@@ -61,46 +61,81 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
       content: typeof m.content === 'string' ? m.content : m.content == null ? '' : JSON.stringify(m.content),
     })).filter(m => m.role !== 'system')
 
+    const today = new Date().toISOString().slice(0, 10)
     const messages: WireMessage[] = [
-      { role: 'system', content: await systemPrompt() },
+      { role: 'system', content: `${await systemPrompt()}\n\nToday's date is ${today}. Treat earlier dates as past; call out deadlines that have already passed.` },
       ...history,
     ]
 
     let finalContent = ''
     let finalModel: string | null = null
+    const allocation = body.allocation ?? process.env.PW_ALLOCATION ?? null
+    const callbacks = {
+      onContent: (t: string) => { finalContent += t; sse(res, 'content', { text: t }) },
+      onReasoning: (t: string) => sse(res, 'reasoning', { text: t }),
+    }
+    const finish = (finishReason: string | null) => {
+      sse(res, 'done', {
+        content: finalContent,
+        finishReason: finishReason ?? 'stop',
+        model: finalModel,
+        messageId: `srv-${Date.now()}`,
+      })
+      res.end()
+    }
     try {
+      // Identical repeated calls get the cached result with a nudge, so a
+      // model stuck re-issuing one call burns no time and gets told to move on.
+      const toolCache = new Map<string, string>()
       for (let iter = 0; iter < MAX_TOOL_ITERATIONS; iter++) {
-        const allocation = body.allocation ?? process.env.PW_ALLOCATION ?? null
         const turn = await streamTurn(
           { model: body.model, messages, tools: TOOL_SPECS, tool_choice: 'auto' },
           allocation,
-          {
-            onContent: t => { finalContent += t; sse(res, 'content', { text: t }) },
-            onReasoning: t => sse(res, 'reasoning', { text: t }),
-          },
+          callbacks,
           abort.signal,
         )
         finalModel = turn.model ?? finalModel
         if (turn.finishReason === 'tool_calls' && turn.toolCalls.length > 0) {
           messages.push({ role: 'assistant', content: turn.content || null, tool_calls: turn.toolCalls })
           for (const tc of turn.toolCalls as WireToolCall[]) {
+            const key = `${tc.function.name}:${tc.function.arguments}`
+            req.log.info({ tool: tc.function.name, args: tc.function.arguments.slice(0, 300), iter }, 'tool call')
             sse(res, 'tool', { phase: 'call', name: tc.function.name, args: tc.function.arguments })
-            const { result, summary } = await executeTool(tc.function.name, tc.function.arguments)
+            let result: string
+            let summary: string
+            if (toolCache.has(key)) {
+              result = `[You already made this exact call in this reply; identical result repeated below. Do not repeat it again.]\n${toolCache.get(key)}`
+              summary = 'repeated call (cached)'
+            } else {
+              const out = await executeTool(tc.function.name, tc.function.arguments)
+              result = out.result
+              summary = out.summary
+              toolCache.set(key, result)
+            }
             sse(res, 'tool', { phase: 'result', name: tc.function.name, summary })
             messages.push({ role: 'tool', tool_call_id: tc.id ?? `${tc.function.name}-${iter}`, content: result })
           }
           continue
         }
-        sse(res, 'done', {
-          content: finalContent,
-          finishReason: turn.finishReason ?? 'stop',
-          model: finalModel,
-          messageId: `srv-${Date.now()}`,
-        })
-        res.end()
+        finish(turn.finishReason)
         return reply
       }
-      sse(res, 'error', { message: `Stopped after ${MAX_TOOL_ITERATIONS} tool iterations.` })
+      // Tool budget exhausted: one final turn with tools disabled so the user
+      // gets an answer built from what was gathered instead of an error.
+      req.log.warn({ iterations: MAX_TOOL_ITERATIONS }, 'tool budget exhausted; forcing final answer')
+      messages.push({
+        role: 'system',
+        content: 'Tool budget for this reply is exhausted. Answer the user now using only the information gathered above. State plainly anything you could not verify.',
+      })
+      const finalTurn = await streamTurn(
+        { model: body.model, messages },
+        allocation,
+        callbacks,
+        abort.signal,
+      )
+      finalModel = finalTurn.model ?? finalModel
+      finish(finalTurn.finishReason)
+      return reply
     } catch (err: any) {
       app.log.error({ err }, 'chat stream failed')
       if (!abort.signal.aborted) sse(res, 'error', { message: String(err?.message ?? err) })

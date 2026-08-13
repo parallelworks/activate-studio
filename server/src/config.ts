@@ -31,7 +31,7 @@ export const EXTRACTED_SUFFIXES = new Set(['.pdf', '.docx', '.pptx', '.xlsx'])
 export const IMAGE_SUFFIXES = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp'])
 
 export const MAX_PREVIEW_BYTES = 512 * 1024
-export const MAX_TOOL_ITERATIONS = 8
+export const MAX_TOOL_ITERATIONS = 24
 
 export function gufiAvailable(): boolean {
   try {
