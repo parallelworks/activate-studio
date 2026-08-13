@@ -22,7 +22,15 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
       return reply.send({ models: [], unreachableSessions: [], error: 'no gateway credential: set PW_API_KEY or authenticate the pw CLI' })
     }
     const wire: any = await listModels()
-    const models = (wire.data ?? wire.models ?? []).filter((m: any) => m)
+    let models = (wire.data ?? wire.models ?? []).filter((m: any) => m)
+    // Org-provider models require an X-Allocation header; without a configured
+    // allocation they can only fail, so hide them. Personal providers sort first
+    // so the default selection is a model that works.
+    if (!process.env.PW_ALLOCATION) {
+      models = models.filter((m: any) => !String(m.id).startsWith('org:'))
+    }
+    models.sort((a: any, b: any) =>
+      Number(String(a.id).startsWith('org:')) - Number(String(b.id).startsWith('org:')))
     return reply.send({ models, unreachableSessions: wire.unreachable_sessions ?? [] })
   })
 

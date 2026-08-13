@@ -11,7 +11,9 @@ const app = Fastify({ logger: { level: 'info' } })
 
 const webDist = path.join(PROJECT_ROOT, 'web', 'dist')
 if (fs.existsSync(webDist)) {
-  await app.register(fastifyStatic, { root: webDist, wildcard: false })
+  // wildcard:true serves from disk per request, so a web rebuild with new
+  // hashed asset names does not require a server restart.
+  await app.register(fastifyStatic, { root: webDist, wildcard: true })
   app.setNotFoundHandler((req, reply) => {
     if (req.url.startsWith('/api/')) return reply.status(404).send({ error: 'not found' })
     return reply.sendFile('index.html')
