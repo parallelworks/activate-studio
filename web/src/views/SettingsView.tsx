@@ -14,7 +14,7 @@ interface Effective {
   customTools: { name: string; description: string; command: string }[]
 }
 
-interface CatalogTool { name: string; description: string; builtin: boolean; enabled: boolean; parameters?: unknown; command?: string; implementation?: string }
+interface CatalogTool { name: string; description: string; builtin: boolean; enabled: boolean; parameters?: unknown; command?: string; implementation?: string; calls?: string }
 interface ExtDoc { name: string; description: string; file: string; active?: boolean; command?: string }
 interface Extensions { dir: string; tools: ExtDoc[]; skills: ExtDoc[]; agents: ExtDoc[] }
 
@@ -79,10 +79,6 @@ export function SettingsView() {
           <div>
             <label className="field-label">Product name</label>
             <input className="field" value={form.appName} onChange={e => setForm({ ...form, appName: e.target.value })} />
-          </div>
-          <div>
-            <label className="field-label">Knowledge base label</label>
-            <input className="field" value={form.kbLabel} onChange={e => setForm({ ...form, kbLabel: e.target.value })} />
           </div>
           <div>
             <label className="field-label">Default theme</label>
@@ -182,7 +178,10 @@ export function SettingsView() {
                     <span className="tool-desc">{t.description}</span>
                   </div>
                   {specOpen === t.name && (
-                    <pre className="tool-spec">{JSON.stringify({ name: t.name, description: t.description, parameters: t.parameters, ...(t.command ? { command: t.command } : {}), ...(t.implementation ? { implementation: t.implementation } : {}) }, null, 2)}</pre>
+                    <>
+                      {t.calls && <p className="tool-calls"><span>Calls:</span> {t.calls}</p>}
+                      <pre className="tool-spec">{JSON.stringify({ name: t.name, description: t.description, parameters: t.parameters, ...(t.command ? { command: t.command } : {}), ...(t.implementation ? { implementation: t.implementation } : {}) }, null, 2)}</pre>
+                    </>
                   )}
                 </div>
               ))}
