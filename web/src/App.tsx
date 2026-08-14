@@ -34,7 +34,7 @@ const NAV: { id: ViewId; label: string; icon: JSX.Element }[] = [
   },
   {
     id: 'overview',
-    label: 'Overview',
+    label: 'Stats',
     icon: <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M2 13.5h12"/><path d="M3.5 13.5V8"/><path d="M7 13.5V4.5"/><path d="M10.5 13.5V6.5"/><path d="M14 13.5V2.5"/></svg>,
   },
   {
