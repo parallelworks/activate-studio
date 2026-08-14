@@ -116,10 +116,12 @@ export function LibraryView({ display, onDisplay }: {
                 <span className="rail-title">{cfg.kbLabel}</span>
                 <span className="rail-actions">
                   <button
-                    className={`btn-secondary select-toggle ${selectMode ? 'active' : ''}`}
+                    className={`rail-collapse select-toggle ${selectMode ? 'active' : ''}`}
                     title="Select multiple items for labeling or deletion"
                     onClick={() => { setSelectMode(m => !m); setMultiSel(new Set()); setTagMenuOpen(false); setConfirmDelete(false) }}
-                  >Select</button>
+                  >
+                    <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.4"><rect x="2" y="2" width="8" height="8" rx="2"/><path d="M4.5 6l1.6 1.6L9 4.7"/><path d="M12.5 6.5v5a1.5 1.5 0 0 1-1.5 1.5H6"/></svg>
+                  </button>
                   <UploadMenu
                     targetDir={targetDir}
                     onTargetDir={setTargetDir}

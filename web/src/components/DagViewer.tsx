@@ -76,7 +76,7 @@ export function DagViewer({ workflow }: { workflow: string }) {
         <svg width={Math.max(width, 400)} height={Math.max(height, 200)}>
           <defs>
             <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-              <path d="M 0 1 L 9 5 L 0 9 z" fill="#5b87a6" />
+              <path d="M 0 1 L 9 5 L 0 9 z" fill="var(--pw-muted-2)" />
             </marker>
           </defs>
           {dag.edges.map((e, i) => {
@@ -90,7 +90,7 @@ export function DagViewer({ workflow }: { workflow: string }) {
             const mx = (x1 + x2) / 2
             return (
               <path key={i} d={`M ${x1} ${y1} C ${mx} ${y1}, ${mx} ${y2}, ${x2} ${y2}`}
-                fill="none" stroke="#5b87a6" strokeWidth="1.6" markerEnd="url(#arrow)" />
+                fill="none" stroke="var(--pw-muted-2)" strokeWidth="1.6" markerEnd="url(#arrow)" />
             )
           })}
           {dag.nodes.map(n => {
@@ -100,9 +100,9 @@ export function DagViewer({ workflow }: { workflow: string }) {
             return (
               <g key={n.id} transform={`translate(${p.x}, ${p.y})`} onClick={() => setSelectedNode(n.id)} style={{ cursor: 'pointer' }}>
                 <rect width={NODE_W} height={NODE_H} rx="8"
-                  fill={active ? '#e1f2fb' : '#ffffff'} stroke={active ? '#06354f' : '#c6d4de'} strokeWidth={active ? 1.8 : 1.2} />
-                <text x="12" y="22" fontSize="12.5" fontWeight="600" fill="#06354f">{n.id.slice(0, 24)}</text>
-                <text x="12" y="40" fontSize="10.5" fill="#6c757d">{n.steps.length} step{n.steps.length === 1 ? '' : 's'}</text>
+                  fill={active ? 'var(--pw-active-pill)' : 'var(--pw-panel)'} stroke={active ? 'var(--pw-navy)' : 'var(--pw-border-strong)'} strokeWidth={active ? 1.8 : 1.2} />
+                <text x="12" y="22" fontSize="12.5" fontWeight="600" fill="var(--pw-navy)">{n.id.slice(0, 24)}</text>
+                <text x="12" y="40" fontSize="10.5" fill="var(--pw-muted)">{n.steps.length} step{n.steps.length === 1 ? '' : 's'}</text>
               </g>
             )
           })}
