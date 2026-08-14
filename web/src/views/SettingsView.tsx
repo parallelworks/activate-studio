@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
-import { ACCENTS, applyAccent } from '../accents'
+import { ACCENTS, SURFACES, applyAccent, applySurface } from '../accents'
 
 interface Effective {
   appName: string
   kbLabel: string
   theme: 'light' | 'dark'
   accent: string
+  surface: string
   sweepIntervalSec: number
   suggestedPrompts: string[]
   visionModel: string
@@ -83,7 +84,21 @@ export function SettingsView() {
                   onClick={() => { setForm({ ...form, accent: k }); applyAccent(k) }}
                 />
               ))}
+              <input
+                type="color"
+                className={`accent-swatch accent-custom ${form.accent.startsWith('custom:') ? 'active' : ''}`}
+                title="Custom accent"
+                value={form.accent.startsWith('custom:') ? form.accent.slice(7) : '#06354f'}
+                onChange={e => { const v = `custom:${e.target.value}`; setForm({ ...form, accent: v }); applyAccent(v) }}
+              />
             </div>
+          </div>
+          <div>
+            <label className="field-label">Surface tone</label>
+            <select className="field" value={form.surface}
+              onChange={e => { setForm({ ...form, surface: e.target.value }); applySurface(e.target.value) }}>
+              {Object.entries(SURFACES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+            </select>
           </div>
           <div>
             <label className="field-label">Background sync interval (seconds, 0 pauses)</label>

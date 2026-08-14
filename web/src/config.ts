@@ -5,6 +5,7 @@ export interface AppConfig {
   iconUrl: string | null
   theme: 'light' | 'dark'
   accent: string
+  surface: string
   kbLabel: string
   suggestedPrompts: string[]
   user: { id: string; username: string; name?: string }
@@ -16,6 +17,7 @@ const DEFAULTS: AppConfig = {
   iconUrl: null,
   theme: 'light',
   accent: 'navy',
+  surface: 'cool',
   kbLabel: 'Knowledge base',
   suggestedPrompts: [
     'What is in this knowledge base?',
@@ -41,6 +43,7 @@ export function useAppConfig(): AppConfig {
           iconUrl: d.iconUrl ?? null,
           theme: d.theme === 'dark' ? 'dark' : 'light',
           accent: d.accent || 'navy',
+          surface: d.surface || 'cool',
           kbLabel: d.kbLabel || DEFAULTS.kbLabel,
           suggestedPrompts: d.suggestedPrompts?.length ? d.suggestedPrompts : DEFAULTS.suggestedPrompts,
           user: d.user?.id ? (d.user as AppConfig['user']) : DEFAULTS.user,

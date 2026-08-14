@@ -37,6 +37,8 @@
   --pw-active-pill: #17395a;
   --pw-green: #34d399;
 
+  --pw-input-bg: #0f172a;
+  --pw-hover-row: #16233a;
   --theme-app-bg: #101a2b;
   --theme-app: #e2e8f0;
   --theme-panel-bg: #101a2b;
@@ -56,8 +58,8 @@
 [data-theme='dark'] .btn-primary:hover { background: #2b5ce4; }
 [data-theme='dark'] .btn-secondary, [data-theme='dark'] .nav-collapse,
 [data-theme='dark'] .rail-collapse, [data-theme='dark'] .rail-expander { background: var(--pw-panel); }
-[data-theme='dark'] .field, [data-theme='dark'] .search-bar input { background: #0f172a; color: var(--pw-text); }
-[data-theme='dark'] .tree-row:hover { background: #16233a; }
+[data-theme='dark'] .field, [data-theme='dark'] .search-bar input { background: var(--pw-input-bg); color: var(--pw-text); }
+[data-theme='dark'] .tree-row:hover { background: var(--pw-hover-row); }
 [data-theme='dark'] .tree-row.dir { color: #d5dfeb; }
 [data-theme='dark'] .tree-row.file { color: #aebdd0; }
 [data-theme='dark'] .sidenav-item { color: #b9c7d8; }
@@ -462,6 +464,8 @@ button { font-family: inherit; }
 .help-lead { margin: 0 0 8px; font-size: 13.5px; line-height: 1.6; color: #3c4656; max-width: 860px; }
 .help-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 12px; }
 .help-card { padding: 18px 22px; }
+.help-card.wide { grid-column: 1 / -1; }
+.help-card.wide .help-card-body ul { columns: 2; column-gap: 28px; }
 .help-card h3 {
   display: flex; align-items: center; gap: 9px; margin: 0 0 8px;
   font-size: 14px; font-weight: 650; color: var(--pw-navy);
@@ -572,9 +576,9 @@ button { font-family: inherit; }
   font-size: 0.88em; padding: 1px 5px; border-radius: 5px;
   background: #eef2f6; border: 1px solid var(--pw-border);
 }
-[data-theme='dark'] [data-streamdown='code-block'] { background: #0f1a26; }
-[data-theme='dark'] [data-streamdown='code-block-header'] { background: #16222f; }
-[data-theme='dark'] [data-streamdown='inline-code'] { background: #16222f; border-color: var(--pw-border); }
+[data-theme='dark'] [data-streamdown='code-block'] { background: var(--pw-input-bg); }
+[data-theme='dark'] [data-streamdown='code-block-header'] { background: var(--theme-hover); }
+[data-theme='dark'] [data-streamdown='inline-code'] { background: var(--theme-hover); border-color: var(--pw-border); }
 
 /* Monospace surfaces share the platform's Geist Mono. */
 code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block'], [data-streamdown='inline-code'] {
@@ -588,3 +592,7 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 }
 .accent-swatch.active { box-shadow: 0 0 0 2px var(--pw-navy); }
 [data-theme='dark'] .accent-swatch { border-color: var(--pw-panel); }
+
+.accent-custom { padding: 0; overflow: hidden; }
+.accent-custom::-webkit-color-swatch-wrapper { padding: 0; }
+.accent-custom::-webkit-color-swatch { border: none; border-radius: 50%; }

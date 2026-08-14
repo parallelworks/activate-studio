@@ -18,6 +18,7 @@ export interface StudioSettings {
   kbLabel?: string
   theme?: 'light' | 'dark'
   accent?: string
+  surface?: string
   sweepIntervalSec?: number
   suggestedPrompts?: string[]
   visionModel?: string
@@ -51,6 +52,7 @@ export function effectiveSettings(): Required<StudioSettings> {
     kbLabel: s.kbLabel ?? process.env.KB_LABEL ?? path.basename(KB_ROOT),
     theme: s.theme ?? (process.env.THEME === 'dark' ? 'dark' : 'light'),
     accent: s.accent ?? process.env.APP_ACCENT ?? 'navy',
+    surface: s.surface ?? process.env.APP_SURFACE ?? 'cool',
     sweepIntervalSec: s.sweepIntervalSec ?? Number(process.env.SWEEP_INTERVAL_SEC ?? 300),
     suggestedPrompts: s.suggestedPrompts ?? envPrompts(),
     visionModel: s.visionModel ?? process.env.ADE_VISION_MODEL ?? '',
@@ -71,8 +73,13 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
     if (body.theme !== undefined) next.theme = body.theme === 'dark' ? 'dark' : 'light'
     if (body.accent !== undefined) {
       const a = String(body.accent)
-      if (!/^[a-z][a-z0-9-]{0,23}$/.test(a)) throw new KbError(400, 'invalid accent name')
+      if (!/^([a-z][a-z0-9-]{0,23}|custom:#[0-9a-fA-F]{6})$/.test(a)) throw new KbError(400, 'invalid accent')
       next.accent = a
+    }
+    if (body.surface !== undefined) {
+      const a = String(body.surface)
+      if (!/^[a-z][a-z0-9-]{0,23}$/.test(a)) throw new KbError(400, 'invalid surface name')
+      next.surface = a
     }
     if (body.sweepIntervalSec !== undefined) {
       const n = Number(body.sweepIntervalSec)

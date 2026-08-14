@@ -10,6 +10,7 @@ export function UploadMenu({ targetDir, onTargetDir, onDone, onProgress }: {
 }) {
   const [open, setOpen] = useState(false)
   const [url, setUrl] = useState('')
+  const [newDir, setNewDir] = useState('')
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
@@ -33,6 +34,24 @@ export function UploadMenu({ targetDir, onTargetDir, onDone, onProgress }: {
       setUrl('')
       setNote(`Indexed in ${(r.indexMs / 1000).toFixed(1)}s`)
       onDone(r.saved)
+    } catch (e) {
+      setNote(String((e as Error).message ?? e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const makeDir = async () => {
+    const rel = newDir.trim().replace(/^\/+|\/+$/g, '')
+    if (!rel) return
+    setBusy(true)
+    setNote('')
+    try {
+      const r = await api.mkdir(rel)
+      setNote(`Created ${r.created}`)
+      setNewDir('')
+      onTargetDir(r.created)
+      window.dispatchEvent(new Event('ade-kb-changed'))
     } catch (e) {
       setNote(String((e as Error).message ?? e))
     } finally {
@@ -70,6 +89,17 @@ export function UploadMenu({ targetDir, onTargetDir, onDone, onProgress }: {
               hidden
               onChange={e => { void sendFiles([...(e.target.files ?? [])]); e.target.value = '' }}
             />
+          </div>
+          <label className="field-label">Or create a new folder</label>
+          <div className="url-row">
+            <input
+              className="field"
+              value={newDir}
+              onChange={e => setNewDir(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && makeDir()}
+              placeholder="e.g. papers/2026"
+            />
+            <button className="btn-primary" onClick={makeDir} disabled={busy || !newDir.trim()}>Create</button>
           </div>
           <label className="field-label">Or add a web page / PDF by URL</label>
           <div className="url-row">

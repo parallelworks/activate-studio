@@ -52,6 +52,15 @@ function slugFromUrl(url: URL): string {
 }
 
 export async function uploadRoutes(app: FastifyInstance): Promise<void> {
+  // Create an empty directory in the knowledge base.
+  app.post('/api/kb/mkdir', async req => {
+    const body = req.body as { path?: string }
+    const rel = String(body.path ?? '').trim()
+    if (!rel) throw new KbError(400, 'path required')
+    const { rel: cleaned } = await targetDir(sanitizeRelPath(rel))
+    return { created: cleaned }
+  })
+
   // Multipart file upload into a chosen KB directory, indexed before returning.
   app.post('/api/kb/upload', async (req, reply) => {
     const dir = String((req.query as { dir?: string }).dir ?? 'uploads')

@@ -41,6 +41,7 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
       kbLabel: eff.kbLabel,
       theme: eff.theme,
       accent: eff.accent,
+      surface: eff.surface,
       suggestedPrompts: eff.suggestedPrompts,
       user,
     }
