@@ -15,6 +15,8 @@ import { conversationRoutes } from './conversations.js'
 import { authHook, authEnabled } from './auth.js'
 import { settingsRoutes } from './settings.js'
 import { chatRoutes } from './chat/routes.js'
+import { ragProxyRoutes } from './ragProxy.js'
+import { maybeAutoStart, ragEndpointRoutes } from './ragEndpoint.js'
 import { gatewayConfigured } from './chat/gateway.js'
 import { startSweepTimer } from './indexing.js'
 
@@ -34,6 +36,8 @@ if (fs.existsSync(webDist)) {
 }
 
 await app.register(kbRoutes)
+await app.register(ragProxyRoutes)
+await app.register(ragEndpointRoutes)
 await app.register(uploadRoutes)
 await app.register(queryRoutes)
 await app.register(tagRoutes)
@@ -48,6 +52,7 @@ await app.register(chatRoutes)
 startSweepTimer(msg => app.log.info(msg))
 
 await app.listen({ host: HOST, port: PORT })
+maybeAutoStart(msg => app.log.info(msg))
 app.log.info(`kb root: ${KB_ROOT}`)
 app.log.info(`gufi index: ${gufiAvailable() ? 'available' : 'NOT BUILT (run indexer/reindex.sh)'}`)
 app.log.info(`gateway: ${gatewayConfigured() ? 'configured' : 'PW_API_KEY NOT SET; chat disabled'}`)
