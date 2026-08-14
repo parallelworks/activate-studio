@@ -1,4 +1,4 @@
-# ade-studio
+# ACTIVATE Studio
 
 Web interface over a knowledge base directory, served as a session on the ACTIVATE platform. Three surfaces: a chat assistant with tool calling grounded in the corpus, a library (file tree, viewer, upload and URL ingestion), and hybrid search (full text plus semantic). The corpus root is configurable (`KB_ROOT`); deployment-specific labels and starter prompts come from the environment, not the code.
 

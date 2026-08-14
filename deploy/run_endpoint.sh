@@ -14,4 +14,4 @@ if [ -f .env ]; then
   set +a
 fi
 
-exec pw endpoints run --name ade-studio --subdomain ade-studio -- node server/dist/main.js
+exec pw endpoints run --name activate-studio --subdomain activate-studio -- node server/dist/main.js

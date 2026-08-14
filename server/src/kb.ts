@@ -96,14 +96,16 @@ export async function readFileContent(rel: string): Promise<FileContent> {
       return { ...base, truncated, content: buf.toString('utf8'), source: 'raw' }
     } finally { await fh.close() }
   }
-  if (kind === 'extracted') {
+  if (kind === 'extracted' || kind === 'image') {
+    // Extracted text for documents; OCR plus vision caption for images.
     try {
       const text = await fs.readFile(extractPath(rel), 'utf8')
-      const truncated = text.length > MAX_PREVIEW_BYTES
-      return { ...base, truncated, content: text.slice(0, MAX_PREVIEW_BYTES), source: 'extracted' }
-    } catch {
-      return { ...base, truncated: false, content: null, source: 'none' }
-    }
+      if (text.trim()) {
+        const truncated = text.length > MAX_PREVIEW_BYTES
+        return { ...base, truncated, content: text.slice(0, MAX_PREVIEW_BYTES), source: 'extracted' }
+      }
+    } catch { /* no cache entry */ }
+    return { ...base, truncated: false, content: null, source: 'none' }
   }
   return { ...base, truncated: false, content: null, source: 'none' }
 }

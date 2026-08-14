@@ -69,7 +69,7 @@ export function Viewer({ path, onDeleted }: {
   }
 
   const indexedView = file.content == null
-    ? <p className="muted pad">No text is stored in the index for this file{isImage ? ' (images are indexed by name and metadata only)' : ''}.</p>
+    ? <p className="muted pad">No text is stored in the index for this file{isImage ? ' yet; the next index pass adds OCR text and a description' : ''}.</p>
     : (
       <div className="viewer-body">
         <p className="index-note">This is the text representation stored in the search index, not the original file.</p>

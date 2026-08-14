@@ -110,6 +110,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
               const out = await executeTool(tc.function.name, tc.function.arguments)
               result = out.result
               summary = out.summary
+              if (out.display) sse(res, 'display', out.display)
               toolCache.set(key, result)
             }
             sse(res, 'tool', { phase: 'result', name: tc.function.name, summary })

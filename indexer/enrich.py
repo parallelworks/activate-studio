@@ -24,7 +24,10 @@ TEXT_SUFFIXES = {
     '.html', '.css', '.js', '.ts', '.tsx', '.svg', '.toml', '.cfg', '.ini', '.def', '.mjs', '.sql',
 }
 EXTRACT_SUFFIXES = {'.pdf', '.docx', '.pptx', '.xlsx'}
+IMAGE_SUFFIXES = {'.png', '.jpg', '.jpeg', '.gif', '.webp'}
 MAX_TEXT = 500_000
+MAX_CAPTION_BYTES = 8 * 1024 * 1024
+MIN_IMAGE_BYTES = 8 * 1024  # skip icons and tiny assets
 
 
 def extract_docx(path: Path) -> str:
@@ -77,6 +80,85 @@ def extract_xlsx(path: Path) -> str:
     return '\n'.join(parts)
 
 
+def gateway_key() -> str:
+    key = os.environ.get('PW_API_KEY', '')
+    if key:
+        return key
+    try:
+        import json
+        import urllib.parse
+        host = urllib.parse.urlparse(os.environ.get('PW_GATEWAY_URL', 'https://activate.parallel.works/api/openai/v1')).netloc
+        creds = json.load(open(os.path.expanduser('~/.config/pw/credentials')))
+        for ident in creds.get('identities', {}).values():
+            if ident.get('server') == host:
+                return ident.get('token') or ident.get('apikey') or ''
+    except Exception:
+        pass
+    return ''
+
+
+def caption_image(path: Path) -> str:
+    """Describe an image with a vision model through the gateway's streaming
+    Responses API. Opt-in via ADE_VISION_MODEL; failures degrade to OCR-only."""
+    import base64
+    import json
+    import urllib.request
+    model = os.environ.get('ADE_VISION_MODEL', '')
+    key = gateway_key()
+    if not model or not key or path.stat().st_size > MAX_CAPTION_BYTES:
+        return ''
+    mime = 'image/jpeg' if path.suffix.lower() in ('.jpg', '.jpeg') else f'image/{path.suffix.lower().lstrip(".")}'
+    img = base64.b64encode(path.read_bytes()).decode()
+    body = json.dumps({
+        'model': model,
+        'stream': True,
+        'input': [{'role': 'user', 'content': [
+            {'type': 'input_text', 'text': 'Describe this image in two to four factual sentences for a search index. Then transcribe any visible text labels.'},
+            {'type': 'input_image', 'image_url': f'data:{mime};base64,{img}'}]}],
+    }).encode()
+    base = os.environ.get('PW_GATEWAY_URL', 'https://activate.parallel.works/api/openai/v1').rstrip('/')
+    req = urllib.request.Request(f'{base}/responses', data=body,
+                                 headers={'Authorization': f'Bearer {key}', 'Content-Type': 'application/json'})
+    try:
+        text = ''
+        with urllib.request.urlopen(req, timeout=180) as resp:
+            for raw in resp:
+                line = raw.decode(errors='replace').strip()
+                if not line.startswith('data:'):
+                    continue
+                data = line[5:].strip()
+                if data == '[DONE]':
+                    break
+                try:
+                    ev = json.loads(data)
+                except Exception:
+                    continue
+                if ev.get('type') == 'response.output_text.delta':
+                    text += ev.get('delta', '')
+        return text.strip()
+    except Exception as exc:
+        print(f'  caption failed {path}: {str(exc)[:120]}', file=sys.stderr)
+        return ''
+
+
+def extract_image(path: Path) -> str:
+    if path.stat().st_size < MIN_IMAGE_BYTES:
+        return ''
+    parts = []
+    caption = caption_image(path)
+    if caption:
+        parts.append(f'Image description:\n{caption}')
+    try:
+        ocr = subprocess.run(['tesseract', str(path), 'stdout', '--psm', '3'],
+                             capture_output=True, text=True, timeout=120)
+        ocr_text = (ocr.stdout or '').strip()
+        if len(ocr_text) > 20:
+            parts.append(f'Text found in image (OCR):\n{ocr_text}')
+    except Exception:
+        pass
+    return '\n\n'.join(parts)
+
+
 def extract(path: Path) -> str | None:
     suffix = path.suffix.lower()
     try:
@@ -90,6 +172,8 @@ def extract(path: Path) -> str | None:
             return extract_pptx(path)[:MAX_TEXT]
         if suffix == '.xlsx':
             return extract_xlsx(path)[:MAX_TEXT]
+        if suffix in IMAGE_SUFFIXES:
+            return extract_image(path)[:MAX_TEXT]
     except Exception as exc:
         print(f'  extract failed {path}: {exc}', file=sys.stderr)
     return None
@@ -136,18 +220,26 @@ def main() -> int:
                     if not fpath.is_file():
                         continue
                     suffix = fpath.suffix.lower()
-                    if suffix not in TEXT_SUFFIXES and suffix not in EXTRACT_SUFFIXES:
+                    cacheable = suffix in EXTRACT_SUFFIXES or suffix in IMAGE_SUFFIXES
+                    if suffix not in TEXT_SUFFIXES and not cacheable:
                         continue
-                    text = extract(fpath)
+                    # Expensive extractions (PDF, office, OCR, captions) are
+                    # cached by mtime; a reindex pass reuses them untouched.
+                    cache_file = cache_root / rel_dir / (fpath.name + '.txt')
+                    if cacheable and cache_file.exists() and cache_file.stat().st_mtime >= fpath.stat().st_mtime:
+                        text = cache_file.read_text(errors='replace')
+                    else:
+                        text = extract(fpath)
+                        if cacheable:
+                            # Cache even empty results so no-text images are
+                            # not re-captioned on every pass.
+                            cache_file.parent.mkdir(parents=True, exist_ok=True)
+                            cache_file.write_text(text or '')
+                            n_extracted += 1
                     if not text or not text.strip():
                         continue
                     rows.append((fpath.stat().st_ino, fpath.name, text))
                     n_files += 1
-                    if suffix in EXTRACT_SUFFIXES:
-                        out = cache_root / rel_dir / (fpath.name + '.txt')
-                        out.parent.mkdir(parents=True, exist_ok=True)
-                        out.write_text(text)
-                        n_extracted += 1
             db.executemany('INSERT INTO words (tinode, fname, wordf) VALUES (?, ?, ?)', rows)
             db.commit()
         finally:
