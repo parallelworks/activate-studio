@@ -4,6 +4,7 @@ import type { FastifyInstance } from 'fastify'
 import { EXCLUDE_DIRS, GUFI_BIN, GUFI_INDEX, KB_ROOT, gufiAvailable } from './config.js'
 import { KbError, resolveKb } from './kb.js'
 import { reindexForDir, reindexForFile } from './indexing.js'
+import { overlayEmpty, overlayGet, overlaySet, overlayUnder } from './tagsOverlay.js'
 
 export const TAG_XATTR = 'user.studio.tags'
 const DELIM = '\x1e'
@@ -25,13 +26,15 @@ export async function readTags(abs: string): Promise<string[]> {
   return stdout.split(',').map(t => t.trim()).filter(Boolean)
 }
 
-async function writeTags(abs: string, tags: string[]): Promise<void> {
+/** True when the filesystem accepted the xattr; false sends the caller to
+ *  the overlay (NFS/EFS refuse user xattrs with ENOTSUP). */
+async function writeTags(abs: string, tags: string[]): Promise<boolean> {
   if (tags.length === 0) {
     await runBin('setfattr', ['-x', TAG_XATTR, abs])
-    return
+    return true
   }
   const { code } = await runBin('setfattr', ['-n', TAG_XATTR, '-v', tags.join(','), abs])
-  if (code !== 0) throw new KbError(500, `could not set tags on ${abs}`)
+  return code === 0
 }
 
 /** Own tags for every entry of a directory, one getfattr process per listing. */
@@ -45,6 +48,13 @@ export async function readTagsBatch(absPaths: string[]): Promise<Map<string, str
     else if (line.startsWith(TAG_XATTR + '=')) {
       const v = line.slice(TAG_XATTR.length + 1).replace(/^"|"$/g, '')
       out.set(current, v.split(',').map(t => t.trim()).filter(Boolean))
+    }
+  }
+  if (!overlayEmpty()) {
+    for (const abs of absPaths) {
+      const rel = path.relative(KB_ROOT, abs)
+      const ov = overlayGet(rel)
+      if (ov) out.set(abs, ov)
     }
   }
   return out
@@ -86,6 +96,16 @@ export async function tagMaps(): Promise<TagMaps> {
       `SELECT rpath(sname, sroll)||'/'||v.name, CAST(x.value AS TEXT) FROM vrpentries v JOIN xattrs_pwd x ON v.inode = x.inode WHERE CAST(x.name AS TEXT) = '${TAG_XATTR}';`,
     ).catch(() => [])
     for (const [p, v] of files) fileTags.set(relOf(p), v.split(',').map(t => t.trim()).filter(Boolean))
+  }
+  // Overlay entries win over (possibly stale) index rows, and make labels
+  // work even before a reindex has run or when GUFI is absent.
+  if (!overlayEmpty()) {
+    const fsSync = await import('node:fs')
+    for (const [rel, tags] of Object.entries(overlayUnder(''))) {
+      let isDir = false
+      try { isDir = fsSync.statSync(path.join(KB_ROOT, rel)).isDirectory() } catch { /* keep as file */ }
+      ;(isDir ? dirTags : fileTags).set(rel, tags)
+    }
   }
   cache = { dirTags, fileTags, at: Date.now() }
   return cache
@@ -136,9 +156,10 @@ export async function applyTagsCore(rawPaths: string[], addRaw: string[], remove
       if (EXCLUDE_DIRS.has(part) || part.startsWith('.')) throw new KbError(400, `not taggable: ${cleaned}`)
     }
     const abs = resolveKb(cleaned)
-    const current = await readTags(abs)
+    const current = overlayGet(cleaned) ?? await readTags(abs)
     const next = [...new Set([...current.filter(t => !remove.includes(t)), ...add])]
-    await writeTags(abs, next)
+    const onFs = await writeTags(abs, next)
+    overlaySet(cleaned, onFs ? [] : next)
     updated[cleaned] = next
     touched.add(cleaned)
   }
@@ -153,6 +174,18 @@ export async function applyTagsCore(rawPaths: string[], addRaw: string[], remove
   }
   invalidateTagMaps()
   return updated
+}
+
+/** Re-apply overlay-stored labels into the index after a reindex rebuilt
+ *  it from a filesystem that has no xattrs. Failures are left for the next
+ *  pass rather than triggering reindex recursion. */
+export async function reapplyTagOverlay(prefix = ''): Promise<number> {
+  const entries = overlayUnder(prefix)
+  const rels = Object.keys(entries)
+  if (!rels.length) return 0
+  const failed = await upsertIndexTags(rels, entries).catch(() => rels)
+  invalidateTagMaps()
+  return rels.length - failed.length
 }
 
 /** Write user.studio.tags rows straight into the per-directory index dbs.
