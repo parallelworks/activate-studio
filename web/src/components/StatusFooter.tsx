@@ -94,7 +94,7 @@ function AiPanel({ ai, onClose, onRecheck }: { ai: AiHealth; onClose: () => void
           {rows.map(([k, v]) => <tr key={k}><td className="k">{k}</td><td className="v">{v}</td></tr>)}
         </tbody></table>
         {ai.status === 'auth' && (
-          <p className="identity-note">The gateway rejected the credential. If this deployment uses a genai.mil key, it needs an unlock every 8 hours; unlock it, then re-check.</p>
+          <p className="identity-note">The gateway rejected the credential. Some providers lock keys on a schedule; unlock the key at your provider, then re-check.</p>
         )}
         <p className="identity-note">Checked via the model listing; a key can also fail at call time, which shows under last call failure.</p>
         <div className="scope-menu-foot">

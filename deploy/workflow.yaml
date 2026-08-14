@@ -41,7 +41,12 @@ permissions:
             label: Session Name
             type: string
             default: studio
-            tooltip: Prefix for the session/endpoint name; the port is appended so each launch is unique.
+            tooltip: Session/endpoint name; also the URL subdomain, so keep it stable across relaunches.
+          unique_suffix:
+            label: Append Port to Session Name
+            type: boolean
+            default: false
+            tooltip: Appends the app port to the session name so each launch gets a unique URL. Leave off for a stable URL that survives relaunches.
           session_method:
             label: Session Method
             type: dropdown
@@ -62,6 +67,23 @@ permissions:
         type: group
         collapsed: true
         items:
+          app_name:
+            label: App Name
+            type: string
+            default: Studio
+            tooltip: Product name shown in the interface (APP_NAME).
+          icon_path:
+            label: Brand Icon Path
+            type: string
+            default: ''
+            optional: true
+            tooltip: Absolute path on the resource to an image used as the interface brand icon and favicon (APP_ICON). Stage the file on the resource first, e.g. under the knowledge base in a .branding directory.
+          suggested_prompts:
+            label: Chat Starter Prompts
+            type: string
+            default: ''
+            optional: true
+            tooltip: Semicolon-separated example questions shown on the empty chat page. Empty keeps the app defaults; editable later in Settings.
           workdir:
             label: Work Directory
             type: string
@@ -130,6 +152,18 @@ permissions:
             type: string
             default: ${HOME}/knowledge-base
             tooltip: The directory to index and serve. Created if missing; point it at an existing corpus to work over it.
+          index_base:
+            label: Index Directory
+            type: string
+            default: ''
+            optional: true
+            tooltip: Where the search index, settings, and credential store live. Empty keeps it inside the work directory; set an absolute path (e.g. a /shared location) to survive work-directory rebuilds.
+          starter_dirs:
+            label: Starter Directories
+            type: string
+            default: ''
+            optional: true
+            tooltip: Comma-separated directory names created inside the knowledge base on launch (e.g. papers,software,datasets). Existing directories are untouched.
           kb_label:
             label: Knowledge Base Label
             type: string
@@ -201,6 +235,16 @@ jobs:
         run: |
           mkdir -p ${{ inputs.app_settings.workdir }}
           mkdir -p ${{ inputs.kb_settings.kb_root }}
+          if [ -n "${{ inputs.kb_settings.index_base }}" ]; then
+            mkdir -p "${{ inputs.kb_settings.index_base }}"
+          fi
+          STARTERS='${{ inputs.kb_settings.starter_dirs }}'
+          if [ -n "$STARTERS" ]; then
+            echo "$STARTERS" | tr ',' '\n' | while read -r d; do
+              d=$(echo "$d" | xargs)
+              [ -n "$d" ] && mkdir -p "${{ inputs.kb_settings.kb_root }}/$d" && echo "starter dir: $d"
+            done
+          fi
       - name: Stop dangling processes from a prior launch
         run: |
           cd ${{ inputs.app_settings.workdir }}
@@ -384,7 +428,15 @@ jobs:
           fi
           export KB_ROOT="${{ inputs.kb_settings.kb_root }}"
           export GUFI_BIN="$PWD/gufi-install/bin"
-          export INDEX_BASE="$PWD/app/index"
+          export INDEX_BASE="${{ inputs.kb_settings.index_base }}"
+          [ -n "$INDEX_BASE" ] || INDEX_BASE="$PWD/app/index"
+          export INDEX_BASE
+          # The embedding model ships inside the app tree; a relocated index
+          # needs it at $INDEX_BASE/models.
+          if [ "$INDEX_BASE" != "$PWD/app/index" ] && [ ! -f "$INDEX_BASE/models/minilm384.gguf" ] && [ -f app/index/models/minilm384.gguf ]; then
+            mkdir -p "$INDEX_BASE/models"
+            cp app/index/models/minilm384.gguf "$INDEX_BASE/models/"
+          fi
           bash app/indexer/reindex.sh || echo "WARNING: index build failed; the app still serves the filesystem."
   run_app:
     needs:
@@ -412,7 +464,30 @@ jobs:
           echo "export KB_ROOT=${{ inputs.kb_settings.kb_root }}" >> ${SCRIPT}
           echo "export KB_LABEL='${{ inputs.kb_settings.kb_label }}'" >> ${SCRIPT}
           echo "export GUFI_BIN=${WORKDIR}/gufi-install/bin" >> ${SCRIPT}
-          echo "export INDEX_BASE=${WORKDIR}/app/index" >> ${SCRIPT}
+          if [ -n "${{ inputs.kb_settings.index_base }}" ]; then
+            echo "export INDEX_BASE='${{ inputs.kb_settings.index_base }}'" >> ${SCRIPT}
+          else
+            echo "export INDEX_BASE=${WORKDIR}/app/index" >> ${SCRIPT}
+          fi
+          echo "export APP_NAME='${{ inputs.app_settings.app_name }}'" >> ${SCRIPT}
+          if [ -n "${{ inputs.app_settings.icon_path }}" ]; then
+            echo "export APP_ICON='${{ inputs.app_settings.icon_path }}'" >> ${SCRIPT}
+          fi
+          PROMPTS='${{ inputs.app_settings.suggested_prompts }}'
+          if [ -n "$PROMPTS" ]; then
+            JSON="["
+            IFS=';'
+            first=1
+            for q in $PROMPTS; do
+              q=$(echo "$q" | xargs | sed 's/\\/\\\\/g; s/"/\\"/g')
+              [ -n "$q" ] || continue
+              [ "$first" = "1" ] && first=0 || JSON="$JSON,"
+              JSON="$JSON\"$q\""
+            done
+            unset IFS
+            JSON="$JSON]"
+            echo "export SUGGESTED_PROMPTS='$JSON'" >> ${SCRIPT}
+          fi
           if [ -n "${{ inputs.model_settings.pw_api_key }}" ]; then
             echo "export PW_API_KEY='${{ inputs.model_settings.pw_api_key }}'" >> ${SCRIPT}
           fi
@@ -460,7 +535,11 @@ jobs:
           if [ "${{ inputs.session_settings.session_method }}" = "web" ]; then
             PREFIX="$(echo "${{ inputs.session_settings.session_name }}" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-' | sed -E 's/-+/-/g; s/^-//; s/-$//')"
             [ -n "$PREFIX" ] || PREFIX="studio"
-            EP_NAME="${PREFIX}-${PORT}"
+            if [ "${{ inputs.session_settings.unique_suffix }}" = "true" ]; then
+              EP_NAME="${PREFIX}-${PORT}"
+            else
+              EP_NAME="${PREFIX}"
+            fi
             PW_BIN="$(command -v pw || echo pw)"
             echo "Forking web endpoint ${EP_NAME} -> localhost:${PORT}; log: $(pwd)/endpoint.log"
             setsid nohup "$PW_BIN" endpoints http -o text --name "$EP_NAME" --subdomain "$EP_NAME" "$PORT" > endpoint.log 2>&1 < /dev/null &
