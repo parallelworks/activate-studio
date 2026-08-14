@@ -10,16 +10,36 @@ interface Effective {
   sweepIntervalSec: number
   suggestedPrompts: string[]
   visionModel: string
+  disabledTools: string[]
+  customTools: { name: string; description: string; command: string }[]
 }
+
+interface CatalogTool { name: string; description: string; builtin: boolean; enabled: boolean; parameters?: unknown }
+interface ExtDoc { name: string; description: string; file: string; active?: boolean; command?: string }
+interface Extensions { dir: string; tools: ExtDoc[]; skills: ExtDoc[]; agents: ExtDoc[] }
+
+const TOOL_GROUPS: [string, string[]][] = [
+  ['Knowledge base', ['search_kb', 'read_kb_file', 'list_kb_dir', 'query_corpus', 'get_labels', 'apply_labels']],
+  ['Workflows', ['list_workflows', 'get_workflow', 'run_workflow', 'workflow_runs', 'workflow_run_detail', 'pw_help']],
+  ['Clusters', ['list_clusters', 'cluster_command']],
+  ['Display and skills', ['show_in_viewer', 'use_skill']],
+]
 
 export function SettingsView() {
   const [form, setForm] = useState<Effective | null>(null)
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
   const [models, setModels] = useState<string[]>([])
+  const [catalog, setCatalog] = useState<CatalogTool[]>([])
+  const [ext, setExt] = useState<Extensions | null>(null)
+  const [specOpen, setSpecOpen] = useState<string | null>(null)
 
   useEffect(() => {
     fetch('/api/settings').then(r => r.json()).then(d => setForm(d.effective)).catch(() => setNote('Could not load settings.'))
+    fetch('/api/chat/tools').then(r => r.json())
+      .then(d => setCatalog(d.tools ?? []))
+      .catch(() => {})
+    fetch('/api/extensions').then(r => r.json()).then(setExt).catch(() => {})
     fetch('/api/chat/models').then(r => r.json())
       .then(d => setModels((d.models ?? []).map((m: { id: string }) => m.id)))
       .catch(() => {})
@@ -127,6 +147,92 @@ export function SettingsView() {
         <div className="query-actions">
           <button className="btn-primary" onClick={save} disabled={busy}>{busy ? 'Saving…' : 'Save settings'}</button>
           {note && <span className="muted">{note}</span>}
+        </div>
+      </div>
+
+      <div className="card settings-card">
+        <h2 className="settings-section-title">Assistant tools</h2>
+        <p className="muted view-sub">
+          Everything the chat assistant can call. Built-in tools are part of the server; unchecking one hides it from the model, and clicking a name shows its exact call specification, so you can copy the shape into a custom tool or extension file with your own changes. Custom tools are commands you define here (saved with these settings, not as files); each appears to the assistant as a callable tool and runs on this server with its output returned to the conversation.
+        </p>
+        {TOOL_GROUPS.map(([group, names]) => {
+          const rows = catalog.filter(t => t.builtin && names.includes(t.name))
+          if (!rows.length) return null
+          return (
+            <div key={group}>
+              <div className="tool-group">{group}</div>
+              {rows.map(t => (
+                <div key={t.name}>
+                  <div className="tool-row">
+                    <input
+                      type="checkbox"
+                      checked={!form.disabledTools.includes(t.name)}
+                      onChange={e => setForm({
+                        ...form,
+                        disabledTools: e.target.checked
+                          ? form.disabledTools.filter(n => n !== t.name)
+                          : [...form.disabledTools, t.name],
+                      })}
+                    />
+                    <button className="tool-name" title="Show the tool call specification"
+                      onClick={() => setSpecOpen(o => o === t.name ? null : t.name)}>
+                      <code>{t.name}</code>
+                    </button>
+                    <span className="tool-desc">{t.description}</span>
+                  </div>
+                  {specOpen === t.name && (
+                    <pre className="tool-spec">{JSON.stringify({ name: t.name, description: t.description, parameters: t.parameters }, null, 2)}</pre>
+                  )}
+                </div>
+              ))}
+            </div>
+          )
+        })}
+        <div className="tool-group">Custom tools</div>
+        <div className="custom-tools">
+          {form.customTools.map((t, i) => (
+            <div className="custom-tool-row" key={i}>
+              <input className="field" placeholder="tool_name" value={t.name}
+                onChange={e => setForm({ ...form, customTools: form.customTools.map((x, j) => j === i ? { ...x, name: e.target.value } : x) })} />
+              <input className="field" placeholder="What it does, for the model" value={t.description}
+                onChange={e => setForm({ ...form, customTools: form.customTools.map((x, j) => j === i ? { ...x, description: e.target.value } : x) })} />
+              <input className="field mono" placeholder="command to run" value={t.command}
+                onChange={e => setForm({ ...form, customTools: form.customTools.map((x, j) => j === i ? { ...x, command: e.target.value } : x) })} />
+              <button className="btn-danger-outline" onClick={() => setForm({ ...form, customTools: form.customTools.filter((_, j) => j !== i) })}>Remove</button>
+            </div>
+          ))}
+          <button className="btn-secondary" onClick={() => setForm({ ...form, customTools: [...form.customTools, { name: '', description: '', command: '' }] })}>Add custom tool</button>
+        </div>
+        <div className="query-actions">
+          <button className="btn-primary" onClick={save} disabled={busy}>{busy ? 'Saving…' : 'Save settings'}</button>
+          {note && <span className="muted">{note}</span>}
+        </div>
+      </div>
+
+      <div className="card settings-card">
+        <h2 className="settings-section-title">Extensions</h2>
+        <p className="muted view-sub">
+          File-based extensions load from <code>{ext?.dir ?? 'the extensions directory beside the index'}</code> and take effect without a restart. <code>tools/*.json</code> files (name, description, command) become chat tools like the custom tools above. <code>skills/*.md</code> files are instruction sets the assistant loads on demand through the use_skill tool, by name or when a task matches their description. <code>agents/default.md</code> is appended to the system prompt as this deployment's standing instructions.
+        </p>
+        <div className="ext-cols">
+          <div>
+            <div className="tool-group">Tool files ({ext?.tools.length ?? 0})</div>
+            {ext?.tools.length
+              ? ext.tools.map(t => <div className="ext-row" key={t.file}><code>{t.name}</code><span className="tool-desc">{t.description || t.command}</span></div>)
+              : <p className="muted ext-empty">None yet. Drop a JSON file in tools/.</p>}
+          </div>
+          <div>
+            <div className="tool-group">Skills ({ext?.skills.length ?? 0})</div>
+            {ext?.skills.length
+              ? ext.skills.map(t => <div className="ext-row" key={t.file}><code>{t.name}</code><span className="tool-desc">{t.description}</span></div>)
+              : <p className="muted ext-empty">None yet. Drop a markdown file in skills/.</p>}
+          </div>
+          <div>
+            <div className="tool-group">Agents ({ext?.agents.length ?? 0})</div>
+            {ext?.agents.length
+              ? ext.agents.map(t => <div className="ext-row" key={t.file}><code>{t.file}</code><span className="tool-desc">{t.active ? 'active (appended to the system prompt)' : 'inactive; rename to default.md to activate'}</span></div>)
+              : <p className="muted ext-empty">None yet. Drop default.md in agents/.</p>}
+          </div>
         </div>
       </div>
     </div>

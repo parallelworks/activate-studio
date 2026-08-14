@@ -1,9 +1,11 @@
 import type { FastifyInstance } from 'fastify'
 import { MAX_TOOL_ITERATIONS } from '../config.js'
 import { gatewayConfigured, listModels, streamTurn, WireMessage, WireToolCall } from './gateway.js'
-import { TOOL_SPECS, executeTool } from './tools.js'
+import { TOOL_SPECS, activeToolSpecs, customToolSpecs, executeTool, skillToolSpec } from './tools.js'
 import { systemPrompt } from './context.js'
 import { attachmentContext } from '../attachments.js'
+import { effectiveSettings } from '../settings.js'
+import { agentPrompt } from '../extensions.js'
 
 interface StreamBody {
   model: string
@@ -33,6 +35,28 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     models.sort((a: any, b: any) =>
       Number(String(a.id).startsWith('org:')) - Number(String(b.id).startsWith('org:')))
     return reply.send({ models, unreachableSessions: wire.unreachable_sessions ?? [] })
+  })
+
+  // Tool catalog for the Settings page: built-ins plus custom, with state.
+  app.get('/api/chat/tools', async () => {
+    const eff = effectiveSettings()
+    const disabled = new Set(eff.disabledTools)
+    return {
+      tools: [
+        ...TOOL_SPECS.map(t => ({
+          name: t.function.name, description: t.function.description, builtin: true,
+          enabled: !disabled.has(t.function.name), parameters: t.function.parameters,
+        })),
+        ...customToolSpecs().map(t => ({
+          name: t.function.name, description: t.function.description, builtin: false,
+          enabled: !disabled.has(t.function.name), parameters: t.function.parameters,
+        })),
+        ...(skillToolSpec() ? [{
+          name: 'use_skill', description: skillToolSpec()!.function.description, builtin: true,
+          enabled: !disabled.has('use_skill'), parameters: skillToolSpec()!.function.parameters,
+        }] : []),
+      ],
+    }
   })
 
   app.post('/api/chat/stream', async (req, reply) => {
@@ -73,8 +97,10 @@ ${ctx}` : ctx
     }
 
     const today = new Date().toISOString().slice(0, 10)
+    // The persona file is read per request so edits apply immediately.
+    const persona = agentPrompt()
     const messages: WireMessage[] = [
-      { role: 'system', content: `${await systemPrompt()}\n\nToday's date is ${today}. Treat earlier dates as past; call out deadlines that have already passed.` },
+      { role: 'system', content: `${await systemPrompt()}\n\nToday's date is ${today}. Treat earlier dates as past; call out deadlines that have already passed.${persona ? `\n\n--- DEPLOYMENT AGENT INSTRUCTIONS (extensions/agents/default.md) ---\n${persona}` : ''}` },
       ...history,
     ]
 
@@ -100,7 +126,7 @@ ${ctx}` : ctx
       const toolCache = new Map<string, string>()
       for (let iter = 0; iter < MAX_TOOL_ITERATIONS; iter++) {
         const turn = await streamTurn(
-          { model: body.model, messages, tools: TOOL_SPECS, tool_choice: 'auto' },
+          { model: body.model, messages, tools: activeToolSpecs(), tool_choice: 'auto' },
           allocation,
           callbacks,
           abort.signal,

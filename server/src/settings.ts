@@ -22,6 +22,8 @@ export interface StudioSettings {
   sweepIntervalSec?: number
   suggestedPrompts?: string[]
   visionModel?: string
+  disabledTools?: string[]
+  customTools?: { name: string; description: string; command: string }[]
 }
 
 let cache: StudioSettings | null = null
@@ -56,6 +58,8 @@ export function effectiveSettings(): Required<StudioSettings> {
     sweepIntervalSec: s.sweepIntervalSec ?? Number(process.env.SWEEP_INTERVAL_SEC ?? 300),
     suggestedPrompts: s.suggestedPrompts ?? envPrompts(),
     visionModel: s.visionModel ?? process.env.ADE_VISION_MODEL ?? '',
+    disabledTools: s.disabledTools ?? [],
+    customTools: s.customTools ?? [],
   }
 }
 
@@ -91,6 +95,18 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
       next.suggestedPrompts = body.suggestedPrompts.map(p => String(p).slice(0, 300)).filter(Boolean).slice(0, 12)
     }
     if (body.visionModel !== undefined) next.visionModel = String(body.visionModel).slice(0, 120) || undefined
+    if (body.disabledTools !== undefined) {
+      if (!Array.isArray(body.disabledTools)) throw new KbError(400, 'disabledTools must be an array')
+      next.disabledTools = body.disabledTools.map(t => String(t).slice(0, 60)).filter(Boolean).slice(0, 50)
+    }
+    if (body.customTools !== undefined) {
+      if (!Array.isArray(body.customTools)) throw new KbError(400, 'customTools must be an array')
+      next.customTools = body.customTools.slice(0, 12).map(t => ({
+        name: String(t?.name ?? '').toLowerCase().replace(/[^a-z0-9_]/g, '_').replace(/^_+|_+$/g, '').slice(0, 40),
+        description: String(t?.description ?? '').slice(0, 300),
+        command: String(t?.command ?? '').slice(0, 500),
+      })).filter(t => t.name && t.command)
+    }
     await fsp.mkdir(INDEX_BASE, { recursive: true })
     await fsp.writeFile(FILE, JSON.stringify(next, null, 1))
     cache = next
