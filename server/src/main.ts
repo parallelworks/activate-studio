@@ -50,6 +50,11 @@ await app.register(settingsRoutes)
 await app.register(chatRoutes)
 
 startSweepTimer(msg => app.log.info(msg))
+// Deploy-time full reindexes rebuild the index without overlay labels
+// (xattr-less filesystems); restore them once the server is up.
+void import('./tags.js').then(m => m.reapplyTagOverlay())
+  .then(n => { if (n) app.log.info(`tag overlay: re-applied ${n} labeled paths`) })
+  .catch(() => {})
 
 await app.listen({ host: HOST, port: PORT })
 maybeAutoStart(msg => app.log.info(msg))

@@ -95,6 +95,10 @@ export function incrementalIndexDir(rel: string): Promise<{ ms: number }> {
       }
       invalidateDbList()
       invalidateContext()
+      // A rebuilt subtree lost any overlay-stored labels (xattr-less
+      // filesystems); put them back. Lazy import avoids a module cycle.
+      const { reapplyTagOverlay } = await import('./tags.js')
+      await reapplyTagOverlay(cleaned).catch(() => {})
       return { ms: Date.now() - t0 }
     } finally {
       await fsp.rm(staging, { recursive: true, force: true })
@@ -127,6 +131,10 @@ export function indexRootDb(): Promise<{ ms: number }> {
       }
       invalidateDbList()
       invalidateContext()
+      // The rebuilt root db lost any overlay-stored labels on root-level
+      // entries; a full re-apply is idempotent and cheap.
+      const { reapplyTagOverlay } = await import('./tags.js')
+      await reapplyTagOverlay('').catch(() => {})
       return { ms: Date.now() - t0 }
     } finally {
       await fsp.rm(staging, { recursive: true, force: true })
