@@ -71,6 +71,9 @@ const streamFromServer: StreamCompletion = async (req, handlers, signal) => {
         break
       case 'error':
         errorMessage = payload.message ?? 'stream error'
+        if (payload.kind === 'credential') {
+          window.dispatchEvent(new CustomEvent('ade-credential-error', { detail: errorMessage }))
+        }
         break
     }
   }

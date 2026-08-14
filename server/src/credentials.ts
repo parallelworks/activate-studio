@@ -26,7 +26,7 @@ const VAULT_FILE = path.join(INDEX_BASE, 'user-credentials.json')
 const SECRET_FILE = path.join(INDEX_BASE, '.credentials-secret')
 const SESSION_TTL_MS = 12 * 3600 * 1000
 
-interface VaultEntry { blob: string; last4: string; addedAt: string; kind?: 'api-key' | 'token'; expiresAt?: string | null }
+interface VaultEntry { blob: string; last4: string; addedAt: string; kind?: 'api-key' | 'token'; expiresAt?: string | null; baseUrl?: string | null }
 
 /** A JWT-shaped credential is a short-term token; surface its expiry so
  *  the UI can say when it dies instead of failing mysteriously. */
@@ -83,7 +83,7 @@ function saveVault(v: Record<string, VaultEntry>): void {
   fs.writeFileSync(VAULT_FILE, JSON.stringify(v, null, 1), { mode: 0o600 })
 }
 
-const sessionKeys = new Map<string, { key: string; expiresAt: number; addedAt: string; last4: string; kind: 'api-key' | 'token'; credExpiresAt: string | null }>()
+const sessionKeys = new Map<string, { key: string; expiresAt: number; addedAt: string; last4: string; kind: 'api-key' | 'token'; credExpiresAt: string | null; baseUrl: string | null }>()
 
 function liveSession(sub: string) {
   const s = sessionKeys.get(sub)
@@ -92,19 +92,24 @@ function liveSession(sub: string) {
   return s
 }
 
-export function setUserKey(sub: string, key: string, persist: boolean): void {
+export function setUserKey(sub: string, key: string, persist: boolean, baseUrl?: string | null): void {
   const trimmed = key.trim()
   if (!trimmed || trimmed.length > 8192) throw new Error('invalid key')
+  let url: string | null = String(baseUrl ?? '').trim().replace(/\/$/, '') || null
+  if (url) {
+    try { new URL(url) } catch { throw new Error('invalid provider base URL') }
+    if (!/^https?:\/\//.test(url)) throw new Error('provider base URL must be http(s)')
+  }
   const last4 = trimmed.slice(-4)
   const addedAt = new Date().toISOString()
   const { kind, expiresAt } = inspect(trimmed)
   if (persist) {
     const vault = loadVault()
-    vault[sub] = { blob: encrypt(trimmed), last4, addedAt, kind, expiresAt }
+    vault[sub] = { blob: encrypt(trimmed), last4, addedAt, kind, expiresAt, baseUrl: url }
     saveVault(vault)
     sessionKeys.delete(sub)
   } else {
-    sessionKeys.set(sub, { key: trimmed, expiresAt: Date.now() + SESSION_TTL_MS, addedAt, last4, kind, credExpiresAt: expiresAt })
+    sessionKeys.set(sub, { key: trimmed, expiresAt: Date.now() + SESSION_TTL_MS, addedAt, last4, kind, credExpiresAt: expiresAt, baseUrl: url })
     const vault = loadVault()
     if (vault[sub]) { delete vault[sub]; saveVault(vault) }
   }
@@ -124,6 +129,7 @@ export interface UserKeyStatus {
   kind?: 'api-key' | 'token'
   credExpiresAt?: string | null
   credExpired?: boolean
+  baseUrl?: string | null
 }
 
 function expired(iso: string | null | undefined): boolean {
@@ -137,6 +143,7 @@ export function getUserKeyStatus(sub: string): UserKeyStatus {
       mode: 'session', last4: s.last4, addedAt: s.addedAt,
       sessionExpiresAt: new Date(s.expiresAt).toISOString(),
       kind: s.kind, credExpiresAt: s.credExpiresAt, credExpired: expired(s.credExpiresAt),
+      baseUrl: s.baseUrl,
     }
   }
   const entry = loadVault()[sub]
@@ -144,6 +151,7 @@ export function getUserKeyStatus(sub: string): UserKeyStatus {
     return {
       mode: 'stored', last4: entry.last4, addedAt: entry.addedAt,
       kind: entry.kind ?? 'api-key', credExpiresAt: entry.expiresAt ?? null, credExpired: expired(entry.expiresAt),
+      baseUrl: entry.baseUrl ?? null,
     }
   }
   return { mode: 'none' }
@@ -151,12 +159,19 @@ export function getUserKeyStatus(sub: string): UserKeyStatus {
 
 /** The caller's own key when they have one; null means use the
  *  deployment credential (current shared-session default). */
-export function resolveUserKey(sub: string | null | undefined): string | null {
+export interface UserCred { key: string; baseUrl: string | null }
+
+export function resolveUserCred(sub: string | null | undefined): UserCred | null {
   if (!sub) return null
   const s = liveSession(sub)
-  if (s) return expired(s.credExpiresAt) ? null : s.key
+  if (s) return expired(s.credExpiresAt) ? null : { key: s.key, baseUrl: s.baseUrl }
   const entry = loadVault()[sub]
   if (!entry) return null
   if (expired(entry.expiresAt)) return null
-  return decrypt(entry.blob)
+  const key = decrypt(entry.blob)
+  return key ? { key, baseUrl: entry.baseUrl ?? null } : null
+}
+
+export function resolveUserKey(sub: string | null | undefined): string | null {
+  return resolveUserCred(sub)?.key ?? null
 }
