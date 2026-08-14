@@ -105,7 +105,7 @@ export function SettingsView() {
     fetch('/api/chat/models').then(r => r.json())
       .then(d => setModels((d.models ?? []).map((m: { id: string }) => m.id)))
       .catch(() => {})
-    fetch('/api/me/model-key').then(r => r.json()).then(setMe).catch(() => {})
+    fetch('/api/me/model-key').then(r => r.json()).then(d => { setMe(d); if (d?.verified && d.mode !== 'none') refreshAccess() }).catch(() => {})
     refreshRagEp()
     const onSection = (e: Event) => {
       const d = (e as CustomEvent).detail as { view?: string; section?: string }
@@ -128,6 +128,8 @@ export function SettingsView() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? `${res.status}`)
       setMe(data)
+      if (data.mode && data.mode !== 'none') refreshAccess()
+      else setAccessHealth(null)
       return true
     } catch (e) {
       setKeyNote(String((e as Error).message ?? e))
@@ -135,6 +137,16 @@ export function SettingsView() {
     } finally {
       setKeyBusy(false)
     }
+  }
+
+  const [accessHealth, setAccessHealth] = useState<{ status: string; models: number; gatewayHost?: string; message?: string | null } | null>(null)
+
+  const refreshAccess = () => {
+    fetch('/api/me/model-key/test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+      .then(r => r.json()).then(h => setAccessHealth(h.error ? null : h)).catch(() => setAccessHealth(null))
+    fetch('/api/chat/models').then(r => r.json())
+      .then(d => setModels((d.models ?? []).map((m: { id: string }) => m.id)))
+      .catch(() => {})
   }
 
   const testKey = async (candidate?: string) => {
@@ -303,14 +315,52 @@ export function SettingsView() {
                 </p>
               ) : (
                 <>
-                  <p className="muted view-sub">
-                    {me.mode === 'none' && 'You are using the deployment’s model credential. Add your own API key or a platform token to call the gateway (and platform tools) as yourself.'}
-                    {me.mode === 'stored' && `Using your ${me.kind === 'token' ? 'token' : 'key'} ending ${me.last4}, added ${me.addedAt?.slice(0, 10)}, stored encrypted on this server.`}
-                    {me.mode === 'session' && `Using your ${me.kind === 'token' ? 'token' : 'key'} ending ${me.last4}, held in memory for this session only (until ${me.sessionExpiresAt ? new Date(me.sessionExpiresAt).toLocaleTimeString() : 'soon'}).`}
-                    {me.mode !== 'none' && me.credExpiresAt && !me.credExpired && ` The ${me.kind === 'token' ? 'token itself expires' : 'credential expires'} ${new Date(me.credExpiresAt).toLocaleString()}.`}
-                    {me.mode !== 'none' && me.baseUrl && ` Provider: ${me.baseUrl}.`}
-                    {me.mode !== 'none' && me.credExpired && ' THIS TOKEN HAS EXPIRED; paste a fresh one.'}
-                  </p>
+                  <div className={`rag-banner ${me.mode !== 'none' && accessHealth?.status === 'ok' ? 'connected' : me.mode !== 'none' && accessHealth && accessHealth.status !== 'ok' ? 'errored' : ''}`}>
+                    <div className="rag-banner-head">
+                      <span className={`status-dot ${me.mode === 'none' ? (form.requirePersonalKey ? 'warn' : 'off') : accessHealth?.status === 'ok' ? 'ok' : accessHealth ? 'warn' : 'off'}`} />
+                      <strong>
+                        {me.mode === 'none' && (form.requirePersonalKey
+                          ? 'Not connected; this deployment requires your own model credential'
+                          : 'No personal key loaded; requests use the deployment credential')}
+                        {me.mode !== 'none' && accessHealth?.status === 'ok' && `Connected with your ${me.kind === 'token' ? 'token' : 'key'} ending ${me.last4}`}
+                        {me.mode !== 'none' && accessHealth && accessHealth.status !== 'ok' && `Your ${me.kind === 'token' ? 'token' : 'key'} ending ${me.last4} is not working (${accessHealth.status})`}
+                        {me.mode !== 'none' && !accessHealth && `Your ${me.kind === 'token' ? 'token' : 'key'} ending ${me.last4} is loaded`}
+                      </strong>
+                      {me.mode !== 'none' && (
+                        <span className="rag-banner-actions">
+                          <button className="btn-secondary" onClick={refreshAccess}>Re-check</button>
+                        </span>
+                      )}
+                    </div>
+                    {me.mode !== 'none' && accessHealth?.status === 'ok' && (
+                      <div className="rag-banner-models">
+                        {models.length || accessHealth.models} models available to you{accessHealth.gatewayHost ? ` via ${accessHealth.gatewayHost}` : ''}:
+                        <div className="rag-chip-row">
+                          {models.slice(0, 12).map(m => <code key={m}>{m}</code>)}
+                          {models.length > 12 && <span className="muted">and {models.length - 12} more</span>}
+                        </div>
+                      </div>
+                    )}
+                    {me.mode !== 'none' && accessHealth && accessHealth.status !== 'ok' && accessHealth.message && (
+                      <p className="muted key-note">{accessHealth.message}</p>
+                    )}
+                    {me.mode !== 'none' && (
+                      <p className="muted key-note">
+                        {me.mode === 'stored' && `Added ${me.addedAt?.slice(0, 10)}, stored encrypted on this server.`}
+                        {me.mode === 'session' && `Held in memory for this session only (until ${me.sessionExpiresAt ? new Date(me.sessionExpiresAt).toLocaleTimeString() : 'soon'}).`}
+                        {me.credExpiresAt && !me.credExpired && ` The ${me.kind === 'token' ? 'token itself expires' : 'credential expires'} ${new Date(me.credExpiresAt).toLocaleString()}.`}
+                        {me.baseUrl && ` Provider: ${me.baseUrl}.`}
+                        {me.credExpired && ' THIS TOKEN HAS EXPIRED; paste a fresh one.'}
+                      </p>
+                    )}
+                  </div>
+                  {me.mode === 'none' && (
+                    <p className="muted view-sub">
+                      {form.requirePersonalKey
+                        ? 'Add your own API key or a platform token below to use chat and models on this deployment. Browsing, search, and adding material work without one.'
+                        : 'Add your own API key or a platform token to call the gateway (and platform tools) as yourself.'}
+                    </p>
+                  )}
                   <div className="key-row">
                     <input
                       className="field grow"

@@ -78,6 +78,11 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
 
   // Personal model key: verified identity required; only status metadata
   // (mode, last4, timestamps) ever goes to the browser.
+  const keyStatusPayload = (sub: string) => {
+    const gatewayHost = (() => { try { return new URL(GATEWAY_BASE).host } catch { return GATEWAY_BASE } })()
+    return { authEnabled: true, verified: true, gatewayHost, ...getUserKeyStatus(sub) }
+  }
+
   app.get('/api/me/model-key', async req => {
     // Standalone deployments (no platform identity configured) run single
     // user on the deployment credential; the personal-key surface is an
@@ -85,7 +90,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     const gatewayHost = (() => { try { return new URL(GATEWAY_BASE).host } catch { return GATEWAY_BASE } })()
     if (!authEnabled() || personalKeysDisabled()) return { authEnabled: false, verified: false, mode: 'none', gatewayHost }
     if (!req.user) return { authEnabled: true, verified: false, mode: 'none', gatewayHost }
-    return { authEnabled: true, verified: true, gatewayHost, ...getUserKeyStatus(req.user.id) }
+    return keyStatusPayload(req.user.id)
   })
 
   // POST mirrors of set/clear: some proxies in front of sessions are
@@ -96,13 +101,13 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     const key = String(body.key ?? '').trim()
     if (!key) return reply.status(400).send({ error: 'key required' })
     try { setUserKey(req.user.id, key, body.persist !== false, body.baseUrl) } catch (e) { return reply.status(400).send({ error: String((e as Error).message ?? e) }) }
-    return { authEnabled: true, verified: true, ...getUserKeyStatus(req.user.id) }
+    return keyStatusPayload(req.user.id)
   })
 
   app.post('/api/me/model-key/clear', async (req, reply) => {
     if (!req.user) return reply.status(403).send({ error: 'not verified' })
     clearUserKey(req.user.id)
-    return { authEnabled: true, verified: true, mode: 'none' }
+    return keyStatusPayload(req.user.id)
   })
 
   app.put('/api/me/model-key', async (req, reply) => {
@@ -111,13 +116,13 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     const key = String(body.key ?? '').trim()
     if (!key) return reply.status(400).send({ error: 'key required' })
     setUserKey(req.user.id, key, body.persist !== false)
-    return { verified: true, ...getUserKeyStatus(req.user.id) }
+    return keyStatusPayload(req.user.id)
   })
 
   app.delete('/api/me/model-key', async (req, reply) => {
     if (!req.user) return reply.status(403).send({ error: 'not verified' })
     clearUserKey(req.user.id)
-    return { verified: true, mode: 'none' }
+    return keyStatusPayload(req.user.id)
   })
 
   // Test a candidate key (or the stored one) against the gateway without
