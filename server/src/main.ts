@@ -7,12 +7,15 @@ import { HOST, PORT, PROJECT_ROOT, KB_ROOT, gufiAvailable } from './config.js'
 import { kbRoutes } from './routes.js'
 import { uploadRoutes } from './uploads.js'
 import { queryRoutes } from './query.js'
+import { tagRoutes } from './tags.js'
+import { authHook, authEnabled } from './auth.js'
 import { chatRoutes } from './chat/routes.js'
 import { gatewayConfigured } from './chat/gateway.js'
 import { startSweepTimer } from './indexing.js'
 
 const app = Fastify({ logger: { level: 'info' } })
 await app.register(fastifyMultipart)
+await authHook(app)
 
 const webDist = path.join(PROJECT_ROOT, 'web', 'dist')
 if (fs.existsSync(webDist)) {
@@ -28,6 +31,7 @@ if (fs.existsSync(webDist)) {
 await app.register(kbRoutes)
 await app.register(uploadRoutes)
 await app.register(queryRoutes)
+await app.register(tagRoutes)
 await app.register(chatRoutes)
 
 startSweepTimer(msg => app.log.info(msg))
@@ -36,3 +40,4 @@ await app.listen({ host: HOST, port: PORT })
 app.log.info(`kb root: ${KB_ROOT}`)
 app.log.info(`gufi index: ${gufiAvailable() ? 'available' : 'NOT BUILT (run indexer/reindex.sh)'}`)
 app.log.info(`gateway: ${gatewayConfigured() ? 'configured' : 'PW_API_KEY NOT SET; chat disabled'}`)
+app.log.info(`auth: ${authEnabled() ? 'JWT verification enabled' : 'open (no AUTH_JWKS_URL)'}`)

@@ -46,6 +46,8 @@ export async function systemPrompt(): Promise<string> {
     '',
     'Ground every answer about the knowledge base in its actual content: call search_kb first, read the files that matter with read_kb_file, and cite the relative file paths you used. If retrieval returns nothing relevant, say so instead of guessing.',
     '',
+    'The knowledge base carries a labeling system: files and directory subtrees can be tagged (for example research or theoretical versus validated or experimental). Search results show labels as [labels: ...], and search_kb accepts a tags filter. When retrieved material carries labels that bear on its reliability or provenance, state them in your answer, and never present material labeled as research or theoretical as established fact.',
+    '',
     statsLine,
     '',
     'Platform workflows registered in this account. These are composable building blocks: recommend which fit a task, preview a DAG with get_workflow before anything runs, validate with run_workflow dry_run, and launch a real run only when the user explicitly asks. Monitor with workflow_runs and workflow_run_detail. pw_help discovers the wider platform command surface.',

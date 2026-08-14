@@ -1,49 +1,43 @@
 import { useRef, useState } from 'react'
 import { api } from '../api'
+import { uploadBatched, UploadProgress } from '../upload'
 
-type Phase = 'idle' | 'uploading' | 'indexing' | 'done' | 'error'
-
-export function UploadMenu({ targetDir, onTargetDir, onDone }: {
+export function UploadMenu({ targetDir, onTargetDir, onDone, onProgress }: {
   targetDir: string
   onTargetDir: (dir: string) => void
   onDone: (savedPaths: string[]) => void
+  onProgress: (p: UploadProgress | null) => void
 }) {
   const [open, setOpen] = useState(false)
-  const [phase, setPhase] = useState<Phase>('idle')
-  const [message, setMessage] = useState('')
   const [url, setUrl] = useState('')
+  const [note, setNote] = useState('')
+  const [busy, setBusy] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
-
-  const finish = (saved: string[], ms: number) => {
-    setPhase('done')
-    setMessage(`${saved.length} item${saved.length === 1 ? '' : 's'} indexed in ${(ms / 1000).toFixed(1)}s`)
-    onDone(saved)
-  }
-  const fail = (e: unknown) => {
-    setPhase('error')
-    setMessage(String((e as Error).message ?? e))
-  }
 
   const sendFiles = async (files: File[]) => {
     if (!files.length) return
-    try {
-      setPhase('uploading')
-      setMessage(`Uploading ${files.length} file${files.length === 1 ? '' : 's'}…`)
-      setPhase('indexing')
-      const r = await api.uploadFiles(files, targetDir)
-      finish(r.saved, r.indexMs)
-    } catch (e) { fail(e) }
+    setBusy(true)
+    setNote('')
+    const items = files.map(f => ({ file: f, rel: f.name }))
+    const result = await uploadBatched(items, targetDir, onProgress)
+    setBusy(false)
+    if (result.done > 0) onDone([`${targetDir}/${items[0].rel}`])
   }
 
   const sendUrl = async () => {
-    if (!/^https?:\/\//i.test(url.trim())) { fail(new Error('enter an http(s) URL')); return }
+    if (!/^https?:\/\//i.test(url.trim())) { setNote('enter an http(s) URL'); return }
+    setBusy(true)
+    setNote('Fetching and indexing…')
     try {
-      setPhase('indexing')
-      setMessage('Fetching and indexing…')
       const r = await api.uploadUrl(url.trim(), targetDir)
       setUrl('')
-      finish(r.saved, r.indexMs)
-    } catch (e) { fail(e) }
+      setNote(`Indexed in ${(r.indexMs / 1000).toFixed(1)}s`)
+      onDone(r.saved)
+    } catch (e) {
+      setNote(String((e as Error).message ?? e))
+    } finally {
+      setBusy(false)
+    }
   }
 
   return (
@@ -61,10 +55,14 @@ export function UploadMenu({ targetDir, onTargetDir, onDone }: {
           <div
             className="dropzone"
             onDragOver={e => e.preventDefault()}
-            onDrop={e => { e.preventDefault(); void sendFiles([...e.dataTransfer.files]) }}
+            onDrop={e => {
+              e.preventDefault()
+              e.stopPropagation()
+              void sendFiles([...e.dataTransfer.files])
+            }}
             onClick={() => fileInput.current?.click()}
           >
-            Drop files here or click to choose
+            Drop files here or click to choose. Any number of files works; progress shows below the tree.
             <input
               ref={fileInput}
               type="file"
@@ -82,14 +80,9 @@ export function UploadMenu({ targetDir, onTargetDir, onDone }: {
               onKeyDown={e => e.key === 'Enter' && sendUrl()}
               placeholder="https://…"
             />
-            <button className="btn-primary" onClick={sendUrl} disabled={phase === 'indexing'}>Add</button>
+            <button className="btn-primary" onClick={sendUrl} disabled={busy}>Add</button>
           </div>
-          {phase !== 'idle' && (
-            <div className={`upload-status ${phase}`}>
-              {phase === 'indexing' && <span className="spinner" />}
-              {message}
-            </div>
-          )}
+          {note && <div className="upload-status">{note}</div>}
         </div>
       )}
     </div>
