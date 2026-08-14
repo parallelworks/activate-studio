@@ -21,8 +21,12 @@ export function ChatView() {
 
   useEffect(() => {
     api.tagVocabulary().then(v => setVocab(v.tags)).catch(() => {})
-    // Mid-conversation credential failures surface as a toast with a path
-    // to fix them; the (patched) empty state owns the no-models case.
+    // Both the no-models state and mid-conversation credential failures
+    // surface as a toast with a click path to Settings; the empty state
+    // text explains, the toast provides the button.
+    fetch('/api/chat/models').then(r => r.json())
+      .then(d => { if (!d.models?.length && d.error) setCredNote(String(d.error)) })
+      .catch(() => {})
     const onCredError = (e: Event) => setCredNote(String((e as CustomEvent).detail ?? 'Model credential needed.'))
     window.addEventListener('ade-credential-error', onCredError)
     return () => window.removeEventListener('ade-credential-error', onCredError)

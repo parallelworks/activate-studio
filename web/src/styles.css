@@ -936,3 +936,5 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .provider-row { align-items: center; }
 .provider-label { margin: 0 4px 0 0; white-space: nowrap; }
 .provider-row select.field { width: auto; min-width: 260px; }
+.settings-content .key-row + .key-row, .settings-content .key-row + .key-persist { margin-top: 10px; }
+.settings-content .key-row { margin-top: 4px; }

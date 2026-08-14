@@ -27,7 +27,9 @@ http.createServer((q, s) => {
     headers['x-studio-injected-key'] = '1';
   }
   const p = http.request(target + q.url, { method: q.method, headers }, r => {
-    s.writeHead(r.statusCode, r.headers); r.pipe(s);
+    s.writeHead(r.statusCode, r.headers);
+    r.pipe(s, { end: false });
+    r.on('end', () => setTimeout(() => s.end(), 400));
   });
   q.pipe(p);
   p.on('error', () => { s.statusCode = 502; s.end(); });

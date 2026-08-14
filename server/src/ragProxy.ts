@@ -169,6 +169,7 @@ async function agenticCompletion(
   clientMessages: unknown[],
   key: string,
   onDelta: (text: string) => void,
+  signal?: AbortSignal,
 ): Promise<{ content: string; finish: string }> {
   const sys = await systemPrompt()
   const today = new Date().toISOString().slice(0, 10)
@@ -185,7 +186,7 @@ async function agenticCompletion(
   for (let iter = 0; iter < MAX_TOOL_ITERATIONS; iter++) {
     const turn = await streamTurn(
       { model: underlying, messages, tools: activeToolSpecs(), tool_choice: 'auto' },
-      null, cb, undefined, key,
+      null, cb, signal, key,
     )
     if (turn.finishReason === 'tool_calls' && turn.toolCalls.length > 0) {
       messages.push({ role: 'assistant', content: turn.content || null, tool_calls: turn.toolCalls })
@@ -205,7 +206,7 @@ async function agenticCompletion(
     return { content: finalContent, finish: turn.finishReason ?? 'stop' }
   }
   messages.push({ role: 'user', content: 'Tool budget exhausted; answer now from what you gathered.' })
-  const finalTurn = await streamTurn({ model: underlying, messages }, null, cb, undefined, key)
+  const finalTurn = await streamTurn({ model: underlying, messages }, null, cb, signal, key)
   return { content: finalContent, finish: finalTurn.finishReason ?? 'stop' }
 }
 
@@ -260,15 +261,33 @@ export async function ragProxyRoutes(app: FastifyInstance): Promise<void> {
         reply.hijack()
         reply.raw.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' })
         reply.raw.write(chunkOf(id, requested, { role: 'assistant' }, null))
+        // The tool loop can run tens of seconds without emitting a byte,
+        // and idle HTTP/2 streams get killed by intermediaries (seen as
+        // INTERNAL_ERROR in pw code through the platform tunnel): send
+        // empty-delta keepalives during silent phases, and stop the loop
+        // when the peer goes away instead of finishing for nobody.
+        const abort = new AbortController()
+        reply.raw.on('close', () => { if (!reply.raw.writableEnded) abort.abort() })
+        const keepalive = setInterval(() => {
+          if (!reply.raw.writableEnded) reply.raw.write(chunkOf(id, requested, {}, null))
+        }, 3_000)
         try {
           const r = await agenticCompletion(underlying, messages, key, t => {
             reply.raw.write(chunkOf(id, requested, { content: t }, null))
-          })
+          }, abort.signal)
           reply.raw.write(chunkOf(id, requested, {}, r.finish))
         } catch (err) {
-          reply.raw.write(chunkOf(id, requested, { content: `\n[studio-agent error: ${String((err as Error).message ?? err).slice(0, 300)}]` }, 'stop'))
+          if (!abort.signal.aborted) {
+            reply.raw.write(chunkOf(id, requested, { content: `\n[studio-agent error: ${String((err as Error).message ?? err).slice(0, 300)}]` }, 'stop'))
+          }
+        } finally {
+          clearInterval(keepalive)
         }
         reply.raw.write('data: [DONE]\n\n')
+        // Give the tunnel a beat to flush the tail frames; an immediate
+        // close races the final SSE lines off the wire (seen as missing
+        // [DONE] and client-side stream errors through QUIC).
+        await new Promise(r => setTimeout(r, 300))
         reply.raw.end()
         return reply
       }
@@ -316,6 +335,7 @@ export async function ragProxyRoutes(app: FastifyInstance): Promise<void> {
     if (upstream.body) {
       for await (const chunk of upstream.body as unknown as AsyncIterable<Uint8Array>) reply.raw.write(chunk)
     }
+    await new Promise(r => setTimeout(r, 300))
     reply.raw.end()
     return reply
   })
