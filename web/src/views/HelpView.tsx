@@ -64,7 +64,7 @@ export function HelpView() {
       </div>
       <div className="help-grid">
         {sections.map(s => (
-          <section className="help-card card" key={s.title}>
+          <section className={`help-card card ${(s.body.match(/^- /gm)?.length ?? 0) > 5 ? 'wide' : ''}`} key={s.title}>
             <h3>{iconFor(s.title)} {s.title}</h3>
             <div className="help-card-body"><Streamdown>{s.body}</Streamdown></div>
             {s.title.toLowerCase().includes('index') && (
