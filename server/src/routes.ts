@@ -8,7 +8,7 @@ import { extractPath, listDir, readFileContent, resolveKb, KbError } from './kb.
 import { CONVERTIBLE, mimeFor, officeToPdf, removePdfPreview } from './preview.js'
 import { blendHits, corpusStats, searchFts, searchNames, searchVector } from './gufi.js'
 import { invalidateContext } from './chat/context.js'
-import { incrementalIndexDir, indexStatus, reindexForFile, sweep } from './indexing.js'
+import { incrementalIndexDir, indexRootDb, indexStatus, reindexForFile, sweep } from './indexing.js'
 import { annotateHits } from './tags.js'
 import { effectiveSettings } from './settings.js'
 
@@ -104,6 +104,41 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
     reply.header('Content-Type', 'application/pdf')
     reply.header('Content-Disposition', 'inline')
     return reply.send(createReadStream(pdf))
+  })
+
+  // Bulk removal: unlink every file first, then re-index each touched
+  // subtree once, so deleting fifty files costs a handful of reindexes.
+  app.post('/api/kb/delete', async req => {
+    const body = req.body as { paths?: string[] }
+    const paths = (body.paths ?? []).slice(0, 500)
+    if (!paths.length) throw new KbError(400, 'paths required')
+    const deleted: string[] = []
+    const skipped: { path: string; reason: string }[] = []
+    const roots = new Set<string>()
+    let rootDb = false
+    for (const rel of paths) {
+      const cleaned = rel.replace(/^\/+|\/+$/g, '')
+      try {
+        for (const part of cleaned.split('/')) {
+          if (EXCLUDE_DIRS.has(part) || part.startsWith('.')) throw new KbError(400, 'protected path')
+        }
+        const abs = resolveKb(cleaned)
+        const st = await fsp.stat(abs)
+        if (!st.isFile()) throw new KbError(400, 'directories are not deletable here')
+        await fsp.rm(abs)
+        await fsp.rm(extractPath(cleaned), { force: true }).catch(() => {})
+        await removePdfPreview(cleaned)
+        deleted.push(cleaned)
+        if (cleaned.includes('/')) roots.add(cleaned.split('/')[0])
+        else rootDb = true
+      } catch (err) {
+        skipped.push({ path: cleaned, reason: err instanceof KbError ? err.message : 'not found' })
+      }
+    }
+    let indexMs = 0
+    for (const root of roots) indexMs += (await incrementalIndexDir(root)).ms
+    if (rootDb) indexMs += (await indexRootDb()).ms
+    return { deleted, skipped, indexMs }
   })
 
   // Remove a file from the knowledge base and from the index.

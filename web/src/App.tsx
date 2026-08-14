@@ -103,23 +103,16 @@ export default function App() {
               : <span className="brand-badge">{(cfg.appName[0] ?? 'S').toUpperCase()}</span>)}
             {cfg.loaded && <span className="brand-text"><b>{cfg.appName}</b></span>}
           </div>
-          <span className="head-actions">
-            <button className="nav-collapse icon-btn" title={(theme ?? cfg.theme) === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'} onClick={toggleTheme}>
-              {(theme ?? cfg.theme) === 'dark'
-                ? <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.4"><circle cx="8" cy="8" r="3.2"/><path d="M8 1.2v1.8M8 13v1.8M1.2 8H3M13 8h1.8M3.2 3.2l1.3 1.3M11.5 11.5l1.3 1.3M12.8 3.2l-1.3 1.3M4.5 11.5l-1.3 1.3"/></svg>
-                : <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M13.5 9.5A6 6 0 0 1 6.5 2.5a6 6 0 1 0 7 7z"/></svg>}
-            </button>
-            <button
-              className="nav-collapse"
-              title={navCollapsed ? 'Expand navigation' : 'Collapse navigation'}
-              onClick={() => setNavCollapsed(c => !c)}
-            >
-              {navCollapsed ? '»' : '«'}
-            </button>
-          </span>
+          <button
+            className="nav-collapse"
+            title={navCollapsed ? 'Expand navigation' : 'Collapse navigation'}
+            onClick={() => setNavCollapsed(c => !c)}
+          >
+            {navCollapsed ? '»' : '«'}
+          </button>
         </div>
         <div className="sidenav-items">
-          {NAV.map(item => (
+          {NAV.filter(i => i.id !== 'settings' && i.id !== 'help').map(item => (
             <button
               key={item.id}
               className={`sidenav-item ${view === item.id ? 'active' : ''}`}
@@ -130,6 +123,29 @@ export default function App() {
               <span>{item.label}</span>
             </button>
           ))}
+        </div>
+        <div className="sidenav-items sidenav-secondary">
+          {NAV.filter(i => i.id === 'settings' || i.id === 'help').map(item => (
+            <button
+              key={item.id}
+              className={`sidenav-item ${view === item.id ? 'active' : ''}`}
+              title={item.label}
+              onClick={() => setView(item.id)}
+            >
+              {item.icon}
+              <span>{item.label}</span>
+            </button>
+          ))}
+          <button
+            className="sidenav-item"
+            title={(theme ?? cfg.theme) === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+            onClick={toggleTheme}
+          >
+            {(theme ?? cfg.theme) === 'dark'
+              ? <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.4"><circle cx="8" cy="8" r="3.2"/><path d="M8 1.2v1.8M8 13v1.8M1.2 8H3M13 8h1.8M3.2 3.2l1.3 1.3M11.5 11.5l1.3 1.3M12.8 3.2l-1.3 1.3M4.5 11.5l-1.3 1.3"/></svg>
+              : <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M13.5 9.5A6 6 0 0 1 6.5 2.5a6 6 0 1 0 7 7z"/></svg>}
+            <span>{(theme ?? cfg.theme) === 'dark' ? 'Light mode' : 'Dark mode'}</span>
+          </button>
         </div>
         <StatusFooter collapsed={navCollapsed} />
       </nav>
