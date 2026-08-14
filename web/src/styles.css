@@ -746,3 +746,10 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .ov-tags button.tag-pill { cursor: pointer; font-family: inherit; }
 .status-dot.inline { display: inline-block; margin-right: 6px; vertical-align: middle; }
 .rail-head-actions { justify-content: flex-end; }
+
+/* Inline images in chat replies: bounded, framed, click target stays the
+   surrounding citation link rather than the image itself. */
+.chat-canvas [data-streamdown] img, .chat-canvas .prose img {
+  max-width: min(100%, 640px); max-height: 440px; border-radius: 8px;
+  border: 1px solid var(--pw-border); display: block; margin: 6px 0;
+}
