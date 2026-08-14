@@ -56,6 +56,14 @@ export const api = {
   tree: (path: string) => getJson<{ entries: KbEntry[] }>(`/api/kb/tree?path=${encodeURIComponent(path)}`),
   file: (path: string) => getJson<FileContent>(`/api/kb/file?path=${encodeURIComponent(path)}`),
   downloadUrl: (path: string) => `/api/kb/download?path=${encodeURIComponent(path)}`,
+  rawUrl: (path: string) => `/api/kb/raw?path=${encodeURIComponent(path)}`,
+  pdfUrl: (path: string) => `/api/kb/pdf?path=${encodeURIComponent(path)}`,
+  deleteFile: async (path: string) => {
+    const res = await fetch(`/api/kb/file?path=${encodeURIComponent(path)}`, { method: 'DELETE' })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error((data as any).error ?? `delete: ${res.status}`)
+    return data as { deleted: string; indexMs: number }
+  },
   stats: () => getJson<{ available: boolean; files?: number; dirs?: number; totalBytes?: number }>(`/api/kb/stats`),
   search: (q: string) => getJson<{ hits: SearchHit[]; error?: string }>(`/api/search?q=${encodeURIComponent(q)}`),
   health: () => getJson<{ ok: boolean; gufi: boolean }>(`/healthz`),

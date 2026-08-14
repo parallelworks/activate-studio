@@ -106,6 +106,7 @@ def main() -> int:
     ap.add_argument('--index', required=True, help='GUFI index tree top (mirrors kb-root)')
     ap.add_argument('--extract-cache', required=True)
     ap.add_argument('--subdir', default='', help='restrict to this KB-relative subtree (incremental indexing)')
+    ap.add_argument('--no-recurse', action='store_true', help='process only the subdir itself, not its children')
     args = ap.parse_args()
 
     kb_root = Path(args.kb_root)
@@ -117,6 +118,8 @@ def main() -> int:
     # Walk the index tree, not the source tree: every db.db the index holds
     # must carry the words table (empty or not) so MATCH queries never error.
     for dirpath, dirnames, _filenames in os.walk(walk_root):
+        if args.no_recurse:
+            dirnames[:] = []
         dirnames.sort()
         dbfile = Path(dirpath) / 'db.db'
         if not dbfile.exists():

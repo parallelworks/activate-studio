@@ -35,7 +35,10 @@ export function LibraryView({ selected, onSelect }: {
         />
       </aside>
       <section className="library-main card">
-        <Viewer path={selected} />
+        <Viewer
+          path={selected}
+          onDeleted={() => { onSelect(null); setRefreshKey(k => k + 1) }}
+        />
       </section>
     </div>
   )

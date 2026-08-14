@@ -47,12 +47,15 @@ def main() -> int:
     ap.add_argument('--model', required=True, help='GGUF embedding model path')
     ap.add_argument('--gufi-sqlite3', default='/opt/gufi/bin/gufi_sqlite3')
     ap.add_argument('--subdir', default='', help='restrict to this KB-relative subtree (incremental indexing)')
+    ap.add_argument('--no-recurse', action='store_true', help='process only the subdir itself, not its children')
     args = ap.parse_args()
 
     index_root = Path(args.index)
     walk_root = index_root / args.subdir if args.subdir else index_root
     dbs = []
     for dirpath, dirnames, _ in os.walk(walk_root):
+        if args.no_recurse:
+            dirnames[:] = []
         dirnames.sort()
         dbfile = Path(dirpath) / 'db.db'
         if dbfile.exists():

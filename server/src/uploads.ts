@@ -1,9 +1,9 @@
 import type { FastifyInstance } from 'fastify'
 import fsp from 'node:fs/promises'
 import path from 'node:path'
-import { EXCLUDE_DIRS, KB_ROOT } from './config.js'
+import { EXCLUDE_DIRS } from './config.js'
 import { KbError, resolveKb } from './kb.js'
-import { incrementalIndexDir } from './indexing.js'
+import { reindexForDir } from './indexing.js'
 
 const MAX_UPLOAD_BYTES = 200 * 1024 * 1024
 const MAX_URL_BYTES = 50 * 1024 * 1024
@@ -25,11 +25,6 @@ async function targetDir(rel: string): Promise<{ abs: string; rel: string }> {
   return { abs, rel: cleaned }
 }
 
-/** The subtree root to re-index: the first path segment keeps sweeps cheap
- *  and covers newly created nested directories in one pass. */
-function indexRoot(rel: string): string {
-  return rel.split('/')[0]
-}
 
 function htmlToText(html: string): string {
   return html
@@ -62,7 +57,7 @@ export async function uploadRoutes(app: FastifyInstance): Promise<void> {
       saved.push(rel ? `${rel}/${name}` : name)
     }
     if (saved.length === 0) throw new KbError(400, 'no files in request')
-    const { ms } = await incrementalIndexDir(indexRoot(rel))
+    const { ms } = await reindexForDir(rel)
     return reply.send({ saved, indexed: true, indexMs: ms })
   })
 
@@ -101,7 +96,7 @@ export async function uploadRoutes(app: FastifyInstance): Promise<void> {
     const dest = path.join(abs, name)
     await fsp.writeFile(dest, data)
     const savedPath = rel ? `${rel}/${name}` : name
-    const { ms } = await incrementalIndexDir(indexRoot(rel))
+    const { ms } = await reindexForDir(rel)
     return reply.send({ saved: [savedPath], indexed: true, indexMs: ms })
   })
 }
