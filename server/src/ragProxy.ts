@@ -4,6 +4,7 @@ import { blendHits, searchFts, searchNames, searchVector } from './gufi.js'
 import { annotateHits } from './tags.js'
 import { readFileContent } from './kb.js'
 import { gatewayKey, streamTurn, WireMessage } from './chat/gateway.js'
+import { resolveUserKey } from './credentials.js'
 import { activeToolSpecs, executeTool } from './chat/tools.js'
 import { systemPrompt } from './chat/context.js'
 import { effectiveSettings } from './settings.js'
@@ -43,8 +44,39 @@ function bearerOf(req: FastifyRequest): string | null {
   return null
 }
 
-function callerKey(req: FastifyRequest): string | null {
-  return bearerOf(req) ?? (effectiveSettings().ragAllowDeploymentKey ? gatewayKey() || null : null)
+function callerKey(req: FastifyRequest): { key: string; source: string } | null {
+  const bearer = bearerOf(req)
+  if (bearer) return { key: bearer, source: 'caller bearer' }
+  // A session-proxied caller with a verified identity uses their stored
+  // personal key, tying keyless in-platform access to their JWT identity.
+  const stored = resolveUserKey((req as FastifyRequest & { user?: { id: string } }).user?.id)
+  if (stored) return { key: stored, source: 'stored personal key (session identity)' }
+  if (effectiveSettings().ragAllowDeploymentKey && gatewayKey()) return { key: gatewayKey(), source: 'deployment (keyless fallback)' }
+  return null
+}
+
+/** The deployment's default underlying model may not be accessible to
+ *  every caller's key (personal providers are per-account); resolve the
+ *  default PER CALLER, preferring the deployment setting when their key
+ *  can use it, else their first available model. Cached briefly per key. */
+const modelListCache = new Map<string, { ids: string[]; at: number }>()
+
+async function defaultModelFor(key: string): Promise<string> {
+  const preferred = effectiveSettings().ragDefaultModel
+  const cacheId = key.slice(-16)
+  const cached = modelListCache.get(cacheId)
+  let ids = cached && Date.now() - cached.at < 300_000 ? cached.ids : null
+  if (!ids) {
+    try {
+      const res = await fetch(`${GATEWAY_BASE}/models`, { headers: { Authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(8000) })
+      const data = res.ok ? await res.json() as { data?: { id: string }[]; models?: { id: string }[] } : {}
+      ids = (data.data ?? data.models ?? []).map(m => m.id)
+    } catch { ids = [] }
+    modelListCache.set(cacheId, { ids, at: Date.now() })
+  }
+  if (preferred && ids.includes(preferred)) return preferred
+  const own = ids.find(id => !id.startsWith('org:') && !/studio-(agent|rag)/.test(id))
+  return own ?? ids.find(id => !/studio-(agent|rag)/.test(id)) ?? preferred
 }
 
 function lastUserText(messages: unknown[]): string | null {
@@ -183,8 +215,9 @@ export async function ragProxyRoutes(app: FastifyInstance): Promise<void> {
   // registration mirroring this list must not duplicate them. ?all=1
   // appends the upstream ids for clients that want one flat list.
   app.get('/v1/models', async (req, reply) => {
-    const key = callerKey(req)
-    if (!key) return reply.status(401).send({ error: { message: 'bearer API key required' } })
+    const auth = callerKey(req)
+    if (!auth) return reply.status(401).send({ error: { message: 'bearer API key required' } })
+    const key = auth.key
     const created = Math.floor(Date.now() / 1000)
     const entry = (id: string) => ({ id, object: 'model', created, owned_by: 'studio' })
     const data = [entry('studio-agent'), entry('studio-rag')]
@@ -201,22 +234,25 @@ export async function ragProxyRoutes(app: FastifyInstance): Promise<void> {
   })
 
   app.post('/v1/chat/completions', async (req, reply) => {
-    const key = callerKey(req)
-    if (!key) return reply.status(401).send({ error: { message: 'bearer API key required' } })
+    const auth = callerKey(req)
+    if (!auth) return reply.status(401).send({ error: { message: 'bearer API key required' } })
+    const key = auth.key
     const eff = effectiveSettings()
     const body = { ...(req.body as Record<string, unknown>) }
     const requested = String(body.model ?? 'studio-rag')
-    const { mode, underlying } = resolveModel(requested)
+    let { mode, underlying } = resolveModel(requested)
+    const bare = requested === 'studio-agent' || requested === 'studio-rag'
+    if (bare) underlying = await defaultModelFor(key)
     if (!underlying) {
-      return reply.status(400).send({ error: { message: `No underlying model: pass ${requested}/<gateway-model-id> or set a default model on the Settings RAG endpoint section.` } })
+      return reply.status(400).send({ error: { message: `No underlying model available to this key: pass ${requested}/<gateway-model-id> or set a default model on the Settings RAG endpoint section.` } })
     }
     const messages = Array.isArray(body.messages) ? [...(body.messages as unknown[])] : []
     const wantStream = body.stream === true
     // Observability for the credential path: whose key is this call on?
-    const authSource = bearerOf(req)
-      ? (String(req.headers['x-studio-injected-key'] ?? '') === '1' ? 'deployment (injected by registration forwarder)' : 'caller bearer')
-      : 'deployment (keyless fallback)'
-    req.log.info({ model: requested, mode, authSource }, 'rag proxy call')
+    const authSource = String(req.headers['x-studio-injected-key'] ?? '') === '1'
+      ? 'deployment (injected by registration forwarder)'
+      : auth.source
+    req.log.info({ model: requested, underlying, mode, authSource }, 'rag proxy call')
     const id = `studio-${Date.now().toString(36)}`
 
     if (mode === 'agent') {

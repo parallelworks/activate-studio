@@ -29,6 +29,7 @@ export interface StudioSettings {
   ragAllowDeploymentKey?: boolean
   ragEndpointAutoStart?: boolean
   ragEndpointName?: string
+  requirePersonalKey?: boolean
 }
 
 let cache: StudioSettings | null = null
@@ -70,6 +71,7 @@ export function effectiveSettings(): Required<StudioSettings> {
     ragAllowDeploymentKey: s.ragAllowDeploymentKey ?? process.env.RAG_PROXY_ALLOW_DEPLOYMENT_KEY === '1',
     ragEndpointAutoStart: s.ragEndpointAutoStart ?? process.env.RAG_ENDPOINT_AUTOSTART === '1',
     ragEndpointName: s.ragEndpointName ?? process.env.RAG_ENDPOINT_NAME ?? '',
+    requirePersonalKey: s.requirePersonalKey ?? process.env.REQUIRE_PERSONAL_KEY === '1',
   }
 }
 
@@ -125,6 +127,7 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
     }
     if (body.ragAllowDeploymentKey !== undefined) next.ragAllowDeploymentKey = Boolean(body.ragAllowDeploymentKey)
     if (body.ragEndpointAutoStart !== undefined) next.ragEndpointAutoStart = Boolean(body.ragEndpointAutoStart)
+    if (body.requirePersonalKey !== undefined) next.requirePersonalKey = Boolean(body.requirePersonalKey)
     if (body.ragEndpointName !== undefined) {
       const n = String(body.ragEndpointName).toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40)
       next.ragEndpointName = n || undefined

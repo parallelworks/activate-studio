@@ -61,7 +61,7 @@ function IndexPanel({ idx, gufi, stats, onClose, onSync, syncing }: {
 
 interface AiHealth {
   ok: boolean
-  status: 'ok' | 'auth' | 'unreachable' | 'unconfigured'
+  status: 'ok' | 'auth' | 'unreachable' | 'unconfigured' | 'key-required'
   models: number
   gatewayHost: string
   message: string | null
@@ -74,6 +74,7 @@ const AI_LABEL: Record<AiHealth['status'], string> = {
   auth: 'model key rejected',
   unreachable: 'models unreachable',
   unconfigured: 'models not configured',
+  'key-required': 'add your model key',
 }
 
 function AiPanel({ ai, onClose, onRecheck }: { ai: AiHealth; onClose: () => void; onRecheck: () => void }) {
