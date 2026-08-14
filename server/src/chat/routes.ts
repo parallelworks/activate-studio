@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { MAX_TOOL_ITERATIONS } from '../config.js'
 import { gatewayConfigured, listModels, streamTurn, WireMessage, WireToolCall } from './gateway.js'
-import { TOOL_SPECS, activeToolSpecs, commandFor, customToolSpecs, executeTool, expandSlashCommand, skillToolSpec } from './tools.js'
+import { TOOL_CALLS, TOOL_SPECS, activeToolSpecs, commandFor, customToolSpecs, executeTool, expandSlashCommand, skillToolSpec } from './tools.js'
 import { systemPrompt } from './context.js'
 import { attachmentContext } from '../attachments.js'
 import { effectiveSettings } from '../settings.js'
@@ -66,6 +66,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
           name: t.function.name, description: t.function.description, builtin: true,
           enabled: !disabled.has(t.function.name), parameters: t.function.parameters,
           implementation: 'built-in (server/src/chat/tools.ts)',
+          calls: TOOL_CALLS[t.function.name],
         })),
         ...customToolSpecs().map(t => ({
           name: t.function.name, description: t.function.description, builtin: false,
@@ -75,6 +76,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
         ...(skillToolSpec() ? [{
           name: 'use_skill', description: skillToolSpec()!.function.description, builtin: true,
           enabled: !disabled.has('use_skill'), parameters: skillToolSpec()!.function.parameters,
+          calls: TOOL_CALLS.use_skill,
         }] : []),
       ],
     }

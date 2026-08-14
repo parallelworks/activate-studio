@@ -15,6 +15,27 @@ export interface ToolSpec {
   }
 }
 
+/** What each built-in actually executes, shown in the Settings tool
+ *  catalog so "built-in" is not a black box. */
+export const TOOL_CALLS: Record<string, string> = {
+  search_kb: 'gufi_query full-text (fts5 words), filename, and vector (sqlite-lembed gvec) searches over the index, blended and label-annotated; grep -ri over the knowledge base when no index exists',
+  read_kb_file: 'reads the file under the knowledge base root; office documents and PDFs return the extracted text cached beside the index',
+  list_kb_dir: 'directory listing under the knowledge base root',
+  query_corpus: 'canned gufi_query aggregations over the per-directory index databases',
+  get_labels: 'reads the user.studio.tags xattr maps cached from the filesystem',
+  apply_labels: 'setfattr user.studio.tags on the paths plus an in-place upsert into the index databases',
+  list_workflows: 'pw workflows ls',
+  get_workflow: 'pw workflows get <name> -o json',
+  run_workflow: 'pw workflows run <name> (dry-run validation unless a real run was requested)',
+  workflow_runs: 'pw workflows runs ls',
+  workflow_run_detail: 'pw workflows runs get <id>',
+  pw_help: 'pw --help / pw <command> --help',
+  list_clusters: 'pw cluster ls -o json',
+  cluster_command: 'pw ssh <resource> <command> (read-only scheduler guidance; state changes only on explicit request)',
+  show_in_viewer: 'no external call; returns viewer deep-link or inline-embed markdown',
+  use_skill: 'loads extensions/skills/<name>.md into the conversation',
+}
+
 export const TOOL_SPECS: ToolSpec[] = [
   {
     type: 'function',
