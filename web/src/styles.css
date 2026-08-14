@@ -836,9 +836,10 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
   padding: 16px 10px; display: flex; flex-direction: column; gap: 2px; overflow-y: auto;
 }
 .help-nav-head {
+  /* Matches the Chats and Library rail headers: 14px semibold, normal case. */
   display: flex; align-items: center; gap: 8px; padding: 0 10px 10px;
-  font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase;
-  color: var(--pw-muted);
+  font-size: 14px; font-weight: 600;
+  color: var(--pw-text);
 }
 .help-nav-icon { width: 18px; height: 18px; object-fit: contain; }
 .help-nav button {
