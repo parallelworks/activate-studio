@@ -71,6 +71,7 @@ export const api = {
   stats: () => getJson<{ available: boolean; files?: number; dirs?: number; totalBytes?: number }>(`/api/kb/stats`),
   search: (q: string, tags?: string[]) => getJson<{ hits: SearchHit[]; error?: string }>(`/api/search?q=${encodeURIComponent(q)}${tags?.length ? `&tags=${encodeURIComponent(tags.join(','))}` : ''}`),
   health: () => getJson<{ ok: boolean; gufi: boolean }>(`/healthz`),
+  mkdir: (path: string) => postJson<{ created: string }>(`/api/kb/mkdir`, { path }),
   tagVocabulary: () => getJson<{ tags: { tag: string; count: number }[] }>(`/api/tags`),
   tagsFor: (path: string) => getJson<{ own: string[]; inherited: string[] }>(`/api/kb/tags?path=${encodeURIComponent(path)}`),
   applyTags: (paths: string[], add: string[], remove: string[]) =>

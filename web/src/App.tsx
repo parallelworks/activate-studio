@@ -8,7 +8,7 @@ import { HelpView } from './views/HelpView'
 import { SettingsView } from './views/SettingsView'
 import { StatusFooter } from './components/StatusFooter'
 import { useAppConfig } from './config'
-import { applyAccent } from './accents'
+import { applyAccent, applySurface } from './accents'
 
 type ViewId = 'chat' | 'library' | 'search' | 'query' | 'overview' | 'settings' | 'help'
 export type Display = { kind: 'file'; target: string } | { kind: 'workflow_dag'; target: string }
@@ -64,7 +64,7 @@ export default function App() {
 
   useEffect(() => { localStorage.setItem('ade-nav-collapsed', navCollapsed ? '1' : '0') }, [navCollapsed])
   useEffect(() => { if (cfg.loaded) document.title = cfg.appName }, [cfg])
-  useEffect(() => { if (cfg.loaded) applyAccent(cfg.accent) }, [cfg])
+  useEffect(() => { if (cfg.loaded) { applyAccent(cfg.accent); applySurface(cfg.surface) } }, [cfg])
   useEffect(() => {
     const effective = theme ?? cfg.theme
     document.documentElement.dataset.theme = effective
@@ -87,8 +87,23 @@ export default function App() {
       history.replaceState(null, '', location.pathname + location.search)
     }
     applyHash()
+    // Chat links render with target=_blank; catch #open= clicks in the
+    // capture phase and route them to the viewer in this tab instead.
+    const onClick = (e: MouseEvent) => {
+      const a = (e.target as HTMLElement).closest?.('a[href*="#open="]') as HTMLAnchorElement | null
+      const m = a?.getAttribute('href')?.match(/#open=(file|workflow_dag):(.+)$/)
+      if (!m) return
+      e.preventDefault()
+      e.stopPropagation()
+      setDisplay({ kind: m[1] as Display['kind'], target: decodeURIComponent(m[2]) })
+      setView('library')
+    }
     window.addEventListener('hashchange', applyHash)
-    return () => window.removeEventListener('hashchange', applyHash)
+    window.addEventListener('click', onClick, true)
+    return () => {
+      window.removeEventListener('hashchange', applyHash)
+      window.removeEventListener('click', onClick, true)
+    }
   }, [])
 
   const openFile = (path: string) => {
