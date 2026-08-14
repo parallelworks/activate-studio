@@ -14,6 +14,13 @@ function sanitizeName(name: string): string {
   return base
 }
 
+/** Directory drops send the filename as a relative path; sanitize per segment. */
+function sanitizeRelPath(name: string): string {
+  const segments = name.split('/').filter(Boolean)
+  if (segments.length > 8) throw new KbError(400, 'path too deep')
+  return segments.map(sanitizeName).join('/')
+}
+
 /** Resolve and create the target directory, refusing excluded trees. */
 async function targetDir(rel: string): Promise<{ abs: string; rel: string }> {
   const cleaned = rel.replace(/^\/+|\/+$/g, '')
@@ -50,9 +57,10 @@ export async function uploadRoutes(app: FastifyInstance): Promise<void> {
     const dir = String((req.query as { dir?: string }).dir ?? 'uploads')
     const { abs, rel } = await targetDir(dir)
     const saved: string[] = []
-    for await (const part of req.files({ limits: { fileSize: MAX_UPLOAD_BYTES, files: 25 } })) {
-      const name = sanitizeName(part.filename ?? 'file')
+    for await (const part of req.files({ limits: { fileSize: MAX_UPLOAD_BYTES, files: 200 } })) {
+      const name = sanitizeRelPath(part.filename ?? 'file')
       const dest = path.join(abs, name)
+      await fsp.mkdir(path.dirname(dest), { recursive: true })
       await fsp.writeFile(dest, await part.toBuffer())
       saved.push(rel ? `${rel}/${name}` : name)
     }
@@ -73,7 +81,7 @@ export async function uploadRoutes(app: FastifyInstance): Promise<void> {
     const res = await fetch(url, {
       redirect: 'follow',
       signal: AbortSignal.timeout(30_000),
-      headers: { 'User-Agent': 'ade-studio-kb/1.0' },
+      headers: { 'User-Agent': 'activate-studio-kb/1.0' },
     })
     if (!res.ok) throw new KbError(502, `fetch failed: ${res.status}`)
     const buf = Buffer.from(await res.arrayBuffer())

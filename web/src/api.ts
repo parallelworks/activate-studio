@@ -71,9 +71,12 @@ export const api = {
   sweepNow: () => postJson<{ changed: string[] }>(`/api/index/sweep`, {}),
   uploadUrl: (url: string, dir: string) =>
     postJson<{ saved: string[]; indexMs: number }>(`/api/kb/upload-url`, { url, dir }),
-  uploadFiles: async (files: File[], dir: string) => {
+  uploadFiles: async (files: (File | { file: File; rel: string })[], dir: string) => {
     const form = new FormData()
-    for (const f of files) form.append('file', f, f.name)
+    for (const f of files) {
+      if (f instanceof File) form.append('file', f, f.name)
+      else form.append('file', f.file, f.rel)
+    }
     const res = await fetch(`/api/kb/upload?dir=${encodeURIComponent(dir)}`, { method: 'POST', body: form })
     const data = await res.json().catch(() => ({}))
     if (!res.ok) throw new Error((data as any).error ?? `upload: ${res.status}`)

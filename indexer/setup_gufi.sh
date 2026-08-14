@@ -7,7 +7,7 @@ PREFIX="${GUFI_PREFIX:-/opt/gufi}"
 
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
   cmake libsqlite3-dev pkg-config zlib1g-dev libpcre2-dev libattr1-dev attr \
-  autoconf automake libtool
+  autoconf automake libtool tesseract-ocr poppler-utils
 
 if [ ! -d "$SRC" ]; then
   git clone https://github.com/mar-file-system/GUFI.git "$SRC"

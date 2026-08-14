@@ -1,6 +1,6 @@
-# ade-studio architecture
+# ACTIVATE Studio architecture
 
-ade-studio is a web interface over a knowledge base directory (the configured `KB_ROOT`). It has three surfaces: a chat assistant with tool calling grounded in the corpus, a library (file tree, document viewer, upload and URL ingestion), and search (full text plus semantic). The retrieval layer is built on GUFI, the Grand Unified File Index from LANL (github.com/mar-file-system/GUFI). This document explains how each layer works and why it is shaped this way.
+ACTIVATE Studio is a web interface over a knowledge base directory (the configured `KB_ROOT`). It has three surfaces: a chat assistant with tool calling grounded in the corpus, a library (file tree, document viewer, upload and URL ingestion), and search (full text plus semantic). The retrieval layer is built on GUFI, the Grand Unified File Index from LANL (github.com/mar-file-system/GUFI). This document explains how each layer works and why it is shaped this way.
 
 ## 1. The index
 
@@ -24,6 +24,8 @@ CREATE VIRTUAL TABLE words USING fts5(tinode UNINDEXED, fname UNINDEXED, wordf)
 One row per file: `tinode` is the source file's inode, `fname` its name, `wordf` the extracted text (capped at 500 KB). Extraction is by suffix: markdown, text, code, and config files are read directly; DOCX via python-docx (paragraphs plus table cells); PDF via pdftotext with a pypdf fallback; PPTX via python-pptx; XLSX via openpyxl. Extracted text for binary formats is also written to `index/extract/<relpath>.txt`, which the server uses for instant previews of DOCX/PDF/PPTX/XLSX in the viewer.
 
 Every directory db gets the `words` table even when empty, so a corpus-wide `MATCH` never fails on a missing table. Full-text hits join back to file metadata by inode. One GUFI detail matters here: `entries.inode` is stored as TEXT, so the join is `ON inode = CAST(tinode AS TEXT)`; without the cast SQLite compares text to integer and matches nothing.
+
+Images are indexed the same way, because indexing an image means producing text for it. For each image of meaningful size, extraction combines two sources: OCR via tesseract (which carries most of the weight for screenshots and labeled diagrams), and, when `ADE_VISION_MODEL` is set, a two-to-four-sentence description from a vision model through the gateway's streaming Responses API. The combined text flows into the same fts5 tables and vector chunks as any document, so images are findable by what is written on them and by what they depict. Expensive extractions of every kind (PDF, office, OCR, captions) are cached by source mtime in the extract cache, so vision calls happen once per image version; `indexer/warm_image_cache.py` fills the cache in parallel for an existing corpus so enrichment passes never block on captioning.
 
 ## 3. Vectors: the semantic layer
 
@@ -56,7 +58,7 @@ The chat backend (`server/src/chat/`) is a server-side tool-calling loop against
 
 The system prompt is composed at startup: an instruction to ground answers in the KB and cite paths, corpus statistics, the account's workflow list, and, when the knowledge base carries its own `CLAUDE.md` conventions file, that file in full, so its rules on tone, terminology, and claims not to make bind chat output; text produced in this interface can end up in deliverables. Today's date is injected per request so deadline questions distinguish past from upcoming.
 
-The model chooses among five tools: `search_kb` (hybrid retrieval as above), `read_kb_file` (raw or extracted text, offset-paged), `list_kb_dir`, `list_workflows`, and `get_workflow` (returns the parsed YAML plus a jobs-and-needs DAG summary). The loop runs up to 24 gateway turns; identical repeated calls are served from a per-request cache with a do-not-repeat note; on budget exhaustion a final no-tools turn forces an answer from what was gathered. Tool activity streams to the browser over SSE and renders in the thread's reasoning disclosure.
+The model chooses among the knowledge tools (`search_kb` hybrid retrieval, `read_kb_file` raw or extracted text, `list_kb_dir`) and the platform tools: `list_workflows` (the account's workflow catalog with descriptions and tags, positioned as composable building blocks for assembly recommendations), `get_workflow` (parsed YAML plus a jobs-and-needs DAG summary for preview), `run_workflow` (dry-run validation by default; a real launch only on explicit user request in the conversation), `workflow_runs` and `workflow_run_detail` (status, errors, log tails), and `pw_help` (discovers the wider pw CLI surface). The loop runs up to 24 gateway turns; identical repeated calls are served from a per-request cache with a do-not-repeat note; on budget exhaustion a final no-tools turn forces an answer from what was gathered. Tool activity streams to the browser over SSE and renders in the thread's reasoning disclosure.
 
 This is retrieval-augmented generation with the model in the driver's seat: instead of stuffing top-k chunks into every prompt, the model searches, reads whole files when snippets are not enough, follows cross-references, and cites the paths it used. The GUFI layer is what makes the tools fast enough for a 46-call research loop to finish in about 80 seconds.
 

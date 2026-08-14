@@ -140,6 +140,33 @@ export function reindexForDir(rel: string): Promise<{ ms: number }> {
   return cleaned ? incrementalIndexDir(cleaned.split('/')[0]) : indexRootDb()
 }
 
+/** Remove cache entries whose source file no longer exists. Cache layouts
+ *  mirror the KB tree with a suffix appended (extract: <rel>.txt keeps the
+ *  original extension; pdf-preview: <rel minus extension>.pdf). */
+async function pruneCache(cacheRoot: string, kind: '.txt' | '.pdf'): Promise<void> {
+  const walk = async (dir: string, rel: string) => {
+    let entries
+    try { entries = await fsp.readdir(dir, { withFileTypes: true }) } catch { return }
+    for (const e of entries) {
+      const abs = path.join(dir, e.name)
+      const childRel = rel ? `${rel}/${e.name}` : e.name
+      if (e.isDirectory()) { await walk(abs, childRel); continue }
+      let exists = false
+      if (kind === '.txt' && e.name.endsWith('.txt')) {
+        exists = fs.existsSync(path.join(KB_ROOT, childRel.slice(0, -4)))
+      } else if (kind === '.pdf' && e.name.endsWith('.pdf')) {
+        const base = path.join(KB_ROOT, path.dirname(childRel), path.basename(e.name, '.pdf'))
+        exists = ['.docx', '.pptx', '.xlsx', '.doc', '.ppt', '.xls', '.odt', '.odp', '.ods']
+          .some(ext => fs.existsSync(base + ext))
+      } else {
+        exists = true
+      }
+      if (!exists) await fsp.rm(abs, { force: true }).catch(() => {})
+    }
+  }
+  await walk(cacheRoot, '')
+}
+
 interface DirScan { latest: number }
 
 /** Latest mtime a directory presents: itself plus its direct files. */
@@ -195,6 +222,10 @@ export async function sweep(log: (msg: string) => void): Promise<string[]> {
     for (const rel of removed) {
       await fsp.rm(path.join(GUFI_INDEX, rel), { recursive: true, force: true }).catch(() => {})
     }
+    // Stale extraction caches for files deleted outside the UI: prune them so
+    // a later same-named file cannot reuse another file's text.
+    await pruneCache(path.join(INDEX_BASE, 'extract'), '.txt')
+    await pruneCache(path.join(INDEX_BASE, 'pdf-preview'), '.pdf')
     // A parent re-index covers its whole subtree; keep only subtree roots.
     changed.sort()
     changed = changed.filter(rel => !changed.some(other => other !== rel && rel.startsWith(other + '/')))

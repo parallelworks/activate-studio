@@ -26,6 +26,7 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
     let suggestedPrompts: string[] = []
     try { suggestedPrompts = JSON.parse(process.env.SUGGESTED_PROMPTS ?? '[]') } catch { /* ignore bad JSON */ }
     return {
+      appName: process.env.APP_NAME ?? 'Studio',
       kbLabel: process.env.KB_LABEL ?? path.basename(KB_ROOT),
       suggestedPrompts,
       user: {

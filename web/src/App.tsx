@@ -1,10 +1,13 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ChatView } from './views/ChatView'
 import { LibraryView } from './views/LibraryView'
 import { SearchView } from './views/SearchView'
+import { QueryView } from './views/QueryView'
 import { StatusFooter } from './components/StatusFooter'
+import { useAppConfig } from './config'
 
-type ViewId = 'chat' | 'library' | 'search'
+type ViewId = 'chat' | 'library' | 'search' | 'query'
+export type Display = { kind: 'file'; target: string } | { kind: 'workflow_dag'; target: string }
 
 const NAV: { id: ViewId; label: string; icon: JSX.Element }[] = [
   {
@@ -22,30 +25,61 @@ const NAV: { id: ViewId; label: string; icon: JSX.Element }[] = [
     label: 'Search',
     icon: <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.4"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3.5 3.5"/></svg>,
   },
+  {
+    id: 'query',
+    label: 'Query',
+    icon: <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.4"><ellipse cx="8" cy="3.5" rx="5.5" ry="2"/><path d="M2.5 3.5v9c0 1.1 2.5 2 5.5 2s5.5-.9 5.5-2v-9"/><path d="M2.5 8c0 1.1 2.5 2 5.5 2s5.5-.9 5.5-2"/></svg>,
+  },
 ]
 
 export default function App() {
   const [view, setView] = useState<ViewId>('chat')
-  const [selected, setSelected] = useState<string | null>(null)
+  const [display, setDisplay] = useState<Display | null>(null)
+  const [navCollapsed, setNavCollapsed] = useState(() => localStorage.getItem('ade-nav-collapsed') === '1')
+  const cfg = useAppConfig()
+
+  useEffect(() => { localStorage.setItem('ade-nav-collapsed', navCollapsed ? '1' : '0') }, [navCollapsed])
+  useEffect(() => { if (cfg.loaded) document.title = cfg.appName }, [cfg])
+
+  useEffect(() => {
+    const onDisplay = (e: Event) => {
+      const detail = (e as CustomEvent).detail as Display
+      if (detail?.kind && detail?.target != null) {
+        setDisplay(detail)
+        setView('library')
+      }
+    }
+    window.addEventListener('ade-display', onDisplay)
+    return () => window.removeEventListener('ade-display', onDisplay)
+  }, [])
 
   const openFile = (path: string) => {
-    setSelected(path)
+    setDisplay({ kind: 'file', target: path })
     setView('library')
   }
 
   return (
     <div className="app">
-      <nav className="sidenav">
-        <div className="sidenav-brand">
-          <span className="brand-mark">ADE</span>
-          <span className="brand-name">Studio</span>
+      <nav className={`sidenav ${navCollapsed ? 'collapsed' : ''}`}>
+        <div className="sidenav-head">
+          <div className="sidenav-brand" title={cfg.appName}>
+            <span className="brand-badge">{(cfg.appName[0] ?? 'S').toUpperCase()}</span>
+            <span className="brand-text"><b>{cfg.appName}</b></span>
+          </div>
+          <button
+            className="nav-collapse"
+            title={navCollapsed ? 'Expand navigation' : 'Collapse navigation'}
+            onClick={() => setNavCollapsed(c => !c)}
+          >
+            {navCollapsed ? '»' : '«'}
+          </button>
         </div>
-        <div className="sidenav-sub">PW Knowledge Base</div>
         <div className="sidenav-items">
           {NAV.map(item => (
             <button
               key={item.id}
               className={`sidenav-item ${view === item.id ? 'active' : ''}`}
+              title={item.label}
               onClick={() => setView(item.id)}
             >
               {item.icon}
@@ -53,14 +87,15 @@ export default function App() {
             </button>
           ))}
         </div>
-        <StatusFooter />
+        <StatusFooter collapsed={navCollapsed} />
       </nav>
       <main className="content">
         <div className={view === 'chat' ? 'view' : 'view hidden'}><ChatView /></div>
         <div className={view === 'library' ? 'view' : 'view hidden'}>
-          <LibraryView selected={selected} onSelect={setSelected} />
+          <LibraryView display={display} onDisplay={setDisplay} />
         </div>
         <div className={view === 'search' ? 'view' : 'view hidden'}><SearchView onOpen={openFile} /></div>
+        <div className={view === 'query' ? 'view' : 'view hidden'}><QueryView onOpen={openFile} /></div>
       </main>
     </div>
   )
