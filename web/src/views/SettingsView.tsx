@@ -31,6 +31,24 @@ const TOOL_GROUPS: [string, string[]][] = [
 
 type SectionId = 'general' | 'access' | 'tools' | 'rag' | 'ext'
 
+/** Dropdown over the live model catalog; a saved value not in the catalog
+ *  stays selectable so settings never silently break. */
+function ModelSelect({ value, models, allowEmpty, emptyLabel, onChange }: {
+  value: string
+  models: string[]
+  allowEmpty?: boolean
+  emptyLabel?: string
+  onChange: (v: string) => void
+}) {
+  const opts = [...new Set([...(value && !models.includes(value) ? [value] : []), ...models])]
+  return (
+    <select className="field" value={value} onChange={e => onChange(e.target.value)}>
+      {allowEmpty && <option value="">{emptyLabel ?? '(none)'}</option>}
+      {opts.map(m => <option key={m} value={m}>{m}</option>)}
+    </select>
+  )
+}
+
 export function SettingsView() {
   const [form, setForm] = useState<Effective | null>(null)
   const [note, setNote] = useState('')
@@ -135,6 +153,8 @@ export function SettingsView() {
 
   if (!form) return <div className="settings-view"><div className="card settings-card"><p className="muted pad">{note || 'Loading…'}</p></div></div>
 
+  const pickableModels = models.filter(m => !/studio-(agent|rag)/.test(m))
+
   const sections: { id: SectionId; label: string }[] = [
     { id: 'general', label: 'General' },
     ...(me?.authEnabled ? [{ id: 'access' as SectionId, label: 'Your model access' }] : []),
@@ -216,13 +236,14 @@ export function SettingsView() {
                     onChange={e => setForm({ ...form, sweepIntervalSec: Number(e.target.value) })} />
                 </div>
                 <div>
-                  <label className="field-label">Vision model for image captioning (empty disables)</label>
-                  <input className="field" value={form.visionModel} list="vision-models"
-                    placeholder={models.length ? 'pick from the connected endpoint or type an id' : 'e.g. me:provider/model'}
-                    onChange={e => setForm({ ...form, visionModel: e.target.value })} />
-                  <datalist id="vision-models">
-                    {models.map(m => <option key={m} value={m} />)}
-                  </datalist>
+                  <label className="field-label">Vision model for image captioning</label>
+                  <ModelSelect
+                    value={form.visionModel}
+                    models={pickableModels}
+                    allowEmpty
+                    emptyLabel="disabled (no image captioning)"
+                    onChange={v => setForm({ ...form, visionModel: v })}
+                  />
                 </div>
               </div>
               <label className="field-label">Chat starter prompts (one per line)</label>
@@ -359,9 +380,13 @@ export function SettingsView() {
               <div className="settings-grid">
                 <div>
                   <label className="field-label">Default underlying model (for bare studio-agent / studio-rag)</label>
-                  <input className="field" value={form.ragDefaultModel} list="vision-models"
-                    placeholder="gateway model id"
-                    onChange={e => setForm({ ...form, ragDefaultModel: e.target.value })} />
+                  <ModelSelect
+                    value={form.ragDefaultModel}
+                    models={pickableModels}
+                    allowEmpty
+                    emptyLabel="none (callers must pass studio-agent/<model-id>)"
+                    onChange={v => setForm({ ...form, ragDefaultModel: v })}
+                  />
                 </div>
                 <div>
                   <label className="field-label">Retrieved context blocks (top K)</label>
