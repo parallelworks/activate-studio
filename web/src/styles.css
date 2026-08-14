@@ -39,9 +39,9 @@
 
   --pw-input-bg: #0f172a;
   --pw-hover-row: #16233a;
-  --theme-app-bg: #101a2b;
+  --theme-app-bg: var(--pw-panel);
   --theme-app: #e2e8f0;
-  --theme-panel-bg: #101a2b;
+  --theme-panel-bg: var(--pw-panel);
   --theme-panel: #e2e8f0;
   --theme-muted-panel-bg: #0f172a;
   --theme-muted-panel-color: #94a3b8;
