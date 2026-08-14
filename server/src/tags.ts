@@ -142,14 +142,66 @@ export async function applyTagsCore(rawPaths: string[], addRaw: string[], remove
     updated[cleaned] = next
     touched.add(cleaned)
   }
-  const roots = new Set([...touched].map(rel => rel.split('/')[0]))
-  for (const root of roots) {
-    const abs = resolveKb(root)
+  // Content did not change, so a subtree reindex (with re-embedding) is
+  // wasted minutes; upsert the xattr rows in the existing index dbs instead.
+  // Any path where that fails falls back to a real reindex.
+  const failed = await upsertIndexTags(paths.map(rel => rel.replace(/^\/+|\/+$/g, '')), updated)
+  for (const rel of failed) {
+    const abs = resolveKb(rel)
     const isDir = await import('node:fs/promises').then(m => m.stat(abs)).then(s => s.isDirectory()).catch(() => false)
-    await (isDir ? reindexForDir(root) : reindexForFile(root))
+    await (isDir ? reindexForDir(rel) : reindexForFile(rel))
   }
   invalidateTagMaps()
   return updated
+}
+
+/** Write user.studio.tags rows straight into the per-directory index dbs.
+ *  Returns the paths that could not be updated in place. */
+async function upsertIndexTags(rels: string[], tags: Record<string, string[]>): Promise<string[]> {
+  const fsSync = await import('node:fs')
+  const pathMod = path
+  const jobs: { db: string; inode: string; value: string; rel: string }[] = []
+  const failed: string[] = []
+  for (const rel of rels) {
+    try {
+      const abs = resolveKb(rel)
+      const st = fsSync.statSync(abs, { bigint: true })
+      const isDir = fsSync.statSync(abs).isDirectory()
+      const db = isDir
+        ? pathMod.join(GUFI_INDEX, rel, 'db.db')
+        : pathMod.join(GUFI_INDEX, pathMod.dirname(rel) === '.' ? '' : pathMod.dirname(rel), 'db.db')
+      if (!fsSync.existsSync(db)) { failed.push(rel); continue }
+      jobs.push({ db, inode: st.ino.toString(), value: (tags[rel] ?? []).join(','), rel })
+    } catch {
+      failed.push(rel)
+    }
+  }
+  if (jobs.length) {
+    const script = `
+import json, sqlite3, sys
+jobs = json.load(sys.stdin)
+bad = []
+for j in jobs:
+    try:
+        db = sqlite3.connect(j['db'])
+        db.execute("DELETE FROM xattrs_pwd WHERE CAST(inode AS TEXT) = ? AND CAST(name AS TEXT) = 'user.studio.tags'", (j['inode'],))
+        if j['value']:
+            db.execute("INSERT INTO xattrs_pwd (inode, name, value) VALUES (?, 'user.studio.tags', ?)", (j['inode'], j['value']))
+        db.commit()
+        db.close()
+    except Exception:
+        bad.append(j['rel'])
+print(json.dumps(bad))
+`
+    const out = await new Promise<string>((resolve, reject) => {
+      const child = execFile('python3', ['-c', script], { timeout: 60_000 },
+        (err, so) => (err ? reject(err) : resolve(so)))
+      child.stdin?.write(JSON.stringify(jobs))
+      child.stdin?.end()
+    }).catch(() => JSON.stringify(jobs.map(j => j.rel)))
+    try { failed.push(...JSON.parse(out)) } catch { failed.push(...jobs.map(j => j.rel)) }
+  }
+  return failed
 }
 
 export async function tagRoutes(app: FastifyInstance): Promise<void> {
