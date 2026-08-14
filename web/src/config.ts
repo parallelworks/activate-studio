@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 export interface AppConfig {
   appName: string
   iconUrl: string | null
+  faviconUrl: string | null
   theme: 'light' | 'dark'
   accent: string
   surface: string
@@ -15,6 +16,7 @@ export interface AppConfig {
 const DEFAULTS: AppConfig = {
   appName: 'Studio',
   iconUrl: null,
+  faviconUrl: null,
   theme: 'light',
   accent: 'navy',
   surface: 'cool',
@@ -41,6 +43,7 @@ export function useAppConfig(): AppConfig {
         cached = {
           appName: d.appName || DEFAULTS.appName,
           iconUrl: d.iconUrl ?? null,
+          faviconUrl: d.faviconUrl ?? null,
           theme: d.theme === 'dark' ? 'dark' : 'light',
           accent: d.accent || 'navy',
           surface: d.surface || 'cool',

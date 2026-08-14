@@ -12,11 +12,20 @@ function fmtBytes(n: number): string {
 }
 
 function ago(iso: string | null): string {
-  if (!iso) return 'never'
+  // Null just means no sweep has completed since the server started.
+  if (!iso) return 'pending'
   const s = Math.max(0, (Date.now() - Date.parse(iso)) / 1000)
   if (s < 90) return `${Math.round(s)}s ago`
   if (s < 5400) return `${Math.round(s / 60)}m ago`
   return `${Math.round(s / 3600)}h ago`
+}
+
+/** Hand a builder query to the Query view and switch to it. */
+function jumpToQuery(filters: { field: string; op: string; value: string }[], sort = 'size') {
+  window.dispatchEvent(new CustomEvent('ade-run-query', {
+    detail: { builder: { source: 'files', filters, groupBy: 'none', sort, dir: 'desc', limit: 100, subtree: '' } },
+  }))
+  location.hash = '#view=query'
 }
 
 export function OverviewView({ onOpen }: { onOpen: (path: string) => void }) {
@@ -25,6 +34,7 @@ export function OverviewView({ onOpen }: { onOpen: (path: string) => void }) {
   const [tags, setTags] = useState<{ tag: string; count: number }[]>([])
   const [largest, setLargest] = useState<QueryResult | null>(null)
   const [recent, setRecent] = useState<QueryResult | null>(null)
+  const [activity, setActivity] = useState<{ conversations: number; latest: string | null; transcripts: number; attachments: number } | null>(null)
 
   useEffect(() => {
     api.stats().then(setStats).catch(() => {})
@@ -35,6 +45,19 @@ export function OverviewView({ onOpen }: { onOpen: (path: string) => void }) {
         .then(r => r.json()).then(set).catch(() => {})
     q({ canned: 'largest', n: 8 }, setLargest)
     q({ canned: 'recent', n: 8, days: 7 }, setRecent)
+    Promise.all([
+      fetch('/api/chat/conversations').then(r => r.json()).catch(() => []),
+      fetch('/api/kb/tree?path=chat-sessions').then(r => r.json()).catch(() => []),
+      fetch('/api/chat/attachments?limit=1&offset=0').then(r => r.json()).catch(() => ({ total: 0 })),
+    ]).then(([convs, transcripts, atts]) => {
+      const list = Array.isArray(convs) ? convs : []
+      setActivity({
+        conversations: list.length,
+        latest: list[0]?.title ?? null,
+        transcripts: Array.isArray(transcripts) ? transcripts.length : 0,
+        attachments: atts?.total ?? 0,
+      })
+    }).catch(() => {})
   }, [])
 
   const byExt = [...(stats?.byExt ?? [])].filter(e => e.ext !== "(none)").sort((a, b) => b.bytes - a.bytes).slice(0, 12)
@@ -66,7 +89,9 @@ export function OverviewView({ onOpen }: { onOpen: (path: string) => void }) {
           <h3>Storage by file type</h3>
           <div className="ov-bars">
             {byExt.map(e => (
-              <div className="ov-bar-row" key={e.ext} title={`${e.ext}: ${fmtBytes(e.bytes)} across ${e.count.toLocaleString()} files`}>
+              <div className="ov-bar-row ov-click" key={e.ext}
+                title={`${e.ext}: ${fmtBytes(e.bytes)} across ${e.count.toLocaleString()} files. Click to list them in Query.`}
+                onClick={() => jumpToQuery([{ field: 'extension', op: 'eq', value: e.ext }])}>
                 <span className="ov-bar-label">.{e.ext}</span>
                 <div className="ov-bar-track">
                   <div className="ov-bar-fill" style={{ width: `${Math.max((e.bytes / maxBytes) * 100, 1)}%` }} />
@@ -102,10 +127,31 @@ export function OverviewView({ onOpen }: { onOpen: (path: string) => void }) {
           <section className="card ov-list">
             <h3>Labels</h3>
             <div className="tag-row ov-tags">
-              {tags.map(t => <span key={t.tag} className="tag-pill on">{t.tag} <span className="tag-count">{t.count}</span></span>)}
+              {tags.map(t => (
+                <button key={t.tag} className="tag-pill on" title={`List everything labeled ${t.tag}`}
+                  onClick={() => jumpToQuery([{ field: 'label', op: 'eq', value: t.tag }], 'modified')}>
+                  {t.tag} <span className="tag-count">{t.count}</span>
+                </button>
+              ))}
             </div>
           </section>
         )}
+
+        <section className="card ov-list">
+          <h3>Studio activity</h3>
+          <div className="ov-row ov-click" onClick={() => { location.hash = '' }}>
+            <span className="ov-row-path">Chat conversations{activity?.latest ? `, latest: ${activity.latest.slice(0, 48)}` : ''}</span>
+            <span className="ov-row-meta">{activity?.conversations ?? '…'}</span>
+          </div>
+          <div className="ov-row ov-click" onClick={() => jumpToQuery([{ field: 'label', op: 'eq', value: 'chat-session' }], 'modified')}>
+            <span className="ov-row-path">Exported session transcripts, searchable in the corpus</span>
+            <span className="ov-row-meta">{activity?.transcripts ?? '…'}</span>
+          </div>
+          <div className="ov-row">
+            <span className="ov-row-path">Chat attachments stored under uploads/chat</span>
+            <span className="ov-row-meta">{activity?.attachments ?? '…'}</span>
+          </div>
+        </section>
       </div>
     </div>
   )

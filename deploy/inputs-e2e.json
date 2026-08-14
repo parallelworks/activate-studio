@@ -1,0 +1,27 @@
+{
+  "resource_and_execution": {
+    "resource": "a30gpuserver"
+  },
+  "session_settings": {
+    "session_name": "studio-e2e",
+    "session_method": "e2e"
+  },
+  "app_settings": {
+    "workdir": "${HOME}/studio-work",
+    "bundlebucket": "pw://<username>/<bucket>",
+    "bundle_file": "studio-bundle.tar.gz",
+    "refresh_software": false,
+    "app_port": 0,
+    "source": "bundle"
+  },
+  "kb_settings": {
+    "kb_root": "${HOME}/studio-kb",
+    "kb_label": "Test Corpus",
+    "build_gufi": true,
+    "run_index": true
+  },
+  "model_settings": {
+    "pw_api_key": "",
+    "gateway_url": ""
+  }
+}

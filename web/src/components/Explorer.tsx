@@ -27,7 +27,7 @@ const FileIcon = () => (
   </svg>
 )
 
-const RowCheck = ({ checked, onToggle }: { checked: boolean; onToggle: () => void }) => (
+export const RowCheck = ({ checked, onToggle }: { checked: boolean; onToggle: () => void }) => (
   <span
     className={`row-check ${checked ? 'checked' : ''}`}
     title="Select for multi-item labeling"

@@ -8,7 +8,7 @@ Every deployment-specific choice lives in environment variables, conventionally 
 
 ## Name and brand
 
-`APP_NAME` is the product name in the header and the browser tab. `APP_ICON` points at an image file (PNG or SVG works) shown beside it; without one, a letter badge from the first character of the name appears instead. `THEME` picks the default of light or dark; every user can toggle from the sidebar footer, and their choice persists in the browser.
+`APP_NAME` is the product name in the header and the browser tab. `APP_ICON` points at an image file (PNG or SVG works) shown beside it; without one, a letter badge from the first character of the name appears instead. `APP_FAVICON` points at an image used as the browser tab icon; it falls back to `APP_ICON`, and with neither set the tab shows the generic bundled favicon. `THEME` picks the default of light or dark; every user can toggle from the sidebar footer, and their choice persists in the browser.
 
 ## Chat
 
@@ -22,7 +22,7 @@ The assistant's tool set is managed from the Settings page and from files.
 
 - Built-in tools live in the server (`server/src/chat/tools.ts`). Settings lists each one with an on/off toggle; clicking a tool's name shows its exact call specification, which you can copy as a starting point for your own.
 - Custom tools defined in Settings are saved with the runtime settings (`index/settings.json`). Each is a name, a description for the model, and a command; the command runs on the Studio server and its output returns to the conversation.
-- File-based extensions load from `index/extensions/` and take effect without a restart:
+- File-based extensions load from `index/extensions/` and take effect without a restart. On first start, when that directory does not exist yet, the server seeds it from the repository's `extensions-starter/` set (two example tools, three skills, and an inactive persona template), so a fresh deployment has working examples to copy; delete or edit them freely, they are never re-created once the directory exists:
   - `tools/*.json`, each `{ "name", "description", "command" }`, behave like custom tools.
   - `skills/*.md` are instruction sets the assistant loads on demand through the `use_skill` tool, either when the user names one or when the task matches the skill's frontmatter description.
   - `agents/default.md` is appended to the system prompt on every request, as the deployment's standing instructions.
@@ -35,7 +35,7 @@ The in-app Help page renders `docs/HELP.md`, split into cards at `##` headings, 
 
 ## Platform identity (optional)
 
-When served behind the ACTIVATE platform, the platform can forward a short-lived JWT in a request header. Set `AUTH_JWKS_URL` to the platform's JWKS endpoint to verify it; `AUTH_HEADER` names the header (default `x-pw-access-token`), and `AUTH_ISSUER`/`AUTH_AUDIENCE` add standard claim checks. With `AUTH_REQUIRED=1`, API requests without a valid token are rejected; without it, verification is best-effort and the verified identity simply personalizes the app. Role-based permissions (who can manage the library versus only chat) are a planned layer on top of this identity.
+When served behind the ACTIVATE platform, the session proxy forwards a short-lived (5 minute) RS256 JWT in the `X-PW-User-Token` header: `sub` is `user:<username>`, `iss` is `pw-session-proxy`, and `aud` carries `session:<sessionId>` and `session:<owner>/<sessionName>`. It identifies the user and proves the platform forwarded the request; it carries no credentials. Set `AUTH_JWKS_URL` to the platform's keys endpoint (`https://<platform-host>/api/platform/keys`, the `jwks_uri` from its OIDC discovery document) to verify it; `AUTH_HEADER` names the header (default `x-pw-user-token`), and `AUTH_ISSUER`/`AUTH_AUDIENCE` add the standard claim checks, with `session:<owner>/<sessionName>` the natural audience to pin. With `AUTH_REQUIRED=1`, API requests without a valid token are rejected; without it, verification is best-effort and the verified identity simply personalizes the app. Role-based permissions (who can manage the library versus only chat) are a planned layer on top of this identity.
 
 ## Labels
 

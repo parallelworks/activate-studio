@@ -123,7 +123,7 @@ export async function annotateHits<T extends { path: string; tags?: string[] }>(
 
 /** Apply or remove tags; shared by the REST route and the chat tool. */
 export async function applyTagsCore(rawPaths: string[], addRaw: string[], removeRaw: string[]): Promise<Record<string, string[]>> {
-  const paths = rawPaths.slice(0, 200)
+  const paths = rawPaths.slice(0, 1000)
   const add = addRaw.map(normalizeTag).filter(Boolean)
   const remove = removeRaw.map(normalizeTag).filter(Boolean)
   if (!paths.length || (!add.length && !remove.length)) throw new KbError(400, 'paths and add or remove required')

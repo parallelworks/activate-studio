@@ -69,7 +69,7 @@ export const api = {
     return data as { deleted: string; indexMs: number }
   },
   stats: () => getJson<{ available: boolean; files?: number; dirs?: number; totalBytes?: number }>(`/api/kb/stats`),
-  search: (q: string, tags?: string[]) => getJson<{ hits: SearchHit[]; error?: string }>(`/api/search?q=${encodeURIComponent(q)}${tags?.length ? `&tags=${encodeURIComponent(tags.join(','))}` : ''}`),
+  search: (q: string, tags?: string[], limit = 50) => getJson<{ hits: SearchHit[]; error?: string }>(`/api/search?q=${encodeURIComponent(q)}&limit=${limit}${tags?.length ? `&tags=${encodeURIComponent(tags.join(','))}` : ''}`),
   health: () => getJson<{ ok: boolean; gufi: boolean }>(`/healthz`),
   mkdir: (path: string) => postJson<{ created: string }>(`/api/kb/mkdir`, { path }),
   tagVocabulary: () => getJson<{ tags: { tag: string; count: number }[] }>(`/api/tags`),

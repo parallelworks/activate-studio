@@ -12,6 +12,7 @@ Ask in plain language; the assistant searches, reads the files that matter, and 
 - Lists and inspects runs, including errors and log tails.
 - "Show me &lt;file&gt;" returns a link that opens it in the Library viewer.
 - Attach files or images with the paperclip; they are filed into the library, indexed, and their content (including text read from images) is part of the conversation.
+- Slash commands invoke extensions directly: /skill_name applies a skill's instructions to your request, /tool_name runs a tool, /agent_name adopts an agent file for one message. /help lists everything available.
 
 ## Library
 

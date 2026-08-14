@@ -307,7 +307,13 @@ button { font-family: inherit; }
 .pill-name { background: #f1f5f9; color: #475569; }
 
 /* ---- search view ---- */
-.search-view { padding: 12px; overflow: auto; flex: 1; display: flex; flex-direction: column; gap: 12px; }
+/* The whole view scrolls as one page (wheel works anywhere over it); rows
+   render lazily so thousand-hit result sets stay cheap. */
+.search-view { padding: 12px; overflow: auto; flex: 1; display: flex; flex-direction: column; gap: 12px; min-height: 0; }
+.search-hero, .search-results { flex-shrink: 0; }
+.result-row { content-visibility: auto; contain-intrinsic-size: auto 64px; }
+.results-more { padding: 10px 16px; }
+.query-results tbody tr { content-visibility: auto; contain-intrinsic-size: auto 38px; }
 .search-hero { padding: 20px 24px; }
 
 .search-bar { display: flex; gap: 8px; margin-top: 14px; }
@@ -429,7 +435,7 @@ button { font-family: inherit; }
 
 /* ---- settings ---- */
 .settings-view { padding: 12px; overflow: auto; flex: 1; }
-.settings-card { padding: 20px 26px; max-width: 780px; }
+.settings-card { padding: 20px 26px; min-width: 0; }
 .settings-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; margin-bottom: 14px; }
 .prompts-box { font-size: 13px; resize: vertical; }
 
@@ -599,7 +605,17 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 
 /* Settings: chat tools */
 .tool-hint { margin: 0 0 8px; font-size: 12px; }
-.settings-view { display: flex; flex-direction: column; gap: 14px; }
+/* Wide layout: general and extensions side by side, the tall assistant-tools
+   card full width below with its groups in a two-column grid. */
+.settings-view { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; align-items: start; max-width: 1500px; }
+.settings-view > .settings-card:nth-child(1) { grid-area: 1 / 1; }
+.settings-view > .settings-card:nth-child(3) { grid-area: 1 / 2; }
+.settings-view > .settings-card:nth-child(2) { grid-area: 2 / 1 / 3 / 3; }
+.settings-view > .settings-card:nth-child(3) .ext-cols { grid-template-columns: 1fr; }
+.tools-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 4px 32px; align-items: start; }
+@media (max-width: 1180px) {
+  .settings-view { display: flex; flex-direction: column; }
+}
 .settings-section-title { margin: 0 0 6px; font-size: 16px; font-weight: 650; color: var(--pw-navy); }
 .tool-group {
   margin: 14px 0 6px; font-size: 11px; font-weight: 600; text-transform: uppercase;
@@ -625,3 +641,108 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
   overflow-x: auto; font-family: 'Geist Mono Variable', ui-monospace, monospace;
 }
 [data-theme='dark'] .tool-spec { background: var(--pw-input-bg); }
+
+/* Multi-select labeling on search and query results */
+.results-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.results-actions { display: flex; gap: 8px; }
+.results-actions .btn-secondary { font-size: 12px; padding: 3px 10px; text-transform: none; letter-spacing: normal; }
+.result-top { justify-content: flex-start; }
+.result-pills { margin-left: auto; }
+.result-row .row-check { opacity: 0; }
+.result-row:hover .row-check, .search-results.has-sel .row-check { opacity: 1; }
+.result-row.multi { background: #fef3c7; }
+.result-row.multi:hover { background: #fde68a; }
+[data-theme='dark'] .result-row.multi { background: #3b2f12; }
+[data-theme='dark'] .result-row.multi:hover { background: #4a3a15; }
+.query-results th.sel-col, .query-results td.sel-col { width: 26px; padding-right: 0; }
+.query-results .row-check { opacity: 0; }
+.query-results tbody tr:hover .row-check, .query-results.has-sel .row-check { opacity: 1; }
+.query-results tbody tr.multi td { background: #fef3c7; }
+[data-theme='dark'] .query-results tbody tr.multi td { background: #3b2f12; }
+
+/* Conversation label scope: compact control floated into the right-pane
+   header bar, opening a multi-select dropdown that scales to many labels. */
+/* height:auto beats the .chat-canvas > * { height:100% } rule, which would
+   stretch the anchor to the canvas bottom and drop the menu off-screen. */
+.chat-scope-anchor { position: absolute; top: 11px; right: 16px; z-index: 30; height: auto; }
+.scope-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  border: 1px solid var(--pw-border); border-radius: 8px;
+  background: var(--pw-panel); color: var(--pw-muted);
+  font-size: 12.5px; font-weight: 500; padding: 5px 10px; cursor: pointer;
+}
+.scope-btn:hover { color: var(--pw-navy); }
+.scope-btn.active { color: var(--pw-link); border-color: var(--pw-link); }
+.scope-count {
+  background: var(--pw-link); color: #fff; border-radius: 99px;
+  font-size: 10.5px; font-weight: 600; line-height: 15px; padding: 0 5px;
+}
+.scope-overlay { position: fixed; inset: 0; z-index: 39; }
+.scope-menu {
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: 40;
+  width: 250px; padding: 10px; display: flex; flex-direction: column; gap: 8px;
+  background: var(--pw-panel); box-shadow: 0 12px 32px rgba(6, 53, 79, 0.16);
+}
+[data-theme='dark'] .scope-menu { box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5); }
+.scope-menu-head {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.05em;
+  text-transform: uppercase; color: var(--pw-muted);
+}
+.scope-filter { font-size: 12.5px; padding: 5px 8px; }
+.scope-list { max-height: 260px; overflow-y: auto; display: flex; flex-direction: column; }
+.scope-item {
+  display: flex; align-items: center; gap: 8px; padding: 5px 4px;
+  font-size: 13px; cursor: pointer; border-radius: 6px;
+}
+.scope-item:hover { background: var(--pw-hover-row, #f8fafc); }
+.scope-tag { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.scope-n { color: var(--pw-muted-2); font-size: 11.5px; }
+.scope-empty { font-size: 12.5px; padding: 4px; }
+.scope-menu-foot { display: flex; justify-content: space-between; align-items: center; }
+.scope-clear {
+  background: none; border: none; color: var(--pw-link); cursor: pointer;
+  font-size: 12px; padding: 2px 6px;
+}
+.scope-clear:hover { text-decoration: underline; }
+.scope-clear:disabled { color: var(--pw-muted-2); cursor: default; text-decoration: none; }
+
+/* Streaming thinking peek: a little more room than the package's 5rem so
+   whole sentences fit, and calmer type for the reasoning text. */
+.chat-canvas [class*="max-h-20"] { max-height: 8.5rem; }
+.chat-canvas [class*="border-l-2"] [class*="text-sm"] { line-height: 1.55; }
+.status-dot.off { background: var(--pw-muted-2); }
+
+/* Identity detail popover, opening upward from the footer identity line */
+.identity-line { position: relative; }
+.identity-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: none; border: none; padding: 0; cursor: pointer;
+  font-size: 11.5px; color: var(--pw-muted); font-family: inherit;
+}
+.identity-btn:hover { color: var(--pw-navy); }
+.identity-panel {
+  position: absolute; bottom: calc(100% + 10px); left: 0; z-index: 40;
+  width: 300px; padding: 10px; display: flex; flex-direction: column; gap: 8px;
+  background: var(--pw-panel); box-shadow: 0 12px 32px rgba(6, 53, 79, 0.16);
+}
+[data-theme='dark'] .identity-panel { box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5); }
+.identity-table { border-collapse: collapse; font-size: 12px; width: 100%; }
+.identity-table td { padding: 4px 0; vertical-align: top; line-height: 1.45; }
+.identity-table tr + tr td { border-top: 1px solid var(--pw-border); }
+.identity-table td.k { color: var(--pw-muted); padding-right: 14px; white-space: nowrap; width: 1%; }
+.identity-table td.v { color: var(--pw-text); word-break: normal; overflow-wrap: anywhere; white-space: pre-line; }
+.identity-claims {
+  margin: 0; padding: 8px; font-size: 10.5px; line-height: 1.5;
+  background: var(--pw-bg); border: 1px solid var(--pw-border); border-radius: 6px;
+  max-height: 180px; overflow: auto; white-space: pre-wrap; word-break: break-all;
+}
+[data-theme='dark'] .identity-claims { background: #0f172a; }
+.identity-note { margin: 0; font-size: 12px; line-height: 1.55; color: var(--pw-muted); }
+.identity-note code { font-size: 11px; }
+.identity-src { font-size: 10.5px; }
+
+/* Stats view: clickable rows and label pills jump to a prefilled query */
+.ov-click { cursor: pointer; }
+.ov-tags button.tag-pill { cursor: pointer; font-family: inherit; }
+.status-dot.inline { display: inline-block; margin-right: 6px; vertical-align: middle; }
+.rail-head-actions { justify-content: flex-end; }
