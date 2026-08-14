@@ -9,11 +9,7 @@ function ago(iso: string | null): string {
   return `${Math.round(s / 3600)}h ago`
 }
 
-export function StatusFooter({ collapsed = false, onToggleTheme, theme }: {
-  collapsed?: boolean
-  onToggleTheme?: () => void
-  theme?: 'light' | 'dark'
-}) {
+export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
   const [stats, setStats] = useState<{ files?: number; dirs?: number } | null>(null)
   const [idx, setIdx] = useState<IndexStatus | null>(null)
   const [syncing, setSyncing] = useState(false)
@@ -60,13 +56,6 @@ export function StatusFooter({ collapsed = false, onToggleTheme, theme }: {
           {syncing || idx?.running ? 'syncing…' : 'sync now'}
         </button>
       </div>
-      {onToggleTheme && (
-        <div className="status-line muted2">
-          <button className="link-btn theme-btn" onClick={onToggleTheme}>
-            {theme === 'dark' ? 'light mode' : 'dark mode'}
-          </button>
-        </div>
-      )}
     </div>
   )
 }

@@ -42,6 +42,10 @@ export function OverviewView({ onOpen }: { onOpen: (path: string) => void }) {
 
   return (
     <div className="overview-view">
+      <div className="card ov-head">
+        <h1 className="view-title">Corpus statistics</h1>
+        <p className="muted view-sub">State and health of the knowledge base: what it holds, how it is stored, what changed recently, and how the index is doing.</p>
+      </div>
       <div className="ov-tiles">
         <div className="card ov-tile"><span className="stat-num">{stats?.files?.toLocaleString() ?? '…'}</span><span className="stat-label">files indexed</span></div>
         <div className="card ov-tile"><span className="stat-num">{stats?.dirs?.toLocaleString() ?? '…'}</span><span className="stat-label">directories</span></div>

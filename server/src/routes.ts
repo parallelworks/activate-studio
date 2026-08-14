@@ -10,6 +10,7 @@ import { blendHits, corpusStats, searchFts, searchNames, searchVector } from './
 import { invalidateContext } from './chat/context.js'
 import { incrementalIndexDir, indexStatus, reindexForFile, sweep } from './indexing.js'
 import { annotateHits } from './tags.js'
+import { effectiveSettings } from './settings.js'
 
 export async function kbRoutes(app: FastifyInstance): Promise<void> {
   app.setErrorHandler((err: unknown, _req, reply) => {
@@ -24,8 +25,7 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
   // Deployment-specific presentation values live in the environment (or the
   // gitignored .env the deploy script sources), never in the repo.
   app.get('/api/config', async req => {
-    let suggestedPrompts: string[] = []
-    try { suggestedPrompts = JSON.parse(process.env.SUGGESTED_PROMPTS ?? '[]') } catch { /* ignore bad JSON */ }
+    const eff = effectiveSettings()
     // A platform-verified identity (JWT) wins over the static env identity.
     const user = req.user
       ? { id: req.user.id, username: req.user.username, name: req.user.name }
@@ -35,11 +35,11 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
           name: process.env.APP_USER_NAME || undefined,
         }
     return {
-      appName: process.env.APP_NAME ?? 'Studio',
+      appName: eff.appName,
       iconUrl: process.env.APP_ICON && fs.existsSync(process.env.APP_ICON) ? '/api/brand-icon' : null,
-      kbLabel: process.env.KB_LABEL ?? path.basename(KB_ROOT),
-      theme: process.env.THEME === 'dark' ? 'dark' : 'light',
-      suggestedPrompts,
+      kbLabel: eff.kbLabel,
+      theme: eff.theme,
+      suggestedPrompts: eff.suggestedPrompts,
       user,
     }
   })
@@ -50,9 +50,10 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
     const file = process.env.HELP_FILE ?? path.join(PROJECT_ROOT, 'docs', 'HELP.md')
     let md = ''
     try { md = await fsp.readFile(file, 'utf8') } catch { md = 'No help content configured.' }
+    const eff = effectiveSettings()
     md = md
-      .replaceAll('{appName}', process.env.APP_NAME ?? 'Studio')
-      .replaceAll('{kbLabel}', process.env.KB_LABEL ?? path.basename(KB_ROOT))
+      .replaceAll('{appName}', eff.appName)
+      .replaceAll('{kbLabel}', eff.kbLabel)
     return reply.type('text/markdown; charset=utf-8').send(md)
   })
 

@@ -27,6 +27,25 @@ const FileIcon = () => (
   </svg>
 )
 
+const RowCheck = ({ checked, onToggle }: { checked: boolean; onToggle: () => void }) => (
+  <span
+    className={`row-check ${checked ? 'checked' : ''}`}
+    title="Select for multi-item labeling"
+    onClick={e => { e.stopPropagation(); onToggle() }}
+  >
+    <svg viewBox="0 0 14 14" width="13" height="13">
+      <rect x="1" y="1" width="12" height="12" rx="3" fill={checked ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.3" />
+      {checked && <path d="M4 7.2 6.2 9.4 10 5" fill="none" stroke="#fff" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />}
+    </svg>
+  </span>
+)
+
+const TagIcon = () => (
+  <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.4">
+    <path d="M2 2h5.2L14 8.8a1 1 0 0 1 0 1.4L10.2 14a1 1 0 0 1-1.4 0L2 7.2V2z" /><circle cx="5.2" cy="5.2" r="1" fill="currentColor" stroke="none" />
+  </svg>
+)
+
 interface NodeProps {
   path: string
   name: string
@@ -37,10 +56,11 @@ interface NodeProps {
   multiSelected: Set<string>
   onToggleMulti: (path: string) => void
   onDropInto: (dir: string, items: DataTransferItemList) => void
+  onLabel: (path: string) => void
 }
 
 function DirNode(props: NodeProps) {
-  const { path, name, depth, onOpen, onDirFocus, selected, multiSelected, onToggleMulti, onDropInto } = props
+  const { path, name, depth, onOpen, onDirFocus, selected, multiSelected, onToggleMulti, onDropInto, onLabel } = props
   const [open, setOpen] = useState(depth === 0)
   const [entries, setEntries] = useState<KbEntry[] | null>(null)
   const [dropOver, setDropOver] = useState(false)
@@ -76,9 +96,12 @@ function DirNode(props: NodeProps) {
             onDirFocus(path)
           }}
         >
+          <RowCheck checked={multiSelected.has(path)} onToggle={() => onToggleMulti(path)} />
           <Chevron open={open} />
           <FolderIcon open={open} />
           <span className="tree-label">{name}</span>
+          <button className="row-tag" title="Labels for this directory (applies to everything beneath it)"
+            onClick={e => { e.stopPropagation(); onLabel(path) }}><TagIcon /></button>
         </div>
       )}
       {open && entries?.map(e =>
@@ -93,9 +116,12 @@ function DirNode(props: NodeProps) {
             onClick={ev => (ev.ctrlKey || ev.metaKey ? onToggleMulti(e.path) : onOpen(e.path))}
             title={`${e.path} (${formatSize(e.size)})`}
           >
+            <RowCheck checked={multiSelected.has(e.path)} onToggle={() => onToggleMulti(e.path)} />
             <span className="chev-space" />
             <FileIcon />
             <span className="tree-label">{e.name}</span>
+            <button className="row-tag" title="Labels for this file"
+              onClick={ev => { ev.stopPropagation(); onLabel(e.path) }}><TagIcon /></button>
           </div>
         ),
       )}
@@ -103,7 +129,7 @@ function DirNode(props: NodeProps) {
   )
 }
 
-export function Explorer({ onOpen, onDirFocus, selected, rootLabel, multiSelected, onToggleMulti, onDropInto }: {
+export function Explorer({ onOpen, onDirFocus, selected, rootLabel, multiSelected, onToggleMulti, onDropInto, onLabel }: {
   onOpen: (path: string) => void
   onDirFocus: (path: string) => void
   selected: string | null
@@ -111,14 +137,15 @@ export function Explorer({ onOpen, onDirFocus, selected, rootLabel, multiSelecte
   multiSelected: Set<string>
   onToggleMulti: (path: string) => void
   onDropInto: (dir: string, items: DataTransferItemList) => void
+  onLabel: (path: string) => void
 }) {
   return (
-    <div className="explorer">
+    <div className={`explorer ${multiSelected.size > 0 ? 'has-sel' : ''}`}>
       <DirNode
         path="" name={rootLabel} depth={0}
         onOpen={onOpen} onDirFocus={onDirFocus} selected={selected}
         multiSelected={multiSelected} onToggleMulti={onToggleMulti}
-        onDropInto={onDropInto}
+        onDropInto={onDropInto} onLabel={onLabel}
       />
     </div>
   )

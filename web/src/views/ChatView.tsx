@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import {
   ChatProvider, ChatLayout, ChatThread, ChatEmptyState,
 } from '@parallelworks/ai-chat'
@@ -12,19 +12,27 @@ export function ChatView() {
   const adapter = useMemo(() => createStudioAdapter(), [])
   const cfg = useAppConfig()
 
+  const canvasRef = useRef<HTMLDivElement>(null)
+  const handleRef = useRef<HTMLDivElement>(null)
+
+  // Drag writes straight to the DOM; React state commits once on release,
+  // so the provider subtree does not re-render per mousemove.
   const onRailDrag = (e: React.MouseEvent) => {
     e.preventDefault()
     const startX = e.clientX
     const startW = rail
+    let w = startW
     const onMove = (ev: MouseEvent) => {
-      const w = Math.min(460, Math.max(180, startW + (ev.clientX - startX)))
-      setRail(w)
-      localStorage.setItem('ade-chat-rail', String(w))
+      w = Math.min(460, Math.max(180, startW + (ev.clientX - startX)))
+      canvasRef.current?.style.setProperty('--ade-chat-rail', `${w}px`)
+      if (handleRef.current) handleRef.current.style.left = `${w - 3}px`
     }
     const onUp = () => {
       document.body.classList.remove('resizing')
       window.removeEventListener('mousemove', onMove)
       window.removeEventListener('mouseup', onUp)
+      setRail(w)
+      localStorage.setItem('ade-chat-rail', String(w))
     }
     document.body.classList.add('resizing')
     window.addEventListener('mousemove', onMove)
@@ -53,11 +61,11 @@ export function ChatView() {
       config={{ variant: 'modern', suggestedPrompts: cfg.suggestedPrompts }}
     >
       <div className="chat-wrap">
-        <div className="chat-canvas card" style={{ ['--ade-chat-rail' as string]: `${rail}px` }}>
+        <div ref={canvasRef} className="chat-canvas card" style={{ ['--ade-chat-rail' as string]: `${rail}px` }}>
           <ChatLayout>
             {activeId ? <ChatThread conversationId={activeId} /> : <ChatEmptyState />}
           </ChatLayout>
-          <div className="chat-rail-handle" style={{ left: rail - 3 }} onMouseDown={onRailDrag} title="Drag to resize conversations" />
+          <div ref={handleRef} className="chat-rail-handle" style={{ left: rail - 3 }} onMouseDown={onRailDrag} title="Drag to resize conversations" />
         </div>
       </div>
     </ChatProvider>
