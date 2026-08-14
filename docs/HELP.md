@@ -1,4 +1,4 @@
-{appName} is a workspace over a knowledge base: the documents, images, spreadsheets, and code a team accumulates, indexed so both people and AI can find and use them. A chat assistant grounded in the corpus sits beside direct tools for browsing, searching, querying, and adding material, and connects to the ACTIVATE platform to reason over, preview, run, and monitor workflows.
+{appName} is a workspace over a knowledge base: the documents, images, spreadsheets, and code a team accumulates, indexed so both people and AI can find and use them. A chat assistant grounded in the corpus sits beside direct tools for browsing, searching, querying, and adding material. When connected to the Parallel Works ACTIVATE platform, the assistant can also reason over, preview, run, and monitor the account's workflows.
 
 The intent is an interaction layer for AI-driven engineering: one place where the knowledge base, the retrieval layer, the models, and the execution layer meet. Every substantive answer is built by searching and reading the actual corpus, with file paths cited so claims can be checked.
 
