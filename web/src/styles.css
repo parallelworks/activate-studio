@@ -214,6 +214,7 @@ button { font-family: inherit; }
 
 /* ---- upload ---- */
 .upload-menu { position: relative; }
+.upload-pop { left: 0; right: auto; }
 .card-pop {
   position: absolute; right: 0; top: calc(100% + 6px); z-index: 30;
   width: 300px; padding: 12px;
