@@ -63,7 +63,9 @@ export default function App() {
       <nav className={`sidenav ${navCollapsed ? 'collapsed' : ''}`}>
         <div className="sidenav-head">
           <div className="sidenav-brand" title={cfg.appName}>
-            <span className="brand-badge">{(cfg.appName[0] ?? 'S').toUpperCase()}</span>
+            {cfg.iconUrl
+              ? <img className="brand-icon" src={cfg.iconUrl} alt="" />
+              : <span className="brand-badge">{(cfg.appName[0] ?? 'S').toUpperCase()}</span>}
             <span className="brand-text"><b>{cfg.appName}</b></span>
           </div>
           <button

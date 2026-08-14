@@ -51,6 +51,7 @@ button { font-family: inherit; }
   background: var(--pw-navy); color: #fff; font-weight: 800; font-size: 13px;
   display: flex; align-items: center; justify-content: center;
 }
+.brand-icon { width: 26px; height: 26px; flex-shrink: 0; object-fit: contain; }
 .brand-text { font-size: 13px; color: var(--pw-muted); white-space: nowrap; overflow: hidden; }
 .brand-text b { color: var(--pw-navy); letter-spacing: 0.05em; font-weight: 750; margin-right: 3px; }
 .nav-collapse, .rail-collapse, .rail-expander {
