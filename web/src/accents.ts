@@ -77,9 +77,19 @@ function styleEl(id: string): HTMLStyleElement {
 
 export function applyAccent(name: string): void {
   const a = accentFor(name)
-  styleEl('accent-style').textContent = !a || name === 'navy' ? '' : `
-:root { --pw-navy: ${a.light[0]}; --pw-navy-2: ${a.light[1]}; --pw-active-pill: ${a.light[2]}; }
-[data-theme='dark'] { --pw-navy: ${a.dark[0]}; --pw-navy-2: ${a.dark[1]}; --pw-active-pill: ${a.dark[2]}; }
+  if (!a || name === 'navy') { styleEl('accent-style').textContent = ''; return }
+  // Dark mode carries hardcoded blues for solid elements (primary buttons,
+  // links, brand badge, --theme-element); derive accent equivalents so the
+  // whole surface follows the accent, not just ink and pills. The solid is
+  // the light ink lightened enough to sit on dark panels with white text.
+  const solid = mix(a.light[0], '#ffffff', 0.18)
+  const solidHover = mix(a.light[0], '#ffffff', 0.3)
+  styleEl('accent-style').textContent = `
+:root { --pw-navy: ${a.light[0]}; --pw-navy-2: ${a.light[1]}; --pw-active-pill: ${a.light[2]}; --pw-link: ${a.light[1]}; --theme-link: ${a.light[1]}; }
+[data-theme='dark'] { --pw-navy: ${a.dark[0]}; --pw-navy-2: ${a.dark[1]}; --pw-active-pill: ${a.dark[2]}; --pw-link: ${a.dark[0]}; --theme-link: ${a.dark[0]}; --theme-element: ${solid}; }
+[data-theme='dark'] .btn-primary { background: ${solid}; }
+[data-theme='dark'] .btn-primary:hover { background: ${solidHover}; }
+[data-theme='dark'] .brand-badge { background: ${solid}; }
 `
 }
 

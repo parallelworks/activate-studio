@@ -24,6 +24,10 @@ export interface StudioSettings {
   visionModel?: string
   disabledTools?: string[]
   customTools?: { name: string; description: string; command: string }[]
+  ragDefaultModel?: string
+  ragTopK?: number
+  ragAllowDeploymentKey?: boolean
+  ragEndpointAutoStart?: boolean
 }
 
 let cache: StudioSettings | null = null
@@ -60,6 +64,10 @@ export function effectiveSettings(): Required<StudioSettings> {
     visionModel: s.visionModel ?? process.env.ADE_VISION_MODEL ?? '',
     disabledTools: s.disabledTools ?? [],
     customTools: s.customTools ?? [],
+    ragDefaultModel: s.ragDefaultModel ?? process.env.RAG_DEFAULT_MODEL ?? '',
+    ragTopK: s.ragTopK ?? Math.min(Math.max(Number(process.env.RAG_TOP_K) || 6, 1), 20),
+    ragAllowDeploymentKey: s.ragAllowDeploymentKey ?? process.env.RAG_PROXY_ALLOW_DEPLOYMENT_KEY === '1',
+    ragEndpointAutoStart: s.ragEndpointAutoStart ?? process.env.RAG_ENDPOINT_AUTOSTART === '1',
   }
 }
 
@@ -107,6 +115,14 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
         command: String(t?.command ?? '').slice(0, 500),
       })).filter(t => t.name && t.command)
     }
+    if (body.ragDefaultModel !== undefined) next.ragDefaultModel = String(body.ragDefaultModel).slice(0, 120) || undefined
+    if (body.ragTopK !== undefined) {
+      const n = Number(body.ragTopK)
+      if (!Number.isFinite(n) || n < 1 || n > 20) throw new KbError(400, 'ragTopK must be 1 to 20')
+      next.ragTopK = n
+    }
+    if (body.ragAllowDeploymentKey !== undefined) next.ragAllowDeploymentKey = Boolean(body.ragAllowDeploymentKey)
+    if (body.ragEndpointAutoStart !== undefined) next.ragEndpointAutoStart = Boolean(body.ragEndpointAutoStart)
     await fsp.mkdir(INDEX_BASE, { recursive: true })
     await fsp.writeFile(FILE, JSON.stringify(next, null, 1))
     cache = next
