@@ -16,6 +16,8 @@ interface Effective {
   ragDefaultModel: string
   ragTopK: number
   ragAllowDeploymentKey: boolean
+  ragAdvertiseRagModel: boolean
+  ragAdvertiseAgentModel: boolean
   ragEndpointAutoStart: boolean
   ragEndpointName: string
   requirePersonalKey: boolean
@@ -43,11 +45,31 @@ function ModelSelect({ value, models, allowEmpty, emptyLabel, onChange }: {
   emptyLabel?: string
   onChange: (v: string) => void
 }) {
+  // Standalone deployments may list no models (local endpoint, no catalog);
+  // the picker always offers typing an id directly.
+  const [typing, setTyping] = useState<string | null>(null)
   const opts = [...new Set([...(value && !models.includes(value) ? [value] : []), ...models])]
+  if (typing !== null) {
+    return (
+      <input className="field" autoFocus value={typing}
+        placeholder="model id, e.g. llama-3.3-70b"
+        onChange={e => setTyping(e.target.value)}
+        onBlur={() => { const v = typing.trim(); setTyping(null); if (v) onChange(v) }}
+        onKeyDown={e => {
+          if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+          if (e.key === 'Escape') setTyping(null)
+        }}
+      />
+    )
+  }
   return (
-    <select className="field" value={value} onChange={e => onChange(e.target.value)}>
+    <select className="field" value={value} onChange={e => {
+      if (e.target.value === '__type__') setTyping(value)
+      else onChange(e.target.value)
+    }}>
       {allowEmpty && <option value="">{emptyLabel ?? '(none)'}</option>}
       {opts.map(m => <option key={m} value={m}>{m}</option>)}
+      <option value="__type__">Type a model id…</option>
     </select>
   )
 }
@@ -482,7 +504,7 @@ export function SettingsView() {
               </p>
               <ul className="rag-modes">
                 <li><code>studio-agent</code> runs the full assistant pipeline (system prompt, search, read, query, labels) on the underlying model and returns the grounded answer.</li>
-                <li><code>studio-rag</code> injects retrieved context blocks with citation instructions and makes one model call; any other model id behaves the same with that model.</li>
+                <li><code>studio-rag</code> injects retrieved context blocks and makes one model call, without the assistant pipeline. It suits plain chat clients; code agents (pw code) drive it with their own tools and lose the grounding, so it is unlisted by default and callable by name; the options below choose which models are advertised. Any other model id behaves like studio-rag with that model.</li>
                 <li>Pick the underlying model per request as <code>studio-agent/&lt;model-id&gt;</code>, or set the default below. Headers <code>X-RAG-Top-K</code>, <code>X-RAG-Tags</code>, and <code>X-RAG-Off: 1</code> tune retrieval per request.</li>
               </ul>
               <div className="settings-grid">
@@ -507,6 +529,17 @@ export function SettingsView() {
                   onChange={e => setForm({ ...form, ragAllowDeploymentKey: e.target.checked })} />
                 Allow callers without a bearer key to use the deployment credential (off means every caller must present their own key)
               </label>
+              <label className="key-persist">
+                <input type="checkbox" checked={form.ragAdvertiseAgentModel}
+                  onChange={e => setForm({ ...form, ragAdvertiseAgentModel: e.target.checked })} />
+                Advertise studio-agent in model listings (full pipeline; the right choice inside tool-calling harnesses such as pw code)
+              </label>
+              <label className="key-persist">
+                <input type="checkbox" checked={form.ragAdvertiseRagModel}
+                  onChange={e => setForm({ ...form, ragAdvertiseRagModel: e.target.checked })} />
+                Advertise studio-rag in model listings (fast single call; suits plain chat interfaces, loses grounding inside code agents)
+              </label>
+              <p className="muted key-note">Both stay callable by name whether advertised or not.</p>
               <div className="settings-grid">
                 <div>
                   <label className="field-label">Platform registration name (how the model appears in catalogs and dropdowns)</label>
@@ -523,7 +556,7 @@ export function SettingsView() {
               {saveRow(false)}
               <div className="tool-group">Platform registration</div>
               <p className="muted view-sub">
-                Publishes this /v1 surface into the platform chat and AI provider catalog (via <code>pw endpoints run --openai</code> around a local forwarder), so users pick the corpus-grounded models like any other. The registered provider authenticates with the deployment credential. Requires an authenticated pw CLI on the host.
+                Publishes this /v1 surface into the platform chat and AI provider catalog (via <code>pw endpoints run --openai</code> around a local forwarder), so users pick the corpus-grounded models like any other. Platform callers reach it with their own credentials; the deployment credential covers only keyless clients such as pw code. Requires an authenticated pw CLI on the host.
               </p>
               <div className={`rag-banner ${ragEp?.state === 'running' ? 'connected' : ragEp?.state === 'error' ? 'errored' : ''}`}>
                 <div className="rag-banner-head">
@@ -550,14 +583,6 @@ export function SettingsView() {
                   </div>
                 )}
                 {ragEp?.detail && ragEp.state !== 'running' && <p className="muted key-note">{ragEp.detail}</p>}
-              </div>
-              <div className="tool-group">Underlying models this deployment can serve</div>
-              <p className="muted view-sub">
-                Bare <code>studio-agent</code> / <code>studio-rag</code> use the default above when the caller's key can access it, otherwise the caller's own first available model; any of these can be pinned per request as <code>studio-agent/&lt;id&gt;</code>.
-              </p>
-              <div className="rag-chip-row">
-                {pickableModels.map(m => <code key={m}>{m}</code>)}
-                {!pickableModels.length && <span className="muted">No models visible to the deployment credential.</span>}
               </div>
             </>
           )}

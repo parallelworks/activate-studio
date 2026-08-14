@@ -68,7 +68,7 @@ The address bar tracks what you are looking at: open documents and views live in
 
 ## RAG for other tools
 
-The knowledge base is usable as a grounded model from outside the Studio: the deployment serves an OpenAI-compatible endpoint where `studio-agent` answers with the full assistant pipeline and `studio-rag` adds retrieved, cited context to a single model call. Any OpenAI-speaking client (pw code, SDKs) can point at it with its own API key, and the deployment can publish both models into the platform chat and provider catalog from the Settings RAG endpoint section.
+The knowledge base is usable as a grounded model from outside the Studio: the deployment serves an OpenAI-compatible endpoint where `studio-agent` answers with the full assistant pipeline. Any OpenAI-speaking client (pw code, SDKs) can point at it with its own API key, and the deployment can publish it into the platform chat and provider catalog from the Settings RAG endpoint section. A second mode, `studio-rag`, injects retrieved cited context into a single model call; it is unlisted but callable by name, suited to programmatic Q&A without tools.
 
 ## The index
 
