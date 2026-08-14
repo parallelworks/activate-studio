@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { MAX_TOOL_ITERATIONS } from '../config.js'
-import { gatewayConfigured, listModels, streamTurn, WireMessage, WireToolCall } from './gateway.js'
+import { aiHealth, gatewayConfigured, listModels, streamTurn, WireMessage, WireToolCall } from './gateway.js'
 import { TOOL_CALLS, TOOL_SPECS, activeToolSpecs, commandFor, customToolSpecs, executeTool, expandSlashCommand, skillToolSpec } from './tools.js'
 import { systemPrompt } from './context.js'
 import { attachmentContext } from '../attachments.js'
@@ -55,6 +55,9 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
       Number(String(a.id).startsWith('org:')) - Number(String(b.id).startsWith('org:')))
     return reply.send({ models, unreachableSessions: wire.unreachable_sessions ?? [] })
   })
+
+  // Live model-callability check for the footer status line.
+  app.get('/api/ai/health', async () => aiHealth())
 
   // Tool catalog for the Settings page: built-ins plus custom, with state.
   app.get('/api/chat/tools', async () => {
@@ -253,7 +256,12 @@ ${ctx}` : ctx
       return reply
     } catch (err: any) {
       app.log.error({ err }, 'chat stream failed')
-      if (!abort.signal.aborted) sse(res, 'error', { message: String(err?.message ?? err) })
+      if (!abort.signal.aborted) {
+        sse(res, 'error', {
+          message: String(err?.message ?? err),
+          kind: err?.name === 'GatewayAuthError' ? 'credential' : 'error',
+        })
+      }
     }
     // An aborted or failed stream still keeps whatever was said.
     if (!recorded && finalContent) {
