@@ -100,7 +100,7 @@ export default function App() {
         setView('library')
         return
       }
-      const vm = location.hash.match(/^#view=([a-z]+)(?::([a-z]+))?$/)
+      const vm = location.hash.match(/^#view=([a-z]+)(?::([a-z0-9-]+))?$/)
       const v = vm?.[1]
       if (v && NAV.some(n => n.id === v)) {
         setView(v as ViewId)
@@ -141,6 +141,8 @@ export default function App() {
       ? `#open=${display.kind}:${encodeURIComponent(display.target).replace(/%2F/gi, '/')}`
       : view !== 'chat' ? `#view=${view}` : ''
     if ((location.hash || '') === hash) return
+    // Views may own a :section suffix on their hash; leave it theirs.
+    if (hash && location.hash.startsWith(`${hash}:`)) return
     history.pushState(null, '', location.pathname + location.search + hash)
   }, [view, display])
 

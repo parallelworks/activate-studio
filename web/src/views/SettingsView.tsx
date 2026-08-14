@@ -78,7 +78,15 @@ export function SettingsView() {
   const [persistKey, setPersistKey] = useState(true)
   const [keyBusy, setKeyBusy] = useState(false)
   const [keyNote, setKeyNote] = useState('')
-  const [section, setSection] = useState<SectionId>('general')
+  const [section, setSection] = useState<SectionId>(() => {
+    const m = location.hash.match(/^#view=settings:([a-z-]+)/)
+    return (m?.[1] as SectionId) || 'general'
+  })
+
+  const goSection = (id: SectionId) => {
+    setSection(id)
+    history.replaceState(null, '', `${location.pathname}${location.search}#view=settings:${id}`)
+  }
   const [ragEp, setRagEp] = useState<{ state: string; name: string | null; url: string | null; detail: string | null } | null>(null)
 
   const refreshRagEp = () => fetch('/api/rag/endpoint').then(r => r.json()).then(setRagEp).catch(() => {})
@@ -198,7 +206,7 @@ export function SettingsView() {
         <nav className="help-nav">
           <div className="help-nav-head"><span>Settings</span></div>
           {sections.map(s => (
-            <button key={s.id} className={section === s.id ? 'active' : ''} onClick={() => setSection(s.id)}>
+            <button key={s.id} className={section === s.id ? 'active' : ''} onClick={() => goSection(s.id)}>
               <span>{s.label}</span>
             </button>
           ))}
