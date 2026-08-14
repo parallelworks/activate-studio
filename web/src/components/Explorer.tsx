@@ -40,6 +40,16 @@ const RowCheck = ({ checked, onToggle }: { checked: boolean; onToggle: () => voi
   </span>
 )
 
+const TreeTags = ({ tags, show }: { tags?: string[]; show: boolean }) => {
+  if (!show || !tags?.length) return null
+  return (
+    <span className="tree-tags">
+      {tags.slice(0, 2).map(t => <span key={t} className="tree-tag">{t}</span>)}
+      {tags.length > 2 && <span className="tree-tag">+{tags.length - 2}</span>}
+    </span>
+  )
+}
+
 const TagIcon = () => (
   <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.4">
     <path d="M2 2h5.2L14 8.8a1 1 0 0 1 0 1.4L10.2 14a1 1 0 0 1-1.4 0L2 7.2V2z" /><circle cx="5.2" cy="5.2" r="1" fill="currentColor" stroke="none" />
@@ -58,19 +68,22 @@ interface NodeProps {
   onDropInto: (dir: string, items: DataTransferItemList) => void
   onLabel: (path: string) => void
   selectMode: boolean
+  showLabels: boolean
+  tagsTick: number
+  tags?: string[]
 }
 
 function DirNode(props: NodeProps) {
-  const { path, name, depth, onOpen, onDirFocus, selected, multiSelected, onToggleMulti, onDropInto, onLabel, selectMode } = props
+  const { path, name, depth, onOpen, onDirFocus, selected, multiSelected, onToggleMulti, onDropInto, onLabel, selectMode, showLabels, tagsTick, tags } = props
   const [open, setOpen] = useState(depth === 0)
   const [entries, setEntries] = useState<KbEntry[] | null>(null)
   const [dropOver, setDropOver] = useState(false)
 
+  // Re-fetch on every open and on tagsTick so a just-applied label shows
+  // without collapsing the expanded tree.
   useEffect(() => {
-    if (open && entries === null) {
-      api.tree(path).then(r => setEntries(r.entries)).catch(() => setEntries([]))
-    }
-  }, [open, entries, path])
+    if (open) api.tree(path).then(r => setEntries(r.entries)).catch(() => setEntries([]))
+  }, [open, path, tagsTick])
 
   // Reveal the selected file: expand every ancestor directory on the way.
   useEffect(() => {
@@ -101,13 +114,14 @@ function DirNode(props: NodeProps) {
           <Chevron open={open} />
           <FolderIcon open={open} />
           <span className="tree-label">{name}</span>
+          <TreeTags tags={tags} show={showLabels} />
           <button className="row-tag" title="Labels for this directory (applies to everything beneath it)"
             onClick={e => { e.stopPropagation(); onLabel(path) }}><TagIcon /></button>
         </div>
       )}
       {open && entries?.map(e =>
         e.type === 'dir' ? (
-          <DirNode key={e.path} {...props} path={e.path} name={e.name} depth={depth + 1} />
+          <DirNode key={e.path} {...props} path={e.path} name={e.name} depth={depth + 1} tags={e.tags} />
         ) : (
           <div
             key={e.path}
@@ -121,6 +135,7 @@ function DirNode(props: NodeProps) {
             <span className="chev-space" />
             <FileIcon />
             <span className="tree-label">{e.name}</span>
+            <TreeTags tags={e.tags} show={showLabels} />
             <button className="row-tag" title="Labels for this file"
               onClick={ev => { ev.stopPropagation(); onLabel(e.path) }}><TagIcon /></button>
           </div>
@@ -130,7 +145,7 @@ function DirNode(props: NodeProps) {
   )
 }
 
-export function Explorer({ onOpen, onDirFocus, selected, rootLabel, multiSelected, onToggleMulti, onDropInto, onLabel, selectMode }: {
+export function Explorer({ onOpen, onDirFocus, selected, rootLabel, multiSelected, onToggleMulti, onDropInto, onLabel, selectMode, showLabels, tagsTick }: {
   onOpen: (path: string) => void
   onDirFocus: (path: string) => void
   selected: string | null
@@ -140,6 +155,8 @@ export function Explorer({ onOpen, onDirFocus, selected, rootLabel, multiSelecte
   onDropInto: (dir: string, items: DataTransferItemList) => void
   onLabel: (path: string) => void
   selectMode: boolean
+  showLabels: boolean
+  tagsTick: number
 }) {
   return (
     <div className={`explorer ${selectMode ? 'has-sel' : ''}`}>
@@ -148,6 +165,7 @@ export function Explorer({ onOpen, onDirFocus, selected, rootLabel, multiSelecte
         onOpen={onOpen} onDirFocus={onDirFocus} selected={selected}
         multiSelected={multiSelected} onToggleMulti={onToggleMulti}
         onDropInto={onDropInto} onLabel={onLabel} selectMode={selectMode}
+        showLabels={showLabels} tagsTick={tagsTick}
       />
     </div>
   )

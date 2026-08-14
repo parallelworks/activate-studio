@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Streamdown } from 'streamdown'
 import { api, FileContent } from '../api'
 import { TagMenu } from './TagMenu'
+import { ModelViewer } from './ModelViewer'
 
 const OFFICE_SUFFIXES = ['.docx', '.pptx', '.xlsx', '.doc', '.ppt', '.xls', '.odt', '.odp', '.ods']
 
@@ -61,12 +62,13 @@ export function Viewer({ path, onDeleted }: {
   const suffix = suffixOf(path)
   const isMarkdown = suffix === '.md'
   const isImage = file.kind === 'image'
+  const isModel = file.kind === 'model'
   const isPdf = suffix === '.pdf'
   const isOffice = OFFICE_SUFFIXES.includes(suffix)
   const isText = file.kind === 'text'
   // Text files have one representation; binary formats have an original
   // rendering and, separately, the text stored in the search index.
-  const hasTabs = !isText && (isImage || isPdf || isOffice)
+  const hasTabs = !isText && (isImage || isPdf || isOffice || isModel)
 
   const doDelete = async () => {
     setDeleting(true)
@@ -91,7 +93,9 @@ export function Viewer({ path, onDeleted }: {
       </div>
     )
 
-  const previewView = isImage ? (
+  const previewView = isModel ? (
+    <ModelViewer path={path} />
+  ) : isImage ? (
     <div className="viewer-body"><img src={api.rawUrl(path)} alt={path} style={{ maxWidth: '100%' }} /></div>
   ) : isPdf ? (
     <iframe className="pdf-frame" src={api.rawUrl(path)} title={path} />

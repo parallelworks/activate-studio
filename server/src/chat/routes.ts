@@ -3,6 +3,7 @@ import { MAX_TOOL_ITERATIONS } from '../config.js'
 import { gatewayConfigured, listModels, streamTurn, WireMessage, WireToolCall } from './gateway.js'
 import { TOOL_SPECS, executeTool } from './tools.js'
 import { systemPrompt } from './context.js'
+import { attachmentContext } from '../attachments.js'
 
 interface StreamBody {
   model: string
@@ -55,11 +56,21 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
       return reply
     }
 
-    // Client history arrives in wire shape; keep only fields the gateway needs.
-    const history: WireMessage[] = (body.messages ?? []).map(m => ({
-      role: m.role,
-      content: typeof m.content === 'string' ? m.content : m.content == null ? '' : JSON.stringify(m.content),
-    })).filter(m => m.role !== 'system')
+    // Client history arrives in wire shape; keep only fields the gateway
+    // needs, expanding attachment references into their extracted text.
+    const history: WireMessage[] = []
+    for (const m of body.messages ?? []) {
+      if (m.role === 'system') continue
+      let content = typeof m.content === 'string' ? m.content : m.content == null ? '' : JSON.stringify(m.content)
+      const ids = (m as { attachment_ids?: string[] }).attachment_ids
+      if (ids?.length) {
+        const ctx = await attachmentContext(ids).catch(() => '')
+        if (ctx) content = content ? `${content}
+
+${ctx}` : ctx
+      }
+      history.push({ role: m.role, content })
+    }
 
     const today = new Date().toISOString().slice(0, 10)
     const messages: WireMessage[] = [
@@ -110,7 +121,6 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
               const out = await executeTool(tc.function.name, tc.function.arguments)
               result = out.result
               summary = out.summary
-              if (out.display) sse(res, 'display', out.display)
               toolCache.set(key, result)
             }
             sse(res, 'tool', { phase: 'result', name: tc.function.name, summary })

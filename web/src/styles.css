@@ -77,7 +77,7 @@
 [data-theme='dark'] .result-row:hover { background: #16233a; }
 [data-theme='dark'] .brand-badge { background: #1d4ed8; }
 [data-theme='dark'] .help-lead p, [data-theme='dark'] .help-card-body p, [data-theme='dark'] .help-card-body ul { color: #b6c2d2; }
-[data-theme='dark'] .search-hero h1, [data-theme='dark'] .empty-state h2 { color: var(--pw-text); }
+[data-theme='dark'] .empty-state h2 { color: var(--pw-text); }
 [data-theme='dark'] .pill-fts { background: #16324a; color: #7cb8f0; }
 [data-theme='dark'] .pill-vector { background: #2b2350; color: #b5a3f5; }
 [data-theme='dark'] .pill-name { background: #1e293b; color: #94a3b8; }
@@ -88,7 +88,7 @@
 * { box-sizing: border-box; }
 html, body, #root { height: 100%; margin: 0; }
 body {
-  font-family: "Geist Sans", Lato, system-ui, -apple-system, sans-serif;
+  font-family: 'Geist Variable', 'Geist Sans', system-ui, -apple-system, sans-serif;
   font-size: 14px;
   color: var(--pw-text);
   background: var(--pw-bg);
@@ -237,6 +237,12 @@ button { font-family: inherit; }
 .tree-row.dir { color: #23324a; font-weight: 500; }
 .tree-row.file { color: #3c4656; }
 .tree-label { overflow: hidden; text-overflow: ellipsis; }
+.tree-tags { display: inline-flex; gap: 3px; margin-left: 2px; flex-shrink: 0; }
+.tree-tag {
+  font-size: 9.5px; line-height: 15px; padding: 0 6px; border-radius: 999px;
+  background: #eef4f9; border: 1px solid #d3e2ee; color: #33607f; white-space: nowrap;
+}
+[data-theme='dark'] .tree-tag { background: #10283a; border-color: #1f4a66; color: #7cb8f0; }
 
 .select-toggle.active { background: var(--pw-active-pill); color: var(--pw-navy); border-color: #9cc6e4; }
 
@@ -300,8 +306,8 @@ button { font-family: inherit; }
 
 /* ---- search view ---- */
 .search-view { padding: 12px; overflow: auto; flex: 1; display: flex; flex-direction: column; gap: 12px; }
-.search-hero { padding: 22px 24px; }
-.search-hero h1 { margin: 0 0 6px; font-size: 20px; font-weight: 650; color: var(--pw-navy); }
+.search-hero { padding: 20px 24px; }
+
 .search-bar { display: flex; gap: 8px; margin-top: 14px; }
 .search-bar input {
   flex: 1; padding: 9px 12px; font-size: 14px;
@@ -372,7 +378,7 @@ button { font-family: inherit; }
 
 /* ---- query view ---- */
 .query-view { padding: 12px; overflow: auto; flex: 1; display: flex; flex-direction: column; gap: 12px; }
-.query-controls { padding: 16px 20px; }
+.query-controls { padding: 20px 24px; }
 .query-mode { display: flex; gap: 2px; border-bottom: 1px solid var(--pw-border); margin-bottom: 12px; }
 .query-mode button {
   padding: 7px 14px; border: none; background: none; cursor: pointer;
@@ -417,7 +423,7 @@ button { font-family: inherit; }
 
 .view-title { margin: 0 0 4px; font-size: 20px; font-weight: 650; color: var(--pw-navy); }
 .view-sub { margin: 0 0 14px; font-size: 13px; }
-.ov-head { padding: 18px 24px 10px; }
+.ov-head { padding: 20px 24px 12px; }
 
 /* ---- settings ---- */
 .settings-view { padding: 12px; overflow: auto; flex: 1; }
@@ -530,3 +536,55 @@ button { font-family: inherit; }
 .muted { color: var(--pw-muted); }
 .muted.pad { padding: 12px 16px; }
 .error { color: #b91c1c; }
+
+/* 3D model viewer */
+.model-viewer { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.model-canvas { flex: 1; min-height: 320px; }
+.model-canvas canvas { display: block; }
+.model-info { margin: 0; padding: 6px 16px 12px; font-size: 12px; color: var(--pw-muted); }
+
+/* Streamdown code blocks (chat + markdown viewer): platform strip header,
+   hairline border, compact type instead of the package's rounded-xl card. */
+[data-streamdown='code-block'] {
+  margin: 10px 0; padding: 0; gap: 0;
+  border-radius: 8px; border: 1px solid var(--pw-border);
+  background: #f8fafc; overflow: hidden;
+}
+[data-streamdown='code-block-header'] {
+  height: 28px; padding: 0 10px;
+  background: #f1f5f9; border-bottom: 1px solid var(--pw-border);
+  font-size: 11px; letter-spacing: 0.02em;
+}
+[data-streamdown='code-block-header'] span:empty::before { content: 'code'; }
+[data-streamdown='code-block'] > div:has(> [data-streamdown='code-block-actions']) {
+  margin-top: -28px; height: 28px; align-items: center; padding-right: 4px; top: 0;
+}
+[data-streamdown='code-block-actions'] {
+  border: none; background: transparent; backdrop-filter: none; padding: 0 2px; gap: 0;
+}
+[data-streamdown='code-block-actions'] svg { width: 13px; height: 13px; }
+[data-streamdown='code-block-body'] {
+  font-size: 12.5px; line-height: 1.55;
+  border: none; border-radius: 0; background: transparent; padding: 0;
+}
+[data-streamdown='code-block-body'] pre { margin: 0; padding: 10px 12px; background: transparent !important; }
+[data-streamdown='inline-code'] {
+  font-size: 0.88em; padding: 1px 5px; border-radius: 5px;
+  background: #eef2f6; border: 1px solid var(--pw-border);
+}
+[data-theme='dark'] [data-streamdown='code-block'] { background: #0f1a26; }
+[data-theme='dark'] [data-streamdown='code-block-header'] { background: #16222f; }
+[data-theme='dark'] [data-streamdown='inline-code'] { background: #16222f; border-color: var(--pw-border); }
+
+/* Monospace surfaces share the platform's Geist Mono. */
+code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block'], [data-streamdown='inline-code'] {
+  font-family: 'Geist Mono Variable', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+}
+
+.accent-row { display: flex; gap: 8px; padding: 6px 0 2px; }
+.accent-swatch {
+  width: 22px; height: 22px; border-radius: 50%;
+  border: 2px solid #fff; box-shadow: 0 0 0 1px var(--pw-border-strong); cursor: pointer;
+}
+.accent-swatch.active { box-shadow: 0 0 0 2px var(--pw-navy); }
+[data-theme='dark'] .accent-swatch { border-color: var(--pw-panel); }

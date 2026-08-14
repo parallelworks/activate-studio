@@ -10,11 +10,12 @@ Ask in plain language; the assistant searches, reads the files that matter, and 
 - Renders a workflow DAG in the Library when you ask to see one.
 - Validates runs with a dry run; launches a real run only when you explicitly ask.
 - Lists and inspects runs, including errors and log tails.
-- "Show me &lt;file&gt;" opens anything in the viewer.
+- "Show me &lt;file&gt;" returns a link that opens it in the Library viewer.
+- Attach files or images with the paperclip; they are filed into the library, indexed, and their content (including text read from images) is part of the conversation.
 
 ## Library
 
-The file tree beside a viewer. Markdown and code render directly; images and PDFs show the original; office documents get a PDF preview.
+The file tree beside a viewer. Markdown and code render directly; images and PDFs show the original; office documents get a PDF preview; STL and STEP models open in an interactive 3D viewer.
 
 - The **Indexed text** tab shows exactly what the search index holds for a file.
 - For images that is OCR text plus a model-written description.
@@ -51,3 +52,15 @@ Everything added becomes searchable in about a second.
 Built on GUFI, the Grand Unified File Index from Los Alamos National Laboratory: a tree of small databases mirroring the directory structure, holding metadata, extracted text, and embedding vectors. Access control is inherited from the filesystem, and additions re-index only the touched folder.
 
 Corpus root for this deployment: **{kbLabel}**
+
+## Built on
+
+Open technologies, each doing the job it was built for.
+
+- [GUFI](https://github.com/mar-file-system/GUFI), the Grand Unified File Index from Los Alamos National Laboratory: the metadata, full-text, and vector index.
+- [sqlite-vec](https://github.com/asg017/sqlite-vec) and [sqlite-lembed](https://github.com/asg017/sqlite-lembed): embedding storage and on-index embedding with a local GGUF model.
+- [@parallelworks/ai-chat](https://www.npmjs.com/package/@parallelworks/ai-chat): the chat interface components, driven by a custom adapter against any OpenAI-compatible endpoint.
+- [Streamdown](https://github.com/vercel/streamdown): streaming markdown rendering in chat and the viewer.
+- [three.js](https://threejs.org/) and [occt-import-js](https://github.com/kovacsv/occt-import-js) (Open CASCADE compiled to WebAssembly): the 3D model viewer and STEP conversion.
+- [Tesseract](https://github.com/tesseract-ocr/tesseract): OCR for text inside images.
+- [Fastify](https://fastify.dev/), [React](https://react.dev/), and [Vite](https://vite.dev/): the server and the interface.

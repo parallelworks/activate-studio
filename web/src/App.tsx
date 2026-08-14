@@ -8,6 +8,7 @@ import { HelpView } from './views/HelpView'
 import { SettingsView } from './views/SettingsView'
 import { StatusFooter } from './components/StatusFooter'
 import { useAppConfig } from './config'
+import { applyAccent } from './accents'
 
 type ViewId = 'chat' | 'library' | 'search' | 'query' | 'overview' | 'settings' | 'help'
 export type Display = { kind: 'file'; target: string } | { kind: 'workflow_dag'; target: string }
@@ -63,6 +64,7 @@ export default function App() {
 
   useEffect(() => { localStorage.setItem('ade-nav-collapsed', navCollapsed ? '1' : '0') }, [navCollapsed])
   useEffect(() => { if (cfg.loaded) document.title = cfg.appName }, [cfg])
+  useEffect(() => { if (cfg.loaded) applyAccent(cfg.accent) }, [cfg])
   useEffect(() => {
     const effective = theme ?? cfg.theme
     document.documentElement.dataset.theme = effective
@@ -74,16 +76,19 @@ export default function App() {
     localStorage.setItem('ade-theme', next)
   }
 
+  // Chat replies carry #open=kind:target links instead of auto-navigating;
+  // the same hash form deep-links on page load.
   useEffect(() => {
-    const onDisplay = (e: Event) => {
-      const detail = (e as CustomEvent).detail as Display
-      if (detail?.kind && detail?.target != null) {
-        setDisplay(detail)
-        setView('library')
-      }
+    const applyHash = () => {
+      const m = location.hash.match(/^#open=(file|workflow_dag):(.+)$/)
+      if (!m) return
+      setDisplay({ kind: m[1] as Display['kind'], target: decodeURIComponent(m[2]) })
+      setView('library')
+      history.replaceState(null, '', location.pathname + location.search)
     }
-    window.addEventListener('ade-display', onDisplay)
-    return () => window.removeEventListener('ade-display', onDisplay)
+    applyHash()
+    window.addEventListener('hashchange', applyHash)
+    return () => window.removeEventListener('hashchange', applyHash)
   }, [])
 
   const openFile = (path: string) => {

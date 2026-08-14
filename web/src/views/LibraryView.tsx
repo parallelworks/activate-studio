@@ -24,6 +24,8 @@ export function LibraryView({ display, onDisplay }: {
   const [multiSel, setMultiSel] = useState<Set<string>>(new Set())
   const [tagMenuOpen, setTagMenuOpen] = useState(false)
   const [selectMode, setSelectMode] = useState(false)
+  const [showLabels, setShowLabels] = useState(() => localStorage.getItem('ade-tree-labels') === '1')
+  const [tagsTick, setTagsTick] = useState(0)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [bulkNote, setBulkNote] = useState('')
 
@@ -51,9 +53,16 @@ export function LibraryView({ display, onDisplay }: {
 
   useEffect(() => {
     const onChange = () => setRefreshKey(k => k + 1)
+    const onTags = () => setTagsTick(k => k + 1)
     window.addEventListener('ade-kb-changed', onChange)
-    return () => window.removeEventListener('ade-kb-changed', onChange)
+    window.addEventListener('ade-tags-changed', onTags)
+    return () => {
+      window.removeEventListener('ade-kb-changed', onChange)
+      window.removeEventListener('ade-tags-changed', onTags)
+    }
   }, [])
+
+  useEffect(() => { localStorage.setItem('ade-tree-labels', showLabels ? '1' : '0') }, [showLabels])
 
   const toggleMulti = (p: string) => setMultiSel(s => {
     const next = new Set(s)
@@ -116,6 +125,13 @@ export function LibraryView({ display, onDisplay }: {
                 <span className="rail-title">{cfg.kbLabel}</span>
                 <span className="rail-actions">
                   <button
+                    className={`rail-collapse select-toggle ${showLabels ? 'active' : ''}`}
+                    title="Show applied labels in the tree"
+                    onClick={() => setShowLabels(v => !v)}
+                  >
+                    <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M2 2h5.2L14 8.8a1 1 0 0 1 0 1.4L10.2 14a1 1 0 0 1-1.4 0L2 7.2V2z"/><circle cx="5.2" cy="5.2" r="1" fill="currentColor" stroke="none"/></svg>
+                  </button>
+                  <button
                     className={`rail-collapse select-toggle ${selectMode ? 'active' : ''}`}
                     title="Select multiple items for labeling or deletion"
                     onClick={() => { setSelectMode(m => !m); setMultiSel(new Set()); setTagMenuOpen(false); setConfirmDelete(false) }}
@@ -168,6 +184,8 @@ export function LibraryView({ display, onDisplay }: {
                 onDropInto={(dir, items) => void uploadTo(dir, items)}
                 onLabel={p => { setMultiSel(new Set([p])); setTagMenuOpen(true); setSelectMode(true) }}
                 selectMode={selectMode}
+                showLabels={showLabels || selectMode}
+                tagsTick={tagsTick}
               />
               {progress && (
                 <div className="upload-panel">

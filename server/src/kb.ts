@@ -2,7 +2,7 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import {
   KB_ROOT, EXTRACT_CACHE, EXCLUDE_DIRS, EXCLUDE_FILE_SUFFIXES,
-  TEXT_SUFFIXES, EXTRACTED_SUFFIXES, IMAGE_SUFFIXES, MAX_PREVIEW_BYTES,
+  TEXT_SUFFIXES, EXTRACTED_SUFFIXES, IMAGE_SUFFIXES, MODEL_SUFFIXES, MAX_PREVIEW_BYTES,
 } from './config.js'
 
 export interface KbEntry {
@@ -11,7 +11,7 @@ export interface KbEntry {
   type: 'dir' | 'file'
   size: number
   mtime: number
-  kind: 'text' | 'extracted' | 'image' | 'binary' | 'dir'
+  kind: 'text' | 'extracted' | 'image' | 'model' | 'binary' | 'dir'
 }
 
 export class KbError extends Error {
@@ -34,6 +34,7 @@ export function classify(name: string, isDir: boolean): KbEntry['kind'] {
   if (TEXT_SUFFIXES.has(ext)) return 'text'
   if (EXTRACTED_SUFFIXES.has(ext)) return 'extracted'
   if (IMAGE_SUFFIXES.has(ext)) return 'image'
+  if (MODEL_SUFFIXES.has(ext)) return 'model'
   return 'binary'
 }
 

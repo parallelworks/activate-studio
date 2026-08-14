@@ -179,7 +179,7 @@ export const TOOL_SPECS: ToolSpec[] = [
     function: {
       name: 'show_in_viewer',
       description:
-        'Display something in the library viewer pane for the user: a knowledge base file (images render as images, PDFs as PDFs) or a workflow DAG diagram. Use whenever the user asks to see, show, open, or display a file, image, document, or workflow graph.',
+        'Get a link that opens something in the library viewer: a knowledge base file (images render as images, PDFs as PDFs, STL and STEP models in a 3D viewer) or a workflow DAG diagram. Returns a markdown link; include it verbatim in your reply so the user can click through. Use whenever the user asks to see, show, open, or display a file, image, document, or workflow graph.',
       parameters: {
         type: 'object',
         properties: {
@@ -235,7 +235,6 @@ function grepFallback(query: string, limit: number): Promise<string[]> {
 export interface ToolOutcome {
   result: string
   summary: string
-  display?: { kind: 'file' | 'workflow_dag'; target: string }
 }
 
 export async function executeTool(name: string, argsJson: string): Promise<ToolOutcome> {
@@ -365,10 +364,13 @@ export async function executeTool(name: string, argsJson: string): Promise<ToolO
           target = target.replace(/[^A-Za-z0-9_./-]/g, '')
           await pwCli(['workflows', 'get', target])
         }
+        const href = `#open=${kind}:${encodeURIComponent(target)}`
+        const label = kind === 'file'
+          ? `Open ${target.split('/').pop()} in the Library`
+          : `Open the ${target} DAG in the Library`
         return {
-          result: `Now displayed in the library viewer: ${kind === 'file' ? target : `DAG of workflow ${target}`}.`,
-          summary: `showing ${target}`,
-          display: { kind, target },
+          result: `Link ready. Include this markdown link verbatim in your reply so the user can open it (${kind === 'file' ? 'the Library viewer opens the file and reveals it in its directory' : 'the Library viewer renders the workflow DAG'}): [${label}](${href})`,
+          summary: `link for ${target}`,
         }
       }
       case 'workflow_run_detail': {

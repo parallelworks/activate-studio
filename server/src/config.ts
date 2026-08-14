@@ -30,6 +30,7 @@ export const TEXT_SUFFIXES = new Set([
 ])
 export const EXTRACTED_SUFFIXES = new Set(['.pdf', '.docx', '.pptx', '.xlsx'])
 export const IMAGE_SUFFIXES = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp'])
+export const MODEL_SUFFIXES = new Set(['.stl', '.step', '.stp'])
 
 export const MAX_PREVIEW_BYTES = 512 * 1024
 export const MAX_TOOL_ITERATIONS = 24
