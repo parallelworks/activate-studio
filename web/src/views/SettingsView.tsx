@@ -61,8 +61,21 @@ export function SettingsView() {
   const [catalog, setCatalog] = useState<CatalogTool[]>([])
   const [ext, setExt] = useState<Extensions | null>(null)
   const [specOpen, setSpecOpen] = useState<string | null>(null)
-  const [me, setMe] = useState<{ authEnabled?: boolean; verified: boolean; mode: 'stored' | 'session' | 'none'; last4?: string; addedAt?: string; sessionExpiresAt?: string; kind?: string; credExpiresAt?: string | null; credExpired?: boolean } | null>(null)
+  const [me, setMe] = useState<{ authEnabled?: boolean; verified: boolean; mode: 'stored' | 'session' | 'none'; last4?: string; addedAt?: string; sessionExpiresAt?: string; kind?: string; credExpiresAt?: string | null; credExpired?: boolean; baseUrl?: string | null } | null>(null)
   const [keyInput, setKeyInput] = useState('')
+  const [providerMode, setProviderMode] = useState<'platform' | 'activate' | 'openai' | 'custom'>('platform')
+  const [providerHost, setProviderHost] = useState('')
+  const [baseUrlInput, setBaseUrlInput] = useState('')
+
+  const effectiveBaseUrl = () => {
+    if (providerMode === 'platform') return ''
+    if (providerMode === 'activate') {
+      const host = providerHost.trim().replace(/^https?:\/\//, '').replace(/\/.*$/, '')
+      return host ? `https://${host}/api/openai/v1` : ''
+    }
+    if (providerMode === 'openai') return 'https://api.openai.com/v1'
+    return baseUrlInput.trim()
+  }
   const [persistKey, setPersistKey] = useState(true)
   const [keyBusy, setKeyBusy] = useState(false)
   const [keyNote, setKeyNote] = useState('')
@@ -87,6 +100,12 @@ export function SettingsView() {
       .catch(() => {})
     fetch('/api/me/model-key').then(r => r.json()).then(setMe).catch(() => {})
     refreshRagEp()
+    const onSection = (e: Event) => {
+      const d = (e as CustomEvent).detail as { view?: string; section?: string }
+      if (d?.view === 'settings' && d.section) setSection(d.section as SectionId)
+    }
+    window.addEventListener('ade-view-section', onSection)
+    return () => window.removeEventListener('ade-view-section', onSection)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -118,7 +137,7 @@ export function SettingsView() {
       const res = await fetch('/api/me/model-key/test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(candidate ? { key: candidate } : {}),
+        body: JSON.stringify(candidate ? { key: candidate, baseUrl: effectiveBaseUrl() || undefined } : {}),
       })
       const h = await res.json()
       if (!res.ok) throw new Error(h.error ?? `${res.status}`)
@@ -282,6 +301,7 @@ export function SettingsView() {
                     {me.mode === 'stored' && `Using your ${me.kind === 'token' ? 'token' : 'key'} ending ${me.last4}, added ${me.addedAt?.slice(0, 10)}, stored encrypted on this server.`}
                     {me.mode === 'session' && `Using your ${me.kind === 'token' ? 'token' : 'key'} ending ${me.last4}, held in memory for this session only (until ${me.sessionExpiresAt ? new Date(me.sessionExpiresAt).toLocaleTimeString() : 'soon'}).`}
                     {me.mode !== 'none' && me.credExpiresAt && !me.credExpired && ` The ${me.kind === 'token' ? 'token itself expires' : 'credential expires'} ${new Date(me.credExpiresAt).toLocaleString()}.`}
+                    {me.mode !== 'none' && me.baseUrl && ` Provider: ${me.baseUrl}.`}
                     {me.mode !== 'none' && me.credExpired && ' THIS TOKEN HAS EXPIRED; paste a fresh one.'}
                   </p>
                   <div className="key-row">
@@ -289,12 +309,12 @@ export function SettingsView() {
                       className="field grow"
                       type="password"
                       value={keyInput}
-                      placeholder="Paste your PW API key or a platform token"
+                      placeholder="Paste your PW API key, a platform token, or another provider's key"
                       autoComplete="off"
                       onChange={e => setKeyInput(e.target.value)}
                     />
                     <button className="btn-primary" disabled={keyBusy || !keyInput.trim()}
-                      onClick={async () => { if (await keyAction('set', { key: keyInput.trim(), persist: persistKey })) { setKeyInput(''); void testKey() } }}>
+                      onClick={async () => { if (await keyAction('set', { key: keyInput.trim(), persist: persistKey, baseUrl: effectiveBaseUrl() })) { setKeyInput(''); void testKey() } }}>
                       Save and test
                     </button>
                     <button className="btn-secondary" disabled={keyBusy || (!keyInput.trim() && me.mode === 'none')}
@@ -303,12 +323,31 @@ export function SettingsView() {
                       <button className="btn-danger-outline" disabled={keyBusy} onClick={() => void keyAction('clear')}>Remove</button>
                     )}
                   </div>
+                  <div className="key-row provider-row">
+                    <label className="field-label provider-label">Credential provider</label>
+                    <select className="field" value={providerMode} onChange={e => setProviderMode(e.target.value as typeof providerMode)}>
+                      <option value="platform">This platform's gateway (default)</option>
+                      <option value="activate">Another ACTIVATE platform…</option>
+                      <option value="openai">OpenAI (api.openai.com)</option>
+                      <option value="custom">Custom OpenAI-compatible URL…</option>
+                    </select>
+                    {providerMode === 'activate' && (
+                      <input className="field grow" value={providerHost} autoComplete="off"
+                        placeholder="platform host, e.g. activate.hpc.mil"
+                        onChange={e => setProviderHost(e.target.value)} />
+                    )}
+                    {providerMode === 'custom' && (
+                      <input className="field grow" value={baseUrlInput} autoComplete="off"
+                        placeholder="https://host/v1"
+                        onChange={e => setBaseUrlInput(e.target.value)} />
+                    )}
+                  </div>
                   <label className="key-persist">
                     <input type="checkbox" checked={persistKey} onChange={e => setPersistKey(e.target.checked)} />
                     Remember on this server (encrypted at rest); unchecked keeps it in memory for about 12 hours only
                   </label>
                   <p className="muted key-trust">
-                    A key added here is available to this server and its operator; encryption at rest protects the stored file, not the running process. Use a key you can revoke. If your key needs periodic unlocking (genai.mil keys unlock every 8 hours), Test tells you its current state.
+                    A key added here is available to this server and its operator; encryption at rest protects the stored file, not the running process. Use a key you can revoke. If your key needs periodic unlocking (genai.mil keys unlock every 8 hours), Test tells you its current state. With a custom provider, chat and models use that provider while platform tools (clusters, workflows) fall back to the deployment credential; a non-platform key is never passed to platform commands.
                   </p>
                   {keyNote && <p className="muted key-note">{keyNote}</p>}
                 </>

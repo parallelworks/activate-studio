@@ -83,8 +83,8 @@ function gatewayError(status: number, bodyText: string, ctx: string): Error {
   return err
 }
 
-export async function listModels(key?: string | null): Promise<unknown> {
-  const res = await fetch(`${GATEWAY_BASE}/models`, {
+export async function listModels(key?: string | null, baseUrl?: string | null): Promise<unknown> {
+  const res = await fetch(`${baseUrl || GATEWAY_BASE}/models`, {
     headers: { Authorization: `Bearer ${key || gatewayKey()}` },
   })
   if (!res.ok) throw gatewayError(res.status, await res.text(), '/models')
@@ -104,15 +104,16 @@ export interface AiHealth {
 /** Live callability check: exercises the gateway with the current
  *  credential (via the model listing) and reports the last real call
  *  failure, which catches keys that list fine but fail at invoke time. */
-export async function aiHealth(key?: string | null): Promise<AiHealth> {
+export async function aiHealth(key?: string | null, baseUrl?: string | null): Promise<AiHealth> {
   const checkedAt = new Date().toISOString()
-  const gatewayHost = (() => { try { return new URL(GATEWAY_BASE).host } catch { return GATEWAY_BASE } })()
+  const apiBase = baseUrl || GATEWAY_BASE
+  const gatewayHost = (() => { try { return new URL(apiBase).host } catch { return apiBase } })()
   const base = { models: 0, gatewayHost, lastCallFailure, checkedAt }
   if (!key && !gatewayConfigured()) {
     return { ...base, ok: false, status: 'unconfigured', message: 'No gateway credential configured (PW_API_KEY or pw CLI login).' }
   }
   try {
-    const res = await fetch(`${GATEWAY_BASE}/models`, {
+    const res = await fetch(`${baseUrl || GATEWAY_BASE}/models`, {
       headers: { Authorization: `Bearer ${key || gatewayKey()}` },
       signal: AbortSignal.timeout(8000),
     })
@@ -139,13 +140,14 @@ export async function streamTurn(
   cb: StreamCallbacks,
   signal?: AbortSignal,
   key?: string | null,
+  baseUrl?: string | null,
 ): Promise<TurnResult> {
   const headers: Record<string, string> = {
     Authorization: `Bearer ${key || gatewayKey()}`,
     'Content-Type': 'application/json',
   }
   if (allocation) headers['X-Allocation'] = allocation
-  const res = await fetch(`${GATEWAY_BASE}/chat/completions`, {
+  const res = await fetch(`${baseUrl || GATEWAY_BASE}/chat/completions`, {
     method: 'POST',
     headers,
     body: JSON.stringify({ ...body, stream: true }),
