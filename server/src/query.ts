@@ -5,9 +5,10 @@ import path from 'node:path'
 import type { FastifyInstance } from 'fastify'
 import { GUFI_BIN, GUFI_INDEX, INDEX_BASE } from './config.js'
 import { KbError } from './kb.js'
+import { tagMaps } from './tags.js'
 
 const DELIM = '\x1e'
-const MAX_ROWS = 500
+const MAX_ROWS = 2000
 
 interface QueryResult {
   columns: string[]
@@ -154,7 +155,7 @@ const FILE_FIELDS: Record<string, string> = {
   label: 'label',
 }
 
-function filterSql(f: BuilderFilter): string {
+function filterSql(f: BuilderFilter, labeledDirs?: Map<string, string[]>): string {
   const field = FILE_FIELDS[f.field]
   if (!field) throw new KbError(400, `unknown field: ${f.field}`)
   let v = String(f.value ?? '')
@@ -162,8 +163,21 @@ function filterSql(f: BuilderFilter): string {
   if (f.field === 'label') {
     if (f.op !== 'eq' && f.op !== 'contains') throw new KbError(400, 'label supports equals and contains')
     const pat = f.op === 'eq' ? `%,${esc(v.toLowerCase())},%` : `%${esc(v.toLowerCase())}%`
-    // Own labels only (directory inheritance is resolved at the app layer).
-    return `EXISTS (SELECT 1 FROM xattrs_pwd xt WHERE xt.inode = vrpentries.inode AND CAST(xt.name AS TEXT) = 'user.studio.tags' AND (','||lower(CAST(xt.value AS TEXT))||',') LIKE '${pat}')`
+    const own = `EXISTS (SELECT 1 FROM xattrs_pwd xt WHERE xt.inode = vrpentries.inode AND CAST(xt.name AS TEXT) = 'user.studio.tags' AND (','||lower(CAST(xt.value AS TEXT))||',') LIKE '${pat}')`
+    // Directory labels inherit down whole subtrees, and a per-directory db
+    // cannot see its ancestors, so inheritance compiles to path prefixes of
+    // the labeled directories (known app-side via the tag maps). In WHERE
+    // context rpath() yields the ABSOLUTE index path (output rows are
+    // stripped afterwards), so the prefix must carry the index root.
+    const want = v.toLowerCase()
+    const idxRoot = path.resolve(GUFI_INDEX)
+    const dirs = [...(labeledDirs ?? new Map<string, string[]>())]
+      .filter(([rel, tags]) => rel !== '' && tags.some(t =>
+        f.op === 'eq' ? t.toLowerCase() === want : t.toLowerCase().includes(want)))
+      .map(([rel]) => rel)
+    const prefixes = dirs.map(rel =>
+      `(${PATH_EXPR}) LIKE '${esc(`${idxRoot}/${rel}`).replace(/([%_])/g, '\\$1')}/%' ESCAPE '\\'`)
+    return `(${[own, ...prefixes].join(' OR ')})`
   }
   if (f.field === 'text') {
     if (f.op !== 'match') throw new KbError(400, 'text supports only match')
@@ -188,8 +202,11 @@ function filterSql(f: BuilderFilter): string {
 async function builderQuery(p: BuilderPayload): Promise<QueryResult> {
   const limit = Math.min(Math.max(Number(p.limit) || 50, 1), MAX_ROWS)
   const usesText = p.filters.some(f => f.field === 'text')
+  const labeledDirs = p.filters.some(f => f.field === 'label')
+    ? (await tagMaps()).dirTags
+    : undefined
   const where = p.filters.length
-    ? 'WHERE ' + p.filters.map(filterSql).join(' AND ')
+    ? 'WHERE ' + p.filters.map(f => filterSql(f, labeledDirs)).join(' AND ')
     : ''
   if (p.source === 'directories') {
     const allowed = new Set(['name', 'size', 'modified'])
@@ -244,7 +261,21 @@ const SAVED_FILE = path.join(INDEX_BASE, 'saved-queries.json')
 
 interface SavedQuery { id: string; name: string; payload: unknown; createdAt: string }
 
+/** Starter examples written on first run so the saved-query rail is never
+ *  empty; users edit or delete them like any saved query. */
+const STARTER_QUERIES: SavedQuery[] = [
+  { id: 'starter-large', name: 'Files over 10 MB', createdAt: '', payload: { builder: { source: 'files', filters: [{ field: 'size', op: 'gt', value: '10485760' }], groupBy: 'none', sort: 'size', dir: 'desc', limit: 200, subtree: '' } } },
+  { id: 'starter-pdfs', name: 'Largest PDFs', createdAt: '', payload: { builder: { source: 'files', filters: [{ field: 'extension', op: 'eq', value: 'pdf' }], groupBy: 'none', sort: 'size', dir: 'desc', limit: 100, subtree: '' } } },
+  { id: 'starter-recent', name: 'Changed in the last 7 days', createdAt: '', payload: { canned: 'recent', n: 200, days: 7, subtree: '' } },
+  { id: 'starter-dirs', name: 'Biggest directories', createdAt: '', payload: { canned: 'big_directories', n: 25, days: 7, subtree: '' } },
+]
+
 function loadSaved(): SavedQuery[] {
+  if (!fs.existsSync(SAVED_FILE)) {
+    const seeded = STARTER_QUERIES.map(s => ({ ...s, createdAt: new Date().toISOString() }))
+    try { fs.writeFileSync(SAVED_FILE, JSON.stringify(seeded, null, 1)) } catch { /* read-only index */ }
+    return seeded
+  }
   try { return JSON.parse(fs.readFileSync(SAVED_FILE, 'utf8')) } catch { return [] }
 }
 

@@ -4,7 +4,8 @@ import { api } from '../api'
 export function TagMenu({ paths, onClose, onApplied }: {
   paths: string[]
   onClose: () => void
-  onApplied: () => void
+  /** Called after each successful apply with the server's path -> tags map. */
+  onApplied: (updated: Record<string, string[]>) => void
 }) {
   const [vocab, setVocab] = useState<{ tag: string; count: number }[]>([])
   const [current, setCurrent] = useState<string[]>([])
@@ -22,9 +23,9 @@ export function TagMenu({ paths, onClose, onApplied }: {
     setBusy(true)
     setNote('')
     try {
-      await api.applyTags(paths, add, remove)
+      const r = await api.applyTags(paths, add, remove)
       setCurrent(c => [...new Set([...c.filter(t => !remove.includes(t)), ...add])])
-      onApplied()
+      onApplied(r.updated ?? {})
       setNote('Applied and re-indexed.')
     } catch (e) {
       setNote(String((e as Error).message ?? e))
@@ -47,6 +48,9 @@ export function TagMenu({ paths, onClose, onApplied }: {
         {busy && <span className="spinner" />}
         <button className="btn-secondary" onClick={onClose}>Close</button>
       </div>
+      {paths.length > 1000 && (
+        <p className="muted tag-note">Labels apply to the first 1,000 selected items per action.</p>
+      )}
       {current.length > 0 && (
         <div className="tag-row">
           {current.map(t => (

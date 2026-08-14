@@ -1,16 +1,66 @@
-import { useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ChatProvider, ChatLayout, ChatThread, ChatEmptyState, AttachmentManager,
 } from '@parallelworks/ai-chat'
 import '@parallelworks/ai-chat/styles.css'
 import { createStudioAdapter } from '../adapter'
 import { useAppConfig } from '../config'
+import { api } from '../api'
+import { setLabelScope } from '../labelScope'
 
 export function ChatView() {
   const [activeId, setActiveId] = useState<string | null>(null)
   const [showAttachments, setShowAttachments] = useState(false)
   const [rail, setRail] = useState(() => Number(localStorage.getItem('ade-chat-rail')) || 260)
   const adapter = useMemo(() => createStudioAdapter(), [])
+  const [vocab, setVocab] = useState<{ tag: string; count: number }[]>([])
+  const [scope, setScope] = useState<Set<string>>(new Set())
+  const [scopeOpen, setScopeOpen] = useState(false)
+  const [scopeFilter, setScopeFilter] = useState('')
+
+  useEffect(() => {
+    api.tagVocabulary().then(v => setVocab(v.tags)).catch(() => {})
+  }, [])
+
+  const toggleScope = (tag: string) => {
+    setScope(s => {
+      const next = new Set(s)
+      if (next.has(tag)) next.delete(tag)
+      else next.add(tag)
+      setLabelScope([...next])
+      return next
+    })
+  }
+
+  const visibleVocab = scopeFilter
+    ? vocab.filter(v => v.tag.toLowerCase().includes(scopeFilter.toLowerCase()))
+    : vocab
+
+  // The package's default link is a real anchor (/chat/<id>) meant for a
+  // routed host; without interception it full-page navigates and loses the
+  // SPA state, which read as "sessions do not load".
+  const LinkComponent = useCallback(function StudioChatLink({ target, className, title, onClick, children }: {
+    target: { kind: 'conversation'; id: string } | { kind: 'attachments' } | { kind: 'external'; href: string }
+    className?: string
+    title?: string
+    onClick?: (e: React.MouseEvent) => void
+    children?: React.ReactNode
+  }) {
+    return (
+      <a
+        href="#"
+        className={className}
+        title={title}
+        onClick={e => {
+          e.preventDefault()
+          onClick?.(e)
+          if (target.kind === 'conversation') { setActiveId(target.id); setShowAttachments(false) }
+          else if (target.kind === 'attachments') setShowAttachments(true)
+          else if (target.kind === 'external') window.open(target.href, '_blank', 'noopener')
+        }}
+      >{children}</a>
+    )
+  }, [])
   const cfg = useAppConfig()
 
   const canvasRef = useRef<HTMLDivElement>(null)
@@ -59,7 +109,7 @@ export function ChatView() {
         info: () => {},
       }}
       activeConversationId={activeId}
-      config={{ variant: 'modern', suggestedPrompts: cfg.suggestedPrompts }}
+      config={{ variant: 'modern', suggestedPrompts: cfg.suggestedPrompts, LinkComponent }}
     >
       <div className="chat-wrap">
         <div ref={canvasRef} className="chat-canvas card" style={{ ['--ade-chat-rail' as string]: `${rail}px` }}>
@@ -67,6 +117,57 @@ export function ChatView() {
             {showAttachments ? <AttachmentManager /> : activeId ? <ChatThread conversationId={activeId} /> : <ChatEmptyState />}
           </ChatLayout>
           <div ref={handleRef} className="chat-rail-handle" style={{ left: rail - 3 }} onMouseDown={onRailDrag} title="Drag to resize conversations" />
+          {vocab.length > 0 && (
+            <div className="chat-scope-anchor">
+              <button
+                className={`scope-btn ${scope.size ? 'active' : ''}`}
+                title="Limit knowledge base retrieval in this chat to items carrying the selected labels"
+                onClick={() => setScopeOpen(o => !o)}
+              >
+                <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M1.5 3h13l-5 5.5V13l-3 1.5V8.5z"/></svg>
+                Scope{scope.size > 0 && <span className="scope-count">{scope.size}</span>}
+              </button>
+              {scopeOpen && (
+                <>
+                  <div className="scope-overlay" onClick={() => setScopeOpen(false)} />
+                  <div className="scope-menu card">
+                    <div className="scope-menu-head">Limit this chat to labels</div>
+                    {vocab.length > 8 && (
+                      <input
+                        className="field scope-filter"
+                        value={scopeFilter}
+                        onChange={e => setScopeFilter(e.target.value)}
+                        placeholder="Filter labels"
+                        autoFocus
+                      />
+                    )}
+                    <div className="scope-list">
+                      {visibleVocab.map(v => (
+                        <label key={v.tag} className="scope-item">
+                          <input
+                            type="checkbox"
+                            checked={scope.has(v.tag)}
+                            onChange={() => toggleScope(v.tag)}
+                          />
+                          <span className="scope-tag">{v.tag}</span>
+                          <span className="scope-n">{v.count}</span>
+                        </label>
+                      ))}
+                      {visibleVocab.length === 0 && <div className="muted scope-empty">No labels match.</div>}
+                    </div>
+                    <div className="scope-menu-foot">
+                      <button
+                        className="scope-clear"
+                        disabled={!scope.size}
+                        onClick={() => { setScope(new Set()); setLabelScope([]) }}
+                      >Clear all</button>
+                      <button className="btn-secondary" onClick={() => setScopeOpen(false)}>Done</button>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </ChatProvider>

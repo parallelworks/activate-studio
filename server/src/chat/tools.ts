@@ -4,7 +4,7 @@ import { listDir, readFileContent, KbError } from '../kb.js'
 import { blendHits, searchFts, searchNames, searchVector } from '../gufi.js'
 import { annotateHits } from '../tags.js'
 import { effectiveSettings } from '../settings.js'
-import { extSkills, extTools, skillBody } from '../extensions.js'
+import { agentBody, extAgents, extSkills, extTools, skillBody } from '../extensions.js'
 
 export interface ToolSpec {
   type: 'function'
@@ -107,7 +107,7 @@ export const TOOL_SPECS: ToolSpec[] = [
     function: {
       name: 'run_workflow',
       description:
-        'Run a platform workflow, or validate it with dry_run. ALWAYS validate with dry_run:true first. Only launch a real run when the user has explicitly asked in this conversation to run the workflow.',
+        'Run a platform workflow, or validate it with dry_run. When composing or exploring on your own initiative, validate with dry_run:true. When the user has asked in this conversation to run a workflow, their request is the authorization: launch the real run without asking again for confirmation.',
       parameters: {
         type: 'object',
         properties: {
@@ -218,7 +218,7 @@ export const TOOL_SPECS: ToolSpec[] = [
     type: 'function',
     function: {
       name: 'cluster_command',
-      description: 'Run a command on a running cluster over SSH (pw ssh <cluster> <command>). Intended for read-only scheduler and system queries: squeue, sinfo, sacct, scontrol show, qstat, pbsnodes, df, nvidia-smi, hostname. Run state-changing commands (sbatch, scancel, qsub, qdel, rm, kill, reboots) ONLY when the user explicitly asked for that exact action; never as part of your own investigation.',
+      description: 'Run a command on a running cluster over SSH (pw ssh <cluster> <command>). Intended for read-only scheduler and system queries: squeue, sinfo, sacct, scontrol show, qstat, pbsnodes, df, nvidia-smi, hostname. State-changing commands (sbatch, scancel, qsub, qdel, rm, kill) are appropriate when the user asked for that action in this conversation; the request itself is the authorization, so do not ask again for confirmation. Do not initiate state changes the user did not request.',
       parameters: {
         type: 'object',
         properties: {
@@ -242,6 +242,11 @@ function allCustomTools(): { name: string; description: string; command: string 
   for (const t of extTools()) merged.set(t.name, t)
   for (const t of effectiveSettings().customTools ?? []) if (t.name && t.command) merged.set(t.name, t)
   return [...merged.values()]
+}
+
+/** The command line behind a custom or file-based tool, for display. */
+export function commandFor(name: string): string | undefined {
+  return allCustomTools().find(t => t.name === name)?.command
 }
 
 export function customToolSpecs(): ToolSpec[] {
@@ -286,6 +291,56 @@ export function skillToolSpec(): ToolSpec | null {
   }
 }
 
+/** Deterministic /help listing of everything slash-invocable. */
+export function slashListing(): string {
+  const lines: string[] = ['Slash commands resolve before the model sees the message.', '']
+  const skills = extSkills()
+  if (skills.length) {
+    lines.push('Skills (instructions applied to your request):')
+    for (const sk of skills) lines.push(`- /${sk.name}${sk.description ? ` : ${sk.description}` : ''}`)
+    lines.push('')
+  }
+  const agents = extAgents()
+  if (agents.length) {
+    lines.push('Agents (standing instructions adopted for one message):')
+    for (const a of agents) lines.push(`- /${a.name}${a.description ? ` : ${a.description}` : ''}`)
+    lines.push('')
+  }
+  const customs = allCustomTools()
+  if (customs.length) {
+    lines.push('Command tools (run directly; add arguments after the name):')
+    for (const t of customs) lines.push(`- /${t.name}${t.description ? ` : ${t.description}` : ''}`)
+    lines.push('')
+  }
+  lines.push('Built-in tools can also be invoked by name, e.g. /search_kb my topic.')
+  lines.push('Everything here also works in plain language; slash form just makes it explicit.')
+  return lines.join('\n')
+}
+
+/** Resolve a leading /command on a user message. Returns the replacement
+ *  message content, or { listing } for meta commands answered without a
+ *  model call, or null when the message is not a recognized command. */
+export function expandSlashCommand(content: string): string | { listing: string } | null {
+  const m = /^\/([A-Za-z0-9_-]+)([\s\S]*)$/.exec(content.trim())
+  if (!m) return null
+  const name = m[1].toLowerCase().replace(/-/g, '_')
+  const rest = m[2].trim()
+  if (name === 'help' || name === 'commands' || name === 'skills') return { listing: slashListing() }
+  const skill = skillBody(name)
+  if (skill != null) {
+    return `Follow these instructions for this request.\n\n${skill}\n\nRequest: ${rest || 'Apply the instructions to the current conversation context.'}`
+  }
+  const agent = agentBody(name)
+  if (agent != null) {
+    return `Adopt these standing instructions for this request.\n\n${agent}\n\nRequest: ${rest || 'Proceed.'}`
+  }
+  const toolNames = new Set([...TOOL_SPECS, ...customToolSpecs()].map(t => t.function.name))
+  if (toolNames.has(name)) {
+    return `Call the ${name} tool now${rest ? ` with arguments derived from: ${rest}` : ''}, then answer from its output.`
+  }
+  return null
+}
+
 export function activeToolSpecs(): ToolSpec[] {
   const disabled = new Set(effectiveSettings().disabledTools ?? [])
   const skill = skillToolSpec()
@@ -321,7 +376,7 @@ export interface ToolOutcome {
   summary: string
 }
 
-export async function executeTool(name: string, argsJson: string): Promise<ToolOutcome> {
+export async function executeTool(name: string, argsJson: string, ctx?: { labelScope?: string[] }): Promise<ToolOutcome> {
   let args: any = {}
   try { args = argsJson ? JSON.parse(argsJson) : {} } catch { /* tolerate bad JSON */ }
   try {
@@ -335,7 +390,16 @@ export async function executeTool(name: string, argsJson: string): Promise<ToolO
             searchNames(query, 5),
             searchVector(query, Math.min(limit, 8)).catch(() => []),
           ])
-          const filter = args.tags ? String(args.tags).split(',').filter(Boolean) : undefined
+          // A conversation-level label scope is enforced here regardless of
+          // what the model asked for; model-requested tags narrow further
+          // only when they fall inside the scope.
+          const scope = ctx?.labelScope?.filter(Boolean) ?? []
+          const requested = args.tags ? String(args.tags).split(',').filter(Boolean) : undefined
+          let filter = requested
+          if (scope.length) {
+            const within = requested?.filter(t => scope.includes(t))
+            filter = within?.length ? within : scope
+          }
           const hits = await annotateHits(blendHits(fts, names, vec, limit + 5), filter)
           const result = hits.length
             ? hits.map(h => `${h.path}${h.tags?.length ? ` [labels: ${h.tags.join(', ')}]` : ''}\n  ${h.snippet || '(filename match)'}`).join('\n')

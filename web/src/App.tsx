@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ChatView } from './views/ChatView'
 import { LibraryView } from './views/LibraryView'
 import { SearchView } from './views/SearchView'
@@ -64,6 +64,16 @@ export default function App() {
 
   useEffect(() => { localStorage.setItem('ade-nav-collapsed', navCollapsed ? '1' : '0') }, [navCollapsed])
   useEffect(() => { if (cfg.loaded) document.title = cfg.appName }, [cfg])
+  useEffect(() => {
+    if (!cfg.loaded || !cfg.faviconUrl) return
+    let link = document.querySelector<HTMLLinkElement>('link[rel="icon"]')
+    if (!link) {
+      link = document.createElement('link')
+      link.rel = 'icon'
+      document.head.appendChild(link)
+    }
+    link.href = cfg.faviconUrl
+  }, [cfg])
   useEffect(() => { if (cfg.loaded) { applyAccent(cfg.accent); applySurface(cfg.surface) } }, [cfg])
   useEffect(() => {
     const effective = theme ?? cfg.theme
@@ -76,15 +86,21 @@ export default function App() {
     localStorage.setItem('ade-theme', next)
   }
 
-  // Chat replies carry #open=kind:target links instead of auto-navigating;
-  // the same hash form deep-links on page load.
+  // Navigation state lives in the URL hash: #open=kind:target for an open
+  // document, #view=<id> for a bare view, empty for the default chat view.
+  // applyHash covers initial load, chat links, manual edits, and browser
+  // back/forward (hash-only history moves fire hashchange).
   useEffect(() => {
     const applyHash = () => {
       const m = location.hash.match(/^#open=(file|workflow_dag):(.+)$/)
-      if (!m) return
-      setDisplay({ kind: m[1] as Display['kind'], target: decodeURIComponent(m[2]) })
-      setView('library')
-      history.replaceState(null, '', location.pathname + location.search)
+      if (m) {
+        setDisplay({ kind: m[1] as Display['kind'], target: decodeURIComponent(m[2]) })
+        setView('library')
+        return
+      }
+      const v = location.hash.match(/^#view=([a-z]+)$/)?.[1]
+      if (v && NAV.some(n => n.id === v)) setView(v as ViewId)
+      else if (!location.hash) setView('chat')
     }
     applyHash()
     // Chat links render with target=_blank; catch #open= clicks in the
@@ -105,6 +121,23 @@ export default function App() {
       window.removeEventListener('click', onClick, true)
     }
   }, [])
+
+  // Push a history entry whenever the navigation state changes, so the
+  // browser's back/forward buttons walk opens and view switches. After a
+  // back/forward the hash already matches the restored state, so the
+  // comparison makes this a no-op instead of a re-push (no feedback loop).
+  // The first run only arms the ref: on a deep-linked load the state update
+  // from applyHash has not landed yet, and writing here would clobber the
+  // incoming hash. Slashes stay literal in the hash for readable URLs.
+  const navReady = useRef(false)
+  useEffect(() => {
+    if (!navReady.current) { navReady.current = true; return }
+    const hash = display && view === 'library'
+      ? `#open=${display.kind}:${encodeURIComponent(display.target).replace(/%2F/gi, '/')}`
+      : view !== 'chat' ? `#view=${view}` : ''
+    if ((location.hash || '') === hash) return
+    history.pushState(null, '', location.pathname + location.search + hash)
+  }, [view, display])
 
   const openFile = (path: string) => {
     setDisplay({ kind: 'file', target: path })

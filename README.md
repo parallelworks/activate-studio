@@ -45,6 +45,10 @@ The chat talks to any OpenAI-compatible backend.
 
 ## ACTIVATE integration (optional)
 
+### Launch as an ACTIVATE workflow
+
+`deploy/workflow.yaml` deploys Studio onto any connected resource from the ACTIVATE workflow form. Two source modes: GitHub (default; clones the repository and builds on the resource, fetching Node and the embedding model when absent) and bundle (a self-contained tarball built by `deploy/make_bundle.sh` for systems without outbound network, pulled from a bucket or pre-staged at `<workdir>/bundle-prestage.tar.gz`). Session methods follow the containerized-webapp-deployment pattern: `web` exposes the app through a forked `pw` endpoint that outlives the workflow, `e2e` launches, asserts `/healthz`, and tears down, `cleanup` stops everything a prior launch left behind. GUFI is built from source on the resource when cmake is available; without it the app still runs with filesystem browsing and grep search. `deploy/app.def` additionally packages everything as an Apptainer image for container-first sites.
+
 - The assistant's workflow tools (catalog with descriptions and tags, DAG preview, dry-run validation, execution on explicit request, run monitoring) come from the pw CLI and hide gracefully when it is absent. The knowledge base tools work everywhere.
 - Serve as a platform session with `deploy/run_endpoint.sh`, which registers the app under the account's reserved subdomain.
 

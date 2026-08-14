@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import type { FastifyInstance } from 'fastify'
-import { INDEX_BASE } from './config.js'
+import { INDEX_BASE, PROJECT_ROOT } from './config.js'
 
 /**
  * File-based extensions, read from INDEX_BASE/extensions/ (deployment-local,
@@ -18,7 +18,20 @@ import { INDEX_BASE } from './config.js'
  */
 
 export const EXT_DIR = path.join(INDEX_BASE, 'extensions')
+const STARTER_DIR = path.join(PROJECT_ROOT, 'extensions-starter')
 const TTL_MS = 5_000
+
+/** First-run seeding: when no extensions directory exists yet, copy the
+ *  repository's starter set so a fresh deployment has working examples.
+ *  Runs only when the directory is entirely absent, so deletions and edits
+ *  are never resurrected. */
+export function seedExtensions(log?: (msg: string) => void): void {
+  if (fs.existsSync(EXT_DIR) || !fs.existsSync(STARTER_DIR)) return
+  try {
+    fs.cpSync(STARTER_DIR, EXT_DIR, { recursive: true })
+    log?.(`seeded starter extensions into ${EXT_DIR}`)
+  } catch { /* seeding is best-effort */ }
+}
 
 export interface ExtTool { name: string; description: string; command: string; file: string }
 export interface ExtDoc { name: string; description: string; file: string }
@@ -88,6 +101,12 @@ export function skillBody(name: string): string | null {
 
 export function extAgents(): ExtDoc[] {
   return listFiles('agents', '.md').map(docMeta)
+}
+
+export function agentBody(name: string): string | null {
+  const agent = extAgents().find(a => a.name === normalizeName(name))
+  if (!agent) return null
+  try { return fs.readFileSync(path.join(EXT_DIR, 'agents', agent.file), 'utf8') } catch { return null }
 }
 
 /** The standing persona: agents/default.md, if present. */

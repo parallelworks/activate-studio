@@ -1,0 +1,88 @@
+# ============================================================================
+# Studio -- multi-stage Singularity/Apptainer recipe
+# (containerized-webapp-deployment pattern).
+#
+#   * Stage "build" compiles the web and server bundles, GUFI, and pulls the
+#     embedding model, so the runtime image needs no compilers and no network.
+#   * Stage "final" carries the production server, the built SPA, the
+#     indexer, GUFI binaries, and the model.
+#   * Runtime contract: binds 0.0.0.0:$PORT, serves HTTP at "/". The corpus
+#     is bind-mounted and named by KB_ROOT; the index lives under DATA_DIR
+#     (bind-mount a writable directory). Chat needs PW_API_KEY or a mounted
+#     pw credential; everything else works without it.
+#
+# Build:   apptainer build studio.sif deploy/app.def   (run from the repo root)
+# Test:    apptainer run --env PORT=8080 --env KB_ROOT=/kb --env DATA_DIR=/data \
+#              --bind /path/to/corpus:/kb --bind /path/to/state:/data studio.sif
+# ============================================================================
+
+Bootstrap: docker
+From: node:20-bookworm
+Stage: build
+
+%files
+    . /opt/src
+
+%post
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update && apt-get install -y --no-install-recommends \
+        cmake make gcc g++ pkg-config zlib1g-dev libsqlite3-dev git curl ca-certificates
+    corepack enable pnpm
+    cd /opt/src
+    rm -rf node_modules web/node_modules server/node_modules index deploy/.cache
+    pnpm install --frozen-lockfile
+    pnpm build
+    pnpm --filter @activate-studio/server --prod deploy --legacy /opt/app/server
+    mkdir -p /opt/app/web
+    cp -r web/dist /opt/app/web/dist
+    cp -r indexer /opt/app/indexer
+    cp -r docs /opt/app/docs
+    cp -r extensions-starter /opt/app/extensions-starter
+    mkdir -p /opt/app/index/models
+    curl -fsSL -o /opt/app/index/models/minilm384.gguf \
+        'https://huggingface.co/asg017/sqlite-lembed-model-examples/resolve/main/all-MiniLM-L6-v2/all-MiniLM-L6-v2.e4ce9877.q8_0.gguf'
+    git clone --depth 1 --recurse-submodules --shallow-submodules \
+        https://github.com/mar-file-system/GUFI /opt/gufi-src
+    mkdir -p /opt/gufi-src/build
+    cd /opt/gufi-src/build
+    cmake .. -DCMAKE_INSTALL_PREFIX=/opt/gufi -DCMAKE_BUILD_TYPE=Release
+    make -j "$(nproc)"
+    make install
+
+# ---------------------------------------------------------------------------
+Bootstrap: docker
+From: node:20-bookworm-slim
+Stage: final
+
+%files from build
+    /opt/app /app
+    /opt/gufi /opt/gufi
+
+%post
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update && apt-get install -y --no-install-recommends \
+        python3 attr poppler-utils curl ca-certificates \
+        && rm -rf /var/lib/apt/lists/*
+
+%environment
+    export NODE_ENV=production
+    export HOST=0.0.0.0
+    export GUFI_BIN=/opt/gufi/bin
+    export KB_ROOT="${KB_ROOT:-/kb}"
+    export INDEX_BASE="${DATA_DIR:-/data}/index"
+
+%startscript
+    mkdir -p "$INDEX_BASE"
+    cp -n /app/index/models/minilm384.gguf "$INDEX_BASE/models/minilm384.gguf" 2>/dev/null || \
+      { mkdir -p "$INDEX_BASE/models"; cp -n /app/index/models/minilm384.gguf "$INDEX_BASE/models/" 2>/dev/null || true; }
+    exec node /app/server/dist/main.js
+
+%runscript
+    mkdir -p "$INDEX_BASE/models"
+    cp -n /app/index/models/minilm384.gguf "$INDEX_BASE/models/" 2>/dev/null || true
+    exec node /app/server/dist/main.js
+
+%labels
+    org.parallelworks.app studio
+    org.parallelworks.pattern generic-interactive-app
+    org.parallelworks.contract "PORT + KB_ROOT + DATA_DIR env in, HTTP at / out"

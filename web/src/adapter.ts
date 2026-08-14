@@ -1,5 +1,5 @@
 import type { ChatAdapter, ModelsList, StreamCompletion } from '@parallelworks/ai-chat'
-import { createMemoryConversationStore } from '@parallelworks/ai-chat/adapters/mock'
+import { getLabelScope } from './labelScope'
 
 async function listModels(): Promise<ModelsList> {
   const res = await fetch('/api/chat/models')
@@ -18,7 +18,9 @@ const streamFromServer: StreamCompletion = async (req, handlers, signal) => {
       messages: req.messages,
       conversationId: req.conversationId,
       userMessageId: req.userMessageId,
+      parentMessageId: req.parentMessageId ?? null,
       allocation: req.allocation ?? null,
+      labelScope: getLabelScope(),
     }),
     signal,
   })
@@ -54,9 +56,10 @@ const streamFromServer: StreamCompletion = async (req, handlers, signal) => {
         handlers.onReasoning?.(payload.text)
         break
       case 'tool': {
-        const line = payload.phase === 'call'
-          ? `\ncalling ${payload.name}(${payload.args ?? ''})\n`
-          : `\n${payload.name}: ${payload.summary}\n`
+        // The server sends a humanized one-liner; fall back to a plain form.
+        const line = payload.pretty ?? (payload.phase === 'call'
+          ? `\n→ ${payload.name}\n`
+          : `\n↳ ${payload.summary}\n`)
         reasoning += line
         handlers.onReasoning?.(line)
         break
@@ -95,14 +98,44 @@ const streamFromServer: StreamCompletion = async (req, handlers, signal) => {
   }
 }
 
+async function json<T>(res: Response): Promise<T> {
+  if (!res.ok) throw new Error(`${res.status} ${await res.text()}`)
+  return res.json()
+}
+
 export function createStudioAdapter(): ChatAdapter {
-  const store = createMemoryConversationStore({ storageKey: 'ade-studio-chat' })
   return {
-    conversations: store.conversations,
+    // Conversations live server-side beside the index; browser storage is
+    // partitioned inside the platform iframe and loses history.
+    conversations: {
+      list: () => fetch('/api/chat/conversations').then(r => json(r)),
+      get: id => fetch(`/api/chat/conversations/${id}`).then(r => json(r)),
+      create: title => fetch('/api/chat/conversations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title }),
+      }).then(r => json(r)),
+      rename: async (id, title) => { await fetch(`/api/chat/conversations/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title }),
+      }).then(r => json(r)) },
+      remove: async id => { await fetch(`/api/chat/conversations/${id}`, { method: 'DELETE' }).then(r => json(r)) },
+    },
     models: { list: listModels },
-    streamCompletion: store.recordingStream(streamFromServer),
+    streamCompletion: streamFromServer,
+    // The onOpen hook is our patch-added extension to the package's
+    // AttachmentsAdapter type, hence the cast. Attachments live in the KB
+    // under uploads/chat/; the id is the base64url rel path, so a tile
+    // click opens the file in the Library via the #open deep link.
     attachments: {
-      list: async ({ limit, offset }) => {
+      onOpen: (att: { id: string }) => {
+        try {
+          const rel = atob(att.id.replace(/-/g, '+').replace(/_/g, '/'))
+          location.hash = `#open=file:${encodeURIComponent(rel).replace(/%2F/gi, '/')}`
+        } catch { /* malformed id: ignore */ }
+      },
+      list: async ({ limit, offset }: { limit: number; offset: number }) => {
         const res = await fetch(`/api/chat/attachments?limit=${limit}&offset=${offset}`)
         if (!res.ok) throw new Error(`attachments: ${res.status}`)
         return res.json()
@@ -118,7 +151,7 @@ export function createStudioAdapter(): ChatAdapter {
         const res = await fetch(`/api/chat/attachments/${id}`, { method: 'DELETE' })
         if (!res.ok) throw new Error(`remove: ${res.status}`)
       },
-      downloadUrl: id => `/api/chat/attachments/${id}/download`,
-    },
+      downloadUrl: (id: string) => `/api/chat/attachments/${id}/download`,
+    } as ChatAdapter['attachments'],
   }
 }

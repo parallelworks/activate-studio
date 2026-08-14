@@ -5,6 +5,7 @@ interface DagData {
   displayName?: string
   nodes: { id: string; steps: string[] }[]
   edges: { from: string; to: string }[]
+  yamlText?: string
 }
 
 const NODE_W = 190
@@ -49,6 +50,7 @@ export function DagViewer({ workflow }: { workflow: string }) {
   const [dag, setDag] = useState<DagData | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [selectedNode, setSelectedNode] = useState<string | null>(null)
+  const [tab, setTab] = useState<'dag' | 'yaml'>('dag')
 
   useEffect(() => {
     setDag(null)
@@ -72,6 +74,15 @@ export function DagViewer({ workflow }: { workflow: string }) {
         <span className="viewer-path">workflow: {dag.name}{dag.displayName && dag.displayName !== dag.name ? ` (${dag.displayName})` : ''}</span>
         <span className="viewer-meta">{dag.nodes.length} jobs, {dag.edges.length} dependencies</span>
       </div>
+      {dag.yamlText && (
+        <div className="viewer-tabs">
+          <button className={tab === 'dag' ? 'active' : ''} onClick={() => setTab('dag')}>DAG</button>
+          <button className={tab === 'yaml' ? 'active' : ''} onClick={() => setTab('yaml')}>workflow.yaml</button>
+        </div>
+      )}
+      {tab === 'yaml' && dag.yamlText ? (
+        <div className="viewer-body"><pre className="text-body">{dag.yamlText}</pre></div>
+      ) : (
       <div className="dag-canvas">
         <svg width={Math.max(width, 400)} height={Math.max(height, 200)}>
           <defs>
@@ -108,7 +119,8 @@ export function DagViewer({ workflow }: { workflow: string }) {
           })}
         </svg>
       </div>
-      {selected && (
+      )}
+      {tab === 'dag' && selected && (
         <div className="dag-steps">
           <div className="dag-steps-title">{selected.id}</div>
           <ol>

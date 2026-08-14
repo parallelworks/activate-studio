@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react'
+import { TagMenu } from '../components/TagMenu'
+import { RowCheck } from '../components/Explorer'
 
 interface QueryResult {
   columns: string[]
@@ -71,9 +73,33 @@ export function QueryView({ onOpen }: { onOpen: (path: string) => void }) {
   const [saved, setSaved] = useState<SavedQuery[]>([])
   const [saveName, setSaveName] = useState('')
   const [savingOpen, setSavingOpen] = useState(false)
+  // multi-select labeling over result rows that carry a path
+  const [sel, setSel] = useState<Set<string>>(new Set())
+  const [tagMenuOpen, setTagMenuOpen] = useState(false)
 
   useEffect(() => {
     fetch('/api/query/saved').then(r => r.json()).then(setSaved).catch(() => {})
+  }, [])
+
+  // Other views (Stats label/extension clicks) hand a ready-to-run builder
+  // payload over this event; adopt it into the form and run it.
+  useEffect(() => {
+    const onRun = (e: Event) => {
+      const p = (e as CustomEvent).detail
+      if (!p?.builder) return
+      setMode('builder')
+      setSource(p.builder.source ?? 'files')
+      setFilters(p.builder.filters?.length ? p.builder.filters : [{ field: 'name', op: 'contains', value: '' }])
+      setGroupBy(p.builder.groupBy ?? 'none')
+      setSort(p.builder.sort ?? 'size')
+      setDir(p.builder.dir ?? 'desc')
+      setLimit(p.builder.limit ?? 50)
+      setSubtree(p.builder.subtree ?? '')
+      void runQuery(p)
+    }
+    window.addEventListener('ade-run-query', onRun)
+    return () => window.removeEventListener('ade-run-query', onRun)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const currentPayload = () => {
@@ -94,6 +120,8 @@ export function QueryView({ onOpen }: { onOpen: (path: string) => void }) {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? `${res.status}`)
       setResult(data)
+      setSel(new Set())
+      setTagMenuOpen(false)
     } catch (e) {
       setError(String((e as Error).message ?? e))
       setResult(null)
@@ -153,6 +181,22 @@ export function QueryView({ onOpen }: { onOpen: (path: string) => void }) {
 
   const maybeOpen = (cell: string) => {
     if (cell.includes('/') || /\.\w{1,5}$/.test(cell)) onOpen(cell)
+  }
+
+  // Labeling is offered only when the result set has an explicit path or
+  // directory column; heuristic path-shaped cells are fine for opening a
+  // viewer but too loose for writing xattrs.
+  const pathCol = result ? result.columns.findIndex(c => c === 'path' || c === 'directory') : -1
+  const rowKeys = pathCol >= 0 && result ? [...new Set(result.rows.map(r => r[pathCol]).filter(Boolean))] : []
+  const allSelected = rowKeys.length > 0 && sel.size === rowKeys.length
+
+  const toggleSel = (key: string) => {
+    setSel(s => {
+      const next = new Set(s)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
   }
 
   return (
@@ -215,7 +259,7 @@ export function QueryView({ onOpen }: { onOpen: (path: string) => void }) {
               </div>
               <div>
                 <label className="field-label">Limit</label>
-                <input className="field" type="number" min={1} max={500} value={limit} onChange={e => setLimit(Number(e.target.value))} />
+                <input className="field" type="number" min={1} max={2000} value={limit} onChange={e => setLimit(Number(e.target.value))} />
               </div>
             </div>
             <label className="field-label">Filters (all must match)</label>
@@ -249,7 +293,7 @@ export function QueryView({ onOpen }: { onOpen: (path: string) => void }) {
             <div className="query-row">
               <div>
                 <label className="field-label">Limit</label>
-                <input className="field" type="number" min={1} max={500} value={n} onChange={e => setN(Number(e.target.value))} />
+                <input className="field" type="number" min={1} max={2000} value={n} onChange={e => setN(Number(e.target.value))} />
               </div>
               {canned === 'recent' && (
                 <div>
@@ -276,6 +320,15 @@ export function QueryView({ onOpen }: { onOpen: (path: string) => void }) {
         </div>
         <div className="query-actions">
           <button className="btn-primary" onClick={() => runQuery()} disabled={busy}>{busy ? 'Running…' : 'Run query'}</button>
+          <button
+            className="btn-secondary"
+            onClick={() => {
+              setResult(null); setError(null); setSel(new Set()); setTagMenuOpen(false)
+              setFilters([{ field: 'name', op: 'contains', value: '' }])
+              setGroupBy('none'); setSort('size'); setDir('desc'); setLimit(50)
+              setSubtree(''); setCanned('largest'); setN(25); setDays(7)
+            }}
+          >Reset</button>
           {savingOpen ? (
             <span className="confirm-group">
               <input className="field" value={saveName} onChange={e => setSaveName(e.target.value)}
@@ -301,15 +354,39 @@ export function QueryView({ onOpen }: { onOpen: (path: string) => void }) {
         {error && <p className="error">{error}</p>}
       </div>
       {result && (
-        <div className="query-results card">
+        <div className={`query-results card ${sel.size ? 'has-sel' : ''}`}>
+          {pathCol >= 0 && rowKeys.length > 0 && (
+            <div className="results-head results-toolbar">
+              <span>{result.columns[pathCol] === 'directory' ? 'Label directories' : 'Label files'} from these results</span>
+              <span className="results-actions">
+                <button
+                  className="btn-secondary"
+                  onClick={() => setSel(allSelected ? new Set() : new Set(rowKeys))}
+                >{allSelected ? 'Clear selection' : 'Select all'}</button>
+                <button
+                  className="btn-secondary"
+                  disabled={!sel.size}
+                  onClick={() => setTagMenuOpen(o => !o)}
+                >Labels…{sel.size ? ` (${sel.size})` : ''}</button>
+              </span>
+            </div>
+          )}
           <div className="table-scroll">
             <table>
               <thead>
-                <tr>{result.columns.map(c => <th key={c}>{c}</th>)}</tr>
+                <tr>
+                  {pathCol >= 0 && <th className="sel-col" />}
+                  {result.columns.map(c => <th key={c}>{c}</th>)}
+                </tr>
               </thead>
               <tbody>
                 {result.rows.map((r, i) => (
-                  <tr key={i}>
+                  <tr key={i} className={pathCol >= 0 && sel.has(r[pathCol]) ? 'multi' : ''}>
+                    {pathCol >= 0 && (
+                      <td className="sel-col">
+                        {r[pathCol] && <RowCheck checked={sel.has(r[pathCol])} onToggle={() => toggleSel(r[pathCol])} />}
+                      </td>
+                    )}
                     {r.map((cell, j) => {
                       const isBytes = result.columns[j] === 'bytes'
                       const looksPath = result.columns[j] === 'path' || result.columns[j] === 'directory' || cell.includes('/')
@@ -326,6 +403,13 @@ export function QueryView({ onOpen }: { onOpen: (path: string) => void }) {
             </table>
           </div>
         </div>
+      )}
+      {tagMenuOpen && sel.size > 0 && (
+        <TagMenu
+          paths={[...sel]}
+          onClose={() => setTagMenuOpen(false)}
+          onApplied={() => {}}
+        />
       )}
     </div>
   )
