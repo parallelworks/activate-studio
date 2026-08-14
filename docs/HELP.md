@@ -51,7 +51,8 @@ Labels organize the corpus without moving files, and they follow inheritance: la
 
 Everything added becomes searchable in about a second.
 
-- Drag files or whole folders onto the tree, or use **Add**; the destination folder is created on demand.
+- Drag files or whole folders onto the tree (a dropped folder keeps its structure), or use **Add**; the destination folder is created on demand.
+- **Add** also has a **New folder** field: type a path (nested is fine) to create an empty directory and make it the destination.
 - Add by URL: web pages are reduced to text with the source recorded; PDFs saved as-is.
 - Files that arrive outside the interface are picked up by the background sync within minutes, or immediately with **sync now**.
 
