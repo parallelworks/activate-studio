@@ -7,6 +7,8 @@ import { attachmentContext } from '../attachments.js'
 import { effectiveSettings } from '../settings.js'
 import { agentPrompt } from '../extensions.js'
 import { recordAssistantTurn, recordUserTurn } from '../conversations.js'
+import { clearUserKey, getUserKeyStatus, resolveUserKey, setUserKey } from '../credentials.js'
+import { authEnabled } from '../auth.js'
 
 interface StreamBody {
   model: string
@@ -39,11 +41,11 @@ function prettyToolArgs(argsJson: string): string {
 }
 
 export async function chatRoutes(app: FastifyInstance): Promise<void> {
-  app.get('/api/chat/models', async (_req, reply) => {
-    if (!gatewayConfigured()) {
+  app.get('/api/chat/models', async (req, reply) => {
+    if (!gatewayConfigured() && !resolveUserKey(req.user?.id)) {
       return reply.send({ models: [], unreachableSessions: [], error: 'no gateway credential: set PW_API_KEY or authenticate the pw CLI' })
     }
-    const wire: any = await listModels()
+    const wire: any = await listModels(resolveUserKey(req.user?.id))
     let models = (wire.data ?? wire.models ?? []).filter((m: any) => m)
     // Org-provider models require an X-Allocation header; without a configured
     // allocation they can only fail, so hide them. Personal providers sort first
@@ -57,7 +59,43 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
   })
 
   // Live model-callability check for the footer status line.
-  app.get('/api/ai/health', async () => aiHealth())
+  app.get('/api/ai/health', async req => aiHealth(resolveUserKey(req.user?.id)))
+
+  // Personal model key: verified identity required; only status metadata
+  // (mode, last4, timestamps) ever goes to the browser.
+  app.get('/api/me/model-key', async req => {
+    // Standalone deployments (no platform identity configured) run single
+    // user on the deployment credential; the personal-key surface is an
+    // ACTIVATE-session feature and stays hidden there.
+    if (!authEnabled()) return { authEnabled: false, verified: false, mode: 'none' }
+    if (!req.user) return { authEnabled: true, verified: false, mode: 'none' }
+    return { authEnabled: true, verified: true, ...getUserKeyStatus(req.user.id) }
+  })
+
+  app.put('/api/me/model-key', async (req, reply) => {
+    if (!req.user) return reply.status(403).send({ error: 'Personal keys need a platform-verified identity; open the app through the platform.' })
+    const body = req.body as { key?: string; persist?: boolean }
+    const key = String(body.key ?? '').trim()
+    if (!key) return reply.status(400).send({ error: 'key required' })
+    setUserKey(req.user.id, key, body.persist !== false)
+    return { verified: true, ...getUserKeyStatus(req.user.id) }
+  })
+
+  app.delete('/api/me/model-key', async (req, reply) => {
+    if (!req.user) return reply.status(403).send({ error: 'not verified' })
+    clearUserKey(req.user.id)
+    return { verified: true, mode: 'none' }
+  })
+
+  // Test a candidate key (or the stored one) against the gateway without
+  // exposing anything about it beyond the health classification.
+  app.post('/api/me/model-key/test', async (req, reply) => {
+    if (!req.user) return reply.status(403).send({ error: 'not verified' })
+    const body = req.body as { key?: string } | null
+    const candidate = String(body?.key ?? '').trim() || resolveUserKey(req.user.id)
+    if (!candidate) return reply.status(400).send({ error: 'no key to test' })
+    return aiHealth(candidate)
+  })
 
   // Tool catalog for the Settings page: built-ins plus custom, with state.
   app.get('/api/chat/tools', async () => {
@@ -100,8 +138,8 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     // soon as the body is consumed, which would abort immediately).
     res.on('close', () => { if (!res.writableEnded) abort.abort() })
 
-    if (!gatewayConfigured()) {
-      sse(res, 'error', { message: 'No gateway credential (set PW_API_KEY or authenticate the pw CLI); chat is unavailable.' })
+    if (!gatewayConfigured() && !resolveUserKey(req.user?.id)) {
+      sse(res, 'error', { message: 'No gateway credential (set PW_API_KEY, authenticate the pw CLI, or add your key in Settings); chat is unavailable.' })
       res.end()
       return reply
     }
@@ -145,6 +183,7 @@ ${ctx}` : ctx
     const today = new Date().toISOString().slice(0, 10)
     // The persona file is read per request so edits apply immediately.
     const persona = agentPrompt()
+    const userKey = resolveUserKey(req.user?.id)
     const labelScope = Array.isArray(body.labelScope)
       ? body.labelScope.map(String).filter(Boolean).slice(0, 16)
       : []
@@ -206,6 +245,7 @@ ${ctx}` : ctx
           allocation,
           callbacks,
           abort.signal,
+          userKey,
         )
         finalModel = turn.model ?? finalModel
         if (turn.finishReason === 'tool_calls' && turn.toolCalls.length > 0) {
@@ -223,7 +263,7 @@ ${ctx}` : ctx
               result = `[You already made this exact call in this reply; identical result repeated below. Do not repeat it again.]\n${toolCache.get(key)}`
               summary = 'repeated call (cached)'
             } else {
-              const out = await executeTool(tc.function.name, tc.function.arguments, { labelScope })
+              const out = await executeTool(tc.function.name, tc.function.arguments, { labelScope, userKey })
               result = out.result
               summary = out.summary
               toolCache.set(key, result)
@@ -250,6 +290,7 @@ ${ctx}` : ctx
         allocation,
         callbacks,
         abort.signal,
+        userKey,
       )
       finalModel = finalTurn.model ?? finalModel
       finish(finalTurn.finishReason)

@@ -33,6 +33,11 @@ export function SettingsView() {
   const [catalog, setCatalog] = useState<CatalogTool[]>([])
   const [ext, setExt] = useState<Extensions | null>(null)
   const [specOpen, setSpecOpen] = useState<string | null>(null)
+  const [me, setMe] = useState<{ authEnabled?: boolean; verified: boolean; mode: 'stored' | 'session' | 'none'; last4?: string; addedAt?: string; sessionExpiresAt?: string } | null>(null)
+  const [keyInput, setKeyInput] = useState('')
+  const [persistKey, setPersistKey] = useState(true)
+  const [keyBusy, setKeyBusy] = useState(false)
+  const [keyNote, setKeyNote] = useState('')
 
   useEffect(() => {
     fetch('/api/settings').then(r => r.json()).then(d => setForm(d.effective)).catch(() => setNote('Could not load settings.'))
@@ -43,7 +48,48 @@ export function SettingsView() {
     fetch('/api/chat/models').then(r => r.json())
       .then(d => setModels((d.models ?? []).map((m: { id: string }) => m.id)))
       .catch(() => {})
+    fetch('/api/me/model-key').then(r => r.json()).then(setMe).catch(() => {})
   }, [])
+
+  const keyAction = async (method: string, body?: unknown) => {
+    setKeyBusy(true)
+    setKeyNote('')
+    try {
+      const res = await fetch('/api/me/model-key', {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? `${res.status}`)
+      setMe(data)
+      return true
+    } catch (e) {
+      setKeyNote(String((e as Error).message ?? e))
+      return false
+    } finally {
+      setKeyBusy(false)
+    }
+  }
+
+  const testKey = async (candidate?: string) => {
+    setKeyBusy(true)
+    setKeyNote('')
+    try {
+      const res = await fetch('/api/me/model-key/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(candidate ? { key: candidate } : {}),
+      })
+      const h = await res.json()
+      if (!res.ok) throw new Error(h.error ?? `${res.status}`)
+      setKeyNote(h.status === 'ok' ? `Key works: ${h.models} models available.` : `Key check failed (${h.status}): ${h.message ?? ''}`)
+    } catch (e) {
+      setKeyNote(String((e as Error).message ?? e))
+    } finally {
+      setKeyBusy(false)
+    }
+  }
 
   const save = async () => {
     if (!form) return
@@ -69,7 +115,7 @@ export function SettingsView() {
 
   return (
     <div className="settings-view">
-      <div className="card settings-card">
+      <div className="card settings-card sc-general">
         <h1 className="view-title">Settings</h1>
         <p className="muted view-sub">
           Saved settings apply immediately and override the deployment's environment defaults; they live beside the index, not in the repository. Brand icon and model credentials stay in the environment (see docs/CUSTOMIZATION.md).
@@ -146,7 +192,7 @@ export function SettingsView() {
         </div>
       </div>
 
-      <div className="card settings-card">
+      <div className="card settings-card sc-tools">
         <h2 className="settings-section-title">Assistant tools</h2>
         <p className="muted view-sub">
           Everything the chat assistant can call. Built-in tools are part of the server; unchecking one hides it from the model, and clicking a name shows its exact call specification, so you can copy the shape into a custom tool or extension file with your own changes. Custom tools are commands you define here (saved with these settings, not as files); each appears to the assistant as a callable tool and runs on this server with its output returned to the conversation.
@@ -210,7 +256,53 @@ export function SettingsView() {
         </div>
       </div>
 
-      <div className="card settings-card">
+      {me?.authEnabled && (
+      <div className="card settings-card sc-access">
+        <h2 className="settings-section-title">Your model access</h2>
+        {!me?.verified ? (
+          <p className="muted view-sub">
+            Personal model keys attach to your platform-verified identity, which this connection does not carry. Open the app through the platform session to add one; until then, requests use the deployment's credential.
+          </p>
+        ) : (
+          <>
+            <p className="muted view-sub">
+              {me.mode === 'none' && 'You are using the deployment\u2019s model credential. Add your own key to call the gateway (and platform tools) as yourself.'}
+              {me.mode === 'stored' && `Using your key ending ${me.last4}, added ${me.addedAt?.slice(0, 10)}, stored encrypted on this server.`}
+              {me.mode === 'session' && `Using your key ending ${me.last4}, held in memory for this session only (expires ${me.sessionExpiresAt ? new Date(me.sessionExpiresAt).toLocaleTimeString() : 'soon'}).`}
+            </p>
+            <div className="key-row">
+              <input
+                className="field grow"
+                type="password"
+                value={keyInput}
+                placeholder="Paste your PW API key"
+                autoComplete="off"
+                onChange={e => setKeyInput(e.target.value)}
+              />
+              <button className="btn-primary" disabled={keyBusy || !keyInput.trim()}
+                onClick={async () => { if (await keyAction('PUT', { key: keyInput.trim(), persist: persistKey })) { setKeyInput(''); void testKey() } }}>
+                Save and test
+              </button>
+              <button className="btn-secondary" disabled={keyBusy || (!keyInput.trim() && me.mode === 'none')}
+                onClick={() => void testKey(keyInput.trim() || undefined)}>Test</button>
+              {me.mode !== 'none' && (
+                <button className="btn-danger-outline" disabled={keyBusy} onClick={() => void keyAction('DELETE')}>Remove</button>
+              )}
+            </div>
+            <label className="key-persist">
+              <input type="checkbox" checked={persistKey} onChange={e => setPersistKey(e.target.checked)} />
+              Remember on this server (encrypted at rest); unchecked keeps it in memory for about 12 hours only
+            </label>
+            <p className="muted key-trust">
+              A key added here is available to this server and its operator; encryption at rest protects the stored file, not the running process. Use a key you can revoke. If your key needs periodic unlocking (genai.mil keys unlock every 8 hours), Test tells you its current state.
+            </p>
+            {keyNote && <p className="muted key-note">{keyNote}</p>}
+          </>
+        )}
+      </div>
+      )}
+
+      <div className="card settings-card sc-ext">
         <h2 className="settings-section-title">Extensions</h2>
         <p className="muted view-sub">
           File-based extensions load from <code>{ext?.dir ?? 'the extensions directory beside the index'}</code> and take effect without a restart. <code>tools/*.json</code> files (name, description, command) become chat tools like the custom tools above. <code>skills/*.md</code> files are instruction sets the assistant loads on demand through the use_skill tool, by name or when a task matches their description. <code>agents/default.md</code> is appended to the system prompt as this deployment's standing instructions.
