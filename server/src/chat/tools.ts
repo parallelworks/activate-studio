@@ -1,5 +1,7 @@
 import { execFile } from 'node:child_process'
-import { gufiAvailable, KB_ROOT, MAX_PREVIEW_BYTES } from '../config.js'
+import fs from 'node:fs/promises'
+import path from 'node:path'
+import { gufiAvailable, KB_ROOT, MAX_PREVIEW_BYTES, PROJECT_ROOT } from '../config.js'
 import { listDir, readFileContent, KbError } from '../kb.js'
 import { blendHits, searchFts, searchNames, searchVector } from '../gufi.js'
 import { annotateHits } from '../tags.js'
@@ -33,6 +35,7 @@ export const TOOL_CALLS: Record<string, string> = {
   list_clusters: 'pw cluster ls -o json',
   cluster_command: 'pw ssh <resource> <command> (read-only scheduler guidance; state changes only on explicit request)',
   show_in_viewer: 'no external call; returns viewer deep-link or inline-embed markdown',
+  studio_docs: 'reads docs/HELP.md, docs/ARCHITECTURE.md, or docs/CUSTOMIZATION.md from the app installation',
   use_skill: 'loads extensions/skills/<name>.md into the conversation',
 }
 
@@ -195,6 +198,21 @@ export const TOOL_SPECS: ToolSpec[] = [
       name: 'get_labels',
       description: 'List the label vocabulary in use across the knowledge base with usage counts (labels convey provenance such as research versus validated).',
       parameters: { type: 'object', properties: {}, required: [] },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'studio_docs',
+      description:
+        'Read this Studio\'s own documentation to answer questions about using the application itself: "help" is the in-app user guide (chat, library, search, query, labels, adding material, navigation), "architecture" explains the index and retrieval design, "customization" covers deployment configuration. Use for any question about how the Studio works or how to do something in it; do not search the knowledge base for these.',
+      parameters: {
+        type: 'object',
+        properties: {
+          doc: { type: 'string', enum: ['help', 'architecture', 'customization'], description: 'Which document to read' },
+        },
+        required: ['doc'],
+      },
     },
   },
   {
@@ -519,6 +537,14 @@ export async function executeTool(name: string, argsJson: string, ctx?: { labelS
         }
         const result = [...counts.entries()].map(([t, c]) => `${t}: ${c}`).join('\n') || 'No labels in use yet.'
         return { result, summary: `${counts.size} labels` }
+      }
+      case 'studio_docs': {
+        const which = String(args.doc ?? 'help').toLowerCase()
+        const file = which === 'architecture' ? 'ARCHITECTURE.md' : which === 'customization' ? 'CUSTOMIZATION.md' : 'HELP.md'
+        let md = await fs.readFile(path.join(PROJECT_ROOT, 'docs', file), 'utf8')
+        const eff = effectiveSettings()
+        md = md.replaceAll('{appName}', eff.appName).replaceAll('{kbLabel}', eff.kbLabel)
+        return { result: md.slice(0, TOOL_OUTPUT_CAP), summary: `${file} (${md.length} chars)` }
       }
       case 'show_in_viewer': {
         const kind = args.kind === 'workflow_dag' ? 'workflow_dag' : 'file'

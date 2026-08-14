@@ -54,6 +54,8 @@ export async function systemPrompt(): Promise<string> {
     '',
     statsLine,
     '',
+    'For questions about the Studio application itself, how to use a view, what a control does, how labels or search or the index work, call studio_docs and answer from the returned guide instead of searching the knowledge base.',
+    '',
     'Platform workflows registered in this account. These are composable building blocks: recommend which fit a task, preview a DAG with get_workflow before anything runs, validate with run_workflow dry_run when acting on your own initiative, and treat a user request to run something as the authorization to run it, with no second confirmation. Monitor with workflow_runs and workflow_run_detail. pw_help discovers the wider platform command surface.',
     workflows || '(workflow list unavailable)',
     '',
