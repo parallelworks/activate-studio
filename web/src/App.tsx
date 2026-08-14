@@ -62,11 +62,13 @@ export default function App() {
     <div className="app">
       <nav className={`sidenav ${navCollapsed ? 'collapsed' : ''}`}>
         <div className="sidenav-head">
-          <div className="sidenav-brand" title={cfg.appName}>
-            {cfg.iconUrl
+          <div className="sidenav-brand" title={cfg.loaded ? cfg.appName : undefined}>
+            {/* Hold the slot empty until config arrives so the generic
+                default never flashes before the deployment brand. */}
+            {cfg.loaded && (cfg.iconUrl
               ? <img className="brand-icon" src={cfg.iconUrl} alt="" />
-              : <span className="brand-badge">{(cfg.appName[0] ?? 'S').toUpperCase()}</span>}
-            <span className="brand-text"><b>{cfg.appName}</b></span>
+              : <span className="brand-badge">{(cfg.appName[0] ?? 'S').toUpperCase()}</span>)}
+            {cfg.loaded && <span className="brand-text"><b>{cfg.appName}</b></span>}
           </div>
           <button
             className="nav-collapse"
