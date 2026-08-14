@@ -2,11 +2,13 @@ import type { FastifyInstance } from 'fastify'
 import { execFile } from 'node:child_process'
 import path from 'node:path'
 import { createReadStream } from 'node:fs'
-import { KB_ROOT, PROJECT_ROOT, gufiAvailable } from './config.js'
-import { listDir, readFileContent, resolveKb, KbError } from './kb.js'
+import fsp from 'node:fs/promises'
+import { EXCLUDE_DIRS, KB_ROOT, PROJECT_ROOT, gufiAvailable } from './config.js'
+import { extractPath, listDir, readFileContent, resolveKb, KbError } from './kb.js'
+import { CONVERTIBLE, mimeFor, officeToPdf, removePdfPreview } from './preview.js'
 import { blendHits, corpusStats, searchFts, searchNames, searchVector } from './gufi.js'
 import { invalidateContext } from './chat/context.js'
-import { incrementalIndexDir, indexStatus, sweep } from './indexing.js'
+import { incrementalIndexDir, indexStatus, reindexForFile, sweep } from './indexing.js'
 
 export async function kbRoutes(app: FastifyInstance): Promise<void> {
   app.setErrorHandler((err: unknown, _req, reply) => {
@@ -47,8 +49,49 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/kb/download', async (req, reply) => {
     const { path: rel = '' } = req.query as { path?: string }
     const abs = resolveKb(rel)
+    reply.header('Content-Type', mimeFor(abs))
     reply.header('Content-Disposition', `attachment; filename="${path.basename(abs)}"`)
     return reply.send(createReadStream(abs))
+  })
+
+  // Inline serving of the actual file (images in <img>, PDFs in <iframe>).
+  app.get('/api/kb/raw', async (req, reply) => {
+    const { path: rel = '' } = req.query as { path?: string }
+    const abs = resolveKb(rel)
+    reply.header('Content-Type', mimeFor(abs))
+    reply.header('Content-Disposition', 'inline')
+    return reply.send(createReadStream(abs))
+  })
+
+  // Office documents rendered as PDF for the Original preview tab.
+  app.get('/api/kb/pdf', async (req, reply) => {
+    const { path: rel = '' } = req.query as { path?: string }
+    const abs = resolveKb(rel)
+    if (!CONVERTIBLE.has(path.extname(abs).toLowerCase())) {
+      throw new KbError(415, 'no PDF preview for this file type')
+    }
+    const pdf = await officeToPdf(abs, rel)
+    reply.header('Content-Type', 'application/pdf')
+    reply.header('Content-Disposition', 'inline')
+    return reply.send(createReadStream(pdf))
+  })
+
+  // Remove a file from the knowledge base and from the index.
+  app.delete('/api/kb/file', async req => {
+    const { path: rel = '' } = req.query as { path?: string }
+    if (!rel) throw new KbError(400, 'path required')
+    for (const part of rel.split('/')) {
+      if (EXCLUDE_DIRS.has(part) || part.startsWith('.')) throw new KbError(400, 'path not deletable')
+    }
+    const abs = resolveKb(rel)
+    const st = await fsp.stat(abs).catch(() => null)
+    if (!st) throw new KbError(404, 'not found')
+    if (!st.isFile()) throw new KbError(400, 'only files can be deleted')
+    await fsp.rm(abs)
+    await fsp.rm(extractPath(rel), { force: true }).catch(() => {})
+    await removePdfPreview(rel)
+    const { ms } = await reindexForFile(rel)
+    return { deleted: rel, indexMs: ms }
   })
 
   app.get('/api/kb/stats', async () => corpusStats())

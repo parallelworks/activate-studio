@@ -94,6 +94,52 @@ export function incrementalIndexDir(rel: string): Promise<{ ms: number }> {
   })
 }
 
+/**
+ * Rebuild only the root directory's db (files directly under KB_ROOT).
+ * gufi_dir2index --max-level 0 emits exactly that one db; enrichment and
+ * embeddings run non-recursively on it.
+ */
+export function indexRootDb(): Promise<{ ms: number }> {
+  return withLock(async () => {
+    const t0 = Date.now()
+    const staging = path.join(INDEX_BASE, `inc-root-${Date.now()}`)
+    await fsp.mkdir(staging, { recursive: true })
+    try {
+      await run(path.join(GUFI_BIN, 'gufi_dir2index'),
+        ['-x', '-n', '4', '--max-level', '0', '--skip-file', ensureSkipFile(), KB_ROOT, staging])
+      const built = path.join(staging, path.basename(KB_ROOT), 'db.db')
+      await fsp.mkdir(GUFI_INDEX, { recursive: true })
+      await fsp.rename(built, path.join(GUFI_INDEX, 'db.db'))
+      await run('python3', [path.join(PROJECT_ROOT, 'indexer', 'enrich.py'),
+        '--kb-root', KB_ROOT, '--index', GUFI_INDEX,
+        '--extract-cache', path.join(INDEX_BASE, 'extract'), '--no-recurse'])
+      if (fs.existsSync(EMBED_MODEL)) {
+        await run('python3', [path.join(PROJECT_ROOT, 'indexer', 'embed.py'),
+          '--index', GUFI_INDEX, '--model', EMBED_MODEL, '--no-recurse'])
+      }
+      invalidateDbList()
+      invalidateContext()
+      return { ms: Date.now() - t0 }
+    } finally {
+      await fsp.rm(staging, { recursive: true, force: true })
+    }
+  })
+}
+
+/** Re-index whatever covers a KB-relative FILE path: the file's top-level
+ *  subtree, or the root db for files directly under the root. */
+export function reindexForFile(rel: string): Promise<{ ms: number }> {
+  const cleaned = rel.replace(/^\/+|\/+$/g, '')
+  return cleaned.includes('/') ? incrementalIndexDir(cleaned.split('/')[0]) : indexRootDb()
+}
+
+/** Re-index whatever covers a KB-relative DIRECTORY: its top-level subtree,
+ *  or the root db when the directory is the root itself. */
+export function reindexForDir(rel: string): Promise<{ ms: number }> {
+  const cleaned = rel.replace(/^\/+|\/+$/g, '')
+  return cleaned ? incrementalIndexDir(cleaned.split('/')[0]) : indexRootDb()
+}
+
 interface DirScan { latest: number }
 
 /** Latest mtime a directory presents: itself plus its direct files. */
@@ -136,13 +182,16 @@ export async function sweep(log: (msg: string) => void): Promise<string[]> {
     const state = loadSweepState()
     const scan = await scanKbDirs()
 
+    let rootChanged = false
     let changed: string[] = []
     for (const [rel, s] of scan) {
-      if (rel === '') continue
-      if ((state[rel] ?? 0) < s.latest) changed.push(rel)
+      if ((state[rel === '' ? '.' : rel] ?? 0) < s.latest) {
+        if (rel === '') rootChanged = true
+        else changed.push(rel)
+      }
     }
     // Removed directories: drop their index subtrees.
-    const removed = Object.keys(state).filter(rel => rel && !scan.has(rel))
+    const removed = Object.keys(state).filter(rel => rel && rel !== '.' && !scan.has(rel))
     for (const rel of removed) {
       await fsp.rm(path.join(GUFI_INDEX, rel), { recursive: true, force: true }).catch(() => {})
     }
@@ -150,16 +199,20 @@ export async function sweep(log: (msg: string) => void): Promise<string[]> {
     changed.sort()
     changed = changed.filter(rel => !changed.some(other => other !== rel && rel.startsWith(other + '/')))
 
+    if (rootChanged) {
+      log('sweep: re-indexing root files')
+      await indexRootDb()
+    }
     for (const rel of changed) {
       log(`sweep: re-indexing ${rel}`)
       await incrementalIndexDir(rel)
     }
-    if (changed.length || removed.length) {
+    if (rootChanged || changed.length || removed.length) {
       const next: Record<string, number> = {}
-      for (const [rel, s] of scan) if (rel) next[rel] = s.latest
+      for (const [rel, s] of scan) next[rel === '' ? '.' : rel] = s.latest
       await fsp.writeFile(SWEEP_STATE, JSON.stringify(next))
     }
-    status.lastChanges = [...changed, ...removed.map(r => `${r} (removed)`)]
+    status.lastChanges = [...(rootChanged ? ['(root files)'] : []), ...changed, ...removed.map(r => `${r} (removed)`)]
     status.lastError = null
     return changed
   } catch (err: any) {
@@ -182,7 +235,7 @@ async function primeSweepState(): Promise<void> {
   if (fs.existsSync(SWEEP_STATE)) return
   const scan = await scanKbDirs()
   const next: Record<string, number> = {}
-  for (const [rel, s] of scan) if (rel) next[rel] = s.latest
+  for (const [rel, s] of scan) next[rel === '' ? '.' : rel] = s.latest
   await fsp.writeFile(SWEEP_STATE, JSON.stringify(next))
 }
 
