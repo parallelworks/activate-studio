@@ -17,7 +17,7 @@
 
   --theme-element: var(--pw-navy);
   --theme-link: #428bca;
-  --theme-border: var(--pw-border-strong);
+  --theme-border: var(--pw-border);
   --theme-hover: #f3f4f6;
 }
 
@@ -44,7 +44,7 @@
   --theme-muted-panel-bg: #0f172a;
   --theme-muted-panel-color: #94a3b8;
   --theme-muted-text-color: #94a3b8;
-  --theme-border: #334155;
+  --theme-border: var(--pw-border);
   --theme-element: #1d4ed8;
   --theme-element-text: #ffffff;
   --theme-hover: #1e293b;
