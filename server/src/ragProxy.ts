@@ -250,18 +250,8 @@ export async function ragProxyRoutes(app: FastifyInstance): Promise<void> {
     const entry = (id: string) => ({ id, object: 'model', created, owned_by: 'studio' })
     const eff0 = effectiveSettings()
     const data: { id: string; object: string; created: number; owned_by: string }[] = []
-    // Advertise the bare name (stable alias) and, when the caller's key
-    // resolves a default, the pinned form showing the underlying model.
-    // Computed per caller from their own credential, so the listing is
-    // truthful for whoever is looking at it, and picking the pinned id
-    // guarantees that base model.
-    const resolved = await defaultModelFor(key).catch(() => '')
-    const advertise = (name: string) => {
-      data.push(entry(name))
-      if (resolved) data.push(entry(`${name}/${resolved}`))
-    }
-    if (eff0.ragAdvertiseAgentModel) advertise('studio-agent')
-    if (eff0.ragAdvertiseRagModel) advertise('studio-rag')
+    if (eff0.ragAdvertiseAgentModel) data.push(entry('studio-agent'))
+    if (eff0.ragAdvertiseRagModel) data.push(entry('studio-rag'))
     if (String((req.query as { all?: string }).all ?? '') === '1') {
       for (const id of ['studio-agent', 'studio-rag']) {
         if (!data.some(d => d.id === id)) data.push(entry(id))
