@@ -68,6 +68,12 @@ export const api = {
     if (!res.ok) throw new Error((data as any).error ?? `delete: ${res.status}`)
     return data as { deleted: string; indexMs: number }
   },
+  deleteDir: async (path: string) => {
+    const res = await fetch(`/api/kb/dir?path=${encodeURIComponent(path)}`, { method: 'DELETE' })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error((data as any).error ?? `delete: ${res.status}`)
+    return data as { deleted: string }
+  },
   stats: () => getJson<{ available: boolean; files?: number; dirs?: number; totalBytes?: number }>(`/api/kb/stats`),
   search: (q: string, tags?: string[], limit = 50) => getJson<{ hits: SearchHit[]; error?: string }>(`/api/search?q=${encodeURIComponent(q)}&limit=${limit}${tags?.length ? `&tags=${encodeURIComponent(tags.join(','))}` : ''}`),
   health: () => getJson<{ ok: boolean; gufi: boolean }>(`/healthz`),

@@ -3,7 +3,7 @@ import { execFile } from 'node:child_process'
 import path from 'node:path'
 import fs, { createReadStream } from 'node:fs'
 import fsp from 'node:fs/promises'
-import { EXCLUDE_DIRS, KB_ROOT, PROJECT_ROOT, gufiAvailable } from './config.js'
+import { EXCLUDE_DIRS, GUFI_INDEX, INDEX_BASE, KB_ROOT, PROJECT_ROOT, gufiAvailable } from './config.js'
 import { extractPath, listDir, readFileContent, resolveKb, KbError } from './kb.js'
 import YAML from 'yaml'
 import { CONVERTIBLE, mimeFor, officeToPdf, pdfPageCount, pdfPagePng, previewPdfFor, removePdfPreview } from './preview.js'
@@ -196,6 +196,29 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
   })
 
   // Remove a file from the knowledge base and from the index.
+  // Recursive directory delete: the tree's context menu offers it with an
+  // explicit confirm. Removes the subtree, its caches, and its index slice;
+  // the next sweep reconciles whatever this misses.
+  app.delete('/api/kb/dir', async req => {
+    const { path: rel = '' } = req.query as { path?: string }
+    const cleaned = rel.replace(/^\/+|\/+$/g, '')
+    if (!cleaned) throw new KbError(400, 'refusing to delete the knowledge base root')
+    for (const part of cleaned.split('/')) {
+      if (EXCLUDE_DIRS.has(part) || part.startsWith('.')) throw new KbError(400, 'path not deletable')
+    }
+    const abs = resolveKb(cleaned)
+    const st = await fsp.stat(abs).catch(() => null)
+    if (!st) throw new KbError(404, 'not found')
+    if (!st.isDirectory()) throw new KbError(400, 'not a directory; use the file delete')
+    await fsp.rm(abs, { recursive: true })
+    for (const cache of ['extract', 'pdf-preview', 'pdf-pages', 'model-cache']) {
+      await fsp.rm(path.join(INDEX_BASE, cache, cleaned), { recursive: true, force: true }).catch(() => {})
+    }
+    await fsp.rm(path.join(GUFI_INDEX, cleaned), { recursive: true, force: true }).catch(() => {})
+    invalidateContext()
+    return { deleted: cleaned }
+  })
+
   app.delete('/api/kb/file', async req => {
     const { path: rel = '' } = req.query as { path?: string }
     if (!rel) throw new KbError(400, 'path required')

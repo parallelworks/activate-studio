@@ -864,3 +864,28 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .help-content .md-body li { margin: 4px 0; }
 .help-hint { max-width: 780px; margin-top: 18px; font-size: 13px; }
 .help-content .help-stats { margin-top: 18px; }
+
+/* Tree right-click context menu */
+.ctx-menu {
+  position: fixed; z-index: 60; min-width: 200px; max-width: 280px;
+  padding: 6px; display: flex; flex-direction: column; gap: 2px;
+  background: var(--pw-panel); box-shadow: 0 12px 32px rgba(6, 53, 79, 0.18);
+}
+[data-theme='dark'] .ctx-menu { box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55); }
+.ctx-title {
+  font-size: 11px; font-weight: 600; color: var(--pw-muted); padding: 4px 10px 6px;
+  border-bottom: 1px solid var(--pw-border); margin-bottom: 3px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ctx-menu > button {
+  border: none; background: none; text-align: left; cursor: pointer;
+  font-size: 13px; color: var(--pw-text); padding: 7px 10px; border-radius: 6px;
+}
+.ctx-menu > button:hover { background: var(--pw-hover-row, #f3f4f6); }
+.ctx-menu > button.ctx-danger { color: #dc2626; }
+.ctx-menu > button.ctx-danger.confirm { background: #fef2f2; }
+[data-theme='dark'] .ctx-menu > button.ctx-danger { color: #f87171; }
+[data-theme='dark'] .ctx-menu > button.ctx-danger.confirm { background: #3a1414; }
+.ctx-input { display: flex; gap: 6px; padding: 4px 8px; }
+.ctx-input .field { font-size: 12.5px; padding: 5px 8px; min-width: 0; }
+.ctx-err { font-size: 12px; color: #dc2626; padding: 4px 10px; }
