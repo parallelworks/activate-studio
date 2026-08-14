@@ -3,10 +3,11 @@ import { ChatView } from './views/ChatView'
 import { LibraryView } from './views/LibraryView'
 import { SearchView } from './views/SearchView'
 import { QueryView } from './views/QueryView'
+import { HelpView } from './views/HelpView'
 import { StatusFooter } from './components/StatusFooter'
 import { useAppConfig } from './config'
 
-type ViewId = 'chat' | 'library' | 'search' | 'query'
+type ViewId = 'chat' | 'library' | 'search' | 'query' | 'help'
 export type Display = { kind: 'file'; target: string } | { kind: 'workflow_dag'; target: string }
 
 const NAV: { id: ViewId; label: string; icon: JSX.Element }[] = [
@@ -29,6 +30,11 @@ const NAV: { id: ViewId; label: string; icon: JSX.Element }[] = [
     id: 'query',
     label: 'Query',
     icon: <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.4"><ellipse cx="8" cy="3.5" rx="5.5" ry="2"/><path d="M2.5 3.5v9c0 1.1 2.5 2 5.5 2s5.5-.9 5.5-2v-9"/><path d="M2.5 8c0 1.1 2.5 2 5.5 2s5.5-.9 5.5-2"/></svg>,
+  },
+  {
+    id: 'help',
+    label: 'Help',
+    icon: <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.4"><circle cx="8" cy="8" r="6.5"/><path d="M6 6.2a2 2 0 0 1 3.9.6c0 1.2-1.9 1.5-1.9 2.7"/><circle cx="8" cy="11.8" r="0.3" fill="currentColor"/></svg>,
   },
 ]
 
@@ -100,6 +106,7 @@ export default function App() {
         </div>
         <div className={view === 'search' ? 'view' : 'view hidden'}><SearchView onOpen={openFile} /></div>
         <div className={view === 'query' ? 'view' : 'view hidden'}><QueryView onOpen={openFile} /></div>
+        <div className={view === 'help' ? 'view' : 'view hidden'}><HelpView /></div>
       </main>
     </div>
   )
