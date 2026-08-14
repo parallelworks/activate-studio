@@ -7,5 +7,6 @@
     "dev": "pnpm --parallel --filter @activate-studio/server --filter @activate-studio/web dev",
     "build": "pnpm --filter @activate-studio/web build && pnpm --filter @activate-studio/server build",
     "start": "node server/dist/main.js"
-  }
+  },
+  "packageManager": "pnpm@10.33.4"
 }

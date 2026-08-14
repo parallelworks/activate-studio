@@ -287,6 +287,7 @@ jobs:
             exit 0
           fi
           cd ${{ inputs.app_settings.workdir }}
+          set -e
           # Node runtime: the system node must be v20+ (corepack/pnpm crash
           # under older ones with ERR_VM_DYNAMIC_IMPORT_CALLBACK_MISSING);
           # otherwise fetch v20 into the workdir.
@@ -315,8 +316,17 @@ jobs:
           git -C repo checkout "${{ inputs.app_settings.git_ref }}"
           git -C repo pull --ff-only 2>/dev/null || true
           cd repo
-          corepack enable pnpm 2>/dev/null || npm install -g pnpm >/dev/null 2>&1 || true
-          command -v pnpm >/dev/null 2>&1 || { echo "ERROR: pnpm unavailable"; exit 1; }
+          # corepack's vm loader breaks on some pnpm/Node pairings even when
+          # the shim exists, so validate by RUNNING pnpm and fall back to a
+          # plain npm global install (which overwrites a broken shim).
+          corepack enable pnpm 2>/dev/null || true
+          if ! pnpm --version >/dev/null 2>&1; then
+            echo "corepack pnpm unusable; installing pnpm via npm"
+            npm install -g pnpm@10 >/dev/null 2>&1 || true
+          fi
+          pnpm --version >/dev/null 2>&1 || { echo "ERROR: pnpm unavailable"; exit 1; }
+          echo "pnpm: $(pnpm --version)"
+
           echo "Installing dependencies and building..."
           pnpm install --frozen-lockfile
           pnpm build
