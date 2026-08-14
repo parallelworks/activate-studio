@@ -428,7 +428,7 @@ export function SettingsView() {
                     </select>
                     {providerMode === 'activate' && (
                       <input className="field grow" value={providerHost} autoComplete="off"
-                        placeholder="platform host, e.g. activate.hpc.mil"
+                        placeholder="platform host, e.g. activate.parallel.works"
                         onChange={e => setProviderHost(e.target.value)} />
                     )}
                     {providerMode === 'custom' && (
@@ -442,7 +442,7 @@ export function SettingsView() {
                     Remember on this server (encrypted at rest); unchecked keeps it in memory for about 12 hours only
                   </label>
                   <p className="muted key-trust">
-                    A key added here is available to this server and its operator; encryption at rest protects the stored file, not the running process. Use a key you can revoke. If your key needs periodic unlocking (genai.mil keys unlock every 8 hours), Test tells you its current state. With a custom provider, chat and models use that provider while platform tools (clusters, workflows) fall back to the deployment credential; a non-platform key is never passed to platform commands.
+                    A key added here is available to this server and its operator; encryption at rest protects the stored file, not the running process. Use a key you can revoke. If your provider locks keys on a schedule, Test tells you the key’s current state. With a custom provider, chat and models use that provider while platform tools (clusters, workflows) fall back to the deployment credential; a non-platform key is never passed to platform commands.
                   </p>
                   {keyNote && <p className="muted key-note">{keyNote}</p>}
                 </>
