@@ -3,6 +3,8 @@ import { gufiAvailable, KB_ROOT, MAX_PREVIEW_BYTES } from '../config.js'
 import { listDir, readFileContent, KbError } from '../kb.js'
 import { blendHits, searchFts, searchNames, searchVector } from '../gufi.js'
 import { annotateHits } from '../tags.js'
+import { effectiveSettings } from '../settings.js'
+import { extSkills, extTools, skillBody } from '../extensions.js'
 
 export interface ToolSpec {
   type: 'function'
@@ -204,9 +206,91 @@ export const TOOL_SPECS: ToolSpec[] = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'list_clusters',
+      description: 'List the compute clusters connected to this account: name, status, active nodes, type. Use this before any cluster_command call to find the right cluster name and confirm it is running.',
+      parameters: { type: 'object', properties: {} },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'cluster_command',
+      description: 'Run a command on a running cluster over SSH (pw ssh <cluster> <command>). Intended for read-only scheduler and system queries: squeue, sinfo, sacct, scontrol show, qstat, pbsnodes, df, nvidia-smi, hostname. Run state-changing commands (sbatch, scancel, qsub, qdel, rm, kill, reboots) ONLY when the user explicitly asked for that exact action; never as part of your own investigation.',
+      parameters: {
+        type: 'object',
+        properties: {
+          cluster: { type: 'string', description: 'Cluster or resource name from list_clusters' },
+          command: { type: 'string', description: 'The command line to run on the cluster' },
+        },
+        required: ['cluster', 'command'],
+      },
+    },
+  },
 ]
 
 const TOOL_OUTPUT_CAP = 24_000
+
+/** Specs for user-defined command tools from Settings. Names that collide
+ *  with a built-in are dropped. */
+/** Settings-stored custom tools plus file-based tools from
+ *  extensions/tools/*.json; settings win on a name collision. */
+function allCustomTools(): { name: string; description: string; command: string }[] {
+  const merged = new Map<string, { name: string; description: string; command: string }>()
+  for (const t of extTools()) merged.set(t.name, t)
+  for (const t of effectiveSettings().customTools ?? []) if (t.name && t.command) merged.set(t.name, t)
+  return [...merged.values()]
+}
+
+export function customToolSpecs(): ToolSpec[] {
+  const builtin = new Set(TOOL_SPECS.map(t => t.function.name))
+  return allCustomTools()
+    .filter(t => t.name && t.command && !builtin.has(t.name))
+    .map(t => ({
+      type: 'function' as const,
+      function: {
+        name: t.name,
+        description: `${t.description || 'Custom deployment tool.'} (Runs a configured command on the Studio server; output is returned here.)`,
+        parameters: {
+          type: 'object',
+          properties: {
+            args: { type: 'string', description: 'Extra command-line arguments appended to the configured command; omit for none.' },
+          },
+        },
+      },
+    }))
+}
+
+/** The tool list a chat request actually gets: built-ins plus custom tools,
+ *  minus anything disabled in Settings. */
+/** use_skill only exists when skill files are present; its description
+ *  carries the current catalog so the model knows what is loadable. */
+export function skillToolSpec(): ToolSpec | null {
+  const skills = extSkills()
+  if (!skills.length) return null
+  return {
+    type: 'function',
+    function: {
+      name: 'use_skill',
+      description: `Load a skill: task-specific instructions to follow for the current request. Available skills: ${skills.map(s => `${s.name}${s.description ? ` (${s.description})` : ''}`).join('; ')}. Load one whenever the user names it or the task clearly matches its description, then follow the returned instructions.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', enum: skills.map(s => s.name), description: 'Skill to load' },
+        },
+        required: ['name'],
+      },
+    },
+  }
+}
+
+export function activeToolSpecs(): ToolSpec[] {
+  const disabled = new Set(effectiveSettings().disabledTools ?? [])
+  const skill = skillToolSpec()
+  return [...TOOL_SPECS, ...customToolSpecs(), ...(skill ? [skill] : [])].filter(t => !disabled.has(t.function.name))
+}
 
 function pwCli(args: string[], timeoutMs = 30_000): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -400,8 +484,48 @@ export async function executeTool(name: string, argsJson: string): Promise<ToolO
           summary: `${dag.jobs.length} jobs, ${edges.length} edges`,
         }
       }
-      default:
+      case 'list_clusters': {
+        const out = await pwCli(['cluster', 'ls', '-o', 'json'])
+        let rows: any[] = []
+        try { rows = JSON.parse(out) } catch { return { result: out.slice(0, TOOL_OUTPUT_CAP), summary: 'clusters' } }
+        const slim = rows.map(c => ({
+          name: c.name, status: c.status, activeNodes: c.activeNodes, type: c.type,
+          connection: c.connectionString || undefined,
+        }))
+        return { result: JSON.stringify(slim, null, 1), summary: `${slim.length} clusters` }
+      }
+      case 'cluster_command': {
+        const cluster = String(args.cluster ?? '').replace(/[^\w.\/:@-]/g, '')
+        const command = String(args.command ?? '').slice(0, 500)
+        if (!cluster || !command) return { result: 'cluster and command are required', summary: 'error' }
+        const out = await pwCli(['ssh', cluster, command], 90_000)
+        return {
+          result: (out.trim() || '(no output)').slice(0, TOOL_OUTPUT_CAP),
+          summary: `${cluster}: ${command.slice(0, 40)}`,
+        }
+      }
+      case 'use_skill': {
+        const skillName = String(args.name ?? '')
+        const body = skillBody(skillName)
+        if (body == null) return { result: `No such skill: ${skillName}`, summary: 'error' }
+        return {
+          result: `Skill ${skillName} loaded. Follow these instructions for the current request:\n\n${body.slice(0, TOOL_OUTPUT_CAP)}`,
+          summary: `skill ${skillName}`,
+        }
+      }
+      default: {
+        const custom = allCustomTools().find(t => t.name === name)
+        if (custom) {
+          const extra = String(args.args ?? '').slice(0, 400)
+          const cmd = extra ? `${custom.command} ${extra}` : custom.command
+          const out = await new Promise<string>((resolve, reject) => {
+            execFile('bash', ['-lc', cmd], { timeout: 90_000, maxBuffer: 8 * 1024 * 1024 },
+              (err, so, se) => (err ? reject(new Error(se || err.message)) : resolve(so)))
+          })
+          return { result: (out.trim() || '(no output)').slice(0, TOOL_OUTPUT_CAP), summary: name }
+        }
         return { result: `Unknown tool: ${name}`, summary: 'error' }
+      }
     }
   } catch (err: any) {
     const msg = err instanceof KbError ? err.message : String(err?.message ?? err)

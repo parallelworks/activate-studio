@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react'
 import {
-  ChatProvider, ChatLayout, ChatThread, ChatEmptyState,
+  ChatProvider, ChatLayout, ChatThread, ChatEmptyState, AttachmentManager,
 } from '@parallelworks/ai-chat'
 import '@parallelworks/ai-chat/styles.css'
 import { createStudioAdapter } from '../adapter'
@@ -8,6 +8,7 @@ import { useAppConfig } from '../config'
 
 export function ChatView() {
   const [activeId, setActiveId] = useState<string | null>(null)
+  const [showAttachments, setShowAttachments] = useState(false)
   const [rail, setRail] = useState(() => Number(localStorage.getItem('ade-chat-rail')) || 260)
   const adapter = useMemo(() => createStudioAdapter(), [])
   const cfg = useAppConfig()
@@ -48,9 +49,9 @@ export function ChatView() {
       adapter={adapter}
       currentUser={cfg.user}
       navigation={{
-        toConversation: id => setActiveId(id),
-        toNewChat: () => setActiveId(null),
-        toAttachments: () => {},
+        toConversation: id => { setActiveId(id); setShowAttachments(false) },
+        toNewChat: () => { setActiveId(null); setShowAttachments(false) },
+        toAttachments: () => setShowAttachments(true),
       }}
       notify={{
         success: () => {},
@@ -63,7 +64,7 @@ export function ChatView() {
       <div className="chat-wrap">
         <div ref={canvasRef} className="chat-canvas card" style={{ ['--ade-chat-rail' as string]: `${rail}px` }}>
           <ChatLayout>
-            {activeId ? <ChatThread conversationId={activeId} /> : <ChatEmptyState />}
+            {showAttachments ? <AttachmentManager /> : activeId ? <ChatThread conversationId={activeId} /> : <ChatEmptyState />}
           </ChatLayout>
           <div ref={handleRef} className="chat-rail-handle" style={{ left: rail - 3 }} onMouseDown={onRailDrag} title="Drag to resize conversations" />
         </div>
