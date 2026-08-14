@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 interface DagData {
   name: string
@@ -51,11 +51,17 @@ export function DagViewer({ workflow }: { workflow: string }) {
   const [error, setError] = useState<string | null>(null)
   const [selectedNode, setSelectedNode] = useState<string | null>(null)
   const [tab, setTab] = useState<'dag' | 'yaml'>('dag')
+  // Pan/zoom viewBox; null = fit the whole DAG to the canvas.
+  const [view, setView] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
+  const svgRef = useRef<SVGSVGElement | null>(null)
+  const dragRef = useRef<{ px: number; py: number; view: { x: number; y: number; w: number; h: number } } | null>(null)
+  const movedRef = useRef(false)
 
   useEffect(() => {
     setDag(null)
     setError(null)
     setSelectedNode(null)
+    setView(null)
     fetch(`/api/workflows/${encodeURIComponent(workflow)}`)
       .then(r => (r.ok ? r.json() : Promise.reject(new Error(`${r.status}`))))
       .then(setDag)
@@ -67,6 +73,47 @@ export function DagViewer({ workflow }: { workflow: string }) {
 
   const { pos, width, height } = layout(dag)
   const selected = dag.nodes.find(n => n.id === selectedNode)
+
+  // Default view fits the entire DAG with padding; interactions replace it.
+  const fitView = { x: -20, y: -20, w: width + 40, h: height + 40 }
+  const v = view ?? fitView
+
+  const clientToView = (e: { clientX: number; clientY: number }) => {
+    const r = svgRef.current!.getBoundingClientRect()
+    return {
+      x: v.x + ((e.clientX - r.left) / r.width) * v.w,
+      y: v.y + ((e.clientY - r.top) / r.height) * v.h,
+    }
+  }
+
+  const zoom = (factor: number, cx?: number, cy?: number) => {
+    const center = { x: cx ?? v.x + v.w / 2, y: cy ?? v.y + v.h / 2 }
+    const w = Math.min(Math.max(v.w * factor, 120), fitView.w * 4)
+    const h = w * (v.h / v.w)
+    setView({ x: center.x - (center.x - v.x) * (w / v.w), y: center.y - (center.y - v.y) * (h / v.h), w, h })
+  }
+
+  const onWheel = (e: React.WheelEvent) => {
+    e.preventDefault()
+    const p = clientToView(e)
+    zoom(e.deltaY > 0 ? 1.15 : 1 / 1.15, p.x, p.y)
+  }
+
+  const onPointerDown = (e: React.PointerEvent) => {
+    movedRef.current = false
+    dragRef.current = { px: e.clientX, py: e.clientY, view: v }
+    ;(e.target as Element).setPointerCapture?.(e.pointerId)
+  }
+  const onPointerMove = (e: React.PointerEvent) => {
+    const d = dragRef.current
+    if (!d) return
+    const r = svgRef.current!.getBoundingClientRect()
+    const dx = ((e.clientX - d.px) / r.width) * d.view.w
+    const dy = ((e.clientY - d.py) / r.height) * d.view.h
+    if (Math.abs(e.clientX - d.px) + Math.abs(e.clientY - d.py) > 4) movedRef.current = true
+    if (movedRef.current) setView({ ...d.view, x: d.view.x - dx, y: d.view.y - dy })
+  }
+  const onPointerUp = () => { dragRef.current = null }
 
   return (
     <div className="viewer">
@@ -84,7 +131,22 @@ export function DagViewer({ workflow }: { workflow: string }) {
         <div className="viewer-body"><pre className="text-body">{dag.yamlText}</pre></div>
       ) : (
       <div className="dag-canvas">
-        <svg width={Math.max(width, 400)} height={Math.max(height, 200)}>
+        <div className="dag-controls">
+          <button title="Zoom in" onClick={() => zoom(1 / 1.3)}>+</button>
+          <button title="Zoom out" onClick={() => zoom(1.3)}>−</button>
+          <button title="Fit the whole workflow" onClick={() => setView(null)}>Fit</button>
+        </div>
+        <svg
+          ref={svgRef}
+          className={dragRef.current ? 'dragging' : ''}
+          viewBox={`${v.x} ${v.y} ${v.w} ${v.h}`}
+          preserveAspectRatio="xMidYMid meet"
+          onWheel={onWheel}
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          onPointerLeave={onPointerUp}
+        >
           <defs>
             <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
               <path d="M 0 1 L 9 5 L 0 9 z" fill="var(--pw-muted-2)" />
@@ -109,7 +171,7 @@ export function DagViewer({ workflow }: { workflow: string }) {
             if (!p) return null
             const active = n.id === selectedNode
             return (
-              <g key={n.id} transform={`translate(${p.x}, ${p.y})`} onClick={() => setSelectedNode(n.id)} style={{ cursor: 'pointer' }}>
+              <g key={n.id} transform={`translate(${p.x}, ${p.y})`} onClick={() => { if (!movedRef.current) setSelectedNode(n.id) }} style={{ cursor: 'pointer' }}>
                 <rect width={NODE_W} height={NODE_H} rx="8"
                   fill={active ? 'var(--pw-active-pill)' : 'var(--pw-panel)'} stroke={active ? 'var(--pw-navy)' : 'var(--pw-border-strong)'} strokeWidth={active ? 1.8 : 1.2} />
                 <text x="12" y="22" fontSize="12.5" fontWeight="600" fill="var(--pw-navy)">{n.id.slice(0, 24)}</text>
