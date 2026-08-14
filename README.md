@@ -6,6 +6,16 @@ It also integrates with the Parallel Works ACTIVATE platform when present: the p
 
 The retrieval layer is built on GUFI, the Grand Unified File Index from LANL (per-directory SQLite index with fts5 and vec0 tables). How the whole system works, including incremental indexing and the need-to-know model, is documented in `docs/ARCHITECTURE.md`. Setup and branding for your own deployment: `docs/CUSTOMIZATION.md` and `.env.example`.
 
+## Built on
+
+- [GUFI](https://github.com/mar-file-system/GUFI) (Los Alamos National Laboratory): the metadata, full-text, and vector index.
+- [sqlite-vec](https://github.com/asg017/sqlite-vec) and [sqlite-lembed](https://github.com/asg017/sqlite-lembed): embedding storage and on-index embedding with a local GGUF model.
+- [@parallelworks/ai-chat](https://www.npmjs.com/package/@parallelworks/ai-chat): the chat interface components, driven by a custom adapter.
+- [Streamdown](https://github.com/vercel/streamdown): streaming markdown rendering.
+- [three.js](https://threejs.org/) and [occt-import-js](https://github.com/kovacsv/occt-import-js): the 3D model viewer and STEP conversion.
+- [Tesseract](https://github.com/tesseract-ocr/tesseract): OCR for text inside images.
+- [Fastify](https://fastify.dev/), [React](https://react.dev/), [Vite](https://vite.dev/): the server and the interface.
+
 ## Layout
 
 - `server/` Fastify + TypeScript: KB API, hybrid search, chat tool loop against an OpenAI-compatible model endpoint, upload and URL ingestion, incremental indexing and background sweep, structured queries.
@@ -31,7 +41,7 @@ Environment: `KB_ROOT` (corpus directory), `KB_LABEL`, `APP_NAME`, `APP_ICON` (p
 The chat talks to any OpenAI-compatible backend.
 
 - Standalone: set `OPENAI_BASE_URL` to the endpoint's `/v1` base and `OPENAI_API_KEY` to its key. OpenAI, vLLM, llama.cpp server, Ollama's OpenAI-compatible endpoint, and similar all work. The endpoint must serve `/models` and streaming `/chat/completions`; tool calling is required for the assistant's knowledge base and workflow tools.
-- On ACTIVATE: with an authenticated pw CLI on the host, no configuration is needed at all (the server reads the CLI's credential for the platform gateway); otherwise set `PW_API_KEY`. `PW_ALLOCATION` enables org-provider models.
+- On ACTIVATE: with an authenticated pw CLI on the host, no configuration is needed at all; the server reads the CLI's credential for the platform gateway, and every model that account can reach appears in the chat's model selector automatically. Otherwise set `PW_API_KEY`. `PW_ALLOCATION` enables org-provider models.
 
 ## ACTIVATE integration (optional)
 
