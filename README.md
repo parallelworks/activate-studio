@@ -10,37 +10,12 @@ The retrieval layer is built on GUFI, the Grand Unified File Index from LANL (pe
 
 ```mermaid
 flowchart LR
-    subgraph clients [Clients]
-        UI["Web UI<br/>Chat / Library / Search / Query"]
-        EXT["OpenAI-compatible clients<br/>(pw code, SDKs)"]
-    end
-
-    subgraph server [Studio server]
-        CHAT["Chat tool loop<br/>search / read / query / labels"]
-        RAG["/v1 RAG endpoint<br/>studio-agent / studio-rag"]
-        API["Library, upload,<br/>query, label APIs"]
-        SWEEP["Indexer + sweep<br/>extract / OCR / captions / embed"]
-    end
-
-    subgraph data [Knowledge base]
-        FS[("Files on disk<br/>+ label xattrs")]
-        IDX[("GUFI index<br/>fts5 / vectors / xattrs")]
-    end
-
-    MODEL["Any OpenAI-compatible<br/>model endpoint"]
-    PLATFORM["ACTIVATE platform (optional)<br/>identity header / workflow tools /<br/>session + model registration"]
-
-    UI --> CHAT
-    UI --> API
-    EXT --> RAG
-    CHAT --> IDX
-    RAG --> IDX
-    API --> FS
-    SWEEP --> FS
-    SWEEP --> IDX
-    CHAT --> MODEL
-    RAG --> MODEL
-    PLATFORM -.-> server
+    UI["Web UI<br/>chat / library / search / query"] --> STUDIO
+    EXT["OpenAI-compatible clients<br/>(pw code, SDKs)"] --> STUDIO
+    STUDIO["Studio server<br/>assistant, /v1 endpoint, indexer"] --> KB
+    STUDIO --> MODEL["Any OpenAI-compatible<br/>model endpoint"]
+    KB[("Knowledge base<br/>files + labels + GUFI index")]
+    PLATFORM["ACTIVATE platform (optional)<br/>identity / workflows / registration"] -.-> STUDIO
 ```
 
 ## Built on
