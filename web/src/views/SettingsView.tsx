@@ -24,6 +24,12 @@ interface Effective {
 }
 
 interface CatalogTool { name: string; description: string; builtin: boolean; enabled: boolean; parameters?: unknown; command?: string; implementation?: string; calls?: string }
+interface RagCall {
+  at: string; model: string; mode: string; underlying: string; authSource: string
+  durationMs: number | null; status: string; detail: string | null
+  retrieval: { terms: string[]; blocks: number; chars: number } | null
+}
+
 interface ExtDoc { name: string; description: string; file: string; active?: boolean; command?: string }
 interface Extensions { dir: string; tools: ExtDoc[]; skills: ExtDoc[]; agents: ExtDoc[] }
 
@@ -110,6 +116,8 @@ export function SettingsView() {
     history.replaceState(null, '', `${location.pathname}${location.search}#view=settings:${id}`)
   }
   const [ragEp, setRagEp] = useState<{ state: string; name: string | null; url: string | null; detail: string | null } | null>(null)
+  const [ragCalls, setRagCalls] = useState<RagCall[]>([])
+  const refreshRagCalls = () => fetch('/api/rag/calls').then(r => r.json()).then(d => setRagCalls(d.calls ?? [])).catch(() => {})
 
   const refreshRagEp = () => fetch('/api/rag/endpoint').then(r => r.json()).then(setRagEp).catch(() => {})
   const ragEpAction = async (verb: 'start' | 'stop') => {
@@ -129,6 +137,7 @@ export function SettingsView() {
       .catch(() => {})
     fetch('/api/me/model-key').then(r => r.json()).then(d => { setMe(d); if (d?.verified && d.mode !== 'none') refreshAccess() }).catch(() => {})
     refreshRagEp()
+    refreshRagCalls()
     const onSection = (e: Event) => {
       const d = (e as CustomEvent).detail as { view?: string; section?: string }
       if (d?.view === 'settings' && d.section) setSection(d.section as SectionId)
@@ -221,7 +230,7 @@ export function SettingsView() {
 
   const sections: { id: SectionId; label: string }[] = [
     { id: 'general', label: 'General' },
-    ...(me?.authEnabled ? [{ id: 'access' as SectionId, label: 'Your model access' }] : []),
+    ...(me?.authEnabled ? [{ id: 'access' as SectionId, label: 'Model access' }] : []),
     { id: 'rag', label: 'RAG endpoint' },
     { id: 'tools', label: 'Assistant tools' },
     { id: 'ext', label: 'Extensions' },
@@ -330,7 +339,7 @@ export function SettingsView() {
 
           {section === 'access' && (
             <>
-              <h1>Your model access</h1>
+              <h1>Model access</h1>
               {!me?.verified ? (
                 <p className="muted view-sub">
                   Personal model keys attach to your platform-verified identity, which this connection does not carry. Open the app through the platform session to add one; until then, requests use the deployment's credential.
@@ -502,11 +511,9 @@ export function SettingsView() {
               <p className="muted view-sub">
                 This deployment serves an OpenAI-compatible endpoint at <code>{location.origin}/v1</code>, so any OpenAI-speaking client (pw code, SDKs, other agents) can use the knowledge base as a grounded model. Callers authenticate with their own gateway API key as the bearer token; the endpoint holds no credentials of its own.
               </p>
-              <ul className="rag-modes">
-                <li><code>studio-agent</code> runs the full assistant pipeline (system prompt, search, read, query, labels) on the underlying model and returns the grounded answer.</li>
-                <li><code>studio-rag</code> injects retrieved context blocks and makes one model call, without the assistant pipeline. It suits plain chat clients; code agents (pw code) drive it with their own tools and lose the grounding, so it is unlisted by default and callable by name; the options below choose which models are advertised. Any other model id behaves like studio-rag with that model.</li>
-                <li>Pick the underlying model per request as <code>studio-agent/&lt;model-id&gt;</code>, or set the default below. Headers <code>X-RAG-Top-K</code>, <code>X-RAG-Tags</code>, and <code>X-RAG-Off: 1</code> tune retrieval per request.</li>
-              </ul>
+              <p className="muted view-sub">
+                Pick the underlying model per request as <code>studio-agent/&lt;model-id&gt;</code> (any other model id behaves like studio-rag with that model), or set the default below. Headers <code>X-RAG-Top-K</code>, <code>X-RAG-Tags</code>, and <code>X-RAG-Off: 1</code> tune retrieval per request.
+              </p>
               <div className="settings-grid">
                 <div>
                   <label className="field-label">Default underlying model (for bare studio-agent / studio-rag)</label>
@@ -532,13 +539,19 @@ export function SettingsView() {
               <label className="key-persist">
                 <input type="checkbox" checked={form.ragAdvertiseAgentModel}
                   onChange={e => setForm({ ...form, ragAdvertiseAgentModel: e.target.checked })} />
-                Advertise studio-agent in model listings (full pipeline; the right choice inside tool-calling harnesses such as pw code)
+                Advertise <code>studio-agent</code> in model listings
               </label>
+              <p className="muted key-note toggle-note">
+                Runs the full assistant pipeline on the server (system prompt, search, read, query, labels) and returns a finished cited answer. Slower, several model calls per question. The right choice inside tool-calling harnesses such as pw code.
+              </p>
               <label className="key-persist">
                 <input type="checkbox" checked={form.ragAdvertiseRagModel}
                   onChange={e => setForm({ ...form, ragAdvertiseRagModel: e.target.checked })} />
-                Advertise studio-rag in model listings (fast single call; suits plain chat interfaces, loses grounding inside code agents)
+                Advertise <code>studio-rag</code> in model listings
               </label>
+              <p className="muted key-note toggle-note">
+                Injects retrieved context blocks into a single model call, no tool loop. Fast, a few seconds. Suits plain chat interfaces; inside code agents the host's own tools take over and the grounding is lost.
+              </p>
               <p className="muted key-note">Both stay callable by name whether advertised or not.</p>
               <div className="settings-grid">
                 <div>
@@ -575,15 +588,45 @@ export function SettingsView() {
                 </div>
                 {ragEp?.state === 'running' && ragEp.name && (
                   <div className="rag-banner-models">
-                    Users can now select these models anywhere on the platform:
+                    Users can now select {form.ragAdvertiseAgentModel && form.ragAdvertiseRagModel ? 'these models' : 'this model'} anywhere on the platform:
                     <div className="rag-chip-row">
-                      <code>session:{cfg.user.username}:{ragEp.name}/studio-agent</code>
-                      <code>session:{cfg.user.username}:{ragEp.name}/studio-rag</code>
+                      {form.ragAdvertiseAgentModel && <code>session:{cfg.user.username}:{ragEp.name}/studio-agent</code>}
+                      {form.ragAdvertiseRagModel && <code>session:{cfg.user.username}:{ragEp.name}/studio-rag</code>}
+                      {!form.ragAdvertiseAgentModel && !form.ragAdvertiseRagModel && <span className="muted">No models advertised; enable a toggle above.</span>}
                     </div>
                   </div>
                 )}
                 {ragEp?.detail && ragEp.state !== 'running' && <p className="muted key-note">{ragEp.detail}</p>}
               </div>
+              <div className="tool-group">Recent endpoint calls</div>
+              <p className="muted view-sub">
+                The last 50 calls to this /v1 surface, most recent first, held in memory and cleared on restart. Question text is not recorded; the distilled retrieval terms are.
+              </p>
+              <button className="btn-secondary" onClick={refreshRagCalls}>Refresh</button>
+              {!ragCalls.length && <p className="muted key-note">No calls since the server started; they appear here as clients use the endpoint.</p>}
+              {ragCalls.length > 0 && (
+                <div className="rag-calls-wrap">
+                  <table className="rag-calls-table">
+                    <thead><tr><th>Time</th><th>Model</th><th>Underlying</th><th>Credential</th><th>Duration</th><th>Retrieval</th><th>Status</th></tr></thead>
+                    <tbody>
+                      {ragCalls.map((c, i) => (
+                        <tr key={i}>
+                          <td>{new Date(c.at).toLocaleTimeString()}</td>
+                          <td><code>{c.model}</code></td>
+                          <td><code>{c.underlying || '-'}</code></td>
+                          <td>{c.authSource.includes('injected') ? 'deployment (keyless caller)'
+                            : c.authSource.includes('stored personal') ? 'personal key'
+                            : c.authSource.includes('deployment') ? 'deployment'
+                            : c.authSource === 'none' ? 'none' : 'caller key'}</td>
+                          <td>{c.durationMs == null ? 'running' : `${(c.durationMs / 1000).toFixed(1)}s`}</td>
+                          <td>{c.retrieval ? `${c.retrieval.blocks} blocks (${c.retrieval.terms.join(', ')})` : c.mode === 'agent' ? 'agent tool loop' : '-'}</td>
+                          <td>{c.status}{c.detail ? `; ${c.detail}` : ''}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </>
           )}
 

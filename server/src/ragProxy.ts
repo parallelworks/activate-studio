@@ -107,7 +107,7 @@ function distill(query: string): string[] {
   return [...new Set(terms)].slice(0, 8)
 }
 
-async function buildContext(query: string, topK: number, tags?: string[]): Promise<string | null> {
+async function buildContext(query: string, topK: number, tags?: string[]): Promise<{ text: string; terms: string[]; blocks: number; chars: number } | null> {
   const q = query.slice(0, 300)
   const terms = distill(q)
   const termQuery = terms.join(' ') || q.slice(0, 100)
@@ -138,7 +138,7 @@ async function buildContext(query: string, topK: number, tags?: string[]): Promi
     const labels = h.tags?.length ? ` (labels: ${h.tags.join(', ')})` : ''
     blocks.push(`[${blocks.length + 1}] ${h.path}${labels}\n${text}`)
   }
-  return blocks.length ? blocks.join('\n\n') : null
+  return blocks.length ? { text: blocks.join('\n\n'), terms, blocks: blocks.length, chars: total } : null
 }
 
 /** Resolve a virtual model id to { mode, underlying }. */
@@ -210,7 +210,32 @@ async function agenticCompletion(
   return { content: finalContent, finish: finalTurn.finishReason ?? 'stop' }
 }
 
+/** Ring buffer of recent /v1 calls so the Settings page can show what the
+ *  endpoint is actually doing. Question text is never recorded; the
+ *  distilled retrieval terms are, which the page discloses. */
+export interface RagCallRecord {
+  at: string
+  model: string
+  mode: string
+  underlying: string
+  authSource: string
+  stream: boolean
+  durationMs: number | null
+  status: 'running' | 'ok' | 'error'
+  detail: string | null
+  retrieval: { terms: string[]; blocks: number; chars: number } | null
+}
+const CALL_LOG: RagCallRecord[] = []
+function logCall(rec: RagCallRecord): RagCallRecord {
+  CALL_LOG.unshift(rec)
+  if (CALL_LOG.length > 50) CALL_LOG.pop()
+  return rec
+}
+export function ragCallLog(): RagCallRecord[] { return CALL_LOG }
+
 export async function ragProxyRoutes(app: FastifyInstance): Promise<void> {
+  app.get('/api/rag/calls', async () => ({ calls: ragCallLog() }))
+
   // Advertises only studio-agent by default: as a host agent's driver
   // model, studio-rag passes the host's tool specs through and the model
   // works the host's tools instead of the injected context, so it is
@@ -244,7 +269,14 @@ export async function ragProxyRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/v1/chat/completions', async (req, reply) => {
     const auth = callerKey(req)
-    if (!auth) return reply.status(401).send({ error: { message: 'bearer API key required' } })
+    if (!auth) {
+      logCall({
+        at: new Date().toISOString(), model: String((req.body as { model?: string })?.model ?? '?'),
+        mode: '?', underlying: '', authSource: 'none', stream: false, durationMs: 0,
+        status: 'error', detail: 'rejected: no credential (bearer API key required)', retrieval: null,
+      })
+      return reply.status(401).send({ error: { message: 'bearer API key required' } })
+    }
     const key = auth.key
     const eff = effectiveSettings()
     const body = { ...(req.body as Record<string, unknown>) }
@@ -262,6 +294,11 @@ export async function ragProxyRoutes(app: FastifyInstance): Promise<void> {
       ? 'deployment (injected by registration forwarder)'
       : auth.source
     req.log.info({ model: requested, underlying, mode, authSource }, 'rag proxy call')
+    const started = Date.now()
+    const rec = logCall({
+      at: new Date().toISOString(), model: requested, mode, underlying, authSource,
+      stream: wantStream, durationMs: null, status: 'running', detail: null, retrieval: null,
+    })
     const id = `studio-${Date.now().toString(36)}`
 
     if (mode === 'agent') {
@@ -284,12 +321,17 @@ export async function ragProxyRoutes(app: FastifyInstance): Promise<void> {
             reply.raw.write(chunkOf(id, requested, { content: t }, null))
           }, abort.signal)
           reply.raw.write(chunkOf(id, requested, {}, r.finish))
+          rec.status = 'ok'
         } catch (err) {
+          rec.status = 'error'
+          rec.detail = String((err as Error).message ?? err).slice(0, 200)
           if (!abort.signal.aborted) {
             reply.raw.write(chunkOf(id, requested, { content: `\n[studio-agent error: ${String((err as Error).message ?? err).slice(0, 300)}]` }, 'stop'))
           }
         } finally {
           clearInterval(keepalive)
+          rec.durationMs = Date.now() - started
+          if (abort.signal.aborted && rec.status === 'error') rec.detail = 'caller disconnected'
         }
         reply.raw.write('data: [DONE]\n\n')
         // Give the tunnel a beat to flush the tail frames; an immediate
@@ -299,11 +341,20 @@ export async function ragProxyRoutes(app: FastifyInstance): Promise<void> {
         reply.raw.end()
         return reply
       }
-      const r = await agenticCompletion(underlying, messages, key, () => {})
-      return {
-        id, object: 'chat.completion', created: Math.floor(Date.now() / 1000), model: requested,
-        choices: [{ index: 0, message: { role: 'assistant', content: r.content }, finish_reason: r.finish }],
-        usage: null,
+      try {
+        const r = await agenticCompletion(underlying, messages, key, () => {})
+        rec.status = 'ok'
+        rec.durationMs = Date.now() - started
+        return {
+          id, object: 'chat.completion', created: Math.floor(Date.now() / 1000), model: requested,
+          choices: [{ index: 0, message: { role: 'assistant', content: r.content }, finish_reason: r.finish }],
+          usage: null,
+        }
+      } catch (err) {
+        rec.status = 'error'
+        rec.detail = String((err as Error).message ?? err).slice(0, 200)
+        rec.durationMs = Date.now() - started
+        throw err
       }
     }
 
@@ -311,21 +362,26 @@ export async function ragProxyRoutes(app: FastifyInstance): Promise<void> {
     const ragOff = String(req.headers['x-rag-off'] ?? '') === '1'
     const topK = Math.min(Math.max(Number(req.headers['x-rag-top-k']) || eff.ragTopK, 1), 20)
     const tags = String(req.headers['x-rag-tags'] ?? '').split(',').map(t => t.trim()).filter(Boolean)
+    if (ragOff) rec.detail = 'retrieval disabled by X-RAG-Off header'
     if (!ragOff && gufiAvailable()) {
       const query = lastUserText(messages)
       if (query?.trim()) {
         try {
           const context = await buildContext(query, topK, tags)
           if (context) {
+            rec.retrieval = { terms: context.terms, blocks: context.blocks, chars: context.chars }
             let insertAt = 0
             while (insertAt < messages.length && (messages[insertAt] as { role?: string })?.role === 'system') insertAt++
-            messages.splice(insertAt, 0, { role: 'system', content: `${DIRECTIVE}\n\n${context}` })
+            messages.splice(insertAt, 0, { role: 'system', content: `${DIRECTIVE}\n\n${context.text}` })
+          } else {
+            rec.detail = 'no retrieval hits'
           }
         } catch (err) {
           if (!FAIL_OPEN) {
             return reply.status(502).send({ error: { message: `retrieval failed: ${String((err as Error).message ?? err)}` } })
           }
           req.log.warn({ err }, 'rag retrieval failed; passing through without context')
+          rec.detail = 'retrieval failed; passed through without context'
         }
       }
     }
@@ -335,6 +391,9 @@ export async function ragProxyRoutes(app: FastifyInstance): Promise<void> {
     const upstream = await fetch(`${GATEWAY_BASE}/chat/completions`, {
       method: 'POST', headers, body: JSON.stringify({ ...body, model: underlying, messages }),
     })
+    rec.status = upstream.ok ? 'ok' : 'error'
+    if (!upstream.ok) rec.detail = `upstream ${upstream.status}`
+    rec.durationMs = Date.now() - started
     reply.hijack()
     reply.raw.writeHead(upstream.status, {
       'Content-Type': upstream.headers.get('content-type') ?? 'application/json',

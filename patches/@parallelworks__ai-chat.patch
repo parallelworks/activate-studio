@@ -30,7 +30,7 @@ index d80e7c3c80143c5232fc9c26fe2b3e9dcb390c3b..b796f9fc963236d937f4198cf09d698e
  										/* @__PURE__ */ jsx("p", {
  											className: "text-sm theme-muted-text text-center max-w-md",
 -											children: "To start chatting, add an AI provider. You can connect Azure OpenAI, custom endpoints, or other supported providers."
-+											children: "Add your API key or platform token under Settings, Your model access. Browsing, search, and adding material work without one."
++											children: "Add your API key or platform token under Settings, Model access. Browsing, search, and adding material work without one."
  										}),
  										extraLinks.addProvider && /* @__PURE__ */ jsxs(LinkComponent, {
  											target: {
