@@ -10,6 +10,7 @@ import { queryRoutes } from './query.js'
 import { tagRoutes } from './tags.js'
 import { modelRoutes } from './model.js'
 import { attachmentRoutes } from './attachments.js'
+import { extensionRoutes } from './extensions.js'
 import { authHook, authEnabled } from './auth.js'
 import { settingsRoutes } from './settings.js'
 import { chatRoutes } from './chat/routes.js'
@@ -37,6 +38,7 @@ await app.register(queryRoutes)
 await app.register(tagRoutes)
 await app.register(modelRoutes)
 await app.register(attachmentRoutes)
+await app.register(extensionRoutes)
 await app.register(settingsRoutes)
 await app.register(chatRoutes)
 

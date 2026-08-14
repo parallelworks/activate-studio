@@ -16,6 +16,19 @@ The assistant talks to any OpenAI-compatible endpoint: set `OPENAI_BASE_URL` and
 
 The chat greeting uses `APP_USER_NAME` in standalone mode. Behind the platform, a verified JWT identity takes precedence (below).
 
+## Tools, skills, and agent files
+
+The assistant's tool set is managed from the Settings page and from files.
+
+- Built-in tools live in the server (`server/src/chat/tools.ts`). Settings lists each one with an on/off toggle; clicking a tool's name shows its exact call specification, which you can copy as a starting point for your own.
+- Custom tools defined in Settings are saved with the runtime settings (`index/settings.json`). Each is a name, a description for the model, and a command; the command runs on the Studio server and its output returns to the conversation.
+- File-based extensions load from `index/extensions/` and take effect without a restart:
+  - `tools/*.json`, each `{ "name", "description", "command" }`, behave like custom tools.
+  - `skills/*.md` are instruction sets the assistant loads on demand through the `use_skill` tool, either when the user names one or when the task matches the skill's frontmatter description.
+  - `agents/default.md` is appended to the system prompt on every request, as the deployment's standing instructions.
+
+Commands run with the server's user and environment. Treat tool and skill files as configuration with shell access, and keep the extensions directory outside version control (the default location is beside the index, which is already ignored).
+
 ## Help content
 
 The in-app Help page renders `docs/HELP.md`, split into cards at `##` headings, with `{appName}` and `{kbLabel}` substituted. Point `HELP_FILE` at your own markdown to replace it entirely.
