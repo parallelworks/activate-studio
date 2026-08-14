@@ -28,6 +28,47 @@ export function LibraryView({ display, onDisplay }: {
   const [tagsTick, setTagsTick] = useState(0)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [bulkNote, setBulkNote] = useState('')
+  // Right-click context menu on tree rows.
+  const [ctx, setCtx] = useState<{ path: string; isDir: boolean; x: number; y: number } | null>(null)
+  const [ctxConfirm, setCtxConfirm] = useState(false)
+  const [ctxNewDir, setCtxNewDir] = useState<string | null>(null)
+  const [ctxBusy, setCtxBusy] = useState(false)
+  const [ctxErr, setCtxErr] = useState('')
+
+  const closeCtx = () => { setCtx(null); setCtxConfirm(false); setCtxNewDir(null); setCtxBusy(false); setCtxErr('') }
+
+  const ctxDelete = async () => {
+    if (!ctx) return
+    setCtxBusy(true)
+    setCtxErr('')
+    try {
+      if (ctx.isDir) await api.deleteDir(ctx.path)
+      else await api.deleteFile(ctx.path)
+      if (display?.kind === 'file' && (display.target === ctx.path || display.target.startsWith(ctx.path + '/'))) onDisplay(null)
+      setRefreshKey(k => k + 1)
+      window.dispatchEvent(new Event('ade-kb-changed'))
+      closeCtx()
+    } catch (e) {
+      setCtxErr(String((e as Error).message ?? e))
+      setCtxBusy(false)
+    }
+  }
+
+  const ctxMakeDir = async () => {
+    if (!ctx || !ctxNewDir?.trim()) return
+    setCtxBusy(true)
+    setCtxErr('')
+    try {
+      const r = await api.mkdir(`${ctx.path}/${ctxNewDir.trim().replace(/^\/+|\/+$/g, '')}`)
+      setTargetDir(r.created)
+      setRefreshKey(k => k + 1)
+      window.dispatchEvent(new Event('ade-kb-changed'))
+      closeCtx()
+    } catch (e) {
+      setCtxErr(String((e as Error).message ?? e))
+      setCtxBusy(false)
+    }
+  }
 
   const bulkDelete = async () => {
     const files = [...multiSel]
@@ -184,6 +225,7 @@ export function LibraryView({ display, onDisplay }: {
                 onToggleMulti={toggleMulti}
                 onDropInto={(dir, items) => void uploadTo(dir, items)}
                 onLabel={p => { setMultiSel(new Set([p])); setTagMenuOpen(true); setSelectMode(true) }}
+                onContext={(path, isDir, x, y) => { setCtxConfirm(false); setCtxNewDir(null); setCtxErr(''); setCtx({ path, isDir, x, y }) }}
                 selectMode={selectMode}
                 showLabels={showLabels || selectMode}
                 tagsTick={tagsTick}
@@ -219,6 +261,44 @@ export function LibraryView({ display, onDisplay }: {
           )}
         </section>
       </div>
+      {ctx && (
+        <>
+          <div className="scope-overlay" onClick={closeCtx} onContextMenu={e => { e.preventDefault(); closeCtx() }} />
+          <div
+            className="ctx-menu card"
+            style={{ left: Math.min(ctx.x, window.innerWidth - 230), top: Math.min(ctx.y, window.innerHeight - 210) }}
+          >
+            <div className="ctx-title" title={ctx.path}>{ctx.path.split('/').pop()}</div>
+            {!ctx.isDir && (
+              <button onClick={() => { onDisplay({ kind: 'file', target: ctx.path }); closeCtx() }}>Open</button>
+            )}
+            {ctx.isDir && (ctxNewDir === null ? (
+              <button onClick={() => setCtxNewDir('')}>New folder inside…</button>
+            ) : (
+              <div className="ctx-input">
+                <input
+                  className="field"
+                  autoFocus
+                  value={ctxNewDir}
+                  placeholder="folder name"
+                  onChange={e => setCtxNewDir(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') void ctxMakeDir(); if (e.key === 'Escape') setCtxNewDir(null) }}
+                />
+                <button className="btn-secondary" disabled={ctxBusy || !ctxNewDir.trim()} onClick={() => void ctxMakeDir()}>Create</button>
+              </div>
+            ))}
+            <button onClick={() => { setMultiSel(new Set([ctx.path])); setTagMenuOpen(true); setSelectMode(true); closeCtx() }}>Labels…</button>
+            {!ctxConfirm ? (
+              <button className="ctx-danger" onClick={() => setCtxConfirm(true)}>{ctx.isDir ? 'Delete folder…' : 'Delete…'}</button>
+            ) : (
+              <button className="ctx-danger confirm" disabled={ctxBusy} onClick={() => void ctxDelete()}>
+                {ctxBusy ? 'Deleting…' : ctx.isDir ? 'Really delete folder and all contents' : 'Really delete this file'}
+              </button>
+            )}
+            {ctxErr && <div className="ctx-err">{ctxErr}</div>}
+          </div>
+        </>
+      )}
     </div>
   )
 }
