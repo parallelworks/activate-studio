@@ -331,7 +331,7 @@ export function SettingsView() {
                 <label className="key-persist">
                   <input type="checkbox" checked={form.chatSharedHistory}
                     onChange={e => setForm({ ...form, chatSharedHistory: e.target.checked })} />
-                  Show every user's chat sessions in the interface (off limits each user to their own; exported transcripts remain in the knowledge base tree either way)
+                  Allow users to see each other's chat sessions in the chat interface (the rail still defaults each user to their own, with a toggle to show all; off removes that option entirely; exported transcripts remain in the knowledge base tree either way)
                 </label>
               )}
               <label className="field-label">Chat starter prompts (one per line)</label>
