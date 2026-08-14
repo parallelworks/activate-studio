@@ -181,6 +181,14 @@ button { font-family: inherit; }
 /* Resizable conversations rail: only the top-level layout's first child;
    nested flex h-full containers (like the empty state) must not match. */
 .chat-canvas > .flex.h-full > :first-child { width: var(--ade-chat-rail, 260px) !important; flex: 0 0 auto !important; }
+/* Align the conversations header and the model-selector toolbar to one height
+   so their bottom borders form a single line across the chat. */
+.chat-canvas > .flex.h-full > :first-child > div:first-child { height: 56px; }
+.chat-canvas main [class*="flex-shrink-0"][class*="border-b"] {
+  height: 56px; display: flex; align-items: center;
+  padding-top: 0 !important; padding-bottom: 0 !important;
+}
+.chat-canvas main [class*="flex-shrink-0"][class*="border-b"] > div { flex: 1; }
 .chat-rail-handle { position: absolute; top: 0; bottom: 0; width: 6px; cursor: col-resize; z-index: 20; }
 .chat-rail-handle:hover, .resizing .chat-rail-handle { background: rgba(91, 135, 166, 0.25); }
 
