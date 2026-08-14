@@ -922,9 +922,8 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 /* Missing-credential banner over the chat, with a path to fix it */
 .cred-banner {
   /* height:auto beats .chat-canvas > * { height:100% } (same trap as the
-     scope anchor). A slim toast above the composer for mid-conversation
-     credential failures. */
-  position: absolute; bottom: 130px; left: 50%; transform: translateX(-50%); z-index: 35; height: auto;
+     scope anchor). A slim toast below the header bar. */
+  position: absolute; top: 64px; left: 50%; transform: translateX(-50%); z-index: 35; height: auto;
   display: flex; align-items: center; gap: 12px; max-width: 680px;
   background: var(--pw-panel); border: 1px solid var(--pw-border-strong);
   border-left: 3px solid var(--pw-amber, #d97706);
