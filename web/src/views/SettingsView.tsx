@@ -22,7 +22,7 @@ const TOOL_GROUPS: [string, string[]][] = [
   ['Knowledge base', ['search_kb', 'read_kb_file', 'list_kb_dir', 'query_corpus', 'get_labels', 'apply_labels']],
   ['Workflows', ['list_workflows', 'get_workflow', 'run_workflow', 'workflow_runs', 'workflow_run_detail', 'pw_help']],
   ['Clusters', ['list_clusters', 'cluster_command']],
-  ['Display and skills', ['show_in_viewer', 'use_skill']],
+  ['Display and skills', ['show_in_viewer', 'use_skill', 'studio_docs']],
 ]
 
 export function SettingsView() {
