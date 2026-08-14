@@ -796,3 +796,22 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 [data-theme='dark'] .chat-canvas div.top-full { box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5); }
 .chat-canvas div.top-full button { color: var(--pw-text); }
 .chat-canvas div.top-full button:hover { background: var(--pw-hover-row, #f3f4f6); }
+
+/* Tailwind v4 utilities in streamdown resolve --color-* tokens; undefined
+   they collapse to black borders and transparent backgrounds. Map them to
+   the platform tokens (both themes follow via the pw token re-step). */
+.chat-canvas {
+  --color-border: var(--pw-border);
+  --color-background: var(--pw-panel);
+  --color-foreground: var(--pw-text);
+  --color-muted: var(--pw-bg);
+  --color-muted-foreground: var(--pw-muted);
+}
+/* Chat tables: soft header emphasis and subtle zebra striping. */
+.chat-canvas [data-streamdown='table'] thead th { border-bottom: 1px solid var(--pw-border-strong); }
+.chat-canvas [data-streamdown='table'] tbody tr:nth-child(even) { background: var(--pw-bg); }
+/* divide-y sets 1px row borders whose color utility is missing (falls back
+   to black); give the dividers and header their token colors directly. */
+.chat-canvas [data-streamdown='table'] thead,
+.chat-canvas [data-streamdown='table'] tbody tr { border-bottom-color: var(--pw-border); }
+.chat-canvas [data-streamdown='table'] thead { background: var(--pw-bg); }
