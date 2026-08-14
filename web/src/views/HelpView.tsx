@@ -47,6 +47,7 @@ export function HelpView() {
   const [md, setMd] = useState<string>('')
   const [stats, setStats] = useState<{ files?: number; dirs?: number; totalBytes?: number } | null>(null)
   const [idx, setIdx] = useState<IndexStatus | null>(null)
+  const [active, setActive] = useState<string>('Overview')
 
   useEffect(() => {
     fetch('/api/help').then(r => r.text()).then(setMd).catch(() => setMd('Help content unavailable.'))
@@ -56,30 +57,45 @@ export function HelpView() {
 
   const { intro, sections } = parseHelp(md)
 
+  const current = (active === 'Overview' ? null : sections.find(s => s.title === active)) ?? null
+
   return (
     <div className="help-view">
-      <div className="help-hero card">
-        {cfg.iconUrl ? <img className="help-hero-icon" src={cfg.iconUrl} alt="" /> : <span className="brand-badge help-hero-badge">{(cfg.appName[0] ?? 'S').toUpperCase()}</span>}
-        <div>
-          <h1>{cfg.appName}</h1>
-          <div className="help-lead"><Streamdown>{intro}</Streamdown></div>
-        </div>
-      </div>
-      <div className="help-grid">
-        {sections.map(s => (
-          <section className={`help-card card ${(s.body.match(/^- /gm)?.length ?? 0) > 5 ? 'wide' : ''}`} key={s.title}>
-            <h3>{iconFor(s.title)} {s.title}</h3>
-            <div className="help-card-body"><Streamdown>{s.body}</Streamdown></div>
-            {s.title.toLowerCase().includes('index') && (
-              <div className="help-stats">
-                <div><span className="stat-num">{stats?.files?.toLocaleString() ?? '…'}</span><span className="stat-label">files indexed</span></div>
-                <div><span className="stat-num">{stats?.dirs?.toLocaleString() ?? '…'}</span><span className="stat-label">directories</span></div>
-                <div><span className="stat-num">{stats?.totalBytes ? `${(stats.totalBytes / 1e9).toFixed(1)} GB` : '…'}</span><span className="stat-label">corpus size</span></div>
-                <div><span className="stat-num">{ago(idx?.lastSweepAt ?? null)}</span><span className="stat-label">last sync</span></div>
-              </div>
-            )}
-          </section>
-        ))}
+      <div className="help-docs card">
+        <nav className="help-nav">
+          <div className="help-nav-head">
+            {cfg.iconUrl ? <img className="help-nav-icon" src={cfg.iconUrl} alt="" /> : null}
+            <span>User guide</span>
+          </div>
+          <button className={active === 'Overview' ? 'active' : ''} onClick={() => setActive('Overview')}>Overview</button>
+          {sections.map(s => (
+            <button key={s.title} className={active === s.title ? 'active' : ''} onClick={() => setActive(s.title)}>
+              {iconFor(s.title)} <span>{s.title}</span>
+            </button>
+          ))}
+        </nav>
+        <article className="help-content">
+          {current === null ? (
+            <>
+              <h1>{cfg.appName}</h1>
+              <div className="md-body"><Streamdown>{intro}</Streamdown></div>
+              <p className="muted help-hint">Each section in the left rail covers one part of the application. The chat assistant reads this same guide, so asking it "how do I…" works too.</p>
+            </>
+          ) : (
+            <>
+              <h1>{current.title}</h1>
+              <div className="md-body"><Streamdown>{current.body}</Streamdown></div>
+              {current.title.toLowerCase().includes('index') && (
+                <div className="help-stats">
+                  <div><span className="stat-num">{stats?.files?.toLocaleString() ?? '…'}</span><span className="stat-label">files indexed</span></div>
+                  <div><span className="stat-num">{stats?.dirs?.toLocaleString() ?? '…'}</span><span className="stat-label">directories</span></div>
+                  <div><span className="stat-num">{stats?.totalBytes ? `${(stats.totalBytes / 1e9).toFixed(1)} GB` : '…'}</span><span className="stat-label">corpus size</span></div>
+                  <div><span className="stat-num">{ago(idx?.lastSweepAt ?? null)}</span><span className="stat-label">last sync</span></div>
+                </div>
+              )}
+            </>
+          )}
+        </article>
       </div>
     </div>
   )
