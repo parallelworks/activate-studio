@@ -49,7 +49,7 @@ export const SURFACES: Record<string, { label: string; dark?: Record<string, str
     dark: {
       '--pw-bg': '#111214', '--pw-panel': '#191b1e', '--pw-border': '#2a2d31', '--pw-border-strong': '#41454b',
       '--pw-input-bg': '#17191c', '--pw-hover-row': '#1e2125',
-      '--theme-app-bg': '#17191c', '--theme-panel-bg': '#17191c', '--theme-muted-panel-bg': '#17191c',
+      '--theme-muted-panel-bg': '#17191c',
       '--theme-hover': '#212428', '--theme-input-bg': '#17191c',
     },
   },
@@ -59,7 +59,7 @@ export const SURFACES: Record<string, { label: string; dark?: Record<string, str
     dark: {
       '--pw-bg': '#151312', '--pw-panel': '#1d1a18', '--pw-border': '#302c28', '--pw-border-strong': '#48423a',
       '--pw-input-bg': '#1a1715', '--pw-hover-row': '#22201c',
-      '--theme-app-bg': '#1a1715', '--theme-panel-bg': '#1a1715', '--theme-muted-panel-bg': '#1a1715',
+      '--theme-muted-panel-bg': '#1a1715',
       '--theme-hover': '#262320', '--theme-input-bg': '#1a1715',
     },
   },
