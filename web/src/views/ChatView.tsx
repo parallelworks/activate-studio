@@ -18,14 +18,14 @@ export function ChatView() {
   const [scope, setScope] = useState<Set<string>>(new Set())
   const [chatFilter, setChatFilterState] = useState<'all' | 'mine'>(getChatListFilter())
   const [chatEpoch, setChatEpoch] = useState(0)
-  const [hasOwners, setHasOwners] = useState(false)
+  const [chatOwners, setChatOwners] = useState<string[]>([])
   const [scopeOpen, setScopeOpen] = useState(false)
   const [scopeFilter, setScopeFilter] = useState('')
 
   useEffect(() => {
     api.tagVocabulary().then(v => setVocab(v.tags)).catch(() => {})
     fetch('/api/chat/conversations').then(r => r.json())
-      .then((rows: { owner?: string | null }[]) => setHasOwners(rows.some(c => c.owner)))
+      .then((rows: { owner?: string | null }[]) => setChatOwners(rows.map(c => c.owner ?? '').filter(Boolean)))
       .catch(() => {})
     // Both the no-models state and mid-conversation credential failures
     // surface as a toast with a click path to Settings; the empty state
@@ -150,7 +150,7 @@ export function ChatView() {
             {showAttachments ? <AttachmentManager /> : activeId ? <ChatThread conversationId={activeId} /> : <ChatEmptyState />}
           </ChatLayout>
           <div ref={handleRef} className="chat-rail-handle" style={{ left: rail - 3 }} onMouseDown={onRailDrag} title="Drag to resize conversations" />
-          {hasOwners && !showAttachments && (
+          {chatOwners.some(o => o !== cfg.user?.username) && !showAttachments && (
             <button
               className={`chat-filter-btn ${chatFilter === 'mine' ? 'active' : ''}`}
               style={{ width: rail - 24 }}

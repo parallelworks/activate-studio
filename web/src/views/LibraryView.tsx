@@ -179,6 +179,13 @@ export function LibraryView({ display, onDisplay }: {
                   >
                     <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.4"><rect x="2" y="2" width="8" height="8" rx="2"/><path d="M4.5 6l1.6 1.6L9 4.7"/><path d="M12.5 6.5v5a1.5 1.5 0 0 1-1.5 1.5H6"/></svg>
                   </button>
+                  <button
+                    className="rail-collapse"
+                    title="Refresh the tree (picks up files added outside the app, like chat-session exports)"
+                    onClick={() => setRefreshKey(k => k + 1)}
+                  >
+                    <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9"/><path d="M13.5 1.5v3h-3"/></svg>
+                  </button>
                   <UploadMenu
                     targetDir={targetDir}
                     onTargetDir={setTargetDir}
@@ -215,7 +222,7 @@ export function LibraryView({ display, onDisplay }: {
               )}
               {bulkNote && <div className="drop-note">{bulkNote}</div>}
               <Explorer
-                key={refreshKey}
+                refreshTick={refreshKey}
                 onOpen={p => onDisplay({ kind: 'file', target: p })}
                 onDirFocus={dir => setTargetDir(dir || 'uploads')}
                 selected={selectedFile}

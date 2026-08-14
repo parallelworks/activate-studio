@@ -21,6 +21,7 @@ interface Effective {
   ragEndpointAutoStart: boolean
   ragEndpointName: string
   requirePersonalKey: boolean
+  chatSharedHistory: boolean
 }
 
 interface CatalogTool { name: string; description: string; builtin: boolean; enabled: boolean; parameters?: unknown; command?: string; implementation?: string; calls?: string }
@@ -324,6 +325,13 @@ export function SettingsView() {
                   <input type="checkbox" checked={form.requirePersonalKey}
                     onChange={e => setForm({ ...form, requirePersonalKey: e.target.checked })} />
                   Require each user to add their own model credential (chat and models refuse the deployment credential; browsing, search, and adding material stay open to everyone)
+                </label>
+              )}
+              {me?.authEnabled && (
+                <label className="key-persist">
+                  <input type="checkbox" checked={form.chatSharedHistory}
+                    onChange={e => setForm({ ...form, chatSharedHistory: e.target.checked })} />
+                  Show every user's chat sessions in the interface (off limits each user to their own; exported transcripts remain in the knowledge base tree either way)
                 </label>
               )}
               <label className="field-label">Chat starter prompts (one per line)</label>

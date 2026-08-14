@@ -7,6 +7,8 @@ import { INDEX_BASE, KB_ROOT } from './config.js'
 import { KbError } from './kb.js'
 import { applyTagsCore } from './tags.js'
 import { reindexForDir } from './indexing.js'
+import { effectiveSettings } from './settings.js'
+import { authEnabled } from './auth.js'
 
 /**
  * Server-side conversation store, one JSON file beside the index. Browser
@@ -127,6 +129,21 @@ function find(id: string): StoredConversation {
   return c
 }
 
+/** With shared history off, an owned conversation exists only for its
+ *  owner; unowned (legacy, standalone) conversations stay visible to all.
+ *  UI-level only: the exported transcripts remain in the knowledge base. */
+function visibleTo(c: StoredConversation, username: string | null | undefined): boolean {
+  if (effectiveSettings().chatSharedHistory || !authEnabled()) return true
+  if (!c.owner) return true
+  return !!username && c.owner === username
+}
+
+function findVisible(id: string, username: string | null | undefined): StoredConversation {
+  const c = find(id)
+  if (!visibleTo(c, username)) throw new KbError(404, 'conversation not found')
+  return c
+}
+
 /** Record the user turn at stream start; tolerates an unknown conversation
  *  (the client always creates one first, but a race should not lose chat). */
 export function recordUserTurn(conversationId: string | undefined, userMessageId: string | undefined, content: string, parentId: string | null, owner?: string | null): void {
@@ -159,11 +176,12 @@ export function recordAssistantTurn(conversationId: string | undefined, message:
 }
 
 export async function conversationRoutes(app: FastifyInstance): Promise<void> {
-  app.get('/api/chat/conversations', async () =>
-    [...load()].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(summary))
+  app.get('/api/chat/conversations', async req =>
+    [...load()].filter(c => visibleTo(c, req.user?.username))
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(summary))
 
   app.get('/api/chat/conversations/:id', async req => {
-    const c = find((req.params as { id: string }).id)
+    const c = findVisible((req.params as { id: string }).id, req.user?.username)
     return { ...c, isOwner: true, canCollaborate: true }
   })
 
@@ -183,7 +201,7 @@ export async function conversationRoutes(app: FastifyInstance): Promise<void> {
   })
 
   app.patch('/api/chat/conversations/:id', async req => {
-    const c = find((req.params as { id: string }).id)
+    const c = findVisible((req.params as { id: string }).id, req.user?.username)
     c.title = String((req.body as { title?: string } | null)?.title ?? '') || null
     c.updatedAt = new Date().toISOString()
     persist()
@@ -193,6 +211,7 @@ export async function conversationRoutes(app: FastifyInstance): Promise<void> {
   app.delete('/api/chat/conversations/:id', async req => {
     const id = (req.params as { id: string }).id
     const gone = load().find(c => c.id === id)
+    if (gone && !visibleTo(gone, req.user?.username)) throw new KbError(404, 'conversation not found')
     cache = load().filter(c => c.id !== id)
     persist()
     if (gone) {
