@@ -77,7 +77,7 @@ function gatewayError(status: number, bodyText: string, ctx: string): Error {
     || /unauthoriz|invalid[ _-]?(api[ _-]?)?key|credential|locked|expired token/i.test(bodyText)
   const err = auth
     ? new GatewayAuthError(
-        `The model gateway rejected the credential (${status}). The API key may be locked or expired; genai.mil keys need an unlock every 8 hours. Unlock or update the key, then retry. Gateway said: ${bodyText.slice(0, 200)}`)
+        `The model gateway rejected the credential (${status}). The API key may be locked or expired; some providers require a periodic unlock. Unlock or update the key, then retry. Gateway said: ${bodyText.slice(0, 200)}`)
     : new Error(`gateway ${ctx} ${status}: ${bodyText.slice(0, 300)}`)
   lastCallFailure = { at: new Date().toISOString(), message: err.message.slice(0, 300), auth }
   return err
