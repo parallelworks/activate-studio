@@ -151,6 +151,7 @@ const FILE_FIELDS: Record<string, string> = {
   size: 'size',
   modified: 'mtime',
   text: 'text',
+  label: 'label',
 }
 
 function filterSql(f: BuilderFilter): string {
@@ -158,6 +159,12 @@ function filterSql(f: BuilderFilter): string {
   if (!field) throw new KbError(400, `unknown field: ${f.field}`)
   let v = String(f.value ?? '')
   if (f.field === 'extension') v = v.replace(/^\./, '').toLowerCase()
+  if (f.field === 'label') {
+    if (f.op !== 'eq' && f.op !== 'contains') throw new KbError(400, 'label supports equals and contains')
+    const pat = f.op === 'eq' ? `%,${esc(v.toLowerCase())},%` : `%${esc(v.toLowerCase())}%`
+    // Own labels only (directory inheritance is resolved at the app layer).
+    return `EXISTS (SELECT 1 FROM xattrs_pwd xt WHERE xt.inode = vrpentries.inode AND CAST(xt.name AS TEXT) = 'user.studio.tags' AND (','||lower(CAST(xt.value AS TEXT))||',') LIKE '${pat}')`
+  }
   if (f.field === 'text') {
     if (f.op !== 'match') throw new KbError(400, 'text supports only match')
     const terms = v.split(/\s+/).map(t => t.replace(/["'*]/g, '')).filter(Boolean).slice(0, 8)

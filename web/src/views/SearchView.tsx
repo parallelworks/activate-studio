@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { api, SearchHit } from '../api'
 
 const MODE_LABEL: Record<SearchHit['mode'], string> = {
@@ -12,13 +12,19 @@ export function SearchView({ onOpen }: { onOpen: (path: string) => void }) {
   const [hits, setHits] = useState<SearchHit[] | null>(null)
   const [note, setNote] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [vocab, setVocab] = useState<{ tag: string; count: number }[]>([])
+  const [activeTags, setActiveTags] = useState<Set<string>>(new Set())
+
+  useEffect(() => {
+    api.tagVocabulary().then(v => setVocab(v.tags)).catch(() => {})
+  }, [])
 
   const run = async () => {
     if (!q.trim()) return
     setBusy(true)
     setNote(null)
     try {
-      const r = await api.search(q)
+      const r = await api.search(q, [...activeTags])
       setHits(r.hits)
       if (r.error) setNote(r.error)
     } catch (e) {
@@ -43,6 +49,23 @@ export function SearchView({ onOpen }: { onOpen: (path: string) => void }) {
           />
           <button className="btn-primary" onClick={run} disabled={busy}>{busy ? 'Searching…' : 'Search'}</button>
         </div>
+        {vocab.length > 0 && (
+          <div className="search-label-filter">
+            <span className="lbl">Labels</span>
+            {vocab.map(v => (
+              <button
+                key={v.tag}
+                className={`tag-pill ${activeTags.has(v.tag) ? 'on' : ''}`}
+                onClick={() => setActiveTags(s => {
+                  const next = new Set(s)
+                  if (next.has(v.tag)) next.delete(v.tag)
+                  else next.add(v.tag)
+                  return next
+                })}
+              >{v.tag}</button>
+            ))}
+          </div>
+        )}
         {note && <p className="muted">{note}</p>}
       </div>
       {hits && (

@@ -9,6 +9,7 @@ import { uploadRoutes } from './uploads.js'
 import { queryRoutes } from './query.js'
 import { tagRoutes } from './tags.js'
 import { authHook, authEnabled } from './auth.js'
+import { settingsRoutes } from './settings.js'
 import { chatRoutes } from './chat/routes.js'
 import { gatewayConfigured } from './chat/gateway.js'
 import { startSweepTimer } from './indexing.js'
@@ -32,6 +33,7 @@ await app.register(kbRoutes)
 await app.register(uploadRoutes)
 await app.register(queryRoutes)
 await app.register(tagRoutes)
+await app.register(settingsRoutes)
 await app.register(chatRoutes)
 
 startSweepTimer(msg => app.log.info(msg))

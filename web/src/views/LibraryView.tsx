@@ -41,18 +41,22 @@ export function LibraryView({ display, onDisplay }: {
     return next
   })
 
+  const railRef = useRef<HTMLElement>(null)
+
   const onDividerDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
-    drag.current = { startX: e.clientX, startWidth: railWidth }
+    const startX = e.clientX
+    const startW = railWidth
+    let w = startW
     const onMove = (ev: MouseEvent) => {
-      if (!drag.current) return
-      setRailWidth(Math.min(RAIL_MAX, Math.max(RAIL_MIN, drag.current.startWidth + (ev.clientX - drag.current.startX))))
+      w = Math.min(RAIL_MAX, Math.max(RAIL_MIN, startW + (ev.clientX - startX)))
+      if (railRef.current) railRef.current.style.width = `${w}px`
     }
     const onUp = () => {
-      drag.current = null
       document.body.classList.remove('resizing')
       window.removeEventListener('mousemove', onMove)
       window.removeEventListener('mouseup', onUp)
+      setRailWidth(w)
     }
     document.body.classList.add('resizing')
     window.addEventListener('mousemove', onMove)
@@ -86,7 +90,7 @@ export function LibraryView({ display, onDisplay }: {
           </div>
         ) : (
           <>
-            <aside className="library-rail" style={{ width: railWidth }}>
+            <aside ref={railRef} className="library-rail" style={{ width: railWidth }}>
               <div className="rail-head">
                 <span className="rail-title">{cfg.kbLabel}</span>
                 <span className="rail-actions">
@@ -125,6 +129,7 @@ export function LibraryView({ display, onDisplay }: {
                 multiSelected={multiSel}
                 onToggleMulti={toggleMulti}
                 onDropInto={(dir, items) => void uploadTo(dir, items)}
+                onLabel={p => { setMultiSel(new Set([p])); setTagMenuOpen(true) }}
               />
               {progress && (
                 <div className="upload-panel">

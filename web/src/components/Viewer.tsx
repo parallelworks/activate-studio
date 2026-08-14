@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Streamdown } from 'streamdown'
 import { api, FileContent } from '../api'
+import { TagMenu } from './TagMenu'
 
 const OFFICE_SUFFIXES = ['.docx', '.pptx', '.xlsx', '.doc', '.ppt', '.xls', '.odt', '.odp', '.ods']
 
@@ -21,6 +22,7 @@ export function Viewer({ path, onDeleted }: {
   const [confirming, setConfirming] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [tags, setTags] = useState<{ own: string[]; inherited: string[] }>({ own: [], inherited: [] })
+  const [labelsOpen, setLabelsOpen] = useState(false)
 
   useEffect(() => {
     if (!path) return
@@ -120,6 +122,16 @@ export function Viewer({ path, onDeleted }: {
         </span>
         <span className="viewer-meta">
           <span>{new Date(file.mtime * 1000).toISOString().slice(0, 10)}</span>
+          <span className="upload-menu">
+            <button className="btn-secondary" onClick={() => setLabelsOpen(o => !o)}>Labels</button>
+            {labelsOpen && (
+              <TagMenu
+                paths={[file.path]}
+                onClose={() => setLabelsOpen(false)}
+                onApplied={() => window.dispatchEvent(new Event('ade-tags-changed'))}
+              />
+            )}
+          </span>
           <a className="btn-primary" href={api.downloadUrl(file.path)}>Download</a>
           {confirming ? (
             <span className="confirm-group">

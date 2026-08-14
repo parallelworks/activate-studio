@@ -152,6 +152,23 @@ export const TOOL_SPECS: ToolSpec[] = [
   {
     type: 'function',
     function: {
+      name: 'apply_labels',
+      description:
+        'Add or remove provenance labels on knowledge base files or directories. A directory label applies to its whole subtree. Use ONLY when the user explicitly asks to label, tag, or reclassify something.',
+      parameters: {
+        type: 'object',
+        properties: {
+          paths: { type: 'string', description: 'Comma-separated KB-relative paths' },
+          add: { type: 'string', description: 'Comma-separated labels to add' },
+          remove: { type: 'string', description: 'Comma-separated labels to remove' },
+        },
+        required: ['paths'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'get_labels',
       description: 'List the label vocabulary in use across the knowledge base with usage counts (labels convey provenance such as research versus validated).',
       parameters: { type: 'object', properties: {}, required: [] },
@@ -315,6 +332,15 @@ export async function executeTool(name: string, argsJson: string): Promise<ToolO
         })
         const lines = [r.columns.join(' | '), ...r.rows.map(row => row.join(' | '))]
         return { result: lines.join('\n').slice(0, TOOL_OUTPUT_CAP), summary: `${r.rows.length} rows in ${r.elapsedMs} ms` }
+      }
+      case 'apply_labels': {
+        const { applyTagsCore } = await import('../tags.js')
+        const paths = String(args.paths ?? '').split(',').map((x: string) => x.trim()).filter(Boolean)
+        const add = String(args.add ?? '').split(',').map((x: string) => x.trim()).filter(Boolean)
+        const remove = String(args.remove ?? '').split(',').map((x: string) => x.trim()).filter(Boolean)
+        const updated = await applyTagsCore(paths, add, remove)
+        const result = Object.entries(updated).map(([p2, t]) => `${p2}: [${t.join(', ')}]`).join('\n')
+        return { result: `Labels updated and re-indexed:\n${result}`, summary: `${paths.length} paths labeled` }
       }
       case 'get_labels': {
         const { tagMaps } = await import('../tags.js')

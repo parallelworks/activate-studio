@@ -26,6 +26,7 @@ const FIELDS = [
   { id: 'size', label: 'Size (bytes)' },
   { id: 'modified', label: 'Modified (YYYY-MM-DD)' },
   { id: 'text', label: 'Text content' },
+  { id: 'label', label: 'Label' },
 ]
 const OPS: Record<string, { id: string; label: string }[]> = {
   default: [
@@ -157,6 +158,8 @@ export function QueryView({ onOpen }: { onOpen: (path: string) => void }) {
   return (
     <div className="query-view">
       <div className="query-controls card">
+        <h1 className="view-title">Query the file index</h1>
+        <p className="muted view-sub">Structured questions about the corpus itself: sizes, ages, types, labels, and locations, answered from the index in milliseconds.</p>
         <div className="query-mode">
           <button className={mode === 'canned' ? 'active' : ''} onClick={() => setMode('canned')}>Canned queries</button>
           <button className={mode === 'builder' ? 'active' : ''} onClick={() => setMode('builder')}>Builder</button>
