@@ -753,3 +753,9 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
   max-width: min(100%, 640px); max-height: 440px; border-radius: 8px;
   border: 1px solid var(--pw-border); display: block; margin: 6px 0;
 }
+
+/* Active conversation in the chat rail: the package marks it with a bare
+   theme-muted-panel token (inactive rows carry only hover:theme-muted-panel),
+   which is too subtle. Use the same accent pill as the sidenav active item. */
+.chat-canvas li.theme-muted-panel { background: var(--pw-active-pill); }
+.chat-canvas li.theme-muted-panel a span { color: var(--pw-navy); font-weight: 600; }
