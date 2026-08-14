@@ -183,9 +183,9 @@ button { font-family: inherit; }
 .chat-canvas > .flex.h-full > :first-child { width: var(--ade-chat-rail, 260px) !important; flex: 0 0 auto !important; }
 /* Align the conversations header and the model-selector toolbar to one height
    so their bottom borders form a single line across the chat. */
-.chat-canvas > .flex.h-full > :first-child > div:first-child { height: 56px; }
+.chat-canvas > .flex.h-full > :first-child > div:first-child { height: 52px; }
 .chat-canvas main [class*="flex-shrink-0"][class*="border-b"] {
-  height: 56px; display: flex; align-items: center;
+  height: 52px; display: flex; align-items: center;
   padding-top: 0 !important; padding-bottom: 0 !important;
 }
 .chat-canvas main [class*="flex-shrink-0"][class*="border-b"] > div { flex: 1; }
@@ -209,7 +209,7 @@ button { font-family: inherit; }
 .library .divider:hover, .resizing .library .divider { background: #e3ebf3; }
 .rail-head {
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
-  padding: 10px 12px; border-bottom: 1px solid var(--pw-border);
+  height: 52px; padding: 0 12px; border-bottom: 1px solid var(--pw-border); flex-shrink: 0;
 }
 .rail-title {
   font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em;

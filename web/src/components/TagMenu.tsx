@@ -44,6 +44,7 @@ export function TagMenu({ paths, onClose, onApplied }: {
       <div className="tag-panel card">
       <div className="tag-pop-head">
         <span className="field-label">Labels for {paths.length === 1 ? paths[0].split('/').pop() : `${paths.length} items`}</span>
+        {busy && <span className="spinner" />}
         <button className="btn-secondary" onClick={onClose}>Close</button>
       </div>
       {current.length > 0 && (
