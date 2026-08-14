@@ -667,7 +667,10 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
    header bar, opening a multi-select dropdown that scales to many labels. */
 /* height:auto beats the .chat-canvas > * { height:100% } rule, which would
    stretch the anchor to the canvas bottom and drop the menu off-screen. */
-.chat-scope-anchor { position: absolute; top: 11px; right: 16px; z-index: 30; height: auto; }
+.chat-scope-anchor { position: absolute; top: 11px; right: 16px; z-index: 8; height: auto; }
+/* Below ai-chat's side panels (z 10-20) so their close controls stay
+   clickable; raised only while the scope menu itself is open. */
+.chat-scope-anchor.open { z-index: 60; }
 .scope-btn {
   display: inline-flex; align-items: center; gap: 6px;
   border: 1px solid var(--pw-border); border-radius: 8px;
