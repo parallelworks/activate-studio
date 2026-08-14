@@ -46,7 +46,7 @@ export interface RagEndpointStatus {
 
 let child: ChildProcess | null = null
 const status: RagEndpointStatus = { state: 'stopped', name: null, url: null, startedAt: null, detail: null }
-function endpointName(): string {
+export function endpointName(): string {
   const eff = effectiveSettings()
   if (eff.ragEndpointName) return eff.ragEndpointName
   const app = eff.appName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'studio'

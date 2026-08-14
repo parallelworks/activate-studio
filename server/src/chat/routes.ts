@@ -9,6 +9,7 @@ import { agentPrompt } from '../extensions.js'
 import { recordAssistantTurn, recordUserTurn } from '../conversations.js'
 import { clearUserKey, getUserKeyStatus, personalKeysDisabled, resolveUserCred, resolveUserKey, setUserKey } from '../credentials.js'
 import { authEnabled } from '../auth.js'
+import { endpointName } from '../ragEndpoint.js'
 
 interface StreamBody {
   model: string
@@ -58,6 +59,11 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     if (!process.env.PW_ALLOCATION) {
       models = models.filter((m: any) => !String(m.id).startsWith('org:'))
     }
+    // This deployment's own published RAG models are circular from inside
+    // the app (chat -> gateway -> tunnel -> this same server's /v1).
+    const selfName = endpointName()
+    models = models.filter((m: any) =>
+      !(String(m.id).startsWith('session:') && String(m.id).includes(`:${selfName}/studio-`)))
     models.sort((a: any, b: any) =>
       Number(String(a.id).startsWith('org:')) - Number(String(b.id).startsWith('org:')))
     return reply.send({ models, unreachableSessions: wire.unreachable_sessions ?? [] })
