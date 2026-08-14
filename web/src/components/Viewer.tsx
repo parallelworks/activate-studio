@@ -8,6 +8,45 @@ const OFFICE_SUFFIXES = ['.docx', '.pptx', '.xlsx', '.doc', '.ppt', '.xls', '.od
 
 type Tab = 'preview' | 'indexed'
 
+const PDF_PAGE_CAP = 150
+
+/** PDFs and office docs preview as server-rendered page images; the
+ *  browser's own PDF viewer is unavailable in the platform's sandboxed
+ *  session iframe, so an <iframe src=...pdf> shows nothing there. */
+function PdfPages({ path }: { path: string }) {
+  const [pages, setPages] = useState<number | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    setPages(null)
+    setError(null)
+    fetch(`/api/kb/pdf-info?path=${encodeURIComponent(path)}`)
+      .then(r => (r.ok ? r.json() : r.json().then((d: { error?: string }) => Promise.reject(new Error(d.error ?? `${r.status}`)))))
+      .then(d => setPages(d.pages))
+      .catch(e => setError(String((e as Error).message ?? e)))
+  }, [path])
+
+  if (error) return <p className="error pad">Could not render this document: {error}</p>
+  if (pages === null) return <p className="muted pad">Rendering preview…</p>
+  const shown = Math.min(pages, PDF_PAGE_CAP)
+  return (
+    <div className="pdf-pages">
+      {Array.from({ length: shown }, (_, i) => (
+        <img
+          key={i}
+          className="pdf-page-img"
+          src={`/api/kb/pdf-page?path=${encodeURIComponent(path)}&page=${i + 1}`}
+          alt={`page ${i + 1}`}
+          loading="lazy"
+        />
+      ))}
+      {pages > shown && (
+        <p className="muted pad">Showing the first {shown} of {pages} pages; use Download for the full document.</p>
+      )}
+    </div>
+  )
+}
+
 function suffixOf(p: string): string {
   const i = p.lastIndexOf('.')
   return i >= 0 ? p.slice(i).toLowerCase() : ''
@@ -97,10 +136,8 @@ export function Viewer({ path, onDeleted }: {
     <ModelViewer path={path} />
   ) : isImage ? (
     <div className="viewer-body"><img src={api.rawUrl(path)} alt={path} style={{ maxWidth: '100%' }} /></div>
-  ) : isPdf ? (
-    <iframe className="pdf-frame" src={api.rawUrl(path)} title={path} />
-  ) : isOffice ? (
-    <iframe className="pdf-frame" src={api.pdfUrl(path)} title={path} />
+  ) : isPdf || isOffice ? (
+    <PdfPages path={path} />
   ) : isText ? (
     <div className="viewer-body">
       {isMarkdown

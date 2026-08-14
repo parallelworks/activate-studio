@@ -1,0 +1,5 @@
+{
+  "name": "server_uptime",
+  "description": "Show the Studio server host's uptime and load average.",
+  "command": "uptime"
+}

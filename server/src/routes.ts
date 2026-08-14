@@ -5,13 +5,22 @@ import fs, { createReadStream } from 'node:fs'
 import fsp from 'node:fs/promises'
 import { EXCLUDE_DIRS, KB_ROOT, PROJECT_ROOT, gufiAvailable } from './config.js'
 import { extractPath, listDir, readFileContent, resolveKb, KbError } from './kb.js'
-import { CONVERTIBLE, mimeFor, officeToPdf, removePdfPreview } from './preview.js'
+import YAML from 'yaml'
+import { CONVERTIBLE, mimeFor, officeToPdf, pdfPageCount, pdfPagePng, previewPdfFor, removePdfPreview } from './preview.js'
 import { blendHits, corpusStats, searchFts, searchNames, searchVector } from './gufi.js'
 import { invalidateContext } from './chat/context.js'
 import { incrementalIndexDir, indexRootDb, indexStatus, reindexForFile, sweep } from './indexing.js'
 import { annotateHits, readTagsBatch } from './tags.js'
 import { removeModelCache } from './model.js'
 import { effectiveSettings } from './settings.js'
+import { authEnabled, authHeaderName } from './auth.js'
+
+function faviconFile(): string | null {
+  for (const p of [process.env.APP_FAVICON, process.env.APP_ICON]) {
+    if (p && fs.existsSync(p)) return p
+  }
+  return null
+}
 
 export async function kbRoutes(app: FastifyInstance): Promise<void> {
   app.setErrorHandler((err: unknown, _req, reply) => {
@@ -22,6 +31,29 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
   })
 
   app.get('/healthz', async () => ({ ok: true, gufi: gufiAvailable() }))
+
+  // Identity introspection: whether THIS request carried a valid platform
+  // token, and what it said. The footer shows it so a viewer can confirm
+  // the platform is forwarding X-PW-User-Token and verification passes.
+  app.get('/api/whoami', async req => {
+    const u = req.user
+    return {
+      authEnabled: authEnabled(),
+      header: authHeaderName(),
+      verified: !!u,
+      user: u ? { id: u.id, username: u.username, name: u.name } : null,
+      token: u
+        ? {
+            issuer: (u.claims.iss as string) ?? null,
+            audience: u.claims.aud ?? null,
+            issuedAt: typeof u.claims.iat === 'number' ? new Date(u.claims.iat * 1000).toISOString() : null,
+            expiresAt: typeof u.claims.exp === 'number' ? new Date(u.claims.exp * 1000).toISOString() : null,
+          }
+        : null,
+      // The viewer's own token payload, so showing all of it is fine.
+      claims: u ? u.claims : null,
+    }
+  })
 
   // Deployment-specific presentation values live in the environment (or the
   // gitignored .env the deploy script sources), never in the repo.
@@ -38,6 +70,7 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
     return {
       appName: eff.appName,
       iconUrl: process.env.APP_ICON && fs.existsSync(process.env.APP_ICON) ? '/api/brand-icon' : null,
+      faviconUrl: faviconFile() ? '/api/favicon' : null,
       kbLabel: eff.kbLabel,
       theme: eff.theme,
       accent: eff.accent,
@@ -64,6 +97,15 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/brand-icon', async (_req, reply) => {
     const icon = process.env.APP_ICON
     if (!icon || !fs.existsSync(icon)) throw new KbError(404, 'no brand icon configured')
+    reply.header('Content-Type', mimeFor(icon))
+    reply.header('Cache-Control', 'public, max-age=3600')
+    return reply.send(createReadStream(icon))
+  })
+
+  // Deployment favicon: APP_FAVICON, falling back to the brand icon.
+  app.get('/api/favicon', async (_req, reply) => {
+    const icon = faviconFile()
+    if (!icon) throw new KbError(404, 'no favicon configured')
     reply.header('Content-Type', mimeFor(icon))
     reply.header('Cache-Control', 'public, max-age=3600')
     return reply.send(createReadStream(icon))
@@ -175,13 +217,13 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/kb/stats', async () => corpusStats())
 
   app.get('/api/search', async req => {
-    const { q = '', limit = '20' } = req.query as { q?: string; limit?: string }
+    const { q = '', limit = '50' } = req.query as { q?: string; limit?: string }
     if (!q.trim()) return { hits: [] }
     if (!gufiAvailable()) return { hits: [], error: 'index not built yet' }
-    const n = Math.min(Number(limit) || 20, 50)
+    const n = Math.min(Number(limit) || 50, 1000)
     const [fts, names, vec] = await Promise.all([
       searchFts(q, n),
-      searchNames(q, 10),
+      searchNames(q, Math.min(Math.max(10, Math.floor(n / 5)), 50)),
       searchVector(q, Math.min(n, 10)).catch(() => []),
     ])
     const { tags } = req.query as { tags?: string }
@@ -238,6 +280,28 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
     for (const [job, def] of Object.entries<any>(jobs)) {
       for (const dep of def?.needs ?? []) edges.push({ from: dep, to: job })
     }
-    return { name: wf.name, displayName: wf.displayName, nodes, edges, yaml: wf.yaml }
+    return {
+      name: wf.name, displayName: wf.displayName, nodes, edges, yaml: wf.yaml,
+      yamlText: YAML.stringify(wf.yaml ?? {}),
+    }
+  })
+
+  // PDF preview as page images: the browser PDF plugin is unavailable in
+  // the platform's sandboxed session iframe, so the client shows PNGs.
+  app.get('/api/kb/pdf-info', async req => {
+    const { path: rel = '' } = req.query as { path?: string }
+    const abs = resolveKb(rel)
+    const pdf = await previewPdfFor(abs, rel)
+    return { pages: await pdfPageCount(pdf) }
+  })
+
+  app.get('/api/kb/pdf-page', async (req, reply) => {
+    const { path: rel = '', page = '1' } = req.query as { path?: string; page?: string }
+    const n = Math.max(1, Math.floor(Number(page) || 1))
+    const abs = resolveKb(rel)
+    const png = await pdfPagePng(abs, rel, n)
+    reply.header('Content-Type', 'image/png')
+    reply.header('Cache-Control', 'public, max-age=300')
+    return reply.send(createReadStream(png))
   })
 }

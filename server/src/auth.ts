@@ -5,13 +5,20 @@ import { createRemoteJWKSet, jwtVerify } from 'jose'
  * Platform identity: when the app runs behind ACTIVATE, the platform forwards
  * a short-lived JWT in a header, verifiable against the platform JWKS
  * endpoint. Configure with:
- *   AUTH_JWKS_URL   JWKS endpoint (enables verification)
- *   AUTH_HEADER     header carrying the token (default x-pw-access-token;
+ *   AUTH_JWKS_URL   JWKS endpoint (enables verification). On ACTIVATE this
+ *                   is GET /api/platform/keys on the platform host (the
+ *                   jwks_uri from its OIDC discovery document).
+ *   AUTH_HEADER     header carrying the token (default x-pw-user-token, the
+ *                   header the ACTIVATE session proxy forwards;
  *                   "authorization" strips a Bearer prefix)
- *   AUTH_ISSUER     optional expected issuer
- *   AUTH_AUDIENCE   optional expected audience
+ *   AUTH_ISSUER     optional expected issuer (pw-session-proxy on ACTIVATE)
+ *   AUTH_AUDIENCE   optional expected audience; the proxy stamps
+ *                   ["session:<sessionId>", "session:<owner>/<sessionName>"]
  *   AUTH_REQUIRED   1 = reject API requests without a valid token
- * Standalone deployments leave AUTH_JWKS_URL unset and nothing changes.
+ * The ACTIVATE token is a short-lived (5 min) RS256 JWT with sub
+ * user:<username>; it identifies the user and proves the platform forwarded
+ * the request, and carries no credentials. Standalone deployments leave
+ * AUTH_JWKS_URL unset and nothing changes.
  */
 
 export interface VerifiedUser {
@@ -28,12 +35,13 @@ declare module 'fastify' {
 }
 
 const JWKS_URL = process.env.AUTH_JWKS_URL ?? ''
-const HEADER = (process.env.AUTH_HEADER ?? 'x-pw-access-token').toLowerCase()
+const HEADER = (process.env.AUTH_HEADER ?? 'x-pw-user-token').toLowerCase()
 const REQUIRED = process.env.AUTH_REQUIRED === '1'
 
 const jwks = JWKS_URL ? createRemoteJWKSet(new URL(JWKS_URL)) : null
 
 export function authEnabled(): boolean { return jwks !== null }
+export function authHeaderName(): string { return HEADER }
 
 async function verify(req: FastifyRequest): Promise<VerifiedUser | null> {
   if (!jwks) return null
@@ -44,7 +52,9 @@ async function verify(req: FastifyRequest): Promise<VerifiedUser | null> {
     issuer: process.env.AUTH_ISSUER || undefined,
     audience: process.env.AUTH_AUDIENCE || undefined,
   })
+  // The platform proxy's sub is user:<username>; strip the prefix.
   const username = String(payload.preferred_username ?? payload.username ?? payload.email ?? payload.sub ?? 'user')
+    .replace(/^user:/, '')
   return {
     id: String(payload.sub ?? username),
     username,

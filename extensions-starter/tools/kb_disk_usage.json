@@ -1,0 +1,5 @@
+{
+  "name": "kb_disk_usage",
+  "description": "Report the total disk usage of the knowledge base directory.",
+  "command": "du -sh \"$KB_ROOT\" | cut -f1"
+}

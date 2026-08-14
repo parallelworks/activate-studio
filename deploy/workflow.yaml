@@ -1,0 +1,489 @@
+# ============================================================================
+# STUDIO — knowledge base workspace as an ACTIVATE session
+#
+# Forked from the containerized-webapp-deployment pattern (nii-ops-viewer
+# lineage): a self-contained bundle is pulled from a bucket onto the
+# resource, GUFI is optionally built there, the knowledge base is indexed,
+# and the Node server is served as a web session through a forked pw
+# endpoint that outlives the workflow. Session methods: web, e2e, cleanup.
+#
+# Bundle: build with deploy/make_bundle.sh and upload to the bucket. It
+# carries the built app with node_modules, a Node 20 runtime, the GUFI
+# source tree, and the embedding model, so the resource needs no outbound
+# network. If GUFI cannot build (no cmake or gcc), the app still runs:
+# browsing works from the filesystem and search falls back to grep.
+#
+# Topology:
+#   setup ─┬─ get_ports ─┬─ pull_software ── build_gufi ── index_kb ── run_app ── expose_session
+#          └─────────────┘
+# ============================================================================
+permissions:
+  - '*'
+'on':
+  execute:
+    inputs:
+      resource_and_execution:
+        label: Resource & Execution
+        type: group
+        collapsed: false
+        items:
+          resource:
+            label: Resource Target
+            type: compute-clusters
+            autoselect: true
+            optional: false
+      session_settings:
+        label: Session
+        type: group
+        collapsed: false
+        items:
+          session_name:
+            label: Session Name
+            type: string
+            default: studio
+            tooltip: Prefix for the session/endpoint name; the port is appended so each launch is unique.
+          session_method:
+            label: Session Method
+            type: dropdown
+            default: web
+            options:
+              - label: Web (endpoint URL)
+                value: web
+              - label: E2E test (verify & tear down)
+                value: e2e
+              - label: Cleanup (stop everything from prior launches)
+                value: cleanup
+            tooltip: |
+              Web     → pw endpoints http exposes the app at a root URL.
+              E2E     → launch everything, assert HTTP 200 at /healthz, tear down, exit.
+              Cleanup → stop every process prior launches left on the node, then exit.
+      app_settings:
+        label: App & Bundle
+        type: group
+        collapsed: true
+        items:
+          workdir:
+            label: Work Directory
+            type: string
+            default: ${HOME}/studio-work
+            tooltip: Directory on the resource where the app is unpacked, built, and run.
+          source:
+            label: App Source
+            type: dropdown
+            default: github
+            options:
+              - label: GitHub (clone and build on the resource)
+                value: github
+              - label: Bundle (bucket or pre-staged; for air-gapped systems)
+                value: bundle
+            tooltip: |
+              GitHub → clone the repository on the resource and build there (needs
+              outbound HTTPS to github.com and nodejs.org; Node is fetched
+              automatically when absent).
+              Bundle → self-contained tarball from deploy/make_bundle.sh, pulled from
+              the bucket or pre-staged at <workdir>/bundle-prestage.tar.gz; nothing
+              is fetched from the internet.
+          repo_url:
+            label: Repository URL
+            type: string
+            default: https://github.com/parallelworks/activate-studio
+            hidden: ${{ inputs.app_settings.source == 'bundle' }}
+            tooltip: Repository to clone. For a private repository, embed a token (https://<token>@github.com/...) or install a deploy key on the resource.
+          git_ref:
+            label: Git Ref
+            type: string
+            default: main
+            hidden: ${{ inputs.app_settings.source == 'bundle' }}
+            tooltip: Branch, tag, or commit to check out.
+          rundir:
+            label: Run Directory
+            type: string
+            default: ${PW_PARENT_JOB_DIR}
+            hidden: true
+          bundlebucket:
+            label: Bundle Bucket
+            type: bucket
+            optional: true
+            tooltip: Bucket holding the deployment bundle built by deploy/make_bundle.sh. If the platform bucket API is unavailable, pre-stage the bundle on the resource as <workdir>/bundle-prestage.tar.gz instead; the pull step falls back to it.
+          bundle_file:
+            label: Bundle File
+            type: string
+            default: studio-bundle.tar.gz
+            tooltip: Filename of the bundle in the bucket. Bump to roll to a newer build.
+          refresh_software:
+            label: Load Latest Bundle
+            type: boolean
+            default: false
+            tooltip: Clobber the cached bundle and re-pull the latest from the bucket.
+          app_port:
+            label: App Port
+            type: number
+            default: 0
+            hidden: true
+      kb_settings:
+        label: Knowledge Base
+        type: group
+        collapsed: false
+        items:
+          kb_root:
+            label: Knowledge Base Directory
+            type: string
+            default: ${HOME}/knowledge-base
+            tooltip: The directory to index and serve. Created if missing; point it at an existing corpus to work over it.
+          kb_label:
+            label: Knowledge Base Label
+            type: string
+            default: Knowledge Base
+            tooltip: Display name in the interface.
+          build_gufi:
+            label: Build GUFI Index Engine
+            type: boolean
+            default: true
+            tooltip: |
+              Build GUFI from the bundled source (needs cmake and a C compiler on the
+              resource; takes a few minutes the first time, cached afterwards). When
+              off or when the build fails, the app still runs with filesystem browsing
+              and grep-backed search.
+          run_index:
+            label: Index on Launch
+            type: boolean
+            default: true
+            tooltip: Run the full index (metadata, text extraction, embeddings) before starting. Turn off for an instant relaunch on an unchanged corpus.
+      model_settings:
+        label: Models (optional)
+        type: group
+        collapsed: true
+        items:
+          pw_api_key:
+            label: Gateway API Key
+            type: string
+            default: ''
+            optional: true
+            tooltip: OpenAI-compatible gateway credential for chat. Empty uses the pw CLI credential on the resource when one exists; chat is disabled otherwise, every other feature still works.
+          gateway_url:
+            label: Gateway Base URL
+            type: string
+            default: ''
+            optional: true
+            tooltip: Override the OpenAI-compatible endpoint base URL (defaults to the ACTIVATE platform gateway).
+jobs:
+  setup:
+    ssh:
+      remoteHost: ${{ inputs.resource_and_execution.resource.ip }}
+    steps:
+      - name: Create directories
+        run: |
+          mkdir -p ${{ inputs.app_settings.workdir }}
+          mkdir -p ${{ inputs.kb_settings.kb_root }}
+      - name: Stop dangling processes from a prior launch
+        run: |
+          cd ${{ inputs.app_settings.workdir }}
+          if [ -f app-custom.pids ]; then
+            echo "Stopping processes from a prior launch:"; cat app-custom.pids || true
+            while read -r p; do
+              [ -n "$p" ] || continue
+              kill "$p" 2>/dev/null || true
+              kill -- -"$p" 2>/dev/null || true
+            done < app-custom.pids
+          fi
+          : > app-custom.pids
+  get_ports:
+    outputs:
+      APP_PORT: ${{ needs.get_ports.steps.ports.outputs.APP_PORT }}
+    ssh:
+      remoteHost: ${{ inputs.resource_and_execution.resource.ip }}
+    steps:
+      - name: Get open port
+        id: ports
+        run: |
+          if [[ ${{ inputs.app_settings.app_port }} == "0" ]]; then
+            APP_PORT=$(pw agent open-port)
+          else
+            APP_PORT=${{ inputs.app_settings.app_port }}
+          fi
+          echo "App port: $APP_PORT"
+          echo APP_PORT=$APP_PORT >> $OUTPUTS
+  pull_software:
+    needs:
+      - setup
+    ssh:
+      remoteHost: ${{ inputs.resource_and_execution.resource.ip }}
+    steps:
+      - name: Clone and build from GitHub
+        run: |
+          if [ "${{ inputs.session_settings.session_method }}" = "cleanup" ]; then exit 0; fi
+          if [ "${{ inputs.app_settings.source }}" != "github" ]; then
+            echo "Bundle mode; the next step pulls the bundle."
+            exit 0
+          fi
+          cd ${{ inputs.app_settings.workdir }}
+          # Node runtime: use the system one when present, else fetch v20.
+          if ! command -v node >/dev/null 2>&1 && [ ! -x node-runtime/bin/node ]; then
+            echo "Fetching Node runtime..."
+            curl -fsSL -o node.tar.xz https://nodejs.org/dist/v20.19.6/node-v20.19.6-linux-x64.tar.xz
+            mkdir -p node-runtime
+            tar -xJf node.tar.xz -C node-runtime --strip-components=1
+            rm -f node.tar.xz
+          fi
+          PATH="$PWD/node-runtime/bin:$PATH"; export PATH
+          echo "node: $(node --version)"
+          if [ -d repo/.git ]; then
+            echo "Updating existing clone..."
+            git -C repo fetch --all --prune
+          else
+            git clone "${{ inputs.app_settings.repo_url }}" repo
+          fi
+          git -C repo checkout "${{ inputs.app_settings.git_ref }}"
+          git -C repo pull --ff-only 2>/dev/null || true
+          cd repo
+          corepack enable pnpm 2>/dev/null || npm install -g pnpm >/dev/null 2>&1 || true
+          command -v pnpm >/dev/null 2>&1 || { echo "ERROR: pnpm unavailable"; exit 1; }
+          echo "Installing dependencies and building..."
+          pnpm install --frozen-lockfile
+          pnpm build
+          # Lay out the same app/ tree the bundle uses, so later jobs are identical.
+          cd ..
+          rm -rf app
+          mkdir -p app/web
+          pnpm --dir repo --filter @activate-studio/server --prod deploy --legacy "$PWD/app/server"
+          cp -r repo/web/dist app/web/dist
+          cp -r repo/indexer app/indexer
+          cp -r repo/docs app/docs
+          cp -r repo/extensions-starter app/extensions-starter
+          mkdir -p app/index/models
+          if [ ! -f app/index/models/minilm384.gguf ]; then
+            echo "Fetching embedding model..."
+            curl -fsSL -o app/index/models/minilm384.gguf \
+              'https://huggingface.co/asg017/sqlite-lembed-model-examples/resolve/main/all-MiniLM-L6-v2/all-MiniLM-L6-v2.e4ce9877.q8_0.gguf' \
+              || echo "WARNING: model fetch failed; vector search disabled."
+          fi
+          if [ ! -f gufi-src.tar.gz ]; then
+            echo "Fetching GUFI source..."
+            git clone --depth 1 --recurse-submodules --shallow-submodules https://github.com/mar-file-system/GUFI gufi-clone \
+              && tar --exclude='GUFI/.git' -czf gufi-src.tar.gz --transform 's|^gufi-clone|GUFI|' gufi-clone \
+              || echo "WARNING: GUFI source fetch failed; index engine unavailable."
+            rm -rf gufi-clone
+          fi
+          echo "github" > .bundle
+      - name: Pull and unpack the bundle
+        run: |
+          if [ "${{ inputs.session_settings.session_method }}" = "cleanup" ]; then
+            echo "Cleanup run; nothing to pull."
+            exit 0
+          fi
+          if [ "${{ inputs.app_settings.source }}" = "github" ]; then
+            echo "GitHub mode; app already built in the previous step."
+            exit 0
+          fi
+          cd ${{ inputs.app_settings.workdir }}
+          BUNDLE="${{ inputs.app_settings.bundle_file }}"
+          if [[ -d app && "$(cat .bundle 2>/dev/null)" == "$BUNDLE" && "${{ inputs.app_settings.refresh_software }}" == "false" ]]; then
+            echo "Bundle ($BUNDLE) already unpacked."
+          else
+            echo "Pulling bundle $BUNDLE ..."
+            # Bucket inputs interpolate as objects; .uri is required (the bare
+            # form injects JSON and the copy fails silently).
+            pw buckets cp "${{ inputs.app_settings.bundlebucket.uri }}/$BUNDLE" ./bundle.tar.gz || {
+              if [ -f bundle-prestage.tar.gz ]; then
+                echo "Bucket pull failed; using pre-staged bundle-prestage.tar.gz"
+                cp bundle-prestage.tar.gz bundle.tar.gz
+              else
+                echo "ERROR: bundle pull failed and no pre-staged bundle found"; exit 1
+              fi
+            }
+            rm -rf app node-* gufi-src.tar.gz
+            tar -xzf bundle.tar.gz
+            rm -f bundle.tar.gz
+            echo "$BUNDLE" > .bundle
+          fi
+          # Node runtime from the bundle, unless the resource already has one.
+          if ! command -v node >/dev/null 2>&1 && [ ! -x node-runtime/bin/node ]; then
+            NODE_TAR=$(ls node-*-linux-x64.tar.xz 2>/dev/null | head -1)
+            if [ -n "$NODE_TAR" ]; then
+              mkdir -p node-runtime
+              tar -xJf "$NODE_TAR" -C node-runtime --strip-components=1
+            fi
+          fi
+          PATH="$PWD/node-runtime/bin:$PATH"; export PATH
+          echo "node: $(command -v node) $(node --version 2>/dev/null || echo 'MISSING')"
+  build_gufi:
+    needs:
+      - pull_software
+    ssh:
+      remoteHost: ${{ inputs.resource_and_execution.resource.ip }}
+    steps:
+      - name: Build GUFI from bundled source
+        run: |
+          if [ "${{ inputs.session_settings.session_method }}" = "cleanup" ]; then exit 0; fi
+          if [ "${{ inputs.kb_settings.build_gufi }}" != "true" ]; then
+            echo "GUFI build disabled; the app will run with filesystem browsing and grep search."
+            exit 0
+          fi
+          cd ${{ inputs.app_settings.workdir }}
+          if [ -x gufi-install/bin/gufi_query ]; then
+            echo "GUFI already built."
+            exit 0
+          fi
+          if ! command -v cmake >/dev/null 2>&1; then
+            module load cmake 2>/dev/null || true
+          fi
+          if ! command -v cmake >/dev/null 2>&1; then
+            echo "WARNING: cmake not available; skipping GUFI build. The app degrades gracefully."
+            exit 0
+          fi
+          tar -xzf gufi-src.tar.gz
+          mkdir -p GUFI/build
+          cd GUFI/build
+          cmake .. -DCMAKE_INSTALL_PREFIX="${{ inputs.app_settings.workdir }}/gufi-install" -DCMAKE_BUILD_TYPE=Release || { echo "WARNING: cmake configure failed; continuing without GUFI"; exit 0; }
+          make -j "$(nproc)" || { echo "WARNING: GUFI build failed; continuing without GUFI"; exit 0; }
+          make install || { echo "WARNING: GUFI install failed; continuing without GUFI"; exit 0; }
+          echo "GUFI installed at ${{ inputs.app_settings.workdir }}/gufi-install"
+  index_kb:
+    needs:
+      - build_gufi
+    ssh:
+      remoteHost: ${{ inputs.resource_and_execution.resource.ip }}
+    steps:
+      - name: Index the knowledge base
+        run: |
+          if [ "${{ inputs.session_settings.session_method }}" = "cleanup" ]; then exit 0; fi
+          if [ "${{ inputs.kb_settings.run_index }}" != "true" ]; then
+            echo "Indexing on launch disabled."
+            exit 0
+          fi
+          cd ${{ inputs.app_settings.workdir }}
+          if [ ! -x gufi-install/bin/gufi_dir2index ]; then
+            echo "GUFI not present; skipping index build (search falls back to grep)."
+            exit 0
+          fi
+          export KB_ROOT="${{ inputs.kb_settings.kb_root }}"
+          export GUFI_BIN="$PWD/gufi-install/bin"
+          export INDEX_BASE="$PWD/app/index"
+          bash app/indexer/reindex.sh || echo "WARNING: index build failed; the app still serves the filesystem."
+  run_app:
+    needs:
+      - index_kb
+      - get_ports
+    ssh:
+      remoteHost: ${{ inputs.resource_and_execution.resource.ip }}
+    steps:
+      - name: Generate run_app.sh
+        run: |
+          RUNDIR="${{ inputs.app_settings.rundir }}"
+          WORKDIR="${{ inputs.app_settings.workdir }}"
+          SCRIPT="${RUNDIR}/run_app.sh"
+          mkdir -p ${RUNDIR}
+
+          cat > ${SCRIPT} << 'SCRIPT_HEADER'
+          #!/bin/bash
+          export PATH="$HOME/.local/bin:$HOME/pw:$PATH"
+          hostname; date; pwd
+          SCRIPT_HEADER
+
+          echo "pushd ${WORKDIR}" >> ${SCRIPT}
+          echo "export PATH=\"${WORKDIR}/node-runtime/bin:\$PATH\"" >> ${SCRIPT}
+          echo "export PORT=${{ needs.get_ports.outputs.APP_PORT }}" >> ${SCRIPT}
+          echo "export KB_ROOT=${{ inputs.kb_settings.kb_root }}" >> ${SCRIPT}
+          echo "export KB_LABEL='${{ inputs.kb_settings.kb_label }}'" >> ${SCRIPT}
+          echo "export GUFI_BIN=${WORKDIR}/gufi-install/bin" >> ${SCRIPT}
+          echo "export INDEX_BASE=${WORKDIR}/app/index" >> ${SCRIPT}
+          if [ -n "${{ inputs.model_settings.pw_api_key }}" ]; then
+            echo "export PW_API_KEY='${{ inputs.model_settings.pw_api_key }}'" >> ${SCRIPT}
+          fi
+          if [ -n "${{ inputs.model_settings.gateway_url }}" ]; then
+            echo "export PW_GATEWAY_URL='${{ inputs.model_settings.gateway_url }}'" >> ${SCRIPT}
+          fi
+
+          if [ "${{ inputs.session_settings.session_method }}" = "cleanup" ]; then
+            cat >> ${SCRIPT} << 'CLEANUP_BODY'
+          echo "CLEANUP RUN: stopping all Studio processes from prior launches on this node."
+          if [ -f app-custom.pids ]; then
+            while read -r p; do [ -n "$p" ] && kill "$p" 2>/dev/null && echo "  killed $p"; done < app-custom.pids
+            : > app-custom.pids
+          fi
+          for pat in "server/dist/main[.]js" "pw endpoints http.*studio"; do
+            pkill -f "$pat" 2>/dev/null && echo "  killed by pattern: $pat"
+          done
+          echo "cleanup complete"
+          CLEANUP_BODY
+            cat ${SCRIPT}
+            exit 0
+          fi
+
+          cat >> ${SCRIPT} << 'APP_LAUNCH'
+          echo "Starting Studio server on port ${PORT} over ${KB_ROOT} ..."
+          setsid nohup node app/server/dist/main.js > app.log 2>&1 < /dev/null &
+          echo "$!" >> app-custom.pids
+          echo "Server forked; logs: $(pwd)/app.log"
+          for i in $(seq 1 60); do
+            (exec 3<>/dev/tcp/127.0.0.1/${PORT}) 2>/dev/null && { exec 3>&- 3<&-; echo "app listening after ~$(( (i-1) * 2 ))s"; break; }
+            sleep 2
+          done
+          if [ "${{ inputs.session_settings.session_method }}" = "web" ]; then
+            PREFIX="$(echo "${{ inputs.session_settings.session_name }}" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-' | sed -E 's/-+/-/g; s/^-//; s/-$//')"
+            [ -n "$PREFIX" ] || PREFIX="studio"
+            EP_NAME="${PREFIX}-${PORT}"
+            PW_BIN="$(command -v pw || echo pw)"
+            echo "Forking web endpoint ${EP_NAME} -> localhost:${PORT}; log: $(pwd)/endpoint.log"
+            setsid nohup "$PW_BIN" endpoints http -o text --name "$EP_NAME" --subdomain "$EP_NAME" "$PORT" > endpoint.log 2>&1 < /dev/null &
+            echo "$!" >> app-custom.pids
+          fi
+          echo "Done running main workflow script."
+          APP_LAUNCH
+          cat ${SCRIPT}
+      - name: Launch app on the login node
+        run: |
+          bash ${{ inputs.app_settings.rundir }}/run_app.sh 2>&1 | tee ${{ inputs.app_settings.rundir }}/run_app.out
+  expose_session:
+    needs:
+      - run_app
+      - get_ports
+    ssh:
+      remoteHost: ${{ inputs.resource_and_execution.resource.ip }}
+    steps:
+      - name: Verify and surface the session
+        run: |
+          cd ${{ inputs.app_settings.workdir }}
+          METHOD="${{ inputs.session_settings.session_method }}"
+          PORT=${{ needs.get_ports.outputs.APP_PORT }}
+          if [ "$METHOD" = "cleanup" ]; then
+            echo "Cleanup run complete; no session created."
+            exit 0
+          fi
+          up=0
+          for i in $(seq 1 60); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "http://localhost:${PORT}/healthz" || echo 000)
+            if [ "$code" != "000" ]; then
+              echo "App responding (HTTP ${code}) after ~$(( (i-1) * 5 ))s."
+              up=1
+              break
+            fi
+            sleep 5
+          done
+          if [ "$METHOD" = "e2e" ]; then
+            body=$(curl -s --max-time 10 "http://localhost:${PORT}/healthz" || echo '')
+            echo "healthz: $body"
+            echo "Tearing down forked processes..."
+            if [ -f app-custom.pids ]; then
+              while read -r p; do
+                [ -n "$p" ] || continue
+                kill "$p" 2>/dev/null || true
+                kill -- -"$p" 2>/dev/null || true
+              done < app-custom.pids
+              : > app-custom.pids
+            fi
+            if [ "$up" = "1" ] && echo "$body" | grep -q '"ok":true'; then
+              echo "E2E PASS: bundle unpacked, server answered healthz, torn down cleanly."
+            else
+              echo "E2E FAIL: server never answered healthz (see app.log in the workdir)."
+              exit 1
+            fi
+            exit 0
+          fi
+          [ "$up" = "1" ] || echo "WARNING: app never responded; check app.log. Continuing."
+          echo "Web endpoint was forked in run_app.sh; URL from endpoint.log:"
+          for i in $(seq 1 12); do
+            [ -s endpoint.log ] && break
+            sleep 5
+          done
+          head -30 endpoint.log 2>/dev/null || echo "(endpoint.log not found)"

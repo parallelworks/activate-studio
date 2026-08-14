@@ -14,7 +14,7 @@ interface Effective {
   customTools: { name: string; description: string; command: string }[]
 }
 
-interface CatalogTool { name: string; description: string; builtin: boolean; enabled: boolean; parameters?: unknown }
+interface CatalogTool { name: string; description: string; builtin: boolean; enabled: boolean; parameters?: unknown; command?: string; implementation?: string }
 interface ExtDoc { name: string; description: string; file: string; active?: boolean; command?: string }
 interface Extensions { dir: string; tools: ExtDoc[]; skills: ExtDoc[]; agents: ExtDoc[] }
 
@@ -155,6 +155,7 @@ export function SettingsView() {
         <p className="muted view-sub">
           Everything the chat assistant can call. Built-in tools are part of the server; unchecking one hides it from the model, and clicking a name shows its exact call specification, so you can copy the shape into a custom tool or extension file with your own changes. Custom tools are commands you define here (saved with these settings, not as files); each appears to the assistant as a callable tool and runs on this server with its output returned to the conversation.
         </p>
+        <div className="tools-grid">
         {TOOL_GROUPS.map(([group, names]) => {
           const rows = catalog.filter(t => t.builtin && names.includes(t.name))
           if (!rows.length) return null
@@ -181,13 +182,14 @@ export function SettingsView() {
                     <span className="tool-desc">{t.description}</span>
                   </div>
                   {specOpen === t.name && (
-                    <pre className="tool-spec">{JSON.stringify({ name: t.name, description: t.description, parameters: t.parameters }, null, 2)}</pre>
+                    <pre className="tool-spec">{JSON.stringify({ name: t.name, description: t.description, parameters: t.parameters, ...(t.command ? { command: t.command } : {}), ...(t.implementation ? { implementation: t.implementation } : {}) }, null, 2)}</pre>
                   )}
                 </div>
               ))}
             </div>
           )
         })}
+        </div>
         <div className="tool-group">Custom tools</div>
         <div className="custom-tools">
           {form.customTools.map((t, i) => (
@@ -218,7 +220,7 @@ export function SettingsView() {
           <div>
             <div className="tool-group">Tool files ({ext?.tools.length ?? 0})</div>
             {ext?.tools.length
-              ? ext.tools.map(t => <div className="ext-row" key={t.file}><code>{t.name}</code><span className="tool-desc">{t.description || t.command}</span></div>)
+              ? ext.tools.map(t => <div className="ext-row" key={t.file}><code>{t.name}</code><span className="tool-desc">{t.description}{t.command ? <> — <code>{t.command}</code></> : null}</span></div>)
               : <p className="muted ext-empty">None yet. Drop a JSON file in tools/.</p>}
           </div>
           <div>

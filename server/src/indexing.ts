@@ -239,22 +239,44 @@ export async function sweep(log: (msg: string) => void): Promise<string[]> {
     changed.sort()
     changed = changed.filter(rel => !changed.some(other => other !== rel && rel.startsWith(other + '/')))
 
+    // One directory failing (a lock collision with an in-flight export or
+    // upload reindex, a bad row) must not poison the whole sweep: index each
+    // in isolation, keep the failed ones' old state so they retry next cycle,
+    // and record state only for what actually succeeded.
+    const failures: string[] = []
+    const indexed: string[] = []
+    let rootIndexed = false
     if (rootChanged) {
       log('sweep: re-indexing root files')
-      await indexRootDb()
+      try { await indexRootDb(); rootIndexed = true } catch (err: any) {
+        failures.push(`(root files): ${String(err?.message ?? err)}`)
+      }
     }
     for (const rel of changed) {
       log(`sweep: re-indexing ${rel}`)
-      await incrementalIndexDir(rel)
+      try { await incrementalIndexDir(rel); indexed.push(rel) } catch (err: any) {
+        failures.push(`${rel}: ${String(err?.message ?? err)}`)
+        log(`sweep: FAILED ${rel}: ${String(err?.message ?? err)}`)
+      }
     }
-    if (rootChanged || changed.length || removed.length) {
+    if (rootIndexed || indexed.length || removed.length) {
+      const failedSet = new Set(changed.filter(rel => !indexed.includes(rel)))
       const next: Record<string, number> = {}
-      for (const [rel, s] of scan) next[rel === '' ? '.' : rel] = s.latest
+      for (const [rel, s] of scan) {
+        const key = rel === '' ? '.' : rel
+        // A failed dir keeps its old timestamp (or stays absent) so the next
+        // sweep still sees it as changed; likewise the root when it failed.
+        if (key === '.' ? (rootChanged && !rootIndexed) : failedSet.has(rel)) {
+          if (state[key] !== undefined) next[key] = state[key]
+        } else {
+          next[key] = s.latest
+        }
+      }
       await fsp.writeFile(SWEEP_STATE, JSON.stringify(next))
     }
-    status.lastChanges = [...(rootChanged ? ['(root files)'] : []), ...changed, ...removed.map(r => `${r} (removed)`)]
-    status.lastError = null
-    return changed
+    status.lastChanges = [...(rootIndexed ? ['(root files)'] : []), ...indexed, ...removed.map(r => `${r} (removed)`)]
+    status.lastError = failures.length ? failures.join('; ') : null
+    return indexed
   } catch (err: any) {
     status.lastError = String(err?.message ?? err)
     return []

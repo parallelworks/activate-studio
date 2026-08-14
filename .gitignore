@@ -8,3 +8,5 @@ __pycache__/
 .venv/
 *.gguf
 .DS_Store
+studio-bundle.tar.gz
+deploy/.cache/

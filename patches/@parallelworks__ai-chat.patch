@@ -1,0 +1,40 @@
+diff --git a/dist/index.js b/dist/index.js
+index d80e7c3c80143c5232fc9c26fe2b3e9dcb390c3b..bf1dbda2068e6bf51eefb9493e049ccfbc0b8e2c 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -1368,6 +1368,8 @@ function AttachmentManager() {
+ 								className: cx("rounded-lg border theme-border overflow-hidden", isDeleting && "opacity-50 pointer-events-none"),
+ 								children: [isImage ? /* @__PURE__ */ jsx("div", {
+ 									className: "aspect-square bg-(--theme-muted-panel-bg) flex items-center justify-center",
++									onClick: () => attachmentsAdapter.onOpen?.(att),
++									style: attachmentsAdapter.onOpen ? { cursor: "pointer" } : void 0,
+ 									children: /* @__PURE__ */ jsx("img", {
+ 										src: downloadUrl,
+ 										alt: att.filename || "Image",
+@@ -1376,6 +1378,8 @@ function AttachmentManager() {
+ 									})
+ 								}) : /* @__PURE__ */ jsx("div", {
+ 									className: "aspect-square bg-(--theme-muted-panel-bg) flex flex-col items-center justify-center gap-2 p-3",
++									onClick: () => attachmentsAdapter.onOpen?.(att),
++									style: attachmentsAdapter.onOpen ? { cursor: "pointer" } : void 0,
+ 									children: /* @__PURE__ */ jsx(FileIcon, { className: "w-8 h-8 theme-muted-text" })
+ 								}), /* @__PURE__ */ jsxs("div", {
+ 									className: "p-3 text-xs bg-(--theme-panel-bg) flex items-center justify-between gap-1",
+@@ -3731,7 +3735,16 @@ function ChatMessageList({ messages, allMessages, streamingMessage, queuedMessag
+ 		const container = containerRef.current;
+ 		if (!container) return;
+ 		container.addEventListener("scroll", handleScroll);
+-		return () => container.removeEventListener("scroll", handleScroll);
++		const releaseStick = (e) => {
++			if (e.type === "wheel" ? e.deltaY < 0 : true) isNearBottomRef.current = false;
++		};
++		container.addEventListener("wheel", releaseStick, { passive: true });
++		container.addEventListener("touchmove", releaseStick, { passive: true });
++		return () => {
++			container.removeEventListener("scroll", handleScroll);
++			container.removeEventListener("wheel", releaseStick);
++			container.removeEventListener("touchmove", releaseStick);
++		};
+ 	}, [handleScroll]);
+ 	const hadMessagesRef = useRef(false);
+ 	useLayoutEffect(() => {
