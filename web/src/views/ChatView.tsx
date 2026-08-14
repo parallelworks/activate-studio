@@ -13,7 +13,7 @@ export function ChatView() {
 
   // The empty state freezes its greeting and starter prompts at mount, so
   // wait for the deployment config before mounting the chat tree.
-  if (!cfg.loaded) return <div className="chat-canvas" />
+  if (!cfg.loaded) return <div className="chat-wrap"><div className="chat-canvas card" /></div>
 
   return (
     <ChatProvider
@@ -32,10 +32,12 @@ export function ChatView() {
       activeConversationId={activeId}
       config={{ variant: 'modern', suggestedPrompts: cfg.suggestedPrompts }}
     >
-      <div className="chat-canvas">
-        <ChatLayout>
-          {activeId ? <ChatThread conversationId={activeId} /> : <ChatEmptyState />}
-        </ChatLayout>
+      <div className="chat-wrap">
+        <div className="chat-canvas card">
+          <ChatLayout>
+            {activeId ? <ChatThread conversationId={activeId} /> : <ChatEmptyState />}
+          </ChatLayout>
+        </div>
       </div>
     </ChatProvider>
   )

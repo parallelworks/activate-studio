@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 
 export interface AppConfig {
+  appName: string
   kbLabel: string
   suggestedPrompts: string[]
   user: { id: string; username: string; name?: string }
@@ -8,6 +9,7 @@ export interface AppConfig {
 }
 
 const DEFAULTS: AppConfig = {
+  appName: 'Studio',
   kbLabel: 'Knowledge base',
   suggestedPrompts: [
     'What is in this knowledge base?',
@@ -29,6 +31,7 @@ export function useAppConfig(): AppConfig {
       .then(r => r.json())
       .then((d: Partial<AppConfig>) => {
         cached = {
+          appName: d.appName || DEFAULTS.appName,
           kbLabel: d.kbLabel || DEFAULTS.kbLabel,
           suggestedPrompts: d.suggestedPrompts?.length ? d.suggestedPrompts : DEFAULTS.suggestedPrompts,
           user: d.user?.id ? (d.user as AppConfig['user']) : DEFAULTS.user,

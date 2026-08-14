@@ -61,6 +61,9 @@ const streamFromServer: StreamCompletion = async (req, handlers, signal) => {
         handlers.onReasoning?.(line)
         break
       }
+      case 'display':
+        window.dispatchEvent(new CustomEvent('ade-display', { detail: payload }))
+        break
       case 'done':
         finishReason = payload.finishReason ?? 'stop'
         model = payload.model ?? null
