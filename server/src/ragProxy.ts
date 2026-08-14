@@ -212,6 +212,11 @@ export async function ragProxyRoutes(app: FastifyInstance): Promise<void> {
     }
     const messages = Array.isArray(body.messages) ? [...(body.messages as unknown[])] : []
     const wantStream = body.stream === true
+    // Observability for the credential path: whose key is this call on?
+    const authSource = bearerOf(req)
+      ? (String(req.headers['x-studio-injected-key'] ?? '') === '1' ? 'deployment (injected by registration forwarder)' : 'caller bearer')
+      : 'deployment (keyless fallback)'
+    req.log.info({ model: requested, mode, authSource }, 'rag proxy call')
     const id = `studio-${Date.now().toString(36)}`
 
     if (mode === 'agent') {
