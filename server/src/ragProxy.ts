@@ -223,10 +223,14 @@ export async function ragProxyRoutes(app: FastifyInstance): Promise<void> {
     const key = auth.key
     const created = Math.floor(Date.now() / 1000)
     const entry = (id: string) => ({ id, object: 'model', created, owned_by: 'studio' })
-    const data = [entry('studio-agent')]
-    if (effectiveSettings().ragAdvertiseRagModel) data.push(entry('studio-rag'))
+    const eff0 = effectiveSettings()
+    const data: { id: string; object: string; created: number; owned_by: string }[] = []
+    if (eff0.ragAdvertiseAgentModel) data.push(entry('studio-agent'))
+    if (eff0.ragAdvertiseRagModel) data.push(entry('studio-rag'))
     if (String((req.query as { all?: string }).all ?? '') === '1') {
-      if (!effectiveSettings().ragAdvertiseRagModel) data.push(entry('studio-rag'))
+      for (const id of ['studio-agent', 'studio-rag']) {
+        if (!data.some(d => d.id === id)) data.push(entry(id))
+      }
       try {
         const res = await fetch(`${GATEWAY_BASE}/models`, { headers: { Authorization: `Bearer ${key}` } })
         if (res.ok) {

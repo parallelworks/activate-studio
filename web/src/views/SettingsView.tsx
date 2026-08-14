@@ -17,6 +17,7 @@ interface Effective {
   ragTopK: number
   ragAllowDeploymentKey: boolean
   ragAdvertiseRagModel: boolean
+  ragAdvertiseAgentModel: boolean
   ragEndpointAutoStart: boolean
   ragEndpointName: string
   requirePersonalKey: boolean
@@ -503,7 +504,7 @@ export function SettingsView() {
               </p>
               <ul className="rag-modes">
                 <li><code>studio-agent</code> runs the full assistant pipeline (system prompt, search, read, query, labels) on the underlying model and returns the grounded answer.</li>
-                <li><code>studio-rag</code> injects retrieved context blocks and makes one model call, without the assistant pipeline. It suits plain chat clients; code agents (pw code) drive it with their own tools and lose the grounding, so it is unlisted by default, callable by name, and advertised only when the option below is on. Any other model id behaves like studio-rag with that model.</li>
+                <li><code>studio-rag</code> injects retrieved context blocks and makes one model call, without the assistant pipeline. It suits plain chat clients; code agents (pw code) drive it with their own tools and lose the grounding, so it is unlisted by default and callable by name; the options below choose which models are advertised. Any other model id behaves like studio-rag with that model.</li>
                 <li>Pick the underlying model per request as <code>studio-agent/&lt;model-id&gt;</code>, or set the default below. Headers <code>X-RAG-Top-K</code>, <code>X-RAG-Tags</code>, and <code>X-RAG-Off: 1</code> tune retrieval per request.</li>
               </ul>
               <div className="settings-grid">
@@ -529,10 +530,16 @@ export function SettingsView() {
                 Allow callers without a bearer key to use the deployment credential (off means every caller must present their own key)
               </label>
               <label className="key-persist">
+                <input type="checkbox" checked={form.ragAdvertiseAgentModel}
+                  onChange={e => setForm({ ...form, ragAdvertiseAgentModel: e.target.checked })} />
+                Advertise studio-agent in model listings (full pipeline; the right choice inside tool-calling harnesses such as pw code)
+              </label>
+              <label className="key-persist">
                 <input type="checkbox" checked={form.ragAdvertiseRagModel}
                   onChange={e => setForm({ ...form, ragAdvertiseRagModel: e.target.checked })} />
-                Advertise studio-rag in model listings (it stays callable by name either way; leave off where users pick models for code agents)
+                Advertise studio-rag in model listings (fast single call; suits plain chat interfaces, loses grounding inside code agents)
               </label>
+              <p className="muted key-note">Both stay callable by name whether advertised or not.</p>
               <div className="settings-grid">
                 <div>
                   <label className="field-label">Platform registration name (how the model appears in catalogs and dropdowns)</label>

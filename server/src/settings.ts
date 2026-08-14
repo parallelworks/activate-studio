@@ -28,6 +28,7 @@ export interface StudioSettings {
   ragTopK?: number
   ragAllowDeploymentKey?: boolean
   ragAdvertiseRagModel?: boolean
+  ragAdvertiseAgentModel?: boolean
   ragEndpointAutoStart?: boolean
   ragEndpointName?: string
   requirePersonalKey?: boolean
@@ -71,6 +72,7 @@ export function effectiveSettings(): Required<StudioSettings> {
     ragTopK: s.ragTopK ?? Math.min(Math.max(Number(process.env.RAG_TOP_K) || 6, 1), 20),
     ragAllowDeploymentKey: s.ragAllowDeploymentKey ?? process.env.RAG_PROXY_ALLOW_DEPLOYMENT_KEY === '1',
     ragAdvertiseRagModel: s.ragAdvertiseRagModel ?? process.env.RAG_ADVERTISE_RAG_MODEL === '1',
+    ragAdvertiseAgentModel: s.ragAdvertiseAgentModel ?? process.env.RAG_ADVERTISE_AGENT_MODEL !== '0',
     ragEndpointAutoStart: s.ragEndpointAutoStart ?? process.env.RAG_ENDPOINT_AUTOSTART === '1',
     ragEndpointName: s.ragEndpointName ?? process.env.RAG_ENDPOINT_NAME ?? '',
     requirePersonalKey: s.requirePersonalKey ?? process.env.REQUIRE_PERSONAL_KEY === '1',
@@ -129,6 +131,7 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
     }
     if (body.ragAllowDeploymentKey !== undefined) next.ragAllowDeploymentKey = Boolean(body.ragAllowDeploymentKey)
     if (body.ragAdvertiseRagModel !== undefined) next.ragAdvertiseRagModel = Boolean(body.ragAdvertiseRagModel)
+    if (body.ragAdvertiseAgentModel !== undefined) next.ragAdvertiseAgentModel = Boolean(body.ragAdvertiseAgentModel)
     if (body.ragEndpointAutoStart !== undefined) next.ragEndpointAutoStart = Boolean(body.ragEndpointAutoStart)
     if (body.requirePersonalKey !== undefined) next.requirePersonalKey = Boolean(body.requirePersonalKey)
     if (body.ragEndpointName !== undefined) {
