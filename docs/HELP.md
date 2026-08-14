@@ -12,7 +12,7 @@ Ask in plain language; the assistant searches, reads the files that matter, and 
 - Attach files or images with the paperclip; they are filed into the library, indexed, and their content (including text read from images) is part of the conversation. Clicking an attachment tile later opens the file in the Library.
 - Slash commands invoke extensions directly: /skill_name applies a skill's instructions, /tool_name runs a tool, /agent_name adopts an agent file for one message. /help lists everything available.
 - The thinking line above a reply expands to show the reasoning and each tool call as it happens, and stays with the message afterward.
-- In a shared platform session, add your own model key under Settings, "Model access", to chat and run platform tools as yourself; the footer's model line tells you whether the key currently works.
+- In a shared platform session, add your own model key under Settings, "Model access", to chat and run platform tools as yourself; the page shows whether the key works and which models it reaches, and the footer's model line tracks it afterward. A deployment can require a personal key, in which case chat and models wait until one is added while browsing, search, and adding material stay open.
 
 ## Library
 
@@ -68,7 +68,11 @@ The address bar tracks what you are looking at: open documents and views live in
 
 ## RAG for other tools
 
-The knowledge base is usable as a grounded model from outside the Studio: the deployment serves an OpenAI-compatible endpoint where `studio-agent` answers with the full assistant pipeline. Any OpenAI-speaking client (pw code, SDKs) can point at it with its own API key, and the deployment can publish it into the platform chat and provider catalog from the Settings RAG endpoint section. A second mode, `studio-rag`, injects retrieved cited context into a single model call; it is unlisted but callable by name, suited to programmatic Q&A without tools.
+The knowledge base is usable as a grounded model from outside the Studio: the deployment serves an OpenAI-compatible endpoint that any OpenAI-speaking client (pw code, SDKs) can point at with its own API key, and the Settings RAG endpoint section can publish it into the platform chat and provider catalog.
+
+The two modes suit different clients. `studio-agent` runs the full assistant pipeline and returns a finished cited answer; use it inside tool-calling harnesses such as pw code. `studio-rag` injects retrieved cited context into a single fast model call; use it from plain chat interfaces and scripted Q&A, where no tool loop competes with the context. The Settings section chooses which of the two appear in model listings (studio-agent by default); both stay callable by name either way. Listings also include a pinned form naming the underlying model your credential resolves to, such as `studio-agent/<model-id>`, so the dropdown tells you what you get, and requesting that id guarantees that base model.
+
+The same Settings section shows the registration state, the exact catalog ids, and a log of recent endpoint calls with the model used, credential source, retrieval terms, and timing. Inside the Studio's own chat the published catalog models are hidden, since the app already provides the same grounding directly.
 
 ## The index
 

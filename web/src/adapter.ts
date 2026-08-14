@@ -106,12 +106,34 @@ async function json<T>(res: Response): Promise<T> {
   return res.json()
 }
 
+/** Chat-rail ownership filter. In a shared deployment every user sees the
+ *  same server-side history; the rail can show all of it or only the
+ *  viewer's own (legacy chats with no owner always show). Module state so
+ *  the adapter's list() can consult it without prop plumbing. */
+let chatFilter: 'all' | 'mine' = (localStorage.getItem('ade-chat-filter') as 'all' | 'mine') || 'all'
+let viewerUsername = ''
+export function setChatListFilter(f: 'all' | 'mine'): void {
+  chatFilter = f
+  localStorage.setItem('ade-chat-filter', f)
+}
+export function getChatListFilter(): 'all' | 'mine' { return chatFilter }
+export function setViewerUsername(u: string): void { viewerUsername = u }
+
+interface OwnedSummary { id: string; title?: string; owner?: string | null }
+function decorateConversations<T extends OwnedSummary>(rows: T[]): T[] {
+  return rows
+    .filter(c => chatFilter === 'all' || !c.owner || !viewerUsername || c.owner === viewerUsername)
+    .map(c => c.owner && viewerUsername && c.owner !== viewerUsername
+      ? { ...c, title: `${c.title ?? 'Untitled'} (${c.owner})` }
+      : c)
+}
+
 export function createStudioAdapter(): ChatAdapter {
   return {
     // Conversations live server-side beside the index; browser storage is
     // partitioned inside the platform iframe and loses history.
     conversations: {
-      list: () => fetch('/api/chat/conversations').then(r => json(r)),
+      list: () => fetch('/api/chat/conversations').then(r => json<OwnedSummary[]>(r)).then(decorateConversations) as ReturnType<ChatAdapter['conversations']['list']>,
       get: id => fetch(`/api/chat/conversations/${id}`).then(r => json(r)),
       create: title => fetch('/api/chat/conversations', {
         method: 'POST',
