@@ -180,8 +180,8 @@ export function SettingsView() {
   const sections: { id: SectionId; label: string }[] = [
     { id: 'general', label: 'General' },
     ...(me?.authEnabled ? [{ id: 'access' as SectionId, label: 'Your model access' }] : []),
-    { id: 'tools', label: 'Assistant tools' },
     { id: 'rag', label: 'RAG endpoint' },
+    { id: 'tools', label: 'Assistant tools' },
     { id: 'ext', label: 'Extensions' },
   ]
 
