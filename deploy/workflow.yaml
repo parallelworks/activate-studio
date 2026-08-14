@@ -313,15 +313,18 @@ jobs:
           else
             git clone "${{ inputs.app_settings.repo_url }}" repo
           fi
-          git -C repo checkout "${{ inputs.app_settings.git_ref }}"
-          git -C repo pull --ff-only 2>/dev/null || true
+          git -C repo checkout -f "${{ inputs.app_settings.git_ref }}"
+          # Hard reset so force-pushed branches update too; a plain ff-only
+          # pull fails silently after a force push and builds a stale tree.
+          git -C repo reset --hard "origin/${{ inputs.app_settings.git_ref }}" 2>/dev/null || true
+          echo "building $(git -C repo rev-parse --short HEAD): $(git -C repo log -1 --format=%s)"
+
           cd repo
-          # corepack's vm loader breaks on some pnpm/Node pairings even when
-          # the shim exists, so validate by RUNNING pnpm and fall back to a
-          # plain npm global install (which overwrites a broken shim).
-          corepack enable pnpm 2>/dev/null || true
+          # No corepack: its vm loader crashes on several pnpm/Node pairings
+          # and its shims linger broken across runs. A plain npm global
+          # install of pnpm 10 overwrites any stale shim and just works.
           if ! pnpm --version >/dev/null 2>&1; then
-            echo "corepack pnpm unusable; installing pnpm via npm"
+            echo "installing pnpm via npm"
             npm install -g pnpm@10 >/dev/null 2>&1 || true
           fi
           pnpm --version >/dev/null 2>&1 || { echo "ERROR: pnpm unavailable"; exit 1; }
