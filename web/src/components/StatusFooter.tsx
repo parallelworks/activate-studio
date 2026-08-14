@@ -59,6 +59,56 @@ function IndexPanel({ idx, gufi, stats, onClose, onSync, syncing }: {
   )
 }
 
+interface AiHealth {
+  ok: boolean
+  status: 'ok' | 'auth' | 'unreachable' | 'unconfigured'
+  models: number
+  gatewayHost: string
+  message: string | null
+  lastCallFailure: { at: string; message: string; auth: boolean } | null
+  checkedAt: string
+}
+
+const AI_LABEL: Record<AiHealth['status'], string> = {
+  ok: 'models ready',
+  auth: 'model key rejected',
+  unreachable: 'models unreachable',
+  unconfigured: 'models not configured',
+}
+
+function AiPanel({ ai, onClose, onRecheck }: { ai: AiHealth; onClose: () => void; onRecheck: () => void }) {
+  const rows: [string, string][] = [
+    ['Status', AI_LABEL[ai.status] + (ai.status === 'ok' ? ` (${ai.models} models)` : '')],
+    ['Gateway', ai.gatewayHost],
+    ['Checked', new Date(ai.checkedAt).toLocaleTimeString()],
+  ]
+  if (ai.message) rows.push(['Detail', ai.message])
+  if (ai.lastCallFailure) rows.push(['Last call failure', `${new Date(ai.lastCallFailure.at).toLocaleTimeString()}: ${ai.lastCallFailure.message.slice(0, 160)}`])
+  return (
+    <>
+      <div className="scope-overlay" onClick={onClose} />
+      <div className="identity-panel card">
+        <div className="scope-menu-head">Model availability</div>
+        <table className="identity-table"><tbody>
+          {rows.map(([k, v]) => <tr key={k}><td className="k">{k}</td><td className="v">{v}</td></tr>)}
+        </tbody></table>
+        {ai.status === 'auth' && (
+          <p className="identity-note">The gateway rejected the credential. If this deployment uses a genai.mil key, it needs an unlock every 8 hours; unlock it, then re-check.</p>
+        )}
+        <p className="identity-note">Checked via the model listing; a key can also fail at call time, which shows under last call failure.</p>
+        <div className="scope-menu-foot">
+          <span className="muted identity-src">GET /api/ai/health</span>
+          <span>
+            <button className="btn-secondary" onClick={onRecheck}>Re-check</button>
+            {' '}
+            <button className="btn-secondary" onClick={onClose}>Close</button>
+          </span>
+        </div>
+      </div>
+    </>
+  )
+}
+
 interface WhoAmI {
   authEnabled: boolean
   header: string
@@ -123,12 +173,15 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
   const [idOpen, setIdOpen] = useState(false)
   const [idxOpen, setIdxOpen] = useState(false)
   const [gufi, setGufi] = useState<boolean | null>(null)
+  const [ai, setAi] = useState<AiHealth | null>(null)
+  const [aiOpen, setAiOpen] = useState(false)
 
   const refresh = () => {
     api.stats().then(s => setStats(s as typeof stats)).catch(() => {})
     api.indexStatus().then(setIdx).catch(() => {})
     fetch('/api/whoami').then(r => r.json()).then(setWho).catch(() => {})
     api.health().then(h => setGufi(h.gufi)).catch(() => setGufi(null))
+    fetch('/api/ai/health').then(r => r.json()).then(setAi).catch(() => setAi(null))
   }
   useEffect(() => {
     refresh()
@@ -165,6 +218,21 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
             {who.verified ? who.user?.username : 'identity not verified'}
           </button>
           {idOpen && <IdentityPanel who={who} onClose={() => setIdOpen(false)} />}
+        </div>
+      )}
+      {ai && (
+        <div className="status-line identity-line" title="Click for model availability details">
+          <button className="identity-btn" onClick={() => setAiOpen(o => !o)}>
+            <span className={`status-dot ${ai.status === 'ok' ? 'ok' : ai.status === 'unconfigured' ? 'off' : 'warn'}`} />
+            {ai.status === 'ok' ? `${ai.models} models ready` : AI_LABEL[ai.status]}
+          </button>
+          {aiOpen && (
+            <AiPanel
+              ai={ai}
+              onClose={() => setAiOpen(false)}
+              onRecheck={() => { fetch('/api/ai/health').then(r => r.json()).then(setAi).catch(() => {}) }}
+            />
+          )}
         </div>
       )}
       <div className="status-line identity-line" title="Click for index health details">

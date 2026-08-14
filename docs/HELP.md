@@ -63,7 +63,7 @@ Corpus health at a glance, and every element is a shortcut: storage rows and lab
 
 ## Getting around
 
-The address bar tracks what you are looking at: open documents and views live in the URL, so refresh restores your place, browser back and forward walk your path, and a copied link drops someone else exactly where you were. The footer shows the platform-verified identity and index health; click either for details.
+The address bar tracks what you are looking at: open documents and views live in the URL, so refresh restores your place, browser back and forward walk your path, and a copied link drops someone else exactly where you were. The footer shows the platform-verified identity, model availability (whether the AI gateway credential currently works), and index health; click any of them for details.
 
 ## The index
 
