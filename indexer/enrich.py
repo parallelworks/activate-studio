@@ -142,7 +142,10 @@ def caption_image(path: Path) -> str:
 
 
 def extract_image(path: Path) -> str:
-    if path.stat().st_size < MIN_IMAGE_BYTES:
+    # Icons and tiny assets are skipped, except in the chat-attachments
+    # directory where the user attached the image deliberately.
+    deliberate = path.parent.name == 'chat' and path.parent.parent.name == 'uploads'
+    if not deliberate and path.stat().st_size < MIN_IMAGE_BYTES:
         return ''
     parts = []
     caption = caption_image(path)

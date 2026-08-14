@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
+import { ACCENTS, applyAccent } from '../accents'
 
 interface Effective {
   appName: string
   kbLabel: string
   theme: 'light' | 'dark'
+  accent: string
   sweepIntervalSec: number
   suggestedPrompts: string[]
   visionModel: string
@@ -67,6 +69,21 @@ export function SettingsView() {
               <option value="light">light</option>
               <option value="dark">dark</option>
             </select>
+          </div>
+          <div>
+            <label className="field-label">Accent color</label>
+            <div className="accent-row">
+              {Object.entries(ACCENTS).map(([k, a]) => (
+                <button
+                  key={k}
+                  type="button"
+                  className={`accent-swatch ${form.accent === k ? 'active' : ''}`}
+                  title={a.label}
+                  style={{ background: a.light[0] }}
+                  onClick={() => { setForm({ ...form, accent: k }); applyAccent(k) }}
+                />
+              ))}
+            </div>
           </div>
           <div>
             <label className="field-label">Background sync interval (seconds, 0 pauses)</label>

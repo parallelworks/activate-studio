@@ -8,6 +8,8 @@ import { kbRoutes } from './routes.js'
 import { uploadRoutes } from './uploads.js'
 import { queryRoutes } from './query.js'
 import { tagRoutes } from './tags.js'
+import { modelRoutes } from './model.js'
+import { attachmentRoutes } from './attachments.js'
 import { authHook, authEnabled } from './auth.js'
 import { settingsRoutes } from './settings.js'
 import { chatRoutes } from './chat/routes.js'
@@ -33,6 +35,8 @@ await app.register(kbRoutes)
 await app.register(uploadRoutes)
 await app.register(queryRoutes)
 await app.register(tagRoutes)
+await app.register(modelRoutes)
+await app.register(attachmentRoutes)
 await app.register(settingsRoutes)
 await app.register(chatRoutes)
 

@@ -9,7 +9,8 @@ import { CONVERTIBLE, mimeFor, officeToPdf, removePdfPreview } from './preview.j
 import { blendHits, corpusStats, searchFts, searchNames, searchVector } from './gufi.js'
 import { invalidateContext } from './chat/context.js'
 import { incrementalIndexDir, indexRootDb, indexStatus, reindexForFile, sweep } from './indexing.js'
-import { annotateHits } from './tags.js'
+import { annotateHits, readTagsBatch } from './tags.js'
+import { removeModelCache } from './model.js'
 import { effectiveSettings } from './settings.js'
 
 export async function kbRoutes(app: FastifyInstance): Promise<void> {
@@ -39,6 +40,7 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
       iconUrl: process.env.APP_ICON && fs.existsSync(process.env.APP_ICON) ? '/api/brand-icon' : null,
       kbLabel: eff.kbLabel,
       theme: eff.theme,
+      accent: eff.accent,
       suggestedPrompts: eff.suggestedPrompts,
       user,
     }
@@ -68,7 +70,15 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/api/kb/tree', async req => {
     const { path: rel = '' } = req.query as { path?: string }
-    return { path: rel, entries: await listDir(rel) }
+    const entries = await listDir(rel)
+    // Own labels straight from the filesystem xattrs (one getfattr per
+    // listing), so a just-applied label shows without waiting on the index.
+    const tagged = await readTagsBatch(entries.map(e => resolveKb(e.path))).catch(() => new Map<string, string[]>())
+    for (const e of entries) {
+      const t = tagged.get(resolveKb(e.path))
+      if (t?.length) (e as typeof e & { tags?: string[] }).tags = t
+    }
+    return { path: rel, entries }
   })
 
   app.get('/api/kb/file', async req => {
@@ -128,6 +138,7 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
         await fsp.rm(abs)
         await fsp.rm(extractPath(cleaned), { force: true }).catch(() => {})
         await removePdfPreview(cleaned)
+        await removeModelCache(cleaned)
         deleted.push(cleaned)
         if (cleaned.includes('/')) roots.add(cleaned.split('/')[0])
         else rootDb = true
@@ -155,6 +166,7 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
     await fsp.rm(abs)
     await fsp.rm(extractPath(rel), { force: true }).catch(() => {})
     await removePdfPreview(rel)
+    await removeModelCache(rel)
     const { ms } = await reindexForFile(rel)
     return { deleted: rel, indexMs: ms }
   })

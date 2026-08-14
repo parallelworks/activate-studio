@@ -4,7 +4,8 @@ export interface KbEntry {
   type: 'dir' | 'file'
   size: number
   mtime: number
-  kind: 'text' | 'extracted' | 'image' | 'binary' | 'dir'
+  kind: 'text' | 'extracted' | 'image' | 'model' | 'binary' | 'dir'
+  tags?: string[]
 }
 
 export interface FileContent {
