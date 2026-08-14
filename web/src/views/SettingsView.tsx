@@ -63,7 +63,7 @@ export function SettingsView() {
   const [specOpen, setSpecOpen] = useState<string | null>(null)
   const [me, setMe] = useState<{ authEnabled?: boolean; verified: boolean; mode: 'stored' | 'session' | 'none'; last4?: string; addedAt?: string; sessionExpiresAt?: string; kind?: string; credExpiresAt?: string | null; credExpired?: boolean; baseUrl?: string | null } | null>(null)
   const [keyInput, setKeyInput] = useState('')
-  const [providerMode, setProviderMode] = useState<'platform' | 'activate' | 'openai' | 'custom'>('platform')
+  const [providerMode, setProviderMode] = useState<'platform' | 'activate' | 'custom'>('platform')
   const [providerHost, setProviderHost] = useState('')
   const [baseUrlInput, setBaseUrlInput] = useState('')
 
@@ -73,7 +73,6 @@ export function SettingsView() {
       const host = providerHost.trim().replace(/^https?:\/\//, '').replace(/\/.*$/, '')
       return host ? `https://${host}/api/openai/v1` : ''
     }
-    if (providerMode === 'openai') return 'https://api.openai.com/v1'
     return baseUrlInput.trim()
   }
   const [persistKey, setPersistKey] = useState(true)
@@ -328,8 +327,7 @@ export function SettingsView() {
                     <select className="field" value={providerMode} onChange={e => setProviderMode(e.target.value as typeof providerMode)}>
                       <option value="platform">This platform's gateway (default)</option>
                       <option value="activate">Another ACTIVATE platform…</option>
-                      <option value="openai">OpenAI (api.openai.com)</option>
-                      <option value="custom">Custom OpenAI-compatible URL…</option>
+                      <option value="custom">OpenAI-compatible endpoint…</option>
                     </select>
                     {providerMode === 'activate' && (
                       <input className="field grow" value={providerHost} autoComplete="off"
@@ -338,7 +336,7 @@ export function SettingsView() {
                     )}
                     {providerMode === 'custom' && (
                       <input className="field grow" value={baseUrlInput} autoComplete="off"
-                        placeholder="https://host/v1"
+                        placeholder="base URL, e.g. https://host/v1"
                         onChange={e => setBaseUrlInput(e.target.value)} />
                     )}
                   </div>
