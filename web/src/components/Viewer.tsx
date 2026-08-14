@@ -20,6 +20,15 @@ export function Viewer({ path, onDeleted }: {
   const [tab, setTab] = useState<Tab>('preview')
   const [confirming, setConfirming] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [tags, setTags] = useState<{ own: string[]; inherited: string[] }>({ own: [], inherited: [] })
+
+  useEffect(() => {
+    if (!path) return
+    const load = () => api.tagsFor(path).then(setTags).catch(() => setTags({ own: [], inherited: [] }))
+    load()
+    window.addEventListener('ade-tags-changed', load)
+    return () => window.removeEventListener('ade-tags-changed', load)
+  }, [path])
 
   useEffect(() => {
     setFile(null)
@@ -100,7 +109,15 @@ export function Viewer({ path, onDeleted }: {
   return (
     <div className="viewer">
       <div className="viewer-head">
-        <span className="viewer-path">{file.path}</span>
+        <span className="viewer-path">
+          {file.path}
+          {(tags.own.length > 0 || tags.inherited.length > 0) && (
+            <span className="viewer-tags">
+              {tags.own.map(t => <span key={t} className="tag-pill on small">{t}</span>)}
+              {tags.inherited.map(t => <span key={t} className="tag-pill inherited small" title="inherited from a parent directory">{t}</span>)}
+            </span>
+          )}
+        </span>
         <span className="viewer-meta">
           <span>{new Date(file.mtime * 1000).toISOString().slice(0, 10)}</span>
           <a className="btn-primary" href={api.downloadUrl(file.path)}>Download</a>

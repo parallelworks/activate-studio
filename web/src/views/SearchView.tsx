@@ -53,7 +53,10 @@ export function SearchView({ onOpen }: { onOpen: (path: string) => void }) {
             <div key={h.path} className="result-row" onClick={() => onOpen(h.path)}>
               <div className="result-top">
                 <span className="result-path">{h.path}</span>
-                <span className={`pill pill-${h.mode}`}>{MODE_LABEL[h.mode]}</span>
+                <span className="result-pills">
+                  {(h.tags ?? []).map(t => <span key={t} className="tag-pill on small">{t}</span>)}
+                  <span className={`pill pill-${h.mode}`}>{MODE_LABEL[h.mode]}</span>
+                </span>
               </div>
               {h.snippet && <div className="result-snippet">{h.snippet}</div>}
             </div>

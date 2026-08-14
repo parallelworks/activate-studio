@@ -14,4 +14,9 @@ if [ -f .env ]; then
   set +a
 fi
 
+# One instance only: stop any previous endpoint wrapper and server.
+pkill -f 'endpoints run --name activate-studio' 2>/dev/null || true
+pkill -f 'node server/dist/main.js' 2>/dev/null || true
+sleep 1
+
 exec pw endpoints run --name activate-studio --subdomain activate-studio -- node server/dist/main.js

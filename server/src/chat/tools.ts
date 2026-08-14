@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process'
 import { gufiAvailable, KB_ROOT, MAX_PREVIEW_BYTES } from '../config.js'
 import { listDir, readFileContent, KbError } from '../kb.js'
 import { blendHits, searchFts, searchNames, searchVector } from '../gufi.js'
+import { annotateHits } from '../tags.js'
 
 export interface ToolSpec {
   type: 'function'
@@ -24,6 +25,7 @@ export const TOOL_SPECS: ToolSpec[] = [
         properties: {
           query: { type: 'string', description: 'Search terms (plain words, no operators)' },
           limit: { type: 'number', description: 'Max results, default 10' },
+          tags: { type: 'string', description: 'Comma-separated label filter: only return material carrying at least one of these labels (e.g. "validated" or "research,theoretical")' },
         },
         required: ['query'],
       },
@@ -132,6 +134,32 @@ export const TOOL_SPECS: ToolSpec[] = [
   {
     type: 'function',
     function: {
+      name: 'query_corpus',
+      description:
+        'Structured statistics about the corpus from the file index: largest, newest, oldest, recent (last N days), by_extension totals, big_directories. Use for questions about corpus composition, sizes, and recent activity.',
+      parameters: {
+        type: 'object',
+        properties: {
+          canned: { type: 'string', enum: ['largest', 'newest', 'oldest', 'recent', 'by_extension', 'big_directories'] },
+          n: { type: 'number', description: 'Row limit, default 25' },
+          days: { type: 'number', description: 'For recent: window in days, default 7' },
+          subtree: { type: 'string', description: 'Restrict to a subtree, empty for whole corpus' },
+        },
+        required: ['canned'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_labels',
+      description: 'List the label vocabulary in use across the knowledge base with usage counts (labels convey provenance such as research versus validated).',
+      parameters: { type: 'object', properties: {}, required: [] },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'show_in_viewer',
       description:
         'Display something in the library viewer pane for the user: a knowledge base file (images render as images, PDFs as PDFs) or a workflow DAG diagram. Use whenever the user asks to see, show, open, or display a file, image, document, or workflow graph.',
@@ -207,9 +235,10 @@ export async function executeTool(name: string, argsJson: string): Promise<ToolO
             searchNames(query, 5),
             searchVector(query, Math.min(limit, 8)).catch(() => []),
           ])
-          const hits = blendHits(fts, names, vec, limit + 5)
+          const filter = args.tags ? String(args.tags).split(',').filter(Boolean) : undefined
+          const hits = await annotateHits(blendHits(fts, names, vec, limit + 5), filter)
           const result = hits.length
-            ? hits.map(h => `${h.path}\n  ${h.snippet || '(filename match)'}`).join('\n')
+            ? hits.map(h => `${h.path}${h.tags?.length ? ` [labels: ${h.tags.join(', ')}]` : ''}\n  ${h.snippet || '(filename match)'}`).join('\n')
             : 'No matches.'
           return { result, summary: `${hits.length} hits` }
         }
@@ -276,6 +305,26 @@ export async function executeTool(name: string, argsJson: string): Promise<ToolO
           result = JSON.stringify(runs, null, 1)
         } catch { /* plain text fallback */ }
         return { result: result.slice(0, TOOL_OUTPUT_CAP), summary: 'runs listed' }
+      }
+      case 'query_corpus': {
+        const { runCanned } = await import('../query.js')
+        const r = await runCanned(String(args.canned ?? ''), {
+          n: Math.min(Number(args.n) || 25, 100),
+          days: Math.min(Number(args.days) || 7, 3650),
+          subtree: args.subtree ? String(args.subtree) : undefined,
+        })
+        const lines = [r.columns.join(' | '), ...r.rows.map(row => row.join(' | '))]
+        return { result: lines.join('\n').slice(0, TOOL_OUTPUT_CAP), summary: `${r.rows.length} rows in ${r.elapsedMs} ms` }
+      }
+      case 'get_labels': {
+        const { tagMaps } = await import('../tags.js')
+        const maps = await tagMaps()
+        const counts = new Map<string, number>()
+        for (const tags of [...maps.dirTags.values(), ...maps.fileTags.values()]) {
+          for (const t of tags) counts.set(t, (counts.get(t) ?? 0) + 1)
+        }
+        const result = [...counts.entries()].map(([t, c]) => `${t}: ${c}`).join('\n') || 'No labels in use yet.'
+        return { result, summary: `${counts.size} labels` }
       }
       case 'show_in_viewer': {
         const kind = args.kind === 'workflow_dag' ? 'workflow_dag' : 'file'

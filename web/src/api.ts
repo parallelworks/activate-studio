@@ -24,6 +24,7 @@ export interface SearchHit {
   mtime: number
   snippet: string
   mode: 'fts' | 'name' | 'vector'
+  tags?: string[]
 }
 
 export interface IndexStatus {
@@ -67,6 +68,10 @@ export const api = {
   stats: () => getJson<{ available: boolean; files?: number; dirs?: number; totalBytes?: number }>(`/api/kb/stats`),
   search: (q: string) => getJson<{ hits: SearchHit[]; error?: string }>(`/api/search?q=${encodeURIComponent(q)}`),
   health: () => getJson<{ ok: boolean; gufi: boolean }>(`/healthz`),
+  tagVocabulary: () => getJson<{ tags: { tag: string; count: number }[] }>(`/api/tags`),
+  tagsFor: (path: string) => getJson<{ own: string[]; inherited: string[] }>(`/api/kb/tags?path=${encodeURIComponent(path)}`),
+  applyTags: (paths: string[], add: string[], remove: string[]) =>
+    postJson<{ updated: Record<string, string[]> }>(`/api/kb/tags`, { paths, add, remove }),
   indexStatus: () => getJson<IndexStatus>(`/api/index/status`),
   sweepNow: () => postJson<{ changed: string[] }>(`/api/index/sweep`, {}),
   uploadUrl: (url: string, dir: string) =>
