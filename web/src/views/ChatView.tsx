@@ -3,7 +3,7 @@ import {
   ChatProvider, ChatLayout, ChatThread, ChatEmptyState, AttachmentManager,
 } from '@parallelworks/ai-chat'
 import '@parallelworks/ai-chat/styles.css'
-import { createStudioAdapter } from '../adapter'
+import { createStudioAdapter, getChatListFilter, setChatListFilter, setViewerUsername } from '../adapter'
 import { useAppConfig } from '../config'
 import { api } from '../api'
 import { setLabelScope } from '../labelScope'
@@ -16,11 +16,17 @@ export function ChatView() {
   const [credNote, setCredNote] = useState<string | null>(null)
   const [vocab, setVocab] = useState<{ tag: string; count: number }[]>([])
   const [scope, setScope] = useState<Set<string>>(new Set())
+  const [chatFilter, setChatFilterState] = useState<'all' | 'mine'>(getChatListFilter())
+  const [chatEpoch, setChatEpoch] = useState(0)
+  const [hasOwners, setHasOwners] = useState(false)
   const [scopeOpen, setScopeOpen] = useState(false)
   const [scopeFilter, setScopeFilter] = useState('')
 
   useEffect(() => {
     api.tagVocabulary().then(v => setVocab(v.tags)).catch(() => {})
+    fetch('/api/chat/conversations').then(r => r.json())
+      .then((rows: { owner?: string | null }[]) => setHasOwners(rows.some(c => c.owner)))
+      .catch(() => {})
     // Both the no-models state and mid-conversation credential failures
     // surface as a toast with a click path to Settings; the empty state
     // text explains, the toast provides the button.
@@ -104,8 +110,18 @@ export function ChatView() {
   // wait for the deployment config before mounting the chat tree.
   if (!cfg.loaded) return <div className="chat-wrap"><div className="chat-canvas card" /></div>
 
+  setViewerUsername(cfg.user?.username ?? '')
+
+  const toggleChatFilter = () => {
+    const next = chatFilter === 'all' ? 'mine' : 'all'
+    setChatListFilter(next)
+    setChatFilterState(next)
+    setChatEpoch(e => e + 1)
+  }
+
   return (
     <ChatProvider
+      key={chatEpoch}
       adapter={adapter}
       currentUser={cfg.user}
       navigation={{
@@ -134,6 +150,16 @@ export function ChatView() {
             {showAttachments ? <AttachmentManager /> : activeId ? <ChatThread conversationId={activeId} /> : <ChatEmptyState />}
           </ChatLayout>
           <div ref={handleRef} className="chat-rail-handle" style={{ left: rail - 3 }} onMouseDown={onRailDrag} title="Drag to resize conversations" />
+          {hasOwners && !showAttachments && (
+            <button
+              className={`chat-filter-btn ${chatFilter === 'mine' ? 'active' : ''}`}
+              style={{ width: rail - 24 }}
+              title="Show every conversation on this deployment, or only yours"
+              onClick={toggleChatFilter}
+            >
+              {chatFilter === 'mine' ? 'Showing my chats' : 'Showing all chats'}
+            </button>
+          )}
           {vocab.length > 0 && (
             <div className="chat-scope-anchor">
               <button

@@ -233,6 +233,7 @@ ${ctx}` : ctx
       body.userMessageId,
       typeof lastUser?.content === 'string' ? lastUser.content : '',
       body.parentMessageId ?? null,
+      req.user?.username ?? null,
     )
 
     const today = new Date().toISOString().slice(0, 10)

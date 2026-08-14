@@ -23,6 +23,7 @@ const MAX_CONVERSATIONS = 500
  *  directory carries the chat-session label; files inherit it. */
 const EXPORT_DIR = 'chat-sessions'
 let exportDirLabeled = false
+const ownerLabeled = new Set<string>()
 let indexTimer: NodeJS.Timeout | null = null
 
 function exportPath(c: StoredConversation): string {
@@ -40,7 +41,7 @@ async function exportToKb(c: StoredConversation): Promise<void> {
     const lines = [
       `# ${c.title ?? (firstUser ? firstUser.slice(0, 70) : 'Untitled conversation')}`,
       '',
-      `Chat session ${c.id}, started ${c.createdAt.slice(0, 16).replace('T', ' ')}.`,
+      `Chat session ${c.id}, started ${c.createdAt.slice(0, 16).replace('T', ' ')}${c.owner ? ` by ${c.owner}` : ''}.`,
       '',
     ]
     for (const m of c.messages) {
@@ -51,6 +52,14 @@ async function exportToKb(c: StoredConversation): Promise<void> {
       lines.push('')
     }
     await fsp.writeFile(exportPath(c), lines.join('\n'))
+    // Owner label on the transcript, so Search, Query, and chat Scope can
+    // filter sessions by user like any other label. Once per file per boot.
+    if (c.owner && !ownerLabeled.has(c.id)) {
+      ownerLabeled.add(c.id)
+      const rel = path.relative(KB_ROOT, exportPath(c))
+      const tag = `user-${c.owner.toLowerCase().replace(/[^a-z0-9_-]+/g, '-')}`
+      await applyTagsCore([rel], [tag], []).catch(() => { ownerLabeled.delete(c.id) })
+    }
     // Debounced re-index: bursts of turns cost one pass. A failure here is
     // recoverable (the sweep retries the dir) but must not be invisible.
     if (indexTimer) clearTimeout(indexTimer)
@@ -78,6 +87,9 @@ export interface StoredMessage {
 export interface StoredConversation {
   id: string
   title: string | null
+  /** Verified username of whoever started the conversation; null on
+   *  standalone deployments and for chats predating ownership. */
+  owner?: string | null
   createdAt: string
   updatedAt: string
   activeBranchId: string | null
@@ -101,6 +113,7 @@ function persist(): void {
 const summary = (c: StoredConversation) => ({
   id: c.id,
   ...(c.title !== null ? { title: c.title } : {}),
+  owner: c.owner ?? null,
   messageCount: c.messages.length,
   createdAt: c.createdAt,
   updatedAt: c.updatedAt,
@@ -116,15 +129,16 @@ function find(id: string): StoredConversation {
 
 /** Record the user turn at stream start; tolerates an unknown conversation
  *  (the client always creates one first, but a race should not lose chat). */
-export function recordUserTurn(conversationId: string | undefined, userMessageId: string | undefined, content: string, parentId: string | null): void {
+export function recordUserTurn(conversationId: string | undefined, userMessageId: string | undefined, content: string, parentId: string | null, owner?: string | null): void {
   if (!conversationId) return
   const all = load()
   let c = all.find(x => x.id === conversationId)
   const now = new Date().toISOString()
   if (!c) {
-    c = { id: conversationId, title: null, createdAt: now, updatedAt: now, activeBranchId: null, messages: [] }
+    c = { id: conversationId, title: null, owner: owner ?? null, createdAt: now, updatedAt: now, activeBranchId: null, messages: [] }
     all.push(c)
   }
+  if (owner && !c.owner) { c.owner = owner }
   // Retries and regenerations resend the same user message; never duplicate.
   if (userMessageId && c.messages.some(m => m.id === userMessageId)) return
   c.messages.push({ id: userMessageId ?? crypto.randomUUID(), role: 'user', content, parentId, timestamp: now })
@@ -158,6 +172,7 @@ export async function conversationRoutes(app: FastifyInstance): Promise<void> {
     const now = new Date().toISOString()
     const c: StoredConversation = {
       id: crypto.randomUUID(), title: title ?? null,
+      owner: req.user?.username ?? null,
       createdAt: now, updatedAt: now, activeBranchId: null, messages: [],
     }
     const all = load()
