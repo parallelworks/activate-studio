@@ -83,9 +83,9 @@ function gatewayError(status: number, bodyText: string, ctx: string): Error {
   return err
 }
 
-export async function listModels(): Promise<unknown> {
+export async function listModels(key?: string | null): Promise<unknown> {
   const res = await fetch(`${GATEWAY_BASE}/models`, {
-    headers: { Authorization: `Bearer ${gatewayKey()}` },
+    headers: { Authorization: `Bearer ${key || gatewayKey()}` },
   })
   if (!res.ok) throw gatewayError(res.status, await res.text(), '/models')
   return res.json()
@@ -104,16 +104,16 @@ export interface AiHealth {
 /** Live callability check: exercises the gateway with the current
  *  credential (via the model listing) and reports the last real call
  *  failure, which catches keys that list fine but fail at invoke time. */
-export async function aiHealth(): Promise<AiHealth> {
+export async function aiHealth(key?: string | null): Promise<AiHealth> {
   const checkedAt = new Date().toISOString()
   const gatewayHost = (() => { try { return new URL(GATEWAY_BASE).host } catch { return GATEWAY_BASE } })()
   const base = { models: 0, gatewayHost, lastCallFailure, checkedAt }
-  if (!gatewayConfigured()) {
+  if (!key && !gatewayConfigured()) {
     return { ...base, ok: false, status: 'unconfigured', message: 'No gateway credential configured (PW_API_KEY or pw CLI login).' }
   }
   try {
     const res = await fetch(`${GATEWAY_BASE}/models`, {
-      headers: { Authorization: `Bearer ${gatewayKey()}` },
+      headers: { Authorization: `Bearer ${key || gatewayKey()}` },
       signal: AbortSignal.timeout(8000),
     })
     const text = await res.text()
@@ -138,9 +138,10 @@ export async function streamTurn(
   allocation: string | null,
   cb: StreamCallbacks,
   signal?: AbortSignal,
+  key?: string | null,
 ): Promise<TurnResult> {
   const headers: Record<string, string> = {
-    Authorization: `Bearer ${gatewayKey()}`,
+    Authorization: `Bearer ${key || gatewayKey()}`,
     'Content-Type': 'application/json',
   }
   if (allocation) headers['X-Allocation'] = allocation
