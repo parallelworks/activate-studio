@@ -311,6 +311,9 @@ jobs:
             echo "Updating existing clone..."
             git -C repo fetch --all --prune
           else
+            # A repo dir without .git is debris (interrupted copy or failed
+            # clone); wipe it rather than dying on a non-empty destination.
+            rm -rf repo
             git clone "${{ inputs.app_settings.repo_url }}" repo
           fi
           git -C repo checkout -f "${{ inputs.app_settings.git_ref }}"
