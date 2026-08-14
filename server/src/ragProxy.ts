@@ -211,18 +211,26 @@ async function agenticCompletion(
 }
 
 export async function ragProxyRoutes(app: FastifyInstance): Promise<void> {
-  // Advertises only the two studio models by default; the gateway's own
-  // catalog already lists the underlying models, and a platform provider
-  // registration mirroring this list must not duplicate them. ?all=1
-  // appends the upstream ids for clients that want one flat list.
+  // Advertises only studio-agent by default: as a host agent's driver
+  // model, studio-rag passes the host's tool specs through and the model
+  // works the host's tools instead of the injected context, so it is
+  // unlisted (still callable by name; ?all=1 shows it plus the upstream
+  // ids for clients that want one flat list). The gateway's own catalog
+  // already lists the underlying models.
   app.get('/v1/models', async (req, reply) => {
     const auth = callerKey(req)
     if (!auth) return reply.status(401).send({ error: { message: 'bearer API key required' } })
     const key = auth.key
     const created = Math.floor(Date.now() / 1000)
     const entry = (id: string) => ({ id, object: 'model', created, owned_by: 'studio' })
-    const data = [entry('studio-agent'), entry('studio-rag')]
+    const eff0 = effectiveSettings()
+    const data: { id: string; object: string; created: number; owned_by: string }[] = []
+    if (eff0.ragAdvertiseAgentModel) data.push(entry('studio-agent'))
+    if (eff0.ragAdvertiseRagModel) data.push(entry('studio-rag'))
     if (String((req.query as { all?: string }).all ?? '') === '1') {
+      for (const id of ['studio-agent', 'studio-rag']) {
+        if (!data.some(d => d.id === id)) data.push(entry(id))
+      }
       try {
         const res = await fetch(`${GATEWAY_BASE}/models`, { headers: { Authorization: `Bearer ${key}` } })
         if (res.ok) {
