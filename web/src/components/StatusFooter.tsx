@@ -56,7 +56,6 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
           {syncing || idx?.running ? 'syncing…' : 'sync now'}
         </button>
       </div>
-      <div className="powered">Powered by Parallel Works</div>
     </div>
   )
 }
