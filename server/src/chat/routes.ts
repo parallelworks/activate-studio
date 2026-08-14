@@ -45,7 +45,12 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     if (!gatewayConfigured() && !resolveUserKey(req.user?.id)) {
       return reply.send({ models: [], unreachableSessions: [], error: 'no gateway credential: set PW_API_KEY or authenticate the pw CLI' })
     }
-    const wire: any = await listModels(resolveUserKey(req.user?.id))
+    const eff0 = effectiveSettings()
+    const personalKey = resolveUserKey(req.user?.id)
+    if (eff0.requirePersonalKey && authEnabled() && !personalKey) {
+      return reply.send({ models: [], unreachableSessions: [], error: 'This deployment requires your own model credential: add your API key or platform token in Settings, Your model access.' })
+    }
+    const wire: any = await listModels(personalKey)
     let models = (wire.data ?? wire.models ?? []).filter((m: any) => m)
     // Org-provider models require an X-Allocation header; without a configured
     // allocation they can only fail, so hide them. Personal providers sort first
@@ -59,7 +64,17 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
   })
 
   // Live model-callability check for the footer status line.
-  app.get('/api/ai/health', async req => aiHealth(resolveUserKey(req.user?.id)))
+  app.get('/api/ai/health', async req => {
+    const personal = resolveUserKey(req.user?.id)
+    if (effectiveSettings().requirePersonalKey && authEnabled() && !personal) {
+      return {
+        ok: false, status: 'key-required', models: 0, gatewayHost: '', message:
+          'This deployment requires your own model credential; add it in Settings, Your model access.',
+        lastCallFailure: null, checkedAt: new Date().toISOString(),
+      }
+    }
+    return aiHealth(personal)
+  })
 
   // Personal model key: verified identity required; only status metadata
   // (mode, last4, timestamps) ever goes to the browser.
@@ -155,7 +170,16 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     // soon as the body is consumed, which would abort immediately).
     res.on('close', () => { if (!res.writableEnded) abort.abort() })
 
-    if (!gatewayConfigured() && !resolveUserKey(req.user?.id)) {
+    const userKeyEarly = resolveUserKey(req.user?.id)
+    if (effectiveSettings().requirePersonalKey && authEnabled() && !userKeyEarly) {
+      sse(res, 'error', {
+        message: 'This deployment requires your own model credential. Add your API key or platform token in Settings, Your model access, then retry. Browsing, search, and adding material work without one.',
+        kind: 'credential',
+      })
+      res.end()
+      return reply
+    }
+    if (!gatewayConfigured() && !userKeyEarly) {
       sse(res, 'error', { message: 'No gateway credential (set PW_API_KEY, authenticate the pw CLI, or add your key in Settings); chat is unavailable.' })
       res.end()
       return reply

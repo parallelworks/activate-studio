@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { ACCENTS, SURFACES, applyAccent, applySurface } from '../accents'
+import { useAppConfig } from '../config'
 
 interface Effective {
   appName: string
@@ -17,6 +18,7 @@ interface Effective {
   ragAllowDeploymentKey: boolean
   ragEndpointAutoStart: boolean
   ragEndpointName: string
+  requirePersonalKey: boolean
 }
 
 interface CatalogTool { name: string; description: string; builtin: boolean; enabled: boolean; parameters?: unknown; command?: string; implementation?: string; calls?: string }
@@ -51,6 +53,7 @@ function ModelSelect({ value, models, allowEmpty, emptyLabel, onChange }: {
 }
 
 export function SettingsView() {
+  const cfg = useAppConfig()
   const [form, setForm] = useState<Effective | null>(null)
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
@@ -247,6 +250,13 @@ export function SettingsView() {
                   />
                 </div>
               </div>
+              {me?.authEnabled && (
+                <label className="key-persist">
+                  <input type="checkbox" checked={form.requirePersonalKey}
+                    onChange={e => setForm({ ...form, requirePersonalKey: e.target.checked })} />
+                  Require each user to add their own model credential (chat and models refuse the deployment credential; browsing, search, and adding material stay open to everyone)
+                </label>
+              )}
               <label className="field-label">Chat starter prompts (one per line)</label>
               <textarea
                 className="field prompts-box"
@@ -420,18 +430,40 @@ export function SettingsView() {
               <p className="muted view-sub">
                 Publishes this /v1 surface into the platform chat and AI provider catalog (via <code>pw endpoints run --openai</code> around a local forwarder), so users pick the corpus-grounded models like any other. The registered provider authenticates with the deployment credential. Requires an authenticated pw CLI on the host.
               </p>
-              <div className="key-row">
-                <span className="rag-ep-status">
+              <div className={`rag-banner ${ragEp?.state === 'running' ? 'connected' : ragEp?.state === 'error' ? 'errored' : ''}`}>
+                <div className="rag-banner-head">
                   <span className={`status-dot ${ragEp?.state === 'running' ? 'ok' : ragEp?.state === 'error' ? 'warn' : 'off'}`} />
-                  {ragEp?.state ?? 'unknown'}{ragEp?.name ? ` (${ragEp.name})` : ''}
-                  {ragEp?.url ? <> at <code>{ragEp.url}</code></> : null}
-                </span>
-                {ragEp?.state === 'running' || ragEp?.state === 'starting'
-                  ? <button className="btn-secondary" onClick={() => void ragEpAction('stop')}>Stop</button>
-                  : <button className="btn-primary" onClick={() => void ragEpAction('start')}>Register now</button>}
-                <button className="btn-secondary" onClick={refreshRagEp}>Refresh</button>
+                  <strong>
+                    {ragEp?.state === 'running' ? 'Connected: published in the platform model catalog' :
+                     ragEp?.state === 'starting' ? 'Registering…' :
+                     ragEp?.state === 'error' ? 'Registration failed' : 'Not registered on the platform'}
+                  </strong>
+                  <span className="rag-banner-actions">
+                    {ragEp?.state === 'running' || ragEp?.state === 'starting'
+                      ? <button className="btn-secondary" onClick={() => void ragEpAction('stop')}>Stop</button>
+                      : <button className="btn-primary" onClick={() => void ragEpAction('start')}>Register now</button>}
+                    <button className="btn-secondary" onClick={refreshRagEp}>Refresh</button>
+                  </span>
+                </div>
+                {ragEp?.state === 'running' && ragEp.name && (
+                  <div className="rag-banner-models">
+                    Users can now select these models anywhere on the platform:
+                    <div className="rag-chip-row">
+                      <code>session:{cfg.user.username}:{ragEp.name}/studio-agent</code>
+                      <code>session:{cfg.user.username}:{ragEp.name}/studio-rag</code>
+                    </div>
+                  </div>
+                )}
+                {ragEp?.detail && ragEp.state !== 'running' && <p className="muted key-note">{ragEp.detail}</p>}
               </div>
-              {ragEp?.detail && <p className="muted key-note">{ragEp.detail}</p>}
+              <div className="tool-group">Underlying models this deployment can serve</div>
+              <p className="muted view-sub">
+                Bare <code>studio-agent</code> / <code>studio-rag</code> use the default above when the caller's key can access it, otherwise the caller's own first available model; any of these can be pinned per request as <code>studio-agent/&lt;id&gt;</code>.
+              </p>
+              <div className="rag-chip-row">
+                {pickableModels.map(m => <code key={m}>{m}</code>)}
+                {!pickableModels.length && <span className="muted">No models visible to the deployment credential.</span>}
+              </div>
             </>
           )}
 
