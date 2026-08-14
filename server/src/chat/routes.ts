@@ -72,6 +72,23 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     return { authEnabled: true, verified: true, ...getUserKeyStatus(req.user.id) }
   })
 
+  // POST mirrors of set/clear: some proxies in front of sessions are
+  // unfriendly to PUT and DELETE, and the embed saw "failed to fetch".
+  app.post('/api/me/model-key', async (req, reply) => {
+    if (!req.user) return reply.status(403).send({ error: 'Personal keys need a platform-verified identity; open the app through the platform.' })
+    const body = req.body as { key?: string; persist?: boolean }
+    const key = String(body.key ?? '').trim()
+    if (!key) return reply.status(400).send({ error: 'key required' })
+    setUserKey(req.user.id, key, body.persist !== false)
+    return { authEnabled: true, verified: true, ...getUserKeyStatus(req.user.id) }
+  })
+
+  app.post('/api/me/model-key/clear', async (req, reply) => {
+    if (!req.user) return reply.status(403).send({ error: 'not verified' })
+    clearUserKey(req.user.id)
+    return { authEnabled: true, verified: true, mode: 'none' }
+  })
+
   app.put('/api/me/model-key', async (req, reply) => {
     if (!req.user) return reply.status(403).send({ error: 'Personal keys need a platform-verified identity; open the app through the platform.' })
     const body = req.body as { key?: string; persist?: boolean }
