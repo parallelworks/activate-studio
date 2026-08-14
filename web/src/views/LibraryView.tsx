@@ -101,47 +101,51 @@ export function LibraryView({ display, onDisplay }: {
       onDragLeave={() => setDropState(s => (s === 'busy' ? s : 'idle'))}
       onDrop={onDrop}
     >
-      {railCollapsed ? (
-        <button className="rail-expander" title="Expand knowledge base tree" onClick={() => setRailCollapsed(false)}>»</button>
-      ) : (
-        <>
-          <aside className="library-rail card" style={{ width: railWidth }}>
-            <div className="rail-head">
-              <span className="rail-title">{cfg.kbLabel}</span>
-              <span className="rail-actions">
-                <UploadMenu
-                  targetDir={targetDir}
-                  onTargetDir={setTargetDir}
-                  onDone={paths => {
-                    setRefreshKey(k => k + 1)
-                    if (paths[0]) onDisplay({ kind: 'file', target: paths[0] })
-                  }}
-                />
-                <button className="rail-collapse" title="Collapse tree" onClick={() => setRailCollapsed(true)}>«</button>
-              </span>
-            </div>
-            {dropNote && <div className="drop-note">{dropNote}</div>}
-            <Explorer
-              key={refreshKey}
-              onOpen={p => onDisplay({ kind: 'file', target: p })}
-              onDirFocus={dir => setTargetDir(dir || 'uploads')}
-              selected={selectedFile}
-              rootLabel={cfg.kbLabel}
-            />
-          </aside>
-          <div className="divider" onMouseDown={onDividerDown} title="Drag to resize" />
-        </>
-      )}
-      <section className="library-main card">
-        {display?.kind === 'workflow_dag' ? (
-          <DagViewer workflow={display.target} />
+      <div className="library-card card">
+        {railCollapsed ? (
+          <div className="rail-strip">
+            <button className="rail-expander" title="Expand knowledge base tree" onClick={() => setRailCollapsed(false)}>»</button>
+          </div>
         ) : (
-          <Viewer
-            path={selectedFile}
-            onDeleted={() => { onDisplay(null); setRefreshKey(k => k + 1) }}
-          />
+          <>
+            <aside className="library-rail" style={{ width: railWidth }}>
+              <div className="rail-head">
+                <span className="rail-title">{cfg.kbLabel}</span>
+                <span className="rail-actions">
+                  <UploadMenu
+                    targetDir={targetDir}
+                    onTargetDir={setTargetDir}
+                    onDone={paths => {
+                      setRefreshKey(k => k + 1)
+                      if (paths[0]) onDisplay({ kind: 'file', target: paths[0] })
+                    }}
+                  />
+                  <button className="rail-collapse" title="Collapse tree" onClick={() => setRailCollapsed(true)}>«</button>
+                </span>
+              </div>
+              {dropNote && <div className="drop-note">{dropNote}</div>}
+              <Explorer
+                key={refreshKey}
+                onOpen={p => onDisplay({ kind: 'file', target: p })}
+                onDirFocus={dir => setTargetDir(dir || 'uploads')}
+                selected={selectedFile}
+                rootLabel={cfg.kbLabel}
+              />
+            </aside>
+            <div className="divider" onMouseDown={onDividerDown} title="Drag to resize" />
+          </>
         )}
-      </section>
+        <section className="library-main">
+          {display?.kind === 'workflow_dag' ? (
+            <DagViewer workflow={display.target} />
+          ) : (
+            <Viewer
+              path={selectedFile}
+              onDeleted={() => { onDisplay(null); setRefreshKey(k => k + 1) }}
+            />
+          )}
+        </section>
+      </div>
     </div>
   )
 }
