@@ -6,7 +6,7 @@ settings:
 
 patchedDependencies:
   '@parallelworks/ai-chat':
-    hash: e236524ca2ec89fd3ef9680acdd30cea36844ed73893e1d42b61885130eccf31
+    hash: fae9b89ff51084f65e21010e3a808ddf21eb8d65a3f16635561b6deabd691adc
     path: patches/@parallelworks__ai-chat.patch
 
 importers:
@@ -54,7 +54,7 @@ importers:
         version: 5.3.0
       '@parallelworks/ai-chat':
         specifier: 0.1.0-rc.1
-        version: 0.1.0-rc.1(patch_hash=e236524ca2ec89fd3ef9680acdd30cea36844ed73893e1d42b61885130eccf31)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+        version: 0.1.0-rc.1(patch_hash=fae9b89ff51084f65e21010e3a808ddf21eb8d65a3f16635561b6deabd691adc)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       react:
         specifier: ^18.3.0
         version: 18.3.1
@@ -2410,7 +2410,7 @@ snapshots:
   '@napi-rs/lzma-linux-x64-gnu@1.5.1':
     optional: true
 
-  '@parallelworks/ai-chat@0.1.0-rc.1(patch_hash=e236524ca2ec89fd3ef9680acdd30cea36844ed73893e1d42b61885130eccf31)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)':
+  '@parallelworks/ai-chat@0.1.0-rc.1(patch_hash=fae9b89ff51084f65e21010e3a808ddf21eb8d65a3f16635561b6deabd691adc)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)':
     dependencies:
       '@streamdown/code': 1.1.1(react@18.3.1)
       '@streamdown/math': 1.0.2(react@18.3.1)

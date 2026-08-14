@@ -13,6 +13,7 @@ export function ChatView() {
   const [showAttachments, setShowAttachments] = useState(false)
   const [rail, setRail] = useState(() => Number(localStorage.getItem('ade-chat-rail')) || 260)
   const adapter = useMemo(() => createStudioAdapter(), [])
+  const [credNote, setCredNote] = useState<string | null>(null)
   const [vocab, setVocab] = useState<{ tag: string; count: number }[]>([])
   const [scope, setScope] = useState<Set<string>>(new Set())
   const [scopeOpen, setScopeOpen] = useState(false)
@@ -20,6 +21,11 @@ export function ChatView() {
 
   useEffect(() => {
     api.tagVocabulary().then(v => setVocab(v.tags)).catch(() => {})
+    // Mid-conversation credential failures surface as a toast with a path
+    // to fix them; the (patched) empty state owns the no-models case.
+    const onCredError = (e: Event) => setCredNote(String((e as CustomEvent).detail ?? 'Model credential needed.'))
+    window.addEventListener('ade-credential-error', onCredError)
+    return () => window.removeEventListener('ade-credential-error', onCredError)
   }, [])
 
   const toggleScope = (tag: string) => {
@@ -113,6 +119,13 @@ export function ChatView() {
     >
       <div className="chat-wrap">
         <div ref={canvasRef} className="chat-canvas card" style={{ ['--ade-chat-rail' as string]: `${rail}px` }}>
+          {credNote && (
+            <div className="cred-banner">
+              <span className="cred-banner-text">{credNote}</span>
+              <button className="btn-primary" onClick={() => { location.hash = '#view=settings:access' }}>Open Settings</button>
+              <button className="btn-secondary" onClick={() => setCredNote(null)}>Dismiss</button>
+            </div>
+          )}
           <ChatLayout>
             {showAttachments ? <AttachmentManager /> : activeId ? <ChatThread conversationId={activeId} /> : <ChatEmptyState />}
           </ChatLayout>

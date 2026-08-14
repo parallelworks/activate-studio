@@ -100,9 +100,12 @@ export default function App() {
         setView('library')
         return
       }
-      const v = location.hash.match(/^#view=([a-z]+)$/)?.[1]
-      if (v && NAV.some(n => n.id === v)) setView(v as ViewId)
-      else if (!location.hash) setView('chat')
+      const vm = location.hash.match(/^#view=([a-z]+)(?::([a-z]+))?$/)
+      const v = vm?.[1]
+      if (v && NAV.some(n => n.id === v)) {
+        setView(v as ViewId)
+        if (vm?.[2]) window.dispatchEvent(new CustomEvent('ade-view-section', { detail: { view: v, section: vm[2] } }))
+      } else if (!location.hash) setView('chat')
     }
     applyHash()
     // Chat links render with target=_blank; catch #open= clicks in the

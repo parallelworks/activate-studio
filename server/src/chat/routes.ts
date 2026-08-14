@@ -7,7 +7,7 @@ import { attachmentContext } from '../attachments.js'
 import { effectiveSettings } from '../settings.js'
 import { agentPrompt } from '../extensions.js'
 import { recordAssistantTurn, recordUserTurn } from '../conversations.js'
-import { clearUserKey, getUserKeyStatus, resolveUserKey, setUserKey } from '../credentials.js'
+import { clearUserKey, getUserKeyStatus, resolveUserCred, resolveUserKey, setUserKey } from '../credentials.js'
 import { authEnabled } from '../auth.js'
 
 interface StreamBody {
@@ -46,11 +46,11 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
       return reply.send({ models: [], unreachableSessions: [], error: 'no gateway credential: set PW_API_KEY or authenticate the pw CLI' })
     }
     const eff0 = effectiveSettings()
-    const personalKey = resolveUserKey(req.user?.id)
-    if (eff0.requirePersonalKey && authEnabled() && !personalKey) {
+    const cred = resolveUserCred(req.user?.id)
+    if (eff0.requirePersonalKey && authEnabled() && !cred) {
       return reply.send({ models: [], unreachableSessions: [], error: 'This deployment requires your own model credential: add your API key or platform token in Settings, Your model access.' })
     }
-    const wire: any = await listModels(personalKey)
+    const wire: any = await listModels(cred?.key, cred?.baseUrl)
     let models = (wire.data ?? wire.models ?? []).filter((m: any) => m)
     // Org-provider models require an X-Allocation header; without a configured
     // allocation they can only fail, so hide them. Personal providers sort first
@@ -65,15 +65,15 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
 
   // Live model-callability check for the footer status line.
   app.get('/api/ai/health', async req => {
-    const personal = resolveUserKey(req.user?.id)
-    if (effectiveSettings().requirePersonalKey && authEnabled() && !personal) {
+    const cred = resolveUserCred(req.user?.id)
+    if (effectiveSettings().requirePersonalKey && authEnabled() && !cred) {
       return {
         ok: false, status: 'key-required', models: 0, gatewayHost: '', message:
           'This deployment requires your own model credential; add it in Settings, Your model access.',
         lastCallFailure: null, checkedAt: new Date().toISOString(),
       }
     }
-    return aiHealth(personal)
+    return aiHealth(cred?.key, cred?.baseUrl)
   })
 
   // Personal model key: verified identity required; only status metadata
@@ -91,10 +91,10 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
   // unfriendly to PUT and DELETE, and the embed saw "failed to fetch".
   app.post('/api/me/model-key', async (req, reply) => {
     if (!req.user) return reply.status(403).send({ error: 'Personal keys need a platform-verified identity; open the app through the platform.' })
-    const body = req.body as { key?: string; persist?: boolean }
+    const body = req.body as { key?: string; persist?: boolean; baseUrl?: string }
     const key = String(body.key ?? '').trim()
     if (!key) return reply.status(400).send({ error: 'key required' })
-    setUserKey(req.user.id, key, body.persist !== false)
+    try { setUserKey(req.user.id, key, body.persist !== false, body.baseUrl) } catch (e) { return reply.status(400).send({ error: String((e as Error).message ?? e) }) }
     return { authEnabled: true, verified: true, ...getUserKeyStatus(req.user.id) }
   })
 
@@ -123,10 +123,12 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
   // exposing anything about it beyond the health classification.
   app.post('/api/me/model-key/test', async (req, reply) => {
     if (!req.user) return reply.status(403).send({ error: 'not verified' })
-    const body = req.body as { key?: string } | null
-    const candidate = String(body?.key ?? '').trim() || resolveUserKey(req.user.id)
+    const body = req.body as { key?: string; baseUrl?: string } | null
+    const stored = resolveUserCred(req.user.id)
+    const candidate = String(body?.key ?? '').trim() || stored?.key
+    const baseUrl = String(body?.baseUrl ?? '').trim() || stored?.baseUrl || null
     if (!candidate) return reply.status(400).send({ error: 'no key to test' })
-    return aiHealth(candidate)
+    return aiHealth(candidate, baseUrl)
   })
 
   // Tool catalog for the Settings page: built-ins plus custom, with state.
@@ -170,8 +172,8 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     // soon as the body is consumed, which would abort immediately).
     res.on('close', () => { if (!res.writableEnded) abort.abort() })
 
-    const userKeyEarly = resolveUserKey(req.user?.id)
-    if (effectiveSettings().requirePersonalKey && authEnabled() && !userKeyEarly) {
+    const userCred = resolveUserCred(req.user?.id)
+    if (effectiveSettings().requirePersonalKey && authEnabled() && !userCred) {
       sse(res, 'error', {
         message: 'This deployment requires your own model credential. Add your API key or platform token in Settings, Your model access, then retry. Browsing, search, and adding material work without one.',
         kind: 'credential',
@@ -179,7 +181,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
       res.end()
       return reply
     }
-    if (!gatewayConfigured() && !userKeyEarly) {
+    if (!gatewayConfigured() && !userCred) {
       sse(res, 'error', { message: 'No gateway credential (set PW_API_KEY, authenticate the pw CLI, or add your key in Settings); chat is unavailable.' })
       res.end()
       return reply
@@ -224,7 +226,11 @@ ${ctx}` : ctx
     const today = new Date().toISOString().slice(0, 10)
     // The persona file is read per request so edits apply immediately.
     const persona = agentPrompt()
-    const userKey = resolveUserKey(req.user?.id)
+    const userKey = userCred?.key ?? null
+    const userBase = userCred?.baseUrl ?? null
+    // pw CLI tools only accept a PW credential; a custom-provider key must
+    // never leak into platform executions.
+    const pwToolKey = userCred && !userCred.baseUrl ? userCred.key : null
     const labelScope = Array.isArray(body.labelScope)
       ? body.labelScope.map(String).filter(Boolean).slice(0, 16)
       : []
@@ -287,6 +293,7 @@ ${ctx}` : ctx
           callbacks,
           abort.signal,
           userKey,
+          userBase,
         )
         finalModel = turn.model ?? finalModel
         if (turn.finishReason === 'tool_calls' && turn.toolCalls.length > 0) {
@@ -304,7 +311,7 @@ ${ctx}` : ctx
               result = `[You already made this exact call in this reply; identical result repeated below. Do not repeat it again.]\n${toolCache.get(key)}`
               summary = 'repeated call (cached)'
             } else {
-              const out = await executeTool(tc.function.name, tc.function.arguments, { labelScope, userKey })
+              const out = await executeTool(tc.function.name, tc.function.arguments, { labelScope, userKey: pwToolKey })
               result = out.result
               summary = out.summary
               toolCache.set(key, result)
@@ -332,6 +339,7 @@ ${ctx}` : ctx
         callbacks,
         abort.signal,
         userKey,
+        userBase,
       )
       finalModel = finalTurn.model ?? finalModel
       finish(finalTurn.finishReason)
