@@ -20,7 +20,15 @@ pnpm build
 node server/dist/main.js          # http://localhost:4080
 ```
 
-Environment: `PW_API_KEY` (falls back to the pw CLI credential store), `PW_ALLOCATION` (enables org-provider models), `SWEEP_INTERVAL_SEC` (default 300, 0 disables), `KB_ROOT`, `KB_LABEL`, `SUGGESTED_PROMPTS` (JSON array), `APP_USER_ID`/`APP_USERNAME`/`APP_USER_NAME`, `PORT`. `deploy/run_endpoint.sh` sources a gitignored `.env` in the repo root, which is where deployment-specific values belong.
+Environment: `KB_ROOT`, `KB_LABEL`, `APP_NAME`, `APP_ICON` (path to a brand image), `HELP_FILE` (override `docs/HELP.md`), `SUGGESTED_PROMPTS` (JSON array), `APP_USER_ID`/`APP_USERNAME`/`APP_USER_NAME`, `SWEEP_INTERVAL_SEC` (default 300, 0 disables), `ADE_VISION_MODEL` (enables image captioning), `PORT`. `deploy/run_endpoint.sh` sources a gitignored `.env` in the repo root, which is where deployment-specific values belong.
+
+## Models
+
+The chat talks to any OpenAI-compatible backend; nothing in the app requires the pw CLI for model access.
+
+- Default: the ACTIVATE gateway. With an authenticated pw CLI on the host, no configuration is needed at all (the server reads the CLI's credential); otherwise set `PW_API_KEY`. `PW_ALLOCATION` enables org-provider models.
+- Any other backend: set `OPENAI_BASE_URL` (or `PW_GATEWAY_URL`) to the endpoint's `/v1` base and `OPENAI_API_KEY` (or `PW_API_KEY`) to its key. OpenAI, vLLM, llama.cpp server, Ollama's OpenAI-compatible endpoint, and similar all work. The endpoint must serve `/models` and streaming `/chat/completions`; tool calling is required for the assistant's knowledge base and workflow tools.
+- The platform workflow tools (catalog, DAG preview, runs) come from the pw CLI and disappear gracefully when it is absent; the knowledge base tools work everywhere.
 
 One-time setup: `indexer/setup_gufi.sh`, then `indexer/reindex.sh` for the first index build.
 
