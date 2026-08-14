@@ -61,7 +61,7 @@ export function SettingsView() {
   const [catalog, setCatalog] = useState<CatalogTool[]>([])
   const [ext, setExt] = useState<Extensions | null>(null)
   const [specOpen, setSpecOpen] = useState<string | null>(null)
-  const [me, setMe] = useState<{ authEnabled?: boolean; verified: boolean; mode: 'stored' | 'session' | 'none'; last4?: string; addedAt?: string; sessionExpiresAt?: string; kind?: string; credExpiresAt?: string | null; credExpired?: boolean; baseUrl?: string | null } | null>(null)
+  const [me, setMe] = useState<{ authEnabled?: boolean; verified: boolean; mode: 'stored' | 'session' | 'none'; last4?: string; addedAt?: string; sessionExpiresAt?: string; kind?: string; credExpiresAt?: string | null; credExpired?: boolean; baseUrl?: string | null; gatewayHost?: string } | null>(null)
   const [keyInput, setKeyInput] = useState('')
   const [providerMode, setProviderMode] = useState<'platform' | 'activate' | 'custom'>('platform')
   const [providerHost, setProviderHost] = useState('')
@@ -325,7 +325,7 @@ export function SettingsView() {
                   <div className="key-row provider-row">
                     <label className="field-label provider-label">Credential provider</label>
                     <select className="field" value={providerMode} onChange={e => setProviderMode(e.target.value as typeof providerMode)}>
-                      <option value="platform">This platform's gateway (default)</option>
+                      <option value="platform">{me?.gatewayHost ? `This deployment's gateway (${me.gatewayHost})` : "This deployment's gateway (default)"}</option>
                       <option value="activate">Another ACTIVATE platform…</option>
                       <option value="custom">OpenAI-compatible endpoint…</option>
                     </select>
