@@ -64,12 +64,69 @@ export function gatewayConfigured(): boolean {
   return gatewayKey().length > 0
 }
 
+/** Credential rejections get their own error type and an actionable
+ *  message, so the UI can say "unlock your key" instead of a raw 401. */
+export class GatewayAuthError extends Error {
+  constructor(message: string) { super(message); this.name = 'GatewayAuthError' }
+}
+
+let lastCallFailure: { at: string; message: string; auth: boolean } | null = null
+
+function gatewayError(status: number, bodyText: string, ctx: string): Error {
+  const auth = status === 401 || status === 403
+    || /unauthoriz|invalid[ _-]?(api[ _-]?)?key|credential|locked|expired token/i.test(bodyText)
+  const err = auth
+    ? new GatewayAuthError(
+        `The model gateway rejected the credential (${status}). The API key may be locked or expired; genai.mil keys need an unlock every 8 hours. Unlock or update the key, then retry. Gateway said: ${bodyText.slice(0, 200)}`)
+    : new Error(`gateway ${ctx} ${status}: ${bodyText.slice(0, 300)}`)
+  lastCallFailure = { at: new Date().toISOString(), message: err.message.slice(0, 300), auth }
+  return err
+}
+
 export async function listModels(): Promise<unknown> {
   const res = await fetch(`${GATEWAY_BASE}/models`, {
     headers: { Authorization: `Bearer ${gatewayKey()}` },
   })
-  if (!res.ok) throw new Error(`gateway /models ${res.status}: ${await res.text()}`)
+  if (!res.ok) throw gatewayError(res.status, await res.text(), '/models')
   return res.json()
+}
+
+export interface AiHealth {
+  ok: boolean
+  status: 'ok' | 'auth' | 'unreachable' | 'unconfigured'
+  models: number
+  gatewayHost: string
+  message: string | null
+  lastCallFailure: { at: string; message: string; auth: boolean } | null
+  checkedAt: string
+}
+
+/** Live callability check: exercises the gateway with the current
+ *  credential (via the model listing) and reports the last real call
+ *  failure, which catches keys that list fine but fail at invoke time. */
+export async function aiHealth(): Promise<AiHealth> {
+  const checkedAt = new Date().toISOString()
+  const gatewayHost = (() => { try { return new URL(GATEWAY_BASE).host } catch { return GATEWAY_BASE } })()
+  const base = { models: 0, gatewayHost, lastCallFailure, checkedAt }
+  if (!gatewayConfigured()) {
+    return { ...base, ok: false, status: 'unconfigured', message: 'No gateway credential configured (PW_API_KEY or pw CLI login).' }
+  }
+  try {
+    const res = await fetch(`${GATEWAY_BASE}/models`, {
+      headers: { Authorization: `Bearer ${gatewayKey()}` },
+      signal: AbortSignal.timeout(8000),
+    })
+    const text = await res.text()
+    if (!res.ok) {
+      const auth = res.status === 401 || res.status === 403
+      return { ...base, ok: false, status: auth ? 'auth' : 'unreachable', message: `${res.status}: ${text.slice(0, 200)}` }
+    }
+    const data = JSON.parse(text) as { data?: unknown[]; models?: unknown[] }
+    const n = Array.isArray(data.data) ? data.data.length : Array.isArray(data.models) ? data.models.length : 0
+    return { ...base, ok: true, status: 'ok', models: n, message: null }
+  } catch (e) {
+    return { ...base, ok: false, status: 'unreachable', message: String((e as Error).message ?? e).slice(0, 200) }
+  }
 }
 
 /**
@@ -93,7 +150,7 @@ export async function streamTurn(
     body: JSON.stringify({ ...body, stream: true }),
     signal,
   })
-  if (!res.ok || !res.body) throw new Error(`gateway chat ${res.status}: ${await res.text()}`)
+  if (!res.ok || !res.body) throw gatewayError(res.status, await res.text(), 'chat')
 
   let content = ''
   let reasoning = ''
