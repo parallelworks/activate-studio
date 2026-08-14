@@ -49,7 +49,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     const eff0 = effectiveSettings()
     const cred = resolveUserCred(req.user?.id)
     if (eff0.requirePersonalKey && authEnabled() && !personalKeysDisabled() && !cred) {
-      return reply.send({ models: [], unreachableSessions: [], error: 'This deployment requires your own model credential: add your API key or platform token in Settings, Your model access.' })
+      return reply.send({ models: [], unreachableSessions: [], error: 'This deployment requires your own model credential: add your API key or platform token in Settings, Model access.' })
     }
     const wire: any = await listModels(cred?.key, cred?.baseUrl)
     let models = (wire.data ?? wire.models ?? []).filter((m: any) => m)
@@ -75,7 +75,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     if (effectiveSettings().requirePersonalKey && authEnabled() && !personalKeysDisabled() && !cred) {
       return {
         ok: false, status: 'key-required', models: 0, gatewayHost: '', message:
-          'This deployment requires your own model credential; add it in Settings, Your model access.',
+          'This deployment requires your own model credential; add it in Settings, Model access.',
         lastCallFailure: null, checkedAt: new Date().toISOString(),
       }
     }
@@ -187,7 +187,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     const userCred = resolveUserCred(req.user?.id)
     if (effectiveSettings().requirePersonalKey && authEnabled() && !personalKeysDisabled() && !userCred) {
       sse(res, 'error', {
-        message: 'This deployment requires your own model credential. Add your API key or platform token in Settings, Your model access, then retry. Browsing, search, and adding material work without one.',
+        message: 'This deployment requires your own model credential. Add your API key or platform token in Settings, Model access, then retry. Browsing, search, and adding material work without one.',
         kind: 'credential',
       })
       res.end()
