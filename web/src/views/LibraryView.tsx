@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Display } from '../App'
+import { api } from '../api'
 import { Explorer } from '../components/Explorer'
 import { Viewer } from '../components/Viewer'
 import { DagViewer } from '../components/DagViewer'
@@ -22,6 +23,26 @@ export function LibraryView({ display, onDisplay }: {
   const [progress, setProgress] = useState<UploadProgress | null>(null)
   const [multiSel, setMultiSel] = useState<Set<string>>(new Set())
   const [tagMenuOpen, setTagMenuOpen] = useState(false)
+  const [selectMode, setSelectMode] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [bulkNote, setBulkNote] = useState('')
+
+  const bulkDelete = async () => {
+    const files = [...multiSel]
+    setConfirmDelete(false)
+    setBulkNote('Deleting…')
+    try {
+      const r = await api.deleteFiles(files)
+      const skippedDirs = r.skipped.filter((x: { reason: string }) => x.reason.includes('directories'))
+      setBulkNote(`${r.deleted.length} deleted${r.skipped.length ? `, ${r.skipped.length} skipped${skippedDirs.length ? ' (directories are not deletable)' : ''}` : ''}`)
+      setMultiSel(new Set())
+      setRefreshKey(k => k + 1)
+      if (display?.kind === 'file' && r.deleted.includes(display.target)) onDisplay(null)
+    } catch (e) {
+      setBulkNote(String((e as Error).message ?? e))
+    }
+    setTimeout(() => setBulkNote(''), 6000)
+  }
   const drag = useRef<{ startX: number; startWidth: number } | null>(null)
   const cfg = useAppConfig()
 
@@ -94,6 +115,11 @@ export function LibraryView({ display, onDisplay }: {
               <div className="rail-head">
                 <span className="rail-title">{cfg.kbLabel}</span>
                 <span className="rail-actions">
+                  <button
+                    className={`btn-secondary select-toggle ${selectMode ? 'active' : ''}`}
+                    title="Select multiple items for labeling or deletion"
+                    onClick={() => { setSelectMode(m => !m); setMultiSel(new Set()); setTagMenuOpen(false); setConfirmDelete(false) }}
+                  >Select</button>
                   <UploadMenu
                     targetDir={targetDir}
                     onTargetDir={setTargetDir}
@@ -106,11 +132,19 @@ export function LibraryView({ display, onDisplay }: {
                   <button className="rail-collapse" title="Collapse tree" onClick={() => setRailCollapsed(true)}>«</button>
                 </span>
               </div>
-              {multiSel.size > 0 && (
+              {selectMode && (
                 <div className="multi-bar">
                   <span>{multiSel.size} selected</span>
-                  <button className="btn-secondary" onClick={() => setTagMenuOpen(o => !o)}>Labels…</button>
-                  <button className="link-btn2" onClick={() => { setMultiSel(new Set()); setTagMenuOpen(false) }}>clear</button>
+                  <button className="btn-secondary" disabled={!multiSel.size} onClick={() => setTagMenuOpen(o => !o)}>Labels…</button>
+                  {confirmDelete ? (
+                    <span className="confirm-group">
+                      <button className="btn-danger" onClick={bulkDelete}>Delete {multiSel.size}</button>
+                      <button className="btn-secondary" onClick={() => setConfirmDelete(false)}>Cancel</button>
+                    </span>
+                  ) : (
+                    <button className="btn-danger-outline" disabled={!multiSel.size} onClick={() => setConfirmDelete(true)}>Delete…</button>
+                  )}
+                  <button className="link-btn2" onClick={() => setMultiSel(new Set())}>clear</button>
                   {tagMenuOpen && (
                     <TagMenu
                       paths={[...multiSel]}
@@ -120,6 +154,7 @@ export function LibraryView({ display, onDisplay }: {
                   )}
                 </div>
               )}
+              {bulkNote && <div className="drop-note">{bulkNote}</div>}
               <Explorer
                 key={refreshKey}
                 onOpen={p => onDisplay({ kind: 'file', target: p })}
@@ -129,7 +164,8 @@ export function LibraryView({ display, onDisplay }: {
                 multiSelected={multiSel}
                 onToggleMulti={toggleMulti}
                 onDropInto={(dir, items) => void uploadTo(dir, items)}
-                onLabel={p => { setMultiSel(new Set([p])); setTagMenuOpen(true) }}
+                onLabel={p => { setMultiSel(new Set([p])); setTagMenuOpen(true); setSelectMode(true) }}
+                selectMode={selectMode}
               />
               {progress && (
                 <div className="upload-panel">
