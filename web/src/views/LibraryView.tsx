@@ -162,9 +162,8 @@ export function LibraryView({ display, onDisplay }: {
         ) : (
           <>
             <aside ref={railRef} className="library-rail" style={{ width: railWidth }}>
-              {/* The tree's root row already names the knowledge base, so the
-                  head is just the action row (label hover carries the name). */}
-              <div className="rail-head rail-head-actions" title={cfg.kbLabel}>
+              <div className="rail-head" title={cfg.kbLabel}>
+                <span className="rail-title">Library</span>
                 <span className="rail-actions">
                   <button
                     className={`rail-collapse select-toggle ${showLabels ? 'active' : ''}`}

@@ -66,6 +66,10 @@ Corpus health at a glance, and every element is a shortcut: storage rows and lab
 
 The address bar tracks what you are looking at: open documents and views live in the URL, so refresh restores your place, browser back and forward walk your path, and a copied link drops someone else exactly where you were. The footer shows the platform-verified identity, model availability (whether the AI gateway credential currently works), and index health; click any of them for details.
 
+## RAG for other tools
+
+The knowledge base is usable as a grounded model from outside the Studio: the deployment serves an OpenAI-compatible endpoint where `studio-agent` answers with the full assistant pipeline and `studio-rag` adds retrieved, cited context to a single model call. Any OpenAI-speaking client (pw code, SDKs) can point at it with its own API key, and the deployment can publish both models into the platform chat and provider catalog from the Settings RAG endpoint section.
+
 ## The index
 
 Built on GUFI, the Grand Unified File Index from Los Alamos National Laboratory: a tree of small databases mirroring the directory structure, holding metadata, extracted text, and embedding vectors. Access control is inherited from the filesystem, and additions re-index only the touched folder.
