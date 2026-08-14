@@ -1,6 +1,6 @@
 # ACTIVATE Studio architecture
 
-ACTIVATE Studio is a web interface over a knowledge base directory (the configured `KB_ROOT`). It has three surfaces: a chat assistant with tool calling grounded in the corpus, a library (file tree, document viewer, upload and URL ingestion), and search (full text plus semantic). The retrieval layer is built on GUFI, the Grand Unified File Index from LANL (github.com/mar-file-system/GUFI). This document explains how each layer works and why it is shaped this way.
+ACTIVATE Studio is a standalone web interface over a knowledge base directory (the configured `KB_ROOT`): a chat assistant with tool calling grounded in the corpus, a library (file tree, document viewer, upload and URL ingestion), search (full text plus semantic), and a structured query interface. It runs against any OpenAI-compatible model endpoint and optionally integrates with the Parallel Works ACTIVATE platform for zero-configuration model access, workflow tools, and session serving. The retrieval layer is built on GUFI, the Grand Unified File Index from LANL (github.com/mar-file-system/GUFI). This document explains how each layer works and why it is shaped this way.
 
 ## 1. The index
 
@@ -54,7 +54,7 @@ Three retrieval modes run against the index, all in `server/src/gufi.ts`:
 
 ## 5. Chat: retrieval as tools, not context stuffing
 
-The chat backend (`server/src/chat/`) is a server-side tool-calling loop against the ACTIVATE gateway's OpenAI-compatible surface. The browser never holds a credential; the server reads `PW_API_KEY` or, when unset, the pw CLI's own token store (`~/.config/pw/credentials`, matched by gateway host, re-read when the file changes). Org-provider models need an `X-Allocation` header and are hidden from the model list unless `PW_ALLOCATION` is set.
+The chat backend (`server/src/chat/`) is a server-side tool-calling loop against an OpenAI-compatible model endpoint, selected by `OPENAI_BASE_URL`/`PW_GATEWAY_URL` and defaulting to the ACTIVATE gateway. The browser never holds a credential; the server reads `OPENAI_API_KEY`/`PW_API_KEY` or, when unset, the pw CLI's own token store (`~/.config/pw/credentials`, matched by gateway host, re-read when the file changes). On the ACTIVATE gateway, org-provider models need an `X-Allocation` header and are hidden from the model list unless `PW_ALLOCATION` is set. The workflow tools shell out to the pw CLI and degrade gracefully when it is absent; the knowledge tools have no platform dependency.
 
 The system prompt is composed at startup: an instruction to ground answers in the KB and cite paths, corpus statistics, the account's workflow list, and, when the knowledge base carries its own `CLAUDE.md` conventions file, that file in full, so its rules on tone, terminology, and claims not to make bind chat output; text produced in this interface can end up in deliverables. Today's date is injected per request so deadline questions distinguish past from upcoming.
 
