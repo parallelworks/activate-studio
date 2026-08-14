@@ -1,0 +1,10 @@
+node_modules/
+dist/
+index/
+*.log
+*.db
+.env
+__pycache__/
+.venv/
+*.gguf
+.DS_Store
