@@ -6,9 +6,19 @@ import { corpusStats } from '../gufi.js'
 
 let cached: string | null = null
 
-function pwList(): Promise<string> {
+function pwCatalog(): Promise<string> {
   return new Promise(resolve => {
-    execFile('pw', ['workflows', 'ls'], { timeout: 20_000 }, (_e, stdout) => resolve(stdout?.trim() ?? ''))
+    execFile('pw', ['workflows', 'ls', '-o', 'json'], { timeout: 20_000 }, (_e, stdout) => {
+      try {
+        const wfs = JSON.parse(stdout ?? '[]') as any[]
+        resolve(wfs.map(w => {
+          const tags = (w.tags ?? []).filter(Boolean)
+          return `- ${w.name}: ${w.description || w.displayName || ''}${tags.length ? ` [tags: ${tags.join(', ')}]` : ''}`
+        }).join('\n'))
+      } catch {
+        resolve(stdout?.trim() ?? '')
+      }
+    })
   })
 }
 
@@ -29,16 +39,16 @@ export async function systemPrompt(): Promise<string> {
       if (s.available) statsLine = `Indexed corpus: ${s.files} files across ${s.dirs} directories, ${Math.round((s.totalBytes ?? 0) / 1e6)} MB.`
     } catch { /* stats are best-effort */ }
   }
-  const workflows = await pwList()
+  const workflows = await pwCatalog()
 
   cached = [
-    `You are the assistant inside ade-studio, a knowledge base interface. The knowledge base at ${KB_ROOT} is the working corpus for this deployment.`,
+    `You are the assistant inside ACTIVATE Studio, a knowledge base interface. The knowledge base at ${KB_ROOT} is the working corpus for this deployment.`,
     '',
     'Ground every answer about the knowledge base in its actual content: call search_kb first, read the files that matter with read_kb_file, and cite the relative file paths you used. If retrieval returns nothing relevant, say so instead of guessing.',
     '',
     statsLine,
     '',
-    'Platform workflows registered in this account (list_workflows/get_workflow give detail):',
+    'Platform workflows registered in this account. These are composable building blocks: recommend which fit a task, preview a DAG with get_workflow before anything runs, validate with run_workflow dry_run, and launch a real run only when the user explicitly asks. Monitor with workflow_runs and workflow_run_detail. pw_help discovers the wider platform command surface.',
     workflows || '(workflow list unavailable)',
     '',
     conventions

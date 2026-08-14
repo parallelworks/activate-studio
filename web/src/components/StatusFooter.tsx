@@ -9,7 +9,7 @@ function ago(iso: string | null): string {
   return `${Math.round(s / 3600)}h ago`
 }
 
-export function StatusFooter() {
+export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
   const [stats, setStats] = useState<{ files?: number; dirs?: number } | null>(null)
   const [idx, setIdx] = useState<IndexStatus | null>(null)
   const [syncing, setSyncing] = useState(false)
@@ -26,11 +26,24 @@ export function StatusFooter() {
 
   const sync = async () => {
     setSyncing(true)
-    try { await api.sweepNow() } catch { /* surfaced via status */ }
+    try {
+      await api.sweepNow()
+      // Tell the library to drop its cached tree state.
+      window.dispatchEvent(new Event('ade-kb-changed'))
+    } catch { /* surfaced via status */ }
     refresh()
     setSyncing(false)
   }
 
+  if (collapsed) {
+    return (
+      <div className="sidenav-footer">
+        <div className="status-line" title={stats?.files ? `${stats.files.toLocaleString()} files indexed, sync ${ago(idx?.lastSweepAt ?? null)}` : 'index loading'}>
+          <span className={`status-dot ${idx?.lastError ? 'warn' : 'ok'}`} />
+        </div>
+      </div>
+    )
+  }
   return (
     <div className="sidenav-footer">
       <div className="status-line">
