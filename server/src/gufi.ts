@@ -13,6 +13,7 @@ export interface SearchHit {
   snippet: string
   score: number
   mode: 'fts' | 'name' | 'vector'
+  tags?: string[]
 }
 
 function run(bin: string, args: string[], timeoutMs = 60_000): Promise<{ stdout: string; stderr: string }> {

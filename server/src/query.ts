@@ -118,6 +118,15 @@ const CANNED: Record<string, (p: { n: number; days: number; subtree?: string }) 
   }),
 }
 
+/** Run a canned corpus query by id; used by the API and by the chat tool. */
+export async function runCanned(id: string, p: { n: number; days: number; subtree?: string }): Promise<QueryResult> {
+  const fn = CANNED[id]
+  if (!fn) throw new KbError(400, `unknown canned query: ${id}`)
+  return fn(p)
+}
+
+export const CANNED_IDS = Object.keys(CANNED)
+
 /* ---- structured builder: compile a form payload into a staged query ---- */
 
 export interface BuilderFilter { field: string; op: string; value: string }

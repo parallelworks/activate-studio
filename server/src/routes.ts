@@ -9,6 +9,7 @@ import { CONVERTIBLE, mimeFor, officeToPdf, removePdfPreview } from './preview.j
 import { blendHits, corpusStats, searchFts, searchNames, searchVector } from './gufi.js'
 import { invalidateContext } from './chat/context.js'
 import { incrementalIndexDir, indexStatus, reindexForFile, sweep } from './indexing.js'
+import { annotateHits } from './tags.js'
 
 export async function kbRoutes(app: FastifyInstance): Promise<void> {
   app.setErrorHandler((err: unknown, _req, reply) => {
@@ -22,19 +23,24 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
 
   // Deployment-specific presentation values live in the environment (or the
   // gitignored .env the deploy script sources), never in the repo.
-  app.get('/api/config', async () => {
+  app.get('/api/config', async req => {
     let suggestedPrompts: string[] = []
     try { suggestedPrompts = JSON.parse(process.env.SUGGESTED_PROMPTS ?? '[]') } catch { /* ignore bad JSON */ }
+    // A platform-verified identity (JWT) wins over the static env identity.
+    const user = req.user
+      ? { id: req.user.id, username: req.user.username, name: req.user.name }
+      : {
+          id: process.env.APP_USER_ID ?? 'user',
+          username: process.env.APP_USERNAME ?? 'user',
+          name: process.env.APP_USER_NAME || undefined,
+        }
     return {
       appName: process.env.APP_NAME ?? 'Studio',
       iconUrl: process.env.APP_ICON && fs.existsSync(process.env.APP_ICON) ? '/api/brand-icon' : null,
       kbLabel: process.env.KB_LABEL ?? path.basename(KB_ROOT),
+      theme: process.env.THEME === 'dark' ? 'dark' : 'light',
       suggestedPrompts,
-      user: {
-        id: process.env.APP_USER_ID ?? 'user',
-        username: process.env.APP_USERNAME ?? 'user',
-        name: process.env.APP_USER_NAME || undefined,
-      },
+      user,
     }
   })
 
@@ -129,7 +135,9 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
       searchNames(q, 10),
       searchVector(q, Math.min(n, 10)).catch(() => []),
     ])
-    return { hits: blendHits(fts, names, vec, n) }
+    const { tags } = req.query as { tags?: string }
+    const filter = tags ? tags.split(',').filter(Boolean) : undefined
+    return { hits: await annotateHits(blendHits(fts, names, vec, n), filter) }
   })
 
   app.get('/api/index/status', async () => indexStatus())

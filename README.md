@@ -4,7 +4,7 @@ A standalone web workspace over a knowledge base directory: a chat assistant wit
 
 It also integrates with the Parallel Works ACTIVATE platform when present: the platform's AI gateway works with zero configuration, the assistant gains workflow tools (catalog, DAG preview, dry-run validation, execution, run monitoring), and the app can be served as a platform session. None of that is required to use it.
 
-The retrieval layer is built on GUFI, the Grand Unified File Index from LANL (per-directory SQLite index with fts5 and vec0 tables). How the whole system works, including incremental indexing and the need-to-know model, is documented in `docs/ARCHITECTURE.md`.
+The retrieval layer is built on GUFI, the Grand Unified File Index from LANL (per-directory SQLite index with fts5 and vec0 tables). How the whole system works, including incremental indexing and the need-to-know model, is documented in `docs/ARCHITECTURE.md`. Setup and branding for your own deployment: `docs/CUSTOMIZATION.md` and `.env.example`.
 
 ## Layout
 
