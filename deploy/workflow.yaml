@@ -287,8 +287,17 @@ jobs:
             exit 0
           fi
           cd ${{ inputs.app_settings.workdir }}
-          # Node runtime: use the system one when present, else fetch v20.
-          if ! command -v node >/dev/null 2>&1 && [ ! -x node-runtime/bin/node ]; then
+          # Node runtime: the system node must be v20+ (corepack/pnpm crash
+          # under older ones with ERR_VM_DYNAMIC_IMPORT_CALLBACK_MISSING);
+          # otherwise fetch v20 into the workdir.
+          NEED_NODE=1
+          if [ -x node-runtime/bin/node ]; then
+            NEED_NODE=0
+          elif command -v node >/dev/null 2>&1; then
+            MAJ=$(node -p 'process.version.slice(1).split(".")[0]' 2>/dev/null || echo 0)
+            [ "$MAJ" -ge 20 ] && NEED_NODE=0 || echo "System node is v$MAJ; fetching v20."
+          fi
+          if [ "$NEED_NODE" = "1" ]; then
             echo "Fetching Node runtime..."
             curl -fsSL -o node.tar.xz https://nodejs.org/dist/v20.19.6/node-v20.19.6-linux-x64.tar.xz
             mkdir -p node-runtime
@@ -366,8 +375,15 @@ jobs:
             rm -f bundle.tar.gz
             echo "$BUNDLE" > .bundle
           fi
-          # Node runtime from the bundle, unless the resource already has one.
-          if ! command -v node >/dev/null 2>&1 && [ ! -x node-runtime/bin/node ]; then
+          # Node runtime from the bundle, unless the resource has v20+.
+          NEED_NODE=1
+          if [ -x node-runtime/bin/node ]; then
+            NEED_NODE=0
+          elif command -v node >/dev/null 2>&1; then
+            MAJ=$(node -p 'process.version.slice(1).split(".")[0]' 2>/dev/null || echo 0)
+            [ "$MAJ" -ge 20 ] && NEED_NODE=0
+          fi
+          if [ "$NEED_NODE" = "1" ]; then
             NODE_TAR=$(ls node-*-linux-x64.tar.xz 2>/dev/null | head -1)
             if [ -n "$NODE_TAR" ]; then
               mkdir -p node-runtime
