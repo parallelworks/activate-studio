@@ -46,11 +46,13 @@ def main() -> int:
     ap.add_argument('--index', required=True, help='GUFI index tree top')
     ap.add_argument('--model', required=True, help='GGUF embedding model path')
     ap.add_argument('--gufi-sqlite3', default='/opt/gufi/bin/gufi_sqlite3')
+    ap.add_argument('--subdir', default='', help='restrict to this KB-relative subtree (incremental indexing)')
     args = ap.parse_args()
 
     index_root = Path(args.index)
+    walk_root = index_root / args.subdir if args.subdir else index_root
     dbs = []
-    for dirpath, dirnames, _ in os.walk(index_root):
+    for dirpath, dirnames, _ in os.walk(walk_root):
         dirnames.sort()
         dbfile = Path(dirpath) / 'db.db'
         if dbfile.exists():
@@ -96,19 +98,23 @@ def main() -> int:
 
     def embed_db(dbfile: Path) -> str | None:
         p = str(dbfile).replace("'", "''")
-        script = '\n'.join([
-            "INSERT INTO temp.lembed_models(name, model) SELECT 'minilm384', lembed_model_from_file('%s');" % args.model,
-            f"ATTACH '{p}' AS d;",
-            'DROP TABLE IF EXISTS d.gvec;',
-            'CREATE VIRTUAL TABLE d.gvec USING vec0(cid INTEGER PRIMARY KEY, fp384 float[384]);',
-            "INSERT INTO d.gvec(cid, fp384) SELECT cid, lembed('minilm384', substr(ctext, 1, 2000)) FROM d.gchunks WHERE length(trim(ctext)) > 0;",
-            'DETACH d;',
-        ])
-        proc = subprocess.run([args.gufi_sqlite3], input=script,
-                              capture_output=True, text=True, timeout=1800)
-        if proc.returncode != 0 or 'Error' in proc.stderr:
-            return f'{dbfile}: {proc.stderr.strip()[-300:]}'
-        return None
+        # sqlite-lembed does not truncate: token-dense text (code, markup)
+        # can overflow the MiniLM context and segfault. 800 chars is safe for
+        # prose and nearly all code; retry denser content at 400.
+        for cap in (800, 400):
+            script = '\n'.join([
+                "INSERT INTO temp.lembed_models(name, model) SELECT 'minilm384', lembed_model_from_file('%s');" % args.model,
+                f"ATTACH '{p}' AS d;",
+                'DROP TABLE IF EXISTS d.gvec;',
+                'CREATE VIRTUAL TABLE d.gvec USING vec0(cid INTEGER PRIMARY KEY, fp384 float[384]);',
+                f"INSERT INTO d.gvec(cid, fp384) SELECT cid, lembed('minilm384', substr(ctext, 1, {cap})) FROM d.gchunks WHERE length(trim(ctext)) > 0;",
+                'DETACH d;',
+            ])
+            proc = subprocess.run([args.gufi_sqlite3], input=script,
+                                  capture_output=True, text=True, timeout=1800)
+            if proc.returncode == 0 and 'Error' not in proc.stderr:
+                return None
+        return f'{dbfile}: {proc.stderr.strip()[-300:] or f"exit {proc.returncode}"}'
 
     targets = [d for d in dbs if has_chunks(d)]
     errors = []

@@ -1,81 +1,67 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { Explorer } from './components/Explorer'
-import { Viewer } from './components/Viewer'
-import { SearchPanel } from './components/SearchPanel'
-import { ChatPanel } from './components/ChatPanel'
-import { api } from './api'
+import { useState } from 'react'
+import { ChatView } from './views/ChatView'
+import { LibraryView } from './views/LibraryView'
+import { SearchView } from './views/SearchView'
+import { StatusFooter } from './components/StatusFooter'
 
-const CHAT_MIN = 380
-const readWidth = () => {
-  const saved = Number(localStorage.getItem('ade-chat-width'))
-  const fallback = Math.round(window.innerWidth * 0.45)
-  return Math.max(CHAT_MIN, saved || fallback)
-}
+type ViewId = 'chat' | 'library' | 'search'
+
+const NAV: { id: ViewId; label: string; icon: JSX.Element }[] = [
+  {
+    id: 'chat',
+    label: 'Chat',
+    icon: <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M14 10.5a1.5 1.5 0 0 1-1.5 1.5H5l-3 3V3.5A1.5 1.5 0 0 1 3.5 2h9A1.5 1.5 0 0 1 14 3.5v7z"/></svg>,
+  },
+  {
+    id: 'library',
+    label: 'Library',
+    icon: <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M1.5 3.5A1 1 0 0 1 2.5 2.5h3l1.5 2h6a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1v-9z"/></svg>,
+  },
+  {
+    id: 'search',
+    label: 'Search',
+    icon: <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.4"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3.5 3.5"/></svg>,
+  },
+]
 
 export default function App() {
+  const [view, setView] = useState<ViewId>('chat')
   const [selected, setSelected] = useState<string | null>(null)
-  const [tab, setTab] = useState<'browse' | 'search'>('browse')
-  const [gufi, setGufi] = useState<boolean | null>(null)
-  const [chatWidth, setChatWidth] = useState(readWidth)
-  const [chatFull, setChatFull] = useState(() => localStorage.getItem('ade-chat-full') === '1')
-  const dragState = useRef<{ startX: number; startWidth: number } | null>(null)
 
-  useEffect(() => {
-    api.health().then(h => setGufi(h.gufi)).catch(() => setGufi(false))
-  }, [])
-
-  useEffect(() => { localStorage.setItem('ade-chat-width', String(chatWidth)) }, [chatWidth])
-  useEffect(() => { localStorage.setItem('ade-chat-full', chatFull ? '1' : '0') }, [chatFull])
-
-  const onDividerDown = useCallback((e: React.MouseEvent) => {
-    e.preventDefault()
-    dragState.current = { startX: e.clientX, startWidth: chatWidth }
-    const onMove = (ev: MouseEvent) => {
-      if (!dragState.current) return
-      const delta = dragState.current.startX - ev.clientX
-      const max = Math.round(window.innerWidth * 0.75)
-      setChatWidth(Math.min(max, Math.max(CHAT_MIN, dragState.current.startWidth + delta)))
-    }
-    const onUp = () => {
-      dragState.current = null
-      document.body.classList.remove('resizing')
-      window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mouseup', onUp)
-    }
-    document.body.classList.add('resizing')
-    window.addEventListener('mousemove', onMove)
-    window.addEventListener('mouseup', onUp)
-  }, [chatWidth])
+  const openFile = (path: string) => {
+    setSelected(path)
+    setView('library')
+  }
 
   return (
     <div className="app">
-      <header className="topbar">
-        <span className="brand">ade-studio</span>
-        <span className="sub">PW_KNOWLEDGE_BASE</span>
-        {gufi === false && <span className="warn">index not built; search limited</span>}
-      </header>
-      <div className="columns">
-        {!chatFull && (
-          <aside className="left">
-            <div className="tabs">
-              <button className={tab === 'browse' ? 'active' : ''} onClick={() => setTab('browse')}>Browse</button>
-              <button className={tab === 'search' ? 'active' : ''} onClick={() => setTab('search')}>Search</button>
-            </div>
-            {tab === 'browse'
-              ? <Explorer onOpen={p => setSelected(p)} selected={selected} />
-              : <SearchPanel onOpen={p => { setSelected(p) }} />}
-          </aside>
-        )}
-        {!chatFull && (
-          <main className="center">
-            <Viewer path={selected} />
-          </main>
-        )}
-        {!chatFull && <div className="divider" onMouseDown={onDividerDown} title="Drag to resize chat" />}
-        <aside className="right" style={chatFull ? { flex: 1 } : { width: chatWidth }}>
-          <ChatPanel fullScreen={chatFull} onToggleFull={() => setChatFull(f => !f)} />
-        </aside>
-      </div>
+      <nav className="sidenav">
+        <div className="sidenav-brand">
+          <span className="brand-mark">ADE</span>
+          <span className="brand-name">Studio</span>
+        </div>
+        <div className="sidenav-sub">PW Knowledge Base</div>
+        <div className="sidenav-items">
+          {NAV.map(item => (
+            <button
+              key={item.id}
+              className={`sidenav-item ${view === item.id ? 'active' : ''}`}
+              onClick={() => setView(item.id)}
+            >
+              {item.icon}
+              <span>{item.label}</span>
+            </button>
+          ))}
+        </div>
+        <StatusFooter />
+      </nav>
+      <main className="content">
+        <div className={view === 'chat' ? 'view' : 'view hidden'}><ChatView /></div>
+        <div className={view === 'library' ? 'view' : 'view hidden'}>
+          <LibraryView selected={selected} onSelect={setSelected} />
+        </div>
+        <div className={view === 'search' ? 'view' : 'view hidden'}><SearchView onOpen={openFile} /></div>
+      </main>
     </div>
   )
 }

@@ -6,6 +6,7 @@ import { KB_ROOT, PROJECT_ROOT, gufiAvailable } from './config.js'
 import { listDir, readFileContent, resolveKb, KbError } from './kb.js'
 import { blendHits, corpusStats, searchFts, searchNames, searchVector } from './gufi.js'
 import { invalidateContext } from './chat/context.js'
+import { incrementalIndexDir, indexStatus, sweep } from './indexing.js'
 
 export async function kbRoutes(app: FastifyInstance): Promise<void> {
   app.setErrorHandler((err: unknown, _req, reply) => {
@@ -47,6 +48,20 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
       searchVector(q, Math.min(n, 10)).catch(() => []),
     ])
     return { hits: blendHits(fts, names, vec, n) }
+  })
+
+  app.get('/api/index/status', async () => indexStatus())
+
+  app.post('/api/index/dir', async req => {
+    const { path: rel = '' } = req.body as { path?: string }
+    if (!rel) return { error: 'path required' }
+    const { ms } = await incrementalIndexDir(rel)
+    return { indexed: rel, ms }
+  })
+
+  app.post('/api/index/sweep', async () => {
+    const changed = await sweep(m => app.log.info(m))
+    return { changed }
   })
 
   app.post('/api/reindex', async (_req, reply) => {

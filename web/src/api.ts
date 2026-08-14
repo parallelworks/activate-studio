@@ -26,10 +26,30 @@ export interface SearchHit {
   mode: 'fts' | 'name' | 'vector'
 }
 
+export interface IndexStatus {
+  running: boolean
+  lastSweepAt: string | null
+  lastSweepMs: number | null
+  lastChanges: string[]
+  lastError: string | null
+  sweepIntervalSec: number
+}
+
 async function getJson<T>(url: string): Promise<T> {
   const res = await fetch(url)
   if (!res.ok) throw new Error(`${url}: ${res.status}`)
   return res.json() as Promise<T>
+}
+
+async function postJson<T>(url: string, body: unknown): Promise<T> {
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error((data as any).error ?? `${url}: ${res.status}`)
+  return data as T
 }
 
 export const api = {
@@ -39,4 +59,16 @@ export const api = {
   stats: () => getJson<{ available: boolean; files?: number; dirs?: number; totalBytes?: number }>(`/api/kb/stats`),
   search: (q: string) => getJson<{ hits: SearchHit[]; error?: string }>(`/api/search?q=${encodeURIComponent(q)}`),
   health: () => getJson<{ ok: boolean; gufi: boolean }>(`/healthz`),
+  indexStatus: () => getJson<IndexStatus>(`/api/index/status`),
+  sweepNow: () => postJson<{ changed: string[] }>(`/api/index/sweep`, {}),
+  uploadUrl: (url: string, dir: string) =>
+    postJson<{ saved: string[]; indexMs: number }>(`/api/kb/upload-url`, { url, dir }),
+  uploadFiles: async (files: File[], dir: string) => {
+    const form = new FormData()
+    for (const f of files) form.append('file', f, f.name)
+    const res = await fetch(`/api/kb/upload?dir=${encodeURIComponent(dir)}`, { method: 'POST', body: form })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error((data as any).error ?? `upload: ${res.status}`)
+    return data as { saved: string[]; indexMs: number }
+  },
 }

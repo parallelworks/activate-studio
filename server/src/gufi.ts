@@ -122,6 +122,7 @@ function toKbRel(p: string): string {
 const EMBED_MODEL = path.join(INDEX_BASE, 'models', 'minilm384.gguf')
 
 let dbListCache: { dbs: string[]; at: number } | null = null
+export function invalidateDbList(): void { dbListCache = null }
 function listIndexDbs(): string[] {
   if (dbListCache && Date.now() - dbListCache.at < 60_000) return dbListCache.dbs
   const dbs: string[] = []

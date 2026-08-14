@@ -16,12 +16,15 @@ export function Viewer({ path }: { path: string | null }) {
   if (!path) {
     return (
       <div className="viewer empty">
-        <p>Select a file from the explorer, search the corpus, or ask the assistant. Citations in chat open here.</p>
+        <div className="empty-state">
+          <h2>Nothing open</h2>
+          <p className="muted">Pick a file from the tree, drop new material on the Add button, or find something in Search.</p>
+        </div>
       </div>
     )
   }
   if (error) return <div className="viewer"><p className="error">{error}</p></div>
-  if (!file) return <div className="viewer"><p>Loading {path}…</p></div>
+  if (!file) return <div className="viewer"><p className="muted">Loading {path}…</p></div>
 
   const isMarkdown = path.toLowerCase().endsWith('.md')
   const isImage = file.kind === 'image'
@@ -30,21 +33,23 @@ export function Viewer({ path }: { path: string | null }) {
       <div className="viewer-head">
         <span className="viewer-path">{file.path}</span>
         <span className="viewer-meta">
-          {file.source === 'extracted' ? 'extracted text · ' : ''}
-          {new Date(file.mtime * 1000).toISOString().slice(0, 10)} ·{' '}
-          <a href={api.downloadUrl(file.path)}>download</a>
+          {file.source === 'extracted' && <span className="pill pill-name">extracted text</span>}
+          <span>{new Date(file.mtime * 1000).toISOString().slice(0, 10)}</span>
+          <a className="btn-secondary" href={api.downloadUrl(file.path)}>Download</a>
         </span>
       </div>
-      {isImage ? (
-        <img src={api.downloadUrl(file.path)} alt={file.path} style={{ maxWidth: '100%' }} />
-      ) : file.content == null ? (
-        <p>No text preview for this file type.</p>
-      ) : isMarkdown ? (
-        <div className="md-body"><Streamdown>{file.content}</Streamdown></div>
-      ) : (
-        <pre className="text-body">{file.content}</pre>
-      )}
-      {file.truncated && <p className="viewer-meta">Preview truncated; use download for the full file.</p>}
+      <div className="viewer-body">
+        {isImage ? (
+          <img src={api.downloadUrl(file.path)} alt={file.path} style={{ maxWidth: '100%' }} />
+        ) : file.content == null ? (
+          <p className="muted">No text preview for this file type.</p>
+        ) : isMarkdown ? (
+          <div className="md-body"><Streamdown>{file.content}</Streamdown></div>
+        ) : (
+          <pre className="text-body">{file.content}</pre>
+        )}
+        {file.truncated && <p className="muted">Preview truncated; use Download for the full file.</p>}
+      </div>
     </div>
   )
 }
