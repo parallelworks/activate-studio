@@ -424,7 +424,16 @@ button { font-family: inherit; }
 .table-scroll td.cell-path { font-family: ui-monospace, monospace; font-size: 11.5px; color: var(--pw-navy); cursor: pointer; }
 .table-scroll td.cell-path:hover { text-decoration: underline; }
 
-.dag-canvas { overflow: auto; padding: 24px; }
+/* Pan/zoom canvas: no scrollbars; the SVG viewBox does the navigating. */
+.dag-canvas { overflow: hidden; position: relative; flex: 1; min-height: 260px; display: flex; }
+.dag-canvas svg { width: 100%; height: 100%; flex: 1; touch-action: none; cursor: grab; display: block; }
+.dag-canvas svg.dragging { cursor: grabbing; }
+.dag-controls { position: absolute; top: 10px; right: 12px; z-index: 5; display: flex; gap: 4px; }
+.dag-controls button {
+  border: 1px solid var(--pw-border); border-radius: 6px; background: var(--pw-panel);
+  color: var(--pw-muted); cursor: pointer; font-size: 12.5px; line-height: 1; padding: 5px 8px; min-width: 26px;
+}
+.dag-controls button:hover { color: var(--pw-navy); border-color: var(--pw-muted); }
 .dag-steps { border-top: 1px solid var(--pw-border); padding: 12px 24px 18px; }
 .dag-steps-title { font-size: 13px; font-weight: 600; color: var(--pw-navy); margin-bottom: 6px; }
 .dag-steps ol { margin: 0; padding-left: 20px; font-size: 13px; color: #3c4656; line-height: 1.7; }
