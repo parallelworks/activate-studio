@@ -110,7 +110,10 @@ async function json<T>(res: Response): Promise<T> {
  *  same server-side history; the rail can show all of it or only the
  *  viewer's own (legacy chats with no owner always show). Module state so
  *  the adapter's list() can consult it without prop plumbing. */
-let chatFilter: 'all' | 'mine' = (localStorage.getItem('ade-chat-filter') as 'all' | 'mine') || 'all'
+// Defaults to 'mine': the rail is personal working space, and unowned
+// (legacy, standalone) chats always show, so the default only hides other
+// users' conversations; the pill widens the view.
+let chatFilter: 'all' | 'mine' = (localStorage.getItem('ade-chat-filter') as 'all' | 'mine') || 'mine'
 let viewerUsername = ''
 export function setChatListFilter(f: 'all' | 'mine'): void {
   chatFilter = f
