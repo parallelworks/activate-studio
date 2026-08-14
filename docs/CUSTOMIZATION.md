@@ -54,3 +54,15 @@ The server exposes an OpenAI-compatible surface at `/v1` (`/v1/models`, `/v1/cha
 Callers authenticate with their own gateway API key as the bearer token; the endpoint holds no credentials and simply forwards the caller's key, so per-user credential state (including keys that need periodic unlocking) passes through. The "allow deployment credential" setting opts callers without a key onto the deployment's own credential. Per-request headers: `X-RAG-Top-K` (1 to 20), `X-RAG-Tags` (comma-separated label filter, inheritance respected), `X-RAG-Off: 1` (plain passthrough). Retrieval fails open by default (`RAG_FAIL_OPEN=false` makes retrieval errors hard failures).
 
 The Settings RAG endpoint section can also register the surface into the platform's chat and AI provider catalog (a managed `pw endpoints run --openai` child process around a local forwarder; requires an authenticated pw CLI on the host). Registered models appear as `session:<owner>:<name>-rag/studio-agent` and `.../studio-rag` and are callable through the platform gateway like any other model, which is how pw code consumes them. The forwarder authenticates those calls with the deployment credential; enable "register automatically at startup" to survive restarts.
+
+## Deployment postures
+
+The application runs in one of three postures; state the choice deliberately rather than inheriting it.
+
+*Single user* (the default, and the right shape for on-premises or air-gapped deployments): leave `AUTH_JWKS_URL` unset. There is no identity layer, the personal-key surface never appears, the per-user credential store is never created, and the deployment credential is simply the operator's own. Point `OPENAI_BASE_URL` (or `PW_GATEWAY_URL`) at any OpenAI-compatible endpoint, including a local vLLM or llama.cpp server; indexing, embeddings (local GGUF model), and OCR are already local, so nothing requires outbound network. Disable or localize the vision-captioning model for fully disconnected operation.
+
+*Multi-user, shared credential*: identity verification on (`AUTH_JWKS_URL`), and `DISABLE_PERSONAL_KEYS=1`. Users are identified but everyone's model calls and platform tools run on the deployment credential; the server provably collects no user keys (the flag is env-only by design, so no UI setting can re-enable collection). The risk in this posture is that all activity acts as the deployment owner.
+
+*Multi-user, personal keys*: identity verification on, personal keys enabled (optionally `REQUIRE_PERSONAL_KEY=1` to refuse the deployment credential for chat). Each user's calls run on their own key, which is the correct posture for per-user model entitlements and keys that need periodic unlocking. This is the posture that custodies secrets: keys are encrypted at rest but visible to the server process and its operator, as described above. The platform's delegated-credential flow, when available, replaces the custody entirely.
+
+`REQUIRE_PERSONAL_KEY` and `DISABLE_PERSONAL_KEYS` together would be contradictory; when both are set, the disable flag wins and the requirement is ignored. The ACTIVATE deployment workflow exposes these postures as a dropdown at launch.

@@ -7,7 +7,7 @@ import { attachmentContext } from '../attachments.js'
 import { effectiveSettings } from '../settings.js'
 import { agentPrompt } from '../extensions.js'
 import { recordAssistantTurn, recordUserTurn } from '../conversations.js'
-import { clearUserKey, getUserKeyStatus, resolveUserCred, resolveUserKey, setUserKey } from '../credentials.js'
+import { clearUserKey, getUserKeyStatus, personalKeysDisabled, resolveUserCred, resolveUserKey, setUserKey } from '../credentials.js'
 import { authEnabled } from '../auth.js'
 
 interface StreamBody {
@@ -47,7 +47,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     }
     const eff0 = effectiveSettings()
     const cred = resolveUserCred(req.user?.id)
-    if (eff0.requirePersonalKey && authEnabled() && !cred) {
+    if (eff0.requirePersonalKey && authEnabled() && !personalKeysDisabled() && !cred) {
       return reply.send({ models: [], unreachableSessions: [], error: 'This deployment requires your own model credential: add your API key or platform token in Settings, Your model access.' })
     }
     const wire: any = await listModels(cred?.key, cred?.baseUrl)
@@ -66,7 +66,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
   // Live model-callability check for the footer status line.
   app.get('/api/ai/health', async req => {
     const cred = resolveUserCred(req.user?.id)
-    if (effectiveSettings().requirePersonalKey && authEnabled() && !cred) {
+    if (effectiveSettings().requirePersonalKey && authEnabled() && !personalKeysDisabled() && !cred) {
       return {
         ok: false, status: 'key-required', models: 0, gatewayHost: '', message:
           'This deployment requires your own model credential; add it in Settings, Your model access.',
@@ -82,7 +82,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     // Standalone deployments (no platform identity configured) run single
     // user on the deployment credential; the personal-key surface is an
     // ACTIVATE-session feature and stays hidden there.
-    if (!authEnabled()) return { authEnabled: false, verified: false, mode: 'none' }
+    if (!authEnabled() || personalKeysDisabled()) return { authEnabled: false, verified: false, mode: 'none' }
     if (!req.user) return { authEnabled: true, verified: false, mode: 'none' }
     return { authEnabled: true, verified: true, ...getUserKeyStatus(req.user.id) }
   })
@@ -173,7 +173,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     res.on('close', () => { if (!res.writableEnded) abort.abort() })
 
     const userCred = resolveUserCred(req.user?.id)
-    if (effectiveSettings().requirePersonalKey && authEnabled() && !userCred) {
+    if (effectiveSettings().requirePersonalKey && authEnabled() && !personalKeysDisabled() && !userCred) {
       sse(res, 'error', {
         message: 'This deployment requires your own model credential. Add your API key or platform token in Settings, Your model access, then retry. Browsing, search, and adding material work without one.',
         kind: 'credential',

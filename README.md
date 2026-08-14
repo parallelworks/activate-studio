@@ -6,6 +6,43 @@ It also integrates with the Parallel Works ACTIVATE platform when present: the p
 
 The retrieval layer is built on GUFI, the Grand Unified File Index from LANL (per-directory SQLite index with fts5 and vec0 tables). How the whole system works, including incremental indexing and the need-to-know model, is documented in `docs/ARCHITECTURE.md`. Setup and branding for your own deployment: `docs/CUSTOMIZATION.md` and `.env.example`.
 
+## Architecture
+
+```mermaid
+flowchart LR
+    subgraph clients [Clients]
+        UI["Web UI<br/>Chat / Library / Search / Query"]
+        EXT["OpenAI-compatible clients<br/>(pw code, SDKs)"]
+    end
+
+    subgraph server [Studio server]
+        CHAT["Chat tool loop<br/>search / read / query / labels"]
+        RAG["/v1 RAG endpoint<br/>studio-agent / studio-rag"]
+        API["Library, upload,<br/>query, label APIs"]
+        SWEEP["Indexer + sweep<br/>extract / OCR / captions / embed"]
+    end
+
+    subgraph data [Knowledge base]
+        FS[("Files on disk<br/>+ label xattrs")]
+        IDX[("GUFI index<br/>fts5 / vectors / xattrs")]
+    end
+
+    MODEL["Any OpenAI-compatible<br/>model endpoint"]
+    PLATFORM["ACTIVATE platform (optional)<br/>identity header / workflow tools /<br/>session + model registration"]
+
+    UI --> CHAT
+    UI --> API
+    EXT --> RAG
+    CHAT --> IDX
+    RAG --> IDX
+    API --> FS
+    SWEEP --> FS
+    SWEEP --> IDX
+    CHAT --> MODEL
+    RAG --> MODEL
+    PLATFORM -.-> server
+```
+
 ## Built on
 
 - [GUFI](https://github.com/mar-file-system/GUFI) (Los Alamos National Laboratory): the metadata, full-text, and vector index.
