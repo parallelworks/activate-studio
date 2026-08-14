@@ -42,12 +42,20 @@ function ago(iso: string | null): string {
   return `${Math.round(s / 3600)} hours ago`
 }
 
+const slugOf = (t: string) => t.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+
 export function HelpView() {
   const cfg = useAppConfig()
   const [md, setMd] = useState<string>('')
   const [stats, setStats] = useState<{ files?: number; dirs?: number; totalBytes?: number } | null>(null)
   const [idx, setIdx] = useState<IndexStatus | null>(null)
   const [active, setActive] = useState<string>('Overview')
+  const [pendingSlug, setPendingSlug] = useState<string | null>(() => location.hash.match(/^#view=help:([a-z0-9-]+)/)?.[1] ?? null)
+
+  const goSection = (title: string) => {
+    setActive(title)
+    history.replaceState(null, '', `${location.pathname}${location.search}#view=help:${slugOf(title)}`)
+  }
 
   useEffect(() => {
     fetch('/api/help').then(r => r.text()).then(setMd).catch(() => setMd('Help content unavailable.'))
@@ -56,6 +64,16 @@ export function HelpView() {
   }, [])
 
   const { intro, sections } = parseHelp(md)
+
+  // Restore the section from the hash once the markdown has arrived.
+  useEffect(() => {
+    if (!pendingSlug || !sections.length) return
+    if (pendingSlug === 'overview') { setActive('Overview'); setPendingSlug(null); return }
+    const hit = sections.find(s => slugOf(s.title) === pendingSlug)
+    if (hit) setActive(hit.title)
+    setPendingSlug(null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [md])
 
   const current = (active === 'Overview' ? null : sections.find(s => s.title === active)) ?? null
 
@@ -67,9 +85,9 @@ export function HelpView() {
             {cfg.iconUrl ? <img className="help-nav-icon" src={cfg.iconUrl} alt="" /> : null}
             <span>User guide</span>
           </div>
-          <button className={active === 'Overview' ? 'active' : ''} onClick={() => setActive('Overview')}>Overview</button>
+          <button className={active === 'Overview' ? 'active' : ''} onClick={() => goSection('Overview')}>Overview</button>
           {sections.map(s => (
-            <button key={s.title} className={active === s.title ? 'active' : ''} onClick={() => setActive(s.title)}>
+            <button key={s.title} className={active === s.title ? 'active' : ''} onClick={() => goSection(s.title)}>
               {iconFor(s.title)} <span>{s.title}</span>
             </button>
           ))}
