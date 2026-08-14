@@ -183,6 +183,14 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     // Response 'close' fires on client disconnect (request 'close' fires as
     // soon as the body is consumed, which would abort immediately).
     res.on('close', () => { if (!res.writableEnded) abort.abort() })
+    // A long model turn planning tool calls emits nothing for tens of
+    // seconds, and proxies in front of the session kill silent streams
+    // (same failure fixed on /v1): SSE comment lines every 3s keep it
+    // open; the client parser drops lines without data.
+    const keepalive = setInterval(() => {
+      if (!res.writableEnded) res.write(': keepalive\n\n')
+    }, 3_000)
+    res.on('close', () => clearInterval(keepalive))
 
     const userCred = resolveUserCred(req.user?.id)
     if (effectiveSettings().requirePersonalKey && authEnabled() && !personalKeysDisabled() && !userCred) {
