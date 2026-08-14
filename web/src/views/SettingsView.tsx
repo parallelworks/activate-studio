@@ -13,9 +13,13 @@ export function SettingsView() {
   const [form, setForm] = useState<Effective | null>(null)
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
+  const [models, setModels] = useState<string[]>([])
 
   useEffect(() => {
     fetch('/api/settings').then(r => r.json()).then(d => setForm(d.effective)).catch(() => setNote('Could not load settings.'))
+    fetch('/api/chat/models').then(r => r.json())
+      .then(d => setModels((d.models ?? []).map((m: { id: string }) => m.id)))
+      .catch(() => {})
   }, [])
 
   const save = async () => {
@@ -71,8 +75,12 @@ export function SettingsView() {
           </div>
           <div>
             <label className="field-label">Vision model for image captioning (empty disables)</label>
-            <input className="field" value={form.visionModel} placeholder="e.g. me:provider/model"
+            <input className="field" value={form.visionModel} list="vision-models"
+              placeholder={models.length ? 'pick from the connected endpoint or type an id' : 'e.g. me:provider/model'}
               onChange={e => setForm({ ...form, visionModel: e.target.value })} />
+            <datalist id="vision-models">
+              {models.map(m => <option key={m} value={m} />)}
+            </datalist>
           </div>
         </div>
 
