@@ -71,11 +71,13 @@ interface NodeProps {
   selectMode: boolean
   showLabels: boolean
   tagsTick: number
+  /** Bumping re-fetches every open directory without collapsing the tree. */
+  refreshTick: number
   tags?: string[]
 }
 
 function DirNode(props: NodeProps) {
-  const { path, name, depth, onOpen, onDirFocus, selected, multiSelected, onToggleMulti, onDropInto, onLabel, onContext, selectMode, showLabels, tagsTick, tags } = props
+  const { path, name, depth, onOpen, onDirFocus, selected, multiSelected, onToggleMulti, onDropInto, onLabel, onContext, selectMode, showLabels, tagsTick, refreshTick, tags } = props
   const [open, setOpen] = useState(depth === 0)
   const [entries, setEntries] = useState<KbEntry[] | null>(null)
   const [dropOver, setDropOver] = useState(false)
@@ -84,7 +86,7 @@ function DirNode(props: NodeProps) {
   // without collapsing the expanded tree.
   useEffect(() => {
     if (open) api.tree(path).then(r => setEntries(r.entries)).catch(() => setEntries([]))
-  }, [open, path, tagsTick])
+  }, [open, path, tagsTick, refreshTick])
 
   // Reveal the selected file: expand every ancestor directory on the way.
   useEffect(() => {
@@ -148,7 +150,7 @@ function DirNode(props: NodeProps) {
   )
 }
 
-export function Explorer({ onOpen, onDirFocus, selected, rootLabel, multiSelected, onToggleMulti, onDropInto, onLabel, onContext, selectMode, showLabels, tagsTick }: {
+export function Explorer({ onOpen, onDirFocus, selected, rootLabel, multiSelected, onToggleMulti, onDropInto, onLabel, onContext, selectMode, showLabels, tagsTick, refreshTick }: {
   onOpen: (path: string) => void
   onDirFocus: (path: string) => void
   selected: string | null
@@ -161,6 +163,7 @@ export function Explorer({ onOpen, onDirFocus, selected, rootLabel, multiSelecte
   selectMode: boolean
   showLabels: boolean
   tagsTick: number
+  refreshTick: number
 }) {
   return (
     <div className={`explorer ${selectMode ? 'has-sel' : ''}`}>
@@ -169,7 +172,7 @@ export function Explorer({ onOpen, onDirFocus, selected, rootLabel, multiSelecte
         onOpen={onOpen} onDirFocus={onDirFocus} selected={selected}
         multiSelected={multiSelected} onToggleMulti={onToggleMulti}
         onDropInto={onDropInto} onLabel={onLabel} onContext={onContext} selectMode={selectMode}
-        showLabels={showLabels} tagsTick={tagsTick}
+        showLabels={showLabels} tagsTick={tagsTick} refreshTick={refreshTick}
       />
     </div>
   )

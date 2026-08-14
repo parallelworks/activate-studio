@@ -29,6 +29,7 @@ export interface StudioSettings {
   ragAllowDeploymentKey?: boolean
   ragAdvertiseRagModel?: boolean
   ragAdvertiseAgentModel?: boolean
+  chatSharedHistory?: boolean
   ragEndpointAutoStart?: boolean
   ragEndpointName?: string
   requirePersonalKey?: boolean
@@ -73,6 +74,7 @@ export function effectiveSettings(): Required<StudioSettings> {
     ragAllowDeploymentKey: s.ragAllowDeploymentKey ?? process.env.RAG_PROXY_ALLOW_DEPLOYMENT_KEY === '1',
     ragAdvertiseRagModel: s.ragAdvertiseRagModel ?? process.env.RAG_ADVERTISE_RAG_MODEL === '1',
     ragAdvertiseAgentModel: s.ragAdvertiseAgentModel ?? process.env.RAG_ADVERTISE_AGENT_MODEL !== '0',
+    chatSharedHistory: s.chatSharedHistory ?? process.env.CHAT_SHARED_HISTORY !== '0',
     ragEndpointAutoStart: s.ragEndpointAutoStart ?? process.env.RAG_ENDPOINT_AUTOSTART === '1',
     ragEndpointName: s.ragEndpointName ?? process.env.RAG_ENDPOINT_NAME ?? '',
     requirePersonalKey: s.requirePersonalKey ?? process.env.REQUIRE_PERSONAL_KEY === '1',
@@ -132,6 +134,7 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
     if (body.ragAllowDeploymentKey !== undefined) next.ragAllowDeploymentKey = Boolean(body.ragAllowDeploymentKey)
     if (body.ragAdvertiseRagModel !== undefined) next.ragAdvertiseRagModel = Boolean(body.ragAdvertiseRagModel)
     if (body.ragAdvertiseAgentModel !== undefined) next.ragAdvertiseAgentModel = Boolean(body.ragAdvertiseAgentModel)
+    if (body.chatSharedHistory !== undefined) next.chatSharedHistory = Boolean(body.chatSharedHistory)
     if (body.ragEndpointAutoStart !== undefined) next.ragEndpointAutoStart = Boolean(body.ragEndpointAutoStart)
     if (body.requirePersonalKey !== undefined) next.requirePersonalKey = Boolean(body.requirePersonalKey)
     if (body.ragEndpointName !== undefined) {
