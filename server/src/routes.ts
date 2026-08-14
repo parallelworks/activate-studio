@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { execFile } from 'node:child_process'
 import path from 'node:path'
-import { createReadStream } from 'node:fs'
+import fs, { createReadStream } from 'node:fs'
 import fsp from 'node:fs/promises'
 import { EXCLUDE_DIRS, KB_ROOT, PROJECT_ROOT, gufiAvailable } from './config.js'
 import { extractPath, listDir, readFileContent, resolveKb, KbError } from './kb.js'
@@ -27,6 +27,7 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
     try { suggestedPrompts = JSON.parse(process.env.SUGGESTED_PROMPTS ?? '[]') } catch { /* ignore bad JSON */ }
     return {
       appName: process.env.APP_NAME ?? 'Studio',
+      iconUrl: process.env.APP_ICON && fs.existsSync(process.env.APP_ICON) ? '/api/brand-icon' : null,
       kbLabel: process.env.KB_LABEL ?? path.basename(KB_ROOT),
       suggestedPrompts,
       user: {
@@ -35,6 +36,15 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
         name: process.env.APP_USER_NAME || undefined,
       },
     }
+  })
+
+  // Deployment brand icon (APP_ICON env points at an image file).
+  app.get('/api/brand-icon', async (_req, reply) => {
+    const icon = process.env.APP_ICON
+    if (!icon || !fs.existsSync(icon)) throw new KbError(404, 'no brand icon configured')
+    reply.header('Content-Type', mimeFor(icon))
+    reply.header('Cache-Control', 'public, max-age=3600')
+    return reply.send(createReadStream(icon))
   })
 
   app.get('/api/kb/tree', async req => {

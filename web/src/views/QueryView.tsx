@@ -48,7 +48,7 @@ function fmtBytes(v: string): string {
 }
 
 export function QueryView({ onOpen }: { onOpen: (path: string) => void }) {
-  const [mode, setMode] = useState<'builder' | 'canned' | 'sql'>('builder')
+  const [mode, setMode] = useState<'builder' | 'canned' | 'sql'>('canned')
   // builder state
   const [source, setSource] = useState<'files' | 'directories'>('files')
   const [filters, setFilters] = useState<Filter[]>([{ field: 'name', op: 'contains', value: '' }])
@@ -158,8 +158,8 @@ export function QueryView({ onOpen }: { onOpen: (path: string) => void }) {
     <div className="query-view">
       <div className="query-controls card">
         <div className="query-mode">
-          <button className={mode === 'builder' ? 'active' : ''} onClick={() => setMode('builder')}>Builder</button>
           <button className={mode === 'canned' ? 'active' : ''} onClick={() => setMode('canned')}>Canned queries</button>
+          <button className={mode === 'builder' ? 'active' : ''} onClick={() => setMode('builder')}>Builder</button>
           <button className={mode === 'sql' ? 'active' : ''} onClick={() => setMode('sql')}>SQL</button>
           {saved.length > 0 && (
             <select
