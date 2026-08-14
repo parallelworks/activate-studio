@@ -828,3 +828,8 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 /* "Calls:" line above the spec expander on the tools settings card */
 .tool-calls { margin: 2px 0 6px 26px; font-size: 12.5px; color: var(--pw-muted); line-height: 1.5; }
 .tool-calls span { font-weight: 600; color: var(--pw-navy); }
+
+/* Help bullets: markers outside with a hanging indent, so wrapped lines
+   align under the text instead of the marker. */
+.help-card-body ul { list-style-position: outside; padding-left: 18px; margin: 6px 0; }
+.help-card-body li { margin: 3px 0; padding: 0; }

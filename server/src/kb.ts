@@ -108,5 +108,33 @@ export async function readFileContent(rel: string): Promise<FileContent> {
     } catch { /* no cache entry */ }
     return { ...base, truncated: false, content: null, source: 'none' }
   }
+  if (kind === 'binary') {
+    // Unknown suffixes are often text anyway (logs, .bak copies, dotless
+    // files); sniff the head and serve as text when the bytes read as text.
+    const fh = await fs.open(abs, 'r')
+    try {
+      const len = Math.min(st.size, 65536)
+      const head = Buffer.alloc(len)
+      await fh.read(head, 0, len, 0)
+      if (looksLikeText(head)) {
+        const previewLen = Math.min(st.size, MAX_PREVIEW_BYTES)
+        const buf = previewLen === len ? head : Buffer.alloc(previewLen)
+        if (previewLen !== len) await fh.read(buf, 0, previewLen, 0)
+        return { ...base, kind: 'text', truncated: st.size > MAX_PREVIEW_BYTES, content: buf.toString('utf8'), source: 'raw' }
+      }
+    } finally { await fh.close() }
+  }
   return { ...base, truncated: false, content: null, source: 'none' }
+}
+
+/** True when a buffer looks like readable text: no NUL bytes and only a
+ *  trace of control characters outside tab/newline/carriage return. */
+function looksLikeText(buf: Buffer): boolean {
+  if (buf.length === 0) return true
+  let control = 0
+  for (const b of buf) {
+    if (b === 0) return false
+    if (b < 32 && b !== 9 && b !== 10 && b !== 13) control++
+  }
+  return control / buf.length < 0.02
 }
