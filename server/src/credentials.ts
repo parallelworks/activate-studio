@@ -26,7 +26,21 @@ const VAULT_FILE = path.join(INDEX_BASE, 'user-credentials.json')
 const SECRET_FILE = path.join(INDEX_BASE, '.credentials-secret')
 const SESSION_TTL_MS = 12 * 3600 * 1000
 
-interface VaultEntry { blob: string; last4: string; addedAt: string }
+interface VaultEntry { blob: string; last4: string; addedAt: string; kind?: 'api-key' | 'token'; expiresAt?: string | null }
+
+/** A JWT-shaped credential is a short-term token; surface its expiry so
+ *  the UI can say when it dies instead of failing mysteriously. */
+function inspect(key: string): { kind: 'api-key' | 'token'; expiresAt: string | null } {
+  const parts = key.split('.')
+  if (parts.length === 3) {
+    try {
+      const payload = JSON.parse(Buffer.from(parts[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8'))
+      const exp = typeof payload.exp === 'number' ? new Date(payload.exp * 1000).toISOString() : null
+      return { kind: 'token', expiresAt: exp }
+    } catch { /* not a JWT after all */ }
+  }
+  return { kind: 'api-key', expiresAt: null }
+}
 
 let secretCache: Buffer | null = null
 
@@ -69,7 +83,7 @@ function saveVault(v: Record<string, VaultEntry>): void {
   fs.writeFileSync(VAULT_FILE, JSON.stringify(v, null, 1), { mode: 0o600 })
 }
 
-const sessionKeys = new Map<string, { key: string; expiresAt: number; addedAt: string; last4: string }>()
+const sessionKeys = new Map<string, { key: string; expiresAt: number; addedAt: string; last4: string; kind: 'api-key' | 'token'; credExpiresAt: string | null }>()
 
 function liveSession(sub: string) {
   const s = sessionKeys.get(sub)
@@ -80,16 +94,17 @@ function liveSession(sub: string) {
 
 export function setUserKey(sub: string, key: string, persist: boolean): void {
   const trimmed = key.trim()
-  if (!trimmed || trimmed.length > 4096) throw new Error('invalid key')
+  if (!trimmed || trimmed.length > 8192) throw new Error('invalid key')
   const last4 = trimmed.slice(-4)
   const addedAt = new Date().toISOString()
+  const { kind, expiresAt } = inspect(trimmed)
   if (persist) {
     const vault = loadVault()
-    vault[sub] = { blob: encrypt(trimmed), last4, addedAt }
+    vault[sub] = { blob: encrypt(trimmed), last4, addedAt, kind, expiresAt }
     saveVault(vault)
     sessionKeys.delete(sub)
   } else {
-    sessionKeys.set(sub, { key: trimmed, expiresAt: Date.now() + SESSION_TTL_MS, addedAt, last4 })
+    sessionKeys.set(sub, { key: trimmed, expiresAt: Date.now() + SESSION_TTL_MS, addedAt, last4, kind, credExpiresAt: expiresAt })
     const vault = loadVault()
     if (vault[sub]) { delete vault[sub]; saveVault(vault) }
   }
@@ -106,13 +121,31 @@ export interface UserKeyStatus {
   last4?: string
   addedAt?: string
   sessionExpiresAt?: string
+  kind?: 'api-key' | 'token'
+  credExpiresAt?: string | null
+  credExpired?: boolean
+}
+
+function expired(iso: string | null | undefined): boolean {
+  return !!iso && Date.parse(iso) < Date.now()
 }
 
 export function getUserKeyStatus(sub: string): UserKeyStatus {
   const s = liveSession(sub)
-  if (s) return { mode: 'session', last4: s.last4, addedAt: s.addedAt, sessionExpiresAt: new Date(s.expiresAt).toISOString() }
+  if (s) {
+    return {
+      mode: 'session', last4: s.last4, addedAt: s.addedAt,
+      sessionExpiresAt: new Date(s.expiresAt).toISOString(),
+      kind: s.kind, credExpiresAt: s.credExpiresAt, credExpired: expired(s.credExpiresAt),
+    }
+  }
   const entry = loadVault()[sub]
-  if (entry) return { mode: 'stored', last4: entry.last4, addedAt: entry.addedAt }
+  if (entry) {
+    return {
+      mode: 'stored', last4: entry.last4, addedAt: entry.addedAt,
+      kind: entry.kind ?? 'api-key', credExpiresAt: entry.expiresAt ?? null, credExpired: expired(entry.expiresAt),
+    }
+  }
   return { mode: 'none' }
 }
 
@@ -121,8 +154,9 @@ export function getUserKeyStatus(sub: string): UserKeyStatus {
 export function resolveUserKey(sub: string | null | undefined): string | null {
   if (!sub) return null
   const s = liveSession(sub)
-  if (s) return s.key
+  if (s) return expired(s.credExpiresAt) ? null : s.key
   const entry = loadVault()[sub]
   if (!entry) return null
+  if (expired(entry.expiresAt)) return null
   return decrypt(entry.blob)
 }
