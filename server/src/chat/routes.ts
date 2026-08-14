@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify'
-import { MAX_TOOL_ITERATIONS } from '../config.js'
+import { GATEWAY_BASE, MAX_TOOL_ITERATIONS } from '../config.js'
 import { aiHealth, gatewayConfigured, listModels, streamTurn, WireMessage, WireToolCall } from './gateway.js'
 import { TOOL_CALLS, TOOL_SPECS, activeToolSpecs, commandFor, customToolSpecs, executeTool, expandSlashCommand, skillToolSpec } from './tools.js'
 import { systemPrompt } from './context.js'
@@ -82,9 +82,10 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     // Standalone deployments (no platform identity configured) run single
     // user on the deployment credential; the personal-key surface is an
     // ACTIVATE-session feature and stays hidden there.
-    if (!authEnabled() || personalKeysDisabled()) return { authEnabled: false, verified: false, mode: 'none' }
-    if (!req.user) return { authEnabled: true, verified: false, mode: 'none' }
-    return { authEnabled: true, verified: true, ...getUserKeyStatus(req.user.id) }
+    const gatewayHost = (() => { try { return new URL(GATEWAY_BASE).host } catch { return GATEWAY_BASE } })()
+    if (!authEnabled() || personalKeysDisabled()) return { authEnabled: false, verified: false, mode: 'none', gatewayHost }
+    if (!req.user) return { authEnabled: true, verified: false, mode: 'none', gatewayHost }
+    return { authEnabled: true, verified: true, gatewayHost, ...getUserKeyStatus(req.user.id) }
   })
 
   // POST mirrors of set/clear: some proxies in front of sessions are
