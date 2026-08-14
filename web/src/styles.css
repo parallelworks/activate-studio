@@ -767,3 +767,32 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 }
 .embed-root { height: 100vh; display: flex; flex-direction: column; background: var(--pw-panel); }
 .embed-root .viewer { flex: 1; min-height: 0; }
+
+/* Streamdown's table controls (and other shadcn-styled bits) read
+   --background/--border/--muted tokens we never defined, leaving its
+   dropdown transparent. Map them to the platform tokens; dark mode follows
+   because the pw tokens re-step. */
+.chat-canvas {
+  --background: var(--pw-panel);
+  --foreground: var(--pw-text);
+  --border: var(--pw-border);
+  --muted: var(--pw-bg);
+  --muted-foreground: var(--pw-muted);
+}
+
+/* Own chat bubble in the accent pill, matching the selection styling. */
+.chat-canvas .rounded-br-md {
+  background: var(--pw-active-pill);
+  color: var(--pw-navy);
+}
+
+/* The table-download dropdown's bg-background/hover:bg-muted utilities have
+   no compiled CSS in the shipped bundle; paint the menu directly. */
+.chat-canvas div.top-full {
+  background: var(--pw-panel);
+  border-color: var(--pw-border);
+  box-shadow: 0 8px 24px rgba(6, 53, 79, 0.16);
+}
+[data-theme='dark'] .chat-canvas div.top-full { box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5); }
+.chat-canvas div.top-full button { color: var(--pw-text); }
+.chat-canvas div.top-full button:hover { background: var(--pw-hover-row, #f3f4f6); }
