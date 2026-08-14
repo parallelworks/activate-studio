@@ -151,7 +151,7 @@ export function reindexForDir(rel: string): Promise<{ ms: number }> {
 /** Remove cache entries whose source file no longer exists. Cache layouts
  *  mirror the KB tree with a suffix appended (extract: <rel>.txt keeps the
  *  original extension; pdf-preview: <rel minus extension>.pdf). */
-async function pruneCache(cacheRoot: string, kind: '.txt' | '.pdf'): Promise<void> {
+async function pruneCache(cacheRoot: string, kind: '.txt' | '.pdf' | '.json'): Promise<void> {
   const walk = async (dir: string, rel: string) => {
     let entries
     try { entries = await fsp.readdir(dir, { withFileTypes: true }) } catch { return }
@@ -234,6 +234,7 @@ export async function sweep(log: (msg: string) => void): Promise<string[]> {
     // a later same-named file cannot reuse another file's text.
     await pruneCache(path.join(INDEX_BASE, 'extract'), '.txt')
     await pruneCache(path.join(INDEX_BASE, 'pdf-preview'), '.pdf')
+    await pruneCache(path.join(INDEX_BASE, 'model-cache'), '.json')
     // A parent re-index covers its whole subtree; keep only subtree roots.
     changed.sort()
     changed = changed.filter(rel => !changed.some(other => other !== rel && rel.startsWith(other + '/')))

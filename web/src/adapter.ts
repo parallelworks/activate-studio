@@ -61,9 +61,6 @@ const streamFromServer: StreamCompletion = async (req, handlers, signal) => {
         handlers.onReasoning?.(line)
         break
       }
-      case 'display':
-        window.dispatchEvent(new CustomEvent('ade-display', { detail: payload }))
-        break
       case 'done':
         finishReason = payload.finishReason ?? 'stop'
         model = payload.model ?? null
@@ -104,5 +101,24 @@ export function createStudioAdapter(): ChatAdapter {
     conversations: store.conversations,
     models: { list: listModels },
     streamCompletion: store.recordingStream(streamFromServer),
+    attachments: {
+      list: async ({ limit, offset }) => {
+        const res = await fetch(`/api/chat/attachments?limit=${limit}&offset=${offset}`)
+        if (!res.ok) throw new Error(`attachments: ${res.status}`)
+        return res.json()
+      },
+      upload: async (file, _conversationId) => {
+        const fd = new FormData()
+        fd.append('file', file, file.name)
+        const res = await fetch('/api/chat/attachments', { method: 'POST', body: fd })
+        if (!res.ok) throw new Error(`upload: ${res.status} ${await res.text()}`)
+        return res.json()
+      },
+      remove: async id => {
+        const res = await fetch(`/api/chat/attachments/${id}`, { method: 'DELETE' })
+        if (!res.ok) throw new Error(`remove: ${res.status}`)
+      },
+      downloadUrl: id => `/api/chat/attachments/${id}/download`,
+    },
   }
 }

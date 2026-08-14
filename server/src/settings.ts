@@ -17,6 +17,7 @@ export interface StudioSettings {
   appName?: string
   kbLabel?: string
   theme?: 'light' | 'dark'
+  accent?: string
   sweepIntervalSec?: number
   suggestedPrompts?: string[]
   visionModel?: string
@@ -31,7 +32,15 @@ export function loadSettings(): StudioSettings {
 }
 
 function envPrompts(): string[] {
-  try { return JSON.parse(process.env.SUGGESTED_PROMPTS ?? '[]') } catch { return [] }
+  const fallback = [
+    'What tools can you use and what can I ask you to do?',
+    'What is in this knowledge base?',
+    'Which workflows are available to run?',
+  ]
+  try {
+    const fromEnv = JSON.parse(process.env.SUGGESTED_PROMPTS ?? '[]')
+    return Array.isArray(fromEnv) && fromEnv.length ? fromEnv : fallback
+  } catch { return fallback }
 }
 
 /** Effective values: saved settings override environment defaults. */
@@ -41,6 +50,7 @@ export function effectiveSettings(): Required<StudioSettings> {
     appName: s.appName ?? process.env.APP_NAME ?? 'Studio',
     kbLabel: s.kbLabel ?? process.env.KB_LABEL ?? path.basename(KB_ROOT),
     theme: s.theme ?? (process.env.THEME === 'dark' ? 'dark' : 'light'),
+    accent: s.accent ?? process.env.APP_ACCENT ?? 'navy',
     sweepIntervalSec: s.sweepIntervalSec ?? Number(process.env.SWEEP_INTERVAL_SEC ?? 300),
     suggestedPrompts: s.suggestedPrompts ?? envPrompts(),
     visionModel: s.visionModel ?? process.env.ADE_VISION_MODEL ?? '',
@@ -59,6 +69,11 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
     if (body.appName !== undefined) next.appName = String(body.appName).slice(0, 60) || undefined
     if (body.kbLabel !== undefined) next.kbLabel = String(body.kbLabel).slice(0, 60) || undefined
     if (body.theme !== undefined) next.theme = body.theme === 'dark' ? 'dark' : 'light'
+    if (body.accent !== undefined) {
+      const a = String(body.accent)
+      if (!/^[a-z][a-z0-9-]{0,23}$/.test(a)) throw new KbError(400, 'invalid accent name')
+      next.accent = a
+    }
     if (body.sweepIntervalSec !== undefined) {
       const n = Number(body.sweepIntervalSec)
       if (!Number.isFinite(n) || n < 0 || n > 86400) throw new KbError(400, 'sweep interval must be 0 to 86400 seconds')
