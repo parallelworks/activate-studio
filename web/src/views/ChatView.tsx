@@ -161,7 +161,7 @@ export function ChatView() {
             </button>
           )}
           {vocab.length > 0 && (
-            <div className="chat-scope-anchor">
+            <div className={`chat-scope-anchor ${scopeOpen ? 'open' : ''}`}>
               <button
                 className={`scope-btn ${scope.size ? 'active' : ''}`}
                 title="Limit knowledge base retrieval in this chat to items carrying the selected labels"
