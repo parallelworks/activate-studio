@@ -1,65 +1,82 @@
+import { useEffect, useState } from 'react'
 import { Streamdown } from 'streamdown'
+import { api, IndexStatus } from '../api'
 import { useAppConfig } from '../config'
 
-const HELP = (appName: string, kbLabel: string) => `
-# ${appName}
+const SECTION_ICONS: Record<string, JSX.Element> = {
+  chat: <svg viewBox="0 0 16 16" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M14 10.5a1.5 1.5 0 0 1-1.5 1.5H5l-3 3V3.5A1.5 1.5 0 0 1 3.5 2h9A1.5 1.5 0 0 1 14 3.5v7z"/></svg>,
+  library: <svg viewBox="0 0 16 16" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M1.5 3.5A1 1 0 0 1 2.5 2.5h3l1.5 2h6a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1v-9z"/></svg>,
+  search: <svg viewBox="0 0 16 16" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.4"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3.5 3.5"/></svg>,
+  query: <svg viewBox="0 0 16 16" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.4"><ellipse cx="8" cy="3.5" rx="5.5" ry="2"/><path d="M2.5 3.5v9c0 1.1 2.5 2 5.5 2s5.5-.9 5.5-2v-9"/><path d="M2.5 8c0 1.1 2.5 2 5.5 2s5.5-.9 5.5-2"/></svg>,
+  adding: <svg viewBox="0 0 16 16" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M8 10V2.5"/><path d="m5 5.5 3-3 3 3"/><path d="M2.5 10.5v2a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1v-2"/></svg>,
+  index: <svg viewBox="0 0 16 16" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.4"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg>,
+}
 
-${appName} is an interface for working with a knowledge base: the documents, images, spreadsheets, and code that a team accumulates, indexed so that both people and AI can find and use them. It pairs a chat assistant that is grounded in the corpus with direct tools for browsing, searching, querying, and adding material. It also connects to the ACTIVATE platform, so the assistant can reason over the workflows registered in the account, preview them as DAGs, and run and monitor them when asked.
+function iconFor(title: string): JSX.Element | null {
+  const key = Object.keys(SECTION_ICONS).find(k => title.toLowerCase().includes(k))
+  return key ? SECTION_ICONS[key] : null
+}
 
-The intent is an interaction layer for AI-driven engineering: one place where the knowledge base, the retrieval layer, the models, and the execution layer meet. The assistant is not a general chatbot with a logo on it; every substantive answer is built by searching and reading the actual corpus, with file paths cited so claims can be checked.
+interface Section { title: string; body: string }
 
-## Chat
+/** Split the help markdown: intro is everything before the first `## `,
+ *  each `## Title` becomes a card. */
+function parseHelp(md: string): { intro: string; sections: Section[] } {
+  const parts = md.split(/\n(?=## )/)
+  const intro = parts[0]?.startsWith('## ') ? '' : (parts.shift() ?? '')
+  const sections = parts.map(p => {
+    const nl = p.indexOf('\n')
+    return { title: p.slice(3, nl < 0 ? undefined : nl).trim(), body: nl < 0 ? '' : p.slice(nl + 1).trim() }
+  })
+  return { intro: intro.trim(), sections }
+}
 
-Ask questions in plain language. The assistant searches the knowledge base (full text and semantic), reads the files that matter, and cites the paths it used. It also knows the platform:
-
-- **Workflow advice**: it has the account's workflow catalog with descriptions and tags, and can recommend which workflows fit a task or could be assembled together.
-- **Preview before running**: ask to see a workflow and it renders the DAG in the Library pane. Runs are validated with a dry run first, and a real run is launched only when you explicitly ask.
-- **Monitoring**: it can list recent runs and inspect one, including errors and log tails.
-- **Show me**: ask it to display any file, image, or workflow graph and the Library viewer opens it.
-
-Conversations are kept in your browser. The model selector at the top of the chat chooses which AI model answers.
-
-## Library
-
-The file tree of the knowledge base. Click a file to view it: markdown and code render directly, images and PDFs show the original, and office documents are converted to a PDF preview. The **Indexed text** tab on binary files shows exactly what the search index holds for that file, which for images is OCR text plus a model-written description.
-
-Adding material:
-
-- **Drag and drop** files or whole folders onto the tree, or use the **Add** button. The destination folder is configurable and created on demand.
-- **Add by URL**: web pages are fetched and reduced to text with the source recorded; PDFs are saved as-is.
-- Everything added is searchable in about a second.
-- **Delete** removes a file from the knowledge base and from the index.
-
-Files that arrive outside this interface (copied in, generated by scripts) are picked up automatically by a background sync within a few minutes, or immediately with **sync now** in the sidebar.
-
-## Search
-
-One box, three retrieval modes run together: full text (exact words, including text inside DOCX, PDF, PPTX, and text found in images), semantic (meaning-based, so related phrasing matches), and filename. Each result is labeled with the mode that found it. Click a result to open it in the Library.
-
-## Query
-
-Structured questions about the corpus itself, answered from the file index rather than file contents:
-
-- **Canned queries**: largest files, most recently modified, oldest, changed in the last N days, totals by extension, biggest directories.
-- **Builder**: compose your own from filters (name, path, extension, size, date, text match), grouping, sorting, and a subtree scope.
-- **SQL**: raw read-only SELECT statements over the index tables, for those who know the schema.
-- **Saved queries**: name any query and rerun it later with one click.
-
-Queries run across hundreds of per-directory databases in parallel and typically return in tens of milliseconds.
-
-## How the index works
-
-The knowledge base is indexed with GUFI, the Grand Unified File Index from Los Alamos National Laboratory: a tree of small databases mirroring the directory structure, one per folder, holding file metadata plus extracted text and embedding vectors. Because the index mirrors the filesystem, access control is inherited from the filesystem itself. Text is extracted from every supported format (office documents, PDFs, presentations, spreadsheets, images via OCR and vision-model description) and embedded for semantic search. Additions re-index only the touched folder, which is why new material is searchable in about a second.
-
-The corpus root for this deployment is **${kbLabel}**. The sidebar footer shows the index size and the time of the last background sync.
-`
+function ago(iso: string | null): string {
+  if (!iso) return 'not yet run'
+  const s = Math.max(0, (Date.now() - Date.parse(iso)) / 1000)
+  if (s < 90) return `${Math.round(s)} seconds ago`
+  if (s < 5400) return `${Math.round(s / 60)} minutes ago`
+  return `${Math.round(s / 3600)} hours ago`
+}
 
 export function HelpView() {
   const cfg = useAppConfig()
+  const [md, setMd] = useState<string>('')
+  const [stats, setStats] = useState<{ files?: number; dirs?: number; totalBytes?: number } | null>(null)
+  const [idx, setIdx] = useState<IndexStatus | null>(null)
+
+  useEffect(() => {
+    fetch('/api/help').then(r => r.text()).then(setMd).catch(() => setMd('Help content unavailable.'))
+    api.stats().then(setStats).catch(() => {})
+    api.indexStatus().then(setIdx).catch(() => {})
+  }, [])
+
+  const { intro, sections } = parseHelp(md)
+
   return (
     <div className="help-view">
-      <div className="help-body card">
-        <div className="md-body"><Streamdown>{HELP(cfg.appName, cfg.kbLabel)}</Streamdown></div>
+      <div className="help-hero card">
+        {cfg.iconUrl ? <img className="help-hero-icon" src={cfg.iconUrl} alt="" /> : <span className="brand-badge help-hero-badge">{(cfg.appName[0] ?? 'S').toUpperCase()}</span>}
+        <div>
+          <h1>{cfg.appName}</h1>
+          <div className="help-lead"><Streamdown>{intro}</Streamdown></div>
+        </div>
+      </div>
+      <div className="help-grid">
+        {sections.map(s => (
+          <section className="help-card card" key={s.title}>
+            <h3>{iconFor(s.title)} {s.title}</h3>
+            <div className="help-card-body"><Streamdown>{s.body}</Streamdown></div>
+            {s.title.toLowerCase().includes('index') && (
+              <div className="help-stats">
+                <div><span className="stat-num">{stats?.files?.toLocaleString() ?? '…'}</span><span className="stat-label">files indexed</span></div>
+                <div><span className="stat-num">{stats?.dirs?.toLocaleString() ?? '…'}</span><span className="stat-label">directories</span></div>
+                <div><span className="stat-num">{stats?.totalBytes ? `${(stats.totalBytes / 1e9).toFixed(1)} GB` : '…'}</span><span className="stat-label">corpus size</span></div>
+                <div><span className="stat-num">{ago(idx?.lastSweepAt ?? null)}</span><span className="stat-label">last sync</span></div>
+              </div>
+            )}
+          </section>
+        ))}
       </div>
     </div>
   )

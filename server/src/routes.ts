@@ -38,6 +38,18 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
     }
   })
 
+  // Help content: markdown from docs/HELP.md, overridable per deployment
+  // via HELP_FILE, with {appName} and {kbLabel} substituted.
+  app.get('/api/help', async (_req, reply) => {
+    const file = process.env.HELP_FILE ?? path.join(PROJECT_ROOT, 'docs', 'HELP.md')
+    let md = ''
+    try { md = await fsp.readFile(file, 'utf8') } catch { md = 'No help content configured.' }
+    md = md
+      .replaceAll('{appName}', process.env.APP_NAME ?? 'Studio')
+      .replaceAll('{kbLabel}', process.env.KB_LABEL ?? path.basename(KB_ROOT))
+    return reply.type('text/markdown; charset=utf-8').send(md)
+  })
+
   // Deployment brand icon (APP_ICON env points at an image file).
   app.get('/api/brand-icon', async (_req, reply) => {
     const icon = process.env.APP_ICON

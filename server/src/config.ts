@@ -12,7 +12,8 @@ export const GUFI_BIN = process.env.GUFI_BIN ?? '/opt/gufi/bin'
 export const PORT = Number(process.env.PORT ?? 4080)
 export const HOST = process.env.HOST ?? '0.0.0.0'
 
-export const GATEWAY_BASE = (process.env.PW_GATEWAY_URL ?? 'https://activate.parallel.works/api/openai/v1').replace(/\/$/, '')
+// Any OpenAI-compatible backend works; the ACTIVATE gateway is the default.
+export const GATEWAY_BASE = (process.env.PW_GATEWAY_URL ?? process.env.OPENAI_BASE_URL ?? 'https://activate.parallel.works/api/openai/v1').replace(/\/$/, '')
 export const PW_API_KEY = process.env.PW_API_KEY ?? process.env.OPENAI_API_KEY ?? ''
 
 // Directory names never entered when browsing, indexing, or searching.
