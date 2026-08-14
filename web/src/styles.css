@@ -896,6 +896,10 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .key-trust { font-size: 12px; margin: 10px 0 0; max-width: 820px; line-height: 1.55; }
 .key-note { margin: 8px 0 0; font-size: 12.5px; }
 .toggle-note { margin: 2px 0 12px 26px; max-width: var(--settings-measure); }
+/* Conversation rows and rail actions match the Library tree scale
+   (13px); the "Chats" header itself stays 14px like the rail titles. */
+.chat-canvas .theme-panel.border-r a { font-size: 13px; }
+
 .chat-filter-btn {
   position: absolute; left: 12px; bottom: 10px; z-index: 4;
   height: auto;
