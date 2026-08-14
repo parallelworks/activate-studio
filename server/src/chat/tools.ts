@@ -516,6 +516,22 @@ export async function executeTool(name: string, argsJson: string, ctx?: { labelS
         const label = kind === 'file'
           ? `Open ${target.split('/').pop()} in the Library`
           : `Open the ${target} DAG in the Library`
+        // Images and page-rendered documents can be SHOWN inline in the chat,
+        // not just linked; hand the model the ready-made markdown for both.
+        const suffix = (target.match(/\.[a-z0-9]+$/i)?.[0] ?? '').toLowerCase()
+        const rawUrl = `/api/kb/raw?path=${encodeURIComponent(target)}`
+        if (kind === 'file' && ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg'].includes(suffix)) {
+          return {
+            result: `This is an image; show it inline in your reply with this markdown, then the link:\n![${target.split('/').pop()}](${rawUrl})\n[${label}](${href})`,
+            summary: `inline image + link for ${target}`,
+          }
+        }
+        if (kind === 'file' && ['.pdf', '.docx', '.pptx', '.xlsx', '.doc', '.ppt', '.xls', '.odt', '.odp', '.ods'].includes(suffix)) {
+          return {
+            result: `This document renders as page images; you can show its first page inline with this markdown, then the link:\n![${target.split('/').pop()} page 1](/api/kb/pdf-page?path=${encodeURIComponent(target)}&page=1)\n[${label}](${href})`,
+            summary: `inline page + link for ${target}`,
+          }
+        }
         return {
           result: `Link ready. Include this markdown link verbatim in your reply so the user can open it (${kind === 'file' ? 'the Library viewer opens the file and reveals it in its directory' : 'the Library viewer renders the workflow DAG'}): [${label}](${href})`,
           summary: `link for ${target}`,

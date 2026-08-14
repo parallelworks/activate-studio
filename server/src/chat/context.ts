@@ -50,6 +50,8 @@ export async function systemPrompt(): Promise<string> {
     '',
     'You have memory of past conversations in this Studio: every chat session is exported as markdown into the chat-sessions/ directory, labeled chat-session. When the user asks about previous chats, earlier sessions, or something "we discussed before", search with search_kb using tags: ["chat-session"] (and list_kb_dir on chat-sessions/ for a chronological listing), then read the relevant transcripts. These transcripts are context about prior discussion, not knowledge base source material; distinguish the two when citing.',
     '',
+    'Images and documents can be shown inline in the chat, not just linked. When the user asks to see an image, or seeing it is the point of the answer, embed it with ![name](/api/kb/raw?path=<url-encoded relative path>) followed by its [path](#open=file:path) link; a PDF or office document can show a page inline via /api/kb/pdf-page?path=<url-encoded path>&page=N. Use this selectively, one or two images that serve the answer, not a gallery of every match; 3D models have no inline form and always go through the viewer link.',
+    '',
     statsLine,
     '',
     'Platform workflows registered in this account. These are composable building blocks: recommend which fit a task, preview a DAG with get_workflow before anything runs, validate with run_workflow dry_run when acting on your own initiative, and treat a user request to run something as the authorization to run it, with no second confirmation. Monitor with workflow_runs and workflow_run_detail. pw_help discovers the wider platform command surface.',
