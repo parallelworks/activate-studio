@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { ChatView } from './views/ChatView'
+import { DagViewer } from './components/DagViewer'
+import { ModelViewer } from './components/ModelViewer'
 import { LibraryView } from './views/LibraryView'
 import { SearchView } from './views/SearchView'
 import { QueryView } from './views/QueryView'
@@ -142,6 +144,19 @@ export default function App() {
   const openFile = (path: string) => {
     setDisplay({ kind: 'file', target: path })
     setView('library')
+  }
+
+  // Embed mode: /?embed=dag&workflow=<name> or /?embed=model&path=<rel>
+  // renders a single interactive viewer with no app chrome, for iframes
+  // hosted inside chat replies (the ai-chat img override turns same-origin
+  // /?embed= image sources into iframes).
+  const embedParams = new URLSearchParams(location.search)
+  const embedKind = embedParams.get('embed')
+  if (embedKind === 'dag' && embedParams.get('workflow')) {
+    return <div className="embed-root"><DagViewer workflow={embedParams.get('workflow')!} /></div>
+  }
+  if (embedKind === 'model' && embedParams.get('path')) {
+    return <div className="embed-root"><ModelViewer path={embedParams.get('path')!} /></div>
   }
 
   return (

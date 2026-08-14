@@ -1,5 +1,5 @@
 diff --git a/dist/index.js b/dist/index.js
-index d80e7c3c80143c5232fc9c26fe2b3e9dcb390c3b..bf1dbda2068e6bf51eefb9493e049ccfbc0b8e2c 100644
+index d80e7c3c80143c5232fc9c26fe2b3e9dcb390c3b..da16bdae13704e48e6040aa5ff9d365d227e8198 100644
 --- a/dist/index.js
 +++ b/dist/index.js
 @@ -1368,6 +1368,8 @@ function AttachmentManager() {
@@ -20,7 +20,23 @@ index d80e7c3c80143c5232fc9c26fe2b3e9dcb390c3b..bf1dbda2068e6bf51eefb9493e049ccf
  									children: /* @__PURE__ */ jsx(FileIcon, { className: "w-8 h-8 theme-muted-text" })
  								}), /* @__PURE__ */ jsxs("div", {
  									className: "p-3 text-xs bg-(--theme-panel-bg) flex items-center justify-between gap-1",
-@@ -3731,7 +3735,16 @@ function ChatMessageList({ messages, allMessages, streamingMessage, queuedMessag
+@@ -3426,7 +3430,14 @@ function Markdown({ children, isStreaming, controls }) {
+ 			controls,
+ 			plugins,
+ 			shikiTheme,
+-			components: { a: ({ node, ...props }) => /* @__PURE__ */ jsx("a", {
++			components: {
++				img: ({ node, ...props }) => typeof props.src === "string" && props.src.startsWith("/?embed=") ? /* @__PURE__ */ jsx("iframe", {
++					src: props.src,
++					title: props.alt || "embedded viewer",
++					className: "chat-embed-frame",
++					loading: "lazy"
++				}) : /* @__PURE__ */ jsx("img", { ...props }),
++				a: ({ node, ...props }) => /* @__PURE__ */ jsx("a", {
+ 				...props,
+ 				className: cx("link wrap-break-word", props.className),
+ 				target: "_blank",
+@@ -3731,7 +3742,16 @@ function ChatMessageList({ messages, allMessages, streamingMessage, queuedMessag
  		const container = containerRef.current;
  		if (!container) return;
  		container.addEventListener("scroll", handleScroll);

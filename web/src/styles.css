@@ -759,3 +759,11 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
    which is too subtle. Use the same accent pill as the sidenav active item. */
 .chat-canvas li.theme-muted-panel { background: var(--pw-active-pill); }
 .chat-canvas li.theme-muted-panel a span { color: var(--pw-navy); font-weight: 600; }
+
+/* Embedded viewer windows inside chat replies, and the chrome-less embed page */
+.chat-canvas iframe.chat-embed-frame {
+  width: 100%; max-width: 760px; height: 420px; display: block; margin: 6px 0;
+  border: 1px solid var(--pw-border); border-radius: 8px; background: var(--pw-panel);
+}
+.embed-root { height: 100vh; display: flex; flex-direction: column; background: var(--pw-panel); }
+.embed-root .viewer { flex: 1; min-height: 0; }

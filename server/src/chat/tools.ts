@@ -517,9 +517,22 @@ export async function executeTool(name: string, argsJson: string, ctx?: { labelS
           ? `Open ${target.split('/').pop()} in the Library`
           : `Open the ${target} DAG in the Library`
         // Images and page-rendered documents can be SHOWN inline in the chat,
-        // not just linked; hand the model the ready-made markdown for both.
+        // not just linked; interactive DAG and 3D viewers embed as windows
+        // (the chat renders /?embed= image sources as same-origin iframes).
         const suffix = (target.match(/\.[a-z0-9]+$/i)?.[0] ?? '').toLowerCase()
         const rawUrl = `/api/kb/raw?path=${encodeURIComponent(target)}`
+        if (kind === 'workflow_dag') {
+          return {
+            result: `Show the interactive DAG inline in your reply with this markdown, then the link:\n![${target} DAG](/?embed=dag&workflow=${encodeURIComponent(target)})\n[${label}](${href})`,
+            summary: `inline DAG + link for ${target}`,
+          }
+        }
+        if (kind === 'file' && ['.stl', '.step', '.stp'].includes(suffix)) {
+          return {
+            result: `Show the interactive 3D model inline in your reply with this markdown, then the link:\n![${target.split('/').pop()}](/?embed=model&path=${encodeURIComponent(target)})\n[${label}](${href})`,
+            summary: `inline 3D viewer + link for ${target}`,
+          }
+        }
         if (kind === 'file' && ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg'].includes(suffix)) {
           return {
             result: `This is an image; show it inline in your reply with this markdown, then the link:\n![${target.split('/').pop()}](${rawUrl})\n[${label}](${href})`,
