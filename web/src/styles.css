@@ -901,3 +901,4 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .rag-modes li { margin: 5px 0; }
 .rag-ep-status { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; color: var(--pw-text); margin-right: 6px; }
 .rag-ep-status code { font-size: 12px; }
+.prompts-box { min-height: 200px; resize: vertical; }

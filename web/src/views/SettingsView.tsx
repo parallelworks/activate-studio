@@ -249,7 +249,7 @@ export function SettingsView() {
               <label className="field-label">Chat starter prompts (one per line)</label>
               <textarea
                 className="field prompts-box"
-                rows={5}
+                rows={10}
                 value={form.suggestedPrompts.join('\n')}
                 onChange={e => setForm({ ...form, suggestedPrompts: e.target.value.split('\n') })}
               />
