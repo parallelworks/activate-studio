@@ -22,6 +22,13 @@ import { INDEX_BASE } from './config.js'
  *    written to disk at all.
  */
 
+/** Env-only kill switch (deliberately not a runtime setting: a security
+ *  posture should not be flippable from the UI). With it set, this module
+ *  refuses to store or resolve personal keys at all. */
+export function personalKeysDisabled(): boolean {
+  return process.env.DISABLE_PERSONAL_KEYS === '1'
+}
+
 const VAULT_FILE = path.join(INDEX_BASE, 'user-credentials.json')
 const SECRET_FILE = path.join(INDEX_BASE, '.credentials-secret')
 const SESSION_TTL_MS = 12 * 3600 * 1000
@@ -93,6 +100,7 @@ function liveSession(sub: string) {
 }
 
 export function setUserKey(sub: string, key: string, persist: boolean, baseUrl?: string | null): void {
+  if (personalKeysDisabled()) throw new Error('personal keys are disabled on this deployment')
   const trimmed = key.trim()
   if (!trimmed || trimmed.length > 8192) throw new Error('invalid key')
   let url: string | null = String(baseUrl ?? '').trim().replace(/\/$/, '') || null
@@ -162,7 +170,7 @@ export function getUserKeyStatus(sub: string): UserKeyStatus {
 export interface UserCred { key: string; baseUrl: string | null }
 
 export function resolveUserCred(sub: string | null | undefined): UserCred | null {
-  if (!sub) return null
+  if (!sub || personalKeysDisabled()) return null
   const s = liveSession(sub)
   if (s) return expired(s.credExpiresAt) ? null : { key: s.key, baseUrl: s.baseUrl }
   const entry = loadVault()[sub]

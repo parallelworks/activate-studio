@@ -154,6 +154,32 @@ permissions:
         type: group
         collapsed: true
         items:
+          posture:
+            label: Deployment Posture
+            type: dropdown
+            default: single
+            options:
+              - label: Single user (no identity, deployment credential only)
+                value: single
+              - label: Multi-user, shared credential (no key collection)
+                value: multi-shared
+              - label: Multi-user, personal keys allowed
+                value: multi-personal
+              - label: Multi-user, personal keys required
+                value: multi-strict
+            tooltip: |
+              Single user runs with no platform identity and never creates the
+              per-user credential store. Multi-user postures verify the platform
+              identity header; shared keeps everyone on the deployment credential
+              with key collection hard-disabled, personal lets users add their own
+              model keys, strict requires them for chat. Multi-user postures need
+              the platform host below.
+          platform_host:
+            label: Platform Host (multi-user postures)
+            type: string
+            default: ''
+            optional: true
+            tooltip: Platform host for identity verification, e.g. activate.parallel.works; the JWKS path is appended automatically. Ignored for the single-user posture.
           pw_api_key:
             label: Gateway API Key
             type: string
@@ -392,6 +418,18 @@ jobs:
           fi
           if [ -n "${{ inputs.model_settings.gateway_url }}" ]; then
             echo "export PW_GATEWAY_URL='${{ inputs.model_settings.gateway_url }}'" >> ${SCRIPT}
+          fi
+          POSTURE='${{ inputs.model_settings.posture }}'
+          PLATFORM_HOST='${{ inputs.model_settings.platform_host }}'
+          if [ "$POSTURE" != "single" ] && [ -n "$PLATFORM_HOST" ]; then
+            echo "export AUTH_JWKS_URL='https://${PLATFORM_HOST}/api/platform/keys'" >> ${SCRIPT}
+            echo "export AUTH_ISSUER='pw-session-proxy'" >> ${SCRIPT}
+          fi
+          if [ "$POSTURE" = "multi-shared" ]; then
+            echo "export DISABLE_PERSONAL_KEYS=1" >> ${SCRIPT}
+          fi
+          if [ "$POSTURE" = "multi-strict" ]; then
+            echo "export REQUIRE_PERSONAL_KEY=1" >> ${SCRIPT}
           fi
 
           if [ "${{ inputs.session_settings.session_method }}" = "cleanup" ]; then
