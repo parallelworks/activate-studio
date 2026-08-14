@@ -22,7 +22,10 @@ const http = require('http');
 const target = 'http://127.0.0.1:' + process.env.STUDIO_TARGET_PORT;
 http.createServer((q, s) => {
   const headers = { ...q.headers };
-  if (!headers.authorization && process.env.STUDIO_INJECT_KEY) headers.authorization = 'Bearer ' + process.env.STUDIO_INJECT_KEY;
+  if (!headers.authorization && process.env.STUDIO_INJECT_KEY) {
+    headers.authorization = 'Bearer ' + process.env.STUDIO_INJECT_KEY;
+    headers['x-studio-injected-key'] = '1';
+  }
   const p = http.request(target + q.url, { method: q.method, headers }, r => {
     s.writeHead(r.statusCode, r.headers); r.pipe(s);
   });
