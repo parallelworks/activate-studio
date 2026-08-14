@@ -67,6 +67,7 @@ interface NodeProps {
   onToggleMulti: (path: string) => void
   onDropInto: (dir: string, items: DataTransferItemList) => void
   onLabel: (path: string) => void
+  onContext: (path: string, isDir: boolean, x: number, y: number) => void
   selectMode: boolean
   showLabels: boolean
   tagsTick: number
@@ -74,7 +75,7 @@ interface NodeProps {
 }
 
 function DirNode(props: NodeProps) {
-  const { path, name, depth, onOpen, onDirFocus, selected, multiSelected, onToggleMulti, onDropInto, onLabel, selectMode, showLabels, tagsTick, tags } = props
+  const { path, name, depth, onOpen, onDirFocus, selected, multiSelected, onToggleMulti, onDropInto, onLabel, onContext, selectMode, showLabels, tagsTick, tags } = props
   const [open, setOpen] = useState(depth === 0)
   const [entries, setEntries] = useState<KbEntry[] | null>(null)
   const [dropOver, setDropOver] = useState(false)
@@ -109,6 +110,7 @@ function DirNode(props: NodeProps) {
             setOpen(o => !o)
             onDirFocus(path)
           }}
+          onContextMenu={e => { if (path) { e.preventDefault(); e.stopPropagation(); onContext(path, true, e.clientX, e.clientY) } }}
         >
           {selectMode && <RowCheck checked={multiSelected.has(path)} onToggle={() => onToggleMulti(path)} />}
           <Chevron open={open} />
@@ -129,6 +131,7 @@ function DirNode(props: NodeProps) {
             className={`tree-row file ${selected === e.path ? 'selected' : ''} ${multiSelected.has(e.path) ? 'multi' : ''}`}
             style={{ paddingLeft: 8 + (depth + 1) * 14 }}
             onClick={ev => (ev.ctrlKey || ev.metaKey ? onToggleMulti(e.path) : onOpen(e.path))}
+            onContextMenu={ev => { ev.preventDefault(); ev.stopPropagation(); onContext(e.path, false, ev.clientX, ev.clientY) }}
             title={`${e.path} (${formatSize(e.size)})`}
           >
             {selectMode && <RowCheck checked={multiSelected.has(e.path)} onToggle={() => onToggleMulti(e.path)} />}
@@ -145,7 +148,7 @@ function DirNode(props: NodeProps) {
   )
 }
 
-export function Explorer({ onOpen, onDirFocus, selected, rootLabel, multiSelected, onToggleMulti, onDropInto, onLabel, selectMode, showLabels, tagsTick }: {
+export function Explorer({ onOpen, onDirFocus, selected, rootLabel, multiSelected, onToggleMulti, onDropInto, onLabel, onContext, selectMode, showLabels, tagsTick }: {
   onOpen: (path: string) => void
   onDirFocus: (path: string) => void
   selected: string | null
@@ -154,6 +157,7 @@ export function Explorer({ onOpen, onDirFocus, selected, rootLabel, multiSelecte
   onToggleMulti: (path: string) => void
   onDropInto: (dir: string, items: DataTransferItemList) => void
   onLabel: (path: string) => void
+  onContext: (path: string, isDir: boolean, x: number, y: number) => void
   selectMode: boolean
   showLabels: boolean
   tagsTick: number
@@ -164,7 +168,7 @@ export function Explorer({ onOpen, onDirFocus, selected, rootLabel, multiSelecte
         path="" name={rootLabel} depth={0}
         onOpen={onOpen} onDirFocus={onDirFocus} selected={selected}
         multiSelected={multiSelected} onToggleMulti={onToggleMulti}
-        onDropInto={onDropInto} onLabel={onLabel} selectMode={selectMode}
+        onDropInto={onDropInto} onLabel={onLabel} onContext={onContext} selectMode={selectMode}
         showLabels={showLabels} tagsTick={tagsTick}
       />
     </div>

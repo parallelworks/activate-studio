@@ -18,7 +18,8 @@ Ask in plain language; the assistant searches, reads the files that matter, and 
 The file tree beside a viewer. Markdown and code render directly; images show the original; PDFs and office documents render as page images; STL and STEP models open in an interactive 3D viewer.
 
 - The **Indexed text** tab shows exactly what the search index holds for a file; for images that is OCR text plus a model-written description.
-- **Delete** removes a file from the corpus and the index together.
+- **Right-click** any row for a context menu: Open, Labels…, and Delete on files; New folder inside…, Labels…, and Delete folder (with its contents, after a confirm) on directories.
+- **Delete** removes material from the corpus and the index together.
 - Panes resize at the boundary and collapse from the header.
 
 ## Search
