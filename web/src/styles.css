@@ -902,3 +902,19 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .rag-ep-status { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; color: var(--pw-text); margin-right: 6px; }
 .rag-ep-status code { font-size: 12px; }
 .prompts-box { min-height: 200px; resize: vertical; }
+
+/* RAG endpoint registration banner and model chips */
+.rag-banner { border: 1px solid var(--pw-border); border-radius: 10px; padding: 12px 14px; max-width: var(--settings-measure); margin: 4px 0 14px; }
+.rag-banner.connected { border-color: #86d3a5; background: #f2fbf5; }
+[data-theme='dark'] .rag-banner.connected { border-color: #1e5631; background: #10241a; }
+.rag-banner.errored { border-color: #f3c1c1; background: #fdf4f4; }
+[data-theme='dark'] .rag-banner.errored { border-color: #6b2a2a; background: #2a1414; }
+.rag-banner-head { display: flex; align-items: center; gap: 9px; font-size: 13.5px; }
+.rag-banner-head strong { font-weight: 600; color: var(--pw-text); }
+.rag-banner-actions { margin-left: auto; display: flex; gap: 6px; }
+.rag-banner-models { margin-top: 10px; font-size: 12.5px; color: var(--pw-muted); }
+.rag-chip-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; max-width: var(--settings-measure); }
+.rag-chip-row code {
+  font-size: 12px; padding: 3px 8px; border-radius: 6px;
+  background: var(--pw-bg); border: 1px solid var(--pw-border);
+}
