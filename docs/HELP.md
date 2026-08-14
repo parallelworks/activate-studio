@@ -12,6 +12,7 @@ Ask in plain language; the assistant searches, reads the files that matter, and 
 - Attach files or images with the paperclip; they are filed into the library, indexed, and their content (including text read from images) is part of the conversation. Clicking an attachment tile later opens the file in the Library.
 - Slash commands invoke extensions directly: /skill_name applies a skill's instructions, /tool_name runs a tool, /agent_name adopts an agent file for one message. /help lists everything available.
 - The thinking line above a reply expands to show the reasoning and each tool call as it happens, and stays with the message afterward.
+- In a shared platform session, add your own model key under Settings, "Your model access", to chat and run platform tools as yourself; the footer's model line tells you whether the key currently works.
 
 ## Library
 

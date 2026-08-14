@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process'
+import { AsyncLocalStorage } from 'node:async_hooks'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { gufiAvailable, KB_ROOT, MAX_PREVIEW_BYTES, PROJECT_ROOT } from '../config.js'
@@ -387,8 +388,12 @@ export function activeToolSpecs(): ToolSpec[] {
 }
 
 function pwCli(args: string[], timeoutMs = 30_000): Promise<string> {
+  // The caller's own key (when they added one) scopes platform actions to
+  // their account; otherwise the deployment credential applies.
+  const userKey = toolContext.getStore()?.userKey
+  const env = userKey ? { ...process.env, PW_API_KEY: userKey } : process.env
   return new Promise((resolve, reject) => {
-    execFile('pw', args, { timeout: timeoutMs, maxBuffer: 8 * 1024 * 1024 }, (err, stdout, stderr) => {
+    execFile('pw', args, { timeout: timeoutMs, maxBuffer: 8 * 1024 * 1024, env }, (err, stdout, stderr) => {
       if (err) return reject(new Error(stderr || err.message))
       resolve(stdout)
     })
@@ -415,7 +420,16 @@ export interface ToolOutcome {
   summary: string
 }
 
-export async function executeTool(name: string, argsJson: string, ctx?: { labelScope?: string[] }): Promise<ToolOutcome> {
+// Per-invocation context (caller's own platform key for pw CLI executions)
+// travels via AsyncLocalStorage so nested helpers stay signature-stable and
+// concurrent tool calls from different users cannot cross-contaminate.
+const toolContext = new AsyncLocalStorage<{ userKey: string | null }>()
+
+export async function executeTool(name: string, argsJson: string, ctx?: { labelScope?: string[]; userKey?: string | null }): Promise<ToolOutcome> {
+  return toolContext.run({ userKey: ctx?.userKey ?? null }, () => executeToolImpl(name, argsJson, ctx))
+}
+
+async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScope?: string[]; userKey?: string | null }): Promise<ToolOutcome> {
   let args: any = {}
   try { args = argsJson ? JSON.parse(argsJson) : {} } catch { /* tolerate bad JSON */ }
   try {
