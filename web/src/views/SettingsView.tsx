@@ -16,6 +16,7 @@ interface Effective {
   ragTopK: number
   ragAllowDeploymentKey: boolean
   ragEndpointAutoStart: boolean
+  ragEndpointName: string
 }
 
 interface CatalogTool { name: string; description: string; builtin: boolean; enabled: boolean; parameters?: unknown; command?: string; implementation?: string; calls?: string }
@@ -57,7 +58,7 @@ export function SettingsView() {
   const [catalog, setCatalog] = useState<CatalogTool[]>([])
   const [ext, setExt] = useState<Extensions | null>(null)
   const [specOpen, setSpecOpen] = useState<string | null>(null)
-  const [me, setMe] = useState<{ authEnabled?: boolean; verified: boolean; mode: 'stored' | 'session' | 'none'; last4?: string; addedAt?: string; sessionExpiresAt?: string } | null>(null)
+  const [me, setMe] = useState<{ authEnabled?: boolean; verified: boolean; mode: 'stored' | 'session' | 'none'; last4?: string; addedAt?: string; sessionExpiresAt?: string; kind?: string; credExpiresAt?: string | null; credExpired?: boolean } | null>(null)
   const [keyInput, setKeyInput] = useState('')
   const [persistKey, setPersistKey] = useState(true)
   const [keyBusy, setKeyBusy] = useState(false)
@@ -86,14 +87,14 @@ export function SettingsView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const keyAction = async (method: string, body?: unknown) => {
+  const keyAction = async (action: 'set' | 'clear', body?: unknown) => {
     setKeyBusy(true)
     setKeyNote('')
     try {
-      const res = await fetch('/api/me/model-key', {
-        method,
+      const res = await fetch(action === 'set' ? '/api/me/model-key' : '/api/me/model-key/clear', {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: body === undefined ? undefined : JSON.stringify(body),
+        body: body === undefined ? '{}' : JSON.stringify(body),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? `${res.status}`)
@@ -267,27 +268,29 @@ export function SettingsView() {
               ) : (
                 <>
                   <p className="muted view-sub">
-                    {me.mode === 'none' && 'You are using the deployment’s model credential. Add your own key to call the gateway (and platform tools) as yourself.'}
-                    {me.mode === 'stored' && `Using your key ending ${me.last4}, added ${me.addedAt?.slice(0, 10)}, stored encrypted on this server.`}
-                    {me.mode === 'session' && `Using your key ending ${me.last4}, held in memory for this session only (expires ${me.sessionExpiresAt ? new Date(me.sessionExpiresAt).toLocaleTimeString() : 'soon'}).`}
+                    {me.mode === 'none' && 'You are using the deployment’s model credential. Add your own API key or a platform token to call the gateway (and platform tools) as yourself.'}
+                    {me.mode === 'stored' && `Using your ${me.kind === 'token' ? 'token' : 'key'} ending ${me.last4}, added ${me.addedAt?.slice(0, 10)}, stored encrypted on this server.`}
+                    {me.mode === 'session' && `Using your ${me.kind === 'token' ? 'token' : 'key'} ending ${me.last4}, held in memory for this session only (until ${me.sessionExpiresAt ? new Date(me.sessionExpiresAt).toLocaleTimeString() : 'soon'}).`}
+                    {me.mode !== 'none' && me.credExpiresAt && !me.credExpired && ` The ${me.kind === 'token' ? 'token itself expires' : 'credential expires'} ${new Date(me.credExpiresAt).toLocaleString()}.`}
+                    {me.mode !== 'none' && me.credExpired && ' THIS TOKEN HAS EXPIRED; paste a fresh one.'}
                   </p>
                   <div className="key-row">
                     <input
                       className="field grow"
                       type="password"
                       value={keyInput}
-                      placeholder="Paste your PW API key"
+                      placeholder="Paste your PW API key or a platform token"
                       autoComplete="off"
                       onChange={e => setKeyInput(e.target.value)}
                     />
                     <button className="btn-primary" disabled={keyBusy || !keyInput.trim()}
-                      onClick={async () => { if (await keyAction('PUT', { key: keyInput.trim(), persist: persistKey })) { setKeyInput(''); void testKey() } }}>
+                      onClick={async () => { if (await keyAction('set', { key: keyInput.trim(), persist: persistKey })) { setKeyInput(''); void testKey() } }}>
                       Save and test
                     </button>
                     <button className="btn-secondary" disabled={keyBusy || (!keyInput.trim() && me.mode === 'none')}
                       onClick={() => void testKey(keyInput.trim() || undefined)}>Test</button>
                     {me.mode !== 'none' && (
-                      <button className="btn-danger-outline" disabled={keyBusy} onClick={() => void keyAction('DELETE')}>Remove</button>
+                      <button className="btn-danger-outline" disabled={keyBusy} onClick={() => void keyAction('clear')}>Remove</button>
                     )}
                   </div>
                   <label className="key-persist">
@@ -399,6 +402,14 @@ export function SettingsView() {
                   onChange={e => setForm({ ...form, ragAllowDeploymentKey: e.target.checked })} />
                 Allow callers without a bearer key to use the deployment credential (off means every caller must present their own key)
               </label>
+              <div className="settings-grid">
+                <div>
+                  <label className="field-label">Platform registration name (how the model appears in catalogs and dropdowns)</label>
+                  <input className="field" value={form.ragEndpointName}
+                    placeholder="defaults to <product-name>-rag"
+                    onChange={e => setForm({ ...form, ragEndpointName: e.target.value })} />
+                </div>
+              </div>
               <label className="key-persist">
                 <input type="checkbox" checked={form.ragEndpointAutoStart}
                   onChange={e => setForm({ ...form, ragEndpointAutoStart: e.target.checked })} />
