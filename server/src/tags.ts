@@ -121,6 +121,37 @@ export async function annotateHits<T extends { path: string; tags?: string[] }>(
   return annotated.filter(h => want.some(t => h.tags!.includes(t)))
 }
 
+/** Apply or remove tags; shared by the REST route and the chat tool. */
+export async function applyTagsCore(rawPaths: string[], addRaw: string[], removeRaw: string[]): Promise<Record<string, string[]>> {
+  const paths = rawPaths.slice(0, 200)
+  const add = addRaw.map(normalizeTag).filter(Boolean)
+  const remove = removeRaw.map(normalizeTag).filter(Boolean)
+  if (!paths.length || (!add.length && !remove.length)) throw new KbError(400, 'paths and add or remove required')
+
+  const updated: Record<string, string[]> = {}
+  const touched = new Set<string>()
+  for (const rel of paths) {
+    const cleaned = rel.replace(/^\/+|\/+$/g, '')
+    for (const part of cleaned.split('/')) {
+      if (EXCLUDE_DIRS.has(part) || part.startsWith('.')) throw new KbError(400, `not taggable: ${cleaned}`)
+    }
+    const abs = resolveKb(cleaned)
+    const current = await readTags(abs)
+    const next = [...new Set([...current.filter(t => !remove.includes(t)), ...add])]
+    await writeTags(abs, next)
+    updated[cleaned] = next
+    touched.add(cleaned)
+  }
+  const roots = new Set([...touched].map(rel => rel.split('/')[0]))
+  for (const root of roots) {
+    const abs = resolveKb(root)
+    const isDir = await import('node:fs/promises').then(m => m.stat(abs)).then(s => s.isDirectory()).catch(() => false)
+    await (isDir ? reindexForDir(root) : reindexForFile(root))
+  }
+  invalidateTagMaps()
+  return updated
+}
+
 export async function tagRoutes(app: FastifyInstance): Promise<void> {
   // Vocabulary with usage counts, from the index.
   app.get('/api/tags', async () => {
@@ -140,33 +171,6 @@ export async function tagRoutes(app: FastifyInstance): Promise<void> {
   // Apply or remove tags on files and directories (multi-select friendly).
   app.post('/api/kb/tags', async req => {
     const body = req.body as { paths?: string[]; add?: string[]; remove?: string[] }
-    const paths = (body.paths ?? []).slice(0, 200)
-    const add = (body.add ?? []).map(normalizeTag).filter(Boolean)
-    const remove = (body.remove ?? []).map(normalizeTag).filter(Boolean)
-    if (!paths.length || (!add.length && !remove.length)) throw new KbError(400, 'paths and add or remove required')
-
-    const updated: Record<string, string[]> = {}
-    const touched = new Set<string>()
-    for (const rel of paths) {
-      const cleaned = rel.replace(/^\/+|\/+$/g, '')
-      for (const part of cleaned.split('/')) {
-        if (EXCLUDE_DIRS.has(part) || part.startsWith('.')) throw new KbError(400, `not taggable: ${cleaned}`)
-      }
-      const abs = resolveKb(cleaned)
-      const current = await readTags(abs)
-      const next = [...new Set([...current.filter(t => !remove.includes(t)), ...add])]
-      await writeTags(abs, next)
-      updated[cleaned] = next
-      touched.add(cleaned)
-    }
-    // Re-index the touched subtrees so the xattrs land in the index.
-    const roots = new Set([...touched].map(rel => rel.split('/')[0]))
-    for (const root of roots) {
-      const abs = resolveKb(root)
-      const isDir = await import('node:fs/promises').then(m => m.stat(abs)).then(s => s.isDirectory()).catch(() => false)
-      await (isDir ? reindexForDir(root) : reindexForFile(root))
-    }
-    invalidateTagMaps()
-    return { updated }
+    return { updated: await applyTagsCore(body.paths ?? [], body.add ?? [], body.remove ?? []) }
   })
 }

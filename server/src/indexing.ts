@@ -5,6 +5,7 @@ import path from 'node:path'
 import { EXCLUDE_DIRS, GUFI_BIN, GUFI_INDEX, INDEX_BASE, KB_ROOT, PROJECT_ROOT } from './config.js'
 import { invalidateDbList } from './gufi.js'
 import { invalidateContext } from './chat/context.js'
+import { effectiveSettings } from './settings.js'
 
 const SKIP_FILE = path.join(INDEX_BASE, 'skip-dirs.txt')
 const SWEEP_STATE = path.join(INDEX_BASE, 'sweep-state.json')
@@ -28,11 +29,18 @@ const status: IndexStatus = {
   sweepIntervalSec: Number(process.env.SWEEP_INTERVAL_SEC ?? 300),
 }
 
+function currentIntervalSec(): number {
+  return effectiveSettings().sweepIntervalSec
+}
+
 export function indexStatus(): IndexStatus { return { ...status } }
 
 function run(cmd: string, args: string[], timeoutMs = 10 * 60_000): Promise<string> {
+  // Settings can change the captioning model at runtime.
+  const vm = effectiveSettings().visionModel
+  const env = vm ? { ...process.env, ADE_VISION_MODEL: vm } : process.env
   return new Promise((resolve, reject) => {
-    execFile(cmd, args, { timeout: timeoutMs, maxBuffer: 32 * 1024 * 1024 }, (err, so, se) =>
+    execFile(cmd, args, { timeout: timeoutMs, maxBuffer: 32 * 1024 * 1024, env }, (err, so, se) =>
       err ? reject(new Error(`${path.basename(cmd)}: ${se || err.message}`)) : resolve(so))
   })
 }
@@ -271,8 +279,15 @@ async function primeSweepState(): Promise<void> {
 }
 
 export function startSweepTimer(log: (msg: string) => void): void {
-  if (status.sweepIntervalSec <= 0) return
+  // Self-rescheduling so a settings change to the interval applies at the
+  // next cycle without a restart; 0 pauses sweeping but keeps checking.
+  const tick = async (): Promise<void> => {
+    const sec = currentIntervalSec()
+    status.sweepIntervalSec = sec
+    if (sec > 0) await sweep(log)
+    setTimeout(() => { void tick() }, Math.max(sec, 60) * 1000).unref()
+  }
   void primeSweepState().then(() => {
-    setInterval(() => { void sweep(log) }, status.sweepIntervalSec * 1000).unref()
+    setTimeout(() => { void tick() }, Math.max(status.sweepIntervalSec, 60) * 1000).unref()
   })
 }

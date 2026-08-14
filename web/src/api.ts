@@ -66,7 +66,7 @@ export const api = {
     return data as { deleted: string; indexMs: number }
   },
   stats: () => getJson<{ available: boolean; files?: number; dirs?: number; totalBytes?: number }>(`/api/kb/stats`),
-  search: (q: string) => getJson<{ hits: SearchHit[]; error?: string }>(`/api/search?q=${encodeURIComponent(q)}`),
+  search: (q: string, tags?: string[]) => getJson<{ hits: SearchHit[]; error?: string }>(`/api/search?q=${encodeURIComponent(q)}${tags?.length ? `&tags=${encodeURIComponent(tags.join(','))}` : ''}`),
   health: () => getJson<{ ok: boolean; gufi: boolean }>(`/healthz`),
   tagVocabulary: () => getJson<{ tags: { tag: string; count: number }[] }>(`/api/tags`),
   tagsFor: (path: string) => getJson<{ own: string[]; inherited: string[] }>(`/api/kb/tags?path=${encodeURIComponent(path)}`),

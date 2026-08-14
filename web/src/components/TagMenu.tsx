@@ -39,7 +39,9 @@ export function TagMenu({ paths, onClose, onApplied }: {
   }
 
   return (
-    <div className="card-pop tag-pop">
+    <>
+      <div className="tag-overlay" onClick={onClose} />
+      <div className="tag-panel card">
       <div className="tag-pop-head">
         <span className="field-label">Labels for {paths.length === 1 ? paths[0].split('/').pop() : `${paths.length} items`}</span>
         <button className="btn-secondary" onClick={onClose}>Close</button>
@@ -73,6 +75,7 @@ export function TagMenu({ paths, onClose, onApplied }: {
         <button className="btn-primary" onClick={addFromInput} disabled={busy || !input.trim()}>Add</button>
       </div>
       {note && <p className="muted tag-note">{note}</p>}
-    </div>
+      </div>
+    </>
   )
 }
