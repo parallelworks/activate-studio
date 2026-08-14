@@ -214,8 +214,9 @@ button { font-family: inherit; }
   height: 52px; padding: 0 12px; border-bottom: 1px solid var(--pw-border); flex-shrink: 0;
 }
 .rail-title {
-  font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em;
-  color: var(--pw-muted); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  /* Matches the chat rail's "Chats" header: 14px semibold, normal case. */
+  font-size: 14px; font-weight: 600;
+  color: var(--pw-text); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .rail-actions button { white-space: nowrap; }
 .library-main { flex: 1; min-width: 0; overflow: auto; }
@@ -937,3 +938,5 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .provider-row select.field { width: auto; min-width: 260px; }
 .settings-content .key-row + .key-row, .settings-content .key-row + .key-persist { margin-top: 10px; }
 .settings-content .key-row { margin-top: 4px; }
+
+[data-theme='dark'] .rail-title { color: var(--pw-text); }
