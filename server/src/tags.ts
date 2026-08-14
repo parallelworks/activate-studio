@@ -168,9 +168,11 @@ export async function applyTagsCore(rawPaths: string[], addRaw: string[], remove
   // Any path where that fails falls back to a real reindex.
   const failed = await upsertIndexTags(paths.map(rel => rel.replace(/^\/+|\/+$/g, '')), updated)
   for (const rel of failed) {
+    // Best effort: the label is already durable (xattr or overlay); a
+    // reindex failure (no GUFI yet) must not fail the apply.
     const abs = resolveKb(rel)
     const isDir = await import('node:fs/promises').then(m => m.stat(abs)).then(s => s.isDirectory()).catch(() => false)
-    await (isDir ? reindexForDir(rel) : reindexForFile(rel))
+    await (isDir ? reindexForDir(rel) : reindexForFile(rel)).catch(() => {})
   }
   invalidateTagMaps()
   return updated
