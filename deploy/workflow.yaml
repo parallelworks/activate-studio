@@ -718,7 +718,9 @@ jobs:
             fi
             PW_BIN="$(command -v pw || echo pw)"
             echo "Forking web endpoint ${EP_NAME} -> localhost:${PORT}; log: $(pwd)/endpoint.log"
-            setsid nohup "$PW_BIN" endpoints http -o text --name "$EP_NAME" --subdomain "$EP_NAME" "$PORT" > endpoint.log 2>&1 < /dev/null &
+            # --keep leaves the session registered when this process exits, so the
+            # URL people have been given keeps resolving across a relaunch.
+            setsid nohup "$PW_BIN" endpoints http -o text --keep --name "$EP_NAME" --subdomain "$EP_NAME" "$PORT" > endpoint.log 2>&1 < /dev/null &
             echo "$!" >> app-custom.pids
           fi
           echo "Done running main workflow script."

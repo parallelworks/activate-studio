@@ -86,6 +86,7 @@ function ModelSelect({ value, models, allowEmpty, emptyLabel, onChange }: {
 export function SettingsView() {
   const cfg = useAppConfig()
   const [form, setForm] = useState<Effective | null>(null)
+  const [deploymentCred, setDeploymentCred] = useState<boolean | null>(null)
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
   const [models, setModels] = useState<string[]>([])
@@ -130,12 +131,14 @@ export function SettingsView() {
   }
 
   useEffect(() => {
-    fetch('/api/settings').then(r => r.json()).then(d => setForm(d.effective)).catch(() => setNote('Could not load settings.'))
+    fetch('/api/settings').then(r => r.json())
+      .then(d => { setForm(d.effective); setDeploymentCred(d.deploymentCredential ?? null) })
+      .catch(() => setNote('Could not load settings.'))
     fetch('/api/chat/tools').then(r => r.json())
       .then(d => setCatalog(d.tools ?? []))
       .catch(() => {})
     fetch('/api/extensions').then(r => r.json()).then(setExt).catch(() => {})
-    fetch('/api/chat/models').then(r => r.json())
+    fetch('/api/chat/models?config=1').then(r => r.json())
       .then(d => setModels((d.models ?? []).map((m: { id: string }) => m.id)))
       .catch(() => {})
     fetch('/api/me/model-key').then(r => r.json()).then(d => { setMe(d); if (d?.verified && d.mode !== 'none') refreshAccess() }).catch(() => {})
@@ -178,7 +181,7 @@ export function SettingsView() {
   const refreshAccess = () => {
     fetch('/api/me/model-key/test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
       .then(r => r.json()).then(h => setAccessHealth(h.error ? null : h)).catch(() => setAccessHealth(null))
-    fetch('/api/chat/models').then(r => r.json())
+    fetch('/api/chat/models?config=1').then(r => r.json())
       .then(d => setModels((d.models ?? []).map((m: { id: string }) => m.id)))
       .catch(() => {})
   }
@@ -325,6 +328,13 @@ export function SettingsView() {
                     emptyLabel="disabled (no image captioning)"
                     onChange={v => setForm({ ...form, visionModel: v })}
                   />
+                  {form.visionModel && deploymentCred === false && (
+                    <p className="muted key-note">
+                      Captioning runs during background indexing, when no user is present, so it uses
+                      the deployment credential or the host's pw CLI login rather than a personal key.
+                      This deployment has neither, so images will be indexed by OCR and filename only.
+                    </p>
+                  )}
                 </div>
               </div>
               {me?.authEnabled && (
