@@ -45,7 +45,9 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument('--index', required=True, help='GUFI index tree top')
     ap.add_argument('--model', required=True, help='GGUF embedding model path')
-    ap.add_argument('--gufi-sqlite3', default='/opt/gufi/bin/gufi_sqlite3')
+    ap.add_argument('--gufi-sqlite3',
+                    default=os.path.join(os.environ.get('GUFI_BIN', '/opt/gufi/bin'), 'gufi_sqlite3'),
+                    help='gufi_sqlite3 binary; defaults under $GUFI_BIN')
     ap.add_argument('--subdir', default='', help='restrict to this KB-relative subtree (incremental indexing)')
     ap.add_argument('--no-recurse', action='store_true', help='process only the subdir itself, not its children')
     args = ap.parse_args()
