@@ -2,6 +2,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
 import { rememberHashChanges, restoreLastHash } from './lastLocation'
+import { applyRememberedFavicon } from './config'
 import '@fontsource-variable/geist'
 import '@fontsource-variable/geist-mono'
 // Two packages ship their own Tailwind build, and their utilities collide at
@@ -16,6 +17,7 @@ import './styles.css'
 // Before the first render: components read the hash while initializing.
 restoreLastHash()
 rememberHashChanges()
+applyRememberedFavicon()
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

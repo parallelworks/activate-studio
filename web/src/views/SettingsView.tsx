@@ -394,7 +394,7 @@ export function SettingsView() {
                 <label className="key-persist">
                   <input type="checkbox" checked={form.requirePersonalKey}
                     onChange={e => setForm({ ...form, requirePersonalKey: e.target.checked })} />
-                  Require each user to add their own model credential (chat and models refuse the deployment credential; browsing, search, and adding material stay open to everyone)
+                  Require each user to add their own model credential (chat and models refuse the deployment credential, though a key another user has shared here is accepted; browsing, search, and adding material stay open to everyone)
                 </label>
               )}
               {me?.authEnabled && (
@@ -539,13 +539,14 @@ export function SettingsView() {
                         stop the sharing, since the person who started it may not be around when it needs to end.
                       </p>
                     </div>
-                  ) : me.mode !== 'none' && me.sharingAllowed && (
+                  ) : me.sharingAllowed && (
                     <div className="key-row share-row">
-                      <button className="btn-secondary" disabled={keyBusy}
+                      <button className="btn-secondary" disabled={keyBusy || me.mode === 'none'}
                         onClick={() => void keyAction('share')}>Share this key with everyone</button>
                       <span className="muted key-note">
-                        Lets users here who have no key of their own work with yours, which spends your quota
-                        and runs as you. You can stop it at any time.
+                        {me.mode === 'none'
+                          ? 'Add your own key above first; you can then share it with everyone here.'
+                          : 'Lets users here who have no key of their own work with yours, which spends your quota and runs as you. You can stop it at any time.'}
                       </span>
                     </div>
                   )}

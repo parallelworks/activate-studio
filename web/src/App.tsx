@@ -73,8 +73,10 @@ export default function App() {
   // when it has not.
   const brandIcon = effectiveTheme === 'dark' ? (cfg.iconUrlDark ?? cfg.iconUrl) : cfg.iconUrl
   useEffect(() => {
+    // The remembered brand fills these on the first frame, so this runs
+    // without waiting for the configuration request.
     const favicon = effectiveTheme === 'dark' ? (cfg.faviconUrlDark ?? cfg.faviconUrl) : cfg.faviconUrl
-    if (!cfg.loaded || !favicon) return
+    if (!favicon) return
     let link = document.querySelector<HTMLLinkElement>('link[rel="icon"]')
     if (!link) {
       link = document.createElement('link')
