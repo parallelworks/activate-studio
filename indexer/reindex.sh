@@ -45,18 +45,15 @@ fi
 
 # Atomic-ish swap so the server never sees a half-built tree.
 #
-# gufi_dir2index nests its output under the source basename, and the server
-# expects $INDEX_BASE/gufi to mirror the corpus directly (its incremental
-# passes write $INDEX_BASE/gufi/<subdir>). Promoting the nested directory
-# rather than the staging root is what keeps the two agreeing: with the
-# extra level in place, enrichment resolved every subdirectory to
-# $KB_ROOT/<kb-basename>/<subdir>, which does not exist, so nothing below
-# the root was ever indexed.
+# The tree keeps the level gufi_dir2index adds for the source basename: the
+# server reads $INDEX_BASE/gufi/<basename of KB_ROOT> and its incremental
+# passes write into that same directory, so flattening it here leaves a
+# rebuilt index the server never looks at.
 if [ -d "$GUFI_DEST" ]; then
   rm -rf "$INDEX_BASE/gufi.old"
   mv "$GUFI_DEST" "$INDEX_BASE/gufi.old"
 fi
-mv "$STAGING/$(basename "$KB_ROOT")" "$GUFI_DEST"
-rm -rf "$INDEX_BASE/gufi.old" "$STAGING"
+mv "$STAGING" "$GUFI_DEST"
+rm -rf "$INDEX_BASE/gufi.old"
 
-echo "index rebuilt at $GUFI_DEST"
+echo "index rebuilt at $GUFI_DEST/$(basename "$KB_ROOT")"
