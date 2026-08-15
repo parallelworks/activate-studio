@@ -10,6 +10,8 @@ import { blendHits, corpusStats, searchFts, searchNames, searchVector } from './
 import { invalidateContext } from './chat/context.js'
 import { extractorReport, getIndexJob, incrementalIndexDir, indexRootDb, indexStatus, reindexForFile, startIndexJob, sweep } from './indexing.js'
 import { copyPaths, movePaths, reindexRoots, renamePath } from './move.js'
+import { suggestLabels } from './labeling.js'
+import { resolveUserCred } from './credentials.js'
 import { getJob, startJob } from './jobs.js'
 import { annotateHits, readTagsBatch } from './tags.js'
 import { gatewayKey } from './chat/gateway.js'
@@ -286,6 +288,24 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
     for (const root of roots) indexMs += (await incrementalIndexDir(root)).ms
     if (rootDb) indexMs += (await indexRootDb()).ms
     return { deleted, skipped, indexMs }
+  })
+
+  // Propose labels for material that has none. Nothing is applied here;
+  // the reviewer decides, and applying runs through the ordinary tag path.
+  app.post('/api/kb/label-suggestions', async req => {
+    const body = req.body as { dir?: string; limit?: number; includeLabelled?: boolean; model?: string }
+    const eff = effectiveSettings()
+    const cred = resolveUserCred(req.user?.id)
+    const model = String(body.model ?? '') || eff.ragDefaultModel
+    if (!model) throw new KbError(400, 'no model configured for labelling: set a default model on the RAG endpoint page, or pass one')
+    return suggestLabels({
+      dir: body.dir ?? '',
+      limit: body.limit,
+      includeLabelled: body.includeLabelled,
+      model,
+      key: cred?.key ?? null,
+      baseUrl: cred?.baseUrl ?? null,
+    })
   })
 
   // Every directory in the corpus, for choosing a move destination.

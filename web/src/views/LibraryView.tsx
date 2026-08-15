@@ -34,6 +34,14 @@ export function LibraryView({ display, onDisplay }: {
   const [selectMode, setSelectMode] = useState(false)
   const [moveMenuOpen, setMoveMenuOpen] = useState(false)
   const [allDirs, setAllDirs] = useState<string[]>([])
+  /** Proposed labels awaiting review; nothing is applied until accepted. */
+  const [suggest, setSuggest] = useState<{
+    dir: string
+    busy: boolean
+    error?: string
+    considered?: number
+    rows: { path: string; labels: string[]; why: string; accept: boolean }[]
+  } | null>(null)
   const [showLabels, setShowLabels] = useState(() => localStorage.getItem('ade-tree-labels') === '1')
   const [tagsTick, setTagsTick] = useState(0)
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -153,6 +161,8 @@ export function LibraryView({ display, onDisplay }: {
 
   // The row a range extends from: the last one clicked without shift.
   const anchor = useRef<string | null>(null)
+  /** Live while an upload is in flight, so it can be stopped. */
+  const uploadAbort = useRef<AbortController | null>(null)
 
   const toggleMulti = (p: string) => {
     anchor.current = p
@@ -219,6 +229,38 @@ export function LibraryView({ display, onDisplay }: {
     p.phase = 'done'
     p.finished = true
     setProgress({ ...p })
+    window.dispatchEvent(new CustomEvent('ade-kb-changed'))
+  }
+
+  /** Ask the model what this material should be labelled. */
+  const runSuggest = async (dir: string) => {
+    setSuggest({ dir, busy: true, rows: [] })
+    try {
+      const r = await api.labelSuggestions(dir, 40)
+      setSuggest({
+        dir, busy: false, considered: r.considered,
+        rows: r.proposals.map(p2 => ({ ...p2, accept: true })),
+      })
+    } catch (e) {
+      setSuggest({ dir, busy: false, rows: [], error: String((e as Error).message ?? e) })
+    }
+  }
+
+  /** Apply the accepted proposals, grouped so identical label sets go in
+   *  one call rather than one per file. */
+  const applySuggestions = async () => {
+    if (!suggest) return
+    const groups = new Map<string, string[]>()
+    for (const row of suggest.rows.filter(r => r.accept && r.labels.length)) {
+      const key = row.labels.join(',')
+      groups.set(key, [...(groups.get(key) ?? []), row.path])
+    }
+    setSuggest({ ...suggest, busy: true })
+    for (const [labels, paths] of groups) {
+      await api.applyTags(paths, labels.split(','), []).catch(() => {})
+    }
+    setSuggest(null)
+    window.dispatchEvent(new CustomEvent('ade-tags-changed'))
     window.dispatchEvent(new CustomEvent('ade-kb-changed'))
   }
 
@@ -292,7 +334,9 @@ export function LibraryView({ display, onDisplay }: {
   const uploadTo = useCallback(async (dir: string, items: DataTransferItemList) => {
     const files = await collectDropped(items)
     if (!files.length) return
-    const result = await uploadBatched(files, dir, setProgress)
+    uploadAbort.current = new AbortController()
+    const result = await uploadBatched(files, dir, setProgress, uploadAbort.current.signal)
+    uploadAbort.current = null
     setRefreshKey(k => k + 1)
     if (result.done > 0 && files.length === 1) {
       onDisplay({ kind: 'file', target: (dir ? dir + '/' : '') + files[0].rel })
@@ -413,19 +457,72 @@ export function LibraryView({ display, onDisplay }: {
                 showLabels={showLabels || selectMode}
                 tagsTick={tagsTick}
               />
+              {suggest && (
+                <div className="upload-panel suggest-panel">
+                  <div className="upload-panel-head">
+                    <span>
+                      {suggest.busy && !suggest.rows.length
+                        ? `Reading ${suggest.dir || 'the library'} and proposing labels…`
+                        : suggest.error
+                          ? 'Could not propose labels'
+                          : `${suggest.rows.length} of ${suggest.considered ?? 0} unlabelled files have proposals`}
+                    </span>
+                    <button className="link-btn2" onClick={() => setSuggest(null)}>dismiss</button>
+                  </div>
+                  {suggest.error && <div className="upload-failed">{suggest.error}</div>}
+                  {!suggest.busy && !suggest.error && !suggest.rows.length && (
+                    <div className="muted suggest-empty">Nothing to propose here. Everything already carries a label, or there was no text to read.</div>
+                  )}
+                  {suggest.rows.length > 0 && (
+                    <>
+                      <div className="suggest-rows">
+                        {suggest.rows.map((row, i) => (
+                          <label className="suggest-row" key={row.path} title={row.why}>
+                            <input
+                              type="checkbox"
+                              checked={row.accept}
+                              onChange={e => setSuggest(s2 => s2 && {
+                                ...s2,
+                                rows: s2.rows.map((r, j) => (j === i ? { ...r, accept: e.target.checked } : r)),
+                              })}
+                            />
+                            <span className="suggest-path">{row.path}</span>
+                            <span className="suggest-tags">{row.labels.map(l => <code key={l}>{l}</code>)}</span>
+                          </label>
+                        ))}
+                      </div>
+                      <div className="suggest-actions">
+                        <button className="btn-primary" disabled={suggest.busy || !suggest.rows.some(r => r.accept)}
+                          onClick={() => void applySuggestions()}>
+                          {suggest.busy ? 'Applying…' : `Apply ${suggest.rows.filter(r => r.accept).length}`}
+                        </button>
+                        <button className="btn-secondary" onClick={() => setSuggest(s2 => s2 && { ...s2, rows: s2.rows.map(r => ({ ...r, accept: false })) })}>
+                          Clear all
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
               {progress && (
                 <div className="upload-panel">
                   <div className="upload-panel-head">
                     <span>
                       {progress.phase === 'done'
-                        ? `${progress.done} of ${progress.total} ${progress.kind === 'move' ? 'moved to' : 'added to'} ${progress.dir || 'root'}${progress.indexMs ? `, indexed in ${(progress.indexMs / 1000).toFixed(1)}s` : ''}`
+                        ? progress.cancelled
+                          ? `Cancelled: ${progress.done} of ${progress.total} had already been added to ${progress.dir || 'root'}`
+                          : `${progress.done} of ${progress.total} ${progress.kind === 'move' ? 'moved to' : 'added to'} ${progress.dir || 'root'}${progress.indexMs ? `, indexed in ${(progress.indexMs / 1000).toFixed(1)}s` : ''}`
                         : progress.phase === 'indexing'
                           ? `Indexing ${progress.done} ${progress.done === 1 ? 'item' : 'items'} in ${progress.dir || 'root'}…`
                           : progress.kind === 'move'
                             ? `Moving into ${progress.dir || 'root'}: ${progress.done} / ${progress.total}`
                             : `Uploading to ${progress.dir || 'root'}: ${progress.done} / ${progress.total}${progress.totalBytes ? ` (${fmtBytes(progress.bytes)} of ${fmtBytes(progress.totalBytes)})` : ''}`}
                     </span>
-                    <button className="link-btn2" onClick={() => setProgress(null)}>dismiss</button>
+                    {progress.phase === 'uploading' && progress.kind !== 'move' && uploadAbort.current ? (
+                      <button className="link-btn2" onClick={() => uploadAbort.current?.abort()}>cancel</button>
+                    ) : (
+                      <button className="link-btn2" onClick={() => setProgress(null)}>dismiss</button>
+                    )}
                   </div>
                   {/* Bytes drive the bar while uploading, so one large file
                       still moves; indexing has no count to report, so the
@@ -508,6 +605,9 @@ export function LibraryView({ display, onDisplay }: {
                 </button>
               </div>
             ))}
+            {ctx.isDir && (
+              <button onClick={() => { void runSuggest(ctx.path); closeCtx() }}>Suggest labels…</button>
+            )}
             {ctx.path && (
               <button onClick={() => { addToChat(ctx.path); closeCtx() }}>Add to chat</button>
             )}
