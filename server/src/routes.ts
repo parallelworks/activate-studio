@@ -5,12 +5,12 @@ import fs, { createReadStream } from 'node:fs'
 import fsp from 'node:fs/promises'
 import { EXCLUDE_DIRS, GUFI_INDEX, INDEX_BASE, KB_ROOT, PROJECT_ROOT, gufiAvailable } from './config.js'
 import { extractPath, listDir, readFileContent, resolveKb, KbError } from './kb.js'
-import YAML from 'yaml'
 import { CONVERTIBLE, mimeFor, officeToPdf, pdfPageCount, pdfPagePng, previewPdfFor, removePdfPreview } from './preview.js'
 import { blendHits, corpusStats, searchFts, searchNames, searchVector } from './gufi.js'
 import { invalidateContext } from './chat/context.js'
 import { incrementalIndexDir, indexRootDb, indexStatus, reindexForFile, sweep } from './indexing.js'
 import { annotateHits, readTagsBatch } from './tags.js'
+import { convertToDynamicForm, dumpYaml, getAllDeps, getStepLabel, workflowHasUserInputs } from '@parallelworks/workflow-parser'
 import { removeModelCache } from './model.js'
 import { effectiveSettings } from './settings.js'
 import { authEnabled, authHeaderName } from './auth.js'
@@ -294,18 +294,31 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
       execFile('pw', ['workflows', 'get', name, '-o', 'json'], { timeout: 20_000 }, (e, so, se) => e ? reject(new Error(se || e.message)) : resolve(so))
     })
     const wf = JSON.parse(out)
-    const jobs = wf.yaml?.jobs ?? {}
-    const nodes = Object.entries<any>(jobs).map(([id, def]) => ({
+    const jobs = (wf.yaml?.jobs ?? {}) as Record<string, { steps?: unknown[]; needs?: string[] }>
+    // The platform's own parser names steps and resolves dependencies, so
+    // this view matches what ACTIVATE shows and follows it as the workflow
+    // schema evolves, rather than reimplementing either.
+    const nodes = Object.entries(jobs).map(([id, def]) => ({
       id,
-      steps: (def?.steps ?? []).map((s: any) => s?.name ?? 'step'),
+      steps: (def?.steps ?? []).map((s, i) => getStepLabel(s as Parameters<typeof getStepLabel>[0], i)),
+      dependsOn: [...getAllDeps(id, jobs)],
     }))
     const edges: { from: string; to: string }[] = []
-    for (const [job, def] of Object.entries<any>(jobs)) {
+    for (const [job, def] of Object.entries(jobs)) {
       for (const dep of def?.needs ?? []) edges.push({ from: dep, to: job })
     }
+    // The input form the platform would render for this workflow, so a
+    // preview can show what a run actually asks for. The converter takes
+    // the inputs subtree, not the whole document.
+    let form: unknown = null
+    const rawInputs = wf.yaml?.on?.execute?.inputs
+    try {
+      form = rawInputs && workflowHasUserInputs(wf.yaml) ? convertToDynamicForm(rawInputs) : null
+    } catch { /* an older or hand-written schema the converter does not accept */ }
     return {
       name: wf.name, displayName: wf.displayName, nodes, edges, yaml: wf.yaml,
-      yamlText: YAML.stringify(wf.yaml ?? {}),
+      form,
+      yamlText: dumpYaml(wf.yaml ?? {}),
     }
   })
 
