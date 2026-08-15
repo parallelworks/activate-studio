@@ -135,6 +135,10 @@ button { font-family: inherit; }
 .banner-row .banner-hex { flex: 0 0 100px; font-family: ui-monospace, monospace; }
 @media (max-width: 720px) { .banner-row { flex-wrap: wrap; } .banner-row .banner-text { flex-basis: 100%; } }
 .shared-key { margin-top: 12px; }
+.upload-current { font-size: 11.5px; color: var(--pw-muted); margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Indexing reports no count, so the bar sweeps instead of filling. */
+.upload-bar.indeterminate > div { animation: upload-sweep 1.1s ease-in-out infinite; transform-origin: left center; }
+@keyframes upload-sweep { 0% { opacity: 0.35; } 50% { opacity: 1; } 100% { opacity: 0.35; } }
 .share-row { margin-top: 12px; align-items: center; gap: 10px; }
 .share-row .key-note { margin: 0; }
 

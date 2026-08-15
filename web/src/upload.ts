@@ -2,8 +2,14 @@ import { api } from './api'
 
 export interface UploadItem { file: File; rel: string }
 export interface UploadProgress {
+  /** 'uploading' while bytes move, 'indexing' while the corpus catches up. */
+  phase: 'uploading' | 'indexing' | 'done'
   total: number
   done: number
+  /** Bytes sent and total bytes, so one large file still shows movement. */
+  bytes: number
+  totalBytes: number
+  current: string
   failed: { name: string; error: string }[]
   indexMs: number
   finished: boolean
@@ -12,7 +18,9 @@ export interface UploadProgress {
   indexError?: string
 }
 
-const BATCH = 25
+/** Small batches keep the count moving; one request per file would spend
+ *  more time in round trips than in bytes. */
+const BATCH = 4
 
 /** Walk dropped DataTransfer items, descending directories. */
 export async function collectDropped(items: DataTransferItemList): Promise<UploadItem[]> {
@@ -37,29 +45,65 @@ export async function collectDropped(items: DataTransferItemList): Promise<Uploa
 }
 
 /**
- * Bulk upload in batches with progress: a thousand papers arrive as ~40
- * sequential requests, each indexed on the server before it returns, so
- * progress reflects searchable files, not just transferred bytes.
+ * Bulk upload with progress the whole way through.
+ *
+ * Indexing used to run inside every upload request, so the bar sat still
+ * for as long as the corpus took to catch up and a large drop read as hung.
+ * Files now go up in small batches with byte-level progress, and the single
+ * indexing pass afterwards is its own phase, watched as a background job.
  */
 export async function uploadBatched(
   items: UploadItem[],
   dir: string,
   onProgress: (p: UploadProgress) => void,
 ): Promise<UploadProgress> {
-  const p: UploadProgress = { total: items.length, done: 0, failed: [], indexMs: 0, finished: false, dir }
+  const totalBytes = items.reduce((n, i) => n + i.file.size, 0)
+  const p: UploadProgress = {
+    phase: 'uploading', total: items.length, done: 0, bytes: 0, totalBytes,
+    current: items[0]?.rel ?? '', failed: [], indexMs: 0, finished: false, dir,
+  }
   onProgress({ ...p })
+
+  let sentBefore = 0
   for (let i = 0; i < items.length; i += BATCH) {
     const batch = items.slice(i, i + BATCH)
+    p.current = batch[0].rel
     try {
-      const r = await api.uploadFiles(batch, dir)
+      const r = await api.uploadFiles(batch, dir, {
+        deferIndex: true,
+        onBytes: sent => { p.bytes = sentBefore + sent; onProgress({ ...p }) },
+      })
       p.done += r.saved.length
-      p.indexMs += r.indexMs ?? 0
-      if (r.indexed === false && r.indexError) p.indexError = r.indexError
     } catch (e) {
       for (const it of batch) p.failed.push({ name: it.rel, error: String((e as Error).message ?? e) })
     }
+    sentBefore += batch.reduce((n, b) => n + b.file.size, 0)
+    p.bytes = sentBefore
     onProgress({ ...p })
   }
+
+  // One indexing pass for everything that landed, watched rather than
+  // waited on inside a request.
+  if (p.done > 0) {
+    p.phase = 'indexing'
+    p.current = ''
+    onProgress({ ...p })
+    try {
+      const job = await api.startIndexJob(dir)
+      const t0 = Date.now()
+      for (;;) {
+        await new Promise(r => setTimeout(r, 1000))
+        const s = await api.indexJob(job.id)
+        if (s.state === 'done') { p.indexMs = s.ms ?? Date.now() - t0; break }
+        if (s.state === 'error') { p.indexError = s.error ?? 'indexing failed'; break }
+        onProgress({ ...p })
+      }
+    } catch (e) {
+      p.indexError = String((e as Error).message ?? e)
+    }
+  }
+
+  p.phase = 'done'
   p.finished = true
   onProgress({ ...p })
   return p
