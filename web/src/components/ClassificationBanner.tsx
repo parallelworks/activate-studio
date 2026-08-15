@@ -28,8 +28,10 @@ export function bannerInk(hex: string): string {
     const c = v / 255
     return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
   })
-  const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b
-  return luminance > 0.45 ? '#101010' : '#ffffff'
+  const l = 0.2126 * r + 0.7152 * g + 0.0722 * b
+  // Whichever ink contrasts more, by the WCAG ratio. A fixed lightness
+  // threshold puts white on orange, which is the marking that needs black.
+  return (l + 0.05) / 0.05 > 1.05 / (l + 0.05) ? '#101010' : '#ffffff'
 }
 
 export function ClassificationBanner(): ReactElement | null {
@@ -37,7 +39,7 @@ export function ClassificationBanner(): ReactElement | null {
   const text = cfg.bannerText?.trim()
   if (!text) return null
   if (isEmbedded() && !cfg.bannerWhenEmbedded) return null
-  const bg = cfg.bannerColor || '#2e6b2e'
+  const bg = cfg.bannerColor || '#24612e'
   return (
     <div className="cls-banner" style={{ background: bg, color: bannerInk(bg) }} role="note">
       {text}
