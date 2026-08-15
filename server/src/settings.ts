@@ -19,6 +19,7 @@ export interface StudioSettings {
   theme?: 'light' | 'dark'
   accent?: string
   surface?: string
+  iconUrl?: string
   sweepIntervalSec?: number
   suggestedPrompts?: string[]
   visionModel?: string
@@ -64,6 +65,7 @@ export function effectiveSettings(): Required<StudioSettings> {
     theme: s.theme ?? (process.env.THEME === 'dark' ? 'dark' : 'light'),
     accent: s.accent ?? process.env.APP_ACCENT ?? 'navy',
     surface: s.surface ?? process.env.APP_SURFACE ?? 'neutral',
+    iconUrl: s.iconUrl ?? process.env.APP_ICON ?? '',
     sweepIntervalSec: s.sweepIntervalSec ?? Number(process.env.SWEEP_INTERVAL_SEC ?? 300),
     suggestedPrompts: s.suggestedPrompts ?? envPrompts(),
     visionModel: s.visionModel ?? process.env.ADE_VISION_MODEL ?? '',
@@ -97,6 +99,11 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
       const a = String(body.accent)
       if (!/^([a-z][a-z0-9-]{0,23}|custom:#[0-9a-fA-F]{6})$/.test(a)) throw new KbError(400, 'invalid accent')
       next.accent = a
+    }
+    if (body.iconUrl !== undefined) {
+      const v = String(body.iconUrl).trim()
+      if (v && !/^https?:\/\//i.test(v) && !v.startsWith('/')) throw new KbError(400, 'icon must be an http(s) URL or an absolute path')
+      next.iconUrl = v
     }
     if (body.surface !== undefined) {
       const a = String(body.surface)

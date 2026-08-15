@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { CopyToClipboard } from '@parallelworks/ui'
 import { ACCENTS, SURFACES, applyAccent, applySurface } from '../accents'
 import { useAppConfig } from '../config'
 
@@ -8,6 +9,7 @@ interface Effective {
   theme: 'light' | 'dark'
   accent: string
   surface: string
+  iconUrl: string
   sweepIntervalSec: number
   suggestedPrompts: string[]
   visionModel: string
@@ -305,6 +307,11 @@ export function SettingsView() {
                   </select>
                 </div>
                 <div>
+                  <label className="field-label">Brand icon (URL, or a path on the server)</label>
+                  <input className="field" value={form.iconUrl} placeholder="https://example.org/logo.png"
+                    onChange={e => setForm({ ...form, iconUrl: e.target.value })} />
+                </div>
+                <div>
                   <label className="field-label">Background sync interval (seconds, 0 pauses)</label>
                   <input className="field" type="number" min={0} max={86400} value={form.sweepIntervalSec}
                     onChange={e => setForm({ ...form, sweepIntervalSec: Number(e.target.value) })} />
@@ -517,7 +524,8 @@ export function SettingsView() {
             <>
               <h1>RAG endpoint</h1>
               <p className="muted view-sub">
-                This deployment serves an OpenAI-compatible endpoint at <code>{location.origin}/v1</code>, so any OpenAI-speaking client (pw code, SDKs, other agents) can use the knowledge base as a grounded model. Callers authenticate with their own gateway API key as the bearer token; the endpoint holds no credentials of its own.
+                This deployment serves an OpenAI-compatible endpoint at{' '}
+                <CopyToClipboard text={`${location.origin}/v1`}><code>{location.origin}/v1</code></CopyToClipboard>, so any OpenAI-speaking client (pw code, SDKs, other agents) can use the knowledge base as a grounded model. Callers authenticate with their own gateway API key as the bearer token; the endpoint holds no credentials of its own.
               </p>
               <p className="muted view-sub">
                 Pick the underlying model per request as <code>studio-agent/&lt;model-id&gt;</code> (any other model id behaves like studio-rag with that model), or set the default below. Headers <code>X-RAG-Top-K</code>, <code>X-RAG-Tags</code>, and <code>X-RAG-Off: 1</code> tune retrieval per request.
@@ -598,8 +606,16 @@ export function SettingsView() {
                   <div className="rag-banner-models">
                     Users can now select {form.ragAdvertiseAgentModel && form.ragAdvertiseRagModel ? 'these models' : 'this model'} anywhere on the platform:
                     <div className="rag-chip-row">
-                      {form.ragAdvertiseAgentModel && <code>session:{cfg.user.username}:{ragEp.name}/studio-agent</code>}
-                      {form.ragAdvertiseRagModel && <code>session:{cfg.user.username}:{ragEp.name}/studio-rag</code>}
+                      {form.ragAdvertiseAgentModel && (
+                        <CopyToClipboard text={`session:${cfg.user.username}:${ragEp.name}/studio-agent`}>
+                          <code>session:{cfg.user.username}:{ragEp.name}/studio-agent</code>
+                        </CopyToClipboard>
+                      )}
+                      {form.ragAdvertiseRagModel && (
+                        <CopyToClipboard text={`session:${cfg.user.username}:${ragEp.name}/studio-rag`}>
+                          <code>session:{cfg.user.username}:{ragEp.name}/studio-rag</code>
+                        </CopyToClipboard>
+                      )}
                       {!form.ragAdvertiseAgentModel && !form.ragAdvertiseRagModel && <span className="muted">No models advertised; enable a toggle above.</span>}
                     </div>
                   </div>
