@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process'
 import path from 'node:path'
 import type { FastifyInstance } from 'fastify'
-import { EXCLUDE_DIRS, GUFI_BIN, GUFI_INDEX, KB_ROOT, gufiAvailable } from './config.js'
+import { EXCLUDE_DIRS, GUFI_BIN, GUFI_INDEX, KB_ROOT, gufiAvailable, PYTHON_BIN } from './config.js'
 import { KbError, resolveKb } from './kb.js'
 import { reindexForDir, reindexForFile } from './indexing.js'
 import { overlayEmpty, overlayGet, overlaySet, overlayUnder } from './tagsOverlay.js'
@@ -229,7 +229,7 @@ for j in jobs:
 print(json.dumps(bad))
 `
     const out = await new Promise<string>((resolve, reject) => {
-      const child = execFile('python3', ['-c', script], { timeout: 60_000 },
+      const child = execFile(PYTHON_BIN, ['-c', script], { timeout: 60_000 },
         (err, so) => (err ? reject(err) : resolve(so)))
       child.stdin?.write(JSON.stringify(jobs))
       child.stdin?.end()
