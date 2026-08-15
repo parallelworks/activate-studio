@@ -65,8 +65,30 @@ function rememberBrand(c: AppConfig): void {
   try {
     localStorage.setItem(BRAND_KEY, JSON.stringify({
       appName: c.appName, iconUrl: c.iconUrl, iconUrlDark: c.iconUrlDark, kbLabel: c.kbLabel,
+      faviconUrl: c.faviconUrl, faviconUrlDark: c.faviconUrlDark,
       bannerText: c.bannerText, bannerColor: c.bannerColor, bannerWhenEmbedded: c.bannerWhenEmbedded,
     }))
+  } catch { /* storage unavailable */ }
+}
+
+/** Set the tab icon from the previous visit, before React renders. The
+ *  configuration request takes a moment, and until it returned the browser
+ *  showed the bundled default mark and then swapped to the deployment's,
+ *  which reads as the tab flickering on every load. */
+export function applyRememberedFavicon(): void {
+  try {
+    const brand = rememberedBrand()
+    const stored = localStorage.getItem('ade-theme')
+    const dark = stored === 'dark' || (stored !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches)
+    const href = (dark ? brand.faviconUrlDark ?? brand.faviconUrl : brand.faviconUrl) ?? null
+    if (!href) return
+    let link = document.querySelector<HTMLLinkElement>('link[rel="icon"]')
+    if (!link) {
+      link = document.createElement('link')
+      link.rel = 'icon'
+      document.head.appendChild(link)
+    }
+    link.href = href
   } catch { /* storage unavailable */ }
 }
 
