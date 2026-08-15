@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { DependencyGraphPreview } from '@parallelworks/ui/workflow'
 import '@parallelworks/ui/styles.css'
+import '@parallelworks/ui/theme.css'
 
 interface DagData {
   name: string
@@ -162,7 +163,7 @@ export function DagViewer({ workflow }: { workflow: string }) {
           <DependencyGraphPreview yml={dag.yaml} removeBorder />
         </div>
       ) : (
-      <div className="dag-canvas">
+      <div className="dag-canvas own-dag">
         <div className="dag-controls">
           <button title="Zoom in" onClick={() => zoom(1 / 1.3)}>+</button>
           <button title="Zoom out" onClick={() => zoom(1.3)}>−</button>

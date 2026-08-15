@@ -9,7 +9,19 @@ import { api } from '../api'
 import { setLabelScope } from '../labelScope'
 
 export function ChatView() {
-  const [activeId, setActiveId] = useState<string | null>(null)
+  // The open conversation lives in the URL, so a refresh (or a shared link)
+  // returns to the same session instead of an empty chat.
+  const [activeId, setActiveIdState] = useState<string | null>(() => {
+    const m = location.hash.match(/^#chat=([0-9a-f-]{8,})$/i)
+    return m ? m[1] : null
+  })
+  const setActiveId = useCallback((id: string | null) => {
+    setActiveIdState(id)
+    const next = id ? `#chat=${id}` : ''
+    if (location.hash !== next) {
+      history.replaceState(null, '', `${location.pathname}${location.search}${next}`)
+    }
+  }, [])
   const [showAttachments, setShowAttachments] = useState(false)
   const [rail, setRail] = useState(() => Number(localStorage.getItem('ade-chat-rail')) || 260)
   const adapter = useMemo(() => createStudioAdapter(), [])
@@ -35,7 +47,16 @@ export function ChatView() {
       .catch(() => {})
     const onCredError = (e: Event) => setCredNote(String((e as CustomEvent).detail ?? 'Model credential needed.'))
     window.addEventListener('ade-credential-error', onCredError)
-    return () => window.removeEventListener('ade-credential-error', onCredError)
+    // Back and forward between conversations.
+    const onHash = () => {
+      const m = location.hash.match(/^#chat=([0-9a-f-]{8,})$/i)
+      setActiveIdState(m ? m[1] : null)
+    }
+    window.addEventListener('hashchange', onHash)
+    return () => {
+      window.removeEventListener('ade-credential-error', onCredError)
+      window.removeEventListener('hashchange', onHash)
+    }
   }, [])
 
   const toggleScope = (tag: string) => {
