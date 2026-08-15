@@ -3,6 +3,13 @@ import ReactDOM from 'react-dom/client'
 import App from './App'
 import '@fontsource-variable/geist'
 import '@fontsource-variable/geist-mono'
+// Two packages ship their own Tailwind build, and their utilities collide at
+// equal specificity, so whichever loads last wins. The chat package must come
+// second: its responsive variants (a two-column starter grid, for one) were
+// being overridden by the UI package's base utilities. Ours loads last of all.
+import '@parallelworks/ui/styles.css'
+import '@parallelworks/ui/theme.css'
+import '@parallelworks/ai-chat/styles.css'
 import './styles.css'
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
