@@ -432,7 +432,10 @@ button { font-family: inherit; }
    the graph out of the frame. */
 .dag-canvas.own-dag svg { width: 100%; height: 100%; flex: 1; touch-action: none; cursor: grab; display: block; }
 .dag-canvas.own-dag svg.dragging { cursor: grabbing; }
-.dag-canvas.platform-dag { display: flex; position: relative; overflow: hidden; flex: 1; min-height: 420px; }
+.dag-canvas.platform-dag { display: flex; position: relative; overflow: hidden; flex: 1; min-height: 420px; padding: 14px 8px 8px; }
+/* Inside the chat embed the frame sets the height, so a minimum of our own
+   only pushes the graph past the bottom of the frame and clips it. */
+.embed-root .dag-canvas.platform-dag { min-height: 0; }
 /* The graph sizes its own chrome with full-height children, which need a
    parent whose height actually resolves; flex with min-height:0 gives it
    one without the percentage-height trap. */
@@ -780,7 +783,7 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 
 /* Embedded viewer windows inside chat replies, and the chrome-less embed page */
 .chat-canvas iframe.chat-embed-frame {
-  width: 100%; max-width: 760px; height: 420px; display: block; margin: 6px 0;
+  width: 100%; max-width: 760px; height: 480px; display: block; margin: 6px 0;
   border: 1px solid var(--pw-border); border-radius: 8px; background: var(--pw-panel);
 }
 .embed-root { height: 100vh; display: flex; flex-direction: column; background: var(--pw-panel); }
