@@ -1,5 +1,6 @@
 import path from 'node:path'
 import fs from 'node:fs'
+import { execFileSync } from 'node:child_process'
 
 export const KB_ROOT = process.env.KB_ROOT ?? '/data/knowledge-base'
 export const PROJECT_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', '..')
@@ -13,6 +14,21 @@ export const PORT = Number(process.env.PORT ?? 4080)
 export const HOST = process.env.HOST ?? '0.0.0.0'
 
 // Any OpenAI-compatible backend works; the ACTIVATE gateway is the default.
+/** Indexer scripts use 3.10+ syntax; some clusters still default python3
+ *  to 3.9, so prefer PYTHON_BIN, then the newest versioned interpreter on
+ *  PATH, then plain python3. */
+export const PYTHON_BIN = (() => {
+  const explicit = process.env.PYTHON_BIN
+  if (explicit) return explicit
+  for (const cand of ['python3.13', 'python3.12', 'python3.11', 'python3.10', 'python3']) {
+    try {
+      const v = execFileSync(cand, ['-c', 'import sys; print(sys.version_info >= (3, 10))'], { encoding: 'utf8' }).trim()
+      if (v === 'True') return cand
+    } catch { /* try the next one */ }
+  }
+  return 'python3'
+})()
+
 export const GATEWAY_BASE = (process.env.PW_GATEWAY_URL ?? process.env.OPENAI_BASE_URL ?? 'https://activate.parallel.works/api/openai/v1').replace(/\/$/, '')
 export const PW_API_KEY = process.env.PW_API_KEY ?? process.env.OPENAI_API_KEY ?? ''
 
