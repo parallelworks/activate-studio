@@ -27,6 +27,7 @@ export const TOOL_CALLS: Record<string, string> = {
   list_kb_dir: 'directory listing under the knowledge base root',
   query_corpus: 'canned gufi_query aggregations over the per-directory index databases',
   get_labels: 'reads the user.studio.tags xattr maps cached from the filesystem',
+  suggest_labels: 'reads the first ~1200 characters of each unlabelled file and asks the deployment model to propose labels from the existing vocabulary (proposals only, nothing applied)',
   apply_labels: 'setfattr user.studio.tags on the paths plus an in-place upsert into the index databases',
   list_workflows: 'pw workflows ls',
   get_workflow: 'pw workflows get <name> -o json',
@@ -204,6 +205,22 @@ export const TOOL_SPECS: ToolSpec[] = [
           subtree: { type: 'string', description: 'Restrict to a subtree, empty for whole corpus' },
         },
         required: ['canned'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'suggest_labels',
+      description:
+        'Read files that carry no labels and propose labels for them, reusing the corpus vocabulary where it fits and proposing new labels where it does not. Returns proposals only; nothing is applied. Use when the user asks how the library should be labelled, or asks for help classifying material, then show the proposals and apply them with apply_labels once the user agrees.',
+      parameters: {
+        type: 'object',
+        properties: {
+          dir: { type: 'string', description: 'KB-relative directory to look at; empty for the whole corpus' },
+          limit: { type: 'number', description: 'How many files to consider (default 40, max 200)' },
+          include_labelled: { type: 'boolean', description: 'Also consider files that already have labels (default false)' },
+        },
       },
     },
   },
@@ -578,6 +595,33 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
         })
         const lines = [r.columns.join(' | '), ...r.rows.map(row => row.join(' | '))]
         return { result: lines.join('\n').slice(0, TOOL_OUTPUT_CAP), summary: `${r.rows.length} rows in ${r.elapsedMs} ms` }
+      }
+      case 'suggest_labels': {
+        const { suggestLabels } = await import('../labeling.js')
+        const { effectiveSettings } = await import('../settings.js')
+        const model = effectiveSettings().ragDefaultModel
+        if (!model) {
+          return {
+            result: 'No default model is configured for labelling; set one on the RAG endpoint settings page.',
+            summary: 'no labelling model',
+          }
+        }
+        const out = await suggestLabels({
+          dir: String(args.dir ?? ''),
+          limit: Number(args.limit) || 40,
+          includeLabelled: !!args.include_labelled,
+          model,
+          key: ctx?.userKey ?? null,
+        })
+        if (!out.proposals.length) {
+          return { result: `Looked at ${out.considered} files and had nothing to propose.`, summary: 'no proposals' }
+        }
+        const lines = out.proposals.map(p2 => `${p2.path}: [${p2.labels.join(', ')}]${p2.why ? ` (${p2.why})` : ''}`)
+        const fresh = out.newLabels.length ? `\nNew labels proposed: ${out.newLabels.join(', ')}` : ''
+        return {
+          result: `Proposals for ${out.proposals.length} of ${out.considered} unlabelled files. Nothing has been applied; use apply_labels once the user agrees.${fresh}\n${lines.join('\n')}`,
+          summary: `${out.proposals.length} label proposals`,
+        }
       }
       case 'apply_labels': {
         const { applyTagsCore } = await import('../tags.js')
