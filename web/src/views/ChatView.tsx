@@ -20,6 +20,9 @@ export function ChatView() {
     if (location.hash !== next) {
       history.replaceState(null, '', `${location.pathname}${location.search}${next}`)
     }
+    // Refreshing inside the platform frame reloads this app without its
+    // hash, so the open conversation is remembered separately.
+    try { localStorage.setItem('ade-last-hash', next) } catch { /* storage unavailable */ }
   }, [])
   const [showAttachments, setShowAttachments] = useState(false)
   const [rail, setRail] = useState(() => Number(localStorage.getItem('ade-chat-rail')) || 260)
