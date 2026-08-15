@@ -160,6 +160,9 @@ export function DagViewer({ workflow }: { workflow: string }) {
         // The platform's own dependency graph, so the workflow reads the
         // same here as it does in ACTIVATE.
         <div className="dag-canvas platform-dag">
+          {/* The platform's own graph. Its run view (per-step status icons)
+              needs an actual run; a definition renders as job cards, which
+              is what ACTIVATE shows for a workflow too. */}
           <DependencyGraphPreview yml={dag.yaml} removeBorder />
         </div>
       ) : (
