@@ -45,7 +45,15 @@ export function excluded(name: string, isDir: boolean): boolean {
 
 export async function listDir(rel: string): Promise<KbEntry[]> {
   const abs = resolveKb(rel)
-  const dirents = await fs.readdir(abs, { withFileTypes: true })
+  let dirents
+  try {
+    dirents = await fs.readdir(abs, { withFileTypes: true })
+  } catch (e) {
+    // A directory the interface expects but nothing has created yet
+    // (chat-sessions before the first chat) lists as empty.
+    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return []
+    throw e
+  }
   const out: KbEntry[] = []
   for (const d of dirents) {
     if (d.name.startsWith('.') && d.name !== '.') continue

@@ -95,6 +95,6 @@ export const api = {
     const res = await fetch(`/api/kb/upload?dir=${encodeURIComponent(dir)}`, { method: 'POST', body: form })
     const data = await res.json().catch(() => ({}))
     if (!res.ok) throw new Error((data as any).error ?? `upload: ${res.status}`)
-    return data as { saved: string[]; indexMs: number }
+    return data as { saved: string[]; indexMs: number; indexed?: boolean; indexError?: string }
   },
 }

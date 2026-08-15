@@ -8,6 +8,8 @@ export interface UploadProgress {
   indexMs: number
   finished: boolean
   dir: string
+  /** Files landed, but the indexing pass after them did not. */
+  indexError?: string
 }
 
 const BATCH = 25
@@ -51,7 +53,8 @@ export async function uploadBatched(
     try {
       const r = await api.uploadFiles(batch, dir)
       p.done += r.saved.length
-      p.indexMs += r.indexMs
+      p.indexMs += r.indexMs ?? 0
+      if (r.indexed === false && r.indexError) p.indexError = r.indexError
     } catch (e) {
       for (const it of batch) p.failed.push({ name: it.rel, error: String((e as Error).message ?? e) })
     }
