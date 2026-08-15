@@ -114,14 +114,23 @@ Stage: final
     /opt/gufi /opt/gufi
 
 %post
+    # Fail the build on a failed step. An image that quietly lacks an
+    # extractor indexes Word files as their filename and says nothing,
+    # which is how the first attempt at this shipped: the apt line named a
+    # package bookworm does not have, so it installed none of them and the
+    # build still reported success.
+    set -e
     export DEBIAN_FRONTEND=noninteractive
     # bookworm's python3 is 3.11, which satisfies the indexer's 3.10+ syntax.
-    # Office extraction needs these three; without them a docx indexes as
-    # its filename. Debian ships them, so no pip and no network at run time.
+    # Debian carries docx and openpyxl; python-pptx is not packaged, so it
+    # comes from pip at build time, never at run time.
     apt-get update && apt-get install -y --no-install-recommends \
-        python3 python3-docx python3-pptx python3-openpyxl \
-        attr poppler-utils tesseract-ocr curl ca-certificates \
-        && rm -rf /var/lib/apt/lists/*
+        python3 python3-pip python3-docx python3-openpyxl \
+        attr poppler-utils tesseract-ocr curl ca-certificates
+    pip3 install --no-cache-dir --break-system-packages python-pptx
+    rm -rf /var/lib/apt/lists/*
+    # Prove it before the image is sealed.
+    python3 -c "import docx, pptx, openpyxl; print('extractors ok: docx, pptx, openpyxl')"
     cat > /app/start.sh << 'START'
 #!/bin/sh
 # The index lives on the bind-mounted data directory, never in the image;

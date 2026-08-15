@@ -379,7 +379,7 @@ ${ctx}` : ctx
                 continue
               }
               try {
-                const out = await executeTool(tc.function.name, tc.function.arguments, { labelScope, userKey: pwToolKey })
+                const out = await executeTool(tc.function.name, tc.function.arguments, { labelScope, userKey: pwToolKey, model: String(body.model ?? '') || null })
                 toolCache.set(key, out.result)
                 outcomes[i] = out
               } catch (e) {
