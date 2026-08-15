@@ -30,8 +30,38 @@ MAX_CAPTION_BYTES = 8 * 1024 * 1024
 MIN_IMAGE_BYTES = 8 * 1024  # skip icons and tiny assets
 
 
+def _ooxml_text(path: Path, members: str, break_tags: tuple) -> str:
+    """Text out of an OOXML file with the standard library alone.
+
+    docx, pptx and xlsx are zipped XML, so the text is reachable without
+    python-docx, python-pptx or openpyxl. Clusters routinely have none of
+    them and no way to install them, and a Word document that indexes as
+    its filename is worse than a slightly rougher extraction.
+    """
+    import re
+    import zipfile
+    out = []
+    try:
+        with zipfile.ZipFile(path) as z:
+            names = sorted(n for n in z.namelist() if re.fullmatch(members, n))
+            for name in names:
+                xml = z.read(name).decode('utf-8', errors='replace')
+                for tag in break_tags:
+                    xml = xml.replace(tag, '\n')
+                text = re.sub(r'<[^>]+>', '', xml)
+                text = (text.replace('&amp;', '&').replace('&lt;', '<').replace('&gt;', '>')
+                            .replace('&quot;', '"').replace('&apos;', "'"))
+                out.append('\n'.join(line.strip() for line in text.split('\n') if line.strip()))
+    except Exception:
+        return ''
+    return '\n'.join(x for x in out if x)
+
+
 def extract_docx(path: Path) -> str:
-    from docx import Document  # type: ignore
+    try:
+        from docx import Document  # type: ignore
+    except ImportError:
+        return _ooxml_text(path, r'word/document\.xml', ('</w:p>', '</w:tr>', '</w:tc>'))
     doc = Document(str(path))
     parts = [p.text for p in doc.paragraphs]
     for table in doc.tables:
@@ -57,7 +87,10 @@ def extract_pdf(path: Path) -> str:
 
 
 def extract_pptx(path: Path) -> str:
-    from pptx import Presentation  # type: ignore
+    try:
+        from pptx import Presentation  # type: ignore
+    except ImportError:
+        return _ooxml_text(path, r'ppt/slides/slide\d+\.xml', ('</a:p>', '</a:t>'))
     prs = Presentation(str(path))
     parts = []
     for slide in prs.slides:
@@ -68,7 +101,11 @@ def extract_pptx(path: Path) -> str:
 
 
 def extract_xlsx(path: Path) -> str:
-    from openpyxl import load_workbook  # type: ignore
+    try:
+        from openpyxl import load_workbook  # type: ignore
+    except ImportError:
+        # Shared strings hold most cell text; sheet XML holds the rest.
+        return _ooxml_text(path, r'xl/(sharedStrings|worksheets/sheet\d+)\.xml', ('</si>', '</row>', '</c>'))
     wb = load_workbook(str(path), read_only=True, data_only=True)
     parts = []
     for ws in wb.worksheets:
