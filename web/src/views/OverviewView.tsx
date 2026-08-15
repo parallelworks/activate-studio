@@ -31,6 +31,7 @@ function jumpToQuery(filters: { field: string; op: string; value: string }[], so
 export function OverviewView({ onOpen }: { onOpen: (path: string) => void }) {
   const [stats, setStats] = useState<{ files?: number; dirs?: number; totalBytes?: number; byExt?: ExtRow[] } | null>(null)
   const [idx, setIdx] = useState<IndexStatus | null>(null)
+  const [extractors, setExtractors] = useState<{ name: string; available: boolean; covers: string }[]>([])
   const [tags, setTags] = useState<{ tag: string; count: number }[]>([])
   const [largest, setLargest] = useState<QueryResult | null>(null)
   const [recent, setRecent] = useState<QueryResult | null>(null)
@@ -39,6 +40,7 @@ export function OverviewView({ onOpen }: { onOpen: (path: string) => void }) {
   useEffect(() => {
     api.stats().then(setStats).catch(() => {})
     api.indexStatus().then(setIdx).catch(() => {})
+    api.extractors().then(r => setExtractors(r.extractors)).catch(() => {})
     api.tagVocabulary().then(v => setTags(v.tags)).catch(() => {})
     const q = (body: unknown, set: (r: QueryResult) => void) =>
       fetch('/api/query', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
@@ -82,6 +84,15 @@ export function OverviewView({ onOpen }: { onOpen: (path: string) => void }) {
 
       {idx?.lastError && (
         <div className="card ov-error">Last sync reported: {idx.lastError.slice(0, 300)}</div>
+      )}
+
+      {/* A format with no extractor indexes as its filename, which is worth
+          saying out loud rather than leaving to be discovered. */}
+      {extractors.some(x => !x.available) && (
+        <div className="card ov-note">
+          Not all document formats can be read on this host, so these index by filename only:{' '}
+          {extractors.filter(x => !x.available).map(x => `${x.covers} (needs ${x.name})`).join(', ')}.
+        </div>
       )}
 
       <div className="ov-grid">
