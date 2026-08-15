@@ -21,7 +21,7 @@ export function isEmbedded(): boolean {
 /** Black or white text, whichever the background can carry. Deployments pick
  *  their own color, and a light one with white text is unreadable. */
 export function bannerInk(hex: string): string {
-  const m = /^#([0-9a-f]{6})$/i.exec(hex.trim())
+  const m = /^#([0-9a-f]{6})$/i.exec((hex ?? '').trim())
   if (!m) return '#ffffff'
   const n = parseInt(m[1], 16)
   const [r, g, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map(v => {

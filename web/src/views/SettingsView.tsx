@@ -335,7 +335,7 @@ export function SettingsView() {
                 </div>
                 <div>
                   <label className="field-label">Classification banner (empty for none)</label>
-                  <input className="field" value={form.bannerText}
+                  <input className="field" value={form.bannerText ?? ''}
                     placeholder="***** APPROVED FOR IL5 HIGH - CONTROLLED UNCLASSIFIED INFORMATION (CUI) *****"
                     onChange={e => setForm({ ...form, bannerText: e.target.value })} />
                   <div className="accent-row banner-colors">
@@ -343,7 +343,7 @@ export function SettingsView() {
                       <button
                         key={hex}
                         type="button"
-                        className={`accent-swatch ${form.bannerColor.toLowerCase() === hex ? 'active' : ''}`}
+                        className={`accent-swatch ${(form.bannerColor ?? '').toLowerCase() === hex ? 'active' : ''}`}
                         style={{ background: hex }}
                         title={label}
                         onClick={() => setForm({ ...form, bannerColor: hex })}
@@ -353,18 +353,18 @@ export function SettingsView() {
                       type="color"
                       className="accent-swatch accent-custom"
                       title="Custom color"
-                      value={/^#[0-9a-fA-F]{6}$/.test(form.bannerColor) ? form.bannerColor : '#2e6b2e'}
+                      value={/^#[0-9a-fA-F]{6}$/.test(form.bannerColor ?? '') ? form.bannerColor : '#2e6b2e'}
                       onChange={e => setForm({ ...form, bannerColor: e.target.value })}
                     />
                   </div>
-                  {form.bannerText.trim() && (
+                  {(form.bannerText ?? '').trim() && (
                     <div className="cls-banner banner-preview"
                       style={{ background: form.bannerColor, color: bannerInk(form.bannerColor) }}>
                       {form.bannerText}
                     </div>
                   )}
                   <label className="key-persist">
-                    <input type="checkbox" checked={form.bannerWhenEmbedded}
+                    <input type="checkbox" checked={!!form.bannerWhenEmbedded}
                       onChange={e => setForm({ ...form, bannerWhenEmbedded: e.target.checked })} />
                     <span>Show it inside the platform frame too</span>
                   </label>
