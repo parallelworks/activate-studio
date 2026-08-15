@@ -132,6 +132,35 @@ export const TOOL_SPECS: ToolSpec[] = [
   {
     type: 'function',
     function: {
+      name: 'compose_workflow',
+      description:
+        'Combine existing workflows into a new one that runs each as a subworkflow step, merging their inputs. Use it to assemble a chain toward a goal: list_workflows to see what exists, then compose the ones that fit. Returns the composed workflow.yaml for review; nothing is saved to the platform.',
+      parameters: {
+        type: 'object',
+        properties: {
+          workflows: {
+            type: 'array',
+            description: 'Workflows to run, in order. Each is a name (cloudinit) or a marketplace reference with an optional version (marketplace/cloudinit/v1.0.1).',
+            items: {
+              type: 'object',
+              properties: {
+                uses: { type: 'string', description: 'Workflow reference' },
+                name: { type: 'string', description: 'Label for the step' },
+                id: { type: 'string', description: 'Job id; derived from the reference when omitted' },
+                needs: { type: 'array', items: { type: 'string' }, description: 'Job ids to wait for; omit for a straight chain' },
+              },
+              required: ['uses'],
+            },
+          },
+          parallel: { type: 'boolean', description: 'Run the steps independently instead of chaining each after the previous one' },
+        },
+        required: ['workflows'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'run_workflow',
       description:
         'Run a platform workflow, or validate it with dry_run. When composing or exploring on your own initiative, validate with dry_run:true. When the user has asked in this conversation to run a workflow, their request is the authorization: launch the real run without asking again for confirmation.',
