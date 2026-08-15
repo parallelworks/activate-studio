@@ -4,7 +4,7 @@ import type { FastifyInstance } from 'fastify'
 import { EXCLUDE_DIRS, GUFI_BIN, GUFI_INDEX, KB_ROOT, gufiAvailable, PYTHON_BIN } from './config.js'
 import { KbError, resolveKb } from './kb.js'
 import { reindexForDir, reindexForFile } from './indexing.js'
-import { overlayEmpty, overlayGet, overlaySet, overlayUnder } from './tagsOverlay.js'
+import { identify, overlayByInode, overlayEmpty, overlayEntries, overlayFlush, overlayGet, overlayNotePath, overlayPrune, overlaySet, sameObject } from './tagsOverlay.js'
 
 export const TAG_XATTR = 'user.studio.tags'
 const DELIM = '\x1e'
@@ -100,11 +100,8 @@ export async function tagMaps(): Promise<TagMaps> {
   // Overlay entries win over (possibly stale) index rows, and make labels
   // work even before a reindex has run or when GUFI is absent.
   if (!overlayEmpty()) {
-    const fsSync = await import('node:fs')
-    for (const [rel, tags] of Object.entries(overlayUnder(''))) {
-      let isDir = false
-      try { isDir = fsSync.statSync(path.join(KB_ROOT, rel)).isDirectory() } catch { /* keep as file */ }
-      ;(isDir ? dirTags : fileTags).set(rel, tags)
+    for (const e of Object.values(overlayEntries())) {
+      ;(e.dir ? dirTags : fileTags).set(e.path, e.tags)
     }
   }
   cache = { dirTags, fileTags, at: Date.now() }
@@ -178,17 +175,58 @@ export async function applyTagsCore(rawPaths: string[], addRaw: string[], remove
   return updated
 }
 
-/** Re-apply overlay-stored labels into the index after a reindex rebuilt
- *  it from a filesystem that has no xattrs. Failures are left for the next
- *  pass rather than triggering reindex recursion. */
+/**
+ * Re-attach overlay labels to a rebuilt index by joining on inode, which is
+ * how GUFI expects information that a tree walk cannot recover to be
+ * restored. Asking the index where each inode lives now (rather than
+ * trusting a stored path) means renames and moves survive a reindex, and a
+ * full pass prunes labels whose file is gone from both the index and disk.
+ */
 export async function reapplyTagOverlay(prefix = ''): Promise<number> {
-  const entries = overlayUnder(prefix)
-  const rels = Object.keys(entries)
-  if (!rels.length) return 0
-  const failed = await upsertIndexTags(rels, entries).catch(() => rels)
+  if (overlayEmpty() || !gufiAvailable()) return 0
+  const byInode = overlayByInode()
+  const entries = overlayEntries()
+
+  const rows: { rel: string; inode: string; dir: boolean }[] = []
+  const dirs = await gufiRows(
+    'SELECT rpath(sname, sroll), CAST(inode AS TEXT) FROM vrsummary;',
+  ).catch(() => [])
+  for (const [p, ino] of dirs) rows.push({ rel: relOf(p), inode: ino, dir: true })
+  const files = await gufiRows(
+    "SELECT rpath(sname, sroll)||'/'||name, CAST(inode AS TEXT) FROM vrpentries;",
+  ).catch(() => [])
+  for (const [p, ino] of files) rows.push({ rel: relOf(p), inode: ino, dir: false })
+
+  const scope = prefix.replace(/^\/+|\/+$/g, '')
+  const updated: Record<string, string[]> = {}
+  const seen = new Set<string>()
+  let pathsMoved = false
+  for (const row of rows) {
+    const keys = byInode.get(row.inode)
+    if (!keys) continue
+    // The index reports inodes only; stat confirms both the fsid (a corpus
+    // spanning devices must not cross-apply labels) and the creation time
+    // (a recycled inode is a different file).
+    const id = identify(path.join(KB_ROOT, row.rel))
+    if (!id) continue
+    const key = keys.find(k => k === id.key)
+    const entry = key ? entries[key] : undefined
+    if (!key || !entry || !sameObject(entry, id)) continue
+    seen.add(key)
+    if (overlayNotePath(key, row.rel, row.dir)) pathsMoved = true
+    if (scope && row.rel !== scope && !row.rel.startsWith(scope + '/')) continue
+    updated[row.rel] = entries[key].tags
+  }
+  if (pathsMoved) overlayFlush()
+
+  const rels = Object.keys(updated)
+  const failed = rels.length ? await upsertIndexTags(rels, updated).catch(() => rels) : []
+  if (!scope) overlayPrune(seen)
   invalidateTagMaps()
   return rels.length - failed.length
 }
+
+
 
 /** Write user.studio.tags rows straight into the per-directory index dbs.
  *  Returns the paths that could not be updated in place. */
