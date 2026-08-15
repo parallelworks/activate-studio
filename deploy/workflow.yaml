@@ -446,7 +446,12 @@ jobs:
           sed -i 's/-DGGML_CCACHE=Off/-DGGML_CCACHE=Off -DGGML_NATIVE=Off/' GUFI/contrib/deps/sqlite-lembed.sh 2>/dev/null || true
           mkdir -p GUFI/build
           cd GUFI/build
-          cmake .. -DCMAKE_INSTALL_PREFIX="${{ inputs.app_settings.workdir }}/gufi-install" -DCMAKE_BUILD_TYPE=Release || { echo "WARNING: cmake configure failed; continuing without GUFI"; exit 0; }
+          # SERVER_CONFIG/CLIENT_CONFIG default under /etc/GUFI, which an
+          # unprivileged install cannot create; keep them inside the prefix.
+          GUFI_PREFIX="${{ inputs.app_settings.workdir }}/gufi-install"
+          cmake .. -DCMAKE_INSTALL_PREFIX="$GUFI_PREFIX" -DCMAKE_BUILD_TYPE=Release \
+            -DSERVER_CONFIG="$GUFI_PREFIX/etc/server" -DCLIENT_CONFIG="$GUFI_PREFIX/etc/client" \
+            || { echo "WARNING: cmake configure failed; continuing without GUFI"; exit 0; }
           make -j "$(nproc)" || { echo "WARNING: GUFI build failed; continuing without GUFI"; exit 0; }
           make install || { echo "WARNING: GUFI install failed; continuing without GUFI"; exit 0; }
           echo "GUFI installed at ${{ inputs.app_settings.workdir }}/gufi-install"
