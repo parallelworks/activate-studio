@@ -75,30 +75,39 @@ function styleEl(id: string): HTMLStyleElement {
   return el
 }
 
+/** Cached so index.html can apply the same CSS before first paint. */
+function remember(key: string, css: string): void {
+  try { localStorage.setItem(key, css) } catch { /* storage unavailable */ }
+}
+
 export function applyAccent(name: string): void {
   const a = accentFor(name)
-  if (!a || name === 'navy') { styleEl('accent-style').textContent = ''; return }
+  if (!a || name === 'navy') { styleEl('accent-style').textContent = ''; remember('ade-accent-css', ''); return }
   // Dark mode carries hardcoded blues for solid elements (primary buttons,
   // links, brand badge, --theme-element); derive accent equivalents so the
   // whole surface follows the accent, not just ink and pills. The solid is
   // the light ink lightened enough to sit on dark panels with white text.
   const solid = mix(a.light[0], '#ffffff', 0.18)
   const solidHover = mix(a.light[0], '#ffffff', 0.3)
-  styleEl('accent-style').textContent = `
+  const css = `
 :root { --pw-navy: ${a.light[0]}; --pw-navy-2: ${a.light[1]}; --pw-active-pill: ${a.light[2]}; --pw-link: ${a.light[1]}; --theme-link: ${a.light[1]}; }
 [data-theme='dark'] { --pw-navy: ${a.dark[0]}; --pw-navy-2: ${a.dark[1]}; --pw-active-pill: ${a.dark[2]}; --pw-link: ${a.dark[0]}; --theme-link: ${a.dark[0]}; --theme-element: ${solid}; }
 [data-theme='dark'] .btn-primary { background: ${solid}; }
 [data-theme='dark'] .btn-primary:hover { background: ${solidHover}; }
 [data-theme='dark'] .brand-badge { background: ${solid}; }
 `
+  styleEl('accent-style').textContent = css
+  remember('ade-accent-css', css)
 }
 
 export function applySurface(name: string): void {
   const sfc = SURFACES[name]
   const block = (vars?: Record<string, string>) =>
     vars ? Object.entries(vars).map(([k, v]) => `${k}: ${v};`).join(' ') : ''
-  styleEl('surface-style').textContent = !sfc || name === 'cool' ? '' : `
+  const css = !sfc || name === 'cool' ? '' : `
 :root { ${block(sfc.light)} }
 [data-theme='dark'] { ${block(sfc.dark)} }
 `
+  styleEl('surface-style').textContent = css
+  remember('ade-surface-css', css)
 }
