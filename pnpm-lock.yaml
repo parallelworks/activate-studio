@@ -21,6 +21,9 @@ importers:
       '@fastify/static':
         specifier: ^8.0.0
         version: 8.3.0
+      '@parallelworks/workflow-parser':
+        specifier: ^0.1.0
+        version: 0.1.0
       fastify:
         specifier: ^5.0.0
         version: 5.12.0
@@ -567,6 +570,9 @@ packages:
       react: ^19.0.0
       react-dom: ^19.0.0
 
+  '@parallelworks/workflow-parser@0.1.0':
+    resolution: {integrity: sha512-ptMo7X8F6aQ4hvyZz9U6noNZt7WEE3LiA9Fwr3H2mxsX7VkAKJCsa2+18ByRr9N0dQI04eUntWq1bdShh37Dug==}
+
   '@pinojs/redact@0.4.0':
     resolution: {integrity: sha512-k2ENnmBugE/rzQfEcdWHcCY+/FM3VLzH9cYEsbdsoqrvzAKRhUZeRNhAZvB8OitQJ1TBed3yqWtdjzS6wJKBwg==}
 
@@ -934,6 +940,12 @@ packages:
 
   ajv@8.20.0:
     resolution: {integrity: sha512-Thbli+OlOj+iMPYFBVBfJ3OmCAnaSyNn4M1vz9T6Gka5Jt9ba/HIR56joy65tY6kx/FCF5VXNB819Y7/GUrBGA==}
+
+  anser@2.3.5:
+    resolution: {integrity: sha512-vcZjxvvVoxTeR5XBNJB38oTu/7eDCZlwdz32N1eNgpyPF7j/Z7Idf+CUwQOkKKpJ7RJyjxgLHCM7vdIK0iCNMQ==}
+
+  argparse@2.0.1:
+    resolution: {integrity: sha512-8+9WqebbFzpX9OR+Wa6O29asIogeRMzcGtAINdpMHHyAg10f05aSFVBbcEqGf/PXw1EjAZ+q2/bEBg3DvurK3Q==}
 
   atomic-sleep@1.0.0:
     resolution: {integrity: sha512-kNOjDqAh7px0XWNI+4QbzoiR/nTkHAWNud2uvnJquD1/x5a7EQZMJT0AczqK0Qn67oY/TTQ1LbUKajZpp3I9tQ==}
@@ -1411,6 +1423,10 @@ packages:
 
   js-tokens@4.0.0:
     resolution: {integrity: sha512-RdJUflcE3cUzKiMqQgsCu06FPu9UdIJO0beYbPhHN4k6apgJtifcoCtT9bcxOpYBtpD2kCM6Sbzg4CausW/PKQ==}
+
+  js-yaml@4.3.1:
+    resolution: {integrity: sha512-CY6crGq313MX8GkwvB7tzgp99vjQxY1++5y10/BKN/GUfHqWaOGQMNZkBvqSzsZKWk/ijwHlWzzkLulsGHhjWQ==}
+    hasBin: true
 
   jsesc@3.1.0:
     resolution: {integrity: sha512-/sM3dO2FOzXjKQhJuo0Q173wf2KOo8t4I8vHy6lF9poUp7bKT0/NHE8fPX23PwfhnykfqnC2xRxOnVw5XuGIaA==}
@@ -2425,6 +2441,12 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
+  '@parallelworks/workflow-parser@0.1.0':
+    dependencies:
+      anser: 2.3.5
+      js-yaml: 4.3.1
+      luxon: 3.7.2
+
   '@pinojs/redact@0.4.0': {}
 
   '@rolldown/pluginutils@1.0.0-beta.27': {}
@@ -2783,6 +2805,10 @@ snapshots:
       fast-uri: 3.1.5
       json-schema-traverse: 1.0.0
       require-from-string: 2.0.2
+
+  anser@2.3.5: {}
+
+  argparse@2.0.1: {}
 
   atomic-sleep@1.0.0: {}
 
@@ -3388,6 +3414,10 @@ snapshots:
   jose@6.2.8: {}
 
   js-tokens@4.0.0: {}
+
+  js-yaml@4.3.1:
+    dependencies:
+      argparse: 2.0.1
 
   jsesc@3.1.0: {}
 
