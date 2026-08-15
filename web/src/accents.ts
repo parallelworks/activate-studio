@@ -1,3 +1,5 @@
+import { deriveTheme } from '@parallelworks/ui/theme'
+
 /** Named accent schemes: [primary ink, hover ink, active pill] per theme.
  *  'navy' is the stylesheet default and applies no override. */
 export interface Accent {
@@ -70,8 +72,12 @@ function styleEl(id: string): HTMLStyleElement {
   if (!el) {
     el = document.createElement('style')
     el.id = id
-    document.head.appendChild(el)
   }
+  // Always move it last in <head>. The pre-paint script in index.html
+  // inserts these before the bundle's stylesheet, and on equal specificity
+  // the later rule wins, so leaving it in place lets the bundle's stock
+  // values override every token we derive.
+  document.head.appendChild(el)
   return el
 }
 
@@ -80,34 +86,65 @@ function remember(key: string, css: string): void {
   try { localStorage.setItem(key, css) } catch { /* storage unavailable */ }
 }
 
-export function applyAccent(name: string): void {
-  const a = accentFor(name)
-  if (!a || name === 'navy') { styleEl('accent-style').textContent = ''; remember('ade-accent-css', ''); return }
-  // Dark mode carries hardcoded blues for solid elements (primary buttons,
-  // links, brand badge, --theme-element); derive accent equivalents so the
-  // whole surface follows the accent, not just ink and pills. The solid is
-  // the light ink lightened enough to sit on dark panels with white text.
+/** Base backgrounds the stylesheet ships with; a surface may override them,
+ *  and the derived tokens follow whichever is in effect. */
+const BASE_BG = { light: '#f3f4f6', dark: '#0c1320' }
+
+let current = { accent: 'navy', surface: 'cool' }
+
+function backgrounds(): { light: string; dark: string } {
+  const sfc = SURFACES[current.surface]
+  return {
+    light: sfc?.light?.['--pw-bg'] ?? BASE_BG.light,
+    dark: sfc?.dark?.['--pw-bg'] ?? BASE_BG.dark,
+  }
+}
+
+/** Emit both style blocks together: the platform derives its whole
+ *  --theme-* token set from an accent plus a background, so the two cannot
+ *  be computed independently. Shared components (the chat package, anything
+ *  adopted from @parallelworks/ui) read those tokens, which is why hand
+ *  mapping a few of them still left stock blue showing in dark mode. */
+function emit(): void {
+  const a = accentFor(current.accent) ?? ACCENTS.navy
+  const bg = backgrounds()
   const solid = mix(a.light[0], '#ffffff', 0.18)
   const solidHover = mix(a.light[0], '#ffffff', 0.3)
-  const css = `
-:root { --pw-navy: ${a.light[0]}; --pw-navy-2: ${a.light[1]}; --pw-active-pill: ${a.light[2]}; --pw-link: ${a.light[1]}; --theme-link: ${a.light[1]}; }
-[data-theme='dark'] { --pw-navy: ${a.dark[0]}; --pw-navy-2: ${a.dark[1]}; --pw-active-pill: ${a.dark[2]}; --pw-link: ${a.dark[0]}; --theme-link: ${a.dark[0]}; --theme-element: ${solid}; }
+  const vars = (v: Record<string, string>) => Object.entries(v).map(([k, x]) => `${k}: ${x};`).join(' ')
+
+  let themeLight = ''
+  let themeDark = ''
+  try {
+    themeLight = vars(deriveTheme({ accent: a.light[0], background: bg.light }))
+    themeDark = vars(deriveTheme({ accent: a.dark[0], background: bg.dark }))
+  } catch { /* our own variables still theme the app */ }
+
+  const sfc = SURFACES[current.surface]
+  const block = (v?: Record<string, string>) =>
+    v ? Object.entries(v).map(([k, x]) => `${k}: ${x};`).join(' ') : ''
+  const surfaceCss = !sfc || current.surface === 'cool' ? '' : `
+:root { ${block(sfc.light)} }
+[data-theme='dark'] { ${block(sfc.dark)} }
+`
+  const accentCss = `
+:root { ${themeLight} --pw-navy: ${a.light[0]}; --pw-navy-2: ${a.light[1]}; --pw-active-pill: ${a.light[2]}; --pw-link: ${a.light[1]}; --theme-link: ${a.light[1]}; }
+[data-theme='dark'] { ${themeDark} --pw-navy: ${a.dark[0]}; --pw-navy-2: ${a.dark[1]}; --pw-active-pill: ${a.dark[2]}; --pw-link: ${a.dark[0]}; --theme-link: ${a.dark[0]}; --theme-element: ${solid}; }
 [data-theme='dark'] .btn-primary { background: ${solid}; }
 [data-theme='dark'] .btn-primary:hover { background: ${solidHover}; }
 [data-theme='dark'] .brand-badge { background: ${solid}; }
 `
-  styleEl('accent-style').textContent = css
-  remember('ade-accent-css', css)
+  styleEl('surface-style').textContent = surfaceCss
+  styleEl('accent-style').textContent = accentCss
+  remember('ade-surface-css', surfaceCss)
+  remember('ade-accent-css', accentCss)
+}
+
+export function applyAccent(name: string): void {
+  current = { ...current, accent: name }
+  emit()
 }
 
 export function applySurface(name: string): void {
-  const sfc = SURFACES[name]
-  const block = (vars?: Record<string, string>) =>
-    vars ? Object.entries(vars).map(([k, v]) => `${k}: ${v};`).join(' ') : ''
-  const css = !sfc || name === 'cool' ? '' : `
-:root { ${block(sfc.light)} }
-[data-theme='dark'] { ${block(sfc.dark)} }
-`
-  styleEl('surface-style').textContent = css
-  remember('ade-surface-css', css)
+  current = { ...current, surface: name }
+  emit()
 }
