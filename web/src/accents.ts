@@ -134,9 +134,15 @@ function emit(): void {
 :root:root { ${block(sfc.light)} }
 :root:root[data-theme='dark'] { ${block(sfc.dark)} }
 `
+  // The platform derives hover as a neutral tint. Ours carries a little of
+  // the accent instead, so choosing green does not leave blue-grey hovers
+  // behind on rows and menu items.
+  const hoverLight = mix(bg.light, a.light[0], 0.07)
+  const hoverDark = mix(bg.dark, a.dark[0], 0.14)
+
   const accentCss = `
-:root:root { ${themeLight} --pw-navy: ${a.light[0]}; --pw-navy-2: ${a.light[1]}; --pw-active-pill: ${a.light[2]}; --pw-link: ${a.light[1]}; --theme-link: ${a.light[1]}; }
-:root:root[data-theme='dark'] { ${themeDark} --pw-navy: ${a.dark[0]}; --pw-navy-2: ${a.dark[1]}; --pw-active-pill: ${a.dark[2]}; --pw-link: ${a.dark[0]}; --theme-link: ${a.dark[0]}; --theme-element: ${solid}; }
+:root:root { ${themeLight} --pw-navy: ${a.light[0]}; --pw-navy-2: ${a.light[1]}; --pw-active-pill: ${a.light[2]}; --pw-link: ${a.light[1]}; --theme-link: ${a.light[1]}; --theme-hover: ${hoverLight}; --pw-hover-row: ${hoverLight}; }
+:root:root[data-theme='dark'] { ${themeDark} --pw-navy: ${a.dark[0]}; --pw-navy-2: ${a.dark[1]}; --pw-active-pill: ${a.dark[2]}; --pw-link: ${a.dark[0]}; --theme-link: ${a.dark[0]}; --theme-element: ${solid}; --theme-hover: ${hoverDark}; --pw-hover-row: ${hoverDark}; }
 :root[data-theme='dark'] .btn-primary { background: ${solid}; }
 :root[data-theme='dark'] .btn-primary:hover { background: ${solidHover}; }
 :root[data-theme='dark'] .brand-badge { background: ${solid}; }
