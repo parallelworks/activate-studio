@@ -15,11 +15,27 @@ import { removeModelCache } from './model.js'
 import { effectiveSettings } from './settings.js'
 import { authEnabled, authHeaderName } from './auth.js'
 
+/** A brand image may be given as a URL instead of a path on the resource,
+ *  which is easier for a deployment whose branding lives on a web server
+ *  and needs no file staged next to the corpus. */
+function isUrl(v: string | undefined): v is string {
+  return !!v && /^https?:\/\//i.test(v)
+}
+
 function faviconFile(): string | null {
   for (const p of [process.env.APP_FAVICON, process.env.APP_ICON]) {
-    if (p && fs.existsSync(p)) return p
+    if (p && !isUrl(p) && fs.existsSync(p)) return p
   }
   return null
+}
+
+/** The URL the browser should load for a brand image: an external URL as
+ *  given, our own endpoint when a file is staged, or nothing. */
+function brandUrl(kind: 'icon' | 'favicon'): string | null {
+  const configured = kind === 'icon' ? process.env.APP_ICON : (process.env.APP_FAVICON ?? process.env.APP_ICON)
+  if (isUrl(configured)) return configured
+  if (kind === 'icon') return configured && fs.existsSync(configured) ? '/api/brand-icon' : null
+  return faviconFile() ? '/api/favicon' : null
 }
 
 export async function kbRoutes(app: FastifyInstance): Promise<void> {
@@ -69,8 +85,8 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
         }
     return {
       appName: eff.appName,
-      iconUrl: process.env.APP_ICON && fs.existsSync(process.env.APP_ICON) ? '/api/brand-icon' : null,
-      faviconUrl: faviconFile() ? '/api/favicon' : null,
+      iconUrl: brandUrl('icon'),
+      faviconUrl: brandUrl('favicon'),
       kbLabel: eff.kbLabel,
       theme: eff.theme,
       accent: eff.accent,

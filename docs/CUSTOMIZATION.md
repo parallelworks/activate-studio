@@ -8,7 +8,7 @@ Every deployment-specific choice lives in environment variables, conventionally 
 
 ## Name and brand
 
-`APP_NAME` is the product name in the header and the browser tab. `APP_ICON` points at an image file (PNG or SVG works) shown beside it; without one, a letter badge from the first character of the name appears instead. `APP_FAVICON` points at an image used as the browser tab icon; it falls back to `APP_ICON`, and with neither set the tab shows the generic bundled favicon. `THEME` picks the default of light or dark; every user can toggle from the sidebar footer, and their choice persists in the browser.
+`APP_NAME` is the product name in the header and the browser tab. `APP_ICON` points at an image (PNG or SVG works) shown beside it, either an `https://` URL or a path on the resource; without one, a letter badge from the first character of the name appears instead. `APP_FAVICON` points at an image used as the browser tab icon; it falls back to `APP_ICON`, and with neither set the tab shows the generic bundled favicon. `THEME` picks the default of light or dark; every user can toggle from the sidebar footer, and their choice persists in the browser.
 
 ## Chat
 
