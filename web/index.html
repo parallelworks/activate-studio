@@ -5,6 +5,26 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" href="/favicon.svg" />
     <title>Studio</title>
+    <script>
+      // Paint in the right theme immediately. Everything below is a cache of
+      // what the app applied last time; the app still fetches the real
+      // configuration and overwrites these, but without this the first paint
+      // uses stock light-mode defaults and visibly flips once config lands.
+      try {
+        var d = document.documentElement
+        var t = localStorage.getItem('ade-theme') || localStorage.getItem('ade-theme-default')
+        if (t === 'dark' || t === 'light') d.dataset.theme = t
+        var put = function (id, css) {
+          if (!css) return
+          var el = document.createElement('style')
+          el.id = id
+          el.textContent = css
+          document.head.appendChild(el)
+        }
+        put('accent-style', localStorage.getItem('ade-accent-css'))
+        put('surface-style', localStorage.getItem('ade-surface-css'))
+      } catch (e) { /* first visit, or storage unavailable */ }
+    </script>
   </head>
   <body>
     <div id="root"></div>
