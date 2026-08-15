@@ -39,6 +39,7 @@ export interface StudioSettings {
   bannerText?: string
   bannerColor?: string
   bannerWhenEmbedded?: boolean
+  allowKeySharing?: boolean
 }
 
 let cache: StudioSettings | null = null
@@ -92,6 +93,10 @@ export function effectiveSettings(): Required<StudioSettings> {
     bannerText: s.bannerText ?? process.env.BANNER_TEXT ?? '',
     bannerColor: s.bannerColor ?? process.env.BANNER_COLOR ?? '#24612e',
     bannerWhenEmbedded: s.bannerWhenEmbedded ?? process.env.BANNER_WHEN_EMBEDDED === '1',
+    // Whether a user may promote their own key to stand in for the
+    // deployment credential. On by default: the deployments that need it
+    // are the ones with no credential of their own.
+    allowKeySharing: s.allowKeySharing ?? process.env.ALLOW_KEY_SHARING !== '0',
   }
 }
 
@@ -169,6 +174,7 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
       next.bannerColor = c || undefined
     }
     if (body.bannerWhenEmbedded !== undefined) next.bannerWhenEmbedded = Boolean(body.bannerWhenEmbedded)
+    if (body.allowKeySharing !== undefined) next.allowKeySharing = Boolean(body.allowKeySharing)
     if (body.ragEndpointName !== undefined) {
       const n = String(body.ragEndpointName).toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40)
       next.ragEndpointName = n || undefined
