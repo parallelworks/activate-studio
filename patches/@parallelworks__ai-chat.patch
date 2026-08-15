@@ -1,8 +1,7 @@
 diff --git a/dist/index.js b/dist/index.js
-index d80e7c3c80143c5232fc9c26fe2b3e9dcb390c3b..b796f9fc963236d937f4198cf09d698e44bbc633 100644
 --- a/dist/index.js
 +++ b/dist/index.js
-@@ -1368,6 +1368,8 @@ function AttachmentManager() {
+@@ -1368,6 +1368,8 @@
  								className: cx("rounded-lg border theme-border overflow-hidden", isDeleting && "opacity-50 pointer-events-none"),
  								children: [isImage ? /* @__PURE__ */ jsx("div", {
  									className: "aspect-square bg-(--theme-muted-panel-bg) flex items-center justify-center",
@@ -11,7 +10,7 @@ index d80e7c3c80143c5232fc9c26fe2b3e9dcb390c3b..b796f9fc963236d937f4198cf09d698e
  									children: /* @__PURE__ */ jsx("img", {
  										src: downloadUrl,
  										alt: att.filename || "Image",
-@@ -1376,6 +1378,8 @@ function AttachmentManager() {
+@@ -1376,6 +1378,8 @@
  									})
  								}) : /* @__PURE__ */ jsx("div", {
  									className: "aspect-square bg-(--theme-muted-panel-bg) flex flex-col items-center justify-center gap-2 p-3",
@@ -20,7 +19,7 @@ index d80e7c3c80143c5232fc9c26fe2b3e9dcb390c3b..b796f9fc963236d937f4198cf09d698e
  									children: /* @__PURE__ */ jsx(FileIcon, { className: "w-8 h-8 theme-muted-text" })
  								}), /* @__PURE__ */ jsxs("div", {
  									className: "p-3 text-xs bg-(--theme-panel-bg) flex items-center justify-between gap-1",
-@@ -2475,11 +2479,11 @@ function ChatEmptyState({ targetSession }) {
+@@ -2475,11 +2479,11 @@
  										/* @__PURE__ */ jsx(CloudIcon, { className: "h-16 w-16 theme-muted-text opacity-50" }),
  										/* @__PURE__ */ jsx("p", {
  											className: "text-lg theme-muted-text",
@@ -34,7 +33,7 @@ index d80e7c3c80143c5232fc9c26fe2b3e9dcb390c3b..b796f9fc963236d937f4198cf09d698e
  										}),
  										extraLinks.addProvider && /* @__PURE__ */ jsxs(LinkComponent, {
  											target: {
-@@ -2506,7 +2510,7 @@ function ChatEmptyState({ targetSession }) {
+@@ -2506,7 +2510,7 @@
  							ref: inputRef,
  							onSend: handleSendMessage,
  							disabled: isLoading || isLoadingModels || models.length === 0,
@@ -43,7 +42,7 @@ index d80e7c3c80143c5232fc9c26fe2b3e9dcb390c3b..b796f9fc963236d937f4198cf09d698e
  						})
  					]
  				})
-@@ -3426,7 +3430,14 @@ function Markdown({ children, isStreaming, controls }) {
+@@ -3426,7 +3430,14 @@
  			controls,
  			plugins,
  			shikiTheme,
@@ -59,7 +58,14 @@ index d80e7c3c80143c5232fc9c26fe2b3e9dcb390c3b..b796f9fc963236d937f4198cf09d698e
  				...props,
  				className: cx("link wrap-break-word", props.className),
  				target: "_blank",
-@@ -3731,7 +3742,16 @@ function ChatMessageList({ messages, allMessages, streamingMessage, queuedMessag
+@@ -3725,13 +3736,22 @@
+ 	const handleScroll = useCallback(() => {
+ 		if (!containerRef.current) return;
+ 		const { scrollTop, scrollHeight, clientHeight } = containerRef.current;
+-		isNearBottomRef.current = scrollHeight - scrollTop - clientHeight < 150;
++		isNearBottomRef.current = scrollHeight - scrollTop - clientHeight < 24;
+ 	}, []);
+ 	useEffect(() => {
  		const container = containerRef.current;
  		if (!container) return;
  		container.addEventListener("scroll", handleScroll);

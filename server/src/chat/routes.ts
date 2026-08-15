@@ -324,29 +324,54 @@ ${ctx}` : ctx
         finalModel = turn.model ?? finalModel
         if (turn.finishReason === 'tool_calls' && turn.toolCalls.length > 0) {
           messages.push({ role: 'assistant', content: turn.content || null, tool_calls: turn.toolCalls })
-          for (const tc of turn.toolCalls as WireToolCall[]) {
-            const key = `${tc.function.name}:${tc.function.arguments}`
+          const calls = turn.toolCalls as WireToolCall[]
+          // A model answering a broad question asks for many files at once
+          // (a question about every in-process proposal asked for nine), and
+          // running them one after another made the reply take as long as
+          // their sum. They are independent reads, so run them together and
+          // report in the order asked. A cap keeps a large fan-out from
+          // flooding the index and the platform CLI.
+          for (const tc of calls) {
             req.log.info({ tool: tc.function.name, args: tc.function.arguments.slice(0, 300), iter }, 'tool call')
             markThinking()
             const callLine = `\n→ \`${tc.function.name}\` ${prettyToolArgs(tc.function.arguments)}\n`
             finalReasoning += callLine
             sse(res, 'tool', { phase: 'call', name: tc.function.name, args: tc.function.arguments, pretty: callLine })
-            let result: string
-            let summary: string
-            if (toolCache.has(key)) {
-              result = `[You already made this exact call in this reply; identical result repeated below. Do not repeat it again.]\n${toolCache.get(key)}`
-              summary = 'repeated call (cached)'
-            } else {
-              const out = await executeTool(tc.function.name, tc.function.arguments, { labelScope, userKey: pwToolKey })
-              result = out.result
-              summary = out.summary
-              toolCache.set(key, result)
+          }
+          const outcomes: { result: string; summary: string }[] = new Array(calls.length)
+          let cursor = 0
+          const CONCURRENCY = 6
+          await Promise.all(Array.from({ length: Math.min(CONCURRENCY, calls.length) }, async () => {
+            for (;;) {
+              const i = cursor++
+              if (i >= calls.length) return
+              const tc = calls[i]
+              const key = `${tc.function.name}:${tc.function.arguments}`
+              if (toolCache.has(key)) {
+                outcomes[i] = {
+                  result: `[You already made this exact call in this reply; identical result repeated below. Do not repeat it again.]\n${toolCache.get(key)}`,
+                  summary: 'repeated call (cached)',
+                }
+                continue
+              }
+              try {
+                const out = await executeTool(tc.function.name, tc.function.arguments, { labelScope, userKey: pwToolKey })
+                toolCache.set(key, out.result)
+                outcomes[i] = out
+              } catch (e) {
+                // One failed tool must not take the whole reply down.
+                outcomes[i] = { result: `tool failed: ${String((e as Error).message ?? e)}`, summary: 'failed' }
+              }
+              markThinking()
             }
+          }))
+          calls.forEach((tc, i) => {
+            const { result, summary } = outcomes[i]
             const resultLine = `\n↳ ${summary}\n`
             finalReasoning += resultLine
             sse(res, 'tool', { phase: 'result', name: tc.function.name, summary, pretty: resultLine })
             messages.push({ role: 'tool', tool_call_id: tc.id ?? `${tc.function.name}-${iter}`, content: result })
-          }
+          })
           continue
         }
         finish(turn.finishReason)
