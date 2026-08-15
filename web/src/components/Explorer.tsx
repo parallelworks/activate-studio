@@ -166,7 +166,16 @@ export function Explorer({ onOpen, onDirFocus, selected, rootLabel, multiSelecte
   refreshTick: number
 }) {
   return (
-    <div className={`explorer ${selectMode ? 'has-sel' : ''}`}>
+    <div
+      className={`explorer ${selectMode ? 'has-sel' : ''}`}
+      // Right-clicking the empty space below the tree targets the root, so a
+      // folder can be created at the top level; rows handle their own menu.
+      onContextMenu={e => {
+        if ((e.target as HTMLElement).closest('.tree-row')) return
+        e.preventDefault()
+        onContext('', true, e.clientX, e.clientY)
+      }}
+    >
       <DirNode
         path="" name={rootLabel} depth={0}
         onOpen={onOpen} onDirFocus={onDirFocus} selected={selected}
