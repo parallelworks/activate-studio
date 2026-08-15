@@ -8,7 +8,7 @@ import { extractPath, listDir, readFileContent, resolveKb, KbError } from './kb.
 import { CONVERTIBLE, mimeFor, officeToPdf, pdfPageCount, pdfPagePng, previewPdfFor, removePdfPreview } from './preview.js'
 import { blendHits, corpusStats, searchFts, searchNames, searchVector } from './gufi.js'
 import { invalidateContext } from './chat/context.js'
-import { incrementalIndexDir, indexRootDb, indexStatus, reindexForFile, sweep } from './indexing.js'
+import { getIndexJob, incrementalIndexDir, indexRootDb, indexStatus, reindexForFile, startIndexJob, sweep } from './indexing.js'
 import { annotateHits, readTagsBatch } from './tags.js'
 import { gatewayKey } from './chat/gateway.js'
 import { convertToDynamicForm, dumpYaml, getAllDeps, getStepLabel, workflowHasUserInputs } from '@parallelworks/workflow-parser'
@@ -344,6 +344,19 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
     if (!rel) return { error: 'path required' }
     const { ms } = await incrementalIndexDir(rel)
     return { indexed: rel, ms }
+  })
+
+  // Start an indexing pass and watch it, so a bulk upload can show the
+  // phase it is in rather than holding a request open.
+  app.post('/api/index/job', async req => {
+    const { path: rel = '' } = req.body as { path?: string }
+    return startIndexJob(String(rel).replace(/^\/+|\/+$/g, ''))
+  })
+
+  app.get('/api/index/job/:id', async (req, reply) => {
+    const job = getIndexJob(Number((req.params as { id: string }).id))
+    if (!job) return reply.status(404).send({ error: 'no such job' })
+    return job
   })
 
   app.post('/api/index/sweep', async () => {
