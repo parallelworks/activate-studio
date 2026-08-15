@@ -9,6 +9,8 @@ import { CONVERTIBLE, mimeFor, officeToPdf, pdfPageCount, pdfPagePng, pdfPreview
 import { blendHits, corpusStats, searchFts, searchNames, searchVector } from './gufi.js'
 import { invalidateContext } from './chat/context.js'
 import { getIndexJob, incrementalIndexDir, indexRootDb, indexStatus, reindexForFile, startIndexJob, sweep } from './indexing.js'
+import { movePaths, reindexRoots } from './move.js'
+import { getJob, startJob } from './jobs.js'
 import { annotateHits, readTagsBatch } from './tags.js'
 import { gatewayKey } from './chat/gateway.js'
 import { convertToDynamicForm, dumpYaml, getAllDeps, getStepLabel, workflowHasUserInputs } from '@parallelworks/workflow-parser'
@@ -278,67 +280,45 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
     return { deleted, skipped, indexMs }
   })
 
+  // Every directory in the corpus, for choosing a move destination.
+  app.get('/api/kb/dirs', async () => {
+    const out: string[] = []
+    const walk = async (rel: string, depth: number): Promise<void> => {
+      if (depth > 8) return
+      let entries
+      try { entries = await fsp.readdir(resolveKb(rel), { withFileTypes: true }) } catch { return }
+      for (const e of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+        if (!e.isDirectory() || e.name.startsWith('.') || EXCLUDE_DIRS.has(e.name)) continue
+        const child = rel ? `${rel}/${e.name}` : e.name
+        out.push(child)
+        if (out.length > 2000) return
+        await walk(child, depth + 1)
+      }
+    }
+    await walk('', 0)
+    return { dirs: out }
+  })
+
   // Move files and directories inside the corpus, so the tree can be
   // reorganised without going back to a shell. Both ends are re-indexed:
   // material that moved is not new, but the index records where it lives.
   app.post('/api/kb/move', async req => {
-    const body = req.body as { paths?: string[]; dest?: string }
+    const body = req.body as { paths?: string[]; dest?: string; async?: boolean }
+    if (body.async) {
+      const paths = (body.paths ?? []).slice(0, 500)
+      return startJob('move', paths.length, async h => {
+        const r = await movePaths(paths, String(body.dest ?? ''), (done, current) => {
+          h.progress({ phase: 'moving', done, current })
+        })
+        h.progress({ phase: 'indexing', done: paths.length, current: '' })
+        r.indexMs = await reindexRoots(r.roots, r.rootDb)
+        return r
+      })
+    }
     const paths = (body.paths ?? []).slice(0, 500)
-    const dest = String(body.dest ?? '').replace(/^\/+|\/+$/g, '')
-    if (!paths.length) throw new KbError(400, 'paths required')
-    for (const part of dest.split('/').filter(Boolean)) {
-      if (EXCLUDE_DIRS.has(part) || part.startsWith('.')) throw new KbError(400, 'protected destination')
-    }
-    const destAbs = resolveKb(dest)
-    const dstStat = await fsp.stat(destAbs).catch(() => null)
-    if (!dstStat?.isDirectory()) throw new KbError(400, `not a directory: ${dest || 'root'}`)
-
-    const moved: { from: string; to: string }[] = []
-    const skipped: { path: string; reason: string }[] = []
-    const roots = new Set<string>()
-    let rootDb = false
-    const touch = (rel: string) => { if (rel.includes('/')) roots.add(rel.split('/')[0]); else rootDb = true }
-
-    for (const rel of paths) {
-      const cleaned = rel.replace(/^\/+|\/+$/g, '')
-      try {
-        for (const part of cleaned.split('/')) {
-          if (EXCLUDE_DIRS.has(part) || part.startsWith('.')) throw new KbError(400, 'protected path')
-        }
-        const abs = resolveKb(cleaned)
-        const name = path.basename(cleaned)
-        const targetRel = dest ? `${dest}/${name}` : name
-        if (targetRel === cleaned) throw new KbError(400, 'already there')
-        const st = await fsp.stat(abs)
-        // Moving a directory into itself would take the tree with it.
-        if (st.isDirectory() && (dest === cleaned || dest.startsWith(`${cleaned}/`))) {
-          throw new KbError(400, 'cannot move a directory into itself')
-        }
-        const targetAbs = resolveKb(targetRel)
-        if (await fsp.stat(targetAbs).then(() => true, () => false)) throw new KbError(409, 'name already exists there')
-        await fsp.rename(abs, targetAbs)
-        // Derived artefacts are keyed by path, so they travel with the
-        // file: re-extracting a large PDF or re-rendering its pages costs
-        // seconds, and a move changes none of their content.
-        if (st.isFile()) {
-          await moveCacheEntry(extractPath(cleaned), extractPath(targetRel))
-          const from = pdfPreviewPaths(cleaned)
-          const to = pdfPreviewPaths(targetRel)
-          await moveCacheEntry(from.file, to.file)
-          await moveCacheEntry(from.pages, to.pages)
-          await moveCacheEntry(modelCachePath(cleaned), modelCachePath(targetRel))
-        }
-        moved.push({ from: cleaned, to: targetRel })
-        touch(cleaned)
-        touch(targetRel)
-      } catch (err) {
-        skipped.push({ path: cleaned, reason: err instanceof KbError ? err.message : String((err as Error).message ?? err) })
-      }
-    }
-    let indexMs = 0
-    for (const root of roots) indexMs += (await incrementalIndexDir(root)).ms
-    if (rootDb) indexMs += (await indexRootDb()).ms
-    return { moved, skipped, indexMs }
+    const r = await movePaths(paths, String(body.dest ?? ''))
+    const indexMs = await reindexRoots(r.roots, r.rootDb)
+    return { moved: r.moved, skipped: r.skipped, indexMs }
   })
 
   // Remove a file from the knowledge base and from the index.
@@ -414,6 +394,12 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
   app.post('/api/index/job', async req => {
     const { path: rel = '' } = req.body as { path?: string }
     return startIndexJob(String(rel).replace(/^\/+|\/+$/g, ''))
+  })
+
+  app.get('/api/jobs/:id', async (req, reply) => {
+    const job = getJob(Number((req.params as { id: string }).id))
+    if (!job) return reply.status(404).send({ error: 'no such job' })
+    return job
   })
 
   app.get('/api/index/job/:id', async (req, reply) => {
