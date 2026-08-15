@@ -7,9 +7,18 @@
 #   * Stage "final" carries the production server, the built SPA, the
 #     indexer, GUFI binaries, and the model.
 #   * Runtime contract: binds 0.0.0.0:$PORT, serves HTTP at "/". The corpus
-#     is bind-mounted and named by KB_ROOT; the index lives under DATA_DIR
-#     (bind-mount a writable directory). Chat needs PW_API_KEY or a mounted
-#     pw credential; everything else works without it.
+#     is bind-mounted and named by KB_ROOT; the index, settings, and
+#     credential store live under DATA_DIR (bind-mount a writable directory,
+#     never inside the image). Chat needs PW_API_KEY or a mounted pw
+#     credential; everything else works without it. INDEX_ON_START=1 builds
+#     or refreshes the index before serving.
+#
+#   The image exists because host environments vary in ways that break a
+#   from-source deploy: an old default python3 beside a newer one, a stale
+#   corepack shim, an assembler that rejects the CPU's newest instructions,
+#   install paths that assume root. Everything the app compiles against is
+#   pinned here instead of discovered on the node, and nothing in the image
+#   requires privilege at run time.
 #
 # Build:   apptainer build studio.sif deploy/app.def   (run from the repo root)
 # Test:    apptainer run --env PORT=8080 --env KB_ROOT=/kb --env DATA_DIR=/data \
@@ -27,7 +36,9 @@ Stage: build
     export DEBIAN_FRONTEND=noninteractive
     apt-get update && apt-get install -y --no-install-recommends \
         cmake make gcc g++ pkg-config zlib1g-dev libsqlite3-dev git curl ca-certificates
-    corepack enable pnpm
+    # npm, not corepack: corepack's loader crashes on some pnpm/Node
+    # pairings and leaves broken shims behind.
+    npm install -g pnpm@10
     cd /opt/src
     rm -rf node_modules web/node_modules server/node_modules index deploy/.cache
     pnpm install --frozen-lockfile
@@ -43,9 +54,20 @@ Stage: build
         'https://huggingface.co/asg017/sqlite-lembed-model-examples/resolve/main/all-MiniLM-L6-v2/all-MiniLM-L6-v2.e4ce9877.q8_0.gguf'
     git clone --depth 1 --recurse-submodules --shallow-submodules \
         https://github.com/mar-file-system/GUFI /opt/gufi-src
+    # GUFI's cmake derives its version from git describe, which a shallow
+    # tagless clone cannot answer.
+    git -C /opt/gufi-src -c user.name=build -c user.email=build@localhost \
+        tag -a build-snapshot -m "build snapshot"
+    # llama.cpp (vendored via sqlite-lembed) defaults to -march=native, which
+    # bakes in host instructions the target CPU or assembler may reject; the
+    # image must run anywhere.
+    sed -i 's/-DGGML_CCACHE=Off/-DGGML_CCACHE=Off -DGGML_NATIVE=Off/' \
+        /opt/gufi-src/contrib/deps/sqlite-lembed.sh
     mkdir -p /opt/gufi-src/build
     cd /opt/gufi-src/build
-    cmake .. -DCMAKE_INSTALL_PREFIX=/opt/gufi -DCMAKE_BUILD_TYPE=Release
+    cmake .. -DCMAKE_INSTALL_PREFIX=/opt/gufi -DCMAKE_BUILD_TYPE=Release \
+        -DSERVER_CONFIG=/opt/gufi/etc/server -DCLIENT_CONFIG=/opt/gufi/etc/client \
+        -DBASH_COMPLETION=Off
     make -j "$(nproc)"
     make install
 
@@ -60,27 +82,40 @@ Stage: final
 
 %post
     export DEBIAN_FRONTEND=noninteractive
+    # bookworm's python3 is 3.11, which satisfies the indexer's 3.10+ syntax.
     apt-get update && apt-get install -y --no-install-recommends \
-        python3 attr poppler-utils curl ca-certificates \
+        python3 attr poppler-utils tesseract-ocr curl ca-certificates \
         && rm -rf /var/lib/apt/lists/*
+    cat > /app/start.sh << 'START'
+#!/bin/sh
+# The index lives on the bind-mounted data directory, never in the image;
+# the embedding model is seeded there on first run.
+set -e
+mkdir -p "$INDEX_BASE/models"
+[ -f "$INDEX_BASE/models/minilm384.gguf" ] || \
+    cp /app/index/models/minilm384.gguf "$INDEX_BASE/models/" 2>/dev/null || true
+# INDEX_ON_START=1 builds or refreshes the index before serving.
+if [ "${INDEX_ON_START:-0}" = "1" ] && [ -x "$GUFI_BIN/gufi_dir2index" ]; then
+    PROJECT_ROOT=/app sh /app/indexer/reindex.sh || \
+        echo "WARNING: index build failed; serving the filesystem"
+fi
+exec node /app/server/dist/main.js
+START
+    chmod +x /app/start.sh
 
 %environment
     export NODE_ENV=production
     export HOST=0.0.0.0
     export GUFI_BIN=/opt/gufi/bin
+    export PYTHON_BIN=python3
     export KB_ROOT="${KB_ROOT:-/kb}"
     export INDEX_BASE="${DATA_DIR:-/data}/index"
 
 %startscript
-    mkdir -p "$INDEX_BASE"
-    cp -n /app/index/models/minilm384.gguf "$INDEX_BASE/models/minilm384.gguf" 2>/dev/null || \
-      { mkdir -p "$INDEX_BASE/models"; cp -n /app/index/models/minilm384.gguf "$INDEX_BASE/models/" 2>/dev/null || true; }
-    exec node /app/server/dist/main.js
+    exec /app/start.sh
 
 %runscript
-    mkdir -p "$INDEX_BASE/models"
-    cp -n /app/index/models/minilm384.gguf "$INDEX_BASE/models/" 2>/dev/null || true
-    exec node /app/server/dist/main.js
+    exec /app/start.sh
 
 %labels
     org.parallelworks.app studio
