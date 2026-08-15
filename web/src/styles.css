@@ -144,6 +144,15 @@ button { font-family: inherit; }
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
 }
 .ov-note { padding: 10px 12px; font-size: 12.5px; color: var(--pw-muted); }
+/* Label proposals: a review list, not an action. Nothing is applied until
+   the reader accepts it. */
+.suggest-panel .suggest-rows { max-height: 260px; overflow: auto; margin-top: 6px; }
+.suggest-row { display: flex; align-items: center; gap: 6px; padding: 3px 0; font-size: 12px; cursor: pointer; }
+.suggest-path { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.suggest-tags { display: flex; gap: 4px; flex-shrink: 0; }
+.suggest-tags code { font-size: 11px; padding: 1px 5px; border-radius: 3px; background: var(--theme-hover, #eef2f7); }
+.suggest-actions { display: flex; gap: 6px; margin-top: 8px; }
+.suggest-empty { font-size: 12px; padding: 4px 0; }
 .move-menu { padding: 6px 8px 2px; }
 .move-menu .field { width: 100%; font-size: 12.5px; }
 .upload-current { font-size: 11.5px; color: var(--pw-muted); margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

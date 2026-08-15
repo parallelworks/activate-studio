@@ -89,7 +89,7 @@ export const api = {
   uploadFiles: async (
     files: (File | { file: File; rel: string })[],
     dir: string,
-    opts: { deferIndex?: boolean; onBytes?: (sent: number) => void } = {},
+    opts: { deferIndex?: boolean; onBytes?: (sent: number) => void; signal?: AbortSignal } = {},
   ) => {
     const form = new FormData()
     for (const f of files) {
@@ -102,6 +102,13 @@ export const api = {
     return await new Promise<UploadResult>((resolve, reject) => {
       const xhr = new XMLHttpRequest()
       xhr.open('POST', url)
+      // Cancelling stops the transfer mid-batch; whatever already reached
+      // the server stays, which the panel says out loud.
+      if (opts.signal) {
+        if (opts.signal.aborted) { xhr.abort(); return reject(new DOMException('cancelled', 'AbortError')) }
+        opts.signal.addEventListener('abort', () => xhr.abort(), { once: true })
+      }
+      xhr.onabort = () => reject(new DOMException('cancelled', 'AbortError'))
       xhr.upload.onprogress = e => { if (e.lengthComputable) opts.onBytes?.(e.loaded) }
       xhr.onload = () => {
         let data: any = {}
@@ -116,6 +123,14 @@ export const api = {
   },
 
   dirs: () => getJson<{ dirs: string[] }>('/api/kb/dirs'),
+
+  labelSuggestions: (dir: string, limit = 40) =>
+    postJson<{
+      proposals: { path: string; labels: string[]; why: string }[]
+      newLabels: string[]
+      considered: number
+      model: string
+    }>('/api/kb/label-suggestions', { dir, limit }),
 
   copyJob: (paths: string[], dest: string) => postJson<Job>('/api/kb/copy', { paths, dest, async: true }),
 

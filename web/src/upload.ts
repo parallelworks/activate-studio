@@ -18,11 +18,26 @@ export interface UploadProgress {
   dir: string
   /** Files landed, but the indexing pass after them did not. */
   indexError?: string
+  /** Stopped part way; the files already sent are still there. */
+  cancelled?: boolean
 }
 
-/** Small batches keep the count moving; one request per file would spend
- *  more time in round trips than in bytes. */
-const BATCH = 4
+/**
+ * Batch size and how many requests are in flight at once.
+ *
+ * Through the platform tunnel the round trip dominates: the cluster writes
+ * 5 MB in under a tenth of a second, so a sequential batch-at-a-time upload
+ * spends its life waiting. Several requests in flight hide that latency,
+ * and small files ride in larger batches because each one is nearly all
+ * overhead.
+ */
+const CONCURRENCY = 3
+const SMALL_FILE = 1024 * 1024
+
+function batchSize(items: UploadItem[]): number {
+  const avg = items.reduce((n, i) => n + i.file.size, 0) / Math.max(items.length, 1)
+  return avg < SMALL_FILE ? 12 : 4
+}
 
 /** Walk dropped DataTransfer items, descending directories. */
 export async function collectDropped(items: DataTransferItemList): Promise<UploadItem[]> {
@@ -58,6 +73,7 @@ export async function uploadBatched(
   items: UploadItem[],
   dir: string,
   onProgress: (p: UploadProgress) => void,
+  signal?: AbortSignal,
 ): Promise<UploadProgress> {
   const totalBytes = items.reduce((n, i) => n + i.file.size, 0)
   const p: UploadProgress = {
@@ -66,23 +82,49 @@ export async function uploadBatched(
   }
   onProgress({ ...p })
 
-  let sentBefore = 0
-  for (let i = 0; i < items.length; i += BATCH) {
-    const batch = items.slice(i, i + BATCH)
-    p.current = batch[0].rel
-    try {
-      const r = await api.uploadFiles(batch, dir, {
-        deferIndex: true,
-        onBytes: sent => { p.bytes = sentBefore + sent; onProgress({ ...p }) },
-      })
-      p.done += r.saved.length
-    } catch (e) {
-      for (const it of batch) p.failed.push({ name: it.rel, error: String((e as Error).message ?? e) })
-    }
-    sentBefore += batch.reduce((n, b) => n + b.file.size, 0)
-    p.bytes = sentBefore
+  const size = batchSize(items)
+  const batches: UploadItem[][] = []
+  for (let i = 0; i < items.length; i += size) batches.push(items.slice(i, i + size))
+
+  // Bytes are counted per batch and summed, since several are in the air at
+  // once and each reports its own progress.
+  const settled = new Map<number, number>()
+  const inFlight = new Map<number, number>()
+  const publish = () => {
+    let n = 0
+    for (const v of settled.values()) n += v
+    for (const v of inFlight.values()) n += v
+    p.bytes = n
     onProgress({ ...p })
   }
+
+  let next = 0
+  const worker = async (): Promise<void> => {
+    for (;;) {
+      const idx = next++
+      if (idx >= batches.length || signal?.aborted) return
+      const batch = batches[idx]
+      p.current = batch[0].rel
+      const bytes = batch.reduce((n, b) => n + b.file.size, 0)
+      try {
+        const r = await api.uploadFiles(batch, dir, {
+          deferIndex: true,
+          signal,
+          onBytes: sent => { inFlight.set(idx, sent); publish() },
+        })
+        p.done += r.saved.length
+      } catch (e) {
+        if ((e as Error).name === 'AbortError') { p.cancelled = true; return }
+        for (const it of batch) p.failed.push({ name: it.rel, error: String((e as Error).message ?? e) })
+      } finally {
+        inFlight.delete(idx)
+        settled.set(idx, bytes)
+        publish()
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, batches.length) }, worker))
+  if (signal?.aborted) p.cancelled = true
 
   // One indexing pass for everything that landed, watched rather than
   // waited on inside a request.
