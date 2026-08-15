@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { rememberHash } from '../lastLocation'
 import {
   ChatProvider, ChatLayout, ChatThread, ChatEmptyState, AttachmentManager,
 } from '@parallelworks/ai-chat'
@@ -22,7 +23,7 @@ export function ChatView() {
     }
     // Refreshing inside the platform frame reloads this app without its
     // hash, so the open conversation is remembered separately.
-    try { localStorage.setItem('ade-last-hash', next) } catch { /* storage unavailable */ }
+    rememberHash(next)
   }, [])
   const [showAttachments, setShowAttachments] = useState(false)
   const [rail, setRail] = useState(() => Number(localStorage.getItem('ade-chat-rail')) || 260)

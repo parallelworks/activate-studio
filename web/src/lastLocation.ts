@@ -10,21 +10,40 @@
 
 const KEY = 'ade-last-hash'
 
+/**
+ * Session storage, not local: a refresh keeps the tab, so the restore does
+ * what it is for, while a new tab starts on the default view. Remembering
+ * across tabs meant the bare URL always reopened the last file, with no way
+ * to get back to the top level, and a file deleted since then reopened as
+ * an error every time.
+ */
+function store(): Storage | null {
+  try { return window.sessionStorage } catch { return null }
+}
+
+/** Record the hash the app itself navigated to. */
+export function rememberHash(hash: string): void {
+  try { store()?.setItem(KEY, hash || '') } catch { /* storage unavailable */ }
+}
+
+/** Forget it, when what it points at is gone. */
+export function forgetHash(): void {
+  try { store()?.removeItem(KEY) } catch { /* storage unavailable */ }
+}
+
 /** Must run before the first render: components read location.hash in their
  *  state initializers, and replaceState fires no event to correct them. */
 export function restoreLastHash(): void {
   try {
     if (location.hash) return
-    const last = localStorage.getItem(KEY)
+    const last = store()?.getItem(KEY)
     if (!last || !last.startsWith('#')) return
     history.replaceState(null, '', location.pathname + location.search + last)
   } catch { /* storage unavailable, or a hash we cannot restore */ }
 }
 
 export function rememberHashChanges(): void {
-  const save = () => {
-    try { localStorage.setItem(KEY, location.hash || '') } catch { /* storage unavailable */ }
-  }
+  const save = () => rememberHash(location.hash)
   // pushState and replaceState fire no event, so the app's own navigation is
   // caught on the way out as well as on hashchange.
   window.addEventListener('hashchange', save)
