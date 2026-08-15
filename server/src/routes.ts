@@ -5,10 +5,10 @@ import fs, { createReadStream } from 'node:fs'
 import fsp from 'node:fs/promises'
 import { EXCLUDE_DIRS, GUFI_INDEX, INDEX_BASE, KB_ROOT, PROJECT_ROOT, gufiAvailable } from './config.js'
 import { KbError, extractPath, listDir, moveCacheEntry, readFileContent, resolveKb } from './kb.js'
-import { CONVERTIBLE, mimeFor, officeToPdf, pdfPageCount, pdfPagePng, pdfPreviewPaths, previewPdfFor, removePdfPreview } from './preview.js'
+import { CONVERTIBLE, mimeFor, officeToPdf, OfficePreviewUnavailable, pdfPageCount, pdfPagePng, pdfPreviewPaths, previewPdfFor, removePdfPreview } from './preview.js'
 import { blendHits, corpusStats, searchFts, searchNames, searchVector } from './gufi.js'
 import { invalidateContext } from './chat/context.js'
-import { getIndexJob, incrementalIndexDir, indexRootDb, indexStatus, reindexForFile, startIndexJob, sweep } from './indexing.js'
+import { extractorReport, getIndexJob, incrementalIndexDir, indexRootDb, indexStatus, reindexForFile, startIndexJob, sweep } from './indexing.js'
 import { copyPaths, movePaths, reindexRoots, renamePath } from './move.js'
 import { getJob, startJob } from './jobs.js'
 import { annotateHits, readTagsBatch } from './tags.js'
@@ -238,7 +238,15 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
     if (!CONVERTIBLE.has(path.extname(abs).toLowerCase())) {
       throw new KbError(415, 'no PDF preview for this file type')
     }
-    const pdf = await officeToPdf(abs, rel)
+    let pdf: string
+    try {
+      pdf = await officeToPdf(abs, rel)
+    } catch (e) {
+      // 415 rather than 500: the file is fine, this host cannot render it.
+      // The viewer offers the extracted text instead.
+      if (e instanceof OfficePreviewUnavailable) throw new KbError(415, e.message)
+      throw e
+    }
     reply.header('Content-Type', 'application/pdf')
     reply.header('Content-Disposition', 'inline')
     return reply.send(createReadStream(pdf))
@@ -406,6 +414,10 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
   })
 
   app.get('/api/index/status', async () => indexStatus())
+
+  // What this host can extract text from, so a format that indexes by
+  // filename alone is visible rather than a silent gap.
+  app.get('/api/index/extractors', async () => ({ extractors: extractorReport() }))
 
   app.post('/api/index/dir', async req => {
     const { path: rel = '' } = req.body as { path?: string }
