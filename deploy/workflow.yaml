@@ -110,6 +110,16 @@ permissions:
               Bundle → self-contained tarball from deploy/make_bundle.sh, pulled from
               the bucket or pre-staged at <workdir>/bundle-prestage.tar.gz; nothing
               is fetched from the internet.
+          container_dir:
+            label: Container Scratch Directory
+            type: string
+            default: /tmp/studio-container
+            hidden: ${{ inputs.app_settings.source != 'container' }}
+            tooltip: >-
+              Where the image and its expanded sandbox live on the resource.
+              Keep this on node-local disk, since it is derived from the image
+              and costs nothing to recreate, while a shared filesystem charges
+              for the space and extracts far more slowly.
           image_path:
             label: Container Image
             type: string
@@ -388,7 +398,10 @@ jobs:
             exit 0
           fi
           if [ "${{ inputs.app_settings.source }}" = "container" ]; then
-            cd ${{ inputs.app_settings.workdir }}
+            CDIR="${{ inputs.app_settings.container_dir }}"
+            [ -n "$CDIR" ] || CDIR="${{ inputs.app_settings.workdir }}"
+            mkdir -p "$CDIR" || { echo "ERROR: cannot create $CDIR"; exit 1; }
+            cd "$CDIR"
             IMG="${{ inputs.app_settings.image_path }}"
             [ -n "$IMG" ] || IMG="$PWD/studio.sif"
             command -v apptainer >/dev/null 2>&1 || command -v singularity >/dev/null 2>&1 || \
@@ -425,12 +438,20 @@ jobs:
                 [ -n "$FS_ID" ] || { echo "ERROR: no squashfs partition found in $IMG"; exit 1; }
                 rm -rf sandbox rootfs.squash
                 "$RUNTIME" sif dump "$FS_ID" "$IMG" > rootfs.squash || { echo "ERROR: could not read the image partition"; exit 1; }
-                unsquashfs -q -f -d sandbox rootfs.squash || { echo "ERROR: sandbox expansion failed"; exit 1; }
+                # -no-xattrs: the destination is often a filesystem that
+                # refuses them, and nothing in the image depends on them.
+                unsquashfs -q -f -no-xattrs -d sandbox rootfs.squash || { echo "ERROR: sandbox expansion failed"; exit 1; }
                 rm -f rootfs.squash
                 echo "$IMG:$(stat -c %Y "$IMG")" > .sandbox-src
               fi
               echo "$PWD/sandbox" > .image
+              # The image itself is no longer needed once expanded, and on a
+              # shared filesystem it is pure cost.
+              case "${{ inputs.app_settings.image_path }}" in
+                *://*) rm -f "$IMG" ;;
+              esac
             fi
+            cp .image "${{ inputs.app_settings.workdir }}/.image"
             echo "container: $(cat .image) ($("$RUNTIME" --version))"
             exit 0
           fi
