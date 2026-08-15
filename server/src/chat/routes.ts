@@ -48,7 +48,12 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     }
     const eff0 = effectiveSettings()
     const cred = resolveUserCred(req.user?.id)
-    if (eff0.requirePersonalKey && authEnabled() && !personalKeysDisabled() && !cred) {
+    // Settings asks with config=1: the deployment's own model choices (the
+    // vision model, the RAG default) have to be configurable even where
+    // chat requires each user to bring a key, so that listing falls back to
+    // the deployment credential instead of coming back empty.
+    const forConfig = String((req.query as { config?: string }).config ?? '') === '1'
+    if (!forConfig && eff0.requirePersonalKey && authEnabled() && !personalKeysDisabled() && !cred) {
       return reply.send({ models: [], unreachableSessions: [], error: 'This deployment requires your own model credential: add your API key or platform token in Settings, Model access.' })
     }
     const wire: any = await listModels(cred?.key, cred?.baseUrl)
