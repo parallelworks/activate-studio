@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Streamdown } from 'streamdown'
 import { api, FileContent } from '../api'
+import { forgetHash } from '../lastLocation'
 import { TagMenu } from './TagMenu'
 import { ModelViewer } from './ModelViewer'
 
@@ -82,7 +83,15 @@ export function Viewer({ path, onDeleted }: {
       // Text files ARE their own preview; office docs open on the rendered
       // original; anything else opens on whatever it has.
       setTab('preview')
-    }).catch(e => setError(String(e)))
+    }).catch(e => {
+      setError(String(e))
+      // A file that cannot be opened should not keep reopening: drop it from
+      // the remembered location so the next visit lands on the library.
+      forgetHash()
+      if (location.hash.startsWith('#open=')) {
+        history.replaceState(null, '', location.pathname + location.search + '#view=library')
+      }
+    })
   }, [path])
 
   if (!path) {
@@ -95,7 +104,18 @@ export function Viewer({ path, onDeleted }: {
       </div>
     )
   }
-  if (error) return <div className="viewer"><p className="error">{error}</p></div>
+  if (error) {
+    return (
+      <div className="viewer">
+        <div className="empty-state">
+          <h2>Cannot open this file</h2>
+          <p className="muted">{path}</p>
+          <p className="error">{error}</p>
+          <p className="muted">It may have been moved, renamed, or deleted since this link was made.</p>
+        </div>
+      </div>
+    )
+  }
   if (!file) return <div className="viewer"><p className="muted">Loading {path}…</p></div>
 
   const suffix = suffixOf(path)
