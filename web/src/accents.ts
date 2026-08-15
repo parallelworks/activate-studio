@@ -86,17 +86,20 @@ function remember(key: string, css: string): void {
   try { localStorage.setItem(key, css) } catch { /* storage unavailable */ }
 }
 
-/** Base backgrounds the stylesheet ships with; a surface may override them,
- *  and the derived tokens follow whichever is in effect. */
-const BASE_BG = { light: '#f3f4f6', dark: '#0c1320' }
+/** Panel backgrounds the stylesheet ships with; a surface may override
+ *  them, and the derived tokens follow whichever is in effect. The panel,
+ *  not the page, is the right seed: the shared components render inside a
+ *  card, so seeding from the page background left the chat pane grey while
+ *  every other view sat on white. */
+const BASE_PANEL = { light: '#ffffff', dark: '#16202f' }
 
 let current = { accent: 'navy', surface: 'cool' }
 
 function backgrounds(): { light: string; dark: string } {
   const sfc = SURFACES[current.surface]
   return {
-    light: sfc?.light?.['--pw-bg'] ?? BASE_BG.light,
-    dark: sfc?.dark?.['--pw-bg'] ?? BASE_BG.dark,
+    light: sfc?.light?.['--pw-panel'] ?? BASE_PANEL.light,
+    dark: sfc?.dark?.['--pw-panel'] ?? BASE_PANEL.dark,
   }
 }
 
