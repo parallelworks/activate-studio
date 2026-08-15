@@ -12,6 +12,7 @@ import { extractorReport, getIndexJob, incrementalIndexDir, indexRootDb, indexSt
 import { copyPaths, movePaths, reindexRoots, renamePath } from './move.js'
 import { suggestLabels } from './labeling.js'
 import { resolveUserCred } from './credentials.js'
+import { listModels } from './chat/gateway.js'
 import { getJob, startJob } from './jobs.js'
 import { annotateHits, readTagsBatch } from './tags.js'
 import { gatewayKey } from './chat/gateway.js'
@@ -296,8 +297,15 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
     const body = req.body as { dir?: string; limit?: number; includeLabelled?: boolean; model?: string }
     const eff = effectiveSettings()
     const cred = resolveUserCred(req.user?.id)
-    const model = String(body.model ?? '') || eff.ragDefaultModel
-    if (!model) throw new KbError(400, 'no model configured for labelling: set a default model on the RAG endpoint page, or pass one')
+    let model = String(body.model ?? '') || eff.ragDefaultModel
+    if (!model) {
+      // No default set: use the first model the caller's credential can
+      // reach, so labelling works without configuring anything.
+      const wire = await listModels(cred?.key, cred?.baseUrl).catch(() => null) as { data?: { id: string }[]; models?: { id: string }[] } | null
+      const first = (wire?.data ?? wire?.models ?? []).map(m => m?.id).filter(Boolean)[0]
+      if (!first) throw new KbError(400, 'No model is available to this deployment for labelling. Add your model credential in Settings, Model access.')
+      model = first
+    }
     try {
       return await suggestLabels({
         dir: body.dir ?? '',

@@ -473,11 +473,11 @@ export interface ToolOutcome {
 // concurrent tool calls from different users cannot cross-contaminate.
 const toolContext = new AsyncLocalStorage<{ userKey: string | null }>()
 
-export async function executeTool(name: string, argsJson: string, ctx?: { labelScope?: string[]; userKey?: string | null }): Promise<ToolOutcome> {
+export async function executeTool(name: string, argsJson: string, ctx?: { labelScope?: string[]; userKey?: string | null; model?: string | null }): Promise<ToolOutcome> {
   return toolContext.run({ userKey: ctx?.userKey ?? null }, () => executeToolImpl(name, argsJson, ctx))
 }
 
-async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScope?: string[]; userKey?: string | null }): Promise<ToolOutcome> {
+async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScope?: string[]; userKey?: string | null; model?: string | null }): Promise<ToolOutcome> {
   let args: any = {}
   try { args = argsJson ? JSON.parse(argsJson) : {} } catch { /* tolerate bad JSON */ }
   try {
@@ -599,10 +599,13 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
       case 'suggest_labels': {
         const { suggestLabels } = await import('../labeling.js')
         const { effectiveSettings } = await import('../settings.js')
-        const model = effectiveSettings().ragDefaultModel
+        // The model already answering this conversation reads the files
+        // too; the configured default is only a fallback for callers that
+        // have no conversation, such as the Library button.
+        const model = ctx?.model || effectiveSettings().ragDefaultModel
         if (!model) {
           return {
-            result: 'No default model is configured for labelling; set one on the RAG endpoint settings page.',
+            result: 'No model is available for labelling on this deployment.',
             summary: 'no labelling model',
           }
         }
