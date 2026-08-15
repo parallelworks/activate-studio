@@ -8,9 +8,9 @@ GUFI represents a filesystem as a parallel tree of SQLite databases. `gufi_dir2i
 
 The index lives at `$INDEX_BASE/gufi/<basename of KB_ROOT>/`, where `INDEX_BASE` defaults to `index/` beside the code and is usually pointed at durable storage instead. That extra level is the one `gufi_dir2index` adds for the source directory, and both the full rebuild (`indexer/reindex.sh`) and the server's incremental passes write into it; flattening it leaves a rebuilt index the server never reads. Alongside the tree, `INDEX_BASE` holds the extract cache, rendered PDF pages, settings, the credential vault, saved queries, conversations, and the embedding model, so a deployment can rebuild its working directory without losing state. The build excludes `.git`, `node_modules`, `.venv`, `__pycache__`, `dist`, `build`, caches, screenshots, and dot-directories via a `--skip-file`.
 
-Two properties of this design carry the rest of the system:
+Two properties of this design determine the rest of the system:
 
-- Queries fan out per directory. `gufi_query` walks the index breadth-first with a thread pool and runs your SQL against every `db.db` independently, so a corpus-wide query is hundreds of tiny local queries, not one big scan.
+- Queries fan out per directory. `gufi_query` walks the index breadth-first with a thread pool and runs your SQL against every `db.db` independently, so a corpus-wide query is hundreds of small local queries.
 - The index tree replicates the source tree's POSIX permissions. A query running as a user cannot descend into index directories that user could not read in the source. Need-to-know is inherited from the filesystem rather than reimplemented (section 10).
 
 ## 2. Enrichment: making file content searchable
@@ -23,9 +23,9 @@ CREATE VIRTUAL TABLE words USING fts5(tinode UNINDEXED, fname UNINDEXED, wordf)
 
 One row per file: `tinode` is the source file's inode as text, `fname` its name, `wordf` the extracted text (capped at 500 KB). The inode is text rather than an integer because parallel filesystems issue inode numbers above SQLite's signed 64-bit limit, which raised OverflowError and failed the whole pass; every consumer joins on `CAST(tinode AS TEXT)` anyway, since GUFI stores `entries.inode` as TEXT and an uncast comparison matches nothing.
 
-Extraction is by suffix. Markdown, text, code, and config files are read directly. DOCX, PPTX and XLSX use python-docx, python-pptx and openpyxl, falling back to a standard-library reader when those are missing: the three formats are zipped XML, and a cluster that cannot install packages should still index its Word documents rather than filing them under their filename. PDFs use `pdftotext -layout`, which keeps columns and table cells apart, with pypdf as a fallback; a PDF whose text layer is thin for its page count is a scan, so its pages are rendered with `pdftoppm` and read with tesseract. Extracted text is written to `$INDEX_BASE/extract/<relpath>.txt` and reused for instant previews.
+Extraction is by suffix. Markdown, text, code, and config files are read directly. DOCX, PPTX and XLSX use python-docx, python-pptx and openpyxl, falling back to a standard-library reader when those are missing, since the three formats are zipped XML and a host that cannot install packages can still read them. PDFs use `pdftotext -layout`, which keeps columns and table cells apart, with pypdf as a fallback; a PDF whose text layer is thin for its page count is a scan, so its pages are rendered with `pdftoppm` and read with tesseract. Extracted text is written to `$INDEX_BASE/extract/<relpath>.txt` and reused for instant previews.
 
-Expensive extractions are cached by source mtime. Only images cache an empty result, where a picture with no text is a real answer; a document that extracted to nothing is retried on the next pass, so material indexes as soon as the tooling to read it exists rather than staying invisible after the library arrives. `GET /api/index/extractors` reports which readers this host has, and the Stats page names any format that can only be indexed by filename.
+Expensive extractions are cached by source mtime. Only images cache an empty result, where a picture with no text is a real answer; a document that extracted to nothing is retried on the next pass, so it indexes once the reader for its format is installed. `GET /api/index/extractors` reports which readers this host has, and the Stats page names any format that can only be indexed by filename.
 
 Images are indexed the same way, because indexing an image means producing text for it: OCR via tesseract, plus a two-to-four-sentence description from a vision model when one is configured. Both flow into the same fts5 tables and vector chunks as any document.
 
@@ -42,7 +42,7 @@ CREATE VIRTUAL TABLE gvec USING vec0(cid INTEGER PRIMARY KEY, fp384 float[384]);
 INSERT INTO gvec SELECT cid, lembed('minilm384', substr(ctext, 1, 800)) FROM gchunks;
 ```
 
-The model is all-MiniLM-L6-v2 quantized to Q8 (25 MB, 384 dimensions). Two hard-won constraints are encoded here. First, sqlite-lembed does not truncate input, and token-dense text (source code, markup) can exceed the model's context and segfault the process; 800 characters is safe for prose and nearly all code, and a 400-character retry covers the remainder. Second, each directory db is embedded in its own gufi_sqlite3 process, so one bad row cannot abort the rest of the pass.
+The model is all-MiniLM-L6-v2 quantized to Q8 (25 MB, 384 dimensions). Two constraints are encoded here. First, sqlite-lembed does not truncate input, and token-dense text (source code, markup) can exceed the model's context and segfault the process; 800 characters is safe for prose and nearly all code, and a 400-character retry covers the remainder. Second, each directory db is embedded in its own gufi_sqlite3 process, so one bad row cannot abort the rest of the pass.
 
 ## 4. Query paths
 
@@ -56,13 +56,13 @@ Three retrieval modes run against the index, all in `server/src/gufi.ts`:
 
 ## 5. Labels
 
-Labels are the corpus's own vocabulary, stored on the files rather than in a side database. The primary store is the `user.studio.tags` xattr, so a label survives a move or rename because it belongs to the inode, and GUFI indexes it with the rest of the metadata. Filesystems that refuse xattrs (several network filesystems do) fall back to an overlay keyed by `fsid.inode` with the birth time recorded for validation, which is the convention GUFI's own tooling uses; `reapplyTagOverlay` rejoins the overlay to the rebuilt index on inode after every incremental pass and refreshes the path it stores.
+Labels are stored on the files themselves. The primary store is the `user.studio.tags` xattr, so a label survives a move or rename because it belongs to the inode, and GUFI indexes it with the rest of the metadata. Filesystems that refuse xattrs (several network filesystems do) fall back to an overlay keyed by `fsid.inode` with the birth time recorded for validation, which is the convention GUFI's own tooling uses; `reapplyTagOverlay` rejoins the overlay to the rebuilt index on inode after every incremental pass and refreshes the path it stores.
 
 A label on a directory applies to everything beneath it, so a corpus can be organised by folder and filtered by label without labelling each file. `GET /api/tags` returns the vocabulary with counts, which the chat scope selector, the query builder, and search filters all read.
 
 `server/src/labeling.ts` proposes labels for material that has none. It reads the opening text of each unlabelled file, reuses the existing vocabulary wherever it fits, and proposes new labels only where nothing existing describes the material. Nothing is applied: proposals return for review in the Library, or to the assistant through the `suggest_labels` tool, which is told to apply them with `apply_labels` once the user agrees. It reads with whichever model is answering the conversation, so it needs no configuration of its own.
 
-## 6. Chat: retrieval as tools, not context stuffing
+## 6. Chat: retrieval as tools
 
 The chat backend (`server/src/chat/`) is a server-side tool-calling loop against an OpenAI-compatible model endpoint, selected by `OPENAI_BASE_URL`/`PW_GATEWAY_URL` and defaulting to the ACTIVATE gateway. The browser never holds a credential.
 
@@ -72,27 +72,27 @@ The model chooses among the knowledge tools (`search_kb`, `read_kb_file`, `list_
 
 The loop runs up to `MAX_TOOL_ITERATIONS` (24) gateway turns. Tool calls within one turn execute concurrently, six at a time, because a research question routinely issues six searches whose latency used to add up in series. Identical repeated calls are served from a per-request cache with a do-not-repeat note; on budget exhaustion a final no-tools turn forces an answer from what was gathered. Tool activity streams to the browser over SSE, with keepalives so a long turn is not cut by an idle proxy.
 
-This is retrieval-augmented generation with the model in the driver's seat: instead of stuffing top-k chunks into every prompt, the model searches, reads whole files when snippets are not enough, follows cross-references, and cites the paths it used.
+Top-k chunks are not stuffed into every prompt. The model searches, reads whole files when snippets are not enough, follows cross-references, and cites the paths it used.
 
 ## 7. Identity and credentials
 
 With `AUTH_JWKS_URL` set, the platform's session proxy supplies a verified JWT per request, and the app knows who is asking. That identity drives three things: conversations are stamped with an owner and the chat rail defaults to showing your own, exported transcripts record who wrote them, and model credentials are per user.
 
-Personal credentials live in a vault beside the index (`server/src/credentials.ts`), encrypted with AES-256-GCM under a key file written 0600, and never leave the server: status APIs expose the last four characters and timestamps only. A key can be stored or held in memory for a session. The trust model is stated plainly in the interface: a key pasted here is available to the server and its operator.
+Personal credentials live in a vault beside the index (`server/src/credentials.ts`), encrypted with AES-256-GCM under a key file written 0600, and never leave the server: status APIs expose the last four characters and timestamps only. A key can be stored or held in memory for a session. The interface states the trust model: a key pasted here is available to the server and its operator.
 
 Four postures are supported. A single-user deployment runs on the deployment credential. `DISABLE_PERSONAL_KEYS` refuses personal keys entirely. The default lets each user add their own and falls back to the deployment credential. `REQUIRE_PERSONAL_KEY` refuses the deployment credential for chat and model listing while leaving browsing, search, and ingestion open to everyone.
 
-One user can also promote their key for everyone else. A promoted key is stored under a reserved vault subject and returned by `gatewayKey()` ahead of the deployment credential, so it covers every path that would otherwise have none, including keyless callers to the `/v1` surface and captioning during a sweep. It satisfies a deployment that requires personal keys, because someone put it there deliberately for these users. Personal keys still win for whoever has one, any verified user can stop the sharing (the person who started it may be gone when it needs to end), and the panel names who provided it.
+One user can also promote their key for everyone else. A promoted key is stored under a reserved vault subject and returned by `gatewayKey()` ahead of the deployment credential, so it covers every path that would otherwise have none, including keyless callers to the `/v1` surface and captioning during a sweep. It satisfies a deployment that requires personal keys. Personal keys take precedence for whoever has one, any verified user can stop the sharing, and the panel names who provided it.
 
 ## 8. The /v1 surface
 
-`server/src/ragProxy.ts` serves an OpenAI-compatible endpoint at `/v1`, so any OpenAI-speaking client can use the corpus as a model. Two models are offered. `studio-agent[/<model>]` runs the full assistant pipeline on the server and returns a finished, cited answer: slower, several model calls per question, and the right choice inside a tool-calling harness that would otherwise take over the retrieval. `studio-rag[/<model>]` injects retrieved context blocks into a single call: fast, and suited to plain chat interfaces. Either can be hidden from model listings while remaining callable by name. Callers authenticate with their own key; `X-RAG-Top-K`, `X-RAG-Tags` and `X-RAG-Off` tune retrieval per request. `server/src/ragEndpoint.ts` registers the surface in the platform's model catalog through `pw endpoints run --openai`, and the settings page shows the last fifty calls with their model, credential source, duration, and retrieval terms, so the layer is inspectable rather than magic.
+`server/src/ragProxy.ts` serves an OpenAI-compatible endpoint at `/v1`, so any OpenAI-speaking client can use the corpus as a model. Two models are offered. `studio-agent[/<model>]` runs the full assistant pipeline on the server and returns a finished, cited answer: slower, several model calls per question, and unaffected by a calling harness that would otherwise take over the retrieval. `studio-rag[/<model>]` injects retrieved context blocks into a single call: fast, and suited to plain chat interfaces. Either can be hidden from model listings while remaining callable by name. Callers authenticate with their own key; `X-RAG-Top-K`, `X-RAG-Tags` and `X-RAG-Off` tune retrieval per request. `server/src/ragEndpoint.ts` registers the surface in the platform's model catalog through `pw endpoints run --openai`, and the settings page shows the last fifty calls with their model, credential source, duration, and retrieval terms.
 
 ## 9. Ingestion, reorganisation, and the sweep
 
 `POST /api/kb/upload?dir=<rel>` accepts multipart files; `POST /api/kb/upload-url` fetches a URL (PDF saved raw; HTML reduced to text with provenance; other text saved as-is). Files land in the chosen directory, which is created on demand; excluded and dot-directories are refused and filenames are sanitized.
 
-Indexing used to run inside the upload request, which held it open for the whole pass and read as a stuck uploader. With `index=0` the request returns as soon as the files are on disk, and the browser asks for one indexing pass afterwards through `POST /api/index/job`, polling it as its own phase. Uploads send several requests at a time with byte-level progress and can be cancelled; what already landed stays, and the panel says so.
+Indexing ran inside the upload request until recently, holding it open for the whole pass. With `index=0` the request returns as soon as the files are on disk, and the browser asks for one indexing pass afterwards through `POST /api/index/job`, polling it as its own phase. Uploads send several requests at a time with byte-level progress and can be cancelled; files already sent remain, and the panel reports how many.
 
 Material can be reorganised in place: `POST /api/kb/move`, `/api/kb/copy` and `/api/kb/rename` move, duplicate and rename files and directories, refusing a move into a directory's own subtree and reporting refusals per path rather than failing the batch. Derived artefacts (extracted text, rendered PDF pages, parsed 3D models) are keyed by path, so a move or rename carries them; a copy leaves them to be rebuilt. Both ends are re-indexed before the response, and labels follow because they belong to the inode. A bulk move runs as a watchable job (`server/src/jobs.ts`) rather than one long request.
 
@@ -100,7 +100,7 @@ Incremental indexing (`server/src/indexing.ts`) runs `gufi_dir2index` on the tou
 
 Files also arrive by scp, generators, and git. A background sweep (default every 300 seconds) walks the corpus and computes, per directory, the newest mtime among the directory and its direct files; newer directories are re-indexed and disappeared ones removed. On first startup with no state file the sweep primes rather than rebuilding an index that already exists. A file whose content changes without an mtime update is missed until a full rebuild.
 
-When the corpus directory is missing or empty, the app seeds it with a small starting layout and a README naming the deployment, so a fresh deployment opens on something with shape. It only ever runs on an empty corpus.
+When the corpus directory is missing or empty, the app seeds it with a small starting layout and a README naming the deployment. It only ever runs on an empty corpus.
 
 ## 10. Need-to-know
 
@@ -114,7 +114,7 @@ Three paths, all driven by `deploy/workflow.yaml` as a platform workflow:
 
 - **github**: clones the public repository on the resource and builds it there. The usual choice while the app is changing; a rerun pulls and restarts.
 - **bundle**: unpacks a tarball staged in a bucket, for hosts without GitHub access.
-- **container**: runs the Apptainer image built from `deploy/app.def`, staged in a bucket. The image pins Node, GUFI, the embedding model, and the document extractors, which is what makes it the predictable choice on a host with an old default python, a stale corepack shim, or an assembler that rejects the CPU's newest instructions. The recipe runs under `set -e` and imports every extractor before the image is sealed, because an image that quietly lacks one indexes Word files as their filename and says nothing.
+- **container**: runs the Apptainer image built from `deploy/app.def`, staged in a bucket. The image pins Node, GUFI, the embedding model, and the document extractors, so it does not depend on what the host provides, such as an old default python, a stale corepack shim, or an assembler that rejects the CPU's newest instructions. The recipe runs under `set -e` and imports every extractor before the image is sealed; an image missing one indexes Word files by filename with no error.
 
 The corpus and the index live on shared storage; everything derived (node_modules, builds, GUFI) belongs on local disk, which measured about 55 times faster for small-file writes on the deployment that prompted the split. Presentation is deployment configuration: app name, brand icons for light and dark, starter prompts, starter directories, and a classification banner with its own text and colour, drawn only when the app is open on its own so it is not duplicated inside the platform frame.
 
