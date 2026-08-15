@@ -74,8 +74,17 @@ export async function uploadRoutes(app: FastifyInstance): Promise<void> {
       saved.push(rel ? `${rel}/${name}` : name)
     }
     if (saved.length === 0) throw new KbError(400, 'no files in request')
-    const { ms } = await reindexForDir(rel)
-    return reply.send({ saved, indexed: true, indexMs: ms })
+    try {
+      const { ms } = await reindexForDir(rel)
+      return reply.send({ saved, indexed: true, indexMs: ms })
+    } catch (e) {
+      req.log.error(e, 'upload saved but indexing failed')
+      return reply.send({
+        saved,
+        indexed: false,
+        indexError: String((e as Error).message ?? e).slice(0, 300),
+      })
+    }
   })
 
   // Fetch a URL into the KB: PDFs saved raw, HTML reduced to text with
