@@ -11,6 +11,11 @@ export interface AppConfig {
   surface: string
   kbLabel: string
   suggestedPrompts: string[]
+  /** Classification banner across the top; empty means none. */
+  bannerText: string
+  bannerColor: string
+  /** Draw it even inside the platform frame, which shows its own. */
+  bannerWhenEmbedded: boolean
   user: { id: string; username: string; name?: string }
   loaded: boolean
   /** True when the name and icon came from the previous visit, so the header
@@ -34,6 +39,9 @@ const DEFAULTS: AppConfig = {
     'What workflows are available in this account?',
     'Find everything related to a topic I name.',
   ],
+  bannerText: '',
+  bannerColor: '#2e6b2e',
+  bannerWhenEmbedded: false,
   user: { id: 'user', username: 'user' },
   loaded: false,
 }
@@ -55,7 +63,10 @@ function rememberedBrand(): Partial<AppConfig> {
 
 function rememberBrand(c: AppConfig): void {
   try {
-    localStorage.setItem(BRAND_KEY, JSON.stringify({ appName: c.appName, iconUrl: c.iconUrl, iconUrlDark: c.iconUrlDark, kbLabel: c.kbLabel }))
+    localStorage.setItem(BRAND_KEY, JSON.stringify({
+      appName: c.appName, iconUrl: c.iconUrl, iconUrlDark: c.iconUrlDark, kbLabel: c.kbLabel,
+      bannerText: c.bannerText, bannerColor: c.bannerColor, bannerWhenEmbedded: c.bannerWhenEmbedded,
+    }))
   } catch { /* storage unavailable */ }
 }
 
@@ -81,6 +92,9 @@ export function useAppConfig(): AppConfig {
           surface: d.surface || 'neutral',
           kbLabel: d.kbLabel || DEFAULTS.kbLabel,
           suggestedPrompts: d.suggestedPrompts?.length ? d.suggestedPrompts : DEFAULTS.suggestedPrompts,
+          bannerText: d.bannerText ?? '',
+          bannerColor: d.bannerColor || DEFAULTS.bannerColor,
+          bannerWhenEmbedded: !!d.bannerWhenEmbedded,
           user: d.user?.id ? (d.user as AppConfig['user']) : DEFAULTS.user,
           loaded: true,
         }

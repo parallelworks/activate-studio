@@ -9,6 +9,7 @@ import { OverviewView } from './views/OverviewView'
 import { HelpView } from './views/HelpView'
 import { SettingsView } from './views/SettingsView'
 import { StatusFooter } from './components/StatusFooter'
+import { ClassificationBanner } from './components/ClassificationBanner'
 import { useAppConfig } from './config'
 import { applyAccent, applySurface } from './accents'
 
@@ -176,6 +177,8 @@ export default function App() {
 
   return (
     <div className="app">
+      <ClassificationBanner />
+      <div className="app-body">
       <nav className={`sidenav ${navCollapsed ? 'collapsed' : ''}`}>
         <div className="sidenav-head">
           <div className="sidenav-brand" title={cfg.loaded ? cfg.appName : undefined}>
@@ -245,6 +248,7 @@ export default function App() {
         <div className={view === 'settings' ? 'view' : 'view hidden'}><SettingsView /></div>
         <div className={view === 'help' ? 'view' : 'view hidden'}><HelpView /></div>
       </main>
+      </div>
     </div>
   )
 }

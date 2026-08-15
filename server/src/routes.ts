@@ -140,6 +140,9 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
       accent: eff.accent,
       surface: eff.surface,
       suggestedPrompts: eff.suggestedPrompts,
+      bannerText: eff.bannerText,
+      bannerColor: eff.bannerColor,
+      bannerWhenEmbedded: eff.bannerWhenEmbedded,
       user,
     }
   })
