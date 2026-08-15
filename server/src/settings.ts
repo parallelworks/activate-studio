@@ -4,6 +4,7 @@ import path from 'node:path'
 import type { FastifyInstance } from 'fastify'
 import { INDEX_BASE, KB_ROOT } from './config.js'
 import { KbError } from './kb.js'
+import { gatewayConfigured } from './chat/gateway.js'
 
 /**
  * Runtime-editable settings, stored beside the index. Environment variables
@@ -87,6 +88,11 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/settings', async () => ({
     effective: effectiveSettings(),
     saved: loadSettings(),
+    // Background work (image captioning during a sweep) runs with no user
+    // present, so it can only use the deployment credential or the host's
+    // pw CLI login. Report whether one exists rather than letting
+    // captioning fail quietly on a bring-your-own-key deployment.
+    deploymentCredential: gatewayConfigured(),
   }))
 
   app.put('/api/settings', async req => {
