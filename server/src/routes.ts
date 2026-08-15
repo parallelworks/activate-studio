@@ -65,16 +65,23 @@ async function fetchRemoteIcon(url: string): Promise<{ body: Buffer; type: strin
 
 /** The URL the browser should load for a brand image: our own endpoint
  *  whenever one is configured, or nothing. */
-function brandUrl(kind: 'icon' | 'favicon'): string | null {
-  // A setting beats the environment, so branding can be changed from the
-  // interface without redeploying.
-  const fromSettings = effectiveSettings().iconUrl || undefined
-  const configured = kind === 'icon'
-    ? (fromSettings ?? process.env.APP_ICON)
-    : (process.env.APP_FAVICON ?? fromSettings ?? process.env.APP_ICON)
-  if (isUrl(configured)) return kind === 'icon' ? '/api/brand-icon' : '/api/favicon'
-  if (kind === 'icon') return configured && fs.existsSync(configured) ? '/api/brand-icon' : null
-  return faviconFile() ? '/api/favicon' : null
+/** The image configured for a theme: the dark variant when one is set and
+ *  dark is asked for, otherwise the ordinary one. A deployment whose mark is
+ *  dark ink needs a second file to stay visible on a dark background. */
+function configuredIcon(dark: boolean): string | undefined {
+  const s = effectiveSettings()
+  if (dark) return (s.iconUrlDark || process.env.APP_ICON_DARK) || s.iconUrl || process.env.APP_ICON
+  return s.iconUrl || process.env.APP_ICON
+}
+
+function brandUrl(kind: 'icon' | 'favicon', dark = false): string | null {
+  const configured = kind === 'favicon' && process.env.APP_FAVICON && !dark
+    ? process.env.APP_FAVICON
+    : configuredIcon(dark)
+  const suffix = dark ? '?variant=dark' : ''
+  if (isUrl(configured)) return (kind === 'icon' ? '/api/brand-icon' : '/api/favicon') + suffix
+  if (!configured || !fs.existsSync(configured)) return null
+  return (kind === 'icon' ? '/api/brand-icon' : '/api/favicon') + suffix
 }
 
 export async function kbRoutes(app: FastifyInstance): Promise<void> {
@@ -125,7 +132,9 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
     return {
       appName: eff.appName,
       iconUrl: brandUrl('icon'),
+      iconUrlDark: brandUrl('icon', true),
       faviconUrl: brandUrl('favicon'),
+      faviconUrlDark: brandUrl('favicon', true),
       kbLabel: eff.kbLabel,
       theme: eff.theme,
       accent: eff.accent,
@@ -149,8 +158,8 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
   })
 
   // Deployment brand icon (APP_ICON env points at an image file).
-  app.get('/api/brand-icon', async (_req, reply) => {
-    const icon = effectiveSettings().iconUrl || process.env.APP_ICON
+  app.get('/api/brand-icon', async (req, reply) => {
+    const icon = configuredIcon(String((req.query as { variant?: string }).variant ?? '') === 'dark')
     if (isUrl(icon)) {
       const got = await fetchRemoteIcon(icon)
       if (!got) throw new KbError(502, 'could not load the configured brand image')
@@ -165,8 +174,9 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
   })
 
   // Deployment favicon: APP_FAVICON, falling back to the brand icon.
-  app.get('/api/favicon', async (_req, reply) => {
-    const configured = process.env.APP_FAVICON || effectiveSettings().iconUrl || process.env.APP_ICON
+  app.get('/api/favicon', async (req, reply) => {
+    const wantDark = String((req.query as { variant?: string }).variant ?? '') === 'dark'
+    const configured = (!wantDark && process.env.APP_FAVICON) || configuredIcon(wantDark)
     if (isUrl(configured)) {
       const got = await fetchRemoteIcon(configured)
       if (!got) throw new KbError(502, 'could not load the configured favicon')
@@ -174,7 +184,7 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
       reply.header('Cache-Control', 'public, max-age=600')
       return reply.send(got.body)
     }
-    const icon = faviconFile()
+    const icon = configured && fs.existsSync(configured) ? configured : faviconFile()
     if (!icon) throw new KbError(404, 'no favicon configured')
     reply.header('Content-Type', mimeFor(icon))
     reply.header('Cache-Control', 'public, max-age=3600')
