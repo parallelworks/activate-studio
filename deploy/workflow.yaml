@@ -407,8 +407,31 @@ jobs:
                 IMG="$PWD/studio.sif" ;;
             esac
             [ -f "$IMG" ] || { echo "ERROR: container image not found: $IMG"; exit 1; }
-            echo "$IMG" > .image
-            echo "container image: $IMG ($("$RUNTIME" --version))"
+            # A SIF is a squashfs image, and some login nodes run kernels
+            # without squashfs (and without squashfuse or the privileges to
+            # load the module). Where the runtime cannot mount the image,
+            # expand it once into a sandbox directory and run from that;
+            # unsquashfs needs no kernel support. Cached against the image's
+            # timestamp so a rerun does not repeat the extraction.
+            if "$RUNTIME" exec "$IMG" true 2>/dev/null; then
+              echo "$IMG" > .image
+            else
+              echo "Runtime cannot mount the image directly (no squashfs); expanding to a sandbox."
+              command -v unsquashfs >/dev/null 2>&1 || { echo "ERROR: no squashfs support and unsquashfs is unavailable"; exit 1; }
+              if [ -d sandbox ] && [ -f .sandbox-src ] && [ "$(cat .sandbox-src)" = "$IMG:$(stat -c %Y "$IMG")" ]; then
+                echo "Sandbox already expanded from this image."
+              else
+                FS_ID=$("$RUNTIME" sif list "$IMG" | awk -F'|' '$5 ~ /Squashfs/ { gsub(/ /, "", $1); print $1; exit }')
+                [ -n "$FS_ID" ] || { echo "ERROR: no squashfs partition found in $IMG"; exit 1; }
+                rm -rf sandbox rootfs.squash
+                "$RUNTIME" sif dump "$FS_ID" "$IMG" > rootfs.squash || { echo "ERROR: could not read the image partition"; exit 1; }
+                unsquashfs -q -f -d sandbox rootfs.squash || { echo "ERROR: sandbox expansion failed"; exit 1; }
+                rm -f rootfs.squash
+                echo "$IMG:$(stat -c %Y "$IMG")" > .sandbox-src
+              fi
+              echo "$PWD/sandbox" > .image
+            fi
+            echo "container: $(cat .image) ($("$RUNTIME" --version))"
             exit 0
           fi
           cd ${{ inputs.app_settings.workdir }}
