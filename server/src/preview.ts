@@ -54,6 +54,14 @@ export function officeToPdf(absSource: string, relPath: string): Promise<string>
   return next
 }
 
+/** Where the rendered preview of a PDF lives, so a move can carry it. */
+export function pdfPreviewPaths(relPath: string): { file: string; pages: string } {
+  return {
+    file: path.join(PDF_CACHE, path.dirname(relPath), path.basename(relPath, path.extname(relPath)) + '.pdf'),
+    pages: pageDirFor(relPath),
+  }
+}
+
 export async function removePdfPreview(relPath: string): Promise<void> {
   const outFile = path.join(PDF_CACHE, path.dirname(relPath), path.basename(relPath, path.extname(relPath)) + '.pdf')
   await fsp.rm(outFile, { force: true }).catch(() => {})

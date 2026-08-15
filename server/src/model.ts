@@ -118,6 +118,9 @@ export async function modelFor(rel: string): Promise<ModelPayload> {
   return payload
 }
 
+/** Cache path for a parsed 3D model, so a move can carry it. */
+export function modelCachePath(rel: string): string { return cachePath(rel) }
+
 export async function removeModelCache(rel: string): Promise<void> {
   await fs.rm(cachePath(rel), { force: true }).catch(() => {})
 }
