@@ -1,7 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
 import { DependencyGraphPreview } from '@parallelworks/ui/workflow'
-import '@parallelworks/ui/styles.css'
-import '@parallelworks/ui/theme.css'
 
 interface DagData {
   name: string
