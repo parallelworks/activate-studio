@@ -7,7 +7,7 @@ import { attachmentContext } from '../attachments.js'
 import { effectiveSettings } from '../settings.js'
 import { agentPrompt } from '../extensions.js'
 import { recordAssistantTurn, recordUserTurn } from '../conversations.js'
-import { clearUserKey, getUserKeyStatus, personalKeysDisabled, resolveUserCred, resolveUserKey, setUserKey } from '../credentials.js'
+import { clearSharedKey, clearUserKey, getSharedKeyStatus, getUserKeyStatus, personalKeysDisabled, resolveUserCred, resolveUserKey, setUserKey, shareUserKey } from '../credentials.js'
 import { authEnabled } from '../auth.js'
 import { endpointName } from '../ragEndpoint.js'
 
@@ -91,7 +91,12 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
   // (mode, last4, timestamps) ever goes to the browser.
   const keyStatusPayload = (sub: string) => {
     const gatewayHost = (() => { try { return new URL(GATEWAY_BASE).host } catch { return GATEWAY_BASE } })()
-    return { authEnabled: true, verified: true, gatewayHost, ...getUserKeyStatus(sub) }
+    return {
+      authEnabled: true, verified: true, gatewayHost,
+      ...getUserKeyStatus(sub),
+      shared: getSharedKeyStatus(sub),
+      sharingAllowed: effectiveSettings().allowKeySharing && !effectiveSettings().requirePersonalKey,
+    }
   }
 
   app.get('/api/me/model-key', async req => {
@@ -133,6 +138,26 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
   app.delete('/api/me/model-key', async (req, reply) => {
     if (!req.user) return reply.status(403).send({ error: 'not verified' })
     clearUserKey(req.user.id)
+    return keyStatusPayload(req.user.id)
+  })
+
+  // Promote the caller's own key to stand in for the deployment credential,
+  // and take it back. Revocation is open to any verified user on purpose:
+  // the key acts for the whole deployment, and the person who shared it may
+  // be gone by the time it needs removing. Who shared it stays on display.
+  app.post('/api/me/model-key/share', async (req, reply) => {
+    if (!req.user) return reply.status(403).send({ error: 'not verified' })
+    const eff = effectiveSettings()
+    if (!eff.allowKeySharing) return reply.status(403).send({ error: 'this deployment does not allow sharing a personal key' })
+    if (eff.requirePersonalKey) return reply.status(400).send({ error: 'this deployment requires each user to bring their own key, so a shared one would never be used' })
+    try { shareUserKey(req.user.id, req.user.name || req.user.username) }
+    catch (e) { return reply.status(400).send({ error: String((e as Error).message ?? e) }) }
+    return keyStatusPayload(req.user.id)
+  })
+
+  app.post('/api/me/model-key/unshare', async (req, reply) => {
+    if (!req.user) return reply.status(403).send({ error: 'not verified' })
+    clearSharedKey()
     return keyStatusPayload(req.user.id)
   })
 
