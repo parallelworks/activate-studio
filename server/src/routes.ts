@@ -4,15 +4,15 @@ import path from 'node:path'
 import fs, { createReadStream } from 'node:fs'
 import fsp from 'node:fs/promises'
 import { EXCLUDE_DIRS, GUFI_INDEX, INDEX_BASE, KB_ROOT, PROJECT_ROOT, gufiAvailable } from './config.js'
-import { extractPath, listDir, readFileContent, resolveKb, KbError } from './kb.js'
-import { CONVERTIBLE, mimeFor, officeToPdf, pdfPageCount, pdfPagePng, previewPdfFor, removePdfPreview } from './preview.js'
+import { KbError, extractPath, listDir, moveCacheEntry, readFileContent, resolveKb } from './kb.js'
+import { CONVERTIBLE, mimeFor, officeToPdf, pdfPageCount, pdfPagePng, pdfPreviewPaths, previewPdfFor, removePdfPreview } from './preview.js'
 import { blendHits, corpusStats, searchFts, searchNames, searchVector } from './gufi.js'
 import { invalidateContext } from './chat/context.js'
 import { getIndexJob, incrementalIndexDir, indexRootDb, indexStatus, reindexForFile, startIndexJob, sweep } from './indexing.js'
 import { annotateHits, readTagsBatch } from './tags.js'
 import { gatewayKey } from './chat/gateway.js'
 import { convertToDynamicForm, dumpYaml, getAllDeps, getStepLabel, workflowHasUserInputs } from '@parallelworks/workflow-parser'
-import { removeModelCache } from './model.js'
+import { modelCachePath, removeModelCache } from './model.js'
 import { effectiveSettings } from './settings.js'
 import { authEnabled, authHeaderName } from './auth.js'
 
@@ -276,6 +276,69 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
     for (const root of roots) indexMs += (await incrementalIndexDir(root)).ms
     if (rootDb) indexMs += (await indexRootDb()).ms
     return { deleted, skipped, indexMs }
+  })
+
+  // Move files and directories inside the corpus, so the tree can be
+  // reorganised without going back to a shell. Both ends are re-indexed:
+  // material that moved is not new, but the index records where it lives.
+  app.post('/api/kb/move', async req => {
+    const body = req.body as { paths?: string[]; dest?: string }
+    const paths = (body.paths ?? []).slice(0, 500)
+    const dest = String(body.dest ?? '').replace(/^\/+|\/+$/g, '')
+    if (!paths.length) throw new KbError(400, 'paths required')
+    for (const part of dest.split('/').filter(Boolean)) {
+      if (EXCLUDE_DIRS.has(part) || part.startsWith('.')) throw new KbError(400, 'protected destination')
+    }
+    const destAbs = resolveKb(dest)
+    const dstStat = await fsp.stat(destAbs).catch(() => null)
+    if (!dstStat?.isDirectory()) throw new KbError(400, `not a directory: ${dest || 'root'}`)
+
+    const moved: { from: string; to: string }[] = []
+    const skipped: { path: string; reason: string }[] = []
+    const roots = new Set<string>()
+    let rootDb = false
+    const touch = (rel: string) => { if (rel.includes('/')) roots.add(rel.split('/')[0]); else rootDb = true }
+
+    for (const rel of paths) {
+      const cleaned = rel.replace(/^\/+|\/+$/g, '')
+      try {
+        for (const part of cleaned.split('/')) {
+          if (EXCLUDE_DIRS.has(part) || part.startsWith('.')) throw new KbError(400, 'protected path')
+        }
+        const abs = resolveKb(cleaned)
+        const name = path.basename(cleaned)
+        const targetRel = dest ? `${dest}/${name}` : name
+        if (targetRel === cleaned) throw new KbError(400, 'already there')
+        const st = await fsp.stat(abs)
+        // Moving a directory into itself would take the tree with it.
+        if (st.isDirectory() && (dest === cleaned || dest.startsWith(`${cleaned}/`))) {
+          throw new KbError(400, 'cannot move a directory into itself')
+        }
+        const targetAbs = resolveKb(targetRel)
+        if (await fsp.stat(targetAbs).then(() => true, () => false)) throw new KbError(409, 'name already exists there')
+        await fsp.rename(abs, targetAbs)
+        // Derived artefacts are keyed by path, so they travel with the
+        // file: re-extracting a large PDF or re-rendering its pages costs
+        // seconds, and a move changes none of their content.
+        if (st.isFile()) {
+          await moveCacheEntry(extractPath(cleaned), extractPath(targetRel))
+          const from = pdfPreviewPaths(cleaned)
+          const to = pdfPreviewPaths(targetRel)
+          await moveCacheEntry(from.file, to.file)
+          await moveCacheEntry(from.pages, to.pages)
+          await moveCacheEntry(modelCachePath(cleaned), modelCachePath(targetRel))
+        }
+        moved.push({ from: cleaned, to: targetRel })
+        touch(cleaned)
+        touch(targetRel)
+      } catch (err) {
+        skipped.push({ path: cleaned, reason: err instanceof KbError ? err.message : String((err as Error).message ?? err) })
+      }
+    }
+    let indexMs = 0
+    for (const root of roots) indexMs += (await incrementalIndexDir(root)).ms
+    if (rootDb) indexMs += (await indexRootDb()).ms
+    return { moved, skipped, indexMs }
   })
 
   // Remove a file from the knowledge base and from the index.
