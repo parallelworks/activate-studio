@@ -32,7 +32,8 @@ export function LibraryView({ display, onDisplay }: {
   const [multiSel, setMultiSel] = useState<Set<string>>(new Set())
   const [tagMenuOpen, setTagMenuOpen] = useState(false)
   const [selectMode, setSelectMode] = useState(false)
-  const [moveNote, setMoveNote] = useState('')
+  const [moveMenuOpen, setMoveMenuOpen] = useState(false)
+  const [allDirs, setAllDirs] = useState<string[]>([])
   const [showLabels, setShowLabels] = useState(() => localStorage.getItem('ade-tree-labels') === '1')
   const [tagsTick, setTagsTick] = useState(0)
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -145,23 +146,43 @@ export function LibraryView({ display, onDisplay }: {
     anchor.current ??= p
   }
 
-  /** Drag a row (or the whole selection) onto a directory to move it. */
+  /** Drag a row (or the whole selection) onto a directory to move it, or
+   *  pick a destination for the selection. Runs as a job so a few hundred
+   *  files report progress instead of freezing the panel. */
   const moveInto = async (dir: string, paths: string[]) => {
     const clean = paths.filter(p => p && p !== dir && !dir.startsWith(`${p}/`))
     if (!clean.length) return
-    setMoveNote(`Moving ${clean.length} ${clean.length === 1 ? 'item' : 'items'} into ${dir || 'root'}…`)
-    try {
-      const r = await api.move(clean, dir)
-      const failed = r.skipped.length
-      setMoveNote(failed
-        ? `Moved ${r.moved.length}; ${failed} could not move: ${r.skipped.map(x => `${x.path} (${x.reason})`).slice(0, 2).join(', ')}`
-        : `Moved ${r.moved.length} into ${dir || 'root'}`)
-      setMultiSel(new Set())
-      window.dispatchEvent(new CustomEvent('ade-kb-changed'))
-    } catch (e) {
-      setMoveNote(String((e as Error).message ?? e))
+    const p: UploadProgress = {
+      kind: 'move', phase: 'uploading', total: clean.length, done: 0, bytes: 0, totalBytes: 0,
+      current: clean[0], failed: [], indexMs: 0, finished: false, dir,
     }
-    setTimeout(() => setMoveNote(''), 6000)
+    setProgress({ ...p })
+    try {
+      const job = await api.moveJob(clean, dir)
+      for (;;) {
+        await new Promise(r => setTimeout(r, 500))
+        const s = await api.job(job.id)
+        p.done = s.done
+        p.current = s.current
+        p.phase = s.phase === 'indexing' ? 'indexing' : 'uploading'
+        if (s.state === 'done') {
+          const r = s.result as { moved: unknown[]; skipped: { path: string; reason: string }[] } | null
+          p.done = r?.moved.length ?? s.done
+          p.failed = (r?.skipped ?? []).map(x => ({ name: x.path, error: x.reason }))
+          p.indexMs = s.ms ?? 0
+          break
+        }
+        if (s.state === 'error') { p.indexError = s.error ?? 'move failed'; break }
+        setProgress({ ...p })
+      }
+    } catch (e) {
+      p.indexError = String((e as Error).message ?? e)
+    }
+    p.phase = 'done'
+    p.finished = true
+    setProgress({ ...p })
+    setMultiSel(new Set())
+    window.dispatchEvent(new CustomEvent('ade-kb-changed'))
   }
 
   const railRef = useRef<HTMLElement>(null)
@@ -254,6 +275,11 @@ export function LibraryView({ display, onDisplay }: {
                 <div className="multi-bar">
                   <span>{multiSel.size} selected</span>
                   <button className="btn-secondary" disabled={!multiSel.size} onClick={() => setTagMenuOpen(o => !o)}>Labels…</button>
+                  <button className="btn-secondary" disabled={!multiSel.size}
+                    onClick={async () => {
+                      setMoveMenuOpen(o => !o)
+                      if (!allDirs.length) setAllDirs((await api.dirs().catch(() => ({ dirs: [] }))).dirs)
+                    }}>Move to…</button>
                   {confirmDelete ? (
                     <span className="confirm-group">
                       <button className="btn-danger" onClick={bulkDelete}>Delete {multiSel.size}</button>
@@ -263,6 +289,21 @@ export function LibraryView({ display, onDisplay }: {
                     <button className="btn-danger-outline" disabled={!multiSel.size} onClick={() => setConfirmDelete(true)}>Delete…</button>
                   )}
                   <button className="link-btn2" onClick={() => setMultiSel(new Set())}>clear</button>
+                  {moveMenuOpen && (
+                    <div className="move-menu">
+                      <select className="field" defaultValue=""
+                        onChange={e => {
+                          const dest = e.target.value
+                          if (dest === '') return
+                          setMoveMenuOpen(false)
+                          void moveInto(dest === '/' ? '' : dest, [...multiSel])
+                        }}>
+                        <option value="">Move {multiSel.size} {multiSel.size === 1 ? 'item' : 'items'} to…</option>
+                        <option value="/">{cfg.kbLabel} (root)</option>
+                        {allDirs.map(d => <option key={d} value={d}>{d}</option>)}
+                      </select>
+                    </div>
+                  )}
                   {tagMenuOpen && (
                     <TagMenu
                       paths={[...multiSel]}
@@ -275,8 +316,8 @@ export function LibraryView({ display, onDisplay }: {
               {bulkNote && <div className="drop-note">{bulkNote}</div>}
               <Explorer
                 refreshTick={refreshKey}
-                onOpen={p => onDisplay({ kind: 'file', target: p })}
-                onDirFocus={dir => setTargetDir(dir || 'uploads')}
+                onOpen={p => { anchor.current = p; onDisplay({ kind: 'file', target: p }) }}
+                onDirFocus={dir => { anchor.current = dir; setTargetDir(dir || 'uploads') }}
                 selected={selectedFile}
                 rootLabel={cfg.kbLabel}
                 multiSelected={multiSel}
@@ -290,16 +331,17 @@ export function LibraryView({ display, onDisplay }: {
                 showLabels={showLabels || selectMode}
                 tagsTick={tagsTick}
               />
-              {moveNote && <div className="move-note">{moveNote}</div>}
               {progress && (
                 <div className="upload-panel">
                   <div className="upload-panel-head">
                     <span>
                       {progress.phase === 'done'
-                        ? `${progress.done} of ${progress.total} added to ${progress.dir || 'root'}${progress.indexMs ? `, indexed in ${(progress.indexMs / 1000).toFixed(1)}s` : ''}`
+                        ? `${progress.done} of ${progress.total} ${progress.kind === 'move' ? 'moved to' : 'added to'} ${progress.dir || 'root'}${progress.indexMs ? `, indexed in ${(progress.indexMs / 1000).toFixed(1)}s` : ''}`
                         : progress.phase === 'indexing'
-                          ? `Indexing ${progress.done} ${progress.done === 1 ? 'file' : 'files'} in ${progress.dir || 'root'}…`
-                          : `Uploading to ${progress.dir || 'root'}: ${progress.done} / ${progress.total}${progress.totalBytes ? ` (${fmtBytes(progress.bytes)} of ${fmtBytes(progress.totalBytes)})` : ''}`}
+                          ? `Indexing ${progress.done} ${progress.done === 1 ? 'item' : 'items'} in ${progress.dir || 'root'}…`
+                          : progress.kind === 'move'
+                            ? `Moving into ${progress.dir || 'root'}: ${progress.done} / ${progress.total}`
+                            : `Uploading to ${progress.dir || 'root'}: ${progress.done} / ${progress.total}${progress.totalBytes ? ` (${fmtBytes(progress.bytes)} of ${fmtBytes(progress.totalBytes)})` : ''}`}
                     </span>
                     <button className="link-btn2" onClick={() => setProgress(null)}>dismiss</button>
                   </div>
@@ -307,9 +349,9 @@ export function LibraryView({ display, onDisplay }: {
                       still moves; indexing has no count to report, so the
                       bar runs indeterminate until the job comes back. */}
                   <div className={`upload-bar ${progress.phase === 'indexing' ? 'indeterminate' : ''}`}>
-                    <div style={{ width: progress.phase === 'indexing' ? '100%' : `${(progress.totalBytes ? progress.bytes / progress.totalBytes : progress.done / Math.max(progress.total, 1)) * 100}%` }} />
+                    <div style={{ width: progress.phase === 'indexing' ? '100%' : `${(progress.totalBytes && progress.kind !== 'move' ? progress.bytes / progress.totalBytes : progress.done / Math.max(progress.total, 1)) * 100}%` }} />
                   </div>
-                  {progress.phase === 'uploading' && progress.current && (
+                  {progress.phase !== 'done' && progress.current && (
                     <div className="upload-current">{progress.current}</div>
                   )}
                   {progress.indexError && (
