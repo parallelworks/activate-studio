@@ -115,6 +115,10 @@ export default function App() {
       const vm = location.hash.match(/^#view=([a-z]+)(?::([a-z0-9-]+))?$/)
       const v = vm?.[1]
       if (v && NAV.some(n => n.id === v)) {
+        // #view=library is a request for the library itself. Leaving the
+        // open document in state made the app rewrite the hash straight
+        // back to #open=, so the page could never be reached.
+        if (v === 'library') setDisplay(null)
         setView(v as ViewId)
         if (vm?.[2]) window.dispatchEvent(new CustomEvent('ade-view-section', { detail: { view: v, section: vm[2] } }))
       } else if (!location.hash || location.hash.startsWith('#chat=')) setView('chat')
@@ -209,7 +213,10 @@ export default function App() {
               key={item.id}
               className={`sidenav-item ${view === item.id ? 'active' : ''}`}
               title={item.label}
-              onClick={() => setView(item.id)}
+              onClick={() => {
+                if (item.id === 'library' && view === 'library') setDisplay(null)
+                setView(item.id)
+              }}
             >
               {item.icon}
               <span>{item.label}</span>
