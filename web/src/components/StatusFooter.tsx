@@ -177,16 +177,21 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
   const [ai, setAi] = useState<AiHealth | null>(null)
   const [aiOpen, setAiOpen] = useState(false)
 
-  const refresh = () => {
-    api.stats().then(s => setStats(s as typeof stats)).catch(() => {})
-    api.indexStatus().then(setIdx).catch(() => {})
-    fetch('/api/whoami').then(r => r.json()).then(setWho).catch(() => {})
-    api.health().then(h => setGufi(h.gufi)).catch(() => setGufi(null))
-    fetch('/api/ai/health').then(r => r.json()).then(setAi).catch(() => setAi(null))
-  }
+  // Each line waited on its own request, so the footer assembled itself a
+  // row at a time while the page settled. The first pass is awaited as a
+  // whole and the footer appears once, complete; later refreshes update in
+  // place, where a line changing is meaningful rather than noise.
+  const [ready, setReady] = useState(false)
+  const refresh = () => Promise.allSettled([
+    api.stats().then(s => setStats(s as typeof stats)),
+    api.indexStatus().then(setIdx),
+    fetch('/api/whoami').then(r => r.json()).then(setWho),
+    api.health().then(h => setGufi(h.gufi)).catch(() => setGufi(null)),
+    fetch('/api/ai/health').then(r => r.json()).then(setAi).catch(() => setAi(null)),
+  ])
   useEffect(() => {
-    refresh()
-    const t = setInterval(refresh, 60_000)
+    void refresh().then(() => setReady(true))
+    const t = setInterval(() => { void refresh() }, 60_000)
     return () => clearInterval(t)
   }, [])
 
@@ -210,6 +215,8 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
       </div>
     )
   }
+  // Hold the space so the sidebar does not shift when the rows arrive.
+  if (!ready) return <div className="sidenav-footer footer-pending" />
   return (
     <div className="sidenav-footer">
       {who?.authEnabled && (
