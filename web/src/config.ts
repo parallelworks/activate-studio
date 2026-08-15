@@ -40,7 +40,7 @@ const DEFAULTS: AppConfig = {
     'Find everything related to a topic I name.',
   ],
   bannerText: '',
-  bannerColor: '#2e6b2e',
+  bannerColor: '#24612e',
   bannerWhenEmbedded: false,
   user: { id: 'user', username: 'user' },
   loaded: false,
