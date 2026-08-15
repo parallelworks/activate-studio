@@ -80,6 +80,8 @@ export default function App() {
   useEffect(() => {
     const effective = theme ?? cfg.theme
     document.documentElement.dataset.theme = effective
+    // Cached so the next load paints in this theme before config arrives.
+    if (cfg.loaded) { try { localStorage.setItem('ade-theme-default', cfg.theme) } catch { /* ignore */ } }
   }, [theme, cfg])
 
   const toggleTheme = () => {
