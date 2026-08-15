@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ChatProvider, ChatLayout, ChatThread, ChatEmptyState, AttachmentManager,
 } from '@parallelworks/ai-chat'
-import '@parallelworks/ai-chat/styles.css'
 import { createStudioAdapter, getChatListFilter, setChatListFilter, setViewerUsername } from '../adapter'
 import { useAppConfig } from '../config'
 import { api } from '../api'
