@@ -77,7 +77,12 @@ permissions:
             type: string
             default: ''
             optional: true
-            tooltip: Absolute path on the resource to an image used as the interface brand icon and favicon (APP_ICON). Stage the file on the resource first, e.g. under the knowledge base in a .branding directory.
+            tooltip: >-
+              Image used as the interface brand icon and favicon (APP_ICON).
+              Either an https URL, or an absolute path on the resource, in
+              which case stage the file first (for a container deployment it
+              must sit under a bind-mounted directory, such as a .branding
+              folder inside the knowledge base).
           suggested_prompts:
             label: Chat Starter Prompts
             type: string
