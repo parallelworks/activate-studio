@@ -279,7 +279,7 @@ export function LibraryView({ display, onDisplay }: {
               <button onClick={() => { onDisplay({ kind: 'file', target: ctx.path }); closeCtx() }}>Open</button>
             )}
             {ctx.isDir && (ctxNewDir === null ? (
-              <button onClick={() => setCtxNewDir('')}>New folder inside…</button>
+              <button onClick={() => setCtxNewDir('')}>New folder</button>
             ) : (
               <div className="ctx-input">
                 <input
