@@ -79,6 +79,15 @@ export function extractPath(rel: string): string {
   return path.join(EXTRACT_CACHE, rel + '.txt')
 }
 
+/** Carry a path-keyed cache entry to a new path, if it exists. Extraction
+ *  of a large PDF costs seconds; a move is not a reason to redo it. */
+export async function moveCacheEntry(from: string, to: string): Promise<void> {
+  try {
+    await fs.mkdir(path.dirname(to), { recursive: true })
+    await fs.rename(from, to)
+  } catch { /* nothing cached, or across devices: it will be rebuilt */ }
+}
+
 export interface FileContent {
   path: string
   kind: KbEntry['kind']

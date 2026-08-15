@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { api, KbEntry } from '../api'
 
 function formatSize(n: number): string {
@@ -66,6 +66,10 @@ interface NodeProps {
   multiSelected: Set<string>
   onToggleMulti: (path: string) => void
   onDropInto: (dir: string, items: DataTransferItemList) => void
+  /** Shift-click: select every row between the last click and this one. */
+  onSelectRange: (path: string) => void
+  /** Internal drag: move these corpus paths into this directory. */
+  onMoveInto: (dir: string, paths: string[]) => void
   onLabel: (path: string) => void
   onContext: (path: string, isDir: boolean, x: number, y: number) => void
   selectMode: boolean
@@ -76,8 +80,36 @@ interface NodeProps {
   tags?: string[]
 }
 
+/** Corpus paths carried by an internal drag. A drag from the desktop has
+ *  no such type, which is how a move is told apart from an upload. */
+const DRAG_TYPE = 'application/x-studio-paths'
+
+function startRowDrag(e: React.DragEvent, path: string, multiSelected: Set<string>): void {
+  // Dragging one of several selected rows moves the whole selection.
+  const paths = multiSelected.has(path) ? [...multiSelected] : [path]
+  e.dataTransfer.setData(DRAG_TYPE, JSON.stringify(paths))
+  e.dataTransfer.effectAllowed = 'move'
+}
+
+function draggedPaths(e: React.DragEvent): string[] {
+  try {
+    const raw = e.dataTransfer.getData(DRAG_TYPE)
+    const parsed = raw ? JSON.parse(raw) : []
+    return Array.isArray(parsed) ? parsed.filter(p => typeof p === 'string') : []
+  } catch { return [] }
+}
+
+/** Visible rows in the order they are on screen, read from the tree itself
+ *  rather than tracked separately: the range a shift-click means is the one
+ *  the reader can see. */
+export function visibleRowPaths(): string[] {
+  return [...document.querySelectorAll<HTMLElement>('.tree-row[data-path]')]
+    .map(el => el.dataset.path ?? '')
+    .filter(Boolean)
+}
+
 function DirNode(props: NodeProps) {
-  const { path, name, depth, onOpen, onDirFocus, selected, multiSelected, onToggleMulti, onDropInto, onLabel, onContext, selectMode, showLabels, tagsTick, refreshTick, tags } = props
+  const { path, name, depth, onOpen, onDirFocus, selected, multiSelected, onToggleMulti, onSelectRange, onMoveInto, onDropInto, onLabel, onContext, selectMode, showLabels, tagsTick, refreshTick, tags } = props
   const [open, setOpen] = useState(depth === 0)
   const [entries, setEntries] = useState<KbEntry[] | null>(null)
   const [dropOver, setDropOver] = useState(false)
@@ -97,17 +129,23 @@ function DirNode(props: NodeProps) {
     <div>
       {depth > 0 && (
         <div
+          data-path={path}
           className={`tree-row dir ${multiSelected.has(path) ? 'multi' : ''} ${dropOver ? 'drop-target' : ''}`}
           style={{ paddingLeft: 8 + depth * 14 }}
+          draggable
+          onDragStart={e => { e.stopPropagation(); startRowDrag(e, path, multiSelected) }}
           onDragOver={e => { e.preventDefault(); e.stopPropagation(); setDropOver(true) }}
           onDragLeave={() => setDropOver(false)}
           onDrop={e => {
             e.preventDefault()
             e.stopPropagation()
             setDropOver(false)
-            onDropInto(path, e.dataTransfer.items)
+            const dragged = draggedPaths(e)
+            if (dragged.length) onMoveInto(path, dragged)
+            else onDropInto(path, e.dataTransfer.items)
           }}
           onClick={e => {
+            if (e.shiftKey) { onSelectRange(path); return }
             if (e.ctrlKey || e.metaKey) { onToggleMulti(path); return }
             setOpen(o => !o)
             onDirFocus(path)
@@ -130,9 +168,16 @@ function DirNode(props: NodeProps) {
           <div
             key={e.path}
             ref={el => { if (el && selected === e.path) el.scrollIntoView({ block: 'nearest' }) }}
+            data-path={e.path}
             className={`tree-row file ${selected === e.path ? 'selected' : ''} ${multiSelected.has(e.path) ? 'multi' : ''}`}
             style={{ paddingLeft: 8 + (depth + 1) * 14 }}
-            onClick={ev => (ev.ctrlKey || ev.metaKey ? onToggleMulti(e.path) : onOpen(e.path))}
+            draggable
+            onDragStart={ev => { ev.stopPropagation(); startRowDrag(ev, e.path, multiSelected) }}
+            onClick={ev => {
+              if (ev.shiftKey) { onSelectRange(e.path); return }
+              if (ev.ctrlKey || ev.metaKey) { onToggleMulti(e.path); return }
+              onOpen(e.path)
+            }}
             onContextMenu={ev => { ev.preventDefault(); ev.stopPropagation(); onContext(e.path, false, ev.clientX, ev.clientY) }}
             title={`${e.path} (${formatSize(e.size)})`}
           >
@@ -150,7 +195,7 @@ function DirNode(props: NodeProps) {
   )
 }
 
-export function Explorer({ onOpen, onDirFocus, selected, rootLabel, multiSelected, onToggleMulti, onDropInto, onLabel, onContext, selectMode, showLabels, tagsTick, refreshTick }: {
+export function Explorer({ onOpen, onDirFocus, selected, rootLabel, multiSelected, onToggleMulti, onSelectRange, onMoveInto, onDropInto, onLabel, onContext, selectMode, showLabels, tagsTick, refreshTick }: {
   onOpen: (path: string) => void
   onDirFocus: (path: string) => void
   selected: string | null
@@ -158,6 +203,8 @@ export function Explorer({ onOpen, onDirFocus, selected, rootLabel, multiSelecte
   multiSelected: Set<string>
   onToggleMulti: (path: string) => void
   onDropInto: (dir: string, items: DataTransferItemList) => void
+  onSelectRange: (path: string) => void
+  onMoveInto: (dir: string, paths: string[]) => void
   onLabel: (path: string) => void
   onContext: (path: string, isDir: boolean, x: number, y: number) => void
   selectMode: boolean
@@ -180,7 +227,8 @@ export function Explorer({ onOpen, onDirFocus, selected, rootLabel, multiSelecte
         path="" name={rootLabel} depth={0}
         onOpen={onOpen} onDirFocus={onDirFocus} selected={selected}
         multiSelected={multiSelected} onToggleMulti={onToggleMulti}
-        onDropInto={onDropInto} onLabel={onLabel} onContext={onContext} selectMode={selectMode}
+        onDropInto={onDropInto} onSelectRange={onSelectRange} onMoveInto={onMoveInto}
+        onLabel={onLabel} onContext={onContext} selectMode={selectMode}
         showLabels={showLabels} tagsTick={tagsTick} refreshTick={refreshTick}
       />
     </div>

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Display } from '../App'
 import { api } from '../api'
-import { Explorer } from '../components/Explorer'
+import { Explorer, visibleRowPaths } from '../components/Explorer'
 import { Viewer } from '../components/Viewer'
 import { DagViewer } from '../components/DagViewer'
 import { UploadMenu } from '../components/UploadMenu'
@@ -32,6 +32,7 @@ export function LibraryView({ display, onDisplay }: {
   const [multiSel, setMultiSel] = useState<Set<string>>(new Set())
   const [tagMenuOpen, setTagMenuOpen] = useState(false)
   const [selectMode, setSelectMode] = useState(false)
+  const [moveNote, setMoveNote] = useState('')
   const [showLabels, setShowLabels] = useState(() => localStorage.getItem('ade-tree-labels') === '1')
   const [tagsTick, setTagsTick] = useState(0)
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -114,12 +115,54 @@ export function LibraryView({ display, onDisplay }: {
 
   useEffect(() => { localStorage.setItem('ade-tree-labels', showLabels ? '1' : '0') }, [showLabels])
 
-  const toggleMulti = (p: string) => setMultiSel(s => {
-    const next = new Set(s)
-    if (next.has(p)) next.delete(p)
-    else next.add(p)
-    return next
-  })
+  // The row a range extends from: the last one clicked without shift.
+  const anchor = useRef<string | null>(null)
+
+  const toggleMulti = (p: string) => {
+    anchor.current = p
+    setMultiSel(s => {
+      const next = new Set(s)
+      if (next.has(p)) next.delete(p)
+      else next.add(p)
+      return next
+    })
+  }
+
+  /** Shift-click selects everything between the anchor and this row, in the
+   *  order the rows appear on screen. */
+  const selectRange = (p: string) => {
+    const rows = visibleRowPaths()
+    const from = anchor.current && rows.includes(anchor.current) ? rows.indexOf(anchor.current) : rows.indexOf(p)
+    const to = rows.indexOf(p)
+    if (from < 0 || to < 0) return
+    const [lo, hi] = from <= to ? [from, to] : [to, from]
+    setSelectMode(true)
+    setMultiSel(s => {
+      const next = new Set(s)
+      for (const row of rows.slice(lo, hi + 1)) next.add(row)
+      return next
+    })
+    anchor.current ??= p
+  }
+
+  /** Drag a row (or the whole selection) onto a directory to move it. */
+  const moveInto = async (dir: string, paths: string[]) => {
+    const clean = paths.filter(p => p && p !== dir && !dir.startsWith(`${p}/`))
+    if (!clean.length) return
+    setMoveNote(`Moving ${clean.length} ${clean.length === 1 ? 'item' : 'items'} into ${dir || 'root'}…`)
+    try {
+      const r = await api.move(clean, dir)
+      const failed = r.skipped.length
+      setMoveNote(failed
+        ? `Moved ${r.moved.length}; ${failed} could not move: ${r.skipped.map(x => `${x.path} (${x.reason})`).slice(0, 2).join(', ')}`
+        : `Moved ${r.moved.length} into ${dir || 'root'}`)
+      setMultiSel(new Set())
+      window.dispatchEvent(new CustomEvent('ade-kb-changed'))
+    } catch (e) {
+      setMoveNote(String((e as Error).message ?? e))
+    }
+    setTimeout(() => setMoveNote(''), 6000)
+  }
 
   const railRef = useRef<HTMLElement>(null)
 
@@ -239,12 +282,15 @@ export function LibraryView({ display, onDisplay }: {
                 multiSelected={multiSel}
                 onToggleMulti={toggleMulti}
                 onDropInto={(dir, items) => void uploadTo(dir, items)}
+                onSelectRange={selectRange}
+                onMoveInto={(dir, paths) => void moveInto(dir, paths)}
                 onLabel={p => { setMultiSel(new Set([p])); setTagMenuOpen(true); setSelectMode(true) }}
                 onContext={(path, isDir, x, y) => { setCtxConfirm(false); setCtxNewDir(null); setCtxErr(''); setCtx({ path, isDir, x, y }) }}
                 selectMode={selectMode}
                 showLabels={showLabels || selectMode}
                 tagsTick={tagsTick}
               />
+              {moveNote && <div className="move-note">{moveNote}</div>}
               {progress && (
                 <div className="upload-panel">
                   <div className="upload-panel-head">
