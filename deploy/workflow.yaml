@@ -372,13 +372,19 @@ jobs:
           cp -r repo/indexer app/indexer
           cp -r repo/docs app/docs
           cp -r repo/extensions-starter app/extensions-starter
-          mkdir -p app/index/models
-          if [ ! -f app/index/models/minilm384.gguf ]; then
+          mkdir -p app/index/models cache
+          # The app tree is rebuilt from scratch each run, so the model is
+          # cached beside it rather than inside it; otherwise every update
+          # re-downloads it.
+          if [ ! -f cache/minilm384.gguf ]; then
             echo "Fetching embedding model..."
-            curl -fsSL -o app/index/models/minilm384.gguf \
+            curl -fsSL -o cache/minilm384.gguf \
               'https://huggingface.co/asg017/sqlite-lembed-model-examples/resolve/main/all-MiniLM-L6-v2/all-MiniLM-L6-v2.e4ce9877.q8_0.gguf' \
               || echo "WARNING: model fetch failed; vector search disabled."
+          else
+            echo "embedding model already cached"
           fi
+          [ -f cache/minilm384.gguf ] && cp -f cache/minilm384.gguf app/index/models/minilm384.gguf
           if [ ! -f gufi-src.tar.gz ]; then
             echo "Fetching GUFI source..."
             # GUFI's cmake runs git describe for its version string; a shallow
