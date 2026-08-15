@@ -70,20 +70,80 @@ def extract_docx(path: Path) -> str:
     return '\n'.join(x for x in parts if x and x.strip())
 
 
-def extract_pdf(path: Path) -> str:
+# A PDF with almost no extractable text is a scan; below this many
+# characters per page, try reading the pages as images instead.
+OCR_CHARS_PER_PAGE = 120
+
+
+def _pdf_page_count(path: Path) -> int:
     try:
-        out = subprocess.run(['pdftotext', '-q', str(path), '-'],
-                             capture_output=True, text=True, timeout=120)
-        if out.returncode == 0 and out.stdout.strip():
-            return out.stdout
+        out = subprocess.run(['pdfinfo', str(path)], capture_output=True, text=True, timeout=60)
+        for line in out.stdout.splitlines():
+            if line.startswith('Pages:'):
+                return int(line.split(':', 1)[1].strip())
+    except Exception:
+        pass
+    return 1
+
+
+def _pdf_ocr(path: Path, pages: int) -> str:
+    """OCR a scanned PDF, page by page, up to a sane limit.
+
+    Signed and faxed forms carry their text as an image, so pdftotext
+    returns a page number and nothing else. Rendering to PNG and running
+    tesseract is slow, so it only happens when the text layer is thin.
+    """
+    import shutil
+    import tempfile
+    if not (shutil.which('pdftoppm') and shutil.which('tesseract')):
+        return ''
+    limit = min(pages, 30)
+    parts = []
+    with tempfile.TemporaryDirectory() as tmp:
+        prefix = str(Path(tmp) / 'page')
+        try:
+            subprocess.run(['pdftoppm', '-r', '200', '-f', '1', '-l', str(limit), '-png', str(path), prefix],
+                           capture_output=True, timeout=600)
+        except Exception:
+            return ''
+        for png in sorted(Path(tmp).glob('page*.png')):
+            try:
+                out = subprocess.run(['tesseract', str(png), 'stdout', '--psm', '3'],
+                                     capture_output=True, text=True, timeout=180)
+                text = (out.stdout or '').strip()
+                if text:
+                    parts.append(text)
+            except Exception:
+                continue
+    body = '\n\n'.join(parts)
+    return f'Text read from scanned pages (OCR):\n{body}' if body else ''
+
+
+def extract_pdf(path: Path) -> str:
+    text = ''
+    try:
+        # -layout keeps columns and table cells apart; without it, rows run
+        # together into one line and read badly in a snippet.
+        out = subprocess.run(['pdftotext', '-layout', '-q', str(path), '-'],
+                             capture_output=True, text=True, timeout=180)
+        if out.returncode == 0:
+            text = out.stdout or ''
     except FileNotFoundError:
         pass
-    try:
-        from pypdf import PdfReader  # type: ignore
-        reader = PdfReader(str(path))
-        return '\n'.join((page.extract_text() or '') for page in reader.pages)
-    except Exception:
-        return ''
+    if not text.strip():
+        try:
+            from pypdf import PdfReader  # type: ignore
+            reader = PdfReader(str(path))
+            text = '\n'.join((page.extract_text() or '') for page in reader.pages)
+        except Exception:
+            text = ''
+    pages = _pdf_page_count(path)
+    if len(text.strip()) < OCR_CHARS_PER_PAGE * pages:
+        ocr = _pdf_ocr(path, pages)
+        if ocr:
+            # Keep both: the text layer may hold a header the scan blurs.
+            return f'{text}\n\n{ocr}' if text.strip() else ocr
+    return text
 
 
 def extract_pptx(path: Path) -> str:
@@ -270,9 +330,13 @@ def main() -> int:
                         text = cache_file.read_text(errors='replace')
                     else:
                         text = extract(fpath)
-                        if cacheable:
-                            # Cache even empty results so no-text images are
-                            # not re-captioned on every pass.
+                        # Images cache even when empty: captioning and OCR are
+                        # expensive and a picture with no text is a real
+                        # answer. Documents do not: an empty result usually
+                        # means the extractor was missing, and caching it hid
+                        # the file from every later pass, including the one
+                        # after the library was installed.
+                        if cacheable and ((text and text.strip()) or suffix in IMAGE_SUFFIXES):
                             cache_file.parent.mkdir(parents=True, exist_ok=True)
                             cache_file.write_text(text or '')
                             n_extracted += 1
