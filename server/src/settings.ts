@@ -63,7 +63,7 @@ export function effectiveSettings(): Required<StudioSettings> {
     kbLabel: s.kbLabel ?? process.env.KB_LABEL ?? path.basename(KB_ROOT),
     theme: s.theme ?? (process.env.THEME === 'dark' ? 'dark' : 'light'),
     accent: s.accent ?? process.env.APP_ACCENT ?? 'navy',
-    surface: s.surface ?? process.env.APP_SURFACE ?? 'cool',
+    surface: s.surface ?? process.env.APP_SURFACE ?? 'neutral',
     sweepIntervalSec: s.sweepIntervalSec ?? Number(process.env.SWEEP_INTERVAL_SEC ?? 300),
     suggestedPrompts: s.suggestedPrompts ?? envPrompts(),
     visionModel: s.visionModel ?? process.env.ADE_VISION_MODEL ?? '',

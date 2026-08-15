@@ -19,7 +19,7 @@ const DEFAULTS: AppConfig = {
   faviconUrl: null,
   theme: 'light',
   accent: 'navy',
-  surface: 'cool',
+  surface: 'neutral',
   kbLabel: 'Knowledge base',
   suggestedPrompts: [
     'What is in this knowledge base?',
@@ -46,7 +46,7 @@ export function useAppConfig(): AppConfig {
           faviconUrl: d.faviconUrl ?? null,
           theme: d.theme === 'dark' ? 'dark' : 'light',
           accent: d.accent || 'navy',
-          surface: d.surface || 'cool',
+          surface: d.surface || 'neutral',
           kbLabel: d.kbLabel || DEFAULTS.kbLabel,
           suggestedPrompts: d.suggestedPrompts?.length ? d.suggestedPrompts : DEFAULTS.suggestedPrompts,
           user: d.user?.id ? (d.user as AppConfig['user']) : DEFAULTS.user,
