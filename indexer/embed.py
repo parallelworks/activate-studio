@@ -69,13 +69,14 @@ def main() -> int:
         db = sqlite3.connect(str(dbfile))
         try:
             db.execute('DROP TABLE IF EXISTS gchunks')
-            db.execute('CREATE TABLE gchunks (cid INTEGER PRIMARY KEY, tinode INTEGER, fname TEXT, seq INTEGER, ctext TEXT)')
+            db.execute('CREATE TABLE gchunks (cid INTEGER PRIMARY KEY, tinode TEXT, fname TEXT, seq INTEGER, ctext TEXT)')
             try:
                 rows = db.execute('SELECT tinode, fname, wordf FROM words').fetchall()
             except sqlite3.OperationalError:
                 rows = []
             ins = []
             for tinode, fname, wordf in rows:
+                tinode = str(tinode)
                 if fname.lower().endswith(NO_EMBED_SUFFIXES):
                     continue
                 for seq, c in enumerate(chunk(wordf or '')):

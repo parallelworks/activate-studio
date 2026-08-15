@@ -248,6 +248,9 @@ export function LibraryView({ display, onDisplay }: {
                     <button className="link-btn2" onClick={() => setProgress(null)}>dismiss</button>
                   </div>
                   <div className="upload-bar"><div style={{ width: `${(progress.done / Math.max(progress.total, 1)) * 100}%` }} /></div>
+                  {progress.indexError && (
+                    <div className="upload-failed">Uploaded, but indexing failed, so these files are not searchable yet: {progress.indexError}</div>
+                  )}
                   {progress.failed.length > 0 && (
                     <div className="upload-failed">{progress.failed.length} failed: {progress.failed.slice(0, 3).map(f => f.name).join(', ')}{progress.failed.length > 3 ? '…' : ''}</div>
                   )}
