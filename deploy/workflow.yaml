@@ -97,7 +97,7 @@ permissions:
             type: string
             default: ''
             optional: true
-            tooltip: Banner background as #rrggbb. Empty uses green (#2e6b2e). Text color follows the background.
+            tooltip: Banner background as #rrggbb. Empty uses green (#24612e). Text color follows the background.
           suggested_prompts:
             label: Chat Starter Prompts
             type: string

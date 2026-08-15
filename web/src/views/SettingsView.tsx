@@ -48,13 +48,15 @@ const TOOL_GROUPS: [string, string[]][] = [
   ['Display and skills', ['show_in_viewer', 'use_skill', 'studio_docs']],
 ]
 
-const BANNER_COLORS: [string, string][] = [
-  ['#2e6b2e', 'Green'],
-  ['#502b85', 'Purple'],
-  ['#0033a0', 'Blue'],
-  ['#c8102e', 'Red'],
-  ['#ff8c00', 'Orange'],
-  ['#fce83a', 'Yellow'],
+/** Markings and their colors, following the platform's banners. Any of
+ *  them can be edited after picking one; the list is a starting point. */
+const BANNER_PRESETS: { label: string; text: string; color: string }[] = [
+  { label: 'Unclassified', text: '***** UNCLASSIFIED *****', color: '#1c5180' },
+  { label: 'CUI', text: '***** CONTROLLED UNCLASSIFIED INFORMATION (CUI) *****', color: '#24612e' },
+  { label: 'CUI at IL5 High', text: '***** APPROVED FOR IL5 HIGH - CONTROLLED UNCLASSIFIED INFORMATION (CUI) *****', color: '#24612e' },
+  { label: 'Secret', text: '***** SECRET *****', color: '#c8102e' },
+  { label: 'Top Secret', text: '***** TOP SECRET *****', color: '#ff8c00' },
+  { label: 'Top Secret / SCI', text: '***** TOP SECRET // SCI *****', color: '#fce83a' },
 ]
 
 type SectionId = 'general' | 'access' | 'tools' | 'rag' | 'ext'
@@ -335,28 +337,19 @@ export function SettingsView() {
                 </div>
                 <div>
                   <label className="field-label">Classification banner (empty for none)</label>
+                  <select className="field" value=""
+                    onChange={e => {
+                      const p = BANNER_PRESETS.find(x => x.label === e.target.value)
+                      if (p) setForm({ ...form, bannerText: p.text, bannerColor: p.color })
+                    }}>
+                    <option value="">Pick a marking, or write your own below</option>
+                    {BANNER_PRESETS.map(p => <option key={p.label} value={p.label}>{p.label}</option>)}
+                  </select>
                   <input className="field" value={form.bannerText ?? ''}
                     placeholder="***** APPROVED FOR IL5 HIGH - CONTROLLED UNCLASSIFIED INFORMATION (CUI) *****"
                     onChange={e => setForm({ ...form, bannerText: e.target.value })} />
-                  <div className="accent-row banner-colors">
-                    {BANNER_COLORS.map(([hex, label]) => (
-                      <button
-                        key={hex}
-                        type="button"
-                        className={`accent-swatch ${(form.bannerColor ?? '').toLowerCase() === hex ? 'active' : ''}`}
-                        style={{ background: hex }}
-                        title={label}
-                        onClick={() => setForm({ ...form, bannerColor: hex })}
-                      />
-                    ))}
-                    <input
-                      type="color"
-                      className="accent-swatch accent-custom"
-                      title="Custom color"
-                      value={/^#[0-9a-fA-F]{6}$/.test(form.bannerColor ?? '') ? form.bannerColor : '#2e6b2e'}
-                      onChange={e => setForm({ ...form, bannerColor: e.target.value })}
-                    />
-                  </div>
+                  <input className="field banner-hex" value={form.bannerColor ?? ''} placeholder="#24612e"
+                    onChange={e => setForm({ ...form, bannerColor: e.target.value })} />
                   {(form.bannerText ?? '').trim() && (
                     <div className="cls-banner banner-preview"
                       style={{ background: form.bannerColor, color: bannerInk(form.bannerColor) }}>
