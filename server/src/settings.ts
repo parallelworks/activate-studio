@@ -90,7 +90,7 @@ export function effectiveSettings(): Required<StudioSettings> {
     // embedded session, so by default the app draws its own only when it is
     // open on its own (a new tab or window), never twice.
     bannerText: s.bannerText ?? process.env.BANNER_TEXT ?? '',
-    bannerColor: s.bannerColor ?? process.env.BANNER_COLOR ?? '#2e6b2e',
+    bannerColor: s.bannerColor ?? process.env.BANNER_COLOR ?? '#24612e',
     bannerWhenEmbedded: s.bannerWhenEmbedded ?? process.env.BANNER_WHEN_EMBEDDED === '1',
   }
 }
