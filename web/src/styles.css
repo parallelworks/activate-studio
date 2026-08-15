@@ -113,8 +113,13 @@ button { font-family: inherit; }
 .cls-banner {
   flex-shrink: 0;
   text-align: center;
+  /* The platform chrome draws its banner in the system stack. Geist, which
+     the rest of this app uses, sets noticeably heavier at the same weight,
+     so the banner keeps its own family to match the one above it. */
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
   font-size: 0.8rem;
-  font-weight: normal;
+  font-weight: 400;
   padding: 3px 0;
   overflow-wrap: anywhere;
 }
