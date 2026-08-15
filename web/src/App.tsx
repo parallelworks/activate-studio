@@ -1,4 +1,5 @@
 import { ReactElement, useEffect, useRef, useState } from 'react'
+import { rememberHash } from './lastLocation'
 import { ChatView } from './views/ChatView'
 import { DagViewer } from './components/DagViewer'
 import { ModelViewer } from './components/ModelViewer'
@@ -157,7 +158,7 @@ export default function App() {
     // The chat view keeps its open conversation in the hash; do not clear it.
     if (!hash && location.hash.startsWith('#chat=')) return
     history.pushState(null, '', location.pathname + location.search + hash)
-    try { localStorage.setItem('ade-last-hash', hash) } catch { /* storage unavailable */ }
+    rememberHash(hash)
   }, [view, display])
 
   const openFile = (path: string) => {
