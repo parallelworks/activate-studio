@@ -91,7 +91,8 @@ export function incrementalIndexDir(rel: string): Promise<{ ms: number }> {
         '--extract-cache', path.join(INDEX_BASE, 'extract'), '--subdir', cleaned])
       if (fs.existsSync(EMBED_MODEL)) {
         await run(PYTHON_BIN, [path.join(PROJECT_ROOT, 'indexer', 'embed.py'),
-          '--index', GUFI_INDEX, '--model', EMBED_MODEL, '--subdir', cleaned])
+          '--index', GUFI_INDEX, '--model', EMBED_MODEL, '--subdir', cleaned,
+          '--gufi-sqlite3', path.join(GUFI_BIN, 'gufi_sqlite3')])
       }
       invalidateDbList()
       invalidateContext()
@@ -127,7 +128,8 @@ export function indexRootDb(): Promise<{ ms: number }> {
         '--extract-cache', path.join(INDEX_BASE, 'extract'), '--no-recurse'])
       if (fs.existsSync(EMBED_MODEL)) {
         await run(PYTHON_BIN, [path.join(PROJECT_ROOT, 'indexer', 'embed.py'),
-          '--index', GUFI_INDEX, '--model', EMBED_MODEL, '--no-recurse'])
+          '--index', GUFI_INDEX, '--model', EMBED_MODEL, '--no-recurse',
+          '--gufi-sqlite3', path.join(GUFI_BIN, 'gufi_sqlite3')])
       }
       invalidateDbList()
       invalidateContext()
