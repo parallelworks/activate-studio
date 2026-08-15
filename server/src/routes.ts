@@ -10,6 +10,7 @@ import { blendHits, corpusStats, searchFts, searchNames, searchVector } from './
 import { invalidateContext } from './chat/context.js'
 import { incrementalIndexDir, indexRootDb, indexStatus, reindexForFile, sweep } from './indexing.js'
 import { annotateHits, readTagsBatch } from './tags.js'
+import { gatewayKey } from './chat/gateway.js'
 import { convertToDynamicForm, dumpYaml, getAllDeps, getStepLabel, workflowHasUserInputs } from '@parallelworks/workflow-parser'
 import { removeModelCache } from './model.js'
 import { effectiveSettings } from './settings.js'
@@ -29,8 +30,41 @@ function faviconFile(): string | null {
   return null
 }
 
-/** The URL the browser should load for a brand image: an external URL as
- *  given, our own endpoint when a file is staged, or nothing. */
+/**
+ * Brand images are always served from our own endpoint, never linked
+ * directly. A platform URL (a blob, say) needs a credential the browser
+ * cannot send from this origin, so the server fetches it instead and hands
+ * the bytes back; a staged file is streamed the same way. Cached briefly so
+ * the page does not refetch it on every load.
+ */
+const remoteIcon = new Map<string, { body: Buffer; type: string; at: number }>()
+const REMOTE_ICON_TTL = 10 * 60_000
+
+async function fetchRemoteIcon(url: string): Promise<{ body: Buffer; type: string } | null> {
+  const hit = remoteIcon.get(url)
+  if (hit && Date.now() - hit.at < REMOTE_ICON_TTL) return hit
+  const attempt = async (auth: boolean) => {
+    const key = auth ? gatewayKey() : ''
+    if (auth && !key) return null
+    const res = await fetch(url, {
+      headers: auth ? { Authorization: `Bearer ${key}` } : undefined,
+      signal: AbortSignal.timeout(15_000),
+    })
+    if (!res.ok) return null
+    return {
+      body: Buffer.from(await res.arrayBuffer()),
+      type: res.headers.get('content-type') ?? 'image/png',
+    }
+  }
+  // Public images need no credential; a platform blob answers 401 without
+  // one, so fall back to the deployment's.
+  const got = await attempt(false).catch(() => null) ?? await attempt(true).catch(() => null)
+  if (got) remoteIcon.set(url, { ...got, at: Date.now() })
+  return got
+}
+
+/** The URL the browser should load for a brand image: our own endpoint
+ *  whenever one is configured, or nothing. */
 function brandUrl(kind: 'icon' | 'favicon'): string | null {
   // A setting beats the environment, so branding can be changed from the
   // interface without redeploying.
@@ -38,7 +72,7 @@ function brandUrl(kind: 'icon' | 'favicon'): string | null {
   const configured = kind === 'icon'
     ? (fromSettings ?? process.env.APP_ICON)
     : (process.env.APP_FAVICON ?? fromSettings ?? process.env.APP_ICON)
-  if (isUrl(configured)) return configured
+  if (isUrl(configured)) return kind === 'icon' ? '/api/brand-icon' : '/api/favicon'
   if (kind === 'icon') return configured && fs.existsSync(configured) ? '/api/brand-icon' : null
   return faviconFile() ? '/api/favicon' : null
 }
@@ -117,6 +151,13 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
   // Deployment brand icon (APP_ICON env points at an image file).
   app.get('/api/brand-icon', async (_req, reply) => {
     const icon = effectiveSettings().iconUrl || process.env.APP_ICON
+    if (isUrl(icon)) {
+      const got = await fetchRemoteIcon(icon)
+      if (!got) throw new KbError(502, 'could not load the configured brand image')
+      reply.header('Content-Type', got.type)
+      reply.header('Cache-Control', 'public, max-age=600')
+      return reply.send(got.body)
+    }
     if (!icon || !fs.existsSync(icon)) throw new KbError(404, 'no brand icon configured')
     reply.header('Content-Type', mimeFor(icon))
     reply.header('Cache-Control', 'public, max-age=3600')
@@ -125,6 +166,14 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
 
   // Deployment favicon: APP_FAVICON, falling back to the brand icon.
   app.get('/api/favicon', async (_req, reply) => {
+    const configured = process.env.APP_FAVICON || effectiveSettings().iconUrl || process.env.APP_ICON
+    if (isUrl(configured)) {
+      const got = await fetchRemoteIcon(configured)
+      if (!got) throw new KbError(502, 'could not load the configured favicon')
+      reply.header('Content-Type', got.type)
+      reply.header('Cache-Control', 'public, max-age=600')
+      return reply.send(got.body)
+    }
     const icon = faviconFile()
     if (!icon) throw new KbError(404, 'no favicon configured')
     reply.header('Content-Type', mimeFor(icon))
