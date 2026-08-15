@@ -23,7 +23,7 @@ function isUrl(v: string | undefined): v is string {
 }
 
 function faviconFile(): string | null {
-  for (const p of [process.env.APP_FAVICON, process.env.APP_ICON]) {
+  for (const p of [process.env.APP_FAVICON, effectiveSettings().iconUrl || undefined, process.env.APP_ICON]) {
     if (p && !isUrl(p) && fs.existsSync(p)) return p
   }
   return null
@@ -32,7 +32,12 @@ function faviconFile(): string | null {
 /** The URL the browser should load for a brand image: an external URL as
  *  given, our own endpoint when a file is staged, or nothing. */
 function brandUrl(kind: 'icon' | 'favicon'): string | null {
-  const configured = kind === 'icon' ? process.env.APP_ICON : (process.env.APP_FAVICON ?? process.env.APP_ICON)
+  // A setting beats the environment, so branding can be changed from the
+  // interface without redeploying.
+  const fromSettings = effectiveSettings().iconUrl || undefined
+  const configured = kind === 'icon'
+    ? (fromSettings ?? process.env.APP_ICON)
+    : (process.env.APP_FAVICON ?? fromSettings ?? process.env.APP_ICON)
   if (isUrl(configured)) return configured
   if (kind === 'icon') return configured && fs.existsSync(configured) ? '/api/brand-icon' : null
   return faviconFile() ? '/api/favicon' : null
@@ -111,7 +116,7 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
 
   // Deployment brand icon (APP_ICON env points at an image file).
   app.get('/api/brand-icon', async (_req, reply) => {
-    const icon = process.env.APP_ICON
+    const icon = effectiveSettings().iconUrl || process.env.APP_ICON
     if (!icon || !fs.existsSync(icon)) throw new KbError(404, 'no brand icon configured')
     reply.header('Content-Type', mimeFor(icon))
     reply.header('Cache-Control', 'public, max-age=3600')
