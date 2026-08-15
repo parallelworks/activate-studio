@@ -19,6 +19,13 @@
   --theme-link: #428bca;
   --theme-border: var(--pw-border);
   --theme-hover: #f3f4f6;
+
+  /* Every left rail (chat, library, settings, help) shares one background.
+     Light mode keeps them white like the cards, where the border alone
+     separates the panes cleanly; dark mode takes the panel token the chat
+     components use, a step off the card, which is where the separation
+     actually needs help. */
+  --pw-rail-bg: var(--pw-panel);
 }
 
 /* Dark mode: a deliberately re-stepped palette, not an automatic flip.
@@ -53,6 +60,7 @@
   --theme-hover-text: #e2e8f0;
   --theme-link: #7cb8f0;
   --theme-input-bg: #0f172a;
+  --pw-rail-bg: var(--theme-panel-bg, #232528);
 }
 [data-theme='dark'] .btn-primary { background: #1d4ed8; color: #fff; }
 [data-theme='dark'] .btn-primary:hover { background: #2b5ce4; }
@@ -123,7 +131,7 @@ button { font-family: inherit; }
 .brand-text { font-size: 12.5px; color: var(--pw-muted); white-space: nowrap; overflow: hidden; }
 .brand-text b { color: var(--pw-navy); letter-spacing: 0.05em; font-weight: 750; margin-right: 3px; }
 .nav-collapse, .rail-collapse, .rail-expander {
-  border: 1px solid var(--pw-border); border-radius: 6px; background: #fff;
+  border: 1px solid var(--pw-border); border-radius: 6px; background: var(--pw-panel);
   color: var(--pw-muted); cursor: pointer; font-size: 12px; line-height: 1;
   padding: 3px 7px; flex-shrink: 0;
 }
@@ -154,6 +162,8 @@ button { font-family: inherit; }
 .sidenav-secondary { margin-top: auto; padding-bottom: 8px; }
 .sidenav-footer { padding: 10px 8px 0; border-top: 1px solid var(--pw-border); }
 .status-line { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--pw-muted); padding: 2px 0; }
+/* Reserves the footer's height while its first read is in flight. */
+.footer-pending { min-height: 74px; }
 .status-line.muted2 { color: var(--pw-muted-2); }
 .status-dot { width: 7px; height: 7px; border-radius: 50%; }
 .status-dot.ok { background: var(--pw-green); }
@@ -202,13 +212,19 @@ button { font-family: inherit; }
   padding: 6px 12px; font-size: 12px; color: var(--pw-muted);
   border-bottom: 1px solid var(--pw-border); background: #f8fbff;
 }
-.library-rail { flex-shrink: 0; display: flex; flex-direction: column; min-height: 0; }
-.rail-strip { display: flex; flex-direction: column; padding: 8px 6px; border-right: 1px solid var(--pw-border); }
+/* The chat rail sits a step lighter than its card, and the other views'
+   rails were left flat against theirs, so the two pages read differently in
+   dark mode. They all take the same muted-panel token now. */
+.library-rail { flex-shrink: 0; display: flex; flex-direction: column; min-height: 0; background: var(--pw-rail-bg); }
+.rail-strip { display: flex; flex-direction: column; padding: 8px 6px; border-right: 1px solid var(--theme-border, var(--pw-border)); background: var(--pw-rail-bg); }
+.chat-canvas .theme-panel.border-r { background: var(--pw-rail-bg); }
 .library .divider {
   width: 5px; flex-shrink: 0; cursor: col-resize;
-  border-right: 1px solid var(--pw-border); background: transparent;
+  /* The same token the chat rail divides with, and the strip carries the
+     rail's own colour so no page background shows through beside the line. */
+  border-right: 1px solid var(--theme-border, var(--pw-border)); background: var(--pw-rail-bg);
 }
-.library .divider:hover, .resizing .library .divider { background: #e3ebf3; }
+.library .divider:hover, .resizing .library .divider { background: var(--theme-hover, #e3ebf3); }
 .rail-head {
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
   height: 52px; padding: 0 12px; border-bottom: 1px solid var(--pw-border); flex-shrink: 0;
@@ -263,7 +279,7 @@ button { font-family: inherit; }
   width: 100%; padding: 6px 8px; font-size: 13px;
   border: 1px solid var(--pw-border-strong); border-radius: 6px; background: #f9fafb;
 }
-.field:focus { outline: 2px solid #bfdbfe; border-color: var(--pw-link); background: #fff; }
+.field:focus { outline: 2px solid #bfdbfe; border-color: var(--pw-link); background: var(--pw-input-bg, #fff); }
 .dropzone {
   margin-top: 8px; padding: 18px 10px; text-align: center;
   border: 1.5px dashed var(--pw-border-strong); border-radius: 8px;
@@ -293,7 +309,7 @@ button { font-family: inherit; }
 .btn-secondary {
   display: inline-block; padding: 4px 10px;
   border: 1px solid var(--pw-border-strong); border-radius: 6px;
-  background: #fff; color: var(--pw-muted); font-size: 12px; font-weight: 500;
+  background: var(--pw-panel); color: var(--pw-muted); font-size: 12px; font-weight: 500;
   cursor: pointer; text-decoration: none;
 }
 .btn-secondary:hover { color: var(--pw-navy); border-color: var(--pw-muted); }
@@ -322,7 +338,7 @@ button { font-family: inherit; }
   flex: 1; padding: 9px 12px; font-size: 14px;
   border: 1px solid var(--pw-border-strong); border-radius: 8px; background: #f9fafb;
 }
-.search-bar input:focus { outline: 2px solid #bfdbfe; border-color: var(--pw-link); background: #fff; }
+.search-bar input:focus { outline: 2px solid #bfdbfe; border-color: var(--pw-link); background: var(--pw-input-bg, #fff); }
 .search-results { overflow: hidden; }
 .search-bar { max-width: 720px; }
 .results-head {
@@ -380,7 +396,7 @@ button { font-family: inherit; }
 .btn-danger:disabled { opacity: 0.6; cursor: default; }
 .btn-danger-outline {
   padding: 4px 12px; border: 1px solid #fca5a5; border-radius: 6px;
-  background: #fff; color: #dc2626; font-size: 12px; font-weight: 500; cursor: pointer;
+  background: var(--pw-panel); color: #dc2626; font-size: 12px; font-weight: 500; cursor: pointer;
 }
 .btn-danger-outline:hover { background: #fef2f2; }
 .confirm-group { display: inline-flex; gap: 6px; }
@@ -407,7 +423,8 @@ button { font-family: inherit; }
 .saved-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
 .saved-chip {
   display: inline-flex; align-items: center; border: 1px solid var(--pw-border-strong);
-  border-radius: 999px; overflow: hidden; background: #fff;
+  /* Was a hardcoded white, which left the label unreadable in dark mode. */
+  border-radius: 999px; overflow: hidden; background: var(--pw-panel);
 }
 .saved-load { border: none; background: none; padding: 3px 4px 3px 12px; font-size: 12px; color: var(--pw-navy); cursor: pointer; }
 .saved-load:hover { text-decoration: underline; }
@@ -854,7 +871,8 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .help-view { padding: 12px; flex: 1; display: flex; min-height: 0; overflow: hidden; }
 .help-docs { flex: 1; display: flex; min-height: 0; overflow: hidden; padding: 0; }
 .help-nav {
-  width: 220px; flex-shrink: 0; border-right: 1px solid var(--pw-border);
+  width: 220px; flex-shrink: 0; border-right: 1px solid var(--theme-border, var(--pw-border));
+  background: var(--pw-rail-bg);
   padding: 16px 10px; display: flex; flex-direction: column; gap: 2px; overflow-y: auto;
 }
 .help-nav-head {
@@ -875,7 +893,7 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 [data-theme='dark'] .help-nav button { color: #b9c7d8; }
 [data-theme='dark'] .help-nav button:hover { background: #1d2a3c; color: #e8eef6; }
 .help-content { flex: 1; overflow-y: auto; padding: 26px 40px 40px; }
-.help-content h1 { margin: 0 0 12px; font-size: 22px; color: var(--pw-navy); }
+.help-content h1 { margin: 0 0 12px; font-size: 20px; font-weight: 650; letter-spacing: -0.01em; color: var(--pw-text); }
 .help-content .md-body { max-width: 780px; font-size: 14px; line-height: 1.65; }
 .help-content .md-body ul { list-style-position: outside; padding-left: 20px; margin: 8px 0; }
 .help-content .md-body li { margin: 4px 0; }
