@@ -838,7 +838,11 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .chat-canvas [data-streamdown='table'] thead { background: var(--pw-bg); }
 
 /* "Calls:" line above the spec expander on the tools settings card */
-.tool-calls { margin: 2px 0 6px 26px; font-size: 12.5px; color: var(--pw-muted); line-height: 1.5; }
+.tool-calls {
+  margin: 1px 0 8px 26px; font-size: 12.5px; color: var(--pw-muted); line-height: 1.5;
+  border-left: 2px solid var(--pw-border); padding-left: 9px;
+}
+.tool-calls code { font-size: 12px; color: var(--pw-text); }
 .tool-calls span { font-weight: 600; color: var(--pw-navy); }
 
 /* Help bullets: markers outside with a hanging indent, so wrapped lines
