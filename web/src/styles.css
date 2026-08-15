@@ -427,8 +427,16 @@ button { font-family: inherit; }
 
 /* Pan/zoom canvas: no scrollbars; the SVG viewBox does the navigating. */
 .dag-canvas { overflow: hidden; position: relative; flex: 1; min-height: 260px; display: flex; }
-.dag-canvas svg { width: 100%; height: 100%; flex: 1; touch-action: none; cursor: grab; display: block; }
-.dag-canvas svg.dragging { cursor: grabbing; }
+/* Scoped to our own renderer: forcing width/height onto the platform
+   component's internal SVG breaks its coordinate space, so panning walks
+   the graph out of the frame. */
+.dag-canvas.own-dag svg { width: 100%; height: 100%; flex: 1; touch-action: none; cursor: grab; display: block; }
+.dag-canvas.own-dag svg.dragging { cursor: grabbing; }
+.dag-canvas.platform-dag { display: flex; position: relative; overflow: hidden; flex: 1; min-height: 420px; }
+/* The graph sizes its own chrome with full-height children, which need a
+   parent whose height actually resolves; flex with min-height:0 gives it
+   one without the percentage-height trap. */
+.dag-canvas.platform-dag > * { flex: 1; min-width: 0; min-height: 0; }
 .dag-controls { position: absolute; top: 10px; right: 12px; z-index: 5; display: flex; gap: 4px; }
 .dag-controls button {
   border: 1px solid var(--pw-border); border-radius: 6px; background: var(--pw-panel);
