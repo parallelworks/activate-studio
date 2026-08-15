@@ -34,6 +34,31 @@ export function ChatView() {
   const [chatEpoch, setChatEpoch] = useState(0)
   const [multiUser, setMultiUser] = useState(false)
   const [scopeOpen, setScopeOpen] = useState(false)
+
+  // "Add to chat" from the Library hands a corpus path to the composer, the
+  // way an editor drops a file reference into a prompt. The composer belongs
+  // to the chat package, so the text goes in through the DOM: React tracks
+  // the value on the element, and only the native setter plus an input event
+  // makes it notice a change from outside.
+  useEffect(() => {
+    const onInsert = (e: Event) => {
+      const text = (e as CustomEvent<{ text: string }>).detail?.text
+      if (!text) return
+      const put = (tries: number) => {
+        const box = document.querySelector<HTMLTextAreaElement>('.chat-canvas textarea')
+        if (!box) { if (tries > 0) setTimeout(() => put(tries - 1), 100); return }
+        const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
+        const next = box.value ? `${box.value.replace(/\s*$/, '')} ${text} ` : `${text} `
+        setter?.call(box, next)
+        box.dispatchEvent(new Event('input', { bubbles: true }))
+        box.focus()
+        box.setSelectionRange(next.length, next.length)
+      }
+      put(20)
+    }
+    window.addEventListener('ade-chat-insert', onInsert)
+    return () => window.removeEventListener('ade-chat-insert', onInsert)
+  }, [])
   const [scopeFilter, setScopeFilter] = useState('')
 
   useEffect(() => {

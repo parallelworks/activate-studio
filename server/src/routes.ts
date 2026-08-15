@@ -9,7 +9,7 @@ import { CONVERTIBLE, mimeFor, officeToPdf, pdfPageCount, pdfPagePng, pdfPreview
 import { blendHits, corpusStats, searchFts, searchNames, searchVector } from './gufi.js'
 import { invalidateContext } from './chat/context.js'
 import { getIndexJob, incrementalIndexDir, indexRootDb, indexStatus, reindexForFile, startIndexJob, sweep } from './indexing.js'
-import { movePaths, reindexRoots } from './move.js'
+import { copyPaths, movePaths, reindexRoots, renamePath } from './move.js'
 import { getJob, startJob } from './jobs.js'
 import { annotateHits, readTagsBatch } from './tags.js'
 import { gatewayKey } from './chat/gateway.js'
@@ -319,6 +319,31 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
     const r = await movePaths(paths, String(body.dest ?? ''))
     const indexMs = await reindexRoots(r.roots, r.rootDb)
     return { moved: r.moved, skipped: r.skipped, indexMs }
+  })
+
+  // Copy files and directories into another directory.
+  app.post('/api/kb/copy', async req => {
+    const body = req.body as { paths?: string[]; dest?: string; async?: boolean }
+    const paths = (body.paths ?? []).slice(0, 500)
+    if (body.async) {
+      return startJob('move', paths.length, async h => {
+        const r = await copyPaths(paths, String(body.dest ?? ''), (done, current) => h.progress({ phase: 'copying', done, current }))
+        h.progress({ phase: 'indexing', done: paths.length, current: '' })
+        r.indexMs = await reindexRoots(r.roots, r.rootDb)
+        return r
+      })
+    }
+    const r = await copyPaths(paths, String(body.dest ?? ''))
+    const indexMs = await reindexRoots(r.roots, r.rootDb)
+    return { copied: r.moved, skipped: r.skipped, indexMs }
+  })
+
+  // Rename a file or directory in place.
+  app.post('/api/kb/rename', async req => {
+    const body = req.body as { path?: string; name?: string }
+    const r = await renamePath(String(body.path ?? ''), String(body.name ?? ''))
+    const indexMs = await reindexRoots(r.roots, r.rootDb)
+    return { renamed: r.moved[0] ?? null, indexMs }
   })
 
   // Remove a file from the knowledge base and from the index.
