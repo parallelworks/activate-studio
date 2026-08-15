@@ -94,17 +94,29 @@ permissions:
             type: dropdown
             default: github
             options:
+              - label: Container (Apptainer image; pinned runtime, no build on the resource)
+                value: container
               - label: GitHub (clone and build on the resource)
                 value: github
               - label: Bundle (bucket or pre-staged; for air-gapped systems)
                 value: bundle
             tooltip: |
+              Container → run a prebuilt Apptainer image (deploy/app.def) that
+              carries Node, Python, GUFI, and the embedding model, so nothing is
+              compiled on the resource and host differences stop mattering.
               GitHub → clone the repository on the resource and build there (needs
               outbound HTTPS to github.com and nodejs.org; Node is fetched
               automatically when absent).
               Bundle → self-contained tarball from deploy/make_bundle.sh, pulled from
               the bucket or pre-staged at <workdir>/bundle-prestage.tar.gz; nothing
               is fetched from the internet.
+          image_path:
+            label: Container Image
+            type: string
+            default: ''
+            optional: true
+            hidden: ${{ inputs.app_settings.source != 'container' }}
+            tooltip: Path to the .sif on the resource, or a bucket/library/docker URI Apptainer can pull. Empty looks for studio.sif in the work directory.
           repo_url:
             label: Repository URL
             type: string
@@ -283,7 +295,7 @@ jobs:
         run: |
           if [ "${{ inputs.session_settings.session_method }}" = "cleanup" ]; then exit 0; fi
           if [ "${{ inputs.app_settings.source }}" != "github" ]; then
-            echo "Bundle mode; the next step pulls the bundle."
+            echo "Not GitHub mode; a later step stages the image or bundle."
             exit 0
           fi
           cd ${{ inputs.app_settings.workdir }}
@@ -375,6 +387,24 @@ jobs:
             echo "GitHub mode; app already built in the previous step."
             exit 0
           fi
+          if [ "${{ inputs.app_settings.source }}" = "container" ]; then
+            cd ${{ inputs.app_settings.workdir }}
+            IMG="${{ inputs.app_settings.image_path }}"
+            [ -n "$IMG" ] || IMG="$PWD/studio.sif"
+            command -v apptainer >/dev/null 2>&1 || command -v singularity >/dev/null 2>&1 || \
+              { echo "ERROR: neither apptainer nor singularity is on the resource"; exit 1; }
+            RUNTIME="$(command -v apptainer || command -v singularity)"
+            case "$IMG" in
+              *://*)
+                echo "Pulling image $IMG ..."
+                "$RUNTIME" pull -F "$PWD/studio.sif" "$IMG" || { echo "ERROR: image pull failed"; exit 1; }
+                IMG="$PWD/studio.sif" ;;
+            esac
+            [ -f "$IMG" ] || { echo "ERROR: container image not found: $IMG"; exit 1; }
+            echo "$IMG" > .image
+            echo "container image: $IMG ($("$RUNTIME" --version))"
+            exit 0
+          fi
           cd ${{ inputs.app_settings.workdir }}
           BUNDLE="${{ inputs.app_settings.bundle_file }}"
           if [[ -d app && "$(cat .bundle 2>/dev/null)" == "$BUNDLE" && "${{ inputs.app_settings.refresh_software }}" == "false" ]]; then
@@ -422,6 +452,10 @@ jobs:
       - name: Build GUFI from bundled source
         run: |
           if [ "${{ inputs.session_settings.session_method }}" = "cleanup" ]; then exit 0; fi
+          if [ "${{ inputs.app_settings.source }}" = "container" ]; then
+            echo "Container mode; GUFI ships inside the image."
+            exit 0
+          fi
           if [ "${{ inputs.kb_settings.build_gufi }}" != "true" ]; then
             echo "GUFI build disabled; the app will run with filesystem browsing and grep search."
             exit 0
@@ -469,6 +503,10 @@ jobs:
           if [ "${{ inputs.session_settings.session_method }}" = "cleanup" ]; then exit 0; fi
           if [ "${{ inputs.kb_settings.run_index }}" != "true" ]; then
             echo "Indexing on launch disabled."
+            exit 0
+          fi
+          if [ "${{ inputs.app_settings.source }}" = "container" ]; then
+            echo "Container mode; the image indexes on start (INDEX_ON_START)."
             exit 0
           fi
           cd ${{ inputs.app_settings.workdir }}
@@ -573,9 +611,36 @@ jobs:
             exit 0
           fi
 
-          cat >> ${SCRIPT} << 'APP_LAUNCH'
+          if [ "${{ inputs.app_settings.source }}" = "container" ]; then
+            echo "export INDEX_ON_START=${{ inputs.kb_settings.run_index }}" >> ${SCRIPT}
+            cat >> ${SCRIPT} << 'CONTAINER_LAUNCH'
+          IMG="$(cat .image 2>/dev/null)"
+          RUNTIME="$(command -v apptainer || command -v singularity)"
+          echo "Starting Studio container on port ${PORT} over ${KB_ROOT} ..."
+          # The corpus and all writable state stay on the host; the image is
+          # read-only. DATA_DIR holds the index, settings, and credentials.
+          setsid nohup "$RUNTIME" run \
+            --env PORT="${PORT}" --env KB_ROOT="${KB_ROOT}" --env DATA_DIR="${INDEX_BASE}" \
+            --env INDEX_BASE="${INDEX_BASE}" --env KB_LABEL="${KB_LABEL}" \
+            --env APP_NAME="${APP_NAME}" --env INDEX_ON_START="${INDEX_ON_START}" \
+            ${APP_ICON:+--env APP_ICON="${APP_ICON}"} \
+            ${SUGGESTED_PROMPTS:+--env SUGGESTED_PROMPTS="${SUGGESTED_PROMPTS}"} \
+            ${PW_API_KEY:+--env PW_API_KEY="${PW_API_KEY}"} \
+            ${PW_GATEWAY_URL:+--env PW_GATEWAY_URL="${PW_GATEWAY_URL}"} \
+            ${AUTH_JWKS_URL:+--env AUTH_JWKS_URL="${AUTH_JWKS_URL}"} \
+            ${AUTH_ISSUER:+--env AUTH_ISSUER="${AUTH_ISSUER}"} \
+            ${DISABLE_PERSONAL_KEYS:+--env DISABLE_PERSONAL_KEYS="${DISABLE_PERSONAL_KEYS}"} \
+            ${REQUIRE_PERSONAL_KEY:+--env REQUIRE_PERSONAL_KEY="${REQUIRE_PERSONAL_KEY}"} \
+            --bind "${KB_ROOT}:${KB_ROOT}" --bind "${INDEX_BASE}:${INDEX_BASE}" \
+            "$IMG" > app.log 2>&1 < /dev/null &
+          CONTAINER_LAUNCH
+          else
+            cat >> ${SCRIPT} << 'APP_LAUNCH'
           echo "Starting Studio server on port ${PORT} over ${KB_ROOT} ..."
           setsid nohup node app/server/dist/main.js > app.log 2>&1 < /dev/null &
+          APP_LAUNCH
+          fi
+          cat >> ${SCRIPT} << 'APP_LAUNCH'
           echo "$!" >> app-custom.pids
           echo "Server forked; logs: $(pwd)/app.log"
           for i in $(seq 1 60); do
