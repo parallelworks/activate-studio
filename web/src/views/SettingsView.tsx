@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { CopyToClipboard } from '@parallelworks/ui'
 import { ACCENTS, SURFACES, applyAccent, applySurface } from '../accents'
 import { useAppConfig } from '../config'
+import { bannerInk } from '../components/ClassificationBanner'
 
 interface Effective {
   appName: string
@@ -25,6 +26,9 @@ interface Effective {
   ragEndpointName: string
   requirePersonalKey: boolean
   chatSharedHistory: boolean
+  bannerText: string
+  bannerColor: string
+  bannerWhenEmbedded: boolean
 }
 
 interface CatalogTool { name: string; description: string; builtin: boolean; enabled: boolean; parameters?: unknown; command?: string; implementation?: string; calls?: string }
@@ -42,6 +46,15 @@ const TOOL_GROUPS: [string, string[]][] = [
   ['Workflows', ['list_workflows', 'get_workflow', 'compose_workflow', 'run_workflow', 'workflow_runs', 'workflow_run_detail', 'pw_help']],
   ['Clusters', ['list_clusters', 'cluster_command']],
   ['Display and skills', ['show_in_viewer', 'use_skill', 'studio_docs']],
+]
+
+const BANNER_COLORS: [string, string][] = [
+  ['#2e6b2e', 'Green'],
+  ['#502b85', 'Purple'],
+  ['#0033a0', 'Blue'],
+  ['#c8102e', 'Red'],
+  ['#ff8c00', 'Orange'],
+  ['#fce83a', 'Yellow'],
 ]
 
 type SectionId = 'general' | 'access' | 'tools' | 'rag' | 'ext'
@@ -319,6 +332,46 @@ export function SettingsView() {
                   <label className="field-label">Brand icon for dark mode (optional)</label>
                   <input className="field" value={form.iconUrlDark} placeholder="leave empty to use the same image"
                     onChange={e => setForm({ ...form, iconUrlDark: e.target.value })} />
+                </div>
+                <div>
+                  <label className="field-label">Classification banner (empty for none)</label>
+                  <input className="field" value={form.bannerText}
+                    placeholder="***** APPROVED FOR IL5 HIGH - CONTROLLED UNCLASSIFIED INFORMATION (CUI) *****"
+                    onChange={e => setForm({ ...form, bannerText: e.target.value })} />
+                  <div className="accent-row banner-colors">
+                    {BANNER_COLORS.map(([hex, label]) => (
+                      <button
+                        key={hex}
+                        type="button"
+                        className={`accent-swatch ${form.bannerColor.toLowerCase() === hex ? 'active' : ''}`}
+                        style={{ background: hex }}
+                        title={label}
+                        onClick={() => setForm({ ...form, bannerColor: hex })}
+                      />
+                    ))}
+                    <input
+                      type="color"
+                      className="accent-swatch accent-custom"
+                      title="Custom color"
+                      value={/^#[0-9a-fA-F]{6}$/.test(form.bannerColor) ? form.bannerColor : '#2e6b2e'}
+                      onChange={e => setForm({ ...form, bannerColor: e.target.value })}
+                    />
+                  </div>
+                  {form.bannerText.trim() && (
+                    <div className="cls-banner banner-preview"
+                      style={{ background: form.bannerColor, color: bannerInk(form.bannerColor) }}>
+                      {form.bannerText}
+                    </div>
+                  )}
+                  <label className="key-persist">
+                    <input type="checkbox" checked={form.bannerWhenEmbedded}
+                      onChange={e => setForm({ ...form, bannerWhenEmbedded: e.target.checked })} />
+                    <span>Show it inside the platform frame too</span>
+                  </label>
+                  <p className="muted key-note">
+                    The platform draws its own banner around an embedded session, so by default this one
+                    appears only when the app is open in its own tab or window, where nothing else marks it.
+                  </p>
                 </div>
                 <div>
                   <label className="field-label">Background sync interval (seconds, 0 pauses)</label>

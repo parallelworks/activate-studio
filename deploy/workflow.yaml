@@ -83,6 +83,21 @@ permissions:
               which case stage the file first (for a container deployment it
               must sit under a bind-mounted directory, such as a .branding
               folder inside the knowledge base).
+          banner_text:
+            label: Classification Banner
+            type: string
+            default: ''
+            optional: true
+            tooltip: >-
+              Banner text across the top of the app, e.g. the CUI marking. The platform draws
+              its own banner around an embedded session, so this one appears only when the app
+              is opened on its own; editable later in Settings.
+          banner_color:
+            label: Classification Banner Color
+            type: string
+            default: ''
+            optional: true
+            tooltip: Banner background as #rrggbb. Empty uses green (#2e6b2e). Text color follows the background.
           suggested_prompts:
             label: Chat Starter Prompts
             type: string
@@ -190,7 +205,7 @@ permissions:
             type: string
             default: ''
             optional: true
-            tooltip: Comma-separated directory names created inside the knowledge base on launch (e.g. papers,software,datasets). Existing directories are untouched.
+            tooltip: Comma-separated directory names for a knowledge base that is new or empty (e.g. papers,software,datasets). Empty uses the default set, and a knowledge base that already holds content is never touched.
           kb_label:
             label: Knowledge Base Label
             type: string
@@ -264,13 +279,6 @@ jobs:
           mkdir -p ${{ inputs.kb_settings.kb_root }}
           if [ -n "${{ inputs.kb_settings.index_base }}" ]; then
             mkdir -p "${{ inputs.kb_settings.index_base }}"
-          fi
-          STARTERS='${{ inputs.kb_settings.starter_dirs }}'
-          if [ -n "$STARTERS" ]; then
-            echo "$STARTERS" | tr ',' '\n' | while read -r d; do
-              d=$(echo "$d" | xargs)
-              [ -n "$d" ] && mkdir -p "${{ inputs.kb_settings.kb_root }}/$d" && echo "starter dir: $d"
-            done
           fi
       - name: Stop dangling processes from a prior launch
         run: |
@@ -625,6 +633,15 @@ jobs:
             echo "export INDEX_BASE=${WORKDIR}/app/index" >> ${SCRIPT}
           fi
           echo "export APP_NAME='${{ inputs.app_settings.app_name }}'" >> ${SCRIPT}
+          if [ -n "${{ inputs.app_settings.banner_text }}" ]; then
+            echo "export BANNER_TEXT='${{ inputs.app_settings.banner_text }}'" >> ${SCRIPT}
+          fi
+          if [ -n "${{ inputs.app_settings.banner_color }}" ]; then
+            echo "export BANNER_COLOR='${{ inputs.app_settings.banner_color }}'" >> ${SCRIPT}
+          fi
+          if [ -n "${{ inputs.kb_settings.starter_dirs }}" ]; then
+            echo "export KB_STARTER_DIRS='${{ inputs.kb_settings.starter_dirs }}'" >> ${SCRIPT}
+          fi
           if [ -n "${{ inputs.app_settings.icon_path }}" ]; then
             echo "export APP_ICON='${{ inputs.app_settings.icon_path }}'" >> ${SCRIPT}
           fi
@@ -690,6 +707,9 @@ jobs:
             --env PORT="${PORT}" --env KB_ROOT="${KB_ROOT}" --env DATA_DIR="${INDEX_BASE}" \
             --env INDEX_BASE="${INDEX_BASE}" --env KB_LABEL="${KB_LABEL}" \
             --env APP_NAME="${APP_NAME}" --env INDEX_ON_START="${INDEX_ON_START}" \
+            ${KB_STARTER_DIRS:+--env KB_STARTER_DIRS="${KB_STARTER_DIRS}"} \
+            ${BANNER_TEXT:+--env BANNER_TEXT="${BANNER_TEXT}"} \
+            ${BANNER_COLOR:+--env BANNER_COLOR="${BANNER_COLOR}"} \
             ${APP_ICON:+--env APP_ICON="${APP_ICON}"} \
             ${SUGGESTED_PROMPTS:+--env SUGGESTED_PROMPTS="${SUGGESTED_PROMPTS}"} \
             ${PW_API_KEY:+--env PW_API_KEY="${PW_API_KEY}"} \

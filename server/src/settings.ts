@@ -36,6 +36,9 @@ export interface StudioSettings {
   ragEndpointAutoStart?: boolean
   ragEndpointName?: string
   requirePersonalKey?: boolean
+  bannerText?: string
+  bannerColor?: string
+  bannerWhenEmbedded?: boolean
 }
 
 let cache: StudioSettings | null = null
@@ -83,6 +86,12 @@ export function effectiveSettings(): Required<StudioSettings> {
     ragEndpointAutoStart: s.ragEndpointAutoStart ?? process.env.RAG_ENDPOINT_AUTOSTART === '1',
     ragEndpointName: s.ragEndpointName ?? process.env.RAG_ENDPOINT_NAME ?? '',
     requirePersonalKey: s.requirePersonalKey ?? process.env.REQUIRE_PERSONAL_KEY === '1',
+    // Classification banner. The platform already shows one around an
+    // embedded session, so by default the app draws its own only when it is
+    // open on its own (a new tab or window), never twice.
+    bannerText: s.bannerText ?? process.env.BANNER_TEXT ?? '',
+    bannerColor: s.bannerColor ?? process.env.BANNER_COLOR ?? '#2e6b2e',
+    bannerWhenEmbedded: s.bannerWhenEmbedded ?? process.env.BANNER_WHEN_EMBEDDED === '1',
   }
 }
 
@@ -153,6 +162,13 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
     if (body.chatSharedHistory !== undefined) next.chatSharedHistory = Boolean(body.chatSharedHistory)
     if (body.ragEndpointAutoStart !== undefined) next.ragEndpointAutoStart = Boolean(body.ragEndpointAutoStart)
     if (body.requirePersonalKey !== undefined) next.requirePersonalKey = Boolean(body.requirePersonalKey)
+    if (body.bannerText !== undefined) next.bannerText = String(body.bannerText).slice(0, 200)
+    if (body.bannerColor !== undefined) {
+      const c = String(body.bannerColor).trim()
+      if (c && !/^#[0-9a-fA-F]{6}$/.test(c)) throw new KbError(400, 'banner color must be a #rrggbb value')
+      next.bannerColor = c || undefined
+    }
+    if (body.bannerWhenEmbedded !== undefined) next.bannerWhenEmbedded = Boolean(body.bannerWhenEmbedded)
     if (body.ragEndpointName !== undefined) {
       const n = String(body.ragEndpointName).toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40)
       next.ragEndpointName = n || undefined

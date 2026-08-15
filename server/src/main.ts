@@ -19,6 +19,7 @@ import { ragProxyRoutes } from './ragProxy.js'
 import { maybeAutoStart, ragEndpointRoutes } from './ragEndpoint.js'
 import { gatewayConfigured } from './chat/gateway.js'
 import { startSweepTimer } from './indexing.js'
+import { seedKnowledgeBase } from './seed.js'
 
 const app = Fastify({ logger: { level: 'info' } })
 await app.register(fastifyMultipart)
@@ -49,6 +50,9 @@ await app.register(conversationRoutes)
 await app.register(settingsRoutes)
 await app.register(chatRoutes)
 
+// A brand-new deployment opens on a corpus with some shape rather than an
+// empty tree; only ever runs when the knowledge base has nothing in it.
+await seedKnowledgeBase(msg => app.log.info(msg))
 startSweepTimer(msg => app.log.info(msg))
 // Deploy-time full reindexes rebuild the index without overlay labels
 // (xattr-less filesystems); restore them once the server is up.
