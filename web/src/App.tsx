@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { ReactElement, useEffect, useRef, useState } from 'react'
 import { ChatView } from './views/ChatView'
 import { DagViewer } from './components/DagViewer'
 import { ModelViewer } from './components/ModelViewer'
@@ -15,7 +15,7 @@ import { applyAccent, applySurface } from './accents'
 type ViewId = 'chat' | 'library' | 'search' | 'query' | 'overview' | 'settings' | 'help'
 export type Display = { kind: 'file'; target: string } | { kind: 'workflow_dag'; target: string }
 
-const NAV: { id: ViewId; label: string; icon: JSX.Element }[] = [
+const NAV: { id: ViewId; label: string; icon: ReactElement }[] = [
   {
     id: 'chat',
     label: 'Chat',
