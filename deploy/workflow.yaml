@@ -116,7 +116,7 @@ permissions:
             default: ''
             optional: true
             hidden: ${{ inputs.app_settings.source != 'container' }}
-            tooltip: Path to the .sif on the resource, or a bucket/library/docker URI Apptainer can pull. Empty looks for studio.sif in the work directory.
+            tooltip: Path to the .sif on the resource, a platform bucket URI (pw://user/bucket/studio.sif), or a library/docker URI the container runtime can pull. Empty looks for studio.sif in the work directory.
           repo_url:
             label: Repository URL
             type: string
@@ -395,6 +395,12 @@ jobs:
               { echo "ERROR: neither apptainer nor singularity is on the resource"; exit 1; }
             RUNTIME="$(command -v apptainer || command -v singularity)"
             case "$IMG" in
+              pw://*|s3://*|gs://*|az://*)
+                # Platform buckets are not something the container runtime
+                # can pull; stage through the CLI instead.
+                echo "Staging image from bucket: $IMG"
+                pw buckets cp "$IMG" "$PWD/studio.sif" || { echo "ERROR: bucket copy failed"; exit 1; }
+                IMG="$PWD/studio.sif" ;;
               *://*)
                 echo "Pulling image $IMG ..."
                 "$RUNTIME" pull -F "$PWD/studio.sif" "$IMG" || { echo "ERROR: image pull failed"; exit 1; }
