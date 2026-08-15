@@ -34,8 +34,11 @@ Stage: build
 
 %post
     export DEBIAN_FRONTEND=noninteractive
+    # GUFI's cmake requires these executables at configure time (column
+    # ships in bsdextrautils on Debian; setfattr/getfattr in attr).
     apt-get update && apt-get install -y --no-install-recommends \
-        cmake make gcc g++ pkg-config zlib1g-dev libsqlite3-dev git curl ca-certificates
+        cmake make gcc g++ pkg-config zlib1g-dev libsqlite3-dev git curl ca-certificates \
+        bsdextrautils attr diffutils patch gawk
     # npm, not corepack: corepack's loader crashes on some pnpm/Node
     # pairings and leaves broken shims behind.
     npm install -g pnpm@10
