@@ -1,8 +1,8 @@
 import fsp from 'node:fs/promises'
 import path from 'node:path'
-import { EXCLUDE_DIRS, GATEWAY_BASE } from './config.js'
+import { EXCLUDE_DIRS } from './config.js'
 import { extractPath, readFileContent, resolveKb } from './kb.js'
-import { gatewayKey } from './chat/gateway.js'
+import { streamTurn } from './chat/gateway.js'
 import { effectiveTags, tagMaps } from './tags.js'
 
 /**
@@ -78,18 +78,24 @@ async function candidates(dir: string, limit: number, includeLabelled: boolean):
   return unlabelled
 }
 
+/**
+ * One turn through the same path the chat uses.
+ *
+ * A plain non-streaming completion with temperature 0 is rejected by the
+ * providers this gateway fronts ("An error occurred while generating the
+ * response"), so this goes through streamTurn, which is the call shape the
+ * chat already works with, and collects the text.
+ */
 async function complete(messages: unknown[], key: string | null, baseUrl: string | null, model: string): Promise<string> {
-  const res = await fetch(`${baseUrl || GATEWAY_BASE}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${key || gatewayKey()}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ model, messages, temperature: 0 }),
-  })
-  if (!res.ok) throw new Error(`gateway ${res.status}: ${(await res.text()).slice(0, 200)}`)
-  const wire = await res.json() as { choices?: { message?: { content?: string } }[] }
-  return wire.choices?.[0]?.message?.content ?? ''
+  const turn = await streamTurn(
+    { model, messages },
+    null,
+    { onContent: () => {} },
+    undefined,
+    key,
+    baseUrl,
+  )
+  return turn.content
 }
 
 /** Models wrap JSON in prose and fences often enough to plan for it. */
