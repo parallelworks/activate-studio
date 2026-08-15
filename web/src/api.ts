@@ -117,6 +117,11 @@ export const api = {
 
   dirs: () => getJson<{ dirs: string[] }>('/api/kb/dirs'),
 
+  copyJob: (paths: string[], dest: string) => postJson<Job>('/api/kb/copy', { paths, dest, async: true }),
+
+  rename: (path: string, name: string) =>
+    postJson<{ renamed: { from: string; to: string } | null; indexMs: number }>('/api/kb/rename', { path, name }),
+
   /** Bulk move as a watchable job: the interface polls /api/jobs/<id>. */
   moveJob: (paths: string[], dest: string) =>
     postJson<Job>('/api/kb/move', { paths, dest, async: true }),
