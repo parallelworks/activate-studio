@@ -1,10 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
+import { DependencyGraphPreview } from '@parallelworks/ui/workflow'
+import '@parallelworks/ui/styles.css'
 
 interface DagData {
   name: string
   displayName?: string
-  nodes: { id: string; steps: string[] }[]
+  nodes: { id: string; steps: string[]; dependsOn?: string[] }[]
   edges: { from: string; to: string }[]
+  /** The workflow document, rendered by the platform's own graph. */
+  yaml?: Record<string, unknown>
+  form?: Record<string, { label?: string; type?: string; default?: unknown; tooltip?: string }> | null
   yamlText?: string
 }
 
@@ -50,7 +55,7 @@ export function DagViewer({ workflow }: { workflow: string }) {
   const [dag, setDag] = useState<DagData | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [selectedNode, setSelectedNode] = useState<string | null>(null)
-  const [tab, setTab] = useState<'dag' | 'yaml'>('dag')
+  const [tab, setTab] = useState<'dag' | 'inputs' | 'yaml'>('dag')
   // Pan/zoom viewBox; null = fit the whole DAG to the canvas.
   const [view, setView] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
   const svgRef = useRef<SVGSVGElement | null>(null)
@@ -124,11 +129,38 @@ export function DagViewer({ workflow }: { workflow: string }) {
       {dag.yamlText && (
         <div className="viewer-tabs">
           <button className={tab === 'dag' ? 'active' : ''} onClick={() => setTab('dag')}>DAG</button>
+          {dag.form && Object.keys(dag.form).length > 0 && (
+            <button className={tab === 'inputs' ? 'active' : ''} onClick={() => setTab('inputs')}>Inputs</button>
+          )}
           <button className={tab === 'yaml' ? 'active' : ''} onClick={() => setTab('yaml')}>workflow.yaml</button>
         </div>
       )}
       {tab === 'yaml' && dag.yamlText ? (
         <div className="viewer-body"><pre className="text-body">{dag.yamlText}</pre></div>
+      ) : tab === 'inputs' && dag.form ? (
+        // What a run of this workflow asks for, as the platform's parser
+        // resolves it from the document.
+        <div className="viewer-body">
+          <table className="rag-calls-table wf-inputs">
+            <thead><tr><th>Input</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+            <tbody>
+              {Object.entries(dag.form).map(([id, f]) => (
+                <tr key={id}>
+                  <td>{f?.label || id}</td>
+                  <td><code>{f?.type ?? 'string'}</code></td>
+                  <td>{f?.default === undefined || f?.default === '' ? '-' : <code>{String(f.default)}</code>}</td>
+                  <td>{f?.tooltip ?? ''}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : dag.yaml ? (
+        // The platform's own dependency graph, so the workflow reads the
+        // same here as it does in ACTIVATE.
+        <div className="dag-canvas platform-dag">
+          <DependencyGraphPreview yml={dag.yaml} removeBorder />
+        </div>
       ) : (
       <div className="dag-canvas">
         <div className="dag-controls">
