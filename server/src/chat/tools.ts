@@ -7,6 +7,7 @@ import { listDir, readFileContent, KbError } from '../kb.js'
 import { blendHits, searchFts, searchNames, searchVector } from '../gufi.js'
 import { annotateHits } from '../tags.js'
 import { effectiveSettings } from '../settings.js'
+import { composeWorkflows } from '../workflowCompose.js'
 import { agentBody, extAgents, extSkills, extTools, skillBody } from '../extensions.js'
 
 export interface ToolSpec {
@@ -32,6 +33,7 @@ export const TOOL_CALLS: Record<string, string> = {
   run_workflow: 'pw workflows run <name> (dry-run validation unless a real run was requested)',
   workflow_runs: 'pw workflows runs ls',
   workflow_run_detail: 'pw workflows runs get <id>',
+  compose_workflow: 'reads each source workflow with pw workflows get, then emits a workflow that runs them as `uses:` subworkflow steps',
   pw_help: 'pw --help / pw <command> --help',
   list_clusters: 'pw cluster ls -o json',
   cluster_command: 'pw ssh <resource> <command> (read-only scheduler guidance; state changes only on explicit request)',
@@ -478,6 +480,21 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
         const entries = await listDir(String(args.path ?? ''))
         const result = entries.map(e => `${e.type === 'dir' ? 'd' : '-'} ${e.path}${e.type === 'dir' ? '/' : ` (${e.size}b)`}`).join('\n')
         return { result: result || '(empty)', summary: `${entries.length} entries` }
+      }
+      case 'compose_workflow': {
+        const list = (args.workflows ?? []) as { uses: string; name?: string; id?: string; needs?: string[] }[]
+        const composed = await composeWorkflows(list, { chain: !args.parallel })
+        const notes = [
+          composed.missing.length ? `could not read: ${composed.missing.join(', ')} (inputs for those steps were not merged)` : '',
+          composed.conflicts.length ? `input conflicts: ${composed.conflicts.join('; ')}` : '',
+        ].filter(Boolean)
+        return {
+          result: [
+            composed.yamlText,
+            notes.length ? `\n# ${notes.join('\n# ')}` : '',
+          ].join(''),
+          summary: `composed ${list.length} workflows, ${composed.inputs.length} inputs`,
+        }
       }
       case 'list_workflows': {
         const out = await pwCli(['workflows', 'ls', '-o', 'json'])
