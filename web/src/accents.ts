@@ -125,16 +125,21 @@ function emit(): void {
   const sfc = SURFACES[current.surface]
   const block = (v?: Record<string, string>) =>
     v ? Object.entries(v).map(([k, x]) => `${k}: ${x};`).join(' ') : ''
+  // Doubled selectors (:root:root) outrank the plain :root rules the shared
+  // packages ship, so these win wherever they land in the cascade. Without
+  // that, the cached copy applied before first paint loses to the bundle's
+  // stylesheet the moment it loads, and the page flashes stock blue before
+  // settling on the configured theme.
   const surfaceCss = !sfc || current.surface === 'cool' ? '' : `
-:root { ${block(sfc.light)} }
-[data-theme='dark'] { ${block(sfc.dark)} }
+:root:root { ${block(sfc.light)} }
+:root:root[data-theme='dark'] { ${block(sfc.dark)} }
 `
   const accentCss = `
-:root { ${themeLight} --pw-navy: ${a.light[0]}; --pw-navy-2: ${a.light[1]}; --pw-active-pill: ${a.light[2]}; --pw-link: ${a.light[1]}; --theme-link: ${a.light[1]}; }
-[data-theme='dark'] { ${themeDark} --pw-navy: ${a.dark[0]}; --pw-navy-2: ${a.dark[1]}; --pw-active-pill: ${a.dark[2]}; --pw-link: ${a.dark[0]}; --theme-link: ${a.dark[0]}; --theme-element: ${solid}; }
-[data-theme='dark'] .btn-primary { background: ${solid}; }
-[data-theme='dark'] .btn-primary:hover { background: ${solidHover}; }
-[data-theme='dark'] .brand-badge { background: ${solid}; }
+:root:root { ${themeLight} --pw-navy: ${a.light[0]}; --pw-navy-2: ${a.light[1]}; --pw-active-pill: ${a.light[2]}; --pw-link: ${a.light[1]}; --theme-link: ${a.light[1]}; }
+:root:root[data-theme='dark'] { ${themeDark} --pw-navy: ${a.dark[0]}; --pw-navy-2: ${a.dark[1]}; --pw-active-pill: ${a.dark[2]}; --pw-link: ${a.dark[0]}; --theme-link: ${a.dark[0]}; --theme-element: ${solid}; }
+:root[data-theme='dark'] .btn-primary { background: ${solid}; }
+:root[data-theme='dark'] .btn-primary:hover { background: ${solidHover}; }
+:root[data-theme='dark'] .brand-badge { background: ${solid}; }
 `
   styleEl('surface-style').textContent = surfaceCss
   styleEl('accent-style').textContent = accentCss
