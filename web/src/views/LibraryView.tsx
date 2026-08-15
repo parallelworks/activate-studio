@@ -59,7 +59,8 @@ export function LibraryView({ display, onDisplay }: {
     setCtxBusy(true)
     setCtxErr('')
     try {
-      const r = await api.mkdir(`${ctx.path}/${ctxNewDir.trim().replace(/^\/+|\/+$/g, '')}`)
+      const name = ctxNewDir.trim().replace(/^\/+|\/+$/g, '')
+      const r = await api.mkdir(ctx.path ? `${ctx.path}/${name}` : name)
       setTargetDir(r.created)
       setRefreshKey(k => k + 1)
       window.dispatchEvent(new Event('ade-kb-changed'))
@@ -274,7 +275,7 @@ export function LibraryView({ display, onDisplay }: {
             className="ctx-menu card"
             style={{ left: Math.min(ctx.x, window.innerWidth - 230), top: Math.min(ctx.y, window.innerHeight - 210) }}
           >
-            <div className="ctx-title" title={ctx.path}>{ctx.path.split('/').pop()}</div>
+            <div className="ctx-title" title={ctx.path || cfg.kbLabel}>{ctx.path ? ctx.path.split('/').pop() : cfg.kbLabel}</div>
             {!ctx.isDir && (
               <button onClick={() => { onDisplay({ kind: 'file', target: ctx.path }); closeCtx() }}>Open</button>
             )}
@@ -293,8 +294,10 @@ export function LibraryView({ display, onDisplay }: {
                 <button className="btn-secondary" disabled={ctxBusy || !ctxNewDir.trim()} onClick={() => void ctxMakeDir()}>Create</button>
               </div>
             ))}
-            <button onClick={() => { setMultiSel(new Set([ctx.path])); setTagMenuOpen(true); setSelectMode(true); closeCtx() }}>Labels…</button>
-            {!ctxConfirm ? (
+            {ctx.path && (
+              <button onClick={() => { setMultiSel(new Set([ctx.path])); setTagMenuOpen(true); setSelectMode(true); closeCtx() }}>Labels…</button>
+            )}
+            {!ctx.path ? null : !ctxConfirm ? (
               <button className="ctx-danger" onClick={() => setCtxConfirm(true)}>{ctx.isDir ? 'Delete folder…' : 'Delete…'}</button>
             ) : (
               <button className="ctx-danger confirm" disabled={ctxBusy} onClick={() => void ctxDelete()}>
