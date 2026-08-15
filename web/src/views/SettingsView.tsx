@@ -10,6 +10,7 @@ interface Effective {
   accent: string
   surface: string
   iconUrl: string
+  iconUrlDark: string
   sweepIntervalSec: number
   suggestedPrompts: string[]
   visionModel: string
@@ -313,6 +314,11 @@ export function SettingsView() {
                   <label className="field-label">Brand icon (URL, or a path on the server)</label>
                   <input className="field" value={form.iconUrl} placeholder="https://example.org/logo.png"
                     onChange={e => setForm({ ...form, iconUrl: e.target.value })} />
+                </div>
+                <div>
+                  <label className="field-label">Brand icon for dark mode (optional)</label>
+                  <input className="field" value={form.iconUrlDark} placeholder="leave empty to use the same image"
+                    onChange={e => setForm({ ...form, iconUrlDark: e.target.value })} />
                 </div>
                 <div>
                   <label className="field-label">Background sync interval (seconds, 0 pauses)</label>
