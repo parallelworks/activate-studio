@@ -107,7 +107,7 @@ export default function App() {
       if (v && NAV.some(n => n.id === v)) {
         setView(v as ViewId)
         if (vm?.[2]) window.dispatchEvent(new CustomEvent('ade-view-section', { detail: { view: v, section: vm[2] } }))
-      } else if (!location.hash) setView('chat')
+      } else if (!location.hash || location.hash.startsWith('#chat=')) setView('chat')
     }
     applyHash()
     // Chat links render with target=_blank; catch #open= clicks in the
@@ -145,6 +145,8 @@ export default function App() {
     if ((location.hash || '') === hash) return
     // Views may own a :section suffix on their hash; leave it theirs.
     if (hash && location.hash.startsWith(`${hash}:`)) return
+    // The chat view keeps its open conversation in the hash; do not clear it.
+    if (!hash && location.hash.startsWith('#chat=')) return
     history.pushState(null, '', location.pathname + location.search + hash)
   }, [view, display])
 
