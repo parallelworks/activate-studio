@@ -38,7 +38,7 @@ interface Extensions { dir: string; tools: ExtDoc[]; skills: ExtDoc[]; agents: E
 
 const TOOL_GROUPS: [string, string[]][] = [
   ['Knowledge base', ['search_kb', 'read_kb_file', 'list_kb_dir', 'query_corpus', 'get_labels', 'apply_labels']],
-  ['Workflows', ['list_workflows', 'get_workflow', 'run_workflow', 'workflow_runs', 'workflow_run_detail', 'pw_help']],
+  ['Workflows', ['list_workflows', 'get_workflow', 'compose_workflow', 'run_workflow', 'workflow_runs', 'workflow_run_detail', 'pw_help']],
   ['Clusters', ['list_clusters', 'cluster_command']],
   ['Display and skills', ['show_in_viewer', 'use_skill', 'studio_docs']],
 ]
@@ -493,17 +493,19 @@ export function SettingsView() {
                                 : [...form.disabledTools, t.name],
                             })}
                           />
-                          <button className="tool-name" title="Show the tool call specification"
+                          <button className="tool-name" title="Show the parameter schema this tool accepts"
                             onClick={() => setSpecOpen(o => o === t.name ? null : t.name)}>
                             <code>{t.name}</code>
                           </button>
                           <span className="tool-desc">{t.description}</span>
                         </div>
+                        {/* What the tool actually runs is the useful part, so
+                            it sits under every row rather than behind a click
+                            with the wire schema on top of it. */}
+                        {t.calls && <p className="tool-calls">{t.calls}</p>}
+                        {t.command && <p className="tool-calls"><code>{t.command}</code></p>}
                         {specOpen === t.name && (
-                          <>
-                            {t.calls && <p className="tool-calls"><span>Calls:</span> {t.calls}</p>}
-                            <pre className="tool-spec">{JSON.stringify({ name: t.name, description: t.description, parameters: t.parameters, ...(t.command ? { command: t.command } : {}), ...(t.implementation ? { implementation: t.implementation } : {}) }, null, 2)}</pre>
-                          </>
+                          <pre className="tool-spec">{JSON.stringify({ name: t.name, description: t.description, parameters: t.parameters }, null, 2)}</pre>
                         )}
                       </div>
                     ))}
