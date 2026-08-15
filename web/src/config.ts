@@ -3,7 +3,9 @@ import { useEffect, useState } from 'react'
 export interface AppConfig {
   appName: string
   iconUrl: string | null
+  iconUrlDark: string | null
   faviconUrl: string | null
+  faviconUrlDark: string | null
   theme: 'light' | 'dark'
   accent: string
   surface: string
@@ -19,7 +21,9 @@ export interface AppConfig {
 const DEFAULTS: AppConfig = {
   appName: 'Studio',
   iconUrl: null,
+  iconUrlDark: null,
   faviconUrl: null,
+  faviconUrlDark: null,
   theme: 'light',
   accent: 'navy',
   surface: 'neutral',
@@ -51,7 +55,7 @@ function rememberedBrand(): Partial<AppConfig> {
 
 function rememberBrand(c: AppConfig): void {
   try {
-    localStorage.setItem(BRAND_KEY, JSON.stringify({ appName: c.appName, iconUrl: c.iconUrl, kbLabel: c.kbLabel }))
+    localStorage.setItem(BRAND_KEY, JSON.stringify({ appName: c.appName, iconUrl: c.iconUrl, iconUrlDark: c.iconUrlDark, kbLabel: c.kbLabel }))
   } catch { /* storage unavailable */ }
 }
 
@@ -69,7 +73,9 @@ export function useAppConfig(): AppConfig {
         cached = {
           appName: d.appName || DEFAULTS.appName,
           iconUrl: d.iconUrl ?? null,
+          iconUrlDark: d.iconUrlDark ?? null,
           faviconUrl: d.faviconUrl ?? null,
+          faviconUrlDark: d.faviconUrlDark ?? null,
           theme: d.theme === 'dark' ? 'dark' : 'light',
           accent: d.accent || 'navy',
           surface: d.surface || 'neutral',

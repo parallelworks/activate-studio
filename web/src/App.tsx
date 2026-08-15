@@ -66,16 +66,22 @@ export default function App() {
 
   useEffect(() => { localStorage.setItem('ade-nav-collapsed', navCollapsed ? '1' : '0') }, [navCollapsed])
   useEffect(() => { if (cfg.loaded) document.title = cfg.appName }, [cfg])
+  const effectiveTheme = theme ?? cfg.theme
+  // A mark drawn in dark ink disappears on a dark background, so a
+  // deployment may configure a second image; fall back to the one image
+  // when it has not.
+  const brandIcon = effectiveTheme === 'dark' ? (cfg.iconUrlDark ?? cfg.iconUrl) : cfg.iconUrl
   useEffect(() => {
-    if (!cfg.loaded || !cfg.faviconUrl) return
+    const favicon = effectiveTheme === 'dark' ? (cfg.faviconUrlDark ?? cfg.faviconUrl) : cfg.faviconUrl
+    if (!cfg.loaded || !favicon) return
     let link = document.querySelector<HTMLLinkElement>('link[rel="icon"]')
     if (!link) {
       link = document.createElement('link')
       link.rel = 'icon'
       document.head.appendChild(link)
     }
-    link.href = cfg.faviconUrl
-  }, [cfg])
+    link.href = favicon
+  }, [cfg, effectiveTheme])
   useEffect(() => { if (cfg.loaded) { applyAccent(cfg.accent); applySurface(cfg.surface) } }, [cfg])
   useEffect(() => {
     const effective = theme ?? cfg.theme
@@ -177,8 +183,8 @@ export default function App() {
                 so a returning visitor never sees the generic name swap to the
                 deployment's. A first-ever visit has nothing to remember, and
                 shows the slot empty rather than the wrong name. */}
-            {cfg.iconUrl
-              ? <img className="brand-icon" src={cfg.iconUrl} alt="" />
+            {brandIcon
+              ? <img className="brand-icon" src={brandIcon} alt="" />
               : <span className="brand-badge">{(cfg.appName[0] ?? 'S').toUpperCase()}</span>}
             {(cfg.loaded || cfg.brandRemembered) && <span className="brand-text"><b>{cfg.appName}</b></span>}
           </div>
