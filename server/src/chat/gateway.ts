@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { GATEWAY_BASE, PW_API_KEY } from '../config.js'
+import { resolveSharedKey } from '../credentials.js'
 
 /**
  * Gateway credential: PW_API_KEY env when set, otherwise the pw CLI's own
@@ -29,7 +30,10 @@ function credentialFromCliStore(): string {
 }
 
 export function gatewayKey(): string {
-  return PW_API_KEY || credentialFromCliStore()
+  // A key a user has promoted for everyone stands in for the deployment
+  // credential, and wins over the ambient one: it was chosen deliberately,
+  // in the app, by someone who wanted the group to use it.
+  return resolveSharedKey() || PW_API_KEY || credentialFromCliStore()
 }
 
 export interface WireToolCall {

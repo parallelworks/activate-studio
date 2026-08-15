@@ -29,6 +29,7 @@ interface Effective {
   bannerText: string
   bannerColor: string
   bannerWhenEmbedded: boolean
+  allowKeySharing: boolean
 }
 
 interface CatalogTool { name: string; description: string; builtin: boolean; enabled: boolean; parameters?: unknown; command?: string; implementation?: string; calls?: string }
@@ -109,7 +110,9 @@ export function SettingsView() {
   const [catalog, setCatalog] = useState<CatalogTool[]>([])
   const [ext, setExt] = useState<Extensions | null>(null)
   const [specOpen, setSpecOpen] = useState<string | null>(null)
-  const [me, setMe] = useState<{ authEnabled?: boolean; verified: boolean; mode: 'stored' | 'session' | 'none'; last4?: string; addedAt?: string; sessionExpiresAt?: string; kind?: string; credExpiresAt?: string | null; credExpired?: boolean; baseUrl?: string | null; gatewayHost?: string } | null>(null)
+  const [me, setMe] = useState<{ authEnabled?: boolean; verified: boolean; mode: 'stored' | 'session' | 'none'; last4?: string; addedAt?: string; sessionExpiresAt?: string; kind?: string; credExpiresAt?: string | null; credExpired?: boolean; baseUrl?: string | null; gatewayHost?: string
+    shared?: { active: boolean; last4?: string; sharedBy?: string; sharedAt?: string; credExpired?: boolean; mine?: boolean }
+    sharingAllowed?: boolean } | null>(null)
   const [keyInput, setKeyInput] = useState('')
   const [providerMode, setProviderMode] = useState<'platform' | 'activate' | 'custom'>('platform')
   const [providerHost, setProviderHost] = useState('')
@@ -169,11 +172,11 @@ export function SettingsView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const keyAction = async (action: 'set' | 'clear', body?: unknown) => {
+  const keyAction = async (action: 'set' | 'clear' | 'share' | 'unshare', body?: unknown) => {
     setKeyBusy(true)
     setKeyNote('')
     try {
-      const res = await fetch(action === 'set' ? '/api/me/model-key' : '/api/me/model-key/clear', {
+      const res = await fetch(action === 'set' ? '/api/me/model-key' : `/api/me/model-key/${action}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: body === undefined ? '{}' : JSON.stringify(body),
@@ -335,21 +338,23 @@ export function SettingsView() {
                   <input className="field" value={form.iconUrlDark} placeholder="leave empty to use the same image"
                     onChange={e => setForm({ ...form, iconUrlDark: e.target.value })} />
                 </div>
-                <div>
+                <div className="banner-field">
                   <label className="field-label">Classification banner (empty for none)</label>
-                  <select className="field" value=""
-                    onChange={e => {
-                      const p = BANNER_PRESETS.find(x => x.label === e.target.value)
-                      if (p) setForm({ ...form, bannerText: p.text, bannerColor: p.color })
-                    }}>
-                    <option value="">Pick a marking, or write your own below</option>
-                    {BANNER_PRESETS.map(p => <option key={p.label} value={p.label}>{p.label}</option>)}
-                  </select>
-                  <input className="field" value={form.bannerText ?? ''}
-                    placeholder="***** APPROVED FOR IL5 HIGH - CONTROLLED UNCLASSIFIED INFORMATION (CUI) *****"
-                    onChange={e => setForm({ ...form, bannerText: e.target.value })} />
-                  <input className="field banner-hex" value={form.bannerColor ?? ''} placeholder="#24612e"
-                    onChange={e => setForm({ ...form, bannerColor: e.target.value })} />
+                  <div className="banner-row">
+                    <select className="field banner-preset" value=""
+                      onChange={e => {
+                        const p = BANNER_PRESETS.find(x => x.label === e.target.value)
+                        if (p) setForm({ ...form, bannerText: p.text, bannerColor: p.color })
+                      }}>
+                      <option value="">Marking…</option>
+                      {BANNER_PRESETS.map(p => <option key={p.label} value={p.label}>{p.label}</option>)}
+                    </select>
+                    <input className="field banner-text" value={form.bannerText ?? ''}
+                      placeholder="Text across the top, or pick a marking"
+                      onChange={e => setForm({ ...form, bannerText: e.target.value })} />
+                    <input className="field banner-hex" value={form.bannerColor ?? ''} placeholder="#24612e"
+                      onChange={e => setForm({ ...form, bannerColor: e.target.value })} />
+                  </div>
                   {(form.bannerText ?? '').trim() && (
                     <div className="cls-banner banner-preview"
                       style={{ background: form.bannerColor, color: bannerInk(form.bannerColor) }}>
@@ -359,12 +364,8 @@ export function SettingsView() {
                   <label className="key-persist">
                     <input type="checkbox" checked={!!form.bannerWhenEmbedded}
                       onChange={e => setForm({ ...form, bannerWhenEmbedded: e.target.checked })} />
-                    <span>Show it inside the platform frame too</span>
+                    <span>Show it inside the platform frame too, which already draws its own</span>
                   </label>
-                  <p className="muted key-note">
-                    The platform draws its own banner around an embedded session, so by default this one
-                    appears only when the app is open in its own tab or window, where nothing else marks it.
-                  </p>
                 </div>
                 <div>
                   <label className="field-label">Background sync interval (seconds, 0 pauses)</label>
@@ -394,6 +395,13 @@ export function SettingsView() {
                   <input type="checkbox" checked={form.requirePersonalKey}
                     onChange={e => setForm({ ...form, requirePersonalKey: e.target.checked })} />
                   Require each user to add their own model credential (chat and models refuse the deployment credential; browsing, search, and adding material stay open to everyone)
+                </label>
+              )}
+              {me?.authEnabled && (
+                <label className="key-persist">
+                  <input type="checkbox" checked={form.allowKeySharing}
+                    onChange={e => setForm({ ...form, allowKeySharing: e.target.checked })} />
+                  Let a user share their own model credential with everyone here, standing in for the deployment credential (useful where the deployment has none; the sharer's quota covers the group)
                 </label>
               )}
               {me?.authEnabled && (
@@ -510,6 +518,37 @@ export function SettingsView() {
                     <input type="checkbox" checked={persistKey} onChange={e => setPersistKey(e.target.checked)} />
                     Remember on this server (encrypted at rest); unchecked keeps it in memory for about 12 hours only
                   </label>
+                  {me.shared?.active ? (
+                    <div className="rag-banner connected shared-key">
+                      <div className="rag-banner-head">
+                        <span className={`status-dot ${me.shared.credExpired ? 'warn' : 'ok'}`} />
+                        <strong>
+                          Key ending {me.shared.last4} is shared with everyone on this deployment
+                          {me.shared.sharedBy ? `, by ${me.shared.mine ? 'you' : me.shared.sharedBy}` : ''}
+                          {me.shared.sharedAt ? ` on ${me.shared.sharedAt.slice(0, 10)}` : ''}
+                          {me.shared.credExpired ? '; it has expired and is no longer used' : ''}
+                        </strong>
+                        <span className="rag-banner-actions">
+                          <button className="btn-danger-outline" disabled={keyBusy}
+                            onClick={() => void keyAction('unshare')}>Stop sharing</button>
+                        </span>
+                      </div>
+                      <p className="muted key-note">
+                        Anyone here without a key of their own calls the gateway with this one, so its owner's
+                        quota and usage cover the deployment. Their own keys still take precedence. Anyone can
+                        stop the sharing, since the person who started it may not be around when it needs to end.
+                      </p>
+                    </div>
+                  ) : me.mode !== 'none' && me.sharingAllowed && (
+                    <div className="key-row share-row">
+                      <button className="btn-secondary" disabled={keyBusy}
+                        onClick={() => void keyAction('share')}>Share this key with everyone</button>
+                      <span className="muted key-note">
+                        Lets users here who have no key of their own work with yours, which spends your quota
+                        and runs as you. You can stop it at any time.
+                      </span>
+                    </div>
+                  )}
                   <p className="muted key-trust">
                     A key added here is available to this server and its operator; encryption at rest protects the stored file, not the running process. Use a key you can revoke. If your provider locks keys on a schedule, Test tells you the key’s current state. With a custom provider, chat and models use that provider while platform tools (clusters, workflows) fall back to the deployment credential; a non-platform key is never passed to platform commands.
                   </p>
