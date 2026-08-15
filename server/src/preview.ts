@@ -22,6 +22,12 @@ export const CONVERTIBLE = new Set(['.docx', '.pptx', '.xlsx', '.doc', '.ppt', '
 const PDF_CACHE = path.join(INDEX_BASE, 'pdf-preview')
 const SOFFICE_HOME = path.join(INDEX_BASE, '.soffice')
 
+/** Raised when an office document cannot be rendered on this host, which
+ *  is a deployment fact rather than a fault in the file. */
+export class OfficePreviewUnavailable extends Error {
+  constructor(message: string) { super(message); this.name = 'OfficePreviewUnavailable' }
+}
+
 // LibreOffice instances fight over the user profile; run one at a time.
 let conversionQueue: Promise<unknown> = Promise.resolve()
 
@@ -44,7 +50,16 @@ export function officeToPdf(absSource: string, relPath: string): Promise<string>
       execFile('soffice', ['--headless', '--convert-to', 'pdf', '--outdir', outDir, absSource], {
         timeout: 120_000,
         env: { ...process.env, HOME: SOFFICE_HOME },
-      }, (err, _so, se) => err ? reject(new Error(`conversion failed: ${se || err.message}`)) : resolve())
+      }, (err, _so, se) => {
+        if (!err) return resolve()
+        // No LibreOffice on this host: say so, rather than passing a raw
+        // "spawn soffice ENOENT" to the reader. The viewer falls back to
+        // the extracted text, which is already indexed.
+        const missing = (err as NodeJS.ErrnoException).code === 'ENOENT'
+        reject(new OfficePreviewUnavailable(missing
+          ? 'LibreOffice (soffice) is not installed on this deployment, so Word, PowerPoint and Excel files cannot be rendered here.'
+          : `conversion failed: ${se || err.message}`))
+      })
     })
     if (!fs.existsSync(outFile)) throw new Error('conversion produced no output')
     return outFile
