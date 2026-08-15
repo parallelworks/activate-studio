@@ -33,7 +33,12 @@ const VAULT_FILE = path.join(INDEX_BASE, 'user-credentials.json')
 const SECRET_FILE = path.join(INDEX_BASE, '.credentials-secret')
 const SESSION_TTL_MS = 12 * 3600 * 1000
 
-interface VaultEntry { blob: string; last4: string; addedAt: string; kind?: 'api-key' | 'token'; expiresAt?: string | null; baseUrl?: string | null }
+interface VaultEntry { blob: string; last4: string; addedAt: string; kind?: 'api-key' | 'token'; expiresAt?: string | null; baseUrl?: string | null; sharedBy?: string; sharedBySub?: string }
+
+/** Reserved vault subject holding a key a user has promoted for everyone.
+ *  A platform subject is a uuid, so it cannot collide, and setUserKey
+ *  refuses it outright. */
+const SHARED_SUB = '__shared__'
 
 /** A JWT-shaped credential is a short-term token; surface its expiry so
  *  the UI can say when it dies instead of failing mysteriously. */
@@ -101,6 +106,7 @@ function liveSession(sub: string) {
 
 export function setUserKey(sub: string, key: string, persist: boolean, baseUrl?: string | null): void {
   if (personalKeysDisabled()) throw new Error('personal keys are disabled on this deployment')
+  if (sub === SHARED_SUB) throw new Error('reserved subject')
   const trimmed = key.trim()
   if (!trimmed || trimmed.length > 8192) throw new Error('invalid key')
   let url: string | null = String(baseUrl ?? '').trim().replace(/\/$/, '') || null
@@ -127,6 +133,77 @@ export function clearUserKey(sub: string): void {
   sessionKeys.delete(sub)
   const vault = loadVault()
   if (vault[sub]) { delete vault[sub]; saveVault(vault) }
+}
+
+/**
+ * A key one user promotes for everyone else on the deployment.
+ *
+ * The case this answers: a deployment with no credential of its own, where
+ * one person has a key and wants the app usable by the group without each
+ * of them pasting one. It stands in for the deployment credential, so every
+ * request that would otherwise have none runs as the sharer, and their
+ * usage and quota carry the whole deployment. The UI says so plainly.
+ *
+ * A key bound to a custom provider is refused: the deployment-credential
+ * paths call the configured gateway, so such a key would work in some
+ * places and not others.
+ */
+export function shareUserKey(sub: string, sharedBy: string): void {
+  const cred = resolveUserCred(sub)
+  if (!cred) throw new Error('add your own key first, then share it')
+  if (cred.baseUrl) throw new Error('a key bound to a custom provider cannot be shared; the deployment credential always calls this deployment\'s gateway')
+  const status = getUserKeyStatus(sub)
+  const vault = loadVault()
+  vault[SHARED_SUB] = {
+    blob: encrypt(cred.key),
+    last4: status.last4 ?? cred.key.slice(-4),
+    addedAt: new Date().toISOString(),
+    kind: status.kind ?? 'api-key',
+    expiresAt: status.credExpiresAt ?? null,
+    baseUrl: null,
+    sharedBy,
+    sharedBySub: sub,
+  }
+  saveVault(vault)
+}
+
+export function clearSharedKey(): void {
+  const vault = loadVault()
+  if (vault[SHARED_SUB]) { delete vault[SHARED_SUB]; saveVault(vault) }
+}
+
+export interface SharedKeyStatus {
+  active: boolean
+  last4?: string
+  sharedBy?: string
+  sharedAt?: string
+  kind?: 'api-key' | 'token'
+  credExpiresAt?: string | null
+  credExpired?: boolean
+  /** True when the promoted key is the caller's own. */
+  mine?: boolean
+}
+
+export function getSharedKeyStatus(sub?: string | null): SharedKeyStatus {
+  const entry = loadVault()[SHARED_SUB]
+  if (!entry) return { active: false }
+  return {
+    active: true,
+    last4: entry.last4,
+    sharedBy: entry.sharedBy,
+    sharedAt: entry.addedAt,
+    kind: entry.kind ?? 'api-key',
+    credExpiresAt: entry.expiresAt ?? null,
+    credExpired: expired(entry.expiresAt),
+    mine: !!sub && entry.sharedBySub === sub,
+  }
+}
+
+/** The promoted key, if one is active and still valid. */
+export function resolveSharedKey(): string | null {
+  const entry = loadVault()[SHARED_SUB]
+  if (!entry || expired(entry.expiresAt)) return null
+  return decrypt(entry.blob)
 }
 
 export interface UserKeyStatus {
@@ -170,7 +247,7 @@ export function getUserKeyStatus(sub: string): UserKeyStatus {
 export interface UserCred { key: string; baseUrl: string | null }
 
 export function resolveUserCred(sub: string | null | undefined): UserCred | null {
-  if (!sub || personalKeysDisabled()) return null
+  if (!sub || sub === SHARED_SUB || personalKeysDisabled()) return null
   const s = liveSession(sub)
   if (s) return expired(s.credExpiresAt) ? null : { key: s.key, baseUrl: s.baseUrl }
   const entry = loadVault()[sub]
