@@ -22,13 +22,25 @@ printf '%s\n' .git node_modules .venv venv __pycache__ dist build .cache .pytest
 
 # Enrichment: extract text into fts5 tables inside the staged index and
 # refresh the on-disk extract cache used for previews.
-python3 "$PROJECT_ROOT/indexer/enrich.py" --kb-root "$KB_ROOT" \
+# Indexer scripts need Python 3.10+; some clusters default python3 to 3.9.
+PYTHON_BIN="${PYTHON_BIN:-}"
+if [ -z "$PYTHON_BIN" ]; then
+  for cand in python3.13 python3.12 python3.11 python3.10 python3; do
+    if command -v "$cand" >/dev/null 2>&1 && "$cand" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)' 2>/dev/null; then
+      PYTHON_BIN="$cand"; break
+    fi
+  done
+fi
+PYTHON_BIN="${PYTHON_BIN:-python3}"
+echo "python: $PYTHON_BIN ($($PYTHON_BIN --version 2>&1))"
+
+"$PYTHON_BIN" "$PROJECT_ROOT/indexer/enrich.py" --kb-root "$KB_ROOT" \
   --index "$STAGING/$(basename "$KB_ROOT")" --extract-cache "$INDEX_BASE/extract"
 
 # Vector embeddings (skippable: SKIP_EMBED=1). Model fetched by setup_gufi.sh.
 MODEL="$INDEX_BASE/models/minilm384.gguf"
 if [ -z "${SKIP_EMBED:-}" ] && [ -f "$MODEL" ]; then
-  python3 "$PROJECT_ROOT/indexer/embed.py" --index "$STAGING/$(basename "$KB_ROOT")" --model "$MODEL"
+  "$PYTHON_BIN" "$PROJECT_ROOT/indexer/embed.py" --index "$STAGING/$(basename "$KB_ROOT")" --model "$MODEL"
 fi
 
 # Atomic-ish swap so the server never sees a half-built tree.

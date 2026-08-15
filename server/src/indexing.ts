@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process'
 import fs from 'node:fs'
 import fsp from 'node:fs/promises'
 import path from 'node:path'
-import { EXCLUDE_DIRS, GUFI_BIN, GUFI_INDEX, INDEX_BASE, KB_ROOT, PROJECT_ROOT } from './config.js'
+import { EXCLUDE_DIRS, GUFI_BIN, GUFI_INDEX, INDEX_BASE, KB_ROOT, PROJECT_ROOT, PYTHON_BIN } from './config.js'
 import { invalidateDbList } from './gufi.js'
 import { invalidateContext } from './chat/context.js'
 import { effectiveSettings } from './settings.js'
@@ -86,11 +86,11 @@ export function incrementalIndexDir(rel: string): Promise<{ ms: number }> {
       await fsp.rm(target, { recursive: true, force: true })
       await fsp.rename(built, target)
 
-      await run('python3', [path.join(PROJECT_ROOT, 'indexer', 'enrich.py'),
+      await run(PYTHON_BIN, [path.join(PROJECT_ROOT, 'indexer', 'enrich.py'),
         '--kb-root', KB_ROOT, '--index', GUFI_INDEX,
         '--extract-cache', path.join(INDEX_BASE, 'extract'), '--subdir', cleaned])
       if (fs.existsSync(EMBED_MODEL)) {
-        await run('python3', [path.join(PROJECT_ROOT, 'indexer', 'embed.py'),
+        await run(PYTHON_BIN, [path.join(PROJECT_ROOT, 'indexer', 'embed.py'),
           '--index', GUFI_INDEX, '--model', EMBED_MODEL, '--subdir', cleaned])
       }
       invalidateDbList()
@@ -122,11 +122,11 @@ export function indexRootDb(): Promise<{ ms: number }> {
       const built = path.join(staging, path.basename(KB_ROOT), 'db.db')
       await fsp.mkdir(GUFI_INDEX, { recursive: true })
       await fsp.rename(built, path.join(GUFI_INDEX, 'db.db'))
-      await run('python3', [path.join(PROJECT_ROOT, 'indexer', 'enrich.py'),
+      await run(PYTHON_BIN, [path.join(PROJECT_ROOT, 'indexer', 'enrich.py'),
         '--kb-root', KB_ROOT, '--index', GUFI_INDEX,
         '--extract-cache', path.join(INDEX_BASE, 'extract'), '--no-recurse'])
       if (fs.existsSync(EMBED_MODEL)) {
-        await run('python3', [path.join(PROJECT_ROOT, 'indexer', 'embed.py'),
+        await run(PYTHON_BIN, [path.join(PROJECT_ROOT, 'indexer', 'embed.py'),
           '--index', GUFI_INDEX, '--model', EMBED_MODEL, '--no-recurse'])
       }
       invalidateDbList()
