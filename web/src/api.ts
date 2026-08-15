@@ -115,6 +115,13 @@ export const api = {
     })
   },
 
+  dirs: () => getJson<{ dirs: string[] }>('/api/kb/dirs'),
+
+  /** Bulk move as a watchable job: the interface polls /api/jobs/<id>. */
+  moveJob: (paths: string[], dest: string) =>
+    postJson<Job>('/api/kb/move', { paths, dest, async: true }),
+  job: (id: number) => getJson<Job>(`/api/jobs/${id}`),
+
   move: (paths: string[], dest: string) =>
     postJson<{ moved: { from: string; to: string }[]; skipped: { path: string; reason: string }[]; indexMs: number }>(
       '/api/kb/move', { paths, dest }),
@@ -124,6 +131,19 @@ export const api = {
 }
 
 export interface UploadResult { saved: string[]; indexMs?: number; indexed?: boolean; indexError?: string; deferred?: boolean }
+export interface Job {
+  id: number
+  kind: 'move' | 'index'
+  phase: string
+  state: 'running' | 'done' | 'error'
+  done: number
+  total: number
+  current: string
+  result: unknown
+  error: string | null
+  ms: number | null
+}
+
 export interface IndexJob {
   id: number
   dir: string

@@ -2,6 +2,8 @@ import { api } from './api'
 
 export interface UploadItem { file: File; rel: string }
 export interface UploadProgress {
+  /** Uploading from the desktop, or moving inside the corpus. */
+  kind?: 'upload' | 'move'
   /** 'uploading' while bytes move, 'indexing' while the corpus catches up. */
   phase: 'uploading' | 'indexing' | 'done'
   total: number
