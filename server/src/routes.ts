@@ -298,14 +298,21 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
     const cred = resolveUserCred(req.user?.id)
     const model = String(body.model ?? '') || eff.ragDefaultModel
     if (!model) throw new KbError(400, 'no model configured for labelling: set a default model on the RAG endpoint page, or pass one')
-    return suggestLabels({
-      dir: body.dir ?? '',
-      limit: body.limit,
-      includeLabelled: body.includeLabelled,
-      model,
-      key: cred?.key ?? null,
-      baseUrl: cred?.baseUrl ?? null,
-    })
+    try {
+      return await suggestLabels({
+        dir: body.dir ?? '',
+        limit: body.limit,
+        includeLabelled: body.includeLabelled,
+        model,
+        key: cred?.key ?? null,
+        baseUrl: cred?.baseUrl ?? null,
+      })
+    } catch (e) {
+      const detail = String((e as Error).message ?? e)
+      throw new KbError(502, cred
+        ? `The model refused the request (${detail.slice(0, 160)}). Try a different model on the RAG endpoint settings page.`
+        : `No personal model credential is loaded, and the deployment credential was refused (${detail.slice(0, 160)}). Add your key in Settings, Model access.`)
+    }
   })
 
   // Every directory in the corpus, for choosing a move destination.
