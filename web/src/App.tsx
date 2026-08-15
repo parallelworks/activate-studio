@@ -155,6 +155,7 @@ export default function App() {
     // The chat view keeps its open conversation in the hash; do not clear it.
     if (!hash && location.hash.startsWith('#chat=')) return
     history.pushState(null, '', location.pathname + location.search + hash)
+    try { localStorage.setItem('ade-last-hash', hash) } catch { /* storage unavailable */ }
   }, [view, display])
 
   const openFile = (path: string) => {
