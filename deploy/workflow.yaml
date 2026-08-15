@@ -412,7 +412,12 @@ jobs:
                 # Platform buckets are not something the container runtime
                 # can pull; stage through the CLI instead.
                 echo "Staging image from bucket: $IMG"
-                pw buckets cp "$IMG" "$PWD/studio.sif" || { echo "ERROR: bucket copy failed"; exit 1; }
+                # The CLI draws a carriage-return progress bar, which the
+                # platform log viewer renders as one endless line; keep the
+                # transcript readable and surface only the outcome.
+                pw buckets cp "$IMG" "$PWD/studio.sif" > bucket-cp.log 2>&1 \
+                  || { echo "ERROR: bucket copy failed"; tr '\r' '\n' < bucket-cp.log | tail -3; exit 1; }
+                echo "staged image: $(du -h "$PWD/studio.sif" | cut -f1)"
                 IMG="$PWD/studio.sif" ;;
               *://*)
                 echo "Pulling image $IMG ..."
@@ -463,7 +468,8 @@ jobs:
             echo "Pulling bundle $BUNDLE ..."
             # Bucket inputs interpolate as objects; .uri is required (the bare
             # form injects JSON and the copy fails silently).
-            pw buckets cp "${{ inputs.app_settings.bundlebucket.uri }}/$BUNDLE" ./bundle.tar.gz || {
+            pw buckets cp "${{ inputs.app_settings.bundlebucket.uri }}/$BUNDLE" ./bundle.tar.gz > bucket-cp.log 2>&1 || {
+              tr '\r' '\n' < bucket-cp.log | tail -3
               if [ -f bundle-prestage.tar.gz ]; then
                 echo "Bucket pull failed; using pre-staged bundle-prestage.tar.gz"
                 cp bundle-prestage.tar.gz bundle.tar.gz
