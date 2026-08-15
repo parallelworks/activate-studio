@@ -3,7 +3,7 @@ import fsp from 'node:fs/promises'
 import path from 'node:path'
 import { EXCLUDE_DIRS } from './config.js'
 import { KbError, resolveKb } from './kb.js'
-import { reindexForDir } from './indexing.js'
+import { reindexForDir, startIndexJob } from './indexing.js'
 
 const MAX_UPLOAD_BYTES = 200 * 1024 * 1024
 const MAX_URL_BYTES = 50 * 1024 * 1024
@@ -74,6 +74,13 @@ export async function uploadRoutes(app: FastifyInstance): Promise<void> {
       saved.push(rel ? `${rel}/${name}` : name)
     }
     if (saved.length === 0) throw new KbError(400, 'no files in request')
+
+    // index=0 returns as soon as the files are on disk, which is what a
+    // bulk upload wants: the client sends its batches back to back and asks
+    // for one indexing pass at the end, watching it through /api/index/job.
+    if (String((req.query as { index?: string }).index ?? '') === '0') {
+      return reply.send({ saved, indexed: false, deferred: true })
+    }
     try {
       const { ms } = await reindexForDir(rel)
       return reply.send({ saved, indexed: true, indexMs: ms })

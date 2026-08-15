@@ -35,6 +35,56 @@ function currentIntervalSec(): number {
 
 export function indexStatus(): IndexStatus { return { ...status } }
 
+/**
+ * Indexing a directory in the background, so an upload can return as soon
+ * as the files are on disk. A bulk drop of a hundred documents otherwise
+ * held one request open for the whole indexing pass, which reads as a
+ * stuck uploader and times out through a proxy.
+ */
+export interface IndexJob {
+  id: number
+  dir: string
+  state: 'queued' | 'running' | 'done' | 'error'
+  startedAt: string
+  finishedAt: string | null
+  ms: number | null
+  error: string | null
+}
+
+let jobSeq = 0
+const jobs = new Map<number, IndexJob>()
+
+export function startIndexJob(rel: string): IndexJob {
+  const job: IndexJob = {
+    id: ++jobSeq,
+    dir: rel,
+    state: 'queued',
+    startedAt: new Date().toISOString(),
+    finishedAt: null,
+    ms: null,
+    error: null,
+  }
+  jobs.set(job.id, job)
+  // Old jobs are only interesting while a page is still polling them.
+  for (const [id, j] of jobs) if (jobs.size > 20 && j.state !== 'running' && j.state !== 'queued') jobs.delete(id)
+  void (async () => {
+    job.state = 'running'
+    try {
+      const { ms } = await reindexForDir(rel)
+      job.ms = ms
+      job.state = 'done'
+    } catch (e) {
+      job.error = String((e as Error).message ?? e).slice(0, 400)
+      job.state = 'error'
+    } finally {
+      job.finishedAt = new Date().toISOString()
+    }
+  })()
+  return job
+}
+
+export function getIndexJob(id: number): IndexJob | null { return jobs.get(id) ?? null }
+
 function run(cmd: string, args: string[], timeoutMs = 10 * 60_000): Promise<string> {
   // Settings can change the captioning model at runtime.
   const vm = effectiveSettings().visionModel

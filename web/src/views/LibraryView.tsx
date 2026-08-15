@@ -12,6 +12,14 @@ import { collectDropped, uploadBatched, UploadProgress } from '../upload'
 const RAIL_MIN = 220
 const RAIL_MAX = 520
 
+/** Human-sized byte counts for the upload panel. */
+function fmtBytes(n: number): string {
+  if (n < 1024) return `${n} B`
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`
+  if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`
+  return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`
+}
+
 export function LibraryView({ display, onDisplay }: {
   display: Display | null
   onDisplay: (d: Display | null) => void
@@ -241,13 +249,23 @@ export function LibraryView({ display, onDisplay }: {
                 <div className="upload-panel">
                   <div className="upload-panel-head">
                     <span>
-                      {progress.finished
-                        ? `${progress.done} of ${progress.total} indexed into ${progress.dir || 'root'}`
-                        : `Uploading to ${progress.dir || 'root'}: ${progress.done} / ${progress.total}`}
+                      {progress.phase === 'done'
+                        ? `${progress.done} of ${progress.total} added to ${progress.dir || 'root'}${progress.indexMs ? `, indexed in ${(progress.indexMs / 1000).toFixed(1)}s` : ''}`
+                        : progress.phase === 'indexing'
+                          ? `Indexing ${progress.done} ${progress.done === 1 ? 'file' : 'files'} in ${progress.dir || 'root'}…`
+                          : `Uploading to ${progress.dir || 'root'}: ${progress.done} / ${progress.total}${progress.totalBytes ? ` (${fmtBytes(progress.bytes)} of ${fmtBytes(progress.totalBytes)})` : ''}`}
                     </span>
                     <button className="link-btn2" onClick={() => setProgress(null)}>dismiss</button>
                   </div>
-                  <div className="upload-bar"><div style={{ width: `${(progress.done / Math.max(progress.total, 1)) * 100}%` }} /></div>
+                  {/* Bytes drive the bar while uploading, so one large file
+                      still moves; indexing has no count to report, so the
+                      bar runs indeterminate until the job comes back. */}
+                  <div className={`upload-bar ${progress.phase === 'indexing' ? 'indeterminate' : ''}`}>
+                    <div style={{ width: progress.phase === 'indexing' ? '100%' : `${(progress.totalBytes ? progress.bytes / progress.totalBytes : progress.done / Math.max(progress.total, 1)) * 100}%` }} />
+                  </div>
+                  {progress.phase === 'uploading' && progress.current && (
+                    <div className="upload-current">{progress.current}</div>
+                  )}
                   {progress.indexError && (
                     <div className="upload-failed">Uploaded, but indexing failed, so these files are not searchable yet: {progress.indexError}</div>
                   )}
