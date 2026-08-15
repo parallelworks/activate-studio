@@ -21,6 +21,9 @@
 #   requires privilege at run time.
 #
 # Build:   apptainer build studio.sif deploy/app.def   (run from the repo root)
+#          Stale Docker Hub tokens in ~/.docker/config.json make the base
+#          image pull fail as unauthorized instead of falling back to
+#          anonymous; build with a clean HOME if that happens.
 # Test:    apptainer run --env PORT=8080 --env KB_ROOT=/kb --env DATA_DIR=/data \
 #              --bind /path/to/corpus:/kb --bind /path/to/state:/data studio.sif
 # ============================================================================
@@ -38,7 +41,7 @@ Stage: build
     # ships in bsdextrautils on Debian; setfattr/getfattr in attr).
     apt-get update && apt-get install -y --no-install-recommends \
         cmake make gcc g++ pkg-config zlib1g-dev libsqlite3-dev git curl ca-certificates \
-        bsdextrautils attr diffutils patch gawk
+        bsdextrautils attr diffutils patch gawk patchelf
     # npm, not corepack: corepack's loader crashes on some pnpm/Node
     # pairings and leaves broken shims behind.
     npm install -g pnpm@10
@@ -47,6 +50,15 @@ Stage: build
     pnpm install --frozen-lockfile
     pnpm build
     pnpm --filter @activate-studio/server --prod deploy --legacy /opt/app/server
+    # pnpm's virtual store keeps a workspace self-link that escapes to
+    # /opt/src, and the stage copy refuses a symlink leaving the tree.
+    # Nothing outside /opt/app is needed at run time, so drop those.
+    find /opt/app -type l | while read -r l; do
+        case "$(readlink -f "$l" || true)" in
+            /opt/app/*) ;;
+            *) rm -f "$l" ;;
+        esac
+    done
     mkdir -p /opt/app/web
     cp -r web/dist /opt/app/web/dist
     cp -r indexer /opt/app/indexer
@@ -73,6 +85,24 @@ Stage: build
         -DBASH_COMPLETION=Off
     make -j "$(nproc)"
     make install
+    # GUFI links its AI tooling against libraries under the build tree's
+    # dependency prefix (llama.cpp and its own sqlite build), which the
+    # runtime stage does not carry; place them beside the binaries and give
+    # the binaries an rpath to match. An LD_LIBRARY_PATH would do the same
+    # job far too broadly: GUFI's sqlite lacks symbols CPython's sqlite3
+    # module needs, so exporting it breaks every indexer script.
+    cp -a /opt/gufi-src/build/deps/*/lib/*.so* /opt/gufi/lib/ 2>/dev/null || true
+    for b in /opt/gufi/bin/*; do
+        [ -f "$b" ] && [ -x "$b" ] || continue
+        patchelf --set-rpath '$ORIGIN/../lib' "$b" 2>/dev/null || true
+    done
+    # The libraries need a path of their own: a RUNPATH covers an object's
+    # direct dependencies only, so without this the binary finds libllama
+    # and libllama then fails to find libggml.
+    for l in /opt/gufi/lib/*.so*; do
+        [ -f "$l" ] || continue
+        patchelf --set-rpath '$ORIGIN' "$l" 2>/dev/null || true
+    done
 
 # ---------------------------------------------------------------------------
 Bootstrap: docker
@@ -99,7 +129,7 @@ mkdir -p "$INDEX_BASE/models"
     cp /app/index/models/minilm384.gguf "$INDEX_BASE/models/" 2>/dev/null || true
 # INDEX_ON_START=1 builds or refreshes the index before serving.
 if [ "${INDEX_ON_START:-0}" = "1" ] && [ -x "$GUFI_BIN/gufi_dir2index" ]; then
-    PROJECT_ROOT=/app sh /app/indexer/reindex.sh || \
+    PROJECT_ROOT=/app bash /app/indexer/reindex.sh || \
         echo "WARNING: index build failed; serving the filesystem"
 fi
 exec node /app/server/dist/main.js
