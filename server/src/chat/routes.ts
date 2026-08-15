@@ -53,7 +53,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     // chat requires each user to bring a key, so that listing falls back to
     // the deployment credential instead of coming back empty.
     const forConfig = String((req.query as { config?: string }).config ?? '') === '1'
-    if (!forConfig && eff0.requirePersonalKey && authEnabled() && !personalKeysDisabled() && !cred) {
+    if (!forConfig && eff0.requirePersonalKey && authEnabled() && !personalKeysDisabled() && !cred && !getSharedKeyStatus().active) {
       return reply.send({ models: [], unreachableSessions: [], error: 'This deployment requires your own model credential: add your API key or platform token in Settings, Model access.' })
     }
     const wire: any = await listModels(cred?.key, cred?.baseUrl)
@@ -77,7 +77,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
   // Live model-callability check for the footer status line.
   app.get('/api/ai/health', async req => {
     const cred = resolveUserCred(req.user?.id)
-    if (effectiveSettings().requirePersonalKey && authEnabled() && !personalKeysDisabled() && !cred) {
+    if (effectiveSettings().requirePersonalKey && authEnabled() && !personalKeysDisabled() && !cred && !getSharedKeyStatus().active) {
       return {
         ok: false, status: 'key-required', models: 0, gatewayHost: '', message:
           'This deployment requires your own model credential; add it in Settings, Model access.',
@@ -95,7 +95,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
       authEnabled: true, verified: true, gatewayHost,
       ...getUserKeyStatus(sub),
       shared: getSharedKeyStatus(sub),
-      sharingAllowed: effectiveSettings().allowKeySharing && !effectiveSettings().requirePersonalKey,
+      sharingAllowed: effectiveSettings().allowKeySharing,
     }
   }
 
@@ -149,7 +149,6 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     if (!req.user) return reply.status(403).send({ error: 'not verified' })
     const eff = effectiveSettings()
     if (!eff.allowKeySharing) return reply.status(403).send({ error: 'this deployment does not allow sharing a personal key' })
-    if (eff.requirePersonalKey) return reply.status(400).send({ error: 'this deployment requires each user to bring their own key, so a shared one would never be used' })
     try { shareUserKey(req.user.id, req.user.name || req.user.username) }
     catch (e) { return reply.status(400).send({ error: String((e as Error).message ?? e) }) }
     return keyStatusPayload(req.user.id)
@@ -223,7 +222,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     res.on('close', () => clearInterval(keepalive))
 
     const userCred = resolveUserCred(req.user?.id)
-    if (effectiveSettings().requirePersonalKey && authEnabled() && !personalKeysDisabled() && !userCred) {
+    if (effectiveSettings().requirePersonalKey && authEnabled() && !personalKeysDisabled() && !userCred && !getSharedKeyStatus().active) {
       sse(res, 'error', {
         message: 'This deployment requires your own model credential. Add your API key or platform token in Settings, Model access, then retry. Browsing, search, and adding material work without one.',
         kind: 'credential',
