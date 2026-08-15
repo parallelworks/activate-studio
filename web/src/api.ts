@@ -131,6 +131,8 @@ export const api = {
     postJson<{ moved: { from: string; to: string }[]; skipped: { path: string; reason: string }[]; indexMs: number }>(
       '/api/kb/move', { paths, dest }),
 
+  extractors: () => getJson<{ extractors: { name: string; available: boolean; covers: string }[] }>('/api/index/extractors'),
+
   startIndexJob: (dir: string) => postJson<IndexJob>('/api/index/job', { path: dir }),
   indexJob: (id: number) => getJson<IndexJob>(`/api/index/job/${id}`),
 }

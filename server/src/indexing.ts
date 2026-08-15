@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process'
+import { execFile, execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import fsp from 'node:fs/promises'
 import path from 'node:path'
@@ -31,6 +31,35 @@ const status: IndexStatus = {
 
 function currentIntervalSec(): number {
   return effectiveSettings().sweepIntervalSec
+}
+
+/**
+ * Which document extractors this host can actually run. A missing library
+ * used to mean Word, PowerPoint and Excel files indexed as their filename
+ * and nothing said so; the interface reports it instead.
+ */
+export interface ExtractorReport { name: string; available: boolean; covers: string }
+
+let extractorCache: ExtractorReport[] | null = null
+
+export function extractorReport(): ExtractorReport[] {
+  if (extractorCache) return extractorCache
+  const probe = (code: string): boolean => {
+    try { execFileSync(PYTHON_BIN, ['-c', code], { stdio: 'ignore', timeout: 15_000 }); return true }
+    catch { return false }
+  }
+  const which = (bin: string): boolean => {
+    try { execFileSync('sh', ['-c', `command -v ${bin}`], { stdio: 'ignore', timeout: 10_000 }); return true }
+    catch { return false }
+  }
+  extractorCache = [
+    { name: 'python-docx', available: probe('import docx'), covers: '.docx' },
+    { name: 'python-pptx', available: probe('import pptx'), covers: '.pptx' },
+    { name: 'openpyxl', available: probe('import openpyxl'), covers: '.xlsx' },
+    { name: 'pdftotext', available: which('pdftotext'), covers: '.pdf' },
+    { name: 'tesseract', available: which('tesseract'), covers: 'text inside images (OCR)' },
+  ]
+  return extractorCache
 }
 
 export function indexStatus(): IndexStatus { return { ...status } }
