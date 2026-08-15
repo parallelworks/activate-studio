@@ -44,8 +44,11 @@ export function LibraryView({ display, onDisplay }: {
   const [ctxNewDir, setCtxNewDir] = useState<string | null>(null)
   const [ctxBusy, setCtxBusy] = useState(false)
   const [ctxErr, setCtxErr] = useState('')
+  const [ctxRename, setCtxRename] = useState<string | null>(null)
+  /** Cut or copied paths, waiting for a destination. */
+  const [clipboard, setClipboard] = useState<{ mode: 'cut' | 'copy'; paths: string[] } | null>(null)
 
-  const closeCtx = () => { setCtx(null); setCtxConfirm(false); setCtxNewDir(null); setCtxBusy(false); setCtxErr('') }
+  const closeCtx = () => { setCtx(null); setCtxConfirm(false); setCtxNewDir(null); setCtxRename(null); setCtxBusy(false); setCtxErr('') }
 
   const ctxDelete = async () => {
     if (!ctx) return
@@ -57,6 +60,22 @@ export function LibraryView({ display, onDisplay }: {
       if (display?.kind === 'file' && (display.target === ctx.path || display.target.startsWith(ctx.path + '/'))) onDisplay(null)
       setRefreshKey(k => k + 1)
       window.dispatchEvent(new Event('ade-kb-changed'))
+      closeCtx()
+    } catch (e) {
+      setCtxErr(String((e as Error).message ?? e))
+      setCtxBusy(false)
+    }
+  }
+
+  const ctxDoRename = async () => {
+    if (!ctx || ctxRename === null || !ctxRename.trim()) return
+    setCtxBusy(true)
+    setCtxErr('')
+    try {
+      const r = await api.rename(ctx.path, ctxRename.trim())
+      // A renamed file that is open in the viewer should follow its name.
+      if (r.renamed && !ctx.isDir && selectedFile === ctx.path) onDisplay({ kind: 'file', target: r.renamed.to })
+      window.dispatchEvent(new CustomEvent('ade-kb-changed'))
       closeCtx()
     } catch (e) {
       setCtxErr(String((e as Error).message ?? e))
@@ -116,6 +135,22 @@ export function LibraryView({ display, onDisplay }: {
 
   useEffect(() => { localStorage.setItem('ade-tree-labels', showLabels ? '1' : '0') }, [showLabels])
 
+  // Cut, copy and paste from the keyboard, ignored while typing so a
+  // rename box or a search field keeps its own shortcuts.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return
+      const el = e.target as HTMLElement | null
+      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return
+      const paths = [...multiSel]
+      if (e.key === 'x' && paths.length) { setClipboard({ mode: 'cut', paths }); e.preventDefault() }
+      else if (e.key === 'c' && paths.length) { setClipboard({ mode: 'copy', paths }); e.preventDefault() }
+      else if (e.key === 'v' && clipboard?.paths.length) { void pasteInto(targetDir === 'uploads' ? '' : targetDir); e.preventDefault() }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
+
   // The row a range extends from: the last one clicked without shift.
   const anchor = useRef<string | null>(null)
 
@@ -144,6 +179,53 @@ export function LibraryView({ display, onDisplay }: {
       return next
     })
     anchor.current ??= p
+  }
+
+  /** Paste whatever was cut or copied into a directory. */
+  const pasteInto = async (dir: string) => {
+    if (!clipboard?.paths.length) return
+    if (clipboard.mode === 'cut') {
+      await moveInto(dir, clipboard.paths)
+      setClipboard(null)
+      return
+    }
+    const paths = clipboard.paths
+    const p: UploadProgress = {
+      kind: 'move', phase: 'uploading', total: paths.length, done: 0, bytes: 0, totalBytes: 0,
+      current: paths[0], failed: [], indexMs: 0, finished: false, dir,
+    }
+    setProgress({ ...p })
+    try {
+      const job = await api.copyJob(paths, dir)
+      for (;;) {
+        await new Promise(r => setTimeout(r, 500))
+        const s = await api.job(job.id)
+        p.done = s.done
+        p.current = s.current
+        p.phase = s.phase === 'indexing' ? 'indexing' : 'uploading'
+        if (s.state === 'done') {
+          const r = s.result as { moved: unknown[]; skipped: { path: string; reason: string }[] } | null
+          p.done = r?.moved.length ?? s.done
+          p.failed = (r?.skipped ?? []).map(x => ({ name: x.path, error: x.reason }))
+          p.indexMs = s.ms ?? 0
+          break
+        }
+        if (s.state === 'error') { p.indexError = s.error ?? 'copy failed'; break }
+        setProgress({ ...p })
+      }
+    } catch (e) {
+      p.indexError = String((e as Error).message ?? e)
+    }
+    p.phase = 'done'
+    p.finished = true
+    setProgress({ ...p })
+    window.dispatchEvent(new CustomEvent('ade-kb-changed'))
+  }
+
+  /** Hand a path to the chat as a reference, the way an editor does. */
+  const addToChat = (path: string) => {
+    window.dispatchEvent(new CustomEvent('ade-chat-insert', { detail: { text: path } }))
+    location.hash = '#view=chat'
   }
 
   /** Drag a row (or the whole selection) onto a directory to move it, or
@@ -403,6 +485,58 @@ export function LibraryView({ display, onDisplay }: {
                 <button className="btn-secondary" disabled={ctxBusy || !ctxNewDir.trim()} onClick={() => void ctxMakeDir()}>Create</button>
               </div>
             ))}
+            {ctx.path && (ctxRename === null ? (
+              <button onClick={() => setCtxRename(ctx.path.split('/').pop() ?? '')}>Rename…</button>
+            ) : (
+              <div className="ctx-input">
+                <input
+                  className="field"
+                  autoFocus
+                  value={ctxRename}
+                  placeholder="new name"
+                  onChange={e => setCtxRename(e.target.value)}
+                  onFocus={e => {
+                    // Select the stem, leaving the extension alone, which is
+                    // what a rename usually changes.
+                    const dot = e.target.value.lastIndexOf('.')
+                    e.target.setSelectionRange(0, dot > 0 ? dot : e.target.value.length)
+                  }}
+                  onKeyDown={e => { if (e.key === 'Enter') void ctxDoRename(); if (e.key === 'Escape') setCtxRename(null) }}
+                />
+                <button className="btn-secondary" disabled={ctxBusy || !ctxRename.trim()} onClick={() => void ctxDoRename()}>
+                  {ctxBusy ? 'Renaming…' : 'Rename'}
+                </button>
+              </div>
+            ))}
+            {ctx.path && (
+              <button onClick={() => { addToChat(ctx.path); closeCtx() }}>Add to chat</button>
+            )}
+            {ctx.path && (
+              <button onClick={async () => {
+                await navigator.clipboard.writeText(ctx.path).catch(() => {})
+                setCtxErr('Path copied')
+                setTimeout(closeCtx, 700)
+              }}>Copy path</button>
+            )}
+            {ctx.path && (
+              <button onClick={() => {
+                const paths = multiSel.has(ctx.path) ? [...multiSel] : [ctx.path]
+                setClipboard({ mode: 'cut', paths })
+                closeCtx()
+              }}>Cut{multiSel.has(ctx.path) && multiSel.size > 1 ? ` ${multiSel.size} items` : ''}</button>
+            )}
+            {ctx.path && (
+              <button onClick={() => {
+                const paths = multiSel.has(ctx.path) ? [...multiSel] : [ctx.path]
+                setClipboard({ mode: 'copy', paths })
+                closeCtx()
+              }}>Copy{multiSel.has(ctx.path) && multiSel.size > 1 ? ` ${multiSel.size} items` : ''}</button>
+            )}
+            {ctx.isDir && clipboard?.paths.length && (
+              <button onClick={() => { void pasteInto(ctx.path); closeCtx() }}>
+                Paste {clipboard.paths.length} {clipboard.paths.length === 1 ? 'item' : 'items'}
+              </button>
+            )}
             {ctx.path && (
               <button onClick={() => { setMultiSel(new Set([ctx.path])); setTagMenuOpen(true); setSelectMode(true); closeCtx() }}>Labels…</button>
             )}
