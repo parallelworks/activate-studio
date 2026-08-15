@@ -11,6 +11,9 @@ export interface AppConfig {
   suggestedPrompts: string[]
   user: { id: string; username: string; name?: string }
   loaded: boolean
+  /** True when the name and icon came from the previous visit, so the header
+   *  can paint them before the configuration request returns. */
+  brandRemembered?: boolean
 }
 
 const DEFAULTS: AppConfig = {
@@ -33,8 +36,31 @@ const DEFAULTS: AppConfig = {
 
 let cached: AppConfig | null = null
 
+/** The branding half of the configuration, remembered between visits so the
+ *  header paints the deployment's own name and icon on the first frame
+ *  instead of showing a generic one and swapping a moment later. The fetched
+ *  configuration still wins; this only decides what the first frame says. */
+const BRAND_KEY = 'ade-brand'
+
+function rememberedBrand(): Partial<AppConfig> {
+  try {
+    const raw = localStorage.getItem(BRAND_KEY)
+    return raw ? JSON.parse(raw) as Partial<AppConfig> : {}
+  } catch { return {} }
+}
+
+function rememberBrand(c: AppConfig): void {
+  try {
+    localStorage.setItem(BRAND_KEY, JSON.stringify({ appName: c.appName, iconUrl: c.iconUrl, kbLabel: c.kbLabel }))
+  } catch { /* storage unavailable */ }
+}
+
 export function useAppConfig(): AppConfig {
-  const [cfg, setCfg] = useState<AppConfig>(cached ?? DEFAULTS)
+  const [cfg, setCfg] = useState<AppConfig>(() => {
+    if (cached) return cached
+    const brand = rememberedBrand()
+    return { ...DEFAULTS, ...brand, brandRemembered: !!brand.appName }
+  })
   useEffect(() => {
     if (cached) return
     fetch('/api/config')
@@ -52,6 +78,7 @@ export function useAppConfig(): AppConfig {
           user: d.user?.id ? (d.user as AppConfig['user']) : DEFAULTS.user,
           loaded: true,
         }
+        rememberBrand(cached)
         setCfg(cached)
       })
       .catch(() => setCfg({ ...DEFAULTS, loaded: true }))
