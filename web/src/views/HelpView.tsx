@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react'
+import { ReactElement, useEffect, useState } from 'react'
 import { Streamdown } from 'streamdown'
 import { api, IndexStatus } from '../api'
 import { useAppConfig } from '../config'
 
-const SECTION_ICONS: Record<string, JSX.Element> = {
+const SECTION_ICONS: Record<string, ReactElement> = {
   chat: <svg viewBox="0 0 16 16" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M14 10.5a1.5 1.5 0 0 1-1.5 1.5H5l-3 3V3.5A1.5 1.5 0 0 1 3.5 2h9A1.5 1.5 0 0 1 14 3.5v7z"/></svg>,
   library: <svg viewBox="0 0 16 16" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M1.5 3.5A1 1 0 0 1 2.5 2.5h3l1.5 2h6a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1v-9z"/></svg>,
   search: <svg viewBox="0 0 16 16" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.4"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3.5 3.5"/></svg>,
@@ -15,7 +15,7 @@ const SECTION_ICONS: Record<string, JSX.Element> = {
   around: <svg viewBox="0 0 16 16" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.4"><circle cx="8" cy="8" r="6.5"/><path d="M8 1.5v3M8 11.5v3M1.5 8h3M11.5 8h3"/></svg>,
 }
 
-function iconFor(title: string): JSX.Element | null {
+function iconFor(title: string): ReactElement | null {
   const key = Object.keys(SECTION_ICONS).find(k => title.toLowerCase().includes(k))
   return key ? SECTION_ICONS[key] : null
 }
