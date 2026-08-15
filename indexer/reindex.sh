@@ -44,11 +44,19 @@ if [ -z "${SKIP_EMBED:-}" ] && [ -f "$MODEL" ]; then
 fi
 
 # Atomic-ish swap so the server never sees a half-built tree.
+#
+# gufi_dir2index nests its output under the source basename, and the server
+# expects $INDEX_BASE/gufi to mirror the corpus directly (its incremental
+# passes write $INDEX_BASE/gufi/<subdir>). Promoting the nested directory
+# rather than the staging root is what keeps the two agreeing: with the
+# extra level in place, enrichment resolved every subdirectory to
+# $KB_ROOT/<kb-basename>/<subdir>, which does not exist, so nothing below
+# the root was ever indexed.
 if [ -d "$GUFI_DEST" ]; then
   rm -rf "$INDEX_BASE/gufi.old"
   mv "$GUFI_DEST" "$INDEX_BASE/gufi.old"
 fi
-mv "$STAGING" "$GUFI_DEST"
-rm -rf "$INDEX_BASE/gufi.old"
+mv "$STAGING/$(basename "$KB_ROOT")" "$GUFI_DEST"
+rm -rf "$INDEX_BASE/gufi.old" "$STAGING"
 
-echo "index rebuilt at $GUFI_DEST/$(basename "$KB_ROOT")"
+echo "index rebuilt at $GUFI_DEST"

@@ -86,15 +86,44 @@ export const api = {
   sweepNow: () => postJson<{ changed: string[] }>(`/api/index/sweep`, {}),
   uploadUrl: (url: string, dir: string) =>
     postJson<{ saved: string[]; indexMs: number }>(`/api/kb/upload-url`, { url, dir }),
-  uploadFiles: async (files: (File | { file: File; rel: string })[], dir: string) => {
+  uploadFiles: async (
+    files: (File | { file: File; rel: string })[],
+    dir: string,
+    opts: { deferIndex?: boolean; onBytes?: (sent: number) => void } = {},
+  ) => {
     const form = new FormData()
     for (const f of files) {
       if (f instanceof File) form.append('file', f, f.name)
       else form.append('file', f.file, f.rel)
     }
-    const res = await fetch(`/api/kb/upload?dir=${encodeURIComponent(dir)}`, { method: 'POST', body: form })
-    const data = await res.json().catch(() => ({}))
-    if (!res.ok) throw new Error((data as any).error ?? `upload: ${res.status}`)
-    return data as { saved: string[]; indexMs: number; indexed?: boolean; indexError?: string }
+    const url = `/api/kb/upload?dir=${encodeURIComponent(dir)}${opts.deferIndex ? '&index=0' : ''}`
+    // XHR rather than fetch: only XHR reports how much of the body has gone
+    // out, which is what makes a large upload legible while it runs.
+    return await new Promise<UploadResult>((resolve, reject) => {
+      const xhr = new XMLHttpRequest()
+      xhr.open('POST', url)
+      xhr.upload.onprogress = e => { if (e.lengthComputable) opts.onBytes?.(e.loaded) }
+      xhr.onload = () => {
+        let data: any = {}
+        try { data = JSON.parse(xhr.responseText) } catch { /* non-JSON error body */ }
+        if (xhr.status < 200 || xhr.status >= 300) return reject(new Error(data.error ?? `upload: ${xhr.status}`))
+        resolve(data as UploadResult)
+      }
+      xhr.onerror = () => reject(new Error('upload: connection failed'))
+      xhr.ontimeout = () => reject(new Error('upload: timed out'))
+      xhr.send(form)
+    })
   },
+
+  startIndexJob: (dir: string) => postJson<IndexJob>('/api/index/job', { path: dir }),
+  indexJob: (id: number) => getJson<IndexJob>(`/api/index/job/${id}`),
+}
+
+export interface UploadResult { saved: string[]; indexMs?: number; indexed?: boolean; indexError?: string; deferred?: boolean }
+export interface IndexJob {
+  id: number
+  dir: string
+  state: 'queued' | 'running' | 'done' | 'error'
+  ms: number | null
+  error: string | null
 }
