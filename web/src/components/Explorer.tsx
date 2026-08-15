@@ -89,6 +89,19 @@ function startRowDrag(e: React.DragEvent, path: string, multiSelected: Set<strin
   const paths = multiSelected.has(path) ? [...multiSelected] : [path]
   e.dataTransfer.setData(DRAG_TYPE, JSON.stringify(paths))
   e.dataTransfer.effectAllowed = 'move'
+
+  // What is being dragged should be visible while dragging it: one row
+  // shows its name, several show how many.
+  const chip = document.createElement('div')
+  chip.className = 'drag-chip'
+  chip.textContent = paths.length > 1
+    ? `${paths.length} items`
+    : (path.split('/').pop() ?? path)
+  document.body.appendChild(chip)
+  e.dataTransfer.setDragImage(chip, 12, 12)
+  // The browser snapshots the element for the drag image, so it can go as
+  // soon as the current task yields.
+  setTimeout(() => chip.remove(), 0)
 }
 
 function draggedPaths(e: React.DragEvent): string[] {
