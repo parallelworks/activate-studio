@@ -123,7 +123,8 @@ function toKbRel(p: string): string {
 const EMBED_MODEL = path.join(INDEX_BASE, 'models', 'minilm384.gguf')
 
 let dbListCache: { dbs: string[]; at: number } | null = null
-export function invalidateDbList(): void { dbListCache = null }
+let vecDbCache: { dbs: string[]; at: number } | null = null
+export function invalidateDbList(): void { dbListCache = null; vecDbCache = null }
 function listIndexDbs(): string[] {
   if (dbListCache && Date.now() - dbListCache.at < 60_000) return dbListCache.dbs
   const dbs: string[] = []
@@ -147,6 +148,37 @@ export function vectorsAvailable(): boolean {
  * One gufi_sqlite3 process: load the embedding model, embed the query once,
  * then ATTACH each directory db, take its top-k chunks, DETACH. Node merges.
  */
+/**
+ * Index dbs that actually carry a vector table. A directory with nothing
+ * embeddable in it (an empty folder, images only, a corpus mid-ingest) has
+ * no gvec, and gufi_sqlite3 abandons the whole script at the first missing
+ * table, so attaching every db lets one empty directory silently disable
+ * semantic search for the entire corpus. Reading sqlite_master is always
+ * valid, so this pass is safe to run over everything.
+ */
+async function listVectorDbs(): Promise<string[]> {
+  if (vecDbCache && Date.now() - vecDbCache.at < 60_000) return vecDbCache.dbs
+  const all = listIndexDbs()
+  if (!all.length) return []
+  const script = all.flatMap(db => [
+    `ATTACH ${q(db)} AS c;`,
+    `SELECT 'HASVEC' || ${q(DELIM)} || ${q(db)} FROM c.sqlite_master WHERE type IN ('table','view') AND name = 'gvec';`,
+    'DETACH c;',
+  ])
+  const { stdout } = await new Promise<{ stdout: string }>(resolve => {
+    const child = execFile(path.join(GUFI_BIN, 'gufi_sqlite3'), [], { timeout: 60_000, maxBuffer: 32 * 1024 * 1024 },
+      (_err, so) => resolve({ stdout: so ?? '' }))
+    child.stdin?.write(script.join('\n'))
+    child.stdin?.end()
+  })
+  const dbs = stdout.split('\n')
+    .filter(l => l.startsWith('HASVEC'))
+    .map(l => l.split(DELIM)[1])
+    .filter(Boolean)
+  vecDbCache = { dbs, at: Date.now() }
+  return dbs
+}
+
 export async function searchVector(queryText: string, limit = 10): Promise<SearchHit[]> {
   if (!vectorsAvailable()) return []
   const idx = path.resolve(GUFI_INDEX)
@@ -154,7 +186,9 @@ export async function searchVector(queryText: string, limit = 10): Promise<Searc
     `INSERT INTO temp.lembed_models(name, model) SELECT 'minilm384', lembed_model_from_file(${q(EMBED_MODEL)});`,
     `CREATE TABLE temp.qv AS SELECT lembed('minilm384', ${q(queryText.slice(0, 500))}) AS qe;`,
   ]
-  for (const db of listIndexDbs()) {
+  const vecDbs = await listVectorDbs()
+  if (!vecDbs.length) return []
+  for (const db of vecDbs) {
     const relDir = path.relative(idx, path.dirname(db))
     script.push(`ATTACH ${q(db)} AS d;`)
     script.push(
