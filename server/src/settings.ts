@@ -102,7 +102,7 @@ export function effectiveSettings(): Required<StudioSettings> {
     // {"<engine>": {"workflow": "<name>", "inputs": {...preset...}}}
     serveWorkflows: s.serveWorkflows ?? process.env.SERVE_WORKFLOWS ?? JSON.stringify({
       vllm: { workflow: 'vllm-endpoint', inputs: {} },
-      ollama: { workflow: 'marketplace.ollama_openwebui.latest', inputs: {} },
+      ollama: { workflow: 'ollama-endpoint', inputs: {} },
     }),
   }
 }
