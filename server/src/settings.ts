@@ -42,6 +42,7 @@ export interface StudioSettings {
   allowKeySharing?: boolean
   serveWorkflows?: string
   hpcStatusUrl?: string
+  hpcStatusWorkflow?: string
 }
 
 let cache: StudioSettings | null = null
@@ -104,6 +105,10 @@ export function effectiveSettings(): Required<StudioSettings> {
     // Base URL of an HPC Status Monitor deployment (github.com/parallelworks/hpc_status);
     // empty disables the hpc_status tool.
     hpcStatusUrl: s.hpcStatusUrl ?? process.env.HPC_STATUS_URL ?? '',
+    // Workflow that deploys the Status Monitor, so the assistant can stand
+    // one up when none is running (hpcmp_status on the HPCMP platform,
+    // hpc_status generally).
+    hpcStatusWorkflow: s.hpcStatusWorkflow ?? process.env.HPC_STATUS_WORKFLOW ?? 'hpc_status',
     serveWorkflows: s.serveWorkflows ?? process.env.SERVE_WORKFLOWS ?? JSON.stringify({
       vllm: { workflow: 'vllm-endpoint', inputs: {} },
       ollama: { workflow: 'ollama-endpoint', inputs: {} },
@@ -191,6 +196,7 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
       if (v && !/^https?:\/\//i.test(v)) throw new KbError(400, 'hpcStatusUrl must be http(s)')
       next.hpcStatusUrl = v || undefined
     }
+    if (body.hpcStatusWorkflow !== undefined) next.hpcStatusWorkflow = String(body.hpcStatusWorkflow).slice(0, 80) || undefined
     if (body.serveWorkflows !== undefined) {
       const raw = String(body.serveWorkflows).slice(0, 4000)
       try { JSON.parse(raw) } catch { throw new KbError(400, 'serveWorkflows must be JSON') }

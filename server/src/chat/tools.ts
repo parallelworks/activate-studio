@@ -39,7 +39,7 @@ export const TOOL_CALLS: Record<string, string> = {
   compose_workflow: 'reads each source workflow with pw workflows get, then emits a workflow that runs them as `uses:` subworkflow steps',
   pw_help: 'pw --help / pw <command> --help',
   list_clusters: 'pw cluster ls -o json',
-  hpc_status: 'GET against the configured Status Monitor REST API (fleet, cluster-usage, placement, insights, storage, events); read-only',
+  hpc_status: 'GET against the configured Status Monitor REST API (fleet, cluster-usage, placement, insights, storage, events); launch=true instead runs the deployment-configured monitor workflow via the pw CLI',
   cluster_command: 'pw ssh <resource> <command> (read-only scheduler guidance; state changes only on explicit request)',
   show_in_viewer: 'no external call; returns viewer deep-link or inline-embed markdown',
   studio_docs: 'reads docs/HELP.md, docs/ARCHITECTURE.md, or docs/CUSTOMIZATION.md from the app installation',
@@ -350,6 +350,8 @@ export const TOOL_SPECS: ToolSpec[] = [
         properties: {
           view: { type: 'string', description: "One of: summary (fleet at a glance), fleet (every system), queues (queue health; add cluster for one system), placement (where to submit), insights (open findings), storage (quotas and purge), events (recent changes)" },
           cluster: { type: 'string', description: 'System name, for queues' },
+          launch: { type: 'boolean', description: 'Deploy a Status Monitor for this user via the configured workflow, when none is running. Only when the user asked for one.' },
+          inputs: { type: 'string', description: 'JSON workflow inputs for the launch, when the workflow needs any' },
         },
         required: ['view'],
       },
@@ -877,9 +879,21 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
       }
       case 'hpc_status': {
         const { effectiveSettings } = await import('../settings.js')
-        const base = effectiveSettings().hpcStatusUrl
+        const eff2 = effectiveSettings()
+        if (args.launch === true) {
+          const wf = eff2.hpcStatusWorkflow
+          const cliArgs = ['workflows', 'run']
+          if (args.inputs) cliArgs.push('-i', JSON.stringify(JSON.parse(String(args.inputs))))
+          cliArgs.push(wf)
+          const out = await pwCli(cliArgs, 180_000)
+          return {
+            result: `Status Monitor launch submitted via workflow ${wf}.\n${out.trim().slice(0, 1500)}\nWatch it with workflow_runs; once it serves, set its URL as the Status Monitor URL in Settings so this tool can read it.`,
+            summary: 'monitor launch submitted',
+          }
+        }
+        const base = eff2.hpcStatusUrl
         if (!base) {
-          return { result: 'No Status Monitor is configured on this deployment (set the Status Monitor URL in Settings, or HPC_STATUS_URL).', summary: 'not configured' }
+          return { result: `No Status Monitor is configured on this deployment (set the Status Monitor URL in Settings, or HPC_STATUS_URL). One can be deployed for this user with launch=true, which runs the ${eff2.hpcStatusWorkflow} workflow; only do that if the user asked for it.`, summary: 'not configured' }
         }
         const view = String(args.view ?? 'summary')
         const cluster = String(args.cluster ?? '').replace(/[^\w.-]/g, '')
