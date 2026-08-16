@@ -19,26 +19,26 @@ The security statement that follows from this is in ARCHITECTURE.md section 10: 
 
 ## The mechanism for point 4: permission-permutation external dbs
 
-GUFI's external-db design covers exactly this need: per-file extracted content stored in the index tree under the same access control as the source. The pieces:
+GUFI's external-db design stores per-file extracted content in the index tree under the same access control as the source. The pieces:
 
 - **Shards in the tree.** External dbs live inside the GUFI index tree, one set per directory, named by permission permutation: `ext_ur.db` for files the directory owner can read, `ext_gr.db` for the directory group, `ext_or.db` for other-readable files, and `ext_<uid>_<gid>r.db` for files outside those categories. Each shard's own owner, group, and mode encode the access of the files whose records it holds, so the filesystem enforces who can open which shard, and tree traversal permissions cover the rest.
-- **Version-aware keys.** Records are keyed `fsid.inode.mtime`, which makes them unique to filesystem, file, and version. Don't-re-extract falls out of the key (query for files where no ext record exists at the current mtime), and so does invalidation on change.
+- **Version-aware keys.** Records are keyed `fsid.inode.mtime`, unique to filesystem, file, and version. A query for files with no ext record at the current mtime gives the re-extraction work list, and a changed file invalidates its records by the same key.
 - **Three tables per shard.** A plain status table (`ext_file`, per-file extraction state), an fts5 bm25 table (porter tokenizer, chunked with page and position metadata), and a vec0 table (4096-dim embeddings with the producing model's name and dimensions recorded per chunk, so mixed models coexist).
 - **Staging through a spread tree.** Extraction output lands in a permanent staging tree sharded by fsid.inode range, then merges into the per-directory shards. Extraction is a workflow over a GUFI query ("everything matching this pattern with no current ext record"), parallelized by inode range, and the extractor can differ per file type, with the producing model recorded per chunk.
 - **Query time: `gufi_vt`.** A SQLite virtual table runs the walk with a thread pool: per-thread intermediate tables, external records copied in per directory (the thread simply cannot open shards the caller cannot read), bm25 rank joined to vec0 cosine distance for hybrid retrieval, then a global aggregate. The caller composes all of it in SQL.
 
-This settles two questions this note previously carried. vec0 works inside the shards (the reference schema is a vec0 table with high-dimension float32 columns). And the right treatment for our derived caches is to become ext db records rather than files: extracted text is a bm25/status record, and rendered PDF pages either move into the shards as blobs or get the same permission-shard naming on disk.
+This resolves two earlier open questions. vec0 works inside the shards (the reference schema is a vec0 table with high-dimension float32 columns). Derived caches become ext db records instead of files: extracted text is a bm25/status record, and rendered PDF pages either move into the shards as blobs or take the same permission-shard naming on disk.
 
-What it maps onto here: the per-directory `words` and `gvec` tables become permission shards; the enrichment pass becomes a query-driven extraction workflow keyed by `fsid.inode.mtime` instead of an mtime-cached walk; and the search paths move from hand-rolled per-directory fan-out to `gufi_vt` composition. Upstream GUFI directions worth tracking because they land on our problems: ext dbs combined with rollups (large-tree wins), and ANN with neighborhoods merged with treesummaries.
+Mapping to this codebase: the per-directory `words` and `gvec` tables become permission shards; the enrichment pass becomes a query-driven extraction workflow keyed by `fsid.inode.mtime` instead of an mtime-cached walk; and the search paths move from per-directory fan-out in application code to `gufi_vt` composition. Related upstream GUFI work: ext dbs combined with rollups, and ANN with neighborhoods merged with treesummaries.
 
 ## Multisite and the virtual data lake
 
-Two further directions point past a single deployment, and the multi-user design should not paint them out:
+Two further directions extend past a single deployment and constrain the multi-user design:
 
 - **Virtual data lake**: emulate a lakehouse from source data instead of copying into one, with layout metadata (headers, footers, page statistics) held in GUFI and byte ranges read at query time, access control current because it is the filesystem's. The Studio's enrichment is the unstructured half of that picture; the structured half follows the same principle.
-- **Cross-site**: a Studio per site over a site-local GUFI tree, with federation at the query layer rather than by copying corpora, is the shape that follows. Site indexes stay under site access control; a multisite query is a fan-out of `gufi_vt` queries with results merged, the same way a single-site query is a fan-out over directories. Persistence-per-site (the DEWD pattern: corpus and index on durable storage, app relaunchable by workflow) is the building block, and the turnkey scheduler mode (app plus model in one job over a site corpus) is the ephemeral variant.
+- **Cross-site**: a Studio per site over a site-local GUFI tree, federated at the query layer instead of by copying corpora. Site indexes stay under site access control; a multisite query is a fan-out of `gufi_vt` queries with results merged, structurally the same as a single-site query's fan-out over directories. The building blocks exist: per-site persistence (corpus and index on durable storage, app relaunched by workflow) and the compute-node mode (app plus model in one scheduler job over a site corpus).
 
-None of this is scheduled; it is recorded so the multi-user work builds toward it rather than away from it.
+None of this is scheduled. It is recorded here as a constraint on the multi-user design.
 
 ## Identity mapping
 
