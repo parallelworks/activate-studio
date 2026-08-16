@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { rememberHash } from '../lastLocation'
 import {
   ChatProvider, ChatLayout, ChatThread, ChatEmptyState, AttachmentManager,
@@ -184,7 +184,31 @@ export function ChatView() {
         info: () => {},
       }}
       activeConversationId={activeId}
-      config={{ variant: 'modern', suggestedPrompts: cfg.suggestedPrompts, LinkComponent }}
+      config={{
+        variant: 'modern',
+        suggestedPrompts: cfg.suggestedPrompts,
+        LinkComponent,
+        // Same-origin /?embed= image sources render as live viewers (DAGs,
+        // 3D models) instead of broken images; the server emits them in
+        // chat replies. Formerly a dist patch, now the supported hook.
+        markdownComponents: {
+          img: ({ node: _node, ...props }) =>
+            typeof props.src === 'string' && props.src.startsWith('/?embed=') ? (
+              <iframe src={props.src} title={String(props.alt ?? 'embedded viewer')} className="chat-embed-frame" />
+            ) : (
+              <img {...props} />
+            ),
+        },
+        strings: {
+          emptyState: {
+            noProvidersTitle: 'Model credential needed',
+            noProvidersBody: 'Add your API key or platform token under Settings, Model access. Browsing, search, and adding material work without one.',
+          },
+          input: {
+            placeholderNoProviders: 'Add your model credential to start chatting',
+          },
+        },
+      }}
     >
       <div className="chat-wrap">
         <div ref={canvasRef} className="chat-canvas card" style={{ ['--ade-chat-rail' as string]: `${rail}px` }}>

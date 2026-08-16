@@ -152,7 +152,7 @@ export function createStudioAdapter(): ChatAdapter {
     },
     models: { list: listModels },
     streamCompletion: streamFromServer,
-    // The onOpen hook is our patch-added extension to the package's
+    // onOpen is part of the package's adapter surface as of 0.1.0; it was
     // AttachmentsAdapter type, hence the cast. Attachments live in the KB
     // under uploads/chat/; the id is the base64url rel path, so a tile
     // click opens the file in the Library via the #open deep link.
