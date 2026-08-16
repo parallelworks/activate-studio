@@ -243,6 +243,9 @@ jobs:
           #!/bin/bash
           set -u
           cd "__RUNDIR__"
+          # The run directory persists across launches; stale logs from the
+          # previous job must not satisfy this launch's watchers.
+          : > endpoint.log; : > model-endpoint.log; : > vllm.out; : > studio.out
           RUNTIME="$(command -v apptainer || command -v singularity)"
           cleanup() {
             "$RUNTIME" instance stop studio-compute-vllm 2>/dev/null
