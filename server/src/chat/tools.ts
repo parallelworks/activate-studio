@@ -27,6 +27,7 @@ export const TOOL_CALLS: Record<string, string> = {
   list_kb_dir: 'directory listing under the knowledge base root',
   query_corpus: 'canned gufi_query aggregations over the per-directory index databases',
   get_labels: 'reads the user.studio.tags xattr maps cached from the filesystem',
+  write_kb_file: 'fs write into the knowledge base (path-checked, excluded dirs refused) followed by an incremental reindex of the touched subtree',
   suggest_labels: 'reads the first ~1200 characters of each unlabelled file and asks the deployment model to propose labels from the existing vocabulary (proposals only, nothing applied)',
   apply_labels: 'setfattr user.studio.tags on the paths plus an in-place upsert into the index databases',
   list_workflows: 'pw workflows ls',
@@ -239,6 +240,23 @@ export const TOOL_SPECS: ToolSpec[] = [
           limit: { type: 'number', description: 'How many files to consider (default 40, max 200)' },
           include_labelled: { type: 'boolean', description: 'Also consider files that already have labels (default false)' },
         },
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'write_kb_file',
+      description:
+        'Write a text file into the knowledge base and index it, for material generated in the conversation: a case file, a script, a geometry (ASCII STL), a note. Use ONLY when the user asked for something to be created or saved. Excluded and dot-directories are refused, and an existing file is only replaced with overwrite=true. After writing a viewable file (STL, markdown, case files), show_in_viewer displays it.',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: 'KB-relative path to write, e.g. models/generated/dam.stl' },
+          content: { type: 'string', description: 'The full file content (text; up to 2 MB)' },
+          overwrite: { type: 'boolean', description: 'Replace an existing file (default false)' },
+        },
+        required: ['path', 'content'],
       },
     },
   },
@@ -698,6 +716,33 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
           summary: `${out.proposals.length} label proposals`,
         }
       }
+      case 'write_kb_file': {
+        const { resolveKb, KbError } = await import('../kb.js')
+        const { EXCLUDE_DIRS } = await import('../config.js')
+        const fsp = await import('node:fs/promises')
+        const pathMod = await import('node:path')
+        const rel = String(args.path ?? '').replace(/^\/+|\/+$/g, '')
+        const content = String(args.content ?? '')
+        if (!rel || !content) return { result: 'path and content are required', summary: 'error' }
+        if (content.length > 2 * 1024 * 1024) return { result: 'Content over 2 MB; write it in parts or as multiple files.', summary: 'too large' }
+        for (const part of rel.split('/')) {
+          if (EXCLUDE_DIRS.has(part) || part.startsWith('.')) return { result: `Not writable: ${part} is excluded.`, summary: 'refused' }
+        }
+        let abs: string
+        try { abs = resolveKb(rel) } catch (e) { return { result: String((e as Error).message ?? e), summary: 'refused' } }
+        const exists = await fsp.stat(abs).then(() => true, () => false)
+        if (exists && args.overwrite !== true) {
+          return { result: `${rel} already exists. Pass overwrite=true to replace it, or choose another name.`, summary: 'exists' }
+        }
+        await fsp.mkdir(pathMod.dirname(abs), { recursive: true })
+        await fsp.writeFile(abs, content)
+        const { reindexForFile } = await import('../indexing.js')
+        const { ms } = await reindexForFile(rel).catch(() => ({ ms: 0 }))
+        return {
+          result: `Wrote ${rel} (${content.length} bytes)${exists ? ', replacing the previous version' : ''} and re-indexed in ${ms} ms. show_in_viewer can display it.`,
+          summary: `wrote ${rel}`,
+        }
+      }
       case 'apply_labels': {
         const { applyTagsCore } = await import('../tags.js')
         const paths = String(args.paths ?? '').split(',').map((x: string) => x.trim()).filter(Boolean)
@@ -815,8 +860,13 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
       }
       case 'cluster_command': {
         const cluster = String(args.cluster ?? '').replace(/[^\w.\/:@-]/g, '')
-        const command = String(args.command ?? '').slice(0, 500)
+        const command = String(args.command ?? '')
         if (!cluster || !command) return { result: 'cluster and command are required', summary: 'error' }
+        // Refuse rather than truncate: a command cut mid-token is a
+        // different command, and the failure it produces points nowhere.
+        if (command.length > 8000) {
+          return { result: 'Command too long (over 8000 characters). For writing files into the knowledge base, use write_kb_file instead of shell redirection.', summary: 'command too long' }
+        }
         const out = await pwCli(['ssh', cluster, command], 90_000)
         return {
           result: (out.trim() || '(no output)').slice(0, TOOL_OUTPUT_CAP),
