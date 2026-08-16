@@ -1,0 +1,391 @@
+permissions:
+  - '*'
+
+# ACTIVATE Studio on a compute node, as one scheduler job.
+#
+# The login-node workflow (deploy/workflow.yaml) serves from the head node.
+# This one submits a single batch job that runs the whole stack on a compute
+# node: optionally a vLLM model server on the node's GPUs, the Studio
+# container beside it with its gateway pointed at that local model, and the
+# platform session registrations made from the node itself. The pattern is
+# the same as running Jupyter on compute: the app comes up when the job
+# runs, points at a persistent corpus on the site filesystem, and ends with
+# the walltime, while the session names and the corpus and index survive
+# for the next launch.
+#
+# Container mode only: compute nodes should not build software, so the
+# Studio and vLLM images are staged from a bucket by the login node.
+
+on:
+  execute:
+    inputs:
+      resource:
+        label: Resource
+        type: compute-clusters
+        include-workspace: false
+        tooltip: Cluster whose scheduler runs the job.
+      app:
+        type: group
+        label: Application
+        items:
+          app_name:
+            label: App Name
+            type: string
+            default: ACTIVATE Studio
+          session_name:
+            label: Session Name
+            type: string
+            default: studio-compute
+            tooltip: Platform session for the web interface. Kept across relaunches, so the URL is stable.
+          suggested_prompts:
+            label: Chat Starter Prompts
+            type: string
+            default: ''
+            optional: true
+            tooltip: Semicolon-separated example questions shown on the empty chat page.
+          icon_path:
+            label: Brand Icon Path
+            type: string
+            default: ''
+            optional: true
+            tooltip: Absolute path on the resource to a light-mode icon image; must sit under the knowledge base or another bound directory.
+          icon_path_dark:
+            label: Brand Icon Path (dark mode)
+            type: string
+            default: ''
+            optional: true
+      kb:
+        type: group
+        label: Knowledge Base
+        items:
+          kb_root:
+            label: Knowledge Base Directory
+            type: string
+            default: ${WORKDIR}/studio-knowledge-base
+            tooltip: The corpus, on storage that survives the job (site scratch or home). Created and seeded if missing.
+          index_base:
+            label: Index Directory
+            type: string
+            default: ${WORKDIR}/studio-index
+            tooltip: Index, settings, and credential store. Also persistent, so relaunches reuse the index.
+          kb_label:
+            label: Knowledge Base Label
+            type: string
+            default: Knowledge Base
+          starter_dirs:
+            label: Starter Directories
+            type: string
+            default: ''
+            optional: true
+          run_index:
+            label: Index on Start
+            type: boolean
+            default: true
+            tooltip: Build or refresh the index when the job starts. With a prebuilt index in the index directory this is quick.
+      scheduler:
+        type: group
+        label: Scheduler
+        items:
+          partition:
+            label: Partition
+            type: string
+            default: ''
+            tooltip: Scheduler partition with the GPUs (e.g. AIML).
+          account:
+            label: Account
+            type: string
+            default: ''
+          qos:
+            label: QOS
+            type: string
+            default: ''
+            optional: true
+          walltime:
+            label: Walltime
+            type: string
+            default: '08:00:00'
+            tooltip: The stack ends with the job. Relaunching reuses the corpus, index, and session names.
+          scheduler_directives:
+            label: Extra Scheduler Directives
+            type: string
+            default: ''
+            optional: true
+            tooltip: Semicolon-separated sbatch directives without the #SBATCH prefix (e.g. --gres=gpu:h100_sxm5:4 on systems that require an explicit GRES).
+      containers:
+        type: group
+        label: Containers
+        items:
+          studio_bucket:
+            label: Studio Image (bucket)
+            type: string
+            default: pw://mshaxted/codeassist/studio.sif
+          studio_local:
+            label: Studio Image (on the resource)
+            type: string
+            default: ${WORKDIR}/containers/studio.sif
+            tooltip: An existing file is reused; delete it to force a fresh pull.
+      model:
+        type: group
+        label: Model Serving
+        items:
+          serve:
+            label: Serve a Model in the Job
+            type: boolean
+            default: true
+            tooltip: Start vLLM on the node's GPUs and point the Studio at it. Off, the Studio uses the gateway URL below instead.
+          model_dir:
+            label: Model Directory
+            type: string
+            default: ${WORKDIR}/models/gpt-oss-20b
+            tooltip: HuggingFace-format model directory on the resource. Downloaded on the login node when missing and a model id is set.
+          hf_model_id:
+            label: HuggingFace Model ID
+            type: string
+            default: openai/gpt-oss-20b
+            optional: true
+            tooltip: Downloaded into the model directory when it does not exist yet.
+          hf_token:
+            label: HuggingFace Token
+            type: string
+            default: ''
+            optional: true
+          served_name:
+            label: Served Model Name
+            type: string
+            default: gpt-oss-20b
+          vllm_bucket:
+            label: vLLM Image (bucket)
+            type: string
+            default: pw://mshaxted/codeassist/vllm-0.27.sif
+          vllm_local:
+            label: vLLM Image (on the resource)
+            type: string
+            default: ${WORKDIR}/containers/vllm.sif
+          gpu_ids:
+            label: GPU IDs
+            type: string
+            default: '0'
+            tooltip: CUDA_VISIBLE_DEVICES for the model server. The Studio itself needs no GPU.
+          vllm_args:
+            label: vLLM Arguments
+            type: string
+            default: --tensor-parallel-size 1 --gpu-memory-utilization 0.9 --max-model-len 65536 --trust-remote-code --enable-auto-tool-choice --tool-call-parser openai
+            tooltip: The openai tool-call parser matches gpt-oss; a Qwen model wants --tool-call-parser qwen3_coder --reasoning-parser qwen3.
+          register_openai:
+            label: Register the Model in the Catalog
+            type: boolean
+            default: true
+            tooltip: Also expose the model itself as a platform model (pw endpoints --openai), so other tools can use it while the job runs.
+          model_endpoint_name:
+            label: Model Endpoint Name
+            type: string
+            default: studio-model
+          gateway_url:
+            label: Gateway URL (when not serving)
+            type: string
+            default: ''
+            optional: true
+            tooltip: OpenAI-compatible endpoint the Studio uses when no model is served in the job.
+      rundir:
+        label: Run Directory
+        type: string
+        default: ${WORKDIR}/studio-compute
+        tooltip: Job scripts, logs, and pid files on the resource.
+
+jobs:
+  stage:
+    ssh:
+      remoteHost: ${{ inputs.resource.ip }}
+    steps:
+      - name: Prepare directories and images
+        run: |
+          RUNDIR="$(eval echo '${{ inputs.rundir }}')"
+          KB="$(eval echo '${{ inputs.kb.kb_root }}')"
+          IDX="$(eval echo '${{ inputs.kb.index_base }}')"
+          SSIF="$(eval echo '${{ inputs.containers.studio_local }}')"
+          VSIF="$(eval echo '${{ inputs.model.vllm_local }}')"
+          mkdir -p "$RUNDIR" "$KB" "$IDX" "$(dirname "$SSIF")" "$(dirname "$VSIF")"
+          PW_BIN="$(command -v pw || echo ~/pw/pw)"
+          if [ ! -f "$SSIF" ]; then "$PW_BIN" buckets cp ${{ inputs.containers.studio_bucket }} "$SSIF"; fi
+          if [ "${{ inputs.model.serve }}" = "true" ] && [ ! -f "$VSIF" ]; then "$PW_BIN" buckets cp ${{ inputs.model.vllm_bucket }} "$VSIF"; fi
+          ls -la "$SSIF" "$VSIF" 2>/dev/null || true
+
+      - name: Fetch the model if missing
+        run: |
+          if [ "${{ inputs.model.serve }}" != "true" ]; then echo "Not serving a model."; exit 0; fi
+          MODEL_DIR="$(eval echo '${{ inputs.model.model_dir }}')"
+          if [ -f "$MODEL_DIR/config.json" ]; then echo "Model present at $MODEL_DIR; reusing."; exit 0; fi
+          if [ -z "${{ inputs.model.hf_model_id }}" ]; then echo "No model directory and no model id to download."; exit 1; fi
+          # pip on the login node rather than the container: some login
+          # nodes exhaust user namespaces and refuse containers entirely.
+          python3 -m pip install --user -q "huggingface_hub[cli]"
+          HF_TOKEN='${{ inputs.model.hf_token }}' ~/.local/bin/hf download '${{ inputs.model.hf_model_id }}' --local-dir "$MODEL_DIR"
+          ls "$MODEL_DIR" | head -5
+
+  submit:
+    needs:
+      - stage
+    ssh:
+      remoteHost: ${{ inputs.resource.ip }}
+    steps:
+      - name: Write the job script
+        run: |
+          RUNDIR="$(eval echo '${{ inputs.rundir }}')"
+          cd "$RUNDIR"
+          KB="$(eval echo '${{ inputs.kb.kb_root }}')"
+          IDX="$(eval echo '${{ inputs.kb.index_base }}')"
+          SSIF="$(eval echo '${{ inputs.containers.studio_local }}')"
+          VSIF="$(eval echo '${{ inputs.model.vllm_local }}')"
+          MODEL_DIR="$(eval echo '${{ inputs.model.model_dir }}')"
+          PW_BIN="$(command -v pw || echo ~/pw/pw)"
+
+          cat > job.sh << 'JOB'
+          #!/bin/bash
+          set -u
+          cd "__RUNDIR__"
+          RUNTIME="$(command -v apptainer || command -v singularity)"
+          cleanup() {
+            "$RUNTIME" instance stop studio-compute-vllm 2>/dev/null
+            pkill -f "studio-compute-endpoint-marker" 2>/dev/null
+          }
+          trap cleanup EXIT
+
+          pickport() { python3 -c 'import socket; s=socket.socket(); s.bind(("",0)); print(s.getsockname()[1]); s.close()'; }
+
+          GATEWAY_URL="__GATEWAY_URL__"
+          GATEWAY_KEY=""
+          if [ "__SERVE__" = "true" ]; then
+            VPORT=$(pickport)
+            "$RUNTIME" instance start --nv --cleanenv --writable-tmpfs \
+              --bind "__MODEL_DIR__:/model" --bind "$PWD:/rundir" \
+              "__VSIF__" studio-compute-vllm
+            "$RUNTIME" exec instance://studio-compute-vllm bash -c "
+              export CUDA_VISIBLE_DEVICES='__GPU_IDS__'
+              nohup python3 -m vllm.entrypoints.openai.api_server \
+                --model /model --served-model-name '__SERVED_NAME__' \
+                --host 0.0.0.0 --port $VPORT __VLLM_ARGS__ \
+                > /rundir/vllm.out 2>&1 &
+            "
+            for i in $(seq 1 240); do
+              curl -s -m 5 "localhost:$VPORT/v1/models" | grep -q '"id"' && { echo "vLLM up after ~$((i*5))s"; break; }
+              pgrep -f "openai.api_server.*--port $VPORT" > /dev/null || { echo "vLLM exited:"; tail -30 vllm.out; exit 1; }
+              sleep 5
+            done
+            curl -s -m 5 "localhost:$VPORT/v1/models" | grep -q '"id"' || { echo "vLLM never came up:"; tail -30 vllm.out; exit 1; }
+            GATEWAY_URL="http://localhost:$VPORT/v1"
+            GATEWAY_KEY="local"
+            if [ "__REGISTER_OPENAI__" = "true" ]; then
+              setsid nohup "__PW_BIN__" endpoints http --openai --keep -o text \
+                --name "__MODEL_EP__" "$VPORT" > model-endpoint.log 2>&1 < /dev/null &
+            fi
+          fi
+
+          APORT=$(pickport)
+          setsid nohup "$RUNTIME" run --cleanenv \
+            --env PORT="$APORT" --env KB_ROOT="__KB__" --env DATA_DIR="__IDX__" \
+            --env INDEX_BASE="__IDX__" --env KB_LABEL="__KB_LABEL__" \
+            --env APP_NAME="__APP_NAME__" --env INDEX_ON_START="__RUN_INDEX__" \
+            --env KB_STARTER_DIRS="__STARTER_DIRS__" \
+            --env PW_GATEWAY_URL="$GATEWAY_URL" \
+            ${GATEWAY_KEY:+--env PW_API_KEY="$GATEWAY_KEY"} \
+            ${APP_ICON_SET:+--env APP_ICON="__ICON__" --env APP_ICON_DARK="__ICON_DARK__"} \
+            --env SUGGESTED_PROMPTS='__PROMPTS_JSON__' \
+            --bind "__KB__:__KB__" --bind "__IDX__:__IDX__" \
+            "__SSIF__" > studio.out 2>&1 < /dev/null &
+
+          for i in $(seq 1 120); do
+            curl -s -m 5 "localhost:$APORT/healthz" > /dev/null 2>&1 && { echo "Studio up after ~$((i*5))s on port $APORT"; break; }
+            sleep 5
+          done
+          curl -s -m 5 "localhost:$APORT/healthz" > /dev/null 2>&1 || { echo "Studio never came up:"; tail -30 studio.out; exit 1; }
+
+          setsid nohup "__PW_BIN__" endpoints http --keep -o text \
+            --name "__SESSION__" --subdomain "__SESSION__" "$APORT" > endpoint.log 2>&1 < /dev/null &
+          sleep 15
+          grep -oE "https://[^ ]+" endpoint.log | head -1
+
+          # Hold the allocation while the studio answers; the job ends when
+          # the app dies or the walltime arrives.
+          while curl -s -m 10 "localhost:$APORT/healthz" > /dev/null 2>&1; do sleep 60; done
+          echo "Studio stopped responding; ending the job."
+          JOB
+
+          # Interpolate without fighting the heredoc's quoting.
+          ICON="$(eval echo '${{ inputs.app.icon_path }}')"
+          ICON_DARK="$(eval echo '${{ inputs.app.icon_path_dark }}')"
+          PROMPTS='${{ inputs.app.suggested_prompts }}'
+          PROMPTS_JSON="[]"
+          if [ -n "$PROMPTS" ]; then
+            PROMPTS_JSON=$(python3 - << 'PY'
+          import json, os
+          raw = os.environ.get('P', '')
+          print(json.dumps([q.strip() for q in raw.split(';') if q.strip()]))
+          PY
+          )
+          fi
+          export P="$PROMPTS"
+          PROMPTS_JSON=$(P="$PROMPTS" python3 -c "import json,os; print(json.dumps([q.strip() for q in os.environ['P'].split(';') if q.strip()]))")
+          python3 - "$RUNDIR/job.sh" << PYEOF
+          import sys
+          p = sys.argv[1]
+          s = open(p).read()
+          import textwrap
+          s = textwrap.dedent(s)
+          reps = {
+            '__RUNDIR__': "$RUNDIR", '__KB__': "$KB", '__IDX__': "$IDX",
+            '__SSIF__': "$SSIF", '__VSIF__': "$VSIF", '__MODEL_DIR__': "$MODEL_DIR",
+            '__PW_BIN__': "$PW_BIN",
+            '__SERVE__': "${{ inputs.model.serve }}",
+            '__GPU_IDS__': "${{ inputs.model.gpu_ids }}",
+            '__SERVED_NAME__': "${{ inputs.model.served_name }}",
+            '__VLLM_ARGS__': "${{ inputs.model.vllm_args }}",
+            '__REGISTER_OPENAI__': "${{ inputs.model.register_openai }}",
+            '__MODEL_EP__': "${{ inputs.model.model_endpoint_name }}",
+            '__GATEWAY_URL__': "${{ inputs.model.gateway_url }}",
+            '__APP_NAME__': "${{ inputs.app.app_name }}",
+            '__SESSION__': "${{ inputs.app.session_name }}",
+            '__KB_LABEL__': "${{ inputs.kb.kb_label }}",
+            '__STARTER_DIRS__': "${{ inputs.kb.starter_dirs }}",
+            '__RUN_INDEX__': "true" if "${{ inputs.kb.run_index }}" == "true" else "0",
+            '__ICON__': "$ICON", '__ICON_DARK__': "$ICON_DARK",
+            '__PROMPTS_JSON__': '''$PROMPTS_JSON''',
+          }
+          for k, v in reps.items():
+              s = s.replace(k, v)
+          open(p, 'w').write(s)
+          print('job script written')
+          PYEOF
+          chmod +x job.sh
+
+      - name: Submit and watch until the session is up
+        run: |
+          RUNDIR="$(eval echo '${{ inputs.rundir }}')"
+          cd "$RUNDIR"
+          JOB_NAME="studio-${{ inputs.app.session_name }}"
+          # One stack per session name: end any previous job before submitting.
+          scancel --name "$JOB_NAME" 2>/dev/null || true
+          ARGS="--job-name=$JOB_NAME --partition=${{ inputs.scheduler.partition }} --account=${{ inputs.scheduler.account }} --time=${{ inputs.scheduler.walltime }} --nodes=1 --output=$RUNDIR/job.out"
+          [ -n "${{ inputs.scheduler.qos }}" ] && ARGS="$ARGS --qos=${{ inputs.scheduler.qos }}"
+          DIRECTIVES='${{ inputs.scheduler.scheduler_directives }}'
+          if [ -n "$DIRECTIVES" ]; then
+            IFS=';'
+            for d in $DIRECTIVES; do d=$(echo "$d" | xargs); [ -n "$d" ] && ARGS="$ARGS $d"; done
+            unset IFS
+          fi
+          JOBID=$(sbatch $ARGS job.sh | grep -oE '[0-9]+$')
+          echo "Submitted job $JOBID"
+          for i in $(seq 1 240); do
+            ST=$(squeue -j "$JOBID" -h -o %T 2>/dev/null || true)
+            [ -z "$ST" ] && { echo "Job left the queue; output:"; tail -40 job.out 2>/dev/null; exit 1; }
+            [ "$ST" = "RUNNING" ] && break
+            sleep 15
+          done
+          echo "Job running; waiting for the session URL..."
+          for i in $(seq 1 240); do
+            URL=$(grep -oE "https://[^ ]+" endpoint.log 2>/dev/null | head -1 || true)
+            [ -n "$URL" ] && { echo "Studio session: $URL"; break; }
+            ST=$(squeue -j "$JOBID" -h -o %T 2>/dev/null || true)
+            [ -z "$ST" ] && { echo "Job ended before the session came up; output:"; tail -40 job.out 2>/dev/null; exit 1; }
+            sleep 10
+          done
+          tail -5 job.out 2>/dev/null || true
