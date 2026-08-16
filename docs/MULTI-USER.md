@@ -4,7 +4,7 @@ Status: design, not yet scheduled. This note collects the current state, the tar
 
 ## Where it stands
 
-The service runs as one POSIX user. Every file the app writes (uploads, chat exports, seeded directories) is owned by that user, every query runs as that user, and the extracted text and vectors live inside the per-directory `db.db` files with the same ownership. `INDEX_BASE` is deployment-level state: settings, conversations, saved queries, the credential vault.
+The service currently runs as one POSIX user, with the changes planned in this note not yet started. Every file the app writes (uploads, chat exports, seeded directories) is owned by that user, every query runs as that user, and the extracted text and vectors live inside the per-directory `db.db` files with the same ownership. `INDEX_BASE` is deployment-level state: settings, conversations, saved queries, the credential vault.
 
 Platform identity (the `X-PW-User-Token` JWT, and the ACTIVATE OIDC flow in progress that will carry the CAC-authenticated user) already separates people above the filesystem: conversations have owners, transcripts record who wrote them, model credentials are per user in the vault, and a shared key has a named provider. It does not separate anything at the filesystem: a group sharing a deployment this way has all its files roll up to the single service user.
 
