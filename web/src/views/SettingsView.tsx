@@ -43,7 +43,7 @@ interface ExtDoc { name: string; description: string; file: string; active?: boo
 interface Extensions { dir: string; tools: ExtDoc[]; skills: ExtDoc[]; agents: ExtDoc[] }
 
 const TOOL_GROUPS: [string, string[]][] = [
-  ['Knowledge base', ['search_kb', 'read_kb_file', 'list_kb_dir', 'query_corpus', 'get_labels', 'suggest_labels', 'apply_labels']],
+  ['Knowledge base', ['search_kb', 'read_kb_file', 'write_kb_file', 'list_kb_dir', 'query_corpus', 'get_labels', 'suggest_labels', 'apply_labels']],
   ['Workflows', ['list_workflows', 'get_workflow', 'compose_workflow', 'serve_model', 'run_workflow', 'workflow_runs', 'workflow_run_detail', 'pw_help']],
   ['Clusters', ['list_clusters', 'cluster_command']],
   ['Display and skills', ['show_in_viewer', 'use_skill', 'studio_docs']],
