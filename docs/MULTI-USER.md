@@ -1,6 +1,6 @@
 # Multi-user design note
 
-Status: design, not yet scheduled. This note collects the current state, the target, and the open questions, so the work can start from a shared understanding instead of a rediscovery pass. Correspondence with Gary Grider (LANL, GUFI) that shaped it is in the knowledge base under `emails/`.
+Status: design, not yet scheduled. This note collects the current state, the target, and the open questions, so the work can start from a shared understanding instead of a rediscovery pass. Correspondence with Gary Grider (LANL, GUFI) that shaped it is in the knowledge base under `emails/`, and his extraction and external-db design deck is at `partnerships/gufi/gufi-extract-workflows.pptx`.
 
 ## Where it stands
 
@@ -19,14 +19,26 @@ The security statement that follows from this is in ARCHITECTURE.md section 10: 
 
 ## The mechanism for point 4: permission-permutation external dbs
 
-GUFI has a system-level external db mechanism built for exactly this. Content that cannot be recomputed at walk time goes into external dbs beside the index, sharded by the permission permutations present in each directory: each shard's file mode encodes the access of the files whose records it holds, so the filesystem itself enforces who can open which shard. At query time GUFI virtually appends the external db records into a table and attempts to open each shard as the caller; shards the caller cannot open contribute nothing.
+Gary Grider supplied the design (deck in the knowledge base at `partnerships/gufi/gufi-extract-workflows.pptx`, the "Knowledge Tank" per-file extraction design, January 2026). LANL runs it in test with deployment imminent. The pieces:
 
-Applied here: the fts5 `words` rows and the vec0 chunks for a file would move into the shard matching that file's permissions, and a caller's full-text or semantic query would only ever see content from files they could read directly. The label overlay could take the same treatment, though xattr labels already inherit access control from the file.
+- **Shards in the tree.** External dbs live inside the GUFI index tree, one set per directory, named by permission permutation: `ext_ur.db` for files the directory owner can read, `ext_gr.db` for the directory group, `ext_or.db` for other-readable files, and `ext_<uid>_<gid>r.db` for files outside those categories. Each shard's own owner, group, and mode encode the access of the files whose records it holds, so the filesystem enforces who can open which shard, and tree traversal permissions cover the rest.
+- **Version-aware keys.** Records are keyed `fsid.inode.mtime`, which makes them unique to filesystem, file, and version. Don't-re-extract falls out of the key (query for files where no ext record exists at the current mtime), and so does invalidation on change.
+- **Three tables per shard.** A plain status table (`ext_file`, per-file extraction state), an fts5 bm25 table (porter tokenizer, chunked with page and position metadata), and a vec0 table (4096-dim embeddings with the producing model's name and dimensions recorded per chunk, so mixed models coexist).
+- **Staging through a spread tree.** Extraction output lands in a permanent staging tree sharded by fsid.inode range, then merges into the per-directory shards. Extraction is a workflow over a GUFI query ("everything matching this pattern with no current ext record"), parallelized by inode range. LANL extracts with VaultIQ, using different models per file type, with custom models for their own imagery planned.
+- **Query time: `gufi_vt`.** A SQLite virtual table runs the walk with a thread pool: per-thread intermediate tables, external records copied in per directory (the thread simply cannot open shards the caller cannot read), bm25 rank joined to vec0 cosine distance for hybrid retrieval, then a global aggregate. The caller composes all of it in SQL.
 
-Gary has offered to walk through the mechanism in detail. Standing questions put to him:
+This answers both standing questions. vec0 works inside the shards (their production schema is a vec0 table with 4096-dim float32 columns). And the right treatment for our derived caches is to become ext db records rather than files: extracted text is a bm25/status record, and rendered PDF pages either move into the shards as blobs or get the same permission-shard naming on disk.
 
-- Does a vec0 virtual table work inside an external db shard the way it does in the tree dbs? The embedding path depends on `gufi_sqlite3` loading sqlite-vec and sqlite-lembed against whatever db it opens.
-- What is the right treatment for derived caches that live outside the dbs (rendered PDF pages under `pdf-pages/`, extracted text under `extract/`)? They leak content the same way the shared dbs do; either they move into the sharded dbs or they need an equivalent permission scheme on disk.
+What it maps onto here: the per-directory `words` and `gvec` tables become permission shards; the enrichment pass becomes a query-driven extraction workflow keyed by `fsid.inode.mtime` instead of an mtime-cached walk; and the search paths move from hand-rolled per-directory fan-out to `gufi_vt` composition. Gary's roadmap items worth tracking because they land on our problems: ext dbs combined with rollups (large-tree wins), and ANN with neighborhoods merged with treesummaries.
+
+## Multisite and the virtual data lake
+
+Two of Gary's threads point past a single deployment, and the multi-user design should not paint them out:
+
+- **Virtual parquet** (`emails/gary-lakehouse-gufi-thoughts.pptx`): emulate a lakehouse from source data instead of copying into one, with layout metadata (headers, footers, page statistics) held in GUFI and byte ranges read at query time, access control current because it is the filesystem's. The Studio's enrichment is the unstructured half of that picture; virtual parquet is the structured half, and AFRL's data-lake direction aligns with it.
+- **Cross-site**: a Studio per site over a site-local GUFI tree, with federation at the query layer rather than by copying corpora, is the shape that follows. Site indexes stay under site access control; a multisite query is a fan-out of `gufi_vt` queries with results merged, the same way a single-site query is a fan-out over directories. Persistence-per-site (the DEWD pattern: corpus and index on durable storage, app relaunchable by workflow) is the building block, and the turnkey scheduler mode (app plus model in one job over a site corpus) is the ephemeral variant.
+
+None of this is scheduled; it is recorded so the multi-user work builds toward it rather than away from it.
 
 ## Identity mapping
 
