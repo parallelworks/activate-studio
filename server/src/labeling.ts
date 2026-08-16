@@ -8,10 +8,9 @@ import { effectiveTags, tagMaps } from './tags.js'
 /**
  * Proposed labels for material that has none.
  *
- * Labelling a corpus by hand is the step people skip, so the labels stay
- * thin and the filters stay useless. This reads what each file actually
- * says, reuses the vocabulary already in the corpus wherever it fits, and
- * proposes a small number of new labels where it does not. Nothing is
+ * Reads what each file says, reuses the vocabulary already in the corpus
+ * where it fits, and proposes new labels where it does not, so a corpus
+ * can be labelled without doing every file by hand. Nothing is
  * applied here: the proposals go back for review, and applying them runs
  * through the same path as a label set by hand.
  */
