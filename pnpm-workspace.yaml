@@ -3,5 +3,3 @@ packages:
   - web
 allowBuilds:
   esbuild: true
-patchedDependencies:
-  '@parallelworks/ai-chat': patches/@parallelworks__ai-chat.patch
