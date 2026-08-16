@@ -41,6 +41,10 @@ function prettyToolArgs(argsJson: string): string {
   }
 }
 
+// Without a cap, a reasoning model can generate to its context limit
+// before answering, which on a modest GPU reads as a hang.
+const MAX_COMPLETION_TOKENS = Number(process.env.CHAT_MAX_TOKENS ?? 8192)
+
 export async function chatRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/chat/models', async (req, reply) => {
     if (!gatewayConfigured() && !resolveUserKey(req.user?.id)) {
@@ -338,7 +342,7 @@ ${ctx}` : ctx
       const toolCache = new Map<string, string>()
       for (let iter = 0; iter < MAX_TOOL_ITERATIONS; iter++) {
         const turn = await streamTurn(
-          { model: body.model, messages, tools: activeToolSpecs(), tool_choice: 'auto' },
+          { model: body.model, messages, tools: activeToolSpecs(), tool_choice: 'auto', max_tokens: MAX_COMPLETION_TOKENS },
           allocation,
           callbacks,
           abort.signal,
@@ -409,7 +413,7 @@ ${ctx}` : ctx
         content: 'Tool budget for this reply is exhausted. Answer the user now using only the information gathered above. State plainly anything you could not verify.',
       })
       const finalTurn = await streamTurn(
-        { model: body.model, messages },
+        { model: body.model, messages, max_tokens: MAX_COMPLETION_TOKENS },
         allocation,
         callbacks,
         abort.signal,
