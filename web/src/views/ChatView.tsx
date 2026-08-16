@@ -27,6 +27,9 @@ export function ChatView() {
   }, [])
   const [showAttachments, setShowAttachments] = useState(false)
   const [rail, setRail] = useState(() => Number(localStorage.getItem('ade-chat-rail')) || 260)
+  // Width of the Activity (thinking) drawer on the right; the package
+  // renders it fixed at 400px, and our CSS reads this variable over it.
+  const [thinkRail, setThinkRail] = useState(() => Number(localStorage.getItem('ade-think-rail')) || 400)
   const adapter = useMemo(() => createStudioAdapter(), [])
   const [credNote, setCredNote] = useState<string | null>(null)
   const [vocab, setVocab] = useState<{ tag: string; count: number }[]>([])
@@ -133,6 +136,28 @@ export function ChatView() {
 
   // Drag writes straight to the DOM; React state commits once on release,
   // so the provider subtree does not re-render per mousemove.
+  const onThinkDrag = (e: React.MouseEvent) => {
+    e.preventDefault()
+    const startX = e.clientX
+    const startW = thinkRail
+    let w = startW
+    const onMove = (ev: MouseEvent) => {
+      // The drawer hangs off the right edge, so dragging left widens it.
+      w = Math.min(700, Math.max(280, startW + (startX - ev.clientX)))
+      canvasRef.current?.style.setProperty('--ade-think-rail', `${w}px`)
+    }
+    const onUp = () => {
+      document.body.classList.remove('resizing')
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+      setThinkRail(w)
+      localStorage.setItem('ade-think-rail', String(w))
+    }
+    document.body.classList.add('resizing')
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }
+
   const onRailDrag = (e: React.MouseEvent) => {
     e.preventDefault()
     const startX = e.clientX
@@ -211,7 +236,7 @@ export function ChatView() {
       }}
     >
       <div className="chat-wrap">
-        <div ref={canvasRef} className="chat-canvas card" style={{ ['--ade-chat-rail' as string]: `${rail}px` }}>
+        <div ref={canvasRef} className="chat-canvas card" style={{ ['--ade-chat-rail' as string]: `${rail}px`, ['--ade-think-rail' as string]: `${thinkRail}px` }}>
           {credNote && (
             <div className="cred-banner">
               <span className="cred-banner-text">{credNote}</span>
@@ -223,6 +248,7 @@ export function ChatView() {
             {showAttachments ? <AttachmentManager /> : activeId ? <ChatThread conversationId={activeId} /> : <ChatEmptyState />}
           </ChatLayout>
           <div ref={handleRef} className="chat-rail-handle" style={{ left: rail - 3 }} onMouseDown={onRailDrag} title="Drag to resize conversations" />
+          <div className="chat-think-handle" onMouseDown={onThinkDrag} title="Drag to resize the activity panel" />
           {multiUser && !showAttachments && (
             <button
               className={`chat-filter-btn ${chatFilter === 'mine' ? 'active' : ''}`}
