@@ -40,6 +40,7 @@ export interface StudioSettings {
   bannerColor?: string
   bannerWhenEmbedded?: boolean
   allowKeySharing?: boolean
+  serveWorkflows?: string
 }
 
 let cache: StudioSettings | null = null
@@ -97,6 +98,12 @@ export function effectiveSettings(): Required<StudioSettings> {
     // deployment credential. On by default: the deployments that need it
     // are the ones with no credential of their own.
     allowKeySharing: s.allowKeySharing ?? process.env.ALLOW_KEY_SHARING !== '0',
+    // Model-serving workflows the serve_model chat tool can launch, as JSON:
+    // {"<engine>": {"workflow": "<name>", "inputs": {...preset...}}}
+    serveWorkflows: s.serveWorkflows ?? process.env.SERVE_WORKFLOWS ?? JSON.stringify({
+      vllm: { workflow: 'vllm-endpoint', inputs: {} },
+      ollama: { workflow: 'marketplace.ollama_openwebui.latest', inputs: {} },
+    }),
   }
 }
 
@@ -175,6 +182,11 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
     }
     if (body.bannerWhenEmbedded !== undefined) next.bannerWhenEmbedded = Boolean(body.bannerWhenEmbedded)
     if (body.allowKeySharing !== undefined) next.allowKeySharing = Boolean(body.allowKeySharing)
+    if (body.serveWorkflows !== undefined) {
+      const raw = String(body.serveWorkflows).slice(0, 4000)
+      try { JSON.parse(raw) } catch { throw new KbError(400, 'serveWorkflows must be JSON') }
+      next.serveWorkflows = raw
+    }
     if (body.ragEndpointName !== undefined) {
       const n = String(body.ragEndpointName).toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40)
       next.ragEndpointName = n || undefined
