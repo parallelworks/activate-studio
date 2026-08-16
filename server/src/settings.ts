@@ -41,6 +41,7 @@ export interface StudioSettings {
   bannerWhenEmbedded?: boolean
   allowKeySharing?: boolean
   serveWorkflows?: string
+  hpcStatusUrl?: string
 }
 
 let cache: StudioSettings | null = null
@@ -100,6 +101,9 @@ export function effectiveSettings(): Required<StudioSettings> {
     allowKeySharing: s.allowKeySharing ?? process.env.ALLOW_KEY_SHARING !== '0',
     // Model-serving workflows the serve_model chat tool can launch, as JSON:
     // {"<engine>": {"workflow": "<name>", "inputs": {...preset...}}}
+    // Base URL of an HPC Status Monitor deployment (github.com/parallelworks/hpc_status);
+    // empty disables the hpc_status tool.
+    hpcStatusUrl: s.hpcStatusUrl ?? process.env.HPC_STATUS_URL ?? '',
     serveWorkflows: s.serveWorkflows ?? process.env.SERVE_WORKFLOWS ?? JSON.stringify({
       vllm: { workflow: 'vllm-endpoint', inputs: {} },
       ollama: { workflow: 'ollama-endpoint', inputs: {} },
@@ -182,6 +186,11 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
     }
     if (body.bannerWhenEmbedded !== undefined) next.bannerWhenEmbedded = Boolean(body.bannerWhenEmbedded)
     if (body.allowKeySharing !== undefined) next.allowKeySharing = Boolean(body.allowKeySharing)
+    if (body.hpcStatusUrl !== undefined) {
+      const v = String(body.hpcStatusUrl).trim().replace(/\/$/, '')
+      if (v && !/^https?:\/\//i.test(v)) throw new KbError(400, 'hpcStatusUrl must be http(s)')
+      next.hpcStatusUrl = v || undefined
+    }
     if (body.serveWorkflows !== undefined) {
       const raw = String(body.serveWorkflows).slice(0, 4000)
       try { JSON.parse(raw) } catch { throw new KbError(400, 'serveWorkflows must be JSON') }
