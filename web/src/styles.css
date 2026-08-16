@@ -762,6 +762,26 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 /* height:auto beats the .chat-canvas > * { height:100% } rule, which would
    stretch the anchor to the canvas bottom and drop the menu off-screen. */
 .chat-scope-anchor { position: absolute; top: 11px; right: 16px; z-index: 8; height: auto; }
+/* ---- Activity (thinking) drawer: the package renders it as a fixed 400px
+   right panel. Our width variable overrides it so the drag handle below can
+   resize it, the scope button steps left of it instead of overlapping its
+   header, and the handle only exists while the drawer is open. The open
+   drawer is the width-transitioning panel without the w-0 class. ---- */
+.chat-canvas div[class*="transition-[width]"]:not([class~="w-0"]) { width: var(--ade-think-rail, 400px) !important; }
+.chat-canvas div[class*="transition-[width]"] > div[class*="w-[400px]"] { width: var(--ade-think-rail, 400px) !important; }
+.chat-canvas:has(div[class*="transition-[width]"]:not([class~="w-0"])) .chat-scope-anchor { right: calc(var(--ade-think-rail, 400px) + 16px); }
+.chat-think-handle {
+  display: none; position: absolute; top: 0; bottom: 0; width: 7px;
+  right: calc(var(--ade-think-rail, 400px) - 3px);
+  cursor: col-resize; z-index: 30;
+}
+.chat-canvas:has(div[class*="transition-[width]"]:not([class~="w-0"])) .chat-think-handle { display: block; }
+.chat-think-handle:hover { background: color-mix(in srgb, var(--pw-link) 25%, transparent); }
+/* Drawer content: tool activity is dense and its arguments are long
+   unbroken strings; size it as a log, not as prose. */
+.chat-canvas div[class*="transition-[width]"] { font-size: 13px; }
+.chat-canvas div[class*="transition-[width]"] pre,
+.chat-canvas div[class*="transition-[width]"] code { overflow-wrap: anywhere; white-space: pre-wrap; }
 /* Below ai-chat's side panels (z 10-20) so their close controls stay
    clickable; raised only while the scope menu itself is open. */
 .chat-scope-anchor.open { z-index: 60; }
