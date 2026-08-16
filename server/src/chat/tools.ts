@@ -31,6 +31,7 @@ export const TOOL_CALLS: Record<string, string> = {
   apply_labels: 'setfattr user.studio.tags on the paths plus an in-place upsert into the index databases',
   list_workflows: 'pw workflows ls',
   get_workflow: 'pw workflows get <name> -o json',
+  serve_model: 'pw workflows get/run on the deployment-configured serving workflow for the engine (settings key serveWorkflows)',
   run_workflow: 'pw workflows run <name> (dry-run validation unless a real run was requested)',
   workflow_runs: 'pw workflows runs ls',
   workflow_run_detail: 'pw workflows runs get <id>',
@@ -156,6 +157,23 @@ export const TOOL_SPECS: ToolSpec[] = [
           parallel: { type: 'boolean', description: 'Run the steps independently instead of chaining each after the previous one' },
         },
         required: ['workflows'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'serve_model',
+      description:
+        'Launch a model-serving workflow (vLLM or Ollama) so a new model becomes available on the platform. Without launch=true it describes the chosen engine: which workflow it runs, the inputs that workflow takes, and this deployment\'s preset values. With launch=true it submits the run; do that only when the user asked to launch a model in this conversation. A vLLM launch downloads the model, serves it on the chosen resource, and registers it in the platform model catalog (session:<owner>:<name>/<model>); an Ollama launch serves an Ollama plus Open WebUI session on a Kubernetes cluster, and models are pulled inside it afterwards. Watch progress with workflow_runs and workflow_run_detail.',
+      parameters: {
+        type: 'object',
+        properties: {
+          engine: { type: 'string', description: "Which serving engine: 'vllm' or 'ollama' (the configured engines; call with no engine to list them)" },
+          model: { type: 'string', description: 'For vllm: the HuggingFace model id to serve (fills model.hf_model_id). For ollama, models are pulled after launch instead.' },
+          inputs: { type: 'string', description: 'JSON object of workflow inputs, merged over the deployment preset (e.g. {"resource": "a30gpuserver", "endpoint": {"name": "qwen38-27b"}})' },
+          launch: { type: 'boolean', description: 'false (default) describes; true submits the run' },
+        },
       },
     },
   },
@@ -559,6 +577,60 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
           .map(p => p.replace(/[^a-z0-9-]/gi, '')).filter(Boolean).slice(0, 4)
         const out = await pwCli([...parts, '--help'])
         return { result: out.trim().slice(0, TOOL_OUTPUT_CAP), summary: `pw ${parts.join(' ')} --help` }
+      }
+      case 'serve_model': {
+        const { effectiveSettings } = await import('../settings.js')
+        let engines: Record<string, { workflow: string; inputs?: Record<string, unknown> }> = {}
+        try { engines = JSON.parse(effectiveSettings().serveWorkflows) } catch { /* fall through to empty */ }
+        const engine = String(args.engine ?? '').toLowerCase()
+        if (!engine || !engines[engine]) {
+          const listing = Object.entries(engines).map(([k, v]) => `${k}: workflow ${v.workflow}`).join('\n')
+          return {
+            result: `Configured serving engines:\n${listing || '(none configured on this deployment)'}\nCall again with engine and launch=false to see that workflow's inputs.`,
+            summary: 'engines listed',
+          }
+        }
+        const cfg = engines[engine]
+        // Deep-merge: preset under caller inputs, group by group.
+        const merge = (base: any, over: any): any => {
+          if (!over || typeof over !== 'object' || Array.isArray(over)) return over ?? base
+          const out = { ...(base && typeof base === 'object' ? base : {}) }
+          for (const [k, v] of Object.entries(over)) out[k] = merge(out[k], v)
+          return out
+        }
+        let merged: Record<string, unknown> = { ...(cfg.inputs ?? {}) }
+        if (args.inputs) merged = merge(merged, JSON.parse(String(args.inputs)))
+        if (engine === 'vllm' && args.model) {
+          merged = merge(merged, { model: { hf_model_id: String(args.model) } })
+        }
+        if (args.launch !== true) {
+          // Describe: the workflow's declared inputs plus the preset.
+          let declared = ''
+          try {
+            const doc = JSON.parse((await pwCli(['workflows', 'get', cfg.workflow, '-o', 'json'], 60_000)).split('\n\n')[0])
+            const ins = doc?.yaml?.on?.execute?.inputs ?? doc?.yaml?.[true as any]?.execute?.inputs ?? {}
+            const rows: string[] = []
+            const walk = (prefix: string, obj: Record<string, any>) => {
+              for (const [k, v] of Object.entries(obj ?? {})) {
+                if (v && typeof v === 'object' && v.type === 'group') walk(`${prefix}${k}.`, v.items ?? {})
+                else if (v && typeof v === 'object') rows.push(`${prefix}${k} (default: ${JSON.stringify(v.default ?? null)})`)
+              }
+            }
+            walk('', ins)
+            declared = rows.join('\n')
+          } catch (e) {
+            declared = `(could not read the workflow: ${String((e as Error).message ?? e).slice(0, 120)})`
+          }
+          return {
+            result: `Engine ${engine} runs workflow ${cfg.workflow}.\nDeclared inputs:\n${declared}\n\nInputs that would be submitted now:\n${JSON.stringify(merged, null, 1)}\n\nCall again with launch=true to submit. Only do so if the user asked to launch a model.`,
+            summary: `${engine} serve described`,
+          }
+        }
+        const out = await pwCli(['workflows', 'run', '-i', JSON.stringify(merged), cfg.workflow, '-o', 'json'], 180_000)
+        return {
+          result: `Run submitted for ${cfg.workflow}.\n${out.trim().slice(0, 2000)}\nWatch it with workflow_runs / workflow_run_detail. A vLLM endpoint appears in the model catalog once the model finishes loading.`,
+          summary: `${engine} serve launched`,
+        }
       }
       case 'run_workflow': {
         const wfName = String(args.name ?? '').replace(/[^A-Za-z0-9_./-]/g, '')
