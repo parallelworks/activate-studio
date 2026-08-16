@@ -61,12 +61,12 @@ on:
           kb_root:
             label: Knowledge Base Directory
             type: string
-            default: ${WORKDIR}/studio-knowledge-base
+            default: ${WORKDIR:-$HOME/pw}/studio-knowledge-base
             tooltip: The corpus, on storage that survives the job (site scratch or home). Created and seeded if missing.
           index_base:
             label: Index Directory
             type: string
-            default: ${WORKDIR}/studio-index
+            default: ${WORKDIR:-$HOME/pw}/studio-index
             tooltip: Index, settings, and credential store. Also persistent, so relaunches reuse the index.
           kb_label:
             label: Knowledge Base Label
@@ -122,7 +122,7 @@ on:
           studio_local:
             label: Studio Image (on the resource)
             type: string
-            default: ${WORKDIR}/containers/studio.sif
+            default: ${WORKDIR:-$HOME/pw}/containers/studio.sif
             tooltip: An existing file is reused; delete it to force a fresh pull.
       model:
         type: group
@@ -136,7 +136,7 @@ on:
           model_dir:
             label: Model Directory
             type: string
-            default: ${WORKDIR}/models/gpt-oss-20b
+            default: ${WORKDIR:-$HOME/pw}/models/gpt-oss-20b
             tooltip: HuggingFace-format model directory on the resource. Downloaded on the login node when missing and a model id is set.
           hf_model_id:
             label: HuggingFace Model ID
@@ -160,7 +160,7 @@ on:
           vllm_local:
             label: vLLM Image (on the resource)
             type: string
-            default: ${WORKDIR}/containers/vllm.sif
+            default: ${WORKDIR:-$HOME/pw}/containers/vllm.sif
           gpu_ids:
             label: GPU IDs
             type: string
@@ -189,7 +189,7 @@ on:
       rundir:
         label: Run Directory
         type: string
-        default: ${WORKDIR}/studio-compute
+        default: ${WORKDIR:-$HOME/pw}/studio-compute
         tooltip: Job scripts, logs, and pid files on the resource.
 
 jobs:
@@ -288,7 +288,7 @@ jobs:
             --env KB_STARTER_DIRS="__STARTER_DIRS__" \
             --env PW_GATEWAY_URL="$GATEWAY_URL" \
             ${GATEWAY_KEY:+--env PW_API_KEY="$GATEWAY_KEY"} \
-            ${APP_ICON_SET:+--env APP_ICON="__ICON__" --env APP_ICON_DARK="__ICON_DARK__"} \
+            --env APP_ICON="__ICON__" --env APP_ICON_DARK="__ICON_DARK__" \
             --env SUGGESTED_PROMPTS='__PROMPTS_JSON__' \
             --bind "__KB__:__KB__" --bind "__IDX__:__IDX__" \
             "__SSIF__" > studio.out 2>&1 < /dev/null &
