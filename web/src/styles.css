@@ -769,7 +769,7 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
    drawer is the width-transitioning panel without the w-0 class. ---- */
 .chat-canvas div[class*="transition-[width]"]:not([class~="w-0"]) { width: var(--ade-think-rail, 400px) !important; }
 .chat-canvas div[class*="transition-[width]"] > div[class*="w-[400px]"] { width: var(--ade-think-rail, 400px) !important; }
-.chat-canvas:has(div[class*="transition-[width]"]:not([class~="w-0"])) .chat-scope-anchor { right: calc(var(--ade-think-rail, 400px) + 16px); }
+.chat-canvas:has(div[class*="transition-[width]"]:not([class~="w-0"])) .chat-scope-anchor { right: calc(var(--ade-think-rail, 400px) + 12px); }
 .chat-think-handle {
   display: none; position: absolute; top: 0; bottom: 0; width: 7px;
   right: calc(var(--ade-think-rail, 400px) - 3px);

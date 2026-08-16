@@ -39,6 +39,7 @@ export const TOOL_CALLS: Record<string, string> = {
   compose_workflow: 'reads each source workflow with pw workflows get, then emits a workflow that runs them as `uses:` subworkflow steps',
   pw_help: 'pw --help / pw <command> --help',
   list_clusters: 'pw cluster ls -o json',
+  hpc_status: 'GET against the configured Status Monitor REST API (fleet, cluster-usage, placement, insights, storage, events); read-only',
   cluster_command: 'pw ssh <resource> <command> (read-only scheduler guidance; state changes only on explicit request)',
   show_in_viewer: 'no external call; returns viewer deep-link or inline-embed markdown',
   studio_docs: 'reads docs/HELP.md, docs/ARCHITECTURE.md, or docs/CUSTOMIZATION.md from the app installation',
@@ -336,6 +337,22 @@ export const TOOL_SPECS: ToolSpec[] = [
       name: 'list_clusters',
       description: 'List the compute clusters connected to this account: name, status, active nodes, type. Use this before any cluster_command call to find the right cluster name and confirm it is running.',
       parameters: { type: 'object', properties: {} },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'hpc_status',
+      description:
+        'Live status of the HPC fleet from the deployment\'s Status Monitor: which systems are up and how busy, queue depth and node availability per system, allocation burn, storage quotas and purge exposure, open insights, and placement recommendations for where a job would start fastest. Use before recommending where to submit or launch anything (including serve_model targets), and to answer "is X up", "which queue", "how much allocation is left". Read-only.',
+      parameters: {
+        type: 'object',
+        properties: {
+          view: { type: 'string', description: "One of: summary (fleet at a glance), fleet (every system), queues (queue health; add cluster for one system), placement (where to submit), insights (open findings), storage (quotas and purge), events (recent changes)" },
+          cluster: { type: 'string', description: 'System name, for queues' },
+        },
+        required: ['view'],
+      },
     },
   },
   {
@@ -857,6 +874,34 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
           connection: c.connectionString || undefined,
         }))
         return { result: JSON.stringify(slim, null, 1), summary: `${slim.length} clusters` }
+      }
+      case 'hpc_status': {
+        const { effectiveSettings } = await import('../settings.js')
+        const base = effectiveSettings().hpcStatusUrl
+        if (!base) {
+          return { result: 'No Status Monitor is configured on this deployment (set the Status Monitor URL in Settings, or HPC_STATUS_URL).', summary: 'not configured' }
+        }
+        const view = String(args.view ?? 'summary')
+        const cluster = String(args.cluster ?? '').replace(/[^\w.-]/g, '')
+        const paths: Record<string, string> = {
+          summary: '/api/fleet/summary',
+          fleet: '/api/fleet',
+          queues: cluster ? `/api/cluster-usage/${cluster}` : '/api/cluster-usage',
+          placement: '/api/placement',
+          insights: '/api/insights',
+          storage: '/api/storage',
+          events: '/api/events',
+        }
+        const path2 = paths[view]
+        if (!path2) return { result: `Unknown view: ${view}. Views: ${Object.keys(paths).join(', ')}`, summary: 'bad view' }
+        try {
+          const res = await fetch(`${base}${path2}`, { signal: AbortSignal.timeout(30_000) })
+          if (!res.ok) return { result: `Status Monitor returned ${res.status} for ${path2}.`, summary: `http ${res.status}` }
+          const text = await res.text()
+          return { result: text.slice(0, TOOL_OUTPUT_CAP), summary: `${view}${cluster ? `:${cluster}` : ''}` }
+        } catch (e) {
+          return { result: `Status Monitor unreachable at ${base}: ${String((e as Error).message ?? e).slice(0, 120)}`, summary: 'unreachable' }
+        }
       }
       case 'cluster_command': {
         const cluster = String(args.cluster ?? '').replace(/[^\w.\/:@-]/g, '')
