@@ -30,6 +30,24 @@ export function ChatView() {
   // Width of the Activity (thinking) drawer on the right; the package
   // renders it fixed at 400px, and our CSS reads this variable over it.
   const [thinkRail, setThinkRail] = useState(() => Number(localStorage.getItem('ade-think-rail')) || 400)
+
+  // The Activity drawer belongs to the chat package; its open state is
+  // observed from the DOM and mirrored as a data attribute the CSS keys on,
+  // which holds up across package markup changes better than a :has()
+  // selector on utility classes.
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const sync = () => {
+      const drawer = canvas.querySelector('div[class*="transition-[width]"]')
+      const open = !!drawer && !(drawer.className.split(/\s+/).includes('w-0'))
+      canvas.dataset.thinkOpen = open ? '1' : '0'
+    }
+    sync()
+    const mo = new MutationObserver(sync)
+    mo.observe(canvas, { subtree: true, attributes: true, attributeFilter: ['class'], childList: true })
+    return () => mo.disconnect()
+  }, [])
   const adapter = useMemo(() => createStudioAdapter(), [])
   const [credNote, setCredNote] = useState<string | null>(null)
   const [vocab, setVocab] = useState<{ tag: string; count: number }[]>([])
