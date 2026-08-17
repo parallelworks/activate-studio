@@ -45,6 +45,18 @@ function prettyToolArgs(argsJson: string): string {
 // before answering, which on a modest GPU reads as a hang.
 const MAX_COMPLETION_TOKENS = Number(process.env.CHAT_MAX_TOKENS ?? 8192)
 
+/** Extra body fields for a model, from the chatTemplateKwargs setting:
+ *  the first entry whose key appears in the model id applies. */
+function templateKwargsFor(model: string): Record<string, unknown> {
+  try {
+    const map = JSON.parse(effectiveSettings().chatTemplateKwargs) as Record<string, unknown>
+    for (const [k, v] of Object.entries(map)) {
+      if (model.toLowerCase().includes(k.toLowerCase())) return { chat_template_kwargs: v }
+    }
+  } catch { /* malformed setting: apply nothing */ }
+  return {}
+}
+
 export async function chatRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/chat/models', async (req, reply) => {
     if (!gatewayConfigured() && !resolveUserKey(req.user?.id)) {
@@ -322,6 +334,13 @@ ${ctx}` : ctx
         reasoning: finalReasoning || undefined,
         reasoningDuration: reasoningDuration || (reasoningStart ? Date.now() - reasoningStart : undefined),
       })
+      if (!finalContent.trim()) {
+        const note = finalReasoning.trim()
+          ? 'The model spent this turn reasoning without producing an answer. Ask again, or rephrase more directly.'
+          : `The model returned no text (finish reason: ${finishReason ?? 'stop'}). Retry, or pick another model.`
+        finalContent = note
+        sse(res, 'content', { text: note })
+      }
       sse(res, 'done', {
         content: finalContent,
         finishReason: finishReason ?? 'stop',
@@ -342,7 +361,7 @@ ${ctx}` : ctx
       const toolCache = new Map<string, string>()
       for (let iter = 0; iter < MAX_TOOL_ITERATIONS; iter++) {
         const turn = await streamTurn(
-          { model: body.model, messages, tools: activeToolSpecs(), tool_choice: 'auto', max_tokens: MAX_COMPLETION_TOKENS },
+          { model: body.model, messages, tools: activeToolSpecs(), tool_choice: 'auto', max_tokens: MAX_COMPLETION_TOKENS, ...templateKwargsFor(String(body.model ?? '')) },
           allocation,
           callbacks,
           abort.signal,
@@ -413,7 +432,7 @@ ${ctx}` : ctx
         content: 'Tool budget for this reply is exhausted. Answer the user now using only the information gathered above. State plainly anything you could not verify.',
       })
       const finalTurn = await streamTurn(
-        { model: body.model, messages, max_tokens: MAX_COMPLETION_TOKENS },
+        { model: body.model, messages, max_tokens: MAX_COMPLETION_TOKENS, ...templateKwargsFor(String(body.model ?? '')) },
         allocation,
         callbacks,
         abort.signal,
