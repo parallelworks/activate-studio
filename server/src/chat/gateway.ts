@@ -19,8 +19,16 @@ function credentialFromCliStore(): string {
     const data = JSON.parse(fs.readFileSync(file, 'utf8'))
     const host = new URL(GATEWAY_BASE).host
     let key = ''
-    for (const ident of Object.values<any>(data.identities ?? {})) {
-      if (ident?.server === host) { key = ident.token || ident.apikey || ''; break }
+    // The active context (PW_CONTEXT, then currentIdentity) wins when it is
+    // for this host; several identities can share a server, and the current
+    // one is the credential the CLI itself would use.
+    const current = data.identities?.[process.env.PW_CONTEXT || data.currentIdentity]
+    if (current?.server === host) {
+      key = current.token || current.apikey || ''
+    } else {
+      for (const ident of Object.values<any>(data.identities ?? {})) {
+        if (ident?.server === host) { key = ident.token || ident.apikey || ''; break }
+      }
     }
     credCache = { key, mtimeMs: st.mtimeMs }
     return key
