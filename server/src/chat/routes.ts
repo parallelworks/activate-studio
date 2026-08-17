@@ -7,7 +7,7 @@ import { attachmentContext } from '../attachments.js'
 import { effectiveSettings } from '../settings.js'
 import { agentPrompt } from '../extensions.js'
 import { recordAssistantTurn, recordUserTurn } from '../conversations.js'
-import { clearSharedKey, clearUserKey, getSharedKeyStatus, getUserKeyStatus, personalKeysDisabled, resolveUserCred, resolveUserKey, setUserKey, shareUserKey } from '../credentials.js'
+import { clearSharedKey, clearUserKey, getSharedKeyStatus, getUserKeyStatus, KEY_COOKIE, personalKeysDisabled, resolveUserCred, resolveUserKey, sealKeyCookie, setUserKey, shareUserKey } from '../credentials.js'
 import { authEnabled } from '../auth.js'
 import { endpointName } from '../ragEndpoint.js'
 
@@ -192,18 +192,37 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
 
   // POST mirrors of set/clear: some proxies in front of sessions are
   // unfriendly to PUT and DELETE, and the embed saw "failed to fetch".
+  // Persisted keys rest in the caller's browser as sealed Secure cookies,
+  // not on the server: the value is the key encrypted with the server
+  // secret, chunked under the per-cookie size limit, HttpOnly and
+  // SameSite=Strict. The server keeps a memory copy with a TTL and
+  // rehydrates from the cookie on request.
+  const setKeyCookies = (reply: { header: (k: string, v: string[]) => unknown }, sub: string) => {
+    const chunks = sealKeyCookie(sub) ?? []
+    const jar = chunks.map((c, i) => `${KEY_COOKIE}${i}=${c}; Path=/; Max-Age=31536000; HttpOnly; Secure; SameSite=Strict`)
+    // A shorter key than last time leaves fewer chunks; expire two beyond.
+    for (let i = chunks.length; i < chunks.length + 2; i++) jar.push(`${KEY_COOKIE}${i}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Strict`)
+    reply.header('set-cookie', jar)
+  }
+  const clearKeyCookies = (reply: { header: (k: string, v: string[]) => unknown }) => {
+    reply.header('set-cookie', Array.from({ length: 4 }, (_, i) => `${KEY_COOKIE}${i}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Strict`))
+  }
+
   app.post('/api/me/model-key', async (req, reply) => {
     if (!req.user) return reply.status(403).send({ error: 'Personal keys need a platform-verified identity; open the app through the platform.' })
     const body = req.body as { key?: string; persist?: boolean; baseUrl?: string }
     const key = String(body.key ?? '').trim()
     if (!key) return reply.status(400).send({ error: 'key required' })
-    try { setUserKey(req.user.id, key, body.persist !== false, body.baseUrl) } catch (e) { return reply.status(400).send({ error: String((e as Error).message ?? e) }) }
+    try { setUserKey(req.user.id, key, false, body.baseUrl) } catch (e) { return reply.status(400).send({ error: String((e as Error).message ?? e) }) }
+    if (body.persist !== false) setKeyCookies(reply, req.user.id)
+    else clearKeyCookies(reply)
     return keyStatusPayload(req.user.id)
   })
 
   app.post('/api/me/model-key/clear', async (req, reply) => {
     if (!req.user) return reply.status(403).send({ error: 'not verified' })
     clearUserKey(req.user.id)
+    clearKeyCookies(reply)
     return keyStatusPayload(req.user.id)
   })
 
@@ -212,13 +231,16 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     const body = req.body as { key?: string; persist?: boolean }
     const key = String(body.key ?? '').trim()
     if (!key) return reply.status(400).send({ error: 'key required' })
-    setUserKey(req.user.id, key, body.persist !== false)
+    setUserKey(req.user.id, key, false)
+    if (body.persist !== false) setKeyCookies(reply, req.user.id)
+    else clearKeyCookies(reply)
     return keyStatusPayload(req.user.id)
   })
 
   app.delete('/api/me/model-key', async (req, reply) => {
     if (!req.user) return reply.status(403).send({ error: 'not verified' })
     clearUserKey(req.user.id)
+    clearKeyCookies(reply)
     return keyStatusPayload(req.user.id)
   })
 
