@@ -138,6 +138,11 @@ export async function aiHealth(key?: string | null, baseUrl?: string | null): Pr
  * One streamed chat.completions turn. Tool-call deltas are accumulated and
  * returned whole; content/reasoning deltas are forwarded as they arrive.
  */
+/** An error the upstream serve delivered inside an SSE stream after the 200
+ *  was already committed (e.g. a tool-call parse failure mid-generation).
+ *  These are sampling-dependent, so a retry of the same turn is reasonable. */
+export class StreamedTurnError extends Error {}
+
 export async function streamTurn(
   body: Record<string, unknown>,
   allocation: string | null,
@@ -151,13 +156,41 @@ export async function streamTurn(
     'Content-Type': 'application/json',
   }
   if (allocation) headers['X-Allocation'] = allocation
+  const streaming = body.stream !== false
   const res = await fetch(`${baseUrl || GATEWAY_BASE}/chat/completions`, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ ...body, stream: true }),
+    body: JSON.stringify({ ...body, stream: streaming }),
     signal,
   })
   if (!res.ok || !res.body) throw gatewayError(res.status, await res.text(), 'chat')
+
+  // The non-streaming path exists as a fallback: vLLM's incremental output
+  // parser can fail on token sequences the whole-message parser handles
+  // (seen with gpt-oss tool-call headers), so a broken streamed turn is
+  // retried without streaming.
+  if (!streaming) {
+    const full: any = await res.json()
+    if (full.error) throw new StreamedTurnError(String(full.error.message ?? JSON.stringify(full.error)))
+    const choice = full.choices?.[0] ?? {}
+    const msg = choice.message ?? {}
+    // A malformed generation can surface raw harmony control tokens as the
+    // content ("<|channel|>… <|call|>", " to=functions.x…<|call|"); that is
+    // not text for a user.
+    if (typeof msg.content === 'string' && (/<\|(call|channel|message|constrain|end)\|/.test(msg.content) || /^\s*to=/.test(msg.content))) msg.content = ''
+    if (typeof msg.content === 'string' && msg.content) cb.onContent(msg.content)
+    if (typeof msg.reasoning_content === 'string' && msg.reasoning_content) cb.onReasoning?.(msg.reasoning_content)
+    return {
+      content: typeof msg.content === 'string' ? msg.content : '',
+      reasoning: typeof msg.reasoning_content === 'string' ? msg.reasoning_content : '',
+      toolCalls: (msg.tool_calls ?? []).map((tc: any, i: number) => ({
+        index: i, id: tc.id, type: tc.type ?? 'function',
+        function: { name: tc.function?.name ?? '', arguments: tc.function?.arguments ?? '' },
+      })),
+      finishReason: choice.finish_reason ?? null,
+      model: full.model ?? null,
+    }
+  }
 
   let content = ''
   let reasoning = ''
@@ -181,6 +214,10 @@ export async function streamTurn(
       if (data === '[DONE]') continue
       let chunk: any
       try { chunk = JSON.parse(data) } catch { continue }
+      if (chunk.error) {
+        const msg = typeof chunk.error === 'object' ? String(chunk.error.message ?? JSON.stringify(chunk.error)) : String(chunk.error)
+        throw new StreamedTurnError(msg)
+      }
       model = chunk.model ?? model
       const choice = chunk.choices?.[0]
       if (!choice) continue
