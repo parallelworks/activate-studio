@@ -8,7 +8,26 @@ export const INDEX_BASE = process.env.INDEX_BASE ?? path.join(PROJECT_ROOT, 'ind
 // gufi_dir2index mirrors the source tree under INDEX_BASE/gufi/<basename of KB_ROOT>
 export const GUFI_INDEX = path.join(INDEX_BASE, 'gufi', path.basename(KB_ROOT))
 export const EXTRACT_CACHE = path.join(INDEX_BASE, 'extract')
-export const GUFI_BIN = process.env.GUFI_BIN ?? '/opt/gufi/bin'
+/** GUFI binaries: env override first, then installs near the app (the
+ *  deploy workflows place gufi-install beside the app directory, and a
+ *  source checkout may carry one at the repo root or the current
+ *  directory), then PATH, then the container image's /opt/gufi. */
+export const GUFI_BIN = (() => {
+  if (process.env.GUFI_BIN) return process.env.GUFI_BIN
+  const nearby = [
+    path.join(PROJECT_ROOT, 'gufi-install', 'bin'),
+    path.join(PROJECT_ROOT, '..', 'gufi-install', 'bin'),
+    path.join(process.cwd(), 'gufi-install', 'bin'),
+  ]
+  for (const c of nearby) {
+    if (fs.existsSync(path.join(c, 'gufi_query'))) return c
+  }
+  try {
+    const found = execFileSync('sh', ['-c', 'command -v gufi_query'], { encoding: 'utf8' }).trim()
+    if (found) return path.dirname(found)
+  } catch { /* not on PATH */ }
+  return '/opt/gufi/bin'
+})()
 
 export const PORT = Number(process.env.PORT ?? 4080)
 export const HOST = process.env.HOST ?? '0.0.0.0'

@@ -92,9 +92,16 @@ function brandUrl(kind: 'icon' | 'favicon', dark = false): string | null {
 export async function kbRoutes(app: FastifyInstance): Promise<void> {
   app.setErrorHandler((err: unknown, _req, reply) => {
     if (err instanceof KbError) return reply.status(err.status).send({ error: err.message })
-    app.log.error(err)
-    const message = err instanceof Error ? err.message : String(err)
-    return reply.status(500).send({ error: message })
+    if ((err as { validation?: unknown })?.validation) {
+      return reply.status(400).send({ error: err instanceof Error ? err.message : 'invalid request' })
+    }
+    // Everything else is an internal failure whose message can carry exec
+    // detail: spawned binary paths, child stderr, command lines. None of
+    // that belongs in a response; the log holds it under an id the client
+    // can quote.
+    const errorId = Math.random().toString(36).slice(2, 10)
+    app.log.error({ err, errorId }, 'unhandled route error')
+    return reply.status(500).send({ error: `internal error (ref ${errorId})` })
   })
 
   app.get('/healthz', async () => ({ ok: true, gufi: gufiAvailable() }))
