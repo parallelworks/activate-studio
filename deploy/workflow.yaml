@@ -284,10 +284,15 @@ jobs:
         run: |
           cd ${{ inputs.app_settings.workdir }}
           # The watchdog dies first so it cannot resurrect what follows.
+          # The pid file is best effort; the sweep below catches watchdogs
+          # whose pid file is stale or was written wrong.
           if [ -f watchdog.pid ]; then
             kill "$(cat watchdog.pid)" 2>/dev/null || true
             rm -f watchdog.pid
           fi
+          for p in $(pgrep -f "bash watchdog[.]sh" 2>/dev/null); do
+            [ "$(readlink /proc/$p/cwd 2>/dev/null)" = "$PWD" ] && kill -9 "$p" 2>/dev/null && echo "  swept stale watchdog $p"
+          done
           if [ -f app-custom.pids ]; then
             echo "Stopping processes from a prior launch:"; cat app-custom.pids || true
             while read -r p; do
@@ -808,31 +813,36 @@ jobs:
             # URL people have been given keeps resolving across a relaunch.
             setsid nohup "$PW_BIN" endpoints http -o text --keep --name "$EP_NAME" --subdomain "$EP_NAME" "$PORT" > endpoint.log 2>&1 < /dev/null &
             echo "$!" >> app-custom.pids
-            # Watchdog: if the app or the endpoint agent dies, kill what is
-            # left of this deployment (scoped by workdir and session name)
-            # and re-run this script for a clean start. A workflow relaunch
-            # kills the watchdog first, so the two never fight.
+            echo "$!" > agent.pid
+            # Watchdog: if the app stops answering or the endpoint agent
+            # process dies, kill what is left of this deployment (servers
+            # scoped by workdir, the agent by recorded pid) and re-run this
+            # script for a clean start. Liveness uses the app health URL and
+            # the agent pid file; matching the agent by command line proved
+            # unreliable. A workflow relaunch kills the watchdog first, so
+            # the two never fight.
+            RUN_SCRIPT="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
             cat > watchdog.sh << WATCHDOG
           cd "\$(dirname "\$0")"
           while sleep 120; do
             ok=1
             curl -sf -m 8 "localhost:${PORT}/healthz" > /dev/null || ok=0
-            pgrep -f "endpoints http.*--name ${EP_NAME}" > /dev/null || ok=0
+            kill -0 "\$(cat agent.pid 2>/dev/null)" 2>/dev/null || ok=0
             [ "\$ok" = 1 ] && continue
             echo "\$(date -Is) unhealthy; restarting stack" >> watchdog.log
             for p in \$(pgrep -f "app/server/dist/main[.]js" 2>/dev/null); do
               [ "\$(readlink /proc/\$p/cwd 2>/dev/null)" = "\$PWD" ] && kill "\$p" 2>/dev/null
             done
-            pkill -f "endpoints http.*--name ${EP_NAME}" 2>/dev/null
+            kill "\$(cat agent.pid 2>/dev/null)" 2>/dev/null
             sleep 3
-            bash "${SCRIPT}" >> watchdog.log 2>&1
+            bash "${RUN_SCRIPT}" >> watchdog.log 2>&1
             sleep 60
           done
           WATCHDOG
-            if [ -f watchdog.pid ]; then kill "\$(cat watchdog.pid)" 2>/dev/null || true; fi
+            if [ -f watchdog.pid ]; then kill "$(cat watchdog.pid)" 2>/dev/null || true; fi
             setsid nohup bash watchdog.sh > /dev/null 2>&1 < /dev/null &
-            echo "\$!" > watchdog.pid
-            echo "Watchdog forked; log: \$(pwd)/watchdog.log"
+            echo "$!" > watchdog.pid
+            echo "Watchdog forked; log: $(pwd)/watchdog.log"
           fi
           echo "Done running main workflow script."
           APP_LAUNCH
