@@ -9,7 +9,6 @@ import { agentPrompt } from '../extensions.js'
 import { recordAssistantTurn, recordUserTurn } from '../conversations.js'
 import { clearSharedKey, clearUserKey, getSharedKeyStatus, getUserKeyStatus, KEY_COOKIE, personalKeysDisabled, resolveUserCred, resolveUserKey, sealKeyCookie, setUserKey, shareUserKey } from '../credentials.js'
 import { authEnabled } from '../auth.js'
-import { endpointName } from '../ragEndpoint.js'
 
 interface StreamBody {
   model: string
@@ -145,11 +144,13 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     if (!process.env.PW_ALLOCATION) {
       models = models.filter((m: any) => !String(m.id).startsWith('org:'))
     }
-    // This deployment's own published RAG models are circular from inside
-    // the app (chat -> gateway -> tunnel -> this same server's /v1).
-    const selfName = endpointName()
+    // Published Studio RAG models never belong in a Studio's own picker:
+    // the deployment's own are circular (chat -> gateway -> tunnel -> this
+    // same server's /v1), and another Studio deployment's are its agent
+    // wearing a different corpus, which reads as a broken duplicate here.
+    // The studio-agent/studio-rag tag identifies them whoever published.
     models = models.filter((m: any) =>
-      !(String(m.id).startsWith('session:') && String(m.id).includes(`:${selfName}/studio-`)))
+      !(String(m.id).startsWith('session:') && /\/studio-(agent|rag)$/.test(String(m.id))))
     models.sort((a: any, b: any) =>
       Number(String(a.id).startsWith('org:')) - Number(String(b.id).startsWith('org:')))
     return reply.send({ models, unreachableSessions: wire.unreachable_sessions ?? [] })
