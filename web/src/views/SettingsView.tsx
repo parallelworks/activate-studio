@@ -462,8 +462,8 @@ export function SettingsView() {
                     )}
                     {me.mode !== 'none' && (
                       <p className="muted key-note">
-                        {me.mode === 'stored' && `Added ${me.addedAt?.slice(0, 10)}, stored encrypted on this server.`}
-                        {me.mode === 'session' && `Held in memory for this session only (until ${me.sessionExpiresAt ? new Date(me.sessionExpiresAt).toLocaleTimeString() : 'soon'}).`}
+                        {me.mode === 'stored' && `Added ${me.addedAt?.slice(0, 10)}, remembered in this browser.`}
+                        {me.mode === 'session' && `Held in memory (until ${me.sessionExpiresAt ? new Date(me.sessionExpiresAt).toLocaleTimeString() : 'soon'}; a remembered key renews this from the browser cookie automatically).`}
                         {me.credExpiresAt && !me.credExpired && ` The ${me.kind === 'token' ? 'token itself expires' : 'credential expires'} ${new Date(me.credExpiresAt).toLocaleString()}.`}
                         {me.baseUrl && ` Provider: ${me.baseUrl}.`}
                         {me.credExpired && ' THIS TOKEN HAS EXPIRED; paste a fresh one.'}
@@ -516,7 +516,7 @@ export function SettingsView() {
                   </div>
                   <label className="key-persist">
                     <input type="checkbox" checked={persistKey} onChange={e => setPersistKey(e.target.checked)} />
-                    Remember on this server (encrypted at rest); unchecked keeps it in memory for about 12 hours only
+                    Remember in this browser (a sealed Secure cookie; the server holds it in memory only); unchecked keeps it for about 12 hours
                   </label>
                   {me.shared?.active ? (
                     <div className="rag-banner connected shared-key">

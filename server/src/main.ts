@@ -13,6 +13,7 @@ import { attachmentRoutes } from './attachments.js'
 import { extensionRoutes, seedExtensions } from './extensions.js'
 import { conversationRoutes } from './conversations.js'
 import { authHook, authEnabled } from './auth.js'
+import { hydrateFromCookie, scrubPersonalVaultEntries } from './credentials.js'
 import { settingsRoutes } from './settings.js'
 import { chatRoutes } from './chat/routes.js'
 import { ragProxyRoutes } from './ragProxy.js'
@@ -24,6 +25,12 @@ import { seedKnowledgeBase } from './seed.js'
 const app = Fastify({ logger: { level: 'info' } })
 await app.register(fastifyMultipart)
 await authHook(app)
+// Browser-held personal keys: a request from a verified user whose memory
+// entry has expired rehydrates it from the sealed key cookie.
+app.addHook('onRequest', async req => {
+  if (req.user?.id) hydrateFromCookie(req.user.id, req.headers.cookie)
+})
+app.log.info(`personal key vault scrub: ${scrubPersonalVaultEntries()} legacy entries removed`)
 
 const webDist = path.join(PROJECT_ROOT, 'web', 'dist')
 if (fs.existsSync(webDist)) {
