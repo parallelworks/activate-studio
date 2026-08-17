@@ -570,10 +570,16 @@ ${ctx}` : ctx
       finish(finalTurn?.finishReason ?? 'stop')
       return reply
     } catch (err: any) {
-      app.log.error({ err }, 'chat stream failed')
+      const errorId = Math.random().toString(36).slice(2, 10)
+      app.log.error({ err, errorId }, 'chat stream failed')
       if (!abort.signal.aborted) {
+        // Deliberate gateway messages (credential guidance, upstream HTTP
+        // errors) are user-facing; anything else stays in the log so exec
+        // detail never reaches the client.
+        const msg = String(err?.message ?? err)
+        const userFacing = err?.name === 'GatewayAuthError' || /^gateway /.test(msg)
         sse(res, 'error', {
-          message: String(err?.message ?? err),
+          message: userFacing ? msg : `The reply failed with an internal error (ref ${errorId}).`,
           kind: err?.name === 'GatewayAuthError' ? 'credential' : 'error',
         })
       }
