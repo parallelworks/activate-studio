@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import fsp from 'node:fs/promises'
 import path from 'node:path'
 import type { FastifyInstance } from 'fastify'
-import { GUFI_BIN, GUFI_INDEX, INDEX_BASE } from './config.js'
+import { GUFI_BIN, GUFI_INDEX, INDEX_BASE, gufiAvailable } from './config.js'
 import { KbError } from './kb.js'
 import { tagMaps } from './tags.js'
 
@@ -308,6 +308,9 @@ export async function queryRoutes(app: FastifyInstance): Promise<void> {
     const body = req.body as {
       canned?: string; sql?: string; builder?: BuilderPayload
       n?: number; days?: number; subtree?: string
+    }
+    if (!gufiAvailable()) {
+      throw new KbError(503, 'index not built yet; run indexer/setup_gufi.sh and indexer/reindex.sh')
     }
     const n = Math.min(Math.max(Number(body.n) || 25, 1), MAX_ROWS)
     const days = Math.min(Math.max(Number(body.days) || 7, 1), 3650)
