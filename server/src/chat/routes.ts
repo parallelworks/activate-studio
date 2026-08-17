@@ -62,17 +62,45 @@ function windowFor(model: string): number | null {
  * 24k characters per result), and a prompt past the window makes the
  * serve answer 400, which reaches the user as silence.
  */
-function trimForWindow(messages: WireMessage[], model: string): void {
-  const window = windowFor(model)
-  if (!window) return
-  const budgetTokens = window - MAX_COMPLETION_TOKENS - 1024
-  const estimate = () => messages.reduce((n, m) => n + (typeof m.content === 'string' ? m.content.length : 200) + 80, 0) / 3.5
+const MIN_COMPLETION_TOKENS = 1024
+const TRIM_STUB = `[an earlier tool result was trimmed to fit the model's context window]`
+
+// Dense estimate (3 chars/token): tool output is paths, JSON, and numbers,
+// which tokenize far worse than prose, and an optimistic estimate becomes an
+// upstream 400 that some gateways forward as an empty 200 stream (core#18694).
+// Assistant tool_calls carry their JSON arguments on the wire, so count them.
+function estimateTokens(messages: WireMessage[]): number {
+  let chars = 0
   for (const m of messages) {
-    if (estimate() <= budgetTokens) return
-    if (m.role === 'tool' && typeof m.content === 'string' && m.content.length > 400) {
-      m.content = `[an earlier tool result was trimmed to fit the model's context window]`
-    }
+    chars += typeof m.content === 'string' ? m.content.length : 0
+    const calls = (m as { tool_calls?: { function?: { name?: string; arguments?: string } }[] }).tool_calls ?? []
+    for (const tc of calls) chars += (tc.function?.name?.length ?? 0) + (tc.function?.arguments?.length ?? 0) + 40
+    chars += 120
   }
+  return Math.ceil(chars / 3)
+}
+
+/** Trim messages to the model's context window and return the max_tokens the
+ *  remaining space supports, so prompt + completion never exceeds the window.
+ *  overheadChars covers request payload outside the messages (tool schemas).
+ *  Models with no configured window get the full budget, untrimmed. */
+function fitWindow(messages: WireMessage[], model: string, overheadChars: number): number {
+  const window = windowFor(model)
+  if (!window) return MAX_COMPLETION_TOKENS
+  const overhead = Math.ceil(overheadChars / 3) + 512
+  const budget = window - MIN_COMPLETION_TOKENS - overhead
+  for (const m of messages) {
+    if (estimateTokens(messages) <= budget) break
+    if (m.role === 'tool' && typeof m.content === 'string' && m.content.length > 400) m.content = TRIM_STUB
+  }
+  // Tool results alone were not enough: stub older assistant prose too,
+  // keeping the last message intact.
+  for (const m of messages.slice(0, -1)) {
+    if (estimateTokens(messages) <= budget) break
+    if (m.role === 'assistant' && typeof m.content === 'string' && m.content.length > 400) m.content = TRIM_STUB
+  }
+  const room = window - estimateTokens(messages) - overhead
+  return Math.max(MIN_COMPLETION_TOKENS, Math.min(MAX_COMPLETION_TOKENS, room))
 }
 
 /** Extra body fields for a model, from the chatTemplateKwargs setting:
@@ -390,9 +418,10 @@ ${ctx}` : ctx
       // model stuck re-issuing one call burns no time and gets told to move on.
       const toolCache = new Map<string, string>()
       for (let iter = 0; iter < MAX_TOOL_ITERATIONS; iter++) {
-        trimForWindow(messages as WireMessage[], String(body.model ?? ''))
+        const toolSpecs = activeToolSpecs()
+        const maxTokens = fitWindow(messages as WireMessage[], String(body.model ?? ''), JSON.stringify(toolSpecs).length)
         const turn = await streamTurn(
-          { model: body.model, messages, tools: activeToolSpecs(), tool_choice: 'auto', max_tokens: MAX_COMPLETION_TOKENS, ...templateKwargsFor(String(body.model ?? '')) },
+          { model: body.model, messages, tools: toolSpecs, tool_choice: 'auto', max_tokens: maxTokens, ...templateKwargsFor(String(body.model ?? '')) },
           allocation,
           callbacks,
           abort.signal,
@@ -470,8 +499,9 @@ ${ctx}` : ctx
         role: 'system',
         content: 'No further tool calls are available for this reply. Answer the user now, using only the information gathered above. State plainly anything you could not verify.',
       })
+      const finalMaxTokens = fitWindow(messages as WireMessage[], String(body.model ?? ''), 0)
       const finalTurn = await streamTurn(
-        { model: body.model, messages, max_tokens: MAX_COMPLETION_TOKENS, ...templateKwargsFor(String(body.model ?? '')) },
+        { model: body.model, messages, max_tokens: finalMaxTokens, ...templateKwargsFor(String(body.model ?? '')) },
         allocation,
         callbacks,
         abort.signal,
