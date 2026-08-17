@@ -481,11 +481,12 @@ ${ctx}` : ctx
           })
           continue
         }
-        // A turn with no tool calls and no visible text is not an answer;
-        // some models (a 4-bit 27B in a 24-tool loop) end this way instead
-        // of concluding. Break to the forced-answer turn rather than
-        // finishing with silence.
-        if (!turn.content.trim() && !finalContent.trim()) {
+        // A turn with no tool calls and no text of its own is not an
+        // answer, even when earlier turns narrated before their tool calls
+        // ("Let's read the case directories"): judge the closing turn by
+        // its own content and break to the forced-answer turn rather than
+        // finishing on narration or silence.
+        if (!turn.content.trim()) {
           req.log.warn({ iter }, 'empty turn with no tool calls; forcing final answer')
           break
         }
