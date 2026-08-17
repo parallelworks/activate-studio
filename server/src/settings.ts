@@ -44,6 +44,7 @@ export interface StudioSettings {
   hpcStatusUrl?: string
   hpcStatusWorkflow?: string
   chatTemplateKwargs?: string
+  chatModelWindows?: string
 }
 
 let cache: StudioSettings | null = null
@@ -115,6 +116,11 @@ export function effectiveSettings(): Required<StudioSettings> {
     // from session-model streams, so thinking is invisible dead time and a
     // turn can end with its answer trapped in the stripped channel.
     chatTemplateKwargs: s.chatTemplateKwargs ?? process.env.CHAT_TEMPLATE_KWARGS ?? JSON.stringify({ qwen: { enable_thinking: false } }),
+    // Context windows for models that have small ones, JSON of
+    // {modelSubstring: tokens}. The tool loop trims old tool results to
+    // stay inside; without this a long loop overflows the window and the
+    // serve answers 400, which the gateway forwards as an empty stream.
+    chatModelWindows: s.chatModelWindows ?? process.env.CHAT_MODEL_WINDOWS ?? JSON.stringify({ qwen: 16384 }),
     serveWorkflows: s.serveWorkflows ?? process.env.SERVE_WORKFLOWS ?? JSON.stringify({
       vllm: { workflow: 'vllm-endpoint', inputs: {} },
       ollama: { workflow: 'ollama-endpoint', inputs: {} },
@@ -203,6 +209,11 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
       next.hpcStatusUrl = v || undefined
     }
     if (body.hpcStatusWorkflow !== undefined) next.hpcStatusWorkflow = String(body.hpcStatusWorkflow).slice(0, 80) || undefined
+    if (body.chatModelWindows !== undefined) {
+      const raw = String(body.chatModelWindows).slice(0, 1000)
+      try { JSON.parse(raw) } catch { throw new KbError(400, 'chatModelWindows must be JSON') }
+      next.chatModelWindows = raw
+    }
     if (body.chatTemplateKwargs !== undefined) {
       const raw = String(body.chatTemplateKwargs).slice(0, 2000)
       try { JSON.parse(raw) } catch { throw new KbError(400, 'chatTemplateKwargs must be JSON') }
