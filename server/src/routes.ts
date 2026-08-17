@@ -89,20 +89,27 @@ function brandUrl(kind: 'icon' | 'favicon', dark = false): string | null {
   return (kind === 'icon' ? '/api/brand-icon' : '/api/favicon') + suffix
 }
 
-export async function kbRoutes(app: FastifyInstance): Promise<void> {
-  app.setErrorHandler((err: unknown, _req, reply) => {
+/** Sanitizing error handler for the WHOLE app: KbError text is deliberate
+ *  and passes through; schema-validation messages are safe; anything else
+ *  can carry exec detail (spawned binary paths, child stderr, command
+ *  lines) and is returned as a generic message with a reference id that
+ *  the server log holds the detail under. Register at the app level in
+ *  main.ts: a Fastify error handler set inside one plugin does not cover
+ *  routes registered by the others.
+ */
+export function sanitizedErrorHandler(app: FastifyInstance) {
+  return (err: unknown, _req: unknown, reply: { status: (n: number) => { send: (b: unknown) => unknown } }) => {
     if (err instanceof KbError) return reply.status(err.status).send({ error: err.message })
     if ((err as { validation?: unknown })?.validation) {
       return reply.status(400).send({ error: err instanceof Error ? err.message : 'invalid request' })
     }
-    // Everything else is an internal failure whose message can carry exec
-    // detail: spawned binary paths, child stderr, command lines. None of
-    // that belongs in a response; the log holds it under an id the client
-    // can quote.
     const errorId = Math.random().toString(36).slice(2, 10)
     app.log.error({ err, errorId }, 'unhandled route error')
     return reply.status(500).send({ error: `internal error (ref ${errorId})` })
-  })
+  }
+}
+
+export async function kbRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/healthz', async () => ({ ok: true, gufi: gufiAvailable() }))
 
