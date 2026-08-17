@@ -452,15 +452,23 @@ ${ctx}` : ctx
           })
           continue
         }
+        // A turn with no tool calls and no visible text is not an answer;
+        // some models (a 4-bit 27B in a 24-tool loop) end this way instead
+        // of concluding. Break to the forced-answer turn rather than
+        // finishing with silence.
+        if (!turn.content.trim() && !finalContent.trim()) {
+          req.log.warn({ iter }, 'empty turn with no tool calls; forcing final answer')
+          break
+        }
         finish(turn.finishReason)
         return reply
       }
       // Tool budget exhausted: one final turn with tools disabled so the user
       // gets an answer built from what was gathered instead of an error.
-      req.log.warn({ iterations: MAX_TOOL_ITERATIONS }, 'tool budget exhausted; forcing final answer')
+      req.log.warn('forcing final answer (budget exhausted or empty turn)')
       messages.push({
         role: 'system',
-        content: 'Tool budget for this reply is exhausted. Answer the user now using only the information gathered above. State plainly anything you could not verify.',
+        content: 'No further tool calls are available for this reply. Answer the user now, using only the information gathered above. State plainly anything you could not verify.',
       })
       const finalTurn = await streamTurn(
         { model: body.model, messages, max_tokens: MAX_COMPLETION_TOKENS, ...templateKwargsFor(String(body.model ?? '')) },
