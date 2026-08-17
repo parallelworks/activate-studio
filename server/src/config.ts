@@ -1,5 +1,6 @@
 import path from 'node:path'
 import fs from 'node:fs'
+import os from 'node:os'
 import { execFileSync } from 'node:child_process'
 
 export const KB_ROOT = process.env.KB_ROOT ?? '/data/knowledge-base'
@@ -29,7 +30,23 @@ export const PYTHON_BIN = (() => {
   return 'python3'
 })()
 
-export const GATEWAY_BASE = (process.env.PW_GATEWAY_URL ?? process.env.OPENAI_BASE_URL ?? 'https://activate.parallel.works/api/openai/v1').replace(/\/$/, '')
+/** The pw CLI's active context (PW_CONTEXT, then currentIdentity in its
+ *  credential store) names the platform host the user is actually working
+ *  against, so it decides the default gateway; env overrides still win.
+ *  Read once at startup, like the rest of this module. */
+function cliContextGateway(): string | null {
+  try {
+    const file = path.join(os.homedir(), '.config', 'pw', 'credentials')
+    const data = JSON.parse(fs.readFileSync(file, 'utf8'))
+    const name = process.env.PW_CONTEXT || data.currentIdentity
+    const server = data.identities?.[name]?.server
+    return server ? `https://${server}/api/openai/v1` : null
+  } catch {
+    return null
+  }
+}
+
+export const GATEWAY_BASE = (process.env.PW_GATEWAY_URL ?? process.env.OPENAI_BASE_URL ?? cliContextGateway() ?? 'https://activate.parallel.works/api/openai/v1').replace(/\/$/, '')
 export const PW_API_KEY = process.env.PW_API_KEY ?? process.env.OPENAI_API_KEY ?? ''
 
 // Directory names never entered when browsing, indexing, or searching.
