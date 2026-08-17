@@ -1,12 +1,37 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { rememberHash } from '../lastLocation'
 import {
-  ChatProvider, ChatLayout, ChatThread, ChatEmptyState, AttachmentManager,
+  ChatProvider, ChatLayout, ChatThread, ChatEmptyState, AttachmentManager, useChat,
 } from '@parallelworks/ai-chat'
 import { createStudioAdapter, getChatListFilter, setChatListFilter, setViewerUsername } from '../adapter'
 import { useAppConfig } from '../config'
 import { api } from '../api'
 import { setLabelScope } from '../labelScope'
+
+const MODEL_STORAGE_KEY = 'studio.chat.lastModel'
+
+/** Keeps the model selection valid and remembered. A conversation restores
+ *  the model its last reply used, which may be a serve that no longer exists;
+ *  the composer then lets a message go out and the send fails. Whenever the
+ *  selection is missing or absent from the live model list, this swaps in the
+ *  remembered model, or the first available one, and every valid selection is
+ *  persisted for the next visit. */
+function ModelSelectionGuard() {
+  const { models, selectedProvider, setSelectedProvider, hasLoadedModels } = useChat()
+  useEffect(() => {
+    if (selectedProvider && models.some(m => m.id === selectedProvider)) {
+      try { localStorage.setItem(MODEL_STORAGE_KEY, selectedProvider) } catch { /* storage unavailable */ }
+    }
+  }, [selectedProvider, models])
+  useEffect(() => {
+    if (!hasLoadedModels || models.length === 0) return
+    if (selectedProvider && models.some(m => m.id === selectedProvider)) return
+    let stored: string | null = null
+    try { stored = localStorage.getItem(MODEL_STORAGE_KEY) } catch { /* storage unavailable */ }
+    setSelectedProvider(stored && models.some(m => m.id === stored) ? stored : models[0].id)
+  }, [hasLoadedModels, models, selectedProvider, setSelectedProvider])
+  return null
+}
 
 export function ChatView() {
   // The open conversation lives in the URL, so a refresh (or a shared link)
@@ -262,6 +287,7 @@ export function ChatView() {
               <button className="btn-secondary" onClick={() => setCredNote(null)}>Dismiss</button>
             </div>
           )}
+          <ModelSelectionGuard />
           <ChatLayout>
             {showAttachments ? <AttachmentManager /> : activeId ? <ChatThread conversationId={activeId} /> : <ChatEmptyState />}
           </ChatLayout>
