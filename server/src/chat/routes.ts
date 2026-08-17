@@ -45,6 +45,36 @@ function prettyToolArgs(argsJson: string): string {
 // before answering, which on a modest GPU reads as a hang.
 const MAX_COMPLETION_TOKENS = Number(process.env.CHAT_MAX_TOKENS ?? 8192)
 
+/** Known context window for a model, from the chatModelWindows setting. */
+function windowFor(model: string): number | null {
+  try {
+    const map = JSON.parse(effectiveSettings().chatModelWindows) as Record<string, number>
+    for (const [k, v] of Object.entries(map)) {
+      if (model.toLowerCase().includes(k.toLowerCase()) && Number(v) > 0) return Number(v)
+    }
+  } catch { /* malformed: no window known */ }
+  return null
+}
+
+/**
+ * Keep the conversation inside a small model's context window by stubbing
+ * out the oldest tool results. Tool output dominates a long loop (up to
+ * 24k characters per result), and a prompt past the window makes the
+ * serve answer 400, which reaches the user as silence.
+ */
+function trimForWindow(messages: WireMessage[], model: string): void {
+  const window = windowFor(model)
+  if (!window) return
+  const budgetTokens = window - MAX_COMPLETION_TOKENS - 1024
+  const estimate = () => messages.reduce((n, m) => n + (typeof m.content === 'string' ? m.content.length : 200) + 80, 0) / 3.5
+  for (const m of messages) {
+    if (estimate() <= budgetTokens) return
+    if (m.role === 'tool' && typeof m.content === 'string' && m.content.length > 400) {
+      m.content = `[an earlier tool result was trimmed to fit the model's context window]`
+    }
+  }
+}
+
 /** Extra body fields for a model, from the chatTemplateKwargs setting:
  *  the first entry whose key appears in the model id applies. */
 function templateKwargsFor(model: string): Record<string, unknown> {
@@ -360,6 +390,7 @@ ${ctx}` : ctx
       // model stuck re-issuing one call burns no time and gets told to move on.
       const toolCache = new Map<string, string>()
       for (let iter = 0; iter < MAX_TOOL_ITERATIONS; iter++) {
+        trimForWindow(messages as WireMessage[], String(body.model ?? ''))
         const turn = await streamTurn(
           { model: body.model, messages, tools: activeToolSpecs(), tool_choice: 'auto', max_tokens: MAX_COMPLETION_TOKENS, ...templateKwargsFor(String(body.model ?? '')) },
           allocation,
