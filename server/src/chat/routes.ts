@@ -496,21 +496,35 @@ ${ctx}` : ctx
       // Tool budget exhausted: one final turn with tools disabled so the user
       // gets an answer built from what was gathered instead of an error.
       req.log.warn('forcing final answer (budget exhausted or empty turn)')
+      // The nudge rides as a user message with the tools still declared but
+      // disabled: dropping the tool block or trailing a system message shifts
+      // the chat template underneath models trained on it (gpt-oss answered
+      // such turns only in its reasoning channel, which reads as silence).
       messages.push({
-        role: 'system',
-        content: 'No further tool calls are available for this reply. Answer the user now, using only the information gathered above. State plainly anything you could not verify.',
+        role: 'user',
+        content: 'No further tool calls are available for this reply. Give your final answer now, using only the information gathered above. State plainly anything you could not verify.',
       })
-      const finalMaxTokens = fitWindow(messages as WireMessage[], String(body.model ?? ''), 0)
-      const finalTurn = await streamTurn(
-        { model: body.model, messages, max_tokens: finalMaxTokens, ...templateKwargsFor(String(body.model ?? '')) },
-        allocation,
-        callbacks,
-        abort.signal,
-        userKey,
-        userBase,
-      )
-      finalModel = finalTurn.model ?? finalModel
-      finish(finalTurn.finishReason)
+      const finalSpecs = activeToolSpecs()
+      const finalMaxTokens = fitWindow(messages as WireMessage[], String(body.model ?? ''), JSON.stringify(finalSpecs).length)
+      // Reasoning-first models sometimes spend a whole completion in their
+      // reasoning channel, which the gateway strips on session-model streams
+      // (core#18693), so a first empty forced turn gets one retry.
+      let finalTurn = null as Awaited<ReturnType<typeof streamTurn>> | null
+      for (let attempt = 0; attempt < 2; attempt++) {
+        finalTurn = await streamTurn(
+          { model: body.model, messages, tools: finalSpecs, tool_choice: 'none', max_tokens: finalMaxTokens, ...templateKwargsFor(String(body.model ?? '')) },
+          allocation,
+          callbacks,
+          abort.signal,
+          userKey,
+          userBase,
+        )
+        finalModel = finalTurn.model ?? finalModel
+        if (finalTurn.content.trim()) break
+        req.log.warn({ attempt }, 'forced final answer came back empty')
+        messages.push({ role: 'user', content: 'Reply with the final answer as plain text.' })
+      }
+      finish(finalTurn?.finishReason ?? 'stop')
       return reply
     } catch (err: any) {
       app.log.error({ err }, 'chat stream failed')
