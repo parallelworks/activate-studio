@@ -115,7 +115,7 @@ export function effectiveSettings(): Required<StudioSettings> {
     // Default disables Qwen thinking: the gateway strips reasoning content
     // from session-model streams, so thinking is invisible dead time and a
     // turn can end with its answer trapped in the stripped channel.
-    chatTemplateKwargs: s.chatTemplateKwargs ?? process.env.CHAT_TEMPLATE_KWARGS ?? JSON.stringify({ qwen: { enable_thinking: false } }),
+    chatTemplateKwargs: s.chatTemplateKwargs ?? process.env.CHAT_TEMPLATE_KWARGS ?? JSON.stringify({ 'qwen': { enable_thinking: false }, 'gpt-oss': { reasoning_effort: 'low' } }),
     // Context windows for models that have small ones, JSON of
     // {modelSubstring: tokens}. The tool loop trims old tool results to
     // stay inside; without this a long loop overflows the window and the
