@@ -120,7 +120,7 @@ export function effectiveSettings(): Required<StudioSettings> {
     // {modelSubstring: tokens}. The tool loop trims old tool results to
     // stay inside; without this a long loop overflows the window and the
     // serve answers 400, which the gateway forwards as an empty stream.
-    chatModelWindows: s.chatModelWindows ?? process.env.CHAT_MODEL_WINDOWS ?? JSON.stringify({ qwen: 16384 }),
+    chatModelWindows: s.chatModelWindows ?? process.env.CHAT_MODEL_WINDOWS ?? JSON.stringify({ qwen: 57344 }),
     serveWorkflows: s.serveWorkflows ?? process.env.SERVE_WORKFLOWS ?? JSON.stringify({
       vllm: { workflow: 'vllm-endpoint', inputs: {} },
       ollama: { workflow: 'ollama-endpoint', inputs: {} },
