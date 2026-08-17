@@ -283,6 +283,11 @@ jobs:
       - name: Stop dangling processes from a prior launch
         run: |
           cd ${{ inputs.app_settings.workdir }}
+          # The watchdog dies first so it cannot resurrect what follows.
+          if [ -f watchdog.pid ]; then
+            kill "$(cat watchdog.pid)" 2>/dev/null || true
+            rm -f watchdog.pid
+          fi
           if [ -f app-custom.pids ]; then
             echo "Stopping processes from a prior launch:"; cat app-custom.pids || true
             while read -r p; do
@@ -292,6 +297,15 @@ jobs:
             done < app-custom.pids
           fi
           : > app-custom.pids
+          # Sweep by pattern too, scoped so other deployments on the node
+          # survive: studio servers are matched by working directory, the
+          # endpoint agent by this deployment's session name.
+          for p in $(pgrep -f "app/server/dist/main[.]js" 2>/dev/null); do
+            [ "$(readlink /proc/$p/cwd 2>/dev/null)" = "$PWD" ] && kill "$p" 2>/dev/null && echo "  swept stale server $p"
+          done
+          PREFIX="$(echo "${{ inputs.session_settings.session_name }}" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-' | sed -E 's/-+/-/g; s/^-//; s/-$//')"
+          [ -n "$PREFIX" ] || PREFIX="studio"
+          pkill -f "endpoints http.*--name ${PREFIX}" 2>/dev/null && echo "  swept stale endpoint agent (${PREFIX})" || true
   get_ports:
     outputs:
       APP_PORT: ${{ needs.get_ports.steps.ports.outputs.APP_PORT }}
@@ -794,6 +808,31 @@ jobs:
             # URL people have been given keeps resolving across a relaunch.
             setsid nohup "$PW_BIN" endpoints http -o text --keep --name "$EP_NAME" --subdomain "$EP_NAME" "$PORT" > endpoint.log 2>&1 < /dev/null &
             echo "$!" >> app-custom.pids
+            # Watchdog: if the app or the endpoint agent dies, kill what is
+            # left of this deployment (scoped by workdir and session name)
+            # and re-run this script for a clean start. A workflow relaunch
+            # kills the watchdog first, so the two never fight.
+            cat > watchdog.sh << WATCHDOG
+          cd "\$(dirname "\$0")"
+          while sleep 120; do
+            ok=1
+            curl -sf -m 8 "localhost:${PORT}/healthz" > /dev/null || ok=0
+            pgrep -f "endpoints http.*--name ${EP_NAME}" > /dev/null || ok=0
+            [ "\$ok" = 1 ] && continue
+            echo "\$(date -Is) unhealthy; restarting stack" >> watchdog.log
+            for p in \$(pgrep -f "app/server/dist/main[.]js" 2>/dev/null); do
+              [ "\$(readlink /proc/\$p/cwd 2>/dev/null)" = "\$PWD" ] && kill "\$p" 2>/dev/null
+            done
+            pkill -f "endpoints http.*--name ${EP_NAME}" 2>/dev/null
+            sleep 3
+            bash "${SCRIPT}" >> watchdog.log 2>&1
+            sleep 60
+          done
+          WATCHDOG
+            if [ -f watchdog.pid ]; then kill "\$(cat watchdog.pid)" 2>/dev/null || true; fi
+            setsid nohup bash watchdog.sh > /dev/null 2>&1 < /dev/null &
+            echo "\$!" > watchdog.pid
+            echo "Watchdog forked; log: \$(pwd)/watchdog.log"
           fi
           echo "Done running main workflow script."
           APP_LAUNCH

@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { GATEWAY_BASE, MAX_TOOL_ITERATIONS } from '../config.js'
-import { aiHealth, gatewayConfigured, listModels, streamTurn, WireMessage, WireToolCall } from './gateway.js'
+import { aiHealth, gatewayConfigured, listModels, StreamedTurnError, streamTurn, WireMessage, WireToolCall } from './gateway.js'
 import { TOOL_CALLS, TOOL_SPECS, activeToolSpecs, commandFor, customToolSpecs, executeTool, expandSlashCommand, skillToolSpec } from './tools.js'
 import { systemPrompt } from './context.js'
 import { attachmentContext } from '../attachments.js'
@@ -63,6 +63,13 @@ function windowFor(model: string): number | null {
  * serve answer 400, which reaches the user as silence.
  */
 const MIN_COMPLETION_TOKENS = 1024
+
+// Model substrings served without upstream streaming. vLLM's incremental
+// output parser fails stochastically on gpt-oss tool-call headers where the
+// whole-message parser does not, and the gateway strips the reasoning stream
+// anyway (core#18693), so streaming buys those models nothing but the bug.
+// Tool activity still streams to the client; only final text arrives whole.
+const NO_STREAM_MODELS = (process.env.CHAT_NO_STREAM ?? 'gpt-oss').split(',').map(m => m.trim().toLowerCase()).filter(Boolean)
 const TRIM_STUB = `[an earlier tool result was trimmed to fit the model's context window]`
 
 // Dense estimate (3 chars/token): tool output is paths, JSON, and numbers,
@@ -414,22 +421,44 @@ ${ctx}` : ctx
       return reply
     }
     try {
+      // vLLM can fail a generation after the 200 is committed (its gpt-oss
+      // tool-call parser dies on some sampled header sequences) and the
+      // failure arrives as an SSE error frame. Those are sampling-dependent,
+      // so the turn is retried before the error reaches the user.
+      const noStream = NO_STREAM_MODELS.some(k => String(body.model ?? '').toLowerCase().includes(k))
+      const lastUserQuestion = [...messages].reverse().find(m => (m as WireMessage).role === 'user')
+      const turnWithRetry = async (payload: Record<string, unknown>) => {
+        for (let attempt = 0; ; attempt++) {
+          try {
+            return await streamTurn(attempt === 0 && !noStream ? payload : { ...payload, stream: false }, allocation, callbacks, abort.signal, userKey, userBase)
+          } catch (err: any) {
+            // Two retriable shapes: an SSE error frame after a committed 200
+            // (streaming), and the gateway's 400 "error occurred while
+            // generating the response" (the same serve-side generation
+            // failure, non-streaming). Both are sampling-dependent.
+            const generationError = err instanceof StreamedTurnError
+              || /error occurred while generating/i.test(String(err?.message ?? ''))
+            if (generationError && attempt < 2 && !abort.signal.aborted) {
+              req.log.warn({ attempt, err: String(err?.message ?? err) }, 'serve failed generating; retrying turn')
+              continue
+            }
+            throw err
+          }
+        }
+      }
       // Identical repeated calls get the cached result with a nudge, so a
       // model stuck re-issuing one call burns no time and gets told to move on.
       const toolCache = new Map<string, string>()
+      let usedTools = false
       for (let iter = 0; iter < MAX_TOOL_ITERATIONS; iter++) {
         const toolSpecs = activeToolSpecs()
         const maxTokens = fitWindow(messages as WireMessage[], String(body.model ?? ''), JSON.stringify(toolSpecs).length)
-        const turn = await streamTurn(
+        const turn = await turnWithRetry(
           { model: body.model, messages, tools: toolSpecs, tool_choice: 'auto', max_tokens: maxTokens, ...templateKwargsFor(String(body.model ?? '')) },
-          allocation,
-          callbacks,
-          abort.signal,
-          userKey,
-          userBase,
         )
         finalModel = turn.model ?? finalModel
         if (turn.finishReason === 'tool_calls' && turn.toolCalls.length > 0) {
+          usedTools = true
           messages.push({ role: 'assistant', content: turn.content || null, tool_calls: turn.toolCalls })
           const calls = turn.toolCalls as WireToolCall[]
           // A model answering a broad question asks for many files at once
@@ -485,8 +514,9 @@ ${ctx}` : ctx
         // answer, even when earlier turns narrated before their tool calls
         // ("Let's read the case directories"): judge the closing turn by
         // its own content and break to the forced-answer turn rather than
-        // finishing on narration or silence.
-        if (!turn.content.trim()) {
+        // finishing on narration or silence. After tool use, a few words of
+        // chatter ("Open one to see content.") is not an answer either.
+        if (!turn.content.trim() || (usedTools && turn.content.trim().length < 200)) {
           req.log.warn({ iter }, 'empty turn with no tool calls; forcing final answer')
           break
         }
@@ -504,25 +534,38 @@ ${ctx}` : ctx
         role: 'user',
         content: 'No further tool calls are available for this reply. Give your final answer now, using only the information gathered above. State plainly anything you could not verify.',
       })
-      const finalSpecs = activeToolSpecs()
-      const finalMaxTokens = fitWindow(messages as WireMessage[], String(body.model ?? ''), JSON.stringify(finalSpecs).length)
-      // Reasoning-first models sometimes spend a whole completion in their
-      // reasoning channel, which the gateway strips on session-model streams
-      // (core#18693), so a first empty forced turn gets one retry.
+      // The forced turn is synthesized as plain question-and-answer rather
+      // than a continuation of the tool transcript. Appending "answer now"
+      // to a transcript of tool calls does not work: harmony-template models
+      // keep tool-calling under tool_choice 'none', and with tools removed
+      // they reason about the missing tools without emitting an answer
+      // (which the gateway then strips, core#18693). A transcript shaped as
+      // question, gathered material, "answer" leaves the model nothing to
+      // continue except the answer.
+      const gathered = (messages as WireMessage[])
+        .filter(m => m.role === 'tool' && typeof m.content === 'string' && m.content !== TRIM_STUB)
+        .map((m, i) => `[${i + 1}] ${m.content}`)
+        .join('\n\n')
+      // The deployment system prompt is deliberately absent here: its tool
+      // instructions make a tools-free turn reason about the missing tools
+      // instead of answering (verified by replaying the request with and
+      // without it against the same serve).
+      const finalMessages: WireMessage[] = [
+        { role: 'system', content: 'Answer the user using the gathered material below. State plainly anything the material does not cover.' },
+        ...(lastUserQuestion ? [lastUserQuestion as WireMessage] : []),
+        { role: 'assistant', content: `I looked through the knowledge base and gathered this material:\n\n${gathered || '(no tool results were collected)'}` },
+        { role: 'user', content: 'Based on that material, give your final answer to my question now. State plainly anything you could not verify.' },
+      ]
       let finalTurn = null as Awaited<ReturnType<typeof streamTurn>> | null
       for (let attempt = 0; attempt < 2; attempt++) {
-        finalTurn = await streamTurn(
-          { model: body.model, messages, tools: finalSpecs, tool_choice: 'none', max_tokens: finalMaxTokens, ...templateKwargsFor(String(body.model ?? '')) },
-          allocation,
-          callbacks,
-          abort.signal,
-          userKey,
-          userBase,
+        const finalMaxTokens = fitWindow(finalMessages, String(body.model ?? ''), 0)
+        finalTurn = await turnWithRetry(
+          { model: body.model, messages: finalMessages, max_tokens: finalMaxTokens, ...templateKwargsFor(String(body.model ?? '')) },
         )
         finalModel = finalTurn.model ?? finalModel
         if (finalTurn.content.trim()) break
         req.log.warn({ attempt }, 'forced final answer came back empty')
-        messages.push({ role: 'user', content: 'Reply with the final answer as plain text.' })
+        finalMessages.push({ role: 'user', content: 'Reply with the final answer as plain text.' })
       }
       finish(finalTurn?.finishReason ?? 'stop')
       return reply
