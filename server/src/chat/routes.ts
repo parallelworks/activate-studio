@@ -449,19 +449,29 @@ ${ctx}` : ctx
       // so the turn is retried before the error reaches the user.
       const noStream = NO_STREAM_MODELS.some(k => String(body.model ?? '').toLowerCase().includes(k))
       const lastUserQuestion = [...messages].reverse().find(m => (m as WireMessage).role === 'user')
+      // Once a provider rejects the token cap, every later turn of this
+      // reply skips it up front instead of paying a failed attempt each.
+      let dropTokenCap = false
       const turnWithRetry = async (payload: Record<string, unknown>) => {
         for (let attempt = 0; ; attempt++) {
+          const p: Record<string, unknown> = attempt === 0 && !noStream ? { ...payload } : { ...payload, stream: false }
+          // Some providers reject any token-limit parameter outright (the
+          // codex provider 400s on max_tokens and max_completion_tokens
+          // alike, masked by the gateway into the generic generation
+          // error), so a retry after that failure goes out without the cap.
+          if (dropTokenCap) delete p.max_tokens
           try {
-            return await streamTurn(attempt === 0 && !noStream ? payload : { ...payload, stream: false }, allocation, callbacks, abort.signal, userKey, userBase)
+            return await streamTurn(p, allocation, callbacks, abort.signal, userKey, userBase)
           } catch (err: any) {
-            // Two retriable shapes: an SSE error frame after a committed 200
+            // Retriable shapes: an SSE error frame after a committed 200
             // (streaming), and the gateway's 400 "error occurred while
-            // generating the response" (the same serve-side generation
-            // failure, non-streaming). Both are sampling-dependent.
+            // generating the response", which covers both sampling-dependent
+            // serve failures and parameter rejections.
             const generationError = err instanceof StreamedTurnError
               || /error occurred while generating/i.test(String(err?.message ?? ''))
             if (generationError && attempt < 2 && !abort.signal.aborted) {
-              req.log.warn({ attempt, err: String(err?.message ?? err) }, 'serve failed generating; retrying turn')
+              if (!(err instanceof StreamedTurnError)) dropTokenCap = true
+              req.log.warn({ attempt, dropTokenCap, err: String(err?.message ?? err) }, 'serve failed generating; retrying turn')
               continue
             }
             throw err
