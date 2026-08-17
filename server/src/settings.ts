@@ -43,6 +43,7 @@ export interface StudioSettings {
   serveWorkflows?: string
   hpcStatusUrl?: string
   hpcStatusWorkflow?: string
+  chatTemplateKwargs?: string
 }
 
 let cache: StudioSettings | null = null
@@ -109,6 +110,11 @@ export function effectiveSettings(): Required<StudioSettings> {
     // one up when none is running (hpcmp_status on the HPCMP platform,
     // hpc_status generally).
     hpcStatusWorkflow: s.hpcStatusWorkflow ?? process.env.HPC_STATUS_WORKFLOW ?? 'hpc_status',
+    // Per-model chat template kwargs, JSON of {modelSubstring: kwargs}.
+    // Default disables Qwen thinking: the gateway strips reasoning content
+    // from session-model streams, so thinking is invisible dead time and a
+    // turn can end with its answer trapped in the stripped channel.
+    chatTemplateKwargs: s.chatTemplateKwargs ?? process.env.CHAT_TEMPLATE_KWARGS ?? JSON.stringify({ qwen: { enable_thinking: false } }),
     serveWorkflows: s.serveWorkflows ?? process.env.SERVE_WORKFLOWS ?? JSON.stringify({
       vllm: { workflow: 'vllm-endpoint', inputs: {} },
       ollama: { workflow: 'ollama-endpoint', inputs: {} },
@@ -197,6 +203,11 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
       next.hpcStatusUrl = v || undefined
     }
     if (body.hpcStatusWorkflow !== undefined) next.hpcStatusWorkflow = String(body.hpcStatusWorkflow).slice(0, 80) || undefined
+    if (body.chatTemplateKwargs !== undefined) {
+      const raw = String(body.chatTemplateKwargs).slice(0, 2000)
+      try { JSON.parse(raw) } catch { throw new KbError(400, 'chatTemplateKwargs must be JSON') }
+      next.chatTemplateKwargs = raw
+    }
     if (body.serveWorkflows !== undefined) {
       const raw = String(body.serveWorkflows).slice(0, 4000)
       try { JSON.parse(raw) } catch { throw new KbError(400, 'serveWorkflows must be JSON') }
