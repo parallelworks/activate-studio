@@ -48,6 +48,42 @@ KB_ROOT=/path/to/corpus node server/dist/main.js   # http://localhost:4080
 
 Environment: `KB_ROOT` (corpus directory), `KB_LABEL`, `APP_NAME`, `APP_ICON` (path to a brand image), `HELP_FILE` (override `docs/HELP.md`), `SUGGESTED_PROMPTS` (JSON array), `APP_USER_ID`/`APP_USERNAME`/`APP_USER_NAME`, `SWEEP_INTERVAL_SEC` (default 300, 0 disables), `ADE_VISION_MODEL` (enables image captioning), `PORT`. A gitignored `.env` in the repo root is the place for deployment-specific values; `deploy/run_endpoint.sh` sources it.
 
+## Running on macOS
+
+The server and web app run from source on macOS the same way as the
+standalone quick start above; the Linux-specific pieces are optional.
+GUFI does not build on macOS, and the app runs without it: browsing,
+grep search, chat, and viewers all work, while the indexed search and
+query surfaces answer with empty results and a note until an index
+exists. Document
+extraction and previews use whatever tools are present: `brew install
+--cask libreoffice` provides `soffice` for DOCX/PPTX previews, and
+`pip install python-docx python-pptx openpyxl pymupdf` enables text
+extraction for indexing. The Apptainer container build below is
+Linux-only.
+
+## Container build
+
+`deploy/app.def` packages the server, web build, GUFI, and the
+extraction toolchain as a single Apptainer/Singularity image for
+container-first sites (it is also what the compute-node workflow runs):
+
+```
+apptainer build studio.sif deploy/app.def
+```
+
+Run it with the knowledge base and index bound in:
+
+```
+apptainer run --bind /path/to/corpus:/kb --env KB_ROOT=/kb \
+  --env INDEX_BASE=/kb-index --bind /path/to/index:/kb-index \
+  --env PORT=4080 studio.sif
+```
+
+The build needs a Linux host (or VM) with Apptainer 1.2+; there is no
+macOS container path. The deploy workflows pull a prebuilt image from a
+bucket when one is configured, so most deployments never build locally.
+
 ## Models
 
 The chat talks to any OpenAI-compatible backend.

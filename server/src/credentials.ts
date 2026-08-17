@@ -117,16 +117,25 @@ export function setUserKey(sub: string, key: string, persist: boolean, baseUrl?:
   const last4 = trimmed.slice(-4)
   const addedAt = new Date().toISOString()
   const { kind, expiresAt } = inspect(trimmed)
-  if (persist) {
-    const vault = loadVault()
-    vault[sub] = { blob: encrypt(trimmed), last4, addedAt, kind, expiresAt, baseUrl: url }
-    saveVault(vault)
-    sessionKeys.delete(sub)
-  } else {
-    sessionKeys.set(sub, { key: trimmed, expiresAt: Date.now() + SESSION_TTL_MS, addedAt, last4, kind, credExpiresAt: expiresAt, baseUrl: url })
-    const vault = loadVault()
-    if (vault[sub]) { delete vault[sub]; saveVault(vault) }
-  }
+  // Personal keys live in memory only; the browser's sealed cookie is the
+  // durable copy (persist governs whether the route sets it). The vault
+  // file now holds nothing but the deployment shared key, and any personal
+  // entry from before this change is scrubbed.
+  void persist
+  sessionKeys.set(sub, { key: trimmed, expiresAt: Date.now() + SESSION_TTL_MS, addedAt, last4, kind, credExpiresAt: expiresAt, baseUrl: url })
+  const vault = loadVault()
+  if (vault[sub]) { delete vault[sub]; saveVault(vault) }
+}
+
+/** One-time scrub: personal entries predating browser-held keys leave the
+ *  vault so nothing personal stays at rest. The shared key remains. */
+export function scrubPersonalVaultEntries(): number {
+  const vault = loadVault()
+  const doomed = Object.keys(vault).filter(k => k !== SHARED_SUB)
+  if (!doomed.length) return 0
+  for (const k of doomed) delete vault[k]
+  saveVault(vault)
+  return doomed.length
 }
 
 export function clearUserKey(sub: string): void {
@@ -231,14 +240,6 @@ export function getUserKeyStatus(sub: string): UserKeyStatus {
       baseUrl: s.baseUrl,
     }
   }
-  const entry = loadVault()[sub]
-  if (entry) {
-    return {
-      mode: 'stored', last4: entry.last4, addedAt: entry.addedAt,
-      kind: entry.kind ?? 'api-key', credExpiresAt: entry.expiresAt ?? null, credExpired: expired(entry.expiresAt),
-      baseUrl: entry.baseUrl ?? null,
-    }
-  }
   return { mode: 'none' }
 }
 
@@ -250,13 +251,52 @@ export function resolveUserCred(sub: string | null | undefined): UserCred | null
   if (!sub || sub === SHARED_SUB || personalKeysDisabled()) return null
   const s = liveSession(sub)
   if (s) return expired(s.credExpiresAt) ? null : { key: s.key, baseUrl: s.baseUrl }
-  const entry = loadVault()[sub]
-  if (!entry) return null
-  if (expired(entry.expiresAt)) return null
-  const key = decrypt(entry.blob)
-  return key ? { key, baseUrl: entry.baseUrl ?? null } : null
+  return null
 }
 
 export function resolveUserKey(sub: string | null | undefined): string | null {
   return resolveUserCred(sub)?.key ?? null
+}
+
+/**
+ * Browser-held personal keys. The sealed value is the key and provider URL
+ * encrypted with the server secret, split across numbered cookies to stay
+ * under the per-cookie size limit. The browser is the only place the key
+ * rests; the server holds it in memory with a TTL and rehydrates from the
+ * cookie on request, so nothing personal is written to disk and the raw
+ * key never appears in a header.
+ */
+export const KEY_COOKIE = 'ade_mk'
+const COOKIE_CHUNK = 3800
+
+export function sealKeyCookie(sub: string): string[] | null {
+  const s = liveSession(sub)
+  if (!s) return null
+  const blob = encrypt(JSON.stringify({ k: s.key, u: s.baseUrl ?? null }))
+  const chunks: string[] = []
+  for (let i = 0; i < blob.length; i += COOKIE_CHUNK) chunks.push(blob.slice(i, i + COOKIE_CHUNK))
+  return chunks
+}
+
+export function hydrateFromCookie(sub: string, cookieHeader: string | undefined): void {
+  if (!sub || !cookieHeader || personalKeysDisabled()) return
+  if (liveSession(sub)) return
+  const jar = new Map<string, string>()
+  for (const part of cookieHeader.split(';')) {
+    const eq = part.indexOf('=')
+    if (eq > 0) jar.set(part.slice(0, eq).trim(), part.slice(eq + 1).trim())
+  }
+  let blob = ''
+  for (let i = 0; ; i++) {
+    const c = jar.get(`${KEY_COOKIE}${i}`)
+    if (!c) break
+    blob += c
+  }
+  if (!blob) return
+  try {
+    const opened = decrypt(blob)
+    if (!opened) return
+    const { k, u } = JSON.parse(opened) as { k?: string; u?: string | null }
+    if (typeof k === 'string' && k.trim()) setUserKey(sub, k, false, u ?? null)
+  } catch { /* stale cookie sealed under a rotated secret: ignore */ }
 }
