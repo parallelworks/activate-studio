@@ -118,7 +118,7 @@ export function QueryView({ onOpen }: { onOpen: (path: string) => void }) {
         body: JSON.stringify(payload ?? currentPayload()),
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error ?? `${res.status}`)
+      if (!res.ok) throw new Error(data.message ?? data.error ?? `${res.status}`)
       setResult(data)
       setSel(new Set())
       setTagMenuOpen(false)

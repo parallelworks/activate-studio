@@ -44,7 +44,8 @@ export function OverviewView({ onOpen }: { onOpen: (path: string) => void }) {
     api.tagVocabulary().then(v => setTags(v.tags)).catch(() => {})
     const q = (body: unknown, set: (r: QueryResult) => void) =>
       fetch('/api/query', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-        .then(r => r.json()).then(set).catch(() => {})
+        // An error payload parses as JSON too; only a shape with rows is a result.
+        .then(r => r.json()).then(r => { if (Array.isArray(r?.rows)) set(r) }).catch(() => {})
     q({ canned: 'largest', n: 8 }, setLargest)
     q({ canned: 'recent', n: 8, days: 7 }, setRecent)
     Promise.all([
