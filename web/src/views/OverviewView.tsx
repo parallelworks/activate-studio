@@ -167,8 +167,10 @@ export function OverviewView({ onOpen }: { onOpen: (path: string) => void }) {
         </section>
       </div>
 
-      <TopologyMap />
-      <SemanticMap onOpen={onOpen} />
+      <div className="ov-grid ov-maps">
+        <TopologyMap />
+        <SemanticMap onOpen={onOpen} />
+      </div>
     </div>
   )
 }

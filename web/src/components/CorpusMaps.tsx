@@ -103,12 +103,12 @@ export function TopologyMap() {
   let node = tree
   if (focus) for (const part of focus.split('/')) { const c = node.children.get(part); if (!c) break; node = c }
   const kids = [...node.children.values()]
-  const W = 960, H = 430
+  const W = 600, H = 520
   const rects = squarify(kids, 0, 0, W, H)
   const topDirs = [...tree.children.values()].sort((a, b) => b.bytes - a.bytes)
   const topColor = (p: string) => PALETTE[[...tree.children.keys()].indexOf(p.split('/')[0]) % PALETTE.length]
   return (
-    <section className="card ov-span">
+    <section className="card ov-list">
       <h3>Corpus topology</h3>
       <p className="muted">Area is bytes on disk, one hue per top-level directory, shade separating siblings. Click a directory to zoom; the crumbs back out.</p>
       <p className="crumb-row">
@@ -184,7 +184,7 @@ export function SemanticMap({ onOpen }: { onOpen: (path: string) => void }) {
   useEffect(() => {
     const cv = canvasRef.current
     if (!cv || !files) return
-    const W = cv.clientWidth, H = 440
+    const W = cv.clientWidth, H = Math.min(460, Math.max(340, Math.round(W * 0.85)))
     cv.width = W * devicePixelRatio
     cv.height = H * devicePixelRatio
     cv.style.height = `${H}px`
@@ -262,7 +262,7 @@ export function SemanticMap({ onOpen }: { onOpen: (path: string) => void }) {
     return best
   }
   return (
-    <section className="card ov-span">
+    <section className="card ov-list">
       <h3>Semantic map</h3>
       <p className="muted">Every embedded document, placed by content similarity and colored by cluster. Neighbors read alike even when they live in different folders. Hover for the file; click to open it.</p>
       <div style={{ position: 'relative' }}>
