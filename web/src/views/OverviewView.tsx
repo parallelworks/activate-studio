@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api, IndexStatus } from '../api'
+import { SemanticMap, TopologyMap } from '../components/CorpusMaps'
 
 interface ExtRow { ext: string; count: number; bytes: number }
 interface QueryResult { columns: string[]; rows: string[][] }
@@ -164,6 +165,9 @@ export function OverviewView({ onOpen }: { onOpen: (path: string) => void }) {
             <span className="ov-row-meta">{activity?.attachments ?? '…'}</span>
           </div>
         </section>
+
+        <TopologyMap />
+        <SemanticMap onOpen={onOpen} />
       </div>
     </div>
   )
