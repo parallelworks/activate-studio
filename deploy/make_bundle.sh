@@ -25,8 +25,7 @@ echo "Building web and server..."
 echo "Staging production server (pnpm deploy)..."
 mkdir -p "$STAGE/app"
 (cd "$PROJECT_ROOT" && pnpm --filter @activate-studio/server --prod deploy --legacy "$STAGE/app/server" >/dev/null)
-# The deploy leaves a production-only install recorded, which pnpm 11 would
-# try to undo on the next script run in this checkout. Put the state back.
+# The deploy records a prod-only install; restore the dev one.
 (cd "$PROJECT_ROOT" && pnpm install --frozen-lockfile >/dev/null)
 
 echo "Staging web, indexer, docs, starters..."
