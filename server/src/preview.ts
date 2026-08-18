@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process'
+import { KbError } from './kb.js'
 import fs from 'node:fs'
 import fsp from 'node:fs/promises'
 import path from 'node:path'
@@ -24,8 +25,12 @@ const SOFFICE_HOME = path.join(INDEX_BASE, '.soffice')
 
 /** Raised when an office document cannot be rendered on this host, which
  *  is a deployment fact rather than a fault in the file. */
-export class OfficePreviewUnavailable extends Error {
-  constructor(message: string) { super(message); this.name = 'OfficePreviewUnavailable' }
+/** A KbError so every route and the app-level error handler pass the
+ *  message through verbatim: this is deliberate reader-facing text, and
+ *  masking it as an internal error hides the actionable part (install
+ *  LibreOffice, or read the extracted text instead). */
+export class OfficePreviewUnavailable extends KbError {
+  constructor(message: string) { super(415, message); this.name = 'OfficePreviewUnavailable' }
 }
 
 // LibreOffice instances fight over the user profile; run one at a time.
