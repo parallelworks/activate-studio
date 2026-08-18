@@ -179,6 +179,11 @@ permissions:
             type: boolean
             default: false
             tooltip: Clobber the cached bundle and re-pull the latest from the bucket.
+          office_image:
+            label: LibreOffice Image (bucket)
+            type: string
+            optional: true
+            tooltip: Apptainer/Singularity image with LibreOffice, pulled from a bucket when the host has no soffice, so Word, PowerPoint and Excel files render as pages. Leave empty to fall back to extracted-text previews.
           app_port:
             label: App Port
             type: number
@@ -509,6 +514,28 @@ jobs:
           fi
           PATH="$PWD/node-runtime/bin:$PATH"; export PATH
           echo "node: $(command -v node) $(node --version 2>/dev/null || echo 'MISSING')"
+      - name: Office rendering via container when soffice is absent
+        run: |
+          cd ${{ inputs.app_settings.workdir }}
+          IMG_URI="${{ inputs.app_settings.office_image }}"
+          if [ -z "$IMG_URI" ]; then echo "No office image configured."; exit 0; fi
+          if command -v soffice >/dev/null 2>&1; then echo "System soffice present; container not needed."; exit 0; fi
+          RUNTIME="$(command -v apptainer || command -v singularity || true)"
+          if [ -z "$RUNTIME" ]; then echo "No apptainer/singularity on this host; office rendering stays unavailable."; exit 0; fi
+          SIF="$PWD/libreoffice.sif"
+          if [ ! -f "$SIF" ]; then
+            PW_BIN="$(command -v pw || echo pw)"
+            "$PW_BIN" buckets cp "$IMG_URI" "$SIF" || { echo "office image pull failed; office rendering stays unavailable."; exit 0; }
+          fi
+          cat > soffice-wrapper.sh << 'WRAP'
+          #!/bin/bash
+          RUNTIME="$(command -v apptainer || command -v singularity)"
+          BINDS="${KB_ROOT:+--bind $KB_ROOT}${INDEX_BASE:+ --bind $INDEX_BASE}"
+          exec "$RUNTIME" exec $BINDS "$(dirname "$0")/libreoffice.sif" soffice "$@"
+          WRAP
+          chmod +x soffice-wrapper.sh
+          echo "Office rendering wrapper installed at $PWD/soffice-wrapper.sh"
+
   build_gufi:
     needs:
       - pull_software
@@ -696,6 +723,9 @@ jobs:
           echo "export KB_ROOT=${{ inputs.kb_settings.kb_root }}" >> ${SCRIPT}
           echo "export KB_LABEL='${{ inputs.kb_settings.kb_label }}'" >> ${SCRIPT}
           echo "export GUFI_BIN=${WORKDIR}/gufi-install/bin" >> ${SCRIPT}
+          if [ -x "${WORKDIR}/soffice-wrapper.sh" ]; then
+            echo "export SOFFICE_BIN=${WORKDIR}/soffice-wrapper.sh" >> ${SCRIPT}
+          fi
           if [ -x "${WORKDIR}/pyenv/bin/python" ]; then
             echo "export PYTHON_BIN=${WORKDIR}/pyenv/bin/python" >> ${SCRIPT}
           fi
