@@ -394,9 +394,19 @@ jobs:
           JOB_NAME="studio-${{ inputs.app.session_name }}"
           # One stack per session name: end any previous job before submitting.
           scancel --name "$JOB_NAME" 2>/dev/null || true
-          ARGS="--job-name=$JOB_NAME --partition=${{ inputs.scheduler.partition }} --account=${{ inputs.scheduler.account }} --time=${{ inputs.scheduler.walltime }} --nodes=1 --output=$RUNDIR/job.out"
+          # CLI-supplied partial input groups arrive with unset fields empty
+          # (form defaults live only in the form), so the training-proven
+          # values back every scheduler field here as well.
+          PARTITION='${{ inputs.scheduler.partition }}'; [ -n "$PARTITION" ] || PARTITION='AIML'
+          WALLTIME='${{ inputs.scheduler.walltime }}'; [ -n "$WALLTIME" ] || WALLTIME='02:00:00'
+          # A fresh output file per submission: a watcher reading a prior
+          # job's leftover output mistakes its state for this run's.
+          OUT="$RUNDIR/job-$(date +%s).out"
+          ln -sf "$OUT" "$RUNDIR/job.out"
+          ARGS="--job-name=$JOB_NAME --partition=$PARTITION --account=${{ inputs.scheduler.account }} --time=$WALLTIME --nodes=1 --output=$OUT"
           [ -n "${{ inputs.scheduler.qos }}" ] && ARGS="$ARGS --qos=${{ inputs.scheduler.qos }}"
           DIRECTIVES='${{ inputs.scheduler.scheduler_directives }}'
+          [ -n "$DIRECTIVES" ] || DIRECTIVES='--gres=gpu:h100_sxm5:4'
           if [ -n "$DIRECTIVES" ]; then
             IFS=';'
             for d in $DIRECTIVES; do d=$(echo "$d" | xargs); [ -n "$d" ] && ARGS="$ARGS $d"; done
