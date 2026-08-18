@@ -192,21 +192,35 @@ export async function semanticMap(): Promise<SemanticMap> {
   const k = Math.max(4, Math.min(14, Math.round(Math.sqrt(rels.length / 2))))
   const assign = kmeans(pts, k)
   // A cluster's label is the directory most of its members live under,
-  // which names the grouping in the corpus's own vocabulary.
-  const clusterLabels: string[] = []
-  for (let c = 0; c < k; c++) {
+  // in the corpus's own vocabulary. When several clusters collide on the
+  // same label (a corpus dominated by one tree, like a proposals archive),
+  // the colliding ones descend a path level until they differ, so
+  // "proposals" times nine becomes the actual subdirectories.
+  const labelAt = (c: number, depth: number): string => {
     const tally = new Map<string, number>()
     rels.forEach((rel, i) => {
       if (assign[i] !== c) return
-      const seg = rel.includes('/') ? rel.split('/')[0] : '(root)'
+      const parts = rel.split('/')
+      const seg = parts.length > depth ? parts.slice(0, depth + 1).join('/') : (parts.length > 1 ? parts.slice(0, -1).join('/') : '(root)')
       tally.set(seg, (tally.get(seg) ?? 0) + 1)
     })
     const sorted = [...tally.entries()].sort((a, b) => b[1] - a[1])
     const total = sorted.reduce((s, [, n]) => s + n, 0)
-    if (!sorted.length) { clusterLabels.push(''); continue }
-    clusterLabels.push(sorted[0][1] / total >= 0.6 || sorted.length === 1
+    if (!sorted.length) return ''
+    return sorted[0][1] / total >= 0.6 || sorted.length === 1
       ? sorted[0][0]
-      : `${sorted[0][0]} + ${sorted[1][0]}`)
+      : `${sorted[0][0]} + ${sorted[1][0].split('/').pop()}`
+  }
+  const clusterLabels: string[] = []
+  for (let c = 0; c < k; c++) clusterLabels.push(labelAt(c, 0))
+  for (let depth = 1; depth <= 3; depth++) {
+    const counts = new Map<string, number>()
+    for (const l of clusterLabels) counts.set(l, (counts.get(l) ?? 0) + 1)
+    let collided = false
+    for (let c = 0; c < k; c++) {
+      if ((counts.get(clusterLabels[c]) ?? 0) > 1) { clusterLabels[c] = labelAt(c, depth); collided = true }
+    }
+    if (!collided) break
   }
   const out: SemanticMap = {
     available: true,
