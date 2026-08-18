@@ -6,7 +6,7 @@ import { systemPrompt } from './context.js'
 import { attachmentContext } from '../attachments.js'
 import { effectiveSettings } from '../settings.js'
 import { agentPrompt } from '../extensions.js'
-import { recordAssistantTurn, recordUserTurn } from '../conversations.js'
+import { recordAssistantTurn, recordUserTurn, StoredToolCallPart } from '../conversations.js'
 import { clearSharedKey, clearUserKey, getSharedKeyStatus, getUserKeyStatus, KEY_COOKIE, personalKeysDisabled, resolveUserCred, resolveUserKey, sealKeyCookie, setUserKey, shareUserKey } from '../credentials.js'
 import { authEnabled } from '../auth.js'
 
@@ -22,22 +22,6 @@ interface StreamBody {
 
 function sse(res: NodeJS.WritableStream, event: string, data: unknown): void {
   res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
-}
-
-/** Human-readable one-liner for a tool call, shown in the thinking stream
- *  (live and persisted). Keeps the raw JSON args out of the reader's face. */
-function prettyToolArgs(argsJson: string): string {
-  try {
-    const a = JSON.parse(argsJson || '{}') as Record<string, unknown>
-    const parts = Object.entries(a).slice(0, 3).map(([k, v]) => {
-      let s = typeof v === 'string' ? v : JSON.stringify(v)
-      if (s.length > 48) s = `${s.slice(0, 45)}…`
-      return `${k}: ${typeof v === 'string' ? `"${s}"` : s}`
-    })
-    return parts.join(' · ')
-  } catch {
-    return argsJson.slice(0, 60)
-  }
 }
 
 // Without a cap, a reasoning model can generate to its context limit
@@ -399,6 +383,9 @@ ${ctx}` : ctx
     let finalContent = ''
     let finalModel: string | null = null
     let finalReasoning = ''
+    // Tool calls made across the turn, persisted as message parts so the
+    // client renders them as tool blocks rather than thinking text.
+    const finalParts: StoredToolCallPart[] = []
     let reasoningStart = 0
     let reasoningDuration = 0
     const markThinking = () => { if (!reasoningStart) reasoningStart = Date.now() }
@@ -421,9 +408,10 @@ ${ctx}` : ctx
         model: finalModel,
         reasoning: finalReasoning || undefined,
         reasoningDuration: reasoningDuration || (reasoningStart ? Date.now() - reasoningStart : undefined),
+        parts: finalParts.length ? finalParts : undefined,
       })
       if (!finalContent.trim()) {
-        const note = finalReasoning.trim()
+        const note = finalReasoning.trim() || finalParts.length
           ? 'The model spent this turn reasoning without producing an answer. Ask again, or rephrase more directly.'
           : `The model returned no text (finish reason: ${finishReason ?? 'stop'}). Retry, or pick another model.`
         finalContent = note
@@ -500,14 +488,22 @@ ${ctx}` : ctx
           // their sum. They are independent reads, so run them together and
           // report in the order asked. A cap keeps a large fan-out from
           // flooding the index and the platform CLI.
-          for (const tc of calls) {
+          // Part ids must be unique across the whole turn — parallel calls to
+          // the same tool within an iteration get their index appended.
+          const iterParts = calls.map((tc, i): StoredToolCallPart => ({
+            kind: 'tool_call',
+            id: tc.id ?? `${tc.function.name}-${iter}-${i}`,
+            name: tc.function.name,
+            args: tc.function.arguments,
+            status: 'ok',
+          }))
+          finalParts.push(...iterParts)
+          calls.forEach((tc, i) => {
             req.log.info({ tool: tc.function.name, args: tc.function.arguments.slice(0, 300), iter }, 'tool call')
             markThinking()
-            const callLine = `\n→ \`${tc.function.name}\` ${prettyToolArgs(tc.function.arguments)}\n`
-            finalReasoning += callLine
-            sse(res, 'tool', { phase: 'call', name: tc.function.name, args: tc.function.arguments, pretty: callLine })
-          }
-          const outcomes: { result: string; summary: string }[] = new Array(calls.length)
+            sse(res, 'tool', { phase: 'call', id: iterParts[i].id, name: tc.function.name, args: tc.function.arguments })
+          })
+          const outcomes: { result: string; summary: string; failed?: boolean }[] = new Array(calls.length)
           let cursor = 0
           const CONCURRENCY = 6
           await Promise.all(Array.from({ length: Math.min(CONCURRENCY, calls.length) }, async () => {
@@ -529,16 +525,16 @@ ${ctx}` : ctx
                 outcomes[i] = out
               } catch (e) {
                 // One failed tool must not take the whole reply down.
-                outcomes[i] = { result: `tool failed: ${String((e as Error).message ?? e)}`, summary: 'failed' }
+                outcomes[i] = { result: `tool failed: ${String((e as Error).message ?? e)}`, summary: 'failed', failed: true }
               }
               markThinking()
             }
           }))
           calls.forEach((tc, i) => {
-            const { result, summary } = outcomes[i]
-            const resultLine = `\n↳ ${summary}\n`
-            finalReasoning += resultLine
-            sse(res, 'tool', { phase: 'result', name: tc.function.name, summary, pretty: resultLine })
+            const { result, summary, failed } = outcomes[i]
+            iterParts[i].status = failed ? 'error' : 'ok'
+            iterParts[i].result = summary
+            sse(res, 'tool', { phase: 'result', id: iterParts[i].id, name: tc.function.name, summary, error: !!failed })
             messages.push({ role: 'tool', tool_call_id: tc.id ?? `${tc.function.name}-${iter}`, content: result })
           })
           continue
