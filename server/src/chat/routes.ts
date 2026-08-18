@@ -113,7 +113,9 @@ function flattenForSingleTurn(messages: WireMessage[], instructions: string): Wi
   const parts: string[] = []
   if (sys.length) parts.push(`Operating instructions for this assistant; follow them even though they arrive in a user message:\n\n${sys.join('\n\n')}`)
   parts.push(`=== Conversation transcript (the backend retains no history; THIS is the authoritative record, and pronouns like "it" refer to it) ===\n\n${lines.join('\n\n')}`)
-  parts.push('=== Now ===\nContinue serving the latest user request in the transcript above. If gathered tool output completes it, reply in plain text with the answer; if the task needs another action, respond with the next tool-call envelope; never repeat a call whose result already appears above.')
+  const hasToolResults = messages.some(m => m.role === 'tool')
+  const firstTurnRule = hasToolResults ? '' : ' No tool has been called yet in this conversation: unless the request is a greeting or a question about the assistant itself, your reply now MUST be a tool-call envelope, beginning with search_kb.'
+  parts.push(`=== Now ===\nServe the latest user request in the transcript above. The knowledge base is the authority in this workspace and your general training knowledge may be outdated or wrong for this deployment's specific cases, so even when you believe you know the subject, questions touching the corpus or its subject matter are answered from tool results, never from memory alone. If no tool result above answers the request, reply with a tool-call envelope (search or read before answering; write when asked to create or save something). Reply in plain text only when tool output above answers the request, or when the request is genuinely unrelated to the corpus. Never repeat a call whose result already appears above. When your answer draws on corpus files, cite each as a markdown link exactly like [relative/path.md](#open=file:relative/path.md) so the reader can open it.${firstTurnRule}`)
   if (instructions) parts.push(instructions.trim())
   return [{ role: 'user', content: parts.join('\n\n') }]
 }
@@ -593,6 +595,24 @@ ${ctx}` : ctx
       // model stuck re-issuing one call burns no time and gets told to move on.
       const toolCache = new Map<string, string>()
       let usedTools = false
+      // Single-turn backends rationalize textbook questions as answerable
+      // from memory no matter the instructions, so the first turn arrives
+      // pre-grounded: the server runs the search itself and seeds the
+      // result into the transcript, making citation the easy path.
+      if (foldSystem && !messages.some(m => (m as WireMessage).role === 'tool')) {
+        const q = String((lastUserQuestion as WireMessage | undefined)?.content ?? '').trim()
+        if (q && q.length > 12) {
+          try {
+            const seeded = await executeTool('search_kb', JSON.stringify({ query: q.slice(0, 300) }), { labelScope, userKey: pwToolKey, model: String(body.model ?? '') || null })
+            const callId = `seed-${Date.now()}`
+            messages.push({ role: 'assistant', content: null, tool_calls: [{ index: 0, id: callId, type: 'function', function: { name: 'search_kb', arguments: JSON.stringify({ query: q.slice(0, 300) }) } }] } as WireMessage)
+            messages.push({ role: 'tool', tool_call_id: callId, content: seeded.result } as WireMessage)
+            const line = `\n\u21B3 pre-searched the knowledge base\n`
+            finalReasoning += line
+            sse(res, 'tool', { phase: 'result', name: 'search_kb', summary: 'pre-searched the knowledge base', pretty: line })
+          } catch { /* seeding is best-effort */ }
+        }
+      }
       for (let iter = 0; iter < MAX_TOOL_ITERATIONS; iter++) {
         const toolSpecs = activeToolSpecs()
         const maxTokens = fitWindow(messages as WireMessage[], String(body.model ?? ''), JSON.stringify(toolSpecs).length)
