@@ -183,7 +183,7 @@ permissions:
             label: LibreOffice Image (bucket)
             type: string
             optional: true
-            tooltip: Apptainer/Singularity image with LibreOffice, pulled from a bucket when the host has no soffice, so Word, PowerPoint and Excel files render as pages. Leave empty to fall back to extracted-text previews.
+            tooltip: Bucket path of a container image holding LibreOffice; the Studio's own studio.sif works since it carries LibreOffice. Pulled when the host has no soffice, so Word, PowerPoint and Excel files render as pages. Leave empty to fall back to extracted-text previews.
           app_port:
             label: App Port
             type: number
@@ -522,7 +522,7 @@ jobs:
           if command -v soffice >/dev/null 2>&1; then echo "System soffice present; container not needed."; exit 0; fi
           RUNTIME="$(command -v apptainer || command -v singularity || true)"
           if [ -z "$RUNTIME" ]; then echo "No apptainer/singularity on this host; office rendering stays unavailable."; exit 0; fi
-          SIF="$PWD/libreoffice.sif"
+          SIF="$PWD/office-render.sif"
           if [ ! -f "$SIF" ]; then
             PW_BIN="$(command -v pw || echo pw)"
             "$PW_BIN" buckets cp "$IMG_URI" "$SIF" || { echo "office image pull failed; office rendering stays unavailable."; exit 0; }
@@ -531,7 +531,7 @@ jobs:
           #!/bin/bash
           RUNTIME="$(command -v apptainer || command -v singularity)"
           BINDS="${KB_ROOT:+--bind $KB_ROOT}${INDEX_BASE:+ --bind $INDEX_BASE}"
-          exec "$RUNTIME" exec $BINDS "$(dirname "$0")/libreoffice.sif" soffice "$@"
+          exec "$RUNTIME" exec $BINDS "$(dirname "$0")/office-render.sif" soffice "$@"
           WRAP
           chmod +x soffice-wrapper.sh
           echo "Office rendering wrapper installed at $PWD/soffice-wrapper.sh"
