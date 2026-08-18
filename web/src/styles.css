@@ -1119,3 +1119,5 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .map-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 10px 2px 0; }
 .legend-chip { display: inline-flex; align-items: center; gap: 6px; background: none; border: none; font: inherit; font-size: 0.82rem; color: var(--pw-text, #1e293b); cursor: pointer; padding: 0; }
 .legend-dot { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+
+.ov-maps { margin-top: 12px; }
