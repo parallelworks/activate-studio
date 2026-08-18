@@ -186,6 +186,9 @@ export function SettingsView() {
       setMe(data)
       if (data.mode && data.mode !== 'none') refreshAccess()
       else setAccessHealth(null)
+      // The chat caches its model list (and the credential-required notice)
+      // from before the key changed; tell it to start over.
+      window.dispatchEvent(new CustomEvent('ade:model-access-changed'))
       return true
     } catch (e) {
       setKeyNote(String((e as Error).message ?? e))
