@@ -257,18 +257,8 @@ export function SemanticMap({ onOpen }: { onOpen: (path: string) => void }) {
       g.fill()
       g.globalAlpha = 1
     }
-    // Small corpora carry their names on the map itself.
+    // Cluster names at centroids; individual files stay hover-only.
     const isDark = document.documentElement.getAttribute('data-theme') === 'dark'
-    if (files.length <= 40) {
-      g.font = '11px system-ui, sans-serif'
-      g.fillStyle = isDark ? '#cbd5e1' : '#334155'
-      for (const f of files) {
-        const { x, y } = px(f)
-        const name = f.path.split('/').pop() ?? f.path
-        g.fillText(name.length > 28 ? `${name.slice(0, 26)}…` : name, x + 7, y + 4)
-      }
-    }
-    // Cluster names at centroids, above everything.
     g.font = '600 12.5px system-ui, sans-serif'
     for (let c = 0; c < k; c++) {
       const members = files.filter(f => f.c === c)
