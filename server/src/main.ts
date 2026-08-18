@@ -7,6 +7,7 @@ import { HOST, PORT, PROJECT_ROOT, KB_ROOT, gufiAvailable } from './config.js'
 import { kbRoutes, sanitizedErrorHandler } from './routes.js'
 import { uploadRoutes } from './uploads.js'
 import { queryRoutes } from './query.js'
+import { topologyRoutes } from './topology.js'
 import { tagRoutes } from './tags.js'
 import { modelRoutes } from './model.js'
 import { attachmentRoutes } from './attachments.js'
@@ -49,6 +50,7 @@ await app.register(ragProxyRoutes)
 await app.register(ragEndpointRoutes)
 await app.register(uploadRoutes)
 await app.register(queryRoutes)
+await app.register(topologyRoutes)
 await app.register(tagRoutes)
 await app.register(modelRoutes)
 await app.register(attachmentRoutes)
