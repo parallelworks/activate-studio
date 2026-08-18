@@ -471,6 +471,7 @@ ${ctx}` : ctx
     const finalParts: StoredToolCallPart[] = []
     let reasoningStart = 0
     let reasoningDuration = 0
+    const requestStart = Date.now()
     const markThinking = () => { if (!reasoningStart) reasoningStart = Date.now() }
     const allocation = body.allocation ?? process.env.PW_ALLOCATION ?? null
     const callbacks = {
@@ -485,6 +486,17 @@ ${ctx}` : ctx
     const finish = (finishReason: string | null) => {
       const messageId = `srv-${Date.now()}`
       recorded = true
+      // The duration row in the client renders only when reasoning text
+      // exists. A turn that worked through tools with no visible reasoning
+      // (session models: the gateway strips it) still deserves its timing,
+      // so it gets a one-line summary carrying the whole turn's elapsed.
+      if (!finalReasoning.trim() && finalParts.length) {
+        const elapsed = Date.now() - requestStart
+        if (!reasoningDuration) reasoningDuration = elapsed
+        const secs = Math.max(1, Math.round(elapsed / 1000))
+        finalReasoning = `Ran ${finalParts.length} tool call${finalParts.length === 1 ? '' : 's'} in ${secs}s.`
+        sse(res, 'reasoning', { text: finalReasoning })
+      }
       recordAssistantTurn(body.conversationId, {
         id: messageId, role: 'assistant', content: finalContent,
         parentId: body.userMessageId ?? null, timestamp: new Date().toISOString(),
