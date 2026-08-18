@@ -7,11 +7,41 @@ import { useEffect, useMemo, useRef, useState } from 'react'
  * render from one fetch each and open files or directories on click.
  */
 
-const PALETTE = [
-  '#2563eb', '#d97706', '#059669', '#dc2626', '#7c3aed',
-  '#0891b2', '#be185d', '#65a30d', '#9333ea', '#ea580c',
-  '#0d9488', '#b91c1c', '#4f46e5', '#a16207',
-]
+/** Categorical colors derived from the deployment's accent: analogous
+ *  hues around it with alternating lightness, so the maps read as part of
+ *  the theme instead of a foreign rainbow. */
+function hexToHsl(hex: string): { h: number; s: number; l: number } {
+  const m = hex.replace('#', '')
+  const r = parseInt(m.slice(0, 2), 16) / 255, g = parseInt(m.slice(2, 4), 16) / 255, b = parseInt(m.slice(4, 6), 16) / 255
+  const max = Math.max(r, g, b), min = Math.min(r, g, b)
+  const l = (max + min) / 2
+  if (max === min) return { h: 215, s: 60, l: l * 100 }
+  const d = max - min
+  const sat = l > 0.5 ? d / (2 - max - min) : d / (max + min)
+  let h = 0
+  if (max === r) h = ((g - b) / d + (g < b ? 6 : 0))
+  else if (max === g) h = (b - r) / d + 2
+  else h = (r - g) / d + 4
+  return { h: h * 60, s: sat * 100, l: l * 100 }
+}
+
+function accentPalette(): string[] {
+  let accent = '#2563eb'
+  try {
+    const css = getComputedStyle(document.documentElement)
+    accent = (css.getPropertyValue('--theme-accent') || css.getPropertyValue('--pw-link') || accent).trim() || accent
+  } catch { /* server-side or headless */ }
+  const { h, s } = hexToHsl(accent.startsWith('#') ? accent : '#2563eb')
+  const sat = Math.min(68, Math.max(42, s))
+  const out: string[] = []
+  for (let i = 0; i < 14; i++) {
+    const hue = (h + ((i % 7) - 3) * 19 + 360) % 360
+    const light = i % 2 ? 62 : 44
+    out.push(`hsl(${Math.round(hue)} ${Math.round(sat)}% ${light}%)`)
+  }
+  return out
+}
+const PALETTE = accentPalette()
 
 interface DirRow { dir: string; files: number; bytes: number }
 
@@ -103,7 +133,7 @@ export function TopologyMap() {
   let node = tree
   if (focus) for (const part of focus.split('/')) { const c = node.children.get(part); if (!c) break; node = c }
   const kids = [...node.children.values()]
-  const W = 600, H = 400
+  const W = 600, H = 340
   const rects = squarify(kids, 0, 0, W, H)
   const topDirs = [...tree.children.values()].sort((a, b) => b.bytes - a.bytes)
   const topColor = (p: string) => PALETTE[[...tree.children.keys()].indexOf(p.split('/')[0]) % PALETTE.length]
@@ -184,7 +214,7 @@ export function SemanticMap({ onOpen }: { onOpen: (path: string) => void }) {
   useEffect(() => {
     const cv = canvasRef.current
     if (!cv || !files) return
-    const W = cv.clientWidth, H = Math.min(380, Math.max(300, Math.round(W * 0.66)))
+    const W = cv.clientWidth, H = Math.min(320, Math.max(260, Math.round(W * 0.55)))
     cv.width = W * devicePixelRatio
     cv.height = H * devicePixelRatio
     cv.style.height = `${H}px`
