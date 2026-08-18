@@ -342,20 +342,17 @@ jobs:
           fi
           cd ${{ inputs.app_settings.workdir }}
           set -e
-          # Node runtime: the system node must be v22+ (pnpm 11 requires it);
-          # otherwise fetch v22 into the workdir. A node-runtime left by an
-          # older run may be v20 and sits ahead of the system node on PATH.
-          node_major() { "$1" -p 'process.version.slice(1).split(".")[0]' 2>/dev/null || echo 0; }
-          if [ -x node-runtime/bin/node ] && [ "$(node_major node-runtime/bin/node)" -lt 22 ]; then
-            echo "Discarding node-runtime $(node-runtime/bin/node --version); need v22+."
+          # A workdir node-runtime shadows the system node on PATH, so an
+          # older one is discarded rather than kept.
+          node_ok() { [ "$("$1" -p 'process.version.slice(1).split(".")[0]' 2>/dev/null || echo 0)" -ge 22 ]; }
+          if [ -x node-runtime/bin/node ] && ! node_ok node-runtime/bin/node; then
             rm -rf node-runtime
           fi
           NEED_NODE=1
           if [ -x node-runtime/bin/node ]; then
             NEED_NODE=0
-          elif command -v node >/dev/null 2>&1; then
-            MAJ=$(node_major node)
-            [ "$MAJ" -ge 22 ] && NEED_NODE=0 || echo "System node is v$MAJ; fetching v22."
+          elif command -v node >/dev/null 2>&1 && node_ok node; then
+            NEED_NODE=0
           fi
           if [ "$NEED_NODE" = "1" ]; then
             echo "Fetching Node runtime..."
