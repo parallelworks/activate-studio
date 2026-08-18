@@ -1085,3 +1085,14 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 [data-theme='dark'] .rail-title { color: var(--pw-text); }
 
 .cred-banner .btn-primary, .cred-banner .btn-secondary { white-space: nowrap; flex-shrink: 0; }
+
+.extracted-fallback {
+  white-space: pre-wrap;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  padding: 12px;
+  border: 1px solid var(--ade-border, #ddd);
+  border-radius: 8px;
+  max-height: 70vh;
+  overflow: auto;
+}
