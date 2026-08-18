@@ -962,7 +962,7 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
           })
           return { result: (out.trim() || '(no output)').slice(0, TOOL_OUTPUT_CAP), summary: name }
         }
-        return { result: `Unknown tool: ${name}`, summary: 'error' }
+        return { result: `The tool ${name} does not exist in this environment; it may be a backend built-in that is unavailable here. Use only the tools declared for this conversation, or answer in plain text.`, summary: `no such tool ${name}` }
       }
     }
   } catch (err: any) {
