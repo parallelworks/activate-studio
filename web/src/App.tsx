@@ -182,6 +182,21 @@ export default function App() {
   if (embedKind === 'model' && embedParams.get('path')) {
     return <div className="embed-root"><ModelViewer path={embedParams.get('path')!} /></div>
   }
+  if (embedKind === 'html' && embedParams.get('path')) {
+    // The inner frame is the sandbox; the served page also carries a CSP
+    // sandbox header, so scripts run with no origin privileges and no
+    // network access.
+    return (
+      <div className="embed-root">
+        <iframe
+          sandbox="allow-scripts"
+          src={`/api/kb/html?path=${encodeURIComponent(embedParams.get('path')!)}`}
+          title="sandboxed page"
+          style={{ width: '100%', height: '100%', border: 0 }}
+        />
+      </div>
+    )
+  }
 
   return (
     <div className="app">

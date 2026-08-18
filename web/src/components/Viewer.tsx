@@ -7,7 +7,7 @@ import { ModelViewer } from './ModelViewer'
 
 const OFFICE_SUFFIXES = ['.docx', '.pptx', '.xlsx', '.doc', '.ppt', '.xls', '.odt', '.odp', '.ods']
 
-type Tab = 'preview' | 'indexed'
+type Tab = 'preview' | 'indexed' | 'source'
 
 const PDF_PAGE_CAP = 150
 
@@ -145,7 +145,7 @@ export function Viewer({ path, onDeleted }: {
   const isText = file.kind === 'text'
   // Text files have one representation; binary formats have an original
   // rendering and, separately, the text stored in the search index.
-  const hasTabs = !isText && (isImage || isPdf || isOffice || isModel)
+  const hasTabs = isMarkdown || (!isText && (isImage || isPdf || isOffice || isModel))
 
   const doDelete = async () => {
     setDeleting(true)
@@ -169,6 +169,13 @@ export function Viewer({ path, onDeleted }: {
         {file.truncated && <p className="muted">Preview truncated; use Download for the full file.</p>}
       </div>
     )
+
+  const sourceView = (
+    <div className="viewer-body">
+      <pre className="text-body">{file.content ?? ''}</pre>
+      {file.truncated && <p className="muted">Truncated; use Download for the full file.</p>}
+    </div>
+  )
 
   const previewView = isModel ? (
     <ModelViewer path={path} />
@@ -227,10 +234,11 @@ export function Viewer({ path, onDeleted }: {
       {hasTabs && (
         <div className="viewer-tabs">
           <button className={tab === 'preview' ? 'active' : ''} onClick={() => setTab('preview')}>Preview</button>
-          <button className={tab === 'indexed' ? 'active' : ''} onClick={() => setTab('indexed')}>Indexed text</button>
+          {isMarkdown && <button className={tab === 'source' ? 'active' : ''} onClick={() => setTab('source')}>Source</button>}
+          {!isMarkdown && <button className={tab === 'indexed' ? 'active' : ''} onClick={() => setTab('indexed')}>Indexed text</button>}
         </div>
       )}
-      {hasTabs ? (tab === 'preview' ? previewView : indexedView) : previewView}
+      {hasTabs ? (tab === 'preview' ? previewView : tab === 'source' ? sourceView : indexedView) : previewView}
     </div>
   )
 }

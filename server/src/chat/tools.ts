@@ -757,8 +757,18 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
         await fsp.writeFile(abs, content)
         const { reindexForFile } = await import('../indexing.js')
         const { ms } = await reindexForFile(rel).catch(() => ({ ms: 0 }))
+        // The affordance arrives exactly when it is needed: a written model
+        // or page comes back with the ready-made embed markdown, so the
+        // assistant shows the built-in viewer instead of building its own.
+        const ext = pathMod.extname(rel).toLowerCase()
+        let show = 'show_in_viewer can display it.'
+        if (['.stl', '.step', '.stp', '.obj', '.glb', '.gltf'].includes(ext)) {
+          show = `Show the interactive 3D model inline in your reply with this markdown, then its link:\n![${rel.split('/').pop()}](/?embed=model&path=${encodeURIComponent(rel)})\n[${rel}](#open=file:${rel.replace(/ /g, '%20')})\nIterate by rewriting the file with overwrite=true; the embed always renders the current version.`
+        } else if (['.html', '.htm'].includes(ext)) {
+          show = `Show the page inline, sandboxed, with this markdown, then its link:\n![${rel.split('/').pop()}](/?embed=html&path=${encodeURIComponent(rel)})\n[${rel}](#open=file:${rel.replace(/ /g, '%20')})\nThe sandbox allows inline scripts and styles only, no network requests, so keep the page self-contained.`
+        }
         return {
-          result: `Wrote ${rel} (${content.length} bytes)${exists ? ', replacing the previous version' : ''} and re-indexed in ${ms} ms. show_in_viewer can display it.`,
+          result: `Wrote ${rel} (${content.length} bytes)${exists ? ', replacing the previous version' : ''} and re-indexed in ${ms} ms. ${show}`,
           summary: `wrote ${rel}`,
         }
       }
