@@ -103,7 +103,7 @@ export function TopologyMap() {
   let node = tree
   if (focus) for (const part of focus.split('/')) { const c = node.children.get(part); if (!c) break; node = c }
   const kids = [...node.children.values()]
-  const W = 600, H = 520
+  const W = 600, H = 400
   const rects = squarify(kids, 0, 0, W, H)
   const topDirs = [...tree.children.values()].sort((a, b) => b.bytes - a.bytes)
   const topColor = (p: string) => PALETTE[[...tree.children.keys()].indexOf(p.split('/')[0]) % PALETTE.length]
@@ -184,7 +184,7 @@ export function SemanticMap({ onOpen }: { onOpen: (path: string) => void }) {
   useEffect(() => {
     const cv = canvasRef.current
     if (!cv || !files) return
-    const W = cv.clientWidth, H = Math.min(460, Math.max(340, Math.round(W * 0.85)))
+    const W = cv.clientWidth, H = Math.min(380, Math.max(300, Math.round(W * 0.66)))
     cv.width = W * devicePixelRatio
     cv.height = H * devicePixelRatio
     cv.style.height = `${H}px`
