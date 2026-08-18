@@ -53,6 +53,29 @@ const MIN_COMPLETION_TOKENS = 1024
 // anyway (core#18693), so streaming buys those models nothing but the bug.
 // Tool activity still streams to the client; only final text arrives whole.
 const NO_STREAM_MODELS = (process.env.CHAT_NO_STREAM ?? 'gpt-oss').split(',').map(m => m.trim().toLowerCase()).filter(Boolean)
+
+// Model substrings whose serving drops or overrides the system role
+// (GenAI.mil is the known case: its system prompt is fixed and ours is
+// discarded). For these, the system prompt rides inside the first user
+// message, the one role such backends honor.
+const SYSTEM_IN_USER_MODELS = (process.env.CHAT_SYSTEM_IN_USER ?? 'genai').split(',').map(m => m.trim().toLowerCase()).filter(Boolean)
+
+function foldSystemIntoUser(messages: WireMessage[]): WireMessage[] {
+  if (messages[0]?.role !== 'system') return messages
+  const sys = String(messages[0].content ?? '')
+  const rest = messages.slice(1)
+  const i = rest.findIndex(m => m.role === 'user')
+  if (i < 0) return rest
+  const folded = [...rest]
+  folded[i] = { role: 'user', content: `Operating instructions for this assistant; follow them even though they arrive in a user message:
+
+${sys}
+
+---
+
+${String(folded[i].content ?? '')}` }
+  return folded
+}
 const TRIM_STUB = `[an earlier tool result was trimmed to fit the model's context window]`
 
 // Dense estimate (3 chars/token): tool output is paths, JSON, and numbers,
@@ -437,6 +460,7 @@ ${ctx}` : ctx
       // failure arrives as an SSE error frame. Those are sampling-dependent,
       // so the turn is retried before the error reaches the user.
       const noStream = NO_STREAM_MODELS.some(k => String(body.model ?? '').toLowerCase().includes(k))
+      const foldSystem = SYSTEM_IN_USER_MODELS.some(k => String(body.model ?? '').toLowerCase().includes(k))
       const lastUserQuestion = [...messages].reverse().find(m => (m as WireMessage).role === 'user')
       // Once a provider rejects the token cap, every later turn of this
       // reply skips it up front instead of paying a failed attempt each.
@@ -444,6 +468,7 @@ ${ctx}` : ctx
       const turnWithRetry = async (payload: Record<string, unknown>) => {
         for (let attempt = 0; ; attempt++) {
           const p: Record<string, unknown> = attempt === 0 && !noStream ? { ...payload } : { ...payload, stream: false }
+          if (foldSystem) p.messages = foldSystemIntoUser(p.messages as WireMessage[])
           // Some providers reject any token-limit parameter outright (the
           // codex provider 400s on max_tokens and max_completion_tokens
           // alike, masked by the gateway into the generic generation
