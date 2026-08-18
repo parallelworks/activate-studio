@@ -1114,3 +1114,8 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .crumb { background: none; border: none; color: var(--pw-link, #2563eb); cursor: pointer; padding: 0 2px; font: inherit; }
 .semantic-map { border: 1px solid var(--pw-border, #ddd); border-radius: 8px; background: var(--pw-panel, #fafafa); }
 .map-tip { position: absolute; left: 8px; bottom: 8px; background: rgba(15,23,42,0.9); color: #fff; padding: 3px 8px; border-radius: 6px; font-size: 0.78rem; pointer-events: none; max-width: 90%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.ov-span { margin-top: 12px; }
+.map-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 10px 2px 0; }
+.legend-chip { display: inline-flex; align-items: center; gap: 6px; background: none; border: none; font: inherit; font-size: 0.82rem; color: var(--pw-text, #1e293b); cursor: pointer; padding: 0; }
+.legend-dot { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
