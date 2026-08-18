@@ -17,16 +17,34 @@ const PDF_PAGE_CAP = 150
 function PdfPages({ path }: { path: string }) {
   const [pages, setPages] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [fallbackText, setFallbackText] = useState<string | null>(null)
 
   useEffect(() => {
     setPages(null)
     setError(null)
+    setFallbackText(null)
     fetch(`/api/kb/pdf-info?path=${encodeURIComponent(path)}`)
       .then(r => (r.ok ? r.json() : r.json().then((d: { error?: string }) => Promise.reject(new Error(d.error ?? `${r.status}`)))))
       .then(d => setPages(d.pages))
-      .catch(e => setError(String((e as Error).message ?? e)))
+      .catch(async e => {
+        setError(String((e as Error).message ?? e))
+        // A host without LibreOffice cannot render office pages, but the
+        // extracted text is already indexed; show that instead of a wall.
+        try {
+          const f = await fetch(`/api/kb/file?path=${encodeURIComponent(path)}`).then(r => (r.ok ? r.json() : null))
+          if (f?.content?.trim()) setFallbackText(f.content)
+        } catch { /* no fallback available */ }
+      })
   }, [path])
 
+  if (error && fallbackText) {
+    return (
+      <div className="pad">
+        <p className="muted">Page rendering is unavailable here ({error}) so this is the document's extracted text.</p>
+        <pre className="extracted-fallback">{fallbackText}</pre>
+      </div>
+    )
+  }
   if (error) return <p className="error pad">Could not render this document: {error}</p>
   if (pages === null) return <p className="muted pad">Rendering preview…</p>
   const shown = Math.min(pages, PDF_PAGE_CAP)
