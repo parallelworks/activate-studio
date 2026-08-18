@@ -72,6 +72,11 @@ on:
             label: Knowledge Base Label
             type: string
             default: Knowledge Base
+          mission:
+            label: Mission and Context
+            type: string
+            optional: true
+            tooltip: One short paragraph on what this Studio is for; injected into the assistant's system prompt and editable later in Settings.
           starter_dirs:
             label: Starter Directories
             type: string
@@ -288,6 +293,7 @@ jobs:
             --env PORT="$APORT" --env KB_ROOT="__KB__" --env DATA_DIR="__IDX__" \
             --env INDEX_BASE="__IDX__" --env KB_LABEL="__KB_LABEL__" \
             --env APP_NAME="__APP_NAME__" --env INDEX_ON_START="__RUN_INDEX__" \
+            --env KB_MISSION="__KB_MISSION__" \
             --env KB_STARTER_DIRS="__STARTER_DIRS__" \
             --env PW_GATEWAY_URL="$GATEWAY_URL" \
             ${GATEWAY_KEY:+--env PW_API_KEY="$GATEWAY_KEY"} \
@@ -348,6 +354,7 @@ jobs:
             '__APP_NAME__': "${{ inputs.app.app_name }}",
             '__SESSION__': "${{ inputs.app.session_name }}",
             '__KB_LABEL__': "${{ inputs.kb.kb_label }}",
+            '__KB_MISSION__': """${{ inputs.kb.mission }}""",
             '__STARTER_DIRS__': "${{ inputs.kb.starter_dirs }}",
             '__RUN_INDEX__': "true" if "${{ inputs.kb.run_index }}" == "true" else "0",
             '__ICON__': "$ICON", '__ICON_DARK__': "$ICON_DARK",
