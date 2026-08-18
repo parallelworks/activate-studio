@@ -22,6 +22,9 @@ export const CONVERTIBLE = new Set(['.docx', '.pptx', '.xlsx', '.doc', '.ppt', '
 
 const PDF_CACHE = path.join(INDEX_BASE, 'pdf-preview')
 const SOFFICE_HOME = path.join(INDEX_BASE, '.soffice')
+// Hosts without a system LibreOffice can point this at a wrapper (the
+// deploy workflow writes one that runs soffice inside a container).
+const SOFFICE_BIN = process.env.SOFFICE_BIN ?? 'soffice'
 
 /** Raised when an office document cannot be rendered on this host, which
  *  is a deployment fact rather than a fault in the file. */
@@ -52,7 +55,7 @@ export function officeToPdf(absSource: string, relPath: string): Promise<string>
     await fsp.mkdir(outDir, { recursive: true })
     await fsp.mkdir(SOFFICE_HOME, { recursive: true })
     await new Promise<void>((resolve, reject) => {
-      execFile('soffice', ['--headless', '--convert-to', 'pdf', '--outdir', outDir, absSource], {
+      execFile(SOFFICE_BIN, ['--headless', '--convert-to', 'pdf', '--outdir', outDir, absSource], {
         timeout: 120_000,
         env: { ...process.env, HOME: SOFFICE_HOME },
       }, (err, _so, se) => {
@@ -62,7 +65,7 @@ export function officeToPdf(absSource: string, relPath: string): Promise<string>
         // the extracted text, which is already indexed.
         const missing = (err as NodeJS.ErrnoException).code === 'ENOENT'
         reject(new OfficePreviewUnavailable(missing
-          ? 'LibreOffice (soffice) is not installed on this deployment, so Word, PowerPoint and Excel files cannot be rendered here.'
+          ? `LibreOffice is not available on this deployment (${SOFFICE_BIN} not found), so Word, PowerPoint and Excel files cannot be rendered here.`
           : `conversion failed: ${se || err.message}`))
       })
     })
