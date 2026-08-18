@@ -37,6 +37,7 @@ export interface StudioSettings {
   ragEndpointName?: string
   requirePersonalKey?: boolean
   bannerText?: string
+  kbMission?: string
   bannerColor?: string
   bannerWhenEmbedded?: boolean
   allowKeySharing?: boolean
@@ -96,6 +97,7 @@ export function effectiveSettings(): Required<StudioSettings> {
     // embedded session, so by default the app draws its own only when it is
     // open on its own (a new tab or window), never twice.
     bannerText: s.bannerText ?? process.env.BANNER_TEXT ?? '',
+    kbMission: s.kbMission ?? process.env.KB_MISSION ?? '',
     bannerColor: s.bannerColor ?? process.env.BANNER_COLOR ?? '#24612e',
     bannerWhenEmbedded: s.bannerWhenEmbedded ?? process.env.BANNER_WHEN_EMBEDDED === '1',
     // Whether a user may promote their own key to stand in for the
@@ -196,6 +198,7 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
     if (body.ragEndpointAutoStart !== undefined) next.ragEndpointAutoStart = Boolean(body.ragEndpointAutoStart)
     if (body.requirePersonalKey !== undefined) next.requirePersonalKey = Boolean(body.requirePersonalKey)
     if (body.bannerText !== undefined) next.bannerText = String(body.bannerText).slice(0, 200)
+    if (body.kbMission !== undefined) next.kbMission = String(body.kbMission).slice(0, 4000)
     if (body.bannerColor !== undefined) {
       const c = String(body.bannerColor).trim()
       if (c && !/^#[0-9a-fA-F]{6}$/.test(c)) throw new KbError(400, 'banner color must be a #rrggbb value')

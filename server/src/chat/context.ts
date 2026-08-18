@@ -2,6 +2,7 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { execFile } from 'node:child_process'
 import { KB_ROOT, gufiAvailable } from '../config.js'
+import { effectiveSettings } from '../settings.js'
 import { corpusStats } from '../gufi.js'
 
 let cached: string | null = null
@@ -28,6 +29,16 @@ function pwCatalog(): Promise<string> {
  * loaded whole so its working rules bind chat output.
  */
 export async function systemPrompt(): Promise<string> {
+  const base = await staticPrompt()
+  // The mission is spliced fresh on every call so a Settings edit takes
+  // effect without a restart; everything expensive stays cached.
+  const mission = String(effectiveSettings().kbMission ?? '').trim()
+  if (!mission) return base
+  const marker = 'the working corpus for this deployment.'
+  return base.replace(marker, `${marker}\n\nDeployment mission and context, written by this deployment's operators; treat it as authoritative about what this Studio is for:\n${mission}`)
+}
+
+async function staticPrompt(): Promise<string> {
   if (cached) return cached
   let conventions = ''
   try { conventions = await fs.readFile(path.join(KB_ROOT, 'CLAUDE.md'), 'utf8') } catch { /* absent */ }
@@ -43,6 +54,8 @@ export async function systemPrompt(): Promise<string> {
 
   cached = [
     `You are the assistant inside ACTIVATE Studio, a knowledge base interface. The knowledge base at ${KB_ROOT} is the working corpus for this deployment.`,
+    '',
+    'Never invent an expansion for an acronym or program name: if the mission statement and the knowledge base do not define one, say it is not defined there rather than guessing.',
     '',
     'Ground every answer about the knowledge base in its actual content: call search_kb first, read the files that matter with read_kb_file, and cite the files you used. Write every citation as a markdown link of the form [relative/path.md](#open=file:relative/path.md) so the reader can click through to the document in the library viewer; the viewer renders text, office documents, PDFs, images, and 3D models, so link whichever file grounds the claim. Percent-encode spaces in the link target (%20) and leave the link text as the plain path. If retrieval returns nothing relevant, say so instead of guessing.',
     '',
