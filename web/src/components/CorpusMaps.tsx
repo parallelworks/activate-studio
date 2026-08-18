@@ -237,7 +237,8 @@ export function SemanticMap({ onOpen }: { onOpen: (path: string) => void }) {
       if (!members.length || !labels[c]) continue
       const cx = members.reduce((s, f) => s + px(f).x, 0) / members.length
       const cy = members.reduce((s, f) => s + px(f).y, 0) / members.length
-      const text = labels[c]
+      const short = (l: string) => l.split(' + ').map(part => part.split('/').slice(-2).join('/')).join(' + ')
+      const text = short(labels[c])
       const wpx = g.measureText(text).width
       g.fillStyle = isDark ? 'rgba(15,23,42,0.85)' : 'rgba(255,255,255,0.85)'
       g.fillRect(cx - wpx / 2 - 5, cy - 20, wpx + 10, 17)
