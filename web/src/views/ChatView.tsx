@@ -257,7 +257,16 @@ export function ChatView() {
       currentUser={cfg.user}
       navigation={{
         toConversation: id => { setActiveId(id); setShowAttachments(false) },
-        toNewChat: () => { setActiveId(null); setShowAttachments(false) },
+        toNewChat: () => {
+          setActiveId(null); setShowAttachments(false)
+          // Land the cursor in the composer so typing starts immediately.
+          const focus = (tries: number) => {
+            const box = document.querySelector<HTMLTextAreaElement>('.chat-canvas textarea')
+            if (box) box.focus()
+            else if (tries > 0) setTimeout(() => focus(tries - 1), 100)
+          }
+          setTimeout(() => focus(5), 50)
+        },
         toAttachments: () => setShowAttachments(true),
       }}
       notify={{
