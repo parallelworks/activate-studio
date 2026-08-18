@@ -653,7 +653,8 @@ button { font-family: inherit; }
 
 /* 3D model viewer */
 .model-viewer { display: flex; flex-direction: column; flex: 1; min-height: 0; }
-.model-canvas { flex: 1; min-height: 320px; }
+.model-canvas { flex: 1; min-height: 320px; background: radial-gradient(ellipse at center, #f8fafc 0%, #e2e8f0 100%); border-radius: 8px; }
+[data-theme='dark'] .model-canvas { background: radial-gradient(ellipse at center, #1e293b 0%, #0f172a 100%); }
 .model-canvas canvas { display: block; }
 .model-info { margin: 0; padding: 6px 16px 12px; font-size: 12px; color: var(--pw-muted); }
 
