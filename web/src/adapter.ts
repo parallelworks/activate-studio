@@ -55,15 +55,25 @@ const streamFromServer: StreamCompletion = async (req, handlers, signal) => {
         reasoning += payload.text
         handlers.onReasoning?.(payload.text)
         break
-      case 'tool': {
-        // The server sends a humanized one-liner; fall back to a plain form.
-        const line = payload.pretty ?? (payload.phase === 'call'
-          ? `\n→ ${payload.name}\n`
-          : `\n↳ ${payload.summary}\n`)
-        reasoning += line
-        handlers.onReasoning?.(line)
+      case 'tool':
+        // Tool activity streams as structured part deltas; the package
+        // renders them as tool blocks (running → resolved) in the thread.
+        if (payload.phase === 'call') {
+          handlers.onPart?.({
+            type: 'tool_start',
+            id: payload.id ?? payload.name,
+            name: payload.name,
+            args: payload.args ?? '',
+          })
+        } else {
+          handlers.onPart?.({
+            type: 'tool_end',
+            id: payload.id ?? payload.name,
+            result: payload.summary ?? '',
+            isError: !!payload.error,
+          })
+        }
         break
-      }
       case 'done':
         finishReason = payload.finishReason ?? 'stop'
         model = payload.model ?? null

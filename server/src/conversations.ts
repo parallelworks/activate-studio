@@ -73,6 +73,17 @@ async function exportToKb(c: StoredConversation): Promise<void> {
   } catch { /* export is best-effort; the JSON store is the source of truth */ }
 }
 
+/** Tool call made during the turn, in ai-chat's ToolCallPart shape; the
+ *  package renders these as tool blocks above the message content. */
+export interface StoredToolCallPart {
+  kind: 'tool_call'
+  id: string
+  name: string
+  args: string
+  status: 'ok' | 'error'
+  result?: string
+}
+
 export interface StoredMessage {
   id: string
   role: string
@@ -84,6 +95,7 @@ export interface StoredMessage {
   /** Milliseconds spent thinking before the first answer token; ai-chat
    *  renders it as "Thought for Ns" on the stored message. */
   reasoningDuration?: number
+  parts?: StoredToolCallPart[]
 }
 
 export interface StoredConversation {
