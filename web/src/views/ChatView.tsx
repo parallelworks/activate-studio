@@ -82,6 +82,20 @@ export function ChatView() {
   const [multiUser, setMultiUser] = useState(false)
   const [scopeOpen, setScopeOpen] = useState(false)
 
+  // A key added or removed in Settings changes what the chat may list and
+  // say: remount the provider so models and the credential notice refetch.
+  useEffect(() => {
+    const onAccessChange = () => {
+      setCredNote(null)
+      fetch('/api/chat/models').then(r => r.json())
+        .then(d => { if (!d.models?.length && d.error) setCredNote(String(d.error)) })
+        .catch(() => { /* the remount below refetches regardless */ })
+      setChatEpoch(e => e + 1)
+    }
+    window.addEventListener('ade:model-access-changed', onAccessChange)
+    return () => window.removeEventListener('ade:model-access-changed', onAccessChange)
+  }, [])
+
   // "Add to chat" from the Library hands a corpus path to the composer, the
   // way an editor drops a file reference into a prompt. The composer belongs
   // to the chat package, so the text goes in through the DOM: React tracks
