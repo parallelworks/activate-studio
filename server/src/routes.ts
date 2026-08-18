@@ -249,6 +249,19 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
   })
 
   // Office documents rendered as PDF for the Original preview tab.
+  // Corpus HTML rendered under a hard sandbox: inline scripts and styles
+  // run, nothing loads over the network and the page has no origin
+  // privileges, which is what makes model-authored interactive pages
+  // (parametric viewers and the like) safe to display.
+  app.get('/api/kb/html', async (req, reply) => {
+    const { path: rel = '' } = req.query as { path?: string }
+    const abs = resolveKb(rel)
+    if (!/\.html?$/i.test(abs)) throw new KbError(415, 'not an html file')
+    reply.header('Content-Type', 'text/html; charset=utf-8')
+    reply.header('Content-Security-Policy', "sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:")
+    return reply.send(createReadStream(abs))
+  })
+
   app.get('/api/kb/pdf', async (req, reply) => {
     const { path: rel = '' } = req.query as { path?: string }
     const abs = resolveKb(rel)
