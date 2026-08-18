@@ -165,10 +165,10 @@ export function OverviewView({ onOpen }: { onOpen: (path: string) => void }) {
             <span className="ov-row-meta">{activity?.attachments ?? '…'}</span>
           </div>
         </section>
-
-        <TopologyMap />
-        <SemanticMap onOpen={onOpen} />
       </div>
+
+      <TopologyMap />
+      <SemanticMap onOpen={onOpen} />
     </div>
   )
 }

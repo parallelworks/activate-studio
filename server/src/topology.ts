@@ -166,6 +166,7 @@ interface SemanticMap {
   sourceStamp?: number
   files?: { path: string; x: number; y: number; c: number }[]
   clusters?: number
+  clusterLabels?: string[]
 }
 
 export async function semanticMap(): Promise<SemanticMap> {
@@ -174,7 +175,7 @@ export async function semanticMap(): Promise<SemanticMap> {
   const stamp = latestDbStamp(dbs)
   try {
     const cached = JSON.parse(fs.readFileSync(MAP_CACHE, 'utf8')) as SemanticMap
-    if (cached.sourceStamp === stamp && cached.files?.length) return cached
+    if (cached.sourceStamp === stamp && cached.files?.length && cached.clusterLabels) return cached
   } catch { /* no cache yet */ }
   const vecs = await collectFileVectors(dbs)
   if (vecs.size < 3) return { available: false }
@@ -190,11 +191,29 @@ export async function semanticMap(): Promise<SemanticMap> {
   const pts = rels.map((_, i) => ({ x: nx[i], y: ny[i] }))
   const k = Math.max(4, Math.min(14, Math.round(Math.sqrt(rels.length / 2))))
   const assign = kmeans(pts, k)
+  // A cluster's label is the directory most of its members live under,
+  // which names the grouping in the corpus's own vocabulary.
+  const clusterLabels: string[] = []
+  for (let c = 0; c < k; c++) {
+    const tally = new Map<string, number>()
+    rels.forEach((rel, i) => {
+      if (assign[i] !== c) return
+      const seg = rel.includes('/') ? rel.split('/')[0] : '(root)'
+      tally.set(seg, (tally.get(seg) ?? 0) + 1)
+    })
+    const sorted = [...tally.entries()].sort((a, b) => b[1] - a[1])
+    const total = sorted.reduce((s, [, n]) => s + n, 0)
+    if (!sorted.length) { clusterLabels.push(''); continue }
+    clusterLabels.push(sorted[0][1] / total >= 0.6 || sorted.length === 1
+      ? sorted[0][0]
+      : `${sorted[0][0]} + ${sorted[1][0]}`)
+  }
   const out: SemanticMap = {
     available: true,
     builtAt: new Date().toISOString(),
     sourceStamp: stamp,
     clusters: k,
+    clusterLabels,
     files: rels.map((rel, i) => ({ path: rel, x: Math.round(nx[i] * 1000) / 1000, y: Math.round(ny[i] * 1000) / 1000, c: assign[i] })),
   }
   try { fs.writeFileSync(MAP_CACHE, JSON.stringify(out)) } catch { /* cache is best effort */ }
