@@ -280,37 +280,6 @@ jobs:
           if [ -n "${{ inputs.kb_settings.index_base }}" ]; then
             mkdir -p "${{ inputs.kb_settings.index_base }}"
           fi
-      - name: Stop dangling processes from a prior launch
-        run: |
-          cd ${{ inputs.app_settings.workdir }}
-          # The watchdog dies first so it cannot resurrect what follows.
-          # The pid file is best effort; the sweep below catches watchdogs
-          # whose pid file is stale or was written wrong.
-          if [ -f watchdog.pid ]; then
-            kill "$(cat watchdog.pid)" 2>/dev/null || true
-            rm -f watchdog.pid
-          fi
-          for p in $(pgrep -f "bash watchdog[.]sh" 2>/dev/null); do
-            [ "$(readlink /proc/$p/cwd 2>/dev/null)" = "$PWD" ] && kill -9 "$p" 2>/dev/null && echo "  swept stale watchdog $p"
-          done
-          if [ -f app-custom.pids ]; then
-            echo "Stopping processes from a prior launch:"; cat app-custom.pids || true
-            while read -r p; do
-              [ -n "$p" ] || continue
-              kill "$p" 2>/dev/null || true
-              kill -- -"$p" 2>/dev/null || true
-            done < app-custom.pids
-          fi
-          : > app-custom.pids
-          # Sweep by pattern too, scoped so other deployments on the node
-          # survive: studio servers are matched by working directory, the
-          # endpoint agent by this deployment's session name.
-          for p in $(pgrep -f "app/server/dist/main[.]js" 2>/dev/null); do
-            [ "$(readlink /proc/$p/cwd 2>/dev/null)" = "$PWD" ] && kill "$p" 2>/dev/null && echo "  swept stale server $p"
-          done
-          PREFIX="$(echo "${{ inputs.session_settings.session_name }}" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-' | sed -E 's/-+/-/g; s/^-//; s/-$//')"
-          [ -n "$PREFIX" ] || PREFIX="studio"
-          pkill -f "endpoints http.*--name ${PREFIX}" 2>/dev/null && echo "  swept stale endpoint agent (${PREFIX})" || true
   get_ports:
     outputs:
       APP_PORT: ${{ needs.get_ports.steps.ports.outputs.APP_PORT }}
@@ -673,6 +642,41 @@ jobs:
     ssh:
       remoteHost: ${{ inputs.resource_and_execution.resource.ip }}
     steps:
+      # The old deployment stays alive through the whole build: stopping it
+      # here, after pull, build, and index all succeeded, means a failed
+      # build leaves the previous version serving instead of a dead app
+      # (learned when a transient GitHub reset killed a DEWD relaunch).
+      - name: Stop dangling processes from a prior launch
+        run: |
+          cd ${{ inputs.app_settings.workdir }}
+          # The watchdog dies first so it cannot resurrect what follows.
+          # The pid file is best effort; the sweep below catches watchdogs
+          # whose pid file is stale or was written wrong.
+          if [ -f watchdog.pid ]; then
+            kill "$(cat watchdog.pid)" 2>/dev/null || true
+            rm -f watchdog.pid
+          fi
+          for p in $(pgrep -f "bash watchdog[.]sh" 2>/dev/null); do
+            [ "$(readlink /proc/$p/cwd 2>/dev/null)" = "$PWD" ] && kill -9 "$p" 2>/dev/null && echo "  swept stale watchdog $p"
+          done
+          if [ -f app-custom.pids ]; then
+            echo "Stopping processes from a prior launch:"; cat app-custom.pids || true
+            while read -r p; do
+              [ -n "$p" ] || continue
+              kill "$p" 2>/dev/null || true
+              kill -- -"$p" 2>/dev/null || true
+            done < app-custom.pids
+          fi
+          : > app-custom.pids
+          # Sweep by pattern too, scoped so other deployments on the node
+          # survive: studio servers are matched by working directory, the
+          # endpoint agent by this deployment's session name.
+          for p in $(pgrep -f "app/server/dist/main[.]js" 2>/dev/null); do
+            [ "$(readlink /proc/$p/cwd 2>/dev/null)" = "$PWD" ] && kill "$p" 2>/dev/null && echo "  swept stale server $p"
+          done
+          PREFIX="$(echo "${{ inputs.session_settings.session_name }}" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-' | sed -E 's/-+/-/g; s/^-//; s/-$//')"
+          [ -n "$PREFIX" ] || PREFIX="studio"
+          pkill -f "endpoints http.*--name ${PREFIX}" 2>/dev/null && echo "  swept stale endpoint agent (${PREFIX})" || true
       - name: Generate run_app.sh
         run: |
           RUNDIR="${{ inputs.app_settings.rundir }}"
