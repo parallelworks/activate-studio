@@ -126,7 +126,9 @@ Stage: final
     # comes from pip at build time, never at run time.
     apt-get update && apt-get install -y --no-install-recommends \
         python3 python3-pip python3-docx python3-openpyxl \
-        attr poppler-utils tesseract-ocr curl ca-certificates
+        attr poppler-utils tesseract-ocr curl ca-certificates \
+        libreoffice-writer libreoffice-impress libreoffice-calc \
+        fonts-liberation fonts-dejavu-core
     pip3 install --no-cache-dir --break-system-packages python-pptx
     rm -rf /var/lib/apt/lists/*
     # Prove it before the image is sealed.
