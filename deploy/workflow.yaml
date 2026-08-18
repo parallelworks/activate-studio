@@ -723,7 +723,13 @@ jobs:
           echo "export PORT=${{ needs.get_ports.outputs.APP_PORT }}" >> ${SCRIPT}
           echo "export KB_ROOT=${{ inputs.kb_settings.kb_root }}" >> ${SCRIPT}
           echo "export KB_LABEL='${{ inputs.kb_settings.kb_label }}'" >> ${SCRIPT}
-          echo "export KB_MISSION='${{ inputs.kb_settings.mission }}'" >> ${SCRIPT}
+          # The mission is free text; a quoted heredoc plus %q survives any
+          # quoting the operator types (apostrophes included).
+          KB_MISSION_TEXT=$(cat << 'MISSION_EOF'
+          ${{ inputs.kb_settings.mission }}
+          MISSION_EOF
+          )
+          printf 'export KB_MISSION=%q\n' "$KB_MISSION_TEXT" >> ${SCRIPT}
           echo "export GUFI_BIN=${WORKDIR}/gufi-install/bin" >> ${SCRIPT}
           if [ -x "${WORKDIR}/soffice-wrapper.sh" ]; then
             echo "export SOFFICE_BIN=${WORKDIR}/soffice-wrapper.sh" >> ${SCRIPT}
