@@ -14,7 +14,7 @@ OUT="${1:-$PROJECT_ROOT/studio-bundle.tar.gz}"
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
 
-NODE_VERSION="v20.19.6"
+NODE_VERSION="v22.23.2"
 NODE_DIST="node-${NODE_VERSION}-linux-x64"
 CACHE="$PROJECT_ROOT/deploy/.cache"
 mkdir -p "$CACHE"
@@ -25,6 +25,8 @@ echo "Building web and server..."
 echo "Staging production server (pnpm deploy)..."
 mkdir -p "$STAGE/app"
 (cd "$PROJECT_ROOT" && pnpm --filter @activate-studio/server --prod deploy --legacy "$STAGE/app/server" >/dev/null)
+# The deploy records a prod-only install; restore the dev one.
+(cd "$PROJECT_ROOT" && pnpm install --frozen-lockfile >/dev/null)
 
 echo "Staging web, indexer, docs, starters..."
 mkdir -p "$STAGE/app/web"

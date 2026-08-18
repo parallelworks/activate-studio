@@ -29,7 +29,7 @@
 # ============================================================================
 
 Bootstrap: docker
-From: node:20-bookworm
+From: node:22-bookworm
 Stage: build
 
 %files
@@ -44,7 +44,7 @@ Stage: build
         bsdextrautils attr diffutils patch gawk patchelf
     # npm, not corepack: corepack's loader crashes on some pnpm/Node
     # pairings and leaves broken shims behind.
-    npm install -g pnpm@10
+    npm install -g pnpm@11
     cd /opt/src
     rm -rf node_modules web/node_modules server/node_modules index deploy/.cache
     pnpm install --frozen-lockfile
@@ -106,7 +106,7 @@ Stage: build
 
 # ---------------------------------------------------------------------------
 Bootstrap: docker
-From: node:20-bookworm-slim
+From: node:22-bookworm-slim
 Stage: final
 
 %files from build
