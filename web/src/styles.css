@@ -1105,3 +1105,12 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
   border-radius: 8px;
   background: #fff;
 }
+
+.treemap { border-radius: 8px; overflow: hidden; }
+.treemap-cell { cursor: pointer; border: 1px solid rgba(255,255,255,0.55); overflow: hidden; transition: filter .12s; }
+.treemap-cell:hover { filter: brightness(1.15); }
+.treemap-label { font-size: 0.72rem; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,0.55); padding: 3px 5px; display: inline-block; line-height: 1.25; }
+.crumb-row { margin: 4px 0 8px; }
+.crumb { background: none; border: none; color: var(--pw-link, #2563eb); cursor: pointer; padding: 0 2px; font: inherit; }
+.semantic-map { border: 1px solid var(--pw-border, #ddd); border-radius: 8px; background: var(--pw-panel, #fafafa); }
+.map-tip { position: absolute; left: 8px; bottom: 8px; background: rgba(15,23,42,0.9); color: #fff; padding: 3px 8px; border-radius: 6px; font-size: 0.78rem; pointer-events: none; max-width: 90%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
