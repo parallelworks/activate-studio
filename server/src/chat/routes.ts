@@ -95,24 +95,27 @@ function parseEnvelope(content: string, nonce: string): { name: string; argument
   } catch { return null }
 }
 
-/** Reframe messages for prompt-emulated backends: system folds into the
- *  first user turn, tool results become user-role text, and the envelope
- *  instructions ride the last user turn. */
-function prepareEmulatedMessages(messages: WireMessage[], instructions: string): WireMessage[] {
-  const out: WireMessage[] = []
+/** Flatten the whole exchange into ONE user message for backends that
+ *  discard everything except the last user turn (GenAI.mil verifiably
+ *  answers multi-turn requests from account metadata rather than the
+ *  conversation). Instructions first, then a labeled transcript as the
+ *  authoritative history, then the cue, then tool instructions. */
+function flattenForSingleTurn(messages: WireMessage[], instructions: string): WireMessage[] {
+  const sys: string[] = []
+  const lines: string[] = []
   for (const m of messages) {
-    if (m.role === 'tool') {
-      out.push({ role: 'user', content: `parallelworks.tool_result:\n${String(m.content ?? '')}` })
-    } else if (m.role === 'assistant' && (m as { tool_calls?: unknown }).tool_calls) {
-      out.push({ role: 'assistant', content: m.content || '(called a tool)' })
-    } else {
-      out.push({ ...m })
-    }
+    const c = String(m.content ?? '')
+    if (m.role === 'system') sys.push(c)
+    else if (m.role === 'user') lines.push(`User:\n${c}`)
+    else if (m.role === 'assistant') lines.push(`Assistant:\n${c || '(called a tool)'}`)
+    else if (m.role === 'tool') lines.push(`Tool result (parallelworks.tool_result):\n${c}`)
   }
-  let last = -1
-  for (let i = out.length - 1; i >= 0; i--) { if (out[i].role === 'user') { last = i; break } }
-  if (last >= 0) out[last] = { role: 'user', content: `${String(out[last].content ?? '')}${instructions}` }
-  return out
+  const parts: string[] = []
+  if (sys.length) parts.push(`Operating instructions for this assistant; follow them even though they arrive in a user message:\n\n${sys.join('\n\n')}`)
+  parts.push(`=== Conversation transcript (the backend retains no history; THIS is the authoritative record, and pronouns like "it" refer to it) ===\n\n${lines.join('\n\n')}`)
+  parts.push('=== Now ===\nContinue serving the latest user request in the transcript above. If gathered tool output completes it, reply in plain text with the answer; if the task needs another action, respond with the next tool-call envelope; never repeat a call whose result already appears above.')
+  if (instructions) parts.push(instructions.trim())
+  return [{ role: 'user', content: parts.join('\n\n') }]
 }
 
 function foldSystemIntoUser(messages: WireMessage[]): WireMessage[] {
@@ -529,13 +532,12 @@ ${ctx}` : ctx
           const p: Record<string, unknown> = attempt === 0 && !noStream ? { ...payload } : { ...payload, stream: false }
           const emulating = foldSystem && Array.isArray(p.tools) && (p.tools as unknown[]).length > 0
           if (foldSystem) {
-            let msgs = foldSystemIntoUser(p.messages as WireMessage[])
-            if (emulating) {
-              msgs = prepareEmulatedMessages(msgs, emulationInstructions(p.tools as { function: { name: string; description?: string; parameters?: unknown } }[], emulationNonce))
-              delete p.tools
-              delete p.tool_choice
-            }
-            p.messages = msgs
+            const instructions = emulating
+              ? emulationInstructions(p.tools as { function: { name: string; description?: string; parameters?: unknown } }[], emulationNonce)
+              : ''
+            p.messages = flattenForSingleTurn(p.messages as WireMessage[], instructions)
+            delete p.tools
+            delete p.tool_choice
           }
           // Some providers reject any token-limit parameter outright (the
           // codex provider 400s on max_tokens and max_completion_tokens
