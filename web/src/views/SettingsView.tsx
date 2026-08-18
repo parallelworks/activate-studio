@@ -30,6 +30,7 @@ interface Effective {
   bannerColor: string
   bannerWhenEmbedded: boolean
   allowKeySharing: boolean
+  kbMission: string
 }
 
 interface CatalogTool { name: string; description: string; builtin: boolean; enabled: boolean; parameters?: unknown; command?: string; implementation?: string; calls?: string }
@@ -336,6 +337,14 @@ export function SettingsView() {
                   <input className="field" value={form.iconUrl} placeholder="https://example.org/logo.png"
                     onChange={e => setForm({ ...form, iconUrl: e.target.value })} />
                 </div>
+                <div>
+                  <label className="field-label">Mission and context</label>
+                  <textarea className="field" rows={4} value={form.kbMission ?? ''}
+                    placeholder="What this Studio is for: the program or project it serves, what the corpus holds, terms the assistant should know. Injected into the assistant's system prompt."
+                    onChange={e => setForm({ ...form, kbMission: e.target.value })} />
+                  <p className="muted key-note">The assistant treats this as authoritative about the deployment's purpose. It is also told never to invent expansions for acronyms the mission and corpus leave undefined.</p>
+                </div>
+
                 <div>
                   <label className="field-label">Brand icon for dark mode (optional)</label>
                   <input className="field" value={form.iconUrlDark} placeholder="leave empty to use the same image"

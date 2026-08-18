@@ -216,6 +216,11 @@ permissions:
             type: string
             default: Knowledge Base
             tooltip: Display name in the interface.
+          mission:
+            label: Mission and Context
+            type: string
+            optional: true
+            tooltip: One short paragraph on what this Studio is for; injected into the assistant's system prompt and editable later in Settings.
           build_gufi:
             label: Build GUFI Index Engine
             type: boolean
@@ -718,6 +723,7 @@ jobs:
           echo "export PORT=${{ needs.get_ports.outputs.APP_PORT }}" >> ${SCRIPT}
           echo "export KB_ROOT=${{ inputs.kb_settings.kb_root }}" >> ${SCRIPT}
           echo "export KB_LABEL='${{ inputs.kb_settings.kb_label }}'" >> ${SCRIPT}
+          echo "export KB_MISSION='${{ inputs.kb_settings.mission }}'" >> ${SCRIPT}
           echo "export GUFI_BIN=${WORKDIR}/gufi-install/bin" >> ${SCRIPT}
           if [ -x "${WORKDIR}/soffice-wrapper.sh" ]; then
             echo "export SOFFICE_BIN=${WORKDIR}/soffice-wrapper.sh" >> ${SCRIPT}
