@@ -133,7 +133,7 @@ export function TopologyMap() {
   let node = tree
   if (focus) for (const part of focus.split('/')) { const c = node.children.get(part); if (!c) break; node = c }
   const kids = [...node.children.values()]
-  const W = 600, H = 340
+  const W = 600, H = 320
   const rects = squarify(kids, 0, 0, W, H)
   const topDirs = [...tree.children.values()].sort((a, b) => b.bytes - a.bytes)
   const topColor = (p: string) => PALETTE[[...tree.children.keys()].indexOf(p.split('/')[0]) % PALETTE.length]
@@ -147,7 +147,7 @@ export function TopologyMap() {
           <button key={i} className="crumb" onClick={() => setFocus(arr.slice(0, i + 1).join('/'))}>/{part}</button>
         ))}
       </p>
-      <div className="treemap" style={{ position: 'relative', width: '100%', aspectRatio: `${W}/${H}` }}>
+      <div className="treemap" style={{ position: 'relative', width: '100%', height: 320 }}>
         {rects.map((r, i) => (
           <div
             key={i}
@@ -205,7 +205,15 @@ export function SemanticMap({ onOpen }: { onOpen: (path: string) => void }) {
   const [files, setFiles] = useState<MapFile[] | null>(null)
   const [labels, setLabels] = useState<string[]>([])
   const [hover, setHover] = useState<MapFile | null>(null)
+  const [resizeTick, setResizeTick] = useState(0)
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  useEffect(() => {
+    const cv = canvasRef.current
+    if (!cv) return
+    const ro = new ResizeObserver(() => setResizeTick(t => t + 1))
+    ro.observe(cv)
+    return () => ro.disconnect()
+  }, [files])
   useEffect(() => {
     fetch('/api/kb/semantic-map').then(r => r.json())
       .then(d => { if (d.available) { setFiles(d.files); setLabels(d.clusterLabels ?? []) } })
@@ -214,7 +222,7 @@ export function SemanticMap({ onOpen }: { onOpen: (path: string) => void }) {
   useEffect(() => {
     const cv = canvasRef.current
     if (!cv || !files) return
-    const W = cv.clientWidth, H = Math.min(320, Math.max(260, Math.round(W * 0.55)))
+    const W = cv.clientWidth || 600, H = 320
     cv.width = W * devicePixelRatio
     cv.height = H * devicePixelRatio
     cv.style.height = `${H}px`
@@ -275,7 +283,7 @@ export function SemanticMap({ onOpen }: { onOpen: (path: string) => void }) {
       g.fillStyle = PALETTE[c % PALETTE.length]
       g.fillText(text, cx - wpx / 2, cy - 7)
     }
-  }, [files, hover, labels])
+  }, [files, hover, labels, resizeTick])
   if (!files) return null
   const locate = (e: React.MouseEvent) => {
     const cv = canvasRef.current!
