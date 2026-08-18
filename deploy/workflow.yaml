@@ -179,11 +179,11 @@ permissions:
             type: boolean
             default: false
             tooltip: Clobber the cached bundle and re-pull the latest from the bucket.
-          office_image:
-            label: LibreOffice Image (bucket)
+          office_runtime:
+            label: LibreOffice Runtime (bucket)
             type: string
             optional: true
-            tooltip: Bucket path of a container image holding LibreOffice; the Studio's own studio.sif works since it carries LibreOffice. Pulled when the host has no soffice, so Word, PowerPoint and Excel files render as pages. Leave empty to fall back to extracted-text previews.
+            tooltip: Bucket path of an office-runtime.tar.gz (the official LibreOffice Linux binaries repacked as a relocatable directory). Pulled and cached once per host when soffice is absent, like the Node runtime, so Word, PowerPoint and Excel files render as pages. Leave empty to fall back to extracted-text previews.
           app_port:
             label: App Port
             type: number
@@ -514,27 +514,23 @@ jobs:
           fi
           PATH="$PWD/node-runtime/bin:$PATH"; export PATH
           echo "node: $(command -v node) $(node --version 2>/dev/null || echo 'MISSING')"
-      - name: Office rendering via container when soffice is absent
+      - name: Office rendering runtime when soffice is absent
         run: |
           cd ${{ inputs.app_settings.workdir }}
-          IMG_URI="${{ inputs.app_settings.office_image }}"
-          if [ -z "$IMG_URI" ]; then echo "No office image configured."; exit 0; fi
-          if command -v soffice >/dev/null 2>&1; then echo "System soffice present; container not needed."; exit 0; fi
-          RUNTIME="$(command -v apptainer || command -v singularity || true)"
-          if [ -z "$RUNTIME" ]; then echo "No apptainer/singularity on this host; office rendering stays unavailable."; exit 0; fi
-          SIF="$PWD/office-render.sif"
-          if [ ! -f "$SIF" ]; then
+          RT_URI="${{ inputs.app_settings.office_runtime }}"
+          if [ -z "$RT_URI" ]; then echo "No office runtime configured."; exit 0; fi
+          if command -v soffice >/dev/null 2>&1; then echo "System soffice present; staged runtime not needed."; exit 0; fi
+          SOFFICE="$(find "$PWD/office-runtime" -name soffice -path "*/program/*" 2>/dev/null | head -1)"
+          if [ -z "$SOFFICE" ]; then
             PW_BIN="$(command -v pw || echo pw)"
-            "$PW_BIN" buckets cp "$IMG_URI" "$SIF" || { echo "office image pull failed; office rendering stays unavailable."; exit 0; }
+            "$PW_BIN" buckets cp "$RT_URI" office-runtime.tar.gz || { echo "office runtime pull failed; office rendering stays unavailable."; exit 0; }
+            tar -xzf office-runtime.tar.gz && rm -f office-runtime.tar.gz
+            SOFFICE="$(find "$PWD/office-runtime" -name soffice -path "*/program/*" | head -1)"
           fi
-          cat > soffice-wrapper.sh << 'WRAP'
-          #!/bin/bash
-          RUNTIME="$(command -v apptainer || command -v singularity)"
-          BINDS="${KB_ROOT:+--bind $KB_ROOT}${INDEX_BASE:+ --bind $INDEX_BASE}"
-          exec "$RUNTIME" exec $BINDS "$(dirname "$0")/office-render.sif" soffice "$@"
-          WRAP
+          [ -n "$SOFFICE" ] || { echo "no soffice in the runtime; office rendering stays unavailable."; exit 0; }
+          printf '#!/bin/bash\nexec "%s" "$@"\n' "$SOFFICE" > soffice-wrapper.sh
           chmod +x soffice-wrapper.sh
-          echo "Office rendering wrapper installed at $PWD/soffice-wrapper.sh"
+          echo "Office rendering via staged runtime: $SOFFICE"
 
   build_gufi:
     needs:
