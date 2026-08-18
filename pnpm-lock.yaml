@@ -51,8 +51,8 @@ importers:
         specifier: ^5.3.0
         version: 5.3.0
       '@parallelworks/ai-chat':
-        specifier: 0.2.2
-        version: 0.2.2(@popperjs/core@2.11.8)(formik@2.4.9(@types/react@19.2.18)(react@19.2.8))(monaco-editor@0.55.1)(monaco-yaml@5.5.1(monaco-editor@0.55.1))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+        specifier: 0.4.0
+        version: 0.4.0(@popperjs/core@2.11.8)(formik@2.4.9(@types/react@19.2.18)(react@19.2.8))(monaco-editor@0.55.1)(monaco-yaml@5.5.1(monaco-editor@0.55.1))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@parallelworks/ui':
         specifier: ^0.5.0
         version: 0.5.0(@popperjs/core@2.11.8)(formik@2.4.9(@types/react@19.2.18)(react@19.2.8))(monaco-editor@0.55.1)(monaco-yaml@5.5.1(monaco-editor@0.55.1))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -601,8 +601,8 @@ packages:
     os: [linux]
     libc: [glibc]
 
-  '@parallelworks/ai-chat@0.2.2':
-    resolution: {integrity: sha512-8kiAeFWm+FxYNBZsf5HJsOtICfb/+hYZcIG15JpZhJDHvdH+BNIhqmFTb5r/s0mpUZ78Qrr1D5qYuge1NrvrdQ==}
+  '@parallelworks/ai-chat@0.4.0':
+    resolution: {integrity: sha512-tKgF643WPhIG0wUCYvAycT1j0UDoh82SfsOQgVk3APBvpIUja65TBaHrFr8EFJ5XLXTtySTRTpGPJFtQ9Ixyqw==}
     hasBin: true
     peerDependencies:
       react: ^19.0.0
@@ -2756,7 +2756,7 @@ snapshots:
   '@napi-rs/lzma-linux-x64-gnu@1.5.1':
     optional: true
 
-  '@parallelworks/ai-chat@0.2.2(@popperjs/core@2.11.8)(formik@2.4.9(@types/react@19.2.18)(react@19.2.8))(monaco-editor@0.55.1)(monaco-yaml@5.5.1(monaco-editor@0.55.1))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
+  '@parallelworks/ai-chat@0.4.0(@popperjs/core@2.11.8)(formik@2.4.9(@types/react@19.2.18)(react@19.2.8))(monaco-editor@0.55.1)(monaco-yaml@5.5.1(monaco-editor@0.55.1))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
     dependencies:
       '@parallelworks/ui': 0.5.0(@popperjs/core@2.11.8)(formik@2.4.9(@types/react@19.2.18)(react@19.2.8))(monaco-editor@0.55.1)(monaco-yaml@5.5.1(monaco-editor@0.55.1))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@streamdown/code': 1.1.1(react@19.2.8)
