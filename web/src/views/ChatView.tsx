@@ -291,6 +291,9 @@ export function ChatView() {
             ),
         },
         strings: {
+          thinking: {
+            thoughtFor: (duration: string) => `Worked for ${duration}`,
+          },
           emptyState: {
             noProvidersTitle: 'Model credential needed',
             noProvidersBody: 'Add your API key or platform token under Settings, Model access. Browsing, search, and adding material work without one.',
