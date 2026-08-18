@@ -138,6 +138,7 @@ export function Viewer({ path, onDeleted }: {
 
   const suffix = suffixOf(path)
   const isMarkdown = suffix === '.md'
+  const isHtml = /\.html?$/i.test(path)
   const isImage = file.kind === 'image'
   const isModel = file.kind === 'model'
   const isPdf = suffix === '.pdf'
@@ -145,7 +146,7 @@ export function Viewer({ path, onDeleted }: {
   const isText = file.kind === 'text'
   // Text files have one representation; binary formats have an original
   // rendering and, separately, the text stored in the search index.
-  const hasTabs = isMarkdown || (!isText && (isImage || isPdf || isOffice || isModel))
+  const hasTabs = isMarkdown || isHtml || (!isText && (isImage || isPdf || isOffice || isModel))
 
   const doDelete = async () => {
     setDeleting(true)
@@ -177,7 +178,14 @@ export function Viewer({ path, onDeleted }: {
     </div>
   )
 
-  const previewView = isModel ? (
+  const previewView = isHtml ? (
+    <iframe
+      sandbox="allow-scripts"
+      src={`/api/kb/html?path=${encodeURIComponent(path)}`}
+      title={path}
+      className="html-preview-frame"
+    />
+  ) : isModel ? (
     <ModelViewer path={path} />
   ) : isImage ? (
     <div className="viewer-body"><img src={api.rawUrl(path)} alt={path} style={{ maxWidth: '100%' }} /></div>
@@ -234,8 +242,8 @@ export function Viewer({ path, onDeleted }: {
       {hasTabs && (
         <div className="viewer-tabs">
           <button className={tab === 'preview' ? 'active' : ''} onClick={() => setTab('preview')}>Preview</button>
-          {isMarkdown && <button className={tab === 'source' ? 'active' : ''} onClick={() => setTab('source')}>Source</button>}
-          {!isMarkdown && <button className={tab === 'indexed' ? 'active' : ''} onClick={() => setTab('indexed')}>Indexed text</button>}
+          {(isMarkdown || isHtml) && <button className={tab === 'source' ? 'active' : ''} onClick={() => setTab('source')}>Source</button>}
+          {!(isMarkdown || isHtml) && <button className={tab === 'indexed' ? 'active' : ''} onClick={() => setTab('indexed')}>Indexed text</button>}
         </div>
       )}
       {hasTabs ? (tab === 'preview' ? previewView : tab === 'source' ? sourceView : indexedView) : previewView}
