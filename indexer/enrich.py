@@ -342,9 +342,9 @@ def main() -> int:
                             n_extracted += 1
                     if not text or not text.strip():
                         continue
-                    # Inodes go in as text. Parallel filesystems (the DEWD
-                    # cluster's /shared among them) issue numbers past
-                    # SQLite's signed 64-bit range, which raised OverflowError
+                    # Inodes go in as text. Some parallel filesystems
+                    # issue numbers past SQLite's signed 64-bit range,
+                    # which raised OverflowError
                     # and failed the whole indexing pass; every consumer joins
                     # on CAST(tinode AS TEXT) anyway.
                     rows.append((str(fpath.stat().st_ino), fpath.name, text))

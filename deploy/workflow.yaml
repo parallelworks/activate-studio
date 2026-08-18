@@ -668,7 +668,7 @@ jobs:
       # The old deployment stays alive through the whole build: stopping it
       # here, after pull, build, and index all succeeded, means a failed
       # build leaves the previous version serving instead of a dead app
-      # (learned when a transient GitHub reset killed a DEWD relaunch).
+      # (learned when a transient GitHub reset killed a relaunch).
       - name: Stop dangling processes from a prior launch
         run: |
           cd ${{ inputs.app_settings.workdir }}
