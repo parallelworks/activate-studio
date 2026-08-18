@@ -103,13 +103,14 @@ export function TopologyMap() {
   let node = tree
   if (focus) for (const part of focus.split('/')) { const c = node.children.get(part); if (!c) break; node = c }
   const kids = [...node.children.values()]
-  const W = 960, H = 320
+  const W = 960, H = 430
   const rects = squarify(kids, 0, 0, W, H)
+  const topDirs = [...tree.children.values()].sort((a, b) => b.bytes - a.bytes)
   const topColor = (p: string) => PALETTE[[...tree.children.keys()].indexOf(p.split('/')[0]) % PALETTE.length]
   return (
-    <section className="card ov-list">
+    <section className="card ov-span">
       <h3>Corpus topology</h3>
-      <p className="muted">Area is bytes on disk. Click a directory to zoom; click the crumb to back out.</p>
+      <p className="muted">Area is bytes on disk, one hue per top-level directory, shade separating siblings. Click a directory to zoom; the crumbs back out.</p>
       <p className="crumb-row">
         <button className="crumb" onClick={() => setFocus('')}>corpus</button>
         {focus.split('/').filter(Boolean).map((part, i, arr) => (
@@ -127,52 +128,123 @@ export function TopologyMap() {
               left: `${(r.x / W) * 100}%`, top: `${(r.y / H) * 100}%`,
               width: `${(r.w / W) * 100}%`, height: `${(r.h / H) * 100}%`,
               background: topColor(r.node.path),
+              filter: `brightness(${1.18 - (i % 4) * 0.11})`,
             }}
             onClick={() => { if (r.node.children.size) setFocus(r.node.path) }}
           >
-            {(r.w / W) * 100 > 8 && (r.h / H) * 100 > 8 && (
-              <span className="treemap-label">{r.node.name}<br />{fmtB(r.node.bytes)}</span>
+            {(r.w / W) * 100 > 7 && (r.h / H) * 100 > 7 && (
+              <span className="treemap-label">{r.node.name}<br />{r.node.files} files · {fmtB(r.node.bytes)}</span>
             )}
           </div>
         ))}
       </div>
+      <p className="map-legend">
+        {topDirs.map(d => (
+          <button key={d.path} className="legend-chip" onClick={() => setFocus(d.path)}>
+            <span className="legend-dot" style={{ background: topColor(d.path) }} />
+            {d.name} <span className="muted">{fmtB(d.bytes)}</span>
+          </button>
+        ))}
+      </p>
     </section>
   )
 }
 
 interface MapFile { path: string; x: number; y: number; c: number }
 
+/** Andrew's monotone chain convex hull. */
+function hull(pts: { x: number; y: number }[]): { x: number; y: number }[] {
+  if (pts.length < 3) return pts
+  const p = [...pts].sort((a, b) => a.x - b.x || a.y - b.y)
+  const cross = (o: { x: number; y: number }, a: { x: number; y: number }, b: { x: number; y: number }) =>
+    (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x)
+  const lower: typeof p = []
+  for (const pt of p) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], pt) <= 0) lower.pop()
+    lower.push(pt)
+  }
+  const upper: typeof p = []
+  for (const pt of [...p].reverse()) {
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], pt) <= 0) upper.pop()
+    upper.push(pt)
+  }
+  return [...lower.slice(0, -1), ...upper.slice(0, -1)]
+}
+
 export function SemanticMap({ onOpen }: { onOpen: (path: string) => void }) {
   const [files, setFiles] = useState<MapFile[] | null>(null)
+  const [labels, setLabels] = useState<string[]>([])
   const [hover, setHover] = useState<MapFile | null>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   useEffect(() => {
     fetch('/api/kb/semantic-map').then(r => r.json())
-      .then(d => { if (d.available) setFiles(d.files) })
+      .then(d => { if (d.available) { setFiles(d.files); setLabels(d.clusterLabels ?? []) } })
       .catch(() => { /* stays empty */ })
   }, [])
   useEffect(() => {
     const cv = canvasRef.current
     if (!cv || !files) return
-    const W = cv.clientWidth, H = 340
+    const W = cv.clientWidth, H = 440
     cv.width = W * devicePixelRatio
     cv.height = H * devicePixelRatio
     cv.style.height = `${H}px`
     const g = cv.getContext('2d')!
     g.scale(devicePixelRatio, devicePixelRatio)
     g.clearRect(0, 0, W, H)
-    const pad = 18
+    const pad = 26
+    const px = (f: { x: number; y: number }) => ({ x: pad + f.x * (W - 2 * pad), y: pad + (1 - f.y) * (H - 2 * pad) })
+    const k = Math.max(...files.map(f => f.c)) + 1
+    // Soft hulls first so points and labels sit above them.
+    for (let c = 0; c < k; c++) {
+      const members = files.filter(f => f.c === c).map(px)
+      if (members.length < 3) continue
+      const hl = hull(members)
+      g.beginPath()
+      hl.forEach((pt, i) => (i ? g.lineTo(pt.x, pt.y) : g.moveTo(pt.x, pt.y)))
+      g.closePath()
+      g.fillStyle = PALETTE[c % PALETTE.length]
+      g.globalAlpha = 0.08
+      g.fill()
+      g.globalAlpha = 0.35
+      g.strokeStyle = PALETTE[c % PALETTE.length]
+      g.stroke()
+      g.globalAlpha = 1
+    }
     for (const f of files) {
-      const x = pad + f.x * (W - 2 * pad)
-      const y = pad + (1 - f.y) * (H - 2 * pad)
+      const { x, y } = px(f)
       g.beginPath()
       g.arc(x, y, hover === f ? 7 : 4.5, 0, Math.PI * 2)
       g.fillStyle = PALETTE[f.c % PALETTE.length]
-      g.globalAlpha = hover && hover !== f ? 0.45 : 0.9
+      g.globalAlpha = hover && hover !== f ? 0.4 : 0.92
       g.fill()
       g.globalAlpha = 1
     }
-  }, [files, hover])
+    // Small corpora carry their names on the map itself.
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark'
+    if (files.length <= 40) {
+      g.font = '11px system-ui, sans-serif'
+      g.fillStyle = isDark ? '#cbd5e1' : '#334155'
+      for (const f of files) {
+        const { x, y } = px(f)
+        const name = f.path.split('/').pop() ?? f.path
+        g.fillText(name.length > 28 ? `${name.slice(0, 26)}…` : name, x + 7, y + 4)
+      }
+    }
+    // Cluster names at centroids, above everything.
+    g.font = '600 12.5px system-ui, sans-serif'
+    for (let c = 0; c < k; c++) {
+      const members = files.filter(f => f.c === c)
+      if (!members.length || !labels[c]) continue
+      const cx = members.reduce((s, f) => s + px(f).x, 0) / members.length
+      const cy = members.reduce((s, f) => s + px(f).y, 0) / members.length
+      const text = labels[c]
+      const wpx = g.measureText(text).width
+      g.fillStyle = isDark ? 'rgba(15,23,42,0.85)' : 'rgba(255,255,255,0.85)'
+      g.fillRect(cx - wpx / 2 - 5, cy - 20, wpx + 10, 17)
+      g.fillStyle = PALETTE[c % PALETTE.length]
+      g.fillText(text, cx - wpx / 2, cy - 7)
+    }
+  }, [files, hover, labels])
   if (!files) return null
   const locate = (e: React.MouseEvent) => {
     const cv = canvasRef.current!
@@ -189,7 +261,7 @@ export function SemanticMap({ onOpen }: { onOpen: (path: string) => void }) {
     return best
   }
   return (
-    <section className="card ov-list">
+    <section className="card ov-span">
       <h3>Semantic map</h3>
       <p className="muted">Every embedded document, placed by content similarity and colored by cluster. Neighbors read alike even when they live in different folders. Hover for the file; click to open it.</p>
       <div style={{ position: 'relative' }}>
@@ -203,6 +275,14 @@ export function SemanticMap({ onOpen }: { onOpen: (path: string) => void }) {
         />
         {hover && <div className="map-tip">{hover.path}</div>}
       </div>
+      <p className="map-legend">
+        {labels.map((l, c) => l && (
+          <span key={c} className="legend-chip">
+            <span className="legend-dot" style={{ background: PALETTE[c % PALETTE.length] }} />
+            {l}
+          </span>
+        ))}
+      </p>
     </section>
   )
 }
