@@ -342,19 +342,24 @@ jobs:
           fi
           cd ${{ inputs.app_settings.workdir }}
           set -e
-          # Node runtime: the system node must be v20+ (corepack/pnpm crash
-          # under older ones with ERR_VM_DYNAMIC_IMPORT_CALLBACK_MISSING);
-          # otherwise fetch v20 into the workdir.
+          # Node runtime: the system node must be v22+ (pnpm 11 requires it);
+          # otherwise fetch v22 into the workdir. A node-runtime left by an
+          # older run may be v20 and sits ahead of the system node on PATH.
+          node_major() { "$1" -p 'process.version.slice(1).split(".")[0]' 2>/dev/null || echo 0; }
+          if [ -x node-runtime/bin/node ] && [ "$(node_major node-runtime/bin/node)" -lt 22 ]; then
+            echo "Discarding node-runtime $(node-runtime/bin/node --version); need v22+."
+            rm -rf node-runtime
+          fi
           NEED_NODE=1
           if [ -x node-runtime/bin/node ]; then
             NEED_NODE=0
           elif command -v node >/dev/null 2>&1; then
-            MAJ=$(node -p 'process.version.slice(1).split(".")[0]' 2>/dev/null || echo 0)
-            [ "$MAJ" -ge 20 ] && NEED_NODE=0 || echo "System node is v$MAJ; fetching v20."
+            MAJ=$(node_major node)
+            [ "$MAJ" -ge 22 ] && NEED_NODE=0 || echo "System node is v$MAJ; fetching v22."
           fi
           if [ "$NEED_NODE" = "1" ]; then
             echo "Fetching Node runtime..."
-            curl -fsSL -o node.tar.xz https://nodejs.org/dist/v20.19.6/node-v20.19.6-linux-x64.tar.xz
+            curl -fsSL -o node.tar.xz https://nodejs.org/dist/v22.23.2/node-v22.23.2-linux-x64.tar.xz
             mkdir -p node-runtime
             tar -xJf node.tar.xz -C node-runtime --strip-components=1
             rm -f node.tar.xz
@@ -379,10 +384,11 @@ jobs:
           cd repo
           # No corepack: its vm loader crashes on several pnpm/Node pairings
           # and its shims linger broken across runs. A plain npm global
-          # install of pnpm 10 overwrites any stale shim and just works.
-          if ! pnpm --version >/dev/null 2>&1; then
+          # install of pnpm 11 overwrites any stale shim and just works.
+          PNPM_MAJ=$(pnpm --version 2>/dev/null | cut -d. -f1 || echo 0)
+          if [ "${PNPM_MAJ:-0}" -lt 11 ] 2>/dev/null; then
             echo "installing pnpm via npm"
-            npm install -g pnpm@10 >/dev/null 2>&1 || true
+            npm install -g pnpm@11 >/dev/null 2>&1 || true
           fi
           pnpm --version >/dev/null 2>&1 || { echo "ERROR: pnpm unavailable"; exit 1; }
           echo "pnpm: $(pnpm --version)"
@@ -520,13 +526,13 @@ jobs:
             rm -f bundle.tar.gz
             echo "$BUNDLE" > .bundle
           fi
-          # Node runtime from the bundle, unless the resource has v20+.
+          # Node runtime from the bundle, unless the resource has v22+.
           NEED_NODE=1
           if [ -x node-runtime/bin/node ]; then
             NEED_NODE=0
           elif command -v node >/dev/null 2>&1; then
             MAJ=$(node -p 'process.version.slice(1).split(".")[0]' 2>/dev/null || echo 0)
-            [ "$MAJ" -ge 20 ] && NEED_NODE=0
+            [ "$MAJ" -ge 22 ] && NEED_NODE=0
           fi
           if [ "$NEED_NODE" = "1" ]; then
             NODE_TAR=$(ls node-*-linux-x64.tar.xz 2>/dev/null | head -1)
