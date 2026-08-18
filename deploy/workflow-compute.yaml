@@ -31,22 +31,22 @@ on:
           app_name:
             label: App Name
             type: string
-            default: ACTIVATE Studio
+            default: CFD AI Studio
           session_name:
             label: Session Name
             type: string
-            default: studio-compute
+            default: cfd-studio
             tooltip: Platform session for the web interface. Kept across relaunches, so the URL is stable.
           suggested_prompts:
             label: Chat Starter Prompts
             type: string
-            default: ''
+            default: 'What cases are in this knowledge base and what does each simulate?;How does snappyHexMesh refine the mesh around the motorBike body?;Show me the motorBike surface geometry.;What boundary conditions does the damBreak case use for the water phase?'
             optional: true
             tooltip: Semicolon-separated example questions shown on the empty chat page.
           icon_path:
             label: Brand Icon Path
             type: string
-            default: ''
+            default: ${WORKDIR:-$HOME/pw}/studio-knowledge-base/.branding/icon.png
             optional: true
             tooltip: Absolute path on the resource to a light-mode icon image; must sit under the knowledge base or another bound directory.
           icon_path_dark:
@@ -71,12 +71,19 @@ on:
           kb_label:
             label: Knowledge Base Label
             type: string
-            default: Knowledge Base
+            default: CFD Knowledge Base
           mission:
             label: Mission and Context
             type: string
+            default: "This is the CFD AI Studio, a workspace for computational fluid dynamics engineering. The corpus holds complete OpenFOAM tutorial cases, tutorials for running each, solver manuals, papers, surface geometry models, and prior chat sessions. Its purpose is helping engineers understand, run, and adapt CFD cases and answering questions grounded in this material."
             optional: true
             tooltip: One short paragraph on what this Studio is for; injected into the assistant's system prompt and editable later in Settings.
+          starter_bundle:
+            label: Starter Knowledge Base (bucket)
+            type: string
+            optional: true
+            default: pw://mshaxted/codeassist/cfd-starter-kb.tar.gz
+            tooltip: Tarball pulled and extracted into an empty knowledge base on first launch, so a fresh deployment starts with a working corpus. A knowledge base that already has content is never touched.
           starter_dirs:
             label: Starter Directories
             type: string
@@ -94,7 +101,7 @@ on:
           partition:
             label: Partition
             type: string
-            default: ''
+            default: AIML
             tooltip: Scheduler partition with the GPUs (e.g. AIML).
           account:
             label: Account
@@ -108,12 +115,12 @@ on:
           walltime:
             label: Walltime
             type: string
-            default: '08:00:00'
+            default: '02:00:00'
             tooltip: The stack ends with the job. Relaunching reuses the corpus, index, and session names.
           scheduler_directives:
             label: Extra Scheduler Directives
             type: string
-            default: ''
+            default: '--gres=gpu:h100_sxm5:4'
             optional: true
             tooltip: Semicolon-separated sbatch directives without the #SBATCH prefix (e.g. --gres=gpu:h100_sxm5:4 on systems that require an explicit GRES).
       containers:
@@ -141,12 +148,12 @@ on:
           model_dir:
             label: Model Directory
             type: string
-            default: ${WORKDIR:-$HOME/pw}/models/gpt-oss-20b
+            default: ${WORKDIR:-$HOME/pw}/models/gemma-4-31B-it-heretic
             tooltip: HuggingFace-format model directory on the resource. Downloaded on the login node when missing and a model id is set.
           hf_model_id:
             label: HuggingFace Model ID
             type: string
-            default: openai/gpt-oss-20b
+            default: coder3101/gemma-4-31B-it-heretic
             optional: true
             tooltip: Downloaded into the model directory when it does not exist yet.
           hf_token:
@@ -157,7 +164,7 @@ on:
           served_name:
             label: Served Model Name
             type: string
-            default: gpt-oss-20b
+            default: gemma-4-31b-it
           vllm_bucket:
             label: vLLM Image (bucket)
             type: string
@@ -174,7 +181,7 @@ on:
           vllm_args:
             label: vLLM Arguments
             type: string
-            default: --tensor-parallel-size 1 --gpu-memory-utilization 0.9 --max-model-len 65536 --trust-remote-code --enable-auto-tool-choice --tool-call-parser openai
+            default: '--tensor-parallel-size 1 --gpu-memory-utilization 0.92 --max-model-len 32768 --kv-cache-dtype fp8 --trust-remote-code --enable-auto-tool-choice --tool-call-parser gemma4 --reasoning-parser gemma4 --chat-template /vllm-workspace/examples/tool_chat_template_gemma4.jinja'
             tooltip: The openai tool-call parser matches gpt-oss; a Qwen model wants --tool-call-parser qwen3_coder --reasoning-parser qwen3.
           register_openai:
             label: Register the Model in the Catalog
@@ -184,7 +191,7 @@ on:
           model_endpoint_name:
             label: Model Endpoint Name
             type: string
-            default: studio-model
+            default: gemma
           gateway_url:
             label: Gateway URL (when not serving)
             type: string
@@ -210,6 +217,19 @@ jobs:
           SSIF="$(eval echo '${{ inputs.containers.studio_local }}')"
           VSIF="$(eval echo '${{ inputs.model.vllm_local }}')"
           mkdir -p "$RUNDIR" "$KB" "$IDX" "$(dirname "$SSIF")" "$(dirname "$VSIF")"
+          # An empty knowledge base seeds itself from the starter bundle, so
+          # a first launch lands with a working corpus; existing content is
+          # never touched.
+          BUNDLE_URI="${{ inputs.kb.starter_bundle }}"
+          if [ -n "$BUNDLE_URI" ] && [ -z "$(ls -A "$KB" 2>/dev/null)" ]; then
+            PW_BIN="$(command -v pw || echo ~/pw/pw)"
+            if "$PW_BIN" buckets cp "$BUNDLE_URI" "$RUNDIR/starter-kb.tar.gz"; then
+              tar -xzf "$RUNDIR/starter-kb.tar.gz" -C "$KB" && rm -f "$RUNDIR/starter-kb.tar.gz"
+              echo "Seeded the knowledge base from $BUNDLE_URI"
+            else
+              echo "Starter bundle pull failed; continuing with an empty knowledge base."
+            fi
+          fi
           PW_BIN="$(command -v pw || echo ~/pw/pw)"
           if [ ! -f "$SSIF" ]; then "$PW_BIN" buckets cp ${{ inputs.containers.studio_bucket }} "$SSIF"; fi
           if [ "${{ inputs.model.serve }}" = "true" ] && [ ! -f "$VSIF" ]; then "$PW_BIN" buckets cp ${{ inputs.model.vllm_bucket }} "$VSIF"; fi
