@@ -338,14 +338,6 @@ export function SettingsView() {
                     onChange={e => setForm({ ...form, iconUrl: e.target.value })} />
                 </div>
                 <div>
-                  <label className="field-label">Mission and context</label>
-                  <textarea className="field" rows={4} value={form.kbMission ?? ''}
-                    placeholder="What this Studio is for: the program or project it serves, what the corpus holds, terms the assistant should know. Injected into the assistant's system prompt."
-                    onChange={e => setForm({ ...form, kbMission: e.target.value })} />
-                  <p className="muted key-note">The assistant treats this as authoritative about the deployment's purpose. It is also told never to invent expansions for acronyms the mission and corpus leave undefined.</p>
-                </div>
-
-                <div>
                   <label className="field-label">Brand icon for dark mode (optional)</label>
                   <input className="field" value={form.iconUrlDark} placeholder="leave empty to use the same image"
                     onChange={e => setForm({ ...form, iconUrlDark: e.target.value })} />
@@ -423,6 +415,15 @@ export function SettingsView() {
                   Allow users to see each other's chat sessions in the chat interface (the rail still defaults each user to their own, with a toggle to show all; off removes that option entirely; exported transcripts remain in the knowledge base tree either way)
                 </label>
               )}
+              <label className="field-label">Mission and context</label>
+              <textarea
+                className="field prompts-box"
+                rows={4}
+                value={form.kbMission ?? ''}
+                placeholder="What this Studio is for: the program or project it serves, what the corpus holds, terms the assistant should know. Injected into the assistant's system prompt."
+                onChange={e => setForm({ ...form, kbMission: e.target.value })}
+              />
+              <p className="muted key-note">The assistant treats this as authoritative about the deployment's purpose, and it never invents expansions for acronyms the mission and corpus leave undefined.</p>
               <label className="field-label">Chat starter prompts (one per line)</label>
               <textarea
                 className="field prompts-box"
