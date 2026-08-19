@@ -130,6 +130,58 @@ export async function captureIfStale(): Promise<SnapshotMeta | null> {
   return capture()
 }
 
+/** The census of one snapshot, cached because a view walks it a level at
+ *  a time and reading a compressed file per click is wasteful. */
+let cached: { id: string; snap: Snapshot } | null = null
+
+function snapshotOf(id: string): Snapshot {
+  if (cached?.id === id) return cached.snap
+  const snap = readSnapshot(id)
+  cached = { id, snap }
+  return snap
+}
+
+export interface Level {
+  dir: string
+  dirs: { name: string; path: string; files: number; bytes: number }[]
+  files: { name: string; path: string; size: number; mtime: number }[]
+  totals: { files: number; bytes: number }
+}
+
+/** One directory level of the corpus as it stood, built from the census. */
+export function level(id: string, dir: string): Level {
+  const snap = snapshotOf(id)
+  const prefix = dir ? dir.replace(/\/+$/, '') + '/' : ''
+  const dirs = new Map<string, { files: number; bytes: number }>()
+  const files: Level['files'] = []
+  let totals = { files: 0, bytes: 0 }
+  for (const e of snap.entries) {
+    if (prefix && !e.path.startsWith(prefix)) continue
+    const rest = e.path.slice(prefix.length)
+    if (rest === '') continue
+    const slash = rest.indexOf('/')
+    totals.files += 1
+    totals.bytes += e.size
+    if (slash < 0) {
+      files.push({ name: rest, path: e.path, size: e.size, mtime: e.mtime })
+    } else {
+      const name = rest.slice(0, slash)
+      const cur = dirs.get(name) ?? { files: 0, bytes: 0 }
+      cur.files += 1
+      cur.bytes += e.size
+      dirs.set(name, cur)
+    }
+  }
+  return {
+    dir,
+    dirs: [...dirs.entries()]
+      .map(([name, v]) => ({ name, path: prefix + name, ...v }))
+      .sort((a, b) => b.bytes - a.bytes),
+    files: files.sort((a, b) => (a.name < b.name ? -1 : 1)),
+    totals,
+  }
+}
+
 export interface Diff {
   from: SnapshotMeta
   to: SnapshotMeta
@@ -194,6 +246,14 @@ export async function historyRoutes(app: FastifyInstance): Promise<void> {
   app.post('/api/kb/history/capture', async () => {
     const snap = await capture()
     return { captured: snap }
+  })
+
+  app.get('/api/kb/history/level', async req => {
+    const { id, dir } = req.query as { id?: string; dir?: string }
+    const all = listSnapshots()
+    if (all.length === 0) return { available: false }
+    const snapId = id ?? all[all.length - 1].id
+    return { available: true, ...level(snapId, dir ?? '') }
   })
 
   app.get('/api/kb/history/diff', async req => {
