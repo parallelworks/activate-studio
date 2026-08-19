@@ -1119,3 +1119,17 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .legend-chip { display: inline-flex; align-items: center; gap: 6px; background: none; border: none; font: inherit; font-size: 0.82rem; color: var(--pw-text, #1e293b); cursor: pointer; padding: 0; }
 .legend-dot { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
 
+
+/* Structured previews: JSON and YAML as a collapsible tree. */
+.tree-doc { padding: 10px 14px; }
+.tree-doc-label { color: var(--muted); font-size: 12px; margin: 6px 0; }
+.tree-row { display: flex; align-items: baseline; gap: 6px; line-height: 1.5; font-family: var(--font-mono); font-size: 12.5px; }
+.tree-toggle { background: none; border: 0; color: var(--muted); cursor: pointer; padding: 0; width: 12px; line-height: 1; }
+.tree-key { color: var(--pw-link); }
+.tree-key::after { content: ':'; color: var(--muted); }
+.tree-summary { color: var(--muted); }
+.tree-scalar { white-space: pre-wrap; word-break: break-word; }
+.tree-string { color: var(--text); }
+.tree-number, .tree-boolean { color: var(--pw-link); }
+.tree-null { color: var(--muted); font-style: italic; }
+.tree-block { margin: 2px 0 6px; padding: 6px 8px; background: var(--panel-2, rgba(127,127,127,0.08)); border-radius: 4px; white-space: pre-wrap; font-size: 12px; }
