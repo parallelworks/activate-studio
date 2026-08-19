@@ -2,8 +2,10 @@ permissions:
   - '*'
 
 # ACTIVATE Studio on a compute node, as one scheduler job.
-# Full documentation, including the training quick start and operating
-# notes: deploy/COMPUTE.md.
+# SUPERSEDED: deploy/workflow.yaml now carries this as its scheduler
+# placement (Slurm and PBS), toggled by "Submit as a Scheduler Job"; this
+# file remains only for platform records that still reference it and will
+# be removed once they migrate. Documentation: deploy/COMPUTE.md.
 #
 # The login-node workflow (deploy/workflow.yaml) serves from the head node.
 # This one submits a single batch job that runs the whole stack on a compute
