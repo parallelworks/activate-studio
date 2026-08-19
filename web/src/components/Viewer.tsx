@@ -1,13 +1,17 @@
-import { useEffect, useState } from 'react'
+import { ReactElement, useEffect, useState } from 'react'
 import { Streamdown } from 'streamdown'
 import { api, FileContent } from '../api'
 import { forgetHash } from '../lastLocation'
 import { TagMenu } from './TagMenu'
 import { ModelViewer } from './ModelViewer'
+import { DataTree } from './DataTree'
 
 const OFFICE_SUFFIXES = ['.docx', '.pptx', '.xlsx', '.doc', '.ppt', '.xls', '.odt', '.odp', '.ods']
 
 type Tab = 'preview' | 'indexed' | 'source'
+
+const JSON_SUFFIXES = ['.json', '.jsonl', '.geojson', '.ipynb']
+const YAML_SUFFIXES = ['.yaml', '.yml']
 
 const PDF_PAGE_CAP = 150
 
@@ -144,9 +148,9 @@ export function Viewer({ path, onDeleted }: {
   const isPdf = suffix === '.pdf'
   const isOffice = OFFICE_SUFFIXES.includes(suffix)
   const isText = file.kind === 'text'
-  // Text files have one representation; binary formats have an original
-  // rendering and, separately, the text stored in the search index.
-  const hasTabs = isMarkdown || isHtml || (!isText && (isImage || isPdf || isOffice || isModel))
+  const isJson = JSON_SUFFIXES.includes(suffix)
+  const isYaml = YAML_SUFFIXES.includes(suffix)
+  const isStructured = (isJson || isYaml) && isText
 
   const doDelete = async () => {
     setDeleting(true)
@@ -178,7 +182,9 @@ export function Viewer({ path, onDeleted }: {
     </div>
   )
 
-  const previewView = isHtml ? (
+  const treeView = <DataTree text={file.content ?? ''} format={isYaml ? 'yaml' : 'json'} />
+
+  const previewView = isStructured ? treeView : isHtml ? (
     <iframe
       sandbox="allow-scripts"
       src={`/api/kb/html?path=${encodeURIComponent(path)}`}
@@ -201,6 +207,19 @@ export function Viewer({ path, onDeleted }: {
   ) : (
     <p className="muted pad">No inline preview for this file type; use Download.</p>
   )
+
+  // A file's tabs are the representations it actually has: a rendered
+  // preview where one exists, the bytes as written, and the text the
+  // index holds for formats whose text is extracted rather than read.
+  const previewLabel = isStructured ? 'Tree' : isMarkdown ? 'Rendered' : isHtml ? 'Page' : 'Preview'
+  const views: { key: Tab; label: string; node: ReactElement }[] = []
+  const hasRendered = isStructured || isMarkdown || isHtml || isImage || isPdf || isOffice || isModel
+  if (hasRendered) views.push({ key: 'preview', label: previewLabel, node: previewView })
+  if (isText) views.push({ key: 'source', label: hasRendered ? 'Source' : 'Text', node: sourceView })
+  if (!isText && (isImage || isPdf || isOffice || isModel)) {
+    views.push({ key: 'indexed', label: 'Indexed text', node: indexedView })
+  }
+  const active = views.some(v => v.key === tab) ? tab : (views[0]?.key ?? 'preview')
 
   return (
     <div className="viewer">
@@ -239,14 +258,14 @@ export function Viewer({ path, onDeleted }: {
           )}
         </span>
       </div>
-      {hasTabs && (
+      {views.length > 0 && (
         <div className="viewer-tabs">
-          <button className={tab === 'preview' ? 'active' : ''} onClick={() => setTab('preview')}>Preview</button>
-          {(isMarkdown || isHtml) && <button className={tab === 'source' ? 'active' : ''} onClick={() => setTab('source')}>Source</button>}
-          {!(isMarkdown || isHtml) && <button className={tab === 'indexed' ? 'active' : ''} onClick={() => setTab('indexed')}>Indexed text</button>}
+          {views.map(v => (
+            <button key={v.key} className={active === v.key ? 'active' : ''} onClick={() => setTab(v.key)}>{v.label}</button>
+          ))}
         </div>
       )}
-      {hasTabs ? (tab === 'preview' ? previewView : tab === 'source' ? sourceView : indexedView) : previewView}
+      {views.find(v => v.key === active)?.node ?? previewView}
     </div>
   )
 }

@@ -68,6 +68,9 @@ importers:
       three:
         specifier: ^0.185.1
         version: 0.185.1
+      yaml:
+        specifier: ^2.9.0
+        version: 2.9.0
     devDependencies:
       '@types/react':
         specifier: ^19.2.18
