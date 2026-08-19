@@ -67,6 +67,7 @@ permissions:
         hidden: ${{ inputs.resource_and_execution.resource.schedulerType != 'slurm' || inputs.resource_and_execution.scheduler == false }}
         items:
           account:
+            default: "hpcmo49636prw"
             label: Account
             type: slurm-accounts
             resource: ${{ inputs.resource_and_execution.resource }}
@@ -82,6 +83,7 @@ permissions:
             ignore: ${{ inputs.resource_and_execution.resource.schedulerType != 'slurm' || inputs.resource_and_execution.scheduler == false }}
             tooltip: Partition with the GPUs (--partition). Empty uses the cluster default.
           qos:
+            default: "standard"
             label: Quality of Service
             type: slurm-qos
             resource: ${{ inputs.resource_and_execution.resource }}
