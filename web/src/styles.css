@@ -1133,3 +1133,17 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .tree-number, .tree-boolean { color: var(--pw-link); }
 .tree-null { color: var(--muted); font-style: italic; }
 .tree-block { margin: 2px 0 6px; padding: 6px 8px; background: var(--panel-2, rgba(127,127,127,0.08)); border-radius: 4px; white-space: pre-wrap; font-size: 12px; }
+
+/* Corpus timeline: one point per index pass, height by file count. */
+.hist-axis { position: relative; height: 84px; margin: 10px 0 4px; border-bottom: 1px solid var(--border); }
+.hist-point { position: absolute; bottom: 0; width: 8px; margin-left: -4px; padding: 0; border: 0; border-radius: 2px 2px 0 0;
+  background: var(--pw-link); opacity: 0.55; cursor: pointer; transition: opacity 120ms ease; }
+.hist-point:hover { opacity: 0.85; }
+.hist-point.active { opacity: 1; box-shadow: 0 0 0 2px var(--panel), 0 0 0 3px var(--pw-link); }
+.hist-legend { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 10px; }
+.hist-summary { margin: 6px 0 10px; }
+.hist-detail { border-top: 1px solid var(--border); padding-top: 10px; }
+.hist-changes { margin-bottom: 10px; }
+.hist-change-label { font-weight: 600; font-size: 12.5px; margin: 0 0 4px; }
+.hist-change-list { margin: 0; padding-left: 16px; font-size: 12.5px; line-height: 1.6; }
+.hist-change-list button.link-button { font-family: var(--font-mono); font-size: 12px; }
