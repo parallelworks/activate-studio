@@ -15,7 +15,8 @@
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "streamdown": "^2.5.0",
-    "three": "^0.185.1"
+    "three": "^0.185.1",
+    "yaml": "^2.9.0"
   },
   "devDependencies": {
     "@types/react": "^19.2.18",
