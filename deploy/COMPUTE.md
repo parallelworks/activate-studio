@@ -32,11 +32,15 @@ it.
 
 ## Quick start (CFD training on makau)
 
-The `configurations` block in the yaml carries a per-resource preset:
-selecting makau pre-fills the complete training package, the CFD AI Studio
-with a Gemma 4 31B serve on one H100, a starter corpus, mission, prompts,
-and branding, with scheduler placement already on. A first launch needs
-three choices:
+Two ways to get the pre-filled training package, the CFD AI Studio with a
+Gemma 4 31B serve, a starter corpus, mission, prompts, and branding, with
+scheduler placement already on. On activate.hpc.mil the `cfd-studio`
+record is the turnkey copy: every training value is the form default,
+generated from this workflow by `deploy/make_cfd_training_yaml.py` (rerun
+it and PATCH the record's stored yaml after workflow changes). On any
+platform serving the plain workflow, the `configurations` block does the
+same through a per-resource preset that fires when makau is selected. A
+first launch needs three choices:
 
 1. Resource: makau.
 2. Account: your scheduler account (allocation).
@@ -95,6 +99,11 @@ relaunches.
   explicitly: `PATCH /api/workflows/<name>` with body
   `{"yaml": "<file contents as a string>"}`, then verify the stored copy
   carries your change before launching.
+- A model by itself, without the Studio, is a separate workflow: the
+  marketplace Ollama GGUF workflow (scheduler placement, Slurm and PBS,
+  any GGUF tag from HuggingFace) fits compute clusters like makau, and
+  the `ollama-endpoint` and `vllm-endpoint` records serve from GPU login
+  hosts and register the model in the platform catalog.
 - One stack per session name: a new submission cancels the previous job
   with the same name first. Each submission writes its own output file
   (`job-<timestamp>.out`, with a `job.out` symlink to the current one), so
@@ -102,9 +111,13 @@ relaunches.
 
 ## Troubleshooting
 
-- *Rejected with a GRES or select message*: the site requires an explicit
-  GPU request. Put it in Extra Scheduler Directives in the site's own
-  syntax; the error message names the node type it expects.
+- *Rejected with a GRES, select, or "node configuration is not available"
+  message*: the site requires an explicit GPU request, or the requested
+  shape does not exist in that partition. Put the request in Extra
+  Scheduler Directives in the site's own syntax. On makau the AIML
+  partition has quad `h100_sxm5:4` nodes only; the single-GPU
+  `h100_nvl:1` nodes are in the standard, debug, background, and high
+  partitions.
 - *Long "waiting" phase on first launch*: the model download. Watch the
   run's log; later launches skip it.
 - *Session up but chat answers slowly*: normal for a 31B model on one GPU;
