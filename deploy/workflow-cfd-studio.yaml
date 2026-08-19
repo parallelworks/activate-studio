@@ -247,10 +247,10 @@ permissions:
           image_path:
             label: Container Image
             type: string
-            default: "/p/app/projects/hsp/cfd-training/containers/studio.sif"
+            default: "/p/app/projects/hsp/cfd-training/containers/studio.sif; pw://mshaxted/codeassist/studio.sif"
             optional: true
             hidden: ${{ inputs.app_settings.source != 'container' }}
-            tooltip: Path to the .sif on the resource, a platform bucket URI (pw://user/bucket/studio.sif), or a library/docker URI the container runtime can pull. Empty looks for studio.sif in the work directory.
+            tooltip: Path to the .sif on the resource, a platform bucket URI (pw://user/bucket/studio.sif), or a library/docker URI the container runtime can pull. Several may be listed, separated by semicolons, and the first that works is used, so a shared copy can name a bucket behind it. Empty looks for studio.sif in the work directory.
           repo_url:
             label: Repository URL
             type: string
@@ -318,9 +318,9 @@ permissions:
           starter_bundle:
             label: Starter Knowledge Base (bucket)
             type: string
-            default: "/p/app/projects/hsp/cfd-training/cfd-starter-kb.tar.gz"
+            default: "/p/app/projects/hsp/cfd-training/cfd-starter-kb.tar.gz; pw://mshaxted/codeassist/cfd-starter-kb.tar.gz"
             optional: true
-            tooltip: Tarball (bucket URI) pulled and extracted into an empty knowledge base on first launch, so a fresh deployment starts with a working corpus. A knowledge base that already has content is never touched. Scheduler placement only.
+            tooltip: Tarball pulled and extracted into an empty knowledge base on first launch, so a fresh deployment starts with a working corpus. Takes a bucket URI, a path on the resource, or several of either separated by semicolons, in which case the first that works is used. A knowledge base that already has content is never touched. Scheduler placement only.
           kb_label:
             label: Knowledge Base Label
             type: string
@@ -423,10 +423,10 @@ permissions:
           vllm_image:
             label: vLLM Image (bucket or path)
             type: string
-            default: "/p/app/projects/hsp/cfd-training/containers/vllm.sif"
+            default: "/p/app/projects/hsp/cfd-training/containers/vllm.sif; pw://mshaxted/codeassist/vllm-0.27.sif"
             optional: true
             hidden: ${{ inputs.resource_and_execution.scheduler != true }}
-            tooltip: Bucket URI or path of the vLLM Apptainer image. Staged beside the Studio image and cached on the resource.
+            tooltip: Bucket URI or path of the vLLM Apptainer image, or several separated by semicolons, the first that works being used. Staged beside the Studio image and cached on the resource.
           gpu_ids:
             label: GPU IDs
             type: string
@@ -1155,49 +1155,68 @@ jobs:
           # An empty knowledge base seeds itself from the starter bundle, so
           # a first launch lands with a working corpus; existing content is
           # never touched.
-          BUNDLE="${{ inputs.kb_settings.starter_bundle }}"
-          if [ -n "$BUNDLE" ] && [ -z "$(ls -A "$KB" 2>/dev/null)" ]; then
-            SRC=""
-            case "$BUNDLE" in
-              pw://*|s3://*|gs://*|az://*)
-                if "$PW_BIN" buckets cp "$BUNDLE" "$RUNDIR/starter-kb.tar.gz" > bundle-cp.log 2>&1; then
-                  SRC="$RUNDIR/starter-kb.tar.gz"
-                else
-                  tr '\r' '\n' < bundle-cp.log | tail -3
-                fi ;;
-              *)
-                # A tarball already on the resource, e.g. one shared copy
-                # every trainee reads.
-                if [ -r "$BUNDLE" ]; then SRC="$BUNDLE"; else echo "Starter bundle not readable: $BUNDLE"; fi ;;
-            esac
+          BUNDLES="${{ inputs.kb_settings.starter_bundle }}"
+          if [ -n "$BUNDLES" ] && [ -z "$(ls -A "$KB" 2>/dev/null)" ]; then
+            SRC=""; USED=""
+            OLDIFS="$IFS"; IFS=';,'
+            for BUNDLE in $BUNDLES; do
+              IFS="$OLDIFS"
+              BUNDLE="$(echo "$BUNDLE" | xargs)"
+              [ -n "$BUNDLE" ] || continue
+              case "$BUNDLE" in
+                pw://*|s3://*|gs://*|az://*)
+                  if "$PW_BIN" buckets cp "$BUNDLE" "$RUNDIR/starter-kb.tar.gz" > bundle-cp.log 2>&1; then
+                    SRC="$RUNDIR/starter-kb.tar.gz"; USED="$BUNDLE"; break
+                  fi
+                  tr '\r' '\n' < bundle-cp.log | tail -3 ;;
+                *)
+                  # A tarball already on the resource, e.g. one shared copy
+                  # every trainee reads.
+                  if [ -r "$BUNDLE" ]; then SRC="$BUNDLE"; USED="$BUNDLE"; break; fi
+                  echo "Not readable here, trying the next source: $BUNDLE" ;;
+              esac
+              IFS=';,'
+            done
+            IFS="$OLDIFS"
             if [ -n "$SRC" ] && tar -xzf "$SRC" -C "$KB"; then
-              echo "Seeded the knowledge base from $BUNDLE"
+              echo "Seeded the knowledge base from $USED"
             else
-              echo "Starter bundle unavailable; continuing with an empty knowledge base."
+              echo "No starter bundle could be read; continuing with an empty knowledge base."
             fi
             rm -f "$RUNDIR/starter-kb.tar.gz"
           fi
           # Images live on the shared filesystem so the compute node sees
           # what the login node staged; an existing file is reused, delete
           # it to force a fresh pull.
-          # A bucket URI is pulled once into the per-user cache; a path on
-          # the resource is read where it sits, so one shared read-only
-          # image serves every user with no per-user copy.
-          resolve() { # $1 = configured source, $2 = cache path; prints the usable path
-            SRC="$1"; DST="$2"
-            [ -n "$SRC" ] || SRC="$DST"
-            case "$SRC" in
-              pw://*|s3://*|gs://*|az://*)
-                if [ ! -f "$DST" ]; then
+          # Each setting may list several sources, separated by semicolons or
+          # commas, and the first that works wins. That lets one deployment
+          # name a shared copy on its own filesystem and a bucket behind it,
+          # so the same configuration still launches on a system where that
+          # path does not exist.
+          resolve() { # $1 = configured sources, $2 = cache path; prints the usable path
+            SRCS="$1"; DST="$2"
+            [ -n "$SRCS" ] || SRCS="$DST"
+            OLDIFS="$IFS"; IFS=';,'
+            for SRC in $SRCS; do
+              IFS="$OLDIFS"
+              SRC="$(echo "$SRC" | xargs)"
+              [ -n "$SRC" ] || continue
+              case "$SRC" in
+                pw://*|s3://*|gs://*|az://*)
+                  if [ -f "$DST" ]; then echo "$DST"; return 0; fi
                   echo "Staging $SRC -> $DST" >&2
-                  "$PW_BIN" buckets cp "$SRC" "$DST" > image-cp.log 2>&1 \
-                    || { tr '\r' '\n' < image-cp.log | tail -3 >&2; return 1; }
-                fi
-                echo "$DST" ;;
-              *)
-                [ -r "$SRC" ] || return 1
-                echo "$SRC" ;;
-            esac
+                  if "$PW_BIN" buckets cp "$SRC" "$DST" > image-cp.log 2>&1; then
+                    echo "$DST"; return 0
+                  fi
+                  tr '\r' '\n' < image-cp.log | tail -3 >&2 ;;
+                *)
+                  if [ -r "$SRC" ]; then echo "$SRC"; return 0; fi
+                  echo "Not readable here, trying the next source: $SRC" >&2 ;;
+              esac
+              IFS=';,'
+            done
+            IFS="$OLDIFS"
+            return 1
           }
           cd "$RUNDIR"
           # resolve runs in a subshell, so a failure inside it cannot end
