@@ -123,6 +123,10 @@ web interface and filling the deployment fields by hand.
 - The starter bundle is rebuilt by tarring a curated corpus and uploading
   it; keep working files (chat exports, user uploads, generated models) out
   of it so trainees start clean.
+- The job script the node runs is written from the workflow, with every
+  launch value in a `job.env` beside it and the script itself plain bash
+  referring to named variables. To debug a launch, read `job.sh` and
+  `job.env` in the run directory; they are what actually ran.
 - A workflow record of local type executes the platform's stored copy of
   the yaml rather than the repository, so it does not follow a merge.
   After changing the yaml, push it explicitly: `PATCH
