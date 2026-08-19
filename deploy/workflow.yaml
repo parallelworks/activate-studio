@@ -27,43 +27,6 @@
 permissions:
   - '*'
 
-# Per-resource presets: selecting a matching resource pre-fills the form
-# with a complete, tested configuration. The makau entry is the CFD
-# training package (scheduler placement, Gemma 4 31B serve, starter
-# corpus); values mirror the proven activate-studio-compute runs.
-configurations:
-  makau:
-    inputs:
-      resource_and_execution:
-        scheduler: true
-      slurm:
-        partition: AIML
-        walltime: '02:00:00'
-        scheduler_directives: '--gres=gpu:h100_sxm5:4'
-      session_settings:
-        session_name: cfd-studio
-      app_settings:
-        source: container
-        app_name: CFD AI Studio
-        workdir: ${WORKDIR:-$HOME/pw}
-        image_path: pw://mshaxted/codeassist/studio.sif
-        icon_path: ${WORKDIR:-$HOME/pw}/studio-knowledge-base/.branding/icon.png
-        suggested_prompts: 'What cases are in this knowledge base and what does each simulate?;How does snappyHexMesh refine the mesh around the motorBike body?;Show me the motorBike surface geometry.;What boundary conditions does the damBreak case use for the water phase?'
-      kb_settings:
-        kb_root: ${WORKDIR:-$HOME/pw}/studio-knowledge-base
-        index_base: ${WORKDIR:-$HOME/pw}/studio-index
-        kb_label: CFD Knowledge Base
-        starter_bundle: pw://mshaxted/codeassist/cfd-starter-kb.tar.gz
-        mission: "This is the CFD AI Studio, a workspace for computational fluid dynamics engineering. The corpus holds complete OpenFOAM tutorial cases, tutorials for running each, solver manuals, papers, surface geometry models, and prior chat sessions. Its purpose is helping engineers understand, run, and adapt CFD cases and answering questions grounded in this material."
-      model_settings:
-        serve: true
-        hf_model_id: coder3101/gemma-4-31B-it-heretic
-        model_dir: ${WORKDIR:-$HOME/pw}/models/gemma-4-31B-it-heretic
-        served_name: gemma-4-31b-it
-        vllm_image: pw://mshaxted/codeassist/vllm-0.27.sif
-        vllm_args: '--tensor-parallel-size 1 --gpu-memory-utilization 0.92 --max-model-len 32768 --kv-cache-dtype fp8 --trust-remote-code --enable-auto-tool-choice --tool-call-parser gemma4 --reasoning-parser gemma4 --chat-template /vllm-workspace/examples/tool_chat_template_gemma4.jinja'
-        model_endpoint_name: gemma
-
 'on':
   execute:
     inputs:
@@ -127,7 +90,7 @@ configurations:
             type: string
             default: ''
             optional: true
-            tooltip: Semicolon-separated sbatch directives without the #SBATCH prefix, e.g. --gres=gpu:h100_sxm5:4 on systems that require an explicit GRES.
+            tooltip: Semicolon-separated sbatch directives without the #SBATCH prefix, e.g. a --gres=gpu:<type>:<count> request on systems that require an explicit GRES.
       pbs:
         label: PBS Job
         type: group

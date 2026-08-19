@@ -26,23 +26,16 @@ placement is proven in production runs; PBS follows the marketplace script
 submitter's mechanics and has passed simulation but not yet a live PBS
 cluster, so treat the first PBS launch as a shakedown.
 
-`deploy/workflow-compute.yaml` is the superseded standalone version of the
-scheduler placement, kept only for platform records that still reference
-it.
+## Quick start (a pre-filled training deployment)
 
-## Quick start (CFD training on makau)
+`deploy/make_cfd_training_yaml.py` derives a turnkey copy of this
+workflow from a site preset file: every deployment value becomes the form
+default, scheduler placement included, and the form opens with only the
+resource and scheduler groups expanded. Publish the output as a platform
+workflow record, and rerun the generator and update that record whenever
+this workflow changes. A launch then needs three choices:
 
-Two ways to get the pre-filled training package, the CFD AI Studio with a
-Gemma 4 31B serve, a starter corpus, mission, prompts, and branding, with
-scheduler placement already on. On activate.hpc.mil the `cfd-studio`
-record is the turnkey copy: every training value is the form default,
-generated from this workflow by `deploy/make_cfd_training_yaml.py` (rerun
-it and PATCH the record's stored yaml after workflow changes). On any
-platform serving the plain workflow, the `configurations` block does the
-same through a per-resource preset that fires when makau is selected. A
-first launch needs three choices:
-
-1. Resource: makau.
+1. Resource: the cluster to run on.
 2. Account: your scheduler account (allocation).
 3. QOS: your quality of service.
 
@@ -64,8 +57,9 @@ relaunches.
   partition, QOS, and queue mean the flag is omitted and the cluster
   default applies. Extra directives are semicolon-separated lines without
   the `#SBATCH`/`#PBS` prefix; on systems that require an explicit GPU
-  request this is where it goes (`--gres=gpu:h100_sxm5:4` on makau,
-  `-l select=1:ngpus=1` as the PBS starting point).
+  request this is where it goes, in the site's own syntax
+  (`--gres=gpu:<type>:<count>`, or `-l select=1:ngpus=1` as a PBS
+  starting point).
 - **App & Bundle**: source must be Container. The image comes from the
   bucket URI or path in Container Image and is cached at
   `<workdir>/containers/studio.sif` on the shared filesystem so the compute
@@ -89,28 +83,34 @@ relaunches.
 ## Running a class
 
 A room of trainees launching at once hits three limits, all handled by
-staging one shared read-only copy on the resource and pointing the form
-at it (`make_cfd_training_yaml.py --shared-dir DIR`). Without it each
-launch pulls the Studio image (0.4 GB), the vLLM image (8.3 GB), and
-downloads the model (59 GB for Gemma 4 31B). A path on the resource is
-read where it sits, so the copies never multiply; bucket URIs still
-cache per user. The directory holds `containers/studio.sif`,
-`containers/vllm.sif`, `models/<model dir>`, and the starter tarball,
-each world-readable with every parent directory traversable. On makau
-this is `/p/app/projects/hsp/cfd-training`.
+staging one shared read-only copy in the site's project space and
+pointing the form at it (`make_cfd_training_yaml.py --shared-dir DIR`).
+Without it every launch pulls the Studio image, pulls the vLLM image
+(several GB), and downloads the model (tens of GB for a 31B model). A
+path on the resource is read where it sits, so the copies never
+multiply; bucket URIs still cache per user. The directory holds
+`containers/studio.sif`, `containers/vllm.sif`, `models/<model dir>`,
+and the starter tarball, each world-readable with every parent directory
+traversable.
 
 What stays per user: the corpus, the index, the run directory, and the
 session name, so trainees do not collide and each keeps their own
 uploads and chats.
 
-Node capacity is the remaining ceiling. The makau AIML partition is
-`OverSubscribe=EXCLUSIVE` with 16 nodes, so one trainee stack occupies a
-whole quad-H100 node whatever it requests, and concurrent launches beyond
-the free node count queue rather than fail. Check `sinfo -p AIML` before
-a session and, when the class is larger than the free nodes, either
-stagger launches or serve one model for everyone (Serve a Model in the
-Job off, Gateway Base URL pointed at a model already running) so the
-trainee jobs need no GPU at all.
+Node capacity is the remaining ceiling. Where the GPU partition is
+`OverSubscribe=EXCLUSIVE`, one trainee stack occupies a whole node
+whatever it requests, and concurrent launches beyond the free node count
+queue rather than fail. Check the partition's free nodes before a session
+and, when the class is larger than that, either stagger launches or serve
+one model for everyone (Serve a Model in the Job off, Gateway Base URL
+pointed at a model already running) so the trainee jobs need no GPU at
+all.
+
+Workflow records are per user on ACTIVATE, with no share operation, so
+each trainee needs their own copy: `pw workflows create --yaml
+<training yaml> --display-name "<name>" <record name>`, run where the
+yaml is readable, or adding this workflow from its repository through the
+web interface and filling the deployment fields by hand.
 
 ## Operating notes
 
@@ -120,16 +120,17 @@ trainee jobs need no GPU at all.
 - The starter bundle is rebuilt by tarring a curated corpus and uploading
   it; keep working files (chat exports, user uploads, generated models) out
   of it so trainees start clean.
-- On activate.hpc.mil, runs execute the platform's stored copy of this
-  yaml, which lags the repository. After changing the yaml, push it
-  explicitly: `PATCH /api/workflows/<name>` with body
+- A workflow record of local type executes the platform's stored copy of
+  the yaml rather than the repository, so it does not follow a merge.
+  After changing the yaml, push it explicitly: `PATCH
+  /api/workflows/<name>` with body
   `{"yaml": "<file contents as a string>"}`, then verify the stored copy
   carries your change before launching.
 - A model by itself, without the Studio, is a separate workflow: the
   marketplace Ollama GGUF workflow (scheduler placement, Slurm and PBS,
-  any GGUF tag from HuggingFace) fits compute clusters like makau, and
-  the `ollama-endpoint` and `vllm-endpoint` records serve from GPU login
-  hosts and register the model in the platform catalog.
+  any GGUF tag from HuggingFace) fits compute clusters, and the
+  `ollama-endpoint` and `vllm-endpoint` workflows serve from GPU login
+  hosts; both register the model in the platform catalog.
 - One stack per session name: a new submission cancels the previous job
   with the same name first. Each submission writes its own output file
   (`job-<timestamp>.out`, with a `job.out` symlink to the current one), so
@@ -140,13 +141,11 @@ trainee jobs need no GPU at all.
 - *Rejected with a GRES, select, or "node configuration is not available"
   message*: the site requires an explicit GPU request, or the requested
   shape does not exist in that partition. Put the request in Extra
-  Scheduler Directives in the site's own syntax. On makau the AIML
-  partition has quad `h100_sxm5:4` nodes only; the single-GPU
-  `h100_nvl:1` nodes are in the standard, debug, background, and high
-  partitions.
+  Scheduler Directives in the site's own syntax; `sinfo -o "%P %G %D %t"`
+  lists which GPU shapes each partition actually has.
 - *Long "waiting" phase on first launch*: the model download. Watch the
   run's log; later launches skip it.
-- *Session up but chat answers slowly*: normal for a 31B model on one GPU;
+- *Session up but chat answers slowly*: normal for a large model on one GPU;
   the tool-activity feed shows progress during grounded answers.
 - *Empty knowledge base after launch*: the starter bundle pull failed
   (check the run log for the bucket error); the app still works, and a
