@@ -427,7 +427,7 @@ configurations:
             default: ''
             optional: true
             hidden: ${{ inputs.resource_and_execution.scheduler != true }}
-            tooltip: HuggingFace-format model directory on the resource. Empty derives <workdir>/models/<model id>. Downloaded on the login node when missing and a model id is set.
+            tooltip: HuggingFace-format model directory on the resource. Empty derives <workdir>/models/<model id>. Downloaded on the login node when missing and a model id is set; a read-only shared copy is served in place, so one copy covers every user.
           hf_model_id:
             label: HuggingFace Model ID
             type: string
@@ -1181,42 +1181,62 @@ jobs:
           # An empty knowledge base seeds itself from the starter bundle, so
           # a first launch lands with a working corpus; existing content is
           # never touched.
-          BUNDLE_URI="${{ inputs.kb_settings.starter_bundle }}"
-          if [ -n "$BUNDLE_URI" ] && [ -z "$(ls -A "$KB" 2>/dev/null)" ]; then
-            if "$PW_BIN" buckets cp "$BUNDLE_URI" "$RUNDIR/starter-kb.tar.gz" > bundle-cp.log 2>&1; then
-              tar -xzf "$RUNDIR/starter-kb.tar.gz" -C "$KB" && rm -f "$RUNDIR/starter-kb.tar.gz"
-              echo "Seeded the knowledge base from $BUNDLE_URI"
+          BUNDLE="${{ inputs.kb_settings.starter_bundle }}"
+          if [ -n "$BUNDLE" ] && [ -z "$(ls -A "$KB" 2>/dev/null)" ]; then
+            SRC=""
+            case "$BUNDLE" in
+              pw://*|s3://*|gs://*|az://*)
+                if "$PW_BIN" buckets cp "$BUNDLE" "$RUNDIR/starter-kb.tar.gz" > bundle-cp.log 2>&1; then
+                  SRC="$RUNDIR/starter-kb.tar.gz"
+                else
+                  tr '\r' '\n' < bundle-cp.log | tail -3
+                fi ;;
+              *)
+                # A tarball already on the resource, e.g. one shared copy
+                # every trainee reads.
+                if [ -r "$BUNDLE" ]; then SRC="$BUNDLE"; else echo "Starter bundle not readable: $BUNDLE"; fi ;;
+            esac
+            if [ -n "$SRC" ] && tar -xzf "$SRC" -C "$KB"; then
+              echo "Seeded the knowledge base from $BUNDLE"
             else
-              tr '\r' '\n' < bundle-cp.log | tail -3
-              echo "Starter bundle pull failed; continuing with an empty knowledge base."
+              echo "Starter bundle unavailable; continuing with an empty knowledge base."
             fi
+            rm -f "$RUNDIR/starter-kb.tar.gz"
           fi
           # Images live on the shared filesystem so the compute node sees
           # what the login node staged; an existing file is reused, delete
           # it to force a fresh pull.
-          stage() { # $1 = configured source (URI or path), $2 = cache path
+          # A bucket URI is pulled once into the per-user cache; a path on
+          # the resource is read where it sits, so one shared read-only
+          # image serves every user with no per-user copy.
+          resolve() { # $1 = configured source, $2 = cache path; prints the usable path
             SRC="$1"; DST="$2"
             [ -n "$SRC" ] || SRC="$DST"
             case "$SRC" in
               pw://*|s3://*|gs://*|az://*)
                 if [ ! -f "$DST" ]; then
-                  echo "Staging $SRC -> $DST"
+                  echo "Staging $SRC -> $DST" >&2
                   "$PW_BIN" buckets cp "$SRC" "$DST" > image-cp.log 2>&1 \
-                    || { tr '\r' '\n' < image-cp.log | tail -3; echo "ERROR: image stage failed: $SRC"; exit 1; }
+                    || { tr '\r' '\n' < image-cp.log | tail -3 >&2; return 1; }
                 fi
-                ;;
+                echo "$DST" ;;
               *)
-                [ -f "$SRC" ] || { echo "ERROR: container image not found: $SRC"; exit 1; }
-                [ "$SRC" = "$DST" ] || cp -f "$SRC" "$DST"
-                ;;
+                [ -r "$SRC" ] || return 1
+                echo "$SRC" ;;
             esac
           }
           cd "$RUNDIR"
-          stage "${{ inputs.app_settings.image_path }}" "$WORKDIR/containers/studio.sif"
+          # resolve runs in a subshell, so a failure inside it cannot end
+          # the step; the empty result is what this checks.
+          SSIF="$(resolve "${{ inputs.app_settings.image_path }}" "$WORKDIR/containers/studio.sif")"
+          [ -n "$SSIF" ] || { echo "ERROR: Studio image unavailable: ${{ inputs.app_settings.image_path }}"; exit 1; }
+          VSIF="$WORKDIR/containers/vllm.sif"
           if [ "${{ inputs.model_settings.serve }}" = "true" ]; then
-            stage "${{ inputs.model_settings.vllm_image }}" "$WORKDIR/containers/vllm.sif"
+            VSIF="$(resolve "${{ inputs.model_settings.vllm_image }}" "$WORKDIR/containers/vllm.sif")"
+            [ -n "$VSIF" ] || { echo "ERROR: vLLM image unavailable: ${{ inputs.model_settings.vllm_image }}"; exit 1; }
           fi
-          ls -la "$WORKDIR/containers/" 2>/dev/null || true
+          printf 'SSIF=%s\nVSIF=%s\n' "$SSIF" "$VSIF" > "$RUNDIR/images.env"
+          cat "$RUNDIR/images.env"
 
       - name: Fetch the model if missing
         run: |
@@ -1249,8 +1269,10 @@ jobs:
           KB="$(eval echo '${{ inputs.kb_settings.kb_root }}')"
           IDX="$(eval echo '${{ inputs.kb_settings.index_base }}')"
           [ -n "$IDX" ] || IDX="$WORKDIR/studio-index"
-          SSIF="$WORKDIR/containers/studio.sif"
-          VSIF="$WORKDIR/containers/vllm.sif"
+          # Paths resolved during staging: a shared image is read where it
+          # sits, a bucket image from the per-user cache.
+          SSIF="$WORKDIR/containers/studio.sif"; VSIF="$WORKDIR/containers/vllm.sif"
+          [ -f "$RUNDIR/images.env" ] && . "$RUNDIR/images.env"
           MODEL_DIR="$(eval echo '${{ inputs.model_settings.model_dir }}')"
           [ -n "$MODEL_DIR" ] || MODEL_DIR="$WORKDIR/models/$(basename '${{ inputs.model_settings.hf_model_id }}')"
           PW_BIN="$(command -v pw || echo ~/pw/pw)"
