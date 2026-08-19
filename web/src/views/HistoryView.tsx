@@ -118,9 +118,29 @@ export function HistoryView({ onOpen }: { onOpen: (path: string) => void }) {
     )
   }
 
+  const changed = diff?.counts
+    ? diff.counts.added + diff.counts.modified + diff.counts.renamed + diff.counts.removed
+    : 0
+
   return (
     <div className="hist-view">
-      <div className="hist-stage">
+      <div className="card ov-head">
+        <h1 className="view-title">Corpus history</h1>
+        <p className="muted view-sub">
+          The knowledge base as the index found it at each pass. Pick a moment on the right, browse what the
+          corpus held then, and see what that pass changed. Snapshots record the file list with sizes and
+          dates, not file contents, so opening a file here shows it as it is today.
+        </p>
+      </div>
+
+      <div className="hist-tiles">
+        <div className="card ov-tile"><span className="stat-num">{snaps.length}</span><span className="stat-label">snapshots kept</span></div>
+        <div className="card ov-tile"><span className="stat-num">{current!.files.toLocaleString()}</span><span className="stat-label">files at this point</span></div>
+        <div className="card ov-tile"><span className="stat-num">{bytes(current!.bytes)}</span><span className="stat-label">corpus size then</span></div>
+        <div className="card ov-tile"><span className="stat-num">{idx === 0 ? '—' : changed}</span><span className="stat-label">changes in this pass</span></div>
+      </div>
+
+      <div className="hist-stage card">
         {Array.from({ length: behind }, (_, i) => (
           <div key={i} className="hist-ghost" style={{ '--depth': String(behind - i) } as React.CSSProperties} />
         ))}
@@ -128,10 +148,11 @@ export function HistoryView({ onOpen }: { onOpen: (path: string) => void }) {
         <div className="hist-card">
           <div className="hist-card-head">
             <div>
-              <h2>{when(current!.takenAt, true)}</h2>
+              <h3>{when(current!.takenAt, true)}</h3>
               <p className="muted">
-                {current!.files.toLocaleString()} files, {bytes(current!.bytes)}
-                {idx === snaps.length - 1 ? ' · most recent pass' : ` · ${snaps.length - 1 - idx} pass${snaps.length - 1 - idx === 1 ? '' : 'es'} ago`}
+                {idx === snaps.length - 1
+                  ? 'The most recent index pass'
+                  : `${snaps.length - 1 - idx} pass${snaps.length - 1 - idx === 1 ? '' : 'es'} ago`}
               </p>
             </div>
             <button className="btn-secondary" onClick={capture} disabled={busy}>{busy ? 'Capturing…' : 'Capture now'}</button>
@@ -146,6 +167,7 @@ export function HistoryView({ onOpen }: { onOpen: (path: string) => void }) {
 
           <div className="hist-panes">
             <div className="hist-listing">
+              <p className="hist-pane-label">Contents at this point</p>
               {level?.dirs?.map(d => (
                 <button key={d.path} className="hist-row" onClick={() => setDir(d.path)}>
                   <span className="hist-name">{d.name}/</span>
@@ -164,7 +186,7 @@ export function HistoryView({ onOpen }: { onOpen: (path: string) => void }) {
             </div>
 
             <div className="hist-side">
-              <h3>What arrived here</h3>
+              <p className="hist-pane-label">What this pass changed</p>
               {idx === 0 ? (
                 <p className="muted">This is the earliest snapshot, so there is nothing before it to compare against.</p>
               ) : diff?.counts ? (
@@ -199,8 +221,11 @@ export function HistoryView({ onOpen }: { onOpen: (path: string) => void }) {
         </div>
       </div>
 
-      <div className="hist-scrubber" role="slider" aria-label="Snapshot" aria-valuenow={idx} aria-valuemin={0} aria-valuemax={snaps.length - 1}>
-        {snaps.map((s, i) => (
+      <div className="hist-scrubber card" role="slider" aria-label="Snapshot" aria-valuenow={idx} aria-valuemin={0} aria-valuemax={snaps.length - 1}>
+        <p className="hist-scrub-title">Index passes</p>
+        {[...snaps].reverse().map((s) => {
+          const i = snaps.indexOf(s)
+          return (
           <button
             key={s.id}
             className={`hist-tick${i === idx ? ' active' : ''}`}
@@ -210,7 +235,8 @@ export function HistoryView({ onOpen }: { onOpen: (path: string) => void }) {
             <span className="hist-tick-label">{when(s.takenAt)}</span>
             {i === snaps.length - 1 && <span className="hist-now"> now</span>}
           </button>
-        ))}
+          )
+        })}
       </div>
     </div>
   )
