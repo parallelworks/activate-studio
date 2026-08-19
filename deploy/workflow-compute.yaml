@@ -28,6 +28,7 @@ on:
         tooltip: Cluster whose scheduler runs the job.
       app:
         type: group
+        collapsed: true
         label: Application
         items:
           app_name:
@@ -58,6 +59,7 @@ on:
             optional: true
       kb:
         type: group
+        collapsed: true
         label: Knowledge Base
         items:
           kb_root:
@@ -98,6 +100,7 @@ on:
             tooltip: Build or refresh the index when the job starts. With a prebuilt index in the index directory this is quick.
       scheduler:
         type: group
+        collapsed: false
         label: Scheduler
         items:
           partition:
@@ -127,6 +130,7 @@ on:
             tooltip: Semicolon-separated sbatch directives without the #SBATCH prefix (e.g. --gres=gpu:h100_sxm5:4 on systems that require an explicit GRES).
       containers:
         type: group
+        collapsed: true
         label: Containers
         items:
           studio_bucket:
@@ -140,6 +144,7 @@ on:
             tooltip: An existing file is reused; delete it to force a fresh pull.
       model:
         type: group
+        collapsed: true
         label: Model Serving
         items:
           serve:
