@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Derive the turnkey CFD training workflow from deploy/workflow.yaml.
+"""Derive a turnkey training workflow from deploy/workflow.yaml.
 
-Prints a yaml where a site preset is baked in as the plain form
-defaults: scheduler placement on, container source, the model serve, and
-the starter corpus. Push the output to a platform workflow record per
-deploy/COMPUTE.md's stored-yaml procedure.
+Prints a copy where a site preset is baked in as the plain form defaults:
+scheduler placement on, container source, the model serve, and the
+starter corpus. Push the output to a platform workflow record per
+deploy/COMPUTE.md's stored-yaml procedure, or commit it and point a
+remote record at it.
 
     make_cfd_training_yaml.py --preset site-preset.yaml [workflow.yaml] \
         [--shared-dir DIR]
@@ -18,8 +19,16 @@ read-only copy on the resource, so a class of trainees launches without
 each pulling the images and model weights again. The directory holds
 containers/studio.sif, containers/vllm.sif, models/<model dir name>,
 and the starter corpus tarball.
+
+The source is edited as text rather than parsed and re-dumped: a yaml
+dump discards every comment and rewrites the shell in the run blocks as
+one escaped string, which makes the generated file unreadable. Editing
+the text touches only the lines whose values change, so the output reads
+exactly like the workflow it came from.
 """
+import json
 import sys
+
 import yaml
 
 HEADER = """
@@ -32,44 +41,136 @@ HEADER = """
 # Regenerate after changing deploy/workflow.yaml; do not hand-edit.
 """
 
-argv = sys.argv[1:]
-shared = None
-preset_file = None
-if '--preset' in argv:
-    i = argv.index('--preset')
-    preset_file = argv[i + 1]
-    del argv[i:i + 2]
-if '--shared-dir' in argv:
-    i = argv.index('--shared-dir')
-    shared = argv[i + 1].rstrip('/')
-    del argv[i:i + 2]
-src = argv[0] if argv else 'deploy/workflow.yaml'
-d = yaml.safe_load(open(src))
+# Groups whose contents the form shows expanded; everything else starts
+# collapsed so the page opens on the fields a launch actually needs.
+OPEN_GROUPS = ('resource_and_execution', 'slurm')
 
-ins = d['on']['execute']['inputs']
-if not preset_file:
-    sys.exit('a --preset file is required; see the module docstring')
-preset = yaml.safe_load(open(preset_file))['inputs']
 
-for group, values in preset.items():
-    for key, val in values.items():
-        ins[group]['items'][key]['default'] = val
+def indent_of(line):
+    return len(line) - len(line.lstrip())
 
-# The form opens compact: the scheduler group carries the two fields a
-# first launch needs; everything else expands on demand.
-for group, item in ins.items():
-    if isinstance(item, dict) and item.get('type') == 'group':
-        item['collapsed'] = group not in ('resource_and_execution', 'slurm')
 
-if shared:
-    model_name = ins['model_settings']['items']['model_dir']['default'].rsplit('/', 1)[-1]
-    ins['app_settings']['items']['image_path']['default'] = shared + '/containers/studio.sif'
-    ins['model_settings']['items']['vllm_image']['default'] = shared + '/containers/vllm.sif'
-    ins['model_settings']['items']['model_dir']['default'] = shared + '/models/' + model_name
-    ins['kb_settings']['items']['starter_bundle']['default'] = shared + '/cfd-starter-kb.tar.gz'
-ins['session_settings']['items']['session_name']['tooltip'] = (
-    'Platform session for the web interface, per user, kept across relaunches. '
-    'Change it to run more than one studio.')
+def block_end(lines, start):
+    """Index just past the block owned by the key on line `start`."""
+    base = indent_of(lines[start])
+    i = start + 1
+    while i < len(lines):
+        line = lines[i]
+        if line.strip() and indent_of(line) <= base:
+            break
+        i += 1
+    return i
 
-print(HEADER.strip())
-yaml.safe_dump(d, sys.stdout, sort_keys=False, width=100, allow_unicode=True)
+
+def find_key(lines, start, end, key, depth=None):
+    """Line index of `key:` between start and end, optionally at `depth`."""
+    for i in range(start, end):
+        line = lines[i]
+        if not line.strip() or line.lstrip().startswith('#'):
+            continue
+        if line.lstrip().startswith(key + ':'):
+            if depth is None or indent_of(line) == depth:
+                return i
+    return -1
+
+
+def scalar(value):
+    """A yaml scalar for `value`, quoted so any text survives intact."""
+    if isinstance(value, bool):
+        return 'true' if value else 'false'
+    if isinstance(value, (int, float)):
+        return str(value)
+    return json.dumps(str(value))  # JSON strings are valid yaml scalars
+
+
+def set_field(lines, group_start, group_end, field, value):
+    """Set (or add) `default:` for one field inside a group's items."""
+    items = find_key(lines, group_start, group_end, 'items')
+    if items < 0:
+        sys.exit(f'group has no items: line {group_start + 1}')
+    items_end = block_end(lines, items)
+    field_line = find_key(lines, items + 1, items_end, field,
+                          depth=indent_of(lines[items]) + 2)
+    if field_line < 0:
+        sys.exit(f'no such field: {field}')
+    field_end = block_end(lines, field_line)
+    depth = indent_of(lines[field_line]) + 2
+    existing = find_key(lines, field_line + 1, field_end, 'default', depth=depth)
+    if existing >= 0:
+        # A default written as a block scalar or a wrapped string owns the
+        # lines after it; replace the whole run.
+        tail = block_end(lines, existing)
+        lines[existing:tail] = [' ' * depth + 'default: ' + scalar(value)]
+    else:
+        lines.insert(field_line + 1, ' ' * depth + 'default: ' + scalar(value))
+
+
+def main():
+    argv = sys.argv[1:]
+    shared = preset_file = None
+    if '--preset' in argv:
+        i = argv.index('--preset')
+        preset_file = argv[i + 1]
+        del argv[i:i + 2]
+    if '--shared-dir' in argv:
+        i = argv.index('--shared-dir')
+        shared = argv[i + 1].rstrip('/')
+        del argv[i:i + 2]
+    if not preset_file:
+        sys.exit('a --preset file is required; see the module docstring')
+    src = argv[0] if argv else 'deploy/workflow.yaml'
+
+    text = open(src).read()
+    lines = text.split('\n')
+    doc = yaml.safe_load(text)  # parsed only to validate what we edit
+    groups = doc['on']['execute']['inputs']
+
+    preset = yaml.safe_load(open(preset_file))['inputs']
+    if shared:
+        model_dir = preset['model_settings']['model_dir']
+        preset['app_settings']['image_path'] = shared + '/containers/studio.sif'
+        preset['model_settings']['vllm_image'] = shared + '/containers/vllm.sif'
+        preset['model_settings']['model_dir'] = shared + '/models/' + model_dir.rsplit('/', 1)[-1]
+        preset['kb_settings']['starter_bundle'] = shared + '/cfd-starter-kb.tar.gz'
+
+    for group, values in preset.items():
+        if group not in groups:
+            sys.exit(f'no such input group: {group}')
+        for field in values:
+            if field not in groups[group].get('items', {}):
+                sys.exit(f'no such field: {group}.{field}')
+
+    # Work bottom-up so earlier line numbers stay valid as lines shift.
+    inputs_line = find_key(lines, 0, len(lines), 'inputs')
+    inputs_end = block_end(lines, inputs_line)
+    group_depth = indent_of(lines[inputs_line]) + 2
+    starts = {}
+    for i in range(inputs_line + 1, inputs_end):
+        line = lines[i]
+        if line.strip() and indent_of(line) == group_depth and line.rstrip().endswith(':'):
+            starts[line.strip().rstrip(':')] = i
+
+    for group in sorted(starts, key=lambda g: starts[g], reverse=True):
+        start = starts[group]
+        end = block_end(lines, start)
+        if groups[group].get('type') != 'group':
+            if group in preset:
+                sys.exit(f'{group} is not a group')
+            continue
+        for field, value in reversed(list(preset.get(group, {}).items())):
+            set_field(lines, start, end, field, value)
+            end = block_end(lines, start)
+        collapsed = group not in OPEN_GROUPS
+        line = find_key(lines, start + 1, end, 'collapsed', depth=group_depth + 2)
+        if line >= 0:
+            lines[line] = ' ' * (group_depth + 2) + 'collapsed: ' + scalar(collapsed)
+        else:
+            type_line = find_key(lines, start + 1, end, 'type', depth=group_depth + 2)
+            lines.insert(type_line + 1, ' ' * (group_depth + 2) + 'collapsed: ' + scalar(collapsed))
+
+    out = '\n'.join(lines)
+    yaml.safe_load(out)  # the edit must still parse
+    sys.stdout.write(HEADER.lstrip('\n') + out)
+
+
+main()
