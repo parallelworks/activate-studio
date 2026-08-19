@@ -127,11 +127,21 @@ def main():
 
     preset = yaml.safe_load(open(preset_file))['inputs']
     if shared:
+        # The shared copy comes first and whatever the preset already named
+        # stays behind it, so the same workflow still launches on a system
+        # where that directory does not exist.
+        def prefer(group, field, path):
+            fallback = preset[group].get(field, '')
+            preset[group][field] = f'{path}; {fallback}' if fallback else path
+
         model_dir = preset['model_settings']['model_dir']
-        preset['app_settings']['image_path'] = shared + '/containers/studio.sif'
-        preset['model_settings']['vllm_image'] = shared + '/containers/vllm.sif'
+        prefer('app_settings', 'image_path', shared + '/containers/studio.sif')
+        prefer('model_settings', 'vllm_image', shared + '/containers/vllm.sif')
+        prefer('kb_settings', 'starter_bundle', shared + '/cfd-starter-kb.tar.gz')
+        # A model directory is read directly rather than resolved, so it
+        # takes the shared copy alone; a system without it downloads to the
+        # per-user default instead.
         preset['model_settings']['model_dir'] = shared + '/models/' + model_dir.rsplit('/', 1)[-1]
-        preset['kb_settings']['starter_bundle'] = shared + '/cfd-starter-kb.tar.gz'
 
     for group, values in preset.items():
         if group not in groups:
