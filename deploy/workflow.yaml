@@ -1243,14 +1243,93 @@ jobs:
           [ -n "$SESSION" ] || SESSION="studio"
           MODEL_EP="${{ inputs.model_settings.model_endpoint_name }}"
           [ -n "$MODEL_EP" ] || MODEL_EP="${SESSION}-model"
+          ICON="$(eval echo '${{ inputs.app_settings.icon_path }}')"
+          ICON_DARK="$(eval echo '${{ inputs.app_settings.icon_path_dark }}')"
+          # Free text arrives through quoted heredocs so an apostrophe, a
+          # quote, or a line break in an operator's wording cannot break the
+          # script that carries it.
+          MISSION=$(cat << 'FIELD_EOF'
+          ${{ inputs.kb_settings.mission }}
+          FIELD_EOF
+          )
+          APP_NAME=$(cat << 'FIELD_EOF'
+          ${{ inputs.app_settings.app_name }}
+          FIELD_EOF
+          )
+          KB_LABEL=$(cat << 'FIELD_EOF'
+          ${{ inputs.kb_settings.kb_label }}
+          FIELD_EOF
+          )
+          PROMPTS=$(cat << 'FIELD_EOF'
+          ${{ inputs.app_settings.suggested_prompts }}
+          FIELD_EOF
+          )
+          BANNER_TEXT=$(cat << 'FIELD_EOF'
+          ${{ inputs.app_settings.banner_text }}
+          FIELD_EOF
+          )
+          VLLM_ARGS=$(cat << 'FIELD_EOF'
+          ${{ inputs.model_settings.vllm_args }}
+          FIELD_EOF
+          )
+          PROMPTS_JSON=$(P="$PROMPTS" python3 -c "import json,os; print(json.dumps([q.strip() for q in os.environ['P'].split(';') if q.strip()]))")
+          JWKS=""
+          if [ "${{ inputs.model_settings.posture }}" != "single" ] && [ -n "${{ inputs.model_settings.platform_host }}" ]; then
+            JWKS="https://${{ inputs.model_settings.platform_host }}/api/platform/keys"
+          fi
+          DISABLE_KEYS=""; [ "${{ inputs.model_settings.posture }}" = "multi-shared" ] && DISABLE_KEYS=1
+          REQUIRE_KEY=""; [ "${{ inputs.model_settings.posture }}" = "multi-strict" ] && REQUIRE_KEY=1
+          INDEX_ON_START=0; [ "${{ inputs.kb_settings.run_index }}" = "true" ] && INDEX_ON_START=true
 
-          cat > job.sh << 'JOB'
-          #!/bin/bash
+          # Every launch-specific value lands here, %q-quoted, so the job
+          # script itself stays a plain readable script with no generated
+          # substitutions in its body.
+          {
+            printf 'RUNDIR=%q\n'         "$RUNDIR"
+            printf 'KB=%q\n'             "$KB"
+            printf 'IDX=%q\n'            "$IDX"
+            printf 'SSIF=%q\n'           "$SSIF"
+            printf 'VSIF=%q\n'           "$VSIF"
+            printf 'MODEL_DIR=%q\n'      "$MODEL_DIR"
+            printf 'PW_BIN=%q\n'         "$PW_BIN"
+            printf 'SESSION=%q\n'        "$SESSION"
+            printf 'MODEL_EP=%q\n'       "$MODEL_EP"
+            printf 'SERVE=%q\n'          '${{ inputs.model_settings.serve }}'
+            printf 'GPU_IDS=%q\n'        '${{ inputs.model_settings.gpu_ids }}'
+            printf 'SERVED_NAME=%q\n'    '${{ inputs.model_settings.served_name }}'
+            printf 'VLLM_ARGS=%q\n'      "$VLLM_ARGS"
+            printf 'REGISTER_OPENAI=%q\n' '${{ inputs.model_settings.register_openai }}'
+            printf 'GATEWAY_URL=%q\n'    '${{ inputs.model_settings.gateway_url }}'
+            printf 'GATEWAY_KEY=%q\n'    '${{ inputs.model_settings.pw_api_key }}'
+            printf 'APP_NAME=%q\n'       "$APP_NAME"
+            printf 'KB_LABEL=%q\n'       "$KB_LABEL"
+            printf 'STARTER_DIRS=%q\n'   '${{ inputs.kb_settings.starter_dirs }}'
+            printf 'BANNER_TEXT=%q\n'    "$BANNER_TEXT"
+            printf 'BANNER_COLOR=%q\n'   '${{ inputs.app_settings.banner_color }}'
+            printf 'ICON=%q\n'           "$ICON"
+            printf 'ICON_DARK=%q\n'      "$ICON_DARK"
+            printf 'MISSION=%q\n'        "$MISSION"
+            printf 'PROMPTS_JSON=%q\n'   "$PROMPTS_JSON"
+            printf 'JWKS=%q\n'           "$JWKS"
+            printf 'DISABLE_KEYS=%q\n'   "$DISABLE_KEYS"
+            printf 'REQUIRE_KEY=%q\n'    "$REQUIRE_KEY"
+            printf 'INDEX_ON_START=%q\n' "$INDEX_ON_START"
+          } > job.env
+          cat job.env
+
+          # The only generated line in the job script is the path to the
+          # values above; the scheduler copies the script elsewhere, so it
+          # cannot find them relative to itself.
+          printf '#!/bin/bash\nJOB_ENV=%q\n' "$RUNDIR/job.env" > job.sh
+          cat >> job.sh << 'JOB'
           set -u
-          cd "__RUNDIR__"
+          . "$JOB_ENV"
+          cd "$RUNDIR"
+
           # The run directory persists across launches; stale logs from the
           # previous job must not satisfy this launch's watchers.
           : > endpoint.log; : > model-endpoint.log; : > vllm.out; : > studio.out
+
           RUNTIME="$(command -v apptainer || command -v singularity)"
           cleanup() {
             "$RUNTIME" instance stop studio-compute-vllm 2>/dev/null
@@ -1259,18 +1338,18 @@ jobs:
 
           pickport() { python3 -c 'import socket; s=socket.socket(); s.bind(("",0)); print(s.getsockname()[1]); s.close()'; }
 
-          GATEWAY_URL="__GATEWAY_URL__"
-          GATEWAY_KEY="__GATEWAY_KEY__"
-          if [ "__SERVE__" = "true" ]; then
+          # A model served in this job takes the node's GPUs and the Studio
+          # points at it; otherwise the Studio uses the configured gateway.
+          if [ "$SERVE" = "true" ]; then
             VPORT=$(pickport)
             "$RUNTIME" instance start --nv --cleanenv --writable-tmpfs \
-              --bind "__MODEL_DIR__:/model" --bind "$PWD:/rundir" \
-              "__VSIF__" studio-compute-vllm
+              --bind "$MODEL_DIR:/model" --bind "$PWD:/rundir" \
+              "$VSIF" studio-compute-vllm
             "$RUNTIME" exec instance://studio-compute-vllm bash -c "
-              export CUDA_VISIBLE_DEVICES='__GPU_IDS__'
+              export CUDA_VISIBLE_DEVICES='$GPU_IDS'
               nohup python3 -m vllm.entrypoints.openai.api_server \
-                --model /model --served-model-name '__SERVED_NAME__' \
-                --host 0.0.0.0 --port $VPORT __VLLM_ARGS__ \
+                --model /model --served-model-name '$SERVED_NAME' \
+                --host 0.0.0.0 --port $VPORT $VLLM_ARGS \
                 > /rundir/vllm.out 2>&1 &
             "
             for i in $(seq 1 240); do
@@ -1281,31 +1360,30 @@ jobs:
             curl -s -m 5 "localhost:$VPORT/v1/models" | grep -q '"id"' || { echo "vLLM never came up:"; tail -30 vllm.out; exit 1; }
             GATEWAY_URL="http://localhost:$VPORT/v1"
             GATEWAY_KEY="local"
-            if [ "__REGISTER_OPENAI__" = "true" ]; then
-              setsid nohup "__PW_BIN__" endpoints http --openai --keep -o text \
-                --name "__MODEL_EP__" "$VPORT" > model-endpoint.log 2>&1 < /dev/null &
+            if [ "$REGISTER_OPENAI" = "true" ]; then
+              setsid nohup "$PW_BIN" endpoints http --openai --keep -o text \
+                --name "$MODEL_EP" "$VPORT" > model-endpoint.log 2>&1 < /dev/null &
             fi
           fi
 
           APORT=$(pickport)
           setsid nohup "$RUNTIME" run --cleanenv \
-            --env PORT="$APORT" --env KB_ROOT="__KB__" --env DATA_DIR="__IDX__" \
-            --env INDEX_BASE="__IDX__" --env KB_LABEL="__KB_LABEL__" \
-            --env APP_NAME="__APP_NAME__" --env INDEX_ON_START="__RUN_INDEX__" \
-            --env KB_MISSION="__KB_MISSION__" \
-            --env KB_STARTER_DIRS="__STARTER_DIRS__" \
+            --env PORT="$APORT" --env KB_ROOT="$KB" --env DATA_DIR="$IDX" \
+            --env INDEX_BASE="$IDX" --env KB_LABEL="$KB_LABEL" \
+            --env APP_NAME="$APP_NAME" --env INDEX_ON_START="$INDEX_ON_START" \
+            --env KB_MISSION="$MISSION" --env KB_STARTER_DIRS="$STARTER_DIRS" \
+            --env SUGGESTED_PROMPTS="$PROMPTS_JSON" \
+            --env APP_ICON="$ICON" --env APP_ICON_DARK="$ICON_DARK" \
             ${GATEWAY_URL:+--env PW_GATEWAY_URL="$GATEWAY_URL"} \
             ${GATEWAY_KEY:+--env PW_API_KEY="$GATEWAY_KEY"} \
-            --env APP_ICON="__ICON__" --env APP_ICON_DARK="__ICON_DARK__" \
-            ${BANNER_TEXT_V:+--env BANNER_TEXT="$BANNER_TEXT_V"} \
-            ${BANNER_COLOR_V:+--env BANNER_COLOR="$BANNER_COLOR_V"} \
-            ${AUTH_JWKS_URL_V:+--env AUTH_JWKS_URL="$AUTH_JWKS_URL_V"} \
-            ${AUTH_JWKS_URL_V:+--env AUTH_ISSUER="pw-session-proxy"} \
-            ${DISABLE_PERSONAL_KEYS_V:+--env DISABLE_PERSONAL_KEYS=1} \
-            ${REQUIRE_PERSONAL_KEY_V:+--env REQUIRE_PERSONAL_KEY=1} \
-            --env SUGGESTED_PROMPTS='__PROMPTS_JSON__' \
-            --bind "__KB__:__KB__" --bind "__IDX__:__IDX__" \
-            "__SSIF__" > studio.out 2>&1 < /dev/null &
+            ${BANNER_TEXT:+--env BANNER_TEXT="$BANNER_TEXT"} \
+            ${BANNER_COLOR:+--env BANNER_COLOR="$BANNER_COLOR"} \
+            ${JWKS:+--env AUTH_JWKS_URL="$JWKS"} \
+            ${JWKS:+--env AUTH_ISSUER="pw-session-proxy"} \
+            ${DISABLE_KEYS:+--env DISABLE_PERSONAL_KEYS="$DISABLE_KEYS"} \
+            ${REQUIRE_KEY:+--env REQUIRE_PERSONAL_KEY="$REQUIRE_KEY"} \
+            --bind "$KB:$KB" --bind "$IDX:$IDX" \
+            "$SSIF" > studio.out 2>&1 < /dev/null &
 
           for i in $(seq 1 120); do
             curl -s -m 5 "localhost:$APORT/healthz" > /dev/null 2>&1 && { echo "Studio up after ~$((i*5))s on port $APORT"; break; }
@@ -1313,8 +1391,8 @@ jobs:
           done
           curl -s -m 5 "localhost:$APORT/healthz" > /dev/null 2>&1 || { echo "Studio never came up:"; tail -30 studio.out; exit 1; }
 
-          setsid nohup "__PW_BIN__" endpoints http --keep -o text \
-            --name "__SESSION__" --subdomain "__SESSION__" "$APORT" > endpoint.log 2>&1 < /dev/null &
+          setsid nohup "$PW_BIN" endpoints http --keep -o text \
+            --name "$SESSION" --subdomain "$SESSION" "$APORT" > endpoint.log 2>&1 < /dev/null &
           sleep 15
           grep -oE "https://[^ ]+" endpoint.log | head -1
 
@@ -1323,60 +1401,8 @@ jobs:
           while curl -s -m 10 "localhost:$APORT/healthz" > /dev/null 2>&1; do sleep 60; done
           echo "Studio stopped responding; ending the job."
           JOB
-
-          # Posture env values resolve at job runtime via the *_V variables
-          # baked in below; empty means the flag is omitted.
-          POSTURE='${{ inputs.model_settings.posture }}'
-          PLATFORM_HOST='${{ inputs.model_settings.platform_host }}'
-          JWKS=""
-          if [ "$POSTURE" != "single" ] && [ -n "$PLATFORM_HOST" ]; then
-            JWKS="https://${PLATFORM_HOST}/api/platform/keys"
-          fi
-          DPK=""; [ "$POSTURE" = "multi-shared" ] && DPK="1"
-          RPK=""; [ "$POSTURE" = "multi-strict" ] && RPK="1"
-          # Interpolate without fighting the heredoc's quoting.
-          ICON="$(eval echo '${{ inputs.app_settings.icon_path }}')"
-          ICON_DARK="$(eval echo '${{ inputs.app_settings.icon_path_dark }}')"
-          PROMPTS_JSON=$(P='${{ inputs.app_settings.suggested_prompts }}' python3 -c "import json,os; print(json.dumps([q.strip() for q in os.environ['P'].split(';') if q.strip()]))")
-          python3 - "$RUNDIR/job.sh" << PYEOF
-          import sys, textwrap
-          p = sys.argv[1]
-          s = textwrap.dedent(open(p).read())
-          reps = {
-            '__RUNDIR__': "$RUNDIR", '__KB__': "$KB", '__IDX__': "$IDX",
-            '__SSIF__': "$SSIF", '__VSIF__': "$VSIF", '__MODEL_DIR__': "$MODEL_DIR",
-            '__PW_BIN__': "$PW_BIN",
-            '__SERVE__': "${{ inputs.model_settings.serve }}",
-            '__GPU_IDS__': "${{ inputs.model_settings.gpu_ids }}",
-            '__SERVED_NAME__': "${{ inputs.model_settings.served_name }}",
-            '__VLLM_ARGS__': "${{ inputs.model_settings.vllm_args }}",
-            '__REGISTER_OPENAI__': "${{ inputs.model_settings.register_openai }}",
-            '__MODEL_EP__': "$MODEL_EP",
-            '__GATEWAY_URL__': "${{ inputs.model_settings.gateway_url }}",
-            '__GATEWAY_KEY__': "${{ inputs.model_settings.pw_api_key }}",
-            '__APP_NAME__': "${{ inputs.app_settings.app_name }}",
-            '__SESSION__': "$SESSION",
-            '__KB_LABEL__': "${{ inputs.kb_settings.kb_label }}",
-            '__KB_MISSION__': """${{ inputs.kb_settings.mission }}""",
-            '__STARTER_DIRS__': "${{ inputs.kb_settings.starter_dirs }}",
-            '__RUN_INDEX__': "true" if "${{ inputs.kb_settings.run_index }}" == "true" else "0",
-            '__ICON__': "$ICON", '__ICON_DARK__': "$ICON_DARK",
-            '__PROMPTS_JSON__': '''$PROMPTS_JSON''',
-          }
-          for k, v in reps.items():
-              s = s.replace(k, v)
-          # Literal launch-time values for the optional env toggles.
-          s = s.replace('BANNER_TEXT_V', 'BT').replace('BANNER_COLOR_V', 'BC')
-          s = s.replace('AUTH_JWKS_URL_V', 'JW').replace('DISABLE_PERSONAL_KEYS_V', 'DK').replace('REQUIRE_PERSONAL_KEY_V', 'RK')
-          prelude = 'BT=%r; BC=%r; JW=%r; DK=%r; RK=%r\n' % (
-              """${{ inputs.app_settings.banner_text }}""",
-              """${{ inputs.app_settings.banner_color }}""",
-              "$JWKS", "$DPK", "$RPK")
-          s = s.replace('set -u\n', 'set -u\n' + prelude, 1)
-          open(p, 'w').write(s)
-          print('job script written')
-          PYEOF
           chmod +x job.sh
+          bash -n job.sh && echo "job script syntax ok"
 
       - name: Submit in the resource's scheduler dialect and watch
         run: |
