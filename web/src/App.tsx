@@ -7,6 +7,7 @@ import { LibraryView } from './views/LibraryView'
 import { SearchView } from './views/SearchView'
 import { QueryView } from './views/QueryView'
 import { OverviewView } from './views/OverviewView'
+import { HistoryView } from './views/HistoryView'
 import { HelpView } from './views/HelpView'
 import { SettingsView } from './views/SettingsView'
 import { StatusFooter } from './components/StatusFooter'
@@ -14,7 +15,7 @@ import { ClassificationBanner } from './components/ClassificationBanner'
 import { useAppConfig } from './config'
 import { applyAccent, applySurface } from './accents'
 
-type ViewId = 'chat' | 'library' | 'search' | 'query' | 'overview' | 'settings' | 'help'
+type ViewId = 'chat' | 'library' | 'search' | 'query' | 'overview' | 'history' | 'settings' | 'help'
 export type Display = { kind: 'file'; target: string } | { kind: 'workflow_dag'; target: string }
 
 const NAV: { id: ViewId; label: string; icon: ReactElement }[] = [
@@ -42,6 +43,11 @@ const NAV: { id: ViewId; label: string; icon: ReactElement }[] = [
     id: 'overview',
     label: 'Stats',
     icon: <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M2 13.5h12"/><path d="M3.5 13.5V8"/><path d="M7 13.5V4.5"/><path d="M10.5 13.5V6.5"/><path d="M14 13.5V2.5"/></svg>,
+  },
+  {
+    id: 'history',
+    label: 'History',
+    icon: <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.4"><circle cx="8" cy="8" r="6.5"/><path d="M8 4.4V8l2.6 1.6"/></svg>,
   },
   {
     id: 'settings',
@@ -271,6 +277,7 @@ export default function App() {
         <div className={view === 'search' ? 'view' : 'view hidden'}><SearchView onOpen={openFile} /></div>
         <div className={view === 'query' ? 'view' : 'view hidden'}><QueryView onOpen={openFile} /></div>
         <div className={view === 'overview' ? 'view' : 'view hidden'}><OverviewView onOpen={openFile} /></div>
+        <div className={view === 'history' ? 'view' : 'view hidden'}><HistoryView onOpen={openFile} /></div>
         <div className={view === 'settings' ? 'view' : 'view hidden'}><SettingsView /></div>
         <div className={view === 'help' ? 'view' : 'view hidden'}><HelpView /></div>
       </main>
