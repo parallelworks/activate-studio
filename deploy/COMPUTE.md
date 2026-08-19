@@ -31,9 +31,12 @@ cluster, so treat the first PBS launch as a shakedown.
 `deploy/make_cfd_training_yaml.py` derives a turnkey copy of this
 workflow from a site preset file: every deployment value becomes the form
 default, scheduler placement included, and the form opens with only the
-resource and scheduler groups expanded. Publish the output as a platform
-workflow record, and rerun the generator and update that record whenever
-this workflow changes. A launch then needs three choices:
+resource and scheduler groups expanded. `deploy/workflow-cfd-studio.yaml`
+is one such copy, generated for a specific site and committed so people
+can add it directly from this repository as a remote workflow (repo, the
+`main` branch, and that path) rather than each building a record by hand.
+Regenerate it after changing this workflow. A launch then needs three
+choices:
 
 1. Resource: the cluster to run on.
 2. Account: your scheduler account (allocation).
