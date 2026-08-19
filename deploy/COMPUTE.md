@@ -86,6 +86,32 @@ relaunches.
   up, then cancels the job and reports pass or fail; the cleanup method
   cancels any job with this session's name and exits.
 
+## Running a class
+
+A room of trainees launching at once hits three limits, all handled by
+staging one shared read-only copy on the resource and pointing the form
+at it (`make_cfd_training_yaml.py --shared-dir DIR`). Without it each
+launch pulls the Studio image (0.4 GB), the vLLM image (8.3 GB), and
+downloads the model (59 GB for Gemma 4 31B). A path on the resource is
+read where it sits, so the copies never multiply; bucket URIs still
+cache per user. The directory holds `containers/studio.sif`,
+`containers/vllm.sif`, `models/<model dir>`, and the starter tarball,
+each world-readable with every parent directory traversable. On makau
+this is `/p/app/projects/hsp/cfd-training`.
+
+What stays per user: the corpus, the index, the run directory, and the
+session name, so trainees do not collide and each keeps their own
+uploads and chats.
+
+Node capacity is the remaining ceiling. The makau AIML partition is
+`OverSubscribe=EXCLUSIVE` with 16 nodes, so one trainee stack occupies a
+whole quad-H100 node whatever it requests, and concurrent launches beyond
+the free node count queue rather than fail. Check `sinfo -p AIML` before
+a session and, when the class is larger than the free nodes, either
+stagger launches or serve one model for everyone (Serve a Model in the
+Job off, Gateway Base URL pointed at a model already running) so the
+trainee jobs need no GPU at all.
+
 ## Operating notes
 
 - Artifacts live in the bucket beside each other: the Studio image, the
