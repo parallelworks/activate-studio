@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api, IndexStatus } from '../api'
 import { SemanticMap, TopologyMap } from '../components/CorpusMaps'
-import { HistoryTimeline } from '../components/HistoryTimeline'
 
 interface ExtRow { ext: string; count: number; bytes: number }
 interface QueryResult { columns: string[]; rows: string[][] }
@@ -172,7 +171,6 @@ export function OverviewView({ onOpen }: { onOpen: (path: string) => void }) {
         <TopologyMap />
         <SemanticMap onOpen={onOpen} />
       </div>
-      <HistoryTimeline onOpen={onOpen} />
     </div>
   )
 }
