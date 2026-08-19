@@ -13,12 +13,57 @@
 # network. If GUFI cannot build (no cmake or gcc), the app still runs:
 # browsing works from the filesystem and search falls back to grep.
 #
-# Topology:
+# Topology (login-node placement):
 #   setup ─┬─ get_ports ─┬─ pull_software ── build_gufi ── index_kb ── run_app ── expose_session
 #          └─────────────┘
+#
+# Scheduler placement: the "Submit as a Scheduler Job" toggle instead runs
+# stage_compute ── submit_compute, which package the whole stack (container
+# source only, optionally with a vLLM model serve on the node's GPUs) as one
+# batch job in the resource's scheduler dialect (Slurm or PBS, detected from
+# the resource). The job ends with the walltime; corpus, index, and session
+# names persist. Documented in deploy/COMPUTE.md.
 # ============================================================================
 permissions:
   - '*'
+
+# Per-resource presets: selecting a matching resource pre-fills the form
+# with a complete, tested configuration. The makau entry is the CFD
+# training package (scheduler placement, Gemma 4 31B serve, starter
+# corpus); values mirror the proven activate-studio-compute runs.
+configurations:
+  makau:
+    inputs:
+      resource_and_execution:
+        scheduler: true
+      slurm:
+        partition: AIML
+        walltime: '02:00:00'
+        scheduler_directives: '--gres=gpu:h100_sxm5:4'
+      session_settings:
+        session_name: cfd-studio
+      app_settings:
+        source: container
+        app_name: CFD AI Studio
+        workdir: ${WORKDIR:-$HOME/pw}
+        image_path: pw://mshaxted/codeassist/studio.sif
+        icon_path: ${WORKDIR:-$HOME/pw}/studio-knowledge-base/.branding/icon.png
+        suggested_prompts: 'What cases are in this knowledge base and what does each simulate?;How does snappyHexMesh refine the mesh around the motorBike body?;Show me the motorBike surface geometry.;What boundary conditions does the damBreak case use for the water phase?'
+      kb_settings:
+        kb_root: ${WORKDIR:-$HOME/pw}/studio-knowledge-base
+        index_base: ${WORKDIR:-$HOME/pw}/studio-index
+        kb_label: CFD Knowledge Base
+        starter_bundle: pw://mshaxted/codeassist/cfd-starter-kb.tar.gz
+        mission: "This is the CFD AI Studio, a workspace for computational fluid dynamics engineering. The corpus holds complete OpenFOAM tutorial cases, tutorials for running each, solver manuals, papers, surface geometry models, and prior chat sessions. Its purpose is helping engineers understand, run, and adapt CFD cases and answering questions grounded in this material."
+      model_settings:
+        serve: true
+        hf_model_id: coder3101/gemma-4-31B-it-heretic
+        model_dir: ${WORKDIR:-$HOME/pw}/models/gemma-4-31B-it-heretic
+        served_name: gemma-4-31b-it
+        vllm_image: pw://mshaxted/codeassist/vllm-0.27.sif
+        vllm_args: '--tensor-parallel-size 1 --gpu-memory-utilization 0.92 --max-model-len 32768 --kv-cache-dtype fp8 --trust-remote-code --enable-auto-tool-choice --tool-call-parser gemma4 --reasoning-parser gemma4 --chat-template /vllm-workspace/examples/tool_chat_template_gemma4.jinja'
+        model_endpoint_name: gemma
+
 'on':
   execute:
     inputs:
@@ -32,6 +77,86 @@ permissions:
             type: compute-clusters
             autoselect: true
             optional: false
+          scheduler:
+            label: Submit as a Scheduler Job
+            type: boolean
+            default: false
+            hidden: ${{ inputs.resource_and_execution.resource.schedulerType == '' }}
+            tooltip: |
+              On, the whole stack runs as one batch job on a compute node,
+              submitted in the resource's scheduler dialect (Slurm or PBS),
+              optionally with a vLLM model serve on the node's GPUs; the app
+              ends with the walltime and relaunches reuse the corpus, index,
+              and session names. Off, the app runs on the login node and
+              outlives the workflow. Scheduler placement runs the container
+              source only.
+      slurm:
+        label: Slurm Job
+        type: group
+        collapsed: false
+        hidden: ${{ inputs.resource_and_execution.resource.schedulerType != 'slurm' || inputs.resource_and_execution.scheduler == false }}
+        items:
+          account:
+            label: Account
+            type: slurm-accounts
+            resource: ${{ inputs.resource_and_execution.resource }}
+            optional: true
+            ignore: ${{ inputs.resource_and_execution.resource.schedulerType != 'slurm' || inputs.resource_and_execution.scheduler == false }}
+            tooltip: Scheduler account for the job (--account).
+          partition:
+            label: Partition
+            type: slurm-partitions
+            resource: ${{ inputs.resource_and_execution.resource }}
+            optional: true
+            ignore: ${{ inputs.resource_and_execution.resource.schedulerType != 'slurm' || inputs.resource_and_execution.scheduler == false }}
+            tooltip: Partition with the GPUs (--partition). Empty uses the cluster default.
+          qos:
+            label: Quality of Service
+            type: slurm-qos
+            resource: ${{ inputs.resource_and_execution.resource }}
+            optional: true
+            ignore: ${{ inputs.resource_and_execution.resource.schedulerType != 'slurm' || inputs.resource_and_execution.scheduler == false }}
+            tooltip: QOS for the job (--qos), where the site requires one.
+          walltime:
+            label: Walltime
+            type: string
+            default: '02:00:00'
+            tooltip: The stack ends with the job (--time). Relaunching reuses the corpus, index, and session names.
+          scheduler_directives:
+            label: Extra Scheduler Directives
+            type: string
+            default: ''
+            optional: true
+            tooltip: Semicolon-separated sbatch directives without the #SBATCH prefix, e.g. --gres=gpu:h100_sxm5:4 on systems that require an explicit GRES.
+      pbs:
+        label: PBS Job
+        type: group
+        collapsed: false
+        hidden: ${{ inputs.resource_and_execution.resource.schedulerType != 'pbs' || inputs.resource_and_execution.scheduler == false }}
+        items:
+          account:
+            label: Account
+            type: string
+            default: ''
+            optional: true
+            tooltip: Allocation for the job (-A).
+          queue:
+            label: Queue
+            type: string
+            default: ''
+            optional: true
+            tooltip: Queue for the job (-q). Empty uses the cluster default.
+          walltime:
+            label: Walltime
+            type: string
+            default: '02:00:00'
+            tooltip: The stack ends with the job (-l walltime=). Relaunching reuses the corpus, index, and session names.
+          scheduler_directives:
+            label: Extra Scheduler Directives
+            type: string
+            default: '-l select=1:ngpus=1'
+            optional: true
+            tooltip: Semicolon-separated qsub directives without the #PBS prefix; the select statement names the node shape the site requires.
       session_settings:
         label: Session
         type: group
@@ -83,6 +208,12 @@ permissions:
               which case stage the file first (for a container deployment it
               must sit under a bind-mounted directory, such as a .branding
               folder inside the knowledge base).
+          icon_path_dark:
+            label: Brand Icon Path (dark mode)
+            type: string
+            default: ''
+            optional: true
+            tooltip: Icon variant for dark mode; same rules as the light icon. Empty reuses the light icon.
           banner_text:
             label: Classification Banner
             type: string
@@ -211,6 +342,12 @@ permissions:
             default: ''
             optional: true
             tooltip: Comma-separated directory names for a knowledge base that is new or empty (e.g. papers,software,datasets). Empty uses the default set, and a knowledge base that already holds content is never touched.
+          starter_bundle:
+            label: Starter Knowledge Base (bucket)
+            type: string
+            default: ''
+            optional: true
+            tooltip: Tarball (bucket URI) pulled and extracted into an empty knowledge base on first launch, so a fresh deployment starts with a working corpus. A knowledge base that already has content is never touched. Scheduler placement only.
           kb_label:
             label: Knowledge Base Label
             type: string
@@ -278,8 +415,72 @@ permissions:
             default: ''
             optional: true
             tooltip: Override the OpenAI-compatible endpoint base URL (defaults to the ACTIVATE platform gateway).
+          serve:
+            label: Serve a Model in the Job
+            type: boolean
+            default: false
+            hidden: ${{ inputs.resource_and_execution.scheduler != true }}
+            tooltip: Scheduler placement only. Start vLLM on the job's GPUs and point the Studio at it; off, the Studio uses the gateway settings above.
+          model_dir:
+            label: Model Directory
+            type: string
+            default: ''
+            optional: true
+            hidden: ${{ inputs.resource_and_execution.scheduler != true }}
+            tooltip: HuggingFace-format model directory on the resource. Empty derives <workdir>/models/<model id>. Downloaded on the login node when missing and a model id is set.
+          hf_model_id:
+            label: HuggingFace Model ID
+            type: string
+            default: ''
+            optional: true
+            hidden: ${{ inputs.resource_and_execution.scheduler != true }}
+            tooltip: Downloaded into the model directory when it does not exist yet.
+          hf_token:
+            label: HuggingFace Token
+            type: string
+            default: ''
+            optional: true
+            hidden: ${{ inputs.resource_and_execution.scheduler != true }}
+          served_name:
+            label: Served Model Name
+            type: string
+            default: model
+            hidden: ${{ inputs.resource_and_execution.scheduler != true }}
+          vllm_image:
+            label: vLLM Image (bucket or path)
+            type: string
+            default: ''
+            optional: true
+            hidden: ${{ inputs.resource_and_execution.scheduler != true }}
+            tooltip: Bucket URI or path of the vLLM Apptainer image. Staged beside the Studio image and cached on the resource.
+          gpu_ids:
+            label: GPU IDs
+            type: string
+            default: '0'
+            hidden: ${{ inputs.resource_and_execution.scheduler != true }}
+            tooltip: CUDA_VISIBLE_DEVICES for the model server. The Studio itself needs no GPU.
+          vllm_args:
+            label: vLLM Arguments
+            type: string
+            default: '--tensor-parallel-size 1 --gpu-memory-utilization 0.92 --max-model-len 32768'
+            hidden: ${{ inputs.resource_and_execution.scheduler != true }}
+            tooltip: Tool-call and reasoning parsers are model-specific; a Gemma 4 model wants --tool-call-parser gemma4 --reasoning-parser gemma4 and its chat template, a Qwen model --tool-call-parser qwen3_coder --reasoning-parser qwen3.
+          register_openai:
+            label: Register the Model in the Catalog
+            type: boolean
+            default: true
+            hidden: ${{ inputs.resource_and_execution.scheduler != true }}
+            tooltip: Also expose the served model as a platform model (pw endpoints --openai), so other tools can use it while the job runs.
+          model_endpoint_name:
+            label: Model Endpoint Name
+            type: string
+            default: ''
+            optional: true
+            hidden: ${{ inputs.resource_and_execution.scheduler != true }}
+            tooltip: Platform endpoint name for the served model. Empty derives <session name>-model.
 jobs:
   setup:
+    if: ${{ inputs.resource_and_execution.scheduler != true }}
     ssh:
       remoteHost: ${{ inputs.resource_and_execution.resource.ip }}
     steps:
@@ -291,6 +492,7 @@ jobs:
             mkdir -p "${{ inputs.kb_settings.index_base }}"
           fi
   get_ports:
+    if: ${{ inputs.resource_and_execution.scheduler != true }}
     outputs:
       APP_PORT: ${{ needs.get_ports.steps.ports.outputs.APP_PORT }}
     ssh:
@@ -307,6 +509,7 @@ jobs:
           echo "App port: $APP_PORT"
           echo APP_PORT=$APP_PORT >> $OUTPUTS
   pull_software:
+    if: ${{ inputs.resource_and_execution.scheduler != true }}
     needs:
       - setup
     ssh:
@@ -538,6 +741,7 @@ jobs:
           echo "Office rendering via staged runtime: $SOFFICE"
 
   build_gufi:
+    if: ${{ inputs.resource_and_execution.scheduler != true }}
     needs:
       - pull_software
     ssh:
@@ -628,6 +832,7 @@ jobs:
           make install || { echo "WARNING: GUFI install failed; continuing without GUFI"; exit 0; }
           echo "GUFI installed at ${{ inputs.app_settings.workdir }}/gufi-install"
   index_kb:
+    if: ${{ inputs.resource_and_execution.scheduler != true }}
     needs:
       - build_gufi
     ssh:
@@ -664,6 +869,7 @@ jobs:
           fi
           bash app/indexer/reindex.sh || echo "WARNING: index build failed; the app still serves the filesystem."
   run_app:
+    if: ${{ inputs.resource_and_execution.scheduler != true }}
     needs:
       - index_kb
       - get_ports
@@ -896,6 +1102,7 @@ jobs:
         run: |
           bash ${{ inputs.app_settings.rundir }}/run_app.sh 2>&1 | tee ${{ inputs.app_settings.rundir }}/run_app.out
   expose_session:
+    if: ${{ inputs.resource_and_execution.scheduler != true }}
     needs:
       - run_app
       - get_ports
@@ -948,3 +1155,354 @@ jobs:
             sleep 5
           done
           head -30 endpoint.log 2>/dev/null || echo "(endpoint.log not found)"
+
+  stage_compute:
+    if: ${{ inputs.resource_and_execution.scheduler == true }}
+    ssh:
+      remoteHost: ${{ inputs.resource_and_execution.resource.ip }}
+    steps:
+      - name: Stage directories, images, and starter corpus
+        run: |
+          if [ "${{ inputs.session_settings.session_method }}" = "cleanup" ]; then
+            echo "Cleanup run; nothing to stage."
+            exit 0
+          fi
+          if [ "${{ inputs.app_settings.source }}" != "container" ]; then
+            echo "ERROR: scheduler placement runs the container source only; set App Source to Container."
+            exit 1
+          fi
+          WORKDIR="$(eval echo '${{ inputs.app_settings.workdir }}')"
+          RUNDIR="$WORKDIR/compute-run"
+          KB="$(eval echo '${{ inputs.kb_settings.kb_root }}')"
+          IDX="$(eval echo '${{ inputs.kb_settings.index_base }}')"
+          [ -n "$IDX" ] || IDX="$WORKDIR/studio-index"
+          mkdir -p "$RUNDIR" "$KB" "$IDX" "$WORKDIR/containers"
+          PW_BIN="$(command -v pw || echo ~/pw/pw)"
+          # An empty knowledge base seeds itself from the starter bundle, so
+          # a first launch lands with a working corpus; existing content is
+          # never touched.
+          BUNDLE_URI="${{ inputs.kb_settings.starter_bundle }}"
+          if [ -n "$BUNDLE_URI" ] && [ -z "$(ls -A "$KB" 2>/dev/null)" ]; then
+            if "$PW_BIN" buckets cp "$BUNDLE_URI" "$RUNDIR/starter-kb.tar.gz" > bundle-cp.log 2>&1; then
+              tar -xzf "$RUNDIR/starter-kb.tar.gz" -C "$KB" && rm -f "$RUNDIR/starter-kb.tar.gz"
+              echo "Seeded the knowledge base from $BUNDLE_URI"
+            else
+              tr '\r' '\n' < bundle-cp.log | tail -3
+              echo "Starter bundle pull failed; continuing with an empty knowledge base."
+            fi
+          fi
+          # Images live on the shared filesystem so the compute node sees
+          # what the login node staged; an existing file is reused, delete
+          # it to force a fresh pull.
+          stage() { # $1 = configured source (URI or path), $2 = cache path
+            SRC="$1"; DST="$2"
+            [ -n "$SRC" ] || SRC="$DST"
+            case "$SRC" in
+              pw://*|s3://*|gs://*|az://*)
+                if [ ! -f "$DST" ]; then
+                  echo "Staging $SRC -> $DST"
+                  "$PW_BIN" buckets cp "$SRC" "$DST" > image-cp.log 2>&1 \
+                    || { tr '\r' '\n' < image-cp.log | tail -3; echo "ERROR: image stage failed: $SRC"; exit 1; }
+                fi
+                ;;
+              *)
+                [ -f "$SRC" ] || { echo "ERROR: container image not found: $SRC"; exit 1; }
+                [ "$SRC" = "$DST" ] || cp -f "$SRC" "$DST"
+                ;;
+            esac
+          }
+          cd "$RUNDIR"
+          stage "${{ inputs.app_settings.image_path }}" "$WORKDIR/containers/studio.sif"
+          if [ "${{ inputs.model_settings.serve }}" = "true" ]; then
+            stage "${{ inputs.model_settings.vllm_image }}" "$WORKDIR/containers/vllm.sif"
+          fi
+          ls -la "$WORKDIR/containers/" 2>/dev/null || true
+
+      - name: Fetch the model if missing
+        run: |
+          if [ "${{ inputs.session_settings.session_method }}" = "cleanup" ]; then exit 0; fi
+          if [ "${{ inputs.model_settings.serve }}" != "true" ]; then echo "Not serving a model."; exit 0; fi
+          WORKDIR="$(eval echo '${{ inputs.app_settings.workdir }}')"
+          MODEL_DIR="$(eval echo '${{ inputs.model_settings.model_dir }}')"
+          [ -n "$MODEL_DIR" ] || MODEL_DIR="$WORKDIR/models/$(basename '${{ inputs.model_settings.hf_model_id }}')"
+          if [ -f "$MODEL_DIR/config.json" ]; then echo "Model present at $MODEL_DIR; reusing."; exit 0; fi
+          if [ -z "${{ inputs.model_settings.hf_model_id }}" ]; then echo "ERROR: no model directory and no model id to download."; exit 1; fi
+          # pip on the login node rather than the container: some login
+          # nodes exhaust user namespaces and refuse containers entirely.
+          python3 -m pip install --user -q "huggingface_hub[cli]"
+          HF_TOKEN='${{ inputs.model_settings.hf_token }}' ~/.local/bin/hf download '${{ inputs.model_settings.hf_model_id }}' --local-dir "$MODEL_DIR"
+          ls "$MODEL_DIR" | head -5
+
+  submit_compute:
+    if: ${{ inputs.resource_and_execution.scheduler == true }}
+    needs:
+      - stage_compute
+    ssh:
+      remoteHost: ${{ inputs.resource_and_execution.resource.ip }}
+    steps:
+      - name: Write the job script
+        run: |
+          if [ "${{ inputs.session_settings.session_method }}" = "cleanup" ]; then exit 0; fi
+          WORKDIR="$(eval echo '${{ inputs.app_settings.workdir }}')"
+          RUNDIR="$WORKDIR/compute-run"
+          cd "$RUNDIR"
+          KB="$(eval echo '${{ inputs.kb_settings.kb_root }}')"
+          IDX="$(eval echo '${{ inputs.kb_settings.index_base }}')"
+          [ -n "$IDX" ] || IDX="$WORKDIR/studio-index"
+          SSIF="$WORKDIR/containers/studio.sif"
+          VSIF="$WORKDIR/containers/vllm.sif"
+          MODEL_DIR="$(eval echo '${{ inputs.model_settings.model_dir }}')"
+          [ -n "$MODEL_DIR" ] || MODEL_DIR="$WORKDIR/models/$(basename '${{ inputs.model_settings.hf_model_id }}')"
+          PW_BIN="$(command -v pw || echo ~/pw/pw)"
+          SESSION="$(echo "${{ inputs.session_settings.session_name }}" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-' | sed -E 's/-+/-/g; s/^-//; s/-$//')"
+          [ -n "$SESSION" ] || SESSION="studio"
+          MODEL_EP="${{ inputs.model_settings.model_endpoint_name }}"
+          [ -n "$MODEL_EP" ] || MODEL_EP="${SESSION}-model"
+
+          cat > job.sh << 'JOB'
+          #!/bin/bash
+          set -u
+          cd "__RUNDIR__"
+          # The run directory persists across launches; stale logs from the
+          # previous job must not satisfy this launch's watchers.
+          : > endpoint.log; : > model-endpoint.log; : > vllm.out; : > studio.out
+          RUNTIME="$(command -v apptainer || command -v singularity)"
+          cleanup() {
+            "$RUNTIME" instance stop studio-compute-vllm 2>/dev/null
+          }
+          trap cleanup EXIT
+
+          pickport() { python3 -c 'import socket; s=socket.socket(); s.bind(("",0)); print(s.getsockname()[1]); s.close()'; }
+
+          GATEWAY_URL="__GATEWAY_URL__"
+          GATEWAY_KEY="__GATEWAY_KEY__"
+          if [ "__SERVE__" = "true" ]; then
+            VPORT=$(pickport)
+            "$RUNTIME" instance start --nv --cleanenv --writable-tmpfs \
+              --bind "__MODEL_DIR__:/model" --bind "$PWD:/rundir" \
+              "__VSIF__" studio-compute-vllm
+            "$RUNTIME" exec instance://studio-compute-vllm bash -c "
+              export CUDA_VISIBLE_DEVICES='__GPU_IDS__'
+              nohup python3 -m vllm.entrypoints.openai.api_server \
+                --model /model --served-model-name '__SERVED_NAME__' \
+                --host 0.0.0.0 --port $VPORT __VLLM_ARGS__ \
+                > /rundir/vllm.out 2>&1 &
+            "
+            for i in $(seq 1 240); do
+              curl -s -m 5 "localhost:$VPORT/v1/models" | grep -q '"id"' && { echo "vLLM up after ~$((i*5))s"; break; }
+              pgrep -f "openai.api_server.*--port $VPORT" > /dev/null || { echo "vLLM exited:"; tail -30 vllm.out; exit 1; }
+              sleep 5
+            done
+            curl -s -m 5 "localhost:$VPORT/v1/models" | grep -q '"id"' || { echo "vLLM never came up:"; tail -30 vllm.out; exit 1; }
+            GATEWAY_URL="http://localhost:$VPORT/v1"
+            GATEWAY_KEY="local"
+            if [ "__REGISTER_OPENAI__" = "true" ]; then
+              setsid nohup "__PW_BIN__" endpoints http --openai --keep -o text \
+                --name "__MODEL_EP__" "$VPORT" > model-endpoint.log 2>&1 < /dev/null &
+            fi
+          fi
+
+          APORT=$(pickport)
+          setsid nohup "$RUNTIME" run --cleanenv \
+            --env PORT="$APORT" --env KB_ROOT="__KB__" --env DATA_DIR="__IDX__" \
+            --env INDEX_BASE="__IDX__" --env KB_LABEL="__KB_LABEL__" \
+            --env APP_NAME="__APP_NAME__" --env INDEX_ON_START="__RUN_INDEX__" \
+            --env KB_MISSION="__KB_MISSION__" \
+            --env KB_STARTER_DIRS="__STARTER_DIRS__" \
+            ${GATEWAY_URL:+--env PW_GATEWAY_URL="$GATEWAY_URL"} \
+            ${GATEWAY_KEY:+--env PW_API_KEY="$GATEWAY_KEY"} \
+            --env APP_ICON="__ICON__" --env APP_ICON_DARK="__ICON_DARK__" \
+            ${BANNER_TEXT_V:+--env BANNER_TEXT="$BANNER_TEXT_V"} \
+            ${BANNER_COLOR_V:+--env BANNER_COLOR="$BANNER_COLOR_V"} \
+            ${AUTH_JWKS_URL_V:+--env AUTH_JWKS_URL="$AUTH_JWKS_URL_V"} \
+            ${AUTH_JWKS_URL_V:+--env AUTH_ISSUER="pw-session-proxy"} \
+            ${DISABLE_PERSONAL_KEYS_V:+--env DISABLE_PERSONAL_KEYS=1} \
+            ${REQUIRE_PERSONAL_KEY_V:+--env REQUIRE_PERSONAL_KEY=1} \
+            --env SUGGESTED_PROMPTS='__PROMPTS_JSON__' \
+            --bind "__KB__:__KB__" --bind "__IDX__:__IDX__" \
+            "__SSIF__" > studio.out 2>&1 < /dev/null &
+
+          for i in $(seq 1 120); do
+            curl -s -m 5 "localhost:$APORT/healthz" > /dev/null 2>&1 && { echo "Studio up after ~$((i*5))s on port $APORT"; break; }
+            sleep 5
+          done
+          curl -s -m 5 "localhost:$APORT/healthz" > /dev/null 2>&1 || { echo "Studio never came up:"; tail -30 studio.out; exit 1; }
+
+          setsid nohup "__PW_BIN__" endpoints http --keep -o text \
+            --name "__SESSION__" --subdomain "__SESSION__" "$APORT" > endpoint.log 2>&1 < /dev/null &
+          sleep 15
+          grep -oE "https://[^ ]+" endpoint.log | head -1
+
+          # Hold the allocation while the studio answers; the job ends when
+          # the app dies or the walltime arrives.
+          while curl -s -m 10 "localhost:$APORT/healthz" > /dev/null 2>&1; do sleep 60; done
+          echo "Studio stopped responding; ending the job."
+          JOB
+
+          # Posture env values resolve at job runtime via the *_V variables
+          # baked in below; empty means the flag is omitted.
+          POSTURE='${{ inputs.model_settings.posture }}'
+          PLATFORM_HOST='${{ inputs.model_settings.platform_host }}'
+          JWKS=""
+          if [ "$POSTURE" != "single" ] && [ -n "$PLATFORM_HOST" ]; then
+            JWKS="https://${PLATFORM_HOST}/api/platform/keys"
+          fi
+          DPK=""; [ "$POSTURE" = "multi-shared" ] && DPK="1"
+          RPK=""; [ "$POSTURE" = "multi-strict" ] && RPK="1"
+          # Interpolate without fighting the heredoc's quoting.
+          ICON="$(eval echo '${{ inputs.app_settings.icon_path }}')"
+          ICON_DARK="$(eval echo '${{ inputs.app_settings.icon_path_dark }}')"
+          PROMPTS_JSON=$(P='${{ inputs.app_settings.suggested_prompts }}' python3 -c "import json,os; print(json.dumps([q.strip() for q in os.environ['P'].split(';') if q.strip()]))")
+          python3 - "$RUNDIR/job.sh" << PYEOF
+          import sys, textwrap
+          p = sys.argv[1]
+          s = textwrap.dedent(open(p).read())
+          reps = {
+            '__RUNDIR__': "$RUNDIR", '__KB__': "$KB", '__IDX__': "$IDX",
+            '__SSIF__': "$SSIF", '__VSIF__': "$VSIF", '__MODEL_DIR__': "$MODEL_DIR",
+            '__PW_BIN__': "$PW_BIN",
+            '__SERVE__': "${{ inputs.model_settings.serve }}",
+            '__GPU_IDS__': "${{ inputs.model_settings.gpu_ids }}",
+            '__SERVED_NAME__': "${{ inputs.model_settings.served_name }}",
+            '__VLLM_ARGS__': "${{ inputs.model_settings.vllm_args }}",
+            '__REGISTER_OPENAI__': "${{ inputs.model_settings.register_openai }}",
+            '__MODEL_EP__': "$MODEL_EP",
+            '__GATEWAY_URL__': "${{ inputs.model_settings.gateway_url }}",
+            '__GATEWAY_KEY__': "${{ inputs.model_settings.pw_api_key }}",
+            '__APP_NAME__': "${{ inputs.app_settings.app_name }}",
+            '__SESSION__': "$SESSION",
+            '__KB_LABEL__': "${{ inputs.kb_settings.kb_label }}",
+            '__KB_MISSION__': """${{ inputs.kb_settings.mission }}""",
+            '__STARTER_DIRS__': "${{ inputs.kb_settings.starter_dirs }}",
+            '__RUN_INDEX__': "true" if "${{ inputs.kb_settings.run_index }}" == "true" else "0",
+            '__ICON__': "$ICON", '__ICON_DARK__': "$ICON_DARK",
+            '__PROMPTS_JSON__': '''$PROMPTS_JSON''',
+          }
+          for k, v in reps.items():
+              s = s.replace(k, v)
+          # Literal launch-time values for the optional env toggles.
+          s = s.replace('BANNER_TEXT_V', 'BT').replace('BANNER_COLOR_V', 'BC')
+          s = s.replace('AUTH_JWKS_URL_V', 'JW').replace('DISABLE_PERSONAL_KEYS_V', 'DK').replace('REQUIRE_PERSONAL_KEY_V', 'RK')
+          prelude = 'BT=%r; BC=%r; JW=%r; DK=%r; RK=%r\n' % (
+              """${{ inputs.app_settings.banner_text }}""",
+              """${{ inputs.app_settings.banner_color }}""",
+              "$JWKS", "$DPK", "$RPK")
+          s = s.replace('set -u\n', 'set -u\n' + prelude, 1)
+          open(p, 'w').write(s)
+          print('job script written')
+          PYEOF
+          chmod +x job.sh
+
+      - name: Submit in the resource's scheduler dialect and watch
+        run: |
+          WORKDIR="$(eval echo '${{ inputs.app_settings.workdir }}')"
+          RUNDIR="$WORKDIR/compute-run"
+          mkdir -p "$RUNDIR"; cd "$RUNDIR"
+          METHOD="${{ inputs.session_settings.session_method }}"
+          STYPE="${{ inputs.resource_and_execution.resource.schedulerType }}"
+          SESSION="$(echo "${{ inputs.session_settings.session_name }}" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-' | sed -E 's/-+/-/g; s/^-//; s/-$//')"
+          [ -n "$SESSION" ] || SESSION="studio"
+          JOB_NAME="studio-$SESSION"
+          echo "scheduler dialect: ${STYPE:-none}"
+
+          cancel_by_name() {
+            if [ "$STYPE" = "slurm" ]; then
+              scancel --name "$JOB_NAME" 2>/dev/null || true
+            elif [ "$STYPE" = "pbs" ]; then
+              # PBS caps job names; cancel what a prior submit could have used.
+              for id in $(qselect -N "$(echo "$JOB_NAME" | cut -c1-15)" 2>/dev/null); do qdel "$id" 2>/dev/null || true; done
+            fi
+          }
+          if [ "$METHOD" = "cleanup" ]; then
+            echo "Cleanup run: cancelling any $JOB_NAME job."
+            cancel_by_name
+            exit 0
+          fi
+
+          # One stack per session name: end any previous job before submitting.
+          cancel_by_name
+          # A fresh output file per submission: a watcher reading a prior
+          # job's leftover output mistakes its state for this run's.
+          OUT="$RUNDIR/job-$(date +%s).out"
+          ln -sf "$OUT" "$RUNDIR/job.out"
+          # CLI-supplied partial input groups arrive with unset fields empty
+          # (form defaults live only in the form), so walltime is backed by
+          # a fallback; empty partition, account, qos, and queue mean the
+          # flag is omitted and the cluster default applies.
+          if [ "$STYPE" = "slurm" ]; then
+            WALLTIME='${{ inputs.slurm.walltime }}'; [ -n "$WALLTIME" ] || WALLTIME='02:00:00'
+            {
+              echo "#SBATCH --job-name=$JOB_NAME"
+              echo "#SBATCH --nodes=1"
+              echo "#SBATCH --time=$WALLTIME"
+              echo "#SBATCH --output=$OUT"
+              [ -n "${{ inputs.slurm.partition }}" ] && echo "#SBATCH --partition=${{ inputs.slurm.partition }}"
+              [ -n "${{ inputs.slurm.account }}" ] && echo "#SBATCH --account=${{ inputs.slurm.account }}"
+              [ -n "${{ inputs.slurm.qos }}" ] && echo "#SBATCH --qos=${{ inputs.slurm.qos }}"
+              DIRECTIVES='${{ inputs.slurm.scheduler_directives }}'
+              IFS=';'
+              for d in $DIRECTIVES; do d=$(echo "$d" | xargs); [ -n "$d" ] && echo "#SBATCH $d"; done
+              unset IFS
+              true
+            } > headers.sh
+          elif [ "$STYPE" = "pbs" ]; then
+            WALLTIME='${{ inputs.pbs.walltime }}'; [ -n "$WALLTIME" ] || WALLTIME='02:00:00'
+            {
+              echo "#PBS -N $(echo "$JOB_NAME" | cut -c1-15)"
+              echo "#PBS -o $OUT"
+              echo "#PBS -j oe"
+              echo "#PBS -l walltime=$WALLTIME"
+              [ -n "${{ inputs.pbs.account }}" ] && echo "#PBS -A ${{ inputs.pbs.account }}"
+              [ -n "${{ inputs.pbs.queue }}" ] && echo "#PBS -q ${{ inputs.pbs.queue }}"
+              DIRECTIVES='${{ inputs.pbs.scheduler_directives }}'
+              IFS=';'
+              for d in $DIRECTIVES; do d=$(echo "$d" | xargs); [ -n "$d" ] && echo "#PBS $d"; done
+              unset IFS
+              true
+            } > headers.sh
+          else
+            echo "ERROR: the resource reports no scheduler; turn off scheduler placement or pick a cluster with one."
+            exit 1
+          fi
+          { head -1 job.sh; cat headers.sh; tail -n +2 job.sh; } > job-submit.sh
+          chmod +x job-submit.sh
+          sed -n '1,20p' job-submit.sh
+
+          if [ "$STYPE" = "slurm" ]; then
+            JOBID=$(sbatch job-submit.sh | grep -oE '[0-9]+$') || { echo "ERROR: submission failed"; exit 1; }
+            job_state() { squeue -j "$JOBID" -h -o %T 2>/dev/null || true; }
+            is_running() { [ "$1" = "RUNNING" ]; }
+          else
+            QSUB_OUT=$(qsub job-submit.sh 2>&1) || { echo "ERROR: submission failed: $QSUB_OUT"; exit 1; }
+            JOBID=$(echo "$QSUB_OUT" | head -1)
+            job_state() { qstat -f "$JOBID" 2>/dev/null | grep job_state | cut -d'=' -f2 | tr -d ' '; }
+            is_running() { [ "$1" = "R" ]; }
+          fi
+          echo "Submitted job $JOBID"
+          for i in $(seq 1 240); do
+            ST=$(job_state)
+            [ -z "$ST" ] && { echo "Job left the queue; output:"; tail -40 job.out 2>/dev/null; exit 1; }
+            is_running "$ST" && break
+            sleep 15
+          done
+          echo "Job running; waiting for the session URL..."
+          URL=""
+          for i in $(seq 1 240); do
+            URL=$(grep -oE "https://[^ ]+" endpoint.log 2>/dev/null | head -1 || true)
+            [ -n "$URL" ] && { echo "Studio session: $URL"; break; }
+            ST=$(job_state)
+            [ -z "$ST" ] && { echo "Job ended before the session came up; output:"; tail -40 job.out 2>/dev/null; exit 1; }
+            sleep 10
+          done
+          if [ "$METHOD" = "e2e" ]; then
+            if [ -n "$URL" ]; then
+              echo "E2E PASS: job ran, stack came up, session registered; cancelling the job."
+              if [ "$STYPE" = "slurm" ]; then scancel "$JOBID"; else qdel "$JOBID"; fi
+            else
+              echo "E2E FAIL: session never came up; cancelling the job."
+              if [ "$STYPE" = "slurm" ]; then scancel "$JOBID"; else qdel "$JOBID"; fi
+              exit 1
+            fi
+            exit 0
+          fi
+          tail -5 job.out 2>/dev/null || true
