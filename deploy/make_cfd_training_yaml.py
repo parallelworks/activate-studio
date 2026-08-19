@@ -1,24 +1,34 @@
 #!/usr/bin/env python3
 """Derive the turnkey CFD training workflow from deploy/workflow.yaml.
 
-Prints a yaml where the makau configurations preset is baked in as the
-plain form defaults: scheduler placement on, container source, Gemma 4
-serve, starter corpus. Push the output to the platform record (local
-type) per deploy/COMPUTE.md's stored-yaml procedure.
+Prints a yaml where a site preset is baked in as the plain form
+defaults: scheduler placement on, container source, the model serve, and
+the starter corpus. Push the output to a platform workflow record per
+deploy/COMPUTE.md's stored-yaml procedure.
 
-    make_cfd_training_yaml.py [workflow.yaml] [--shared-dir DIR]
+    make_cfd_training_yaml.py --preset site-preset.yaml [workflow.yaml] \
+        [--shared-dir DIR]
+
+--preset is a file holding {inputs: {<group>: {<field>: <value>}}} with
+the site's values (resource-specific paths, accounts, model choice); it
+lives with the site's operations notes, not in this repository.
 
 --shared-dir points the images, model, and starter corpus at one
 read-only copy on the resource, so a class of trainees launches without
-each pulling 8 GB of images and 59 GB of model weights. The directory
-holds containers/studio.sif, containers/vllm.sif,
-models/<model dir name>, and cfd-starter-kb.tar.gz.
+each pulling the images and model weights again. The directory holds
+containers/studio.sif, containers/vllm.sif, models/<model dir name>,
+and the starter corpus tarball.
 """
 import sys
 import yaml
 
 argv = sys.argv[1:]
 shared = None
+preset_file = None
+if '--preset' in argv:
+    i = argv.index('--preset')
+    preset_file = argv[i + 1]
+    del argv[i:i + 2]
 if '--shared-dir' in argv:
     i = argv.index('--shared-dir')
     shared = argv[i + 1].rstrip('/')
@@ -27,7 +37,9 @@ src = argv[0] if argv else 'deploy/workflow.yaml'
 d = yaml.safe_load(open(src))
 
 ins = d['on']['execute']['inputs']
-preset = d.pop('configurations')['makau']['inputs']
+if not preset_file:
+    sys.exit('a --preset file is required; see the module docstring')
+preset = yaml.safe_load(open(preset_file))['inputs']
 
 for group, values in preset.items():
     for key, val in values.items():
@@ -38,8 +50,6 @@ for group, values in preset.items():
 for group, item in ins.items():
     if isinstance(item, dict) and item.get('type') == 'group':
         item['collapsed'] = group not in ('resource_and_execution', 'slurm')
-
-ins['slurm']['items']['scheduler_directives']['default'] = '--gres=gpu:h100_sxm5:4'
 
 if shared:
     model_name = ins['model_settings']['items']['model_dir']['default'].rsplit('/', 1)[-1]
