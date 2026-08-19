@@ -938,74 +938,81 @@ jobs:
         \ }}')\"\nPW_BIN=\"$(command -v pw || echo ~/pw/pw)\"\nSESSION=\"$(echo \"${{ inputs.session_settings.session_name\
         \ }}\" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-' | sed -E 's/-+/-/g; s/^-//; s/-$//')\"\
         \n[ -n \"$SESSION\" ] || SESSION=\"studio\"\nMODEL_EP=\"${{ inputs.model_settings.model_endpoint_name\
-        \ }}\"\n[ -n \"$MODEL_EP\" ] || MODEL_EP=\"${SESSION}-model\"\n\ncat > job.sh << 'JOB'\n#!/bin/bash\n\
-        set -u\ncd \"__RUNDIR__\"\n# The run directory persists across launches; stale logs from the\n\
-        # previous job must not satisfy this launch's watchers.\n: > endpoint.log; : > model-endpoint.log;\
-        \ : > vllm.out; : > studio.out\nRUNTIME=\"$(command -v apptainer || command -v singularity)\"\n\
-        cleanup() {\n  \"$RUNTIME\" instance stop studio-compute-vllm 2>/dev/null\n}\ntrap cleanup EXIT\n\
-        \npickport() { python3 -c 'import socket; s=socket.socket(); s.bind((\"\",0)); print(s.getsockname()[1]);\
-        \ s.close()'; }\n\nGATEWAY_URL=\"__GATEWAY_URL__\"\nGATEWAY_KEY=\"__GATEWAY_KEY__\"\nif [ \"__SERVE__\"\
-        \ = \"true\" ]; then\n  VPORT=$(pickport)\n  \"$RUNTIME\" instance start --nv --cleanenv --writable-tmpfs\
-        \ \\\n    --bind \"__MODEL_DIR__:/model\" --bind \"$PWD:/rundir\" \\\n    \"__VSIF__\" studio-compute-vllm\n\
-        \  \"$RUNTIME\" exec instance://studio-compute-vllm bash -c \"\n    export CUDA_VISIBLE_DEVICES='__GPU_IDS__'\n\
-        \    nohup python3 -m vllm.entrypoints.openai.api_server \\\n      --model /model --served-model-name\
-        \ '__SERVED_NAME__' \\\n      --host 0.0.0.0 --port $VPORT __VLLM_ARGS__ \\\n      > /rundir/vllm.out\
-        \ 2>&1 &\n  \"\n  for i in $(seq 1 240); do\n    curl -s -m 5 \"localhost:$VPORT/v1/models\" |\
-        \ grep -q '\"id\"' && { echo \"vLLM up after ~$((i*5))s\"; break; }\n    pgrep -f \"openai.api_server.*--port\
-        \ $VPORT\" > /dev/null || { echo \"vLLM exited:\"; tail -30 vllm.out; exit 1; }\n    sleep 5\n\
-        \  done\n  curl -s -m 5 \"localhost:$VPORT/v1/models\" | grep -q '\"id\"' || { echo \"vLLM never\
-        \ came up:\"; tail -30 vllm.out; exit 1; }\n  GATEWAY_URL=\"http://localhost:$VPORT/v1\"\n  GATEWAY_KEY=\"\
-        local\"\n  if [ \"__REGISTER_OPENAI__\" = \"true\" ]; then\n    setsid nohup \"__PW_BIN__\" endpoints\
-        \ http --openai --keep -o text \\\n      --name \"__MODEL_EP__\" \"$VPORT\" > model-endpoint.log\
-        \ 2>&1 < /dev/null &\n  fi\nfi\n\nAPORT=$(pickport)\nsetsid nohup \"$RUNTIME\" run --cleanenv\
-        \ \\\n  --env PORT=\"$APORT\" --env KB_ROOT=\"__KB__\" --env DATA_DIR=\"__IDX__\" \\\n  --env\
-        \ INDEX_BASE=\"__IDX__\" --env KB_LABEL=\"__KB_LABEL__\" \\\n  --env APP_NAME=\"__APP_NAME__\"\
-        \ --env INDEX_ON_START=\"__RUN_INDEX__\" \\\n  --env KB_MISSION=\"__KB_MISSION__\" \\\n  --env\
-        \ KB_STARTER_DIRS=\"__STARTER_DIRS__\" \\\n  ${GATEWAY_URL:+--env PW_GATEWAY_URL=\"$GATEWAY_URL\"\
-        } \\\n  ${GATEWAY_KEY:+--env PW_API_KEY=\"$GATEWAY_KEY\"} \\\n  --env APP_ICON=\"__ICON__\" --env\
-        \ APP_ICON_DARK=\"__ICON_DARK__\" \\\n  ${BANNER_TEXT_V:+--env BANNER_TEXT=\"$BANNER_TEXT_V\"\
-        } \\\n  ${BANNER_COLOR_V:+--env BANNER_COLOR=\"$BANNER_COLOR_V\"} \\\n  ${AUTH_JWKS_URL_V:+--env\
-        \ AUTH_JWKS_URL=\"$AUTH_JWKS_URL_V\"} \\\n  ${AUTH_JWKS_URL_V:+--env AUTH_ISSUER=\"pw-session-proxy\"\
-        } \\\n  ${DISABLE_PERSONAL_KEYS_V:+--env DISABLE_PERSONAL_KEYS=1} \\\n  ${REQUIRE_PERSONAL_KEY_V:+--env\
-        \ REQUIRE_PERSONAL_KEY=1} \\\n  --env SUGGESTED_PROMPTS='__PROMPTS_JSON__' \\\n  --bind \"__KB__:__KB__\"\
-        \ --bind \"__IDX__:__IDX__\" \\\n  \"__SSIF__\" > studio.out 2>&1 < /dev/null &\n\nfor i in $(seq\
-        \ 1 120); do\n  curl -s -m 5 \"localhost:$APORT/healthz\" > /dev/null 2>&1 && { echo \"Studio\
-        \ up after ~$((i*5))s on port $APORT\"; break; }\n  sleep 5\ndone\ncurl -s -m 5 \"localhost:$APORT/healthz\"\
-        \ > /dev/null 2>&1 || { echo \"Studio never came up:\"; tail -30 studio.out; exit 1; }\n\nsetsid\
-        \ nohup \"__PW_BIN__\" endpoints http --keep -o text \\\n  --name \"__SESSION__\" --subdomain\
-        \ \"__SESSION__\" \"$APORT\" > endpoint.log 2>&1 < /dev/null &\nsleep 15\ngrep -oE \"https://[^\
-        \ ]+\" endpoint.log | head -1\n\n# Hold the allocation while the studio answers; the job ends\
-        \ when\n# the app dies or the walltime arrives.\nwhile curl -s -m 10 \"localhost:$APORT/healthz\"\
-        \ > /dev/null 2>&1; do sleep 60; done\necho \"Studio stopped responding; ending the job.\"\nJOB\n\
-        \n# Posture env values resolve at job runtime via the *_V variables\n# baked in below; empty means\
-        \ the flag is omitted.\nPOSTURE='${{ inputs.model_settings.posture }}'\nPLATFORM_HOST='${{ inputs.model_settings.platform_host\
-        \ }}'\nJWKS=\"\"\nif [ \"$POSTURE\" != \"single\" ] && [ -n \"$PLATFORM_HOST\" ]; then\n  JWKS=\"\
-        https://${PLATFORM_HOST}/api/platform/keys\"\nfi\nDPK=\"\"; [ \"$POSTURE\" = \"multi-shared\"\
-        \ ] && DPK=\"1\"\nRPK=\"\"; [ \"$POSTURE\" = \"multi-strict\" ] && RPK=\"1\"\n# Interpolate without\
-        \ fighting the heredoc's quoting.\nICON=\"$(eval echo '${{ inputs.app_settings.icon_path }}')\"\
-        \nICON_DARK=\"$(eval echo '${{ inputs.app_settings.icon_path_dark }}')\"\nPROMPTS_JSON=$(P='${{\
-        \ inputs.app_settings.suggested_prompts }}' python3 -c \"import json,os; print(json.dumps([q.strip()\
-        \ for q in os.environ['P'].split(';') if q.strip()]))\")\npython3 - \"$RUNDIR/job.sh\" << PYEOF\n\
-        import sys, textwrap\np = sys.argv[1]\ns = textwrap.dedent(open(p).read())\nreps = {\n  '__RUNDIR__':\
-        \ \"$RUNDIR\", '__KB__': \"$KB\", '__IDX__': \"$IDX\",\n  '__SSIF__': \"$SSIF\", '__VSIF__': \"\
-        $VSIF\", '__MODEL_DIR__': \"$MODEL_DIR\",\n  '__PW_BIN__': \"$PW_BIN\",\n  '__SERVE__': \"${{\
-        \ inputs.model_settings.serve }}\",\n  '__GPU_IDS__': \"${{ inputs.model_settings.gpu_ids }}\"\
-        ,\n  '__SERVED_NAME__': \"${{ inputs.model_settings.served_name }}\",\n  '__VLLM_ARGS__': \"${{\
-        \ inputs.model_settings.vllm_args }}\",\n  '__REGISTER_OPENAI__': \"${{ inputs.model_settings.register_openai\
-        \ }}\",\n  '__MODEL_EP__': \"$MODEL_EP\",\n  '__GATEWAY_URL__': \"${{ inputs.model_settings.gateway_url\
-        \ }}\",\n  '__GATEWAY_KEY__': \"${{ inputs.model_settings.pw_api_key }}\",\n  '__APP_NAME__':\
-        \ \"${{ inputs.app_settings.app_name }}\",\n  '__SESSION__': \"$SESSION\",\n  '__KB_LABEL__':\
-        \ \"${{ inputs.kb_settings.kb_label }}\",\n  '__KB_MISSION__': \"\"\"${{ inputs.kb_settings.mission\
-        \ }}\"\"\",\n  '__STARTER_DIRS__': \"${{ inputs.kb_settings.starter_dirs }}\",\n  '__RUN_INDEX__':\
-        \ \"true\" if \"${{ inputs.kb_settings.run_index }}\" == \"true\" else \"0\",\n  '__ICON__': \"\
-        $ICON\", '__ICON_DARK__': \"$ICON_DARK\",\n  '__PROMPTS_JSON__': '''$PROMPTS_JSON''',\n}\nfor\
-        \ k, v in reps.items():\n    s = s.replace(k, v)\n# Literal launch-time values for the optional\
-        \ env toggles.\ns = s.replace('BANNER_TEXT_V', 'BT').replace('BANNER_COLOR_V', 'BC')\ns = s.replace('AUTH_JWKS_URL_V',\
-        \ 'JW').replace('DISABLE_PERSONAL_KEYS_V', 'DK').replace('REQUIRE_PERSONAL_KEY_V', 'RK')\nprelude\
-        \ = 'BT=%r; BC=%r; JW=%r; DK=%r; RK=%r\\n' % (\n    \"\"\"${{ inputs.app_settings.banner_text\
-        \ }}\"\"\",\n    \"\"\"${{ inputs.app_settings.banner_color }}\"\"\",\n    \"$JWKS\", \"$DPK\"\
-        , \"$RPK\")\ns = s.replace('set -u\\n', 'set -u\\n' + prelude, 1)\nopen(p, 'w').write(s)\nprint('job\
-        \ script written')\nPYEOF\nchmod +x job.sh\n"
+        \ }}\"\n[ -n \"$MODEL_EP\" ] || MODEL_EP=\"${SESSION}-model\"\nICON=\"$(eval echo '${{ inputs.app_settings.icon_path\
+        \ }}')\"\nICON_DARK=\"$(eval echo '${{ inputs.app_settings.icon_path_dark }}')\"\n# Free text\
+        \ arrives through quoted heredocs so an apostrophe, a\n# quote, or a line break in an operator's\
+        \ wording cannot break the\n# script that carries it.\nMISSION=$(cat << 'FIELD_EOF'\n${{ inputs.kb_settings.mission\
+        \ }}\nFIELD_EOF\n)\nAPP_NAME=$(cat << 'FIELD_EOF'\n${{ inputs.app_settings.app_name }}\nFIELD_EOF\n\
+        )\nKB_LABEL=$(cat << 'FIELD_EOF'\n${{ inputs.kb_settings.kb_label }}\nFIELD_EOF\n)\nPROMPTS=$(cat\
+        \ << 'FIELD_EOF'\n${{ inputs.app_settings.suggested_prompts }}\nFIELD_EOF\n)\nBANNER_TEXT=$(cat\
+        \ << 'FIELD_EOF'\n${{ inputs.app_settings.banner_text }}\nFIELD_EOF\n)\nVLLM_ARGS=$(cat << 'FIELD_EOF'\n\
+        ${{ inputs.model_settings.vllm_args }}\nFIELD_EOF\n)\nPROMPTS_JSON=$(P=\"$PROMPTS\" python3 -c\
+        \ \"import json,os; print(json.dumps([q.strip() for q in os.environ['P'].split(';') if q.strip()]))\"\
+        )\nJWKS=\"\"\nif [ \"${{ inputs.model_settings.posture }}\" != \"single\" ] && [ -n \"${{ inputs.model_settings.platform_host\
+        \ }}\" ]; then\n  JWKS=\"https://${{ inputs.model_settings.platform_host }}/api/platform/keys\"\
+        \nfi\nDISABLE_KEYS=\"\"; [ \"${{ inputs.model_settings.posture }}\" = \"multi-shared\" ] && DISABLE_KEYS=1\n\
+        REQUIRE_KEY=\"\"; [ \"${{ inputs.model_settings.posture }}\" = \"multi-strict\" ] && REQUIRE_KEY=1\n\
+        INDEX_ON_START=0; [ \"${{ inputs.kb_settings.run_index }}\" = \"true\" ] && INDEX_ON_START=true\n\
+        \n# Every launch-specific value lands here, %q-quoted, so the job\n# script itself stays a plain\
+        \ readable script with no generated\n# substitutions in its body.\n{\n  printf 'RUNDIR=%q\\n'\
+        \         \"$RUNDIR\"\n  printf 'KB=%q\\n'             \"$KB\"\n  printf 'IDX=%q\\n'         \
+        \   \"$IDX\"\n  printf 'SSIF=%q\\n'           \"$SSIF\"\n  printf 'VSIF=%q\\n'           \"$VSIF\"\
+        \n  printf 'MODEL_DIR=%q\\n'      \"$MODEL_DIR\"\n  printf 'PW_BIN=%q\\n'         \"$PW_BIN\"\n\
+        \  printf 'SESSION=%q\\n'        \"$SESSION\"\n  printf 'MODEL_EP=%q\\n'       \"$MODEL_EP\"\n\
+        \  printf 'SERVE=%q\\n'          '${{ inputs.model_settings.serve }}'\n  printf 'GPU_IDS=%q\\\
+        n'        '${{ inputs.model_settings.gpu_ids }}'\n  printf 'SERVED_NAME=%q\\n'    '${{ inputs.model_settings.served_name\
+        \ }}'\n  printf 'VLLM_ARGS=%q\\n'      \"$VLLM_ARGS\"\n  printf 'REGISTER_OPENAI=%q\\n' '${{ inputs.model_settings.register_openai\
+        \ }}'\n  printf 'GATEWAY_URL=%q\\n'    '${{ inputs.model_settings.gateway_url }}'\n  printf 'GATEWAY_KEY=%q\\\
+        n'    '${{ inputs.model_settings.pw_api_key }}'\n  printf 'APP_NAME=%q\\n'       \"$APP_NAME\"\
+        \n  printf 'KB_LABEL=%q\\n'       \"$KB_LABEL\"\n  printf 'STARTER_DIRS=%q\\n'   '${{ inputs.kb_settings.starter_dirs\
+        \ }}'\n  printf 'BANNER_TEXT=%q\\n'    \"$BANNER_TEXT\"\n  printf 'BANNER_COLOR=%q\\n'   '${{\
+        \ inputs.app_settings.banner_color }}'\n  printf 'ICON=%q\\n'           \"$ICON\"\n  printf 'ICON_DARK=%q\\\
+        n'      \"$ICON_DARK\"\n  printf 'MISSION=%q\\n'        \"$MISSION\"\n  printf 'PROMPTS_JSON=%q\\\
+        n'   \"$PROMPTS_JSON\"\n  printf 'JWKS=%q\\n'           \"$JWKS\"\n  printf 'DISABLE_KEYS=%q\\\
+        n'   \"$DISABLE_KEYS\"\n  printf 'REQUIRE_KEY=%q\\n'    \"$REQUIRE_KEY\"\n  printf 'INDEX_ON_START=%q\\\
+        n' \"$INDEX_ON_START\"\n} > job.env\ncat job.env\n\n# The only generated line in the job script\
+        \ is the path to the\n# values above; the scheduler copies the script elsewhere, so it\n# cannot\
+        \ find them relative to itself.\nprintf '#!/bin/bash\\nJOB_ENV=%q\\n' \"$RUNDIR/job.env\" > job.sh\n\
+        cat >> job.sh << 'JOB'\nset -u\n. \"$JOB_ENV\"\ncd \"$RUNDIR\"\n\n# The run directory persists\
+        \ across launches; stale logs from the\n# previous job must not satisfy this launch's watchers.\n\
+        : > endpoint.log; : > model-endpoint.log; : > vllm.out; : > studio.out\n\nRUNTIME=\"$(command\
+        \ -v apptainer || command -v singularity)\"\ncleanup() {\n  \"$RUNTIME\" instance stop studio-compute-vllm\
+        \ 2>/dev/null\n}\ntrap cleanup EXIT\n\npickport() { python3 -c 'import socket; s=socket.socket();\
+        \ s.bind((\"\",0)); print(s.getsockname()[1]); s.close()'; }\n\n# A model served in this job takes\
+        \ the node's GPUs and the Studio\n# points at it; otherwise the Studio uses the configured gateway.\n\
+        if [ \"$SERVE\" = \"true\" ]; then\n  VPORT=$(pickport)\n  \"$RUNTIME\" instance start --nv --cleanenv\
+        \ --writable-tmpfs \\\n    --bind \"$MODEL_DIR:/model\" --bind \"$PWD:/rundir\" \\\n    \"$VSIF\"\
+        \ studio-compute-vllm\n  \"$RUNTIME\" exec instance://studio-compute-vllm bash -c \"\n    export\
+        \ CUDA_VISIBLE_DEVICES='$GPU_IDS'\n    nohup python3 -m vllm.entrypoints.openai.api_server \\\n\
+        \      --model /model --served-model-name '$SERVED_NAME' \\\n      --host 0.0.0.0 --port $VPORT\
+        \ $VLLM_ARGS \\\n      > /rundir/vllm.out 2>&1 &\n  \"\n  for i in $(seq 1 240); do\n    curl\
+        \ -s -m 5 \"localhost:$VPORT/v1/models\" | grep -q '\"id\"' && { echo \"vLLM up after ~$((i*5))s\"\
+        ; break; }\n    pgrep -f \"openai.api_server.*--port $VPORT\" > /dev/null || { echo \"vLLM exited:\"\
+        ; tail -30 vllm.out; exit 1; }\n    sleep 5\n  done\n  curl -s -m 5 \"localhost:$VPORT/v1/models\"\
+        \ | grep -q '\"id\"' || { echo \"vLLM never came up:\"; tail -30 vllm.out; exit 1; }\n  GATEWAY_URL=\"\
+        http://localhost:$VPORT/v1\"\n  GATEWAY_KEY=\"local\"\n  if [ \"$REGISTER_OPENAI\" = \"true\"\
+        \ ]; then\n    setsid nohup \"$PW_BIN\" endpoints http --openai --keep -o text \\\n      --name\
+        \ \"$MODEL_EP\" \"$VPORT\" > model-endpoint.log 2>&1 < /dev/null &\n  fi\nfi\n\nAPORT=$(pickport)\n\
+        setsid nohup \"$RUNTIME\" run --cleanenv \\\n  --env PORT=\"$APORT\" --env KB_ROOT=\"$KB\" --env\
+        \ DATA_DIR=\"$IDX\" \\\n  --env INDEX_BASE=\"$IDX\" --env KB_LABEL=\"$KB_LABEL\" \\\n  --env APP_NAME=\"\
+        $APP_NAME\" --env INDEX_ON_START=\"$INDEX_ON_START\" \\\n  --env KB_MISSION=\"$MISSION\" --env\
+        \ KB_STARTER_DIRS=\"$STARTER_DIRS\" \\\n  --env SUGGESTED_PROMPTS=\"$PROMPTS_JSON\" \\\n  --env\
+        \ APP_ICON=\"$ICON\" --env APP_ICON_DARK=\"$ICON_DARK\" \\\n  ${GATEWAY_URL:+--env PW_GATEWAY_URL=\"\
+        $GATEWAY_URL\"} \\\n  ${GATEWAY_KEY:+--env PW_API_KEY=\"$GATEWAY_KEY\"} \\\n  ${BANNER_TEXT:+--env\
+        \ BANNER_TEXT=\"$BANNER_TEXT\"} \\\n  ${BANNER_COLOR:+--env BANNER_COLOR=\"$BANNER_COLOR\"} \\\
+        \n  ${JWKS:+--env AUTH_JWKS_URL=\"$JWKS\"} \\\n  ${JWKS:+--env AUTH_ISSUER=\"pw-session-proxy\"\
+        } \\\n  ${DISABLE_KEYS:+--env DISABLE_PERSONAL_KEYS=\"$DISABLE_KEYS\"} \\\n  ${REQUIRE_KEY:+--env\
+        \ REQUIRE_PERSONAL_KEY=\"$REQUIRE_KEY\"} \\\n  --bind \"$KB:$KB\" --bind \"$IDX:$IDX\" \\\n  \"\
+        $SSIF\" > studio.out 2>&1 < /dev/null &\n\nfor i in $(seq 1 120); do\n  curl -s -m 5 \"localhost:$APORT/healthz\"\
+        \ > /dev/null 2>&1 && { echo \"Studio up after ~$((i*5))s on port $APORT\"; break; }\n  sleep\
+        \ 5\ndone\ncurl -s -m 5 \"localhost:$APORT/healthz\" > /dev/null 2>&1 || { echo \"Studio never\
+        \ came up:\"; tail -30 studio.out; exit 1; }\n\nsetsid nohup \"$PW_BIN\" endpoints http --keep\
+        \ -o text \\\n  --name \"$SESSION\" --subdomain \"$SESSION\" \"$APORT\" > endpoint.log 2>&1 <\
+        \ /dev/null &\nsleep 15\ngrep -oE \"https://[^ ]+\" endpoint.log | head -1\n\n# Hold the allocation\
+        \ while the studio answers; the job ends when\n# the app dies or the walltime arrives.\nwhile\
+        \ curl -s -m 10 \"localhost:$APORT/healthz\" > /dev/null 2>&1; do sleep 60; done\necho \"Studio\
+        \ stopped responding; ending the job.\"\nJOB\nchmod +x job.sh\nbash -n job.sh && echo \"job script\
+        \ syntax ok\"\n"
     - name: Submit in the resource's scheduler dialect and watch
       run: "WORKDIR=\"$(eval echo '${{ inputs.app_settings.workdir }}')\"\nRUNDIR=\"$WORKDIR/compute-run\"\
         \nmkdir -p \"$RUNDIR\"; cd \"$RUNDIR\"\nMETHOD=\"${{ inputs.session_settings.session_method }}\"\
