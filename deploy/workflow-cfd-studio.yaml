@@ -1207,6 +1207,13 @@ jobs:
           # name a shared copy on its own filesystem and a bucket behind it,
           # so the same configuration still launches on a system where that
           # path does not exist.
+          # The bucket cache is keyed by destination path alone, so once a
+          # copy exists it is reused whatever the source now holds. That
+          # makes a bucket-hosted image impossible to update for anyone who
+          # has launched before, which is the wrong default for the one
+          # artifact that changes with every fix. Refresh Software clears
+          # the cached copy first so the next launch takes the current one.
+          REFRESH="${{ inputs.app_settings.refresh_software }}"
           resolve() { # $1 = configured sources, $2 = cache path; prints the usable path
             SRCS="$1"; DST="$2"
             [ -n "$SRCS" ] || SRCS="$DST"
@@ -1217,7 +1224,9 @@ jobs:
               [ -n "$SRC" ] || continue
               case "$SRC" in
                 pw://*|s3://*|gs://*|az://*)
-                  if [ -f "$DST" ]; then echo "$DST"; return 0; fi
+                  if [ -f "$DST" ] && [ "$REFRESH" != "true" ]; then echo "$DST"; return 0; fi
+                  [ "$REFRESH" = "true" ] && [ -f "$DST" ] && \
+                    { echo "Refresh requested; discarding the cached $DST" >&2; rm -f "$DST"; }
                   echo "Staging $SRC -> $DST" >&2
                   if "$PW_BIN" buckets cp "$SRC" "$DST" > image-cp.log 2>&1; then
                     echo "$DST"; return 0
