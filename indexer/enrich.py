@@ -7,6 +7,12 @@ entries by inode, per the GUFI master document pattern). DOCX/PDF/PPTX/XLSX
 text is also written to an on-disk extract cache the server uses for
 previews. Every directory db gets the `words` table, empty or not, so
 MATCH queries never hit a missing table.
+
+Office documents normally arrive already converted: the server (and
+reindex.sh) run `server/dist/preextract.js`, which turns .docx/.pptx/.xlsx/
+.doc into Markdown through downmark and writes the cache entries this script
+reuses. The readers below are the fallback for whatever that pass could not
+read, and the only path for PDFs, OCR and image captions.
 """
 import argparse
 import os
@@ -23,7 +29,8 @@ TEXT_SUFFIXES = {
     '.md', '.txt', '.py', '.sh', '.yaml', '.yml', '.json', '.csv', '.tsv', '.xml',
     '.html', '.css', '.js', '.ts', '.tsx', '.svg', '.toml', '.cfg', '.ini', '.def', '.mjs', '.sql',
 }
-EXTRACT_SUFFIXES = {'.pdf', '.docx', '.pptx', '.xlsx'}
+# .doc has no reader here; it indexes only through the pre-extracted cache.
+EXTRACT_SUFFIXES = {'.pdf', '.docx', '.pptx', '.xlsx', '.doc'}
 IMAGE_SUFFIXES = {'.png', '.jpg', '.jpeg', '.gif', '.webp'}
 MAX_TEXT = 500_000
 MAX_CAPTION_BYTES = 8 * 1024 * 1024
