@@ -73,6 +73,30 @@ void import('./tags.js').then(m => m.reapplyTagOverlay())
   .catch(() => {})
 
 await app.listen({ host: HOST, port: PORT })
+
+/**
+ * Stay up. The Studio runs under the platform endpoint agent, which owns
+ * the process tree: when this process exits the endpoint is removed, the
+ * scheduler job ends, and any model serving beside it on the same node
+ * dies too. That makes the blast radius of one unhandled error the whole
+ * session, and it has already cost one: a spawn of a CLI that was not in
+ * the container emitted an unhandled 'error' event and took everything
+ * with it.
+ *
+ * Keeping a process alive after an uncaught exception is normally poor
+ * practice, because the state that threw may be inconsistent. Here the
+ * alternative is worse by a wide margin: a failed request should cost the
+ * request, not the deployment and the GPU allocation behind it. Both
+ * handlers are installed after listen, so a genuine startup failure still
+ * exits rather than being swallowed.
+ */
+process.on('unhandledRejection', reason => {
+  app.log.error({ err: reason }, 'unhandled rejection; the deployment stays up')
+})
+process.on('uncaughtException', err => {
+  app.log.error({ err }, 'uncaught exception; the deployment stays up')
+})
+
 maybeAutoStart(msg => app.log.info(msg))
 app.log.info(`kb root: ${KB_ROOT}`)
 app.log.info(`gufi index: ${gufiAvailable() ? 'available' : 'NOT BUILT (run indexer/reindex.sh)'}`)
