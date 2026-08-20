@@ -1,9 +1,9 @@
-import { ReactElement, useEffect, useState } from 'react'
+import { ReactElement, Suspense, lazy, useEffect, useState } from 'react'
 import { Streamdown } from 'streamdown'
 import { api, FileContent } from '../api'
 import { forgetHash } from '../lastLocation'
 import { TagMenu } from './TagMenu'
-import { ModelViewer } from './ModelViewer'
+const ModelViewer = lazy(() => import('./ModelViewer').then(m => ({ default: m.ModelViewer })))
 import { DataTree } from './DataTree'
 
 const OFFICE_SUFFIXES = ['.docx', '.pptx', '.xlsx', '.doc', '.ppt', '.xls', '.odt', '.odp', '.ods']
@@ -192,7 +192,7 @@ export function Viewer({ path, onDeleted }: {
       className="html-preview-frame"
     />
   ) : isModel ? (
-    <ModelViewer path={path} />
+    <Suspense fallback={<p className="muted pad">Loading the 3D viewer…</p>}><ModelViewer path={path} /></Suspense>
   ) : isImage ? (
     <div className="viewer-body"><img src={api.rawUrl(path)} alt={path} style={{ maxWidth: '100%' }} /></div>
   ) : isPdf || isOffice ? (
