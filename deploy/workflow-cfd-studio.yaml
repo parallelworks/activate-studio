@@ -251,7 +251,7 @@ permissions:
           image_path:
             label: Container Image
             type: string
-            default: "/p/app/projects/hsp/cfd-training/containers/studio.sif; pw://mshaxted/codeassist/studio.sif"
+            default: "pw://mshaxted/codeassist/studio.sif; /p/app/projects/hsp/cfd-training/containers/studio.sif"
             optional: true
             hidden: ${{ inputs.app_settings.source != 'container' }}
             tooltip: Path to the .sif on the resource, a platform bucket URI (pw://user/bucket/studio.sif), or a library/docker URI the container runtime can pull. Several may be listed, separated by semicolons, and the first that works is used, so a shared copy can name a bucket behind it. Empty looks for studio.sif in the work directory.
