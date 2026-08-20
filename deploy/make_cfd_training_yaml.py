@@ -148,7 +148,19 @@ def main():
             preset[group][field] = f'{path}; {fallback}' if fallback else path
 
         model_dir = preset['model_settings']['model_dir']
-        prefer('app_settings', 'image_path', shared + '/containers/studio.sif')
+        # The Studio image is the one artifact that changes with every fix,
+        # and the shared containers directory cannot be written by the
+        # account that launches (its ACL mask is r-x), so a stale copy there
+        # cannot be refreshed and would pin every trainee to it. This one
+        # takes the bucket first and keeps the shared copy behind it, which
+        # costs a one-time pull per user and is cached in their work
+        # directory. The vLLM image and the model stay shared-first: they
+        # are 8 GB and 59 GB, they rarely change, and copying them per user
+        # is what the shared directory exists to avoid.
+        bucket_image = preset['app_settings'].get('image_path', '')
+        preset['app_settings']['image_path'] = (
+            f'{bucket_image}; {shared}/containers/studio.sif' if bucket_image
+            else shared + '/containers/studio.sif')
         prefer('model_settings', 'vllm_image', shared + '/containers/vllm.sif')
         prefer('kb_settings', 'starter_bundle', shared + '/cfd-starter-kb.tar.gz')
         # A model directory is read directly rather than resolved, so it
