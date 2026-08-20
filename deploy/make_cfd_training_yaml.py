@@ -45,6 +45,19 @@ HEADER = """
 # collapsed so the page opens on the fields a launch actually needs.
 OPEN_GROUPS = ('resource_and_execution', 'slurm')
 
+# The form is read top to bottom by someone launching this for the first
+# time, so the two groups they must touch say what to do and the rest are
+# labelled as optional depth rather than as more required work.
+GROUP_LABELS = {
+    'resource_and_execution': 'Step 1: Choose the cluster',
+    'slurm': 'Step 2: Your scheduler account',
+    'pbs': 'Step 2: Your scheduler account (PBS systems)',
+    'session_settings': 'Advanced: Session and URL',
+    'app_settings': 'Advanced: Application and image',
+    'kb_settings': 'Advanced: Knowledge base and mission',
+    'model_settings': 'Advanced: Model serving',
+}
+
 
 def indent_of(line):
     return len(line) - len(line.lstrip())
@@ -163,6 +176,12 @@ def main():
     for group in sorted(starts, key=lambda g: starts[g], reverse=True):
         start = starts[group]
         end = block_end(lines, start)
+        label = GROUP_LABELS.get(group)
+        if label:
+            line = find_key(lines, start + 1, end, 'label', depth=group_depth + 2)
+            if line >= 0:
+                lines[line] = ' ' * (group_depth + 2) + 'label: ' + scalar(label)
+                end = block_end(lines, start)
         if groups[group].get('type') != 'group':
             if group in preset:
                 sys.exit(f'{group} is not a group')
