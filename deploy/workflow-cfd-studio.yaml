@@ -1213,7 +1213,11 @@ jobs:
           # has launched before, which is the wrong default for the one
           # artifact that changes with every fix. Refresh Software clears
           # the cached copy first so the next launch takes the current one.
-          REFRESH="${{ inputs.app_settings.refresh_software }}"
+          # Lowercased because the form sends a real boolean ("true") while a
+          # CLI launch that fills inputs by hand can easily send the string
+          # "True", and a case-sensitive test turns that into a silent no-op:
+          # the launch reports success and quietly keeps the cached image.
+          REFRESH="$(printf '%s' "${{ inputs.app_settings.refresh_software }}" | tr '[:upper:]' '[:lower:]')"
           resolve() { # $1 = configured sources, $2 = cache path; prints the usable path
             SRCS="$1"; DST="$2"
             [ -n "$SRCS" ] || SRCS="$DST"
