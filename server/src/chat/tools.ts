@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import fs from 'node:fs/promises'
 import path from 'node:path'
-import { gufiAvailable, KB_ROOT, MAX_PREVIEW_BYTES, PROJECT_ROOT } from '../config.js'
+import { gufiAvailable, isMissingCli, KB_ROOT, MAX_PREVIEW_BYTES, NO_CLI_MESSAGE, PROJECT_ROOT, PW_CLI } from '../config.js'
 import { listDir, readFileContent, KbError } from '../kb.js'
 import { blendHits, searchFts, searchNames, searchVector } from '../gufi.js'
 import { annotateHits } from '../tags.js'
@@ -496,8 +496,10 @@ function pwCli(args: string[], timeoutMs = 30_000): Promise<string> {
   const userKey = toolContext.getStore()?.userKey
   const env = userKey ? { ...process.env, PW_API_KEY: userKey } : process.env
   return new Promise((resolve, reject) => {
-    execFile('pw', args, { timeout: timeoutMs, maxBuffer: 8 * 1024 * 1024, env }, (err, stdout, stderr) => {
-      if (err) return reject(new Error(stderr || err.message))
+    execFile(PW_CLI, args, { timeout: timeoutMs, maxBuffer: 8 * 1024 * 1024, env }, (err, stdout, stderr) => {
+      // "spawn pw ENOENT" tells the model nothing it can act on and reads
+      // as though the command failed, so name the actual condition.
+      if (err) return reject(new Error(isMissingCli(err) ? NO_CLI_MESSAGE : (stderr || err.message)))
       resolve(stdout)
     })
   })

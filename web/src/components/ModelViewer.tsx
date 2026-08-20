@@ -5,12 +5,39 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 interface ModelMesh {
   name?: string
   color?: [number, number, number]
-  positions: number[]
-  normals?: number[]
-  indices: number[]
+  positions: Float32Array
+  normals?: Float32Array
+  indices?: Uint32Array
 }
 
 interface ModelPayload { format: string; meshes: ModelMesh[]; triangles: number }
+
+interface Span { o: number; n: number }
+interface HeaderMesh { name?: string; color?: [number, number, number]; positions: Span; normals?: Span; indices?: Span }
+
+/**
+ * Read the binary reply described in server/src/model.ts: a length-prefixed
+ * JSON header followed by the arrays. The typed arrays are views onto the
+ * response buffer rather than copies of it, so a large part costs its own
+ * size once and nothing more.
+ */
+function decodeModel(buf: ArrayBuffer): ModelPayload {
+  const headerLength = new DataView(buf).getUint32(0, true)
+  const header = JSON.parse(new TextDecoder().decode(new Uint8Array(buf, 4, headerLength))) as
+    { format: string; triangles: number; meshes: HeaderMesh[] }
+  const base = 4 + headerLength
+  return {
+    format: header.format,
+    triangles: header.triangles,
+    meshes: header.meshes.map(m => ({
+      name: m.name,
+      color: m.color,
+      positions: new Float32Array(buf, base + m.positions.o, m.positions.n),
+      normals: m.normals ? new Float32Array(buf, base + m.normals.o, m.normals.n) : undefined,
+      indices: m.indices ? new Uint32Array(buf, base + m.indices.o, m.indices.n) : undefined,
+    })),
+  }
+}
 
 export function ModelViewer({ path }: { path: string }) {
   const mountRef = useRef<HTMLDivElement | null>(null)
@@ -50,16 +77,16 @@ export function ModelViewer({ path }: { path: string }) {
     fetch(`/api/kb/model?path=${encodeURIComponent(path)}`)
       .then(async r => {
         if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `${r.status}`)
-        return r.json() as Promise<ModelPayload>
+        return decodeModel(await r.arrayBuffer())
       })
       .then(payload => {
         if (disposed) return
         const group = new THREE.Group()
         for (const m of payload.meshes) {
           const geo = new THREE.BufferGeometry()
-          geo.setAttribute('position', new THREE.Float32BufferAttribute(m.positions, 3))
-          if (m.normals?.length) geo.setAttribute('normal', new THREE.Float32BufferAttribute(m.normals, 3))
-          geo.setIndex(m.indices)
+          geo.setAttribute('position', new THREE.BufferAttribute(m.positions, 3))
+          if (m.normals?.length) geo.setAttribute('normal', new THREE.BufferAttribute(m.normals, 3))
+          if (m.indices?.length) geo.setIndex(new THREE.BufferAttribute(m.indices, 1))
           if (!m.normals?.length) geo.computeVertexNormals()
           const color = m.color
             ? new THREE.Color(m.color[0], m.color[1], m.color[2])
