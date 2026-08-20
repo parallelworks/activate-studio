@@ -1397,8 +1397,18 @@ jobs:
               sleep 5
             done
             curl -s -m 5 "localhost:$VPORT/v1/models" | grep -q '"id"' || { echo "vLLM never came up:"; tail -30 vllm.out; exit 1; }
-            GATEWAY_URL="http://localhost:$VPORT/v1"
-            GATEWAY_KEY="local"
+            # The served model is given to the Studio as a second target
+            # rather than as the gateway. Replacing the gateway made this
+            # model the only one anybody could pick, which hid the platform
+            # provider models (GenAI.mil and the rest) from a deployment
+            # that is otherwise entitled to them. Listed side by side, the
+            # private model on this node and the platform providers appear
+            # in one picker and either can be called in the same
+            # conversation. Where no platform credential is configured the
+            # Studio still finds one from the pw CLI store bound in below,
+            # and if there is genuinely none, the local model stands alone,
+            # which is the old behaviour.
+            SIDECAR_URL="http://localhost:$VPORT/v1"
               # No --keep: a model session outliving its job points at nothing.
             if [ "$REGISTER_OPENAI" = "true" ]; then
               setsid nohup "$PW_BIN" endpoints http --openai -o text \
@@ -1423,12 +1433,21 @@ jobs:
           # value re-parsed by a second shell loses its quoting, and the starter
           # prompts are JSON. Only the runtime and the gateway are added here,
           # since both are decided after job.env was written.
-          printf 'RUNTIME=%q\nGATEWAY_URL=%q\nGATEWAY_KEY=%q\n' \
-            "$RUNTIME" "$GATEWAY_URL" "$GATEWAY_KEY" >> "$JOB_ENV"
+          printf 'RUNTIME=%q\nGATEWAY_URL=%q\nGATEWAY_KEY=%q\nSIDECAR_URL=%q\n' \
+            "$RUNTIME" "$GATEWAY_URL" "$GATEWAY_KEY" "${SIDECAR_URL:-}" >> "$JOB_ENV"
           printf '#!/bin/bash\nJOB_ENV=%q\n' "$JOB_ENV" > launch-studio.sh
           cat >> launch-studio.sh << 'LAUNCH'
           . "$JOB_ENV"
-          exec "$RUNTIME" run --cleanenv \
+          # Restart rather than die. The endpoint agent owns this process
+          # tree, so when the Studio exits the endpoint is removed and the
+          # job ends, taking any model serving beside it on the node with
+          # it. A crash should cost a reconnect, not the allocation. A
+          # clean exit (code 0) is a real shutdown and ends the loop; a
+          # crash is retried a few times and then allowed to fail, so a
+          # deployment that cannot start does not restart forever.
+          tries=0
+          while :; do
+            "$RUNTIME" run --cleanenv \
             --env PORT="$PORT" --env KB_ROOT="$KB" --env DATA_DIR="$IDX" \
             --env INDEX_BASE="$IDX" --env KB_LABEL="$KB_LABEL" \
             --env APP_NAME="$APP_NAME" --env INDEX_ON_START="$INDEX_ON_START" \
@@ -1443,10 +1462,20 @@ jobs:
             ${JWKS:+--env AUTH_ISSUER="pw-session-proxy"} \
             ${DISABLE_KEYS:+--env DISABLE_PERSONAL_KEYS="$DISABLE_KEYS"} \
             ${REQUIRE_KEY:+--env REQUIRE_PERSONAL_KEY="$REQUIRE_KEY"} \
-            --env PW_CLI="/usr/local/bin/pw" \
+            ${SIDECAR_URL:+--env SIDECAR_MODEL_URL="$SIDECAR_URL"} \
+            --env PW_CLI="/usr/local/bin/pw" --env HOME="$HOME" \
             --bind "$PW_BIN:/usr/local/bin/pw" \
             --bind "$KB:$KB" --bind "$IDX:$IDX" \
-            "$SSIF"
+            "$SSIF" && break
+            rc=$?
+            tries=$((tries + 1))
+            if [ "$tries" -ge 5 ]; then
+              echo "Studio exited $rc five times; not restarting again."
+              exit "$rc"
+            fi
+            echo "Studio exited $rc; restarting (attempt $tries of 5)."
+            sleep 5
+          done
           LAUNCH
           chmod +x launch-studio.sh
           # The agent owns this process tree: deleting the session ends the job.

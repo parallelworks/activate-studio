@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { GATEWAY_BASE, MAX_TOOL_ITERATIONS } from '../config.js'
-import { aiHealth, gatewayConfigured, listModels, StreamedTurnError, streamTurn, WireMessage, WireToolCall } from './gateway.js'
+import { aiHealth, gatewayConfigured, isSidecarModel, listModels, listSidecarModels, sidecarConfigured, sidecarTarget, StreamedTurnError, streamTurn, WireMessage, WireToolCall } from './gateway.js'
 import { TOOL_CALLS, TOOL_SPECS, activeToolSpecs, commandFor, customToolSpecs, executeTool, expandSlashCommand, skillToolSpec } from './tools.js'
 import { systemPrompt } from './context.js'
 import { attachmentContext } from '../attachments.js'
@@ -244,7 +244,7 @@ function templateKwargsFor(model: string): Record<string, unknown> {
 
 export async function chatRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/chat/models', async (req, reply) => {
-    if (!gatewayConfigured() && !resolveUserKey(req.user?.id)) {
+    if (!gatewayConfigured() && !resolveUserKey(req.user?.id) && !sidecarConfigured()) {
       return reply.send({ models: [], unreachableSessions: [], error: 'no gateway credential: set PW_API_KEY or authenticate the pw CLI' })
     }
     const eff0 = effectiveSettings()
@@ -257,7 +257,19 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     if (!forConfig && eff0.requirePersonalKey && authEnabled() && !personalKeysDisabled() && !cred && !getSharedKeyStatus().active) {
       return reply.send({ models: [], unreachableSessions: [], error: 'This deployment requires your own model credential: add your API key or platform token in Settings, Model access.' })
     }
-    const wire: any = await listModels(cred?.key, cred?.baseUrl)
+    // The platform catalog and the model served on this node are listed
+    // independently. Either can be missing: the gateway credential may be
+    // absent on a deployment whose whole point is the private model beside
+    // it, and the serve may still be loading. Neither absence should empty
+    // the picker of the other.
+    const sidecar = await listSidecarModels()
+    let wire: any = {}
+    try {
+      if (gatewayConfigured() || cred) wire = await listModels(cred?.key, cred?.baseUrl)
+    } catch (e) {
+      if (!sidecar.length) throw e
+      app.log.warn({ err: e }, 'gateway model listing failed; serving the local model only')
+    }
     let models = (wire.data ?? wire.models ?? []).filter((m: any) => m)
     // Org-provider models require an X-Allocation header; without a configured
     // allocation they can only fail, so hide them. Personal providers sort first
@@ -291,6 +303,19 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
         context_window: m.context_window ?? m.max_model_len ?? undefined,
       }
     })
+    // The model on this node goes in already labelled, so the mapping above
+    // (which infers a provider for gateway entries) leaves it alone.
+    models = [...models, ...sidecar.map((m: any) => {
+      const engine = engineName[String(m.owned_by || '').toLowerCase()] || String(m.owned_by || 'local')
+      return {
+        ...m,
+        provider: `Served here (${engine})`,
+        provider_type: 'local',
+        provider_name: engine,
+        name: m.name || String(m.id),
+        context_window: m.context_window ?? m.max_model_len ?? undefined,
+      }
+    })]
     models.sort((a: any, b: any) =>
       Number(String(a.id).startsWith('org:')) - Number(String(b.id).startsWith('org:')))
     return reply.send({ models, unreachableSessions: wire.unreachable_sessions ?? [] })
@@ -474,7 +499,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
       res.end()
       return reply
     }
-    if (!gatewayConfigured() && !userCred) {
+    if (!gatewayConfigured() && !userCred && !sidecarConfigured()) {
       sse(res, 'error', { message: 'No gateway credential (set PW_API_KEY, authenticate the pw CLI, or add your key in Settings); chat is unavailable.' })
       res.end()
       return reply
@@ -520,8 +545,12 @@ ${ctx}` : ctx
     const today = new Date().toISOString().slice(0, 10)
     // The persona file is read per request so edits apply immediately.
     const persona = agentPrompt()
-    const userKey = userCred?.key ?? null
-    const userBase = userCred?.baseUrl ?? null
+    // A model served on this node is reached directly rather than through
+    // the gateway, which does not know about it. Everything else keeps the
+    // caller's own credential and base.
+    const onSidecar = isSidecarModel(String((req.body as { model?: string })?.model ?? ''))
+    const userKey = onSidecar ? sidecarTarget().key : (userCred?.key ?? null)
+    const userBase = onSidecar ? sidecarTarget().baseUrl : (userCred?.baseUrl ?? null)
     // pw CLI tools only accept a PW credential; a custom-provider key must
     // never leak into platform executions.
     const pwToolKey = userCred && !userCred.baseUrl ? userCred.key : null

@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { execFile } from 'node:child_process'
-import { KB_ROOT, gufiAvailable } from '../config.js'
+import { KB_ROOT, gufiAvailable, PW_CLI } from '../config.js'
 import { effectiveSettings } from '../settings.js'
 import { corpusStats } from '../gufi.js'
 
@@ -9,7 +9,7 @@ let cached: string | null = null
 
 function pwCatalog(): Promise<string> {
   return new Promise(resolve => {
-    execFile('pw', ['workflows', 'ls', '-o', 'json'], { timeout: 20_000 }, (_e, stdout) => {
+    execFile(PW_CLI, ['workflows', 'ls', '-o', 'json'], { timeout: 20_000 }, (_e, stdout) => {
       try {
         const wfs = JSON.parse(stdout ?? '[]') as any[]
         resolve(wfs.map(w => {

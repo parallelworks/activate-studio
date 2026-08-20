@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process'
 import { dumpYaml } from '@parallelworks/workflow-parser'
+import { PW_CLI } from './config.js'
 
 /**
  * Compose several existing workflows into one that runs them as
@@ -46,7 +47,7 @@ function jobId(uses: string, taken: Set<string>): string {
 
 function pw(args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
-    execFile('pw', args, { timeout: 30_000, maxBuffer: 16 * 1024 * 1024 },
+    execFile(PW_CLI, args, { timeout: 30_000, maxBuffer: 16 * 1024 * 1024 },
       (err, so, se) => (err ? reject(new Error(se || err.message)) : resolve(so)))
   })
 }
