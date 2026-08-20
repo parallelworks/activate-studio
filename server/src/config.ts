@@ -81,7 +81,7 @@ export const TEXT_SUFFIXES = new Set([
   '.html', '.css', '.js', '.ts', '.tsx', '.svg', '.toml', '.cfg', '.ini', '.def', '.mjs', '.sql',
   '.log', '.conf', '.env', '.service',
 ])
-export const EXTRACTED_SUFFIXES = new Set(['.pdf', '.docx', '.pptx', '.xlsx'])
+export const EXTRACTED_SUFFIXES = new Set(['.pdf', '.docx', '.pptx', '.xlsx', '.doc'])
 export const IMAGE_SUFFIXES = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp'])
 export const MODEL_SUFFIXES = new Set(['.stl', '.step', '.stp'])
 
