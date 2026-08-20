@@ -272,6 +272,25 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     // The studio-agent/studio-rag tag identifies them whoever published.
     models = models.filter((m: any) =>
       !(String(m.id).startsWith('session:') && /\/studio-(agent|rag)$/.test(String(m.id))))
+    // A model served beside this Studio answers /v1/models as the plain
+    // OpenAI shape, with no provider fields, and the picker files it under
+    // "unknown provider". Name it for what it is: the model this deployment
+    // is serving, on the machine the Studio is running on.
+    const localBase = /(^|\/\/)(localhost|127\.0\.0\.1)/.test(cred?.baseUrl || GATEWAY_BASE)
+    const engineName: Record<string, string> = { vllm: 'vLLM', ollama: 'Ollama', llamacpp: 'llama.cpp' }
+    models = models.map((m: any) => {
+      if (m.provider || m.provider_name) return m
+      const engine = engineName[String(m.owned_by || '').toLowerCase()] || String(m.owned_by || 'local')
+      return {
+        ...m,
+        provider: localBase ? `Served here (${engine})` : engine,
+        provider_type: 'local',
+        provider_name: engine,
+        name: m.name || String(m.id),
+        // vLLM reports the window it was started with; the picker shows it.
+        context_window: m.context_window ?? m.max_model_len ?? undefined,
+      }
+    })
     models.sort((a: any, b: any) =>
       Number(String(a.id).startsWith('org:')) - Number(String(b.id).startsWith('org:')))
     return reply.send({ models, unreachableSessions: wire.unreachable_sessions ?? [] })
