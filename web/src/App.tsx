@@ -1,8 +1,8 @@
-import { ReactElement, useEffect, useRef, useState } from 'react'
+import { ReactElement, Suspense, lazy, useEffect, useRef, useState } from 'react'
 import { rememberHash } from './lastLocation'
 import { ChatView } from './views/ChatView'
 import { DagViewer } from './components/DagViewer'
-import { ModelViewer } from './components/ModelViewer'
+const ModelViewer = lazy(() => import('./components/ModelViewer').then(m => ({ default: m.ModelViewer })))
 import { LibraryView } from './views/LibraryView'
 import { SearchView } from './views/SearchView'
 import { QueryView } from './views/QueryView'
@@ -186,7 +186,7 @@ export default function App() {
     return <div className="embed-root"><DagViewer workflow={embedParams.get('workflow')!} /></div>
   }
   if (embedKind === 'model' && embedParams.get('path')) {
-    return <div className="embed-root"><ModelViewer path={embedParams.get('path')!} /></div>
+    return <div className="embed-root"><Suspense fallback={null}><ModelViewer path={embedParams.get('path')!} /></Suspense></div>
   }
   if (embedKind === 'html' && embedParams.get('path')) {
     // The inner frame is the sandbox; the served page also carries a CSP
