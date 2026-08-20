@@ -1352,6 +1352,7 @@ jobs:
           RUNTIME="$(command -v apptainer || command -v singularity)"
           cleanup() {
             "$RUNTIME" instance stop studio-compute-vllm 2>/dev/null
+            [ -f model-endpoint.pid ] && kill "$(cat model-endpoint.pid)" 2>/dev/null
           }
           trap cleanup EXIT
 
@@ -1379,15 +1380,23 @@ jobs:
             curl -s -m 5 "localhost:$VPORT/v1/models" | grep -q '"id"' || { echo "vLLM never came up:"; tail -30 vllm.out; exit 1; }
             GATEWAY_URL="http://localhost:$VPORT/v1"
             GATEWAY_KEY="local"
+              # No --keep: a model session outliving its job points at nothing.
             if [ "$REGISTER_OPENAI" = "true" ]; then
-              setsid nohup "$PW_BIN" endpoints http --openai --keep -o text \
+              setsid nohup "$PW_BIN" endpoints http --openai -o text \
                 --name "$MODEL_EP" "$VPORT" > model-endpoint.log 2>&1 < /dev/null &
+              echo $! > model-endpoint.pid
             fi
           fi
 
-          APORT=$(pickport)
-          setsid nohup "$RUNTIME" run --cleanenv \
-            --env PORT="$APORT" --env KB_ROOT="$KB" --env DATA_DIR="$IDX" \
+
+          # The Studio runs under the endpoint agent rather than beside it:
+          # `endpoints run` owns the process tree and tears it down when the
+          # endpoint goes, so deleting the session releases the node instead
+          # of leaving the job to burn the rest of its walltime. The walltime
+          # remains the backstop for a session nobody deletes.
+          "$PW_BIN" endpoints run --name "$SESSION" --subdomain "$SESSION" -- \
+            "$RUNTIME" run --cleanenv \
+            --env PORT="{port}" --env KB_ROOT="$KB" --env DATA_DIR="$IDX" \
             --env INDEX_BASE="$IDX" --env KB_LABEL="$KB_LABEL" \
             --env APP_NAME="$APP_NAME" --env INDEX_ON_START="$INDEX_ON_START" \
             --env KB_MISSION="$MISSION" --env KB_STARTER_DIRS="$STARTER_DIRS" \
@@ -1402,23 +1411,11 @@ jobs:
             ${DISABLE_KEYS:+--env DISABLE_PERSONAL_KEYS="$DISABLE_KEYS"} \
             ${REQUIRE_KEY:+--env REQUIRE_PERSONAL_KEY="$REQUIRE_KEY"} \
             --bind "$KB:$KB" --bind "$IDX:$IDX" \
-            "$SSIF" > studio.out 2>&1 < /dev/null &
+            "$SSIF" 2>&1 | tee studio.out
 
-          for i in $(seq 1 120); do
-            curl -s -m 5 "localhost:$APORT/healthz" > /dev/null 2>&1 && { echo "Studio up after ~$((i*5))s on port $APORT"; break; }
-            sleep 5
-          done
-          curl -s -m 5 "localhost:$APORT/healthz" > /dev/null 2>&1 || { echo "Studio never came up:"; tail -30 studio.out; exit 1; }
-
-          setsid nohup "$PW_BIN" endpoints http --keep -o text \
-            --name "$SESSION" --subdomain "$SESSION" "$APORT" > endpoint.log 2>&1 < /dev/null &
-          sleep 15
-          grep -oE "https://[^ ]+" endpoint.log | head -1
-
-          # Hold the allocation while the studio answers; the job ends when
-          # the app dies or the walltime arrives.
-          while curl -s -m 10 "localhost:$APORT/healthz" > /dev/null 2>&1; do sleep 60; done
-          echo "Studio stopped responding; ending the job."
+          # Reached when the endpoint is deleted, the Studio exits, or the
+          # walltime arrives; the trap stops the model beside it.
+          echo "Studio endpoint closed; ending the job."
           JOB
           chmod +x job.sh
           bash -n job.sh && echo "job script syntax ok"
