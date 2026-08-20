@@ -1134,47 +1134,42 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .tree-null { color: var(--muted); font-style: italic; }
 .tree-block { margin: 2px 0 6px; padding: 6px 8px; background: var(--panel-2, rgba(127,127,127,0.08)); border-radius: 4px; white-space: pre-wrap; font-size: 12px; }
 
-/* History view: the corpus at a point in time. Page furniture matches the
-   other views (header card, stat tiles, cards); the receding stack and the
-   scrubber are the only things particular to it. */
+/* History view. Same furniture as the other views: flat cards, the app's
+   type, no nested panels or drop shadows. */
 .hist-view { padding: 12px; overflow: auto; flex: 1; display: grid; gap: 12px; min-height: 0;
-  grid-template-columns: 1fr 168px; grid-template-areas: "head head" "tiles tiles" "stage scrub"; align-content: start; }
+  grid-template-columns: 1fr 200px; grid-template-areas: "head head" "tiles tiles" "stage scrub"; align-content: start; }
 .hist-view .ov-head { grid-area: head; }
 .hist-tiles { grid-area: tiles; display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
-.hist-stage { grid-area: stage; position: relative; perspective: 1600px; padding: 26px 14px 0; min-height: 520px; overflow: hidden; }
-.hist-ghost { position: absolute; left: 14px; right: 14px; top: 26px; bottom: 0;
-  border: 1px solid var(--border); border-top-left-radius: 10px; border-top-right-radius: 10px; background: var(--panel);
-  transform: translateY(calc(var(--depth) * -7px)) scale(calc(1 - var(--depth) * 0.018));
-  opacity: calc(0.55 / var(--depth)); }
-.hist-card { position: relative; display: flex; flex-direction: column; height: 100%; overflow: hidden;
-  border: 1px solid var(--border); border-radius: 10px; background: var(--panel); box-shadow: 0 6px 22px rgba(0,0,0,0.14); }
-.hist-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 12px 16px 8px; }
-.hist-card-head h3 { margin: 0 0 2px; font-size: 14px; }
-.hist-card-head p { margin: 0; font-size: 12.5px; }
-.hist-crumbs { padding: 0 16px 8px; font-size: 12.5px; border-bottom: 1px solid var(--border); }
-.hist-panes { display: grid; grid-template-columns: 1fr 300px; flex: 1; min-height: 0; }
-.hist-pane-label { margin: 0 0 6px; font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
-.hist-listing { overflow: auto; padding: 12px 10px 16px 14px; }
-.hist-row { display: flex; justify-content: space-between; gap: 12px; width: 100%; padding: 5px 8px; border: 0; border-radius: 6px;
-  background: none; color: inherit; text-align: left; cursor: pointer; font-size: 12.5px; }
+.hist-stage { grid-area: stage; min-height: 520px; display: flex; flex-direction: column; padding: 0; overflow: hidden; }
+.hist-card { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; }
+.hist-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 16px 20px 10px; }
+.hist-card-head h3 { margin: 0 0 2px; font-size: 15px; font-weight: 650; color: var(--pw-navy); }
+.hist-card-head p { margin: 0; font-size: 13px; }
+.hist-crumbs { padding: 0 20px 12px; font-size: 13px; }
+.hist-panes { display: grid; grid-template-columns: 1fr 320px; flex: 1; min-height: 0; border-top: 1px solid var(--border); }
+.hist-pane-label { margin: 0 0 8px; font-size: 13px; font-weight: 650; color: var(--pw-navy); }
+.hist-listing { overflow: auto; padding: 14px 12px 18px 20px; }
+.hist-row { display: flex; justify-content: space-between; gap: 12px; width: 100%; padding: 6px 8px; border: 0; border-radius: 6px;
+  background: none; color: inherit; text-align: left; cursor: pointer; font-size: 13px; }
 .hist-row:hover { background: var(--hover, rgba(127,127,127,0.10)); }
-.hist-name { font-family: var(--font-mono); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.hist-side { border-left: 1px solid var(--border); overflow: auto; padding: 12px 14px 16px; }
-.hist-counts { display: flex; gap: 10px; margin: 0 0 10px; font-family: var(--font-mono); font-size: 12.5px; }
+.hist-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hist-side { border-left: 1px solid var(--border); overflow: auto; padding: 14px 20px 18px; }
+.hist-counts { display: flex; gap: 12px; margin: 0 0 12px; font-size: 13px; }
 .hist-tally.add { color: #2f9e44; }
 .hist-tally.mod { color: var(--pw-link); }
 .hist-tally.move { color: #b08900; }
 .hist-tally.del { color: #c92a2a; }
-.hist-changes { margin-bottom: 10px; }
-.hist-change-label { font-weight: 600; font-size: 12px; margin: 0 0 3px; }
-.hist-change-list { margin: 0; padding-left: 14px; font-size: 12px; line-height: 1.55; }
-.hist-change-list button.link-button { font-family: var(--font-mono); font-size: 11.5px; }
+.hist-changes { margin-bottom: 12px; }
+.hist-change-label { font-weight: 600; font-size: 13px; margin: 0 0 4px; }
+.hist-change-list { margin: 0; padding: 0; list-style: none; font-size: 12.5px; line-height: 1.7; }
+.hist-change-list li { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hist-change-list button.link-button { font-size: 12.5px; text-align: left; }
 .hist-scrubber { grid-area: scrub; display: flex; flex-direction: column; align-items: stretch; gap: 2px;
-  overflow: auto; padding: 12px 10px; }
-.hist-scrub-title { margin: 0 0 8px; font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
-.hist-tick { position: relative; padding: 4px 6px 4px 16px; border: 0; background: none; color: var(--muted);
-  font-size: 11.5px; text-align: left; cursor: pointer; border-radius: 4px; }
-.hist-tick::before { content: ''; position: absolute; left: 4px; top: 50%; width: 7px; height: 1px; background: currentColor; opacity: 0.6; }
+  overflow: auto; padding: 16px 16px 18px; }
+.hist-scrub-title { margin: 0 0 10px; font-size: 13px; font-weight: 650; color: var(--pw-navy); }
+.hist-tick { position: relative; padding: 5px 8px 5px 18px; border: 0; background: none; color: var(--muted);
+  font-size: 12.5px; text-align: left; cursor: pointer; border-radius: 6px; }
+.hist-tick::before { content: ''; position: absolute; left: 6px; top: 50%; width: 7px; height: 1px; background: currentColor; opacity: 0.6; }
 .hist-tick:hover { color: var(--text); background: var(--hover, rgba(127,127,127,0.10)); }
 .hist-tick.active { color: var(--pw-link); font-weight: 600; }
 .hist-tick.active::before { width: 11px; height: 2px; opacity: 1; }
