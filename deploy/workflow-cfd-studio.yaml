@@ -986,7 +986,12 @@ jobs:
           fi
 
           if [ "${{ inputs.app_settings.source }}" = "container" ]; then
-            echo "export INDEX_ON_START=${{ inputs.kb_settings.run_index }}" >> ${SCRIPT}
+            # The image tests for 1 exactly; "true" reads as off.
+            if [ "${{ inputs.kb_settings.run_index }}" = "true" ]; then
+              echo "export INDEX_ON_START=1" >> ${SCRIPT}
+            else
+              echo "export INDEX_ON_START=0" >> ${SCRIPT}
+            fi
             cat >> ${SCRIPT} << 'CONTAINER_LAUNCH'
           IMG="$(cat .image 2>/dev/null)"
           RUNTIME="$(command -v apptainer || command -v singularity)"
@@ -1309,7 +1314,10 @@ jobs:
           fi
           DISABLE_KEYS=""; [ "${{ inputs.model_settings.posture }}" = "multi-shared" ] && DISABLE_KEYS=1
           REQUIRE_KEY=""; [ "${{ inputs.model_settings.posture }}" = "multi-strict" ] && REQUIRE_KEY=1
-          INDEX_ON_START=0; [ "${{ inputs.kb_settings.run_index }}" = "true" ] && INDEX_ON_START=true
+          # The image tests INDEX_ON_START=1 exactly, so "true" reads as off and
+          # the corpus is served unindexed with search silently on the grep
+          # fallback. Send what the image checks for.
+          INDEX_ON_START=0; [ "${{ inputs.kb_settings.run_index }}" = "true" ] && INDEX_ON_START=1
 
           # Every launch-specific value lands here, %q-quoted, so the job
           # script itself stays a plain readable script with no generated
