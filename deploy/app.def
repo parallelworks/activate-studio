@@ -142,7 +142,8 @@ mkdir -p "$INDEX_BASE/models"
 [ -f "$INDEX_BASE/models/minilm384.gguf" ] || \
     cp /app/index/models/minilm384.gguf "$INDEX_BASE/models/" 2>/dev/null || true
 # INDEX_ON_START=1 builds or refreshes the index before serving.
-if [ "${INDEX_ON_START:-0}" = "1" ] && [ -x "$GUFI_BIN/gufi_dir2index" ]; then
+case "${INDEX_ON_START:-0}" in 1|true|TRUE|yes|on) index_on_start=1 ;; *) index_on_start=0 ;; esac
+if [ "$index_on_start" = "1" ] && [ -x "$GUFI_BIN/gufi_dir2index" ]; then
     PROJECT_ROOT=/app bash /app/indexer/reindex.sh || \
         echo "WARNING: index build failed; serving the filesystem"
 fi
