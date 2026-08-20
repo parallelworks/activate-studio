@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { GATEWAY_BASE, PW_API_KEY } from '../config.js'
+import { GATEWAY_BASE, PW_API_KEY, SIDECAR_BASE, SIDECAR_KEY } from '../config.js'
 import { resolveSharedKey } from '../credentials.js'
 
 /**
@@ -74,6 +74,50 @@ export interface TurnResult {
 
 export function gatewayConfigured(): boolean {
   return gatewayKey().length > 0
+}
+
+/* ---- the model served beside this deployment ---- */
+
+/**
+ * Ids seen from the sidecar, recorded when it is listed so a later chat
+ * turn can tell which target a chosen model belongs to. A model name is
+ * the only thing the browser sends back, and the two catalogs are
+ * otherwise indistinguishable.
+ */
+const sidecarIds = new Set<string>()
+
+export function sidecarConfigured(): boolean {
+  return SIDECAR_BASE.length > 0
+}
+
+export function isSidecarModel(id: string): boolean {
+  return sidecarIds.has(id)
+}
+
+export function sidecarTarget(): { key: string; baseUrl: string } {
+  return { key: SIDECAR_KEY, baseUrl: SIDECAR_BASE }
+}
+
+/**
+ * The sidecar's own catalog. A serve that is still loading, or has gone
+ * away with its job, must not empty the picker of everything else, so a
+ * failure here is an empty list rather than an error.
+ */
+export async function listSidecarModels(): Promise<any[]> {
+  if (!sidecarConfigured()) return []
+  try {
+    const res = await fetch(`${SIDECAR_BASE}/models`, {
+      headers: { Authorization: `Bearer ${SIDECAR_KEY}` },
+      signal: AbortSignal.timeout(5000),
+    })
+    if (!res.ok) return []
+    const data = await res.json() as { data?: any[]; models?: any[] }
+    const models = (data.data ?? data.models ?? []).filter(Boolean)
+    for (const m of models) if (m?.id) sidecarIds.add(String(m.id))
+    return models
+  } catch {
+    return []
+  }
 }
 
 /** Credential rejections get their own error type and an actionable

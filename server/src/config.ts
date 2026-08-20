@@ -88,6 +88,38 @@ export const MODEL_SUFFIXES = new Set(['.stl', '.step', '.stp'])
 export const MAX_PREVIEW_BYTES = 512 * 1024
 export const MAX_TOOL_ITERATIONS = 24
 
+/**
+ * Where the pw CLI lives. A container deployment has one only if the
+ * binary was bound in, and it is bound at an absolute path rather than
+ * placed on PATH, so every caller has to be told where to look. Bare "pw"
+ * remains the default for a deployment running directly on a host.
+ */
+export const PW_CLI = process.env.PW_CLI || 'pw'
+
+/**
+ * A model served beside this deployment, on the same node: an OpenAI-
+ * compatible base URL reachable over the loopback interface.
+ *
+ * This is deliberately separate from the gateway rather than a
+ * replacement for it. Pointing the whole deployment at the local serve
+ * makes that model the only one anybody can pick, which hides the
+ * platform's provider models; listing both means a private model on the
+ * node and the platform providers appear in one picker and either can be
+ * called in the same conversation.
+ */
+export const SIDECAR_BASE = (process.env.SIDECAR_MODEL_URL ?? '').replace(/\/$/, '')
+export const SIDECAR_KEY = process.env.SIDECAR_MODEL_KEY || 'local'
+
+/** True when a failure is the CLI being absent rather than a command that
+ *  ran and failed, which the assistant should report differently. */
+export function isMissingCli(err: unknown): boolean {
+  return (err as NodeJS.ErrnoException)?.code === 'ENOENT'
+}
+
+export const NO_CLI_MESSAGE =
+  'The pw CLI is not available to this deployment, so platform actions (workflows, clusters, status) cannot run from here. '
+  + 'Bind the CLI and its credentials into the container, or set PW_CLI to its path.'
+
 export function gufiAvailable(): boolean {
   try {
     return fs.existsSync(path.join(GUFI_BIN, 'gufi_query')) && fs.existsSync(GUFI_INDEX)

@@ -1,6 +1,6 @@
 import { spawn, ChildProcess } from 'node:child_process'
 import type { FastifyInstance } from 'fastify'
-import { PORT } from './config.js'
+import { PORT, PW_CLI } from './config.js'
 import { effectiveSettings } from './settings.js'
 import { gatewayKey } from './chat/gateway.js'
 
@@ -70,7 +70,7 @@ export function startRagEndpoint(): RagEndpointStatus {
   // bound in, and a spawn that cannot find its command emits an 'error'
   // event: unhandled, that took the whole server down with it, so one
   // click on a button ended the session.
-  const cli = process.env.PW_CLI || 'pw'
+  const cli = PW_CLI
   const proc = spawn(cli, ['endpoints', 'run', '--openai', '--name', name, '-o', 'text', '--', 'node', '-e', FORWARDER], {
     env: { ...process.env, STUDIO_TARGET_PORT: String(PORT), STUDIO_INJECT_KEY: key },
     stdio: ['ignore', 'pipe', 'pipe'],
