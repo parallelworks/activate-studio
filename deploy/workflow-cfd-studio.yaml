@@ -38,7 +38,7 @@ permissions:
   execute:
     inputs:
       resource_and_execution:
-        label: Resource & Execution
+        label: "Step 1: Choose the cluster"
         type: group
         collapsed: false
         items:
@@ -61,7 +61,7 @@ permissions:
               outlives the workflow. Scheduler placement runs the container
               source only.
       slurm:
-        label: Slurm Job
+        label: "Step 2: Your scheduler account"
         type: group
         collapsed: false
         hidden: ${{ inputs.resource_and_execution.resource.schedulerType != 'slurm' || inputs.resource_and_execution.scheduler == false }}
@@ -102,7 +102,7 @@ permissions:
             optional: true
             tooltip: Semicolon-separated sbatch directives without the #SBATCH prefix, e.g. a --gres=gpu:<type>:<count> request on systems that require an explicit GRES.
       pbs:
-        label: PBS Job
+        label: "Step 2: Your scheduler account (PBS systems)"
         type: group
         collapsed: true
         hidden: ${{ inputs.resource_and_execution.resource.schedulerType != 'pbs' || inputs.resource_and_execution.scheduler == false }}
@@ -131,7 +131,7 @@ permissions:
             optional: true
             tooltip: Semicolon-separated qsub directives without the #PBS prefix; the select statement names the node shape the site requires.
       session_settings:
-        label: Session
+        label: "Advanced: Session and URL"
         type: group
         collapsed: true
         items:
@@ -161,7 +161,7 @@ permissions:
               E2E     → launch everything, assert HTTP 200 at /healthz, tear down, exit.
               Cleanup → stop every process prior launches left on the node, then exit.
       app_settings:
-        label: App & Bundle
+        label: "Advanced: Application and image"
         type: group
         collapsed: true
         items:
@@ -294,7 +294,7 @@ permissions:
             default: 0
             hidden: true
       kb_settings:
-        label: Knowledge Base
+        label: "Advanced: Knowledge base and mission"
         type: group
         collapsed: true
         items:
@@ -347,7 +347,7 @@ permissions:
             default: true
             tooltip: Run the full index (metadata, text extraction, embeddings) before starting. Turn off for an instant relaunch on an unchanged corpus.
       model_settings:
-        label: Models (optional)
+        label: "Advanced: Model serving"
         type: group
         collapsed: true
         items:
