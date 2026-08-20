@@ -27,7 +27,17 @@
     </script>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <!-- Replaced when the app mounts. On a slow link the bundle can take
+           several seconds, and a blank page reads as a broken deployment. -->
+      <div id="boot" style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;font-family:system-ui,sans-serif;color:#64748b">
+        <div style="text-align:center">
+          <div style="width:26px;height:26px;margin:0 auto 12px;border:2px solid #cbd5e1;border-top-color:#2563eb;border-radius:50%;animation:boot-spin 0.9s linear infinite"></div>
+          <div style="font-size:13px">Starting the studio…</div>
+        </div>
+      </div>
+      <style>@keyframes boot-spin{to{transform:rotate(360deg)}}</style>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

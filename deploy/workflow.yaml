@@ -1443,6 +1443,8 @@ jobs:
             ${JWKS:+--env AUTH_ISSUER="pw-session-proxy"} \
             ${DISABLE_KEYS:+--env DISABLE_PERSONAL_KEYS="$DISABLE_KEYS"} \
             ${REQUIRE_KEY:+--env REQUIRE_PERSONAL_KEY="$REQUIRE_KEY"} \
+            --env PW_CLI="/usr/local/bin/pw" \
+            --bind "$PW_BIN:/usr/local/bin/pw" \
             --bind "$KB:$KB" --bind "$IDX:$IDX" \
             "$SSIF"
           LAUNCH

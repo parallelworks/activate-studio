@@ -66,7 +66,12 @@ export function startRagEndpoint(): RagEndpointStatus {
     return ragEndpointStatus()
   }
   const name = endpointName()
-  const proc = spawn('pw', ['endpoints', 'run', '--openai', '--name', name, '-o', 'text', '--', 'node', '-e', FORWARDER], {
+  // A container deployment has no pw CLI inside it unless the binary was
+  // bound in, and a spawn that cannot find its command emits an 'error'
+  // event: unhandled, that took the whole server down with it, so one
+  // click on a button ended the session.
+  const cli = process.env.PW_CLI || 'pw'
+  const proc = spawn(cli, ['endpoints', 'run', '--openai', '--name', name, '-o', 'text', '--', 'node', '-e', FORWARDER], {
     env: { ...process.env, STUDIO_TARGET_PORT: String(PORT), STUDIO_INJECT_KEY: key },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
@@ -88,6 +93,15 @@ export function startRagEndpoint(): RagEndpointStatus {
   }
   proc.stdout?.on('data', onData)
   proc.stderr?.on('data', onData)
+  proc.on('error', err => {
+    if (child === proc) child = null
+    status.state = 'error'
+    status.url = null
+    status.detail = (err as NodeJS.ErrnoException).code === 'ENOENT'
+      ? `The pw CLI is not available to this deployment (looked for "${cli}"), so the model cannot be registered on the platform from here. `
+        + 'Bind the CLI into the container, or set PW_CLI to its path.'
+      : `Could not start the endpoint agent: ${err.message}`
+  })
   proc.on('exit', code => {
     if (child === proc) child = null
     status.state = code === 0 ? 'stopped' : 'error'
