@@ -97,10 +97,6 @@ export function HistoryView({ onOpen }: { onOpen: (path: string) => void }) {
     return parts.map((p, i) => ({ name: p, path: parts.slice(0, i + 1).join('/') }))
   }, [dir])
 
-  // Ghost cards stand in for the snapshots behind this one, capped so a
-  // long history does not build a wall.
-  const behind = Math.min(4, idx)
-
   if (snaps === null) return <div className="hist-view"><p className="muted pad">Loading history…</p></div>
 
   if (snaps.length === 0) {
@@ -141,10 +137,6 @@ export function HistoryView({ onOpen }: { onOpen: (path: string) => void }) {
       </div>
 
       <div className="hist-stage card">
-        {Array.from({ length: behind }, (_, i) => (
-          <div key={i} className="hist-ghost" style={{ '--depth': String(behind - i) } as React.CSSProperties} />
-        ))}
-
         <div className="hist-card">
           <div className="hist-card-head">
             <div>

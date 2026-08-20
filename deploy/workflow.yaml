@@ -1402,9 +1402,15 @@ jobs:
           # endpoint goes, so deleting the session releases the node instead
           # of leaving the job to burn the rest of its walltime. The walltime
           # remains the backstop for a session nobody deletes.
-          "$PW_BIN" endpoints run --name "$SESSION" --subdomain "$SESSION" -- \
-            "$RUNTIME" run --cleanenv \
-            --env PORT="{port}" --env KB_ROOT="$KB" --env DATA_DIR="$IDX" \
+          # The endpoint agent joins the command it is given back into one
+          # string, so a --env value containing a space arrives as separate
+          # arguments and the container is handed nonsense. Keep the whole
+          # invocation in a script and let the agent run just that; the port
+          # it assigns arrives in the environment.
+          cat > launch-studio.sh << 'LAUNCH'
+          #!/bin/bash
+          exec "$RUNTIME" run --cleanenv \
+            --env PORT="$PORT" --env KB_ROOT="$KB" --env DATA_DIR="$IDX" \
             --env INDEX_BASE="$IDX" --env KB_LABEL="$KB_LABEL" \
             --env APP_NAME="$APP_NAME" --env INDEX_ON_START="$INDEX_ON_START" \
             --env KB_MISSION="$MISSION" --env KB_STARTER_DIRS="$STARTER_DIRS" \
@@ -1419,7 +1425,12 @@ jobs:
             ${DISABLE_KEYS:+--env DISABLE_PERSONAL_KEYS="$DISABLE_KEYS"} \
             ${REQUIRE_KEY:+--env REQUIRE_PERSONAL_KEY="$REQUIRE_KEY"} \
             --bind "$KB:$KB" --bind "$IDX:$IDX" \
-            "$SSIF" 2>&1 | tee studio.out
+            "$SSIF"
+          LAUNCH
+          chmod +x launch-studio.sh
+          # The agent owns this process tree: deleting the session ends the job.
+          "$PW_BIN" endpoints run --name "$SESSION" --subdomain "$SESSION" -- \
+            bash "$RUNDIR/launch-studio.sh" 2>&1 | tee studio.out
 
           # Reached when the endpoint is deleted, the Studio exits, or the
           # walltime arrives; the trap stops the model beside it.
