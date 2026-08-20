@@ -452,10 +452,13 @@ permissions:
           model_endpoint_name:
             label: Model Endpoint Name
             type: string
-            default: "gemma"
+            default: "gemma-${USER}"
             optional: true
             hidden: ${{ inputs.resource_and_execution.scheduler != true }}
-            tooltip: Platform endpoint name for the served model. Empty derives <session name>-model.
+            tooltip: >-
+              Platform endpoint name for the served model, expanded like the session
+              name, so gemma-${USER} gives each person their own. Empty derives
+              <session name>-model.
 jobs:
   setup:
     if: ${{ inputs.resource_and_execution.scheduler != true }}
@@ -1282,7 +1285,9 @@ jobs:
           PW_BIN="$(command -v pw || echo ~/pw/pw)"
           SESSION="$(eval echo "${{ inputs.session_settings.session_name }}" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-' | sed -E 's/-+/-/g; s/^-//; s/-$//')"
           [ -n "$SESSION" ] || SESSION="studio"
-          MODEL_EP="${{ inputs.model_settings.model_endpoint_name }}"
+          # Expanded and slugified like the session name, since this is an
+          # endpoint name too and several people may run the same workflow.
+          MODEL_EP="$(eval echo "${{ inputs.model_settings.model_endpoint_name }}" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-' | sed -E 's/-+/-/g; s/^-//; s/-$//')"
           [ -n "$MODEL_EP" ] || MODEL_EP="${SESSION}-model"
           ICON="$(eval echo '${{ inputs.app_settings.icon_path }}')"
           ICON_DARK="$(eval echo '${{ inputs.app_settings.icon_path_dark }}')"
@@ -1424,8 +1429,16 @@ jobs:
           # arguments and the container is handed nonsense. Keep the whole
           # invocation in a script and let the agent run just that; the port
           # it assigns arrives in the environment.
-          cat > launch-studio.sh << 'LAUNCH'
-          #!/bin/bash
+          # The launcher runs as a fresh shell, so it reads the same %q-quoted
+          # values the job script uses rather than having them pasted in: a JSON
+          # value re-parsed by a second shell loses its quoting, and the starter
+          # prompts are JSON. Only the runtime and the gateway are added here,
+          # since both are decided after job.env was written.
+          printf 'RUNTIME=%q\nGATEWAY_URL=%q\nGATEWAY_KEY=%q\n' \
+            "$RUNTIME" "$GATEWAY_URL" "$GATEWAY_KEY" >> "$JOB_ENV"
+          printf '#!/bin/bash\nJOB_ENV=%q\n' "$JOB_ENV" > launch-studio.sh
+          cat >> launch-studio.sh << 'LAUNCH'
+          . "$JOB_ENV"
           exec "$RUNTIME" run --cleanenv \
             --env PORT="$PORT" --env KB_ROOT="$KB" --env DATA_DIR="$IDX" \
             --env INDEX_BASE="$IDX" --env KB_LABEL="$KB_LABEL" \
