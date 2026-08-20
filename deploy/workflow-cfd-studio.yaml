@@ -138,8 +138,12 @@ permissions:
           session_name:
             label: Session Name
             type: string
-            default: "cfd-studio"
-            tooltip: Session/endpoint name; also the URL subdomain, so keep it stable across relaunches.
+            default: "cfd-studio-${USER}"
+            tooltip: >-
+              Session and endpoint name, and also the URL subdomain, so keep it stable
+              across relaunches. Shell variables are expanded, so a name like
+              studio-${USER} gives each person their own session and URL where several
+              people launch the same workflow.
           unique_suffix:
             label: Append Port to Session Name
             type: boolean
@@ -882,7 +886,7 @@ jobs:
           for p in $(pgrep -f "app/server/dist/main[.]js" 2>/dev/null); do
             [ "$(readlink /proc/$p/cwd 2>/dev/null)" = "$PWD" ] && kill "$p" 2>/dev/null && echo "  swept stale server $p"
           done
-          PREFIX="$(echo "${{ inputs.session_settings.session_name }}" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-' | sed -E 's/-+/-/g; s/^-//; s/-$//')"
+          PREFIX="$(eval echo "${{ inputs.session_settings.session_name }}" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-' | sed -E 's/-+/-/g; s/^-//; s/-$//')"
           [ -n "$PREFIX" ] || PREFIX="studio"
           pkill -f "endpoints http.*--name ${PREFIX}" 2>/dev/null && echo "  swept stale endpoint agent (${PREFIX})" || true
       - name: Generate run_app.sh
@@ -1030,7 +1034,7 @@ jobs:
             sleep 2
           done
           if [ "${{ inputs.session_settings.session_method }}" = "web" ]; then
-            PREFIX="$(echo "${{ inputs.session_settings.session_name }}" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-' | sed -E 's/-+/-/g; s/^-//; s/-$//')"
+            PREFIX="$(eval echo "${{ inputs.session_settings.session_name }}" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-' | sed -E 's/-+/-/g; s/^-//; s/-$//')"
             [ -n "$PREFIX" ] || PREFIX="studio"
             if [ "${{ inputs.session_settings.unique_suffix }}" = "true" ]; then
               EP_NAME="${PREFIX}-${PORT}"
@@ -1039,9 +1043,11 @@ jobs:
             fi
             PW_BIN="$(command -v pw || echo pw)"
             echo "Forking web endpoint ${EP_NAME} -> localhost:${PORT}; log: $(pwd)/endpoint.log"
-            # --keep leaves the session registered when this process exits, so the
-            # URL people have been given keeps resolving across a relaunch.
-            setsid nohup "$PW_BIN" endpoints http -o text --keep --name "$EP_NAME" --subdomain "$EP_NAME" "$PORT" > endpoint.log 2>&1 < /dev/null &
+            # No --keep: a session that outlives its server is a URL that
+            # resolves to nothing, and it hides from anyone reading the session
+            # list that the deployment is down. The watchdog below restarts the
+            # app and re-registers, which covers the case --keep was there for.
+            setsid nohup "$PW_BIN" endpoints http -o text --name "$EP_NAME" --subdomain "$EP_NAME" "$PORT" > endpoint.log 2>&1 < /dev/null &
             echo "$!" >> app-custom.pids
             echo "$!" > agent.pid
             # Watchdog: if the app stops answering or the endpoint agent
@@ -1274,7 +1280,7 @@ jobs:
           MODEL_DIR="$(eval echo '${{ inputs.model_settings.model_dir }}')"
           [ -n "$MODEL_DIR" ] || MODEL_DIR="$WORKDIR/models/$(basename '${{ inputs.model_settings.hf_model_id }}')"
           PW_BIN="$(command -v pw || echo ~/pw/pw)"
-          SESSION="$(echo "${{ inputs.session_settings.session_name }}" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-' | sed -E 's/-+/-/g; s/^-//; s/-$//')"
+          SESSION="$(eval echo "${{ inputs.session_settings.session_name }}" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-' | sed -E 's/-+/-/g; s/^-//; s/-$//')"
           [ -n "$SESSION" ] || SESSION="studio"
           MODEL_EP="${{ inputs.model_settings.model_endpoint_name }}"
           [ -n "$MODEL_EP" ] || MODEL_EP="${SESSION}-model"
@@ -1413,9 +1419,15 @@ jobs:
           # endpoint goes, so deleting the session releases the node instead
           # of leaving the job to burn the rest of its walltime. The walltime
           # remains the backstop for a session nobody deletes.
-          "$PW_BIN" endpoints run --name "$SESSION" --subdomain "$SESSION" -- \
-            "$RUNTIME" run --cleanenv \
-            --env PORT="{port}" --env KB_ROOT="$KB" --env DATA_DIR="$IDX" \
+          # The endpoint agent joins the command it is given back into one
+          # string, so a --env value containing a space arrives as separate
+          # arguments and the container is handed nonsense. Keep the whole
+          # invocation in a script and let the agent run just that; the port
+          # it assigns arrives in the environment.
+          cat > launch-studio.sh << 'LAUNCH'
+          #!/bin/bash
+          exec "$RUNTIME" run --cleanenv \
+            --env PORT="$PORT" --env KB_ROOT="$KB" --env DATA_DIR="$IDX" \
             --env INDEX_BASE="$IDX" --env KB_LABEL="$KB_LABEL" \
             --env APP_NAME="$APP_NAME" --env INDEX_ON_START="$INDEX_ON_START" \
             --env KB_MISSION="$MISSION" --env KB_STARTER_DIRS="$STARTER_DIRS" \
@@ -1430,7 +1442,12 @@ jobs:
             ${DISABLE_KEYS:+--env DISABLE_PERSONAL_KEYS="$DISABLE_KEYS"} \
             ${REQUIRE_KEY:+--env REQUIRE_PERSONAL_KEY="$REQUIRE_KEY"} \
             --bind "$KB:$KB" --bind "$IDX:$IDX" \
-            "$SSIF" 2>&1 | tee studio.out
+            "$SSIF"
+          LAUNCH
+          chmod +x launch-studio.sh
+          # The agent owns this process tree: deleting the session ends the job.
+          "$PW_BIN" endpoints run --name "$SESSION" --subdomain "$SESSION" -- \
+            bash "$RUNDIR/launch-studio.sh" 2>&1 | tee studio.out
 
           # Reached when the endpoint is deleted, the Studio exits, or the
           # walltime arrives; the trap stops the model beside it.
@@ -1446,7 +1463,7 @@ jobs:
           mkdir -p "$RUNDIR"; cd "$RUNDIR"
           METHOD="${{ inputs.session_settings.session_method }}"
           STYPE="${{ inputs.resource_and_execution.resource.schedulerType }}"
-          SESSION="$(echo "${{ inputs.session_settings.session_name }}" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-' | sed -E 's/-+/-/g; s/^-//; s/-$//')"
+          SESSION="$(eval echo "${{ inputs.session_settings.session_name }}" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-' | sed -E 's/-+/-/g; s/^-//; s/-$//')"
           [ -n "$SESSION" ] || SESSION="studio"
           JOB_NAME="studio-$SESSION"
           echo "scheduler dialect: ${STYPE:-none}"
