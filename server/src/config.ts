@@ -110,6 +110,15 @@ export const PW_CLI = process.env.PW_CLI || 'pw'
 export const SIDECAR_BASE = (process.env.SIDECAR_MODEL_URL ?? '').replace(/\/$/, '')
 export const SIDECAR_KEY = process.env.SIDECAR_MODEL_KEY || 'local'
 
+/**
+ * The platform endpoint this deployment registered its own model under,
+ * when it registered one. Knowing the name lets the picker drop the
+ * gateway's copy of that model precisely, rather than by matching model
+ * names and risking the removal of an identically named model served by
+ * somebody else's session.
+ */
+export const SIDECAR_ENDPOINT = process.env.SIDECAR_ENDPOINT || ''
+
 /** True when a failure is the CLI being absent rather than a command that
  *  ran and failed, which the assistant should report differently. */
 export function isMissingCli(err: unknown): boolean {
