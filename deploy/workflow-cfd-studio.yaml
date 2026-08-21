@@ -1497,6 +1497,7 @@ jobs:
             ${DISABLE_KEYS:+--env DISABLE_PERSONAL_KEYS="$DISABLE_KEYS"} \
             ${REQUIRE_KEY:+--env REQUIRE_PERSONAL_KEY="$REQUIRE_KEY"} \
             ${SIDECAR_URL:+--env SIDECAR_MODEL_URL="$SIDECAR_URL"} \
+            ${SIDECAR_URL:+--env SIDECAR_ENDPOINT="$MODEL_EP"} \
             --env PW_CLI="/usr/local/bin/pw" --env HOME="$HOME" \
             --bind "$PW_BIN:/usr/local/bin/pw" \
             --bind "$KB:$KB" --bind "$IDX:$IDX" \
