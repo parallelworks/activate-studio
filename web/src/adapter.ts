@@ -5,7 +5,13 @@ async function listModels(): Promise<ModelsList> {
   const res = await fetch('/api/chat/models')
   if (!res.ok) throw new Error(`models: ${res.status}`)
   const data = await res.json()
-  return { models: data.models ?? [], unreachableSessions: data.unreachableSessions ?? [] }
+  // The server marks models whose most recent call failed (an expired
+  // provider key fails at call time while listing fine). The picker
+  // component is upstream, so the signal rides the display name; it
+  // disappears on the first successful call.
+  const models = (data.models ?? []).map((m: { id: string; name?: string; callable?: boolean }) =>
+    m?.callable === false ? { ...m, name: `${m.name || m.id} · last call failed` } : m)
+  return { models, unreachableSessions: data.unreachableSessions ?? [] }
 }
 
 /** Stream one completion from the server's tool-loop endpoint over SSE. */

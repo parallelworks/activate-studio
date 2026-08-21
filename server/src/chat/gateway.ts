@@ -128,6 +128,27 @@ export class GatewayAuthError extends Error {
 
 let lastCallFailure: { at: string; message: string; auth: boolean } | null = null
 
+/**
+ * Which models have recently failed at invoke time, keyed by model id.
+ * A provider's catalog listing succeeds on the registration alone, so a
+ * model whose credential has expired still lists as available; the only
+ * evidence of callability is an actual call. Failures are recorded here
+ * and cleared by the next success, so the picker can say "last call
+ * failed" about exactly the models where that is true, without probing
+ * anything.
+ */
+const modelFailures = new Map<string, { at: string; message: string; auth: boolean; status: number }>()
+
+export function modelFailure(id: string): { at: string; message: string; auth: boolean; status: number } | undefined {
+  return modelFailures.get(id)
+}
+
+export function recordModelOutcome(id: string | null | undefined, failure: { message: string; auth: boolean; status: number } | null): void {
+  if (!id) return
+  if (failure) modelFailures.set(String(id), { at: new Date().toISOString(), ...failure })
+  else modelFailures.delete(String(id))
+}
+
 function gatewayError(status: number, bodyText: string, ctx: string): Error {
   const auth = status === 401 || status === 403
     || /unauthoriz|invalid[ _-]?(api[ _-]?)?key|credential|locked|expired token/i.test(bodyText)
@@ -215,7 +236,17 @@ export async function streamTurn(
     body: JSON.stringify({ ...body, stream: streaming }),
     signal,
   })
-  if (!res.ok || !res.body) throw gatewayError(res.status, await res.text(), 'chat')
+  if (!res.ok || !res.body) {
+    const text = await res.text()
+    const err = gatewayError(res.status, text, 'chat')
+    recordModelOutcome(String(body.model ?? ''), {
+      message: text.slice(0, 200), auth: err.name === 'GatewayAuthError', status: res.status,
+    })
+    throw err
+  }
+  // The provider answered; whatever this model's history was, it is
+  // callable now.
+  recordModelOutcome(String(body.model ?? ''), null)
 
   // The non-streaming path exists as a fallback: vLLM's incremental output
   // parser can fail on token sequences the whole-message parser handles
