@@ -1,4 +1,2 @@
-python-docx
+# Optional: PDF text fallback for hosts without poppler (pdftotext).
 pypdf
-python-pptx
-openpyxl

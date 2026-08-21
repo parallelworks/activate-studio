@@ -59,9 +59,7 @@ exists. Document
 extraction and previews use whatever tools are present: `brew install
 --cask libreoffice` provides `soffice` for DOCX/PPTX previews, and
 Word, PowerPoint and Excel files extract to Markdown through
-`@giraffesyo/downmark`, bundled with the server, so they need nothing extra;
-`pip install python-docx python-pptx openpyxl pypdf` adds the fallback
-readers. The Apptainer container build below is
+`@giraffesyo/downmark`, bundled with the server, so they need nothing extra. The Apptainer container build below is
 Linux-only.
 
 ## Container build
