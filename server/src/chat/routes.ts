@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { GATEWAY_BASE, MAX_TOOL_ITERATIONS, SIDECAR_ENDPOINT } from '../config.js'
-import { aiHealth, gatewayConfigured, isSidecarModel, listModels, listSidecarModels, sidecarConfigured, sidecarTarget, StreamedTurnError, streamTurn, WireMessage, WireToolCall } from './gateway.js'
+import { aiHealth, gatewayConfigured, isSidecarModel, listModels, listSidecarModels, modelFailure, sidecarConfigured, sidecarTarget, StreamedTurnError, streamTurn, WireMessage, WireToolCall } from './gateway.js'
 import { TOOL_CALLS, TOOL_SPECS, activeToolSpecs, commandFor, customToolSpecs, executeTool, expandSlashCommand, skillToolSpec } from './tools.js'
 import { systemPrompt } from './context.js'
 import { attachmentContext } from '../attachments.js'
@@ -331,6 +331,13 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
         context_window: m.context_window ?? m.max_model_len ?? undefined,
       }
     })]
+    // A model whose last call failed is still offered (the provider may
+    // recover, or the key may be renewed), but the picker gets told, so
+    // choosing it is informed rather than a surprise at reply time.
+    models = models.map((m: any) => {
+      const f = modelFailure(String(m.id))
+      return f ? { ...m, callable: false, last_error: { at: f.at, auth: f.auth, status: f.status } } : m
+    })
     models.sort((a: any, b: any) =>
       Number(String(a.id).startsWith('org:')) - Number(String(b.id).startsWith('org:')))
     return reply.send({ models, unreachableSessions: wire.unreachable_sessions ?? [] })
@@ -885,9 +892,25 @@ ${ctx}` : ctx
         // errors) are user-facing; anything else stays in the log so exec
         // detail never reaches the client.
         const msg = String(err?.message ?? err)
-        const userFacing = err?.name === 'GatewayAuthError' || /^gateway /.test(msg)
+        const model = String(body.model ?? 'the model')
+        let userMsg: string | null = null
+        if (err?.name === 'GatewayAuthError') {
+          userMsg = msg
+        } else if (/^gateway chat /.test(msg)) {
+          // The raw relay ("gateway chat 400: {json}") reads as a Studio
+          // fault. Say what is actually known: this model cannot be called
+          // right now, and if it sits behind a personal provider key, that
+          // key expiring is the common cause.
+          const personal = /^[a-z0-9_.-]+:/i.test(model) && !model.startsWith('session:') && !model.startsWith('org:')
+          userMsg = `${model} cannot be called right now: its provider returned an error. `
+            + (personal ? 'This model uses a provider key registered on the platform, and an expired key fails exactly this way; renew it under the platform\u2019s AI provider settings, or pick another model. '
+                        : 'Pick another model from the list while it recovers. ')
+            + `Other models are unaffected. Provider said: ${msg.slice(0, 160)}`
+        } else if (/^gateway /.test(msg)) {
+          userMsg = msg
+        }
         sse(res, 'error', {
-          message: userFacing ? msg : `The reply failed with an internal error (ref ${errorId}).`,
+          message: userMsg ?? `The reply failed with an internal error (ref ${errorId}).`,
           kind: err?.name === 'GatewayAuthError' ? 'credential' : 'error',
         })
       }
