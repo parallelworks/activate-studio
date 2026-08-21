@@ -13,7 +13,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
  * a name, a size, and a date, and opened only if it still exists today.
  */
 
-interface Snap { id: string; takenAt: number; files: number; bytes: number }
+interface Snap { id: string; takenAt: number; files: number; bytes: number; disk: number }
 interface LevelDir { name: string; path: string; files: number; bytes: number }
 interface LevelFile { name: string; path: string; size: number; mtime: number }
 interface Level { available: boolean; dir?: string; dirs?: LevelDir[]; files?: LevelFile[]; totals?: { files: number; bytes: number } }
@@ -42,6 +42,7 @@ function when(ts: number, long = false): string {
 
 export function HistoryView({ onOpen }: { onOpen: (path: string) => void }) {
   const [snaps, setSnaps] = useState<Snap[] | null>(null)
+  const [stored, setStored] = useState(0)
   const [idx, setIdx] = useState(0)
   const [dir, setDir] = useState('')
   const [level, setLevel] = useState<Level | null>(null)
@@ -50,9 +51,10 @@ export function HistoryView({ onOpen }: { onOpen: (path: string) => void }) {
 
   const load = useCallback(() => fetch('/api/kb/history')
     .then(r => r.json())
-    .then((d: { snapshots?: Snap[] }) => {
+    .then((d: { snapshots?: Snap[]; storedBytes?: number }) => {
       const list = d.snapshots ?? []
       setSnaps(list)
+      setStored(d.storedBytes ?? 0)
       setIdx(Math.max(0, list.length - 1))
     })
     .catch(() => setSnaps([])), [])
@@ -91,6 +93,16 @@ export function HistoryView({ onOpen }: { onOpen: (path: string) => void }) {
       await load()
     } finally { setBusy(false) }
   }
+
+  // Deleting the newest snapshot of a live corpus is not an error: the
+  // reload's visit captures a fresh one, so the timeline stays truthful.
+  const remove = (id: string) =>
+    fetch(`/api/kb/history/snapshot?id=${id}`, { method: 'DELETE' }).then(load)
+
+  const pruneTo = (keep: number) =>
+    fetch('/api/kb/history/prune', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ keep }),
+    }).then(load)
 
   const crumbs = useMemo(() => {
     const parts = dir ? dir.split('/') : []
@@ -134,7 +146,7 @@ export function HistoryView({ onOpen }: { onOpen: (path: string) => void }) {
       </div>
 
       <div className="ov-tiles hist-tiles">
-        <div className="card ov-tile"><span className="stat-num">{snaps.length}</span><span className="stat-label">snapshots kept</span></div>
+        <div className="card ov-tile"><span className="stat-num">{snaps.length}</span><span className="stat-label">snapshots · {bytes(stored)} on disk</span></div>
         <div className="card ov-tile"><span className="stat-num">{current!.files.toLocaleString()}</span><span className="stat-label">files at this point</span></div>
         <div className="card ov-tile"><span className="stat-num">{bytes(current!.bytes)}</span><span className="stat-label">corpus size then</span></div>
         <div className="card ov-tile"><span className="stat-num">{idx === 0 ? '—' : changed}</span><span className="stat-label">changes in this pass</span></div>
@@ -212,20 +224,26 @@ export function HistoryView({ onOpen }: { onOpen: (path: string) => void }) {
 
       <section className="card ov-list hist-rail" role="slider" aria-label="Snapshot" aria-valuenow={idx} aria-valuemin={0} aria-valuemax={snaps.length - 1}>
         <h3>Index passes</h3>
+        <p className="muted hist-stored">{snaps.length} kept · {bytes(stored)} on disk</p>
         {[...snaps].reverse().map((s) => {
           const i = snaps.indexOf(s)
           return (
-          <button
-            key={s.id}
-            className={`hist-tick${i === idx ? ' active' : ''}`}
-            onClick={() => setIdx(i)}
-            title={`${when(s.takenAt, true)} · ${s.files.toLocaleString()} files`}
-          >
-            <span className="hist-tick-label">{when(s.takenAt)}</span>
-            {i === snaps.length - 1 && <span className="hist-now"> now</span>}
-          </button>
+          <div key={s.id} className="hist-tick-row">
+            <button
+              className={`hist-tick${i === idx ? ' active' : ''}`}
+              onClick={() => setIdx(i)}
+              title={`${when(s.takenAt, true)} · ${s.files.toLocaleString()} files`}
+            >
+              <span className="hist-tick-label">{when(s.takenAt)}</span>
+              {i === snaps.length - 1 && <span className="hist-now"> now</span>}
+            </button>
+            <button className="hist-tick-del" title={`Delete this snapshot (${bytes(s.disk)})`} onClick={() => remove(s.id)}>×</button>
+          </div>
           )
         })}
+        {snaps.length > 10 && (
+          <button className="link-button hist-prune" onClick={() => pruneTo(10)}>Remove all but the last 10</button>
+        )}
       </section>
     </div>
   )
