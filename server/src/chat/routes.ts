@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify'
-import { GATEWAY_BASE, MAX_TOOL_ITERATIONS } from '../config.js'
+import { GATEWAY_BASE, MAX_TOOL_ITERATIONS, SIDECAR_ENDPOINT } from '../config.js'
 import { aiHealth, gatewayConfigured, isSidecarModel, listModels, listSidecarModels, sidecarConfigured, sidecarTarget, StreamedTurnError, streamTurn, WireMessage, WireToolCall } from './gateway.js'
 import { TOOL_CALLS, TOOL_SPECS, activeToolSpecs, commandFor, customToolSpecs, executeTool, expandSlashCommand, skillToolSpec } from './tools.js'
 import { systemPrompt } from './context.js'
@@ -303,6 +303,21 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
         context_window: m.context_window ?? m.max_model_len ?? undefined,
       }
     })
+    // A model served here and also registered on the platform arrives from
+    // both catalogs and would be offered twice. Keep the direct entry,
+    // which answers without the gateway hop, and drop the gateway's copy.
+    // Matching on the endpoint name when it is known keeps this from
+    // removing an identically named model that belongs to a different
+    // session; without it, the model id is the only thing to go on.
+    if (sidecar.length) {
+      const servedIds = new Set(sidecar.map((m: any) => String(m.id)))
+      models = models.filter((m: any) => {
+        const parts = /^session:[^:]+:([^/]+)\/(.+)$/.exec(String(m.id))
+        if (!parts) return true
+        return SIDECAR_ENDPOINT ? parts[1] !== SIDECAR_ENDPOINT : !servedIds.has(parts[2])
+      })
+    }
+
     // The model on this node goes in already labelled, so the mapping above
     // (which infers a provider for gateway entries) leaves it alone.
     models = [...models, ...sidecar.map((m: any) => {
