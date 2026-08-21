@@ -4,6 +4,7 @@ import fsp from 'node:fs/promises'
 import path from 'node:path'
 import { EXCLUDE_DIRS, GUFI_BIN, GUFI_INDEX, INDEX_BASE, KB_ROOT, PROJECT_ROOT, PYTHON_BIN } from './config.js'
 import { invalidateDbList } from './gufi.js'
+import { runPreExtract } from './preextract.js'
 import { invalidateContext } from './chat/context.js'
 import { effectiveSettings } from './settings.js'
 
@@ -44,18 +45,14 @@ let extractorCache: ExtractorReport[] | null = null
 
 export function extractorReport(): ExtractorReport[] {
   if (extractorCache) return extractorCache
-  const probe = (code: string): boolean => {
-    try { execFileSync(PYTHON_BIN, ['-c', code], { stdio: 'ignore', timeout: 15_000 }); return true }
-    catch { return false }
-  }
   const which = (bin: string): boolean => {
     try { execFileSync('sh', ['-c', `command -v ${bin}`], { stdio: 'ignore', timeout: 10_000 }); return true }
     catch { return false }
   }
+  // Office formats convert through downmark, which ships inside the server
+  // bundle, so they never depend on the host.
   extractorCache = [
-    { name: 'python-docx', available: probe('import docx'), covers: '.docx' },
-    { name: 'python-pptx', available: probe('import pptx'), covers: '.pptx' },
-    { name: 'openpyxl', available: probe('import openpyxl'), covers: '.xlsx' },
+    { name: 'downmark', available: true, covers: '.docx, .pptx, .xlsx, .doc' },
     { name: 'pdftotext', available: which('pdftotext'), covers: '.pdf' },
     { name: 'tesseract', available: which('tesseract'), covers: 'text inside images (OCR)' },
   ]
@@ -165,6 +162,8 @@ export function incrementalIndexDir(rel: string): Promise<{ ms: number }> {
       await fsp.rm(target, { recursive: true, force: true })
       await fsp.rename(built, target)
 
+      // Office documents go to Markdown first; enrich.py reuses the entries.
+      await runPreExtract({ kbRoot: KB_ROOT, cacheRoot: path.join(INDEX_BASE, 'extract'), subdir: cleaned }, m => console.warn(m))
       await run(PYTHON_BIN, [path.join(PROJECT_ROOT, 'indexer', 'enrich.py'),
         '--kb-root', KB_ROOT, '--index', GUFI_INDEX,
         '--extract-cache', path.join(INDEX_BASE, 'extract'), '--subdir', cleaned])
@@ -202,6 +201,7 @@ export function indexRootDb(): Promise<{ ms: number }> {
       const built = path.join(staging, path.basename(KB_ROOT), 'db.db')
       await fsp.mkdir(GUFI_INDEX, { recursive: true })
       await fsp.rename(built, path.join(GUFI_INDEX, 'db.db'))
+      await runPreExtract({ kbRoot: KB_ROOT, cacheRoot: path.join(INDEX_BASE, 'extract'), noRecurse: true }, m => console.warn(m))
       await run(PYTHON_BIN, [path.join(PROJECT_ROOT, 'indexer', 'enrich.py'),
         '--kb-root', KB_ROOT, '--index', GUFI_INDEX,
         '--extract-cache', path.join(INDEX_BASE, 'extract'), '--no-recurse'])
