@@ -11,8 +11,8 @@ MATCH queries never hit a missing table.
 Office documents normally arrive already converted: the server (and
 reindex.sh) run `server/dist/preextract.js`, which turns .docx/.pptx/.xlsx/
 .doc into Markdown through downmark and writes the cache entries this script
-reuses. The readers below are the fallback for whatever that pass could not
-read, and the only path for PDFs, OCR and image captions.
+reuses. The standard-library OOXML reader below is the last resort for a
+document that pass could not read; PDFs, OCR and image captions live here.
 """
 import argparse
 import os
@@ -40,10 +40,10 @@ MIN_IMAGE_BYTES = 8 * 1024  # skip icons and tiny assets
 def _ooxml_text(path: Path, members: str, break_tags: tuple) -> str:
     """Text out of an OOXML file with the standard library alone.
 
-    docx, pptx and xlsx are zipped XML, so the text is reachable without
-    python-docx, python-pptx or openpyxl. Clusters routinely have none of
-    them and no way to install them, and a Word document that indexes as
-    its filename is worse than a slightly rougher extraction.
+    docx, pptx and xlsx are zipped XML, so their text is reachable without
+    any library. This only runs for a document downmark could not convert
+    (see the module docstring): a rough extraction beats indexing a Word
+    document as its filename.
     """
     import re
     import zipfile
@@ -65,16 +65,7 @@ def _ooxml_text(path: Path, members: str, break_tags: tuple) -> str:
 
 
 def extract_docx(path: Path) -> str:
-    try:
-        from docx import Document  # type: ignore
-    except ImportError:
-        return _ooxml_text(path, r'word/document\.xml', ('</w:p>', '</w:tr>', '</w:tc>'))
-    doc = Document(str(path))
-    parts = [p.text for p in doc.paragraphs]
-    for table in doc.tables:
-        for row in table.rows:
-            parts.append('\t'.join(c.text for c in row.cells))
-    return '\n'.join(x for x in parts if x and x.strip())
+    return _ooxml_text(path, r'word/document\.xml', ('</w:p>', '</w:tr>', '</w:tc>'))
 
 
 # A PDF with almost no extractable text is a scan; below this many
@@ -154,34 +145,12 @@ def extract_pdf(path: Path) -> str:
 
 
 def extract_pptx(path: Path) -> str:
-    try:
-        from pptx import Presentation  # type: ignore
-    except ImportError:
-        return _ooxml_text(path, r'ppt/slides/slide\d+\.xml', ('</a:p>', '</a:t>'))
-    prs = Presentation(str(path))
-    parts = []
-    for slide in prs.slides:
-        for shape in slide.shapes:
-            if shape.has_text_frame:
-                parts.append(shape.text_frame.text)
-    return '\n'.join(x for x in parts if x and x.strip())
+    return _ooxml_text(path, r'ppt/slides/slide\d+\.xml', ('</a:p>', '</a:t>'))
 
 
 def extract_xlsx(path: Path) -> str:
-    try:
-        from openpyxl import load_workbook  # type: ignore
-    except ImportError:
-        # Shared strings hold most cell text; sheet XML holds the rest.
-        return _ooxml_text(path, r'xl/(sharedStrings|worksheets/sheet\d+)\.xml', ('</si>', '</row>', '</c>'))
-    wb = load_workbook(str(path), read_only=True, data_only=True)
-    parts = []
-    for ws in wb.worksheets:
-        parts.append(f'# sheet: {ws.title}')
-        for row in ws.iter_rows(values_only=True):
-            cells = [str(c) for c in row if c is not None]
-            if cells:
-                parts.append('\t'.join(cells))
-    return '\n'.join(parts)
+    # Shared strings hold most cell text; sheet XML holds the rest.
+    return _ooxml_text(path, r'xl/(sharedStrings|worksheets/sheet\d+)\.xml', ('</si>', '</row>', '</c>'))
 
 
 def gateway_key() -> str:

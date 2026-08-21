@@ -6,8 +6,8 @@
  * as an npm dependency) into `$INDEX_BASE/extract/<rel>.txt`. enrich.py
  * already reuses any cache entry at least as new as its source, so it picks
  * these up as-is and indexes them; a file downmark cannot read gets no entry
- * and falls through to enrich.py's own readers (python-docx et al., then a
- * standard-library OOXML pass). PDFs stay with pdftotext and OCR in
+ * and falls through to enrich.py's standard-library OOXML pass, the only
+ * reader left there for these formats. PDFs stay with pdftotext and OCR in
  * enrich.py; poppler is present for page previews regardless and downmark
  * has no OCR.
  *

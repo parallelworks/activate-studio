@@ -115,24 +115,25 @@ Stage: final
 
 %post
     # Fail the build on a failed step. An image that quietly lacks an
-    # extractor indexes Word files as their filename and says nothing,
-    # which is how the first attempt at this shipped: the apt line named a
-    # package bookworm does not have, so it installed none of them and the
-    # build still reported success.
+    # extractor indexes documents as their filename and says nothing, which
+    # is how the first attempt at this shipped: the apt line named a package
+    # bookworm does not have, so it installed none of them and the build
+    # still reported success.
     set -e
     export DEBIAN_FRONTEND=noninteractive
     # bookworm's python3 is 3.11, which satisfies the indexer's 3.10+ syntax.
-    # Debian carries docx and openpyxl; python-pptx is not packaged, so it
-    # comes from pip at build time, never at run time.
+    # Office documents convert through downmark inside the server bundle, so
+    # no Python document libraries are needed; poppler and tesseract cover
+    # PDFs and OCR, LibreOffice renders office pages for previews.
     apt-get update && apt-get install -y --no-install-recommends \
-        python3 python3-pip python3-docx python3-openpyxl \
+        python3 \
         attr poppler-utils tesseract-ocr curl ca-certificates \
         libreoffice-writer libreoffice-impress libreoffice-calc \
         fonts-liberation fonts-dejavu-core
-    pip3 install --no-cache-dir --break-system-packages python-pptx
     rm -rf /var/lib/apt/lists/*
-    # Prove it before the image is sealed.
-    python3 -c "import docx, pptx, openpyxl; print('extractors ok: docx, pptx, openpyxl')"
+    # Prove the extractors exist before the image is sealed.
+    command -v pdftotext && command -v tesseract && command -v soffice \
+        && ls /app/server/node_modules/@giraffesyo/downmark/dist/downmark.wasm
     cat > /app/start.sh << 'START'
 #!/bin/sh
 # The index lives on the bind-mounted data directory, never in the image;

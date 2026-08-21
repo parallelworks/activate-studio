@@ -45,22 +45,14 @@ let extractorCache: ExtractorReport[] | null = null
 
 export function extractorReport(): ExtractorReport[] {
   if (extractorCache) return extractorCache
-  const probe = (code: string): boolean => {
-    try { execFileSync(PYTHON_BIN, ['-c', code], { stdio: 'ignore', timeout: 15_000 }); return true }
-    catch { return false }
-  }
   const which = (bin: string): boolean => {
     try { execFileSync('sh', ['-c', `command -v ${bin}`], { stdio: 'ignore', timeout: 10_000 }); return true }
     catch { return false }
   }
   // Office formats convert through downmark, which ships inside the server
-  // bundle, so they never depend on the host; the Python readers remain as
-  // the fallback for a document downmark cannot read.
+  // bundle, so they never depend on the host.
   extractorCache = [
     { name: 'downmark', available: true, covers: '.docx, .pptx, .xlsx, .doc' },
-    { name: 'python-docx (fallback)', available: probe('import docx'), covers: '.docx' },
-    { name: 'python-pptx (fallback)', available: probe('import pptx'), covers: '.pptx' },
-    { name: 'openpyxl (fallback)', available: probe('import openpyxl'), covers: '.xlsx' },
     { name: 'pdftotext', available: which('pdftotext'), covers: '.pdf' },
     { name: 'tesseract', available: which('tesseract'), covers: 'text inside images (OCR)' },
   ]
