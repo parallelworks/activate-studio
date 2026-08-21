@@ -4,6 +4,7 @@ import zlib from 'node:zlib'
 import type { FastifyInstance } from 'fastify'
 import { GUFI_INDEX, INDEX_BASE, gufiAvailable } from './config.js'
 import { queryPerDir } from './gufi.js'
+import { KbError } from './kb.js'
 
 /**
  * Corpus history: a timeline of what the knowledge base held, captured
@@ -28,7 +29,7 @@ const HISTORY_DIR = path.join(INDEX_BASE, 'history')
 const KEEP = Number(process.env.HISTORY_KEEP ?? 30)
 
 export interface Entry { path: string; size: number; mtime: number; inode: number }
-export interface SnapshotMeta { id: string; takenAt: number; files: number; bytes: number }
+export interface SnapshotMeta { id: string; takenAt: number; files: number; bytes: number; disk: number }
 interface Snapshot extends SnapshotMeta { entries: Entry[] }
 
 function kbRel(p: string): string {
@@ -53,7 +54,10 @@ export function listSnapshots(): SnapshotMeta[] {
       const id = n.replace(/\.json\.gz$/, '')
       try {
         const s = readSnapshot(id)
-        return { id, takenAt: s.takenAt, files: s.files, bytes: s.bytes }
+        // bytes is the corpus size the snapshot describes; disk is what the
+        // snapshot itself costs to keep, which is what a cleanup decision
+        // needs to see.
+        return { id, takenAt: s.takenAt, files: s.files, bytes: s.bytes, disk: fs.statSync(fileFor(id)).size }
       } catch {
         return null
       }
@@ -106,12 +110,18 @@ export async function capture(): Promise<SnapshotMeta | null> {
     takenAt,
     files: entries.length,
     bytes: entries.reduce((n, e) => n + e.size, 0),
+    disk: 0,
     entries,
   }
   ensureDir()
   fs.writeFileSync(fileFor(snap.id), zlib.gzipSync(Buffer.from(JSON.stringify(snap))))
   prune()
-  return { id: snap.id, takenAt: snap.takenAt, files: snap.files, bytes: snap.bytes }
+  return { id: snap.id, takenAt: snap.takenAt, files: snap.files, bytes: snap.bytes, disk: fs.statSync(fileFor(snap.id)).size }
+}
+
+function deleteSnapshot(id: string): void {
+  fs.rmSync(fileFor(id), { force: true })
+  if (cached?.id === id) cached = null
 }
 
 function prune(): void {
@@ -225,8 +235,8 @@ export function diff(fromId: string, toId: string): Diff {
   const removed = removedRaw.filter(e => !e.inode || removedByInode.has(e.inode))
 
   return {
-    from: { id: a.id, takenAt: a.takenAt, files: a.files, bytes: a.bytes },
-    to: { id: b.id, takenAt: b.takenAt, files: b.files, bytes: b.bytes },
+    from: { id: a.id, takenAt: a.takenAt, files: a.files, bytes: a.bytes, disk: fs.statSync(fileFor(a.id)).size },
+    to: { id: b.id, takenAt: b.takenAt, files: b.files, bytes: b.bytes, disk: fs.statSync(fileFor(b.id)).size },
     added: added.slice(0, LIST_CAP),
     removed: removed.slice(0, LIST_CAP),
     modified: modified.slice(0, LIST_CAP),
@@ -240,7 +250,30 @@ export async function historyRoutes(app: FastifyInstance): Promise<void> {
     // A visit is the moment we know indexing has finished, so it is also
     // when a missed snapshot gets taken.
     await captureIfStale().catch(() => null)
-    return { available: gufiAvailable(), snapshots: listSnapshots(), keep: KEEP }
+    const snapshots = listSnapshots()
+    return { available: gufiAvailable(), snapshots, keep: KEEP, storedBytes: snapshots.reduce((n, s) => n + s.disk, 0) }
+  })
+
+  // Snapshots are only a census, so deleting one loses nothing that a
+  // fresh index pass cannot re-record; the id is numeric by construction
+  // and validated so the delete cannot be steered outside the history
+  // directory. Deleting the newest snapshot of a live corpus just means
+  // the next visit captures a fresh one, which is the correct outcome.
+  app.delete('/api/kb/history/snapshot', async req => {
+    const { id } = req.query as { id?: string }
+    if (!id || !/^\d+$/.test(id)) throw new KbError(400, 'snapshot id required')
+    deleteSnapshot(id)
+    const snapshots = listSnapshots()
+    return { snapshots, storedBytes: snapshots.reduce((n, s) => n + s.disk, 0) }
+  })
+
+  app.post('/api/kb/history/prune', async req => {
+    const { keep } = (req.body ?? {}) as { keep?: number }
+    const n = Math.max(1, Math.min(500, Number(keep) || 10))
+    const all = listSnapshots()
+    for (const s of all.slice(0, Math.max(0, all.length - n))) deleteSnapshot(s.id)
+    const snapshots = listSnapshots()
+    return { snapshots, removed: all.length - snapshots.length, storedBytes: snapshots.reduce((n2, s) => n2 + s.disk, 0) }
   })
 
   app.post('/api/kb/history/capture', async () => {
