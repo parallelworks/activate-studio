@@ -17,8 +17,8 @@ importers:
         specifier: ^8.0.0
         version: 8.3.0
       '@giraffesyo/downmark':
-        specifier: 0.6.1
-        version: 0.6.1
+        specifier: 0.7.0
+        version: 0.7.0
       '@parallelworks/workflow-parser':
         specifier: ^0.1.0
         version: 0.1.0
@@ -551,8 +551,8 @@ packages:
   '@fontsource-variable/geist@5.3.0':
     resolution: {integrity: sha512-j0m+vLQuG5XAYoHtGCVu0spvlGreR3EzpECUVzkFmI1mTVnAO38l/NEPDCFgZ177JxzYJCLSmTQibIiYPilGrA==}
 
-  '@giraffesyo/downmark@0.6.1':
-    resolution: {integrity: sha512-rccP8cPouMYIEDJnmgzB1mfcAX10/AFqrKWfHZIOf4Nzd4VgXSLpTQTiyqSBBqKKx2q58WnVnFGwt9Nyn1O04g==}
+  '@giraffesyo/downmark@0.7.0':
+    resolution: {integrity: sha512-kwzg9CLdH4bs61qdygDRr1tWe22zwDV3VtAKmMITTgoETV+2xbFnoVfSLk3/NADfaikkPNFG6KoRjurvTBkORg==}
     engines: {node: '>=18'}
 
   '@headlessui/react@2.2.10':
@@ -2706,7 +2706,7 @@ snapshots:
 
   '@fontsource-variable/geist@5.3.0': {}
 
-  '@giraffesyo/downmark@0.6.1': {}
+  '@giraffesyo/downmark@0.7.0': {}
 
   '@headlessui/react@2.2.10(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
     dependencies:
