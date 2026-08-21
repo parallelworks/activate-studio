@@ -51,6 +51,8 @@ export interface PreExtractSummary {
   scanned: number
   converted: number
   reused: number
+  /** Converted, but downmark reported content it could not carry over. */
+  warned: number
   failed: number
   ms: number
 }
@@ -74,7 +76,7 @@ export async function preExtract(opts: PreExtractOptions): Promise<PreExtractSum
   const { convert, version } = await import('@giraffesyo/downmark')
   const ver = await version()
   const refreshAll = (await readMarker(opts.cacheRoot)) !== ver
-  const summary: PreExtractSummary = { scanned: 0, converted: 0, reused: 0, failed: 0, ms: 0 }
+  const summary: PreExtractSummary = { scanned: 0, converted: 0, reused: 0, warned: 0, failed: 0, ms: 0 }
 
   const sub = (opts.subdir ?? '').replace(/^\/+|\/+$/g, '')
   const start = sub ? path.join(opts.kbRoot, sub) : opts.kbRoot
@@ -105,9 +107,17 @@ export async function preExtract(opts: PreExtractOptions): Promise<PreExtractSum
       if (st.size > MAX_INPUT_BYTES) { summary.failed++; log(`preextract: ${childRel}: ${st.size} bytes exceeds the converter's input limit`); continue }
       try {
         const data = await fsp.readFile(abs)
-        const { markdown } = await convert(data, { filename: e.name })
+        const { markdown, warnings } = await convert(data, { filename: e.name })
         const text = markdown.slice(0, MAX_TEXT)
         if (!text.trim()) { summary.failed++; log(`preextract: ${childRel}: no text`); continue }
+        // A conversion can succeed and still lose content; say what, so a
+        // document that indexes short is explained in the log rather than
+        // discovered by a reader. The Markdown is still the best text we have.
+        if (warnings.length) {
+          summary.warned++
+          for (const w of warnings.slice(0, 5)) log(`preextract: ${childRel}: ${w.code}${w.location ? ` (${w.location})` : ''}: ${w.message}`)
+          if (warnings.length > 5) log(`preextract: ${childRel}: ${warnings.length - 5} more warnings`)
+        }
         await fsp.mkdir(path.dirname(cacheFile), { recursive: true })
         const tmp = `${cacheFile}.${process.pid}.tmp`
         await fsp.writeFile(tmp, text)
