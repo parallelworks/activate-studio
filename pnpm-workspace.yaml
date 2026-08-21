@@ -6,4 +6,6 @@ allowBuilds:
 minimumReleaseAge: 1440
 minimumReleaseAgeExclude:
   - '@parallelworks/*'
+  # Authored in-house as well; new releases are consumed the day they ship.
+  - '@giraffesyo/downmark'
 engineStrict: true
