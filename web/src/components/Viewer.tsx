@@ -153,9 +153,11 @@ export function Viewer({ path, onDeleted }: {
   const isJson = JSON_SUFFIXES.includes(suffix)
   const isYaml = YAML_SUFFIXES.includes(suffix)
   const isStructured = (isJson || isYaml) && isText
-  // Office documents are extracted to Markdown (downmark), so their indexed
-  // text renders; PDFs and everything else extract to flat text.
-  const extractedMarkdown = file.source === 'extracted' && ['.docx', '.pptx', '.xlsx', '.doc'].includes(suffix)
+  // Extracted documents are Markdown wherever downmark converted them,
+  // PDFs included; a PDF that fell back to pdftotext is plain text, which
+  // renders as itself. The alternative — a <pre> — shows a converted file's
+  // tables and its OCR marker as literal syntax.
+  const extractedMarkdown = file.source === 'extracted' && ['.docx', '.pptx', '.xlsx', '.doc', '.pdf'].includes(suffix)
 
   const doDelete = async () => {
     setDeleting(true)
