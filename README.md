@@ -33,6 +33,7 @@ flowchart LR
 - `server/` Fastify + TypeScript: KB API, hybrid search, chat tool loop against an OpenAI-compatible model endpoint, upload and URL ingestion, incremental indexing and background sweep, structured queries.
 - `web/` Vite React SPA: Chat (full-canvas `@parallelworks/ai-chat`), Library, Search, Query, Help.
 - `indexer/` GUFI toolchain build, full rebuild, enrichment (text extraction, OCR, vision captions), embeddings.
+- `testdata/` synthetic corpus and the end-to-end extraction test (`pnpm test`).
 - `deploy/` optional ACTIVATE session serving.
 - `docs/` architecture documentation and the in-app help content.
 

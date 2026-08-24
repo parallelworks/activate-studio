@@ -123,6 +123,7 @@ The corpus and the index live on shared storage; everything derived (node_module
 ## 12. Runbook
 
 - Full rebuild: `indexer/reindex.sh` (index plus enrichment plus embeddings). `SKIP_EMBED=1` to skip vectors.
+- Extraction is covered end to end by `pnpm test`, which runs the real pipeline over `testdata/corpus` and asserts on the text that reaches the fts5 tables; see `testdata/README.md`.
 - GUFI toolchain: `indexer/setup_gufi.sh` builds from source and fetches the embedding model.
 - Serve as a platform session: `deploy/run_endpoint.sh` wraps `pw endpoints run`.
 - Web rebuilds do not need a server restart (static assets are served per request). Server code changes need a restart of the endpoint process, which owns the session: killing the node process alone deletes the session.
@@ -179,4 +180,9 @@ deploy/
   workflow.yaml    platform workflow: github, bundle, or container deployment
   app.def          Apptainer image recipe
   run_endpoint.sh  serve as a platform session
+testdata/
+  corpus/          synthetic documents covering every extracted format
+  extraction.test.mjs  end-to-end pipeline test (pnpm test)
+  expectations.json    what each file's indexed text must contain
+  make-corpus.py   regenerates the fixtures deterministically
 ```
