@@ -131,9 +131,18 @@ Stage: final
         libreoffice-writer libreoffice-impress libreoffice-calc \
         fonts-liberation fonts-dejavu-core
     rm -rf /var/lib/apt/lists/*
-    # Prove the extractors exist before the image is sealed.
+    # Prove the extractors exist before the image is sealed. The native
+    # binary matters most: without it PDFs never reach downmark and OCR
+    # cannot run at all, and the image would still build and start.
     command -v pdftotext && command -v tesseract && command -v soffice \
         && ls /app/server/node_modules/@giraffesyo/downmark/dist/downmark.wasm
+    node --input-type=module -e "
+      const { binaryPath } = await import('/app/server/node_modules/@giraffesyo/downmark/dist/index.js')
+      const bin = binaryPath()
+      if (!bin) { console.error('no native downmark binary in the image: PDFs and OCR would silently fall back'); process.exit(1) }
+      const { execFileSync } = await import('node:child_process')
+      console.log('downmark binary ok:', bin, execFileSync(bin, ['-version']).toString().trim())
+    "
     cat > /app/start.sh << 'START'
 #!/bin/sh
 # The index lives on the bind-mounted data directory, never in the image;

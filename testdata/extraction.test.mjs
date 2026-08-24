@@ -86,6 +86,13 @@ async function preextract({ kb, cache }, env = {}) {
   return { summary: JSON.parse(stdout.trim().split('\n').pop()), log: stderr }
 }
 
+async function preextractScoped({ kb, cache }, subdir) {
+  const { stdout, stderr } = await execFileAsync(process.execPath,
+    [PREEXTRACT, '--kb-root', kb, '--extract-cache', cache, '--subdir', subdir],
+    { maxBuffer: 32 * 1024 * 1024, timeout: 10 * 60_000 })
+  return { summary: JSON.parse(stdout.trim().split('\n').pop()), log: stderr }
+}
+
 async function enrich({ kb, index, cache }) {
   await execFileAsync(PYTHON, [ENRICH, '--kb-root', kb, '--index', index, '--extract-cache', cache],
     { maxBuffer: 32 * 1024 * 1024, timeout: 10 * 60_000 })
@@ -137,6 +144,7 @@ test('a file whose extension lies is reported, not fatal', { skip: !PYTHON && 'n
 test('a scanned PDF is read through OCR and marked as such', {
   skip: (!PYTHON && 'no python 3.10+ on PATH') || (!NATIVE && 'no native downmark binary') || (!TESSERACT && 'tesseract not installed'),
 }, () => {
+  assert.ok(indexed, 'the pipeline run failed; see the failure above')
   const text = indexed['scans/invoice-scan.pdf']
   assert.ok(text, 'the scan produced no indexed text at all')
   assert.match(text, /includes OCR text/, 'OCR text must be marked so consumers can weigh it differently')
@@ -146,6 +154,7 @@ test('a scanned PDF is read through OCR and marked as such', {
 test('a scan under a typed header is OCR\'d too (the thin policy)', {
   skip: (!PYTHON && 'no python 3.10+ on PATH') || (!NATIVE && 'no native downmark binary') || (!TESSERACT && 'tesseract not installed'),
 }, () => {
+  assert.ok(indexed, 'the pipeline run failed; see the failure above')
   const text = indexed['scans/form-mixed.pdf']
   assert.ok(text, 'the mixed document produced no indexed text at all')
   // The header comes from the content stream, so a textless-only policy
@@ -159,6 +168,7 @@ test('a scan under a typed header is OCR\'d too (the thin policy)', {
 test('text inside an image is indexed', {
   skip: (!PYTHON && 'no python 3.10+ on PATH') || (!TESSERACT && 'tesseract not installed'),
 }, () => {
+  assert.ok(indexed, 'the pipeline run failed; see the failure above')
   const text = indexed['images/diagram.png']
   assert.ok(text, 'the image produced no indexed text at all')
   assert.match(text, /DIAGRAM LABEL 3308/, 'OCR should have read the label')
@@ -172,6 +182,20 @@ test('a second pass reuses the cache instead of reconverting', { skip: !PYTHON &
   assert.equal(second.summary.converted, 0, 'the second pass reconverted files it had already cached')
   assert.equal(second.summary.reused, first.summary.converted + first.summary.reused,
     'every previously converted file should have been reused')
+})
+
+test('a scoped pass reuses the cache too (what the server actually runs)', { skip: !PYTHON && 'no python 3.10+ on PATH' }, async () => {
+  const dirs = await stage('reuse-scoped')
+  // The server always indexes a subtree or the root db, never the whole
+  // tree, so whole-tree reuse passing says nothing about the real path:
+  // a version marker that only a full pass could write left every scoped
+  // pass reconverting its subtree, OCR and all, on every upload.
+  const first = await preextractScoped(dirs, 'docs')
+  const second = await preextractScoped(dirs, 'docs')
+  assert.ok(first.summary.converted > 0, 'the first scoped pass should convert something')
+  assert.equal(second.summary.converted, 0,
+    'the second scoped pass reconverted its subtree: is the version marker gating reuse again?')
+  assert.equal(second.summary.reused, first.summary.converted)
 })
 
 test('without the native binary, PDFs fall back to enrich.py', {

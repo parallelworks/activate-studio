@@ -32,6 +32,7 @@ import fs from 'node:fs'
 import fsp from 'node:fs/promises'
 import path from 'node:path'
 import { spawnSync } from 'node:child_process'
+import { createRequire } from 'node:module'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { binaryPath } from '@giraffesyo/downmark'
 
@@ -90,6 +91,21 @@ const DEFAULT_EXCLUDE = new Set([
   '.cache', '.pytest_cache', 'screenshots', '.ipynb_checkpoints',
 ])
 
+/** The converter version, read from the package rather than the library.
+ *  downmark's version() starts the wasm runtime even where the native
+ *  binary does all the work, so asking it here would make a trimmed or
+ *  unreadable wasm take down a pipeline that does not otherwise need it —
+ *  and would pay a 10 MB load on every pass to compute a cache marker. */
+async function converterVersion(): Promise<string> {
+  try {
+    const pkg = createRequire(import.meta.url).resolve('@giraffesyo/downmark/package.json')
+    const { version } = JSON.parse(await fsp.readFile(pkg, 'utf8'))
+    if (typeof version === 'string' && version) return version
+  } catch { /* fall through to asking the library */ }
+  const { version } = await import('@giraffesyo/downmark')
+  return version()
+}
+
 async function readMarker(cacheRoot: string): Promise<string> {
   try { return (await fsp.readFile(path.join(cacheRoot, VERSION_MARKER), 'utf8')).trim() } catch { return '' }
 }
@@ -102,8 +118,13 @@ export async function preExtract(opts: PreExtractOptions): Promise<PreExtractSum
   const log = opts.log ?? (() => {})
   const exclude = opts.excludeDirs ?? DEFAULT_EXCLUDE
   const { convert, version } = await import('@giraffesyo/downmark')
-  const ver = await version()
-  const refreshAll = (await readMarker(opts.cacheRoot)) !== ver
+  const ver = await converterVersion()
+  // Only a whole-tree pass can honour a version refresh, because only a
+  // whole-tree pass can then record that the tree is current. Letting a
+  // scoped pass set it meant the marker was never written and every scoped
+  // pass reconverted its whole subtree — re-running OCR on every upload.
+  const fullScope = !opts.subdir && !opts.noRecurse
+  const refreshAll = fullScope && (await readMarker(opts.cacheRoot)) !== ver
   const native = downmarkNative()
   // "thin" also reads a scanned body under a typed header, the case a
   // textless policy misses; pages with a real text layer are left alone.
@@ -118,7 +139,11 @@ export async function preExtract(opts: PreExtractOptions): Promise<PreExtractSum
 
   const sub = (opts.subdir ?? '').replace(/^\/+|\/+$/g, '')
   const start = sub ? path.join(opts.kbRoot, sub) : opts.kbRoot
-  if (!path.resolve(start).startsWith(path.resolve(opts.kbRoot))) throw new Error('subdir escapes the knowledge base')
+  const kbResolved = path.resolve(opts.kbRoot)
+  const startResolved = path.resolve(start)
+  if (startResolved !== kbResolved && !startResolved.startsWith(kbResolved + path.sep)) {
+    throw new Error('subdir escapes the knowledge base')
+  }
 
   const walk = async (dir: string, rel: string): Promise<void> => {
     let entries
@@ -170,8 +195,9 @@ export async function preExtract(opts: PreExtractOptions): Promise<PreExtractSum
   }
   await walk(start, sub)
 
-  // Only a pass over the whole tree proves every entry is current.
-  if (refreshAll && !sub && !opts.noRecurse) {
+  // Only a pass over the whole tree proves every entry is current, which
+  // refreshAll now implies.
+  if (refreshAll) {
     await fsp.mkdir(opts.cacheRoot, { recursive: true })
     await fsp.writeFile(path.join(opts.cacheRoot, VERSION_MARKER), ver + '\n')
   }
@@ -197,7 +223,10 @@ export function runPreExtract(opts: Omit<PreExtractOptions, 'log' | 'excludeDirs
     child.stdout?.on('data', d => { out += d })
     child.stderr?.on('data', d => { err += d })
     child.on('error', e => { log(`preextract: ${e.message}`); resolve(null) })
-    child.on('exit', code => {
+    // 'close' rather than 'exit': with piped stdio, 'exit' can arrive before
+    // the pipes have drained, which silently truncated the warnings the
+    // child had just written and left the summary unparseable.
+    child.on('close', code => {
       for (const line of err.split('\n')) if (line.trim()) log(line.trim())
       if (code !== 0) { log(`preextract: exited ${code}`); resolve(null); return }
       try { resolve(JSON.parse(out.trim().split('\n').pop() ?? '')) } catch { resolve(null) }
@@ -223,7 +252,9 @@ const invokedDirectly = process.argv[1] && import.meta.url === pathToFileURL(pat
 if (invokedDirectly) {
   let opts: PreExtractOptions
   try { opts = parseArgs(process.argv.slice(2)) } catch (e) { console.error(String((e as Error).message)); process.exit(2) }
+  // Setting exitCode rather than calling process.exit: stdout to a pipe is
+  // asynchronous, and exiting immediately after the write can cut it off.
   preExtract({ ...opts!, log: m => console.error(m) })
-    .then(s => { console.log(JSON.stringify(s)); process.exit(0) })
-    .catch(e => { console.error(`preextract: ${String((e as Error).message ?? e)}`); process.exit(1) })
+    .then(s => { console.log(JSON.stringify(s)); process.exitCode = 0 })
+    .catch(e => { console.error(`preextract: ${String((e as Error).message ?? e)}`); process.exitCode = 1 })
 }
