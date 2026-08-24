@@ -58,8 +58,9 @@ query surfaces answer with empty results and a note until an index
 exists. Document
 extraction and previews use whatever tools are present: `brew install
 --cask libreoffice` provides `soffice` for DOCX/PPTX previews, and
-Word, PowerPoint and Excel files extract to Markdown through
-`@giraffesyo/downmark`, bundled with the server, so they need nothing extra. The Apptainer container build below is
+Word, PowerPoint, Excel and PDF files extract to Markdown through
+`@giraffesyo/downmark`, bundled with the server, so they need nothing extra
+(tesseract adds OCR for scanned pages). The Apptainer container build below is
 Linux-only.
 
 ## Container build
