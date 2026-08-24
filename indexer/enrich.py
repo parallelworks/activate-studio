@@ -320,10 +320,10 @@ def main() -> int:
                     if cacheable and cache_file.exists() and cache_file.stat().st_mtime >= fpath.stat().st_mtime:
                         text = cache_file.read_text(errors='replace')
                         if suffix == '.pdf':
-                            # A pre-extracted PDF with a typed header over a
-                            # scanned body has text, so downmark did not OCR
-                            # it; apply the same thin-text rule as a fresh
-                            # extraction and keep the result.
+                            # downmark's thin policy OCRs scans itself; a
+                            # thin cache entry without its marker means the
+                            # host had no tesseract when it was written, so
+                            # retry here and keep the result.
                             thick = ocr_if_thin(fpath, text)
                             if thick != text:
                                 text = thick

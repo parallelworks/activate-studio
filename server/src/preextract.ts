@@ -15,8 +15,8 @@
  * host has it, with downmark marking the pages OCR filled in. On a host
  * running the wasm (no platform package) PDFs are left to enrich.py, whose
  * pdftotext + OCR path remains the fallback either way; enrich.py also
- * re-checks a cached PDF whose text is thin for its page count, since
- * downmark OCRs only pages with no text at all.
+ * re-checks a cached PDF whose text is thin for its page count, which
+ * matters only for entries written while tesseract was not installed.
  *
  * Markdown rather than flat text because the downstream consumers are the
  * chat model, full-text snippets, and the viewer: headings, tables and slide
@@ -105,8 +105,10 @@ export async function preExtract(opts: PreExtractOptions): Promise<PreExtractSum
   const ver = await version()
   const refreshAll = (await readMarker(opts.cacheRoot)) !== ver
   const native = downmarkNative()
+  // "thin" also reads a scanned body under a typed header, the case a
+  // textless policy misses; pages with a real text layer are left alone.
   const ocr = native && tesseractAvailable()
-    ? { engine: 'tesseract' as const, maxPages: OCR_MAX_PAGES, pageTimeoutMs: OCR_PAGE_TIMEOUT_MS, timeoutMs: OCR_TIMEOUT_MS }
+    ? { engine: 'tesseract' as const, policy: 'thin' as const, maxPages: OCR_MAX_PAGES, pageTimeoutMs: OCR_PAGE_TIMEOUT_MS, timeoutMs: OCR_TIMEOUT_MS }
     : undefined
   const handles = (name: string): boolean => {
     const ext = path.extname(name).toLowerCase()
