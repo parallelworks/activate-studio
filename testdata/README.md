@@ -6,8 +6,10 @@ shows what it broke instead of being discovered by a reader who cannot find
 a document they know is there.
 
 ```sh
-pnpm test                      # builds the server, then runs the suite
-node --test testdata/extraction.test.mjs   # if the server is already built
+pnpm test                      # builds the server, then runs both suites
+node --test testdata/extraction.test.mjs   # converters and the index text
+node --test testdata/server.test.mjs       # the server's own indexing path
+node testdata/check-packaging.mjs DIR      # a `pnpm deploy` tree can convert
 ```
 
 ## What it runs
@@ -54,6 +56,18 @@ Two behaviours are also asserted directly: a second pass reuses the cache
 instead of reconverting, and with `DOWNMARK_FORCE_WASM=1` (a platform with
 no native binary) PDFs fall through to `enrich.py`'s pdftotext path while
 Office documents still convert.
+
+`server.test.mjs` boots the real server against a throwaway knowledge base,
+indexes a directory through `POST /api/index/dir`, and reads the document
+back through the API the viewer uses — covering the call sites in
+`indexing.ts` that the converter tests never reach. `gufi_dir2index` is
+stubbed (`fake-gufi/`), since GUFI is a metadata indexer, does not build on
+macOS, and is not the subject; everything else is the real server.
+
+`check-packaging.mjs` asserts that what `pnpm deploy --prod --legacy`
+produces can still convert: the native binary resolves, is executable, and
+runs, and the wasm sits where `deploy/app.def`'s proof step looks for it.
+CI runs it, because that tree — not the workspace — is what ships.
 
 Tests skip with a stated reason when a dependency is absent — tesseract for
 OCR, python 3.10+ for the indexing half — so a bare checkout still verifies

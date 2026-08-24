@@ -31,3 +31,11 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - run: pnpm test
+
+      # The container and the bundle ship what `pnpm deploy` produces, not
+      # the workspace. This is where the native binary would go missing or
+      # lose its executable bit, and the app would still start.
+      - name: check the deployed server tree
+        run: |
+          pnpm --filter @activate-studio/server --prod deploy --legacy /tmp/deploy-check
+          node testdata/check-packaging.mjs /tmp/deploy-check

@@ -785,6 +785,14 @@ jobs:
           fi
           export KB_ROOT="${{ inputs.kb_settings.kb_root }}"
           export GUFI_BIN="$PWD/gufi-install/bin"
+          # Each step is its own shell, so the PATH pull_software exported is
+          # gone. Document conversion runs as a Node CLI: without this, a
+          # resource whose only Node is the staged runtime indexes Word,
+          # PowerPoint and Excel files with the fallback reader and says so
+          # only in passing.
+          if [ -x node-runtime/bin/node ]; then
+            PATH="$PWD/node-runtime/bin:$PATH"; export PATH
+          fi
           export INDEX_BASE="${{ inputs.kb_settings.index_base }}"
           [ -n "$INDEX_BASE" ] || INDEX_BASE="$PWD/app/index"
           export INDEX_BASE
