@@ -43,7 +43,10 @@ if [ -f "$PREEXTRACT" ] && command -v "$NODE_BIN" >/dev/null 2>&1; then
   "$NODE_BIN" "$PREEXTRACT" --kb-root "$KB_ROOT" --extract-cache "$INDEX_BASE/extract" \
     || echo "WARNING: office pre-extraction failed; enrich.py uses its own readers"
 else
-  echo "server/dist/preextract.js or node not found; enrich.py uses its own office readers"
+  echo "WARNING: no node or server/dist/preextract.js at $PREEXTRACT."
+  echo "WARNING: Word, PowerPoint and Excel files will be indexed by the"
+  echo "WARNING: standard-library fallback reader, which loses tables and"
+  echo "WARNING: headings, and PDFs by pdftotext alone. Build the server."
 fi
 
 "$PYTHON_BIN" "$PROJECT_ROOT/indexer/enrich.py" --kb-root "$KB_ROOT" \
