@@ -14,6 +14,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
  */
 
 interface Snap { id: string; takenAt: number; files: number; bytes: number; disk: number }
+interface Check { at: number }
 interface LevelDir { name: string; path: string; files: number; bytes: number }
 interface LevelFile { name: string; path: string; size: number; mtime: number }
 interface Level { available: boolean; dir?: string; dirs?: LevelDir[]; files?: LevelFile[]; totals?: { files: number; bytes: number } }
@@ -43,6 +44,7 @@ function when(ts: number, long = false): string {
 export function HistoryView({ onOpen }: { onOpen: (path: string) => void }) {
   const [snaps, setSnaps] = useState<Snap[] | null>(null)
   const [stored, setStored] = useState(0)
+  const [checks, setChecks] = useState<Check[]>([])
   const [idx, setIdx] = useState(0)
   const [dir, setDir] = useState('')
   const [level, setLevel] = useState<Level | null>(null)
@@ -51,10 +53,11 @@ export function HistoryView({ onOpen }: { onOpen: (path: string) => void }) {
 
   const load = useCallback(() => fetch('/api/kb/history')
     .then(r => r.json())
-    .then((d: { snapshots?: Snap[]; storedBytes?: number }) => {
+    .then((d: { snapshots?: Snap[]; storedBytes?: number; checks?: Check[] }) => {
       const list = d.snapshots ?? []
       setSnaps(list)
       setStored(d.storedBytes ?? 0)
+      setChecks(d.checks ?? [])
       setIdx(Math.max(0, list.length - 1))
     })
     .catch(() => setSnaps([])), [])
@@ -225,6 +228,15 @@ export function HistoryView({ onOpen }: { onOpen: (path: string) => void }) {
       <section className="card ov-list hist-rail" role="slider" aria-label="Snapshot" aria-valuenow={idx} aria-valuemin={0} aria-valuemax={snaps.length - 1}>
         <h3>Index passes</h3>
         <p className="muted hist-stored">{snaps.length} kept · {bytes(stored)} on disk</p>
+        {/* Days the index was examined and found unchanged, shown above
+            the snapshots so a quiet timeline reads as verified rather
+            than as nothing watching. Only checks newer than the latest
+            snapshot are informative; older ones are implied by it. */}
+        {checks.filter(c => c.at > (snaps[snaps.length - 1]?.takenAt ?? 0)).reverse().map(c => (
+          <span key={c.at} className="hist-check" title="The index was examined and nothing had changed.">
+            <span className="hist-tick-label">{when(c.at)}</span> · checked, no change
+          </span>
+        ))}
         {[...snaps].reverse().map((s) => {
           const i = snaps.indexOf(s)
           return (
