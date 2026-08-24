@@ -131,12 +131,49 @@ function prune(): void {
   }
 }
 
-/** Capture when the index has been rebuilt since the last snapshot. */
+/* ---- liveness checks: proof the system looked, without a census ---- */
+
+const CHECKS_FILE = path.join(HISTORY_DIR, 'checks.jsonl')
+const CHECKS_KEEP = 60
+
+export interface Check { at: number }
+
+export function listChecks(): Check[] {
+  try {
+    return fs.readFileSync(CHECKS_FILE, 'utf8').split('\n').filter(Boolean)
+      .map(l => JSON.parse(l) as Check)
+  } catch {
+    return []
+  }
+}
+
+/**
+ * A timeline with no new points is ambiguous: the corpus may be quiet, or
+ * nothing may be checking it. A check entry is a timestamp recorded when
+ * the index was examined and found unchanged, at most one per calendar
+ * day, so quiet days read as "verified unchanged" instead of as silence.
+ * It costs a line of JSON where a snapshot costs a census.
+ */
+function recordCheck(): void {
+  const now = new Date()
+  const checks = listChecks()
+  const last = checks[checks.length - 1]
+  if (last && new Date(last.at * 1000).toDateString() === now.toDateString()) return
+  ensureDir()
+  const kept = [...checks, { at: Math.floor(now.getTime() / 1000) }].slice(-CHECKS_KEEP)
+  fs.writeFileSync(CHECKS_FILE, kept.map(c => JSON.stringify(c)).join('\n') + '\n')
+}
+
+/** Capture when the index has been rebuilt since the last snapshot; when
+ *  it has not, leave the daily proof-of-life marker instead. */
 export async function captureIfStale(): Promise<SnapshotMeta | null> {
   if (!gufiAvailable()) return null
   const all = listSnapshots()
   const last = all[all.length - 1]
-  if (last && indexMtime() <= last.takenAt) return null
+  if (last && indexMtime() <= last.takenAt) {
+    recordCheck()
+    return null
+  }
   return capture()
 }
 
@@ -251,7 +288,11 @@ export async function historyRoutes(app: FastifyInstance): Promise<void> {
     // when a missed snapshot gets taken.
     await captureIfStale().catch(() => null)
     const snapshots = listSnapshots()
-    return { available: gufiAvailable(), snapshots, keep: KEEP, storedBytes: snapshots.reduce((n, s) => n + s.disk, 0) }
+    return {
+      available: gufiAvailable(), snapshots, keep: KEEP,
+      storedBytes: snapshots.reduce((n, s) => n + s.disk, 0),
+      checks: listChecks().slice(-14),
+    }
   })
 
   // Snapshots are only a census, so deleting one loses nothing that a
