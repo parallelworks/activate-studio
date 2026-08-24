@@ -396,7 +396,18 @@ export function startSweepTimer(log: (msg: string) => void): void {
   const tick = async (): Promise<void> => {
     const sec = currentIntervalSec()
     status.sweepIntervalSec = sec
-    if (sec > 0) await sweep(log)
+    if (sec > 0) {
+      await sweep(log)
+      // History rides the sweep rather than waiting for a visit: a change
+      // becomes a snapshot within one interval, and an unchanged pass
+      // leaves the daily proof-of-life marker. Before this, a week of
+      // churn nobody looked at collapsed into a single point at the next
+      // visit. Dynamic import because history is otherwise downstream of
+      // this module.
+      await import('./history.js').then(m => m.captureIfStale())
+        .then(snap => { if (snap) log(`history: captured snapshot ${snap.id} (${snap.files} files)`) })
+        .catch(() => {})
+    }
     setTimeout(() => { void tick() }, Math.max(sec, 60) * 1000).unref()
   }
   void primeSweepState().then(() => {
