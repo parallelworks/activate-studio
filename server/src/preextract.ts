@@ -1,15 +1,22 @@
 /**
- * Office documents to Markdown for the extract cache, ahead of enrich.py.
+ * Documents to Markdown for the extract cache, ahead of enrich.py.
  *
  * Word, PowerPoint and Excel files (plus legacy .doc) convert through
- * downmark (the pure-Go document converter compiled to WebAssembly, shipped
- * as an npm dependency) into `$INDEX_BASE/extract/<rel>.txt`. enrich.py
- * already reuses any cache entry at least as new as its source, so it picks
- * these up as-is and indexes them; a file downmark cannot read gets no entry
- * and falls through to enrich.py's standard-library OOXML pass, the only
- * reader left there for these formats. PDFs stay with pdftotext and OCR in
- * enrich.py; poppler is present for page previews regardless and downmark
- * has no OCR.
+ * downmark (the pure-Go document converter, shipped on npm as a native
+ * binary per platform with a WebAssembly fallback) into
+ * `$INDEX_BASE/extract/<rel>.txt`. enrich.py already reuses any cache entry
+ * at least as new as its source, so it picks these up as-is and indexes
+ * them; a file downmark cannot read gets no entry and falls through to
+ * enrich.py's standard-library OOXML pass, the only reader left there for
+ * these formats.
+ *
+ * PDFs go the same way where the native binary is installed: text pages
+ * extract directly and scanned pages are read through tesseract when the
+ * host has it, with downmark marking the pages OCR filled in. On a host
+ * running the wasm (no platform package) PDFs are left to enrich.py, whose
+ * pdftotext + OCR path remains the fallback either way; enrich.py also
+ * re-checks a cached PDF whose text is thin for its page count, since
+ * downmark OCRs only pages with no text at all.
  *
  * Markdown rather than flat text because the downstream consumers are the
  * chat model, full-text snippets, and the viewer: headings, tables and slide
@@ -24,9 +31,30 @@ import { fork } from 'node:child_process'
 import fs from 'node:fs'
 import fsp from 'node:fs/promises'
 import path from 'node:path'
+import { spawnSync } from 'node:child_process'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { binaryPath } from '@giraffesyo/downmark'
 
 export const OFFICE_MARKDOWN_SUFFIXES = new Set(['.docx', '.pptx', '.xlsx', '.doc'])
+const PDF_SUFFIX = '.pdf'
+
+/** True when downmark runs as the native binary here (PDFs and OCR need it). */
+export function downmarkNative(): boolean { return binaryPath() !== null }
+
+// Matches enrich.py's OCR budget: at most 30 pages, and a scan that takes
+// longer than this is left to the next pass rather than holding the index.
+const OCR_MAX_PAGES = 30
+const OCR_PAGE_TIMEOUT_MS = 120_000
+const OCR_TIMEOUT_MS = 300_000
+
+let tesseractKnown: boolean | null = null
+function tesseractAvailable(): boolean {
+  if (tesseractKnown === null) {
+    try { tesseractKnown = spawnSync('tesseract', ['--version'], { stdio: 'ignore', timeout: 10_000 }).status === 0 }
+    catch { tesseractKnown = false }
+  }
+  return tesseractKnown
+}
 
 // Same cap as enrich.py's MAX_TEXT: the index holds the head of a huge
 // workbook, full-text search covers the rest of nothing.
@@ -76,6 +104,14 @@ export async function preExtract(opts: PreExtractOptions): Promise<PreExtractSum
   const { convert, version } = await import('@giraffesyo/downmark')
   const ver = await version()
   const refreshAll = (await readMarker(opts.cacheRoot)) !== ver
+  const native = downmarkNative()
+  const ocr = native && tesseractAvailable()
+    ? { engine: 'tesseract' as const, maxPages: OCR_MAX_PAGES, pageTimeoutMs: OCR_PAGE_TIMEOUT_MS, timeoutMs: OCR_TIMEOUT_MS }
+    : undefined
+  const handles = (name: string): boolean => {
+    const ext = path.extname(name).toLowerCase()
+    return OFFICE_MARKDOWN_SUFFIXES.has(ext) || (native && ext === PDF_SUFFIX)
+  }
   const summary: PreExtractSummary = { scanned: 0, converted: 0, reused: 0, warned: 0, failed: 0, ms: 0 }
 
   const sub = (opts.subdir ?? '').replace(/^\/+|\/+$/g, '')
@@ -93,7 +129,7 @@ export async function preExtract(opts: PreExtractOptions): Promise<PreExtractSum
         if (!opts.noRecurse && !exclude.has(e.name) && !e.name.startsWith('.')) await walk(abs, childRel)
         continue
       }
-      if (!e.isFile() || !OFFICE_MARKDOWN_SUFFIXES.has(path.extname(e.name).toLowerCase())) continue
+      if (!e.isFile() || !handles(e.name)) continue
       summary.scanned++
       let st: fs.Stats
       try { st = await fsp.stat(abs) } catch { continue }
@@ -107,7 +143,8 @@ export async function preExtract(opts: PreExtractOptions): Promise<PreExtractSum
       if (st.size > MAX_INPUT_BYTES) { summary.failed++; log(`preextract: ${childRel}: ${st.size} bytes exceeds the converter's input limit`); continue }
       try {
         const data = await fsp.readFile(abs)
-        const { markdown, warnings } = await convert(data, { filename: e.name })
+        const isPdf = path.extname(e.name).toLowerCase() === PDF_SUFFIX
+        const { markdown, warnings } = await convert(data, isPdf && ocr ? { filename: e.name, ocr } : { filename: e.name })
         const text = markdown.slice(0, MAX_TEXT)
         if (!text.trim()) { summary.failed++; log(`preextract: ${childRel}: no text`); continue }
         // A conversion can succeed and still lose content; say what, so a

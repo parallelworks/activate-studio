@@ -4,7 +4,7 @@ import fsp from 'node:fs/promises'
 import path from 'node:path'
 import { EXCLUDE_DIRS, GUFI_BIN, GUFI_INDEX, INDEX_BASE, KB_ROOT, PROJECT_ROOT, PYTHON_BIN } from './config.js'
 import { invalidateDbList } from './gufi.js'
-import { runPreExtract } from './preextract.js'
+import { downmarkNative, runPreExtract } from './preextract.js'
 import { invalidateContext } from './chat/context.js'
 import { effectiveSettings } from './settings.js'
 
@@ -50,9 +50,10 @@ export function extractorReport(): ExtractorReport[] {
     catch { return false }
   }
   // Office formats convert through downmark, which ships inside the server
-  // bundle, so they never depend on the host.
+  // bundle, so they never depend on the host; PDFs join them where the
+  // native binary is installed (pdftotext covers them otherwise).
   extractorCache = [
-    { name: 'downmark', available: true, covers: '.docx, .pptx, .xlsx, .doc' },
+    { name: 'downmark', available: true, covers: downmarkNative() ? '.docx, .pptx, .xlsx, .doc, .pdf' : '.docx, .pptx, .xlsx, .doc' },
     { name: 'pdftotext', available: which('pdftotext'), covers: '.pdf' },
     { name: 'tesseract', available: which('tesseract'), covers: 'text inside images (OCR)' },
   ]

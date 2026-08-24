@@ -8,11 +8,14 @@ text is also written to an on-disk extract cache the server uses for
 previews. Every directory db gets the `words` table, empty or not, so
 MATCH queries never hit a missing table.
 
-Office documents normally arrive already converted: the server (and
-reindex.sh) run `server/dist/preextract.js`, which turns .docx/.pptx/.xlsx/
-.doc into Markdown through downmark and writes the cache entries this script
-reuses. The standard-library OOXML reader below is the last resort for a
-document that pass could not read; PDFs, OCR and image captions live here.
+Documents normally arrive already converted: the server (and reindex.sh)
+run `server/dist/preextract.js`, which turns .docx/.pptx/.xlsx/.doc, and
+PDFs where downmark's native binary is installed, into Markdown and writes
+the cache entries this script reuses. The readers below are the fallback:
+the standard-library OOXML pass for Office files, pdftotext for PDFs on a
+host without the binary. A cached PDF whose text is thin for its page count
+is still OCR'd here, since downmark reads only pages with no text at all.
+Image OCR and captions live here alone.
 """
 import argparse
 import os
@@ -117,6 +120,24 @@ def _pdf_ocr(path: Path, pages: int) -> str:
     return f'Text read from scanned pages (OCR):\n{body}' if body else ''
 
 
+# downmark marks the pages its own OCR filled in; a document carrying the
+# marker has already been read as ink and a second pass adds nothing.
+DOWNMARK_OCR_MARKER = 'includes OCR text'
+
+
+def ocr_if_thin(path: Path, text: str) -> str:
+    """Append OCR text when the text layer is thin for the page count."""
+    if DOWNMARK_OCR_MARKER in text:
+        return text
+    pages = _pdf_page_count(path)
+    if len(text.strip()) < OCR_CHARS_PER_PAGE * pages:
+        ocr = _pdf_ocr(path, pages)
+        if ocr:
+            # Keep both: the text layer may hold a header the scan blurs.
+            return f'{text}\n\n{ocr}' if text.strip() else ocr
+    return text
+
+
 def extract_pdf(path: Path) -> str:
     text = ''
     try:
@@ -135,13 +156,7 @@ def extract_pdf(path: Path) -> str:
             text = '\n'.join((page.extract_text() or '') for page in reader.pages)
         except Exception:
             text = ''
-    pages = _pdf_page_count(path)
-    if len(text.strip()) < OCR_CHARS_PER_PAGE * pages:
-        ocr = _pdf_ocr(path, pages)
-        if ocr:
-            # Keep both: the text layer may hold a header the scan blurs.
-            return f'{text}\n\n{ocr}' if text.strip() else ocr
-    return text
+    return ocr_if_thin(path, text)
 
 
 def extract_pptx(path: Path) -> str:
@@ -304,6 +319,15 @@ def main() -> int:
                     cache_file = cache_root / rel_dir / (fpath.name + '.txt')
                     if cacheable and cache_file.exists() and cache_file.stat().st_mtime >= fpath.stat().st_mtime:
                         text = cache_file.read_text(errors='replace')
+                        if suffix == '.pdf':
+                            # A pre-extracted PDF with a typed header over a
+                            # scanned body has text, so downmark did not OCR
+                            # it; apply the same thin-text rule as a fresh
+                            # extraction and keep the result.
+                            thick = ocr_if_thin(fpath, text)
+                            if thick != text:
+                                text = thick
+                                cache_file.write_text(text)
                     else:
                         text = extract(fpath)
                         # Images cache even when empty: captioning and OCR are
