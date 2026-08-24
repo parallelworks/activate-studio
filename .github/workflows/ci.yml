@@ -16,9 +16,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      # No version here: package.json's packageManager pins it, and naming
+      # it in both places is an error the action refuses to guess through.
       - uses: pnpm/action-setup@v4
-        with:
-          version: 11
 
       # The extraction tests skip what a host cannot do; installing these
       # means the OCR and pdftotext paths are actually exercised rather
