@@ -43,6 +43,8 @@ function findPython() {
   return null
 }
 const PYTHON = findPython()
+const { binaryPath } = await import(path.join(REPO, 'server', 'node_modules', '@giraffesyo', 'downmark', 'dist', 'index.js'))
+const NATIVE = binaryPath() !== null
 const SKIP = !fs.existsSync(MAIN) ? 'server not built (pnpm --filter @activate-studio/server build)'
   : !PYTHON ? 'no python 3.10+ on PATH'
   : false
@@ -132,10 +134,17 @@ test('the server indexes a directory and serves the extracted text', { skip: SKI
 
   // The report the Stats page reads: proves the server process can load
   // preextract.js and resolve the native binary, not just the test runner.
+  // `available` is a constant, so the load-bearing assertion is `covers`:
+  // it is what downmarkNative() decided inside the server process.
   const extractors = await (await fetch(`${server.base}/api/index/extractors`)).json()
   const downmark = extractors.extractors.find(e => e.name === 'downmark')
   assert.ok(downmark, `downmark missing from the extractor report: ${JSON.stringify(extractors)}`)
   assert.equal(downmark.available, true)
+  assert.match(downmark.covers, /\.docx/, `downmark should cover Office formats: ${JSON.stringify(downmark)}`)
+  if (NATIVE) {
+    assert.match(downmark.covers, /\.pdf/,
+      `the test runner resolved a native binary but the server did not: ${JSON.stringify(downmark)}`)
+  }
 
   // Index the way an upload does, through the server's own code path.
   await indexDir(server, 'docs')
@@ -148,6 +157,9 @@ test('the server indexes a directory and serves the extracted text', { skip: SKI
   assert.match(file.content, /# Solver Handbook/, 'the heading should have survived into the served text')
   assert.match(file.content, /VELOCITY-INLET-7734/)
   assert.match(file.content, /\| inlet/, 'the table should have survived into the served text')
+  assert.equal(file.format, 'markdown', 'the server should tell the viewer this text is Markdown')
+  assert.ok(!file.content.startsWith('<!-- extracted by downmark '),
+    'the provenance line is metadata and should not be served as content')
 
   // And the extract cache landed where the rest of the system looks for it.
   const cached = path.join(server.indexBase, 'extract', 'docs', 'handbook.docx.txt')

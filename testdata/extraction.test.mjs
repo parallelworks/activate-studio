@@ -134,7 +134,12 @@ for (const [rel, spec] of Object.entries(EXPECTATIONS)) {
 
 test('a file whose extension lies is reported, not fatal', { skip: !PYTHON && 'no python 3.10+ on PATH' }, () => {
   assert.ok(summary, 'the pipeline run failed; see the failure above')
-  assert.equal(summary.failed, 1, `expected exactly one conversion failure, got ${summary.failed}`)
+  // On a native host with no OCR engine the pure scan has no text to give
+  // either, so it is a second, legitimate failure that falls through to
+  // enrich.py — not a regression this test should turn red for.
+  const expected = NATIVE && !TESSERACT ? 2 : 1
+  assert.equal(summary.failed, expected,
+    `expected ${expected} conversion failure(s), got ${summary.failed}\n---\n${log}`)
   assert.match(log, /truncated\.docx/, 'the failing file should be named in the log')
   // It must not reach the index as garbage either: enrich.py's standard
   // library reader cannot read it, so it indexes as nothing at all.
@@ -196,6 +201,42 @@ test('a scoped pass reuses the cache too (what the server actually runs)', { ski
   assert.equal(second.summary.converted, 0,
     'the second scoped pass reconverted its subtree: is the version marker gating reuse again?')
   assert.equal(second.summary.reused, first.summary.converted)
+})
+
+test('an entry from an older converter is redone, on a scoped pass too', { skip: !PYTHON && 'no python 3.10+ on PATH' }, async () => {
+  const dirs = await stage('version-refresh')
+  const first = await preextractScoped(dirs, 'docs')
+  assert.ok(first.summary.converted > 0)
+
+  // Rewrite the provenance line to name an older downmark, leaving the
+  // mtimes untouched. The version marker this replaced could only be
+  // honoured by a whole-tree pass, so an upgrade never reached a
+  // deployment that indexes subtrees — which is every deployment.
+  const entry = path.join(dirs.cache, 'docs', 'handbook.docx.txt')
+  const before = await fsp.readFile(entry, 'utf8')
+  assert.match(before, /^<!-- extracted by downmark [0-9]/,
+    'a converted entry should name the converter that wrote it')
+  await fsp.writeFile(entry, before.replace(/^<!-- extracted by downmark [^>]*-->/, '<!-- extracted by downmark 0.0.1 -->'))
+
+  const second = await preextractScoped(dirs, 'docs')
+  assert.equal(second.summary.converted, 1, 'the stale entry should have been reconverted')
+  assert.equal(second.summary.reused, first.summary.converted - 1, 'the current entries should still be reused')
+  assert.match(await fsp.readFile(entry, 'utf8'), /^<!-- extracted by downmark (?!0\.0\.1)/,
+    'the reconverted entry should name the converter that actually wrote it')
+})
+
+test('a fallback-written entry is not labelled as Markdown', { skip: !PYTHON && 'no python 3.10+ on PATH' }, async () => {
+  const dirs = await stage('provenance-fallback')
+  await preextract(dirs, { DOWNMARK_FORCE_WASM: '1' })
+  // enrich.py writes the PDF entries on this path; nothing may claim they
+  // are Markdown, because pdftotext's column-aligned output is not.
+  await enrich(dirs)
+  const pdfEntry = path.join(dirs.cache, 'docs', 'report.pdf.txt')
+  if (fs.existsSync(pdfEntry)) {
+    const text = await fsp.readFile(pdfEntry, 'utf8')
+    assert.ok(!text.startsWith('<!-- extracted by downmark '),
+      'a fallback reader must not label its output as downmark Markdown')
+  }
 })
 
 test('without the native binary, PDFs fall back to enrich.py', {

@@ -500,6 +500,11 @@ def make_broken() -> None:
 
 
 def main() -> int:
+    # Before anything is deleted: the scanned and image fixtures need
+    # pdftoppm, and exiting halfway through would leave the committed corpus
+    # wiped and only partly regenerated.
+    if not shutil.which('pdftoppm'):
+        sys.exit('pdftoppm (poppler-utils) is needed to regenerate the corpus')
     if ROOT.exists():
         shutil.rmtree(ROOT)
     make_docx()

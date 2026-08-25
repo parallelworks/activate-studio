@@ -52,6 +52,17 @@ rather than reporting a diff of prose.
 | `notes/*` | Markdown, CSV, YAML, JSON and source files keep flowing through untouched |
 | `broken/truncated.docx` | An unreadable file is logged and counted, never fatal, and indexes nothing |
 
+Cache entries also carry provenance, which the suite checks: an entry
+downmark wrote names its version, one written by a fallback reader does not,
+and an entry naming an older version is reconverted on a scoped pass — the
+path every deployment actually uses.
+
+**Known gap:** there is no `.doc` fixture. `.doc` is the one format with no
+fallback in `enrich.py`, so a downmark regression there would index those
+files as nothing at all, silently. Generating a Word 97 compound-binary file
+by hand is a large piece of work for one fixture; until there is one, `.doc`
+rides on downmark's own test suite.
+
 Two behaviours are also asserted directly: a second pass reuses the cache
 instead of reconverting, and with `DOWNMARK_FORCE_WASM=1` (a platform with
 no native binary) PDFs fall through to `enrich.py`'s pdftotext path while
