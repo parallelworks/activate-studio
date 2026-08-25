@@ -7,7 +7,6 @@ const ModelViewer = lazy(() => import('./ModelViewer').then(m => ({ default: m.M
 import { DataTree } from './DataTree'
 
 const OFFICE_SUFFIXES = ['.docx', '.pptx', '.xlsx', '.doc', '.ppt', '.xls', '.odt', '.odp', '.ods']
-
 type Tab = 'preview' | 'indexed' | 'source'
 
 const JSON_SUFFIXES = ['.json', '.jsonl', '.geojson', '.ipynb']
@@ -153,11 +152,11 @@ export function Viewer({ path, onDeleted }: {
   const isJson = JSON_SUFFIXES.includes(suffix)
   const isYaml = YAML_SUFFIXES.includes(suffix)
   const isStructured = (isJson || isYaml) && isText
-  // Extracted documents are Markdown wherever downmark converted them,
-  // PDFs included; a PDF that fell back to pdftotext is plain text, which
-  // renders as itself. The alternative — a <pre> — shows a converted file's
-  // tables and its OCR marker as literal syntax.
-  const extractedMarkdown = file.source === 'extracted' && ['.docx', '.pptx', '.xlsx', '.doc', '.pdf'].includes(suffix)
+  // Whether extracted text is Markdown is the server's to know: the same
+  // PDF is downmark Markdown on a host with the native binary and
+  // pdftotext's column-aligned text without it, and rendering that as
+  // Markdown turns its columns into code blocks and reflows its rows.
+  const extractedMarkdown = file.source === 'extracted' && file.format === 'markdown'
 
   const doDelete = async () => {
     setDeleting(true)

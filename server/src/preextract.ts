@@ -39,8 +39,14 @@ import { binaryPath } from '@giraffesyo/downmark'
 export const OFFICE_MARKDOWN_SUFFIXES = new Set(['.docx', '.pptx', '.xlsx', '.doc'])
 const PDF_SUFFIX = '.pdf'
 
-/** True when downmark runs as the native binary here (PDFs and OCR need it). */
-export function downmarkNative(): boolean { return binaryPath() !== null }
+/** True when downmark runs as the native binary here (PDFs and OCR need it).
+ *  binaryPath() throws when the platform package is installed but its binary
+ *  is missing — the exact packaging failure the extractor report exists to
+ *  show — so a broken install reads as "no native binary" rather than taking
+ *  the report (and the endpoint serving it) down with it. */
+export function downmarkNative(): boolean {
+  try { return binaryPath() !== null } catch { return false }
+}
 
 // Matches enrich.py's OCR budget: at most 30 pages, and a scan that takes
 // longer than this is left to the next pass rather than holding the index.
@@ -62,10 +68,26 @@ function tesseractAvailable(): boolean {
 const MAX_TEXT = 500_000
 // downmark refuses OOXML archives above this anyway; skip the read.
 const MAX_INPUT_BYTES = 64 * 1024 * 1024
-// Cache entries written by an older converter (or by enrich.py's flat-text
-// readers before this existed) are refreshed once per downmark version; the
-// marker is written after a full-scope pass completes.
-const VERSION_MARKER = '.downmark-version'
+/**
+ * Every entry this writes names the converter on its first line:
+ *
+ *     <!-- extracted by downmark 0.10.0 -->
+ *
+ * which answers two questions nothing else could. A later pass can tell an
+ * entry it produced from one enrich.py's flat-text readers wrote, so an
+ * entry from an older downmark is reconverted per file — a single marker
+ * file could only say that for a whole-tree pass, and the server never runs
+ * one. And the server can tell the viewer whether the text is Markdown,
+ * rather than guessing from the suffix and rendering pdftotext's
+ * column-aligned output as though it were.
+ *
+ * An HTML comment because downmark already emits them into content that
+ * gets indexed (slide numbers, OCR markers), so this adds a kind of noise
+ * the pipeline already carries.
+ */
+export const PROVENANCE_PREFIX = '<!-- extracted by downmark '
+const PROVENANCE_END = ' -->'
+const provenanceLine = (ver: string) => `${PROVENANCE_PREFIX}${ver}${PROVENANCE_END}`
 
 export interface PreExtractOptions {
   kbRoot: string
@@ -106,8 +128,23 @@ async function converterVersion(): Promise<string> {
   return version()
 }
 
-async function readMarker(cacheRoot: string): Promise<string> {
-  try { return (await fsp.readFile(path.join(cacheRoot, VERSION_MARKER), 'utf8')).trim() } catch { return '' }
+/** The downmark version that wrote a cache entry, '' for anything else
+ *  (an enrich.py fallback, or an entry from before provenance existed). */
+async function entryVersion(file: string): Promise<string> {
+  let fh: fsp.FileHandle | undefined
+  try {
+    fh = await fsp.open(file, 'r')
+    const buf = Buffer.alloc(200)
+    const { bytesRead } = await fh.read(buf, 0, buf.length, 0)
+    const head = buf.subarray(0, bytesRead).toString('utf8')
+    if (!head.startsWith(PROVENANCE_PREFIX)) return ''
+    const end = head.indexOf(PROVENANCE_END)
+    return end < 0 ? '' : head.slice(PROVENANCE_PREFIX.length, end)
+  } catch {
+    return ''
+  } finally {
+    await fh?.close()
+  }
 }
 
 /** Convert every Office document under the scope whose cache entry is
@@ -117,14 +154,8 @@ export async function preExtract(opts: PreExtractOptions): Promise<PreExtractSum
   const t0 = Date.now()
   const log = opts.log ?? (() => {})
   const exclude = opts.excludeDirs ?? DEFAULT_EXCLUDE
-  const { convert, version } = await import('@giraffesyo/downmark')
+  const { convert } = await import('@giraffesyo/downmark')
   const ver = await converterVersion()
-  // Only a whole-tree pass can honour a version refresh, because only a
-  // whole-tree pass can then record that the tree is current. Letting a
-  // scoped pass set it meant the marker was never written and every scoped
-  // pass reconverted its whole subtree — re-running OCR on every upload.
-  const fullScope = !opts.subdir && !opts.noRecurse
-  const refreshAll = fullScope && (await readMarker(opts.cacheRoot)) !== ver
   const native = downmarkNative()
   // "thin" also reads a scanned body under a typed header, the case a
   // textless policy misses; pages with a real text layer are left alone.
@@ -161,19 +192,24 @@ export async function preExtract(opts: PreExtractOptions): Promise<PreExtractSum
       let st: fs.Stats
       try { st = await fsp.stat(abs) } catch { continue }
       const cacheFile = path.join(opts.cacheRoot, childRel + '.txt')
-      if (!refreshAll) {
-        try {
-          const cst = await fsp.stat(cacheFile)
-          if (cst.mtimeMs >= st.mtimeMs && cst.size > 0) { summary.reused++; continue }
-        } catch { /* no entry yet */ }
-      }
+      try {
+        const cst = await fsp.stat(cacheFile)
+        // Current source, and written by this converter: nothing to redo.
+        // A version mismatch reconverts this one file, whatever the scope
+        // of the pass, which is what makes an upgrade reach a deployment
+        // that only ever indexes subtrees.
+        if (cst.mtimeMs >= st.mtimeMs && cst.size > 0 && (await entryVersion(cacheFile)) === ver) {
+          summary.reused++
+          continue
+        }
+      } catch { /* no entry yet */ }
       if (st.size > MAX_INPUT_BYTES) { summary.failed++; log(`preextract: ${childRel}: ${st.size} bytes exceeds the converter's input limit`); continue }
       try {
         const data = await fsp.readFile(abs)
         const isPdf = path.extname(e.name).toLowerCase() === PDF_SUFFIX
         const { markdown, warnings } = await convert(data, isPdf && ocr ? { filename: e.name, ocr } : { filename: e.name })
-        const text = markdown.slice(0, MAX_TEXT)
-        if (!text.trim()) { summary.failed++; log(`preextract: ${childRel}: no text`); continue }
+        if (!markdown.trim()) { summary.failed++; log(`preextract: ${childRel}: no text`); continue }
+        const text = `${provenanceLine(ver)}\n\n${markdown}`.slice(0, MAX_TEXT)
         // A conversion can succeed and still lose content; say what, so a
         // document that indexes short is explained in the log rather than
         // discovered by a reader. The Markdown is still the best text we have.
@@ -194,13 +230,6 @@ export async function preExtract(opts: PreExtractOptions): Promise<PreExtractSum
     }
   }
   await walk(start, sub)
-
-  // Only a pass over the whole tree proves every entry is current, which
-  // refreshAll now implies.
-  if (refreshAll) {
-    await fsp.mkdir(opts.cacheRoot, { recursive: true })
-    await fsp.writeFile(path.join(opts.cacheRoot, VERSION_MARKER), ver + '\n')
-  }
   summary.ms = Date.now() - t0
   return summary
 }
@@ -209,8 +238,7 @@ export async function preExtract(opts: PreExtractOptions): Promise<PreExtractSum
  *  server. Resolves to the summary, or null when the child failed; callers
  *  continue either way because enrich.py covers the same files. */
 export function runPreExtract(opts: Omit<PreExtractOptions, 'log' | 'excludeDirs'>, log: (msg: string) => void = () => {}): Promise<PreExtractSummary | null> {
-  const self = fileURLToPath(import.meta.url)
-  const script = path.join(path.dirname(self), 'preextract' + path.extname(self))
+  const script = fileURLToPath(import.meta.url)
   const args = ['--kb-root', opts.kbRoot, '--extract-cache', opts.cacheRoot]
   if (opts.subdir) args.push('--subdir', opts.subdir)
   if (opts.noRecurse) args.push('--no-recurse')

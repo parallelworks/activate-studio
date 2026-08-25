@@ -117,17 +117,31 @@ def _pdf_ocr(path: Path, pages: int) -> str:
             except Exception:
                 continue
     body = '\n\n'.join(parts)
-    return f'Text read from scanned pages (OCR):\n{body}' if body else ''
+    return f'{OCR_HEADER}\n{body}' if body else ''
 
 
 # downmark marks the pages its own OCR filled in; a document carrying the
 # marker has already been read as ink and a second pass adds nothing.
 DOWNMARK_OCR_MARKER = 'includes OCR text'
+# Our own OCR block carries this header for the same reason: a cached entry
+# that already holds one has been read as ink, and re-reading it appends a
+# second copy of the same text and re-runs the render-plus-tesseract pass on
+# every later enrichment until the entry finally crosses the thin threshold.
+OCR_HEADER = 'Text read from scanned pages (OCR):'
+
+
+# OCR covers at most this many pages, so a document already holding more
+# characters than that many pages' worth cannot gain enough from a pass to
+# be worth one. Checking this before pdfinfo keeps a reindex over thousands
+# of text PDFs from forking a process per file per pass to learn nothing.
+OCR_TEXT_CEILING = OCR_CHARS_PER_PAGE * 30
 
 
 def ocr_if_thin(path: Path, text: str) -> str:
     """Append OCR text when the text layer is thin for the page count."""
-    if DOWNMARK_OCR_MARKER in text:
+    if DOWNMARK_OCR_MARKER in text or OCR_HEADER in text:
+        return text
+    if len(text.strip()) >= OCR_TEXT_CEILING:
         return text
     pages = _pdf_page_count(path)
     if len(text.strip()) < OCR_CHARS_PER_PAGE * pages:
@@ -318,16 +332,23 @@ def main() -> int:
                     # cached by mtime; a reindex pass reuses them untouched.
                     cache_file = cache_root / rel_dir / (fpath.name + '.txt')
                     if cacheable and cache_file.exists() and cache_file.stat().st_mtime >= fpath.stat().st_mtime:
-                        text = cache_file.read_text(errors='replace')
+                        text = cache_file.read_text(errors='replace')[:MAX_TEXT]
                         if suffix == '.pdf':
                             # downmark's thin policy OCRs scans itself; a
                             # thin cache entry without its marker means the
                             # host had no tesseract when it was written, so
                             # retry here and keep the result.
-                            thick = ocr_if_thin(fpath, text)
+                            thick = ocr_if_thin(fpath, text)[:MAX_TEXT]
                             if thick != text:
                                 text = thick
-                                cache_file.write_text(text)
+                                # A cache that cannot be written (read-only
+                                # or full shared storage) must not abort the
+                                # pass: the text is still indexed, and the
+                                # next pass retries the write.
+                                try:
+                                    cache_file.write_text(text)
+                                except OSError as exc:
+                                    print(f'  cache write failed {cache_file}: {exc}', file=sys.stderr)
                     else:
                         text = extract(fpath)
                         # Images cache even when empty: captioning and OCR are

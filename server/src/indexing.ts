@@ -250,7 +250,15 @@ async function pruneCache(cacheRoot: string, kind: '.txt' | '.pdf' | '.json'): P
       const childRel = rel ? `${rel}/${e.name}` : e.name
       if (e.isDirectory()) { await walk(abs, childRel); continue }
       let exists = false
-      if (kind === '.txt' && e.name.endsWith('.txt')) {
+      if (e.name.endsWith('.tmp')) {
+        // preextract writes <entry>.<pid>.tmp and renames; a pass killed
+        // mid-write leaves one behind, and no later pass would ever look at
+        // it again. Only sweep the stale ones: an in-flight conversion is
+        // capped well under this, so anything older is abandoned.
+        let age = 0
+        try { age = Date.now() - (await fsp.stat(abs)).mtimeMs } catch { /* gone already */ }
+        exists = age < 60 * 60_000
+      } else if (kind === '.txt' && e.name.endsWith('.txt')) {
         exists = fs.existsSync(path.join(KB_ROOT, childRel.slice(0, -4)))
       } else if (kind === '.pdf' && e.name.endsWith('.pdf')) {
         const base = path.join(KB_ROOT, path.dirname(childRel), path.basename(e.name, '.pdf'))
