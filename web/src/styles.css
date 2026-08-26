@@ -254,7 +254,11 @@ button { font-family: inherit; }
    our !important pinned. */
 /* Align the conversations header and the model-selector toolbar to one height
    so their bottom borders form a single line across the chat. */
-.chat-canvas > .flex.h-full > :first-child > div:first-child { height: 52px; }
+/* The rail's first child is the resize separator when expanded, so the
+   header alignment must name the header row, not the first child; the
+   first-child form clamped the separator's grab strip to a 52px sliver,
+   which read as resizing having disappeared. */
+.chat-canvas > .flex.h-full > :first-child > div[class*="justify-between"] { height: 52px; }
 .chat-canvas main [class*="flex-shrink-0"][class*="border-b"] {
   height: 52px; display: flex; align-items: center;
   padding-top: 0 !important; padding-bottom: 0 !important;
