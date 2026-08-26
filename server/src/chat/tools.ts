@@ -9,6 +9,7 @@ import { annotateHits } from '../tags.js'
 import { effectiveSettings } from '../settings.js'
 import { composeWorkflows } from '../workflowCompose.js'
 import { agentBody, extAgents, extSkills, extTools, skillBody } from '../extensions.js'
+import { callRemoteTool, isRemoteTool, remoteToolSpecs } from '../mcpClient.js'
 
 export interface ToolSpec {
   type: 'function'
@@ -525,6 +526,14 @@ export function activeToolSpecs(): ToolSpec[] {
   return [...TOOL_SPECS, ...customToolSpecs(), ...(skill ? [skill] : [])].filter(t => !disabled.has(t.function.name))
 }
 
+/** The tool list including any attached MCP servers. Async because a
+ *  remote listing is a network call; cached for a minute in the client. */
+export async function activeToolSpecsWithRemote(): Promise<ToolSpec[]> {
+  const disabled = new Set(effectiveSettings().disabledTools ?? [])
+  const remote = await remoteToolSpecs().catch(() => [])
+  return [...activeToolSpecs(), ...remote.filter(t => !disabled.has(t.function.name))]
+}
+
 function pwCli(args: string[], timeoutMs = 30_000): Promise<string> {
   // The caller's own key (when they added one) scopes platform actions to
   // their account; otherwise the deployment credential applies.
@@ -989,6 +998,10 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
         }
       }
       default: {
+        if (isRemoteTool(name)) {
+          const out = await callRemoteTool(name, args)
+          return { result: (out.trim() || '(no output)').slice(0, TOOL_OUTPUT_CAP), summary: name }
+        }
         const custom = allCustomTools().find(t => t.name === name)
         if (custom) {
           const extra = String(args.args ?? '').slice(0, 400)
