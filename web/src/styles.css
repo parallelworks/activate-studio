@@ -248,9 +248,10 @@ button { font-family: inherit; }
 .chat-wrap { flex: 1; min-height: 0; padding: 12px; display: flex; }
 .chat-canvas { flex: 1; min-height: 0; background: var(--pw-panel); overflow: hidden; position: relative; }
 .chat-canvas > * { height: 100%; }
-/* Resizable conversations rail: only the top-level layout's first child;
-   nested flex h-full containers (like the empty state) must not match. */
-.chat-canvas > .flex.h-full > :first-child { width: var(--ade-chat-rail, 260px) !important; flex: 0 0 auto !important; }
+/* The conversations rail's width, resize separator, and collapse belong
+   to the chat package; overriding its width here is what made the
+   collapse button appear dead, since the package animates an inline width
+   our !important pinned. */
 /* Align the conversations header and the model-selector toolbar to one height
    so their bottom borders form a single line across the chat. */
 .chat-canvas > .flex.h-full > :first-child > div:first-child { height: 52px; }
@@ -259,6 +260,7 @@ button { font-family: inherit; }
   padding-top: 0 !important; padding-bottom: 0 !important;
 }
 .chat-canvas main [class*="flex-shrink-0"][class*="border-b"] > div { flex: 1; }
+.chat-rail-backdrop { display: none; }
 .chat-rail-handle { position: absolute; top: 0; bottom: 0; width: 6px; cursor: col-resize; z-index: 20; }
 .chat-rail-handle:hover, .resizing .chat-rail-handle { background: rgba(91, 135, 166, 0.25); }
 
@@ -1257,6 +1259,15 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
      the Chat item in the bottom bar, closed again by picking a
      conversation. The drag handles are mouse furniture and go; the
      Activity drawer is a desktop luxury at this width. */
+  .chat-canvas.rail-open .chat-rail-backdrop {
+    display: block; position: absolute; inset: 0; z-index: 24;
+    background: rgba(0, 0, 0, 0.25);
+  }
+  /* The package's own collapse toggle fights the slide-over at this
+     width (its collapsed state is a slim strip, not a closed drawer), so
+     the drawer's close affordances are the backdrop and the Chat item. */
+  .chat-canvas > .flex.h-full > :first-child > div[class*="justify-between"] button { display: none; }
+  .chat-canvas.rail-open .chat-filter-btn { display: block; z-index: 26; }
   .chat-canvas > .flex.h-full > :first-child {
     position: absolute; left: 0; top: 0; bottom: 0; z-index: 25;
     width: min(85vw, 320px) !important;
