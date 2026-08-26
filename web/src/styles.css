@@ -1176,6 +1176,10 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .hist-tick.active::before { width: 11px; height: 2px; opacity: 1; }
 .hist-now { color: var(--pw-link); opacity: 0.75; }
 
+/* The More button and its sheet are phone furniture; at desktop width
+   the full rail carries every destination and these never render. */
+.nav-more, .nav-more-sheet { display: none; }
+
 /* ---- phones and narrow windows ----
    One breakpoint, layout only: the desktop arrangement (a navigation rail
    beside the view, side-by-side panes, multi-column grids) becomes a
@@ -1203,7 +1207,24 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
      the brand text costs width the icons need. */
   .brand-text, .nav-collapse, .head-actions { display: none; }
   .sidenav-items, .sidenav.collapsed .sidenav-items { flex-direction: row; flex: 1; justify-content: space-evenly; gap: 0; margin: 0; }
-  .sidenav-items.sidenav-secondary { flex: 0 0 auto; }
+  /* Settings and Help move into the More sheet; secondary destinations
+     leave the bar so the main four get room. */
+  .sidenav-items.sidenav-secondary { display: none; }
+  .sidenav-item.mob-hide { display: none; }
+  .nav-more { display: flex; }
+  .nav-more-sheet {
+    display: flex; flex-direction: column; gap: 2px;
+    position: fixed; left: 10px; right: 10px; bottom: 58px; z-index: 45;
+    padding: 10px; box-shadow: 0 12px 32px rgba(16, 24, 40, 0.22);
+  }
+  .nav-more-sheet .sidenav-item { justify-content: flex-start; padding: 10px 12px; }
+  .nav-more-sheet .sidenav-item span { display: inline; }
+  /* The status footer, hidden from the bar below, has its home here. */
+  .nav-more-sheet .sidenav-footer { display: flex; flex-direction: column; gap: 4px; border-top: 1px solid var(--pw-border); margin-top: 8px; padding-top: 10px; }
+  /* Grid children refuse to shrink below content width without this, and
+     the Stats bars rode that straight off the viewport edge. */
+  .ov-grid > * { min-width: 0; overflow: hidden; }
+  .ov-bar-value { white-space: normal; }
   .sidenav-item, .sidenav.collapsed .sidenav-item { justify-content: center; padding: 10px; }
   .sidenav-item span { display: none; }
   /* auto-fit with a 420px floor overflows a 390px phone */
