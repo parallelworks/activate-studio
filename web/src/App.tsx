@@ -236,6 +236,9 @@ export default function App() {
               title={item.label}
               onClick={() => {
                 if (item.id === 'library' && view === 'library') setDisplay(null)
+                // On a phone the conversations rail is a slide-over, and
+                // re-tapping the Chat item in the bottom bar is its toggle.
+                if (item.id === 'chat' && view === 'chat') window.dispatchEvent(new Event('ade:toggle-chat-rail'))
                 setView(item.id)
               }}
             >

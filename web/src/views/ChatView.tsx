@@ -73,6 +73,16 @@ export function ChatView() {
     mo.observe(canvas, { subtree: true, attributes: true, attributeFilter: ['class'], childList: true })
     return () => mo.disconnect()
   }, [])
+  // Phone slide-over state for the conversations rail; the bottom-bar
+  // Chat item toggles it, and choosing a conversation closes it.
+  const [railOpen, setRailOpen] = useState(false)
+  useEffect(() => {
+    const t = () => setRailOpen(o => !o)
+    window.addEventListener('ade:toggle-chat-rail', t)
+    return () => window.removeEventListener('ade:toggle-chat-rail', t)
+  }, [])
+  useEffect(() => { setRailOpen(false) }, [activeId])
+
   const adapter = useMemo(() => createStudioAdapter(), [])
   const [credNote, setCredNote] = useState<string | null>(null)
   const [vocab, setVocab] = useState<{ tag: string; count: number }[]>([])
@@ -305,7 +315,7 @@ export function ChatView() {
       }}
     >
       <div className="chat-wrap">
-        <div ref={canvasRef} className="chat-canvas card" style={{ ['--ade-chat-rail' as string]: `${rail}px`, ['--ade-think-rail' as string]: `${thinkRail}px` }}>
+        <div ref={canvasRef} className={`chat-canvas card${railOpen ? ' rail-open' : ''}`} style={{ ['--ade-chat-rail' as string]: `${rail}px`, ['--ade-think-rail' as string]: `${thinkRail}px` }}>
           {credNote && (
             <div className="cred-banner">
               <span className="cred-banner-text">{credNote}</span>
