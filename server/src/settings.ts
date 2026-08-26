@@ -48,6 +48,7 @@ export interface StudioSettings {
   chatModelWindows?: string
   mcpEnabled?: boolean
   ragProxyEnabled?: boolean
+  historyIntervalSec?: number
 }
 
 let cache: StudioSettings | null = null
@@ -87,6 +88,10 @@ export function effectiveSettings(): Required<StudioSettings> {
     disabledTools: s.disabledTools ?? [],
     mcpEnabled: s.mcpEnabled ?? process.env.MCP_ENABLED !== '0',
     ragProxyEnabled: s.ragProxyEnabled ?? process.env.RAG_PROXY_ENABLED !== '0',
+    // One snapshot a day by default. Every index pass would make the
+    // timeline a churn log and the retention window cover barely a day;
+    // 0 captures every pass, for a corpus worth watching that closely.
+    historyIntervalSec: s.historyIntervalSec ?? Number(process.env.HISTORY_INTERVAL_SEC ?? 86400),
     customTools: s.customTools ?? [],
     ragDefaultModel: s.ragDefaultModel ?? process.env.RAG_DEFAULT_MODEL ?? '',
     ragTopK: s.ragTopK ?? Math.min(Math.max(Number(process.env.RAG_TOP_K) || 6, 1), 20),
@@ -179,6 +184,11 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
     if (body.visionModel !== undefined) next.visionModel = String(body.visionModel).slice(0, 120) || undefined
     if (body.mcpEnabled !== undefined) next.mcpEnabled = !!body.mcpEnabled
     if (body.ragProxyEnabled !== undefined) next.ragProxyEnabled = !!body.ragProxyEnabled
+    if (body.historyIntervalSec !== undefined) {
+      const n = Number(body.historyIntervalSec)
+      if (!Number.isFinite(n) || n < 0 || n > 2592000) throw new KbError(400, 'history interval must be 0 to 2592000 seconds')
+      next.historyIntervalSec = n
+    }
     if (body.disabledTools !== undefined) {
       if (!Array.isArray(body.disabledTools)) throw new KbError(400, 'disabledTools must be an array')
       next.disabledTools = body.disabledTools.map(t => String(t).slice(0, 60)).filter(Boolean).slice(0, 50)
