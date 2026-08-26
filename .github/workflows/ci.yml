@@ -19,6 +19,6 @@ jobs:
       - name: Build the server
         run: pnpm --filter @activate-studio/server build
       - name: Server tests
-        run: node --test server/test/
+        run: node --test server/test/*.test.mjs
       - name: Typecheck and build the web app
         run: pnpm --filter @activate-studio/web build
