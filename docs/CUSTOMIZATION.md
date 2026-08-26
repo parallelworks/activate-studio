@@ -29,6 +29,8 @@ The assistant's tool set is managed from the Settings page and from files.
 
 Commands run with the server's user and environment. Treat tool and skill files as configuration with shell access, and keep the extensions directory outside version control (the default location is beside the index, which is already ignored).
 
+A tool the assistant calls with arguments receives them as positional parameters (`"$@"`), not as text pasted onto the end of the command line. Quoting groups words, so `--path "two words"` arrives as two arguments; everything else is literal, so a semicolon, a pipe, backticks, or `$(...)` in a model-written argument is passed to the command as data and never interpreted by the shell. Write commands that expect `"$1"` and friends. This matters most when the assistant is reasoning over retrieved documents, since those are the untrusted input that could otherwise try to steer an argument.
+
 ## Help content
 
 The in-app Help page renders `docs/HELP.md`, split into cards at `##` headings, with `{appName}` and `{kbLabel}` substituted. Point `HELP_FILE` at your own markdown to replace it entirely.

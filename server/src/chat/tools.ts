@@ -376,6 +376,41 @@ export const TOOL_SPECS: ToolSpec[] = [
 
 const TOOL_OUTPUT_CAP = 24_000
 
+/** Split a model-supplied argument string into argv words.
+ *
+ *  Quote-aware so `--flag "two words"` still arrives as two arguments, and
+ *  deliberately nothing more: no metacharacter, expansion, or substitution
+ *  handling. The words produced here are passed to the command as positional
+ *  parameters, so anything the model writes is data rather than shell syntax. */
+export function splitToolArgs(input: string): string[] {
+  const out: string[] = []
+  let cur = ''
+  let started = false
+  let quote: '"' | "'" | null = null
+  for (const ch of input) {
+    if (quote) {
+      if (ch === quote) quote = null
+      else cur += ch
+      continue
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch
+      started = true
+      continue
+    }
+    if (/\s/.test(ch)) {
+      if (started || cur) out.push(cur)
+      cur = ''
+      started = false
+      continue
+    }
+    cur += ch
+    started = true
+  }
+  if (started || cur) out.push(cur)
+  return out
+}
+
 /** Specs for user-defined command tools from Settings. Names that collide
  *  with a built-in are dropped. */
 /** Settings-stored custom tools plus file-based tools from
@@ -404,7 +439,7 @@ export function customToolSpecs(): ToolSpec[] {
         parameters: {
           type: 'object',
           properties: {
-            args: { type: 'string', description: 'Extra command-line arguments appended to the configured command; omit for none.' },
+            args: { type: 'string', description: 'Extra command-line arguments for the configured command; omit for none. Passed as positional parameters, so shell syntax has no effect and quotes group words.' },
           },
         },
       },
@@ -957,9 +992,9 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
         const custom = allCustomTools().find(t => t.name === name)
         if (custom) {
           const extra = String(args.args ?? '').slice(0, 400)
-          const cmd = extra ? `${custom.command} ${extra}` : custom.command
           const out = await new Promise<string>((resolve, reject) => {
-            execFile('bash', ['-lc', cmd], { timeout: 90_000, maxBuffer: 8 * 1024 * 1024 },
+            execFile('bash', ['-lc', `${custom.command} "$@"`, custom.name, ...splitToolArgs(extra)],
+              { timeout: 90_000, maxBuffer: 8 * 1024 * 1024 },
               (err, so, se) => (err ? reject(new Error(se || err.message)) : resolve(so)))
           })
           return { result: (out.trim() || '(no output)').slice(0, TOOL_OUTPUT_CAP), summary: name }
