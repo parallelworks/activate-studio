@@ -46,6 +46,7 @@ export interface StudioSettings {
   hpcStatusWorkflow?: string
   chatTemplateKwargs?: string
   chatModelWindows?: string
+  mcpEnabled?: boolean
 }
 
 let cache: StudioSettings | null = null
@@ -83,6 +84,7 @@ export function effectiveSettings(): Required<StudioSettings> {
     suggestedPrompts: s.suggestedPrompts ?? envPrompts(),
     visionModel: s.visionModel ?? process.env.ADE_VISION_MODEL ?? '',
     disabledTools: s.disabledTools ?? [],
+    mcpEnabled: s.mcpEnabled ?? process.env.MCP_ENABLED !== '0',
     customTools: s.customTools ?? [],
     ragDefaultModel: s.ragDefaultModel ?? process.env.RAG_DEFAULT_MODEL ?? '',
     ragTopK: s.ragTopK ?? Math.min(Math.max(Number(process.env.RAG_TOP_K) || 6, 1), 20),
@@ -173,6 +175,7 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
       next.suggestedPrompts = body.suggestedPrompts.map(p => String(p).slice(0, 300)).filter(Boolean).slice(0, 12)
     }
     if (body.visionModel !== undefined) next.visionModel = String(body.visionModel).slice(0, 120) || undefined
+    if (body.mcpEnabled !== undefined) next.mcpEnabled = !!body.mcpEnabled
     if (body.disabledTools !== undefined) {
       if (!Array.isArray(body.disabledTools)) throw new KbError(400, 'disabledTools must be an array')
       next.disabledTools = body.disabledTools.map(t => String(t).slice(0, 60)).filter(Boolean).slice(0, 50)
