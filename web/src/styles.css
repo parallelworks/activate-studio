@@ -1209,5 +1209,22 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
   .library-rail { width: 100% !important; max-height: 40vh; }
   .library .divider { display: none; }
   .card-pop { width: min(300px, calc(100vw - 24px)); }
+  .tag-panel { width: min(340px, calc(100vw - 24px)); right: 12px; }
   .query-row .grow, .query-form select.field { max-width: 100%; }
+
+  /* Chat. The conversations rail becomes a slide-over: hidden by
+     default so the thread gets the whole width, opened by re-tapping
+     the Chat item in the bottom bar, closed again by picking a
+     conversation. The drag handles are mouse furniture and go; the
+     Activity drawer is a desktop luxury at this width. */
+  .chat-canvas > .flex.h-full > :first-child {
+    position: absolute; left: 0; top: 0; bottom: 0; z-index: 25;
+    width: min(85vw, 320px) !important;
+    transform: translateX(-105%); transition: transform 0.15s ease;
+    box-shadow: 4px 0 18px rgba(16, 24, 40, 0.18);
+    background: var(--pw-rail-bg);
+  }
+  .chat-canvas.rail-open > .flex.h-full > :first-child { transform: none; }
+  .chat-rail-handle, .chat-think-handle, .chat-filter-btn { display: none; }
+  .chat-canvas div[class*="transition-[width]"] { width: 0 !important; min-width: 0 !important; }
 }
