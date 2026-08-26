@@ -5,6 +5,7 @@ import type { FastifyInstance } from 'fastify'
 import { INDEX_BASE, KB_ROOT } from './config.js'
 import { KbError } from './kb.js'
 import { gatewayConfigured } from './chat/gateway.js'
+import { invalidateRemote, remoteStatus } from './mcpClient.js'
 
 /**
  * Runtime-editable settings, stored beside the index. Environment variables
@@ -49,6 +50,7 @@ export interface StudioSettings {
   mcpEnabled?: boolean
   ragProxyEnabled?: boolean
   historyIntervalSec?: number
+  mcpServers?: { name: string; url: string; header?: string }[]
 }
 
 let cache: StudioSettings | null = null
@@ -92,6 +94,7 @@ export function effectiveSettings(): Required<StudioSettings> {
     // timeline a churn log and the retention window cover barely a day;
     // 0 captures every pass, for a corpus worth watching that closely.
     historyIntervalSec: s.historyIntervalSec ?? Number(process.env.HISTORY_INTERVAL_SEC ?? 86400),
+    mcpServers: s.mcpServers ?? [],
     customTools: s.customTools ?? [],
     ragDefaultModel: s.ragDefaultModel ?? process.env.RAG_DEFAULT_MODEL ?? '',
     ragTopK: s.ragTopK ?? Math.min(Math.max(Number(process.env.RAG_TOP_K) || 6, 1), 20),
@@ -150,6 +153,10 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
     deploymentCredential: gatewayConfigured(),
   }))
 
+  // Connection state for each attached MCP server, so the page can show
+  // whether it answered and how many tools it offered.
+  app.get('/api/settings/mcp-servers', async () => ({ servers: await remoteStatus() }))
+
   app.put('/api/settings', async req => {
     const body = req.body as StudioSettings
     const next: StudioSettings = { ...loadSettings() }
@@ -184,6 +191,15 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
     if (body.visionModel !== undefined) next.visionModel = String(body.visionModel).slice(0, 120) || undefined
     if (body.mcpEnabled !== undefined) next.mcpEnabled = !!body.mcpEnabled
     if (body.ragProxyEnabled !== undefined) next.ragProxyEnabled = !!body.ragProxyEnabled
+    if (body.mcpServers !== undefined) {
+      if (!Array.isArray(body.mcpServers)) throw new KbError(400, 'mcpServers must be an array')
+      next.mcpServers = body.mcpServers.slice(0, 10).map(m => {
+        const name = String(m?.name ?? '').toLowerCase().replace(/[^a-z0-9_]/g, '_').replace(/^_+|_+$/g, '').slice(0, 24)
+        const url = String(m?.url ?? '').trim().slice(0, 500)
+        if (url && !/^https?:\/\//i.test(url)) throw new KbError(400, 'MCP server url must be http(s)')
+        return { name, url, header: String(m?.header ?? '').slice(0, 300) || undefined }
+      }).filter(m => m.name && m.url)
+    }
     if (body.historyIntervalSec !== undefined) {
       const n = Number(body.historyIntervalSec)
       if (!Number.isFinite(n) || n < 0 || n > 2592000) throw new KbError(400, 'history interval must be 0 to 2592000 seconds')
@@ -250,6 +266,7 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
     await fsp.mkdir(INDEX_BASE, { recursive: true })
     await fsp.writeFile(FILE, JSON.stringify(next, null, 1))
     cache = next
+    invalidateRemote()
     return { effective: effectiveSettings(), saved: next }
   })
 }

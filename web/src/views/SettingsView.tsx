@@ -24,6 +24,7 @@ interface Effective {
   ragAdvertiseRagModel: boolean
   ragAdvertiseAgentModel: boolean
   mcpEnabled: boolean
+  mcpServers: { name: string; url: string; header?: string }[]
   ragProxyEnabled: boolean
   ragEndpointAutoStart: boolean
   ragEndpointName: string
@@ -112,6 +113,7 @@ export function SettingsView() {
   const [busy, setBusy] = useState(false)
   const [models, setModels] = useState<string[]>([])
   const [catalog, setCatalog] = useState<CatalogTool[]>([])
+  const [mcpStatus, setMcpStatus] = useState<{ name: string; url: string; tools: number; error: string | null }[]>([])
   const [ext, setExt] = useState<Extensions | null>(null)
   const [specOpen, setSpecOpen] = useState<string | null>(null)
   const [me, setMe] = useState<{ authEnabled?: boolean; verified: boolean; mode: 'stored' | 'session' | 'none'; last4?: string; addedAt?: string; sessionExpiresAt?: string; kind?: string; credExpiresAt?: string | null; credExpired?: boolean; baseUrl?: string | null; gatewayHost?: string
@@ -154,6 +156,7 @@ export function SettingsView() {
   }
 
   useEffect(() => {
+    fetch('/api/settings/mcp-servers').then(r => r.json()).then(d => setMcpStatus(d.servers ?? [])).catch(() => {})
     fetch('/api/settings').then(r => r.json())
       .then(d => { setForm(d.effective); setDeploymentCred(d.deploymentCredential ?? null) })
       .catch(() => setNote('Could not load settings.'))
@@ -682,6 +685,39 @@ export function SettingsView() {
                 <code className="mcp-snippet">pw code mcp add --transport http studio-kb {location.origin}/api/mcp</code>
               </CopyToClipboard>
               <p className="muted key-note">pw code signs its platform requests with your existing CLI login, so no token goes in the command.</p>
+              <div className="tool-group">Attached MCP servers (tools from elsewhere)</div>
+              <p className="muted view-sub">
+                Servers this deployment connects to as a client, so their tools join the assistant's own and one
+                question can cross both. A server's tools appear namespaced under its name. Two things to weigh
+                before attaching one: the assistant will send tool arguments to that third party, and a server's
+                tool descriptions are text the model reads while choosing what to call, so attach only servers you
+                trust.
+              </p>
+              {(form.mcpServers ?? []).map((srv, i) => {
+                const st = mcpStatus.find(x => x.name === srv.name)
+                return (
+                  <div className="mcp-server-row" key={i}>
+                    <input className="field" placeholder="name (hubspot)" value={srv.name}
+                      onChange={e => { const next = [...form.mcpServers]; next[i] = { ...srv, name: e.target.value }; setForm({ ...form, mcpServers: next }) }} />
+                    <input className="field" placeholder="https://host/mcp" value={srv.url}
+                      onChange={e => { const next = [...form.mcpServers]; next[i] = { ...srv, url: e.target.value }; setForm({ ...form, mcpServers: next }) }} />
+                    <input className="field" placeholder="Authorization: Bearer <token>" value={srv.header ?? ''}
+                      onChange={e => { const next = [...form.mcpServers]; next[i] = { ...srv, header: e.target.value }; setForm({ ...form, mcpServers: next }) }} />
+                    <button className="btn-secondary" onClick={() => setForm({ ...form, mcpServers: form.mcpServers.filter((_, j) => j !== i) })}>Remove</button>
+                    <span className="mcp-server-state">
+                      {st ? (st.error
+                        ? <><span className="status-dot warn" /> {st.error}</>
+                        : <><span className="status-dot ok" /> {st.tools} tools</>)
+                        : <span className="muted">save to connect</span>}
+                    </span>
+                  </div>
+                )
+              })}
+              <div className="query-actions">
+                <button className="btn-secondary" onClick={() => setForm({ ...form, mcpServers: [...(form.mcpServers ?? []), { name: '', url: '', header: '' }] })}>Attach a server</button>
+              </div>
+              {saveRow(false)}
+
               <p className="field-label">Other MCP clients (settings JSON)</p>
               <CopyToClipboard text={JSON.stringify({ mcpServers: { 'studio-kb': { type: 'http', url: `${location.origin}/api/mcp`, ...(me?.authEnabled ? { headers: { Authorization: 'Bearer <platform token>' } } : {}) } } }, null, 2)}>
                 <code className="mcp-snippet">{JSON.stringify({ mcpServers: { 'studio-kb': { type: 'http', url: `${location.origin}/api/mcp`, ...(me?.authEnabled ? { headers: { Authorization: 'Bearer <platform token>' } } : {}) } } }, null, 2)}</code>
