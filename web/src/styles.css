@@ -1183,12 +1183,22 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
    which is where thumbs are. Nothing changes above 760px, and nothing
    here touches color or type. */
 @media (max-width: 760px) {
+  /* Dynamic-toolbar browsers shrink the visual viewport as their chrome
+     appears; 100% of the layout viewport leaves the bottom bar buried
+     behind it. dvh tracks what is actually visible, and browsers without
+     it ignore the declaration and keep the 100% above. */
+  .app { height: 100dvh; }
+  body { overflow-x: hidden; }
   .app-body { flex-direction: column; }
   .sidenav, .sidenav.collapsed {
     order: 2; width: 100%; flex-direction: row; align-items: center;
     padding: 2px 6px; border-right: 0; border-top: 1px solid var(--pw-border);
   }
   .sidenav-head { margin: 0 4px 0 0; }
+  /* The status footer rides inside the nav on desktop; in a 48px bottom
+     bar it overflowed the viewport edge and buried the icons. Its
+     content lives on the Stats page, which is one tap away. */
+  .sidenav-footer { display: none; }
   /* The collapse toggle manages a rail that no longer exists here, and
      the brand text costs width the icons need. */
   .brand-text, .nav-collapse, .head-actions { display: none; }
