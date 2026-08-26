@@ -16,6 +16,16 @@ const MODEL_STORAGE_KEY = 'studio.chat.lastModel'
  *  selection is missing or absent from the live model list, this swaps in the
  *  remembered model, or the first available one, and every valid selection is
  *  persisted for the next visit. */
+function FilterReloader() {
+  const { loadConversations } = useChat()
+  useEffect(() => {
+    const on = () => { void loadConversations() }
+    window.addEventListener('ade:chat-filter-changed', on)
+    return () => window.removeEventListener('ade:chat-filter-changed', on)
+  }, [loadConversations])
+  return null
+}
+
 function ModelSelectionGuard() {
   const { models, selectedProvider, setSelectedProvider, hasLoadedModels } = useChat()
   useEffect(() => {
@@ -257,7 +267,10 @@ export function ChatView() {
     const next = chatFilter === 'all' ? 'mine' : 'all'
     setChatListFilter(next)
     setChatFilterState(next)
-    setChatEpoch(e => e + 1)
+    // A list refresh, not a remount: bumping the provider epoch here tore
+    // down the open thread and aborted any stream just to refilter the
+    // rail. FilterReloader inside the provider re-lists instead.
+    window.dispatchEvent(new Event('ade:chat-filter-changed'))
   }
 
   return (
@@ -324,6 +337,7 @@ export function ChatView() {
             </div>
           )}
           <ModelSelectionGuard />
+          <FilterReloader />
           <ChatLayout>
             {showAttachments ? <AttachmentManager /> : activeId ? <ChatThread conversationId={activeId} /> : <ChatEmptyState />}
           </ChatLayout>
