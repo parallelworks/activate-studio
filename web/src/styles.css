@@ -1176,6 +1176,10 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .hist-tick.active::before { width: 11px; height: 2px; opacity: 1; }
 .hist-now { color: var(--pw-link); opacity: 0.75; }
 
+.mcp-snippet { display: block; background: var(--pw-bg); border: 1px solid var(--pw-border); border-radius: 6px;
+  padding: 8px 10px; font-size: 11.5px; line-height: 1.5; overflow-x: auto; white-space: pre-wrap; word-break: break-all;
+  cursor: copy; margin-bottom: 6px; }
+
 /* The More button and its sheet are phone furniture; at desktop width
    the full rail carries every destination and these never render. */
 .nav-more, .nav-more-sheet { display: none; }
@@ -1194,6 +1198,11 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
   .app { height: 100dvh; }
   body { overflow-x: hidden; }
   .app-body { flex-direction: column; }
+  /* Desktop gives .view height:100% to fill the row beside the rail; in
+     a column that same 100% plus the bar overflows the viewport, so the
+     whole page scrolled and carried the bar off-screen. flex:1 alone
+     sizes it correctly here. */
+  .view { height: auto; }
   .sidenav, .sidenav.collapsed {
     order: 2; width: 100%; flex-direction: row; align-items: center;
     padding: 2px 6px; border-right: 0; border-top: 1px solid var(--pw-border);
