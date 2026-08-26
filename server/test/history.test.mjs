@@ -54,3 +54,14 @@ test('a diff tells a move from an add-plus-remove by inode', () => {
   assert.equal(d.removed[0].path, 'docs/deep/c.md')
   assert.equal(d.modified[0].path, 'a.md')
 })
+
+test('the cadence keeps one point per interval and records a check between', async () => {
+  const now = Math.floor(Date.now() / 1000)
+  snap(String(now - 60), [{ path: 'a.md', size: 1, mtime: now, inode: 1 }])
+  const { captureIfStale } = hist
+  // Default cadence is a day, and the newest snapshot is a minute old, so
+  // a changed index must not earn a second point yet.
+  const before = hist.listSnapshots().length
+  await captureIfStale()
+  assert.equal(hist.listSnapshots().length, before, 'no extra point inside the interval')
+})

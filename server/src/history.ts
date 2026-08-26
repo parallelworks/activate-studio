@@ -5,6 +5,7 @@ import type { FastifyInstance } from 'fastify'
 import { GUFI_INDEX, INDEX_BASE, gufiAvailable } from './config.js'
 import { queryPerDir } from './gufi.js'
 import { KbError } from './kb.js'
+import { effectiveSettings } from './settings.js'
 
 /**
  * Corpus history: a timeline of what the knowledge base held, captured
@@ -164,13 +165,30 @@ function recordCheck(): void {
   fs.writeFileSync(CHECKS_FILE, kept.map(c => JSON.stringify(c)).join('\n') + '\n')
 }
 
-/** Capture when the index has been rebuilt since the last snapshot; when
- *  it has not, leave the daily proof-of-life marker instead. */
+/**
+ * Capture when the index has changed and the cadence has elapsed.
+ *
+ * The cadence exists because indexing is frequent and change is not
+ * interesting at that resolution: capturing every pass turns the timeline
+ * into a churn log and burns the retention window in a day. At the
+ * default of one snapshot a day, a point summarizes everything that
+ * changed since the previous one, which is the granularity someone
+ * reviewing a corpus actually wants. Setting it to 0 captures every pass.
+ *
+ * Either way an unchanged index leaves the proof-of-life marker, so quiet
+ * days stay legible as verified rather than as silence.
+ */
 export async function captureIfStale(): Promise<SnapshotMeta | null> {
   if (!gufiAvailable()) return null
   const all = listSnapshots()
   const last = all[all.length - 1]
   if (last && indexMtime() <= last.takenAt) {
+    recordCheck()
+    return null
+  }
+  const every = effectiveSettings().historyIntervalSec
+  if (last && every > 0 && Math.floor(Date.now() / 1000) - last.takenAt < every) {
+    // Changed, but too soon to be worth its own point.
     recordCheck()
     return null
   }
