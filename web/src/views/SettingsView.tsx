@@ -22,6 +22,7 @@ interface Effective {
   ragAllowDeploymentKey: boolean
   ragAdvertiseRagModel: boolean
   ragAdvertiseAgentModel: boolean
+  mcpEnabled: boolean
   ragEndpointAutoStart: boolean
   ragEndpointName: string
   requirePersonalKey: boolean
@@ -739,6 +740,30 @@ export function SettingsView() {
                 )}
                 {ragEp?.detail && ragEp.state !== 'running' && <p className="muted key-note">{ragEp.detail}</p>}
               </div>
+              <div className="tool-group">MCP access (bring your own model)</div>
+              <p className="muted view-sub">
+                <CopyToClipboard text={`${location.origin}/api/mcp`}><code>{location.origin}/api/mcp</code></CopyToClipboard> serves
+                this knowledge base over the Model Context Protocol: the client brings its own model and calls the corpus tools
+                directly (search, read, list, query, labels, docs). Read-only; adding material, labels, and platform actions stay
+                with this assistant. {me?.authEnabled
+                  ? 'This deployment requires sign-in, so clients send a platform token as the bearer.'
+                  : 'This deployment is open, so no header is needed.'}
+              </p>
+              <label className="key-persist">
+                <input type="checkbox" checked={form.mcpEnabled}
+                  onChange={e => setForm({ ...form, mcpEnabled: e.target.checked })} />
+                Serve MCP at /api/mcp (individual tools can be disabled in the tool catalog above)
+              </label>
+              <p className="field-label">Claude Code and pw code</p>
+              <CopyToClipboard text={`claude mcp add --transport http studio-kb ${location.origin}/api/mcp${me?.authEnabled ? ' -H "Authorization: Bearer <platform token>"' : ''}`}>
+                <code className="mcp-snippet">claude mcp add --transport http studio-kb {location.origin}/api/mcp{me?.authEnabled ? ' -H "Authorization: Bearer <platform token>"' : ''}</code>
+              </CopyToClipboard>
+              <p className="field-label">Any MCP client (settings JSON)</p>
+              <CopyToClipboard text={JSON.stringify({ mcpServers: { 'studio-kb': { type: 'http', url: `${location.origin}/api/mcp`, ...(me?.authEnabled ? { headers: { Authorization: 'Bearer <platform token>' } } : {}) } } }, null, 2)}>
+                <code className="mcp-snippet">{JSON.stringify({ mcpServers: { 'studio-kb': { type: 'http', url: `${location.origin}/api/mcp`, ...(me?.authEnabled ? { headers: { Authorization: 'Bearer <platform token>' } } : {}) } } }, null, 2)}</code>
+              </CopyToClipboard>
+              {saveRow(false)}
+
               <div className="tool-group">Recent endpoint calls</div>
               <p className="muted view-sub">
                 The last 50 calls to this /v1 surface, most recent first, held in memory and cleared on restart. Question text is not recorded; the distilled retrieval terms are.

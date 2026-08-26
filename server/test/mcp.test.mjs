@@ -13,8 +13,10 @@ process.env.INDEX_BASE = fs.mkdtempSync(path.join(os.tmpdir(), 'studio-idx-'))
 const { default: Fastify } = await import('fastify')
 const { mcpRoutes } = await import('../dist/mcp.js')
 
+const { settingsRoutes } = await import('../dist/settings.js')
 const app = Fastify()
 await app.register(mcpRoutes)
+await app.register(settingsRoutes)
 const rpc = (method, params, id = 1) =>
   app.inject({ method: 'POST', url: '/api/mcp', payload: { jsonrpc: '2.0', id, method, params } })
     .then(r => JSON.parse(r.body))
@@ -51,4 +53,14 @@ test('an unexposed tool is refused, an unknown method is an error', async () => 
 test('notifications get no body', async () => {
   const r = await app.inject({ method: 'POST', url: '/api/mcp', payload: { jsonrpc: '2.0', method: 'notifications/initialized' } })
   assert.equal(r.statusCode, 202)
+})
+
+test('the settings switch turns the endpoint off', async () => {
+  // Through the settings route, the way the UI does it, so the module's
+  // cache is updated rather than bypassed.
+  const put = await app.inject({ method: 'PUT', url: '/api/settings', payload: { mcpEnabled: false } })
+  assert.equal(put.statusCode, 200)
+  const r = await app.inject({ method: 'POST', url: '/api/mcp', payload: { jsonrpc: '2.0', id: 9, method: 'tools/list' } })
+  assert.equal(r.statusCode, 403)
+  await app.inject({ method: 'PUT', url: '/api/settings', payload: { mcpEnabled: true } })
 })
