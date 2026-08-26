@@ -54,6 +54,9 @@ function exposedTools(): { name: string; description: string; inputSchema: Recor
 
 export async function mcpRoutes(app: FastifyInstance): Promise<void> {
   app.post('/api/mcp', async (req, reply) => {
+    if (!effectiveSettings().mcpEnabled) {
+      return reply.status(403).send({ error: 'MCP access is disabled for this deployment (Settings, MCP access)' })
+    }
     const msg = (req.body ?? {}) as RpcMessage
 
     // Notifications carry no id and expect no body.
