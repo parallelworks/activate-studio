@@ -1182,6 +1182,11 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .hist-tick.active::before { width: 11px; height: 2px; opacity: 1; }
 .hist-now { color: var(--pw-link); opacity: 0.75; }
 
+.access-compare { margin: 0 0 14px; display: grid; gap: 10px; }
+.access-compare dt { font-size: 13px; font-weight: 650; color: var(--pw-navy); margin-bottom: 2px; }
+.access-compare dd { margin: 0; font-size: 13px; color: var(--pw-muted); line-height: 1.55; }
+.access-compare > div { border-left: 2px solid var(--pw-border-strong); padding-left: 12px; }
+.access-switch { display: flex; align-items: center; gap: 10px; margin: 10px 0 8px; font-size: 13px; }
 .mcp-snippet { display: block; background: var(--pw-bg); border: 1px solid var(--pw-border); border-radius: 6px;
   padding: 8px 10px; font-size: 11.5px; line-height: 1.5; overflow-x: auto; white-space: pre-wrap; word-break: break-all;
   cursor: copy; margin-bottom: 6px; }

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { CopyToClipboard } from '@parallelworks/ui'
+import { CopyToClipboard, SwitchToggle } from '@parallelworks/ui'
 import { ACCENTS, SURFACES, applyAccent, applySurface } from '../accents'
 import { useAppConfig } from '../config'
 import { bannerInk } from '../components/ClassificationBanner'
@@ -653,14 +653,17 @@ export function SettingsView() {
           {section === 'rag' && (
             <>
               <h1>External access</h1>
-              <p className="muted view-sub">
-                Two ways to use this knowledge base from outside, independent and freely combined.
-                <b> Knowledge tools (MCP)</b>: the client brings its own model and calls the corpus tools directly,
-                which suits agentic clients such as pw code, Claude Code, and IDE assistants; answers come from the
-                caller's model, grounded by our search. <b>Grounded model (OpenAI-compatible)</b>: this deployment
-                answers as a model with retrieval built in, which suits anything that can only point at an OpenAI
-                base URL, and is what the platform model catalog publishes. Each has its own switch below.
-              </p>
+              <p className="muted view-sub">Two ways to use this knowledge base from outside. They are independent, and a deployment can serve either or both.</p>
+              <dl className="access-compare">
+                <div>
+                  <dt>Knowledge tools (MCP)</dt>
+                  <dd>The client brings its own model and calls the corpus tools directly. Answers come from the caller's model, grounded by our search. Suits pw code, other agentic clients, and IDE assistants.</dd>
+                </div>
+                <div>
+                  <dt>Grounded model (OpenAI-compatible)</dt>
+                  <dd>This deployment answers as a model, with retrieval built in. Suits any client that can only point at an OpenAI base URL, and it is what the platform model catalog publishes.</dd>
+                </div>
+              </dl>
               <div className="tool-group">Knowledge tools over MCP (your model, our tools)</div>
               <p className="muted view-sub">
                 <CopyToClipboard text={`${location.origin}/api/mcp`}><code>{location.origin}/api/mcp</code></CopyToClipboard> serves
@@ -670,16 +673,16 @@ export function SettingsView() {
                   ? 'This deployment requires sign-in, so clients send a platform token as the bearer.'
                   : 'This deployment is open, so no header is needed.'}
               </p>
-              <label className="key-persist">
-                <input type="checkbox" checked={form.mcpEnabled}
-                  onChange={e => setForm({ ...form, mcpEnabled: e.target.checked })} />
-                Serve MCP at /api/mcp (individual tools can be disabled in the tool catalog above)
-              </label>
-              <p className="field-label">Claude Code and pw code</p>
-              <CopyToClipboard text={`claude mcp add --transport http studio-kb ${location.origin}/api/mcp${me?.authEnabled ? ' -H "Authorization: Bearer <platform token>"' : ''}`}>
-                <code className="mcp-snippet">claude mcp add --transport http studio-kb {location.origin}/api/mcp{me?.authEnabled ? ' -H "Authorization: Bearer <platform token>"' : ''}</code>
+              <div className="access-switch">
+                <SwitchToggle value={form.mcpEnabled} onChange={v => setForm({ ...form, mcpEnabled: v })} yesLabel="On" noLabel="Off" />
+                <span>Serve MCP at /api/mcp. Individual tools can be disabled in the tool catalog above.</span>
+              </div>
+              <p className="field-label">pw code</p>
+              <CopyToClipboard text={`pw code mcp add --transport http studio-kb ${location.origin}/api/mcp`}>
+                <code className="mcp-snippet">pw code mcp add --transport http studio-kb {location.origin}/api/mcp</code>
               </CopyToClipboard>
-              <p className="field-label">Any MCP client (settings JSON)</p>
+              <p className="muted key-note">pw code signs its platform requests with your existing CLI login, so no token goes in the command.</p>
+              <p className="field-label">Other MCP clients (settings JSON)</p>
               <CopyToClipboard text={JSON.stringify({ mcpServers: { 'studio-kb': { type: 'http', url: `${location.origin}/api/mcp`, ...(me?.authEnabled ? { headers: { Authorization: 'Bearer <platform token>' } } : {}) } } }, null, 2)}>
                 <code className="mcp-snippet">{JSON.stringify({ mcpServers: { 'studio-kb': { type: 'http', url: `${location.origin}/api/mcp`, ...(me?.authEnabled ? { headers: { Authorization: 'Bearer <platform token>' } } : {}) } } }, null, 2)}</code>
               </CopyToClipboard>
@@ -687,11 +690,10 @@ export function SettingsView() {
 
 
               <div className="tool-group">Grounded model (OpenAI-compatible /v1)</div>
-              <label className="key-persist">
-                <input type="checkbox" checked={form.ragProxyEnabled}
-                  onChange={e => setForm({ ...form, ragProxyEnabled: e.target.checked })} />
-                Serve the grounded model at /v1
-              </label>
+              <div className="access-switch">
+                <SwitchToggle value={form.ragProxyEnabled} onChange={v => setForm({ ...form, ragProxyEnabled: v })} yesLabel="On" noLabel="Off" />
+                <span>Serve the grounded model at /v1.</span>
+              </div>
               <p className="muted view-sub">
                 The endpoint at{' '}
                 <CopyToClipboard text={`${location.origin}/v1`}><code>{location.origin}/v1</code></CopyToClipboard> lets
