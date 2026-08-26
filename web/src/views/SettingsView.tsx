@@ -23,6 +23,7 @@ interface Effective {
   ragAdvertiseRagModel: boolean
   ragAdvertiseAgentModel: boolean
   mcpEnabled: boolean
+  ragProxyEnabled: boolean
   ragEndpointAutoStart: boolean
   ragEndpointName: string
   requirePersonalKey: boolean
@@ -261,7 +262,7 @@ export function SettingsView() {
   const sections: { id: SectionId; label: string }[] = [
     { id: 'general', label: 'General' },
     ...(me?.authEnabled ? [{ id: 'access' as SectionId, label: 'Model access' }] : []),
-    { id: 'rag', label: 'RAG endpoint' },
+    { id: 'rag', label: 'External access' },
     { id: 'tools', label: 'Assistant tools' },
     { id: 'ext', label: 'Extensions' },
   ]
@@ -640,10 +641,51 @@ export function SettingsView() {
 
           {section === 'rag' && (
             <>
-              <h1>RAG endpoint</h1>
+              <h1>External access</h1>
               <p className="muted view-sub">
-                This deployment serves an OpenAI-compatible endpoint at{' '}
-                <CopyToClipboard text={`${location.origin}/v1`}><code>{location.origin}/v1</code></CopyToClipboard>, so any OpenAI-speaking client (pw code, SDKs, other agents) can use the knowledge base as a grounded model. Callers authenticate with their own gateway API key as the bearer token; the endpoint holds no credentials of its own.
+                Two ways to use this knowledge base from outside, independent and freely combined.
+                <b> Knowledge tools (MCP)</b>: the client brings its own model and calls the corpus tools directly,
+                which suits agentic clients such as pw code, Claude Code, and IDE assistants; answers come from the
+                caller's model, grounded by our search. <b>Grounded model (OpenAI-compatible)</b>: this deployment
+                answers as a model with retrieval built in, which suits anything that can only point at an OpenAI
+                base URL, and is what the platform model catalog publishes. Each has its own switch below.
+              </p>
+              <div className="tool-group">Knowledge tools over MCP (your model, our tools)</div>
+              <p className="muted view-sub">
+                <CopyToClipboard text={`${location.origin}/api/mcp`}><code>{location.origin}/api/mcp</code></CopyToClipboard> serves
+                this knowledge base over the Model Context Protocol: the client brings its own model and calls the corpus tools
+                directly (search, read, list, query, labels, docs). Read-only; adding material, labels, and platform actions stay
+                with this assistant. {me?.authEnabled
+                  ? 'This deployment requires sign-in, so clients send a platform token as the bearer.'
+                  : 'This deployment is open, so no header is needed.'}
+              </p>
+              <label className="key-persist">
+                <input type="checkbox" checked={form.mcpEnabled}
+                  onChange={e => setForm({ ...form, mcpEnabled: e.target.checked })} />
+                Serve MCP at /api/mcp (individual tools can be disabled in the tool catalog above)
+              </label>
+              <p className="field-label">Claude Code and pw code</p>
+              <CopyToClipboard text={`claude mcp add --transport http studio-kb ${location.origin}/api/mcp${me?.authEnabled ? ' -H "Authorization: Bearer <platform token>"' : ''}`}>
+                <code className="mcp-snippet">claude mcp add --transport http studio-kb {location.origin}/api/mcp{me?.authEnabled ? ' -H "Authorization: Bearer <platform token>"' : ''}</code>
+              </CopyToClipboard>
+              <p className="field-label">Any MCP client (settings JSON)</p>
+              <CopyToClipboard text={JSON.stringify({ mcpServers: { 'studio-kb': { type: 'http', url: `${location.origin}/api/mcp`, ...(me?.authEnabled ? { headers: { Authorization: 'Bearer <platform token>' } } : {}) } } }, null, 2)}>
+                <code className="mcp-snippet">{JSON.stringify({ mcpServers: { 'studio-kb': { type: 'http', url: `${location.origin}/api/mcp`, ...(me?.authEnabled ? { headers: { Authorization: 'Bearer <platform token>' } } : {}) } } }, null, 2)}</code>
+              </CopyToClipboard>
+              {saveRow(false)}
+
+
+              <div className="tool-group">Grounded model (OpenAI-compatible /v1)</div>
+              <label className="key-persist">
+                <input type="checkbox" checked={form.ragProxyEnabled}
+                  onChange={e => setForm({ ...form, ragProxyEnabled: e.target.checked })} />
+                Serve the grounded model at /v1
+              </label>
+              <p className="muted view-sub">
+                The endpoint at{' '}
+                <CopyToClipboard text={`${location.origin}/v1`}><code>{location.origin}/v1</code></CopyToClipboard> lets
+                any OpenAI-speaking client (pw code, SDKs, other agents) use the knowledge base as a grounded model.
+                Callers authenticate with their own gateway API key as the bearer token; the endpoint holds no credentials of its own.
               </p>
               <p className="muted view-sub">
                 Pick the underlying model per request as <code>studio-agent/&lt;model-id&gt;</code> (any other model id behaves like studio-rag with that model), or set the default below. Headers <code>X-RAG-Top-K</code>, <code>X-RAG-Tags</code>, and <code>X-RAG-Off: 1</code> tune retrieval per request.
@@ -740,31 +782,7 @@ export function SettingsView() {
                 )}
                 {ragEp?.detail && ragEp.state !== 'running' && <p className="muted key-note">{ragEp.detail}</p>}
               </div>
-              <div className="tool-group">MCP access (bring your own model)</div>
-              <p className="muted view-sub">
-                <CopyToClipboard text={`${location.origin}/api/mcp`}><code>{location.origin}/api/mcp</code></CopyToClipboard> serves
-                this knowledge base over the Model Context Protocol: the client brings its own model and calls the corpus tools
-                directly (search, read, list, query, labels, docs). Read-only; adding material, labels, and platform actions stay
-                with this assistant. {me?.authEnabled
-                  ? 'This deployment requires sign-in, so clients send a platform token as the bearer.'
-                  : 'This deployment is open, so no header is needed.'}
-              </p>
-              <label className="key-persist">
-                <input type="checkbox" checked={form.mcpEnabled}
-                  onChange={e => setForm({ ...form, mcpEnabled: e.target.checked })} />
-                Serve MCP at /api/mcp (individual tools can be disabled in the tool catalog above)
-              </label>
-              <p className="field-label">Claude Code and pw code</p>
-              <CopyToClipboard text={`claude mcp add --transport http studio-kb ${location.origin}/api/mcp${me?.authEnabled ? ' -H "Authorization: Bearer <platform token>"' : ''}`}>
-                <code className="mcp-snippet">claude mcp add --transport http studio-kb {location.origin}/api/mcp{me?.authEnabled ? ' -H "Authorization: Bearer <platform token>"' : ''}</code>
-              </CopyToClipboard>
-              <p className="field-label">Any MCP client (settings JSON)</p>
-              <CopyToClipboard text={JSON.stringify({ mcpServers: { 'studio-kb': { type: 'http', url: `${location.origin}/api/mcp`, ...(me?.authEnabled ? { headers: { Authorization: 'Bearer <platform token>' } } : {}) } } }, null, 2)}>
-                <code className="mcp-snippet">{JSON.stringify({ mcpServers: { 'studio-kb': { type: 'http', url: `${location.origin}/api/mcp`, ...(me?.authEnabled ? { headers: { Authorization: 'Bearer <platform token>' } } : {}) } } }, null, 2)}</code>
-              </CopyToClipboard>
-              {saveRow(false)}
-
-              <div className="tool-group">Recent endpoint calls</div>
+              <div className="tool-group">Recent grounded-model calls</div>
               <p className="muted view-sub">
                 The last 50 calls to this /v1 surface, most recent first, held in memory and cleared on restart. Question text is not recorded; the distilled retrieval terms are.
               </p>

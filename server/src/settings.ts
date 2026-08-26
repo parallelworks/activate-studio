@@ -47,6 +47,7 @@ export interface StudioSettings {
   chatTemplateKwargs?: string
   chatModelWindows?: string
   mcpEnabled?: boolean
+  ragProxyEnabled?: boolean
 }
 
 let cache: StudioSettings | null = null
@@ -85,6 +86,7 @@ export function effectiveSettings(): Required<StudioSettings> {
     visionModel: s.visionModel ?? process.env.ADE_VISION_MODEL ?? '',
     disabledTools: s.disabledTools ?? [],
     mcpEnabled: s.mcpEnabled ?? process.env.MCP_ENABLED !== '0',
+    ragProxyEnabled: s.ragProxyEnabled ?? process.env.RAG_PROXY_ENABLED !== '0',
     customTools: s.customTools ?? [],
     ragDefaultModel: s.ragDefaultModel ?? process.env.RAG_DEFAULT_MODEL ?? '',
     ragTopK: s.ragTopK ?? Math.min(Math.max(Number(process.env.RAG_TOP_K) || 6, 1), 20),
@@ -176,6 +178,7 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
     }
     if (body.visionModel !== undefined) next.visionModel = String(body.visionModel).slice(0, 120) || undefined
     if (body.mcpEnabled !== undefined) next.mcpEnabled = !!body.mcpEnabled
+    if (body.ragProxyEnabled !== undefined) next.ragProxyEnabled = !!body.ragProxyEnabled
     if (body.disabledTools !== undefined) {
       if (!Array.isArray(body.disabledTools)) throw new KbError(400, 'disabledTools must be an array')
       next.disabledTools = body.disabledTools.map(t => String(t).slice(0, 60)).filter(Boolean).slice(0, 50)
