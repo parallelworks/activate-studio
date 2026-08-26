@@ -64,3 +64,18 @@ test('the settings switch turns the endpoint off', async () => {
   assert.equal(r.statusCode, 403)
   await app.inject({ method: 'PUT', url: '/api/settings', payload: { mcpEnabled: true } })
 })
+
+test('the grounded-model switch turns /v1 off without touching MCP', async () => {
+  const { ragProxyRoutes } = await import('../dist/ragProxy.js')
+  const app2 = Fastify()
+  await app2.register(mcpRoutes)
+  await app2.register(ragProxyRoutes)
+  const { settingsRoutes: sr } = await import('../dist/settings.js')
+  await app2.register(sr)
+  await app2.inject({ method: 'PUT', url: '/api/settings', payload: { ragProxyEnabled: false, mcpEnabled: true } })
+  const v1 = await app2.inject({ method: 'GET', url: '/v1/models' })
+  assert.equal(v1.statusCode, 403)
+  const mcp = await app2.inject({ method: 'POST', url: '/api/mcp', payload: { jsonrpc: '2.0', id: 1, method: 'ping' } })
+  assert.equal(mcp.statusCode, 200)
+  await app2.inject({ method: 'PUT', url: '/api/settings', payload: { ragProxyEnabled: true } })
+})
