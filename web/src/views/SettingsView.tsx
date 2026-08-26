@@ -13,6 +13,7 @@ interface Effective {
   iconUrl: string
   iconUrlDark: string
   sweepIntervalSec: number
+  historyIntervalSec: number
   suggestedPrompts: string[]
   visionModel: string
   disabledTools: string[]
@@ -377,6 +378,16 @@ export function SettingsView() {
                   <label className="field-label">Background sync interval (seconds, 0 pauses)</label>
                   <input className="field" type="number" min={0} max={86400} value={form.sweepIntervalSec}
                     onChange={e => setForm({ ...form, sweepIntervalSec: Number(e.target.value) })} />
+                </div>
+                <div>
+                  <label className="field-label">Corpus history snapshot (seconds between points)</label>
+                  <input className="field" type="number" min={0} max={2592000} step={3600} value={form.historyIntervalSec}
+                    onChange={e => setForm({ ...form, historyIntervalSec: Number(e.target.value) })} />
+                  <p className="muted key-note">
+                    86400 is one point a day, summarizing everything that changed since the previous point. 0 captures
+                    every index pass, which is a churn log on a busy corpus. Days with no change are recorded as a
+                    check either way.
+                  </p>
                 </div>
                 <div>
                   <label className="field-label">Vision model for image captioning</label>
