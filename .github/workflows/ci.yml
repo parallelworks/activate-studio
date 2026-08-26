@@ -1,0 +1,24 @@
+# Build and test on every push and pull request. A red check on the PR and
+# GitHub's failure email to the pusher are the pass/fail notification;
+# nothing here deploys anything.
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - name: Build the server
+        run: pnpm --filter @activate-studio/server build
+      - name: Server tests
+        run: node --test server/test/
+      - name: Typecheck and build the web app
+        run: pnpm --filter @activate-studio/web build

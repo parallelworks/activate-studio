@@ -1175,3 +1175,39 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .hist-tick.active { color: var(--pw-link); font-weight: 600; }
 .hist-tick.active::before { width: 11px; height: 2px; opacity: 1; }
 .hist-now { color: var(--pw-link); opacity: 0.75; }
+
+/* ---- phones and narrow windows ----
+   One breakpoint, layout only: the desktop arrangement (a navigation rail
+   beside the view, side-by-side panes, multi-column grids) becomes a
+   single column with the navigation as an icon bar along the bottom edge,
+   which is where thumbs are. Nothing changes above 760px, and nothing
+   here touches color or type. */
+@media (max-width: 760px) {
+  .app-body { flex-direction: column; }
+  .sidenav, .sidenav.collapsed {
+    order: 2; width: 100%; flex-direction: row; align-items: center;
+    padding: 2px 6px; border-right: 0; border-top: 1px solid var(--pw-border);
+  }
+  .sidenav-head { margin: 0 4px 0 0; }
+  /* The collapse toggle manages a rail that no longer exists here, and
+     the brand text costs width the icons need. */
+  .brand-text, .nav-collapse, .head-actions { display: none; }
+  .sidenav-items, .sidenav.collapsed .sidenav-items { flex-direction: row; flex: 1; justify-content: space-evenly; gap: 0; margin: 0; }
+  .sidenav-items.sidenav-secondary { flex: 0 0 auto; }
+  .sidenav-item, .sidenav.collapsed .sidenav-item { justify-content: center; padding: 10px; }
+  .sidenav-item span { display: none; }
+  /* auto-fit with a 420px floor overflows a 390px phone */
+  .ov-grid, .help-grid, .tools-grid, .ext-cols, .settings-grid { grid-template-columns: 1fr; }
+  .ov-bar-row { grid-template-columns: 48px 1fr; }
+  .ov-bar-value { grid-column: 1 / -1; text-align: right; }
+  .hist-view { grid-template-columns: 1fr; grid-template-areas: "head" "tiles" "main" "rail"; }
+  .viewer-body { padding: 12px 14px; }
+  /* The library's resizable rail stacks above the listing; a drag divider
+     makes no sense stacked, and the rail's inline width from a desktop
+     resize must not survive the rotation. */
+  .library { flex-direction: column; }
+  .library-rail { width: 100% !important; max-height: 40vh; }
+  .library .divider { display: none; }
+  .card-pop { width: min(300px, calc(100vw - 24px)); }
+  .query-row .grow, .query-form select.field { max-width: 100%; }
+}
