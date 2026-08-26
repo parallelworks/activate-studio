@@ -242,6 +242,14 @@ export async function ragProxyRoutes(app: FastifyInstance): Promise<void> {
   // unlisted (still callable by name; ?all=1 shows it plus the upstream
   // ids for clients that want one flat list). The gateway's own catalog
   // already lists the underlying models.
+  // Both /v1 routes honor the Settings switch; the call log stays
+  // readable so the page can still show history while the surface is off.
+  app.addHook('onRequest', async (req, reply) => {
+    if (req.url.startsWith('/v1/') && !effectiveSettings().ragProxyEnabled) {
+      return reply.status(403).send({ error: 'The grounded-model endpoint is disabled for this deployment (Settings, External access)' })
+    }
+  })
+
   app.get('/v1/models', async (req, reply) => {
     const auth = callerKey(req)
     if (!auth) return reply.status(401).send({ error: { message: 'bearer API key required' } })
