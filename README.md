@@ -1,5 +1,7 @@
 # ACTIVATE Studio
 
+[![ci](https://github.com/parallelworks/activate-studio/actions/workflows/ci.yml/badge.svg)](https://github.com/parallelworks/activate-studio/actions/workflows/ci.yml)
+
 A standalone web workspace over a knowledge base directory: a chat assistant with tool calling grounded in the corpus, a library (file tree, viewer, upload and URL ingestion, original-file previews), hybrid search (full text plus semantic, including text inside office documents, PDFs, and images), and a structured query interface over the file index. It runs anywhere Node, Python, and GUFI run, against any OpenAI-compatible model endpoint.
 
 It also integrates with the Parallel Works ACTIVATE platform when present: the platform's AI gateway works with zero configuration, the assistant gains workflow tools (catalog, DAG preview, dry-run validation, execution, run monitoring), and the app can be served as a platform session. None of that is required to use it.
