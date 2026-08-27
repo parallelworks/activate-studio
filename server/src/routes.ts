@@ -534,8 +534,13 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
    * primary and the CLI now only covers a deployment whose credential is
    * the CLI's own login.
    */
-  const platformApi = async (path: string): Promise<unknown | null> => {
-    const key = gatewayKey()
+  const platformApi = async (path: string, userId?: string): Promise<unknown | null> => {
+    // The caller's own platform token first: a bring-your-own-key
+    // deployment has no credential of its own, and its users do. A custom
+    // provider key is never a platform token, so one carrying a baseUrl is
+    // skipped rather than sent to the platform.
+    const cred = userId ? resolveUserCred(userId) : null
+    const key = (cred && !cred.baseUrl ? cred.key : null) || gatewayKey()
     if (!key) return null
     let host: string
     try { host = new URL(GATEWAY_BASE).origin } catch { return null }
@@ -547,8 +552,8 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
     return res.json()
   }
 
-  app.get('/api/workflows', async () => {
-    const viaApi = await platformApi('/api/workflows').catch(() => null)
+  app.get('/api/workflows', async req => {
+    const viaApi = await platformApi('/api/workflows', req.user?.id).catch(() => null)
     if (viaApi) {
       const rows = (Array.isArray(viaApi) ? viaApi : (viaApi as { workflows?: unknown[] }).workflows ?? [])
         .map((w: any) => ({ name: String(w?.name ?? ''), type: String(w?.type ?? '') }))
@@ -558,7 +563,7 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
     const out = await new Promise<string>((resolve, reject) => {
       execFile(PW_CLI, ['workflows', 'ls'], { timeout: 20_000 }, (e, so, se) => e ? reject(new Error(se || e.message)) : resolve(so))
     }).catch(e => {
-      throw new KbError(502, `Cannot list workflows: no platform credential for this deployment, and the pw CLI on this host is not usable (${String(e.message).slice(0, 120)}). Authenticate the CLI here, or set PW_API_KEY.`)
+      throw new KbError(502, `Cannot list workflows: no platform credential available (this deployment has none, and you have not added your own under Settings, Model access), and the pw CLI on this host is not usable (${String(e.message).slice(0, 120)}). Authenticate the CLI here, or set PW_API_KEY.`)
     })
     const rows = out.trim().split('\n').slice(1).map(l => {
       const m = l.trim().match(/^(\S+)\s+(\S+)$/)
@@ -569,11 +574,11 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/api/workflows/:name', async req => {
     const name = (req.params as { name: string }).name.replace(/[^A-Za-z0-9_.-]/g, '')
-    const viaApi = await platformApi(`/api/workflows/${encodeURIComponent(name)}`).catch(() => null)
+    const viaApi = await platformApi(`/api/workflows/${encodeURIComponent(name)}`, req.user?.id).catch(() => null)
     const wf: any = viaApi ?? JSON.parse(await new Promise<string>((resolve, reject) => {
       execFile(PW_CLI, ['workflows', 'get', name, '-o', 'json'], { timeout: 20_000 }, (e, so, se) => e ? reject(new Error(se || e.message)) : resolve(so))
     }).catch(e => {
-      throw new KbError(502, `Cannot read workflow ${name}: no platform credential for this deployment, and the pw CLI on this host is not usable (${String(e.message).slice(0, 120)}). Authenticate the CLI here, or set PW_API_KEY.`)
+      throw new KbError(502, `Cannot read workflow ${name}: no platform credential available (this deployment has none, and you have not added your own under Settings, Model access), and the pw CLI on this host is not usable (${String(e.message).slice(0, 120)}). Authenticate the CLI here, or set PW_API_KEY.`)
     }))
     const jobs = (wf.yaml?.jobs ?? {}) as Record<string, { steps?: unknown[]; needs?: string[] }>
     // The platform's own parser names steps and resolves dependencies, so
