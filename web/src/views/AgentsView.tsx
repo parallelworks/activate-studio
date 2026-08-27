@@ -27,6 +27,9 @@ export function AgentsView() {
   const [description, setDescription] = useState('')
   const [body, setBody] = useState('')
   const [note, setNote] = useState('')
+  // Editing loads the file into the same form that writes it, so there is
+  // one place to learn rather than a separate editor.
+  const [editing, setEditing] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
   const load = useCallback(() => fetch('/api/extensions').then(r => r.json())
@@ -55,11 +58,20 @@ export function AgentsView() {
       const d = await res.json()
       if (!res.ok) throw new Error(d.error ?? `${res.status}`)
       setNote(`Saved ${d.name}. It is available in chat now.`)
-      setName(''); setDescription(''); setBody('')
+      setName(''); setDescription(''); setBody(''); setEditing(null)
       await load()
     } catch (e) {
       setNote(String((e as Error).message))
     } finally { setBusy(false) }
+  }
+
+  const edit = async (n: string) => {
+    const res = await fetch(`/api/extensions/persona?name=${encodeURIComponent(n)}`)
+    if (!res.ok) return
+    const d = await res.json()
+    setKind('persona'); setEditing(d.name); setName(d.name); setDescription(d.description ?? ''); setBody(d.body ?? '')
+    setNote(`Editing ${d.name}. Saving overwrites it.`)
+    document.querySelector('.agents-body')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
   }
 
   const remove = async (n: string) => {
@@ -94,6 +106,7 @@ export function AgentsView() {
               <span className="ov-row-path">{p.name}{p.shared && <span className="persona-shared">shared</span>}</span>
               <span className="ov-row-meta">
                 {p.description || 'no description'}
+                <button className="link-button agents-del" onClick={() => void edit(p.name)}>edit</button>
                 <button className="link-button agents-del" onClick={() => remove(p.name)}>remove</button>
               </span>
             </div>
@@ -118,7 +131,7 @@ export function AgentsView() {
       </div>
 
       <section className="card settings-card">
-        <h3>Add one</h3>
+        <h3>{editing ? `Editing ${editing}` : 'Add one'}</h3>
         <div className="agents-kind">
           <button className={`btn-secondary ${kind === 'persona' ? 'active' : ''}`} onClick={() => setKind('persona')}>Persona</button>
           <button className={`btn-secondary ${kind === 'skill' ? 'active' : ''}`} onClick={() => setKind('skill')}>Skill</button>
@@ -143,8 +156,11 @@ export function AgentsView() {
           placeholder={'Paste the file. Frontmatter is read into the fields above and rewritten on save.'} />
         <div className="query-actions">
           <button className="btn-primary" onClick={() => void save()} disabled={busy || !name || !body}>
-            {busy ? 'Saving…' : `Save ${kind}`}
+            {busy ? 'Saving…' : editing ? `Save ${editing}` : `Save ${kind}`}
           </button>
+          {editing && (
+            <button className="btn-secondary" onClick={() => { setEditing(null); setName(''); setDescription(''); setBody(''); setNote('') }}>Cancel</button>
+          )}
           {note && <span className="muted">{note}</span>}
         </div>
       </section>

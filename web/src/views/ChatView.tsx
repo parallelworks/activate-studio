@@ -61,7 +61,6 @@ export function ChatView() {
     rememberHash(next)
   }, [])
   const [showAttachments, setShowAttachments] = useState(false)
-  const [rail, setRail] = useState(() => Number(localStorage.getItem('ade-chat-rail')) || 260)
   // Width of the Activity (thinking) drawer on the right; the package
   // renders it fixed at 400px, and our CSS reads this variable over it.
   const [thinkRail, setThinkRail] = useState(() => Number(localStorage.getItem('ade-think-rail')) || 400)
@@ -223,7 +222,6 @@ export function ChatView() {
   const cfg = useAppConfig()
 
   const canvasRef = useRef<HTMLDivElement>(null)
-  const handleRef = useRef<HTMLDivElement>(null)
 
   // Drag writes straight to the DOM; React state commits once on release,
   // so the provider subtree does not re-render per mousemove.
@@ -249,27 +247,6 @@ export function ChatView() {
     window.addEventListener('mouseup', onUp)
   }
 
-  const onRailDrag = (e: React.MouseEvent) => {
-    e.preventDefault()
-    const startX = e.clientX
-    const startW = rail
-    let w = startW
-    const onMove = (ev: MouseEvent) => {
-      w = Math.min(460, Math.max(180, startW + (ev.clientX - startX)))
-      canvasRef.current?.style.setProperty('--ade-chat-rail', `${w}px`)
-      if (handleRef.current) handleRef.current.style.left = `${w - 3}px`
-    }
-    const onUp = () => {
-      document.body.classList.remove('resizing')
-      window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mouseup', onUp)
-      setRail(w)
-      localStorage.setItem('ade-chat-rail', String(w))
-    }
-    document.body.classList.add('resizing')
-    window.addEventListener('mousemove', onMove)
-    window.addEventListener('mouseup', onUp)
-  }
 
   // The empty state freezes its greeting and starter prompts at mount, so
   // wait for the deployment config before mounting the chat tree.
@@ -342,7 +319,7 @@ export function ChatView() {
       }}
     >
       <div className="chat-wrap">
-        <div ref={canvasRef} className={`chat-canvas card${railOpen ? ' rail-open' : ''}`} style={{ ['--ade-chat-rail' as string]: `${rail}px`, ['--ade-think-rail' as string]: `${thinkRail}px` }}>
+        <div ref={canvasRef} className={`chat-canvas card${railOpen ? ' rail-open' : ''}`} style={{ ['--ade-think-rail' as string]: `${thinkRail}px` }}>
           {credNote && (
             <div className="cred-banner">
               <span className="cred-banner-text">{credNote}</span>
@@ -360,7 +337,6 @@ export function ChatView() {
           {multiUser && !showAttachments && (
             <button
               className={`chat-filter-btn ${chatFilter === 'mine' ? 'active' : ''}`}
-              style={{ width: rail - 24 }}
               title="Show every conversation on this deployment, or only yours"
               onClick={toggleChatFilter}
             >
