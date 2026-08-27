@@ -334,7 +334,7 @@ export default function App() {
         <div className={view === 'query' ? 'view' : 'view hidden'}><QueryView onOpen={openFile} /></div>
         <div className={view === 'overview' ? 'view' : 'view hidden'}><OverviewView onOpen={openFile} /></div>
         <div className={view === 'history' ? 'view' : 'view hidden'}><HistoryView onOpen={openFile} /></div>
-        <div className={view === 'agents' ? 'view' : 'view hidden'}><AgentsView /></div>
+        <div className={view === 'agents' ? 'view' : 'view hidden'}><AgentsView onOpen={openFile} /></div>
         <div className={view === 'settings' ? 'view' : 'view hidden'}><SettingsView /></div>
         <div className={view === 'help' ? 'view' : 'view hidden'}><HelpView /></div>
       </main>
