@@ -85,7 +85,7 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
   }
 
   return (
-    <div className="overview-view">
+    <div className="overview-view agents-view">
       <div className="card ov-head">
         <h1 className="view-title">Agents</h1>
         <p className="muted view-sub">
