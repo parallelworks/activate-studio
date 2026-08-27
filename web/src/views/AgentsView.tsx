@@ -100,7 +100,8 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
             A standing stance for a whole conversation. Choose one from the <b>Persona</b> button above the message box in
             Chat; it stays in force until you change it. Personas are stored
             in the knowledge base{dir ? <> at <code>{dir}</code></> : null}, so everyone working over this corpus has
-            the same library.
+            the same library. They are ordinary corpus files: browsable under <code>.agents</code> in the Library,
+            rendered as Markdown in the viewer, searchable, and labeled <code>agent-persona</code>.
           </p>
           {personas.map(p => (
             <div className="ov-row" key={p.name} onClick={() => void edit('persona', p.name)} title="Open this persona for editing">
@@ -165,7 +166,12 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
             {busy ? 'Saving…' : editing ? `Save ${editing}` : `Save ${kind}`}
           </button>
           {editing && (
-            <button className="btn-secondary" onClick={() => { setEditing(null); setName(''); setDescription(''); setBody(''); setNote('') }}>Cancel</button>
+            <>
+              <button className="btn-secondary" onClick={() => { setEditing(null); setName(''); setDescription(''); setBody(''); setNote('') }}>Cancel</button>
+              {kind === 'persona' && personas.find(p => p.name === editing)?.shared && (
+                <button className="btn-secondary" onClick={() => onOpen(`.agents/${editing}.md`)}>Read it rendered</button>
+              )}
+            </>
           )}
           {note && <span className="muted">{note}</span>}
         </div>
