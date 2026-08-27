@@ -212,21 +212,23 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
               <PersonaIcon icon={icon} name={name || '?'} size={34} />
               <input className="field persona-icon-field" value={icon} onChange={e => setIcon(e.target.value)}
                 placeholder="an emoji, or upload an image" />
-              <label className="btn-secondary agents-file">
-                Upload image
+              <label className={`btn-secondary agents-file${name ? '' : ' disabled'}`}
+                title={name ? 'Choose an image for this persona' : 'Name the persona first: the image file is named after it'}>
+                {name ? 'Upload image' : 'Upload image (name it first)'}
                 <input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml,image/gif"
+                  disabled={!name}
                   onChange={async e => {
                     const f = e.target.files?.[0]
-                    if (!f) return
-                    // Disabling this until a name existed made the button
-                    // inert with nothing to explain why; saying so is
-                    // better than a control that does nothing.
-                    if (!name) { setNote('Name the persona first: the image file is named after it.'); e.target.value = ''; return }
+                    if (!f || !name) return
                     const fd = new FormData()
                     fd.append('file', f)
                     const res = await fetch(`/api/extensions/persona-icon?name=${encodeURIComponent(name)}`, { method: 'POST', body: fd })
                     const d = await res.json()
-                    if (res.ok) { setIcon(d.icon); setNote('Icon uploaded. Save the persona to attach it.') }
+                    if (res.ok) {
+                      setIcon(d.icon)
+                      setNote(d.attached ? 'Icon uploaded and attached.' : 'Icon uploaded. Save the persona to attach it.')
+                      if (d.attached) await load()
+                    }
                     else setNote(d.error ?? `upload failed (${res.status})`)
                     e.target.value = ''
                   }} />
