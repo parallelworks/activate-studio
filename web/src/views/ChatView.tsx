@@ -106,6 +106,7 @@ export function ChatView() {
   const [personaList, setPersonaList] = useState<{ name: string; description: string; shared: boolean }[]>([])
   const [persona, setPersonaState] = useState<string | null>(() => localStorage.getItem('ade-persona'))
   const [personaOpen, setPersonaOpen] = useState(false)
+  const [personaFilter, setPersonaFilter] = useState('')
   useEffect(() => {
     fetch('/api/extensions').then(r => r.json()).then(d => setPersonaList(d.personas ?? [])).catch(() => {})
   }, [])
@@ -363,12 +364,26 @@ export function ChatView() {
                         <span className="persona-name">Deployment default</span>
                         <span className="muted">the standing instructions for this Studio</span>
                       </button>
+                      {personaList.length > 8 && (
+                        <input
+                          className="field scope-filter"
+                          placeholder={`Filter ${personaList.length} personas`}
+                          value={personaFilter}
+                          onChange={e => setPersonaFilter(e.target.value)}
+                          autoFocus
+                        />
+                      )}
                       {personaList.length === 0 && (
                         <p className="muted pad">
                           No personas yet. Add one in the Agents tab and it appears here.
                         </p>
                       )}
-                      {personaList.map(p => (
+                      {personaList
+                        .filter(p => {
+                          const q = personaFilter.trim().toLowerCase()
+                          return !q || p.name.toLowerCase().includes(q) || (p.description ?? '').toLowerCase().includes(q)
+                        })
+                        .map(p => (
                         <button key={p.name} className={`persona-row ${persona === p.name ? 'on' : ''}`}
                           onClick={() => { setPersonaState(p.name); setPersonaOpen(false) }}>
                           <span className="persona-name">{p.name}{p.shared && <span className="persona-shared">shared</span>}</span>
