@@ -3,7 +3,7 @@ import { execFile } from 'node:child_process'
 import path from 'node:path'
 import fs, { createReadStream } from 'node:fs'
 import fsp from 'node:fs/promises'
-import { EXCLUDE_DIRS, GUFI_INDEX, INDEX_BASE, KB_ROOT, PROJECT_ROOT, gufiAvailable } from './config.js'
+import { EXCLUDE_DIRS, GUFI_INDEX, INDEX_BASE, KB_ROOT, PROJECT_ROOT, PW_CLI, gufiAvailable } from './config.js'
 import { KbError, extractPath, listDir, moveCacheEntry, readFileContent, resolveKb } from './kb.js'
 import { CONVERTIBLE, mimeFor, officeToPdf, OfficePreviewUnavailable, pdfPageCount, pdfPagePng, pdfPreviewPaths, previewPdfFor, removePdfPreview } from './preview.js'
 import { blendHits, corpusStats, searchFts, searchNames, searchVector } from './gufi.js'
@@ -523,7 +523,7 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/api/workflows', async () => {
     const out = await new Promise<string>((resolve, reject) => {
-      execFile('pw', ['workflows', 'ls'], { timeout: 20_000 }, (e, so, se) => e ? reject(new Error(se || e.message)) : resolve(so))
+      execFile(PW_CLI, ['workflows', 'ls'], { timeout: 20_000 }, (e, so, se) => e ? reject(new Error(se || e.message)) : resolve(so))
     })
     const rows = out.trim().split('\n').slice(1).map(l => {
       const m = l.trim().match(/^(\S+)\s+(\S+)$/)
@@ -535,7 +535,7 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/workflows/:name', async req => {
     const name = (req.params as { name: string }).name.replace(/[^A-Za-z0-9_.-]/g, '')
     const out = await new Promise<string>((resolve, reject) => {
-      execFile('pw', ['workflows', 'get', name, '-o', 'json'], { timeout: 20_000 }, (e, so, se) => e ? reject(new Error(se || e.message)) : resolve(so))
+      execFile(PW_CLI, ['workflows', 'get', name, '-o', 'json'], { timeout: 20_000 }, (e, so, se) => e ? reject(new Error(se || e.message)) : resolve(so))
     })
     const wf = JSON.parse(out)
     const jobs = (wf.yaml?.jobs ?? {}) as Record<string, { steps?: unknown[]; needs?: string[] }>
