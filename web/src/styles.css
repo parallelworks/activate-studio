@@ -1204,7 +1204,7 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .agents-kind .btn-secondary.active { border-color: var(--pw-link); color: var(--pw-link); }
 .agents-file { position: relative; overflow: hidden; cursor: pointer; }
 .agents-file input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
-.agents-body { width: 100%; min-height: 220px; font-family: ui-monospace, monospace; font-size: 12.5px; line-height: 1.6; resize: vertical; }
+.agents-body { width: 100%; min-height: 45vh; font-family: ui-monospace, monospace; font-size: 12.5px; line-height: 1.6; resize: vertical; }
 .agents-del { margin-left: 10px; font-size: 11.5px; }
 .chat-persona-anchor { position: relative; }
 .persona-row { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%;
