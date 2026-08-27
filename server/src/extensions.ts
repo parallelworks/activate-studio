@@ -308,7 +308,24 @@ export async function extensionRoutes(app: FastifyInstance): Promise<void> {
       if (e !== ext) { try { fs.rmSync(path.join(dir, `${name}${e}`), { force: true }) } catch { /* absent */ } }
     }
     fs.writeFileSync(path.join(dir, `${name}${ext}`), await part.toBuffer())
-    return { ok: true, icon: `${path.basename(CORPUS_AGENT_DIR)}/icons/${name}${ext}` }
+    const icon = `${path.basename(CORPUS_AGENT_DIR)}/icons/${name}${ext}`
+    // Attach it now when the persona already exists. Leaving the path in a
+    // form field for someone to save separately meant the image landed in
+    // the corpus with nothing referencing it, which reads as the upload
+    // having gone nowhere. A persona still being written has no file yet,
+    // so its form carries the path until it is saved.
+    const existing = agentFiles().find(a => a.name === name)
+    let attached = false
+    if (existing) {
+      try {
+        const raw = fs.readFileSync(existing.file, 'utf8')
+        const meta = docMeta(existing.file)
+        const body = raw.replace(/^---\n[\s\S]*?\n---\n?/, '').trim()
+        writeDoc(path.dirname(existing.file), name, body, meta.description, icon)
+        attached = true
+      } catch { /* the form still carries it */ }
+    }
+    return { ok: true, icon, attached }
   })
 
   app.delete('/api/extensions/persona', async req => {
