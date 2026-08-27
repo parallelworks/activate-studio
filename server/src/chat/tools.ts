@@ -455,11 +455,25 @@ export function customToolSpecs(): ToolSpec[] {
 export function skillToolSpec(): ToolSpec | null {
   const skills = extSkills()
   if (!skills.length) return null
+  // Every skill's name and description ship in this tool's description on
+  // every request, so a large library is a standing token cost: ~146
+  // characters each, which is roughly 2,200 tokens at sixty skills. Past a
+  // threshold the descriptions are clipped to the part that identifies the
+  // skill, which keeps selection possible while bounding the cost; the
+  // full text is always in the file the skill loads.
+  const FULL_DESC_LIMIT = 25
+  const clip = skills.length > FULL_DESC_LIMIT
+  const listed = skills
+    .map(s => {
+      const d = clip ? s.description.slice(0, 60).trim() : s.description
+      return `${s.name}${d ? ` (${d}${clip && s.description.length > 60 ? '…' : ''})` : ''}`
+    })
+    .join('; ')
   return {
     type: 'function',
     function: {
       name: 'use_skill',
-      description: `Load a skill: task-specific instructions to follow for the current request. Available skills: ${skills.map(s => `${s.name}${s.description ? ` (${s.description})` : ''}`).join('; ')}. Load one whenever the user names it or the task clearly matches its description, then follow the returned instructions.`,
+      description: `Load a skill: task-specific instructions to follow for the current request. Available skills: ${listed}. Load one whenever the user names it or the task clearly matches its description, then follow the returned instructions.${clip ? ' Descriptions here are shortened; loading a skill returns its full instructions.' : ''}`,
       parameters: {
         type: 'object',
         properties: {
