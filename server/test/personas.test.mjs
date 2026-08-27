@@ -61,3 +61,14 @@ test('a large skill library does not blow up the tool description', async () => 
   assert.match(spec.function.description, /shortened/, 'says the descriptions are clipped')
   assert.equal(spec.function.parameters.properties.name.enum.length, 60, 'every skill is still selectable')
 })
+
+test('an icon survives a rewrite and is reported with the persona', async () => {
+  const { personas: list } = await import('../dist/extensions.js')
+  fs.writeFileSync(path.join(kb, '.agents', 'iconic.md'),
+    '---\nname: iconic\ndescription: has a mark\nicon: .agents/icons/iconic.png\n---\n\nBody.')
+  const p = list().find(x => x.name === 'iconic')
+  assert.equal(p.icon, '.agents/icons/iconic.png')
+  // and an emoji is equally valid
+  fs.writeFileSync(path.join(kb, '.agents', 'emo.md'), '---\nname: emo\ndescription: d\nicon: 🛠\n---\n\nBody.')
+  assert.equal(list().find(x => x.name === 'emo').icon, '🛠')
+})
