@@ -364,8 +364,8 @@ export function ChatView() {
                     <div className="scope-menu card">
                       <div className="scope-menu-head">Persona for this conversation</div>
                       <button className={`persona-row ${!persona ? 'on' : ''}`} onClick={() => { setPersonaState(null); setPersonaOpen(false) }}>
-                        <span className="persona-name">Deployment default</span>
-                        <span className="muted">the standing instructions for this Studio</span>
+                        <span className="persona-name">Default</span>
+                        <span className="muted">how this workspace normally answers</span>
                       </button>
                       {personaList.length > 8 && (
                         <input

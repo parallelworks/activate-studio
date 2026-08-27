@@ -143,7 +143,7 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
           <h3>Personas ({shownPersonas.length}{filter ? ` of ${personas.length}` : ''})</h3>
           <p className="muted view-sub">
             A standing stance for a whole conversation. Choose one from the <b>Persona</b> button above the message box in
-            Chat; it stays in force until you change it. Personas are stored
+            Chat; it stays in force until you change it, and <b>Default</b> puts it back to how this workspace normally answers. Personas are stored
             in the knowledge base{dir ? <> at <code>{dir}</code></> : null}, so everyone working over this corpus has
             the same library. They are ordinary corpus files: browsable under <code>.agents</code> in the Library,
             rendered as Markdown in the viewer, searchable, and labeled <code>agent-persona</code>.
