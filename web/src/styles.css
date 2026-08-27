@@ -1222,6 +1222,14 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
   margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--pw-border); font-size: 12px; }
 .agents-pager-btns { display: flex; gap: 6px; }
 .agents-pager .btn-secondary { font-size: 12px; padding: 3px 10px; }
+.persona-icon { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+  border-radius: 6px; object-fit: cover; vertical-align: middle; }
+.persona-icon.initials { background: var(--pw-active-pill); color: var(--pw-navy); font-weight: 700; letter-spacing: 0.02em; }
+.persona-icon.glyph { line-height: 1; }
+.persona-icon-row { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; flex-wrap: wrap; }
+.persona-icon-field { flex: 1; min-width: 160px; }
+.agents-view .ov-row-path { display: flex; align-items: center; gap: 8px; }
+.persona-row .persona-name { display: flex; align-items: center; gap: 8px; }
 .agents-filter { display: flex; align-items: center; gap: 10px; padding: 10px 14px; }
 .agents-filter .field { flex: 1; }
 /* A long library scrolls inside the menu instead of running off screen. */
