@@ -343,7 +343,8 @@ export function ChatView() {
               {chatFilter === 'mine' ? 'Showing my chats' : 'Showing all chats'}
             </button>
           )}
-          {(
+          <div className="chat-controls">
+            {(
               <div className={`chat-persona-anchor ${personaOpen ? 'open' : ''}`}>
                 <button
                   className={`scope-btn ${persona ? 'active' : ''}`}
@@ -379,7 +380,7 @@ export function ChatView() {
                 )}
               </div>
             )}
-          {vocab.length > 0 && (
+            {vocab.length > 0 && (
             <div className={`chat-scope-anchor ${scopeOpen ? 'open' : ''}`}>
               <button
                 className={`scope-btn ${scope.size ? 'active' : ''}`}
@@ -429,7 +430,8 @@ export function ChatView() {
                 </>
               )}
             </div>
-          )}
+            )}
+          </div>
         </div>
       </div>
     </ChatProvider>

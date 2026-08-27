@@ -771,18 +771,17 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
    header bar, opening a multi-select dropdown that scales to many labels. */
 /* height:auto beats the .chat-canvas > * { height:100% } rule, which would
    stretch the anchor to the canvas bottom and drop the menu off-screen. */
-.chat-scope-anchor { position: absolute; top: 11px; right: 16px; z-index: 8; height: auto; }
-/* The persona control sits beside Scope in the same corner. Both are
-   absolutely positioned over the package's header, so the persona one
-   steps left by the width of Scope rather than sharing a flex row that
-   does not exist. */
-.chat-persona-anchor { position: absolute; top: 11px; right: 104px; z-index: 8; height: auto; }
-.chat-canvas[data-think-open="1"] .chat-persona-anchor { right: calc(var(--ade-think-rail, 400px) + 100px); }
+/* Scope and Persona share one row over the package's header. They were
+   two absolutely-positioned elements with a hand-tuned offset between
+   them, which is how the persona control ended up somewhere nobody could
+   find it; one row cannot drift or overlap. */
+.chat-controls { position: absolute; top: 11px; right: 16px; z-index: 8; display: flex; align-items: center; gap: 6px; }
+.chat-canvas[data-think-open="1"] .chat-controls { right: calc(var(--ade-think-rail, 400px) + 12px); }
+.chat-scope-anchor, .chat-persona-anchor { position: relative; height: auto; }
 .chat-persona-anchor .scope-menu { right: 0; }
 @media (max-width: 760px) {
   /* No room for both beside the model picker; the persona label drops to
      its icon and the pair tucks tighter. */
-  .chat-persona-anchor { right: 92px; }
   .chat-persona-anchor .scope-btn { padding: 4px 7px; }
   .chat-persona-anchor .scope-btn span.persona-label { display: none; }
 }
@@ -793,7 +792,6 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
    drawer is the width-transitioning panel without the w-0 class. ---- */
 .chat-canvas[data-think-open="1"] div[class*="transition-[width]"] { width: var(--ade-think-rail, 400px) !important; }
 .chat-canvas div[class*="transition-[width]"] > div[class*="w-[400px]"] { width: var(--ade-think-rail, 400px) !important; }
-.chat-canvas[data-think-open="1"] .chat-scope-anchor { right: calc(var(--ade-think-rail, 400px) + 12px); }
 .chat-think-handle {
   display: none; position: absolute; top: 0; bottom: 0; width: 7px;
   right: calc(var(--ade-think-rail, 400px) - 3px);
