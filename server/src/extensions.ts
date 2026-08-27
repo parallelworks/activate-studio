@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import type { FastifyInstance } from 'fastify'
-import { INDEX_BASE, PROJECT_ROOT } from './config.js'
+import { INDEX_BASE, KB_ROOT, PROJECT_ROOT } from './config.js'
 
 /**
  * File-based extensions, read from INDEX_BASE/extensions/ (deployment-local,
@@ -109,16 +109,121 @@ export function agentBody(name: string): string | null {
   try { return fs.readFileSync(path.join(EXT_DIR, 'agents', agent.file), 'utf8') } catch { return null }
 }
 
-/** The standing persona: agents/default.md, if present. */
-export function agentPrompt(): string {
+/**
+ * Personas live in two places and merge into one library.
+ *
+ * The corpus directory (KB_ROOT/.agents) is the shared one: every Studio
+ * over the same knowledge base sees the same personas, they version and
+ * sync with the corpus itself, and a team grows the library by adding
+ * files to material they already share. The deployment directory
+ * (extensions/agents) stays for personas belonging to one deployment, and
+ * wins on a name collision so a deployment can override a shared persona
+ * without editing the corpus.
+ *
+ * default.md remains the standing persona when a turn names none, so a
+ * deployment that never touches this keeps working exactly as before.
+ */
+export const CORPUS_AGENT_DIR = path.join(KB_ROOT, '.agents')
+
+function agentFiles(): { name: string; file: string; shared: boolean }[] {
+  const found = new Map<string, { name: string; file: string; shared: boolean }>()
+  for (const [dir, shared] of [[CORPUS_AGENT_DIR, true], [path.join(EXT_DIR, 'agents'), false]] as const) {
+    let names: string[] = []
+    try { names = fs.readdirSync(dir).filter(f => f.endsWith('.md') && !f.startsWith('.')) } catch { continue }
+    for (const f of names) {
+      const meta = docMeta(path.join(dir, f))
+      // The deployment directory is read second, so it overwrites.
+      found.set(meta.name, { name: meta.name, file: path.join(dir, f), shared })
+    }
+  }
+  return [...found.values()]
+}
+
+/** The persona library, for the picker and the Settings list. */
+export function personas(): (ExtDoc & { shared: boolean })[] {
+  return agentFiles().map(a => {
+    const meta = docMeta(a.file)
+    return { ...meta, file: path.basename(a.file), shared: a.shared }
+  })
+}
+
+/** The persona text for a turn: the named one, else the standing default. */
+export function agentPrompt(name?: string | null): string {
+  const wanted = normalizeName(String(name ?? ''))
+  if (wanted) {
+    const hit = agentFiles().find(a => a.name === wanted)
+    if (hit) {
+      try { return fs.readFileSync(hit.file, 'utf8').replace(/^---\n[\s\S]*?\n---\n?/, '').trim() } catch { /* fall through */ }
+    }
+  }
   try { return fs.readFileSync(path.join(EXT_DIR, 'agents', 'default.md'), 'utf8').trim() } catch { return '' }
 }
 
+/**
+ * Authoring endpoints. Personas write into the corpus by default, which
+ * is what makes them shared: the file lands in the knowledge base, syncs
+ * and versions with everything else, and every Studio over that corpus
+ * sees it. Skills stay deployment-local, since they carry instructions
+ * for how this deployment works.
+ *
+ * The name is normalized to a safe slug and the file is written by
+ * joining that slug to a fixed directory, so a crafted name cannot climb
+ * out of it.
+ */
+function writeDoc(dir: string, rawName: string, body: string, description: string): { name: string; file: string } {
+  const name = normalizeName(rawName)
+  if (!name) throw new Error('a name is required')
+  const text = String(body ?? '').slice(0, 100_000).trim()
+  if (!text) throw new Error('the document is empty')
+  const desc = String(description ?? '').replace(/\n/g, ' ').slice(0, 200).trim()
+  // Frontmatter is rewritten from the supplied fields so the listing and
+  // the file never disagree; a pasted document's own frontmatter is
+  // replaced rather than duplicated.
+  const withoutFm = text.replace(/^---\n[\s\S]*?\n---\n?/, '').trim()
+  const doc = `---\nname: ${name}\ndescription: ${desc}\n---\n\n${withoutFm}\n`
+  fs.mkdirSync(dir, { recursive: true })
+  const file = path.join(dir, `${name}.md`)
+  fs.writeFileSync(file, doc)
+  return { name, file }
+}
+
 export async function extensionRoutes(app: FastifyInstance): Promise<void> {
+  app.post('/api/extensions/persona', async (req, reply) => {
+    const b = (req.body ?? {}) as { name?: string; description?: string; body?: string; shared?: boolean }
+    try {
+      const dir = b.shared === false ? path.join(EXT_DIR, 'agents') : CORPUS_AGENT_DIR
+      const { name } = writeDoc(dir, String(b.name ?? ''), String(b.body ?? ''), String(b.description ?? ''))
+      return { ok: true, name, shared: b.shared !== false }
+    } catch (e) {
+      return reply.status(400).send({ error: String((e as Error).message) })
+    }
+  })
+
+  app.post('/api/extensions/skill', async (req, reply) => {
+    const b = (req.body ?? {}) as { name?: string; description?: string; body?: string }
+    try {
+      const { name } = writeDoc(path.join(EXT_DIR, 'skills'), String(b.name ?? ''), String(b.body ?? ''), String(b.description ?? ''))
+      return { ok: true, name }
+    } catch (e) {
+      return reply.status(400).send({ error: String((e as Error).message) })
+    }
+  })
+
+  app.delete('/api/extensions/persona', async req => {
+    const name = normalizeName(String((req.query as { name?: string }).name ?? ''))
+    if (!name) return { ok: false }
+    for (const dir of [CORPUS_AGENT_DIR, path.join(EXT_DIR, 'agents')]) {
+      try { fs.rmSync(path.join(dir, `${name}.md`), { force: true }) } catch { /* absent */ }
+    }
+    return { ok: true }
+  })
+
   app.get('/api/extensions', async () => ({
     dir: EXT_DIR,
     tools: extTools().map(({ command, ...t }) => ({ ...t, command })),
     skills: extSkills(),
     agents: extAgents().map(a => ({ ...a, active: a.file === 'default.md' })),
+    personas: personas(),
+    corpusAgentDir: CORPUS_AGENT_DIR,
   }))
 }
