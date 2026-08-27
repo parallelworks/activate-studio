@@ -343,7 +343,7 @@ export function ChatView() {
               {chatFilter === 'mine' ? 'Showing my chats' : 'Showing all chats'}
             </button>
           )}
-          {personaList.length > 0 && (
+          {(
               <div className={`chat-persona-anchor ${personaOpen ? 'open' : ''}`}>
                 <button
                   className={`scope-btn ${persona ? 'active' : ''}`}
@@ -351,7 +351,7 @@ export function ChatView() {
                   onClick={() => setPersonaOpen(o => !o)}
                 >
                   <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.4"><circle cx="8" cy="5.5" r="2.8"/><path d="M2.6 14c.6-3 2.8-4.5 5.4-4.5s4.8 1.5 5.4 4.5"/></svg>
-                  {persona ? personaList.find(p => p.name === persona)?.name ?? persona : 'Persona'}
+                  <span className="persona-label">{persona ? personaList.find(p => p.name === persona)?.name ?? persona : 'Persona'}</span>
                 </button>
                 {personaOpen && (
                   <>
@@ -362,6 +362,11 @@ export function ChatView() {
                         <span className="persona-name">Deployment default</span>
                         <span className="muted">the standing instructions for this Studio</span>
                       </button>
+                      {personaList.length === 0 && (
+                        <p className="muted pad">
+                          No personas yet. Add one in the Agents tab and it appears here.
+                        </p>
+                      )}
                       {personaList.map(p => (
                         <button key={p.name} className={`persona-row ${persona === p.name ? 'on' : ''}`}
                           onClick={() => { setPersonaState(p.name); setPersonaOpen(false) }}>
