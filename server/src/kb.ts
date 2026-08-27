@@ -29,6 +29,9 @@ export function resolveKb(rel: string): string {
   return abs
 }
 
+/** Dot directories the Library shows anyway. */
+export const VISIBLE_DOT_DIRS = new Set(['.agents'])
+
 export function classify(name: string, isDir: boolean): KbEntry['kind'] {
   if (isDir) return 'dir'
   const ext = path.extname(name).toLowerCase()
@@ -57,7 +60,11 @@ export async function listDir(rel: string): Promise<KbEntry[]> {
   }
   const out: KbEntry[] = []
   for (const d of dirents) {
-    if (d.name.startsWith('.') && d.name !== '.') continue
+    // Dot entries are hidden because they are machinery (.git, .cache).
+    // The persona library is the exception: it is material a user writes
+    // and should be browsable and readable like the rest of the corpus,
+    // and it only lives under a dot so it stays out of the way.
+    if (d.name.startsWith('.') && d.name !== '.' && !VISIBLE_DOT_DIRS.has(d.name)) continue
     if (excluded(d.name, d.isDirectory())) continue
     const p = path.join(abs, d.name)
     let st
