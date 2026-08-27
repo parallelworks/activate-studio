@@ -8,6 +8,7 @@ import { SearchView } from './views/SearchView'
 import { QueryView } from './views/QueryView'
 import { OverviewView } from './views/OverviewView'
 import { HistoryView } from './views/HistoryView'
+import { AgentsView } from './views/AgentsView'
 import { HelpView } from './views/HelpView'
 import { SettingsView } from './views/SettingsView'
 import { StatusFooter } from './components/StatusFooter'
@@ -15,7 +16,7 @@ import { ClassificationBanner } from './components/ClassificationBanner'
 import { useAppConfig } from './config'
 import { applyAccent, applySurface } from './accents'
 
-type ViewId = 'chat' | 'library' | 'search' | 'query' | 'overview' | 'history' | 'settings' | 'help'
+type ViewId = 'chat' | 'library' | 'search' | 'query' | 'overview' | 'history' | 'agents' | 'settings' | 'help'
 export type Display = { kind: 'file'; target: string } | { kind: 'workflow_dag'; target: string }
 
 // The destinations that keep a spot in the phone bottom bar; the rest
@@ -47,6 +48,11 @@ const NAV: { id: ViewId; label: string; icon: ReactElement }[] = [
     id: 'overview',
     label: 'Stats',
     icon: <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M2 13.5h12"/><path d="M3.5 13.5V8"/><path d="M7 13.5V4.5"/><path d="M10.5 13.5V6.5"/><path d="M14 13.5V2.5"/></svg>,
+  },
+  {
+    id: 'agents',
+    label: 'Agents',
+    icon: <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.4"><circle cx="8" cy="5.5" r="2.8"/><path d="M2.6 14c.6-3 2.8-4.5 5.4-4.5s4.8 1.5 5.4 4.5"/></svg>,
   },
   {
     id: 'history',
@@ -328,6 +334,7 @@ export default function App() {
         <div className={view === 'query' ? 'view' : 'view hidden'}><QueryView onOpen={openFile} /></div>
         <div className={view === 'overview' ? 'view' : 'view hidden'}><OverviewView onOpen={openFile} /></div>
         <div className={view === 'history' ? 'view' : 'view hidden'}><HistoryView onOpen={openFile} /></div>
+        <div className={view === 'agents' ? 'view' : 'view hidden'}><AgentsView /></div>
         <div className={view === 'settings' ? 'view' : 'view hidden'}><SettingsView /></div>
         <div className={view === 'help' ? 'view' : 'view hidden'}><HelpView /></div>
       </main>
