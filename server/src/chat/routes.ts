@@ -18,6 +18,7 @@ interface StreamBody {
   parentMessageId?: string | null
   allocation?: string | null
   labelScope?: string[]
+  agent?: string | null
 }
 
 function sse(res: NodeJS.WritableStream, event: string, data: unknown): void {
@@ -581,7 +582,7 @@ ${ctx}` : ctx
 
     const today = new Date().toISOString().slice(0, 10)
     // The persona file is read per request so edits apply immediately.
-    const persona = agentPrompt()
+    const persona = agentPrompt(body.agent)
     // A model served on this node is reached directly rather than through
     // the gateway, which does not know about it. Everything else keeps the
     // caller's own credential and base.

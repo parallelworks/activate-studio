@@ -6,7 +6,7 @@ import {
 import { createStudioAdapter, getChatListFilter, setChatListFilter, setViewerUsername } from '../adapter'
 import { useAppConfig } from '../config'
 import { api } from '../api'
-import { setLabelScope } from '../labelScope'
+import { setLabelScope, setPersona } from '../labelScope'
 
 const MODEL_STORAGE_KEY = 'studio.chat.lastModel'
 
@@ -101,6 +101,20 @@ export function ChatView() {
   const [chatEpoch, setChatEpoch] = useState(0)
   const [multiUser, setMultiUser] = useState(false)
   const [scopeOpen, setScopeOpen] = useState(false)
+  // Personas: a standing stance for the conversation, distinct from
+  // skills, which the assistant loads per task. Remembered per browser so
+  // a reload keeps the chosen one.
+  const [personaList, setPersonaList] = useState<{ name: string; description: string; shared: boolean }[]>([])
+  const [persona, setPersonaState] = useState<string | null>(() => localStorage.getItem('ade-persona'))
+  const [personaOpen, setPersonaOpen] = useState(false)
+  useEffect(() => {
+    fetch('/api/extensions').then(r => r.json()).then(d => setPersonaList(d.personas ?? [])).catch(() => {})
+  }, [])
+  useEffect(() => {
+    setPersona(persona)
+    if (persona) localStorage.setItem('ade-persona', persona)
+    else localStorage.removeItem('ade-persona')
+  }, [persona])
 
   // A key added or removed in Settings changes what the chat may list and
   // say: remount the provider so models and the credential notice refetch.
@@ -353,6 +367,37 @@ export function ChatView() {
               {chatFilter === 'mine' ? 'Showing my chats' : 'Showing all chats'}
             </button>
           )}
+          {personaList.length > 0 && (
+              <div className={`chat-persona-anchor ${personaOpen ? 'open' : ''}`}>
+                <button
+                  className={`scope-btn ${persona ? 'active' : ''}`}
+                  title="The standing persona for this conversation, from the shared library"
+                  onClick={() => setPersonaOpen(o => !o)}
+                >
+                  <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.4"><circle cx="8" cy="5.5" r="2.8"/><path d="M2.6 14c.6-3 2.8-4.5 5.4-4.5s4.8 1.5 5.4 4.5"/></svg>
+                  {persona ? personaList.find(p => p.name === persona)?.name ?? persona : 'Persona'}
+                </button>
+                {personaOpen && (
+                  <>
+                    <div className="scope-overlay" onClick={() => setPersonaOpen(false)} />
+                    <div className="scope-menu card">
+                      <div className="scope-menu-head">Persona for this conversation</div>
+                      <button className={`persona-row ${!persona ? 'on' : ''}`} onClick={() => { setPersonaState(null); setPersonaOpen(false) }}>
+                        <span className="persona-name">Deployment default</span>
+                        <span className="muted">the standing instructions for this Studio</span>
+                      </button>
+                      {personaList.map(p => (
+                        <button key={p.name} className={`persona-row ${persona === p.name ? 'on' : ''}`}
+                          onClick={() => { setPersonaState(p.name); setPersonaOpen(false) }}>
+                          <span className="persona-name">{p.name}{p.shared && <span className="persona-shared">shared</span>}</span>
+                          {p.description && <span className="muted">{p.description}</span>}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
           {vocab.length > 0 && (
             <div className={`chat-scope-anchor ${scopeOpen ? 'open' : ''}`}>
               <button
