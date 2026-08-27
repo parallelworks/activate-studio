@@ -3,7 +3,7 @@ import { execFile } from 'node:child_process'
 import path from 'node:path'
 import fs, { createReadStream } from 'node:fs'
 import fsp from 'node:fs/promises'
-import { EXCLUDE_DIRS, GUFI_INDEX, INDEX_BASE, KB_ROOT, PROJECT_ROOT, PW_CLI, gufiAvailable } from './config.js'
+import { EXCLUDE_DIRS, GATEWAY_BASE, GUFI_INDEX, INDEX_BASE, KB_ROOT, PROJECT_ROOT, PW_CLI, gufiAvailable } from './config.js'
 import { KbError, extractPath, listDir, moveCacheEntry, readFileContent, resolveKb } from './kb.js'
 import { CONVERTIBLE, mimeFor, officeToPdf, OfficePreviewUnavailable, pdfPageCount, pdfPagePng, pdfPreviewPaths, previewPdfFor, removePdfPreview } from './preview.js'
 import { blendHits, corpusStats, searchFts, searchNames, searchVector } from './gufi.js'
@@ -521,9 +521,44 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
     return reply.send({ started: true })
   })
 
+  /**
+   * Workflow listing and DAGs come from the platform REST API using the
+   * deployment's own token, with the pw CLI as the fallback.
+   *
+   * The CLI was the only path, and it fails wherever the host has no
+   * authenticated context, which is the normal state of a login node
+   * nobody has run `pw auth` on. That surfaced as a 500 from the DAG
+   * viewer naming neither the CLI nor the credential. The Studio already
+   * holds a platform token for the model gateway and the platform serves
+   * both the list and each workflow's yaml, so the token is the better
+   * primary and the CLI now only covers a deployment whose credential is
+   * the CLI's own login.
+   */
+  const platformApi = async (path: string): Promise<unknown | null> => {
+    const key = gatewayKey()
+    if (!key) return null
+    let host: string
+    try { host = new URL(GATEWAY_BASE).origin } catch { return null }
+    const res = await fetch(`${host}${path}`, {
+      headers: { Authorization: `Bearer ${key}` },
+      signal: AbortSignal.timeout(20_000),
+    })
+    if (!res.ok) return null
+    return res.json()
+  }
+
   app.get('/api/workflows', async () => {
+    const viaApi = await platformApi('/api/workflows').catch(() => null)
+    if (viaApi) {
+      const rows = (Array.isArray(viaApi) ? viaApi : (viaApi as { workflows?: unknown[] }).workflows ?? [])
+        .map((w: any) => ({ name: String(w?.name ?? ''), type: String(w?.type ?? '') }))
+        .filter((w: { name: string }) => w.name)
+      return { workflows: rows }
+    }
     const out = await new Promise<string>((resolve, reject) => {
       execFile(PW_CLI, ['workflows', 'ls'], { timeout: 20_000 }, (e, so, se) => e ? reject(new Error(se || e.message)) : resolve(so))
+    }).catch(e => {
+      throw new KbError(502, `Cannot list workflows: no platform credential for this deployment, and the pw CLI on this host is not usable (${String(e.message).slice(0, 120)}). Authenticate the CLI here, or set PW_API_KEY.`)
     })
     const rows = out.trim().split('\n').slice(1).map(l => {
       const m = l.trim().match(/^(\S+)\s+(\S+)$/)
@@ -534,10 +569,12 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/api/workflows/:name', async req => {
     const name = (req.params as { name: string }).name.replace(/[^A-Za-z0-9_.-]/g, '')
-    const out = await new Promise<string>((resolve, reject) => {
+    const viaApi = await platformApi(`/api/workflows/${encodeURIComponent(name)}`).catch(() => null)
+    const wf: any = viaApi ?? JSON.parse(await new Promise<string>((resolve, reject) => {
       execFile(PW_CLI, ['workflows', 'get', name, '-o', 'json'], { timeout: 20_000 }, (e, so, se) => e ? reject(new Error(se || e.message)) : resolve(so))
-    })
-    const wf = JSON.parse(out)
+    }).catch(e => {
+      throw new KbError(502, `Cannot read workflow ${name}: no platform credential for this deployment, and the pw CLI on this host is not usable (${String(e.message).slice(0, 120)}). Authenticate the CLI here, or set PW_API_KEY.`)
+    }))
     const jobs = (wf.yaml?.jobs ?? {}) as Record<string, { steps?: unknown[]; needs?: string[] }>
     // The platform's own parser names steps and resolves dependencies, so
     // this view matches what ACTIVATE shows and follows it as the workflow
