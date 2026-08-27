@@ -215,16 +215,20 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
               <label className="btn-secondary agents-file">
                 Upload image
                 <input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml,image/gif"
-                  disabled={!name}
                   onChange={async e => {
                     const f = e.target.files?.[0]
-                    if (!f || !name) return
+                    if (!f) return
+                    // Disabling this until a name existed made the button
+                    // inert with nothing to explain why; saying so is
+                    // better than a control that does nothing.
+                    if (!name) { setNote('Name the persona first: the image file is named after it.'); e.target.value = ''; return }
                     const fd = new FormData()
                     fd.append('file', f)
                     const res = await fetch(`/api/extensions/persona-icon?name=${encodeURIComponent(name)}`, { method: 'POST', body: fd })
                     const d = await res.json()
-                    if (res.ok) { setIcon(d.icon); setNote('Icon uploaded. Save to attach it.') }
-                    else setNote(d.error ?? 'upload failed')
+                    if (res.ok) { setIcon(d.icon); setNote('Icon uploaded. Save the persona to attach it.') }
+                    else setNote(d.error ?? `upload failed (${res.status})`)
+                    e.target.value = ''
                   }} />
               </label>
               {icon && <button className="link-button" onClick={() => setIcon('')}>clear</button>}
