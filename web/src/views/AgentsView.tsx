@@ -33,6 +33,13 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
   // A library of sixty is a wall of rows; filtering is the difference
   // between a list you scan and one you search.
   const [filter, setFilter] = useState('')
+  // Paged rather than one long scroll: a library of sixty is browsed in
+  // chunks, and the count line says where you are in it. Filtering resets
+  // to the first page, since page four of the old result set means
+  // nothing against the new one.
+  const [pPage, setPPage] = useState(0)
+  const [sPage, setSPage] = useState(0)
+  useEffect(() => { setPPage(0); setSPage(0) }, [filter])
   const [busy, setBusy] = useState(false)
 
   const load = useCallback(() => fetch('/api/extensions').then(r => r.json())
@@ -89,6 +96,24 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
   const shownPersonas = personas.filter(p => matches(p.name, p.description))
   const shownSkills = skills.filter(k => matches(k.name, k.description))
 
+  const PAGE = 12
+  const pageOf = <T,>(rows: T[], page: number) => rows.slice(page * PAGE, page * PAGE + PAGE)
+  const pager = (rows: unknown[], page: number, setPage: (n: number) => void) => {
+    if (rows.length <= PAGE) return null
+    const last = Math.ceil(rows.length / PAGE) - 1
+    const from = page * PAGE + 1
+    const to = Math.min(rows.length, page * PAGE + PAGE)
+    return (
+      <div className="agents-pager">
+        <span className="muted">{from}–{to} of {rows.length}</span>
+        <span className="agents-pager-btns">
+          <button className="btn-secondary" disabled={page === 0} onClick={() => setPage(page - 1)}>Previous</button>
+          <button className="btn-secondary" disabled={page >= last} onClick={() => setPage(page + 1)}>Next</button>
+        </span>
+      </div>
+    )
+  }
+
   const onFile = (f: File | undefined) => {
     if (!f) return
     f.text().then(t => { if (!name) setName(f.name.replace(/\.md$/, '')); onBody(t) })
@@ -121,7 +146,7 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
             the same library. They are ordinary corpus files: browsable under <code>.agents</code> in the Library,
             rendered as Markdown in the viewer, searchable, and labeled <code>agent-persona</code>.
           </p>
-          {shownPersonas.map(p => (
+          {pageOf(shownPersonas, pPage).map(p => (
             <div className="ov-row" key={p.name} onClick={() => void edit('persona', p.name)} title="Open this persona for editing">
               <span className="ov-row-path">{p.name}{p.shared && <span className="persona-shared">shared</span>}</span>
               <span className="ov-row-meta">
@@ -136,6 +161,7 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
             </div>
           ))}
           {shownPersonas.length === 0 && <p className="muted">{filter ? 'None match that filter.' : 'None yet. The first one you add appears in the chat Persona control.'}</p>}
+          {pager(shownPersonas, pPage, setPPage)}
         </section>
 
         <section className="card ov-list">
@@ -145,13 +171,14 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
             nothing to select in Chat: ask for the work, or name the skill, and the assistant calls it. Write the
             description so it can tell when the skill applies.
           </p>
-          {shownSkills.map(s => (
+          {pageOf(shownSkills, sPage).map(s => (
             <div className="ov-row" key={s.name} onClick={() => void edit('skill', s.name)} title="Open this skill for editing">
               <span className="ov-row-path">{s.name}</span>
               <span className="ov-row-meta">{s.description || 'no description'}</span>
             </div>
           ))}
           {shownSkills.length === 0 && <p className="muted">{filter ? 'None match that filter.' : 'None yet.'}</p>}
+          {pager(shownSkills, sPage, setSPage)}
         </section>
       </div>
 
