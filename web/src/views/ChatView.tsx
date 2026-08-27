@@ -7,6 +7,7 @@ import { createStudioAdapter, getChatListFilter, setChatListFilter, setViewerUse
 import { useAppConfig } from '../config'
 import { api } from '../api'
 import { setLabelScope, setPersona } from '../labelScope'
+import { PersonaIcon } from '../components/PersonaIcon'
 
 const MODEL_STORAGE_KEY = 'studio.chat.lastModel'
 
@@ -103,7 +104,7 @@ export function ChatView() {
   // Personas: a standing stance for the conversation, distinct from
   // skills, which the assistant loads per task. Remembered per browser so
   // a reload keeps the chosen one.
-  const [personaList, setPersonaList] = useState<{ name: string; description: string; shared: boolean }[]>([])
+  const [personaList, setPersonaList] = useState<{ name: string; description: string; shared: boolean; icon: string }[]>([])
   const [persona, setPersonaState] = useState<string | null>(() => localStorage.getItem('ade-persona'))
   const [personaOpen, setPersonaOpen] = useState(false)
   const [personaFilter, setPersonaFilter] = useState('')
@@ -352,7 +353,9 @@ export function ChatView() {
                   title="The standing persona for this conversation, from the shared library"
                   onClick={() => setPersonaOpen(o => !o)}
                 >
-                  <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.4"><circle cx="8" cy="5.5" r="2.8"/><path d="M2.6 14c.6-3 2.8-4.5 5.4-4.5s4.8 1.5 5.4 4.5"/></svg>
+                  {persona
+                    ? <PersonaIcon icon={personaList.find(p => p.name === persona)?.icon} name={persona} size={16} />
+                    : <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.4"><circle cx="8" cy="5.5" r="2.8"/><path d="M2.6 14c.6-3 2.8-4.5 5.4-4.5s4.8 1.5 5.4 4.5"/></svg>}
                   <span className="persona-label">{persona ? personaList.find(p => p.name === persona)?.name ?? persona : 'Persona'}</span>
                 </button>
                 {personaOpen && (
@@ -386,7 +389,7 @@ export function ChatView() {
                         .map(p => (
                         <button key={p.name} className={`persona-row ${persona === p.name ? 'on' : ''}`}
                           onClick={() => { setPersonaState(p.name); setPersonaOpen(false) }}>
-                          <span className="persona-name">{p.name}{p.shared && <span className="persona-shared">shared</span>}</span>
+                          <span className="persona-name"><PersonaIcon icon={p.icon} name={p.name} size={18} />{p.name}{p.shared && <span className="persona-shared">shared</span>}</span>
                           {p.description && <span className="muted">{p.description}</span>}
                         </button>
                       ))}
