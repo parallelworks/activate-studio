@@ -1,0 +1,68 @@
+#!/usr/bin/env python3
+"""A stand-in for gufi_dir2index, for the server integration test.
+
+The real tool records filesystem metadata into a tree of SQLite databases
+mirroring the source. It needs a CMake build of GUFI, does not build on
+macOS at all, and is not the subject of this test: what is under test is
+the server's own indexing path — that it pre-extracts documents, runs
+enrich.py over the result, and serves the extracted text.
+
+So this reproduces the one part of the real tool's output the rest of the
+pipeline depends on: <dest>/<basename of src>/ mirroring the source tree,
+with an empty db.db in every directory. enrich.py creates the `words`
+table inside those itself.
+
+    gufi_dir2index [-x] [-n N] [--max-level 0] [--skip-file F] SRC DEST
+"""
+import os
+import sqlite3
+import sys
+from pathlib import Path
+
+
+def main(argv: list[str]) -> int:
+    max_level = None
+    skip_names: set[str] = set()
+    positional: list[str] = []
+    i = 0
+    while i < len(argv):
+        arg = argv[i]
+        if arg == '-x':
+            i += 1
+        elif arg in ('-n', '--threads'):
+            i += 2
+        elif arg == '--max-level':
+            max_level = int(argv[i + 1])
+            i += 2
+        elif arg == '--skip-file':
+            skip_file = Path(argv[i + 1])
+            if skip_file.exists():
+                skip_names = {ln.strip() for ln in skip_file.read_text().splitlines() if ln.strip()}
+            i += 2
+        else:
+            positional.append(arg)
+            i += 1
+
+    if len(positional) != 2:
+        print(f'usage: {sys.argv[0]} [-x] [-n N] [--max-level L] [--skip-file F] SRC DEST', file=sys.stderr)
+        return 2
+    src, dest = Path(positional[0]), Path(positional[1])
+    if not src.is_dir():
+        print(f'{src}: not a directory', file=sys.stderr)
+        return 1
+
+    top = dest / src.name
+    for dirpath, dirnames, _ in os.walk(src):
+        rel = Path(dirpath).relative_to(src)
+        depth = 0 if str(rel) == '.' else len(rel.parts)
+        dirnames[:] = sorted(d for d in dirnames if d not in skip_names)
+        if max_level is not None and depth >= max_level:
+            dirnames[:] = []
+        target = top / rel
+        target.mkdir(parents=True, exist_ok=True)
+        sqlite3.connect(str(target / 'db.db')).close()
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main(sys.argv[1:]))

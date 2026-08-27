@@ -1,4 +1,10 @@
-python-docx
+# Optional, and installed by nothing: no deployment path runs pip against
+# this file any more. Document extraction needs no Python libraries — Word,
+# PowerPoint, Excel and PDF files convert through @giraffesyo/downmark,
+# which ships with the server, and PDFs fall back to poppler's pdftotext.
+#
+# pypdf is read by enrich.py only where it is already importable, as a last
+# resort for a host that has neither the downmark binary nor poppler:
+#
+#     pip install -r indexer/requirements.txt
 pypdf
-python-pptx
-openpyxl

@@ -1,0 +1,52 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
+endobj
+2 0 obj
+<< /Length 298 >>
+stream
+BT
+/F1 20 Tf 1 0 0 1 72 720 Tm (Boundary Layer Report) Tj
+/F1 12 Tf 1 0 0 1 72 690 Tm (Case study for the inlet refinement pass.) Tj
+/F1 12 Tf 1 0 0 1 72 670 Tm (Reference code BOUNDARY-LAYER-4417 identifies this run.) Tj
+/F1 12 Tf 1 0 0 1 72 650 Tm (Each case is rerun when residuals stall.) Tj
+ET
+endstream
+endobj
+3 0 obj
+<< /Length 208 >>
+stream
+BT
+/F1 16 Tf 1 0 0 1 72 720 Tm (Appendix A) Tj
+/F1 12 Tf 1 0 0 1 72 690 Tm (Convergence marker CONVERGENCE-HISTORY-5502 closes the set.) Tj
+/F1 12 Tf 1 0 0 1 72 670 Tm (No further passes were required.) Tj
+ET
+endstream
+endobj
+4 0 obj
+<< /Type /Page /Parent 6 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 1 0 R >>  >> /Contents 2 0 R >>
+endobj
+5 0 obj
+<< /Type /Page /Parent 6 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 1 0 R >>  >> /Contents 3 0 R >>
+endobj
+6 0 obj
+<< /Type /Pages /Kids [4 0 R 5 0 R] /Count 2 >>
+endobj
+7 0 obj
+<< /Type /Catalog /Pages 6 0 R >>
+endobj
+xref
+0 8
+0000000000 65535 f 
+0000000009 00000 n 
+0000000106 00000 n 
+0000000455 00000 n 
+0000000714 00000 n 
+0000000841 00000 n 
+0000000968 00000 n 
+0000001031 00000 n 
+trailer
+<< /Size 8 /Root 7 0 R >>
+startxref
+1080
+%%EOF

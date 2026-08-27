@@ -34,6 +34,21 @@ fi
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 echo "python: $PYTHON_BIN ($($PYTHON_BIN --version 2>&1))"
 
+# Office documents convert to Markdown through downmark, bundled with the
+# server, before enrichment; enrich.py reuses those cache entries and keeps
+# its own readers for anything that pass skipped. Needs the built server.
+PREEXTRACT="$PROJECT_ROOT/server/dist/preextract.js"
+NODE_BIN="${NODE_BIN:-node}"
+if [ -f "$PREEXTRACT" ] && command -v "$NODE_BIN" >/dev/null 2>&1; then
+  "$NODE_BIN" "$PREEXTRACT" --kb-root "$KB_ROOT" --extract-cache "$INDEX_BASE/extract" \
+    || echo "WARNING: office pre-extraction failed; enrich.py uses its own readers"
+else
+  echo "WARNING: no node or server/dist/preextract.js at $PREEXTRACT."
+  echo "WARNING: Word, PowerPoint and Excel files will be indexed by the"
+  echo "WARNING: standard-library fallback reader, which loses tables and"
+  echo "WARNING: headings, and PDFs by pdftotext alone. Build the server."
+fi
+
 "$PYTHON_BIN" "$PROJECT_ROOT/indexer/enrich.py" --kb-root "$KB_ROOT" \
   --index "$STAGING/$(basename "$KB_ROOT")" --extract-cache "$INDEX_BASE/extract"
 

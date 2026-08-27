@@ -35,6 +35,7 @@ flowchart LR
 - `server/` Fastify + TypeScript: KB API, hybrid search, chat tool loop against an OpenAI-compatible model endpoint, upload and URL ingestion, incremental indexing and background sweep, structured queries.
 - `web/` Vite React SPA: Chat (full-canvas `@parallelworks/ai-chat`), Library, Search, Query, Help.
 - `indexer/` GUFI toolchain build, full rebuild, enrichment (text extraction, OCR, vision captions), embeddings.
+- `testdata/` synthetic corpus and the end-to-end extraction test (`pnpm test`).
 - `deploy/` optional ACTIVATE session serving.
 - `docs/` architecture documentation and the in-app help content.
 
@@ -60,8 +61,9 @@ query surfaces answer with empty results and a note until an index
 exists. Document
 extraction and previews use whatever tools are present: `brew install
 --cask libreoffice` provides `soffice` for DOCX/PPTX previews, and
-`pip install python-docx python-pptx openpyxl pymupdf` enables text
-extraction for indexing. The Apptainer container build below is
+Word, PowerPoint, Excel and PDF files extract to Markdown through
+`@giraffesyo/downmark`, bundled with the server, so they need nothing extra
+(tesseract adds OCR for scanned pages). The Apptainer container build below is
 Linux-only.
 
 ## Container build

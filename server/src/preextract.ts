@@ -1,0 +1,288 @@
+/**
+ * Documents to Markdown for the extract cache, ahead of enrich.py.
+ *
+ * Word, PowerPoint and Excel files (plus legacy .doc) convert through
+ * downmark (the pure-Go document converter, shipped on npm as a native
+ * binary per platform with a WebAssembly fallback) into
+ * `$INDEX_BASE/extract/<rel>.txt`. enrich.py already reuses any cache entry
+ * at least as new as its source, so it picks these up as-is and indexes
+ * them; a file downmark cannot read gets no entry and falls through to
+ * enrich.py's standard-library OOXML pass, the only reader left there for
+ * these formats.
+ *
+ * PDFs go the same way where the native binary is installed: text pages
+ * extract directly and scanned pages are read through tesseract when the
+ * host has it, with downmark marking the pages OCR filled in. On a host
+ * running the wasm (no platform package) PDFs are left to enrich.py, whose
+ * pdftotext + OCR path remains the fallback either way; enrich.py also
+ * re-checks a cached PDF whose text is thin for its page count, which
+ * matters only for entries written while tesseract was not installed.
+ *
+ * Markdown rather than flat text because the downstream consumers are the
+ * chat model, full-text snippets, and the viewer: headings, tables and slide
+ * boundaries survive, and the viewer renders them.
+ *
+ * Runs as a child process (see runPreExtract) or as a CLI from reindex.sh:
+ *   node server/dist/preextract.js --kb-root DIR --extract-cache DIR [--subdir REL] [--no-recurse]
+ * The wasm is single-threaded and blocks its thread per document, so the
+ * server never converts on its own event loop.
+ */
+import { fork } from 'node:child_process'
+import fs from 'node:fs'
+import fsp from 'node:fs/promises'
+import path from 'node:path'
+import { spawnSync } from 'node:child_process'
+import { createRequire } from 'node:module'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+import { binaryPath } from '@giraffesyo/downmark'
+
+export const OFFICE_MARKDOWN_SUFFIXES = new Set(['.docx', '.pptx', '.xlsx', '.doc'])
+const PDF_SUFFIX = '.pdf'
+
+/** True when downmark runs as the native binary here (PDFs and OCR need it).
+ *  binaryPath() throws when the platform package is installed but its binary
+ *  is missing — the exact packaging failure the extractor report exists to
+ *  show — so a broken install reads as "no native binary" rather than taking
+ *  the report (and the endpoint serving it) down with it. */
+export function downmarkNative(): boolean {
+  try { return binaryPath() !== null } catch { return false }
+}
+
+// Matches enrich.py's OCR budget: at most 30 pages, and a scan that takes
+// longer than this is left to the next pass rather than holding the index.
+const OCR_MAX_PAGES = 30
+const OCR_PAGE_TIMEOUT_MS = 120_000
+const OCR_TIMEOUT_MS = 300_000
+
+let tesseractKnown: boolean | null = null
+function tesseractAvailable(): boolean {
+  if (tesseractKnown === null) {
+    try { tesseractKnown = spawnSync('tesseract', ['--version'], { stdio: 'ignore', timeout: 10_000 }).status === 0 }
+    catch { tesseractKnown = false }
+  }
+  return tesseractKnown
+}
+
+// Same cap as enrich.py's MAX_TEXT: the index holds the head of a huge
+// workbook, full-text search covers the rest of nothing.
+const MAX_TEXT = 500_000
+// downmark refuses OOXML archives above this anyway; skip the read.
+const MAX_INPUT_BYTES = 64 * 1024 * 1024
+/**
+ * Every entry this writes names the converter on its first line:
+ *
+ *     <!-- extracted by downmark 0.10.0 -->
+ *
+ * which answers two questions nothing else could. A later pass can tell an
+ * entry it produced from one enrich.py's flat-text readers wrote, so an
+ * entry from an older downmark is reconverted per file — a single marker
+ * file could only say that for a whole-tree pass, and the server never runs
+ * one. And the server can tell the viewer whether the text is Markdown,
+ * rather than guessing from the suffix and rendering pdftotext's
+ * column-aligned output as though it were.
+ *
+ * An HTML comment because downmark already emits them into content that
+ * gets indexed (slide numbers, OCR markers), so this adds a kind of noise
+ * the pipeline already carries.
+ */
+export const PROVENANCE_PREFIX = '<!-- extracted by downmark '
+const PROVENANCE_END = ' -->'
+const provenanceLine = (ver: string) => `${PROVENANCE_PREFIX}${ver}${PROVENANCE_END}`
+
+export interface PreExtractOptions {
+  kbRoot: string
+  cacheRoot: string
+  subdir?: string
+  noRecurse?: boolean
+  excludeDirs?: Set<string>
+  log?: (msg: string) => void
+}
+
+export interface PreExtractSummary {
+  scanned: number
+  converted: number
+  reused: number
+  /** Converted, but downmark reported content it could not carry over. */
+  warned: number
+  failed: number
+  ms: number
+}
+
+const DEFAULT_EXCLUDE = new Set([
+  '.git', 'node_modules', '.venv', 'venv', '__pycache__', 'dist', 'build',
+  '.cache', '.pytest_cache', 'screenshots', '.ipynb_checkpoints',
+])
+
+/** The converter version, read from the package rather than the library.
+ *  downmark's version() starts the wasm runtime even where the native
+ *  binary does all the work, so asking it here would make a trimmed or
+ *  unreadable wasm take down a pipeline that does not otherwise need it —
+ *  and would pay a 10 MB load on every pass to compute a cache marker. */
+async function converterVersion(): Promise<string> {
+  try {
+    const pkg = createRequire(import.meta.url).resolve('@giraffesyo/downmark/package.json')
+    const { version } = JSON.parse(await fsp.readFile(pkg, 'utf8'))
+    if (typeof version === 'string' && version) return version
+  } catch { /* fall through to asking the library */ }
+  const { version } = await import('@giraffesyo/downmark')
+  return version()
+}
+
+/** The downmark version that wrote a cache entry, '' for anything else
+ *  (an enrich.py fallback, or an entry from before provenance existed). */
+async function entryVersion(file: string): Promise<string> {
+  let fh: fsp.FileHandle | undefined
+  try {
+    fh = await fsp.open(file, 'r')
+    const buf = Buffer.alloc(200)
+    const { bytesRead } = await fh.read(buf, 0, buf.length, 0)
+    const head = buf.subarray(0, bytesRead).toString('utf8')
+    if (!head.startsWith(PROVENANCE_PREFIX)) return ''
+    const end = head.indexOf(PROVENANCE_END)
+    return end < 0 ? '' : head.slice(PROVENANCE_PREFIX.length, end)
+  } catch {
+    return ''
+  } finally {
+    await fh?.close()
+  }
+}
+
+/** Convert every Office document under the scope whose cache entry is
+ *  missing or stale. Never throws for a single document; failures are
+ *  counted and logged so enrich.py's readers take over for those files. */
+export async function preExtract(opts: PreExtractOptions): Promise<PreExtractSummary> {
+  const t0 = Date.now()
+  const log = opts.log ?? (() => {})
+  const exclude = opts.excludeDirs ?? DEFAULT_EXCLUDE
+  const { convert } = await import('@giraffesyo/downmark')
+  const ver = await converterVersion()
+  const native = downmarkNative()
+  // "thin" also reads a scanned body under a typed header, the case a
+  // textless policy misses; pages with a real text layer are left alone.
+  const ocr = native && tesseractAvailable()
+    ? { engine: 'tesseract' as const, policy: 'thin' as const, maxPages: OCR_MAX_PAGES, pageTimeoutMs: OCR_PAGE_TIMEOUT_MS, timeoutMs: OCR_TIMEOUT_MS }
+    : undefined
+  const handles = (name: string): boolean => {
+    const ext = path.extname(name).toLowerCase()
+    return OFFICE_MARKDOWN_SUFFIXES.has(ext) || (native && ext === PDF_SUFFIX)
+  }
+  const summary: PreExtractSummary = { scanned: 0, converted: 0, reused: 0, warned: 0, failed: 0, ms: 0 }
+
+  const sub = (opts.subdir ?? '').replace(/^\/+|\/+$/g, '')
+  const start = sub ? path.join(opts.kbRoot, sub) : opts.kbRoot
+  const kbResolved = path.resolve(opts.kbRoot)
+  const startResolved = path.resolve(start)
+  if (startResolved !== kbResolved && !startResolved.startsWith(kbResolved + path.sep)) {
+    throw new Error('subdir escapes the knowledge base')
+  }
+
+  const walk = async (dir: string, rel: string): Promise<void> => {
+    let entries
+    try { entries = await fsp.readdir(dir, { withFileTypes: true }) } catch { return }
+    entries.sort((a, b) => a.name.localeCompare(b.name))
+    for (const e of entries) {
+      const abs = path.join(dir, e.name)
+      const childRel = rel ? `${rel}/${e.name}` : e.name
+      if (e.isDirectory()) {
+        if (!opts.noRecurse && !exclude.has(e.name) && !e.name.startsWith('.')) await walk(abs, childRel)
+        continue
+      }
+      if (!e.isFile() || !handles(e.name)) continue
+      summary.scanned++
+      let st: fs.Stats
+      try { st = await fsp.stat(abs) } catch { continue }
+      const cacheFile = path.join(opts.cacheRoot, childRel + '.txt')
+      try {
+        const cst = await fsp.stat(cacheFile)
+        // Current source, and written by this converter: nothing to redo.
+        // A version mismatch reconverts this one file, whatever the scope
+        // of the pass, which is what makes an upgrade reach a deployment
+        // that only ever indexes subtrees.
+        if (cst.mtimeMs >= st.mtimeMs && cst.size > 0 && (await entryVersion(cacheFile)) === ver) {
+          summary.reused++
+          continue
+        }
+      } catch { /* no entry yet */ }
+      if (st.size > MAX_INPUT_BYTES) { summary.failed++; log(`preextract: ${childRel}: ${st.size} bytes exceeds the converter's input limit`); continue }
+      try {
+        const data = await fsp.readFile(abs)
+        const isPdf = path.extname(e.name).toLowerCase() === PDF_SUFFIX
+        const { markdown, warnings } = await convert(data, isPdf && ocr ? { filename: e.name, ocr } : { filename: e.name })
+        if (!markdown.trim()) { summary.failed++; log(`preextract: ${childRel}: no text`); continue }
+        const text = `${provenanceLine(ver)}\n\n${markdown}`.slice(0, MAX_TEXT)
+        // A conversion can succeed and still lose content; say what, so a
+        // document that indexes short is explained in the log rather than
+        // discovered by a reader. The Markdown is still the best text we have.
+        if (warnings.length) {
+          summary.warned++
+          for (const w of warnings.slice(0, 5)) log(`preextract: ${childRel}: ${w.code}${w.location ? ` (${w.location})` : ''}: ${w.message}`)
+          if (warnings.length > 5) log(`preextract: ${childRel}: ${warnings.length - 5} more warnings`)
+        }
+        await fsp.mkdir(path.dirname(cacheFile), { recursive: true })
+        const tmp = `${cacheFile}.${process.pid}.tmp`
+        await fsp.writeFile(tmp, text)
+        await fsp.rename(tmp, cacheFile)
+        summary.converted++
+      } catch (err) {
+        summary.failed++
+        log(`preextract: ${childRel}: ${String((err as Error).message ?? err).slice(0, 200)}`)
+      }
+    }
+  }
+  await walk(start, sub)
+  summary.ms = Date.now() - t0
+  return summary
+}
+
+/** Run preExtract in a child process so a long conversion never blocks the
+ *  server. Resolves to the summary, or null when the child failed; callers
+ *  continue either way because enrich.py covers the same files. */
+export function runPreExtract(opts: Omit<PreExtractOptions, 'log' | 'excludeDirs'>, log: (msg: string) => void = () => {}): Promise<PreExtractSummary | null> {
+  const script = fileURLToPath(import.meta.url)
+  const args = ['--kb-root', opts.kbRoot, '--extract-cache', opts.cacheRoot]
+  if (opts.subdir) args.push('--subdir', opts.subdir)
+  if (opts.noRecurse) args.push('--no-recurse')
+  return new Promise(resolve => {
+    // fork inherits execArgv, so the tsx loader used in development carries
+    // over; in production the script is plain JS under dist/.
+    const child = fork(script, args, { stdio: ['ignore', 'pipe', 'pipe', 'ipc'], timeout: 30 * 60_000 })
+    let out = ''
+    let err = ''
+    child.stdout?.on('data', d => { out += d })
+    child.stderr?.on('data', d => { err += d })
+    child.on('error', e => { log(`preextract: ${e.message}`); resolve(null) })
+    // 'close' rather than 'exit': with piped stdio, 'exit' can arrive before
+    // the pipes have drained, which silently truncated the warnings the
+    // child had just written and left the summary unparseable.
+    child.on('close', code => {
+      for (const line of err.split('\n')) if (line.trim()) log(line.trim())
+      if (code !== 0) { log(`preextract: exited ${code}`); resolve(null); return }
+      try { resolve(JSON.parse(out.trim().split('\n').pop() ?? '')) } catch { resolve(null) }
+    })
+  })
+}
+
+function parseArgs(argv: string[]): PreExtractOptions {
+  const opts: PreExtractOptions = { kbRoot: '', cacheRoot: '' }
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i]
+    if (a === '--kb-root') opts.kbRoot = argv[++i] ?? ''
+    else if (a === '--extract-cache') opts.cacheRoot = argv[++i] ?? ''
+    else if (a === '--subdir') opts.subdir = argv[++i] ?? ''
+    else if (a === '--no-recurse') opts.noRecurse = true
+    else throw new Error(`unknown argument: ${a}`)
+  }
+  if (!opts.kbRoot || !opts.cacheRoot) throw new Error('usage: preextract --kb-root DIR --extract-cache DIR [--subdir REL] [--no-recurse]')
+  return opts
+}
+
+const invokedDirectly = process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href
+if (invokedDirectly) {
+  let opts: PreExtractOptions
+  try { opts = parseArgs(process.argv.slice(2)) } catch (e) { console.error(String((e as Error).message)); process.exit(2) }
+  // Setting exitCode rather than calling process.exit: stdout to a pipe is
+  // asynchronous, and exiting immediately after the write can cut it off.
+  preExtract({ ...opts!, log: m => console.error(m) })
+    .then(s => { console.log(JSON.stringify(s)); process.exitCode = 0 })
+    .catch(e => { console.error(`preextract: ${String((e as Error).message ?? e)}`); process.exitCode = 1 })
+}

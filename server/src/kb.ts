@@ -4,6 +4,7 @@ import {
   KB_ROOT, EXTRACT_CACHE, EXCLUDE_DIRS, EXCLUDE_FILE_SUFFIXES,
   TEXT_SUFFIXES, EXTRACTED_SUFFIXES, IMAGE_SUFFIXES, MODEL_SUFFIXES, MAX_PREVIEW_BYTES,
 } from './config.js'
+import { PROVENANCE_PREFIX } from './preextract.js'
 
 export interface KbEntry {
   name: string
@@ -96,6 +97,12 @@ export interface FileContent {
   truncated: boolean
   content: string | null // null when binary/image (client uses download URL)
   source: 'raw' | 'extracted' | 'none'
+  /** Set for extracted text: 'markdown' where downmark converted the
+   *  document, 'text' where a fallback reader produced it. The suffix
+   *  cannot answer this — the same PDF is Markdown on a host with the
+   *  native binary and pdftotext's column-aligned output without it, and
+   *  rendering the latter as Markdown turns its columns into code blocks. */
+  format?: 'markdown' | 'text'
 }
 
 export async function readFileContent(rel: string): Promise<FileContent> {
@@ -117,10 +124,20 @@ export async function readFileContent(rel: string): Promise<FileContent> {
   if (kind === 'extracted' || kind === 'image') {
     // Extracted text for documents; OCR plus vision caption for images.
     try {
-      const text = await fs.readFile(extractPath(rel), 'utf8')
-      if (text.trim()) {
+      const raw = await fs.readFile(extractPath(rel), 'utf8')
+      if (raw.trim()) {
+        // The provenance line is metadata, not content: it decides how the
+        // text is rendered and is then dropped from what the reader sees.
+        const isMarkdown = raw.startsWith(PROVENANCE_PREFIX)
+        const text = isMarkdown ? raw.slice(raw.indexOf('\n') + 1).replace(/^\n/, '') : raw
         const truncated = text.length > MAX_PREVIEW_BYTES
-        return { ...base, truncated, content: text.slice(0, MAX_PREVIEW_BYTES), source: 'extracted' }
+        return {
+          ...base,
+          truncated,
+          content: text.slice(0, MAX_PREVIEW_BYTES),
+          source: 'extracted',
+          format: isMarkdown ? 'markdown' : 'text',
+        }
       }
     } catch { /* no cache entry */ }
     return { ...base, truncated: false, content: null, source: 'none' }
