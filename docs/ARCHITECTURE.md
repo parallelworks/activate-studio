@@ -23,7 +23,7 @@ CREATE VIRTUAL TABLE words USING fts5(tinode UNINDEXED, fname UNINDEXED, wordf)
 
 One row per file: `tinode` is the source file's inode as text, `fname` its name, `wordf` the extracted text (capped at 500 KB). The inode is text rather than an integer because parallel filesystems issue inode numbers above SQLite's signed 64-bit limit, which raised OverflowError and failed the whole pass; every consumer joins on `CAST(tinode AS TEXT)` anyway, since GUFI stores `entries.inode` as TEXT and an uncast comparison matches nothing.
 
-Extraction is by suffix. Markdown, text, code, and config files are read directly. DOCX, PPTX and XLSX use python-docx, python-pptx and openpyxl, falling back to a standard-library reader when those are missing, since the three formats are zipped XML and a host that cannot install packages can still read them. PDFs use `pdftotext -layout`, which keeps columns and table cells apart, with pypdf as a fallback; a PDF whose text layer is thin for its page count is a scan, so its pages are rendered with `pdftoppm` and read with tesseract. Extracted text is written to `$INDEX_BASE/extract/<relpath>.txt` and reused for instant previews.
+Extraction is by suffix. Markdown, text, code, and config files are read directly. DOCX, PPTX, XLSX and legacy DOC convert to Markdown through [downmark](https://github.com/giraffesyo/downmark), a pure-Go document converter that ships on npm as a native binary per platform (`@giraffesyo/downmark` plus `@giraffesyo/downmark-<os>-<arch>`) with a WebAssembly fallback, so Office extraction needs nothing from the host: `server/src/preextract.ts` runs as a child process before each `enrich.py` pass (and from `reindex.sh`) and writes the cache entries `enrich.py` then reuses. Headings, tables, slide boundaries, speaker notes, chart data and equations survive, and the viewer renders the result. Should downmark fail on a document, `enrich.py` falls back to a standard-library reader, since the three formats are zipped XML; no Python document libraries are involved. Every entry downmark writes opens with a provenance line naming the converter (`<!-- extracted by downmark 0.10.0 -->`). That is what lets a later pass reconvert an entry an older downmark produced — per file, so an upgrade reaches a deployment that only ever indexes subtrees, which is every deployment — and what lets the server tell the viewer whether extracted text is Markdown, rather than inferring it from the suffix and rendering pdftotext's column-aligned output as though it had tables. The line is metadata: `GET /api/kb/file` reports it as `format: 'markdown'` and serves the text without it. PDFs take the same route where the native binary is installed: text pages extract directly, and scanned pages — including a scanned body under a typed header (downmark's `thin` OCR policy) — are read through tesseract (up to 30 pages, bounded in time), with downmark marking the pages OCR filled in. `enrich.py` keeps `pdftotext -layout` (pypdf as a fallback) for hosts running the wasm, and applies the thin-text rule to every PDF, cached or not: a PDF whose text is thin for its page count is a scan, so its pages are rendered with `pdftoppm` and read with tesseract. Extracted text is written to `$INDEX_BASE/extract/<relpath>.txt` and reused for instant previews.
 
 Expensive extractions are cached by source mtime. Only images cache an empty result, where a picture with no text is a real answer; a document that extracted to nothing is retried on the next pass, so it indexes once the reader for its format is installed. `GET /api/index/extractors` reports which readers this host has, and the Stats page names any format that can only be indexed by filename.
 
@@ -123,6 +123,7 @@ The corpus and the index live on shared storage; everything derived (node_module
 ## 12. Runbook
 
 - Full rebuild: `indexer/reindex.sh` (index plus enrichment plus embeddings). `SKIP_EMBED=1` to skip vectors.
+- Extraction is covered end to end by `pnpm test`, which runs the real pipeline over `testdata/corpus` and asserts on the text that reaches the fts5 tables; see `testdata/README.md`.
 - GUFI toolchain: `indexer/setup_gufi.sh` builds from source and fetches the embedding model.
 - Serve as a platform session: `deploy/run_endpoint.sh` wraps `pw endpoints run`.
 - Web rebuilds do not need a server restart (static assets are served per request). Server code changes need a restart of the endpoint process, which owns the session: killing the node process alone deletes the session.
@@ -179,4 +180,9 @@ deploy/
   workflow.yaml    platform workflow: github, bundle, or container deployment
   app.def          Apptainer image recipe
   run_endpoint.sh  serve as a platform session
+testdata/
+  corpus/          synthetic documents covering every extracted format
+  extraction.test.mjs  end-to-end pipeline test (pnpm test)
+  expectations.json    what each file's indexed text must contain
+  make-corpus.py   regenerates the fixtures deterministically
 ```

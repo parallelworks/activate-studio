@@ -11,14 +11,31 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # Node 22 matches the container base image, so a syntax or API level
+      # the image cannot run fails here rather than at deploy time.
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: corepack enable
+      # No version here: package.json's packageManager pins it, and naming
+      # it in both places is an error the action refuses to guess through.
+      - uses: pnpm/action-setup@v4
+
+      # The extraction tests skip what a host cannot do; installing these
+      # means the OCR and pdftotext paths are actually exercised rather
+      # than quietly skipped on every run.
+      - name: install extraction tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends tesseract-ocr poppler-utils
+
       - run: pnpm install --frozen-lockfile
-      - name: Build the server
-        run: pnpm --filter @activate-studio/server build
-      - name: Server tests
-        run: node --test server/test/*.test.mjs
-      - name: Typecheck and build the web app
-        run: pnpm --filter @activate-studio/web build
+      - run: pnpm build
+      - run: pnpm test
+
+      # The container and the bundle ship what `pnpm deploy` produces, not
+      # the workspace. This is where the native binary would go missing or
+      # lose its executable bit, and the app would still start.
+      - name: check the deployed server tree
+        run: |
+          pnpm --filter @activate-studio/server --prod deploy --legacy /tmp/deploy-check
+          node testdata/check-packaging.mjs /tmp/deploy-check

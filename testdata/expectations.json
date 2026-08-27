@@ -1,0 +1,67 @@
+{
+  "_comment": [
+    "What each corpus file must yield once the whole extraction pipeline has run:",
+    "preextract.ts converts, enrich.py indexes, and these are assertions on the text",
+    "the fts5 words table ends up holding, which is what search and chat read.",
+    "",
+    "Assertions are properties, not golden files. Converter output legitimately",
+    "shifts between downmark releases (spacing, table padding, a heading level);",
+    "byte-exact goldens would churn on every bump and train everyone to re-bless",
+    "them without looking. These say what must never stop being true: the content",
+    "is present, and the structure that the old flat-text readers destroyed",
+    "survived. `absent` catches the specific regressions we have already had."
+  ],
+  "docs/handbook.docx": {
+    "why": "Headings and tables: the structure python-docx flattened to tab-joined lines.",
+    "contains": ["# Solver Handbook", "## Mesh sizing", "VELOCITY-INLET-7734", "| inlet", "| wake"],
+    "absent": ["<w:t>", "PK\u0003\u0004"],
+    "minChars": 200
+  },
+  "docs/quarterly.xlsx": {
+    "why": "Every sheet becomes its own heading plus a Markdown table.",
+    "contains": ["## Runs", "## Budget", "REYNOLDS-CASE-8891", "| a-01 |", "| gpu | 96 |"],
+    "minChars": 120
+  },
+  "docs/kickoff.pptx": {
+    "why": "Slide boundaries, the table, and speaker notes; the old reader dropped all three.",
+    "contains": [
+      "Slide number: 1",
+      "Slide number: 2",
+      "MESH-REFINEMENT-2261",
+      "| baseline | 1.2M |",
+      "Speaker note: mention the rerun policy."
+    ],
+    "minChars": 200
+  },
+  "docs/report.pdf": {
+    "why": "An ordinary typeset PDF: both pages present, and no OCR was needed for it.",
+    "contains": ["Boundary Layer Report", "BOUNDARY-LAYER-4417", "Appendix A", "CONVERGENCE-HISTORY-5502"],
+    "absent": ["includes OCR text"],
+    "minChars": 200
+  },
+  "notes/readme.md": {
+    "why": "Markdown is read as-is, not converted.",
+    "contains": ["# Study notes", "The refinement pass follows the handbook."],
+    "minChars": 60
+  },
+  "notes/runs.csv": {
+    "why": "Plain text formats keep flowing through enrich.py untouched.",
+    "contains": ["case,reynolds,status", "a-02,8.1e5,stalled"],
+    "minChars": 40
+  },
+  "notes/solver.yaml": {
+    "why": "Config files stay searchable.",
+    "contains": ["scheme: implicit", "tolerance: 1.0e-6"],
+    "minChars": 30
+  },
+  "notes/settings.json": {
+    "why": "JSON is indexed as text; the viewer renders it as a tree separately.",
+    "contains": ["\"cells\": 128400"],
+    "minChars": 30
+  },
+  "notes/postprocess.py": {
+    "why": "Source files are part of the corpus and must not be skipped.",
+    "contains": ["def summarise(residuals):"],
+    "minChars": 30
+  }
+}

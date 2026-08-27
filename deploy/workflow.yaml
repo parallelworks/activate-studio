@@ -717,47 +717,6 @@ jobs:
     ssh:
       remoteHost: ${{ inputs.resource_and_execution.resource.ip }}
     steps:
-      - name: Python environment for document extraction
-        run: |
-          if [ "${{ inputs.session_settings.session_method }}" = "cleanup" ]; then exit 0; fi
-          if [ "${{ inputs.app_settings.source }}" = "container" ]; then
-            echo "Container mode; the image carries the extractors."
-            exit 0
-          fi
-          cd ${{ inputs.app_settings.workdir }}
-          # Word, PowerPoint and Excel files index as their filename alone
-          # without these. The indexer has a standard-library fallback, but
-          # the libraries read the documents properly, so install them once
-          # into a venv beside the app and point the indexer at it.
-          PY=""
-          for cand in python3.13 python3.12 python3.11 python3.10 python3; do
-            if command -v "$cand" >/dev/null 2>&1 && "$cand" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)' 2>/dev/null; then
-              PY="$cand"; break
-            fi
-          done
-          if [ -z "$PY" ]; then
-            echo "WARNING: no python 3.10+ found; extraction falls back to the standard library."
-            exit 0
-          fi
-          if [ ! -x pyenv/bin/python ]; then
-            "$PY" -m venv pyenv || echo "WARNING: could not create the venv"
-          fi
-          if [ -x pyenv/bin/python ]; then
-            ./pyenv/bin/python -m pip install --quiet --upgrade pip 2>/dev/null || true
-            ./pyenv/bin/python -m pip install --quiet python-docx python-pptx openpyxl \
-              || echo "WARNING: could not install the extractors (no network?); the standard-library fallback applies."
-            ./pyenv/bin/python - <<'CHECK'
-          mods = []
-          for name, label in (('docx', 'python-docx'), ('pptx', 'python-pptx'), ('openpyxl', 'openpyxl')):
-              try:
-                  __import__(name)
-                  mods.append(f'{label} ok')
-              except ImportError:
-                  mods.append(f'{label} MISSING')
-          print('document extraction:', ', '.join(mods))
-          CHECK
-          fi
-
       - name: Build GUFI from bundled source
         run: |
           if [ "${{ inputs.session_settings.session_method }}" = "cleanup" ]; then exit 0; fi
@@ -826,11 +785,17 @@ jobs:
           fi
           export KB_ROOT="${{ inputs.kb_settings.kb_root }}"
           export GUFI_BIN="$PWD/gufi-install/bin"
+          # Each step is its own shell, so the PATH pull_software exported is
+          # gone. Document conversion runs as a Node CLI: without this, a
+          # resource whose only Node is the staged runtime indexes Word,
+          # PowerPoint and Excel files with the fallback reader and says so
+          # only in passing.
+          if [ -x node-runtime/bin/node ]; then
+            PATH="$PWD/node-runtime/bin:$PATH"; export PATH
+          fi
           export INDEX_BASE="${{ inputs.kb_settings.index_base }}"
           [ -n "$INDEX_BASE" ] || INDEX_BASE="$PWD/app/index"
           export INDEX_BASE
-          # Document extraction runs under the venv when one was built.
-          if [ -x pyenv/bin/python ]; then export PYTHON_BIN="$PWD/pyenv/bin/python"; fi
           # The embedding model ships inside the app tree; a relocated index
           # needs it at $INDEX_BASE/models.
           if [ "$INDEX_BASE" != "$PWD/app/index" ] && [ ! -f "$INDEX_BASE/models/minilm384.gguf" ] && [ -f app/index/models/minilm384.gguf ]; then
@@ -909,9 +874,6 @@ jobs:
           echo "export GUFI_BIN=${WORKDIR}/gufi-install/bin" >> ${SCRIPT}
           if [ -x "${WORKDIR}/soffice-wrapper.sh" ]; then
             echo "export SOFFICE_BIN=${WORKDIR}/soffice-wrapper.sh" >> ${SCRIPT}
-          fi
-          if [ -x "${WORKDIR}/pyenv/bin/python" ]; then
-            echo "export PYTHON_BIN=${WORKDIR}/pyenv/bin/python" >> ${SCRIPT}
           fi
           if [ -n "${{ inputs.kb_settings.index_base }}" ]; then
             echo "export INDEX_BASE='${{ inputs.kb_settings.index_base }}'" >> ${SCRIPT}
