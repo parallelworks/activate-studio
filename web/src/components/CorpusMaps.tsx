@@ -260,16 +260,35 @@ export function SemanticMap({ onOpen }: { onOpen: (path: string) => void }) {
     // Cluster names at centroids; individual files stay hover-only.
     const isDark = document.documentElement.getAttribute('data-theme') === 'dark'
     g.font = '600 12.5px system-ui, sans-serif'
-    for (let c = 0; c < k; c++) {
-      const members = files.filter(f => f.c === c)
-      if (!members.length || !labels[c]) continue
+    /* Labels are drawn largest cluster first and a label that would cover
+       one already drawn is skipped. Every cluster is named in full in the
+       legend below, so dropping a colliding label costs nothing, while
+       drawing it costs the reader the whole map: at this corpus size the
+       centroids sit close enough that unmanaged labels pile into an
+       unreadable stack. The text is the last path segment of at most two
+       parts, since the leading directories are what make these long and
+       the legend carries them anyway. */
+    const short = (l: string) => {
+      const parts = l.split(' + ').map(part => part.split('/').filter(Boolean).slice(-1)[0] ?? part)
+      const head = parts.slice(0, 2).join(' + ') + (parts.length > 2 ? ' +…' : '')
+      return head.length > 30 ? head.slice(0, 29) + '…' : head
+    }
+    const drawn: { x0: number; y0: number; x1: number; y1: number }[] = []
+    const order = Array.from({ length: k }, (_, c) => c)
+      .map(c => ({ c, members: files.filter(f => f.c === c) }))
+      .filter(e => e.members.length > 0 && labels[e.c])
+      .sort((a, b) => b.members.length - a.members.length)
+    for (const { c, members } of order) {
       const cx = members.reduce((s, f) => s + px(f).x, 0) / members.length
       const cy = members.reduce((s, f) => s + px(f).y, 0) / members.length
-      const short = (l: string) => l.split(' + ').map(part => part.split('/').slice(-2).join('/')).join(' + ')
       const text = short(labels[c])
       const wpx = g.measureText(text).width
+      const box = { x0: cx - wpx / 2 - 5, y0: cy - 20, x1: cx + wpx / 2 + 5, y1: cy - 3 }
+      const clashes = drawn.some(d => box.x0 < d.x1 && box.x1 > d.x0 && box.y0 < d.y1 && box.y1 > d.y0)
+      if (clashes) continue
+      drawn.push(box)
       g.fillStyle = isDark ? 'rgba(15,23,42,0.85)' : 'rgba(255,255,255,0.85)'
-      g.fillRect(cx - wpx / 2 - 5, cy - 20, wpx + 10, 17)
+      g.fillRect(box.x0, box.y0, wpx + 10, 17)
       g.fillStyle = PALETTE[c % PALETTE.length]
       g.fillText(text, cx - wpx / 2, cy - 7)
     }
