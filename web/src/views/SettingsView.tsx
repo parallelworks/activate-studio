@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { CopyToClipboard } from '@parallelworks/ui'
+import { CopyToClipboard, SwitchToggle } from '@parallelworks/ui'
 import { ACCENTS, SURFACES, applyAccent, applySurface } from '../accents'
 import { useAppConfig } from '../config'
 import { bannerInk } from '../components/ClassificationBanner'
@@ -13,6 +13,7 @@ interface Effective {
   iconUrl: string
   iconUrlDark: string
   sweepIntervalSec: number
+  historyIntervalSec: number
   suggestedPrompts: string[]
   visionModel: string
   disabledTools: string[]
@@ -22,6 +23,9 @@ interface Effective {
   ragAllowDeploymentKey: boolean
   ragAdvertiseRagModel: boolean
   ragAdvertiseAgentModel: boolean
+  mcpEnabled: boolean
+  mcpServers: { name: string; url: string; header?: string }[]
+  ragProxyEnabled: boolean
   ragEndpointAutoStart: boolean
   ragEndpointName: string
   requirePersonalKey: boolean
@@ -109,6 +113,7 @@ export function SettingsView() {
   const [busy, setBusy] = useState(false)
   const [models, setModels] = useState<string[]>([])
   const [catalog, setCatalog] = useState<CatalogTool[]>([])
+  const [mcpStatus, setMcpStatus] = useState<{ name: string; url: string; tools: number; error: string | null }[]>([])
   const [ext, setExt] = useState<Extensions | null>(null)
   const [specOpen, setSpecOpen] = useState<string | null>(null)
   const [me, setMe] = useState<{ authEnabled?: boolean; verified: boolean; mode: 'stored' | 'session' | 'none'; last4?: string; addedAt?: string; sessionExpiresAt?: string; kind?: string; credExpiresAt?: string | null; credExpired?: boolean; baseUrl?: string | null; gatewayHost?: string
@@ -151,6 +156,7 @@ export function SettingsView() {
   }
 
   useEffect(() => {
+    fetch('/api/settings/mcp-servers').then(r => r.json()).then(d => setMcpStatus(d.servers ?? [])).catch(() => {})
     fetch('/api/settings').then(r => r.json())
       .then(d => { setForm(d.effective); setDeploymentCred(d.deploymentCredential ?? null) })
       .catch(() => setNote('Could not load settings.'))
@@ -260,7 +266,7 @@ export function SettingsView() {
   const sections: { id: SectionId; label: string }[] = [
     { id: 'general', label: 'General' },
     ...(me?.authEnabled ? [{ id: 'access' as SectionId, label: 'Model access' }] : []),
-    { id: 'rag', label: 'RAG endpoint' },
+    { id: 'rag', label: 'External access' },
     { id: 'tools', label: 'Assistant tools' },
     { id: 'ext', label: 'Extensions' },
   ]
@@ -375,6 +381,16 @@ export function SettingsView() {
                   <label className="field-label">Background sync interval (seconds, 0 pauses)</label>
                   <input className="field" type="number" min={0} max={86400} value={form.sweepIntervalSec}
                     onChange={e => setForm({ ...form, sweepIntervalSec: Number(e.target.value) })} />
+                </div>
+                <div>
+                  <label className="field-label">Corpus history snapshot (seconds between points)</label>
+                  <input className="field" type="number" min={0} max={2592000} step={3600} value={form.historyIntervalSec}
+                    onChange={e => setForm({ ...form, historyIntervalSec: Number(e.target.value) })} />
+                  <p className="muted key-note">
+                    86400 is one point a day, summarizing everything that changed since the previous point. 0 captures
+                    every index pass, which is a churn log on a busy corpus. Days with no change are recorded as a
+                    check either way.
+                  </p>
                 </div>
                 <div>
                   <label className="field-label">Vision model for image captioning</label>
@@ -639,10 +655,86 @@ export function SettingsView() {
 
           {section === 'rag' && (
             <>
-              <h1>RAG endpoint</h1>
+              <h1>External access</h1>
+              <p className="muted view-sub">Two ways to use this knowledge base from outside. They are independent, and a deployment can serve either or both.</p>
+              <dl className="access-compare">
+                <div>
+                  <dt>Knowledge tools (MCP)</dt>
+                  <dd>The client brings its own model and calls the corpus tools directly. Answers come from the caller's model, grounded by our search. Suits pw code, other agentic clients, and IDE assistants.</dd>
+                </div>
+                <div>
+                  <dt>Grounded model (OpenAI-compatible)</dt>
+                  <dd>This deployment answers as a model, with retrieval built in. Suits any client that can only point at an OpenAI base URL, and it is what the platform model catalog publishes.</dd>
+                </div>
+              </dl>
+              <div className="tool-group">Knowledge tools over MCP (your model, our tools)</div>
               <p className="muted view-sub">
-                This deployment serves an OpenAI-compatible endpoint at{' '}
-                <CopyToClipboard text={`${location.origin}/v1`}><code>{location.origin}/v1</code></CopyToClipboard>, so any OpenAI-speaking client (pw code, SDKs, other agents) can use the knowledge base as a grounded model. Callers authenticate with their own gateway API key as the bearer token; the endpoint holds no credentials of its own.
+                <CopyToClipboard text={`${location.origin}/api/mcp`}><code>{location.origin}/api/mcp</code></CopyToClipboard> serves
+                this knowledge base over the Model Context Protocol: the client brings its own model and calls the corpus tools
+                directly (search, read, list, query, labels, docs). Read-only; adding material, labels, and platform actions stay
+                with this assistant. {me?.authEnabled
+                  ? 'This deployment requires sign-in, so clients send a platform token as the bearer.'
+                  : 'This deployment is open, so no header is needed.'}
+              </p>
+              <div className="access-switch">
+                <SwitchToggle value={form.mcpEnabled} onChange={v => setForm({ ...form, mcpEnabled: v })} yesLabel="On" noLabel="Off" />
+                <span>Serve MCP at /api/mcp. Individual tools can be disabled in the tool catalog above.</span>
+              </div>
+              <p className="field-label">pw code</p>
+              <CopyToClipboard text={`pw code mcp add --transport http studio-kb ${location.origin}/api/mcp`}>
+                <code className="mcp-snippet">pw code mcp add --transport http studio-kb {location.origin}/api/mcp</code>
+              </CopyToClipboard>
+              <p className="muted key-note">pw code signs its platform requests with your existing CLI login, so no token goes in the command.</p>
+              <div className="tool-group">Attached MCP servers (tools from elsewhere)</div>
+              <p className="muted view-sub">
+                Servers this deployment connects to as a client, so their tools join the assistant's own and one
+                question can cross both. A server's tools appear namespaced under its name. Two things to weigh
+                before attaching one: the assistant will send tool arguments to that third party, and a server's
+                tool descriptions are text the model reads while choosing what to call, so attach only servers you
+                trust.
+              </p>
+              {(form.mcpServers ?? []).map((srv, i) => {
+                const st = mcpStatus.find(x => x.name === srv.name)
+                return (
+                  <div className="mcp-server-row" key={i}>
+                    <input className="field" placeholder="name (hubspot)" value={srv.name}
+                      onChange={e => { const next = [...form.mcpServers]; next[i] = { ...srv, name: e.target.value }; setForm({ ...form, mcpServers: next }) }} />
+                    <input className="field" placeholder="https://host/mcp" value={srv.url}
+                      onChange={e => { const next = [...form.mcpServers]; next[i] = { ...srv, url: e.target.value }; setForm({ ...form, mcpServers: next }) }} />
+                    <input className="field" placeholder="Authorization: Bearer <token>" value={srv.header ?? ''}
+                      onChange={e => { const next = [...form.mcpServers]; next[i] = { ...srv, header: e.target.value }; setForm({ ...form, mcpServers: next }) }} />
+                    <button className="btn-secondary" onClick={() => setForm({ ...form, mcpServers: form.mcpServers.filter((_, j) => j !== i) })}>Remove</button>
+                    <span className="mcp-server-state">
+                      {st ? (st.error
+                        ? <><span className="status-dot warn" /> {st.error}</>
+                        : <><span className="status-dot ok" /> {st.tools} tools</>)
+                        : <span className="muted">save to connect</span>}
+                    </span>
+                  </div>
+                )
+              })}
+              <div className="query-actions">
+                <button className="btn-secondary" onClick={() => setForm({ ...form, mcpServers: [...(form.mcpServers ?? []), { name: '', url: '', header: '' }] })}>Attach a server</button>
+              </div>
+              {saveRow(false)}
+
+              <p className="field-label">Other MCP clients (settings JSON)</p>
+              <CopyToClipboard text={JSON.stringify({ mcpServers: { 'studio-kb': { type: 'http', url: `${location.origin}/api/mcp`, ...(me?.authEnabled ? { headers: { Authorization: 'Bearer <platform token>' } } : {}) } } }, null, 2)}>
+                <code className="mcp-snippet">{JSON.stringify({ mcpServers: { 'studio-kb': { type: 'http', url: `${location.origin}/api/mcp`, ...(me?.authEnabled ? { headers: { Authorization: 'Bearer <platform token>' } } : {}) } } }, null, 2)}</code>
+              </CopyToClipboard>
+              {saveRow(false)}
+
+
+              <div className="tool-group">Grounded model (OpenAI-compatible /v1)</div>
+              <div className="access-switch">
+                <SwitchToggle value={form.ragProxyEnabled} onChange={v => setForm({ ...form, ragProxyEnabled: v })} yesLabel="On" noLabel="Off" />
+                <span>Serve the grounded model at /v1.</span>
+              </div>
+              <p className="muted view-sub">
+                The endpoint at{' '}
+                <CopyToClipboard text={`${location.origin}/v1`}><code>{location.origin}/v1</code></CopyToClipboard> lets
+                any OpenAI-speaking client (pw code, SDKs, other agents) use the knowledge base as a grounded model.
+                Callers authenticate with their own gateway API key as the bearer token; the endpoint holds no credentials of its own.
               </p>
               <p className="muted view-sub">
                 Pick the underlying model per request as <code>studio-agent/&lt;model-id&gt;</code> (any other model id behaves like studio-rag with that model), or set the default below. Headers <code>X-RAG-Top-K</code>, <code>X-RAG-Tags</code>, and <code>X-RAG-Off: 1</code> tune retrieval per request.
@@ -739,7 +831,7 @@ export function SettingsView() {
                 )}
                 {ragEp?.detail && ragEp.state !== 'running' && <p className="muted key-note">{ragEp.detail}</p>}
               </div>
-              <div className="tool-group">Recent endpoint calls</div>
+              <div className="tool-group">Recent grounded-model calls</div>
               <p className="muted view-sub">
                 The last 50 calls to this /v1 surface, most recent first, held in memory and cleared on restart. Question text is not recorded; the distilled retrieval terms are.
               </p>

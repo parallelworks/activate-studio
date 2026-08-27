@@ -4,6 +4,8 @@ import zlib from 'node:zlib'
 import type { FastifyInstance } from 'fastify'
 import { GUFI_INDEX, INDEX_BASE, gufiAvailable } from './config.js'
 import { queryPerDir } from './gufi.js'
+import { KbError } from './kb.js'
+import { effectiveSettings } from './settings.js'
 
 /**
  * Corpus history: a timeline of what the knowledge base held, captured
@@ -28,7 +30,7 @@ const HISTORY_DIR = path.join(INDEX_BASE, 'history')
 const KEEP = Number(process.env.HISTORY_KEEP ?? 30)
 
 export interface Entry { path: string; size: number; mtime: number; inode: number }
-export interface SnapshotMeta { id: string; takenAt: number; files: number; bytes: number }
+export interface SnapshotMeta { id: string; takenAt: number; files: number; bytes: number; disk: number }
 interface Snapshot extends SnapshotMeta { entries: Entry[] }
 
 function kbRel(p: string): string {
@@ -53,7 +55,10 @@ export function listSnapshots(): SnapshotMeta[] {
       const id = n.replace(/\.json\.gz$/, '')
       try {
         const s = readSnapshot(id)
-        return { id, takenAt: s.takenAt, files: s.files, bytes: s.bytes }
+        // bytes is the corpus size the snapshot describes; disk is what the
+        // snapshot itself costs to keep, which is what a cleanup decision
+        // needs to see.
+        return { id, takenAt: s.takenAt, files: s.files, bytes: s.bytes, disk: fs.statSync(fileFor(id)).size }
       } catch {
         return null
       }
@@ -106,12 +111,18 @@ export async function capture(): Promise<SnapshotMeta | null> {
     takenAt,
     files: entries.length,
     bytes: entries.reduce((n, e) => n + e.size, 0),
+    disk: 0,
     entries,
   }
   ensureDir()
   fs.writeFileSync(fileFor(snap.id), zlib.gzipSync(Buffer.from(JSON.stringify(snap))))
   prune()
-  return { id: snap.id, takenAt: snap.takenAt, files: snap.files, bytes: snap.bytes }
+  return { id: snap.id, takenAt: snap.takenAt, files: snap.files, bytes: snap.bytes, disk: fs.statSync(fileFor(snap.id)).size }
+}
+
+function deleteSnapshot(id: string): void {
+  fs.rmSync(fileFor(id), { force: true })
+  if (cached?.id === id) cached = null
 }
 
 function prune(): void {
@@ -121,12 +132,66 @@ function prune(): void {
   }
 }
 
-/** Capture when the index has been rebuilt since the last snapshot. */
+/* ---- liveness checks: proof the system looked, without a census ---- */
+
+const CHECKS_FILE = path.join(HISTORY_DIR, 'checks.jsonl')
+const CHECKS_KEEP = 60
+
+export interface Check { at: number }
+
+export function listChecks(): Check[] {
+  try {
+    return fs.readFileSync(CHECKS_FILE, 'utf8').split('\n').filter(Boolean)
+      .map(l => JSON.parse(l) as Check)
+  } catch {
+    return []
+  }
+}
+
+/**
+ * A timeline with no new points is ambiguous: the corpus may be quiet, or
+ * nothing may be checking it. A check entry is a timestamp recorded when
+ * the index was examined and found unchanged, at most one per calendar
+ * day, so quiet days read as "verified unchanged" instead of as silence.
+ * It costs a line of JSON where a snapshot costs a census.
+ */
+function recordCheck(): void {
+  const now = new Date()
+  const checks = listChecks()
+  const last = checks[checks.length - 1]
+  if (last && new Date(last.at * 1000).toDateString() === now.toDateString()) return
+  ensureDir()
+  const kept = [...checks, { at: Math.floor(now.getTime() / 1000) }].slice(-CHECKS_KEEP)
+  fs.writeFileSync(CHECKS_FILE, kept.map(c => JSON.stringify(c)).join('\n') + '\n')
+}
+
+/**
+ * Capture when the index has changed and the cadence has elapsed.
+ *
+ * The cadence exists because indexing is frequent and change is not
+ * interesting at that resolution: capturing every pass turns the timeline
+ * into a churn log and burns the retention window in a day. At the
+ * default of one snapshot a day, a point summarizes everything that
+ * changed since the previous one, which is the granularity someone
+ * reviewing a corpus actually wants. Setting it to 0 captures every pass.
+ *
+ * Either way an unchanged index leaves the proof-of-life marker, so quiet
+ * days stay legible as verified rather than as silence.
+ */
 export async function captureIfStale(): Promise<SnapshotMeta | null> {
   if (!gufiAvailable()) return null
   const all = listSnapshots()
   const last = all[all.length - 1]
-  if (last && indexMtime() <= last.takenAt) return null
+  if (last && indexMtime() <= last.takenAt) {
+    recordCheck()
+    return null
+  }
+  const every = effectiveSettings().historyIntervalSec
+  if (last && every > 0 && Math.floor(Date.now() / 1000) - last.takenAt < every) {
+    // Changed, but too soon to be worth its own point.
+    recordCheck()
+    return null
+  }
   return capture()
 }
 
@@ -225,8 +290,8 @@ export function diff(fromId: string, toId: string): Diff {
   const removed = removedRaw.filter(e => !e.inode || removedByInode.has(e.inode))
 
   return {
-    from: { id: a.id, takenAt: a.takenAt, files: a.files, bytes: a.bytes },
-    to: { id: b.id, takenAt: b.takenAt, files: b.files, bytes: b.bytes },
+    from: { id: a.id, takenAt: a.takenAt, files: a.files, bytes: a.bytes, disk: fs.statSync(fileFor(a.id)).size },
+    to: { id: b.id, takenAt: b.takenAt, files: b.files, bytes: b.bytes, disk: fs.statSync(fileFor(b.id)).size },
     added: added.slice(0, LIST_CAP),
     removed: removed.slice(0, LIST_CAP),
     modified: modified.slice(0, LIST_CAP),
@@ -240,7 +305,34 @@ export async function historyRoutes(app: FastifyInstance): Promise<void> {
     // A visit is the moment we know indexing has finished, so it is also
     // when a missed snapshot gets taken.
     await captureIfStale().catch(() => null)
-    return { available: gufiAvailable(), snapshots: listSnapshots(), keep: KEEP }
+    const snapshots = listSnapshots()
+    return {
+      available: gufiAvailable(), snapshots, keep: KEEP,
+      storedBytes: snapshots.reduce((n, s) => n + s.disk, 0),
+      checks: listChecks().slice(-14),
+    }
+  })
+
+  // Snapshots are only a census, so deleting one loses nothing that a
+  // fresh index pass cannot re-record; the id is numeric by construction
+  // and validated so the delete cannot be steered outside the history
+  // directory. Deleting the newest snapshot of a live corpus just means
+  // the next visit captures a fresh one, which is the correct outcome.
+  app.delete('/api/kb/history/snapshot', async req => {
+    const { id } = req.query as { id?: string }
+    if (!id || !/^\d+$/.test(id)) throw new KbError(400, 'snapshot id required')
+    deleteSnapshot(id)
+    const snapshots = listSnapshots()
+    return { snapshots, storedBytes: snapshots.reduce((n, s) => n + s.disk, 0) }
+  })
+
+  app.post('/api/kb/history/prune', async req => {
+    const { keep } = (req.body ?? {}) as { keep?: number }
+    const n = Math.max(1, Math.min(500, Number(keep) || 10))
+    const all = listSnapshots()
+    for (const s of all.slice(0, Math.max(0, all.length - n))) deleteSnapshot(s.id)
+    const snapshots = listSnapshots()
+    return { snapshots, removed: all.length - snapshots.length, storedBytes: snapshots.reduce((n2, s) => n2 + s.disk, 0) }
   })
 
   app.post('/api/kb/history/capture', async () => {

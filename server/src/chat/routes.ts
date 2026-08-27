@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify'
-import { GATEWAY_BASE, MAX_TOOL_ITERATIONS } from '../config.js'
-import { aiHealth, gatewayConfigured, isSidecarModel, listModels, listSidecarModels, sidecarConfigured, sidecarTarget, StreamedTurnError, streamTurn, WireMessage, WireToolCall } from './gateway.js'
-import { TOOL_CALLS, TOOL_SPECS, activeToolSpecs, commandFor, customToolSpecs, executeTool, expandSlashCommand, skillToolSpec } from './tools.js'
+import { GATEWAY_BASE, MAX_TOOL_ITERATIONS, SIDECAR_ENDPOINT } from '../config.js'
+import { aiHealth, gatewayConfigured, isSidecarModel, listModels, listSidecarModels, modelFailure, sidecarConfigured, sidecarTarget, StreamedTurnError, streamTurn, WireMessage, WireToolCall } from './gateway.js'
+import { TOOL_CALLS, TOOL_SPECS, activeToolSpecs, activeToolSpecsWithRemote, commandFor, customToolSpecs, executeTool, expandSlashCommand, skillToolSpec } from './tools.js'
 import { systemPrompt } from './context.js'
 import { attachmentContext } from '../attachments.js'
 import { effectiveSettings } from '../settings.js'
@@ -303,6 +303,21 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
         context_window: m.context_window ?? m.max_model_len ?? undefined,
       }
     })
+    // A model served here and also registered on the platform arrives from
+    // both catalogs and would be offered twice. Keep the direct entry,
+    // which answers without the gateway hop, and drop the gateway's copy.
+    // Matching on the endpoint name when it is known keeps this from
+    // removing an identically named model that belongs to a different
+    // session; without it, the model id is the only thing to go on.
+    if (sidecar.length) {
+      const servedIds = new Set(sidecar.map((m: any) => String(m.id)))
+      models = models.filter((m: any) => {
+        const parts = /^session:[^:]+:([^/]+)\/(.+)$/.exec(String(m.id))
+        if (!parts) return true
+        return SIDECAR_ENDPOINT ? parts[1] !== SIDECAR_ENDPOINT : !servedIds.has(parts[2])
+      })
+    }
+
     // The model on this node goes in already labelled, so the mapping above
     // (which infers a provider for gateway entries) leaves it alone.
     models = [...models, ...sidecar.map((m: any) => {
@@ -316,6 +331,28 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
         context_window: m.context_window ?? m.max_model_len ?? undefined,
       }
     })]
+    // A provider shared into this account lists under the owner's prefix
+    // but with the same display name as one's own, so two registrations of
+    // the same product look like duplicates. Say whose it is when the
+    // owner is somebody else.
+    const viewer = (req.user?.username ?? '').toLowerCase()
+    if (viewer) {
+      models = models.map((m: any) => {
+        const mm = /^([a-z0-9_.-]+):[^/]+\//i.exec(String(m.id))
+        if (mm && mm[1].toLowerCase() !== viewer && !String(m.id).startsWith('session:') && !String(m.id).startsWith('org:')) {
+          return { ...m, provider: `${m.provider ?? m.provider_name ?? 'provider'} · shared by ${mm[1]}` }
+        }
+        return m
+      })
+    }
+
+    // A model whose last call failed is still offered (the provider may
+    // recover, or the key may be renewed), but the picker gets told, so
+    // choosing it is informed rather than a surprise at reply time.
+    models = models.map((m: any) => {
+      const f = modelFailure(String(m.id))
+      return f ? { ...m, callable: false, last_error: { at: f.at, auth: f.auth, status: f.status } } : m
+    })
     models.sort((a: any, b: any) =>
       Number(String(a.id).startsWith('org:')) - Number(String(b.id).startsWith('org:')))
     return reply.send({ models, unreachableSessions: wire.unreachable_sessions ?? [] })
@@ -736,7 +773,7 @@ ${ctx}` : ctx
         }
       }
       for (let iter = 0; iter < MAX_TOOL_ITERATIONS; iter++) {
-        const toolSpecs = activeToolSpecs()
+        const toolSpecs = await activeToolSpecsWithRemote()
         const maxTokens = fitWindow(messages as WireMessage[], String(body.model ?? ''), JSON.stringify(toolSpecs).length)
         const turn = await turnWithRetry(
           { model: body.model, messages, tools: toolSpecs, tool_choice: 'auto', max_tokens: maxTokens, ...templateKwargsFor(String(body.model ?? '')) },
@@ -870,9 +907,25 @@ ${ctx}` : ctx
         // errors) are user-facing; anything else stays in the log so exec
         // detail never reaches the client.
         const msg = String(err?.message ?? err)
-        const userFacing = err?.name === 'GatewayAuthError' || /^gateway /.test(msg)
+        const model = String(body.model ?? 'the model')
+        let userMsg: string | null = null
+        if (err?.name === 'GatewayAuthError') {
+          userMsg = msg
+        } else if (/^gateway chat /.test(msg)) {
+          // The raw relay ("gateway chat 400: {json}") reads as a Studio
+          // fault. Say what is actually known: this model cannot be called
+          // right now, and if it sits behind a personal provider key, that
+          // key expiring is the common cause.
+          const personal = /^[a-z0-9_.-]+:/i.test(model) && !model.startsWith('session:') && !model.startsWith('org:')
+          userMsg = `${model} cannot be called right now: its provider returned an error. `
+            + (personal ? 'This model uses a provider key registered on the platform, and an expired key fails exactly this way; renew it under the platform\u2019s AI provider settings, or pick another model. '
+                        : 'Pick another model from the list while it recovers. ')
+            + `Other models are unaffected. Provider said: ${msg.slice(0, 160)}`
+        } else if (/^gateway /.test(msg)) {
+          userMsg = msg
+        }
         sse(res, 'error', {
-          message: userFacing ? msg : `The reply failed with an internal error (ref ${errorId}).`,
+          message: userMsg ?? `The reply failed with an internal error (ref ${errorId}).`,
           kind: err?.name === 'GatewayAuthError' ? 'credential' : 'error',
         })
       }

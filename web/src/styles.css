@@ -43,6 +43,9 @@
   --pw-link: #8ec3f5;
   --pw-active-pill: #17395a;
   --pw-green: #34d399;
+  /* Amber had no dark step because its only use was a 3px rule, where the
+     light value still reads. As text on the dark panel it does not. */
+  --pw-amber: #fbbf24;
 
   --pw-input-bg: #0f172a;
   --pw-hover-row: var(--theme-hover, #16233a);
@@ -245,17 +248,23 @@ button { font-family: inherit; }
 .chat-wrap { flex: 1; min-height: 0; padding: 12px; display: flex; }
 .chat-canvas { flex: 1; min-height: 0; background: var(--pw-panel); overflow: hidden; position: relative; }
 .chat-canvas > * { height: 100%; }
-/* Resizable conversations rail: only the top-level layout's first child;
-   nested flex h-full containers (like the empty state) must not match. */
-.chat-canvas > .flex.h-full > :first-child { width: var(--ade-chat-rail, 260px) !important; flex: 0 0 auto !important; }
+/* The conversations rail's width, resize separator, and collapse belong
+   to the chat package; overriding its width here is what made the
+   collapse button appear dead, since the package animates an inline width
+   our !important pinned. */
 /* Align the conversations header and the model-selector toolbar to one height
    so their bottom borders form a single line across the chat. */
-.chat-canvas > .flex.h-full > :first-child > div:first-child { height: 52px; }
+/* The rail's first child is the resize separator when expanded, so the
+   header alignment must name the header row, not the first child; the
+   first-child form clamped the separator's grab strip to a 52px sliver,
+   which read as resizing having disappeared. */
+.chat-canvas > .flex.h-full > :first-child > div[class*="justify-between"] { height: 52px; }
 .chat-canvas main [class*="flex-shrink-0"][class*="border-b"] {
   height: 52px; display: flex; align-items: center;
   padding-top: 0 !important; padding-bottom: 0 !important;
 }
 .chat-canvas main [class*="flex-shrink-0"][class*="border-b"] > div { flex: 1; }
+.chat-rail-backdrop { display: none; }
 .chat-rail-handle { position: absolute; top: 0; bottom: 0; width: 6px; cursor: col-resize; z-index: 20; }
 .chat-rail-handle:hover, .resizing .chat-rail-handle { background: rgba(91, 135, 166, 0.25); }
 
@@ -1134,43 +1143,151 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .tree-null { color: var(--muted); font-style: italic; }
 .tree-block { margin: 2px 0 6px; padding: 6px 8px; background: var(--panel-2, rgba(127,127,127,0.08)); border-radius: 4px; white-space: pre-wrap; font-size: 12px; }
 
-/* History view. Same furniture as the other views: flat cards, the app's
-   type, no nested panels or drop shadows. */
+/* History view. Built from the Stats page's own furniture (card ov-list
+   sections, ov-row rows, ov-tiles), so it looks like the other pages
+   because it is made of the same pieces. Only the page grid, the change
+   tallies, and the timeline ticks are defined here. */
 .hist-view { padding: 12px; overflow: auto; flex: 1; display: grid; gap: 12px; min-height: 0;
-  grid-template-columns: 1fr 200px; grid-template-areas: "head head" "tiles tiles" "stage scrub"; align-content: start; }
+  grid-template-columns: 1fr 210px; grid-template-areas: "head head" "tiles tiles" "main rail"; align-content: start; }
 .hist-view .ov-head { grid-area: head; }
-.hist-tiles { grid-area: tiles; display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
-.hist-stage { grid-area: stage; min-height: 520px; display: flex; flex-direction: column; padding: 0; overflow: hidden; }
-.hist-card { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; }
-.hist-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 16px 20px 10px; }
-.hist-card-head h3 { margin: 0 0 2px; font-size: 15px; font-weight: 650; color: var(--pw-navy); }
-.hist-card-head p { margin: 0; font-size: 13px; }
-.hist-crumbs { padding: 0 20px 12px; font-size: 13px; }
-.hist-panes { display: grid; grid-template-columns: 1fr 320px; flex: 1; min-height: 0; border-top: 1px solid var(--border); }
-.hist-pane-label { margin: 0 0 8px; font-size: 13px; font-weight: 650; color: var(--pw-navy); }
-.hist-listing { overflow: auto; padding: 14px 12px 18px 20px; }
-.hist-row { display: flex; justify-content: space-between; gap: 12px; width: 100%; padding: 6px 8px; border: 0; border-radius: 6px;
-  background: none; color: inherit; text-align: left; cursor: pointer; font-size: 13px; }
-.hist-row:hover { background: var(--hover, rgba(127,127,127,0.10)); }
-.hist-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.hist-side { border-left: 1px solid var(--border); overflow: auto; padding: 14px 20px 18px; }
-.hist-counts { display: flex; gap: 12px; margin: 0 0 12px; font-size: 13px; }
-.hist-tally.add { color: #2f9e44; }
+.hist-tiles { grid-area: tiles; }
+.hist-main { grid-area: main; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.hist-rail { grid-area: rail; align-self: start; display: flex; flex-direction: column; gap: 2px; }
+.hist-head-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.hist-head-note { font-weight: 400; }
+.hist-crumbs { margin: 0 0 10px; font-size: 13px; }
+.hist-counts { display: flex; flex-wrap: wrap; gap: 12px; margin: 0 0 12px; font-size: 13px; }
+.hist-tally.add { color: var(--pw-green); }
 .hist-tally.mod { color: var(--pw-link); }
-.hist-tally.move { color: #b08900; }
-.hist-tally.del { color: #c92a2a; }
+.hist-tally.move { color: var(--pw-amber); }
+.hist-tally.del { color: #dc2626; }
 .hist-changes { margin-bottom: 12px; }
-.hist-change-label { font-weight: 600; font-size: 13px; margin: 0 0 4px; }
-.hist-change-list { margin: 0; padding: 0; list-style: none; font-size: 12.5px; line-height: 1.7; }
-.hist-change-list li { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.hist-change-list button.link-button { font-size: 12.5px; text-align: left; }
-.hist-scrubber { grid-area: scrub; display: flex; flex-direction: column; align-items: stretch; gap: 2px;
-  overflow: auto; padding: 16px 16px 18px; }
-.hist-scrub-title { margin: 0 0 10px; font-size: 13px; font-weight: 650; color: var(--pw-navy); }
-.hist-tick { position: relative; padding: 5px 8px 5px 18px; border: 0; background: none; color: var(--muted);
-  font-size: 12.5px; text-align: left; cursor: pointer; border-radius: 6px; }
+.hist-change-label { font-weight: 600; font-size: 13px; margin: 0 0 4px; color: var(--pw-navy); }
+.hist-stored { margin: -8px 0 8px; font-size: 11.5px; }
+.hist-tick-row { display: flex; align-items: center; gap: 2px; }
+.hist-tick-row .hist-tick { flex: 1; min-width: 0; }
+/* The delete affordance appears on hover, the same pattern as removing a
+   saved query, so the rail stays quiet until the reader reaches for it. */
+.hist-tick-del { border: 0; background: none; color: transparent; cursor: pointer;
+  font-size: 13px; line-height: 1; padding: 3px 5px; border-radius: 4px; }
+.hist-tick-row:hover .hist-tick-del { color: var(--pw-muted); }
+.hist-tick-del:hover { color: #dc2626; background: var(--theme-hover); }
+.hist-prune { margin-top: 8px; font-size: 12px; }
+.hist-check { padding: 4px 8px 4px 18px; font-size: 12px; color: var(--pw-muted-2); }
+.hist-tick { position: relative; padding: 5px 8px 5px 18px; border: 0; background: none; color: var(--pw-muted);
+  font-size: 13px; text-align: left; cursor: pointer; border-radius: 6px; }
 .hist-tick::before { content: ''; position: absolute; left: 6px; top: 50%; width: 7px; height: 1px; background: currentColor; opacity: 0.6; }
-.hist-tick:hover { color: var(--text); background: var(--hover, rgba(127,127,127,0.10)); }
+.hist-tick:hover { color: var(--pw-text); background: var(--theme-hover); }
 .hist-tick.active { color: var(--pw-link); font-weight: 600; }
 .hist-tick.active::before { width: 11px; height: 2px; opacity: 1; }
 .hist-now { color: var(--pw-link); opacity: 0.75; }
+
+.mcp-server-row { display: grid; grid-template-columns: 130px 1fr 1fr auto; gap: 8px; align-items: center; margin-bottom: 6px; }
+.mcp-server-state { grid-column: 1 / -1; font-size: 11.5px; color: var(--pw-muted); display: flex; align-items: center; gap: 6px; }
+@media (max-width: 760px) { .mcp-server-row { grid-template-columns: 1fr; } }
+.access-compare { margin: 0 0 14px; display: grid; gap: 10px; }
+.access-compare dt { font-size: 13px; font-weight: 650; color: var(--pw-navy); margin-bottom: 2px; }
+.access-compare dd { margin: 0; font-size: 13px; color: var(--pw-muted); line-height: 1.55; }
+.access-compare > div { border-left: 2px solid var(--pw-border-strong); padding-left: 12px; }
+.access-switch { display: flex; align-items: center; gap: 10px; margin: 10px 0 8px; font-size: 13px; }
+.mcp-snippet { display: block; background: var(--pw-bg); border: 1px solid var(--pw-border); border-radius: 6px;
+  padding: 8px 10px; font-size: 11.5px; line-height: 1.5; overflow-x: auto; white-space: pre-wrap; word-break: break-all;
+  cursor: copy; margin-bottom: 6px; }
+
+/* The More button and its sheet are phone furniture; at desktop width
+   the full rail carries every destination and these never render. */
+.nav-more, .nav-more-sheet { display: none; }
+
+/* ---- phones and narrow windows ----
+   One breakpoint, layout only: the desktop arrangement (a navigation rail
+   beside the view, side-by-side panes, multi-column grids) becomes a
+   single column with the navigation as an icon bar along the bottom edge,
+   which is where thumbs are. Nothing changes above 760px, and nothing
+   here touches color or type. */
+@media (max-width: 760px) {
+  /* Dynamic-toolbar browsers shrink the visual viewport as their chrome
+     appears; 100% of the layout viewport leaves the bottom bar buried
+     behind it. dvh tracks what is actually visible, and browsers without
+     it ignore the declaration and keep the 100% above. */
+  .app { height: 100dvh; }
+  body { overflow-x: hidden; }
+  .app-body { flex-direction: column; }
+  /* Desktop gives .view height:100% to fill the row beside the rail; in
+     a column that same 100% plus the bar overflows the viewport, so the
+     whole page scrolled and carried the bar off-screen. flex:1 alone
+     sizes it correctly here. */
+  .view { height: auto; }
+  .sidenav, .sidenav.collapsed {
+    order: 2; width: 100%; flex-direction: row; align-items: center;
+    padding: 2px 6px; border-right: 0; border-top: 1px solid var(--pw-border);
+  }
+  .sidenav-head { margin: 0 4px 0 0; }
+  /* The status footer rides inside the nav on desktop; in a 48px bottom
+     bar it overflowed the viewport edge and buried the icons. Its
+     content lives on the Stats page, which is one tap away. */
+  .sidenav-footer { display: none; }
+  /* The collapse toggle manages a rail that no longer exists here, and
+     the brand text costs width the icons need. */
+  .brand-text, .nav-collapse, .head-actions { display: none; }
+  .sidenav-items, .sidenav.collapsed .sidenav-items { flex-direction: row; flex: 1; justify-content: space-evenly; gap: 0; margin: 0; }
+  /* Settings and Help move into the More sheet; secondary destinations
+     leave the bar so the main four get room. */
+  .sidenav-items.sidenav-secondary { display: none; }
+  .sidenav-item.mob-hide { display: none; }
+  .nav-more { display: flex; }
+  .nav-more-sheet {
+    display: flex; flex-direction: column; gap: 2px;
+    position: fixed; left: 10px; right: 10px; bottom: 58px; z-index: 45;
+    padding: 10px; box-shadow: 0 12px 32px rgba(16, 24, 40, 0.22);
+  }
+  .nav-more-sheet .sidenav-item { justify-content: flex-start; padding: 10px 12px; }
+  .nav-more-sheet .sidenav-item span { display: inline; }
+  /* The status footer, hidden from the bar below, has its home here. */
+  .nav-more-sheet .sidenav-footer { display: flex; flex-direction: column; gap: 4px; border-top: 1px solid var(--pw-border); margin-top: 8px; padding-top: 10px; }
+  /* Grid children refuse to shrink below content width without this, and
+     the Stats bars rode that straight off the viewport edge. */
+  .ov-grid > * { min-width: 0; overflow: hidden; }
+  .ov-bar-value { white-space: normal; }
+  .sidenav-item, .sidenav.collapsed .sidenav-item { justify-content: center; padding: 10px; }
+  .sidenav-item span { display: none; }
+  /* auto-fit with a 420px floor overflows a 390px phone */
+  .ov-grid, .help-grid, .tools-grid, .ext-cols, .settings-grid { grid-template-columns: 1fr; }
+  .ov-bar-row { grid-template-columns: 48px 1fr; }
+  .ov-bar-value { grid-column: 1 / -1; text-align: right; }
+  .hist-view { grid-template-columns: 1fr; grid-template-areas: "head" "tiles" "main" "rail"; }
+  .viewer-body { padding: 12px 14px; }
+  /* The library's resizable rail stacks above the listing; a drag divider
+     makes no sense stacked, and the rail's inline width from a desktop
+     resize must not survive the rotation. */
+  .library { flex-direction: column; }
+  .library-rail { width: 100% !important; max-height: 40vh; }
+  .library .divider { display: none; }
+  .card-pop { width: min(300px, calc(100vw - 24px)); }
+  .tag-panel { width: min(340px, calc(100vw - 24px)); right: 12px; }
+  .query-row .grow, .query-form select.field { max-width: 100%; }
+
+  /* Chat. The conversations rail becomes a slide-over: hidden by
+     default so the thread gets the whole width, opened by re-tapping
+     the Chat item in the bottom bar, closed again by picking a
+     conversation. The drag handles are mouse furniture and go; the
+     Activity drawer is a desktop luxury at this width. */
+  .chat-canvas.rail-open .chat-rail-backdrop {
+    display: block; position: absolute; inset: 0; z-index: 24;
+    background: rgba(0, 0, 0, 0.25);
+  }
+  /* The package's own collapse toggle fights the slide-over at this
+     width (its collapsed state is a slim strip, not a closed drawer), so
+     the drawer's close affordances are the backdrop and the Chat item. */
+  .chat-canvas > .flex.h-full > :first-child > div[class*="justify-between"] button { display: none; }
+  .chat-canvas.rail-open .chat-filter-btn { display: block; z-index: 26; }
+  .chat-canvas > .flex.h-full > :first-child {
+    position: absolute; left: 0; top: 0; bottom: 0; z-index: 25;
+    width: min(85vw, 320px) !important;
+    transform: translateX(-105%); transition: transform 0.15s ease;
+    box-shadow: 4px 0 18px rgba(16, 24, 40, 0.18);
+    background: var(--pw-rail-bg);
+  }
+  .chat-canvas.rail-open > .flex.h-full > :first-child { transform: none; }
+  .chat-rail-handle, .chat-think-handle, .chat-filter-btn { display: none; }
+  .chat-canvas div[class*="transition-[width]"] { width: 0 !important; min-width: 0 !important; }
+}

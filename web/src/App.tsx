@@ -18,6 +18,10 @@ import { applyAccent, applySurface } from './accents'
 type ViewId = 'chat' | 'library' | 'search' | 'query' | 'overview' | 'history' | 'settings' | 'help'
 export type Display = { kind: 'file'; target: string } | { kind: 'workflow_dag'; target: string }
 
+// The destinations that keep a spot in the phone bottom bar; the rest
+// move into the More sheet.
+const MOBILE_PRIMARY = new Set<string>(['chat', 'library', 'search', 'overview'])
+
 const NAV: { id: ViewId; label: string; icon: ReactElement }[] = [
   {
     id: 'chat',
@@ -72,9 +76,26 @@ export default function App() {
     return t === 'dark' || t === 'light' ? t : null
   })
 
+  // The device's own preference, live: a phone flipping to dark at sunset
+  // carries the app with it unless the user has chosen explicitly. A
+  // deployment that brands itself dark stays dark either way, so the
+  // system signal only ever adds dark, never strips a deliberate look.
+  const [sysDark, setSysDark] = useState(() => matchMedia('(prefers-color-scheme: dark)').matches)
+  useEffect(() => {
+    const mq = matchMedia('(prefers-color-scheme: dark)')
+    const on = () => setSysDark(mq.matches)
+    mq.addEventListener('change', on)
+    return () => mq.removeEventListener('change', on)
+  }, [])
+
+  // Phone-only: the bottom bar keeps the main destinations and the rest
+  // live in a sheet, along with the status footer, which has no room in a
+  // 48px bar.
+  const [moreOpen, setMoreOpen] = useState(false)
+
   useEffect(() => { localStorage.setItem('ade-nav-collapsed', navCollapsed ? '1' : '0') }, [navCollapsed])
   useEffect(() => { if (cfg.loaded) document.title = cfg.appName }, [cfg])
-  const effectiveTheme = theme ?? cfg.theme
+  const effectiveTheme = theme ?? (sysDark ? 'dark' : cfg.theme)
   // A mark drawn in dark ink disappears on a dark background, so a
   // deployment may configure a second image; fall back to the one image
   // when it has not.
@@ -94,14 +115,14 @@ export default function App() {
   }, [cfg, effectiveTheme])
   useEffect(() => { if (cfg.loaded) { applyAccent(cfg.accent); applySurface(cfg.surface) } }, [cfg])
   useEffect(() => {
-    const effective = theme ?? cfg.theme
+    const effective = theme ?? (sysDark ? 'dark' : cfg.theme)
     document.documentElement.dataset.theme = effective
     // Cached so the next load paints in this theme before config arrives.
     if (cfg.loaded) { try { localStorage.setItem('ade-theme-default', cfg.theme) } catch { /* ignore */ } }
-  }, [theme, cfg])
+  }, [theme, cfg, sysDark])
 
   const toggleTheme = () => {
-    const next = (theme ?? cfg.theme) === 'dark' ? 'light' : 'dark'
+    const next = (theme ?? (sysDark ? 'dark' : cfg.theme)) === 'dark' ? 'light' : 'dark'
     setTheme(next)
     localStorage.setItem('ade-theme', next)
   }
@@ -232,10 +253,13 @@ export default function App() {
           {NAV.filter(i => i.id !== 'settings' && i.id !== 'help').map(item => (
             <button
               key={item.id}
-              className={`sidenav-item ${view === item.id ? 'active' : ''}`}
+              className={`sidenav-item ${view === item.id ? 'active' : ''}${MOBILE_PRIMARY.has(item.id) ? '' : ' mob-hide'}`}
               title={item.label}
               onClick={() => {
                 if (item.id === 'library' && view === 'library') setDisplay(null)
+                // On a phone the conversations rail is a slide-over, and
+                // re-tapping the Chat item in the bottom bar is its toggle.
+                if (item.id === 'chat' && view === 'chat') window.dispatchEvent(new Event('ade:toggle-chat-rail'))
                 setView(item.id)
               }}
             >
@@ -243,7 +267,33 @@ export default function App() {
               <span>{item.label}</span>
             </button>
           ))}
+          <button
+            className={`sidenav-item nav-more ${moreOpen || !MOBILE_PRIMARY.has(view) ? 'active' : ''}`}
+            title="More"
+            onClick={() => setMoreOpen(o => !o)}
+          >
+            <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><circle cx="3" cy="8" r="1.5" /><circle cx="8" cy="8" r="1.5" /><circle cx="13" cy="8" r="1.5" /></svg>
+            <span>More</span>
+          </button>
         </div>
+        {moreOpen && (
+          <>
+            <div className="scope-overlay" onClick={() => setMoreOpen(false)} />
+            <div className="nav-more-sheet card">
+              {NAV.filter(i => !MOBILE_PRIMARY.has(i.id)).map(item => (
+                <button
+                  key={item.id}
+                  className={`sidenav-item ${view === item.id ? 'active' : ''}`}
+                  onClick={() => { setView(item.id); setMoreOpen(false) }}
+                >
+                  {item.icon}
+                  <span>{item.label}</span>
+                </button>
+              ))}
+              <StatusFooter />
+            </div>
+          </>
+        )}
         <div className="sidenav-items sidenav-secondary">
           {NAV.filter(i => i.id === 'settings' || i.id === 'help').map(item => (
             <button

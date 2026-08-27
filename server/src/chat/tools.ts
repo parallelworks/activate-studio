@@ -9,6 +9,8 @@ import { annotateHits } from '../tags.js'
 import { effectiveSettings } from '../settings.js'
 import { composeWorkflows } from '../workflowCompose.js'
 import { agentBody, extAgents, extSkills, extTools, skillBody } from '../extensions.js'
+import { callRemoteTool, isRemoteTool, remoteToolSpecs } from '../mcpClient.js'
+import { gatewayKey } from './gateway.js'
 
 export interface ToolSpec {
   type: 'function'
@@ -376,6 +378,41 @@ export const TOOL_SPECS: ToolSpec[] = [
 
 const TOOL_OUTPUT_CAP = 24_000
 
+/** Split a model-supplied argument string into argv words.
+ *
+ *  Quote-aware so `--flag "two words"` still arrives as two arguments, and
+ *  deliberately nothing more: no metacharacter, expansion, or substitution
+ *  handling. The words produced here are passed to the command as positional
+ *  parameters, so anything the model writes is data rather than shell syntax. */
+export function splitToolArgs(input: string): string[] {
+  const out: string[] = []
+  let cur = ''
+  let started = false
+  let quote: '"' | "'" | null = null
+  for (const ch of input) {
+    if (quote) {
+      if (ch === quote) quote = null
+      else cur += ch
+      continue
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch
+      started = true
+      continue
+    }
+    if (/\s/.test(ch)) {
+      if (started || cur) out.push(cur)
+      cur = ''
+      started = false
+      continue
+    }
+    cur += ch
+    started = true
+  }
+  if (started || cur) out.push(cur)
+  return out
+}
+
 /** Specs for user-defined command tools from Settings. Names that collide
  *  with a built-in are dropped. */
 /** Settings-stored custom tools plus file-based tools from
@@ -404,7 +441,7 @@ export function customToolSpecs(): ToolSpec[] {
         parameters: {
           type: 'object',
           properties: {
-            args: { type: 'string', description: 'Extra command-line arguments appended to the configured command; omit for none.' },
+            args: { type: 'string', description: 'Extra command-line arguments for the configured command; omit for none. Passed as positional parameters, so shell syntax has no effect and quotes group words.' },
           },
         },
       },
@@ -488,6 +525,69 @@ export function activeToolSpecs(): ToolSpec[] {
   const disabled = new Set(effectiveSettings().disabledTools ?? [])
   const skill = skillToolSpec()
   return [...TOOL_SPECS, ...customToolSpecs(), ...(skill ? [skill] : [])].filter(t => !disabled.has(t.function.name))
+}
+
+/** The tool list including any attached MCP servers. Async because a
+ *  remote listing is a network call; cached for a minute in the client. */
+export async function activeToolSpecsWithRemote(): Promise<ToolSpec[]> {
+  const disabled = new Set(effectiveSettings().disabledTools ?? [])
+  const remote = await remoteToolSpecs().catch(() => [])
+  return [...activeToolSpecs(), ...remote.filter(t => !disabled.has(t.function.name))]
+}
+
+/**
+ * Find a running Status Monitor without being told where it is.
+ *
+ * The monitor is usually a session in the same account, so its URL is
+ * discoverable rather than configuration: list sessions, keep the running
+ * ones whose name or workflow looks like a monitor, and probe each for
+ * the fleet endpoint. The first that answers is it. Configuration still
+ * wins when set, since a deployment may point at a shared monitor that is
+ * not a session of this user's at all.
+ *
+ * Probing is what makes this safe to guess with: a session that merely
+ * sounds like a monitor but does not serve /api/fleet/summary is skipped
+ * rather than reported as one.
+ */
+let monitorCache: { at: number; url: string | null } = { at: 0, url: null }
+const MONITOR_TTL_MS = 300_000
+
+function platformAuth(): Record<string, string> {
+  const key = gatewayKey()
+  return key ? { Authorization: `Bearer ${key}` } : {}
+}
+
+async function probeMonitor(base: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${base}/api/fleet/summary`, {
+      headers: platformAuth(), signal: AbortSignal.timeout(6000), redirect: 'manual',
+    })
+    if (!res.ok) return false
+    // A platform login redirect answers 200 with HTML; the monitor answers JSON.
+    return (res.headers.get('content-type') ?? '').includes('json')
+  } catch {
+    return false
+  }
+}
+
+export async function discoverStatusMonitor(): Promise<string | null> {
+  if (Date.now() - monitorCache.at < MONITOR_TTL_MS) return monitorCache.url
+  let found: string | null = null
+  try {
+    const rows = JSON.parse(await pwCli(['sessions', 'ls', '-o', 'json'], 20_000)) as any[]
+    const sessions = Array.isArray(rows) ? rows : []
+    const looksLikeMonitor = (x: any) => /status|hpc.?mon/i.test(`${x?.name ?? ''} ${x?.targetName ?? ''}`)
+    const candidates = sessions
+      .filter(x => String(x?.status) === 'running' && typeof x?.externalHref === 'string' && /^https?:/i.test(x.externalHref))
+      .sort((a, b) => Number(looksLikeMonitor(b)) - Number(looksLikeMonitor(a)))
+      .slice(0, 8)
+    for (const c of candidates) {
+      const base = String(c.externalHref).replace(/\/+$/, '')
+      if (await probeMonitor(base)) { found = base; break }
+    }
+  } catch { /* no CLI or no sessions: nothing to discover */ }
+  monitorCache = { at: Date.now(), url: found }
+  return found
 }
 
 function pwCli(args: string[], timeoutMs = 30_000): Promise<string> {
@@ -903,9 +1003,9 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
             summary: 'monitor launch submitted',
           }
         }
-        const base = eff2.hpcStatusUrl
+        const base = eff2.hpcStatusUrl || await discoverStatusMonitor()
         if (!base) {
-          return { result: `No Status Monitor is configured on this deployment (set the Status Monitor URL in Settings, or HPC_STATUS_URL). One can be deployed for this user with launch=true, which runs the ${eff2.hpcStatusWorkflow} workflow; only do that if the user asked for it.`, summary: 'not configured' }
+          return { result: `No Status Monitor is configured on this deployment, and no running session on this account answers as one. Set the Status Monitor URL in Settings (or HPC_STATUS_URL), or deploy one with launch=true, which runs the ${eff2.hpcStatusWorkflow} workflow; only do that if the user asked for it.`, summary: 'not configured' }
         }
         const view = String(args.view ?? 'summary')
         const cluster = String(args.cluster ?? '').replace(/[^\w.-]/g, '')
@@ -921,7 +1021,7 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
         const path2 = paths[view]
         if (!path2) return { result: `Unknown view: ${view}. Views: ${Object.keys(paths).join(', ')}`, summary: 'bad view' }
         try {
-          const res = await fetch(`${base}${path2}`, { signal: AbortSignal.timeout(30_000) })
+          const res = await fetch(`${base}${path2}`, { headers: platformAuth(), signal: AbortSignal.timeout(30_000) })
           if (!res.ok) return { result: `Status Monitor returned ${res.status} for ${path2}.`, summary: `http ${res.status}` }
           const text = await res.text()
           return { result: text.slice(0, TOOL_OUTPUT_CAP), summary: `${view}${cluster ? `:${cluster}` : ''}` }
@@ -954,12 +1054,16 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
         }
       }
       default: {
+        if (isRemoteTool(name)) {
+          const out = await callRemoteTool(name, args)
+          return { result: (out.trim() || '(no output)').slice(0, TOOL_OUTPUT_CAP), summary: name }
+        }
         const custom = allCustomTools().find(t => t.name === name)
         if (custom) {
           const extra = String(args.args ?? '').slice(0, 400)
-          const cmd = extra ? `${custom.command} ${extra}` : custom.command
           const out = await new Promise<string>((resolve, reject) => {
-            execFile('bash', ['-lc', cmd], { timeout: 90_000, maxBuffer: 8 * 1024 * 1024 },
+            execFile('bash', ['-lc', `${custom.command} "$@"`, custom.name, ...splitToolArgs(extra)],
+              { timeout: 90_000, maxBuffer: 8 * 1024 * 1024 },
               (err, so, se) => (err ? reject(new Error(se || err.message)) : resolve(so)))
           })
           return { result: (out.trim() || '(no output)').slice(0, TOOL_OUTPUT_CAP), summary: name }
