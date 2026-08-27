@@ -1209,6 +1209,10 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .agents-view .ov-row-meta { white-space: normal; text-align: right; min-width: 0; overflow-wrap: anywhere; }
 .agents-view .ov-grid > * { min-width: 0; }
 .agents-view .ov-list, .agents-view .settings-card { min-width: 0; overflow: hidden; }
+.agents-pager { display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--pw-border); font-size: 12px; }
+.agents-pager-btns { display: flex; gap: 6px; }
+.agents-pager .btn-secondary { font-size: 12px; padding: 3px 10px; }
 .agents-filter { display: flex; align-items: center; gap: 10px; padding: 10px 14px; }
 .agents-filter .field { flex: 1; }
 /* A long library scrolls inside the menu instead of running off screen. */
