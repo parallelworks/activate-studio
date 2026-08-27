@@ -772,6 +772,20 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 /* height:auto beats the .chat-canvas > * { height:100% } rule, which would
    stretch the anchor to the canvas bottom and drop the menu off-screen. */
 .chat-scope-anchor { position: absolute; top: 11px; right: 16px; z-index: 8; height: auto; }
+/* The persona control sits beside Scope in the same corner. Both are
+   absolutely positioned over the package's header, so the persona one
+   steps left by the width of Scope rather than sharing a flex row that
+   does not exist. */
+.chat-persona-anchor { position: absolute; top: 11px; right: 104px; z-index: 8; height: auto; }
+.chat-canvas[data-think-open="1"] .chat-persona-anchor { right: calc(var(--ade-think-rail, 400px) + 100px); }
+.chat-persona-anchor .scope-menu { right: 0; }
+@media (max-width: 760px) {
+  /* No room for both beside the model picker; the persona label drops to
+     its icon and the pair tucks tighter. */
+  .chat-persona-anchor { right: 92px; }
+  .chat-persona-anchor .scope-btn { padding: 4px 7px; }
+  .chat-persona-anchor .scope-btn span.persona-label { display: none; }
+}
 /* ---- Activity (thinking) drawer: the package renders it as a fixed 400px
    right panel. Our width variable overrides it so the drag handle below can
    resize it, the scope button steps left of it instead of overlapping its

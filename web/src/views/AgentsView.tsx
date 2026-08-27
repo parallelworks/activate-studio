@@ -18,7 +18,7 @@ import { useCallback, useEffect, useState } from 'react'
 interface Persona { name: string; description: string; shared: boolean }
 interface Skill { name: string; description: string; file: string }
 
-export function AgentsView() {
+export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
   const [personas, setPersonas] = useState<Persona[]>([])
   const [skills, setSkills] = useState<Skill[]>([])
   const [dir, setDir] = useState('')
@@ -65,11 +65,11 @@ export function AgentsView() {
     } finally { setBusy(false) }
   }
 
-  const edit = async (n: string) => {
-    const res = await fetch(`/api/extensions/persona?name=${encodeURIComponent(n)}`)
+  const edit = async (k: 'persona' | 'skill', n: string) => {
+    const res = await fetch(`/api/extensions/${k}?name=${encodeURIComponent(n)}`)
     if (!res.ok) return
     const d = await res.json()
-    setKind('persona'); setEditing(d.name); setName(d.name); setDescription(d.description ?? ''); setBody(d.body ?? '')
+    setKind(k); setEditing(d.name); setName(d.name); setDescription(d.description ?? ''); setBody(d.body ?? '')
     setNote(`Editing ${d.name}. Saving overwrites it.`)
     document.querySelector('.agents-body')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
   }
@@ -97,17 +97,22 @@ export function AgentsView() {
         <section className="card ov-list">
           <h3>Personas ({personas.length})</h3>
           <p className="muted view-sub">
-            A standing stance for a whole conversation, chosen from the Persona control in chat. Personas are stored
+            A standing stance for a whole conversation. Choose one from the <b>Persona</b> button above the message box in
+            Chat; it stays in force until you change it. Personas are stored
             in the knowledge base{dir ? <> at <code>{dir}</code></> : null}, so everyone working over this corpus has
             the same library.
           </p>
           {personas.map(p => (
-            <div className="ov-row" key={p.name}>
+            <div className="ov-row" key={p.name} onClick={() => void edit('persona', p.name)} title="Open this persona for editing">
               <span className="ov-row-path">{p.name}{p.shared && <span className="persona-shared">shared</span>}</span>
               <span className="ov-row-meta">
                 {p.description || 'no description'}
-                <button className="link-button agents-del" onClick={() => void edit(p.name)}>edit</button>
-                <button className="link-button agents-del" onClick={() => remove(p.name)}>remove</button>
+                {p.shared && (
+                  <button className="link-button agents-del"
+                    onClick={e => { e.stopPropagation(); onOpen(`.agents/${p.name}.md`) }}>in library</button>
+                )}
+                <button className="link-button agents-del"
+                  onClick={e => { e.stopPropagation(); remove(p.name) }}>remove</button>
               </span>
             </div>
           ))}
@@ -117,11 +122,12 @@ export function AgentsView() {
         <section className="card ov-list">
           <h3>Skills ({skills.length})</h3>
           <p className="muted view-sub">
-            Task instructions the assistant loads itself, mid-conversation, when the work matches the description.
-            No one selects a skill; write the description so the assistant can tell when it applies.
+            Task instructions the assistant loads itself, mid-conversation, when the work matches the description. There is
+            nothing to select in Chat: ask for the work, or name the skill, and the assistant calls it. Write the
+            description so it can tell when the skill applies.
           </p>
           {skills.map(s => (
-            <div className="ov-row" key={s.name}>
+            <div className="ov-row" key={s.name} onClick={() => void edit('skill', s.name)} title="Open this skill for editing">
               <span className="ov-row-path">{s.name}</span>
               <span className="ov-row-meta">{s.description || 'no description'}</span>
             </div>

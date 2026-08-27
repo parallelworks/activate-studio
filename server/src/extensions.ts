@@ -258,6 +258,20 @@ export async function extensionRoutes(app: FastifyInstance): Promise<void> {
     }
   })
 
+  // Skills read back the same way personas do, so the one form edits both.
+  app.get('/api/extensions/skill', async (req, reply) => {
+    const wanted = normalizeName(String((req.query as { name?: string }).name ?? ''))
+    const hit = wanted ? extSkills().find(k => k.name === wanted) : undefined
+    if (!hit) return reply.status(404).send({ error: 'no such skill' })
+    let raw = ''
+    try { raw = fs.readFileSync(path.join(EXT_DIR, 'skills', hit.file), 'utf8') } catch { return reply.status(404).send({ error: 'unreadable' }) }
+    return {
+      name: hit.name,
+      description: hit.description,
+      body: raw.replace(/^---\n[\s\S]*?\n---\n?/, '').trim(),
+    }
+  })
+
   app.delete('/api/extensions/persona', async req => {
     const name = normalizeName(String((req.query as { name?: string }).name ?? ''))
     if (!name) return { ok: false }
