@@ -99,6 +99,13 @@ export default function App() {
   // 48px bar.
   const [moreOpen, setMoreOpen] = useState(false)
 
+  // Returning to a view that was hidden is a size change for anything
+  // inside it; some components only re-measure on a resize signal.
+  useEffect(() => {
+    const t = setTimeout(() => window.dispatchEvent(new Event('resize')), 0)
+    return () => clearTimeout(t)
+  }, [view])
+
   useEffect(() => { localStorage.setItem('ade-nav-collapsed', navCollapsed ? '1' : '0') }, [navCollapsed])
   useEffect(() => { if (cfg.loaded) document.title = cfg.appName }, [cfg])
   const effectiveTheme = theme ?? (sysDark ? 'dark' : cfg.theme)
@@ -326,7 +333,7 @@ export default function App() {
         <StatusFooter collapsed={navCollapsed} />
       </nav>
       <main className="content">
-        <div className={view === 'chat' ? 'view' : 'view hidden'}><ChatView /></div>
+        <div className={`view view-chat${view === 'chat' ? '' : ' hidden'}`}><ChatView /></div>
         <div className={view === 'library' ? 'view' : 'view hidden'}>
           <LibraryView display={display} onDisplay={setDisplay} />
         </div>
