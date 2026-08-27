@@ -10,6 +10,7 @@ import { effectiveSettings } from '../settings.js'
 import { composeWorkflows } from '../workflowCompose.js'
 import { agentBody, extAgents, extSkills, extTools, skillBody } from '../extensions.js'
 import { callRemoteTool, isRemoteTool, remoteToolSpecs } from '../mcpClient.js'
+import { gatewayKey } from './gateway.js'
 
 export interface ToolSpec {
   type: 'function'
@@ -534,6 +535,61 @@ export async function activeToolSpecsWithRemote(): Promise<ToolSpec[]> {
   return [...activeToolSpecs(), ...remote.filter(t => !disabled.has(t.function.name))]
 }
 
+/**
+ * Find a running Status Monitor without being told where it is.
+ *
+ * The monitor is usually a session in the same account, so its URL is
+ * discoverable rather than configuration: list sessions, keep the running
+ * ones whose name or workflow looks like a monitor, and probe each for
+ * the fleet endpoint. The first that answers is it. Configuration still
+ * wins when set, since a deployment may point at a shared monitor that is
+ * not a session of this user's at all.
+ *
+ * Probing is what makes this safe to guess with: a session that merely
+ * sounds like a monitor but does not serve /api/fleet/summary is skipped
+ * rather than reported as one.
+ */
+let monitorCache: { at: number; url: string | null } = { at: 0, url: null }
+const MONITOR_TTL_MS = 300_000
+
+function platformAuth(): Record<string, string> {
+  const key = gatewayKey()
+  return key ? { Authorization: `Bearer ${key}` } : {}
+}
+
+async function probeMonitor(base: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${base}/api/fleet/summary`, {
+      headers: platformAuth(), signal: AbortSignal.timeout(6000), redirect: 'manual',
+    })
+    if (!res.ok) return false
+    // A platform login redirect answers 200 with HTML; the monitor answers JSON.
+    return (res.headers.get('content-type') ?? '').includes('json')
+  } catch {
+    return false
+  }
+}
+
+export async function discoverStatusMonitor(): Promise<string | null> {
+  if (Date.now() - monitorCache.at < MONITOR_TTL_MS) return monitorCache.url
+  let found: string | null = null
+  try {
+    const rows = JSON.parse(await pwCli(['sessions', 'ls', '-o', 'json'], 20_000)) as any[]
+    const sessions = Array.isArray(rows) ? rows : []
+    const looksLikeMonitor = (x: any) => /status|hpc.?mon/i.test(`${x?.name ?? ''} ${x?.targetName ?? ''}`)
+    const candidates = sessions
+      .filter(x => String(x?.status) === 'running' && typeof x?.externalHref === 'string' && /^https?:/i.test(x.externalHref))
+      .sort((a, b) => Number(looksLikeMonitor(b)) - Number(looksLikeMonitor(a)))
+      .slice(0, 8)
+    for (const c of candidates) {
+      const base = String(c.externalHref).replace(/\/+$/, '')
+      if (await probeMonitor(base)) { found = base; break }
+    }
+  } catch { /* no CLI or no sessions: nothing to discover */ }
+  monitorCache = { at: Date.now(), url: found }
+  return found
+}
+
 function pwCli(args: string[], timeoutMs = 30_000): Promise<string> {
   // The caller's own key (when they added one) scopes platform actions to
   // their account; otherwise the deployment credential applies.
@@ -947,9 +1003,9 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
             summary: 'monitor launch submitted',
           }
         }
-        const base = eff2.hpcStatusUrl
+        const base = eff2.hpcStatusUrl || await discoverStatusMonitor()
         if (!base) {
-          return { result: `No Status Monitor is configured on this deployment (set the Status Monitor URL in Settings, or HPC_STATUS_URL). One can be deployed for this user with launch=true, which runs the ${eff2.hpcStatusWorkflow} workflow; only do that if the user asked for it.`, summary: 'not configured' }
+          return { result: `No Status Monitor is configured on this deployment, and no running session on this account answers as one. Set the Status Monitor URL in Settings (or HPC_STATUS_URL), or deploy one with launch=true, which runs the ${eff2.hpcStatusWorkflow} workflow; only do that if the user asked for it.`, summary: 'not configured' }
         }
         const view = String(args.view ?? 'summary')
         const cluster = String(args.cluster ?? '').replace(/[^\w.-]/g, '')
@@ -965,7 +1021,7 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
         const path2 = paths[view]
         if (!path2) return { result: `Unknown view: ${view}. Views: ${Object.keys(paths).join(', ')}`, summary: 'bad view' }
         try {
-          const res = await fetch(`${base}${path2}`, { signal: AbortSignal.timeout(30_000) })
+          const res = await fetch(`${base}${path2}`, { headers: platformAuth(), signal: AbortSignal.timeout(30_000) })
           if (!res.ok) return { result: `Status Monitor returned ${res.status} for ${path2}.`, summary: `http ${res.status}` }
           const text = await res.text()
           return { result: text.slice(0, TOOL_OUTPUT_CAP), summary: `${view}${cluster ? `:${cluster}` : ''}` }
