@@ -70,6 +70,9 @@ await seedKnowledgeBase(msg => app.log.info(msg))
 startSweepTimer(msg => app.log.info(msg))
 // Deploy-time full reindexes rebuild the index without overlay labels
 // (xattr-less filesystems); restore them once the server is up.
+void import('./extensions.js').then(m => m.labelPersonas())
+  .then(n => { if (n) app.log.info(`personas: labeled ${n} definitions`) })
+  .catch(() => {})
 void import('./tags.js').then(m => m.reapplyTagOverlay())
   .then(n => { if (n) app.log.info(`tag overlay: re-applied ${n} labeled paths`) })
   .catch(() => {})
