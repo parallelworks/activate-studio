@@ -1238,6 +1238,11 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .agents-kind .btn-secondary.active { border-color: var(--pw-link); color: var(--pw-link); }
 .agents-file { position: relative; overflow: hidden; cursor: pointer; display: inline-flex; align-items: center; }
 .agents-file:hover { border-color: var(--pw-link); color: var(--pw-link); }
+/* A control that cannot act should look like it: greyed, not pressable,
+   and saying its precondition in the label rather than after a click. */
+.agents-file.disabled { opacity: 0.5; cursor: not-allowed; }
+.agents-file.disabled:hover { border-color: var(--pw-border); color: var(--pw-muted); }
+.agents-file.disabled input { cursor: not-allowed; }
 .agents-file input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
 .agents-body { width: 100%; min-height: 45vh; font-family: ui-monospace, monospace; font-size: 12.5px; line-height: 1.6; resize: vertical; }
 .agents-del { margin-left: 10px; font-size: 11.5px; }
