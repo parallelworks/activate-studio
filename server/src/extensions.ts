@@ -140,10 +140,18 @@ function agentFiles(): { name: string; file: string; shared: boolean }[] {
 }
 
 /** The persona library, for the picker and the Settings list. */
-export function personas(): (ExtDoc & { shared: boolean })[] {
+/** The icon field: an emoji, or a corpus-relative path to an image. */
+function iconOf(file: string): string {
+  try {
+    const fm = /^---\n([\s\S]*?)\n---/.exec(fs.readFileSync(file, 'utf8'))
+    return fm ? (/^icon:\s*(.+)$/m.exec(fm[1])?.[1]?.trim() ?? '') : ''
+  } catch { return '' }
+}
+
+export function personas(): (ExtDoc & { shared: boolean; icon: string })[] {
   return agentFiles().map(a => {
     const meta = docMeta(a.file)
-    return { ...meta, file: path.basename(a.file), shared: a.shared }
+    return { ...meta, file: path.basename(a.file), shared: a.shared, icon: iconOf(a.file) }
   })
 }
 
@@ -172,6 +180,9 @@ export function agentPrompt(name?: string | null): string {
  */
 export const PERSONA_LABEL = 'agent-persona'
 
+/** Image types accepted as a persona icon. */
+const ICON_SUFFIXES = new Set(['.png', '.jpg', '.jpeg', '.webp', '.svg', '.gif'])
+
 /**
  * Label every corpus persona, so retrieval can tell a persona definition
  * from ordinary corpus material and the assistant can be told what to do
@@ -192,7 +203,7 @@ export async function labelPersonas(): Promise<number> {
   }
 }
 
-function writeDoc(dir: string, rawName: string, body: string, description: string): { name: string; file: string } {
+function writeDoc(dir: string, rawName: string, body: string, description: string, icon = ''): { name: string; file: string } {
   const name = normalizeName(rawName)
   if (!name) throw new Error('a name is required')
   const text = String(body ?? '').slice(0, 100_000).trim()
@@ -202,7 +213,8 @@ function writeDoc(dir: string, rawName: string, body: string, description: strin
   // the file never disagree; a pasted document's own frontmatter is
   // replaced rather than duplicated.
   const withoutFm = text.replace(/^---\n[\s\S]*?\n---\n?/, '').trim()
-  const doc = `---\nname: ${name}\ndescription: ${desc}\n---\n\n${withoutFm}\n`
+  const iconLine = icon ? `icon: ${String(icon).slice(0, 200).replace(/\n/g, '')}\n` : ''
+  const doc = `---\nname: ${name}\ndescription: ${desc}\n${iconLine}---\n\n${withoutFm}\n`
   fs.mkdirSync(dir, { recursive: true })
   const file = path.join(dir, `${name}.md`)
   fs.writeFileSync(file, doc)
@@ -211,11 +223,11 @@ function writeDoc(dir: string, rawName: string, body: string, description: strin
 
 export async function extensionRoutes(app: FastifyInstance): Promise<void> {
   app.post('/api/extensions/persona', async (req, reply) => {
-    const b = (req.body ?? {}) as { name?: string; description?: string; body?: string; shared?: boolean }
+    const b = (req.body ?? {}) as { name?: string; description?: string; body?: string; shared?: boolean; icon?: string }
     try {
       const shared = b.shared !== false
       const dir = shared ? CORPUS_AGENT_DIR : path.join(EXT_DIR, 'agents')
-      const { name } = writeDoc(dir, String(b.name ?? ''), String(b.body ?? ''), String(b.description ?? ''))
+      const { name } = writeDoc(dir, String(b.name ?? ''), String(b.body ?? ''), String(b.description ?? ''), String(b.icon ?? ''))
       // A shared persona is corpus material: index it so it is searchable
       // at once rather than at the next sweep, then label it so retrieval
       // can tell what it is.
@@ -255,6 +267,7 @@ export async function extensionRoutes(app: FastifyInstance): Promise<void> {
       description: meta.description,
       body: raw.replace(/^---\n[\s\S]*?\n---\n?/, '').trim(),
       shared: hit.shared,
+      icon: iconOf(hit.file),
     }
   })
 
@@ -270,6 +283,32 @@ export async function extensionRoutes(app: FastifyInstance): Promise<void> {
       description: hit.description,
       body: raw.replace(/^---\n[\s\S]*?\n---\n?/, '').trim(),
     }
+  })
+
+  /**
+   * A persona's icon is an ordinary corpus image under .agents/icons, so
+   * it versions, syncs and backs up with the definition it belongs to
+   * rather than living in a store of its own. The extension is taken from
+   * an allowlist and the filename from the persona, so an upload cannot
+   * name its own path or land as something executable.
+   */
+  app.post('/api/extensions/persona-icon', async (req, reply) => {
+    const name = normalizeName(String((req.query as { name?: string }).name ?? ''))
+    if (!name) return reply.status(400).send({ error: 'a persona name is required' })
+    const part = await req.file({ limits: { fileSize: 2 * 1024 * 1024 } })
+    if (!part) return reply.status(400).send({ error: 'no image in request' })
+    const ext = path.extname(String(part.filename ?? '')).toLowerCase()
+    if (!ICON_SUFFIXES.has(ext)) {
+      return reply.status(400).send({ error: `image must be one of ${[...ICON_SUFFIXES].join(', ')}` })
+    }
+    const dir = path.join(CORPUS_AGENT_DIR, 'icons')
+    fs.mkdirSync(dir, { recursive: true })
+    // One icon per persona: replace any other extension it had.
+    for (const e of ICON_SUFFIXES) {
+      if (e !== ext) { try { fs.rmSync(path.join(dir, `${name}${e}`), { force: true }) } catch { /* absent */ } }
+    }
+    fs.writeFileSync(path.join(dir, `${name}${ext}`), await part.toBuffer())
+    return { ok: true, icon: `${path.basename(CORPUS_AGENT_DIR)}/icons/${name}${ext}` }
   })
 
   app.delete('/api/extensions/persona', async req => {

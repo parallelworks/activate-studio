@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { PersonaIcon } from '../components/PersonaIcon'
 
 /**
  * Personas and skills: the two ways a markdown file changes how the
@@ -15,7 +16,7 @@ import { useCallback, useEffect, useState } from 'react'
  * material a user authors and grows, not deployment configuration.
  */
 
-interface Persona { name: string; description: string; shared: boolean }
+interface Persona { name: string; description: string; shared: boolean; icon: string }
 interface Skill { name: string; description: string; file: string }
 
 export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
@@ -26,6 +27,7 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [body, setBody] = useState('')
+  const [icon, setIcon] = useState('')
   const [note, setNote] = useState('')
   // Editing loads the file into the same form that writes it, so there is
   // one place to learn rather than a separate editor.
@@ -63,12 +65,12 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
     try {
       const res = await fetch(`/api/extensions/${kind}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, description, body, shared: true }),
+        body: JSON.stringify({ name, description, body, icon, shared: true }),
       })
       const d = await res.json()
       if (!res.ok) throw new Error(d.error ?? `${res.status}`)
       setNote(`Saved ${d.name}. It is available in chat now.`)
-      setName(''); setDescription(''); setBody(''); setEditing(null)
+      setName(''); setDescription(''); setBody(''); setIcon(''); setEditing(null)
       await load()
     } catch (e) {
       setNote(String((e as Error).message))
@@ -79,7 +81,7 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
     const res = await fetch(`/api/extensions/${k}?name=${encodeURIComponent(n)}`)
     if (!res.ok) return
     const d = await res.json()
-    setKind(k); setEditing(d.name); setName(d.name); setDescription(d.description ?? ''); setBody(d.body ?? '')
+    setKind(k); setEditing(d.name); setName(d.name); setDescription(d.description ?? ''); setBody(d.body ?? ''); setIcon(d.icon ?? '')
     setNote(`Editing ${d.name}. Saving overwrites it.`)
     document.querySelector('.agents-body')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
   }
@@ -148,7 +150,7 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
           </p>
           {pageOf(shownPersonas, pPage).map(p => (
             <div className="ov-row" key={p.name} onClick={() => void edit('persona', p.name)} title="Open this persona for editing">
-              <span className="ov-row-path">{p.name}{p.shared && <span className="persona-shared">shared</span>}</span>
+              <span className="ov-row-path"><PersonaIcon icon={p.icon} name={p.name} size={20} />{p.name}{p.shared && <span className="persona-shared">shared</span>}</span>
               <span className="ov-row-meta">
                 {p.description || 'no description'}
                 {p.shared && (
@@ -203,6 +205,36 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
               placeholder={kind === 'skill' ? 'when the assistant should load this' : 'what this persona is for'} />
           </div>
         </div>
+        {kind === 'persona' && (
+          <>
+            <label className="field-label">Icon</label>
+            <div className="persona-icon-row">
+              <PersonaIcon icon={icon} name={name || '?'} size={34} />
+              <input className="field persona-icon-field" value={icon} onChange={e => setIcon(e.target.value)}
+                placeholder="an emoji, or upload an image" />
+              <label className="btn-secondary agents-file">
+                Upload image
+                <input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml,image/gif"
+                  disabled={!name}
+                  onChange={async e => {
+                    const f = e.target.files?.[0]
+                    if (!f || !name) return
+                    const fd = new FormData()
+                    fd.append('file', f)
+                    const res = await fetch(`/api/extensions/persona-icon?name=${encodeURIComponent(name)}`, { method: 'POST', body: fd })
+                    const d = await res.json()
+                    if (res.ok) { setIcon(d.icon); setNote('Icon uploaded. Save to attach it.') }
+                    else setNote(d.error ?? 'upload failed')
+                  }} />
+              </label>
+              {icon && <button className="link-button" onClick={() => setIcon('')}>clear</button>}
+            </div>
+            <p className="muted key-note">
+              An image is stored in the knowledge base under <code>.agents/icons</code>, so it travels with the
+              persona. Name the persona first, since the file is named after it. With no icon, the initials stand in.
+            </p>
+          </>
+        )}
         <label className="field-label">Markdown</label>
         <textarea className="field agents-body" value={body} onChange={e => onBody(e.target.value)}
           placeholder={'Paste the file. Frontmatter is read into the fields above and rewritten on save.'} />
