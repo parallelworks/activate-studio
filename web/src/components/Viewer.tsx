@@ -7,7 +7,6 @@ const ModelViewer = lazy(() => import('./ModelViewer').then(m => ({ default: m.M
 import { DataTree } from './DataTree'
 
 const OFFICE_SUFFIXES = ['.docx', '.pptx', '.xlsx', '.doc', '.ppt', '.xls', '.odt', '.odp', '.ods']
-
 type Tab = 'preview' | 'indexed' | 'source'
 
 const JSON_SUFFIXES = ['.json', '.jsonl', '.geojson', '.ipynb']
@@ -18,7 +17,7 @@ const PDF_PAGE_CAP = 150
 /** PDFs and office docs preview as server-rendered page images; the
  *  browser's own PDF viewer is unavailable in the platform's sandboxed
  *  session iframe, so an <iframe src=...pdf> shows nothing there. */
-function PdfPages({ path }: { path: string }) {
+function PdfPages({ path, markdown }: { path: string; markdown: boolean }) {
   const [pages, setPages] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [fallbackText, setFallbackText] = useState<string | null>(null)
@@ -45,7 +44,9 @@ function PdfPages({ path }: { path: string }) {
     return (
       <div className="pad">
         <p className="muted">Page rendering is unavailable here ({error}) so this is the document's extracted text.</p>
-        <pre className="extracted-fallback">{fallbackText}</pre>
+        {markdown
+          ? <div className="md-body"><Streamdown>{fallbackText}</Streamdown></div>
+          : <pre className="extracted-fallback">{fallbackText}</pre>}
       </div>
     )
   }
@@ -151,6 +152,11 @@ export function Viewer({ path, onDeleted }: {
   const isJson = JSON_SUFFIXES.includes(suffix)
   const isYaml = YAML_SUFFIXES.includes(suffix)
   const isStructured = (isJson || isYaml) && isText
+  // Whether extracted text is Markdown is the server's to know: the same
+  // PDF is downmark Markdown on a host with the native binary and
+  // pdftotext's column-aligned text without it, and rendering that as
+  // Markdown turns its columns into code blocks and reflows its rows.
+  const extractedMarkdown = file.source === 'extracted' && file.format === 'markdown'
 
   const doDelete = async () => {
     setDeleting(true)
@@ -168,7 +174,7 @@ export function Viewer({ path, onDeleted }: {
     : (
       <div className="viewer-body">
         <p className="index-note">This is the text representation stored in the search index, not the original file.</p>
-        {isMarkdown
+        {isMarkdown || extractedMarkdown
           ? <div className="md-body"><Streamdown>{file.content}</Streamdown></div>
           : <pre className="text-body">{file.content}</pre>}
         {file.truncated && <p className="muted">Preview truncated; use Download for the full file.</p>}
@@ -196,7 +202,7 @@ export function Viewer({ path, onDeleted }: {
   ) : isImage ? (
     <div className="viewer-body"><img src={api.rawUrl(path)} alt={path} style={{ maxWidth: '100%' }} /></div>
   ) : isPdf || isOffice ? (
-    <PdfPages path={path} />
+    <PdfPages path={path} markdown={extractedMarkdown} />
   ) : isText ? (
     <div className="viewer-body">
       {isMarkdown

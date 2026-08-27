@@ -16,6 +16,7 @@ export interface FileContent {
   truncated: boolean
   content: string | null
   source: 'raw' | 'extracted' | 'none'
+  format?: 'markdown' | 'text'
 }
 
 export interface SearchHit {

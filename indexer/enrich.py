@@ -7,6 +7,15 @@ entries by inode, per the GUFI master document pattern). DOCX/PDF/PPTX/XLSX
 text is also written to an on-disk extract cache the server uses for
 previews. Every directory db gets the `words` table, empty or not, so
 MATCH queries never hit a missing table.
+
+Documents normally arrive already converted: the server (and reindex.sh)
+run `server/dist/preextract.js`, which turns .docx/.pptx/.xlsx/.doc, and
+PDFs where downmark's native binary is installed, into Markdown and writes
+the cache entries this script reuses. The readers below are the fallback:
+the standard-library OOXML pass for Office files, pdftotext for PDFs on a
+host without the binary. A cached PDF whose text is thin for its page count
+is still OCR'd here, since downmark reads only pages with no text at all.
+Image OCR and captions live here alone.
 """
 import argparse
 import os
@@ -23,7 +32,8 @@ TEXT_SUFFIXES = {
     '.md', '.txt', '.py', '.sh', '.yaml', '.yml', '.json', '.csv', '.tsv', '.xml',
     '.html', '.css', '.js', '.ts', '.tsx', '.svg', '.toml', '.cfg', '.ini', '.def', '.mjs', '.sql',
 }
-EXTRACT_SUFFIXES = {'.pdf', '.docx', '.pptx', '.xlsx'}
+# .doc has no reader here; it indexes only through the pre-extracted cache.
+EXTRACT_SUFFIXES = {'.pdf', '.docx', '.pptx', '.xlsx', '.doc'}
 IMAGE_SUFFIXES = {'.png', '.jpg', '.jpeg', '.gif', '.webp'}
 MAX_TEXT = 500_000
 MAX_CAPTION_BYTES = 8 * 1024 * 1024
@@ -33,10 +43,10 @@ MIN_IMAGE_BYTES = 8 * 1024  # skip icons and tiny assets
 def _ooxml_text(path: Path, members: str, break_tags: tuple) -> str:
     """Text out of an OOXML file with the standard library alone.
 
-    docx, pptx and xlsx are zipped XML, so the text is reachable without
-    python-docx, python-pptx or openpyxl. Clusters routinely have none of
-    them and no way to install them, and a Word document that indexes as
-    its filename is worse than a slightly rougher extraction.
+    docx, pptx and xlsx are zipped XML, so their text is reachable without
+    any library. This only runs for a document downmark could not convert
+    (see the module docstring): a rough extraction beats indexing a Word
+    document as its filename.
     """
     import re
     import zipfile
@@ -58,16 +68,7 @@ def _ooxml_text(path: Path, members: str, break_tags: tuple) -> str:
 
 
 def extract_docx(path: Path) -> str:
-    try:
-        from docx import Document  # type: ignore
-    except ImportError:
-        return _ooxml_text(path, r'word/document\.xml', ('</w:p>', '</w:tr>', '</w:tc>'))
-    doc = Document(str(path))
-    parts = [p.text for p in doc.paragraphs]
-    for table in doc.tables:
-        for row in table.rows:
-            parts.append('\t'.join(c.text for c in row.cells))
-    return '\n'.join(x for x in parts if x and x.strip())
+    return _ooxml_text(path, r'word/document\.xml', ('</w:p>', '</w:tr>', '</w:tc>'))
 
 
 # A PDF with almost no extractable text is a scan; below this many
@@ -116,7 +117,39 @@ def _pdf_ocr(path: Path, pages: int) -> str:
             except Exception:
                 continue
     body = '\n\n'.join(parts)
-    return f'Text read from scanned pages (OCR):\n{body}' if body else ''
+    return f'{OCR_HEADER}\n{body}' if body else ''
+
+
+# downmark marks the pages its own OCR filled in; a document carrying the
+# marker has already been read as ink and a second pass adds nothing.
+DOWNMARK_OCR_MARKER = 'includes OCR text'
+# Our own OCR block carries this header for the same reason: a cached entry
+# that already holds one has been read as ink, and re-reading it appends a
+# second copy of the same text and re-runs the render-plus-tesseract pass on
+# every later enrichment until the entry finally crosses the thin threshold.
+OCR_HEADER = 'Text read from scanned pages (OCR):'
+
+
+# OCR covers at most this many pages, so a document already holding more
+# characters than that many pages' worth cannot gain enough from a pass to
+# be worth one. Checking this before pdfinfo keeps a reindex over thousands
+# of text PDFs from forking a process per file per pass to learn nothing.
+OCR_TEXT_CEILING = OCR_CHARS_PER_PAGE * 30
+
+
+def ocr_if_thin(path: Path, text: str) -> str:
+    """Append OCR text when the text layer is thin for the page count."""
+    if DOWNMARK_OCR_MARKER in text or OCR_HEADER in text:
+        return text
+    if len(text.strip()) >= OCR_TEXT_CEILING:
+        return text
+    pages = _pdf_page_count(path)
+    if len(text.strip()) < OCR_CHARS_PER_PAGE * pages:
+        ocr = _pdf_ocr(path, pages)
+        if ocr:
+            # Keep both: the text layer may hold a header the scan blurs.
+            return f'{text}\n\n{ocr}' if text.strip() else ocr
+    return text
 
 
 def extract_pdf(path: Path) -> str:
@@ -137,44 +170,16 @@ def extract_pdf(path: Path) -> str:
             text = '\n'.join((page.extract_text() or '') for page in reader.pages)
         except Exception:
             text = ''
-    pages = _pdf_page_count(path)
-    if len(text.strip()) < OCR_CHARS_PER_PAGE * pages:
-        ocr = _pdf_ocr(path, pages)
-        if ocr:
-            # Keep both: the text layer may hold a header the scan blurs.
-            return f'{text}\n\n{ocr}' if text.strip() else ocr
-    return text
+    return ocr_if_thin(path, text)
 
 
 def extract_pptx(path: Path) -> str:
-    try:
-        from pptx import Presentation  # type: ignore
-    except ImportError:
-        return _ooxml_text(path, r'ppt/slides/slide\d+\.xml', ('</a:p>', '</a:t>'))
-    prs = Presentation(str(path))
-    parts = []
-    for slide in prs.slides:
-        for shape in slide.shapes:
-            if shape.has_text_frame:
-                parts.append(shape.text_frame.text)
-    return '\n'.join(x for x in parts if x and x.strip())
+    return _ooxml_text(path, r'ppt/slides/slide\d+\.xml', ('</a:p>', '</a:t>'))
 
 
 def extract_xlsx(path: Path) -> str:
-    try:
-        from openpyxl import load_workbook  # type: ignore
-    except ImportError:
-        # Shared strings hold most cell text; sheet XML holds the rest.
-        return _ooxml_text(path, r'xl/(sharedStrings|worksheets/sheet\d+)\.xml', ('</si>', '</row>', '</c>'))
-    wb = load_workbook(str(path), read_only=True, data_only=True)
-    parts = []
-    for ws in wb.worksheets:
-        parts.append(f'# sheet: {ws.title}')
-        for row in ws.iter_rows(values_only=True):
-            cells = [str(c) for c in row if c is not None]
-            if cells:
-                parts.append('\t'.join(cells))
-    return '\n'.join(parts)
+    # Shared strings hold most cell text; sheet XML holds the rest.
+    return _ooxml_text(path, r'xl/(sharedStrings|worksheets/sheet\d+)\.xml', ('</si>', '</row>', '</c>'))
 
 
 def gateway_key() -> str:
@@ -327,7 +332,23 @@ def main() -> int:
                     # cached by mtime; a reindex pass reuses them untouched.
                     cache_file = cache_root / rel_dir / (fpath.name + '.txt')
                     if cacheable and cache_file.exists() and cache_file.stat().st_mtime >= fpath.stat().st_mtime:
-                        text = cache_file.read_text(errors='replace')
+                        text = cache_file.read_text(errors='replace')[:MAX_TEXT]
+                        if suffix == '.pdf':
+                            # downmark's thin policy OCRs scans itself; a
+                            # thin cache entry without its marker means the
+                            # host had no tesseract when it was written, so
+                            # retry here and keep the result.
+                            thick = ocr_if_thin(fpath, text)[:MAX_TEXT]
+                            if thick != text:
+                                text = thick
+                                # A cache that cannot be written (read-only
+                                # or full shared storage) must not abort the
+                                # pass: the text is still indexed, and the
+                                # next pass retries the write.
+                                try:
+                                    cache_file.write_text(text)
+                                except OSError as exc:
+                                    print(f'  cache write failed {cache_file}: {exc}', file=sys.stderr)
                     else:
                         text = extract(fpath)
                         # Images cache even when empty: captioning and OCR are

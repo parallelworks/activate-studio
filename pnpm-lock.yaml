@@ -16,6 +16,9 @@ importers:
       '@fastify/static':
         specifier: ^8.0.0
         version: 8.3.0
+      '@giraffesyo/downmark':
+        specifier: 0.10.0
+        version: 0.10.0
       '@parallelworks/workflow-parser':
         specifier: ^0.1.0
         version: 0.1.0
@@ -547,6 +550,46 @@ packages:
 
   '@fontsource-variable/geist@5.3.0':
     resolution: {integrity: sha512-j0m+vLQuG5XAYoHtGCVu0spvlGreR3EzpECUVzkFmI1mTVnAO38l/NEPDCFgZ177JxzYJCLSmTQibIiYPilGrA==}
+
+  '@giraffesyo/downmark-darwin-arm64@0.10.0':
+    resolution: {integrity: sha512-l0G7KxuoqBCyPIf4z2V+u+xM6AfYs4STLslrX7joCcmtP6yWWT+rZGMB8+Txkaja1CyPfuMZpLpoy55F3Q9ibA==}
+    engines: {node: '>=18'}
+    cpu: [arm64]
+    os: [darwin]
+
+  '@giraffesyo/downmark-darwin-x64@0.10.0':
+    resolution: {integrity: sha512-ZSn0selSeW3LvNUao7LHLgUHd3xn1WwuG4y4W3psu/P7D+AFEVACMVPr53p6JWtp7fb0kexDBj+a3a5NCkkbyw==}
+    engines: {node: '>=18'}
+    cpu: [x64]
+    os: [darwin]
+
+  '@giraffesyo/downmark-linux-arm64@0.10.0':
+    resolution: {integrity: sha512-IvUcCmbCrNaUrVJZujbIb2kcm9IS5qLUb2/wfvBI1GqMCcIcWfA8O+d2hW/xG/KVZbpxCWxynnOTKzkaknGEcw==}
+    engines: {node: '>=18'}
+    cpu: [arm64]
+    os: [linux]
+
+  '@giraffesyo/downmark-linux-x64@0.10.0':
+    resolution: {integrity: sha512-Jhib2/HKd1qnujX2pEHq3RQuuy64qdalaSvxts6JGkMDQK60RCyYqBaQzNW0jWXpKKAqCG4bZ0jqARkWo0V8vw==}
+    engines: {node: '>=18'}
+    cpu: [x64]
+    os: [linux]
+
+  '@giraffesyo/downmark-win32-arm64@0.10.0':
+    resolution: {integrity: sha512-Md62PiZgJuDQgJZVvVxOTp5HQ6j1OiFDvMH3PcisYmvF/H+uvEeJ8BYa5fexSmossWgUB9O06yv7Kcm6vwqNGA==}
+    engines: {node: '>=18'}
+    cpu: [arm64]
+    os: [win32]
+
+  '@giraffesyo/downmark-win32-x64@0.10.0':
+    resolution: {integrity: sha512-2UZiC0dLgJNHkhLXBO2Yk/22Iar9q0lRj7bfl0bLgSrB84dqSsa/QIjUNfsFG6EiqFlA6MTdnnL2iRdB/bQruw==}
+    engines: {node: '>=18'}
+    cpu: [x64]
+    os: [win32]
+
+  '@giraffesyo/downmark@0.10.0':
+    resolution: {integrity: sha512-KOUda2QFMmE6XUbFQjAdXCbxh5FAomcinkX0XCnVSY0lhFjeXfKec3bN20PMv3kAG/lDAHbw98fSPiFMWwUIUw==}
+    engines: {node: '>=18'}
 
   '@headlessui/react@2.2.10':
     resolution: {integrity: sha512-5pVLNK9wlpxTUTy9GpgbX/SdcRh+HBnPktjM2wbiLTH4p+2EPHBO1aoSryUCuKUIItdDWO9ITlhUL8UnUN/oIA==}
@@ -2698,6 +2741,33 @@ snapshots:
   '@fontsource-variable/geist-mono@5.3.0': {}
 
   '@fontsource-variable/geist@5.3.0': {}
+
+  '@giraffesyo/downmark-darwin-arm64@0.10.0':
+    optional: true
+
+  '@giraffesyo/downmark-darwin-x64@0.10.0':
+    optional: true
+
+  '@giraffesyo/downmark-linux-arm64@0.10.0':
+    optional: true
+
+  '@giraffesyo/downmark-linux-x64@0.10.0':
+    optional: true
+
+  '@giraffesyo/downmark-win32-arm64@0.10.0':
+    optional: true
+
+  '@giraffesyo/downmark-win32-x64@0.10.0':
+    optional: true
+
+  '@giraffesyo/downmark@0.10.0':
+    optionalDependencies:
+      '@giraffesyo/downmark-darwin-arm64': 0.10.0
+      '@giraffesyo/downmark-darwin-x64': 0.10.0
+      '@giraffesyo/downmark-linux-arm64': 0.10.0
+      '@giraffesyo/downmark-linux-x64': 0.10.0
+      '@giraffesyo/downmark-win32-arm64': 0.10.0
+      '@giraffesyo/downmark-win32-x64': 0.10.0
 
   '@headlessui/react@2.2.10(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
     dependencies:
