@@ -236,6 +236,15 @@ button { font-family: inherit; }
 .content { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .view { flex: 1; min-height: 0; display: flex; flex-direction: column; height: 100%; }
 .view.hidden { display: none; }
+/* Chat is hidden differently. Its thread measures the container it scrolls
+   in, and display:none zeroes that measurement; the package does not
+   recover it when the element is shown again, so navigating away and back
+   left the thread blank with only the composer drawn. Keeping it in the
+   layout preserves the geometry, and visibility plus pointer-events keeps
+   it out of the way. It stays mounted either way, so this costs layout on
+   one view rather than the conversation state. */
+.app-body { position: relative; }
+.view.hidden.view-chat { display: flex; visibility: hidden; pointer-events: none; position: absolute; inset: 0; z-index: -1; }
 
 .card {
   background: var(--pw-panel);
