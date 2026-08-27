@@ -775,7 +775,10 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
    two absolutely-positioned elements with a hand-tuned offset between
    them, which is how the persona control ended up somewhere nobody could
    find it; one row cannot drift or overlap. */
-.chat-controls { position: absolute; top: 11px; right: 16px; z-index: 8; display: flex; align-items: center; gap: 6px; }
+/* height:auto is load-bearing: .chat-canvas > * forces height:100% on
+   direct children, which made this row full-height and centred the
+   buttons halfway down the canvas. */
+.chat-controls { position: absolute; top: 11px; right: 16px; z-index: 8; display: flex; align-items: center; gap: 6px; height: auto; }
 .chat-canvas[data-think-open="1"] .chat-controls { right: calc(var(--ade-think-rail, 400px) + 12px); }
 .chat-scope-anchor, .chat-persona-anchor { position: relative; height: auto; }
 .chat-persona-anchor .scope-menu { right: 0; }
