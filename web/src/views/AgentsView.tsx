@@ -30,6 +30,9 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
   // Editing loads the file into the same form that writes it, so there is
   // one place to learn rather than a separate editor.
   const [editing, setEditing] = useState<string | null>(null)
+  // A library of sixty is a wall of rows; filtering is the difference
+  // between a list you scan and one you search.
+  const [filter, setFilter] = useState('')
   const [busy, setBusy] = useState(false)
 
   const load = useCallback(() => fetch('/api/extensions').then(r => r.json())
@@ -79,6 +82,13 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
     await load()
   }
 
+  const matches = (n: string, d: string) => {
+    const q = filter.trim().toLowerCase()
+    return !q || n.toLowerCase().includes(q) || (d ?? '').toLowerCase().includes(q)
+  }
+  const shownPersonas = personas.filter(p => matches(p.name, p.description))
+  const shownSkills = skills.filter(k => matches(k.name, k.description))
+
   const onFile = (f: File | undefined) => {
     if (!f) return
     f.text().then(t => { if (!name) setName(f.name.replace(/\.md$/, '')); onBody(t) })
@@ -93,9 +103,17 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
         </p>
       </div>
 
+      {(personas.length + skills.length) > 8 && (
+        <div className="card agents-filter">
+          <input className="field" value={filter} onChange={e => setFilter(e.target.value)}
+            placeholder={`Filter ${personas.length + skills.length} definitions by name or description`} />
+          {filter && <button className="link-button" onClick={() => setFilter('')}>clear</button>}
+        </div>
+      )}
+
       <div className="ov-grid">
         <section className="card ov-list">
-          <h3>Personas ({personas.length})</h3>
+          <h3>Personas ({shownPersonas.length}{filter ? ` of ${personas.length}` : ''})</h3>
           <p className="muted view-sub">
             A standing stance for a whole conversation. Choose one from the <b>Persona</b> button above the message box in
             Chat; it stays in force until you change it. Personas are stored
@@ -103,7 +121,7 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
             the same library. They are ordinary corpus files: browsable under <code>.agents</code> in the Library,
             rendered as Markdown in the viewer, searchable, and labeled <code>agent-persona</code>.
           </p>
-          {personas.map(p => (
+          {shownPersonas.map(p => (
             <div className="ov-row" key={p.name} onClick={() => void edit('persona', p.name)} title="Open this persona for editing">
               <span className="ov-row-path">{p.name}{p.shared && <span className="persona-shared">shared</span>}</span>
               <span className="ov-row-meta">
@@ -117,23 +135,23 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
               </span>
             </div>
           ))}
-          {personas.length === 0 && <p className="muted">None yet. The first one you add appears in the chat Persona control.</p>}
+          {shownPersonas.length === 0 && <p className="muted">{filter ? 'None match that filter.' : 'None yet. The first one you add appears in the chat Persona control.'}</p>}
         </section>
 
         <section className="card ov-list">
-          <h3>Skills ({skills.length})</h3>
+          <h3>Skills ({shownSkills.length}{filter ? ` of ${skills.length}` : ''})</h3>
           <p className="muted view-sub">
             Task instructions the assistant loads itself, mid-conversation, when the work matches the description. There is
             nothing to select in Chat: ask for the work, or name the skill, and the assistant calls it. Write the
             description so it can tell when the skill applies.
           </p>
-          {skills.map(s => (
+          {shownSkills.map(s => (
             <div className="ov-row" key={s.name} onClick={() => void edit('skill', s.name)} title="Open this skill for editing">
               <span className="ov-row-path">{s.name}</span>
               <span className="ov-row-meta">{s.description || 'no description'}</span>
             </div>
           ))}
-          {skills.length === 0 && <p className="muted">None yet.</p>}
+          {shownSkills.length === 0 && <p className="muted">{filter ? 'None match that filter.' : 'None yet.'}</p>}
         </section>
       </div>
 

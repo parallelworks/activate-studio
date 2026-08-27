@@ -45,3 +45,19 @@ test('a crafted name cannot escape the persona directories', () => {
   fs.writeFileSync(path.join(os.tmpdir(), 'outside.md'), 'SHOULD NOT LOAD')
   assert.equal(agentPrompt('../../../../tmp/outside'), 'Standing instructions.')
 })
+
+test('a large skill library does not blow up the tool description', async () => {
+  const skillDir = path.join(idx, 'extensions', 'skills')
+  fs.mkdirSync(skillDir, { recursive: true })
+  const long = 'Produces a structured competitive analysis from corpus material, covering positioning, pricing, and differentiators'
+  for (let i = 0; i < 60; i++) {
+    fs.writeFileSync(path.join(skillDir, `skill-${i}.md`), `---\nname: skill_${i}\ndescription: ${long}\n---\n\nBody.`)
+  }
+  const { skillToolSpec } = await import('../dist/chat/tools.js')
+  const spec = skillToolSpec()
+  const len = spec.function.description.length
+  // Unbounded this is ~8,800 characters on every request.
+  assert.ok(len < 5000, `description is ${len} chars; expected the clip to bound it`)
+  assert.match(spec.function.description, /shortened/, 'says the descriptions are clipped')
+  assert.equal(spec.function.parameters.properties.name.enum.length, 60, 'every skill is still selectable')
+})
