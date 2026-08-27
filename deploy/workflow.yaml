@@ -1347,8 +1347,18 @@ jobs:
           cleanup() {
             "$RUNTIME" instance stop studio-compute-vllm 2>/dev/null
             [ -f model-endpoint.pid ] && kill "$(cat model-endpoint.pid)" 2>/dev/null
+            # The endpoint agent deletes its own session when it exits
+            # cleanly, but a walltime kill never lets it, which leaves a
+            # record behind pointing at a node that is no longer serving.
+            # Delete both by name; a session that has already gone makes
+            # this a no-op.
+            [ -n "$MODEL_EP" ] && "$PW_BIN" endpoints delete "$MODEL_EP" > /dev/null 2>&1
+            [ -n "$SESSION" ] && "$PW_BIN" endpoints delete "$SESSION" > /dev/null 2>&1
+            return 0
           }
-          trap cleanup EXIT
+          # EXIT alone does not fire when the shell is killed by a signal,
+          # which is exactly how a job ends at its walltime.
+          trap cleanup EXIT INT TERM
 
           pickport() { python3 -c 'import socket; s=socket.socket(); s.bind(("",0)); print(s.getsockname()[1]); s.close()'; }
 
@@ -1438,6 +1448,7 @@ jobs:
             ${DISABLE_KEYS:+--env DISABLE_PERSONAL_KEYS="$DISABLE_KEYS"} \
             ${REQUIRE_KEY:+--env REQUIRE_PERSONAL_KEY="$REQUIRE_KEY"} \
             ${SIDECAR_URL:+--env SIDECAR_MODEL_URL="$SIDECAR_URL"} \
+            ${SIDECAR_URL:+--env SIDECAR_ENDPOINT="$MODEL_EP"} \
             --env PW_CLI="/usr/local/bin/pw" --env HOME="$HOME" \
             --bind "$PW_BIN:/usr/local/bin/pw" \
             --bind "$KB:$KB" --bind "$IDX:$IDX" \
@@ -1506,6 +1517,11 @@ jobs:
               echo "#SBATCH --job-name=$JOB_NAME"
               echo "#SBATCH --nodes=1"
               echo "#SBATCH --time=$WALLTIME"
+              # Ask for SIGTERM at the batch shell a minute before the
+              # walltime, so the cleanup trap has time to delete the
+              # endpoint sessions instead of being killed outright and
+              # leaving them behind as stopped records.
+              echo "#SBATCH --signal=B:TERM@60"
               echo "#SBATCH --output=$OUT"
               [ -n "${{ inputs.slurm.partition }}" ] && echo "#SBATCH --partition=${{ inputs.slurm.partition }}"
               [ -n "${{ inputs.slurm.account }}" ] && echo "#SBATCH --account=${{ inputs.slurm.account }}"

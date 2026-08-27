@@ -16,6 +16,16 @@ const MODEL_STORAGE_KEY = 'studio.chat.lastModel'
  *  selection is missing or absent from the live model list, this swaps in the
  *  remembered model, or the first available one, and every valid selection is
  *  persisted for the next visit. */
+function FilterReloader() {
+  const { loadConversations } = useChat()
+  useEffect(() => {
+    const on = () => { void loadConversations() }
+    window.addEventListener('ade:chat-filter-changed', on)
+    return () => window.removeEventListener('ade:chat-filter-changed', on)
+  }, [loadConversations])
+  return null
+}
+
 function ModelSelectionGuard() {
   const { models, selectedProvider, setSelectedProvider, hasLoadedModels } = useChat()
   useEffect(() => {
@@ -73,6 +83,16 @@ export function ChatView() {
     mo.observe(canvas, { subtree: true, attributes: true, attributeFilter: ['class'], childList: true })
     return () => mo.disconnect()
   }, [])
+  // Phone slide-over state for the conversations rail; the bottom-bar
+  // Chat item toggles it, and choosing a conversation closes it.
+  const [railOpen, setRailOpen] = useState(false)
+  useEffect(() => {
+    const t = () => setRailOpen(o => !o)
+    window.addEventListener('ade:toggle-chat-rail', t)
+    return () => window.removeEventListener('ade:toggle-chat-rail', t)
+  }, [])
+  useEffect(() => { setRailOpen(false) }, [activeId])
+
   const adapter = useMemo(() => createStudioAdapter(), [])
   const [credNote, setCredNote] = useState<string | null>(null)
   const [vocab, setVocab] = useState<{ tag: string; count: number }[]>([])
@@ -247,7 +267,10 @@ export function ChatView() {
     const next = chatFilter === 'all' ? 'mine' : 'all'
     setChatListFilter(next)
     setChatFilterState(next)
-    setChatEpoch(e => e + 1)
+    // A list refresh, not a remount: bumping the provider epoch here tore
+    // down the open thread and aborted any stream just to refilter the
+    // rail. FilterReloader inside the provider re-lists instead.
+    window.dispatchEvent(new Event('ade:chat-filter-changed'))
   }
 
   return (
@@ -305,7 +328,7 @@ export function ChatView() {
       }}
     >
       <div className="chat-wrap">
-        <div ref={canvasRef} className="chat-canvas card" style={{ ['--ade-chat-rail' as string]: `${rail}px`, ['--ade-think-rail' as string]: `${thinkRail}px` }}>
+        <div ref={canvasRef} className={`chat-canvas card${railOpen ? ' rail-open' : ''}`} style={{ ['--ade-chat-rail' as string]: `${rail}px`, ['--ade-think-rail' as string]: `${thinkRail}px` }}>
           {credNote && (
             <div className="cred-banner">
               <span className="cred-banner-text">{credNote}</span>
@@ -314,10 +337,11 @@ export function ChatView() {
             </div>
           )}
           <ModelSelectionGuard />
+          <FilterReloader />
           <ChatLayout>
             {showAttachments ? <AttachmentManager /> : activeId ? <ChatThread conversationId={activeId} /> : <ChatEmptyState />}
           </ChatLayout>
-          <div ref={handleRef} className="chat-rail-handle" style={{ left: rail - 3 }} onMouseDown={onRailDrag} title="Drag to resize conversations" />
+          {railOpen && <div className="chat-rail-backdrop" onClick={() => setRailOpen(false)} />}
           <div className="chat-think-handle" onMouseDown={onThinkDrag} title="Drag to resize the activity panel" />
           {multiUser && !showAttachments && (
             <button

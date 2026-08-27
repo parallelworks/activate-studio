@@ -1,16 +1,16 @@
-name: CI
-
+# Build and test on every push and pull request. A red check on the PR and
+# GitHub's failure email to the pusher are the pass/fail notification;
+# nothing here deploys anything.
+name: ci
 on:
   push:
     branches: [main]
   pull_request:
-
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       # Node 22 matches the container base image, so a syntax or API level
       # the image cannot run fails here rather than at deploy time.
       - uses: actions/setup-node@v4
