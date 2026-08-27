@@ -170,6 +170,28 @@ export function agentPrompt(name?: string | null): string {
  * joining that slug to a fixed directory, so a crafted name cannot climb
  * out of it.
  */
+export const PERSONA_LABEL = 'agent-persona'
+
+/**
+ * Label every corpus persona, so retrieval can tell a persona definition
+ * from ordinary corpus material and the assistant can be told what to do
+ * with one. Runs at startup and after a write; already-labeled files cost
+ * nothing, so it is safe to call repeatedly.
+ */
+export async function labelPersonas(): Promise<number> {
+  let names: string[] = []
+  try { names = fs.readdirSync(CORPUS_AGENT_DIR).filter(f => f.endsWith('.md') && !f.startsWith('.')) } catch { return 0 }
+  if (!names.length) return 0
+  const rels = names.map(f => path.join(path.basename(CORPUS_AGENT_DIR), f))
+  try {
+    const { applyTagsCore } = await import('./tags.js')
+    await applyTagsCore(rels, [PERSONA_LABEL], [])
+    return rels.length
+  } catch {
+    return 0
+  }
+}
+
 function writeDoc(dir: string, rawName: string, body: string, description: string): { name: string; file: string } {
   const name = normalizeName(rawName)
   if (!name) throw new Error('a name is required')
@@ -191,9 +213,18 @@ export async function extensionRoutes(app: FastifyInstance): Promise<void> {
   app.post('/api/extensions/persona', async (req, reply) => {
     const b = (req.body ?? {}) as { name?: string; description?: string; body?: string; shared?: boolean }
     try {
-      const dir = b.shared === false ? path.join(EXT_DIR, 'agents') : CORPUS_AGENT_DIR
+      const shared = b.shared !== false
+      const dir = shared ? CORPUS_AGENT_DIR : path.join(EXT_DIR, 'agents')
       const { name } = writeDoc(dir, String(b.name ?? ''), String(b.body ?? ''), String(b.description ?? ''))
-      return { ok: true, name, shared: b.shared !== false }
+      // A shared persona is corpus material: index it so it is searchable
+      // at once rather than at the next sweep, then label it so retrieval
+      // can tell what it is.
+      if (shared) {
+        const { incrementalIndexDir } = await import('./indexing.js')
+        await incrementalIndexDir(path.basename(CORPUS_AGENT_DIR)).catch(() => {})
+        await labelPersonas()
+      }
+      return { ok: true, name, shared }
     } catch (e) {
       return reply.status(400).send({ error: String((e as Error).message) })
     }
@@ -206,6 +237,24 @@ export async function extensionRoutes(app: FastifyInstance): Promise<void> {
       return { ok: true, name }
     } catch (e) {
       return reply.status(400).send({ error: String((e as Error).message) })
+    }
+  })
+
+  // Read one back for editing. Frontmatter is returned split out, so the
+  // editor shows the same fields the writer takes rather than making
+  // someone hand-edit a header.
+  app.get('/api/extensions/persona', async (req, reply) => {
+    const wanted = normalizeName(String((req.query as { name?: string }).name ?? ''))
+    const hit = wanted ? agentFiles().find(a => a.name === wanted) : undefined
+    if (!hit) return reply.status(404).send({ error: 'no such persona' })
+    let raw = ''
+    try { raw = fs.readFileSync(hit.file, 'utf8') } catch { return reply.status(404).send({ error: 'unreadable' }) }
+    const meta = docMeta(hit.file)
+    return {
+      name: meta.name,
+      description: meta.description,
+      body: raw.replace(/^---\n[\s\S]*?\n---\n?/, '').trim(),
+      shared: hit.shared,
     }
   })
 
