@@ -7,7 +7,7 @@ import { attachmentContext } from '../attachments.js'
 import { effectiveSettings } from '../settings.js'
 import { agentPrompt } from '../extensions.js'
 import { recordAssistantTurn, recordUserTurn, StoredToolCallPart } from '../conversations.js'
-import { clearSharedKey, clearUserKey, getSharedKeyStatus, getUserKeyStatus, KEY_COOKIE, personalKeysDisabled, resolveUserCred, resolveUserKey, sealKeyCookie, setUserKey, shareUserKey } from '../credentials.js'
+import { clearSharedKey, clearUserKey, getSharedKeyStatus, getUserKeyStatus, KEY_COOKIE, KEY_COOKIE_P, personalKeysDisabled, resolveUserCred, resolveUserKey, sealKeyCookie, setUserKey, shareUserKey } from '../credentials.js'
 import { authEnabled } from '../auth.js'
 
 interface StreamBody {
@@ -218,6 +218,43 @@ function estimateTokens(messages: WireMessage[]): number {
  * starts accepting the cap gets it back on the next deployment.
  */
 const noTokenCap = new Set<string>()
+
+const BASE_ATTRS = 'Path=/; HttpOnly; Secure; SameSite=None'
+
+/**
+ * Set-Cookie headers carrying the sealed key, or expiring it when chunks
+ * is empty.
+ *
+ * SameSite=None rather than Strict, because a deployment is reached
+ * through a sessions domain that differs from the platform's own
+ * (pw.hsp.mil under activate.hpc.mil, for one). The app therefore runs as
+ * a cross-site context, where a Strict cookie is stored and then never
+ * offered back, so the key looked lost on every restart even though the
+ * browser still held it. None is safe here because the cookie grants
+ * nothing on its own: it is HttpOnly, its value is encrypted with a server
+ * secret the browser never sees, and rehydration runs only for a request
+ * already carrying a verified platform JWT.
+ *
+ * Written twice, under two names, because neither form covers both ways
+ * the app is opened. A Partitioned cookie is keyed to the embedding site
+ * under CHIPS, which is what browsers that block third-party cookies
+ * require when the app runs inside the platform; an unpartitioned one is
+ * what gets sent when the same app is opened directly at its own URL,
+ * where the partitioned copy belongs to a different partition and stays
+ * behind. Both are the same sealed value and hydration takes whichever
+ * arrives, so a key entered in one context still works in the other.
+ */
+export function keyCookieJar(chunks: string[]): string[] {
+  const jar: string[] = []
+  for (const [name, attrs] of [[KEY_COOKIE, BASE_ATTRS], [KEY_COOKIE_P, `${BASE_ATTRS}; Partitioned`]] as const) {
+    chunks.forEach((c, i) => jar.push(`${name}${i}=${c}; Max-Age=31536000; ${attrs}`))
+    // A shorter key than last time leaves fewer chunks; expire two beyond.
+    for (let i = chunks.length; i < chunks.length + (chunks.length ? 2 : 4); i++) {
+      jar.push(`${name}${i}=; Max-Age=0; ${attrs}`)
+    }
+  }
+  return jar
+}
 
 /**
  * Turn the raw relay ("gateway chat 400: {json}") into something a reader
@@ -437,18 +474,30 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
   // unfriendly to PUT and DELETE, and the embed saw "failed to fetch".
   // Persisted keys rest in the caller's browser as sealed Secure cookies,
   // not on the server: the value is the key encrypted with the server
-  // secret, chunked under the per-cookie size limit, HttpOnly and
-  // SameSite=Strict. The server keeps a memory copy with a TTL and
-  // rehydrates from the cookie on request.
+  // secret, chunked under the per-cookie size limit and HttpOnly. The
+  // server keeps a memory copy with a TTL and rehydrates from the cookie
+  // on request.
+  //
+  // SameSite=None rather than Strict, because a deployment is reached
+  // through a sessions domain that differs from the platform's own
+  // (pw.hsp.mil under activate.hpc.mil, for one), so the app runs as a
+  // cross-site context and a Strict cookie is set but never sent back.
+  // That is what made every restart ask for the key again: the durable
+  // copy existed in the browser and was never offered. Partitioned keys
+  // the cookie to the embedding site under CHIPS, which is the behaviour
+  // wanted anyway, and browsers that do not know the attribute ignore it.
+  //
+  // None widens what the cookie rides on, and that is acceptable here
+  // only because it grants nothing by itself: it is HttpOnly, its value
+  // is encrypted with a server secret the browser never sees, and
+  // rehydration runs solely for a request already carrying a verified
+  // platform JWT, so a cross-site request without that token cannot use
+  // it.
   const setKeyCookies = (reply: { header: (k: string, v: string[]) => unknown }, sub: string) => {
-    const chunks = sealKeyCookie(sub) ?? []
-    const jar = chunks.map((c, i) => `${KEY_COOKIE}${i}=${c}; Path=/; Max-Age=31536000; HttpOnly; Secure; SameSite=Strict`)
-    // A shorter key than last time leaves fewer chunks; expire two beyond.
-    for (let i = chunks.length; i < chunks.length + 2; i++) jar.push(`${KEY_COOKIE}${i}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Strict`)
-    reply.header('set-cookie', jar)
+    reply.header('set-cookie', keyCookieJar(sealKeyCookie(sub) ?? []))
   }
   const clearKeyCookies = (reply: { header: (k: string, v: string[]) => unknown }) => {
-    reply.header('set-cookie', Array.from({ length: 4 }, (_, i) => `${KEY_COOKIE}${i}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Strict`))
+    reply.header('set-cookie', keyCookieJar([]))
   }
 
   app.post('/api/me/model-key', async (req, reply) => {
