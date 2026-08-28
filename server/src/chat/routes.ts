@@ -208,6 +208,40 @@ function estimateTokens(messages: WireMessage[]): number {
   return Math.ceil(chars / 3)
 }
 
+/**
+ * Models whose provider rejects any token-cap parameter. Learned from the
+ * first failure rather than configured, because the rejection is a property
+ * of whatever provider sits behind a given model name and the gateway
+ * translates our max_tokens into the provider's own spelling before it is
+ * refused. Remembered so only the first turn on such a model pays a failed
+ * request; the process lifetime is the right scope, since a model that
+ * starts accepting the cap gets it back on the next deployment.
+ */
+const noTokenCap = new Set<string>()
+
+/**
+ * Turn the raw relay ("gateway chat 400: {json}") into something a reader
+ * can act on. The status is what separates the cases, and getting it wrong
+ * is expensive: a 401 or 403 on a model behind a personal provider key is
+ * usually that key expiring, but a 400 naming a parameter is the request
+ * being wrong for that provider, and blaming the key there sends someone
+ * to renew a credential that was never the problem.
+ */
+export function gatewayChatMessage(msg: string, model: string): string {
+  const status = Number(/^gateway chat (\d+)/.exec(msg)?.[1] ?? 0)
+  const personal = /^[a-z0-9_.-]+:/i.test(model) && !model.startsWith('session:') && !model.startsWith('org:')
+  const rejectedParam = status === 400
+    && /unsupported|unknown|unrecognized|invalid/i.test(msg)
+    && /parameter|argument|property|field/i.test(msg)
+  const cause = rejectedParam
+    ? 'The request carried a parameter this provider does not accept, which is an incompatibility between the Studio and that provider rather than anything wrong with your credentials. Pick another model, and report this one so the parameter can be dropped for it. '
+    : (status === 401 || status === 403) && personal
+      ? 'This model uses a provider key registered on the platform, and an expired key fails exactly this way; renew it under the platform\u2019s AI provider settings, or pick another model. '
+      : 'Pick another model from the list while it recovers. '
+  return `${model} cannot be called right now: its provider returned an error. ${cause}`
+    + `Other models are unaffected. Provider said: ${msg.slice(0, 200)}`
+}
+
 /** Trim messages to the model's context window and return the max_tokens the
  *  remaining space supports, so prompt + completion never exceeds the window.
  *  overheadChars covers request payload outside the messages (tool schemas).
@@ -703,7 +737,7 @@ ${ctx}` : ctx
           // codex provider 400s on max_tokens and max_completion_tokens
           // alike, masked by the gateway into the generic generation
           // error), so a retry after that failure goes out without the cap.
-          if (dropTokenCap) delete p.max_tokens
+          if (dropTokenCap || noTokenCap.has(String(p.model ?? ''))) delete p.max_tokens
           try {
             if (!emulating) return await streamTurn(p, allocation, callbacks, abort.signal, userKey, userBase)
             // Envelope replies must not reach the client as content: buffer,
@@ -745,10 +779,24 @@ ${ctx}` : ctx
             // (streaming), and the gateway's 400 "error occurred while
             // generating the response", which covers both sampling-dependent
             // serve failures and parameter rejections.
+            const errText = String(err?.message ?? '')
+            // A gateway that passes the provider's own complaint through
+            // instead of masking it says which parameter was rejected. The
+            // codex provider names max_output_tokens, which is the gateway's
+            // own translation of our max_tokens, so dropping the cap is
+            // still the fix; matching only the masked wording meant this
+            // shape reached the user as an unexplained 400.
+            const rejectedTokenCap = /unsupported|unknown|unrecognized|invalid/i.test(errText)
+              && /max_tokens|max_output_tokens|max_completion_tokens/i.test(errText)
             const generationError = err instanceof StreamedTurnError
-              || /error occurred while generating/i.test(String(err?.message ?? ''))
+              || /error occurred while generating/i.test(errText)
+              || rejectedTokenCap
             if (generationError && attempt < 2 && !abort.signal.aborted) {
               if (!(err instanceof StreamedTurnError)) dropTokenCap = true
+              // Only an explicit parameter rejection is worth remembering:
+              // the masked generation error also covers sampling failures,
+              // which say nothing about whether the cap is supported.
+              if (rejectedTokenCap) noTokenCap.add(String(body.model ?? ''))
               req.log.warn({ attempt, dropTokenCap, err: String(err?.message ?? err) }, 'serve failed generating; retrying turn')
               continue
             }
@@ -918,15 +966,7 @@ ${ctx}` : ctx
         if (err?.name === 'GatewayAuthError') {
           userMsg = msg
         } else if (/^gateway chat /.test(msg)) {
-          // The raw relay ("gateway chat 400: {json}") reads as a Studio
-          // fault. Say what is actually known: this model cannot be called
-          // right now, and if it sits behind a personal provider key, that
-          // key expiring is the common cause.
-          const personal = /^[a-z0-9_.-]+:/i.test(model) && !model.startsWith('session:') && !model.startsWith('org:')
-          userMsg = `${model} cannot be called right now: its provider returned an error. `
-            + (personal ? 'This model uses a provider key registered on the platform, and an expired key fails exactly this way; renew it under the platform\u2019s AI provider settings, or pick another model. '
-                        : 'Pick another model from the list while it recovers. ')
-            + `Other models are unaffected. Provider said: ${msg.slice(0, 160)}`
+          userMsg = gatewayChatMessage(msg, model)
         } else if (/^gateway /.test(msg)) {
           userMsg = msg
         }
