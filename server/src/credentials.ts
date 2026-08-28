@@ -275,7 +275,11 @@ const COOKIE_CHUNK = 3800
 export function sealKeyCookie(sub: string): string[] | null {
   const s = liveSession(sub)
   if (!s) return null
-  const blob = encrypt(JSON.stringify({ k: s.key, u: s.baseUrl ?? null }))
+  // The subject is sealed in with the key. A browser holds one cookie jar
+  // for the host no matter who is signed in, so without this the cookie is
+  // a bearer token for whoever presents it: signing in as a second user in
+  // the same browser handed them the first user's key.
+  const blob = encrypt(JSON.stringify({ s: sub, k: s.key, u: s.baseUrl ?? null }))
   const chunks: string[] = []
   for (let i = 0; i < blob.length; i += COOKIE_CHUNK) chunks.push(blob.slice(i, i + COOKIE_CHUNK))
   return chunks
@@ -305,7 +309,12 @@ export function hydrateFromCookie(sub: string, cookieHeader: string | undefined)
     try {
       const opened = decrypt(blob)
       if (!opened) continue
-      const { k, u } = JSON.parse(opened) as { k?: string; u?: string | null }
+      const { s: owner, k, u } = JSON.parse(opened) as { s?: string; k?: string; u?: string | null }
+      // Only the subject the key was sealed for may open it. A cookie from
+      // an older build carries no subject, so it cannot be attributed to
+      // anyone and is refused rather than guessed at; that costs one
+      // re-entry and closes the leak.
+      if (owner !== sub) continue
       if (typeof k === 'string' && k.trim()) { setUserKey(sub, k, false, u ?? null); return }
     } catch { /* stale cookie sealed under a rotated secret: try the other */ }
   }
