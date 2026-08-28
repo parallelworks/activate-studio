@@ -71,7 +71,11 @@ export function startRagEndpoint(): RagEndpointStatus {
   // event: unhandled, that took the whole server down with it, so one
   // click on a button ended the session.
   const cli = PW_CLI
-  const proc = spawn(cli, ['endpoints', 'run', '--openai', '--name', name, '-o', 'text', '--', 'node', '-e', FORWARDER], {
+  // Pin the subdomain to the endpoint name. Without it the platform assigns
+  // a random one on every registration, so the URL changed each time the
+  // Studio restarted and anything configured against it (a pw code model, an
+  // MCP client) pointed at a session that no longer existed.
+  const proc = spawn(cli, ['endpoints', 'run', '--openai', '--name', name, '--subdomain', name, '-o', 'text', '--', 'node', '-e', FORWARDER], {
     env: { ...process.env, STUDIO_TARGET_PORT: String(PORT), STUDIO_INJECT_KEY: key },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
