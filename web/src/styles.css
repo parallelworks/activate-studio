@@ -1217,7 +1217,12 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .agents-view .ov-row-path { flex: 0 1 auto; min-width: 0; }
 .agents-view .ov-row-meta { white-space: normal; text-align: right; min-width: 0; overflow-wrap: anywhere; }
 .agents-view .ov-grid > * { min-width: 0; }
-.agents-view .ov-list, .agents-view .settings-card { min-width: 0; overflow: hidden; }
+/* overflow:hidden here clipped the editor's Save row once the textarea
+   grew (zoom, or a long definition) and left nothing to scroll. Only the
+   horizontal axis needed containing. */
+.agents-view .ov-list, .agents-view .settings-card { min-width: 0; overflow-x: auto; }
+/* A tall editor must not push its own actions out of reach. */
+.agents-body { max-height: 55vh; }
 .agents-pager { display: flex; align-items: center; justify-content: space-between; gap: 12px;
   margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--pw-border); font-size: 12px; }
 .agents-pager-btns { display: flex; gap: 6px; }
@@ -1230,14 +1235,14 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .persona-icon-field { flex: 1; min-width: 160px; }
 .agents-view .ov-row-path { display: flex; align-items: center; gap: 8px; }
 .persona-row .persona-name { display: flex; align-items: center; gap: 8px; }
-.mission-detail { margin-top: 10px; border-top: 1px solid var(--pw-border); padding-top: 10px; }
-.mission-table { width: 100%; border-collapse: collapse; font-size: 12.5px; margin: 8px 0 12px; }
-.mission-table th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--pw-muted); padding: 3px 8px 3px 0; }
-.mission-table td { padding: 4px 8px 4px 0; border-top: 1px solid var(--pw-border); }
-.mission-board { display: flex; flex-direction: column; gap: 5px; max-height: 260px; overflow-y: auto;
+.task-detail { margin-top: 10px; border-top: 1px solid var(--pw-border); padding-top: 10px; }
+.task-table { width: 100%; border-collapse: collapse; font-size: 12.5px; margin: 8px 0 12px; }
+.task-table th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--pw-muted); padding: 3px 8px 3px 0; }
+.task-table td { padding: 4px 8px 4px 0; border-top: 1px solid var(--pw-border); }
+.task-board { display: flex; flex-direction: column; gap: 5px; max-height: 260px; overflow-y: auto;
   background: var(--pw-bg); border: 1px solid var(--pw-border); border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; }
-.mission-msg { font-size: 12.5px; display: flex; flex-direction: column; }
-.mission-msg-meta { font-size: 11px; color: var(--pw-muted); }
+.task-msg { font-size: 12.5px; display: flex; flex-direction: column; }
+.task-msg-meta { font-size: 11px; color: var(--pw-muted); }
 .agents-filter { display: flex; align-items: center; gap: 10px; padding: 10px 14px; }
 .agents-filter .field { flex: 1; }
 /* A long library scrolls inside the menu instead of running off screen. */
