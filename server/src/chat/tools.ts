@@ -1168,7 +1168,10 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
           // live; on a skipped or finished job it names a step that never ran.
           const live = /^(running|in_progress|active|started)$/i.test(String(v?.status))
           const step = live ? (v?.steps ?? []).find((s: any) => s?.status && s.status !== 'completed') : null
-          return `  ${k}: ${v?.status}${v?.ssh?.remoteHost ? ` on ${v.ssh.remoteHost}` : ''}${step?.name ? ` (at "${step.name}")` : ''}`
+          // A job the run has not reached yet carries no status at all, and
+          // "undefined" reads as a fault rather than as its turn not coming.
+          const state = v?.status ? String(v.status) : 'not started'
+          return `  ${k}: ${state}${v?.ssh?.remoteHost ? ` on ${v.ssh.remoteHost}` : ''}${step?.name ? ` (at "${step.name}")` : ''}`
         })
         const svc = (doc?.inputs as any)?.service ?? {}
         const parts = [`Run ${doc?.slug ?? id} of ${doc?.workflowName}: ${doc?.status}`, jobs.join('\n')]
