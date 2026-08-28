@@ -670,8 +670,24 @@ jobs:
                 echo "ERROR: bundle pull failed and no pre-staged bundle found"; exit 1
               fi
             }
+            # With no index_base set, the index base is app/index, which
+            # holds the search index, the per-user credential vault and the
+            # secret that decrypts it. Refreshing the bundle replaces the
+            # code, so this state has to survive it; without this, every
+            # redeploy silently made users re-enter their keys.
+            if [ -d app/index ]; then
+              rm -rf .index-keep
+              mv app/index .index-keep
+            fi
             rm -rf app node-* gufi-src.tar.gz
             tar -xzf bundle.tar.gz
+            if [ -d .index-keep ]; then
+              mkdir -p app/index
+              # Preserved state wins; anything the new bundle ships that the
+              # old base did not have is kept.
+              cp -a .index-keep/. app/index/
+              rm -rf .index-keep
+            fi
             rm -f bundle.tar.gz
             echo "$BUNDLE" > .bundle
           fi
