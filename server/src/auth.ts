@@ -67,6 +67,17 @@ export async function authHook(app: FastifyInstance): Promise<void> {
   if (!authEnabled()) return
   app.addHook('onRequest', async (req, reply) => {
     if (req.url === '/healthz' || !req.url.startsWith('/api/')) return
+    // A mission worker presents its mission token, not a platform JWT.
+    // The token authorizes one mission's board and nothing else, and the
+    // MCP layer checks it again before exposing any board tool.
+    if (req.url.startsWith('/api/mcp')) {
+      const auth = String(req.headers.authorization ?? '')
+      const tok = auth.startsWith('Bearer ') ? auth.slice(7).trim() : ''
+      if (tok) {
+        const { missionByToken } = await import('./missions.js')
+        if (missionByToken(tok)) return
+      }
+    }
     try {
       const user = await verify(req)
       if (user) req.user = user
