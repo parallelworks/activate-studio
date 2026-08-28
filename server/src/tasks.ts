@@ -7,51 +7,58 @@ import { INDEX_BASE, KB_ROOT, PW_CLI } from './config.js'
 import { personas } from './extensions.js'
 
 /**
- * Missions: many headless agents on one objective, visible from one place.
+ * Delegated tasks: a request that decomposes into subtasks worked by
+ * headless agents, visible as one tree.
  *
- * A mission is an objective, a set of agents drawn from the persona
- * library, a board recording what happened, and a results directory in
- * the corpus. Agents are `pw code` one-shot runs: headless, bounded, and
+ * A task is what the user asked for. It may decompose into subtasks, each
+ * carried out by an agent, and an agent may decompose its own subtask
+ * further, which is the tree the operator watches. The vocabulary is
+ * A2A's rather than ours: task, subtask, and the states below. Agents are `pw code` one-shot runs: headless, bounded, and
  * daemon-independent, with the orchestrator here recording lifecycle to
  * the board and collecting results. An agent can request subtasks in its
  * result, which spawns children, so a fleet can grow itself; the ceiling
  * and depth limit are enforced here, server-side, because asking a model
  * to be restrained is not a control.
  *
- * Results are corpus files under missions/<id>/ and messages only point
+ * Results are corpus files under tasks/<id>/ and messages only point
  * at them, so outcomes index, search, and survive like any other
  * material, and the supervisor's context never holds the fleet's output.
  *
  * The board is append-only JSONL under the index directory, one file per
- * mission, with an in-memory tail for the viewer. Workers do not write
- * the board directly in this slice: that needs mission-scoped tokens on
+ * task, with an in-memory tail for the viewer. Workers do not write
+ * the board directly in this slice: that needs task-scoped tokens on
  * /api/mcp, which is the next step, and lifecycle recording from the
  * orchestrator covers coordination up to the tens of agents this slice
  * targets.
  */
 
 export interface BoardMsg { seq: number; at: string; from: string; topic: string; body: string }
-export interface Participant {
+/** A2A's task lifecycle, adopted verbatim so our states mean what the
+ *  rest of the field means by them. input-required is the one we could
+ *  not previously express: an agent blocked on a human decision. */
+export type TaskState = 'submitted' | 'working' | 'input-required' | 'completed' | 'failed' | 'canceled'
+
+export interface AgentTask {
   name: string; persona: string; objective: string; parent: string | null; depth: number
-  status: 'running' | 'done' | 'failed' | 'stopped'
+  state: TaskState
   startedAt: string; updatedAt: string; note: string; resultPath: string | null
 }
-export interface Task { id: string; objective: string; persona: string; claimedBy: string | null; done: boolean; resultPath: string | null }
-export interface Mission {
-  id: string; token: string; tasks: Task[]
+export interface SharedTask { id: string; objective: string; persona: string; claimedBy: string | null; done: boolean; resultPath: string | null }
+export interface Task {
+  id: string; token: string; shared: SharedTask[]
   objective: string; model: string; createdAt: string
-  status: 'running' | 'done' | 'stopped'
+  state: TaskState
   maxAgents: number; maxDepth: number
-  participants: Map<string, Participant>
+  nodes: Map<string, AgentTask>
   board: BoardMsg[]
   seq: number
   procs: Map<string, ReturnType<typeof execFile>>
 }
 
-const missions = new Map<string, Mission>()
-const MISSIONS_DIR = path.join(INDEX_BASE, 'missions')
+const tasks = new Map<string, Task>()
+const MISSIONS_DIR = path.join(INDEX_BASE, 'tasks')
 
-/** Hard ceilings the per-mission settings are clamped to. */
+/** Hard ceilings the per-task settings are clamped to. */
 const MAX_AGENTS_CAP = 24
 const MAX_DEPTH_CAP = 3
 const AGENT_TIMEOUT_MS = 15 * 60_000
@@ -60,10 +67,10 @@ const AGENT_TIMEOUT_MS = 15 * 60_000
 const SELF_URL = (process.env.STUDIO_SELF_URL || `http://127.0.0.1:${process.env.PORT || 4080}`).replace(/\/$/, '')
 
 function slug(s: string): string {
-  return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'mission'
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'task'
 }
 
-function post(m: Mission, from: string, topic: string, body: string): void {
+function post(m: Task, from: string, topic: string, body: string): void {
   const msg: BoardMsg = { seq: ++m.seq, at: new Date().toISOString(), from, topic, body: body.slice(0, 4000) }
   m.board.push(msg)
   if (m.board.length > 500) m.board.splice(0, m.board.length - 500)
@@ -73,14 +80,14 @@ function post(m: Mission, from: string, topic: string, body: string): void {
   } catch { /* the in-memory board still serves the viewer */ }
 }
 
-function agentCount(m: Mission): number { return m.participants.size }
+function agentCount(m: Task): number { return m.nodes.size }
 
-function maybeFinish(m: Mission): void {
-  if (m.status !== 'running') return
-  const alive = [...m.participants.values()].some(p => p.status === 'running')
+function maybeFinish(m: Task): void {
+  if (m.state !== 'working') return
+  const alive = [...m.nodes.values()].some(p => p.state === 'working')
   if (!alive) {
-    m.status = 'done'
-    post(m, 'orchestrator', 'mission', 'Every agent has finished.')
+    m.state = 'completed'
+    post(m, 'orchestrator', 'task', 'Every agent has finished.')
   }
 }
 
@@ -90,7 +97,7 @@ function maybeFinish(m: Mission): void {
  * JSON is kept whole as the result, so a model that ignores the contract
  * still produces a usable outcome instead of an error.
  */
-function agentPromptFor(m: Mission, personaName: string, objective: string): string {
+function agentPromptFor(m: Task, personaName: string, objective: string): string {
   const p = personas().find(x => x.name === personaName)
   const personaText = p ? (() => {
     try {
@@ -100,7 +107,7 @@ function agentPromptFor(m: Mission, personaName: string, objective: string): str
   })() : ''
   return [
     personaText && `Adopt this persona for the task:\n${personaText}`,
-    `You are one agent in a coordinated mission. Mission objective: ${m.objective}`,
+    `You are one agent in a coordinated task. Task objective: ${m.objective}`,
     `Your task: ${objective}`,
     'Work headlessly and do not ask questions. When finished, output ONLY a JSON object:',
     '{"result": "<your findings or work product, as markdown>", "subtasks": [{"persona": "<optional persona name>", "objective": "<subtask>"}]}',
@@ -108,33 +115,33 @@ function agentPromptFor(m: Mission, personaName: string, objective: string): str
   ].filter(Boolean).join('\n\n')
 }
 
-function spawnAgent(m: Mission, opts: { persona: string; objective: string; parent: string | null; depth: number }): string {
-  if (m.status !== 'running') throw new Error('mission is not running')
+function spawnAgent(m: Task, opts: { persona: string; objective: string; parent: string | null; depth: number }): string {
+  if (m.state !== 'working') throw new Error('task is not running')
   if (agentCount(m) >= m.maxAgents) throw new Error(`agent ceiling reached (${m.maxAgents})`)
   if (opts.depth > m.maxDepth) throw new Error(`depth limit reached (${m.maxDepth})`)
   const name = `${slug(opts.persona || 'agent')}-${agentCount(m) + 1}`
-  const p: Participant = {
+  const p: AgentTask = {
     name, persona: opts.persona, objective: opts.objective, parent: opts.parent, depth: opts.depth,
-    status: 'running', startedAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+    state: 'working', startedAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
     note: 'starting', resultPath: null,
   }
-  m.participants.set(name, p)
+  m.nodes.set(name, p)
   post(m, 'orchestrator', 'spawn', `${name} (persona ${opts.persona || 'none'}, depth ${opts.depth}${opts.parent ? `, child of ${opts.parent}` : ''}): ${opts.objective}`)
 
   const workdir = path.join(MISSIONS_DIR, m.id, 'work', name)
   fs.mkdirSync(workdir, { recursive: true })
   // The worker reaches the board through this Studio's own MCP endpoint,
-  // registered in its workspace with the mission token and its own agent
+  // registered in its workspace with the task token and its own agent
   // name. Written as the CLI's local-scope settings file rather than by
   // shelling out, so spawning stays one process.
   try {
     fs.mkdirSync(path.join(workdir, '.agents'), { recursive: true })
     fs.writeFileSync(path.join(workdir, '.agents', 'settings.local.json'), JSON.stringify({
       mcpServers: {
-        mission: {
+        task: {
           type: 'http',
           url: `${SELF_URL}/api/mcp`,
-          headers: { Authorization: `Bearer ${m.token}`, 'X-Mission-Agent': name },
+          headers: { Authorization: `Bearer ${m.token}`, 'X-Task-Agent': name },
         },
       },
     }, null, 2))
@@ -144,9 +151,9 @@ function spawnAgent(m: Mission, opts: { persona: string; objective: string; pare
   const child = execFile(PW_CLI, args, { timeout: AGENT_TIMEOUT_MS, maxBuffer: 16 * 1024 * 1024 }, (err, stdout) => {
     m.procs.delete(name)
     p.updatedAt = new Date().toISOString()
-    if (p.status === 'stopped') { maybeFinish(m); return }
+    if (p.state === 'canceled') { maybeFinish(m); return }
     if (err && !stdout) {
-      p.status = 'failed'
+      p.state = 'failed'
       p.note = String(err.message).slice(0, 200)
       post(m, name, 'failed', p.note)
       maybeFinish(m)
@@ -180,8 +187,8 @@ function spawnAgent(m: Mission, opts: { persona: string; objective: string; pare
       }
     } catch { /* plain text output */ }
 
-    // The result is corpus material under the mission.
-    const relDir = path.join('missions', m.id)
+    // The result is corpus material under the task.
+    const relDir = path.join('tasks', m.id)
     const rel = path.join(relDir, `${name}.md`)
     try {
       fs.mkdirSync(path.join(KB_ROOT, relDir), { recursive: true })
@@ -191,7 +198,7 @@ function spawnAgent(m: Mission, opts: { persona: string; objective: string; pare
     } catch { /* the board still carries the text */ }
     void import('./indexing.js').then(x => x.incrementalIndexDir(relDir)).catch(() => {})
 
-    p.status = 'done'
+    p.state = 'completed'
     p.note = 'finished'
     post(m, name, 'complete', p.resultPath ? `Result at ${p.resultPath}` : result.slice(0, 1500))
 
@@ -211,105 +218,105 @@ function spawnAgent(m: Mission, opts: { persona: string; objective: string; pare
   return name
 }
 
-export function createMission(opts: {
+export function createTask(opts: {
   objective: string; model: string
   agents: { persona?: string; objective: string }[]
   maxAgents?: number; maxDepth?: number
-}): Mission {
+}): Task {
   const id = `${new Date().toISOString().slice(0, 10)}-${slug(opts.objective)}-${Math.random().toString(36).slice(2, 6)}`
-  const m: Mission = {
+  const m: Task = {
     id, objective: opts.objective.slice(0, 2000), model: opts.model, createdAt: new Date().toISOString(),
-    status: 'running',
+    state: 'working',
     maxAgents: Math.min(Math.max(Number(opts.maxAgents) || 10, 1), MAX_AGENTS_CAP),
     maxDepth: Math.min(Math.max(Number(opts.maxDepth) || 2, 0), MAX_DEPTH_CAP),
-    participants: new Map(), board: [], seq: 0, procs: new Map(),
-    // A mission-scoped bearer, not a platform credential: it authorizes
-    // exactly the board of one mission, for as long as that mission
+    nodes: new Map(), board: [], seq: 0, procs: new Map(),
+    // A task-scoped bearer, not a platform credential: it authorizes
+    // exactly the board of one task, for as long as that task
     // exists, so a worker never holds anything wider than its own job.
     token: randomBytes(24).toString('hex'),
-    tasks: [],
+    shared: [],
   }
-  missions.set(id, m)
-  post(m, 'orchestrator', 'mission', `Objective: ${m.objective} (up to ${m.maxAgents} agents, depth ${m.maxDepth})`)
+  tasks.set(id, m)
+  post(m, 'orchestrator', 'task', `Objective: ${m.objective} (up to ${m.maxAgents} agents, depth ${m.maxDepth})`)
   for (const a of opts.agents.slice(0, m.maxAgents)) {
     spawnAgent(m, { persona: String(a.persona ?? ''), objective: String(a.objective ?? '').slice(0, 2000), parent: null, depth: 0 })
   }
   return m
 }
 
-export function stopMission(id: string): boolean {
-  const m = missions.get(id)
+export function stopTask(id: string): boolean {
+  const m = tasks.get(id)
   if (!m) return false
-  m.status = 'stopped'
+  m.state = 'canceled'
   for (const [name, proc] of m.procs) {
-    const p = m.participants.get(name)
-    if (p) { p.status = 'stopped'; p.note = 'stopped by user' }
+    const p = m.nodes.get(name)
+    if (p) { p.state = 'canceled'; p.note = 'stopped by user' }
     try { proc.kill('SIGTERM') } catch { /* already gone */ }
   }
   m.procs.clear()
-  post(m, 'orchestrator', 'mission', 'Stopped by user.')
+  post(m, 'orchestrator', 'task', 'Stopped by user.')
   return true
 }
 
-export function missionSummary(m: Mission) {
+export function taskSummary(m: Task) {
   return {
-    id: m.id, objective: m.objective, model: m.model, status: m.status,
+    id: m.id, objective: m.objective, model: m.model, state: m.state,
     createdAt: m.createdAt, maxAgents: m.maxAgents, maxDepth: m.maxDepth,
-    agents: [...m.participants.values()],
+    agents: [...m.nodes.values()],
   }
 }
 
-export function listMissions() {
-  return [...missions.values()].map(m => ({
-    id: m.id, objective: m.objective, status: m.status, createdAt: m.createdAt,
-    agents: m.participants.size,
-    running: [...m.participants.values()].filter(p => p.status === 'running').length,
+export function listTasks() {
+  return [...tasks.values()].map(m => ({
+    id: m.id, objective: m.objective, state: m.state, createdAt: m.createdAt,
+    agents: m.nodes.size,
+    running: [...m.nodes.values()].filter(p => p.state === 'working').length,
   }))
 }
 
-export function getMission(id: string): Mission | undefined { return missions.get(id) }
+export function getTask(id: string): Task | undefined { return tasks.get(id) }
 
-/** Resolve a mission bearer to its mission. */
-export function missionByToken(token: string): Mission | undefined {
+/** Resolve a task bearer to its task. */
+export function taskByToken(token: string): Task | undefined {
   if (!token) return undefined
-  for (const m of missions.values()) if (m.token === token) return m
+  for (const m of tasks.values()) if (m.token === token) return m
   return undefined
 }
 
 /** Board operations available to workers over MCP. */
 export const board = {
-  post(m: Mission, from: string, topic: string, body: string) {
+  post(m: Task, from: string, topic: string, body: string) {
     post(m, from, topic || 'note', body)
     return { ok: true }
   },
-  read(m: Mission, since: number, limit = 50) {
+  read(m: Task, since: number, limit = 50) {
     return m.board.filter(b => b.seq > since).slice(-limit)
   },
-  status(m: Mission, from: string, note: string) {
-    const p = m.participants.get(from)
+  status(m: Task, from: string, note: string) {
+    const p = m.nodes.get(from)
     if (p) { p.note = note.slice(0, 200); p.updatedAt = new Date().toISOString() }
     post(m, from, 'status', note)
     return { ok: true }
   },
-  addTask(m: Mission, objective: string, persona = '') {
-    const t: Task = { id: `t${m.tasks.length + 1}`, objective: objective.slice(0, 2000), persona, claimedBy: null, done: false, resultPath: null }
-    m.tasks.push(t)
+  addTask(m: Task, objective: string, persona = '') {
+    const t: SharedTask = { id: `s${m.shared.length + 1}`, objective: objective.slice(0, 2000), persona, claimedBy: null, done: false, resultPath: null }
+    m.shared.push(t)
     post(m, 'orchestrator', 'task', `${t.id} offered: ${t.objective}`)
     return t
   },
   /** Atomic by construction: this runs on the server's single thread, so
    *  the check and the write cannot interleave with another claim. That
    *  is what makes many workers on one queue safe. */
-  claim(m: Mission, from: string, taskId?: string) {
-    const t = taskId ? m.tasks.find(x => x.id === taskId) : m.tasks.find(x => !x.claimedBy && !x.done)
-    if (!t) return { claimed: null as Task | null, reason: 'no unclaimed task' }
-    if (t.claimedBy) return { claimed: null as Task | null, reason: `already claimed by ${t.claimedBy}` }
+  claim(m: Task, from: string, taskId?: string) {
+    const t = taskId ? m.shared.find(x => x.id === taskId) : m.shared.find(x => !x.claimedBy && !x.done)
+    if (!t) return { claimed: null as SharedTask | null, reason: 'no unclaimed task' }
+    if (t.claimedBy) return { claimed: null as SharedTask | null, reason: `already claimed by ${t.claimedBy}` }
     t.claimedBy = from
     post(m, from, 'claim', `${t.id}: ${t.objective}`)
     return { claimed: t, reason: '' }
   },
-  complete(m: Mission, from: string, taskId: string, resultPath: string) {
-    const t = m.tasks.find(x => x.id === taskId)
+  complete(m: Task, from: string, taskId: string, resultPath: string) {
+    const t = m.shared.find(x => x.id === taskId)
     if (!t) return { ok: false, reason: 'no such task' }
     t.done = true
     t.resultPath = resultPath || null
@@ -318,31 +325,31 @@ export const board = {
   },
 }
 
-export async function missionRoutes(app: FastifyInstance): Promise<void> {
-  app.get('/api/missions', async () => ({ missions: listMissions() }))
+export async function taskRoutes(app: FastifyInstance): Promise<void> {
+  app.get('/api/tasks', async () => ({ tasks: listTasks() }))
 
-  app.get('/api/missions/:id', async (req, reply) => {
-    const m = missions.get((req.params as { id: string }).id)
-    if (!m) return reply.status(404).send({ error: 'no such mission' })
+  app.get('/api/tasks/:id', async (req, reply) => {
+    const m = tasks.get((req.params as { id: string }).id)
+    if (!m) return reply.status(404).send({ error: 'no such task' })
     const since = Number((req.query as { since?: string }).since ?? 0)
-    return { ...missionSummary(m), board: m.board.filter(b => b.seq > since) }
+    return { ...taskSummary(m), board: m.board.filter(b => b.seq > since) }
   })
 
-  app.post('/api/missions', async (req, reply) => {
+  app.post('/api/tasks', async (req, reply) => {
     const b = (req.body ?? {}) as { objective?: string; model?: string; agents?: { persona?: string; objective: string }[]; maxAgents?: number; maxDepth?: number }
     if (!b.objective || !b.model || !Array.isArray(b.agents) || b.agents.length === 0) {
       return reply.status(400).send({ error: 'objective, model, and at least one agent are required' })
     }
     try {
-      const m = createMission({ objective: b.objective, model: b.model, agents: b.agents, maxAgents: b.maxAgents, maxDepth: b.maxDepth })
-      return missionSummary(m)
+      const m = createTask({ objective: b.objective, model: b.model, agents: b.agents, maxAgents: b.maxAgents, maxDepth: b.maxDepth })
+      return taskSummary(m)
     } catch (e) {
       return reply.status(400).send({ error: String((e as Error).message) })
     }
   })
 
-  app.post('/api/missions/:id/stop', async (req, reply) => {
-    const ok = stopMission((req.params as { id: string }).id)
-    return ok ? { ok } : reply.status(404).send({ error: 'no such mission' })
+  app.post('/api/tasks/:id/stop', async (req, reply) => {
+    const ok = stopTask((req.params as { id: string }).id)
+    return ok ? { ok } : reply.status(404).send({ error: 'no such task' })
   })
 }

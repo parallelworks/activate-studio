@@ -19,7 +19,7 @@ import { hydrateFromCookie, scrubPersonalVaultEntries } from './credentials.js'
 import { settingsRoutes } from './settings.js'
 import { chatRoutes } from './chat/routes.js'
 import { mcpRoutes } from './mcp.js'
-import { missionRoutes } from './missions.js'
+import { taskRoutes } from './tasks.js'
 import { ragProxyRoutes } from './ragProxy.js'
 import { maybeAutoStart, ragEndpointRoutes } from './ragEndpoint.js'
 import { gatewayConfigured } from './chat/gateway.js'
@@ -64,7 +64,7 @@ await app.register(conversationRoutes)
 await app.register(settingsRoutes)
 await app.register(chatRoutes)
 await app.register(mcpRoutes)
-await app.register(missionRoutes)
+await app.register(taskRoutes)
 
 // A brand-new deployment opens on a corpus with some shape rather than an
 // empty tree; only ever runs when the knowledge base has nothing in it.
