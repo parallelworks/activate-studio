@@ -11,12 +11,8 @@ import { PersonaIcon } from '../components/PersonaIcon'
 
 const MODEL_STORAGE_KEY = 'studio.chat.lastModel'
 
-/** Keeps the model selection valid and remembered. A conversation restores
- *  the model its last reply used, which may be a serve that no longer exists;
- *  the composer then lets a message go out and the send fails. Whenever the
- *  selection is missing or absent from the live model list, this swaps in the
- *  remembered model, or the first available one, and every valid selection is
- *  persisted for the next visit. */
+/** Re-lists the conversation rail when the scope toggle changes, without
+ *  remounting the provider and tearing down an open stream. */
 function FilterReloader() {
   const { loadConversations } = useChat()
   useEffect(() => {
@@ -27,19 +23,40 @@ function FilterReloader() {
   return null
 }
 
+/** Keeps the model selection valid and remembered across reloads. */
 function ModelSelectionGuard() {
   const { models, selectedProvider, setSelectedProvider, hasLoadedModels } = useChat()
-  useEffect(() => {
-    if (selectedProvider && models.some(m => m.id === selectedProvider)) {
-      try { localStorage.setItem(MODEL_STORAGE_KEY, selectedProvider) } catch { /* storage unavailable */ }
-    }
-  }, [selectedProvider, models])
+  // The chat provider picks its own selection as soon as the catalog
+  // arrives, and that selection is valid, so a guard that only acts on an
+  // invalid one never restored anything: on every refresh the provider's
+  // default stood, and the effect that remembers the choice then wrote that
+  // default over the model the user had actually picked. The remembered
+  // choice has to win once, before anything is written back.
+  const restored = useRef(false)
   useEffect(() => {
     if (!hasLoadedModels || models.length === 0) return
-    if (selectedProvider && models.some(m => m.id === selectedProvider)) return
+    const served = (id: string | null | undefined): id is string => !!id && models.some(m => m.id === id)
     let stored: string | null = null
     try { stored = localStorage.getItem(MODEL_STORAGE_KEY) } catch { /* storage unavailable */ }
-    setSelectedProvider(stored && models.some(m => m.id === stored) ? stored : models[0].id)
+
+    if (!restored.current) {
+      restored.current = true
+      const want = served(stored) ? stored
+        : served(selectedProvider) ? selectedProvider
+        : models[0].id
+      if (want !== selectedProvider) setSelectedProvider(want)
+      return
+    }
+
+    // From here the selection is the user's own, so remember it. A
+    // conversation can still restore a model that is no longer served, and
+    // the composer would let a message go out that cannot be sent, so an
+    // unserved selection falls back to the remembered one.
+    if (served(selectedProvider)) {
+      try { localStorage.setItem(MODEL_STORAGE_KEY, selectedProvider) } catch { /* storage unavailable */ }
+      return
+    }
+    setSelectedProvider(served(stored) ? stored : models[0].id)
   }, [hasLoadedModels, models, selectedProvider, setSelectedProvider])
   return null
 }
