@@ -25,6 +25,9 @@ interface Effective {
   ragAdvertiseAgentModel: boolean
   mcpEnabled: boolean
   mcpServers: { name: string; url: string; header?: string }[]
+  delegationEnabled: boolean
+  delegationMaxAgents: number
+  delegationMaxDepth: number
   ragProxyEnabled: boolean
   ragEndpointAutoStart: boolean
   ragEndpointName: string
@@ -685,6 +688,39 @@ export function SettingsView() {
                 <code className="mcp-snippet">pw code mcp add --transport http studio-kb {location.origin}/api/mcp</code>
               </CopyToClipboard>
               <p className="muted key-note">pw code signs its platform requests with your existing CLI login, so no token goes in the command.</p>
+              <div className="tool-group">Delegation (the assistant working in parallel)</div>
+              <p className="muted view-sub">
+                With this on, the assistant may split a request into subtasks and run them concurrently as headless
+                agents, rather than doing everything in one conversation. It decides when, which is how these systems
+                are built; you decide whether, and how far it may go. Progress appears on the Agents tab and results
+                land in the knowledge base under <code>tasks/</code>.
+              </p>
+              <p className="muted view-sub">
+                Worth knowing before enabling: parallel agents are the right tool for work that splits into
+                independent strands, and the wrong one for tightly interdependent work. Published systems of this
+                kind use roughly fifteen times the tokens of a single conversation, so the ceilings below are a cost
+                control as much as a safety one.
+              </p>
+              <div className="access-switch">
+                <SwitchToggle value={form.delegationEnabled} onChange={v => setForm({ ...form, delegationEnabled: v })} yesLabel="On" noLabel="Off" />
+                <span>Let the assistant delegate subtasks to concurrent agents</span>
+              </div>
+              <div className="settings-grid">
+                <div>
+                  <label className="field-label">Most agents per task</label>
+                  <input className="field" type="number" min={1} max={24} value={form.delegationMaxAgents}
+                    onChange={e => setForm({ ...form, delegationMaxAgents: Number(e.target.value) })} />
+                  <p className="muted key-note">Counting subtasks the agents themselves start.</p>
+                </div>
+                <div>
+                  <label className="field-label">How deep agents may delegate</label>
+                  <input className="field" type="number" min={0} max={3} value={form.delegationMaxDepth}
+                    onChange={e => setForm({ ...form, delegationMaxDepth: Number(e.target.value) })} />
+                  <p className="muted key-note">0 stops agents starting their own subtasks; 1 lets them go one level.</p>
+                </div>
+              </div>
+              {saveRow(false)}
+
               <div className="tool-group">Attached MCP servers (tools from elsewhere)</div>
               <p className="muted view-sub">
                 Servers this deployment connects to as a client, so their tools join the assistant's own and one

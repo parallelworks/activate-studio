@@ -51,6 +51,9 @@ export interface StudioSettings {
   ragProxyEnabled?: boolean
   historyIntervalSec?: number
   mcpServers?: { name: string; url: string; header?: string }[]
+  delegationEnabled?: boolean
+  delegationMaxAgents?: number
+  delegationMaxDepth?: number
 }
 
 let cache: StudioSettings | null = null
@@ -95,6 +98,12 @@ export function effectiveSettings(): Required<StudioSettings> {
     // 0 captures every pass, for a corpus worth watching that closely.
     historyIntervalSec: s.historyIntervalSec ?? Number(process.env.HISTORY_INTERVAL_SEC ?? 86400),
     mcpServers: s.mcpServers ?? [],
+    // Fan-out is the assistant's judgment, but its bounds are the
+    // operator's. Off by default: a deployment opts into spending many
+    // model runs on one request.
+    delegationEnabled: s.delegationEnabled ?? process.env.DELEGATION_ENABLED === '1',
+    delegationMaxAgents: s.delegationMaxAgents ?? Number(process.env.DELEGATION_MAX_AGENTS ?? 6),
+    delegationMaxDepth: s.delegationMaxDepth ?? Number(process.env.DELEGATION_MAX_DEPTH ?? 1),
     customTools: s.customTools ?? [],
     ragDefaultModel: s.ragDefaultModel ?? process.env.RAG_DEFAULT_MODEL ?? '',
     ragTopK: s.ragTopK ?? Math.min(Math.max(Number(process.env.RAG_TOP_K) || 6, 1), 20),
@@ -191,6 +200,17 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
     if (body.visionModel !== undefined) next.visionModel = String(body.visionModel).slice(0, 120) || undefined
     if (body.mcpEnabled !== undefined) next.mcpEnabled = !!body.mcpEnabled
     if (body.ragProxyEnabled !== undefined) next.ragProxyEnabled = !!body.ragProxyEnabled
+    if (body.delegationEnabled !== undefined) next.delegationEnabled = !!body.delegationEnabled
+    if (body.delegationMaxAgents !== undefined) {
+      const n = Number(body.delegationMaxAgents)
+      if (!Number.isFinite(n) || n < 1 || n > 24) throw new KbError(400, 'agents must be 1 to 24')
+      next.delegationMaxAgents = n
+    }
+    if (body.delegationMaxDepth !== undefined) {
+      const n = Number(body.delegationMaxDepth)
+      if (!Number.isFinite(n) || n < 0 || n > 3) throw new KbError(400, 'depth must be 0 to 3')
+      next.delegationMaxDepth = n
+    }
     if (body.mcpServers !== undefined) {
       if (!Array.isArray(body.mcpServers)) throw new KbError(400, 'mcpServers must be an array')
       next.mcpServers = body.mcpServers.slice(0, 10).map(m => {

@@ -26,28 +26,28 @@ fi
 `, { mode: 0o755 })
 process.env.PW_CLI = path.join(bin, 'pw')
 
-const { createMission, getMission } = await import('../dist/missions.js')
+const { createTask, getTask } = await import('../dist/tasks.js')
 
 const settle = async (m, tries = 60) => {
   for (let i = 0; i < tries; i++) {
-    if (m.status !== 'running') return
+    if (m.state !== 'working') return
     await new Promise(r => setTimeout(r, 100))
   }
 }
 
 test('agents spawn, sub-spawn within limits, and results land in the corpus', async () => {
-  const m = createMission({
+  const m = createTask({
     objective: 'test coordination', model: 'stub:model',
     agents: [{ persona: '', objective: 'root-task investigate' }],
     maxAgents: 10, maxDepth: 1,
   })
   await settle(m)
-  assert.equal(m.status, 'done')
-  const agents = [...m.participants.values()]
+  assert.equal(m.state, 'completed')
+  const agents = [...m.nodes.values()]
   // 1 root + 2 leaves; the grandchildren the leaves requested exceed
   // depth 1 and must have been refused, not spawned.
   assert.equal(agents.length, 3, `expected 3 agents, saw ${agents.map(a => a.name).join(', ')}`)
-  assert.ok(agents.every(a => a.status === 'done'))
+  assert.ok(agents.every(a => a.state === 'completed'))
   const leaves = agents.filter(a => a.depth === 1)
   assert.equal(leaves.length, 2)
   assert.ok(leaves.every(a => a.parent === agents[0].name), 'lineage is recorded')
@@ -63,12 +63,12 @@ test('agents spawn, sub-spawn within limits, and results land in the corpus', as
 })
 
 test('the agent ceiling refuses subtasks past it', async () => {
-  const m = createMission({
+  const m = createTask({
     objective: 'ceiling test', model: 'stub:model',
     agents: [{ objective: 'root-task expand' }],
     maxAgents: 2, maxDepth: 3,
   })
   await settle(m)
-  assert.ok(m.participants.size <= 2, `ceiling held: ${m.participants.size} agents`)
+  assert.ok(m.nodes.size <= 2, `ceiling held: ${m.nodes.size} agents`)
   assert.ok(m.board.some(b => b.topic === 'refused' && /ceiling/.test(b.body)), 'the refusal names the ceiling')
 })
