@@ -18,6 +18,9 @@ import { PersonaIcon } from '../components/PersonaIcon'
 
 interface Persona { name: string; description: string; shared: boolean; icon: string }
 interface Skill { name: string; description: string; file: string }
+interface MissionAgent { name: string; persona: string; objective: string; parent: string | null; depth: number; status: string; note: string; resultPath: string | null; updatedAt: string }
+interface MissionRow { id: string; objective: string; status: string; agents: number; running: number }
+interface MissionDetail extends MissionRow { maxAgents: number; maxDepth: number; agents2?: never; board: { seq: number; at: string; from: string; topic: string; body: string }[] }
 
 export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
   const [personas, setPersonas] = useState<Persona[]>([])
@@ -35,6 +38,11 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
   // A library of sixty is a wall of rows; filtering is the difference
   // between a list you scan and one you search.
   const [filter, setFilter] = useState('')
+  // Missions: the fleet view. Polled while one is running, since the
+  // point is watching agents work.
+  const [missions, setMissions] = useState<MissionRow[]>([])
+  const [openMission, setOpenMission] = useState<string | null>(null)
+  const [detail, setDetail] = useState<(Omit<MissionDetail, 'agents'> & { agents: MissionAgent[] }) | null>(null)
   // Paged rather than one long scroll: a library of sixty is browsed in
   // chunks, and the count line says where you are in it. Filtering resets
   // to the first page, since page four of the old result set means
@@ -43,6 +51,25 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
   const [sPage, setSPage] = useState(0)
   useEffect(() => { setPPage(0); setSPage(0) }, [filter])
   const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    let stop = false
+    const tick = async () => {
+      try {
+        const d = await fetch('/api/missions').then(r => r.json())
+        if (!stop) setMissions(d.missions ?? [])
+        if (openMission && !stop) {
+          const md = await fetch(`/api/missions/${encodeURIComponent(openMission)}`).then(r => r.json())
+          if (!stop && !md.error) setDetail(md)
+        }
+      } catch { /* next tick */ }
+      const anyRunning = missions.some(x => x.status === 'running') || detail?.status === 'running'
+      if (!stop) t = window.setTimeout(tick, anyRunning ? 3000 : 15000)
+    }
+    let t = window.setTimeout(tick, 0)
+    return () => { stop = true; clearTimeout(t) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openMission])
 
   const load = useCallback(() => fetch('/api/extensions').then(r => r.json())
     .then(d => { setPersonas(d.personas ?? []); setSkills(d.skills ?? []); setDir(d.corpusAgentDir ?? '') })
@@ -129,6 +156,55 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
           Markdown files that change how the assistant behaves. Write one here or drop in a file you already have.
         </p>
       </div>
+
+      {missions.length > 0 && (
+        <section className="card ov-list">
+          <h3>Missions ({missions.length})</h3>
+          <p className="muted view-sub">
+            Coordinated agent runs started from chat. Each agent is a headless run; results are files under
+            <code> missions/</code> in the knowledge base, and the board records what happened.
+          </p>
+          {missions.map(mi => (
+            <div className="ov-row" key={mi.id} onClick={() => setOpenMission(openMission === mi.id ? null : mi.id)}>
+              <span className="ov-row-path">
+                <span className={`status-dot ${mi.status === 'running' ? 'ok' : mi.status === 'done' ? 'off' : 'warn'}`} /> {mi.id}
+              </span>
+              <span className="ov-row-meta">{mi.running} running of {mi.agents} · {mi.status}</span>
+            </div>
+          ))}
+          {openMission && detail && (
+            <div className="mission-detail">
+              <p className="muted">{detail.objective}</p>
+              <table className="mission-table">
+                <thead><tr><th>agent</th><th>status</th><th>lineage</th><th>result</th></tr></thead>
+                <tbody>
+                  {detail.agents.map(a => (
+                    <tr key={a.name}>
+                      <td>{'\u00a0'.repeat(a.depth * 2)}{a.name}</td>
+                      <td><span className={`status-dot ${a.status === 'running' ? 'ok' : a.status === 'done' ? 'off' : 'warn'}`} /> {a.status === 'running' ? a.note : a.status}</td>
+                      <td className="muted">{a.parent ?? 'root'}</td>
+                      <td>{a.resultPath
+                        ? <button className="link-button" onClick={() => onOpen(a.resultPath!)}>{a.resultPath.split('/').pop()}</button>
+                        : <span className="muted">—</span>}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div className="mission-board">
+                {detail.board.slice(-20).map(b => (
+                  <div key={b.seq} className="mission-msg">
+                    <span className="mission-msg-meta">{b.at.slice(11, 19)} {b.from} · {b.topic}</span>
+                    <span>{b.body.slice(0, 240)}</span>
+                  </div>
+                ))}
+              </div>
+              {detail.status === 'running' && (
+                <button className="btn-secondary" onClick={async () => { await fetch(`/api/missions/${encodeURIComponent(detail.id)}/stop`, { method: 'POST' }) }}>Stop mission</button>
+              )}
+            </div>
+          )}
+        </section>
+      )}
 
       {(personas.length + skills.length) > 8 && (
         <div className="card agents-filter">
