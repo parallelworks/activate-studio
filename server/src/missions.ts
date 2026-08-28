@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process'
 import fs from 'node:fs'
+import { randomBytes } from 'node:crypto'
 import path from 'node:path'
 import type { FastifyInstance } from 'fastify'
 import { INDEX_BASE, KB_ROOT, PW_CLI } from './config.js'
@@ -35,8 +36,10 @@ export interface Participant {
   status: 'running' | 'done' | 'failed' | 'stopped'
   startedAt: string; updatedAt: string; note: string; resultPath: string | null
 }
+export interface Task { id: string; objective: string; persona: string; claimedBy: string | null; done: boolean; resultPath: string | null }
 export interface Mission {
-  id: string; objective: string; model: string; createdAt: string
+  id: string; token: string; tasks: Task[]
+  objective: string; model: string; createdAt: string
   status: 'running' | 'done' | 'stopped'
   maxAgents: number; maxDepth: number
   participants: Map<string, Participant>
@@ -52,6 +55,9 @@ const MISSIONS_DIR = path.join(INDEX_BASE, 'missions')
 const MAX_AGENTS_CAP = 24
 const MAX_DEPTH_CAP = 3
 const AGENT_TIMEOUT_MS = 15 * 60_000
+/** Where a worker reaches this Studio. Loopback by default, since workers
+ *  run beside the server in this slice. */
+const SELF_URL = (process.env.STUDIO_SELF_URL || `http://127.0.0.1:${process.env.PORT || 4080}`).replace(/\/$/, '')
 
 function slug(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'mission'
@@ -117,6 +123,22 @@ function spawnAgent(m: Mission, opts: { persona: string; objective: string; pare
 
   const workdir = path.join(MISSIONS_DIR, m.id, 'work', name)
   fs.mkdirSync(workdir, { recursive: true })
+  // The worker reaches the board through this Studio's own MCP endpoint,
+  // registered in its workspace with the mission token and its own agent
+  // name. Written as the CLI's local-scope settings file rather than by
+  // shelling out, so spawning stays one process.
+  try {
+    fs.mkdirSync(path.join(workdir, '.agents'), { recursive: true })
+    fs.writeFileSync(path.join(workdir, '.agents', 'settings.local.json'), JSON.stringify({
+      mcpServers: {
+        mission: {
+          type: 'http',
+          url: `${SELF_URL}/api/mcp`,
+          headers: { Authorization: `Bearer ${m.token}`, 'X-Mission-Agent': name },
+        },
+      },
+    }, null, 2))
+  } catch { /* the agent still works, without the board */ }
   const args = ['code', '-p', agentPromptFor(m, opts.persona, opts.objective), '-o', 'json',
     '--permission-mode', 'read-only', '-w', workdir, '-m', m.model]
   const child = execFile(PW_CLI, args, { timeout: AGENT_TIMEOUT_MS, maxBuffer: 16 * 1024 * 1024 }, (err, stdout) => {
@@ -201,6 +223,11 @@ export function createMission(opts: {
     maxAgents: Math.min(Math.max(Number(opts.maxAgents) || 10, 1), MAX_AGENTS_CAP),
     maxDepth: Math.min(Math.max(Number(opts.maxDepth) || 2, 0), MAX_DEPTH_CAP),
     participants: new Map(), board: [], seq: 0, procs: new Map(),
+    // A mission-scoped bearer, not a platform credential: it authorizes
+    // exactly the board of one mission, for as long as that mission
+    // exists, so a worker never holds anything wider than its own job.
+    token: randomBytes(24).toString('hex'),
+    tasks: [],
   }
   missions.set(id, m)
   post(m, 'orchestrator', 'mission', `Objective: ${m.objective} (up to ${m.maxAgents} agents, depth ${m.maxDepth})`)
@@ -241,6 +268,55 @@ export function listMissions() {
 }
 
 export function getMission(id: string): Mission | undefined { return missions.get(id) }
+
+/** Resolve a mission bearer to its mission. */
+export function missionByToken(token: string): Mission | undefined {
+  if (!token) return undefined
+  for (const m of missions.values()) if (m.token === token) return m
+  return undefined
+}
+
+/** Board operations available to workers over MCP. */
+export const board = {
+  post(m: Mission, from: string, topic: string, body: string) {
+    post(m, from, topic || 'note', body)
+    return { ok: true }
+  },
+  read(m: Mission, since: number, limit = 50) {
+    return m.board.filter(b => b.seq > since).slice(-limit)
+  },
+  status(m: Mission, from: string, note: string) {
+    const p = m.participants.get(from)
+    if (p) { p.note = note.slice(0, 200); p.updatedAt = new Date().toISOString() }
+    post(m, from, 'status', note)
+    return { ok: true }
+  },
+  addTask(m: Mission, objective: string, persona = '') {
+    const t: Task = { id: `t${m.tasks.length + 1}`, objective: objective.slice(0, 2000), persona, claimedBy: null, done: false, resultPath: null }
+    m.tasks.push(t)
+    post(m, 'orchestrator', 'task', `${t.id} offered: ${t.objective}`)
+    return t
+  },
+  /** Atomic by construction: this runs on the server's single thread, so
+   *  the check and the write cannot interleave with another claim. That
+   *  is what makes many workers on one queue safe. */
+  claim(m: Mission, from: string, taskId?: string) {
+    const t = taskId ? m.tasks.find(x => x.id === taskId) : m.tasks.find(x => !x.claimedBy && !x.done)
+    if (!t) return { claimed: null as Task | null, reason: 'no unclaimed task' }
+    if (t.claimedBy) return { claimed: null as Task | null, reason: `already claimed by ${t.claimedBy}` }
+    t.claimedBy = from
+    post(m, from, 'claim', `${t.id}: ${t.objective}`)
+    return { claimed: t, reason: '' }
+  },
+  complete(m: Mission, from: string, taskId: string, resultPath: string) {
+    const t = m.tasks.find(x => x.id === taskId)
+    if (!t) return { ok: false, reason: 'no such task' }
+    t.done = true
+    t.resultPath = resultPath || null
+    post(m, from, 'complete', `${t.id} done${resultPath ? ` -> ${resultPath}` : ''}`)
+    return { ok: true }
+  },
+}
 
 export async function missionRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/missions', async () => ({ missions: listMissions() }))
