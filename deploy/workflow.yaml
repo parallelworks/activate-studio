@@ -923,6 +923,14 @@ jobs:
           if [ -n "$PLATFORM_HOST" ]; then
             echo "export PW_PLATFORM_HOST='${PLATFORM_HOST}'" >> ${SCRIPT}
           fi
+          # A bundle deployment runs on the host and inherits its pw on
+          # PATH; a container has neither, so bind the host's binary in the
+          # way the compute path already does. Without it every platform
+          # tool in the assistant fails on a container deployment.
+          PW_BIN_HOST="$(command -v pw || true)"
+          if [ -n "$PW_BIN_HOST" ]; then
+            echo "export PW_BIN_HOST='${PW_BIN_HOST}'" >> ${SCRIPT}
+          fi
           if [ "$POSTURE" != "single" ] && [ -n "$PLATFORM_HOST" ]; then
             echo "export AUTH_JWKS_URL='https://${PLATFORM_HOST}/api/platform/keys'" >> ${SCRIPT}
             echo "export AUTH_ISSUER='pw-session-proxy'" >> ${SCRIPT}
@@ -979,7 +987,9 @@ jobs:
             ${AUTH_ISSUER:+--env AUTH_ISSUER="${AUTH_ISSUER}"} \
             ${DISABLE_PERSONAL_KEYS:+--env DISABLE_PERSONAL_KEYS="${DISABLE_PERSONAL_KEYS}"} \
             ${REQUIRE_PERSONAL_KEY:+--env REQUIRE_PERSONAL_KEY="${REQUIRE_PERSONAL_KEY}"} \
+            --env PW_CLI="/usr/local/bin/pw" \
             --bind "${KB_ROOT}:${KB_ROOT}" --bind "${INDEX_BASE}:${INDEX_BASE}" \
+            ${PW_BIN_HOST:+--bind "${PW_BIN_HOST}:/usr/local/bin/pw"} \
             "$IMG" > app.log 2>&1 < /dev/null &
           CONTAINER_LAUNCH
           else
