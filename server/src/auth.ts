@@ -74,8 +74,8 @@ export async function authHook(app: FastifyInstance): Promise<void> {
       const auth = String(req.headers.authorization ?? '')
       const tok = auth.startsWith('Bearer ') ? auth.slice(7).trim() : ''
       if (tok) {
-        const { missionByToken } = await import('./missions.js')
-        if (missionByToken(tok)) return
+        const { taskByToken } = await import('./tasks.js')
+        if (taskByToken(tok)) return
       }
     }
     try {

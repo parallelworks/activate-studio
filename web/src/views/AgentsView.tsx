@@ -18,9 +18,9 @@ import { PersonaIcon } from '../components/PersonaIcon'
 
 interface Persona { name: string; description: string; shared: boolean; icon: string }
 interface Skill { name: string; description: string; file: string }
-interface MissionAgent { name: string; persona: string; objective: string; parent: string | null; depth: number; status: string; note: string; resultPath: string | null; updatedAt: string }
-interface MissionRow { id: string; objective: string; status: string; agents: number; running: number }
-interface MissionDetail extends MissionRow { maxAgents: number; maxDepth: number; agents2?: never; board: { seq: number; at: string; from: string; topic: string; body: string }[] }
+interface SubTask { name: string; persona: string; objective: string; parent: string | null; depth: number; state: string; note: string; resultPath: string | null; updatedAt: string }
+interface TaskRow { id: string; objective: string; state: string; agents: number; running: number }
+interface TaskDetail extends TaskRow { maxAgents: number; maxDepth: number; board: { seq: number; at: string; from: string; topic: string; body: string }[] }
 
 export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
   const [personas, setPersonas] = useState<Persona[]>([])
@@ -38,11 +38,11 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
   // A library of sixty is a wall of rows; filtering is the difference
   // between a list you scan and one you search.
   const [filter, setFilter] = useState('')
-  // Missions: the fleet view. Polled while one is running, since the
-  // point is watching agents work.
-  const [missions, setMissions] = useState<MissionRow[]>([])
-  const [openMission, setOpenMission] = useState<string | null>(null)
-  const [detail, setDetail] = useState<(Omit<MissionDetail, 'agents'> & { agents: MissionAgent[] }) | null>(null)
+  // Delegated tasks: the tree of subtasks and the agents working them,
+  // polled while anything is running, since the point is watching.
+  const [taskRuns, setTaskRuns] = useState<TaskRow[]>([])
+  const [openTask, setOpenTask] = useState<string | null>(null)
+  const [detail, setDetail] = useState<(Omit<TaskDetail, 'agents'> & { agents: SubTask[] }) | null>(null)
   // Paged rather than one long scroll: a library of sixty is browsed in
   // chunks, and the count line says where you are in it. Filtering resets
   // to the first page, since page four of the old result set means
@@ -56,20 +56,20 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
     let stop = false
     const tick = async () => {
       try {
-        const d = await fetch('/api/missions').then(r => r.json())
-        if (!stop) setMissions(d.missions ?? [])
-        if (openMission && !stop) {
-          const md = await fetch(`/api/missions/${encodeURIComponent(openMission)}`).then(r => r.json())
+        const d = await fetch('/api/tasks').then(r => r.json())
+        if (!stop) setTaskRuns(d.tasks ?? [])
+        if (openTask && !stop) {
+          const md = await fetch(`/api/tasks/${encodeURIComponent(openTask)}`).then(r => r.json())
           if (!stop && !md.error) setDetail(md)
         }
       } catch { /* next tick */ }
-      const anyRunning = missions.some(x => x.status === 'running') || detail?.status === 'running'
+      const anyRunning = taskRuns.some(x => x.state === 'working') || detail?.state === 'working'
       if (!stop) t = window.setTimeout(tick, anyRunning ? 3000 : 15000)
     }
     let t = window.setTimeout(tick, 0)
     return () => { stop = true; clearTimeout(t) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [openMission])
+  }, [openTask])
 
   const load = useCallback(() => fetch('/api/extensions').then(r => r.json())
     .then(d => { setPersonas(d.personas ?? []); setSkills(d.skills ?? []); setDir(d.corpusAgentDir ?? '') })
@@ -157,31 +157,32 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
         </p>
       </div>
 
-      {missions.length > 0 && (
+      {taskRuns.length > 0 && (
         <section className="card ov-list">
-          <h3>Missions ({missions.length})</h3>
+          <h3>Delegated tasks ({taskRuns.length})</h3>
           <p className="muted view-sub">
-            Coordinated agent runs started from chat. Each agent is a headless run; results are files under
-            <code> missions/</code> in the knowledge base, and the board records what happened.
+            Work the assistant split into subtasks and handed to agents. Each subtask is a headless run; results are
+            files under <code>tasks/</code> in the knowledge base, and the board records what happened. Enable and
+            bound this under Settings, Delegation.
           </p>
-          {missions.map(mi => (
-            <div className="ov-row" key={mi.id} onClick={() => setOpenMission(openMission === mi.id ? null : mi.id)}>
+          {taskRuns.map(mi => (
+            <div className="ov-row" key={mi.id} onClick={() => setOpenTask(openTask === mi.id ? null : mi.id)}>
               <span className="ov-row-path">
-                <span className={`status-dot ${mi.status === 'running' ? 'ok' : mi.status === 'done' ? 'off' : 'warn'}`} /> {mi.id}
+                <span className={`status-dot ${mi.state === 'working' ? 'ok' : mi.state === 'completed' ? 'off' : 'warn'}`} /> {mi.id}
               </span>
-              <span className="ov-row-meta">{mi.running} running of {mi.agents} · {mi.status}</span>
+              <span className="ov-row-meta">{mi.running} working of {mi.agents} · {mi.state}</span>
             </div>
           ))}
-          {openMission && detail && (
-            <div className="mission-detail">
+          {openTask && detail && (
+            <div className="task-detail">
               <p className="muted">{detail.objective}</p>
-              <table className="mission-table">
-                <thead><tr><th>agent</th><th>status</th><th>lineage</th><th>result</th></tr></thead>
+              <table className="task-table">
+                <thead><tr><th>subtask</th><th>state</th><th>parent</th><th>result</th></tr></thead>
                 <tbody>
                   {detail.agents.map(a => (
                     <tr key={a.name}>
                       <td>{'\u00a0'.repeat(a.depth * 2)}{a.name}</td>
-                      <td><span className={`status-dot ${a.status === 'running' ? 'ok' : a.status === 'done' ? 'off' : 'warn'}`} /> {a.status === 'running' ? a.note : a.status}</td>
+                      <td><span className={`status-dot ${a.state === 'working' ? 'ok' : a.state === 'completed' ? 'off' : a.state === 'input-required' ? 'warn' : 'warn'}`} /> {a.state === 'working' ? a.note : a.state}</td>
                       <td className="muted">{a.parent ?? 'root'}</td>
                       <td>{a.resultPath
                         ? <button className="link-button" onClick={() => onOpen(a.resultPath!)}>{a.resultPath.split('/').pop()}</button>
@@ -190,16 +191,16 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
                   ))}
                 </tbody>
               </table>
-              <div className="mission-board">
+              <div className="task-board">
                 {detail.board.slice(-20).map(b => (
-                  <div key={b.seq} className="mission-msg">
-                    <span className="mission-msg-meta">{b.at.slice(11, 19)} {b.from} · {b.topic}</span>
+                  <div key={b.seq} className="task-msg">
+                    <span className="task-msg-meta">{b.at.slice(11, 19)} {b.from} · {b.topic}</span>
                     <span>{b.body.slice(0, 240)}</span>
                   </div>
                 ))}
               </div>
-              {detail.status === 'running' && (
-                <button className="btn-secondary" onClick={async () => { await fetch(`/api/missions/${encodeURIComponent(detail.id)}/stop`, { method: 'POST' }) }}>Stop mission</button>
+              {detail.state === 'working' && (
+                <button className="btn-secondary" onClick={async () => { await fetch(`/api/tasks/${encodeURIComponent(detail.id)}/stop`, { method: 'POST' }) }}>Cancel task</button>
               )}
             </div>
           )}

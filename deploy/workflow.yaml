@@ -916,6 +916,13 @@ jobs:
           fi
           POSTURE='${{ inputs.model_settings.posture }}'
           PLATFORM_HOST='${{ inputs.model_settings.platform_host }}'
+          # The pw CLI resolves a server from its stored context, and a
+          # container has none. Without this, a key entered in Settings
+          # authenticates against nothing and every platform tool fails,
+          # so pass the host the deployment already knows.
+          if [ -n "$PLATFORM_HOST" ]; then
+            echo "export PW_PLATFORM_HOST='${PLATFORM_HOST}'" >> ${SCRIPT}
+          fi
           if [ "$POSTURE" != "single" ] && [ -n "$PLATFORM_HOST" ]; then
             echo "export AUTH_JWKS_URL='https://${PLATFORM_HOST}/api/platform/keys'" >> ${SCRIPT}
             echo "export AUTH_ISSUER='pw-session-proxy'" >> ${SCRIPT}
@@ -966,6 +973,7 @@ jobs:
             ${APP_ICON:+--env APP_ICON="${APP_ICON}"} \
             ${SUGGESTED_PROMPTS:+--env SUGGESTED_PROMPTS="${SUGGESTED_PROMPTS}"} \
             ${PW_API_KEY:+--env PW_API_KEY="${PW_API_KEY}"} \
+            ${PW_PLATFORM_HOST:+--env PW_PLATFORM_HOST="${PW_PLATFORM_HOST}"} \
             ${PW_GATEWAY_URL:+--env PW_GATEWAY_URL="${PW_GATEWAY_URL}"} \
             ${AUTH_JWKS_URL:+--env AUTH_JWKS_URL="${AUTH_JWKS_URL}"} \
             ${AUTH_ISSUER:+--env AUTH_ISSUER="${AUTH_ISSUER}"} \
@@ -1314,6 +1322,7 @@ jobs:
             printf 'REGISTER_OPENAI=%q\n' '${{ inputs.model_settings.register_openai }}'
             printf 'GATEWAY_URL=%q\n'    '${{ inputs.model_settings.gateway_url }}'
             printf 'GATEWAY_KEY=%q\n'    '${{ inputs.model_settings.pw_api_key }}'
+            printf 'PLATFORM_HOST=%q\n' '${{ inputs.model_settings.platform_host }}'
             printf 'APP_NAME=%q\n'       "$APP_NAME"
             printf 'KB_LABEL=%q\n'       "$KB_LABEL"
             printf 'STARTER_DIRS=%q\n'   '${{ inputs.kb_settings.starter_dirs }}'
@@ -1441,6 +1450,7 @@ jobs:
             --env APP_ICON="$ICON" --env APP_ICON_DARK="$ICON_DARK" \
             ${GATEWAY_URL:+--env PW_GATEWAY_URL="$GATEWAY_URL"} \
             ${GATEWAY_KEY:+--env PW_API_KEY="$GATEWAY_KEY"} \
+            ${PLATFORM_HOST:+--env PW_PLATFORM_HOST="$PLATFORM_HOST"} \
             ${BANNER_TEXT:+--env BANNER_TEXT="$BANNER_TEXT"} \
             ${BANNER_COLOR:+--env BANNER_COLOR="$BANNER_COLOR"} \
             ${JWKS:+--env AUTH_JWKS_URL="$JWKS"} \

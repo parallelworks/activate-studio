@@ -36,6 +36,9 @@ export const TOOL_CALLS: Record<string, string> = {
   get_workflow: 'pw workflows get <name> -o json',
   serve_model: 'pw workflows get/run on the deployment-configured serving workflow for the engine (settings key serveWorkflows)',
   run_workflow: 'pw workflows run <name> (dry-run validation unless a real run was requested)',
+  workflow_configs: 'pw workflows get <name> -o json, reading its saved input configurations',
+  hpc_environments: 'pw environments ls (scheduler partitions, limits and required fields per system)',
+  watch_run: 'pw workflows runs view <id>, polled until the run changes or exposes a session',
   workflow_runs: 'pw workflows runs ls',
   workflow_run_detail: 'pw workflows runs get <id>',
   compose_workflow: 'reads each source workflow with pw workflows get, then emits a workflow that runs them as `uses:` subworkflow steps',
@@ -46,8 +49,8 @@ export const TOOL_CALLS: Record<string, string> = {
   show_in_viewer: 'no external call; returns viewer deep-link or inline-embed markdown',
   studio_docs: 'reads docs/HELP.md, docs/ARCHITECTURE.md, or docs/CUSTOMIZATION.md from the app installation',
   use_skill: 'loads extensions/skills/<name>.md into the conversation',
-  start_mission: 'spawns concurrent pw code one-shot agents with a server-enforced ceiling and depth limit; results are written under missions/ in the corpus',
-  mission_status: 'reads the in-memory mission board and participant table',
+  delegate: 'spawns concurrent pw code one-shot agents with a server-enforced ceiling and depth limit; results are written under tasks/ in the corpus',
+  task_status: 'reads the in-memory task board and its subtask tree',
 }
 
 export const TOOL_SPECS: ToolSpec[] = [
@@ -186,17 +189,66 @@ export const TOOL_SPECS: ToolSpec[] = [
   {
     type: 'function',
     function: {
-      name: 'run_workflow',
+      name: 'workflow_configs',
       description:
-        'Run a platform workflow, or validate it with dry_run. When composing or exploring on your own initiative, validate with dry_run:true. When the user has asked in this conversation to run a workflow, their request is the authorization: launch the real run without asking again for confirmation.',
+        'List a workflow\'s saved input configurations: the named, ready-made settings for running it on a particular HPC system. Most site-specific detail a user should not have to know (queue or partition, QoS, walltime, GPU directives, account) is already correct in these. Call this before run_workflow whenever a request names a system ("on makau", "on carpenter"), and prefer the configuration whose name matches that system over composing scheduler settings yourself. Configurations marked builtin ship with the workflow; the others were saved by this account and usually carry a resource and a chosen model as well.',
       parameters: {
         type: 'object',
         properties: {
           name: { type: 'string', description: 'Workflow name from list_workflows' },
-          inputs: { type: 'string', description: 'JSON object of input values, if the workflow needs them' },
+          config: { type: 'string', description: 'Optional: one configuration name, to see its full resolved inputs instead of the summary list' },
+        },
+        required: ['name'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'hpc_environments',
+      description:
+        'List the schedulable partitions (queues) on a connected HPC system, with their state, free node count, walltime ceiling, the defaults the site applies, and which submission fields the site requires. Use this to choose a partition and a legal walltime, to check a system has capacity before submitting, and when a request names a system that workflow_configs has no configuration for, so scheduler settings have to be built from the site\'s own values rather than guessed.',
+      parameters: {
+        type: 'object',
+        properties: {
+          cluster: { type: 'string', description: 'Cluster name from list_clusters; omit to list every system that has partitions' },
+        },
+        required: [],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'run_workflow',
+      description:
+        'Run a platform workflow, or validate it with dry_run. Pass config to start from a saved configuration from workflow_configs, which is the reliable way to get site-correct scheduler settings; inputs are merged on top of it and win. When composing or exploring on your own initiative, validate with dry_run:true. When the user has asked in this conversation to run a workflow, their request is the authorization: launch the real run without asking again for confirmation. After a real run, report the run id and call watch_run.',
+      parameters: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', description: 'Workflow name from list_workflows' },
+          config: { type: 'string', description: 'Saved configuration name from workflow_configs to load settings from' },
+          resource: { type: 'string', description: 'Target system name, e.g. makau. Sets the workflow\'s compute-clusters input; only needed when the configuration does not already carry one, or to retarget it' },
+          inputs: { type: 'string', description: 'JSON object of input values, merged over the configuration' },
           dry_run: { type: 'boolean', description: 'true validates without executing (default true)' },
         },
         required: ['name'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'watch_run',
+      description:
+        'Check a workflow run and wait briefly for it to make progress. Returns the run state, the state of each job, and the session URL once the run exposes one. Use it after launching anything the user is waiting on, such as a served model or an interactive session, and call it again to keep following a run that is still working. It returns as soon as something changes, so repeated calls are how progress gets reported.',
+      parameters: {
+        type: 'object',
+        properties: {
+          run: { type: 'string', description: 'Run identifier from run_workflow or workflow_runs; omit to follow the most recent run' },
+          wait: { type: 'number', description: 'Seconds to wait for a change before returning, 0-120, default 45' },
+        },
+        required: [],
       },
     },
   },
@@ -364,41 +416,38 @@ export const TOOL_SPECS: ToolSpec[] = [
   {
     type: 'function',
     function: {
-      name: 'start_mission',
+      name: 'delegate',
       description:
-        'Launch a coordinated mission: several headless agents working concurrently on parts of one objective, drawn from the persona library. Returns the mission id; results arrive as corpus files under missions/<id>/ and progress is on the Agents tab. Use only when the user explicitly asks for multiple agents or a mission; each agent is a real model run with real cost.',
+        'Break the current request into subtasks and have agents work them concurrently. Each agent gets its own context and writes a result file into the corpus; you get back a task id, not their output. Delegate when the work genuinely splits into independent strands that are each substantial, for example one per document, per system, or per question. Do not delegate work that is small enough to do directly, that is tightly interdependent, or where one strand needs another\'s answer first. Fewer, larger subtasks beat many small ones.',
       parameters: {
         type: 'object',
         properties: {
-          objective: { type: 'string', description: 'The overall objective' },
-          agents: {
+          objective: { type: 'string', description: 'What the whole task is trying to achieve' },
+          subtasks: {
             type: 'array',
-            description: 'The initial agents, each with its own task; they may spawn subtasks within server-enforced limits',
+            description: 'The independent strands. Give each a clear objective, a boundary, and what it should produce.',
             items: {
               type: 'object',
               properties: {
                 persona: { type: 'string', description: 'Optional persona name from the library' },
-                objective: { type: 'string', description: 'This agent task' },
+                objective: { type: 'string', description: 'This subtask, stated so an agent with no other context can do it' },
               },
               required: ['objective'],
             },
           },
-          max_agents: { type: 'number', description: 'Agent ceiling including subtasks, default 10' },
         },
-        required: ['objective', 'agents'],
+        required: ['objective', 'subtasks'],
       },
     },
   },
   {
     type: 'function',
     function: {
-      name: 'mission_status',
-      description: 'The state of a coordinated mission: each agent, its status and lineage, and recent board messages. With no id, lists missions.',
+      name: 'task_status',
+      description: 'The state of a delegated task: each subtask, its state and lineage, and recent board messages. With no id, lists tasks.',
       parameters: {
         type: 'object',
-        properties: {
-          id: { type: 'string', description: 'Mission id from start_mission; omit to list all' },
-        },
+        properties: { id: { type: 'string', description: 'Task id from delegate; omit to list all' } },
         required: [],
       },
     },
@@ -580,7 +629,12 @@ export function expandSlashCommand(content: string): string | { listing: string 
 }
 
 export function activeToolSpecs(): ToolSpec[] {
-  const disabled = new Set(effectiveSettings().disabledTools ?? [])
+  const eff = effectiveSettings()
+  const disabled = new Set(eff.disabledTools ?? [])
+  // Delegation is opt-in, and an unavailable capability should not be
+  // described to the model at all: a tool it can see is a tool it will
+  // try, and the refusal costs a turn.
+  if (!eff.delegationEnabled) { disabled.add('delegate'); disabled.add('task_status') }
   const skill = skillToolSpec()
   return [...TOOL_SPECS, ...customToolSpecs(), ...(skill ? [skill] : [])].filter(t => !disabled.has(t.function.name))
 }
@@ -661,6 +715,93 @@ function pwCli(args: string[], timeoutMs = 30_000): Promise<string> {
       resolve(stdout)
     })
   })
+}
+
+/**
+ * The pw CLI appends notices to stdout ("A new version of the PW CLI is
+ * available"), so `-o json` output is JSON followed by prose often enough
+ * that a bare JSON.parse is a latent failure in every tool that calls one.
+ * Take the first balanced JSON value and ignore whatever trails it.
+ */
+function jsonFromCli<T = unknown>(text: string): T {
+  const start = text.search(/[[{]/)
+  if (start < 0) throw new Error(`no JSON in CLI output: ${text.slice(0, 160)}`)
+  const open = text[start]
+  const close = open === '[' ? ']' : '}'
+  let depth = 0
+  let inStr = false
+  let esc = false
+  for (let i = start; i < text.length; i++) {
+    const c = text[i]
+    if (inStr) {
+      if (esc) esc = false
+      else if (c === '\\') esc = true
+      else if (c === '"') inStr = false
+      continue
+    }
+    if (c === '"') inStr = true
+    else if (c === open) depth++
+    else if (c === close && --depth === 0) return JSON.parse(text.slice(start, i + 1)) as T
+  }
+  return JSON.parse(text.slice(start)) as T
+}
+
+/** A workflow record, including its saved input configurations. */
+async function wfDoc(name: string): Promise<any> {
+  const clean = name.replace(/[^A-Za-z0-9_.-]/g, '')
+  return jsonFromCli<any>(await pwCli(['workflows', 'get', clean, '-o', 'json'], 60_000))
+}
+
+/** Declared inputs of a workflow, flattened to dotted paths with types. */
+function declaredInputs(wf: any): { path: string; type: string; def: unknown }[] {
+  const on = wf?.yaml?.on ?? wf?.yaml?.[true as unknown as string] ?? {}
+  const rows: { path: string; type: string; def: unknown }[] = []
+  const walk = (prefix: string, obj: Record<string, any>): void => {
+    for (const [k, v] of Object.entries(obj ?? {})) {
+      if (!v || typeof v !== 'object') continue
+      if (v.type === 'group') walk(`${prefix}${k}.`, v.items ?? {})
+      else rows.push({ path: `${prefix}${k}`, type: String(v.type ?? ''), def: v.default })
+    }
+  }
+  walk('', on?.execute?.inputs ?? {})
+  return rows
+}
+
+function setPath(obj: Record<string, any>, dotted: string, value: unknown): void {
+  const parts = dotted.split('.')
+  let cur = obj
+  for (const p of parts.slice(0, -1)) {
+    if (!cur[p] || typeof cur[p] !== 'object') cur[p] = {}
+    cur = cur[p]
+  }
+  cur[parts[parts.length - 1]] = value
+}
+
+/** Preset under caller inputs: later values win, groups merge by key. */
+function mergeInputs(base: any, over: any): any {
+  if (!over || typeof over !== 'object' || Array.isArray(over)) return over ?? base
+  const out = { ...(base && typeof base === 'object' && !Array.isArray(base) ? base : {}) }
+  for (const [k, v] of Object.entries(over)) out[k] = mergeInputs(out[k], v)
+  return out
+}
+
+/**
+ * A workflow's compute-clusters input wants `pw://<owner>/<name>`, and a
+ * user says "makau". The owner is whatever account the cluster is attached
+ * under, which the environments listing reports, so resolve it there and
+ * fall back to the bare name rather than guessing an owner.
+ */
+async function resolveResource(name: string): Promise<string> {
+  const raw = name.trim()
+  if (raw.startsWith('pw://')) return raw
+  const bare = raw.replace(/[^\w.-]/g, '')
+  try {
+    const envs = jsonFromCli<any[]>(await pwCli(['environments', 'ls', '-o', 'json'], 60_000))
+    const hit = envs.find(e => String(e?.clusterName ?? '').toLowerCase() === bare.toLowerCase())
+    if (hit?.clusterUser) return `pw://${hit.clusterUser}/${hit.clusterName}`
+    if (hit?.clusterName) return String(hit.clusterName)
+  } catch { /* the bare name is still worth trying */ }
+  return bare
 }
 
 function grepFallback(query: string, limit: number): Promise<string[]> {
@@ -829,21 +970,219 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
           summary: `${engine} serve launched`,
         }
       }
+      case 'workflow_configs': {
+        const wf = await wfDoc(String(args.name ?? ''))
+        const configs = (wf?.configurations ?? []) as any[]
+        if (!configs.length) {
+          const sites = declaredInputs(wf).filter(r => r.type === 'compute-clusters').map(r => r.path)
+          return {
+            result: `Workflow ${wf?.name ?? args.name} has no saved configurations. Build inputs from its declared schema (get_workflow) and the site's own values (hpc_environments).`
+              + (sites.length ? `\nIts target-system input is: ${sites.join(', ')}.` : ''),
+            summary: 'no configurations',
+          }
+        }
+        const wanted = args.config ? String(args.config).toLowerCase() : ''
+        if (wanted) {
+          const one = configs.find(c => String(c.name ?? c.id ?? '').toLowerCase() === wanted)
+          if (!one) return { result: `No configuration named ${args.config}. Available: ${configs.map(c => c.name ?? c.id).join(', ')}`, summary: 'no such config' }
+          return {
+            result: `Configuration "${one.name ?? one.id}"${one.builtin ? ' (builtin)' : ''} of ${wf.name} sets:\n${JSON.stringify(one.inputs ?? {}, null, 1)}`,
+            summary: `config ${one.name ?? one.id}`,
+          }
+        }
+        // A summary line per configuration: enough for the model to pick
+        // one by system name without pulling every nested input.
+        const rows = configs.map(c => {
+          const ins = (c.inputs ?? {}) as any
+          const sl = ins.cluster?.slurm ?? {}
+          const pb = ins.cluster?.pbs ?? {}
+          const bits: string[] = []
+          if (ins.resource) bits.push(`resource=${ins.resource}`)
+          if (sl.partition) bits.push(`partition=${sl.partition}`)
+          if (sl.qos) bits.push(`qos=${sl.qos}`)
+          // The site account is the one required value the builtin
+          // configurations omit, so name it wherever it does appear.
+          if (sl.account) bits.push(`account=${sl.account}`)
+          if (sl.time) bits.push(`walltime=${sl.time}`)
+          if (sl.scheduler_directives) bits.push(`sbatch="${String(sl.scheduler_directives).trim().replace(/\n+/g, '; ')}"`)
+          if (pb.scheduler_directives) bits.push(`pbs="${String(pb.scheduler_directives).trim().split('\n').filter(l => l && !l.startsWith('##')).join('; ')}"`)
+          if (ins.service?.models) bits.push(`models=${ins.service.models}`)
+          return `${c.name ?? c.id}${c.builtin ? ' (builtin)' : ' (saved by this account)'}: ${bits.join(', ') || '(no scheduler settings)'}`
+        })
+        return {
+          result: `Saved configurations for ${wf.name}:\n${rows.join('\n')}\n\n`
+            + 'Pass one as run_workflow config to launch with these settings; add resource only if the configuration has none.',
+          summary: `${configs.length} configurations`,
+        }
+      }
+      case 'hpc_environments': {
+        const want = String(args.cluster ?? '').replace(/[^\w.-]/g, '').toLowerCase()
+        const envs = jsonFromCli<any[]>(await pwCli(['environments', 'ls', '-o', 'json'], 90_000))
+        const rows = want ? envs.filter(e => String(e.clusterName ?? '').toLowerCase() === want) : envs
+        if (!rows.length) {
+          const names = [...new Set(envs.map(e => e.clusterName))].sort()
+          return { result: `No partitions found for "${args.cluster}". Systems with partitions: ${names.join(', ')}`, summary: 'no match' }
+        }
+        if (!want) {
+          // Fleet view: one line per system, so the model can pick a target
+          // before asking for that system's partitions in detail.
+          const by = new Map<string, any[]>()
+          for (const e of rows) {
+            const k = String(e.clusterName)
+            if (!by.has(k)) by.set(k, [])
+            by.get(k)!.push(e)
+          }
+          const lines = [...by.entries()].sort().map(([name, list]) => {
+            const up = list.filter(e => e.partitionState === 'up')
+            const free = up.reduce((n, e) => n + (Number(e.availNodes) || 0), 0)
+            return `${name} (${list[0].clusterDisplayName || name}), ${list[0].schedulerType}: ${list.length} partitions, ${up.length} up, ${free} nodes free`
+          })
+          return { result: `Systems with schedulable partitions:\n${lines.join('\n')}\n\nCall again with a cluster name for its partitions and submission fields.`, summary: `${by.size} systems` }
+        }
+        const head = `${rows[0].clusterDisplayName || want} (${want}), scheduler ${rows[0].schedulerType}, attached as user ${rows[0].clusterUser}`
+        const detail = rows.map(e => {
+          const req = (e.fields ?? []).filter((f: any) => f.required).map((f: any) => f.key)
+          return `  ${e.partitionName}: ${e.partitionState}, ${e.availNodes}/${e.totalNodes} nodes free, max walltime ${e.maxTime}`
+            + `\n    defaults ${JSON.stringify(e.defaults ?? {})}`
+            + `\n    required ${req.join(', ') || '(none)'}`
+        })
+        return {
+          result: `${head}\n${detail.join('\n')}\n\n`
+            + 'account and qos are per-user site values; take them from a saved configuration (workflow_configs) when one exists for this system rather than inventing them.',
+          summary: `${rows.length} partitions on ${want}`,
+        }
+      }
       case 'run_workflow': {
         const wfName = String(args.name ?? '').replace(/[^A-Za-z0-9_./-]/g, '')
         const dryRun = args.dry_run !== false
         const cliArgs = ['workflows', 'run']
         if (dryRun) cliArgs.push('--dry-run')
-        if (args.inputs) {
-          const parsed = JSON.parse(String(args.inputs))
-          cliArgs.push('-i', JSON.stringify(parsed))
+        // Resource targeting needs the workflow's schema: the input that
+        // carries the target system is declared as compute-clusters, and
+        // its key differs between workflows.
+        let inputs: Record<string, unknown> = args.inputs ? JSON.parse(String(args.inputs)) : {}
+        if (args.resource) {
+          const target = await resolveResource(String(args.resource))
+          let doc: any = null
+          try { doc = await wfDoc(wfName) } catch { /* fall back to the conventional key */ }
+          const slots = doc ? declaredInputs(doc).filter(r => r.type === 'compute-clusters').map(r => r.path) : []
+          for (const p of slots.length ? slots : ['resource']) setPath(inputs, p, target)
+        }
+        if (args.config) cliArgs.push('--saved-inputs', String(args.config))
+        // --inputs overrides --saved-inputs wholesale in the CLI, so merge
+        // the configuration in here rather than letting it be dropped.
+        if (Object.keys(inputs).length) {
+          if (args.config) {
+            try {
+              const doc = await wfDoc(wfName)
+              const cfg = (doc?.configurations ?? []).find((c: any) =>
+                String(c.name ?? c.id ?? '').toLowerCase() === String(args.config).toLowerCase())
+              if (cfg?.inputs) inputs = mergeInputs(cfg.inputs, inputs)
+            } catch { /* send what we have */ }
+          }
+          cliArgs.push('-i', JSON.stringify(inputs))
         }
         cliArgs.push(wfName, '-o', 'json')
-        const out = await pwCli(cliArgs, 120_000)
+        let out: string
+        try {
+          out = await pwCli(cliArgs, 180_000)
+        } catch (e) {
+          // The builtin site configurations carry a partition, QoS and
+          // walltime but no account, because an account is per user. That
+          // failure is the common one here and it has a specific remedy,
+          // so name it instead of returning the raw validation line.
+          const msg = String((e as Error).message ?? e)
+          if (/missing required field/i.test(msg)) {
+            const missing = msg.split(':').pop()?.trim() ?? 'a required field'
+            let known = ''
+            try {
+              const doc = await wfDoc(wfName)
+              const accts = [...new Set((doc?.configurations ?? [])
+                .map((c: any) => c?.inputs?.cluster?.slurm?.account)
+                .filter(Boolean))]
+              if (accts.length) known = ` Configurations on this workflow use account ${accts.join(' or ')}; reuse one if it applies to this system.`
+            } catch { /* the plain message still helps */ }
+            return {
+              result: `The submission was rejected for a missing value: ${missing}.${known}`
+                + ' Site account and QoS are per user and cannot be inferred from the system itself,'
+                + ' so take them from a saved configuration for that system, or ask the user for the project account to charge.',
+              summary: 'missing required input',
+            }
+          }
+          throw e
+        }
+        const trimmed = out.trim()
+        let where = ''
+        try {
+          const r = jsonFromCli<any>(trimmed)
+          const run = r?.run ?? r
+          if (run?.slug || run?.id) where = `\nRun ${run.slug ?? run.id}. Follow it with watch_run.`
+        } catch { /* text output is fine */ }
         return {
-          result: out.trim().slice(0, TOOL_OUTPUT_CAP) || (dryRun ? 'Validation passed.' : 'Run submitted.'),
+          result: (trimmed.slice(0, TOOL_OUTPUT_CAP) || (dryRun ? 'Validation passed.' : 'Run submitted.')) + where,
           summary: dryRun ? 'dry run ok' : 'run submitted',
         }
+      }
+      case 'watch_run': {
+        const wait = Math.max(0, Math.min(Number(args.wait ?? 45) || 45, 120))
+        let id = String(args.run ?? '').replace(/[^A-Za-z0-9_.:/-]/g, '')
+        if (!id) {
+          const listed = jsonFromCli<any>(await pwCli(['workflows', 'runs', 'list', '-o', 'json']))
+          const runs = (Array.isArray(listed) ? listed : listed?.runs ?? []) as any[]
+          if (!runs.length) return { result: 'No workflow runs on this account yet.', summary: 'none' }
+          id = String(runs[0].slug ?? runs[0].id)
+        }
+        // The view is addressed by slug; an id is what a submission hands
+        // back, so accept either and translate when the first lookup fails.
+        const view = async (key: string): Promise<any> =>
+          jsonFromCli<any>(await pwCli(['workflows', 'runs', 'view', key, '-o', 'json'], 60_000))
+        let doc: any
+        try {
+          doc = await view(id)
+        } catch {
+          const listed = jsonFromCli<any>(await pwCli(['workflows', 'runs', 'list', '-o', 'json']))
+          const runs = (Array.isArray(listed) ? listed : listed?.runs ?? []) as any[]
+          const hit = runs.find(r => r.id === id || r.slug === id)
+          if (!hit) return { result: `No run named ${id}. List them with workflow_runs.`, summary: 'not found' }
+          id = String(hit.slug ?? hit.id)
+          doc = await view(id)
+        }
+        const stamp = (d: any): string => `${d?.status}|${Object.entries(d?.executedJobs ?? {})
+          .map(([k, v]: [string, any]) => `${k}:${v?.status}`).join(',')}`
+        const TERMINAL = new Set(['completed', 'error', 'failed', 'canceled', 'cancelled'])
+        const started = Date.now()
+        let before = stamp(doc)
+        // Poll rather than sleep the full wait: the point is to return the
+        // moment something changes, so a caller reporting progress in chat
+        // is not a fixed interval behind the run.
+        while (wait > 0 && !TERMINAL.has(String(doc?.status)) && Date.now() - started < wait * 1000) {
+          await new Promise(r => setTimeout(r, 5000))
+          try {
+            const next = await view(id)
+            doc = next
+            if (stamp(next) !== before) { before = stamp(next); break }
+          } catch { break }
+        }
+        const jobs = Object.entries(doc?.executedJobs ?? {}).map(([k, v]: [string, any]) => {
+          // Which step is executing only means something while the job is
+          // live; on a skipped or finished job it names a step that never ran.
+          const live = /^(running|in_progress|active|started)$/i.test(String(v?.status))
+          const step = live ? (v?.steps ?? []).find((s: any) => s?.status && s.status !== 'completed') : null
+          return `  ${k}: ${v?.status}${v?.ssh?.remoteHost ? ` on ${v.ssh.remoteHost}` : ''}${step?.name ? ` (at "${step.name}")` : ''}`
+        })
+        const svc = (doc?.inputs as any)?.service ?? {}
+        const parts = [`Run ${doc?.slug ?? id} of ${doc?.workflowName}: ${doc?.status}`, jobs.join('\n')]
+        if (svc.endpoint_name) {
+          const live = !TERMINAL.has(String(doc?.status))
+          parts.push(`Endpoint "${svc.endpoint_name}"${svc.models ? ` serving ${svc.models}` : ''}: `
+            + (live
+              ? 'appears in the platform model catalog and session list once wait_for_endpoint completes.'
+              : `not serving, the run is ${doc?.status}.`))
+        }
+        if (TERMINAL.has(String(doc?.status)) && String(doc?.status) !== 'completed') {
+          parts.push('Use workflow_run_detail for the errors and log tail.')
+        }
+        return { result: parts.filter(Boolean).join('\n').slice(0, TOOL_OUTPUT_CAP), summary: `${doc?.slug ?? id}: ${doc?.status}` }
       }
       case 'workflow_runs': {
         const limit = Math.min(Number(args.limit) || 15, 50)
@@ -1040,9 +1379,16 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
       case 'list_clusters': {
         const out = await pwCli(['cluster', 'ls', '-o', 'json'])
         let rows: any[] = []
-        try { rows = JSON.parse(out) } catch { return { result: out.slice(0, TOOL_OUTPUT_CAP), summary: 'clusters' } }
+        try { rows = jsonFromCli<any[]>(out) } catch { return { result: out.slice(0, TOOL_OUTPUT_CAP), summary: 'clusters' } }
+        // schedulerType decides whether a job is described with #SBATCH or
+        // #PBS, so a listing without it cannot be acted on.
         const slim = rows.map(c => ({
-          name: c.name, status: c.status, activeNodes: c.activeNodes, type: c.type,
+          name: c.name,
+          displayName: c.displayName || undefined,
+          status: c.status,
+          scheduler: c.schedulerType || undefined,
+          activeNodes: c.activeNodes,
+          type: c.type,
           connection: c.connectionString || undefined,
         }))
         return { result: JSON.stringify(slim, null, 1), summary: `${slim.length} clusters` }
@@ -1111,41 +1457,49 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
           summary: `skill ${skillName}`,
         }
       }
-      case 'start_mission': {
-        const { createMission, missionSummary } = await import('../missions.js')
-        const agents = Array.isArray(args.agents) ? args.agents : []
-        if (!args.objective || !agents.length) return { result: 'objective and agents are required', summary: 'error' }
+      case 'delegate': {
+        const { createTask, taskSummary } = await import('../tasks.js')
+        const agents = Array.isArray(args.subtasks) ? args.subtasks : []
+        if (!args.objective || !agents.length) return { result: 'objective and subtasks are required', summary: 'error' }
         const model = String(ctx?.model ?? '')
         if (!model) return { result: 'No model in context to run agents with.', summary: 'error' }
+        const eff = effectiveSettings()
+        if (!eff.delegationEnabled) {
+          return { result: 'Delegation is disabled for this deployment; do the work yourself in this conversation.', summary: 'disabled' }
+        }
+        if (agents.length > eff.delegationMaxAgents) {
+          return { result: `Too many subtasks: this deployment allows ${eff.delegationMaxAgents}. Combine them into fewer, larger strands.`, summary: 'over ceiling' }
+        }
         try {
-          const m = createMission({
+          const m = createTask({
             objective: String(args.objective), model,
             agents: agents.map((a: { persona?: string; objective: string }) => ({ persona: a.persona, objective: a.objective })),
-            maxAgents: Number(args.max_agents) || 10,
+            maxAgents: eff.delegationMaxAgents,
+            maxDepth: eff.delegationMaxDepth,
           })
-          const sum = missionSummary(m)
+          const sum = taskSummary(m)
           return {
-            result: `Mission ${sum.id} started with ${sum.agents.length} agents (ceiling ${sum.maxAgents}, depth ${sum.maxDepth}). Watch it on the Agents tab; results land under missions/${sum.id}/ in the knowledge base. Check on it with mission_status.`,
-            summary: `mission ${sum.id}`,
+            result: `Task ${sum.id} started with ${sum.agents.length} subtasks (ceiling ${sum.maxAgents}, depth ${sum.maxDepth}). Results land under tasks/${sum.id}/ in the knowledge base and the operator can watch the tree on the Agents tab. Poll it with task_status; do not wait idly, tell the user it is running.`,
+            summary: `task ${sum.id}`,
           }
         } catch (e) {
-          return { result: `Could not start the mission: ${String((e as Error).message)}`, summary: 'error' }
+          return { result: `Could not delegate: ${String((e as Error).message)}`, summary: 'error' }
         }
       }
-      case 'mission_status': {
-        const { getMission, listMissions, missionSummary } = await import('../missions.js')
+      case 'task_status': {
+        const { getTask, listTasks, taskSummary } = await import('../tasks.js')
         const mid = String(args.id ?? '')
         if (!mid) {
-          const all = listMissions()
-          return { result: all.length ? JSON.stringify(all, null, 1) : 'No missions.', summary: `${all.length} missions` }
+          const all = listTasks()
+          return { result: all.length ? JSON.stringify(all, null, 1) : 'No delegated tasks.', summary: `${all.length} tasks` }
         }
-        const m = getMission(mid)
-        if (!m) return { result: `No such mission: ${mid}`, summary: 'error' }
-        const sum = missionSummary(m)
+        const m = getTask(mid)
+        if (!m) return { result: `No such task: ${mid}`, summary: 'error' }
+        const sum = taskSummary(m)
         const tail = m.board.slice(-15).map(b => `[${b.topic}] ${b.from}: ${b.body.slice(0, 200)}`).join('\n')
         return {
-          result: `${JSON.stringify({ ...sum, agents: sum.agents.map(a => ({ name: a.name, status: a.status, depth: a.depth, parent: a.parent, note: a.note, result: a.resultPath })) }, null, 1)}\n\nRecent board:\n${tail}`,
-          summary: `mission ${mid}: ${sum.status}`,
+          result: `${JSON.stringify({ ...sum, agents: sum.agents.map(a => ({ name: a.name, status: a.state, depth: a.depth, parent: a.parent, note: a.note, result: a.resultPath })) }, null, 1)}\n\nRecent board:\n${tail}`,
+          summary: `task ${mid}: ${sum.state}`,
         }
       }
       default: {
