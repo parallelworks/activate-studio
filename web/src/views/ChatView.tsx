@@ -100,6 +100,9 @@ export function ChatView() {
   const [chatFilter, setChatFilterState] = useState<'all' | 'mine'>(getChatListFilter())
   const [chatEpoch, setChatEpoch] = useState(0)
   const [multiUser, setMultiUser] = useState(false)
+  // Off means the server will not return anyone else's conversations,
+  // so the show-all toggle has nothing to show and is hidden.
+  const [sharedHistory, setSharedHistory] = useState(true)
   const [scopeOpen, setScopeOpen] = useState(false)
   // Personas: a standing stance for the conversation, distinct from
   // skills, which the assistant loads per task. Remembered per browser so
@@ -160,7 +163,18 @@ export function ChatView() {
   useEffect(() => {
     api.tagVocabulary().then(v => setVocab(v.tags)).catch(() => {})
     fetch('/api/me/model-key').then(r => r.json())
-      .then(d => setMultiUser(!!d.authEnabled))
+      .then(d => {
+        setMultiUser(!!d.authEnabled)
+        const shared = d.sharedHistory !== false
+        setSharedHistory(shared)
+        // A browser that stored 'all' before the setting was turned
+        // off would otherwise sit on a scope it can no longer have.
+        if (!shared && getChatListFilter() === 'all') {
+          setChatListFilter('mine')
+          setChatFilterState('mine')
+          window.dispatchEvent(new Event('ade:chat-filter-changed'))
+        }
+      })
       .catch(() => {})
     // Both the no-models state and mid-conversation credential failures
     // surface as a toast with a click path to Settings; the empty state
@@ -336,7 +350,7 @@ export function ChatView() {
           </ChatLayout>
           {railOpen && <div className="chat-rail-backdrop" onClick={() => setRailOpen(false)} />}
           <div className="chat-think-handle" onMouseDown={onThinkDrag} title="Drag to resize the activity panel" />
-          {multiUser && !showAttachments && (
+          {multiUser && sharedHistory && !showAttachments && (
             <button
               className={`chat-filter-btn ${chatFilter === 'mine' ? 'active' : ''}`}
               title="Show every conversation on this deployment, or only yours"
