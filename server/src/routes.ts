@@ -14,6 +14,7 @@ import { suggestLabels } from './labeling.js'
 import { resolveUserCred } from './credentials.js'
 import { listModels } from './chat/gateway.js'
 import { getJob, startJob } from './jobs.js'
+import { buildInfo } from './version.js'
 import { annotateHits, readTagsBatch } from './tags.js'
 import { gatewayKey } from './chat/gateway.js'
 import { convertToDynamicForm, dumpYaml, getAllDeps, getStepLabel, workflowHasUserInputs } from '@parallelworks/workflow-parser'
@@ -165,6 +166,11 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
       user,
     }
   })
+
+  // Which build is serving. Deliberately its own route and free of auth
+  // concerns: checking that a deploy landed should be one curl, and it
+  // discloses nothing a user of the app cannot already see.
+  app.get('/api/version', async () => buildInfo())
 
   // Help content: markdown from docs/HELP.md, overridable per deployment
   // via HELP_FILE, with {appName} and {kbLabel} substituted.

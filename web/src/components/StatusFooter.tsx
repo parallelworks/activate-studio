@@ -110,6 +110,50 @@ function AiPanel({ ai, onClose, onRecheck }: { ai: AiHealth; onClose: () => void
   )
 }
 
+interface Build {
+  version: string
+  commit: string | null
+  builtAt: string | null
+  startedAt: string
+  source: 'bundle' | 'git' | 'package'
+}
+
+const BUILD_SOURCE: Record<Build['source'], string> = {
+  bundle: 'stamped when the deployment bundle was built',
+  git: 'read from the checkout this server runs from',
+  package: 'no tag or stamp found; package version only',
+}
+
+function BuildPanel({ build, onClose }: { build: Build; onClose: () => void }) {
+  const rows: [string, string][] = [
+    ['Version', build.version],
+    ['Commit', build.commit ?? 'unknown'],
+    ['Built', build.builtAt ? new Date(build.builtAt).toLocaleString() : 'unknown'],
+    ['Server started', new Date(build.startedAt).toLocaleString()],
+    ['Source', BUILD_SOURCE[build.source]],
+  ]
+  return (
+    <>
+      <div className="scope-overlay" onClick={onClose} />
+      <div className="identity-panel card">
+        <div className="scope-menu-head">Build</div>
+        <table className="identity-table"><tbody>
+          {rows.map(([k, v]) => <tr key={k}><td className="k">{k}</td><td className="v">{v}</td></tr>)}
+        </tbody></table>
+        <p className="identity-note">
+          Compare this against the release you deployed. A redeploy that did not take leaves
+          the old commit and build time here, which is otherwise indistinguishable from one
+          that worked.
+        </p>
+        <div className="scope-menu-foot">
+          <span className="muted identity-src">GET /api/version</span>
+          <button className="btn-secondary" onClick={onClose}>Close</button>
+        </div>
+      </div>
+    </>
+  )
+}
+
 interface WhoAmI {
   authEnabled: boolean
   header: string
@@ -176,6 +220,8 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
   const [gufi, setGufi] = useState<boolean | null>(null)
   const [ai, setAi] = useState<AiHealth | null>(null)
   const [aiOpen, setAiOpen] = useState(false)
+  const [build, setBuild] = useState<Build | null>(null)
+  const [buildOpen, setBuildOpen] = useState(false)
 
   // Each line waited on its own request, so the footer assembled itself a
   // row at a time while the page settled. The first pass is awaited as a
@@ -193,6 +239,11 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
     void refresh().then(() => setReady(true))
     const t = setInterval(() => { void refresh() }, 60_000)
     return () => clearInterval(t)
+  }, [])
+  // Fetched once: it cannot change while this server is up, and a change
+  // means the page is talking to a different process than it started with.
+  useEffect(() => {
+    fetch('/api/version').then(r => r.json()).then(setBuild).catch(() => setBuild(null))
   }, [])
 
   const sync = async () => {
@@ -241,6 +292,15 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
               onRecheck={() => { fetch('/api/ai/health').then(r => r.json()).then(setAi).catch(() => {}) }}
             />
           )}
+        </div>
+      )}
+      {build && (
+        <div className="status-line identity-line" title="Click for build details">
+          <button className="identity-btn" onClick={() => setBuildOpen(o => !o)}>
+            <span className={`status-dot ${build.version === 'dev' ? 'off' : 'ok'}`} />
+            {build.version}
+          </button>
+          {buildOpen && <BuildPanel build={build} onClose={() => setBuildOpen(false)} />}
         </div>
       )}
       <div className="status-line identity-line" title="Click for index health details">
