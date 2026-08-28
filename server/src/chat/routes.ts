@@ -389,9 +389,14 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     // user on the deployment credential; the personal-key surface is an
     // ACTIVATE-session feature and stays hidden there.
     const gatewayHost = (() => { try { return new URL(GATEWAY_BASE).host } catch { return GATEWAY_BASE } })()
-    if (!authEnabled() || personalKeysDisabled()) return { authEnabled: false, verified: false, mode: 'none', gatewayHost }
-    if (!req.user) return { authEnabled: true, verified: false, mode: 'none', gatewayHost }
-    return keyStatusPayload(req.user.id)
+    // The chat rail offers a show-all-conversations toggle. With shared
+    // history off the server already refuses other people's conversations,
+    // so the toggle was a control that could only fail; the client needs
+    // the setting to hide it rather than discover that by clicking.
+    const sharedHistory = effectiveSettings().chatSharedHistory !== false
+    if (!authEnabled() || personalKeysDisabled()) return { authEnabled: false, verified: false, mode: 'none', gatewayHost, sharedHistory }
+    if (!req.user) return { authEnabled: true, verified: false, mode: 'none', gatewayHost, sharedHistory }
+    return { ...keyStatusPayload(req.user.id), sharedHistory }
   })
 
   // POST mirrors of set/clear: some proxies in front of sessions are
