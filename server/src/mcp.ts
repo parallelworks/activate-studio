@@ -8,15 +8,15 @@ import { board, taskByToken, type Task } from './tasks.js'
  *
  * The RAG proxy publishes this corpus as a model: callers get our serving
  * loop, our prompt, and whatever model this deployment runs. MCP inverts
- * that. A client (pw code, Claude Code, any MCP-capable tool) brings its
- * own model and calls the corpus tools directly, so the reasoning happens
+ * that. A client (pw code, or any MCP-capable tool) brings its own model
+ * and calls the corpus tools directly, so the reasoning happens
  * wherever the user already works and this server only answers questions
  * about the corpus. The tool layer is the chat assistant's own specs and
  * executor; this file is protocol, not capability.
  *
  * Streamable-HTTP MCP, stateless: each POST carries one JSON-RPC message
- * and gets a JSON reply, which is the shape `claude mcp add --transport
- * http` expects. Living under /api/ puts it behind the same bearer auth
+ * and gets a JSON reply, which is the shape an HTTP transport
+ * registration expects. Living under /api/ puts it behind the same bearer auth
  * as every other route when auth is enabled.
  *
  * Only corpus-reading tools are exposed. Writes (files, labels) and
