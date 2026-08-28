@@ -1,7 +1,7 @@
 {
   "name": "activate-studio",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Knowledge base visualization and chat harness over a configurable corpus, served as an ACTIVATE session",
   "scripts": {
     "dev": "pnpm --parallel --filter @activate-studio/server --filter @activate-studio/web dev",

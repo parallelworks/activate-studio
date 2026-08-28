@@ -11,3 +11,6 @@ __pycache__/
 studio-bundle.tar.gz
 deploy/.cache/
 CLAUDE.md
+
+# Written by deploy/make_bundle.sh into the bundle, never into the repo.
+build-info.json
