@@ -612,7 +612,11 @@ export function expandSlashCommand(content: string): string | { listing: string 
   if (!m) return null
   const name = m[1].toLowerCase().replace(/-/g, '_')
   const rest = m[2].trim()
-  if (name === 'help' || name === 'commands' || name === 'skills') return { listing: slashListing() }
+  // The names people actually try. "tools" was the one that reached the
+  // model as literal text and got a confused answer back.
+  if (['help', 'commands', 'skills', 'tools', 'agents', 'personas', 'list'].includes(name)) {
+    return { listing: slashListing() }
+  }
   const skill = skillBody(name)
   if (skill != null) {
     return `Follow these instructions for this request.\n\n${skill}\n\nRequest: ${rest || 'Apply the instructions to the current conversation context.'}`
@@ -625,6 +629,11 @@ export function expandSlashCommand(content: string): string | { listing: string 
   if (toolNames.has(name)) {
     return `Call the ${name} tool now${rest ? ` with arguments derived from: ${rest}` : ''}, then answer from its output.`
   }
+  // A bare unknown /word is someone guessing at the command set, and
+  // passing it through means the model answers a question about a string.
+  // Anything with content after it is left alone, so a pasted path such as
+  // /shared/corpus/file.md still reaches the model as what it is.
+  if (!rest) return { listing: `There is no /${m[1]} command.\n\n${slashListing()}` }
   return null
 }
 
