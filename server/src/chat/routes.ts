@@ -270,11 +270,20 @@ export function gatewayChatMessage(msg: string, model: string): string {
   const rejectedParam = status === 400
     && /unsupported|unknown|unrecognized|invalid/i.test(msg)
     && /parameter|argument|property|field/i.test(msg)
+  // The gateway collapses several upstream conditions into one 400 that
+  // says only that generation failed. A provider credential that is locked
+  // or rejected produces it, and so does a provider-side failure, and
+  // nothing in the response separates them. The locked key is both the
+  // common case and the only one the reader can act on, so name it while
+  // being honest that it is not certain.
+  const maskedFailure = status === 400 && /error occurred while generating/i.test(msg)
   const cause = rejectedParam
     ? 'The request carried a parameter this provider does not accept, which is an incompatibility between the Studio and that provider rather than anything wrong with your credentials. Pick another model, and report this one so the parameter can be dropped for it. '
     : (status === 401 || status === 403) && personal
       ? 'This model uses a provider key registered on the platform, and an expired key fails exactly this way; renew it under the platform\u2019s AI provider settings, or pick another model. '
-      : 'Pick another model from the list while it recovers. '
+      : maskedFailure && personal
+        ? 'The gateway reports only that generation failed, which covers both a provider credential that is locked or rejected and a fault at the provider itself. A locked key is the usual cause and the one you can do something about: some providers lock keys on a schedule, so unlock or renew it at the provider, then re-check under model availability in the footer. If the key is fine, the provider is failing and another model will work. '
+        : 'Pick another model from the list while it recovers. '
   return `${model} cannot be called right now: its provider returned an error. ${cause}`
     + `Other models are unaffected. Provider said: ${msg.slice(0, 200)}`
 }
