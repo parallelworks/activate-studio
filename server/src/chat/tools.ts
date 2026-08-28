@@ -46,6 +46,8 @@ export const TOOL_CALLS: Record<string, string> = {
   show_in_viewer: 'no external call; returns viewer deep-link or inline-embed markdown',
   studio_docs: 'reads docs/HELP.md, docs/ARCHITECTURE.md, or docs/CUSTOMIZATION.md from the app installation',
   use_skill: 'loads extensions/skills/<name>.md into the conversation',
+  start_mission: 'spawns concurrent pw code one-shot agents with a server-enforced ceiling and depth limit; results are written under missions/ in the corpus',
+  mission_status: 'reads the in-memory mission board and participant table',
 }
 
 export const TOOL_SPECS: ToolSpec[] = [
@@ -356,6 +358,48 @@ export const TOOL_SPECS: ToolSpec[] = [
           inputs: { type: 'string', description: 'JSON workflow inputs for the launch, when the workflow needs any' },
         },
         required: ['view'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'start_mission',
+      description:
+        'Launch a coordinated mission: several headless agents working concurrently on parts of one objective, drawn from the persona library. Returns the mission id; results arrive as corpus files under missions/<id>/ and progress is on the Agents tab. Use only when the user explicitly asks for multiple agents or a mission; each agent is a real model run with real cost.',
+      parameters: {
+        type: 'object',
+        properties: {
+          objective: { type: 'string', description: 'The overall objective' },
+          agents: {
+            type: 'array',
+            description: 'The initial agents, each with its own task; they may spawn subtasks within server-enforced limits',
+            items: {
+              type: 'object',
+              properties: {
+                persona: { type: 'string', description: 'Optional persona name from the library' },
+                objective: { type: 'string', description: 'This agent task' },
+              },
+              required: ['objective'],
+            },
+          },
+          max_agents: { type: 'number', description: 'Agent ceiling including subtasks, default 10' },
+        },
+        required: ['objective', 'agents'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'mission_status',
+      description: 'The state of a coordinated mission: each agent, its status and lineage, and recent board messages. With no id, lists missions.',
+      parameters: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', description: 'Mission id from start_mission; omit to list all' },
+        },
+        required: [],
       },
     },
   },
@@ -1065,6 +1109,43 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
         return {
           result: `Skill ${skillName} loaded. Follow these instructions for the current request:\n\n${body.slice(0, TOOL_OUTPUT_CAP)}`,
           summary: `skill ${skillName}`,
+        }
+      }
+      case 'start_mission': {
+        const { createMission, missionSummary } = await import('../missions.js')
+        const agents = Array.isArray(args.agents) ? args.agents : []
+        if (!args.objective || !agents.length) return { result: 'objective and agents are required', summary: 'error' }
+        const model = String(ctx?.model ?? '')
+        if (!model) return { result: 'No model in context to run agents with.', summary: 'error' }
+        try {
+          const m = createMission({
+            objective: String(args.objective), model,
+            agents: agents.map((a: { persona?: string; objective: string }) => ({ persona: a.persona, objective: a.objective })),
+            maxAgents: Number(args.max_agents) || 10,
+          })
+          const sum = missionSummary(m)
+          return {
+            result: `Mission ${sum.id} started with ${sum.agents.length} agents (ceiling ${sum.maxAgents}, depth ${sum.maxDepth}). Watch it on the Agents tab; results land under missions/${sum.id}/ in the knowledge base. Check on it with mission_status.`,
+            summary: `mission ${sum.id}`,
+          }
+        } catch (e) {
+          return { result: `Could not start the mission: ${String((e as Error).message)}`, summary: 'error' }
+        }
+      }
+      case 'mission_status': {
+        const { getMission, listMissions, missionSummary } = await import('../missions.js')
+        const mid = String(args.id ?? '')
+        if (!mid) {
+          const all = listMissions()
+          return { result: all.length ? JSON.stringify(all, null, 1) : 'No missions.', summary: `${all.length} missions` }
+        }
+        const m = getMission(mid)
+        if (!m) return { result: `No such mission: ${mid}`, summary: 'error' }
+        const sum = missionSummary(m)
+        const tail = m.board.slice(-15).map(b => `[${b.topic}] ${b.from}: ${b.body.slice(0, 200)}`).join('\n')
+        return {
+          result: `${JSON.stringify({ ...sum, agents: sum.agents.map(a => ({ name: a.name, status: a.status, depth: a.depth, parent: a.parent, note: a.note, result: a.resultPath })) }, null, 1)}\n\nRecent board:\n${tail}`,
+          summary: `mission ${mid}: ${sum.status}`,
         }
       }
       default: {
