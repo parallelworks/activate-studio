@@ -267,6 +267,9 @@ export function resolveUserKey(sub: string | null | undefined): string | null {
  * key never appears in a header.
  */
 export const KEY_COOKIE = 'ade_mk'
+/** The CHIPS-partitioned twin of KEY_COOKIE. The two are written together
+ *  and either one is enough; see keyCookieJar for why both exist. */
+export const KEY_COOKIE_P = 'ade_mkp'
 const COOKIE_CHUNK = 3800
 
 export function sealKeyCookie(sub: string): string[] | null {
@@ -286,17 +289,24 @@ export function hydrateFromCookie(sub: string, cookieHeader: string | undefined)
     const eq = part.indexOf('=')
     if (eq > 0) jar.set(part.slice(0, eq).trim(), part.slice(eq + 1).trim())
   }
-  let blob = ''
-  for (let i = 0; ; i++) {
-    const c = jar.get(`${KEY_COOKIE}${i}`)
-    if (!c) break
-    blob += c
+  const assemble = (name: string): string => {
+    let blob = ''
+    for (let i = 0; ; i++) {
+      const c = jar.get(`${name}${i}`)
+      if (!c) break
+      blob += c
+    }
+    return blob
   }
-  if (!blob) return
-  try {
-    const opened = decrypt(blob)
-    if (!opened) return
-    const { k, u } = JSON.parse(opened) as { k?: string; u?: string | null }
-    if (typeof k === 'string' && k.trim()) setUserKey(sub, k, false, u ?? null)
-  } catch { /* stale cookie sealed under a rotated secret: ignore */ }
+  // Whichever form the browser offered. Only one arrives in most contexts,
+  // and when both do they carry the same sealed value.
+  for (const blob of [assemble(KEY_COOKIE), assemble(KEY_COOKIE_P)]) {
+    if (!blob) continue
+    try {
+      const opened = decrypt(blob)
+      if (!opened) continue
+      const { k, u } = JSON.parse(opened) as { k?: string; u?: string | null }
+      if (typeof k === 'string' && k.trim()) { setUserKey(sub, k, false, u ?? null); return }
+    } catch { /* stale cookie sealed under a rotated secret: try the other */ }
+  }
 }
