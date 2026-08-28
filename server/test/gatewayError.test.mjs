@@ -46,6 +46,29 @@ test('a shared model never gets personal-key advice', () => {
   }
 })
 
+// Verbatim from a locked GenAI provider key, August 2026.
+const MASKED_400 = 'gateway chat 400: {"error":{"message":"An error occurred while generating the response","type":"error"}}'
+
+test('the masked generation error names the locked key, without asserting it', () => {
+  const m = gatewayChatMessage(MASKED_400, 'vschuetz:genaiprod/gemini-3.7-flash')
+  assert.match(m, /locked/, 'a locked provider key is the actionable cause')
+  assert.match(m, /re-check under model availability/, 'says where to confirm')
+  // The gateway does not distinguish the causes, so the message must not
+  // claim to know which one it is.
+  assert.match(m, /and a fault at the provider itself/)
+})
+
+test('a shared model gets no provider-key advice on the masked error', () => {
+  const m = gatewayChatMessage(MASKED_400, 'session:someone:studio-rag/studio-agent')
+  assert.doesNotMatch(m, /locked/)
+  assert.match(m, /Pick another model/)
+})
+
+test('a parameter rejection is still told apart from the masked failure', () => {
+  const m = gatewayChatMessage(PARAM_400, PERSONAL)
+  assert.doesNotMatch(m, /locked/, 'an explicit parameter complaint is not a credential problem')
+})
+
 test('an unclassified failure says what is known and nothing more', () => {
   const m = gatewayChatMessage('gateway chat 500: upstream exploded', PERSONAL)
   assert.match(m, /Pick another model from the list while it recovers/)
