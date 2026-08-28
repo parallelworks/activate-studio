@@ -29,6 +29,17 @@ mkdir -p "$STAGE/app"
 (cd "$PROJECT_ROOT" && pnpm install --frozen-lockfile >/dev/null)
 
 echo "Staging web, indexer, docs, starters..."
+# Stamp the build so a running deployment can say which one it is. Without
+# this a refresh that silently failed is indistinguishable from one that
+# worked, since PROJECT_ROOT in a deployment is app/ and there is no git
+# checkout there to ask.
+VERSION="$(cd "$PROJECT_ROOT" && git describe --tags --always --dirty 2>/dev/null || echo dev)"
+case "$VERSION" in v*) ;; *) VERSION="dev" ;; esac
+COMMIT="$(cd "$PROJECT_ROOT" && git rev-parse --short HEAD 2>/dev/null || echo unknown)"
+printf '{\n "version": "%s",\n "commit": "%s",\n "builtAt": "%s"\n}\n' \
+  "$VERSION" "$COMMIT" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$STAGE/app/build-info.json"
+echo "Build stamp: $VERSION ($COMMIT)"
+
 mkdir -p "$STAGE/app/web"
 cp -r "$PROJECT_ROOT/web/dist" "$STAGE/app/web/dist"
 cp -r "$PROJECT_ROOT/indexer" "$STAGE/app/indexer"
