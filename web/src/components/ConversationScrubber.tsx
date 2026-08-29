@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useChat } from '@parallelworks/ai-chat'
 
 /**
@@ -67,6 +67,32 @@ function messageNodes(): HTMLElement[] {
   return selectMessageBlocks(children)
 }
 
+/**
+ * Why the rail is or is not showing, readable from the console as
+ * __adeScrubber(). Every stage here is a place the positional lookup can
+ * fail, and without this the answer to "I don't see it" is guesswork.
+ */
+function installDebug(ticks: number, min: number): void {
+  ;(window as unknown as Record<string, unknown>).__adeScrubber = () => {
+    const canvas = document.querySelector('.chat-canvas')
+    const candidates = canvas ? canvas.querySelectorAll('.overflow-y-auto') : []
+    const host = scrollHost()
+    const list = host?.querySelector('.max-w-4xl')
+    return {
+      canvasFound: !!canvas,
+      overflowCandidates: candidates.length,
+      scrollHostFound: !!host,
+      listFound: !!list,
+      listChildren: list ? list.children.length : 0,
+      messageBlocks: messageNodes().length,
+      ticks,
+      minimumToShow: min,
+      showing: ticks >= min,
+      railInDom: !!document.querySelector('.chat-scrubber'),
+    }
+  }
+}
+
 export function ConversationScrubber() {
   const { currentConversation, isStreaming } = useChat()
   const [ticks, setTicks] = useState<Tick[]>([])
@@ -76,25 +102,44 @@ export function ConversationScrubber() {
   const messages = (currentConversation?.messages ?? []) as Msg[]
   const conversationId = currentConversation?.id ?? null
 
-  // Rebuild from the DOM whenever the thread could have changed. Reading
-  // after paint matters: the nodes do not exist until the thread renders.
+  // Kept in a ref so the observer below can read the current messages
+  // without being torn down and rebuilt on every render.
+  const messagesRef = useRef<Msg[]>(messages)
+  messagesRef.current = messages
+
+  // Rebuild whenever the thread's DOM changes. A single read after mount
+  // was not enough: the effect can run before the thread has rendered, and
+  // with the conversation already in state nothing else would change to
+  // trigger a second look, so the rail stayed empty for the whole visit.
   useEffect(() => {
-    let cancelled = false
+    const canvas = document.querySelector('.chat-canvas')
+    if (!canvas) return
+    let frame = 0
     const build = () => {
-      if (cancelled) return
+      frame = 0
       const nodes = messageNodes()
-      const real = messages.filter(m => !m.pseudo)
+      const real = messagesRef.current.filter(m => !m.pseudo)
       // Trust the data for role and text only when it describes the same
       // number of things the DOM is showing; otherwise fall back to what
       // is on screen, which is always right about what can be scrolled to.
       const aligned = real.length === nodes.length
-      setTicks(nodes.map((n, i) => aligned
-        ? { role: real[i].role === 'user' ? 'user' : 'assistant', text: (real[i].content ?? '').trim() }
-        : { role: null, text: (n.textContent ?? '').trim() }))
+      const next = nodes.map((n, i) => aligned
+        ? { role: (real[i].role === 'user' ? 'user' : 'assistant') as Tick['role'], text: (real[i].content ?? '').trim() }
+        : { role: null, text: (n.textContent ?? '').trim() })
+      // Replace only on a real change, since this runs on every mutation
+      // the thread makes, streaming included.
+      setTicks(prev => (prev.length === next.length
+        && prev.every((t, i) => t.role === next[i].role && t.text === next[i].text)) ? prev : next)
     }
-    const raf = requestAnimationFrame(build)
-    return () => { cancelled = true; cancelAnimationFrame(raf) }
-  }, [conversationId, messages.length, isStreaming])
+    const schedule = () => { if (!frame) frame = requestAnimationFrame(build) }
+    const mo = new MutationObserver(schedule)
+    mo.observe(canvas, { childList: true, subtree: true, characterData: true })
+    schedule()
+    return () => {
+      mo.disconnect()
+      if (frame) cancelAnimationFrame(frame)
+    }
+  }, [conversationId])
 
   const jump = useCallback((i: number) => {
     messageNodes()[i]?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -128,6 +173,8 @@ export function ConversationScrubber() {
       if (frame) cancelAnimationFrame(frame)
     }
   }, [ticks.length])
+
+  installDebug(ticks.length, MIN_MESSAGES)
 
   // Below a handful of messages the rail is clutter: scrolling already
   // finds everything.
