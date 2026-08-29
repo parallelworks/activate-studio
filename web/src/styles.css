@@ -1070,7 +1070,13 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .chat-scrubber {
   position: absolute; left: 0; right: var(--ade-think-rail, 0px); bottom: 0; z-index: 5;
   pointer-events: none;
-  display: flex; justify-content: center;
+  display: flex; justify-content: center; align-items: flex-end;
+  /* `.chat-canvas > *` sets height:100% for the package's own layout, and
+     a direct child gets it whether it wants it or not. Left alone the rail
+     spans the whole canvas and paints at the top instead of along the
+     bottom edge, which is the same rule that once put the chat controls
+     mid-page. */
+  height: auto;
 }
 .chat-scrubber-rail {
   pointer-events: auto;
