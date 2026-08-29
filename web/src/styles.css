@@ -1062,6 +1062,56 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 }
 .chat-filter-btn:hover { color: var(--pw-text); border-color: var(--pw-border-strong); }
 .chat-filter-btn.active { color: var(--pw-navy); border-color: var(--pw-navy); }
+
+/* Conversation scrubber: a tick per message along the bottom of the thread,
+   hover to preview, click to jump. Sits above the composer's sticky footer,
+   and is pointer-transparent except on the ticks themselves so it never
+   eats a click meant for the message underneath. */
+.chat-scrubber {
+  position: absolute; left: 0; right: var(--ade-think-rail, 0px); bottom: 0; z-index: 5;
+  pointer-events: none;
+  display: flex; justify-content: center;
+}
+.chat-scrubber-rail {
+  pointer-events: auto;
+  display: flex; align-items: flex-end; gap: 2px;
+  width: min(100%, 56rem); padding: 0 16px 5px;
+  height: 26px;
+}
+.chat-scrubber-tick {
+  flex: 1 1 0; min-width: 2px; max-width: 10px; padding: 0;
+  border: 0; border-radius: 2px; cursor: pointer;
+  background: var(--pw-border-strong);
+  opacity: .45;
+  transition: opacity .12s, background-color .12s;
+}
+.chat-scrubber-tick.user { background: var(--pw-navy); opacity: .35; }
+.chat-scrubber-tick:hover, .chat-scrubber-tick:focus-visible { opacity: 1; outline: none; }
+/* Where you are now, so the rail reads as a position and not just a list. */
+.chat-scrubber-tick.current { opacity: .95; background: var(--pw-navy); }
+.chat-scrubber-card {
+  pointer-events: none;
+  position: absolute; bottom: 30px;
+  transform: translateX(-50%);
+  /* Clamped so a tick near either end still shows its card in full. */
+  max-width: min(30rem, calc(100% - 24px));
+  min-width: 14rem;
+  padding: 8px 10px; border-radius: 8px;
+  background: var(--pw-panel); border: 1px solid var(--pw-border-strong);
+  box-shadow: 0 6px 20px rgb(0 0 0 / .18);
+  font-size: 12.5px; line-height: 1.45; color: var(--pw-text);
+}
+.chat-scrubber-role {
+  font-size: 11px; font-weight: 600; color: var(--pw-muted);
+  margin-bottom: 3px;
+}
+.chat-scrubber-text {
+  display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical;
+  overflow: hidden; white-space: pre-wrap; overflow-wrap: anywhere;
+}
+/* On a phone the rail is too dense to hit accurately, and the thread is
+   short enough to scroll. */
+@media (max-width: 760px) { .chat-scrubber { display: none; } }
 .rag-calls-wrap { overflow-x: auto; max-width: var(--settings-measure); margin-top: 10px; }
 .rag-calls-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
 .rag-calls-table th, .rag-calls-table td { text-align: left; padding: 5px 12px 5px 0; border-bottom: 1px solid var(--pw-border); vertical-align: top; white-space: nowrap; }

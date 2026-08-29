@@ -8,6 +8,7 @@ import { useAppConfig } from '../config'
 import { api } from '../api'
 import { setLabelScope, setPersona } from '../labelScope'
 import { PersonaIcon } from '../components/PersonaIcon'
+import { ConversationScrubber } from '../components/ConversationScrubber'
 
 const MODEL_STORAGE_KEY = 'studio.chat.lastModel'
 
@@ -365,6 +366,7 @@ export function ChatView() {
           <ChatLayout>
             {showAttachments ? <AttachmentManager /> : activeId ? <ChatThread conversationId={activeId} /> : <ChatEmptyState />}
           </ChatLayout>
+          {activeId && !showAttachments && <ConversationScrubber />}
           {railOpen && <div className="chat-rail-backdrop" onClick={() => setRailOpen(false)} />}
           <div className="chat-think-handle" onMouseDown={onThinkDrag} title="Drag to resize the activity panel" />
           {multiUser && sharedHistory && !showAttachments && (
