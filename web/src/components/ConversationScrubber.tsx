@@ -23,8 +23,8 @@ import { useChat } from '@parallelworks/ai-chat'
 interface Msg { id: string; role: string; content?: string | null; pseudo?: unknown }
 interface Tick { role: 'user' | 'assistant' | null; text: string }
 
-const MIN_TICK = 5
-const MAX_TICK = 22
+const MIN_TICK = 6
+const MAX_TICK = 26
 const PREVIEW_CHARS = 220
 const MIN_MESSAGES = 6
 
@@ -145,6 +145,29 @@ export function ConversationScrubber() {
     messageNodes()[i]?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }, [])
 
+  // The rail belongs against the thread's left edge, and the thread starts
+  // wherever the conversations rail currently ends: it is resizable and
+  // collapsible, so the offset is measured rather than assumed.
+  const selfRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const canvas = document.querySelector('.chat-canvas')
+    if (!canvas) return
+    const place = () => {
+      const host = scrollHost()
+      const el = selfRef.current
+      if (!host || !el) return
+      const left = host.getBoundingClientRect().left - canvas.getBoundingClientRect().left
+      el.style.setProperty('--scrub-left', `${Math.max(0, Math.round(left))}px`)
+    }
+    place()
+    const ro = new ResizeObserver(place)
+    ro.observe(canvas)
+    const host = scrollHost()
+    if (host) ro.observe(host)
+    window.addEventListener('resize', place)
+    return () => { ro.disconnect(); window.removeEventListener('resize', place) }
+  }, [ticks.length])
+
   // Where you are now, so the rail reads as a position rather than a list.
   // Computed on scroll rather than with an observer per message, which at
   // several hundred messages would be a lot of observers for one number.
@@ -184,11 +207,11 @@ export function ConversationScrubber() {
   const preview = hover != null ? ticks[hover] : null
 
   return (
-    <div className="chat-scrubber" aria-label="Conversation timeline">
+    <div className="chat-scrubber" ref={selfRef} aria-label="Conversation timeline">
       {preview && (
         <div
           className="chat-scrubber-card"
-          style={{ left: `${((hover! + 0.5) / ticks.length) * 100}%` }}
+          style={{ top: `${((hover! + 0.5) / ticks.length) * 100}%` }}
         >
           {preview.role && (
             <div className="chat-scrubber-role">{preview.role === 'user' ? 'You' : 'Assistant'}</div>
@@ -202,7 +225,7 @@ export function ConversationScrubber() {
             key={i}
             type="button"
             className={`chat-scrubber-tick${t.role === 'user' ? ' user' : ''}${i === current ? ' current' : ''}`}
-            style={{ height: `${MIN_TICK + Math.round((MAX_TICK - MIN_TICK) * Math.sqrt(t.text.length / longest))}px` }}
+            style={{ width: `${MIN_TICK + Math.round((MAX_TICK - MIN_TICK) * Math.sqrt(t.text.length / longest))}px` }}
             title={`Message ${i + 1} of ${ticks.length}`}
             onMouseEnter={() => setHover(i)}
             onMouseLeave={() => setHover(h => (h === i ? null : h))}
