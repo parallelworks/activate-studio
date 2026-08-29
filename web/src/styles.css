@@ -1063,45 +1063,61 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .chat-filter-btn:hover { color: var(--pw-text); border-color: var(--pw-border-strong); }
 .chat-filter-btn.active { color: var(--pw-navy); border-color: var(--pw-navy); }
 
-/* Conversation scrubber: a tick per message along the bottom of the thread,
-   hover to preview, click to jump. Sits above the composer's sticky footer,
-   and is pointer-transparent except on the ticks themselves so it never
-   eats a click meant for the message underneath. */
+/* Conversation scrubber: a tick per message down the side of the thread,
+   hover to preview, click to jump. Vertical because that is the axis the
+   thread scrolls on, so a tick's position maps directly to how far down
+   the conversation it sits. */
 .chat-scrubber {
-  position: absolute; left: 0; right: var(--ade-think-rail, 0px); bottom: 0; z-index: 5;
+  position: absolute;
+  left: var(--scrub-left, 0px); top: 0; bottom: 0; z-index: 5;
+  width: 34px;
   pointer-events: none;
-  display: flex; justify-content: center; align-items: flex-end;
+  display: flex; align-items: center;
   /* `.chat-canvas > *` sets height:100% for the package's own layout, and
-     a direct child gets it whether it wants it or not. Left alone the rail
-     spans the whole canvas and paints at the top instead of along the
-     bottom edge, which is the same rule that once put the chat controls
-     mid-page. */
-  height: auto;
+     a direct child gets it whether it wants it or not; here that is what
+     we want, but state it rather than inherit it by luck. */
+  height: 100%;
 }
 .chat-scrubber-rail {
   pointer-events: auto;
-  display: flex; align-items: flex-end; gap: 2px;
-  width: min(100%, 56rem); padding: 0 16px 5px;
-  height: 26px;
+  display: flex; flex-direction: column; align-items: flex-start; justify-content: center;
+  gap: 1px;
+  padding: 8px 0 8px 6px;
+  max-height: 100%; width: 100%;
+  /* A long thread has more ticks than the rail has pixels; hiding the
+     spill keeps it a rail rather than something that grows past the
+     thread. The ticks shrink first, so this only bites in the extreme. */
+  overflow: hidden;
+  /* Idle it is a hairline; it opens up when pointed at, so a long thread
+     is navigable without the rail competing with the conversation. */
+  opacity: .5;
+  transition: opacity .14s ease;
 }
+.chat-scrubber:hover .chat-scrubber-rail { opacity: 1; }
 .chat-scrubber-tick {
-  flex: 1 1 0; min-width: 2px; max-width: 10px; padding: 0;
+  /* Shrinkable, so the count of messages sets the density rather than
+     pushing the rail past the bottom of the thread. */
+  flex: 0 1 3px;
+  height: 3px; min-height: 1px; padding: 0;
   border: 0; border-radius: 2px; cursor: pointer;
   background: var(--pw-border-strong);
-  opacity: .45;
-  transition: opacity .12s, background-color .12s;
+  /* Collapsed to a stub until the rail is pointed at, which is the hover
+     expansion: the ticks grow out to their real lengths. */
+  max-width: 8px;
+  transition: max-width .16s ease, background-color .12s, height .12s;
 }
-.chat-scrubber-tick.user { background: var(--pw-navy); opacity: .35; }
-.chat-scrubber-tick:hover, .chat-scrubber-tick:focus-visible { opacity: 1; outline: none; }
+.chat-scrubber:hover .chat-scrubber-tick { max-width: none; }
+.chat-scrubber-tick.user { background: var(--pw-navy); opacity: .75; }
+.chat-scrubber-tick:hover, .chat-scrubber-tick:focus-visible {
+  background: var(--pw-navy); height: 5px; outline: none;
+}
 /* Where you are now, so the rail reads as a position and not just a list. */
-.chat-scrubber-tick.current { opacity: .95; background: var(--pw-navy); }
+.chat-scrubber-tick.current { background: var(--pw-navy); height: 5px; }
 .chat-scrubber-card {
   pointer-events: none;
-  position: absolute; bottom: 30px;
-  transform: translateX(-50%);
-  /* Clamped so a tick near either end still shows its card in full. */
-  max-width: min(30rem, calc(100% - 24px));
-  min-width: 14rem;
+  position: absolute; left: 40px;
+  transform: translateY(-50%);
+  max-width: 26rem; min-width: 13rem;
   padding: 8px 10px; border-radius: 8px;
   background: var(--pw-panel); border: 1px solid var(--pw-border-strong);
   box-shadow: 0 6px 20px rgb(0 0 0 / .18);
@@ -1112,7 +1128,7 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
   margin-bottom: 3px;
 }
 .chat-scrubber-text {
-  display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical;
+  display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical;
   overflow: hidden; white-space: pre-wrap; overflow-wrap: anywhere;
 }
 /* On a phone the rail is too dense to hit accurately, and the thread is
