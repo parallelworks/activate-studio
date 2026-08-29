@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useChat } from '@parallelworks/ai-chat'
 
 /**
@@ -97,6 +97,12 @@ export function ConversationScrubber() {
   const { currentConversation, isStreaming } = useChat()
   const [ticks, setTicks] = useState<Tick[]>([])
   const [hover, setHover] = useState<number | null>(null)
+  // The card is placed from the tick's own geometry. A percentage of the
+  // rail's height does not work: the ticks are a centred, padded stack, so
+  // the nth tick is not n/total of the way down the container and the card
+  // pointed at the wrong message.
+  const [cardTop, setCardTop] = useState(0)
+  const cardRef = useRef<HTMLDivElement>(null)
   const [current, setCurrent] = useState(0)
 
   const messages = (currentConversation?.messages ?? []) as Msg[]
@@ -140,6 +146,14 @@ export function ConversationScrubber() {
       if (frame) cancelAnimationFrame(frame)
     }
   }, [conversationId])
+
+  const show = useCallback((i: number, el: HTMLElement) => {
+    const wrap = selfRef.current
+    if (!wrap) return
+    const t = el.getBoundingClientRect()
+    setHover(i)
+    setCardTop(t.top - wrap.getBoundingClientRect().top + t.height / 2)
+  }, [])
 
   const jump = useCallback((i: number) => {
     messageNodes()[i]?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -199,6 +213,18 @@ export function ConversationScrubber() {
 
   installDebug(ticks.length, MIN_MESSAGES)
 
+  // Nudge the card back inside once its real height is known, so a tick at
+  // the very top or bottom does not put half the preview off the thread.
+  useLayoutEffect(() => {
+    const wrap = selfRef.current
+    const card = cardRef.current
+    if (hover == null || !wrap || !card) return
+    const half = card.offsetHeight / 2
+    const lo = half + 8
+    const hi = Math.max(lo, wrap.clientHeight - half - 8)
+    setCardTop(t => Math.min(Math.max(t, lo), hi))
+  }, [hover])
+
   // Below a handful of messages the rail is clutter: scrolling already
   // finds everything.
   if (ticks.length < MIN_MESSAGES) return null
@@ -211,7 +237,8 @@ export function ConversationScrubber() {
       {preview && (
         <div
           className="chat-scrubber-card"
-          style={{ top: `${((hover! + 0.5) / ticks.length) * 100}%` }}
+          ref={cardRef}
+          style={{ top: `${cardTop}px` }}
         >
           {preview.role && (
             <div className="chat-scrubber-role">{preview.role === 'user' ? 'You' : 'Assistant'}</div>
@@ -227,9 +254,9 @@ export function ConversationScrubber() {
             className={`chat-scrubber-tick${t.role === 'user' ? ' user' : ''}${i === current ? ' current' : ''}`}
             style={{ width: `${MIN_TICK + Math.round((MAX_TICK - MIN_TICK) * Math.sqrt(t.text.length / longest))}px` }}
             title={`Message ${i + 1} of ${ticks.length}`}
-            onMouseEnter={() => setHover(i)}
+            onMouseEnter={e => show(i, e.currentTarget)}
             onMouseLeave={() => setHover(h => (h === i ? null : h))}
-            onFocus={() => setHover(i)}
+            onFocus={e => show(i, e.currentTarget)}
             onBlur={() => setHover(null)}
             onClick={() => jump(i)}
           />
