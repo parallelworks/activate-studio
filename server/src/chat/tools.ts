@@ -145,7 +145,7 @@ export const TOOL_SPECS: ToolSpec[] = [
     function: {
       name: 'compose_workflow',
       description:
-        'Combine existing workflows into a new one that runs each as a subworkflow step, merging their inputs. Use it to assemble a chain toward a goal: list_workflows to see what exists, then compose the ones that fit. Returns the composed workflow.yaml for review; nothing is saved to the platform.',
+        'Combine existing workflows into a new one that runs each as a subworkflow step, merging their inputs. Use it to assemble a chain toward a goal: list_workflows to see what exists, then compose the ones that fit. Returns the composed workflow.yaml for review; nothing is saved to the platform. To show it, write the YAML into the knowledge base and embed /?embed=dag&path=<that file>.',
       parameters: {
         type: 'object',
         properties: {

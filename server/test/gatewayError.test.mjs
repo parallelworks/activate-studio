@@ -69,6 +69,22 @@ test('a parameter rejection is still told apart from the masked failure', () => 
   assert.doesNotMatch(m, /locked/, 'an explicit parameter complaint is not a credential problem')
 })
 
+// The documented GenAI.mil locked-key body, as the gateway relays it.
+const LOCKED_401 = 'gateway chat 401: {"error":{"type":"unauthorized","message":"API key locked - visit the unlock URL to re-enable your key","unlock_url":"https://genai.example.mil/unlock/abc-123"}}'
+
+test('a locked GenAI key hands the user its unlock link', () => {
+  const m = gatewayChatMessage(LOCKED_401, PERSONAL)
+  assert.match(m, /locked this API key/)
+  assert.match(m, /https:\/\/genai\.example\.mil\/unlock\/abc-123/)
+  assert.doesNotMatch(m, /renew it under the platform/, 'the unlock link outranks the generic auth advice')
+})
+
+test('an escaped unlock_url inside a relayed body is still found', () => {
+  const escaped = 'gateway chat 401: {"error":{"message":"{\\"unlock_url\\": \\"https://genai.example.mil/unlock/xyz\\"}","type":"error"}}'
+  const m = gatewayChatMessage(escaped, PERSONAL)
+  assert.match(m, /unlock\/xyz/)
+})
+
 test('an unclassified failure says what is known and nothing more', () => {
   const m = gatewayChatMessage('gateway chat 500: upstream exploded', PERSONAL)
   assert.match(m, /Pick another model from the list while it recovers/)

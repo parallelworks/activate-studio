@@ -128,7 +128,12 @@ export default function App() {
   }, [cfg, effectiveTheme])
   useEffect(() => { if (cfg.loaded) { applyAccent(cfg.accent); applySurface(cfg.surface) } }, [cfg])
   useEffect(() => {
-    const effective = theme ?? (sysDark ? 'dark' : cfg.theme)
+    // An embed document is told its theme by the page hosting it, and that
+    // instruction outranks every local derivation: the iframe must match
+    // its parent, whatever this document would have decided for itself.
+    const told = new URLSearchParams(location.search).get('theme')
+    const effective = (told === 'dark' || told === 'light')
+      ? told : theme ?? (sysDark ? 'dark' : cfg.theme)
     document.documentElement.dataset.theme = effective
     // Cached so the next load paints in this theme before config arrives.
     if (cfg.loaded) { try { localStorage.setItem('ade-theme-default', cfg.theme) } catch { /* ignore */ } }
@@ -216,8 +221,15 @@ export default function App() {
   // /?embed= image sources into iframes).
   const embedParams = new URLSearchParams(location.search)
   const embedKind = embedParams.get('embed')
-  if (embedKind === 'dag' && embedParams.get('workflow')) {
-    return <div className="embed-root"><DagViewer workflow={embedParams.get('workflow')!} /></div>
+  if (embedKind === 'dag' && (embedParams.get('workflow') || embedParams.get('path'))) {
+    return (
+      <div className="embed-root">
+        <DagViewer
+          workflow={embedParams.get('workflow') ?? undefined}
+          path={embedParams.get('path') ?? undefined}
+        />
+      </div>
+    )
   }
   if (embedKind === 'model' && embedParams.get('path')) {
     return <div className="embed-root"><Suspense fallback={null}><ModelViewer path={embedParams.get('path')!} /></Suspense></div>

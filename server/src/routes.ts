@@ -18,6 +18,7 @@ import { buildInfo } from './version.js'
 import { annotateHits, readTagsBatch } from './tags.js'
 import { gatewayKey } from './chat/gateway.js'
 import { convertToDynamicForm, dumpYaml, getAllDeps, getStepLabel, workflowHasUserInputs } from '@parallelworks/workflow-parser'
+import { parse as parseYaml } from 'yaml'
 import { modelCachePath, removeModelCache } from './model.js'
 import { effectiveSettings } from './settings.js'
 import { authEnabled, authHeaderName } from './auth.js'
@@ -594,18 +595,11 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
     return { workflows: rows }
   })
 
-  app.get('/api/workflows/:name', async req => {
-    const name = (req.params as { name: string }).name.replace(/[^A-Za-z0-9_.-]/g, '')
-    const viaApi = await platformApi(`/api/workflows/${encodeURIComponent(name)}`, req.user?.id).catch(() => null)
-    const wf: any = viaApi ?? JSON.parse(await new Promise<string>((resolve, reject) => {
-      execFile(PW_CLI, ['workflows', 'get', name, '-o', 'json'], { timeout: 20_000 }, (e, so, se) => e ? reject(new Error(se || e.message)) : resolve(so))
-    }).catch(e => {
-      throw new KbError(502, `Cannot read workflow ${name}: ${credentialRemedy(req.user?.id, String(e.message))}`)
-    }))
-    const jobs = (wf.yaml?.jobs ?? {}) as Record<string, { steps?: unknown[]; needs?: string[] }>
-    // The platform's own parser names steps and resolves dependencies, so
-    // this view matches what ACTIVATE shows and follows it as the workflow
-    // schema evolves, rather than reimplementing either.
+  // One workflow document, shaped for the DAG viewer. Shared between the
+  // platform route below and the corpus route, so a generated workflow.yaml
+  // in the library renders exactly like a registered one.
+  const dagPayload = (name: string, displayName: string | undefined, yamlDoc: any) => {
+    const jobs = (yamlDoc?.jobs ?? {}) as Record<string, { steps?: unknown[]; needs?: string[] }>
     const nodes = Object.entries(jobs).map(([id, def]) => ({
       id,
       steps: (def?.steps ?? []).map((s, i) => getStepLabel(s as Parameters<typeof getStepLabel>[0], i)),
@@ -615,19 +609,42 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
     for (const [job, def] of Object.entries(jobs)) {
       for (const dep of def?.needs ?? []) edges.push({ from: dep, to: job })
     }
-    // The input form the platform would render for this workflow, so a
-    // preview can show what a run actually asks for. The converter takes
-    // the inputs subtree, not the whole document.
     let form: unknown = null
-    const rawInputs = wf.yaml?.on?.execute?.inputs
+    const rawInputs = yamlDoc?.on?.execute?.inputs
     try {
-      form = rawInputs && workflowHasUserInputs(wf.yaml) ? convertToDynamicForm(rawInputs) : null
+      form = rawInputs && workflowHasUserInputs(yamlDoc) ? convertToDynamicForm(rawInputs) : null
     } catch { /* an older or hand-written schema the converter does not accept */ }
-    return {
-      name: wf.name, displayName: wf.displayName, nodes, edges, yaml: wf.yaml,
-      form,
-      yamlText: dumpYaml(wf.yaml ?? {}),
+    return { name, displayName, nodes, edges, yaml: yamlDoc, form, yamlText: dumpYaml(yamlDoc ?? {}) }
+  }
+
+  // A workflow YAML in the corpus, rendered as a DAG without being
+  // registered on the platform. This is what lets the assistant design a
+  // workflow on the fly: write the yaml into the library, then embed
+  // /?embed=dag&path=<rel>. No platform credential involved.
+  app.get('/api/kb/dag', async req => {
+    const { path: rel = '' } = req.query as { path?: string }
+    const abs = resolveKb(rel)
+    let doc: any
+    try {
+      doc = parseYaml(await fsp.readFile(abs, 'utf8'))
+    } catch (e) {
+      throw new KbError(422, `Not parseable as workflow YAML: ${String((e as Error).message ?? e).slice(0, 160)}`)
     }
+    if (!doc || typeof doc !== 'object' || !doc.jobs || typeof doc.jobs !== 'object') {
+      throw new KbError(422, 'This YAML has no jobs section, so there is no DAG to draw.')
+    }
+    return dagPayload(rel.split('/').pop() ?? rel, undefined, doc)
+  })
+
+  app.get('/api/workflows/:name', async req => {
+    const name = (req.params as { name: string }).name.replace(/[^A-Za-z0-9_.-]/g, '')
+    const viaApi = await platformApi(`/api/workflows/${encodeURIComponent(name)}`, req.user?.id).catch(() => null)
+    const wf: any = viaApi ?? JSON.parse(await new Promise<string>((resolve, reject) => {
+      execFile(PW_CLI, ['workflows', 'get', name, '-o', 'json'], { timeout: 20_000 }, (e, so, se) => e ? reject(new Error(se || e.message)) : resolve(so))
+    }).catch(e => {
+      throw new KbError(502, `Cannot read workflow ${name}: ${credentialRemedy(req.user?.id, String(e.message))}`)
+    }))
+    return dagPayload(wf.name, wf.displayName, wf.yaml)
   })
 
   // PDF preview as page images: the browser PDF plugin is unavailable in

@@ -50,7 +50,7 @@ function layout(dag: DagData) {
   return { pos, width, height }
 }
 
-export function DagViewer({ workflow }: { workflow: string }) {
+export function DagViewer({ workflow, path }: { workflow?: string; path?: string }) {
   const [dag, setDag] = useState<DagData | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [selectedNode, setSelectedNode] = useState<string | null>(null)
@@ -66,14 +66,19 @@ export function DagViewer({ workflow }: { workflow: string }) {
     setError(null)
     setSelectedNode(null)
     setView(null)
-    fetch(`/api/workflows/${encodeURIComponent(workflow)}`)
-      .then(r => (r.ok ? r.json() : Promise.reject(new Error(`${r.status}`))))
+    // A corpus path renders a generated workflow.yaml straight from the
+    // library; a name goes through the platform. Same payload either way.
+    const url = path
+      ? `/api/kb/dag?path=${encodeURIComponent(path)}`
+      : `/api/workflows/${encodeURIComponent(workflow ?? '')}`
+    fetch(url)
+      .then(r => (r.ok ? r.json() : r.json().then((b: { error?: string }) => Promise.reject(new Error(b?.error ?? `${r.status}`)), () => Promise.reject(new Error(`${r.status}`)))))
       .then(setDag)
-      .catch(e => setError(String(e)))
-  }, [workflow])
+      .catch(e => setError(String(e?.message ?? e)))
+  }, [workflow, path])
 
-  if (error) return <div className="viewer"><p className="error">Could not load workflow {workflow}: {error}</p></div>
-  if (!dag) return <div className="viewer"><p className="muted pad">Loading workflow {workflow}…</p></div>
+  if (error) return <div className="viewer"><p className="error">Could not load workflow {path ?? workflow}: {error}</p></div>
+  if (!dag) return <div className="viewer"><p className="muted pad">Loading workflow {path ?? workflow}…</p></div>
 
   const { pos, width, height } = layout(dag)
   const selected = dag.nodes.find(n => n.id === selectedNode)

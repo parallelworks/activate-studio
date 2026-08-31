@@ -59,6 +59,13 @@ export function ragEndpointStatus(): RagEndpointStatus {
 
 export function startRagEndpoint(): RagEndpointStatus {
   if (child) return ragEndpointStatus()
+  // Registering publishes /v1 into the platform catalog, and /v1 is off:
+  // the published model would list everywhere and fail every call.
+  if (!effectiveSettings().ragProxyEnabled) {
+    status.state = 'error'
+    status.detail = 'The /v1 surface is disabled in Settings; enable "Serve the grounded model at /v1" before registering it on the platform.'
+    return ragEndpointStatus()
+  }
   const key = gatewayKey()
   if (!key) {
     status.state = 'error'
@@ -135,7 +142,7 @@ export async function ragEndpointRoutes(app: FastifyInstance): Promise<void> {
 
 /** Auto-start at boot when the setting asks for it. */
 export function maybeAutoStart(log: (msg: string) => void): void {
-  if (effectiveSettings().ragEndpointAutoStart) {
+  if (effectiveSettings().ragEndpointAutoStart && effectiveSettings().ragProxyEnabled) {
     log('rag endpoint auto-start enabled; registering')
     startRagEndpoint()
   }
