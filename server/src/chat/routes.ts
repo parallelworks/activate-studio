@@ -277,7 +277,14 @@ export function gatewayChatMessage(msg: string, model: string): string {
   // common case and the only one the reader can act on, so name it while
   // being honest that it is not certain.
   const maskedFailure = status === 400 && /error occurred while generating/i.test(msg)
-  const cause = rejectedParam
+  // GenAI.mil locks API keys every 8 hours as policy, and its 401 body
+  // carries the unlock URL. That link is the entire remedy, so when it is
+  // present nothing else is worth saying around it. The match tolerates
+  // JSON escaping, since the body often arrives quoted inside the relay.
+  const unlockUrl = /unlock_url[\\":\s]*(https?:\/\/[^"\\\s]+)/.exec(msg)?.[1]
+  const cause = unlockUrl
+    ? `The provider locked this API key, which it does on a schedule (GenAI locks keys every 8 hours). Unlock it here and try again: ${unlockUrl} `
+    : rejectedParam
     ? 'The request carried a parameter this provider does not accept, which is an incompatibility between the Studio and that provider rather than anything wrong with your credentials. Pick another model, and report this one so the parameter can be dropped for it. '
     : (status === 401 || status === 403) && personal
       ? 'This model uses a provider key registered on the platform, and an expired key fails exactly this way; renew it under the platform\u2019s AI provider settings, or pick another model. '

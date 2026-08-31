@@ -199,7 +199,17 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
     }
     if (body.visionModel !== undefined) next.visionModel = String(body.visionModel).slice(0, 120) || undefined
     if (body.mcpEnabled !== undefined) next.mcpEnabled = !!body.mcpEnabled
-    if (body.ragProxyEnabled !== undefined) next.ragProxyEnabled = !!body.ragProxyEnabled
+    if (body.ragProxyEnabled !== undefined) {
+      next.ragProxyEnabled = !!body.ragProxyEnabled
+      // Off means off everywhere. The /v1 routes already refuse calls, but
+      // the platform registration is a separate process holding a session
+      // that keeps the model listed in the catalog looking alive; leaving
+      // it up made the switch look ignored. Dynamic import because the
+      // endpoint module imports settings.
+      if (!next.ragProxyEnabled) {
+        void import('./ragEndpoint.js').then(m => m.stopRagEndpoint()).catch(() => {})
+      }
+    }
     if (body.delegationEnabled !== undefined) next.delegationEnabled = !!body.delegationEnabled
     if (body.delegationMaxAgents !== undefined) {
       const n = Number(body.delegationMaxAgents)

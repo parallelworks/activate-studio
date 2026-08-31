@@ -19,6 +19,13 @@ import { useCallback, useEffect, useRef, useState } from 'react'
  */
 export function EmbedFrame({ src, title }: { src: string; title: string }) {
   const wrapRef = useRef<HTMLDivElement>(null)
+  // The embed is its own document and used to re-derive the theme for
+  // itself, which is not guaranteed to reach the same answer as the page
+  // hosting it; a dark chat then held a light DAG. The parent knows its
+  // theme, so it is passed along rather than re-derived.
+  const theme = document.documentElement.dataset.theme
+  const themed = theme && !src.includes('theme=')
+    ? `${src}&theme=${theme}` : src
   const [mode, setMode] = useState<'inline' | 'native' | 'overlay'>('inline')
 
   const enter = useCallback(() => {
@@ -58,7 +65,7 @@ export function EmbedFrame({ src, title }: { src: string; title: string }) {
   const full = mode !== 'inline'
   return (
     <div ref={wrapRef} className={`chat-embed-wrap${mode === 'overlay' ? ' overlay' : ''}${mode === 'native' ? ' native-full' : ''}`}>
-      <iframe src={src} title={title} className="chat-embed-frame" />
+      <iframe src={themed} title={title} className="chat-embed-frame" />
       <button
         type="button"
         className="chat-embed-expand"
