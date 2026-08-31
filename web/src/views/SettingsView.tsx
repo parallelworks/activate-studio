@@ -208,7 +208,7 @@ export function SettingsView() {
     }
   }
 
-  const [accessHealth, setAccessHealth] = useState<{ status: string; models: number; gatewayHost?: string; message?: string | null } | null>(null)
+  const [accessHealth, setAccessHealth] = useState<{ status: string; models: number; gatewayHost?: string; message?: string | null; platformAccess?: boolean | null } | null>(null)
 
   const refreshAccess = () => {
     fetch('/api/me/model-key/test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
@@ -480,6 +480,14 @@ export function SettingsView() {
                         </span>
                       )}
                     </div>
+                    {me.mode !== 'none' && accessHealth?.status === 'ok' && accessHealth.platformAccess === false && (
+                      <p className="identity-note">
+                        This credential reaches models only. Workflow tools, run monitoring, and the DAG viewer
+                        use the platform API, which needs a platform token or a platform API key; an AI gateway
+                        API key or a provider key does not grant that access. Both work for chat, so this only
+                        matters if you use the workflow features.
+                      </p>
+                    )}
                     {me.mode !== 'none' && accessHealth?.status === 'ok' && (
                       <div className="rag-banner-models">
                         {models.length || accessHealth.models} models available to you{accessHealth.gatewayHost ? ` via ${accessHealth.gatewayHost}` : ''}:
@@ -505,8 +513,8 @@ export function SettingsView() {
                   {me.mode === 'none' && (
                     <p className="muted view-sub">
                       {form.requirePersonalKey
-                        ? 'Add your own API key or a platform token below to use chat and models on this deployment. Browsing, search, and adding material work without one.'
-                        : 'Add your own API key or a platform token to call the gateway (and platform tools) as yourself.'}
+                        ? 'Add your own credential below to use chat and models on this deployment. A platform token or platform API key covers everything, chat plus workflow tools and the DAG viewer; an AI gateway API key or a provider key covers chat only. Browsing, search, and adding material work without one.'
+                        : 'Add your own credential to call the gateway (and platform tools) as yourself. A platform token or platform API key covers everything; an AI gateway API key or a provider key covers chat only.'}
                     </p>
                   )}
                   <div className="key-row">
@@ -514,7 +522,7 @@ export function SettingsView() {
                       className="field grow"
                       type="password"
                       value={keyInput}
-                      placeholder="Paste your PW API key, a platform token, or another provider's key"
+                      placeholder="Paste a platform token or API key (full access), or an AI gateway / provider key (chat only)"
                       autoComplete="off"
                       onChange={e => setKeyInput(e.target.value)}
                     />
