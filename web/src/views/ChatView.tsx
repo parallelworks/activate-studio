@@ -9,6 +9,7 @@ import { api } from '../api'
 import { setLabelScope, setPersona } from '../labelScope'
 import { PersonaIcon } from '../components/PersonaIcon'
 import { ConversationScrubber } from '../components/ConversationScrubber'
+import { EmbedFrame } from '../components/EmbedFrame'
 
 const MODEL_STORAGE_KEY = 'studio.chat.lastModel'
 
@@ -333,7 +334,7 @@ export function ChatView() {
         markdownComponents: {
           img: ({ node: _node, ...props }) =>
             typeof props.src === 'string' && props.src.startsWith('/?embed=') ? (
-              <iframe src={props.src} title={String(props.alt ?? 'embedded viewer')} className="chat-embed-frame" />
+              <EmbedFrame src={props.src} title={String(props.alt ?? 'embedded viewer')} />
             ) : (
               <img {...props} />
             ),
