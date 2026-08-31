@@ -774,6 +774,13 @@ export function SettingsView() {
                 <SwitchToggle value={form.ragProxyEnabled} onChange={v => setForm({ ...form, ragProxyEnabled: v })} yesLabel="On" noLabel="Off" />
                 <span>Serve the grounded model at /v1.</span>
               </div>
+              {!form.ragProxyEnabled && (
+                <p className="muted view-sub">
+                  Off: /v1 refuses calls, and any platform registration is taken down with it. Turn it on to configure the models, keys, and platform registration.
+                </p>
+              )}
+              {!form.ragProxyEnabled && saveRow(false)}
+              {form.ragProxyEnabled && (<>
               <p className="muted view-sub">
                 The endpoint at{' '}
                 <CopyToClipboard text={`${location.origin}/v1`}><code>{location.origin}/v1</code></CopyToClipboard> lets
@@ -875,6 +882,8 @@ export function SettingsView() {
                 )}
                 {ragEp?.detail && ragEp.state !== 'running' && <p className="muted key-note">{ragEp.detail}</p>}
               </div>
+              </>)}
+              {form.ragProxyEnabled && (<>
               <div className="tool-group">Recent grounded-model calls</div>
               <p className="muted view-sub">
                 The last 50 calls to this /v1 surface, most recent first, held in memory and cleared on restart. Question text is not recorded; the distilled retrieval terms are.
@@ -904,6 +913,7 @@ export function SettingsView() {
                   </table>
                 </div>
               )}
+              </>)}
             </>
           )}
 
