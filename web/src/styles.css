@@ -957,6 +957,10 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 }
 .dag-schema-warn ul { margin: 4px 0 0; padding-left: 18px; }
 .dag-schema-warn li { margin: 2px 0; }
+/* The Workflow tab hosts the DAG viewer inside the Library viewer; the
+   inner viewer needs a height or the SVG canvas collapses. */
+.workflow-tab-body { flex: 1; min-height: 480px; display: flex; flex-direction: column; }
+.workflow-tab-body .viewer { flex: 1; }
 .embed-root { height: 100vh; display: flex; flex-direction: column; background: var(--pw-panel); }
 .embed-root .viewer { flex: 1; min-height: 0; }
 
