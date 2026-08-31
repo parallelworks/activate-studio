@@ -5,9 +5,10 @@ import { forgetHash } from '../lastLocation'
 import { TagMenu } from './TagMenu'
 const ModelViewer = lazy(() => import('./ModelViewer').then(m => ({ default: m.ModelViewer })))
 import { DataTree } from './DataTree'
+import { DagViewer } from './DagViewer'
 
 const OFFICE_SUFFIXES = ['.docx', '.pptx', '.xlsx', '.doc', '.ppt', '.xls', '.odt', '.odp', '.ods']
-type Tab = 'preview' | 'indexed' | 'source'
+type Tab = 'preview' | 'indexed' | 'source' | 'workflow'
 
 const JSON_SUFFIXES = ['.json', '.jsonl', '.geojson', '.ipynb']
 const YAML_SUFFIXES = ['.yaml', '.yml']
@@ -152,6 +153,10 @@ export function Viewer({ path, onDeleted }: {
   const isJson = JSON_SUFFIXES.includes(suffix)
   const isYaml = YAML_SUFFIXES.includes(suffix)
   const isStructured = (isJson || isYaml) && isText
+  // A YAML file with a jobs map is a platform workflow, and the DAG is the
+  // reading of it people actually want. The heuristic only decides whether
+  // the tab appears; the server's parse is the authority on the content.
+  const isWorkflowYaml = isYaml && isText && /^jobs:/m.test(file?.content ?? '')
   // Whether extracted text is Markdown is the server's to know: the same
   // PDF is downmark Markdown on a host with the native binary and
   // pdftotext's column-aligned text without it, and rendering that as
@@ -219,6 +224,10 @@ export function Viewer({ path, onDeleted }: {
   // index holds for formats whose text is extracted rather than read.
   const previewLabel = isStructured ? 'Tree' : isMarkdown ? 'Rendered' : isHtml ? 'Page' : 'Preview'
   const views: { key: Tab; label: string; node: ReactElement }[] = []
+  if (isWorkflowYaml) {
+    // First, so a workflow file opens on its DAG rather than on the tree.
+    views.push({ key: 'workflow', label: 'Workflow', node: <div className="workflow-tab-body"><DagViewer path={path} /></div> })
+  }
   const hasRendered = isStructured || isMarkdown || isHtml || isImage || isPdf || isOffice || isModel
   if (hasRendered) views.push({ key: 'preview', label: previewLabel, node: previewView })
   if (isText) views.push({ key: 'source', label: hasRendered ? 'Source' : 'Text', node: sourceView })
