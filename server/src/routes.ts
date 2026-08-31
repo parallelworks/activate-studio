@@ -19,6 +19,7 @@ import { annotateHits, readTagsBatch } from './tags.js'
 import { gatewayKey } from './chat/gateway.js'
 import { convertToDynamicForm, dumpYaml, getAllDeps, getStepLabel, workflowHasUserInputs } from '@parallelworks/workflow-parser'
 import { parse as parseYaml } from 'yaml'
+import { validateWorkflowDoc } from './workflowSchema.js'
 import { modelCachePath, removeModelCache } from './model.js'
 import { effectiveSettings } from './settings.js'
 import { authEnabled, authHeaderName } from './auth.js'
@@ -633,7 +634,10 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
     if (!doc || typeof doc !== 'object' || !doc.jobs || typeof doc.jobs !== 'object') {
       throw new KbError(422, 'This YAML has no jobs section, so there is no DAG to draw.')
     }
-    return dagPayload(rel.split('/').pop() ?? rel, undefined, doc)
+    // The verdict rides along so the viewer can say why a drafted workflow
+    // will not run, instead of drawing a plausible graph over a broken file.
+    const verdict = await validateWorkflowDoc(doc)
+    return { ...dagPayload(rel.split('/').pop() ?? rel, undefined, doc), schemaErrors: verdict.ok === false ? verdict.errors : [] }
   })
 
   app.get('/api/workflows/:name', async req => {

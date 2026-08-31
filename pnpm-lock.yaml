@@ -22,6 +22,9 @@ importers:
       '@parallelworks/workflow-parser':
         specifier: ^0.1.0
         version: 0.1.0
+      ajv:
+        specifier: ^8.20.0
+        version: 8.20.0
       fastify:
         specifier: ^5.0.0
         version: 5.12.0

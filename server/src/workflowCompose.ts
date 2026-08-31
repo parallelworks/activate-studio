@@ -55,8 +55,22 @@ function pw(args: string[]): Promise<string> {
 /** The workflow's own name, without a marketplace prefix or version. */
 function sourceName(uses: string): string {
   const parts = uses.split('/').filter(Boolean)
-  const withoutMarketplace = parts[0] === 'marketplace' ? parts.slice(1) : parts
-  return withoutMarketplace.filter(p => !/^v?\d/.test(p))[0] ?? uses
+  const withoutPrefix = parts[0] === 'marketplace' || parts[0] === 'workflow' ? parts.slice(1) : parts
+  return withoutPrefix.filter(p => !/^v?\d/.test(p))[0] ?? uses
+}
+
+/**
+ * The reference the platform schema accepts in a `uses:` step. Legal forms
+ * are the builtin parallelworks/* actions and the marketplace/, workflow/,
+ * and github/ prefixes; a bare name is one of your own workflows, so it is
+ * emitted as workflow/<name>. Emitting the bare name was the composer's
+ * main schema violation: the yaml looked right, rendered a DAG, and was
+ * rejected at submission.
+ */
+function usesRef(uses: string): string {
+  const first = uses.split('/')[0]
+  if (['marketplace', 'workflow', 'github', 'parallelworks'].includes(first)) return uses
+  return `workflow/${uses}`
 }
 
 export async function composeWorkflows(steps: ComposeStep[], opts: { chain?: boolean } = {}): Promise<ComposeResult> {
@@ -64,7 +78,8 @@ export async function composeWorkflows(steps: ComposeStep[], opts: { chain?: boo
 
   const taken = new Set<string>()
   const resolved = steps.map(s => {
-    const id = (s.id ?? jobId(s.uses, taken)).replace(/[^A-Za-z0-9_]/g, '_')
+    // Job keys are lowercase in the schema (^[a-z0-9_-]{1,255}$).
+    const id = (s.id ?? jobId(s.uses, taken)).toLowerCase().replace(/[^a-z0-9_-]/g, '_')
     taken.add(id)
     return { ...s, id }
   })
@@ -118,7 +133,7 @@ export async function composeWorkflows(steps: ComposeStep[], opts: { chain?: boo
       ...(needs?.length ? { needs } : {}),
       steps: [{
         name: step.name ?? `Run ${sourceName(step.uses)}`,
-        uses: step.uses,
+        uses: usesRef(step.uses),
         ...(Object.keys(withInputs).length ? { with: withInputs } : {}),
       }],
     }

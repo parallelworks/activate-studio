@@ -10,6 +10,8 @@ interface DagData {
   yaml?: Record<string, unknown>
   form?: Record<string, { label?: string; type?: string; default?: unknown; tooltip?: string }> | null
   yamlText?: string
+  /** Present for corpus files: why the platform would reject this YAML. */
+  schemaErrors?: string[]
 }
 
 const NODE_W = 190
@@ -80,6 +82,7 @@ export function DagViewer({ workflow, path }: { workflow?: string; path?: string
   if (error) return <div className="viewer"><p className="error">Could not load workflow {path ?? workflow}: {error}</p></div>
   if (!dag) return <div className="viewer"><p className="muted pad">Loading workflow {path ?? workflow}…</p></div>
 
+  const schemaWarnings = dag.schemaErrors ?? []
   const { pos, width, height } = layout(dag)
   const selected = dag.nodes.find(n => n.id === selectedNode)
 
@@ -130,6 +133,12 @@ export function DagViewer({ workflow, path }: { workflow?: string; path?: string
         <span className="viewer-path">workflow: {dag.name}{dag.displayName && dag.displayName !== dag.name ? ` (${dag.displayName})` : ''}</span>
         <span className="viewer-meta">{dag.nodes.length} jobs, {dag.edges.length} dependencies</span>
       </div>
+      {schemaWarnings.length > 0 && (
+        <div className="dag-schema-warn">
+          <strong>This YAML does not pass the platform workflow schema; it will not run as written.</strong>
+          <ul>{schemaWarnings.slice(0, 8).map((w, i) => <li key={i}>{w}</li>)}</ul>
+        </div>
+      )}
       {dag.yamlText && (
         <div className="viewer-tabs">
           <button className={tab === 'dag' ? 'active' : ''} onClick={() => setTab('dag')}>DAG</button>
