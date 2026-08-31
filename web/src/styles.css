@@ -948,6 +948,15 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .chat-embed-wrap.overlay .chat-embed-expand,
 .chat-embed-wrap:fullscreen .chat-embed-expand { opacity: 1; }
 .chat-embed-wrap:fullscreen { background: var(--pw-panel); padding: 12px; }
+/* A drafted workflow that fails the platform schema still draws, but says
+   plainly that it will not run, with the schema's own complaints. */
+.dag-schema-warn {
+  margin: 8px 12px 0; padding: 8px 12px; border-radius: 8px;
+  border: 1px solid var(--pw-amber); background: color-mix(in srgb, var(--pw-amber) 12%, var(--pw-panel));
+  font-size: 12.5px; color: var(--pw-text);
+}
+.dag-schema-warn ul { margin: 4px 0 0; padding-left: 18px; }
+.dag-schema-warn li { margin: 2px 0; }
 .embed-root { height: 100vh; display: flex; flex-direction: column; background: var(--pw-panel); }
 .embed-root .viewer { flex: 1; min-height: 0; }
 

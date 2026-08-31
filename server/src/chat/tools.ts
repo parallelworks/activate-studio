@@ -42,6 +42,7 @@ export const TOOL_CALLS: Record<string, string> = {
   workflow_runs: 'pw workflows runs ls',
   workflow_run_detail: 'pw workflows runs get <id>',
   compose_workflow: 'reads each source workflow with pw workflows get, then emits a workflow that runs them as `uses:` subworkflow steps',
+  validate_workflow: 'parses the YAML (inline or a knowledge base file) and validates it against the platform\'s /workflow.schema.json',
   pw_help: 'pw --help / pw <command> --help',
   list_clusters: 'pw cluster ls -o json',
   hpc_status: 'GET against the configured Status Monitor REST API (fleet, cluster-usage, placement, insights, storage, events); launch=true instead runs the deployment-configured monitor workflow via the pw CLI',
@@ -183,6 +184,22 @@ export const TOOL_SPECS: ToolSpec[] = [
           inputs: { type: 'string', description: 'JSON object of workflow inputs, merged over the deployment preset (e.g. {"resource": "a30gpuserver", "endpoint": {"name": "qwen38-27b"}})' },
           launch: { type: 'boolean', description: 'false (default) describes; true submits the run' },
         },
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'validate_workflow',
+      description:
+        'Validate workflow YAML against the platform\'s workflow schema. Pass yaml text, or path for a file in the knowledge base. Run this after composing or editing a workflow and fix every error it reports before writing the file, embedding its DAG, or offering to run it; a workflow that fails this check will fail on the platform too.',
+      parameters: {
+        type: 'object',
+        properties: {
+          yaml: { type: 'string', description: 'Workflow YAML text to validate' },
+          path: { type: 'string', description: 'Knowledge base path of a workflow YAML file to validate instead of inline text' },
+        },
+        required: [],
       },
     },
   },
@@ -895,16 +912,26 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
       case 'compose_workflow': {
         const list = (args.workflows ?? []) as { uses: string; name?: string; id?: string; needs?: string[] }[]
         const composed = await composeWorkflows(list, { chain: !args.parallel })
+        // Validated against the platform's own schema before it is handed
+        // back: a composition that merely looks plausible renders a broken
+        // DAG and fails at submission, and this is the moment to say so.
+        const { validateWorkflowDoc } = await import('../workflowSchema.js')
+        const verdict = await validateWorkflowDoc(composed.yaml)
         const notes = [
           composed.missing.length ? `could not read: ${composed.missing.join(', ')} (inputs for those steps were not merged)` : '',
           composed.conflicts.length ? `input conflicts: ${composed.conflicts.join('; ')}` : '',
+          verdict.ok === true ? `schema check: valid against ${verdict.source}` : '',
         ].filter(Boolean)
+        const failure = verdict.ok === false
+          ? `\n\nSCHEMA CHECK FAILED against ${verdict.source}; fix these before writing or running this workflow:\n${verdict.errors.map(e => `- ${e}`).join('\n')}`
+          : verdict.ok === null ? `\n\n(${verdict.errors[0]})` : ''
         return {
           result: [
             composed.yamlText,
             notes.length ? `\n# ${notes.join('\n# ')}` : '',
+            failure,
           ].join(''),
-          summary: `composed ${list.length} workflows, ${composed.inputs.length} inputs`,
+          summary: `composed ${list.length} workflows, ${composed.inputs.length} inputs${verdict.ok === false ? ', schema errors' : ''}`,
         }
       }
       case 'list_workflows': {
@@ -977,6 +1004,27 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
         return {
           result: `Run submitted for ${cfg.workflow}.\n${out.trim().slice(0, 2000)}\nWatch it with workflow_runs / workflow_run_detail. A vLLM endpoint appears in the model catalog once the model finishes loading.`,
           summary: `${engine} serve launched`,
+        }
+      }
+      case 'validate_workflow': {
+        const { validateWorkflowDoc } = await import('../workflowSchema.js')
+        const { parse: parseYamlText } = await import('yaml')
+        let text = String(args.yaml ?? '')
+        if (!text && args.path) {
+          const file = await readFileContent(String(args.path))
+          text = file.content ?? ''
+        }
+        if (!text.trim()) return { result: 'Nothing to validate: pass yaml text or a knowledge base path.', summary: 'error' }
+        let doc: unknown
+        try { doc = parseYamlText(text) } catch (e) {
+          return { result: `Not parseable as YAML: ${String((e as Error).message ?? e).slice(0, 300)}`, summary: 'parse error' }
+        }
+        const verdict = await validateWorkflowDoc(doc)
+        if (verdict.ok === true) return { result: `Valid against ${verdict.source}.`, summary: 'valid' }
+        if (verdict.ok === null) return { result: verdict.errors[0], summary: 'schema unavailable' }
+        return {
+          result: `Invalid against ${verdict.source}:\n${verdict.errors.map(e => `- ${e}`).join('\n')}`,
+          summary: `${verdict.errors.length} schema errors`,
         }
       }
       case 'workflow_configs': {
