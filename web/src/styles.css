@@ -979,7 +979,11 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
   animation: task-pulse 1.6s ease-in-out infinite;
 }
 .task-board-card { display: flex; flex-direction: column; gap: 14px; }
-.task-empty h3 { margin: 0 0 8px; }
+.task-empty { padding: 18px 6px 10px; max-width: 62ch; }
+.task-empty h3 { margin: 0 0 10px; font-size: 14px; font-weight: 650; }
+.task-empty p { margin: 0 0 10px; font-size: 13px; line-height: 1.6; }
+.task-empty p:last-child { margin-bottom: 0; }
+.task-empty code { font-size: 12px; }
 .task-cards {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px;
 }
@@ -1424,7 +1428,12 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
    horizontal axis needed containing. */
 .agents-view .ov-list, .agents-view .settings-card { min-width: 0; overflow-x: auto; }
 /* A tall editor must not push its own actions out of reach. */
-.agents-body { max-height: 55vh; }
+.agents-body {
+  min-height: 220px;
+  height: clamp(220px, calc(100vh - 520px), 60vh);
+  max-height: 60vh;
+  resize: vertical;
+}
 .agents-pager { display: flex; align-items: center; justify-content: space-between; gap: 12px;
   margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--pw-border); font-size: 12px; }
 .agents-pager-btns { display: flex; gap: 6px; }
