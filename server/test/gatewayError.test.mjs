@@ -11,6 +11,13 @@ process.env.KB_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'studio-kb-'))
 process.env.INDEX_BASE = fs.mkdtempSync(path.join(os.tmpdir(), 'studio-idx-'))
 
 const { gatewayChatMessage } = await import('../dist/chat/routes.js')
+const { extractUnlockUrl } = await import('../dist/chat/gateway.js')
+
+test('the unlock url is found plain and JSON-escaped', () => {
+  assert.equal(extractUnlockUrl('{"unlock_url": "https://x.mil/unlock/a1"}'), 'https://x.mil/unlock/a1')
+  assert.equal(extractUnlockUrl('{\\"unlock_url\\": \\"https://x.mil/unlock/b2\\"}'), 'https://x.mil/unlock/b2')
+  assert.equal(extractUnlockUrl('no urls here'), null)
+})
 
 // The shape observed from the platform gateway on a codex-backed model:
 // streaming plus a token cap, which the gateway translates into the
