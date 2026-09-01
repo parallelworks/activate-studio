@@ -1209,9 +1209,9 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .empty-with-brand.has-icon h1::before {
   content: '';
   display: block;
-  width: 56px; height: 56px;
-  margin: 0 auto 18px;
-  border-radius: 12px;
+  width: 96px; height: 96px;
+  margin: 0 auto 22px;
+  border-radius: 18px;
   background: var(--empty-brand-icon) center / contain no-repeat;
 }
 
