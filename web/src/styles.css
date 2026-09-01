@@ -979,7 +979,10 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
   background: var(--pw-green); margin-left: 6px; vertical-align: 2px;
   animation: task-pulse 1.6s ease-in-out infinite;
 }
-.task-board-card { display: flex; flex-direction: column; gap: 14px; }
+/* .card carries no padding of its own; sections add it. Same inset as
+   .ov-list so this card's content lines up with every other page. */
+.task-board-card { display: flex; flex-direction: column; gap: 14px; padding: 16px 20px; }
+.task-empty .view-sub:last-child { margin-bottom: 0; }
 .task-empty { max-width: 62ch; }
 .task-empty h3, .task-board-card h3 { margin: 0 0 12px; font-size: 13px; font-weight: 650; color: var(--pw-navy); }
 .task-empty p { line-height: 1.6; }
