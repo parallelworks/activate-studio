@@ -196,7 +196,7 @@ export interface AiHealth {
  * because a one-token call per provider is a real request and the locking
  * behaviour this exists for is GenAI's.
  */
-export interface ProviderVerdict { ok: boolean; unlockUrl: string | null; message: string }
+export interface ProviderVerdict { ok: boolean; kind: 'locked' | 'unavailable' | null; unlockUrl: string | null; message: string }
 const providerProbes = new Map<string, { at: number; v: ProviderVerdict }>()
 const PROBE_TTL_MS = 5 * 60_000
 const PROBE_PATTERN = new RegExp(process.env.STUDIO_PROBE_PROVIDERS || 'genai', 'i')
@@ -211,8 +211,7 @@ export async function probeProvider(prefix: string, sampleModelId: string, key?:
   const cacheKey = `${prefix}:${(key ?? '').slice(-6)}`
   const hit = providerProbes.get(cacheKey)
   if (hit && Date.now() - hit.at < PROBE_TTL_MS) return hit.v
-  let v: ProviderVerdict = { ok: true, unlockUrl: null, message: '' }
-  try {
+  const ping = async (): Promise<{ ok: boolean; status: number; text: string }> => {
     const res = await fetch(`${GATEWAY_BASE}/chat/completions`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${key || gatewayKey()}`, 'Content-Type': 'application/json' },
@@ -220,12 +219,26 @@ export async function probeProvider(prefix: string, sampleModelId: string, key?:
       signal: AbortSignal.timeout(6000),
     })
     const text = await res.text()
-    if (!res.ok || /"error"/.test(text.slice(0, 40))) {
-      const unlockUrl = extractUnlockUrl(text)
-      // Only a recognizable credential failure marks the provider: a
-      // transient generation error must not grey out a whole provider.
-      const credentialish = unlockUrl !== null || res.status === 401 || res.status === 403 || /locked|unauthorized|api key/i.test(text)
-      if (credentialish) v = { ok: false, unlockUrl, message: text.slice(0, 200) }
+    return { ok: res.ok && !/^\s*\{"error"/.test(text), status: res.status, text }
+  }
+  let v: ProviderVerdict = { ok: true, kind: null, unlockUrl: null, message: '' }
+  try {
+    let r = await ping()
+    if (!r.ok) {
+      const unlockUrl = extractUnlockUrl(r.text)
+      const credentialish = unlockUrl !== null || r.status === 401 || r.status === 403 || /locked|unauthorized|api key/i.test(r.text)
+      if (credentialish) {
+        v = { ok: false, kind: 'locked', unlockUrl, message: r.text.slice(0, 200) }
+      } else {
+        // The gateway masks a provider's own 401 into a generic 400
+        // (parallelworks/core#19405), so the lock this probe exists for
+        // arrives looking like any transient failure. A one-token ping
+        // failing twice in a row is treated as the provider being down
+        // for real, whatever the wording; a healthy serve essentially
+        // never fails it once, let alone twice.
+        r = await ping()
+        if (!r.ok) v = { ok: false, kind: 'unavailable', unlockUrl: extractUnlockUrl(r.text), message: r.text.slice(0, 200) }
+      }
     }
   } catch { /* unreachable is not proof of a lock; leave ok */ }
   providerProbes.set(cacheKey, { at: Date.now(), v })
