@@ -77,8 +77,48 @@ function post(m: Task, from: string, topic: string, body: string): void {
   try {
     fs.mkdirSync(path.join(MISSIONS_DIR, m.id), { recursive: true })
     fs.appendFileSync(path.join(MISSIONS_DIR, m.id, 'board.jsonl'), JSON.stringify(msg) + '\n')
+    // The snapshot is what makes a task survive a restart: every state
+    // change routes through a post, so writing it here keeps disk and
+    // memory in step without a second bookkeeping path. The token is
+    // deliberately not in it; a rehydrated task is history, not a live
+    // board, and history needs no bearer.
+    fs.writeFileSync(path.join(MISSIONS_DIR, m.id, 'state.json'), JSON.stringify(taskSummary(m)))
   } catch { /* the in-memory board still serves the viewer */ }
 }
+
+/**
+ * Tasks from before this process started, loaded back so a restart does
+ * not amnesia a campaign the operator was watching. Anything recorded as
+ * still working was killed with the old process, and saying so plainly
+ * beats a spinner that never resolves.
+ */
+function rehydrate(): void {
+  let dirs: string[] = []
+  try { dirs = fs.readdirSync(MISSIONS_DIR) } catch { return }
+  for (const id of dirs.slice(-100)) {
+    if (tasks.has(id)) continue
+    try {
+      const snap = JSON.parse(fs.readFileSync(path.join(MISSIONS_DIR, id, 'state.json'), 'utf8')) as ReturnType<typeof taskSummary>
+      const m: Task = {
+        id: snap.id, objective: snap.objective, model: snap.model, createdAt: snap.createdAt,
+        state: snap.state, maxAgents: snap.maxAgents, maxDepth: snap.maxDepth,
+        nodes: new Map(), board: [], seq: 0, procs: new Map(), token: '', shared: [],
+      }
+      for (const a of snap.agents ?? []) {
+        if (a.state === 'working') { a.state = 'canceled'; a.note = 'interrupted by a server restart' }
+        m.nodes.set(a.name, a)
+      }
+      if (m.state === 'working' || m.state === 'submitted') m.state = 'canceled'
+      try {
+        const lines = fs.readFileSync(path.join(MISSIONS_DIR, id, 'board.jsonl'), 'utf8').trim().split('\n').slice(-500)
+        m.board = lines.map(l => JSON.parse(l) as BoardMsg)
+        m.seq = m.board.length ? m.board[m.board.length - 1].seq : 0
+      } catch { /* a snapshot with no board still lists */ }
+      tasks.set(id, m)
+    } catch { /* a directory without a snapshot predates snapshots */ }
+  }
+}
+rehydrate()
 
 function agentCount(m: Task): number { return m.nodes.size }
 
@@ -109,6 +149,7 @@ function agentPromptFor(m: Task, personaName: string, objective: string): string
     personaText && `Adopt this persona for the task:\n${personaText}`,
     `You are one agent in a coordinated task. Task objective: ${m.objective}`,
     `Your task: ${objective}`,
+    'As you work, call the task MCP tool board_status before each major step with a one-line note of what you are doing; that note is what the operator watching the task sees. Post findings other agents need with board_post.',
     'Work headlessly and do not ask questions. When finished, output ONLY a JSON object:',
     '{"result": "<your findings or work product, as markdown>", "subtasks": [{"persona": "<optional persona name>", "objective": "<subtask>"}]}',
     'Include subtasks only when part of your task genuinely needs a separate agent; most tasks need none.',
@@ -148,6 +189,7 @@ function spawnAgent(m: Task, opts: { persona: string; objective: string; parent:
   } catch { /* the agent still works, without the board */ }
   const args = ['code', '-p', agentPromptFor(m, opts.persona, opts.objective), '-o', 'json',
     '--permission-mode', 'read-only', '-w', workdir, '-m', m.model]
+  const live = path.join(workdir, 'live.log')
   const child = execFile(PW_CLI, args, { timeout: AGENT_TIMEOUT_MS, maxBuffer: 16 * 1024 * 1024 }, (err, stdout) => {
     m.procs.delete(name)
     p.updatedAt = new Date().toISOString()
@@ -214,8 +256,31 @@ function spawnAgent(m: Task, opts: { persona: string; objective: string; parent:
     }
     maybeFinish(m)
   })
+  // Everything the process says, as it says it. The CLI's structured
+  // result arrives on stdout only at the end, but stderr narrates along
+  // the way, and either way the log is the drill-down behind the agent's
+  // one-line note in the viewer.
+  const append = (buf: Buffer) => { try { fs.appendFileSync(live, buf) } catch { /* viewer just shows less */ } }
+  child.stdout?.on('data', append)
+  child.stderr?.on('data', append)
   m.procs.set(name, child)
   return name
+}
+
+/** The tail of one agent's live output, for the viewer's drill-down. */
+export function agentOutput(id: string, agent: string): string | null {
+  const m = tasks.get(id)
+  if (!m || !m.nodes.has(agent)) return null
+  try {
+    const f = path.join(MISSIONS_DIR, id, 'work', agent, 'live.log')
+    const size = fs.statSync(f).size
+    const fd = fs.openSync(f, 'r')
+    const want = Math.min(size, 16 * 1024)
+    const buf = Buffer.alloc(want)
+    fs.readSync(fd, buf, 0, want, size - want)
+    fs.closeSync(fd)
+    return buf.toString('utf8')
+  } catch { return '' }
 }
 
 export function createTask(opts: {
@@ -346,6 +411,13 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
     } catch (e) {
       return reply.status(400).send({ error: String((e as Error).message) })
     }
+  })
+
+  app.get('/api/tasks/:id/agents/:name/output', async (req, reply) => {
+    const { id, name } = req.params as { id: string; name: string }
+    const tail = agentOutput(id, name)
+    if (tail === null) return reply.status(404).send({ error: 'no such task or agent' })
+    return { tail }
   })
 
   app.post('/api/tasks/:id/stop', async (req, reply) => {
