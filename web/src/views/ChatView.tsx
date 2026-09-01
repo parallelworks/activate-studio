@@ -379,18 +379,23 @@ export function ChatView() {
           <ModelSelectionGuard />
           <FilterReloader />
           <ChatLayout>
-            {showAttachments ? <AttachmentManager /> : activeId ? <ChatThread conversationId={activeId} /> : (
-              <div className="empty-with-brand">
-                {(() => {
-                  // The same dark-aware pick the sidebar makes, so the two
-                  // never disagree about which mark to show.
-                  const dark = document.documentElement.dataset.theme === 'dark'
-                  const icon = dark ? (cfg.iconUrlDark ?? cfg.iconUrl) : cfg.iconUrl
-                  return icon ? <img className="empty-brand-icon" src={icon} alt="" /> : null
-                })()}
-                <ChatEmptyState />
-              </div>
-            )}
+            {showAttachments ? <AttachmentManager /> : activeId ? <ChatThread conversationId={activeId} /> : (() => {
+              // The same dark-aware pick the sidebar makes, so the two never
+              // disagree about which mark to show. The icon rides as a
+              // pseudo-element on the package's greeting heading, so it sits
+              // directly above "what's on your mind" wherever the package
+              // centers it, rather than pinned to the top of the canvas.
+              const dark = document.documentElement.dataset.theme === 'dark'
+              const icon = dark ? (cfg.iconUrlDark ?? cfg.iconUrl) : cfg.iconUrl
+              return (
+                <div
+                  className={`empty-with-brand${icon ? ' has-icon' : ''}`}
+                  style={icon ? { ['--empty-brand-icon' as string]: `url("${icon}")` } : undefined}
+                >
+                  <ChatEmptyState />
+                </div>
+              )
+            })()}
           </ChatLayout>
           {activeId && !showAttachments && <ConversationScrubber />}
           {railOpen && <div className="chat-rail-backdrop" onClick={() => setRailOpen(false)} />}
