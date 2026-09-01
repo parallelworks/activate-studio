@@ -83,6 +83,7 @@
    the accent stays on what is interactive or active. */
 [data-theme='dark'] .view-title, [data-theme='dark'] .ov-chart h3, [data-theme='dark'] .ov-list h3,
 [data-theme='dark'] .empty-state h2, [data-theme='dark'] .help-hero h1, [data-theme='dark'] .dag-steps-title,
+[data-theme='dark'] .task-empty h3, [data-theme='dark'] .task-board-card h3,
 [data-theme='dark'] .brand-text b { color: var(--pw-text); }
 [data-theme='dark'] .result-path, [data-theme='dark'] .viewer-path, [data-theme='dark'] .ov-row-path,
 [data-theme='dark'] .table-scroll td.cell-path { color: var(--pw-text); }
@@ -979,11 +980,9 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
   animation: task-pulse 1.6s ease-in-out infinite;
 }
 .task-board-card { display: flex; flex-direction: column; gap: 14px; }
-.task-empty { padding: 18px 6px 10px; max-width: 62ch; }
-.task-empty h3 { margin: 0 0 10px; font-size: 14px; font-weight: 650; }
-.task-empty p { margin: 0 0 10px; font-size: 13px; line-height: 1.6; }
-.task-empty p:last-child { margin-bottom: 0; }
-.task-empty code { font-size: 12px; }
+.task-empty { max-width: 62ch; }
+.task-empty h3, .task-board-card h3 { margin: 0 0 12px; font-size: 13px; font-weight: 650; color: var(--pw-navy); }
+.task-empty p { line-height: 1.6; }
 .task-cards {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px;
 }
