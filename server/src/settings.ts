@@ -101,7 +101,11 @@ export function effectiveSettings(): Required<StudioSettings> {
     // Fan-out is the assistant's judgment, but its bounds are the
     // operator's. Off by default: a deployment opts into spending many
     // model runs on one request.
-    delegationEnabled: s.delegationEnabled ?? process.env.DELEGATION_ENABLED === '1',
+    // On by default since v1.13: the guardrails (server-side ceiling,
+    // depth limit, read-only agents) are the control, and shipping it off
+    // meant the Agents tab advertised a capability most deployments never
+    // saw. DELEGATION_ENABLED=0 or the setting turns it back off.
+    delegationEnabled: s.delegationEnabled ?? process.env.DELEGATION_ENABLED !== '0',
     delegationMaxAgents: s.delegationMaxAgents ?? Number(process.env.DELEGATION_MAX_AGENTS ?? 6),
     delegationMaxDepth: s.delegationMaxDepth ?? Number(process.env.DELEGATION_MAX_DEPTH ?? 1),
     customTools: s.customTools ?? [],
