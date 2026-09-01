@@ -183,6 +183,55 @@ export interface AiHealth {
 /** Live callability check: exercises the gateway with the current
  *  credential (via the model listing) and reports the last real call
  *  failure, which catches keys that list fine but fail at invoke time. */
+/**
+ * Provider liveness at listing time. The gateway lists a registered
+ * provider's models from its registry without asking the provider, so a
+ * locked GenAI key produced a picker full of selectable models that could
+ * only fail. The probe asks the provider itself: for a personal custom
+ * provider that is a GET of its /models (free), and for gateway-registered
+ * providers a one-token completion on one model of that provider, which is
+ * the only request shape the gateway forwards. Cached per provider and
+ * key, since a lock lasts hours and the picker refreshes often; probing is
+ * limited to providers matching STUDIO_PROBE_PROVIDERS (default genai),
+ * because a one-token call per provider is a real request and the locking
+ * behaviour this exists for is GenAI's.
+ */
+export interface ProviderVerdict { ok: boolean; unlockUrl: string | null; message: string }
+const providerProbes = new Map<string, { at: number; v: ProviderVerdict }>()
+const PROBE_TTL_MS = 5 * 60_000
+const PROBE_PATTERN = new RegExp(process.env.STUDIO_PROBE_PROVIDERS || 'genai', 'i')
+
+export function probeableProvider(prefix: string): boolean { return PROBE_PATTERN.test(prefix) }
+
+export function extractUnlockUrl(text: string): string | null {
+  return /unlock_url[\\":\s]*(https?:\/\/[^"\\\s]+)/.exec(text)?.[1] ?? null
+}
+
+export async function probeProvider(prefix: string, sampleModelId: string, key?: string | null): Promise<ProviderVerdict> {
+  const cacheKey = `${prefix}:${(key ?? '').slice(-6)}`
+  const hit = providerProbes.get(cacheKey)
+  if (hit && Date.now() - hit.at < PROBE_TTL_MS) return hit.v
+  let v: ProviderVerdict = { ok: true, unlockUrl: null, message: '' }
+  try {
+    const res = await fetch(`${GATEWAY_BASE}/chat/completions`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${key || gatewayKey()}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: sampleModelId, messages: [{ role: 'user', content: 'ping' }], max_tokens: 1, stream: false }),
+      signal: AbortSignal.timeout(6000),
+    })
+    const text = await res.text()
+    if (!res.ok || /"error"/.test(text.slice(0, 40))) {
+      const unlockUrl = extractUnlockUrl(text)
+      // Only a recognizable credential failure marks the provider: a
+      // transient generation error must not grey out a whole provider.
+      const credentialish = unlockUrl !== null || res.status === 401 || res.status === 403 || /locked|unauthorized|api key/i.test(text)
+      if (credentialish) v = { ok: false, unlockUrl, message: text.slice(0, 200) }
+    }
+  } catch { /* unreachable is not proof of a lock; leave ok */ }
+  providerProbes.set(cacheKey, { at: Date.now(), v })
+  return v
+}
+
 export async function aiHealth(key?: string | null, baseUrl?: string | null): Promise<AiHealth> {
   const checkedAt = new Date().toISOString()
   const apiBase = baseUrl || GATEWAY_BASE
