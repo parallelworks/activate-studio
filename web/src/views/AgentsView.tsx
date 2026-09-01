@@ -211,10 +211,13 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
             <div className="task-empty">
               <h3>No delegated work yet</h3>
               <p className="muted">
-                Ask the assistant in Chat to fan work out, "delegate a campaign across these five input decks",
-                and the task appears here as a live board: each subtask is a headless pw code agent, local for
-                quick work or a campaign of platform workflow runs on a connected HPC system for long work.
-                Results are files under <code>tasks/</code> in the knowledge base. Bounds live under Settings, Delegation.
+                Ask the assistant in Chat to fan work out, for example <i>"delegate a campaign across these
+                five input decks"</i>, and the task appears here as a live board.
+              </p>
+              <p className="muted">
+                Each subtask is a headless pw code agent: local for quick work, or a campaign of platform
+                workflow runs on a connected HPC system for long work. Results land under <code>tasks/</code> in
+                the knowledge base, and the agent ceiling and depth are set under Settings, Delegation.
               </p>
             </div>
           )}
