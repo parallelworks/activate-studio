@@ -1199,6 +1199,16 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .chat-filter-btn:hover { color: var(--pw-text); border-color: var(--pw-border-strong); }
 .chat-filter-btn.active { color: var(--pw-navy); border-color: var(--pw-navy); }
 
+/* The deployment's mark above the empty chat, so a fresh page says whose
+   studio this is before the first question. The wrapper preserves the
+   package's own centering below it. */
+.empty-with-brand { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.empty-with-brand > .empty-brand-icon {
+  width: 56px; height: 56px; object-fit: contain; border-radius: 12px;
+  margin: 7vh auto 0; display: block;
+}
+.empty-with-brand > *:last-child { flex: 1; min-height: 0; }
+
 /* Conversation scrubber: a tick per message down the side of the thread,
    hover to preview, click to jump. Vertical because that is the axis the
    thread scrolls on, so a tick's position maps directly to how far down

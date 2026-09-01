@@ -379,7 +379,18 @@ export function ChatView() {
           <ModelSelectionGuard />
           <FilterReloader />
           <ChatLayout>
-            {showAttachments ? <AttachmentManager /> : activeId ? <ChatThread conversationId={activeId} /> : <ChatEmptyState />}
+            {showAttachments ? <AttachmentManager /> : activeId ? <ChatThread conversationId={activeId} /> : (
+              <div className="empty-with-brand">
+                {(() => {
+                  // The same dark-aware pick the sidebar makes, so the two
+                  // never disagree about which mark to show.
+                  const dark = document.documentElement.dataset.theme === 'dark'
+                  const icon = dark ? (cfg.iconUrlDark ?? cfg.iconUrl) : cfg.iconUrl
+                  return icon ? <img className="empty-brand-icon" src={icon} alt="" /> : null
+                })()}
+                <ChatEmptyState />
+              </div>
+            )}
           </ChatLayout>
           {activeId && !showAttachments && <ConversationScrubber />}
           {railOpen && <div className="chat-rail-backdrop" onClick={() => setRailOpen(false)} />}
