@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { GATEWAY_BASE, MAX_TOOL_ITERATIONS, SIDECAR_ENDPOINT } from '../config.js'
-import { aiHealth, gatewayConfigured, isSidecarModel, listModels, listSidecarModels, modelFailure, probeProvider, probeableProvider, extractUnlockUrl, sidecarConfigured, sidecarTarget, StreamedTurnError, streamTurn, WireMessage, WireToolCall } from './gateway.js'
+import { aiHealth, gatewayConfigured, isSidecarModel, listModels, listSidecarModels, modelFailure, probeProvider, probeableProvider, extractUnlockUrl, invalidateProviderProbes, sidecarConfigured, sidecarTarget, StreamedTurnError, streamTurn, WireMessage, WireToolCall } from './gateway.js'
 import { TOOL_CALLS, TOOL_SPECS, activeToolSpecs, activeToolSpecsWithRemote, commandFor, customToolSpecs, executeTool, expandSlashCommand, skillToolSpec } from './tools.js'
 import { systemPrompt } from './context.js'
 import { attachmentContext } from '../attachments.js'
@@ -473,23 +473,22 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
         new Promise(r => setTimeout(r, 6500)),
       ])
     }
-    models = models.map((m: any) => {
+    // A locked provider's models leave the list rather than being marked:
+    // the picker renders labels from the id alone and consumes no
+    // availability field (core#19534), so an in-list mark is invisible and
+    // the model stays selectable while every call fails. Absence is the
+    // one signal the picker cannot ignore; the response carries what was
+    // hidden so the interface can say why, and the models return on the
+    // next listing after an unlock re-check clears the probe cache.
+    const hidden: { id: string; locked: boolean; unlock_url: string | null }[] = []
+    models = models.filter((m: any) => {
       const id = String(m.id)
       const v = verdicts.get(id.slice(0, Math.max(id.indexOf('/'), 0)))
       if (v && !v.ok) {
-        const label = v.kind === 'locked' || v.unlockUrl
-          ? 'locked; unlock via Settings, Model access'
-          : 'not responding; for GenAI this usually means the key is locked on its 8-hour schedule'
-        return {
-          ...m,
-          callable: false,
-          locked: v.kind === 'locked',
-          unavailable: true,
-          unlock_url: v.unlockUrl,
-          name: `${m.name || id} (${label})`,
-        }
+        hidden.push({ id, locked: v.kind === 'locked', unlock_url: v.unlockUrl })
+        return false
       }
-      return m
+      return true
     })
 
     // A model whose last call failed is still offered (the provider may
@@ -501,7 +500,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     })
     models.sort((a: any, b: any) =>
       Number(String(a.id).startsWith('org:')) - Number(String(b.id).startsWith('org:')))
-    return reply.send({ models, unreachableSessions: wire.unreachable_sessions ?? [] })
+    return reply.send({ models, hidden, unreachableSessions: wire.unreachable_sessions ?? [] })
   })
 
   // Live model-callability check for the footer status line.
@@ -514,6 +513,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
         lastCallFailure: null, checkedAt: new Date().toISOString(),
       }
     }
+    if (String((req.query as { fresh?: string }).fresh ?? '') === '1') invalidateProviderProbes()
     const health = await aiHealth(cred?.key, cred?.baseUrl)
     // Whether the credential also reaches the platform API, which is what
     // the workflow tools and the DAG viewer use. Two different products
@@ -653,6 +653,9 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
   // Test a candidate key (or the stored one) against the gateway without
   // exposing anything about it beyond the health classification.
   app.post('/api/me/model-key/test', async (req, reply) => {
+    // A re-check is the user saying "I changed something, look again":
+    // the provider probe cache must not outlive that.
+    invalidateProviderProbes()
     if (!req.user) return reply.status(403).send({ error: 'not verified' })
     const body = req.body as { key?: string; baseUrl?: string } | null
     const stored = resolveUserCred(req.user.id)

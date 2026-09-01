@@ -186,13 +186,12 @@ export function ChatView() {
     // issue filed). The warning therefore lives here, above the thread,
     // where it cannot be missed or truncated.
     fetch('/api/chat/models').then(r => r.json()).then(d => {
-      const down = (d.models ?? []).filter((m: { callable?: boolean; locked?: boolean; unavailable?: boolean }) =>
-        m.callable === false && (m.locked || m.unavailable))
-      if (down.length) {
-        const locked = down.some((m: { locked?: boolean }) => m.locked)
-        setCredNote(`${down.length} model${down.length === 1 ? ' is' : 's are'} not responding${locked
-          ? '; the provider reports the key is locked'
-          : ' (for GenAI this usually means the key is locked on its 8-hour schedule)'}. Unlock or re-check under Settings, Model access; they remain selectable but calls will fail until then.`)
+      const hidden = (d.hidden ?? []) as { id: string; locked: boolean }[]
+      if (hidden.length) {
+        const locked = hidden.some(m => m.locked)
+        setCredNote(`${hidden.length} model${hidden.length === 1 ? ' is' : 's are'} hidden from the model list${locked
+          ? ' because the provider reports the key is locked'
+          : ' because the provider is not responding (for GenAI this usually means the key is locked on its 8-hour schedule)'}. Unlock and Re-check under Settings, Model access, and they return automatically.`)
       }
     }).catch(() => {})
     fetch('/api/me/model-key').then(r => r.json())

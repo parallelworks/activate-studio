@@ -295,7 +295,7 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
             <AiPanel
               ai={ai}
               onClose={() => setAiOpen(false)}
-              onRecheck={() => { fetch('/api/ai/health').then(r => r.json()).then(setAi).catch(() => {}) }}
+              onRecheck={() => { fetch('/api/ai/health?fresh=1').then(r => r.json()).then(setAi).catch(() => {}) }}
             />
           )}
         </div>
