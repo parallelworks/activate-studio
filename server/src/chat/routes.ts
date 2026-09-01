@@ -473,22 +473,23 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
         new Promise(r => setTimeout(r, 6500)),
       ])
     }
-    // A locked provider's models leave the list rather than being marked:
-    // the picker renders labels from the id alone and consumes no
-    // availability field (core#19534), so an in-list mark is invisible and
-    // the model stays selectable while every call fails. Absence is the
-    // one signal the picker cannot ignore; the response carries what was
-    // hidden so the interface can say why, and the models return on the
-    // next listing after an unlock re-check clears the probe cache.
-    const hidden: { id: string; locked: boolean; unlock_url: string | null }[] = []
-    models = models.filter((m: any) => {
+    // A locked provider's models stay listed, marked INSIDE the id: the
+    // picker renders labels from the id alone and consumes no availability
+    // field (core#19534), so the id is the only text lane that actually
+    // shows. The suffix is stripped from inbound requests, so selecting a
+    // marked model still addresses the real one, and the call-time error
+    // then explains the lock. Hiding was tried first and read as "no
+    // models available" when a whole provider was down, which was worse.
+    const impaired: { id: string; locked: boolean; unlock_url: string | null }[] = []
+    models = models.map((m: any) => {
       const id = String(m.id)
       const v = verdicts.get(id.slice(0, Math.max(id.indexOf('/'), 0)))
       if (v && !v.ok) {
-        hidden.push({ id, locked: v.kind === 'locked', unlock_url: v.unlockUrl })
-        return false
+        const tag = v.kind === 'locked' ? 'locked' : 'unavailable'
+        impaired.push({ id, locked: v.kind === 'locked', unlock_url: v.unlockUrl })
+        return { ...m, id: `${id} [${tag}]`, callable: false, locked: v.kind === 'locked', unavailable: true, unlock_url: v.unlockUrl }
       }
-      return true
+      return m
     })
 
     // A model whose last call failed is still offered (the provider may
@@ -500,7 +501,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     })
     models.sort((a: any, b: any) =>
       Number(String(a.id).startsWith('org:')) - Number(String(b.id).startsWith('org:')))
-    return reply.send({ models, hidden, unreachableSessions: wire.unreachable_sessions ?? [] })
+    return reply.send({ models, impaired, unreachableSessions: wire.unreachable_sessions ?? [] })
   })
 
   // Live model-callability check for the footer status line.
@@ -693,6 +694,10 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/api/chat/stream', async (req, reply) => {
     const body = req.body as StreamBody
+    // The listing marks unavailable models inside the id, since that is
+    // the only text the picker renders; a selection therefore arrives
+    // carrying the mark, and the real model is the id without it.
+    body.model = String(body.model ?? '').replace(/ \[(locked|unavailable)\]$/, '')
     reply.hijack()
     reply.raw.writeHead(200, {
       'Content-Type': 'text/event-stream',
