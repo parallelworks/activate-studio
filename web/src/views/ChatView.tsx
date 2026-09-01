@@ -181,6 +181,20 @@ export function ChatView() {
 
   useEffect(() => {
     api.tagVocabulary().then(v => setVocab(v.tags)).catch(() => {})
+    // The model picker is the package's and renders labels from the id
+    // alone, so a locked provider cannot be marked inside it (upstream
+    // issue filed). The warning therefore lives here, above the thread,
+    // where it cannot be missed or truncated.
+    fetch('/api/chat/models').then(r => r.json()).then(d => {
+      const down = (d.models ?? []).filter((m: { callable?: boolean; locked?: boolean; unavailable?: boolean }) =>
+        m.callable === false && (m.locked || m.unavailable))
+      if (down.length) {
+        const locked = down.some((m: { locked?: boolean }) => m.locked)
+        setCredNote(`${down.length} model${down.length === 1 ? ' is' : 's are'} not responding${locked
+          ? '; the provider reports the key is locked'
+          : ' (for GenAI this usually means the key is locked on its 8-hour schedule)'}. Unlock or re-check under Settings, Model access; they remain selectable but calls will fail until then.`)
+      }
+    }).catch(() => {})
     fetch('/api/me/model-key').then(r => r.json())
       .then(d => {
         setMultiUser(!!d.authEnabled)
