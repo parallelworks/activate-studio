@@ -961,6 +961,16 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
    inner viewer needs a height or the SVG canvas collapses. */
 .workflow-tab-body { flex: 1; min-height: 480px; display: flex; flex-direction: column; }
 .workflow-tab-body .viewer { flex: 1; }
+/* Per-agent drill-down in the delegated-tasks tree. */
+.agent-row { cursor: pointer; }
+.agent-row.open td { background: var(--pw-hover-row); }
+.agent-detail { padding: 6px 8px; }
+.agent-live {
+  max-height: 260px; overflow: auto; margin: 6px 0 2px;
+  padding: 8px 10px; border-radius: 6px;
+  background: var(--pw-input-bg); border: 1px solid var(--pw-border);
+  font-size: 11.5px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere;
+}
 .embed-root { height: 100vh; display: flex; flex-direction: column; background: var(--pw-panel); }
 .embed-root .viewer { flex: 1; min-height: 0; }
 

@@ -1539,7 +1539,7 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
           })
           const sum = taskSummary(m)
           return {
-            result: `Task ${sum.id} started with ${sum.agents.length} subtasks (ceiling ${sum.maxAgents}, depth ${sum.maxDepth}). Results land under tasks/${sum.id}/ in the knowledge base and the operator can watch the tree on the Agents tab. Poll it with task_status; do not wait idly, tell the user it is running.`,
+            result: `Task ${sum.id} started with ${sum.agents.length} subtasks (ceiling ${sum.maxAgents}, depth ${sum.maxDepth}). Results land under tasks/${sum.id}/ in the knowledge base. In your reply, give the user this link to watch the agents live: [View agents working](#view=agents:${sum.id}). Poll with task_status; do not wait idly, tell the user it is running.`,
             summary: `task ${sum.id}`,
           }
         } catch (e) {
