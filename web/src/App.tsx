@@ -172,13 +172,25 @@ export default function App() {
     // Chat links render with target=_blank; catch #open= clicks in the
     // capture phase and route them to the viewer in this tab instead.
     const onClick = (e: MouseEvent) => {
-      const a = (e.target as HTMLElement).closest?.('a[href*="#open="]') as HTMLAnchorElement | null
-      const m = a?.getAttribute('href')?.match(/#open=(file|workflow_dag):(.+)$/)
-      if (!m) return
-      e.preventDefault()
-      e.stopPropagation()
-      setDisplay({ kind: m[1] as Display['kind'], target: decodeURIComponent(m[2]) })
-      setView('library')
+      const a = (e.target as HTMLElement).closest?.('a[href*="#open="], a[href*="#view="]') as HTMLAnchorElement | null
+      const href = a?.getAttribute('href') ?? ''
+      const m = href.match(/#open=(file|workflow_dag):(.+)$/)
+      if (m) {
+        e.preventDefault()
+        e.stopPropagation()
+        setDisplay({ kind: m[1] as Display['kind'], target: decodeURIComponent(m[2]) })
+        setView('library')
+        return
+      }
+      // A chat reply can hand the user a view link ("watch the agents
+      // here"); routed in this tab, since a new tab of the whole app is
+      // never what such a link means.
+      const vm = href.match(/#view=[a-z]+(?::[a-z0-9-]+)?$/)
+      if (vm) {
+        e.preventDefault()
+        e.stopPropagation()
+        location.hash = vm[0]
+      }
     }
     window.addEventListener('hashchange', applyHash)
     window.addEventListener('click', onClick, true)

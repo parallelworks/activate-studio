@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 import { PersonaIcon } from '../components/PersonaIcon'
 
 /**
@@ -47,6 +47,40 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
   // chunks, and the count line says where you are in it. Filtering resets
   // to the first page, since page four of the old result set means
   // nothing against the new one.
+  // #view=agents:<task-id> from a chat reply or a shared link opens that
+  // task's tree directly.
+  useEffect(() => {
+    const on = (e: Event) => {
+      const d = (e as CustomEvent).detail as { view?: string; section?: string }
+      if (d?.view === 'agents' && d.section) setOpenTask(d.section)
+    }
+    window.addEventListener('ade-view-section', on)
+    const m = location.hash.match(/^#view=agents:([a-z0-9-]+)$/)
+    if (m) setOpenTask(m[1])
+    return () => window.removeEventListener('ade-view-section', on)
+  }, [])
+  // The drill-down behind one agent's row: its live output, polled while
+  // it works.
+  const [openAgent, setOpenAgent] = useState<string | null>(null)
+  const [agentTail, setAgentTail] = useState('')
+  useEffect(() => {
+    if (!openTask || !openAgent) return
+    let stop = false
+    let t = 0
+    const tick = async () => {
+      try {
+        const d = await fetch(`/api/tasks/${encodeURIComponent(openTask)}/agents/${encodeURIComponent(openAgent)}/output`).then(r => r.json())
+        if (!stop) setAgentTail(String(d.tail ?? ''))
+      } catch { /* next tick */ }
+      const working = detail?.agents.find(a => a.name === openAgent)?.state === 'working'
+      if (!stop && working) t = window.setTimeout(tick, 3000)
+    }
+    t = window.setTimeout(tick, 0)
+    return () => { stop = true; clearTimeout(t) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openTask, openAgent])
+  useEffect(() => { setOpenAgent(null); setAgentTail('') }, [openTask])
+
   const [pPage, setPPage] = useState(0)
   const [sPage, setSPage] = useState(0)
   useEffect(() => { setPPage(0); setSPage(0) }, [filter])
@@ -180,14 +214,29 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
                 <thead><tr><th>subtask</th><th>state</th><th>parent</th><th>result</th></tr></thead>
                 <tbody>
                   {detail.agents.map(a => (
-                    <tr key={a.name}>
-                      <td>{'\u00a0'.repeat(a.depth * 2)}{a.name}</td>
-                      <td><span className={`status-dot ${a.state === 'working' ? 'ok' : a.state === 'completed' ? 'off' : a.state === 'input-required' ? 'warn' : 'warn'}`} /> {a.state === 'working' ? a.note : a.state}</td>
-                      <td className="muted">{a.parent ?? 'root'}</td>
-                      <td>{a.resultPath
-                        ? <button className="link-button" onClick={() => onOpen(a.resultPath!)}>{a.resultPath.split('/').pop()}</button>
-                        : <span className="muted">—</span>}</td>
-                    </tr>
+                    <React.Fragment key={a.name}>
+                      <tr className={`agent-row${openAgent === a.name ? ' open' : ''}`}
+                        onClick={() => setOpenAgent(openAgent === a.name ? null : a.name)}
+                        title="Show this agent's live output">
+                        <td>{'\u00a0'.repeat(a.depth * 2)}{a.name}</td>
+                        <td><span className={`status-dot ${a.state === 'working' ? 'ok' : a.state === 'completed' ? 'off' : a.state === 'input-required' ? 'warn' : 'warn'}`} /> {a.state === 'working' ? a.note : a.state}</td>
+                        <td className="muted">{a.parent ?? 'root'}</td>
+                        <td onClick={e => e.stopPropagation()}>{a.resultPath
+                          ? <button className="link-button" onClick={() => onOpen(a.resultPath!)}>{a.resultPath.split('/').pop()}</button>
+                          : <span className="muted">—</span>}</td>
+                      </tr>
+                      {openAgent === a.name && (
+                        <tr className="agent-detail-row">
+                          <td colSpan={4}>
+                            <div className="agent-detail">
+                              <p className="muted">{a.persona ? `${a.persona}: ` : ''}{a.objective}</p>
+                              {a.state === 'working' && <p className="muted">{a.note}</p>}
+                              <pre className="agent-live">{agentTail || (a.state === 'working' ? 'No output yet; the log fills as the agent works.' : 'No output was captured for this agent.')}</pre>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
                   ))}
                 </tbody>
               </table>
