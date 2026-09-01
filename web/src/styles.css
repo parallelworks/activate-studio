@@ -1199,15 +1199,21 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .chat-filter-btn:hover { color: var(--pw-text); border-color: var(--pw-border-strong); }
 .chat-filter-btn.active { color: var(--pw-navy); border-color: var(--pw-navy); }
 
-/* The deployment's mark above the empty chat, so a fresh page says whose
-   studio this is before the first question. The wrapper preserves the
-   package's own centering below it. */
-.empty-with-brand { display: flex; flex-direction: column; height: 100%; min-height: 0; }
-.empty-with-brand > .empty-brand-icon {
-  width: 56px; height: 56px; object-fit: contain; border-radius: 12px;
-  margin: 7vh auto 0; display: block;
+/* The deployment's mark above the empty chat's greeting. Drawn as a
+   pseudo-element on the package's own h1, so it sits immediately above
+   "what's on your mind" wherever the package centers that, and moves with
+   it; a wrapper-level image was pinned to the canvas top and looked
+   unrelated to the content below it. */
+.empty-with-brand { height: 100%; min-height: 0; }
+.empty-with-brand > * { height: 100%; }
+.empty-with-brand.has-icon h1::before {
+  content: '';
+  display: block;
+  width: 56px; height: 56px;
+  margin: 0 auto 18px;
+  border-radius: 12px;
+  background: var(--empty-brand-icon) center / contain no-repeat;
 }
-.empty-with-brand > *:last-child { flex: 1; min-height: 0; }
 
 /* Conversation scrubber: a tick per message down the side of the thread,
    hover to preview, click to jump. Vertical because that is the axis the
