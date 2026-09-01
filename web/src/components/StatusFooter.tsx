@@ -67,6 +67,7 @@ interface AiHealth {
   message: string | null
   lastCallFailure: { at: string; message: string; auth: boolean } | null
   checkedAt: string
+  unlockUrl?: string | null
 }
 
 const AI_LABEL: Record<AiHealth['status'], string> = {
@@ -93,9 +94,14 @@ function AiPanel({ ai, onClose, onRecheck }: { ai: AiHealth; onClose: () => void
         <table className="identity-table"><tbody>
           {rows.map(([k, v]) => <tr key={k}><td className="k">{k}</td><td className="v">{v}</td></tr>)}
         </tbody></table>
-        {ai.status === 'auth' && (
+        {ai.unlockUrl ? (
+          <p className="identity-note">
+            The provider locked this key, which it does on a schedule.{' '}
+            <a href={ai.unlockUrl} target="_blank" rel="noopener noreferrer">Unlock your key</a>, then re-check.
+          </p>
+        ) : ai.status === 'auth' ? (
           <p className="identity-note">The gateway rejected the credential. Some providers lock keys on a schedule; unlock the key at your provider, then re-check.</p>
-        )}
+        ) : null}
         <p className="identity-note">Checked via the model listing; a key can also fail at call time, which shows under last call failure.</p>
         <div className="scope-menu-foot">
           <span className="muted identity-src">GET /api/ai/health</span>
