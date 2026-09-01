@@ -55,7 +55,11 @@ function ModelSelectionGuard() {
     // the composer would let a message go out that cannot be sent, so an
     // unserved selection falls back to the remembered one.
     if (served(selectedProvider)) {
-      try { localStorage.setItem(MODEL_STORAGE_KEY, selectedProvider) } catch { /* storage unavailable */ }
+      // A marked id ("... [locked]") is a temporary identity; remembering
+      // it would restore a dead selection after the provider recovers.
+      if (!/ \[(locked|unavailable)\]$/.test(selectedProvider)) {
+        try { localStorage.setItem(MODEL_STORAGE_KEY, selectedProvider) } catch { /* storage unavailable */ }
+      }
       return
     }
     setSelectedProvider(served(stored) ? stored : models[0].id)
@@ -186,12 +190,12 @@ export function ChatView() {
     // issue filed). The warning therefore lives here, above the thread,
     // where it cannot be missed or truncated.
     fetch('/api/chat/models').then(r => r.json()).then(d => {
-      const hidden = (d.hidden ?? []) as { id: string; locked: boolean }[]
-      if (hidden.length) {
-        const locked = hidden.some(m => m.locked)
-        setCredNote(`${hidden.length} model${hidden.length === 1 ? ' is' : 's are'} hidden from the model list${locked
-          ? ' because the provider reports the key is locked'
-          : ' because the provider is not responding (for GenAI this usually means the key is locked on its 8-hour schedule)'}. Unlock and Re-check under Settings, Model access, and they return automatically.`)
+      const impaired = (d.impaired ?? []) as { id: string; locked: boolean }[]
+      if (impaired.length) {
+        const locked = impaired.some(m => m.locked)
+        setCredNote(`${impaired.length} model${impaired.length === 1 ? ' is' : 's are'} marked [${locked ? 'locked' : 'unavailable'}] in the model list${locked
+          ? ': the provider reports the key is locked'
+          : ' (for GenAI this usually means the key is locked on its 8-hour schedule)'}. Unlock and Re-check under Settings, Model access; the marks clear on the next listing.`)
       }
     }).catch(() => {})
     fetch('/api/me/model-key').then(r => r.json())
