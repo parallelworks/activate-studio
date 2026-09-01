@@ -883,6 +883,24 @@ jobs:
 
           echo "pushd ${WORKDIR}" >> ${SCRIPT}
           echo "export PATH=\"${WORKDIR}/node-runtime/bin:\$PATH\"" >> ${SCRIPT}
+          # The watchdog re-runs this script in an environment that may
+          # lack the system node the deploy step saw (module-provided node
+          # does not survive into a bare restart shell). If node is absent
+          # at run time, extract the bundle's runtime on the spot; without
+          # this a watchdog restart died with "nohup: failed to run
+          # command 'node'" and the deployment stayed down.
+          cat >> ${SCRIPT} << 'NODE_FALLBACK'
+          if ! command -v node >/dev/null 2>&1; then
+            NT=$(ls node-*-linux-x64.tar.xz 2>/dev/null | head -1)
+            if [ -n "$NT" ]; then
+              mkdir -p node-runtime
+              tar -xJf "$NT" -C node-runtime --strip-components=1
+              echo "node runtime extracted at restart: $(command -v node)"
+            else
+              echo "ERROR: no node on PATH and no bundled runtime to extract"
+            fi
+          fi
+          NODE_FALLBACK
           echo "export PORT=${{ needs.get_ports.outputs.APP_PORT }}" >> ${SCRIPT}
           echo "export KB_ROOT=${{ inputs.kb_settings.kb_root }}" >> ${SCRIPT}
           echo "export KB_LABEL='${{ inputs.kb_settings.kb_label }}'" >> ${SCRIPT}
