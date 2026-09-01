@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { GATEWAY_BASE, MAX_TOOL_ITERATIONS, SIDECAR_ENDPOINT } from '../config.js'
-import { aiHealth, gatewayConfigured, isSidecarModel, listModels, listSidecarModels, modelFailure, sidecarConfigured, sidecarTarget, StreamedTurnError, streamTurn, WireMessage, WireToolCall } from './gateway.js'
+import { aiHealth, gatewayConfigured, isSidecarModel, listModels, listSidecarModels, modelFailure, probeProvider, probeableProvider, extractUnlockUrl, sidecarConfigured, sidecarTarget, StreamedTurnError, streamTurn, WireMessage, WireToolCall } from './gateway.js'
 import { TOOL_CALLS, TOOL_SPECS, activeToolSpecs, activeToolSpecsWithRemote, commandFor, customToolSpecs, executeTool, expandSlashCommand, skillToolSpec } from './tools.js'
 import { systemPrompt } from './context.js'
 import { attachmentContext } from '../attachments.js'
@@ -355,6 +355,17 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     try {
       if (gatewayConfigured() || cred) wire = await listModels(cred?.key, cred?.baseUrl)
     } catch (e) {
+      // A personal provider key that is locked fails right here, at the
+      // provider's own /models. Say that, with the unlock link, instead
+      // of a bare listing failure.
+      const msg = String((e as Error).message ?? e)
+      const unlockUrl = extractUnlockUrl(msg)
+      if (cred?.baseUrl && (unlockUrl || /401|403|locked|unauthorized/i.test(msg))) {
+        return reply.send({
+          models: sidecar, unreachableSessions: [],
+          error: `Your provider key is locked or rejected by ${new URL(cred.baseUrl).host}.${unlockUrl ? ` Unlock it here and reload: ${unlockUrl}` : ''} The Settings, Model access page shows the same link and a Re-check.`,
+        })
+      }
       if (!sidecar.length) throw e
       app.log.warn({ err: e }, 'gateway model listing failed; serving the local model only')
     }
@@ -433,6 +444,46 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
         return m
       })
     }
+
+    // Providers that lock their keys are asked before their models are
+    // offered: a locked GenAI key otherwise fills the picker with models
+    // that can only fail, discovered one failed reply at a time. Probes
+    // are budgeted so a slow provider cannot stall the listing; an
+    // unanswered probe changes nothing this pass and the cache catches
+    // the next one.
+    const prefixes = new Map<string, string>()
+    for (const m of models) {
+      const id = String(m.id)
+      const slash = id.indexOf('/')
+      if (slash > 0) {
+        const prefix = id.slice(0, slash)
+        if (probeableProvider(prefix) && !prefixes.has(prefix)) prefixes.set(prefix, id)
+      }
+    }
+    const verdicts = new Map<string, { ok: boolean; unlockUrl: string | null }>()
+    if (prefixes.size) {
+      await Promise.race([
+        Promise.allSettled([...prefixes.entries()].map(async ([prefix, sample]) => {
+          const v = await probeProvider(prefix, sample, cred?.key)
+          verdicts.set(prefix, v)
+        })),
+        new Promise(r => setTimeout(r, 6500)),
+      ])
+    }
+    models = models.map((m: any) => {
+      const id = String(m.id)
+      const v = verdicts.get(id.slice(0, Math.max(id.indexOf('/'), 0)))
+      if (v && !v.ok) {
+        return {
+          ...m,
+          callable: false,
+          locked: true,
+          unlock_url: v.unlockUrl,
+          name: `${m.name || id} (locked${v.unlockUrl ? '; unlock via Settings, Model access' : ''})`,
+        }
+      }
+      return m
+    })
 
     // A model whose last call failed is still offered (the provider may
     // recover, or the key may be renewed), but the picker gets told, so
