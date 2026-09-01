@@ -208,7 +208,7 @@ export function SettingsView() {
     }
   }
 
-  const [accessHealth, setAccessHealth] = useState<{ status: string; models: number; gatewayHost?: string; message?: string | null; platformAccess?: boolean | null } | null>(null)
+  const [accessHealth, setAccessHealth] = useState<{ status: string; models: number; gatewayHost?: string; message?: string | null; platformAccess?: boolean | null; unlockUrl?: string | null } | null>(null)
 
   const refreshAccess = () => {
     fetch('/api/me/model-key/test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
@@ -480,6 +480,13 @@ export function SettingsView() {
                         </span>
                       )}
                     </div>
+                    {me.mode !== 'none' && accessHealth?.unlockUrl && (
+                      <p className="identity-note">
+                        The provider reports this key is locked, which it does on a schedule (GenAI locks keys
+                        every 8 hours). <a href={accessHealth.unlockUrl} target="_blank" rel="noopener noreferrer">Unlock
+                        your key</a>, then Re-check.
+                      </p>
+                    )}
                     {me.mode !== 'none' && accessHealth?.status === 'ok' && accessHealth.platformAccess === false && (
                       <p className="identity-note">
                         This credential reaches models only. Workflow tools, run monitoring, and the DAG viewer
