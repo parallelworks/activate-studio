@@ -92,6 +92,15 @@ test('an escaped unlock_url inside a relayed body is still found', () => {
   assert.match(m, /unlock\/xyz/)
 })
 
+// The gateway's streaming path passes this through verbatim; the
+// non-streaming path masks it (core#19405).
+test('the locked wording without a url still names the lock and the settings path', () => {
+  const m = gatewayChatMessage('gateway chat 400: {"error":{"message":"API key locked - visit the unlock URL to re-enable your key","type":"error"}}', PERSONAL)
+  assert.match(m, /locked this API key/)
+  assert.match(m, /Settings, Model access/)
+  assert.doesNotMatch(m, /Pick another model from the list while it recovers/)
+})
+
 test('an unclassified failure says what is known and nothing more', () => {
   const m = gatewayChatMessage('gateway chat 500: upstream exploded', PERSONAL)
   assert.match(m, /Pick another model from the list while it recovers/)

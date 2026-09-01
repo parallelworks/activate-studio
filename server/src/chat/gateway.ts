@@ -215,18 +215,25 @@ export async function probeProvider(prefix: string, sampleModelId: string, key?:
     const res = await fetch(`${GATEWAY_BASE}/chat/completions`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${key || gatewayKey()}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: sampleModelId, messages: [{ role: 'user', content: 'ping' }], max_tokens: 1, stream: false }),
+      // stream:true, deliberately: the gateway masks provider errors on the
+      // non-streaming path and passes them through on the streaming one
+      // (measured for both the locked-key 401 and parameter rejections),
+      // so only a streaming probe can see "API key locked". A healthy
+      // model answers with SSE frames, which the error check ignores.
+      body: JSON.stringify({ model: sampleModelId, messages: [{ role: 'user', content: 'ping' }], max_tokens: 1, stream: true }),
       signal: AbortSignal.timeout(6000),
     })
     const text = await res.text()
-    return { ok: res.ok && !/^\s*\{"error"/.test(text), status: res.status, text }
+    // A streaming success arrives as SSE data frames; an error arrives as
+    // one JSON error body whatever the transport asked for.
+    return { ok: res.ok && !/^\s*\{"error"/.test(text), status: res.status, text: text.slice(0, 4000) }
   }
   let v: ProviderVerdict = { ok: true, kind: null, unlockUrl: null, message: '' }
   try {
     let r = await ping()
     if (!r.ok) {
       const unlockUrl = extractUnlockUrl(r.text)
-      const credentialish = unlockUrl !== null || r.status === 401 || r.status === 403 || /locked|unauthorized|api key/i.test(r.text)
+      const credentialish = unlockUrl !== null || r.status === 401 || r.status === 403 || /key locked|locked|unauthorized|api key/i.test(r.text)
       if (credentialish) {
         v = { ok: false, kind: 'locked', unlockUrl, message: r.text.slice(0, 200) }
       } else {
