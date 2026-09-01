@@ -42,6 +42,8 @@ export interface AgentTask {
   name: string; persona: string; objective: string; parent: string | null; depth: number
   state: TaskState
   startedAt: string; updatedAt: string; note: string; resultPath: string | null
+  /** Campaign agents only: the platform run carrying this agent. */
+  runSlug?: string | null
 }
 export interface SharedTask { id: string; objective: string; persona: string; claimedBy: string | null; done: boolean; resultPath: string | null }
 export interface Task {
@@ -49,10 +51,16 @@ export interface Task {
   objective: string; model: string; createdAt: string
   state: TaskState
   maxAgents: number; maxDepth: number
+  /** local: workers are child processes beside the server. campaign:
+   *  workers are platform workflow runs on a named system, which is what
+   *  outlives this process and scales past its host. */
+  execution: 'local' | 'campaign'
+  resource: string | null
   nodes: Map<string, AgentTask>
   board: BoardMsg[]
   seq: number
   procs: Map<string, ReturnType<typeof execFile>>
+  pollers: Map<string, ReturnType<typeof setInterval>>
 }
 
 const tasks = new Map<string, Task>()
@@ -65,6 +73,121 @@ const AGENT_TIMEOUT_MS = 15 * 60_000
 /** Where a worker reaches this Studio. Loopback by default, since workers
  *  run beside the server in this slice. */
 const SELF_URL = (process.env.STUDIO_SELF_URL || `http://127.0.0.1:${process.env.PORT || 4080}`).replace(/\/$/, '')
+
+const CAMPAIGN_POLL_MS = Number(process.env.STUDIO_CAMPAIGN_POLL_MS || 20_000)
+const RUNNER_WORKFLOW = 'studio-agent-runner'
+
+function pwRun(args: string[], timeoutMs = 60_000): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile(PW_CLI, args, { timeout: timeoutMs, maxBuffer: 16 * 1024 * 1024 },
+      (err, so, se) => (err ? reject(new Error(String(se || err.message))) : resolve(String(so))))
+  })
+}
+
+/** The pw CLI appends upgrade notices to stdout, so take the first
+ *  balanced JSON value rather than parsing the whole thing. */
+function jsonHead<T = unknown>(text: string): T {
+  const start = text.search(/[[{]/)
+  if (start < 0) throw new Error(`no JSON in CLI output: ${text.slice(0, 120)}`)
+  const open = text[start]; const close = open === '[' ? ']' : '}'
+  let depth = 0; let inStr = false; let esc = false
+  for (let i = start; i < text.length; i++) {
+    const c = text[i]
+    if (inStr) { if (esc) esc = false; else if (c === '\\') esc = true; else if (c === '"') inStr = false; continue }
+    if (c === '"') inStr = true
+    else if (c === open) depth++
+    else if (c === close && --depth === 0) return JSON.parse(text.slice(start, i + 1)) as T
+  }
+  return JSON.parse(text.slice(start)) as T
+}
+
+/**
+ * The runner: one job on the target system's login node that writes the
+ * agent's prompt and board registration, runs pw code, and brackets the
+ * final output in markers the poller extracts. Login-node execution is
+ * deliberate: the agent itself is API calls and corpus work, and the
+ * heavy compute is whatever workflows the agent launches, which go
+ * through the scheduler like anything else. Registered once per account,
+ * created automatically when absent, and validated against the platform
+ * schema by the test suite.
+ */
+const RUNNER_YAML = `permissions:
+  - '*'
+'on':
+  execute:
+    inputs:
+      resource:
+        label: Agent host
+        type: compute-clusters
+        autoselect: true
+        optional: false
+      prompt:
+        label: Agent prompt
+        type: editor
+      model:
+        label: Model
+        type: string
+      agent_name:
+        label: Agent name
+        type: string
+      board_url:
+        label: Studio board URL
+        type: string
+        optional: true
+      board_token:
+        label: Board token
+        type: string
+        optional: true
+      timeout_seconds:
+        label: Timeout seconds
+        type: number
+        default: 7200
+jobs:
+  agent:
+    ssh:
+      remoteHost: \${{ inputs.resource.ip }}
+    steps:
+      - name: Run agent
+        run: |
+          set -e
+          WORK="$PWD/agent-work"
+          mkdir -p "$WORK/.agents"
+          cat > "$WORK/prompt.txt" << 'STUDIO_PROMPT_EOF'
+          \${{ inputs.prompt }}
+          STUDIO_PROMPT_EOF
+          if [ -n "\${{ inputs.board_url }}" ]; then
+            cat > "$WORK/.agents/settings.local.json" << 'STUDIO_MCP_EOF'
+          {"mcpServers":{"task":{"type":"http","url":"\${{ inputs.board_url }}/api/mcp","headers":{"Authorization":"Bearer \${{ inputs.board_token }}","X-Task-Agent":"\${{ inputs.agent_name }}"}}}}
+          STUDIO_MCP_EOF
+          fi
+          set +e
+          timeout "\${{ inputs.timeout_seconds }}" pw code -p "$(cat "$WORK/prompt.txt")" -o json --permission-mode read-only -w "$WORK" -m "\${{ inputs.model }}" > "$WORK/out.json" 2> "$WORK/err.log"
+          RC=$?
+          set -e
+          echo "STUDIO_RESULT_BEGIN"
+          cat "$WORK/out.json" 2>/dev/null || true
+          echo ""
+          echo "STUDIO_RESULT_END"
+          tail -c 4000 "$WORK/err.log" 2>/dev/null || true
+          exit $RC
+`
+
+export function runnerWorkflowYaml(): string { return RUNNER_YAML }
+
+let runnerEnsured = false
+async function ensureRunnerWorkflow(): Promise<void> {
+  if (runnerEnsured) return
+  try {
+    await pwRun(['workflows', 'get', RUNNER_WORKFLOW, '-o', 'json'])
+    runnerEnsured = true
+    return
+  } catch { /* absent: create it */ }
+  const tmp = path.join(MISSIONS_DIR, 'agent-runner.yaml')
+  fs.mkdirSync(MISSIONS_DIR, { recursive: true })
+  fs.writeFileSync(tmp, RUNNER_YAML)
+  await pwRun(['workflows', 'create', '--yaml', tmp, RUNNER_WORKFLOW], 60_000)
+  runnerEnsured = true
+}
 
 function slug(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'task'
@@ -102,13 +225,30 @@ function rehydrate(): void {
       const m: Task = {
         id: snap.id, objective: snap.objective, model: snap.model, createdAt: snap.createdAt,
         state: snap.state, maxAgents: snap.maxAgents, maxDepth: snap.maxDepth,
-        nodes: new Map(), board: [], seq: 0, procs: new Map(), token: '', shared: [],
+        execution: (snap as { execution?: 'local' | 'campaign' }).execution ?? 'local',
+        resource: (snap as { resource?: string | null }).resource ?? null,
+        nodes: new Map(), board: [], seq: 0, procs: new Map(), pollers: new Map(), token: '', shared: [],
       }
+      let reattached = 0
       for (const a of snap.agents ?? []) {
-        if (a.state === 'working') { a.state = 'canceled'; a.note = 'interrupted by a server restart' }
+        if (a.state === 'working') {
+          if (m.execution === 'campaign' && a.runSlug) {
+            // The worker is a platform run that never depended on this
+            // process; pick up watching it where the old process left off.
+            a.note = 'reattached after a server restart'
+            reattached++
+          } else {
+            a.state = 'canceled'; a.note = 'interrupted by a server restart'
+          }
+        }
         m.nodes.set(a.name, a)
       }
-      if (m.state === 'working' || m.state === 'submitted') m.state = 'canceled'
+      if ((m.state === 'working' || m.state === 'submitted') && reattached === 0) m.state = 'canceled'
+      if (reattached > 0) {
+        for (const a of m.nodes.values()) {
+          if (a.state === 'working' && a.runSlug) watchCampaignAgent(m, a)
+        }
+      }
       try {
         const lines = fs.readFileSync(path.join(MISSIONS_DIR, id, 'board.jsonl'), 'utf8').trim().split('\n').slice(-500)
         m.board = lines.map(l => JSON.parse(l) as BoardMsg)
@@ -156,6 +296,129 @@ function agentPromptFor(m: Task, personaName: string, objective: string): string
   ].filter(Boolean).join('\n\n')
 }
 
+/**
+ * One completion path for both worker kinds. Three output shapes are
+ * tolerated: the agent's contract JSON at top level, the CLI's envelope
+ * with the contract (or plain text) inside, and plain text. Unwrapping
+ * must not discard the contract's subtasks, which is exactly what a naive
+ * result-first unwrap does.
+ */
+function completeAgent(m: Task, p: AgentTask, rawText: string): void {
+  const text = rawText.trim()
+  let result = text
+  let subtasks: { persona?: string; objective?: string }[] = []
+  const tryContract = (o: unknown): boolean => {
+    if (o && typeof o === 'object' && ('result' in (o as object) || 'subtasks' in (o as object))) {
+      const c = o as { result?: unknown; subtasks?: unknown }
+      result = String(c.result ?? '')
+      subtasks = Array.isArray(c.subtasks) ? c.subtasks as typeof subtasks : []
+      return true
+    }
+    return false
+  }
+  try {
+    const env = JSON.parse(text)
+    if (!tryContract(env)) {
+      const unwrapped = String((env as { content?: unknown; output?: unknown; message?: unknown }).content
+        ?? (env as { output?: unknown }).output ?? (env as { message?: unknown }).message ?? '')
+      if (unwrapped) {
+        result = unwrapped
+        try { tryContract(JSON.parse(unwrapped)) } catch { /* plain text inside the envelope */ }
+      }
+    }
+  } catch { /* plain text output */ }
+
+  // The result is corpus material under the task.
+  const relDir = path.join('tasks', m.id)
+  const rel = path.join(relDir, `${p.name}.md`)
+  try {
+    fs.mkdirSync(path.join(KB_ROOT, relDir), { recursive: true })
+    fs.writeFileSync(path.join(KB_ROOT, rel),
+      `---\nmission: ${m.id}\nagent: ${p.name}\npersona: ${p.persona}\n---\n\n# ${p.objective}\n\n${result}\n`)
+    p.resultPath = rel
+  } catch { /* the board still carries the text */ }
+  void import('./indexing.js').then(x => x.incrementalIndexDir(relDir)).catch(() => {})
+
+  p.state = 'completed'
+  p.note = 'finished'
+  p.updatedAt = new Date().toISOString()
+  post(m, p.name, 'complete', p.resultPath ? `Result at ${p.resultPath}` : result.slice(0, 1500))
+
+  // Sub-spawning, inside the same server-enforced limits.
+  for (const st of subtasks.slice(0, 5)) {
+    const objective = String(st?.objective ?? '').slice(0, 2000)
+    if (!objective) continue
+    try {
+      spawnAgent(m, { persona: String(st?.persona ?? p.persona), objective, parent: p.name, depth: p.depth + 1 })
+    } catch (e) {
+      post(m, 'orchestrator', 'refused', `Subtask from ${p.name} refused: ${String((e as Error).message)}`)
+    }
+  }
+  maybeFinish(m)
+}
+
+/** What the poller extracts from a campaign run's log: everything the
+ *  runner bracketed between its markers. */
+export function extractRunnerResult(log: string): string | null {
+  const m = /STUDIO_RESULT_BEGIN\n([\s\S]*?)\nSTUDIO_RESULT_END/.exec(log)
+  return m ? m[1].trim() : null
+}
+
+const RUN_TERMINAL = new Set(['completed', 'error', 'failed', 'canceled', 'cancelled'])
+
+/**
+ * Watch one campaign agent's platform run. The poll writes the run log
+ * into the same live.log the local path streams to, so the viewer's
+ * drill-down is identical for both worker kinds, and on a terminal state
+ * the bracketed output goes through the shared completion path.
+ */
+function watchCampaignAgent(m: Task, p: AgentTask): void {
+  const workdir = path.join(MISSIONS_DIR, m.id, 'work', p.name)
+  fs.mkdirSync(workdir, { recursive: true })
+  const live = path.join(workdir, 'live.log')
+  const tick = async () => {
+    if (p.state !== 'working') { clearPoller(m, p.name); return }
+    let doc: { status?: string; executedJobs?: Record<string, { status?: string; steps?: { name?: string; status?: string }[] }> }
+    try {
+      doc = jsonHead(await pwRun(['workflows', 'runs', 'view', String(p.runSlug), '-o', 'json']))
+    } catch { return /* transient; next tick */ }
+    const job = doc.executedJobs?.agent
+    const step = (job?.steps ?? []).find(st => st?.status && st.status !== 'completed')
+    p.note = `run ${p.runSlug}: ${doc.status ?? 'unknown'}${job?.status ? `, job ${job.status}` : ''}${step?.name ? ` (${step.name})` : ''}`
+    p.updatedAt = new Date().toISOString()
+    let log = ''
+    try {
+      log = await pwRun(['workflows', 'runs', 'logs', String(p.runSlug)], 60_000)
+      fs.writeFileSync(live, log)
+    } catch { /* the note still updates */ }
+    if (!RUN_TERMINAL.has(String(doc.status))) return
+    clearPoller(m, p.name)
+    if (p.state !== 'working') return
+    const bracketed = extractRunnerResult(log)
+    if (doc.status === 'completed' && bracketed !== null) {
+      completeAgent(m, p, bracketed)
+    } else {
+      p.state = 'failed'
+      p.note = `run ${p.runSlug} ${doc.status}${bracketed === null ? ', no result markers in the log' : ''}`
+      p.updatedAt = new Date().toISOString()
+      post(m, p.name, 'failed', p.note)
+      maybeFinish(m)
+    }
+  }
+  const h = setInterval(() => { void tick() }, CAMPAIGN_POLL_MS)
+  // Watching must never be the reason the process cannot exit: an
+  // un-unref'd interval holds the event loop open, which surfaced as the
+  // test runner hanging after every test had finished.
+  h.unref?.()
+  m.pollers.set(p.name, h)
+  void tick()
+}
+
+function clearPoller(m: Task, name: string): void {
+  const h = m.pollers.get(name)
+  if (h) { clearInterval(h); m.pollers.delete(name) }
+}
+
 function spawnAgent(m: Task, opts: { persona: string; objective: string; parent: string | null; depth: number }): string {
   if (m.state !== 'working') throw new Error('task is not running')
   if (agentCount(m) >= m.maxAgents) throw new Error(`agent ceiling reached (${m.maxAgents})`)
@@ -164,10 +427,43 @@ function spawnAgent(m: Task, opts: { persona: string; objective: string; parent:
   const p: AgentTask = {
     name, persona: opts.persona, objective: opts.objective, parent: opts.parent, depth: opts.depth,
     state: 'working', startedAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
-    note: 'starting', resultPath: null,
+    note: 'starting', resultPath: null, runSlug: null,
   }
   m.nodes.set(name, p)
-  post(m, 'orchestrator', 'spawn', `${name} (persona ${opts.persona || 'none'}, depth ${opts.depth}${opts.parent ? `, child of ${opts.parent}` : ''}): ${opts.objective}`)
+  post(m, 'orchestrator', 'spawn', `${name} (persona ${opts.persona || 'none'}, depth ${opts.depth}${opts.parent ? `, child of ${opts.parent}` : ''}${m.execution === 'campaign' ? `, campaign on ${m.resource}` : ''}): ${opts.objective}`)
+
+  if (m.execution === 'campaign') {
+    // The worker is a platform workflow run on the task's system, not a
+    // child of this process. Submission is async; the agent shows as
+    // working from the start and the watcher takes over from submission.
+    void (async () => {
+      try {
+        await ensureRunnerWorkflow()
+        const inputs = {
+          resource: m.resource,
+          prompt: agentPromptFor(m, opts.persona, opts.objective),
+          model: m.model,
+          agent_name: name,
+          board_url: SELF_URL.startsWith('http://127.0.0.1') ? '' : SELF_URL,
+          board_token: SELF_URL.startsWith('http://127.0.0.1') ? '' : m.token,
+          timeout_seconds: 7200,
+        }
+        const out = await pwRun(['workflows', 'run', '-i', JSON.stringify(inputs), RUNNER_WORKFLOW, '-o', 'json'], 180_000)
+        const run = (jsonHead<{ run?: { slug?: string; id?: string } }>(out).run ?? jsonHead<{ slug?: string; id?: string }>(out)) as { slug?: string; id?: string }
+        p.runSlug = String(run.slug ?? run.id ?? '')
+        if (!p.runSlug) throw new Error('submission returned no run identifier')
+        post(m, 'orchestrator', 'spawn', `${name} submitted as run ${p.runSlug}`)
+        watchCampaignAgent(m, p)
+      } catch (e) {
+        p.state = 'failed'
+        p.note = `submission failed: ${String((e as Error).message).slice(0, 200)}`
+        p.updatedAt = new Date().toISOString()
+        post(m, name, 'failed', p.note)
+        maybeFinish(m)
+      }
+    })()
+    return name
+  }
 
   const workdir = path.join(MISSIONS_DIR, m.id, 'work', name)
   fs.mkdirSync(workdir, { recursive: true })
@@ -201,60 +497,7 @@ function spawnAgent(m: Task, opts: { persona: string; objective: string; parent:
       maybeFinish(m)
       return
     }
-    // Three shapes are tolerated: the agent's contract JSON at top level,
-    // the CLI's envelope with the contract (or plain text) inside, and
-    // plain text. Unwrapping must not discard the contract's subtasks,
-    // which is exactly what a naive result-first unwrap does.
-    const text = String(stdout ?? '').trim()
-    let result = text
-    let subtasks: { persona?: string; objective?: string }[] = []
-    const tryContract = (o: unknown): boolean => {
-      if (o && typeof o === 'object' && ('result' in (o as object) || 'subtasks' in (o as object))) {
-        const c = o as { result?: unknown; subtasks?: unknown }
-        result = String(c.result ?? '')
-        subtasks = Array.isArray(c.subtasks) ? c.subtasks as typeof subtasks : []
-        return true
-      }
-      return false
-    }
-    try {
-      const env = JSON.parse(text)
-      if (!tryContract(env)) {
-        const unwrapped = String((env as { content?: unknown; output?: unknown; message?: unknown }).content
-          ?? (env as { output?: unknown }).output ?? (env as { message?: unknown }).message ?? '')
-        if (unwrapped) {
-          result = unwrapped
-          try { tryContract(JSON.parse(unwrapped)) } catch { /* plain text inside the envelope */ }
-        }
-      }
-    } catch { /* plain text output */ }
-
-    // The result is corpus material under the task.
-    const relDir = path.join('tasks', m.id)
-    const rel = path.join(relDir, `${name}.md`)
-    try {
-      fs.mkdirSync(path.join(KB_ROOT, relDir), { recursive: true })
-      fs.writeFileSync(path.join(KB_ROOT, rel),
-        `---\nmission: ${m.id}\nagent: ${name}\npersona: ${opts.persona}\n---\n\n# ${opts.objective}\n\n${result}\n`)
-      p.resultPath = rel
-    } catch { /* the board still carries the text */ }
-    void import('./indexing.js').then(x => x.incrementalIndexDir(relDir)).catch(() => {})
-
-    p.state = 'completed'
-    p.note = 'finished'
-    post(m, name, 'complete', p.resultPath ? `Result at ${p.resultPath}` : result.slice(0, 1500))
-
-    // Sub-spawning, inside the same server-enforced limits.
-    for (const st of subtasks.slice(0, 5)) {
-      const objective = String(st?.objective ?? '').slice(0, 2000)
-      if (!objective) continue
-      try {
-        spawnAgent(m, { persona: String(st?.persona ?? opts.persona), objective, parent: name, depth: opts.depth + 1 })
-      } catch (e) {
-        post(m, 'orchestrator', 'refused', `Subtask from ${name} refused: ${String((e as Error).message)}`)
-      }
-    }
-    maybeFinish(m)
+    completeAgent(m, p, String(stdout ?? '').trim())
   })
   // Everything the process says, as it says it. The CLI's structured
   // result arrives on stdout only at the end, but stderr narrates along
@@ -287,14 +530,20 @@ export function createTask(opts: {
   objective: string; model: string
   agents: { persona?: string; objective: string }[]
   maxAgents?: number; maxDepth?: number
+  execution?: 'local' | 'campaign'; resource?: string | null
 }): Task {
+  if (opts.execution === 'campaign' && !opts.resource) {
+    throw new Error('campaign execution needs a resource (a connected system to run the agents on)')
+  }
   const id = `${new Date().toISOString().slice(0, 10)}-${slug(opts.objective)}-${Math.random().toString(36).slice(2, 6)}`
   const m: Task = {
     id, objective: opts.objective.slice(0, 2000), model: opts.model, createdAt: new Date().toISOString(),
     state: 'working',
     maxAgents: Math.min(Math.max(Number(opts.maxAgents) || 10, 1), MAX_AGENTS_CAP),
     maxDepth: Math.min(Math.max(Number(opts.maxDepth) || 2, 0), MAX_DEPTH_CAP),
-    nodes: new Map(), board: [], seq: 0, procs: new Map(),
+    execution: opts.execution === 'campaign' ? 'campaign' : 'local',
+    resource: opts.resource ?? null,
+    nodes: new Map(), board: [], seq: 0, procs: new Map(), pollers: new Map(),
     // A task-scoped bearer, not a platform credential: it authorizes
     // exactly the board of one task, for as long as that task
     // exists, so a worker never holds anything wider than its own job.
@@ -319,6 +568,17 @@ export function stopTask(id: string): boolean {
     try { proc.kill('SIGTERM') } catch { /* already gone */ }
   }
   m.procs.clear()
+  for (const [name, h] of m.pollers) {
+    clearInterval(h)
+    const p = m.nodes.get(name)
+    if (p && p.state === 'working') {
+      p.state = 'canceled'; p.note = 'stopped by user'
+      // The run outlives this process by design, so stopping the task
+      // must reach out and cancel it, or the fleet keeps billing.
+      if (p.runSlug) void pwRun(['workflows', 'runs', 'cancel', p.runSlug], 60_000).catch(() => {})
+    }
+  }
+  m.pollers.clear()
   post(m, 'orchestrator', 'task', 'Stopped by user.')
   return true
 }
@@ -327,6 +587,7 @@ export function taskSummary(m: Task) {
   return {
     id: m.id, objective: m.objective, model: m.model, state: m.state,
     createdAt: m.createdAt, maxAgents: m.maxAgents, maxDepth: m.maxDepth,
+    execution: m.execution, resource: m.resource,
     agents: [...m.nodes.values()],
   }
 }
@@ -334,6 +595,7 @@ export function taskSummary(m: Task) {
 export function listTasks() {
   return [...tasks.values()].map(m => ({
     id: m.id, objective: m.objective, state: m.state, createdAt: m.createdAt,
+    execution: m.execution, resource: m.resource,
     agents: m.nodes.size,
     running: [...m.nodes.values()].filter(p => p.state === 'working').length,
   }))
