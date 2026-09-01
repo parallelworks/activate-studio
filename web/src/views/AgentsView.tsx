@@ -49,14 +49,21 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
   // nothing against the new one.
   // #view=agents:<task-id> from a chat reply or a shared link opens that
   // task's tree directly.
+  // Two pages under one tab: the live task board, and the persona/skill
+  // library. They share the section because both are about agents, and
+  // they are separated because watching a fleet and editing markdown are
+  // different activities that were fighting for the same screen.
+  const [page, setPageState] = useState<'tasks' | 'library'>(() =>
+    (localStorage.getItem('ade-agents-page') as 'tasks' | 'library') || 'tasks')
+  const setPage = (v: 'tasks' | 'library') => { setPageState(v); localStorage.setItem('ade-agents-page', v) }
   useEffect(() => {
     const on = (e: Event) => {
       const d = (e as CustomEvent).detail as { view?: string; section?: string }
-      if (d?.view === 'agents' && d.section) setOpenTask(d.section)
+      if (d?.view === 'agents' && d.section) { setOpenTask(d.section); setPageState('tasks') }
     }
     window.addEventListener('ade-view-section', on)
     const m = location.hash.match(/^#view=agents:([a-z0-9-]+)$/)
-    if (m) setOpenTask(m[1])
+    if (m) { setOpenTask(m[1]); setPageState('tasks') }
     return () => window.removeEventListener('ade-view-section', on)
   }, [])
   // The drill-down behind one agent's row: its live output, polled while
@@ -182,89 +189,113 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
     f.text().then(t => { if (!name) setName(f.name.replace(/\.md$/, '')); onBody(t) })
   }
 
+  const STATE_DOT: Record<string, string> = { working: 'ok', completed: 'off', 'input-required': 'warn' }
+  const dotFor = (st: string) => STATE_DOT[st] ?? 'warn'
+  const doneCount = (mi: TaskRow) => mi.agents - mi.running
+
   return (
     <div className="overview-view agents-view">
       <div className="card ov-head">
         <h1 className="view-title">Agents</h1>
-        <p className="muted view-sub">
-          Markdown files that change how the assistant behaves. Write one here or drop in a file you already have.
-        </p>
+        <div className="viewer-tabs agents-tabs">
+          <button className={page === 'tasks' ? 'active' : ''} onClick={() => setPage('tasks')}>
+            Tasks{taskRuns.some(t => t.state === 'working') ? <span className="tab-live-dot" /> : null}
+          </button>
+          <button className={page === 'library' ? 'active' : ''} onClick={() => setPage('library')}>Personas and skills</button>
+        </div>
       </div>
 
-      <section className="card ov-list">
-          <h3>Delegated tasks ({taskRuns.length})</h3>
-          <p className="muted view-sub">
-            Work the assistant split into subtasks and handed to agents. Each subtask is a headless pw code run,
-            local for quick work or a campaign of platform workflow runs on a connected system for long work;
-            results are files under <code>tasks/</code> in the knowledge base, and the board records what happened.
-            Click a task for its agent tree, and an agent for its live output. Enable and bound this under
-            Settings, Delegation.
-          </p>
+      {page === 'tasks' && (
+        <section className="card task-board-card">
           {taskRuns.length === 0 && (
-            <p className="muted">
-              Nothing delegated yet. Ask the assistant in Chat to fan work out (for example, "delegate a campaign
-              across these five input decks"); the task and its agents appear here as they run.
-            </p>
-          )}
-          {taskRuns.map(mi => (
-            <div className="ov-row" key={mi.id} onClick={() => setOpenTask(openTask === mi.id ? null : mi.id)}>
-              <span className="ov-row-path">
-                <span className={`status-dot ${mi.state === 'working' ? 'ok' : mi.state === 'completed' ? 'off' : 'warn'}`} /> {mi.id}
-              </span>
-              <span className="ov-row-meta">{mi.running} working of {mi.agents} · {mi.state}{(mi as { execution?: string; resource?: string }).execution === 'campaign' ? ` · campaign on ${(mi as { resource?: string }).resource ?? '?'}` : ''}</span>
+            <div className="task-empty">
+              <h3>No delegated work yet</h3>
+              <p className="muted">
+                Ask the assistant in Chat to fan work out, "delegate a campaign across these five input decks",
+                and the task appears here as a live board: each subtask is a headless pw code agent, local for
+                quick work or a campaign of platform workflow runs on a connected HPC system for long work.
+                Results are files under <code>tasks/</code> in the knowledge base. Bounds live under Settings, Delegation.
+              </p>
             </div>
-          ))}
+          )}
+          {taskRuns.length > 0 && (
+            <div className="task-cards">
+              {taskRuns.map(mi => (
+                <div key={mi.id} className={`task-card${openTask === mi.id ? ' selected' : ''}${mi.state === 'working' ? ' live' : ''}`}
+                  onClick={() => setOpenTask(openTask === mi.id ? null : mi.id)}>
+                  <div className="task-card-top">
+                    <span className={`status-dot ${dotFor(mi.state)}${mi.state === 'working' ? ' pulse' : ''}`} />
+                    <span className="task-card-state">{mi.state === 'working' ? `${mi.running} agent${mi.running === 1 ? '' : 's'} working` : mi.state}</span>
+                    {(mi as { execution?: string }).execution === 'campaign' && (
+                      <span className="task-badge">campaign · {((mi as { resource?: string }).resource ?? '').split('/').pop() || '?'}</span>
+                    )}
+                  </div>
+                  <div className="task-card-objective">{mi.objective}</div>
+                  <div className="task-progress"><div className="task-progress-fill" style={{ width: `${mi.agents ? Math.round(100 * doneCount(mi) / mi.agents) : 0}%` }} /></div>
+                  <div className="task-card-meta">
+                    <span>{doneCount(mi)} of {mi.agents} done</span>
+                    <span>{mi.id.slice(0, 10)}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
           {openTask && detail && (
             <div className="task-detail">
-              <p className="muted">{detail.objective}</p>
-              <table className="task-table">
-                <thead><tr><th>subtask</th><th>state</th><th>parent</th><th>result</th></tr></thead>
-                <tbody>
+              <div className="task-detail-head">
+                <span className={`status-dot ${dotFor(detail.state)}${detail.state === 'working' ? ' pulse' : ''}`} />
+                <span className="task-detail-objective">{detail.objective}</span>
+                {detail.state === 'working' && (
+                  <button className="btn-secondary" onClick={async () => { await fetch(`/api/tasks/${encodeURIComponent(detail.id)}/stop`, { method: 'POST' }) }}>Cancel</button>
+                )}
+              </div>
+              <div className="task-columns">
+                <div className="task-tree">
                   {detail.agents.map(a => (
                     <React.Fragment key={a.name}>
-                      <tr className={`agent-row${openAgent === a.name ? ' open' : ''}`}
+                      <div className={`tree-row${openAgent === a.name ? ' open' : ''}`}
+                        style={{ paddingLeft: `${10 + a.depth * 20}px` }}
                         onClick={() => setOpenAgent(openAgent === a.name ? null : a.name)}
                         title="Show this agent's live output">
-                        <td>{'\u00a0'.repeat(a.depth * 2)}{a.name}</td>
-                        <td><span className={`status-dot ${a.state === 'working' ? 'ok' : a.state === 'completed' ? 'off' : a.state === 'input-required' ? 'warn' : 'warn'}`} /> {a.state === 'working' ? a.note : a.state}</td>
-                        <td className="muted">{a.parent ?? 'root'}</td>
-                        <td onClick={e => e.stopPropagation()}>{a.resultPath
-                          ? <button className="link-button" onClick={() => onOpen(a.resultPath!)}>{a.resultPath.split('/').pop()}</button>
-                          : <span className="muted">—</span>}</td>
-                      </tr>
+                        {a.depth > 0 && <span className="tree-elbow" style={{ left: `${a.depth * 20 - 8}px` }} />}
+                        <span className={`status-dot ${dotFor(a.state)}${a.state === 'working' ? ' pulse' : ''}`} />
+                        <span className="tree-name">{a.name}</span>
+                        <span className="tree-note muted">{a.state === 'working' ? a.note : a.state}</span>
+                        {a.resultPath && (
+                          <button className="link-button" onClick={e => { e.stopPropagation(); onOpen(a.resultPath!) }}>result</button>
+                        )}
+                      </div>
                       {openAgent === a.name && (
-                        <tr className="agent-detail-row">
-                          <td colSpan={4}>
-                            <div className="agent-detail">
-                              <p className="muted">{a.persona ? `${a.persona}: ` : ''}{a.objective}</p>
-                              {(a as { runSlug?: string | null }).runSlug && (
-                                <p className="muted">platform run <code>{(a as { runSlug?: string }).runSlug}</code></p>
-                              )}
-                              {a.state === 'working' && <p className="muted">{a.note}</p>}
-                              <pre className="agent-live">{agentTail || (a.state === 'working' ? 'No output yet; the log fills as the agent works.' : 'No output was captured for this agent.')}</pre>
-                            </div>
-                          </td>
-                        </tr>
+                        <div className="agent-detail">
+                          <p className="muted">{a.persona ? `${a.persona}: ` : ''}{a.objective}</p>
+                          {(a as { runSlug?: string | null }).runSlug && (
+                            <p className="muted">platform run <code>{(a as { runSlug?: string }).runSlug}</code></p>
+                          )}
+                          <pre className="agent-live">{agentTail || (a.state === 'working' ? 'No output yet; the log fills as the agent works.' : 'No output was captured for this agent.')}</pre>
+                        </div>
                       )}
                     </React.Fragment>
                   ))}
-                </tbody>
-              </table>
-              <div className="task-board">
-                {detail.board.slice(-20).map(b => (
-                  <div key={b.seq} className="task-msg">
-                    <span className="task-msg-meta">{b.at.slice(11, 19)} {b.from} · {b.topic}</span>
-                    <span>{b.body.slice(0, 240)}</span>
-                  </div>
-                ))}
+                </div>
+                <div className="task-feed">
+                  <div className="task-feed-title muted">Board</div>
+                  {detail.board.slice(-40).map(b => (
+                    <div key={b.seq} className="task-msg">
+                      <span className="task-msg-meta">
+                        <span className={`task-topic t-${b.topic}`}>{b.topic}</span>
+                        {b.at.slice(11, 19)} · {b.from}
+                      </span>
+                      <span>{b.body.slice(0, 300)}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
-              {detail.state === 'working' && (
-                <button className="btn-secondary" onClick={async () => { await fetch(`/api/tasks/${encodeURIComponent(detail.id)}/stop`, { method: 'POST' }) }}>Cancel task</button>
-              )}
             </div>
           )}
         </section>
+      )}
 
+      {page === 'library' && (<>
       {(personas.length + skills.length) > 8 && (
         <div className="card agents-filter">
           <input className="field" value={filter} onChange={e => setFilter(e.target.value)}
@@ -394,6 +425,7 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
           {note && <span className="muted">{note}</span>}
         </div>
       </section>
+      </>)}
     </div>
   )
 }

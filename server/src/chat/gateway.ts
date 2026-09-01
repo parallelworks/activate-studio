@@ -176,6 +176,8 @@ export interface AiHealth {
   message: string | null
   lastCallFailure: { at: string; message: string; auth: boolean } | null
   checkedAt: string
+  /** Present when the provider reports a locked key with its unlock link. */
+  unlockUrl?: string | null
 }
 
 /** Live callability check: exercises the gateway with the current
@@ -197,7 +199,17 @@ export async function aiHealth(key?: string | null, baseUrl?: string | null): Pr
     const text = await res.text()
     if (!res.ok) {
       const auth = res.status === 401 || res.status === 403
-      return { ...base, ok: false, status: auth ? 'auth' : 'unreachable', message: `${res.status}: ${text.slice(0, 200)}` }
+      // GenAI.mil locks keys every 8 hours and its 401 body carries the
+      // unlock URL. That link is the remedy, so it is extracted before the
+      // body is truncated for display and carried as its own field.
+      const unlockUrl = /unlock_url[\\":\s]*(https?:\/\/[^"\\\s]+)/.exec(text)?.[1] ?? null
+      return {
+        ...base, ok: false, status: auth ? 'auth' : 'unreachable',
+        message: unlockUrl
+          ? 'The provider locked this API key (it does so on a schedule); unlock it and re-check.'
+          : `${res.status}: ${text.slice(0, 200)}`,
+        unlockUrl,
+      }
     }
     const data = JSON.parse(text) as { data?: unknown[]; models?: unknown[] }
     const n = Array.isArray(data.data) ? data.data.length : Array.isArray(data.models) ? data.models.length : 0

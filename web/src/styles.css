@@ -971,6 +971,74 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
    inner viewer needs a height or the SVG canvas collapses. */
 .workflow-tab-body { flex: 1; min-height: 480px; display: flex; flex-direction: column; }
 .workflow-tab-body .viewer { flex: 1; }
+/* The task board: cards for the fleet, a tree and a feed for one task. */
+.agents-tabs { margin-top: 10px; }
+.tab-live-dot {
+  display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+  background: var(--pw-green); margin-left: 6px; vertical-align: 2px;
+  animation: task-pulse 1.6s ease-in-out infinite;
+}
+.task-board-card { display: flex; flex-direction: column; gap: 14px; }
+.task-empty h3 { margin: 0 0 8px; }
+.task-cards {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px;
+}
+.task-card {
+  border: 1px solid var(--pw-border); border-radius: 10px; padding: 10px 12px;
+  cursor: pointer; background: var(--pw-panel);
+  transition: border-color .12s, box-shadow .12s;
+}
+.task-card:hover { border-color: var(--pw-border-strong); }
+.task-card.selected { border-color: var(--pw-navy); box-shadow: 0 0 0 1px var(--pw-navy); }
+.task-card-top { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--pw-muted); }
+.task-card-state { flex: 1; }
+.task-badge {
+  font-size: 10.5px; padding: 1px 7px; border-radius: 999px;
+  border: 1px solid var(--pw-border-strong); color: var(--pw-muted); white-space: nowrap;
+}
+.task-card-objective {
+  margin: 7px 0 9px; font-size: 13px; font-weight: 600; line-height: 1.4;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  min-height: 2.6em;
+}
+.task-progress { height: 4px; border-radius: 2px; background: var(--pw-border); overflow: hidden; }
+.task-progress-fill { height: 100%; background: var(--pw-green); transition: width .4s ease; }
+.task-card-meta { display: flex; justify-content: space-between; margin-top: 7px; font-size: 11px; color: var(--pw-muted); }
+@keyframes task-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+.status-dot.pulse { animation: task-pulse 1.6s ease-in-out infinite; }
+.task-detail { border-top: 1px solid var(--pw-border); padding-top: 12px; }
+.task-detail-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.task-detail-objective { flex: 1; font-weight: 600; font-size: 13.5px; }
+.task-columns { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 14px; }
+@media (max-width: 900px) { .task-columns { grid-template-columns: 1fr; } }
+.task-tree { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.tree-row {
+  position: relative; display: flex; align-items: center; gap: 8px;
+  padding: 6px 8px; border-radius: 6px; cursor: pointer; font-size: 12.5px;
+}
+.tree-row:hover, .tree-row.open { background: var(--pw-hover-row); }
+.tree-elbow {
+  position: absolute; top: 0; bottom: 50%; width: 10px;
+  border-left: 1px solid var(--pw-border-strong); border-bottom: 1px solid var(--pw-border-strong);
+  border-bottom-left-radius: 6px;
+}
+.tree-name { font-family: ui-monospace, monospace; font-size: 12px; white-space: nowrap; }
+.tree-note { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.task-feed {
+  border-left: 1px solid var(--pw-border); padding-left: 14px;
+  display: flex; flex-direction: column; gap: 8px;
+  max-height: 420px; overflow-y: auto; min-width: 0;
+}
+@media (max-width: 900px) { .task-feed { border-left: 0; padding-left: 0; border-top: 1px solid var(--pw-border); padding-top: 10px; } }
+.task-feed-title { font-size: 11px; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; }
+.task-topic {
+  display: inline-block; font-size: 10px; padding: 0 6px; border-radius: 999px; margin-right: 6px;
+  border: 1px solid var(--pw-border-strong); color: var(--pw-muted);
+}
+.task-topic.t-complete { color: var(--pw-green); border-color: var(--pw-green); }
+.task-topic.t-failed, .task-topic.t-refused { color: var(--pw-amber); border-color: var(--pw-amber); }
+.task-topic.t-spawn { color: var(--pw-navy); border-color: var(--pw-navy); }
+
 /* Per-agent drill-down in the delegated-tasks tree. */
 .agent-row { cursor: pointer; }
 .agent-row.open td { background: var(--pw-hover-row); }
