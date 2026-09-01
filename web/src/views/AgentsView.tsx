@@ -191,20 +191,27 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
         </p>
       </div>
 
-      {taskRuns.length > 0 && (
-        <section className="card ov-list">
+      <section className="card ov-list">
           <h3>Delegated tasks ({taskRuns.length})</h3>
           <p className="muted view-sub">
-            Work the assistant split into subtasks and handed to agents. Each subtask is a headless run; results are
-            files under <code>tasks/</code> in the knowledge base, and the board records what happened. Enable and
-            bound this under Settings, Delegation.
+            Work the assistant split into subtasks and handed to agents. Each subtask is a headless pw code run,
+            local for quick work or a campaign of platform workflow runs on a connected system for long work;
+            results are files under <code>tasks/</code> in the knowledge base, and the board records what happened.
+            Click a task for its agent tree, and an agent for its live output. Enable and bound this under
+            Settings, Delegation.
           </p>
+          {taskRuns.length === 0 && (
+            <p className="muted">
+              Nothing delegated yet. Ask the assistant in Chat to fan work out (for example, "delegate a campaign
+              across these five input decks"); the task and its agents appear here as they run.
+            </p>
+          )}
           {taskRuns.map(mi => (
             <div className="ov-row" key={mi.id} onClick={() => setOpenTask(openTask === mi.id ? null : mi.id)}>
               <span className="ov-row-path">
                 <span className={`status-dot ${mi.state === 'working' ? 'ok' : mi.state === 'completed' ? 'off' : 'warn'}`} /> {mi.id}
               </span>
-              <span className="ov-row-meta">{mi.running} working of {mi.agents} · {mi.state}</span>
+              <span className="ov-row-meta">{mi.running} working of {mi.agents} · {mi.state}{(mi as { execution?: string; resource?: string }).execution === 'campaign' ? ` · campaign on ${(mi as { resource?: string }).resource ?? '?'}` : ''}</span>
             </div>
           ))}
           {openTask && detail && (
@@ -230,6 +237,9 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
                           <td colSpan={4}>
                             <div className="agent-detail">
                               <p className="muted">{a.persona ? `${a.persona}: ` : ''}{a.objective}</p>
+                              {(a as { runSlug?: string | null }).runSlug && (
+                                <p className="muted">platform run <code>{(a as { runSlug?: string }).runSlug}</code></p>
+                              )}
                               {a.state === 'working' && <p className="muted">{a.note}</p>}
                               <pre className="agent-live">{agentTail || (a.state === 'working' ? 'No output yet; the log fills as the agent works.' : 'No output was captured for this agent.')}</pre>
                             </div>
@@ -254,7 +264,6 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
             </div>
           )}
         </section>
-      )}
 
       {(personas.length + skills.length) > 8 && (
         <div className="card agents-filter">

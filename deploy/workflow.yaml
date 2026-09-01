@@ -267,6 +267,12 @@ permissions:
             type: bucket
             optional: true
             tooltip: Bucket holding the deployment bundle built by deploy/make_bundle.sh. If the platform bucket API is unavailable, pre-stage the bundle on the resource as <workdir>/bundle-prestage.tar.gz instead; the pull step falls back to it.
+          self_url:
+            label: Public Studio URL
+            type: string
+            default: ''
+            optional: true
+            tooltip: The session URL this deployment is reached at (e.g. https://my-studio.example). Campaign agents running on other systems use it to reach the task board; empty keeps the board local-only.
           bundle_file:
             label: Bundle File
             type: string
@@ -939,6 +945,9 @@ jobs:
           if [ -n "$PLATFORM_HOST" ]; then
             echo "export PW_PLATFORM_HOST='${PLATFORM_HOST}'" >> ${SCRIPT}
           fi
+          if [ -n "${{ inputs.app_settings.self_url }}" ]; then
+            echo "export STUDIO_SELF_URL='${{ inputs.app_settings.self_url }}'" >> ${SCRIPT}
+          fi
           # A bundle deployment runs on the host and inherits its pw on
           # PATH; a container has neither, so bind the host's binary in the
           # way the compute path already does. Without it every platform
@@ -998,6 +1007,7 @@ jobs:
             ${SUGGESTED_PROMPTS:+--env SUGGESTED_PROMPTS="${SUGGESTED_PROMPTS}"} \
             ${PW_API_KEY:+--env PW_API_KEY="${PW_API_KEY}"} \
             ${PW_PLATFORM_HOST:+--env PW_PLATFORM_HOST="${PW_PLATFORM_HOST}"} \
+            ${STUDIO_SELF_URL:+--env STUDIO_SELF_URL="${STUDIO_SELF_URL}"} \
             ${PW_GATEWAY_URL:+--env PW_GATEWAY_URL="${PW_GATEWAY_URL}"} \
             ${AUTH_JWKS_URL:+--env AUTH_JWKS_URL="${AUTH_JWKS_URL}"} \
             ${AUTH_ISSUER:+--env AUTH_ISSUER="${AUTH_ISSUER}"} \

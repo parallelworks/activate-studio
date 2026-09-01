@@ -77,6 +77,16 @@
 [data-theme='dark'] .sidenav-item:hover { background: var(--theme-hover, #1d2a3c); color: var(--pw-text); }
 [data-theme='dark'] .field:focus, [data-theme='dark'] .search-bar input:focus { outline: 2px solid #2b5f8f; border-color: #4b8cc4; background: #101927; }
 [data-theme='dark'] .viewer-tabs button.active, [data-theme='dark'] .query-mode button.active { color: var(--pw-navy); }
+/* In light, the navy accent doubles as the heading and path ink and reads
+   as structure. In dark the accent is a bright blue, and the same rule
+   painted half of every page in it. Static text goes back to text ink;
+   the accent stays on what is interactive or active. */
+[data-theme='dark'] .view-title, [data-theme='dark'] .ov-chart h3, [data-theme='dark'] .ov-list h3,
+[data-theme='dark'] .empty-state h2, [data-theme='dark'] .help-hero h1, [data-theme='dark'] .dag-steps-title,
+[data-theme='dark'] .brand-text b { color: var(--pw-text); }
+[data-theme='dark'] .result-path, [data-theme='dark'] .viewer-path, [data-theme='dark'] .ov-row-path,
+[data-theme='dark'] .table-scroll td.cell-path { color: var(--pw-text); }
+[data-theme='dark'] .dag-canvas.own-dag text { fill: var(--pw-text); }
 [data-theme='dark'] .btn-secondary { color: #a9b8c9; border-color: #3b4d63; }
 [data-theme='dark'] .btn-secondary:hover { color: #e8eef6; border-color: #56708c; }
 [data-theme='dark'] .rail-title, [data-theme='dark'] .results-head { color: #9fb0c3; }

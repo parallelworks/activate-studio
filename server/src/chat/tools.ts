@@ -439,6 +439,8 @@ export const TOOL_SPECS: ToolSpec[] = [
       parameters: {
         type: 'object',
         properties: {
+          execution: { type: 'string', enum: ['local', 'campaign'], description: 'local runs agents beside the server, bounded at 15 minutes each: right for quick parallel lookups. campaign submits each agent as a platform workflow run on a named system, hours-long and surviving restarts: right for long or many-agent work. Default local.' },
+          resource: { type: 'string', description: 'Campaign only: the connected system to run agents on, from list_clusters. When the user does not name one, consult hpc_status placement before choosing.' },
           objective: { type: 'string', description: 'What the whole task is trying to achieve' },
           subtasks: {
             type: 'array',
@@ -1531,15 +1533,19 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
           return { result: `Too many subtasks: this deployment allows ${eff.delegationMaxAgents}. Combine them into fewer, larger strands.`, summary: 'over ceiling' }
         }
         try {
+          const execution = args.execution === 'campaign' ? 'campaign' as const : 'local' as const
+          const resource = execution === 'campaign' && args.resource
+            ? await resolveResource(String(args.resource)) : null
           const m = createTask({
             objective: String(args.objective), model,
             agents: agents.map((a: { persona?: string; objective: string }) => ({ persona: a.persona, objective: a.objective })),
             maxAgents: eff.delegationMaxAgents,
             maxDepth: eff.delegationMaxDepth,
+            execution, resource,
           })
           const sum = taskSummary(m)
           return {
-            result: `Task ${sum.id} started with ${sum.agents.length} subtasks (ceiling ${sum.maxAgents}, depth ${sum.maxDepth}). Results land under tasks/${sum.id}/ in the knowledge base. In your reply, give the user this link to watch the agents live: [View agents working](#view=agents:${sum.id}). Poll with task_status; do not wait idly, tell the user it is running.`,
+            result: `Task ${sum.id} started with ${sum.agents.length} subtasks (ceiling ${sum.maxAgents}, depth ${sum.maxDepth}${sum.execution === 'campaign' ? `; campaign on ${sum.resource}, agents run as platform workflow runs and survive restarts` : ''}). Results land under tasks/${sum.id}/ in the knowledge base. In your reply, give the user this link to watch the agents live: [View agents working](#view=agents:${sum.id}). Poll with task_status; do not wait idly, tell the user it is running.`,
             summary: `task ${sum.id}`,
           }
         } catch (e) {
