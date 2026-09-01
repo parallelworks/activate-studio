@@ -460,7 +460,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
         if (probeableProvider(prefix) && !prefixes.has(prefix)) prefixes.set(prefix, id)
       }
     }
-    const verdicts = new Map<string, { ok: boolean; unlockUrl: string | null }>()
+    const verdicts = new Map<string, { ok: boolean; kind: 'locked' | 'unavailable' | null; unlockUrl: string | null }>()
     if (prefixes.size) {
       await Promise.race([
         Promise.allSettled([...prefixes.entries()].map(async ([prefix, sample]) => {
@@ -474,12 +474,16 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
       const id = String(m.id)
       const v = verdicts.get(id.slice(0, Math.max(id.indexOf('/'), 0)))
       if (v && !v.ok) {
+        const label = v.kind === 'locked' || v.unlockUrl
+          ? 'locked; unlock via Settings, Model access'
+          : 'not responding; for GenAI this usually means the key is locked on its 8-hour schedule'
         return {
           ...m,
           callable: false,
-          locked: true,
+          locked: v.kind === 'locked',
+          unavailable: true,
           unlock_url: v.unlockUrl,
-          name: `${m.name || id} (locked${v.unlockUrl ? '; unlock via Settings, Model access' : ''})`,
+          name: `${m.name || id} (${label})`,
         }
       }
       return m
