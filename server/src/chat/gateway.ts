@@ -201,6 +201,10 @@ const providerProbes = new Map<string, { at: number; v: ProviderVerdict }>()
 const PROBE_TTL_MS = 5 * 60_000
 const PROBE_PATTERN = new RegExp(process.env.STUDIO_PROBE_PROVIDERS || 'genai', 'i')
 
+/** Cleared on an explicit re-check, so an unlock takes effect at once
+ *  instead of after the cache ages out. */
+export function invalidateProviderProbes(): void { providerProbes.clear() }
+
 export function probeableProvider(prefix: string): boolean { return PROBE_PATTERN.test(prefix) }
 
 export function extractUnlockUrl(text: string): string | null {
