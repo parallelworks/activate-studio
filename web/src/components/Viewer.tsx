@@ -1,4 +1,4 @@
-import { ReactElement, Suspense, lazy, useEffect, useState } from 'react'
+import { ReactElement, Suspense, lazy, useEffect, useRef, useState } from 'react'
 import { Streamdown } from 'streamdown'
 import { api, FileContent } from '../api'
 import { forgetHash } from '../lastLocation'
@@ -77,8 +77,38 @@ function suffixOf(p: string): string {
   return i >= 0 ? p.slice(i).toLowerCase() : ''
 }
 
-export function Viewer({ path, onDeleted }: {
+/**
+ * Scroll a range into the middle of whatever scrolls it. scrollIntoView
+ * on the range's element would land on the top of a long <pre>, not on
+ * the match inside it, so the scroll is computed from the range's own
+ * rectangle against the nearest scrolling ancestor.
+ */
+function scrollRangeIntoView(range: Range): void {
+  const rect = range.getBoundingClientRect()
+  let el: HTMLElement | null = range.startContainer.parentElement
+  while (el) {
+    const st = getComputedStyle(el)
+    if (/(auto|scroll)/.test(st.overflowY) && el.scrollHeight > el.clientHeight) {
+      const box = el.getBoundingClientRect()
+      el.scrollTop += rect.top - box.top - el.clientHeight / 2 + rect.height / 2
+      return
+    }
+    el = el.parentElement
+  }
+  window.scrollBy({ top: rect.top - window.innerHeight / 2 })
+}
+
+/** The words a find string is really asking for: quotes and fts5 operators dropped. */
+function findTerms(text: string): string[] {
+  return text.split(/\s+/)
+    .map(t => t.replace(/^["'(]+|["')]+$/g, ''))
+    .filter(t => t.length >= 2 && !/^(AND|OR|NOT|NEAR)$/i.test(t))
+}
+
+export function Viewer({ path, find, onDeleted }: {
   path: string | null
+  /** Text to land on and highlight, typically the search query that led here. */
+  find?: string
   onDeleted: (path: string) => void
 }) {
   const [file, setFile] = useState<FileContent | null>(null)
@@ -88,6 +118,62 @@ export function Viewer({ path, onDeleted }: {
   const [deleting, setDeleting] = useState(false)
   const [tags, setTags] = useState<{ own: string[]; inherited: string[] }>({ own: [], inherited: [] })
   const [labelsOpen, setLabelsOpen] = useState(false)
+  // Find in this file. Matches are painted with the CSS Custom Highlight
+  // API rather than by wrapping text in <mark>, because the rendered
+  // Markdown and the text bodies are React's DOM and rewriting their text
+  // nodes underneath React breaks the next update.
+  const bodyRef = useRef<HTMLDivElement>(null)
+  const [findText, setFindText] = useState('')
+  const [findOpen, setFindOpen] = useState(false)
+  const [hitCount, setHitCount] = useState(0)
+  const [hitIdx, setHitIdx] = useState(0)
+
+  // Opened from a search result: seed the find bar with the query and
+  // land on the tab that actually holds the matched text. A PDF or office
+  // file previews as page images, which cannot be searched, so those open
+  // on the indexed text, which is exactly what the search matched.
+  useEffect(() => {
+    if (!file || !path || file.path !== path) return
+    setFindText(find ?? '')
+    setFindOpen(!!find)
+    setHitIdx(0)
+    if (find) {
+      const sfx = suffixOf(file.path)
+      const paged = sfx === '.pdf' || OFFICE_SUFFIXES.includes(sfx) || file.kind === 'image'
+      if (paged && file.content != null) setTab('indexed')
+    }
+  }, [find, path, file?.path])
+
+  useEffect(() => {
+    const root = bodyRef.current
+    const H = (globalThis as unknown as { Highlight?: new (...r: Range[]) => unknown }).Highlight
+    const reg = (globalThis as unknown as { CSS?: { highlights?: Map<string, unknown> } }).CSS?.highlights
+    if (!root || !H || !reg) return
+    reg.delete('find-hit'); reg.delete('find-current')
+    const terms = findTerms(findText)
+    if (!terms.length) { setHitCount(0); return }
+    const re = new RegExp(terms.map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'gi')
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+    const ranges: Range[] = []
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      const text = (n as Text).data
+      re.lastIndex = 0
+      let m: RegExpExecArray | null
+      while ((m = re.exec(text))) {
+        const r = document.createRange()
+        r.setStart(n, m.index); r.setEnd(n, m.index + m[0].length)
+        ranges.push(r)
+        if (!m[0].length) re.lastIndex++
+      }
+    }
+    setHitCount(ranges.length)
+    if (!ranges.length) return
+    const i = Math.min(hitIdx, ranges.length - 1)
+    reg.set('find-hit', new H(...ranges))
+    reg.set('find-current', new H(ranges[i]))
+    scrollRangeIntoView(ranges[i])
+    return () => { reg.delete('find-hit'); reg.delete('find-current') }
+  }, [findText, hitIdx, tab, findOpen, file?.content])
 
   useEffect(() => {
     if (!path) return
@@ -251,6 +337,7 @@ export function Viewer({ path, onDeleted }: {
         <span className="viewer-meta">
           <span>{new Date(file.mtime * 1000).toISOString().slice(0, 10)}</span>
           <span className="upload-menu">
+            <button className="btn-secondary" onClick={() => setFindOpen(o => !o)} title="Find text in this file">Find</button>
             <button className="btn-secondary" onClick={() => setLabelsOpen(o => !o)}>Labels</button>
             {labelsOpen && (
               <TagMenu
@@ -280,7 +367,33 @@ export function Viewer({ path, onDeleted }: {
           ))}
         </div>
       )}
-      {views.find(v => v.key === active)?.node ?? previewView}
+      {(findOpen || findText) && (
+        <div className="find-bar">
+          <input
+            value={findText}
+            autoFocus
+            placeholder="Find in this file"
+            onChange={e => { setFindText(e.target.value); setHitIdx(0) }}
+            onKeyDown={e => {
+              if (e.key === 'Enter' && hitCount) setHitIdx(i => e.shiftKey ? (i - 1 + hitCount) % hitCount : (i + 1) % hitCount)
+              if (e.key === 'Escape') { setFindOpen(false); setFindText('') }
+            }}
+          />
+          <span className="find-count muted">
+            {hitCount
+              ? `${Math.min(hitIdx, hitCount - 1) + 1} of ${hitCount}`
+              : (isPdf || isOffice || isImage) && active === 'preview' && file.content != null
+                ? <>Pages are images; <button className="link-button" onClick={() => setTab('indexed')}>show matches in the indexed text</button></>
+                : findText ? 'No matches' : ''}
+          </span>
+          <button className="btn-secondary" disabled={!hitCount} onClick={() => setHitIdx(i => (i - 1 + hitCount) % hitCount)}>Previous</button>
+          <button className="btn-secondary" disabled={!hitCount} onClick={() => setHitIdx(i => (i + 1) % hitCount)}>Next</button>
+          <button className="btn-secondary" onClick={() => { setFindOpen(false); setFindText('') }}>Close</button>
+        </div>
+      )}
+      <div ref={bodyRef} className="viewer-find-scope">
+        {views.find(v => v.key === active)?.node ?? previewView}
+      </div>
     </div>
   )
 }
