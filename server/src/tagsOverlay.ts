@@ -54,6 +54,12 @@ export function overlayKey(abs: string): string | null {
   return identify(abs)?.key ?? null
 }
 
+/** The inode half of a fsid.inode key. */
+export function inodeOf(key: string): string {
+  const i = key.indexOf('.')
+  return i >= 0 ? key.slice(i + 1) : key
+}
+
 /** Same file object? Inode equality plus creation time where both sides
  *  report one, so a recycled inode is not mistaken for the original. */
 export function sameObject(entry: OverlayEntry, id: { btime: string }): boolean {
@@ -151,20 +157,69 @@ export function overlayByInode(): Map<string, string[]> {
   return out
 }
 
-/** Drop entries whose file is gone from both the index and the filesystem,
- *  and those whose inode now belongs to a different file. */
+/**
+ * Drop entries whose file is gone from both the index and the filesystem,
+ * and those whose inode now belongs to a different file.
+ *
+ * The fsid in a key is the device number the mount had when the label was
+ * written, and a rebuilt host mounts the same share under a different one.
+ * That once made every entry look foreign at once and the prune deleted
+ * all of them (dewd, 2026-09-03). So: an entry whose path still resolves
+ * to the same inode and creation time is the same file and is re-keyed
+ * rather than dropped; a pass that recognizes nothing at all is refused,
+ * since a corpus does not vanish between two index passes; and the file
+ * is backed up before any entry is removed.
+ */
 export function overlayPrune(seenKeys: Set<string>): number {
   const all = load()
+  const keys = Object.keys(all.entries)
+  if (!keys.length) return 0
   let dropped = 0
-  for (const [key, e] of Object.entries(all.entries)) {
+  let rekeyed = 0
+  const toDrop: string[] = []
+  for (const key of keys) {
+    const e = all.entries[key]
+    if (seenKeys.has(key)) continue
     const id = identify(path.join(KB_ROOT, e.path))
-    const stillThere = id?.key === key && sameObject(e, id)
-    if (seenKeys.has(key) || stillThere) continue
-    delete all.entries[key]
-    dropped++
+    if (id && inodeOf(id.key) === inodeOf(key) && sameObject(e, id)) {
+      if (id.key !== key) { all.entries[id.key] = e; delete all.entries[key]; rekeyed++ }
+      continue
+    }
+    toDrop.push(key)
   }
-  if (dropped) persist()
+  if (toDrop.length === keys.length && !seenKeys.size) {
+    // Nothing recognized anywhere: the index or the mount is not what it
+    // was, not the corpus. Refuse rather than empty the store.
+    if (rekeyed) persist()
+    return 0
+  }
+  if (toDrop.length) {
+    try { fs.copyFileSync(FILE, `${FILE}.bak`) } catch { /* first write, or unreadable; the backup is best effort */ }
+    for (const key of toDrop) { delete all.entries[key]; dropped++ }
+  }
+  if (dropped || rekeyed) persist()
   return dropped
+}
+
+/** Move an entry to a new key (the same file seen under a new device id). */
+export function overlayRekey(from: string, to: string): void {
+  const all = load()
+  const e = all.entries[from]
+  if (!e || from === to) return
+  all.entries[to] = e
+  delete all.entries[from]
+}
+
+/** Adopt a label set for a path when the overlay has none for that file:
+ *  the recovery path when the index still carries rows the overlay lost. */
+export function overlayAdopt(rel: string, tags: string[]): boolean {
+  const id = identify(path.join(KB_ROOT, rel))
+  if (!id || !tags.length) return false
+  const all = load()
+  if (all.entries[id.key]?.tags.length) return false
+  all.entries[id.key] = { tags, path: rel, dir: id.dir, btime: id.btime, at: new Date().toISOString() }
+  persist()
+  return true
 }
 
 export function overlayEmpty(): boolean {
