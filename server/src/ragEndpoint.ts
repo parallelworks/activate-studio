@@ -57,8 +57,32 @@ export function ragEndpointStatus(): RagEndpointStatus {
   return { ...status }
 }
 
+/**
+ * The platform the proxy registers on. `pw endpoints run` picks its target
+ * from --context, then PW_CONTEXT, then whatever context the host's CLI
+ * currently points at. That last fallback is how a development Studio's
+ * proxy ended up registered on a production platform: the parent endpoint
+ * was launched with --context, the child inherited nothing, and the host's
+ * current context was elsewhere. Registration is therefore refused unless
+ * the target is explicit: PW_CONTEXT (the child passes it as --context) or
+ * PW_PLATFORM_HOST (what the deploy workflow exports).
+ */
+export function explicitPlatformTarget(): { args: string[]; detail: string } | null {
+  const ctx = process.env.PW_CONTEXT?.trim()
+  if (ctx) return { args: ['--context', ctx], detail: `context ${ctx}` }
+  const host = process.env.PW_PLATFORM_HOST?.trim()
+  if (host) return { args: [], detail: `platform ${host}` }
+  return null
+}
+
 export function startRagEndpoint(): RagEndpointStatus {
   if (child) return ragEndpointStatus()
+  const target = explicitPlatformTarget()
+  if (!target) {
+    status.state = 'error'
+    status.detail = 'No explicit platform target: set PW_CONTEXT or PW_PLATFORM_HOST for this deployment, otherwise the proxy would register on whatever platform the host\u2019s pw CLI happens to point at.'
+    return ragEndpointStatus()
+  }
   // Registering publishes /v1 into the platform catalog, and /v1 is off:
   // the published model would list everywhere and fail every call.
   if (!effectiveSettings().ragProxyEnabled) {
@@ -82,7 +106,7 @@ export function startRagEndpoint(): RagEndpointStatus {
   // a random one on every registration, so the URL changed each time the
   // Studio restarted and anything configured against it (a pw code model, an
   // MCP client) pointed at a session that no longer existed.
-  const proc = spawn(cli, ['endpoints', 'run', '--openai', '--name', name, '--subdomain', name, '-o', 'text', '--', 'node', '-e', FORWARDER], {
+  const proc = spawn(cli, ['endpoints', 'run', ...target.args, '--openai', '--name', name, '--subdomain', name, '-o', 'text', '--', 'node', '-e', FORWARDER], {
     env: { ...process.env, STUDIO_TARGET_PORT: String(PORT), STUDIO_INJECT_KEY: key },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
@@ -143,7 +167,13 @@ export async function ragEndpointRoutes(app: FastifyInstance): Promise<void> {
 /** Auto-start at boot when the setting asks for it. */
 export function maybeAutoStart(log: (msg: string) => void): void {
   if (effectiveSettings().ragEndpointAutoStart && effectiveSettings().ragProxyEnabled) {
-    log('rag endpoint auto-start enabled; registering')
+    const target = explicitPlatformTarget()
+    if (!target) {
+      log('rag endpoint auto-start skipped: no explicit platform target (set PW_CONTEXT or PW_PLATFORM_HOST)')
+      startRagEndpoint()
+      return
+    }
+    log(`rag endpoint auto-start enabled; registering on ${target.detail}`)
     startRagEndpoint()
   }
 }
