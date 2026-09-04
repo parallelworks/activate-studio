@@ -46,14 +46,125 @@ const STOPWORDS = new Set([
   'does', 'it', 'this', 'that', 'at', 'by', 'from', 'as', 'us', 'you',
 ])
 
-/** Build an fts5 MATCH expression: meaningful terms quoted, AND-joined. */
+/**
+ * The search grammar, the subset of search-engine habits people arrive
+ * with: "quoted words" match as an exact phrase, OR between alternatives,
+ * -word or NOT word excludes, word* matches by prefix, and everything else
+ * is a whole word that must be present (AND). The fts5 index uses the
+ * default unicode61 tokenizer, so a bare term matches whole tokens only,
+ * case-insensitively; partial matches happen only when asked for with *.
+ */
+export interface QueryItem { text: string; phrase: boolean; prefix: boolean }
+export interface QueryGroup { items: QueryItem[]; negatives: QueryItem[] }
+export interface ParsedQuery {
+  /** OR-separated groups; within a group every item must match. */
+  groups: QueryGroup[]
+  hasOperators: boolean
+  /** The whole query was one quoted phrase. */
+  exact: boolean
+}
+
+export function parseSearchQuery(raw: string): ParsedQuery {
+  const s = raw.trim()
+  type Tok = { text: string; phrase: boolean; neg: boolean; prefix: boolean; op?: 'OR' | 'AND' }
+  const toks: Tok[] = []
+  let hasOperators = false
+  let pendingNot = false
+  const re = /(-|NOT\s+)?"([^"]*)"|(-)?(\S+)/g
+  let m: RegExpExecArray | null
+  while ((m = re.exec(s))) {
+    if (m[2] !== undefined) {
+      const t = m[2].replace(/"/g, '').trim()
+      if (t) { toks.push({ text: t, phrase: true, neg: !!m[1] || pendingNot, prefix: false }); hasOperators = true }
+      pendingNot = false
+      continue
+    }
+    let w = m[4]
+    const neg = !!m[3]
+    if (w === 'OR' || w === 'AND') { toks.push({ text: w, phrase: false, neg: false, prefix: false, op: w }); hasOperators = true; continue }
+    if (w === 'NOT') { pendingNot = true; hasOperators = true; continue }
+    const prefix = w.endsWith('*')
+    w = w.replace(/["'*]/g, '')
+    if (!w) continue
+    if (neg || pendingNot || prefix) hasOperators = true
+    toks.push({ text: w, phrase: false, neg: neg || pendingNot, prefix })
+    pendingNot = false
+  }
+  const groups: QueryGroup[] = [{ items: [], negatives: [] }]
+  for (const t of toks) {
+    if (t.op === 'OR') { groups.push({ items: [], negatives: [] }); continue }
+    if (t.op === 'AND') continue
+    const item = { text: t.text, phrase: t.phrase, prefix: t.prefix }
+    if (t.neg) groups[groups.length - 1].negatives.push(item)
+    else groups[groups.length - 1].items.push(item)
+  }
+  for (const g of groups) {
+    // Stopwords are dropped from bare terms only when something else is
+    // left to search for; a phrase keeps every word it was given.
+    const kept = g.items.filter(i => i.phrase || i.prefix || !STOPWORDS.has(i.text.toLowerCase()))
+    g.items = (kept.length ? kept : g.items).slice(0, 8)
+  }
+  const exact = toks.length === 1 && toks[0].phrase && !toks[0].neg
+  return { groups: groups.filter(g => g.items.length || g.negatives.length), hasOperators, exact }
+}
+
+const ftsQuote = (t: string) => `"${t.replace(/"/g, '')}"`
+
+/** The fts5 MATCH expression for a parsed query, or '' when nothing positive remains. */
+export function ftsExprFor(parsed: ParsedQuery): string {
+  const parts: string[] = []
+  for (const g of parsed.groups) {
+    const pos = g.items.map(i => ftsQuote(i.text) + (i.prefix ? '*' : ''))
+    if (!pos.length) continue
+    let e = pos.length > 1 ? `(${pos.join(' AND ')})` : pos[0]
+    for (const n of g.negatives) e = `(${e} NOT ${ftsQuote(n.text)})`
+    parts.push(e)
+  }
+  return parts.length > 1 ? parts.join(' OR ') : (parts[0] ?? '')
+}
+
 function ftsExpr(query: string): string {
-  const all = query.split(/\s+/).map(t => t.replace(/["'*]/g, '')).filter(Boolean)
-  let terms = all.filter(t => !STOPWORDS.has(t.toLowerCase()))
-  if (terms.length === 0) terms = all
-  terms = terms.slice(0, 8)
-  if (terms.length === 0) return ''
-  return terms.map(t => `"${t}"`).join(' AND ')
+  return ftsExprFor(parseSearchQuery(query))
+}
+
+/**
+ * A filename clause for one term. Filenames are matched by substring,
+ * which is what people expect of a name search, except that a short
+ * term is required to start a word: "tin" must not surface routine.md.
+ */
+export function nameClause(term: string): string {
+  const t = term.replace(/[%_]/g, '')
+  if (!t) return '0'
+  if (t.length > 3) return `name LIKE ${q('%' + t + '%')}`
+  const starts = ['', ' ', '-', '_', '.', '(', '[', ',']
+  return '(' + starts.map(sep => `name LIKE ${q((sep ? '%' + sep : '') + t + '%')}`).join(' OR ') + ')'
+}
+
+export function nameWhere(parsed: ParsedQuery): string {
+  const groups = parsed.groups
+    .map(g => g.items.map(i => nameClause(i.text)).filter(c => c !== '0'))
+    .filter(cs => cs.length)
+    .map(cs => cs.length > 1 ? `(${cs.join(' AND ')})` : cs[0])
+  return groups.length > 1 ? groups.join(' OR ') : (groups[0] ?? '0')
+}
+
+/**
+ * Whether semantic (vector) hits belong in the blend. They do for a
+ * question or a topic; they are noise for an identifier, an acronym, a
+ * quoted phrase, or a query with operators, where the person is asking
+ * for the literal thing and a "similar" document reads as a wrong answer.
+ */
+export function wantsSemantic(raw: string): boolean {
+  const p = parseSearchQuery(raw)
+  if (p.hasOperators || p.exact) return false
+  const words = p.groups.flatMap(g => g.items).map(i => i.text)
+  if (words.length === 1) {
+    const w = words[0]
+    if (w.length <= 3) return false
+    if (/^[A-Z0-9][A-Z0-9-]{0,7}$/.test(w)) return false
+    if (/\d/.test(w)) return false
+  }
+  return words.length > 0
 }
 
 /** Blend full-text, filename, and vector hits without letting one starve the rest. */
@@ -95,10 +206,11 @@ export async function searchFts(queryText: string, limit = 20): Promise<SearchHi
 
 /** Filename substring search over entries metadata (no enrichment needed). */
 export async function searchNames(queryText: string, limit = 20): Promise<SearchHit[]> {
-  const like = q('%' + queryText.replace(/[%_]/g, '') + '%')
+  const where = nameWhere(parseSearchQuery(queryText))
+  if (where === '0') return []
   const sql =
     `SELECT rpath(sname, sroll)||'/'||name, name, size, mtime ` +
-    `FROM vrpentries WHERE name LIKE ${like} LIMIT ${limit};`
+    `FROM vrpentries WHERE ${where} LIMIT ${limit};`
   const rows = await queryPerDir(sql)
   return rows.slice(0, limit).map(r => ({
     path: toKbRel(r[0]),
