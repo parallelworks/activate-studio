@@ -377,11 +377,11 @@ permissions:
             optional: true
             tooltip: Platform host for identity verification, e.g. activate.parallel.works; the JWKS path is appended automatically. Ignored for the single-user posture.
           pw_api_key:
-            label: Gateway API Key
+            label: Platform API key
+            tooltip: A platform API key from your ACTIVATE account (Account, API keys), not an AI gateway or model key. The deployment's endpoint agent, CLI calls, and campaign runner authenticate with it, so the host never depends on a pw login that expires.
             type: string
             default: ''
             optional: true
-            tooltip: OpenAI-compatible gateway credential for chat. Empty uses the pw CLI credential on the resource when one exists; chat is disabled otherwise, every other feature still works.
           gateway_url:
             label: Gateway Base URL
             type: string
