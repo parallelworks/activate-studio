@@ -551,6 +551,7 @@ export function LibraryView({ display, onDisplay }: {
           ) : (
             <Viewer
               path={selectedFile}
+              find={display?.kind === 'file' ? display.q : undefined}
               onDeleted={() => { onDisplay(null); setRefreshKey(k => k + 1) }}
             />
           )}

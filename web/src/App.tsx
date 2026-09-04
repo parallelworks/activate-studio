@@ -17,7 +17,7 @@ import { useAppConfig } from './config'
 import { applyAccent, applySurface } from './accents'
 
 type ViewId = 'chat' | 'library' | 'search' | 'query' | 'overview' | 'history' | 'agents' | 'settings' | 'help'
-export type Display = { kind: 'file'; target: string } | { kind: 'workflow_dag'; target: string }
+export type Display = { kind: 'file'; target: string; q?: string } | { kind: 'workflow_dag'; target: string }
 
 // The destinations that keep a spot in the phone bottom bar; the rest
 // move into the More sheet.
@@ -151,9 +151,9 @@ export default function App() {
   // back/forward (hash-only history moves fire hashchange).
   useEffect(() => {
     const applyHash = () => {
-      const m = location.hash.match(/^#open=(file|workflow_dag):(.+)$/)
+      const m = location.hash.match(/^#open=(file|workflow_dag):(.+?)(?:&q=([^&]*))?$/)
       if (m) {
-        setDisplay({ kind: m[1] as Display['kind'], target: decodeURIComponent(m[2]) })
+        setDisplay({ kind: m[1] as Display['kind'], target: decodeURIComponent(m[2]), ...(m[3] ? { q: decodeURIComponent(m[3]) } : {}) })
         setView('library')
         return
       }
@@ -174,11 +174,11 @@ export default function App() {
     const onClick = (e: MouseEvent) => {
       const a = (e.target as HTMLElement).closest?.('a[href*="#open="], a[href*="#view="]') as HTMLAnchorElement | null
       const href = a?.getAttribute('href') ?? ''
-      const m = href.match(/#open=(file|workflow_dag):(.+)$/)
+      const m = href.match(/#open=(file|workflow_dag):(.+?)(?:&q=([^&]*))?$/)
       if (m) {
         e.preventDefault()
         e.stopPropagation()
-        setDisplay({ kind: m[1] as Display['kind'], target: decodeURIComponent(m[2]) })
+        setDisplay({ kind: m[1] as Display['kind'], target: decodeURIComponent(m[2]), ...(m[3] ? { q: decodeURIComponent(m[3]) } : {}) })
         setView('library')
         return
       }
@@ -211,7 +211,7 @@ export default function App() {
   useEffect(() => {
     if (!navReady.current) { navReady.current = true; return }
     const hash = display && view === 'library'
-      ? `#open=${display.kind}:${encodeURIComponent(display.target).replace(/%2F/gi, '/')}`
+      ? `#open=${display.kind}:${encodeURIComponent(display.target).replace(/%2F/gi, '/')}${display.kind === 'file' && display.q ? `&q=${encodeURIComponent(display.q)}` : ''}`
       : view !== 'chat' ? `#view=${view}` : ''
     if ((location.hash || '') === hash) return
     // Views may own a :section suffix on their hash; leave it theirs.
@@ -222,8 +222,10 @@ export default function App() {
     rememberHash(hash)
   }, [view, display])
 
-  const openFile = (path: string) => {
-    setDisplay({ kind: 'file', target: path })
+  // A search result opens with the query it matched, so the viewer can
+  // land on the match instead of the top of the file.
+  const openFile = (path: string, q?: string) => {
+    setDisplay(q ? { kind: 'file', target: path, q } : { kind: 'file', target: path })
     setView('library')
   }
 
