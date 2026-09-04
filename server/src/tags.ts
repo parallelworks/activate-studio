@@ -4,7 +4,7 @@ import type { FastifyInstance } from 'fastify'
 import { EXCLUDE_DIRS, GUFI_BIN, GUFI_INDEX, KB_ROOT, gufiAvailable, PYTHON_BIN } from './config.js'
 import { KbError, resolveKb } from './kb.js'
 import { reindexForDir, reindexForFile } from './indexing.js'
-import { identify, overlayByInode, overlayEmpty, overlayEntries, overlayFlush, overlayGet, overlayNotePath, overlayPrune, overlaySet, sameObject } from './tagsOverlay.js'
+import { identify, inodeOf, overlayAdopt, overlayByInode, overlayEmpty, overlayEntries, overlayFlush, overlayGet, overlayNotePath, overlayPrune, overlayRekey, overlaySet, sameObject } from './tagsOverlay.js'
 
 export const TAG_XATTR = 'user.studio.tags'
 const DELIM = '\x1e'
@@ -209,7 +209,13 @@ export async function reapplyTagOverlay(prefix = ''): Promise<number> {
     // (a recycled inode is a different file).
     const id = identify(path.join(KB_ROOT, row.rel))
     if (!id) continue
-    const key = keys.find(k => k === id.key)
+    // Exact key first; failing that, the same inode under another device
+    // id with the same creation time is the same file on a rebuilt host.
+    let key = keys.find(k => k === id.key)
+    if (!key) {
+      const alt = keys.find(k => inodeOf(k) === inodeOf(id.key) && entries[k] && sameObject(entries[k], id))
+      if (alt) { entries[id.key] = entries[alt]; overlayRekey(alt, id.key); key = id.key; pathsMoved = true }
+    }
     const entry = key ? entries[key] : undefined
     if (!key || !entry || !sameObject(entry, id)) continue
     seen.add(key)
@@ -277,7 +283,41 @@ print(json.dumps(bad))
   return failed
 }
 
+/**
+ * Rebuild overlay entries from the label rows the index still carries.
+ * The index is written from the overlay, so normally this finds nothing
+ * new; after the overlay has been lost it is the only copy left.
+ */
+export async function recoverOverlayFromIndex(): Promise<number> {
+  if (!gufiAvailable()) return 0
+  const dirs = await gufiRows(
+    `SELECT rpath(sname, sroll), CAST(x.value AS TEXT) FROM vrsummary JOIN xattrs_pwd x ON vrsummary.inode = x.inode WHERE CAST(x.name AS TEXT) = '${TAG_XATTR}';`,
+  ).catch(() => [])
+  const files = await gufiRows(
+    `SELECT rpath(sname, sroll)||'/'||v.name, CAST(x.value AS TEXT) FROM vrpentries v JOIN xattrs_pwd x ON v.inode = x.inode WHERE CAST(x.name AS TEXT) = '${TAG_XATTR}';`,
+  ).catch(() => [])
+  let adopted = 0
+  for (const [p, value] of [...dirs, ...files]) {
+    const tags = String(value ?? '').split(/[,\s]+/).map(normalizeTag).filter(Boolean)
+    if (tags.length && overlayAdopt(relOf(p), tags)) adopted++
+  }
+  if (adopted) invalidateTagMaps()
+  return adopted
+}
+
 export async function tagRoutes(app: FastifyInstance): Promise<void> {
+  // An empty overlay beside an index that still carries labels is a lost
+  // overlay, not a corpus without labels; recover once the index is up.
+  const t = setTimeout(() => {
+    if (!overlayEmpty()) return
+    recoverOverlayFromIndex()
+      .then(n => { if (n) app.log.warn({ adopted: n }, 'label overlay was empty; entries recovered from the index') })
+      .catch(() => {})
+  }, 20_000)
+  t.unref?.()
+
+  app.post('/api/kb/tags/recover', async () => ({ adopted: await recoverOverlayFromIndex() }))
+
   // Vocabulary with usage counts, from the index.
   app.get('/api/tags', async () => {
     const maps = await tagMaps()
