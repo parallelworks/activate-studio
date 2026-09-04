@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffectiveTheme } from '../theme'
 import { rememberHash } from '../lastLocation'
 import {
   ChatProvider, ChatLayout, ChatThread, ChatEmptyState, AttachmentManager, useChat,
@@ -90,6 +91,7 @@ export function ChatView() {
 
   const adapter = useMemo(() => createStudioAdapter(), [])
   const [credNote, setCredNote] = useState<string | null>(null)
+  const effectiveTheme = useEffectiveTheme()
   const [vocab, setVocab] = useState<{ tag: string; count: number }[]>([])
   const [scope, setScope] = useState<Set<string>>(new Set())
   const [chatFilter, setChatFilterState] = useState<'all' | 'mine'>(getChatListFilter())
@@ -356,11 +358,11 @@ export function ChatView() {
           <ChatLayout>
             {showAttachments ? <AttachmentManager /> : activeId ? <ChatThread conversationId={activeId} /> : (() => {
               // The same dark-aware pick the sidebar makes, so the two never
-              // disagree about which mark to show. The icon rides as a
-              // pseudo-element on the package's greeting heading, so it sits
-              // directly above "what's on your mind" wherever the package
-              // centers it, rather than pinned to the top of the canvas.
-              const dark = document.documentElement.dataset.theme === 'dark'
+              // disagree about which mark to show, and read live so a theme
+              // toggle swaps it. The icon rides as a pseudo-element on the
+              // package's greeting heading, so it sits directly above "what's
+              // on your mind" wherever the package centers it.
+              const dark = effectiveTheme === 'dark'
               const icon = dark ? (cfg.iconUrlDark ?? cfg.iconUrl) : cfg.iconUrl
               return (
                 <div

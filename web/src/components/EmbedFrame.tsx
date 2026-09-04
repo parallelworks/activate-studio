@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffectiveTheme } from '../theme'
 
 /**
  * The iframe a chat reply's /?embed= image becomes, with a control to take
@@ -23,9 +24,10 @@ export function EmbedFrame({ src, title }: { src: string; title: string }) {
   // itself, which is not guaranteed to reach the same answer as the page
   // hosting it; a dark chat then held a light DAG. The parent knows its
   // theme, so it is passed along rather than re-derived.
-  const theme = document.documentElement.dataset.theme
-  const themed = theme && !src.includes('theme=')
-    ? `${src}&theme=${theme}` : src
+  // Read live: a theme toggle changes the src, which reloads the embed in
+  // the new theme, the same way a fresh open would.
+  const theme = useEffectiveTheme()
+  const themed = !src.includes('theme=') ? `${src}&theme=${theme}` : src
   const [mode, setMode] = useState<'inline' | 'native' | 'overlay'>('inline')
 
   const enter = useCallback(() => {
