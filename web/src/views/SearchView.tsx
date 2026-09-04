@@ -63,7 +63,7 @@ export function SearchView({ onOpen }: { onOpen: (path: string, q?: string) => v
             value={q}
             onChange={e => setQ(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && run()}
-            placeholder="Search files, documents, and topics"
+            placeholder={'Whole words; "exact phrase", OR, -exclude, prefix*'}
             autoFocus
           />
           <button className="btn-primary" onClick={() => run()} disabled={busy}>{busy ? 'Searching…' : 'Search'}</button>

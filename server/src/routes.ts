@@ -6,7 +6,7 @@ import fsp from 'node:fs/promises'
 import { EXCLUDE_DIRS, GATEWAY_BASE, GUFI_INDEX, INDEX_BASE, KB_ROOT, PROJECT_ROOT, PW_CLI, gufiAvailable } from './config.js'
 import { KbError, extractPath, listDir, moveCacheEntry, readFileContent, resolveKb } from './kb.js'
 import { CONVERTIBLE, mimeFor, officeToPdf, OfficePreviewUnavailable, pdfPageCount, pdfPagePng, pdfPreviewPaths, previewPdfFor, removePdfPreview } from './preview.js'
-import { blendHits, corpusStats, searchFts, searchNames, searchVector } from './gufi.js'
+import { blendHits, corpusStats, searchFts, searchNames, searchVector, wantsSemantic } from './gufi.js'
 import { invalidateContext } from './chat/context.js'
 import { extractorReport, getIndexJob, incrementalIndexDir, indexRootDb, indexStatus, reindexForFile, startIndexJob, sweep } from './indexing.js'
 import { copyPaths, movePaths, reindexRoots, renamePath } from './move.js'
@@ -476,7 +476,7 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
     const [fts, names, vec] = await Promise.all([
       searchFts(q, n),
       searchNames(q, Math.min(Math.max(10, Math.floor(n / 5)), 50)),
-      searchVector(q, Math.min(n, 10)).catch(() => []),
+      wantsSemantic(q) ? searchVector(q, Math.min(n, 10)).catch(() => []) : Promise.resolve([]),
     ])
     const { tags } = req.query as { tags?: string }
     const filter = tags ? tags.split(',').filter(Boolean) : undefined
