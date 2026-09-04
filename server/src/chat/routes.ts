@@ -264,6 +264,22 @@ export function keyCookieJar(chunks: string[]): string[] {
  * being wrong for that provider, and blaming the key there sends someone
  * to renew a credential that was never the problem.
  */
+/**
+ * What to tell a user whose credential the platform just refused. The
+ * expiry, when the credential is a token whose payload carries one, turns
+ * "401" into a sentence with a time in it and a remedy that does not expire.
+ */
+export function credentialRejectionMessage(owner: 'personal' | 'deployment', kind: string | null, credExpiresAt: string | null): string {
+  if (owner === 'deployment') {
+    return 'The platform rejected the deployment credential (401). An operator must replace it in the deployment settings; until then, add your own token or API key under Settings, Model access.'
+  }
+  const expired = !!credExpiresAt && Date.parse(credExpiresAt) < Date.now()
+  if (expired) {
+    return `Your platform token expired at ${new Date(credExpiresAt!).toLocaleString('en-US', { timeZone: 'UTC', dateStyle: 'medium', timeStyle: 'short' })} UTC; tokens last 24 hours from login. Paste a fresh token under Settings, Model access, or an API key from Account, API keys, which does not expire.`
+  }
+  return `The platform rejected your stored ${kind === 'token' ? 'token' : 'credential'} (401). If it was a platform token it has likely expired, since tokens last 24 hours from login. Paste a fresh token under Settings, Model access, or an API key from Account, API keys, which does not expire.`
+}
+
 export function gatewayChatMessage(msg: string, model: string): string {
   const status = Number(/^gateway chat (\d+)/.exec(msg)?.[1] ?? 0)
   const personal = /^[a-z0-9_.-]+:/i.test(model) && !model.startsWith('session:') && !model.startsWith('org:')
@@ -367,6 +383,17 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
         return reply.send({
           models: sidecar, unreachableSessions: [],
           error: `Your provider key is locked or rejected by ${new URL(cred.baseUrl).host}.${unlockUrl ? ` Unlock it here and reload: ${unlockUrl}` : ''} The Settings, Model access page shows the same link and a Re-check.`,
+        })
+      }
+      // A credential the platform rejects used to surface as a 500 and the
+      // picker's generic "internal error". It is an ordinary state with a
+      // known remedy, so it is answered as one.
+      const rejected = /\b(401|403)\b|unauthorized|forbidden/i.test(msg)
+      if (rejected) {
+        const st = cred && req.user ? getUserKeyStatus(req.user.id) : null
+        return reply.send({
+          models: sidecar, unreachableSessions: [], credential: 'rejected',
+          error: credentialRejectionMessage(cred ? 'personal' : 'deployment', st?.kind ?? null, st?.credExpiresAt ?? null),
         })
       }
       if (!sidecar.length) throw e

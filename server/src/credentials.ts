@@ -114,7 +114,9 @@ export function setUserKey(sub: string, key: string, persist: boolean, baseUrl?:
     try { new URL(url) } catch { throw new Error('invalid provider base URL') }
     if (!/^https?:\/\//.test(url)) throw new Error('provider base URL must be http(s)')
   }
-  const last4 = trimmed.slice(-4)
+  // Base64-padded tokens end in '=' and a suffix of 'NA==' identifies
+  // nothing; the last characters before the padding do.
+  const last4 = trimmed.replace(/=+$/, '').slice(-4)
   const addedAt = new Date().toISOString()
   const { kind, expiresAt } = inspect(trimmed)
   // Personal keys live in memory only; the browser's sealed cookie is the
@@ -165,7 +167,7 @@ export function shareUserKey(sub: string, sharedBy: string): void {
   const vault = loadVault()
   vault[SHARED_SUB] = {
     blob: encrypt(cred.key),
-    last4: status.last4 ?? cred.key.slice(-4),
+    last4: status.last4 ?? cred.key.replace(/=+$/, '').slice(-4),
     addedAt: new Date().toISOString(),
     kind: status.kind ?? 'api-key',
     expiresAt: status.credExpiresAt ?? null,
