@@ -9,7 +9,7 @@ const MODE_LABEL: Record<SearchHit['mode'], string> = {
   name: 'filename',
 }
 
-export function SearchView({ onOpen }: { onOpen: (path: string) => void }) {
+export function SearchView({ onOpen }: { onOpen: (path: string, q?: string) => void }) {
   const [q, setQ] = useState('')
   const [hits, setHits] = useState<SearchHit[] | null>(null)
   const [note, setNote] = useState<string | null>(null)
@@ -107,7 +107,7 @@ export function SearchView({ onOpen }: { onOpen: (path: string) => void }) {
           </div>
           {hits.length === 0 && <p className="muted pad">No matches.</p>}
           {hits.map(h => (
-            <div key={h.path} className={`result-row ${sel.has(h.path) ? 'multi' : ''}`} onClick={() => onOpen(h.path)}>
+            <div key={h.path} className={`result-row ${sel.has(h.path) ? 'multi' : ''}`} onClick={() => onOpen(h.path, q)}>
               <div className="result-top">
                 <RowCheck checked={sel.has(h.path)} onToggle={() => toggleSel(h.path)} />
                 <span className="result-path">{h.path}</span>
