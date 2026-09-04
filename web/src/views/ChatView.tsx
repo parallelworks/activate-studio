@@ -25,46 +25,18 @@ function FilterReloader() {
   return null
 }
 
-/** Keeps the model selection valid and remembered across reloads. */
-function ModelSelectionGuard() {
-  const { models, selectedProvider, setSelectedProvider, hasLoadedModels } = useChat()
-  // The chat provider picks its own selection as soon as the catalog
-  // arrives, and that selection is valid, so a guard that only acts on an
-  // invalid one never restored anything: on every refresh the provider's
-  // default stood, and the effect that remembers the choice then wrote that
-  // default over the model the user had actually picked. The remembered
-  // choice has to win once, before anything is written back.
-  const restored = useRef(false)
-  useEffect(() => {
-    if (!hasLoadedModels || models.length === 0) return
-    const served = (id: string | null | undefined): id is string => !!id && models.some(m => m.id === id)
-    let stored: string | null = null
-    try { stored = localStorage.getItem(MODEL_STORAGE_KEY) } catch { /* storage unavailable */ }
-
-    if (!restored.current) {
-      restored.current = true
-      const want = served(stored) ? stored
-        : served(selectedProvider) ? selectedProvider
-        : models[0].id
-      if (want !== selectedProvider) setSelectedProvider(want)
-      return
-    }
-
-    // From here the selection is the user's own, so remember it. A
-    // conversation can still restore a model that is no longer served, and
-    // the composer would let a message go out that cannot be sent, so an
-    // unserved selection falls back to the remembered one.
-    if (served(selectedProvider)) {
-      // A marked id ("... [locked]") is a temporary identity; remembering
-      // it would restore a dead selection after the provider recovers.
-      if (!/ \[(locked|unavailable)\]$/.test(selectedProvider)) {
-        try { localStorage.setItem(MODEL_STORAGE_KEY, selectedProvider) } catch { /* storage unavailable */ }
-      }
-      return
-    }
-    setSelectedProvider(served(stored) ? stored : models[0].id)
-  }, [hasLoadedModels, models, selectedProvider, setSelectedProvider])
-  return null
+/**
+ * Selection persistence moved into the chat package (0.4.3+ remembers the
+ * chosen model under its own key and validates it against the catalog),
+ * which is what the studio's guard did. This carries a choice remembered
+ * under the studio's old key across the upgrade, once, and retires the key.
+ */
+function migrateRememberedModel(): void {
+  try {
+    const legacy = localStorage.getItem(MODEL_STORAGE_KEY)
+    if (legacy && !localStorage.getItem('aiChatSelectedModel')) localStorage.setItem('aiChatSelectedModel', legacy)
+    if (legacy) localStorage.removeItem(MODEL_STORAGE_KEY)
+  } catch { /* storage unavailable */ }
 }
 
 export function ChatView() {
@@ -184,6 +156,7 @@ export function ChatView() {
   const [scopeFilter, setScopeFilter] = useState('')
 
   useEffect(() => {
+    migrateRememberedModel()
     api.tagVocabulary().then(v => setVocab(v.tags)).catch(() => {})
     // The model picker is the package's and renders labels from the id
     // alone, so a locked provider cannot be marked inside it (upstream
@@ -342,7 +315,6 @@ export function ChatView() {
       }}
       activeConversationId={activeId}
       config={{
-        variant: 'modern',
         suggestedPrompts: cfg.suggestedPrompts,
         LinkComponent,
         // Same-origin /?embed= image sources render as live viewers (DAGs,
@@ -379,8 +351,7 @@ export function ChatView() {
               <button className="btn-secondary" onClick={() => setCredNote(null)}>Dismiss</button>
             </div>
           )}
-          <ModelSelectionGuard />
-          <FilterReloader />
+                    <FilterReloader />
           <ChatLayout>
             {showAttachments ? <AttachmentManager /> : activeId ? <ChatThread conversationId={activeId} /> : (() => {
               // The same dark-aware pick the sidebar makes, so the two never

@@ -487,7 +487,11 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
       if (v && !v.ok) {
         const tag = v.kind === 'locked' ? 'locked' : 'unavailable'
         impaired.push({ id, locked: v.kind === 'locked', unlock_url: v.unlockUrl })
-        return { ...m, id: `${id} [${tag}]`, callable: false, locked: v.kind === 'locked', unavailable: true, unlock_url: v.unlockUrl }
+        // ai-chat 0.4.4+ renders a host-supplied name in the picker and
+        // falls back to the id only when there is none, so the mark has to
+        // ride on both or it vanishes for every model that has a name.
+        const name = typeof m.name === 'string' && m.name.trim() ? `${m.name.trim()} [${tag}]` : m.name
+        return { ...m, id: `${id} [${tag}]`, name, callable: false, locked: v.kind === 'locked', unavailable: true, unlock_url: v.unlockUrl }
       }
       return m
     })
