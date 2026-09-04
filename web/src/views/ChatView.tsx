@@ -163,6 +163,7 @@ export function ChatView() {
     // issue filed). The warning therefore lives here, above the thread,
     // where it cannot be missed or truncated.
     fetch('/api/chat/models').then(r => r.json()).then(d => {
+      if (d.error && !(d.models ?? []).length) { setCredNote(String(d.error)); return }
       const impaired = (d.impaired ?? []) as { id: string; locked: boolean }[]
       if (impaired.length) {
         const locked = impaired.some(m => m.locked)

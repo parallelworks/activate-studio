@@ -471,7 +471,13 @@ export function SettingsView() {
                           ? 'Not connected; this deployment requires your own model credential'
                           : 'No personal key loaded; requests use the deployment credential')}
                         {me.mode !== 'none' && accessHealth?.status === 'ok' && `Connected with your ${me.kind === 'token' ? 'token' : 'key'} ending ${me.last4}`}
-                        {me.mode !== 'none' && accessHealth && accessHealth.status !== 'ok' && `Your ${me.kind === 'token' ? 'token' : 'key'} ending ${me.last4} is not working (${accessHealth.status})`}
+                        {me.mode !== 'none' && accessHealth && accessHealth.status !== 'ok' && (
+                          accessHealth.status === 'auth'
+                            ? (me.credExpired
+                              ? `Your token ending ${me.last4} expired ${new Date(me.credExpiresAt!).toLocaleString()}`
+                              : `${accessHealth.gatewayHost ?? 'The platform'} rejected your ${me.kind === 'token' ? 'token' : 'key'} ending ${me.last4}`)
+                            : `Could not reach ${accessHealth.gatewayHost ?? 'the platform'} with your ${me.kind === 'token' ? 'token' : 'key'} ending ${me.last4} (${accessHealth.status})`
+                        )}
                         {me.mode !== 'none' && !accessHealth && `Your ${me.kind === 'token' ? 'token' : 'key'} ending ${me.last4} is loaded`}
                       </strong>
                       {me.mode !== 'none' && (
@@ -513,7 +519,8 @@ export function SettingsView() {
                         {me.mode === 'session' && `Held in memory (until ${me.sessionExpiresAt ? new Date(me.sessionExpiresAt).toLocaleTimeString() : 'soon'}; a remembered key renews this from the browser cookie automatically).`}
                         {me.credExpiresAt && !me.credExpired && ` The ${me.kind === 'token' ? 'token itself expires' : 'credential expires'} ${new Date(me.credExpiresAt).toLocaleString()}.`}
                         {me.baseUrl && ` Provider: ${me.baseUrl}.`}
-                        {me.credExpired && ' THIS TOKEN HAS EXPIRED; paste a fresh one.'}
+                        {me.credExpired && ' This token has expired.'}
+                        {accessHealth?.status === 'auth' && ' Platform tokens last 24 hours from login. Paste a fresh token below, or an API key from your ACTIVATE account (Account, API keys), which does not expire.'}
                       </p>
                     )}
                   </div>
