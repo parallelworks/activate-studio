@@ -280,7 +280,9 @@ export async function aiHealth(key?: string | null, baseUrl?: string | null): Pr
         ...base, ok: false, status: auth ? 'auth' : 'unreachable',
         message: unlockUrl
           ? 'The provider locked this API key (it does so on a schedule); unlock it and re-check.'
-          : `${res.status}: ${text.slice(0, 200)}`,
+          : auth
+            ? `${gatewayHost} rejected this credential (${res.status}). A platform token lasts 24 hours from login; an API key from Account, API keys does not expire.`
+            : `${res.status}: ${text.slice(0, 200)}`,
         unlockUrl,
       }
     }
