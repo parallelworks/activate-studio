@@ -210,7 +210,7 @@ export const TOOL_SPECS: ToolSpec[] = [
     function: {
       name: 'workflow_configs',
       description:
-        'List a workflow\'s saved input configurations: the named, ready-made settings for running it on a particular HPC system. Most site-specific detail a user should not have to know (queue or partition, QoS, walltime, GPU directives, account) is already correct in these. Call this before run_workflow whenever a request names a system ("on makau", "on carpenter"), and prefer the configuration whose name matches that system over composing scheduler settings yourself. Configurations marked builtin ship with the workflow; the others were saved by this account and usually carry a resource and a chosen model as well.',
+        'List a workflow\'s saved input configurations: the named, ready-made settings for running it on a particular HPC system. Most site-specific detail a user should not have to know (queue or partition, QoS, walltime, GPU directives, account) is already correct in these. Call this before run_workflow whenever a request names a system ("on vega", "on juno"), and prefer the configuration whose name matches that system over composing scheduler settings yourself. Configurations marked builtin ship with the workflow; the others were saved by this account and usually carry a resource and a chosen model as well.',
       parameters: {
         type: 'object',
         properties: {

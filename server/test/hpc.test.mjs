@@ -143,7 +143,7 @@ test('partitions report their ceiling, free nodes and required fields', async ()
 test('an unknown system names the ones that do have partitions', async () => {
   const r = await call('hpc_environments', { cluster: 'nosuch' })
   assert.match(r.result, /vega/)
-  assert.match(r.result, /wheat/)
+  assert.match(r.result, /juno/)
 })
 
 test('configurations are summarised by the settings that decide a submission', async () => {
@@ -189,7 +189,7 @@ test('caller inputs win over the configuration they are merged onto', async () =
 
 test('a missing site account is explained with the account that would fix it', async () => {
   const r = await call('run_workflow', {
-    name: 'mp.ollama.latest', config: 'Makau', resource: 'vega', dry_run: false,
+    name: 'mp.ollama.latest', config: 'Vega', resource: 'vega', dry_run: false,
   })
   assert.match(r.result, /SLURM account/)
   assert.match(r.result, /acct123/)
