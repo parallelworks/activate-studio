@@ -210,7 +210,7 @@ export const TOOL_SPECS: ToolSpec[] = [
     function: {
       name: 'workflow_configs',
       description:
-        'List a workflow\'s saved input configurations: the named, ready-made settings for running it on a particular HPC system. Most site-specific detail a user should not have to know (queue or partition, QoS, walltime, GPU directives, account) is already correct in these. Call this before run_workflow whenever a request names a system ("on makau", "on carpenter"), and prefer the configuration whose name matches that system over composing scheduler settings yourself. Configurations marked builtin ship with the workflow; the others were saved by this account and usually carry a resource and a chosen model as well.',
+        'List a workflow\'s saved input configurations: the named, ready-made settings for running it on a particular HPC system. Most site-specific detail a user should not have to know (queue or partition, QoS, walltime, GPU directives, account) is already correct in these. Call this before run_workflow whenever a request names a system ("on vega", "on juno"), and prefer the configuration whose name matches that system over composing scheduler settings yourself. Configurations marked builtin ship with the workflow; the others were saved by this account and usually carry a resource and a chosen model as well.',
       parameters: {
         type: 'object',
         properties: {
@@ -247,7 +247,7 @@ export const TOOL_SPECS: ToolSpec[] = [
         properties: {
           name: { type: 'string', description: 'Workflow name from list_workflows' },
           config: { type: 'string', description: 'Saved configuration name from workflow_configs to load settings from' },
-          resource: { type: 'string', description: 'Target system name, e.g. makau. Sets the workflow\'s compute-clusters input; only needed when the configuration does not already carry one, or to retarget it' },
+          resource: { type: 'string', description: 'Target system name, e.g. vega. Sets the workflow\'s compute-clusters input; only needed when the configuration does not already carry one, or to retarget it' },
           inputs: { type: 'string', description: 'JSON object of input values, merged over the configuration' },
           dry_run: { type: 'boolean', description: 'true validates without executing (default true)' },
         },
@@ -871,7 +871,7 @@ function mergeInputs(base: any, over: any): any {
 
 /**
  * A workflow's compute-clusters input wants `pw://<owner>/<name>`, and a
- * user says "makau". The owner is whatever account the cluster is attached
+ * user says "vega". The owner is whatever account the cluster is attached
  * under, which the environments listing reports, so resolve it there and
  * fall back to the bare name rather than guessing an owner.
  */

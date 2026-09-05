@@ -164,7 +164,7 @@ export function overlayByInode(): Map<string, string[]> {
  * The fsid in a key is the device number the mount had when the label was
  * written, and a rebuilt host mounts the same share under a different one.
  * That once made every entry look foreign at once and the prune deleted
- * all of them (dewd, 2026-09-03). So: an entry whose path still resolves
+ * all of them (a production deployment, 2026-09-03). So: an entry whose path still resolves
  * to the same inode and creation time is the same file and is re-keyed
  * rather than dropped; a pass that recognizes nothing at all is refused,
  * since a corpus does not vanish between two index passes; and the file

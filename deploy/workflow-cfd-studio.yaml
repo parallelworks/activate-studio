@@ -67,7 +67,7 @@ permissions:
         hidden: ${{ inputs.resource_and_execution.resource.schedulerType != 'slurm' || inputs.resource_and_execution.scheduler == false }}
         items:
           account:
-            default: "hpcmo49636prw"
+            default: ""
             label: Account
             type: slurm-accounts
             resource: ${{ inputs.resource_and_execution.resource }}

@@ -9,8 +9,8 @@ const { summarizeRunDetail } = await import('../dist/chat/tools.js')
 
 const VIEW = JSON.stringify({ slug: 'hellobatch-00007', workflowName: 'hellobatch', status: 'completed', createdAt: '2026-09-05T12:50:00Z', completedAt: '2026-09-05T12:51:30Z',
   executedJobs: {
-    preprocessing: { status: 'completed', ssh: { remoteHost: 'makau.mhpcc.hpc.mil' }, steps: [{ name: 'Create command script', status: 'completed' }] },
-    job_runner: { status: 'completed', ssh: { remoteHost: 'makau.mhpcc.hpc.mil' }, steps: [{ name: 'Submit batch job', status: 'completed' }, { name: 'Show job output', status: 'completed' }, { name: 'Notify', status: 'skipped' }] },
+    preprocessing: { status: 'completed', ssh: { remoteHost: 'vega.example.org' }, steps: [{ name: 'Create command script', status: 'completed' }] },
+    job_runner: { status: 'completed', ssh: { remoteHost: 'vega.example.org' }, steps: [{ name: 'Submit batch job', status: 'completed' }, { name: 'Show job output', status: 'completed' }, { name: 'Notify', status: 'skipped' }] },
   },
   yaml: { jobs: { job_runner: { steps: [{ run: 'cat > commands.sh << EOF\n' + 'x'.repeat(30_000) + '\nEOF' }] } } } })
 const LOGS = `=== job: preprocessing > step: Create command script (completed, 1s) ===
@@ -29,7 +29,7 @@ test('the job output reaches the reader, and the workflow script text does not',
   const { text, status } = summarizeRunDetail(VIEW, '', LOGS)
   assert.equal(status, 'completed')
   assert.match(text, /^Run hellobatch-00007 of hellobatch: completed, started 2026-09-05T12:50:00Z, ended 2026-09-05T12:51:30Z/)
-  assert.match(text, /job_runner: completed on makau\.mhpcc\.hpc\.mil \[Submit batch job: completed; Show job output: completed; Notify: skipped\]/)
+  assert.match(text, /job_runner: completed on vega\.example\.org \[Submit batch job: completed; Show job output: completed; Notify: skipped\]/)
   assert.match(text, /studio-e2e-mtodkzdu/)
   assert.match(text, /JobId=5251/)
   assert.doesNotMatch(text, /xxxxxxxx/, 'the embedded script is not dumped')

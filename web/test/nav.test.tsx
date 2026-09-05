@@ -15,7 +15,7 @@ describe('library hash', () => {
     expect(parseOpenHash(h)).toEqual(d)
   })
   it('parses a workflow DAG and rejects anything else', () => {
-    expect(parseOpenHash('#open=workflow_dag:dewd-training')).toEqual({ kind: 'workflow_dag', target: 'dewd-training' })
+    expect(parseOpenHash('#open=workflow_dag:cfd-training')).toEqual({ kind: 'workflow_dag', target: 'cfd-training' })
     expect(parseOpenHash('#view=agents')).toBeNull()
     expect(parseOpenHash('')).toBeNull()
   })

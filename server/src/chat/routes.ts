@@ -228,7 +228,7 @@ const BASE_ATTRS = 'Path=/; HttpOnly; Secure; SameSite=None'
  *
  * SameSite=None rather than Strict, because a deployment is reached
  * through a sessions domain that differs from the platform's own
- * (pw.hsp.mil under activate.hpc.mil, for one). The app therefore runs as
+ * (a session domain served under a different platform host, for one). The app therefore runs as
  * a cross-site context, where a Strict cookie is stored and then never
  * offered back, so the key looked lost on every restart even though the
  * browser still held it. None is safe here because the cookie grants
@@ -630,7 +630,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
   //
   // SameSite=None rather than Strict, because a deployment is reached
   // through a sessions domain that differs from the platform's own
-  // (pw.hsp.mil under activate.hpc.mil, for one), so the app runs as a
+  // (a session domain served under a different platform host, for one), so the app runs as a
   // cross-site context and a Strict cookie is set but never sent back.
   // That is what made every restart ask for the key again: the durable
   // copy existed in the browser and was never offered. Partitioned keys
