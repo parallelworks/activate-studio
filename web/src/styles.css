@@ -1233,6 +1233,25 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
   background: var(--empty-brand-icon) center / contain no-repeat;
 }
 
+/* Slash-command palette above the composer. */
+.slash-palette {
+  position: absolute; z-index: 30;
+  background: var(--pw-panel); border: 1px solid var(--pw-border-strong); border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(16, 24, 40, 0.14);
+  padding: 6px; max-height: 320px; overflow-y: auto;
+}
+.slash-item {
+  display: grid; grid-template-columns: auto auto 1fr; align-items: baseline; gap: 10px;
+  padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 13px;
+}
+.slash-item.current { background: var(--pw-hover-row); }
+.slash-name { font-family: ui-monospace, monospace; font-weight: 600; white-space: nowrap; }
+.slash-kind { font-size: 10px; padding: 0 6px; border-radius: 999px; border: 1px solid var(--pw-border-strong); color: var(--pw-muted); text-transform: uppercase; letter-spacing: .04em; }
+.slash-kind.k-skill { color: var(--pw-green); border-color: var(--pw-green); }
+.slash-kind.k-agent { color: var(--pw-navy); border-color: var(--pw-navy); }
+.slash-desc { color: var(--pw-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.slash-foot { font-size: 11px; padding: 6px 10px 2px; }
+
 /* Conversation scrubber: a tick per message down the side of the thread,
    hover to preview, click to jump. Vertical because that is the axis the
    thread scrolls on, so a tick's position maps directly to how far down
