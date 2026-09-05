@@ -1,4 +1,5 @@
 import { ReactElement, Suspense, lazy, useEffect, useRef, useState } from 'react'
+import { buildOpenHash, parseOpenHash } from './nav'
 import { rememberHash } from './lastLocation'
 import { ChatView } from './views/ChatView'
 import { DagViewer } from './components/DagViewer'
@@ -151,9 +152,9 @@ export default function App() {
   // back/forward (hash-only history moves fire hashchange).
   useEffect(() => {
     const applyHash = () => {
-      const m = location.hash.match(/^#open=(file|workflow_dag):(.+?)(?:&q=([^&]*))?$/)
-      if (m) {
-        setDisplay({ kind: m[1] as Display['kind'], target: decodeURIComponent(m[2]), ...(m[3] ? { q: decodeURIComponent(m[3]) } : {}) })
+      const opened = parseOpenHash(location.hash)
+      if (opened) {
+        setDisplay(opened)
         setView('library')
         return
       }
@@ -174,11 +175,11 @@ export default function App() {
     const onClick = (e: MouseEvent) => {
       const a = (e.target as HTMLElement).closest?.('a[href*="#open="], a[href*="#view="]') as HTMLAnchorElement | null
       const href = a?.getAttribute('href') ?? ''
-      const m = href.match(/#open=(file|workflow_dag):(.+?)(?:&q=([^&]*))?$/)
-      if (m) {
+      const opened = parseOpenHash(href.slice(href.indexOf('#open=')))
+      if (opened) {
         e.preventDefault()
         e.stopPropagation()
-        setDisplay({ kind: m[1] as Display['kind'], target: decodeURIComponent(m[2]), ...(m[3] ? { q: decodeURIComponent(m[3]) } : {}) })
+        setDisplay(opened)
         setView('library')
         return
       }
@@ -211,7 +212,7 @@ export default function App() {
   useEffect(() => {
     if (!navReady.current) { navReady.current = true; return }
     const hash = display && view === 'library'
-      ? `#open=${display.kind}:${encodeURIComponent(display.target).replace(/%2F/gi, '/')}${display.kind === 'file' && display.q ? `&q=${encodeURIComponent(display.q)}` : ''}`
+      ? buildOpenHash(display)
       : view !== 'chat' ? `#view=${view}` : ''
     if ((location.hash || '') === hash) return
     // Views may own a :section suffix on their hash; leave it theirs.

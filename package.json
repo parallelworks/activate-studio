@@ -7,7 +7,7 @@
     "dev": "pnpm --parallel --filter @activate-studio/server --filter @activate-studio/web dev",
     "build": "pnpm --filter @activate-studio/web build && pnpm --filter @activate-studio/server build",
     "start": "node server/dist/main.js",
-    "test": "pnpm --filter @activate-studio/server build && node --test server/test/*.test.mjs testdata/extraction.test.mjs testdata/server.test.mjs"
+    "test": "pnpm --filter @activate-studio/server build && node --test server/test/*.test.mjs testdata/extraction.test.mjs testdata/server.test.mjs && pnpm --filter @activate-studio/web test"
   },
   "packageManager": "pnpm@11.22.0",
   "engines": {

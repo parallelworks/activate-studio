@@ -99,7 +99,7 @@ function scrollRangeIntoView(range: Range): void {
 }
 
 /** The words a find string is really asking for: quotes and fts5 operators dropped. */
-function findTerms(text: string): string[] {
+export function findTerms(text: string): string[] {
   return text.split(/\s+/)
     .map(t => t.replace(/^["'(]+|["')]+$/g, ''))
     .filter(t => t.length >= 2 && !/^(AND|OR|NOT|NEAR)$/i.test(t))
