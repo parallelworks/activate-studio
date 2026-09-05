@@ -10,7 +10,9 @@ Ask in plain language; the assistant searches, reads the files that matter, and 
 - **Scope** (top right of the thread) limits retrieval for the conversation to selected labels; the restriction is enforced server-side.
 - Recommends workflows from the account catalog; validates runs with a dry run and launches a real run only when you explicitly ask; lists and inspects runs, including errors and log tails.
 - Attach files or images with the paperclip; they are filed into the library, indexed, and their content (including text read from images) is part of the conversation. Clicking an attachment tile later opens the file in the Library.
-- Slash commands invoke extensions directly: /skill_name applies a skill's instructions, /tool_name runs a tool, /agent_name adopts an agent file for one message. /help lists everything available.
+- Type **/** in the composer for a palette of everything slash-invocable, filtered as you type; arrow keys move, Enter or Tab inserts, Escape closes. /skill_name applies a skill's instructions, /tool_name runs a tool, /agent_name adopts an agent file for one message, and /help lists them all.
+- Launches work on connected HPC systems from plain requests ("run X on makau"): site partitions, walltime limits, and saved configurations are read from the platform, a run is followed to completion, and a failure is explained in terms of the submission. If the platform's per-user workspace has scaled down while idle, a launch starts it and retries on its own.
+- A model whose provider has locked or rejected its key shows **[locked]** or **[unavailable]** in the model list, with a banner above the thread; Settings, "Model access" carries the unlock link and a Re-check.
 - The thinking line above a reply expands to show the reasoning and each tool call as it happens, and stays with the message afterward.
 - In a shared platform session, add your own model key under Settings, "Model access", to chat and run platform tools as yourself; the page shows whether the key works and which models it reaches, and the footer's model line tracks it afterward. A deployment can require a personal key, in which case chat and models wait until one is added while browsing, search, and adding material stay open.
 
@@ -19,6 +21,7 @@ Ask in plain language; the assistant searches, reads the files that matter, and 
 The file tree beside a viewer. Markdown and code render directly; images show the original; PDFs and office documents render as page images; STL and STEP models open in an interactive 3D viewer.
 
 - The **Indexed text** tab shows exactly what the search index holds for a file; for images that is OCR text plus a model-written description.
+- **Find** (viewer header) searches within the open file: every match is highlighted, the bar floats while you scroll, and Enter, Shift+Enter, or the buttons step through them. A file opened from a search result lands on its first match with the query already in the bar; a PDF or office document opened that way lands on its Indexed text, since page images cannot be searched.
 - **Right-click** any row for a context menu: Open, Labels…, and Delete on files; New folder inside…, Labels…, and Delete folder (with its contents, after a confirm) on directories.
 - **Delete** removes material from the corpus and the index together.
 - Panes resize at the boundary and collapse from the header.
@@ -27,9 +30,15 @@ The file tree beside a viewer. Markdown and code render directly; images show th
 
 One box, three retrieval modes at once, each result labeled by the mode that found it: **full text** (exact words, including inside DOCX, PDF, PPTX, and text on images), **semantic** (meaning-based), and **filename**.
 
+- Whole words by default: TIN matches the word TIN, not "routine". Put an exact phrase in "quotes", separate alternatives with OR, exclude with -word or NOT word, and ask for a prefix with word*. Semantic results are left out for identifiers, acronyms, quoted phrases, and operator queries, where a "similar" document would read as a wrong answer.
+- Clicking a result opens the file on its first match, with the query in the viewer's find bar.
 - Label chips under the box filter results to material carrying those labels.
 - Hover a result for its checkbox; **Select all** plus **Labels…** applies labels to the whole result set in one action.
 - **Load more matches** extends a search to up to 1,000 results.
+
+## Agents
+
+Two pages under one tab. **Tasks** is the board for work the assistant has delegated: each task is a card with its state, a campaign badge naming the system when the agents run as platform workflow runs, and a progress bar; opening one shows the agent tree, each agent's live output, and the board feed. **Personas and skills** is the library of markdown files that change how the assistant behaves, with an editor for adding or changing them.
 
 ## Query
 
