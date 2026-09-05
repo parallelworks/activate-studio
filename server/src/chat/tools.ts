@@ -820,6 +820,32 @@ function mergeInputs(base: any, over: any): any {
  * under, which the environments listing reports, so resolve it there and
  * fall back to the bare name rather than guessing an owner.
  */
+/**
+ * The partition to submit to when the request named none: the system's
+ * "up" partition with the most free nodes. Site accounts and QoS are
+ * per-user and stay the caller's to supply; a partition is a fact about
+ * the system, and a scheduler with no default one rejects the job with
+ * "No partition specified", which a user asking in plain language
+ * should never have to see.
+ */
+async function defaultPartition(resource: string): Promise<{ name: string; why: string } | null> {
+  const bare = resource.replace(/^pw:\/\/[^/]+\//, '').replace(/[^\w.-]/g, '').toLowerCase()
+  try {
+    const envs = jsonFromCli<any[]>(await pwCli(['environments', 'ls', '-o', 'json'], 60_000))
+    const up = envs
+      .filter(e => String(e?.clusterName ?? '').toLowerCase() === bare && e.partitionState === 'up' && e.partitionName)
+      .sort((a, b) => (Number(b.availNodes) || 0) - (Number(a.availNodes) || 0))
+    if (!up.length) return null
+    return { name: String(up[0].partitionName), why: `${up[0].availNodes}/${up[0].totalNodes} nodes free, max walltime ${up[0].maxTime}` }
+  } catch {
+    return null
+  }
+}
+
+function pathGet(obj: Record<string, unknown>, dotted: string): unknown {
+  return dotted.split('.').reduce<unknown>((o, k) => (o && typeof o === 'object' ? (o as Record<string, unknown>)[k] : undefined), obj)
+}
+
 async function resolveResource(name: string): Promise<string> {
   const raw = name.trim()
   if (raw.startsWith('pw://')) return raw
@@ -1142,6 +1168,27 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
           }
           cliArgs.push('-i', JSON.stringify(inputs))
         }
+        // A scheduler submission with no partition fails at sbatch on any
+        // system without a default one. Fill it from the platform's view
+        // of the system, after the configuration merge so a configured
+        // partition always wins, and say which one was chosen.
+        let partitionNote = ''
+        if (args.resource && inputs.scheduler !== false) {
+          try {
+            const doc = await wfDoc(wfName)
+            const slots = declaredInputs(doc).filter(r => r.type === 'slurm-partitions').map(r => r.path)
+            const empty = slots.filter(p => !pathGet(inputs, p))
+            if (empty.length) {
+              const chosen = await defaultPartition(String(args.resource))
+              if (chosen) {
+                for (const p of empty) setPath(inputs, p, chosen.name)
+                const i = cliArgs.indexOf('-i')
+                if (i >= 0) cliArgs[i + 1] = JSON.stringify(inputs); else cliArgs.push('-i', JSON.stringify(inputs))
+                partitionNote = `\nPartition ${chosen.name} was chosen for ${args.resource} (${chosen.why}); name one in inputs to override.`
+              }
+            }
+          } catch { /* the submission will say what is missing */ }
+        }
         cliArgs.push(wfName, '-o', 'json')
         let out: string
         let wsStarted = false
@@ -1183,7 +1230,7 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
         } catch { /* text output is fine */ }
         const wsNote = wsStarted ? '\n(The platform user workspace was not running; it was started and the launch retried.)' : ''
         return {
-          result: (trimmed.slice(0, TOOL_OUTPUT_CAP) || (dryRun ? 'Validation passed.' : 'Run submitted.')) + where + wsNote,
+          result: (trimmed.slice(0, TOOL_OUTPUT_CAP) || (dryRun ? 'Validation passed.' : 'Run submitted.')) + where + partitionNote + wsNote,
           summary: dryRun ? 'dry run ok' : 'run submitted',
         }
       }
