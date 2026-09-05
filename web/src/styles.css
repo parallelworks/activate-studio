@@ -1063,6 +1063,15 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .task-topic.t-failed, .task-topic.t-refused { color: var(--pw-amber); border-color: var(--pw-amber); }
 .task-topic.t-spawn { color: var(--pw-navy); border-color: var(--pw-navy); }
 
+/* Platform runs launched from chat, on the Tasks page. */
+.run-list { border-top: 1px solid var(--pw-border); padding-top: 12px; }
+.run-list h3 { margin: 0 0 8px; font-size: 13px; font-weight: 650; color: var(--pw-navy); }
+.run-row { display: flex; align-items: center; gap: 8px; padding: 4px 6px; font-size: 12.5px; }
+.run-slug { font-family: ui-monospace, monospace; }
+.run-meta { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.updated-line .btn-secondary.small { padding: 1px 8px; font-size: 11px; margin-left: 6px; }
+[data-theme='dark'] .run-list h3 { color: var(--pw-text); }
+
 /* Per-agent drill-down in the delegated-tasks tree. */
 .agent-row { cursor: pointer; }
 .agent-row.open td { background: var(--pw-hover-row); }
