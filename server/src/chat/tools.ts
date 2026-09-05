@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process'
+import { withWorkspace } from '../workspace.js'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import fs from 'node:fs/promises'
 import path from 'node:path'
@@ -1143,8 +1144,11 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
         }
         cliArgs.push(wfName, '-o', 'json')
         let out: string
+        let wsStarted = false
         try {
-          out = await pwCli(cliArgs, 180_000)
+          const launched = await withWorkspace({ cli: pwCli, retryEveryMs: Number(process.env.STUDIO_WORKSPACE_RETRY_MS) || undefined }, () => pwCli(cliArgs, 180_000))
+          out = launched.value
+          wsStarted = launched.started
         } catch (e) {
           // The builtin site configurations carry a partition, QoS and
           // walltime but no account, because an account is per user. That
@@ -1177,8 +1181,9 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
           const run = r?.run ?? r
           if (run?.slug || run?.id) where = `\nRun ${run.slug ?? run.id}. Follow it with watch_run.`
         } catch { /* text output is fine */ }
+        const wsNote = wsStarted ? '\n(The platform user workspace was not running; it was started and the launch retried.)' : ''
         return {
-          result: (trimmed.slice(0, TOOL_OUTPUT_CAP) || (dryRun ? 'Validation passed.' : 'Run submitted.')) + where,
+          result: (trimmed.slice(0, TOOL_OUTPUT_CAP) || (dryRun ? 'Validation passed.' : 'Run submitted.')) + where + wsNote,
           summary: dryRun ? 'dry run ok' : 'run submitted',
         }
       }
