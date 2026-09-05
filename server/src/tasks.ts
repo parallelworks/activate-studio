@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process'
+import { withWorkspace } from './workspace.js'
 import fs from 'node:fs'
 import { randomBytes } from 'node:crypto'
 import path from 'node:path'
@@ -448,7 +449,11 @@ function spawnAgent(m: Task, opts: { persona: string; objective: string; parent:
           board_token: SELF_URL.startsWith('http://127.0.0.1') ? '' : m.token,
           timeout_seconds: 7200,
         }
-        const out = await pwRun(['workflows', 'run', '-i', JSON.stringify(inputs), RUNNER_WORKFLOW, '-o', 'json'], 180_000)
+        // A campaign submits many agents in a row; the first one to find
+        // the user workspace scaled down starts it and waits, the rest
+        // then go straight through.
+        const { value: out, started } = await withWorkspace({ cli: pwRun }, () => pwRun(['workflows', 'run', '-i', JSON.stringify(inputs), RUNNER_WORKFLOW, '-o', 'json'], 180_000))
+        if (started) post(m, 'orchestrator', 'status', 'the platform user workspace was not running; it was started and the submission retried')
         const run = (jsonHead<{ run?: { slug?: string; id?: string } }>(out).run ?? jsonHead<{ slug?: string; id?: string }>(out)) as { slug?: string; id?: string }
         p.runSlug = String(run.slug ?? run.id ?? '')
         if (!p.runSlug) throw new Error('submission returned no run identifier')
