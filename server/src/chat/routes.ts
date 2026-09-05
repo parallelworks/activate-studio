@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify'
+import { listRuns } from '../runs.js'
 import { GATEWAY_BASE, MAX_TOOL_ITERATIONS, SIDECAR_ENDPOINT } from '../config.js'
 import { aiHealth, gatewayConfigured, isSidecarModel, listModels, listSidecarModels, modelFailure, probeProvider, probeableProvider, extractUnlockUrl, invalidateProviderProbes, sidecarConfigured, sidecarTarget, StreamedTurnError, streamTurn, WireMessage, WireToolCall } from './gateway.js'
 import { TOOL_CALLS, TOOL_SPECS, activeToolSpecs, activeToolSpecsWithRemote, commandFor, customToolSpecs, executeTool, expandSlashCommand, skillToolSpec } from './tools.js'
@@ -309,6 +310,10 @@ export function credentialRejectionMessage(owner: 'personal' | 'deployment', kin
   }
   return `The platform rejected your stored ${kind === 'token' ? 'token' : 'credential'} (401). If it was a platform token it has likely expired, since tokens last 24 hours from login. Paste a fresh token under Settings, Model access, or an API key from Account, API keys, which does not expire.`
 }
+
+/** Streams currently being answered; a shutdown waits for them (briefly). */
+let inFlight = 0
+export function streamsInFlight(): number { return inFlight }
 
 export function gatewayChatMessage(msg: string, model: string): string {
   const status = Number(/^gateway chat (\d+)/.exec(msg)?.[1] ?? 0)
@@ -716,6 +721,9 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
   })
 
   // Tool catalog for the Settings page: built-ins plus custom, with state.
+  // Workflow runs the assistant launched, followed across restarts.
+  app.get('/api/runs', async () => ({ runs: listRuns(60) }))
+
   app.get('/api/chat/tools', async () => {
     const eff = effectiveSettings()
     const disabled = new Set(eff.disabledTools)
@@ -755,6 +763,8 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
       'X-Accel-Buffering': 'no',
     })
     const res = reply.raw
+    inFlight++
+    res.on('close', () => { inFlight = Math.max(0, inFlight - 1) })
     const abort = new AbortController()
     // Response 'close' fires on client disconnect (request 'close' fires as
     // soon as the body is consumed, which would abort immediately).
@@ -1017,7 +1027,7 @@ ${ctx}` : ctx
         const q = String((lastUserQuestion as WireMessage | undefined)?.content ?? '').trim()
         if (q && q.length > 12) {
           try {
-            const seeded = await executeTool('search_kb', JSON.stringify({ query: q.slice(0, 300) }), { labelScope, userKey: pwToolKey, model: String(body.model ?? '') || null })
+            const seeded = await executeTool('search_kb', JSON.stringify({ query: q.slice(0, 300) }), { labelScope, userKey: pwToolKey, model: String(body.model ?? '') || null, conversationId: body.conversationId ?? null, userId: req.user?.id ?? null })
             const callId = `seed-${Date.now()}`
             messages.push({ role: 'assistant', content: null, tool_calls: [{ index: 0, id: callId, type: 'function', function: { name: 'search_kb', arguments: JSON.stringify({ query: q.slice(0, 300) }) } }] } as WireMessage)
             messages.push({ role: 'tool', tool_call_id: callId, content: seeded.result } as WireMessage)
@@ -1076,7 +1086,7 @@ ${ctx}` : ctx
                 continue
               }
               try {
-                const out = await executeTool(tc.function.name, tc.function.arguments, { labelScope, userKey: pwToolKey, model: String(body.model ?? '') || null })
+                const out = await executeTool(tc.function.name, tc.function.arguments, { labelScope, userKey: pwToolKey, model: String(body.model ?? '') || null, conversationId: body.conversationId ?? null, userId: req.user?.id ?? null })
                 toolCache.set(key, out.result)
                 outcomes[i] = out
               } catch (e) {

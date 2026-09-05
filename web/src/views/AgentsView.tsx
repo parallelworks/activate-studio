@@ -20,6 +20,7 @@ interface Persona { name: string; description: string; shared: boolean; icon: st
 interface Skill { name: string; description: string; file: string }
 interface SubTask { name: string; persona: string; objective: string; parent: string | null; depth: number; state: string; note: string; resultPath: string | null; updatedAt: string }
 interface TaskRow { id: string; objective: string; state: string; agents: number; running: number }
+interface PlatformRun { slug: string; workflow: string; resource: string | null; conversationId: string | null; launchedAt: string; state: string; endedAt: string | null }
 interface TaskDetail extends TaskRow { maxAgents: number; maxDepth: number; board: { seq: number; at: string; from: string; topic: string; body: string }[] }
 
 export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
@@ -53,6 +54,16 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
   // library. They share the section because both are about agents, and
   // they are separated because watching a fleet and editing markdown are
   // different activities that were fighting for the same screen.
+  // Workflow runs the assistant launched, followed by the server across
+  // restarts; listed here so long-running work has a place to be seen.
+  const [runs, setRuns] = useState<PlatformRun[]>([])
+  useEffect(() => {
+    let stop = false
+    const tick = () => fetch('/api/runs').then(r => r.json()).then(d => { if (!stop) setRuns(d.runs ?? []) }).catch(() => {})
+    tick()
+    const t = setInterval(tick, 15_000)
+    return () => { stop = true; clearInterval(t) }
+  }, [])
   const [page, setPageState] = useState<'tasks' | 'library'>(() =>
     (localStorage.getItem('ade-agents-page') as 'tasks' | 'library') || 'tasks')
   const setPage = (v: 'tasks' | 'library') => { setPageState(v); localStorage.setItem('ade-agents-page', v) }
@@ -239,6 +250,19 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
                     <span>{doneCount(mi)} of {mi.agents} done</span>
                     <span>{mi.id.slice(0, 10)}</span>
                   </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {runs.length > 0 && (
+            <div className="run-list">
+              <h3>Workflow runs launched from chat</h3>
+              {runs.slice(0, 12).map(r => (
+                <div key={r.slug} className="run-row">
+                  <span className={`status-dot ${r.state === 'running' ? 'ok pulse' : r.state === 'completed' ? 'off' : 'warn'}`} />
+                  <span className="run-slug">{r.slug}</span>
+                  <span className="muted run-meta">{r.workflow}{r.resource ? ` on ${r.resource.replace(/^pw:\/\/[^/]+\//, '')}` : ''} · {r.state}{r.endedAt ? '' : ' · since ' + new Date(r.launchedAt).toLocaleTimeString()}</span>
+                  {r.conversationId && <a className="link-button" href={`#chat=${r.conversationId}`}>chat</a>}
                 </div>
               ))}
             </div>
