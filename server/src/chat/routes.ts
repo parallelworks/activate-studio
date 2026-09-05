@@ -269,6 +269,36 @@ export function keyCookieJar(chunks: string[]): string[] {
  * expiry, when the credential is a token whose payload carries one, turns
  * "401" into a sentence with a time in it and a remedy that does not expire.
  */
+/** The suffix a listing puts on an unavailable model's id and name. */
+export const AVAILABILITY_MARK = / \[(locked|unavailable)\]$/
+
+export function stripAvailabilityMark(id: string): string {
+  return id.replace(AVAILABILITY_MARK, '')
+}
+
+/**
+ * Mark the models of providers whose probe failed. The mark rides inside
+ * the id and the name because the picker renders one of those two and
+ * consumes no availability field (core#19534); the id is stripped again
+ * on the way in, so a marked selection still addresses the real model.
+ */
+export function markImpaired<M extends { id: string; name?: string }>(
+  models: M[],
+  verdicts: Map<string, { ok: boolean; kind: 'locked' | 'unavailable' | null; unlockUrl: string | null }>,
+): { models: (M | (M & { callable: false; locked: boolean; unavailable: true; unlock_url: string | null }))[]; impaired: { id: string; locked: boolean; unlock_url: string | null }[] } {
+  const impaired: { id: string; locked: boolean; unlock_url: string | null }[] = []
+  const out = models.map(m => {
+    const id = String(m.id)
+    const v = verdicts.get(id.slice(0, Math.max(id.indexOf('/'), 0)))
+    if (!v || v.ok) return m
+    const tag = v.kind === 'locked' ? 'locked' : 'unavailable'
+    impaired.push({ id, locked: v.kind === 'locked', unlock_url: v.unlockUrl })
+    const name = typeof m.name === 'string' && m.name.trim() ? `${m.name.trim()} [${tag}]` : m.name
+    return { ...m, id: `${id} [${tag}]`, name, callable: false as const, locked: v.kind === 'locked', unavailable: true as const, unlock_url: v.unlockUrl }
+  })
+  return { models: out, impaired }
+}
+
 export function credentialRejectionMessage(owner: 'personal' | 'deployment', kind: string | null, credExpiresAt: string | null): string {
   if (owner === 'deployment') {
     return 'The platform rejected the deployment credential (401). An operator must replace it in the deployment settings; until then, add your own token or API key under Settings, Model access.'
@@ -507,21 +537,9 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     // marked model still addresses the real one, and the call-time error
     // then explains the lock. Hiding was tried first and read as "no
     // models available" when a whole provider was down, which was worse.
-    const impaired: { id: string; locked: boolean; unlock_url: string | null }[] = []
-    models = models.map((m: any) => {
-      const id = String(m.id)
-      const v = verdicts.get(id.slice(0, Math.max(id.indexOf('/'), 0)))
-      if (v && !v.ok) {
-        const tag = v.kind === 'locked' ? 'locked' : 'unavailable'
-        impaired.push({ id, locked: v.kind === 'locked', unlock_url: v.unlockUrl })
-        // ai-chat 0.4.4+ renders a host-supplied name in the picker and
-        // falls back to the id only when there is none, so the mark has to
-        // ride on both or it vanishes for every model that has a name.
-        const name = typeof m.name === 'string' && m.name.trim() ? `${m.name.trim()} [${tag}]` : m.name
-        return { ...m, id: `${id} [${tag}]`, name, callable: false, locked: v.kind === 'locked', unavailable: true, unlock_url: v.unlockUrl }
-      }
-      return m
-    })
+    const marked = markImpaired(models, verdicts)
+    models = marked.models
+    const impaired = marked.impaired
 
     // A model whose last call failed is still offered (the provider may
     // recover, or the key may be renewed), but the picker gets told, so
@@ -728,7 +746,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     // The listing marks unavailable models inside the id, since that is
     // the only text the picker renders; a selection therefore arrives
     // carrying the mark, and the real model is the id without it.
-    body.model = String(body.model ?? '').replace(/ \[(locked|unavailable)\]$/, '')
+    body.model = stripAvailabilityMark(String(body.model ?? ''))
     reply.hijack()
     reply.raw.writeHead(200, {
       'Content-Type': 'text/event-stream',
