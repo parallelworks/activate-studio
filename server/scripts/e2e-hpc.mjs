@@ -9,8 +9,10 @@
  *   PW_CONTEXT=activate node server/scripts/e2e-hpc.mjs [resource] [workflow]
  *
  * Defaults: resource a30gpuserver, workflow activatebatch (a Slurm batch
- * job that echoes a marker). Exit 0 only when the run completes and the
- * marker appears in its output.
+ * job that echoes a marker). E2E_PARTITION names a partition for systems
+ * with no default one; E2E_SLURM is a JSON object merged into the slurm
+ * group for sites that need an account and QoS. Exit 0 only when the run
+ * completes and the marker appears in its output.
  */
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -35,7 +37,7 @@ console.log((await call('hpc_environments', { resource })).summary)
 console.log(stamp(), `submit ${workflow} on ${resource} through the scheduler`)
 const launch = await call('run_workflow', {
   name: workflow, resource, dry_run: false,
-  inputs: JSON.stringify({ commands: `hostname\necho ${marker}\nscontrol show job $SLURM_JOB_ID | head -1\n`, scheduler: true, slurm: { time: '00:05:00', nodes: 1, cpus_per_task: 1 } }),
+  inputs: JSON.stringify({ commands: `hostname\necho ${marker}\nscontrol show job $SLURM_JOB_ID | head -1\n`, scheduler: true, slurm: { time: '00:05:00', nodes: 1, cpus_per_task: 1, ...(process.env.E2E_PARTITION ? { partition: process.env.E2E_PARTITION } : {}), ...(process.env.E2E_SLURM ? JSON.parse(process.env.E2E_SLURM) : {}) } }),
 })
 const slug = (String(launch.result).match(new RegExp(`${workflow}-\\d{5}`)) || [])[0]
 if (!slug) { console.error('no run slug in', String(launch.result).slice(0, 400)); process.exit(2) }
