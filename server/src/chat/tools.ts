@@ -731,6 +731,60 @@ export async function discoverStatusMonitor(): Promise<string | null> {
   return found
 }
 
+/**
+ * What a reader needs from a run: its state, each job's state, and the
+ * output of the steps, most recent and any failed ones first. The raw run
+ * record is the wrong thing to hand over: it embeds the workflow's own
+ * script text and ran to the output cap before a single line of job
+ * output, so the assistant could not see the result of the job it had
+ * just launched and went looking for it with shell commands instead.
+ */
+export function summarizeRunDetail(viewText: string, errorsText: string, logsText: string, cap = 12_000): { text: string; status: string } {
+  const lines: string[] = []
+  let status = 'unknown'
+  try {
+    const v = jsonFromCli<any>(viewText)
+    status = String(v.status ?? 'unknown')
+    lines.push(`Run ${v.slug ?? v.id ?? ''} of ${v.workflowName ?? v.workflow ?? ''}: ${status}` +
+      `${v.createdAt ? `, started ${v.createdAt}` : ''}${v.completedAt ? `, ended ${v.completedAt}` : ''}`)
+    const jobs = v.executedJobs ?? {}
+    for (const [name, j] of Object.entries<any>(jobs)) {
+      const host = j?.ssh?.remoteHost ? ` on ${j.ssh.remoteHost}` : ''
+      const steps = (j?.steps ?? []).map((st: any) => `${st.name}: ${st.status}`).join('; ')
+      lines.push(`  ${name}: ${j?.status ?? '?'}${host}${steps ? ` [${steps}]` : ''}`)
+    }
+  } catch {
+    lines.push(`Run detail:\n${viewText.trim().slice(0, 1500)}`)
+  }
+  if (errorsText.trim()) lines.push('', 'Errors:', errorsText.trim().slice(0, 3000))
+
+  // Step output, by section header, dropping the platform's "error fetching
+  // logs" placeholders. Failed steps first and longest, then the rest in
+  // run order, each trimmed to its tail.
+  const sections: { head: string; failed: boolean; body: string }[] = []
+  const re = /^=== job: (.+?) > step: (.+?) \((\w*),[^)]*\) ===\s*$/gm
+  const heads = [...logsText.matchAll(re)]
+  for (let i = 0; i < heads.length; i++) {
+    const h = heads[i]
+    const start = h.index! + h[0].length
+    const end = i + 1 < heads.length ? heads[i + 1].index! : logsText.length
+    const body = logsText.slice(start, end).split('\n').filter(l => !/^\(error fetching logs/.test(l)).join('\n').trim()
+    if (!body || h[3] === 'skipped') continue
+    sections.push({ head: `${h[1]} > ${h[2]} (${h[3] || 'ran'})`, failed: /^(error|failed)$/i.test(h[3]), body })
+  }
+  const tail = (t: string, n: number) => t.split('\n').slice(-n).join('\n')
+  const ordered = [...sections.filter(s => s.failed), ...sections.filter(s => !s.failed)]
+  if (ordered.length) {
+    lines.push('', 'Step output (tails; failed steps first):')
+    for (const s of ordered) lines.push(`--- ${s.head} ---`, tail(s.body, s.failed ? 60 : 30))
+  } else if (logsText.trim()) {
+    lines.push('', 'Logs (tail):', tail(logsText.trim(), 60))
+  }
+  let text = lines.join('\n')
+  if (text.length > cap) text = text.slice(0, cap) + '\n… (truncated)'
+  return { text, status }
+}
+
 function pwCli(args: string[], timeoutMs = 30_000): Promise<string> {
   // The caller's own key (when they added one) scopes platform actions to
   // their account; otherwise the deployment credential applies.
@@ -1469,10 +1523,8 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
           pwCli(['workflows', 'runs', 'view', id]))
         const errors = await pwCli(['workflows', 'runs', 'errors', id]).catch(() => '')
         const logs = await pwCli(['workflows', 'runs', 'logs', id]).catch(() => '')
-        const parts = [`Run detail:\n${view.trim()}`]
-        if (errors.trim()) parts.push(`Errors:\n${errors.trim().slice(0, 4000)}`)
-        if (logs.trim()) parts.push(`Logs (tail):\n${logs.trim().slice(-4000)}`)
-        return { result: parts.join('\n\n').slice(0, TOOL_OUTPUT_CAP), summary: 'run inspected' }
+        const { text, status } = summarizeRunDetail(view, errors, logs)
+        return { result: text, summary: `${id}: ${status}` }
       }
       case 'get_workflow': {
         const wfName = String(args.name ?? '').replace(/[^A-Za-z0-9_.-]/g, '')
