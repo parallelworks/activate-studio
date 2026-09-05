@@ -176,6 +176,21 @@ export function recordUserTurn(conversationId: string | undefined, userMessageId
   persist()
 }
 
+/**
+ * A short assistant note appended to a conversation by the server itself
+ * (a run the conversation launched has ended), parented to the last
+ * message so it sits on the active branch and is not hidden by branching.
+ */
+export function appendConversationNote(conversationId: string, content: string): boolean {
+  const c = load().find(x => x.id === conversationId)
+  if (!c) return false
+  const last = c.messages[c.messages.length - 1]
+  c.messages.push({ id: `note-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`, role: 'assistant', content, parentId: last?.id ?? null, timestamp: new Date().toISOString() })
+  c.updatedAt = new Date().toISOString()
+  persist()
+  return true
+}
+
 export function recordAssistantTurn(conversationId: string | undefined, message: StoredMessage): void {
   if (!conversationId) return
   const c = load().find(x => x.id === conversationId)

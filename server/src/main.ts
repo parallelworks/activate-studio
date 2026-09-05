@@ -1,4 +1,6 @@
 import Fastify from 'fastify'
+import { setRunsLog, watchRegisteredRuns } from './runs.js'
+import { streamsInFlight } from './chat/routes.js'
 import fastifyStatic from '@fastify/static'
 import fastifyMultipart from '@fastify/multipart'
 import fs from 'node:fs'
@@ -80,6 +82,32 @@ void import('./tags.js').then(m => m.reapplyTagOverlay())
   .catch(() => {})
 
 await app.listen({ host: HOST, port: PORT })
+
+// Runs the assistant launched before the last restart are followed again,
+// so their end still reaches the conversations that asked for them.
+setRunsLog(msg => app.log.info(msg))
+{
+  const n = watchRegisteredRuns()
+  if (n) app.log.info(`following ${n} workflow run(s) registered before this start`)
+}
+
+// A rollout stops this process with SIGTERM. Streams that are mid-answer
+// finish their server-side work (a tool loop, a run registration) for up
+// to twenty seconds before the process goes; the tunnel in front of them
+// is replaced by the deploy regardless, so this is about not losing what
+// the server was in the middle of recording, not about keeping clients.
+let stopping = false
+const stop = async (sig: string) => {
+  if (stopping) return
+  stopping = true
+  const t0 = Date.now()
+  app.log.info(`${sig}: draining ${streamsInFlight()} in-flight stream(s)`)
+  while (streamsInFlight() > 0 && Date.now() - t0 < 20_000) await new Promise(r => setTimeout(r, 250))
+  await app.close().catch(() => {})
+  process.exit(0)
+}
+process.on('SIGTERM', () => { void stop('SIGTERM') })
+process.on('SIGINT', () => { void stop('SIGINT') })
 
 /**
  * Stay up. The Studio runs under the platform endpoint agent, which owns

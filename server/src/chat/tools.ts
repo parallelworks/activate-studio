@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process'
+import { recordRun } from '../runs.js'
 import { withWorkspace } from '../workspace.js'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import fs from 'node:fs/promises'
@@ -936,10 +937,10 @@ export interface ToolOutcome {
 // Per-invocation context (caller's own platform key for pw CLI executions)
 // travels via AsyncLocalStorage so nested helpers stay signature-stable and
 // concurrent tool calls from different users cannot cross-contaminate.
-const toolContext = new AsyncLocalStorage<{ userKey: string | null }>()
+const toolContext = new AsyncLocalStorage<{ userKey: string | null; conversationId?: string | null; userId?: string | null }>()
 
-export async function executeTool(name: string, argsJson: string, ctx?: { labelScope?: string[]; userKey?: string | null; model?: string | null }): Promise<ToolOutcome> {
-  return toolContext.run({ userKey: ctx?.userKey ?? null }, () => executeToolImpl(name, argsJson, ctx))
+export async function executeTool(name: string, argsJson: string, ctx?: { labelScope?: string[]; userKey?: string | null; model?: string | null; conversationId?: string | null; userId?: string | null }): Promise<ToolOutcome> {
+  return toolContext.run({ userKey: ctx?.userKey ?? null, conversationId: ctx?.conversationId ?? null, userId: ctx?.userId ?? null }, () => executeToolImpl(name, argsJson, ctx))
 }
 
 async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScope?: string[]; userKey?: string | null; model?: string | null }): Promise<ToolOutcome> {
@@ -1281,6 +1282,12 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
           const r = jsonFromCli<any>(trimmed)
           const run = r?.run ?? r
           if (run?.slug || run?.id) where = `\nRun ${run.slug ?? run.id}. Follow it with watch_run.`
+          // A real launch is registered so it is followed across a Studio
+          // restart and its end is reported into this conversation.
+          if (!dryRun && (run?.slug || run?.id)) {
+            const store = toolContext.getStore()
+            recordRun({ slug: String(run.slug ?? run.id), workflow: wfName, resource: args.resource ? String(args.resource) : null, conversationId: store?.conversationId ?? null, owner: store?.userId ?? null })
+          }
         } catch { /* text output is fine */ }
         const wsNote = wsStarted ? '\n(The platform user workspace was not running; it was started and the launch retried.)' : ''
         return {

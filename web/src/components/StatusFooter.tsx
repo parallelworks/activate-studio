@@ -246,10 +246,22 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
     const t = setInterval(() => { void refresh() }, 60_000)
     return () => clearInterval(t)
   }, [])
-  // Fetched once: it cannot change while this server is up, and a change
-  // means the page is talking to a different process than it started with.
+  // Polled: a change means a new version was rolled out under this page.
+  // The page keeps working against the new server, but its own code is
+  // the old build, so it says so and offers a reload; open conversations
+  // are saved server-side and survive it.
+  const [updated, setUpdated] = useState<Build | null>(null)
   useEffect(() => {
-    fetch('/api/version').then(r => r.json()).then(setBuild).catch(() => setBuild(null))
+    let first: string | null = null
+    const check = () => fetch('/api/version').then(r => r.json()).then((b: Build) => {
+      if (first === null) { first = b.commit; setBuild(b); return }
+      if (b.commit !== first) setUpdated(b)
+    }).catch(() => { if (first === null) setBuild(null) })
+    check()
+    const t = setInterval(check, 60_000)
+    const onVis = () => { if (document.visibilityState === 'visible') check() }
+    document.addEventListener('visibilitychange', onVis)
+    return () => { clearInterval(t); document.removeEventListener('visibilitychange', onVis) }
   }, [])
 
   const sync = async () => {
@@ -298,6 +310,13 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
               onRecheck={() => { fetch('/api/ai/health?fresh=1').then(r => r.json()).then(setAi).catch(() => {}) }}
             />
           )}
+        </div>
+      )}
+      {updated && (
+        <div className="status-line identity-line updated-line" title="A new version was deployed while this page was open">
+          <span className="status-dot warn" />
+          Updated to {updated.version}
+          <button className="btn-secondary small" onClick={() => location.reload()}>Reload</button>
         </div>
       )}
       {build && (
