@@ -16,7 +16,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms))
 test('a launched run is followed to its end, recorded, and reported into its conversation', async () => {
   let views = 0
   runs.setRunsCli(async args => { assert.deepEqual(args.slice(0, 3), ['workflows', 'runs', 'view']); views++; return JSON.stringify({ slug: args[3], status: views < 3 ? 'running' : 'completed' }) + '\n\nA new version of the PW CLI is available.\n' })
-  runs.recordRun({ slug: 'hellobatch-00007', workflow: 'hellobatch', resource: 'makau', conversationId: 'c1', owner: 'me' })
+  runs.recordRun({ slug: 'hellobatch-00007', workflow: 'hellobatch', resource: 'vega', conversationId: 'c1', owner: 'me' })
   assert.equal(runs.listRuns()[0].state, 'running')
   for (let i = 0; i < 40 && runs.listRuns()[0].state !== 'completed'; i++) await sleep(15)
   const r = runs.listRuns()[0]
@@ -28,7 +28,7 @@ test('a launched run is followed to its end, recorded, and reported into its con
   const note = conv.messages[conv.messages.length - 1]
   assert.equal(note.role, 'assistant')
   assert.equal(note.parentId, 'a1', 'parented to the last message so it sits on the active branch')
-  assert.match(note.content, /Run hellobatch-00007 of hellobatch on makau finished: completed/)
+  assert.match(note.content, /Run hellobatch-00007 of hellobatch on vega finished: completed/)
   assert.match(note.content, /workflow_run_detail hellobatch-00007/)
 })
 test('after a restart, runs that had not ended are watched again from the file', async () => {

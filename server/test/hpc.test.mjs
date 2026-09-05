@@ -48,13 +48,13 @@ const WORKFLOW = {
   },
   configurations: [
     {
-      name: 'Makau', builtin: true,
+      name: 'Vega', builtin: true,
       inputs: { cluster: { scheduler: true, slurm: { partition: 'standard', qos: 'standard', time: '01:00:00' } } },
     },
     {
       name: 'gemma-uncensored', builtin: false,
       inputs: {
-        resource: 'pw://someone/makau',
+        resource: 'pw://someone/vega',
         cluster: { scheduler: true, slurm: { partition: 'standard', qos: 'standard', account: 'acct123', time: '01:00:00' } },
         service: { models: 'hf.co/some/abliterated-GGUF:Q4_K_M' },
       },
@@ -64,14 +64,14 @@ const WORKFLOW = {
 
 const ENVS = [
   {
-    clusterName: 'makau', clusterDisplayName: 'Makau (MHPCC)', clusterUser: 'someone',
+    clusterName: 'vega', clusterDisplayName: 'Vega (Site A)', clusterUser: 'someone',
     schedulerType: 'slurm', partitionName: 'AIML', partitionState: 'up',
     availNodes: 9, totalNodes: 16, maxTime: '7-00:00:00',
     defaults: { numNodes: 1, walltime: '7-00:00:00' },
     fields: [{ key: 'walltime', required: true }, { key: 'account', required: true }, { key: 'qos', required: true }],
   },
   {
-    clusterName: 'wheat', clusterDisplayName: 'Wheat (ERDC)', clusterUser: 'someone',
+    clusterName: 'juno', clusterDisplayName: 'Juno (Site B)', clusterUser: 'someone',
     schedulerType: 'pbs', partitionName: 'standard', partitionState: 'up',
     availNodes: 40, totalNodes: 100, maxTime: '1-00:00:00',
     defaults: {}, fields: [],
@@ -82,8 +82,8 @@ const RUN_VIEW = {
   slug: 'mp-ollama-00028', workflowName: 'mp.ollama.latest', status: 'running',
   inputs: { service: { endpoint_name: 'gemma-heretic', models: 'hf.co/some/abliterated-GGUF:Q4_K_M' } },
   executedJobs: {
-    preprocessing: { status: 'completed', ssh: { remoteHost: 'makau.mhpcc.hpc.mil' }, steps: [{ name: 'Checkout', status: 'completed' }] },
-    session_runner: { status: 'running', ssh: { remoteHost: 'makau.mhpcc.hpc.mil' }, steps: [{ name: 'Start service', status: 'running' }] },
+    preprocessing: { status: 'completed', ssh: { remoteHost: 'vega.example.org' }, steps: [{ name: 'Checkout', status: 'completed' }] },
+    session_runner: { status: 'running', ssh: { remoteHost: 'vega.example.org' }, steps: [{ name: 'Start service', status: 'running' }] },
     cleanup: { status: 'skipped', steps: [{ name: 'Never ran', status: 'skipped' }] },
   },
 }
@@ -130,29 +130,29 @@ const lastRun = () => fs.readFileSync(calls, 'utf8').trim().split('\n')
 
 test('a system listing survives the notice the CLI appends to JSON', async () => {
   const r = await call('hpc_environments', {})
-  assert.match(r.result, /makau \(Makau \(MHPCC\)\), slurm/)
-  assert.match(r.result, /wheat \(Wheat \(ERDC\)\), pbs/)
+  assert.match(r.result, /vega \(Vega \(Site A\)\), slurm/)
+  assert.match(r.result, /juno \(Juno \(Site B\)\), pbs/)
 })
 
 test('partitions report their ceiling, free nodes and required fields', async () => {
-  const r = await call('hpc_environments', { cluster: 'makau' })
+  const r = await call('hpc_environments', { cluster: 'vega' })
   assert.match(r.result, /AIML: up, 9\/16 nodes free, max walltime 7-00:00:00/)
   assert.match(r.result, /required walltime, account, qos/)
 })
 
 test('an unknown system names the ones that do have partitions', async () => {
   const r = await call('hpc_environments', { cluster: 'nosuch' })
-  assert.match(r.result, /makau/)
+  assert.match(r.result, /vega/)
   assert.match(r.result, /wheat/)
 })
 
 test('configurations are summarised by the settings that decide a submission', async () => {
   const r = await call('workflow_configs', { name: 'mp.ollama.latest' })
-  assert.match(r.result, /Makau \(builtin\): partition=standard, qos=standard/)
+  assert.match(r.result, /Vega \(builtin\): partition=standard, qos=standard/)
   // The account is the one required value the builtin configurations omit,
   // so it has to be visible where it does exist.
   assert.match(r.result, /account=acct123/)
-  assert.match(r.result, /resource=pw:\/\/someone\/makau/)
+  assert.match(r.result, /resource=pw:\/\/someone\/vega/)
 })
 
 test('a saved configuration launches without the caller composing inputs', async () => {
@@ -165,12 +165,12 @@ test('a saved configuration launches without the caller composing inputs', async
 
 test('a named system is resolved into the workflow\'s own compute-clusters input', async () => {
   await call('run_workflow', {
-    name: 'mp.ollama.latest', config: 'gemma-uncensored', resource: 'makau', dry_run: false,
+    name: 'mp.ollama.latest', config: 'gemma-uncensored', resource: 'vega', dry_run: false,
   })
   const args = lastRun()
   const sent = JSON.parse(args[args.indexOf('-i') + 1])
   // Resolved to the owning account rather than passed through bare.
-  assert.equal(sent.resource, 'pw://someone/makau')
+  assert.equal(sent.resource, 'pw://someone/vega')
   // The configuration is merged in, because --inputs would otherwise
   // replace it wholesale and drop the site's scheduler settings.
   assert.equal(sent.cluster.slurm.partition, 'standard')
@@ -189,7 +189,7 @@ test('caller inputs win over the configuration they are merged onto', async () =
 
 test('a missing site account is explained with the account that would fix it', async () => {
   const r = await call('run_workflow', {
-    name: 'mp.ollama.latest', config: 'Makau', resource: 'makau', dry_run: false,
+    name: 'mp.ollama.latest', config: 'Makau', resource: 'vega', dry_run: false,
   })
   assert.match(r.result, /SLURM account/)
   assert.match(r.result, /acct123/)
@@ -198,7 +198,7 @@ test('a missing site account is explained with the account that would fix it', a
 
 test('a run reports where it landed and which step is live', async () => {
   const r = await call('watch_run', { run: 'mp-ollama-00028', wait: 0 })
-  assert.match(r.result, /session_runner: running on makau\.mhpcc\.hpc\.mil \(at "Start service"\)/)
+  assert.match(r.result, /session_runner: running on vega\.example\.org \(at "Start service"\)/)
   // A skipped job has no live step, and naming one would be a fiction.
   assert.doesNotMatch(r.result, /cleanup: skipped.*\(at/)
   assert.match(r.result, /Endpoint "gemma-heretic"/)

@@ -25,7 +25,7 @@ test('PW_CONTEXT becomes an explicit --context on the child', () => {
 })
 
 test('PW_PLATFORM_HOST alone is an explicit target the CLI honors by itself', () => {
-  process.env.PW_PLATFORM_HOST = 'activate.hpc.mil'
-  assert.deepEqual(explicitPlatformTarget(), { args: [], detail: 'platform activate.hpc.mil' })
+  process.env.PW_PLATFORM_HOST = 'activate.example.org'
+  assert.deepEqual(explicitPlatformTarget(), { args: [], detail: 'platform activate.example.org' })
   delete process.env.PW_PLATFORM_HOST
 })
