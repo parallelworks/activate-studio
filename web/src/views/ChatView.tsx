@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useEffectiveTheme } from '../theme'
 import { SlashPalette } from '../components/SlashPalette'
+import { NextUp } from '../components/NextUp'
 import { rememberHash } from '../lastLocation'
 import {
   ChatProvider, ChatLayout, ChatThread, ChatEmptyState, AttachmentManager, useChat,
@@ -377,6 +378,7 @@ export function ChatView() {
           </ChatLayout>
           {activeId && !showAttachments && <ConversationScrubber />}
           {!showAttachments && <SlashPalette canvas={canvasRef} />}
+          {!showAttachments && <NextUp canvas={canvasRef} />}
           {railOpen && <div className="chat-rail-backdrop" onClick={() => setRailOpen(false)} />}
           <div className="chat-think-handle" onMouseDown={onThinkDrag} title="Drag to resize the activity panel" />
           {multiUser && sharedHistory && !showAttachments && (

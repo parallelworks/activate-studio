@@ -1,4 +1,6 @@
 import type { FastifyInstance } from 'fastify'
+import { suggestNext } from './suggest.js'
+import { getConversation } from '../conversations.js'
 import { listRuns } from '../runs.js'
 import { GATEWAY_BASE, MAX_TOOL_ITERATIONS, SIDECAR_ENDPOINT } from '../config.js'
 import { aiHealth, gatewayConfigured, isSidecarModel, listModels, listSidecarModels, modelFailure, probeProvider, probeableProvider, extractUnlockUrl, invalidateProviderProbes, sidecarConfigured, sidecarTarget, StreamedTurnError, streamTurn, WireMessage, WireToolCall, type TokenUsage } from './gateway.js'
@@ -734,6 +736,16 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
   // Tool catalog for the Settings page: built-ins plus custom, with state.
   // Workflow runs the assistant launched, followed across restarts.
   app.get('/api/runs', async () => ({ runs: listRuns(60) }))
+
+  // What to type next, read off the stored last turn: cheap, specific,
+  // and empty when the reply asked the user something.
+  app.get('/api/chat/suggestions', async (req, reply) => {
+    const id = String((req.query as { conversation?: string }).conversation ?? '')
+    const c = id ? getConversation(id) : undefined
+    if (!c) return reply.send({ after: null, suggestions: [] })
+    if (c.owner && req.user?.id && c.owner !== req.user.id && !effectiveSettings().chatSharedHistory) return reply.code(403).send({ error: 'not your conversation' })
+    return reply.send(suggestNext(c))
+  })
 
   app.get('/api/chat/tools', async () => {
     const eff = effectiveSettings()

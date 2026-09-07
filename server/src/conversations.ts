@@ -183,6 +183,11 @@ export function recordUserTurn(conversationId: string | undefined, userMessageId
  * (a run the conversation launched has ended), parented to the last
  * message so it sits on the active branch and is not hidden by branching.
  */
+/** One conversation as stored, or undefined. */
+export function getConversation(id: string): StoredConversation | undefined {
+  return load().find(x => x.id === id)
+}
+
 export function appendConversationNote(conversationId: string, content: string): boolean {
   const c = load().find(x => x.id === conversationId)
   if (!c) return false
