@@ -96,6 +96,8 @@ export interface StoredMessage {
    *  renders it as "Thought for Ns" on the stored message. */
   reasoningDuration?: number
   parts?: StoredToolCallPart[]
+  /** Token counts summed over the turn's model calls, when the gateway reported them. */
+  tokensUsed?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }
 }
 
 export interface StoredConversation {

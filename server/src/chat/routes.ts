@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { listRuns } from '../runs.js'
 import { GATEWAY_BASE, MAX_TOOL_ITERATIONS, SIDECAR_ENDPOINT } from '../config.js'
-import { aiHealth, gatewayConfigured, isSidecarModel, listModels, listSidecarModels, modelFailure, probeProvider, probeableProvider, extractUnlockUrl, invalidateProviderProbes, sidecarConfigured, sidecarTarget, StreamedTurnError, streamTurn, WireMessage, WireToolCall } from './gateway.js'
+import { aiHealth, gatewayConfigured, isSidecarModel, listModels, listSidecarModels, modelFailure, probeProvider, probeableProvider, extractUnlockUrl, invalidateProviderProbes, sidecarConfigured, sidecarTarget, StreamedTurnError, streamTurn, WireMessage, WireToolCall, type TokenUsage } from './gateway.js'
 import { TOOL_CALLS, TOOL_SPECS, activeToolSpecs, activeToolSpecsWithRemote, commandFor, customToolSpecs, executeTool, expandSlashCommand, skillToolSpec } from './tools.js'
 import { systemPrompt } from './context.js'
 import { attachmentContext } from '../attachments.js'
@@ -298,6 +298,17 @@ export function markImpaired<M extends { id: string; name?: string }>(
     return { ...m, id: `${id} [${tag}]`, name, callable: false as const, locked: v.kind === 'locked', unavailable: true as const, unlock_url: v.unlockUrl }
   })
   return { models: out, impaired }
+}
+
+/** Token counts summed over a turn's model calls. */
+export function addUsage(a: TokenUsage, b: TokenUsage): TokenUsage {
+  const n = (x?: number) => (typeof x === 'number' && Number.isFinite(x) ? x : 0)
+  const prompt = n(a.prompt_tokens) + n(b.prompt_tokens)
+  const completion = n(a.completion_tokens) + n(b.completion_tokens)
+  // A side without a total contributes its parts, so a provider that
+  // omits total_tokens does not shrink the sum.
+  const tot = (x: TokenUsage) => n(x.total_tokens) || n(x.prompt_tokens) + n(x.completion_tokens)
+  return { prompt_tokens: prompt, completion_tokens: completion, total_tokens: tot(a) + tot(b) }
 }
 
 export function credentialRejectionMessage(owner: 'personal' | 'deployment', kind: string | null, credExpiresAt: string | null): string {
@@ -854,6 +865,7 @@ ${ctx}` : ctx
     ]
 
     let finalContent = ''
+    let usageTotal: TokenUsage = {}
     let finalModel: string | null = null
     let finalReasoning = ''
     // Tool calls made across the turn, persisted as message parts so the
@@ -893,6 +905,7 @@ ${ctx}` : ctx
         model: finalModel,
         reasoning: finalReasoning || undefined,
         reasoningDuration: reasoningDuration || (reasoningStart ? Date.now() - reasoningStart : undefined),
+        tokensUsed: usageTotal.total_tokens ? usageTotal : undefined,
         parts: finalParts.length ? finalParts : undefined,
       })
       if (!finalContent.trim()) {
@@ -1043,6 +1056,7 @@ ${ctx}` : ctx
         const turn = await turnWithRetry(
           { model: body.model, messages, tools: toolSpecs, tool_choice: 'auto', max_tokens: maxTokens, ...templateKwargsFor(String(body.model ?? '')) },
         )
+        if (turn.usage) usageTotal = addUsage(usageTotal, turn.usage)
         finalModel = turn.model ?? finalModel
         if (turn.finishReason === 'tool_calls' && turn.toolCalls.length > 0) {
           usedTools = true
@@ -1195,6 +1209,7 @@ ${ctx}` : ctx
         model: finalModel,
         reasoning: finalReasoning || undefined,
         reasoningDuration: reasoningDuration || (reasoningStart ? Date.now() - reasoningStart : undefined),
+        tokensUsed: usageTotal.total_tokens ? usageTotal : undefined,
       })
     }
     res.end()

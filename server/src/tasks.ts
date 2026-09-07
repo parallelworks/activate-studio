@@ -45,6 +45,43 @@ export interface AgentTask {
   startedAt: string; updatedAt: string; note: string; resultPath: string | null
   /** Campaign agents only: the platform run carrying this agent. */
   runSlug?: string | null
+  /** Tokens the agent's model calls consumed, when pw code reported them. */
+  usage?: AgentUsage | null
+}
+export interface AgentUsage { input: number; output: number; total: number; cost?: number | null }
+
+/**
+ * Token usage from whatever envelope pw code emitted. Field names differ
+ * between CLI versions and providers (usage.prompt_tokens, input_tokens,
+ * total_cost_usd, ...), so every known spelling is tried and the result is
+ * null rather than zeros when none is present.
+ */
+/** The task's agents' usage summed, or null when none reported any. */
+export function sumUsage(m: { nodes: Map<string, AgentTask> }): AgentUsage | null {
+  let out: AgentUsage | null = null
+  for (const a of m.nodes.values()) {
+    if (!a.usage) continue
+    out = out ?? { input: 0, output: 0, total: 0, cost: null }
+    out.input += a.usage.input; out.output += a.usage.output; out.total += a.usage.total
+    if (a.usage.cost != null) out.cost = (out.cost ?? 0) + a.usage.cost
+  }
+  return out
+}
+
+export function usageOf(env: unknown): AgentUsage | null {
+  if (!env || typeof env !== 'object') return null
+  const o = env as Record<string, unknown>
+  const u = (o.usage && typeof o.usage === 'object' ? o.usage : o) as Record<string, unknown>
+  const num = (...keys: string[]): number | null => {
+    for (const k of keys) { const v = u[k] ?? o[k]; if (typeof v === 'number' && Number.isFinite(v)) return v }
+    return null
+  }
+  const input = num('prompt_tokens', 'input_tokens', 'inputTokens')
+  const output = num('completion_tokens', 'output_tokens', 'outputTokens')
+  const total = num('total_tokens', 'totalTokens') ?? (input != null || output != null ? (input ?? 0) + (output ?? 0) : null)
+  const cost = num('total_cost_usd', 'cost_usd', 'cost', 'totalCostUsd')
+  if (total == null && cost == null) return null
+  return { input: input ?? 0, output: output ?? 0, total: total ?? 0, cost: cost ?? null }
 }
 export interface SharedTask { id: string; objective: string; persona: string; claimedBy: string | null; done: boolean; resultPath: string | null }
 export interface Task {
@@ -319,6 +356,8 @@ function completeAgent(m: Task, p: AgentTask, rawText: string): void {
   }
   try {
     const env = JSON.parse(text)
+    const used = usageOf(env)
+    if (used) p.usage = used
     if (!tryContract(env)) {
       const unwrapped = String((env as { content?: unknown; output?: unknown; message?: unknown }).content
         ?? (env as { output?: unknown }).output ?? (env as { message?: unknown }).message ?? '')
@@ -593,6 +632,7 @@ export function taskSummary(m: Task) {
     id: m.id, objective: m.objective, model: m.model, state: m.state,
     createdAt: m.createdAt, maxAgents: m.maxAgents, maxDepth: m.maxDepth,
     execution: m.execution, resource: m.resource,
+    usage: sumUsage(m),
     agents: [...m.nodes.values()],
   }
 }
@@ -600,6 +640,7 @@ export function taskSummary(m: Task) {
 export function listTasks() {
   return [...tasks.values()].map(m => ({
     id: m.id, objective: m.objective, state: m.state, createdAt: m.createdAt,
+    usage: sumUsage(m),
     execution: m.execution, resource: m.resource,
     agents: m.nodes.size,
     running: [...m.nodes.values()].filter(p => p.state === 'working').length,

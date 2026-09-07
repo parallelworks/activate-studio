@@ -64,12 +64,15 @@ export interface StreamCallbacks {
   onReasoning?: (text: string) => void
 }
 
+export interface TokenUsage { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }
 export interface TurnResult {
   content: string
   reasoning: string
   toolCalls: WireToolCall[]
   finishReason: string | null
   model: string | null
+  /** Token counts when the stream carried a usage chunk; absent otherwise. */
+  usage?: TokenUsage
 }
 
 export function gatewayConfigured(): boolean {
@@ -365,6 +368,7 @@ export async function streamTurn(
   let content = ''
   let reasoning = ''
   let finishReason: string | null = null
+  let usage: TokenUsage | undefined
   let model: string | null = null
   const toolCalls = new Map<number, WireToolCall>()
 
@@ -389,6 +393,9 @@ export async function streamTurn(
         throw new StreamedTurnError(msg)
       }
       model = chunk.model ?? model
+      // Some servers send a final chunk with usage and no choices; read
+      // it before the choice check would skip that chunk.
+      if (chunk.usage && typeof chunk.usage === 'object') usage = chunk.usage as TokenUsage
       const choice = chunk.choices?.[0]
       if (!choice) continue
       const delta = choice.delta ?? {}
@@ -411,5 +418,5 @@ export async function streamTurn(
       if (choice.finish_reason) finishReason = choice.finish_reason
     }
   }
-  return { content, reasoning, toolCalls: [...toolCalls.values()], finishReason, model }
+  return { content, reasoning, toolCalls: [...toolCalls.values()], finishReason, model, ...(usage ? { usage } : {}) }
 }

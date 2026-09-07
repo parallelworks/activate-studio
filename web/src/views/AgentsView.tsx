@@ -18,8 +18,8 @@ import { PersonaIcon } from '../components/PersonaIcon'
 
 interface Persona { name: string; description: string; shared: boolean; icon: string }
 interface Skill { name: string; description: string; file: string }
-interface SubTask { name: string; persona: string; objective: string; parent: string | null; depth: number; state: string; note: string; resultPath: string | null; updatedAt: string }
-interface TaskRow { id: string; objective: string; state: string; agents: number; running: number }
+interface SubTask { name: string; persona: string; objective: string; parent: string | null; depth: number; state: string; note: string; resultPath: string | null; updatedAt: string; usage?: { input: number; output: number; total: number; cost?: number | null } | null }
+interface TaskRow { id: string; objective: string; state: string; agents: number; running: number; usage?: { input: number; output: number; total: number; cost?: number | null } | null }
 interface PlatformRun { slug: string; workflow: string; resource: string | null; conversationId: string | null; launchedAt: string; state: string; endedAt: string | null }
 interface TaskDetail extends TaskRow { maxAgents: number; maxDepth: number; board: { seq: number; at: string; from: string; topic: string; body: string }[] }
 
@@ -165,6 +165,17 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
     document.querySelector('.agents-body')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
   }
 
+  // A copy of a persona, loaded into the editor as a new file: the way a
+  // default persona is adapted without losing the original.
+  const duplicate = async (n: string) => {
+    const res = await fetch(`/api/extensions/persona?name=${encodeURIComponent(n)}`)
+    if (!res.ok) return
+    const d = await res.json()
+    setKind('persona'); setEditing(null); setName(`${d.name}_copy`); setDescription(d.description ?? ''); setBody(d.body ?? ''); setIcon(d.icon ?? '')
+    setNote(`Copy of ${d.name}. Rename it and save; the original is untouched.`)
+    document.querySelector('.agents-body')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }
+
   const remove = async (n: string) => {
     await fetch(`/api/extensions/persona?name=${encodeURIComponent(n)}`, { method: 'DELETE' })
     await load()
@@ -200,6 +211,7 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
     f.text().then(t => { if (!name) setName(f.name.replace(/\.md$/, '')); onBody(t) })
   }
 
+  const fmtTokens = (n: number) => n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n)
   const STATE_DOT: Record<string, string> = { working: 'ok', completed: 'off', 'input-required': 'warn' }
   const dotFor = (st: string) => STATE_DOT[st] ?? 'warn'
   const doneCount = (mi: TaskRow) => mi.agents - mi.running
@@ -247,7 +259,7 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
                   <div className="task-card-objective">{mi.objective}</div>
                   <div className="task-progress"><div className="task-progress-fill" style={{ width: `${mi.agents ? Math.round(100 * doneCount(mi) / mi.agents) : 0}%` }} /></div>
                   <div className="task-card-meta">
-                    <span>{doneCount(mi)} of {mi.agents} done</span>
+                    <span>{doneCount(mi)} of {mi.agents} done{mi.usage?.total ? ` · ${fmtTokens(mi.usage.total)} tok` : ''}</span>
                     <span>{mi.id.slice(0, 10)}</span>
                   </div>
                 </div>
@@ -287,7 +299,7 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
                         {a.depth > 0 && <span className="tree-elbow" style={{ left: `${a.depth * 20 - 8}px` }} />}
                         <span className={`status-dot ${dotFor(a.state)}${a.state === 'working' ? ' pulse' : ''}`} />
                         <span className="tree-name">{a.name}</span>
-                        <span className="tree-note muted">{a.state === 'working' ? a.note : a.state}</span>
+                        <span className="tree-note muted">{a.state === 'working' ? a.note : a.state}{a.usage?.total ? ` · ${fmtTokens(a.usage.total)} tok${a.usage.cost != null ? ` · $${a.usage.cost.toFixed(2)}` : ''}` : ''}</span>
                         {a.resultPath && (
                           <button className="link-button" onClick={e => { e.stopPropagation(); onOpen(a.resultPath!) }}>result</button>
                         )}
@@ -298,6 +310,7 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
                           {(a as { runSlug?: string | null }).runSlug && (
                             <p className="muted">platform run <code>{(a as { runSlug?: string }).runSlug}</code></p>
                           )}
+                          {a.usage?.total ? <p className="muted">tokens: {fmtTokens(a.usage.input)} in, {fmtTokens(a.usage.output)} out, {fmtTokens(a.usage.total)} total{a.usage.cost != null ? `, $${a.usage.cost.toFixed(3)}` : ''}</p> : null}
                           <pre className="agent-live">{agentTail || (a.state === 'working' ? 'No output yet; the log fills as the agent works.' : 'No output was captured for this agent.')}</pre>
                         </div>
                       )}
@@ -350,6 +363,8 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
                   <button className="link-button agents-del"
                     onClick={e => { e.stopPropagation(); onOpen(`.agents/${p.name}.md`) }}>in library</button>
                 )}
+                <button className="link-button agents-del" title="Open a copy in the editor, to change without touching the original"
+                  onClick={e => { e.stopPropagation(); void duplicate(p.name) }}>duplicate</button>
                 <button className="link-button agents-del"
                   onClick={e => { e.stopPropagation(); remove(p.name) }}>remove</button>
               </span>
