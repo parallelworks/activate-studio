@@ -1,4 +1,5 @@
 import Fastify from 'fastify'
+import { fleetRoutes, startFleet } from './fleet.js'
 import { setRunsLog, watchRegisteredRuns } from './runs.js'
 import { streamsInFlight } from './chat/routes.js'
 import fastifyStatic from '@fastify/static'
@@ -67,6 +68,7 @@ await app.register(settingsRoutes)
 await app.register(chatRoutes)
 await app.register(mcpRoutes)
 await app.register(taskRoutes)
+await app.register(fleetRoutes)
 
 // A brand-new deployment opens on a corpus with some shape rather than an
 // empty tree; only ever runs when the knowledge base has nothing in it.
@@ -86,6 +88,7 @@ await app.listen({ host: HOST, port: PORT })
 // Runs the assistant launched before the last restart are followed again,
 // so their end still reaches the conversations that asked for them.
 setRunsLog(msg => app.log.info(msg))
+startFleet(msg => app.log.info(msg))
 {
   const n = watchRegisteredRuns()
   if (n) app.log.info(`following ${n} workflow run(s) registered before this start`)

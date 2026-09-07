@@ -300,12 +300,18 @@ rehydrate()
 
 function agentCount(m: Task): number { return m.nodes.size }
 
+/** Listeners told when a task reaches a terminal state; the fleet ticks on it. */
+const finishListeners: ((m: Task) => void)[] = []
+export function onTaskFinished(fn: (m: Task) => void): void { finishListeners.push(fn) }
+function notifyFinished(m: Task): void { for (const fn of finishListeners) { try { fn(m) } catch { /* a listener must not break the engine */ } } }
+
 function maybeFinish(m: Task): void {
   if (m.state !== 'working') return
   const alive = [...m.nodes.values()].some(p => p.state === 'working')
   if (!alive) {
     m.state = 'completed'
     post(m, 'orchestrator', 'task', 'Every agent has finished.')
+    notifyFinished(m)
   }
 }
 
@@ -606,6 +612,7 @@ export function stopTask(id: string): boolean {
   const m = tasks.get(id)
   if (!m) return false
   m.state = 'canceled'
+  queueMicrotask(() => notifyFinished(m))
   for (const [name, proc] of m.procs) {
     const p = m.nodes.get(name)
     if (p) { p.state = 'canceled'; p.note = 'stopped by user' }
