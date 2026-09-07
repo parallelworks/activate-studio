@@ -311,7 +311,7 @@ export function SemanticMap({ onOpen }: { onOpen: (path: string) => void }) {
   return (
     <section className="card ov-list">
       <h3>Semantic map</h3>
-      <p className="muted">Every embedded document, placed by content similarity and colored by cluster. Neighbors read alike even when they live in different folders. Hover for the file; click to open it.</p>
+      <p className="muted">Every embedded document, placed by similarity of its embedding: the vectors semantic search uses, projected to two dimensions, so files that read alike sit near each other whatever folder they live in. The axes carry no meaning of their own; only distance does. Color is the cluster a file falls into. Hover for the file; click to open it.</p>
       <div style={{ position: 'relative' }}>
         <canvas
           ref={canvasRef}
