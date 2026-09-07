@@ -26,11 +26,37 @@ const TTL_MS = 5_000
  *  Runs only when the directory is entirely absent, so deletions and edits
  *  are never resurrected. */
 export function seedExtensions(log?: (msg: string) => void): void {
-  if (fs.existsSync(EXT_DIR) || !fs.existsSync(STARTER_DIR)) return
-  try {
-    fs.cpSync(STARTER_DIR, EXT_DIR, { recursive: true })
-    log?.(`seeded starter extensions into ${EXT_DIR}`)
-  } catch { /* seeding is best-effort */ }
+  if (!fs.existsSync(STARTER_DIR)) return
+  if (!fs.existsSync(EXT_DIR)) {
+    try {
+      fs.cpSync(STARTER_DIR, EXT_DIR, { recursive: true })
+      log?.(`seeded starter extensions into ${EXT_DIR}`)
+    } catch { /* seeding is best-effort */ }
+  }
+  // Starter files added after a deployment first seeded (the default
+  // personas, say) still have to arrive, and a file the operator deleted
+  // must stay deleted. A ledger of what has ever been seeded settles both:
+  // a starter file is copied only when it is absent and not on the ledger.
+  const ledgerFile = path.join(EXT_DIR, '.seeded.json')
+  let ledger: string[] = []
+  try { ledger = JSON.parse(fs.readFileSync(ledgerFile, 'utf8')) } catch { /* first ledger */ }
+  const seen = new Set(ledger)
+  const added: string[] = []
+  const walk = (dir: string, rel = ''): void => {
+    for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
+      const r = rel ? `${rel}/${ent.name}` : ent.name
+      if (ent.isDirectory()) { walk(path.join(dir, ent.name), r); continue }
+      const dest = path.join(EXT_DIR, r)
+      if (fs.existsSync(dest)) { seen.add(r); continue }
+      if (seen.has(r)) continue
+      try { fs.mkdirSync(path.dirname(dest), { recursive: true }); fs.copyFileSync(path.join(dir, ent.name), dest); seen.add(r); added.push(r) } catch { /* best effort */ }
+    }
+  }
+  try { walk(STARTER_DIR) } catch { /* best effort */ }
+  if (added.length || seen.size !== ledger.length) {
+    try { fs.writeFileSync(ledgerFile, JSON.stringify([...seen].sort(), null, 1)) } catch { /* best effort */ }
+  }
+  if (added.length) log?.(`seeded ${added.length} new starter file(s): ${added.join(', ')}`)
 }
 
 export interface ExtTool { name: string; description: string; command: string; file: string }
