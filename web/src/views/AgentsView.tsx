@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { PersonaIcon } from '../components/PersonaIcon'
+import { FleetPage } from './FleetPage'
 
 /**
  * Personas and skills: the two ways a markdown file changes how the
@@ -64,9 +65,9 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
     const t = setInterval(tick, 15_000)
     return () => { stop = true; clearInterval(t) }
   }, [])
-  const [page, setPageState] = useState<'tasks' | 'library'>(() =>
-    (localStorage.getItem('ade-agents-page') as 'tasks' | 'library') || 'tasks')
-  const setPage = (v: 'tasks' | 'library') => { setPageState(v); localStorage.setItem('ade-agents-page', v) }
+  const [page, setPageState] = useState<'fleet' | 'tasks' | 'library'>(() =>
+    (localStorage.getItem('ade-agents-page') as 'fleet' | 'tasks' | 'library') || 'fleet')
+  const setPage = (v: 'fleet' | 'tasks' | 'library') => { setPageState(v); localStorage.setItem('ade-agents-page', v) }
   useEffect(() => {
     const on = (e: Event) => {
       const d = (e as CustomEvent).detail as { view?: string; section?: string }
@@ -221,12 +222,15 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
       <div className="card ov-head">
         <h1 className="view-title">Agents</h1>
         <div className="viewer-tabs agents-tabs">
+          <button className={page === 'fleet' ? 'active' : ''} onClick={() => setPage('fleet')}>Fleet</button>
           <button className={page === 'tasks' ? 'active' : ''} onClick={() => setPage('tasks')}>
             Tasks{taskRuns.some(t => t.state === 'working') ? <span className="tab-live-dot" /> : null}
           </button>
           <button className={page === 'library' ? 'active' : ''} onClick={() => setPage('library')}>Personas and skills</button>
         </div>
       </div>
+
+      {page === 'fleet' && <FleetPage personas={personas} onOpenTask={id => { setOpenTask(id); setPageState('tasks') }} />}
 
       {page === 'tasks' && (
         <section className="card task-board-card">

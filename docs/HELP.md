@@ -38,7 +38,7 @@ One box, three retrieval modes at once, each result labeled by the mode that fou
 
 ## Agents
 
-Two pages under one tab. **Tasks** is the board for work the assistant has delegated: each task is a card with its state, a campaign badge naming the system when the agents run as platform workflow runs, and a progress bar; opening one shows the agent tree, each agent's live output, and the board feed. **Personas and skills** is the library of markdown files that change how the assistant behaves, with an editor for adding or changing them.
+Three pages under one tab. **Fleet** is the operator base for standing agents: each has a goal, a persona, a budget, and triggers (a schedule, a workflow run ending, files changing under a folder). An agent wakes in ticks, does one bounded round of work with the same tools the assistant has, writes the outcome to its journal, and parks itself under **Needs you** when a decision needs a person; tell it something in its message box and it answers on the next tick. Start from a template or write a goal. **Tasks** is the board for work the assistant has delegated: each task is a card with its state, a campaign badge naming the system when the agents run as platform workflow runs, and a progress bar; opening one shows the agent tree, each agent's live output, and the board feed. **Personas and skills** is the library of markdown files that change how the assistant behaves, with an editor for adding or changing them.
 
 ## Query
 

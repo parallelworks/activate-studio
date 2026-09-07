@@ -1,4 +1,5 @@
 import fs from 'node:fs'
+import { notifyRunEnded } from './fleet.js'
 import path from 'node:path'
 import { execFile } from 'node:child_process'
 import { INDEX_BASE, PW_CLI } from './config.js'
@@ -88,6 +89,7 @@ export function markRunEnded(slug: string, state: string): void {
       `Run ${slug} of ${r.workflow}${where} finished: ${state}. Ask for its detail (workflow_run_detail ${slug}) to see the output${state === 'completed' ? '' : ' and why it failed'}.`)
   }
   log(`run ${slug} ended: ${state}`)
+  notifyRunEnded({ slug, workflow: r.workflow, resource: r.resource, state })
 }
 
 /** How often the watcher asks the platform; tests shorten it. */
