@@ -50,7 +50,17 @@ permissions:
             label: Hugging Face token
             type: string
             optional: true
-            tooltip: Needed once to download the Kyutai STT and TTS weights and the voice files, which are gated behind accepting the model terms.
+            tooltip: Optional. The Kyutai STT and TTS weights and the stock voices download without one; a token is only needed for gated or private voice repositories.
+          stt_gpu:
+            label: GPU index for speech recognition
+            type: string
+            default: "0"
+            tooltip: The NVIDIA device index the STT service is pinned to (about 2.5 GB).
+          tts_gpu:
+            label: GPU index for speech synthesis
+            type: string
+            default: "0"
+            tooltip: The NVIDIA device index the TTS service is pinned to (about 5.3 GB). Use a second index to split the two across cards.
           session_name:
             label: Session name
             type: string
@@ -76,27 +86,72 @@ jobs:
         run: |
           set -e
           cd ${{ inputs.unmute.workdir }}/unmute
+          # The image's start script logs into Hugging Face unconditionally and
+          # dies on an empty token; the weights are public, so the login is
+          # made optional here. The cargo build of moshi-server is kept in a
+          # named volume so only the first start compiles it.
+          cat > start_moshi_server_studio.sh << 'EOF3'
+          #!/bin/bash
+          set -ex
+          export LD_LIBRARY_PATH=$(python3 -c 'import sysconfig; print(sysconfig.get_config_var("LIBDIR"))')
+          if [ -n "$HUGGING_FACE_HUB_TOKEN" ]; then uvx hf auth login --token "$HUGGING_FACE_HUB_TOKEN"; fi
+          CARGO_TARGET_DIR=/app/target cargo install --features cuda moshi-server@0.6.4
+          /root/.cargo/bin/moshi-server "$@"
+          EOF3
+          chmod +x start_moshi_server_studio.sh
+          # Verified on a two-GPU host: the NVIDIA container runtime with explicit
+          # device ids, not CDI names, which failed there on a stale device spec.
           cat > docker-compose.studio.yml << 'EOF2'
           services:
             backend:
               environment:
                 KYUTAI_LLM_URL: ${STUDIO_V1_URL}
-                KYUTAI_LLM_MODEL: ${STUDIO_MODEL}
-                KYUTAI_LLM_API_KEY: ${STUDIO_API_KEY}
+                KYUTAI_LLM_MODEL: ${STUDIO_MODEL:-studio-voice}
+                KYUTAI_LLM_API_KEY: ${STUDIO_API_KEY:-none}
+              extra_hosts:
+                - "host.docker.internal:host-gateway"
               depends_on: !override
                 - stt
                 - tts
             llm:
               profiles: ["disabled"]
+            stt:
+              entrypoint: ["uv", "run", "--locked", "--project", "./moshi-server", "./start_moshi_server_studio.sh"]
+              volumes:
+                - ./start_moshi_server_studio.sh:/app/start_moshi_server_studio.sh:ro
+                - moshi-target:/app/target
+              deploy:
+                resources:
+                  reservations:
+                    devices: !override
+                      - driver: nvidia
+                        device_ids: ["${STT_GPU:-0}"]
+                        capabilities: [gpu]
+            tts:
+              entrypoint: ["uv", "run", "--locked", "--project", "./moshi-server", "./start_moshi_server_studio.sh"]
+              volumes:
+                - ./start_moshi_server_studio.sh:/app/start_moshi_server_studio.sh:ro
+                - moshi-target:/app/target
+              deploy:
+                resources:
+                  reservations:
+                    devices: !override
+                      - driver: nvidia
+                        device_ids: ["${TTS_GPU:-0}"]
+                        capabilities: [gpu]
             traefik:
               ports: !override
                 - "${UNMUTE_PORT:-80}:80"
+          volumes:
+            moshi-target:
           EOF2
           {
             echo "STUDIO_V1_URL=${{ inputs.studio.v1_url }}"
             echo "STUDIO_MODEL=${{ inputs.studio.model }}"
             echo "STUDIO_API_KEY=${{ inputs.studio.api_key }}"
             echo "HUGGING_FACE_HUB_TOKEN=${{ inputs.unmute.hf_token }}"
+            echo "STT_GPU=${{ inputs.unmute.stt_gpu }}"
+            echo "TTS_GPU=${{ inputs.unmute.tts_gpu }}"
           } > .env.studio
           chmod 600 .env.studio
       - name: Build the images
