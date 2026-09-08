@@ -1,8 +1,10 @@
 import type { FastifyInstance } from 'fastify'
+import fs from 'node:fs'
+import path from 'node:path'
 import { suggestNext } from './suggest.js'
 import { getConversation } from '../conversations.js'
 import { listRuns } from '../runs.js'
-import { GATEWAY_BASE, MAX_TOOL_ITERATIONS, SIDECAR_ENDPOINT } from '../config.js'
+import { GATEWAY_BASE, MAX_TOOL_ITERATIONS, SIDECAR_ENDPOINT, INDEX_BASE } from '../config.js'
 import { aiHealth, gatewayConfigured, isSidecarModel, listModels, listSidecarModels, modelFailure, probeProvider, probeableProvider, extractUnlockUrl, invalidateProviderProbes, sidecarConfigured, sidecarTarget, StreamedTurnError, streamTurn, WireMessage, WireToolCall, type TokenUsage } from './gateway.js'
 import { TOOL_CALLS, TOOL_SPECS, activeToolSpecs, activeToolSpecsWithRemote, commandFor, customToolSpecs, executeTool, expandSlashCommand, skillToolSpec } from './tools.js'
 import { systemPrompt } from './context.js'
@@ -220,7 +222,18 @@ function estimateTokens(messages: WireMessage[]): number {
  * request; the process lifetime is the right scope, since a model that
  * starts accepting the cap gets it back on the next deployment.
  */
-const noTokenCap = new Set<string>()
+const NO_CAP_FILE = path.join(INDEX_BASE, 'no-token-cap.json')
+const noTokenCap = ((): Set<string> => {
+  // Remembered on disk: a provider that refuses a token cap refuses it
+  // every time, and re-learning it after each restart costs the first
+  // turn of a conversation a failed attempt.
+  try { return new Set(JSON.parse(fs.readFileSync(NO_CAP_FILE, 'utf8')) as string[]) } catch { return new Set() }
+})()
+function rememberNoTokenCap(model: string): void {
+  if (!model || noTokenCap.has(model)) return
+  noTokenCap.add(model)
+  try { fs.writeFileSync(NO_CAP_FILE, JSON.stringify([...noTokenCap])) } catch { /* memory still holds it for this process */ }
+}
 
 const BASE_ATTRS = 'Path=/; HttpOnly; Secure; SameSite=None'
 
@@ -956,9 +969,16 @@ ${ctx}` : ctx
       // Once a provider rejects the token cap, every later turn of this
       // reply skips it up front instead of paying a failed attempt each.
       let dropTokenCap = false
+      // The unstreamed retry exists for serves that fail a generation after
+      // the 200 is committed. A rejected parameter is not that: the turn
+      // never started, and answering it without streaming leaves the reader
+      // watching a still "Thinking" line for the whole reply. Only a real
+      // generation failure gives up streaming.
+      let retryUnstreamed = false
       const turnWithRetry = async (payload: Record<string, unknown>) => {
         for (let attempt = 0; ; attempt++) {
-          const p: Record<string, unknown> = attempt === 0 && !noStream ? { ...payload } : { ...payload, stream: false }
+          const streamThis = !noStream && (attempt === 0 || !retryUnstreamed)
+          const p: Record<string, unknown> = streamThis ? { ...payload } : { ...payload, stream: false }
           const emulating = foldSystem && Array.isArray(p.tools) && (p.tools as unknown[]).length > 0
           if (foldSystem) {
             p.messages = emulatedPrompt(
@@ -1027,12 +1047,18 @@ ${ctx}` : ctx
             const generationError = err instanceof StreamedTurnError
               || /error occurred while generating/i.test(errText)
               || rejectedTokenCap
-            if (generationError && attempt < 2 && !abort.signal.aborted) {
+            // A retry after text has already reached the reader appends a
+            // second answer to the first: the client accumulates content
+            // events and has no way to unsay them. So a turn that has
+            // spoken is never retried; the error is surfaced instead.
+            const spoken = finalContent.length > 0
+            if (generationError && attempt < 2 && !abort.signal.aborted && !spoken) {
               if (!(err instanceof StreamedTurnError)) dropTokenCap = true
+              if (!rejectedTokenCap) retryUnstreamed = true
               // Only an explicit parameter rejection is worth remembering:
               // the masked generation error also covers sampling failures,
               // which say nothing about whether the cap is supported.
-              if (rejectedTokenCap) noTokenCap.add(String(body.model ?? ''))
+              if (rejectedTokenCap) rememberNoTokenCap(String(body.model ?? ''))
               req.log.warn({ attempt, dropTokenCap, err: String(err?.message ?? err) }, 'serve failed generating; retrying turn')
               continue
             }
