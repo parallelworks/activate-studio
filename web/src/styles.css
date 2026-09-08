@@ -1611,9 +1611,21 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
   /* Dynamic-toolbar browsers shrink the visual viewport as their chrome
      appears; 100% of the layout viewport leaves the bottom bar buried
      behind it. dvh tracks what is actually visible, and browsers without
-     it ignore the declaration and keep the 100% above. */
+     it ignore the declaration and keep the 100% above.
+
+     The ancestors need it too: html, body and #root were still 100% of
+     the layout viewport, so on iOS the app sat in a box taller than the
+     screen, the page itself scrolled, and the navigation bar floated
+     above a band of background with the composer pushed out of reach.
+     Sizing every ancestor to the visible viewport and refusing a
+     page-level scroll keeps the bar on the bottom edge; the views
+     scroll inside their own containers, which is where scrolling
+     belongs. */
+  html, body, #root { height: 100dvh; overflow: hidden; }
   .app { height: 100dvh; }
   body { overflow-x: hidden; }
+  /* Clear of the home indicator, on the phones that have one. */
+  .sidenav, .sidenav.collapsed { padding-bottom: max(2px, env(safe-area-inset-bottom)); }
   .app-body { flex-direction: column; }
   /* Desktop gives .view height:100% to fill the row beside the rail; in
      a column that same 100% plus the bar overflows the viewport, so the
