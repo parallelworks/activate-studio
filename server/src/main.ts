@@ -43,9 +43,31 @@ const webDist = path.join(PROJECT_ROOT, 'web', 'dist')
 if (fs.existsSync(webDist)) {
   // wildcard:true serves from disk per request, so a web rebuild with new
   // hashed asset names does not require a server restart.
-  await app.register(fastifyStatic, { root: webDist, wildcard: true })
+  //
+  // The two kinds of file want opposite caching, and serving both as
+  // max-age=0 got both wrong: the shell could still be held stale by a
+  // phone browser after a deploy, while two megabytes of fingerprinted
+  // JavaScript were revalidated on every single load. A file under
+  // /assets carries its content hash in its name, so its bytes can never
+  // change and it is cached for a year and never revalidated; the HTML
+  // shell that names those files is never cached, so a deploy is picked
+  // up on the next load without anyone clearing anything.
+  await app.register(fastifyStatic, {
+    root: webDist,
+    wildcard: true,
+    // The plugin writes its own Cache-Control (max-age=0) after
+    // setHeaders runs, so its handling has to be off for these to stand.
+    cacheControl: false,
+    setHeaders: (res, filePath) => {
+      const immutable = /[\\/]assets[\\/]/.test(filePath) && /-[A-Za-z0-9_-]{8,}\.[a-z0-9]+$/.test(filePath)
+      res.setHeader('Cache-Control', immutable
+        ? 'public, max-age=31536000, immutable'
+        : 'no-store, must-revalidate')
+    },
+  })
   app.setNotFoundHandler((req, reply) => {
     if (req.url.startsWith('/api/')) return reply.status(404).send({ error: 'not found' })
+    reply.header('Cache-Control', 'no-store, must-revalidate')
     return reply.sendFile('index.html')
   })
 }
