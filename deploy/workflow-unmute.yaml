@@ -1,9 +1,13 @@
-# Unmute (Kyutai) as a voice front end for an ACTIVATE Studio: speech
-# recognition, semantic turn-taking, and speech synthesis around the
-# Studio's own assistant, reached as the studio-voice model on the
-# Studio's /v1 endpoint. Runs the upstream docker compose on a GPU node
-# with the bundled LLM service disabled, and exposes Unmute's web
-# interface as a platform session. Feature preview.
+# Unmute (Kyutai) as a voice front end: speech recognition, semantic
+# turn-taking, and speech synthesis around a conversational model that is
+# a configuration value, not a hosted service. Point it at a Studio and
+# the voice gets the corpus, tools and workflows with an API model behind
+# it (studio-voice/<gateway-model-id>); point it at the gateway and it is
+# a plain conversation with that model. Only the speech services need a
+# GPU: about 5.3 GB for synthesis and 2.5 GB for recognition, which may
+# sit on different cards. Runs the upstream docker compose with the
+# bundled LLM disabled and publishes the interface as a platform session.
+# Feature preview; verified on a two-GPU node.
 permissions:
   - '*'
 'on':
@@ -20,10 +24,10 @@ permissions:
         label: Studio
         items:
           v1_url:
-            label: Studio /v1 base URL
+            label: Model base URL
             type: string
             optional: false
-            tooltip: The Studio's OpenAI-compatible endpoint, e.g. https://my-studio-rag.example/v1 (the registered RAG endpoint) or https://my-studio.example/v1.
+            tooltip: "Where the conversational model lives, WITHOUT the /v1 suffix: Unmute appends it. A Studio (https://my-studio.example) puts the corpus, tools and workflows behind the voice; the platform gateway (https://activate.parallel.works/api/openai) is the shortest path to a plain conversation."
           api_key:
             label: Studio API key
             type: string
@@ -33,7 +37,7 @@ permissions:
             label: Model
             type: string
             default: studio-voice
-            tooltip: studio-voice is the assistant with its tools and grounding, answering in spoken sentences.
+            tooltip: "Against a Studio: studio-voice is the assistant with its tools and grounding, answering in spoken sentences, and studio-voice/<gateway-model-id> names the model behind it (an API model such as a Sol or Gemini id). Against the gateway directly: the model id itself."
       unmute:
         type: group
         label: Unmute
