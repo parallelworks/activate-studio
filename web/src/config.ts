@@ -119,6 +119,7 @@ export function useAppConfig(): AppConfig {
           bannerColor: d.bannerColor || DEFAULTS.bannerColor,
           bannerWhenEmbedded: !!d.bannerWhenEmbedded,
           user: d.user?.id ? (d.user as AppConfig['user']) : DEFAULTS.user,
+          features: d.features ?? undefined,
           loaded: true,
         }
         rememberBrand(cached)
