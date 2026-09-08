@@ -121,6 +121,14 @@ button { font-family: inherit; }
 
 .app { display: flex; flex-direction: column; height: 100%; }
 .app-body { display: flex; flex: 1; min-height: 0; }
+/* The element between the app body and the views. A flex item's default
+   min-height is auto, which refuses to shrink below its content: in the
+   phone's column that let a tall page (Settings, measured at 2102px in an
+   844px app) push the whole layout past the viewport, carrying the
+   navigation bar off-screen and leaving nothing able to scroll, since the
+   scrolling containers below it never got a bounded height to work
+   against. Zero here is what lets every view's own scroller do its job. */
+main.content { min-height: 0; min-width: 0; }
 
 /* Classification banner: full width above everything, in the platform's
    style. Sized so it reads as chrome and not as content. */
