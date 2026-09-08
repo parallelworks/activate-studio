@@ -28,6 +28,8 @@ interface Effective {
   delegationEnabled: boolean
   delegationMaxAgents: number
   delegationMaxDepth: number
+  voiceEnabled: boolean
+  voiceUrl: string
   ragProxyEnabled: boolean
   ragEndpointAutoStart: boolean
   ragEndpointName: string
@@ -710,6 +712,23 @@ export function SettingsView() {
                 <code className="mcp-snippet">pw code mcp add --transport http studio-kb {location.origin}/api/mcp</code>
               </CopyToClipboard>
               <p className="muted key-note">pw code signs its platform requests with your existing CLI login, so no token goes in the command.</p>
+              <div className="tool-group">Feature previews</div>
+              <p className="muted view-sub">
+                Capabilities that work end to end but are still being shaped. Each is off until switched on here, and each
+                shows its control in the interface only when it is on and configured.
+              </p>
+              <div className="access-switch">
+                <SwitchToggle value={form.voiceEnabled} onChange={v => setForm({ ...form, voiceEnabled: v })} yesLabel="On" noLabel="Off" />
+                <span>Voice conversations: talk with the assistant back and forth, through an Unmute deployment</span>
+              </div>
+              <p className="muted view-sub">
+                Unmute (Kyutai, MIT) wraps a text model with streaming speech recognition, semantic turn-taking, and speech
+                synthesis. Deploy it with the <code>unmute</code> workflow pointed at this Studio's <code>/v1</code> endpoint
+                and the <code>studio-voice</code> model, which is the assistant with its tools and grounding, answering in
+                spoken sentences. Then put the deployment's session URL here; a Voice button appears above the chat.
+              </p>
+              <label className="field-label">Unmute session URL</label>
+              <input className="field" value={form.voiceUrl} placeholder="https://unmute.example" onChange={e => setForm({ ...form, voiceUrl: e.target.value })} />
               <div className="tool-group">Delegation (the assistant working in parallel)</div>
               <p className="muted view-sub">
                 With this on, the assistant may split a request into subtasks and run them concurrently as headless

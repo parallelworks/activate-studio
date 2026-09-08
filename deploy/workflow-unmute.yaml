@@ -1,0 +1,114 @@
+# Unmute (Kyutai) as a voice front end for an ACTIVATE Studio: speech
+# recognition, semantic turn-taking, and speech synthesis around the
+# Studio's own assistant, reached as the studio-voice model on the
+# Studio's /v1 endpoint. Runs the upstream docker compose on a GPU node
+# with the bundled LLM service disabled, and exposes Unmute's web
+# interface as a platform session. Feature preview.
+permissions:
+  - '*'
+'on':
+  execute:
+    inputs:
+      resource:
+        label: GPU system
+        type: compute-clusters
+        autoselect: true
+        optional: false
+        tooltip: A Linux x86_64 node with one GPU of 16 GB or more (STT about 2.5 GB, TTS about 5.3 GB) and Docker with the NVIDIA runtime.
+      studio:
+        type: group
+        label: Studio
+        items:
+          v1_url:
+            label: Studio /v1 base URL
+            type: string
+            optional: false
+            tooltip: The Studio's OpenAI-compatible endpoint, e.g. https://my-studio-rag.example/v1 (the registered RAG endpoint) or https://my-studio.example/v1.
+          api_key:
+            label: Studio API key
+            type: string
+            optional: false
+            tooltip: A platform token or API key the Studio accepts on /v1.
+          model:
+            label: Model
+            type: string
+            default: studio-voice
+            tooltip: studio-voice is the assistant with its tools and grounding, answering in spoken sentences.
+      unmute:
+        type: group
+        label: Unmute
+        items:
+          repo:
+            label: Repository
+            type: string
+            default: https://github.com/kyutai-labs/unmute.git
+          ref:
+            label: Git ref
+            type: string
+            default: main
+          hf_token:
+            label: Hugging Face token
+            type: string
+            optional: true
+            tooltip: Needed once to download the Kyutai STT and TTS weights and the voice files, which are gated behind accepting the model terms.
+          session_name:
+            label: Session name
+            type: string
+            default: unmute
+          workdir:
+            label: Working directory
+            type: string
+            default: ~/unmute-work
+jobs:
+  deploy:
+    ssh:
+      remoteHost: ${{ inputs.resource.ip }}
+    steps:
+      - name: Fetch Unmute
+        run: |
+          set -e
+          mkdir -p ${{ inputs.unmute.workdir }} && cd ${{ inputs.unmute.workdir }}
+          if [ ! -d unmute ]; then git clone --depth 1 --branch "${{ inputs.unmute.ref }}" "${{ inputs.unmute.repo }}" unmute; fi
+          cd unmute && git fetch --depth 1 origin "${{ inputs.unmute.ref }}" && git checkout -q FETCH_HEAD
+          command -v docker >/dev/null || { echo "docker is required on the node"; exit 1; }
+          docker info 2>/dev/null | grep -qi nvidia || echo "warning: no NVIDIA runtime reported by docker; STT and TTS will not start without it"
+      - name: Point the backend at the Studio and drop the bundled LLM
+        run: |
+          set -e
+          cd ${{ inputs.unmute.workdir }}/unmute
+          cat > docker-compose.studio.yml << 'EOF2'
+          services:
+            backend:
+              environment:
+                KYUTAI_LLM_URL: ${STUDIO_V1_URL}
+                KYUTAI_LLM_MODEL: ${STUDIO_MODEL}
+                KYUTAI_LLM_API_KEY: ${STUDIO_API_KEY}
+              depends_on: !override
+                - stt
+                - tts
+            llm:
+              profiles: ["disabled"]
+            traefik:
+              ports: !override
+                - "${UNMUTE_PORT:-80}:80"
+          EOF2
+          {
+            echo "STUDIO_V1_URL=${{ inputs.studio.v1_url }}"
+            echo "STUDIO_MODEL=${{ inputs.studio.model }}"
+            echo "STUDIO_API_KEY=${{ inputs.studio.api_key }}"
+            echo "HUGGING_FACE_HUB_TOKEN=${{ inputs.unmute.hf_token }}"
+          } > .env.studio
+          chmod 600 .env.studio
+      - name: Build the images
+        run: |
+          set -e
+          cd ${{ inputs.unmute.workdir }}/unmute
+          docker compose --env-file .env.studio -f docker-compose.yml -f docker-compose.studio.yml build
+      - name: Serve Unmute as a platform session
+        run: |
+          set -e
+          cd ${{ inputs.unmute.workdir }}/unmute
+          # The endpoint agent hands this command a free port in PORT; traefik
+          # publishes on it, and the agent tunnels it to the session URL.
+          pw endpoints run --name "${{ inputs.unmute.session_name }}" --subdomain "${{ inputs.unmute.session_name }}" -- \
+            bash -c 'UNMUTE_PORT="$PORT" docker compose --env-file .env.studio -f docker-compose.yml -f docker-compose.studio.yml up --abort-on-container-exit'

@@ -142,9 +142,14 @@ async function buildContext(query: string, topK: number, tags?: string[]): Promi
 }
 
 /** Resolve a virtual model id to { mode, underlying }. */
-function resolveModel(requested: string): { mode: 'agent' | 'rag'; underlying: string } {
+export function resolveModel(requested: string): { mode: 'agent' | 'rag'; underlying: string; voice?: boolean } {
   const eff = effectiveSettings()
   const fallback = eff.ragDefaultModel
+  // studio-voice is the agent tuned for a live voice conversation: the
+  // same tools and grounding, answers shaped to be spoken.
+  if (requested === 'studio-voice' || requested.startsWith('studio-voice/')) {
+    return { mode: 'agent', underlying: requested.slice('studio-voice/'.length) || fallback, voice: true }
+  }
   if (requested === 'studio-agent' || requested.startsWith('studio-agent/')) {
     return { mode: 'agent', underlying: requested.slice('studio-agent/'.length) || fallback }
   }
@@ -153,6 +158,8 @@ function resolveModel(requested: string): { mode: 'agent' | 'rag'; underlying: s
   }
   return { mode: 'rag', underlying: requested }
 }
+
+export const VOICE_STYLE = 'You are speaking aloud in a live voice conversation. Answer in one or two short sentences of plain spoken language. No markdown, no lists, no headings, no links: say a file name instead of writing a path. Before a tool call that will take time, say in a few words what you are checking. If the user is silent or vague, ask one short question.'
 
 /* ---- OpenAI wire helpers ---- */
 
@@ -170,11 +177,12 @@ async function agenticCompletion(
   key: string,
   onDelta: (text: string) => void,
   signal?: AbortSignal,
+  voice = false,
 ): Promise<{ content: string; finish: string }> {
   const sys = await systemPrompt()
   const today = new Date().toISOString().slice(0, 10)
   const messages: WireMessage[] = [
-    { role: 'system', content: `${sys}\n\nToday's date is ${today}.` },
+    { role: 'system', content: `${sys}\n\nToday's date is ${today}.${voice ? `\n\n${VOICE_STYLE}` : ''}` },
     ...(clientMessages as WireMessage[]).filter(m => m.role !== 'system').map(m => ({
       role: m.role,
       content: typeof m.content === 'string' ? m.content : m.content == null ? '' : JSON.stringify(m.content),
@@ -258,7 +266,7 @@ export async function ragProxyRoutes(app: FastifyInstance): Promise<void> {
     const entry = (id: string) => ({ id, object: 'model', created, owned_by: 'studio' })
     const eff0 = effectiveSettings()
     const data: { id: string; object: string; created: number; owned_by: string }[] = []
-    if (eff0.ragAdvertiseAgentModel) data.push(entry('studio-agent'))
+    if (eff0.ragAdvertiseAgentModel) { data.push(entry('studio-agent')); data.push(entry('studio-voice')) }
     if (eff0.ragAdvertiseRagModel) data.push(entry('studio-rag'))
     if (String((req.query as { all?: string }).all ?? '') === '1') {
       for (const id of ['studio-agent', 'studio-rag']) {
@@ -289,8 +297,9 @@ export async function ragProxyRoutes(app: FastifyInstance): Promise<void> {
     const eff = effectiveSettings()
     const body = { ...(req.body as Record<string, unknown>) }
     const requested = String(body.model ?? 'studio-rag')
-    let { mode, underlying } = resolveModel(requested)
-    const bare = requested === 'studio-agent' || requested === 'studio-rag'
+    const resolved = resolveModel(requested)
+    let { mode, underlying } = resolved
+    const bare = requested === 'studio-agent' || requested === 'studio-rag' || requested === 'studio-voice'
     if (bare) underlying = await defaultModelFor(key)
     if (!underlying) {
       return reply.status(400).send({ error: { message: `No underlying model available to this key: pass ${requested}/<gateway-model-id> or set a default model on the Settings RAG endpoint section.` } })
@@ -327,7 +336,7 @@ export async function ragProxyRoutes(app: FastifyInstance): Promise<void> {
         try {
           const r = await agenticCompletion(underlying, messages, key, t => {
             reply.raw.write(chunkOf(id, requested, { content: t }, null))
-          }, abort.signal)
+          }, abort.signal, !!resolved.voice)
           reply.raw.write(chunkOf(id, requested, {}, r.finish))
           rec.status = 'ok'
         } catch (err) {

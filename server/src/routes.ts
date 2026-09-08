@@ -165,6 +165,9 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
       bannerText: eff.bannerText,
       bannerColor: eff.bannerColor,
       bannerWhenEmbedded: eff.bannerWhenEmbedded,
+      // Feature previews a deployment has switched on; the client shows
+      // their controls only when the flag and its configuration are both present.
+      features: { voice: { enabled: !!eff.voiceEnabled && !!eff.voiceUrl, url: eff.voiceUrl || '' } },
       user,
     }
   })
