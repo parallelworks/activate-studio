@@ -54,6 +54,9 @@ export interface StudioSettings {
   delegationEnabled?: boolean
   delegationMaxAgents?: number
   delegationMaxDepth?: number
+  /** Feature preview: voice conversations through an Unmute deployment. */
+  voiceEnabled?: boolean
+  voiceUrl?: string
 }
 
 let cache: StudioSettings | null = null
@@ -108,6 +111,8 @@ export function effectiveSettings(): Required<StudioSettings> {
     delegationEnabled: s.delegationEnabled ?? process.env.DELEGATION_ENABLED !== '0',
     delegationMaxAgents: s.delegationMaxAgents ?? Number(process.env.DELEGATION_MAX_AGENTS ?? 6),
     delegationMaxDepth: s.delegationMaxDepth ?? Number(process.env.DELEGATION_MAX_DEPTH ?? 1),
+    voiceEnabled: s.voiceEnabled ?? process.env.VOICE_ENABLED === '1',
+    voiceUrl: s.voiceUrl ?? process.env.VOICE_URL ?? '',
     customTools: s.customTools ?? [],
     ragDefaultModel: s.ragDefaultModel ?? process.env.RAG_DEFAULT_MODEL ?? '',
     ragTopK: s.ragTopK ?? Math.min(Math.max(Number(process.env.RAG_TOP_K) || 6, 1), 20),
@@ -215,6 +220,12 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
       }
     }
     if (body.delegationEnabled !== undefined) next.delegationEnabled = !!body.delegationEnabled
+    if (body.voiceEnabled !== undefined) next.voiceEnabled = !!body.voiceEnabled
+    if (body.voiceUrl !== undefined) {
+      const u = String(body.voiceUrl).trim().replace(/\/+$/, '')
+      if (u && !/^https?:\/\//.test(u)) throw new KbError(400, 'voice URL must be http(s)')
+      next.voiceUrl = u || undefined
+    }
     if (body.delegationMaxAgents !== undefined) {
       const n = Number(body.delegationMaxAgents)
       if (!Number.isFinite(n) || n < 1 || n > 24) throw new KbError(400, 'agents must be 1 to 24')

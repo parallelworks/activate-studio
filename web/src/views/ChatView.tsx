@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useEffectiveTheme } from '../theme'
 import { SlashPalette } from '../components/SlashPalette'
 import { NextUp } from '../components/NextUp'
+import { VoiceOverlay } from '../components/VoiceOverlay'
 import { rememberHash } from '../lastLocation'
 import {
   ChatProvider, ChatLayout, ChatThread, ChatEmptyState, AttachmentManager, useChat,
@@ -94,6 +95,7 @@ export function ChatView() {
   const adapter = useMemo(() => createStudioAdapter(), [])
   const [credNote, setCredNote] = useState<string | null>(null)
   const effectiveTheme = useEffectiveTheme()
+  const [voiceOpen, setVoiceOpen] = useState(false)
   const [vocab, setVocab] = useState<{ tag: string; count: number }[]>([])
   const [scope, setScope] = useState<Set<string>>(new Set())
   const [chatFilter, setChatFilterState] = useState<'all' | 'mine'>(getChatListFilter())
@@ -379,6 +381,7 @@ export function ChatView() {
           {activeId && !showAttachments && <ConversationScrubber />}
           {!showAttachments && <SlashPalette canvas={canvasRef} />}
           {!showAttachments && <NextUp canvas={canvasRef} />}
+          {voiceOpen && cfg.features?.voice?.url && <VoiceOverlay url={cfg.features.voice.url} onClose={() => setVoiceOpen(false)} />}
           {railOpen && <div className="chat-rail-backdrop" onClick={() => setRailOpen(false)} />}
           <div className="chat-think-handle" onMouseDown={onThinkDrag} title="Drag to resize the activity panel" />
           {multiUser && sharedHistory && !showAttachments && (
@@ -391,6 +394,12 @@ export function ChatView() {
             </button>
           )}
           <div className="chat-controls">
+            {cfg.features?.voice?.enabled && (
+              <button className="scope-btn voice-btn" title="Talk with the assistant (feature preview)" onClick={() => setVoiceOpen(true)}>
+                <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.4"><rect x="5.5" y="1.5" width="5" height="8" rx="2.5"/><path d="M3 7.5a5 5 0 0 0 10 0M8 12.5v2M5.5 14.5h5"/></svg>
+                <span className="persona-label">Voice</span>
+              </button>
+            )}
             {(
               <div className={`chat-persona-anchor ${personaOpen ? 'open' : ''}`}>
                 <button

@@ -67,6 +67,10 @@ Everything added becomes searchable in about a second.
 - Add by URL: web pages are reduced to text with the source recorded; PDFs saved as-is.
 - Files that arrive outside the interface are picked up by the background sync within minutes, or immediately with **sync now**.
 
+## Feature previews
+
+Capabilities a deployment can switch on under Settings, "Feature previews". **Voice conversations** put a Voice button above the chat that opens a live back-and-forth with the assistant: it listens, decides when you have finished a thought, answers in spoken sentences, and can be interrupted. It runs on a separate Unmute deployment (the `unmute` workflow) whose model is this Studio's own assistant, with its tools and knowledge base, so it can look things up and launch work while you talk.
+
 ## Stats
 
 Corpus health at a glance, and every element is a shortcut: storage rows and label pills open a prefilled query listing the matching files, largest and recently-changed rows open in the viewer, and the activity card tracks conversations, exported transcripts, and attachments.

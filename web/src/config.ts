@@ -16,6 +16,7 @@ export interface AppConfig {
   bannerColor: string
   /** Draw it even inside the platform frame, which shows its own. */
   bannerWhenEmbedded: boolean
+  features?: { voice?: { enabled: boolean; url: string } }
   user: { id: string; username: string; name?: string }
   loaded: boolean
   /** True when the name and icon came from the previous visit, so the header
