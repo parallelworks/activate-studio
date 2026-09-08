@@ -723,9 +723,11 @@ export function SettingsView() {
               </div>
               <p className="muted view-sub">
                 Unmute (Kyutai, MIT) wraps a text model with streaming speech recognition, semantic turn-taking, and speech
-                synthesis. Deploy it with the <code>unmute</code> workflow pointed at this Studio's <code>/v1</code> endpoint
-                and the <code>studio-voice</code> model, which is the assistant with its tools and grounding, answering in
-                spoken sentences. Then put the deployment's session URL here; a Voice button appears above the chat.
+                synthesis. Only the speech services need a GPU; the model that does the talking is a configuration value.
+                Deploy it with the <code>unmute</code> workflow pointed at this Studio and the <code>studio-voice</code> model,
+                which is the assistant with its tools and knowledge base answering in spoken sentences, with any API model
+                behind it (<code>studio-voice/&lt;gateway-model-id&gt;</code>). Then put the deployment's session URL here;
+                a Voice button appears above the chat.
               </p>
               <label className="field-label">Unmute session URL</label>
               <input className="field" value={form.voiceUrl} placeholder="https://unmute.example" onChange={e => setForm({ ...form, voiceUrl: e.target.value })} />
