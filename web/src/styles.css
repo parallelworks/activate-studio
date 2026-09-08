@@ -821,10 +821,20 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .chat-scope-anchor, .chat-persona-anchor { position: relative; height: auto; }
 .chat-persona-anchor .scope-menu { right: 0; }
 @media (max-width: 760px) {
-  /* No room for both beside the model picker; the persona label drops to
-     its icon and the pair tucks tighter. */
-  .chat-persona-anchor .scope-btn { padding: 4px 7px; }
-  .chat-persona-anchor .scope-btn span.persona-label { display: none; }
+  /* These controls float over the package's own header, which holds the
+     model picker. On a phone the picker is wide enough to run under them,
+     so every label drops to its icon and the picker is given a ceiling and
+     allowed to truncate. The selector reaches into the package's markup,
+     which is why it is written defensively: if the class ever changes the
+     rule simply stops applying and the labels stay hidden. */
+  .chat-controls { gap: 4px; top: 10px; right: 10px; }
+  .chat-controls .scope-btn { padding: 4px 7px; }
+  .chat-controls .scope-btn span { display: none; }
+  .chat-canvas main [class*="border-b"] button[class*="min-w-"] {
+    min-width: 0 !important;
+    max-width: calc(100vw - 190px);
+    overflow: hidden;
+  }
 }
 /* ---- Activity (thinking) drawer: the package renders it as a fixed 400px
    right panel. Our width variable overrides it so the drag handle below can
@@ -1270,6 +1280,15 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
   background: var(--empty-brand-icon) center / contain no-repeat;
 }
 
+/* Voice preview: a small panel, since the session opens in its own tab. */
+.voice-panel {
+  position: absolute; z-index: 40; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: min(440px, calc(100vw - 32px)); padding: 18px 20px;
+  box-shadow: 0 12px 32px rgba(16, 24, 40, 0.24);
+}
+.voice-panel h3 { margin: 0 0 10px; font-size: 13px; font-weight: 650; color: var(--pw-navy); }
+[data-theme='dark'] .voice-panel h3 { color: var(--pw-text); }
+
 /* Voice preview: Unmute's interface over the chat. */
 .voice-overlay { position: absolute; inset: 0; z-index: 40; display: flex; flex-direction: column; background: #000; }
 .voice-overlay-bar { display: flex; align-items: center; gap: 12px; padding: 8px 12px; background: var(--pw-panel); border-bottom: 1px solid var(--pw-border); }
@@ -1671,6 +1690,31 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
   .ov-bar-value { grid-column: 1 / -1; text-align: right; }
   .hist-view { grid-template-columns: 1fr; grid-template-areas: "head" "tiles" "main" "rail"; }
   .viewer-body { padding: 12px 14px; }
+  /* Settings and Help are a 220px section rail beside a scrolling
+     article. On a phone that rail eats most of the width and, with the
+     page no longer scrolling, the article had nowhere to go: the page
+     looked stuck. The rail becomes a horizontal strip of section chips
+     above the article, and the article keeps the scrolling, which is
+     what it does at every width. */
+  .help-docs { flex-direction: column; }
+  .help-nav {
+    width: auto; flex: 0 0 auto; flex-direction: row; gap: 6px;
+    border-right: 0; border-bottom: 1px solid var(--pw-border);
+    padding: 8px 10px; overflow-x: auto; overflow-y: hidden;
+    scrollbar-width: none;
+  }
+  .help-nav::-webkit-scrollbar { display: none; }
+  .help-nav-head { display: none; }
+  .help-nav button { white-space: nowrap; flex: 0 0 auto; }
+  .help-content, .settings-content { padding: 14px 14px 32px; min-height: 0; }
+  .settings-view { padding: 8px; }
+  /* Every view scrolls inside itself now that the page cannot: a view
+     whose own content is taller than the screen was simply clipped. */
+  .view > * { min-height: 0; }
+  .overview-view, .help-content, .settings-content, .query-view, .hist-view {
+    overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
+  }
+  .query-view, .hist-view { overflow-y: auto; }
   /* The library's resizable rail stacks above the listing; a drag divider
      makes no sense stacked, and the rail's inline width from a desktop
      resize must not survive the rotation. */
