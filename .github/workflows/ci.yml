@@ -39,3 +39,23 @@ jobs:
         run: |
           pnpm --filter @activate-studio/server --prod deploy --legacy /tmp/deploy-check
           node testdata/check-packaging.mjs /tmp/deploy-check
+
+  macos:
+    # The Studio is expected to run from source on a laptop, and macOS is
+    # where that claim rots quietly: a Linux-only assumption in the server
+    # or a tool that exists only under apt shows up here and nowhere else.
+    # GUFI is not built in this job, which takes far longer than the tests
+    # and has its own upstream CI; what is checked is that the server and
+    # web build and the suite passes on macOS.
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: pnpm/action-setup@v4
+      - name: install extraction tools
+        run: brew install tesseract poppler
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm test
