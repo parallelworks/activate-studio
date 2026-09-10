@@ -1,0 +1,89 @@
+# Build GUFI on a clean macOS runner and exercise the pieces the Studio
+# depends on. Run by hand rather than on every push: the AI dependency path
+# compiles llama.cpp and takes far longer than the test suite.
+#
+# What this answers that a local build cannot: whether GUFI builds and its
+# vector stack works on a machine nobody has configured, which is the state
+# a new Mac user is in.
+name: gufi-macos
+
+on:
+  workflow_dispatch:
+    inputs:
+      gufi_ref:
+        description: GUFI branch, tag, or commit
+        default: main
+      dep_ai:
+        description: Build the AI dependencies (sqlite-vec and sqlite-lembed)
+        type: boolean
+        default: true
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: build GUFI
+        env:
+          GUFI_SRC: ${{ github.workspace }}/gufi-src
+          GUFI_PREFIX: ${{ github.workspace }}/gufi
+          GUFI_AI: ${{ inputs.dep_ai && '1' || '0' }}
+        run: |
+          set -x
+          git clone https://github.com/mar-file-system/GUFI "$GUFI_SRC"
+          git -C "$GUFI_SRC" checkout "${{ inputs.gufi_ref }}"
+          indexer/setup_gufi.sh
+
+      - name: what got built
+        run: |
+          ls "${{ github.workspace }}/gufi/bin"
+          "${{ github.workspace }}/gufi/bin/gufi_query" -H 2>&1 | head -20 || true
+
+      - name: index a tree and query it
+        run: |
+          set -e
+          BIN="${{ github.workspace }}/gufi/bin"
+          mkdir -p corpus/notes
+          printf 'the index is a tree of per-directory databases\n' > corpus/notes/design.txt
+          printf 'nothing to do with the other file\n' > corpus/unrelated.md
+          "$BIN/gufi_dir2index" -x corpus idx
+          "$BIN/gufi_query" -d ' ' -E "SELECT name, size FROM vrpentries;" idx/corpus
+
+      - name: embed a phrase and search vectors
+        if: ${{ inputs.dep_ai }}
+        run: |
+          set -e
+          BIN="${{ github.workspace }}/gufi/bin"
+          MODEL="$(find "${{ github.workspace }}" -name 'minilm384.gguf' | head -1)"
+          test -n "$MODEL"
+          # The pattern the Studio uses: load the model, embed the question
+          # with lembed, store document vectors in a vec0 table, and take the
+          # nearest by distance.
+          "$BIN/gufi_sqlite3" <<SQL
+          .bail on
+          INSERT INTO temp.lembed_models(name, model) SELECT 'm', lembed_model_from_file('$MODEL');
+          CREATE VIRTUAL TABLE v USING vec0(id INTEGER PRIMARY KEY, fp384 float[384]);
+          INSERT INTO v(id, fp384) VALUES
+            (1, lembed('m', 'a tree of per-directory databases holding file metadata')),
+            (2, lembed('m', 'a recipe for lemon cake'));
+          CREATE TABLE q AS SELECT lembed('m', 'how is the file index laid out') AS e;
+          SELECT id, distance FROM v WHERE fp384 MATCH (SELECT e FROM q) ORDER BY distance LIMIT 2;
+          SQL
+
+      - name: the Studio against that index
+        run: |
+          set -e
+          corepack enable
+          pnpm install --frozen-lockfile
+          pnpm build
+          GUFI_PREFIX="${{ github.workspace }}/gufi" \
+          KB_ROOT="${{ github.workspace }}/corpus" \
+          INDEX_BASE="${{ github.workspace }}/studio-index" \
+            node -e "
+              process.env.PATH = process.env.GUFI_PREFIX + '/bin:' + process.env.PATH
+              const { gufiAvailable } = await import('./server/dist/config.js')
+              const { vectorsAvailable } = await import('./server/dist/gufi.js')
+              console.log('gufi found:', gufiAvailable(), '| vectors:', vectorsAvailable())
+            " || true
