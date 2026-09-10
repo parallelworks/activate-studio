@@ -54,11 +54,19 @@ Environment: `KB_ROOT` (corpus directory), `KB_LABEL`, `APP_NAME`, `APP_ICON` (p
 ## Running on macOS
 
 The server and web app run from source on macOS the same way as the
-standalone quick start above; the Linux-specific pieces are optional.
-GUFI does not build on macOS, and the app runs without it: browsing,
-grep search, chat, and viewers all work, while the indexed search and
-query surfaces answer with empty results and a note until an index
-exists. Document
+standalone quick start above, and `indexer/setup_gufi.sh` builds GUFI
+there too: it installs the Homebrew toolchain that GUFI's own macOS CI
+uses (LLVM rather than Apple clang, libomp, and the GNU utilities its
+scripts expect) and configures the build against them.
+
+GUFI's AI dependencies, `sqlite-vec` and `sqlite-lembed` with
+llama.cpp, are what semantic search needs and are also the hard part of
+the build on macOS. They are on by default; `GUFI_AI=0
+indexer/setup_gufi.sh` skips them for a quick build that keeps
+metadata, filename, and full-text search and loses only the semantic
+blend. The app also runs with no index at all: browsing, grep search,
+chat, and viewers work, while the indexed search and query surfaces
+answer with empty results and a note until an index exists. Document
 extraction and previews use whatever tools are present: `brew install
 --cask libreoffice` provides `soffice` for DOCX/PPTX previews, and
 Word, PowerPoint, Excel and PDF files extract to Markdown through
