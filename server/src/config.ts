@@ -3,8 +3,16 @@ import fs from 'node:fs'
 import os from 'node:os'
 import { execFileSync } from 'node:child_process'
 
-export const KB_ROOT = process.env.KB_ROOT ?? '/data/knowledge-base'
 export const PROJECT_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', '..')
+export const KB_ROOT = process.env.KB_ROOT ?? ((): string => {
+  // Deployments always set KB_ROOT; the fallback is for someone running from
+  // a clone on their own machine, where /data is a Linux server convention
+  // that does not exist and cannot be created without root. A directory
+  // beside the code works everywhere and is seeded on first start.
+  const server = '/data/knowledge-base'
+  if (fs.existsSync(server)) return server
+  return path.join(PROJECT_ROOT, 'knowledge-base')
+})()
 export const INDEX_BASE = process.env.INDEX_BASE ?? path.join(PROJECT_ROOT, 'index')
 // gufi_dir2index mirrors the source tree under INDEX_BASE/gufi/<basename of KB_ROOT>
 export const GUFI_INDEX = path.join(INDEX_BASE, 'gufi', path.basename(KB_ROOT))

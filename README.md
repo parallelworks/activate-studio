@@ -44,35 +44,24 @@ flowchart LR
 ```
 pnpm install
 pnpm build
-indexer/setup_gufi.sh                          # one-time: GUFI toolchain + embedding model
+indexer/setup_gufi.sh                          # one-time: GUFI toolchain + embedding model (GUFI_AI=0 to skip the vector extensions)
 KB_ROOT=/path/to/corpus indexer/reindex.sh     # first index build
 KB_ROOT=/path/to/corpus node server/dist/main.js   # http://localhost:4080
 ```
 
-Environment: `KB_ROOT` (corpus directory), `KB_LABEL`, `APP_NAME`, `APP_ICON` (path to a brand image), `HELP_FILE` (override `docs/HELP.md`), `SUGGESTED_PROMPTS` (JSON array), `APP_USER_ID`/`APP_USERNAME`/`APP_USER_NAME`, `SWEEP_INTERVAL_SEC` (default 300, 0 disables), `ADE_VISION_MODEL` (enables image captioning), `PORT`. A gitignored `.env` in the repo root is the place for deployment-specific values; `deploy/run_endpoint.sh` sources it.
+Environment: `KB_ROOT` (corpus directory; defaults to `/data/knowledge-base` where that exists, otherwise `knowledge-base/` beside the code, seeded on first start), `KB_LABEL`, `APP_NAME`, `APP_ICON` (path to a brand image), `HELP_FILE` (override `docs/HELP.md`), `SUGGESTED_PROMPTS` (JSON array), `APP_USER_ID`/`APP_USERNAME`/`APP_USER_NAME`, `SWEEP_INTERVAL_SEC` (default 300, 0 disables), `ADE_VISION_MODEL` (enables image captioning), `PORT`. A gitignored `.env` in the repo root is the place for deployment-specific values; `deploy/run_endpoint.sh` sources it.
 
 ## Running on macOS
 
-The server and web app run from source on macOS the same way as the
-standalone quick start above, and `indexer/setup_gufi.sh` builds GUFI
-there too: it installs the Homebrew toolchain that GUFI's own macOS CI
-uses (LLVM rather than Apple clang, libomp, and the GNU utilities its
-scripts expect) and configures the build against them.
+The Studio runs from a clone on macOS, and `indexer/setup_gufi.sh`
+builds GUFI there too, using the Homebrew toolchain that GUFI's own
+macOS CI uses. `GUFI_AI=0` skips the vector extensions, which are the
+hard part of that build, and keeps metadata, filename, and full-text
+search. A `macos-15` job in CI builds and runs the suite on every pull
+request.
 
-GUFI's AI dependencies, `sqlite-vec` and `sqlite-lembed` with
-llama.cpp, are what semantic search needs and are also the hard part of
-the build on macOS. They are on by default; `GUFI_AI=0
-indexer/setup_gufi.sh` skips them for a quick build that keeps
-metadata, filename, and full-text search and loses only the semantic
-blend. The app also runs with no index at all: browsing, grep search,
-chat, and viewers work, while the indexed search and query surfaces
-answer with empty results and a note until an index exists. Document
-extraction and previews use whatever tools are present: `brew install
---cask libreoffice` provides `soffice` for DOCX/PPTX previews, and
-Word, PowerPoint, Excel and PDF files extract to Markdown through
-`@giraffesyo/downmark`, bundled with the server, so they need nothing extra
-(tesseract adds OCR for scanned pages). The Apptainer container build below is
-Linux-only.
+Start to finish, including what works before an index exists:
+[`docs/MACOS.md`](docs/MACOS.md).
 
 ## Container build
 
