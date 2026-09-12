@@ -51,6 +51,12 @@ test('a run the platform keeps failing to report is dropped from watching, not p
   let n = 0
   fresh.setRunsCli(async () => { n++; throw new Error('Workflow run not found') })
   fresh.recordRun({ slug: 'gone-1', workflow: 'w' })
-  await sleep(15 * 40)
-  assert.ok(n >= 30 && n <= 34, `stopped after 30 failures (saw ${n})`)
+  // Wait for the give-up point rather than a fixed span: a loaded runner
+  // drifts the interval timer, and a count band around a sleep is exactly
+  // the assertion that flakes there. Then a grace period proves it stopped.
+  const deadline = Date.now() + 10_000
+  while (n < 30 && Date.now() < deadline) await sleep(15)
+  assert.equal(n, 30, `gave up after 30 failures (saw ${n})`)
+  await sleep(15 * 6)
+  assert.equal(n, 30, `no polls after giving up (saw ${n})`)
 })

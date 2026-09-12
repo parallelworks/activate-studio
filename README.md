@@ -73,6 +73,22 @@ Settings, where the tree is probed first. `STUDIO_SECTIONS` chooses which
 parts of the app appear, so a site can run an index viewer with no
 assistant. Details: [`docs/LIBRARIES.md`](docs/LIBRARIES.md).
 
+## Releases and change records
+
+Every version is a tag, and every tag is a GitHub Release whose notes are
+the descriptions of the pull requests it contains; those descriptions are
+written as change notes when the change is made. `CHANGELOG.md` is the
+same record for every version at once. Both come from one script:
+
+```
+node scripts/release-notes.mjs v1.59        # notes for one version
+node scripts/release-notes.mjs --changelog  # regenerate CHANGELOG.md
+```
+
+To cut a release: merge, tag `vX.Y`, push the tag, regenerate the change
+log, and publish with
+`gh release create vX.Y --title vX.Y --notes "$(node scripts/release-notes.mjs vX.Y)"`.
+
 ## Container build
 
 `deploy/app.def` packages the server, web build, GUFI, and the
