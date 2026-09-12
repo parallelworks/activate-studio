@@ -1,3 +1,4 @@
+import { LibrariesSection } from '../components/LibrariesSection'
 import { useEffect, useState } from 'react'
 import { CopyToClipboard, SwitchToggle } from '@parallelworks/ui'
 import { ACCENTS, SURFACES, applyAccent, applySurface } from '../accents'
@@ -70,7 +71,7 @@ const BANNER_PRESETS: { label: string; text: string; color: string }[] = [
   { label: 'Top Secret / SCI', text: '***** TOP SECRET // SCI *****', color: '#fce83a' },
 ]
 
-type SectionId = 'general' | 'access' | 'tools' | 'rag' | 'ext'
+type SectionId = 'general' | 'access' | 'tools' | 'rag' | 'ext' | 'libraries'
 
 /** Dropdown over the live model catalog; a saved value not in the catalog
  *  stays selectable so settings never silently break. */
@@ -274,6 +275,7 @@ export function SettingsView() {
     { id: 'rag', label: 'External access' },
     { id: 'tools', label: 'Assistant tools' },
     { id: 'ext', label: 'Extensions' },
+    { id: 'libraries', label: 'Libraries' },
   ]
 
   const saveRow = (reload = true) => (
@@ -952,6 +954,7 @@ export function SettingsView() {
             </>
           )}
 
+          {section === 'libraries' && <LibrariesSection />}
           {section === 'ext' && (
             <>
               <h1>Extensions</h1>

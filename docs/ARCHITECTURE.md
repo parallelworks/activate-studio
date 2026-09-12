@@ -8,6 +8,8 @@ GUFI represents a filesystem as a parallel tree of SQLite databases. `gufi_dir2i
 
 The index lives at `$INDEX_BASE/gufi/<basename of KB_ROOT>/`, where `INDEX_BASE` defaults to `index/` beside the code and is usually pointed at durable storage instead. That extra level is the one `gufi_dir2index` adds for the source directory, and both the full rebuild (`indexer/reindex.sh`) and the server's incremental passes write into it; flattening it leaves a rebuilt index the server never reads. Alongside the tree, `INDEX_BASE` holds the extract cache, rendered PDF pages, settings, the credential vault, saved queries, conversations, and the embedding model, so a deployment can rebuild its working directory without losing state. The build excludes `.git`, `node_modules`, `.venv`, `__pycache__`, `dist`, `build`, caches, screenshots, and dot-directories via a `--skip-file`.
 
+That index is the primary library. The server can mount others read only, each a GUFI tree with an optional source root, addressed by a `library` parameter that defaults to the primary; `server/src/libraries.ts` holds the registry and the probe, and `docs/LIBRARIES.md` describes the behavior.
+
 Two properties of this design determine the rest of the system:
 
 - Queries fan out per directory. `gufi_query` walks the index breadth-first with a thread pool and runs your SQL against every `db.db` independently, so a corpus-wide query is hundreds of small local queries.

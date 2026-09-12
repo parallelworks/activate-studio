@@ -19,11 +19,12 @@ export class KbError extends Error {
   constructor(public status: number, message: string) { super(message) }
 }
 
-/** Resolve a client-supplied relative path safely inside KB_ROOT. */
-export function resolveKb(rel: string): string {
+/** Resolve a client-supplied relative path safely inside a corpus root, the
+ * knowledge base unless a library's own source root is given. */
+export function resolveKb(rel: string, base: string = KB_ROOT): string {
   const cleaned = rel.replace(/^\/+/, '')
-  const abs = path.resolve(KB_ROOT, cleaned)
-  if (abs !== KB_ROOT && !abs.startsWith(KB_ROOT + path.sep)) {
+  const abs = path.resolve(base, cleaned)
+  if (abs !== base && !abs.startsWith(base + path.sep)) {
     throw new KbError(400, 'path escapes the knowledge base root')
   }
   return abs
@@ -47,8 +48,8 @@ export function excluded(name: string, isDir: boolean): boolean {
   return EXCLUDE_FILE_SUFFIXES.some(s => name.toLowerCase().endsWith(s))
 }
 
-export async function listDir(rel: string): Promise<KbEntry[]> {
-  const abs = resolveKb(rel)
+export async function listDir(rel: string, base: string = KB_ROOT): Promise<KbEntry[]> {
+  const abs = resolveKb(rel, base)
   let dirents
   try {
     dirents = await fs.readdir(abs, { withFileTypes: true })
@@ -71,7 +72,7 @@ export async function listDir(rel: string): Promise<KbEntry[]> {
     try { st = await fs.stat(p) } catch { continue }
     out.push({
       name: d.name,
-      path: path.relative(KB_ROOT, p),
+      path: path.relative(base, p),
       type: d.isDirectory() ? 'dir' : 'file',
       size: st.size,
       mtime: Math.floor(st.mtimeMs / 1000),
@@ -112,8 +113,8 @@ export interface FileContent {
   format?: 'markdown' | 'text'
 }
 
-export async function readFileContent(rel: string): Promise<FileContent> {
-  const abs = resolveKb(rel)
+export async function readFileContent(rel: string, root: string = KB_ROOT): Promise<FileContent> {
+  const abs = resolveKb(rel, root)
   const st = await fs.stat(abs)
   if (st.isDirectory()) throw new KbError(400, 'path is a directory')
   const kind = classify(abs, false)

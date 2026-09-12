@@ -1,3 +1,4 @@
+import type { PublicLibrary } from './api'
 import { useEffect, useState } from 'react'
 
 export interface AppConfig {
@@ -17,6 +18,10 @@ export interface AppConfig {
   /** Draw it even inside the platform frame, which shows its own. */
   bannerWhenEmbedded: boolean
   features?: { voice?: { enabled: boolean; url: string } }
+  /** Every mounted library, primary first. */
+  libraries?: PublicLibrary[]
+  /** Which sections the app shows; unset means all. */
+  sections?: string[]
   user: { id: string; username: string; name?: string }
   loaded: boolean
   /** True when the name and icon came from the previous visit, so the header
@@ -120,6 +125,8 @@ export function useAppConfig(): AppConfig {
           bannerWhenEmbedded: !!d.bannerWhenEmbedded,
           user: d.user?.id ? (d.user as AppConfig['user']) : DEFAULTS.user,
           features: d.features ?? undefined,
+          libraries: Array.isArray(d.libraries) ? d.libraries : undefined,
+          sections: Array.isArray(d.sections) && d.sections.length ? d.sections : undefined,
           loaded: true,
         }
         rememberBrand(cached)

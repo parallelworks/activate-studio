@@ -1,6 +1,6 @@
 import { ReactElement, Suspense, lazy, useEffect, useRef, useState } from 'react'
 import { Streamdown } from 'streamdown'
-import { api, FileContent } from '../api'
+import { api, withLibrary, FileContent } from '../api'
 import { forgetHash } from '../lastLocation'
 import { TagMenu } from './TagMenu'
 const ModelViewer = lazy(() => import('./ModelViewer').then(m => ({ default: m.ModelViewer })))
@@ -27,7 +27,7 @@ function PdfPages({ path, markdown }: { path: string; markdown: boolean }) {
     setPages(null)
     setError(null)
     setFallbackText(null)
-    fetch(`/api/kb/pdf-info?path=${encodeURIComponent(path)}`)
+    fetch(withLibrary(`/api/kb/pdf-info?path=${encodeURIComponent(path)}`))
       .then(r => (r.ok ? r.json() : r.json().then((d: { error?: string }) => Promise.reject(new Error(d.error ?? `${r.status}`)))))
       .then(d => setPages(d.pages))
       .catch(async e => {
@@ -35,7 +35,7 @@ function PdfPages({ path, markdown }: { path: string; markdown: boolean }) {
         // A host without LibreOffice cannot render office pages, but the
         // extracted text is already indexed; show that instead of a wall.
         try {
-          const f = await fetch(`/api/kb/file?path=${encodeURIComponent(path)}`).then(r => (r.ok ? r.json() : null))
+          const f = await fetch(withLibrary(`/api/kb/file?path=${encodeURIComponent(path)}`)).then(r => (r.ok ? r.json() : null))
           if (f?.content?.trim()) setFallbackText(f.content)
         } catch { /* no fallback available */ }
       })

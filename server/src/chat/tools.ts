@@ -7,6 +7,7 @@ import path from 'node:path'
 import { gufiAvailable, isMissingCli, KB_ROOT, MAX_PREVIEW_BYTES, NO_CLI_MESSAGE, PROJECT_ROOT, PW_CLI } from '../config.js'
 import { listDir, readFileContent, KbError } from '../kb.js'
 import { blendHits, searchFts, searchNames, searchVector } from '../gufi.js'
+import { getLibrary } from '../libraries.js'
 import { annotateHits } from '../tags.js'
 import { effectiveSettings } from '../settings.js'
 import { composeWorkflows } from '../workflowCompose.js'
@@ -937,10 +938,22 @@ export interface ToolOutcome {
 // Per-invocation context (caller's own platform key for pw CLI executions)
 // travels via AsyncLocalStorage so nested helpers stay signature-stable and
 // concurrent tool calls from different users cannot cross-contaminate.
-const toolContext = new AsyncLocalStorage<{ userKey: string | null; conversationId?: string | null; userId?: string | null }>()
+const toolContext = new AsyncLocalStorage<{ userKey: string | null; conversationId?: string | null; userId?: string | null; library?: string | null }>()
 
-export async function executeTool(name: string, argsJson: string, ctx?: { labelScope?: string[]; userKey?: string | null; model?: string | null; conversationId?: string | null; userId?: string | null }): Promise<ToolOutcome> {
-  return toolContext.run({ userKey: ctx?.userKey ?? null, conversationId: ctx?.conversationId ?? null, userId: ctx?.userId ?? null }, () => executeToolImpl(name, argsJson, ctx))
+export async function executeTool(name: string, argsJson: string, ctx?: { labelScope?: string[]; userKey?: string | null; model?: string | null; library?: string | null; conversationId?: string | null; userId?: string | null }): Promise<ToolOutcome> {
+  return toolContext.run({ userKey: ctx?.userKey ?? null, conversationId: ctx?.conversationId ?? null, userId: ctx?.userId ?? null, library: ctx?.library ?? null }, () => executeToolImpl(name, argsJson, ctx))
+}
+
+// The library a tool call reads from: the primary unless the conversation
+// named one. A library without files on this host can be searched but its
+// files cannot be opened, and the tool says so instead of failing oddly.
+function toolLibrary() {
+  return getLibrary(toolContext.getStore()?.library ?? null)
+}
+function toolSourceRoot(): string {
+  const lib = toolLibrary()
+  if (!lib.sourceRoot) throw new Error(`${lib.label} has no files on this host; it can be searched but not read`)
+  return lib.sourceRoot
 }
 
 async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScope?: string[]; userKey?: string | null; model?: string | null }): Promise<ToolOutcome> {
@@ -953,9 +966,9 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
         const limit = Math.min(Number(args.limit) || 10, 25)
         if (gufiAvailable()) {
           const [fts, names, vec] = await Promise.all([
-            searchFts(query, limit),
-            searchNames(query, 5),
-            searchVector(query, Math.min(limit, 8)).catch(() => []),
+            searchFts(query, limit, toolLibrary().indexRoot).catch(() => []),
+            searchNames(query, 5, toolLibrary().indexRoot),
+            searchVector(query, Math.min(limit, 8), toolLibrary().indexRoot).catch(() => []),
           ])
           // A conversation-level label scope is enforced here regardless of
           // what the model asked for; model-requested tags narrow further
@@ -979,7 +992,7 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
       case 'read_kb_file': {
         const rel = String(args.path ?? '')
         const offset = Math.max(0, Number(args.offset) || 0)
-        const fc = await readFileContent(rel)
+        const fc = await readFileContent(rel, toolSourceRoot())
         if (fc.content == null) {
           return { result: `Binary file (${fc.kind}, ${fc.size} bytes); no text available.`, summary: 'binary' }
         }
@@ -989,7 +1002,7 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
         return { result: slice + more, summary: `${slice.length} chars (${fc.source})` }
       }
       case 'list_kb_dir': {
-        const entries = await listDir(String(args.path ?? ''))
+        const entries = await listDir(String(args.path ?? ''), toolSourceRoot())
         const result = entries.map(e => `${e.type === 'dir' ? 'd' : '-'} ${e.path}${e.type === 'dir' ? '/' : ` (${e.size}b)`}`).join('\n')
         return { result: result || '(empty)', summary: `${entries.length} entries` }
       }

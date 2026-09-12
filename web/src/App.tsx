@@ -1,5 +1,6 @@
 import { ReactElement, Suspense, lazy, useEffect, useRef, useState } from 'react'
 import { buildOpenHash, parseOpenHash } from './nav'
+import { currentLibrary, setLibrary } from './api'
 import { rememberHash } from './lastLocation'
 import { ChatView } from './views/ChatView'
 import { DagViewer } from './components/DagViewer'
@@ -18,7 +19,7 @@ import { useAppConfig } from './config'
 import { applyAccent, applySurface } from './accents'
 
 type ViewId = 'chat' | 'library' | 'search' | 'query' | 'overview' | 'history' | 'agents' | 'settings' | 'help'
-export type Display = { kind: 'file'; target: string; q?: string } | { kind: 'workflow_dag'; target: string }
+export type Display = { kind: 'file'; target: string; q?: string; lib?: string } | { kind: 'workflow_dag'; target: string }
 
 // The destinations that keep a spot in the phone bottom bar; the rest
 // move into the More sheet.
@@ -77,6 +78,16 @@ export default function App() {
   const [display, setDisplay] = useState<Display | null>(null)
   const [navCollapsed, setNavCollapsed] = useState(() => localStorage.getItem('ade-nav-collapsed') === '1')
   const cfg = useAppConfig()
+  // A deployment can leave sections out, which is how the Studio becomes an
+  // index viewer with no assistant. Settings and Help always stay reachable.
+  const allowed = (id: ViewId) => !cfg.sections || cfg.sections.includes(id) || id === 'settings' || id === 'help'
+  useEffect(() => {
+    if (cfg.loaded && !allowed(view)) {
+      const first = NAV.find(i => allowed(i.id))
+      if (first) setView(first.id)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cfg.loaded, cfg.sections])
 
   const [theme, setTheme] = useState<'light' | 'dark' | null>(() => {
     const t = localStorage.getItem('ade-theme')
@@ -153,6 +164,7 @@ export default function App() {
   useEffect(() => {
     const applyHash = () => {
       const opened = parseOpenHash(location.hash)
+      if (opened?.kind === 'file' && opened.lib && opened.lib !== currentLibrary()) setLibrary(opened.lib)
       if (opened) {
         setDisplay(opened)
         setView('library')
@@ -176,6 +188,7 @@ export default function App() {
       const a = (e.target as HTMLElement).closest?.('a[href*="#open="], a[href*="#view="]') as HTMLAnchorElement | null
       const href = a?.getAttribute('href') ?? ''
       const opened = parseOpenHash(href.slice(href.indexOf('#open=')))
+      if (opened?.kind === 'file' && opened.lib && opened.lib !== currentLibrary()) setLibrary(opened.lib)
       if (opened) {
         e.preventDefault()
         e.stopPropagation()
@@ -226,7 +239,11 @@ export default function App() {
   // A search result opens with the query it matched, so the viewer can
   // land on the match instead of the top of the file.
   const openFile = (path: string, q?: string) => {
-    setDisplay(q ? { kind: 'file', target: path, q } : { kind: 'file', target: path })
+    const lib = currentLibrary()
+    const d: Display = { kind: 'file', target: path }
+    if (q) d.q = q
+    if (lib !== 'kb') d.lib = lib
+    setDisplay(d)
     setView('library')
   }
 
@@ -290,7 +307,7 @@ export default function App() {
           </button>
         </div>
         <div className="sidenav-items">
-          {NAV.filter(i => i.id !== 'settings' && i.id !== 'help').map(item => (
+          {NAV.filter(i => i.id !== 'settings' && i.id !== 'help' && allowed(i.id)).map(item => (
             <button
               key={item.id}
               className={`sidenav-item ${view === item.id ? 'active' : ''}${MOBILE_PRIMARY.has(item.id) ? '' : ' mob-hide'}`}
@@ -320,7 +337,7 @@ export default function App() {
           <>
             <div className="scope-overlay" onClick={() => setMoreOpen(false)} />
             <div className="nav-more-sheet card">
-              {NAV.filter(i => !MOBILE_PRIMARY.has(i.id)).map(item => (
+              {NAV.filter(i => !MOBILE_PRIMARY.has(i.id) && allowed(i.id)).map(item => (
                 <button
                   key={item.id}
                   className={`sidenav-item ${view === item.id ? 'active' : ''}`}

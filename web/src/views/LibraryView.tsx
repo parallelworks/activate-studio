@@ -1,3 +1,6 @@
+import { LibrarySwitch, libraryWritable } from '../components/LibrarySwitch'
+import { currentLibrary, onLibraryChange } from '../api'
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Display } from '../App'
 import { api } from '../api'
@@ -126,6 +129,11 @@ export function LibraryView({ display, onDisplay }: {
   }
   const drag = useRef<{ startX: number; startWidth: number } | null>(null)
   const cfg = useAppConfig()
+  // Switching library re-reads the tree and clears whatever was open,
+  // since a path only means something inside its own library.
+  const [libId, setLibId] = useState(currentLibrary())
+  useEffect(() => onLibraryChange(id => { setLibId(id); setRefreshKey(k => k + 1); onDisplay(null) }), [onDisplay])
+  const writable = libraryWritable(cfg.libraries, libId)
 
   useEffect(() => { localStorage.setItem('ade-rail-width', String(railWidth)) }, [railWidth])
   useEffect(() => { localStorage.setItem('ade-rail-collapsed', railCollapsed ? '1' : '0') }, [railCollapsed])
@@ -351,7 +359,7 @@ export function LibraryView({ display, onDisplay }: {
       className={`library ${dropOver ? 'drop-over' : ''}`}
       onDragOver={e => { e.preventDefault(); setDropOver(true) }}
       onDragLeave={() => setDropOver(false)}
-      onDrop={e => { e.preventDefault(); setDropOver(false); void uploadTo(targetDir, e.dataTransfer.items) }}
+      onDrop={e => { e.preventDefault(); setDropOver(false); if (writable) void uploadTo(targetDir, e.dataTransfer.items) }}
     >
       <div className="library-card card">
         {railCollapsed ? (
@@ -362,7 +370,9 @@ export function LibraryView({ display, onDisplay }: {
           <>
             <aside ref={railRef} className="library-rail" style={{ width: railWidth }}>
               <div className="rail-head" title={cfg.kbLabel}>
-                <span className="rail-title">Library</span>
+                {cfg.libraries && cfg.libraries.length > 1
+                  ? <LibrarySwitch libraries={cfg.libraries} />
+                  : <span className="rail-title">Library</span>}
                 <span className="rail-actions">
                   <button
                     className={`rail-collapse select-toggle ${showLabels ? 'active' : ''}`}
@@ -448,7 +458,7 @@ export function LibraryView({ display, onDisplay }: {
                 rootLabel={cfg.kbLabel}
                 multiSelected={multiSel}
                 onToggleMulti={toggleMulti}
-                onDropInto={(dir, items) => void uploadTo(dir, items)}
+                onDropInto={(dir, items) => { if (writable) void uploadTo(dir, items) }}
                 onSelectRange={selectRange}
                 onMoveInto={(dir, paths) => void moveInto(dir, paths)}
                 onLabel={p => { setMultiSel(new Set([p])); setTagMenuOpen(true); setSelectMode(true) }}
@@ -568,7 +578,7 @@ export function LibraryView({ display, onDisplay }: {
             {!ctx.isDir && (
               <button onClick={() => { onDisplay({ kind: 'file', target: ctx.path }); closeCtx() }}>Open</button>
             )}
-            {ctx.isDir && (ctxNewDir === null ? (
+            {writable && ctx.isDir && (ctxNewDir === null ? (
               <button onClick={() => setCtxNewDir('')}>New folder</button>
             ) : (
               <div className="ctx-input">
@@ -583,7 +593,7 @@ export function LibraryView({ display, onDisplay }: {
                 <button className="btn-secondary" disabled={ctxBusy || !ctxNewDir.trim()} onClick={() => void ctxMakeDir()}>Create</button>
               </div>
             ))}
-            {ctx.path && (ctxRename === null ? (
+            {writable && ctx.path && (ctxRename === null ? (
               <button onClick={() => setCtxRename(ctx.path.split('/').pop() ?? '')}>Rename…</button>
             ) : (
               <div className="ctx-input">

@@ -331,6 +331,23 @@ permissions:
             type: string
             optional: true
             tooltip: One short paragraph on what this Studio is for; injected into the assistant's system prompt and editable later in Settings.
+          libraries:
+            label: Additional Libraries
+            type: string
+            optional: true
+            tooltip: |
+              Other indexes this Studio mounts read only, as a JSON list. Each entry
+              needs an id and an indexRoot (a GUFI tree); a label and a sourceRoot
+              (where the files are, when they are on this host) are optional.
+              Example: [{"id":"scratch","label":"Scratch","indexRoot":"/gufi/scratch"}]
+          sections:
+            label: Visible Sections
+            type: string
+            optional: true
+            tooltip: |
+              Comma-separated list of the sections to show, from chat, library,
+              search, query, overview, history, agents. Leave empty for all of them.
+              "library,search,overview" makes the Studio an index viewer with no assistant.
           build_gufi:
             label: Build GUFI Index Engine
             type: boolean
@@ -930,6 +947,12 @@ jobs:
           if [ -n "${{ inputs.kb_settings.starter_dirs }}" ]; then
             echo "export KB_STARTER_DIRS='${{ inputs.kb_settings.starter_dirs }}'" >> ${SCRIPT}
           fi
+          if [ -n "${{ inputs.kb_settings.libraries }}" ]; then
+            printf 'export STUDIO_LIBRARIES=%q\n' '${{ inputs.kb_settings.libraries }}' >> ${SCRIPT}
+          fi
+          if [ -n "${{ inputs.kb_settings.sections }}" ]; then
+            printf 'export STUDIO_SECTIONS=%q\n' '${{ inputs.kb_settings.sections }}' >> ${SCRIPT}
+          fi
           if [ -n "${{ inputs.app_settings.icon_path }}" ]; then
             echo "export APP_ICON='${{ inputs.app_settings.icon_path }}'" >> ${SCRIPT}
           fi
@@ -1019,6 +1042,8 @@ jobs:
             --env INDEX_BASE="${INDEX_BASE}" --env KB_LABEL="${KB_LABEL}" \
             --env APP_NAME="${APP_NAME}" --env INDEX_ON_START="${INDEX_ON_START}" \
             ${KB_STARTER_DIRS:+--env KB_STARTER_DIRS="${KB_STARTER_DIRS}"} \
+            ${STUDIO_LIBRARIES:+--env STUDIO_LIBRARIES="${STUDIO_LIBRARIES}"} \
+            ${STUDIO_SECTIONS:+--env STUDIO_SECTIONS="${STUDIO_SECTIONS}"} \
             ${BANNER_TEXT:+--env BANNER_TEXT="${BANNER_TEXT}"} \
             ${BANNER_COLOR:+--env BANNER_COLOR="${BANNER_COLOR}"} \
             ${APP_ICON:+--env APP_ICON="${APP_ICON}"} \

@@ -1078,7 +1078,7 @@ ${ctx}` : ctx
         const q = String((lastUserQuestion as WireMessage | undefined)?.content ?? '').trim()
         if (q && q.length > 12) {
           try {
-            const seeded = await executeTool('search_kb', JSON.stringify({ query: q.slice(0, 300) }), { labelScope, userKey: pwToolKey, model: String(body.model ?? '') || null, conversationId: body.conversationId ?? null, userId: req.user?.id ?? null })
+            const seeded = await executeTool('search_kb', JSON.stringify({ query: q.slice(0, 300) }), { labelScope, library: String((body as { library?: string }).library ?? '') || null, userKey: pwToolKey, model: String(body.model ?? '') || null, conversationId: body.conversationId ?? null, userId: req.user?.id ?? null })
             const callId = `seed-${Date.now()}`
             messages.push({ role: 'assistant', content: null, tool_calls: [{ index: 0, id: callId, type: 'function', function: { name: 'search_kb', arguments: JSON.stringify({ query: q.slice(0, 300) }) } }] } as WireMessage)
             messages.push({ role: 'tool', tool_call_id: callId, content: seeded.result } as WireMessage)
@@ -1138,7 +1138,7 @@ ${ctx}` : ctx
                 continue
               }
               try {
-                const out = await executeTool(tc.function.name, tc.function.arguments, { labelScope, userKey: pwToolKey, model: String(body.model ?? '') || null, conversationId: body.conversationId ?? null, userId: req.user?.id ?? null })
+                const out = await executeTool(tc.function.name, tc.function.arguments, { labelScope, library: String((body as { library?: string }).library ?? '') || null, userKey: pwToolKey, model: String(body.model ?? '') || null, conversationId: body.conversationId ?? null, userId: req.user?.id ?? null })
                 toolCache.set(key, out.result)
                 outcomes[i] = out
               } catch (e) {

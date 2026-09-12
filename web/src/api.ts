@@ -1,3 +1,41 @@
+/** A mounted library, as the server describes it. Paths stay on the server. */
+export interface PublicLibrary {
+  id: string
+  label: string
+  primary: boolean
+  writable: boolean
+  pinned: boolean
+  source: boolean
+  caps: { index: boolean; fullText: boolean; vectors: boolean }
+}
+
+// ---- which library requests address ----
+// The primary is 'kb' and is what every request meant before libraries
+// existed, so it is sent as nothing at all. Views read the current library
+// through the helpers below and never build the query string themselves.
+const LIB_KEY = 'ade-library'
+const PRIMARY = 'kb'
+let current: string = (() => { try { return localStorage.getItem(LIB_KEY) || PRIMARY } catch { return PRIMARY } })()
+const listeners = new Set<(id: string) => void>()
+export function currentLibrary(): string { return current }
+export function setLibrary(id: string): void {
+  current = id || PRIMARY
+  try { current === PRIMARY ? localStorage.removeItem(LIB_KEY) : localStorage.setItem(LIB_KEY, current) } catch { /* storage unavailable */ }
+  for (const fn of listeners) fn(current)
+}
+export function onLibraryChange(fn: (id: string) => void): () => void {
+  listeners.add(fn)
+  return () => { listeners.delete(fn) }
+}
+/** Append the current library to a URL that already has a query string, or none. */
+export function withLibrary(url: string): string {
+  if (current === PRIMARY) return url
+  return url + (url.includes('?') ? '&' : '?') + 'library=' + encodeURIComponent(current)
+}
+function withLib<T extends object>(body: T): T & { library?: string } {
+  return current === PRIMARY ? body : { ...body, library: current }
+}
+
 export interface KbEntry {
   name: string
   path: string
@@ -39,7 +77,7 @@ export interface IndexStatus {
 }
 
 async function getJson<T>(url: string): Promise<T> {
-  const res = await fetch(url)
+  const res = await fetch(withLibrary(url))
   if (!res.ok) throw new Error(`${url}: ${res.status}`)
   return res.json() as Promise<T>
 }
@@ -48,7 +86,7 @@ async function postJson<T>(url: string, body: unknown): Promise<T> {
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    body: JSON.stringify(body && typeof body === 'object' ? withLib(body as object) : body),
   })
   const data = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error((data as any).error ?? `${url}: ${res.status}`)
@@ -58,19 +96,19 @@ async function postJson<T>(url: string, body: unknown): Promise<T> {
 export const api = {
   tree: (path: string) => getJson<{ entries: KbEntry[] }>(`/api/kb/tree?path=${encodeURIComponent(path)}`),
   file: (path: string) => getJson<FileContent>(`/api/kb/file?path=${encodeURIComponent(path)}`),
-  downloadUrl: (path: string) => `/api/kb/download?path=${encodeURIComponent(path)}`,
-  rawUrl: (path: string) => `/api/kb/raw?path=${encodeURIComponent(path)}`,
-  pdfUrl: (path: string) => `/api/kb/pdf?path=${encodeURIComponent(path)}`,
+  downloadUrl: (path: string) => withLibrary(`/api/kb/download?path=${encodeURIComponent(path)}`),
+  rawUrl: (path: string) => withLibrary(`/api/kb/raw?path=${encodeURIComponent(path)}`),
+  pdfUrl: (path: string) => withLibrary(`/api/kb/pdf?path=${encodeURIComponent(path)}`),
   deleteFiles: (paths: string[]) =>
     postJson<{ deleted: string[]; skipped: { path: string; reason: string }[]; indexMs: number }>(`/api/kb/delete`, { paths }),
   deleteFile: async (path: string) => {
-    const res = await fetch(`/api/kb/file?path=${encodeURIComponent(path)}`, { method: 'DELETE' })
+    const res = await fetch(withLibrary(`/api/kb/file?path=${encodeURIComponent(path)}`), { method: 'DELETE' })
     const data = await res.json().catch(() => ({}))
     if (!res.ok) throw new Error((data as any).error ?? `delete: ${res.status}`)
     return data as { deleted: string; indexMs: number }
   },
   deleteDir: async (path: string) => {
-    const res = await fetch(`/api/kb/dir?path=${encodeURIComponent(path)}`, { method: 'DELETE' })
+    const res = await fetch(withLibrary(`/api/kb/dir?path=${encodeURIComponent(path)}`), { method: 'DELETE' })
     const data = await res.json().catch(() => ({}))
     if (!res.ok) throw new Error((data as any).error ?? `delete: ${res.status}`)
     return data as { deleted: string }
@@ -97,7 +135,7 @@ export const api = {
       if (f instanceof File) form.append('file', f, f.name)
       else form.append('file', f.file, f.rel)
     }
-    const url = `/api/kb/upload?dir=${encodeURIComponent(dir)}${opts.deferIndex ? '&index=0' : ''}`
+    const url = withLibrary(`/api/kb/upload?dir=${encodeURIComponent(dir)}${opts.deferIndex ? '&index=0' : ''}`)
     // XHR rather than fetch: only XHR reports how much of the body has gone
     // out, which is what makes a large upload legible while it runs.
     return await new Promise<UploadResult>((resolve, reject) => {
@@ -151,6 +189,13 @@ export const api = {
 
   startIndexJob: (dir: string) => postJson<IndexJob>('/api/index/job', { path: dir }),
   indexJob: (id: number) => getJson<IndexJob>(`/api/index/job/${id}`),
+  libraries: () => getJson<{ libraries: PublicLibrary[] }>('/api/libraries'),
+  addLibrary: (def: { id: string; label?: string; indexRoot: string; sourceRoot?: string }) =>
+    postJson<{ library: PublicLibrary }>('/api/libraries', def),
+  removeLibrary: async (id: string) => {
+    const res = await fetch(`/api/libraries/${encodeURIComponent(id)}`, { method: 'DELETE' })
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `remove: ${res.status}`)
+  },
 }
 
 export interface UploadResult { saved: string[]; indexMs?: number; indexed?: boolean; indexError?: string; deferred?: boolean }

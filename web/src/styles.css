@@ -1771,3 +1771,10 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
   .chat-rail-handle, .chat-think-handle, .chat-filter-btn { display: none; }
   .chat-canvas div[class*="transition-[width]"] { width: 0 !important; min-width: 0 !important; }
 }
+
+/* ---- library switcher: lives in the Library rail header ---- */
+.library-switch {
+  font: inherit; font-size: 12px; color: var(--pw-text); background: var(--pw-panel);
+  border: 1px solid var(--pw-border); border-radius: 6px; padding: 2px 6px; max-width: 60%;
+}
+.rail-head .library-switch { margin-right: auto; }

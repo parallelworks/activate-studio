@@ -1,3 +1,4 @@
+import { getLibrary, requireWritable } from './libraries.js'
 import { execFile } from 'node:child_process'
 import path from 'node:path'
 import type { FastifyInstance } from 'fastify'
@@ -335,6 +336,7 @@ export async function tagRoutes(app: FastifyInstance): Promise<void> {
 
   // Apply or remove tags on files and directories (multi-select friendly).
   app.post('/api/kb/tags', async req => {
+    requireWritable(getLibrary(((req.query ?? {}) as { library?: string }).library ?? ((req.body ?? {}) as { library?: string }).library))
     const body = req.body as { paths?: string[]; add?: string[]; remove?: string[] }
     return { updated: await applyTagsCore(body.paths ?? [], body.add ?? [], body.remove ?? []) }
   })
