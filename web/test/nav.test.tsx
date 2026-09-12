@@ -20,3 +20,13 @@ describe('library hash', () => {
     expect(parseOpenHash('')).toBeNull()
   })
 })
+
+describe('library in a deep link', () => {
+  it('is omitted for the primary and carried for any other library, both ways', () => {
+    expect(buildOpenHash({ kind: 'file', target: 'a/b.md', lib: 'kb' })).toBe('#open=file:a/b.md')
+    expect(buildOpenHash({ kind: 'file', target: 'a/b.md', q: 'x y', lib: 'scratch' })).toBe('#open=file:a/b.md&q=x%20y&lib=scratch')
+    expect(parseOpenHash('#open=file:a/b.md&lib=scratch')).toEqual({ kind: 'file', target: 'a/b.md', lib: 'scratch' })
+    expect(parseOpenHash('#open=file:a/b.md&q=x%20y&lib=scratch')).toEqual({ kind: 'file', target: 'a/b.md', q: 'x y', lib: 'scratch' })
+    expect(parseOpenHash('#open=file:a/b.md')).toEqual({ kind: 'file', target: 'a/b.md' })
+  })
+})

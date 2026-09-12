@@ -7,14 +7,21 @@ import type { Display } from './App'
  * for their slashes, which keeps the hash readable.
  */
 export function parseOpenHash(hash: string): Display | null {
-  const m = /^#open=(file|workflow_dag):(.+?)(?:&q=([^&]*))?$/.exec(hash)
+  const m = /^#open=(file|workflow_dag):(.+?)(?:&q=([^&]*))?(?:&lib=([a-z0-9_-]+))?$/.exec(hash)
   if (!m) return null
   const target = decodeURIComponent(m[2])
   if (m[1] === 'workflow_dag') return { kind: 'workflow_dag', target }
-  return m[3] ? { kind: 'file', target, q: decodeURIComponent(m[3]) } : { kind: 'file', target }
+  const d: Display = { kind: 'file', target }
+  if (m[3]) d.q = decodeURIComponent(m[3])
+  // Which library the path belongs to; absent means the primary.
+  if (m[4]) d.lib = m[4]
+  return d
 }
 
 export function buildOpenHash(display: Display): string {
   const base = `#open=${display.kind}:${encodeURIComponent(display.target).replace(/%2F/gi, '/')}`
-  return display.kind === 'file' && display.q ? `${base}&q=${encodeURIComponent(display.q)}` : base
+  if (display.kind !== 'file') return base
+  const q = display.q ? `&q=${encodeURIComponent(display.q)}` : ''
+  const lib = display.lib && display.lib !== 'kb' ? `&lib=${display.lib}` : ''
+  return base + q + lib
 }

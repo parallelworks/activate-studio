@@ -1,3 +1,4 @@
+import { getLibrary, requireWritable, listLibraries, publicLibrary, addLibrary, removeLibrary, probeAll } from './libraries.js'
 import type { FastifyInstance } from 'fastify'
 import { execFile } from 'node:child_process'
 import path from 'node:path'
@@ -113,6 +114,20 @@ export function sanitizedErrorHandler(app: FastifyInstance) {
 }
 
 export async function kbRoutes(app: FastifyInstance): Promise<void> {
+  // Which library a request means. The primary when unnamed, so every
+  // existing client keeps its behavior; a name resolves to a mounted
+  // library or a 404.
+  const libOf = (req: { query?: unknown; body?: unknown }) => {
+    const q = (req.query ?? {}) as { library?: string }
+    const b = (req.body ?? {}) as { library?: string }
+    return getLibrary(q.library ?? b.library, effectiveSettings().kbLabel)
+  }
+  // Files are only reachable when the library has a source root on this host.
+  const sourceOf = (req: { query?: unknown; body?: unknown }) => {
+    const lib = libOf(req)
+    if (!lib.sourceRoot) throw new KbError(409, `${lib.label} has no files on this host; it can be searched and described but not opened`)
+    return lib.sourceRoot
+  }
 
   app.get('/healthz', async () => ({ ok: true, gufi: gufiAvailable() }))
 
@@ -168,6 +183,8 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
       // Feature previews a deployment has switched on; the client shows
       // their controls only when the flag and its configuration are both present.
       features: { voice: { enabled: !!eff.voiceEnabled && !!eff.voiceUrl, url: eff.voiceUrl || '' } },
+      libraries: listLibraries(eff.kbLabel).map(publicLibrary),
+      sections: eff.sections.length ? eff.sections : undefined,
       user,
     }
   })
@@ -226,12 +243,13 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/api/kb/tree', async req => {
     const { path: rel = '' } = req.query as { path?: string }
-    const entries = await listDir(rel)
+    const root = sourceOf(req)
+    const entries = await listDir(rel, root)
     // Own labels straight from the filesystem xattrs (one getfattr per
     // listing), so a just-applied label shows without waiting on the index.
-    const tagged = await readTagsBatch(entries.map(e => resolveKb(e.path))).catch(() => new Map<string, string[]>())
+    const tagged = await readTagsBatch(entries.map(e => resolveKb(e.path, root))).catch(() => new Map<string, string[]>())
     for (const e of entries) {
-      const t = tagged.get(resolveKb(e.path))
+      const t = tagged.get(resolveKb(e.path, root))
       if (t?.length) (e as typeof e & { tags?: string[] }).tags = t
     }
     return { path: rel, entries }
@@ -239,12 +257,12 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/api/kb/file', async req => {
     const { path: rel = '' } = req.query as { path?: string }
-    return readFileContent(rel)
+    return readFileContent(rel, sourceOf(req))
   })
 
   app.get('/api/kb/download', async (req, reply) => {
     const { path: rel = '' } = req.query as { path?: string }
-    const abs = resolveKb(rel)
+    const abs = resolveKb(rel, sourceOf(req))
     reply.header('Content-Type', mimeFor(abs))
     reply.header('Content-Disposition', `attachment; filename="${path.basename(abs)}"`)
     return reply.send(createReadStream(abs))
@@ -253,7 +271,7 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
   // Inline serving of the actual file (images in <img>, PDFs in <iframe>).
   app.get('/api/kb/raw', async (req, reply) => {
     const { path: rel = '' } = req.query as { path?: string }
-    const abs = resolveKb(rel)
+    const abs = resolveKb(rel, sourceOf(req))
     reply.header('Content-Type', mimeFor(abs))
     reply.header('Content-Disposition', 'inline')
     return reply.send(createReadStream(abs))
@@ -266,7 +284,7 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
   // (parametric viewers and the like) safe to display.
   app.get('/api/kb/html', async (req, reply) => {
     const { path: rel = '' } = req.query as { path?: string }
-    const abs = resolveKb(rel)
+    const abs = resolveKb(rel, sourceOf(req))
     if (!/\.html?$/i.test(abs)) throw new KbError(415, 'not an html file')
     reply.header('Content-Type', 'text/html; charset=utf-8')
     reply.header('Content-Security-Policy', "sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:")
@@ -275,7 +293,7 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/api/kb/pdf', async (req, reply) => {
     const { path: rel = '' } = req.query as { path?: string }
-    const abs = resolveKb(rel)
+    const abs = resolveKb(rel, sourceOf(req))
     if (!CONVERTIBLE.has(path.extname(abs).toLowerCase())) {
       throw new KbError(415, 'no PDF preview for this file type')
     }
@@ -296,6 +314,7 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
   // Bulk removal: unlink every file first, then re-index each touched
   // subtree once, so deleting fifty files costs a handful of reindexes.
   app.post('/api/kb/delete', async req => {
+    requireWritable(libOf(req))
     const body = req.body as { paths?: string[] }
     const paths = (body.paths ?? []).slice(0, 500)
     if (!paths.length) throw new KbError(400, 'paths required')
@@ -384,6 +403,7 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
   // reorganised without going back to a shell. Both ends are re-indexed:
   // material that moved is not new, but the index records where it lives.
   app.post('/api/kb/move', async req => {
+    requireWritable(libOf(req))
     const body = req.body as { paths?: string[]; dest?: string; async?: boolean }
     if (body.async) {
       const paths = (body.paths ?? []).slice(0, 500)
@@ -404,6 +424,7 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
 
   // Copy files and directories into another directory.
   app.post('/api/kb/copy', async req => {
+    requireWritable(libOf(req))
     const body = req.body as { paths?: string[]; dest?: string; async?: boolean }
     const paths = (body.paths ?? []).slice(0, 500)
     if (body.async) {
@@ -421,6 +442,7 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
 
   // Rename a file or directory in place.
   app.post('/api/kb/rename', async req => {
+    requireWritable(libOf(req))
     const body = req.body as { path?: string; name?: string }
     const r = await renamePath(String(body.path ?? ''), String(body.name ?? ''))
     const indexMs = await reindexRoots(r.roots, r.rootDb)
@@ -432,6 +454,7 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
   // explicit confirm. Removes the subtree, its caches, and its index slice;
   // the next sweep reconciles whatever this misses.
   app.delete('/api/kb/dir', async req => {
+    requireWritable(libOf(req))
     const { path: rel = '' } = req.query as { path?: string }
     const cleaned = rel.replace(/^\/+|\/+$/g, '')
     if (!cleaned) throw new KbError(400, 'refusing to delete the knowledge base root')
@@ -452,6 +475,7 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
   })
 
   app.delete('/api/kb/file', async req => {
+    requireWritable(libOf(req))
     const { path: rel = '' } = req.query as { path?: string }
     if (!rel) throw new KbError(400, 'path required')
     for (const part of rel.split('/')) {
@@ -469,17 +493,18 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
     return { deleted: rel, indexMs: ms }
   })
 
-  app.get('/api/kb/stats', async () => corpusStats())
+  app.get('/api/kb/stats', async req => corpusStats(libOf(req).indexRoot))
 
   app.get('/api/search', async req => {
     const { q = '', limit = '50' } = req.query as { q?: string; limit?: string }
     if (!q.trim()) return { hits: [] }
     if (!gufiAvailable()) return { hits: [], error: 'index not built yet' }
     const n = Math.min(Number(limit) || 50, 1000)
+    const lib = libOf(req)
     const [fts, names, vec] = await Promise.all([
-      searchFts(q, n),
-      searchNames(q, Math.min(Math.max(10, Math.floor(n / 5)), 50)),
-      wantsSemantic(q) ? searchVector(q, Math.min(n, 10)).catch(() => []) : Promise.resolve([]),
+      lib.caps.fullText || lib.primary ? searchFts(q, n, lib.indexRoot).catch(() => []) : Promise.resolve([]),
+      searchNames(q, Math.min(Math.max(10, Math.floor(n / 5)), 50), lib.indexRoot),
+      wantsSemantic(q) && (lib.caps.vectors || lib.primary) ? searchVector(q, Math.min(n, 10), lib.indexRoot).catch(() => []) : Promise.resolve([]),
     ])
     const { tags } = req.query as { tags?: string }
     const filter = tags ? tags.split(',').filter(Boolean) : undefined
@@ -493,6 +518,7 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/index/extractors', async () => ({ extractors: extractorReport() }))
 
   app.post('/api/index/dir', async req => {
+    requireWritable(libOf(req))
     const { path: rel = '' } = req.body as { path?: string }
     if (!rel) return { error: 'path required' }
     const { ms } = await incrementalIndexDir(rel)
@@ -502,6 +528,7 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
   // Start an indexing pass and watch it, so a bulk upload can show the
   // phase it is in rather than holding a request open.
   app.post('/api/index/job', async req => {
+    requireWritable(libOf(req))
     const { path: rel = '' } = req.body as { path?: string }
     return startIndexJob(String(rel).replace(/^\/+|\/+$/g, ''))
   })
@@ -518,12 +545,14 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
     return job
   })
 
-  app.post('/api/index/sweep', async () => {
+  app.post('/api/index/sweep', async req => {
+    requireWritable(libOf(req))
     const changed = await sweep(m => app.log.info(m))
     return { changed }
   })
 
-  app.post('/api/reindex', async (_req, reply) => {
+  app.post('/api/reindex', async (req, reply) => {
+    requireWritable(libOf(req))
     const script = path.join(PROJECT_ROOT, 'indexer', 'reindex.sh')
     execFile('bash', [script], { timeout: 15 * 60_000 }, err => {
       if (err) app.log.error({ err }, 'reindex failed')
@@ -658,7 +687,7 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
   // the platform's sandboxed session iframe, so the client shows PNGs.
   app.get('/api/kb/pdf-info', async req => {
     const { path: rel = '' } = req.query as { path?: string }
-    const abs = resolveKb(rel)
+    const abs = resolveKb(rel, sourceOf(req))
     const pdf = await previewPdfFor(abs, rel)
     return { pages: await pdfPageCount(pdf) }
   })
@@ -666,10 +695,23 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/kb/pdf-page', async (req, reply) => {
     const { path: rel = '', page = '1' } = req.query as { path?: string; page?: string }
     const n = Math.max(1, Math.floor(Number(page) || 1))
-    const abs = resolveKb(rel)
+    const abs = resolveKb(rel, sourceOf(req))
     const png = await pdfPagePng(abs, rel, n)
     reply.header('Content-Type', 'image/png')
     reply.header('Cache-Control', 'public, max-age=300')
     return reply.send(createReadStream(png))
   })
+
+  // ---- libraries: what is mounted, and adding or removing one ----
+  app.get('/api/libraries', async () => ({ libraries: (await probeAll(effectiveSettings().kbLabel)).map(publicLibrary) }))
+  app.post('/api/libraries', async req => {
+    const b = req.body as { id?: string; label?: string; indexRoot?: string; sourceRoot?: string | null }
+    const lib = await addLibrary({ id: String(b.id ?? '').trim().toLowerCase(), label: b.label, indexRoot: String(b.indexRoot ?? ''), sourceRoot: b.sourceRoot || null })
+    return { library: publicLibrary(lib) }
+  })
+  app.delete('/api/libraries/:id', async req => {
+    removeLibrary(String((req.params as { id: string }).id))
+    return { ok: true }
+  })
+
 }

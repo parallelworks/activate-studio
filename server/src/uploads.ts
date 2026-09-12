@@ -1,3 +1,4 @@
+import { getLibrary, requireWritable } from './libraries.js'
 import type { FastifyInstance } from 'fastify'
 import fsp from 'node:fs/promises'
 import path from 'node:path'
@@ -54,6 +55,7 @@ function slugFromUrl(url: URL): string {
 export async function uploadRoutes(app: FastifyInstance): Promise<void> {
   // Create an empty directory in the knowledge base.
   app.post('/api/kb/mkdir', async req => {
+    requireWritable(getLibrary(((req.query ?? {}) as { library?: string }).library ?? ((req.body ?? {}) as { library?: string }).library))
     const body = req.body as { path?: string }
     const rel = String(body.path ?? '').trim()
     if (!rel) throw new KbError(400, 'path required')
@@ -63,6 +65,7 @@ export async function uploadRoutes(app: FastifyInstance): Promise<void> {
 
   // Multipart file upload into a chosen KB directory, indexed before returning.
   app.post('/api/kb/upload', async (req, reply) => {
+    requireWritable(getLibrary(((req.query ?? {}) as { library?: string }).library ?? ((req.body ?? {}) as { library?: string }).library))
     const dir = String((req.query as { dir?: string }).dir ?? 'uploads')
     const { abs, rel } = await targetDir(dir)
     const saved: string[] = []
@@ -97,6 +100,7 @@ export async function uploadRoutes(app: FastifyInstance): Promise<void> {
   // Fetch a URL into the KB: PDFs saved raw, HTML reduced to text with
   // provenance header, other content saved as-is.
   app.post('/api/kb/upload-url', async (req, reply) => {
+    requireWritable(getLibrary(((req.query ?? {}) as { library?: string }).library ?? ((req.body ?? {}) as { library?: string }).library))
     const body = req.body as { url?: string; dir?: string }
     const rawUrl = String(body.url ?? '').trim()
     if (!/^https?:\/\//i.test(rawUrl)) throw new KbError(400, 'url must be http(s)')

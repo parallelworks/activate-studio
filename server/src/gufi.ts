@@ -177,14 +177,15 @@ export function blendHits(fts: SearchHit[], names: SearchHit[], vec: SearchHit[]
     .slice(0, limit)
 }
 
-export async function queryPerDir(sql: string, opts: { threads?: number; subdir?: string } = {}): Promise<string[][]> {
-  const target = opts.subdir ? path.join(GUFI_INDEX, opts.subdir) : GUFI_INDEX
+export async function queryPerDir(sql: string, opts: { threads?: number; subdir?: string; indexRoot?: string } = {}): Promise<string[][]> {
+  const root = opts.indexRoot ?? GUFI_INDEX
+  const target = opts.subdir ? path.join(root, opts.subdir) : root
   const { stdout } = await run('gufi_query', ['-n', String(opts.threads ?? 8), '-d', DELIM, '-E', sql, target])
   return parseRows(stdout, 1)
 }
 
 /** Full-text search over enriched fts5 `words` tables, joined to entries by inode. */
-export async function searchFts(queryText: string, limit = 20): Promise<SearchHit[]> {
+export async function searchFts(queryText: string, limit = 20, indexRoot?: string): Promise<SearchHit[]> {
   const expr = ftsExpr(queryText)
   if (!expr) return []
   const sql =
@@ -192,9 +193,9 @@ export async function searchFts(queryText: string, limit = 20): Promise<SearchHi
     `replace(replace(snippet(words, 2, '[', ']', ' … ', 12), char(10), ' '), char(13), ' ') ` +
     `FROM vrpentries INNER JOIN words ON inode=CAST(tinode AS TEXT) ` +
     `WHERE wordf MATCH ${q(expr)} LIMIT ${limit};`
-  const rows = await queryPerDir(sql)
+  const rows = await queryPerDir(sql, { indexRoot })
   return rows.slice(0, limit * 3).map(r => ({
-    path: toKbRel(r[0]),
+    path: toKbRel(r[0], indexRoot),
     name: r[1],
     size: Number(r[2]) || 0,
     mtime: Number(r[3]) || 0,
@@ -205,15 +206,15 @@ export async function searchFts(queryText: string, limit = 20): Promise<SearchHi
 }
 
 /** Filename substring search over entries metadata (no enrichment needed). */
-export async function searchNames(queryText: string, limit = 20): Promise<SearchHit[]> {
+export async function searchNames(queryText: string, limit = 20, indexRoot?: string): Promise<SearchHit[]> {
   const where = nameWhere(parseSearchQuery(queryText))
   if (where === '0') return []
   const sql =
     `SELECT rpath(sname, sroll)||'/'||name, name, size, mtime ` +
     `FROM vrpentries WHERE ${where} LIMIT ${limit};`
-  const rows = await queryPerDir(sql)
+  const rows = await queryPerDir(sql, { indexRoot })
   return rows.slice(0, limit).map(r => ({
-    path: toKbRel(r[0]),
+    path: toKbRel(r[0], indexRoot),
     name: r[1],
     size: Number(r[2]) || 0,
     mtime: Number(r[3]) || 0,
@@ -224,8 +225,8 @@ export async function searchNames(queryText: string, limit = 20): Promise<Search
 }
 
 /** gufi_query prints paths rooted at the index tree; strip the index prefix. */
-function toKbRel(p: string): string {
-  const idx = path.resolve(GUFI_INDEX)
+function toKbRel(p: string, indexRoot: string = GUFI_INDEX): string {
+  const idx = path.resolve(indexRoot)
   const abs = path.resolve(p)
   if (abs.startsWith(idx + path.sep)) return abs.slice(idx.length + 1)
   if (abs === idx) return ''
@@ -234,11 +235,13 @@ function toKbRel(p: string): string {
 
 const EMBED_MODEL = path.join(INDEX_BASE, 'models', 'minilm384.gguf')
 
-let dbListCache: { dbs: string[]; at: number } | null = null
-let vecDbCache: { dbs: string[]; at: number } | null = null
-export function invalidateDbList(): void { dbListCache = null; vecDbCache = null }
-function listIndexDbs(): string[] {
-  if (dbListCache && Date.now() - dbListCache.at < 60_000) return dbListCache.dbs
+// Cached per index root: a second library walks its own tree.
+const dbListCache = new Map<string, { dbs: string[]; at: number }>()
+const vecDbCache = new Map<string, { dbs: string[]; at: number }>()
+export function invalidateDbList(): void { dbListCache.clear(); vecDbCache.clear() }
+function listIndexDbs(indexRoot: string = GUFI_INDEX): string[] {
+  const hit = dbListCache.get(indexRoot)
+  if (hit && Date.now() - hit.at < 60_000) return hit.dbs
   const dbs: string[] = []
   const walk = (dir: string) => {
     let entries: fs.Dirent[]
@@ -246,8 +249,8 @@ function listIndexDbs(): string[] {
     if (entries.some(e => e.name === 'db.db')) dbs.push(path.join(dir, 'db.db'))
     for (const e of entries) if (e.isDirectory()) walk(path.join(dir, e.name))
   }
-  walk(GUFI_INDEX)
-  dbListCache = { dbs, at: Date.now() }
+  walk(indexRoot)
+  dbListCache.set(indexRoot, { dbs, at: Date.now() })
   return dbs
 }
 
@@ -268,9 +271,10 @@ export function vectorsAvailable(): boolean {
  * semantic search for the entire corpus. Reading sqlite_master is always
  * valid, so this pass is safe to run over everything.
  */
-async function listVectorDbs(): Promise<string[]> {
-  if (vecDbCache && Date.now() - vecDbCache.at < 60_000) return vecDbCache.dbs
-  const all = listIndexDbs()
+async function listVectorDbs(indexRoot: string = GUFI_INDEX): Promise<string[]> {
+  const hit = vecDbCache.get(indexRoot)
+  if (hit && Date.now() - hit.at < 60_000) return hit.dbs
+  const all = listIndexDbs(indexRoot)
   if (!all.length) return []
   const script = all.flatMap(db => [
     `ATTACH ${q(db)} AS c;`,
@@ -287,18 +291,18 @@ async function listVectorDbs(): Promise<string[]> {
     .filter(l => l.startsWith('HASVEC'))
     .map(l => l.split(DELIM)[1])
     .filter(Boolean)
-  vecDbCache = { dbs, at: Date.now() }
+  vecDbCache.set(indexRoot, { dbs, at: Date.now() })
   return dbs
 }
 
-export async function searchVector(queryText: string, limit = 10): Promise<SearchHit[]> {
+export async function searchVector(queryText: string, limit = 10, indexRoot: string = GUFI_INDEX): Promise<SearchHit[]> {
   if (!vectorsAvailable()) return []
-  const idx = path.resolve(GUFI_INDEX)
+  const idx = path.resolve(indexRoot)
   const script: string[] = [
     `INSERT INTO temp.lembed_models(name, model) SELECT 'minilm384', lembed_model_from_file(${q(EMBED_MODEL)});`,
     `CREATE TABLE temp.qv AS SELECT lembed('minilm384', ${q(queryText.slice(0, 500))}) AS qe;`,
   ]
-  const vecDbs = await listVectorDbs()
+  const vecDbs = await listVectorDbs(indexRoot)
   if (!vecDbs.length) return []
   for (const db of vecDbs) {
     const relDir = path.relative(idx, path.dirname(db))
@@ -347,16 +351,16 @@ export interface CorpusStats {
   byExt?: { ext: string; count: number; bytes: number }[]
 }
 
-export async function corpusStats(): Promise<CorpusStats> {
+export async function corpusStats(indexRoot?: string): Promise<CorpusStats> {
   if (!gufiAvailable()) return { available: false }
   const sumSql = `SELECT totfiles, totsize FROM vrsummary;`
-  const rows = await queryPerDir(sumSql)
+  const rows = await queryPerDir(sumSql, { indexRoot })
   let files = 0, totalBytes = 0
   for (const r of rows) { files += Number(r[0]) || 0; totalBytes += Number(r[1]) || 0 }
   const extSql =
     `SELECT lower(CASE WHEN name LIKE '%.%' THEN replace(name, rtrim(name, replace(name, '.', '')), '') ELSE '' END), ` +
     `count(*), sum(size) FROM vrpentries GROUP BY 1;`
-  const extRows = await queryPerDir(extSql)
+  const extRows = await queryPerDir(extSql, { indexRoot })
   const agg = new Map<string, { count: number; bytes: number }>()
   for (const r of extRows) {
     const ext = r[0] || '(none)'

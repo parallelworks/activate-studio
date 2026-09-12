@@ -63,6 +63,16 @@ request.
 Start to finish, including what works before an index exists:
 [`docs/MACOS.md`](docs/MACOS.md).
 
+## Libraries
+
+The Studio can mount several indexes at once: the knowledge base it owns,
+plus read-only ones such as a site's root-built GUFI index or an index
+someone handed over. Users pick one in the Library rail; administrators
+list them in the deploy form, set `STUDIO_LIBRARIES`, or add one in
+Settings, where the tree is probed first. `STUDIO_SECTIONS` chooses which
+parts of the app appear, so a site can run an index viewer with no
+assistant. Details: [`docs/LIBRARIES.md`](docs/LIBRARIES.md).
+
 ## Container build
 
 `deploy/app.def` packages the server, web build, GUFI, and the
