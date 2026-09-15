@@ -22,7 +22,7 @@ test('the probe streams, and a locked key read through the streaming path is a l
   responses.push({ status: 400, text: '{"error":{"message":"API key locked - visit the unlock URL to re-enable your key","type":"error"}}' })
   const v = await probeProvider('me:genaimil', 'me:genaimil/gemini', 'k1')
   assert.equal(calls[0].body.stream, true, 'stream:true is the path the gateway does not mask')
-  assert.equal(calls[0].body.max_tokens, 1)
+  assert.equal('max_tokens' in calls[0].body, false, 'no token cap: some families reject every spelling of one')
   assert.deepEqual([v.ok, v.kind], [false, 'locked'])
 })
 test('an unlock url in the body is carried on the verdict', async () => {
@@ -65,4 +65,38 @@ test('aiHealth explains a 401 and carries the unlock url when the provider gives
   const ok = await aiHealth('k8')
   assert.equal(ok.status, 'ok'); assert.equal(ok.models, 2)
   assert.equal(extractUnlockUrl('none'), null)
+})
+
+test('a provider that rejects the token-cap parameter is up, not unavailable', async () => {
+  // The gpt-5.6 family answers any max_tokens with a parameter rejection,
+  // explicitly or behind the gateway's masked 400. A probe that carried
+  // one marked every model of the family [unavailable] while all of them
+  // answered; the probe now sends no cap, and a parameter complaint is
+  // read as a reachable provider either way.
+  reset()
+  responses.push({ status: 400, text: '{"error":{"message":"{\\"detail\\":\\"Unsupported parameter: max_output_tokens\\"}","type":"error"}}' })
+  const v = await probeProvider('me:army', 'me:army/gpt-5.6-luna-gov', 'k7')
+  assert.deepEqual([v.ok, v.kind], [true, null])
+  assert.equal(calls.length, 1, 'no second ping needed for a parameter complaint')
+})
+
+test('a healthy stream is read only to its first frame', async () => {
+  reset()
+  let pulls = 0
+  const frames = ['data: {"choices":[{"delta":{"content":"p"}}]}\n\n', 'data: {"choices":[{"delta":{"content":"ong"}}]}\n\n', 'data: [DONE]\n']
+  const enc = new TextEncoder()
+  // highWaterMark 0: chunks are produced only when read, so the count is the probe's reads.
+  const body = new ReadableStream({ pull(c) { if (pulls < frames.length) c.enqueue(enc.encode(frames[pulls++])); else c.close() } }, { highWaterMark: 0 })
+  globalThis.fetch = async (url, init) => {
+    calls.push({ url: String(url), body: init?.body ? JSON.parse(init.body) : null })
+    return { ok: true, status: 200, body, text: async () => frames.join('') }
+  }
+  const v = await probeProvider('me:army', 'me:army/gpt-5.6-terra-gov', 'k8')
+  assert.equal(v.ok, true)
+  assert.ok(pulls <= 1, `read ${pulls} chunks; one frame is proof enough`)
+  globalThis.fetch = async (url, init) => {
+    calls.push({ url: String(url), body: init?.body ? JSON.parse(init.body) : null })
+    const r = responses.shift() ?? { status: 200, text: 'data: {"choices":[{"delta":{"content":"pong"}}]}\n\ndata: [DONE]\n' }
+    return { ok: r.status < 400, status: r.status, text: async () => r.text }
+  }
 })
