@@ -214,30 +214,81 @@ export function extractUnlockUrl(text: string): string | null {
   return /unlock_url[\\":\s]*(https?:\/\/[^"\\\s]+)/.exec(text)?.[1] ?? null
 }
 
+/** A body that names a request parameter as the problem: the provider is up. */
+function rejectedParameter(text: string): boolean {
+  return /unsupported|unknown|unrecognized|invalid|not supported/i.test(text)
+    && /parameter|max_tokens|max_output_tokens|max_completion_tokens|temperature|top_p/i.test(text)
+}
+
+/**
+ * The response up to its first SSE frame, or the whole body when it is
+ * not a stream. An error body is one JSON object and arrives complete; a
+ * healthy stream is abandoned after the first data frame proves the
+ * provider is answering, so an uncapped ping costs the provider a few
+ * tokens rather than a paragraph. Bodies without a readable stream (the
+ * test double, a proxy that buffers) fall back to text().
+ */
+async function firstFrame(res: Response, ctl: AbortController): Promise<string> {
+  if (!res.ok || !res.body || typeof (res.body as { getReader?: unknown }).getReader !== 'function') return res.text()
+  const reader = (res.body as ReadableStream<Uint8Array>).getReader()
+  const dec = new TextDecoder()
+  let buf = ''
+  try {
+    for (;;) {
+      const { value, done } = await reader.read()
+      if (done) break
+      buf += dec.decode(value, { stream: true })
+      if (/^data: /m.test(buf) || /^\s*\{"error"/.test(buf)) break
+      if (buf.length > 16_384) break
+    }
+  } finally {
+    try { ctl.abort() } catch { /* already closed */ }
+    try { reader.releaseLock() } catch { /* already released */ }
+  }
+  return buf
+}
+
 export async function probeProvider(prefix: string, sampleModelId: string, key?: string | null): Promise<ProviderVerdict> {
   const cacheKey = `${prefix}:${(key ?? '').slice(-6)}`
   const hit = providerProbes.get(cacheKey)
   if (hit && Date.now() - hit.at < PROBE_TTL_MS) return hit.v
   const ping = async (): Promise<{ ok: boolean; status: number; text: string }> => {
-    const res = await fetch(`${GATEWAY_BASE}/chat/completions`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${key || gatewayKey()}`, 'Content-Type': 'application/json' },
-      // stream:true, deliberately: the gateway masks provider errors on the
-      // non-streaming path and passes them through on the streaming one
-      // (measured for both the locked-key 401 and parameter rejections),
-      // so only a streaming probe can see "API key locked". A healthy
-      // model answers with SSE frames, which the error check ignores.
-      body: JSON.stringify({ model: sampleModelId, messages: [{ role: 'user', content: 'ping' }], max_tokens: 1, stream: true }),
-      signal: AbortSignal.timeout(6000),
-    })
-    const text = await res.text()
-    // A streaming success arrives as SSE data frames; an error arrives as
-    // one JSON error body whatever the transport asked for.
-    return { ok: res.ok && !/^\s*\{"error"/.test(text), status: res.status, text: text.slice(0, 4000) }
+    // No token cap, deliberately. Some provider families reject every
+    // spelling of one (max_tokens, max_completion_tokens, max_output_tokens),
+    // and a probe that carries one then fails on its own parameter and
+    // reports a healthy provider as down; the mark then sits on every
+    // model of that family. The cost of an uncapped ping is bounded
+    // another way: the response is read only until its first frame.
+    const ctl = new AbortController()
+    const timer = setTimeout(() => ctl.abort(), 6000)
+    try {
+      const res = await fetch(`${GATEWAY_BASE}/chat/completions`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${key || gatewayKey()}`, 'Content-Type': 'application/json' },
+        // stream:true, deliberately: the gateway masks provider errors on the
+        // non-streaming path and passes them through on the streaming one
+        // (measured for both the locked-key 401 and parameter rejections),
+        // so only a streaming probe can see "API key locked". A healthy
+        // model answers with SSE frames, which the error check ignores.
+        body: JSON.stringify({ model: sampleModelId, messages: [{ role: 'user', content: 'ping' }], stream: true }),
+        signal: ctl.signal,
+      })
+      const text = await firstFrame(res, ctl)
+      // A streaming success arrives as SSE data frames; an error arrives as
+      // one JSON error body whatever the transport asked for.
+      return { ok: res.ok && !/^\s*\{"error"/.test(text), status: res.status, text: text.slice(0, 4000) }
+    } finally {
+      clearTimeout(timer)
+    }
   }
   let v: ProviderVerdict = { ok: true, kind: null, unlockUrl: null, message: '' }
   try {
     let r = await ping()
+    if (!r.ok && rejectedParameter(r.text)) {
+      // The provider answered, in detail, about the request's shape. That
+      // is a reachable, unlocked provider; whatever it disliked is ours.
+      r = { ...r, ok: true }
+    }
     if (!r.ok) {
       const unlockUrl = extractUnlockUrl(r.text)
       const credentialish = unlockUrl !== null || r.status === 401 || r.status === 403 || /key locked|locked|unauthorized|api key/i.test(r.text)
