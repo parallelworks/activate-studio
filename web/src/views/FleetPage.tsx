@@ -1,3 +1,4 @@
+import { fetchModels } from '../api'
 import { useEffect, useState } from 'react'
 import { PersonaIcon } from '../components/PersonaIcon'
 
@@ -40,7 +41,7 @@ export function FleetPage({ personas, onOpenTask }: { personas: Persona[]; onOpe
     refresh()
     const t = setInterval(refresh, 10_000)
     fetch('/api/fleet/templates').then(r => r.json()).then(d => setTemplates(d.templates ?? [])).catch(() => {})
-    fetch('/api/chat/models').then(r => r.json()).then(d => {
+    fetchModels().then(d => {
       const ids = (d.models ?? []).filter((m: { callable?: boolean }) => m.callable !== false).map((m: { id: string }) => m.id)
       setModels(ids)
       setForm(f => f.model ? f : { ...f, model: ids[0] ?? '' })

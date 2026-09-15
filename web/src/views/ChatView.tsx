@@ -9,7 +9,7 @@ import {
 } from '@parallelworks/ai-chat'
 import { createStudioAdapter, getChatListFilter, setChatListFilter, setViewerUsername } from '../adapter'
 import { useAppConfig } from '../config'
-import { api } from '../api'
+import { api, fetchModels, forgetModels, type ModelsResponse } from '../api'
 import { setLabelScope, setPersona } from '../labelScope'
 import { PersonaIcon } from '../components/PersonaIcon'
 import { ConversationScrubber } from '../components/ConversationScrubber'
@@ -126,9 +126,8 @@ export function ChatView() {
   useEffect(() => {
     const onAccessChange = () => {
       setCredNote(null)
-      fetch('/api/chat/models').then(r => r.json())
-        .then(d => { if (!d.models?.length && d.error) setCredNote(String(d.error)) })
-        .catch(() => { /* the remount below refetches regardless */ })
+      forgetModels()
+      fetchModels({ refresh: true }).then(applyModels).catch(() => { /* the remount below refetches regardless */ })
       setChatEpoch(e => e + 1)
     }
     window.addEventListener('ade:model-access-changed', onAccessChange)
@@ -161,6 +160,40 @@ export function ChatView() {
   }, [])
   const [scopeFilter, setScopeFilter] = useState('')
 
+  // What the listing says, applied wherever it came from: the banner above
+  // the thread, and a remount of the picker when the set of marked models
+  // changes, since the picker is the package's and only re-reads on mount.
+  // A remount mid-reply would drop the visible stream, so it waits for the
+  // next idle moment.
+  const marksRef = useRef<string>('')
+  const applyModels = (d: ModelsResponse) => {
+    if (d.error && !(d.models ?? []).length) { setCredNote(String(d.error)); return }
+    const impaired = (d.impaired ?? []) as { id: string; locked: boolean }[]
+    const marks = impaired.map(m => `${m.id}:${m.locked ? 'L' : 'U'}`).sort().join(',')
+    if (impaired.length) {
+      const locked = impaired.some(m => m.locked)
+      setCredNote(`${impaired.length} model${impaired.length === 1 ? ' is' : 's are'} marked [${locked ? 'locked' : 'unavailable'}] in the model list${locked
+        ? ': the provider reports the key is locked'
+        : ' (for GenAI this usually means the key is locked on its 8-hour schedule)'}. Unlock and Re-check under Settings, Model access; the marks clear on the next listing.`)
+    } else if (marksRef.current) {
+      setCredNote(null)
+    }
+    if (marksRef.current && marks !== marksRef.current) setChatEpoch(e => e + 1)
+    marksRef.current = marks
+  }
+  // Keep the status fresh without a reload: ask again when the tab comes
+  // back into view and every five minutes while it stays there. The
+  // server answers from its cache and refreshes behind the answer, so
+  // these are cheap.
+  useEffect(() => {
+    const tick = () => { if (document.visibilityState === 'visible') fetchModels().then(applyModels).catch(() => {}) }
+    const onVisible = () => { if (document.visibilityState === 'visible') { forgetModels(); tick() } }
+    document.addEventListener('visibilitychange', onVisible)
+    const id = window.setInterval(() => { forgetModels(); tick() }, 5 * 60_000)
+    return () => { document.removeEventListener('visibilitychange', onVisible); window.clearInterval(id) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   useEffect(() => {
     migrateRememberedModel()
     api.tagVocabulary().then(v => setVocab(v.tags)).catch(() => {})
@@ -168,16 +201,7 @@ export function ChatView() {
     // alone, so a locked provider cannot be marked inside it (upstream
     // issue filed). The warning therefore lives here, above the thread,
     // where it cannot be missed or truncated.
-    fetch('/api/chat/models').then(r => r.json()).then(d => {
-      if (d.error && !(d.models ?? []).length) { setCredNote(String(d.error)); return }
-      const impaired = (d.impaired ?? []) as { id: string; locked: boolean }[]
-      if (impaired.length) {
-        const locked = impaired.some(m => m.locked)
-        setCredNote(`${impaired.length} model${impaired.length === 1 ? ' is' : 's are'} marked [${locked ? 'locked' : 'unavailable'}] in the model list${locked
-          ? ': the provider reports the key is locked'
-          : ' (for GenAI this usually means the key is locked on its 8-hour schedule)'}. Unlock and Re-check under Settings, Model access; the marks clear on the next listing.`)
-      }
-    }).catch(() => {})
+    fetchModels().then(applyModels).catch(() => {})
     fetch('/api/me/model-key').then(r => r.json())
       .then(d => {
         setMultiUser(!!d.authEnabled)
@@ -195,9 +219,6 @@ export function ChatView() {
     // Both the no-models state and mid-conversation credential failures
     // surface as a toast with a click path to Settings; the empty state
     // text explains, the toast provides the button.
-    fetch('/api/chat/models').then(r => r.json())
-      .then(d => { if (!d.models?.length && d.error) setCredNote(String(d.error)) })
-      .catch(() => {})
     const onCredError = (e: Event) => setCredNote(String((e as CustomEvent).detail ?? 'Model credential needed.'))
     window.addEventListener('ade-credential-error', onCredError)
     // Back and forward between conversations.
