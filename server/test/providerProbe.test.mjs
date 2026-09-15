@@ -75,7 +75,7 @@ test('a provider that rejects the token-cap parameter is up, not unavailable', a
   // read as a reachable provider either way.
   reset()
   responses.push({ status: 400, text: '{"error":{"message":"{\\"detail\\":\\"Unsupported parameter: max_output_tokens\\"}","type":"error"}}' })
-  const v = await probeProvider('me:army', 'me:army/gpt-5.6-luna-gov', 'k7')
+  const v = await probeProvider('me:vega', 'me:vega/model-a', 'k7')
   assert.deepEqual([v.ok, v.kind], [true, null])
   assert.equal(calls.length, 1, 'no second ping needed for a parameter complaint')
 })
@@ -91,7 +91,7 @@ test('a healthy stream is read only to its first frame', async () => {
     calls.push({ url: String(url), body: init?.body ? JSON.parse(init.body) : null })
     return { ok: true, status: 200, body, text: async () => frames.join('') }
   }
-  const v = await probeProvider('me:army', 'me:army/gpt-5.6-terra-gov', 'k8')
+  const v = await probeProvider('me:vega', 'me:vega/model-b', 'k8')
   assert.equal(v.ok, true)
   assert.ok(pulls <= 1, `read ${pulls} chunks; one frame is proof enough`)
   globalThis.fetch = async (url, init) => {
