@@ -411,25 +411,28 @@ function templateKwargsFor(model: string): Record<string, unknown> {
 }
 
 export async function chatRoutes(app: FastifyInstance): Promise<void> {
-  app.get('/api/chat/models', async (req, reply) => {
-    if (!gatewayConfigured() && !resolveUserKey(req.user?.id) && !sidecarConfigured()) {
-      return reply.send({ models: [], unreachableSessions: [], error: 'no gateway credential: set PW_API_KEY or authenticate the pw CLI' })
-    }
-    const eff0 = effectiveSettings()
-    const cred = resolveUserCred(req.user?.id)
-    // Settings asks with config=1: the deployment's own model choices (the
-    // vision model, the RAG default) have to be configurable even where
-    // chat requires each user to bring a key, so that listing falls back to
-    // the deployment credential instead of coming back empty.
-    const forConfig = String((req.query as { config?: string }).config ?? '') === '1'
-    if (!forConfig && eff0.requirePersonalKey && authEnabled() && !personalKeysDisabled() && !cred && !getSharedKeyStatus().active) {
-      return reply.send({ models: [], unreachableSessions: [], error: 'This deployment requires your own model credential: add your API key or platform token in Settings, Model access.' })
-    }
-    // The platform catalog and the model served on this node are listed
-    // independently. Either can be missing: the gateway credential may be
-    // absent on a deployment whose whole point is the private model beside
-    // it, and the serve may still be loading. Neither absence should empty
-    // the picker of the other.
+  // The expensive part of a listing is the gateway catalog plus one probe
+  // per provider family, and both were paid on every load: about a second
+  // here, several on a deployment whose gateway and providers are further
+  // away, and per user, since each credential probes on its own. The
+  // computed listing is now kept per credential. A load inside the fresh
+  // window is answered from it; an older one is answered from it too and
+  // refreshed in the background, so the next load is current; only the
+  // very first load per credential waits. ?refresh=1 is the user saying
+  // "look again": it drops the probes and recomputes before answering.
+  // Per-request decorations (a model whose last call failed) are applied
+  // after the cache, so they stay live.
+  type Listing = { models: any[]; impaired: { id: string; locked: boolean; unlock_url: string | null }[]; unreachableSessions: unknown[] }
+  const LISTING_FRESH_MS = 60_000
+  const LISTING_KEEP_MS = 30 * 60_000
+  const listings = new Map<string, { at: number; v: Listing }>()
+  const refreshing = new Map<string, Promise<Listing>>()
+  const listingKey = (cred: { key?: string | null; baseUrl?: string | null } | null, viewer: string) =>
+    `${viewer}|${(cred?.key ?? '').slice(-8)}|${cred?.baseUrl ?? ''}`
+
+  // Everything up to the cache: catalog, provider probes, availability marks.
+  class ListingReply extends Error { constructor(public payload: unknown) { super('listing reply') } }
+  async function computeListing(cred: ReturnType<typeof resolveUserCred>, req: any): Promise<Listing> {
     const sidecar = await listSidecarModels()
     let wire: any = {}
     try {
@@ -441,7 +444,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
       const msg = String((e as Error).message ?? e)
       const unlockUrl = extractUnlockUrl(msg)
       if (cred?.baseUrl && (unlockUrl || /401|403|locked|unauthorized/i.test(msg))) {
-        return reply.send({
+        throw new ListingReply({
           models: sidecar, unreachableSessions: [],
           error: `Your provider key is locked or rejected by ${new URL(cred.baseUrl).host}.${unlockUrl ? ` Unlock it here and reload: ${unlockUrl}` : ''} The Settings, Model access page shows the same link and a Re-check.`,
         })
@@ -452,7 +455,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
       const rejected = /\b(401|403)\b|unauthorized|forbidden/i.test(msg)
       if (rejected) {
         const st = cred && req.user ? getUserKeyStatus(req.user.id) : null
-        return reply.send({
+        throw new ListingReply({
           models: sidecar, unreachableSessions: [], credential: 'rejected',
           error: credentialRejectionMessage(cred ? 'personal' : 'deployment', st?.kind ?? null, st?.credExpiresAt ?? null),
         })
@@ -575,13 +578,58 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     // A model whose last call failed is still offered (the provider may
     // recover, or the key may be renewed), but the picker gets told, so
     // choosing it is informed rather than a surprise at reply time.
+    return { models, impaired, unreachableSessions: wire.unreachable_sessions ?? [] } as Listing
+  }
+
+  app.get('/api/chat/models', async (req, reply) => {
+    if (!gatewayConfigured() && !resolveUserKey(req.user?.id) && !sidecarConfigured()) {
+      return reply.send({ models: [], unreachableSessions: [], error: 'no gateway credential: set PW_API_KEY or authenticate the pw CLI' })
+    }
+    const eff0 = effectiveSettings()
+    const cred = resolveUserCred(req.user?.id)
+    // Settings asks with config=1: the deployment's own model choices (the
+    // vision model, the RAG default) have to be configurable even where
+    // chat requires each user to bring a key, so that listing falls back to
+    // the deployment credential instead of coming back empty.
+    const forConfig = String((req.query as { config?: string }).config ?? '') === '1'
+    if (!forConfig && eff0.requirePersonalKey && authEnabled() && !personalKeysDisabled() && !cred && !getSharedKeyStatus().active) {
+      return reply.send({ models: [], unreachableSessions: [], error: 'This deployment requires your own model credential: add your API key or platform token in Settings, Model access.' })
+    }
+    // The platform catalog and the model served on this node are listed
+    // independently. Either can be missing: the gateway credential may be
+    // absent on a deployment whose whole point is the private model beside
+    // it, and the serve may still be loading. Neither absence should empty
+    // the picker of the other.
+    const key = listingKey(cred, (req.user?.username ?? '').toLowerCase())
+    const wantFresh = String((req.query as { refresh?: string }).refresh ?? '') === '1'
+    if (wantFresh) { invalidateProviderProbes(); listings.delete(key) }
+    const compute = () => {
+      const p = computeListing(cred, req).then(v => { listings.set(key, { at: Date.now(), v }); return v }).finally(() => refreshing.delete(key))
+      refreshing.set(key, p)
+      return p
+    }
+    const hit = listings.get(key)
+    let listing: Listing
+    try {
+      if (hit && Date.now() - hit.at < LISTING_KEEP_MS) {
+        listing = hit.v
+        if (Date.now() - hit.at > LISTING_FRESH_MS && !refreshing.has(key)) compute().catch(() => { /* the next load retries */ })
+      } else {
+        listing = await (refreshing.get(key) ?? compute())
+      }
+    } catch (e) {
+      if (e instanceof ListingReply) return reply.send(e.payload)
+      throw e
+    }
+    let models = listing.models
+    const impaired = listing.impaired
     models = models.map((m: any) => {
       const f = modelFailure(String(m.id))
       return f ? { ...m, callable: false, last_error: { at: f.at, auth: f.auth, status: f.status } } : m
     })
     models.sort((a: any, b: any) =>
       Number(String(a.id).startsWith('org:')) - Number(String(b.id).startsWith('org:')))
-    return reply.send({ models, impaired, unreachableSessions: wire.unreachable_sessions ?? [] })
+    return reply.send({ models, impaired, unreachableSessions: listing.unreachableSessions })
   })
 
   // Live model-callability check for the footer status line.
@@ -736,7 +784,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
   app.post('/api/me/model-key/test', async (req, reply) => {
     // A re-check is the user saying "I changed something, look again":
     // the provider probe cache must not outlive that.
-    invalidateProviderProbes()
+    invalidateProviderProbes(); listings.clear()
     if (!req.user) return reply.status(403).send({ error: 'not verified' })
     const body = req.body as { key?: string; baseUrl?: string } | null
     const stored = resolveUserCred(req.user.id)

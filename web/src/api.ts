@@ -219,3 +219,37 @@ export interface IndexJob {
   ms: number | null
   error: string | null
 }
+
+// ---- the model list ----
+// Several places ask for it on the same mount: the chat package's picker,
+// the availability banner, the credential notice, the fleet page. One
+// in-flight request serves all of them, and a listing is reused for a
+// short window so a remount does not refetch. The server keeps its own
+// longer cache and refreshes in the background; this only stops the
+// client asking three times for one answer.
+export interface ModelsResponse {
+  models: { id: string; name?: string; callable?: boolean; [k: string]: unknown }[]
+  impaired?: { id: string; locked: boolean; unlock_url: string | null }[]
+  unreachableSessions?: unknown[]
+  error?: string
+  credential?: string
+}
+const MODELS_REUSE_MS = 15_000
+let modelsAt = 0
+let modelsLast: ModelsResponse | null = null
+let modelsInFlight: Promise<ModelsResponse> | null = null
+export function fetchModels(opts: { refresh?: boolean } = {}): Promise<ModelsResponse> {
+  if (!opts.refresh && modelsLast && Date.now() - modelsAt < MODELS_REUSE_MS) return Promise.resolve(modelsLast)
+  if (modelsInFlight) return modelsInFlight
+  modelsInFlight = fetch(opts.refresh ? '/api/chat/models?refresh=1' : '/api/chat/models')
+    .then(async r => {
+      if (!r.ok) throw new Error(`models: ${r.status}`)
+      const d = (await r.json()) as ModelsResponse
+      modelsLast = d; modelsAt = Date.now()
+      return d
+    })
+    .finally(() => { modelsInFlight = null })
+  return modelsInFlight
+}
+/** Forget the reused listing, so the next ask goes to the server. */
+export function forgetModels(): void { modelsLast = null; modelsAt = 0 }
