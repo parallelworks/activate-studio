@@ -2,6 +2,24 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.60 (2026-09-15)
+
+### A change log and release notes generated from pull request descriptions (#339)
+
+Versions were tagged but never published as GitHub Releases, so the change record existed only as PR titles. Every merged PR here carries a description written as a change note, so the notes for a version are those descriptions in order, and the change log is the same for every version at once.
+
+`scripts/release-notes.mjs` produces both from the tags and the gh CLI (`vX.Y` for one version, `--changelog` for all), mapping squash commits to PRs by the `(#N)` suffix and dropping attribution trailers. `CHANGELOG.md` is its output for all sixty versions to date. The README documents the release steps, and every existing tag is being published as a Release with these notes.
+
+Also makes the run-watch test deterministic: it slept a fixed span and asserted a count band, which flaked on the macOS runner; it now waits for the give-up point and then proves no further polls happen.
+
+### The provider probe no longer marks a healthy model family unavailable (#340)
+
+The provider probe pinged with `max_tokens: 1`. One model family rejects every spelling of a token cap (`max_output_tokens` explicitly, `max_tokens` and `max_completion_tokens` behind the gateway's masked 400; measured earlier on `gpt-5.6-sol`), so the ping failed twice on its own parameter and the probe reported a reachable, unlocked provider as down. Every model of the family showed `[unavailable]` and the banner told the user to unlock a key that was never locked.
+
+The ping now carries no cap. Cost is bounded by reading the streamed response only to its first frame, which is proof the provider answers, then aborting. A body that names a request parameter as the problem is classified as a reachable provider regardless of status, since a provider arguing about the request's shape is up. Locked and unavailable verdicts are unchanged.
+
+Verified live against the cap-rejecting family on the gateway: the verdict is now ok. Tests: parameter rejection reads as up with no second ping; a healthy stream is read to one frame; existing locked, unlock-url, masked-twice, and cache cases still pass. 184 server tests pass.
+
 ## v1.59 (2026-09-12)
 
 ### A manual macOS job that builds GUFI and exercises its vector stack (#337)
