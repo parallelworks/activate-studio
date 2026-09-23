@@ -71,7 +71,25 @@ const BANNER_PRESETS: { label: string; text: string; color: string }[] = [
   { label: 'Top Secret / SCI', text: '***** TOP SECRET // SCI *****', color: '#fce83a' },
 ]
 
-type SectionId = 'general' | 'access' | 'tools' | 'rag' | 'ext' | 'libraries'
+type SectionId = 'general' | 'access' | 'tools' | 'rag' | 'previews' | 'ext' | 'libraries'
+
+/**
+ * The settings rail, in order. Model access appears only where the
+ * deployment signs users in. Feature previews is its own section rather
+ * than a heading at the foot of another one: a capability nobody can
+ * find is off for everyone regardless of the switch.
+ */
+export function settingsSections(opts: { authEnabled: boolean }): { id: SectionId; label: string }[] {
+  return [
+    { id: 'general', label: 'General' },
+    ...(opts.authEnabled ? [{ id: 'access' as SectionId, label: 'Model access' }] : []),
+    { id: 'rag', label: 'External access' },
+    { id: 'tools', label: 'Assistant tools' },
+    { id: 'previews', label: 'Feature previews' },
+    { id: 'ext', label: 'Extensions' },
+    { id: 'libraries', label: 'Libraries' },
+  ]
+}
 
 /** Dropdown over the live model catalog; a saved value not in the catalog
  *  stays selectable so settings never silently break. */
@@ -269,14 +287,7 @@ export function SettingsView() {
 
   const pickableModels = models.filter(m => !/studio-(agent|rag)/.test(m))
 
-  const sections: { id: SectionId; label: string }[] = [
-    { id: 'general', label: 'General' },
-    ...(me?.authEnabled ? [{ id: 'access' as SectionId, label: 'Model access' }] : []),
-    { id: 'rag', label: 'External access' },
-    { id: 'tools', label: 'Assistant tools' },
-    { id: 'ext', label: 'Extensions' },
-    { id: 'libraries', label: 'Libraries' },
-  ]
+  const sections = settingsSections({ authEnabled: !!me?.authEnabled })
 
   const saveRow = (reload = true) => (
     <div className="query-actions">
@@ -714,25 +725,6 @@ export function SettingsView() {
                 <code className="mcp-snippet">pw code mcp add --transport http studio-kb {location.origin}/api/mcp</code>
               </CopyToClipboard>
               <p className="muted key-note">pw code signs its platform requests with your existing CLI login, so no token goes in the command.</p>
-              <div className="tool-group">Feature previews</div>
-              <p className="muted view-sub">
-                Capabilities that work end to end but are still being shaped. Each is off until switched on here, and each
-                shows its control in the interface only when it is on and configured.
-              </p>
-              <div className="access-switch">
-                <SwitchToggle value={form.voiceEnabled} onChange={v => setForm({ ...form, voiceEnabled: v })} yesLabel="On" noLabel="Off" />
-                <span>Voice conversations: talk with the assistant back and forth, through an Unmute deployment</span>
-              </div>
-              <p className="muted view-sub">
-                Unmute (Kyutai, MIT) wraps a text model with streaming speech recognition, semantic turn-taking, and speech
-                synthesis. Only the speech services need a GPU; the model that does the talking is a configuration value.
-                Deploy it with the <code>unmute</code> workflow pointed at this Studio and the <code>studio-voice</code> model,
-                which is the assistant with its tools and knowledge base answering in spoken sentences, with any API model
-                behind it (<code>studio-voice/&lt;gateway-model-id&gt;</code>). Then put the deployment's session URL here;
-                a Voice button appears above the chat.
-              </p>
-              <label className="field-label">Unmute session URL</label>
-              <input className="field" value={form.voiceUrl} placeholder="https://unmute.example" onChange={e => setForm({ ...form, voiceUrl: e.target.value })} />
               <div className="tool-group">Delegation (the assistant working in parallel)</div>
               <p className="muted view-sub">
                 With this on, the assistant may split a request into subtasks and run them concurrently as headless
@@ -954,6 +946,31 @@ export function SettingsView() {
             </>
           )}
 
+          {section === 'previews' && (
+            <>
+              <h1>Feature previews</h1>
+              <p className="muted view-sub">
+                Capabilities that work end to end but are still being shaped. Each is off until switched on here, and each
+                shows its control in the interface only when it is on and configured.
+              </p>
+              <div className="access-switch">
+                <SwitchToggle value={form.voiceEnabled} onChange={v => setForm({ ...form, voiceEnabled: v })} yesLabel="On" noLabel="Off" />
+                <span>Voice conversations: talk with the assistant back and forth, through an Unmute deployment</span>
+              </div>
+              <p className="muted view-sub">
+                Unmute (Kyutai, MIT) wraps a text model with streaming speech recognition, semantic turn-taking, and speech
+                synthesis. Only the speech services need a GPU; the model that does the talking is a configuration value.
+                Deploy it with the <code>unmute</code> workflow pointed at this Studio and the <code>studio-voice</code> model,
+                which is the assistant with its tools and knowledge base answering in spoken sentences, with any API model
+                behind it (<code>studio-voice/&lt;gateway-model-id&gt;</code>). Then put the deployment's session URL here;
+                a Voice button appears above the chat. The deployment has to be reachable from the browser you use, so a
+                closed network needs its own Unmute rather than one running elsewhere.
+              </p>
+              <label className="field-label">Unmute session URL</label>
+              <input className="field" value={form.voiceUrl} placeholder="https://unmute.example" onChange={e => setForm({ ...form, voiceUrl: e.target.value })} />
+              {saveRow()}
+            </>
+          )}
           {section === 'libraries' && <LibrariesSection />}
           {section === 'ext' && (
             <>
