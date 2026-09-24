@@ -57,11 +57,11 @@ importers:
         specifier: ^5.3.0
         version: 5.3.0
       '@parallelworks/ai-chat':
-        specifier: 0.4.5
-        version: 0.4.5(@popperjs/core@2.11.8)(formik@2.4.9(@types/react@19.2.18)(react@19.2.8))(monaco-editor@0.55.1)(monaco-yaml@5.5.1(monaco-editor@0.55.1))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
-      '@parallelworks/ui':
-        specifier: ^0.5.0
+        specifier: 0.5.0
         version: 0.5.0(@popperjs/core@2.11.8)(formik@2.4.9(@types/react@19.2.18)(react@19.2.8))(monaco-editor@0.55.1)(monaco-yaml@5.5.1(monaco-editor@0.55.1))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      '@parallelworks/ui':
+        specifier: ^0.16.0
+        version: 0.16.0(@popperjs/core@2.11.8)(formik@2.4.9(@types/react@19.2.18)(react@19.2.8))(monaco-editor@0.55.1)(monaco-yaml@5.5.1(monaco-editor@0.55.1))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       react:
         specifier: ^19.2.8
         version: 19.2.8
@@ -703,29 +703,15 @@ packages:
     os: [linux]
     libc: [glibc]
 
-  '@parallelworks/ai-chat@0.4.5':
-    resolution: {integrity: sha512-JcPK5b+6Jtb9Tz58wqPqXowKzXCggcZGuZcTeJz3lL0MNeog/4Egw2Qr1F6twlVMhSpXU+18L4x6SMrYGLWJwA==}
+  '@parallelworks/ai-chat@0.5.0':
+    resolution: {integrity: sha512-RCa6oiSvU10TdH7+TZ+Ag65142jFD47RQ+qu/S9Ae/jIHSpUrjEkhkDS5UpMXXA76qpDl+ani5r4OanuQx1WMg==}
     hasBin: true
     peerDependencies:
       react: ^19.0.0
       react-dom: ^19.0.0
 
-  '@parallelworks/ui@0.14.0':
-    resolution: {integrity: sha512-H9y30lUgo1+ccNhBrM8pVJ5TZpJDy3tQFJE61xiBE2QmJtwZLQy5RDXxQZLCRl/TwQZvWBCaXE+7nY4zN1Y0jw==}
-    peerDependencies:
-      formik: ^2.4.9
-      monaco-editor: ^0.55.1
-      monaco-yaml: ^5.5.1
-      react: ^19.0.0
-      react-dom: ^19.0.0
-    peerDependenciesMeta:
-      monaco-editor:
-        optional: true
-      monaco-yaml:
-        optional: true
-
-  '@parallelworks/ui@0.5.0':
-    resolution: {integrity: sha512-qulgQFWtz33aujRrFuRfniDa4uffZkA5c3ztO3uQ6UfJA1HG+aXttvJS+rYYzXV+KrzvMlVFbuUGLxmt6Ixtqw==}
+  '@parallelworks/ui@0.16.0':
+    resolution: {integrity: sha512-iLtTMluY+D5rf48owEr14QJnLHtKBksCGLnexvqOwUYPGKVa8e6RTxEILx8Yif1d3cj9SledWWMVwFEecHwtow==}
     peerDependencies:
       formik: ^2.4.9
       monaco-editor: ^0.55.1
@@ -741,8 +727,8 @@ packages:
   '@parallelworks/workflow-parser@0.1.0':
     resolution: {integrity: sha512-ptMo7X8F6aQ4hvyZz9U6noNZt7WEE3LiA9Fwr3H2mxsX7VkAKJCsa2+18ByRr9N0dQI04eUntWq1bdShh37Dug==}
 
-  '@parallelworks/workflow-parser@0.2.0':
-    resolution: {integrity: sha512-GaBcPnSHwpDsktmRAz8th9lIej28A1a/MnJbNQ7r8Hn9/kX3+HpeLK73HvHgDvaEMrCaVJ7E1PR7vfTYSm5skg==}
+  '@parallelworks/workflow-parser@0.4.0':
+    resolution: {integrity: sha512-M1xkV50s6pQ9/gbgMrEbxYClZlvq/k+1NLZAA0KTKxdoAV8juptoyWKmHmiIGq/IVzYr4j2Bd7Ko8Dcd7m7hSw==}
 
   '@pinojs/redact@0.4.0':
     resolution: {integrity: sha512-k2ENnmBugE/rzQfEcdWHcCY+/FM3VLzH9cYEsbdsoqrvzAKRhUZeRNhAZvB8OitQJ1TBed3yqWtdjzS6wJKBwg==}
@@ -3297,9 +3283,9 @@ snapshots:
   '@napi-rs/lzma-linux-x64-gnu@1.5.1':
     optional: true
 
-  '@parallelworks/ai-chat@0.4.5(@popperjs/core@2.11.8)(formik@2.4.9(@types/react@19.2.18)(react@19.2.8))(monaco-editor@0.55.1)(monaco-yaml@5.5.1(monaco-editor@0.55.1))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
+  '@parallelworks/ai-chat@0.5.0(@popperjs/core@2.11.8)(formik@2.4.9(@types/react@19.2.18)(react@19.2.8))(monaco-editor@0.55.1)(monaco-yaml@5.5.1(monaco-editor@0.55.1))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
     dependencies:
-      '@parallelworks/ui': 0.14.0(@popperjs/core@2.11.8)(formik@2.4.9(@types/react@19.2.18)(react@19.2.8))(monaco-editor@0.55.1)(monaco-yaml@5.5.1(monaco-editor@0.55.1))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      '@parallelworks/ui': 0.16.0(@popperjs/core@2.11.8)(formik@2.4.9(@types/react@19.2.18)(react@19.2.8))(monaco-editor@0.55.1)(monaco-yaml@5.5.1(monaco-editor@0.55.1))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@streamdown/code': 1.1.1(react@19.2.8)
       '@streamdown/math': 1.0.2(react@19.2.8)
       '@streamdown/mermaid': 1.0.2(react@19.2.8)
@@ -3319,43 +3305,10 @@ snapshots:
       - monaco-yaml
       - supports-color
 
-  '@parallelworks/ui@0.14.0(@popperjs/core@2.11.8)(formik@2.4.9(@types/react@19.2.18)(react@19.2.8))(monaco-editor@0.55.1)(monaco-yaml@5.5.1(monaco-editor@0.55.1))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
+  '@parallelworks/ui@0.16.0(@popperjs/core@2.11.8)(formik@2.4.9(@types/react@19.2.18)(react@19.2.8))(monaco-editor@0.55.1)(monaco-yaml@5.5.1(monaco-editor@0.55.1))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
     dependencies:
       '@headlessui/react': 2.2.10(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
-      '@parallelworks/workflow-parser': 0.2.0
-      '@streamdown/code': 1.1.1(react@19.2.8)
-      '@streamdown/math': 1.0.2(react@19.2.8)
-      '@tanstack/react-virtual': 3.14.9(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
-      classnames: 2.5.1
-      fast-deep-equal: 3.1.3
-      formik: 2.4.9(@types/react@19.2.18)(react@19.2.8)
-      framer-motion: 12.43.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
-      js-yaml: 4.3.1
-      luxon: 3.7.2
-      re-resizable: 6.11.2(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
-      react: 19.2.8
-      react-animate-height: 3.2.4(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
-      react-dom: 19.2.8(react@19.2.8)
-      react-icons: 5.6.0(react@19.2.8)
-      react-loading-skeleton: 3.5.0(react@19.2.8)
-      react-number-format: 5.4.5(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
-      react-popper: 2.3.0(@popperjs/core@2.11.8)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
-      react-tooltip: 6.0.8(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
-      react-zoom-pan-pinch: 4.0.4(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
-      streamdown: 2.5.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
-      usehooks-ts: 3.1.1(react@19.2.8)
-    optionalDependencies:
-      monaco-editor: 0.55.1
-      monaco-yaml: 5.5.1(monaco-editor@0.55.1)
-    transitivePeerDependencies:
-      - '@emotion/is-prop-valid'
-      - '@popperjs/core'
-      - supports-color
-
-  '@parallelworks/ui@0.5.0(@popperjs/core@2.11.8)(formik@2.4.9(@types/react@19.2.18)(react@19.2.8))(monaco-editor@0.55.1)(monaco-yaml@5.5.1(monaco-editor@0.55.1))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
-    dependencies:
-      '@headlessui/react': 2.2.10(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
-      '@parallelworks/workflow-parser': 0.1.0
+      '@parallelworks/workflow-parser': 0.4.0
       '@streamdown/code': 1.1.1(react@19.2.8)
       '@streamdown/math': 1.0.2(react@19.2.8)
       '@tanstack/react-virtual': 3.14.9(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -3391,7 +3344,7 @@ snapshots:
       js-yaml: 4.3.1
       luxon: 3.7.2
 
-  '@parallelworks/workflow-parser@0.2.0':
+  '@parallelworks/workflow-parser@0.4.0':
     dependencies:
       anser: 2.3.5
       js-yaml: 4.3.1

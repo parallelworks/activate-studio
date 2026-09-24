@@ -210,6 +210,18 @@ export function invalidateProviderProbes(): void { providerProbes.clear() }
 
 export function probeableProvider(prefix: string): boolean { return PROBE_PATTERN.test(prefix) }
 
+/** The provider's own sentence from an error body, for showing a person. */
+export function providerReason(text: string): string {
+  let t = text
+  for (let i = 0; i < 3; i++) {
+    const m = /"message"\s*:\s*"((?:[^"\\]|\\.)*)"/.exec(t)
+    if (!m) break
+    t = m[1].replace(/\\"/g, '"').replace(/\\\\/g, '\\')
+  }
+  t = t.replace(/^received error while streaming:\s*/i, '').replace(/\s+/g, ' ').trim()
+  return t.length > 180 ? t.slice(0, 177) + '...' : t
+}
+
 export function extractUnlockUrl(text: string): string | null {
   return /unlock_url[\\":\s]*(https?:\/\/[^"\\\s]+)/.exec(text)?.[1] ?? null
 }
@@ -426,8 +438,24 @@ export async function streamTurn(
   const reader = res.body.getReader()
   const decoder = new TextDecoder()
   let buf = ''
+  // A provider can accept a request, open the stream, and send nothing.
+  // Only the client's own abort ended that, so a reply could sit on its
+  // spinner indefinitely. Each read now has a limit, reset by every chunk
+  // and generous enough for providers that buffer a whole answer (about a
+  // minute is common) or a model that thinks before its first token.
+  const idleMs = Number(process.env.STUDIO_STREAM_IDLE_MS) || 300_000
+  const readWithin = async () => {
+    let timer: NodeJS.Timeout | undefined
+    const idle = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        reader.cancel().catch(() => {})
+        reject(new Error(`The model sent nothing for ${Math.round(idleMs / 1000)} seconds, so the reply was stopped. Try again, or pick another model.`))
+      }, idleMs)
+    })
+    try { return await Promise.race([reader.read(), idle]) } finally { clearTimeout(timer) }
+  }
   for (;;) {
-    const { done, value } = await reader.read()
+    const { done, value } = await readWithin()
     if (done) break
     buf += decoder.decode(value, { stream: true })
     let nl

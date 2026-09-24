@@ -229,7 +229,7 @@ export interface IndexJob {
 // client asking three times for one answer.
 export interface ModelsResponse {
   models: { id: string; name?: string; callable?: boolean; [k: string]: unknown }[]
-  impaired?: { id: string; locked: boolean; unlock_url: string | null }[]
+  impaired?: { id: string; locked: boolean; reason?: string; unlock_url: string | null }[]
   unreachableSessions?: unknown[]
   error?: string
   credential?: string

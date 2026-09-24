@@ -2,6 +2,32 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.63 (2026-09-23)
+
+### Feature previews is its own settings section (#343)
+
+The voice preview switch sat at the foot of **External access**, below the retrieval endpoint and the MCP configuration. A deployment reported the preview missing while its own bundle carried the control; it was findability, not a deploy gap.
+
+Feature previews is now its own section in the settings rail, between Assistant tools and Extensions. The rail is extracted as `settingsSections()`, a pure function with a test, so a new section has to be placed deliberately. The voice text now also states that the Unmute deployment must be reachable from the browser in use, since a closed network needs its own rather than one running elsewhere.
+
+## v1.62 (2026-09-15)
+
+### The model listing answers from a cache and refreshes behind it (#342)
+
+Every load of the model list fetched the gateway catalog and pinged each provider family (about a second on dev, several seconds where the gateway and providers are further away and each user's credential probes on its own), and the client asked three times per mount.
+
+**Server:** the computed listing is cached per viewer and credential (the listing is shaped by the viewer, since shared providers are labeled with their owner). A load inside the 60 s fresh window is answered from cache; an older one is answered from cache and refreshed in the background (deduplicated), so the next load is current; only the first load per credential waits. `?refresh=1` drops the probes and recomputes before answering, and the key test in Settings clears every listing. The last-call-failed decoration is applied after the cache so it stays live.
+
+**Client:** one deduplicated request (`fetchModels` in `api.ts`) serves the picker, the banner, the credential notice, and the fleet page, with a 15 s reuse. Freshness without a reload: refetch when the tab becomes visible and every five minutes while visible; the picker is remounted only when the set of marked models changes, never mid-reply.
+
+Measured on dev: first load 1.2 s, next three under 10 ms, forced refresh 0.4 s. Tests cover cached loads, refresh seeing a changed catalog, and the live decoration. 187 server and 12 web tests pass.
+
+## v1.61 (2026-09-15)
+
+### Neutral provider names in the probe fixtures (#341)
+
+The two new probe cases used a real provider prefix and its model ids as fixture names. Fixtures use neutral names like the rest of the suite.
+
 ## v1.60 (2026-09-15)
 
 ### A change log and release notes generated from pull request descriptions (#339)
