@@ -5,6 +5,7 @@ import { suggestNext } from './suggest.js'
 import { getConversation } from '../conversations.js'
 import { listRuns } from '../runs.js'
 import { GATEWAY_BASE, MAX_TOOL_ITERATIONS, SIDECAR_ENDPOINT, INDEX_BASE } from '../config.js'
+import { providerReason } from './gateway.js'
 import { aiHealth, gatewayConfigured, isSidecarModel, listModels, listSidecarModels, modelFailure, probeProvider, probeableProvider, extractUnlockUrl, invalidateProviderProbes, sidecarConfigured, sidecarTarget, StreamedTurnError, streamTurn, WireMessage, WireToolCall, type TokenUsage } from './gateway.js'
 import { TOOL_CALLS, TOOL_SPECS, activeToolSpecs, activeToolSpecsWithRemote, commandFor, customToolSpecs, executeTool, expandSlashCommand, skillToolSpec } from './tools.js'
 import { systemPrompt } from './context.js'
@@ -300,15 +301,15 @@ export function stripAvailabilityMark(id: string): string {
  */
 export function markImpaired<M extends { id: string; name?: string }>(
   models: M[],
-  verdicts: Map<string, { ok: boolean; kind: 'locked' | 'unavailable' | null; unlockUrl: string | null }>,
-): { models: (M | (M & { callable: false; locked: boolean; unavailable: true; unlock_url: string | null }))[]; impaired: { id: string; locked: boolean; unlock_url: string | null }[] } {
-  const impaired: { id: string; locked: boolean; unlock_url: string | null }[] = []
+  verdicts: Map<string, { ok: boolean; kind: 'locked' | 'unavailable' | null; unlockUrl: string | null; message?: string }>,
+): { models: (M | (M & { callable: false; locked: boolean; unavailable: true; unlock_url: string | null }))[]; impaired: { id: string; locked: boolean; reason?: string; unlock_url: string | null }[] } {
+  const impaired: { id: string; locked: boolean; reason?: string; unlock_url: string | null }[] = []
   const out = models.map(m => {
     const id = String(m.id)
     const v = verdicts.get(id.slice(0, Math.max(id.indexOf('/'), 0)))
     if (!v || v.ok) return m
     const tag = v.kind === 'locked' ? 'locked' : 'unavailable'
-    impaired.push({ id, locked: v.kind === 'locked', unlock_url: v.unlockUrl })
+    impaired.push({ id, locked: v.kind === 'locked', ...(v.message ? { reason: providerReason(v.message) } : {}), unlock_url: v.unlockUrl })
     const name = typeof m.name === 'string' && m.name.trim() ? `${m.name.trim()} [${tag}]` : m.name
     return { ...m, id: `${id} [${tag}]`, name, callable: false as const, locked: v.kind === 'locked', unavailable: true as const, unlock_url: v.unlockUrl }
   })
@@ -422,7 +423,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
   // "look again": it drops the probes and recomputes before answering.
   // Per-request decorations (a model whose last call failed) are applied
   // after the cache, so they stay live.
-  type Listing = { models: any[]; impaired: { id: string; locked: boolean; unlock_url: string | null }[]; unreachableSessions: unknown[] }
+  type Listing = { models: any[]; impaired: { id: string; locked: boolean; reason?: string; unlock_url: string | null }[]; unreachableSessions: unknown[] }
   const LISTING_FRESH_MS = 60_000
   const LISTING_KEEP_MS = 30 * 60_000
   const listings = new Map<string, { at: number; v: Listing }>()
@@ -554,7 +555,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
         if (probeableProvider(prefix) && !prefixes.has(prefix)) prefixes.set(prefix, id)
       }
     }
-    const verdicts = new Map<string, { ok: boolean; kind: 'locked' | 'unavailable' | null; unlockUrl: string | null }>()
+    const verdicts = new Map<string, { ok: boolean; kind: 'locked' | 'unavailable' | null; unlockUrl: string | null; message?: string }>()
     if (prefixes.size) {
       await Promise.race([
         Promise.allSettled([...prefixes.entries()].map(async ([prefix, sample]) => {

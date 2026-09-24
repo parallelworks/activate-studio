@@ -100,3 +100,18 @@ test('a healthy stream is read only to its first frame', async () => {
     return { ok: r.status < 400, status: r.status, text: async () => r.text }
   }
 })
+
+test('the provider reason is its own sentence, unwrapped from nested error bodies', async () => {
+  const { providerReason } = await import('../dist/chat/gateway.js')
+  const body = '{"error":{"message":"received error while streaming: {\\"message\\": \\"Requested model is not available and no compliant same-model variant was found.\\", \\"type\\": \\"invalid_request_error\\"}","type":"error"}}'
+  assert.equal(providerReason(body), 'Requested model is not available and no compliant same-model variant was found.')
+  assert.equal(providerReason('plain text'), 'plain text')
+})
+
+test('a marked model carries the reason to the client', async () => {
+  const { markImpaired } = await import('../dist/chat/routes.js')
+  const verdicts = new Map([['me:vega', { ok: false, kind: 'unavailable', unlockUrl: null, message: '{"error":{"message":"model not served","type":"error"}}' }]])
+  const r = markImpaired([{ id: 'me:vega/model-a' }], verdicts)
+  assert.equal(r.impaired[0].reason, 'model not served')
+  assert.equal(r.impaired[0].locked, false)
+})

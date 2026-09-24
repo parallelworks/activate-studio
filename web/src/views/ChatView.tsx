@@ -168,13 +168,21 @@ export function ChatView() {
   const marksRef = useRef<string>('')
   const applyModels = (d: ModelsResponse) => {
     if (d.error && !(d.models ?? []).length) { setCredNote(String(d.error)); return }
-    const impaired = (d.impaired ?? []) as { id: string; locked: boolean }[]
+    const impaired = (d.impaired ?? []) as { id: string; locked: boolean; reason?: string }[]
     const marks = impaired.map(m => `${m.id}:${m.locked ? 'L' : 'U'}`).sort().join(',')
     if (impaired.length) {
-      const locked = impaired.some(m => m.locked)
-      setCredNote(`${impaired.length} model${impaired.length === 1 ? ' is' : 's are'} marked [${locked ? 'locked' : 'unavailable'}] in the model list${locked
-        ? ': the provider reports the key is locked'
-        : ' (for GenAI this usually means the key is locked on its 8-hour schedule)'}. Unlock and Re-check under Settings, Model access; the marks clear on the next listing.`)
+      // Say what the provider said. A lock gets the unlock step; anything
+      // else is quoted, since guessing a cause misleads (this banner once
+      // blamed an 8-hour key lock for a provider that was rejecting the
+      // model names themselves).
+      const locked = impaired.filter(m => m.locked)
+      const reasons = [...new Set(impaired.map(m => m.reason).filter(Boolean))] as string[]
+      const n = impaired.length
+      const head = `${n} model${n === 1 ? ' is' : 's are'} marked [${locked.length ? 'locked' : 'unavailable'}] because the provider refused a test request`
+      const why = locked.length
+        ? ': it reports the key is locked. Unlock it, then Re-check under Settings, Model access.'
+        : reasons.length ? `: "${reasons[0]}". Re-check under Settings, Model access, once the provider is answering again.` : '. Re-check under Settings, Model access.'
+      setCredNote(head + why)
     } else if (marksRef.current) {
       setCredNote(null)
     }

@@ -180,10 +180,16 @@ export function createStudioAdapter(): ChatAdapter {
           location.hash = `#open=file:${encodeURIComponent(rel).replace(/%2F/gi, '/')}`
         } catch { /* malformed id: ignore */ }
       },
-      list: async ({ limit, offset }: { limit: number; offset: number }) => {
+      // ai-chat 0.5 pages by an opaque cursor and asks whether there is
+      // more; the server pages by offset, so the cursor is the next offset.
+      list: async ({ limit, cursor }: { limit: number; cursor?: string }) => {
+        const offset = Number(cursor) || 0
         const res = await fetch(`/api/chat/attachments?limit=${limit}&offset=${offset}`)
         if (!res.ok) throw new Error(`attachments: ${res.status}`)
-        return res.json()
+        const page = await res.json() as { attachments: unknown[]; total: number }
+        const next = offset + (page.attachments?.length ?? 0)
+        const hasMore = next < (page.total ?? 0)
+        return { ...page, hasMore, ...(hasMore ? { nextCursor: String(next) } : {}) }
       },
       upload: async (file, _conversationId) => {
         const fd = new FormData()
