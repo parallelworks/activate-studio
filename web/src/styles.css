@@ -309,7 +309,11 @@ main.content { min-height: 0; min-width: 0; }
    dark mode. They all take the same muted-panel token now. */
 .library-rail { flex-shrink: 0; display: flex; flex-direction: column; min-height: 0; background: var(--pw-rail-bg); }
 .rail-strip { display: flex; flex-direction: column; padding: 8px 6px; border-right: 1px solid var(--theme-border, var(--pw-border)); background: var(--pw-rail-bg); }
-.chat-canvas .theme-panel.border-r { background: var(--pw-rail-bg); }
+/* The conversations rail: ai-chat 0.4 drew it as theme-panel border-r; 0.5
+   as an aside on the muted-panel token. Both take the
+   Library rail's token so the two rails match in dark mode. */
+.chat-canvas .theme-panel.border-r,
+.chat-canvas aside[class*="bg-(--theme-muted-panel-bg)"] { background: var(--pw-rail-bg); }
 .library .divider {
   width: 5px; flex-shrink: 0; cursor: col-resize;
   /* The same token the chat rail divides with, and the strip carries the
@@ -1266,7 +1270,8 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .toggle-note { margin: 2px 0 12px 26px; max-width: var(--settings-measure); }
 /* Conversation rows and rail actions match the Library tree scale
    (13px); the "Chats" header itself stays 14px like the rail titles. */
-.chat-canvas .theme-panel.border-r a { font-size: 13px; }
+.chat-canvas .theme-panel.border-r a,
+.chat-canvas aside li span, .chat-canvas aside button span, .chat-canvas aside a span { font-size: 13px; }
 
 .chat-filter-btn {
   position: absolute; left: 12px; bottom: 10px; z-index: 4;
