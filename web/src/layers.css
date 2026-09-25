@@ -1,0 +1,13 @@
+/*
+ * Cascade layer order, declared before any stylesheet loads.
+ *
+ * The package stylesheets nest their rules in the pw-ui and pw-ai-chat
+ * layers, except one: the compiled ui stylesheet (0.16) also emits a
+ * top-level `base` layer that gives every input and textarea a border,
+ * padding, and background. Declared after the package layers, it
+ * outranked their utilities, so the chat composer grew a second border
+ * and the conversation search lost the padding that clears its icon.
+ * Naming `base` first makes it the lowest layer. The Studio's own inputs
+ * all carry their own classes and are unaffected.
+ */
+@layer base, pw-ui, pw-ai-chat;

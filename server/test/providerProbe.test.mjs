@@ -115,3 +115,10 @@ test('a marked model carries the reason to the client', async () => {
   assert.equal(r.impaired[0].reason, 'model not served')
   assert.equal(r.impaired[0].locked, false)
 })
+
+test('the reason survives a body truncated mid-message', async () => {
+  const { providerReason } = await import('../dist/chat/gateway.js')
+  // Exactly what the banner showed: the outer message cut at 200 characters.
+  const cut = '{"error":{"message":"received error while streaming: {\\"message\\": \\"Requested model is not available and no compliant same-model variant was found.\\", \\"type\\": \\"invalid_reque'
+  assert.equal(providerReason(cut), 'Requested model is not available and no compliant same-model variant was found.')
+})
