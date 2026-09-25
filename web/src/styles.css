@@ -966,10 +966,26 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
    class only behind `hover:`, so " bg-[" with a leading space matches the
    open row alone. Both are kept so the highlight survives either version. */
 .chat-canvas li.theme-muted-panel,
-.chat-canvas li.group[class*=" bg-[color-mix"] { background: var(--pw-active-pill); }
+.chat-canvas li.group[class*=" bg-[color-mix"] {
+  /* The shared pale pill disappears against a white rail at a glance, and
+     finding the open conversation in a long list is what this row is for.
+     A stronger tint of the accent plus a bar on the leading edge; the bar
+     carries it even where the tint is subtle, in either theme and under
+     any deployment accent. */
+  background: color-mix(in oklab, var(--pw-navy) 14%, var(--pw-rail-bg));
+  box-shadow: inset 3px 0 0 var(--pw-navy);
+}
+[data-theme='dark'] .chat-canvas li.theme-muted-panel,
+[data-theme='dark'] .chat-canvas li.group[class*=" bg-[color-mix"] {
+  background: color-mix(in oklab, var(--pw-link) 22%, var(--pw-rail-bg));
+  box-shadow: inset 3px 0 0 var(--pw-link);
+}
 .chat-canvas li.theme-muted-panel a span,
 .chat-canvas li.group[class*=" bg-[color-mix"] span { color: var(--pw-navy); font-weight: 600; }
 [data-theme='dark'] .chat-canvas li.group[class*=" bg-[color-mix"] span { color: var(--pw-text); }
+/* Rows and rail actions are links; the dark theme's link blue is for links
+   in prose, not for navigation, which reads as plain text like the Library tree. */
+[data-theme='dark'] .chat-canvas aside a { color: var(--pw-text); }
 
 /* Embedded viewer windows inside chat replies, and the chrome-less embed page */
 .chat-canvas iframe.chat-embed-frame {
