@@ -214,7 +214,9 @@ export function probeableProvider(prefix: string): boolean { return PROBE_PATTER
 export function providerReason(text: string): string {
   let t = text
   for (let i = 0; i < 3; i++) {
-    const m = /"message"\s*:\s*"((?:[^"\\]|\\.)*)"/.exec(t)
+    // A complete string first; failing that, a string cut off by an
+    // upstream truncation, taken to the end of what arrived.
+    const m = /"message"\s*:\s*"((?:[^"\\]|\\.)*)"/.exec(t) ?? /"message"\s*:\s*"((?:[^"\\]|\\.)*)$/.exec(t)
     if (!m) break
     t = m[1].replace(/\\"/g, '"').replace(/\\\\/g, '\\')
   }
@@ -305,7 +307,7 @@ export async function probeProvider(prefix: string, sampleModelId: string, key?:
       const unlockUrl = extractUnlockUrl(r.text)
       const credentialish = unlockUrl !== null || r.status === 401 || r.status === 403 || /key locked|locked|unauthorized|api key/i.test(r.text)
       if (credentialish) {
-        v = { ok: false, kind: 'locked', unlockUrl, message: r.text.slice(0, 200) }
+        v = { ok: false, kind: 'locked', unlockUrl, message: r.text.slice(0, 2000) }
       } else {
         // The gateway masks a provider's own 401 into a generic 400
         // (parallelworks/core#19405), so the lock this probe exists for
@@ -314,7 +316,7 @@ export async function probeProvider(prefix: string, sampleModelId: string, key?:
         // for real, whatever the wording; a healthy serve essentially
         // never fails it once, let alone twice.
         r = await ping()
-        if (!r.ok) v = { ok: false, kind: 'unavailable', unlockUrl: extractUnlockUrl(r.text), message: r.text.slice(0, 200) }
+        if (!r.ok) v = { ok: false, kind: 'unavailable', unlockUrl: extractUnlockUrl(r.text), message: r.text.slice(0, 2000) }
       }
     }
   } catch { /* unreachable is not proof of a lock; leave ok */ }
