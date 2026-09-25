@@ -955,11 +955,17 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
   border: 1px solid var(--pw-border); display: block; margin: 6px 0;
 }
 
-/* Active conversation in the chat rail: the package marks it with a bare
-   theme-muted-panel token (inactive rows carry only hover:theme-muted-panel),
-   which is too subtle. Use the same accent pill as the sidenav active item. */
-.chat-canvas li.theme-muted-panel { background: var(--pw-active-pill); }
-.chat-canvas li.theme-muted-panel a span { color: var(--pw-navy); font-weight: 600; }
+/* Active conversation in the chat rail, drawn as the same accent pill as
+   the active sidenav item; the package's own mark is too faint to find.
+   ai-chat 0.4 marked the row with theme-muted-panel. 0.5 marks it with a
+   bare `bg-[color-mix(...)]` class, while every other row carries that
+   class only behind `hover:`, so " bg-[" with a leading space matches the
+   open row alone. Both are kept so the highlight survives either version. */
+.chat-canvas li.theme-muted-panel,
+.chat-canvas li.group[class*=" bg-[color-mix"] { background: var(--pw-active-pill); }
+.chat-canvas li.theme-muted-panel a span,
+.chat-canvas li.group[class*=" bg-[color-mix"] span { color: var(--pw-navy); font-weight: 600; }
+[data-theme='dark'] .chat-canvas li.group[class*=" bg-[color-mix"] span { color: var(--pw-text); }
 
 /* Embedded viewer windows inside chat replies, and the chrome-less embed page */
 .chat-canvas iframe.chat-embed-frame {
