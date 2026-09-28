@@ -27,7 +27,6 @@ export function LibrariesSection() {
     setBusy(true); setNote('')
     try { await api.removeLibrary(id); await load() } catch (e) { setNote(String((e as Error).message ?? e)) } finally { setBusy(false) }
   }
-  const yn = (b: boolean) => (b ? 'yes' : 'no')
   return (
     <>
       <h1>Libraries</h1>
@@ -36,19 +35,30 @@ export function LibrariesSection() {
         any other is read only: a site's index built by root, or one someone handed over. A library without files on
         this host can still be searched and described.
       </p>
-      <table className="settings-table">
-        <thead><tr><th>Library</th><th>Writable</th><th>Files here</th><th>Full text</th><th>Vectors</th><th></th></tr></thead>
-        <tbody>
-          {libs.map(l => (
-            <tr key={l.id}>
-              <td><b>{l.label}</b> <span className="muted">{l.id}{l.pinned && !l.primary ? ', set by the deployment' : ''}</span></td>
-              <td>{yn(l.writable)}</td><td>{yn(l.source)}</td><td>{yn(l.caps.fullText)}</td><td>{yn(l.caps.vectors)}</td>
-              <td>{!l.pinned && <button className="btn-secondary" disabled={busy} onClick={() => void remove(l.id)}>Remove</button>}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <h2>Add a library</h2>
+      <div className="rag-calls-wrap">
+        <table className="rag-calls-table libraries-table">
+          <thead>
+            <tr><th>Library</th><th>Access</th><th>Files on this host</th><th>Full-text search</th><th>Semantic search</th><th></th></tr>
+          </thead>
+          <tbody>
+            {libs.map(l => (
+              <tr key={l.id}>
+                <td>
+                  <div className="lib-name">{l.label}</div>
+                  <div className="lib-id">{l.id}{l.primary ? ', the knowledge base' : l.pinned ? ', set by the deployment' : ''}</div>
+                </td>
+                <td>{l.writable ? 'Read and write' : 'Read only'}</td>
+                <td><Mark on={l.source} /></td>
+                <td><Mark on={l.caps.fullText} /></td>
+                <td><Mark on={l.caps.vectors} /></td>
+                <td className="lib-actions">{!l.pinned && <button className="btn-secondary" disabled={busy} onClick={() => void remove(l.id)}>Remove</button>}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="tool-group">Add a library</div>
+      <p className="muted view-sub">The Studio checks the path before mounting it and says what it found.</p>
       <div className="settings-grid">
         <div>
           <label className="field-label">Identifier</label>
@@ -73,4 +83,9 @@ export function LibrariesSection() {
       </div>
     </>
   )
+}
+
+/** Yes or no for a capability, as a word a screen reader says and a color the eye finds. */
+function Mark({ on }: { on: boolean }) {
+  return <span className={on ? 'lib-yes' : 'lib-no'}>{on ? 'Yes' : 'No'}</span>
 }
