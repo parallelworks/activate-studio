@@ -94,6 +94,9 @@ export function ChatView() {
 
   const adapter = useMemo(() => createStudioAdapter(), [])
   const [credNote, setCredNote] = useState<string | null>(null)
+  // The note on screen, readable from handlers defined before render.
+  const credNoteRef = useRef<string | null>(null)
+  credNoteRef.current = credNote
   const effectiveTheme = useEffectiveTheme()
   const [voiceOpen, setVoiceOpen] = useState(false)
   const [vocab, setVocab] = useState<{ tag: string; count: number }[]>([])
@@ -166,6 +169,18 @@ export function ChatView() {
   // A remount mid-reply would drop the visible stream, so it waits for the
   // next idle moment.
   const marksRef = useRef<string>('')
+  // A dismissed availability notice stays dismissed for that exact set of
+  // marked models. It returns only when the set changes: a model marked or
+  // cleared, or a lock turning into an outage. Kept per browser.
+  const DISMISS_KEY = 'ade-marks-dismissed'
+  const marksNote = useRef<{ text: string; marks: string } | null>(null)
+  const dismissedMarks = () => { try { return localStorage.getItem(DISMISS_KEY) ?? '' } catch { return '' } }
+  const dismissNote = () => {
+    if (marksNote.current && marksNote.current.text === credNoteRef.current) {
+      try { localStorage.setItem(DISMISS_KEY, marksNote.current.marks) } catch { /* storage unavailable */ }
+    }
+    setCredNote(null)
+  }
   const applyModels = (d: ModelsResponse) => {
     if (d.error && !(d.models ?? []).length) { setCredNote(String(d.error)); return }
     const impaired = (d.impaired ?? []) as { id: string; locked: boolean; reason?: string }[]
@@ -182,9 +197,14 @@ export function ChatView() {
       const why = locked.length
         ? ': it reports the key is locked. Unlock it, then Re-check under Settings, Model access.'
         : reasons.length ? `: "${reasons[0]}". Re-check under Settings, Model access, once the provider is answering again.` : '. Re-check under Settings, Model access.'
-      setCredNote(head + why)
-    } else if (marksRef.current) {
-      setCredNote(null)
+      const text = head + why
+      marksNote.current = { text, marks }
+      if (dismissedMarks() !== marks) setCredNote(text)
+    } else {
+      // Nothing marked any more: a later recurrence should be shown again.
+      try { localStorage.removeItem(DISMISS_KEY) } catch { /* storage unavailable */ }
+      if (marksRef.current && marksNote.current?.text === credNoteRef.current) setCredNote(null)
+      marksNote.current = null
     }
     if (marksRef.current && marks !== marksRef.current) setChatEpoch(e => e + 1)
     marksRef.current = marks
@@ -384,7 +404,7 @@ export function ChatView() {
             <div className="cred-banner">
               <span className="cred-banner-text">{credNote}</span>
               <button className="btn-primary" onClick={() => { location.hash = '#view=settings:access' }}>Open Settings</button>
-              <button className="btn-secondary" onClick={() => setCredNote(null)}>Dismiss</button>
+              <button className="btn-secondary" onClick={dismissNote}>Dismiss</button>
             </div>
           )}
                     <FilterReloader />
