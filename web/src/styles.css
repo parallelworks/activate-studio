@@ -313,7 +313,13 @@ main.content { min-height: 0; min-width: 0; }
    as an aside on the muted-panel token. Both take the
    Library rail's token so the two rails match in dark mode. */
 .chat-canvas .theme-panel.border-r,
-.chat-canvas aside[class*="bg-(--theme-muted-panel-bg)"] { background: var(--pw-rail-bg); }
+.chat-canvas aside[class*="bg-(--theme-muted-panel-bg)"] {
+  background: var(--pw-rail-bg);
+  /* 0.4 drew a divider on this rail's edge and 0.5 does not; with the
+     rail and the thread both white, the conversations column stopped
+     reading as a column at all. The Library rail keeps its divider. */
+  border-right: 1px solid var(--theme-border, var(--pw-border));
+}
 .library .divider {
   width: 5px; flex-shrink: 0; cursor: col-resize;
   /* The same token the chat rail divides with, and the strip carries the
