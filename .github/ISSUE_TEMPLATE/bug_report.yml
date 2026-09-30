@@ -1,0 +1,36 @@
+name: Bug report
+description: Something does not work as it should
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead. Include any error text.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to reproduce
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: From the Studio footer or /api/version
+  - type: dropdown
+    id: env
+    attributes:
+      label: Where it runs
+      options:
+        - Standalone on Linux
+        - Standalone on macOS
+        - Container
+        - ACTIVATE platform session
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: Logs, screenshots, browser. Remove hostnames and anything private first.
