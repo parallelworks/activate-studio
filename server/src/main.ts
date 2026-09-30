@@ -59,9 +59,10 @@ if (fs.existsSync(webDist)) {
     // The plugin writes its own Cache-Control (max-age=0) after
     // setHeaders runs, so its handling has to be off for these to stand.
     cacheControl: false,
-    setHeaders: (res, filePath) => {
+    // @fastify/static 10 hands this the Fastify reply, not Node's response.
+    setHeaders: (reply, filePath) => {
       const immutable = /[\\/]assets[\\/]/.test(filePath) && /-[A-Za-z0-9_-]{8,}\.[a-z0-9]+$/.test(filePath)
-      res.setHeader('Cache-Control', immutable
+      reply.header('Cache-Control', immutable
         ? 'public, max-age=31536000, immutable'
         : 'no-store, must-revalidate')
     },
