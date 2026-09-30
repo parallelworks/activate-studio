@@ -9,3 +9,10 @@ minimumReleaseAgeExclude:
   # Authored in-house as well; new releases are consumed the day they ship.
   - '@giraffesyo/*'
 engineStrict: true
+# Floors for transitive packages with published advisories, held within
+# the major version their dependents ask for.
+overrides:
+  fast-uri@3: ^3.1.6
+  fast-uri@4: ^4.1.4
+  js-yaml@4: ^4.3.2
+  dompurify@3: ^3.4.16
