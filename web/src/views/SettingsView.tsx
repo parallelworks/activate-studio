@@ -1,4 +1,5 @@
 import { LibrariesSection } from '../components/LibrariesSection'
+import { WorkflowsSection } from '../components/WorkflowsSection'
 import { useEffect, useState } from 'react'
 import { CopyToClipboard, SwitchToggle } from '@parallelworks/ui'
 import { ACCENTS, SURFACES, applyAccent, applySurface } from '../accents'
@@ -71,15 +72,16 @@ const BANNER_PRESETS: { label: string; text: string; color: string }[] = [
   { label: 'Top Secret / SCI', text: '***** TOP SECRET // SCI *****', color: '#fce83a' },
 ]
 
-type SectionId = 'general' | 'access' | 'tools' | 'rag' | 'previews' | 'ext' | 'libraries'
+type SectionId = 'general' | 'access' | 'tools' | 'rag' | 'previews' | 'ext' | 'libraries' | 'workflows'
 
 /**
  * The settings rail, in order. Model access appears only where the
  * deployment signs users in. Feature previews is its own section rather
  * than a heading at the foot of another one: a capability nobody can
- * find is off for everyone regardless of the switch.
+ * find is off for everyone regardless of the switch. Workflows appears
+ * only when the Studio runs on the platform, since it lists the platform's.
  */
-export function settingsSections(opts: { authEnabled: boolean }): { id: SectionId; label: string }[] {
+export function settingsSections(opts: { authEnabled: boolean; platform?: boolean }): { id: SectionId; label: string }[] {
   return [
     { id: 'general', label: 'General' },
     ...(opts.authEnabled ? [{ id: 'access' as SectionId, label: 'Model access' }] : []),
@@ -88,6 +90,7 @@ export function settingsSections(opts: { authEnabled: boolean }): { id: SectionI
     { id: 'previews', label: 'Feature previews' },
     { id: 'ext', label: 'Extensions' },
     { id: 'libraries', label: 'Libraries' },
+    ...(opts.platform ? [{ id: 'workflows' as SectionId, label: 'Workflows' }] : []),
   ]
 }
 
@@ -287,7 +290,7 @@ export function SettingsView() {
 
   const pickableModels = models.filter(m => !/studio-(agent|rag)/.test(m))
 
-  const sections = settingsSections({ authEnabled: !!me?.authEnabled })
+  const sections = settingsSections({ authEnabled: !!me?.authEnabled, platform: !!cfg.platform })
 
   const saveRow = (reload = true) => (
     <div className="query-actions">
@@ -972,6 +975,7 @@ export function SettingsView() {
             </>
           )}
           {section === 'libraries' && <LibrariesSection />}
+          {section === 'workflows' && <WorkflowsSection />}
           {section === 'ext' && (
             <>
               <h1>Extensions</h1>

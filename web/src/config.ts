@@ -22,6 +22,10 @@ export interface AppConfig {
   libraries?: PublicLibrary[]
   /** Which sections the app shows; unset means all. */
   sections?: string[]
+  /** Running on the ACTIVATE platform, with a credential to reach it. */
+  platform?: boolean
+  /** How many workflows this Studio offers on its Workflows tab. */
+  workflowCount?: number
   user: { id: string; username: string; name?: string }
   loaded: boolean
   /** True when the name and icon came from the previous visit, so the header
@@ -127,6 +131,8 @@ export function useAppConfig(): AppConfig {
           features: d.features ?? undefined,
           libraries: Array.isArray(d.libraries) ? d.libraries : undefined,
           sections: Array.isArray(d.sections) && d.sections.length ? d.sections : undefined,
+          platform: !!d.platform,
+          workflowCount: typeof d.workflowCount === 'number' ? d.workflowCount : 0,
           loaded: true,
         }
         rememberBrand(cached)

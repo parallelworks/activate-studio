@@ -1820,3 +1820,28 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .libraries-table .lib-yes { color: var(--pw-text); }
 .libraries-table .lib-no { color: var(--pw-muted-2); }
 .libraries-table .lib-actions { text-align: right; width: 1%; }
+
+/* Workflows tab */
+.wf-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(10.5rem, 1fr)); gap: 0.75rem; margin: 1rem 0 1.5rem; }
+.wf-tile { display: flex; flex-direction: column; align-items: center; gap: 0.5rem; padding: 1rem 0.75rem; border: 1px solid var(--pw-border); border-radius: 10px; background: var(--pw-panel); color: inherit; font: inherit; cursor: pointer; text-align: center; transition: border-color .15s, box-shadow .15s; }
+.wf-tile:hover:not(:disabled) { border-color: var(--theme-accent, var(--pw-link)); box-shadow: 0 1px 6px rgba(0,0,0,.08); }
+.wf-tile.unavailable { opacity: .55; cursor: default; }
+.wf-icon { width: 3rem; height: 3rem; display: flex; align-items: center; justify-content: center; }
+.wf-icon img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.wf-icon-blank { width: 3rem; height: 3rem; border-radius: 8px; background: var(--theme-accent, var(--pw-link)); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 1.25rem; text-transform: uppercase; }
+.wf-name { font-weight: 600; font-size: 0.9rem; line-height: 1.25; }
+.wf-note { font-size: 0.75rem; color: var(--pw-muted); }
+.wf-back { display: block; align-self: flex-start; margin: 0 auto 0.5rem 0; padding: 0; }
+.wf-preset { max-width: 28rem; margin: 0.75rem 0 1rem; }
+.wf-form { max-width: 48rem; }
+.wf-actions { margin-top: 1rem; flex-wrap: wrap; align-items: center; }
+.wf-ok { color: var(--ok, #24612e); }
+.wf-fail { color: var(--danger, #b42318); white-space: pre-wrap; }
+.wf-install { max-width: 40rem; padding: 1rem; }
+.wf-state.completed { color: var(--ok, #24612e); }
+.wf-state.error, .wf-state.failed { color: var(--danger, #b42318); }
+.wf-picked { padding-left: 1.25rem; margin: 0.5rem 0 1rem; }
+.wf-picked li { display: flex; gap: 0.6rem; align-items: baseline; flex-wrap: wrap; padding: 0.2rem 0; }
+.wf-picked-name { font-weight: 600; }
+.wf-picked-actions { margin-left: auto; display: flex; gap: 0.25rem; }
+.wf-catalog td:first-child { width: 2rem; }

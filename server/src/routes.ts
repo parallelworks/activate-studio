@@ -23,6 +23,7 @@ import { parse as parseYaml } from 'yaml'
 import { validateWorkflowDoc } from './workflowSchema.js'
 import { modelCachePath, removeModelCache } from './model.js'
 import { effectiveSettings } from './settings.js'
+import { curatedNames, platformAvailable } from './workflowsTab.js'
 import { authEnabled, authHeaderName } from './auth.js'
 
 /** A brand image may be given as a URL instead of a path on the resource,
@@ -185,6 +186,10 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
       features: { voice: { enabled: !!eff.voiceEnabled && !!eff.voiceUrl, url: eff.voiceUrl || '' } },
       libraries: listLibraries(eff.kbLabel).map(publicLibrary),
       sections: eff.sections.length ? eff.sections : undefined,
+      // A platform credential is what the Workflows tab needs; without one
+      // (a Studio off ACTIVATE) the tab is not offered.
+      platform: platformAvailable(req.user?.id),
+      workflowCount: curatedNames().length,
       user,
     }
   })
