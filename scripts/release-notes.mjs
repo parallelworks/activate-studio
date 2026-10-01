@@ -13,7 +13,7 @@ import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 
 const sh = (cmd, args) => execFileSync(cmd, args, { encoding: 'utf8', maxBuffer: 64 << 20 })
-const tags = sh('git', ['tag', '-l', 'v*', '--sort=v:refname', '--format=%(refname:short)\t%(taggerdate:short)'])
+const tags = sh('git', ['tag', '-l', 'v*', '--sort=v:refname', '--format=%(refname:short)\t%(creatordate:short)'])
   .trim().split('\n').filter(Boolean).map(l => { const [tag, date] = l.split('\t'); return { tag, date } })
 const prs = new Map(JSON.parse(sh('gh', ['pr', 'list', '--state', 'merged', '--limit', '1000', '--json', 'number,title,body']))
   .map(p => [p.number, p]))

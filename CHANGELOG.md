@@ -2,6 +2,153 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.73 (2026-10-01)
+
+### Workflows tab: a curated set of platform workflows, run from their own forms (#354)
+
+### Workflows tab (#354)
+
+Studio users asked for platform workflows they can run directly, without going through the chat. The Workflows tab shows a set of ACTIVATE workflows chosen for this Studio as tiles; each opens the workflow's own input form, with Validate (a dry run) and Run.
+
+**Choosing the set.** Settings has a new Workflows section that lists every workflow on the platform account the Studio is deployed under, so a site deployment picks from that site's own workflows. Ticked workflows become tiles, in the order shown, which can be rearranged. A name no longer on the account is flagged. The deploy forms gain an Offered Workflows input (`STUDIO_WORKFLOWS`, comma-separated) for the initial list; a list saved in Settings replaces it.
+
+**Who runs it.** Workflow records are per user, so each viewer runs their own copy under their own credential and allocation. A viewer who lacks a curated workflow is offered "Add to my workflows", which copies the deployment account's definition into theirs with `pw workflows create`. Only workflows in the set can be run from the tab (403 otherwise).
+
+**The form.** It is `DynamicForm` from `@parallelworks/ui` 0.17 with the platform's schema conversion, so conditional fields, groups, defaults, and saved configurations (as presets) behave as on the platform. The Studio supplies the input types that need live data: clusters, partitions of the chosen cluster, and buckets. Slurm accounts and QoS are text inputs, since no public endpoint lists them. Host fields write through Formik as the built-in ones do. A cluster value carries name, user, and type, so the platform's own submission step builds the right `pw://` reference, including for a cluster shared by another user.
+
+**Elsewhere.** The tab and its Settings section appear only when the Studio can reach a platform. `list_workflows` marks the curated workflows `offeredHere` and lists them first, so the assistant prefers them. Recent runs from the tab are listed under the tiles; unfinished ones are refreshed with the viewer's key, since the background watcher's credential cannot see a viewer's own runs. Docs: `docs/WORKFLOWS.md`.
+
+**Verified** against a live platform: tiles and icons, the catalog (76 workflows), a form with a cluster picked in the browser validating as a dry run, and Settings picking and saving. 8 new server tests (tiles, catalog, form, the 403, reference handling, dry run) and a web test for the section's visibility; 198 server and 16 web tests pass.
+
+## v1.72 (2026-09-30)
+
+### Floor brace-expansion at 5.0.12 (#353)
+
+**What was wrong or missing**
+
+Three advisories against the transitive `brace-expansion` 5.0.9 (two high, one medium) surfaced when Dependabot rescanned after #352.
+
+**What changed**
+
+A floor in the `pnpm-workspace.yaml` overrides, `brace-expansion@5: ^5.0.12`, within its major.
+
+**How it was verified**
+
+The lockfile resolves 5.0.12; `pnpm install --frozen-lockfile` passes; 190 server and 15 web tests pass.
+
+## v1.71 (2026-09-30)
+
+### A contributing guide, a security policy, and issue and PR templates (#351)
+
+**What was wrong or missing**
+
+The repository was public and Apache-2.0 licensed but told an outside contributor nothing: not the pnpm workspace rule that fails CI when broken, not that release notes are generated from PR descriptions, and not the two maintainer approvals or the organization's commit-message rule a PR meets at merge.
+
+**What changed**
+
+- `CONTRIBUTING.md`: setup, the workspace, the 24-hour dependency age rule, tests, and what a PR needs (description as change note, squash merge, two approvals, first-time CI approval, no assistant attribution trailers, no deployment-specific names).
+- `SECURITY.md`: private vulnerability reporting, now enabled on the repository.
+- `.github/PULL_REQUEST_TEMPLATE.md`: what was wrong, what changed, how it was verified.
+- Issue forms for bugs and features, and a contact link routing security reports to private advisories.
+- README links the guide.
+
+Repository settings changed alongside: merged branches are deleted automatically, and private vulnerability reporting is on.
+
+**How it was verified**
+
+Issue forms parse as YAML; links resolve to files in the repo.
+
+### Close the open security advisories (#352)
+
+**What was wrong or missing**
+
+Dependabot reported 48 open alerts on `main`: 14 high, 30 medium, 4 low.
+
+**What changed**
+
+The smallest upgrades that close every alert:
+
+| Package | From | To | Kind |
+|---|---|---|---|
+| `@fastify/static` | 8 | 10.1.5 | direct |
+| `fastify` | 5.x | 5.12.5 | direct |
+| `vite` | 5 | 6.4.3 | direct; also retires the vulnerable `esbuild` it pulled in |
+| `vitest` (+ `@vitest/mocker`) | 3 | 4.1.11 | direct |
+| `fast-uri` | | ^3.1.6 / ^4.1.4 | override |
+| `js-yaml` | | ^4.3.2 | override |
+| `dompurify` | | ^3.4.16 | override |
+
+Overrides in `pnpm-workspace.yaml` stay within the major each dependent asks for. Vite 8 and Vitest 5 exist but would also move the React plugin and test setup, which nothing here needs.
+
+One breaking change applied: `@fastify/static` 10 passes `setHeaders` the Fastify reply rather than Node's response, so the cache-header hook uses `reply.header`.
+
+**How it was verified**
+
+On a running server: the HTML shell is `no-store, must-revalidate` and hashed assets `public, max-age=31536000, immutable`, as before; search and library routes answer. 190 server and 15 web tests pass; the web app builds under Vite 6.4.3; headless Chrome renders the chat with no page errors; `pnpm install --frozen-lockfile` passes.
+
+## v1.70 (2026-09-28)
+
+### Conversations rail divider back; a dismissed availability notice stays dismissed (#350)
+
+**Rail divider.** ai-chat 0.4 drew a border on the conversations rail and 0.5 does not; with rail and thread both white in light mode, the middle column stopped reading as a column. The rail takes `border-right` again with the Library rail's token. Checked in both themes.
+
+**Notice dismissal.** The model availability notice returned on every listing after being dismissed, including the five-minute refresh. A dismissal is now stored per browser (`localStorage`) against the exact set of marked models (id plus locked/unavailable), and the notice returns only when that set changes. When nothing is marked the stored dismissal is dropped, so a later recurrence shows. Credential notices are unaffected.
+
+## v1.69 (2026-09-28)
+
+### The Libraries page lays out as a table (#349)
+
+The libraries list used `settings-table`, a class with no styles, so columns ran together and the identifier butted against the name. It now uses `rag-calls-table` like the rest of Settings: the identifier on its own muted line under the name, access in words (Read and write / Read only), capability columns named for what the user gets (Full-text search, Semantic search) with No muted, and the add form under the standard `tool-group` subheading. Checked in a browser.
+
+## v1.68 (2026-09-25)
+
+### The open conversation stands out in the rail (#348)
+
+The open row used the shared pale pill (`#e1f2fb` on a white rail) and was hard to find at a glance. It now gets `color-mix(in oklab, var(--pw-navy) 14%, var(--pw-rail-bg))` plus a 3px `inset` accent bar on the leading edge (dark: `--pw-link` at 22% and a `--pw-link` bar), so the mark holds under any deployment accent. Sidenav, Library tree, and Help keep the shared pill.
+
+Also: in dark mode rail rows rendered in the link blue from the global `[data-theme='dark'] a` rule; rail links now use `--pw-text` like the Library tree. Checked in both themes in headless Chrome.
+
+## v1.67 (2026-09-25)
+
+### The conversations rail matches the Library rail under ai-chat 0.5 (#347)
+
+An audit of the Studio's `.chat-canvas` rules against the ai-chat 0.5 DOM found two more 0.4-era selectors that stopped matching (after the rail highlight in #346):
+
+- **Rail background.** The rail is now `aside.bg-(--theme-muted-panel-bg)`, not `.theme-panel.border-r`, so it lost `--pw-rail-bg`: identical in light, `#2e3032` vs the Library rail's `#232528` in dark.
+- **Row size.** Rows and actions are spans inside `li`, `button`, and `a`, not bare links, so they rendered at 14px instead of the Library tree's 13px.
+
+Both rules now match either version. Measured in headless Chrome: rail `#232528` in dark and white in light; rows and actions 13px; the Chats header stays 14px.
+
+The audit's remaining unmatched selectors belong to states the check did not render (activity drawer open, a reply streaming, dark-only rules); their classes (`max-h-20`, `border-l-2`, `transition-[width]`) still ship in 0.5.
+
+## v1.66 (2026-09-25)
+
+### The open conversation is highlighted again in the rail (#346)
+
+ai-chat 0.5 marks the open conversation's row with a bare `bg-[color-mix(in_oklab,var(--theme-panel)_8%,transparent)]` class (an 8% tint) where 0.4 used `theme-muted-panel`. The Studio's accent-pill rule targeted the old class and stopped matching. The rule now also matches `li.group[class*=" bg-[color-mix"]`: every other row carries that class only behind `hover:`, so the leading space selects the open row alone. The old selector is kept so either package version works. Verified in headless Chrome: exactly one row, the open one, draws the pill at weight 600.
+
+## v1.65 (2026-09-25)
+
+### Declare cascade layer order; the banner reason survives truncation (#345)
+
+**Composer and conversation search (regression from ai-chat 0.5 / ui 0.16).** Both packages nest their rules in `pw-ui` / `pw-ai-chat`, but the compiled ui stylesheet also emits a top-level `@layer base { input, textarea { border; padding; background } }`. Declared after the package layers, it outranked their utilities (`border-0`, `pl-8`, `bg-transparent`), so the composer textarea drew a second bordered box and the search input lost the padding that clears its icon. `web/src/layers.css`, imported first, declares `@layer base, pw-ui, pw-ai-chat;` so `base` is lowest. The Studio's own inputs all carry `.field` or a scoped rule and are unaffected. Measured in headless Chrome after the change: textarea border 0 and transparent; search padding-left 32px. (The leak contradicts the ui README's statement that all rules are layered; worth an upstream fix.)
+
+**Banner showed raw JSON.** The probe truncated the provider error to 200 characters before extracting the reason, cutting the nested message in half. It now keeps 2,000, and `providerReason` also accepts a message cut off mid-string (tested with the exact truncated body the banner displayed).
+
+## v1.64 (2026-09-24)
+
+### Say what the provider said, bound silent streams, ai-chat 0.5 (#344)
+
+**Banner.** Every `[unavailable]` mark was explained as a key on an 8-hour lock schedule. Measured against a provider whose models were marked: the provider refused the model names outright, streamed (502) and non-streamed (masked 400), with *Requested model is not available and no compliant same-model variant was found*. The mark was correct; the explanation was wrong. Marked models now carry the provider's own sentence (`providerReason`, which unwraps the gateway's nested error bodies) and the banner quotes it. A lock still gets the unlock step.
+
+**Correction.** #340 claimed live verification that removing the probe's token cap cleared the marks. That check hit the wrong gateway (`Provider owner not found`), and the marks had this other cause. Removing the cap stays, since a probe never needed one.
+
+**Silent streams.** A stream that opened and sent nothing had no limit but the client's abort. Each read now has one (`STUDIO_STREAM_IDLE_MS`, default 300 s), reset by every chunk; some providers buffer a whole answer and take about a minute per call.
+
+**ai-chat 0.5.0** with `@parallelworks/ui` ^0.16 (its peer floor). Attachments paging moved to a cursor contract with `hasMore`; the adapter maps the server offset to it (tested). Headless smoke: chat canvas, composer, and picker render, 19 models listed, no page errors.
+
+Also regenerates CHANGELOG.md; the v1.62 and v1.63 entries never reached main. 189 server and 15 web tests pass.
+
 ## v1.63 (2026-09-23)
 
 ### Feature previews is its own settings section (#343)
