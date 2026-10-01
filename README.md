@@ -73,6 +73,12 @@ Settings, where the tree is probed first. `STUDIO_SECTIONS` chooses which
 parts of the app appear, so a site can run an index viewer with no
 assistant. Details: [`docs/LIBRARIES.md`](docs/LIBRARIES.md).
 
+On the ACTIVATE platform, the Workflows tab offers a set of platform
+workflows chosen for this Studio, as tiles that each open the workflow's
+own form and run it under the viewer's account. Administrators pick the set
+in Settings or set `STUDIO_WORKFLOWS`. Details:
+[`docs/WORKFLOWS.md`](docs/WORKFLOWS.md).
+
 ## Contributing
 
 Contributions are welcome. [`CONTRIBUTING.md`](CONTRIBUTING.md) covers setup, the pnpm workspace, tests, and what a pull request needs; security issues go through [`SECURITY.md`](SECURITY.md).

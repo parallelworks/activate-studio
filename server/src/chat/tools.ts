@@ -110,7 +110,7 @@ export const TOOL_SPECS: ToolSpec[] = [
     function: {
       name: 'list_workflows',
       description:
-        'List the platform workflows registered in this account with names, descriptions, and tags. These are composable building blocks: use this catalog to recommend which workflows fit a task or could be assembled together.',
+        'List the platform workflows registered in this account with names, descriptions, and tags. Workflows this Studio offers on its Workflows tab are marked offeredHere and listed first; prefer them when one fits, and point the user to that tab to run it from its form. These are composable building blocks: use this catalog to recommend which workflows fit a task or could be assembled together.',
       parameters: { type: 'object', properties: {}, required: [] },
     },
   },
@@ -1034,14 +1034,16 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
       case 'list_workflows': {
         const out = await pwCli(['workflows', 'ls', '-o', 'json'])
         const wfs = JSON.parse(out) as any[]
+        const offered = effectiveSettings().workflowCollection ?? []
         const catalog = wfs.map(w => ({
           name: w.name,
           displayName: w.displayName,
           description: w.description || '',
           tags: (w.tags ?? []).filter(Boolean),
           type: w.type,
-        }))
-        return { result: JSON.stringify(catalog, null, 1), summary: `${catalog.length} workflows` }
+          ...(offered.includes(w.name) ? { offeredHere: true } : {}),
+        })).sort((x, y) => Number(!!y.offeredHere) - Number(!!x.offeredHere))
+        return { result: JSON.stringify(catalog, null, 1), summary: `${catalog.length} workflows${offered.length ? `, ${offered.length} offered here` : ''}` }
       }
       case 'pw_help': {
         const parts = String(args.command ?? '').split(/\s+/).filter(Boolean)

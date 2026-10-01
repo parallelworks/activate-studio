@@ -10,6 +10,7 @@ import { SearchView } from './views/SearchView'
 import { QueryView } from './views/QueryView'
 import { OverviewView } from './views/OverviewView'
 import { HistoryView } from './views/HistoryView'
+import { WorkflowsView } from './views/WorkflowsView'
 import { AgentsView } from './views/AgentsView'
 import { HelpView } from './views/HelpView'
 import { SettingsView } from './views/SettingsView'
@@ -18,7 +19,7 @@ import { ClassificationBanner } from './components/ClassificationBanner'
 import { useAppConfig } from './config'
 import { applyAccent, applySurface } from './accents'
 
-type ViewId = 'chat' | 'library' | 'search' | 'query' | 'overview' | 'history' | 'agents' | 'settings' | 'help'
+type ViewId = 'chat' | 'library' | 'search' | 'query' | 'overview' | 'history' | 'agents' | 'workflows' | 'settings' | 'help'
 export type Display = { kind: 'file'; target: string; q?: string; lib?: string } | { kind: 'workflow_dag'; target: string }
 
 // The destinations that keep a spot in the phone bottom bar; the rest
@@ -57,6 +58,11 @@ const NAV: { id: ViewId; label: string; icon: ReactElement }[] = [
     icon: <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.4"><circle cx="8" cy="5.5" r="2.8"/><path d="M2.6 14c.6-3 2.8-4.5 5.4-4.5s4.8 1.5 5.4 4.5"/></svg>,
   },
   {
+    id: 'workflows',
+    label: 'Workflows',
+    icon: <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.4"><rect x="1.5" y="2" width="5" height="4" rx="1"/><rect x="9.5" y="10" width="5" height="4" rx="1"/><path d="M4 6v3a1.5 1.5 0 0 0 1.5 1.5h4"/><path d="m8 9 1.5 1.5L8 12"/></svg>,
+  },
+  {
     id: 'history',
     label: 'History',
     icon: <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.4"><circle cx="8" cy="8" r="6.5"/><path d="M8 4.4V8l2.6 1.6"/></svg>,
@@ -80,7 +86,8 @@ export default function App() {
   const cfg = useAppConfig()
   // A deployment can leave sections out, which is how the Studio becomes an
   // index viewer with no assistant. Settings and Help always stay reachable.
-  const allowed = (id: ViewId) => !cfg.sections || cfg.sections.includes(id) || id === 'settings' || id === 'help'
+  // The Workflows tab lists platform workflows, so it exists only there.
+  const allowed = (id: ViewId) => (id !== 'workflows' || !!cfg.platform) && (!cfg.sections || cfg.sections.includes(id) || id === 'settings' || id === 'help')
   useEffect(() => {
     if (cfg.loaded && !allowed(view)) {
       const first = NAV.find(i => allowed(i.id))
@@ -386,6 +393,7 @@ export default function App() {
         <div className={view === 'overview' ? 'view' : 'view hidden'}><OverviewView onOpen={openFile} /></div>
         <div className={view === 'history' ? 'view' : 'view hidden'}><HistoryView onOpen={openFile} /></div>
         <div className={view === 'agents' ? 'view' : 'view hidden'}><AgentsView onOpen={openFile} /></div>
+        {cfg.platform && view === 'workflows' && <div className="view"><WorkflowsView /></div>}
         <div className={view === 'settings' ? 'view' : 'view hidden'}><SettingsView /></div>
         <div className={view === 'help' ? 'view' : 'view hidden'}><HelpView /></div>
       </main>

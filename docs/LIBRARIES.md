@@ -59,7 +59,8 @@ are kept in `libraries.json` under the index base.
 ## Sections
 
 `STUDIO_SECTIONS` chooses which parts of the app appear, from `chat`,
-`library`, `search`, `query`, `overview`, `history`, and `agents`. Leave it
+`library`, `search`, `query`, `overview`, `history`, `agents`, and
+`workflows`. Leave it
 unset for all of them. A site that wants an index viewer and nothing else
 sets `library,search,overview`, and the assistant and the agents are not
 rendered. Settings and Help always remain reachable.

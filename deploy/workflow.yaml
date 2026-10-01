@@ -346,8 +346,17 @@ permissions:
             optional: true
             tooltip: |
               Comma-separated list of the sections to show, from chat, library,
-              search, query, overview, history, agents. Leave empty for all of them.
+              search, query, overview, history, agents, workflows. Leave empty for all of them.
               "library,search,overview" makes the Studio an index viewer with no assistant.
+          workflows:
+            label: Offered Workflows
+            type: string
+            optional: true
+            tooltip: |
+              Comma-separated names of platform workflows to offer as tiles on the
+              Workflows tab, in order. Each viewer runs them under their own account.
+              Administrators can also pick them in Settings, Workflows, from the
+              workflows on the account this Studio is deployed under.
           build_gufi:
             label: Build GUFI Index Engine
             type: boolean
@@ -953,6 +962,9 @@ jobs:
           if [ -n "${{ inputs.kb_settings.sections }}" ]; then
             printf 'export STUDIO_SECTIONS=%q\n' '${{ inputs.kb_settings.sections }}' >> ${SCRIPT}
           fi
+          if [ -n "${{ inputs.kb_settings.workflows }}" ]; then
+            printf 'export STUDIO_WORKFLOWS=%q\n' '${{ inputs.kb_settings.workflows }}' >> ${SCRIPT}
+          fi
           if [ -n "${{ inputs.app_settings.icon_path }}" ]; then
             echo "export APP_ICON='${{ inputs.app_settings.icon_path }}'" >> ${SCRIPT}
           fi
@@ -1044,6 +1056,7 @@ jobs:
             ${KB_STARTER_DIRS:+--env KB_STARTER_DIRS="${KB_STARTER_DIRS}"} \
             ${STUDIO_LIBRARIES:+--env STUDIO_LIBRARIES="${STUDIO_LIBRARIES}"} \
             ${STUDIO_SECTIONS:+--env STUDIO_SECTIONS="${STUDIO_SECTIONS}"} \
+            ${STUDIO_WORKFLOWS:+--env STUDIO_WORKFLOWS="${STUDIO_WORKFLOWS}"} \
             ${BANNER_TEXT:+--env BANNER_TEXT="${BANNER_TEXT}"} \
             ${BANNER_COLOR:+--env BANNER_COLOR="${BANNER_COLOR}"} \
             ${APP_ICON:+--env APP_ICON="${APP_ICON}"} \

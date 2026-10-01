@@ -20,6 +20,8 @@ export interface StudioSettings {
   kbLabel?: string
   /** Which sections the app shows; unset means all of them. */
   sections?: string[]
+  /** The workflows this Studio offers on its Workflows tab, by record name. */
+  workflowCollection?: string[]
   theme?: 'light' | 'dark'
   accent?: string
   surface?: string
@@ -88,6 +90,7 @@ export function effectiveSettings(): Required<StudioSettings> {
     appName: s.appName ?? process.env.APP_NAME ?? 'Studio',
     kbLabel: s.kbLabel ?? process.env.KB_LABEL ?? path.basename(KB_ROOT),
     sections: s.sections ?? (process.env.STUDIO_SECTIONS ? process.env.STUDIO_SECTIONS.split(',').map(x => x.trim()).filter(Boolean) : []),
+    workflowCollection: s.workflowCollection ?? (process.env.STUDIO_WORKFLOWS ? process.env.STUDIO_WORKFLOWS.split(',').map(x => x.trim()).filter(Boolean) : []),
     theme: s.theme ?? (process.env.THEME === 'dark' ? 'dark' : 'light'),
     accent: s.accent ?? process.env.APP_ACCENT ?? 'navy',
     surface: s.surface ?? process.env.APP_SURFACE ?? 'neutral',
@@ -184,6 +187,10 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
     if (body.appName !== undefined) next.appName = String(body.appName).slice(0, 60) || undefined
     if (body.kbLabel !== undefined) next.kbLabel = String(body.kbLabel).slice(0, 60) || undefined
     if (body.sections !== undefined) next.sections = Array.isArray(body.sections) && body.sections.length ? body.sections.map(String).slice(0, 20) : undefined
+    if (body.workflowCollection !== undefined) {
+      const list = Array.isArray(body.workflowCollection) ? body.workflowCollection.map(String).filter(n => /^[A-Za-z0-9_.-]{1,120}$/.test(n)) : []
+      next.workflowCollection = list.length ? [...new Set(list)].slice(0, 60) : undefined
+    }
     if (body.theme !== undefined) next.theme = body.theme === 'dark' ? 'dark' : 'light'
     if (body.accent !== undefined) {
       const a = String(body.accent)

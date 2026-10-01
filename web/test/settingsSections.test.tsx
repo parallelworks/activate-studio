@@ -15,4 +15,9 @@ describe('the settings rail', () => {
     expect(settingsSections({ authEnabled: false }).map(s => s.id)).not.toContain('access')
     expect(settingsSections({ authEnabled: true }).map(s => s.id)).toContain('access')
   })
+
+  it('shows Workflows only when the Studio runs on the platform', () => {
+    expect(settingsSections({ authEnabled: true }).map(s => s.id)).not.toContain('workflows')
+    expect(settingsSections({ authEnabled: true, platform: true }).map(s => s.id)).toContain('workflows')
+  })
 })
