@@ -1,3 +1,4 @@
+import crypto from 'node:crypto'
 import { getLibrary, requireWritable, listLibraries, publicLibrary, addLibrary, removeLibrary, probeAll } from './libraries.js'
 import type { FastifyInstance } from 'fastify'
 import { execFile } from 'node:child_process'
@@ -88,10 +89,14 @@ function brandUrl(kind: 'icon' | 'favicon', dark = false): string | null {
   const configured = kind === 'favicon' && process.env.APP_FAVICON && !dark
     ? process.env.APP_FAVICON
     : configuredIcon(dark)
-  const suffix = dark ? '?variant=dark' : ''
-  if (isUrl(configured)) return (kind === 'icon' ? '/api/brand-icon' : '/api/favicon') + suffix
-  if (!configured || !fs.existsSync(configured)) return null
-  return (kind === 'icon' ? '/api/brand-icon' : '/api/favicon') + suffix
+  if (!configured || (!isUrl(configured) && !fs.existsSync(configured))) return null
+  // Browsers keep these for an hour, so the address carries a version: a
+  // different image, or the same file replaced, is a different URL and is
+  // fetched at once instead of after the cached copy expires.
+  let stamp = configured
+  if (!isUrl(configured)) { try { stamp += `:${fs.statSync(configured).mtimeMs}` } catch { /* existence checked above */ } }
+  const v = crypto.createHash('sha1').update(stamp).digest('hex').slice(0, 10)
+  return `${kind === 'icon' ? '/api/brand-icon' : '/api/favicon'}?${dark ? 'variant=dark&' : ''}v=${v}`
 }
 
 export interface WebManifestIcon { src: string; type: string; sizes: string; purpose?: string }
@@ -295,7 +300,7 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
       const got = isUrl(configured)
         ? await fetchRemoteIcon(configured).catch(() => null)
         : fs.existsSync(configured) ? { body: fs.readFileSync(configured), type: mimeFor(configured) } : null
-      if (got) brand = { src: '/api/brand-icon', type: got.type, sizes: imageSizes(got.body, got.type) }
+      if (got) brand = { src: brandUrl('icon') ?? '/api/brand-icon', type: got.type, sizes: imageSizes(got.body, got.type) }
     }
     reply.header('Cache-Control', 'no-store, must-revalidate')
     return reply.type('application/manifest+json').send(webManifest({ name: eff.appName, dark: eff.theme === 'dark', brand }))

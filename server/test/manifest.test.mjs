@@ -33,7 +33,8 @@ test('the route names the deployment, puts its icon first at its real size, and 
   assert.equal(m.name, 'Example Research Studio')
   assert.ok(m.short_name.length <= 12)
   assert.equal(m.display, 'standalone')
-  assert.deepEqual(m.icons[0], { src: '/api/brand-icon', type: 'image/png', sizes: '300x200' })
+  assert.match(m.icons[0].src, /^\/api\/brand-icon\?v=[0-9a-f]{10}$/)
+  assert.deepEqual({ ...m.icons[0], src: 'x' }, { src: 'x', type: 'image/png', sizes: '300x200' })
   assert.ok(m.icons.some(i => i.sizes === '512x512' && i.purpose === 'maskable'))
 })
 
@@ -49,4 +50,12 @@ test('icon sizes: PNG from its header, SVG and unknown as any', () => {
   assert.equal(imageSizes(png, 'image/png'), '300x200')
   assert.equal(imageSizes(Buffer.from('<svg/>'), 'image/svg+xml'), 'any')
   assert.equal(imageSizes(Buffer.from('GIF89a'), 'image/gif'), 'any')
+})
+
+test('replacing the icon file changes its address, so browsers do not keep the old one', async () => {
+  const first = (await app.inject({ method: 'GET', url: '/manifest.webmanifest' })).json().icons[0].src
+  const later = new Date(Date.now() + 5000)
+  fs.utimesSync(ICON, later, later)
+  const second = (await app.inject({ method: 'GET', url: '/manifest.webmanifest' })).json().icons[0].src
+  assert.notEqual(first, second)
 })
