@@ -94,6 +94,44 @@ function brandUrl(kind: 'icon' | 'favicon', dark = false): string | null {
   return (kind === 'icon' ? '/api/brand-icon' : '/api/favicon') + suffix
 }
 
+export interface WebManifestIcon { src: string; type: string; sizes: string; purpose?: string }
+
+/** Pixel size of a PNG, or "any" for SVG and anything unreadable. Browsers
+ *  pick an icon by its declared size, so a PNG brand icon is declared at
+ *  the size it is. */
+export function imageSizes(body: Buffer, type: string): string {
+  if (/svg/.test(type)) return 'any'
+  if (body.length > 24 && body.readUInt32BE(0) === 0x89504e47) return `${body.readUInt32BE(16)}x${body.readUInt32BE(20)}`
+  return 'any'
+}
+
+/**
+ * The web app manifest. No `id`: an id resolves against the origin rather
+ * than the manifest's folder, so on a Studio mounted under a path it would
+ * take the host's identity; without one the start URL is the identity.
+ * The deployment's own icon comes first; the default mark's PNGs stay as
+ * the sizes browsers require to offer installation.
+ */
+export function webManifest(o: { name: string; dark: boolean; brand: WebManifestIcon | null }): Record<string, unknown> {
+  const bg = o.dark ? '#0c1320' : '#f3f4f6'
+  const name = o.name || 'Studio'
+  return {
+    name,
+    short_name: name.length > 12 ? name.split(/\s+/).pop()!.slice(0, 12) : name,
+    start_url: './',
+    scope: './',
+    display: 'standalone',
+    background_color: bg,
+    theme_color: bg,
+    icons: [
+      ...(o.brand ? [o.brand] : []),
+      { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+      { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+      { src: '/icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+    ],
+  }
+}
+
 /** Sanitizing error handler for the WHOLE app: KbError text is deliberate
  *  and passes through; schema-validation messages are safe; anything else
  *  can carry exec detail (spawned binary paths, child stderr, command
@@ -244,6 +282,23 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
     reply.header('Content-Type', mimeFor(icon))
     reply.header('Cache-Control', 'public, max-age=3600')
     return reply.send(createReadStream(icon))
+  })
+
+  // The installable-app manifest, built per deployment so each installs
+  // under its own name and icon. Never cached: a rename or a new icon has
+  // to reach the next install.
+  app.get('/manifest.webmanifest', async (_req, reply) => {
+    const eff = effectiveSettings()
+    let brand: WebManifestIcon | null = null
+    const configured = configuredIcon(false)
+    if (configured) {
+      const got = isUrl(configured)
+        ? await fetchRemoteIcon(configured).catch(() => null)
+        : fs.existsSync(configured) ? { body: fs.readFileSync(configured), type: mimeFor(configured) } : null
+      if (got) brand = { src: '/api/brand-icon', type: got.type, sizes: imageSizes(got.body, got.type) }
+    }
+    reply.header('Cache-Control', 'no-store, must-revalidate')
+    return reply.type('application/manifest+json').send(webManifest({ name: eff.appName, dark: eff.theme === 'dark', brand }))
   })
 
   app.get('/api/kb/tree', async req => {
