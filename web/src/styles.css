@@ -1914,3 +1914,35 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
   .chats-row-meta { display: none; }
 }
 .wf-kind { font-size: 11px; color: var(--pw-muted); border: 1px solid var(--pw-border); border-radius: 999px; padding: 0 7px; }
+
+/* Workflow form inputs. The form library draws its text fields with a
+   global input rule in a "base" layer, which the Studio deliberately ranks
+   below the shared packages' resets (see layers.css) so it cannot restyle
+   inputs elsewhere. Inside the workflow form that left every text and
+   number field as bare text, so the form gets the Studio's field look here,
+   scoped to the form. */
+.wf-form input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=hidden]):not([type=color]),
+.wf-form textarea {
+  width: 100%; box-sizing: border-box; min-height: 32px;
+  padding: 6px 8px; font: inherit; font-size: 13px; color: var(--pw-text);
+  background: var(--pw-input-bg, #f9fafb);
+  border: 1px solid var(--pw-border-strong); border-radius: 6px;
+}
+.wf-form input[role=combobox] { padding-right: 32px; }
+.wf-form input:focus, .wf-form textarea:focus {
+  outline: 2px solid var(--theme-focus-ring, #bfdbfe); outline-offset: 0; border-color: var(--pw-link);
+}
+.wf-form input:disabled, .wf-form textarea:disabled { opacity: 0.6; cursor: not-allowed; }
+.wf-form input::placeholder, .wf-form textarea::placeholder { color: var(--pw-muted); opacity: 0.8; }
+.wf-form input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=hidden]):not([type=color]),
+.wf-form select.field { height: 32px; line-height: 18px; }
+/* The UI library's Yes/No switch paints its handle and its unselected half
+   with a fixed white-to-gray gradient and has no dark variant. */
+[data-theme='dark'] [role=switch] [class*="from-[#e6e6e6]"] {
+  background-image: linear-gradient(to bottom, color-mix(in srgb, var(--pw-text) 10%, var(--pw-panel)), color-mix(in srgb, var(--pw-text) 6%, var(--pw-panel)));
+  color: var(--pw-text);
+}
+/* The handle, a step lighter so it stays distinct from the label beside it. */
+[data-theme='dark'] [role=switch] [class*="from-white"] {
+  background-image: linear-gradient(to bottom, color-mix(in srgb, var(--pw-text) 28%, var(--pw-panel)), color-mix(in srgb, var(--pw-text) 20%, var(--pw-panel)));
+}
