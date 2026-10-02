@@ -1913,3 +1913,4 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
   .chats-manager { padding: 12px 14px 24px; }
   .chats-row-meta { display: none; }
 }
+.wf-kind { font-size: 11px; color: var(--pw-muted); border: 1px solid var(--pw-border); border-radius: 999px; padding: 0 7px; }

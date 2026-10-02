@@ -1,4 +1,5 @@
 import fs from 'node:fs'
+import { parseWorkflowEntry } from './workflowEntries.js'
 import fsp from 'node:fs/promises'
 import path from 'node:path'
 import type { FastifyInstance } from 'fastify'
@@ -188,7 +189,7 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
     if (body.kbLabel !== undefined) next.kbLabel = String(body.kbLabel).slice(0, 60) || undefined
     if (body.sections !== undefined) next.sections = Array.isArray(body.sections) && body.sections.length ? body.sections.map(String).slice(0, 20) : undefined
     if (body.workflowCollection !== undefined) {
-      const list = Array.isArray(body.workflowCollection) ? body.workflowCollection.map(String).filter(n => /^[A-Za-z0-9_.-]{1,120}$/.test(n)) : []
+      const list = Array.isArray(body.workflowCollection) ? body.workflowCollection.map(n => parseWorkflowEntry(String(n))?.entry).filter((n): n is string => !!n) : []
       next.workflowCollection = list.length ? [...new Set(list)].slice(0, 60) : undefined
     }
     if (body.theme !== undefined) next.theme = body.theme === 'dark' ? 'dark' : 'light'

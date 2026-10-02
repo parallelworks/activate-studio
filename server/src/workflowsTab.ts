@@ -24,6 +24,7 @@ import { gatewayKey } from './chat/gateway.js'
 import { resolveUserCred } from './credentials.js'
 import { effectiveSettings } from './settings.js'
 import { KbError } from './kb.js'
+import { entryTitle, githubThumbnail, githubYamlUrls, parseWorkflowEntry, type WorkflowEntry } from './workflowEntries.js'
 import { recordRun, listRuns, markRunEnded, isTerminalRunState } from './runs.js'
 import { withWorkspace } from './workspace.js'
 
@@ -106,11 +107,6 @@ export function curatedNames(): string[] {
   return (effectiveSettings().workflowCollection ?? []).filter(Boolean)
 }
 
-const SAFE_NAME = /^[A-Za-z0-9_.-]{1,120}$/
-function checkName(name: string): string {
-  if (!SAFE_NAME.test(name)) throw new KbError(400, 'invalid workflow name')
-  return name
-}
 
 /**
  * The cluster and bucket pickers hold an object so conditional fields can
@@ -125,6 +121,54 @@ export function resolveStudioRefs(v: unknown): unknown {
     return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, resolveStudioRefs(x)]))
   }
   return v
+}
+
+
+interface MarketRow { slug: string; name?: string; description?: string; imageUrl?: string; type?: string }
+const marketCache = new Map<string, { at: number; rows: MarketRow[] }>()
+async function marketplaceFor(key: string | null): Promise<MarketRow[]> {
+  const k = (key ?? '').slice(-12)
+  const hit = marketCache.get(k)
+  if (hit && Date.now() - hit.at < 300_000) return hit.rows
+  const raw = firstJson<unknown>(await call(['marketplace', 'ls', '-o', 'json'], key, 90_000))
+  const rows = ((Array.isArray(raw) ? raw : (raw as { items?: unknown[] }).items ?? []) as MarketRow[]).filter(r => !r.type || r.type === 'workflow')
+  marketCache.set(k, { at: Date.now(), rows })
+  return rows
+}
+
+function entryOf(req: { query: unknown }): WorkflowEntry {
+  const e = parseWorkflowEntry(String((req.query as { w?: string }).w ?? ''))
+  if (!e) throw new KbError(400, 'invalid workflow: use a name, marketplace/<slug>, or github.com/<owner>/<repo>[/path][@ref]')
+  return e
+}
+
+interface Definition { yaml: any; displayName: string; description: string; configurations: { name: string; inputs: Record<string, unknown> }[] }
+
+/** A workflow's YAML and details, wherever it is defined. */
+async function definitionOf(e: WorkflowEntry, key: string | null): Promise<Definition> {
+  if (e.kind === 'account') {
+    const doc = firstJson<any>(await call(['workflows', 'get', e.name, '-o', 'json'], key, 60_000))
+    return {
+      yaml: typeof doc?.yaml === 'string' ? parseYaml(doc.yaml) : doc?.yaml,
+      displayName: doc?.displayName || e.name,
+      description: doc?.description ?? '',
+      configurations: (doc?.configurations ?? []).map((c: any) => ({ name: c.name ?? c.id ?? '', inputs: c.inputs ?? {} })),
+    }
+  }
+  if (e.kind === 'marketplace') {
+    const text = await call(['marketplace', 'get', e.slug, '--yaml'], key, 60_000)
+    const m = (await marketplaceFor(key).catch(() => [])).find(x => x.slug === e.slug)
+    return { yaml: parseYaml(text), displayName: m?.name || e.slug, description: m?.description ?? '', configurations: [] }
+  }
+  let lastStatus = 0
+  for (const url of githubYamlUrls(e)) {
+    const res = await fetch(url, { signal: AbortSignal.timeout(20_000) }).catch(() => null)
+    if (res?.ok) return { yaml: parseYaml(await res.text()), displayName: entryTitle(e), description: e.entry, configurations: [] }
+    lastStatus = res?.status ?? 0
+  }
+  throw new KbError(lastStatus === 404 ? 404 : 502, lastStatus === 404
+    ? `No workflow.yaml at ${e.entry}. Private repositories still run, but their form cannot be shown here.`
+    : `Could not read ${e.entry} from GitHub.`)
 }
 
 const runChecked = new Map<string, number>()
@@ -151,8 +195,17 @@ export async function workflowsTabRoutes(app: FastifyInstance): Promise<void> {
     if (!rows && mine.own && mine.key) { rows = await listFor(mine.key); source = 'viewer' }
     if (!rows) throw depError ?? new KbError(409, 'No platform credential: add your ACTIVATE API key under Settings, Model access.')
     const curated = new Set(curatedNames())
+    // Marketplace workflows, listed with whichever key worked; a failure
+    // here leaves the account list standing.
+    const market = await marketplaceFor(source === 'viewer' ? mine.key : dep).catch(() => [])
     return {
       source,
+      marketplace: market.map(m => ({
+        name: `marketplace/${m.slug}`,
+        displayName: m.name || m.slug,
+        description: m.description ?? '',
+        curated: curated.has(`marketplace/${m.slug}`),
+      })).sort((a, b) => a.displayName.localeCompare(b.displayName)),
       workflows: rows.map(w => ({
         name: w.name,
         displayName: w.displayName || w.name,
@@ -160,34 +213,54 @@ export async function workflowsTabRoutes(app: FastifyInstance): Promise<void> {
         tags: (w.tags ?? []).filter(Boolean),
         curated: curated.has(w.name),
       })).sort((a, b) => a.displayName.localeCompare(b.displayName)),
-      missing: [...curated].filter(n => !rows.some(w => w.name === n)),
+      missing: [...curated].filter(n => parseWorkflowEntry(n)?.kind === 'account' && !rows.some(w => w.name === n)),
     }
   })
 
-  // The tiles: the curated set, as this viewer has it.
+  // The tiles: the curated set, as this viewer has it. Account workflows
+  // come from the viewer's list (or the owner's, until they add a copy);
+  // marketplace and GitHub entries run as they are and need no copy.
   app.get('/api/workflows/collection', async req => {
     const names = curatedNames()
     if (!names.length) return { configured: false, workflows: [] }
     const v = viewer(req)
-    const mine = await listFor(v.key)
+    const entries = names.map(n => parseWorkflowEntry(n)).filter((e): e is WorkflowEntry => !!e)
+    const accountNames = entries.filter(e => e.kind === 'account').map(e => e.entry)
+    const mine = accountNames.length ? await listFor(v.key) : []
     const byName = new Map(mine.map(w => [w.name, w]))
-    // A viewer on their own key may lack a curated record; the owner's copy
-    // supplies its title and icon until they add it.
     let owner: Map<string, WorkflowRow> | null = null
-    if (v.own && names.some(n => !byName.has(n)) && gatewayKey()) {
+    if (v.own && accountNames.some(n => !byName.has(n)) && gatewayKey()) {
       owner = new Map((await listFor(gatewayKey()).catch(() => [])).map(w => [w.name, w]))
     }
-    const workflows = names.map(name => {
-      const w = byName.get(name) ?? owner?.get(name)
+    const market = entries.some(e => e.kind === 'marketplace') ? await marketplaceFor(v.key).catch(() => null) : null
+    const iconOf = (entry: string) => `/api/workflows/item/icon?w=${encodeURIComponent(entry)}`
+    const workflows = entries.map(e => {
+      if (e.kind === 'account') {
+        const w = byName.get(e.name) ?? owner?.get(e.name)
+        return {
+          name: e.entry, kind: e.kind,
+          displayName: w?.displayName || e.name,
+          description: w?.description ?? '',
+          tags: (w?.tags ?? []).filter(Boolean),
+          icon: w?.imageUrl ? iconOf(e.entry) : null,
+          configurations: (byName.get(e.name)?.configurations ?? []).map(c => c.name ?? c.id ?? '').filter(Boolean),
+          installed: byName.has(e.name),
+          available: !!w,
+        }
+      }
+      if (e.kind === 'marketplace') {
+        const m = market?.find(x => x.slug === e.slug)
+        return {
+          name: e.entry, kind: e.kind,
+          displayName: m?.name || e.slug, description: m?.description ?? '', tags: [],
+          icon: m?.imageUrl ? iconOf(e.entry) : null, configurations: [],
+          installed: true, available: market ? !!m : true,
+        }
+      }
       return {
-        name,
-        displayName: w?.displayName || name,
-        description: w?.description ?? '',
-        tags: (w?.tags ?? []).filter(Boolean),
-        icon: w?.imageUrl ? `/api/workflows/${encodeURIComponent(name)}/icon` : null,
-        configurations: (byName.get(name)?.configurations ?? []).map(c => c.name ?? c.id ?? '').filter(Boolean),
-        installed: byName.has(name),
-        available: !!w,
+        name: e.entry, kind: e.kind,
+        displayName: entryTitle(e), description: e.entry, tags: [],
+        icon: iconOf(e.entry), configurations: [], installed: true, available: true,
       }
     })
     return { configured: true, workflows }
@@ -195,43 +268,42 @@ export async function workflowsTabRoutes(app: FastifyInstance): Promise<void> {
 
   // A tile's icon. Platform blobs need the credential, so they are served
   // through here; outside URLs are fetched once and cached.
-  app.get('/api/workflows/:name/icon', async (req, reply) => {
-    const name = checkName((req.params as { name: string }).name)
-    const hit = iconCache.get(name)
+  app.get('/api/workflows/item/icon', async (req, reply) => {
+    const e = entryOf(req)
+    const hit = iconCache.get(e.entry)
     if (hit && Date.now() - hit.at < 3_600_000) return reply.type(hit.type).header('Cache-Control', 'private, max-age=3600').send(hit.body)
     const v = viewer(req)
-    const rows = [...await listFor(v.key), ...(v.own && gatewayKey() ? await listFor(gatewayKey()).catch(() => []) : [])]
-    const url = rows.find(w => w.name === name)?.imageUrl
+    let url: string | undefined
+    if (e.kind === 'account') {
+      const rows = [...await listFor(v.key), ...(v.own && gatewayKey() ? await listFor(gatewayKey()).catch(() => []) : [])]
+      url = rows.find(w => w.name === e.name)?.imageUrl
+    } else if (e.kind === 'marketplace') {
+      url = (await marketplaceFor(v.key).catch(() => [])).find(x => x.slug === e.slug)?.imageUrl
+    } else url = githubThumbnail(e)
     if (!url) return reply.status(404).send({ error: 'no icon' })
     const host = new URL(GATEWAY_BASE).origin
     const abs = url.startsWith('/') ? host + url : url
     if (!/^https:\/\//.test(abs)) return reply.status(404).send({ error: 'no icon' })
-    const res = await fetch(abs, { headers: abs.startsWith(host) ? { Authorization: `Bearer ${v.key}` } : {}, signal: AbortSignal.timeout(15_000) })
-    if (!res.ok) return reply.status(404).send({ error: 'icon unavailable' })
+    const res = await fetch(abs, { headers: abs.startsWith(host) ? { Authorization: `Bearer ${v.key}` } : {}, signal: AbortSignal.timeout(15_000) }).catch(() => null)
+    if (!res?.ok) return reply.status(404).send({ error: 'icon unavailable' })
     const type = res.headers.get('content-type') || 'image/png'
     if (!/^image\//.test(type)) return reply.status(404).send({ error: 'not an image' })
     const body = Buffer.from(await res.arrayBuffer())
-    iconCache.set(name, { at: Date.now(), type, body })
+    iconCache.set(e.entry, { at: Date.now(), type, body })
     return reply.type(type).header('Cache-Control', 'private, max-age=3600').send(body)
   })
 
   // The form: the workflow's inputs in the platform's dynamic-form shape,
-  // and its saved configurations as presets.
-  app.get('/api/workflows/:name/form', async req => {
-    const name = checkName((req.params as { name: string }).name)
+  // and its saved configurations as presets. Also how Settings checks a
+  // GitHub entry before adding it.
+  app.get('/api/workflows/item/form', async req => {
+    const e = entryOf(req)
     const v = viewer(req)
-    const doc = firstJson<any>(await call(['workflows', 'get', name, '-o', 'json'], v.key, 60_000))
-    const yamlDoc = typeof doc?.yaml === 'string' ? parseYaml(doc.yaml) : doc?.yaml
-    const inputs = yamlDoc?.on?.execute?.inputs
+    const d = await definitionOf(e, v.key)
+    const inputs = d.yaml?.on?.execute?.inputs
     let form: unknown = null
-    try { form = inputs && workflowHasUserInputs(yamlDoc) ? convertToDynamicForm(inputs) : {} } catch { form = null }
-    return {
-      name,
-      displayName: doc?.displayName || name,
-      description: doc?.description ?? '',
-      form,
-      configurations: (doc?.configurations ?? []).map((c: any) => ({ name: c.name ?? c.id ?? '', inputs: c.inputs ?? {} })),
-    }
+    try { form = inputs && workflowHasUserInputs(d.yaml) ? convertToDynamicForm(inputs) : {} } catch { form = null }
+    return { name: e.entry, kind: e.kind, displayName: d.displayName, description: d.description, form, configurations: d.configurations }
   })
 
   // Clusters for the cluster picker, as the pw:// reference the platform
@@ -283,46 +355,47 @@ export async function workflowsTabRoutes(app: FastifyInstance): Promise<void> {
 
   // Validate or run. Values arrive as the form holds them; the platform's
   // own submission logic drops hidden and ignored fields before they go.
-  app.post('/api/workflows/:name/run', async req => {
-    const name = checkName((req.params as { name: string }).name)
+  app.post('/api/workflows/item/run', async req => {
+    const e = entryOf(req)
     const body = req.body as { inputs?: Record<string, unknown>; dryRun?: boolean }
     const v = viewer(req)
-    if (!curatedNames().includes(name)) throw new KbError(403, `${name} is not in this Studio's workflow collection`)
-    const doc = firstJson<any>(await call(['workflows', 'get', name, '-o', 'json'], v.key, 60_000))
-    const yamlDoc = typeof doc?.yaml === 'string' ? parseYaml(doc.yaml) : doc?.yaml
+    if (!curatedNames().includes(e.entry)) throw new KbError(403, `${e.entry} is not in this Studio's workflow collection`)
+    const d = await definitionOf(e, v.key)
     let values: Record<string, unknown> = body.inputs ?? {}
-    try { values = prepareSubmittableValues(yamlDoc, values, v.username ?? '') } catch { /* submit as given */ }
+    try { values = prepareSubmittableValues(d.yaml, values, v.username ?? '') } catch { /* submit as given */ }
     values = resolveStudioRefs(values) as Record<string, unknown>
-    const args = ['workflows', 'run', name, '-i', JSON.stringify(values), '-o', 'json']
+    const args = ['workflows', 'run', e.entry, '-i', JSON.stringify(values), '-o', 'json']
     if (body.dryRun) args.push('--dry-run')
     let out: string
     try {
       // Raw CLI errors here: withWorkspace recognizes a stopped workspace by its text.
       out = (await withWorkspace({ cli: (a, t) => cli(a, v.key, t) }, () => cli(args, v.key, 180_000))).value
-    } catch (e) {
-      const msg = String((e as Error).message ?? e).replace(/^\S+Z \[(ERROR|WARN)\] /gm, '')
+    } catch (err) {
+      const msg = String((err as Error).message ?? err).replace(/^\S+Z \[(ERROR|WARN)\] /gm, '')
       return { ok: false, dryRun: !!body.dryRun, message: msg.slice(0, 2000) }
     }
     if (body.dryRun) return { ok: true, dryRun: true, message: out.trim().slice(0, 2000) || 'Validation passed.' }
     let slug: string | null = null
     try { const r = firstJson<any>(out); slug = String((r?.run ?? r)?.slug ?? (r?.run ?? r)?.id ?? '') || null } catch { /* plain output */ }
-    if (slug) recordRun({ slug, workflow: name, owner: v.username })
+    if (slug) recordRun({ slug, workflow: e.entry, owner: v.username })
     return { ok: true, dryRun: false, slug, message: slug ? `Run ${slug} submitted.` : out.trim().slice(0, 2000) }
   })
 
-  // First use: copy the deployment owner's record into the viewer's account.
-  app.post('/api/workflows/:name/install', async req => {
-    const name = checkName((req.params as { name: string }).name)
+  // First use of an account workflow: copy the deployment owner's record
+  // into the viewer's account. Marketplace and GitHub entries need none.
+  app.post('/api/workflows/item/install', async req => {
+    const e = entryOf(req)
     const v = viewer(req)
-    if (!curatedNames().includes(name)) throw new KbError(403, `${name} is not in this Studio's workflow collection`)
+    if (!curatedNames().includes(e.entry)) throw new KbError(403, `${e.entry} is not in this Studio's workflow collection`)
+    if (e.kind !== 'account') throw new KbError(409, 'Marketplace and GitHub workflows run without a copy in your account.')
     const ownerKey = gatewayKey()
     if (!v.own || !ownerKey) throw new KbError(409, 'Nothing to add: this Studio runs workflows with its own credential.')
-    const doc = firstJson<any>(await call(['workflows', 'get', name, '-o', 'json'], ownerKey, 60_000))
+    const doc = firstJson<any>(await call(['workflows', 'get', e.name, '-o', 'json'], ownerKey, 60_000))
     const text = typeof doc?.yaml === 'string' ? doc.yaml : dumpYaml(doc?.yaml ?? {})
-    const tmp = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'wf-')), `${name}.yaml`)
+    const tmp = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'wf-')), `${e.name}.yaml`)
     fs.writeFileSync(tmp, text)
     try {
-      const args = ['workflows', 'create', '--yaml', tmp, name]
+      const args = ['workflows', 'create', '--yaml', tmp, e.name]
       if (doc?.displayName) args.splice(2, 0, '--display-name', String(doc.displayName))
       await call(args, v.key, 60_000)
     } finally { fs.rmSync(path.dirname(tmp), { recursive: true, force: true }) }

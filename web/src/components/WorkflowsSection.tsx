@@ -7,11 +7,15 @@ import { useEffect, useMemo, useState } from 'react'
  * site's own workflows. Order is the order of the tiles.
  */
 
-interface CatalogRow { name: string; displayName: string; description: string; tags: string[]; curated: boolean }
+interface CatalogRow { name: string; displayName: string; description: string; tags?: string[]; curated: boolean }
 
 export function WorkflowsSection() {
   const [catalog, setCatalog] = useState<CatalogRow[] | null>(null)
   const [source, setSource] = useState<'deployment' | 'viewer'>('deployment')
+  const [market, setMarket] = useState<CatalogRow[]>([])
+  const [gh, setGh] = useState('')
+  const [ghNote, setGhNote] = useState('')
+  const [ghBusy, setGhBusy] = useState(false)
   const [picked, setPicked] = useState<string[]>([])
   const [filter, setFilter] = useState('')
   const [note, setNote] = useState('')
@@ -25,14 +29,29 @@ export function WorkflowsSection() {
       if (!r.ok) throw new Error(d.error ?? `${r.status}`)
       setCatalog(d.workflows)
       setSource(d.source === 'viewer' ? 'viewer' : 'deployment')
+      setMarket(Array.isArray(d.marketplace) ? d.marketplace : [])
     }).catch(e => setNote(`Cannot list the platform's workflows: ${(e as Error).message}`))
   }, [])
 
-  const byName = useMemo(() => new Map((catalog ?? []).map(w => [w.name, w])), [catalog])
-  const shown = (catalog ?? []).filter(w => {
+  const byName = useMemo(() => new Map([...(catalog ?? []), ...market].map(w => [w.name, w])), [catalog, market])
+  const matches = (w: CatalogRow) => {
     const q = filter.trim().toLowerCase()
-    return !q || w.name.toLowerCase().includes(q) || w.displayName.toLowerCase().includes(q) || w.tags.some(t => t.toLowerCase().includes(q))
-  })
+    return !q || w.name.toLowerCase().includes(q) || w.displayName.toLowerCase().includes(q) || (w.tags ?? []).some(t => t.toLowerCase().includes(q))
+  }
+  const shown = (catalog ?? []).filter(matches)
+  const shownMarket = market.filter(matches)
+  const addGithub = async () => {
+    const entry = gh.trim().replace(/^https?:\/\//, '').replace(/\.git$/, '')
+    if (!entry) return
+    setGhBusy(true); setGhNote('')
+    try {
+      const r = await fetch(`/api/workflows/item/form?w=${encodeURIComponent(entry)}`)
+      const d = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(d.error ?? `${r.status}`)
+      if (!picked.includes(entry)) { setPicked(p => [...p, entry]); setDirty(true) }
+      setGh(''); setGhNote(`Added ${entry}. Save to offer it.`)
+    } catch (e) { setGhNote(String((e as Error).message)) } finally { setGhBusy(false) }
+  }
   const toggle = (name: string) => { setDirty(true); setPicked(p => p.includes(name) ? p.filter(n => n !== name) : [...p, name]) }
   const move = (i: number, d: -1 | 1) => {
     const j = i + d
@@ -55,8 +74,9 @@ export function WorkflowsSection() {
       <h1>Workflows</h1>
       <p className="muted view-sub">
         The workflows this Studio offers as tiles on its Workflows tab, each run from its own form under the viewer's
-        account. Pick them from the workflows on the platform account this Studio is deployed under. A viewer who does
-        not have one yet can add a copy to their account from the tile.
+        account. Pick them from the account this Studio is deployed under, from the marketplace, or from a GitHub
+        repository. A viewer who lacks an account workflow can add a copy from its tile; marketplace and GitHub
+        workflows need no copy.
       </p>
 
       <div className="tool-group">Offered here ({picked.length})</div>
@@ -67,7 +87,7 @@ export function WorkflowsSection() {
             <li key={n}>
               <span className="wf-picked-name">{byName.get(n)?.displayName ?? n}</span>
               <code className="muted">{n}</code>
-              {catalog && !byName.has(n) && <span className="wf-fail">not on the platform account</span>}
+              {catalog && !n.includes('/') && !byName.has(n) && <span className="wf-fail">not on the platform account</span>}
               <span className="wf-picked-actions">
                 <button className="btn-link" disabled={i === 0} onClick={() => move(i, -1)} aria-label="Move up">&uarr;</button>
                 <button className="btn-link" disabled={i === picked.length - 1} onClick={() => move(i, 1)} aria-label="Move down">&darr;</button>
@@ -82,7 +102,7 @@ export function WorkflowsSection() {
         {note && <span className="muted">{note}</span>}
       </div>
 
-      <div className="tool-group">On the platform{catalog ? ` (${catalog.length})` : ''}</div>
+      <div className="tool-group">On the account{catalog ? ` (${catalog.length})` : ''}</div>
       {catalog && source === 'viewer' && (
         <p className="muted">Listed from your own account, because the deployment's platform credential is not usable. Until it is renewed, other viewers can run a workflow picked here only if it is already in their own account.</p>
       )}
@@ -104,6 +124,38 @@ export function WorkflowsSection() {
           </table>
         </div>
       )}
+
+      <div className="tool-group">Marketplace{market.length ? ` (${market.length})` : ''}</div>
+      {market.length === 0 && catalog && <p className="muted">No marketplace workflows are listed for this account.</p>}
+      {shownMarket.length > 0 && (
+        <div className="rag-calls-wrap">
+          <table className="rag-calls-table wf-catalog">
+            <thead><tr><th></th><th>Workflow</th><th>Description</th></tr></thead>
+            <tbody>
+              {shownMarket.map(w => (
+                <tr key={w.name}>
+                  <td><input type="checkbox" checked={picked.includes(w.name)} onChange={() => toggle(w.name)} aria-label={`Offer ${w.displayName}`} /></td>
+                  <td><div>{w.displayName}</div><code className="muted">{w.name}</code></td>
+                  <td className="muted">{w.description}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <div className="tool-group">From GitHub</div>
+      <p className="muted">
+        A repository, or a directory or file in one, holding a workflow.yaml: <code>github.com/owner/repo</code>,
+        optionally with a path and <code>@branch</code>, tag, or commit. It runs as it is in the repository, without a copy
+        in anyone's account. The form is read from public repositories; a private one still runs.
+      </p>
+      <div className="query-actions">
+        <input className="field" placeholder="github.com/owner/repo[/path][@ref]" value={gh} onChange={e => setGh(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') void addGithub() }} />
+        <button className="btn-secondary" disabled={ghBusy || !gh.trim()} onClick={() => void addGithub()}>{ghBusy ? 'Checking…' : 'Add'}</button>
+      </div>
+      {ghNote && <p className="muted">{ghNote}</p>}
     </>
   )
 }

@@ -353,8 +353,10 @@ permissions:
             type: string
             optional: true
             tooltip: |
-              Comma-separated names of platform workflows to offer as tiles on the
-              Workflows tab, in order. Each viewer runs them under their own account.
+              Comma-separated workflows to offer as tiles on the Workflows tab, in
+              order: account workflow names, marketplace/<slug>, or
+              github.com/<owner>/<repo>[/path][@ref]. Each viewer runs them under
+              their own account.
               Administrators can also pick them in Settings, Workflows, from the
               workflows on the account this Studio is deployed under.
           build_gufi:

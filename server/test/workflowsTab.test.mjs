@@ -76,20 +76,20 @@ test('the catalog lists the deployment account and flags the curated ones', asyn
 })
 
 test('the form converts the workflow inputs and carries saved configurations', async () => {
-  const { status, body } = await j('GET', '/api/workflows/batch-job/form')
+  const { status, body } = await j('GET', '/api/workflows/item/form?w=batch-job')
   assert.equal(status, 200)
   assert.ok(body.form && typeof body.form === 'object')
   assert.deepEqual(body.configurations, [{ name: 'small', inputs: { steps: 1 } }])
 })
 
 test('a workflow outside the collection is refused', async () => {
-  const { status } = await j('POST', '/api/workflows/other/run', { inputs: {}, dryRun: true })
+  const { status } = await j('POST', '/api/workflows/item/run?w=other', { inputs: {}, dryRun: true })
   assert.equal(status, 403)
 })
 
 test('a picker object is submitted as its pw:// reference', async () => {
   calls.length = 0
-  const { body } = await j('POST', '/api/workflows/batch-job/run', {
+  const { body } = await j('POST', '/api/workflows/item/run?w=batch-job', {
     inputs: { resource: { name: 'gpu', user: 'someone', schedulerType: 'slurm', _studioRef: 'pw://someone/gpu' }, steps: 3 },
   })
   assert.equal(body.ok, true)
@@ -100,7 +100,7 @@ test('a picker object is submitted as its pw:// reference', async () => {
 })
 
 test('a dry run validates without recording a run', async () => {
-  const { body } = await j('POST', '/api/workflows/batch-job/run', { inputs: { steps: 1 }, dryRun: true })
+  const { body } = await j('POST', '/api/workflows/item/run?w=batch-job', { inputs: { steps: 1 }, dryRun: true })
   assert.equal(body.ok, true)
   assert.equal(body.dryRun, true)
 })
