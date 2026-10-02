@@ -27,6 +27,18 @@ export type Display = { kind: 'file'; target: string; q?: string; lib?: string }
 // move into the More sheet.
 const MOBILE_PRIMARY = new Set<string>(['chat', 'library', 'search', 'overview'])
 
+// The list-style views share one header bar: the section's name and a
+// short note on what it covers. Chat, the library, settings, and help lay
+// out their own tops.
+const PAGE_NOTES: Partial<Record<ViewId, string>> = {
+  search: 'Full text and meaning, including Office and PDF content',
+  query: 'Sizes, ages, types, labels, and locations, from the index',
+  overview: 'What the knowledge base holds and how the index is doing',
+  agents: '',
+  workflows: 'Each runs under your own account',
+  history: 'The corpus at each index pass',
+}
+
 const NAV: { id: ViewId; label: string; icon: ReactElement }[] = [
   {
     id: 'chat',
@@ -398,6 +410,12 @@ export default function App() {
         <StatusFooter collapsed={navCollapsed} />
       </nav>
       <main className="content">
+        {view in PAGE_NOTES && (
+          <header className="page-head">
+            <h1>{NAV.find(n => n.id === view)?.label}</h1>
+            {PAGE_NOTES[view] && <span className="page-note" title={PAGE_NOTES[view]}>{PAGE_NOTES[view]}</span>}
+          </header>
+        )}
         <div className={`view view-chat${view === 'chat' ? '' : ' hidden'}`}><ChatView /></div>
         <div className={view === 'library' ? 'view' : 'view hidden'}>
           <LibraryView display={display} onDisplay={setDisplay} />

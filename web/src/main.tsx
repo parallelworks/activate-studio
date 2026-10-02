@@ -5,7 +5,7 @@ import ReactDOM from 'react-dom/client'
 import App from './App'
 import { rememberHashChanges, restoreLastHash } from './lastLocation'
 import { applyRememberedFavicon } from './config'
-import '@fontsource-variable/geist'
+import '@fontsource-variable/public-sans'
 import '@fontsource-variable/geist-mono'
 // Two packages ship their own Tailwind build, and their utilities collide at
 // equal specificity, so whichever loads last wins. The chat package must come

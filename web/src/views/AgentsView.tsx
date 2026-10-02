@@ -220,7 +220,6 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
   return (
     <div className="overview-view agents-view">
       <div className="card ov-head">
-        <h1 className="view-title">Agents</h1>
         <div className="viewer-tabs agents-tabs">
           <button className={page === 'fleet' ? 'active' : ''} onClick={() => setPage('fleet')}>Fleet</button>
           <button className={page === 'tasks' ? 'active' : ''} onClick={() => setPage('tasks')}>

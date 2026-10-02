@@ -56,8 +56,6 @@ export function SearchView({ onOpen }: { onOpen: (path: string, q?: string) => v
   return (
     <div className="search-view">
       <div className="search-hero card">
-        <h1 className="view-title">Search the knowledge base</h1>
-        <p className="muted view-sub">Full-text and semantic search across the corpus. Office document and PDF content is included.</p>
         <div className="search-bar">
           <input
             value={q}

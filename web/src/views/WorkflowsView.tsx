@@ -48,8 +48,6 @@ export function WorkflowsView() {
   }
   return (
     <div className="overview-view workflows-view">
-      <h1 className="view-title">Workflows</h1>
-      <p className="muted view-sub">The ACTIVATE workflows this Studio offers. Each runs under your own account, on your own copy of the workflow.</p>
       {error && <p className="banner-error">{error}</p>}
       {!configured && <p className="muted">No workflows are offered yet. An administrator picks them under Settings, Workflows.</p>}
       {tiles && tiles.length > 0 && (

@@ -139,14 +139,9 @@ export function HistoryView({ onOpen }: { onOpen: (path: string) => void }) {
   // this view's own.
   return (
     <div className="hist-view">
-      <div className="card ov-head">
-        <h1 className="view-title">Corpus history</h1>
-        <p className="muted view-sub">
-          The knowledge base as the index found it at each pass. Pick a moment on the timeline, browse what the
-          corpus held then, and see what that pass changed. Snapshots record the file list with sizes and
-          dates, not file contents, so opening a file here shows it as it is today.
-        </p>
-      </div>
+      <p className="muted view-note hist-note">
+        Snapshots record the file list with sizes and dates, not file contents, so opening a file here shows it as it is today.
+      </p>
 
       <div className="ov-tiles hist-tiles">
         <div className="card ov-tile"><span className="stat-num">{snaps.length}</span><span className="stat-label">snapshots · {bytes(stored)} on disk</span></div>
