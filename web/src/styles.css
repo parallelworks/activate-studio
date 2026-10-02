@@ -8,7 +8,7 @@
   --pw-border: #e5e7eb;
   --pw-border-strong: #d1d5db;
   --pw-text: #111827;
-  --pw-muted: #6c757d;
+  --pw-muted: #646e78;
   --pw-muted-2: #9aa4b1;
   --pw-link: #2563eb;
   --pw-active-pill: #e1f2fb;
@@ -26,6 +26,16 @@
      components use, a step off the card, which is where the separation
      actually needs help. */
   --pw-rail-bg: var(--pw-panel);
+
+  /* App navigation and page grounds. In light the navigation sits on the
+     gray ground and pages on the panel color; in dark the navigation is
+     the lighter of the two. Its pills are neutral: the accent marks what is
+     interactive, not where you are. */
+  --pw-nav-bg: var(--pw-bg);
+  --pw-content-bg: var(--pw-panel);
+  --pw-nav-text: color-mix(in srgb, var(--pw-text) 78%, var(--pw-nav-bg));
+  --pw-nav-hover: color-mix(in srgb, var(--pw-text) 5%, var(--pw-nav-bg));
+  --pw-nav-active: color-mix(in srgb, var(--pw-text) 9%, var(--pw-nav-bg));
 }
 
 /* Dark mode: a deliberately re-stepped palette, not an automatic flip.
@@ -64,6 +74,8 @@
   --theme-link: #7cb8f0;
   --theme-input-bg: #0f172a;
   --pw-rail-bg: var(--theme-panel-bg, #232528);
+  --pw-nav-bg: var(--pw-panel);
+  --pw-content-bg: var(--pw-bg);
 }
 [data-theme='dark'] .btn-primary { background: #1d4ed8; color: #fff; }
 [data-theme='dark'] .btn-primary:hover { background: #2b5ce4; }
@@ -73,8 +85,6 @@
 [data-theme='dark'] .tree-row:hover { background: var(--pw-hover-row); }
 [data-theme='dark'] .tree-row.dir { color: #d5dfeb; }
 [data-theme='dark'] .tree-row.file { color: #aebdd0; }
-[data-theme='dark'] .sidenav-item { color: #b9c7d8; }
-[data-theme='dark'] .sidenav-item:hover { background: var(--theme-hover, #1d2a3c); color: var(--pw-text); }
 [data-theme='dark'] .field:focus, [data-theme='dark'] .search-bar input:focus { outline: 2px solid #2b5f8f; border-color: #4b8cc4; background: #101927; }
 [data-theme='dark'] .viewer-tabs button.active, [data-theme='dark'] .query-mode button.active { color: var(--pw-navy); }
 /* In light, the navy accent doubles as the heading and path ink and reads
@@ -111,8 +121,13 @@
 
 * { box-sizing: border-box; }
 html, body, #root { height: 100%; margin: 0; }
+/* Public Sans, as in the platform's other apps; tabular figures so counts
+   and sizes line up in columns. The shared packages' Tailwind builds read
+   --font-sans. */
+:root { --font-sans: 'Public Sans Variable', ui-sans-serif, system-ui, -apple-system, sans-serif; }
 body {
-  font-family: 'Geist Variable', 'Geist Sans', system-ui, -apple-system, sans-serif;
+  font-family: var(--font-sans);
+  font-feature-settings: "tnum" 1;
   font-size: 14px;
   color: var(--pw-text);
   background: var(--pw-bg);
@@ -128,7 +143,7 @@ button { font-family: inherit; }
    navigation bar off-screen and leaving nothing able to scroll, since the
    scrolling containers below it never got a bounded height to work
    against. Zero here is what lets every view's own scroller do its job. */
-main.content { min-height: 0; min-width: 0; }
+main.content { min-height: 0; min-width: 0; background: var(--pw-content-bg); }
 
 /* Classification banner: full width above everything, in the platform's
    style. Sized so it reads as chrome and not as content. */
@@ -189,7 +204,7 @@ main.content { min-height: 0; min-width: 0; }
    to the platform shell around this session, not to the app. ---- */
 .sidenav {
   width: 240px; flex-shrink: 0;
-  background: var(--pw-panel);
+  background: var(--pw-nav-bg);
   border-right: 1px solid var(--pw-border);
   color: var(--pw-text);
   display: flex; flex-direction: column;
@@ -229,11 +244,11 @@ main.content { min-height: 0; min-width: 0; }
 .sidenav-item {
   display: flex; align-items: center; gap: 10px;
   padding: 8px 10px; border: none; border-radius: 8px;
-  background: transparent; color: #3c4656; font-size: 13.5px; font-weight: 500;
+  background: transparent; color: var(--pw-nav-text); font-size: 14px; font-weight: 450;
   cursor: pointer; text-align: left; transition: background 0.12s ease;
 }
-.sidenav-item:hover { background: var(--pw-bg); color: var(--pw-navy); }
-.sidenav-item.active { background: var(--pw-active-pill); color: var(--pw-navy); }
+.sidenav-item:hover { background: var(--pw-nav-hover); color: var(--pw-text); }
+.sidenav-item.active { background: var(--pw-nav-active); color: var(--pw-text); font-weight: 550; }
 .sidenav-item svg { flex-shrink: 0; }
 
 .sidenav-secondary { margin-top: auto; padding-bottom: 8px; }
@@ -241,7 +256,7 @@ main.content { min-height: 0; min-width: 0; }
 .status-line { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--pw-muted); padding: 2px 0; }
 /* Reserves the footer's height while its first read is in flight. */
 .footer-pending { min-height: 74px; }
-.status-line.muted2 { color: var(--pw-muted-2); }
+.status-line.muted2 { color: var(--pw-muted); }
 .status-dot { width: 7px; height: 7px; border-radius: 50%; }
 .status-dot.ok { background: var(--pw-green); }
 .status-dot.warn { background: #f59e0b; }
@@ -907,7 +922,7 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 }
 .scope-item:hover { background: var(--pw-hover-row, #f8fafc); }
 .scope-tag { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.scope-n { color: var(--pw-muted-2); font-size: 11.5px; }
+.scope-n { color: var(--pw-muted); font-size: 11.5px; }
 .scope-empty { font-size: 12.5px; padding: 4px; }
 .scope-menu-foot { display: flex; justify-content: space-between; align-items: center; }
 .scope-clear {
@@ -1041,7 +1056,7 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .workflow-tab-body { flex: 1; min-height: 480px; display: flex; flex-direction: column; }
 .workflow-tab-body .viewer { flex: 1; }
 /* The task board: cards for the fleet, a tree and a feed for one task. */
-.agents-tabs { margin-top: 10px; }
+.agents-tabs { margin-top: 0; }
 .tab-live-dot {
   display: inline-block; width: 7px; height: 7px; border-radius: 50%;
   background: var(--pw-green); margin-left: 6px; vertical-align: 2px;
@@ -1242,13 +1257,11 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .help-nav button {
   display: flex; align-items: center; gap: 9px; padding: 7px 10px;
   border: none; border-radius: 8px; background: transparent; text-align: left;
-  color: #3c4656; font-size: 13px; font-weight: 500; cursor: pointer;
+  color: color-mix(in srgb, var(--pw-text) 78%, var(--pw-panel)); font-size: 13.5px; font-weight: 450; cursor: pointer;
 }
-.help-nav button:hover { background: var(--pw-bg); color: var(--pw-navy); }
-.help-nav button.active { background: var(--pw-active-pill); color: var(--pw-navy); }
+.help-nav button:hover { background: color-mix(in srgb, var(--pw-text) 5%, var(--pw-panel)); color: var(--pw-text); }
+.help-nav button.active { background: color-mix(in srgb, var(--pw-text) 9%, var(--pw-panel)); color: var(--pw-text); font-weight: 550; }
 .help-nav button svg { flex-shrink: 0; width: 15px; height: 15px; }
-[data-theme='dark'] .help-nav button { color: #b9c7d8; }
-[data-theme='dark'] .help-nav button:hover { background: #1d2a3c; color: #e8eef6; }
 .help-content { flex: 1; overflow-y: auto; padding: 26px 40px 40px; }
 .help-content h1 { margin: 0 0 12px; font-size: 20px; font-weight: 650; letter-spacing: -0.01em; color: var(--pw-text); }
 .help-content .md-body { max-width: 780px; font-size: 14px; line-height: 1.65; }
@@ -1555,8 +1568,8 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
    because it is made of the same pieces. Only the page grid, the change
    tallies, and the timeline ticks are defined here. */
 .hist-view { padding: 12px; overflow: auto; flex: 1; display: grid; gap: 12px; min-height: 0;
-  grid-template-columns: 1fr 210px; grid-template-areas: "head head" "tiles tiles" "main rail"; align-content: start; }
-.hist-view .ov-head { grid-area: head; }
+  grid-template-columns: 1fr 210px; grid-template-areas: "note note" "tiles tiles" "main rail"; align-content: start; }
+.hist-note { grid-area: note; margin: 0; font-size: 12.5px; }
 .hist-tiles { grid-area: tiles; }
 .hist-main { grid-area: main; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .hist-rail { grid-area: rail; align-self: start; display: flex; flex-direction: column; gap: 2px; }
@@ -1580,7 +1593,7 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .hist-tick-row:hover .hist-tick-del { color: var(--pw-muted); }
 .hist-tick-del:hover { color: #dc2626; background: var(--theme-hover); }
 .hist-prune { margin-top: 8px; font-size: 12px; }
-.hist-check { padding: 4px 8px 4px 18px; font-size: 12px; color: var(--pw-muted-2); }
+.hist-check { padding: 4px 8px 4px 18px; font-size: 12px; color: var(--pw-muted); }
 .hist-tick { position: relative; padding: 5px 8px 5px 18px; border: 0; background: none; color: var(--pw-muted);
   font-size: 13px; text-align: left; cursor: pointer; border-radius: 6px; }
 .hist-tick::before { content: ''; position: absolute; left: 6px; top: 50%; width: 7px; height: 1px; background: currentColor; opacity: 0.6; }
@@ -1742,7 +1755,7 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
   .ov-grid, .help-grid, .tools-grid, .ext-cols, .settings-grid { grid-template-columns: 1fr; }
   .ov-bar-row { grid-template-columns: 48px 1fr; }
   .ov-bar-value { grid-column: 1 / -1; text-align: right; }
-  .hist-view { grid-template-columns: 1fr; grid-template-areas: "head" "tiles" "main" "rail"; }
+  .hist-view { grid-template-columns: 1fr; grid-template-areas: "note" "tiles" "main" "rail"; }
   .viewer-body { padding: 12px 14px; }
   /* Settings and Help are a 220px section rail beside a scrolling
      article. On a phone that rail eats most of the width and, with the
@@ -1818,7 +1831,7 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .libraries-table .lib-name { font-weight: 600; color: var(--pw-text); }
 .libraries-table .lib-id { font-size: 11.5px; color: var(--pw-muted); margin-top: 2px; }
 .libraries-table .lib-yes { color: var(--pw-text); }
-.libraries-table .lib-no { color: var(--pw-muted-2); }
+.libraries-table .lib-no { color: var(--pw-muted); }
 .libraries-table .lib-actions { text-align: right; width: 1%; }
 
 /* Workflows tab */
@@ -1845,3 +1858,30 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .wf-picked-name { font-weight: 600; }
 .wf-picked-actions { margin-left: auto; display: flex; gap: 0.25rem; }
 .wf-catalog td:first-child { width: 2rem; }
+
+/* Page header bar for the list-style views: the section's name and a short
+   note, flush with the content, ruled off below. */
+.page-head {
+  display: flex; align-items: baseline; gap: 14px; flex-shrink: 0;
+  min-height: 52px; padding: 14px 22px 12px; box-sizing: border-box;
+  border-bottom: 1px solid var(--pw-border); background: var(--pw-content-bg);
+}
+.page-head h1 { margin: 0; font-size: 16px; font-weight: 600; color: var(--pw-text); white-space: nowrap; }
+.page-note { min-width: 0; font-size: 13px; color: var(--pw-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 720px) {
+  .page-head { min-height: 44px; padding: 10px 14px; }
+  .page-note { display: none; }
+}
+
+/* Full-pane views (chat, library, settings, help) run edge to edge from
+   the navigation, as the platform's other apps do: no inset, no card
+   frame. Their inner rails keep their own dividers. */
+.chat-wrap, .library, .settings-view, .help-view { padding: 0; }
+.chat-wrap > .card, .library-card.card, .help-docs.card {
+  border: 0; border-radius: 0; box-shadow: none;
+}
+.sidenav-brand .brand-text { font-size: 14px; color: var(--pw-text); }
+.sidenav-brand .brand-text b { color: var(--pw-text); letter-spacing: 0; font-weight: 600; }
+/* The Agents tabs no longer sit under a title. */
+.agents-view .ov-head { padding: 0 24px; }
+.hist-view > .empty-state { grid-column: 1 / -1; }

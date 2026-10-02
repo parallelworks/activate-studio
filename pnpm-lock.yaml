@@ -63,6 +63,9 @@ importers:
       '@fontsource-variable/geist-mono':
         specifier: ^5.3.0
         version: 5.3.0
+      '@fontsource-variable/public-sans':
+        specifier: ^5.3.0
+        version: 5.3.0
       '@parallelworks/ai-chat':
         specifier: 0.5.0
         version: 0.5.0(@popperjs/core@2.11.8)(formik@2.4.9(@types/react@19.2.18)(react@19.2.8))(monaco-editor@0.55.1)(monaco-yaml@5.5.1(monaco-editor@0.55.1))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -634,6 +637,9 @@ packages:
 
   '@fontsource-variable/geist@5.3.0':
     resolution: {integrity: sha512-j0m+vLQuG5XAYoHtGCVu0spvlGreR3EzpECUVzkFmI1mTVnAO38l/NEPDCFgZ177JxzYJCLSmTQibIiYPilGrA==}
+
+  '@fontsource-variable/public-sans@5.3.0':
+    resolution: {integrity: sha512-AVfkmAt50BMXWpOO21FAntiJFKGX6xTc2dSL8dxtDteONe9IuRXJWGbs0EbG955vAMCq23ENeuopuW87cGWDSQ==}
 
   '@giraffesyo/downmark-darwin-arm64@0.10.0':
     resolution: {integrity: sha512-l0G7KxuoqBCyPIf4z2V+u+xM6AfYs4STLslrX7joCcmtP6yWWT+rZGMB8+Txkaja1CyPfuMZpLpoy55F3Q9ibA==}
@@ -3181,6 +3187,8 @@ snapshots:
   '@fontsource-variable/geist-mono@5.3.0': {}
 
   '@fontsource-variable/geist@5.3.0': {}
+
+  '@fontsource-variable/public-sans@5.3.0': {}
 
   '@giraffesyo/downmark-darwin-arm64@0.10.0':
     optional: true

@@ -11,6 +11,7 @@
   "dependencies": {
     "@fontsource-variable/geist": "^5.3.0",
     "@fontsource-variable/geist-mono": "^5.3.0",
+    "@fontsource-variable/public-sans": "^5.3.0",
     "@parallelworks/ai-chat": "0.5.0",
     "@parallelworks/ui": "^0.17.0",
     "formik": "^2.4.9",
