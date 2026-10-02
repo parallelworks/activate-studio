@@ -139,11 +139,20 @@ export async function workflowsTabRoutes(app: FastifyInstance): Promise<void> {
 
   // What an administrator can pick from: every workflow on the account the
   // Studio is deployed under, which on a site deployment is the site's list.
+  // When the deployment's credential is missing, expired, or rejected, the
+  // viewer's own key lists their account instead, and the answer says so.
   app.get('/api/workflows/catalog', async req => {
-    const key = gatewayKey() ?? viewer(req).key
-    const rows = await listFor(key)
+    const dep = gatewayKey()
+    const mine = platformKeyFor(req.user?.id)
+    let rows: WorkflowRow[] | null = null
+    let source: 'deployment' | 'viewer' = 'deployment'
+    let depError: unknown = null
+    if (dep) rows = await listFor(dep).catch(e => { depError = e; return null })
+    if (!rows && mine.own && mine.key) { rows = await listFor(mine.key); source = 'viewer' }
+    if (!rows) throw depError ?? new KbError(409, 'No platform credential: add your ACTIVATE API key under Settings, Model access.')
     const curated = new Set(curatedNames())
     return {
+      source,
       workflows: rows.map(w => ({
         name: w.name,
         displayName: w.displayName || w.name,

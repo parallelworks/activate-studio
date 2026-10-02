@@ -11,6 +11,7 @@ interface CatalogRow { name: string; displayName: string; description: string; t
 
 export function WorkflowsSection() {
   const [catalog, setCatalog] = useState<CatalogRow[] | null>(null)
+  const [source, setSource] = useState<'deployment' | 'viewer'>('deployment')
   const [picked, setPicked] = useState<string[]>([])
   const [filter, setFilter] = useState('')
   const [note, setNote] = useState('')
@@ -23,6 +24,7 @@ export function WorkflowsSection() {
       const d = await r.json()
       if (!r.ok) throw new Error(d.error ?? `${r.status}`)
       setCatalog(d.workflows)
+      setSource(d.source === 'viewer' ? 'viewer' : 'deployment')
     }).catch(e => setNote(`Cannot list the platform's workflows: ${(e as Error).message}`))
   }, [])
 
@@ -81,6 +83,9 @@ export function WorkflowsSection() {
       </div>
 
       <div className="tool-group">On the platform{catalog ? ` (${catalog.length})` : ''}</div>
+      {catalog && source === 'viewer' && (
+        <p className="muted">Listed from your own account, because the deployment's platform credential is not usable. Until it is renewed, other viewers can run a workflow picked here only if it is already in their own account.</p>
+      )}
       <input className="field" placeholder="Filter by name or tag" value={filter} onChange={e => setFilter(e.target.value)} />
       {!catalog && !note && <p className="muted">Loading…</p>}
       {catalog && (
