@@ -989,17 +989,13 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .chat-canvas li.theme-muted-panel,
 .chat-canvas li.group[class*=" bg-[color-mix"] {
   /* The shared pale pill disappears against a white rail at a glance, and
-     finding the open conversation in a long list is what this row is for.
-     A stronger tint of the accent plus a bar on the leading edge; the bar
-     carries it even where the tint is subtle, in either theme and under
-     any deployment accent. */
+     finding the open conversation in a long list is what this row is for:
+     a stronger tint of the accent and a bold title, with no edge bar. */
   background: color-mix(in oklab, var(--pw-navy) 14%, var(--pw-rail-bg));
-  box-shadow: inset 3px 0 0 var(--pw-navy);
 }
 [data-theme='dark'] .chat-canvas li.theme-muted-panel,
 [data-theme='dark'] .chat-canvas li.group[class*=" bg-[color-mix"] {
   background: color-mix(in oklab, var(--pw-link) 22%, var(--pw-rail-bg));
-  box-shadow: inset 3px 0 0 var(--pw-link);
 }
 .chat-canvas li.theme-muted-panel a span,
 .chat-canvas li.group[class*=" bg-[color-mix"] span { color: var(--pw-navy); font-weight: 600; }
