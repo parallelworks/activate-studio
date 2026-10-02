@@ -50,6 +50,20 @@ let cli: Cli = (args, key, timeoutMs = 60_000) => new Promise((resolve, reject) 
 /** Tests replace the CLI. */
 export function setWorkflowsCli(fn: Cli): void { cli = fn }
 
+/**
+ * A failed CLI call as an error the page can show. Without this a plain
+ * Error reached the sanitizing handler and the viewer saw only "internal
+ * error", even when the cause was an expired credential they could fix.
+ */
+export function platformError(e: unknown): KbError {
+  const text = String((e as Error)?.message ?? e).replace(/^\S+Z \[(ERROR|WARN)\] /gm, '').trim()
+  if (/authentication has expired|please authenticate|401|unauthorized/i.test(text)) {
+    return new KbError(401, 'The platform credential has expired. Add your own platform API key under Settings, Model access, or renew the deployment credential.')
+  }
+  return new KbError(502, `The platform did not answer: ${text.split('\n')[0].slice(0, 300)}`)
+}
+const call: Cli = (args, key, t) => cli(args, key, t).catch(e => { throw platformError(e) })
+
 /** The CLI appends notices after its JSON; take the first balanced value. */
 export function firstJson<T = unknown>(text: string): T {
   const start = text.search(/[[{]/)
@@ -81,7 +95,7 @@ async function listFor(key: string | null): Promise<WorkflowRow[]> {
   const k = (key ?? '').slice(-12)
   const hit = listCache.get(k)
   if (hit && Date.now() - hit.at < 60_000) return hit.rows
-  const raw = firstJson<unknown>(await cli(['workflows', 'ls', '-o', 'json'], key, 90_000))
+  const raw = firstJson<unknown>(await call(['workflows', 'ls', '-o', 'json'], key, 90_000))
   const rows = (Array.isArray(raw) ? raw : (raw as { workflows?: unknown[] }).workflows ?? []) as WorkflowRow[]
   listCache.set(k, { at: Date.now(), rows })
   return rows
@@ -197,7 +211,7 @@ export async function workflowsTabRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/workflows/:name/form', async req => {
     const name = checkName((req.params as { name: string }).name)
     const v = viewer(req)
-    const doc = firstJson<any>(await cli(['workflows', 'get', name, '-o', 'json'], v.key, 60_000))
+    const doc = firstJson<any>(await call(['workflows', 'get', name, '-o', 'json'], v.key, 60_000))
     const yamlDoc = typeof doc?.yaml === 'string' ? parseYaml(doc.yaml) : doc?.yaml
     const inputs = yamlDoc?.on?.execute?.inputs
     let form: unknown = null
@@ -215,7 +229,7 @@ export async function workflowsTabRoutes(app: FastifyInstance): Promise<void> {
   // expands into the object workflows read (ip, schedulerType, ...).
   app.get('/api/platform/clusters', async req => {
     const v = viewer(req)
-    const rows = firstJson<any[]>(await cli(['cluster', 'ls', '-o', 'json'], v.key, 90_000))
+    const rows = firstJson<any[]>(await call(['cluster', 'ls', '-o', 'json'], v.key, 90_000))
     return {
       clusters: rows.map(c => ({
         value: c.user ? `pw://${c.user}/${c.name}` : String(c.name),
@@ -233,7 +247,7 @@ export async function workflowsTabRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/platform/partitions', async req => {
     const v = viewer(req)
     const cluster = String((req.query as { cluster?: string }).cluster ?? '').replace(/^pw:\/\/[^/]+\//, '')
-    const envs = firstJson<any[]>(await cli(['environments', 'ls', '-o', 'json'], v.key, 90_000))
+    const envs = firstJson<any[]>(await call(['environments', 'ls', '-o', 'json'], v.key, 90_000))
     const mine = envs.filter(e => !cluster || String(e.clusterName) === cluster)
     return {
       partitions: mine.map(e => ({
@@ -248,7 +262,7 @@ export async function workflowsTabRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/api/platform/buckets', async req => {
     const v = viewer(req)
-    const rows = firstJson<any>(await cli(['buckets', 'ls', '-o', 'json'], v.key, 60_000))
+    const rows = firstJson<any>(await call(['buckets', 'ls', '-o', 'json'], v.key, 60_000))
     const list: any[] = Array.isArray(rows) ? rows : rows?.buckets ?? []
     return {
       buckets: list.map(b => ({
@@ -265,7 +279,7 @@ export async function workflowsTabRoutes(app: FastifyInstance): Promise<void> {
     const body = req.body as { inputs?: Record<string, unknown>; dryRun?: boolean }
     const v = viewer(req)
     if (!curatedNames().includes(name)) throw new KbError(403, `${name} is not in this Studio's workflow collection`)
-    const doc = firstJson<any>(await cli(['workflows', 'get', name, '-o', 'json'], v.key, 60_000))
+    const doc = firstJson<any>(await call(['workflows', 'get', name, '-o', 'json'], v.key, 60_000))
     const yamlDoc = typeof doc?.yaml === 'string' ? parseYaml(doc.yaml) : doc?.yaml
     let values: Record<string, unknown> = body.inputs ?? {}
     try { values = prepareSubmittableValues(yamlDoc, values, v.username ?? '') } catch { /* submit as given */ }
@@ -274,6 +288,7 @@ export async function workflowsTabRoutes(app: FastifyInstance): Promise<void> {
     if (body.dryRun) args.push('--dry-run')
     let out: string
     try {
+      // Raw CLI errors here: withWorkspace recognizes a stopped workspace by its text.
       out = (await withWorkspace({ cli: (a, t) => cli(a, v.key, t) }, () => cli(args, v.key, 180_000))).value
     } catch (e) {
       const msg = String((e as Error).message ?? e).replace(/^\S+Z \[(ERROR|WARN)\] /gm, '')
@@ -293,14 +308,14 @@ export async function workflowsTabRoutes(app: FastifyInstance): Promise<void> {
     if (!curatedNames().includes(name)) throw new KbError(403, `${name} is not in this Studio's workflow collection`)
     const ownerKey = gatewayKey()
     if (!v.own || !ownerKey) throw new KbError(409, 'Nothing to add: this Studio runs workflows with its own credential.')
-    const doc = firstJson<any>(await cli(['workflows', 'get', name, '-o', 'json'], ownerKey, 60_000))
+    const doc = firstJson<any>(await call(['workflows', 'get', name, '-o', 'json'], ownerKey, 60_000))
     const text = typeof doc?.yaml === 'string' ? doc.yaml : dumpYaml(doc?.yaml ?? {})
     const tmp = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'wf-')), `${name}.yaml`)
     fs.writeFileSync(tmp, text)
     try {
       const args = ['workflows', 'create', '--yaml', tmp, name]
       if (doc?.displayName) args.splice(2, 0, '--display-name', String(doc.displayName))
-      await cli(args, v.key, 60_000)
+      await call(args, v.key, 60_000)
     } finally { fs.rmSync(path.dirname(tmp), { recursive: true, force: true }) }
     listCache.clear()
     return { ok: true }
@@ -320,7 +335,7 @@ export async function workflowsTabRoutes(app: FastifyInstance): Promise<void> {
       await Promise.all(open.slice(0, 5).map(async r => {
         runChecked.set(r.slug, Date.now())
         try {
-          const doc = firstJson<{ status?: string }>(await cli(['workflows', 'runs', 'view', r.slug, '-o', 'json'], key, 30_000))
+          const doc = firstJson<{ status?: string }>(await call(['workflows', 'runs', 'view', r.slug, '-o', 'json'], key, 30_000))
           if (doc.status && isTerminalRunState(doc.status)) markRunEnded(r.slug, String(doc.status).toLowerCase())
         } catch { /* left to the watcher */ }
       }))

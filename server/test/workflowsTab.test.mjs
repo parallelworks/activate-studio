@@ -111,3 +111,13 @@ test('references are resolved at any depth and other objects are left alone', ()
     { a: 'pw://u/x', b: ['y', 2], c: { d: 'e' } },
   )
 })
+
+test('an expired platform credential is reported as such, not as an internal error', async () => {
+  const { platformError } = await import('../dist/workflowsTab.js')
+  const e = platformError(new Error("2026-10-02T14:33:54Z [ERROR] Authentication has expired. Please authenticate again using 'pw auth'."))
+  assert.equal(e.status ?? e.statusCode, 401)
+  assert.match(e.message, /credential has expired/)
+  const other = platformError(new Error('2026-10-02T14:33:54Z [ERROR] connection reset by peer\nmore'))
+  assert.equal(other.status ?? other.statusCode, 502)
+  assert.equal(other.message, 'The platform did not answer: connection reset by peer')
+})
