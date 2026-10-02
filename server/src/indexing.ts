@@ -112,13 +112,25 @@ export function startIndexJob(rel: string): IndexJob {
 
 export function getIndexJob(id: number): IndexJob | null { return jobs.get(id) ?? null }
 
+/** Where indexing reports what went wrong inside a pass that still
+ *  succeeded; the sweep timer points it at the server log. */
+let indexLog: (msg: string) => void = m => console.warn(m)
+
 function run(cmd: string, args: string[], timeoutMs = 10 * 60_000): Promise<string> {
   // Settings can change the captioning model at runtime.
   const vm = effectiveSettings().visionModel
   const env = vm ? { ...process.env, ADE_VISION_MODEL: vm } : process.env
   return new Promise((resolve, reject) => {
-    execFile(cmd, args, { timeout: timeoutMs, maxBuffer: 32 * 1024 * 1024, env }, (err, so, se) =>
-      err ? reject(new Error(`${path.basename(cmd)}: ${se || err.message}`)) : resolve(so))
+    execFile(cmd, args, { timeout: timeoutMs, maxBuffer: 32 * 1024 * 1024, env }, (err, so, se) => {
+      if (err) return reject(new Error(`${path.basename(cmd)}: ${se || err.message}`))
+      // A pass that succeeds can still have failed for single files (a
+      // caption the vision model refused, say); those lines were dropped
+      // with the rest of stderr, which hid why an image had no text.
+      for (const line of String(se ?? '').split('\n')) {
+        if (/\bfailed\b/.test(line)) indexLog(`index: ${line.trim().slice(0, 300)}`)
+      }
+      resolve(so)
+    })
   })
 }
 
@@ -400,6 +412,7 @@ async function primeSweepState(): Promise<void> {
 }
 
 export function startSweepTimer(log: (msg: string) => void): void {
+  indexLog = log
   // Self-rescheduling so a settings change to the interval applies at the
   // next cycle without a restart; 0 pauses sweeping but keeps checking.
   const tick = async (): Promise<void> => {
