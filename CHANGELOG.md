@@ -2,6 +2,48 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.74 (2026-10-02)
+
+### Change log through v1.73 (#355)
+
+### Change log through v1.73 (#355)
+
+Regenerates CHANGELOG.md, which was missing v1.64 to v1.73. The script now dates tags by creatordate, which is the tagger date for an annotated tag and the commit date for a lightweight one; v1.73 is lightweight and was dated "undefined". Existing entries are unchanged.
+
+### The Studio installs as a desktop app (#356)
+
+### The Studio installs as a desktop app (#356)
+
+Chrome and Edge can now install the Studio as an app: its own window, dock or taskbar icon, and launcher entry. When the browser offers installation, an Install app item appears in the rail footer. Firefox does not install web apps on the desktop; Safari on macOS uses File, Add to Dock. Inside the platform's frame the browser never offers it, so the item appears only when the Studio is opened in its own tab.
+
+**Per deployment.** `/manifest.webmanifest` is built by the server from the deployment's name and brand icon, so each deployment installs under its own name. A PNG brand icon is declared at its real size, read from its header; an SVG as `any`. PNGs of the default mark (192, 512, maskable 512, and a 180 touch icon) follow it, since browsers need those sizes to offer installation. The manifest is never cached, so a rename or new icon reaches the next install.
+
+**No `id`.** A manifest id resolves against the origin, not the manifest's folder, so a Studio mounted under a path would take the host's identity. Without one, the start URL is the identity. A test pins this.
+
+**Behind the session proxy.** Browsers fetch a manifest without cookies by default, which the platform's session proxy answers with a sign-in redirect. The link carries `crossorigin="use-credentials"`.
+
+The `theme-color` meta follows the page ground, so an installed window's title bar matches light and dark.
+
+**Verified** in headless Chrome against a local build: the manifest is found and parsed with no errors, the icons serve, and the only installability error reported is the incognito profile headless runs use. The install prompt itself needs a desktop browser to confirm. 3 new server tests; 201 server and 16 web tests pass.
+
+### Layout and type follow the platform's other apps (#357)
+
+### Layout and type follow the platform's other apps (#357)
+
+The Studio now uses the layout and type of the platform's newer apps.
+
+**Navigation and grounds.** In light mode the app navigation sits on the gray ground and pages on the panel color; in dark mode the navigation is the lighter of the two. The active and hover pills are neutral, and labels are regular weight: the accent marks what is interactive, not where you are. The Settings and Help section lists follow the same pattern. The brand line drops its letter spacing.
+
+**Page header bar.** Search, Query, Stats, Agents, Workflows, and History share one header: the section's name and a one-line note on what it covers (full text on hover, hidden at phone width), ruled off below. The title cards at the top of those pages are gone. History's caveat that snapshots record the file list and not file contents stays on the page as a note.
+
+**Edge to edge.** Chat, the library, Settings, and Help run flush from the navigation, with no inset card frame.
+
+**Type.** Public Sans with tabular figures, replacing Geist; Geist Mono stays for code. `--font-sans` is set so the shared packages' builds pick it up.
+
+**Contrast check.** A new test (`web/test/contrast.test.ts`) checks every text color against the grounds it is drawn on, for all 6 accents, 3 surfaces, and both schemes, at WCAG AA (4.5:1), using the theme package's own `contrastRatio` and `deriveTheme`. It found the light muted gray at 4.26:1 on the gray ground, which the navigation now sits on; it is now `#646e78` (4.72:1 there, 5.19:1 on white). Four places that used the lighter `--pw-muted-2` for readable text (the sync status line, scope counts, History's check line, the Libraries table) now use the muted color; that token remains for icons and disabled controls.
+
+Checked in headless Chrome at desktop and phone width, light and dark, across every view. 201 server and 53 web tests pass.
+
 ## v1.73 (2026-10-01)
 
 ### Workflows tab: a curated set of platform workflows, run from their own forms (#354)
