@@ -199,13 +199,20 @@ def gateway_key() -> str:
     return ''
 
 
-def caption_image(path: Path) -> str:
+def vision_model() -> str:
+    return os.environ.get('ADE_VISION_MODEL', '')
+
+
+def caption_image(path: Path) -> str | None:
     """Describe an image with a vision model through the gateway's streaming
-    Responses API. Opt-in via ADE_VISION_MODEL; failures degrade to OCR-only."""
+    Responses API. Opt-in via ADE_VISION_MODEL. Returns '' when captioning
+    is off or the image is too large, and None when the request failed, so
+    the caller can tell a picture with nothing to say from one that was
+    never described."""
     import base64
     import json
     import urllib.request
-    model = os.environ.get('ADE_VISION_MODEL', '')
+    model = vision_model()
     key = gateway_key()
     if not model or not key or path.stat().st_size > MAX_CAPTION_BYTES:
         return ''
@@ -239,16 +246,19 @@ def caption_image(path: Path) -> str:
                     text += ev.get('delta', '')
         return text.strip()
     except Exception as exc:
-        print(f'  caption failed {path}: {str(exc)[:120]}', file=sys.stderr)
-        return ''
+        print(f'  caption failed {path}: {str(exc)[:200]}', file=sys.stderr)
+        return None
 
 
-def extract_image(path: Path) -> str:
+def extract_image_status(path: Path) -> tuple[str, bool]:
+    """The image's text, and whether it is complete enough to cache: False
+    when a vision model is configured and the caption request failed, so the
+    next pass asks again rather than keeping an empty answer for good."""
     # Icons and tiny assets are skipped, except in the chat-attachments
     # directory where the user attached the image deliberately.
     deliberate = path.parent.name == 'chat' and path.parent.parent.name == 'uploads'
     if not deliberate and path.stat().st_size < MIN_IMAGE_BYTES:
-        return ''
+        return '', True
     parts = []
     caption = caption_image(path)
     if caption:
@@ -261,7 +271,18 @@ def extract_image(path: Path) -> str:
             parts.append(f'Text found in image (OCR):\n{ocr_text}')
     except Exception:
         pass
-    return '\n\n'.join(parts)
+    return '\n\n'.join(parts), caption is not None
+
+
+def extract_image(path: Path) -> str:
+    return extract_image_status(path)[0]
+
+
+def image_cache_usable(text: str) -> bool:
+    """A cached image result is reused unless it is empty while a vision
+    model is configured: a successful caption is never empty, so that entry
+    was written by a failed request or before captioning was switched on."""
+    return bool(text.strip()) or not vision_model()
 
 
 def extract(path: Path) -> str | None:
@@ -331,8 +352,13 @@ def main() -> int:
                     # Expensive extractions (PDF, office, OCR, captions) are
                     # cached by mtime; a reindex pass reuses them untouched.
                     cache_file = cache_root / rel_dir / (fpath.name + '.txt')
+                    cached = None
                     if cacheable and cache_file.exists() and cache_file.stat().st_mtime >= fpath.stat().st_mtime:
-                        text = cache_file.read_text(errors='replace')[:MAX_TEXT]
+                        cached = cache_file.read_text(errors='replace')[:MAX_TEXT]
+                        if suffix in IMAGE_SUFFIXES and not image_cache_usable(cached):
+                            cached = None
+                    if cached is not None:
+                        text = cached
                         if suffix == '.pdf':
                             # downmark's thin policy OCRs scans itself; a
                             # thin cache entry without its marker means the
@@ -350,14 +376,25 @@ def main() -> int:
                                 except OSError as exc:
                                     print(f'  cache write failed {cache_file}: {exc}', file=sys.stderr)
                     else:
-                        text = extract(fpath)
+                        complete = True
+                        if suffix in IMAGE_SUFFIXES:
+                            try:
+                                text, complete = extract_image_status(fpath)
+                                text = text[:MAX_TEXT]
+                            except Exception as exc:
+                                print(f'  extract failed {fpath}: {exc}', file=sys.stderr)
+                                text, complete = None, False
+                        else:
+                            text = extract(fpath)
                         # Images cache even when empty: captioning and OCR are
                         # expensive and a picture with no text is a real
-                        # answer. Documents do not: an empty result usually
-                        # means the extractor was missing, and caching it hid
-                        # the file from every later pass, including the one
-                        # after the library was installed.
-                        if cacheable and ((text and text.strip()) or suffix in IMAGE_SUFFIXES):
+                        # answer, unless the caption request failed, which
+                        # the next pass retries. Documents do not cache empty:
+                        # an empty result usually means the extractor was
+                        # missing, and caching it hid the file from every
+                        # later pass, including the one after the library was
+                        # installed.
+                        if cacheable and complete and ((text and text.strip()) or suffix in IMAGE_SUFFIXES):
                             cache_file.parent.mkdir(parents=True, exist_ok=True)
                             cache_file.write_text(text or '')
                             n_extracted += 1

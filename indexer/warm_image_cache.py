@@ -13,7 +13,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from enrich import EXCLUDE_DIRS, IMAGE_SUFFIXES, MIN_IMAGE_BYTES, extract_image  # noqa: E402
+from enrich import EXCLUDE_DIRS, IMAGE_SUFFIXES, MIN_IMAGE_BYTES, extract_image_status, image_cache_usable  # noqa: E402
 
 
 def main() -> int:
@@ -37,7 +37,8 @@ def main() -> int:
                 continue
             rel = fpath.relative_to(kb_root)
             cache_file = cache_root / rel.parent / (fname + '.txt')
-            if cache_file.exists() and cache_file.stat().st_mtime >= fpath.stat().st_mtime:
+            if cache_file.exists() and cache_file.stat().st_mtime >= fpath.stat().st_mtime \
+                    and image_cache_usable(cache_file.read_text(errors='replace')):
                 continue
             todo.append((fpath, cache_file))
 
@@ -47,9 +48,11 @@ def main() -> int:
     def work(item):
         nonlocal done
         fpath, cache_file = item
-        text = extract_image(fpath)
-        cache_file.parent.mkdir(parents=True, exist_ok=True)
-        cache_file.write_text(text or '')
+        text, complete = extract_image_status(fpath)
+        # A failed caption is not cached, so the next run asks again.
+        if complete:
+            cache_file.parent.mkdir(parents=True, exist_ok=True)
+            cache_file.write_text(text or '')
         done += 1
         if done % 25 == 0:
             print(f'  {done}/{len(todo)}', flush=True)
