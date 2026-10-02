@@ -13,6 +13,7 @@ import { useWorkflowFields, forgetPlatformData } from '../components/WorkflowFie
 interface Tile {
   name: string; displayName: string; description: string; tags: string[]
   icon: string | null; configurations: string[]; installed: boolean; available: boolean
+  kind?: 'account' | 'marketplace' | 'github'
 }
 interface FormDoc {
   name: string; displayName: string; description: string
@@ -25,6 +26,14 @@ async function json<T>(res: Response): Promise<T> {
   const d = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error((d as { error?: string }).error ?? `${res.status}`)
   return d as T
+}
+
+/** A tile's icon, or its first letter when there is none or it fails to
+ *  load (a repository without a thumbnail, say). */
+function TileIcon({ src, letter }: { src: string | null; letter: string }) {
+  const [failed, setFailed] = useState(false)
+  if (!src || failed) return <span className="wf-icon-blank">{letter}</span>
+  return <img src={src} alt="" loading="lazy" onError={() => setFailed(true)} />
 }
 
 export function WorkflowsView() {
@@ -44,7 +53,7 @@ export function WorkflowsView() {
 
   if (open) {
     const t = tiles?.find(x => x.name === open)
-    return <WorkflowRunner name={open} title={t?.displayName ?? open} onBack={() => { setOpen(null); loadRuns() }} onLaunched={loadRuns} />
+    return <WorkflowRunner name={open} kind={t?.kind ?? 'account'} title={t?.displayName ?? open} onBack={() => { setOpen(null); loadRuns() }} onLaunched={loadRuns} />
   }
   return (
     <div className="overview-view workflows-view">
@@ -55,8 +64,9 @@ export function WorkflowsView() {
           {tiles.map(t => (
             <button key={t.name} className={`wf-tile${t.available ? '' : ' unavailable'}`} disabled={!t.available}
               title={t.description || t.displayName} onClick={() => setOpen(t.name)}>
-              <span className="wf-icon">{t.icon ? <img src={t.icon} alt="" loading="lazy" /> : <span className="wf-icon-blank">{t.displayName.slice(0, 1)}</span>}</span>
+              <span className="wf-icon"><TileIcon src={t.icon} letter={t.displayName.slice(0, 1)} /></span>
               <span className="wf-name">{t.displayName}</span>
+              {t.kind && t.kind !== 'account' && <span className="wf-kind">{t.kind === 'marketplace' ? 'Marketplace' : 'GitHub'}</span>}
               {!t.installed && t.available && <span className="wf-note">Not in your account yet</span>}
               {!t.available && <span className="wf-note">Not found on the platform</span>}
             </button>
@@ -87,7 +97,7 @@ export function WorkflowsView() {
   )
 }
 
-function WorkflowRunner({ name, title, onBack, onLaunched }: { name: string; title: string; onBack: () => void; onLaunched: () => void }) {
+function WorkflowRunner({ name, kind, title, onBack, onLaunched }: { name: string; kind: string; title: string; onBack: () => void; onLaunched: () => void }) {
   const [doc, setDoc] = useState<FormDoc | null>(null)
   const [error, setError] = useState('')
   const [preset, setPreset] = useState('')
@@ -98,8 +108,8 @@ function WorkflowRunner({ name, title, onBack, onLaunched }: { name: string; tit
   const fields = useWorkflowFields()
   const load = () => {
     setError(''); setNeedsInstall(false)
-    fetch(`/api/workflows/${encodeURIComponent(name)}/form`).then(r => json<FormDoc>(r)).then(setDoc)
-      .catch(e => { const m = String((e as Error).message); if (/not found|404/i.test(m)) setNeedsInstall(true); else setError(m) })
+    fetch(`/api/workflows/item/form?w=${encodeURIComponent(name)}`).then(r => json<FormDoc>(r)).then(setDoc)
+      .catch(e => { const m = String((e as Error).message); if (kind === 'account' && /not found|404/i.test(m)) setNeedsInstall(true); else setError(m) })
   }
   useEffect(() => { forgetPlatformData(); load() }, [name])
 
@@ -114,7 +124,7 @@ function WorkflowRunner({ name, title, onBack, onLaunched }: { name: string; tit
     const values = formik.current?.values ?? {}
     setBusy(dryRun ? 'validate' : 'run'); setResult(null)
     try {
-      const r = await json<{ ok: boolean; message: string; slug?: string | null }>(await fetch(`/api/workflows/${encodeURIComponent(name)}/run`, {
+      const r = await json<{ ok: boolean; message: string; slug?: string | null }>(await fetch(`/api/workflows/item/run?w=${encodeURIComponent(name)}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ inputs: values, dryRun }),
       }))
       setResult({ ok: r.ok, text: r.ok && dryRun ? 'Validation passed. The platform accepts these inputs.' : r.message })
@@ -123,7 +133,7 @@ function WorkflowRunner({ name, title, onBack, onLaunched }: { name: string; tit
   }
   const install = async () => {
     setBusy('install')
-    try { await json(await fetch(`/api/workflows/${encodeURIComponent(name)}/install`, { method: 'POST' })); load() }
+    try { await json(await fetch(`/api/workflows/item/install?w=${encodeURIComponent(name)}`, { method: 'POST' })); load() }
     catch (e) { setError(String((e as Error).message)) } finally { setBusy('') }
   }
 
