@@ -2,6 +2,48 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.79 (2026-10-02)
+
+### Workflow form fields look like inputs again (#365)
+
+### Workflow form fields look like inputs again (#365)
+
+In a workflow's form, text and number fields rendered as bare text: no border, no background, no padding. The form library draws them with a global `input, textarea` rule in a `base` cascade layer. Since v1.65's layer ordering (`web/src/layers.css`), the Studio ranks that layer below the shared packages' Tailwind resets on purpose, so it cannot restyle inputs elsewhere in the Studio; inside the workflow form the resets therefore won and stripped the fields. Selects and text areas were unaffected because the Studio draws those itself.
+
+The workflow form now gets the Studio's own field look, scoped to `.wf-form`: border, input background, 6px radius, padding, a focus ring, a muted placeholder, and a 32px height shared with the Studio's selects. A combobox input keeps room on the right for its arrow button.
+
+The library's Yes/No switch paints its handle and its unselected half with a fixed white-to-gray gradient and has no dark variant, so in dark mode it showed as a bright white bar; in dark mode those parts now take shades of the panel color, with the handle a step lighter than the label. This also applies to the switches in Settings.
+
+Checked in headless Chrome on a marketplace workflow's form (cluster picker, switches, text fields, a single-select dropdown, a multi-select) in light and dark: every field has a 1px border, the input background, and 8px padding. All tests pass.
+
+## v1.78 (2026-10-02)
+
+### Change log through v1.77 (#363)
+
+### Change log through v1.77 (#363)
+
+Regenerates CHANGELOG.md for v1.75 to v1.77.
+
+### Workflows tab: marketplace and GitHub workflows (#364)
+
+### Workflows tab: marketplace and GitHub workflows (#364)
+
+A Studio's workflow collection was limited to workflows saved on its account. An entry can now be any of three kinds, the same forms `pw workflows run` accepts:
+
+| Entry | Runs |
+|---|---|
+| `name` | a workflow saved on the account, as before |
+| `marketplace/<slug>` | the marketplace workflow by slug, with no copy in anyone's account |
+| `github.com/<owner>/<repo>[/path][@ref]` | the workflow.yaml in that repository, directory, or named file, with no copy in anyone's account |
+
+**Settings, Workflows** lists the account's workflows as before, the marketplace's workflow items below them (both filtered by the same box), and a From GitHub field. Adding a GitHub entry first reads its workflow.yaml and refuses it with the reason if it cannot. The settings write validates every entry against the three forms (`server/src/workflowEntries.ts`, shared with the routes) and drops anything else, including `..` segments and other hosts.
+
+**Definitions.** Account workflows come from `pw workflows get`, marketplace ones from `pw marketplace get <slug> --yaml` with their name, description, and icon from `pw marketplace ls` (cached five minutes), and GitHub ones from the repository's raw file (workflow.yaml, then workflow.yml). The CLI cannot print a repository's YAML, so the form for a private repository cannot be shown; the run still goes through `pw workflows run`, which reads private repositories through the platform's connected account. A GitHub tile's icon is the repository's thumbnail.png by the platform's convention, and a tile whose icon is missing or fails shows its initial.
+
+**Routes** move from `/api/workflows/:name/...` to `/api/workflows/item/{form,icon,run,install}?w=<entry>`, since entries contain slashes. Install answers 409 for marketplace and GitHub entries, and the tab offers it only for account workflows.
+
+**Verified** against a live platform with one entry of each kind: tiles with icons; forms for all three; a GitHub dry run validated by the platform; the catalog listing 76 account and 99 marketplace workflows. New tests: entry parsing and refusal, raw URLs, tiles, forms (including a missing repository), runs passing the entry to the CLI as written, install refused for non-account entries, and the settings write. 213 server and 53 web tests pass.
+
 ## v1.77 (2026-10-02)
 
 ### Brand images carry a version in their address (#361)
