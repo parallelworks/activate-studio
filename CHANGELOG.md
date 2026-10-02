@@ -2,6 +2,52 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.77 (2026-10-02)
+
+### Brand images carry a version in their address (#361)
+
+### Brand images carry a version in their address (#361)
+
+The brand icon and favicon were always served at the same address (`/api/brand-icon`, `/api/favicon`) with an hour of browser caching, so changing the icon in Settings left browsers showing the old one for up to an hour. Each address now carries `v=`, a short hash of the configured path or URL plus the file's modification time, so a different image, or the same file replaced, is a new address that browsers fetch at once. The installable-app manifest uses the same versioned address. A new test checks that replacing the file changes the address; all tests pass.
+
+### Select and delete chat conversations in bulk (#362)
+
+### Select and delete chat conversations in bulk (#362)
+
+The chat package's rail deletes conversations one at a time. Until it can select several, the Studio adds a Select chats row to the rail, under New chat and Attachments, which opens a panel in the main pane like the package's Attachments page.
+
+**The panel.** Every conversation with a checkbox, its date, and message count; All (or All shown, when filtered); a title filter; shift-click to set a range; Delete N, which asks for confirmation on the page and then removes them in one request. Clicking a title opens that conversation. If the open conversation is among those deleted, the view returns to a new chat. Done, or any rail navigation, closes the panel.
+
+**Who can delete what.** Only the viewer's own conversations, or ones with no owner. Under shared history the viewer can see others' conversations; those rows are listed but cannot be selected, and the server applies the same rule: `POST /api/chat/conversations/delete` with `{ids}` deletes what the caller owns, removes those transcripts from the knowledge base, reindexes once, and returns `{deleted, skipped}`.
+
+**The rail row.** The package has no slot for extra rail rows, so the row is portaled into the group that holds New chat, styled like its neighbors, with its label class copied from New chat so it collapses with the rail; a mutation observer re-attaches it if the package re-renders that group.
+
+**Conversation history is saved atomically.** The server rewrote `conversations.json` in place, so a crash, or a read, in the middle of a save saw an empty file, and `load()` treats an unreadable file as having no conversations; the next save would have kept it empty. It now writes a temporary file and renames it into place. The new bulk-delete test found this: it read the file during a save, about one run in twenty-five.
+
+**Verified** in headless Chrome against a seeded instance: the row appears in the rail, eight conversations listed, a shift range selects four, the confirmation names the count, deletion leaves the rest in the panel, the rail, and on the server, with no page errors. Two new server tests (the ownership rule with shared history on, and refusal of an empty list); 40 consecutive runs of the bulk-delete test pass. All server and web tests pass.
+
+## v1.76 (2026-10-02)
+
+### Settings lists workflows with the viewer's key when the deployment credential fails (#360)
+
+### Settings lists workflows with the viewer's key when the deployment credential fails (#360)
+
+Settings, Workflows lists the workflows to pick from with the deployment's credential. It fell back to the viewer's own platform key only when the deployment had no credential at all; an expired one is still a non-empty string, so a deployment whose host login had expired showed the expiry error to an administrator whose own key was valid and connected. The catalog now tries the deployment credential and, when it is missing, expired, or rejected, lists the viewer's own account, and says so on the page: until the deployment credential is renewed, other viewers can run a picked workflow only if it is already in their own account, since adding a copy reads the deployment's version. The response carries `source` (`deployment` or `viewer`). One new test; all server and web tests pass.
+
+## v1.75 (2026-10-02)
+
+### Change log through v1.74 (#358)
+
+### Change log through v1.74 (#358)
+
+Regenerates CHANGELOG.md for v1.74 (#356, #357).
+
+### Workflow pages say when the platform credential has expired (#359)
+
+### Workflow pages say when the platform credential has expired (#359)
+
+On a deployment whose platform credential had expired, the Workflows tab and its Settings section showed only "internal error": a failed `pw` call raised a plain error, which the sanitizing handler hides. Every platform call behind those pages now goes through one wrapper that turns a CLI failure into a deliberate error. An expired or rejected credential answers 401 with what to do (add a personal platform API key under Settings, Model access, or renew the deployment credential); anything else answers 502 with the CLI's first line, timestamp removed. The run route keeps the raw CLI text, since the workspace retry recognizes a stopped workspace by it. One new test; all server and web tests pass.
+
 ## v1.74 (2026-10-02)
 
 ### Change log through v1.73 (#355)
