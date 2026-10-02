@@ -7,6 +7,8 @@ import { rememberHash } from '../lastLocation'
 import {
   ChatProvider, ChatLayout, ChatThread, ChatEmptyState, AttachmentManager, useChat,
 } from '@parallelworks/ai-chat'
+import { ChatsManager } from '../components/ChatsManager'
+import { ManageChatsRailItem } from '../components/ManageChatsRailItem'
 import { createStudioAdapter, getChatListFilter, setChatListFilter, setViewerUsername } from '../adapter'
 import { useAppConfig } from '../config'
 import { api, fetchModels, forgetModels, type ModelsResponse } from '../api'
@@ -61,6 +63,7 @@ export function ChatView() {
     rememberHash(next)
   }, [])
   const [showAttachments, setShowAttachments] = useState(false)
+  const [showManage, setShowManage] = useState(false)
   // Width of the Activity (thinking) drawer on the right; the package
   // renders it fixed at 400px, and our CSS reads this variable over it.
   const [thinkRail, setThinkRail] = useState(() => Number(localStorage.getItem('ade-think-rail')) || 400)
@@ -293,8 +296,8 @@ export function ChatView() {
         onClick={e => {
           e.preventDefault()
           onClick?.(e)
-          if (target.kind === 'conversation') { setActiveId(target.id); setShowAttachments(false) }
-          else if (target.kind === 'attachments') setShowAttachments(true)
+          if (target.kind === 'conversation') { setActiveId(target.id); setShowAttachments(false); setShowManage(false) }
+          else if (target.kind === 'attachments') { setShowAttachments(true); setShowManage(false) }
           else if (target.kind === 'external') window.open(target.href, '_blank', 'noopener')
         }}
       >{children}</a>
@@ -351,9 +354,9 @@ export function ChatView() {
       adapter={adapter}
       currentUser={cfg.user}
       navigation={{
-        toConversation: id => { setActiveId(id); setShowAttachments(false) },
+        toConversation: id => { setActiveId(id); setShowAttachments(false); setShowManage(false) },
         toNewChat: () => {
-          setActiveId(null); setShowAttachments(false)
+          setActiveId(null); setShowAttachments(false); setShowManage(false)
           // Land the cursor in the composer so typing starts immediately.
           const focus = (tries: number) => {
             const box = document.querySelector<HTMLTextAreaElement>('.chat-canvas textarea')
@@ -362,7 +365,7 @@ export function ChatView() {
           }
           setTimeout(() => focus(5), 50)
         },
-        toAttachments: () => setShowAttachments(true),
+        toAttachments: () => { setShowAttachments(true); setShowManage(false) },
       }}
       notify={{
         success: () => {},
@@ -409,7 +412,14 @@ export function ChatView() {
           )}
                     <FilterReloader />
           <ChatLayout>
-            {showAttachments ? <AttachmentManager /> : activeId ? <ChatThread conversationId={activeId} /> : (() => {
+            {showManage ? (
+              <ChatsManager
+                activeId={activeId}
+                onOpen={id => { setActiveId(id); setShowManage(false) }}
+                onActiveDeleted={() => setActiveId(null)}
+                onClose={() => setShowManage(false)}
+              />
+            ) : showAttachments ? <AttachmentManager /> : activeId ? <ChatThread conversationId={activeId} /> : (() => {
               // The same dark-aware pick the sidebar makes, so the two never
               // disagree about which mark to show, and read live so a theme
               // toggle swaps it. The icon rides as a pseudo-element on the
@@ -427,9 +437,10 @@ export function ChatView() {
               )
             })()}
           </ChatLayout>
-          {activeId && !showAttachments && <ConversationScrubber />}
-          {!showAttachments && <SlashPalette canvas={canvasRef} />}
-          {!showAttachments && <NextUp canvas={canvasRef} />}
+          <ManageChatsRailItem active={showManage} onSelect={() => { setShowManage(true); setShowAttachments(false) }} />
+          {activeId && !showAttachments && !showManage && <ConversationScrubber />}
+          {!showAttachments && !showManage && <SlashPalette canvas={canvasRef} />}
+          {!showAttachments && !showManage && <NextUp canvas={canvasRef} />}
           {voiceOpen && cfg.features?.voice?.url && <VoiceOverlay url={cfg.features.voice.url} onClose={() => setVoiceOpen(false)} />}
           {railOpen && <div className="chat-rail-backdrop" onClick={() => setRailOpen(false)} />}
           <div className="chat-think-handle" onMouseDown={onThinkDrag} title="Drag to resize the activity panel" />
@@ -442,7 +453,7 @@ export function ChatView() {
               {chatFilter === 'mine' ? 'Showing my chats' : 'Showing all chats'}
             </button>
           )}
-          <div className="chat-controls">
+          <div className="chat-controls" hidden={showManage}>
             {cfg.features?.voice?.enabled && (
               <button className="scope-btn voice-btn" title="Talk with the assistant (feature preview)" onClick={() => setVoiceOpen(true)}>
                 <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.4"><rect x="5.5" y="1.5" width="5" height="8" rx="2.5"/><path d="M3 7.5a5 5 0 0 0 10 0M8 12.5v2M5.5 14.5h5"/></svg>

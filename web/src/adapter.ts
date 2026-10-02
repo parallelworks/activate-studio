@@ -148,6 +148,22 @@ function decorateConversations<T extends OwnedSummary>(rows: T[]): T[] {
       : c)
 }
 
+/** Whether the viewer may delete a conversation: their own, or one with
+ *  no owner. The server applies the same rule. */
+export function isOwnConversation(c: { owner?: string | null }): boolean {
+  return !c.owner || !viewerUsername || c.owner === viewerUsername
+}
+
+/** Deletes many conversations in one request; ids the viewer may not
+ *  delete come back as skipped. */
+export async function deleteConversations(ids: string[]): Promise<{ deleted: string[]; skipped: string[] }> {
+  return fetch('/api/chat/conversations/delete', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids }),
+  }).then(r => json<{ deleted: string[]; skipped: string[] }>(r))
+}
+
 export function createStudioAdapter(): ChatAdapter {
   return {
     // Conversations live server-side beside the index; browser storage is

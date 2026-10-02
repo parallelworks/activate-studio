@@ -121,9 +121,17 @@ function load(): StoredConversation[] {
   return cache!
 }
 
+/** Written to a temporary file and renamed into place, so the file on disk
+ *  is always a whole snapshot. Written in place, a crash or a reader in the
+ *  middle of the write saw an empty file, and load() treats an unreadable
+ *  file as no conversations; the next save would have kept it that way. */
 function persist(): void {
   const snapshot = JSON.stringify(load(), null, 1)
-  writing = writing.then(() => fsp.writeFile(FILE, snapshot)).catch(() => {})
+  const tmp = `${FILE}.${process.pid}.tmp`
+  writing = writing.then(async () => {
+    await fsp.writeFile(tmp, snapshot)
+    await fsp.rename(tmp, FILE)
+  }).catch(() => {})
 }
 
 const summary = (c: StoredConversation) => ({
@@ -240,6 +248,28 @@ export async function conversationRoutes(app: FastifyInstance): Promise<void> {
     c.updatedAt = new Date().toISOString()
     persist()
     return summary(c)
+  })
+
+  // Bulk delete for the chat rail's selection mode: one write and one
+  // reindex for any number of conversations. Only the caller's own (or
+  // unowned) conversations go; others it can see under shared history are
+  // reported as skipped, not deleted.
+  app.post('/api/chat/conversations/delete', async req => {
+    const raw = (req.body as { ids?: unknown } | null)?.ids
+    if (!Array.isArray(raw) || !raw.length) throw new KbError(400, 'ids must be a non-empty list')
+    const ids = new Set(raw.map(String).slice(0, 1000))
+    const me = req.user?.username ?? null
+    const mine = (c: StoredConversation) => visibleTo(c, me) && (!authEnabled() || !c.owner || c.owner === me)
+    const gone = load().filter(c => ids.has(c.id) && mine(c))
+    const goneIds = new Set(gone.map(c => c.id))
+    if (gone.length) {
+      cache = load().filter(c => !goneIds.has(c.id))
+      persist()
+      await Promise.all(gone.map(c => fsp.rm(exportPath(c), { force: true }).catch(() => {})))
+      if (indexTimer) clearTimeout(indexTimer)
+      indexTimer = setTimeout(() => { void reindexForDir(EXPORT_DIR).catch(() => {}) }, 2_000)
+    }
+    return { deleted: [...goneIds], skipped: [...ids].filter(id => !goneIds.has(id)) }
   })
 
   app.delete('/api/chat/conversations/:id', async req => {
