@@ -4,6 +4,11 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <link rel="icon" href="/favicon.svg" />
+    <!-- use-credentials: a manifest is fetched without cookies by default,
+         and behind the platform's session proxy that is a sign-in redirect. -->
+    <link rel="manifest" href="/manifest.webmanifest" crossorigin="use-credentials" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="theme-color" content="#f3f4f6" />
     <title>Studio</title>
     <script>
       // Paint in the right theme immediately. Everything below is a cache of

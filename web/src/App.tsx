@@ -10,6 +10,7 @@ import { SearchView } from './views/SearchView'
 import { QueryView } from './views/QueryView'
 import { OverviewView } from './views/OverviewView'
 import { HistoryView } from './views/HistoryView'
+import { useInstall } from './install'
 import { WorkflowsView } from './views/WorkflowsView'
 import { AgentsView } from './views/AgentsView'
 import { HelpView } from './views/HelpView'
@@ -84,6 +85,7 @@ export default function App() {
   const [display, setDisplay] = useState<Display | null>(null)
   const [navCollapsed, setNavCollapsed] = useState(() => localStorage.getItem('ade-nav-collapsed') === '1')
   const cfg = useAppConfig()
+  const { canInstall, install } = useInstall()
   // A deployment can leave sections out, which is how the Studio becomes an
   // index viewer with no assistant. Settings and Help always stay reachable.
   // The Workflows tab lists platform workflows, so it exists only there.
@@ -154,6 +156,12 @@ export default function App() {
     const effective = (told === 'dark' || told === 'light')
       ? told : theme ?? (sysDark ? 'dark' : cfg.theme)
     document.documentElement.dataset.theme = effective
+    // An installed app's title bar takes this color; match the page ground.
+    requestAnimationFrame(() => {
+      const meta = document.querySelector('meta[name="theme-color"]')
+      const bg = getComputedStyle(document.documentElement).getPropertyValue('--pw-bg').trim()
+      if (meta && bg) meta.setAttribute('content', bg)
+    })
     // Cached so the next load paints in this theme before config arrives.
     if (cfg.loaded) { try { localStorage.setItem('ade-theme-default', cfg.theme) } catch { /* ignore */ } }
   }, [theme, cfg, sysDark])
@@ -370,6 +378,12 @@ export default function App() {
               <span>{item.label}</span>
             </button>
           ))}
+          {canInstall && (
+            <button className="sidenav-item" title={`Install ${cfg.appName} as an app`} onClick={() => void install()}>
+              <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M8 2v8M4.8 7 8 10.2 11.2 7"/><path d="M2.5 11v1.5a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V11"/></svg>
+              <span>Install app</span>
+            </button>
+          )}
           <button
             className="sidenav-item"
             title={(theme ?? cfg.theme) === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}

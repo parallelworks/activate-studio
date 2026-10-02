@@ -1,3 +1,5 @@
+// First: the install event can fire before React renders.
+import './install'
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
