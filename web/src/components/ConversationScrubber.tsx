@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { useChat } from '@parallelworks/ai-chat'
+import { useChat } from '@parallelworks/ui/ai'
 
 /**
  * A rail of ticks along the bottom of the thread, one per message, so a

@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
-import { DependencyGraphPreview } from '@parallelworks/ui/workflow'
+import { Suspense, useEffect, useRef, useState } from 'react'
+import { DependencyGraphPreview } from '@parallelworks/ui/graph'
 
 interface DagData {
   name: string
@@ -175,7 +175,7 @@ export function DagViewer({ workflow, path }: { workflow?: string; path?: string
           {/* The platform's own graph. Its run view (per-step status icons)
               needs an actual run; a definition renders as job cards, which
               is what ACTIVATE shows for a workflow too. */}
-          <DependencyGraphPreview yml={dag.yaml} removeBorder />
+          <Suspense fallback={null}><DependencyGraphPreview yml={dag.yaml} removeBorder /></Suspense>
         </div>
       ) : (
       <div className="dag-canvas own-dag">

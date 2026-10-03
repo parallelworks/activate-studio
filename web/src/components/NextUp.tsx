@@ -1,4 +1,4 @@
-import { useChat } from '@parallelworks/ai-chat'
+import { useChat } from '@parallelworks/ui/ai'
 import { useEffect, useRef, useState } from 'react'
 
 /**

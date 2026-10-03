@@ -1,4 +1,4 @@
-import type { ChatAdapter, ModelsList, StreamCompletion } from '@parallelworks/ai-chat'
+import type { ChatAdapter, ModelsList, StreamCompletion } from '@parallelworks/ui/ai'
 import { getLabelScope, getPersona } from './labelScope'
 import { fetchModels } from './api'
 
