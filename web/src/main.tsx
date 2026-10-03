@@ -2,19 +2,17 @@
 import './install'
 import React from 'react'
 import ReactDOM from 'react-dom/client'
+import { UIProvider } from '@parallelworks/ui'
 import App from './App'
 import { rememberHashChanges, restoreLastHash } from './lastLocation'
 import { applyRememberedFavicon } from './config'
 import '@fontsource-variable/public-sans'
 import '@fontsource-variable/geist-mono'
-// Two packages ship their own Tailwind build, and their utilities collide at
-// equal specificity, so whichever loads last wins. The chat package must come
-// second: its responsive variants (a two-column starter grid, for one) were
-// being overridden by the UI package's base utilities. Ours loads last of all.
+// The UI package's prebuilt stylesheet (chat rules included) loads before
+// ours, so ours wins at equal specificity.
 import './layers.css'
 import '@parallelworks/ui/styles.css'
 import '@parallelworks/ui/theme.css'
-import '@parallelworks/ai-chat/styles.css'
 import './styles.css'
 
 // Before the first render: components read the hash while initializing.
@@ -22,8 +20,15 @@ restoreLastHash()
 rememberHashChanges()
 applyRememberedFavicon()
 
+// The workflow parser (and its WebAssembly) loads only once a workflow form
+// or graph first renders.
+const loadWorkflowEngine = () =>
+  import('@parallelworks/workflow-parser').then(m => m.createWorkflowEngine())
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <App />
+    <UIProvider engine={loadWorkflowEngine}>
+      <App />
+    </UIProvider>
   </React.StrictMode>,
 )
