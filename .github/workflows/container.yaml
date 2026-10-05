@@ -1,0 +1,161 @@
+# Build the Singularity image from deploy/app.def, prove that it starts and
+# that GUFI is complete inside it, and publish it to ghcr.io as an ORAS artifact.
+#
+#   pull_request touching deploy/app.def or this file : build + test, no push
+#   release published                                 : build + test, push :<tag> (+ :latest)
+#   workflow_dispatch (manual "Run workflow" button)  : build + test, push only if ticked
+#
+# Kept separate from ci.yml on purpose: this job takes far longer (GUFI and
+# llama.cpp compile from source) and needs permission to write packages,
+# which code from a pull request should never run with.
+#
+# Pull the result with:
+#   singularity pull oras://ghcr.io/parallelworks/activate-studio:<tag>
+
+name: container
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      push:
+        description: "Push the image to ghcr.io"
+        type: boolean
+        default: false
+      tag:
+        description: "Image tag to push (blank = sha-<short commit>)"
+        type: string
+        default: ""
+  pull_request:
+    paths:
+      - deploy/app.def
+      - .github/workflows/container.yml
+
+# A newer push to the same PR makes the running build pointless; releases
+# and manual runs are never cancelled.
+concurrency:
+  group: container-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # Pinned so a SingularityCE release cannot change the build underneath us.
+  # 4.5.1 fixes relative-path handling in builds that 4.5.0 broke, which
+  # matters for app.def's "%files . /opt/src".
+  SINGULARITY_VERSION: "4.5.1"
+
+jobs:
+  build-test-push:
+    # Pinned rather than ubuntu-latest so the runner keeps matching the
+    # noble .deb installed below.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      packages: write   # only used by the push step; PRs never reach it
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # The build stage (GUFI, llama.cpp, node_modules) plus the final stage
+      # (LibreOffice) need more scratch space than a stock runner leaves
+      # free, so drop preinstalled toolchains this job never uses.
+      - name: free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /usr/local/share/boost /opt/hostedtoolcache/CodeQL
+          df -h /
+
+      - name: install SingularityCE
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          deb="singularity-ce_${SINGULARITY_VERSION}-noble_amd64.deb"
+          gh release download "v${SINGULARITY_VERSION}" \
+            --repo sylabs/singularity --pattern "$deb"
+          sudo apt-get update
+          sudo apt-get install -y "./$deb"
+          singularity --version
+
+      # Run from the repo root: app.def copies "." into the build stage.
+      - name: build studio.sif
+        run: sudo singularity build studio.sif deploy/app.def
+
+      # app.def does a lot of careful rpath work so GUFI's binaries find
+      # llama.cpp and GUFI's own sqlite at run time, and start.sh only warns
+      # if indexing fails. Check both directly so a half-built GUFI fails
+      # the job instead of shipping.
+      - name: check GUFI is complete
+        run: |
+          singularity exec --cleanenv studio.sif sh -ec '
+            test -x /opt/gufi/bin/gufi_dir2index
+            test -x /opt/gufi/bin/gufi_query
+            missing=0
+            for f in /opt/gufi/bin/* /opt/gufi/lib/*.so*; do
+              [ -f "$f" ] || continue
+              if ldd "$f" 2>/dev/null | grep "not found"; then
+                echo "unresolved libraries in $f"
+                missing=1
+              fi
+            done
+            exit $missing
+          '
+
+      # Start the image the way a user would, with a tiny corpus and a
+      # fresh data directory, build the index on start, and wait for
+      # /healthz. --cleanenv keeps the runner's own environment out.
+      - name: smoke test
+        run: |
+          kb="$RUNNER_TEMP/kb"; data="$RUNNER_TEMP/data"; log="$RUNNER_TEMP/studio.log"
+          mkdir -p "$kb/docs" "$data"
+          echo "Smoke-test document about container builds and GUFI." > "$kb/docs/hello.md"
+
+          singularity run --cleanenv \
+            --env PORT=8080 --env KB_ROOT=/kb --env DATA_DIR=/data --env INDEX_ON_START=1 \
+            --bind "$kb:/kb" --bind "$data:/data" \
+            studio.sif > "$log" 2>&1 &
+          pid=$!
+
+          ok=0
+          for i in $(seq 1 150); do
+            if curl -fsS http://127.0.0.1:8080/healthz; then ok=1; break; fi
+            kill -0 "$pid" 2>/dev/null || break   # the server exited
+            sleep 2
+          done
+
+          echo; echo "----- container log -----"; cat "$log"
+          kill "$pid" 2>/dev/null || true
+
+          [ "$ok" = 1 ] || { echo "::error::server never answered /healthz"; exit 1; }
+          if grep -q "index build failed" "$log"; then
+            echo "::error::GUFI index build failed inside the image"; exit 1
+          fi
+          echo "----- index directory -----"
+          find "$data/index" -maxdepth 3 | head -50
+
+      - name: push to ghcr.io
+        if: >-
+          github.event_name == 'release' ||
+          (github.event_name == 'workflow_dispatch' && inputs.push)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          PRERELEASE: ${{ github.event.release.prerelease }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          image="oras://ghcr.io/${GITHUB_REPOSITORY,,}"   # ghcr needs lowercase
+          echo "$GH_TOKEN" | singularity registry login \
+            --username "$GITHUB_ACTOR" --password-stdin oras://ghcr.io
+
+          if [ "$GITHUB_EVENT_NAME" = "release" ]; then
+            tags="$RELEASE_TAG"
+            [ "$PRERELEASE" = "true" ] || tags="$tags latest"
+          else
+            tags="${INPUT_TAG:-sha-${GITHUB_SHA::7}}"
+          fi
+
+          for t in $tags; do
+            singularity push studio.sif "$image:$t"
+            echo "Pushed \`$image:$t\`" >> "$GITHUB_STEP_SUMMARY"
+          done
+

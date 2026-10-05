@@ -36,6 +36,8 @@ Stage: build
     . /opt/src
 
 %post
+    # Fail the bulld on a failed step
+    set -e
     export DEBIAN_FRONTEND=noninteractive
     # GUFI's cmake requires these executables at configure time (column
     # ships in bsdextrautils on Debian; setfattr/getfattr in attr).
