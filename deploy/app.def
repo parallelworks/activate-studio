@@ -108,6 +108,19 @@ Stage: build
         [ -e "/opt/gufi/lib/${lib}" ] || { echo "missing ${lib}"; exit 1; }
     done
 
+    # Some libraries arrive as symlinks with absolute targets under
+    # /opt/gufi-src (libvec0.so -> .../deps/sqlite-vec/lib/vec0.so). The
+    # final stage does not carry /opt/gufi-src, so such links dangle there.
+    # Replace every link that points outside /opt/gufi with a real copy.
+    for l in /opt/gufi/lib/*; do
+        [ -L "$l" ] || continue
+        t=$(readlink -f "$l")
+        case "$t" in
+            /opt/gufi/*) ;;                       # stays inside the image
+            *) rm -f "$l" && cp "$t" "$l" ;;     # would dangle; copy it in
+        esac
+    done
+
     for b in /opt/gufi/bin/*; do
         [ -f "$b" ] && [ -x "$b" ] || continue
         patchelf --set-rpath '$ORIGIN/../lib' "$b" 2>/dev/null || true
