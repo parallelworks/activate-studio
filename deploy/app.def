@@ -94,6 +94,16 @@ Stage: build
     # job far too broadly: GUFI's sqlite lacks symbols CPython's sqlite3
     # module needs, so exporting it breaks every indexer script.
     cp -a /opt/gufi-src/build/deps/*/lib/*.so* /opt/gufi/lib/ 2>/dev/null || true
+
+    # gufi_vt.so also needs these two, which are built outside the
+    # deps/*/lib directories the copy above covers. Find them anywhere in
+    # the build tree, and stop the build if either is missing.
+    for lib in libsqlite3-pcre.so libvec0.so; do
+        find /opt/gufi-src/build -name "${lib}*" \( -type f -o -type l \) \
+            -exec cp -a {} /opt/gufi/lib/ \;
+        ls /opt/gufi/lib/${lib}* > /dev/null || { echo "missing ${lib}"; exit 1; }
+    done
+
     for b in /opt/gufi/bin/*; do
         [ -f "$b" ] && [ -x "$b" ] || continue
         patchelf --set-rpath '$ORIGIN/../lib' "$b" 2>/dev/null || true
