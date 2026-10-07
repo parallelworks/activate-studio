@@ -6,6 +6,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Lets the base-images workflow run CI on the PR it opens.
+  workflow_dispatch:
 
 # Read-only token: nothing here writes to the repository or a registry.
 permissions:

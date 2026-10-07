@@ -543,6 +543,8 @@ jobs:
           if [ "$NEED_NODE" = "1" ]; then
             echo "Fetching Node runtime..."
             curl -fsSL -o node.tar.xz https://nodejs.org/dist/v26.10.0/node-v26.10.0-linux-x64.tar.xz
+            # SHASUMS256.txt digest for the version above; change both together.
+            echo "ca70e9e349de048b9522abb3adc05b3bd6f43c5ffd3ec57916c7da292f59f022  node.tar.xz" | sha256sum -c -
             mkdir -p node-runtime
             tar -xJf node.tar.xz -C node-runtime --strip-components=1
             rm -f node.tar.xz

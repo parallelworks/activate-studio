@@ -1,0 +1,29 @@
+# Keeps the commit-SHA pins on actions and the npm lockfile current.
+# deploy/app.def's base images are outside Dependabot's reach; the
+# base-images workflow bumps those.
+
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: ci
+
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    # Matches pnpm-workspace.yaml's minimumReleaseAge.
+    cooldown:
+      default-days: 1
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+    commit-message:
+      prefix: chore
+      prefix-development: chore
