@@ -29,7 +29,7 @@
 # ============================================================================
 
 Bootstrap: docker
-From: node:22-bookworm
+From: node:26-bookworm@sha256:e6cfc3514df35d1cb534e83f9279a242ad6e578692ab7b56d73dadcc7c4354a0
 Stage: build
 
 %files
@@ -106,7 +106,7 @@ Stage: build
 
 # ---------------------------------------------------------------------------
 Bootstrap: docker
-From: node:22-bookworm-slim
+From: node:26-bookworm-slim@sha256:3ffc19ea878019d9e9ae8971732ad4a03cda44f167107173174b60ed7c65bed3
 Stage: final
 
 %files from build

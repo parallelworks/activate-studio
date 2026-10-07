@@ -14,7 +14,7 @@ OUT="${1:-$PROJECT_ROOT/studio-bundle.tar.gz}"
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
 
-NODE_VERSION="v22.23.2"
+NODE_VERSION="v26.10.0"
 NODE_DIST="node-${NODE_VERSION}-linux-x64"
 CACHE="$PROJECT_ROOT/deploy/.cache"
 mkdir -p "$CACHE"

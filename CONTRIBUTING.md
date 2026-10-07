@@ -12,7 +12,7 @@ pnpm build
 pnpm start          # http://localhost:4080, over knowledge-base/ beside the code
 ```
 
-Node 22 or newer and pnpm are required. GUFI is needed only for the indexed search surfaces; everything else runs without it.
+Node 26 or newer and pnpm are required. GUFI is needed only for the indexed search surfaces; everything else runs without it.
 
 ## Working in the repository
 
