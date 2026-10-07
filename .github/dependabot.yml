@@ -8,6 +8,8 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     groups:
       actions:
         patterns: ["*"]
@@ -18,9 +20,10 @@ updates:
     directory: /
     schedule:
       interval: weekly
-    # Matches pnpm-workspace.yaml's minimumReleaseAge.
+    # A week lets a compromised release be caught and pulled before it is
+    # proposed here. Security updates are not held back by this.
     cooldown:
-      default-days: 1
+      default-days: 7
     groups:
       minor-and-patch:
         update-types: [minor, patch]
