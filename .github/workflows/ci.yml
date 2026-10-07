@@ -24,7 +24,8 @@ jobs:
     timeout-minutes: 30
     steps:
       # Dependency installs run package scripts, so allow only GitHub,
-      # nodejs.org (setup-node's fallback), npm and the Ubuntu mirrors.
+      # nodejs.org (setup-node's fallback), npm and the Ubuntu mirrors,
+      # including the ones apt falls back to when the Azure mirror is down.
       - uses: step-security/harden-runner@351661ca32ac09a36dc5ee2d536e3128f2a3c8ed # v2.22.0
         with:
           egress-policy: block
@@ -37,6 +38,10 @@ jobs:
             nodejs.org:443
             registry.npmjs.org:443
             azure.archive.ubuntu.com:80
+            archive.ubuntu.com:80
+            archive.ubuntu.com:443
+            security.ubuntu.com:80
+            security.ubuntu.com:443
             esm.ubuntu.com:443
             motd.ubuntu.com:443
             packages.microsoft.com:443
