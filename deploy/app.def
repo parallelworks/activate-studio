@@ -28,23 +28,35 @@
 #              --bind /path/to/corpus:/kb --bind /path/to/state:/data studio.sif
 # ============================================================================
 
+# Every input is pinned (base images by digest, GUFI and the model by
+# commit, pnpm by version) so rebuilding a release gives the same image.
+# Bump each in a PR of its own; the container workflow builds and tests it.
+
 Bootstrap: docker
-From: node:22-bookworm
+From: node:26-bookworm@sha256:e6cfc3514df35d1cb534e83f9279a242ad6e578692ab7b56d73dadcc7c4354a0
 Stage: build
 
 %files
     . /opt/src
 
 %post
+    # Fail the build on a failed step. set -e ignores a failure anywhere in
+    # an && chain except its last command, so steps that must stop the
+    # build stand on lines of their own.
+    set -e
     export DEBIAN_FRONTEND=noninteractive
+    GUFI_COMMIT=468e5724134945dc1f282450192297e1fa39c4f3
+    MODEL_COMMIT=7a7bac37782986fe1d4f213de771a8a3d9170b35
+    MODEL_SHA256=71f1d177171468fb5f186c07019e303015aea17af275a67767760bba7be8d2e6
     # GUFI's cmake requires these executables at configure time (column
     # ships in bsdextrautils on Debian; setfattr/getfattr in attr).
-    apt-get update && apt-get install -y --no-install-recommends \
+    apt-get update
+    apt-get install -y --no-install-recommends \
         cmake make gcc g++ pkg-config zlib1g-dev libsqlite3-dev git curl ca-certificates \
         bsdextrautils attr diffutils patch gawk patchelf
     # npm, not corepack: corepack's loader crashes on some pnpm/Node
     # pairings and leaves broken shims behind.
-    npm install -g pnpm@11
+    npm install -g pnpm@11.22.0    # package.json's packageManager
     cd /opt/src
     rm -rf node_modules web/node_modules server/node_modules index deploy/.cache
     pnpm install --frozen-lockfile
@@ -66,9 +78,15 @@ Stage: build
     cp -r extensions-starter /opt/app/extensions-starter
     mkdir -p /opt/app/index/models
     curl -fsSL -o /opt/app/index/models/minilm384.gguf \
-        'https://huggingface.co/asg017/sqlite-lembed-model-examples/resolve/main/all-MiniLM-L6-v2/all-MiniLM-L6-v2.e4ce9877.q8_0.gguf'
-    git clone --depth 1 --recurse-submodules --shallow-submodules \
-        https://github.com/mar-file-system/GUFI /opt/gufi-src
+        "https://huggingface.co/asg017/sqlite-lembed-model-examples/resolve/${MODEL_COMMIT}/all-MiniLM-L6-v2/all-MiniLM-L6-v2.e4ce9877.q8_0.gguf"
+    echo "${MODEL_SHA256}  /opt/app/index/models/minilm384.gguf" | sha256sum -c -
+    # A shallow clone cannot check out an arbitrary commit, so fetch just
+    # that one.
+    git init -q /opt/gufi-src
+    git -C /opt/gufi-src remote add origin https://github.com/mar-file-system/GUFI
+    git -C /opt/gufi-src fetch -q --depth 1 origin "${GUFI_COMMIT}"
+    git -C /opt/gufi-src checkout -q FETCH_HEAD
+    git -C /opt/gufi-src submodule update --init --recursive --depth 1
     # GUFI's cmake derives its version from git describe, which a shallow
     # tagless clone cannot answer.
     git -C /opt/gufi-src -c user.name=build -c user.email=build@localhost \
@@ -92,6 +110,42 @@ Stage: build
     # job far too broadly: GUFI's sqlite lacks symbols CPython's sqlite3
     # module needs, so exporting it breaks every indexer script.
     cp -a /opt/gufi-src/build/deps/*/lib/*.so* /opt/gufi/lib/ 2>/dev/null || true
+
+    # gufi_vt.so also needs these two. libsqlite3-pcre.so is built outside
+    # the deps/*/lib directories the copy above covers, so take it from the
+    # build tree (-L follows symlinks, which would otherwise dangle in the
+    # final stage). The tree holds more than one copy; sort so the pick
+    # does not depend on directory order. find's -exec would swallow a
+    # failed cp, so copy outside it.
+    for lib in libsqlite3-pcre.so libvec0.so; do
+        [ -e "/opt/gufi/lib/${lib}" ] && continue
+        src=$(find /opt/gufi-src/build -name "${lib}" \( -type f -o -type l \) | sort | head -n 1)
+        [ -n "$src" ] || continue    # reported by the check below
+        cp -L "$src" /opt/gufi/lib/
+    done
+
+    # Some libraries arrive as symlinks with absolute targets under
+    # /opt/gufi-src (libvec0.so -> .../deps/sqlite-vec/lib/vec0.so). The
+    # final stage does not carry /opt/gufi-src, so such links dangle there.
+    # Replace every link that points outside /opt/gufi with a real copy.
+    for l in /opt/gufi/lib/*; do
+        [ -L "$l" ] || continue
+        t=$(readlink -f "$l")
+        case "$t" in
+            /opt/gufi/*) ;;                       # stays inside the image
+            *) rm -f "$l"; cp "$t" "$l" ;;       # would dangle; copy it in
+        esac
+    done
+
+    # Stop the build unless each library is genuinely there, printing what
+    # the build tree holds when one is not.
+    for lib in libsqlite3-pcre.so libvec0.so; do
+        [ -e "/opt/gufi/lib/${lib}" ] && continue
+        echo "missing ${lib}; build-tree candidates:"
+        find /opt/gufi-src/build -name "*${lib#lib}*" -exec ls -l {} +
+        exit 1
+    done
+
     for b in /opt/gufi/bin/*; do
         [ -f "$b" ] && [ -x "$b" ] || continue
         patchelf --set-rpath '$ORIGIN/../lib' "$b" 2>/dev/null || true
@@ -106,7 +160,7 @@ Stage: build
 
 # ---------------------------------------------------------------------------
 Bootstrap: docker
-From: node:22-bookworm-slim
+From: node:26-bookworm-slim@sha256:3ffc19ea878019d9e9ae8971732ad4a03cda44f167107173174b60ed7c65bed3
 Stage: final
 
 %files from build
@@ -124,8 +178,11 @@ Stage: final
     # bookworm's python3 is 3.11, which satisfies the indexer's 3.10+ syntax.
     # Office documents convert through downmark inside the server bundle, so
     # no Python document libraries are needed; poppler and tesseract cover
-    # PDFs and OCR, LibreOffice renders office pages for previews.
-    apt-get update && apt-get install -y --no-install-recommends \
+    # PDFs and OCR, LibreOffice renders office pages for previews. One step
+    # per line: set -e ignores a failure inside an && chain unless it is
+    # the chain's last command, so a chain cannot prove anything.
+    apt-get update
+    apt-get install -y --no-install-recommends \
         python3 \
         attr poppler-utils tesseract-ocr curl ca-certificates \
         libreoffice-writer libreoffice-impress libreoffice-calc \
@@ -134,8 +191,10 @@ Stage: final
     # Prove the extractors exist before the image is sealed. The native
     # binary matters most: without it PDFs never reach downmark and OCR
     # cannot run at all, and the image would still build and start.
-    command -v pdftotext && command -v tesseract && command -v soffice \
-        && ls /app/server/node_modules/@giraffesyo/downmark/dist/downmark.wasm
+    command -v pdftotext
+    command -v tesseract
+    command -v soffice
+    ls /app/server/node_modules/@giraffesyo/downmark/dist/downmark.wasm
     node --input-type=module -e "
       const { binaryPath } = await import('/app/server/node_modules/@giraffesyo/downmark/dist/index.js')
       const bin = binaryPath()
@@ -143,6 +202,19 @@ Stage: final
       const { execFileSync } = await import('node:child_process')
       console.log('downmark binary ok:', bin, execFileSync(bin, ['-version']).toString().trim())
     "
+    # GUFI must be complete too. The build stage's rpath work is what lets
+    # its binaries find llama.cpp and GUFI's own sqlite here, and start.sh
+    # only warns when indexing fails, so a library the final stage cannot
+    # resolve would otherwise ship unnoticed.
+    test -x /opt/gufi/bin/gufi_dir2index
+    test -x /opt/gufi/bin/gufi_query
+    for f in /opt/gufi/bin/* /opt/gufi/lib/*.so*; do
+        [ -f "$f" ] || continue
+        if ldd "$f" 2>/dev/null | grep "not found"; then
+            echo "unresolved libraries in $f"
+            exit 1
+        fi
+    done
     cat > /app/start.sh << 'START'
 #!/bin/sh
 # The index lives on the bind-mounted data directory, never in the image;

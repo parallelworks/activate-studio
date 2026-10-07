@@ -17,3 +17,8 @@ overrides:
   js-yaml@4: ^4.3.2
   dompurify@3: ^3.4.16
   brace-expansion@5: ^5.0.12
+  source-map-js@1: ^1.2.2
+  '@fastify/busboy@3': ^3.2.2
+  # The one exception to "within the major": dependents ask for ^0.16 and
+  # no 0.16.x carries the prototype-pollution fix (GHSA-238p-pmpm-9mq7).
+  katex@<0.18.2: ^0.18.2

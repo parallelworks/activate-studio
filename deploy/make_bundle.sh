@@ -14,7 +14,9 @@ OUT="${1:-$PROJECT_ROOT/studio-bundle.tar.gz}"
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
 
-NODE_VERSION="v22.23.2"
+NODE_VERSION="v26.10.0"
+# From nodejs.org/dist/<version>/SHASUMS256.txt; change both together.
+NODE_SHA256="ca70e9e349de048b9522abb3adc05b3bd6f43c5ffd3ec57916c7da292f59f022"
 NODE_DIST="node-${NODE_VERSION}-linux-x64"
 CACHE="$PROJECT_ROOT/deploy/.cache"
 mkdir -p "$CACHE"
@@ -58,6 +60,13 @@ echo "Fetching Node runtime ${NODE_VERSION}..."
 if [ ! -f "$CACHE/${NODE_DIST}.tar.xz" ]; then
   curl -fsSL -o "$CACHE/${NODE_DIST}.tar.xz" \
     "https://nodejs.org/dist/${NODE_VERSION}/${NODE_DIST}.tar.xz"
+fi
+# Checked on every run, so a corrupt or tampered cache is caught too.
+# shasum covers macOS, where sha256sum may be missing.
+if command -v sha256sum >/dev/null 2>&1; then
+  echo "${NODE_SHA256}  $CACHE/${NODE_DIST}.tar.xz" | sha256sum -c -
+else
+  echo "${NODE_SHA256}  $CACHE/${NODE_DIST}.tar.xz" | shasum -a 256 -c -
 fi
 cp "$CACHE/${NODE_DIST}.tar.xz" "$STAGE/"
 

@@ -1,0 +1,76 @@
+# deploy/app.def pins its base images by digest so a rebuild is
+# reproducible, which also means Node and Debian security fixes reach the
+# image only when the digest moves. Dependabot cannot read a .def file, so
+# this checks each pinned tag weekly and opens a PR when one has moved.
+#
+# A PR pushed with the job token does not trigger pull_request workflows,
+# so the job dispatches ci and container on the branch itself; their
+# results show on the PR's head commit.
+
+name: base-images
+
+on:
+  schedule:
+    - cron: "0 9 * * 1"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  bump:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+    env:
+      BRANCH: deps/base-images
+    steps:
+      - uses: step-security/harden-runner@351661ca32ac09a36dc5ee2d536e3128f2a3c8ed # v2.22.0
+        with:
+          egress-policy: audit
+
+      # The token is handed to git only in the step that pushes.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: resolve current digests
+        id: bump
+        run: |
+          set -o pipefail
+          grep -oE '^From: [^@ ]+@sha256:[0-9a-f]{64}' deploy/app.def | cut -d' ' -f2 |
+          while IFS=@ read -r ref old; do
+            new=$(docker buildx imagetools inspect "$ref" --format '{{json .Manifest}}' | jq -r .digest)
+            [[ "$new" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::no digest for $ref"; exit 1; }
+            if [ "$new" != "$old" ]; then
+              echo "$ref: $old -> $new"
+              sed -i "s|^From: ${ref}@${old}\$|From: ${ref}@${new}|" deploy/app.def
+            fi
+          done
+          if git diff --quiet; then
+            echo "Base images are current."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            git diff
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: open or update the PR
+        if: steps.bump.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$BRANCH"
+          git commit -am "chore(deploy): bump base image digests"
+          git push --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$BRANCH"
+          if [ -z "$(gh pr list --head "$BRANCH" --state open --json number --jq '.[].number')" ]; then
+            gh pr create --base main --head "$BRANCH" \
+              --title "chore(deploy): bump base image digests" \
+              --body "The pinned base images in \`deploy/app.def\` have new digests upstream, usually Node or Debian security fixes. Opened by the base-images workflow; ci and container run on this branch by dispatch."
+          fi
+          gh workflow run ci.yml --ref "$BRANCH"
+          gh workflow run container.yaml --ref "$BRANCH"

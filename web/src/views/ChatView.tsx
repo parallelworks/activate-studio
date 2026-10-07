@@ -365,7 +365,6 @@ export function ChatView() {
           }
           setTimeout(() => focus(5), 50)
         },
-        toAttachments: () => { setShowAttachments(true); setShowManage(false) },
       }}
       notify={{
         success: () => {},

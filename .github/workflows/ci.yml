@@ -6,19 +6,51 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Lets the base-images workflow run CI on the PR it opens.
+  workflow_dispatch:
+
+# Read-only token: nothing here writes to the repository or a registry.
+permissions:
+  contents: read
+
+# A newer push to a PR supersedes the running check.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      # Node 22 matches the container base image, so a syntax or API level
-      # the image cannot run fails here rather than at deploy time.
-      - uses: actions/setup-node@v4
+      # Dependency installs run package scripts, so allow only GitHub,
+      # nodejs.org (setup-node's fallback), npm and the Ubuntu mirrors.
+      - uses: step-security/harden-runner@351661ca32ac09a36dc5ee2d536e3128f2a3c8ed # v2.22.0
         with:
-          node-version: 22
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            github.com:443
+            release-assets.githubusercontent.com:443
+            objects.githubusercontent.com:443
+            results-receiver.actions.githubusercontent.com:443
+            nodejs.org:443
+            registry.npmjs.org:443
+            azure.archive.ubuntu.com:80
+            esm.ubuntu.com:443
+            motd.ubuntu.com:443
+            packages.microsoft.com:443
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Node 26 matches the container base image, so a syntax or API level
+      # the image cannot run fails here rather than at deploy time.
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 26
       # No version here: package.json's packageManager pins it, and naming
       # it in both places is an error the action refuses to guess through.
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
 
       # The extraction tests skip what a host cannot do; installing these
       # means the OCR and pdftotext paths are actually exercised rather
@@ -48,12 +80,15 @@ jobs:
     # and has its own upstream CI; what is checked is that the server and
     # web build and the suite passes on macOS.
     runs-on: macos-15
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          node-version: 22
-      - uses: pnpm/action-setup@v4
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 26
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
       - name: install extraction tools
         run: brew install tesseract poppler
       - run: pnpm install --frozen-lockfile

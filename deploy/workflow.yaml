@@ -8,7 +8,7 @@
 # endpoint that outlives the workflow. Session methods: web, e2e, cleanup.
 #
 # Bundle: build with deploy/make_bundle.sh and upload to the bucket. It
-# carries the built app with node_modules, a Node 20 runtime, the GUFI
+# carries the built app with node_modules, a Node 26 runtime, the GUFI
 # source tree, and the embedding model, so the resource needs no outbound
 # network. If GUFI cannot build (no cmake or gcc), the app still runs:
 # browsing works from the filesystem and search falls back to grep.
@@ -530,7 +530,7 @@ jobs:
           set -e
           # A workdir node-runtime shadows the system node on PATH, so an
           # older one is discarded rather than kept.
-          node_ok() { [ "$("$1" -p 'process.version.slice(1).split(".")[0]' 2>/dev/null || echo 0)" -ge 22 ]; }
+          node_ok() { [ "$("$1" -p 'process.version.slice(1).split(".")[0]' 2>/dev/null || echo 0)" -ge 26 ]; }
           if [ -x node-runtime/bin/node ] && ! node_ok node-runtime/bin/node; then
             rm -rf node-runtime
           fi
@@ -542,7 +542,9 @@ jobs:
           fi
           if [ "$NEED_NODE" = "1" ]; then
             echo "Fetching Node runtime..."
-            curl -fsSL -o node.tar.xz https://nodejs.org/dist/v22.23.2/node-v22.23.2-linux-x64.tar.xz
+            curl -fsSL -o node.tar.xz https://nodejs.org/dist/v26.10.0/node-v26.10.0-linux-x64.tar.xz
+            # SHASUMS256.txt digest for the version above; change both together.
+            echo "ca70e9e349de048b9522abb3adc05b3bd6f43c5ffd3ec57916c7da292f59f022  node.tar.xz" | sha256sum -c -
             mkdir -p node-runtime
             tar -xJf node.tar.xz -C node-runtime --strip-components=1
             rm -f node.tar.xz
@@ -725,13 +727,13 @@ jobs:
             rm -f bundle.tar.gz
             echo "$BUNDLE" > .bundle
           fi
-          # Node runtime from the bundle, unless the resource has v22+.
+          # Node runtime from the bundle, unless the resource has v26+.
           NEED_NODE=1
           if [ -x node-runtime/bin/node ]; then
             NEED_NODE=0
           elif command -v node >/dev/null 2>&1; then
             MAJ=$(node -p 'process.version.slice(1).split(".")[0]' 2>/dev/null || echo 0)
-            [ "$MAJ" -ge 22 ] && NEED_NODE=0
+            [ "$MAJ" -ge 26 ] && NEED_NODE=0
           fi
           if [ "$NEED_NODE" = "1" ]; then
             NODE_TAR=$(ls node-*-linux-x64.tar.xz 2>/dev/null | head -1)

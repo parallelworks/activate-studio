@@ -1,0 +1,32 @@
+# Keeps the commit-SHA pins on actions and the npm lockfile current.
+# deploy/app.def's base images are outside Dependabot's reach; the
+# base-images workflow bumps those.
+
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: ci
+
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    # A week lets a compromised release be caught and pulled before it is
+    # proposed here. Security updates are not held back by this.
+    cooldown:
+      default-days: 7
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+    commit-message:
+      prefix: chore
+      prefix-development: chore
