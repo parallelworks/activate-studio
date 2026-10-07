@@ -1,13 +1,19 @@
 # Build the Singularity image from deploy/app.def, prove that it starts and
 # that GUFI is complete inside it, and publish it to ghcr.io as an ORAS artifact.
 #
-#   pull_request touching deploy/app.def or this file : build + test, no push
-#   release published                                 : build + test, push :<tag> (+ :latest)
-#   workflow_dispatch (manual "Run workflow" button)  : build + test, push only if ticked
+#   pull_request or push to main touching the image's inputs : build + test, no push
+#   release published                                         : build + test, push :<tag> (+ :latest)
+#   workflow_dispatch (manual "Run workflow" button)          : build + test, push only if ticked
 #
-# Kept separate from ci.yml on purpose: this job takes far longer (GUFI and
-# llama.cpp compile from source) and needs permission to write packages,
-# which code from a pull request should never run with.
+# The image bakes in far more than app.def, so a change anywhere in what it
+# copies or builds runs this too; otherwise a break would first surface when
+# a release is published, and that release would ship without an image.
+#
+# Kept separate from ci.yml on purpose: this build takes far longer (GUFI and
+# llama.cpp compile from source). Publishing needs permission to write
+# packages, which the build itself never gets: it runs upstream build scripts
+# as root, so only the separate push job, which runs no build code and never
+# runs for a pull request, holds that token.
 #
 # Pull the result with:
 #   singularity pull oras://ghcr.io/parallelworks/activate-studio:<tag>
@@ -28,34 +34,61 @@ on:
         type: string
         default: ""
   pull_request:
-    paths:
+    paths: &image-inputs
       - deploy/app.def
-      - .github/workflows/container.yml
+      - .github/workflows/container.yaml
+      - indexer/**
+      - server/**
+      - web/**
+      - docs/**
+      - extensions-starter/**
+      - package.json
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+  push:
+    branches: [main]
+    paths: *image-inputs
 
-# A newer push to the same PR makes the running build pointless; releases
-# and manual runs are never cancelled.
+# A newer push to the same PR or to main makes the running build pointless.
+# Releases and manual runs each get a group of their own: a shared group
+# would let a newer queued run silently cancel an older pending one.
 concurrency:
-  group: container-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: container-${{ (github.event_name == 'pull_request' || github.event_name == 'push') && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
+
+# Nothing by default; each job asks for what it uses.
+permissions: {}
 
 env:
   # Pinned so a SingularityCE release cannot change the build underneath us.
   # 4.5.1 fixes relative-path handling in builds that 4.5.0 broke, which
-  # matters for app.def's "%files . /opt/src".
+  # matters for app.def's "%files . /opt/src". The digest is the one GitHub
+  # records for the release asset; change both together.
   SINGULARITY_VERSION: "4.5.1"
+  SINGULARITY_DEB_SHA256: "e9cdcec5e479e9f96f7fb95338d5bae2835099ee9f97222d204cb8a3f3f38070"
 
 jobs:
-  build-test-push:
+  build-test:
     # Pinned rather than ubuntu-latest so the runner keeps matching the
     # noble .deb installed below.
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     permissions:
       contents: read
-      packages: write   # only used by the push step; PRs never reach it
 
     steps:
-      - uses: actions/checkout@v4
+      # Record every outbound connection the job makes; the build runs
+      # third-party build scripts (GUFI, llama.cpp) as root.
+      - &harden-runner
+        uses: step-security/harden-runner@351661ca32ac09a36dc5ee2d536e3128f2a3c8ed # v2.22.0
+        with:
+          egress-policy: audit
+
+      # app.def copies the whole checkout, .git included, into the build
+      # stage, so keep the token out of .git/config.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       # The build stage (GUFI, llama.cpp, node_modules) plus the final stage
       # (LibreOffice) need more scratch space than a stock runner leaves
@@ -66,40 +99,25 @@ jobs:
                       /usr/local/share/boost /opt/hostedtoolcache/CodeQL
           df -h /
 
-      - name: install SingularityCE
+      # Download outside the checkout (app.def copies "." into the build)
+      # and refuse a .deb whose digest does not match the pinned one: it is
+      # installed, and later run, as root.
+      - &install-singularity
+        name: install SingularityCE
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           deb="singularity-ce_${SINGULARITY_VERSION}-noble_amd64.deb"
           gh release download "v${SINGULARITY_VERSION}" \
-            --repo sylabs/singularity --pattern "$deb"
+            --repo sylabs/singularity --pattern "$deb" --dir "$RUNNER_TEMP"
+          echo "${SINGULARITY_DEB_SHA256}  $RUNNER_TEMP/$deb" | sha256sum -c -
           sudo apt-get update
-          sudo apt-get install -y "./$deb"
+          sudo apt-get install -y "$RUNNER_TEMP/$deb"
           singularity --version
 
       # Run from the repo root: app.def copies "." into the build stage.
       - name: build studio.sif
         run: sudo singularity build studio.sif deploy/app.def
-
-      # app.def does a lot of careful rpath work so GUFI's binaries find
-      # llama.cpp and GUFI's own sqlite at run time, and start.sh only warns
-      # if indexing fails. Check both directly so a half-built GUFI fails
-      # the job instead of shipping.
-      - name: check GUFI is complete
-        run: |
-          singularity exec --cleanenv studio.sif sh -ec '
-            test -x /opt/gufi/bin/gufi_dir2index
-            test -x /opt/gufi/bin/gufi_query
-            missing=0
-            for f in /opt/gufi/bin/* /opt/gufi/lib/*.so*; do
-              [ -f "$f" ] || continue
-              if ldd "$f" 2>/dev/null | grep "not found"; then
-                echo "unresolved libraries in $f"
-                missing=1
-              fi
-            done
-            exit $missing
-          '
 
       # Start the image the way a user would, with a tiny corpus and a
       # fresh data directory, build the index on start, and wait for
@@ -116,9 +134,11 @@ jobs:
             studio.sif > "$log" 2>&1 &
           pid=$!
 
-          ok=0
+          ok=0; health=""
           for i in $(seq 1 150); do
-            if curl -fsS http://127.0.0.1:8080/healthz; then ok=1; break; fi
+            if health=$(curl -fsS --max-time 5 http://127.0.0.1:8080/healthz); then
+              echo "$health"; ok=1; break
+            fi
             kill -0 "$pid" 2>/dev/null || break   # the server exited
             sleep 2
           done
@@ -127,35 +147,83 @@ jobs:
           kill "$pid" 2>/dev/null || true
 
           [ "$ok" = 1 ] || { echo "::error::server never answered /healthz"; exit 1; }
-          if grep -q "index build failed" "$log"; then
-            echo "::error::GUFI index build failed inside the image"; exit 1
+          # Assert success rather than the absence of start.sh's warning,
+          # which would also be absent if indexing never ran at all.
+          if ! grep -q "index rebuilt at" "$log"; then
+            echo "::error::GUFI index was not built inside the image"; exit 1
           fi
+          case "$health" in
+            *'"gufi":true'*) ;;
+            *) echo "::error::server reports GUFI unavailable: $health"; exit 1 ;;
+          esac
           echo "----- index directory -----"
           find "$data/index" -maxdepth 3 | head -50
 
-      - name: push to ghcr.io
-        if: >-
+      # Hand the tested image to the push job. Only runs that publish pay
+      # for the upload. SIF is already squashfs, so upload the file as it
+      # is (archive: false); the artifact takes the file's name.
+      - name: keep studio.sif for the push job
+        if: &publish >-
           github.event_name == 'release' ||
           (github.event_name == 'workflow_dispatch' && inputs.push)
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          path: studio.sif
+          archive: false
+          if-no-files-found: error
+          retention-days: 1
+
+  push:
+    needs: build-test
+    if: *publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read    # releases/latest lookup
+      packages: write
+
+    steps:
+      - *harden-runner
+
+      # v8 fails on a digest mismatch, so what gets pushed is byte for byte
+      # what build-test tested.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: studio.sif
+
+      - *install-singularity
+
+      - name: push to ghcr.io
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
-          PRERELEASE: ${{ github.event.release.prerelease }}
           INPUT_TAG: ${{ inputs.tag }}
         run: |
+          set -f   # tags are word-split below; never glob them
+          [ -s studio.sif ] || { echo "::error::studio.sif missing from the downloaded artifact"; exit 1; }
           image="oras://ghcr.io/${GITHUB_REPOSITORY,,}"   # ghcr needs lowercase
-          echo "$GH_TOKEN" | singularity registry login \
-            --username "$GITHUB_ACTOR" --password-stdin oras://ghcr.io
 
           if [ "$GITHUB_EVENT_NAME" = "release" ]; then
             tags="$RELEASE_TAG"
-            [ "$PRERELEASE" = "true" ] || tags="$tags latest"
+            # :latest follows GitHub's "Latest release", so a prerelease or a
+            # fix published for an older line does not move it backwards.
+            latest=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name || true)
+            [ "$latest" != "$RELEASE_TAG" ] || tags="$tags latest"
           else
             tags="${INPUT_TAG:-sha-${GITHUB_SHA::7}}"
           fi
+
+          # Reject every bad tag before pushing any, so a typo cannot leave
+          # a partial set behind.
+          for t in $tags; do
+            [[ "$t" =~ ^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$ ]] || {
+              echo "::error::not a valid image tag: $t"; exit 1; }
+          done
+
+          echo "$GH_TOKEN" | singularity registry login \
+            --username "$GITHUB_ACTOR" --password-stdin oras://ghcr.io
 
           for t in $tags; do
             singularity push studio.sif "$image:$t"
             echo "Pushed \`$image:$t\`" >> "$GITHUB_STEP_SUMMARY"
           done
-
