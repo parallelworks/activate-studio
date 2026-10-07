@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormikProps, FormikValues } from 'formik'
 import { DynamicForm, initializeValues } from '@parallelworks/ui/form'
 import { useWorkflowFields, forgetPlatformData } from '../components/WorkflowFields'
@@ -162,8 +162,10 @@ function WorkflowRunner({ name, kind, title, onBack, onLaunched }: { name: strin
           )}
           <div className="wf-form">
             {doc.form && Object.keys(doc.form).length
-              ? <DynamicForm key={`${name}:${preset}`} formJSONs={doc.form} initialValues={initial} formikRef={formik}
-                  fields={fields} workflowForm labelPosition="left" contextKey={preset || 'defaults'} />
+              ? <Suspense fallback={<p className="muted">Loading form…</p>}>
+                  <DynamicForm key={`${name}:${preset}`} formJSONs={doc.form} initialValues={initial} formikRef={formik}
+                    fields={fields} workflowForm labelPosition="left" contextKey={preset || 'defaults'} />
+                </Suspense>
               : <p className="muted">This workflow takes no inputs.</p>}
           </div>
           <div className="query-actions wf-actions">

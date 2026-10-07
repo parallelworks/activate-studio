@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react'
-import { useChat } from '@parallelworks/ai-chat'
+import { useChat } from '@parallelworks/ui/ai'
 import { deleteConversations, isOwnConversation } from '../adapter'
 
 /**

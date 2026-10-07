@@ -6,7 +6,7 @@ import { VoiceOverlay } from '../components/VoiceOverlay'
 import { rememberHash } from '../lastLocation'
 import {
   ChatProvider, ChatLayout, ChatThread, ChatEmptyState, AttachmentManager, useChat,
-} from '@parallelworks/ai-chat'
+} from '@parallelworks/ui/ai'
 import { ChatsManager } from '../components/ChatsManager'
 import { ManageChatsRailItem } from '../components/ManageChatsRailItem'
 import { createStudioAdapter, getChatListFilter, setChatListFilter, setViewerUsername } from '../adapter'
@@ -365,7 +365,6 @@ export function ChatView() {
           }
           setTimeout(() => focus(5), 50)
         },
-        toAttachments: () => { setShowAttachments(true); setShowManage(false) },
       }}
       notify={{
         success: () => {},

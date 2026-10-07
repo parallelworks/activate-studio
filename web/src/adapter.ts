@@ -1,17 +1,17 @@
-import type { ChatAdapter, ModelsList, StreamCompletion } from '@parallelworks/ai-chat'
+import type { ChatAdapter, ModelsList, StreamCompletion } from '@parallelworks/ui/ai'
 import { getLabelScope, getPersona } from './labelScope'
 import { fetchModels } from './api'
 
 async function listModels(): Promise<ModelsList> {
   // The shared request is typed loosely; the package's own types apply here.
-  const data = (await fetchModels()) as unknown as { models?: ModelsList['models']; unreachableSessions?: ModelsList['unreachableSessions'] }
+  const data = (await fetchModels()) as unknown as Partial<ModelsList>
   // The server marks models whose most recent call failed (an expired
   // provider key fails at call time while listing fine). The picker
   // component is upstream, so the signal rides the display name; it
   // disappears on the first successful call.
   const models = (data.models ?? []).map(m =>
     (m as { callable?: boolean }).callable === false ? { ...m, name: `${m.name || m.id} · last call failed` } : m)
-  return { models, unreachableSessions: data.unreachableSessions ?? [] }
+  return { models, unreachableSessions: data.unreachableSessions ?? [], providerIssues: data.providerIssues ?? [] }
 }
 
 /** Stream one completion from the server's tool-loop endpoint over SSE. */
