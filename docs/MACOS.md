@@ -13,7 +13,7 @@ CI, which builds the server and web app and runs the full suite.
 brew install node pnpm
 ```
 
-Node 22 or newer. Nothing else is needed to start.
+Node 26 or newer. Nothing else is needed to start.
 
 ## 2. Run it
 

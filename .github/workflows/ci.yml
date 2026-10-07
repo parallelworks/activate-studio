@@ -11,11 +11,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # Node 22 matches the container base image, so a syntax or API level
+      # Node 26 matches the container base image, so a syntax or API level
       # the image cannot run fails here rather than at deploy time.
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 26
       # No version here: package.json's packageManager pins it, and naming
       # it in both places is an error the action refuses to guess through.
       - uses: pnpm/action-setup@v4
@@ -52,7 +52,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 26
       - uses: pnpm/action-setup@v4
       - name: install extraction tools
         run: brew install tesseract poppler
