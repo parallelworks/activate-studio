@@ -121,7 +121,8 @@ jobs:
     steps:
       # The build runs third-party build scripts (GUFI, llama.cpp) as root,
       # so allow only what a build needs: GitHub (checkout, SingularityCE,
-      # GUFI), the Ubuntu and Debian mirrors, Docker Hub for the base
+      # GUFI), the Ubuntu mirrors (with the ones apt falls back to when
+      # the Azure mirror is down) and Debian's, Docker Hub for the base
       # images, npm, and Hugging Face for the model. Anything else is
       # blocked and shows in the job's StepSecurity report.
       - uses: step-security/harden-runner@351661ca32ac09a36dc5ee2d536e3128f2a3c8ed # v2.22.0
@@ -134,6 +135,10 @@ jobs:
             objects.githubusercontent.com:443
             results-receiver.actions.githubusercontent.com:443
             azure.archive.ubuntu.com:80
+            archive.ubuntu.com:80
+            archive.ubuntu.com:443
+            security.ubuntu.com:80
+            security.ubuntu.com:443
             esm.ubuntu.com:443
             motd.ubuntu.com:443
             packages.microsoft.com:443
