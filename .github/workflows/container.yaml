@@ -8,6 +8,9 @@
 # The image bakes in far more than app.def, so a change anywhere in what it
 # copies or builds runs this too; otherwise a break would first surface when
 # a release is published, and that release would ship without an image.
+# The workflow starts on every PR and push so build-test can be a required
+# check: the changes job decides whether the image is affected, and a
+# skipped build-test counts as passing.
 #
 # Kept separate from ci.yml on purpose: this build takes far longer (GUFI and
 # llama.cpp compile from source). Publishing needs permission to write
@@ -15,8 +18,9 @@
 # as root, so only the separate push job, which runs no build code and never
 # runs for a pull request, holds that token.
 #
-# Pull the result with:
-#   singularity pull oras://ghcr.io/parallelworks/activate-studio:<tag>
+# Pull the result, and check it was built here from a given commit, with:
+#   singularity pull studio.sif oras://ghcr.io/parallelworks/activate-studio:<tag>
+#   gh attestation verify studio.sif --repo parallelworks/activate-studio
 
 name: container
 
@@ -34,20 +38,8 @@ on:
         type: string
         default: ""
   pull_request:
-    paths: &image-inputs
-      - deploy/app.def
-      - .github/workflows/container.yaml
-      - indexer/**
-      - server/**
-      - web/**
-      - docs/**
-      - extensions-starter/**
-      - package.json
-      - pnpm-lock.yaml
-      - pnpm-workspace.yaml
   push:
     branches: [main]
-    paths: *image-inputs
 
 # A newer push to the same PR or to main makes the running build pointless.
 # Releases and manual runs each get a group of their own: a shared group
@@ -68,7 +60,57 @@ env:
   SINGULARITY_DEB_SHA256: "e9cdcec5e479e9f96f7fb95338d5bae2835099ee9f97222d204cb8a3f3f38070"
 
 jobs:
+  # Decides whether this PR or push touches anything the image copies or
+  # builds. Fails open: when the file list cannot be had, build.
+  changes:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      image: ${{ steps.files.outputs.image }}
+    steps:
+      - uses: step-security/harden-runner@351661ca32ac09a36dc5ee2d536e3128f2a3c8ed # v2.22.0
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+
+      - id: files
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          image=true
+          case "$GITHUB_EVENT_NAME" in
+            pull_request)
+              files=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/files" --jq '.[].filename') || files="" ;;
+            push)
+              if [ "${BEFORE//0/}" != "" ]; then
+                files=$(gh api "repos/$GITHUB_REPOSITORY/compare/$BEFORE...$GITHUB_SHA" --jq '.files[].filename') || files=""
+              else
+                files=""
+              fi ;;
+            *) files="" ;;   # release, manual run: always build
+          esac
+          if [ -n "$files" ]; then
+            image=false
+            while read -r f; do
+              case "$f" in
+                deploy/app.def|.github/workflows/container.yaml|\
+                indexer/*|server/*|web/*|docs/*|extensions-starter/*|\
+                package.json|pnpm-lock.yaml|pnpm-workspace.yaml)
+                  echo "image input changed: $f"; image=true; break ;;
+              esac
+            done <<< "$files"
+          fi
+          echo "image=$image" | tee -a "$GITHUB_OUTPUT"
+
   build-test:
+    needs: changes
+    if: needs.changes.outputs.image == 'true'
     # Pinned rather than ubuntu-latest so the runner keeps matching the
     # noble .deb installed below.
     runs-on: ubuntu-24.04
@@ -77,12 +119,32 @@ jobs:
       contents: read
 
     steps:
-      # Record every outbound connection the job makes; the build runs
-      # third-party build scripts (GUFI, llama.cpp) as root.
-      - &harden-runner
-        uses: step-security/harden-runner@351661ca32ac09a36dc5ee2d536e3128f2a3c8ed # v2.22.0
+      # The build runs third-party build scripts (GUFI, llama.cpp) as root,
+      # so allow only what a build needs: GitHub (checkout, SingularityCE,
+      # GUFI), the Ubuntu and Debian mirrors, Docker Hub for the base
+      # images, npm, and Hugging Face for the model. Anything else is
+      # blocked and shows in the job's StepSecurity report.
+      - uses: step-security/harden-runner@351661ca32ac09a36dc5ee2d536e3128f2a3c8ed # v2.22.0
         with:
-          egress-policy: audit
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            github.com:443
+            release-assets.githubusercontent.com:443
+            objects.githubusercontent.com:443
+            results-receiver.actions.githubusercontent.com:443
+            azure.archive.ubuntu.com:80
+            esm.ubuntu.com:443
+            motd.ubuntu.com:443
+            packages.microsoft.com:443
+            auth.docker.io:443
+            index.docker.io:443
+            registry-1.docker.io:443
+            production.cloudfront.docker.com:443
+            deb.debian.org:80
+            registry.npmjs.org:443
+            huggingface.co:443
+            *.hf.co:443
 
       # app.def copies the whole checkout, .git included, into the build
       # stage, so keep the token out of .git/config.
@@ -179,11 +241,18 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
-      contents: read    # releases/latest lookup
+      contents: read      # releases/latest lookup
       packages: write
+      id-token: write     # provenance: Sigstore signing identity
+      attestations: write
 
     steps:
-      - *harden-runner
+      # Audit, not block, until a release run shows this job's full set
+      # (Sigstore and the OIDC token service for the attestation among it).
+      # It runs no build code.
+      - uses: step-security/harden-runner@351661ca32ac09a36dc5ee2d536e3128f2a3c8ed # v2.22.0
+        with:
+          egress-policy: audit
 
       # v8 fails on a digest mismatch, so what gets pushed is byte for byte
       # what build-test tested.
@@ -227,3 +296,9 @@ jobs:
             singularity push studio.sif "$image:$t"
             echo "Pushed \`$image:$t\`" >> "$GITHUB_STEP_SUMMARY"
           done
+
+      # Signed build provenance for the exact file pushed, so anyone can
+      # check an image came from this workflow at a given commit.
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: studio.sif

@@ -31,9 +31,10 @@ jobs:
         with:
           egress-policy: audit
 
-      # Credentials stay: this job pushes the bump branch, and runs no
-      # code from the repo.
+      # The token is handed to git only in the step that pushes.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: resolve current digests
         id: bump
@@ -65,7 +66,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git switch -c "$BRANCH"
           git commit -am "chore(deploy): bump base image digests"
-          git push --force origin "$BRANCH"
+          git push --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$BRANCH"
           if [ -z "$(gh pr list --head "$BRANCH" --state open --json number --jq '.[].number')" ]; then
             gh pr create --base main --head "$BRANCH" \
               --title "chore(deploy): bump base image digests" \
