@@ -45,6 +45,21 @@ function migrateRememberedModel(): void {
   } catch { /* storage unavailable */ }
 }
 
+// The phone layout's breakpoint in styles.css; the conversations list turns
+// into the package's drawer at the same width the bottom bar appears.
+const PHONE_QUERY = '(max-width: 760px)'
+
+function usePhoneLayout(): boolean {
+  const [phone, setPhone] = useState(() => matchMedia(PHONE_QUERY).matches)
+  useEffect(() => {
+    const mq = matchMedia(PHONE_QUERY)
+    const on = () => setPhone(mq.matches)
+    mq.addEventListener('change', on)
+    return () => mq.removeEventListener('change', on)
+  }, [])
+  return phone
+}
+
 export function ChatView() {
   // The open conversation lives in the URL, so a refresh (or a shared link)
   // returns to the same session instead of an empty chat.
@@ -64,29 +79,10 @@ export function ChatView() {
   }, [])
   const [showAttachments, setShowAttachments] = useState(false)
   const [showManage, setShowManage] = useState(false)
-  // Width of the Activity (thinking) drawer on the right; the package
-  // renders it fixed at 400px, and our CSS reads this variable over it.
-  const [thinkRail, setThinkRail] = useState(() => Number(localStorage.getItem('ade-think-rail')) || 400)
-
-  // The Activity drawer belongs to the chat package; its open state is
-  // observed from the DOM and mirrored as a data attribute the CSS keys on,
-  // which holds up across package markup changes better than a :has()
-  // selector on utility classes.
-  useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const sync = () => {
-      const drawer = canvas.querySelector('div[class*="transition-[width]"]')
-      const open = !!drawer && !(drawer.className.split(/\s+/).includes('w-0'))
-      canvas.dataset.thinkOpen = open ? '1' : '0'
-    }
-    sync()
-    const mo = new MutationObserver(sync)
-    mo.observe(canvas, { subtree: true, attributes: true, attributeFilter: ['class'], childList: true })
-    return () => mo.disconnect()
-  }, [])
-  // Phone slide-over state for the conversations rail; the bottom-bar
-  // Chat item toggles it, and choosing a conversation closes it.
+  // On a phone the conversations list is the package's drawer. The
+  // bottom-bar Chat item toggles it; the package closes it on a pick, a tap
+  // outside or Escape.
+  const phone = usePhoneLayout()
   const [railOpen, setRailOpen] = useState(false)
   useEffect(() => {
     const t = () => setRailOpen(o => !o)
@@ -307,30 +303,6 @@ export function ChatView() {
 
   const canvasRef = useRef<HTMLDivElement>(null)
 
-  // Drag writes straight to the DOM; React state commits once on release,
-  // so the provider subtree does not re-render per mousemove.
-  const onThinkDrag = (e: React.MouseEvent) => {
-    e.preventDefault()
-    const startX = e.clientX
-    const startW = thinkRail
-    let w = startW
-    const onMove = (ev: MouseEvent) => {
-      // The drawer hangs off the right edge, so dragging left widens it.
-      w = Math.min(700, Math.max(280, startW + (startX - ev.clientX)))
-      canvasRef.current?.style.setProperty('--ade-think-rail', `${w}px`)
-    }
-    const onUp = () => {
-      document.body.classList.remove('resizing')
-      window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mouseup', onUp)
-      setThinkRail(w)
-      localStorage.setItem('ade-think-rail', String(w))
-    }
-    document.body.classList.add('resizing')
-    window.addEventListener('mousemove', onMove)
-    window.addEventListener('mouseup', onUp)
-  }
-
 
   // The empty state freezes its greeting and starter prompts at mount, so
   // wait for the deployment config before mounting the chat tree.
@@ -352,6 +324,8 @@ export function ChatView() {
     <ChatProvider
       key={chatEpoch}
       adapter={adapter}
+      drawerOpen={railOpen}
+      onDrawerOpenChange={setRailOpen}
       currentUser={cfg.user}
       navigation={{
         toConversation: id => { setActiveId(id); setShowAttachments(false); setShowManage(false) },
@@ -401,7 +375,7 @@ export function ChatView() {
       }}
     >
       <div className="chat-wrap">
-        <div ref={canvasRef} className={`chat-canvas card${railOpen ? ' rail-open' : ''}`} style={{ ['--ade-think-rail' as string]: `${thinkRail}px` }}>
+        <div ref={canvasRef} className={`chat-canvas card${railOpen ? ' rail-open' : ''}`}>
           {credNote && (
             <div className="cred-banner">
               <span className="cred-banner-text">{credNote}</span>
@@ -410,7 +384,7 @@ export function ChatView() {
             </div>
           )}
                     <FilterReloader />
-          <ChatLayout>
+          <ChatLayout sidebarMode={phone ? 'drawer' : 'inline'} drawerToggle={false}>
             {showManage ? (
               <ChatsManager
                 activeId={activeId}
@@ -441,8 +415,6 @@ export function ChatView() {
           {!showAttachments && !showManage && <SlashPalette canvas={canvasRef} />}
           {!showAttachments && !showManage && <NextUp canvas={canvasRef} />}
           {voiceOpen && cfg.features?.voice?.url && <VoiceOverlay url={cfg.features.voice.url} onClose={() => setVoiceOpen(false)} />}
-          {railOpen && <div className="chat-rail-backdrop" onClick={() => setRailOpen(false)} />}
-          <div className="chat-think-handle" onMouseDown={onThinkDrag} title="Drag to resize the activity panel" />
           {multiUser && sharedHistory && !showAttachments && (
             <button
               className={`chat-filter-btn ${chatFilter === 'mine' ? 'active' : ''}`}

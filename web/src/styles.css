@@ -331,7 +331,6 @@ main.content { min-height: 0; min-width: 0; background: var(--pw-content-bg); }
   padding-top: 0 !important; padding-bottom: 0 !important;
 }
 .chat-canvas main [class*="flex-shrink-0"][class*="border-b"] > div { flex: 1; }
-.chat-rail-backdrop { display: none; }
 .chat-rail-handle { position: absolute; top: 0; bottom: 0; width: 6px; cursor: col-resize; z-index: 20; }
 .chat-rail-handle:hover, .resizing .chat-rail-handle { background: rgba(91, 135, 166, 0.25); }
 
@@ -874,7 +873,6 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
    direct children, which made this row full-height and centred the
    buttons halfway down the canvas. */
 .chat-controls { position: absolute; top: 11px; right: 16px; z-index: 8; display: flex; align-items: center; gap: 6px; height: auto; }
-.chat-canvas[data-think-open="1"] .chat-controls { right: calc(var(--ade-think-rail, 400px) + 12px); }
 .chat-scope-anchor, .chat-persona-anchor { position: relative; height: auto; }
 .chat-persona-anchor .scope-menu { right: 0; }
 @media (max-width: 760px) {
@@ -893,25 +891,6 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
     overflow: hidden;
   }
 }
-/* ---- Activity (thinking) drawer: the package renders it as a fixed 400px
-   right panel. Our width variable overrides it so the drag handle below can
-   resize it, the scope button steps left of it instead of overlapping its
-   header, and the handle only exists while the drawer is open. The open
-   drawer is the width-transitioning panel without the w-0 class. ---- */
-.chat-canvas[data-think-open="1"] div[class*="transition-[width]"] { width: var(--ade-think-rail, 400px) !important; }
-.chat-canvas div[class*="transition-[width]"] > div[class*="w-[400px]"] { width: var(--ade-think-rail, 400px) !important; }
-.chat-think-handle {
-  display: none; position: absolute; top: 0; bottom: 0; width: 7px;
-  right: calc(var(--ade-think-rail, 400px) - 3px);
-  cursor: col-resize; z-index: 30;
-}
-.chat-canvas[data-think-open="1"] .chat-think-handle { display: block; }
-.chat-think-handle:hover { background: color-mix(in srgb, var(--pw-link) 25%, transparent); }
-/* Drawer content: tool activity is dense and its arguments are long
-   unbroken strings; size it as a log, not as prose. */
-.chat-canvas div[class*="transition-[width]"] { font-size: 13px; }
-.chat-canvas div[class*="transition-[width]"] pre,
-.chat-canvas div[class*="transition-[width]"] code { overflow-wrap: anywhere; white-space: pre-wrap; }
 /* Below ai-chat's side panels (z 10-20) so their close controls stay
    clickable; raised only while the scope menu itself is open. */
 .chat-scope-anchor.open { z-index: 60; }
@@ -1812,30 +1791,12 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
   .tag-panel { width: min(340px, calc(100vw - 24px)); right: 12px; }
   .query-row .grow, .query-form select.field { max-width: 100%; }
 
-  /* Chat. The conversations rail becomes a slide-over: hidden by
-     default so the thread gets the whole width, opened by re-tapping
-     the Chat item in the bottom bar, closed again by picking a
-     conversation. The drag handles are mouse furniture and go; the
-     Activity drawer is a desktop luxury at this width. */
-  .chat-canvas.rail-open .chat-rail-backdrop {
-    display: block; position: absolute; inset: 0; z-index: 24;
-    background: rgba(0, 0, 0, 0.25);
-  }
-  /* The package's own collapse toggle fights the slide-over at this
-     width (its collapsed state is a slim strip, not a closed drawer), so
-     the drawer's close affordances are the backdrop and the Chat item. */
-  .chat-canvas > .flex.h-full > :first-child > div[class*="justify-between"] button { display: none; }
-  .chat-canvas.rail-open .chat-filter-btn { display: block; z-index: 26; }
-  .chat-canvas > .flex.h-full > :first-child {
-    position: absolute; left: 0; top: 0; bottom: 0; z-index: 25;
-    width: min(85vw, 320px) !important;
-    transform: translateX(-105%); transition: transform 0.15s ease;
-    box-shadow: 4px 0 18px rgba(16, 24, 40, 0.18);
-    background: var(--pw-rail-bg);
-  }
-  .chat-canvas.rail-open > .flex.h-full > :first-child { transform: none; }
-  .chat-rail-handle, .chat-think-handle, .chat-filter-btn { display: none; }
-  .chat-canvas div[class*="transition-[width]"] { width: 0 !important; min-width: 0 !important; }
+  /* Chat. The conversations list is the package's drawer at this width
+     (ChatView switches it at this breakpoint); the bottom-bar Chat item
+     opens it. The show-all filter rides on the open drawer, above the
+     package's drawer layer. */
+  .chat-canvas.rail-open .chat-filter-btn { display: block; z-index: 31; }
+  .chat-rail-handle, .chat-filter-btn { display: none; }
 }
 
 /* ---- library switcher: lives in the Library rail header ---- */
