@@ -2,6 +2,28 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.86 (2026-10-09)
+
+### Change log through v1.85 (#382)
+
+Regenerated with `node scripts/release-notes.mjs --changelog` after the v1.85 release.
+
+### Settings, Libraries shows each library's index and source roots (#383)
+
+## Settings, Libraries shows where each library points
+
+Each library in Settings, Libraries now shows its index root (the GUFI tree) and its source root under its name. A library whose files are not on this host shows "not on this host" for its source. This covers the knowledge base, libraries pinned by the deployment, and libraries added in Settings.
+
+The paths come from the Settings listing (`GET /api/libraries`, and the reply to adding a library) through a new `settingsLibrary`. The client config that every viewer loads (`/api/config`) still uses `publicLibrary` and carries no paths. The existing test for that stays, and a new test checks that the Settings listing has both roots, with a null source for a library that has no files here.
+
+Layout:
+- Paths wrap only after a slash, never inside a directory name, and a selected path copies as written.
+- The library column takes 45% of the table; the other headers may wrap to two lines.
+- The empty actions column no longer reserves 120px.
+- At desktop width each path fits on one line; at 760px they wrap at slashes.
+
+`docs/LIBRARIES.md` notes where the paths appear. Server tests (230) and web tests (54) pass.
+
 ## v1.85 (2026-10-09)
 
 ### Change log through v1.84 (#380)
