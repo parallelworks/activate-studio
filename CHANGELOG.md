@@ -2,6 +2,30 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.85 (2026-10-09)
+
+### Change log through v1.84 (#380)
+
+Regenerated with `node scripts/release-notes.mjs --changelog` after the v1.83 and v1.84 releases.
+
+### Installed app: the classification banner can take the title bar's place (#381)
+
+## The classification banner can take the title bar's place in the installed app
+
+In the installed app, the title bar sits above the classification banner, so two strips of the same color take about 55px at the top of the window. A Studio with a banner now declares the window controls overlay (`display_override: ["window-controls-overlay"]` in the manifest). When it is on, the page draws in the title bar area and the banner fills it: one strip of about 32px, with the marking between the window controls.
+
+Chrome opens a newly installed app with the standard title bar. A chevron button in the title bar turns the overlay on, and Chrome remembers the choice for later launches. Until a viewer turns it on, nothing changes. A Studio without a banner does not declare the overlay, so it gets no chevron.
+
+With the overlay on, the banner:
+- takes the title bar area's height (`env(titlebar-area-height)`);
+- drags the window (`app-region: drag`);
+- keeps its text centered on the window, with clearance on each side equal to the wider of the two control areas;
+- wraps to two lines at a smaller size in a window narrower than about 1000px, so the marking is never truncated.
+
+The banner keeps its text and color, and it is drawn by the page, so it is on screen whenever the app is. The Settings preview of the banner is not affected.
+
+Checked by applying the overlay rules with Mac-like title bar values in headless Chrome, which cannot run the overlay itself: one line at 1440px and 960px, two lines at 720px and 560px, never clipped. In the browser and in the installed app without the overlay, the banner is unchanged (25px, no padding). Server and web tests pass, including a manifest test that only a Studio with a banner declares the overlay.
+
 ## v1.84 (2026-10-09)
 
 ### GitHub workflow tools: component workflows from a repository (#379)
