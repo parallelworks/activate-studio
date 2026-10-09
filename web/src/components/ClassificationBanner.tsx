@@ -48,8 +48,8 @@ export function ClassificationBanner(): ReactElement | null {
   if (!bg) return null
   const text = cfg.bannerText.trim()
   return (
-    <div className="cls-banner" style={{ background: bg, color: bannerInk(bg) }} role="note">
-      {text}
+    <div className="cls-banner" style={{ background: bg, color: bannerInk(bg) }} role="note" title={text}>
+      <span>{text}</span>
     </div>
   )
 }
