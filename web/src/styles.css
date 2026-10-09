@@ -1840,10 +1840,6 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .wf-icon-blank { width: 3rem; height: 3rem; border-radius: 8px; background: var(--theme-accent, var(--pw-link)); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 1.25rem; text-transform: uppercase; }
 .wf-name { font-weight: 600; font-size: 0.9rem; line-height: 1.25; }
 .wf-note { font-size: 0.75rem; color: var(--pw-muted); }
-.wf-back { display: block; align-self: flex-start; margin: 0 auto 0.5rem 0; padding: 0; }
-.wf-preset { max-width: 28rem; margin: 0.75rem 0 1rem; }
-.wf-form { max-width: 48rem; }
-.wf-actions { margin-top: 1rem; flex-wrap: wrap; align-items: center; }
 .wf-ok { color: var(--ok, #24612e); }
 .wf-fail { color: var(--danger, #b42318); white-space: pre-wrap; }
 .wf-install { max-width: 40rem; padding: 1rem; }
@@ -1941,4 +1937,57 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 /* The handle, a step lighter so it stays distinct from the label beside it. */
 [data-theme='dark'] [role=switch] [class*="from-white"] {
   background-image: linear-gradient(to bottom, color-mix(in srgb, var(--pw-text) 28%, var(--pw-panel)), color-mix(in srgb, var(--pw-text) 20%, var(--pw-panel)));
+}
+
+/* Workflow runner page and form layout. The form is the platform's own
+   renderer; these rules give it the Studio's proportions: a fixed label
+   column, quiet section headers, compact empty states, and an action bar
+   that stays on screen for long forms. Scoped to the runner so no other
+   use of the form library changes. */
+.wf-runner { max-width: 820px; padding-bottom: 0; }
+.wf-runner-head { margin-bottom: 18px; }
+.wf-back { display: inline-block; margin: 0 0 10px; padding: 0; font-size: 13px; color: var(--pw-muted); }
+.wf-back:hover { color: var(--pw-text); }
+.wf-title { margin: 0; font-size: 20px; font-weight: 600; color: var(--pw-text); }
+.wf-desc { margin: 4px 0 0; font-size: 13.5px; color: var(--pw-muted); }
+.wf-preset { display: flex; align-items: center; gap: 12px; margin: 0 0 18px; padding: 10px 12px; border: 1px solid var(--pw-border); border-radius: 8px; background: color-mix(in srgb, var(--pw-text) 3%, var(--pw-content-bg)); }
+.wf-preset .field-label { flex: 0 0 198px; margin: 0; font-size: 13px; color: var(--pw-text); }
+.wf-preset .field { max-width: 420px; }
+
+.wf-form { font-size: 13.5px; }
+/* Section headers: the library's 18px bold header, brought down to a
+   label-sized heading with a light rule. */
+.wf-form .text-lg { font-size: 13px; font-weight: 600; letter-spacing: 0.01em; color: var(--pw-text);
+  padding-bottom: 6px; margin: 6px 0 12px; border-bottom: 1px solid var(--pw-border); }
+.wf-form .text-lg button { gap: 6px; color: inherit; }
+.wf-form .text-lg svg { width: 12px; height: 12px; color: var(--pw-muted); flex-shrink: 0; }
+/* Field rows: a fixed label column aligned to the 32px controls. */
+.wf-form .mb-\[15px\] { margin-bottom: 12px; }
+.wf-form label.form-label { display: block; flex: 0 0 210px; max-width: 210px; padding: 7px 14px 0 0; margin: 0;
+  font-size: 13px; line-height: 1.35; color: color-mix(in srgb, var(--pw-text) 82%, var(--pw-content-bg)); }
+.wf-form label.form-label div { display: inline; }
+.wf-form label.form-label [data-tooltip-id] { display: inline-flex; vertical-align: -1px; margin-left: 4px; padding: 0; color: var(--pw-muted); cursor: help; }
+.wf-form label.form-label [data-tooltip-id] svg { width: 12px; height: 12px; }
+.wf-form label.form-label .text-red-500 { color: #b42318; }
+[data-theme='dark'] .wf-form label.form-label .text-red-500 { color: #f87171; }
+/* Multi-select: the trigger matches the other controls, and the empty
+   "No ... selected" table becomes a compact muted line. */
+.wf-form .theme-input.border.rounded-md { margin: 0 0 6px; border-color: var(--pw-border-strong); border-radius: 6px; background: var(--pw-input-bg, #f9fafb); }
+.wf-form .theme-input.border.rounded-md > button { min-height: 30px; padding: 6px 10px; font-size: 13px; }
+.wf-form .theme-panel.border { border: 1px dashed var(--pw-border); border-radius: 6px; background: transparent; }
+.wf-form .theme-panel table { font-size: 12.5px; }
+.wf-form .theme-panel td { padding: 6px 10px; color: var(--pw-muted); }
+.wf-form .theme-panel thead { display: none; }
+
+/* Action bar: Run and Validate stay on screen at the foot of long forms. */
+.wf-actions { position: sticky; bottom: 0; z-index: 3; display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  margin-top: 4px; padding: 12px 0 14px; border-top: 1px solid var(--pw-border); background: var(--pw-content-bg); }
+.wf-actions .btn-primary, .wf-actions .btn-secondary { min-height: 32px; padding: 6px 16px; font-size: 13px; }
+.wf-result { flex: 1 1 280px; font-size: 13px; }
+
+@media (max-width: 720px) {
+  .wf-form .flex.w-full.items-start { flex-direction: column; }
+  .wf-form label.form-label { flex: none; max-width: none; min-height: 0; height: auto; padding: 0 0 4px; }
+  .wf-preset { flex-direction: column; align-items: stretch; }
+  .wf-preset .field-label { flex: none; }
 }

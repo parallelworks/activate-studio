@@ -138,10 +138,12 @@ function WorkflowRunner({ name, kind, title, onBack, onLaunched }: { name: strin
   }
 
   return (
-    <div className="overview-view workflows-view">
-      <button className="btn-link wf-back" onClick={onBack}>&larr; All workflows</button>
-      <h1 className="view-title">{doc?.displayName ?? title}</h1>
-      {doc?.description && <p className="muted view-sub">{doc.description}</p>}
+    <div className="overview-view workflows-view wf-runner">
+      <header className="wf-runner-head">
+        <button className="btn-link wf-back" onClick={onBack}>&larr; All workflows</button>
+        <h1 className="wf-title">{doc?.displayName ?? title}</h1>
+        {doc?.description && <p className="wf-desc">{doc.description}</p>}
+      </header>
       {error && <p className="banner-error">{error}</p>}
       {needsInstall && (
         <div className="card wf-install">
@@ -168,10 +170,10 @@ function WorkflowRunner({ name, kind, title, onBack, onLaunched }: { name: strin
                 </Suspense>
               : <p className="muted">This workflow takes no inputs.</p>}
           </div>
-          <div className="query-actions wf-actions">
-            <button className="btn-secondary" disabled={!!busy} onClick={() => void submit(true)}>{busy === 'validate' ? 'Validating…' : 'Validate'}</button>
+          <div className="wf-actions">
             <button className="btn-primary" disabled={!!busy} onClick={() => void submit(false)}>{busy === 'run' ? 'Starting…' : 'Run'}</button>
-            {result && <span className={result.ok ? 'wf-ok' : 'wf-fail'}>{result.text}</span>}
+            <button className="btn-secondary" disabled={!!busy} onClick={() => void submit(true)}>{busy === 'validate' ? 'Validating…' : 'Validate'}</button>
+            {result && <span className={`wf-result ${result.ok ? 'wf-ok' : 'wf-fail'}`}>{result.text}</span>}
           </div>
         </>
       )}
