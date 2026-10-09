@@ -1843,6 +1843,9 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .wf-ok { color: var(--ok, #24612e); }
 .wf-fail { color: var(--danger, #b42318); white-space: pre-wrap; }
 .wf-install { max-width: 40rem; padding: 1rem; }
+.wf-trust { max-width: 46rem; padding: 0.75rem 1rem; margin-block: 0.75rem; }
+.wf-trust p { margin: 0 0 0.5rem; }
+.wf-trust-check { display: flex; align-items: center; gap: 0.5rem; font-weight: 500; }
 .wf-state.completed { color: var(--ok, #24612e); }
 .wf-state.error, .wf-state.failed { color: var(--danger, #b42318); }
 .wf-picked { padding-left: 1.25rem; margin: 0.5rem 0 1rem; }
@@ -1991,3 +1994,8 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
   .wf-preset { flex-direction: column; align-items: stretch; }
   .wf-preset .field-label { flex: none; }
 }
+
+/* Settings, From GitHub: paths stay in their column; summaries stop at three lines. */
+.wf-gh td:nth-child(2) { min-width: 14rem; }
+.wf-gh code { overflow-wrap: anywhere; }
+.wf-clamp { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; overflow: hidden; }

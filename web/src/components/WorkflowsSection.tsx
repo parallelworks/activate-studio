@@ -8,6 +8,7 @@ import { useEffect, useMemo, useState } from 'react'
  */
 
 interface CatalogRow { name: string; displayName: string; description: string; tags?: string[]; curated: boolean }
+interface GithubRow { entry: string; title: string; description: string }
 
 export function WorkflowsSection() {
   const [catalog, setCatalog] = useState<CatalogRow[] | null>(null)
@@ -16,6 +17,8 @@ export function WorkflowsSection() {
   const [gh, setGh] = useState('')
   const [ghNote, setGhNote] = useState('')
   const [ghBusy, setGhBusy] = useState(false)
+  const [ghRows, setGhRows] = useState<GithubRow[]>([])
+  const [ghBase, setGhBase] = useState('')
   const [picked, setPicked] = useState<string[]>([])
   const [filter, setFilter] = useState('')
   const [note, setNote] = useState('')
@@ -33,23 +36,34 @@ export function WorkflowsSection() {
     }).catch(e => setNote(`Cannot list the platform's workflows: ${(e as Error).message}`))
   }, [])
 
-  const byName = useMemo(() => new Map([...(catalog ?? []), ...market].map(w => [w.name, w])), [catalog, market])
+  const byName = useMemo(() => new Map<string, { displayName: string }>([
+    ...[...(catalog ?? []), ...market].map(w => [w.name, w] as const),
+    ...ghRows.map(w => [w.entry, { displayName: w.title }] as const),
+  ]), [catalog, market, ghRows])
   const matches = (w: CatalogRow) => {
     const q = filter.trim().toLowerCase()
     return !q || w.name.toLowerCase().includes(q) || w.displayName.toLowerCase().includes(q) || (w.tags ?? []).some(t => t.toLowerCase().includes(q))
   }
   const shown = (catalog ?? []).filter(matches)
   const shownMarket = market.filter(matches)
-  const addGithub = async () => {
-    const entry = gh.trim().replace(/^https?:\/\//, '').replace(/\.git$/, '')
+  const shownGh = ghRows.filter(w => matches({ name: w.entry, displayName: w.title, description: w.description, curated: false }))
+  // A found workflow's path below the directory that was searched.
+  const relPath = (entry: string) => entry.replace(/@.*$/, '').slice(ghBase.length).replace(/^\//, '') || entry
+  // A GitHub web link (github.com/o/r/tree/<ref>/<path> or /blob/...) is
+  // rewritten to the entry form github.com/o/r/<path>@<ref>.
+  const findGithub = async () => {
+    let entry = gh.trim().replace(/^https?:\/\//, '').replace(/\.git$/, '').replace(/\/$/, '')
+    const web = /^(github\.com\/[^/]+\/[^/]+)\/(?:tree|blob)\/([^/]+)(?:\/(.*))?$/.exec(entry)
+    if (web) entry = `${web[1]}${web[3] ? `/${web[3]}` : ''}@${web[2]}`
     if (!entry) return
-    setGhBusy(true); setGhNote('')
+    setGhBusy(true); setGhNote(''); setGhRows([])
     try {
-      const r = await fetch(`/api/workflows/item/form?w=${encodeURIComponent(entry)}`)
+      const r = await fetch(`/api/workflows/github/browse?repo=${encodeURIComponent(entry)}`)
       const d = await r.json().catch(() => ({}))
       if (!r.ok) throw new Error(d.error ?? `${r.status}`)
-      if (!picked.includes(entry)) { setPicked(p => [...p, entry]); setDirty(true) }
-      setGh(''); setGhNote(`Added ${entry}. Save to offer it.`)
+      const rows: GithubRow[] = d.workflows ?? []
+      setGhRows(rows); setGhBase(entry.replace(/@.*$/, ''))
+      setGhNote(rows.length ? `${rows.length} workflow${rows.length === 1 ? '' : 's'} at ${entry}. Tick the ones to offer, then Save.` : `No workflow.yaml or yamls/*.yaml at ${entry}.`)
     } catch (e) { setGhNote(String((e as Error).message)) } finally { setGhBusy(false) }
   }
   const toggle = (name: string) => { setDirty(true); setPicked(p => p.includes(name) ? p.filter(n => n !== name) : [...p, name]) }
@@ -146,16 +160,33 @@ export function WorkflowsSection() {
 
       <div className="tool-group">From GitHub</div>
       <p className="muted">
-        A repository, or a directory or file in one, holding a workflow.yaml: <code>github.com/owner/repo</code>,
-        optionally with a path and <code>@branch</code>, tag, or commit. It runs as it is in the repository, without a copy
-        in anyone's account. The form is read from public repositories; a private one still runs.
+        Workflows kept in a public GitHub repository, including components never published to the marketplace. Enter a
+        repository, a directory, or a workflow file, as <code>github.com/owner/repo[/path][@ref]</code> or a GitHub link,
+        and tick the workflows found there: each directory's workflow.yaml, or each of its yamls/ variants. They run as
+        they are in the repository, without a copy in anyone's account.
       </p>
       <div className="query-actions">
-        <input className="field" placeholder="github.com/owner/repo[/path][@ref]" value={gh} onChange={e => setGh(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter') void addGithub() }} />
-        <button className="btn-secondary" disabled={ghBusy || !gh.trim()} onClick={() => void addGithub()}>{ghBusy ? 'Checking…' : 'Add'}</button>
+        <input className="field" placeholder="github.com/parallelworks/workflows/workflows@canary" value={gh} onChange={e => setGh(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') void findGithub() }} />
+        <button className="btn-secondary" disabled={ghBusy || !gh.trim()} onClick={() => void findGithub()}>{ghBusy ? 'Looking…' : 'Find workflows'}</button>
       </div>
       {ghNote && <p className="muted">{ghNote}</p>}
+      {ghRows.length > 0 && (
+        <div className="rag-calls-wrap">
+          <table className="rag-calls-table wf-catalog wf-gh">
+            <thead><tr><th></th><th>Workflow</th><th>Description</th></tr></thead>
+            <tbody>
+              {shownGh.map(w => (
+                <tr key={w.entry}>
+                  <td><input type="checkbox" checked={picked.includes(w.entry)} onChange={() => toggle(w.entry)} aria-label={`Offer ${w.title}`} /></td>
+                  <td><div>{w.title}</div><code className="muted" title={w.entry}>{relPath(w.entry)}</code></td>
+                  <td className="muted"><span className="wf-clamp">{w.description}</span></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </>
   )
 }

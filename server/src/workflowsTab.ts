@@ -24,7 +24,8 @@ import { gatewayKey } from './chat/gateway.js'
 import { resolveUserCred } from './credentials.js'
 import { effectiveSettings } from './settings.js'
 import { KbError } from './kb.js'
-import { entryTitle, githubThumbnail, githubYamlUrls, parseWorkflowEntry, type WorkflowEntry } from './workflowEntries.js'
+import { entryTitle, githubThumbnail, parseWorkflowEntry, type WorkflowEntry } from './workflowEntries.js'
+import { browseGithub, githubDefinition, githubSummary, resolveGithubEntry } from './githubWorkflows.js'
 import { recordRun, listRuns, markRunEnded, isTerminalRunState } from './runs.js'
 import { withWorkspace } from './workspace.js'
 
@@ -57,7 +58,7 @@ export function setWorkflowsCli(fn: Cli): void { cli = fn }
  * error", even when the cause was an expired credential they could fix.
  */
 export function platformError(e: unknown): KbError {
-  const text = String((e as Error)?.message ?? e).replace(/^\S+Z \[(ERROR|WARN)\] /gm, '').trim()
+  const text = String((e as Error)?.message ?? e).replace(/\x1b\[[0-9;]*m/g, '').replace(/^\S+Z \[(ERROR|WARN)\] /gm, '').trim()
   if (/authentication has expired|please authenticate|401|unauthorized/i.test(text)) {
     return new KbError(401, 'The platform credential has expired. Add your own platform API key under Settings, Model access, or renew the deployment credential.')
   }
@@ -142,7 +143,22 @@ function entryOf(req: { query: unknown }): WorkflowEntry {
   return e
 }
 
-interface Definition { yaml: any; displayName: string; description: string; configurations: { name: string; inputs: Record<string, unknown> }[] }
+export interface Definition {
+  yaml: any; displayName: string; description: string
+  configurations: { name: string; inputs: Record<string, unknown> }[]
+  /** What the CLI runs: a GitHub directory entry resolves to its file. */
+  runAs: string
+  /** Account variables a GitHub workflow declares it needs; running it grants them. */
+  permissions: string[]
+}
+
+/** A collection entry's definition, run with the given key; the assistant's
+ *  tools use it so they read marketplace and GitHub workflows the same way. */
+export async function workflowDefinition(entry: string, key: string | null): Promise<Definition> {
+  const e = parseWorkflowEntry(entry)
+  if (!e) throw new KbError(400, `invalid workflow: ${entry}; use a name, marketplace/<slug>, or github.com/<owner>/<repo>[/path][@ref]`)
+  return definitionOf(e, key)
+}
 
 /** A workflow's YAML and details, wherever it is defined. */
 async function definitionOf(e: WorkflowEntry, key: string | null): Promise<Definition> {
@@ -153,22 +169,17 @@ async function definitionOf(e: WorkflowEntry, key: string | null): Promise<Defin
       displayName: doc?.displayName || e.name,
       description: doc?.description ?? '',
       configurations: (doc?.configurations ?? []).map((c: any) => ({ name: c.name ?? c.id ?? '', inputs: c.inputs ?? {} })),
+      runAs: e.entry,
+      permissions: [],
     }
   }
   if (e.kind === 'marketplace') {
     const text = await call(['marketplace', 'get', e.slug, '--yaml'], key, 60_000)
     const m = (await marketplaceFor(key).catch(() => [])).find(x => x.slug === e.slug)
-    return { yaml: parseYaml(text), displayName: m?.name || e.slug, description: m?.description ?? '', configurations: [] }
+    return { yaml: parseYaml(text), displayName: m?.name || e.slug, description: m?.description ?? '', configurations: [], runAs: e.entry, permissions: [] }
   }
-  let lastStatus = 0
-  for (const url of githubYamlUrls(e)) {
-    const res = await fetch(url, { signal: AbortSignal.timeout(20_000) }).catch(() => null)
-    if (res?.ok) return { yaml: parseYaml(await res.text()), displayName: entryTitle(e), description: e.entry, configurations: [] }
-    lastStatus = res?.status ?? 0
-  }
-  throw new KbError(lastStatus === 404 ? 404 : 502, lastStatus === 404
-    ? `No workflow.yaml at ${e.entry}. Private repositories still run, but their form cannot be shown here.`
-    : `Could not read ${e.entry} from GitHub.`)
+  const g = await githubDefinition(e)
+  return { yaml: g.yaml, displayName: g.title, description: g.description || g.entry, configurations: [], runAs: g.entry, permissions: g.permissions }
 }
 
 const runChecked = new Map<string, number>()
@@ -234,6 +245,10 @@ export async function workflowsTabRoutes(app: FastifyInstance): Promise<void> {
     }
     const market = entries.some(e => e.kind === 'marketplace') ? await marketplaceFor(v.key).catch(() => null) : null
     const iconOf = (entry: string) => `/api/workflows/item/icon?w=${encodeURIComponent(entry)}`
+    // GitHub tiles take their title, summary, and icon from the repository;
+    // when GitHub cannot be reached they fall back to the entry itself.
+    const gh = new Map(await Promise.all(entries.filter(e => e.kind === 'github').map(async e =>
+      [e.entry, await githubSummary(e as Extract<WorkflowEntry, { kind: 'github' }>).catch(() => null)] as const)))
     const workflows = entries.map(e => {
       if (e.kind === 'account') {
         const w = byName.get(e.name) ?? owner?.get(e.name)
@@ -257,21 +272,24 @@ export async function workflowsTabRoutes(app: FastifyInstance): Promise<void> {
           installed: true, available: market ? !!m : true,
         }
       }
+      const g = gh.get(e.entry)
       return {
         name: e.entry, kind: e.kind,
-        displayName: entryTitle(e), description: e.entry, tags: [],
-        icon: iconOf(e.entry), configurations: [], installed: true, available: true,
+        displayName: g?.title || entryTitle(e), description: g?.description || e.entry, tags: [],
+        icon: g === null || g?.thumbnail ? iconOf(e.entry) : null, configurations: [], installed: true, available: true,
       }
     })
     return { configured: true, workflows }
   })
 
+  // An SVG icon opened on its own must not run script on the Studio's origin.
+  const ICON_CSP = "default-src 'none'; style-src 'unsafe-inline'; sandbox"
   // A tile's icon. Platform blobs need the credential, so they are served
   // through here; outside URLs are fetched once and cached.
   app.get('/api/workflows/item/icon', async (req, reply) => {
     const e = entryOf(req)
     const hit = iconCache.get(e.entry)
-    if (hit && Date.now() - hit.at < 3_600_000) return reply.type(hit.type).header('Cache-Control', 'private, max-age=3600').send(hit.body)
+    if (hit && Date.now() - hit.at < 3_600_000) return reply.type(hit.type).header('Cache-Control', 'private, max-age=3600').header('Content-Security-Policy', ICON_CSP).send(hit.body)
     const v = viewer(req)
     let url: string | undefined
     if (e.kind === 'account') {
@@ -279,7 +297,7 @@ export async function workflowsTabRoutes(app: FastifyInstance): Promise<void> {
       url = rows.find(w => w.name === e.name)?.imageUrl
     } else if (e.kind === 'marketplace') {
       url = (await marketplaceFor(v.key).catch(() => [])).find(x => x.slug === e.slug)?.imageUrl
-    } else url = githubThumbnail(e)
+    } else url = (await githubSummary(e).catch(() => null))?.thumbnail ?? githubThumbnail(e)
     if (!url) return reply.status(404).send({ error: 'no icon' })
     const host = new URL(GATEWAY_BASE).origin
     const abs = url.startsWith('/') ? host + url : url
@@ -290,7 +308,7 @@ export async function workflowsTabRoutes(app: FastifyInstance): Promise<void> {
     if (!/^image\//.test(type)) return reply.status(404).send({ error: 'not an image' })
     const body = Buffer.from(await res.arrayBuffer())
     iconCache.set(e.entry, { at: Date.now(), type, body })
-    return reply.type(type).header('Cache-Control', 'private, max-age=3600').send(body)
+    return reply.type(type).header('Cache-Control', 'private, max-age=3600').header('Content-Security-Policy', ICON_CSP).send(body)
   })
 
   // The form: the workflow's inputs in the platform's dynamic-form shape,
@@ -303,7 +321,8 @@ export async function workflowsTabRoutes(app: FastifyInstance): Promise<void> {
     const inputs = d.yaml?.on?.execute?.inputs
     let form: unknown = null
     try { form = inputs && workflowHasUserInputs(d.yaml) ? convertToDynamicForm(inputs) : {} } catch { form = null }
-    return { name: e.entry, kind: e.kind, displayName: d.displayName, description: d.description, form, configurations: d.configurations }
+    return { name: e.entry, kind: e.kind, displayName: d.displayName, description: d.description, form, configurations: d.configurations,
+      runAs: d.runAs, permissions: d.permissions }
   })
 
   // Clusters for the cluster picker, as the pw:// reference the platform
@@ -353,26 +372,49 @@ export async function workflowsTabRoutes(app: FastifyInstance): Promise<void> {
     }
   })
 
+  // Settings and the assistant list a repository's workflows, and resolve a
+  // directory to the files the CLI runs.
+  app.get('/api/workflows/github/browse', async req => {
+    const e = parseWorkflowEntry(String((req.query as { repo?: string }).repo ?? ''))
+    if (e?.kind !== 'github') throw new KbError(400, 'repo must be github.com/<owner>/<repo>[/path][@ref]')
+    return { workflows: await browseGithub(e) }
+  })
+  app.get('/api/workflows/github/resolve', async req => {
+    const e = entryOf(req)
+    if (e.kind !== 'github') return { entries: [e.entry] }
+    return { entries: await resolveGithubEntry(e) }
+  })
+
   // Validate or run. Values arrive as the form holds them; the platform's
   // own submission logic drops hidden and ignored fields before they go.
   app.post('/api/workflows/item/run', async req => {
     const e = entryOf(req)
-    const body = req.body as { inputs?: Record<string, unknown>; dryRun?: boolean }
+    const body = req.body as { inputs?: Record<string, unknown>; dryRun?: boolean; trust?: boolean }
     const v = viewer(req)
     if (!curatedNames().includes(e.entry)) throw new KbError(403, `${e.entry} is not in this Studio's workflow collection`)
     const d = await definitionOf(e, v.key)
     let values: Record<string, unknown> = body.inputs ?? {}
     try { values = prepareSubmittableValues(d.yaml, values, v.username ?? '') } catch { /* submit as given */ }
     values = resolveStudioRefs(values) as Record<string, unknown>
-    const args = ['workflows', 'run', e.entry, '-i', JSON.stringify(values), '-o', 'json']
+    const args = ['workflows', 'run', d.runAs, '-i', JSON.stringify(values), '-o', 'json']
     if (body.dryRun) args.push('--dry-run')
+    // A GitHub workflow that declares account variables runs only once the
+    // viewer grants them; --trust is passed only on their explicit approval.
+    if (d.permissions.length && body.trust === true) args.push('--trust')
     let out: string
     try {
       // Raw CLI errors here: withWorkspace recognizes a stopped workspace by its text.
       out = (await withWorkspace({ cli: (a, t) => cli(a, v.key, t) }, () => cli(args, v.key, 180_000))).value
     } catch (err) {
-      const msg = String((err as Error).message ?? err).replace(/^\S+Z \[(ERROR|WARN)\] /gm, '')
-      return { ok: false, dryRun: !!body.dryRun, message: msg.slice(0, 2000) }
+      const msg = String((err as Error).message ?? err).replace(/\x1b\[[0-9;]*m/g, '').replace(/^\S+Z \[(ERROR|WARN)\] /gm, '')
+      if (/wants access to|re-run with --trust/i.test(msg)) {
+        return { ok: false, dryRun: !!body.dryRun, needsTrust: true, permissions: d.permissions,
+          message: `This workflow's repository asks for access to your account variables (${d.permissions.join(', ') || 'unspecified'}). Approve the access and run again; you can revoke it later with pw workflows permissions revoke.` }
+      }
+      // Older CLIs run a GitHub workflow only from a workflow.yaml directory.
+      const hint = e.kind === 'github' && /unable to find workflow github\.com\//i.test(msg)
+        ? ' The platform CLI on this host is too old to run a GitHub workflow file; update pw (v7.105 runs them).' : ''
+      return { ok: false, dryRun: !!body.dryRun, message: (msg + hint).slice(0, 2000) }
     }
     if (body.dryRun) return { ok: true, dryRun: true, message: out.trim().slice(0, 2000) || 'Validation passed.' }
     let slug: string | null = null
