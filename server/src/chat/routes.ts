@@ -525,20 +525,8 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
         context_window: m.context_window ?? m.max_model_len ?? undefined,
       }
     })]
-    // A provider shared into this account lists under the owner's prefix
-    // but with the same display name as one's own, so two registrations of
-    // the same product look like duplicates. Say whose it is when the
-    // owner is somebody else.
-    const viewer = (req.user?.username ?? '').toLowerCase()
-    if (viewer) {
-      models = models.map((m: any) => {
-        const mm = /^([a-z0-9_.-]+):[^/]+\//i.exec(String(m.id))
-        if (mm && mm[1].toLowerCase() !== viewer && !String(m.id).startsWith('session:') && !String(m.id).startsWith('org:')) {
-          return { ...m, provider: `${m.provider ?? m.provider_name ?? 'provider'} · shared by ${mm[1]}` }
-        }
-        return m
-      })
-    }
+    // A provider someone else shared into this account is named as theirs by
+    // the chat package's picker, from each model's provider_owner.
 
     // Providers that lock their keys are asked before their models are
     // offered: a locked GenAI key otherwise fills the picker with models

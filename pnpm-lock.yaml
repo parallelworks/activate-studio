@@ -70,8 +70,8 @@ importers:
         specifier: ^5.3.0
         version: 5.3.0
       '@parallelworks/ui':
-        specifier: ^0.30.0
-        version: 0.30.0(@popperjs/core@2.11.8)(formik@2.4.9(@types/react@19.2.18)(react@19.2.8))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+        specifier: ^0.31.0
+        version: 0.31.0(@popperjs/core@2.11.8)(formik@2.4.9(@types/react@19.2.18)(react@19.2.8))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@parallelworks/workflow-parser':
         specifier: ^0.6.0
         version: 0.6.1
@@ -736,8 +736,8 @@ packages:
     os: [linux]
     libc: [glibc]
 
-  '@parallelworks/ui@0.30.0':
-    resolution: {integrity: sha512-hp7rldgyXE+gZvMZbrxAZAjHzhe1jdOO8isBZYVmdPRjUCqLM7PQdd86db13KpKOB/aUxxKs3JSQ7Iu7PjRAIA==}
+  '@parallelworks/ui@0.31.0':
+    resolution: {integrity: sha512-Ac1CTAGdIw05hB9R7aeOWAliy8xGdQd4WYwNf6Gy7abil2Yfc7Yj1dIHpDGtgETcQTxwCKG9tK24GJcyS6QzvA==}
     peerDependencies:
       formik: ^2.4.9
       monaco-editor: ^0.57.0
@@ -3218,7 +3218,7 @@ snapshots:
   '@napi-rs/lzma-linux-x64-gnu@1.5.1':
     optional: true
 
-  '@parallelworks/ui@0.30.0(@popperjs/core@2.11.8)(formik@2.4.9(@types/react@19.2.18)(react@19.2.8))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
+  '@parallelworks/ui@0.31.0(@popperjs/core@2.11.8)(formik@2.4.9(@types/react@19.2.18)(react@19.2.8))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
     dependencies:
       '@headlessui/react': 2.2.10(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@streamdown/code': 2.0.0(react@19.2.8)
