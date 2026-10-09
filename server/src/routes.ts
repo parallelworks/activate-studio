@@ -117,8 +117,11 @@ export function imageSizes(body: Buffer, type: string): string {
  * The deployment's own icon comes first; the default mark's PNGs stay as
  * the sizes browsers require to offer installation.
  */
-export function webManifest(o: { name: string; dark: boolean; brand: WebManifestIcon | null }): Record<string, unknown> {
+export function webManifest(o: { name: string; dark: boolean; brand: WebManifestIcon | null; banner?: string | null }): Record<string, unknown> {
   const bg = o.dark ? '#0c1320' : '#f3f4f6'
+  // With a classification banner, the title bar takes the banner's color so
+  // the two read as one strip from the first frame of an installed launch.
+  const bar = o.banner && /^#[0-9a-f]{6}$/i.test(o.banner) ? o.banner : bg
   const name = o.name || 'Studio'
   return {
     name,
@@ -127,7 +130,7 @@ export function webManifest(o: { name: string; dark: boolean; brand: WebManifest
     scope: './',
     display: 'standalone',
     background_color: bg,
-    theme_color: bg,
+    theme_color: bar,
     icons: [
       ...(o.brand ? [o.brand] : []),
       { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
@@ -303,7 +306,8 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
       if (got) brand = { src: brandUrl('icon') ?? '/api/brand-icon', type: got.type, sizes: imageSizes(got.body, got.type) }
     }
     reply.header('Cache-Control', 'no-store, must-revalidate')
-    return reply.type('application/manifest+json').send(webManifest({ name: eff.appName, dark: eff.theme === 'dark', brand }))
+    const banner = eff.bannerText?.trim() ? (eff.bannerColor || '#24612e') : null
+    return reply.type('application/manifest+json').send(webManifest({ name: eff.appName, dark: eff.theme === 'dark', brand, banner }))
   })
 
   app.get('/api/kb/tree', async req => {
