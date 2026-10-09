@@ -233,6 +233,14 @@ export function publicLibrary(l: Library): PublicLibrary {
   return { id: l.id, label: l.label, primary: l.primary, writable: l.writable, pinned: l.pinned, source: !!l.sourceRoot, caps: l.caps }
 }
 
+/** A library as Settings shows it: with its index and source roots, so
+ *  whoever manages the libraries can see what each one points at. Only the
+ *  Settings routes send this; the client config every viewer loads keeps
+ *  to publicLibrary, without paths. */
+export function settingsLibrary(l: Library): PublicLibrary & { indexRoot: string; sourceRoot: string | null } {
+  return { ...publicLibrary(l), indexRoot: l.indexRoot, sourceRoot: l.sourceRoot }
+}
+
 /** Tests replace the stored set and the probe memory between cases. */
 export function resetLibrariesForTests(): void {
   added = null

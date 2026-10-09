@@ -130,6 +130,17 @@ test('the client config carries the libraries and the visible sections', async (
   for (const l of r.body.libraries) assert.ok(!('indexRoot' in l) && !('sourceRoot' in l), 'paths stay on the server')
 })
 
+test('Settings lists where each library points', async () => {
+  const r = await j('GET', '/api/libraries')
+  assert.equal(r.status, 200)
+  const by = Object.fromEntries(r.body.libraries.map(l => [l.id, l]))
+  assert.equal(by.kb.sourceRoot, KB)
+  assert.ok(by.kb.indexRoot)
+  assert.equal(by.site.indexRoot, SITE_IDX)
+  assert.equal(by.site.sourceRoot, SITE_SRC)
+  assert.equal(by.scratch.sourceRoot, null, 'a library without files here has no source root')
+})
+
 test('a pinned library cannot be removed from settings; an added one can', async () => {
   const pinned = await j('DELETE', '/api/libraries/scratch')
   assert.equal(pinned.status, 403)

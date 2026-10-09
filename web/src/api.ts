@@ -8,6 +8,8 @@ export interface PublicLibrary {
   source: boolean
   caps: { index: boolean; fullText: boolean; vectors: boolean }
 }
+/** Settings' listing adds where each library points. */
+export interface SettingsLibrary extends PublicLibrary { indexRoot: string; sourceRoot: string | null }
 
 // ---- which library requests address ----
 // The primary is 'kb' and is what every request meant before libraries
@@ -189,9 +191,9 @@ export const api = {
 
   startIndexJob: (dir: string) => postJson<IndexJob>('/api/index/job', { path: dir }),
   indexJob: (id: number) => getJson<IndexJob>(`/api/index/job/${id}`),
-  libraries: () => getJson<{ libraries: PublicLibrary[] }>('/api/libraries'),
+  libraries: () => getJson<{ libraries: SettingsLibrary[] }>('/api/libraries'),
   addLibrary: (def: { id: string; label?: string; indexRoot: string; sourceRoot?: string }) =>
-    postJson<{ library: PublicLibrary }>('/api/libraries', def),
+    postJson<{ library: SettingsLibrary }>('/api/libraries', def),
   removeLibrary: async (id: string) => {
     const res = await fetch(`/api/libraries/${encodeURIComponent(id)}`, { method: 'DELETE' })
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `remove: ${res.status}`)
