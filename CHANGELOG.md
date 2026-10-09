@@ -2,9 +2,153 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
-## v1.79 (2026-10-02)
+## v1.82 (2026-10-09)
 
-### Workflow form fields look like inputs again (#365)
+### chore: move to Node 26 (#371)
+
+Moves everything from Node 22 to 26: the image's base images (now pinned by digest, still bookworm), CI, the Node runtime bundled for compute resources (v26.10.0) and the version check that decides whether to use it, `engines`, `@types/node` and the docs.
+
+Node 25+ defines its own `localStorage` global, which is unusable without `--localstorage-file` and hides jsdom's, so the web tests run with `--no-experimental-webstorage`.
+
+Node 26 becomes LTS later this month; until then it is the Current release.
+
+### ci: harden workflows (#372)
+
+Split out of #370; nothing here depends on the container work.
+
+- Read-only token permissions on `ci` and `gufi-macos`.
+- Actions pinned to commit SHAs at their latest releases (checkout v7, setup-node v7, pnpm/action-setup v6).
+- Checkout no longer leaves credentials in `.git/config`.
+- `step-security/harden-runner` audits outbound network traffic on the Linux job.
+- 30-minute job timeouts, and a newer push cancels a superseded PR run.
+- `gufi-macos`'s free-text `gufi_ref` input reaches the script through `env` instead of `${{ }}` interpolation, which allowed shell injection.
+
+### chore: patch advisories, verify the Node runtime, automate pin updates (#373)
+
+Follow-ups from the #370 review.
+
+**Dependabot alerts.** `pnpm-workspace.yaml` overrides lift the three open advisories:
+- `source-map-js` 1.2.1 → 1.2.2 (high, GHSA-68fv-2mgg-jv7q; dev only, via vite)
+- `@fastify/busboy` 3.2.1 → 3.2.2 (moderate, GHSA-gxm5-99cw-xjw9; multipart uploads)
+- `katex` 0.16.47 → 0.18.11 (low, GHSA-238p-pmpm-9mq7). This one crosses the `^0.16` its dependents ask for, since no 0.16.x has the fix. Inline and display math still render through rehype-katex with no errors.
+
+**Node runtime checksum.** `make_bundle.sh` and both deploy workflows now check the Node tarball against nodejs.org's published sha256 before unpacking it. The bundle script checks its cache on every run too.
+
+**Pins stay current.**
+- `.github/dependabot.yml`: weekly, grouped updates for GitHub Actions (SHA pins and their version comments) and npm, with a one-day cooldown matching `minimumReleaseAge`.
+- `base-images` workflow: weekly, checks each digest-pinned `From:` in `app.def` and opens a PR when one moves. Job-token pushes do not trigger `pull_request` workflows, so it dispatches `ci` and `container` on the branch itself; `ci.yml` gains `workflow_dispatch` for that. Dispatching `container` works once #370 is merged.
+
+Server and web tests pass locally on Node 26.
+
+### ci: add container build workflow (#370)
+
+The container build workflow is separate from the CI because it takes a long time to build dependencies.
+
+<!-- This description becomes the change note in the release notes and CHANGELOG.md. -->
+
+**What was wrong or missing**
+
+We need a .github/workflow for building the whole container
+
+**What changed**
+
+Added `container.yaml` and added `set -e` in the `build` stage of `deploy/app.def`.
+
+**How it was verified**
+
+Examined the workflow file directly. It needs to be included in a PR (this PR in particular)
+to be run for the first time in an actual runner environment.
+<!-- Tests added or run, and anything checked by hand (a browser, a deployment). -->
+
+### ci: block unexpected egress, attest images, lint workflows (#374)
+
+Follow-up hardening.
+
+**Egress blocked, not just audited.** harden-runner switches to `egress-policy: block` on the jobs that run third-party code: ci `build-and-test` (package install scripts), container `build-test` (GUFI and llama.cpp build scripts as root), and `zizmor`. The allowlists come from the endpoints the audited runs actually reached. The `push` and `base-images` jobs stay on audit until a run of each shows its full set; neither runs build code.
+
+**Provenance.** The push job attests the exact `studio.sif` it pushed (`actions/attest-build-provenance`). Verify a pulled image with `gh attestation verify studio.sif --repo parallelworks/activate-studio`.
+
+**zizmor** checks the workflows and `dependabot.yml` on every PR and fails on findings, with annotations. It is clean on this branch.
+
+**Container as a required check.** The workflow now starts on every PR and push to main. A `changes` job decides whether the image's inputs changed, failing open to building, so `build-test` either runs or is skipped (which counts as passing) and can be required.
+
+**Smaller.** Dependabot waits 7 days after a release (zizmor's `dependabot-cooldown`; security updates are not delayed). `base-images` no longer keeps its token in `.git/config` and hands it to git only for the push.
+
+After merge, the repo ruleset adds `build-test` and `zizmor` as required checks.
+
+### ci: allow apt's fallback Ubuntu mirrors through the egress block (#375)
+
+The container build on #369 failed installing SingularityCE: `azure.archive.ubuntu.com` timed out, apt fell back to `archive.ubuntu.com` and `security.ubuntu.com` over HTTPS, and harden-runner blocked both since only the Azure mirror was allowlisted. This adds both fallback hosts, on ports 80 and 443, to the `build-test` and `build-and-test` allowlists, so a mirror outage degrades to the fallback instead of failing the job.
+
+### chore(web): use @parallelworks/ui 0.24, with the chat from @parallelworks/ui/ai (#369)
+
+<!-- This description becomes the change note in the release notes and CHANGELOG.md. -->
+
+**What was wrong or missing**
+
+Studio depended on `@parallelworks/ai-chat` 0.5.0 and `@parallelworks/ui` 0.17. The chat package has moved into `@parallelworks/ui` as `@parallelworks/ui/ai`, and ui changed how workflow forms and graphs work in 0.20 and removed unused props and members in 0.21. Both packages also shipped their own Tailwind build, which forced Studio to manage the cascade order between them.
+
+**What changed**
+
+- Swapped `@parallelworks/ai-chat` for `@parallelworks/ui/ai` and upgraded `@parallelworks/ui` to ^0.24.2. ui's prebuilt stylesheet now includes the chat rules, so the separate chat stylesheet and its `pw-ai-chat` layer are gone. ui still emits a top-level `base` layer, so `layers.css` keeps declaring it first.
+- `DependencyGraphPreview` now comes from `@parallelworks/ui/graph`, since `/workflow` was renamed.
+- ui's workflow form and graph no longer embed the workflow parser. They call a `WorkflowEngine` supplied through `UIProvider`. Studio mounts `UIProvider` at the root with a loader that imports `@parallelworks/workflow-parser` (new dependency, ^0.6.0) on first use, so the parser stays out of the initial bundle. The form and the graph each sit in a `Suspense` boundary while it loads.
+- 0.21 removed `ChatNavigation.toAttachments`, which the chat never called; the attachments view is still reached through the navigation target.
+- 0.23 added `providerIssues` to the models list, for flagging AI connections whose key is rejected or endpoint is unreachable. The adapter passes it through from the server, defaulting to none; the server does not report these yet, so the existing "last call failed" model label stays.
+- Starting values are unchanged: `initializeValues` is called as before, with no blank-default predicate, matching 0.17's default behavior.
+
+**How it was verified**
+
+- `pnpm build`: web type-check and build plus the server build pass; the production bundle carries the parser's WASM as its own asset.
+- `pnpm test`: all 217 server and 53 web tests pass (Node 26).
+- Ran `pnpm dev` on 0.24.2 and checked in headless Chrome, with the platform endpoints mocked:
+  - Chat: renders and the composer enables once a model is listed. A provider issue on the selected model's provider shows the new banner ("API key rejected").
+  - Workflow graph (`?embed=dag`, two-job workflow): renders Build → Test.
+  - Workflow form: renders with defaults, and a field whose `hidden` expression depends on a toggle appears when the toggle flips, so the parser is evaluating expressions.
+  - Found and fixed: under `pnpm dev` the form never rendered. `@parallelworks/workflow-parser` 0.6.1 (which the lockfile now resolves) loads `parseWorkflow.wasm` from beside its module, and Vite's dependency pre-bundling moved the module without the file. `vite.config.ts` now excludes it from pre-bundling. Production builds were unaffected.
+  - Large pastes stay as text: ui only turns them into cards when the host supplies an upload handler, which Studio does not.
+- Not checked: running a workflow against the platform, or sending a chat message to a real model (no credentials in this environment).
+
+### Workflow forms laid out for reading (#376)
+
+The workflow form on the Workflows tab is the platform's own renderer, and at the Studio's width it read poorly: section headers at 18px bold, louder than the workflow title; labels wrapping in an unaligned column with their help icons pushed to the far edge; an empty multi-select drawn as a field-sized box; Run and Validate as small buttons below the last field, off screen on long forms; and a wide gap between the title and its description.
+
+Scoped to the runner page (`.wf-runner`, `.wf-form`), so no other use of the form library changes:
+
+- **Header:** back link, title (20px, text color), and description grouped and tightened.
+- **Section headers:** 13px semibold with a light rule and a small muted chevron.
+- **Fields:** a fixed 210px label column aligned to the 32px controls, labels in normal text flow so the required mark and help icon sit right after the text, and 12px between rows.
+- **Multi-select:** the trigger matches the other controls; the empty "nothing selected" table becomes a compact dashed line without its header.
+- **Action bar:** Run (primary, first) and Validate in a bar pinned to the bottom of the view with a rule above it, the validation or run result beside them.
+- **Saved configurations:** the preset selector sits in a light panel on the same label column.
+- **Phone width:** labels stack above their controls with no gap.
+- **Dark mode:** the required mark uses a lighter red that reads on the dark ground.
+
+Checked in headless Chrome on a marketplace Jupyter form (cluster picker, switches, text fields, a single and a multi-select, two sections) and the ACTIVATE Batch form, in light and dark and at phone width: label-to-control gap 0 at phone width for every field, and with a 700px viewport the form runs to 745px while the action bar stays at 640 to 700. All server and web tests pass.
+
+## v1.81 (2026-10-02)
+
+### Images whose caption failed are described on the next pass (#368)
+
+An uploaded image got no text in the index and never would. The configured vision model refused the caption request (403, in 0.2 s), OCR correctly found no text in a photograph, and the indexer cached the empty result: images cache even when empty, so a picture with nothing to transcribe is not re-sent to the vision model on every pass. That rule could not tell an image with nothing to say from one that was never described, so the empty entry outlived the failure, including after the vision model setting was changed to one that works. The failure itself was invisible: `enrich.py` reports it on stderr, which the server discarded whenever the pass as a whole succeeded.
+
+**Retry.** `caption_image` now returns `None` when the request fails and `''` when captioning is off or the image is too large. A failed caption is not cached, so the next pass asks again; the OCR text, if any, is still indexed for that pass. While a vision model is configured, an empty cached image result is treated as missing and re-extracted: a successful caption is never empty, so such an entry was written by a failed request or before captioning was on. With captioning off, empty entries stand as before. `warm_image_cache.py` follows the same rules.
+
+**Visible.** Lines from the indexer's stderr that report a failure (`caption failed ...`, `extract failed ...`) go to the server log through the sweep's logger, prefixed `index:`, even when the pass succeeds.
+
+**Tested** with the real `enrich.py` against a stand-in gateway in the test process: a refused caption leaves no cache entry and the next pass, with the gateway answering, caches the description; a good entry is reused without a request; an empty entry is retried with a model configured and kept with none. All server and web tests pass.
+
+## v1.80 (2026-10-02)
+
+### Change log through v1.79 (#366)
+
+Regenerates CHANGELOG.md for v1.78 and v1.79.
+
+### Open conversation in the chat rail has no edge bar (#367)
+
+The open conversation in the chat rail was marked with a tinted background, a bold title, and a 3px accent bar on its leading edge (added in v1.68 when the package's own mark was too faint). The bar is removed in both themes; the tint and the bold title remain, so the row is a rounded pill like the rest of the rail. Checked in headless Chrome: no box-shadow on the active row in light or dark, the tint unchanged.
+
+## v1.79 (2026-10-02)
 
 ### Workflow form fields look like inputs again (#365)
 
@@ -20,11 +164,7 @@ Checked in headless Chrome on a marketplace workflow's form (cluster picker, swi
 
 ### Change log through v1.77 (#363)
 
-### Change log through v1.77 (#363)
-
 Regenerates CHANGELOG.md for v1.75 to v1.77.
-
-### Workflows tab: marketplace and GitHub workflows (#364)
 
 ### Workflows tab: marketplace and GitHub workflows (#364)
 
@@ -48,11 +188,7 @@ A Studio's workflow collection was limited to workflows saved on its account. An
 
 ### Brand images carry a version in their address (#361)
 
-### Brand images carry a version in their address (#361)
-
 The brand icon and favicon were always served at the same address (`/api/brand-icon`, `/api/favicon`) with an hour of browser caching, so changing the icon in Settings left browsers showing the old one for up to an hour. Each address now carries `v=`, a short hash of the configured path or URL plus the file's modification time, so a different image, or the same file replaced, is a new address that browsers fetch at once. The installable-app manifest uses the same versioned address. A new test checks that replacing the file changes the address; all tests pass.
-
-### Select and delete chat conversations in bulk (#362)
 
 ### Select and delete chat conversations in bulk (#362)
 
@@ -72,19 +208,13 @@ The chat package's rail deletes conversations one at a time. Until it can select
 
 ### Settings lists workflows with the viewer's key when the deployment credential fails (#360)
 
-### Settings lists workflows with the viewer's key when the deployment credential fails (#360)
-
 Settings, Workflows lists the workflows to pick from with the deployment's credential. It fell back to the viewer's own platform key only when the deployment had no credential at all; an expired one is still a non-empty string, so a deployment whose host login had expired showed the expiry error to an administrator whose own key was valid and connected. The catalog now tries the deployment credential and, when it is missing, expired, or rejected, lists the viewer's own account, and says so on the page: until the deployment credential is renewed, other viewers can run a picked workflow only if it is already in their own account, since adding a copy reads the deployment's version. The response carries `source` (`deployment` or `viewer`). One new test; all server and web tests pass.
 
 ## v1.75 (2026-10-02)
 
 ### Change log through v1.74 (#358)
 
-### Change log through v1.74 (#358)
-
 Regenerates CHANGELOG.md for v1.74 (#356, #357).
-
-### Workflow pages say when the platform credential has expired (#359)
 
 ### Workflow pages say when the platform credential has expired (#359)
 
@@ -94,11 +224,7 @@ On a deployment whose platform credential had expired, the Workflows tab and its
 
 ### Change log through v1.73 (#355)
 
-### Change log through v1.73 (#355)
-
 Regenerates CHANGELOG.md, which was missing v1.64 to v1.73. The script now dates tags by creatordate, which is the tagger date for an annotated tag and the commit date for a lightweight one; v1.73 is lightweight and was dated "undefined". Existing entries are unchanged.
-
-### The Studio installs as a desktop app (#356)
 
 ### The Studio installs as a desktop app (#356)
 
@@ -113,8 +239,6 @@ Chrome and Edge can now install the Studio as an app: its own window, dock or ta
 The `theme-color` meta follows the page ground, so an installed window's title bar matches light and dark.
 
 **Verified** in headless Chrome against a local build: the manifest is found and parsed with no errors, the icons serve, and the only installability error reported is the incognito profile headless runs use. The install prompt itself needs a desktop browser to confirm. 3 new server tests; 201 server and 16 web tests pass.
-
-### Layout and type follow the platform's other apps (#357)
 
 ### Layout and type follow the platform's other apps (#357)
 

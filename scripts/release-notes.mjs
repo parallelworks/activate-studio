@@ -33,8 +33,12 @@ function notesFor(tag, prev) {
   for (const n of prsBetween(prev, tag)) {
     const pr = prs.get(n)
     if (!pr) { parts.push(`### #${n}\n`); continue }
-    const body = (pr.body || '').split('\n').filter(l => !dropLine(l)).join('\n').trim()
-    parts.push(`### ${pr.title} (#${n})\n\n${body}\n`)
+    const heading = `### ${pr.title} (#${n})`
+    let body = (pr.body || '').split('\n').filter(l => !dropLine(l)).join('\n').trim()
+    // Descriptions that open with their own title heading would print it twice.
+    const first = body.split('\n')[0].replace(/^#+\s*/, '').replace(/\s*\(#\d+\)\s*$/, '').trim()
+    if (/^#+\s/.test(body) && first === pr.title.trim()) body = body.split('\n').slice(1).join('\n').trim()
+    parts.push(`${heading}\n\n${body}\n`)
   }
   return parts.join('\n')
 }
