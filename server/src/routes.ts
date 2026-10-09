@@ -1,5 +1,5 @@
 import crypto from 'node:crypto'
-import { getLibrary, requireWritable, listLibraries, publicLibrary, addLibrary, removeLibrary, probeAll } from './libraries.js'
+import { getLibrary, requireWritable, listLibraries, publicLibrary, settingsLibrary, addLibrary, removeLibrary, probeAll } from './libraries.js'
 import type { FastifyInstance } from 'fastify'
 import { execFile } from 'node:child_process'
 import path from 'node:path'
@@ -778,11 +778,11 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
   })
 
   // ---- libraries: what is mounted, and adding or removing one ----
-  app.get('/api/libraries', async () => ({ libraries: (await probeAll(effectiveSettings().kbLabel)).map(publicLibrary) }))
+  app.get('/api/libraries', async () => ({ libraries: (await probeAll(effectiveSettings().kbLabel)).map(settingsLibrary) }))
   app.post('/api/libraries', async req => {
     const b = req.body as { id?: string; label?: string; indexRoot?: string; sourceRoot?: string | null }
     const lib = await addLibrary({ id: String(b.id ?? '').trim().toLowerCase(), label: b.label, indexRoot: String(b.indexRoot ?? ''), sourceRoot: b.sourceRoot || null })
-    return { library: publicLibrary(lib) }
+    return { library: settingsLibrary(lib) }
   })
   app.delete('/api/libraries/:id', async req => {
     removeLibrary(String((req.params as { id: string }).id))

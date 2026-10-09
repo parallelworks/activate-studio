@@ -1850,6 +1850,18 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .libraries-table td { vertical-align: middle; padding-top: 8px; padding-bottom: 8px; }
 .libraries-table .lib-name { font-weight: 600; color: var(--pw-text); }
 .libraries-table .lib-id { font-size: 11.5px; color: var(--pw-muted); margin-top: 2px; }
+/* Where a library points: its GUFI index and, when the files are here, the
+   source tree. Long paths wrap anywhere rather than widen the table. */
+.libraries-table td:first-child { width: 45%; padding-right: 1.5rem; }
+/* The narrow columns give way to the paths: headers may take two lines,
+   and the actions column needs only its Remove button. */
+.libraries-table th { white-space: normal; vertical-align: bottom; }
+.libraries-table td.lib-actions { min-width: 0; }
+.libraries-table .lib-paths { white-space: normal; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 2px 8px; margin: 6px 0 0; font-size: 11.5px; }
+.libraries-table .lib-paths dt { color: var(--pw-muted); }
+.libraries-table .lib-paths dd { margin: 0; min-width: 0; }
+.libraries-table .lib-seg { white-space: nowrap; }
+.libraries-table .lib-paths code { font-size: 11px; user-select: all; }
 .libraries-table .lib-yes { color: var(--pw-text); }
 .libraries-table .lib-no { color: var(--pw-muted); }
 .libraries-table .lib-actions { text-align: right; width: 1%; }

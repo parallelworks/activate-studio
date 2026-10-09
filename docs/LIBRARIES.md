@@ -51,8 +51,10 @@ STUDIO_SECTIONS='library,search,overview'
 Libraries set this way are pinned: they appear for every user and cannot
 be removed from Settings.
 
-*By an administrator:* Settings > Libraries lists what is mounted and what
-each supports, and adds one by path. The Studio probes the tree and
+*By an administrator:* Settings > Libraries lists what is mounted, with
+each library's index root and source root, and what each supports, and
+adds one by path. The paths appear only there (`GET /api/libraries`); the
+client config every viewer loads lists libraries without them. The Studio probes the tree and
 refuses a path that is not a GUFI index, with the reason. Added libraries
 are kept in `libraries.json` under the index base.
 

@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { api, type PublicLibrary } from '../api'
+import { Fragment, useEffect, useState } from 'react'
+import { api, type SettingsLibrary } from '../api'
 
 /**
  * Settings > Libraries: what is mounted, what each supports, and adding
@@ -8,7 +8,7 @@ import { api, type PublicLibrary } from '../api'
  * GUFI index is refused with a reason rather than mounted and empty.
  */
 export function LibrariesSection() {
-  const [libs, setLibs] = useState<PublicLibrary[]>([])
+  const [libs, setLibs] = useState<SettingsLibrary[]>([])
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
   const [form, setForm] = useState({ id: '', label: '', indexRoot: '', sourceRoot: '' })
@@ -46,6 +46,10 @@ export function LibrariesSection() {
                 <td>
                   <div className="lib-name">{l.label}</div>
                   <div className="lib-id">{l.id}{l.primary ? ', the knowledge base' : l.pinned ? ', set by the deployment' : ''}</div>
+                  <dl className="lib-paths">
+                    <dt>Index</dt><dd><PathText path={l.indexRoot} /></dd>
+                    <dt>Source</dt><dd>{l.sourceRoot ? <PathText path={l.sourceRoot} /> : <span className="muted">not on this host</span>}</dd>
+                  </dl>
                 </td>
                 <td>{l.writable ? 'Read and write' : 'Read only'}</td>
                 <td><Mark on={l.source} /></td>
@@ -82,6 +86,19 @@ export function LibrariesSection() {
         {note && <span className="muted">{note}</span>}
       </div>
     </>
+  )
+}
+
+/** A path that wraps only after a slash, never inside a directory name
+ *  (a hyphenated name would otherwise break at its hyphen). The break
+ *  points add no characters, so a selected path copies as written. */
+function PathText({ path }: { path: string }) {
+  return (
+    <code title={path}>
+      {path.split('/').map((seg, i) => (
+        <Fragment key={i}>{i > 0 && <>/<wbr /></>}<span className="lib-seg">{seg}</span></Fragment>
+      ))}
+    </code>
   )
 }
 
