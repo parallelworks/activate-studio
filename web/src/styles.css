@@ -161,6 +161,30 @@ main.content { min-height: 0; min-width: 0; background: var(--pw-content-bg); }
   padding: 3px 0;
   overflow-wrap: anywhere;
 }
+/* An installed app with the window controls overlay on: the banner is the
+   title bar. It fills the title bar area's height, drags the window, and
+   keeps its text centered on the window with the same clearance on both
+   sides as the wider of the two control areas, so the text never runs
+   under the window controls or Chrome's buttons. A marking must not lose
+   words, so a window too narrow for one line takes two at a smaller size
+   instead of truncating. */
+@media (display-mode: window-controls-overlay) {
+  .cls-banner:not(.banner-preview) {
+    --tb-left: env(titlebar-area-x, 0px);
+    --tb-right: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw));
+    display: flex; align-items: center; justify-content: center;
+    box-sizing: border-box;
+    height: env(titlebar-area-height, 33px);
+    padding: 0 max(var(--tb-left), var(--tb-right));
+    overflow: hidden;
+    line-height: 1.15;
+    app-region: drag; -webkit-app-region: drag;
+    user-select: none;
+  }
+}
+@media (display-mode: window-controls-overlay) and (max-width: 1000px) {
+  .cls-banner:not(.banner-preview) { font-size: 0.68rem; }
+}
 .banner-colors { margin-top: 8px; }
 .banner-preview { margin-top: 8px; border-radius: 4px; }
 /* The banner is one setting in three parts, so they share a row and the

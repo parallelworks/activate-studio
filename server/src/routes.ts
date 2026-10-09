@@ -129,6 +129,12 @@ export function webManifest(o: { name: string; dark: boolean; brand: WebManifest
     start_url: './',
     scope: './',
     display: 'standalone',
+    // With a banner, the installed app can give its title bar to the
+    // banner: the window controls overlay (turned on from the chevron in
+    // the title bar, and remembered) lets the page draw there, and the
+    // banner fills it, so the marking and the window controls share one
+    // strip. Without a banner there is nothing to put there.
+    ...(bar !== bg ? { display_override: ['window-controls-overlay'] } : {}),
     background_color: bg,
     theme_color: bar,
     icons: [

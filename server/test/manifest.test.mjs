@@ -68,3 +68,8 @@ test('with a classification banner the title bar takes its color; the splash kee
   assert.equal(marked.background_color, plain.background_color)
   assert.equal(webManifest({ name: 'Studio', dark: false, brand: null, banner: 'red;}' }).theme_color, plain.background_color)
 })
+
+test('only a Studio with a banner offers the window controls overlay', () => {
+  assert.equal(webManifest({ name: 'Studio', dark: false, brand: null }).display_override, undefined)
+  assert.deepEqual(webManifest({ name: 'Studio', dark: false, brand: null, banner: '#24612e' }).display_override, ['window-controls-overlay'])
+})
