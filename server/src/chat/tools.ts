@@ -13,6 +13,9 @@ import { effectiveSettings } from '../settings.js'
 import { composeWorkflows } from '../workflowCompose.js'
 import { agentBody, extAgents, extSkills, extTools, skillBody } from '../extensions.js'
 import { callRemoteTool, isRemoteTool, remoteToolSpecs } from '../mcpClient.js'
+import { parseWorkflowEntry, entryTitle } from '../workflowEntries.js'
+import { workflowDefinition } from '../workflowsTab.js'
+import { browseGithub, githubSummary } from '../githubWorkflows.js'
 import { gatewayKey } from './gateway.js'
 
 export interface ToolSpec {
@@ -35,7 +38,8 @@ export const TOOL_CALLS: Record<string, string> = {
   write_kb_file: 'fs write into the knowledge base (path-checked, excluded dirs refused) followed by an incremental reindex of the touched subtree',
   suggest_labels: 'reads the first ~1200 characters of each unlabelled file and asks the deployment model to propose labels from the existing vocabulary (proposals only, nothing applied)',
   apply_labels: 'setfattr user.studio.tags on the paths plus an in-place upsert into the index databases',
-  list_workflows: 'pw workflows ls',
+  list_workflows: 'pw workflows ls, plus the marketplace and GitHub entries in this Studio\'s collection',
+  list_github_workflows: 'GitHub tree and README reads for a repository (no platform call)',
   get_workflow: 'pw workflows get <name> -o json',
   serve_model: 'pw workflows get/run on the deployment-configured serving workflow for the engine (settings key serveWorkflows)',
   run_workflow: 'pw workflows run <name> (dry-run validation unless a real run was requested)',
@@ -110,8 +114,23 @@ export const TOOL_SPECS: ToolSpec[] = [
     function: {
       name: 'list_workflows',
       description:
-        'List the platform workflows registered in this account with names, descriptions, and tags. Workflows this Studio offers on its Workflows tab are marked offeredHere and listed first; prefer them when one fits, and point the user to that tab to run it from its form. These are composable building blocks: use this catalog to recommend which workflows fit a task or could be assembled together.',
+        'List the platform workflows registered in this account with names, descriptions, and tags, plus the marketplace and GitHub workflows this Studio offers. Workflows offered on the Workflows tab are marked offeredHere and listed first; prefer them when one fits, and point the user to that tab to run it from its form. These are composable building blocks: use this catalog to recommend which workflows fit a task or could be assembled together. For workflows kept in a GitHub repository and not registered anywhere, use list_github_workflows.',
       parameters: { type: 'object', properties: {}, required: [] },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'list_github_workflows',
+      description:
+        'List the workflows in a GitHub repository, or under one directory of it, such as github.com/parallelworks/workflows/workflows@canary: one entry per workflow file (a directory\'s workflow.yaml or each yamls/<variant>.yaml), with the title and summary from its README. Component workflows (a design of experiments, a design explorer, solvers) live there without being published to the marketplace. Pass an entry as the name to get_workflow, workflow_configs, and run_workflow.',
+      parameters: {
+        type: 'object',
+        properties: {
+          repo: { type: 'string', description: 'github.com/<owner>/<repo>[/path][@ref], for example github.com/parallelworks/workflows/workflows@canary' },
+        },
+        required: ['repo'],
+      },
     },
   },
   {
@@ -123,7 +142,7 @@ export const TOOL_SPECS: ToolSpec[] = [
       parameters: {
         type: 'object',
         properties: {
-          name: { type: 'string', description: 'Workflow name from list_workflows' },
+          name: { type: 'string', description: 'Workflow from list_workflows or list_github_workflows: an account workflow name, marketplace/<slug>, or github.com/<owner>/<repo>/<path>[@ref]' },
         },
         required: ['name'],
       },
@@ -215,7 +234,7 @@ export const TOOL_SPECS: ToolSpec[] = [
       parameters: {
         type: 'object',
         properties: {
-          name: { type: 'string', description: 'Workflow name from list_workflows' },
+          name: { type: 'string', description: 'Workflow from list_workflows or list_github_workflows: an account workflow name, marketplace/<slug>, or github.com/<owner>/<repo>/<path>[@ref]' },
           config: { type: 'string', description: 'Optional: one configuration name, to see its full resolved inputs instead of the summary list' },
         },
         required: ['name'],
@@ -246,11 +265,12 @@ export const TOOL_SPECS: ToolSpec[] = [
       parameters: {
         type: 'object',
         properties: {
-          name: { type: 'string', description: 'Workflow name from list_workflows' },
+          name: { type: 'string', description: 'Workflow from list_workflows or list_github_workflows: an account workflow name, marketplace/<slug>, or github.com/<owner>/<repo>/<path>[@ref]' },
           config: { type: 'string', description: 'Saved configuration name from workflow_configs to load settings from' },
           resource: { type: 'string', description: 'Target system name, e.g. vega. Sets the workflow\'s compute-clusters input; only needed when the configuration does not already carry one, or to retarget it' },
           inputs: { type: 'string', description: 'JSON object of input values, merged over the configuration' },
           dry_run: { type: 'boolean', description: 'true validates without executing (default true)' },
+          trust: { type: 'boolean', description: 'Grant a GitHub workflow the account variables it declares (shown by get_workflow as permissions). Set true only after the user has approved that access in this conversation; never on your own initiative.' },
         },
         required: ['name'],
       },
@@ -833,6 +853,13 @@ function jsonFromCli<T = unknown>(text: string): T {
 
 /** A workflow record, including its saved input configurations. */
 async function wfDoc(name: string): Promise<any> {
+  // Marketplace and GitHub workflows have no account record; their YAML is
+  // read where they live, with the caller's key, as the Workflows tab does.
+  const e = parseWorkflowEntry(name)
+  if (e && e.kind !== 'account') {
+    const d = await workflowDefinition(e.entry, toolContext.getStore()?.userKey ?? null)
+    return { name: e.entry, runAs: d.runAs, displayName: d.displayName, description: d.description, yaml: d.yaml, configurations: [], permissions: d.permissions }
+  }
   const clean = name.replace(/[^A-Za-z0-9_.-]/g, '')
   return jsonFromCli<any>(await pwCli(['workflows', 'get', clean, '-o', 'json'], 60_000))
 }
@@ -1042,7 +1069,18 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
           tags: (w.tags ?? []).filter(Boolean),
           type: w.type,
           ...(offered.includes(w.name) ? { offeredHere: true } : {}),
-        })).sort((x, y) => Number(!!y.offeredHere) - Number(!!x.offeredHere))
+        }))
+        for (const name of offered) {
+          const e = parseWorkflowEntry(name)
+          if (!e || e.kind === 'account') continue
+          const g = e.kind === 'github' ? await githubSummary(e).catch(() => null) : null
+          catalog.push({
+            name: e.entry, displayName: g?.title || entryTitle(e),
+            description: g?.description || (e.kind === 'github' ? 'Workflow in a GitHub repository' : 'Marketplace workflow'),
+            tags: [], type: e.kind, offeredHere: true,
+          })
+        }
+        catalog.sort((x, y) => Number(!!y.offeredHere) - Number(!!x.offeredHere))
         return { result: JSON.stringify(catalog, null, 1), summary: `${catalog.length} workflows${offered.length ? `, ${offered.length} offered here` : ''}` }
       }
       case 'pw_help': {
@@ -1209,10 +1247,28 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
         }
       }
       case 'run_workflow': {
-        const wfName = String(args.name ?? '').replace(/[^A-Za-z0-9_./-]/g, '')
+        // Collection entries keep their form (a GitHub ref needs its @);
+        // anything else is sanitized as before.
+        const parsed = parseWorkflowEntry(String(args.name ?? ''))
+        let wfName = parsed?.entry ?? String(args.name ?? '').replace(/[^A-Za-z0-9_./-]/g, '')
         const dryRun = args.dry_run !== false
         const cliArgs = ['workflows', 'run']
         if (dryRun) cliArgs.push('--dry-run')
+        // A GitHub workflow runs from its resolved file, and one that
+        // declares account variables runs only with the user's approval.
+        if (parsed?.kind === 'github') {
+          const gdoc = await wfDoc(wfName)
+          wfName = gdoc.runAs ?? wfName
+          if (gdoc.permissions?.length) {
+            if (args.trust !== true) {
+              return {
+                result: `Not run. ${parsed.entry} asks for access to these account variables: ${gdoc.permissions.join(', ')} ('*' means all of them). Running it grants that access to the repository, revocable with pw workflows permissions revoke. Ask the user to approve; if they do, call run_workflow again with trust: true.`,
+                summary: 'needs the user\'s approval',
+              }
+            }
+            cliArgs.push('--trust')
+          }
+        }
         // Resource targeting needs the workflow's schema: the input that
         // carries the target system is declared as compute-clusters, and
         // its key differs between workflows.
@@ -1548,17 +1604,23 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
         const { text, status } = summarizeRunDetail(view, errors, logs)
         return { result: text, summary: `${id}: ${status}` }
       }
+      case 'list_github_workflows': {
+        const e = parseWorkflowEntry(String(args.repo ?? '').trim())
+        if (e?.kind !== 'github') return { result: 'repo must be github.com/<owner>/<repo>[/path][@ref].', summary: 'error' }
+        const list = await browseGithub(e)
+        const text = JSON.stringify(list.map(w => ({ name: w.entry, title: w.title, summary: w.description })), null, 1)
+        return { result: text.length > TOOL_OUTPUT_CAP ? text.slice(0, TOOL_OUTPUT_CAP) : text, summary: `${list.length} workflows in ${e.owner}/${e.repo}` }
+      }
       case 'get_workflow': {
-        const wfName = String(args.name ?? '').replace(/[^A-Za-z0-9_.-]/g, '')
-        const out = await pwCli(['workflows', 'get', wfName, '-o', 'json'])
-        const wf = JSON.parse(out)
+        const wf = await wfDoc(String(args.name ?? ''))
         const jobs = wf.yaml?.jobs ?? {}
         const edges: string[] = []
         for (const [job, def] of Object.entries<any>(jobs)) {
           for (const dep of def?.needs ?? []) edges.push(`${dep} -> ${job}`)
         }
         const dag = { name: wf.name, displayName: wf.displayName, jobs: Object.keys(jobs), edges }
-        const result = JSON.stringify({ dag, yaml: wf.yaml }, null, 1)
+        const permissions = wf.permissions?.length ? { permissions: wf.permissions, note: 'Running this workflow grants its repository these account variables; ask the user before passing trust to run_workflow.' } : {}
+        const result = JSON.stringify({ dag, ...permissions, yaml: wf.yaml }, null, 1)
         return {
           result: result.length > TOOL_OUTPUT_CAP ? JSON.stringify({ dag }, null, 1) : result,
           summary: `${dag.jobs.length} jobs, ${edges.length} edges`,

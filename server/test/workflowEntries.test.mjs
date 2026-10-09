@@ -42,7 +42,10 @@ setWorkflowsCli(async args => {
   throw new Error(`unexpected ${args.join(' ')}`)
 })
 const realFetch = globalThis.fetch
+const tree = paths => new Response(JSON.stringify({ tree: paths.map(path => ({ path, type: 'blob' })) }), { status: 200 })
 globalThis.fetch = async (url, init) => {
+  if (String(url).startsWith('https://api.github.com/repos/example-org/batch-flow/git/trees/v2')) return tree(['workflow.yaml', 'README.md'])
+  if (String(url).startsWith('https://api.github.com/repos/example-org/absent/git/trees/')) return tree(['README.md'])
   if (String(url) === 'https://raw.githubusercontent.com/example-org/batch-flow/v2/workflow.yaml') return new Response(YAML, { status: 200 })
   if (String(url).startsWith('https://raw.githubusercontent.com/')) return new Response('nope', { status: 404 })
   return realFetch(url, init)
@@ -81,12 +84,13 @@ test('the form comes from the marketplace YAML and from the repository file', as
   assert.match(missing.body.error, /No workflow\.yaml/)
 })
 
-test('runs pass the entry to pw workflows run as written', async () => {
+test('runs pass marketplace entries as written and GitHub entries as their workflow file', async () => {
   calls.length = 0
   const { body } = await j('POST', `/api/workflows/item/run?w=${q('github.com/example-org/batch-flow@v2')}`, { inputs: { message: 'hi' } })
   assert.equal(body.ok, true)
   const run = calls.find(c => c[1] === 'run')
-  assert.equal(run[2], 'github.com/example-org/batch-flow@v2')
+  assert.equal(run[2], 'github.com/example-org/batch-flow/workflow.yaml@v2')
+  assert.ok(!run.includes('--trust'), 'a workflow that declares no permissions runs without --trust')
   const mp = await j('POST', `/api/workflows/item/run?w=${q('marketplace/jupyter')}`, { inputs: {}, dryRun: true })
   assert.equal(mp.body.ok, true)
   assert.equal(calls.filter(c => c[1] === 'run').pop()[2], 'marketplace/jupyter')

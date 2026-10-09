@@ -19,6 +19,7 @@ interface FormDoc {
   name: string; displayName: string; description: string
   form: Record<string, unknown> | null
   configurations: { name: string; inputs: Record<string, unknown> }[]
+  permissions?: string[]
 }
 interface RunRow { slug: string; workflow: string; launchedAt: string; state: string; endedAt: string | null }
 
@@ -104,10 +105,11 @@ function WorkflowRunner({ name, kind, title, onBack, onLaunched }: { name: strin
   const [busy, setBusy] = useState<'' | 'validate' | 'run' | 'install'>('')
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null)
   const [needsInstall, setNeedsInstall] = useState(false)
+  const [trust, setTrust] = useState(false)
   const formik = useRef<FormikProps<FormikValues> | null>(null)
   const fields = useWorkflowFields()
   const load = () => {
-    setError(''); setNeedsInstall(false)
+    setError(''); setNeedsInstall(false); setTrust(false)
     fetch(`/api/workflows/item/form?w=${encodeURIComponent(name)}`).then(r => json<FormDoc>(r)).then(setDoc)
       .catch(e => { const m = String((e as Error).message); if (kind === 'account' && /not found|404/i.test(m)) setNeedsInstall(true); else setError(m) })
   }
@@ -125,7 +127,7 @@ function WorkflowRunner({ name, kind, title, onBack, onLaunched }: { name: strin
     setBusy(dryRun ? 'validate' : 'run'); setResult(null)
     try {
       const r = await json<{ ok: boolean; message: string; slug?: string | null }>(await fetch(`/api/workflows/item/run?w=${encodeURIComponent(name)}`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ inputs: values, dryRun }),
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ inputs: values, dryRun, trust }),
       }))
       setResult({ ok: r.ok, text: r.ok && dryRun ? 'Validation passed. The platform accepts these inputs.' : r.message })
       if (r.ok && !dryRun) onLaunched()
@@ -170,9 +172,23 @@ function WorkflowRunner({ name, kind, title, onBack, onLaunched }: { name: strin
                 </Suspense>
               : <p className="muted">This workflow takes no inputs.</p>}
           </div>
+          {!!doc.permissions?.length && (
+            <div className="card wf-trust">
+              <p>
+                This workflow's repository asks for access to your account variables
+                ({doc.permissions.includes('*') ? 'all of them' : doc.permissions.join(', ')}). The platform runs it only once you
+                approve that access, which stays granted to the repository until you revoke it
+                with <code>pw workflows permissions revoke</code>.
+              </p>
+              <label className="wf-trust-check">
+                <input type="checkbox" checked={trust} onChange={e => setTrust(e.target.checked)} />
+                Allow this access when I validate or run it
+              </label>
+            </div>
+          )}
           <div className="wf-actions">
-            <button className="btn-primary" disabled={!!busy} onClick={() => void submit(false)}>{busy === 'run' ? 'Starting…' : 'Run'}</button>
-            <button className="btn-secondary" disabled={!!busy} onClick={() => void submit(true)}>{busy === 'validate' ? 'Validating…' : 'Validate'}</button>
+            <button className="btn-primary" disabled={!!busy || (!!doc.permissions?.length && !trust)} onClick={() => void submit(false)}>{busy === 'run' ? 'Starting…' : 'Run'}</button>
+            <button className="btn-secondary" disabled={!!busy || (!!doc.permissions?.length && !trust)} onClick={() => void submit(true)}>{busy === 'validate' ? 'Validating…' : 'Validate'}</button>
             {result && <span className={`wf-result ${result.ok ? 'wf-ok' : 'wf-fail'}`}>{result.text}</span>}
           </div>
         </>
