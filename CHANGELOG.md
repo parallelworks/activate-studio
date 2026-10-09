@@ -2,6 +2,49 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.84 (2026-10-09)
+
+### GitHub workflow tools: component workflows from a repository (#379)
+
+## GitHub workflow tools
+
+Component workflows kept in a GitHub repository, and never published to the marketplace, can now be offered on the Workflows tab and used by the assistant. One example is a design of experiments or a design explorer that other workflows call as subworkflows.
+
+Settings, Workflows, From GitHub takes a repository, a directory, a workflow file, or a GitHub link (`/tree/<ref>/<path>` is rewritten to `<path>@<ref>`). It lists every workflow file found there: each directory's `workflow.yaml`, or each of its `yamls/<variant>.yaml` files. Each row shows the title and first paragraph of the directory's README, and ticking a row adds it to the set. Tiles take the same title and summary. A tile's icon is the first PNG, JPEG, or WebP in the directory's `thumbnails/`. SVG is skipped, and icon responses now carry a sandboxing Content-Security-Policy.
+
+`pw workflows run` accepts a directory only when it holds a `workflow.yaml`. The Studio therefore resolves each entry to its file and runs that file, ref included. A directory with several variants is refused until one is named.
+
+A workflow can declare `permissions` (account variables, `'*'` for all). The platform runs it only with `--trust`, validations included, and the grant stays with the repository until it is revoked.
+- **Workflows tab:** the requested access is shown above Run and Validate, which stay disabled until the viewer ticks the approval.
+- **Assistant:** `run_workflow` returns the request without running, and passes `--trust` only when called with `trust: true` after the user approves.
+
+Assistant tools:
+- `list_workflows` now includes the curated marketplace and GitHub entries.
+- A new tool, `list_github_workflows`, browses a repository.
+- `get_workflow`, `workflow_configs`, and `run_workflow` accept every kind of entry. `get_workflow` also reports declared permissions.
+
+CLI errors on the run route are shown without terminal color codes. A CLI too old to run a GitHub workflow file says so: v7.78 cannot, v7.105 can.
+
+GitHub reads use the public API, which allows 60 requests an hour without a token. Each repository's file list is cached for 10 minutes. `GITHUB_TOKEN` is used when set.
+
+Tests: new `githubWorkflows.test.mjs` (browse, resolve, tiles, permissions and approval, old CLI, rate limit) and `githubWorkflowTools.test.mjs` (the chat tools); `workflowEntries.test.mjs` updated for the resolved file entry. Checked against the live `parallelworks/workflows` canary branch: browsing `workflows/` finds 118 workflow files in under a second, the DOE form renders with the approval notice, and a validation without approval is held with the requested access reported.
+
+## v1.83 (2026-10-09)
+
+### Release notes print each pull request's heading once; change log through v1.82 (#377)
+
+Pull request descriptions that open with their own title as a heading (`### Title (#N)`) printed that heading twice in the release notes and `CHANGELOG.md`, once from the script and once from the description; every Studio release since v1.53 carried the duplicate. `scripts/release-notes.mjs` now drops a description's first line when it is a heading repeating the pull request's title, with or without the number. Descriptions that do not open that way are unchanged. The change log is regenerated through v1.82: no duplicate headings remain.
+
+### Installed app title bar matches the classification banner (#378)
+
+With a classification banner configured, an installed Studio window showed its title bar in the page's gray, the banner's color directly below it, and the page under that: a stripe of a third color at the top of the window. The title bar now takes the banner's color whenever the banner is drawn, so the bar and the banner read as one strip.
+
+- `bannerShownColor()` in `ClassificationBanner.tsx` returns the banner color when the banner is on screen (text set, and not inside the platform frame unless `bannerWhenEmbedded`), else null; the banner component uses it too.
+- The page sets `theme-color` to that color, falling back to the page ground as before, and remembers it; the pre-paint script in `index.html` applies the remembered color, so a launch is the right color before the configuration loads.
+- The manifest's `theme_color` is the banner color when a banner is configured (a valid hex color only), so the first frame of an installed launch matches as well; `background_color`, the splash, stays the page ground.
+
+Checked against a build with a CUI banner (#24612e): manifest `theme_color` #24612e with background #f3f4f6; on load the banner and `theme-color` are both #24612e and the color is remembered; on the next load `theme-color` is #24612e before the configuration arrives. New tests for the manifest with and without a banner and for `bannerShownColor`; all server and web tests pass.
+
 ## v1.82 (2026-10-09)
 
 ### chore: move to Node 26 (#371)
