@@ -59,3 +59,12 @@ test('replacing the icon file changes its address, so browsers do not keep the o
   const second = (await app.inject({ method: 'GET', url: '/manifest.webmanifest' })).json().icons[0].src
   assert.notEqual(first, second)
 })
+
+test('with a classification banner the title bar takes its color; the splash keeps the page ground', () => {
+  const plain = webManifest({ name: 'Studio', dark: false, brand: null })
+  assert.equal(plain.theme_color, plain.background_color)
+  const marked = webManifest({ name: 'Studio', dark: false, brand: null, banner: '#24612e' })
+  assert.equal(marked.theme_color, '#24612e')
+  assert.equal(marked.background_color, plain.background_color)
+  assert.equal(webManifest({ name: 'Studio', dark: false, brand: null, banner: 'red;}' }).theme_color, plain.background_color)
+})

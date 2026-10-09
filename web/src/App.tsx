@@ -16,7 +16,7 @@ import { AgentsView } from './views/AgentsView'
 import { HelpView } from './views/HelpView'
 import { SettingsView } from './views/SettingsView'
 import { StatusFooter } from './components/StatusFooter'
-import { ClassificationBanner } from './components/ClassificationBanner'
+import { ClassificationBanner, bannerShownColor } from './components/ClassificationBanner'
 import { useAppConfig } from './config'
 import { applyAccent, applySurface } from './accents'
 
@@ -168,11 +168,15 @@ export default function App() {
     const effective = (told === 'dark' || told === 'light')
       ? told : theme ?? (sysDark ? 'dark' : cfg.theme)
     document.documentElement.dataset.theme = effective
-    // An installed app's title bar takes this color; match the page ground.
+    // An installed app's title bar takes this color: the classification
+    // banner's when one is drawn, so the bar and the banner read as one
+    // strip, otherwise the page ground. Remembered so the next launch
+    // paints it before the configuration arrives.
     requestAnimationFrame(() => {
       const meta = document.querySelector('meta[name="theme-color"]')
-      const bg = getComputedStyle(document.documentElement).getPropertyValue('--pw-bg').trim()
-      if (meta && bg) meta.setAttribute('content', bg)
+      const color = bannerShownColor(cfg) ?? getComputedStyle(document.documentElement).getPropertyValue('--pw-bg').trim()
+      if (meta && color) meta.setAttribute('content', color)
+      if (cfg.loaded && color) { try { localStorage.setItem('ade-theme-color', color) } catch { /* ignore */ } }
     })
     // Cached so the next load paints in this theme before config arrives.
     if (cfg.loaded) { try { localStorage.setItem('ade-theme-default', cfg.theme) } catch { /* ignore */ } }

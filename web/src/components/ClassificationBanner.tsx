@@ -34,12 +34,19 @@ export function bannerInk(hex: string): string {
   return (l + 0.05) / 0.05 > 1.05 / (l + 0.05) ? '#101010' : '#ffffff'
 }
 
+/** The banner's color when it is on screen, else null. An installed app's
+ *  title bar sits directly above the banner, so it takes this color too. */
+export function bannerShownColor(cfg: { bannerText?: string; bannerColor?: string; bannerWhenEmbedded?: boolean }): string | null {
+  if (!cfg.bannerText?.trim()) return null
+  if (isEmbedded() && !cfg.bannerWhenEmbedded) return null
+  return cfg.bannerColor || '#24612e'
+}
+
 export function ClassificationBanner(): ReactElement | null {
   const cfg = useAppConfig()
-  const text = cfg.bannerText?.trim()
-  if (!text) return null
-  if (isEmbedded() && !cfg.bannerWhenEmbedded) return null
-  const bg = cfg.bannerColor || '#24612e'
+  const bg = bannerShownColor(cfg)
+  if (!bg) return null
+  const text = cfg.bannerText.trim()
   return (
     <div className="cls-banner" style={{ background: bg, color: bannerInk(bg) }} role="note">
       {text}

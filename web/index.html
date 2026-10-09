@@ -27,6 +27,9 @@
           document.head.appendChild(el)
         }
         put('accent-style', localStorage.getItem('ade-accent-css'))
+        var tc = localStorage.getItem('ade-theme-color')
+        var tm = document.querySelector('meta[name="theme-color"]')
+        if (tc && tm) tm.setAttribute('content', tc)
         put('surface-style', localStorage.getItem('ade-surface-css'))
       } catch (e) { /* first visit, or storage unavailable */ }
     </script>
