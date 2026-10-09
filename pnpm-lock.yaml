@@ -70,8 +70,8 @@ importers:
         specifier: ^5.3.0
         version: 5.3.0
       '@parallelworks/ui':
-        specifier: ^0.24.2
-        version: 0.24.2(@popperjs/core@2.11.8)(formik@2.4.9(@types/react@19.2.18)(react@19.2.8))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+        specifier: ^0.30.0
+        version: 0.30.0(@popperjs/core@2.11.8)(formik@2.4.9(@types/react@19.2.18)(react@19.2.8))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@parallelworks/workflow-parser':
         specifier: ^0.6.0
         version: 0.6.1
@@ -736,8 +736,8 @@ packages:
     os: [linux]
     libc: [glibc]
 
-  '@parallelworks/ui@0.24.2':
-    resolution: {integrity: sha512-WkjatyIW08W9RLqKu6/ikIIDf4YkwOuRaLxfxxTthQCcvCMTfKD7vUYCzJaWdePRQOJlibmraw5dckpczWkZBQ==}
+  '@parallelworks/ui@0.30.0':
+    resolution: {integrity: sha512-hp7rldgyXE+gZvMZbrxAZAjHzhe1jdOO8isBZYVmdPRjUCqLM7PQdd86db13KpKOB/aUxxKs3JSQ7Iu7PjRAIA==}
     peerDependencies:
       formik: ^2.4.9
       monaco-editor: ^0.57.0
@@ -976,17 +976,8 @@ packages:
       react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
       react-dom: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
 
-  '@tanstack/react-virtual@3.14.9':
-    resolution: {integrity: sha512-qZyr0FZDP8rDC4WBhsryIZmAd9bveJvFGUJJtskWaew6/0dTRS6wZxnR6VQ5bY2KwL3LjerrHqQLk3a0GKcPXQ==}
-    peerDependencies:
-      react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
-      react-dom: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
-
   '@tanstack/virtual-core@3.17.11':
     resolution: {integrity: sha512-+ILjvtHup6Y2hzQ6YzwMgX1Q+oQpxEGOXCEsCNaPoIP0VxMbizIBTmYTDtkerkIQS8/CbP1BRuyt8V/8BCsy1g==}
-
-  '@tanstack/virtual-core@3.17.7':
-    resolution: {integrity: sha512-bp+v10y65sp2H7WpWfIMyxTNfl8ZVfxFTLRjPIFRryi6FV/J33z4IS53WO4pTk36KlvJ4iLiQz+oaydDC1xbcA==}
 
   '@testing-library/dom@10.4.1':
     resolution: {integrity: sha512-o4PXJQidqJl82ckFaXUeoAW+XysPLauYI43Abki5hABd853iMhitooc6znOnczgbTYmEP6U6/y1ZyKAIsvMKGg==}
@@ -3174,7 +3165,7 @@ snapshots:
       '@floating-ui/react': 0.26.28(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@react-aria/focus': 3.22.1(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@react-aria/interactions': 3.28.1(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
-      '@tanstack/react-virtual': 3.14.9(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      '@tanstack/react-virtual': 3.14.13(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       react: 19.2.8
       react-dom: 19.2.8(react@19.2.8)
       use-sync-external-store: 1.6.0(react@19.2.8)
@@ -3227,7 +3218,7 @@ snapshots:
   '@napi-rs/lzma-linux-x64-gnu@1.5.1':
     optional: true
 
-  '@parallelworks/ui@0.24.2(@popperjs/core@2.11.8)(formik@2.4.9(@types/react@19.2.18)(react@19.2.8))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
+  '@parallelworks/ui@0.30.0(@popperjs/core@2.11.8)(formik@2.4.9(@types/react@19.2.18)(react@19.2.8))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
     dependencies:
       '@headlessui/react': 2.2.10(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@streamdown/code': 2.0.0(react@19.2.8)
@@ -3441,15 +3432,7 @@ snapshots:
       react: 19.2.8
       react-dom: 19.2.8(react@19.2.8)
 
-  '@tanstack/react-virtual@3.14.9(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
-    dependencies:
-      '@tanstack/virtual-core': 3.17.7
-      react: 19.2.8
-      react-dom: 19.2.8(react@19.2.8)
-
   '@tanstack/virtual-core@3.17.11': {}
-
-  '@tanstack/virtual-core@3.17.7': {}
 
   '@testing-library/dom@10.4.1':
     dependencies:
