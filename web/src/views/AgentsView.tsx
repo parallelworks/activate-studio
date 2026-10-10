@@ -266,9 +266,9 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
               </p>
               <p className="muted view-sub">
                 Each subtask is a pw code agent: a one-shot run or a pw code session you can watch, steer, and
-                approve requests for (Settings, Delegation, Agent execution), or a campaign of platform workflow
+                approve requests for (Settings, External access, Agent execution), or a campaign of platform workflow
                 runs on a connected HPC system for long work. Results land under <code>tasks/</code> in
-                the knowledge base, and the agent ceiling and depth are set under Settings, Delegation.
+                the knowledge base, and the agent ceiling and depth are set under Settings, External access, Delegation.
               </p>
             </div>
           )}

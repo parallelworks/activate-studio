@@ -55,10 +55,16 @@ export const TOOL_CALLS: Record<string, string> = {
   hpc_status: 'GET against the configured Status Monitor REST API (fleet, cluster-usage, placement, insights, storage, events); launch=true instead runs the deployment-configured monitor workflow via the pw CLI',
   cluster_command: 'pw ssh <resource> <command> (read-only scheduler guidance; state changes only on explicit request)',
   show_in_viewer: 'no external call; returns viewer deep-link or inline-embed markdown',
-  studio_docs: 'reads docs/HELP.md, docs/ARCHITECTURE.md, or docs/CUSTOMIZATION.md from the app installation',
+  studio_docs: 'reads one of the documents under docs/ in the app installation',
   use_skill: 'loads extensions/skills/<name>.md into the conversation',
   delegate: 'spawns concurrent pw code one-shot agents with a server-enforced ceiling and depth limit; results are written under tasks/ in the corpus',
   task_status: 'reads the in-memory task board and its subtask tree',
+}
+
+/** The documents studio_docs can read, by the name the model passes. */
+const STUDIO_DOCS: Record<string, string> = {
+  help: 'HELP.md', architecture: 'ARCHITECTURE.md', customization: 'CUSTOMIZATION.md', libraries: 'LIBRARIES.md',
+  workflows: 'WORKFLOWS.md', agents: 'AGENTS.md', 'multi-user': 'MULTI-USER.md', macos: 'MACOS.md',
 }
 
 export const TOOL_SPECS: ToolSpec[] = [
@@ -387,11 +393,11 @@ export const TOOL_SPECS: ToolSpec[] = [
     function: {
       name: 'studio_docs',
       description:
-        'Read this Studio\'s own documentation to answer questions about using the application itself: "help" is the in-app user guide (chat, library, search, query, labels, adding material, navigation), "architecture" explains the index and retrieval design, "customization" covers deployment configuration. Use for any question about how the Studio works or how to do something in it; do not search the knowledge base for these.',
+        'Read this Studio\'s own documentation to answer questions about using the application itself: "help" is the in-app user guide (chat, library, search, agents, workflows, query, labels, adding material, installing as an app, navigation), "architecture" explains the index and retrieval design, "customization" covers deployment configuration, "libraries" several indexes at once, "workflows" the Workflows tab, "agents" delegated agents and pw code sessions, "multi-user" several people on one deployment, "macos" running on macOS. Use for any question about how the Studio works or how to do something in it; do not search the knowledge base for these.',
       parameters: {
         type: 'object',
         properties: {
-          doc: { type: 'string', enum: ['help', 'architecture', 'customization'], description: 'Which document to read' },
+          doc: { type: 'string', enum: Object.keys(STUDIO_DOCS), description: 'Which document to read' },
         },
         required: ['doc'],
       },
@@ -1539,7 +1545,7 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
       }
       case 'studio_docs': {
         const which = String(args.doc ?? 'help').toLowerCase()
-        const file = which === 'architecture' ? 'ARCHITECTURE.md' : which === 'customization' ? 'CUSTOMIZATION.md' : 'HELP.md'
+        const file = STUDIO_DOCS[which] ?? 'HELP.md'
         let md = await fs.readFile(path.join(PROJECT_ROOT, 'docs', file), 'utf8')
         const eff = effectiveSettings()
         md = md.replaceAll('{appName}', eff.appName).replaceAll('{kbLabel}', eff.kbLabel)

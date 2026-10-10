@@ -17,7 +17,7 @@ import { effectiveSettings } from './settings.js'
  * carried out by an agent, and an agent may decompose its own subtask
  * further, which is the tree the operator watches. The vocabulary is
  * A2A's rather than ours: task, subtask, and the states below. An agent
- * runs one of two ways (Settings, Delegation, "Agent execution"): as a
+ * runs one of two ways (Settings, External access, "Agent execution"): as a
  * one-shot `pw code -p` run (the runner), or as a session in the local pw
  * code daemon, which the Studio follows turn by turn and whose approval
  * requests it shows as input-required. Either way the orchestrator here
