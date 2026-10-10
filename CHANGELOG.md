@@ -2,6 +2,46 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.93 (2026-10-10)
+
+### Change log through v1.92 (#398)
+
+Regenerated with `node scripts/release-notes.mjs --changelog` after the v1.92 release.
+
+### Theme colors in place of the dark-mode patches; labels as chips (#399)
+
+After the shared theme (v1.91), 67 `[data-theme='dark']` rules were still patching colors that light-mode rules hard-coded. Some of them had begun to work against the theme: the dark multi-select colors overrode the new warning tints, and the dark shadows were literal blacks. Headings, paths, and labels were also drawn in navy, a color neither the platform nor the other apps use for static text.
+
+**What changed**
+- Each light-mode rule that hard-coded a color now uses the theme token that applies in both schemes, and its dark patch is deleted. This removes 51 dark rules and 89 color literals.
+- **Headings and titles** use the text color: view titles, chart and list headings, task and fleet headings, the brand name, and empty-state titles. Empty-state titles are now 14px / 500.
+- **Paths:** search results, Stats rows, and query cells use the text color and turn the link color on hover. The viewer's path uses the muted color.
+- **Tree rows:** folders and files use the text color, and chevrons the muted color.
+- **Selections, notices, and banners:**
+  - multi-select rows and bars, the index notice, and the approvals box use `--theme-warning-muted`, with warning text mixed toward the text color;
+  - the external-endpoint banners use the success and error tints;
+  - destructive menu items use `--theme-error`.
+- **Search-mode pills:** full text uses the theme's info tint, by meaning uses violet tinted from the theme, and name uses neutral.
+- **Labels** become a bordered chip with a 6px dot. An applied label has a success tint and dot, and an inherited one a dashed border and a muted dot. Tree tags are bordered and muted.
+- **Bars and shadows:** chart bars use the accent, and menus, panels, and banners use `--theme-shadow-lg`, which the theme sets per scheme.
+- **Code and text bodies** use `--theme-muted-panel-bg`.
+- **Links** use `--theme-link` site-wide. Conversation rows in the chat rail keep the text color in both schemes.
+
+**Kept on purpose (16 rules):**
+- the derived theme defaults;
+- the workflow diagram's text;
+- the find highlights;
+- the 3D canvas gradient;
+- code blocks;
+- the accent swatches in Settings;
+- the tool spec box;
+- the chat rail's selected row;
+- the package's toggle switch.
+
+**Checked.**
+- Screenshots in light and dark of Search with results, Library, Stats, and Chat.
+- Server tests (237) and web tests (66) pass.
+
 ## v1.92 (2026-10-10)
 
 ### Change log through v1.91 (#396)
