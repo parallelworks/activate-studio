@@ -87,6 +87,9 @@ interface WorkflowRow {
   displayName?: string
   description?: string
   imageUrl?: string
+  /** The platform's route to the same image, for a repository the reader
+   *  cannot fetch anonymously (a private GitLab project, say). */
+  imageFallbackUrl?: string
   tags?: string[]
   type?: string
   configurations?: { id?: string; name?: string; inputs?: Record<string, unknown> }[]
@@ -125,7 +128,7 @@ export function resolveStudioRefs(v: unknown): unknown {
 }
 
 
-interface MarketRow { slug: string; name?: string; description?: string; imageUrl?: string; type?: string }
+interface MarketRow { slug: string; name?: string; description?: string; imageUrl?: string; imageFallbackUrl?: string; type?: string }
 const marketCache = new Map<string, { at: number; rows: MarketRow[] }>()
 async function marketplaceFor(key: string | null): Promise<MarketRow[]> {
   const k = (key ?? '').slice(-12)
@@ -180,6 +183,27 @@ async function definitionOf(e: WorkflowEntry, key: string | null): Promise<Defin
   }
   const g = await githubDefinition(e)
   return { yaml: g.yaml, displayName: g.title, description: g.description || g.entry, configurations: [], runAs: g.entry, permissions: g.permissions }
+}
+
+/**
+ * The addresses to try for a workflow's icon, in order. A repository
+ * thumbnail on GitHub is read anonymously, as the platform's own web app
+ * does; anywhere else (a GitLab server, often private or behind a site
+ * certificate) the platform's fallback route goes first, since it reads
+ * the file with the platform's access, and the direct address is the
+ * fallback. Relative addresses are the platform's; only https is fetched.
+ */
+export function iconCandidates(imageUrl: string | undefined, fallbackUrl: string | undefined, platform: string): string[] {
+  const abs = (u?: string) => (!u ? '' : u.startsWith('/') ? platform + u : u)
+  const primary = abs(imageUrl)
+  const fallback = abs(fallbackUrl)
+  let anonymousOk = true
+  try {
+    const h = new URL(primary).hostname
+    anonymousOk = primary.startsWith(platform) || h === 'github.com' || h.endsWith('.githubusercontent.com')
+  } catch { /* not a URL */ }
+  const ordered = anonymousOk ? [primary, fallback] : [fallback, primary]
+  return [...new Set(ordered.filter(u => /^https:\/\//.test(u)))]
 }
 
 const runChecked = new Map<string, number>()
@@ -291,24 +315,27 @@ export async function workflowsTabRoutes(app: FastifyInstance): Promise<void> {
     const hit = iconCache.get(e.entry)
     if (hit && Date.now() - hit.at < 3_600_000) return reply.type(hit.type).header('Cache-Control', 'private, max-age=3600').header('Content-Security-Policy', ICON_CSP).send(hit.body)
     const v = viewer(req)
-    let url: string | undefined
+    let row: { imageUrl?: string; imageFallbackUrl?: string } | undefined
     if (e.kind === 'account') {
       const rows = [...await listFor(v.key), ...(v.own && gatewayKey() ? await listFor(gatewayKey()).catch(() => []) : [])]
-      url = rows.find(w => w.name === e.name)?.imageUrl
+      row = rows.find(w => w.name === e.name)
     } else if (e.kind === 'marketplace') {
-      url = (await marketplaceFor(v.key).catch(() => [])).find(x => x.slug === e.slug)?.imageUrl
-    } else url = (await githubSummary(e).catch(() => null))?.thumbnail ?? githubThumbnail(e)
-    if (!url) return reply.status(404).send({ error: 'no icon' })
+      row = (await marketplaceFor(v.key).catch(() => [])).find(x => x.slug === e.slug)
+    } else row = { imageUrl: (await githubSummary(e).catch(() => null))?.thumbnail ?? githubThumbnail(e) }
     const host = new URL(GATEWAY_BASE).origin
-    const abs = url.startsWith('/') ? host + url : url
-    if (!/^https:\/\//.test(abs)) return reply.status(404).send({ error: 'no icon' })
-    const res = await fetch(abs, { headers: abs.startsWith(host) ? { Authorization: `Bearer ${v.key}` } : {}, signal: AbortSignal.timeout(15_000) }).catch(() => null)
-    if (!res?.ok) return reply.status(404).send({ error: 'icon unavailable' })
-    const type = res.headers.get('content-type') || 'image/png'
-    if (!/^image\//.test(type)) return reply.status(404).send({ error: 'not an image' })
-    const body = Buffer.from(await res.arrayBuffer())
-    iconCache.set(e.entry, { at: Date.now(), type, body })
-    return reply.type(type).header('Cache-Control', 'private, max-age=3600').header('Content-Security-Policy', ICON_CSP).send(body)
+    const candidates = iconCandidates(row?.imageUrl, row?.imageFallbackUrl, host)
+    if (!candidates.length) return reply.status(404).send({ error: 'no icon' })
+    for (const abs of candidates) {
+      // Platform addresses carry the viewer's key; anything else is fetched
+      // anonymously and never sees it.
+      const res = await fetch(abs, { headers: abs.startsWith(host) ? { Authorization: `Bearer ${v.key}` } : {}, signal: AbortSignal.timeout(15_000) }).catch(() => null)
+      const type = res?.headers.get('content-type') || 'image/png'
+      if (!res?.ok || !/^image\//.test(type)) continue
+      const body = Buffer.from(await res.arrayBuffer())
+      iconCache.set(e.entry, { at: Date.now(), type, body })
+      return reply.type(type).header('Cache-Control', 'private, max-age=3600').header('Content-Security-Policy', ICON_CSP).send(body)
+    }
+    return reply.status(404).send({ error: 'icon unavailable' })
   })
 
   // The form: the workflow's inputs in the platform's dynamic-form shape,
