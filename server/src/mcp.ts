@@ -117,6 +117,15 @@ function exposedTools(): { name: string; description: string; inputSchema: Recor
     }))
 }
 
+/** What a task agent with a task token can call: the corpus tools this
+ *  deployment exposes and the board. A pw code session the Studio starts
+ *  pre-approves exactly these, as `mcp__<server>__<tool>`, so its agent
+ *  can search and report without an approval per call; all of them read
+ *  the corpus or write only to the task's own board. */
+export function taskToolNames(): string[] {
+  return [...exposedTools().map(t => t.name), ...BOARD_TOOLS.map(t => t.name)]
+}
+
 export async function mcpRoutes(app: FastifyInstance): Promise<void> {
   app.post('/api/mcp', async (req, reply) => {
     if (!effectiveSettings().mcpEnabled) {

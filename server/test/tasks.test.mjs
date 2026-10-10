@@ -57,6 +57,11 @@ test('agents spawn, sub-spawn within limits, and results land in the corpus', as
   for (const a of agents) {
     assert.ok(a.resultPath && fs.existsSync(path.join(kb, a.resultPath)), `${a.name} result on disk`)
   }
+  // The runner registers no board: pw code would ignore a workspace
+  // settings file, and the token would sit on disk for nothing.
+  for (const a of agents) {
+    assert.ok(!fs.existsSync(path.join(idx, 'tasks', m.id, 'work', a.name, '.agents')), `${a.name} has no workspace settings`)
+  }
   // the board is ordered and complete
   const seqs = m.board.map(b => b.seq)
   assert.deepEqual(seqs, [...seqs].sort((x, y) => x - y))

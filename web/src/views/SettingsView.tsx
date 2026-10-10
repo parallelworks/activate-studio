@@ -30,6 +30,7 @@ interface Effective {
   delegationEnabled: boolean
   delegationMaxAgents: number
   delegationMaxDepth: number
+  agentExecution: 'runner' | 'sessions' | 'both'
   voiceEnabled: boolean
   voiceUrl: string
   ragProxyEnabled: boolean
@@ -142,6 +143,7 @@ export function SettingsView() {
   const [catalog, setCatalog] = useState<CatalogTool[]>([])
   const [mcpStatus, setMcpStatus] = useState<{ name: string; url: string; tools: number; error: string | null }[]>([])
   const [ext, setExt] = useState<Extensions | null>(null)
+  const [runtime, setRuntime] = useState<{ local: { available: boolean; reason: string | null; version: string | null; remoteStart: boolean | null; remoteMaxPermissionMode: string | null } } | null>(null)
   const [specOpen, setSpecOpen] = useState<string | null>(null)
   const [me, setMe] = useState<{ authEnabled?: boolean; verified: boolean; mode: 'stored' | 'session' | 'none'; last4?: string; addedAt?: string; sessionExpiresAt?: string; kind?: string; credExpiresAt?: string | null; credExpired?: boolean; baseUrl?: string | null; gatewayHost?: string
     shared?: { active: boolean; last4?: string; sharedBy?: string; sharedAt?: string; credExpired?: boolean; mine?: boolean }
@@ -191,6 +193,7 @@ export function SettingsView() {
       .then(d => setCatalog(d.tools ?? []))
       .catch(() => {})
     fetch('/api/extensions').then(r => r.json()).then(setExt).catch(() => {})
+    fetch('/api/tasks/runtime').then(r => r.json()).then(setRuntime).catch(() => {})
     fetch('/api/chat/models?config=1').then(r => r.json())
       .then(d => setModels((d.models ?? []).map((m: { id: string }) => m.id)))
       .catch(() => {})
@@ -757,6 +760,26 @@ export function SettingsView() {
                   <input className="field" type="number" min={0} max={3} value={form.delegationMaxDepth}
                     onChange={e => setForm({ ...form, delegationMaxDepth: Number(e.target.value) })} />
                   <p className="muted key-note">0 stops agents starting their own subtasks; 1 lets them go one level.</p>
+                </div>
+                <div>
+                  <label className="field-label">Agent execution</label>
+                  <select className="field" value={form.agentExecution} onChange={e => setForm({ ...form, agentExecution: e.target.value as Effective['agentExecution'] })}>
+                    <option value="runner">Studio runner: one-shot pw code runs</option>
+                    <option value="sessions">pw code sessions</option>
+                    <option value="both">Both, chosen per task</option>
+                  </select>
+                  <p className="muted key-note">
+                    Sessions run in this host's pw code daemon: their progress is live on the Agents tab, a person
+                    approves what an agent asks to do, and a working agent can be steered. With remote control on,
+                    they can also be watched from ACTIVATE's agents page. Campaigns on other systems use the runner.
+                  </p>
+                  {runtime && (
+                    <p className="muted key-note">
+                      {runtime.local.version
+                        ? `pw code daemon ${runtime.local.version}${runtime.local.available ? '' : `: ${runtime.local.reason}`}; remote session start ${runtime.local.remoteStart ? `on, at most ${runtime.local.remoteMaxPermissionMode}` : 'off'}.`
+                        : runtime.local.reason}
+                    </p>
+                  )}
                 </div>
               </div>
               {saveRow(false)}

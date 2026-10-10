@@ -464,6 +464,7 @@ export const TOOL_SPECS: ToolSpec[] = [
         properties: {
           execution: { type: 'string', enum: ['local', 'campaign'], description: 'local runs agents beside the server, bounded at 15 minutes each: right for quick parallel lookups. campaign submits each agent as a platform workflow run on a named system, hours-long and surviving restarts: right for long or many-agent work. Default local.' },
           resource: { type: 'string', description: 'Campaign only: the connected system to run agents on, from list_clusters. When the user does not name one, consult hpc_status placement before choosing.' },
+          runtime: { type: 'string', enum: ['session', 'runner'], description: 'Local only, and only when the deployment allows both: session runs each agent as a pw code session the user can watch, steer, and approve requests for on the Agents tab; runner runs a one-shot agent with no live view. Default session.' },
           objective: { type: 'string', description: 'What the whole task is trying to achieve' },
           subtasks: {
             type: 'array',
@@ -1730,6 +1731,7 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
             maxAgents: eff.delegationMaxAgents,
             maxDepth: eff.delegationMaxDepth,
             execution, resource,
+            runtime: args.runtime === 'runner' ? 'runner' : args.runtime === 'session' ? 'session' : undefined,
           })
           const sum = taskSummary(m)
           return {
