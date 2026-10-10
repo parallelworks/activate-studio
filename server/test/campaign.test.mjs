@@ -93,6 +93,7 @@ test('a campaign agent goes from submission to a corpus result with no child pro
   await waitFor(() => agent().runSlug === 'agent-run-00001')
   await waitFor(() => agent().note.includes('running'), 10000)
   assert.match(agent().note, /agent-run-00001/, 'the note names the run while it works')
+  assert.equal(agent().host, 'pw://user/testcluster', 'the agent names the system it runs on')
 
   await waitFor(() => agent().state === 'completed')
   assert.equal(tasksMod.getTask(m.id).state, 'completed')

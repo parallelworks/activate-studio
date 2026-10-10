@@ -10,6 +10,8 @@ When delegation is on (Settings, External access, Delegation), the assistant can
 
 A campaign on another system always uses the runner. Sessions on remote systems need the platform's agents routes and are a later step.
 
+The task view names the machine its agents run on: the task's system for a campaign, the daemon's host for session agents, and the Studio's host for runners. It appears once in the task's header, and on each agent's row only when a task's agents are on different machines.
+
 ## Session agents
 
 The Studio talks to the pw code daemon over its Unix socket (`$XDG_STATE_HOME/pw/code-<hostname>.sock`, or `PW_CODE_SOCKET`), which only the account that runs the Studio can open. When no daemon is running, the first session agent starts one with the Studio's own platform context (`PW_CONTEXT`), since a daemon started without a context binds to whichever context is current for that account. The daemon must speak protocol 2.
