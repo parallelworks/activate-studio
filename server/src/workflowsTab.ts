@@ -206,6 +206,33 @@ export function iconCandidates(imageUrl: string | undefined, fallbackUrl: string
   return [...new Set(ordered.filter(u => /^https:\/\//.test(u)))]
 }
 
+/**
+ * The platform's thumbnail route for a repository file, rebuilt from the
+ * file's raw address. The platform lists this route as imageFallbackUrl,
+ * but `workflows ls` in pw CLI v7.105 and earlier drops that field, so
+ * a Studio on such a CLI never sees it. The raw address carries the same
+ * three parts the platform builds the route from: GitHub's is
+ * raw.githubusercontent.com/<owner>/<repo>/<ref>/<file>, GitLab's is
+ * <server>/<project>/-/raw/<ref>/<file>. Anything else has no route.
+ */
+export function thumbnailRoute(imageUrl: string | undefined): string | undefined {
+  let u: URL
+  try { u = new URL(imageUrl ?? '') } catch { return undefined }
+  if (u.protocol !== 'https:') return undefined
+  let parts: string[]
+  try { parts = u.pathname.split('/').filter(Boolean).map(decodeURIComponent) } catch { return undefined }
+  let repo: string, ref: string, file: string[]
+  if (u.hostname === 'raw.githubusercontent.com') {
+    if (parts.length < 4) return undefined
+    repo = `${parts[0]}/${parts[1]}`; ref = parts[2]; file = parts.slice(3)
+  } else {
+    const i = parts.indexOf('-')
+    if (i < 1 || parts[i + 1] !== 'raw' || parts.length < i + 4) return undefined
+    repo = `${u.host}/${parts.slice(0, i).join('/')}`; ref = parts[i + 2]; file = parts.slice(i + 3)
+  }
+  return `/api/repositories/thumbnail?${new URLSearchParams({ path: file.join('/'), ref, repo })}`
+}
+
 const runChecked = new Map<string, number>()
 const iconCache = new Map<string, { at: number; type: string; body: Buffer }>()
 
@@ -323,7 +350,7 @@ export async function workflowsTabRoutes(app: FastifyInstance): Promise<void> {
       row = (await marketplaceFor(v.key).catch(() => [])).find(x => x.slug === e.slug)
     } else row = { imageUrl: (await githubSummary(e).catch(() => null))?.thumbnail ?? githubThumbnail(e) }
     const host = new URL(GATEWAY_BASE).origin
-    const candidates = iconCandidates(row?.imageUrl, row?.imageFallbackUrl, host)
+    const candidates = iconCandidates(row?.imageUrl, row?.imageFallbackUrl || thumbnailRoute(row?.imageUrl), host)
     if (!candidates.length) return reply.status(404).send({ error: 'no icon' })
     for (const abs of candidates) {
       // Platform addresses carry the viewer's key; anything else is fetched
