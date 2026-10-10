@@ -2,6 +2,46 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.88 (2026-10-10)
+
+### Change log through v1.87 (#387)
+
+Regenerated with `node scripts/release-notes.mjs --changelog` after the v1.87 release.
+
+### Help and README cover the Workflows tab, desktop install, libraries, and session agents (#388)
+
+## Help and README catch up with recent releases
+
+The in-app help (`docs/HELP.md`, also what the assistant reads through `studio_docs`) and the README had fallen behind v1.73 to v1.87.
+
+**`docs/HELP.md`**
+- A new **Workflows** section covers:
+  - tiles from the account, the marketplace, and GitHub;
+  - Validate and Run, presets, and recent runs;
+  - approval for GitHub workflows that ask for account-variable access;
+  - how administrators choose the set, including **From GitHub** and **Find workflows**;
+  - that the assistant sees the same set.
+- **Chat:** **Select chats** for bulk deletion.
+- **Library:** the library picker, and Settings, "Libraries" with each library's paths.
+- **Agents:** where delegation is configured and the three ways agents run.
+- **Getting around:** **Install app**, the title bar taking the banner color, and Chrome's chevron moving the banner into the title bar.
+- **Built on:** names `@parallelworks/ui` in place of `@parallelworks/ai-chat`.
+
+**`README.md`**
+- The integration paragraph mentions the Workflows tab, session agents, and desktop install.
+- The Workflows paragraph covers marketplace and GitHub workflows and the approval.
+- A new **Agents** section is added.
+- A new **Documentation** table lists every document.
+- The `web/` layout line lists every view.
+- The chat package name is updated.
+
+**Corrections**
+- Delegation settings are under Settings, "External access". `docs/AGENTS.md`, the Agents tab's empty-state text, and a comment in `tasks.ts` said "Settings, Delegation", which does not exist.
+
+**`studio_docs`** now reads every document under `docs/`: help, architecture, customization, libraries, workflows, agents, multi-user, and macos. Before, it read only the first three.
+
+Server tests (237) and web tests (54) pass.
+
 ## v1.87 (2026-10-10)
 
 ### Change log through v1.86 (#384)
