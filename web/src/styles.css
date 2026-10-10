@@ -1,84 +1,138 @@
-/* ade-studio shell, styled on the ACTIVATE platform token system.
-   The ai-chat package reads the same --theme-* variables. */
+/* Colors come from the shared Parallel Works theme contract: the --theme-*
+   tokens that @parallelworks/ui's deriveTheme computes from an accent and a
+   background, the same derivation the platform's other apps use. accents.ts
+   writes the full set for the chosen accent and surface; the two blocks
+   below are its output for the default (navy on the cool surface), for the
+   moment before the script runs, and a test keeps them equal to it. */
+/* BEGIN derived theme defaults (web/test/themeDefaults.test.ts) */
 :root {
-  --pw-navy: #06354f;
-  --pw-navy-2: #0a4a6e;
-  --pw-bg: #f3f4f6;
-  --pw-panel: #ffffff;
-  --pw-border: #e5e7eb;
-  --pw-border-strong: #d1d5db;
-  --pw-text: #111827;
-  --pw-muted: #646e78;
-  --pw-muted-2: #9aa4b1;
-  --pw-link: #2563eb;
-  --pw-active-pill: #e1f2fb;
-  --pw-green: #16a34a;
-  --pw-amber: #d97706;
-
-  --theme-element: var(--pw-navy);
-  --theme-link: #428bca;
-  --theme-border: var(--pw-border);
-  --theme-hover: #f3f4f6;
-
-  /* Every left rail (chat, library, settings, help) shares one background.
-     Light mode keeps them white like the cards, where the border alone
-     separates the panes cleanly; dark mode takes the panel token the chat
-     components use, a step off the card, which is where the separation
-     actually needs help. */
-  --pw-rail-bg: var(--pw-panel);
-
-  /* App navigation and page grounds. In light the navigation sits on the
-     gray ground and pages on the panel color; in dark the navigation is
-     the lighter of the two. Its pills are neutral: the accent marks what is
-     interactive, not where you are. */
-  --pw-nav-bg: var(--pw-bg);
-  --pw-content-bg: var(--pw-panel);
-  --pw-nav-text: color-mix(in srgb, var(--pw-text) 78%, var(--pw-nav-bg));
-  --pw-nav-hover: color-mix(in srgb, var(--pw-text) 5%, var(--pw-nav-bg));
-  --pw-nav-active: color-mix(in srgb, var(--pw-text) 9%, var(--pw-nav-bg));
-}
-
-/* Dark mode: a deliberately re-stepped palette, not an automatic flip.
-   The ai-chat package reads the --theme-* variables and follows along. */
-[data-theme='dark'] {
-  --pw-navy: #7fc0ec;
-  --pw-navy-2: #9cd0f4;
-  --pw-bg: #0c1320;
-  --pw-panel: #16202f;
-  --pw-border: #283749;
-  --pw-border-strong: #3b4d63;
-  --pw-text: #e8eef6;
-  --pw-muted: #9fb0c3;
-  --pw-muted-2: #6e8098;
-  --pw-link: #8ec3f5;
-  --pw-active-pill: #17395a;
-  --pw-green: #34d399;
-  /* Amber had no dark step because its only use was a 3px rule, where the
-     light value still reads. As text on the dark panel it does not. */
-  --pw-amber: #fbbf24;
-
-  --pw-input-bg: #0f172a;
-  --pw-hover-row: var(--theme-hover, #16233a);
-  --theme-app-bg: var(--pw-panel);
-  --theme-app: #e2e8f0;
-  --theme-panel-bg: var(--pw-panel);
-  --theme-panel: #e2e8f0;
-  --theme-muted-panel-bg: #0f172a;
-  --theme-muted-panel-color: #94a3b8;
-  --theme-muted-text-color: #94a3b8;
-  --theme-border: var(--pw-border);
-  --theme-element: #1d4ed8;
+  color-scheme: light;
+  --theme-app-bg: #f3f4f6;
+  --theme-app: #000000;
+  --theme-panel-bg: #fdfdfd;
+  --theme-panel: #000000;
+  --theme-muted-panel-bg: #f9fafb;
+  --theme-muted-panel-color: #666667;
+  --theme-muted-text-color: #666667;
+  --theme-border: #cccdcf;
+  --theme-element: #06354f;
   --theme-element-text: #ffffff;
-  --theme-hover: #1e293b;
-  --theme-hover-text: #e2e8f0;
-  --theme-link: #7cb8f0;
-  --theme-input-bg: #0f172a;
-  --pw-rail-bg: var(--theme-panel-bg, #232528);
-  --pw-nav-bg: var(--pw-panel);
-  --pw-content-bg: var(--pw-bg);
+  --theme-element-hover: #053047;
+  --theme-hover: #e9eaec;
+  --theme-hover-text: #000000;
+  --theme-link: #06354f;
+  --theme-input-bg: #fbfbfc;
+  --theme-input: #06354f;
+  --theme-input-disabled-bg: #f7f8f9;
+  --theme-input-disabled-text: #929294;
+  --theme-card-bg: #fdfdfd;
+  --theme-card-border: rgba(0, 0, 0, 0.04);
+  --theme-card-hover: #f8f8f8;
+  --theme-accent: #06354f;
+  --theme-accent-text: #ffffff;
+  --theme-focus-ring: rgba(6, 53, 79, 0.2);
+  --theme-hover-overlay: rgba(0, 0, 0, 0.02);
+  --theme-success: #159b46;
+  --theme-success-muted: rgba(21, 155, 70, 0.1);
+  --theme-error: #dc2626;
+  --theme-error-muted: rgba(220, 38, 38, 0.1);
+  --theme-warning: #ce7106;
+  --theme-warning-muted: rgba(206, 113, 6, 0.1);
+  --theme-info: #2563eb;
+  --theme-info-muted: rgba(37, 99, 235, 0.1);
+  --theme-favorite: #e11d48;
+  --theme-favorite-muted: rgba(225, 29, 72, 0.1);
+  --theme-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.07);
+  --theme-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.07), 0 2px 4px -2px rgba(0, 0, 0, 0.07);
+  --theme-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.07), 0 4px 6px -4px rgba(0, 0, 0, 0.07);
+  --theme-auth-shadow: 0 25px 80px -20px rgba(0, 0, 0, 0.2), 0 10px 30px -10px rgba(0, 0, 0, 0.1);
+  --theme-bg: #06354f;
+  --theme-sidebar-text: #ffffff;
+  --theme-sidebar-hover: #244d64;
+  --theme-sidebar-hover-text: #ffffff;
+  --theme-sidebar-active-bg: #dae1e5;
+  --theme-sidebar-active-text: #000000;
 }
-[data-theme='dark'] .btn-primary { background: #1d4ed8; color: #fff; }
-[data-theme='dark'] .btn-primary:hover { background: #2b5ce4; }
+[data-theme='dark'] {
+  color-scheme: dark;
+  --theme-app-bg: #0d1117;
+  --theme-app: #ffffff;
+  --theme-panel-bg: #181c21;
+  --theme-panel: #ffffff;
+  --theme-muted-panel-bg: #23262c;
+  --theme-muted-panel-color: #999b9e;
+  --theme-muted-text-color: #999b9e;
+  --theme-border: #34373c;
+  --theme-element: #7fc0ec;
+  --theme-element-text: #000000;
+  --theme-element-hover: #8cc6ee;
+  --theme-hover: #20242a;
+  --theme-hover-text: #ffffff;
+  --theme-link: #7fc0ec;
+  --theme-input-bg: #20242a;
+  --theme-input: #7fc0ec;
+  --theme-input-disabled-bg: #171b21;
+  --theme-input-disabled-text: #6e7074;
+  --theme-card-bg: #181c21;
+  --theme-card-border: rgba(255, 255, 255, 0.06);
+  --theme-card-hover: #24272c;
+  --theme-accent: #7fc0ec;
+  --theme-accent-text: #000000;
+  --theme-focus-ring: rgba(127, 192, 236, 0.25);
+  --theme-hover-overlay: rgba(255, 255, 255, 0.03);
+  --theme-success: #22c55e;
+  --theme-success-muted: rgba(34, 197, 94, 0.15);
+  --theme-error: #ef4444;
+  --theme-error-muted: rgba(239, 68, 68, 0.15);
+  --theme-warning: #f59e0b;
+  --theme-warning-muted: rgba(245, 158, 11, 0.15);
+  --theme-info: #3b82f6;
+  --theme-info-muted: rgba(59, 130, 246, 0.15);
+  --theme-favorite: #f43f5e;
+  --theme-favorite-muted: rgba(244, 63, 94, 0.15);
+  --theme-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --theme-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.35), 0 2px 4px -2px rgba(0, 0, 0, 0.35);
+  --theme-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.35), 0 4px 6px -4px rgba(0, 0, 0, 0.35);
+  --theme-auth-shadow: 0 25px 80px -20px rgba(0, 0, 0, 0.6), 0 10px 30px -10px rgba(0, 0, 0, 0.4);
+  --theme-bg: #181c21;
+  --theme-sidebar-text: #ffffff;
+  --theme-sidebar-hover: #34373c;
+  --theme-sidebar-hover-text: #ffffff;
+  --theme-sidebar-active-bg: #ecf6fc;
+  --theme-sidebar-active-text: #000000;
+}
+/* END derived theme defaults */
+
+/* The Studio's own color names, kept so the rest of this stylesheet reads
+   as before; each is the contract token that supplies it. */
+:root {
+  --pw-navy: var(--theme-accent);
+  --pw-navy-2: var(--theme-element-hover);
+  --pw-bg: var(--theme-app-bg);
+  --pw-panel: var(--theme-panel-bg);
+  --pw-border: var(--theme-border);
+  --pw-border-strong: color-mix(in srgb, var(--theme-border) 80%, var(--theme-app));
+  --pw-text: var(--theme-app);
+  --pw-muted: var(--theme-muted-text-color);
+  --pw-muted-2: var(--theme-input-disabled-text);
+  --pw-link: var(--theme-link);
+  --pw-active-pill: color-mix(in srgb, var(--theme-accent) 12%, var(--theme-panel-bg));
+  --pw-green: var(--theme-success);
+  --pw-amber: var(--theme-warning);
+  --pw-input-bg: var(--theme-input-bg);
+  --pw-hover-row: var(--theme-hover);
+  /* Every left rail (chat, library, settings, help) shares one background. */
+  --pw-rail-bg: var(--theme-muted-panel-bg);
+  /* The navigation sits on the page ground and the pages on the panel
+     color, as in the other apps. Its rows are neutral: the accent marks
+     what is interactive, not where you are. */
+  --pw-nav-bg: var(--theme-app-bg);
+  --pw-content-bg: var(--theme-panel-bg);
+  --pw-nav-text: var(--theme-muted-text-color);
+  --pw-nav-hover: var(--theme-hover);
+  --pw-nav-active: var(--theme-hover);
+}
+
 [data-theme='dark'] .btn-secondary, [data-theme='dark'] .nav-collapse,
 [data-theme='dark'] .rail-collapse, [data-theme='dark'] .rail-expander { background: var(--pw-panel); }
 [data-theme='dark'] .field, [data-theme='dark'] .search-bar input { background: var(--pw-input-bg); color: var(--pw-text); }
@@ -109,7 +163,6 @@
 [data-theme='dark'] .index-note { background: #271f10; border-color: #4a3a12; color: #fbbf24; }
 [data-theme='dark'] .drop-note { background: #0f2231; }
 [data-theme='dark'] .result-row:hover { background: var(--theme-hover, #16233a); }
-[data-theme='dark'] .brand-badge { background: #1d4ed8; }
 [data-theme='dark'] .help-lead p, [data-theme='dark'] .help-card-body p, [data-theme='dark'] .help-card-body ul { color: #b6c2d2; }
 [data-theme='dark'] .empty-state h2 { color: var(--pw-text); }
 [data-theme='dark'] .pill-fts { background: #16324a; color: #7cb8f0; }
@@ -200,7 +253,7 @@ main.content { min-height: 0; min-width: 0; background: var(--pw-content-bg); }
 .drag-chip {
   position: absolute; top: -1000px; left: -1000px;
   padding: 4px 10px; border-radius: 4px;
-  background: var(--theme-accent, var(--pw-link)); color: #fff;
+  background: var(--theme-accent, var(--pw-link)); color: var(--theme-accent-text, #fff);
   font-size: 12px; font-weight: 500; white-space: nowrap;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
 }
@@ -240,7 +293,7 @@ main.content { min-height: 0; min-width: 0; background: var(--pw-content-bg); }
 .sidenav-brand { display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 26px; }
 .brand-badge {
   width: 24px; height: 24px; border-radius: 6px; flex-shrink: 0;
-  background: var(--pw-navy); color: #fff; font-weight: 800; font-size: 13px;
+  background: var(--theme-accent); color: var(--theme-accent-text); font-weight: 800; font-size: 13px;
   display: flex; align-items: center; justify-content: center;
 }
 .brand-icon { width: 26px; height: 26px; flex-shrink: 0; object-fit: contain; }
@@ -481,9 +534,9 @@ main.content { min-height: 0; min-width: 0; background: var(--pw-content-bg); }
 /* ---- buttons and pills ---- */
 .btn-primary {
   padding: 6px 14px; border: none; border-radius: 6px;
-  background: var(--pw-navy); color: #fff; font-size: 12.5px; font-weight: 500; cursor: pointer;
+  background: var(--theme-accent); color: var(--theme-accent-text); font-size: 12.5px; font-weight: 500; cursor: pointer;
 }
-.btn-primary:hover { background: var(--pw-navy-2); }
+.btn-primary:hover { background: var(--theme-element-hover); }
 .btn-primary:disabled { opacity: 0.6; cursor: default; }
 .btn-secondary {
   display: inline-block; padding: 4px 10px;
@@ -942,7 +995,7 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .scope-btn:hover { color: var(--pw-navy); }
 .scope-btn.active { color: var(--pw-link); border-color: var(--pw-link); }
 .scope-count {
-  background: var(--pw-link); color: #fff; border-radius: 99px;
+  background: var(--theme-accent); color: var(--theme-accent-text); border-radius: 99px;
   font-size: 10.5px; font-weight: 600; line-height: 15px; padding: 0 5px;
 }
 .scope-overlay { position: fixed; inset: 0; z-index: 39; }
@@ -1895,7 +1948,7 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .wf-tile.unavailable { opacity: .55; cursor: default; }
 .wf-icon { width: 3rem; height: 3rem; display: flex; align-items: center; justify-content: center; }
 .wf-icon img { max-width: 100%; max-height: 100%; object-fit: contain; }
-.wf-icon-blank { width: 3rem; height: 3rem; border-radius: 8px; background: var(--theme-accent, var(--pw-link)); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 1.25rem; text-transform: uppercase; }
+.wf-icon-blank { width: 3rem; height: 3rem; border-radius: 8px; background: var(--theme-accent, var(--pw-link)); color: var(--theme-accent-text, #fff); display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 1.25rem; text-transform: uppercase; }
 .wf-name { font-weight: 600; font-size: 0.9rem; line-height: 1.25; }
 .wf-note { font-size: 0.75rem; color: var(--pw-muted); }
 .wf-ok { color: var(--ok, #24612e); }

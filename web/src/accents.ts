@@ -43,28 +43,13 @@ function accentFor(name: string): Accent | null {
   return ACCENTS[name] ?? null
 }
 
-/** Surface tones: 'cool' is the stylesheet default (blue-tinted dark). */
-export const SURFACES: Record<string, { label: string; dark?: Record<string, string>; light?: Record<string, string> }> = {
-  cool: { label: 'Cool gray' },
-  neutral: {
-    label: 'Neutral gray',
-    dark: {
-      '--pw-bg': '#111214', '--pw-panel': '#191b1e', '--pw-border': '#2a2d31', '--pw-border-strong': '#41454b',
-      '--pw-input-bg': '#17191c', '--pw-hover-row': '#1e2125',
-      '--theme-muted-panel-bg': '#17191c',
-      '--theme-hover': '#212428', '--theme-input-bg': '#17191c',
-    },
-  },
-  warm: {
-    label: 'Warm gray',
-    light: { '--pw-bg': '#f5f4f1', '--pw-panel': '#fffefb', '--pw-border': '#e9e6df', '--pw-border-strong': '#d6d1c6' },
-    dark: {
-      '--pw-bg': '#151312', '--pw-panel': '#1d1a18', '--pw-border': '#302c28', '--pw-border-strong': '#48423a',
-      '--pw-input-bg': '#1a1715', '--pw-hover-row': '#22201c',
-      '--theme-muted-panel-bg': '#1a1715',
-      '--theme-hover': '#262320', '--theme-input-bg': '#1a1715',
-    },
-  },
+/** Surface tones: the background each theme is derived from. 'cool' is the
+ *  platform's own pair (its light ground and GitHub-like dark), and the
+ *  stylesheet's fallback values are derived from it. */
+export const SURFACES: Record<string, { label: string; light: string; dark: string }> = {
+  cool: { label: 'Cool gray', light: '#f3f4f6', dark: '#0d1117' },
+  neutral: { label: 'Neutral gray', light: '#f4f4f5', dark: '#111214' },
+  warm: { label: 'Warm gray', light: '#f5f4f1', dark: '#151312' },
 }
 
 function styleEl(id: string): HTMLStyleElement {
@@ -86,71 +71,44 @@ function remember(key: string, css: string): void {
   try { localStorage.setItem(key, css) } catch { /* storage unavailable */ }
 }
 
-/** Panel backgrounds the stylesheet ships with; a surface may override
- *  them, and the derived tokens follow whichever is in effect. The panel,
- *  not the page, is the right seed: the shared components render inside a
- *  card, so seeding from the page background left the chat pane grey while
- *  every other view sat on white. */
-const BASE_PANEL = { light: '#ffffff', dark: '#16202f' }
-
 let current = { accent: 'navy', surface: 'cool' }
 
-function backgrounds(): { light: string; dark: string } {
-  const sfc = SURFACES[current.surface]
+/**
+ * The whole --theme-* contract for one accent and surface, light and dark,
+ * from the shared package's deriveTheme: the same derivation the platform's
+ * other apps use, so the Studio's colors, contrast, and status hues match
+ * theirs. The seed is the page background (the ground the navigation sits
+ * on), as in the other apps; nothing derived is overridden afterward, and
+ * the Studio's own --pw-* names are aliases of these in styles.css.
+ */
+export function themeFor(accent: string, surface: string): { light: Record<string, string>; dark: Record<string, string> } {
+  const a = accentFor(accent) ?? ACCENTS.navy
+  const s = SURFACES[surface] ?? SURFACES.cool
   return {
-    light: sfc?.light?.['--pw-panel'] ?? BASE_PANEL.light,
-    dark: sfc?.dark?.['--pw-panel'] ?? BASE_PANEL.dark,
+    light: deriveTheme({ accent: a.light[0], background: s.light }),
+    dark: deriveTheme({ accent: a.dark[0], background: s.dark }),
   }
 }
 
-/** Emit both style blocks together: the platform derives its whole
- *  --theme-* token set from an accent plus a background, so the two cannot
- *  be computed independently. Shared components (the chat package, anything
- *  adopted from @parallelworks/ui) read those tokens, which is why hand
- *  mapping a few of them still left stock blue showing in dark mode. */
 function emit(): void {
-  const a = accentFor(current.accent) ?? ACCENTS.navy
-  const bg = backgrounds()
-  const solid = mix(a.light[0], '#ffffff', 0.18)
-  const solidHover = mix(a.light[0], '#ffffff', 0.3)
   const vars = (v: Record<string, string>) => Object.entries(v).map(([k, x]) => `${k}: ${x};`).join(' ')
-
-  let themeLight = ''
-  let themeDark = ''
+  let css = ''
   try {
-    themeLight = vars(deriveTheme({ accent: a.light[0], background: bg.light }))
-    themeDark = vars(deriveTheme({ accent: a.dark[0], background: bg.dark }))
-  } catch { /* our own variables still theme the app */ }
-
-  const sfc = SURFACES[current.surface]
-  const block = (v?: Record<string, string>) =>
-    v ? Object.entries(v).map(([k, x]) => `${k}: ${x};`).join(' ') : ''
-  // Doubled selectors (:root:root) outrank the plain :root rules the shared
-  // packages ship, so these win wherever they land in the cascade. Without
-  // that, the cached copy applied before first paint loses to the bundle's
-  // stylesheet the moment it loads, and the page flashes stock blue before
-  // settling on the configured theme.
-  const surfaceCss = !sfc || current.surface === 'cool' ? '' : `
-:root:root { ${block(sfc.light)} }
-:root:root[data-theme='dark'] { ${block(sfc.dark)} }
+    const t = themeFor(current.accent, current.surface)
+    // Doubled selectors (:root:root) outrank the plain :root rules the shared
+    // packages ship, so these win wherever they land in the cascade. Without
+    // that, the cached copy applied before first paint loses to the bundle's
+    // stylesheet the moment it loads, and the page flashes stock blue before
+    // settling on the configured theme.
+    css = `
+:root:root { ${vars(t.light)} }
+:root:root[data-theme='dark'] { ${vars(t.dark)} }
 `
-  // The platform derives hover as a neutral tint. Ours carries a little of
-  // the accent instead, so choosing green does not leave blue-grey hovers
-  // behind on rows and menu items.
-  const hoverLight = mix(bg.light, a.light[0], 0.07)
-  const hoverDark = mix(bg.dark, a.dark[0], 0.14)
-
-  const accentCss = `
-:root:root { ${themeLight} --pw-navy: ${a.light[0]}; --pw-navy-2: ${a.light[1]}; --pw-active-pill: ${a.light[2]}; --pw-link: ${a.light[1]}; --theme-link: ${a.light[1]}; --theme-hover: ${hoverLight}; --pw-hover-row: ${hoverLight}; }
-:root:root[data-theme='dark'] { ${themeDark} --pw-navy: ${a.dark[0]}; --pw-navy-2: ${a.dark[1]}; --pw-active-pill: ${a.dark[2]}; --pw-link: ${a.dark[0]}; --theme-link: ${a.dark[0]}; --theme-element: ${solid}; --theme-hover: ${hoverDark}; --pw-hover-row: ${hoverDark}; }
-:root[data-theme='dark'] .btn-primary { background: ${solid}; }
-:root[data-theme='dark'] .btn-primary:hover { background: ${solidHover}; }
-:root[data-theme='dark'] .brand-badge { background: ${solid}; }
-`
-  styleEl('surface-style').textContent = surfaceCss
-  styleEl('accent-style').textContent = accentCss
-  remember('ade-surface-css', surfaceCss)
-  remember('ade-accent-css', accentCss)
+  } catch { /* the stylesheet's derived defaults still theme the app */ }
+  styleEl('accent-style').textContent = css
+  styleEl('surface-style').textContent = ''
+  remember('ade-accent-css', css)
+  remember('ade-surface-css', '')
 }
 
 export function applyAccent(name: string): void {

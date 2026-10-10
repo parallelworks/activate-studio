@@ -18,7 +18,11 @@
       try {
         var d = document.documentElement
         var t = localStorage.getItem('ade-theme') || localStorage.getItem('ade-theme-default')
-        if (t === 'dark' || t === 'light') d.dataset.theme = t
+        if (t === 'dark' || t === 'light') {
+          d.dataset.theme = t
+          d.classList.toggle('dark', t === 'dark')
+          d.style.colorScheme = t
+        }
         var put = function (id, css) {
           if (!css) return
           var el = document.createElement('style')

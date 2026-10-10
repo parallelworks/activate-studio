@@ -219,6 +219,11 @@ export default function App() {
     const effective = (told === 'dark' || told === 'light')
       ? told : theme ?? (sysDark ? 'dark' : cfg.theme)
     document.documentElement.dataset.theme = effective
+    // The shared packages key their dark styles on a "dark" class, and the
+    // browser draws native controls (select arrows, scrollbars, the code
+    // editor) from color-scheme; without both they stay light in dark mode.
+    document.documentElement.classList.toggle('dark', effective === 'dark')
+    document.documentElement.style.colorScheme = effective
     // An installed app's title bar takes this color: the classification
     // banner's when one is drawn, so the bar and the banner read as one
     // strip, otherwise the page ground. Remembered so the next launch
