@@ -20,7 +20,7 @@ import { FleetPage } from './FleetPage'
 interface Persona { name: string; description: string; shared: boolean; icon: string }
 interface Skill { name: string; description: string; file: string }
 interface Approval { id: string; kind: string; text: string }
-interface SubTask { name: string; persona: string; objective: string; parent: string | null; depth: number; state: string; note: string; resultPath: string | null; updatedAt: string; usage?: { input: number; output: number; total: number; cost?: number | null } | null; sessionId?: string | null; approvals?: Approval[] | null }
+interface SubTask { name: string; persona: string; objective: string; parent: string | null; depth: number; state: string; note: string; resultPath: string | null; updatedAt: string; usage?: { input: number; output: number; total: number; cost?: number | null } | null; sessionId?: string | null; approvals?: Approval[] | null; host?: string | null }
 interface TaskRow { id: string; objective: string; state: string; agents: number; running: number; waiting?: number; runtime?: 'runner' | 'session'; usage?: { input: number; output: number; total: number; cost?: number | null } | null }
 interface PlatformRun { slug: string; workflow: string; resource: string | null; conversationId: string | null; launchedAt: string; state: string; endedAt: string | null }
 interface TaskDetail extends TaskRow { maxAgents: number; maxDepth: number; board: { seq: number; at: string; from: string; topic: string; body: string }[] }
@@ -240,6 +240,11 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
   const STATE_DOT: Record<string, string> = { working: 'ok', completed: 'off', 'input-required': 'warn' }
   const dotFor = (st: string) => STATE_DOT[st] ?? 'warn'
   const doneCount = (mi: TaskRow) => mi.agents - mi.running
+  // Where the agents run. Shown once in the task header when they share a
+  // machine, and on each row only when they are spread across machines.
+  const hostLabel = (h: string) => h.split('/').pop() || h
+  const hosts = new Set((detail?.agents ?? []).map(a => a.host).filter((h): h is string => !!h))
+  const sharedHost = hosts.size === 1 ? [...hosts][0] : null
 
   return (
     <div className="overview-view agents-view">
@@ -313,7 +318,10 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
             <div className="task-detail">
               <div className="task-detail-head">
                 <span className={`status-dot ${dotFor(detail.state)}${detail.state === 'working' ? ' pulse' : ''}`} />
-                <span className="task-detail-objective">{detail.objective}</span>
+                <span className="task-detail-title">
+                  <span className="task-detail-objective">{detail.objective}</span>
+                  {sharedHost && <span className="tree-host" title={`Every agent in this task runs on ${sharedHost}`}>on {hostLabel(sharedHost)}</span>}
+                </span>
                 {detail.state === 'working' && (
                   <button className="btn-secondary" onClick={async () => { await fetch(`/api/tasks/${encodeURIComponent(detail.id)}/stop`, { method: 'POST' }) }}>Cancel</button>
                 )}
@@ -344,6 +352,7 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
                         {a.depth > 0 && <span className="tree-elbow" style={{ left: `${a.depth * 20 - 8}px` }} />}
                         <span className={`status-dot ${dotFor(a.state)}${a.state === 'working' ? ' pulse' : ''}`} />
                         <span className="tree-name">{a.name}</span>
+                        {a.host && !sharedHost && <span className="tree-host" title={`Runs on ${a.host}`}>{hostLabel(a.host)}</span>}
                         <span className="tree-note muted">{a.state === 'working' ? a.note : a.state}{a.usage?.total ? ` · ${fmtTokens(a.usage.total)} tok${a.usage.cost != null ? ` · $${a.usage.cost.toFixed(2)}` : ''}` : ''}</span>
                         {a.resultPath && (
                           <button className="link-button" onClick={e => { e.stopPropagation(); onOpen(a.resultPath!) }}>result</button>
@@ -357,7 +366,7 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
                           )}
                           {a.sessionId && (
                             <p className="muted">
-                              pw code session <code>{a.sessionId}</code>; open it in a terminal on this host
+                              pw code session <code>{a.sessionId}</code>; open it in a terminal on {a.host ? <code>{hostLabel(a.host)}</code> : 'that host'}
                               with <code>pw code -r {a.sessionId}</code>, or from ACTIVATE's agents page.
                             </p>
                           )}

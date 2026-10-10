@@ -49,7 +49,7 @@ const daemon = http.createServer((req, res) => {
     const send = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(obj === undefined ? '' : JSON.stringify(obj)) }
     const b = body ? JSON.parse(body) : {}
     const u = req.url
-    if (u === '/v1/status') return send(200, { protocolVersion: 2, version: 'v-test', pid: 1, hostname: 'h', sessions: sessions.size, remoteStart: true, remoteMaxPermissionMode: 'read-only' })
+    if (u === '/v1/status') return send(200, { protocolVersion: 2, version: 'v-test', pid: 1, hostname: 'node-7', sessions: sessions.size, remoteStart: true, remoteMaxPermissionMode: 'read-only' })
     if (req.method === 'POST' && u === '/v1/sessions') {
       const id = `sess-${++n}`
       seen.creates.push(b)
@@ -128,6 +128,7 @@ test('a session agent carries the board inline, works, and completes from its re
   assert.ok(!m.board.some(x => /did not connect/.test(x.body)), 'no false alarm about the board')
   assert.equal(m.maxDepth, 0, 'a depth of 0 is kept, not replaced by the default')
   assert.match(a.sessionId, /^sess-/)
+  assert.equal(a.host, 'node-7', 'the agent names the machine its daemon runs on')
   assert.ok(fs.readFileSync(path.join(kb, a.resultPath), 'utf8').includes('session work done'))
   assert.deepEqual(a.usage, { input: 1200, output: 300, total: 1500, cost: null })
   const live = fs.readFileSync(path.join(idx, 'tasks', m.id, 'work', a.name, 'live.log'), 'utf8')

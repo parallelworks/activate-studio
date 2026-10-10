@@ -70,7 +70,7 @@ On the ACTIVATE platform, the Workflows tab shows the workflows chosen for {appN
 
 When a request splits into parts, the assistant can hand each part to an agent working in parallel. The Agents tab has three pages:
 
-- **Tasks**: each delegated task, its agents, and their output. Approve or deny what an agent asks to do, or give a working agent direction.
+- **Tasks**: each delegated task, its agents, the machine they run on, and their output. Approve or deny what an agent asks to do, or give a working agent direction.
 - **Fleet**: standing agents that wake on a schedule or when something changes, and ask you when they need a decision.
 - **Personas and skills**: the files that shape how the assistant behaves.
 

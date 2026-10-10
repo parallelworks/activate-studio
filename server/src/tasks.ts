@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process'
 import { withWorkspace } from './workspace.js'
 import fs from 'node:fs'
+import os from 'node:os'
 import { randomBytes } from 'node:crypto'
 import path from 'node:path'
 import type { FastifyInstance } from 'fastify'
@@ -56,6 +57,9 @@ export interface AgentTask {
   sessionId?: string | null
   /** Session agents only: what the agent is waiting for a person to approve. */
   approvals?: PendingApproval[] | null
+  /** The machine the agent runs on: the task's system for campaign agents,
+   *  the pw code daemon's host for session agents, this host for runners. */
+  host?: string | null
 }
 export interface PendingApproval { id: string; kind: string; text: string }
 /** runner: one-shot pw code runs. session: sessions in the pw code daemon. */
@@ -503,6 +507,7 @@ function spawnAgent(m: Task, opts: { persona: string; objective: string; parent:
     name, persona: opts.persona, objective: opts.objective, parent: opts.parent, depth: opts.depth,
     state: 'working', startedAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
     note: 'starting', resultPath: null, runSlug: null,
+    host: m.execution === 'campaign' ? m.resource : os.hostname(),
   }
   m.nodes.set(name, p)
   post(m, 'orchestrator', 'spawn', `${name} (persona ${opts.persona || 'none'}, depth ${opts.depth}${opts.parent ? `, child of ${opts.parent}` : ''}${m.execution === 'campaign' ? `, campaign on ${m.resource}` : ''}): ${opts.objective}`)
@@ -630,7 +635,8 @@ function spawnSessionAgent(m: Task, p: AgentTask, prompt: string): void {
   fs.mkdirSync(workdir, { recursive: true })
   void (async () => {
     try {
-      await pwcode.ensureDaemon()
+      const daemon = await pwcode.ensureDaemon()
+      if (daemon.hostname) p.host = daemon.hostname
       const { taskToolNames } = await import('./mcp.js')
       const agentsJson = JSON.stringify({
         [SESSION_AGENT]: {
@@ -646,7 +652,7 @@ function spawnSessionAgent(m: Task, p: AgentTask, prompt: string): void {
       })
       p.sessionId = session.id
       p.note = 'session started'
-      post(m, 'orchestrator', 'spawn', `${p.name} runs as pw code session ${session.id}`)
+      post(m, 'orchestrator', 'spawn', `${p.name} runs as pw code session ${session.id} on ${p.host}`)
       if (p.state !== 'working') { void pwcode.interruptSession(session.id).catch(() => {}); return }
       const servers = await pwcode.waitForMcp(session.id)
       const board = servers.find(x => x.name === 'task')
