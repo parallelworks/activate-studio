@@ -82,16 +82,16 @@ type SectionId = 'general' | 'access' | 'tools' | 'rag' | 'previews' | 'ext' | '
  * find is off for everyone regardless of the switch. Workflows appears
  * only when the Studio runs on the platform, since it lists the platform's.
  */
-export function settingsSections(opts: { authEnabled: boolean; platform?: boolean }): { id: SectionId; label: string }[] {
+export function settingsSections(opts: { authEnabled: boolean; platform?: boolean }): { id: SectionId; label: string; group: string | null }[] {
   return [
-    { id: 'general', label: 'General' },
-    ...(opts.authEnabled ? [{ id: 'access' as SectionId, label: 'Model access' }] : []),
-    { id: 'rag', label: 'External access' },
-    { id: 'tools', label: 'Assistant tools' },
-    { id: 'previews', label: 'Feature previews' },
-    { id: 'ext', label: 'Extensions' },
-    { id: 'libraries', label: 'Libraries' },
-    ...(opts.platform ? [{ id: 'workflows' as SectionId, label: 'Workflows' }] : []),
+    { id: 'general', label: 'General', group: 'Studio' },
+    { id: 'libraries', label: 'Libraries', group: 'Studio' },
+    ...(opts.platform ? [{ id: 'workflows' as SectionId, label: 'Workflows', group: 'Studio' }] : []),
+    ...(opts.authEnabled ? [{ id: 'access' as SectionId, label: 'Model access', group: 'Assistant' }] : []),
+    { id: 'tools', label: 'Assistant tools', group: 'Assistant' },
+    { id: 'previews', label: 'Feature previews', group: 'Assistant' },
+    { id: 'ext', label: 'Extensions', group: 'Assistant' },
+    { id: 'rag', label: 'External access', group: null },
   ]
 }
 
@@ -143,6 +143,8 @@ export function SettingsView() {
   const [catalog, setCatalog] = useState<CatalogTool[]>([])
   const [mcpStatus, setMcpStatus] = useState<{ name: string; url: string; tools: number; error: string | null }[]>([])
   const [ext, setExt] = useState<Extensions | null>(null)
+  // Settings rail groups the visitor opened or closed this visit.
+  const [railOpen, setRailOpen] = useState<Record<string, boolean>>({})
   const [runtime, setRuntime] = useState<{ local: { available: boolean; reason: string | null; version: string | null; remoteStart: boolean | null; remoteMaxPermissionMode: string | null } } | null>(null)
   const [specOpen, setSpecOpen] = useState<string | null>(null)
   const [me, setMe] = useState<{ authEnabled?: boolean; verified: boolean; mode: 'stored' | 'session' | 'none'; last4?: string; addedAt?: string; sessionExpiresAt?: string; kind?: string; credExpiresAt?: string | null; credExpired?: boolean; baseUrl?: string | null; gatewayHost?: string
@@ -307,11 +309,30 @@ export function SettingsView() {
       <div className="help-docs card">
         <nav className="help-nav">
           <div className="help-nav-head"><span>Settings</span></div>
-          {sections.map(s => (
-            <button key={s.id} className={section === s.id ? 'active' : ''} onClick={() => goSection(s.id)}>
-              <span>{s.label}</span>
-            </button>
-          ))}
+          {/* Grouped like the user guide's rail: a group opens when it holds
+              the section being edited, and a header click opens or closes it. */}
+          {sections.reduce<{ name: string | null; items: typeof sections }[]>((acc, sec) => {
+            const last = acc[acc.length - 1]
+            if (last && last.name === sec.group && sec.group !== null) last.items.push(sec); else acc.push({ name: sec.group, items: [sec] })
+            return acc
+          }, []).map((g, i) => {
+            const rows = g.items.map(s => (
+              <button key={s.id} className={section === s.id ? 'active' : ''} onClick={() => goSection(s.id)}>
+                <span>{s.label}</span>
+              </button>
+            ))
+            if (!g.name || g.items.length === 1) return <div key={`flat-${i}`} className="help-nav-group">{rows}</div>
+            const open = railOpen[g.name] ?? g.items.some(s => s.id === section)
+            return (
+              <div key={g.name} className="help-nav-group">
+                <button className="help-nav-group-head" aria-expanded={open} onClick={() => setRailOpen(o => ({ ...o, [g.name!]: !open }))}>
+                  <span>{g.name}</span>
+                  <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="m6 4 4 4-4 4"/></svg>
+                </button>
+                {open && <div className="help-nav-group-pages">{rows}</div>}
+              </div>
+            )
+          })}
         </nav>
         <article className="help-content settings-content">
 

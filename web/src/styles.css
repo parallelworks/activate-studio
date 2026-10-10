@@ -157,7 +157,6 @@
 [data-theme='dark'] .md-body pre, [data-theme='dark'] .text-body { background: #0f172a; border-color: var(--pw-border); }
 [data-theme='dark'] .index-note { background: #271f10; border-color: #4a3a12; color: #fbbf24; }
 [data-theme='dark'] .drop-note { background: #0f2231; }
-[data-theme='dark'] .result-row:hover { background: var(--theme-hover, #16233a); }
 [data-theme='dark'] .help-lead p, [data-theme='dark'] .help-card-body p, [data-theme='dark'] .help-card-body ul { color: #b6c2d2; }
 [data-theme='dark'] .empty-state h2 { color: var(--pw-text); }
 [data-theme='dark'] .pill-fts { background: #16324a; color: #7cb8f0; }
@@ -586,7 +585,7 @@ textarea.field { line-height: 1.5; }
 }
 .result-row { padding: 10px 16px; border-bottom: 1px solid var(--pw-border); cursor: pointer; }
 .result-row:last-child { border-bottom: none; }
-.result-row:hover { background: #f8fafc; }
+.result-row:hover { background: var(--theme-hover); }
 .result-top { display: flex; align-items: center; gap: 10px; justify-content: space-between; }
 .result-path { font-family: ui-monospace, monospace; font-size: 13px; color: var(--pw-navy); word-break: break-all; }
 .result-snippet { font-size: 13px; color: var(--pw-muted); margin-top: 3px; line-height: 1.45; }
@@ -946,8 +945,8 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .result-pills { margin-left: auto; }
 .result-row .row-check { opacity: 0; }
 .result-row:hover .row-check, .search-results.has-sel .row-check { opacity: 1; }
-.result-row.multi { background: #fef3c7; }
-.result-row.multi:hover { background: #fde68a; }
+.result-row.multi { background: var(--theme-warning-muted); }
+.result-row.multi:hover { background: color-mix(in srgb, var(--theme-warning) 18%, transparent); }
 [data-theme='dark'] .result-row.multi { background: #3b2f12; }
 [data-theme='dark'] .result-row.multi:hover { background: #4a3a15; }
 .query-results th.sel-col, .query-results td.sel-col { width: 26px; padding-right: 0; }
@@ -1971,11 +1970,11 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 /* Page header bar for the list-style views: the section's name and a short
    note, flush with the content, ruled off below. */
 .page-head {
-  display: flex; align-items: baseline; gap: 14px; flex-shrink: 0;
-  min-height: 52px; padding: 14px 22px 12px; box-sizing: border-box;
+  display: flex; align-items: center; gap: 12px; flex-shrink: 0;
+  min-height: 48px; padding: 0 20px; box-sizing: border-box;
   border-bottom: 1px solid var(--pw-border); background: var(--pw-content-bg);
 }
-.page-head h1 { margin: 0; font-size: 16px; font-weight: 600; color: var(--pw-text); white-space: nowrap; }
+.page-head h1 { margin: 0; font-size: 14px; font-weight: 600; color: var(--pw-text); white-space: nowrap; }
 .page-note { min-width: 0; font-size: 13px; color: var(--pw-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 @media (max-width: 720px) {
   .page-head { min-height: 44px; padding: 10px 14px; }
@@ -1992,7 +1991,7 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .sidenav-brand .brand-text { font-size: 14px; color: var(--pw-text); }
 .sidenav-brand .brand-text b { color: var(--pw-text); letter-spacing: 0; font-weight: 600; }
 /* The Agents tabs no longer sit under a title. */
-.agents-view .ov-head { padding: 0 24px; }
+.agents-view .ov-head { padding: 0 20px; }
 .hist-view > .empty-state { grid-column: 1 / -1; }
 
 /* Chat rail: Select chats, and the bulk selection panel it opens. */
@@ -2127,3 +2126,39 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 }
 * { scrollbar-width: thin; scrollbar-color: var(--pw-border) transparent; }
 *:hover { scrollbar-color: color-mix(in srgb, var(--pw-muted) 55%, transparent) transparent; }
+
+/* ---- page frame, as in the platform's list pages ----
+   Lists run edge to edge under the 48px header: no outer gutter or card,
+   a strip of controls on the panel with a rule beneath it, slim sticky
+   heading rows, and 20px row padding. Grouped figures (the Stats tiles,
+   workflow tiles, agent cards) keep their cards at a 20px inset. */
+.search-view, .query-view { padding: 0; gap: 0; }
+.search-view > .card, .query-view > .card { border: 0; border-radius: 0; box-shadow: none; }
+.search-view > .search-hero, .query-view > .query-controls { border-bottom: 1px solid var(--pw-border); }
+.search-hero { padding: 12px 20px; }
+.search-bar { margin-top: 0; }
+.search-bar input {
+  min-height: 32px; padding: 5px 10px; font-size: 14px;
+  border: 1px solid var(--theme-border); border-radius: 6px; background: var(--theme-input-bg); color: var(--pw-text);
+}
+.search-bar input:focus { outline: none; border-color: var(--theme-link); box-shadow: 0 0 0 3px var(--theme-focus-ring); }
+.search-results .results-head, .query-view .results-head {
+  position: sticky; top: 0; z-index: 2; padding: 6px 20px;
+  font-size: 12px; font-weight: 500; text-transform: none; letter-spacing: 0;
+  background: color-mix(in srgb, var(--theme-app-bg) 95%, transparent); backdrop-filter: blur(6px);
+}
+.result-row { padding: 10px 20px; border-bottom-color: color-mix(in srgb, var(--pw-border) 60%, transparent); transition: background 0.15s ease; }
+.results-more { padding: 10px 20px; }
+.query-controls { padding: 12px 20px 16px; }
+.overview-view { padding: 20px; }
+.agents-view { padding: 0 0 20px; gap: 16px; }
+.agents-view > .ov-head { border: 0; border-radius: 0; box-shadow: none; border-bottom: 1px solid var(--pw-border); }
+.agents-view > :not(.ov-head) { margin-inline: 20px; }
+@media (max-width: 760px) {
+  .search-hero, .query-controls { padding: 10px 14px; }
+  .result-row, .search-results .results-head, .query-view .results-head { padding-inline: 14px; }
+  .overview-view { padding: 14px; }
+  .agents-view > :not(.ov-head) { margin-inline: 14px; }
+}
+/* Toolbar buttons inside list headings take the compact 28px size. */
+.results-head .btn-secondary, .results-toolbar .btn-secondary { min-height: 28px; padding: 0 10px; font-size: 13px; }
