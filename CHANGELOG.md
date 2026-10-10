@@ -2,6 +2,73 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.87 (2026-10-10)
+
+### Change log through v1.86 (#384)
+
+Regenerated with `node scripts/release-notes.mjs --changelog` after the v1.86 release.
+
+### fix(web): the phone chat uses the package's drawer, and the picker names shared providers' owners (#385)
+
+Bumps `@parallelworks/ui` from 0.24.2 to 0.31.0. That release lets a host own the conversation list's drawer (parallelworks/foundation#187), which this view had been building out of CSS.
+
+**Phone conversations list**
+- At the phone breakpoint (760px, the same one the bottom bar uses) `ChatLayout` runs with `sidebarMode="drawer"` and `drawerToggle={false}`. The bottom-bar Chat item still toggles it, now through `ChatProvider`'s `drawerOpen` / `onDrawerOpenChange`.
+- The package closes the drawer on a pick, New chat, a tap outside or Escape, and returns focus to whatever opened it.
+- Removed: the transform rules on the layout's first child, the hidden package toggle, our backdrop element, and the `.chat-rail-backdrop` styles. The show-all filter still rides on the open drawer, raised above the package's drawer layer.
+
+**Activity drawer**
+The package dropped the right-hand Activity drawer in 0.27 (reasoning now shows in place in the thread). The DOM observer that mirrored its open state, the width variable, the drag handle and their CSS had nothing left to act on and are removed.
+
+**Shared providers**
+The server no longer appends "· shared by <owner>" to the names of providers shared into the account. Since 0.31.0 (parallelworks/foundation#192) the picker names the owner itself, from each model's `provider_owner`, which the gateway already sends; organization providers have none and are not labeled.
+
+Checked in the browser at 420px and 1400px widths: closed by default with the thread at full width, opened from the Chat item, closed by a tap outside, New chat and Escape, and back to the inline column when widened. `pnpm test` passes (server 230, web 54).
+
+### Delegated agents can run as pw code sessions (#386)
+
+Settings, Delegation has a new "Agent execution" choice (`AGENT_EXECUTION`):
+
+| Value | Agents run as |
+|---|---|
+| `runner` (default, unchanged behavior) | one-shot `pw code -p` runs, or platform workflow runs for a campaign |
+| `sessions` | sessions in the local pw code daemon |
+| `both` | either, chosen per task; the `delegate` tool gains a `runtime` parameter, defaulting to sessions |
+
+Campaigns on other systems stay on the runner until remote sessions arrive through the platform's agents routes.
+
+**Session agents.** A new `server/src/pwcode.ts` talks to the daemon over its Unix socket, `$XDG_STATE_HOME/pw/code-<hostname>.sock`, or `PW_CODE_SOCKET`. Only the account running the Studio can open that socket. The client checks protocol 2 by strict equality, as the CLI does. If no daemon is running, it starts one pinned to `PW_CONTEXT`.
+
+Each agent is a read-only session created with:
+- the task board registered inline, as an agent definition passed in `agentsJson`;
+- the board and corpus tools pre-approved, as `mcp__task__*`;
+- remote control on.
+
+The board is reached on loopback. The task token travels only in the request body, never in process arguments or a file.
+
+The Studio polls each session (`STUDIO_SESSION_POLL_MS`, default 2 seconds):
+- History goes to the agent's live log.
+- An approval request makes the agent `input-required`. It is posted to the board and shown in the Agents view under "Waiting for your approval", with Approve and Deny (`POST /api/tasks/:id/agents/:name/approvals/:approvalId`).
+- A working agent takes direction mid-turn from a Steer box (`POST .../direction`).
+- The end of the turn completes the agent through the existing result contract. Token usage comes from the session state.
+- A turn that ends without a reply fails the agent with a reason.
+
+Stopping a task interrupts its sessions. A restart reattaches to working sessions, since they live in the daemon. `GET /api/tasks/runtime` reports the setting and the daemon's version, usability, and remote session policy, and Settings shows that line.
+
+**Runner fixes.**
+- Runners no longer write `.agents/settings.local.json`. pw code ignores that file until someone approves it interactively, so the board never reached one-shot workers.
+- Campaign runs are no longer sent the board token. The session proxy in front of the Studio's public address refuses it anyway.
+- Prompts mention board tools only to agents that have them.
+- A delegation depth of 0 was treated as missing and replaced by 2, so "0 stops agents starting their own subtasks" never applied. It is now kept.
+
+**Checked.**
+- `sessionAgents.test.mjs`, against a fake daemon on a Unix socket, covers the session request, the board waiting to connect before the prompt, completion and usage, approval, steering and interrupt, a turn with no reply, and the settings values.
+- `board.test.mjs` and `tasks.test.mjs` are updated for the runner.
+- Against the real daemon (v7.122.0, protocol 2), sessions are created read-only with remote control on. The inline board connects over loopback with 12 tools, and a turn refused for an expired platform login fails the agent with its reason. The success path with a live model is not yet run.
+- Server tests (237) and web tests (54) pass.
+
+Docs: new `docs/AGENTS.md`; the Agents tab section of `docs/HELP.md` is updated.
+
 ## v1.86 (2026-10-09)
 
 ### Change log through v1.85 (#382)
