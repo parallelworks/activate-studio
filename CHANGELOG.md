@@ -2,6 +2,50 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.92 (2026-10-10)
+
+### Change log through v1.91 (#396)
+
+Regenerated with `node scripts/release-notes.mjs --changelog` after the v1.91 release.
+
+### Geist type, controls, page frame, and the settings rail, to the shared spec (#397)
+
+The second pass at matching the ACTIVATE platform and the other Parallel Works apps, after the shared theme in v1.91. The values come from a survey of the platform's web app, `@parallelworks/ui`, and the shared theme. Where the Studio's own needs differ, its layouts stay: the phone bottom bar, the Library's tree and viewer, Help's reading width, and the chat.
+
+**Type**
+- Geist Sans and Geist Mono, the platform's and the shared chat's typefaces, from `@parallelworks/ui/fonts.css`. This replaces Public Sans and the `@fontsource` packages (`public-sans`, `geist`, `geist-mono`), which are removed.
+- `--font-sans` and `--font-mono` carry the families, and the stylesheet uses them throughout.
+- Font sizes drop from thirteen values to six: 11, 12, 13, 14, 16 and 20px.
+
+**Controls**
+- **Buttons:** 32px with 14px labels at weight 500 and 6px corners. Primary uses the theme accent and its text color. Secondary is bordered on the panel, with a hover fill. A new ghost style and the danger buttons use the theme's error colors. Toolbar buttons in list headings take a compact 28px.
+- **Inputs and selects:** 32px, on the theme's input and border colors, with a 3px accent focus ring.
+- **Tabs:** 14px, with a 2px bar in the text color under the active tab, as the platform's tabs are.
+
+**Page frame**
+- The page header is 48px with a 14px title.
+- **Search and Query** lose their gutter and outer cards:
+  - their controls sit in a strip under the header;
+  - results run edge to edge with 20px row padding and lighter dividers;
+  - list headings are slim, sticky rows;
+  - hover and multi-select use the theme's hover and warning tints.
+- **Agents:** its tabs are a strip under the header, with content at a 20px inset.
+- **Stats and Workflows** keep their tiles as cards at a 20px inset.
+
+**Settings rail.** The same groups as the user guide's rail:
+- **Studio:** General, Libraries, Workflows.
+- **Assistant:** Model access, Assistant tools, Feature previews, Extensions.
+- **External access:** on its own.
+
+A group opens when it holds the section being edited, and its header opens or closes it.
+
+**Removed:** the dark-mode patch rules for fields, field focus, tabs, and secondary buttons, which these styles replace.
+
+**Checked.**
+- Screenshots in light and dark of Search with results, Query, Stats, Agents, and Settings.
+- A settings rail test covers the groups.
+- Server tests (237) and web tests (66) pass.
+
 ## v1.91 (2026-10-10)
 
 ### Change log through v1.90 (#394)
