@@ -4,7 +4,7 @@ Contributions are welcome: bug reports, fixes, new extractors, viewers, document
 
 ## Getting it running
 
-The README's standalone section and [`docs/MACOS.md`](docs/MACOS.md) cover setup. The short version:
+The README's quick start and [`docs/MACOS.md`](docs/MACOS.md) cover setup. The short version:
 
 ```
 pnpm install
@@ -19,6 +19,15 @@ Node 26 or newer and pnpm are required. GUFI is needed only for the indexed sear
 This is a pnpm workspace: `server/` is the Fastify API and `web/` the React client. Add or upgrade a dependency with pnpm from the repository root, for example `pnpm --filter @activate-studio/web add <package>`, and commit `pnpm-lock.yaml` with it. Running `npm install` inside a package leaves the lockfile stale and CI, which installs with a frozen lockfile, will fail.
 
 New dependency versions must be at least 24 hours old; the workspace enforces this.
+
+| Directory | Holds |
+|---|---|
+| `server/` | the Fastify server: knowledge base API, search, the assistant's tool loop, ingestion, indexing, queries, workflows, agents |
+| `web/` | the React interface |
+| `indexer/` | the GUFI build, full re-indexing, and text, OCR, and image extraction |
+| `testdata/` | a synthetic corpus and the end-to-end extraction test |
+| `deploy/` | the ACTIVATE workflow, the bundle builder, and the container definition |
+| `docs/` | the user guide (`HELP.md`) and the other documents listed in the README |
 
 Architecture and design notes live in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), and the multi-index design in [`docs/LIBRARIES.md`](docs/LIBRARIES.md).
 
@@ -41,6 +50,21 @@ Pull requests are squash-merged and need two approving reviews from maintainers,
 Commit messages must not carry automated-assistant attribution trailers; the organization's rules reject them at merge.
 
 Do not include hostnames, account codes, or names of the systems or organizations a deployment serves, in code, tests, or text. Test fixtures use neutral names.
+
+## The user guide
+
+`docs/HELP.md` is the user guide: the app's Help page shows it, and the assistant reads it to answer questions about the Studio. A change people will see updates it in the same pull request, and the README too when the change alters what the Studio offers. Keep the guide short and task-first: what a part of the app is for and the few things people do there, in plain words. Details go in `docs/REFERENCE.md` or the topic documents under `docs/`, which the assistant also reads. Name settings exactly as the Settings page labels them. A new document under `docs/` goes in the README's documentation table and in the `STUDIO_DOCS` list in `server/src/chat/tools.ts`, so the assistant can read it.
+
+## Releases
+
+Every version is a tag, and every tag is a GitHub Release whose notes are the descriptions of the pull requests it contains. `CHANGELOG.md` is the same record for every version at once. Both come from one script:
+
+```
+node scripts/release-notes.mjs v1.59        # notes for one version
+node scripts/release-notes.mjs --changelog  # regenerate CHANGELOG.md
+```
+
+To cut a release: merge, tag `vX.Y`, push the tag, publish with `gh release create vX.Y --title vX.Y --notes "$(node scripts/release-notes.mjs vX.Y)"`, and regenerate the change log in a pull request.
 
 ## Reporting bugs and security issues
 
