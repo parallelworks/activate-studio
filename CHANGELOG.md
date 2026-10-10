@@ -2,6 +2,26 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.96 (2026-10-10)
+
+### Change log through v1.95 (#403)
+
+Regenerated with `node scripts/release-notes.mjs --changelog` after the v1.94 and v1.95 releases.
+
+### Agents view names the machine each agent runs on (#404)
+
+The Agents view now names the machine each agent runs on. For a campaign, that is the task's system. For session agents, it is the host the pw code daemon reports. For runners, it is the Studio's own host. When all of a task's agents share a machine, which is the case today, the name appears once beside the task's objective. It moves onto each agent's row only when a task's agents are spread across machines, which becomes possible once session agents run on remote systems. An agent's session line now names that host in place of "this host", and the board's spawn message for a session agent names it too.
+
+The user guide's Agents section and `docs/AGENTS.md` say where the host appears. The session agent and campaign tests check the recorded host.
+
+### Workflow icons from private repositories load with an older pw CLI (#405)
+
+Icons for workflows kept in a private GitLab project still failed to load on deployments whose pw CLI is v7.105. The fix in v1.94 depends on `imageFallbackUrl`, the platform route that reads the thumbnail with the viewer's access. The Studio gets each workflow's details from `pw workflows ls -o json`, and the v7.105 CLI drops that field from its output. That left only the direct GitLab address, which a private project refuses. The v1.94 test passed because the CLI it ran against is a newer canary build that keeps the field.
+
+When the field is missing, the Studio now rebuilds the route from the thumbnail's raw address. That address contains the same repository, ref, and file path the platform builds the route from: `raw.githubusercontent.com/<owner>/<repo>/<ref>/<file>` for GitHub and `<server>/<project>/-/raw/<ref>/<file>` for GitLab. Checked against a live platform listing, the rebuilt route matched the listed one for all 28 workflows that have one, on GitHub and on GitLab. When the CLI does list the route, it is used as before. GitHub thumbnails are still read anonymously first, so a private GitHub repository now also gets the platform route as its fallback.
+
+The icon test now includes a workflow listed the way v7.105 lists it, plus cases for parsing the raw address.
+
 ## v1.95 (2026-10-10)
 
 ### A compact Library tree: 24px rows in the UI face, rules scoped per tree (#402)
