@@ -4,6 +4,7 @@ import { currentLibrary, setLibrary } from './api'
 import { rememberHash } from './lastLocation'
 import { ChatView } from './views/ChatView'
 import { DagViewer } from './components/DagViewer'
+import { SessionView } from './components/SessionView'
 const ModelViewer = lazy(() => import('./components/ModelViewer').then(m => ({ default: m.ModelViewer })))
 import { LibraryView } from './views/LibraryView'
 import { SearchView } from './views/SearchView'
@@ -352,6 +353,9 @@ export default function App() {
   }
   if (embedKind === 'model' && embedParams.get('path')) {
     return <div className="embed-root"><Suspense fallback={null}><ModelViewer path={embedParams.get('path')!} /></Suspense></div>
+  }
+  if (embedKind === 'session' && embedParams.get('name')) {
+    return <div className="embed-root"><SessionView user={embedParams.get('user') ?? ''} name={embedParams.get('name')!} /></div>
   }
   if (embedKind === 'html' && embedParams.get('path')) {
     // The inner frame is the sandbox; the served page also carries a CSP

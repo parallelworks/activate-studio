@@ -28,7 +28,7 @@ Without `KB_ROOT`, it opens a small sample folder. Any OpenAI-compatible endpoin
 - **Search** finds exact words, related meaning, and file names in one box.
 - **Library** browses and views documents, images, PDFs, office files, and 3D models.
 - **Query** answers structured questions about the files, such as the largest or newest, or runs read-only SQL.
-- **Workflows**, on ACTIVATE, runs chosen platform workflows from their own forms.
+- **Workflows**, on ACTIVATE, runs chosen platform workflows from their own forms, and opens the sessions they start inside the Studio or in a new tab.
 - **Agents** take the parts of a larger request in parallel; you can watch them, approve what they ask to do, and steer them.
 - **Other tools**, such as pw code, can search the same knowledge base over MCP or an OpenAI-compatible endpoint.
 

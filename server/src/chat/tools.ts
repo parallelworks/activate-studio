@@ -47,6 +47,7 @@ export const TOOL_CALLS: Record<string, string> = {
   hpc_environments: 'pw environments ls (scheduler partitions, limits and required fields per system)',
   watch_run: 'pw workflows runs view <id>, polled until the run changes or exposes a session',
   workflow_runs: 'pw workflows runs ls',
+  list_sessions: 'GET /api/sessions on the platform with the user\'s key',
   workflow_run_detail: 'pw workflows runs get <id>',
   compose_workflow: 'reads each source workflow with pw workflows get, then emits a workflow that runs them as `uses:` subworkflow steps',
   validate_workflow: 'parses the YAML (inline or a knowledge base file) and validates it against the platform\'s /workflow.schema.json',
@@ -293,6 +294,22 @@ export const TOOL_SPECS: ToolSpec[] = [
         properties: {
           run: { type: 'string', description: 'Run identifier from run_workflow or workflow_runs; omit to follow the most recent run' },
           wait: { type: 'number', description: 'Seconds to wait for a change before returning, 0-120, default 45' },
+        },
+        required: [],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'list_sessions',
+      description:
+        'List the platform sessions the user can open: the interactive apps workflows start (a design explorer, a notebook, a remote desktop) and running endpoints, with the run that opened each. Pass run to keep the sessions one workflow run opened. Each running session comes with markdown that shows it inline in the reply, with a link to open it in its own tab; use it when the user wants to see or use the session.',
+      parameters: {
+        type: 'object',
+        properties: {
+          run: { type: 'string', description: 'Keep only the sessions this run opened (a run slug from run_workflow or workflow_runs)' },
+          all: { type: 'boolean', description: 'Include sessions that are not running; default false' },
         },
         required: [],
       },
@@ -721,6 +738,20 @@ export async function activeToolSpecsWithRemote(): Promise<ToolSpec[]> {
  */
 let monitorCache: { at: number; url: string | null } = { at: 0, url: null }
 const MONITOR_TTL_MS = 300_000
+
+/** The sessions a run opened, for watch_run: running ones with the markdown that shows them. */
+async function runSessionsNote(slug: string): Promise<string> {
+  const key = toolContext.getStore()?.userKey || gatewayKey()
+  if (!key) return ''
+  try {
+    const { listSessions, sessionEmbed } = await import('../sessions.js')
+    return (await listSessions(key)).filter(x => x.run?.slug === slug)
+      .map(x => x.status === 'running'
+        ? `Session ${x.name} is running. Show it inline with this markdown:\n${sessionEmbed(x)}`
+        : `Session ${x.name}: ${x.status}.`)
+      .join('\n')
+  } catch { return '' }
+}
 
 function platformAuth(): Record<string, string> {
   const key = gatewayKey()
@@ -1434,8 +1465,24 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
         }
         if (TERMINAL.has(String(doc?.status)) && String(doc?.status) !== 'completed') {
           parts.push('Use workflow_run_detail for the errors and log tail.')
+        } else {
+          parts.push(await runSessionsNote(String(doc?.slug ?? id)))
         }
         return { result: parts.filter(Boolean).join('\n').slice(0, TOOL_OUTPUT_CAP), summary: `${doc?.slug ?? id}: ${doc?.status}` }
+      }
+      case 'list_sessions': {
+        const key = toolContext.getStore()?.userKey || gatewayKey()
+        if (!key) return { result: 'No platform credential: the user can add their ACTIVATE API key under Settings, Model access.', summary: 'no credential' }
+        const { listSessions, sessionEmbed } = await import('../sessions.js')
+        const run = args.run ? String(args.run) : ''
+        const rows = (await listSessions(key))
+          .filter(x => (!run || x.run?.slug === run) && (args.all === true || x.status === 'running'))
+        if (!rows.length) return { result: run ? `Run ${run} has no ${args.all === true ? '' : 'running '}session.` : 'No running sessions.', summary: 'none' }
+        const lines = rows.map(x => [
+          `${x.name} (${x.type || 'session'}, ${x.status}${x.user ? `, owner ${x.user}` : ''}${x.resource ? `, on ${x.resource}` : ''}${x.run ? `, opened by run ${x.run.slug} of ${x.run.workflow}` : ''})`,
+          x.status === 'running' ? sessionEmbed(x) : '',
+        ].filter(Boolean).join('\n'))
+        return { result: lines.join('\n\n').slice(0, TOOL_OUTPUT_CAP), summary: `${rows.length} session${rows.length === 1 ? '' : 's'}` }
       }
       case 'workflow_runs': {
         const limit = Math.min(Number(args.limit) || 15, 50)

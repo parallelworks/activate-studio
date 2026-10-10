@@ -29,6 +29,19 @@ export function EmbedFrame({ src, title }: { src: string; title: string }) {
   const theme = useEffectiveTheme()
   const themed = !src.includes('theme=') ? `${src}&theme=${theme}` : src
   const [mode, setMode] = useState<'inline' | 'native' | 'overlay'>('inline')
+  // An embed whose content is short (a session that opens in its own tab)
+  // reports its height, so the reply does not carry an empty 480px box.
+  const frameRef = useRef<HTMLIFrameElement>(null)
+  const [height, setHeight] = useState<number | null>(null)
+  useEffect(() => {
+    const onMessage = (e: MessageEvent) => {
+      if (e.origin !== window.location.origin || e.source !== frameRef.current?.contentWindow) return
+      const d = e.data as { type?: string; height?: number | null } | null
+      if (d?.type === 'ade-embed-height') setHeight(typeof d.height === 'number' && d.height > 0 ? Math.ceil(d.height) : null)
+    }
+    window.addEventListener('message', onMessage)
+    return () => window.removeEventListener('message', onMessage)
+  }, [])
 
   const enter = useCallback(() => {
     const el = wrapRef.current
@@ -67,7 +80,7 @@ export function EmbedFrame({ src, title }: { src: string; title: string }) {
   const full = mode !== 'inline'
   return (
     <div ref={wrapRef} className={`chat-embed-wrap${mode === 'overlay' ? ' overlay' : ''}${mode === 'native' ? ' native-full' : ''}`}>
-      <iframe src={themed} title={title} className="chat-embed-frame" />
+      <iframe ref={frameRef} src={themed} title={title} className="chat-embed-frame" style={height && mode === 'inline' ? { height } : undefined} />
       <button
         type="button"
         className="chat-embed-expand"

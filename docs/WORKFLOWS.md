@@ -56,6 +56,20 @@ The form is the platform's own renderer from `@parallelworks/ui`, fed by the pla
 
 Recent runs from the tab are listed below the tiles with their state.
 
+## Sessions
+
+Workflows often open a session: a design explorer, a notebook, a remote desktop. The tab lists the viewer's running sessions above the recent runs, with the run that opened each, and the runs table names each run's session. The list comes from the platform API (`GET /api/sessions`) with the viewer's key, because the CLI's session output leaves out the field that ties a session to its run in older releases.
+
+A session opens in the Studio when the browser can show it in a frame, and otherwise in its own tab; every view has a button for its own tab. Framing works when three things hold:
+
+- the session is served from its own host under the sessions domain (an endpoint session), not under the platform's address (`/me/session/...`), whose pages refuse to be framed;
+- the Studio is open in its own tab, not inside the platform's page;
+- the Studio's address and the session's are on the same site, which they are when the Studio runs as a session on the same platform.
+
+The platform signs a browser in to each session host separately, with a `SameSite=Lax` cookie that a frame receives only under those conditions. The first visit goes through the platform's login page, which cannot load in a frame, so a session the browser has never opened shows empty or refused until it is opened once in its own tab. The view says so under the frame.
+
+In chat, `list_sessions` and `watch_run` give the assistant each session with the markdown that shows it: `![name](/?embed=session&user=<owner>&name=<session>)` for a session on its own host, or a link for one under the platform's address. When a run launched from chat opens a session, the run watcher adds it to that conversation once it is running.
+
 ## Endpoints
 
 | Route | Purpose |
@@ -69,4 +83,6 @@ Recent runs from the tab are listed below the tiles with their state.
 | `GET /api/workflows/github/resolve?w=<entry>` | the file entries a GitHub entry runs as |
 | `POST /api/workflows/item/install?w=<entry>` | copy the deployment's definition of an account workflow into the viewer's account |
 | `GET /api/workflows/runs` | recent runs |
+| `GET /api/sessions` | the viewer's sessions, newest first; `?run=<slug>` keeps one run's |
+| `GET /api/sessions/item?user=&name=` | one session |
 | `GET /api/platform/clusters`, `/partitions?cluster=`, `/buckets` | data for the pickers |
