@@ -65,11 +65,16 @@ test('status and posts reach the board and the subtask tree', async () => {
   assert.equal(getTask(m.id).nodes.get('agent-1').note, 'reading the corpus')
 })
 
-test('each worker is handed board access in its own workspace', () => {
-  const cfg = path.join(process.env.INDEX_BASE, 'tasks', m.id, 'work', 'agent-1', '.agents', 'settings.local.json')
-  const parsed = JSON.parse(fs.readFileSync(cfg, 'utf8'))
-  assert.match(parsed.mcpServers.task.url, /\/api\/mcp$/)
-  assert.equal(parsed.mcpServers.task.headers.Authorization, `Bearer ${m.token}`)
+test('a runner worker gets no workspace settings file, and so no token on disk', async () => {
+  // pw code loads a workspace settings file only once someone approves it
+  // interactively, so a one-shot worker never saw the board registered
+  // there. Session agents carry the board in their session request
+  // instead (sessionAgents.test.mjs).
+  const dir = path.join(process.env.INDEX_BASE, 'tasks', m.id, 'work', 'agent-1')
+  assert.ok(!fs.existsSync(path.join(dir, '.agents')))
+  const { taskToolNames } = await import('../dist/mcp.js')
+  const names = taskToolNames()
+  assert.ok(names.includes('board_status') && names.includes('board_post') && names.includes('search_kb'))
 })
 
 test.after(() => stopTask(m.id))

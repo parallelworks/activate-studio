@@ -1168,6 +1168,17 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .agent-row { cursor: pointer; }
 .agent-row.open td { background: var(--pw-hover-row); }
 .agent-detail { padding: 6px 8px; }
+/* An agent waiting on a person: the request and the two answers, above the
+   tree so it is seen without opening the agent. */
+.task-approvals { border: 1px solid #fcd34d; background: #fffbeb; border-radius: 6px; padding: 8px 10px; margin-bottom: 10px; }
+[data-theme='dark'] .task-approvals { border-color: #78591a; background: #2a2210; }
+[data-theme='dark'] .task-badge-warn { background: #3b2f12; color: #fcd34d; }
+.task-approval { display: flex; align-items: center; gap: 10px; justify-content: space-between; padding: 4px 0; font-size: 13px; }
+.task-approval > span:first-child { min-width: 0; overflow-wrap: anywhere; }
+.task-approval-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.task-badge-warn { background: #fef3c7; color: #92400e; }
+.agent-steer { display: flex; gap: 6px; align-items: center; margin: 6px 0; flex-wrap: wrap; }
+.agent-steer .field { flex: 1 1 16rem; min-width: 0; }
 .agent-live {
   max-height: 260px; overflow: auto; margin: 6px 0 2px;
   padding: 8px 10px; border-radius: 6px;

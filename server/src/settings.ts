@@ -16,6 +16,11 @@ import { invalidateRemote, remoteStatus } from './mcpClient.js'
 
 const FILE = path.join(INDEX_BASE, 'settings.json')
 
+export type AgentExecution = 'runner' | 'sessions' | 'both'
+const AGENT_EXECUTIONS: AgentExecution[] = ['runner', 'sessions', 'both']
+const asExecution = (v: unknown): AgentExecution | undefined =>
+  AGENT_EXECUTIONS.includes(v as AgentExecution) ? v as AgentExecution : undefined
+
 export interface StudioSettings {
   appName?: string
   kbLabel?: string
@@ -59,6 +64,9 @@ export interface StudioSettings {
   delegationEnabled?: boolean
   delegationMaxAgents?: number
   delegationMaxDepth?: number
+  /** How delegated agents run: one-shot pw code runs (runner), sessions
+   *  in the pw code daemon (sessions), or either, chosen per task (both). */
+  agentExecution?: AgentExecution
   /** Feature preview: voice conversations through an Unmute deployment. */
   voiceEnabled?: boolean
   voiceUrl?: string
@@ -118,6 +126,7 @@ export function effectiveSettings(): Required<StudioSettings> {
     delegationEnabled: s.delegationEnabled ?? process.env.DELEGATION_ENABLED !== '0',
     delegationMaxAgents: s.delegationMaxAgents ?? Number(process.env.DELEGATION_MAX_AGENTS ?? 6),
     delegationMaxDepth: s.delegationMaxDepth ?? Number(process.env.DELEGATION_MAX_DEPTH ?? 1),
+    agentExecution: s.agentExecution ?? asExecution(process.env.AGENT_EXECUTION) ?? 'runner',
     voiceEnabled: s.voiceEnabled ?? process.env.VOICE_ENABLED === '1',
     voiceUrl: s.voiceUrl ?? process.env.VOICE_URL ?? '',
     customTools: s.customTools ?? [],
@@ -232,6 +241,11 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
       }
     }
     if (body.delegationEnabled !== undefined) next.delegationEnabled = !!body.delegationEnabled
+    if (body.agentExecution !== undefined) {
+      const v = asExecution(body.agentExecution)
+      if (!v) throw new KbError(400, 'agent execution must be runner, sessions, or both')
+      next.agentExecution = v
+    }
     if (body.voiceEnabled !== undefined) next.voiceEnabled = !!body.voiceEnabled
     if (body.voiceUrl !== undefined) {
       const u = String(body.voiceUrl).trim().replace(/\/+$/, '')

@@ -19,8 +19,9 @@ import { FleetPage } from './FleetPage'
 
 interface Persona { name: string; description: string; shared: boolean; icon: string }
 interface Skill { name: string; description: string; file: string }
-interface SubTask { name: string; persona: string; objective: string; parent: string | null; depth: number; state: string; note: string; resultPath: string | null; updatedAt: string; usage?: { input: number; output: number; total: number; cost?: number | null } | null }
-interface TaskRow { id: string; objective: string; state: string; agents: number; running: number; usage?: { input: number; output: number; total: number; cost?: number | null } | null }
+interface Approval { id: string; kind: string; text: string }
+interface SubTask { name: string; persona: string; objective: string; parent: string | null; depth: number; state: string; note: string; resultPath: string | null; updatedAt: string; usage?: { input: number; output: number; total: number; cost?: number | null } | null; sessionId?: string | null; approvals?: Approval[] | null }
+interface TaskRow { id: string; objective: string; state: string; agents: number; running: number; waiting?: number; runtime?: 'runner' | 'session'; usage?: { input: number; output: number; total: number; cost?: number | null } | null }
 interface PlatformRun { slug: string; workflow: string; resource: string | null; conversationId: string | null; launchedAt: string; state: string; endedAt: string | null }
 interface TaskDetail extends TaskRow { maxAgents: number; maxDepth: number; board: { seq: number; at: string; from: string; topic: string; body: string }[] }
 
@@ -99,6 +100,29 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openTask, openAgent])
   useEffect(() => { setOpenAgent(null); setAgentTail('') }, [openTask])
+
+  // Answers to an agent's approval request and direction to a working
+  // session go straight to its pw code session; the next poll shows the
+  // result, so nothing here keeps its own copy of the agent's state.
+  const [steer, setSteer] = useState('')
+  const [actNote, setActNote] = useState('')
+  const act = async (url: string, body: unknown, done: string) => {
+    setActNote('')
+    try {
+      const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(d.error ?? `${res.status}`)
+      setActNote(done)
+    } catch (e) { setActNote(String((e as Error).message)) }
+  }
+  const answer = (agent: string, approvalId: string, allowed: boolean) => detail &&
+    act(`/api/tasks/${encodeURIComponent(detail.id)}/agents/${encodeURIComponent(agent)}/approvals/${encodeURIComponent(approvalId)}`, { allowed }, allowed ? 'Approved.' : 'Denied.')
+  const sendSteer = async (agent: string) => {
+    if (!detail || !steer.trim()) return
+    await act(`/api/tasks/${encodeURIComponent(detail.id)}/agents/${encodeURIComponent(agent)}/direction`, { text: steer }, 'Sent to the agent.')
+    setSteer('')
+  }
+  useEffect(() => { setSteer(''); setActNote('') }, [openAgent])
 
   const [pPage, setPPage] = useState(0)
   const [sPage, setSPage] = useState(0)
@@ -241,8 +265,9 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
                 five input decks"</i>, and the task appears here as a live board.
               </p>
               <p className="muted view-sub">
-                Each subtask is a headless pw code agent: local for quick work, or a campaign of platform
-                workflow runs on a connected HPC system for long work. Results land under <code>tasks/</code> in
+                Each subtask is a pw code agent: a one-shot run or a pw code session you can watch, steer, and
+                approve requests for (Settings, Delegation, Agent execution), or a campaign of platform workflow
+                runs on a connected HPC system for long work. Results land under <code>tasks/</code> in
                 the knowledge base, and the agent ceiling and depth are set under Settings, Delegation.
               </p>
             </div>
@@ -258,6 +283,8 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
                     {(mi as { execution?: string }).execution === 'campaign' && (
                       <span className="task-badge">campaign · {((mi as { resource?: string }).resource ?? '').split('/').pop() || '?'}</span>
                     )}
+                    {mi.runtime === 'session' && <span className="task-badge">pw code sessions</span>}
+                    {!!mi.waiting && <span className="task-badge task-badge-warn">{mi.waiting} waiting for approval</span>}
                   </div>
                   <div className="task-card-objective">{mi.objective}</div>
                   <div className="task-progress"><div className="task-progress-fill" style={{ width: `${mi.agents ? Math.round(100 * doneCount(mi) / mi.agents) : 0}%` }} /></div>
@@ -291,6 +318,21 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
                   <button className="btn-secondary" onClick={async () => { await fetch(`/api/tasks/${encodeURIComponent(detail.id)}/stop`, { method: 'POST' }) }}>Cancel</button>
                 )}
               </div>
+              {detail.agents.some(a => a.approvals?.length) && (
+                <div className="task-approvals">
+                  <div className="task-feed-title">Waiting for your approval</div>
+                  {detail.agents.flatMap(a => (a.approvals ?? []).map(ap => (
+                    <div key={`${a.name}:${ap.id}`} className="task-approval">
+                      <span><b>{a.name}</b> asks: {ap.text}</span>
+                      <span className="task-approval-actions">
+                        <button className="btn-primary" onClick={() => void answer(a.name, ap.id, true)}>Approve</button>
+                        <button className="btn-secondary" onClick={() => void answer(a.name, ap.id, false)}>Deny</button>
+                      </span>
+                    </div>
+                  )))}
+                  {actNote && <p className="muted">{actNote}</p>}
+                </div>
+              )}
               <div className="task-columns">
                 <div className="task-tree">
                   {detail.agents.map(a => (
@@ -312,6 +354,20 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
                           <p className="muted">{a.persona ? `${a.persona}: ` : ''}{a.objective}</p>
                           {(a as { runSlug?: string | null }).runSlug && (
                             <p className="muted">platform run <code>{(a as { runSlug?: string }).runSlug}</code></p>
+                          )}
+                          {a.sessionId && (
+                            <p className="muted">
+                              pw code session <code>{a.sessionId}</code>; open it in a terminal on this host
+                              with <code>pw code -r {a.sessionId}</code>, or from ACTIVATE's agents page.
+                            </p>
+                          )}
+                          {a.sessionId && (a.state === 'working' || a.state === 'input-required') && (
+                            <div className="agent-steer">
+                              <input className="field" value={steer} placeholder="Direction for this agent, delivered without ending its turn"
+                                onChange={e => setSteer(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') void sendSteer(a.name) }} />
+                              <button className="btn-secondary" disabled={!steer.trim()} onClick={() => void sendSteer(a.name)}>Steer</button>
+                              {actNote && <span className="muted">{actNote}</span>}
+                            </div>
                           )}
                           {a.usage?.total ? <p className="muted">tokens: {fmtTokens(a.usage.input)} in, {fmtTokens(a.usage.output)} out, {fmtTokens(a.usage.total)} total{a.usage.cost != null ? `, $${a.usage.cost.toFixed(3)}` : ''}</p> : null}
                           <pre className="agent-live">{agentTail || (a.state === 'working' ? 'No output yet; the log fills as the agent works.' : 'No output was captured for this agent.')}</pre>
