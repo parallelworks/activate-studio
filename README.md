@@ -4,7 +4,7 @@
 
 A standalone web workspace over a knowledge base directory: a chat assistant with tool calling grounded in the corpus, a library (file tree, viewer, upload and URL ingestion, original-file previews), hybrid search (full text plus semantic, including text inside office documents, PDFs, and images), and a structured query interface over the file index. It runs anywhere Node, Python, and GUFI run, against any OpenAI-compatible model endpoint.
 
-It also integrates with the Parallel Works ACTIVATE platform when present: the platform's AI gateway works with zero configuration, the assistant gains workflow tools (catalog, DAG preview, dry-run validation, execution, run monitoring), and the app can be served as a platform session. None of that is required to use it.
+It also integrates with the Parallel Works ACTIVATE platform when present: the platform's AI gateway works with zero configuration, the assistant gains workflow tools (catalog, DAG preview, dry-run validation, execution, run monitoring), a Workflows tab offers chosen workflows from the account, the marketplace, or GitHub, delegated agents can run as pw code sessions, and the app can be served as a platform session. None of that is required to use it. Browsers that install web apps can install the Studio as a desktop app.
 
 The retrieval layer is built on GUFI, the Grand Unified File Index from LANL (per-directory SQLite index with fts5 and vec0 tables). How the whole system works, including incremental indexing and the need-to-know model, is documented in `docs/ARCHITECTURE.md`. Setup and branding for your own deployment: `docs/CUSTOMIZATION.md` and `.env.example`.
 
@@ -24,7 +24,7 @@ flowchart LR
 
 - [GUFI](https://github.com/mar-file-system/GUFI) (Los Alamos National Laboratory): the metadata, full-text, and vector index.
 - [sqlite-vec](https://github.com/asg017/sqlite-vec) and [sqlite-lembed](https://github.com/asg017/sqlite-lembed): embedding storage and on-index embedding with a local GGUF model.
-- [@parallelworks/ai-chat](https://www.npmjs.com/package/@parallelworks/ai-chat): the chat interface components, driven by a custom adapter.
+- [@parallelworks/ui](https://www.npmjs.com/package/@parallelworks/ui): the chat interface (`@parallelworks/ui/ai`, driven by a custom adapter) and the platform's workflow form renderer.
 - [Streamdown](https://github.com/vercel/streamdown): streaming markdown rendering.
 - [three.js](https://threejs.org/) and [occt-import-js](https://github.com/kovacsv/occt-import-js): the 3D model viewer and STEP conversion.
 - [Tesseract](https://github.com/tesseract-ocr/tesseract): OCR for text inside images.
@@ -33,7 +33,7 @@ flowchart LR
 ## Layout
 
 - `server/` Fastify + TypeScript: KB API, hybrid search, chat tool loop against an OpenAI-compatible model endpoint, upload and URL ingestion, incremental indexing and background sweep, structured queries.
-- `web/` Vite React SPA: Chat (full-canvas `@parallelworks/ai-chat`), Library, Search, Query, Help.
+- `web/` Vite React SPA: Chat (`@parallelworks/ui/ai`), Library, Search, Query, Stats, Agents, Workflows, Settings, Help.
 - `indexer/` GUFI toolchain build, full rebuild, enrichment (text extraction, OCR, vision captions), embeddings.
 - `testdata/` synthetic corpus and the end-to-end extraction test (`pnpm test`).
 - `deploy/` optional ACTIVATE session serving.
@@ -75,9 +75,36 @@ assistant. Details: [`docs/LIBRARIES.md`](docs/LIBRARIES.md).
 
 On the ACTIVATE platform, the Workflows tab offers a set of platform
 workflows chosen for this Studio, as tiles that each open the workflow's
-own form and run it under the viewer's account. Administrators pick the set
-in Settings or set `STUDIO_WORKFLOWS`. Details:
+own form and run it under the viewer's account. The set can mix workflows
+on the account, marketplace workflows, and workflow files in GitHub
+repositories, including component workflows never published to the
+marketplace; a GitHub workflow that declares access to account variables
+runs only after the viewer approves it. Administrators pick the set in
+Settings or set `STUDIO_WORKFLOWS`. Details:
 [`docs/WORKFLOWS.md`](docs/WORKFLOWS.md).
+
+## Agents
+
+The assistant can delegate a request to agents that work its parts in
+parallel, each writing its result into the knowledge base, and Fleet keeps
+standing agents that wake on a schedule or a trigger. Delegated agents run
+as one-shot pw code runs or as sessions in the pw code daemon, where their
+progress is live, a person approves what an agent asks to do, and a working
+agent can be steered. Details: [`docs/AGENTS.md`](docs/AGENTS.md).
+
+## Documentation
+
+| Document | Covers |
+|---|---|
+| [`docs/HELP.md`](docs/HELP.md) | the in-app user guide, also what the assistant reads to answer questions about the Studio |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | the index, retrieval, and how the server works |
+| [`docs/CUSTOMIZATION.md`](docs/CUSTOMIZATION.md) | deployment configuration, branding, and model access |
+| [`docs/LIBRARIES.md`](docs/LIBRARIES.md) | several indexes at once, and which sections of the app appear |
+| [`docs/WORKFLOWS.md`](docs/WORKFLOWS.md) | the Workflows tab and its endpoints |
+| [`docs/AGENTS.md`](docs/AGENTS.md) | delegated agents, one-shot runs and pw code sessions |
+| [`docs/MULTI-USER.md`](docs/MULTI-USER.md) | several people on one deployment |
+| [`docs/MACOS.md`](docs/MACOS.md) | running on macOS |
+| [`deploy/COMPUTE.md`](deploy/COMPUTE.md) | running the whole stack as a batch job on a compute node |
 
 ## Contributing
 

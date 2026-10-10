@@ -14,6 +14,7 @@ Ask in plain language; the assistant searches, reads the files that matter, and 
 - Launches work on connected HPC systems from plain requests ("run X on the cluster"): site partitions, walltime limits, and saved configurations are read from the platform, a run is followed to completion, and a failure is explained in terms of the submission. If the platform's per-user workspace has scaled down while idle, a launch starts it and retries on its own.
 - A model whose provider has locked or rejected its key shows **[locked]** or **[unavailable]** in the model list, with a banner above the thread; Settings, "Model access" carries the unlock link and a Re-check.
 - The thinking line above a reply expands to show the reasoning and each tool call as it happens, and stays with the message afterward.
+- **Select chats**, under New chat in the conversation rail, selects past conversations (Shift-click selects a range) and deletes them together.
 - In a shared platform session, add your own model key under Settings, "Model access", to chat and run platform tools as yourself; the page shows whether the key works and which models it reaches, and the footer's model line tracks it afterward. A deployment can require a personal key, in which case chat and models wait until one is added while browsing, search, and adding material stay open.
 
 ## Library
@@ -25,6 +26,7 @@ The file tree beside a viewer. Markdown and code render directly; images show th
 - **Right-click** any row for a context menu: Open, Labels…, and Delete on files; New folder inside…, Labels…, and Delete folder (with its contents, after a confirm) on directories.
 - **Delete** removes material from the corpus and the index together.
 - Panes resize at the boundary and collapse from the header.
+- When the deployment mounts more than one library, the picker at the top of the Library rail chooses which one you browse and search; a read-only library says so beside its name. Settings, "Libraries" lists each one with its index and source paths and adds another by path.
 
 ## Search
 
@@ -38,7 +40,16 @@ One box, three retrieval modes at once, each result labeled by the mode that fou
 
 ## Agents
 
-Three pages under one tab. **Fleet** is the operator base for standing agents: each has a goal, a persona, a budget, and triggers (a schedule, a workflow run ending, files changing under a folder). An agent wakes in ticks, does one bounded round of work with the same tools the assistant has, writes the outcome to its journal, and parks itself under **Needs you** when a decision needs a person; tell it something in its message box and it answers on the next tick. Start from a template or write a goal. **Tasks** is the board for work the assistant has delegated: each task is a card with its state, a badge naming the system when the agents run as a campaign of platform workflow runs, a badge when they run as pw code sessions, and a progress bar; opening one shows the agent tree, each agent's live output, and the board feed. A session agent that asks to do something its permissions do not cover waits under **Waiting for your approval** until you approve or deny it, and a working session agent takes direction from the box under its output without ending its turn (see `docs/AGENTS.md`). **Personas and skills** is the library of markdown files that change how the assistant behaves, with an editor for adding or changing them.
+Three pages under one tab. **Fleet** is the operator base for standing agents: each has a goal, a persona, a budget, and triggers (a schedule, a workflow run ending, files changing under a folder). An agent wakes in ticks, does one bounded round of work with the same tools the assistant has, writes the outcome to its journal, and parks itself under **Needs you** when a decision needs a person; tell it something in its message box and it answers on the next tick. Start from a template or write a goal. **Tasks** is the board for work the assistant has delegated: each task is a card with its state, a badge naming the system when the agents run as a campaign of platform workflow runs, a badge when they run as pw code sessions, and a progress bar; opening one shows the agent tree, each agent's live output, and the board feed. A session agent that asks to do something its permissions do not cover waits under **Waiting for your approval** until you approve or deny it, and a working session agent takes direction from the box under its output without ending its turn (see `docs/AGENTS.md`). Settings, "External access", Delegation turns delegation on, sets how many agents a task may use and how deep they may delegate, and chooses how agents run: one-shot runs, pw code sessions, or either per task. **Personas and skills** is the library of markdown files that change how the assistant behaves, with an editor for adding or changing them.
+
+## Workflows
+
+On the ACTIVATE platform, the Workflows tab offers the platform workflows chosen for {appName}, as tiles. Opening one shows the workflow's own form: **Validate** checks the inputs with the platform without running anything, and **Run** submits it under your account. Saved configurations appear as presets, and recent runs are listed under the tiles.
+
+- Tiles come from three places: workflows on the account (if you lack one, the tile offers to add a copy to your account), the marketplace, and GitHub repositories, including component workflows that are not published to the marketplace.
+- A GitHub workflow that asks for access to your account variables shows the request above Run. Run and Validate wait until you tick the approval, and the grant stays with that repository until you revoke it with `pw workflows permissions revoke`.
+- Administrators choose the set under Settings, "Workflows": tick workflows from the account or the marketplace, or enter a GitHub repository, directory, or link under **From GitHub**, press **Find workflows**, and tick the ones to offer.
+- The assistant sees the same set and can list, explain, validate, and run them.
 
 ## Query
 
@@ -79,6 +90,8 @@ Corpus health at a glance, and every element is a shortcut: storage rows and lab
 
 The address bar tracks what you are looking at: open documents and views live in the URL, so refresh restores your place, browser back and forward walk your path, and a copied link drops someone else exactly where you were. The footer shows the platform-verified identity, model availability (whether the AI gateway credential currently works), and index health; click any of them for details.
 
+**Install app**, in the navigation when the browser supports it, installs {appName} as a desktop app that opens in its own window. With a classification banner set, the app's title bar takes the banner's color. In Chrome, the chevron in the title bar moves the banner into the title bar itself, so the marking and the window controls share one strip; Chrome remembers the choice.
+
 ## RAG for other tools
 
 The knowledge base is usable as a grounded model from outside the Studio: the deployment serves an OpenAI-compatible endpoint that any OpenAI-speaking client (pw code, SDKs) can point at with its own API key, and the Settings RAG endpoint section can publish it into the platform chat and provider catalog.
@@ -99,7 +112,7 @@ Open technologies, each doing the job it was built for.
 
 - [GUFI](https://github.com/mar-file-system/GUFI), the Grand Unified File Index from Los Alamos National Laboratory: the metadata, full-text, and vector index.
 - [sqlite-vec](https://github.com/asg017/sqlite-vec) and [sqlite-lembed](https://github.com/asg017/sqlite-lembed): embedding storage and on-index embedding with a local GGUF model.
-- [@parallelworks/ai-chat](https://www.npmjs.com/package/@parallelworks/ai-chat): the chat interface components, driven by a custom adapter against any OpenAI-compatible endpoint.
+- [@parallelworks/ui](https://www.npmjs.com/package/@parallelworks/ui): the chat interface (`@parallelworks/ui/ai`), driven by a custom adapter against any OpenAI-compatible endpoint, and the platform's workflow form renderer.
 - [Streamdown](https://github.com/vercel/streamdown): streaming markdown rendering in chat and the viewer.
 - [three.js](https://threejs.org/) and [occt-import-js](https://github.com/kovacsv/occt-import-js) (Open CASCADE compiled to WebAssembly): the 3D model viewer and STEP conversion.
 - [Tesseract](https://github.com/tesseract-ocr/tesseract): OCR for text inside images.

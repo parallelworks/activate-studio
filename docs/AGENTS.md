@@ -1,6 +1,6 @@
 # Delegated agents
 
-When delegation is on (Settings, Delegation), the assistant can split a request into subtasks and give each to an agent. The task tree, the board, and results under `tasks/<task id>/` in the knowledge base are the same however the agents run. Settings, Delegation, "Agent execution" (environment variable `AGENT_EXECUTION`) chooses how they run:
+When delegation is on (Settings, External access, Delegation), the assistant can split a request into subtasks and give each to an agent. The task tree, the board, and results under `tasks/<task id>/` in the knowledge base are the same however the agents run. The same section's "Agent execution" (environment variable `AGENT_EXECUTION`) chooses how they run:
 
 | Setting | Agents run as |
 |---|---|
