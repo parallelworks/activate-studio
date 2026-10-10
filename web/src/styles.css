@@ -441,24 +441,26 @@ main.content { min-height: 0; min-width: 0; background: var(--pw-content-bg); }
 .rail-actions button { white-space: nowrap; }
 .library-main { flex: 1; min-width: 0; overflow: auto; }
 
-.explorer { overflow: auto; flex: 1; padding: 6px 4px; }
-.tree-row {
+/* The Library tree, compact as file explorers are: 24px rows in the UI
+   face, so a deep folder shows a screenful of entries. Its rules are
+   scoped to .explorer; the agents' task tree and the JSON viewer use the
+   same row class and keep their own. */
+.explorer { overflow: auto; flex: 1; padding: 4px; }
+.explorer .tree-row {
   display: flex; align-items: center; gap: 5px;
-  padding: 3px 8px; cursor: pointer; border-radius: 6px;
+  min-height: 24px; padding: 2px 8px; line-height: 20px; cursor: pointer; border-radius: 4px;
   white-space: nowrap; overflow: hidden;
-  font-size: 13px;
+  font-family: var(--font-sans); font-size: 13px;
 }
-.tree-row:hover { background: var(--theme-hover, #f2f5f8); }
-.tree-row.selected { background: var(--pw-active-pill); color: var(--pw-navy); }
-.tree-row .chev { color: var(--pw-muted); flex-shrink: 0; }
+.explorer .tree-row:hover { background: var(--theme-hover); }
+.explorer .tree-row.selected { background: var(--pw-active-pill); color: var(--pw-text); }
+.explorer .tree-row .chev { color: var(--pw-muted); flex-shrink: 0; }
 .chev-space { display: inline-block; width: 12px; flex-shrink: 0; }
-.tree-row.multi { background: var(--theme-warning-muted); }
-.tree-row.multi:hover { background: #fde68a; }
-.tree-row .glyph { flex-shrink: 0; }
-.tree-row .glyph.folder { color: #5b87a6; }
-.tree-row .glyph.file { color: var(--pw-muted-2); }
-.tree-row.dir { color: var(--pw-text); font-weight: 500; }
-.tree-row.file { color: color-mix(in srgb, var(--pw-text) 80%, var(--pw-muted)); }
+.explorer .tree-row.multi { background: var(--theme-warning-muted); }
+.explorer .tree-row.multi:hover { background: color-mix(in srgb, var(--theme-warning) 18%, transparent); }
+.explorer .tree-row .glyph { flex-shrink: 0; color: var(--pw-muted); }
+.explorer .tree-row.dir { color: var(--pw-text); font-weight: 500; }
+.explorer .tree-row.file { color: color-mix(in srgb, var(--pw-text) 80%, var(--pw-muted)); }
 .tree-label { overflow: hidden; text-overflow: ellipsis; }
 .tree-tags { display: inline-flex; gap: 3px; margin-left: 2px; flex-shrink: 0; }
 .tree-tag {
@@ -779,7 +781,13 @@ textarea.field { line-height: 1.5; }
 .row-check:hover { color: var(--pw-navy); }
 
 .row-tag { opacity: 1; }
-.row-tag:hover { color: var(--pw-navy); }
+.row-tag:hover { color: var(--pw-text); }
+/* With a pointer, a row's label button shows when the row is hovered or
+   selected; on touch screens it stays visible, since there is no hover. */
+@media (hover: hover) {
+  .explorer .row-tag { opacity: 0; }
+  .explorer .tree-row:hover .row-tag, .explorer .tree-row.selected .row-tag, .explorer .row-tag:focus-visible { opacity: 1; }
+}
 .search-label-filter { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; align-items: center; }
 .search-label-filter .lbl { font-size: 11px; color: var(--pw-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
 
@@ -1165,11 +1173,11 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .task-columns { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 14px; }
 @media (max-width: 900px) { .task-columns { grid-template-columns: 1fr; } }
 .task-tree { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.tree-row {
+.task-tree .tree-row {
   position: relative; display: flex; align-items: center; gap: 8px;
   padding: 6px 8px; border-radius: 6px; cursor: pointer; font-size: 13px;
 }
-.tree-row:hover, .tree-row.open { background: var(--pw-hover-row); }
+.task-tree .tree-row:hover, .task-tree .tree-row.open { background: var(--pw-hover-row); }
 .tree-elbow {
   position: absolute; top: 0; bottom: 50%; width: 10px;
   border-left: 1px solid var(--pw-border-strong); border-bottom: 1px solid var(--pw-border-strong);
@@ -1622,7 +1630,7 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 /* Structured previews: JSON and YAML as a collapsible tree. */
 .tree-doc { padding: 10px 14px; }
 .tree-doc-label { color: var(--muted); font-size: 12px; margin: 6px 0; }
-.tree-row { display: flex; align-items: baseline; gap: 6px; line-height: 1.5; font-family: var(--font-mono); font-size: 13px; }
+.tree-doc .tree-row { display: flex; align-items: baseline; gap: 6px; line-height: 1.5; font-family: var(--font-mono); font-size: 13px; }
 .tree-toggle { background: none; border: 0; color: var(--muted); cursor: pointer; padding: 0; width: 12px; line-height: 1; }
 .tree-key { color: var(--pw-link); }
 .tree-key::after { content: ':'; color: var(--muted); }
