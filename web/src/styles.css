@@ -232,7 +232,7 @@ main.content { min-height: 0; min-width: 0; background: var(--pw-content-bg); }
   border-right: 1px solid var(--pw-border);
   color: var(--pw-text);
   display: flex; flex-direction: column;
-  padding: 14px 10px 10px;
+  padding: 12px;
 }
 .sidenav-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; padding: 0 4px; }
 .head-actions { display: flex; gap: 5px; }
@@ -246,36 +246,75 @@ main.content { min-height: 0; min-width: 0; background: var(--pw-content-bg); }
 .brand-icon { width: 26px; height: 26px; flex-shrink: 0; object-fit: contain; }
 .brand-text { font-size: 12.5px; color: var(--pw-muted); white-space: nowrap; overflow: hidden; }
 .brand-text b { color: var(--pw-navy); letter-spacing: 0.05em; font-weight: 750; margin-right: 3px; }
-.nav-collapse, .rail-collapse, .rail-expander {
+.nav-collapse { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--pw-muted); cursor: pointer; flex-shrink: 0; }
+.nav-collapse:hover { background: var(--pw-nav-hover); color: var(--pw-text); }
+.rail-collapse, .rail-expander {
   border: 1px solid var(--pw-border); border-radius: 6px; background: var(--pw-panel);
   color: var(--pw-muted); cursor: pointer; font-size: 12px; line-height: 1;
   padding: 3px 7px; flex-shrink: 0;
 }
-.nav-collapse:hover, .rail-collapse:hover, .rail-expander:hover { color: var(--pw-navy); border-color: var(--pw-muted); }
+.rail-collapse:hover, .rail-expander:hover { color: var(--pw-navy); border-color: var(--pw-muted); }
 .rail-expander { height: 30px; }
 .rail-actions { display: flex; align-items: center; gap: 6px; }
 
-.sidenav.collapsed { width: 56px; padding: 14px 8px 10px; }
+.sidenav.collapsed { width: 64px; padding: 12px; }
 .sidenav.collapsed .brand-text { display: none; }
 .sidenav.collapsed .sidenav-head { flex-direction: column; gap: 8px; }
 .sidenav.collapsed .head-actions { flex-direction: column; gap: 6px; }
-.sidenav.collapsed .sidenav-item { justify-content: center; padding: 9px 0; }
+.sidenav.collapsed .sidenav-item { justify-content: center; padding: 10px 0; }
 .sidenav.collapsed .sidenav-item span { display: none; }
 .sidenav.collapsed .sidenav-footer { display: flex; justify-content: center; }
 .sidenav.collapsed .sidenav-items { margin-top: 12px; }
 .sidenav.collapsed .sidenav-secondary { margin-top: auto; }
 .sidenav-items { display: flex; flex-direction: column; gap: 2px; }
+/* Items to the shared spec: 32px rows, muted 14px labels, the active page
+   filled and at weight 500, 6px corners. */
 .sidenav-item {
   display: flex; align-items: center; gap: 10px;
-  padding: 8px 10px; border: none; border-radius: 8px;
-  background: transparent; color: var(--pw-nav-text); font-size: 14px; font-weight: 450;
-  cursor: pointer; text-align: left; transition: background 0.12s ease;
+  padding: 6px 12px; line-height: 20px; border: none; border-radius: 6px;
+  background: transparent; color: var(--pw-nav-text); font-size: 14px; font-weight: 400;
+  cursor: pointer; text-align: left; transition: background 0.15s ease, color 0.15s ease;
 }
 .sidenav-item:hover { background: var(--pw-nav-hover); color: var(--pw-text); }
-.sidenav-item.active { background: var(--pw-nav-active); color: var(--pw-text); font-weight: 550; }
-.sidenav-item svg { flex-shrink: 0; }
+.sidenav-item.active { background: var(--pw-nav-active); color: var(--pw-text); font-weight: 500; }
+.sidenav-item svg, .help-nav svg { flex-shrink: 0; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
 
 .sidenav-secondary { margin-top: auto; padding-bottom: 8px; }
+/* The sidebar's search box, after the platform's: full width under the
+   brand, a 12px icon, a muted placeholder, and the shortcut at the right. */
+.sidenav-search {
+  display: flex; align-items: center; gap: 8px; margin: 0 0 10px;
+  padding: 6px 10px; border: 1px solid var(--pw-border); border-radius: 6px;
+  background: var(--pw-panel); color: var(--pw-muted);
+}
+.sidenav-search:focus-within { border-color: var(--pw-link); }
+.sidenav-search input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--pw-text); font: inherit; font-size: 14px; padding: 0; }
+.sidenav-search input::placeholder { color: var(--pw-muted); }
+.sidenav-search kbd { font: inherit; font-size: 11px; color: var(--pw-muted); border: 1px solid var(--pw-border); border-radius: 4px; padding: 0 4px; line-height: 16px; }
+.sidenav.collapsed .sidenav-search { display: none; }
+
+/* Menu groups, as the platform draws them: a small label heading with a
+   chevron that turns as the group's pages slide open beneath it, open by
+   default and remembered. In the icon rail and on a phone the wrappers drop
+   out of the layout and every page shows. */
+.sidenav-group { display: flex; flex-direction: column; margin-top: 8px; }
+.sidenav-group-head {
+  display: flex; align-items: center; justify-content: space-between; width: 100%;
+  padding: 6px 12px; border: 0; border-radius: 6px; background: transparent;
+  color: var(--pw-muted); font: inherit; font-size: 11px; font-weight: 500; letter-spacing: 0.01em;
+  cursor: pointer; text-align: left; transition: color 0.15s ease;
+}
+.sidenav-group-head:hover, .sidenav-group-head.active { color: var(--pw-text); }
+.sidenav-chev { transition: transform 0.2s cubic-bezier(0.25, 0.1, 0.25, 1); }
+.sidenav-group.open .sidenav-chev { transform: rotate(90deg); }
+.sidenav-group-body {
+  display: grid; grid-template-rows: 0fr; opacity: 0;
+  transition: grid-template-rows 0.2s cubic-bezier(0.25, 0.1, 0.25, 1), opacity 0.2s cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+.sidenav-group.open .sidenav-group-body { grid-template-rows: 1fr; opacity: 1; }
+.sidenav-group-inner { min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: 2px; }
+.sidenav.collapsed .sidenav-group, .sidenav.collapsed .sidenav-group-body, .sidenav.collapsed .sidenav-group-inner { display: contents; }
+.sidenav.collapsed .sidenav-group-head { display: none; }
 .sidenav-footer { padding: 10px 8px 0; border-top: 1px solid var(--pw-border); }
 .status-line { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--pw-muted); padding: 2px 0; }
 /* Reserves the footer's height while its first read is in flight. */
@@ -1272,6 +1311,14 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .help-nav button:hover { background: color-mix(in srgb, var(--pw-text) 5%, var(--pw-panel)); color: var(--pw-text); }
 .help-nav button.active { background: color-mix(in srgb, var(--pw-text) 9%, var(--pw-panel)); color: var(--pw-text); font-weight: 550; }
 .help-nav button svg { flex-shrink: 0; width: 15px; height: 15px; }
+/* Help rail groups: a row that opens its pages, which sit under a thin
+   rule, with the page being read tinted in the accent. */
+.help-nav-group { display: flex; flex-direction: column; gap: 1px; margin-top: 2px; }
+.help-nav .help-nav-group-head { justify-content: space-between; font-weight: 500; }
+.help-nav .help-nav-group-head svg { width: 12px; height: 12px; transition: transform 0.2s cubic-bezier(0.25, 0.1, 0.25, 1); }
+.help-nav .help-nav-group-head[aria-expanded='true'] svg { transform: rotate(90deg); }
+.help-nav-group-pages { display: flex; flex-direction: column; gap: 1px; margin-left: 14px; padding-left: 8px; border-left: 1px solid var(--pw-border); }
+.help-nav button.active { background: color-mix(in srgb, var(--pw-link) 10%, transparent); color: var(--pw-text); }
 .help-content { flex: 1; overflow-y: auto; padding: 26px 40px 40px; }
 .help-content h1 { margin: 0 0 12px; font-size: 20px; font-weight: 650; letter-spacing: -0.01em; color: var(--pw-text); }
 .help-content .md-body { max-width: 780px; font-size: 14px; line-height: 1.65; }
@@ -1745,6 +1792,9 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
      leave the bar so the main four get room. */
   .sidenav-items.sidenav-secondary { display: none; }
   .sidenav-item.mob-hide { display: none; }
+  .sidenav-group, .sidenav-group-body, .sidenav-group-inner { display: contents; }
+  .sidenav-search { display: none; }
+  .sidenav-group-head { display: none; }
   .nav-more { display: flex; }
   .nav-more-sheet {
     display: flex; flex-direction: column; gap: 2px;
@@ -2011,3 +2061,13 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .wf-gh td:nth-child(2) { min-width: 14rem; }
 .wf-gh code { overflow-wrap: anywhere; }
 .wf-clamp { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; overflow: hidden; }
+
+/* Keyboard focus, motion, and scrollbars, as the other Parallel Works apps
+   draw them: a 2px accent outline, no motion for those who ask for none,
+   and thin scrollbars that recede until used. */
+:focus-visible { outline: 2px solid var(--pw-link); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: 0s !important; animation-duration: 0s !important; }
+}
+* { scrollbar-width: thin; scrollbar-color: var(--pw-border) transparent; }
+*:hover { scrollbar-color: color-mix(in srgb, var(--pw-muted) 55%, transparent) transparent; }

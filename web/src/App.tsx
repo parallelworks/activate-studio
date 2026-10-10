@@ -92,10 +92,61 @@ const NAV: { id: ViewId; label: string; icon: ReactElement }[] = [
   },
 ]
 
+// The menu's groups, after the platform's own navigation: a few direct
+// destinations, then categories that open to their pages. A group the
+// deployment leaves with one page shows that page on its own.
+type NavEntry = { id: ViewId } | { group: string; label: string; items: ViewId[] }
+const NAV_LAYOUT: NavEntry[] = [
+  { id: 'chat' },
+  {
+    group: 'knowledge', label: 'Knowledge', items: ['library', 'search', 'query', 'overview', 'history'],
+  },
+  {
+    group: 'run', label: 'Run', items: ['workflows', 'agents'],
+  },
+]
+const navItem = (id: ViewId) => NAV.find(n => n.id === id)!
+
+function readClosedGroups(): Set<string> {
+  try { return new Set(JSON.parse(localStorage.getItem('ade-nav-closed') ?? '[]') as string[]) } catch { return new Set() }
+}
+
 export default function App() {
   const [view, setView] = useState<ViewId>('chat')
   const [display, setDisplay] = useState<Display | null>(null)
   const [navCollapsed, setNavCollapsed] = useState(() => localStorage.getItem('ade-nav-collapsed') === '1')
+  // The sidebar's search box, as on the platform: Enter searches the
+  // knowledge base in the Search view, and Cmd+K or Ctrl+K reaches it from
+  // anywhere (the Search view itself where the box is hidden).
+  const [navQuery, setNavQuery] = useState('')
+  const navSearchRef = useRef<HTMLInputElement>(null)
+  const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== 'k' || e.shiftKey || e.altKey) return
+      e.preventDefault()
+      const box = navSearchRef.current
+      if (box && box.offsetParent !== null) { box.focus(); box.select() } else setView('search')
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+  const submitNavSearch = () => {
+    const q = navQuery.trim()
+    if (!q) return
+    setView('search')
+    window.dispatchEvent(new CustomEvent('ade:search', { detail: { q } }))
+    setNavQuery('')
+    navSearchRef.current?.blur()
+  }
+  // Groups start open; closing one is remembered, like the platform's menu.
+  const [closedGroups, setClosedGroups] = useState<Set<string>>(readClosedGroups)
+  const toggleGroup = (g: string) => setClosedGroups(prev => {
+    const next = new Set(prev)
+    if (next.has(g)) next.delete(g); else next.add(g)
+    try { localStorage.setItem('ade-nav-closed', JSON.stringify([...next])) } catch { /* not remembered */ }
+    return next
+  })
   const cfg = useAppConfig()
   const { canInstall, install } = useInstall()
   // A deployment can leave sections out, which is how the Studio becomes an
@@ -334,27 +385,66 @@ export default function App() {
             title={navCollapsed ? 'Expand navigation' : 'Collapse navigation'}
             onClick={() => setNavCollapsed(c => !c)}
           >
-            {navCollapsed ? '»' : '«'}
+            <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="1.75" y="2.25" width="12.5" height="11.5" rx="2"/><path d="M6 2.5v11"/></svg>
           </button>
         </div>
+        {allowed('search') && (
+          <form className="sidenav-search" role="search" onSubmit={e => { e.preventDefault(); submitNavSearch() }}>
+            <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3.5 3.5"/></svg>
+            <input ref={navSearchRef} value={navQuery} onChange={e => setNavQuery(e.target.value)} placeholder="Search"
+              aria-label="Search the knowledge base" onKeyDown={e => { if (e.key === 'Escape') { setNavQuery(''); e.currentTarget.blur() } }} />
+            <kbd>{isMac ? '⌘K' : 'Ctrl K'}</kbd>
+          </form>
+        )}
         <div className="sidenav-items">
-          {NAV.filter(i => i.id !== 'settings' && i.id !== 'help' && allowed(i.id)).map(item => (
-            <button
-              key={item.id}
-              className={`sidenav-item ${view === item.id ? 'active' : ''}${MOBILE_PRIMARY.has(item.id) ? '' : ' mob-hide'}`}
-              title={item.label}
-              onClick={() => {
-                if (item.id === 'library' && view === 'library') setDisplay(null)
-                // On a phone the conversations rail is a slide-over, and
-                // re-tapping the Chat item in the bottom bar is its toggle.
-                if (item.id === 'chat' && view === 'chat') window.dispatchEvent(new Event('ade:toggle-chat-rail'))
-                setView(item.id)
-              }}
-            >
-              {item.icon}
-              <span>{item.label}</span>
-            </button>
-          ))}
+          {NAV_LAYOUT.flatMap(entry => {
+            // One page button; inGroup indents it under its group header and
+            // hides it while the group is closed (the collapsed rail and the
+            // phone bar ignore groups and show every page).
+            const pageButton = (id: ViewId, inGroup: string | null) => {
+              const item = navItem(id)
+              return (
+                <button
+                  key={item.id}
+                  className={`sidenav-item ${view === item.id ? 'active' : ''}${MOBILE_PRIMARY.has(item.id) ? '' : ' mob-hide'}${inGroup ? ' in-group' : ''}`}
+                  title={item.label}
+                  onClick={() => {
+                    if (item.id === 'library' && view === 'library') setDisplay(null)
+                    // On a phone the conversations rail is a slide-over, and
+                    // re-tapping the Chat item in the bottom bar is its toggle.
+                    if (item.id === 'chat' && view === 'chat') window.dispatchEvent(new Event('ade:toggle-chat-rail'))
+                    setView(item.id)
+                  }}
+                >
+                  {item.icon}
+                  <span>{item.label}</span>
+                </button>
+              )
+            }
+            if ('id' in entry) return allowed(entry.id) ? [pageButton(entry.id, null)] : []
+            const pages = entry.items.filter(allowed)
+            if (pages.length <= 1) return pages.map(id => pageButton(id, null))
+            const open = !closedGroups.has(entry.group)
+            // The header is a label, as in the platform's menu; the pages
+            // slide open beneath it. On a phone and in the icon rail the
+            // wrappers drop out of the layout and every page shows.
+            return [
+              <div key={`group-${entry.group}`} className={`sidenav-group${open ? ' open' : ''}`}>
+                <button
+                  className={`sidenav-group-head${!open && pages.includes(view) ? ' active' : ''}`}
+                  aria-expanded={open}
+                  title={open ? `Hide ${entry.label}` : `Show ${entry.label}`}
+                  onClick={() => toggleGroup(entry.group)}
+                >
+                  <span>{entry.label}</span>
+                  <svg className="sidenav-chev" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="m6 4 4 4-4 4"/></svg>
+                </button>
+                <div className="sidenav-group-body"><div className="sidenav-group-inner">
+                  {pages.map(id => pageButton(id, entry.group))}
+                </div></div>
+              </div>,
+            ]
+          })}
           <button
             className={`sidenav-item nav-more ${moreOpen || !MOBILE_PRIMARY.has(view) ? 'active' : ''}`}
             title="More"
