@@ -24,14 +24,14 @@ export function SearchView({ onOpen }: { onOpen: (path: string, q?: string) => v
     api.tagVocabulary().then(v => setVocab(v.tags)).catch(() => {})
   }, [])
 
-  const run = async (limit = 50) => {
-    if (!q.trim()) return
+  const run = async (limit = 50, query = q) => {
+    if (!query.trim()) return
     setBusy(true)
     setNote(null)
     setSel(new Set())
     setTagMenuOpen(false)
     try {
-      const r = await api.search(q, [...activeTags], limit)
+      const r = await api.search(query, [...activeTags], limit)
       setHits(r.hits)
       setLastLimit(limit)
       if (r.error) setNote(r.error)
@@ -41,6 +41,18 @@ export function SearchView({ onOpen }: { onOpen: (path: string, q?: string) => v
       setBusy(false)
     }
   }
+
+  // The sidebar's search box hands its query here and opens this view.
+  useEffect(() => {
+    const on = (e: Event) => {
+      const query = String((e as CustomEvent).detail?.q ?? '').trim()
+      if (!query) return
+      setQ(query)
+      void run(50, query)
+    }
+    window.addEventListener('ade:search', on)
+    return () => window.removeEventListener('ade:search', on)
+  })
 
   const toggleSel = (path: string) => {
     setSel(s => {

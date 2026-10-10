@@ -33,7 +33,7 @@ A tool the assistant calls with arguments receives them as positional parameters
 
 ## Help content
 
-The in-app Help page renders `docs/HELP.md`, split into cards at `##` headings, with `{appName}` and `{kbLabel}` substituted. Point `HELP_FILE` at your own markdown to replace it entirely.
+The in-app Help page renders `docs/HELP.md`: the text before the first heading is the Overview, each `##` heading is a page, and a `#` heading groups the pages after it in the rail. `{appName}` and `{kbLabel}` are substituted. Point `HELP_FILE` at your own markdown to replace it entirely.
 
 ## Platform identity (optional)
 

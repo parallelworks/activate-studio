@@ -23,18 +23,27 @@ function iconFor(title: string): ReactElement | null {
   return key ? SECTION_ICONS[key] : null
 }
 
-interface Section { title: string; body: string }
+interface Section { title: string; body: string; group: string | null }
 
-/** Split the help markdown: intro is everything before the first `## `,
- *  each `## Title` becomes a card. */
-function parseHelp(md: string): { intro: string; sections: Section[] } {
-  const parts = md.split(/\n(?=## )/)
-  const intro = parts[0]?.startsWith('## ') ? '' : (parts.shift() ?? '')
-  const sections = parts.map(p => {
-    const nl = p.indexOf('\n')
-    return { title: p.slice(3, nl < 0 ? undefined : nl).trim(), body: nl < 0 ? '' : p.slice(nl + 1).trim() }
-  })
-  return { intro: intro.trim(), sections }
+/** Split the help markdown: the intro is everything before the first
+ *  heading, each `## Title` is a page, and a `# Group` heading groups the
+ *  pages after it in the rail. A guide without `#` headings is one flat
+ *  list, so a deployment's own HELP_FILE keeps working. */
+export function parseHelp(md: string): { intro: string; sections: Section[] } {
+  const intro: string[] = []
+  const sections: Section[] = []
+  let group: string | null = null
+  let current: Section | null = null
+  for (const line of md.split('\n')) {
+    const g = /^# (.+)$/.exec(line)
+    const h = /^## (.+)$/.exec(line)
+    if (g) { group = g[1].trim(); current = null; continue }
+    if (h) { current = { title: h[1].trim(), body: '', group }; sections.push(current); continue }
+    if (current) current.body += line + '\n'
+    else if (group === null) intro.push(line)
+  }
+  for (const sec of sections) sec.body = sec.body.trim()
+  return { intro: intro.join('\n').trim(), sections }
 }
 
 function ago(iso: string | null): string {
@@ -79,6 +88,18 @@ export function HelpView() {
   }, [md])
 
   const current = (active === 'Overview' ? null : sections.find(s => s.title === active)) ?? null
+  // The rail's groups, in order. Only the group being read starts open, so
+  // the guide opens as a few headings, not a wall of pages.
+  const groups = sections.reduce<{ name: string | null; items: Section[] }[]>((acc, sec) => {
+    const last = acc[acc.length - 1]
+    if (last && last.name === sec.group) last.items.push(sec); else acc.push({ name: sec.group, items: [sec] })
+    return acc
+  }, [])
+  // A header click is remembered for this visit; otherwise a group is open
+  // when it holds the page being read, or is the first group on Overview.
+  const [chosen, setChosen] = useState<Record<string, boolean>>({})
+  const isOpen = (name: string, items: Section[], i: number) =>
+    chosen[name] ?? (items.some(x => x.title === active) || (active === 'Overview' && i === 0))
 
   return (
     <div className="help-view">
@@ -89,11 +110,24 @@ export function HelpView() {
             <span>User guide</span>
           </div>
           <button className={active === 'Overview' ? 'active' : ''} onClick={() => goSection('Overview')}>Overview</button>
-          {sections.map(s => (
-            <button key={s.title} className={active === s.title ? 'active' : ''} onClick={() => goSection(s.title)}>
-              {iconFor(s.title)} <span>{s.title}</span>
-            </button>
-          ))}
+          {groups.map((g, i) => {
+            const pages = g.items.map(s => (
+              <button key={s.title} className={active === s.title ? 'active' : ''} onClick={() => goSection(s.title)}>
+                {iconFor(s.title)} <span>{s.title}</span>
+              </button>
+            ))
+            if (!g.name) return <div key={`flat-${i}`}>{pages}</div>
+            const open = isOpen(g.name, g.items, i)
+            return (
+              <div key={g.name} className="help-nav-group">
+                <button className="help-nav-group-head" aria-expanded={open} onClick={() => setChosen(c => ({ ...c, [g.name!]: !open }))}>
+                  <span>{g.name}</span>
+                  <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="m6 4 4 4-4 4"/></svg>
+                </button>
+                {open && <div className="help-nav-group-pages">{pages}</div>}
+              </div>
+            )
+          })}
         </nav>
         <article className="help-content">
           {current === null ? (

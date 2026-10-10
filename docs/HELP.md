@@ -8,6 +8,8 @@
 4. **Add material.** Drag files or folders onto the Library tree. They are searchable within seconds.
 5. **Run a workflow** (on the ACTIVATE platform). Open **Workflows**, choose a tile, fill in the form, and press **Run**.
 
+# Basics
+
 ## Chat
 
 Ask in plain language. The assistant searches the knowledge base, reads the files that matter, and links each source. Past conversations are kept and are searchable themselves.
@@ -36,6 +38,26 @@ One box finds exact words (inside PDFs, office documents, and images too), relat
 - Label chips under the box narrow the results.
 - Tick results to label them together.
 
+## Adding material
+
+Drag files or folders onto the tree, or use **Add**, which also takes a web address. New material is searchable in about a second. Files copied in outside {appName} are picked up within minutes, or right away with **sync now** at the bottom of the navigation.
+
+# Organize and analyze
+
+## Labels
+
+Labels organize files without moving them. Label a folder and everything in it carries the label, including files added later. Apply labels from the tree, the viewer, search results, or by asking the assistant; filter by them in Search, Query, and the chat's Scope.
+
+## Query
+
+Structured questions about the files themselves (largest, newest, totals by type) answered in milliseconds. Start from a canned query, use the builder, or write read-only SQL, and save the ones you reuse.
+
+## Stats
+
+The knowledge base at a glance: size, file types, labels, and recent changes. Click any figure to see the files behind it.
+
+# Run work
+
 ## Workflows
 
 On the ACTIVATE platform, the Workflows tab shows the workflows chosen for {appName}. Open a tile, fill in the form, and press **Run**; **Validate** checks the inputs without running anything. Runs use your own account.
@@ -54,26 +76,14 @@ When a request splits into parts, the assistant can hand each part to an agent w
 
 Delegation is turned on under Settings, "External access".
 
-## Query
-
-Structured questions about the files themselves (largest, newest, totals by type) answered in milliseconds. Start from a canned query, use the builder, or write read-only SQL, and save the ones you reuse.
-
-## Labels
-
-Labels organize files without moving them. Label a folder and everything in it carries the label, including files added later. Apply labels from the tree, the viewer, search results, or by asking the assistant; filter by them in Search, Query, and the chat's Scope.
-
-## Adding material
-
-Drag files or folders onto the tree, or use **Add**, which also takes a web address. New material is searchable in about a second. Files copied in outside {appName} are picked up within minutes, or right away with **sync now** at the bottom of the navigation.
-
-## Stats
-
-The knowledge base at a glance: size, file types, labels, and recent changes. Click any figure to see the files behind it.
+# More
 
 ## Getting around
 
 The address bar follows what you are looking at, so back and forward work and a copied link opens the same place for someone else.
 
+- **Search**, at the top of the navigation, searches the knowledge base; Ctrl+K (⌘K on a Mac) jumps to it from anywhere.
+- The navigation groups its pages under **Knowledge** and **Run**; click a group's name to fold it away, and {appName} remembers.
 - **Install app**, in the navigation, installs {appName} as a desktop app in its own window. If a classification banner is shown, the chevron in Chrome's title bar moves the banner into the title bar.
 - The bottom of the navigation shows who you are signed in as, whether the models are reachable, and the state of the index; click any of them for details.
 
