@@ -2,6 +2,55 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.95 (2026-10-10)
+
+### A compact Library tree: 24px rows in the UI face, rules scoped per tree (#402)
+
+**What was wrong**
+
+The Library tree drew 33px rows in a monospace face, so a large knowledge base showed few entries per screen. That was not its own styling. Three components share the `tree-row` class: the Library explorer, the Agents task tree, and the JSON and YAML viewer. Their rules were global, and the later ones won. The task tree's `6px 8px` padding and the JSON viewer's monospace face and 1.5 line height overrode the explorer's own `3px 8px` rows.
+
+**What changed**
+- **Scoped rules:** each tree's rules apply only inside its own container (`.explorer`, `.task-tree`, `.tree-doc`). The task tree and the JSON viewer look as they did.
+- **Library rows:** 24px tall, in the UI face (Geist Sans) at 13px, with 4px corners. Folder and file icons use the muted color, and the 14px indent per level stays. In the same pane, the tree shows about 35 entries where it showed 26.
+- **Label button:** with a pointer (`@media (hover: hover)`), each row's label button shows when the row is hovered or selected. On touch screens, which have no hover, it stays visible as before.
+- **Theme colors:** the selected row uses the text color, and multi-select hover uses the theme's warning tint, in place of the last hard-coded amber.
+
+**How it was verified**
+- Screenshots of the tree over a copy of a large knowledge base's folder and file names, before (33px rows) and after (24px rows).
+- Server tests (237) and web tests (66) pass.
+
+## v1.94 (2026-10-10)
+
+### Change log through v1.93 (#400)
+
+Regenerated with `node scripts/release-notes.mjs --changelog` after the v1.93 release.
+
+### Workflow icons from private repositories load through the platform's fallback route (#401)
+
+**What was wrong**
+
+A Workflows tile for a remote workflow showed no icon when its thumbnail sat in a repository the Studio could not read anonymously, such as a private project on a GitLab server. The tile's icon route fetched the thumbnail's raw address directly and without credentials, which returns a sign-in page or fails to connect, for example on a site certificate the host does not trust. Icons stored on the platform, and thumbnails on GitHub, were unaffected.
+
+**What changed**
+
+The platform's workflow listing carries `imageFallbackUrl` for a remote workflow's thumbnail: a platform route (`/api/repositories/thumbnail?...`) that reads the same file with the platform's access. The icon route now tries addresses in order (`iconCandidates`):
+- GitHub thumbnails and platform icons go first, as the platform's own web app reads them.
+- For any other repository host, the platform's fallback route goes first, then the direct address.
+
+Platform addresses carry the viewer's key, and outside addresses are fetched without it. A response that is not an image, such as a sign-in page, is skipped. Marketplace rows take the fallback the same way.
+
+**How it was verified**
+- A new `workflowIcons.test.mjs` covers four cases:
+  - a GitLab thumbnail served from the fallback, with the key and without contacting the GitLab host;
+  - GitHub read without the key;
+  - a platform icon read with the key;
+  - a sign-in page refused.
+
+  It also checks the ordering rules.
+- Against a live platform, the fallback route returned a deployment's private GitLab thumbnail (600x600 PNG) with the user's credential, where the direct address was unreachable from the Studio's host.
+- Server tests (241) and web tests (66) pass.
+
 ## v1.93 (2026-10-10)
 
 ### Change log through v1.92 (#398)
