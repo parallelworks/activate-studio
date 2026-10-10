@@ -10,6 +10,8 @@ process.env.STUDIO_RUN_POLL_MS = '15'
 // A conversation that launched the run, written before the modules load.
 fs.writeFileSync(path.join(IX, 'conversations.json'), JSON.stringify([{ id: 'c1', title: 'hpc', owner: 'me', createdAt: 'x', updatedAt: 'x', activeBranchId: null,
   messages: [{ id: 'u1', role: 'user', content: 'run it', timestamp: 'x' }, { id: 'a1', role: 'assistant', content: 'launched', parentId: 'u1', timestamp: 'x' }] }]))
+// A running run also looks for the session it opened; these tests never reach a platform.
+globalThis.fetch = async () => { throw new Error('no network in tests') }
 const runs = await import('../dist/runs.js')
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 

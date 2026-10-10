@@ -1264,6 +1264,37 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .embed-root { height: 100vh; display: flex; flex-direction: column; background: var(--pw-panel); }
 .embed-root .viewer { flex: 1; min-height: 0; }
 
+/* Platform sessions: the apps workflows open, framed where the browser
+   allows it, with a way out to the session's own tab either way. */
+.session-view {
+  display: flex; flex-direction: column; min-height: 0;
+  border: 1px solid var(--pw-border); border-radius: 8px; overflow: hidden; background: var(--pw-panel);
+}
+.embed-root .session-view { flex: 1; border: 0; border-radius: 0; }
+/* No frame: keep its natural height, which the chat embed shrinks to. */
+.embed-root .session-view.compact { flex: none; }
+.session-page .session-view.compact { flex: none; min-height: 0; }
+.session-bar {
+  display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 4px 10px;
+  border-bottom: 1px solid var(--pw-border); font-size: 13px;
+}
+/* The chat embed's full-screen button sits over the top right corner. */
+.embed-root .session-bar { padding-right: 44px; }
+.session-name { font-weight: 600; white-space: nowrap; }
+.session-meta { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.session-bar-actions { margin-left: auto; display: flex; gap: 6px; flex: none; }
+.session-frame { flex: 1; width: 100%; min-height: 0; border: 0; background: var(--pw-panel); }
+.session-hint { margin: 0; padding: 4px 10px; font-size: 12px; border-top: 1px solid var(--pw-border); }
+.session-note { margin: 0; padding: 20px 14px; font-size: 13px; }
+.session-page { display: flex; flex-direction: column; gap: 8px; height: 100%; }
+.session-page .session-view { flex: 1; min-height: 480px; }
+.session-back { align-self: flex-start; }
+.session-list { display: flex; flex-direction: column; gap: 2px; margin-bottom: 16px; }
+.session-row { display: flex; align-items: center; gap: 8px; padding: 4px 8px; border-radius: 6px; font-size: 13px; }
+.session-row:hover { background: var(--pw-hover-row); }
+.session-row .session-meta { flex: 1; }
+.session-row-name { font-weight: 600; }
+
 /* Streamdown's table controls (and other shadcn-styled bits) read
    --background/--border/--muted tokens we never defined, leaving its
    dropdown transparent. Map them to the platform tokens; dark mode follows

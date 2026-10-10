@@ -30,6 +30,7 @@ import { startSweepTimer } from './indexing.js'
 import { seedKnowledgeBase } from './seed.js'
 import { probeAll } from './libraries.js'
 import { workflowsTabRoutes } from './workflowsTab.js'
+import { sessionRoutes } from './sessions.js'
 
 const app = Fastify({ logger: { level: 'info' } })
 await app.register(fastifyMultipart)
@@ -78,6 +79,7 @@ if (fs.existsSync(webDist)) {
 app.setErrorHandler(sanitizedErrorHandler(app))
 await app.register(kbRoutes)
 await app.register(workflowsTabRoutes)
+await app.register(sessionRoutes)
 await app.register(ragProxyRoutes)
 await app.register(ragEndpointRoutes)
 await app.register(uploadRoutes)

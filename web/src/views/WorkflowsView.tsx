@@ -2,6 +2,7 @@ import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormikProps, FormikValues } from 'formik'
 import { DynamicForm, initializeValues } from '@parallelworks/ui/form'
 import { useWorkflowFields, forgetPlatformData } from '../components/WorkflowFields'
+import { SessionView, type SessionInfo } from '../components/SessionView'
 
 /**
  * The Workflows tab: this Studio's curated set of ACTIVATE workflows, as
@@ -43,15 +44,30 @@ export function WorkflowsView() {
   const [error, setError] = useState('')
   const [open, setOpen] = useState<string | null>(null)
   const [runs, setRuns] = useState<RunRow[]>([])
+  // Running sessions: the apps workflows open, and endpoints. A session
+  // opens in this page, or in its own tab where a frame cannot show it.
+  const [sessions, setSessions] = useState<SessionInfo[]>([])
+  const [viewing, setViewing] = useState<SessionInfo | null>(null)
   const loadTiles = () => {
     setError('')
     fetch('/api/workflows/collection').then(r => json<{ configured: boolean; workflows: Tile[] }>(r))
       .then(d => { setConfigured(d.configured); setTiles(d.workflows) })
       .catch(e => setError(String((e as Error).message)))
   }
-  const loadRuns = () => { fetch('/api/workflows/runs').then(r => json<{ runs: RunRow[] }>(r)).then(d => setRuns(d.runs)).catch(() => {}) }
+  const loadRuns = () => {
+    fetch('/api/workflows/runs').then(r => json<{ runs: RunRow[] }>(r)).then(d => setRuns(d.runs)).catch(() => {})
+    fetch('/api/sessions').then(r => json<{ sessions: SessionInfo[] }>(r)).then(d => setSessions(d.sessions.filter(x => x.status === 'running'))).catch(() => {})
+  }
   useEffect(() => { loadTiles(); loadRuns(); const id = window.setInterval(loadRuns, 15_000); return () => window.clearInterval(id) }, [])
 
+  if (viewing) {
+    return (
+      <div className="overview-view workflows-view session-page">
+        <button type="button" className="btn-ghost session-back" onClick={() => setViewing(null)}>Back to workflows</button>
+        <SessionView user={viewing.user} name={viewing.name} initial={viewing} />
+      </div>
+    )
+  }
   if (open) {
     const t = tiles?.find(x => x.name === open)
     return <WorkflowRunner name={open} kind={t?.kind ?? 'account'} title={t?.displayName ?? open} onBack={() => { setOpen(null); loadRuns() }} onLaunched={loadRuns} />
@@ -74,12 +90,29 @@ export function WorkflowsView() {
           ))}
         </div>
       )}
+      {sessions.length > 0 && (
+        <>
+          <div className="tool-group">Sessions</div>
+          <div className="session-list">
+            {sessions.map(x => (
+              <div key={`${x.user}/${x.name}`} className="session-row">
+                <span className="status-dot ok" />
+                <button type="button" className="link-button session-row-name" onClick={() => setViewing(x)}>{x.name}</button>
+                <span className="muted session-meta">
+                  {[x.run ? `${x.run.workflow} · ${x.run.slug}` : x.type, x.resource ? `on ${x.resource}` : '', x.user].filter(Boolean).join(' · ')}
+                </span>
+                {x.url && <a className="btn-ghost" href={x.url} target="_blank" rel="noopener noreferrer">New tab</a>}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
       {runs.length > 0 && (
         <>
           <div className="tool-group">Recent runs</div>
           <div className="rag-calls-wrap">
             <table className="rag-calls-table">
-              <thead><tr><th>Run</th><th>Workflow</th><th>Started</th><th>State</th></tr></thead>
+              <thead><tr><th>Run</th><th>Workflow</th><th>Started</th><th>State</th><th>Session</th></tr></thead>
               <tbody>
                 {runs.map(r => (
                   <tr key={r.slug}>
@@ -87,6 +120,9 @@ export function WorkflowsView() {
                     <td>{tiles?.find(t => t.name === r.workflow)?.displayName ?? r.workflow}</td>
                     <td>{new Date(r.launchedAt).toLocaleString()}</td>
                     <td className={`wf-state ${r.state}`}>{r.state}</td>
+                    <td>{sessions.filter(x => x.run?.slug === r.slug).map(x => (
+                      <button key={x.name} type="button" className="link-button" onClick={() => setViewing(x)}>{x.name}</button>
+                    ))}</td>
                   </tr>
                 ))}
               </tbody>
