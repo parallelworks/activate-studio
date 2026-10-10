@@ -6,8 +6,8 @@ import { UIProvider } from '@parallelworks/ui'
 import App from './App'
 import { rememberHashChanges, restoreLastHash } from './lastLocation'
 import { applyRememberedFavicon } from './config'
-import '@fontsource-variable/public-sans'
-import '@fontsource-variable/geist-mono'
+// Geist Sans and Geist Mono, the platform's typefaces, from the shared package.
+import '@parallelworks/ui/fonts.css'
 // The UI package's prebuilt stylesheet (chat rules included) loads before
 // ours, so ours wins at equal specificity.
 import './layers.css'
