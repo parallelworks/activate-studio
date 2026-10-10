@@ -1,120 +1,88 @@
-{appName} is a workspace over a knowledge base: the documents, images, spreadsheets, and code a team accumulates, indexed so both people and AI can find and use them. A chat assistant grounded in the corpus sits beside direct tools for browsing, searching, querying, labeling, and adding material. When connected to the Parallel Works ACTIVATE platform, the assistant can also reason over, preview, run, and monitor the account's workflows.
+{appName} is a workspace over a knowledge base: a team's documents, images, spreadsheets, and code, indexed so people and the assistant can find and use them. Ask the assistant a question and it answers from those files, with a link to each source.
 
-The intent is an interaction layer for AI-driven engineering: one place where the knowledge base, the retrieval layer, the models, and the execution layer meet. Every substantive answer is built by searching and reading the actual corpus, with each citation a link that opens the source in the Library viewer.
+### Start here
+
+1. **Ask a question.** Open **Chat** and ask in plain language, for example "what did we decide about the cooling design?". The answer links the files it used; click one to open it.
+2. **Find a file.** Type a word or phrase in **Search**. Click a result to open the file at the match.
+3. **Browse.** **Library** shows the folders. Click a file to view it: documents, images, PDFs, office files, and 3D models open in place.
+4. **Add material.** Drag files or folders onto the Library tree. They are searchable within seconds.
+5. **Run a workflow** (on the ACTIVATE platform). Open **Workflows**, choose a tile, fill in the form, and press **Run**.
 
 ## Chat
 
-Ask in plain language; the assistant searches, reads the files that matter, and cites clickable paths. It remembers past sessions: every conversation is exported into the corpus and searchable, so "what did we discuss about X" works.
+Ask in plain language. The assistant searches the knowledge base, reads the files that matter, and links each source. Past conversations are kept and are searchable themselves.
 
-- Shows things inline, not just as links: images, document pages, an interactive workflow DAG window, and an interactive 3D model window can all appear inside the reply.
-- **Scope** (top right of the thread) limits retrieval for the conversation to selected labels; the restriction is enforced server-side.
-- Recommends workflows from the account catalog; validates runs with a dry run and launches a real run only when you explicitly ask; lists and inspects runs, including errors and log tails.
-- Attach files or images with the paperclip; they are filed into the library, indexed, and their content (including text read from images) is part of the conversation. Clicking an attachment tile later opens the file in the Library.
-- Type **/** in the composer for a palette of everything slash-invocable, filtered as you type; arrow keys move, Enter or Tab inserts, Escape closes. /skill_name applies a skill's instructions, /tool_name runs a tool, /agent_name adopts an agent file for one message, and /help lists them all.
-- Launches work on connected HPC systems from plain requests ("run X on the cluster"): site partitions, walltime limits, and saved configurations are read from the platform, a run is followed to completion, and a failure is explained in terms of the submission. If the platform's per-user workspace has scaled down while idle, a launch starts it and retries on its own.
-- A model whose provider has locked or rejected its key shows **[locked]** or **[unavailable]** in the model list, with a banner above the thread; Settings, "Model access" carries the unlock link and a Re-check.
-- The thinking line above a reply expands to show the reasoning and each tool call as it happens, and stays with the message afterward.
-- **Select chats**, under New chat in the conversation rail, selects past conversations (Shift-click selects a range) and deletes them together.
-- In a shared platform session, add your own model key under Settings, "Model access", to chat and run platform tools as yourself; the page shows whether the key works and which models it reaches, and the footer's model line tracks it afterward. A deployment can require a personal key, in which case chat and models wait until one is added while browsing, search, and adding material stay open.
+- **Attach** files or images with the paperclip; they are added to the library and indexed.
+- **Scope**, at the top right, limits answers to material with the labels you choose.
+- Type **/** to pick a skill, a tool, or a persona to use.
+- Ask it to run work on a connected HPC system; it follows the run and explains a failure if there is one.
+- **Select chats**, under New chat, deletes old conversations together.
+- In a shared session, add your own model key under Settings, "Model access", to chat as yourself.
 
 ## Library
 
-The file tree beside a viewer. Markdown and code render directly; images show the original; PDFs and office documents render as page images; STL and STEP models open in an interactive 3D viewer.
+The folder tree beside a viewer. Markdown, code, images, PDFs, office documents, and STL and STEP models open in place.
 
-- The **Indexed text** tab shows exactly what the search index holds for a file; for images that is OCR text plus a model-written description.
-- **Find** (viewer header) searches within the open file: every match is highlighted, the bar floats while you scroll, and Enter, Shift+Enter, or the buttons step through them. A file opened from a search result lands on its first match with the query already in the bar; a PDF or office document opened that way lands on its Indexed text, since page images cannot be searched.
-- **Right-click** any row for a context menu: Open, Labels…, and Delete on files; New folder inside…, Labels…, and Delete folder (with its contents, after a confirm) on directories.
-- **Delete** removes material from the corpus and the index together.
-- Panes resize at the boundary and collapse from the header.
-- When the deployment mounts more than one library, the picker at the top of the Library rail chooses which one you browse and search; a read-only library says so beside its name. Settings, "Libraries" lists each one with its index and source paths and adds another by path.
+- **Right-click** a file or folder to label it, add a folder, or delete it.
+- **Find**, in the viewer's header, searches the open file.
+- **Indexed text** shows what search sees for a file, including text read from images.
+- If several libraries are available, the picker at the top of the tree switches between them.
 
 ## Search
 
-One box, three retrieval modes at once, each result labeled by the mode that found it: **full text** (exact words, including inside DOCX, PDF, PPTX, and text on images), **semantic** (meaning-based), and **filename**.
+One box finds exact words (inside PDFs, office documents, and images too), related meaning, and file names. Each result says which kind of match it was.
 
-- Whole words by default: TIN matches the word TIN, not "routine". Put an exact phrase in "quotes", separate alternatives with OR, exclude with -word or NOT word, and ask for a prefix with word*. Semantic results are left out for identifiers, acronyms, quoted phrases, and operator queries, where a "similar" document would read as a wrong answer.
-- Clicking a result opens the file on its first match, with the query in the viewer's find bar.
-- Label chips under the box filter results to material carrying those labels.
-- Hover a result for its checkbox; **Select all** plus **Labels…** applies labels to the whole result set in one action.
-- **Load more matches** extends a search to up to 1,000 results.
-
-## Agents
-
-Three pages under one tab. **Fleet** is the operator base for standing agents: each has a goal, a persona, a budget, and triggers (a schedule, a workflow run ending, files changing under a folder). An agent wakes in ticks, does one bounded round of work with the same tools the assistant has, writes the outcome to its journal, and parks itself under **Needs you** when a decision needs a person; tell it something in its message box and it answers on the next tick. Start from a template or write a goal. **Tasks** is the board for work the assistant has delegated: each task is a card with its state, a badge naming the system when the agents run as a campaign of platform workflow runs, a badge when they run as pw code sessions, and a progress bar; opening one shows the agent tree, each agent's live output, and the board feed. A session agent that asks to do something its permissions do not cover waits under **Waiting for your approval** until you approve or deny it, and a working session agent takes direction from the box under its output without ending its turn (see `docs/AGENTS.md`). Settings, "External access", Delegation turns delegation on, sets how many agents a task may use and how deep they may delegate, and chooses how agents run: one-shot runs, pw code sessions, or either per task. **Personas and skills** is the library of markdown files that change how the assistant behaves, with an editor for adding or changing them.
+- Use "quotes" for a phrase, OR between alternatives, -word to leave a word out, and word* for words that start the same way.
+- Label chips under the box narrow the results.
+- Tick results to label them together.
 
 ## Workflows
 
-On the ACTIVATE platform, the Workflows tab offers the platform workflows chosen for {appName}, as tiles. Opening one shows the workflow's own form: **Validate** checks the inputs with the platform without running anything, and **Run** submits it under your account. Saved configurations appear as presets, and recent runs are listed under the tiles.
+On the ACTIVATE platform, the Workflows tab shows the workflows chosen for {appName}. Open a tile, fill in the form, and press **Run**; **Validate** checks the inputs without running anything. Runs use your own account.
 
-- Tiles come from three places: workflows on the account (if you lack one, the tile offers to add a copy to your account), the marketplace, and GitHub repositories, including component workflows that are not published to the marketplace.
-- A GitHub workflow that asks for access to your account variables shows the request above Run. Run and Validate wait until you tick the approval, and the grant stays with that repository until you revoke it with `pw workflows permissions revoke`.
-- Administrators choose the set under Settings, "Workflows": tick workflows from the account or the marketplace, or enter a GitHub repository, directory, or link under **From GitHub**, press **Find workflows**, and tick the ones to offer.
-- The assistant sees the same set and can list, explain, validate, and run them.
+- Saved configurations appear as presets at the top of the form.
+- A workflow from GitHub that asks for access to your account variables waits until you tick the approval.
+- Administrators choose the set under Settings, "Workflows".
+
+## Agents
+
+When a request splits into parts, the assistant can hand each part to an agent working in parallel. The Agents tab has three pages:
+
+- **Tasks**: each delegated task, its agents, and their output. Approve or deny what an agent asks to do, or give a working agent direction.
+- **Fleet**: standing agents that wake on a schedule or when something changes, and ask you when they need a decision.
+- **Personas and skills**: the files that shape how the assistant behaves.
+
+Delegation is turned on under Settings, "External access".
 
 ## Query
 
-Structured questions about the corpus itself, answered from the file index in tens of milliseconds.
-
-- **Canned**: largest, newest, oldest, recently changed, totals by extension, biggest directories.
-- **Builder**: filters (including labels), grouping, sorting, and subtree scope, no SQL needed. **Reset** clears the form and results.
-- **SQL**: raw read-only SELECT over the index tables.
-- **Saved queries**: name one, rerun it in a click; a few starter examples ship with a fresh deployment.
-- Result rows with a path column select the same way search results do, for bulk labeling.
+Structured questions about the files themselves (largest, newest, totals by type) answered in milliseconds. Start from a canned query, use the builder, or write read-only SQL, and save the ones you reuse.
 
 ## Labels
 
-Labels organize the corpus without moving files, and they follow inheritance: labeling a directory covers everything under it, now and later, without touching the files.
-
-- Apply from the tree (select mode or a row's tag button), the viewer's **Labels** button, search or query multi-select, or by asking the assistant.
-- Filter by label in Search, the Query builder, the chat Scope control, and the assistant's own retrieval.
-- A file's own labels show green in the viewer; inherited ones gray.
+Labels organize files without moving them. Label a folder and everything in it carries the label, including files added later. Apply labels from the tree, the viewer, search results, or by asking the assistant; filter by them in Search, Query, and the chat's Scope.
 
 ## Adding material
 
-Everything added becomes searchable in about a second.
-
-- Drag files or whole folders onto the tree (a dropped folder keeps its structure), or use **Add**; the destination folder is created on demand.
-- **Add** also has a **New folder** field: type a path (nested is fine) to create an empty directory and make it the destination.
-- Add by URL: web pages are reduced to text with the source recorded; PDFs saved as-is.
-- Files that arrive outside the interface are picked up by the background sync within minutes, or immediately with **sync now**.
-
-## Feature previews
-
-Capabilities a deployment can switch on under Settings, "Feature previews". **Voice conversations** put a Voice button above the chat that opens a live back-and-forth with the assistant: it listens, decides when you have finished a thought, answers in spoken sentences, and can be interrupted. It runs on a separate Unmute deployment (the `unmute` workflow) whose model is this Studio's own assistant, with its tools and knowledge base, so it can look things up and launch work while you talk.
+Drag files or folders onto the tree, or use **Add**, which also takes a web address. New material is searchable in about a second. Files copied in outside {appName} are picked up within minutes, or right away with **sync now** at the bottom of the navigation.
 
 ## Stats
 
-Corpus health at a glance, and every element is a shortcut: storage rows and label pills open a prefilled query listing the matching files, largest and recently-changed rows open in the viewer, and the activity card tracks conversations, exported transcripts, and attachments.
+The knowledge base at a glance: size, file types, labels, and recent changes. Click any figure to see the files behind it.
 
 ## Getting around
 
-The address bar tracks what you are looking at: open documents and views live in the URL, so refresh restores your place, browser back and forward walk your path, and a copied link drops someone else exactly where you were. The footer shows the platform-verified identity, model availability (whether the AI gateway credential currently works), and index health; click any of them for details.
+The address bar follows what you are looking at, so back and forward work and a copied link opens the same place for someone else.
 
-**Install app**, in the navigation when the browser supports it, installs {appName} as a desktop app that opens in its own window. With a classification banner set, the app's title bar takes the banner's color. In Chrome, the chevron in the title bar moves the banner into the title bar itself, so the marking and the window controls share one strip; Chrome remembers the choice.
+- **Install app**, in the navigation, installs {appName} as a desktop app in its own window. If a classification banner is shown, the chevron in Chrome's title bar moves the banner into the title bar.
+- The bottom of the navigation shows who you are signed in as, whether the models are reachable, and the state of the index; click any of them for details.
 
-## RAG for other tools
+## Using it from other tools
 
-The knowledge base is usable as a grounded model from outside the Studio: the deployment serves an OpenAI-compatible endpoint that any OpenAI-speaking client (pw code, SDKs) can point at with its own API key, and the Settings RAG endpoint section can publish it into the platform chat and provider catalog.
-
-The two modes suit different clients. `studio-agent` runs the full assistant pipeline and returns a finished cited answer; use it inside tool-calling harnesses such as pw code. `studio-rag` injects retrieved cited context into a single fast model call; use it from plain chat interfaces and scripted Q&A, where no tool loop competes with the context. The Settings section chooses which of the two appear in model listings (studio-agent by default); both stay callable by name either way. Pin a base model per request as `studio-agent/<model-id>`; the Settings page's recent-calls log shows which underlying model each call resolved to.
-
-The same Settings section shows the registration state, the exact catalog ids, and a log of recent endpoint calls with the model used, credential source, retrieval terms, and timing. Inside the Studio's own chat the published catalog models are hidden, since the app already provides the same grounding directly.
+Other tools can use this knowledge base. pw code and other MCP clients can search it directly, and any OpenAI-compatible client can use it as a model that answers from it. Settings, "External access" has the addresses and the exact commands.
 
 ## The index
 
-Built on GUFI, the Grand Unified File Index from Los Alamos National Laboratory: a tree of small databases mirroring the directory structure, holding metadata, extracted text, and embedding vectors. Access control is inherited from the filesystem, and additions re-index only the touched folder.
+{appName} is built on GUFI, the Grand Unified File Index from Los Alamos National Laboratory: a tree of small databases, one per folder, holding each file's details, its text, and search vectors. Access follows the file system's permissions, and a change re-indexes only the folder it touched.
 
-Corpus root for this deployment: **{kbLabel}**
-
-## Built on
-
-Open technologies, each doing the job it was built for.
-
-- [GUFI](https://github.com/mar-file-system/GUFI), the Grand Unified File Index from Los Alamos National Laboratory: the metadata, full-text, and vector index.
-- [sqlite-vec](https://github.com/asg017/sqlite-vec) and [sqlite-lembed](https://github.com/asg017/sqlite-lembed): embedding storage and on-index embedding with a local GGUF model.
-- [@parallelworks/ui](https://www.npmjs.com/package/@parallelworks/ui): the chat interface (`@parallelworks/ui/ai`), driven by a custom adapter against any OpenAI-compatible endpoint, and the platform's workflow form renderer.
-- [Streamdown](https://github.com/vercel/streamdown): streaming markdown rendering in chat and the viewer.
-- [three.js](https://threejs.org/) and [occt-import-js](https://github.com/kovacsv/occt-import-js) (Open CASCADE compiled to WebAssembly): the 3D model viewer and STEP conversion.
-- [Tesseract](https://github.com/tesseract-ocr/tesseract): OCR for text inside images.
-- [poppler](https://poppler.freedesktop.org/): PDF page rendering for previews.
-- [Fastify](https://fastify.dev/), [React](https://react.dev/), and [Vite](https://vite.dev/): the server and the interface.
+Knowledge base for this deployment: **{kbLabel}**

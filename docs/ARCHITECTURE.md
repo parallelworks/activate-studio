@@ -2,6 +2,16 @@
 
 ACTIVATE Studio is a web interface over a knowledge base directory (the configured `KB_ROOT`): a chat assistant with tool calling grounded in the corpus, a library (file tree, document viewer, upload, reorganisation, labels), search (full text plus semantic), a structured query interface, and an OpenAI-compatible endpoint that serves the corpus as a model. It runs against any OpenAI-compatible model endpoint and integrates with the Parallel Works ACTIVATE platform for model access, workflow and cluster tools, per-user identity, and session serving. The retrieval layer is built on GUFI, the Grand Unified File Index from LANL (github.com/mar-file-system/GUFI). This document explains how each layer works and why it is shaped this way.
 
+```mermaid
+flowchart LR
+    UI["Web UI<br/>chat / library / search / query"] --> STUDIO
+    EXT["OpenAI-compatible and MCP clients<br/>(pw code, SDKs)"] --> STUDIO
+    STUDIO["Studio server<br/>assistant, endpoints, indexer"] --> KB
+    STUDIO --> MODEL["Any OpenAI-compatible<br/>model endpoint"]
+    KB[("Knowledge base<br/>files + labels + GUFI index")]
+    PLATFORM["ACTIVATE platform (optional)<br/>identity / workflows / agents"] -.-> STUDIO
+```
+
 ## 1. The index
 
 GUFI represents a filesystem as a parallel tree of SQLite databases. `gufi_dir2index` walks the source tree and creates, for every source directory, a matching directory in the index containing one `db.db`. Each `db.db` holds the metadata of that directory's files: name, inode, size, mtime, mode, owner, xattrs. Views such as `vrpentries` and `vrsummary` present entries and per-directory rollup totals.

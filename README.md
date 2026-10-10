@@ -2,168 +2,60 @@
 
 [![ci](https://github.com/parallelworks/activate-studio/actions/workflows/ci.yml/badge.svg)](https://github.com/parallelworks/activate-studio/actions/workflows/ci.yml)
 
-A standalone web workspace over a knowledge base directory: a chat assistant with tool calling grounded in the corpus, a library (file tree, viewer, upload and URL ingestion, original-file previews), hybrid search (full text plus semantic, including text inside office documents, PDFs, and images), and a structured query interface over the file index. It runs anywhere Node, Python, and GUFI run, against any OpenAI-compatible model endpoint.
+A web workspace over a folder of documents. It indexes the folder, including the text inside PDFs, office files, and images, and puts a chat assistant over it that answers from those files and links its sources, alongside search, browsing, and structured queries. It runs anywhere Node and GUFI run, with any OpenAI-compatible model. On the Parallel Works ACTIVATE platform it can also run workflows and agents on connected HPC and cloud systems.
 
-It also integrates with the Parallel Works ACTIVATE platform when present: the platform's AI gateway works with zero configuration, the assistant gains workflow tools (catalog, DAG preview, dry-run validation, execution, run monitoring), a Workflows tab offers chosen workflows from the account, the marketplace, or GitHub, delegated agents can run as pw code sessions, and the app can be served as a platform session. None of that is required to use it. Browsers that install web apps can install the Studio as a desktop app.
+## Quick start
 
-The retrieval layer is built on GUFI, the Grand Unified File Index from LANL (per-directory SQLite index with fts5 and vec0 tables). How the whole system works, including incremental indexing and the need-to-know model, is documented in `docs/ARCHITECTURE.md`. Setup and branding for your own deployment: `docs/CUSTOMIZATION.md` and `.env.example`.
+**On ACTIVATE:** run the workflow in [`deploy/workflow.yaml`](deploy/workflow.yaml) on a connected resource and set its "Knowledge Base Directory" to your folder. It builds the index and opens the Studio as a session. The platform's models work with no setup.
 
-## Architecture
-
-```mermaid
-flowchart LR
-    UI["Web UI<br/>chat / library / search / query"] --> STUDIO
-    EXT["OpenAI-compatible clients<br/>(pw code, SDKs)"] --> STUDIO
-    STUDIO["Studio server<br/>assistant, /v1 endpoint, indexer"] --> KB
-    STUDIO --> MODEL["Any OpenAI-compatible<br/>model endpoint"]
-    KB[("Knowledge base<br/>files + labels + GUFI index")]
-    PLATFORM["ACTIVATE platform (optional)<br/>identity / workflows / registration"] -.-> STUDIO
-```
-
-## Built on
-
-- [GUFI](https://github.com/mar-file-system/GUFI) (Los Alamos National Laboratory): the metadata, full-text, and vector index.
-- [sqlite-vec](https://github.com/asg017/sqlite-vec) and [sqlite-lembed](https://github.com/asg017/sqlite-lembed): embedding storage and on-index embedding with a local GGUF model.
-- [@parallelworks/ui](https://www.npmjs.com/package/@parallelworks/ui): the chat interface (`@parallelworks/ui/ai`, driven by a custom adapter) and the platform's workflow form renderer.
-- [Streamdown](https://github.com/vercel/streamdown): streaming markdown rendering.
-- [three.js](https://threejs.org/) and [occt-import-js](https://github.com/kovacsv/occt-import-js): the 3D model viewer and STEP conversion.
-- [Tesseract](https://github.com/tesseract-ocr/tesseract): OCR for text inside images.
-- [Fastify](https://fastify.dev/), [React](https://react.dev/), [Vite](https://vite.dev/): the server and the interface.
-
-## Layout
-
-- `server/` Fastify + TypeScript: KB API, hybrid search, chat tool loop against an OpenAI-compatible model endpoint, upload and URL ingestion, incremental indexing and background sweep, structured queries.
-- `web/` Vite React SPA: Chat (`@parallelworks/ui/ai`), Library, Search, Query, Stats, Agents, Workflows, Settings, Help.
-- `indexer/` GUFI toolchain build, full rebuild, enrichment (text extraction, OCR, vision captions), embeddings.
-- `testdata/` synthetic corpus and the end-to-end extraction test (`pnpm test`).
-- `deploy/` optional ACTIVATE session serving.
-- `docs/` architecture documentation and the in-app help content.
-
-## Running standalone
+**On your own machine** (Linux or macOS, with Node 26 and pnpm):
 
 ```
-pnpm install
-pnpm build
-indexer/setup_gufi.sh                          # one-time: GUFI toolchain + embedding model (GUFI_AI=0 to skip the vector extensions)
-KB_ROOT=/path/to/corpus indexer/reindex.sh     # first index build
-KB_ROOT=/path/to/corpus node server/dist/main.js   # http://localhost:4080
+git clone https://github.com/parallelworks/activate-studio && cd activate-studio
+pnpm install && pnpm build
+indexer/setup_gufi.sh                      # once: builds the GUFI index engine
+export KB_ROOT=/path/to/your/folder
+export OPENAI_BASE_URL=https://api.openai.com/v1 OPENAI_API_KEY=<your key>
+indexer/reindex.sh                         # indexes the folder
+pnpm start                                 # then open http://localhost:4080
 ```
 
-Environment: `KB_ROOT` (corpus directory; defaults to `/data/knowledge-base` where that exists, otherwise `knowledge-base/` beside the code, seeded on first start), `KB_LABEL`, `APP_NAME`, `APP_ICON` (path to a brand image), `HELP_FILE` (override `docs/HELP.md`), `SUGGESTED_PROMPTS` (JSON array), `APP_USER_ID`/`APP_USERNAME`/`APP_USER_NAME`, `SWEEP_INTERVAL_SEC` (default 300, 0 disables), `ADE_VISION_MODEL` (enables image captioning), `PORT`. A gitignored `.env` in the repo root is the place for deployment-specific values; `deploy/run_endpoint.sh` sources it.
+Without `KB_ROOT`, it opens a small sample folder. Any OpenAI-compatible endpoint works in place of OpenAI's. On a Mac, see [`docs/MACOS.md`](docs/MACOS.md).
 
-## Running on macOS
+## What it does
 
-The Studio runs from a clone on macOS, and `indexer/setup_gufi.sh`
-builds GUFI there too, using the Homebrew toolchain that GUFI's own
-macOS CI uses. `GUFI_AI=0` skips the vector extensions, which are the
-hard part of that build, and keeps metadata, filename, and full-text
-search. A `macos-15` job in CI builds and runs the suite on every pull
-request.
+- **Chat** answers from your files and links each source.
+- **Search** finds exact words, related meaning, and file names in one box.
+- **Library** browses and views documents, images, PDFs, office files, and 3D models.
+- **Query** answers structured questions about the files, such as the largest or newest, or runs read-only SQL.
+- **Workflows**, on ACTIVATE, runs chosen platform workflows from their own forms.
+- **Agents** take the parts of a larger request in parallel; you can watch them, approve what they ask to do, and steer them.
+- **Other tools**, such as pw code, can search the same knowledge base over MCP or an OpenAI-compatible endpoint.
 
-Start to finish, including what works before an index exists:
-[`docs/MACOS.md`](docs/MACOS.md).
-
-## Libraries
-
-The Studio can mount several indexes at once: the knowledge base it owns,
-plus read-only ones such as a site's root-built GUFI index or an index
-someone handed over. Users pick one in the Library rail; administrators
-list them in the deploy form, set `STUDIO_LIBRARIES`, or add one in
-Settings, where the tree is probed first. `STUDIO_SECTIONS` chooses which
-parts of the app appear, so a site can run an index viewer with no
-assistant. Details: [`docs/LIBRARIES.md`](docs/LIBRARIES.md).
-
-On the ACTIVATE platform, the Workflows tab offers a set of platform
-workflows chosen for this Studio, as tiles that each open the workflow's
-own form and run it under the viewer's account. The set can mix workflows
-on the account, marketplace workflows, and workflow files in GitHub
-repositories, including component workflows never published to the
-marketplace; a GitHub workflow that declares access to account variables
-runs only after the viewer approves it. Administrators pick the set in
-Settings or set `STUDIO_WORKFLOWS`. Details:
-[`docs/WORKFLOWS.md`](docs/WORKFLOWS.md).
-
-## Agents
-
-The assistant can delegate a request to agents that work its parts in
-parallel, each writing its result into the knowledge base, and Fleet keeps
-standing agents that wake on a schedule or a trigger. Delegated agents run
-as one-shot pw code runs or as sessions in the pw code daemon, where their
-progress is live, a person approves what an agent asks to do, and a working
-agent can be steered. Details: [`docs/AGENTS.md`](docs/AGENTS.md).
+The in-app Help is the user guide: [`docs/HELP.md`](docs/HELP.md), with the details in [`docs/REFERENCE.md`](docs/REFERENCE.md).
 
 ## Documentation
 
 | Document | Covers |
 |---|---|
-| [`docs/HELP.md`](docs/HELP.md) | the in-app user guide, also what the assistant reads to answer questions about the Studio |
-| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | the index, retrieval, and how the server works |
-| [`docs/CUSTOMIZATION.md`](docs/CUSTOMIZATION.md) | deployment configuration, branding, and model access |
-| [`docs/LIBRARIES.md`](docs/LIBRARIES.md) | several indexes at once, and which sections of the app appear |
-| [`docs/WORKFLOWS.md`](docs/WORKFLOWS.md) | the Workflows tab and its endpoints |
-| [`docs/AGENTS.md`](docs/AGENTS.md) | delegated agents, one-shot runs and pw code sessions |
+| [`docs/HELP.md`](docs/HELP.md) | the user guide, shown in the app and read by the assistant |
+| [`docs/REFERENCE.md`](docs/REFERENCE.md) | the details behind the user guide, part by part |
+| [`docs/DEPLOY.md`](docs/DEPLOY.md) | running it on ACTIVATE, in a container, or as a plain server, and connecting models |
+| [`docs/CUSTOMIZATION.md`](docs/CUSTOMIZATION.md) | settings, branding, identity, and the assistant's tools |
+| [`docs/LIBRARIES.md`](docs/LIBRARIES.md) | several indexes at once, and which parts of the app appear |
+| [`docs/WORKFLOWS.md`](docs/WORKFLOWS.md) | the Workflows tab |
+| [`docs/AGENTS.md`](docs/AGENTS.md) | delegated agents |
 | [`docs/MULTI-USER.md`](docs/MULTI-USER.md) | several people on one deployment |
 | [`docs/MACOS.md`](docs/MACOS.md) | running on macOS |
-| [`deploy/COMPUTE.md`](deploy/COMPUTE.md) | running the whole stack as a batch job on a compute node |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | how the index, retrieval, and server work |
+
+## Built on
+
+- [GUFI](https://github.com/mar-file-system/GUFI) (Los Alamos National Laboratory): the metadata, full-text, and vector index.
+- [sqlite-vec](https://github.com/asg017/sqlite-vec) and [sqlite-lembed](https://github.com/asg017/sqlite-lembed): vector storage and embedding with a local model.
+- [@parallelworks/ui](https://www.npmjs.com/package/@parallelworks/ui): the chat interface and the platform's workflow forms.
+- [Streamdown](https://github.com/vercel/streamdown), [three.js](https://threejs.org/), [occt-import-js](https://github.com/kovacsv/occt-import-js), [Tesseract](https://github.com/tesseract-ocr/tesseract), [Fastify](https://fastify.dev/), [React](https://react.dev/), and [Vite](https://vite.dev/).
 
 ## Contributing
 
-Contributions are welcome. [`CONTRIBUTING.md`](CONTRIBUTING.md) covers setup, the pnpm workspace, tests, and what a pull request needs; security issues go through [`SECURITY.md`](SECURITY.md).
-
-## Releases and change records
-
-Every version is a tag, and every tag is a GitHub Release whose notes are
-the descriptions of the pull requests it contains; those descriptions are
-written as change notes when the change is made. `CHANGELOG.md` is the
-same record for every version at once. Both come from one script:
-
-```
-node scripts/release-notes.mjs v1.59        # notes for one version
-node scripts/release-notes.mjs --changelog  # regenerate CHANGELOG.md
-```
-
-To cut a release: merge, tag `vX.Y`, push the tag, regenerate the change
-log, and publish with
-`gh release create vX.Y --title vX.Y --notes "$(node scripts/release-notes.mjs vX.Y)"`.
-
-## Container build
-
-`deploy/app.def` packages the server, web build, GUFI, and the
-extraction toolchain as a single Apptainer/Singularity image for
-container-first sites (it is also what the compute-node workflow runs):
-
-```
-apptainer build studio.sif deploy/app.def
-```
-
-Run it with the knowledge base and index bound in:
-
-```
-apptainer run --bind /path/to/corpus:/kb --env KB_ROOT=/kb \
-  --env INDEX_BASE=/kb-index --bind /path/to/index:/kb-index \
-  --env PORT=4080 studio.sif
-```
-
-The build needs a Linux host (or VM) with Apptainer 1.2+; there is no
-macOS container path. The deploy workflows pull a prebuilt image from a
-bucket when one is configured, so most deployments never build locally.
-
-## Models
-
-The chat talks to any OpenAI-compatible backend.
-
-- Standalone: set `OPENAI_BASE_URL` to the endpoint's `/v1` base and `OPENAI_API_KEY` to its key. OpenAI, vLLM, llama.cpp server, Ollama's OpenAI-compatible endpoint, and similar all work. The endpoint must serve `/models` and streaming `/chat/completions`; tool calling is required for the assistant's knowledge base and workflow tools.
-- On ACTIVATE: with an authenticated pw CLI on the host, no configuration is needed at all; the server reads the CLI's credential for the platform gateway, and every model that account can reach appears in the chat's model selector automatically. Otherwise set `PW_API_KEY`. `PW_ALLOCATION` enables org-provider models.
-
-## ACTIVATE integration (optional)
-
-### Launch as an ACTIVATE workflow
-
-`deploy/workflow.yaml` deploys Studio onto any connected resource from the ACTIVATE workflow form. Two source modes: GitHub (default; clones the repository and builds on the resource, fetching Node and the embedding model when absent) and bundle (a self-contained tarball built by `deploy/make_bundle.sh` for systems without outbound network, pulled from a bucket or pre-staged at `<workdir>/bundle-prestage.tar.gz`). Session methods follow the containerized-webapp-deployment pattern: `web` exposes the app through a forked `pw` endpoint that outlives the workflow, `e2e` launches, asserts `/healthz`, and tears down, `cleanup` stops everything a prior launch left behind. GUFI is built from source on the resource when cmake is available; without it the app still runs with filesystem browsing and grep search. `deploy/app.def` additionally packages everything as an Apptainer image for container-first sites. The workflow's scheduler placement runs the whole stack, model serve included, as one batch job on a compute node, in the resource's scheduler dialect (Slurm or PBS); it is documented in `deploy/COMPUTE.md`.
-
-- The assistant's workflow tools (catalog with descriptions and tags, DAG preview, dry-run validation, execution on explicit request, run monitoring) come from the pw CLI and hide gracefully when it is absent. The knowledge base tools work everywhere.
-- Serve as a platform session with `deploy/run_endpoint.sh`, which registers the app under the account's reserved subdomain.
-
-## Ingestion
-
-Files and URLs added through the Library's Add panel (or dragged onto the tree, folders included) land in a chosen corpus directory and are searchable in under a second via incremental subtree indexing. Files that arrive outside the UI (scp, generators, git) are picked up by the background sweep within one interval, or immediately via the sync now button.
+Contributions are welcome. [`CONTRIBUTING.md`](CONTRIBUTING.md) covers setup, the repository layout, tests, pull requests, and releases. Report security issues through [`SECURITY.md`](SECURITY.md).

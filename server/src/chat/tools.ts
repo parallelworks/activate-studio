@@ -63,7 +63,7 @@ export const TOOL_CALLS: Record<string, string> = {
 
 /** The documents studio_docs can read, by the name the model passes. */
 const STUDIO_DOCS: Record<string, string> = {
-  help: 'HELP.md', architecture: 'ARCHITECTURE.md', customization: 'CUSTOMIZATION.md', libraries: 'LIBRARIES.md',
+  help: 'HELP.md', reference: 'REFERENCE.md', deploy: 'DEPLOY.md', architecture: 'ARCHITECTURE.md', customization: 'CUSTOMIZATION.md', libraries: 'LIBRARIES.md',
   workflows: 'WORKFLOWS.md', agents: 'AGENTS.md', 'multi-user': 'MULTI-USER.md', macos: 'MACOS.md',
 }
 
@@ -393,7 +393,7 @@ export const TOOL_SPECS: ToolSpec[] = [
     function: {
       name: 'studio_docs',
       description:
-        'Read this Studio\'s own documentation to answer questions about using the application itself: "help" is the in-app user guide (chat, library, search, agents, workflows, query, labels, adding material, installing as an app, navigation), "architecture" explains the index and retrieval design, "customization" covers deployment configuration, "libraries" several indexes at once, "workflows" the Workflows tab, "agents" delegated agents and pw code sessions, "multi-user" several people on one deployment, "macos" running on macOS. Use for any question about how the Studio works or how to do something in it; do not search the knowledge base for these.',
+        'Read this Studio\'s own documentation to answer questions about using the application itself: "help" is the in-app user guide (chat, library, search, agents, workflows, query, labels, adding material, installing as an app, navigation), "reference" the details behind each part of the guide (search syntax, keyboard use, model markers, query types, the external endpoints), "deploy" running it on ACTIVATE, in a container, or as a server and connecting models, "architecture" explains the index and retrieval design, "customization" covers deployment configuration, "libraries" several indexes at once, "workflows" the Workflows tab, "agents" delegated agents and pw code sessions, "multi-user" several people on one deployment, "macos" running on macOS. Use for any question about how the Studio works or how to do something in it; do not search the knowledge base for these.',
       parameters: {
         type: 'object',
         properties: {
