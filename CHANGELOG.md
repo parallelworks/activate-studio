@@ -2,6 +2,44 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.91 (2026-10-10)
+
+### Change log through v1.90 (#394)
+
+Regenerated with `node scripts/release-notes.mjs --changelog` after the v1.90 release.
+
+### Colors from the shared Parallel Works theme contract (#395)
+
+The Studio drew its colors from its own `--pw-*` palette, with a dark scheme re-stepped by hand, a partial set of the shared `--theme-*` tokens, and overrides on top of what the shared package derived. Three consequences:
+- Its colors only approximated the other Parallel Works apps.
+- Dark mode was navy-tinted where the others are neutral.
+- Native controls ignored the Studio's dark toggle. Select arrows were drawn black on a dark field, and the shared packages' `dark:` styles never applied, because the Studio set neither the `dark` class nor `color-scheme`.
+
+**Theme** (`accents.ts`)
+- The full 45-token contract comes from `@parallelworks/ui/theme`'s `deriveTheme`, the derivation the other apps use. The seed is the page background, and the accent comes from the Accent setting.
+- Surface tone is now the background seed:
+  - Cool: light `#f3f4f6`, dark `#0d1117`, the platform's own pair.
+  - Neutral: `#f4f4f5` / `#111214`.
+  - Warm: `#f5f4f1` / `#151312`.
+- Nothing derived is overridden afterward. The hand-set link, hover, element, and dark-button values are gone.
+
+**Stylesheet** (`styles.css`)
+- Each `--pw-*` name is now an alias of its contract token: text, page ground, panels, borders, muted text, links, inputs, hover, status hues, and the navigation colors. The rest of the stylesheet reads as before.
+- The hand-tuned dark token block is replaced by two blocks of derived defaults (navy on cool), used before the script runs. A test keeps them equal to `deriveTheme`'s output.
+- Primary buttons, the brand badge, the scope count, and blank workflow icons take the accent with its contract text color. In dark mode that is a light accent with dark text.
+
+**Dark mode for native controls** (`App.tsx`, `index.html`): the `dark` class and `color-scheme` are set alongside `data-theme`, at first paint and on every change. Select arrows, scrollbars, and the code editor now follow the toggle, and the shared packages' dark styles apply.
+
+**Tests**
+- `contrast.test.ts` checks eight text pairs at 4.5:1 or better, for every accent (custom included), every surface, and both schemes, on the derived colors. It covers text and muted text on the page ground and panels, a muted label on hover, text on the active navigation row, button text on the accent, and links on panels.
+- `themeDefaults.test.ts` checks the stylesheet's fallback blocks, the full contract for each accent and surface, and the aliases.
+
+**Not in this change.** The remaining `[data-theme='dark']` patch rules and literal colors are kept for now. They are pruned page by page in a follow-up, with screenshots, since some cover colors the contract does not define.
+
+**Checked.**
+- Screenshots of Search, Query, Stats, Library, Settings, Help, and Chat in light and dark. In dark, Query's select arrows are now light. The chat package follows the same panels and accent as the rest of the app.
+- Server tests (237) and web tests (65) pass.
+
 ## v1.90 (2026-10-10)
 
 ### Change log through v1.89 (#391)
