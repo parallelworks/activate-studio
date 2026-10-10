@@ -2,6 +2,76 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.90 (2026-10-10)
+
+### Change log through v1.89 (#391)
+
+Regenerated with `node scripts/release-notes.mjs --changelog` after the v1.89 release.
+
+### Parallel Works packages to ui 0.34 and workflow-parser 0.8, with Select chats in the list's top slot (#392)
+
+**What was wrong or missing**
+
+The web app was on `@parallelworks/ui` 0.31.0 and `@parallelworks/workflow-parser` 0.6.1, and the server on `@parallelworks/workflow-parser` 0.1.0, so the browser and the server converted workflow forms and prepared submitted values with different parser releases. The current releases are ui 0.34.0 and workflow-parser 0.8.0.
+
+Select chats was placed in the conversation list by finding the package's New chat button in the DOM, watching it with a MutationObserver, and portaling a row into its group. ui 0.33.0 added `sidebarTop` to `ChatLayout` for a host's own content at the top of the list (parallelworks/foundation#198).
+
+The conversation scrubber has not shown since the move to `@parallelworks/ui` 0.24 (#369). It found the message column by the class `max-w-4xl`, which the new package does not use, and ui 0.32.0 changed that column's class again.
+
+**What changed**
+
+- Versions: web `@parallelworks/ui` 0.31.0 to 0.34.0 and `@parallelworks/workflow-parser` 0.6.1 to 0.8.0; server `@parallelworks/workflow-parser` 0.1.0 to 0.8.0. The parser now depends on js-yaml 5, and js-yaml 4 leaves the lockfile. Neither package marks a breaking change in these ranges, and the functions the Studio calls keep their signatures, so no call site changed. The parser's `logSegments` module, removed after 0.1.0, was not used by the Studio.
+- Select chats renders through `sidebarTop`. The portal, the observer, and the `ade-rail-extra` rule are gone. The slot sits above the package's own controls, so the row is now above New chat. It keeps its icon on the collapsed rail and closes the phone drawer when picked, as the package's rows do; before, the drawer stayed open over the selection panel. It takes the package's `hover:chat-tint` like the rows beside it.
+- The scrubber finds the thread by the package's `chat-thread` class and that element's first child, which does not depend on the column's width class.
+- From the packages, with no Studio change: the chat column widens on a wide window (1022px at a 2200px window, unchanged at 1440px); the latest long reply stays open, so a conversation opens on its last line; the composer keeps send inside its box on a narrow screen. The 0.34 `ConversationLayout`, `drawerBar`, and the new 896px `DRAWER_BELOW_PX` apply only to `sidebarMode="auto"`. The Studio sets inline or drawer itself at its 760px phone breakpoint, so its layout is unchanged.
+- workflow-parser 0.8.0 keeps a workflow's `$meta.layout` through form conversion. ui 0.34.0 skips `$meta` when it lists fields (the layout renderer, parallelworks/foundation#202, merged after 0.34.0), so a workflow that declares a layout shows its fields in their listed order until a later ui release.
+- docs/HELP.md says Select chats is above New chat. docs/REFERENCE.md describes the folded older replies and the scrubber.
+
+**How it was verified**
+
+- `pnpm test`: server 237 passed, web 54 passed. `pnpm build` passes.
+- Parser parity: on 76 workflow definitions exported from the platform, `convertToDynamicForm`, `prepareSubmittableValues` (with each input's default), `workflowHasUserInputs`, `getAllDeps`, and `getStepLabel` return identical output on 0.1.0 and 0.8.0. `dumpYaml` differs on 14 of them: js-yaml 5 leaves a plain scalar that starts with a dash unquoted (`default: -c hostname` where 0.1.0 wrote `'-c hostname'`). All 76 dumps parse back to the original object under js-yaml 5, the `yaml` package, PyYAML, and Go's yaml.v3.
+- Headless Chrome against a build of this branch, with a temporary knowledge base and seeded conversations, at 1440, 2200, 1024, and 760px wide:
+  - Select chats is above New chat with the same 2px spacing as the package's rows, shows its icon on the collapsed rail, opens the selection panel, and deleted two picked conversations after the confirmation. At 760px it is in the drawer, and picking it closes the drawer.
+  - In a conversation with two long replies, the older one is folded and the latest is open, with the thread scrolled to its last line.
+  - The scrubber shows eight ticks for an eight-message conversation, and hovering one previews its message.
+  - A fixed-position element inside the chat's main area still covers the whole viewport after 0.32 made that area a size container, so the embed viewer's full-window overlay is unaffected.
+  - The Workflows tab lists a GitHub workflow (parallelworks/activate-batch), renders its form with the 0.8.0 WASM parser loaded, and Validate reaches the server and the platform CLI.
+- Not checked: the platform logins on the test host are expired, so the model list was empty, no reply was streamed, the cluster picker could not list clusters, and Validate stopped at the platform's credential error. Hover tints were not checked, since headless Chrome reports no hover capability and the package's hover classes apply only where hover is available.
+
+### Navigation in groups with a search box, and a user guide rail in groups (#393)
+
+The menu listed nine pages in one column, and the user guide's rail listed fourteen sections. Both read as a wall. They now group the way the ACTIVATE platform's menu does, and the sidebar has a search box.
+
+**Menu** (`App.tsx`, `styles.css`)
+- **Groups:** Chat stays a direct link, then two groups:
+  - **Knowledge:** Library, Search, Query, Stats, History.
+  - **Run:** Workflows, Agents.
+- **Group headings:** each heading is a label at 11px / 500 in the muted color, with a 12px chevron that rotates over 200ms as the group's pages slide open or closed. Groups start open, and a closed group is remembered (`ade-nav-closed`). A group that a deployment leaves with one page shows that page on its own.
+- **Items:** 32px rows (`6px 12px`) with 14px / 400 muted labels and 6px corners. The active page is filled and set at weight 500. Icons are drawn at 1.5 stroke with round ends.
+- **Icon rail:** 64px, showing every page flat. The collapse control is a 16px sidebar icon in place of the `«` text button.
+- **Phone:** the bottom bar is unchanged; the group wrappers drop out of its layout.
+
+**Search box.** Under the brand, as on the platform. Enter opens Search with the query and runs it. Cmd+K or Ctrl+K reaches the box from anywhere, or opens Search where the box is hidden (the icon rail and phones). Escape clears it.
+
+**User guide rail** (`HelpView.tsx`)
+- `docs/HELP.md` groups its pages under level-one headings: Basics, Organize and analyze, Run work, More.
+- The rail shows each group as a row with a rotating chevron, its pages under a thin rule. Only the group being read starts open, so Help opens on the Overview and a few headings.
+- The page being read is tinted in the accent.
+- A guide without level-one headings, such as a deployment's own `HELP_FILE`, still shows as one flat list.
+
+**Throughout.**
+- A 2px accent `:focus-visible` outline.
+- Transitions turned off under `prefers-reduced-motion`.
+- Thin scrollbars that darken on hover.
+
+**Docs.** The user guide's Getting around section covers the search box, its shortcut, and the groups. `docs/CUSTOMIZATION.md` describes the `#` grouping for custom help files.
+
+**Checked.**
+- Screenshots of the menu in light and with a group closed, the search box running a search after Ctrl+K, the Help rail in dark, the icon rail, and the phone bar.
+- A new web test for the guide parser covers grouped, flat, and the shipped guide.
+- Server tests (237) and web tests (57) pass.
+
 ## v1.89 (2026-10-10)
 
 ### Change log through v1.88 (#389)
