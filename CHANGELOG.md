@@ -2,6 +2,41 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.89 (2026-10-10)
+
+### Change log through v1.88 (#389)
+
+Regenerated with `node scripts/release-notes.mjs --changelog` after the v1.88 release.
+
+### A short user guide that starts with a quick start, and a README to match (#390)
+
+Readers found the user guide and the README overwhelming. Both had grown one detail at a time, and the guide's 2,265 words listed everything the app does.
+
+**User guide (`docs/HELP.md`, the in-app Help): 2,265 words to 948.**
+- The Overview page opens with **Start here**: five steps (ask a question, find a file, browse, add material, run a workflow).
+- Each part of the app gets a sentence or two on what it is for, plus the few actions people use there.
+- The left rail gains icons for Workflows, Agents, and Using it from other tools.
+- "Built on" moves to the README only. "RAG for other tools" becomes the shorter "Using it from other tools".
+
+**Reference (`docs/REFERENCE.md`, new): the details the guide no longer carries, by part of the app.** These include search syntax, keyboard use, model markers, the find bar, query types, label colors, the voice preview, and the two external endpoint models. Nothing was dropped.
+
+**README: 1,543 words to 486.** It has a one-paragraph description and a quick start for ACTIVATE and for your own machine. What it does gets one line per feature, followed by the documentation table, "Built on", and contributing.
+- Deployment, container, and model setup move to a new `docs/DEPLOY.md`.
+- The architecture diagram moves to `docs/ARCHITECTURE.md`.
+- The repository layout and the release procedure move to `CONTRIBUTING.md`.
+
+**Keeping it current.**
+- `CONTRIBUTING.md` gains a "The user guide" section: a user-facing change updates `docs/HELP.md` in the same pull request, and the README when it changes what the Studio offers. It keeps the guide short and task-first, puts details in the reference, and names settings exactly as the Settings page labels them.
+- The pull request template carries the same reminder as a comment, so it stays out of the release notes generated from these descriptions.
+
+**`studio_docs`** reads the two new documents (`reference`, `deploy`).
+
+**Checked.**
+- Every detail removed from the guide is in `REFERENCE.md` or a topic document.
+- The new text has none of the phrasings our style rules ban.
+- The Help page renders in a browser: the Overview shows Start here, and the rail lists the sections with their icons.
+- Server tests (237) and web tests (54) pass.
+
 ## v1.88 (2026-10-10)
 
 ### Change log through v1.87 (#387)
