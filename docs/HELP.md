@@ -16,7 +16,7 @@ Ask in plain language. The assistant searches the knowledge base, reads the file
 - **Scope**, at the top right, limits answers to material with the labels you choose.
 - Type **/** to pick a skill, a tool, or a persona to use.
 - Ask it to run work on a connected HPC system; it follows the run and explains a failure if there is one.
-- **Select chats**, under New chat, deletes old conversations together.
+- **Select chats**, above New chat, deletes old conversations together.
 - In a shared session, add your own model key under Settings, "Model access", to chat as yourself.
 
 ## Library
