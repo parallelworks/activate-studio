@@ -30,8 +30,8 @@ importers:
         specifier: 0.10.0
         version: 0.10.0
       '@parallelworks/workflow-parser':
-        specifier: ^0.1.0
-        version: 0.1.0
+        specifier: ^0.8.0
+        version: 0.8.0
       ajv:
         specifier: ^8.20.0
         version: 8.20.0
@@ -70,11 +70,11 @@ importers:
         specifier: ^5.3.0
         version: 5.3.0
       '@parallelworks/ui':
-        specifier: ^0.31.0
-        version: 0.31.0(@popperjs/core@2.11.8)(formik@2.4.9(@types/react@19.2.18)(react@19.2.8))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+        specifier: ^0.34.0
+        version: 0.34.0(@popperjs/core@2.11.8)(formik@2.4.9(@types/react@19.2.18)(react@19.2.8))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@parallelworks/workflow-parser':
-        specifier: ^0.6.0
-        version: 0.6.1
+        specifier: ^0.8.0
+        version: 0.8.0
       formik:
         specifier: ^2.4.9
         version: 2.4.9(@types/react@19.2.18)(react@19.2.8)
@@ -736,8 +736,8 @@ packages:
     os: [linux]
     libc: [glibc]
 
-  '@parallelworks/ui@0.31.0':
-    resolution: {integrity: sha512-Ac1CTAGdIw05hB9R7aeOWAliy8xGdQd4WYwNf6Gy7abil2Yfc7Yj1dIHpDGtgETcQTxwCKG9tK24GJcyS6QzvA==}
+  '@parallelworks/ui@0.34.0':
+    resolution: {integrity: sha512-LSlvWu4OihzJDJD+jCn7UumAvJ+MU+9jw8kjGe7fmxuJui9XVcgeiPj+090gRHrwG9k8HYgi89Y7gAjy/bELqQ==}
     peerDependencies:
       formik: ^2.4.9
       monaco-editor: ^0.57.0
@@ -747,11 +747,8 @@ packages:
       monaco-editor:
         optional: true
 
-  '@parallelworks/workflow-parser@0.1.0':
-    resolution: {integrity: sha512-ptMo7X8F6aQ4hvyZz9U6noNZt7WEE3LiA9Fwr3H2mxsX7VkAKJCsa2+18ByRr9N0dQI04eUntWq1bdShh37Dug==}
-
-  '@parallelworks/workflow-parser@0.6.1':
-    resolution: {integrity: sha512-4H/cTkk2vbMAtVJyXIOnkIZiQZJem76DEwjcy51iqlcgixtWvisHyCv4sVn56vE9rGHWjds97YeyniYEB/n0qQ==}
+  '@parallelworks/workflow-parser@0.8.0':
+    resolution: {integrity: sha512-hloMQgc9o6hkV0k+1rMAuqTzBKu1iFhO0fFt/iUM5hfJ5zbrMd7q3IVNdqR57v6mm9RAamjNDHPSfxb6shaQrQ==}
 
   '@pinojs/redact@0.4.0':
     resolution: {integrity: sha512-k2ENnmBugE/rzQfEcdWHcCY+/FM3VLzH9cYEsbdsoqrvzAKRhUZeRNhAZvB8OitQJ1TBed3yqWtdjzS6wJKBwg==}
@@ -1816,8 +1813,8 @@ packages:
   js-tokens@4.0.0:
     resolution: {integrity: sha512-RdJUflcE3cUzKiMqQgsCu06FPu9UdIJO0beYbPhHN4k6apgJtifcoCtT9bcxOpYBtpD2kCM6Sbzg4CausW/PKQ==}
 
-  js-yaml@4.3.2:
-    resolution: {integrity: sha512-SFNOvSJ+Dgf/9An904Yx+CgSlIPCkIpao4qo51lpee25TIRejdH3rhR4EZMGoNx3/TP3O+wzWuiTFl4sqbltzA==}
+  js-yaml@5.4.3:
+    resolution: {integrity: sha512-yzzNtgczwgoVHNigCyKTXcQJU4Y8t/ikU4UxXW0BvrLfHTGWZhsNcOT2s/a7vn81/4KqVnNmHjaUEPlvWnNwVw==}
     hasBin: true
 
   jsdom@26.1.0:
@@ -3218,7 +3215,7 @@ snapshots:
   '@napi-rs/lzma-linux-x64-gnu@1.5.1':
     optional: true
 
-  '@parallelworks/ui@0.31.0(@popperjs/core@2.11.8)(formik@2.4.9(@types/react@19.2.18)(react@19.2.8))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
+  '@parallelworks/ui@0.34.0(@popperjs/core@2.11.8)(formik@2.4.9(@types/react@19.2.18)(react@19.2.8))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
     dependencies:
       '@headlessui/react': 2.2.10(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@streamdown/code': 2.0.0(react@19.2.8)
@@ -3250,16 +3247,11 @@ snapshots:
       - '@popperjs/core'
       - supports-color
 
-  '@parallelworks/workflow-parser@0.1.0':
+  '@parallelworks/workflow-parser@0.8.0':
     dependencies:
-      anser: 2.3.5
-      js-yaml: 4.3.2
+      js-yaml: 5.4.3
       luxon: 3.7.2
-
-  '@parallelworks/workflow-parser@0.6.1':
-    dependencies:
-      js-yaml: 4.3.2
-      luxon: 3.7.2
+      yaml: 2.9.0
 
   '@pinojs/redact@0.4.0': {}
 
@@ -4442,7 +4434,7 @@ snapshots:
 
   js-tokens@4.0.0: {}
 
-  js-yaml@4.3.2:
+  js-yaml@5.4.3:
     dependencies:
       argparse: 2.0.1
 

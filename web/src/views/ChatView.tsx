@@ -384,7 +384,18 @@ export function ChatView() {
             </div>
           )}
                     <FilterReloader />
-          <ChatLayout sidebarMode={phone ? 'drawer' : 'inline'} drawerToggle={false}>
+          <ChatLayout
+            sidebarMode={phone ? 'drawer' : 'inline'}
+            drawerToggle={false}
+            sidebarTop={({ collapsed }) => (
+              <ManageChatsRailItem
+                active={showManage}
+                collapsed={collapsed}
+                // Like the package's own rows, a pick closes the phone drawer.
+                onSelect={() => { setShowManage(true); setShowAttachments(false); setRailOpen(false) }}
+              />
+            )}
+          >
             {showManage ? (
               <ChatsManager
                 activeId={activeId}
@@ -410,7 +421,6 @@ export function ChatView() {
               )
             })()}
           </ChatLayout>
-          <ManageChatsRailItem active={showManage} onSelect={() => { setShowManage(true); setShowAttachments(false) }} />
           {activeId && !showAttachments && !showManage && <ConversationScrubber />}
           {!showAttachments && !showManage && <SlashPalette canvas={canvasRef} />}
           {!showAttachments && !showManage && <NextUp canvas={canvasRef} />}

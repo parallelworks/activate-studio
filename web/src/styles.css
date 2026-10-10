@@ -1890,8 +1890,12 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .hist-view > .empty-state { grid-column: 1 / -1; }
 
 /* Chat rail: Select chats, and the bulk selection panel it opens. */
-.ade-rail-extra { display: contents; }
-.ade-rail-select { border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; text-align: left; }
+/* The package's New chat group below opens with 8px of padding; the
+   negative margin leaves the 2px gap its own rows keep between them. The
+   hover tint comes from the package's hover:chat-tint, so nothing here
+   sets a background except the active state. */
+.ade-rail-top { padding: 8px 8px 0; margin-bottom: -6px; }
+.ade-rail-select { cursor: pointer; text-align: left; }
 .ade-rail-select.active { background: color-mix(in srgb, var(--pw-text) 9%, var(--pw-panel)); }
 .chats-manager { height: 100%; overflow-y: auto; padding: 18px 24px 32px; box-sizing: border-box; }
 .chats-manager-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px; }

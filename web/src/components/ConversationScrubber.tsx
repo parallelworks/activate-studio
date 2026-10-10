@@ -28,12 +28,21 @@ const MAX_TICK = 26
 const PREVIEW_CHARS = 220
 const MIN_MESSAGES = 6
 
+/**
+ * The package names its thread scroller `chat-thread`, and the messages are
+ * the children of its first element, the centred column. The lookup used
+ * to key on that column's width class, which has changed twice: max-w-4xl
+ * in the earlier chat package, max-w-[50rem] from @parallelworks/ui 0.24,
+ * and a variable width from 0.32. Since the first change the rail found no
+ * list and stayed hidden.
+ */
 function scrollHost(): HTMLElement | null {
-  const canvas = document.querySelector('.chat-canvas')
-  if (!canvas) return null
-  const candidates = canvas.querySelectorAll<HTMLElement>('.overflow-y-auto')
-  for (const el of candidates) if (el.querySelector('.max-w-4xl')) return el
-  return null
+  return document.querySelector<HTMLElement>('.chat-canvas .chat-thread')
+}
+
+function messageList(): HTMLElement | null {
+  const first = scrollHost()?.firstElementChild
+  return first instanceof HTMLElement ? first : null
 }
 
 /** The shape this needs from an element, kept narrow so the rule below
@@ -61,7 +70,7 @@ export function selectMessageBlocks<T extends BlockLike>(children: T[]): T[] {
 
 /** The message blocks currently on screen, in order. */
 function messageNodes(): HTMLElement[] {
-  const list = scrollHost()?.querySelector<HTMLElement>('.max-w-4xl')
+  const list = messageList()
   if (!list) return []
   const children = Array.from(list.children).filter((c): c is HTMLElement => c instanceof HTMLElement)
   return selectMessageBlocks(children)
@@ -75,12 +84,10 @@ function messageNodes(): HTMLElement[] {
 function installDebug(ticks: number, min: number): void {
   ;(window as unknown as Record<string, unknown>).__adeScrubber = () => {
     const canvas = document.querySelector('.chat-canvas')
-    const candidates = canvas ? canvas.querySelectorAll('.overflow-y-auto') : []
     const host = scrollHost()
-    const list = host?.querySelector('.max-w-4xl')
+    const list = messageList()
     return {
       canvasFound: !!canvas,
-      overflowCandidates: candidates.length,
       scrollHostFound: !!host,
       listFound: !!list,
       listChildren: list ? list.children.length : 0,

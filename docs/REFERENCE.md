@@ -11,6 +11,8 @@ The details behind the user guide ([`HELP.md`](HELP.md)), by part of the app. Th
 - An attachment is filed into the library and indexed, and its content, including text read from images, is part of the conversation. Clicking its tile later opens the file in the Library.
 - The **/** list filters as you type; the arrow keys move, Enter or Tab inserts, and Escape closes. `/skill_name` applies a skill, `/tool_name` runs a tool, `/agent_name` adopts an agent file for one message, and `/help` lists them all.
 - The thinking line above a reply expands to show the reasoning and each tool call as it happens, and stays with the message afterward.
+- A long reply folds behind **Show more**, except the latest one, so opening a conversation ends on the last line of its answer.
+- In a conversation of six or more messages, a column of ticks along the thread's left edge marks each message. Pointing at a tick previews the message; clicking it scrolls there.
 - A model whose provider has locked or rejected its key shows **[locked]** or **[unavailable]** in the model list, with a notice above the conversation. Settings, "Model access" has the unlock link and **Re-check**.
 - Under Settings, "Model access", a key you add is checked and the page shows which models it reaches. A deployment can require a personal key; until one is added, chat and models wait while browsing, search, and adding material stay open.
 - **Select chats** selects conversations by click, or a range with Shift-click, and deletes the selection after a confirmation.
