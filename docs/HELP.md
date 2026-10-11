@@ -91,7 +91,7 @@ The address bar follows what you are looking at, so back and forward work and a 
 
 - **Search**, at the top of the navigation, searches the knowledge base; Ctrl+K (⌘K on a Mac) jumps to it from anywhere.
 - The navigation groups its pages under **Knowledge** and **Run**; click a group's name to fold it away, and {appName} remembers.
-- **Install app**, in the navigation, installs {appName} as a desktop app in its own window. If a classification banner is shown, the chevron in Chrome's title bar moves the banner into the title bar.
+- **Install app**, in the navigation, installs {appName} as a desktop app in its own window. If a classification banner is shown, the chevron in Chrome's title bar moves the banner into the title bar. The loading screen draws the banner as it was last shown, so the title bar has no gap while the app starts.
 - The bottom of the navigation shows who you are signed in as, whether the models are reachable, and the state of the index; click any of them for details.
 
 ## Using it from other tools

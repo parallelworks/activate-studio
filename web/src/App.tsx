@@ -17,7 +17,7 @@ import { AgentsView } from './views/AgentsView'
 import { HelpView } from './views/HelpView'
 import { SettingsView } from './views/SettingsView'
 import { StatusFooter } from './components/StatusFooter'
-import { ClassificationBanner, bannerShownColor } from './components/ClassificationBanner'
+import { ClassificationBanner, bannerInk, bannerShownColor } from './components/ClassificationBanner'
 import { useAppConfig } from './config'
 import { applyAccent, applySurface } from './accents'
 
@@ -234,6 +234,16 @@ export default function App() {
       const color = bannerShownColor(cfg) ?? getComputedStyle(document.documentElement).getPropertyValue('--pw-bg').trim()
       if (meta && color) meta.setAttribute('content', color)
       if (cfg.loaded && color) { try { localStorage.setItem('ade-theme-color', color) } catch { /* ignore */ } }
+      // The banner too, so the next launch's loading screen draws it: in an
+      // installed app it is the title bar, which otherwise shows the page's
+      // ground between the window controls until the app arrives.
+      if (cfg.loaded) {
+        try {
+          const shown = bannerShownColor(cfg)
+          if (shown) localStorage.setItem('ade-banner', JSON.stringify({ text: cfg.bannerText.trim(), color: shown, ink: bannerInk(shown), whenEmbedded: !!cfg.bannerWhenEmbedded }))
+          else localStorage.removeItem('ade-banner')
+        } catch { /* ignore */ }
+      }
     })
     // Cached so the next load paints in this theme before config arrives.
     if (cfg.loaded) { try { localStorage.setItem('ade-theme-default', cfg.theme) } catch { /* ignore */ } }
