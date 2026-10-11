@@ -210,7 +210,7 @@ export const TOOL_SPECS: ToolSpec[] = [
         properties: {
           engine: { type: 'string', description: "Which serving engine: 'vllm' or 'ollama' (the configured engines; call with no engine to list them)" },
           model: { type: 'string', description: 'For vllm: the HuggingFace model id to serve (fills model.hf_model_id). For ollama, models are pulled after launch instead.' },
-          inputs: { type: 'string', description: 'JSON object of workflow inputs, merged over the deployment preset (e.g. {"resource": "a30gpuserver", "endpoint": {"name": "qwen38-27b"}})' },
+          inputs: { type: 'string', description: 'JSON object of workflow inputs, merged over the deployment preset (e.g. {"resource": "my-cluster", "endpoint": {"name": "qwen38-27b"}})' },
           launch: { type: 'boolean', description: 'false (default) describes; true submits the run' },
         },
       },

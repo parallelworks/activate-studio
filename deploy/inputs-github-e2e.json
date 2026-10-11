@@ -1,5 +1,5 @@
 {
-  "resource_and_execution": { "resource": "a30gpuserver" },
+  "resource_and_execution": { "resource": "my-cluster" },
   "session_settings": { "session_name": "studio-e2e", "session_method": "e2e" },
   "app_settings": {
     "workdir": "${HOME}/studio-work",

@@ -47,7 +47,7 @@ test('a new agent ticks on the schedule, journals the result, counts tokens, and
 test('a run ending wakes the agents that asked for it, and a working agent gets it in its inbox', async () => {
   const a = fleet.listAgents()[0]
   const before = a.ticks
-  fleet.notifyRunEnded({ slug: 'activatebatch-00012', workflow: 'activatebatch', resource: 'a30gpuserver', state: 'completed' })
+  fleet.notifyRunEnded({ slug: 'activatebatch-00012', workflow: 'activatebatch', resource: 'cluster-a', state: 'completed' })
   assert.ok(await until(() => fleet.getAgent(a.id).ticks === before + 1 && fleet.getAgent(a.id).state === 'idle'))
   const ev = fleet.journalTail(a.id).filter(e => e.kind === 'event').pop()
   assert.match(ev.text, /activatebatch-00012 .* ended: completed/)
@@ -65,7 +65,7 @@ test('a paused agent does not tick; a tick budget pauses it; a decision request 
   const d = fleet.createAgent({ name: 'Decider', goal: 'Please decide the next system.', model: 'm', every: '15m' })
   assert.ok(await until(() => fleet.getAgent(d.id).state === 'input-required'))
   assert.match(fleet.getAgent(d.id).note, /which system/)
-  fleet.messageAgent(d.id, 'Use the debug partition on a30gpuserver.')
+  fleet.messageAgent(d.id, 'Use the debug partition on cluster-a.')
   assert.ok(await until(() => fleet.getAgent(d.id).ticks === 2))
   assert.match(fleet.journalTail(d.id).filter(e => e.kind === 'message').pop().text, /debug partition/)
 })

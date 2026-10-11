@@ -8,8 +8,9 @@
  *
  *   PW_CONTEXT=activate node server/scripts/e2e-hpc.mjs [resource] [workflow]
  *
- * Defaults: resource a30gpuserver, workflow activatebatch (a Slurm batch
- * job that echoes a marker). E2E_PARTITION names a partition for systems
+ * The resource is required (E2E_RESOURCE or the first argument). The
+ * workflow defaults to activatebatch (a Slurm batch job that echoes a
+ * marker). E2E_PARTITION names a partition for systems
  * with no default one; E2E_SLURM is a JSON object merged into the slurm
  * group for sites that need an account and QoS. Exit 0 only when the run
  * completes and the marker appears in its output.
@@ -21,7 +22,8 @@ process.env.KB_ROOT ||= '/tmp'
 process.env.INDEX_BASE ||= path.join(process.env.KB_ROOT, '.e2e-index')
 const { executeTool } = await import(path.join(here, '..', 'dist', 'chat', 'tools.js'))
 
-const resource = process.argv[2] || 'a30gpuserver'
+const resource = process.argv[2] || process.env.E2E_RESOURCE
+if (!resource) { console.error('usage: e2e-hpc.mjs <resource> [workflow], or set E2E_RESOURCE'); process.exit(2) }
 const workflow = process.argv[3] || 'activatebatch'
 const marker = `studio-e2e-${Date.now().toString(36)}`
 const t0 = Date.now()

@@ -62,18 +62,17 @@ const MIN_COMPLETION_TOKENS = 1024
 const NO_STREAM_MODELS = (process.env.CHAT_NO_STREAM ?? 'gpt-oss,genai').split(',').map(m => m.trim().toLowerCase()).filter(Boolean)
 
 // Model substrings whose serving drops or overrides the system role
-// (GenAI.mil is the known case: its system prompt is fixed and ours is
-// discarded). For these, the system prompt rides inside the first user
+// (one provider fixes its own system prompt and discards ours). For these, the system prompt rides inside the first user
 // message, the one role such backends honor.
 const SYSTEM_IN_USER_MODELS = (process.env.CHAT_SYSTEM_IN_USER ?? 'genai').split(',').map(m => m.trim().toLowerCase()).filter(Boolean)
 
 /** Stopgap tool emulation for backends whose serving ignores the tools
- *  field (GenAI.mil until core#18754 lands): tools ride the prompt as an
+ *  field (one provider until core#18754 lands): tools ride the prompt as an
  *  envelope protocol, the model's envelope reply is parsed back into tool
  *  calls, and tool results return as user-role text. Delete this block when
  *  the gateway's own emulation engages on the affected platform. */
 /** The single user message sent to backends that ignore both the system
- *  role and the tools field (GenAI.mil today, core#18754).
+ *  role and the tools field (one provider today, core#18754).
  *
  *  Shape matters more than wording here, measured against both Gemini
  *  Enterprise models on 19 August 2026: the required output has to be the
@@ -355,16 +354,16 @@ export function gatewayChatMessage(msg: string, model: string): string {
   // common case and the only one the reader can act on, so name it while
   // being honest that it is not certain.
   const maskedFailure = status === 400 && /error occurred while generating/i.test(msg)
-  // GenAI.mil locks API keys every 8 hours as policy, and its 401 body
-  // carries the unlock URL. That link is the entire remedy, so when it is
+  // A provider that locks API keys on a schedule carries the unlock URL
+  // in its 401 body. That link is the entire remedy, so when it is
   // present nothing else is worth saying around it. The match tolerates
   // JSON escaping, since the body often arrives quoted inside the relay.
   const unlockUrl = /unlock_url[\\":\s]*(https?:\/\/[^"\\\s]+)/.exec(msg)?.[1]
   const keyLocked = /key locked|api key locked/i.test(msg)
   const cause = unlockUrl
-    ? `The provider locked this API key, which it does on a schedule (GenAI locks keys every 8 hours). Unlock it here and try again: ${unlockUrl} `
+    ? `The provider locked this API key, which it does on a schedule. Unlock it here and try again: ${unlockUrl} `
     : keyLocked
-      ? 'The provider locked this API key, which it does on a schedule (GenAI locks keys every 8 hours). Unlock it on the provider\u2019s API keys page, or from the link under Settings, Model access, then try again. '
+      ? 'The provider locked this API key, which it does on a schedule. Unlock it on the provider\u2019s API keys page, or from the link under Settings, Model access, then try again. '
       : rejectedParam
     ? 'The request carried a parameter this provider does not accept, which is an incompatibility between the Studio and that provider rather than anything wrong with your credentials. Pick another model, and report this one so the parameter can be dropped for it. '
     : (status === 401 || status === 403) && personal
@@ -529,7 +528,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     // the chat package's picker, from each model's provider_owner.
 
     // Providers that lock their keys are asked before their models are
-    // offered: a locked GenAI key otherwise fills the picker with models
+    // offered: a locked key otherwise fills the picker with models
     // that can only fail, discovered one failed reply at a time. Probes
     // are budgeted so a slow provider cannot stall the listing; an
     // unanswered probe changes nothing this pass and the cache catches
@@ -999,7 +998,7 @@ ${ctx}` : ctx
       const noStream = NO_STREAM_MODELS.some(k => String(body.model ?? '').toLowerCase().includes(k))
       const foldSystem = SYSTEM_IN_USER_MODELS.some(k => String(body.model ?? '').toLowerCase().includes(k))
       // Prompt-level tool emulation shares the fold list: the backends that
-      // drop the system role also ignore the tools field on the HSP today
+      // drop the system role also ignore the tools field on one platform today
       // (core#18754); envelope-parse their replies until that lands.
       const emulationNonce = (globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)).slice(0, 8)
       const lastUserQuestion = [...messages].reverse().find(m => (m as WireMessage).role === 'user')

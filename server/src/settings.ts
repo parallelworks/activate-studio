@@ -156,8 +156,8 @@ export function effectiveSettings(): Required<StudioSettings> {
     // empty disables the hpc_status tool.
     hpcStatusUrl: s.hpcStatusUrl ?? process.env.HPC_STATUS_URL ?? '',
     // Workflow that deploys the Status Monitor, so the assistant can stand
-    // one up when none is running (hpcmp_status on the HPCMP platform,
-    // hpc_status generally).
+    // one up when none is running (hpc_status by default; a site can name
+    // its own variant).
     hpcStatusWorkflow: s.hpcStatusWorkflow ?? process.env.HPC_STATUS_WORKFLOW ?? 'hpc_status',
     // Per-model chat template kwargs, JSON of {modelSubstring: kwargs}.
     // Default disables Qwen thinking: the gateway strips reasoning content

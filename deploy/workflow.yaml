@@ -1490,7 +1490,7 @@ jobs:
             # The served model is given to the Studio as a second target
             # rather than as the gateway. Replacing the gateway made this
             # model the only one anybody could pick, which hid the platform
-            # provider models (GenAI.mil and the rest) from a deployment
+            # provider models from a deployment
             # that is otherwise entitled to them. Listed side by side, the
             # private model on this node and the platform providers appear
             # in one picker and either can be called in the same

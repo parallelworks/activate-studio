@@ -1,4 +1,4 @@
-// The GenAI.mil tool emulation: shape was measured to matter (the ask must
+// The prompt-level tool emulation: shape was measured to matter (the ask must
 // come last, and results must be walled off as data), so the shape is
 // pinned here.
 import test from 'node:test'

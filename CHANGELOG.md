@@ -1217,7 +1217,7 @@ Server side (node:test, stubbed `fetch`): the provider probe for every verdict i
 
 Typing `/` opens a palette above the composer listing everything slash-invocable (meta commands, skills, agents, tools from `/api/extensions` and `/api/chat/tools`), filtered as you type; arrow keys move, Enter or Tab inserts `/name `, Escape closes, mouse works too. The composer is the chat package's, so the palette attaches to its textarea from outside: a capture-phase keydown listener on the textarea sees the keystroke before the package's delegated handler and stops propagation, which is what keeps Enter from sending a half-typed command; acceptance writes through the native value setter and dispatches an input event so the controlled textarea updates. A MutationObserver re-attaches when the composer remounts on a conversation switch.
 
-`server/scripts/e2e-hpc.mjs` runs the HPC chain the assistant uses against a live platform through the same `executeTool` entry point the chat calls: `hpc_environments`, a real `run_workflow` with `scheduler: true`, `watch_run` to a terminal state, `workflow_run_detail`, and passes only when the run completes and a per-run marker comes back from the cluster. First pass today: `activatebatch-00009` on `a30gpuserver`, Slurm JobId 27, 33 s end to end.
+`server/scripts/e2e-hpc.mjs` runs the HPC chain the assistant uses against a live platform through the same `executeTool` entry point the chat calls: `hpc_environments`, a real `run_workflow` with `scheduler: true`, `watch_run` to a terminal state, `workflow_run_detail`, and passes only when the run completes and a per-run marker comes back from the cluster. First pass today: `activatebatch-00009` on a test cluster, Slurm JobId 27, 33 s end to end.
 
 ## v1.36 (2026-09-04)
 
@@ -1891,7 +1891,7 @@ Context menu on tree rows: Open/Labels/Delete for files; New folder inside/Label
 
 ### Model callability: health check, footer status, classified credential errors (#35)
 
-Live /api/ai/health check, footer 'N models ready' line with detail panel and re-check, and classified gateway credential errors with actionable unlock messaging. Groundwork for per-user genai.mil credentials.
+Live /api/ai/health check, footer 'N models ready' line with detail panel and re-check, and classified gateway credential errors with actionable unlock messaging. Groundwork for per-user provider credentials.
 
 ### Per-user model keys for shared platform sessions (#36)
 
@@ -2948,7 +2948,7 @@ composer placeholder wording through strings.
 serve_model's ollama engine now defaults to the registered bare-metal
 ollama-endpoint workflow; the Kubernetes marketplace variant stays
 reachable by configuration. Both engines were proven today as platform
-workflow runs on a30gpuserver: vLLM serving Qwen3.8-27B 4-bit on the A30
+workflow runs on a test cluster: vLLM serving Qwen3.8-27B 4-bit on the A30
 (up in 85 seconds), Ollama serving qwen3:4b beside it on the second GPU,
 both registered in the model catalog and visible in this deployment's
 model picker.
@@ -3093,8 +3093,7 @@ floating between panes.
 ### The status tool can deploy the monitor it reads (#138)
 
 hpc_status with launch=true runs the deployment-configured monitor
-workflow (hpcStatusWorkflow, HPC_STATUS_WORKFLOW; hpcmp_status on the
-HPCMP platform, hpc_status generally), so a user without a running
+workflow (hpcStatusWorkflow, HPC_STATUS_WORKFLOW; hpc_status by default), so a user without a running
 monitor can ask for one instead of being told to go deploy it. The
 not-configured message names the option, launching is gated on the user
 having asked, and after the monitor serves, its URL goes into Settings
@@ -3468,9 +3467,9 @@ key now broadcasts a model-access event; the chat clears the notice,
 refetches the list, and remounts its provider so the models and the
 empty-state reflect the new access immediately.
 
-### fix(chat): system prompt rides in the first user message for GenAI.mil (#167)
+### fix(chat): system prompt rides in the first user message for providers that discard the system role (#167)
 
-GenAI.mil fixes its own system prompt and discards the one the request
+One provider fixes its own system prompt and discards the one the request
 carries, so the assistant briefing (what the corpus is, how the tools
 work) never reached the model and questions about the knowledge base
 drew blank answers. For models matching a configurable substring list
@@ -3480,14 +3479,14 @@ tool loop and the forced final answer are covered alike.
 
 ### feat(chat): prompt-level tool emulation for backends that ignore tools (#168)
 
-The GenAI.mil serving path on the HSP passes the tools field through to
+One provider's serving path passes the tools field through to
 an API that discards it (core#18754), so tool calling was dead there
 for those models. For backends on the system-fold list, the studio now
 carries its own emulation: tool schemas ride the last user turn inside
 an envelope protocol with a per-request nonce, the model's envelope
 reply is parsed back into ordinary tool calls, tool results return as
 user-role text, and envelope JSON is buffered so it never reaches the
-client as chat content. Verified end to end against the HSP gateway:
+client as chat content. Verified end to end against that platform's gateway:
 the previously failing corpus question now runs three tool calls and
 answers with citations. Delete this block when the gateway's own
 emulation engages on the affected platform.
@@ -3543,7 +3542,7 @@ now focused so typing starts immediately.
 
 ### fix(chat): conversation history survives single-turn backends (#175)
 
-GenAI.mil discards every message except the last user turn; a probe
+One provider discards every message except the last user turn; a probe
 with planted facts proved it answers multi-turn requests from account
 metadata rather than the conversation, which is why a follow-up like
 "can you make it longer" drew a request for clarification. For models
@@ -3555,7 +3554,7 @@ the model file from the prior turn and re-embedded it.
 
 ### fix(chat): emulated backends ground answers and survive agent handoffs (#176)
 
-Three hardenings from running the training battery through GenAI.mil.
+Three hardenings from running the training battery through a platform provider.
 Native tool calls arriving on the emulated path are the backend's own
 machinery leaking (Gemini Enterprise emits transfer_to_agent handoffs);
 they are intercepted and retried with a corrective note instead of
@@ -3979,7 +3978,7 @@ Fixes from the training session.
 
 Also carries the 3D viewer fix: geometry goes to the browser as binary rather than JSON numbers. A 57 MB STL measured a 452 MB reply and 1.05 GB resident before, and at 76 MB `JSON.stringify` exceeded V8's maximum string length and threw. Now 41.2 MB and 251 MB, and the 76 MB case returns in 0.3s.
 
-Verified: merged catalog lists GenAI.mil, a session model, and the local serve together; a turn naming the local model is routed to the local serve; a real model called `list_workflows` through the restored CLI and answered from the result.
+Verified: merged catalog lists a platform provider, a session model, and the local serve together; a turn naming the local model is routed to the local serve; a real model called `list_workflows` through the restored CLI and answered from the result.
 
 ### fix(deploy): the Studio image resolves from the bucket first (#222)
 
@@ -4043,7 +4042,7 @@ Verified on a running server: an unchanged pass records exactly one check, a sam
 
 **Mobile**: one breakpoint at 760px, layout only. The navigation rail becomes an icon bar along the bottom edge, side-by-side panes stack, and the grids whose auto-fit floor (420px) overflows a 390px phone go single column. The library's resizable rail stacks above the listing with its desktop drag width overridden. Nothing changes above the breakpoint.
 
-**Tests**: thirteen cases over the logic that has actually failed or would hurt most if it did: the 3D wire format round-trips exactly and stays aligned, history diffs tell a move from churn by inode, resolveKb refuses traversal (and the suite documents that absolute paths are root-relative), and the GenAI.mil emulation shape is pinned.
+**Tests**: thirteen cases over the logic that has actually failed or would hurt most if it did: the 3D wire format round-trips exactly and stays aligned, history diffs tell a move from churn by inode, resolveKb refuses traversal (and the suite documents that absolute paths are root-relative), and the provider emulation shape is pinned.
 
 **CI**: GitHub Actions builds the server, runs the tests, and typechecks and builds the web app on every push and PR. The check on the PR and GitHub's failure email are the notification; the README carries the badge.
 
