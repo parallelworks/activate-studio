@@ -2,6 +2,33 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.97 (2026-10-10)
+
+### Change log through v1.96 (#406)
+
+Regenerated with `node scripts/release-notes.mjs --changelog` after the v1.96 release.
+
+### Workflow sessions open in the Studio and in chat (#407)
+
+Workflows often open a session, such as a design explorer, a notebook, or a remote desktop. The Studio now shows these sessions.
+
+The Workflows tab lists the viewer's running sessions, with the run that opened each, and the recent runs table names each run's session. A session opens inside the Studio when the browser can show it in a frame, and otherwise in its own tab. Every session view has a button that opens it in a new tab.
+
+In chat, a new `list_sessions` tool and the existing `watch_run` give the assistant each session with the markdown that shows it. The markdown is an embed, `![name](/?embed=session&user=<owner>&name=<session>)`, for a session on its own host, and a plain link for a session under the platform's address. When a run launched from chat opens a session, the run watcher adds it to that conversation once it is running, one time only, and records this in the run registry so a restart does not add it again.
+
+Sessions are read from the platform API with the viewer's key, not through the CLI. Older CLI releases drop fields from their JSON output, and the field that ties a session to its run is one the Studio needs.
+
+Framing works only under three conditions:
+- The session is served from its own host. A session under the platform's address can't be framed, because the platform's pages refuse it.
+- The Studio is open in its own tab, not inside the platform's page.
+- The Studio and the session are on the same site.
+
+The reason is the cookie. The platform signs a browser in to each session host with a `SameSite=Lax` cookie, and a frame receives that cookie only under those conditions. A browser that has never opened the session still has to open it once in its own tab, because the first sign-in goes through the platform's login page, which can't load in a frame. The view says so under the frame. The browser decides whether to frame (`web/src/sessionFrame.ts`), since only the browser knows the address the Studio is being viewed at.
+
+A chat embed with no frame tells the chat its height, so the reply shows a short card instead of an empty 480px box.
+
+The user guide, `docs/WORKFLOWS.md`, `docs/ARCHITECTURE.md`, and the README cover the change. Tests cover session normalization, the routes, the embed markdown, the one-time conversation note, and the framing decision. The runs test now stubs `fetch`, so a running run's session lookup never reaches a platform.
+
 ## v1.96 (2026-10-10)
 
 ### Change log through v1.95 (#403)
