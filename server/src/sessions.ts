@@ -13,11 +13,9 @@ import { KbError } from './kb.js'
  * `workflows ls` drops imageFallbackUrl. The field that matters here is
  * workflowRun, which ties a session to the run that opened it.
  *
- * Whether a session can show inside the Studio is decided in the browser
- * (web/src/sessionFrame.ts), since only the browser knows the address the
- * Studio is being viewed at. The server reports where each session lives:
- * on its own host under the sessions domain, or under the platform's own
- * address.
+ * The Studio opens a session in a window of its own rather than a frame:
+ * each session host signs the browser in through the platform's login
+ * page, which refuses to load in a frame.
  */
 
 export interface SessionRun { slug: string; workflow: string; number: number | null; status: string | null }
@@ -98,11 +96,9 @@ export async function listSessions(key: string): Promise<SessionRow[]> {
   return rows
 }
 
-/** The markdown that shows a session in a chat reply. A session on its own
- *  host is embedded, and the embed carries its own new-tab button; one under
- *  the platform's address can never be framed, so it gets a link alone. */
+/** The markdown that shows a session in a chat reply: a card with its
+ *  state and buttons that open it in a window of its own or a new tab. */
 export function sessionEmbed(s: SessionRow): string {
-  if (!s.ownHost) return s.url ? `[Open ${s.name} in a new tab](${s.url})` : `Session ${s.name} has no address yet.`
   const q = new URLSearchParams({ embed: 'session', user: s.user, name: s.name })
   return `![${s.name}](/?${q})`
 }

@@ -81,7 +81,7 @@ export function EmbedFrame({ src, title }: { src: string; title: string }) {
   return (
     <div ref={wrapRef} className={`chat-embed-wrap${mode === 'overlay' ? ' overlay' : ''}${mode === 'native' ? ' native-full' : ''}`}>
       <iframe ref={frameRef} src={themed} title={title} className="chat-embed-frame" style={height && mode === 'inline' ? { height } : undefined} />
-      <button
+      {height == null && <button
         type="button"
         className="chat-embed-expand"
         title={full ? 'Exit full screen (Esc)' : 'Full screen'}
@@ -97,7 +97,7 @@ export function EmbedFrame({ src, title }: { src: string; title: string }) {
             <path d="M2 6V2h4M14 6V2h-4M2 10v4h4M14 10v4h-4" />
           </svg>
         )}
-      </button>
+      </button>}
     </div>
   )
 }

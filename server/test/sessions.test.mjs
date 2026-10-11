@@ -65,10 +65,10 @@ test('the list is read with the key, newest first, and filters by run; one sessi
   assert.equal((await app.inject({ url: '/api/sessions/item?user=me&name=nope' })).statusCode, 404)
 })
 
-test('a session on its own host is embedded; one under the platform address gets a link', () => {
+test('a session in chat is a card, wherever it is served from', () => {
   const P = 'https://platform.test'
   assert.equal(sessions.sessionEmbed(sessions.sessionRow(RAW[0], P)), '![explorer-00012](/?embed=session&user=me&name=explorer-00012)')
-  assert.equal(sessions.sessionEmbed(sessions.sessionRow(RAW[1], P)), '[Open code in a new tab](https://platform.test/me/session/me/code?folder=%2Fhome)')
+  assert.equal(sessions.sessionEmbed(sessions.sessionRow(RAW[1], P)), '![code](/?embed=session&user=me&name=code)')
 })
 
 test('a run launched from chat shows its session in that conversation, once', async () => {

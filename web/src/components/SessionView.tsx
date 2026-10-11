@@ -1,11 +1,15 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { currentPlace, frameVerdict, markSignedIn, signedInTo, type FrameVerdict } from '../sessionFrame'
+import { useEffect, useRef, useState } from 'react'
 
 /**
- * One platform session, shown in a frame where the browser allows it and
- * otherwise as a card that opens it in its own tab. A session that is not
- * running yet is polled until it is, so a chat note posted while a run is
- * still starting fills in on its own.
+ * One platform session as a card: its state, the run that opened it, and
+ * buttons that open it in a window of its own or a new tab.
+ *
+ * Sessions are not framed inside the Studio. The browser signs in to each
+ * session's host through the platform's login page, which refuses to load
+ * in a frame, and on the customer platform a session that was signed in
+ * still refused its frame. A window of its own loads every session the way
+ * the platform does. A session that is not running yet is polled until it
+ * is, so a chat note posted while a run is still starting fills in.
  */
 
 export interface SessionInfo {
@@ -15,17 +19,31 @@ export interface SessionInfo {
   resource: string | null; createdAt: string | null
 }
 
-const WHY: Record<Exclude<FrameVerdict, 'frame'>, string> = {
-  'platform-address': 'It is served under the platform\'s own address, which does not allow being shown inside another page.',
-  'inside-platform': 'The Studio is open inside the platform\'s page. Open the Studio in its own tab to see sessions inside it.',
-  'other-site': 'It is on a different domain from this Studio.',
-  'no-address': 'The platform has not given it an address yet.',
+/** The windows this page opened, by session, so a second Open focuses the
+ *  window the session already has. The browser cannot find them by name:
+ *  each is cut off from this page (no opener), so the session gets no
+ *  handle back to the Studio. */
+const sessionWindows = new Map<string, Window>()
+
+/** Opens a session in a window sized for work, or focuses the one it
+ *  already has. False when the browser blocked the window. */
+export function openSessionWindow(s: { user: string; name: string; url: string | null }): boolean {
+  if (!s.url) return false
+  const key = `${s.user}/${s.name}`
+  const open = sessionWindows.get(key)
+  if (open && !open.closed) { open.focus(); return true }
+  const w = window.open('', '_blank', 'popup,width=1280,height=860')
+  if (!w) return false
+  try { w.opener = null } catch { /* not ours to change */ }
+  w.location.href = s.url
+  sessionWindows.set(key, w)
+  return true
 }
 
 export function SessionView({ user, name, initial }: { user: string; name: string; initial?: SessionInfo }) {
   const [s, setS] = useState<SessionInfo | null>(initial ?? null)
   const [error, setError] = useState('')
-  const [nonce, setNonce] = useState(0)
+  const [blocked, setBlocked] = useState(false)
 
   useEffect(() => {
     let stop = false
@@ -48,101 +66,38 @@ export function SessionView({ user, name, initial }: { user: string; name: strin
     return () => { stop = true; window.clearTimeout(timer) }
   }, [user, name])
 
-  const verdict = useMemo(() => (s ? frameVerdict(s, currentPlace()) : 'no-address'), [s])
   const running = s?.status === 'running'
-  const framed = !!s && running && verdict === 'frame'
 
-  // A frame shows the session only once this browser has signed in to the
-  // session's own host; before that it bounces to the platform's login
-  // page, which refuses to load in a frame. The first view therefore asks
-  // for that sign-in in a window of its own, and shows the frame after.
-  const host = useMemo(() => { try { return s?.url ? new URL(s.url).host : '' } catch { return '' } }, [s?.url])
-  const [signedIn, setSignedIn] = useState(false)
-  useEffect(() => { setSignedIn(!!host && signedInTo(host)) }, [host])
-  const [blocked, setBlocked] = useState(false)
-  // Set when the session was opened in a tab to sign in; the frame loads
-  // when the user comes back to this window.
-  const awaitingReturn = useRef(false)
-  const finishSignIn = useCallback(() => {
-    awaitingReturn.current = false
-    markSignedIn(host, true); setSignedIn(true); setBlocked(false); setNonce(n => n + 1)
-  }, [host])
-  useEffect(() => {
-    const onFocus = () => { if (awaitingReturn.current) finishSignIn() }
-    window.addEventListener('focus', onFocus)
-    return () => window.removeEventListener('focus', onFocus)
-  }, [finishSignIn])
-  const signIn = () => {
-    if (!s?.url) return
-    const w = window.open(s.url, `ade-signin-${host}`, 'popup,width=640,height=720')
-    if (!w) { setBlocked(true); return }
-    const t = window.setInterval(() => { if (w.closed) { window.clearInterval(t); finishSignIn() } }, 500)
-  }
-  const showFrame = framed && signedIn
-
-  // Inside a chat embed, a view with no frame is a few lines tall; tell the
-  // chat its height so the reply does not hold an empty box. A framed
-  // session takes the chat's default height.
+  // Inside a chat embed, tell the chat the card's height so the reply does
+  // not hold an empty box.
   const rootRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
-    if (window.parent === window) return
-    const post = () => window.parent.postMessage({ type: 'ade-embed-height', height: showFrame ? null : rootRef.current?.scrollHeight ?? null }, window.location.origin)
+    if (window.parent === window || !rootRef.current) return
+    const post = () => window.parent.postMessage({ type: 'ade-embed-height', height: rootRef.current?.scrollHeight ?? null }, window.location.origin)
     post()
-    if (showFrame || !rootRef.current) return
     const ro = new ResizeObserver(post)
     ro.observe(rootRef.current)
     return () => ro.disconnect()
-  }, [showFrame, s, error, blocked])
+  }, [s, error, blocked])
 
   return (
-    <div className={`session-view${showFrame ? '' : ' compact'}`} ref={rootRef}>
+    <div className="session-view" ref={rootRef}>
       <div className="session-bar">
         <span className={`status-dot ${running ? 'ok' : 'warn'}`} />
         <span className="session-name">{name}</span>
-        {s?.run && <span className="muted session-meta">{s.run.workflow} · {s.run.slug}</span>}
-        {s && !running && <span className="muted session-meta">{s.status || 'not running'}</span>}
-        <span className="session-bar-actions">
-          {showFrame && (
-            <button type="button" className="btn-ghost" onClick={() => setNonce(n => n + 1)} title="Reload the session">Reload</button>
-          )}
-          {s?.url && (
-            <a className="btn-secondary" href={s.url} target="_blank" rel="noopener noreferrer"
-              onClick={() => { if (framed && !signedIn) awaitingReturn.current = true }}>Open in new tab</a>
-          )}
+        <span className="muted session-meta">
+          {[s?.run ? `${s.run.workflow} · ${s.run.slug}` : s?.type, s?.resource ? `on ${s.resource}` : '', s && !running ? (s.status || 'not running') : ''].filter(Boolean).join(' · ')}
         </span>
+        {running && s?.url && (
+          <span className="session-bar-actions">
+            <button type="button" className="btn-primary" onClick={() => setBlocked(!openSessionWindow(s))}>Open</button>
+            <a className="btn-secondary" href={s.url} target="_blank" rel="noopener noreferrer">Open in new tab</a>
+          </span>
+        )}
       </div>
       {error && !s && <p className="session-note banner-error">{error}</p>}
-      {s && !running && <p className="session-note muted">Session {name} is {s.status || 'not running'}. This view updates when it is running.</p>}
-      {framed && !signedIn && (
-        <div className="session-note session-signin">
-          <p>To show {name} here, this browser signs in to it once.</p>
-          <button type="button" className="btn-primary" onClick={signIn}>Sign in</button>
-          <p className="muted">
-            {blocked
-              ? 'The browser blocked the sign-in window. Use Open in new tab instead; the session shows here when you come back to this window.'
-              : `A small window opens and loads ${name}. Close it once ${name} appears, and it shows here.`}
-          </p>
-        </div>
-      )}
-      {showFrame && (
-        <>
-          <iframe
-            key={nonce}
-            src={s.url!}
-            title={name}
-            className="session-frame"
-            sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads allow-modals"
-            allow="clipboard-read; clipboard-write; fullscreen"
-          />
-          <p className="session-hint muted">
-            Empty, or refused to connect? The sign-in may have expired.{' '}
-            <button type="button" className="link-button" onClick={() => { markSignedIn(host, false); setSignedIn(false) }}>Sign in again</button>
-          </p>
-        </>
-      )}
-      {s && running && verdict !== 'frame' && (
-        <p className="session-note muted">This session opens in its own tab. {WHY[verdict]}</p>
-      )}
+      {s && !running && <p className="session-note muted">Session {name} is {s.status || 'not running'}. This card updates when it is running.</p>}
+      {blocked && <p className="session-note muted">The browser blocked the window. Use Open in new tab.</p>}
     </div>
   )
 }

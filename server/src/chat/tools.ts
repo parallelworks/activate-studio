@@ -304,7 +304,7 @@ export const TOOL_SPECS: ToolSpec[] = [
     function: {
       name: 'list_sessions',
       description:
-        'List the platform sessions the user can open: the interactive apps workflows start (a design explorer, a notebook, a remote desktop) and running endpoints, with the run that opened each. Pass run to keep the sessions one workflow run opened. Each running session comes with markdown that shows it inline in the reply, with a link to open it in its own tab; use it when the user wants to see or use the session.',
+        'List the platform sessions the user can open: the interactive apps workflows start (a design explorer, a notebook, a remote desktop) and running endpoints, with the run that opened each. Pass run to keep the sessions one workflow run opened. Each running session comes with markdown that shows it in the reply as a card with buttons that open it; use it when the user wants to see or use the session.',
       parameters: {
         type: 'object',
         properties: {
@@ -747,7 +747,7 @@ async function runSessionsNote(slug: string): Promise<string> {
     const { listSessions, sessionEmbed } = await import('../sessions.js')
     return (await listSessions(key)).filter(x => x.run?.slug === slug)
       .map(x => x.status === 'running'
-        ? `Session ${x.name} is running. Show it inline with this markdown:\n${sessionEmbed(x)}`
+        ? `Session ${x.name} is running. Show it in the reply with this markdown:\n${sessionEmbed(x)}`
         : `Session ${x.name}: ${x.status}.`)
       .join('\n')
   } catch { return '' }

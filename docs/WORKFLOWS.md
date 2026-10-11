@@ -58,17 +58,11 @@ Recent runs from the tab are listed below the tiles with their state.
 
 ## Sessions
 
-Workflows often open a session: a design explorer, a notebook, a remote desktop. The tab lists the viewer's running sessions above the recent runs, with the run that opened each, and the runs table names each run's session. The list comes from the platform API (`GET /api/sessions`) with the viewer's key, because the CLI's session output leaves out the field that ties a session to its run in older releases.
+Workflows often open a session: a design explorer, a notebook, a remote desktop. The tab lists the viewer's running sessions above the recent runs, with the run that opened each, and the runs table names each run's session; clicking a session opens it. The list comes from the platform API (`GET /api/sessions`) with the viewer's key, because the CLI's session output leaves out the field that ties a session to its run in older releases.
 
-A session opens in the Studio when the browser can show it in a frame, and otherwise in its own tab; every view has a button for its own tab. Framing works when three things hold:
+A session opens in a window of its own (the same window again if it is already open) or in a new tab, not in a frame inside the Studio. The browser signs in to each session's host through the platform's login page, which refuses to load in a frame, and on a customer platform a session that had been signed in still refused its frame. A window of its own loads every session the way the platform's own pages do.
 
-- the session is served from its own host under the sessions domain (an endpoint session), not under the platform's address (`/me/session/...`), whose pages refuse to be framed;
-- the Studio is open in its own tab, not inside the platform's page;
-- the Studio's address and the session's are on the same site, which they are when the Studio runs as a session on the same platform.
-
-The platform signs a browser in to each session host separately, with a `SameSite=Lax` cookie that a frame receives only under those conditions. The first visit goes through the platform's login page, which cannot load in a frame. So before it shows the frame, the view asks for that sign-in: **Sign in** opens the session in a small window, and closing the window loads the frame. If the browser blocks the window, opening the session in a new tab does the same, and the frame loads when the Studio window has focus again. The Studio cannot read the sign-in cookie, so it remembers the sign-in for 12 hours and then asks again; with the platform login still current, a repeat sign-in takes a moment. Under the frame, **Sign in again** covers a sign-in that ended sooner.
-
-In chat, `list_sessions` and `watch_run` give the assistant each session with the markdown that shows it: `![name](/?embed=session&user=<owner>&name=<session>)` for a session on its own host, or a link for one under the platform's address. When a run launched from chat opens a session, the run watcher adds it to that conversation once it is running.
+In chat, `list_sessions` and `watch_run` give the assistant each session with the markdown that shows it, `![name](/?embed=session&user=<owner>&name=<session>)`: a card with the session's state and buttons that open it. When a run launched from chat opens a session, the run watcher adds it to that conversation once it is running.
 
 ## Endpoints
 
