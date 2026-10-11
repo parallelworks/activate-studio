@@ -20,7 +20,7 @@ const RAW = [
   { name: 'explorer-00012', user: 'me', type: 'endpoint', status: 'running', healthy: true, domainName: 'explorer-00012.sessions.test',
     externalHref: 'https://explorer-00012.sessions.test/', createdAt: '2026-10-10T02:00:00Z', targetName: 'cluster-a',
     workflowRun: { id: 'r1', name: 'design-explorer', displayName: 'Design Explorer', number: 12, slug: 'design-explorer-00012', status: 'running' } },
-  { name: 'code', user: 'me', type: 'vscode', status: 'running', externalHref: '/me/session/me/code?folder=%2Fhome', createdAt: '2026-10-10T01:00:00Z' },
+  { name: 'code', user: 'me', type: 'vscode', status: 'running', externalHref: '/me/session/me/code?folder=%2Fhome', internalHref: '/sessions/me/code', createdAt: '2026-10-10T01:00:00Z' },
   { name: 'old', user: 'other', type: 'endpoint', status: 'off', domainName: 'old.sessions.test', externalHref: 'https://old.sessions.test/', createdAt: '2026-10-09T00:00:00Z' },
   { user: 'nameless' },
 ]
@@ -50,6 +50,8 @@ test('a session record becomes an absolute address, its host kind, and the run t
   assert.equal(code.url, 'https://platform.test/me/session/me/code?folder=%2Fhome', 'a platform path is made absolute')
   assert.equal(code.ownHost, false, 'served under the platform address, so not framable')
   assert.equal(code.run, null)
+  assert.equal(code.platformUrl, 'https://platform.test/sessions/me/code', 'the session\'s page on the platform, which embeds it')
+  assert.equal(ex.platformUrl, null)
   assert.equal(sessions.sessionRow(RAW[3], P), null, 'a record without a name is dropped')
   assert.equal(sessions.sessionRow({ name: 'x', externalHref: 'http://plain.example/' }, P).url, null, 'only https is offered')
 })
