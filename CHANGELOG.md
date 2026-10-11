@@ -2,6 +2,24 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.102 (2026-10-10)
+
+### Change log through v1.101 (#418)
+
+Regenerated with `node scripts/release-notes.mjs --changelog` after the v1.101 release.
+
+### Sessions open in a window of their own; Workflows in the sidebar returns to its main page (#417)
+
+Sessions now open in a window of their own instead of a frame inside the Studio. The frame did not hold up on a customer platform: a session the browser had just signed in to still refused its frame. Meanwhile the sign-in window loaded the session immediately, and that window is what users wanted.
+
+- **Opening:** clicking a session under Workflows, Sessions, or in the runs table opens it in a window sized for work. A second click focuses the window the session already has. The window has no `opener`, so the session gets no handle back to the Studio, and the Studio keeps its own reference to reuse it.
+- **In chat:** a session embed is a compact card with the session's state, the run that opened it, **Open**, and **Open in new tab**. The card reports its height to the chat, so the reply shows no empty box, and the full-screen button is hidden for embeds that report a height.
+- **Removed:** the framed view, the sign-in step, and the browser-side framing rules (`web/src/sessionFrame.ts` and its tests). The assistant's session markdown is the card for every session.
+
+Clicking Workflows in the sidebar now always returns to the Workflows main page, including from an open workflow form.
+
+The user guide, `docs/WORKFLOWS.md`, and the README describe sessions this way.
+
 ## v1.101 (2026-10-10)
 
 ### Change log through v1.100 (#416)
