@@ -10,6 +10,7 @@ import { HOST, PORT, PROJECT_ROOT, KB_ROOT, gufiAvailable } from './config.js'
 import { kbRoutes, sanitizedErrorHandler } from './routes.js'
 import { uploadRoutes } from './uploads.js'
 import { queryRoutes } from './query.js'
+import { gufiVtRoutes } from './gufiVt.js'
 import { topologyRoutes } from './topology.js'
 import { historyRoutes } from './history.js'
 import { tagRoutes } from './tags.js'
@@ -90,6 +91,7 @@ await app.register(ragProxyRoutes)
 await app.register(ragEndpointRoutes)
 await app.register(uploadRoutes)
 await app.register(queryRoutes)
+await app.register(gufiVtRoutes)
 await app.register(topologyRoutes)
 await app.register(historyRoutes)
 await app.register(tagRoutes)

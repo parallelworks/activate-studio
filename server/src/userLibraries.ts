@@ -9,6 +9,7 @@ import { gatewayKey } from './chat/gateway.js'
 import { resolveUserCred } from './credentials.js'
 import { classify, KbError, type FileContent, type KbEntry } from './kb.js'
 import { remoteRun } from './remoteExec.js'
+import { noteGufi } from './gufiTrace.js'
 
 /**
  * Libraries a user adds from one of their clusters. The index workflow
@@ -113,7 +114,9 @@ export function remoteTarget(root: string | undefined | null): { site: string; k
 export async function remoteQuery(root: string, args: string[], subdir?: string): Promise<string> {
   const t = remoteTarget(root)!
   const target = subdir ? path.posix.join(t.indexRoot, cleanRel(subdir)) : t.indexRoot
+  const t0 = Date.now()
   const r = await remoteRun(t.site, t.key, [`${t.gufiBin}/gufi_query`, ...args, target])
+  noteGufi([`${t.gufiBin}/gufi_query`, ...args, target], { site: t.site, ms: Date.now() - t0 })
   // Like the local runner: a nonzero exit with rows still means rows.
   if (r.code !== 0 && !r.stdout) throw new KbError(502, `gufi_query on ${t.site} failed: ${r.stderr.trim().split('\n').pop() ?? r.code}`)
   return r.stdout

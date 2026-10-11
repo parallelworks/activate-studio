@@ -17,6 +17,7 @@ import { parseWorkflowEntry, entryTitle } from '../workflowEntries.js'
 import { workflowDefinition } from '../workflowsTab.js'
 import { browseGithub, githubSummary } from '../githubWorkflows.js'
 import { gatewayKey } from './gateway.js'
+import { formatCommands, traced } from '../gufiTrace.js'
 
 export interface ToolSpec {
   type: 'function'
@@ -1097,6 +1098,9 @@ function grepFallback(query: string, limit: number): Promise<string[]> {
 export interface ToolOutcome {
   result: string
   summary: string
+  /** Shown under the summary in the chat's tool block and not sent to the
+   *  model: the GUFI commands the tool ran, for a person to copy. */
+  shown?: string
 }
 
 // Per-invocation context (caller's own platform key for pw CLI executions)
@@ -1105,7 +1109,10 @@ export interface ToolOutcome {
 const toolContext = new AsyncLocalStorage<{ userKey: string | null; conversationId?: string | null; userId?: string | null; library?: string | null }>()
 
 export async function executeTool(name: string, argsJson: string, ctx?: { labelScope?: string[]; userKey?: string | null; model?: string | null; library?: string | null; conversationId?: string | null; userId?: string | null }): Promise<ToolOutcome> {
-  return toolContext.run({ userKey: ctx?.userKey ?? null, conversationId: ctx?.conversationId ?? null, userId: ctx?.userId ?? null, library: ctx?.library ?? null }, () => executeToolImpl(name, argsJson, ctx))
+  return toolContext.run({ userKey: ctx?.userKey ?? null, conversationId: ctx?.conversationId ?? null, userId: ctx?.userId ?? null, library: ctx?.library ?? null }, async () => {
+    const { result, commands } = await traced(() => executeToolImpl(name, argsJson, ctx))
+    return commands.length ? { ...result, shown: formatCommands(commands) } : result
+  })
 }
 
 // The library a tool call reads from: the primary unless the conversation

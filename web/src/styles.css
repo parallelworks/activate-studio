@@ -650,6 +650,17 @@ textarea.field { line-height: 1.5; }
 .add-filter { margin-top: 6px; align-self: flex-start; }
 .saved-select { margin-left: auto; max-width: 220px; margin-bottom: 6px; }
 .saved-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+/* The GUFI commands behind a search or query, collapsed under the form. */
+.gufi-cmds { margin-top: 10px; font-size: 0.82rem; }
+.gufi-cmds > summary { cursor: pointer; color: var(--pw-muted); user-select: none; }
+.gufi-cmd { margin-top: 8px; }
+.gufi-cmd-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.gufi-cmd pre {
+  margin: 4px 0 0; padding: 8px 10px; border-radius: 6px;
+  background: rgba(127, 127, 127, 0.1);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.76rem;
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
 .saved-chip {
   display: inline-flex; align-items: center; border: 1px solid var(--pw-border-strong);
   /* Was a hardcoded white, which left the label unreadable in dark mode. */

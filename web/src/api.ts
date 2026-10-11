@@ -1,3 +1,5 @@
+import type { GufiCommand } from './components/GufiCommands'
+
 /** A mounted library, as the server describes it. Paths stay on the server. */
 export interface PublicLibrary {
   id: string
@@ -131,7 +133,7 @@ export const api = {
     return data as { deleted: string }
   },
   stats: () => getJson<{ available: boolean; files?: number; dirs?: number; totalBytes?: number; libraries?: LibraryStats[] }>(`/api/kb/stats`),
-  search: (q: string, tags?: string[], limit = 50) => getJson<{ hits: SearchHit[]; error?: string }>(`/api/search?q=${encodeURIComponent(q)}&limit=${limit}${tags?.length ? `&tags=${encodeURIComponent(tags.join(','))}` : ''}`),
+  search: (q: string, tags?: string[], limit = 50) => getJson<{ hits: SearchHit[]; error?: string; gufi?: GufiCommand[] }>(`/api/search?q=${encodeURIComponent(q)}&limit=${limit}${tags?.length ? `&tags=${encodeURIComponent(tags.join(','))}` : ''}`),
   health: () => getJson<{ ok: boolean; gufi: boolean }>(`/healthz`),
   mkdir: (path: string) => postJson<{ created: string }>(`/api/kb/mkdir`, { path }),
   tagVocabulary: () => getJson<{ tags: { tag: string; count: number }[] }>(`/api/tags`),

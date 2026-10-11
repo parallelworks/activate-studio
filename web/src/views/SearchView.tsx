@@ -5,6 +5,7 @@ import { RowCheck } from '../components/Explorer'
 import { ALL_LIBRARIES, LibrarySwitch } from '../components/LibrarySwitch'
 import { currentLibrary, onLibraryChange } from '../api'
 import { useAppConfig } from '../config'
+import { GufiCommands, type GufiCommand } from '../components/GufiCommands'
 
 const MODE_LABEL: Record<SearchHit['mode'], string> = {
   fts: 'full text',
@@ -22,6 +23,7 @@ export function SearchView({ onOpen }: { onOpen: (path: string, q?: string) => v
   const [sel, setSel] = useState<Set<string>>(new Set())
   const [tagMenuOpen, setTagMenuOpen] = useState(false)
   const [lastLimit, setLastLimit] = useState(50)
+  const [gufi, setGufi] = useState<GufiCommand[] | undefined>(undefined)
 
   useEffect(() => {
     api.tagVocabulary().then(v => setVocab(v.tags)).catch(() => {})
@@ -36,6 +38,7 @@ export function SearchView({ onOpen }: { onOpen: (path: string, q?: string) => v
     try {
       const r = await api.search(query, [...activeTags], limit)
       setHits(r.hits)
+      setGufi(r.gufi)
       setLastLimit(limit)
       if (r.error) setNote(r.error)
     } catch (e) {
@@ -103,6 +106,7 @@ export function SearchView({ onOpen }: { onOpen: (path: string, q?: string) => v
           </div>
         )}
         {note && <p className="muted">{note}</p>}
+        {hits && <GufiCommands commands={gufi} />}
       </div>
       {hits && (
         <div className={`search-results card ${sel.size ? 'has-sel' : ''}`}>
