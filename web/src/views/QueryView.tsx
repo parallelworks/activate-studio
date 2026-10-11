@@ -4,6 +4,7 @@ import { RowCheck } from '../components/Explorer'
 import { ALL_LIBRARIES, LibrarySwitch } from '../components/LibrarySwitch'
 import { useAppConfig } from '../config'
 import { currentLibrary } from '../api'
+import { GufiCommands, type GufiCommand } from '../components/GufiCommands'
 
 interface QueryResult {
   columns: string[]
@@ -14,6 +15,8 @@ interface QueryResult {
   rowLibraries?: string[]
   /** Across all libraries: those that could not answer. */
   failed?: { library: string; error: string }[]
+  /** The GUFI commands that produced the rows. */
+  gufi?: GufiCommand[]
 }
 
 interface Filter { field: string; op: string; value: string }
@@ -363,6 +366,7 @@ export function QueryView({ onOpen }: { onOpen: (path: string) => void }) {
           </div>
         )}
         {error && <p className="error">{error}</p>}
+        <GufiCommands commands={result?.gufi} />
       </div>
       {result && (
         <div className={`query-results card ${sel.size ? 'has-sel' : ''}`}>

@@ -10,6 +10,8 @@ import { tagMaps } from './tags.js'
 import { scopeLibraries } from './libraryScope.js'
 import { REMOTE_PREFIX, remoteIndexRoot, remoteQuery } from './userLibraries.js'
 import { effectiveSettings } from './settings.js'
+import { type GufiCommand, noteGufi, traced } from './gufiTrace.js'
+import { type Plan, type VtOrder, gufiVtAvailable, runAcross, vtEligible } from './gufiVt.js'
 
 const DELIM = '\x1e'
 const MAX_ROWS = 2000
@@ -23,6 +25,11 @@ export interface QueryResult {
   rowLibraries?: string[]
   /** Across several libraries: the ones that could not answer, and why. */
   failed?: { library: string; error: string }[]
+  /** Across several libraries: one gufi_vt statement, or each library on
+   *  its own with the rows merged by the Studio. */
+  engine?: 'gufi_vt' | 'merge'
+  /** The GUFI commands that produced the rows, as a shell takes them. */
+  gufi?: GufiCommand[]
 }
 
 /** The index a query runs against: the knowledge base unless a library
@@ -40,9 +47,14 @@ async function run(args: string[], subtree?: string, timeoutMs = 60_000): Promis
     const capped = args.map((a, i) => (args[i - 1] === '-n' ? String(Math.min(Number(a) || 4, 4)) : a))
     return { stdout: await remoteQuery(root, capped, cleanSubtree(subtree)), stderr: '' }
   }
+  const argv = [path.join(GUFI_BIN, 'gufi_query'), ...args, scopePath(subtree)]
+  const t0 = Date.now()
   return new Promise((resolve, reject) => {
-    execFile(path.join(GUFI_BIN, 'gufi_query'), [...args, scopePath(subtree)], { timeout: timeoutMs, maxBuffer: 64 * 1024 * 1024 },
-      (err, so, se) => (err && !so ? reject(new Error(se?.slice(0, 500) || err.message)) : resolve({ stdout: so, stderr: se ?? '' })))
+    execFile(argv[0], argv.slice(1), { timeout: timeoutMs, maxBuffer: 64 * 1024 * 1024 }, (err, so, se) => {
+      noteGufi(argv, { ms: Date.now() - t0 })
+      if (err && !so) reject(new Error(se?.slice(0, 500) || err.message))
+      else resolve({ stdout: so, stderr: se ?? '' })
+    })
   })
 }
 
@@ -83,25 +95,38 @@ function parse(stdout: string, columns: string[]): QueryResult['rows'] {
 
 /** Staged aggregate: per-directory -E inserts into a per-thread table, -J
  *  merges into the global aggregate, -G applies the final global order. */
-async function aggQuery(opts: {
+function aggPlan(opts: {
   schema: string
   perDir: string
   final: string
   columns: string[]
   subtree?: string
-}): Promise<QueryResult> {
+}): Plan {
+  return {
+    stages: {
+      I: `CREATE TABLE t ${opts.schema};`,
+      E: opts.perDir,
+      K: `CREATE TABLE agg ${opts.schema};`,
+      J: 'INSERT INTO agg SELECT * FROM t;',
+      G: opts.final,
+    },
+    columns: opts.columns,
+    subtree: opts.subtree,
+  }
+}
+
+/** Runs a plan on the index in scope. */
+async function runPlan(plan: Plan): Promise<QueryResult> {
+  if (plan.raw) return rawRun(plan)
   const t0 = Date.now()
+  const s = plan.stages
   const { stdout } = await run([
     '-n', '8', '-d', DELIM, '-a', '1',
-    '-I', `CREATE TABLE t ${opts.schema};`,
-    '-K', `CREATE TABLE agg ${opts.schema};`,
-    '-E', opts.perDir,
-    '-J', 'INSERT INTO agg SELECT * FROM t;',
-    '-G', opts.final,
-  ], opts.subtree)
-  const rows = parse(stdout, opts.columns)
+    '-I', s.I!, '-K', s.K!, '-E', s.E, '-J', s.J!, '-G', s.G!,
+  ], plan.subtree)
+  const rows = parse(stdout, plan.columns)
   return {
-    columns: opts.columns,
+    columns: plan.columns,
     rows: rows.slice(0, MAX_ROWS),
     elapsedMs: Date.now() - t0,
     truncated: rows.length > MAX_ROWS,
@@ -110,43 +135,43 @@ async function aggQuery(opts: {
 
 const PATH_EXPR = `rpath(sname, sroll)||'/'||vrpentries.name`
 
-const CANNED: Record<string, (p: { n: number; days: number; subtree?: string }) => Promise<QueryResult>> = {
-  largest: p => aggQuery({
+const CANNED: Record<string, (p: { n: number; days: number; subtree?: string }) => Plan> = {
+  largest: p => aggPlan({
     schema: '(path TEXT, size INT64, mtime INT64)',
     perDir: `INSERT INTO t SELECT ${PATH_EXPR}, size, mtime FROM vrpentries ORDER BY size DESC LIMIT ${p.n};`,
     final: `SELECT path, size, datetime(mtime, 'unixepoch') FROM agg ORDER BY size DESC LIMIT ${p.n};`,
     columns: ['path', 'bytes', 'modified'],
     subtree: p.subtree,
   }),
-  newest: p => aggQuery({
+  newest: p => aggPlan({
     schema: '(path TEXT, size INT64, mtime INT64)',
     perDir: `INSERT INTO t SELECT ${PATH_EXPR}, size, mtime FROM vrpentries ORDER BY mtime DESC LIMIT ${p.n};`,
     final: `SELECT path, size, datetime(mtime, 'unixepoch') FROM agg ORDER BY mtime DESC LIMIT ${p.n};`,
     columns: ['path', 'bytes', 'modified'],
     subtree: p.subtree,
   }),
-  oldest: p => aggQuery({
+  oldest: p => aggPlan({
     schema: '(path TEXT, size INT64, mtime INT64)',
     perDir: `INSERT INTO t SELECT ${PATH_EXPR}, size, mtime FROM vrpentries ORDER BY mtime ASC LIMIT ${p.n};`,
     final: `SELECT path, size, datetime(mtime, 'unixepoch') FROM agg ORDER BY mtime ASC LIMIT ${p.n};`,
     columns: ['path', 'bytes', 'modified'],
     subtree: p.subtree,
   }),
-  recent: p => aggQuery({
+  recent: p => aggPlan({
     schema: '(path TEXT, size INT64, mtime INT64)',
     perDir: `INSERT INTO t SELECT ${PATH_EXPR}, size, mtime FROM vrpentries WHERE mtime > strftime('%s','now') - ${p.days} * 86400 ORDER BY mtime DESC LIMIT ${p.n};`,
     final: `SELECT path, size, datetime(mtime, 'unixepoch') FROM agg ORDER BY mtime DESC LIMIT ${p.n};`,
     columns: ['path', 'bytes', 'modified'],
     subtree: p.subtree,
   }),
-  by_extension: p => aggQuery({
+  by_extension: p => aggPlan({
     schema: '(ext TEXT, cnt INT64, bytes INT64)',
     perDir: `INSERT INTO t SELECT lower(CASE WHEN name LIKE '%.%' THEN replace(name, rtrim(name, replace(name, '.', '')), '') ELSE '(none)' END), count(*), sum(size) FROM vrpentries GROUP BY 1;`,
     final: `SELECT ext, sum(cnt), sum(bytes) FROM agg GROUP BY ext ORDER BY sum(bytes) DESC LIMIT ${p.n};`,
     columns: ['extension', 'files', 'bytes'],
     subtree: p.subtree,
   }),
-  big_directories: p => aggQuery({
+  big_directories: p => aggPlan({
     schema: '(path TEXT, files INT64, bytes INT64)',
     perDir: `INSERT INTO t SELECT rpath(sname, sroll), totfiles, totsize FROM vrsummary;`,
     final: `SELECT path, files, bytes FROM agg ORDER BY bytes DESC LIMIT ${p.n};`,
@@ -159,7 +184,7 @@ const CANNED: Record<string, (p: { n: number; days: number; subtree?: string }) 
 export async function runCanned(id: string, p: { n: number; days: number; subtree?: string }): Promise<QueryResult> {
   const fn = CANNED[id]
   if (!fn) throw new KbError(400, `unknown canned query: ${id}`)
-  return fn(p)
+  return runPlan(fn(p))
 }
 
 export const CANNED_IDS = Object.keys(CANNED)
@@ -235,7 +260,7 @@ function filterSql(f: BuilderFilter, labeledDirs?: Map<string, string[]>): strin
   }
 }
 
-async function builderQuery(p: BuilderPayload): Promise<QueryResult> {
+async function builderPlan(p: BuilderPayload): Promise<Plan> {
   const limit = Math.min(Math.max(Number(p.limit) || 50, 1), MAX_ROWS)
   const usesText = p.filters.some(f => f.field === 'text')
   const labeledDirs = p.filters.some(f => f.field === 'label')
@@ -252,7 +277,7 @@ async function builderQuery(p: BuilderPayload): Promise<QueryResult> {
     const dirWhere = where
       .replace(/vrpentries\.name/g, 'vrsummary.name')
       .replace(/\bsize\b/g, 'totsize')
-    return aggQuery({
+    return aggPlan({
       schema: '(path TEXT, files INT64, bytes INT64)',
       perDir: `INSERT INTO t SELECT rpath(sname, sroll), totfiles, totsize FROM vrsummary ${dirWhere};`,
       final: `SELECT path, files, bytes FROM agg ORDER BY ${p.sort === 'files' ? 'files' : 'bytes'} ${p.dir === 'asc' ? 'ASC' : 'DESC'} LIMIT ${limit};`,
@@ -264,7 +289,7 @@ async function builderQuery(p: BuilderPayload): Promise<QueryResult> {
     ? 'FROM vrpentries INNER JOIN words ON inode=CAST(tinode AS TEXT)'
     : 'FROM vrpentries'
   if (p.groupBy === 'extension') {
-    return aggQuery({
+    return aggPlan({
       schema: '(ext TEXT, cnt INT64, bytes INT64)',
       perDir: `INSERT INTO t SELECT ${EXT_EXPR}, count(*), sum(size) ${from} ${where} GROUP BY 1;`,
       final: `SELECT ext, sum(cnt), sum(bytes) FROM agg GROUP BY ext ORDER BY ${p.sort === 'files' ? 'sum(cnt)' : 'sum(bytes)'} ${p.dir === 'asc' ? 'ASC' : 'DESC'} LIMIT ${limit};`,
@@ -273,7 +298,7 @@ async function builderQuery(p: BuilderPayload): Promise<QueryResult> {
     })
   }
   if (p.groupBy === 'directory') {
-    return aggQuery({
+    return aggPlan({
       schema: '(path TEXT, cnt INT64, bytes INT64)',
       perDir: `INSERT INTO t SELECT rpath(sname, sroll), count(*), sum(size) ${from} ${where} GROUP BY 1;`,
       final: `SELECT path, cnt, bytes FROM agg ORDER BY ${p.sort === 'files' ? 'cnt' : 'bytes'} ${p.dir === 'asc' ? 'ASC' : 'DESC'} LIMIT ${limit};`,
@@ -282,7 +307,7 @@ async function builderQuery(p: BuilderPayload): Promise<QueryResult> {
     })
   }
   const sortCol = p.sort === 'name' ? 'path' : p.sort === 'modified' ? 'mtime' : 'size'
-  return aggQuery({
+  return aggPlan({
     schema: '(path TEXT, size INT64, mtime INT64)',
     perDir: `INSERT INTO t SELECT ${PATH_EXPR}, size, mtime ${from} ${where} ORDER BY ${sortCol} ${p.dir === 'asc' ? 'ASC' : 'DESC'} LIMIT ${limit};`,
     final: `SELECT path, size, datetime(mtime, 'unixepoch') FROM agg ORDER BY ${sortCol === 'mtime' ? 'mtime' : sortCol} ${p.dir === 'asc' ? 'ASC' : 'DESC'} LIMIT ${limit};`,
@@ -316,28 +341,33 @@ function loadSaved(): SavedQuery[] {
 }
 
 /** Raw per-directory SELECT with guardrails: one statement, read-only verbs. */
-async function rawQuery(sql: string, subtree?: string): Promise<QueryResult> {
+function rawPlan(sql: string, subtree?: string): Plan {
   const cleaned = sql.trim().replace(/;\s*$/, '')
   if (!/^select\s/i.test(cleaned)) throw new KbError(400, 'only SELECT statements are allowed')
   if (/;|\b(attach|detach|pragma|insert|update|delete|drop|create|alter|replace|vacuum|reindex)\b/i.test(cleaned)) {
     throw new KbError(400, 'statement contains a disallowed keyword')
   }
+  return { stages: { E: cleaned + ';' }, columns: [], subtree, raw: true }
+}
+
+async function rawRun(plan: Plan): Promise<QueryResult> {
   const t0 = Date.now()
-  const { stdout, stderr } = await run(['-n', '8', '-d', DELIM, '-E', cleaned + ';'], subtree)
+  const { stdout, stderr } = await run(['-n', '8', '-d', DELIM, '-E', plan.stages.E], plan.subtree)
   const lines = stdout.split('\n').filter(Boolean).map(l => l.split(DELIM).map(stripIndexPrefix))
   if (lines.length === 0 && /Error/i.test(stderr)) {
     const first = stderr.split('\n').find(l => /Error/i.test(l)) ?? 'query failed'
     throw new KbError(400, first.replace(/: \/[^\s"]+db\.db/g, '').slice(0, 300))
   }
   const width = lines.length ? Math.max(...lines.map(r => r.length)) : 1
-  const columns = Array.from({ length: width }, (_, i) => `col${i + 1}`)
   return {
-    columns,
+    columns: rawColumns(width),
     rows: lines.slice(0, MAX_ROWS),
     elapsedMs: Date.now() - t0,
     truncated: lines.length > MAX_ROWS,
   }
 }
+
+const rawColumns = (width: number) => Array.from({ length: width }, (_, i) => `col${i + 1}`)
 
 export interface QueryRequest {
   canned?: string; sql?: string; builder?: BuilderPayload
@@ -346,25 +376,30 @@ export interface QueryRequest {
   library?: string
 }
 
-/** One query on one index, whichever form it takes. */
-function execQuery(body: QueryRequest): Promise<QueryResult> {
+/** One query's plan for the index in scope, whichever form it takes. */
+async function planFor(body: QueryRequest): Promise<Plan> {
   const n = Math.min(Math.max(Number(body.n) || 25, 1), MAX_ROWS)
   const days = Math.min(Math.max(Number(body.days) || 7, 1), 3650)
-  if (body.builder) return builderQuery(body.builder)
+  if (body.builder) return builderPlan(body.builder)
   if (body.canned) {
     const fn = CANNED[body.canned]
     if (!fn) throw new KbError(400, `unknown canned query: ${body.canned}`)
     return fn({ n, days, subtree: body.subtree })
   }
-  if (body.sql) return rawQuery(String(body.sql), body.subtree)
+  if (body.sql) return rawPlan(String(body.sql), body.subtree)
   throw new KbError(400, 'builder, canned, or sql required')
 }
 
+const execQuery = async (body: QueryRequest): Promise<QueryResult> => runPlan(await planFor(body))
+
 /**
  * A query on the named library, or on every library the viewer can read.
- * Across several, each library answers the query on its own (its own top
- * rows for a ranked query) and the rows carry a leading library column; a
- * library that cannot answer is reported beside the rows, not fatal.
+ * Across several, the rows carry a leading library column and a library
+ * that cannot answer is reported beside the rows, not fatal. Where this
+ * host's GUFI has gufi_vt and the query fits it, the libraries answer as
+ * one gufi_vt statement (gufiVt.ts); otherwise each library answers on its
+ * own and the rows merge here. Either way a ranked query's answer is the
+ * overall top rows, re-ranked here, and a grouped one is summed here.
  */
 export async function queryScope(body: QueryRequest, viewerId: string | null): Promise<QueryResult> {
   const libs = scopeLibraries(body.library, viewerId, effectiveSettings().kbLabel)
@@ -374,40 +409,71 @@ export async function queryScope(body: QueryRequest, viewerId: string | null): P
     return onIndex(libs[0].indexRoot, () => execQuery(body))
   }
   const t0 = Date.now()
-  const parts = await Promise.all(libs.map(l =>
-    (local(l.indexRoot) && !gufiAvailable() ? Promise.reject(new Error('index not built yet')) : onIndex(l.indexRoot, () => execQuery(body)))
-      .then(r => ({ l, r }), (e: Error) => ({ l, err: String(e.message ?? e).slice(0, 300) }))))
-  const ok = parts.filter((p): p is { l: typeof libs[number]; r: QueryResult } => 'r' in p)
-  const width = Math.max(1, ...ok.map(p => p.r.columns.length))
-  const columns = ['library', ...(ok.find(p => p.r.columns.length === width)?.r.columns ?? Array.from({ length: width }, (_, i) => `col${i + 1}`))]
-  let tagged = ok.flatMap(p => p.r.rows.map(row => ({ id: p.l.id, row: [p.l.label, ...row] })))
-  // A ranked query's answer across libraries is the overall top rows, not
-  // each library's top rows stacked; where the order is known, re-rank.
   const order = mergeOrder(body)
+  // Each library's plan is built against its own index: a label filter
+  // carries that index's paths.
+  const plans = await Promise.all(libs.map(async lib => ({ lib, plan: await onIndex(lib.indexRoot, () => planFor(body)) })))
+  let tagged: { id: string; row: string[] }[] | null = null
+  let failed: QueryResult['failed'] = []
+  let engine: QueryResult['engine'] = 'merge'
+  if (plans.every(p => vtEligible(p.plan)) && await gufiVtAvailable()) {
+    // The outer ORDER BY is exact for numbers and timestamps; names, and
+    // grouped totals, are ordered here.
+    const pushed: VtOrder | null = order && order.groupBy === undefined && order.numeric ? { col: order.col, desc: order.desc, limit: order.limit } : null
+    try {
+      const r = await runAcross(plans, pushed)
+      tagged = r.rows; failed = r.failed; engine = 'gufi_vt'
+    } catch (e) {
+      vtFallbacks++
+      console.warn(`gufi_vt query fell back to the per-library merge: ${(e as Error).message}`)
+    }
+  }
+  if (!tagged) {
+    const parts = await Promise.all(plans.map(({ lib, plan }) =>
+      (local(lib.indexRoot) && !gufiAvailable() ? Promise.reject(new Error('index not built yet')) : onIndex(lib.indexRoot, () => runPlan(plan)))
+        .then(r => ({ lib, r }), (e: Error) => ({ lib, err: String(e.message ?? e).slice(0, 300) }))))
+    tagged = parts.flatMap(p => ('r' in p ? p.r.rows.map(row => ({ id: p.lib.id, row })) : []))
+    failed = parts.flatMap(p => ('err' in p ? [{ library: p.lib.label, error: p.err }] : []))
+  }
+  const label = new Map(libs.map(l => [l.id, l.label]))
+  const width = Math.max(1, ...tagged.map(t => t.row.length))
+  const columns = ['library', ...(plans[0].plan.raw ? rawColumns(width) : plans[0].plan.columns)]
+  const merged = mergeRows(tagged, order)
+  return {
+    columns,
+    rows: merged.slice(0, MAX_ROWS).map(t => [t.id === 'all' ? 'all' : label.get(t.id) ?? t.id, ...t.row]),
+    rowLibraries: merged.slice(0, MAX_ROWS).map(t => t.id),
+    elapsedMs: Date.now() - t0, truncated: merged.length > MAX_ROWS,
+    failed, engine,
+  }
+}
+
+/** gufi_vt statements that failed and were answered by the merge instead. */
+let vtFallbacks = 0
+export const vtFallbackCount = () => vtFallbacks
+
+/** Rows from several libraries as one answer: grouped totals summed by key,
+ *  then the overall order and limit where the query has one. */
+function mergeRows(tagged: { id: string; row: string[] }[], order: ReturnType<typeof mergeOrder>): { id: string; row: string[] }[] {
+  let out = tagged
   if (order?.groupBy !== undefined) {
     const sums = new Map<string, { id: string; row: string[] }>()
-    for (const t of tagged) {
-      const k = t.row[order.groupBy + 1]
+    for (const t of out) {
+      const k = t.row[order.groupBy]
       const cur = sums.get(k)
-      if (!cur) sums.set(k, { id: 'all', row: ['all', ...t.row.slice(1)] })
-      else for (const c of order.sum) cur.row[c + 1] = String((Number(cur.row[c + 1]) || 0) + (Number(t.row[c + 1]) || 0))
+      if (!cur) sums.set(k, { id: 'all', row: [...t.row] })
+      else for (const c of order.sum) cur.row[c] = String((Number(cur.row[c]) || 0) + (Number(t.row[c]) || 0))
     }
-    tagged = [...sums.values()]
+    out = [...sums.values()]
   }
   if (order) {
-    const c = order.col + 1
-    tagged.sort((a, b) => {
+    const c = order.col
+    out = [...out].sort((a, b) => {
       const x = order.numeric ? (Number(a.row[c]) || 0) - (Number(b.row[c]) || 0) : String(a.row[c]).localeCompare(String(b.row[c]))
       return order.desc ? -x : x
-    })
-    tagged = tagged.slice(0, order.limit)
+    }).slice(0, order.limit)
   }
-  const rows = tagged.map(t => t.row); const rowLibraries = tagged.map(t => t.id)
-  return {
-    columns, rows: rows.slice(0, MAX_ROWS), rowLibraries: rowLibraries.slice(0, MAX_ROWS),
-    elapsedMs: Date.now() - t0, truncated: rows.length > MAX_ROWS || ok.some(p => p.r.truncated),
-    failed: parts.filter((p): p is { l: typeof libs[number]; err: string } => 'err' in p).map(p => ({ library: p.l.label, error: p.err })),
-  }
+  return out
 }
 
 /**
@@ -438,7 +504,10 @@ function mergeOrder(body: QueryRequest): { col: number; numeric: boolean; desc: 
 }
 
 export async function queryRoutes(app: FastifyInstance): Promise<void> {
-  app.post('/api/query', async req => queryScope((req.body ?? {}) as QueryRequest, req.user?.id ?? null))
+  app.post('/api/query', async req => {
+    const { result, commands } = await traced(() => queryScope((req.body ?? {}) as QueryRequest, req.user?.id ?? null))
+    return { ...result, gufi: commands }
+  })
 
   app.get('/api/query/saved', async () => loadSaved())
 

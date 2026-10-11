@@ -139,12 +139,11 @@ the index health popup follow it. Every route that reads a library takes
 - search, which runs in each library what that library supports (full
   text and semantic where its index has them, names always) and blends the
   hits, each tagged with its library;
-- the Query page, where each library answers on its own and the rows gain
-  a leading library column. For the canned queries and the builder, whose
-  order the Studio knows, the rows are re-ranked into the overall top rows
-  and grouped totals (by extension) are added up; raw SQL rows are listed
-  library by library. A library that cannot answer is named beside the
-  rows;
+- the Query page, where the rows gain a leading library column. For the
+  canned queries and the builder, whose order the Studio knows, the rows
+  are the overall top rows and grouped totals (by extension) are added up;
+  raw SQL rows are listed library by library. A library that cannot answer
+  is named beside the rows;
 - statistics, as a total with a line per library.
 
 The All entry is read only. Labels belong to the knowledge base, so a label
@@ -155,6 +154,39 @@ tools take a `library` argument: `search_kb` and `query_corpus` accept
 `all`, `read_kb_file` and `list_kb_dir` take one library's id, and
 `list_libraries` says which ids exist. A cluster library's files are read
 and listed on the cluster.
+
+## One query over several libraries
+
+Where the Studio host's GUFI has gufi_vt, a query over several libraries
+runs as one gufi_vt statement: a virtual table per library, unioned, with
+the overall order and limit in the outer SELECT. A library on this host is
+a local location. A library on a cluster is a remote location whose
+command is the Studio's wrapper (`gufiVtRemote.js`): gufi_vt hands it the
+gufi_query command line, the wrapper splits it without a shell and passes
+it back to the server over loopback, and the server runs gufi_query on the
+cluster through the user's session. No shell parses the SQL on either
+side, and the user's key never appears in a process's arguments. The
+server accepts only gufi_query with the stages gufi_vt sends, on that
+location's own index, under a per-process secret and a per-query token.
+
+gufi_vt fails the whole statement when one location exits nonzero with no
+rows, so each location is checked first (the index exists, and on a
+cluster GUFI is installed) and one that fails is left out and named.
+gufi_vt runs the locations one after another. Without gufi_vt on the host,
+for a plan whose SQL contains a double quote (gufi_vt's own delimiter), or
+when the statement fails, each library answers on its own and the server
+merges the rows. The response says which engine answered.
+
+## The GUFI commands
+
+Search, the Query page, and the chat's `search_kb` and `query_corpus`
+tool blocks show the GUFI commands behind their results, as a shell takes
+them. A command on this host is shown as run. A cluster's command is shown
+under the cluster's name, to run there after `pw ssh <cluster>`. A gufi_vt
+statement is shown as a here-document with gufi_vt's usual remote form,
+`remote_cmd='pw', remote_arg='ssh', remote_arg='<cluster>'`, with the
+cluster's GUFI added to the PATH there, so it runs from a terminal that
+has GUFI and the pw CLI. The chat model does not receive the commands.
 
 ## Sections
 
@@ -177,10 +209,9 @@ and a reload land in the right library.
 
 Enrichment for read-only libraries, in sidecar databases beside the index
 on GUFI's external attach mechanism, so full-text and semantic search work
-there too. A query across libraries as one gufi_vt statement, with the
-remote locations reached through the Studio's session. Refreshing a
+there too. Search across libraries as one gufi_vt statement; it runs
+library by library. Refreshing a
 user's library on a schedule, which needs the user's key at that time:
 personal keys live in memory and the browser's sealed cookie, so until
 delegated sign-in through the platform's OIDC applications arrives, a
-refresh runs when the user asks for it. Each is a follow-on to this
-mechanism rather than a change to it.
+refresh runs when the user asks for it.

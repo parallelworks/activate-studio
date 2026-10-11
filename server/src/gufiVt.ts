@@ -1,0 +1,211 @@
+import { execFile } from 'node:child_process'
+import { randomBytes, timingSafeEqual } from 'node:crypto'
+import fs from 'node:fs'
+import path from 'node:path'
+import type { FastifyInstance } from 'fastify'
+import { GUFI_BIN, HOST, PORT } from './config.js'
+import type { Library } from './libraries.js'
+import { remoteRun } from './remoteExec.js'
+import { REMOTE_PREFIX, remoteTarget } from './userLibraries.js'
+import { noteGufi } from './gufiTrace.js'
+
+/**
+ * A query across several libraries as one gufi_vt statement, GUFI's own
+ * way of querying many indexes at once: a gufi_vt virtual table per
+ * library, unioned, with the overall order and limit in the outer SELECT.
+ *
+ * A library on this host is a plain gufi_vt location. A library on a
+ * user's cluster is a remote one, whose `remote_cmd` is the Studio's
+ * wrapper (gufiVtRemote.ts): gufi_vt hands it the gufi_query command line,
+ * the wrapper splits it without a shell and posts it to this server over
+ * loopback, and the server runs it on the cluster through the user's
+ * existing session (remoteExec.ts), so no remote shell parses the SQL and
+ * the user's key never appears in a process's arguments. Each location is
+ * checked first and one that cannot answer is left out and reported, since
+ * gufi_vt fails the whole statement when a location exits nonzero with no
+ * rows. gufi_vt runs the locations one after another.
+ */
+
+/** A query's stages, as gufi_query takes them. */
+export interface Plan {
+  stages: { I?: string; E: string; K?: string; J?: string; G?: string }
+  columns: string[]
+  subtree?: string
+  /** Raw SQL: per-directory rows with no aggregation and no known order. */
+  raw?: boolean
+}
+export interface VtOrder { col: number; desc: boolean; limit: number }
+export interface VtResult { rows: { id: string; row: string[] }[]; failed: { library: string; error: string }[]; elapsedMs: number }
+
+const WRAPPER = new URL('./gufiVtRemote.js', import.meta.url).pathname
+const SECRET = randomBytes(32).toString('hex')
+const TOKEN_TTL_MS = 10 * 60_000
+const THREADS = 4
+interface Location { site: string; key: string; gufiBin: string; index: string; label: string; error?: string; ran?: { argv: string[]; ms: number }; at: number }
+const tokens = new Map<string, Location>()
+
+/** Values gufi_vt wraps in single quotes (paths) and double quotes (SQL)
+ *  cannot contain that quote. */
+const SAFE_PATH = /^\/[^'"\s\0]*$/
+const fitsVt = (plan: Plan) => Object.values(plan.stages).every(s => !s || !s.includes('"'))
+
+/** Where the wrapper reaches this server. */
+function selfUrl(): string {
+  const h = HOST === '0.0.0.0' || HOST === '::' || !HOST ? '127.0.0.1' : HOST.includes(':') ? `[${HOST}]` : HOST
+  return `http://${h}:${PORT}/internal/gufi-vt`
+}
+
+let available: Promise<boolean> | null = null
+let forced: boolean | null = null
+/** Whether this host's gufi_sqlite3 has gufi_vt with remote locations. */
+export function gufiVtAvailable(): Promise<boolean> {
+  if (forced !== null) return Promise.resolve(forced)
+  available ??= new Promise(resolve => {
+    const sqlite = path.join(GUFI_BIN, 'gufi_sqlite3')
+    if (!fs.existsSync(sqlite) || !SAFE_PATH.test(process.execPath) || !SAFE_PATH.test(WRAPPER)) return resolve(false)
+    // A remote location whose command prints nothing and exits 0 answers
+    // with no rows; a build without remote_cmd refuses the table.
+    const probe = "CREATE VIRTUAL TABLE temp.p USING gufi_vt(index='/', E=\"SELECT name FROM vrpentries;\", remote_cmd='/bin/true'); SELECT count(*) FROM temp.p;"
+    execFile(sqlite, [':memory:', probe], { timeout: 15_000, env: { ...process.env, PATH: `${GUFI_BIN}:${process.env.PATH ?? ''}` } },
+      (err, out) => resolve(!err && String(out).trim() === '0'))
+  })
+  return available
+}
+
+/** Whether a library's plan can run as a gufi_vt location. */
+export function vtEligible(plan: Plan): boolean { return fitsVt(plan) }
+
+interface VtLocation { id: string; index: string; plan: Plan; remote?: { token: string; site: string; gufiBin: string } }
+
+/** A remote location's command as the Studio runs it: the wrapper. */
+const viaStudio = (r: NonNullable<VtLocation['remote']>) => [process.execPath, WRAPPER, r.token]
+/** The same location as a person runs it from a terminal: gufi_vt's usual
+ *  remote form, over pw ssh, with the cluster's GUFI on the PATH there. */
+export const viaPwSsh = (r: NonNullable<VtLocation['remote']>) => ['pw', 'ssh', r.site, 'env', `PATH=${r.gufiBin}:$PATH`]
+
+/** The script for a set of locations: one table each, then the union. */
+export function vtScript(locs: VtLocation[], order: VtOrder | null, remoteCmd = viaStudio): string {
+  const val = (k: string, v?: string) => (v ? `, ${k}="${v}"` : '')
+  const tables = locs.map((l, i) => {
+    const s = l.plan.stages
+    const [cmd, ...rargs] = l.remote ? remoteCmd(l.remote) : []
+    const remote = cmd ? `, remote_cmd='${cmd}'${rargs.map(a => `, remote_arg='${a}'`).join('')}` : ''
+    return `CREATE VIRTUAL TABLE temp.loc_${i} USING gufi_vt(index='${l.index}', threads=${THREADS}${val('I', s.I)}${val('E', s.E)}${val('K', s.K)}${val('J', s.J)}${val('G', s.G)}${remote});`
+  })
+  const union = locs.map((l, i) => `SELECT '${l.id}', * FROM temp.loc_${i}`).join(' UNION ALL ')
+  const tail = order ? ` ORDER BY ${order.col + 2} ${order.desc ? 'DESC' : 'ASC'} LIMIT ${order.limit}` : ''
+  return `${tables.join('\n')}\n${union}${tail};`
+}
+
+/**
+ * Runs each library's plan as one gufi_vt statement. Rows come back tagged
+ * with their library's id, paths relative to that library.
+ */
+export async function runAcross(items: { lib: Library; plan: Plan }[], order: VtOrder | null): Promise<VtResult> {
+  const t0 = Date.now()
+  const failed: VtResult['failed'] = []
+  const locs: (VtLocation & { label: string; root: string })[] = []
+  await Promise.all(items.map(async ({ lib: l, plan }) => {
+    const sub = (plan.subtree ?? '').replace(/^\/+|\/+$/g, '')
+    try {
+      if (sub.split('/').includes('..')) throw new Error('scope escapes the index')
+      if (l.indexRoot.startsWith(REMOTE_PREFIX)) {
+        const t = remoteTarget(l.indexRoot)
+        if (!t) throw new Error('its owner has no key to act with')
+        const index = sub ? path.posix.join(t.indexRoot, sub) : t.indexRoot
+        if (!SAFE_PATH.test(index) || !SAFE_PATH.test(t.gufiBin)) throw new Error('its index path cannot be passed to gufi_vt')
+        const r = await remoteRun(t.site, t.key, ['bash', '-c', 'test -x "$1"/gufi_query || { echo "GUFI is not installed there" >&2; exit 3; }; test -d "$2" || { echo "the index is not there" >&2; exit 4; }', '_', t.gufiBin, index])
+        if (r.code !== 0) throw new Error(r.stderr.trim().split('\n').pop() || `check failed (${r.code})`)
+        const token = randomBytes(16).toString('hex')
+        tokens.set(token, { site: t.site, key: t.key, gufiBin: t.gufiBin, index, label: l.label, at: Date.now() })
+        locs.push({ id: l.id, label: l.label, index, root: t.indexRoot, plan, remote: { token, site: t.site, gufiBin: t.gufiBin } })
+      } else {
+        const root = path.resolve(l.indexRoot)
+        const index = sub ? path.resolve(root, sub) : root
+        if (index !== root && !index.startsWith(root + '/')) throw new Error('scope escapes the index')
+        if (!SAFE_PATH.test(index)) throw new Error('its index path cannot be passed to gufi_vt')
+        if (!fs.existsSync(path.join(index, 'db.db'))) throw new Error('index not built yet')
+        locs.push({ id: l.id, label: l.label, index, root, plan })
+      }
+    } catch (e) { failed.push({ library: l.label, error: String((e as Error).message ?? e).slice(0, 300) }) }
+  }))
+  // The union follows the libraries' order, not the order the checks ended in.
+  const at = (id: string) => items.findIndex(i => i.lib.id === id)
+  locs.sort((a, b) => at(a.id) - at(b.id))
+  if (!locs.length) return { rows: [], failed, elapsedMs: Date.now() - t0 }
+  const script = vtScript(locs, order)
+  const sqlite = path.join(GUFI_BIN, 'gufi_sqlite3')
+  const t1 = Date.now()
+  let out: string
+  try {
+    out = await new Promise<string>((resolve, reject) => {
+      execFile(sqlite, ['-d', 'x', ':memory:', script], {
+        timeout: 300_000, maxBuffer: 64 * 1024 * 1024,
+        env: { ...process.env, PATH: `${GUFI_BIN}:${process.env.PATH ?? ''}`, STUDIO_GUFI_VT_URL: selfUrl(), STUDIO_GUFI_VT_SECRET: SECRET },
+      }, (err, so, se) => (err ? reject(new Error(String(se || err.message).trim().split('\n').slice(-2).join(' ').slice(0, 300))) : resolve(String(so))))
+    })
+  } finally {
+    // Shown as a person would run it: gufi_vt's own remote form for the
+    // statement, then what each cluster ran.
+    noteGufi([sqlite, '-d', 'x', ':memory:'], { engine: 'gufi_vt', ms: Date.now() - t1, script: vtScript(locs, order, viaPwSsh) })
+    for (const l of locs) {
+      if (!l.remote) continue
+      const loc = tokens.get(l.remote.token)
+      if (loc?.ran) noteGufi(loc.ran.argv, { site: loc.site, ms: loc.ran.ms })
+      if (loc?.error) failed.push({ library: loc.label, error: loc.error })
+      tokens.delete(l.remote.token)
+    }
+  }
+  const roots = new Map(locs.map(l => [l.id, l.root + '/']))
+  const rows = out.split('\n').filter(Boolean).map(line => {
+    const cells = line.split('\x1e')
+    const id = cells[0], prefix = roots.get(id) ?? ''
+    return { id, row: cells.slice(1).map(c => (prefix && c.startsWith(prefix) ? c.slice(prefix.length) : c)) }
+  })
+  return { rows, failed, elapsedMs: Date.now() - t0 }
+}
+
+/** The gufi_query arguments gufi_vt sends, and nothing else: the stage SQL,
+ *  its fixed flags, at most THREADS threads, then the location's index. */
+export function checkRemoteArgs(args: unknown, index: string): string[] | null {
+  if (!Array.isArray(args) || args.some(a => typeof a !== 'string') || args[0] !== 'gufi_query' || args[args.length - 1] !== index) return null
+  const a = args as string[]
+  for (let i = 1; i < a.length - 1; i++) {
+    if (a[i] === '--print-tlv' || a[i] === '-x') continue
+    if (a[i] === '--threads') { const n = Number(a[++i]); if (!(n >= 1 && n <= THREADS)) return null; continue }
+    if (/^-[IEKJG]$/.test(a[i]) && i + 1 < a.length - 1) { i++; continue }
+    return null
+  }
+  return a.slice(1)
+}
+
+/** The wrapper's way in. The per-process secret admits it; the path is
+ *  outside /api, so sign-in does not apply. */
+export async function gufiVtRoutes(app: FastifyInstance): Promise<void> {
+  app.post('/internal/gufi-vt', async (req, reply) => {
+    const given = Buffer.from(String(req.headers['x-studio-secret'] ?? ''))
+    const want = Buffer.from(SECRET)
+    if (given.length !== want.length || !timingSafeEqual(given, want)) return reply.status(403).send('forbidden')
+    const { token, args } = (req.body ?? {}) as { token?: string; args?: unknown }
+    const loc = typeof token === 'string' ? tokens.get(token) : undefined
+    if (!loc || Date.now() - loc.at > TOKEN_TTL_MS) return reply.status(404).send('unknown location')
+    const rest = checkRemoteArgs(args, loc.index)
+    if (!rest) return reply.status(400).send('not a gufi_query on this location')
+    const argv = [`${loc.gufiBin}/gufi_query`, ...rest]
+    const t0 = Date.now()
+    const r = await remoteRun(loc.site, loc.key, argv, 300_000)
+      .catch((e: Error) => ({ code: -1, raw: Buffer.alloc(0), stderr: e.message }))
+    loc.ran = { argv, ms: Date.now() - t0 }
+    if (r.code !== 0 && !r.raw.length) loc.error = (r.stderr.trim().split('\n').pop() || `exit ${r.code}`).slice(0, 300)
+    reply.header('Content-Type', 'application/octet-stream')
+    if (r.stderr) reply.header('X-Stderr', Buffer.from(r.stderr.slice(-2000)).toString('base64'))
+    return reply.send(r.raw)
+  })
+}
+
+/** Tests: the secret the wrapper presents, a location to answer for, and a reset. */
+export function gufiVtSecretForTests(): string { return SECRET }
+export function addLocationForTests(token: string, loc: Omit<Location, 'at'>): void { tokens.set(token, { ...loc, at: Date.now() }) }
+export function resetGufiVtForTests(): void { available = null; forced = null; tokens.clear() }
+/** Tests: turn gufi_vt off (or on) regardless of the probe; null restores it. */
+export function forceGufiVtForTests(v: boolean | null): void { forced = v }

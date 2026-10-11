@@ -28,6 +28,7 @@ import { effectiveSettings } from './settings.js'
 import { curatedNames, platformAvailable } from './workflowsTab.js'
 import { authEnabled, authHeaderName } from './auth.js'
 import { remoteDownload, remoteFile, remoteTree } from './userLibraries.js'
+import { traced } from './gufiTrace.js'
 
 /** A brand image may be given as a URL instead of a path on the resource,
  *  which is easier for a deployment whose branding lives on a web server
@@ -648,14 +649,14 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
     const viewer = (req as { user?: { id?: string } }).user?.id ?? null
     const libs = String(library ?? '').toLowerCase() === ALL ? scopeLibraries(ALL, viewer, effectiveSettings().kbLabel) : [libOf(req)]
     if (!gufiAvailable() && libs.every(l => !l.site)) return { hits: [], error: 'index not built yet' }
-    const hits = await searchScope(libs, q, n, { semantic: wantsSemantic(q) })
+    const { result: hits, commands } = await traced(() => searchScope(libs, q, n, { semantic: wantsSemantic(q) }))
     // Labels belong to the knowledge base; other libraries' hits carry none,
     // so a label filter keeps knowledge-base hits only.
     const { tags } = req.query as { tags?: string }
     const filter = tags ? tags.split(',').filter(Boolean) : undefined
     const annotated = await annotateHits(hits.filter(h => h.library.id === PRIMARY_ID), filter)
     const keep = new Map(annotated.map(h => [h.path, h]))
-    return { hits: hits.flatMap(h => (h.library.id === PRIMARY_ID ? (keep.has(h.path) ? [{ ...keep.get(h.path)!, library: h.library }] : []) : filter?.length ? [] : [h])) }
+    return { hits: hits.flatMap(h => (h.library.id === PRIMARY_ID ? (keep.has(h.path) ? [{ ...keep.get(h.path)!, library: h.library }] : []) : filter?.length ? [] : [h])), gufi: commands }
   })
 
   app.get('/api/index/status', async () => indexStatus())

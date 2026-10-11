@@ -1157,7 +1157,7 @@ ${ctx}` : ctx
             markThinking()
             sse(res, 'tool', { phase: 'call', id: iterParts[i].id, name: tc.function.name, args: tc.function.arguments })
           })
-          const outcomes: { result: string; summary: string; failed?: boolean }[] = new Array(calls.length)
+          const outcomes: { result: string; summary: string; failed?: boolean; shown?: string }[] = new Array(calls.length)
           let cursor = 0
           const CONCURRENCY = 6
           await Promise.all(Array.from({ length: Math.min(CONCURRENCY, calls.length) }, async () => {
@@ -1185,10 +1185,13 @@ ${ctx}` : ctx
             }
           }))
           calls.forEach((tc, i) => {
-            const { result, summary, failed } = outcomes[i]
+            const { result, summary, failed, shown } = outcomes[i]
+            // The tool block shows the summary line, and when expanded what
+            // the tool ran; the model gets the result only.
+            const block = shown ? `${summary}\n\n${shown}` : summary
             iterParts[i].status = failed ? 'error' : 'ok'
-            iterParts[i].result = summary
-            sse(res, 'tool', { phase: 'result', id: iterParts[i].id, name: tc.function.name, summary, error: !!failed })
+            iterParts[i].result = block
+            sse(res, 'tool', { phase: 'result', id: iterParts[i].id, name: tc.function.name, summary: block, error: !!failed })
             messages.push({ role: 'tool', tool_call_id: tc.id ?? `${tc.function.name}-${iter}`, content: result })
           })
           continue

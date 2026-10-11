@@ -39,6 +39,7 @@ One box finds exact words (inside PDFs, office documents, and images too), relat
 - Use "quotes" for a phrase, OR between alternatives, -word to leave a word out, and word* for words that start the same way.
 - Label chips under the box narrow the results.
 - Tick results to label them together.
+- **GUFI commands**, under the results, shows the commands that found them, ready to copy and run in a terminal.
 
 ## Adding material
 
@@ -52,7 +53,7 @@ Labels organize files without moving them. Label a folder and everything in it c
 
 ## Query
 
-Structured questions about the files themselves (largest, newest, totals by type) answered in milliseconds. Start from a canned query, use the builder, or write read-only SQL, and save the ones you reuse.
+Structured questions about the files themselves (largest, newest, totals by type) answered in milliseconds. Start from a canned query, use the builder, or write read-only SQL, and save the ones you reuse. **GUFI commands** under the form shows what ran, ready to copy.
 
 ## Stats
 

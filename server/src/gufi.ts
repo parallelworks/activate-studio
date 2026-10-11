@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { GUFI_BIN, GUFI_INDEX, INDEX_BASE, gufiAvailable } from './config.js'
 import { REMOTE_PREFIX, remoteIndexRoot, remoteQuery } from './userLibraries.js'
+import { noteGufi } from './gufiTrace.js'
 
 const DELIM = '\x1e' // record separator; never appears in KB text
 
@@ -18,8 +19,10 @@ export interface SearchHit {
 }
 
 function run(bin: string, args: string[], timeoutMs = 60_000): Promise<{ stdout: string; stderr: string }> {
+  const t0 = Date.now()
   return new Promise((resolve, reject) => {
     execFile(path.join(GUFI_BIN, bin), args, { timeout: timeoutMs, maxBuffer: 64 * 1024 * 1024 }, (err, stdout, stderr) => {
+      if (bin === 'gufi_query') noteGufi([path.join(GUFI_BIN, bin), ...args], { ms: Date.now() - t0 })
       // gufi_query exits nonzero when some per-dir SQL fails (e.g. a table absent
       // in an unenriched directory); rows already emitted are still valid.
       if (err && !stdout) return reject(new Error(`${bin} failed: ${stderr || err.message}`))
