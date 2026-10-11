@@ -183,8 +183,11 @@ function fromDef(d: LibraryDef, pinned: boolean): Library {
   }
 }
 
-/** A viewer's own libraries on their clusters, once built. */
+/** A viewer's own libraries on their clusters, once built. Only where a
+ *  viewer is named (null being the one user of a Studio without sign-in);
+ *  the deployment's own listings pass none and never show them. */
 function userLibrariesOf(viewerId: string | null | undefined): Library[] {
+  if (viewerId === undefined) return []
   const owner = ownerOf(viewerId)
   if (!owner) return []
   return loadUserLibraries(owner).filter(d => d.indexRoot && d.gufiBin).map(d => ({

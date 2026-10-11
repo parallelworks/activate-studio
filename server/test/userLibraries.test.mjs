@@ -78,6 +78,7 @@ test('a finished run makes the library ready and the viewer can search and brows
   assert.equal(d.directories, 2); assert.equal(d.files, 3)
   const lib = L.listLibraries('kb', null).find(l => l.id === d.id)
   assert.ok(lib, 'it joins the library list')
+  assert.equal(L.listLibraries('kb').some(l => l.id === d.id), false, 'not in the deployment\'s own listing')
   assert.equal(lib.site, 'cluster-a'); assert.equal(lib.writable, false); assert.match(lib.indexRoot, /^remote:/)
   assert.equal(L.publicLibrary(lib).source, true)
   const tree = await U.remoteTree(lib.indexRoot, '')

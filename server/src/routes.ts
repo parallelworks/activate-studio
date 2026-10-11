@@ -174,7 +174,7 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
   const libOf = (req: { query?: unknown; body?: unknown }) => {
     const q = (req.query ?? {}) as { library?: string }
     const b = (req.body ?? {}) as { library?: string }
-    return getLibrary(q.library ?? b.library, effectiveSettings().kbLabel, (req as { user?: { id?: string } }).user?.id)
+    return getLibrary(q.library ?? b.library, effectiveSettings().kbLabel, (req as { user?: { id?: string } }).user?.id ?? null)
   }
   // Files are only reachable when the library has a source root on this host.
   const sourceOf = (req: { query?: unknown; body?: unknown }) => {
@@ -237,7 +237,7 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
       // Feature previews a deployment has switched on; the client shows
       // their controls only when the flag and its configuration are both present.
       features: { voice: { enabled: !!eff.voiceEnabled && !!eff.voiceUrl, url: eff.voiceUrl || '' } },
-      libraries: listLibraries(eff.kbLabel, req.user?.id).map(publicLibrary),
+      libraries: listLibraries(eff.kbLabel, req.user?.id ?? null).map(publicLibrary),
       sections: eff.sections.length ? eff.sections : undefined,
       // A platform credential is what the Workflows tab needs; without one
       // (a Studio off ACTIVATE) the tab is not offered.
