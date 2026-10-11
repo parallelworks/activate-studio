@@ -2,6 +2,32 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.104 (2026-10-11)
+
+### Change log through v1.103 (#421)
+
+Regenerated with `node scripts/release-notes.mjs --changelog` after the v1.103 release.
+
+### pw code agents on the user's clusters, with goals (#422)
+
+The assistant can run pw code agents on the user's clusters and follow, steer, and bound them with pw code's `/goal`.
+
+**Transport.** A cluster's pw code daemon is reached the way `pw code attach` reaches it. The Studio server runs `pw ssh <cluster> pw code daemon proxy --ensure`, which bridges the ssh session to that machine's daemon socket and starts the daemon if none runs. The Studio then speaks the daemon's HTTP API over the pipe (`server/src/pwcodeBridge.ts`). One keep-alive bridge per user and cluster carries every request. On a customer cluster, the first request took 5.4 seconds for the ssh setup and later ones about 0.24 seconds. The bridge closes after 10 idle minutes. It needs only `pw ssh` and a pw CLI with `pw code daemon proxy` on the cluster, so it works where the platform's internal agent routes are not served. It also reaches the whole daemon API, goals included.
+
+**Credentials.** A user's agents act with the key their chat uses, so each connection is that user's and runs as them on the cluster. The deployment's key stands in only when sign-in is off and the Studio has one user. On a shared Studio, a viewer without their own key gets no remote agent. Over the bridge the Studio has the owner's authority on that daemon, so it sets each session's permission mode: accept-edits by default, or read-only or plan.
+
+**Goals.** `start_agent` creates a session in a workspace and sends the objective. The workspace is a new directory under `~/studio-agents` unless one is named. When a goal is given, `start_agent` sets it through the daemon's `/goal` route, and pw code then checks it after every turn and continues until it is met. pw code puts no limit on a goal, so the Studio writes the bound into the condition, 20 turns by default. `agent_status` reports the goal's state, the last check, waiting approvals, and the end of the transcript.
+
+**Tools.** `agent_sites`, `agent_sessions`, `start_agent`, `agent_status`, `agent_steer`, `agent_goal`, `agent_approve`, and `agent_stop`, with matching routes under `/api/agent-sites` for a page to come. Steering reaches a working turn, or becomes the next message when none is working. Approvals are answered only on the user's decision.
+
+**The local site.** This host's daemon belongs to the account the Studio runs as. It is offered only when sign-in is off, or when `AGENT_LOCAL_SITE=1`.
+
+The daemon client now takes a transport, and its request timeout is a timer, since a pipe has no socket timeout.
+
+**Tests.** A fake daemon speaks HTTP over the bridge's stdio. The tests cover one bridge reused across calls, the site list, a start with a bounded goal, the status summary, steering fallback, goal controls, input checks, and the key rule.
+
+**Live run on a customer cluster.** The bridge, session creation, the objective turn, and the goal check all ran. The check then reported the provider's monthly token limit, and the status showed it.
+
 ## v1.103 (2026-10-11)
 
 ### Change log through v1.102 (#419)
