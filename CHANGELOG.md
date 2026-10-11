@@ -2,6 +2,24 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.98 (2026-10-10)
+
+### Change log through v1.97 (#408)
+
+Regenerated with `node scripts/release-notes.mjs --changelog` after the v1.97 release.
+
+### Neutral names in comments, tests, examples, and the change log (#410)
+
+This removes the names of specific deployment sites, providers, and internal test systems from the code's comments, test fixtures, examples, the e2e defaults, and the change log. Behavior is unchanged.
+
+- **Comments:** comments about a provider that discards the system role, ignores the tools field, or locks keys on a schedule now describe that behavior without naming the provider or platform.
+- **User-facing text:** the locked-key messages say the provider locks keys on a schedule, without naming one.
+- **Fixtures and examples:** test fixtures use neutral provider ids, hosts, and user names. Examples and placeholders use `my-cluster`.
+- **E2E script:** `server/scripts/e2e-hpc.mjs` no longer has a default resource. It takes the resource from its first argument or `E2E_RESOURCE`.
+- **Unchanged defaults:** `CHAT_NO_STREAM`, `CHAT_SYSTEM_IN_USER`, and `STUDIO_PROBE_PROVIDERS` keep their model-matching defaults.
+
+The change log is regenerated from the pull request descriptions, which were edited the same way.
+
 ## v1.97 (2026-10-10)
 
 ### Change log through v1.96 (#406)
