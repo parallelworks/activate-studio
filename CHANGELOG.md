@@ -2,6 +2,24 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.106 (2026-10-11)
+
+### Change log through v1.105 (#425)
+
+Regenerated with `node scripts/release-notes.mjs --changelog` after the v1.105 release.
+
+### A workflow that builds or updates a GUFI index on a cluster (#409)
+
+`deploy/gufi-index.yaml` is an ACTIVATE workflow that builds or updates a GUFI index of a directory on a cluster, for remote libraries. It runs as the user who launches it, so the index covers what that user can read. The Studio does not launch it yet. It is written so the Studio can register it under each user's account and run it with that user's platform key, the pattern the agent runner uses.
+
+It has four jobs. `prepare` checks the inputs and writes the index script. `install_gufi` builds GUFI's core tools from source on the login node into `~/.activate-studio/gufi/<commit>`, once per commit, without the AI extensions. `index` hands the script to the platform's `script_submitter` subworkflow, which runs it on the login node or submits it to Slurm or PBS. `record` checks the script's exit status and prints the manifest the script wrote, `.studio-index.json`, between `STUDIO_INDEX_BEGIN` and `STUDIO_INDEX_END` in the run log.
+
+The directory defaults to `$WORKDIR`, resolved on the cluster, or the home directory where `$WORKDIR` is not set. The index defaults to `~/.activate-studio/indexes/<name>-<hash>` and must be outside the directory it indexes. `update` mode rescans the directories changed since the previous run with `gufi_incremental_update`; `build` writes a new index beside the old one and swaps it in. GUFI's incremental update creates a temporary file in the directory that holds the indexed one, so where that directory is not writable, as for a work directory under a site-owned parent, an update rebuilds instead. The GUFI source is its GitHub repository at a pinned commit, or a `pw://` tarball for clusters without GitHub access.
+
+The install step handles three differences found on a test cluster. The site's default modules set `CC` to a vendor compiler, so the build uses the system `gcc`. GUFI's configure needs Python 3.9 or later and the system `python3` was 3.6, so it picks an installed `python3.X` that is new enough. `setfattr` and `getfattr` are required at configure time but used only by GUFI's tests, and were missing, so `/bin/false` stands in for them.
+
+Tested on a Slurm cluster at an HPC center: the install from GitHub (about three minutes) and from a `pw://` tarball; runs on the login node and as Slurm jobs; an update after files were added and removed and a directory created, which matched `find`'s counts; a rebuild over an existing index; and a work directory of 3,510 directories and 21,764 files, indexed in 4 seconds on a compute node into a 180 MB index. The YAML validates against the platform's workflow schema. `docs/LIBRARIES.md` lists the inputs.
+
 ## v1.105 (2026-10-11)
 
 ### Change log through v1.104 (#424)
