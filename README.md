@@ -42,7 +42,7 @@ The in-app Help is the user guide: [`docs/HELP.md`](docs/HELP.md), with the deta
 | [`docs/REFERENCE.md`](docs/REFERENCE.md) | the details behind the user guide, part by part |
 | [`docs/DEPLOY.md`](docs/DEPLOY.md) | running it on ACTIVATE, in a container, or as a plain server, and connecting models |
 | [`docs/CUSTOMIZATION.md`](docs/CUSTOMIZATION.md) | settings, branding, identity, and the assistant's tools |
-| [`docs/LIBRARIES.md`](docs/LIBRARIES.md) | several indexes at once, and which parts of the app appear |
+| [`docs/LIBRARIES.md`](docs/LIBRARIES.md) | several indexes at once, building an index on a cluster, and which parts of the app appear |
 | [`docs/WORKFLOWS.md`](docs/WORKFLOWS.md) | the Workflows tab |
 | [`docs/AGENTS.md`](docs/AGENTS.md) | delegated agents |
 | [`docs/MULTI-USER.md`](docs/MULTI-USER.md) | several people on one deployment |

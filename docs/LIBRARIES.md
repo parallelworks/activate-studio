@@ -58,6 +58,35 @@ client config every viewer loads lists libraries without them. The Studio probes
 refuses a path that is not a GUFI index, with the reason. Added libraries
 are kept in `libraries.json` under the index base.
 
+## Indexes on a cluster
+
+`deploy/gufi-index.yaml` is an ACTIVATE workflow that builds or updates a
+GUFI index of a directory on a cluster, as the user who runs it. It
+installs GUFI's core tools from source into the user's account once per
+commit, then runs the index through the platform's `script_submitter`
+subworkflow, on the login node or as a Slurm or PBS job. The Studio does
+not launch it yet; it can be added as a platform workflow and run by hand.
+
+| Input | Default |
+|---|---|
+| `resource` | the cluster |
+| `cluster.scheduler`, `cluster.slurm`, `cluster.pbs` | run on the login node |
+| `index.source_dir` | `$WORKDIR`, or the home directory where it is not set |
+| `index.index_dir` | `~/.activate-studio/indexes/<name>-<hash>` |
+| `index.mode` | `update`: rescan directories changed since the last run, or build if there is no index; `build` rebuilds |
+| `index.threads` | 4 |
+| `gufi.prefix` | `~/.activate-studio/gufi` |
+| `gufi.source` | GUFI's GitHub repository at a pinned commit, or a `pw://` tarball of the source |
+
+The directory being indexed is only read. The index directory must be
+outside it, and a rebuild is swapped in when complete. Each run writes
+`.studio-index.json` in the index directory, with the index path, the
+GUFI binaries, the build time, and directory and file counts, and prints
+it in the run log between `STUDIO_INDEX_BEGIN` and `STUDIO_INDEX_END`. An
+update runs from the directory that holds the indexed one, because GUFI
+creates a temporary file there; where that directory is not writable, the
+run rebuilds instead. An index takes about 50 KB per directory.
+
 ## Sections
 
 `STUDIO_SECTIONS` chooses which parts of the app appear, from `chat`,
