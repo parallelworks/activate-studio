@@ -1,0 +1,590 @@
+# ============================================================================
+# GUFI INDEX: build or update a GUFI index of a directory on a cluster
+#
+# Written for the Studio to register under each user's account and launch
+# with that user's platform key, so GUFI is installed, the index is written,
+# and the directory is read as that user, and the index covers what that
+# user can read. It also runs by hand from the platform.
+#
+# Topology:
+#   prepare ── install_gufi ── index (script_submitter) ── record
+#
+# prepare checks the inputs and writes the index job script. install_gufi
+# builds GUFI's core tools from source on the login node into
+# <gufi prefix>/<commit>, once per commit; the AI extensions are left out,
+# since metadata queries need none and the Studio embeds questions itself.
+# index hands the job script to the shared script_submitter subworkflow,
+# which runs it on the login node or submits it to the cluster's scheduler
+# (Slurm or PBS). record checks the script's exit status and prints the
+# manifest it wrote at <index dir>/.studio-index.json, which the Studio reads
+# for the index's location, age, and size.
+#
+# The directory being indexed is only read. Writes go to the GUFI prefix and
+# the index directory, which must not be inside the directory being indexed
+# (the default location when the home directory is indexed is skipped
+# instead). An update also creates and removes one temporary file in the
+# directory that holds the indexed directory. A rebuild is written beside
+# the old index and swapped in when complete, so queries keep working while
+# it runs.
+# ============================================================================
+permissions:
+  - '*'
+
+jobs:
+  prepare:
+    ssh:
+      remoteHost: ${{ inputs.resource.ip }}
+    steps:
+      - name: Check inputs and write the index script
+        run: |
+          set -e
+          # Each value goes through a quoted heredoc, so nothing in it is
+          # expanded by this shell, and is quoted with %q when it is written
+          # into the job script.
+          cat > in.source_dir <<'STUDIO_GUFI_INPUT'
+          ${{ inputs.index.source_dir }}
+          STUDIO_GUFI_INPUT
+          cat > in.index_dir <<'STUDIO_GUFI_INPUT'
+          ${{ inputs.index.index_dir }}
+          STUDIO_GUFI_INPUT
+          cat > in.mode <<'STUDIO_GUFI_INPUT'
+          ${{ inputs.index.mode }}
+          STUDIO_GUFI_INPUT
+          cat > in.threads <<'STUDIO_GUFI_INPUT'
+          ${{ inputs.index.threads }}
+          STUDIO_GUFI_INPUT
+          cat > in.prefix <<'STUDIO_GUFI_INPUT'
+          ${{ inputs.gufi.prefix }}
+          STUDIO_GUFI_INPUT
+          cat > in.source <<'STUDIO_GUFI_INPUT'
+          ${{ inputs.gufi.source }}
+          STUDIO_GUFI_INPUT
+          value() { tr -d '\r' < "in.$1" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' | sed -n '1p'; }
+          fail() { echo "::error title=Invalid input::$1"; exit 1; }
+          # ~, $HOME, and $WORKDIR at the start of a path are expanded from
+          # this account's environment on the cluster; nothing else is.
+          expand() {
+            case "$1" in
+              "~") printf '%s' "$HOME" ;;
+              "~/"*) printf '%s/%s' "$HOME" "${1#\~/}" ;;
+              '$HOME'|'${HOME}') printf '%s' "$HOME" ;;
+              '$HOME/'*) printf '%s/%s' "$HOME" "${1#\$HOME/}" ;;
+              '${HOME}/'*) printf '%s/%s' "$HOME" "${1#\$\{HOME\}/}" ;;
+              '$WORKDIR'|'${WORKDIR}') printf '%s' "${WORKDIR:-}" ;;
+              '$WORKDIR/'*) [ -n "${WORKDIR:-}" ] && printf '%s/%s' "$WORKDIR" "${1#\$WORKDIR/}" ;;
+              '${WORKDIR}/'*) [ -n "${WORKDIR:-}" ] && printf '%s/%s' "$WORKDIR" "${1#\$\{WORKDIR\}/}" ;;
+              *) printf '%s' "$1" ;;
+            esac
+          }
+
+          # The default is the account's work directory on the cluster. Where
+          # the cluster sets no $WORKDIR, the home directory is indexed.
+          SOURCE_SPEC="$(value source_dir)"
+          [ -n "$SOURCE_SPEC" ] || SOURCE_SPEC='$WORKDIR'
+          case "$SOURCE_SPEC" in
+            '$WORKDIR'|'${WORKDIR}')
+              if [ -z "${WORKDIR:-}" ]; then
+                echo "::warning title=No WORKDIR::\$WORKDIR is not set for $(whoami) on $(hostname -s); indexing the home directory instead."
+                SOURCE_SPEC='$HOME'
+              fi
+              ;;
+            '$WORKDIR/'*|'${WORKDIR}/'*)
+              [ -n "${WORKDIR:-}" ] || fail "\$WORKDIR is not set for $(whoami) on $(hostname -s), so $SOURCE_SPEC cannot be resolved."
+              ;;
+          esac
+          SOURCE_DIR="$(expand "$SOURCE_SPEC")"
+          [ -n "$SOURCE_DIR" ] || fail "No directory to index was given."
+          case "$SOURCE_DIR" in /*) ;; *) fail "The directory to index must be an absolute path or start with ~/ (got: $SOURCE_DIR)." ;; esac
+          [ -d "$SOURCE_DIR" ] || fail "$SOURCE_DIR is not a directory on $(hostname -s)."
+          [ -r "$SOURCE_DIR" ] && [ -x "$SOURCE_DIR" ] || fail "$SOURCE_DIR is not readable by $(whoami)."
+          SOURCE_DIR="$(cd "$SOURCE_DIR" && pwd -P)"
+          [ "$SOURCE_DIR" != "/" ] || fail "Indexing / is not supported; choose a directory."
+
+          INDEX_DIR="$(expand "$(value index_dir)")"
+          DEFAULT_INDEX_DIR=no
+          if [ -z "$INDEX_DIR" ]; then
+            DEFAULT_INDEX_DIR=yes
+            name="$(printf '%s' "${SOURCE_DIR##*/}" | tr -c 'A-Za-z0-9._-' '_')"
+            hash="$(printf '%s' "$SOURCE_DIR" | sha256sum | cut -c1-8)"
+            INDEX_DIR="$HOME/.activate-studio/indexes/${name}-${hash}"
+          fi
+          case "$INDEX_DIR" in /*) ;; *) fail "The index directory must be an absolute path or start with ~/ (got: $INDEX_DIR)." ;; esac
+          INDEX_DIR="$(realpath -m "$INDEX_DIR")"
+          # An index inside the tree it indexes would index itself, and every
+          # update would grow it; one that holds the tree would be swapped
+          # over it. The one exception is the default location when the home
+          # directory is indexed: the build then skips directories named
+          # .activate-studio, and since an update cannot skip anything, it
+          # always rebuilds.
+          SKIP_NAME=""
+          case "$INDEX_DIR/" in
+            "$SOURCE_DIR/"*)
+              if [ "$DEFAULT_INDEX_DIR" = yes ] && [ "$SOURCE_DIR" = "$(cd "$HOME" && pwd -P)" ]; then
+                SKIP_NAME=.activate-studio
+              else
+                fail "The index directory $INDEX_DIR is inside $SOURCE_DIR. Choose an index directory outside the directory being indexed."
+              fi
+              ;;
+          esac
+          case "$SOURCE_DIR/" in "$INDEX_DIR/"*) fail "$SOURCE_DIR is inside the index directory $INDEX_DIR." ;; esac
+          # Only a directory this workflow wrote, or an empty one, is used:
+          # a rebuild replaces what is there.
+          if [ -d "$INDEX_DIR" ] && [ -n "$(ls -A "$INDEX_DIR" 2>/dev/null)" ] && [ ! -f "$INDEX_DIR/.studio-index.json" ]; then
+            fail "$INDEX_DIR already holds files this workflow did not write. Choose an empty or new index directory."
+          fi
+
+          MODE="$(value mode)"
+          case "$MODE" in build|update) ;; "") MODE=update ;; *) fail "Mode must be build or update (got: $MODE)." ;; esac
+          THREADS="$(value threads)"
+          case "$THREADS" in ''|*[!0-9]*) THREADS=4 ;; esac
+          [ "$THREADS" -ge 1 ] && [ "$THREADS" -le 256 ] || THREADS=4
+          if [ -n "$SKIP_NAME" ] && [ "$MODE" = update ]; then
+            echo "The index is inside the directory being indexed, so it is rebuilt rather than updated."
+            MODE=build
+          fi
+
+          PREFIX="$(expand "$(value prefix)")"
+          [ -n "$PREFIX" ] || PREFIX="$HOME/.activate-studio/gufi"
+          case "$PREFIX" in /*) ;; *) fail "The GUFI prefix must be an absolute path or start with ~/ (got: $PREFIX)." ;; esac
+          PREFIX="$(realpath -m "$PREFIX")"
+
+          # The GUFI source: a git URL with @<ref>, or a pw:// tarball of a
+          # GUFI source tree for systems that cannot reach GitHub. The install
+          # is keyed by commit, or by a hash of the tarball's path.
+          GUFI_SOURCE="$(value source)"
+          [ -n "$GUFI_SOURCE" ] || GUFI_SOURCE="https://github.com/mar-file-system/GUFI@fc33e4b3523601181ae61e10878e1ae42780291b"
+          case "$GUFI_SOURCE" in
+            pw://*)
+              GUFI_ID="tar-$(printf '%s' "$GUFI_SOURCE" | sha256sum | cut -c1-12)"
+              ;;
+            *@*)
+              repo="${GUFI_SOURCE%@*}"; ref="${GUFI_SOURCE##*@}"
+              if printf '%s' "$ref" | grep -Eq '^[0-9a-f]{40}$'; then
+                GUFI_ID="$ref"
+              else
+                GUFI_ID="$(git ls-remote "$repo" "$ref" "refs/tags/$ref^{}" 2>/dev/null | awk 'NR==1 {print $1}')"
+                [ -n "$GUFI_ID" ] || fail "Could not resolve $ref in $repo from $(hostname -s)."
+              fi
+              ;;
+            *) fail "The GUFI source must be <git URL>@<commit, tag, or branch> or a pw:// tarball (got: $GUFI_SOURCE)." ;;
+          esac
+          GUFI_DIR="$PREFIX/$GUFI_ID"
+
+          # The job script. Its exit status is recorded in a file because the
+          # submitter does not report it; record checks it.
+          SCRIPT="$PWD/gufi-index.sh"
+          EXIT_FILE="$PWD/gufi-index.exit"
+          rm -f "$EXIT_FILE"
+          {
+            echo '#!/bin/bash'
+            printf 'EXIT_FILE=%q\n' "$EXIT_FILE"
+            printf 'GUFI_BIN=%q\n' "$GUFI_DIR/bin"
+            printf 'GUFI_ID=%q\n' "$GUFI_ID"
+            printf 'SOURCE_DIR=%q\n' "$SOURCE_DIR"
+            printf 'INDEX_DIR=%q\n' "$INDEX_DIR"
+            printf 'MODE=%q\n' "$MODE"
+            printf 'THREADS=%q\n' "$THREADS"
+            printf 'SKIP_NAME=%q\n' "$SKIP_NAME"
+          } > "$SCRIPT"
+          cat >> "$SCRIPT" <<'STUDIO_GUFI_SCRIPT'
+          set -euo pipefail
+          trap 'echo $? > "$EXIT_FILE"' EXIT
+          export PATH="$GUFI_BIN:$PATH"
+          json() { printf '"%s"' "$(printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')"; }
+
+          base="$(basename "$SOURCE_DIR")"
+          tree="$INDEX_DIR/$base"
+          manifest="$INDEX_DIR/.studio-index.json"
+          mkdir -p "$INDEX_DIR"
+          started="$(date +%s)"
+          previous="$( { sed -n 's/.*"startedAt": *\([0-9][0-9]*\).*/\1/p' "$manifest" 2>/dev/null || true; } | head -1)"
+          echo "Indexing $SOURCE_DIR into $tree on $(hostname -s) with $THREADS threads (mode $MODE)"
+
+          # gufi_incremental_update resolves the tree's entries relative to its
+          # working directory and creates (and removes) a temporary database
+          # there, so it runs from the directory that holds the tree, which
+          # must be writable. Where it is not, as for a work directory under
+          # a site-owned parent, the index is rebuilt instead.
+          parent="$(dirname "$SOURCE_DIR")"
+          can_update=no
+          if [ "$MODE" = update ] && [ -f "$tree/db.db" ] && [ -n "$previous" ]; then
+            if [ -w "$parent" ]; then
+              can_update=yes
+            else
+              echo "An update writes a temporary file in $parent, which $(whoami) cannot write; rebuilding instead."
+            fi
+          fi
+
+          if [ "$can_update" = yes ]; then
+            # Only directories changed since the previous run are rescanned,
+            # with a minute's margin for clock skew between nodes.
+            action=update
+            park="$INDEX_DIR/.parking"
+            rm -rf "$park"; mkdir -p "$park"
+            cd "$parent"
+            # The update names every directory it changes, so its output
+            # goes to a log beside the index rather than into the run log.
+            if ! gufi_incremental_update -n "$THREADS" --suspect-stat --suspect-method 3 \
+              --suspect-time "$((previous - 60))" "$tree" "$SOURCE_DIR" "$park" > "$INDEX_DIR/.update.log" 2>&1; then
+              echo "gufi_incremental_update failed; its output is in $INDEX_DIR/.update.log"
+              exit 1
+            fi
+            cd "$INDEX_DIR"
+            rm -rf "$park"
+          else
+            # A full build goes beside the current index and replaces it only
+            # when complete.
+            action=build
+            rm -f "$INDEX_DIR/.update.log"
+            stage="$INDEX_DIR/.build-$$"
+            rm -rf "$stage"
+            skip=()
+            if [ -n "$SKIP_NAME" ]; then
+              printf '%s\n' "$SKIP_NAME" > "$INDEX_DIR/.skip"
+              skip=(--skip-file "$INDEX_DIR/.skip")
+            fi
+            gufi_dir2index -n "$THREADS" ${skip[@]+"${skip[@]}"} "$SOURCE_DIR" "$stage"
+            [ -d "$stage/$base" ] || { echo "gufi_dir2index wrote no tree at $stage/$base"; exit 1; }
+            if [ -d "$tree" ]; then mv "$tree" "$INDEX_DIR/.old-$$"; fi
+            mv "$stage/$base" "$tree"
+            rm -rf "$stage" "$INDEX_DIR/.old-$$"
+          fi
+
+          directories="$(gufi_query -n "$THREADS" -d ' ' -S "SELECT 1 FROM summary WHERE isroot = 1" "$tree" | wc -l)"
+          entries="$(gufi_query -n "$THREADS" -d ' ' -E "SELECT COUNT(*) FROM pentries" "$tree" | awk '{ s += $1 } END { print s + 0 }')"
+          finished="$(date +%s)"
+          {
+            echo '{'
+            echo '  "version": 1,'
+            echo "  \"source\": $(json "$SOURCE_DIR"),"
+            echo "  \"index\": $(json "$tree"),"
+            echo "  \"indexDir\": $(json "$INDEX_DIR"),"
+            echo "  \"mode\": $(json "$MODE"),"
+            echo "  \"action\": $(json "$action"),"
+            echo "  \"startedAt\": $started,"
+            echo "  \"builtAt\": $(json "$(date -u -d "@$finished" +%Y-%m-%dT%H:%M:%SZ)"),"
+            echo "  \"seconds\": $((finished - started)),"
+            echo "  \"gufiCommit\": $(json "$GUFI_ID"),"
+            echo "  \"gufiBin\": $(json "$GUFI_BIN"),"
+            echo "  \"host\": $(json "$(hostname -s)"),"
+            echo "  \"user\": $(json "$(whoami)"),"
+            echo "  \"directories\": $directories,"
+            echo "  \"files\": $entries"
+            echo '}'
+          } > "$manifest.tmp"
+          mv "$manifest.tmp" "$manifest"
+          echo "Index $action finished in $((finished - started))s: $directories directories, $entries files"
+          STUDIO_GUFI_SCRIPT
+          chmod 700 "$SCRIPT"
+
+          echo "Directory:  $SOURCE_DIR"
+          echo "Index:      $INDEX_DIR"
+          echo "Mode:       $MODE, $THREADS threads"
+          echo "GUFI:       $GUFI_SOURCE -> $GUFI_DIR"
+          # Later jobs read these values from files rather than from
+          # outputs, which are pasted into their scripts unquoted.
+          printf '%s\n' "$GUFI_SOURCE" > state.gufi_source
+          printf '%s\n' "$GUFI_ID" > state.gufi_id
+          printf '%s\n' "$GUFI_DIR" > state.gufi_dir
+          printf '%s\n' "$INDEX_DIR" > state.index_dir
+          echo "STATE=$PWD/state" | tee -a $OUTPUTS
+          echo "SCRIPT_PATH=$SCRIPT" | tee -a $OUTPUTS
+          echo "EXIT_FILE=$EXIT_FILE" | tee -a $OUTPUTS
+
+  install_gufi:
+    needs:
+      - prepare
+    ssh:
+      remoteHost: ${{ inputs.resource.ip }}
+    steps:
+      - name: Install GUFI if this commit is not installed
+        run: |
+          set -e
+          STATE="${{ needs.prepare.outputs.STATE }}"
+          GUFI_DIR="$(cat "$STATE.gufi_dir")"
+          GUFI_ID="$(cat "$STATE.gufi_id")"
+          GUFI_SOURCE="$(cat "$STATE.gufi_source")"
+          if [ -f "$GUFI_DIR/.installed" ] && [ -x "$GUFI_DIR/bin/gufi_dir2index" ]; then
+            echo "GUFI $GUFI_ID is installed at $GUFI_DIR."
+            exit 0
+          fi
+          if ! command -v cmake >/dev/null 2>&1 || ! command -v gcc >/dev/null 2>&1; then
+            module load cmake gcc >/dev/null 2>&1 || true
+          fi
+          for tool in cmake gcc g++ make; do
+            command -v "$tool" >/dev/null 2>&1 || { echo "::error title=Missing build tool::$tool is not on PATH on $(hostname -s); GUFI cannot be built here. Install it or load its module, or install GUFI at $GUFI_DIR by hand."; exit 1; }
+          done
+
+          # One install per commit at a time. mkdir is atomic on shared file
+          # systems where flock may not be; a lock older than two hours is
+          # taken to be left by a run that died.
+          mkdir -p "$(dirname "$GUFI_DIR")"
+          lock="$GUFI_DIR.lock"
+          locked=no
+          for i in $(seq 1 240); do
+            if mkdir "$lock" 2>/dev/null; then locked=yes; break; fi
+            if [ -n "$(find "$lock" -maxdepth 0 -mmin +120 2>/dev/null)" ]; then rmdir "$lock" 2>/dev/null || true; continue; fi
+            [ -f "$GUFI_DIR/.installed" ] && { echo "Another run installed GUFI $GUFI_ID."; exit 0; }
+            sleep 15
+          done
+          [ "$locked" = yes ] || { echo "::error title=Install lock::Timed out waiting for $lock"; exit 1; }
+          trap 'rmdir "$lock" 2>/dev/null || true' EXIT
+          [ -f "$GUFI_DIR/.installed" ] && { echo "Another run installed GUFI $GUFI_ID."; exit 0; }
+
+          build="$(mktemp -d "${TMPDIR:-/tmp}/gufi-build.XXXXXX")"
+          trap 'rmdir "$lock" 2>/dev/null || true; rm -rf "$build"' EXIT
+          case "$GUFI_SOURCE" in
+            pw://*)
+              pw buckets cp "$GUFI_SOURCE" "$build/gufi-src.tar.gz" > "$build/cp.log" 2>&1 || { tr '\r' '\n' < "$build/cp.log" | tail -3; echo "::error title=GUFI source::Could not copy $GUFI_SOURCE"; exit 1; }
+              mkdir -p "$build/src"
+              tar -xzf "$build/gufi-src.tar.gz" -C "$build/src" --strip-components=1
+              ;;
+            *)
+              # A blobless clone fetches file contents for the one commit only;
+              # the tags stay, which GUFI's version string is built from.
+              git clone --quiet --filter=blob:none --no-checkout "${GUFI_SOURCE%@*}" "$build/src"
+              git -C "$build/src" -c advice.detachedHead=false checkout --quiet "$GUFI_ID"
+              ;;
+          esac
+          [ -f "$build/src/CMakeLists.txt" ] || { echo "::error title=GUFI source::No CMakeLists.txt in the GUFI source"; exit 1; }
+          # open() with O_CREAT needs a mode; compilers that enforce
+          # _FORTIFY_SOURCE reject the call without one.
+          sed -i 's/open(extdb_path, O_CREAT | O_WRONLY);/open(extdb_path, O_CREAT | O_WRONLY, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);/' \
+            "$build/src/src/gufi_query/spread_tree.c" 2>/dev/null || true
+
+          # The system compilers, not whatever CC a site's default modules set,
+          # so the binaries need no module loaded to run.
+          export CC="$(command -v gcc)" CXX="$(command -v g++)"
+          # GUFI's configure requires Python 3.9 or later; some systems'
+          # python3 is older while a newer python3.X is installed beside it.
+          python=""
+          for p in python3 python3.13 python3.12 python3.11 python3.10 python3.9; do
+            p="$(command -v "$p" 2>/dev/null)" || continue
+            "$p" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 9) else 1)' 2>/dev/null && { python="$p"; break; }
+          done
+          [ -n "$python" ] || { echo "::error title=Missing build tool::GUFI needs Python 3.9 or later on $(hostname -s); none was found."; exit 1; }
+          # setfattr and getfattr are required at configure time but only
+          # GUFI's tests run them; where they are missing, a command that
+          # fails stands in, so anything that does call them fails visibly.
+          xattr_args=""
+          command -v setfattr >/dev/null 2>&1 || xattr_args="$xattr_args -DSETFATTR=/bin/false"
+          command -v getfattr >/dev/null 2>&1 || xattr_args="$xattr_args -DGETFATTR=/bin/false"
+
+          jobs="$(nproc 2>/dev/null || echo 4)"; [ "$jobs" -le 8 ] || jobs=8
+          echo "Building GUFI $GUFI_ID into $GUFI_DIR with $jobs jobs on $(hostname -s) ($CC, $python)"
+          # DEP_INSTALL_PREFIX inside the install prefix keeps the install
+          # self-contained: the binaries' runtime paths point at it. Config
+          # and completion default to /etc, which needs root.
+          cmake -S "$build/src" -B "$build/b" $xattr_args \
+            -DPython3_EXECUTABLE="$python" \
+            -DPython3_SHEBANG="$python" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX="$GUFI_DIR" \
+            -DDEP_INSTALL_PREFIX="$GUFI_DIR/deps" \
+            -DDEP_BUILD_THREADS="$jobs" \
+            -DDEP_AI=Off \
+            -DENABLE_SUDO_TESTS=Off \
+            -DSERVER_CONFIG="$GUFI_DIR/etc/GUFI/config" \
+            -DCLIENT_CONFIG="$GUFI_DIR/etc/GUFI/config" \
+            -DBASH_COMPLETION=Off > "$build/configure.log" 2>&1 \
+            || { tail -30 "$build/configure.log"; echo "::error title=GUFI build::cmake configure failed"; exit 1; }
+          cmake --build "$build/b" -j "$jobs" > "$build/build.log" 2>&1 \
+            || { tail -40 "$build/build.log"; echo "::error title=GUFI build::compile failed"; exit 1; }
+          cmake --install "$build/b" > "$build/install.log" 2>&1 \
+            || { tail -20 "$build/install.log"; echo "::error title=GUFI build::install failed"; exit 1; }
+          "$GUFI_DIR/bin/gufi_dir2index" -v
+          touch "$GUFI_DIR/.installed"
+          echo "GUFI $GUFI_ID installed at $GUFI_DIR"
+
+  index:
+    needs:
+      - prepare
+      - install_gufi
+    ssh:
+      remoteHost: ${{ inputs.resource.ip }}
+    steps:
+      - name: Run the index script
+        uses: marketplace/script_submitter/v3.6
+        with:
+          resource: ${{ inputs.resource }}
+          shebang: '#!/bin/bash'
+          use_existing_script: true
+          script_path: ${{ needs.prepare.outputs.SCRIPT_PATH }}
+          define_cleanup_script: false
+          scheduler: ${{ inputs.cluster.scheduler }}
+          use_scheduler_agent: false
+          submit_and_exit: false
+          # Platforms whose submitter asks for the account, QoS, CPUs, and
+          # node count of an existing cluster read these; others ignore them.
+          slurm:
+            is_enabled: ${{ inputs.cluster.slurm.is_enabled }}
+            account: ${{ inputs.cluster.slurm.account }}
+            partition: ${{ inputs.cluster.slurm.partition }}
+            qos: ${{ inputs.cluster.slurm.qos }}
+            cpus_per_task: ${{ inputs.index.threads }}
+            nodes: 1
+            node_type: ''
+            time: ${{ inputs.cluster.slurm.time }}
+            scheduler_directives: ${{ inputs.cluster.slurm.scheduler_directives }}
+          pbs:
+            is_enabled: ${{ inputs.cluster.pbs.is_enabled }}
+            account: ${{ inputs.cluster.pbs.account }}
+            scheduler_directives: ${{ inputs.cluster.pbs.scheduler_directives }}
+
+  record:
+    needs:
+      - prepare
+      - index
+    ssh:
+      remoteHost: ${{ inputs.resource.ip }}
+    steps:
+      - name: Check the result and print the manifest
+        run: |
+          exit_file="${{ needs.prepare.outputs.EXIT_FILE }}"
+          manifest="$(cat "${{ needs.prepare.outputs.STATE }}.index_dir")/.studio-index.json"
+          if [ ! -f "$exit_file" ]; then
+            echo "::error title=Index::No exit status in $exit_file; the index script did not run to its end"
+            exit 1
+          fi
+          status="$(cat "$exit_file")"
+          if [ "$status" != "0" ]; then
+            echo "::error title=Index::The index script exited with status $status"
+            exit 1
+          fi
+          # The Studio reads the manifest from between these markers in the
+          # run log.
+          echo "STUDIO_INDEX_BEGIN"
+          cat "$manifest"
+          echo "STUDIO_INDEX_END"
+
+'on':
+  execute:
+    inputs:
+      resource:
+        type: compute-clusters
+        label: Compute resource
+        include-workspace: false
+        tooltip: The cluster that holds the directory. GUFI is installed and the index is written there, as you.
+      cluster:
+        type: group
+        label: Scheduler
+        hidden: ${{ inputs.resource.schedulerType == '' }}
+        ignore: ${{ .hidden }}
+        items:
+          scheduler:
+            type: boolean
+            default: false
+            label: Submit the index build to the scheduler?
+            tooltip: |
+              Yes: the build runs as a batch job (sbatch or qsub). Use this for
+              large directories, since login nodes are shared.
+              No: the build runs on the login or controller node.
+          slurm:
+            type: group
+            label: Slurm
+            hidden: ${{ inputs.resource.schedulerType != 'slurm' || inputs.cluster.scheduler == false }}
+            ignore: ${{ .hidden }}
+            items:
+              is_enabled:
+                type: boolean
+                hidden: true
+                default: true
+              account:
+                label: Account
+                type: slurm-accounts
+                resource: ${{ inputs.resource }}
+                tooltip: '--account'
+                ignore: ${{ 'existing' != inputs.resource.provider }}
+                hidden: ${{ .ignore }}
+              partition:
+                label: Partition
+                type: slurm-partitions
+                optional: true
+                resource: ${{ inputs.resource }}
+              qos:
+                label: Quality of service
+                type: slurm-qos
+                resource: ${{ inputs.resource }}
+                tooltip: '--qos'
+                ignore: ${{ 'existing' != inputs.resource.provider }}
+                hidden: ${{ .ignore }}
+              time:
+                label: Walltime
+                type: string
+                default: '01:00:00'
+                tooltip: '--time, as HH:MM:SS or D-HH:MM:SS'
+              scheduler_directives:
+                label: Extra directives
+                type: editor
+                optional: true
+                default: ''
+                tooltip: 'One #SBATCH line per directive.'
+          pbs:
+            type: group
+            label: PBS
+            hidden: ${{ inputs.resource.schedulerType != 'pbs' || inputs.cluster.scheduler == false }}
+            ignore: ${{ .hidden }}
+            items:
+              is_enabled:
+                type: boolean
+                hidden: true
+                default: true
+              account:
+                label: Account
+                type: string
+                optional: true
+                tooltip: '-A'
+              scheduler_directives:
+                label: Directives
+                type: editor
+                default: |
+                  #PBS -l walltime=01:00:00
+                  #PBS -l select=1
+                tooltip: 'One #PBS line per directive.'
+      index:
+        type: group
+        label: Index
+        items:
+          source_dir:
+            label: Directory to index
+            type: string
+            optional: true
+            default: $WORKDIR
+            tooltip: An absolute path on the cluster, or one starting with ~/, $HOME, or $WORKDIR, which are resolved there. $WORKDIR falls back to the home directory where it is not set. The directory is only read.
+          index_dir:
+            label: Index directory
+            type: string
+            optional: true
+            default: ''
+            tooltip: Where the index is written; it must not be inside the directory being indexed. Empty uses ~/.activate-studio/indexes/<name>-<hash>.
+          mode:
+            label: Mode
+            type: dropdown
+            default: update
+            options:
+              - label: Update (rescan what changed since the last run; builds if there is no index)
+                value: update
+              - label: Build (full rebuild, swapped in when complete)
+                value: build
+          threads:
+            label: Threads
+            type: number
+            default: 4
+            min: 1
+            max: 256
+            tooltip: Threads for the scan; also the CPUs requested from Slurm.
+      gufi:
+        type: group
+        label: GUFI install
+        collapsed: true
+        items:
+          prefix:
+            label: Install prefix
+            type: string
+            default: ~/.activate-studio/gufi
+            tooltip: GUFI is built once per commit into <prefix>/<commit>.
+          source:
+            label: GUFI source
+            type: string
+            default: https://github.com/mar-file-system/GUFI@fc33e4b3523601181ae61e10878e1ae42780291b
+            tooltip: A git URL with @<commit, tag, or branch>, or a pw:// path to a tarball of the GUFI source for clusters that cannot reach GitHub.
