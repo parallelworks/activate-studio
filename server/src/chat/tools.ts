@@ -899,7 +899,10 @@ async function wfDoc(name: string): Promise<any> {
     return { name: e.entry, runAs: d.runAs, displayName: d.displayName, description: d.description, yaml: d.yaml, configurations: [], permissions: d.permissions }
   }
   const clean = name.replace(/[^A-Za-z0-9_.-]/g, '')
-  return jsonFromCli<any>(await pwCli(['workflows', 'get', clean, '-o', 'json'], 60_000))
+  // The API keeps the declared input order; the CLI's JSON sorts it.
+  const { workflowRecord } = await import('../platformRecords.js')
+  return await workflowRecord(clean, toolContext.getStore()?.userKey || gatewayKey())
+    ?? jsonFromCli<any>(await pwCli(['workflows', 'get', clean, '-o', 'json'], 60_000))
 }
 
 /** Declared inputs of a workflow, flattened to dotted paths with types. */
@@ -1156,7 +1159,9 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
           // Describe: the workflow's declared inputs plus the preset.
           let declared = ''
           try {
-            const doc = JSON.parse((await pwCli(['workflows', 'get', cfg.workflow, '-o', 'json'], 60_000)).split('\n\n')[0])
+            const { workflowRecord } = await import('../platformRecords.js')
+            const doc = await workflowRecord(cfg.workflow, toolContext.getStore()?.userKey || gatewayKey())
+              ?? JSON.parse((await pwCli(['workflows', 'get', cfg.workflow, '-o', 'json'], 60_000)).split('\n\n')[0])
             const ins = doc?.yaml?.on?.execute?.inputs ?? doc?.yaml?.[true as any]?.execute?.inputs ?? {}
             const rows: string[] = []
             const walk = (prefix: string, obj: Record<string, any>) => {

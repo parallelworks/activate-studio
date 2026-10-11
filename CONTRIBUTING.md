@@ -39,6 +39,8 @@ pnpm test
 
 That builds the server and runs its suite (Node's test runner) and the web suite (Vitest). CI runs the same on Linux and macOS for every pull request. A change that alters behavior comes with a test that fails without it.
 
+Server tests cannot reach the network: `server/test/setup.mjs`, loaded before each test file, makes any `fetch` to a non-loopback host fail. A test that needs a platform or GitHub answer replaces `globalThis.fetch` with a stub.
+
 ## Pull requests
 
 Open the pull request from a branch on your fork. Keep each one to one change.
