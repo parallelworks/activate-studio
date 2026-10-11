@@ -49,6 +49,31 @@
         </div>
       </div>
       <style>@keyframes boot-spin{to{transform:rotate(360deg)}}</style>
+      <!-- The classification banner as the app last drew it, so the loading
+           screen carries the marking too. In an installed app the banner is
+           the title bar; without this the strip between the window controls
+           shows the page's ground until the app mounts. -->
+      <div id="boot-bar" role="note" hidden></div>
+      <style>
+        #boot-bar{position:fixed;top:0;left:0;right:0;z-index:1;text-align:center;font:400 0.8rem system-ui,sans-serif;padding:3px 0;-webkit-font-smoothing:antialiased}
+        #boot-bar[hidden]{display:none!important}
+        @media (display-mode: window-controls-overlay){#boot-bar{display:flex;align-items:center;justify-content:center;box-sizing:border-box;height:env(titlebar-area-height,33px);padding:0 max(env(titlebar-area-x,0px),calc(100vw - env(titlebar-area-x,0px) - env(titlebar-area-width,100vw)));overflow:hidden;line-height:1.15;app-region:drag;-webkit-app-region:drag;user-select:none}}
+      </style>
+      <script>
+        try {
+          var b = JSON.parse(localStorage.getItem('ade-banner') || 'null')
+          var embedded = true
+          try { embedded = window.self !== window.top } catch (e) { /* cross-origin parent */ }
+          if (b && b.text && (!embedded || b.whenEmbedded)) {
+            var bar = document.getElementById('boot-bar')
+            bar.textContent = b.text
+            bar.title = b.text
+            bar.style.background = b.color
+            bar.style.color = b.ink
+            bar.hidden = false
+          }
+        } catch (e) { /* first visit, or storage unavailable */ }
+      </script>
     </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
