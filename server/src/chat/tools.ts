@@ -1100,7 +1100,7 @@ export async function executeTool(name: string, argsJson: string, ctx?: { labelS
 // named one. A library without files on this host can be searched but its
 // files cannot be opened, and the tool says so instead of failing oddly.
 function toolLibrary() {
-  return getLibrary(toolContext.getStore()?.library ?? null)
+  return getLibrary(toolContext.getStore()?.library ?? null, undefined, toolContext.getStore()?.userId ?? null)
 }
 function toolSourceRoot(): string {
   const lib = toolLibrary()

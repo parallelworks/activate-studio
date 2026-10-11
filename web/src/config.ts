@@ -109,8 +109,7 @@ export function useAppConfig(): AppConfig {
     return { ...DEFAULTS, ...brand, brandRemembered: !!brand.appName }
   })
   useEffect(() => {
-    if (cached) return
-    fetch('/api/config')
+    const load = () => fetch('/api/config')
       .then(r => r.json())
       .then((d: Partial<AppConfig>) => {
         cached = {
@@ -139,6 +138,15 @@ export function useAppConfig(): AppConfig {
         setCfg(cached)
       })
       .catch(() => setCfg({ ...DEFAULTS, loaded: true }))
+    if (!cached) void load()
+    // A change the server knows about (a library that finished building)
+    // asks every view for the configuration again.
+    const reload = () => { void load() }
+    window.addEventListener('ade:config-changed', reload)
+    return () => window.removeEventListener('ade:config-changed', reload)
   }, [])
   return cfg
 }
+
+/** Asks the app to fetch its configuration again, as after a library is added. */
+export function reloadAppConfig(): void { window.dispatchEvent(new Event('ade:config-changed')) }

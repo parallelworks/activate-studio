@@ -18,6 +18,7 @@ import path from 'node:path'
 import { execFile } from 'node:child_process'
 import { GUFI_BIN, GUFI_INDEX, INDEX_BASE, KB_ROOT, gufiAvailable } from './config.js'
 import { KbError } from './kb.js'
+import { loadUserLibraries, ownerOf, remoteRootOf } from './userLibraries.js'
 
 export interface LibraryCaps {
   /** A GUFI tree: a db.db at the root. */
@@ -40,6 +41,8 @@ export interface Library {
   /** Pinned by the deployment; cannot be removed from Settings. */
   pinned: boolean
   caps: LibraryCaps
+  /** A user's library on one of their clusters (userLibraries.ts). */
+  site?: string | null
 }
 
 export interface LibraryDef {
@@ -58,6 +61,8 @@ export interface PublicLibrary {
   pinned: boolean
   source: boolean
   caps: LibraryCaps
+  /** The cluster a user's own library lives on. */
+  site?: string | null
 }
 
 export const PRIMARY_ID = 'kb'
@@ -178,8 +183,22 @@ function fromDef(d: LibraryDef, pinned: boolean): Library {
   }
 }
 
-/** Every mounted library, primary first. `label` names the primary. */
-export function listLibraries(primaryLabel = path.basename(KB_ROOT)): Library[] {
+/** A viewer's own libraries on their clusters, once built. Only where a
+ *  viewer is named (null being the one user of a Studio without sign-in);
+ *  the deployment's own listings pass none and never show them. */
+function userLibrariesOf(viewerId: string | null | undefined): Library[] {
+  if (viewerId === undefined) return []
+  const owner = ownerOf(viewerId)
+  if (!owner) return []
+  return loadUserLibraries(owner).filter(d => d.indexRoot && d.gufiBin).map(d => ({
+    id: d.id, label: d.label, indexRoot: remoteRootOf(owner, d.id), sourceRoot: null,
+    writable: false, primary: false, pinned: false, caps: { index: true, fullText: false, vectors: false }, site: d.site,
+  }))
+}
+
+/** Every mounted library, primary first, then the viewer's own. `label`
+ *  names the primary. */
+export function listLibraries(primaryLabel = path.basename(KB_ROOT), viewerId?: string | null): Library[] {
   const seen = new Set<string>([PRIMARY_ID])
   const out: Library[] = [primaryLibrary(primaryLabel)]
   for (const [defs, pinned] of [[pinnedDefs(), true], [loadAdded(), false]] as const) {
@@ -189,6 +208,7 @@ export function listLibraries(primaryLabel = path.basename(KB_ROOT)): Library[] 
       out.push(fromDef(d, pinned))
     }
   }
+  for (const u of userLibrariesOf(viewerId)) if (!seen.has(u.id)) { seen.add(u.id); out.push(u) }
   return out
 }
 
@@ -199,9 +219,9 @@ export async function probeAll(primaryLabel?: string): Promise<Library[]> {
   return libs
 }
 
-export function getLibrary(id: string | undefined | null, primaryLabel?: string): Library {
+export function getLibrary(id: string | undefined | null, primaryLabel?: string, viewerId?: string | null): Library {
   const want = (id || PRIMARY_ID).trim()
-  const lib = listLibraries(primaryLabel).find(l => l.id === want)
+  const lib = listLibraries(primaryLabel, viewerId).find(l => l.id === want)
   if (!lib) throw new KbError(404, `no library named ${want}`)
   return lib
 }
@@ -230,7 +250,7 @@ export function removeLibrary(id: string): void {
 }
 
 export function publicLibrary(l: Library): PublicLibrary {
-  return { id: l.id, label: l.label, primary: l.primary, writable: l.writable, pinned: l.pinned, source: !!l.sourceRoot, caps: l.caps }
+  return { id: l.id, label: l.label, primary: l.primary, writable: l.writable, pinned: l.pinned, source: !!l.sourceRoot || !!l.site, caps: l.caps, site: l.site ?? null }
 }
 
 /** A library as Settings shows it: with its index and source roots, so

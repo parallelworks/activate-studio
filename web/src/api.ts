@@ -7,9 +7,19 @@ export interface PublicLibrary {
   pinned: boolean
   source: boolean
   caps: { index: boolean; fullText: boolean; vectors: boolean }
+  /** The cluster a user's own library lives on. */
+  site?: string | null
 }
 /** Settings' listing adds where each library points. */
 export interface SettingsLibrary extends PublicLibrary { indexRoot: string; sourceRoot: string | null }
+/** A user's own library on one of their clusters. */
+export interface UserLibrary {
+  id: string; label: string; site: string; sourceDir: string; sourceRoot: string | null; indexRoot: string | null
+  state: 'building' | 'ready' | 'updating' | 'failed'
+  run: { slug: string; mode: 'build' | 'update'; startedAt: string } | null
+  error: string | null; builtAt: string | null; directories: number | null; files: number | null
+  scheduler: { partition?: string; account?: string } | null
+}
 
 // ---- which library requests address ----
 // The primary is 'kb' and is what every request meant before libraries
@@ -192,6 +202,15 @@ export const api = {
   startIndexJob: (dir: string) => postJson<IndexJob>('/api/index/job', { path: dir }),
   indexJob: (id: number) => getJson<IndexJob>(`/api/index/job/${id}`),
   libraries: () => getJson<{ libraries: SettingsLibrary[] }>('/api/libraries'),
+  userLibraries: () => getJson<{ libraries: UserLibrary[]; available: boolean }>('/api/user-libraries'),
+  addUserLibrary: (body: { site: string; sourceDir: string; label?: string; scheduler?: { partition: string; account?: string } | null }) =>
+    postJson<UserLibrary>('/api/user-libraries', body),
+  refreshUserLibrary: (id: string) => postJson<UserLibrary>(`/api/user-libraries/${encodeURIComponent(id)}/refresh`, {}),
+  removeUserLibrary: async (id: string) => {
+    const r = await fetch(`/api/user-libraries/${encodeURIComponent(id)}`, { method: 'DELETE' })
+    if (!r.ok) throw new Error(((await r.json().catch(() => ({}))) as { error?: string }).error ?? `${r.status}`)
+  },
+  agentSites: () => getJson<{ sites: { name: string; kind: 'local' | 'cluster'; type?: string }[] }>('/api/agent-sites'),
   addLibrary: (def: { id: string; label?: string; indexRoot: string; sourceRoot?: string }) =>
     postJson<{ library: SettingsLibrary }>('/api/libraries', def),
   removeLibrary: async (id: string) => {

@@ -46,6 +46,8 @@ mkdir -p "$STAGE/app/web"
 cp -r "$PROJECT_ROOT/web/dist" "$STAGE/app/web/dist"
 cp -r "$PROJECT_ROOT/indexer" "$STAGE/app/indexer"
 cp -r "$PROJECT_ROOT/docs" "$STAGE/app/docs"
+# The index workflow the Studio registers for users' cluster libraries.
+mkdir -p "$STAGE/app/deploy" && cp "$PROJECT_ROOT/deploy/gufi-index.yaml" "$STAGE/app/deploy/"
 cp -r "$PROJECT_ROOT/extensions-starter" "$STAGE/app/extensions-starter"
 
 echo "Staging embedding model..."

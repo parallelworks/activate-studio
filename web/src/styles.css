@@ -2181,3 +2181,7 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 }
 /* Toolbar buttons inside list headings take the compact 28px size. */
 .results-head .btn-secondary, .results-toolbar .btn-secondary { min-height: 28px; padding: 0 10px; font-size: 13px; }
+
+/* Settings > Libraries > Your libraries: the Slurm fields under their checkbox. */
+.user-lib-slurm { display: flex; gap: 8px; margin-top: 6px; }
+.user-lib-slurm .field { flex: 1; min-width: 0; }
