@@ -2,6 +2,26 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.103 (2026-10-11)
+
+### Change log through v1.102 (#419)
+
+Regenerated with `node scripts/release-notes.mjs --changelog` after the v1.102 release.
+
+### Workflow forms keep the declared input order; tests cannot reach the network (#420)
+
+Workflow forms in the Studio listed their inputs in a different order from the platform's form. The Studio read each workflow's definition with `pw workflows get -o json`, and the CLI returns the YAML as a Go map, so every level of inputs comes back sorted by name. On one workflow the top-level groups arrived as cluster, doe, postprocessing, resource, software, study, while the workflow declares resource, cluster, doe, study, postprocessing, software. The platform API (`GET /api/workflows/<name>`) returns the declared order. Compared against the workflow's YAML file, it matched at all 39 levels of nesting.
+
+The Studio now reads workflow records through the API with the viewer's key, and uses the CLI only when the API cannot answer. This covers:
+- the workflow form;
+- **Add to my workflows**, which writes the copy into the viewer's account. A copy written from the sorted map also showed its form alphabetically on the platform.
+- the assistant's workflow tools, and model serving's input listing;
+- composed workflows, so a composed form lists each source's inputs in their own order.
+
+The shared reader is `server/src/platformRecords.ts`. The workflow graph view already read the API first.
+
+Server tests now run with `server/test/setup.mjs` loaded first. It makes any `fetch` to a non-loopback host fail, so a test that forgets to stub `fetch` cannot reach a platform with the host's credentials. The full suite passes with it. A new form test serves inputs in declared order from the API and sorted from the CLI, and checks that the form follows the API. It fails without the change.
+
 ## v1.102 (2026-10-10)
 
 ### Change log through v1.101 (#418)
