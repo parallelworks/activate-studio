@@ -2,6 +2,18 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.101 (2026-10-10)
+
+### Change log through v1.100 (#416)
+
+Regenerated with `node scripts/release-notes.mjs --changelog` after the v1.100 release.
+
+### Workflow form tooltips show their text (#414)
+
+The help icons on the workflow form showed nothing on hover. The UI package's tooltips only mark their anchors with `data-tooltip-id` and the text. The text is shown by one shared tooltip, `GlobalTooltip`, which the host app renders once at its root, and the Studio never rendered it. It now renders inside `UIProvider` in `web/src/main.tsx`. This also covers the package's other anchored tooltips, such as the full text of a truncated label.
+
+Checked in a browser against a workflow whose inputs carry `tooltip:` text. Before the change, hovering a help icon showed no tooltip element. After it, the input's text appears above the icon.
+
 ## v1.100 (2026-10-10)
 
 ### Change log through v1.99 (#415)
