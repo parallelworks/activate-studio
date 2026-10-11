@@ -2,6 +2,27 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.100 (2026-10-10)
+
+### Change log through v1.99 (#415)
+
+Regenerated with `node scripts/release-notes.mjs --changelog` after the v1.99 release.
+
+### A workflow's README beside its form (#413)
+
+The workflow page now shows the workflow's README beside the form, or below it on a narrow window. READMEs usually say how a workflow works and what each input changes. **Hide README** puts it away, and the choice is remembered.
+
+Each kind of entry names where its README lives:
+- An account workflow from a repository, including an account copy of a marketplace workflow, names its repository, branch, and README path in its record's `remote` block.
+- A marketplace entry names them for each version; the Studio uses the version tagged `latest`.
+- A GitHub entry reads the `README.md` in its workflow's directory.
+
+The README is read through the platform's repository route with the viewer's key, which reaches private GitHub repositories and projects on registered GitLab servers. A GitHub README falls back to the raw file host. A workflow defined only on the platform has no README, and the page shows its description as before.
+
+Relative links are rewritten so they work outside the repository. Images go through a new route, `GET /api/workflows/item/asset`, which reads image files from the same repository with the same key and nothing else. Other relative links go to the file's page on the repository's site. Code blocks and code spans are left as written. Only a definite answer is cached, either a README or a workflow with none, so a failed platform read is retried on the next view.
+
+The user guide and `docs/WORKFLOWS.md` describe it. Tests cover the address forms, the README location for each kind of entry, the link rewriting, the routes, and the retry.
+
 ## v1.99 (2026-10-10)
 
 ### Change log through v1.98 (#411)
