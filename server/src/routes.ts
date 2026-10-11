@@ -1,5 +1,6 @@
 import crypto from 'node:crypto'
-import { getLibrary, requireWritable, listLibraries, publicLibrary, settingsLibrary, addLibrary, removeLibrary, probeAll } from './libraries.js'
+import { getLibrary, requireWritable, listLibraries, publicLibrary, settingsLibrary, addLibrary, removeLibrary, probeAll, PRIMARY_ID } from './libraries.js'
+import { ALL, scopeLibraries, searchScope } from './libraryScope.js'
 import type { FastifyInstance } from 'fastify'
 import { execFile } from 'node:child_process'
 import path from 'node:path'
@@ -26,7 +27,7 @@ import { modelCachePath, removeModelCache } from './model.js'
 import { effectiveSettings } from './settings.js'
 import { curatedNames, platformAvailable } from './workflowsTab.js'
 import { authEnabled, authHeaderName } from './auth.js'
-import { remoteFile, remoteTree } from './userLibraries.js'
+import { remoteDownload, remoteFile, remoteTree } from './userLibraries.js'
 
 /** A brand image may be given as a URL instead of a path on the resource,
  *  which is easier for a deployment whose branding lives on a web server
@@ -317,8 +318,28 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
     return reply.type('application/manifest+json').send(webManifest({ name: eff.appName, dark: eff.theme === 'dark', brand, banner }))
   })
 
+  // The combined tree, library=all: one top-level folder per library the
+  // viewer can read, named by its id, with that library's own tree below.
+  // A path in it is "<library id>/<path in that library>".
+  const allLibs = (req: { user?: { id?: string } }) => scopeLibraries(ALL, req.user?.id ?? null, effectiveSettings().kbLabel)
+  const inAll = (req: { query?: unknown }) => String(((req.query ?? {}) as { library?: string }).library ?? '').toLowerCase() === ALL
+  const splitAll = (req: { user?: { id?: string } }, rel: string) => {
+    const [id, ...rest] = String(rel).replace(/^\/+/, '').split('/')
+    const lib = allLibs(req).find(l => l.id === id)
+    if (!lib) throw new KbError(404, `no library named ${id}`)
+    return { lib, sub: rest.join('/') }
+  }
+
   app.get('/api/kb/tree', async req => {
     const { path: rel = '' } = req.query as { path?: string }
+    if (inAll(req)) {
+      if (!rel.replace(/^\/+|\/+$/g, '')) {
+        return { path: '', entries: allLibs(req).map(l => ({ name: l.site ? `${l.label} (on ${l.site})` : l.label, path: l.id, type: 'dir', size: 0, mtime: 0, kind: 'dir' })) }
+      }
+      const { lib, sub } = splitAll(req, rel)
+      const entries = lib.site ? await remoteTree(lib.indexRoot, sub) : lib.sourceRoot ? await listDir(sub, lib.sourceRoot) : []
+      return { path: rel, entries: entries.map(e => ({ ...e, path: `${lib.id}/${e.path}` })) }
+    }
     // A user's library on a cluster lists from its index there.
     const lib = libOf(req)
     if (lib.site) return { path: rel, entries: await remoteTree(lib.indexRoot, rel) }
@@ -336,6 +357,12 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/api/kb/file', async req => {
     const { path: rel = '' } = req.query as { path?: string }
+    if (inAll(req)) {
+      const { lib, sub } = splitAll(req, rel)
+      if (lib.site) return { ...(await remoteFile(lib.indexRoot, sub)), path: rel }
+      if (!lib.sourceRoot) throw new KbError(409, `${lib.label} has no files on this host; it can be searched and described but not opened`)
+      return { ...(await readFileContent(sub, lib.sourceRoot)), path: rel }
+    }
     const lib = libOf(req)
     if (lib.site) return remoteFile(lib.indexRoot, rel)
     return readFileContent(rel, sourceOf(req))
@@ -343,6 +370,21 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/api/kb/download', async (req, reply) => {
     const { path: rel = '' } = req.query as { path?: string }
+    const remote = inAll(req) ? splitAll(req, rel) : (() => { const l = libOf(req); return l.site ? { lib: l, sub: rel } : null })()
+    if (remote?.lib.site) {
+      const f = await remoteDownload(remote.lib.indexRoot, remote.sub)
+      reply.header('Content-Type', mimeFor(f.name))
+      reply.header('Content-Disposition', `attachment; filename="${f.name.replace(/"/g, '')}"`)
+      return reply.send(f.body)
+    }
+    if (inAll(req)) {
+      const { lib, sub } = splitAll(req, rel)
+      if (!lib.sourceRoot) throw new KbError(409, `${lib.label} has no files on this host`)
+      const abs = resolveKb(sub, lib.sourceRoot)
+      reply.header('Content-Type', mimeFor(abs))
+      reply.header('Content-Disposition', `attachment; filename="${path.basename(abs)}"`)
+      return reply.send(createReadStream(abs))
+    }
     const abs = resolveKb(rel, sourceOf(req))
     reply.header('Content-Type', mimeFor(abs))
     reply.header('Content-Disposition', `attachment; filename="${path.basename(abs)}"`)
@@ -574,22 +616,46 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
     return { deleted: rel, indexMs: ms }
   })
 
-  app.get('/api/kb/stats', async req => corpusStats(libOf(req).indexRoot))
+  // One library's statistics, or with library=all the total over every
+  // library the viewer can read, with each library's own line.
+  app.get('/api/kb/stats', async req => {
+    const want = (req.query as { library?: string }).library
+    const viewer = (req as { user?: { id?: string } }).user?.id ?? null
+    if (String(want ?? '').toLowerCase() !== ALL) return corpusStats(libOf(req).indexRoot)
+    const libs = scopeLibraries(ALL, viewer, effectiveSettings().kbLabel)
+    const each = await Promise.all(libs.map(l => corpusStats(l.indexRoot).then(st => ({ l, st }), (e: Error) => ({ l, err: String(e.message ?? e).slice(0, 200) }))))
+    const byExt = new Map<string, { count: number; bytes: number }>()
+    let files = 0, dirs = 0, totalBytes = 0
+    for (const e of each) {
+      if (!('st' in e) || !e.st.available) continue
+      files += e.st.files ?? 0; dirs += e.st.dirs ?? 0; totalBytes += e.st.totalBytes ?? 0
+      for (const x of e.st.byExt ?? []) { const c = byExt.get(x.ext) ?? { count: 0, bytes: 0 }; c.count += x.count; c.bytes += x.bytes; byExt.set(x.ext, c) }
+    }
+    return {
+      available: each.some(e => 'st' in e && e.st.available), files, dirs, totalBytes,
+      byExt: [...byExt].map(([ext, v]) => ({ ext, ...v })).sort((a, b) => b.count - a.count).slice(0, 25),
+      libraries: each.map(e => ({ id: e.l.id, label: e.l.label, site: e.l.site ?? null, writable: e.l.writable,
+        ...('st' in e ? { files: e.st.files ?? 0, dirs: e.st.dirs ?? 0, totalBytes: e.st.totalBytes ?? 0, available: e.st.available } : { available: false, error: e.err }) })),
+    }
+  })
 
+  // Search one library, or with library=all every library the viewer can
+  // read; each hit says which library it is in.
   app.get('/api/search', async req => {
-    const { q = '', limit = '50' } = req.query as { q?: string; limit?: string }
+    const { q = '', limit = '50', library } = req.query as { q?: string; limit?: string; library?: string }
     if (!q.trim()) return { hits: [] }
-    if (!gufiAvailable()) return { hits: [], error: 'index not built yet' }
     const n = Math.min(Number(limit) || 50, 1000)
-    const lib = libOf(req)
-    const [fts, names, vec] = await Promise.all([
-      lib.caps.fullText || lib.primary ? searchFts(q, n, lib.indexRoot).catch(() => []) : Promise.resolve([]),
-      searchNames(q, Math.min(Math.max(10, Math.floor(n / 5)), 50), lib.indexRoot),
-      wantsSemantic(q) && (lib.caps.vectors || lib.primary) ? searchVector(q, Math.min(n, 10), lib.indexRoot).catch(() => []) : Promise.resolve([]),
-    ])
+    const viewer = (req as { user?: { id?: string } }).user?.id ?? null
+    const libs = String(library ?? '').toLowerCase() === ALL ? scopeLibraries(ALL, viewer, effectiveSettings().kbLabel) : [libOf(req)]
+    if (!gufiAvailable() && libs.every(l => !l.site)) return { hits: [], error: 'index not built yet' }
+    const hits = await searchScope(libs, q, n, { semantic: wantsSemantic(q) })
+    // Labels belong to the knowledge base; other libraries' hits carry none,
+    // so a label filter keeps knowledge-base hits only.
     const { tags } = req.query as { tags?: string }
     const filter = tags ? tags.split(',').filter(Boolean) : undefined
-    return { hits: await annotateHits(blendHits(fts, names, vec, n), filter) }
+    const annotated = await annotateHits(hits.filter(h => h.library.id === PRIMARY_ID), filter)
+    const keep = new Map(annotated.map(h => [h.path, h]))
+    return { hits: hits.flatMap(h => (h.library.id === PRIMARY_ID ? (keep.has(h.path) ? [{ ...keep.get(h.path)!, library: h.library }] : []) : filter?.length ? [] : [h])) }
   })
 
   app.get('/api/index/status', async () => indexStatus())

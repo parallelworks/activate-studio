@@ -17,3 +17,9 @@ export function setLabelScope(tags: string[]): void {
 let persona: string | null = null
 export function setPersona(name: string | null): void { persona = name || null }
 export function getPersona(): string | null { return persona }
+
+/** The library the assistant searches and queries in this chat: an id, or
+ *  "all"; null leaves it to the server, which means the knowledge base. */
+let chatLibrary: string | null = null
+export function setChatLibrary(id: string | null): void { chatLibrary = id || null }
+export function getChatLibrary(): string | null { return chatLibrary }

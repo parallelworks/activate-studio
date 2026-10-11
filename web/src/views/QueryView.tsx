@@ -1,12 +1,19 @@
 import { useEffect, useState } from 'react'
 import { TagMenu } from '../components/TagMenu'
 import { RowCheck } from '../components/Explorer'
+import { ALL_LIBRARIES, LibrarySwitch } from '../components/LibrarySwitch'
+import { useAppConfig } from '../config'
+import { currentLibrary } from '../api'
 
 interface QueryResult {
   columns: string[]
   rows: string[][]
   elapsedMs: number
   truncated: boolean
+  /** Across all libraries: each row's library id. */
+  rowLibraries?: string[]
+  /** Across all libraries: those that could not answer. */
+  failed?: { library: string; error: string }[]
 }
 
 interface Filter { field: string; op: string; value: string }
@@ -115,7 +122,7 @@ export function QueryView({ onOpen }: { onOpen: (path: string) => void }) {
       const res = await fetch('/api/query', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload ?? currentPayload()),
+        body: JSON.stringify({ ...(payload ?? currentPayload()), ...(currentLibrary() !== 'kb' ? { library: currentLibrary() } : {}) }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.message ?? data.error ?? `${res.status}`)
@@ -179,8 +186,12 @@ export function QueryView({ onOpen }: { onOpen: (path: string) => void }) {
     setFilters(fs => fs.map((f, j) => (j === i ? { ...f, ...patch } : f)))
   }
 
-  const maybeOpen = (cell: string) => {
-    if (cell.includes('/') || /\.\w{1,5}$/.test(cell)) onOpen(cell)
+  // Across all libraries a row opens in the library it came from.
+  const maybeOpen = (cell: string, row?: number) => {
+    if (!(cell.includes('/') || /\.\w{1,5}$/.test(cell))) return
+    const lib = row != null ? result?.rowLibraries?.[row] : undefined
+    if (currentLibrary() === ALL_LIBRARIES) { if (lib && lib !== 'all') onOpen(`${lib}/${cell}`) }
+    else onOpen(cell)
   }
 
   // Labeling is offered only when the result set has an explicit path or
@@ -199,8 +210,10 @@ export function QueryView({ onOpen }: { onOpen: (path: string) => void }) {
     })
   }
 
+  const cfg = useAppConfig()
   return (
     <div className="query-view">
+      {(cfg.libraries?.length ?? 0) > 1 && <div className="scope-bar"><span className="muted">Querying</span><LibrarySwitch libraries={cfg.libraries ?? []} /></div>}
       <div className="query-controls card">
         <div className="query-mode">
           <button className={mode === 'canned' ? 'active' : ''} onClick={() => setMode('canned')}>Canned queries</button>
@@ -337,7 +350,7 @@ export function QueryView({ onOpen }: { onOpen: (path: string) => void }) {
           ) : (
             <button className="btn-secondary" onClick={() => setSavingOpen(true)}>Save query</button>
           )}
-          {result && <span className="muted">{result.rows.length} rows in {result.elapsedMs} ms{result.truncated ? ' (truncated)' : ''}</span>}
+          {result && <span className="muted">{result.rows.length} rows in {result.elapsedMs} ms{result.truncated ? ' (truncated)' : ''}{result.failed?.length ? `; not answered: ${result.failed.map(f => `${f.library} (${f.error})`).join(', ')}` : ''}</span>}
         </div>
         {saved.length > 0 && savingOpen === false && (
           <div className="saved-list">
@@ -387,10 +400,10 @@ export function QueryView({ onOpen }: { onOpen: (path: string) => void }) {
                     )}
                     {r.map((cell, j) => {
                       const isBytes = result.columns[j] === 'bytes'
-                      const looksPath = result.columns[j] === 'path' || result.columns[j] === 'directory' || cell.includes('/')
+                      const looksPath = result.columns[j] !== 'library' && (result.columns[j] === 'path' || result.columns[j] === 'directory' || cell.includes('/'))
                       return (
                         <td key={j} className={looksPath ? 'cell-path' : ''}
-                          onClick={looksPath ? () => maybeOpen(cell) : undefined}>
+                          onClick={looksPath ? () => maybeOpen(cell, i) : undefined}>
                           {isBytes ? fmtBytes(cell) : cell}
                         </td>
                       )

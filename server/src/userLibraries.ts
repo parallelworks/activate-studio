@@ -155,11 +155,32 @@ export async function remoteFile(root: string, rel: string): Promise<FileContent
   const sub = cleanRel(rel)
   const abs = path.posix.join(t.sourceRoot, sub)
   const kind = classify(path.posix.basename(sub), false)
-  const base = { path: sub, kind, size: 0, mtime: 0, truncated: false }
-  if (!TEXT_SUFFIXES.has(path.posix.extname(sub).toLowerCase())) return { ...base, content: null, source: 'none' }
-  const r = await remoteRun(t.site, t.key, ['head', '-c', String(PREVIEW_BYTES + 1), abs])
+  const text = TEXT_SUFFIXES.has(path.posix.extname(sub).toLowerCase())
+  // Size and modified time from the file itself, then the text when it is
+  // text, in one round trip.
+  const r = await remoteRun(t.site, t.key, ['bash', '-c', 'stat -c "%s %Y" -- "$1" || exit 3; [ "$2" = 1 ] && head -c "$3" -- "$1"; exit 0', '_', abs, text ? '1' : '0', String(PREVIEW_BYTES + 1)])
   if (r.code !== 0) throw new KbError(404, `${t.site}: ${r.stderr.trim().split('\n').pop() ?? 'cannot read the file'}`)
-  return { ...base, size: r.stdout.length, truncated: r.stdout.length > PREVIEW_BYTES, content: r.stdout.slice(0, PREVIEW_BYTES), source: 'raw' }
+  const nl = r.stdout.indexOf('\n')
+  const [size, mtime] = r.stdout.slice(0, nl < 0 ? undefined : nl).split(' ').map(Number)
+  const base = { path: sub, kind, size: size || 0, mtime: mtime || 0 }
+  if (!text) return { ...base, truncated: false, content: null, source: 'none' }
+  const body = nl < 0 ? '' : r.stdout.slice(nl + 1)
+  return { ...base, truncated: body.length > PREVIEW_BYTES, content: body.slice(0, PREVIEW_BYTES), source: 'raw' }
+}
+
+/** Largest file the Studio fetches from a cluster for download. */
+export const DOWNLOAD_MAX = 50 * 1024 * 1024
+
+/** A file of a library on a cluster, whole, for download. */
+export async function remoteDownload(root: string, rel: string): Promise<{ name: string; body: Buffer }> {
+  const t = remoteTarget(root)!
+  if (!t.sourceRoot) throw new KbError(409, 'the source directory of this library is not known')
+  const sub = cleanRel(rel)
+  const abs = path.posix.join(t.sourceRoot, sub)
+  const r = await remoteRun(t.site, t.key, ['bash', '-c', 's=$(stat -c %s -- "$1") || exit 3; [ "$s" -le "$2" ] || exit 4; cat -- "$1"', '_', abs, String(DOWNLOAD_MAX)], 300_000)
+  if (r.code === 4) throw new KbError(413, `This file is over ${DOWNLOAD_MAX / 1024 / 1024} MB; copy it from ${t.site} directly.`)
+  if (r.code !== 0) throw new KbError(404, `${t.site}: ${r.stderr.trim().split('\n').pop() ?? 'cannot read the file'}`)
+  return { name: path.posix.basename(sub), body: r.raw }
 }
 
 // ---- building and refreshing with the index workflow ----

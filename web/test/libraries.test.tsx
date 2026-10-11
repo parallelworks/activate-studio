@@ -23,8 +23,10 @@ describe('libraries on the client', () => {
     expect(one.querySelector('select')).toBeNull()
     const { container } = render(<LibrarySwitch libraries={libs} />)
     const select = container.querySelector('select') as HTMLSelectElement
-    expect(select.options.length).toBe(2)
+    expect(select.options.length).toBe(3)
     expect(select.options[1].text).toContain('read only')
+    expect(select.options[2].text).toBe('All libraries')
+    expect(libraryWritable(libs, 'all')).toBe(false)
     fireEvent.change(select, { target: { value: 'scratch' } })
     expect(currentLibrary()).toBe('scratch')
     expect(libraryWritable(libs, 'scratch')).toBe(false)

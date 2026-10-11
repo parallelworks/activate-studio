@@ -1,6 +1,10 @@
 import { useEffect, useState } from 'react'
 import { api, IndexStatus } from '../api'
 import { SemanticMap, TopologyMap } from '../components/CorpusMaps'
+import { currentLibrary, onLibraryChange } from '../api'
+import type { LibraryStats } from '../api'
+import { LibrarySwitch } from '../components/LibrarySwitch'
+import { useAppConfig } from '../config'
 
 interface ExtRow { ext: string; count: number; bytes: number }
 interface QueryResult { columns: string[]; rows: string[][] }
@@ -30,7 +34,8 @@ function jumpToQuery(filters: { field: string; op: string; value: string }[], so
 }
 
 export function OverviewView({ onOpen }: { onOpen: (path: string) => void }) {
-  const [stats, setStats] = useState<{ files?: number; dirs?: number; totalBytes?: number; byExt?: ExtRow[] } | null>(null)
+  const [stats, setStats] = useState<{ files?: number; dirs?: number; totalBytes?: number; byExt?: ExtRow[]; libraries?: LibraryStats[] } | null>(null)
+  const cfg = useAppConfig()
   const [idx, setIdx] = useState<IndexStatus | null>(null)
   const [extractors, setExtractors] = useState<{ name: string; available: boolean; covers: string }[]>([])
   const [tags, setTags] = useState<{ tag: string; count: number }[]>([])
@@ -38,13 +43,22 @@ export function OverviewView({ onOpen }: { onOpen: (path: string) => void }) {
   const [recent, setRecent] = useState<QueryResult | null>(null)
   const [activity, setActivity] = useState<{ conversations: number; latest: string | null; transcripts: number; attachments: number } | null>(null)
 
+  // Loaded again when the library changes or the index does (a sync, a
+  // delete, an upload), so the page never shows a stale count.
+  const [epoch, setEpoch] = useState(0)
+  useEffect(() => {
+    const bump = () => setEpoch(e => e + 1)
+    const off = onLibraryChange(bump)
+    window.addEventListener('ade-kb-changed', bump)
+    return () => { off(); window.removeEventListener('ade-kb-changed', bump) }
+  }, [])
   useEffect(() => {
     api.stats().then(setStats).catch(() => {})
     api.indexStatus().then(setIdx).catch(() => {})
     api.extractors().then(r => setExtractors(r.extractors)).catch(() => {})
     api.tagVocabulary().then(v => setTags(v.tags)).catch(() => {})
     const q = (body: unknown, set: (r: QueryResult) => void) =>
-      fetch('/api/query', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      fetch('/api/query', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...(body as object), ...(currentLibrary() !== 'kb' ? { library: currentLibrary() } : {}) }) })
         // An error payload parses as JSON too; only a shape with rows is a result.
         .then(r => r.json()).then(r => { if (Array.isArray(r?.rows)) set(r) }).catch(() => {})
     q({ canned: 'largest', n: 8 }, setLargest)
@@ -62,13 +76,14 @@ export function OverviewView({ onOpen }: { onOpen: (path: string) => void }) {
         attachments: atts?.total ?? 0,
       })
     }).catch(() => {})
-  }, [])
+  }, [epoch])
 
   const byExt = [...(stats?.byExt ?? [])].filter(e => e.ext !== "(none)").sort((a, b) => b.bytes - a.bytes).slice(0, 12)
   const maxBytes = Math.max(...byExt.map(e => e.bytes), 1)
 
   return (
     <div className="overview-view">
+      {(cfg.libraries?.length ?? 0) > 1 && <div className="scope-bar"><span className="muted">Statistics for</span><LibrarySwitch libraries={cfg.libraries ?? []} /></div>}
       <div className="ov-tiles">
         <div className="card ov-tile"><span className="stat-num">{stats?.files?.toLocaleString() ?? '…'}</span><span className="stat-label">files indexed</span></div>
         <div className="card ov-tile"><span className="stat-num">{stats?.dirs?.toLocaleString() ?? '…'}</span><span className="stat-label">directories</span></div>
@@ -79,6 +94,23 @@ export function OverviewView({ onOpen }: { onOpen: (path: string) => void }) {
         </div>
         <div className="card ov-tile"><span className="stat-num">{tags.length}</span><span className="stat-label">labels in use</span></div>
       </div>
+      {stats?.libraries && (
+        <div className="rag-calls-wrap">
+          <table className="rag-calls-table">
+            <thead><tr><th>Library</th><th>Files</th><th>Directories</th><th>Size</th></tr></thead>
+            <tbody>
+              {stats.libraries.map(l => (
+                <tr key={l.id}>
+                  <td>{l.label}{l.site ? <span className="muted"> on {l.site}</span> : null}</td>
+                  {l.available
+                    ? <><td>{(l.files ?? 0).toLocaleString()}</td><td>{(l.dirs ?? 0).toLocaleString()}</td><td>{fmtBytes(l.totalBytes ?? 0)}</td></>
+                    : <td colSpan={3} className="muted">{l.error ?? 'not available'}</td>}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {idx?.lastError && (
         <div className="card ov-error">Last sync reported: {idx.lastError.slice(0, 300)}</div>

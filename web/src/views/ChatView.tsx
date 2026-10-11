@@ -12,7 +12,7 @@ import { ManageChatsRailItem } from '../components/ManageChatsRailItem'
 import { createStudioAdapter, getChatListFilter, setChatListFilter, setViewerUsername } from '../adapter'
 import { useAppConfig } from '../config'
 import { api, fetchModels, forgetModels, type ModelsResponse } from '../api'
-import { setLabelScope, setPersona } from '../labelScope'
+import { setChatLibrary, setLabelScope, setPersona } from '../labelScope'
 import { PersonaIcon } from '../components/PersonaIcon'
 import { ConversationScrubber } from '../components/ConversationScrubber'
 import { EmbedFrame } from '../components/EmbedFrame'
@@ -113,6 +113,14 @@ export function ChatView() {
   const [personaList, setPersonaList] = useState<{ name: string; description: string; shared: boolean; icon: string }[]>([])
   const [persona, setPersonaState] = useState<string | null>(() => localStorage.getItem('ade-persona'))
   const [personaOpen, setPersonaOpen] = useState(false)
+  // Which library the assistant searches here: the knowledge base unless
+  // the user names one, or all of them.
+  const [chatLib, setChatLib] = useState<string | null>(() => { try { return localStorage.getItem('ade-chat-library') } catch { return null } })
+  const [libOpen, setLibOpen] = useState(false)
+  useEffect(() => {
+    setChatLibrary(chatLib)
+    try { chatLib ? localStorage.setItem('ade-chat-library', chatLib) : localStorage.removeItem('ade-chat-library') } catch { /* per session */ }
+  }, [chatLib])
   const [personaFilter, setPersonaFilter] = useState('')
   useEffect(() => {
     fetch('/api/extensions').then(r => r.json()).then(d => setPersonaList(d.personas ?? [])).catch(() => {})
@@ -488,6 +496,32 @@ export function ChatView() {
                           {p.description && <span className="muted">{p.description}</span>}
                         </button>
                       ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+            {(cfg.libraries?.length ?? 0) > 1 && (
+              <div className={`chat-persona-anchor ${libOpen ? 'open' : ''}`}>
+                <button className={`scope-btn ${chatLib ? 'active' : ''}`} title="Which library the assistant searches and queries in this chat" onClick={() => setLibOpen(o => !o)}>
+                  <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M2.5 3.5h3v9h-3zM6.5 3.5h3v9h-3zM10.5 4l2.6-.7 2.2 8.7-2.6.7z"/></svg>
+                  <span className="persona-label">{chatLib === 'all' ? 'All libraries' : chatLib ? (cfg.libraries?.find(l => l.id === chatLib)?.label ?? chatLib) : 'Library'}</span>
+                </button>
+                {libOpen && (
+                  <>
+                    <div className="scope-overlay" onClick={() => setLibOpen(false)} />
+                    <div className="scope-menu card">
+                      <div className="scope-menu-head">Library for this chat</div>
+                      {(cfg.libraries ?? []).map(l => (
+                        <button key={l.id} className={`persona-row ${(chatLib ?? 'kb') === l.id ? 'on' : ''}`} onClick={() => { setChatLib(l.primary ? null : l.id); setLibOpen(false) }}>
+                          <span className="persona-name">{l.label}</span>
+                          <span className="muted">{l.primary ? 'the knowledge base' : l.site ? `your library on ${l.site}` : 'read only'}</span>
+                        </button>
+                      ))}
+                      <button className={`persona-row ${chatLib === 'all' ? 'on' : ''}`} onClick={() => { setChatLib('all'); setLibOpen(false) }}>
+                        <span className="persona-name">All libraries</span>
+                        <span className="muted">search and query every library at once</span>
+                      </button>
                     </div>
                   </>
                 )}

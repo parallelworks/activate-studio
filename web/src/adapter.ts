@@ -1,5 +1,5 @@
 import type { ChatAdapter, ModelsList, StreamCompletion } from '@parallelworks/ui/ai'
-import { getLabelScope, getPersona } from './labelScope'
+import { getChatLibrary, getLabelScope, getPersona } from './labelScope'
 import { fetchModels } from './api'
 
 async function listModels(): Promise<ModelsList> {
@@ -27,6 +27,7 @@ const streamFromServer: StreamCompletion = async (req, handlers, signal) => {
       parentMessageId: req.parentMessageId ?? null,
       allocation: req.allocation ?? null,
       labelScope: getLabelScope(),
+      library: getChatLibrary(),
       agent: getPersona(),
     }),
     signal,

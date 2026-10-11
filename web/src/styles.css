@@ -2185,3 +2185,7 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 /* Settings > Libraries > Your libraries: the Slurm fields under their checkbox. */
 .user-lib-slurm { display: flex; gap: 8px; margin-top: 6px; }
 .user-lib-slurm .field { flex: 1; min-width: 0; }
+
+/* The library a page searches, queries, or counts, above its controls. */
+.scope-bar { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; font-size: 13px; }
+.pill-library { border: 1px solid var(--pw-border-strong); color: var(--pw-muted); }

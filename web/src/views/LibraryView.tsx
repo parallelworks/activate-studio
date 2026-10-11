@@ -68,6 +68,7 @@ export function LibraryView({ display, onDisplay }: {
     try {
       if (ctx.isDir) await api.deleteDir(ctx.path)
       else await api.deleteFile(ctx.path)
+      window.dispatchEvent(new Event('ade-kb-changed'))
       if (display?.kind === 'file' && (display.target === ctx.path || display.target.startsWith(ctx.path + '/'))) onDisplay(null)
       setRefreshKey(k => k + 1)
       window.dispatchEvent(new Event('ade-kb-changed'))
@@ -117,6 +118,7 @@ export function LibraryView({ display, onDisplay }: {
     setBulkNote('Deleting…')
     try {
       const r = await api.deleteFiles(files)
+      window.dispatchEvent(new Event('ade-kb-changed'))
       const skippedDirs = r.skipped.filter((x: { reason: string }) => x.reason.includes('directories'))
       setBulkNote(`${r.deleted.length} deleted${r.skipped.length ? `, ${r.skipped.length} skipped${skippedDirs.length ? ' (directories are not deletable)' : ''}` : ''}`)
       setMultiSel(new Set())

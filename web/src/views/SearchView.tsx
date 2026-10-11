@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react'
 import { api, SearchHit } from '../api'
 import { TagMenu } from '../components/TagMenu'
 import { RowCheck } from '../components/Explorer'
+import { ALL_LIBRARIES, LibrarySwitch } from '../components/LibrarySwitch'
+import { currentLibrary, onLibraryChange } from '../api'
+import { useAppConfig } from '../config'
 
 const MODE_LABEL: Record<SearchHit['mode'], string> = {
   fts: 'full text',
@@ -65,8 +68,12 @@ export function SearchView({ onOpen }: { onOpen: (path: string, q?: string) => v
 
   const allSelected = hits !== null && hits.length > 0 && sel.size === hits.length
 
+  const cfg = useAppConfig()
+  // A new library means new results: run the search again there.
+  useEffect(() => onLibraryChange(() => { if (q.trim()) void run(lastLimit) }), [q, lastLimit])
   return (
     <div className="search-view">
+      {(cfg.libraries?.length ?? 0) > 1 && <div className="scope-bar"><span className="muted">Searching</span><LibrarySwitch libraries={cfg.libraries ?? []} /></div>}
       <div className="search-hero card">
         <div className="search-bar">
           <input
@@ -117,11 +124,13 @@ export function SearchView({ onOpen }: { onOpen: (path: string, q?: string) => v
           </div>
           {hits.length === 0 && <p className="muted pad">No matches.</p>}
           {hits.map(h => (
-            <div key={h.path} className={`result-row ${sel.has(h.path) ? 'multi' : ''}`} onClick={() => onOpen(h.path, q)}>
+            <div key={`${h.library?.id ?? ''}/${h.path}`} className={`result-row ${sel.has(h.path) ? 'multi' : ''}`}
+              onClick={() => onOpen(currentLibrary() === ALL_LIBRARIES && h.library ? `${h.library.id}/${h.path}` : h.path, q)}>
               <div className="result-top">
                 <RowCheck checked={sel.has(h.path)} onToggle={() => toggleSel(h.path)} />
                 <span className="result-path">{h.path}</span>
                 <span className="result-pills">
+                  {currentLibrary() === ALL_LIBRARIES && h.library && <span className="pill pill-library" title="The library this match is in">{h.library.label}</span>}
                   {(h.tags ?? []).map(t => <span key={t} className="tag-pill on small">{t}</span>)}
                   <span className={`pill pill-${h.mode}`}>{MODE_LABEL[h.mode]}</span>
                 </span>
