@@ -78,6 +78,8 @@ When a request splits into parts, the assistant can hand each part to an agent w
 
 Delegation is turned on under Settings, "External access".
 
+You can also ask the assistant to run a pw code agent on one of your clusters, for example "start an agent on my cluster in ~/project to fix the failing tests, and keep going until they pass". It starts a pw code session there with your key and gives it the goal, so the agent keeps working until the goal is met or a turn limit is reached. Ask the assistant how the agent is doing, give it direction, or pause, resume, or clear its goal. You can open the same session in a terminal with `pw code attach <cluster>/<session>`.
+
 # More
 
 ## Getting around

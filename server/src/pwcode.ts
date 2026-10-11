@@ -25,6 +25,16 @@ export interface DaemonStatus {
   protocolVersion: number; version: string; pid: number; hostname: string
   sessions: number; remoteStart: boolean; remoteMaxPermissionMode: string
 }
+/** One entry of the daemon's session list. */
+export interface SessionSummary {
+  id: string; name?: string; status?: string; workspace?: string; model?: string
+  messages?: number; remoteControl?: boolean; updatedAt?: string; createdAt?: string
+}
+/** Where a session's /goal loop stands. */
+export interface GoalStatus { active?: boolean; paused?: boolean; checking?: boolean; elapsedMs?: number; condition?: string }
+/** One check of the goal after a turn: outcome empty while not met,
+ *  'achieved' when met, 'stopped' when the loop ended otherwise. */
+export interface GoalProgress { turns?: number; condition?: string; reason?: string; outcome?: string; err?: string; elapsedMs?: number; tokens?: number }
 export interface HistoryItem { kind: string; text?: string; toolName?: string; toolArgs?: string; fromMain?: boolean }
 export interface ApprovalRequest {
   id: string; kind: string; header?: string; question?: string; command?: string; reason?: string; mode?: string
@@ -54,16 +64,33 @@ export class DaemonError extends Error {
   constructor(message: string, readonly status = 0) { super(message) }
 }
 
-function call<T>(method: string, route: string, body?: unknown, timeoutMs = 30_000): Promise<T> {
+/** Where daemon requests go: this host's socket, or another machine's
+ *  daemon through the bridge in pwcodeBridge.ts. Every operation below
+ *  takes one, defaulting to the local daemon. */
+export interface DaemonClient {
+  /** 'local', or the platform resource the daemon runs on. */
+  site: string
+  call<T>(method: string, route: string, body?: unknown, timeoutMs?: number): Promise<T>
+}
+
+/**
+ * One request to a daemon over whatever connection `base` names (a socket
+ * path, or an agent that hands out the bridge's pipe). The timeout is a
+ * plain timer: over the bridge there is no network socket whose idle
+ * timeout could fire.
+ */
+export function daemonRequest<T>(base: http.RequestOptions, method: string, route: string, body?: unknown, timeoutMs = 30_000): Promise<T> {
   return new Promise((resolve, reject) => {
     const payload = body === undefined ? undefined : JSON.stringify(body)
+    let timer: ReturnType<typeof setTimeout> | null = null
     const req = http.request({
-      socketPath: socketPath(), path: route, method, timeout: timeoutMs,
+      ...base, path: route, method,
       headers: { Host: 'daemon', Accept: 'application/json', ...(payload ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) } : {}) },
     }, res => {
       const chunks: Buffer[] = []
       res.on('data', c => chunks.push(c))
       res.on('end', () => {
+        if (timer) clearTimeout(timer)
         const text = Buffer.concat(chunks).toString('utf8')
         const status = res.statusCode ?? 0
         let parsed: unknown = null
@@ -76,16 +103,23 @@ function call<T>(method: string, route: string, body?: unknown, timeoutMs = 30_0
         resolve(parsed as T)
       })
     })
-    req.on('timeout', () => req.destroy(new DaemonError('pw code daemon did not answer in time')))
-    req.on('error', e => reject(e instanceof DaemonError ? e : new DaemonError(`pw code daemon unreachable: ${(e as NodeJS.ErrnoException).code ?? e.message}`)))
+    timer = setTimeout(() => req.destroy(new DaemonError('pw code daemon did not answer in time')), timeoutMs)
+    req.on('error', e => { if (timer) clearTimeout(timer); reject(e instanceof DaemonError ? e : new DaemonError(`pw code daemon unreachable: ${(e as NodeJS.ErrnoException).code ?? e.message}`)) })
     if (payload) req.write(payload)
     req.end()
   })
 }
 
-/** The daemon's status, or null when nothing answers on the socket. */
-export async function daemonStatus(): Promise<DaemonStatus | null> {
-  try { return await call<DaemonStatus>('GET', '/v1/status', undefined, 5_000) } catch { return null }
+/** This host's daemon, over its owner-only socket. */
+export const localDaemon: DaemonClient = {
+  site: 'local',
+  call: (method, route, body, timeoutMs) => daemonRequest({ socketPath: socketPath() }, method, route, body, timeoutMs),
+}
+const call = <T>(method: string, route: string, body?: unknown, timeoutMs?: number) => localDaemon.call<T>(method, route, body, timeoutMs)
+
+/** The daemon's status, or null when nothing answers. */
+export async function daemonStatus(c: DaemonClient = localDaemon): Promise<DaemonStatus | null> {
+  try { return await c.call<DaemonStatus>('GET', '/v1/status', undefined, c === localDaemon ? 5_000 : 60_000) } catch { return null }
 }
 
 /** Why the daemon cannot be used, or null when it can. */
@@ -124,17 +158,36 @@ export function ensureDaemon(): Promise<DaemonStatus> {
   return starting
 }
 
-export const createSession = (req: CreateSessionRequest) => call<SessionDetail>('POST', '/v1/sessions', req)
-export const getSession = (id: string) => call<SessionDetail>('GET', `/v1/sessions/${encodeURIComponent(id)}`)
-export const sessionMcp = (id: string) => call<McpServerStatus[] | { servers?: McpServerStatus[] } | null>('GET', `/v1/sessions/${encodeURIComponent(id)}/mcp`)
-export const sendMessage = (id: string, text: string) => call<{ queued: boolean; turnId: string }>('POST', `/v1/sessions/${encodeURIComponent(id)}/messages`, { text })
-export const answerApproval = (id: string, approvalId: string, answer: ApprovalAnswer) =>
-  call<unknown>('POST', `/v1/sessions/${encodeURIComponent(id)}/approvals/${encodeURIComponent(approvalId)}`, answer)
+const sid = (id: string) => `/v1/sessions/${encodeURIComponent(id)}`
+export const createSession = (req: CreateSessionRequest, c: DaemonClient = localDaemon) => c.call<SessionDetail>('POST', '/v1/sessions', req)
+export const listSessions = (c: DaemonClient = localDaemon) => c.call<SessionSummary[] | null>('GET', '/v1/sessions')
+export const getSession = (id: string, c: DaemonClient = localDaemon) => c.call<SessionDetail>('GET', sid(id))
+/** Loads a saved session into the daemon, which a goal needs. */
+export const attachSession = (id: string, c: DaemonClient = localDaemon) => c.call<SessionDetail>('POST', `${sid(id)}/attach`, {})
+export const sessionMcp = (id: string, c: DaemonClient = localDaemon) => c.call<McpServerStatus[] | { servers?: McpServerStatus[] } | null>('GET', `${sid(id)}/mcp`)
+export const sendMessage = (id: string, text: string, c: DaemonClient = localDaemon) => c.call<{ queued: boolean; turnId: string }>('POST', `${sid(id)}/messages`, { text })
+export const answerApproval = (id: string, approvalId: string, answer: ApprovalAnswer, c: DaemonClient = localDaemon) =>
+  c.call<unknown>('POST', `${sid(id)}/approvals/${encodeURIComponent(approvalId)}`, answer)
 /** Steers a running turn: the text reaches the agent mid-turn, the way a
  *  person types into a working pw code session, without ending the turn. */
-export const steerSession = (id: string, text: string) => call<{ delivered: boolean }>('POST', `/v1/sessions/${encodeURIComponent(id)}/direction`, { text })
-export const sessionState = (id: string) => call<{ inputTokens?: number | null; outputTokens?: number | null } | null>('GET', `/v1/sessions/${encodeURIComponent(id)}/state`)
-export const interruptSession = (id: string) => call<unknown>('POST', `/v1/sessions/${encodeURIComponent(id)}/interrupt`, {})
+export const steerSession = (id: string, text: string, c: DaemonClient = localDaemon) => c.call<{ delivered: boolean }>('POST', `${sid(id)}/direction`, { text })
+export const sessionState = (id: string, c: DaemonClient = localDaemon) =>
+  c.call<{ inputTokens?: number | null; outputTokens?: number | null; goal?: GoalStatus | null } | null>('GET', `${sid(id)}/state`)
+export const interruptSession = (id: string, c: DaemonClient = localDaemon) => c.call<unknown>('POST', `${sid(id)}/interrupt`, {})
+/**
+ * The session's /goal: a condition sets it (at most 4,000 characters), an
+ * empty string reads it, and 'pause', 'resume', and 'clear' do what they
+ * say. Setting or resuming starts the turn toward it. The session must be
+ * live in the daemon, so it is attached first when it is not.
+ */
+export async function setGoal(id: string, args: string, c: DaemonClient = localDaemon): Promise<{ output?: string; status?: GoalStatus }> {
+  const go = () => c.call<{ output?: string; status?: GoalStatus }>('POST', `${sid(id)}/goal`, { args, client: 'studio' })
+  try { return await go() } catch (e) {
+    if (!(e instanceof DaemonError) || !/not live/i.test(e.message)) throw e
+    await attachSession(id, c)
+    return go()
+  }
+}
 
 /** Waits until every MCP server in the session has connected or failed,
  *  as the CLI's one-shot mode does before its first message: a turn that
