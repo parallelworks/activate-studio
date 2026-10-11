@@ -66,7 +66,7 @@ On the ACTIVATE platform, the Workflows tab shows the workflows chosen for {appN
 - A workflow from GitHub that asks for access to your account variables waits until you tick the approval.
 - Administrators choose the set under Settings, "Workflows".
 - Apps that runs open, such as a design explorer or a notebook, are listed under **Sessions**. Open one to use it here, or press **New tab**. A session started from chat also appears in that conversation.
-- If a session shows as empty or refused, open it once in its own tab to sign in to it, then press **Reload**.
+- The first time you open a session here, press **Sign in**. A small window loads the session; close it, and the session shows in the Studio. If it later shows as empty or refused, press **Sign in again**.
 
 ## Agents
 
