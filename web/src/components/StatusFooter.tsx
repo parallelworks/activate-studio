@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api, IndexStatus } from '../api'
+import { onLibraryChange } from '../api'
+import type { LibraryStats } from '../api'
 
 function ago(iso: string | null): string {
   // Null just means no sweep has completed since the server started.
@@ -13,7 +15,7 @@ function ago(iso: string | null): string {
 function IndexPanel({ idx, gufi, stats, onClose, onSync, syncing }: {
   idx: IndexStatus | null
   gufi: boolean | null
-  stats: { files?: number; dirs?: number; totalBytes?: number } | null
+  stats: { files?: number; dirs?: number; totalBytes?: number; libraries?: LibraryStats[] } | null
   onClose: () => void
   onSync: () => void
   syncing: boolean
@@ -21,7 +23,8 @@ function IndexPanel({ idx, gufi, stats, onClose, onSync, syncing }: {
   const gb = stats?.totalBytes ? `${(stats.totalBytes / 1e9).toFixed(2)} GB` : ''
   const rows: [string, string, 'ok' | 'warn' | 'off' | null][] = [
     ['GUFI engine', gufi === null ? 'checking…' : gufi ? 'available' : 'unavailable (search falls back to grep)', gufi === null ? 'off' : gufi ? 'ok' : 'warn'],
-    ['Indexed', stats?.files ? `${stats.files.toLocaleString()} files in ${stats.dirs?.toLocaleString()} directories, ${gb}` : 'loading…', null],
+    ['Indexed', stats?.files ? `${stats.files.toLocaleString()} files in ${stats.dirs?.toLocaleString()} directories, ${gb}${stats.libraries ? `, across ${stats.libraries.length} libraries` : ''}` : 'loading…', null],
+    ...(stats?.libraries ?? []).map(l => [`  ${l.label}${l.site ? ` (on ${l.site})` : ''}`, l.available ? `${(l.files ?? 0).toLocaleString()} files in ${(l.dirs ?? 0).toLocaleString()} directories` : (l.error ?? 'not available'), l.available ? 'ok' : 'warn'] as [string, string, 'ok' | 'warn' | 'off' | null]),
     ['Sync loop', idx ? (idx.running ? 'sweep running now' : `every ${idx.sweepIntervalSec}s, last ${ago(idx.lastSweepAt ?? null)}${idx.lastSweepMs != null ? ` (${idx.lastSweepMs} ms)` : ''}`) : 'loading…', idx?.running ? 'ok' : null],
     ['Last result', idx?.lastError ? idx.lastError : idx?.lastSweepAt ? 'clean' : 'no sweep yet this server start', idx?.lastError ? 'warn' : idx?.lastSweepAt ? 'ok' : 'off'],
   ]
@@ -217,7 +220,7 @@ function IdentityPanel({ who, onClose }: { who: WhoAmI; onClose: () => void }) {
 }
 
 export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
-  const [stats, setStats] = useState<{ files?: number; dirs?: number; totalBytes?: number } | null>(null)
+  const [stats, setStats] = useState<{ files?: number; dirs?: number; totalBytes?: number; libraries?: LibraryStats[] } | null>(null)
   const [idx, setIdx] = useState<IndexStatus | null>(null)
   const [syncing, setSyncing] = useState(false)
   const [who, setWho] = useState<WhoAmI | null>(null)
@@ -244,7 +247,11 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
   useEffect(() => {
     void refresh().then(() => setReady(true))
     const t = setInterval(() => { void refresh() }, 60_000)
-    return () => clearInterval(t)
+    // The count follows the library selected and any change to the index.
+    const now = () => { void refresh() }
+    const off = onLibraryChange(now)
+    window.addEventListener('ade-kb-changed', now)
+    return () => { clearInterval(t); off(); window.removeEventListener('ade-kb-changed', now) }
   }, [])
   // Polled: a change means a new version was rolled out under this page.
   // The page keeps working against the new server, but its own code is

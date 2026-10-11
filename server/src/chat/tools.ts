@@ -89,6 +89,7 @@ export const TOOL_SPECS: ToolSpec[] = [
           query: { type: 'string', description: 'Search terms (plain words, no operators)' },
           limit: { type: 'number', description: 'Max results, default 10' },
           tags: { type: 'string', description: 'Comma-separated label filter: only return material carrying at least one of these labels (e.g. "validated" or "research,theoretical")' },
+          library: { type: 'string', description: 'Which library to search: an id from list_libraries, or "all" for every library; default the one selected in this conversation' },
         },
         required: ['query'],
       },
@@ -105,6 +106,7 @@ export const TOOL_SPECS: ToolSpec[] = [
         properties: {
           path: { type: 'string', description: 'Path relative to the knowledge base root' },
           offset: { type: 'number', description: 'Character offset to start from, default 0' },
+          library: { type: 'string', description: 'Which library: an id from list_libraries; default the one selected in this conversation' },
         },
         required: ['path'],
       },
@@ -119,9 +121,18 @@ export const TOOL_SPECS: ToolSpec[] = [
         type: 'object',
         properties: {
           path: { type: 'string', description: 'Directory path relative to the knowledge base root, empty for root' },
+          library: { type: 'string', description: 'Which library: an id from list_libraries; default the one selected in this conversation' },
         },
         required: [],
       },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'list_libraries',
+      description: 'List the libraries this user can search and read: the knowledge base, read-only indexes on this host, and the user\'s own libraries on their clusters, with what each supports. Search, read, list, and query tools take a library id; search and query also take "all".',
+      parameters: { type: 'object', properties: {}, required: [] },
     },
   },
   {
@@ -426,6 +437,7 @@ export const TOOL_SPECS: ToolSpec[] = [
           n: { type: 'number', description: 'Row limit, default 25' },
           days: { type: 'number', description: 'For recent: window in days, default 7' },
           subtree: { type: 'string', description: 'Restrict to a subtree, empty for whole corpus' },
+          library: { type: 'string', description: 'Which library: an id from list_libraries, or "all" for every library (ranked answers re-ranked across them); default the one selected in this conversation' },
         },
         required: ['canned'],
       },
@@ -1107,6 +1119,16 @@ function toolSourceRoot(): string {
   if (!lib.sourceRoot) throw new Error(`${lib.label} has no files on this host; it can be searched but not read`)
   return lib.sourceRoot
 }
+/** The library a tool call names, else the conversation's; "all" is only
+ *  for search and query, so reading and listing need one named. */
+function namedLibrary(name: unknown) {
+  const want = String(name ?? '').trim() || toolContext.getStore()?.library || null
+  if (String(want).toLowerCase() === 'all') throw new Error('name one library (an id from list_libraries) to read or list; "all" is for search and query')
+  return getLibrary(want, undefined, toolContext.getStore()?.userId ?? null)
+}
+function scopeParam(name: unknown): string | null {
+  return String(name ?? '').trim() || toolContext.getStore()?.library || null
+}
 
 async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScope?: string[]; userKey?: string | null; model?: string | null }): Promise<ToolOutcome> {
   let args: any = {}
@@ -1116,12 +1138,20 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
       case 'search_kb': {
         const query = String(args.query ?? '').slice(0, 200)
         const limit = Math.min(Number(args.limit) || 10, 25)
-        if (gufiAvailable()) {
-          const [fts, names, vec] = await Promise.all([
-            searchFts(query, limit, toolLibrary().indexRoot).catch(() => []),
-            searchNames(query, 5, toolLibrary().indexRoot),
-            searchVector(query, Math.min(limit, 8), toolLibrary().indexRoot).catch(() => []),
-          ])
+        const { scopeLibraries, searchScope } = await import('../libraryScope.js')
+        const libs = scopeLibraries(scopeParam(args.library), toolContext.getStore()?.userId ?? null)
+        if (gufiAvailable() || libs.some(l => l.site)) {
+          const scoped = await searchScope(libs, query, limit + 5, { semantic: true, nameLimit: 5 })
+          if (libs.length > 1 || libs[0].id !== 'kb') {
+            const other = scoped.filter(h => h.library.id !== 'kb' || libs.length === 1)
+            const own = libs.length > 1 ? await annotateHits(scoped.filter(h => h.library.id === 'kb'), args.tags ? String(args.tags).split(',').filter(Boolean) : undefined) : []
+            const hits = [...own.map(h => ({ ...h, library: { id: 'kb', label: '' } })), ...other].slice(0, limit)
+            const result = hits.length
+              ? hits.map(h => `[library ${h.library.id}] ${h.path}\n  ${h.snippet || '(filename match)'}`).join('\n') + '\nRead a hit with read_kb_file and its library id.'
+              : 'No matches.'
+            return { result, summary: `${hits.length} hits in ${libs.length} librar${libs.length === 1 ? 'y' : 'ies'}` }
+          }
+          const fts = scoped.filter(h => h.mode === 'fts'), names = scoped.filter(h => h.mode === 'name'), vec = scoped.filter(h => h.mode === 'vector')
           // A conversation-level label scope is enforced here regardless of
           // what the model asked for; model-requested tags narrow further
           // only when they fall inside the scope.
@@ -1144,7 +1174,9 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
       case 'read_kb_file': {
         const rel = String(args.path ?? '')
         const offset = Math.max(0, Number(args.offset) || 0)
-        const fc = await readFileContent(rel, toolSourceRoot())
+        const lib = namedLibrary(args.library)
+        if (!lib.site && !lib.sourceRoot) throw new Error(`${lib.label} has no files on this host; it can be searched but not read`)
+        const fc = lib.site ? await (await import('../userLibraries.js')).remoteFile(lib.indexRoot, rel) : await readFileContent(rel, lib.sourceRoot!)
         if (fc.content == null) {
           return { result: `Binary file (${fc.kind}, ${fc.size} bytes); no text available.`, summary: 'binary' }
         }
@@ -1154,7 +1186,9 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
         return { result: slice + more, summary: `${slice.length} chars (${fc.source})` }
       }
       case 'list_kb_dir': {
-        const entries = await listDir(String(args.path ?? ''), toolSourceRoot())
+        const lib = namedLibrary(args.library)
+        if (!lib.site && !lib.sourceRoot) throw new Error(`${lib.label} has no files on this host; it can be searched but not listed`)
+        const entries = lib.site ? await (await import('../userLibraries.js')).remoteTree(lib.indexRoot, String(args.path ?? '')) : await listDir(String(args.path ?? ''), lib.sourceRoot!)
         const result = entries.map(e => `${e.type === 'dir' ? 'd' : '-'} ${e.path}${e.type === 'dir' ? '/' : ` (${e.size}b)`}`).join('\n')
         return { result: result || '(empty)', summary: `${entries.length} entries` }
       }
@@ -1647,13 +1681,21 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
         } catch { /* plain text fallback */ }
         return { result: result.slice(0, TOOL_OUTPUT_CAP), summary: 'runs listed' }
       }
+      case 'list_libraries': {
+        const { listLibraries } = await import('../libraries.js')
+        const libs = listLibraries(undefined, toolContext.getStore()?.userId ?? null)
+        const result = libs.map(l => `${l.id}: ${l.label}${l.primary ? ' (the knowledge base, read and write)' : l.site ? ` (your library on ${l.site}, read only)` : ' (read only)'}; search: names${l.caps.fullText || l.primary ? ', full text' : ''}${l.caps.vectors || l.primary ? ', semantic' : ''}`).join('\n')
+        return { result: result || 'No libraries.', summary: `${libs.length} librar${libs.length === 1 ? 'y' : 'ies'}` }
+      }
       case 'query_corpus': {
-        const { runCanned } = await import('../query.js')
-        const r = await runCanned(String(args.canned ?? ''), {
+        const { queryScope } = await import('../query.js')
+        const r = await queryScope({
+          canned: String(args.canned ?? ''),
           n: Math.min(Number(args.n) || 25, 100),
           days: Math.min(Number(args.days) || 7, 3650),
           subtree: args.subtree ? String(args.subtree) : undefined,
-        })
+          library: scopeParam(args.library) ?? undefined,
+        }, toolContext.getStore()?.userId ?? null)
         const lines = [r.columns.join(' | '), ...r.rows.map(row => row.join(' | '))]
         return { result: lines.join('\n').slice(0, TOOL_OUTPUT_CAP), summary: `${r.rows.length} rows in ${r.elapsedMs} ms` }
       }

@@ -69,7 +69,11 @@ export function UserLibrariesSection() {
                 <tr key={l.id}>
                   <td>
                     <div className="lib-name">{l.label}</div>
-                    <div className="lib-id">{l.site}, <code>{l.sourceRoot ?? l.sourceDir}</code></div>
+                    <div className="lib-id">{l.id}, on {l.site}, read only</div>
+                    <dl className="lib-paths">
+                      <dt>Index</dt><dd>{l.indexRoot ? <code>{l.site}:{l.indexRoot}</code> : <span className="muted">being built</span>}</dd>
+                      <dt>Source</dt><dd><code>{l.site}:{l.sourceRoot ?? l.sourceDir}</code></dd>
+                    </dl>
                   </td>
                   <td>
                     <span className={`status-dot ${l.state === 'ready' ? 'ok' : l.state === 'failed' ? 'warn' : 'ok pulse'}`} />{' '}

@@ -16,6 +16,7 @@ Ask in plain language. The assistant searches the knowledge base, reads the file
 
 - **Attach** files or images with the paperclip; they are added to the library and indexed.
 - **Scope**, at the top right, limits answers to material with the labels you choose.
+- **Library**, at the top right, chooses which library the assistant searches in this chat, or all of them.
 - Type **/** to pick a skill, a tool, or a persona to use.
 - Ask it to run work on a connected HPC system; it follows the run and explains a failure if there is one.
 - **Select chats**, above New chat, deletes old conversations together.
@@ -28,7 +29,7 @@ The folder tree beside a viewer. Markdown, code, images, PDFs, office documents,
 - **Right-click** a file or folder to label it, add a folder, or delete it.
 - **Find**, in the viewer's header, searches the open file.
 - **Indexed text** shows what search sees for a file, including text read from images.
-- If several libraries are available, the picker at the top of the tree switches between them.
+- If several libraries are available, the picker at the top of the tree switches between them. **All libraries** shows them as one tree, a folder each; Search, Query, and Stats then cover all of them.
 - To browse a directory on one of your clusters, add it under Settings, Libraries, **Your libraries**. The Studio indexes it there with your key, and it appears in the picker for you alone when the index is ready.
 
 ## Search

@@ -126,6 +126,36 @@ live in `INDEX_BASE/users/<owner hash>/libraries.json`. Routes:
 `GET /api/user-libraries`, `POST /api/user-libraries`,
 `POST /api/user-libraries/<id>/refresh`, `DELETE /api/user-libraries/<id>`.
 
+## One library or all
+
+The Library switcher lists every library the viewer can read and an entry
+for all of them, and the Library tree, Search, the Query page, Stats, and
+the index health popup follow it. Every route that reads a library takes
+`library=<id>`, and these take `library=all` too:
+
+- the tree, which then has one top-level folder per library, named by its
+  id, with that library's own tree below; a path in it is
+  `<library id>/<path>`, and files open and download from their library;
+- search, which runs in each library what that library supports (full
+  text and semantic where its index has them, names always) and blends the
+  hits, each tagged with its library;
+- the Query page, where each library answers on its own and the rows gain
+  a leading library column. For the canned queries and the builder, whose
+  order the Studio knows, the rows are re-ranked into the overall top rows
+  and grouped totals (by extension) are added up; raw SQL rows are listed
+  library by library. A library that cannot answer is named beside the
+  rows;
+- statistics, as a total with a line per library.
+
+The All entry is read only. Labels belong to the knowledge base, so a label
+filter on a search over all libraries keeps knowledge-base hits.
+
+The chat has its own library control, beside Persona, and the assistant's
+tools take a `library` argument: `search_kb` and `query_corpus` accept
+`all`, `read_kb_file` and `list_kb_dir` take one library's id, and
+`list_libraries` says which ids exist. A cluster library's files are read
+and listed on the cluster.
+
 ## Sections
 
 `STUDIO_SECTIONS` chooses which parts of the app appear, from `chat`,
@@ -147,8 +177,8 @@ and a reload land in the right library.
 
 Enrichment for read-only libraries, in sidecar databases beside the index
 on GUFI's external attach mechanism, so full-text and semantic search work
-there too. The Query page, which still scopes to the primary. Searching
-across several libraries in one query, through gufi_vt. Refreshing a
+there too. A query across libraries as one gufi_vt statement, with the
+remote locations reached through the Studio's session. Refreshing a
 user's library on a schedule, which needs the user's key at that time:
 personal keys live in memory and the browser's sealed cookie, so until
 delegated sign-in through the platform's OIDC applications arrives, a

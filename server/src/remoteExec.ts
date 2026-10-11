@@ -35,7 +35,7 @@ const LOOP = [
   'done',
 ].join('\n')
 
-export interface RemoteResult { code: number; stdout: string; stderr: string }
+export interface RemoteResult { code: number; stdout: string; stderr: string; /** stdout as bytes, for binary output */ raw: Buffer }
 
 type Spawn = (site: string, key: string, command: string) => ChildProcessWithoutNullStreams
 let spawnSsh: Spawn = (site, key, command) => {
@@ -73,7 +73,8 @@ function open(id: string, site: string, key: string): Channel {
       const p = ch.queue.shift()
       if (!p) continue
       clearTimeout(p.timer)
-      p.resolve({ code: Number(m[1]), stdout: Buffer.from(m[2], 'base64').toString('utf8'), stderr: Buffer.from(m[3] ?? '', 'base64').toString('utf8') })
+      const raw = Buffer.from(m[2], 'base64')
+      p.resolve({ code: Number(m[1]), stdout: raw.toString('utf8'), raw, stderr: Buffer.from(m[3] ?? '', 'base64').toString('utf8') })
     }
   })
   child.stderr.on('data', d => { ch.stderr = (ch.stderr + String(d)).slice(-2000) })

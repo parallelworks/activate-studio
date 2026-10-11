@@ -77,7 +77,12 @@ export interface SearchHit {
   snippet: string
   mode: 'fts' | 'name' | 'vector'
   tags?: string[]
+  /** The library the hit is in, for a search over several. */
+  library?: { id: string; label: string }
 }
+
+/** One library's line in statistics over all libraries. */
+export interface LibraryStats { id: string; label: string; site: string | null; writable: boolean; available: boolean; files?: number; dirs?: number; totalBytes?: number; error?: string }
 
 export interface IndexStatus {
   running: boolean
@@ -125,7 +130,7 @@ export const api = {
     if (!res.ok) throw new Error((data as any).error ?? `delete: ${res.status}`)
     return data as { deleted: string }
   },
-  stats: () => getJson<{ available: boolean; files?: number; dirs?: number; totalBytes?: number }>(`/api/kb/stats`),
+  stats: () => getJson<{ available: boolean; files?: number; dirs?: number; totalBytes?: number; libraries?: LibraryStats[] }>(`/api/kb/stats`),
   search: (q: string, tags?: string[], limit = 50) => getJson<{ hits: SearchHit[]; error?: string }>(`/api/search?q=${encodeURIComponent(q)}&limit=${limit}${tags?.length ? `&tags=${encodeURIComponent(tags.join(','))}` : ''}`),
   health: () => getJson<{ ok: boolean; gufi: boolean }>(`/healthz`),
   mkdir: (path: string) => postJson<{ created: string }>(`/api/kb/mkdir`, { path }),

@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { execFile } from 'node:child_process'
 import fs from 'node:fs'
 import fsp from 'node:fs/promises'
@@ -6,35 +7,71 @@ import type { FastifyInstance } from 'fastify'
 import { GUFI_BIN, GUFI_INDEX, INDEX_BASE, gufiAvailable } from './config.js'
 import { KbError } from './kb.js'
 import { tagMaps } from './tags.js'
+import { scopeLibraries } from './libraryScope.js'
+import { REMOTE_PREFIX, remoteIndexRoot, remoteQuery } from './userLibraries.js'
+import { effectiveSettings } from './settings.js'
 
 const DELIM = '\x1e'
 const MAX_ROWS = 2000
 
-interface QueryResult {
+export interface QueryResult {
   columns: string[]
   rows: string[][]
   elapsedMs: number
   truncated: boolean
+  /** Across several libraries: the library each row came from, by id. */
+  rowLibraries?: string[]
+  /** Across several libraries: the ones that could not answer, and why. */
+  failed?: { library: string; error: string }[]
 }
 
-function run(args: string[], timeoutMs = 60_000): Promise<{ stdout: string; stderr: string }> {
+/** The index a query runs against: the knowledge base unless a library
+ *  was named. Set around a whole query with onIndex, so the canned
+ *  queries, the builder, and raw SQL need not pass it along. */
+const rootCtx = new AsyncLocalStorage<string>()
+const indexRoot = (): string => rootCtx.getStore() ?? GUFI_INDEX
+export function onIndex<T>(root: string, fn: () => Promise<T>): Promise<T> { return rootCtx.run(root, fn) }
+
+/** gufi_query over the index in scope, below `subtree`; a user's library on
+ *  a cluster runs there (userLibraries.ts), with at most 4 threads. */
+async function run(args: string[], subtree?: string, timeoutMs = 60_000): Promise<{ stdout: string; stderr: string }> {
+  const root = indexRoot()
+  if (root.startsWith(REMOTE_PREFIX)) {
+    const capped = args.map((a, i) => (args[i - 1] === '-n' ? String(Math.min(Number(a) || 4, 4)) : a))
+    return { stdout: await remoteQuery(root, capped, cleanSubtree(subtree)), stderr: '' }
+  }
   return new Promise((resolve, reject) => {
-    execFile(path.join(GUFI_BIN, 'gufi_query'), args, { timeout: timeoutMs, maxBuffer: 64 * 1024 * 1024 },
+    execFile(path.join(GUFI_BIN, 'gufi_query'), [...args, scopePath(subtree)], { timeout: timeoutMs, maxBuffer: 64 * 1024 * 1024 },
       (err, so, se) => (err && !so ? reject(new Error(se?.slice(0, 500) || err.message)) : resolve({ stdout: so, stderr: se ?? '' })))
   })
 }
 
-/** gufi_query prints paths rooted at the index tree; make them KB-relative. */
+/** The local path of the index in scope, for prefixes in SQL; a remote
+ *  index's own path on its cluster. */
+function rootPath(): string {
+  const root = indexRoot()
+  return root.startsWith(REMOTE_PREFIX) ? remoteIndexRoot(root) : path.resolve(root)
+}
+
+/** gufi_query prints paths rooted at the index tree; make them relative. */
 function stripIndexPrefix(cell: string): string {
-  const idx = path.resolve(GUFI_INDEX) + '/'
+  const idx = rootPath() + '/'
   return cell.startsWith(idx) ? cell.slice(idx.length) : cell
 }
 
-function scopePath(subtree?: string): string {
+function cleanSubtree(subtree?: string): string | undefined {
   const cleaned = (subtree ?? '').replace(/^\/+|\/+$/g, '')
-  if (!cleaned) return GUFI_INDEX
-  const abs = path.resolve(GUFI_INDEX, cleaned)
-  if (!abs.startsWith(path.resolve(GUFI_INDEX))) throw new KbError(400, 'scope escapes the index')
+  if (!cleaned) return undefined
+  if (cleaned.split('/').includes('..')) throw new KbError(400, 'scope escapes the index')
+  return cleaned
+}
+
+function scopePath(subtree?: string): string {
+  const root = indexRoot()
+  const cleaned = cleanSubtree(subtree)
+  if (!cleaned) return root
+  const abs = path.resolve(root, cleaned)
+  if (!abs.startsWith(path.resolve(root))) throw new KbError(400, 'scope escapes the index')
   return abs
 }
 
@@ -61,8 +98,7 @@ async function aggQuery(opts: {
     '-E', opts.perDir,
     '-J', 'INSERT INTO agg SELECT * FROM t;',
     '-G', opts.final,
-    scopePath(opts.subtree),
-  ])
+  ], opts.subtree)
   const rows = parse(stdout, opts.columns)
   return {
     columns: opts.columns,
@@ -170,7 +206,7 @@ function filterSql(f: BuilderFilter, labeledDirs?: Map<string, string[]>): strin
     // context rpath() yields the ABSOLUTE index path (output rows are
     // stripped afterwards), so the prefix must carry the index root.
     const want = v.toLowerCase()
-    const idxRoot = path.resolve(GUFI_INDEX)
+    const idxRoot = rootPath()
     const dirs = [...(labeledDirs ?? new Map<string, string[]>())]
       .filter(([rel, tags]) => rel !== '' && tags.some(t =>
         f.op === 'eq' ? t.toLowerCase() === want : t.toLowerCase().includes(want)))
@@ -287,7 +323,7 @@ async function rawQuery(sql: string, subtree?: string): Promise<QueryResult> {
     throw new KbError(400, 'statement contains a disallowed keyword')
   }
   const t0 = Date.now()
-  const { stdout, stderr } = await run(['-n', '8', '-d', DELIM, '-E', cleaned + ';', scopePath(subtree)])
+  const { stdout, stderr } = await run(['-n', '8', '-d', DELIM, '-E', cleaned + ';'], subtree)
   const lines = stdout.split('\n').filter(Boolean).map(l => l.split(DELIM).map(stripIndexPrefix))
   if (lines.length === 0 && /Error/i.test(stderr)) {
     const first = stderr.split('\n').find(l => /Error/i.test(l)) ?? 'query failed'
@@ -303,26 +339,106 @@ async function rawQuery(sql: string, subtree?: string): Promise<QueryResult> {
   }
 }
 
+export interface QueryRequest {
+  canned?: string; sql?: string; builder?: BuilderPayload
+  n?: number; days?: number; subtree?: string
+  /** A library id, or "all" for every library the viewer can read. */
+  library?: string
+}
+
+/** One query on one index, whichever form it takes. */
+function execQuery(body: QueryRequest): Promise<QueryResult> {
+  const n = Math.min(Math.max(Number(body.n) || 25, 1), MAX_ROWS)
+  const days = Math.min(Math.max(Number(body.days) || 7, 1), 3650)
+  if (body.builder) return builderQuery(body.builder)
+  if (body.canned) {
+    const fn = CANNED[body.canned]
+    if (!fn) throw new KbError(400, `unknown canned query: ${body.canned}`)
+    return fn({ n, days, subtree: body.subtree })
+  }
+  if (body.sql) return rawQuery(String(body.sql), body.subtree)
+  throw new KbError(400, 'builder, canned, or sql required')
+}
+
+/**
+ * A query on the named library, or on every library the viewer can read.
+ * Across several, each library answers the query on its own (its own top
+ * rows for a ranked query) and the rows carry a leading library column; a
+ * library that cannot answer is reported beside the rows, not fatal.
+ */
+export async function queryScope(body: QueryRequest, viewerId: string | null): Promise<QueryResult> {
+  const libs = scopeLibraries(body.library, viewerId, effectiveSettings().kbLabel)
+  const local = (root: string) => !root.startsWith(REMOTE_PREFIX)
+  if (libs.length === 1) {
+    if (local(libs[0].indexRoot) && !gufiAvailable()) throw new KbError(503, 'index not built yet; run indexer/setup_gufi.sh and indexer/reindex.sh')
+    return onIndex(libs[0].indexRoot, () => execQuery(body))
+  }
+  const t0 = Date.now()
+  const parts = await Promise.all(libs.map(l =>
+    (local(l.indexRoot) && !gufiAvailable() ? Promise.reject(new Error('index not built yet')) : onIndex(l.indexRoot, () => execQuery(body)))
+      .then(r => ({ l, r }), (e: Error) => ({ l, err: String(e.message ?? e).slice(0, 300) }))))
+  const ok = parts.filter((p): p is { l: typeof libs[number]; r: QueryResult } => 'r' in p)
+  const width = Math.max(1, ...ok.map(p => p.r.columns.length))
+  const columns = ['library', ...(ok.find(p => p.r.columns.length === width)?.r.columns ?? Array.from({ length: width }, (_, i) => `col${i + 1}`))]
+  let tagged = ok.flatMap(p => p.r.rows.map(row => ({ id: p.l.id, row: [p.l.label, ...row] })))
+  // A ranked query's answer across libraries is the overall top rows, not
+  // each library's top rows stacked; where the order is known, re-rank.
+  const order = mergeOrder(body)
+  if (order?.groupBy !== undefined) {
+    const sums = new Map<string, { id: string; row: string[] }>()
+    for (const t of tagged) {
+      const k = t.row[order.groupBy + 1]
+      const cur = sums.get(k)
+      if (!cur) sums.set(k, { id: 'all', row: ['all', ...t.row.slice(1)] })
+      else for (const c of order.sum) cur.row[c + 1] = String((Number(cur.row[c + 1]) || 0) + (Number(t.row[c + 1]) || 0))
+    }
+    tagged = [...sums.values()]
+  }
+  if (order) {
+    const c = order.col + 1
+    tagged.sort((a, b) => {
+      const x = order.numeric ? (Number(a.row[c]) || 0) - (Number(b.row[c]) || 0) : String(a.row[c]).localeCompare(String(b.row[c]))
+      return order.desc ? -x : x
+    })
+    tagged = tagged.slice(0, order.limit)
+  }
+  const rows = tagged.map(t => t.row); const rowLibraries = tagged.map(t => t.id)
+  return {
+    columns, rows: rows.slice(0, MAX_ROWS), rowLibraries: rowLibraries.slice(0, MAX_ROWS),
+    elapsedMs: Date.now() - t0, truncated: rows.length > MAX_ROWS || ok.some(p => p.r.truncated),
+    failed: parts.filter((p): p is { l: typeof libs[number]; err: string } => 'err' in p).map(p => ({ library: p.l.label, error: p.err })),
+  }
+}
+
+/**
+ * How rows from several libraries merge into one ranked answer: the column
+ * (in the query's own columns) to sort on, its direction, and the limit;
+ * for a grouped total, the key column and the columns to add up. Null for
+ * raw SQL, whose order the Studio cannot know.
+ */
+function mergeOrder(body: QueryRequest): { col: number; numeric: boolean; desc: boolean; limit: number; groupBy?: number; sum: number[] } | null {
+  const n = Math.min(Math.max(Number(body.n) || 25, 1), MAX_ROWS)
+  switch (body.canned) {
+    case 'largest': return { col: 1, numeric: true, desc: true, limit: n, sum: [] }
+    case 'newest': case 'recent': return { col: 2, numeric: false, desc: true, limit: n, sum: [] }
+    case 'oldest': return { col: 2, numeric: false, desc: false, limit: n, sum: [] }
+    case 'big_directories': return { col: 2, numeric: true, desc: true, limit: n, sum: [] }
+    case 'by_extension': return { col: 2, numeric: true, desc: true, limit: n, groupBy: 0, sum: [1, 2] }
+  }
+  const b = body.builder
+  if (!b) return null
+  const limit = Math.min(Math.max(Number(b.limit) || 50, 1), MAX_ROWS)
+  const desc = b.dir !== 'asc'
+  if (b.source === 'directories') return { col: b.sort === 'files' ? 1 : 2, numeric: true, desc, limit, sum: [] }
+  if (b.groupBy === 'extension') return { col: b.sort === 'files' ? 1 : 2, numeric: true, desc, limit, groupBy: 0, sum: [1, 2] }
+  if (b.groupBy === 'directory') return { col: b.sort === 'files' ? 1 : 2, numeric: true, desc, limit, sum: [] }
+  if (b.sort === 'name') return { col: 0, numeric: false, desc, limit, sum: [] }
+  if (b.sort === 'modified') return { col: 2, numeric: false, desc, limit, sum: [] }
+  return { col: 1, numeric: true, desc, limit, sum: [] }
+}
+
 export async function queryRoutes(app: FastifyInstance): Promise<void> {
-  app.post('/api/query', async req => {
-    const body = req.body as {
-      canned?: string; sql?: string; builder?: BuilderPayload
-      n?: number; days?: number; subtree?: string
-    }
-    if (!gufiAvailable()) {
-      throw new KbError(503, 'index not built yet; run indexer/setup_gufi.sh and indexer/reindex.sh')
-    }
-    const n = Math.min(Math.max(Number(body.n) || 25, 1), MAX_ROWS)
-    const days = Math.min(Math.max(Number(body.days) || 7, 1), 3650)
-    if (body.builder) return builderQuery(body.builder)
-    if (body.canned) {
-      const fn = CANNED[body.canned]
-      if (!fn) throw new KbError(400, `unknown canned query: ${body.canned}`)
-      return fn({ n, days, subtree: body.subtree })
-    }
-    if (body.sql) return rawQuery(String(body.sql), body.subtree)
-    throw new KbError(400, 'builder, canned, or sql required')
-  })
+  app.post('/api/query', async req => queryScope((req.body ?? {}) as QueryRequest, req.user?.id ?? null))
 
   app.get('/api/query/saved', async () => loadSaved())
 
