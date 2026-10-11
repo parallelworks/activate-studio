@@ -422,6 +422,9 @@ export default function App() {
                     // On a phone the conversations rail is a slide-over, and
                     // re-tapping the Chat item in the bottom bar is its toggle.
                     if (item.id === 'chat' && view === 'chat') window.dispatchEvent(new Event('ade:toggle-chat-rail'))
+                    // Workflows always opens on its main page, not on the
+                    // workflow form that was last open there.
+                    if (item.id === 'workflows') window.dispatchEvent(new Event('ade:workflows-home'))
                     setView(item.id)
                   }}
                 >
@@ -471,7 +474,7 @@ export default function App() {
                 <button
                   key={item.id}
                   className={`sidenav-item ${view === item.id ? 'active' : ''}`}
-                  onClick={() => { setView(item.id); setMoreOpen(false) }}
+                  onClick={() => { if (item.id === 'workflows') window.dispatchEvent(new Event('ade:workflows-home')); setView(item.id); setMoreOpen(false) }}
                 >
                   {item.icon}
                   <span>{item.label}</span>

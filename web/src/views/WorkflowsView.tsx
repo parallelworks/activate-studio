@@ -3,7 +3,7 @@ import type { FormikProps, FormikValues } from 'formik'
 import { DynamicForm, initializeValues } from '@parallelworks/ui/form'
 import { Streamdown } from 'streamdown'
 import { useWorkflowFields, forgetPlatformData } from '../components/WorkflowFields'
-import { SessionView, type SessionInfo } from '../components/SessionView'
+import { openSessionWindow, type SessionInfo } from '../components/SessionView'
 
 /**
  * The Workflows tab: this Studio's curated set of ACTIVATE workflows, as
@@ -45,10 +45,9 @@ export function WorkflowsView() {
   const [error, setError] = useState('')
   const [open, setOpen] = useState<string | null>(null)
   const [runs, setRuns] = useState<RunRow[]>([])
-  // Running sessions: the apps workflows open, and endpoints. A session
-  // opens in this page, or in its own tab where a frame cannot show it.
+  // Running sessions: the apps workflows open, and endpoints. Each opens
+  // in a window of its own.
   const [sessions, setSessions] = useState<SessionInfo[]>([])
-  const [viewing, setViewing] = useState<SessionInfo | null>(null)
   const loadTiles = () => {
     setError('')
     fetch('/api/workflows/collection').then(r => json<{ configured: boolean; workflows: Tile[] }>(r))
@@ -60,15 +59,13 @@ export function WorkflowsView() {
     fetch('/api/sessions').then(r => json<{ sessions: SessionInfo[] }>(r)).then(d => setSessions(d.sessions.filter(x => x.status === 'running'))).catch(() => {})
   }
   useEffect(() => { loadTiles(); loadRuns(); const id = window.setInterval(loadRuns, 15_000); return () => window.clearInterval(id) }, [])
+  // The sidebar's Workflows item always leads back to this page.
+  useEffect(() => {
+    const home = () => setOpen(null)
+    window.addEventListener('ade:workflows-home', home)
+    return () => window.removeEventListener('ade:workflows-home', home)
+  }, [])
 
-  if (viewing) {
-    return (
-      <div className="overview-view workflows-view session-page">
-        <button type="button" className="btn-ghost session-back" onClick={() => setViewing(null)}>Back to workflows</button>
-        <SessionView user={viewing.user} name={viewing.name} initial={viewing} />
-      </div>
-    )
-  }
   if (open) {
     const t = tiles?.find(x => x.name === open)
     return <WorkflowRunner name={open} kind={t?.kind ?? 'account'} title={t?.displayName ?? open} onBack={() => { setOpen(null); loadRuns() }} onLaunched={loadRuns} />
@@ -98,7 +95,7 @@ export function WorkflowsView() {
             {sessions.map(x => (
               <div key={`${x.user}/${x.name}`} className="session-row">
                 <span className="status-dot ok" />
-                <button type="button" className="link-button session-row-name" onClick={() => setViewing(x)}>{x.name}</button>
+                <button type="button" className="link-button session-row-name" onClick={() => openSessionWindow(x)} title="Open in a window of its own">{x.name}</button>
                 <span className="muted session-meta">
                   {[x.run ? `${x.run.workflow} · ${x.run.slug}` : x.type, x.resource ? `on ${x.resource}` : '', x.user].filter(Boolean).join(' · ')}
                 </span>
@@ -122,7 +119,7 @@ export function WorkflowsView() {
                     <td>{new Date(r.launchedAt).toLocaleString()}</td>
                     <td className={`wf-state ${r.state}`}>{r.state}</td>
                     <td>{sessions.filter(x => x.run?.slug === r.slug).map(x => (
-                      <button key={x.name} type="button" className="link-button" onClick={() => setViewing(x)}>{x.name}</button>
+                      <button key={x.name} type="button" className="link-button" onClick={() => openSessionWindow(x)} title="Open in a window of its own">{x.name}</button>
                     ))}</td>
                   </tr>
                 ))}
