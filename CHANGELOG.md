@@ -2,6 +2,42 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.108 (2026-10-11)
+
+### Change log through v1.107 (#428)
+
+Regenerated with `node scripts/release-notes.mjs --changelog` after the v1.107 release.
+
+### One library or all: search, queries, statistics, the tree, and the chat (#429)
+
+Search, the Query page, statistics, the Library tree, and the assistant's tools can now cover one library or all of them, whether read and write or read only, on this host or on a user's cluster. Until now the Query page and the chat used only the knowledge base, and nothing covered every library.
+
+**The Library switcher** gains **All libraries**. The tree, Search, Query, Stats, and the index health popup follow it, and Search, Query, and Stats now show the switcher at the top, so the scope is visible where it applies.
+
+**What `library=all` does:**
+- **The tree** has one top-level folder per library, named by its id, with that library's own tree below. A path in it is `<library id>/<path>`. Files open and download from their library, and a cluster library's file comes from the cluster.
+- **Search** runs in each library what that library supports: full text and semantic search where its index has them, and names always. It blends the hits and tags each with its library. A library that fails adds nothing, and the search goes on. Labels belong to the knowledge base, so a label filter keeps knowledge-base hits.
+- **The Query page** has each library answer on its own, and the rows gain a leading library column.
+  - For canned queries and the builder, whose sort order the Studio knows, rows are re-ranked into the overall top rows. Grouped totals, such as per extension, are added up.
+  - Raw SQL rows are listed library by library.
+  - A library that cannot answer is named beside the rows.
+  - The Query page now works on any single library too, including a cluster library, with gufi_query run there.
+- **Statistics** show a total and a line per library.
+
+The All entry is read only.
+
+**The chat** has a Library control beside Persona, which sets the library the assistant searches and queries in that conversation. The web client now sends that choice, which the server already accepted. The assistant's tools take a `library` argument: `search_kb` and `query_corpus` accept `all`, `read_kb_file` and `list_kb_dir` take one library's id, and a new `list_libraries` tool says which ids exist. A cluster library's files are read and listed on the cluster.
+
+**Fixes in the same area:**
+- **Stale statistics:** the Stats page and the footer loaded statistics once, so deleting a directory or pressing **sync now** left them stale until a full reload. Both now reload when the index changes and when the library changes, and deletes in the Library announce the change.
+- **Cluster file dates:** a file opened from a cluster library showed 1970-01-01, because the preview did not read the file's size and modified time. It now reads them on the cluster in the same call.
+- **Cluster downloads:** a cluster library's file now downloads through the session, up to 50 MB.
+- **Library paths:** Your libraries rows show the index and source paths on the cluster, as the host libraries do.
+
+Tests cover scope resolution, re-ranking and summed totals across two cluster libraries, a library that cannot answer, a single library on its own, tagged search hits, and the combined tree. The clusters are faked, through the remote session and a fake gufi_query.
+
+A query across libraries as one gufi_vt statement is next. The Studio's own merge above stays as the fallback and as the check on its answers.
+
 ## v1.107 (2026-10-11)
 
 ### Change log through v1.106 (#426)
