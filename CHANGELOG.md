@@ -2,6 +2,22 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.99 (2026-10-10)
+
+### Change log through v1.98 (#411)
+
+Regenerated with `node scripts/release-notes.mjs --changelog` after the v1.98 release.
+
+### A session asks for its sign-in before it is framed (#412)
+
+Opening a session in the Studio for the first time showed a refused frame. The browser had not yet signed in to the session's own host, so the frame bounced to the platform's login page, and that page refuses to load inside another page. The session itself allows framing; only the sign-in was missing.
+
+The session view now asks for that sign-in before it shows the frame. **Sign in** opens the session in a small window, and closing the window loads the frame. If the browser blocks the window, opening the session in a new tab does the same: the frame loads when the Studio window has focus again.
+
+The sign-in is a cookie the Studio cannot read, so the Studio records when it last sent the browser through it and asks again after 12 hours. With the platform login still current, a repeat sign-in is a redirect that takes a moment. Under the frame, **Sign in again** covers a sign-in that ended sooner.
+
+The user guide and `docs/WORKFLOWS.md` describe the step, and a web test covers the remembered sign-in.
+
 ## v1.98 (2026-10-10)
 
 ### Change log through v1.97 (#408)
