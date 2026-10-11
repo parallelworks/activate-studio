@@ -1,6 +1,6 @@
 {
   "resource_and_execution": {
-    "resource": "a30gpuserver"
+    "resource": "my-cluster"
   },
   "session_settings": {
     "session_name": "studio-e2e",

@@ -23,7 +23,7 @@ test('the unlock url is found plain and JSON-escaped', () => {
 // streaming plus a token cap, which the gateway translates into the
 // provider's own spelling before the provider refuses it.
 const PARAM_400 = 'gateway chat 400: {"error":{"message":"{\\"detail\\":\\"Unsupported parameter: max_output_tokens\\"}","type":"error"}}'
-const PERSONAL = 'Matthew.Shaxted:codex/gpt-5.6-sol'
+const PERSONAL = 'jane.doe:codex/gpt-5.6-sol'
 
 test('a rejected parameter is not reported as an expired key', () => {
   const m = gatewayChatMessage(PARAM_400, PERSONAL)
@@ -53,7 +53,7 @@ test('a shared model never gets personal-key advice', () => {
   }
 })
 
-// Verbatim from a locked GenAI provider key, August 2026.
+// Verbatim from a locked provider key, August 2026.
 const MASKED_400 = 'gateway chat 400: {"error":{"message":"An error occurred while generating the response","type":"error"}}'
 
 test('the masked generation error names the locked key, without asserting it', () => {
@@ -76,18 +76,18 @@ test('a parameter rejection is still told apart from the masked failure', () => 
   assert.doesNotMatch(m, /locked/, 'an explicit parameter complaint is not a credential problem')
 })
 
-// The documented GenAI.mil locked-key body, as the gateway relays it.
-const LOCKED_401 = 'gateway chat 401: {"error":{"type":"unauthorized","message":"API key locked - visit the unlock URL to re-enable your key","unlock_url":"https://genai.example.mil/unlock/abc-123"}}'
+// A provider's documented locked-key body, as the gateway relays it.
+const LOCKED_401 = 'gateway chat 401: {"error":{"type":"unauthorized","message":"API key locked - visit the unlock URL to re-enable your key","unlock_url":"https://provider.example.org/unlock/abc-123"}}'
 
-test('a locked GenAI key hands the user its unlock link', () => {
+test('a locked provider key hands the user its unlock link', () => {
   const m = gatewayChatMessage(LOCKED_401, PERSONAL)
   assert.match(m, /locked this API key/)
-  assert.match(m, /https:\/\/genai\.example\.mil\/unlock\/abc-123/)
+  assert.match(m, /https:\/\/provider\.example\.org\/unlock\/abc-123/)
   assert.doesNotMatch(m, /renew it under the platform/, 'the unlock link outranks the generic auth advice')
 })
 
 test('an escaped unlock_url inside a relayed body is still found', () => {
-  const escaped = 'gateway chat 401: {"error":{"message":"{\\"unlock_url\\": \\"https://genai.example.mil/unlock/xyz\\"}","type":"error"}}'
+  const escaped = 'gateway chat 401: {"error":{"message":"{\\"unlock_url\\": \\"https://provider.example.org/unlock/xyz\\"}","type":"error"}}'
   const m = gatewayChatMessage(escaped, PERSONAL)
   assert.match(m, /unlock\/xyz/)
 })

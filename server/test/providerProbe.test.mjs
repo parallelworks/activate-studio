@@ -27,9 +27,9 @@ test('the probe streams, and a locked key read through the streaming path is a l
 })
 test('an unlock url in the body is carried on the verdict', async () => {
   reset()
-  responses.push({ status: 401, text: '{"error":{"type":"unauthorized","message":"API key locked","unlock_url":"https://genai.test/unlock/abc"}}' })
+  responses.push({ status: 401, text: '{"error":{"type":"unauthorized","message":"API key locked","unlock_url":"https://provider.test/unlock/abc"}}' })
   const v = await probeProvider('me:genaimil', 'me:genaimil/gemini', 'k2')
-  assert.equal(v.unlockUrl, 'https://genai.test/unlock/abc')
+  assert.equal(v.unlockUrl, 'https://provider.test/unlock/abc')
 })
 test('a masked generic failure counts only when it happens twice, then reads as unavailable', async () => {
   reset()
@@ -55,9 +55,9 @@ test('a healthy provider is ok, cached, and re-probed only after invalidation', 
 })
 test('aiHealth explains a 401 and carries the unlock url when the provider gives one', async () => {
   reset()
-  responses.push({ status: 401, text: '{"error":{"message":"API key locked","unlock_url":"https://genai.test/unlock/xyz"}}' })
-  const locked = await aiHealth('k6', 'https://genai.test/v1')
-  assert.equal(locked.status, 'auth'); assert.equal(locked.unlockUrl, 'https://genai.test/unlock/xyz'); assert.match(locked.message, /locked/)
+  responses.push({ status: 401, text: '{"error":{"message":"API key locked","unlock_url":"https://provider.test/unlock/xyz"}}' })
+  const locked = await aiHealth('k6', 'https://provider.test/v1')
+  assert.equal(locked.status, 'auth'); assert.equal(locked.unlockUrl, 'https://provider.test/unlock/xyz'); assert.match(locked.message, /locked/)
   responses.push({ status: 401, text: 'Unauthorized' })
   const plain = await aiHealth('k7')
   assert.equal(plain.status, 'auth'); assert.match(plain.message, /24 hours/); assert.match(plain.message, /does not expire/)

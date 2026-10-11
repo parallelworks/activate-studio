@@ -530,8 +530,7 @@ export function SettingsView() {
                     </div>
                     {me.mode !== 'none' && accessHealth?.unlockUrl && (
                       <p className="identity-note">
-                        The provider reports this key is locked, which it does on a schedule (GenAI locks keys
-                        every 8 hours). <a href={accessHealth.unlockUrl} target="_blank" rel="noopener noreferrer">Unlock
+                        The provider reports this key is locked, which it does on a schedule. <a href={accessHealth.unlockUrl} target="_blank" rel="noopener noreferrer">Unlock
                         your key</a>, then Re-check.
                       </p>
                     )}

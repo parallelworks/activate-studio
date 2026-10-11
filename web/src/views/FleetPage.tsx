@@ -145,7 +145,7 @@ export function FleetPage({ personas, onOpenTask }: { personas: Persona[]; onOpe
               </select>
             </label>
             <label className="field-label">System (for campaign ticks, and for the goal)
-              <input className="field" value={form.resource} onChange={e => setForm({ ...form, resource: e.target.value })} placeholder="a30gpuserver" />
+              <input className="field" value={form.resource} onChange={e => setForm({ ...form, resource: e.target.value })} placeholder="my-cluster" />
             </label>
             <label className="field-label">Every
               <select className="field" value={form.every} onChange={e => setForm({ ...form, every: e.target.value })}>

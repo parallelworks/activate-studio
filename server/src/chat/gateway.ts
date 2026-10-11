@@ -189,7 +189,7 @@ export interface AiHealth {
 /**
  * Provider liveness at listing time. The gateway lists a registered
  * provider's models from its registry without asking the provider, so a
- * locked GenAI key produced a picker full of selectable models that could
+ * locked provider key produced a picker full of selectable models that could
  * only fail. The probe asks the provider itself: for a personal custom
  * provider that is a GET of its /models (free), and for gateway-registered
  * providers a one-token completion on one model of that provider, which is
@@ -197,7 +197,7 @@ export interface AiHealth {
  * key, since a lock lasts hours and the picker refreshes often; probing is
  * limited to providers matching STUDIO_PROBE_PROVIDERS (default genai),
  * because a one-token call per provider is a real request and the locking
- * behaviour this exists for is GenAI's.
+ * behaviour this exists for belongs to those providers.
  */
 export interface ProviderVerdict { ok: boolean; kind: 'locked' | 'unavailable' | null; unlockUrl: string | null; message: string }
 const providerProbes = new Map<string, { at: number; v: ProviderVerdict }>()
@@ -340,8 +340,8 @@ export async function aiHealth(key?: string | null, baseUrl?: string | null): Pr
     const text = await res.text()
     if (!res.ok) {
       const auth = res.status === 401 || res.status === 403
-      // GenAI.mil locks keys every 8 hours and its 401 body carries the
-      // unlock URL. That link is the remedy, so it is extracted before the
+      // Some providers lock keys on a schedule, and their 401 body carries
+      // the unlock URL. That link is the remedy, so it is extracted before the
       // body is truncated for display and carried as its own field.
       const unlockUrl = /unlock_url[\\":\s]*(https?:\/\/[^"\\\s]+)/.exec(text)?.[1] ?? null
       return {
