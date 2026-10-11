@@ -2,6 +2,21 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.105 (2026-10-11)
+
+### Change log through v1.104 (#424)
+
+Regenerated with `node scripts/release-notes.mjs --changelog` after the v1.104 release.
+
+### Inside the platform's page, a session opens on its ACTIVATE page (#423)
+
+Sessions did not open when the Studio was itself open inside the platform's page. The Studio opened a scripted window, and a window opened from inside the platform's sandboxed frame inherits that frame's restrictions. When the browser refused the window, the Workflows list did nothing.
+
+- **Inside the platform's page:** **Open** now reads **Open in ACTIVATE** and opens the session's page on the platform (`/sessions/<user>/<name>`, from the session record's `internalHref`) in a new tab, where the platform shows the session embedded. The tab opens through a link, which a sandboxed frame allows.
+- **Elsewhere:** the session gets a window of its own as before, and now a new tab when the browser blocks the window, so a click always opens something.
+
+Session records carry the new `platformUrl` field. `docs/WORKFLOWS.md` explains why the platform can embed sessions and the Studio cannot yet: the platform reads its own login on its own page and gets a one-time sign-in pass through `/me/embed`. The browser does not send that login to the route from the Studio's site, and the route takes no API key or CLI token.
+
 ## v1.104 (2026-10-11)
 
 ### Change log through v1.103 (#421)
