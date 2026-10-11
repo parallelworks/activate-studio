@@ -2,6 +2,36 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.107 (2026-10-11)
+
+### Change log through v1.106 (#426)
+
+Regenerated with `node scripts/release-notes.mjs --changelog` after the v1.106 release.
+
+### Your libraries: directories on your clusters, indexed and searched there (#427)
+
+Users can add a directory on one of their clusters as their own library. The Studio indexes it there with the index workflow (#409), then browses and searches it on the cluster, as that user.
+
+**Adding.** Settings, Libraries, "Your libraries" takes four inputs:
+- a cluster from the user's active clusters;
+- a directory, `$WORKDIR` by default;
+- a label;
+- optionally, a Slurm partition and account.
+
+The Studio registers the workflow in the user's account the first time, named after its content hash so a changed workflow registers afresh. It runs the workflow with the user's own key, the one their chat uses. It follows the run while Settings is open, and when the run completes it reads the index summary from the run log, resolves the index and GUFI paths on the cluster, and marks the library ready.
+
+**Using.** A ready library joins that user's Library switcher, labeled with its cluster, and no one else's. It is read only. The tree lists each folder from the index on the cluster, name search runs there, and text files open as a preview read from the cluster. **Refresh** reruns the workflow in update mode. **Remove** drops the library from the Studio and leaves the index on the cluster.
+
+**Remote commands.** One long-lived `pw ssh` session per user and cluster carries the commands (`server/src/remoteExec.ts`). Each request is the command's argv, every argument base64-encoded, and the cluster decodes and runs it without a shell, so SQL and paths never meet shell quoting. On a customer cluster the first request took about 5 seconds for the ssh setup and later ones about 0.3 seconds.
+
+**Wiring.** A user library's index root is an opaque reference (`remote:<owner>:<id>`), and `gufi.ts` sends any query on one to the cluster, so search and statistics work unchanged. The bundle and the container image now carry `deploy/gufi-index.yaml` for the Studio to register.
+
+**Live test on a customer cluster.** The test used a synthetic directory of 6 folders and 6 files, and was removed afterwards. Adding it took 73 seconds to reach ready. The root listing then took 343 ms, a subfolder 308 ms, a name search 309 ms, and a text preview worked. The first try showed that this GUFI build names its depth flags `--min-level` and `--max-level`, and the tree uses those.
+
+**Not yet.** Scheduled refresh, which needs the user's key when it falls due. Full-text and semantic search, which need enrichment. Searching several libraries at once through gufi_vt.
+
+Tests cover the summary parsing, the workflow registration and its run inputs, a finished run making the library ready, its place in the library list, the tree listing, a name search through the remote path, and path checks. The fakes are pw, the remote session, and gufi_query.
+
 ## v1.106 (2026-10-11)
 
 ### Change log through v1.105 (#425)
