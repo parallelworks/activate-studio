@@ -28,6 +28,7 @@ import { entryTitle, githubThumbnail, parseWorkflowEntry, type WorkflowEntry } f
 import { browseGithub, githubDefinition, githubSummary, resolveGithubEntry } from './githubWorkflows.js'
 import { recordRun, listRuns, markRunEnded, isTerminalRunState } from './runs.js'
 import { withWorkspace } from './workspace.js'
+import { workflowRecord } from './platformRecords.js'
 
 /** The credential platform calls run under: the viewer's own platform key,
  *  else the deployment's. A provider key (one with a baseUrl) is chat-only. */
@@ -168,7 +169,9 @@ export async function workflowDefinition(entry: string, key: string | null): Pro
 /** A workflow's YAML and details, wherever it is defined. */
 async function definitionOf(e: WorkflowEntry, key: string | null): Promise<Definition> {
   if (e.kind === 'account') {
-    const doc = firstJson<any>(await call(['workflows', 'get', e.name, '-o', 'json'], key, 60_000))
+    // The API first: it keeps the inputs in their declared order, which
+    // the CLI's JSON does not (platformRecords.ts).
+    const doc = await workflowRecord(e.name, key) ?? firstJson<any>(await call(['workflows', 'get', e.name, '-o', 'json'], key, 60_000))
     return {
       yaml: typeof doc?.yaml === 'string' ? parseYaml(doc.yaml) : doc?.yaml,
       displayName: doc?.displayName || e.name,
@@ -488,7 +491,10 @@ export async function workflowsTabRoutes(app: FastifyInstance): Promise<void> {
     if (e.kind !== 'account') throw new KbError(409, 'Marketplace and GitHub workflows run without a copy in your account.')
     const ownerKey = gatewayKey()
     if (!v.own || !ownerKey) throw new KbError(409, 'Nothing to add: this Studio runs workflows with its own credential.')
-    const doc = firstJson<any>(await call(['workflows', 'get', e.name, '-o', 'json'], ownerKey, 60_000))
+    // Read through the API so the copy keeps the declared input order; a
+    // copy written from the CLI's sorted map would show its form
+    // alphabetically on the platform too.
+    const doc = await workflowRecord(e.name, ownerKey) ?? firstJson<any>(await call(['workflows', 'get', e.name, '-o', 'json'], ownerKey, 60_000))
     const text = typeof doc?.yaml === 'string' ? doc.yaml : dumpYaml(doc?.yaml ?? {})
     const tmp = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'wf-')), `${e.name}.yaml`)
     fs.writeFileSync(tmp, text)

@@ -43,7 +43,7 @@ Only workflows in the set can be run from the tab; any other name is refused wit
 
 ## The form
 
-The form is the platform's own renderer from `@parallelworks/ui`, fed by the platform's schema conversion, so conditional fields, groups, and defaults behave as they do on the platform. A workflow's saved configurations appear as presets. A few input types read live platform data, and the Studio supplies those:
+The form is the platform's own renderer from `@parallelworks/ui`, fed by the platform's schema conversion, so conditional fields, groups, and defaults behave as they do on the platform. The workflow's definition is read from the platform API (`GET /api/workflows/<name>`), which keeps the inputs in the order the workflow declares them; `pw workflows get -o json` returns them sorted by name, so it is used only when the API cannot answer. A workflow's saved configurations appear as presets. A few input types read live platform data, and the Studio supplies those:
 
 | Input type | In the Studio |
 |---|---|

@@ -11,6 +11,16 @@ process.env.KB_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'wf-kb-'))
 process.env.INDEX_BASE = fs.mkdtempSync(path.join(os.tmpdir(), 'wf-ix-'))
 process.env.PW_API_KEY = 'deployment-key'
 process.env.STUDIO_WORKFLOWS = 'batch-job,missing-one'
+process.env.PW_GATEWAY_URL = 'https://platform.test/api/openai/v1'
+
+// The platform API returns a workflow's YAML with its inputs in declared
+// order; `pw workflows get -o json` returns them sorted. Only ordered-job
+// is served by the API here; the others fall back to the CLI.
+const ORDERED = { on: { execute: { inputs: { zeta: { type: 'string', label: 'Zeta' }, alpha: { type: 'string', label: 'Alpha' }, mid: { type: 'number', label: 'Mid' } } } }, jobs: { main: { steps: [{ run: 'echo hi' }] } } }
+globalThis.fetch = async url => {
+  if (String(url) === 'https://platform.test/api/workflows/ordered-job') return Response.json({ name: 'ordered-job', displayName: 'Ordered', yaml: ORDERED, configurations: [] })
+  return new Response('not found', { status: 404 })
+}
 
 const { default: Fastify } = await import('fastify')
 const { sanitizedErrorHandler } = await import('../dist/routes.js')
@@ -39,6 +49,7 @@ setWorkflowsCli(async args => {
     { name: 'batch-job', displayName: 'Batch job', description: 'Runs a script', tags: ['hpc'], configurations: [{ name: 'small' }] },
     { name: 'other', displayName: 'Another workflow', description: '' },
   ]) + '\nA newer CLI is available.'
+  if (verb === 'get' && name === 'ordered-job') return JSON.stringify({ name, displayName: 'Ordered', yaml: { on: { execute: { inputs: { alpha: ORDERED.on.execute.inputs.alpha, mid: ORDERED.on.execute.inputs.mid, zeta: ORDERED.on.execute.inputs.zeta } } }, jobs: ORDERED.jobs }, configurations: [] })
   if (verb === 'get') return JSON.stringify({ name, displayName: 'Batch job', yaml: YAML, configurations: [{ name: 'small', inputs: { steps: 1 } }] })
   if (verb === 'run') return args.includes('--dry-run') ? 'inputs are valid' : JSON.stringify({ slug: 'batch-job-00001' })
   throw new Error(`unexpected ${args.join(' ')}`)
@@ -80,6 +91,14 @@ test('the form converts the workflow inputs and carries saved configurations', a
   assert.equal(status, 200)
   assert.ok(body.form && typeof body.form === 'object')
   assert.deepEqual(body.configurations, [{ name: 'small', inputs: { steps: 1 } }])
+})
+
+test('the form keeps the inputs in their declared order, read from the platform API', async () => {
+  const { status, body } = await j('GET', '/api/workflows/item/form?w=ordered-job')
+  assert.equal(status, 200)
+  const order = JSON.stringify(body.form)
+  assert.ok(order.indexOf('Zeta') < order.indexOf('Alpha') && order.indexOf('Alpha') < order.indexOf('Mid'),
+    `declared order zeta, alpha, mid; got ${order.slice(0, 200)}`)
 })
 
 test('a workflow outside the collection is refused', async () => {

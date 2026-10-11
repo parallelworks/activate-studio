@@ -1,6 +1,8 @@
 import { execFile } from 'node:child_process'
 import { dumpYaml } from '@parallelworks/workflow-parser'
 import { PW_CLI } from './config.js'
+import { gatewayKey } from './chat/gateway.js'
+import { workflowRecord } from './platformRecords.js'
 
 /**
  * Compose several existing workflows into one that runs them as
@@ -95,7 +97,9 @@ export async function composeWorkflows(steps: ComposeStep[], opts: { chain?: boo
     const name = sourceName(step.uses)
     let doc: Record<string, any> | null = null
     try {
-      doc = JSON.parse(await pw(['workflows', 'get', name, '-o', 'json']))
+      // The API keeps each source's declared input order, so the merged
+      // form lists them as their workflows do; the CLI's JSON sorts them.
+      doc = await workflowRecord(name, gatewayKey()) ?? JSON.parse(await pw(['workflows', 'get', name, '-o', 'json']))
     } catch {
       missing.push(name)
     }
