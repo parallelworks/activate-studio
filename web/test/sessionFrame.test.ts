@@ -28,3 +28,16 @@ describe('whether a session can be framed', () => {
     expect(siteOf('10.0.0.1')).toBeNull()
   })
 })
+
+describe('remembering a session sign-in', () => {
+  it('holds for twelve hours, then asks again, and can be forgotten', async () => {
+    const { markSignedIn, signedInTo } = await import('../src/sessionFrame')
+    expect(signedInTo('a.example.com')).toBe(false)
+    markSignedIn('a.example.com', true)
+    expect(signedInTo('a.example.com')).toBe(true)
+    expect(signedInTo('a.example.com', Date.now() + 13 * 3600_000)).toBe(false)
+    expect(signedInTo('b.example.com')).toBe(false)
+    markSignedIn('a.example.com', false)
+    expect(signedInTo('a.example.com')).toBe(false)
+  })
+})

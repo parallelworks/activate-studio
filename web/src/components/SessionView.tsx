@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { currentPlace, frameVerdict, type FrameVerdict } from '../sessionFrame'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { currentPlace, frameVerdict, markSignedIn, signedInTo, type FrameVerdict } from '../sessionFrame'
 
 /**
  * One platform session, shown in a frame where the browser allows it and
@@ -52,37 +52,79 @@ export function SessionView({ user, name, initial }: { user: string; name: strin
   const running = s?.status === 'running'
   const framed = !!s && running && verdict === 'frame'
 
+  // A frame shows the session only once this browser has signed in to the
+  // session's own host; before that it bounces to the platform's login
+  // page, which refuses to load in a frame. The first view therefore asks
+  // for that sign-in in a window of its own, and shows the frame after.
+  const host = useMemo(() => { try { return s?.url ? new URL(s.url).host : '' } catch { return '' } }, [s?.url])
+  const [signedIn, setSignedIn] = useState(false)
+  useEffect(() => { setSignedIn(!!host && signedInTo(host)) }, [host])
+  const [blocked, setBlocked] = useState(false)
+  // Set when the session was opened in a tab to sign in; the frame loads
+  // when the user comes back to this window.
+  const awaitingReturn = useRef(false)
+  const finishSignIn = useCallback(() => {
+    awaitingReturn.current = false
+    markSignedIn(host, true); setSignedIn(true); setBlocked(false); setNonce(n => n + 1)
+  }, [host])
+  useEffect(() => {
+    const onFocus = () => { if (awaitingReturn.current) finishSignIn() }
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [finishSignIn])
+  const signIn = () => {
+    if (!s?.url) return
+    const w = window.open(s.url, `ade-signin-${host}`, 'popup,width=640,height=720')
+    if (!w) { setBlocked(true); return }
+    const t = window.setInterval(() => { if (w.closed) { window.clearInterval(t); finishSignIn() } }, 500)
+  }
+  const showFrame = framed && signedIn
+
   // Inside a chat embed, a view with no frame is a few lines tall; tell the
   // chat its height so the reply does not hold an empty box. A framed
   // session takes the chat's default height.
   const rootRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (window.parent === window) return
-    const post = () => window.parent.postMessage({ type: 'ade-embed-height', height: framed ? null : rootRef.current?.scrollHeight ?? null }, window.location.origin)
+    const post = () => window.parent.postMessage({ type: 'ade-embed-height', height: showFrame ? null : rootRef.current?.scrollHeight ?? null }, window.location.origin)
     post()
-    if (framed || !rootRef.current) return
+    if (showFrame || !rootRef.current) return
     const ro = new ResizeObserver(post)
     ro.observe(rootRef.current)
     return () => ro.disconnect()
-  }, [framed, s, error])
+  }, [showFrame, s, error, blocked])
 
   return (
-    <div className={`session-view${framed ? '' : ' compact'}`} ref={rootRef}>
+    <div className={`session-view${showFrame ? '' : ' compact'}`} ref={rootRef}>
       <div className="session-bar">
         <span className={`status-dot ${running ? 'ok' : 'warn'}`} />
         <span className="session-name">{name}</span>
         {s?.run && <span className="muted session-meta">{s.run.workflow} · {s.run.slug}</span>}
         {s && !running && <span className="muted session-meta">{s.status || 'not running'}</span>}
         <span className="session-bar-actions">
-          {running && verdict === 'frame' && (
+          {showFrame && (
             <button type="button" className="btn-ghost" onClick={() => setNonce(n => n + 1)} title="Reload the session">Reload</button>
           )}
-          {s?.url && <a className="btn-secondary" href={s.url} target="_blank" rel="noopener noreferrer">Open in new tab</a>}
+          {s?.url && (
+            <a className="btn-secondary" href={s.url} target="_blank" rel="noopener noreferrer"
+              onClick={() => { if (framed && !signedIn) awaitingReturn.current = true }}>Open in new tab</a>
+          )}
         </span>
       </div>
       {error && !s && <p className="session-note banner-error">{error}</p>}
       {s && !running && <p className="session-note muted">Session {name} is {s.status || 'not running'}. This view updates when it is running.</p>}
-      {framed && (
+      {framed && !signedIn && (
+        <div className="session-note session-signin">
+          <p>To show {name} here, this browser signs in to it once.</p>
+          <button type="button" className="btn-primary" onClick={signIn}>Sign in</button>
+          <p className="muted">
+            {blocked
+              ? 'The browser blocked the sign-in window. Use Open in new tab instead; the session shows here when you come back to this window.'
+              : `A small window opens and loads ${name}. Close it once ${name} appears, and it shows here.`}
+          </p>
+        </div>
+      )}
+      {showFrame && (
         <>
           <iframe
             key={nonce}
@@ -93,7 +135,8 @@ export function SessionView({ user, name, initial }: { user: string; name: strin
             allow="clipboard-read; clipboard-write; fullscreen"
           />
           <p className="session-hint muted">
-            Empty, or refused to connect? Open the session in a new tab once, which signs this browser in to it, then reload here.
+            Empty, or refused to connect? The sign-in may have expired.{' '}
+            <button type="button" className="link-button" onClick={() => { markSignedIn(host, false); setSignedIn(false) }}>Sign in again</button>
           </p>
         </>
       )}

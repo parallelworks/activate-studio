@@ -42,3 +42,27 @@ export function currentPlace(): FramePlace {
   try { topIsSelf = window.top === window || window.top?.location.origin === window.location.origin } catch { topIsSelf = false }
   return { host: window.location.hostname, topIsSelf }
 }
+
+/**
+ * Whether this browser has signed in to a session host, as far as the
+ * Studio can tell. The sign-in itself is a cookie the Studio cannot read,
+ * so the Studio remembers when it last sent the browser through it, and
+ * asks again after SIGNIN_TTL_MS. The cookie lasts as long as the
+ * platform login, so a repeat sign-in is a redirect that takes a moment.
+ */
+const SIGNIN_TTL_MS = 12 * 3600_000
+const signinKey = (host: string) => `ade-session-signin:${host}`
+
+export function signedInTo(host: string, now = Date.now()): boolean {
+  try {
+    const at = Number(localStorage.getItem(signinKey(host)))
+    return !!at && now - at < SIGNIN_TTL_MS
+  } catch { return false }
+}
+
+export function markSignedIn(host: string, signed: boolean): void {
+  try {
+    if (signed) localStorage.setItem(signinKey(host), String(Date.now()))
+    else localStorage.removeItem(signinKey(host))
+  } catch { /* storage off: the sign-in step shows each time */ }
+}
