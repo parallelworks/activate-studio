@@ -13,7 +13,7 @@ import { KbError } from './kb.js'
  * `workflows ls` drops imageFallbackUrl. The field that matters here is
  * workflowRun, which ties a session to the run that opened it.
  *
- * The Studio opens a session in a window of its own rather than a frame:
+ * The Studio opens a session in a window of its own, not in a frame:
  * each session host signs the browser in through the platform's login
  * page, which refuses to load in a frame.
  */
