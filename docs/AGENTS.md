@@ -33,3 +33,17 @@ Stopping a task interrupts its sessions. Sessions belong to the daemon, so a Stu
 ## The runner
 
 A one-shot run has no board: pw code loads a workspace settings file only after someone approves it interactively, and the alternatives would put the task token in the command line or the run's inputs. Its output arrives when it finishes. Campaign runs are not sent the board token, since the Studio's public address sits behind the platform's session proxy, which refuses it.
+
+## pw code agents at sites
+
+The assistant can run pw code agents directly, on one of the user's clusters or, where offered, on the Studio's host. These are pw code sessions the user could also start in a terminal; the assistant's tools start, follow, and steer them (`agent_sites`, `agent_sessions`, `start_agent`, `agent_status`, `agent_steer`, `agent_goal`, `agent_approve`, `agent_stop`).
+
+*Transport.* A cluster's daemon is reached the way `pw code attach` reaches it: the Studio server runs `pw ssh <cluster> pw code daemon proxy --ensure`, which bridges the ssh session to that machine's daemon socket and starts the daemon if none runs, and speaks the daemon's HTTP API over the pipe (`server/src/pwcodeBridge.ts`). One keep-alive bridge per user and cluster carries every request; the first pays for the ssh setup (about 5 seconds), later ones take about a quarter of a second. The bridge closes after 10 idle minutes. This needs only `pw ssh` and a pw CLI with `pw code daemon proxy` on the cluster (v7.120 or later), not the platform's agent routes.
+
+*Credentials.* A user's agents act with the key their chat uses (Settings, Model access), so each connection is that user's and the session runs as them on the cluster, with their files and their pw login there for models. The deployment's key stands in only when sign-in is off and the Studio has one user. Through the bridge the Studio has the owner's authority over that daemon, so it sets each session's permission mode: accept-edits by default (edits in the workspace, asks before commands), or read-only or plan.
+
+*Goals.* `start_agent` creates the session in a workspace (a new directory under `~/studio-agents` unless one is named), sends the objective, and, when a goal is given, sets it through the daemon's `/goal` route. The goal is checked after every turn by an evaluator; while it is not met the session starts another turn on its own. pw code puts no limit on a goal, so the Studio writes one into the condition ("if this is not met within N turns, stop and say what remains", 20 by default). `agent_status` reports the goal's state and the last check (turns, met or not and why), approvals waiting, and the end of the transcript. Approvals are answered only on the user's decision in the conversation.
+
+*Local site.* The Studio's host is a site only when sign-in is off, or when `AGENT_LOCAL_SITE=1`: its daemon belongs to the account the Studio runs as, and a viewer acting there would act as that account.
+
+*Routes.* `GET /api/agent-sites`, `GET /api/agent-sites/<site>/status`, `GET` and `POST /api/agent-sites/<site>/sessions`, `GET /api/agent-sites/<site>/sessions/<id>`, and `POST .../goal`, `.../steer`, `.../approvals/<approval>`, and `.../interrupt`.

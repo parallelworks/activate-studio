@@ -59,6 +59,7 @@ const TOOL_GROUPS: [string, string[]][] = [
   ['Knowledge base', ['search_kb', 'read_kb_file', 'write_kb_file', 'list_kb_dir', 'query_corpus', 'get_labels', 'suggest_labels', 'apply_labels']],
   ['Workflows', ['list_workflows', 'list_github_workflows', 'get_workflow', 'compose_workflow', 'serve_model', 'run_workflow', 'workflow_runs', 'workflow_run_detail', 'list_sessions', 'pw_help']],
   ['Clusters', ['list_clusters', 'hpc_status', 'cluster_command']],
+  ['pw code agents', ['agent_sites', 'agent_sessions', 'start_agent', 'agent_status', 'agent_steer', 'agent_goal', 'agent_approve', 'agent_stop']],
   ['Display and skills', ['show_in_viewer', 'use_skill', 'studio_docs']],
 ]
 

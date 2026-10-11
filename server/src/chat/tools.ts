@@ -48,6 +48,14 @@ export const TOOL_CALLS: Record<string, string> = {
   watch_run: 'pw workflows runs view <id>, polled until the run changes or exposes a session',
   workflow_runs: 'pw workflows runs ls',
   list_sessions: 'GET /api/sessions on the platform with the user\'s key',
+  agent_sites: 'pw clusters ls, and each site\'s pw code daemon status over pw ssh',
+  agent_sessions: 'GET /v1/sessions on the site\'s pw code daemon',
+  start_agent: 'pw ssh to the site, then POST /v1/sessions, a message, and /goal on its pw code daemon',
+  agent_status: 'GET /v1/sessions/<id> and its state on the site\'s pw code daemon',
+  agent_steer: 'POST /v1/sessions/<id>/direction or /messages on the site\'s pw code daemon',
+  agent_goal: 'POST /v1/sessions/<id>/goal on the site\'s pw code daemon',
+  agent_approve: 'POST /v1/sessions/<id>/approvals/<approval> on the site\'s pw code daemon',
+  agent_stop: 'POST /v1/sessions/<id>/interrupt on the site\'s pw code daemon',
   workflow_run_detail: 'pw workflows runs get <id>',
   compose_workflow: 'reads each source workflow with pw workflows get, then emits a workflow that runs them as `uses:` subworkflow steps',
   validate_workflow: 'parses the YAML (inline or a knowledge base file) and validates it against the platform\'s /workflow.schema.json',
@@ -297,6 +305,82 @@ export const TOOL_SPECS: ToolSpec[] = [
         },
         required: [],
       },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'agent_sites',
+      description: 'List where pw code agents can run: the user\'s active clusters, plus this Studio\'s host when it is offered. With probe, also check each named site\'s pw code daemon (starting it there if none runs) and report its version and host.',
+      parameters: { type: 'object', properties: { probe: { type: 'string', description: 'Comma-separated site names to check' } }, required: [] },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'agent_sessions',
+      description: 'List the pw code sessions on a site: id, name, state, workspace, and model. These include sessions the user started in pw code itself.',
+      parameters: { type: 'object', properties: { site: { type: 'string', description: 'Where the agent runs: one of the user\'s clusters by name (from agent_sites), or local for this Studio\'s host when offered' } }, required: ['site'] },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'start_agent',
+      description: 'Start a pw code agent on a site: a session in a workspace there, given the objective. With a goal it keeps working turn after turn until an evaluator finds the goal met or max_turns is reached, without returning to you in between; use a goal for iterative work (fix until the tests pass, run until the residual converges, refine until a check succeeds) and write it as a condition that can be checked from the transcript. The agent runs as the user on that machine with their files and tools. Only start one when the user asks for an agent or remote work in this conversation. Returns the session id; follow it with agent_status.',
+      parameters: {
+        type: 'object',
+        properties: {
+          site: { type: 'string', description: 'Where the agent runs: one of the user\'s clusters by name (from agent_sites), or local for this Studio\'s host when offered' },
+          objective: { type: 'string', description: 'What the agent should do, as you would brief a colleague: context, inputs, where outputs go' },
+          goal: { type: 'string', description: 'Optional completion condition the agent works toward, checked after every turn' },
+          max_turns: { type: 'number', description: 'Bound on the goal loop, default 20' },
+          workspace: { type: 'string', description: 'Working directory on the site: absolute, or under ~, $HOME, or $WORKDIR. Default: a new directory under ~/studio-agents' },
+          model: { type: 'string', description: 'Model id for the session; default: the chat\'s current model when it is a platform model, else the site\'s pw code default' },
+          permission_mode: { type: 'string', enum: ['accept-edits', 'read-only', 'plan'], description: 'accept-edits (default) edits files in the workspace and asks before commands; read-only only reads; plan only plans' },
+        },
+        required: ['site', 'objective'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'agent_status',
+      description: 'Where a pw code agent stands: running or idle, its goal (active, paused) and the last goal check (turn count, met or not and why), what it waits for approval on, and the end of its transcript.',
+      parameters: { type: 'object', properties: { site: { type: 'string', description: 'Where the agent runs: one of the user\'s clusters by name (from agent_sites), or local for this Studio\'s host when offered' }, session: { type: 'string', description: 'The pw code session id, from start_agent or agent_sessions' }, lines: { type: 'number', description: 'Transcript lines to include, default 12' } }, required: ['site', 'session'] },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'agent_steer',
+      description: 'Give a pw code agent direction. By default the text reaches the turn it is working on without ending it; with mode message it queues as the next turn. Use it to correct course, add a constraint, or answer a question the agent asked.',
+      parameters: { type: 'object', properties: { site: { type: 'string', description: 'Where the agent runs: one of the user\'s clusters by name (from agent_sites), or local for this Studio\'s host when offered' }, session: { type: 'string', description: 'The pw code session id, from start_agent or agent_sessions' }, text: { type: 'string' }, mode: { type: 'string', enum: ['direction', 'message'] } }, required: ['site', 'session', 'text'] },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'agent_goal',
+      description: 'Manage a pw code agent\'s goal: set a new condition (it starts working toward it), show the current one, pause the loop, resume it, or clear it.',
+      parameters: { type: 'object', properties: { site: { type: 'string', description: 'Where the agent runs: one of the user\'s clusters by name (from agent_sites), or local for this Studio\'s host when offered' }, session: { type: 'string', description: 'The pw code session id, from start_agent or agent_sessions' }, action: { type: 'string', enum: ['set', 'show', 'pause', 'resume', 'clear'] }, condition: { type: 'string', description: 'For set: the completion condition' }, max_turns: { type: 'number', description: 'For set: bound on the loop, default 20' } }, required: ['site', 'session', 'action'] },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'agent_approve',
+      description: 'Answer a pw code agent\'s approval request (listed by agent_status). Only when the user has decided it in this conversation: show them the request and ask, then pass their answer.',
+      parameters: { type: 'object', properties: { site: { type: 'string', description: 'Where the agent runs: one of the user\'s clusters by name (from agent_sites), or local for this Studio\'s host when offered' }, session: { type: 'string', description: 'The pw code session id, from start_agent or agent_sessions' }, approval: { type: 'string', description: 'The approval id from agent_status' }, allow: { type: 'boolean' }, message: { type: 'string', description: 'For a denial: what to tell the agent' } }, required: ['site', 'session', 'approval', 'allow'] },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'agent_stop',
+      description: 'Interrupt a pw code agent\'s current turn. A goal stays set; pause or clear it with agent_goal to keep it from starting again.',
+      parameters: { type: 'object', properties: { site: { type: 'string', description: 'Where the agent runs: one of the user\'s clusters by name (from agent_sites), or local for this Studio\'s host when offered' }, session: { type: 'string', description: 'The pw code session id, from start_agent or agent_sessions' } }, required: ['site', 'session'] },
     },
   },
   {
@@ -1474,6 +1558,70 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
           parts.push(await runSessionsNote(String(doc?.slug ?? id)))
         }
         return { result: parts.filter(Boolean).join('\n').slice(0, TOOL_OUTPUT_CAP), summary: `${doc?.slug ?? id}: ${doc?.status}` }
+      }
+      case 'agent_sites': {
+        const A = await import('../agentSites.js')
+        const key = A.agentKey(toolContext.getStore()?.userKey)
+        const sites = await A.listSites(key)
+        const probe = String(args.probe ?? '').split(',').map(x => x.trim()).filter(Boolean).slice(0, 5)
+        const checked = await Promise.all(probe.map(async site => {
+          try { const st = await A.probeSite(site, key); return `${site}: ${st.usable ? `pw code ${st.version} on ${st.hostname}, ${st.sessions} session${st.sessions === 1 ? '' : 's'}` : `not usable, ${st.why}`}` }
+          catch (e) { return `${site}: ${String((e as Error).message ?? e).slice(0, 200)}` }
+        }))
+        const list = sites.map(x => `${x.name}${x.kind === 'local' ? ' (this Studio\'s host)' : x.type ? ` (${x.type})` : ''}`).join('\n') || 'No sites: the user has no active clusters.'
+        return { result: [list, ...checked].join('\n').slice(0, TOOL_OUTPUT_CAP), summary: `${sites.length} site${sites.length === 1 ? '' : 's'}` }
+      }
+      case 'agent_sessions': {
+        const A = await import('../agentSites.js')
+        const rows = await A.agentSessions(String(args.site ?? ''), A.agentKey(toolContext.getStore()?.userKey))
+        const lines = rows.map(r => `${r.id}  ${r.status ?? ''}  ${r.name ?? ''}  ${r.workspace ?? ''}  ${r.model ?? ''}`.trim())
+        return { result: (lines.join('\n') || 'No sessions on that site.').slice(0, TOOL_OUTPUT_CAP), summary: `${rows.length} session${rows.length === 1 ? '' : 's'}` }
+      }
+      case 'start_agent': {
+        const A = await import('../agentSites.js')
+        const model = args.model ? String(args.model) : (ctx?.model && /^[^\s:]+:[^\s]+\/[^\s]+$/.test(ctx.model) ? ctx.model : null)
+        const r = await A.startAgent({
+          site: String(args.site ?? ''), key: A.agentKey(toolContext.getStore()?.userKey),
+          objective: String(args.objective ?? ''), goal: args.goal ? String(args.goal) : null,
+          maxTurns: Number(args.max_turns) || undefined, workspace: args.workspace ? String(args.workspace) : null,
+          model, permissionMode: args.permission_mode ? String(args.permission_mode) : null,
+        })
+        return {
+          result: `Started pw code session ${r.session} on ${r.site} (${r.host}), workspace ${r.workspace}, mode ${r.mode}${r.goal ? ', with a goal it works toward until met or bounded' : ''}. Follow it with agent_status; it can also be opened in a terminal there with pw code attach ${r.site}/${r.session}.`,
+          summary: `agent started on ${r.site}`,
+        }
+      }
+      case 'agent_status': {
+        const A = await import('../agentSites.js')
+        const st = await A.agentStatus(String(args.site ?? ''), A.agentKey(toolContext.getStore()?.userKey), String(args.session ?? ''), Number(args.lines) || 12)
+        const goal = st.goal ? `goal: ${st.goal.active ? (st.goal.paused ? 'paused' : st.goal.checking ? 'checking' : 'active') : 'not active'}` : 'goal: none'
+        const check = st.lastCheck ? `last check: turn ${st.lastCheck.turns ?? '?'}, ${st.lastCheck.outcome || 'not met yet'}${st.lastCheck.reason ? `: ${st.lastCheck.reason}` : ''}` : ''
+        const asks = st.approvals.length ? `waiting for approval:\n${st.approvals.map(a => `  ${a.id}: ${a.text}`).join('\n')}` : ''
+        return {
+          result: [`${st.session} on ${st.site}: ${st.status}, workspace ${st.workspace}, model ${st.model}`, goal, check, asks, 'recent:', ...st.recent].filter(Boolean).join('\n').slice(0, TOOL_OUTPUT_CAP),
+          summary: `${st.status}${st.approvals.length ? ', needs approval' : ''}`,
+        }
+      }
+      case 'agent_steer': {
+        const A = await import('../agentSites.js')
+        const r = await A.agentSteer(String(args.site ?? ''), A.agentKey(toolContext.getStore()?.userKey), String(args.session ?? ''), String(args.text ?? ''), args.mode === 'message' ? 'message' : 'direction')
+        return { result: 'delivered' in r ? 'Delivered to the working turn.' : r.asMessage ? 'No turn was working; sent as the next message.' : 'Queued as the next turn.', summary: 'steered' }
+      }
+      case 'agent_goal': {
+        const A = await import('../agentSites.js')
+        const r = await A.agentGoal(String(args.site ?? ''), A.agentKey(toolContext.getStore()?.userKey), String(args.session ?? ''), String(args.action ?? ''), args.condition ? String(args.condition) : null, Number(args.max_turns) || undefined)
+        const st = r?.status
+        return { result: `${(r?.output ?? '').trim() || 'Done.'}${st ? `\n(goal ${st.active ? (st.paused ? 'paused' : 'active') : 'not active'})` : ''}`.slice(0, TOOL_OUTPUT_CAP), summary: `goal ${String(args.action ?? '')}` }
+      }
+      case 'agent_approve': {
+        const A = await import('../agentSites.js')
+        await A.agentApprove(String(args.site ?? ''), A.agentKey(toolContext.getStore()?.userKey), String(args.session ?? ''), String(args.approval ?? ''), args.allow === true, args.message ? String(args.message) : undefined)
+        return { result: args.allow === true ? 'Approved.' : 'Denied.', summary: args.allow === true ? 'approved' : 'denied' }
+      }
+      case 'agent_stop': {
+        const A = await import('../agentSites.js')
+        await A.agentStop(String(args.site ?? ''), A.agentKey(toolContext.getStore()?.userKey), String(args.session ?? ''))
+        return { result: 'Interrupted. A goal stays set until paused or cleared with agent_goal.', summary: 'interrupted' }
       }
       case 'list_sessions': {
         const key = toolContext.getStore()?.userKey || gatewayKey()
