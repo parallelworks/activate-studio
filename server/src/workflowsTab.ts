@@ -65,6 +65,8 @@ export function platformError(e: unknown): KbError {
   return new KbError(502, `The platform did not answer: ${text.split('\n')[0].slice(0, 300)}`)
 }
 const call: Cli = (args, key, t) => cli(args, key, t).catch(e => { throw platformError(e) })
+/** The platform CLI with a viewer's key, for the other workflow routes. */
+export const workflowsCli: Cli = (args, key, t) => call(args, key, t)
 
 /** The CLI appends notices after its JSON; take the first balanced value. */
 export function firstJson<T = unknown>(text: string): T {

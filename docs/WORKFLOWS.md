@@ -56,6 +56,16 @@ The form is the platform's own renderer from `@parallelworks/ui`, fed by the pla
 
 Recent runs from the tab are listed below the tiles with their state.
 
+## README
+
+A workflow kept in a repository shows its README beside the form, or below it on a narrow window. Each kind of entry names where its README lives:
+
+- an account workflow from a repository, including a copy of a marketplace workflow, names its repository, branch, and README path in its record's `remote` block;
+- a marketplace entry names them for each version, and the Studio uses the version tagged `latest`;
+- a GitHub entry reads the `README.md` in its workflow's directory.
+
+The README is read through the platform's repository route (`/api/repositories/readme`) with the viewer's key, which reaches private GitHub repositories and projects on registered GitLab servers. A GitHub README falls back to the raw file host. Relative images are served through `GET /api/workflows/item/asset`, which reads image files from the same repository with the same key. Other relative links go to the file's page on the repository's site. A workflow defined only on the platform has no README, and the page shows its description.
+
 ## Sessions
 
 Workflows often open a session: a design explorer, a notebook, a remote desktop. The tab lists the viewer's running sessions above the recent runs, with the run that opened each, and the runs table names each run's session. The list comes from the platform API (`GET /api/sessions`) with the viewer's key, because the CLI's session output leaves out the field that ties a session to its run in older releases.
@@ -83,6 +93,8 @@ In chat, `list_sessions` and `watch_run` give the assistant each session with th
 | `GET /api/workflows/github/resolve?w=<entry>` | the file entries a GitHub entry runs as |
 | `POST /api/workflows/item/install?w=<entry>` | copy the deployment's definition of an account workflow into the viewer's account |
 | `GET /api/workflows/runs` | recent runs |
+| `GET /api/workflows/item/readme?w=<entry>` | the workflow's README, links rewritten, and its page on the repository |
+| `GET /api/workflows/item/asset?w=<entry>&path=<file>` | an image from the workflow's repository |
 | `GET /api/sessions` | the viewer's sessions, newest first; `?run=<slug>` keeps one run's |
 | `GET /api/sessions/item?user=&name=` | one session |
 | `GET /api/platform/clusters`, `/partitions?cluster=`, `/buckets` | data for the pickers |
