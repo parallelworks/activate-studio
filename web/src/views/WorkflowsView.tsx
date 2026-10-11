@@ -1,6 +1,7 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormikProps, FormikValues } from 'formik'
 import { DynamicForm, initializeValues } from '@parallelworks/ui/form'
+import { Streamdown } from 'streamdown'
 import { useWorkflowFields, forgetPlatformData } from '../components/WorkflowFields'
 import { SessionView, type SessionInfo } from '../components/SessionView'
 
@@ -142,6 +143,17 @@ function WorkflowRunner({ name, kind, title, onBack, onLaunched }: { name: strin
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null)
   const [needsInstall, setNeedsInstall] = useState(false)
   const [trust, setTrust] = useState(false)
+  // The workflow's README, beside the form: it says how the workflow works
+  // and what its inputs change. Hidden or shown by the viewer's choice.
+  const [readme, setReadme] = useState<{ markdown: string | null; web: string | null } | null>(null)
+  const [showReadme, setShowReadme] = useState(() => { try { return localStorage.getItem('ade-wf-readme') !== 'hidden' } catch { return true } })
+  const toggleReadme = () => setShowReadme(v => { try { localStorage.setItem('ade-wf-readme', v ? 'hidden' : 'shown') } catch { /* per session then */ } return !v })
+  useEffect(() => {
+    setReadme(null)
+    fetch(`/api/workflows/item/readme?w=${encodeURIComponent(name)}`).then(r => json<{ markdown: string | null; web: string | null }>(r))
+      .then(setReadme).catch(() => setReadme({ markdown: null, web: null }))
+  }, [name])
+  const hasReadme = !!readme?.markdown
   const formik = useRef<FormikProps<FormikValues> | null>(null)
   const fields = useWorkflowFields()
   const load = () => {
@@ -176,12 +188,17 @@ function WorkflowRunner({ name, kind, title, onBack, onLaunched }: { name: strin
   }
 
   return (
-    <div className="overview-view workflows-view wf-runner">
+    <div className={`overview-view workflows-view wf-runner${hasReadme && showReadme ? ' with-readme' : ''}`}>
       <header className="wf-runner-head">
         <button className="btn-link wf-back" onClick={onBack}>&larr; All workflows</button>
-        <h1 className="wf-title">{doc?.displayName ?? title}</h1>
+        <div className="wf-title-row">
+          <h1 className="wf-title">{doc?.displayName ?? title}</h1>
+          {hasReadme && <button type="button" className="btn-ghost wf-readme-toggle" onClick={toggleReadme}>{showReadme ? 'Hide README' : 'Show README'}</button>}
+        </div>
         {doc?.description && <p className="wf-desc">{doc.description}</p>}
       </header>
+      <div className="wf-runner-body">
+      <div className="wf-runner-main">
       {error && <p className="banner-error">{error}</p>}
       {needsInstall && (
         <div className="card wf-install">
@@ -229,6 +246,17 @@ function WorkflowRunner({ name, kind, title, onBack, onLaunched }: { name: strin
           </div>
         </>
       )}
+      </div>
+      {hasReadme && showReadme && (
+        <aside className="wf-readme" aria-label="README">
+          <div className="wf-readme-head">
+            <span>README</span>
+            {readme?.web && <a href={readme.web} target="_blank" rel="noopener noreferrer">View in repository</a>}
+          </div>
+          <div className="md-body"><Streamdown>{readme!.markdown!}</Streamdown></div>
+        </aside>
+      )}
+      </div>
     </div>
   )
 }
