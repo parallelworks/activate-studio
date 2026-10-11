@@ -14,7 +14,7 @@ import { useEffect, useRef, useState } from 'react'
 
 export interface SessionInfo {
   name: string; user: string; type: string; status: string; healthy: boolean | null
-  url: string | null; ownHost: boolean
+  url: string | null; ownHost: boolean; platformUrl?: string | null
   run: { slug: string; workflow: string; number: number | null; status: string | null } | null
   resource: string | null; createdAt: string | null
 }
@@ -25,15 +25,41 @@ export interface SessionInfo {
  *  handle back to the Studio. */
 const sessionWindows = new Map<string, Window>()
 
-/** Opens a session in a window sized for work, or focuses the one it
- *  already has. False when the browser blocked the window. */
-export function openSessionWindow(s: { user: string; name: string; url: string | null }): boolean {
+/** Whether this page runs inside another site's page, as the Studio does
+ *  when opened from the platform: the top window is then on the platform. */
+export function insidePlatform(): boolean {
+  try { return window.top !== window && window.top!.location.origin !== window.location.origin } catch { return true }
+}
+
+/** Opens a URL in a new tab through a link, which a sandboxed frame allows
+ *  where it may refuse a scripted window. */
+function openTab(url: string): void {
+  const a = document.createElement('a')
+  a.href = url; a.target = '_blank'; a.rel = 'noopener noreferrer'
+  document.body.appendChild(a); a.click(); a.remove()
+}
+
+/**
+ * Opens a session, or focuses the window it already has. Inside the
+ * platform's page the session's ACTIVATE page opens in a new tab: the
+ * platform shows it embedded there, and a window opened from inside the
+ * platform's frame inherits that frame's restrictions. Elsewhere the
+ * session gets a window sized for work, and a new tab when the browser
+ * blocks the window.
+ */
+export function openSessionWindow(s: { user: string; name: string; url: string | null; platformUrl?: string | null }): boolean {
+  if (insidePlatform()) {
+    const target = s.platformUrl || s.url
+    if (!target) return false
+    openTab(target)
+    return true
+  }
   if (!s.url) return false
   const key = `${s.user}/${s.name}`
   const open = sessionWindows.get(key)
   if (open && !open.closed) { open.focus(); return true }
   const w = window.open('', '_blank', 'popup,width=1280,height=860')
-  if (!w) return false
+  if (!w) { openTab(s.url); return true }
   try { w.opener = null } catch { /* not ours to change */ }
   w.location.href = s.url
   sessionWindows.set(key, w)
@@ -90,14 +116,15 @@ export function SessionView({ user, name, initial }: { user: string; name: strin
         </span>
         {running && s?.url && (
           <span className="session-bar-actions">
-            <button type="button" className="btn-primary" onClick={() => setBlocked(!openSessionWindow(s))}>Open</button>
+            <button type="button" className="btn-primary" onClick={() => setBlocked(!openSessionWindow(s))}
+              title={insidePlatform() ? 'Open its page on ACTIVATE, which shows it embedded' : 'Open in a window of its own'}>{insidePlatform() && s.platformUrl ? 'Open in ACTIVATE' : 'Open'}</button>
             <a className="btn-secondary" href={s.url} target="_blank" rel="noopener noreferrer">Open in new tab</a>
           </span>
         )}
       </div>
       {error && !s && <p className="session-note banner-error">{error}</p>}
       {s && !running && <p className="session-note muted">Session {name} is {s.status || 'not running'}. This card updates when it is running.</p>}
-      {blocked && <p className="session-note muted">The browser blocked the window. Use Open in new tab.</p>}
+      {blocked && <p className="session-note muted">This session has no address yet.</p>}
     </div>
   )
 }
