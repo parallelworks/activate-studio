@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useState } from 'react'
 import { api, type SettingsLibrary } from '../api'
+import { UserLibrariesSection } from './UserLibrariesSection'
 
 /**
  * Settings > Libraries: what is mounted, what each supports, and adding
@@ -35,6 +36,8 @@ export function LibrariesSection() {
         any other is read only: a site's index built by root, or one someone handed over. A library without files on
         this host can still be searched and described.
       </p>
+      <UserLibrariesSection />
+      <div className="tool-group">Libraries on this host</div>
       <div className="rag-calls-wrap">
         <table className="rag-calls-table libraries-table">
           <thead>

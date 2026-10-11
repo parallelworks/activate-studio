@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { GUFI_BIN, GUFI_INDEX, INDEX_BASE, gufiAvailable } from './config.js'
+import { REMOTE_PREFIX, remoteIndexRoot, remoteQuery } from './userLibraries.js'
 
 const DELIM = '\x1e' // record separator; never appears in KB text
 
@@ -179,6 +180,8 @@ export function blendHits(fts: SearchHit[], names: SearchHit[], vec: SearchHit[]
 
 export async function queryPerDir(sql: string, opts: { threads?: number; subdir?: string; indexRoot?: string } = {}): Promise<string[][]> {
   const root = opts.indexRoot ?? GUFI_INDEX
+  // A user's library on a cluster: the same query, run there as that user.
+  if (root.startsWith(REMOTE_PREFIX)) return parseRows(await remoteQuery(root, ['-n', String(Math.min(opts.threads ?? 4, 4)), '-d', DELIM, '-E', sql], opts.subdir), 1)
   const target = opts.subdir ? path.join(root, opts.subdir) : root
   const { stdout } = await run('gufi_query', ['-n', String(opts.threads ?? 8), '-d', DELIM, '-E', sql, target])
   return parseRows(stdout, 1)
@@ -226,6 +229,10 @@ export async function searchNames(queryText: string, limit = 20, indexRoot?: str
 
 /** gufi_query prints paths rooted at the index tree; strip the index prefix. */
 function toKbRel(p: string, indexRoot: string = GUFI_INDEX): string {
+  if (indexRoot.startsWith(REMOTE_PREFIX)) {
+    const idx = remoteIndexRoot(indexRoot)
+    return p.startsWith(idx + '/') ? p.slice(idx.length + 1) : p === idx ? '' : p.replace(/^\.\//, '')
+  }
   const idx = path.resolve(indexRoot)
   const abs = path.resolve(p)
   if (abs.startsWith(idx + path.sep)) return abs.slice(idx.length + 1)
@@ -352,7 +359,7 @@ export interface CorpusStats {
 }
 
 export async function corpusStats(indexRoot?: string): Promise<CorpusStats> {
-  if (!gufiAvailable()) return { available: false }
+  if (!gufiAvailable() && !indexRoot?.startsWith(REMOTE_PREFIX)) return { available: false }
   const sumSql = `SELECT totfiles, totsize FROM vrsummary;`
   const rows = await queryPerDir(sumSql, { indexRoot })
   let files = 0, totalBytes = 0

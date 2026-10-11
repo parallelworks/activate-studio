@@ -26,6 +26,7 @@ import { modelCachePath, removeModelCache } from './model.js'
 import { effectiveSettings } from './settings.js'
 import { curatedNames, platformAvailable } from './workflowsTab.js'
 import { authEnabled, authHeaderName } from './auth.js'
+import { remoteFile, remoteTree } from './userLibraries.js'
 
 /** A brand image may be given as a URL instead of a path on the resource,
  *  which is easier for a deployment whose branding lives on a web server
@@ -173,7 +174,7 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
   const libOf = (req: { query?: unknown; body?: unknown }) => {
     const q = (req.query ?? {}) as { library?: string }
     const b = (req.body ?? {}) as { library?: string }
-    return getLibrary(q.library ?? b.library, effectiveSettings().kbLabel)
+    return getLibrary(q.library ?? b.library, effectiveSettings().kbLabel, (req as { user?: { id?: string } }).user?.id)
   }
   // Files are only reachable when the library has a source root on this host.
   const sourceOf = (req: { query?: unknown; body?: unknown }) => {
@@ -236,7 +237,7 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
       // Feature previews a deployment has switched on; the client shows
       // their controls only when the flag and its configuration are both present.
       features: { voice: { enabled: !!eff.voiceEnabled && !!eff.voiceUrl, url: eff.voiceUrl || '' } },
-      libraries: listLibraries(eff.kbLabel).map(publicLibrary),
+      libraries: listLibraries(eff.kbLabel, req.user?.id).map(publicLibrary),
       sections: eff.sections.length ? eff.sections : undefined,
       // A platform credential is what the Workflows tab needs; without one
       // (a Studio off ACTIVATE) the tab is not offered.
@@ -318,6 +319,9 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/api/kb/tree', async req => {
     const { path: rel = '' } = req.query as { path?: string }
+    // A user's library on a cluster lists from its index there.
+    const lib = libOf(req)
+    if (lib.site) return { path: rel, entries: await remoteTree(lib.indexRoot, rel) }
     const root = sourceOf(req)
     const entries = await listDir(rel, root)
     // Own labels straight from the filesystem xattrs (one getfattr per
@@ -332,6 +336,8 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/api/kb/file', async req => {
     const { path: rel = '' } = req.query as { path?: string }
+    const lib = libOf(req)
+    if (lib.site) return remoteFile(lib.indexRoot, rel)
     return readFileContent(rel, sourceOf(req))
   })
 

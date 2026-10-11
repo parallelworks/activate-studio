@@ -64,8 +64,9 @@ are kept in `libraries.json` under the index base.
 GUFI index of a directory on a cluster, as the user who runs it. It
 installs GUFI's core tools from source into the user's account once per
 commit, then runs the index through the platform's `script_submitter`
-subworkflow, on the login node or as a Slurm or PBS job. The Studio does
-not launch it yet; it can be added as a platform workflow and run by hand.
+subworkflow, on the login node or as a Slurm or PBS job. The Studio runs
+it for a user's own libraries (below); it can also be added as a platform
+workflow and run by hand.
 
 | Input | Default |
 |---|---|
@@ -86,6 +87,44 @@ it in the run log between `STUDIO_INDEX_BEGIN` and `STUDIO_INDEX_END`. An
 update runs from the directory that holds the indexed one, because GUFI
 creates a temporary file there; where that directory is not writable, the
 run rebuilds instead. An index takes about 50 KB per directory.
+
+## Your libraries
+
+A user adds a directory on one of their clusters under Settings, Libraries,
+"Your libraries": a cluster from their active clusters, a directory
+(`$WORKDIR` by default), a label, and optionally a Slurm partition and
+account. The Studio then:
+
+- registers the index workflow in the user's account the first time, named
+  `studio-gufi-index-<hash>` after the workflow's content, so a changed
+  workflow registers afresh;
+- runs it with the user's own platform key, the one their chat uses (on a
+  Studio with sign-in off, the deployment's), as that user on the cluster;
+- follows the run while Settings is open, and when it completes reads the
+  index summary from the run log, resolves the index path and the GUFI
+  binaries on the cluster, and marks the library ready.
+
+A ready library joins that user's Library switcher, labeled with its
+cluster, and nobody else's. It is read only. The tree lists each folder
+from the index on the cluster (one `gufi_query` per level), name search
+runs there, and text files open as a preview read from the cluster.
+Full-text and semantic search need enrichment, which these libraries do not
+have yet. **Refresh** reruns the workflow in update mode; **Remove** drops
+the library from the Studio and leaves the index on the cluster.
+
+The commands run over one long-lived `pw ssh` session per user and cluster
+(`server/src/remoteExec.ts`): each request is the command's argv with every
+argument base64-encoded, run on the cluster without a shell, so SQL and
+paths never meet shell quoting. The first request pays for the ssh setup,
+about 5 seconds; later ones take about 0.3 seconds. The session closes
+after 10 idle minutes.
+
+To the rest of the Studio a user library's index root is an opaque
+reference (`remote:<owner>:<id>`); `server/src/gufi.ts` sends any query on
+one to the cluster, so search and statistics work unchanged. Definitions
+live in `INDEX_BASE/users/<owner hash>/libraries.json`. Routes:
+`GET /api/user-libraries`, `POST /api/user-libraries`,
+`POST /api/user-libraries/<id>/refresh`, `DELETE /api/user-libraries/<id>`.
 
 ## Sections
 
@@ -109,6 +148,9 @@ and a reload land in the right library.
 Enrichment for read-only libraries, in sidecar databases beside the index
 on GUFI's external attach mechanism, so full-text and semantic search work
 there too. The Query page, which still scopes to the primary. Searching
-across several libraries in one query. A remote library reached through
-GUFI's client rather than a local tree. Each is a follow-on to this
+across several libraries in one query, through gufi_vt. Refreshing a
+user's library on a schedule, which needs the user's key at that time:
+personal keys live in memory and the browser's sealed cookie, so until
+delegated sign-in through the platform's OIDC applications arrives, a
+refresh runs when the user asks for it. Each is a follow-on to this
 mechanism rather than a change to it.

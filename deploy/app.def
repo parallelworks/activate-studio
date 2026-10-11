@@ -75,6 +75,7 @@ Stage: build
     cp -r web/dist /opt/app/web/dist
     cp -r indexer /opt/app/indexer
     cp -r docs /opt/app/docs
+    mkdir -p /opt/app/deploy && cp deploy/gufi-index.yaml /opt/app/deploy/
     cp -r extensions-starter /opt/app/extensions-starter
     mkdir -p /opt/app/index/models
     curl -fsSL -o /opt/app/index/models/minilm384.gguf \

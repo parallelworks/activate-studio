@@ -21,7 +21,7 @@ export function LibrarySwitch({ libraries }: { libraries: PublicLibrary[] }) {
       onChange={e => setLibrary(e.target.value)}
     >
       {libraries.map(l => (
-        <option key={l.id} value={l.id}>{l.label}{l.writable ? '' : ' (read only)'}</option>
+        <option key={l.id} value={l.id}>{l.label}{l.site ? ` (on ${l.site})` : l.writable ? '' : ' (read only)'}</option>
       ))}
     </select>
   )
