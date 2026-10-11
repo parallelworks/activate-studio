@@ -2,6 +2,28 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.109 (2026-10-11)
+
+### Change log through v1.108 (#430)
+
+Regenerated with `node scripts/release-notes.mjs --changelog` after the v1.108 release.
+
+### Query across libraries as one gufi_vt statement, and show the GUFI commands (#431)
+
+A query over all libraries now runs as one gufi_vt statement where the Studio host's GUFI has gufi_vt: a virtual table per library, unioned, with the overall order and limit in the outer SELECT. A library on a cluster is a remote location whose command is the Studio's wrapper (`gufiVtRemote.js`). gufi_vt hands it the gufi_query command line, the wrapper splits it without a shell and passes it back to the server over loopback, and the server runs gufi_query on the cluster through the user's session. The server accepts only gufi_query with gufi_vt's stages on that location's own index, under a per-process secret and a per-query token.
+
+Each location is checked first (the index exists, and on a cluster GUFI is installed), and one that cannot answer is left out and named beside the rows, since gufi_vt fails the whole statement when a location exits nonzero with no rows. Without gufi_vt on the host, for SQL containing a double quote, or when the statement fails, the per-library merge answers as before. The response's `engine` says which one answered.
+
+Search, the Query page, and the chat's `search_kb` and `query_corpus` tool blocks now show the GUFI commands behind their results, as a shell takes them. Commands on the Studio host are shown as run. A cluster's command is shown under its name, to run there after `pw ssh <cluster>`. A gufi_vt statement is shown as a here-document in gufi_vt's usual remote form (`remote_cmd='pw', remote_arg='ssh', remote_arg='<cluster>'`, with the cluster's GUFI added to the PATH there), so it runs from a terminal with GUFI and the pw CLI. The chat model does not receive the commands.
+
+Tests: `server/test/gufiVt.test.mjs` covers the wrapper's splitting, the endpoint's checks, the generated script, and the command formatting. With GUFI installed, it indexes two synthetic trees, one local and one behind a fake remote session, and checks that gufi_vt returns the same rows as the merge for a ranked query, grouped totals, a builder filter, and raw SQL, with a missing library left out and named.
+
+### Draw the classification banner on the loading screen (#432)
+
+In an installed app with the window controls overlay, the classification banner is the title bar. The loading screen drew before the app had its configuration, so the strip between the window controls showed the page's ground until the app mounted.
+
+The app now caches the banner's text and colors beside the theme color, and the loading screen draws them from that cache: in the title bar area in that display mode, across the top otherwise, and not inside the platform frame unless the deployment shows the banner there. The first launch after this change still shows the gap, since the cache is written once the app has loaded.
+
 ## v1.108 (2026-10-11)
 
 ### Change log through v1.107 (#428)
