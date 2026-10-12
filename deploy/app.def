@@ -33,7 +33,7 @@
 # Bump each in a PR of its own; the container workflow builds and tests it.
 
 Bootstrap: docker
-From: node:26-bookworm@sha256:e6cfc3514df35d1cb534e83f9279a242ad6e578692ab7b56d73dadcc7c4354a0
+From: node:26-bookworm@sha256:f1233c415b41ffcf237c717b3dea92e9d4ea006e0e4c71edcb790605d74f5404
 Stage: build
 
 %files
@@ -161,7 +161,7 @@ Stage: build
 
 # ---------------------------------------------------------------------------
 Bootstrap: docker
-From: node:26-bookworm-slim@sha256:3ffc19ea878019d9e9ae8971732ad4a03cda44f167107173174b60ed7c65bed3
+From: node:26-bookworm-slim@sha256:86f07bc9c5dce4578cf37e5a418b7bfc7f817cda25cde66e2b66e95ed86c4567
 Stage: final
 
 %files from build
