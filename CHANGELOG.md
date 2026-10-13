@@ -2,6 +2,28 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.110 (2026-10-13)
+
+### Change log through v1.109 (#434)
+
+Regenerated with `node scripts/release-notes.mjs --changelog` after the v1.109 release.
+
+### Say what a single-user Studio exposes on its port (#433)
+
+The single-user posture has no identity layer, and the server listens on all interfaces by default. CUSTOMIZATION.md now says what that exposes (chat and platform tools on the operator's credential, queries on the operator's cluster libraries, agents on the host) and how to limit it: the platform's session proxy, a host firewall, or `HOST=127.0.0.1`. Documentation only; the default is unchanged.
+
+### Default to All libraries per tab, keep files writable there, and show Stats loading (#436)
+
+All libraries is now the default where there is more than one library. Each browser tab keeps its own choice in session storage, so a reload keeps it and a new tab starts from the default. The library count is cached from the last configuration so the first requests already use the right default.
+
+With All selected, a request on a path goes to that path's library: `withLibrary` and `withLib` in `web/src/api.ts` take the library's folder off the path, address that library, and the write helpers put the folder back on the paths they return. Routes that already read All (tree, file, download, search, stats) are unchanged. Before this change, raw, HTML, and PDF views, "sync now", and every write refused `library=all`. Now files of every type open from the All tree, and the writable library stays writable inside its folder: uploads, new folders, rename, move, delete, and labels. A library's own folder takes uploads and new folders and is not renamed or deleted, and a request whose paths span two libraries stays addressed to All, which refuses it.
+
+Stats clears its figures and shows a loader while a library loads, and drops answers for a library no longer selected. Previously a cluster library took seconds to count while the last library's numbers stayed on screen. The server keeps a cluster library's counts until its next build (keyed on `builtAt`), and still checks the owner's key on every call.
+
+The library picker on Search and Query moves inside the padded controls, aligned with the search box and the query modes.
+
+Tests: `web/test/libraries.test.tsx` covers the default and the per-tab choice, All-mode addressing for reads and uploads, and writes and their returned paths. `server/test/gufiVt.test.mjs` checks that a cluster library is counted once per build and again after a rebuild. A local run on synthetic data in headless Chrome confirmed the default, the alignment, the loader on switching, and the choice surviving a reload.
+
 ## v1.109 (2026-10-11)
 
 ### Change log through v1.108 (#430)
