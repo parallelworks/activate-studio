@@ -1462,6 +1462,26 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
           }
           cliArgs.push('-i', JSON.stringify(inputs))
         }
+        // A workflow with saved configurations is launched from one of them
+        // or for a named system. A launch that names neither, and gives the
+        // workflow's compute-clusters input no value, runs against whatever
+        // the workflow defaults to and can fail minutes later in a step that
+        // reads the system's details (seen: a script built from an empty
+        // resource field). Ask for the choice before anything is submitted.
+        if (!args.resource && !args.config) {
+          try {
+            const doc = await wfDoc(wfName)
+            const configs = (doc?.configurations ?? []).map((c: any) => String(c.name ?? c.id ?? '')).filter(Boolean)
+            const slots = declaredInputs(doc).filter(r => r.type === 'compute-clusters').map(r => r.path)
+            const empty = slots.filter(p => { const v = pathGet(inputs, p); return v == null || v === '' || (typeof v === 'object' && !Object.keys(v as object).length) })
+            if (configs.length && empty.length) {
+              return {
+                result: `This launch names no saved configuration and no system, so ${empty.join(', ')} would be left to the workflow's default. Launch again with config set to one of: ${configs.slice(0, 12).join(', ')}; or with resource set to a system name. Nothing was submitted.`,
+                summary: 'needs a configuration or a system',
+              }
+            }
+          } catch { /* the submission will say what is missing */ }
+        }
         // A scheduler submission with no partition fails at sbatch on any
         // system without a default one. Fill it from the platform's view
         // of the system, after the configuration merge so a configured

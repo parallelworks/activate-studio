@@ -35,6 +35,8 @@ The Studio reads repositories through GitHub's public API, which allows 60 reque
 
 *Access to account variables:* a workflow can declare `permissions` in its YAML (`'*'` is every account variable). The platform runs it only with `--trust`, after which the grant stays with the repository until `pw workflows permissions revoke` removes it. The tab shows the requested access above Run and Validate, which stay disabled until the viewer ticks the approval; a validation needs it too. The assistant's `run_workflow` returns the requested access without running, and runs with `trust: true` only after the user approves in the conversation.
 
+*Configuration or system:* for a workflow with saved configurations, `run_workflow` submits nothing until the launch names a configuration (`config`) or a system (`resource`), or the inputs fill the workflow's compute-clusters input. Otherwise it returns the configurations to choose from. A launch left to the workflow's default system can fail minutes later in a step that reads the system's details.
+
 ## Who a run belongs to
 
 Workflow records on the platform are per user, and a run uses the caller's credential. A viewer with their own platform key runs their own copy of each workflow, under their own allocation and permissions. When a viewer lacks a curated workflow, the tile's form offers to add it: the Studio copies the deployment account's definition into the viewer's account with `pw workflows create`. A viewer without a key runs under the deployment's credential.

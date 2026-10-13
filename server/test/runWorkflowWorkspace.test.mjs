@@ -28,6 +28,7 @@ test('run_workflow starts a stopped workspace, retries, and says it did', async 
   assert.equal(r.summary, 'run submitted: activatebatch-00010')
   assert.match(r.result, /Run activatebatch-00010/)
   assert.match(r.result, /workspace was not running; it was started and the launch retried/)
-  const seq = fs.readFileSync(calls, 'utf8').trim().split('\n').map(l => JSON.parse(l).slice(0, 2).join(' '))
+  // Reads of the workflow (the launch checks its configurations) are not part of the retry.
+  const seq = fs.readFileSync(calls, 'utf8').trim().split('\n').map(l => JSON.parse(l).slice(0, 2).join(' ')).filter(c => c !== 'workflows get')
   assert.deepEqual(seq, ['workflows run', 'workspace start', 'workflows run'])
 })
