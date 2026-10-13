@@ -394,9 +394,14 @@ export default function App() {
     )
   }
 
-  // An embed this page has no view for. Rendering the app here would put
-  // the whole Studio inside a chat reply.
-  if (embedKind) return <UnknownEmbed kind={embedKind} />
+  // An embed this page has no view for, or any page of the Studio framed
+  // by the Studio itself. Rendering the app there puts the whole Studio
+  // inside a reply, and that copy opens the same conversation and frames
+  // itself again, each copy polling the server, until the server stops
+  // answering. The platform's page framing the Studio is another site and
+  // is not affected.
+  const framedBySelf = (() => { try { return window.parent !== window && window.parent.location.origin === window.location.origin } catch { return false } })()
+  if (embedKind || framedBySelf) return <UnknownEmbed kind={embedKind ?? 'page'} />
 
   return (
     <div className="app">
