@@ -20,6 +20,7 @@ import { StatusFooter } from './components/StatusFooter'
 import { ClassificationBanner, bannerInk, bannerShownColor } from './components/ClassificationBanner'
 import { useAppConfig } from './config'
 import { applyAccent, applySurface } from './accents'
+import { RunPane } from './components/RunPane'
 
 type ViewId = 'chat' | 'library' | 'search' | 'query' | 'overview' | 'history' | 'agents' | 'workflows' | 'settings' | 'help'
 export type Display = { kind: 'file'; target: string; q?: string; lib?: string } | { kind: 'workflow_dag'; target: string }
@@ -368,8 +369,14 @@ export default function App() {
   if (embedKind === 'model' && embedParams.get('path')) {
     return <div className="embed-root"><Suspense fallback={null}><ModelViewer path={embedParams.get('path')!} /></Suspense></div>
   }
-  if (embedKind === 'session' && embedParams.get('name')) {
-    return <div className="embed-root"><SessionView user={embedParams.get('user') ?? ''} name={embedParams.get('name')!} /></div>
+  // A run popped out of the chat's side view into a window of its own.
+  if (embedKind === 'run' && embedParams.get('slug')) {
+    return <div className="embed-root run-embed"><RunPane slug={embedParams.get('slug')!} onClose={() => window.close()} /></div>
+  }
+  if (embedKind === 'session' && (embedParams.get('name') || embedParams.get('host') || embedParams.get('url'))) {
+    let host = embedParams.get('host') ?? ''
+    if (!host && embedParams.get('url')) { try { host = new URL(embedParams.get('url')!).host } catch { /* not an address */ } }
+    return <div className="embed-root"><SessionView user={embedParams.get('user') ?? ''} name={embedParams.get('name') ?? ''} host={host} /></div>
   }
   if (embedKind === 'html' && embedParams.get('path')) {
     // The inner frame is the sandbox; the served page also carries a CSP
@@ -386,6 +393,15 @@ export default function App() {
       </div>
     )
   }
+
+  // An embed this page has no view for, or any page of the Studio framed
+  // by the Studio itself. Rendering the app there puts the whole Studio
+  // inside a reply, and that copy opens the same conversation and frames
+  // itself again, each copy polling the server, until the server stops
+  // answering. The platform's page framing the Studio is another site and
+  // is not affected.
+  const framedBySelf = (() => { try { return window.parent !== window && window.parent.location.origin === window.location.origin } catch { return false } })()
+  if (embedKind || framedBySelf) return <UnknownEmbed kind={embedKind ?? 'page'} />
 
   return (
     <div className="app">
@@ -552,4 +568,13 @@ export default function App() {
       </div>
     </div>
   )
+}
+
+/** A one-line note in place of an embed this Studio does not know, sized
+ *  for the frame that holds it. */
+function UnknownEmbed({ kind }: { kind: string }) {
+  useEffect(() => {
+    if (window.parent !== window) window.parent.postMessage({ type: 'ade-embed-height', height: 44 }, window.location.origin)
+  }, [])
+  return <div className="embed-root embed-unknown"><p className="muted">This reply asked for a "{kind}" view, which the Studio does not have.</p></div>
 }

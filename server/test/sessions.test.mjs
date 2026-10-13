@@ -28,6 +28,12 @@ const seen = []
 globalThis.fetch = async (url, init) => {
   seen.push({ url: String(url), auth: init?.headers?.Authorization ?? null })
   if (String(url) === 'https://platform.test/api/sessions') return Response.json(RAW)
+  // The study viewer's own host, behind the platform key.
+  if (String(url).startsWith('https://explorer-00012.sessions.test/')) {
+    if (init?.headers?.Authorization !== 'Bearer deploy-key') return new Response('', { status: 307, headers: { location: 'https://platform.test/login' } })
+    if (new URL(String(url)).pathname === '/status.json') return Response.json({ total: 16 }, { headers: { 'x-frame-options': 'DENY', 'set-cookie': 'a=b' } })
+    return new Response('<html>viewer</html>', { headers: { 'content-type': 'text/html' } })
+  }
   return new Response('no', { status: 404 })
 }
 
@@ -36,6 +42,7 @@ const runs = await import('../dist/runs.js')
 const { default: Fastify } = await import('fastify')
 const app = Fastify()
 await app.register(sessions.sessionRoutes)
+await app.register((await import('../dist/runPane.js')).runPaneRoutes)
 await app.ready()
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 
@@ -101,3 +108,28 @@ test('a session with no recorded run belongs to the run its name ends with', asy
   assert.ok(!sessionOfRun(row('viewer-study-doe-00006', { slug: 'other-00001', workflow: 'w', number: 1, status: null }), 'study-doe-00006'))
   assert.ok(!sessionOfRun(row('anything', null), ''))
 })
+
+test('one session can be named by the address it is served at', async () => {
+  sessions.resetSessionsForTests()
+  assert.equal((await app.inject({ url: '/api/sessions/item?host=explorer-00012.sessions.test' })).json().name, 'explorer-00012')
+  assert.equal((await app.inject({ url: `/api/sessions/item?url=${encodeURIComponent('https://explorer-00012.sessions.test/some/page')}` })).json().name, 'explorer-00012')
+  assert.equal((await app.inject({ url: '/api/sessions/item?host=elsewhere.test' })).statusCode, 404)
+})
+
+test('the relay serves a session of the viewer with the key, and nothing else', async () => {
+  sessions.resetSessionsForTests(); seen.length = 0
+  const page = await app.inject({ url: '/api/session-proxy/explorer-00012.sessions.test/' })
+  assert.equal(page.statusCode, 200)
+  assert.match(page.headers['content-type'], /text\/html/)
+  assert.equal(page.body, '<html>viewer</html>')
+  const status = await app.inject({ url: '/api/session-proxy/explorer-00012.sessions.test/status.json?t=1' })
+  assert.deepEqual(status.json(), { total: 16 })
+  assert.equal(status.headers['x-frame-options'], undefined, 'the host\'s framing rule stays with the host')
+  assert.equal(status.headers['set-cookie'], undefined, 'and so do its cookies')
+  assert.ok(seen.some(x => x.url === 'https://explorer-00012.sessions.test/status.json?t=1' && x.auth === 'Bearer deploy-key'))
+  // A session served under the platform's address, an unknown host, and the platform itself are refused.
+  assert.equal((await app.inject({ url: '/api/session-proxy/platform.test/' })).statusCode, 404)
+  assert.equal((await app.inject({ url: '/api/session-proxy/old.sessions.test.evil/' })).statusCode, 404)
+  assert.equal((await app.inject({ url: '/api/session-proxy/explorer-00012.sessions.test' })).statusCode, 302)
+})
+

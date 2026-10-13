@@ -133,10 +133,16 @@ export async function sessionRoutes(app: FastifyInstance): Promise<void> {
     return { sessions: rows }
   })
 
+  // One session by name, or by the address it is served at (?host= or
+  // ?url=), which is what a model that saw the address tends to pass.
   app.get('/api/sessions/item', async req => {
-    const { user = '', name = '' } = req.query as { user?: string; name?: string }
-    const row = (await listSessions(keyOf(req))).find(s => s.name === name && (!user || s.user === user))
-    if (!row) throw new KbError(404, `No session named ${name}${user ? ` for ${user}` : ''} is visible to you.`)
+    const { user = '', name = '', host = '', url = '' } = req.query as { user?: string; name?: string; host?: string; url?: string }
+    let want = String(host).toLowerCase()
+    if (!want && url) { try { want = new URL(String(url)).host.toLowerCase() } catch { /* not an address */ } }
+    const hostOf = (s: SessionRow) => { try { return s.url ? new URL(s.url).host.toLowerCase() : '' } catch { return '' } }
+    const row = (await listSessions(keyOf(req))).find(s =>
+      (name && s.name === name && (!user || s.user === user)) || (want && hostOf(s) === want))
+    if (!row) throw new KbError(404, `No session ${name || want} is visible to you.`)
     return row
   })
 }
