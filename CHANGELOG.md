@@ -2,6 +2,39 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.116 (2026-10-13)
+
+### Side view with tabs and pop out, sessions shown in chat, no app inside an unknown embed (#445)
+
+The run pane from #442 becomes a side view with tabs, and sessions can now be shown in chat itself.
+
+- **Side view tabs:** the run the conversation launched, and any session sent there with **Beside chat** on a session card in a reply. The card is a same-origin frame of the chat, so it posts the session to the page that holds the side view. Tabs close individually, and **Hide** folds the side view to a button.
+- **Pop out:** opens the current tab in a window on the right half of the screen (`sideBySide.ts`). Where the Studio is an installed app (standalone or window-controls-overlay display mode), its own window moves to the left half so the two sit side by side. A browser tab cannot be moved by its page, so there only the new window is placed. A popped-out session opens at its own address, where it signs in the way the platform's pages do, so websocket sessions work there. A popped-out run opens `/?embed=run&slug=`, the same three tabs in a window. The session card's **Open** uses the same placement.
+- **Sessions in chat:** a session card in a reply shows the session under its bar, through the relay, with **Hide** to fold it.
+- **Session embeds by address:** a session embed resolves by `host=` or `url=` as well as `name=`, and `/api/sessions/item` accepts both.
+- **Unknown embeds:** an embed address the Studio has no view for now shows a one-line note. It used to render the entire Studio inside the reply. A model that asked for an embed of a session by its address produced exactly that.
+
+Tests:
+- `web/test/sideBySide.test.ts` covers the window placement.
+- `server/test/sessions.test.mjs` covers finding a session by address. It also adds route tests for the relay from #442: the key is sent; the host's framing header and cookies are dropped; the platform's own host, an unknown host, and a session served under the platform address are refused; and the folder address redirects to its trailing slash.
+
+Checked in headless Chrome against a stand-in platform serving the study viewer:
+- the unknown embed showed its note and no app;
+- the session card showed the viewer inline at full height (it first sized itself to its frame, a loop fixed by keeping the inner frame from shrinking);
+- Beside chat added a session tab next to the run tab;
+- Pop out, with a user gesture, opened the run in a window of its own.
+
+
+A second commit adds a guard: any Studio page framed by the Studio itself shows a one-line note, whatever its address. Without it, the unknown-embed path above recursed. The framed copy opened the same conversation, which framed itself again, with every copy polling the server, until the deployment stopped answering. The platform's page framing the Studio is another site and is not affected.
+
+Rebased onto #444. Both added tests at the end of `server/test/sessions.test.mjs`, and both are kept.
+
+## v1.115 (2026-10-13)
+
+### Change log through v1.114 (#446)
+
+Regenerated with `node scripts/release-notes.mjs --changelog` after the v1.114 release.
+
 ## v1.114 (2026-10-13)
 
 ### Change log through v1.113 (#443)
