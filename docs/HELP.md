@@ -29,7 +29,7 @@ The folder tree beside a viewer. Markdown, code, images, PDFs, office documents,
 - **Right-click** a file or folder to label it, add a folder, or delete it.
 - **Find**, in the viewer's header, searches the open file.
 - **Indexed text** shows what search sees for a file, including text read from images.
-- If several libraries are available, the picker at the top of the tree switches between them. **All libraries** shows them as one tree, a folder each; Search, Query, and Stats then cover all of them.
+- If several libraries are available, the picker at the top of the tree switches between them. **All libraries**, the default, shows them as one tree, a folder each; Search, Query, and Stats then cover all of them, and files can still be added and changed inside the knowledge base's folder. Each tab remembers its own choice.
 - To browse a directory on one of your clusters, add it under Settings, Libraries, **Your libraries**. The Studio indexes it there with your key, and it appears in the picker for you alone when the index is ready.
 
 ## Search

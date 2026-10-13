@@ -1,4 +1,4 @@
-import { LibrarySwitch, libraryWritable } from '../components/LibrarySwitch'
+import { ALL_LIBRARIES, LibrarySwitch, libraryWritable } from '../components/LibrarySwitch'
 import { currentLibrary, onLibraryChange } from '../api'
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -27,7 +27,9 @@ export function LibraryView({ display, onDisplay }: {
   display: Display | null
   onDisplay: (d: Display | null) => void
 }) {
-  const [targetDir, setTargetDir] = useState('uploads')
+  // Uploads land in uploads/ until a folder is picked; with All libraries
+  // selected, the primary library's.
+  const [targetDir, setTargetDir] = useState(() => (currentLibrary() === ALL_LIBRARIES ? 'kb/uploads' : 'uploads'))
   const [refreshKey, setRefreshKey] = useState(0)
   const [railWidth, setRailWidth] = useState(() => Number(localStorage.getItem('ade-rail-width')) || 320)
   const [railCollapsed, setRailCollapsed] = useState(() => localStorage.getItem('ade-rail-collapsed') === '1')
@@ -134,8 +136,16 @@ export function LibraryView({ display, onDisplay }: {
   // Switching library re-reads the tree and clears whatever was open,
   // since a path only means something inside its own library.
   const [libId, setLibId] = useState(currentLibrary())
-  useEffect(() => onLibraryChange(id => { setLibId(id); setRefreshKey(k => k + 1); onDisplay(null) }), [onDisplay])
+  useEffect(() => onLibraryChange(id => { setLibId(id); setRefreshKey(k => k + 1); onDisplay(null); setTargetDir(id === ALL_LIBRARIES ? 'kb/uploads' : 'uploads') }), [onDisplay])
   const writable = libraryWritable(cfg.libraries, libId)
+  // With All libraries selected the tree has a folder per library, and a
+  // path is writable when its library is; a library's own folder takes
+  // uploads and new folders but is not itself renamed or deleted.
+  const inAll = libId === ALL_LIBRARIES
+  const primaryId = cfg.libraries?.find(l => l.primary)?.id ?? 'kb'
+  const writableAt = (p: string) => (inAll ? libraryWritable(cfg.libraries, p.replace(/^\/+/, '').split('/')[0]) : writable)
+  const changeableAt = (p: string) => !!p && writableAt(p) && (!inAll || p.includes('/'))
+  const uploadsDir = inAll ? `${primaryId}/uploads` : 'uploads'
 
   useEffect(() => { localStorage.setItem('ade-rail-width', String(railWidth)) }, [railWidth])
   useEffect(() => { localStorage.setItem('ade-rail-collapsed', railCollapsed ? '1' : '0') }, [railCollapsed])
@@ -163,7 +173,7 @@ export function LibraryView({ display, onDisplay }: {
       const paths = [...multiSel]
       if (e.key === 'x' && paths.length) { setClipboard({ mode: 'cut', paths }); e.preventDefault() }
       else if (e.key === 'c' && paths.length) { setClipboard({ mode: 'copy', paths }); e.preventDefault() }
-      else if (e.key === 'v' && clipboard?.paths.length) { void pasteInto(targetDir === 'uploads' ? '' : targetDir); e.preventDefault() }
+      else if (e.key === 'v' && clipboard?.paths.length) { void pasteInto(targetDir === uploadsDir ? (inAll ? primaryId : '') : targetDir); e.preventDefault() }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -361,7 +371,7 @@ export function LibraryView({ display, onDisplay }: {
       className={`library ${dropOver ? 'drop-over' : ''}`}
       onDragOver={e => { e.preventDefault(); setDropOver(true) }}
       onDragLeave={() => setDropOver(false)}
-      onDrop={e => { e.preventDefault(); setDropOver(false); if (writable) void uploadTo(targetDir, e.dataTransfer.items) }}
+      onDrop={e => { e.preventDefault(); setDropOver(false); if (writableAt(targetDir)) void uploadTo(targetDir, e.dataTransfer.items) }}
     >
       <div className="library-card card">
         {railCollapsed ? (
@@ -455,12 +465,12 @@ export function LibraryView({ display, onDisplay }: {
               <Explorer
                 refreshTick={refreshKey}
                 onOpen={p => { anchor.current = p; onDisplay({ kind: 'file', target: p }) }}
-                onDirFocus={dir => { anchor.current = dir; setTargetDir(dir || 'uploads') }}
+                onDirFocus={dir => { anchor.current = dir; setTargetDir(dir || uploadsDir) }}
                 selected={selectedFile}
                 rootLabel={cfg.kbLabel}
                 multiSelected={multiSel}
                 onToggleMulti={toggleMulti}
-                onDropInto={(dir, items) => { if (writable) void uploadTo(dir, items) }}
+                onDropInto={(dir, items) => { if (writableAt(dir)) void uploadTo(dir, items) }}
                 onSelectRange={selectRange}
                 onMoveInto={(dir, paths) => void moveInto(dir, paths)}
                 onLabel={p => { setMultiSel(new Set([p])); setTagMenuOpen(true); setSelectMode(true) }}
@@ -580,7 +590,7 @@ export function LibraryView({ display, onDisplay }: {
             {!ctx.isDir && (
               <button onClick={() => { onDisplay({ kind: 'file', target: ctx.path }); closeCtx() }}>Open</button>
             )}
-            {writable && ctx.isDir && (ctxNewDir === null ? (
+            {writableAt(ctx.path) && ctx.isDir && (ctxNewDir === null ? (
               <button onClick={() => setCtxNewDir('')}>New folder</button>
             ) : (
               <div className="ctx-input">
@@ -595,7 +605,7 @@ export function LibraryView({ display, onDisplay }: {
                 <button className="btn-secondary" disabled={ctxBusy || !ctxNewDir.trim()} onClick={() => void ctxMakeDir()}>Create</button>
               </div>
             ))}
-            {writable && ctx.path && (ctxRename === null ? (
+            {changeableAt(ctx.path) && (ctxRename === null ? (
               <button onClick={() => setCtxRename(ctx.path.split('/').pop() ?? '')}>Rename…</button>
             ) : (
               <div className="ctx-input">
@@ -653,7 +663,7 @@ export function LibraryView({ display, onDisplay }: {
             {ctx.path && (
               <button onClick={() => { setMultiSel(new Set([ctx.path])); setTagMenuOpen(true); setSelectMode(true); closeCtx() }}>Labels…</button>
             )}
-            {!ctx.path ? null : !ctxConfirm ? (
+            {!ctx.path || (inAll && !ctx.path.includes('/')) ? null : !ctxConfirm ? (
               <button className="ctx-danger" onClick={() => setCtxConfirm(true)}>{ctx.isDir ? 'Delete folder…' : 'Delete…'}</button>
             ) : (
               <button className="ctx-danger confirm" disabled={ctxBusy} onClick={() => void ctxDelete()}>

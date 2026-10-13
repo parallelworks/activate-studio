@@ -76,8 +76,8 @@ export function SearchView({ onOpen }: { onOpen: (path: string, q?: string) => v
   useEffect(() => onLibraryChange(() => { if (q.trim()) void run(lastLimit) }), [q, lastLimit])
   return (
     <div className="search-view">
-      {(cfg.libraries?.length ?? 0) > 1 && <div className="scope-bar"><span className="muted">Searching</span><LibrarySwitch libraries={cfg.libraries ?? []} /></div>}
       <div className="search-hero card">
+        {(cfg.libraries?.length ?? 0) > 1 && <div className="scope-bar"><span className="muted">Searching</span><LibrarySwitch libraries={cfg.libraries ?? []} /></div>}
         <div className="search-bar">
           <input
             value={q}

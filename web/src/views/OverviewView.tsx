@@ -52,15 +52,22 @@ export function OverviewView({ onOpen }: { onOpen: (path: string) => void }) {
     window.addEventListener('ade-kb-changed', bump)
     return () => { off(); window.removeEventListener('ade-kb-changed', bump) }
   }, [])
+  // A library on a cluster takes seconds to count. Its figures are cleared
+  // while they load, so the last library's numbers never stand in for it,
+  // and an answer for a library no longer selected is dropped.
+  const [loading, setLoading] = useState(true)
   useEffect(() => {
-    api.stats().then(setStats).catch(() => {})
-    api.indexStatus().then(setIdx).catch(() => {})
-    api.extractors().then(r => setExtractors(r.extractors)).catch(() => {})
-    api.tagVocabulary().then(v => setTags(v.tags)).catch(() => {})
+    let live = true
+    const keep = <T,>(set: (v: T) => void) => (v: T) => { if (live) set(v) }
+    setStats(null); setLargest(null); setRecent(null); setLoading(true)
+    api.stats().then(keep(setStats)).catch(() => {}).finally(() => { if (live) setLoading(false) })
+    api.indexStatus().then(keep(setIdx)).catch(() => {})
+    api.extractors().then(r => { if (live) setExtractors(r.extractors) }).catch(() => {})
+    api.tagVocabulary().then(v => { if (live) setTags(v.tags) }).catch(() => {})
     const q = (body: unknown, set: (r: QueryResult) => void) =>
       fetch('/api/query', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...(body as object), ...(currentLibrary() !== 'kb' ? { library: currentLibrary() } : {}) }) })
         // An error payload parses as JSON too; only a shape with rows is a result.
-        .then(r => r.json()).then(r => { if (Array.isArray(r?.rows)) set(r) }).catch(() => {})
+        .then(r => r.json()).then(r => { if (live && Array.isArray(r?.rows)) set(r) }).catch(() => {})
     q({ canned: 'largest', n: 8 }, setLargest)
     q({ canned: 'recent', n: 8, days: 7 }, setRecent)
     Promise.all([
@@ -68,6 +75,7 @@ export function OverviewView({ onOpen }: { onOpen: (path: string) => void }) {
       fetch('/api/kb/tree?path=chat-sessions').then(r => r.json()).catch(() => []),
       fetch('/api/chat/attachments?limit=1&offset=0').then(r => r.json()).catch(() => ({ total: 0 })),
     ]).then(([convs, transcripts, atts]) => {
+      if (!live) return
       const list = Array.isArray(convs) ? convs : []
       setActivity({
         conversations: list.length,
@@ -76,6 +84,7 @@ export function OverviewView({ onOpen }: { onOpen: (path: string) => void }) {
         attachments: atts?.total ?? 0,
       })
     }).catch(() => {})
+    return () => { live = false }
   }, [epoch])
 
   const byExt = [...(stats?.byExt ?? [])].filter(e => e.ext !== "(none)").sort((a, b) => b.bytes - a.bytes).slice(0, 12)
@@ -83,7 +92,13 @@ export function OverviewView({ onOpen }: { onOpen: (path: string) => void }) {
 
   return (
     <div className="overview-view">
-      {(cfg.libraries?.length ?? 0) > 1 && <div className="scope-bar"><span className="muted">Statistics for</span><LibrarySwitch libraries={cfg.libraries ?? []} /></div>}
+      {(cfg.libraries?.length ?? 0) > 1 && (
+        <div className="scope-bar">
+          <span className="muted">Statistics for</span>
+          <LibrarySwitch libraries={cfg.libraries ?? []} />
+          {loading && <span className="scope-loading" role="status"><span className="spinner" />Counting…</span>}
+        </div>
+      )}
       <div className="ov-tiles">
         <div className="card ov-tile"><span className="stat-num">{stats?.files?.toLocaleString() ?? '…'}</span><span className="stat-label">files indexed</span></div>
         <div className="card ov-tile"><span className="stat-num">{stats?.dirs?.toLocaleString() ?? '…'}</span><span className="stat-label">directories</span></div>

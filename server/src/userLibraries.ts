@@ -98,7 +98,7 @@ function updateDef(owner: string, id: string, patch: Partial<UserLibraryDef>): U
 export const remoteRootOf = (owner: string, id: string) => `${REMOTE_PREFIX}${ownerHash(owner)}:${id}`
 
 /** What a remote root resolves to, or null for a local path. */
-export function remoteTarget(root: string | undefined | null): { site: string; key: string; gufiBin: string; indexRoot: string; sourceRoot: string | null } | null {
+export function remoteTarget(root: string | undefined | null): { site: string; key: string; gufiBin: string; indexRoot: string; sourceRoot: string | null; builtAt: string | null } | null {
   if (!root || !root.startsWith(REMOTE_PREFIX)) return null
   const [hash, id] = root.slice(REMOTE_PREFIX.length).split(':')
   let owner = ''
@@ -107,7 +107,7 @@ export function remoteTarget(root: string | undefined | null): { site: string; k
   if (!d || !d.indexRoot || !d.gufiBin) throw new KbError(409, 'this library is not built yet')
   const key = keyOf(owner)
   if (!key) throw new KbError(409, 'This library is read with your own platform key: add your ACTIVATE API key under Settings, Model access.')
-  return { site: d.site, key, gufiBin: d.gufiBin, indexRoot: d.indexRoot, sourceRoot: d.sourceRoot }
+  return { site: d.site, key, gufiBin: d.gufiBin, indexRoot: d.indexRoot, sourceRoot: d.sourceRoot, builtAt: d.builtAt }
 }
 
 /** Runs gufi_query on the library's cluster, as gufi.ts would locally. */

@@ -216,8 +216,8 @@ export function QueryView({ onOpen }: { onOpen: (path: string) => void }) {
   const cfg = useAppConfig()
   return (
     <div className="query-view">
-      {(cfg.libraries?.length ?? 0) > 1 && <div className="scope-bar"><span className="muted">Querying</span><LibrarySwitch libraries={cfg.libraries ?? []} /></div>}
       <div className="query-controls card">
+        {(cfg.libraries?.length ?? 0) > 1 && <div className="scope-bar"><span className="muted">Querying</span><LibrarySwitch libraries={cfg.libraries ?? []} /></div>}
         <div className="query-mode">
           <button className={mode === 'canned' ? 'active' : ''} onClick={() => setMode('canned')}>Canned queries</button>
           <button className={mode === 'builder' ? 'active' : ''} onClick={() => setMode('builder')}>Builder</button>

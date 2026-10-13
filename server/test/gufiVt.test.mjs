@@ -152,3 +152,31 @@ test('a builder query with a size filter, and raw SQL, across libraries', { skip
   assert.equal(raw.engine, 'gufi_vt')
   assert.deepEqual(raw.rows.map(r => r[1]).sort(), ['big.bin', 'huge.bin', 'log.txt'])
 })
+
+// Last, since it adds a library the queries above would also cover.
+test('a cluster library is counted once per build', { skip: !haveGufi && 'GUFI not installed' }, async () => {
+  const G = await import('../dist/gufi.js')
+  const U = await import('../dist/userLibraries.js')
+  // The cluster's gufi_query, logging each run before it answers.
+  const counted = path.join(dir, 'counted-bin'), log = path.join(dir, 'runs.log')
+  fs.mkdirSync(counted, { recursive: true })
+  fs.writeFileSync(path.join(counted, 'gufi_query'), `#!/bin/sh\necho run >> ${log}\nexec ${gufiBin}/gufi_query "$@"\n`, { mode: 0o755 })
+  const file = path.join(userDir, 'libraries.json')
+  const before = fs.readFileSync(file, 'utf8')
+  const write = builtAt => fs.writeFileSync(file, JSON.stringify([{ ...def('u-count', path.join(dir, 'cluster', 'idx', 'proj')), gufiBin: counted, builtAt }]))
+  const runs = () => (fs.existsSync(log) ? fs.readFileSync(log, 'utf8').split('\n').filter(Boolean).length : 0)
+  try {
+    write('2026-10-01T00:00:00Z')
+    const root = U.remoteRootOf('single', 'u-count')
+    const first = await G.corpusStats(root)
+    assert.equal(first.files, 3)
+    const once = runs()
+    assert.ok(once > 0)
+    assert.deepEqual(await G.corpusStats(root), first)
+    assert.equal(runs(), once)
+    // A rebuild is counted again.
+    write('2026-10-02T00:00:00Z')
+    await G.corpusStats(root)
+    assert.ok(runs() > once)
+  } finally { fs.writeFileSync(file, before) }
+})

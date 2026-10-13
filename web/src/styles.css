@@ -2199,4 +2199,5 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 
 /* The library a page searches, queries, or counts, above its controls. */
 .scope-bar { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; font-size: 13px; }
+.scope-loading { display: inline-flex; align-items: center; gap: 6px; color: var(--pw-muted); }
 .pill-library { border: 1px solid var(--pw-border-strong); color: var(--pw-muted); }

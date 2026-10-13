@@ -27,27 +27,100 @@ export interface UserLibrary {
 // The primary is 'kb' and is what every request meant before libraries
 // existed, so it is sent as nothing at all. Views read the current library
 // through the helpers below and never build the query string themselves.
+//
+// The choice is kept per tab (session storage), so a reload keeps it and a
+// new tab starts from the default: All libraries where there is more than
+// one, else the primary. The library count is remembered from the last
+// configuration so the first requests already use the right default.
 const LIB_KEY = 'ade-library'
+const COUNT_KEY = 'ade-library-count'
 const PRIMARY = 'kb'
-let current: string = (() => { try { return localStorage.getItem(LIB_KEY) || PRIMARY } catch { return PRIMARY } })()
+const ALL = 'all'
+const stored = (): string | null => { try { return sessionStorage.getItem(LIB_KEY) } catch { return null } }
+const defaultLibrary = (count: number): string => (count > 1 ? ALL : PRIMARY)
+let current: string = stored() ?? (() => { try { return defaultLibrary(Number(localStorage.getItem(COUNT_KEY)) || 0) } catch { return PRIMARY } })()
 const listeners = new Set<(id: string) => void>()
 export function currentLibrary(): string { return current }
 export function setLibrary(id: string): void {
   current = id || PRIMARY
-  try { current === PRIMARY ? localStorage.removeItem(LIB_KEY) : localStorage.setItem(LIB_KEY, current) } catch { /* storage unavailable */ }
+  try { sessionStorage.setItem(LIB_KEY, current) } catch { /* storage unavailable */ }
+  for (const fn of listeners) fn(current)
+}
+/** Called with the configured libraries: falls back to the default when
+ *  the tab has no choice of its own or its choice no longer exists. */
+export function settleLibraries(ids: string[]): void {
+  try { localStorage.setItem(COUNT_KEY, String(ids.length)); localStorage.removeItem(LIB_KEY) } catch { /* storage unavailable */ }
+  const mine = stored()
+  const want = mine && (mine === ALL ? ids.length > 1 : ids.includes(mine)) ? mine : defaultLibrary(ids.length)
+  if (want === current) return
+  current = want
   for (const fn of listeners) fn(current)
 }
 export function onLibraryChange(fn: (id: string) => void): () => void {
   listeners.add(fn)
   return () => { listeners.delete(fn) }
 }
+
+/** In All mode a path reads `<library id>/<path>`: its library and the path
+ *  inside it. Null for the top level, which is no library's. */
+export function splitLibraryPath(p: string): { id: string; rel: string } | null {
+  const parts = String(p ?? '').replace(/^\/+/, '').split('/')
+  return parts[0] && parts[0] !== ALL ? { id: parts[0], rel: parts.slice(1).join('/') } : null
+}
+// Routes that take All mode's prefixed paths themselves. Every other route
+// addresses one library, so in All mode a request on a path goes to that
+// path's library, which is what keeps files viewable and the writable
+// library writable while All is selected.
+const ALL_AWARE = new Set(['/api/kb/tree', '/api/kb/file', '/api/kb/download', '/api/search', '/api/kb/stats'])
+// A path that names a library's top folder addresses nothing to change or
+// read inside it; a directory may (an upload or a paste into the library).
+const target = (key: string, p: string) => {
+  const t = splitLibraryPath(p)
+  return t && (t.rel || key === 'dir' || key === 'dest') ? t : null
+}
+/** The library a request on `path` goes to in All mode, to put back on the
+ *  paths the request returns. */
+function prefixFor(p: string): (x: string) => string {
+  const t = current === ALL ? splitLibraryPath(p) : null
+  return t ? (x: string) => (x ? `${t.id}/${x}` : t.id) : (x: string) => x
+}
+
 /** Append the current library to a URL that already has a query string, or none. */
 export function withLibrary(url: string): string {
   if (current === PRIMARY) return url
+  if (current === ALL) {
+    const [route, query = ''] = url.split('?')
+    if (!ALL_AWARE.has(route)) {
+      const pairs = query.split('&').filter(Boolean).map(kv => { const i = kv.indexOf('='); return [kv.slice(0, i < 0 ? kv.length : i), i < 0 ? '' : kv.slice(i + 1)] })
+      const at = pairs.findIndex(([k]) => k === 'path' || k === 'dir')
+      const t = at >= 0 ? target(pairs[at][0], decodeURIComponent(pairs[at][1])) : null
+      if (t) {
+        pairs[at] = [pairs[at][0], encodeURIComponent(t.rel)]
+        if (t.id !== PRIMARY) pairs.push(['library', encodeURIComponent(t.id)])
+        return `${route}?${pairs.map(([k, v]) => `${k}=${v}`).join('&')}`
+      }
+    }
+  }
   return url + (url.includes('?') ? '&' : '?') + 'library=' + encodeURIComponent(current)
 }
 function withLib<T extends object>(body: T): T & { library?: string } {
-  return current === PRIMARY ? body : { ...body, library: current }
+  if (current === PRIMARY) return body
+  if (current === ALL) {
+    const b = body as Record<string, unknown>
+    const single = ['path', 'dir', 'dest'].filter(k => typeof b[k] === 'string')
+    const many = Array.isArray(b.paths) ? (b.paths as unknown[]).map(String) : []
+    // An action on no path (a sync, say) acts on the primary.
+    if (!single.length && !many.length) return body
+    const ts = [...single.map(k => target(k, String(b[k]))), ...many.map(p => target('path', p))]
+    const id = ts[0]?.id
+    if (id && ts.every(t => t && t.id === id)) {
+      const out: Record<string, unknown> = { ...b }
+      for (const k of single) out[k] = splitLibraryPath(String(b[k]))!.rel
+      if (many.length) out.paths = many.map(p => splitLibraryPath(p)!.rel)
+      return (id === PRIMARY ? out : { ...out, library: id }) as T & { library?: string }
+    }
+  }
+  return { ...body, library: current }
 }
 
 export interface KbEntry {
@@ -118,8 +191,11 @@ export const api = {
   downloadUrl: (path: string) => withLibrary(`/api/kb/download?path=${encodeURIComponent(path)}`),
   rawUrl: (path: string) => withLibrary(`/api/kb/raw?path=${encodeURIComponent(path)}`),
   pdfUrl: (path: string) => withLibrary(`/api/kb/pdf?path=${encodeURIComponent(path)}`),
-  deleteFiles: (paths: string[]) =>
-    postJson<{ deleted: string[]; skipped: { path: string; reason: string }[]; indexMs: number }>(`/api/kb/delete`, { paths }),
+  deleteFiles: async (paths: string[]) => {
+    const back = prefixFor(paths[0] ?? '')
+    const r = await postJson<{ deleted: string[]; skipped: { path: string; reason: string }[]; indexMs: number }>(`/api/kb/delete`, { paths })
+    return { ...r, deleted: r.deleted.map(back), skipped: r.skipped.map(x => ({ ...x, path: back(x.path) })) }
+  },
   deleteFile: async (path: string) => {
     const res = await fetch(withLibrary(`/api/kb/file?path=${encodeURIComponent(path)}`), { method: 'DELETE' })
     const data = await res.json().catch(() => ({}))
@@ -135,15 +211,20 @@ export const api = {
   stats: () => getJson<{ available: boolean; files?: number; dirs?: number; totalBytes?: number; libraries?: LibraryStats[] }>(`/api/kb/stats`),
   search: (q: string, tags?: string[], limit = 50) => getJson<{ hits: SearchHit[]; error?: string; gufi?: GufiCommand[] }>(`/api/search?q=${encodeURIComponent(q)}&limit=${limit}${tags?.length ? `&tags=${encodeURIComponent(tags.join(','))}` : ''}`),
   health: () => getJson<{ ok: boolean; gufi: boolean }>(`/healthz`),
-  mkdir: (path: string) => postJson<{ created: string }>(`/api/kb/mkdir`, { path }),
+  mkdir: async (path: string) => {
+    const r = await postJson<{ created: string }>(`/api/kb/mkdir`, { path })
+    return { ...r, created: prefixFor(path)(r.created) }
+  },
   tagVocabulary: () => getJson<{ tags: { tag: string; count: number }[] }>(`/api/tags`),
   tagsFor: (path: string) => getJson<{ own: string[]; inherited: string[] }>(`/api/kb/tags?path=${encodeURIComponent(path)}`),
   applyTags: (paths: string[], add: string[], remove: string[]) =>
     postJson<{ updated: Record<string, string[]> }>(`/api/kb/tags`, { paths, add, remove }),
   indexStatus: () => getJson<IndexStatus>(`/api/index/status`),
   sweepNow: () => postJson<{ changed: string[] }>(`/api/index/sweep`, {}),
-  uploadUrl: (url: string, dir: string) =>
-    postJson<{ saved: string[]; indexMs: number }>(`/api/kb/upload-url`, { url, dir }),
+  uploadUrl: async (url: string, dir: string) => {
+    const r = await postJson<{ saved: string[]; indexMs: number }>(`/api/kb/upload-url`, { url, dir })
+    return { ...r, saved: r.saved.map(prefixFor(dir)) }
+  },
   uploadFiles: async (
     files: (File | { file: File; rel: string })[],
     dir: string,
@@ -172,7 +253,7 @@ export const api = {
         let data: any = {}
         try { data = JSON.parse(xhr.responseText) } catch { /* non-JSON error body */ }
         if (xhr.status < 200 || xhr.status >= 300) return reject(new Error(data.error ?? `upload: ${xhr.status}`))
-        resolve(data as UploadResult)
+        resolve({ ...data, saved: (Array.isArray(data.saved) ? data.saved : []).map(prefixFor(dir)) } as UploadResult)
       }
       xhr.onerror = () => reject(new Error('upload: connection failed'))
       xhr.ontimeout = () => reject(new Error('upload: timed out'))
@@ -182,18 +263,24 @@ export const api = {
 
   dirs: () => getJson<{ dirs: string[] }>('/api/kb/dirs'),
 
-  labelSuggestions: (dir: string, limit = 40) =>
-    postJson<{
+  labelSuggestions: async (dir: string, limit = 40) => {
+    const r = await postJson<{
       proposals: { path: string; labels: string[]; why: string }[]
       newLabels: string[]
       considered: number
       model: string
-    }>('/api/kb/label-suggestions', { dir, limit }),
+    }>('/api/kb/label-suggestions', { dir, limit })
+    const back = prefixFor(dir)
+    return { ...r, proposals: r.proposals.map(x => ({ ...x, path: back(x.path) })) }
+  },
 
   copyJob: (paths: string[], dest: string) => postJson<Job>('/api/kb/copy', { paths, dest, async: true }),
 
-  rename: (path: string, name: string) =>
-    postJson<{ renamed: { from: string; to: string } | null; indexMs: number }>('/api/kb/rename', { path, name }),
+  rename: async (path: string, name: string) => {
+    const r = await postJson<{ renamed: { from: string; to: string } | null; indexMs: number }>('/api/kb/rename', { path, name })
+    const back = prefixFor(path)
+    return { ...r, renamed: r.renamed && { from: back(r.renamed.from), to: back(r.renamed.to) } }
+  },
 
   /** Bulk move as a watchable job: the interface polls /api/jobs/<id>. */
   moveJob: (paths: string[], dest: string) =>
