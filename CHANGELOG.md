@@ -2,6 +2,20 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.117 (2026-10-13)
+
+### Change log through v1.116 (#448)
+
+Regenerated with `node scripts/release-notes.mjs --changelog` after the v1.116 release.
+
+### Ask for a configuration or a system before launching a workflow that has them (#449)
+
+A launch from chat named neither a saved configuration (`config`) nor a system (`resource`), so the workflow's compute-clusters input was left to its default. The run went out with an empty resource field, and every case failed minutes later when a step built its scheduler script from that field's details.
+
+For a workflow with saved configurations, `run_workflow` now submits nothing until the launch names a configuration, names a system, or fills the compute-clusters input. Otherwise it returns the configurations to choose from, and the model launches again with one. Workflows without saved configurations launch as before.
+
+Tests: `server/test/runWorkflowResource.test.mjs` covers the refusal and the three ways through. The workspace-retry test now ignores the workflow read the check adds to its CLI call sequence.
+
 ## v1.116 (2026-10-13)
 
 ### Side view with tabs and pop out, sessions shown in chat, no app inside an unknown embed (#445)
