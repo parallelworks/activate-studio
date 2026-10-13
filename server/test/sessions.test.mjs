@@ -89,3 +89,15 @@ test('a run launched from chat shows its session in that conversation, once', as
   assert.ok(events.some(e => e.t === 'session' && e.slug === 'design-explorer-00012'), 'recorded, so a restart does not post it again')
   runs.resetRunsForTests()
 })
+
+test('a session with no recorded run belongs to the run its name ends with', async () => {
+  const { sessionOfRun } = await import('../dist/sessions.js')
+  const row = (name, run) => ({ name, user: 'u', type: 'endpoint', status: 'running', healthy: null, url: null, ownHost: true, platformUrl: null, run, resource: null, createdAt: null })
+  assert.ok(sessionOfRun(row('viewer-study-doe-00006', null), 'study-doe-00006'))
+  assert.ok(sessionOfRun(row('study-doe-00006', null), 'study-doe-00006'))
+  assert.ok(!sessionOfRun(row('viewer-study-doe-00016', null), 'study-doe-00006'))
+  assert.ok(!sessionOfRun(row('viewer-study-doe-00006x', null), 'study-doe-00006'))
+  // A recorded run decides, whatever the name says.
+  assert.ok(!sessionOfRun(row('viewer-study-doe-00006', { slug: 'other-00001', workflow: 'w', number: 1, status: null }), 'study-doe-00006'))
+  assert.ok(!sessionOfRun(row('anything', null), ''))
+})
