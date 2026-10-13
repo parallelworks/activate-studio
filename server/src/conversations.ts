@@ -98,6 +98,8 @@ export interface StoredMessage {
   parts?: StoredToolCallPart[]
   /** Token counts summed over the turn's model calls, when the gateway reported them. */
   tokensUsed?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }
+  /** How the turn's last model call ended (stop, length, content_filter). */
+  finishReason?: string
 }
 
 export interface StoredConversation {

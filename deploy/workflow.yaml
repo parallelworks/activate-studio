@@ -1051,6 +1051,9 @@ jobs:
           IMG="$(cat .image 2>/dev/null)"
           RUNTIME="$(command -v apptainer || command -v singularity)"
           echo "Starting Studio container on port ${PORT} over ${KB_ROOT} ..."
+          # The last server's log is kept, so a relaunch does not erase the
+          # record of what the previous one did.
+          [ -f app.log ] && mv -f app.log app.log.prev
           # The corpus and all writable state stay on the host; the image is
           # read-only. DATA_DIR holds the index, settings, and credentials.
           setsid nohup "$RUNTIME" run \
@@ -1081,6 +1084,7 @@ jobs:
           else
             cat >> ${SCRIPT} << 'APP_LAUNCH'
           echo "Starting Studio server on port ${PORT} over ${KB_ROOT} ..."
+          [ -f app.log ] && mv -f app.log app.log.prev
           setsid nohup node app/server/dist/main.js > app.log 2>&1 < /dev/null &
           APP_LAUNCH
           fi

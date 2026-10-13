@@ -427,6 +427,7 @@ export async function streamTurn(
       })),
       finishReason: choice.finish_reason ?? null,
       model: full.model ?? null,
+      ...(full.usage && typeof full.usage === 'object' ? { usage: full.usage as TokenUsage } : {}),
     }
   }
 
