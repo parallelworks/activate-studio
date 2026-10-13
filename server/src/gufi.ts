@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { GUFI_BIN, GUFI_INDEX, INDEX_BASE, gufiAvailable } from './config.js'
-import { REMOTE_PREFIX, remoteIndexRoot, remoteQuery } from './userLibraries.js'
+import { REMOTE_PREFIX, remoteIndexRoot, remoteQuery, remoteTarget } from './userLibraries.js'
 import { noteGufi } from './gufiTrace.js'
 
 const DELIM = '\x1e' // record separator; never appears in KB text
@@ -361,8 +361,25 @@ export interface CorpusStats {
   byExt?: { ext: string; count: number; bytes: number }[]
 }
 
+// A library on a cluster changes only when it is rebuilt, and counting it
+// over the remote session takes seconds, so its figures are kept until the
+// next build. The owner's key is still checked on every call.
+const remoteStats = new Map<string, { builtAt: string; stats: CorpusStats }>()
+
 export async function corpusStats(indexRoot?: string): Promise<CorpusStats> {
-  if (!gufiAvailable() && !indexRoot?.startsWith(REMOTE_PREFIX)) return { available: false }
+  if (indexRoot?.startsWith(REMOTE_PREFIX)) {
+    const builtAt = remoteTarget(indexRoot)?.builtAt ?? null
+    const hit = remoteStats.get(indexRoot)
+    if (builtAt && hit?.builtAt === builtAt) return hit.stats
+    const stats = await countCorpus(indexRoot)
+    if (builtAt) remoteStats.set(indexRoot, { builtAt, stats })
+    return stats
+  }
+  if (!gufiAvailable()) return { available: false }
+  return countCorpus(indexRoot)
+}
+
+async function countCorpus(indexRoot?: string): Promise<CorpusStats> {
   const sumSql = `SELECT totfiles, totsize FROM vrsummary;`
   const rows = await queryPerDir(sumSql, { indexRoot })
   let files = 0, totalBytes = 0

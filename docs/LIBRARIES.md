@@ -130,7 +130,9 @@ live in `INDEX_BASE/users/<owner hash>/libraries.json`. Routes:
 
 The Library switcher lists every library the viewer can read and an entry
 for all of them, and the Library tree, Search, the Query page, Stats, and
-the index health popup follow it. Every route that reads a library takes
+the index health popup follow it. All is the default where there is more
+than one library. Each browser tab keeps its own choice in session
+storage, so a reload keeps it and a new tab starts from the default. Every route that reads a library takes
 `library=<id>`, and these take `library=all` too:
 
 - the tree, which then has one top-level folder per library, named by its
@@ -146,8 +148,19 @@ the index health popup follow it. Every route that reads a library takes
   is named beside the rows;
 - statistics, as a total with a line per library.
 
-The All entry is read only. Labels belong to the knowledge base, so a label
-filter on a search over all libraries keeps knowledge-base hits.
+With All selected, every other request on a path goes to that path's
+library, with the library's folder taken off the path and put back on the
+paths it returns (`withLibrary` and `withLib` in `web/src/api.ts`). Files
+of every type open, and the writable library stays writable inside its
+folder: uploads, new folders, renames, moves, deletes, and labels. A
+library's own folder takes uploads and new folders and is not renamed or
+deleted, and a request whose paths span two libraries is refused. Labels
+belong to the knowledge base, so a label filter on a search over all
+libraries keeps knowledge-base hits.
+
+A library on a cluster takes seconds to count, so Stats clears its figures
+and shows a loader while a library loads, and the server keeps a cluster
+library's counts until the library is next built.
 
 The chat has its own library control, beside Persona, and the assistant's
 tools take a `library` argument: `search_kb` and `query_corpus` accept

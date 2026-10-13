@@ -1,6 +1,6 @@
 import { ReactElement, Suspense, lazy, useEffect, useRef, useState } from 'react'
 import { buildOpenHash, parseOpenHash } from './nav'
-import { currentLibrary, setLibrary } from './api'
+import { currentLibrary, setLibrary, settleLibraries } from './api'
 import { rememberHash } from './lastLocation'
 import { ChatView } from './views/ChatView'
 import { DagViewer } from './components/DagViewer'
@@ -193,6 +193,10 @@ export default function App() {
 
   useEffect(() => { localStorage.setItem('ade-nav-collapsed', navCollapsed ? '1' : '0') }, [navCollapsed])
   useEffect(() => { if (cfg.loaded) document.title = cfg.appName }, [cfg])
+  // The tab's library: its own choice, else All libraries where there are
+  // several, once the configuration says which exist.
+  const libIds = (cfg.libraries ?? []).map(l => l.id).join(',')
+  useEffect(() => { if (cfg.loaded) settleLibraries(libIds ? libIds.split(',') : []) }, [cfg.loaded, libIds])
   const effectiveTheme = theme ?? (sysDark ? 'dark' : cfg.theme)
   // A mark drawn in dark ink disappears on a dark background, so a
   // deployment may configure a second image; fall back to the one image
