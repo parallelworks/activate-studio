@@ -24,3 +24,13 @@ test('reasoning, tool calls, and a content filter each get their own explanation
   assert.match(emptyReplyNote({ modelReasoned: false, toolCalls: 1, finishReason: 'stop', completionTokens: 0 }), /^The model ran 1 tool call and then returned no answer/)
   assert.match(emptyReplyNote({ modelReasoned: false, toolCalls: 0, finishReason: 'content_filter', completionTokens: 0 }), /content filter blocked this reply/)
 })
+
+test('a reply that could not be given links the other models, and the same one when retrying it may help', async () => {
+  const { retryLinks, isRateLimit } = await import('../dist/chat/routes.js')
+  const links = retryLinks([{ id: 'u:prov/model-b', name: 'u:prov/model-b' }], 'u:prov/model-a', 'msg-1')
+  assert.equal(links, '\n\nRetry with: [model-b](#retry-with=u%3Aprov%2Fmodel-b&reply-to=msg-1) · [try model-a again](#retry-with=u%3Aprov%2Fmodel-a&reply-to=msg-1)')
+  assert.equal(retryLinks([], null, null), '')
+  assert.ok(isRateLimit('gateway chat 429: {"error":{"code":"rate_limit_exceeded"}}'))
+  assert.ok(isRateLimit('The AI provider is rate limiting requests'))
+  assert.ok(!isRateLimit('gateway chat 400: error occurred while generating the response'))
+})

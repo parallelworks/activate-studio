@@ -32,6 +32,45 @@ function FilterReloader() {
 }
 
 /**
+ * "Retry with" links under a reply the model could not give (an empty
+ * reply, or a provider still rate limiting after the server's waits):
+ * `#retry-with=<model>&reply-to=<user message id>`. A click selects that
+ * model and asks the same question again as a new branch, the way the
+ * thread's own retry does. The model is selected first and the question
+ * sent once the selection has taken, since the package's send reads the
+ * selection it was rendered with.
+ */
+export function RetryWithModel() {
+  const { currentConversation, selectedProvider, setSelectedProvider, sendMessage, isStreaming } = useChat()
+  const [pending, setPending] = useState<{ model: string; content: string; attachmentIds?: string[]; parentId?: string } | null>(null)
+  useEffect(() => {
+    const on = (e: MouseEvent) => {
+      const a = (e.target as HTMLElement | null)?.closest?.('a[href^="#retry-with="]') as HTMLAnchorElement | null
+      if (!a) return
+      e.preventDefault()
+      e.stopPropagation()
+      const m = /^#retry-with=([^&]+)(?:&reply-to=(.+))?$/.exec(a.getAttribute('href') ?? '')
+      if (!m) return
+      const msgs = currentConversation?.messages ?? []
+      const replyTo = m[2] ? decodeURIComponent(m[2]) : null
+      const asked = (replyTo && msgs.find(x => x.id === replyTo && x.role === 'user')) || [...msgs].reverse().find(x => x.role === 'user')
+      if (!asked) return
+      const model = decodeURIComponent(m[1])
+      setPending({ model, content: asked.content || '', attachmentIds: asked.attachments?.map(x => x.id), parentId: asked.parentId || undefined })
+      setSelectedProvider(model)
+    }
+    document.addEventListener('click', on, true)
+    return () => document.removeEventListener('click', on, true)
+  }, [currentConversation, setSelectedProvider])
+  useEffect(() => {
+    if (!pending || isStreaming || selectedProvider !== pending.model) return
+    setPending(null)
+    void sendMessage(pending.content, pending.attachmentIds, pending.parentId)
+  }, [pending, isStreaming, selectedProvider, sendMessage])
+  return null
+}
+
+/**
  * Selection persistence moved into the chat package (0.4.3+ remembers the
  * chosen model under its own key and validates it against the catalog),
  * which is what the studio's guard did. This carries a choice remembered
@@ -392,6 +431,7 @@ export function ChatView() {
             </div>
           )}
                     <FilterReloader />
+                    <RetryWithModel />
           <ChatLayout
             sidebarMode={phone ? 'drawer' : 'inline'}
             drawerToggle={false}
