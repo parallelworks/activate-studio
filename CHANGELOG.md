@@ -2,6 +2,12 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.115 (2026-10-13)
+
+### Change log through v1.114 (#446)
+
+Regenerated with `node scripts/release-notes.mjs --changelog` after the v1.114 release.
+
 ## v1.114 (2026-10-13)
 
 ### Change log through v1.113 (#443)
