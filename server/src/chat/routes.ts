@@ -375,6 +375,18 @@ export function gatewayChatMessage(msg: string, model: string): string {
     + `Other models are unaffected. Provider said: ${msg.slice(0, 200)}`
 }
 
+/** What the user is told when a turn ends with no answer text. A model can
+ *  reason or call tools and still not answer; and a provider can return an
+ *  empty completion (no tokens, finish reason "stop") when it declines a
+ *  request, which is not reasoning and must not be described as such. */
+export function emptyReplyNote(o: { modelReasoned: boolean; toolCalls: number; finishReason: string | null; completionTokens: number | null }): string {
+  const why = `finish reason: ${o.finishReason ?? 'stop'}${o.completionTokens === 0 ? ', no tokens generated' : ''}`
+  if (o.modelReasoned) return 'The model spent this turn reasoning without producing an answer. Ask again, or rephrase more directly.'
+  if (o.toolCalls) return `The model ran ${o.toolCalls} tool call${o.toolCalls === 1 ? '' : 's'} and then returned no answer (${why}). Ask again, or pick another model.`
+  if (o.finishReason === 'content_filter') return `The provider's content filter blocked this reply (${why}). Rephrase the request, or pick another model.`
+  return `The model returned an empty reply (${why}). Providers can return nothing when they decline a request. Rephrase it, or pick another model.`
+}
+
 /** Trim messages to the model's context window and return the max_tokens the
  *  remaining space supports, so prompt + completion never exceeds the window.
  *  overheadChars covers request payload outside the messages (tool schemas).
@@ -929,6 +941,9 @@ ${ctx}` : ctx
     let usageTotal: TokenUsage = {}
     let finalModel: string | null = null
     let finalReasoning = ''
+    // Whether the model itself reasoned. finalReasoning also carries the
+    // server's own lines (the pre-search note), which are not the model's.
+    let modelReasoned = false
     // Tool calls made across the turn, persisted as message parts so the
     // client renders them as tool blocks rather than thinking text.
     const finalParts: StoredToolCallPart[] = []
@@ -943,7 +958,7 @@ ${ctx}` : ctx
         finalContent += t
         sse(res, 'content', { text: t })
       },
-      onReasoning: (t: string) => { markThinking(); finalReasoning += t; sse(res, 'reasoning', { text: t }) },
+      onReasoning: (t: string) => { markThinking(); modelReasoned = true; finalReasoning += t; sse(res, 'reasoning', { text: t }) },
     }
     let recorded = false
     const finish = (finishReason: string | null) => {
@@ -968,11 +983,11 @@ ${ctx}` : ctx
         reasoningDuration: reasoningDuration || (reasoningStart ? Date.now() - reasoningStart : undefined),
         tokensUsed: usageTotal.total_tokens ? usageTotal : undefined,
         parts: finalParts.length ? finalParts : undefined,
+        finishReason: finishReason ?? undefined,
       })
       if (!finalContent.trim()) {
-        const note = finalReasoning.trim() || finalParts.length
-          ? 'The model spent this turn reasoning without producing an answer. Ask again, or rephrase more directly.'
-          : `The model returned no text (finish reason: ${finishReason ?? 'stop'}). Retry, or pick another model.`
+        req.log.warn({ model: body.model, finishReason, usage: usageTotal, toolCalls: finalParts.length, modelReasoned }, 'empty reply')
+        const note = emptyReplyNote({ modelReasoned, toolCalls: finalParts.length, finishReason, completionTokens: usageTotal.total_tokens ? usageTotal.completion_tokens ?? null : null })
         finalContent = note
         sse(res, 'content', { text: note })
       }
@@ -1249,6 +1264,7 @@ ${ctx}` : ctx
           { model: body.model, messages: finalMessages, max_tokens: finalMaxTokens, ...templateKwargsFor(String(body.model ?? '')) },
         )
         finalModel = finalTurn.model ?? finalModel
+        if (finalTurn.usage) usageTotal = addUsage(usageTotal, finalTurn.usage)
         if (finalTurn.content.trim()) break
         req.log.warn({ attempt }, 'forced final answer came back empty')
         finalMessages.push({ role: 'user', content: 'Reply with the final answer as plain text.' })

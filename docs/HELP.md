@@ -21,6 +21,7 @@ Ask in plain language. The assistant searches the knowledge base, reads the file
 - Ask it to run work on a connected HPC system; it follows the run and explains a failure if there is one.
 - **Select chats**, above New chat, deletes old conversations together.
 - In a shared session, add your own model key under Settings, "Model access", to chat as yourself.
+- A reply with no answer says why: the model reasoned without answering, ran tools without answering, or returned an empty reply, which some providers do when they decline a request. Rephrase, or pick another model.
 
 ## Library
 
