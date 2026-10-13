@@ -841,8 +841,8 @@ async function runSessionsNote(slug: string): Promise<string> {
   const key = toolContext.getStore()?.userKey || gatewayKey()
   if (!key) return ''
   try {
-    const { listSessions, sessionEmbed } = await import('../sessions.js')
-    return (await listSessions(key)).filter(x => x.run?.slug === slug)
+    const { listSessions, sessionEmbed, sessionOfRun } = await import('../sessions.js')
+    return (await listSessions(key)).filter(x => sessionOfRun(x, slug))
       .map(x => x.status === 'running'
         ? `Session ${x.name} is running. Show it in the reply with this markdown:\n${sessionEmbed(x)}`
         : `Session ${x.name}: ${x.status}.`)

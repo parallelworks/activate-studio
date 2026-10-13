@@ -4,7 +4,7 @@ import path from 'node:path'
 import { execFile } from 'node:child_process'
 import { INDEX_BASE, PW_CLI } from './config.js'
 import { appendConversationNote } from './conversations.js'
-import { listSessions, sessionEmbed, sessionKeyFor } from './sessions.js'
+import { listSessions, sessionEmbed, sessionKeyFor, sessionOfRun } from './sessions.js'
 
 /**
  * Every workflow run the assistant launches, kept on disk and followed to
@@ -109,7 +109,7 @@ async function showRunSession(slug: string): Promise<void> {
   if (!key) return
   let rows
   try { rows = await listSessions(key) } catch { return }
-  const s = rows.find(x => x.run?.slug === slug && x.status === 'running')
+  const s = rows.find(x => sessionOfRun(x, slug) && x.status === 'running')
   if (!s) return
   sessionShown.add(slug)
   append({ t: 'session', slug, name: s.name })

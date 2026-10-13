@@ -73,6 +73,17 @@ export function sessionRow(raw: any, platform: string): SessionRow | null {
   }
 }
 
+/** Whether a session belongs to a run: the run the platform recorded for
+ *  it, or, for a session with none recorded, a name that is the run's id or
+ *  ends with it. A job that registers its own endpoint (a study viewer, a
+ *  model server) leaves the record empty on some platforms, and those
+ *  workflows name the endpoint after the run, <prefix>-<run id>. */
+export function sessionOfRun(s: SessionRow, slug: string): boolean {
+  if (!slug) return false
+  if (s.run) return s.run.slug === slug
+  return s.name === slug || s.name.endsWith(`-${slug}`)
+}
+
 /** The platform key a user's requests run with: their own, else the deployment's. */
 export function sessionKeyFor(userId: string | null | undefined): string | null {
   const cred = userId ? resolveUserCred(userId) : null
@@ -117,7 +128,7 @@ export async function sessionRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/sessions', async req => {
     const { run } = req.query as { run?: string }
     const rows = (await listSessions(keyOf(req)))
-      .filter(s => !run || s.run?.slug === run)
+      .filter(s => !run || sessionOfRun(s, run))
       .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
     return { sessions: rows }
   })
