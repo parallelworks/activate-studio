@@ -1,4 +1,4 @@
-import type { FastifyInstance } from 'fastify'
+import type { FastifyInstance, FastifyRequest } from 'fastify'
 import fs from 'node:fs'
 import path from 'node:path'
 import { suggestNext } from './suggest.js'
@@ -387,6 +387,21 @@ export function emptyReplyNote(o: { modelReasoned: boolean; toolCalls: number; f
   return `The model returned an empty reply (${why}). Providers can return nothing when they decline a request. Rephrase it, or pick another model.`
 }
 
+/** A provider turning the request away for volume, as the gateway relays it. */
+export const isRateLimit = (text: string): boolean => /rate[ _-]?limit|too many requests|\b429\b/i.test(text)
+
+/** Links under a reply that could not be answered, one per model to retry
+ *  with. Nothing is sent until one is clicked (the chat view handles
+ *  `#retry-with=`), so the choice of where a request goes stays the
+ *  user's. `same` adds a link to retry the model that failed. */
+export function retryLinks(choices: { id: string; name: string }[], same: string | null, replyTo: string | null): string {
+  const href = (id: string) => `#retry-with=${encodeURIComponent(id)}${replyTo ? `&reply-to=${encodeURIComponent(replyTo)}` : ''}`
+  const label = (n: string) => n.split('/').pop() || n
+  const links = choices.map(c => `[${label(c.name)}](${href(c.id)})`)
+  if (same) links.push(`[try ${label(same)} again](${href(same)})`)
+  return links.length ? `\n\nRetry with: ${links.join(' · ')}` : ''
+}
+
 /** Trim messages to the model's context window and return the max_tokens the
  *  remaining space supports, so prompt + completion never exceeds the window.
  *  overheadChars covers request payload outside the messages (tool schemas).
@@ -439,6 +454,18 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
   const LISTING_KEEP_MS = 30 * 60_000
   const listings = new Map<string, { at: number; v: Listing }>()
   const refreshing = new Map<string, Promise<Listing>>()
+  // The models a reply can be retried with: the user's listing as last
+  // loaded, without the model that failed or any whose last call failed in
+  // the last ten minutes (a rate limit, say). Never fetched here: a reply
+  // that failed is no moment to wait on a catalog.
+  const retryChoices = (req: FastifyRequest, failed: string): { id: string; name: string }[] => {
+    const hit = listings.get(listingKey(resolveUserCred(req.user?.id), (req.user?.username ?? '').toLowerCase()))
+    const recent = (id: string) => { const f = modelFailure(id); return !!f && Date.now() - Date.parse(f.at) < 10 * 60_000 }
+    return (hit?.v.models ?? [])
+      .filter((m: any) => m?.id && String(m.id) !== failed && !recent(String(m.id)))
+      .slice(0, 4)
+      .map((m: any) => ({ id: String(m.id), name: String(m.name || m.id) }))
+  }
   const listingKey = (cred: { key?: string | null; baseUrl?: string | null } | null, viewer: string) =>
     `${viewer}|${(cred?.key ?? '').slice(-8)}|${cred?.baseUrl ?? ''}`
 
@@ -987,7 +1014,10 @@ ${ctx}` : ctx
       })
       if (!finalContent.trim()) {
         req.log.warn({ model: body.model, finishReason, usage: usageTotal, toolCalls: finalParts.length, modelReasoned }, 'empty reply')
+        // A model that reasoned may answer on a second try; one that
+        // returned nothing has declined, so only other models are offered.
         const note = emptyReplyNote({ modelReasoned, toolCalls: finalParts.length, finishReason, completionTokens: usageTotal.total_tokens ? usageTotal.completion_tokens ?? null : null })
+          + retryLinks(retryChoices(req, String(body.model ?? '')), modelReasoned ? String(body.model ?? '') : null, body.userMessageId ?? null)
         finalContent = note
         sse(res, 'content', { text: note })
       }
@@ -1103,6 +1133,16 @@ ${ctx}` : ctx
             // events and has no way to unsay them. So a turn that has
             // spoken is never retried; the error is surfaced instead.
             const spoken = finalContent.length > 0
+            // A rate limit usually clears in seconds: wait and try the same
+            // model twice more before the reply says so.
+            if (isRateLimit(errText) && attempt < 2 && !abort.signal.aborted && !spoken) {
+              const wait = attempt === 0 ? 3000 : 8000
+              req.log.warn({ attempt, wait, model: body.model }, 'provider rate limited; waiting before retrying')
+              // Shown while the reply waits, and not kept with it.
+              sse(res, 'reasoning', { text: `\n\u21B3 ${String(body.model ?? 'the model').split('/').pop()} is rate limited; retrying in ${wait / 1000} s\n` })
+              await new Promise(r => { const t = setTimeout(r, wait); abort.signal.addEventListener('abort', () => { clearTimeout(t); r(null) }, { once: true }) })
+              continue
+            }
             if (generationError && attempt < 2 && !abort.signal.aborted && !spoken) {
               if (!(err instanceof StreamedTurnError)) dropTokenCap = true
               if (!rejectedTokenCap) retryUnstreamed = true
@@ -1280,6 +1320,14 @@ ${ctx}` : ctx
         // detail never reaches the client.
         const msg = String(err?.message ?? err)
         const model = String(body.model ?? 'the model')
+        // Still rate limited after the waits: say so in the reply and offer
+        // the other models, which is what the reader can act on.
+        if (isRateLimit(msg) && err?.name !== 'GatewayAuthError') {
+          callbacks.onContent(`${finalContent ? '\n\n' : ''}${model.split('/').pop()} is rate limited by its provider right now; the Studio waited and tried twice more.`
+            + retryLinks(retryChoices(req, model), model, body.userMessageId ?? null))
+          finish('rate_limited')
+          return reply
+        }
         let userMsg: string | null = null
         if (err?.name === 'GatewayAuthError') {
           userMsg = msg
