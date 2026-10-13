@@ -2,6 +2,40 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.113 (2026-10-13)
+
+### Change log through v1.112 (#441)
+
+Regenerated with `node scripts/release-notes.mjs --changelog` after the v1.112 release.
+
+### Show a launched run beside the chat: its form, live graph, and session (#442)
+
+When a reply launches a workflow, a pane opens beside the chat and follows the run:
+
+- **Form:** the workflow's form, filled with the inputs the run was given and marked as executed from the conversation.
+- **Graph:** the platform's own graph of the run (`DependencyGraph` from the UI package), with jobs colored by state and refreshed every four seconds until the run ends. The data comes from `GET /api/runs/item?slug=`, which reads `/api/workflow-runs/<slug>` with the viewer's key.
+- **Session:** the web session the run opened, such as a study viewer, inside the pane.
+
+The pane moves from the form to the graph to the session as each becomes worth watching, unless the viewer picks a tab. A conversation opened later starts with the pane closed and a **Run** button to bring it back.
+
+A session's host signs browsers in through the platform's login page, which refuses frames, but it accepts the platform key as a bearer token from a server. The Studio therefore fetches the session's pages with the viewer's key and serves them at `/api/session-proxy/<host>/` on its own origin:
+- only hosts of sessions the viewer's key can see, and that are served on their own host, are relayed;
+- the address fetched comes from the platform's session record, never from the request;
+- GET and HEAD only, with no cookies passed, and a redirect from the host (its sign-in) is reported instead of followed.
+
+A page that loads its data by relative address works unchanged, which covers the study viewers. Sessions that need websockets open in a new tab from the pane's footer.
+
+`run_workflow` now includes the run's id in its summary (`run submitted: <slug>`), which is what the pane follows.
+
+Each model turn's text now opens a new paragraph (`turnSeparator`). A model that narrates before its tool calls produced one reply with sentences run together across turns, and a heading or table that opened a turn landed mid-line, where markdown cannot render it.
+
+Tests:
+- `web/test/runPane.test.ts` covers which run the pane follows.
+- `server/test/emptyReply.test.mjs` covers the turn separator.
+- Two run-tool tests now expect the summary with the run's id.
+
+Checked end to end in headless Chrome against a stand-in platform serving the study viewer on a synthetic study. The form showed the submitted values, the graph tracked workers finishing, and the session tab showed the viewer updating as cases solved. A scripted tool-calling model's narration and following heading came out as separate paragraphs.
+
 ## v1.112 (2026-10-13)
 
 ### Change log through v1.111 (#439)
