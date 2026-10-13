@@ -10,6 +10,7 @@ import { HOST, PORT, PROJECT_ROOT, KB_ROOT, gufiAvailable } from './config.js'
 import { kbRoutes, sanitizedErrorHandler } from './routes.js'
 import { uploadRoutes } from './uploads.js'
 import { queryRoutes } from './query.js'
+import { runPaneRoutes } from './runPane.js'
 import { gufiVtRoutes } from './gufiVt.js'
 import { topologyRoutes } from './topology.js'
 import { historyRoutes } from './history.js'
@@ -84,6 +85,7 @@ app.setErrorHandler(sanitizedErrorHandler(app))
 await app.register(kbRoutes)
 await app.register(workflowsTabRoutes)
 await app.register(sessionRoutes)
+await app.register(runPaneRoutes)
 await app.register(agentSiteRoutes)
 await app.register(userLibraryRoutes)
 await app.register(workflowReadmeRoutes)

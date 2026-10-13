@@ -2201,3 +2201,36 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .scope-bar { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; font-size: 13px; }
 .scope-loading { display: inline-flex; align-items: center; gap: 6px; color: var(--pw-muted); }
 .pill-library { border: 1px solid var(--pw-border-strong); color: var(--pw-muted); }
+
+/* The run the assistant launched, beside the conversation: its form as
+   submitted, the platform's graph of it, and the session it opened. */
+.chat-wrap { gap: 12px; }
+.run-pane { flex: 0 0 min(46%, 820px); min-width: 0; display: flex; flex-direction: column; overflow: hidden; background: var(--pw-panel); }
+.run-pane-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 14px 6px; }
+.run-pane-title { display: flex; align-items: baseline; gap: 8px; min-width: 0; font-size: 13px; }
+.run-pane-title .muted { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.run-pane-close { font-size: 18px; line-height: 1; padding: 2px 8px; }
+.run-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; align-self: center; background: var(--pw-muted); }
+.run-dot.run-running, .run-dot.run-starting { background: #2563eb; animation: run-pulse 1.4s ease-in-out infinite; }
+.run-dot.run-completed { background: #16a34a; }
+.run-dot.run-error, .run-dot.run-failed { background: #dc2626; }
+@keyframes run-pulse { 50% { opacity: 0.35; } }
+.run-pane-tabs { display: flex; gap: 4px; padding: 0 12px; border-bottom: 1px solid var(--pw-border); }
+.run-pane-tabs button { background: none; border: 0; border-bottom: 2px solid transparent; padding: 6px 10px; font-size: 13px; color: var(--pw-muted); cursor: pointer; }
+.run-pane-tabs button.on { color: var(--pw-text); border-bottom-color: var(--pw-link); }
+.run-pane-tabs button:disabled { cursor: default; opacity: 0.6; }
+.run-pane-body { flex: 1; min-height: 0; overflow: auto; position: relative; }
+.run-pane-form { padding: 12px 14px; }
+.run-pane-fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
+.run-executed { margin: 0 0 10px; font-size: 12px; color: var(--pw-muted); }
+.run-executed.on { color: #16a34a; }
+.run-pane-inputs { font-size: 12px; white-space: pre-wrap; }
+.run-pane-graph { height: 100%; min-height: 420px; }
+.run-pane-frame { width: 100%; height: 100%; min-height: 480px; border: 0; display: block; background: #fff; }
+.run-pane-foot { display: flex; justify-content: space-between; gap: 8px; padding: 6px 14px; border-top: 1px solid var(--pw-border); font-size: 12px; }
+.run-pane-reopen { position: absolute; right: 18px; top: 64px; z-index: 5; font-size: 12px; padding: 4px 10px; border-radius: 14px; border: 1px solid var(--pw-border-strong); background: var(--pw-panel); color: var(--pw-text); cursor: pointer; }
+.chat-wrap { position: relative; }
+@media (max-width: 1000px) {
+  .chat-wrap:has(.run-pane) { flex-direction: column; }
+  .run-pane { flex: 0 0 55%; }
+}

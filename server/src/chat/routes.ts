@@ -387,6 +387,14 @@ export function emptyReplyNote(o: { modelReasoned: boolean; toolCalls: number; f
   return `The model returned an empty reply (${why}). Providers can return nothing when they decline a request. Rephrase it, or pick another model.`
 }
 
+/** What goes between a reply's text so far and the first text of the next
+ *  model turn: a paragraph break, unless there is no text yet or it already
+ *  ends in one. */
+export function turnSeparator(sofar: string): string {
+  if (!sofar.trim() || sofar.endsWith('\n\n')) return ''
+  return sofar.endsWith('\n') ? '\n' : '\n\n'
+}
+
 /** A provider turning the request away for volume, as the gateway relays it. */
 export const isRateLimit = (text: string): boolean => /rate[ _-]?limit|too many requests|\b429\b/i.test(text)
 
@@ -971,6 +979,8 @@ ${ctx}` : ctx
     // Whether the model itself reasoned. finalReasoning also carries the
     // server's own lines (the pre-search note), which are not the model's.
     let modelReasoned = false
+    // Set as each model turn starts: its first text opens a new paragraph.
+    let turnBreak = false
     // Tool calls made across the turn, persisted as message parts so the
     // client renders them as tool blocks rather than thinking text.
     const finalParts: StoredToolCallPart[] = []
@@ -982,6 +992,15 @@ ${ctx}` : ctx
     const callbacks = {
       onContent: (t: string) => {
         if (reasoningStart && !reasoningDuration) reasoningDuration = Date.now() - reasoningStart
+        // A model that narrates before its tool calls speaks once per turn,
+        // and the turns' text arrives as one reply. Without a break the
+        // sentences run together and a heading or table that opens a turn
+        // lands mid-line, where markdown cannot render it.
+        if (turnBreak && t) {
+          turnBreak = false
+          const sep = turnSeparator(finalContent)
+          if (sep) { finalContent += sep; sse(res, 'content', { text: sep }) }
+        }
         finalContent += t
         sse(res, 'content', { text: t })
       },
@@ -1180,6 +1199,7 @@ ${ctx}` : ctx
         }
       }
       for (let iter = 0; iter < MAX_TOOL_ITERATIONS; iter++) {
+        turnBreak = true
         const toolSpecs = await activeToolSpecsWithRemote()
         const maxTokens = fitWindow(messages as WireMessage[], String(body.model ?? ''), JSON.stringify(toolSpecs).length)
         const turn = await turnWithRetry(
@@ -1299,6 +1319,7 @@ ${ctx}` : ctx
       ]
       let finalTurn = null as Awaited<ReturnType<typeof streamTurn>> | null
       for (let attempt = 0; attempt < 2; attempt++) {
+        turnBreak = true
         const finalMaxTokens = fitWindow(finalMessages, String(body.model ?? ''), 0)
         finalTurn = await turnWithRetry(
           { model: body.model, messages: finalMessages, max_tokens: finalMaxTokens, ...templateKwargsFor(String(body.model ?? '')) },
@@ -1323,7 +1344,7 @@ ${ctx}` : ctx
         // Still rate limited after the waits: say so in the reply and offer
         // the other models, which is what the reader can act on.
         if (isRateLimit(msg) && err?.name !== 'GatewayAuthError') {
-          callbacks.onContent(`${finalContent ? '\n\n' : ''}${model.split('/').pop()} is rate limited by its provider right now; the Studio waited and tried twice more.`
+          callbacks.onContent(`${model.split('/').pop()} is rate limited by its provider right now; the Studio waited and tried twice more.`
             + retryLinks(retryChoices(req, model), model, body.userMessageId ?? null))
           finish('rate_limited')
           return reply

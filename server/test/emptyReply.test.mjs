@@ -34,3 +34,11 @@ test('a reply that could not be given links the other models, and the same one w
   assert.ok(isRateLimit('The AI provider is rate limiting requests'))
   assert.ok(!isRateLimit('gateway chat 400: error occurred while generating the response'))
 })
+
+test('each model turn opens a new paragraph, so headings and tables render', async () => {
+  const { turnSeparator } = await import('../dist/chat/routes.js')
+  assert.equal(turnSeparator(''), '')
+  assert.equal(turnSeparator('Let me check the workflows.'), '\n\n')
+  assert.equal(turnSeparator('A list:\n'), '\n')
+  assert.equal(turnSeparator('Done.\n\n'), '')
+})
