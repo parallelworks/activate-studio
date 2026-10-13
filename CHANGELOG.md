@@ -2,6 +2,27 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.111 (2026-10-13)
+
+### Change log through v1.110 (#437)
+
+Regenerated with `node scripts/release-notes.mjs --changelog` after the v1.110 release.
+
+### Say why a chat reply is empty, and keep the evidence (#438)
+
+A chat turn whose model returned an empty completion (HTTP 200, finish reason `stop`, zero completion tokens) was reported as "The model spent this turn reasoning without producing an answer." The model had not reasoned: the server's own pre-search line ("pre-searched the knowledge base") is appended to the turn's reasoning text, and the note treated any reasoning text as the model's. A provider can return such an empty completion when it declines a request, so the wording sent people looking at reasoning settings when the model had declined.
+
+`emptyReplyNote` now distinguishes four cases: the model reasoned without answering; it ran tools and returned no answer; a content filter blocked the reply; or the model returned an empty reply. The last three include the finish reason and say when no tokens were generated. Only reasoning that arrives from the model counts as reasoning.
+
+So the next empty reply can be diagnosed after the fact:
+- non-streamed turns keep the `usage` the gateway returns (it was dropped, so those turns stored no token counts);
+- the forced final-answer turns add their usage to the turn's total;
+- the stored message records its finish reason;
+- an empty reply is logged with the model, finish reason, usage, and tool count;
+- a workflow launch moves the previous server log to `app.log.prev` instead of truncating it.
+
+Tests: `server/test/emptyReply.test.mjs` covers the four notes.
+
 ## v1.110 (2026-10-13)
 
 ### Change log through v1.109 (#434)
