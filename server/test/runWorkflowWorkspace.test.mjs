@@ -25,7 +25,7 @@ const { executeTool } = await import('../dist/chat/tools.js')
 
 test('run_workflow starts a stopped workspace, retries, and says it did', async () => {
   const r = await executeTool('run_workflow', JSON.stringify({ name: 'activatebatch', dry_run: false, inputs: '{"commands":"hostname"}' }))
-  assert.equal(r.summary, 'run submitted')
+  assert.equal(r.summary, 'run submitted: activatebatch-00010')
   assert.match(r.result, /Run activatebatch-00010/)
   assert.match(r.result, /workspace was not running; it was started and the launch retried/)
   const seq = fs.readFileSync(calls, 'utf8').trim().split('\n').map(l => JSON.parse(l).slice(0, 2).join(' '))

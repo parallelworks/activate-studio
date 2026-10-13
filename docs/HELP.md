@@ -18,7 +18,7 @@ Ask in plain language. The assistant searches the knowledge base, reads the file
 - **Scope**, at the top right, limits answers to material with the labels you choose.
 - **Library**, at the top right, chooses which library the assistant searches in this chat, or all of them.
 - Type **/** to pick a skill, a tool, or a persona to use.
-- Ask it to run work on a connected HPC system; it follows the run and explains a failure if there is one.
+- Ask it to run work on a connected HPC system; it follows the run and explains a failure if there is one. A pane beside the chat shows the run: its form as submitted, the live graph of its jobs, and the web session it opens, such as a study viewer.
 - **Select chats**, above New chat, deletes old conversations together.
 - In a shared session, add your own model key under Settings, "Model access", to chat as yourself.
 - A reply with no answer says why: the model reasoned without answering, ran tools without answering, or returned an empty reply, which some providers do when they decline a request. A provider that is rate limiting is retried twice after short waits. Either way the reply ends with **Retry with** links to the other models; nothing is sent to another model until you click one.

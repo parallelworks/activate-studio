@@ -1517,10 +1517,12 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
         }
         const trimmed = out.trim()
         let where = ''
+        let launched = ''
         try {
           const r = jsonFromCli<any>(trimmed)
           const run = r?.run ?? r
           if (run?.slug || run?.id) where = `\nRun ${run.slug ?? run.id}. Follow it with watch_run.`
+          if (!dryRun && (run?.slug || run?.id)) launched = String(run.slug ?? run.id)
           // A real launch is registered so it is followed across a Studio
           // restart and its end is reported into this conversation.
           if (!dryRun && (run?.slug || run?.id)) {
@@ -1531,7 +1533,8 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
         const wsNote = wsStarted ? '\n(The platform user workspace was not running; it was started and the launch retried.)' : ''
         return {
           result: (trimmed.slice(0, TOOL_OUTPUT_CAP) || (dryRun ? 'Validation passed.' : 'Run submitted.')) + where + partitionNote + wsNote,
-          summary: dryRun ? 'dry run ok' : 'run submitted',
+          // The run's id in the summary is what the chat's run pane follows.
+          summary: dryRun ? 'dry run ok' : launched ? `run submitted: ${launched}` : 'run submitted',
         }
       }
       case 'watch_run': {

@@ -70,7 +70,7 @@ test('run_workflow asks for approval before granting access, then runs the file 
   assert.equal(runs().length, before, 'nothing reaches the platform before approval')
 
   const r = await executeTool('run_workflow', JSON.stringify({ name: DOE, dry_run: false, inputs: '{"n_cases":4}', trust: true }))
-  assert.equal(r.summary, 'run submitted')
+  assert.equal(r.summary, 'run submitted: general-00002')
   const run = runs().at(-1)
   assert.ok(run.includes('--trust'))
   assert.ok(run.includes(DOE), 'the @ref survives')

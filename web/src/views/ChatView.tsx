@@ -16,6 +16,7 @@ import { setChatLibrary, setLabelScope, setPersona } from '../labelScope'
 import { PersonaIcon } from '../components/PersonaIcon'
 import { ConversationScrubber } from '../components/ConversationScrubber'
 import { EmbedFrame } from '../components/EmbedFrame'
+import { RunPaneHost } from '../components/RunPane'
 
 const MODEL_STORAGE_KEY = 'studio.chat.lastModel'
 
@@ -620,6 +621,7 @@ export function ChatView() {
             )}
           </div>
         </div>
+        <RunPaneHost />
       </div>
     </ChatProvider>
   )
