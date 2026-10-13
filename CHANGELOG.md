@@ -2,6 +2,24 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.112 (2026-10-13)
+
+### Change log through v1.111 (#439)
+
+Regenerated with `node scripts/release-notes.mjs --changelog` after the v1.111 release.
+
+### Offer other models when a reply cannot be given, and wait out rate limits (#440)
+
+When a reply cannot be given, the chat now offers the user's other models instead of ending at an explanation, and a provider that is rate limiting gets a short wait first.
+
+A rate-limited call (`rate_limit_exceeded`, 429, "too many requests") is retried twice, after 3 and 8 seconds, with a line in the thinking area while it waits. If the limit outlasts the waits, the reply says so in place of an error.
+
+A reply that ends empty (#438) or rate limited closes with `Retry with:` links. They list the user's other models from their cached listing, leaving out any whose last call failed in the last ten minutes. A rate-limited reply, or one where the model reasoned without answering, also links a retry of the same model; an empty completion does not, since that model has declined. Nothing is sent to another model until a link is clicked. The chat view (`RetryWithModel`) then selects that model and, once the selection has taken, asks the same question again the way the thread's own retry does: as a branch from its parent, or as the next message when the question started the conversation.
+
+Tests: `server/test/emptyReply.test.mjs` covers the links and rate-limit detection, and `web/test/retryWithModel.test.tsx` covers selecting before sending and the fallback to the last question. End to end, against a stand-in gateway with one model that returns an empty completion, one that answers, and one that returns 429:
+- the empty reply listed the other two models, and clicking one switched the selection and returned that model's answer;
+- the rate-limited model was called three times over 11 seconds and its reply ended with the three retry links.
+
 ## v1.111 (2026-10-13)
 
 ### Change log through v1.110 (#437)
