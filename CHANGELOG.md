@@ -2,6 +2,20 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.114 (2026-10-13)
+
+### Change log through v1.113 (#443)
+
+Regenerated with `node scripts/release-notes.mjs --changelog` after the v1.113 release.
+
+### Match a session to its run by name when the platform records none (#444)
+
+A job that registers its own endpoint, such as a study viewer or a model server, comes back from the platform's session list (`GET /api/sessions`) with no `workflowRun` recorded. On the customer platform this held for every endpoint session. As a result, the run pane's Session tab (#442), the chat's "session is up" note from the run watcher, and `/api/sessions?run=` never found the session a run opened.
+
+`sessionOfRun` now decides membership in all three places. A recorded run decides when there is one. Without one, a session belongs to a run whose id is its name or the end of its name after a dash, which is how those workflows name their endpoints (`<prefix>-<run id>`).
+
+Tests: `server/test/sessions.test.mjs` covers the name match, a near-miss number, a recorded run overriding the name, and an empty id.
+
 ## v1.113 (2026-10-13)
 
 ### Change log through v1.112 (#441)
