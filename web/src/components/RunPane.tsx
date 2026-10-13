@@ -2,6 +2,8 @@ import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { useChat } from '@parallelworks/ui/ai'
 import { initializeValues } from '@parallelworks/ui/form'
 import { useWorkflowFields } from './WorkflowFields'
+import { insidePlatform } from './SessionView'
+import { openBeside } from '../sideBySide'
 
 /**
  * The run the assistant launched, beside the conversation: the workflow's
@@ -164,37 +166,122 @@ export function RunPane({ slug, onClose }: { slug: string; onClose: () => void }
       {session?.url && tab === 'session' && (
         <footer className="run-pane-foot">
           <span className="muted">{session.name}</span>
-          <a href={session.url} target="_blank" rel="noreferrer">Open in a new tab</a>
+          <button type="button" className="link-btn" onClick={() => popOut({ kind: 'session', id: `session:${session.name}`, name: session.name, url: session.url!, host, platformUrl: null })}>Open beside the Studio</button>
         </footer>
       )}
     </aside>
   )
 }
 
+/** A tab in the side view: a run the conversation launched, or a session
+ *  sent there from a session card in the chat. */
+export type SideItem =
+  | { kind: 'run'; id: string; slug: string }
+  | { kind: 'session'; id: string; name: string; url: string; host: string | null; platformUrl?: string | null }
+
+const label = (i: SideItem) => (i.kind === 'run' ? `Run ${i.slug}` : i.name)
+const upsert = (xs: SideItem[], item: SideItem) => (xs.some(x => x.id === item.id) ? xs : [...xs, item])
+
+/** A session in the side view, through the Studio's relay. */
+function SessionPane({ item }: { item: Extract<SideItem, { kind: 'session' }> }) {
+  return (
+    <aside className="run-pane card" aria-label={item.name}>
+      <header className="run-pane-head">
+        <div className="run-pane-title"><span className="run-dot run-running" /><strong>{item.name}</strong><span className="muted">session</span></div>
+      </header>
+      <div className="run-pane-body">
+        {item.host
+          ? <iframe className="run-pane-frame" title={item.name} src={`/api/session-proxy/${item.host}/`} />
+          : <p className="muted pad">This session is served under the platform's own address, so it cannot show here. Pop it out to open it beside the Studio.</p>}
+      </div>
+    </aside>
+  )
+}
+
+/** Opens a side view tab in a window beside the Studio's. A session opens
+ *  at its own address, where it signs in the way the platform's pages do;
+ *  inside the platform's frame it opens its page on the platform instead. */
+export function popOut(item: SideItem): void {
+  if (item.kind === 'run') { openBeside(`/?embed=run&slug=${encodeURIComponent(item.slug)}`, item.id); return }
+  if (insidePlatform() && item.platformUrl) { window.open(item.platformUrl, '_blank', 'noopener'); return }
+  if (!openBeside(item.url, item.id)) window.open(item.url, '_blank', 'noopener')
+}
+
 /**
- * Follows the conversation for runs and shows the newest in the pane. A run
- * that appears while the viewer watches opens the pane; one the viewer
- * closed stays closed, with a tab at the edge to bring it back.
+ * The side view beside the chat: tabs for the runs the conversation
+ * launched and the sessions sent to it, each able to pop out into a window
+ * beside the Studio. A run that appears while the viewer watches opens it;
+ * a conversation opened with a run already in it starts with it hidden,
+ * with a button at the edge to show it.
  */
-export function RunPaneHost() {
+export function SideViewHost() {
   const { currentConversation, streamingParts } = useChat()
   const slug = useMemo(
     () => latestRunSlug((currentConversation?.messages ?? []) as MessageLike[], (streamingParts ?? []) as PartLike[]),
     [currentConversation, streamingParts],
   )
-  const [closed, setClosed] = useState<string | null>(null)
+  const [items, setItems] = useState<SideItem[]>([])
+  const [active, setActive] = useState<string | null>(null)
+  const [hidden, setHidden] = useState(true)
   const conv = currentConversation?.id ?? null
   const seen = useRef<{ conv: string | null; slug: string | null } | null>(null)
-  // A conversation opened with a run already in it starts with the pane
-  // closed; a run launched in front of the viewer opens it.
   useEffect(() => {
     const prev = seen.current
-    if (!prev || prev.conv !== conv) { seen.current = { conv, slug }; setClosed(slug); return }
-    if (slug && slug !== prev.slug) { seen.current = { conv, slug }; setClosed(null) }
+    const run: SideItem | null = slug ? { kind: 'run', id: `run:${slug}`, slug } : null
+    if (!prev || prev.conv !== conv) {
+      seen.current = { conv, slug }
+      setItems(run ? [run] : []); setActive(run?.id ?? null); setHidden(true)
+      return
+    }
+    if (run && slug !== prev.slug) { seen.current = { conv, slug }; setItems(xs => upsert(xs, run)); setActive(run.id); setHidden(false) }
   }, [conv, slug])
-  if (!slug) return null
-  if (closed === slug) {
-    return <button type="button" className="run-pane-reopen" title="Show the run beside the chat" onClick={() => setClosed(null)}>Run: {slug}</button>
+  // A session card in a reply sends its session here (it is a same-origin
+  // frame inside the chat).
+  useEffect(() => {
+    const on = (e: MessageEvent) => {
+      if (e.origin !== window.location.origin || e.data?.type !== 'ade-side-view') return
+      const s = e.data.session as { name?: string; url?: string | null; ownHost?: boolean; platformUrl?: string | null } | undefined
+      if (!s?.name || !s.url) return
+      let host: string | null = null
+      try { host = s.ownHost ? new URL(s.url).host : null } catch { /* no address */ }
+      const item: SideItem = { kind: 'session', id: `session:${s.name}`, name: s.name, url: s.url, host, platformUrl: s.platformUrl ?? null }
+      setItems(xs => upsert(xs, item)); setActive(item.id); setHidden(false)
+    }
+    window.addEventListener('message', on)
+    return () => window.removeEventListener('message', on)
+  }, [])
+  if (!items.length) return null
+  if (hidden) {
+    return (
+      <button type="button" className="run-pane-reopen" title="Show the side view beside the chat" onClick={() => setHidden(false)}>
+        {items.length === 1 ? label(items[0]) : `Side view (${items.length})`}
+      </button>
+    )
   }
-  return <RunPane slug={slug} onClose={() => setClosed(slug)} />
+  const cur = items.find(i => i.id === active) ?? items[items.length - 1]
+  const close = (id: string) => {
+    const rest = items.filter(i => i.id !== id)
+    setItems(rest)
+    if (cur.id === id) setActive(rest[rest.length - 1]?.id ?? null)
+    if (!rest.length) setHidden(true)
+  }
+  return (
+    <div className="side-view">
+      <div className="side-tabs" role="tablist">
+        {items.map(i => (
+          <div key={i.id} className={`side-tab${i.id === cur.id ? ' on' : ''}`}>
+            <button type="button" role="tab" aria-selected={i.id === cur.id} className="side-tab-label" title={label(i)} onClick={() => setActive(i.id)}>{label(i)}</button>
+            <button type="button" className="side-tab-x" title="Close this tab" onClick={() => close(i.id)}>×</button>
+          </div>
+        ))}
+        <span className="side-tabs-actions">
+          <button type="button" className="btn-ghost" title="Open in a window beside this one" onClick={() => popOut(cur)}>Pop out</button>
+          <button type="button" className="btn-ghost" title="Hide the side view" onClick={() => setHidden(true)}>Hide</button>
+        </span>
+      </div>
+      {cur.kind === 'run'
+        ? <RunPane key={cur.id} slug={cur.slug} onClose={() => close(cur.id)} />
+        : <SessionPane key={cur.id} item={cur} />}
+    </div>
+  )
 }

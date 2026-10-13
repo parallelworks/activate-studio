@@ -1,14 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
+import { openBeside } from '../sideBySide'
 
 /**
  * One platform session as a card: its state, the run that opened it, and
  * buttons that open it in a window of its own or a new tab.
  *
- * Sessions are not framed inside the Studio. The browser signs in to each
+ * The card does not frame the session: the browser signs in to each
  * session's host through the platform's login page, which refuses to load
- * in a frame, and on the customer platform a session that was signed in
- * still refused its frame. A window of its own loads every session the way
- * the platform does. A session that is not running yet is polled until it
+ * in a frame. A window of its own loads every session the way the platform
+ * does, and Beside chat sends it to the chat's side view, which shows it
+ * through the Studio's relay. A session that is not running yet is polled until it
  * is, so a chat note posted while a run is still starting fills in.
  */
 
@@ -58,24 +59,28 @@ export function openSessionWindow(s: { user: string; name: string; url: string |
   const key = `${s.user}/${s.name}`
   const open = sessionWindows.get(key)
   if (open && !open.closed) { open.focus(); return true }
-  const w = window.open('', '_blank', 'popup,width=1280,height=860')
-  if (!w) { openTab(s.url); return true }
-  try { w.opener = null } catch { /* not ours to change */ }
-  w.location.href = s.url
-  sessionWindows.set(key, w)
+  // Beside the Studio: the right half of the screen, with the Studio's
+  // window moved to the left half where it is an installed app.
+  if (!openBeside(s.url, `session:${key}`)) openTab(s.url)
   return true
 }
 
-export function SessionView({ user, name, initial }: { user: string; name: string; initial?: SessionInfo }) {
+export function SessionView({ user, name, host = '', initial }: { user: string; name: string; host?: string; initial?: SessionInfo }) {
+  // A card inside a chat reply is a same-origin frame of the chat page,
+  // which keeps the side view.
+  const inChat = (() => { try { return window.parent !== window && window.parent.location.origin === window.location.origin } catch { return false } })()
   const [s, setS] = useState<SessionInfo | null>(initial ?? null)
   const [error, setError] = useState('')
   const [blocked, setBlocked] = useState(false)
+  // In a chat reply the session shows under its bar, through the Studio's
+  // relay, unless the reader hides it.
+  const [inline, setInline] = useState(true)
 
   useEffect(() => {
     let stop = false
     let timer = 0
     const load = () => {
-      fetch(`/api/sessions/item?user=${encodeURIComponent(user)}&name=${encodeURIComponent(name)}`)
+      fetch(`/api/sessions/item?user=${encodeURIComponent(user)}&name=${encodeURIComponent(name)}${host ? `&host=${encodeURIComponent(host)}` : ''}`)
         .then(async r => {
           const d = await r.json().catch(() => ({}))
           if (!r.ok) throw new Error((d as { error?: string }).error ?? `${r.status}`)
@@ -90,7 +95,7 @@ export function SessionView({ user, name, initial }: { user: string; name: strin
     }
     load()
     return () => { stop = true; window.clearTimeout(timer) }
-  }, [user, name])
+  }, [user, name, host])
 
   const running = s?.status === 'running'
 
@@ -104,13 +109,13 @@ export function SessionView({ user, name, initial }: { user: string; name: strin
     const ro = new ResizeObserver(post)
     ro.observe(rootRef.current)
     return () => ro.disconnect()
-  }, [s, error, blocked])
+  }, [s, error, blocked, inline])
 
   return (
     <div className="session-view" ref={rootRef}>
       <div className="session-bar">
         <span className={`status-dot ${running ? 'ok' : 'warn'}`} />
-        <span className="session-name">{name}</span>
+        <span className="session-name">{s?.name ?? name}</span>
         <span className="muted session-meta">
           {[s?.run ? `${s.run.workflow} · ${s.run.slug}` : s?.type, s?.resource ? `on ${s.resource}` : '', s && !running ? (s.status || 'not running') : ''].filter(Boolean).join(' · ')}
         </span>
@@ -118,6 +123,13 @@ export function SessionView({ user, name, initial }: { user: string; name: strin
           <span className="session-bar-actions">
             <button type="button" className="btn-primary" onClick={() => setBlocked(!openSessionWindow(s))}
               title={insidePlatform() ? 'Open its page on ACTIVATE, which shows it embedded' : 'Open in a window of its own'}>{insidePlatform() && s.platformUrl ? 'Open in ACTIVATE' : 'Open'}</button>
+            {inChat && s.ownHost && (
+              <>
+                <button type="button" className="btn-secondary" onClick={() => setInline(v => !v)}>{inline ? 'Hide' : 'Show here'}</button>
+                <button type="button" className="btn-secondary" title="Show it in the side view beside the chat"
+                  onClick={() => window.parent.postMessage({ type: 'ade-side-view', session: s }, window.location.origin)}>Beside chat</button>
+              </>
+            )}
             <a className="btn-secondary" href={s.url} target="_blank" rel="noopener noreferrer">Open in new tab</a>
           </span>
         )}
@@ -125,6 +137,9 @@ export function SessionView({ user, name, initial }: { user: string; name: strin
       {error && !s && <p className="session-note banner-error">{error}</p>}
       {s && !running && <p className="session-note muted">Session {name} is {s.status || 'not running'}. This card updates when it is running.</p>}
       {blocked && <p className="session-note muted">This session has no address yet.</p>}
+      {inChat && inline && running && s?.ownHost && s.url && (
+        <iframe className="session-inline" title={s.name} src={`/api/session-proxy/${new URL(s.url).host}/`} />
+      )}
     </div>
   )
 }
