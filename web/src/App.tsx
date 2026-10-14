@@ -373,10 +373,10 @@ export default function App() {
   if (embedKind === 'run' && embedParams.get('slug')) {
     return <div className="embed-root run-embed"><RunPane slug={embedParams.get('slug')!} onClose={() => window.close()} /></div>
   }
-  if (embedKind === 'session' && (embedParams.get('name') || embedParams.get('host') || embedParams.get('url'))) {
+  if (embedKind === 'session' && (embedParams.get('name') || embedParams.get('host') || embedParams.get('url') || embedParams.get('run'))) {
     let host = embedParams.get('host') ?? ''
     if (!host && embedParams.get('url')) { try { host = new URL(embedParams.get('url')!).host } catch { /* not an address */ } }
-    return <div className="embed-root"><SessionView user={embedParams.get('user') ?? ''} name={embedParams.get('name') ?? ''} host={host} /></div>
+    return <div className="embed-root"><SessionView user={embedParams.get('user') ?? ''} name={embedParams.get('name') ?? ''} host={host} run={embedParams.get('run') ?? ''} /></div>
   }
   if (embedKind === 'html' && embedParams.get('path')) {
     // The inner frame is the sandbox; the served page also carries a CSP

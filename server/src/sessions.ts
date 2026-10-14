@@ -133,16 +133,19 @@ export async function sessionRoutes(app: FastifyInstance): Promise<void> {
     return { sessions: rows }
   })
 
-  // One session by name, or by the address it is served at (?host= or
-  // ?url=), which is what a model that saw the address tends to pass.
+  // One session by name, by the address it is served at (?host= or ?url=),
+  // or by the run that opened it (?run=), which are what a model that saw
+  // the address or the run tends to pass. A run's running session wins.
   app.get('/api/sessions/item', async req => {
-    const { user = '', name = '', host = '', url = '' } = req.query as { user?: string; name?: string; host?: string; url?: string }
+    const { user = '', name = '', host = '', url = '', run = '' } = req.query as { user?: string; name?: string; host?: string; url?: string; run?: string }
     let want = String(host).toLowerCase()
     if (!want && url) { try { want = new URL(String(url)).host.toLowerCase() } catch { /* not an address */ } }
     const hostOf = (s: SessionRow) => { try { return s.url ? new URL(s.url).host.toLowerCase() : '' } catch { return '' } }
-    const row = (await listSessions(keyOf(req))).find(s =>
+    const rows = await listSessions(keyOf(req))
+    const ofRun = run ? rows.filter(s => sessionOfRun(s, String(run))).sort((a, b) => Number(b.status === 'running') - Number(a.status === 'running')) : []
+    const row = ofRun[0] ?? rows.find(s =>
       (name && s.name === name && (!user || s.user === user)) || (want && hostOf(s) === want))
-    if (!row) throw new KbError(404, `No session ${name || want} is visible to you.`)
+    if (!row) throw new KbError(404, run && !name && !want ? `Run ${run} has no session yet.` : `No session ${name || want} is visible to you.`)
     return row
   })
 }

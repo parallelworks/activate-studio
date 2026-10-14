@@ -133,3 +133,10 @@ test('the relay serves a session of the viewer with the key, and nothing else', 
   assert.equal((await app.inject({ url: '/api/session-proxy/explorer-00012.sessions.test' })).statusCode, 302)
 })
 
+test('one session can be named by the run that opened it, the running one first', async () => {
+  sessions.resetSessionsForTests()
+  assert.equal((await app.inject({ url: '/api/sessions/item?run=design-explorer-00012' })).json().name, 'explorer-00012')
+  const none = await app.inject({ url: '/api/sessions/item?run=other-00001' })
+  assert.equal(none.statusCode, 404, 'a run with no session yet; the card keeps asking until it has one')
+})
+
