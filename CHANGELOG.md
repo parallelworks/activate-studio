@@ -2,6 +2,22 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.125 (2026-10-14)
+
+### Change log through v1.124 (#465)
+
+Regenerated with `node scripts/release-notes.mjs --changelog` after the v1.124 release.
+
+### Platform refusals reach the model; session match takes several words (#466)
+
+When the platform refuses a request, the pw CLI exits non-zero with the platform's problem document on stdout and nothing on stderr. The chat tools passed stderr (empty, or the CLI's upgrade notice) or Node's "Command failed" to the model. On a live deployment a model then made 13 launch attempts guessing at input syntax and credentials, when the platform had said `Missing required fields: Quality of Service [QoS]`.
+
+The problem document's `detail` and each `errors[].pointer` and `detail` now form the error, and the CLI's upgrade notice is dropped from stderr. Since the message names a missing required field, `run_workflow`'s existing remedy now applies: take the account and QoS from a saved configuration for that system, or ask the user.
+
+`list_sessions` `match` now takes several words, any of which may match. A model passed `"MODO|dettrain|00006"` and matched nothing.
+
+Tests: `problemMessage` on the 400 document the platform returned, on a JSON listing, and on plain text.
+
 ## v1.124 (2026-10-14)
 
 ### Change log through v1.123 (#463)
