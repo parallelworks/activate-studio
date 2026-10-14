@@ -29,6 +29,7 @@ interface Effective {
   mcpServers: { name: string; url: string; header?: string }[]
   delegationEnabled: boolean
   delegationMaxAgents: number
+  maxToolRounds: number
   delegationMaxDepth: number
   agentExecution: 'runner' | 'sessions' | 'both'
   voiceEnabled: boolean
@@ -661,6 +662,14 @@ export function SettingsView() {
               <p className="muted view-sub">
                 Everything the chat assistant can call. Built-in tools are part of the server; unchecking one hides it from the model, and clicking a name shows what it actually calls plus its exact specification, so you can copy the shape into a custom tool or extension file with your own changes. Custom tools are commands you define here (saved with these settings, not as files); each appears to the assistant as a callable tool and runs on this server with its output returned to the conversation.
               </p>
+              <div className="settings-grid">
+                <div>
+                  <label className="field-label">Most tool rounds per reply</label>
+                  <input className="field" type="number" min={5} max={200} value={form.maxToolRounds}
+                    onChange={e => setForm({ ...form, maxToolRounds: Number(e.target.value) })} />
+                  <p className="muted key-note">Each round is one model call and the tools it asks for. At the limit the assistant answers from what it has and says it stopped.</p>
+                </div>
+              </div>
               <div className="tools-grid">
               {TOOL_GROUPS.map(([group, names]) => {
                 const rows = catalog.filter(t => t.builtin && names.includes(t.name))

@@ -14,3 +14,11 @@ test('delegation is on by default and DELEGATION_ENABLED=0 is the kill switch', 
   assert.equal(effectiveSettings().delegationEnabled, false)
   delete process.env.DELEGATION_ENABLED
 })
+
+test('a reply may spend 50 tool rounds by default, and STUDIO_MAX_TOOL_ROUNDS changes it', () => {
+  delete process.env.STUDIO_MAX_TOOL_ROUNDS
+  assert.equal(effectiveSettings().maxToolRounds, 50)
+  process.env.STUDIO_MAX_TOOL_ROUNDS = '80'
+  assert.equal(effectiveSettings().maxToolRounds, 80)
+  delete process.env.STUDIO_MAX_TOOL_ROUNDS
+})

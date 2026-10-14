@@ -1007,6 +1007,9 @@ ${ctx}` : ctx
     let reasoningStart = 0
     let reasoningDuration = 0
     const requestStart = Date.now()
+    // Where a reply's time goes, logged when it finishes: the model's rounds
+    // against the tools they ran, and how long the first model answer took.
+    const timing = { rounds: 0, toolCalls: 0, modelMs: 0, toolMs: 0, seedMs: 0, firstModelMs: 0 }
     const markThinking = () => { if (!reasoningStart) reasoningStart = Date.now() }
     const allocation = body.allocation ?? process.env.PW_ALLOCATION ?? null
     const callbacks = {
@@ -1028,6 +1031,7 @@ ${ctx}` : ctx
     }
     let recorded = false
     const finish = (finishReason: string | null) => {
+      req.log.info({ model: body.model, ...timing, totalMs: Date.now() - requestStart, finishReason }, 'reply timing')
       const messageId = `srv-${Date.now()}`
       recorded = true
       // The duration row in the client renders only when reasoning text
@@ -1208,7 +1212,9 @@ ${ctx}` : ctx
         const q = String((lastUserQuestion as WireMessage | undefined)?.content ?? '').trim()
         if (q && q.length > 12) {
           try {
+            const seedStart = Date.now()
             const seeded = await executeTool('search_kb', JSON.stringify({ query: q.slice(0, 300) }), { labelScope, library: String((body as { library?: string }).library ?? '') || null, userKey: pwToolKey, model: String(body.model ?? '') || null, conversationId: body.conversationId ?? null, userId: req.user?.id ?? null })
+            timing.seedMs = Date.now() - seedStart
             const callId = `seed-${Date.now()}`
             messages.push({ role: 'assistant', content: null, tool_calls: [{ index: 0, id: callId, type: 'function', function: { name: 'search_kb', arguments: JSON.stringify({ query: q.slice(0, 300) }) } }] } as WireMessage)
             messages.push({ role: 'tool', tool_call_id: callId, content: seeded.result } as WireMessage)
@@ -1218,13 +1224,20 @@ ${ctx}` : ctx
           } catch { /* seeding is best-effort */ }
         }
       }
-      for (let iter = 0; iter < MAX_TOOL_ITERATIONS; iter++) {
+      // The rounds a reply may spend on tools, from Settings, Assistant tools.
+      const maxRounds = effectiveSettings().maxToolRounds ?? MAX_TOOL_ITERATIONS
+      let hitLimit = true
+      for (let iter = 0; iter < maxRounds; iter++) {
         turnBreak = true
         const toolSpecs = await activeToolSpecsWithRemote()
         const maxTokens = fitWindow(messages as WireMessage[], String(body.model ?? ''), JSON.stringify(toolSpecs).length)
+        const modelStart = Date.now()
         const turn = await turnWithRetry(
           { model: body.model, messages, tools: toolSpecs, tool_choice: 'auto', max_tokens: maxTokens, ...templateKwargsFor(String(body.model ?? '')) },
         )
+        timing.rounds++
+        timing.modelMs += Date.now() - modelStart
+        if (!timing.firstModelMs) timing.firstModelMs = Date.now() - requestStart
         if (turn.usage) usageTotal = addUsage(usageTotal, turn.usage)
         finalModel = turn.model ?? finalModel
         if (turn.finishReason === 'tool_calls' && turn.toolCalls.length > 0) {
@@ -1253,6 +1266,8 @@ ${ctx}` : ctx
             sse(res, 'tool', { phase: 'call', id: iterParts[i].id, name: tc.function.name, args: tc.function.arguments })
           })
           const outcomes: { result: string; summary: string; failed?: boolean; shown?: string }[] = new Array(calls.length)
+          const toolStart = Date.now()
+          timing.toolCalls += calls.length
           let cursor = 0
           const CONCURRENCY = 6
           await Promise.all(Array.from({ length: Math.min(CONCURRENCY, calls.length) }, async () => {
@@ -1279,6 +1294,7 @@ ${ctx}` : ctx
               markThinking()
             }
           }))
+          timing.toolMs += Date.now() - toolStart
           calls.forEach((tc, i) => {
             const { result, summary, failed, shown } = outcomes[i]
             // The tool block shows the summary line, and when expanded what
@@ -1299,11 +1315,13 @@ ${ctx}` : ctx
         // chatter ("Open one to see content.") is not an answer either.
         if (!turn.content.trim() || (usedTools && turn.content.trim().length < 200)) {
           req.log.warn({ iter }, 'empty turn with no tool calls; forcing final answer')
+          hitLimit = false
           break
         }
         finish(turn.finishReason)
         return reply
       }
+      if (hitLimit) req.log.warn({ maxRounds }, 'tool round limit reached')
       // Tool budget exhausted: one final turn with tools disabled so the user
       // gets an answer built from what was gathered instead of an error.
       req.log.warn('forcing final answer (budget exhausted or empty turn)')
@@ -1346,9 +1364,16 @@ ${ctx}` : ctx
         )
         finalModel = finalTurn.model ?? finalModel
         if (finalTurn.usage) usageTotal = addUsage(usageTotal, finalTurn.usage)
+        timing.rounds++
         if (finalTurn.content.trim()) break
         req.log.warn({ attempt }, 'forced final answer came back empty')
         finalMessages.push({ role: 'user', content: 'Reply with the final answer as plain text.' })
+      }
+      // Work cut short by the limit says so, so the person can ask to go on.
+      if (hitLimit) {
+        const note = `\n\n*Stopped after ${maxRounds} tool rounds, the limit set under Settings, Assistant tools. Ask to continue and the assistant picks up from here.*`
+        finalContent += note
+        sse(res, 'content', { text: note })
       }
       finish(finalTurn?.finishReason ?? 'stop')
       return reply
