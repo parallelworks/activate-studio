@@ -26,3 +26,12 @@ test('ordinary output, including output that mentions the word, is left alone', 
   assert.equal(cliAuthFailure('[{"name":"wf","description":"Unauthorized access audit"}]', '', false), null)
   assert.equal(cliAuthFailure('', 'Error: missing required field: account', true), null)
 })
+
+test('a refused request reports the platform problem, field by field', async () => {
+  const { problemMessage } = await import('../dist/chat/tools.js')
+  const doc = JSON.stringify({ detail: 'Missing required fields: Quality of Service [QoS]', errors: [{ code: 'invalid', detail: "This value isn't valid.", pointer: '#/cluster/slurm/qos' }], status: 400, title: 'Bad Request' }, null, 2)
+  assert.equal(problemMessage(doc), "The platform refused the request (400): Missing required fields: Quality of Service [QoS]; cluster.slurm.qos: This value isn't valid.")
+  assert.match(problemMessage(doc), /missing required field/i, 'the run tool names the remedy for a missing account or QoS')
+  assert.equal(problemMessage('[{"name":"a"}]'), null)
+  assert.equal(problemMessage('plain text'), null)
+})
