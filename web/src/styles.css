@@ -163,6 +163,12 @@ a { color: var(--pw-link); }
 
 * { box-sizing: border-box; }
 html, body, #root { height: 100%; margin: 0; }
+/* The app is a fixed shell whose views scroll inside their own containers.
+   With the page itself free to scroll, anything that reached past the
+   window (the sidebar's footer in a short window, a tall workflow form)
+   scrolled the whole shell up, leaving a band of background under it and
+   the form's sticky Run bar off the window's edge. */
+html, body, #root { overflow: hidden; }
 /* Geist Sans and Geist Mono, as in the platform and the shared chat;
    tabular figures so counts and sizes line up in columns. The shared
    packages' Tailwind builds read --font-sans and --font-mono. */
@@ -277,7 +283,7 @@ main.content { min-height: 0; min-width: 0; background: var(--pw-content-bg); }
   border-right: 1px solid var(--pw-border);
   color: var(--pw-text);
   display: flex; flex-direction: column;
-  padding: 12px;
+  padding: 12px; overflow-y: auto;
 }
 .sidenav-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; padding: 0 4px; }
 .head-actions { display: flex; gap: 5px; }
@@ -2052,27 +2058,10 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 }
 .wf-kind { font-size: 11px; color: var(--pw-muted); border: 1px solid var(--pw-border); border-radius: 999px; padding: 0 7px; }
 
-/* Workflow form inputs. The form library draws its text fields with a
-   global input rule in a "base" layer, which the Studio deliberately ranks
-   below the shared packages' resets (see layers.css) so it cannot restyle
-   inputs elsewhere. Inside the workflow form that left every text and
-   number field as bare text, so the form gets the Studio's field look here,
-   scoped to the form. */
-.wf-form input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=hidden]):not([type=color]),
-.wf-form textarea {
-  width: 100%; box-sizing: border-box; min-height: 32px;
-  padding: 6px 8px; font: inherit; font-size: 13px; color: var(--pw-text);
-  background: var(--pw-input-bg, #f9fafb);
-  border: 1px solid var(--pw-border-strong); border-radius: 6px;
-}
-.wf-form input[role=combobox] { padding-right: 32px; }
-.wf-form input:focus, .wf-form textarea:focus {
-  outline: 2px solid var(--theme-focus-ring, #bfdbfe); outline-offset: 0; border-color: var(--pw-link);
-}
-.wf-form input:disabled, .wf-form textarea:disabled { opacity: 0.6; cursor: not-allowed; }
-.wf-form input::placeholder, .wf-form textarea::placeholder { color: var(--pw-muted); opacity: 0.8; }
-.wf-form input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=hidden]):not([type=color]),
-.wf-form select.field { height: 32px; line-height: 18px; }
+/* Workflow form inputs are drawn by the form library, every one in its own
+   box (fieldBox), and the Studio's own pickers use the same box. The rule
+   that once gave the library's bare inputs a border drew a second box
+   inside the number fields and dropdowns once the library drew its own. */
 /* The UI library's Yes/No switch paints its handle and its unselected half
    with a fixed white-to-gray gradient and has no dark variant. */
 [data-theme='dark'] [role=switch] [class*="from-[#e6e6e6]"] {
@@ -2121,33 +2110,16 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .wf-back:hover { color: var(--pw-text); }
 .wf-title { margin: 0; font-size: 20px; font-weight: 600; color: var(--pw-text); }
 .wf-desc { margin: 4px 0 0; font-size: 14px; color: var(--pw-muted); }
+.wf-source { margin: 4px 0 0; font-size: 12px; color: var(--pw-muted); overflow-wrap: anywhere; }
+.wf-source code { font-size: 12px; }
 .wf-preset { display: flex; align-items: center; gap: 12px; margin: 0 0 18px; padding: 10px 12px; border: 1px solid var(--pw-border); border-radius: 8px; background: color-mix(in srgb, var(--pw-text) 3%, var(--pw-content-bg)); }
 .wf-preset .field-label { flex: 0 0 198px; margin: 0; font-size: 13px; color: var(--pw-text); }
 .wf-preset .field { max-width: 420px; }
 
 .wf-form { font-size: 14px; }
-/* Section headers: the library's 18px bold header, brought down to a
-   label-sized heading with a light rule. */
-.wf-form .text-lg { font-size: 13px; font-weight: 600; letter-spacing: 0.01em; color: var(--pw-text);
-  padding-bottom: 6px; margin: 6px 0 12px; border-bottom: 1px solid var(--pw-border); }
-.wf-form .text-lg button { gap: 6px; color: inherit; }
-.wf-form .text-lg svg { width: 12px; height: 12px; color: var(--pw-muted); flex-shrink: 0; }
-/* Field rows: a fixed label column aligned to the 32px controls. */
-.wf-form .mb-\[15px\] { margin-bottom: 12px; }
-.wf-form label.form-label { display: block; flex: 0 0 210px; max-width: 210px; padding: 7px 14px 0 0; margin: 0;
-  font-size: 13px; line-height: 1.35; color: color-mix(in srgb, var(--pw-text) 82%, var(--pw-content-bg)); }
-.wf-form label.form-label div { display: inline; }
-.wf-form label.form-label [data-tooltip-id] { display: inline-flex; vertical-align: -1px; margin-left: 4px; padding: 0; color: var(--pw-muted); cursor: help; }
-.wf-form label.form-label [data-tooltip-id] svg { width: 12px; height: 12px; }
-.wf-form label.form-label .text-red-500 { color: var(--theme-error); }
-/* Multi-select: the trigger matches the other controls, and the empty
-   "No ... selected" table becomes a compact muted line. */
-.wf-form .theme-input.border.rounded-md { margin: 0 0 6px; border-color: var(--pw-border-strong); border-radius: 6px; background: var(--pw-input-bg, #f9fafb); }
-.wf-form .theme-input.border.rounded-md > button { min-height: 30px; padding: 6px 10px; font-size: 13px; }
-.wf-form .theme-panel.border { border: 1px dashed var(--pw-border); border-radius: 6px; background: transparent; }
-.wf-form .theme-panel table { font-size: 13px; }
-.wf-form .theme-panel td { padding: 6px 10px; color: var(--pw-muted); }
-.wf-form .theme-panel thead { display: none; }
+/* The form library (0.45) draws its own section headers, rules, labels,
+   and field boxes; the overrides written for its 0.34 markup either match
+   nothing now or drew a second rule under every group heading. */
 
 /* Action bar: Run and Validate stay on screen at the foot of long forms. */
 .wf-actions { position: sticky; bottom: 0; z-index: 3; display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
@@ -2156,8 +2128,6 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .wf-result { flex: 1 1 280px; font-size: 13px; }
 
 @media (max-width: 720px) {
-  .wf-form .flex.w-full.items-start { flex-direction: column; }
-  .wf-form label.form-label { flex: none; max-width: none; min-height: 0; height: auto; padding: 0 0 4px; }
   .wf-preset { flex-direction: column; align-items: stretch; }
   .wf-preset .field-label { flex: none; }
 }

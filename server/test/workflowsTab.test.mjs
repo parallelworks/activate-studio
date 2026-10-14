@@ -33,7 +33,7 @@ globalThis.fetch = async url => {
 
 const { default: Fastify } = await import('fastify')
 const { sanitizedErrorHandler } = await import('../dist/routes.js')
-const { workflowsTabRoutes, setWorkflowsCli, resetWorkflowsTabForTests, resolveStudioRefs, firstJson } = await import('../dist/workflowsTab.js')
+const { workflowsTabRoutes, setWorkflowsCli, resetWorkflowsTabForTests, resolveStudioRefs, firstJson, recordSource } = await import('../dist/workflowsTab.js')
 
 const YAML = `
 on:
@@ -176,4 +176,11 @@ test('with the deployment credential expired, the catalog lists the viewer\'s ow
   const body = res.json()
   assert.equal(body.source, 'viewer')
   assert.deepEqual(body.workflows.map(w => w.name), ['mine-only'])
+})
+
+test('a workflow record names its source: local, or the repository, branch, and file it is read from', () => {
+  assert.deepEqual(recordSource({ type: 'local' }), { kind: 'local' })
+  assert.deepEqual(recordSource({ type: 'remote', remote: { repo: 'https://github.com/org/repo.git', branch: 'main', yaml: 'workflows/a/workflow.yaml' } }),
+    { kind: 'remote', repo: 'github.com/org/repo', branch: 'main', path: 'workflows/a/workflow.yaml' })
+  assert.deepEqual(recordSource(null), { kind: 'local' })
 })

@@ -68,6 +68,7 @@ The knowledge base at a glance: size, file types, labels, and recent changes. Cl
 On the ACTIVATE platform, the Workflows tab shows the workflows chosen for {appName}. Open a tile, fill in the form, and press **Run**; **Validate** checks the inputs without running anything. Runs use your own account.
 
 - Saved configurations appear as presets at the top of the form.
+- Under the title, the form says where the workflow comes from: stored in your account (local), or read from a repository (remote), with its branch and file.
 - A form shows the sections and columns its workflow defines.
 - A workflow kept in a repository shows its README beside the form, with how it works and what its inputs change. **Hide README** puts it away.
 - A workflow from GitHub that asks for access to your account variables waits until you tick the approval.

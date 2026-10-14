@@ -156,6 +156,22 @@ export interface Definition {
   runAs: string
   /** Account variables a GitHub workflow declares it needs; running it grants them. */
   permissions: string[]
+  /** Where the definition comes from, shown above the form. */
+  source?: WorkflowSource
+}
+
+/** A workflow's origin: kept in the account (local), read from a
+ *  repository on each run (remote), or a marketplace item. */
+export type WorkflowSource =
+  | { kind: 'local' }
+  | { kind: 'remote'; repo: string; branch: string | null; path: string | null }
+  | { kind: 'marketplace'; slug: string }
+
+/** The origin a platform workflow record declares: its remote block, when it has one. */
+export function recordSource(doc: { type?: string; remote?: { repo?: string; branch?: string; yaml?: string } | null } | null | undefined): WorkflowSource {
+  const r = doc?.remote
+  if (r?.repo) return { kind: 'remote', repo: String(r.repo).replace(/^https?:\/\//, '').replace(/\.git$/, ''), branch: r.branch || null, path: r.yaml || null }
+  return { kind: 'local' }
 }
 
 /** A collection entry's definition, run with the given key; the assistant's
@@ -179,15 +195,17 @@ async function definitionOf(e: WorkflowEntry, key: string | null): Promise<Defin
       configurations: (doc?.configurations ?? []).map((c: any) => ({ name: c.name ?? c.id ?? '', inputs: c.inputs ?? {} })),
       runAs: e.entry,
       permissions: [],
+      source: recordSource(doc),
     }
   }
   if (e.kind === 'marketplace') {
     const text = await call(['marketplace', 'get', e.slug, '--yaml'], key, 60_000)
     const m = (await marketplaceFor(key).catch(() => [])).find(x => x.slug === e.slug)
-    return { yaml: parseYaml(text), displayName: m?.name || e.slug, description: m?.description ?? '', configurations: [], runAs: e.entry, permissions: [] }
+    return { yaml: parseYaml(text), displayName: m?.name || e.slug, description: m?.description ?? '', configurations: [], runAs: e.entry, permissions: [], source: { kind: 'marketplace', slug: e.slug } }
   }
   const g = await githubDefinition(e)
-  return { yaml: g.yaml, displayName: g.title, description: g.description || g.entry, configurations: [], runAs: g.entry, permissions: g.permissions }
+  return { yaml: g.yaml, displayName: g.title, description: g.description || g.entry, configurations: [], runAs: g.entry, permissions: g.permissions,
+    source: { kind: 'remote', repo: `github.com/${e.owner}/${e.repo}`, branch: e.ref, path: e.path || null } }
 }
 
 /**
@@ -381,7 +399,7 @@ export async function workflowsTabRoutes(app: FastifyInstance): Promise<void> {
     let form: unknown = null
     try { form = inputs && workflowHasUserInputs(d.yaml) ? convertToDynamicForm(inputs) : {} } catch { form = null }
     return { name: e.entry, kind: e.kind, displayName: d.displayName, description: d.description, form, configurations: d.configurations,
-      runAs: d.runAs, permissions: d.permissions }
+      runAs: d.runAs, permissions: d.permissions, source: d.source ?? null }
   })
 
   // Clusters for the cluster picker, as the pw:// reference the platform

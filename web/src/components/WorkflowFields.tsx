@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ComponentProps, type ReactNode } from 'react'
 import { useWatch } from 'react-hook-form'
-import { Field } from '@parallelworks/ui'
+import { Field, fieldBox } from '@parallelworks/ui'
 import { fieldFrame, useFieldValue, type FieldComponent } from '@parallelworks/ui/form'
 
 /**
@@ -46,7 +46,7 @@ function Select({ frame, value, options, onChange, disabled, placeholder, note }
   return (
     <Field {...f} description={note ?? f.description}>
       {(c) => (
-        <select {...c} className="field wf-select" value={value} disabled={disabled} onChange={e => onChange(e.target.value)}>
+        <select {...c} className={`${fieldBox()} wf-select`} value={value} disabled={disabled} onChange={e => onChange(e.target.value)}>
           <option value="">{placeholder}</option>
           {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
@@ -125,9 +125,9 @@ function textField(kind: 'text' | 'password' | 'textarea', hint?: string): Field
     return (
       <Field {...f} description={hint ?? f.description}>
         {(c) => kind === 'textarea'
-          ? <textarea {...c} className="field wf-editor" rows={8} disabled={disabled}
+          ? <textarea {...c} className={`${fieldBox({ multiline: true })} wf-editor`} rows={8} disabled={disabled}
               value={String(currentValue ?? '')} onChange={e => onChange(e.target.value)} />
-          : <input {...c} className="field" type={kind} disabled={disabled}
+          : <input {...c} className={fieldBox()} type={kind} disabled={disabled}
               placeholder={String((field as { placeholder?: unknown }).placeholder ?? '')}
               value={String(currentValue ?? '')} onChange={e => onChange(e.target.value)} />}
       </Field>
