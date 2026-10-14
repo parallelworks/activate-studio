@@ -2,6 +2,30 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.118 (2026-10-13)
+
+### Change log through v1.117 (#450)
+
+Regenerated with `node scripts/release-notes.mjs --changelog` after the v1.117 release.
+
+### Follow runs whatever their id, link sessions by name on the Workflows tab, wrap session cards (#451)
+
+Found by an end-to-end test on a live platform. A chat model launched the design explorer workflow from its GitHub file on a test cluster over a synthetic 16-case study whose cases finished one at a time. The test then checked the side view, the session in chat, Beside chat, Pop out, and the Workflows tab in headless Chrome.
+
+- **Run ids:** a run of a workflow file from GitHub gets an id with no number on the end (`gh-<owner>-<repo>`, then `-2` for the next), so the side view, which looked for ids ending in five digits, never opened for it. It now takes the id from the run tools' summaries as written: `run submitted: <id>` from `run_workflow`, and `<id>: <status>` from the watchers.
+- **Session column:** the Workflows tab's runs table now matches a session to its run by name when the platform records no run (`sessionOfRun`, the same rule the server applies since #444), so the study viewer appears beside its run.
+- **Card buttons:** a session card's bar wraps in a narrow chat column. With the side view open, Hide, Beside chat, and Open in new tab were cut off.
+
+After the fixes, the same test showed:
+- the side view opening on the run within seconds of the launch;
+- the Session tab showing the study viewer through the relay, which counted cases as they solved (4, then 6, then 14 of 16);
+- the session card inline at full height with all four buttons visible;
+- Beside chat adding the session as a second tab;
+- Pop out opening a window at the session's own address;
+- the runs table naming the session.
+
+Tests: `web/test/runPane.test.ts` covers ids with and without a number and the client's session match.
+
 ## v1.117 (2026-10-13)
 
 ### Change log through v1.116 (#448)
