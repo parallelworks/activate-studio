@@ -42,3 +42,13 @@ test('each model turn opens a new paragraph, so headings and tables render', asy
   assert.equal(turnSeparator('A list:\n'), '\n')
   assert.equal(turnSeparator('Done.\n\n'), '')
 })
+
+test('earlier turns reach the model as text: their tool calls and results are left out of the history', async () => {
+  const { isEarlierToolTraffic } = await import('../dist/chat/routes.js')
+  assert.equal(isEarlierToolTraffic({ role: 'tool', content: 'result', tool_call_id: 'c1' }), true)
+  assert.equal(isEarlierToolTraffic({ role: 'tool', content: 'result' }), true)
+  assert.equal(isEarlierToolTraffic({ role: 'assistant', content: null, tool_calls: [{ id: 'c1' }] }), true)
+  assert.equal(isEarlierToolTraffic({ role: 'assistant', content: 'Here is what I found.', tool_calls: [{ id: 'c1' }] }), false)
+  assert.equal(isEarlierToolTraffic({ role: 'assistant', content: 'Plain answer.' }), false)
+  assert.equal(isEarlierToolTraffic({ role: 'user', content: 'And the margins?' }), false)
+})

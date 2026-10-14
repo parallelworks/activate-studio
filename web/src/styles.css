@@ -168,7 +168,7 @@ html, body, #root { height: 100%; margin: 0; }
    window (the sidebar's footer in a short window, a tall workflow form)
    scrolled the whole shell up, leaving a band of background under it and
    the form's sticky Run bar off the window's edge. */
-html, body, #root { overflow: hidden; }
+html, body, #root { overflow: hidden; overflow: clip; }
 /* Geist Sans and Geist Mono, as in the platform and the shared chat;
    tabular figures so counts and sizes line up in columns. The shared
    packages' Tailwind builds read --font-sans and --font-mono. */
@@ -1845,7 +1845,7 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
      page-level scroll keeps the bar on the bottom edge; the views
      scroll inside their own containers, which is where scrolling
      belongs. */
-  html, body, #root { height: 100%; overflow: hidden; }
+  html, body, #root { height: 100%; overflow: hidden; overflow: clip; }
   /* Pinned to the visual viewport rather than sized by a chain of
      percentages: a fixed element with dvh is the one arrangement iOS
      keeps correct while its toolbars slide in and out. Out of flow, so
@@ -1951,7 +1951,11 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
   font: inherit; font-size: 12px; color: var(--pw-text); background: var(--pw-panel);
   border: 1px solid var(--pw-border); border-radius: 6px; padding: 2px 6px; max-width: 60%;
 }
-.rail-head .library-switch { margin-right: auto; }
+/* In the tree's header the picker takes what the buttons leave and
+   truncates; at its natural width a long library name pushed + Add and the
+   collapse button past the pane's edge. */
+.rail-head .library-switch { margin-right: auto; flex: 1 1 0; min-width: 0; max-width: none; text-overflow: ellipsis; }
+.rail-head .rail-actions { flex-shrink: 0; }
 
 /* ---- Settings > Libraries ---- */
 .libraries-table { margin-bottom: 18px; }
@@ -2227,7 +2231,15 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 
 /* The side view's tabs: each run or session sent beside the chat, with
    Pop out (a window beside the Studio) and Hide. */
-.side-view { flex: 0 0 min(46%, 820px); min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.side-view { flex: 0 0 min(46%, 820px); min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 6px; }
+/* Stacked under the chat in a narrow window, the side view and the chat
+   share the height and each scrolls inside its share. Without min-height:0
+   the side view grew to its content (the graph and the session frame ask
+   for 420 to 480px each), squeezed the chat to a sliver, and pushed the
+   shell past the window. overflow: clip on the shell (above) keeps a
+   scrollIntoView from moving it either way; hidden alone still lets script
+   scroll it, out of reach of the user. */
+.chat-wrap > *, .wf-with-side > * { min-height: 0; }
 .side-view .run-pane { flex: 1 1 auto; min-height: 0; }
 .side-tabs { display: flex; align-items: center; gap: 4px; min-width: 0; overflow-x: auto; }
 .side-tab { display: flex; align-items: center; min-width: 0; max-width: 240px; border: 1px solid var(--pw-border); border-radius: 6px; background: var(--pw-panel); }
