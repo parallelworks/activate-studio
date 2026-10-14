@@ -2,6 +2,27 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.123 (2026-10-14)
+
+### Change log through v1.122 (#460)
+
+Regenerated with `node scripts/release-notes.mjs --changelog` after the v1.122 release.
+
+### Fix follow-up messages after tool use, the stacked side view, and the tree header (#462)
+
+Three fixes found while using v1.122 on a live deployment.
+
+**Follow-ups after tool use failed.** Starting with the 0.45 chat client, an assistant message's earlier tool calls go into the request history as an assistant message carrying `tool_calls`, followed by tool messages carrying `tool_call_id`. The server rebuilt the history as role and text only, which stripped those IDs, and the gateway refused the request: `Tool message missing tool_call_id`. So every follow-up to a reply that had used tools failed. Earlier turns now contribute only their text, as they did before 0.45. The current turn's tool calls are sent by the turn loop with their IDs, unchanged. The stand-in gateway used for testing now rejects tool messages without an ID, as real gateways do. With it, v1.122 reproduces the failure and this branch answers the follow-up.
+
+**Stacked side view.** Below 1000 px wide, the side view stacks under the chat. As a flex item with `min-height: auto` it grew to its content's full height, because the graph and the session frame each ask for 420 to 480 px. In a 700 px window it reached 1,323 px, squeezed the chat out of view, and pushed the shell past the window. Since v1.122 the shell is `overflow: hidden`, which still lets `scrollIntoView` scroll it, and the user then cannot scroll back. Now the stacked side view and the chat share the height, each scrolling inside its share. The shell is `overflow: clip`, which nothing can scroll.
+
+**Tree header.** The library picker had `max-width: 60%` and couldn't shrink, so a long library name pushed **+ Add** and the collapse button past the pane's edge. It now takes the width the buttons leave and truncates its text.
+
+Checked in headless Chrome:
+- A two-message conversation against the strict stand-in gateway gets its follow-up answered.
+- At 1000 px the side view takes the bottom 55%, with no overflow and no shift after `scrollIntoView`; at 1400 px the side-by-side layout is unchanged.
+- With a long library name, every tree header button stays inside a 240 px or 300 px pane.
+
 ## v1.122 (2026-10-14)
 
 ### Change log through v1.121 (#459)
