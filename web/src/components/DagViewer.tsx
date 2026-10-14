@@ -1,5 +1,55 @@
-import { Suspense, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { DependencyGraphPreview } from '@parallelworks/ui/graph'
+import { initializeValues, resolveFormLayout } from '@parallelworks/ui/form'
+import { useWorkflowFields } from './WorkflowFields'
+
+const DynamicForm = lazy(() => import('@parallelworks/ui/form').then(m => ({ default: m.DynamicForm })))
+
+type FormJson = Record<string, unknown>
+
+const LAYOUT_ISSUE: Record<string, string> = {
+  unknown_field: 'names a field that is not an input here',
+  duplicate_field: 'places a field a second time',
+  invalid_node: 'is not a valid layout node',
+}
+
+/**
+ * Layout problems the schema cannot see: a layout that names a field the
+ * form does not have, or places one twice. The form then drops that layout
+ * and draws its fields in order, so the author is told why.
+ */
+function layoutNotes(form: FormJson, scope = 'the form'): string[] {
+  const names = Object.keys(form).filter(k => !k.startsWith('$'))
+  const meta = form.$meta as { layout?: unknown } | undefined
+  const out: string[] = []
+  if (meta?.layout !== undefined) {
+    const { issues } = resolveFormLayout(meta.layout, names)
+    for (const i of issues) out.push(`The layout of ${scope}, at ${['layout', ...i.path].join('.')}, ${LAYOUT_ISSUE[i.code] ?? i.code}; the form is drawn without it.`)
+  }
+  for (const k of names) {
+    const f = form[k] as { type?: string; label?: string; options?: unknown } | undefined
+    if (f && f.type === 'object' && f.options && typeof f.options === 'object' && !Array.isArray(f.options)) out.push(...layoutNotes(f.options as FormJson, `"${f.label ?? k}"`))
+  }
+  return out
+}
+
+/** The form a run of this workflow asks for, drawn by the platform's own form library. */
+function FormPreview({ form }: { form: FormJson }) {
+  const fields = useWorkflowFields()
+  const initial = useMemo(() => { try { return initializeValues(form, {}) ?? {} } catch { return {} } }, [form])
+  const notes = useMemo(() => { try { return layoutNotes(form) } catch { return [] } }, [form])
+  return (
+    <div className="viewer-body dag-form-preview">
+      <p className="muted dag-form-note">A preview of the form a run of this workflow shows. Nothing here is submitted.</p>
+      {notes.length > 0 && <div className="dag-schema-warn"><ul>{notes.map((n, i) => <li key={i}>{n}</li>)}</ul></div>}
+      <div className="wf-form">
+        <Suspense fallback={<p className="muted">Loading form…</p>}>
+          <DynamicForm formJSONs={form} initialValues={initial} fields={fields} workflowForm labelPosition="left" contextKey="preview" allowLayoutCSS />
+        </Suspense>
+      </div>
+    </div>
+  )
+}
 
 interface DagData {
   name: string
@@ -8,7 +58,8 @@ interface DagData {
   edges: { from: string; to: string }[]
   /** The workflow document, rendered by the platform's own graph. */
   yaml?: Record<string, unknown>
-  form?: Record<string, { label?: string; type?: string; default?: unknown; tooltip?: string }> | null
+  /** The workflow's inputs in the platform's form shape. */
+  form?: FormJson | null
   yamlText?: string
   /** Present for corpus files: why the platform would reject this YAML. */
   schemaErrors?: string[]
@@ -143,7 +194,7 @@ export function DagViewer({ workflow, path }: { workflow?: string; path?: string
         <div className="viewer-tabs">
           <button className={tab === 'dag' ? 'active' : ''} onClick={() => setTab('dag')}>DAG</button>
           {dag.form && Object.keys(dag.form).length > 0 && (
-            <button className={tab === 'inputs' ? 'active' : ''} onClick={() => setTab('inputs')}>Inputs</button>
+            <button className={tab === 'inputs' ? 'active' : ''} onClick={() => setTab('inputs')}>Form</button>
           )}
           <button className={tab === 'yaml' ? 'active' : ''} onClick={() => setTab('yaml')}>workflow.yaml</button>
         </div>
@@ -151,23 +202,7 @@ export function DagViewer({ workflow, path }: { workflow?: string; path?: string
       {tab === 'yaml' && dag.yamlText ? (
         <div className="viewer-body"><pre className="text-body">{dag.yamlText}</pre></div>
       ) : tab === 'inputs' && dag.form ? (
-        // What a run of this workflow asks for, as the platform's parser
-        // resolves it from the document.
-        <div className="viewer-body">
-          <table className="rag-calls-table wf-inputs">
-            <thead><tr><th>Input</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
-            <tbody>
-              {Object.entries(dag.form).map(([id, f]) => (
-                <tr key={id}>
-                  <td>{f?.label || id}</td>
-                  <td><code>{f?.type ?? 'string'}</code></td>
-                  <td>{f?.default === undefined || f?.default === '' ? '-' : <code>{String(f.default)}</code>}</td>
-                  <td>{f?.tooltip ?? ''}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <FormPreview form={dag.form} />
       ) : dag.yaml ? (
         // The platform's own dependency graph, so the workflow reads the
         // same here as it does in ACTIVATE.

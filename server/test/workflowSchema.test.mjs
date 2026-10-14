@@ -69,6 +69,35 @@ test('a form layout passes the platform schema, and a layout node it does not de
   assert.equal(bad.ok, false)
 })
 
+test('an input error names the field and the rule it breaks, not every input type the oneOf tried', async () => {
+  const doc = { on: { execute: { inputs: {
+    resource: { type: 'compute-clusters', label: 'Cluster' },
+    sched: { type: 'group', label: 'Scheduler', items: {
+      slurm: { type: 'group', label: 'SLURM', items: {
+        account: { type: 'slurm-accounts', label: 'Account', resource: '${{ inputs.resource }}', default: 'proj123' },
+      } },
+    } },
+  } } }, jobs: { main: { steps: [{ run: 'true' }] } } }
+  const v = await validateWorkflowDoc(doc)
+  assert.equal(v.ok, false)
+  assert.deepEqual(v.errors, ['/on/execute/inputs/sched/items/slurm/items/account/default: must be an expression, written ${{ ... }}'])
+  doc.on.execute.inputs.sched.items.slurm.items.account.default = '${{ "proj123" }}'
+  assert.equal((await validateWorkflowDoc(doc)).ok, true)
+})
+
+test('layout and one-of-several errors say where and what, once each', async () => {
+  const doc = { on: { execute: { inputs: {
+    $meta: { layout: { type: 'stack', children: [{ type: 'columns', children: [] }, { type: 'field', field: 'a', span: 99 }] } },
+    a: { type: 'string', label: 'A', width: 'wide' },
+  } } }, jobs: { main: { steps: [{ run: 'true' }] } } }
+  const v = await validateWorkflowDoc(doc)
+  assert.equal(v.ok, false)
+  assert.equal(v.errors.length, 3, v.errors.join('\n'))
+  assert.ok(v.errors.some(e => e.startsWith('/on/execute/inputs/$meta/layout/children/0/type: "columns" is not a layout node type')))
+  assert.ok(v.errors.some(e => e.startsWith('/on/execute/inputs/$meta/layout/children/1/span: must satisfy one of')))
+  assert.ok(v.errors.some(e => e.startsWith('/on/execute/inputs/a/width: must satisfy one of')))
+})
+
 test('a bare uses reference is what the schema rejects', async () => {
   const v = await validateWorkflowDoc({ jobs: { a: { steps: [{ uses: 'cloudinit' }] } } })
   assert.equal(v.ok, false)
