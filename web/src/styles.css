@@ -2273,3 +2273,34 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 /* A session shown under its card in a chat reply. */
 .session-inline { display: block; flex: 0 0 auto; width: 100%; height: 520px; border: 0; border-top: 1px solid var(--pw-border); margin-top: 8px; background: #fff; }
 .embed-unknown p { margin: 0; padding: 10px 12px; font-size: 13px; }
+/* The Scope menu holds the chat's library and its labels: the button names
+   the library after "Scope", and the menu scrolls when both are long. */
+.scope-sub { margin-left: 6px; padding-left: 6px; border-left: 1px solid var(--pw-border); font-weight: 500; }
+.chat-scope-anchor .scope-menu { width: 270px; max-height: min(70vh, 560px); overflow-y: auto; }
+.scope-libs { display: flex; flex-direction: column; gap: 2px; }
+/* A reply that is still streaming keeps a steady shape. The package shows
+   the latest lines of the model's thinking under the label while it thinks
+   and drops them when a tool or the answer starts, which opened and closed
+   the block on every round; the label stays, and clicking it opens the
+   whole reasoning. A tool call's result summary sits on the call's own row
+   instead of a second line, so a call is the height of the "Ran N tools"
+   row it folds into and nothing jumps when it does. These reach into the
+   package's markup (its test ids), so a markup change only loses the
+   effect. */
+.chat-reasoning-tail { display: none; }
+[data-testid="tool-call-part"] { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
+[data-testid="tool-call-part"] > :first-child { flex: 0 1 auto; min-width: 0; }
+[data-testid="tool-call-part"] > :only-child { flex: 1 1 auto; }
+[data-testid="tool-call-part"] > :first-child + div {
+  margin: 0; flex: 0 1 auto; max-width: 45%; min-width: 0;
+  line-height: 24px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* The Workflows page with its side view: the page and the view side by
+   side, stacked on a narrow screen, as the chat does. */
+.wf-with-side { flex: 1; min-height: 0; display: flex; gap: 12px; position: relative; }
+.wf-with-side > .overview-view { flex: 1 1 auto; min-width: 0; }
+.wf-with-side > .side-view { padding: 12px 12px 12px 0; }
+@media (max-width: 1000px) {
+  .wf-with-side:has(.side-view) { flex-direction: column; }
+  .wf-with-side > .side-view { padding: 0 12px 12px; min-height: 60vh; }
+}

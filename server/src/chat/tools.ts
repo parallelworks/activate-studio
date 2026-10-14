@@ -951,10 +951,31 @@ function pwCli(args: string[], timeoutMs = 30_000): Promise<string> {
     execFile(PW_CLI, args, { timeout: timeoutMs, maxBuffer: 8 * 1024 * 1024, env }, (err, stdout, stderr) => {
       // "spawn pw ENOENT" tells the model nothing it can act on and reads
       // as though the command failed, so name the actual condition.
-      if (err) return reject(new Error(isMissingCli(err) ? NO_CLI_MESSAGE : (stderr || err.message)))
+      if (err && isMissingCli(err)) return reject(new Error(NO_CLI_MESSAGE))
+      const denied = cliAuthFailure(String(stdout ?? ''), String(stderr ?? ''), !!userKey)
+      if (denied) return reject(new Error(denied))
+      if (err) return reject(new Error(stderr || err.message))
       resolve(stdout)
     })
   })
+}
+
+/**
+ * The CLI's answer when the credential it ran with was refused or missing.
+ * A model handed the raw 401 body or "no context configured" guesses at
+ * input shapes and syntax, so say whose credential failed and what fixes it.
+ */
+export function cliAuthFailure(stdout: string, stderr: string, personal: boolean): string | null {
+  // The refusal arrives as a problem document in place of the output; only
+  // that shape counts, so a listing that mentions the word does not.
+  const head = stdout.trim().slice(0, 300)
+  const refused = (head.startsWith('{') && /"status":\s*40[13]\b/.test(head) && /"title":\s*"(Unauthorized|Forbidden)"/.test(head))
+    || /\b(401|Unauthorized)\b/.test(stderr)
+  const missing = /no context configured|could not extract platform host|invalid credential format/i.test(`${stderr}\n${head}`)
+  if (!refused && !missing) return null
+  return personal
+    ? 'The platform refused the user\'s own key for this command (unauthorized). It may have expired or been revoked; ask the user to add a current ACTIVATE API key under Settings, Model access. This is a credential problem, not a problem with the command or its inputs.'
+    : 'No usable platform credential for this command: the user has no personal ACTIVATE key in this Studio, and the deployment\'s own credential was ' + (refused ? 'refused by the platform' : 'missing') + '. Ask the user to add their ACTIVATE API key under Settings, Model access. This is a credential problem, not a problem with the command or its inputs.'
 }
 
 /**

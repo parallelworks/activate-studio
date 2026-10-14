@@ -12,7 +12,7 @@ import { systemPrompt } from './context.js'
 import { attachmentContext } from '../attachments.js'
 import { effectiveSettings } from '../settings.js'
 import { agentPrompt } from '../extensions.js'
-import { recordAssistantTurn, recordUserTurn, StoredToolCallPart } from '../conversations.js'
+import { beginAnswer, recordAssistantTurn, recordUserTurn, StoredToolCallPart } from '../conversations.js'
 import { clearSharedKey, clearUserKey, getSharedKeyStatus, getUserKeyStatus, KEY_COOKIE, KEY_COOKIE_P, personalKeysDisabled, resolveUserCred, resolveUserKey, sealKeyCookie, setUserKey, shareUserKey } from '../credentials.js'
 import { authEnabled } from '../auth.js'
 
@@ -884,6 +884,10 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     const res = reply.raw
     inFlight++
     res.on('close', () => { inFlight = Math.max(0, inFlight - 1) })
+    // While this runs, the conversation's newest user message is not
+    // reported as having lost its reply.
+    const endAnswer = beginAnswer(body.conversationId)
+    res.on('close', endAnswer)
     const abort = new AbortController()
     // Response 'close' fires on client disconnect (request 'close' fires as
     // soon as the body is consumed, which would abort immediately).
@@ -1363,8 +1367,9 @@ ${ctx}` : ctx
         })
       }
     }
-    // An aborted or failed stream still keeps whatever was said.
-    if (!recorded && finalContent) {
+    // An aborted or failed stream still keeps whatever was said, and the
+    // tool calls it made, so a stopped turn's errors stay readable.
+    if (!recorded && (finalContent || finalParts.length)) {
       recordAssistantTurn(body.conversationId, {
         id: `srv-${Date.now()}`, role: 'assistant', content: finalContent,
         parentId: body.userMessageId ?? null, timestamp: new Date().toISOString(),
@@ -1372,6 +1377,8 @@ ${ctx}` : ctx
         reasoning: finalReasoning || undefined,
         reasoningDuration: reasoningDuration || (reasoningStart ? Date.now() - reasoningStart : undefined),
         tokensUsed: usageTotal.total_tokens ? usageTotal : undefined,
+        parts: finalParts.length ? finalParts : undefined,
+        finishReason: abort.signal.aborted ? 'stopped' : undefined,
       })
     }
     res.end()
