@@ -22,6 +22,22 @@ interface FormDoc {
   form: Record<string, unknown> | null
   configurations: { name: string; inputs: Record<string, unknown> }[]
   permissions?: string[]
+  source?: WorkflowSource | null
+}
+type WorkflowSource =
+  | { kind: 'local' }
+  | { kind: 'remote'; repo: string; branch: string | null; path: string | null }
+  | { kind: 'marketplace'; slug: string }
+
+/** Where a workflow's definition comes from, in one line. */
+function SourceLine({ source }: { source: WorkflowSource }) {
+  if (source.kind === 'local') return <p className="wf-source">Local: stored in your ACTIVATE account</p>
+  if (source.kind === 'marketplace') return <p className="wf-source">Marketplace: <code>{source.slug}</code></p>
+  return (
+    <p className="wf-source">
+      Remote: <code>{source.repo}</code>{source.branch && <> on <code>{source.branch}</code></>}{source.path && <>, <code>{source.path}</code></>}
+    </p>
+  )
 }
 interface RunRow { slug: string; workflow: string; launchedAt: string; state: string; endedAt: string | null }
 
@@ -193,6 +209,7 @@ function WorkflowRunner({ name, kind, title, onBack, onLaunched }: { name: strin
           {hasReadme && <button type="button" className="btn-ghost wf-readme-toggle" onClick={toggleReadme}>{showReadme ? 'Hide README' : 'Show README'}</button>}
         </div>
         {doc?.description && <p className="wf-desc">{doc.description}</p>}
+        {doc?.source && <SourceLine source={doc.source} />}
       </header>
       <div className="wf-runner-body">
       <div className="wf-runner-main">
