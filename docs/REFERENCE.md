@@ -25,6 +25,7 @@ The details behind the user guide ([`HELP.md`](HELP.md)), by part of the app. Th
 - **Find** highlights every match, stays in view while you scroll, and steps through matches with Enter, Shift+Enter, or its buttons. A file opened from a search result opens on its first match with the query already in the find bar; a PDF or office document opened that way opens on its indexed text, since page images cannot be searched.
 - The right-click menu has Open, Labels…, and Delete for a file, and New folder inside…, Labels…, and Delete folder (with its contents, after a confirmation) for a folder. Delete removes the material and its index entries together.
 - Panes resize at their edges and collapse from their headers.
+- A workflow YAML is checked against the platform's published workflow schema. Each input is checked against the schema for the type it declares, and each layout node against its node type, so a problem is reported once, as the field's path and the rule it breaks, instead of once for every input type the schema allows. The **Form** tab draws the run form with the platform's form library; a layout that names a missing field or places one twice is reported there, since the form then draws that group without its layout.
 - A read-only library says so beside its name in the picker. Settings, "Libraries" lists each library with its index and source paths, and adds one by path ([`LIBRARIES.md`](LIBRARIES.md)).
 
 ## Search
