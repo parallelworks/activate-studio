@@ -2,6 +2,22 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.127 (2026-10-14)
+
+### Change log through v1.126 (#469)
+
+Regenerated with `node scripts/release-notes.mjs --changelog` after the v1.126 release.
+
+### Chat: tool rounds per reply is a setting (default 50); replies log their timing (#470)
+
+A user found that long chat tasks stopped after 24 tool rounds, a constant in `config.ts` with no setting.
+
+**Tool rounds setting.** **Settings > Assistant tools > Most tool rounds per reply** now controls it, from 5 to 200 with a default of 50; `STUDIO_MAX_TOOL_ROUNDS` sets the deployment default. At the limit the assistant still answers from what it gathered, as before, and now ends with a note that it stopped at the limit and that asking it to continue picks up from there.
+
+**Reply timing.** The same user found the Studio slow next to coding agents. Each reply now logs `reply timing`: rounds, tool calls, model time, tool time, pre-search time, time to the first model answer, and total. That shows where a deployment's time goes before anything is changed.
+
+Tests: the default and the environment override. The full suite passes.
+
 ## v1.126 (2026-10-14)
 
 ### Change log through v1.125 (#467)
