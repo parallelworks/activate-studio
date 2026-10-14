@@ -151,7 +151,7 @@ export function RunPane({ slug, onClose }: { slug: string; onClose: () => void }
               ? <Suspense fallback={<p className="muted">Loading form…</p>}>
                   <fieldset disabled className="run-pane-fieldset">
                     <DynamicForm key={`${slug}:${doc.displayName ?? ''}`} formJSONs={doc.form as any} initialValues={initial as any}
-                      fields={fields} workflowForm labelPosition="left" contextKey={slug} />
+                      fields={fields} workflowForm labelPosition="left" contextKey={slug} allowLayoutCSS />
                   </fieldset>
                 </Suspense>
               : run?.inputs

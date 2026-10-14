@@ -106,9 +106,13 @@ export async function composeWorkflows(steps: ComposeStep[], opts: { chain?: boo
     const declared = (doc?.yaml?.on?.execute?.inputs ?? {}) as Record<string, any>
     const names: string[] = []
     for (const [key, def] of Object.entries(declared)) {
+      // `$meta` is the source form's layout, which names that form's fields;
+      // the composed form has its own field set, so it is not carried over.
+      if (key.startsWith('$')) continue
       if (def && typeof def === 'object' && def.type === 'group') {
         // Groups nest their fields; the composed form takes the fields.
         for (const [k, d] of Object.entries((def.items ?? {}) as Record<string, unknown>)) {
+          if (k.startsWith('$')) continue
           names.push(k)
           record(k, d as Record<string, unknown>, name)
         }

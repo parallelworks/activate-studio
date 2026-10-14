@@ -56,6 +56,8 @@ The form is the platform's own renderer from `@parallelworks/ui`, fed by the pla
 | `editor` | a text area |
 | Kubernetes and instance types | text inputs |
 
+A form that defines a layout in `$meta.layout` (sections, stacks, and responsive grids, at the top of the inputs or inside a group) is drawn with it, here and in the side view's Form tab. Grid columns follow the width of the form, not the window, so the narrow side view gets each grid's `base` columns. The layout's scoped `css` is applied; the renderer accepts only layout and appearance properties and drops a block that has any other. The workflow composer leaves the source workflows' layouts out, since each names its own workflow's fields.
+
 Recent runs from the tab are listed below the tiles with their state.
 
 ## README

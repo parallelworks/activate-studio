@@ -1,5 +1,5 @@
-import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
-import type { FormikProps, FormikValues } from 'formik'
+import { Suspense, useEffect, useMemo, useState } from 'react'
+import { useForm } from 'react-hook-form'
 import { DynamicForm, initializeValues } from '@parallelworks/ui/form'
 import { Streamdown } from 'streamdown'
 import { useWorkflowFields, forgetPlatformData } from '../components/WorkflowFields'
@@ -151,7 +151,7 @@ function WorkflowRunner({ name, kind, title, onBack, onLaunched }: { name: strin
       .then(setReadme).catch(() => setReadme({ markdown: null, web: null }))
   }, [name])
   const hasReadme = !!readme?.markdown
-  const formik = useRef<FormikProps<FormikValues> | null>(null)
+  const form = useForm<Record<string, unknown>>()
   const fields = useWorkflowFields()
   const load = () => {
     setError(''); setNeedsInstall(false); setTrust(false)
@@ -168,7 +168,7 @@ function WorkflowRunner({ name, kind, title, onBack, onLaunched }: { name: strin
     try { return initializeValues(doc.form, saved) ?? saved } catch { return saved }
   }, [doc, preset])
   const submit = async (dryRun: boolean) => {
-    const values = formik.current?.values ?? {}
+    const { editorKeyPostfix: _, ...values } = form.getValues()
     setBusy(dryRun ? 'validate' : 'run'); setResult(null)
     try {
       const r = await json<{ ok: boolean; message: string; slug?: string | null }>(await fetch(`/api/workflows/item/run?w=${encodeURIComponent(name)}`, {
@@ -217,8 +217,8 @@ function WorkflowRunner({ name, kind, title, onBack, onLaunched }: { name: strin
           <div className="wf-form">
             {doc.form && Object.keys(doc.form).length
               ? <Suspense fallback={<p className="muted">Loading form…</p>}>
-                  <DynamicForm key={`${name}:${preset}`} formJSONs={doc.form} initialValues={initial} formikRef={formik}
-                    fields={fields} workflowForm labelPosition="left" contextKey={preset || 'defaults'} />
+                  <DynamicForm key={`${name}:${preset}`} form={form} formJSONs={doc.form} initialValues={initial} reinitialize
+                    fields={fields} workflowForm labelPosition="left" contextKey={preset || 'defaults'} allowLayoutCSS />
                 </Suspense>
               : <p className="muted">This workflow takes no inputs.</p>}
           </div>

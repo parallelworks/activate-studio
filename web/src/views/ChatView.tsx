@@ -388,11 +388,6 @@ export function ChatView() {
           setTimeout(() => focus(5), 50)
         },
       }}
-      notify={{
-        success: () => {},
-        error: (m: string) => console.error(m),
-        info: () => {},
-      }}
       activeConversationId={activeId}
       config={{
         suggestedPrompts: cfg.suggestedPrompts,
