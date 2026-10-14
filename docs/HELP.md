@@ -17,7 +17,7 @@ Ask in plain language. The assistant searches the knowledge base, reads the file
 - **Attach** files or images with the paperclip; they are added to the library and indexed.
 - **Scope**, at the top right, chooses which library the assistant searches in this chat, or all of them, and limits answers to material with the labels you choose.
 - Type **/** to pick a skill, a tool, or a persona to use.
-- Ask it to run work on a connected HPC system; it follows the run and explains a failure if there is one. A side view beside the chat shows the run: its form as submitted, the live graph of its jobs, and the web session it opens, such as a study viewer. **Beside chat** on a session card adds the session as a tab there, and **Pop out** opens a tab in a window beside the Studio.
+- Ask it to run work on a connected HPC system; it follows the run and explains a failure if there is one. A side view beside the chat shows the run: its form as submitted, the live graph of its jobs, and the web session it opens, such as a study viewer. **Beside chat** on a session card adds the session as a tab there, **Full screen** shows it over the whole Studio (Close or Escape returns), and **Pop out** opens a tab in a window beside the Studio.
 - Ask to see running sessions by a word or a run ("show me the modo sessions"); each comes back as a card that opens it.
 - **Select chats**, above New chat, deletes old conversations together.
 - In a shared session, add your own model key under Settings, "Model access", to chat as yourself.

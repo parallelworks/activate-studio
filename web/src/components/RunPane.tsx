@@ -3,7 +3,7 @@ import { useChat } from '@parallelworks/ui/ai'
 import { initializeValues } from '@parallelworks/ui/form'
 import { useWorkflowFields } from './WorkflowFields'
 import { insidePlatform } from './SessionView'
-import { openBeside } from '../sideBySide'
+import { openBeside, openFullView } from '../sideBySide'
 
 /**
  * The run the assistant launched, beside the conversation: the workflow's
@@ -226,6 +226,47 @@ function sessionItem(s: SideSession): SideItem | null {
   return { kind: 'session', id: `session:${s.name}`, name: s.name, url: s.url, host, platformUrl: s.platformUrl ?? null }
 }
 
+/**
+ * A session at full size inside the Studio: everything below the
+ * classification banner, which stays visible, with Close (or Escape),
+ * Pop out, and New tab. Opened with openFullView.
+ */
+export function FullViewHost() {
+  const [item, setItem] = useState<Extract<SideItem, { kind: 'session' }> | null>(null)
+  useEffect(() => {
+    const on = (e: MessageEvent) => {
+      if (e.origin !== window.location.origin || e.data?.type !== 'ade-full-view') return
+      const it = sessionItem(e.data.session)
+      if (it?.kind === 'session') setItem(it)
+    }
+    window.addEventListener('message', on)
+    return () => window.removeEventListener('message', on)
+  }, [])
+  useEffect(() => {
+    if (!item) return
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') setItem(null) }
+    window.addEventListener('keydown', key)
+    return () => window.removeEventListener('keydown', key)
+  }, [item])
+  if (!item) return null
+  return (
+    <div className="full-view" role="dialog" aria-label={item.name}>
+      <div className="full-view-bar">
+        <span className="run-dot run-running" />
+        <strong className="full-view-name">{item.name}</strong>
+        <span className="full-view-actions">
+          <button type="button" className="btn-ghost" title="Open in a window beside this one" onClick={() => popOut(item)}>Pop out</button>
+          <a className="btn-ghost" href={item.url} target="_blank" rel="noopener noreferrer">New tab</a>
+          <button type="button" className="btn-secondary" title="Close (Escape)" onClick={() => setItem(null)}>Close</button>
+        </span>
+      </div>
+      {item.host
+        ? <iframe className="full-view-frame" title={item.name} src={`/api/session-proxy/${item.host}/`} />
+        : <p className="muted pad">This session is served under the platform's own address, so it cannot show here. Pop it out to open it beside the Studio.</p>}
+    </div>
+  )
+}
+
 /** Sends a session or a run to the side view of a page with no chat. The
  *  chat stays mounted behind other pages, so its side view takes only
  *  messages with no target (the session cards in its replies). */
@@ -286,6 +327,10 @@ function SideView({ side, beside }: { side: ReturnType<typeof useSideItems>; bes
           </div>
         ))}
         <span className="side-tabs-actions">
+          {cur.kind === 'session' && cur.host && (
+            <button type="button" className="btn-ghost" title="Show it over the whole Studio"
+              onClick={() => openFullView({ name: cur.name, url: cur.url, ownHost: true, platformUrl: cur.platformUrl }, false)}>Full screen</button>
+          )}
           <button type="button" className="btn-ghost" title="Open in a window beside this one" onClick={() => popOut(cur)}>Pop out</button>
           <button type="button" className="btn-ghost" title="Hide the side view" onClick={() => setHidden(true)}>Hide</button>
         </span>

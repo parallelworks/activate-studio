@@ -20,7 +20,7 @@ import { StatusFooter } from './components/StatusFooter'
 import { ClassificationBanner, bannerInk, bannerShownColor } from './components/ClassificationBanner'
 import { useAppConfig } from './config'
 import { applyAccent, applySurface } from './accents'
-import { RunPane } from './components/RunPane'
+import { FullViewHost, RunPane } from './components/RunPane'
 
 type ViewId = 'chat' | 'library' | 'search' | 'query' | 'overview' | 'history' | 'agents' | 'workflows' | 'settings' | 'help'
 export type Display = { kind: 'file'; target: string; q?: string; lib?: string } | { kind: 'workflow_dag'; target: string }
@@ -565,6 +565,7 @@ export default function App() {
         <div className={view === 'settings' ? 'view' : 'view hidden'}><SettingsView /></div>
         <div className={view === 'help' ? 'view' : 'view hidden'}><HelpView /></div>
       </main>
+      <FullViewHost />
       </div>
     </div>
   )
