@@ -2,6 +2,28 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.124 (2026-10-14)
+
+### Change log through v1.123 (#463)
+
+Regenerated with `node scripts/release-notes.mjs --changelog` after the v1.123 release.
+
+### Keep the Studio from sliding out of view; find sessions by word or run (#464)
+
+On a live deployment the Studio kept sliding up and sideways out of view, leaving only the composer at the top of a blank page. There were two triggers.
+
+**A study viewer in a session frame.** The design explorer calls `scrollIntoView({ block: 'nearest' })` to keep a row in view, and calls `focus()`. In a same-origin frame (the session relay), both also scroll every container around the frame. That includes boxes with `overflow: hidden`, which the user can't scroll back. The relay now injects a small script at the top of every HTML page it serves. Inside a frame, the script reimplements `scrollIntoView`, and `scrollIntoViewIfNeeded` where it exists, so they scroll only the page's own containers, and it gives `focus()` `preventScroll`. Outside a frame it does nothing. A probe two frames deep confirmed the effect: on v1.123 an element scrolled into view inside the explorer moved the chat's containers; with the guard, nothing outside the explorer moved.
+
+**The conversation scrubber.** Its jump used `scrollIntoView({ block: 'start' })`. For a message near the end, that asks for more scroll than the thread has, and the browser takes the rest from the surrounding panes. The jump now scrolls the thread only.
+
+**Backstop.** The chat canvas and the shell under the banner use `overflow: clip`. On the root element `clip` still counts as `hidden`, so the window itself can still be scrolled by script. A capturing scroll listener therefore resets the window, the shell, the chat canvas and the sidebar's horizontal scroll whenever a script moves them. None of those is meant to scroll; each view scrolls inside its own container.
+
+**Sessions in chat.**
+- `list_sessions` with `run` now matches a run's session by name (`<prefix>-<run id>`), the way the session cards and the Workflows page already do. A viewer a job registered for itself has no run recorded, so the old filter never found it.
+- A new `match` parameter keeps sessions whose name, run or workflow contains a word, and the tool description points requests like "show me the modo sessions" at it.
+
+Tests: the relay output starts with the guard and then the page, and the guard lands ahead of the page's own scripts (with or without a doctype, or no `<head>`). The full suite passes.
+
 ## v1.123 (2026-10-14)
 
 ### Change log through v1.122 (#460)
