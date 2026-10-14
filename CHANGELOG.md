@@ -2,6 +2,20 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.126 (2026-10-14)
+
+### Change log through v1.125 (#467)
+
+Regenerated with `node scripts/release-notes.mjs --changelog` after the v1.125 release.
+
+### Sessions full screen in the Studio; the relay streams what it passes (#468)
+
+**Full screen.** Session cards in chat and the side view (chat and Workflows page) get **Full screen**. It shows the session through the relay over everything below the classification banner, so the marking stays visible, with **Close** (or Escape), **Pop out** and **New tab**. A card is a frame inside the chat, so it posts `ade-full-view` to the app around it; `FullViewHost` sits in `.app-body`. `openFullView` lives in `sideBySide.ts` so the card and the side view share it without an import cycle.
+
+**Streaming relay.** The session relay now streams every response other than a page (`Readable.fromWeb`) as it arrives. HTML is still buffered so the scroll guard can be injected. A study viewer's gallery requests dozens of full-size images through the session tunnel, and buffering each one until its last byte made the gallery slow to fill.
+
+Checked in headless Chrome: Full screen from a chat card covers the shell below the banner and shows the relayed viewer. Close and Escape both return, and Full screen from the side view works the same. The full suite passes.
+
 ## v1.125 (2026-10-14)
 
 ### Change log through v1.124 (#465)
