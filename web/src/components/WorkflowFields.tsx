@@ -1,5 +1,7 @@
-import { useEffect, useMemo, useState, type ComponentProps } from 'react'
-import { FieldWrapper, type FieldComponent } from '@parallelworks/ui/form'
+import { useEffect, useMemo, useState, type ComponentProps, type ReactNode } from 'react'
+import { useWatch } from 'react-hook-form'
+import { Field } from '@parallelworks/ui'
+import { fieldFrame, useFieldValue, type FieldComponent } from '@parallelworks/ui/form'
 
 /**
  * Field components the platform's DynamicForm leaves to the host: the
@@ -22,20 +24,13 @@ function load<T>(url: string): Promise<T> {
 /** Forget platform data so the next form open re-reads it. */
 export function forgetPlatformData(): void { cache.clear() }
 
-/** Top-level fields get no onChange from the form; the built-in fields
- *  write through Formik themselves, and these do the same. */
-function write(p: ComponentProps<FieldComponent>, v: unknown): void {
-  const name = String((p.field as { name?: string }).name ?? '')
-  p.onChange?.(v)
-  if (name) { p.setFieldValue?.(name, v); p.setFieldTouched?.(name, true) }
-  p.setFormDirty?.(true)
-}
+type Props = ComponentProps<FieldComponent>
+/** The field's path in the form, which its value is bound by. */
+const nameOf = (p: Props) => String((p.field as { name?: string }).name ?? '')
 
-/** The value an expression like `${{ inputs.resource }}` points at. */
-function resolveRef(expr: unknown, values: Record<string, unknown>): unknown {
-  const m = /\$\{\{\s*inputs\.([A-Za-z0-9_.]+)\s*\}\}/.exec(String(expr ?? ''))
-  if (!m) return undefined
-  return m[1].split('.').reduce<unknown>((o, k) => (o && typeof o === 'object' ? (o as Record<string, unknown>)[k] : undefined), values)
+/** The form path an expression like `${{ inputs.resource }}` points at. */
+function refPath(expr: unknown): string {
+  return /\$\{\{\s*inputs\.([A-Za-z0-9_.]+)\s*\}\}/.exec(String(expr ?? ''))?.[1] ?? ''
 }
 function clusterName(v: unknown): string {
   if (!v) return ''
@@ -43,26 +38,26 @@ function clusterName(v: unknown): string {
   return String((v as { name?: unknown }).name ?? '')
 }
 
-function Select({ label, field, value, options, onChange, disabled, placeholder, note }: {
-  label: string; field: { optional?: unknown; tooltip?: unknown }; value: string
-  options: { value: string; label: string }[]; onChange: (v: string) => void; disabled: boolean; placeholder: string; note?: string
+function Select({ frame, value, options, onChange, disabled, placeholder, note }: {
+  frame: Props; value: string
+  options: { value: string; label: string }[]; onChange: (v: string) => void; disabled: boolean; placeholder: string; note?: ReactNode
 }) {
+  const f = fieldFrame(frame)
   return (
-    <FieldWrapper label={label} optional={field.optional === true} description={note}>
-      {(b) => (
-        <select id={b.id} aria-describedby={b.describedBy} className="field wf-select" value={value} disabled={disabled}
-          onChange={e => onChange(e.target.value)}>
+    <Field {...f} description={note ?? f.description}>
+      {(c) => (
+        <select {...c} className="field wf-select" value={value} disabled={disabled} onChange={e => onChange(e.target.value)}>
           <option value="">{placeholder}</option>
           {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
       )}
-    </FieldWrapper>
+    </Field>
   )
 }
 
 const ClusterField: FieldComponent = (props) => {
-  const { field, label, currentValue, disabled } = props
-  const onChange = (v: unknown) => write(props, v)
+  const { field, disabled } = props
+  const [currentValue, onChange] = useFieldValue<unknown>(nameOf(props))
   const [opts, setOpts] = useState<ClusterOption[]>([])
   const [err, setErr] = useState('')
   useEffect(() => { load<{ clusters: ClusterOption[] }>('/api/platform/clusters').then(d => setOpts(d.clusters)).catch(e => setErr(String(e.message))) }, [])
@@ -83,16 +78,23 @@ const ClusterField: FieldComponent = (props) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [opts])
   return (
-    <Select label={label} field={field} value={current} disabled={disabled} placeholder={err ? 'Clusters unavailable' : 'Select a cluster'}
+    <Select frame={props} value={current} disabled={disabled} placeholder={err ? 'Clusters unavailable' : 'Select a cluster'}
       options={opts.map(o => ({ value: o.value, label: `${o.label}${o.status && o.status !== 'active' ? ` (${o.status})` : ''}` }))}
       onChange={pick} note={err ? `Could not list clusters: ${err}` : undefined} />
   )
 }
 
 const PartitionField: FieldComponent = (props) => {
-  const { field, label, currentValue, values, disabled } = props
-  const onChange = (v: unknown) => write(props, v)
-  const cluster = clusterName(resolveRef((field as { resource?: unknown }).resource ?? '${{ inputs.resource }}', values))
+  const { field, disabled } = props
+  const [currentValue, onChange] = useFieldValue<unknown>(nameOf(props))
+  // The cluster this partition belongs to. The form resolves the field's
+  // `resource: ${{ inputs.resource }}` against its values and hands over the
+  // cluster itself; an expression it left unresolved, or none (meaning
+  // inputs.resource), is followed by watching that input.
+  const ref = (field as { resource?: unknown }).resource
+  const path = refPath(ref ?? '${{ inputs.resource }}')
+  const watched = useWatch({ name: path || '__no_resource__' }) as unknown
+  const cluster = clusterName(path ? watched : ref)
   const [opts, setOpts] = useState<{ value: string; label: string }[]>([])
   useEffect(() => {
     if (!cluster) { setOpts([]); return }
@@ -100,34 +102,35 @@ const PartitionField: FieldComponent = (props) => {
       .then(d => setOpts(d.partitions.map(p => ({ value: p.value, label: `${p.label}${p.state ? `, ${p.state}` : ''}${p.availNodes != null ? `, ${p.availNodes}/${p.totalNodes} nodes free` : ''}` }))))
       .catch(() => setOpts([]))
   }, [cluster])
-  return <Select label={label} field={field} value={String(currentValue ?? '')} disabled={disabled || !cluster}
+  return <Select frame={props} value={String(currentValue ?? '')} disabled={disabled || !cluster}
     placeholder={cluster ? 'Select a partition' : 'Choose a cluster first'} options={opts} onChange={v => onChange(v)} />
 }
 
 const BucketField: FieldComponent = (props) => {
-  const { field, label, currentValue, disabled } = props
-  const onChange = (v: unknown) => write(props, v)
+  const { disabled } = props
+  const [currentValue, onChange] = useFieldValue<unknown>(nameOf(props))
   const [opts, setOpts] = useState<{ value: string; label: string }[]>([])
   useEffect(() => { load<{ buckets: { value: string; label: string }[] }>('/api/platform/buckets').then(d => setOpts(d.buckets)).catch(() => setOpts([])) }, [])
   const current = typeof currentValue === 'object' && currentValue ? String((currentValue as { _studioRef?: string; uri?: string })._studioRef ?? (currentValue as { uri?: string }).uri ?? '') : String(currentValue ?? '')
-  return <Select label={label} field={field} value={current} disabled={disabled} placeholder="Select a bucket" options={opts}
+  return <Select frame={props} value={current} disabled={disabled} placeholder="Select a bucket" options={opts}
     onChange={v => onChange(v ? { _studioRef: v, uri: v } : '')} />
 }
 
 /** A plain text control for types whose options the public API does not expose. */
 function textField(kind: 'text' | 'password' | 'textarea', hint?: string): FieldComponent {
   const F: FieldComponent = (props) => {
-    const { field, label, currentValue, disabled } = props
-    const onChange = (v: unknown) => write(props, v)
+    const { field, disabled } = props
+    const [currentValue, onChange] = useFieldValue<unknown>(nameOf(props))
+    const f = fieldFrame(props)
     return (
-      <FieldWrapper label={label} optional={field.optional === true} description={hint}>
-        {(b) => kind === 'textarea'
-          ? <textarea id={b.id} aria-describedby={b.describedBy} className="field wf-editor" rows={8} disabled={disabled}
+      <Field {...f} description={hint ?? f.description}>
+        {(c) => kind === 'textarea'
+          ? <textarea {...c} className="field wf-editor" rows={8} disabled={disabled}
               value={String(currentValue ?? '')} onChange={e => onChange(e.target.value)} />
-          : <input id={b.id} aria-describedby={b.describedBy} className="field" type={kind} disabled={disabled}
+          : <input {...c} className="field" type={kind} disabled={disabled}
               placeholder={String((field as { placeholder?: unknown }).placeholder ?? '')}
               value={String(currentValue ?? '')} onChange={e => onChange(e.target.value)} />}
-      </FieldWrapper>
+      </Field>
     )
   }
   return F

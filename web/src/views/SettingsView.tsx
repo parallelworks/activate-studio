@@ -1,7 +1,7 @@
 import { LibrariesSection } from '../components/LibrariesSection'
 import { WorkflowsSection } from '../components/WorkflowsSection'
 import { useEffect, useState } from 'react'
-import { CopyToClipboard, SwitchToggle } from '@parallelworks/ui'
+import { CopyToClipboard, Switch } from '@parallelworks/ui'
 import { ACCENTS, SURFACES, applyAccent, applySurface } from '../accents'
 import { useAppConfig } from '../config'
 import { bannerInk } from '../components/ClassificationBanner'
@@ -744,7 +744,7 @@ export function SettingsView() {
                   : 'This deployment is open, so no header is needed.'}
               </p>
               <div className="access-switch">
-                <SwitchToggle value={form.mcpEnabled} onChange={v => setForm({ ...form, mcpEnabled: v })} yesLabel="On" noLabel="Off" />
+                <Switch checked={form.mcpEnabled} onCheckedChange={v => setForm({ ...form, mcpEnabled: v })} onLabel="On" offLabel="Off" aria-label="Serve MCP" />
                 <span>Serve MCP at /api/mcp. Individual tools can be disabled in the tool catalog above.</span>
               </div>
               <p className="field-label">pw code</p>
@@ -766,7 +766,7 @@ export function SettingsView() {
                 control as much as a safety one.
               </p>
               <div className="access-switch">
-                <SwitchToggle value={form.delegationEnabled} onChange={v => setForm({ ...form, delegationEnabled: v })} yesLabel="On" noLabel="Off" />
+                <Switch checked={form.delegationEnabled} onCheckedChange={v => setForm({ ...form, delegationEnabled: v })} onLabel="On" offLabel="Off" aria-label="Delegate to concurrent agents" />
                 <span>Let the assistant delegate subtasks to concurrent agents</span>
               </div>
               <div className="settings-grid">
@@ -847,7 +847,7 @@ export function SettingsView() {
 
               <div className="tool-group">Grounded model (OpenAI-compatible /v1)</div>
               <div className="access-switch">
-                <SwitchToggle value={form.ragProxyEnabled} onChange={v => setForm({ ...form, ragProxyEnabled: v })} yesLabel="On" noLabel="Off" />
+                <Switch checked={form.ragProxyEnabled} onCheckedChange={v => setForm({ ...form, ragProxyEnabled: v })} onLabel="On" offLabel="Off" aria-label="Serve the grounded model" />
                 <span>Serve the grounded model at /v1.</span>
               </div>
               {!form.ragProxyEnabled && (
@@ -1001,7 +1001,7 @@ export function SettingsView() {
                 shows its control in the interface only when it is on and configured.
               </p>
               <div className="access-switch">
-                <SwitchToggle value={form.voiceEnabled} onChange={v => setForm({ ...form, voiceEnabled: v })} yesLabel="On" noLabel="Off" />
+                <Switch checked={form.voiceEnabled} onCheckedChange={v => setForm({ ...form, voiceEnabled: v })} onLabel="On" offLabel="Off" aria-label="Voice conversations" />
                 <span>Voice conversations: talk with the assistant back and forth, through an Unmute deployment</span>
               </div>
               <p className="muted view-sub">

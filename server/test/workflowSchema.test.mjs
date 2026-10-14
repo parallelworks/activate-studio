@@ -19,7 +19,10 @@ fs.copyFileSync(path.join(here, 'fixtures', 'workflow.schema.json'), path.join(i
 
 // A fake pw CLI serving two small workflows for the composer to merge.
 const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'studio-bin-'))
+// Each carries a form layout, which names its own fields and so is not
+// carried into a composed form.
 const WF = name => JSON.stringify({ name, yaml: { on: { execute: { inputs: {
+  $meta: { layout: { type: 'stack', children: [{ type: 'field', field: 'resource' }] } },
   resource: { type: 'compute-clusters', label: 'Resource' },
 } } }, jobs: { main: { steps: [{ run: 'true' }] } } } })
 fs.writeFileSync(path.join(bin, 'pw'), `#!/usr/bin/env node
@@ -41,6 +44,29 @@ test('what the composer emits passes the platform schema', async () => {
     assert.match(job.steps[0].uses, /^(workflow|marketplace|github|parallelworks)\//,
       'a bare name is not a legal uses reference')
   }
+})
+
+test('the composer takes the inputs and leaves the source forms\' layouts behind', async () => {
+  const c = await composeWorkflows([{ uses: 'cloudinit' }, { uses: 'Hello.World' }])
+  const inputs = c.yaml.on.execute.inputs
+  assert.ok(inputs.resource, 'the declared input is merged')
+  assert.equal(inputs.$meta, undefined)
+  for (const job of Object.values(c.yaml.jobs)) assert.ok(!JSON.stringify(job).includes('$meta'))
+})
+
+test('a form layout passes the platform schema, and a layout node it does not define fails', async () => {
+  const doc = layout => ({ on: { execute: { inputs: {
+    $meta: { layout },
+    cases: { type: 'number', label: 'Cases', default: 8 },
+    study: { type: 'group', label: 'Study', items: {
+      $meta: { layout: { type: 'grid', columns: { base: 1, md: 2 }, children: [{ type: 'field', field: 'low' }, { type: 'field', field: 'high' }] } },
+      low: { type: 'number', label: 'Low' }, high: { type: 'number', label: 'High' } } },
+  } } }, jobs: { main: { steps: [{ run: 'true' }] } } })
+  const good = await validateWorkflowDoc(doc({ type: 'section', label: 'Run', children: [
+    { type: 'grid', columns: [2, 1], gap: 'md', children: [{ type: 'field', field: 'study', span: { base: 2, md: 1 } }, { type: 'field', field: 'cases' }] }] }))
+  assert.equal(good.ok, true, good.errors.join('; '))
+  const bad = await validateWorkflowDoc(doc({ type: 'columns', children: [] }))
+  assert.equal(bad.ok, false)
 })
 
 test('a bare uses reference is what the schema rejects', async () => {

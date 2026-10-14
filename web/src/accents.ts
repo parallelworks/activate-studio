@@ -85,8 +85,8 @@ export function themeFor(accent: string, surface: string): { light: Record<strin
   const a = accentFor(accent) ?? ACCENTS.navy
   const s = SURFACES[surface] ?? SURFACES.cool
   return {
-    light: deriveTheme({ accent: a.light[0], background: s.light }),
-    dark: deriveTheme({ accent: a.dark[0], background: s.dark }),
+    light: deriveTheme({ interface: { base: s.light, accent: a.light[0] } }),
+    dark: deriveTheme({ interface: { base: s.dark, accent: a.dark[0] } }),
   }
 }
 

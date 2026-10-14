@@ -1008,7 +1008,8 @@ function declaredInputs(wf: any): { path: string; type: string; def: unknown }[]
   const rows: { path: string; type: string; def: unknown }[] = []
   const walk = (prefix: string, obj: Record<string, any>): void => {
     for (const [k, v] of Object.entries(obj ?? {})) {
-      if (!v || typeof v !== 'object') continue
+      // `$meta` holds the form's layout and label settings, not an input.
+      if (!v || typeof v !== 'object' || k.startsWith('$')) continue
       if (v.type === 'group') walk(`${prefix}${k}.`, v.items ?? {})
       else rows.push({ path: `${prefix}${k}`, type: String(v.type ?? ''), def: v.default })
     }
@@ -1291,6 +1292,7 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
             const rows: string[] = []
             const walk = (prefix: string, obj: Record<string, any>) => {
               for (const [k, v] of Object.entries(obj ?? {})) {
+                if (k.startsWith('$')) continue
                 if (v && typeof v === 'object' && v.type === 'group') walk(`${prefix}${k}.`, v.items ?? {})
                 else if (v && typeof v === 'object') rows.push(`${prefix}${k} (default: ${JSON.stringify(v.default ?? null)})`)
               }

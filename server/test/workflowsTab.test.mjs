@@ -17,7 +17,16 @@ process.env.PW_GATEWAY_URL = 'https://platform.test/api/openai/v1'
 // order; `pw workflows get -o json` returns them sorted. Only ordered-job
 // is served by the API here; the others fall back to the CLI.
 const ORDERED = { on: { execute: { inputs: { zeta: { type: 'string', label: 'Zeta' }, alpha: { type: 'string', label: 'Alpha' }, mid: { type: 'number', label: 'Mid' } } } }, jobs: { main: { steps: [{ run: 'echo hi' }] } } }
+// A workflow whose form has a layout, at the top and inside a group.
+const LAID_OUT = { on: { execute: { inputs: {
+  $meta: { layout: { type: 'grid', columns: { base: 1, md: 2 }, children: [{ type: 'field', field: 'study' }, { type: 'field', field: 'cases' }] } },
+  cases: { type: 'number', label: 'Cases', default: 8 },
+  study: { type: 'group', label: 'Study', items: {
+    $meta: { layout: { type: 'stack', children: [{ type: 'field', field: 'high' }, { type: 'field', field: 'low' }] } },
+    low: { type: 'number', label: 'Low' }, high: { type: 'number', label: 'High' } } },
+} } }, jobs: { main: { steps: [{ run: 'echo hi' }] } } }
 globalThis.fetch = async url => {
+  if (String(url) === 'https://platform.test/api/workflows/laid-out') return Response.json({ name: 'laid-out', displayName: 'Laid out', yaml: LAID_OUT, configurations: [] })
   if (String(url) === 'https://platform.test/api/workflows/ordered-job') return Response.json({ name: 'ordered-job', displayName: 'Ordered', yaml: ORDERED, configurations: [] })
   return new Response('not found', { status: 404 })
 }
@@ -99,6 +108,13 @@ test('the form keeps the inputs in their declared order, read from the platform 
   const order = JSON.stringify(body.form)
   assert.ok(order.indexOf('Zeta') < order.indexOf('Alpha') && order.indexOf('Alpha') < order.indexOf('Mid'),
     `declared order zeta, alpha, mid; got ${order.slice(0, 200)}`)
+})
+
+test('the form keeps the workflow\'s layout, at the top and inside a group, for the form to render', async () => {
+  const { status, body } = await j('GET', '/api/workflows/item/form?w=laid-out')
+  assert.equal(status, 200)
+  assert.deepEqual(body.form.$meta, LAID_OUT.on.execute.inputs.$meta)
+  assert.deepEqual(body.form.study.options.$meta, LAID_OUT.on.execute.inputs.study.items.$meta)
 })
 
 test('a workflow outside the collection is refused', async () => {
