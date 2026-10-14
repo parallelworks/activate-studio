@@ -58,6 +58,53 @@ export function passHeaders(headers: Headers): Record<string, string> {
   return out
 }
 
+/**
+ * Injected at the top of every relayed page. A same-origin frame's
+ * scrollIntoView and focus scroll every container around the frame as
+ * well, so a study viewer keeping its newest row in view scrolled the
+ * Studio's own panes, including ones with overflow hidden that the user
+ * cannot scroll back, and the shell slid up and sideways out of reach.
+ * Inside a frame, both now scroll only the page's own containers.
+ */
+export const FRAME_SCROLL_GUARD = `<script>/* ACTIVATE Studio: keep this page's scrolling inside its frame */(function () {
+  if (window.top === window) return;
+  var E = Element.prototype, H = HTMLElement.prototype, focus = H.focus;
+  function scrollers(el) {
+    var out = [], p = el.parentElement;
+    while (p) { var s = getComputedStyle(p); if (/(auto|scroll)/.test(s.overflowY + ' ' + s.overflowX)) out.push(p); p = p.parentElement; }
+    out.push(document.scrollingElement || document.documentElement);
+    return out;
+  }
+  function delta(a0, a1, b0, b1, mode) {
+    if (mode === 'start') return a0 - b0;
+    if (mode === 'end') return a1 - b1;
+    if (mode === 'center') return (a0 + a1) / 2 - (b0 + b1) / 2;
+    if (a0 < b0) return a0 - b0;
+    if (a1 > b1) return Math.min(a1 - b1, a0 - b0);
+    return 0;
+  }
+  E.scrollIntoView = function (arg) {
+    var o = arg && typeof arg === 'object' ? arg : { block: arg === false ? 'end' : 'start' };
+    var list = scrollers(this);
+    for (var i = 0; i < list.length; i++) {
+      var p = list[i], r = this.getBoundingClientRect();
+      var top = p === list[list.length - 1] ? { top: 0, bottom: innerHeight, left: 0, right: innerWidth } : p.getBoundingClientRect();
+      p.scrollTop += delta(r.top, r.bottom, top.top, top.bottom, o.block || 'start');
+      p.scrollLeft += delta(r.left, r.right, top.left, top.right, o.inline || 'nearest');
+    }
+  };
+  if (E.scrollIntoViewIfNeeded) E.scrollIntoViewIfNeeded = function () { E.scrollIntoView.call(this, { block: 'nearest' }); };
+  H.focus = function (o) { return focus.call(this, Object.assign({}, o, { preventScroll: true })); };
+})();</script>`
+
+/** A relayed HTML page with the frame scroll guard ahead of its own scripts. */
+export function withScrollGuard(html: string): string {
+  const head = /<head[^>]*>/i.exec(html)
+  if (head) return html.slice(0, head.index + head[0].length) + FRAME_SCROLL_GUARD + html.slice(head.index + head[0].length)
+  const doctype = /^\s*<!doctype[^>]*>/i.exec(html)
+  return doctype ? doctype[0] + FRAME_SCROLL_GUARD + html.slice(doctype[0].length) : FRAME_SCROLL_GUARD + html
+}
+
 export async function runPaneRoutes(app: FastifyInstance): Promise<void> {
   const keyOf = (req: FastifyRequest) => {
     const key = sessionKeyFor(req.user?.id)
@@ -94,7 +141,10 @@ export async function runPaneRoutes(app: FastifyInstance): Promise<void> {
     // not accepted, and following it would land a sign-in form in the pane.
     if (res.status >= 300 && res.status < 400) throw new KbError(502, 'The session asked for a sign-in the Studio cannot complete; open it in a new tab.')
     reply.code(res.status).headers(passHeaders(res.headers))
-    return reply.send(req.method === 'HEAD' ? '' : Buffer.from(await res.arrayBuffer()))
+    if (req.method === 'HEAD') return reply.send('')
+    const body = Buffer.from(await res.arrayBuffer())
+    if (/^text\/html\b/i.test(res.headers.get('content-type') ?? '')) return reply.send(withScrollGuard(body.toString('utf8')))
+    return reply.send(body)
   }
   // Relative addresses resolve against the page's own path, so the page is
   // served at the folder address with its trailing slash.

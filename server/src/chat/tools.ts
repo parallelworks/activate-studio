@@ -400,11 +400,12 @@ export const TOOL_SPECS: ToolSpec[] = [
     function: {
       name: 'list_sessions',
       description:
-        'List the platform sessions the user can open: the interactive apps workflows start (a design explorer, a notebook, a remote desktop) and running endpoints, with the run that opened each. Pass run to keep the sessions one workflow run opened. Each running session comes with markdown that shows it in the reply as a card with buttons that open it; use it when the user wants to see or use the session.',
+        'List the platform sessions the user can open: the interactive apps workflows start (a design explorer, a notebook, a remote desktop) and running endpoints, with the run that opened each. Use it whenever the user asks to see, show, or open sessions or a design explorer, including by a word ("show me the modo sessions": match "modo"). Pass run to keep the sessions one workflow run opened, or match to keep those whose name, run, or workflow contains a word. Each running session comes with markdown that shows it in the reply as a card with buttons that open it; put that markdown in the reply.',
       parameters: {
         type: 'object',
         properties: {
           run: { type: 'string', description: 'Keep only the sessions this run opened (a run slug from run_workflow or workflow_runs)' },
+          match: { type: 'string', description: 'Keep only sessions whose name, run, or workflow contains this text, case-insensitive (for example modo, doe, explorer)' },
           all: { type: 'boolean', description: 'Include sessions that are not running; default false' },
         },
         required: [],
@@ -1713,13 +1714,17 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
       case 'list_sessions': {
         const key = toolContext.getStore()?.userKey || gatewayKey()
         if (!key) return { result: 'No platform credential: the user can add their ACTIVATE API key under Settings, Model access.', summary: 'no credential' }
-        const { listSessions, sessionEmbed } = await import('../sessions.js')
+        const { listSessions, sessionEmbed, sessionOfRun } = await import('../sessions.js')
         const run = args.run ? String(args.run) : ''
+        const match = args.match ? String(args.match).trim().toLowerCase() : ''
+        // A session a job registers for itself (a study viewer) has no run
+        // recorded; it is the run's by name, as the session cards match it.
         const rows = (await listSessions(key))
-          .filter(x => (!run || x.run?.slug === run) && (args.all === true || x.status === 'running'))
-        if (!rows.length) return { result: run ? `Run ${run} has no ${args.all === true ? '' : 'running '}session.` : 'No running sessions.', summary: 'none' }
+          .filter(x => (!run || sessionOfRun(x, run)) && (args.all === true || x.status === 'running'))
+          .filter(x => !match || [x.name, x.run?.slug, x.run?.workflow].some(v => String(v ?? '').toLowerCase().includes(match)))
+        if (!rows.length) return { result: run ? `Run ${run} has no ${args.all === true ? '' : 'running '}session.` : match ? `No ${args.all === true ? '' : 'running '}session matches "${match}".` : 'No running sessions.', summary: 'none' }
         const lines = rows.map(x => [
-          `${x.name} (${x.type || 'session'}, ${x.status}${x.user ? `, owner ${x.user}` : ''}${x.resource ? `, on ${x.resource}` : ''}${x.run ? `, opened by run ${x.run.slug} of ${x.run.workflow}` : ''})`,
+          `${x.name} (${x.type || 'session'}, ${x.status}${x.user ? `, owner ${x.user}` : ''}${x.resource ? `, on ${x.resource}` : ''}${x.run ? `, opened by run ${x.run.slug} of ${x.run.workflow}` : run ? `, the session of run ${run}` : ''})`,
           x.status === 'running' ? sessionEmbed(x) : '',
         ].filter(Boolean).join('\n'))
         return { result: lines.join('\n\n').slice(0, TOOL_OUTPUT_CAP), summary: `${rows.length} session${rows.length === 1 ? '' : 's'}` }

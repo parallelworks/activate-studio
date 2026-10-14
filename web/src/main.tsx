@@ -15,6 +15,22 @@ import '@parallelworks/ui/styles.css'
 import '@parallelworks/ui/theme.css'
 import './styles.css'
 
+// The shell never scrolls; each pane scrolls itself. A scrollIntoView or
+// focus anywhere (a frame, the chat package) can still scroll the window
+// and boxes that only hide their overflow, which slid the Studio up and
+// sideways out of the user's reach. Whatever a script scrolls there is put
+// back at once.
+const SHELL = '.app, .app-body, main.content, .chat-canvas, .chat-wrap, .view'
+document.addEventListener('scroll', e => {
+  const t = e.target === document ? document.scrollingElement : e.target
+  if (!(t instanceof Element)) return
+  if (t === document.scrollingElement || t === document.body || t.id === 'root' || t.matches(SHELL)) {
+    if (t.scrollTop || t.scrollLeft) { t.scrollTop = 0; t.scrollLeft = 0 }
+  } else if (t.matches('.sidenav') && t.scrollLeft) {
+    t.scrollLeft = 0
+  }
+}, { capture: true, passive: true })
+
 // Before the first render: components read the hash while initializing.
 restoreLastHash()
 rememberHashChanges()
