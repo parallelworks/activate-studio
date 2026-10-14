@@ -2,6 +2,33 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.122 (2026-10-14)
+
+### Change log through v1.121 (#459)
+
+Regenerated with `node scripts/release-notes.mjs --changelog` after the v1.121 release.
+
+### Workflow forms: one box per field, one rule per heading, no page scroll; show the source (#458)
+
+Follow-ups to the 0.45 form upgrade, from using the workflow form on a live deployment.
+
+**One box per field.** 0.45 draws every field in its own box (`fieldBox`). The Studio still had a rule from the 0.34 era, when the library's inputs had no border, that gave every input in `.wf-form` a border. On a number field or a dropdown the visible box is a wrapper, so that rule drew a second, smaller box inside it. The rule is removed. The Studio's own pickers (cluster, partition, bucket, plain text) now use `fieldBox` too, so all fields share the same box and height.
+
+**One rule per group heading.** The old override that restyled section headings added a bottom border to the heading's button, under the rule the library already draws, which made a double line. The other 0.34 overrides (label column, multi-select trigger, empty-table panel, narrow-screen label stacking) no longer match anything in 0.45's markup. All of them are removed.
+
+**No page-level scroll.** `html`, `body` and `#root` now refuse a page scroll at every width, as the phone layout already did, and the sidebar scrolls inside itself. Before, in a short window, the sidebar footer or a long workflow form could scroll the whole shell up. That left a band of background below it and moved the form's sticky Run bar off the bottom edge. In a 640 px window every view had overflowed the page by 9 px, all of it the sidebar footer; now none do, and each view scrolls in its own container as before.
+
+**Where the workflow comes from.** The form route returns `source`, shown under the title:
+- local, when the workflow is stored in the account;
+- remote, with the record's `remote` repo, branch and workflow file, or a GitHub entry's repository, ref and path;
+- marketplace, with the item's slug.
+
+Tests: `recordSource` for local, remote and missing records. Checked in headless Chrome on a laid-out form with number fields, a dropdown, text fields and the Studio's pickers:
+- one box per field and one rule per heading;
+- no page overflow in any view at 640 px;
+- the sidebar scrolls;
+- the source line shows for a remote record.
+
 ## v1.121 (2026-10-13)
 
 ### Change log through v1.120 (#456)
