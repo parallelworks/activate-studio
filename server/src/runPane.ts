@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
+import { Readable } from 'node:stream'
 import { KbError } from './kb.js'
 import { platformJson } from './platformRecords.js'
 import { listSessions, sessionKeyFor, type SessionRow } from './sessions.js'
@@ -142,9 +143,12 @@ export async function runPaneRoutes(app: FastifyInstance): Promise<void> {
     if (res.status >= 300 && res.status < 400) throw new KbError(502, 'The session asked for a sign-in the Studio cannot complete; open it in a new tab.')
     reply.code(res.status).headers(passHeaders(res.headers))
     if (req.method === 'HEAD') return reply.send('')
-    const body = Buffer.from(await res.arrayBuffer())
-    if (/^text\/html\b/i.test(res.headers.get('content-type') ?? '')) return reply.send(withScrollGuard(body.toString('utf8')))
-    return reply.send(body)
+    if (/^text\/html\b/i.test(res.headers.get('content-type') ?? '')) return reply.send(withScrollGuard(Buffer.from(await res.arrayBuffer()).toString('utf8')))
+    // Everything else streams through as it arrives: a study viewer's gallery
+    // asks for dozens of full-size images through the session tunnel, and
+    // holding each one until its last byte came in made the gallery slow.
+    if (!res.body) return reply.send('')
+    return reply.send(Readable.fromWeb(res.body as unknown as import('node:stream/web').ReadableStream))
   }
   // Relative addresses resolve against the page's own path, so the page is
   // served at the folder address with its trailing slash.

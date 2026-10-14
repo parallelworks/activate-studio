@@ -43,3 +43,10 @@ export function openBeside(url: string, key: string): boolean {
   opened.set(key, w)
   return true
 }
+
+/** Shows a session over the whole Studio below the banner (FullViewHost in
+ *  RunPane). From a session card, a frame inside the chat, the message goes
+ *  to the app around it. */
+export function openFullView(session: { name?: string; url?: string | null; ownHost?: boolean; platformUrl?: string | null }, fromFrame: boolean): void {
+  (fromFrame ? window.parent : window).postMessage({ type: 'ade-full-view', session }, window.location.origin)
+}

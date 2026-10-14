@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { openBeside } from '../sideBySide'
+import { openBeside, openFullView } from '../sideBySide'
 
 /**
  * One platform session as a card: its state, the run that opened it, and
@@ -139,6 +139,8 @@ export function SessionView({ user, name, host = '', run = '', initial }: { user
                 <button type="button" className="btn-secondary" onClick={() => setInline(v => !v)}>{inline ? 'Hide' : 'Show here'}</button>
                 <button type="button" className="btn-secondary" title="Show it in the side view beside the chat"
                   onClick={() => window.parent.postMessage({ type: 'ade-side-view', session: s }, window.location.origin)}>Beside chat</button>
+                <button type="button" className="btn-secondary" title="Show it over the whole Studio; Close or Escape returns"
+                  onClick={() => openFullView(s, true)}>Full screen</button>
               </>
             )}
             <a className="btn-secondary" href={s.url} target="_blank" rel="noopener noreferrer">Open in new tab</a>
