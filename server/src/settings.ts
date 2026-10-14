@@ -63,6 +63,8 @@ export interface StudioSettings {
   mcpServers?: { name: string; url: string; header?: string }[]
   delegationEnabled?: boolean
   delegationMaxAgents?: number
+  /** Model rounds one chat reply may spend calling tools before it answers. */
+  maxToolRounds?: number
   delegationMaxDepth?: number
   /** How delegated agents run: one-shot pw code runs (runner), sessions
    *  in the pw code daemon (sessions), or either, chosen per task (both). */
@@ -125,6 +127,7 @@ export function effectiveSettings(): Required<StudioSettings> {
     // saw. DELEGATION_ENABLED=0 or the setting turns it back off.
     delegationEnabled: s.delegationEnabled ?? process.env.DELEGATION_ENABLED !== '0',
     delegationMaxAgents: s.delegationMaxAgents ?? Number(process.env.DELEGATION_MAX_AGENTS ?? 6),
+    maxToolRounds: s.maxToolRounds ?? (Number(process.env.STUDIO_MAX_TOOL_ROUNDS) || 50),
     delegationMaxDepth: s.delegationMaxDepth ?? Number(process.env.DELEGATION_MAX_DEPTH ?? 1),
     agentExecution: s.agentExecution ?? asExecution(process.env.AGENT_EXECUTION) ?? 'runner',
     voiceEnabled: s.voiceEnabled ?? process.env.VOICE_ENABLED === '1',
@@ -251,6 +254,11 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
       const u = String(body.voiceUrl).trim().replace(/\/+$/, '')
       if (u && !/^https?:\/\//.test(u)) throw new KbError(400, 'voice URL must be http(s)')
       next.voiceUrl = u || undefined
+    }
+    if (body.maxToolRounds !== undefined) {
+      const n = Number(body.maxToolRounds)
+      if (!Number.isInteger(n) || n < 5 || n > 200) throw new KbError(400, 'tool rounds must be 5 to 200')
+      next.maxToolRounds = n
     }
     if (body.delegationMaxAgents !== undefined) {
       const n = Number(body.delegationMaxAgents)
