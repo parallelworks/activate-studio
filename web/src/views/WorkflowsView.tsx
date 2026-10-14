@@ -3,7 +3,7 @@ import type { FormikProps, FormikValues } from 'formik'
 import { DynamicForm, initializeValues } from '@parallelworks/ui/form'
 import { Streamdown } from 'streamdown'
 import { useWorkflowFields, forgetPlatformData } from '../components/WorkflowFields'
-import { openSessionWindow, type SessionInfo } from '../components/SessionView'
+import { openSessionWindow, sessionOfRun, type SessionInfo } from '../components/SessionView'
 
 /**
  * The Workflows tab: this Studio's curated set of ACTIVATE workflows, as
@@ -118,7 +118,7 @@ export function WorkflowsView() {
                     <td>{tiles?.find(t => t.name === r.workflow)?.displayName ?? r.workflow}</td>
                     <td>{new Date(r.launchedAt).toLocaleString()}</td>
                     <td className={`wf-state ${r.state}`}>{r.state}</td>
-                    <td>{sessions.filter(x => x.run?.slug === r.slug).map(x => (
+                    <td>{sessions.filter(x => sessionOfRun(x, r.slug)).map(x => (
                       <button key={x.name} type="button" className="link-button" onClick={() => openSessionWindow(x)} title="Open in a window of its own">{x.name}</button>
                     ))}</td>
                   </tr>

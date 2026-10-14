@@ -1283,12 +1283,12 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 }
 .embed-root .session-view { border: 0; border-radius: 0; }
 .session-bar {
-  display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 4px 10px;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; min-height: 40px; padding: 4px 10px;
   border-bottom: 1px solid var(--pw-border); font-size: 13px;
 }
-.session-name { font-weight: 600; white-space: nowrap; }
+.session-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .session-meta { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.session-bar-actions { margin-left: auto; display: flex; gap: 6px; flex: none; }
+.session-bar-actions { margin-left: auto; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; flex: 0 1 auto; min-width: 0; }
 .session-note { margin: 0; padding: 20px 14px; font-size: 13px; }
 .session-list { display: flex; flex-direction: column; gap: 2px; margin-bottom: 16px; }
 .session-row { display: flex; align-items: center; gap: 8px; padding: 4px 8px; border-radius: 6px; font-size: 13px; }

@@ -17,9 +17,18 @@ import { openBeside } from '../sideBySide'
 const DynamicForm = lazy(() => import('@parallelworks/ui/form').then(m => ({ default: m.DynamicForm })))
 const DependencyGraph = lazy(() => import('@parallelworks/ui/graph').then(m => ({ default: m.DependencyGraph })))
 
-/** Tools whose results name a run, and the shape of a run's id. */
+/** Tools whose summaries name a run, and how each names it: a launch says
+ *  "run submitted: <id>", the watchers start with "<id>: <status>". The id
+ *  is taken as written, since its shape varies: a run of a workflow file
+ *  from GitHub has no number on the end. */
 const RUN_TOOLS = new Set(['run_workflow', 'watch_run', 'workflow_run_detail'])
-const RUN_ID = /\b([a-z0-9][a-z0-9_.-]*-\d{5})\b/i
+const RUN_ID = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,120}$/
+function runIdOf(tool: string, firstLine: string): string | null {
+  const id = tool === 'run_workflow'
+    ? /^run submitted: (\S+)/.exec(firstLine)?.[1]
+    : /^(\S+): /.exec(firstLine)?.[1]
+  return id && RUN_ID.test(id) ? id : null
+}
 
 interface PartLike { kind?: string; name?: string; result?: string | null }
 interface MessageLike { parts?: PartLike[] | null }
@@ -30,8 +39,8 @@ export function latestRunSlug(messages: MessageLike[], streaming: PartLike[] = [
   const scan = (parts: PartLike[] | null | undefined) => {
     for (const p of parts ?? []) {
       if (p.kind !== 'tool_call' || !RUN_TOOLS.has(String(p.name))) continue
-      const m = RUN_ID.exec(String(p.result ?? '').split('\n')[0])
-      if (m) found = m[1]
+      const id = runIdOf(String(p.name), String(p.result ?? '').split('\n')[0])
+      if (id) found = id
     }
   }
   for (const m of messages) scan(m.parts)

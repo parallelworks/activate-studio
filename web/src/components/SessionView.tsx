@@ -20,6 +20,17 @@ export interface SessionInfo {
   resource: string | null; createdAt: string | null
 }
 
+/** Whether a session belongs to a run: the run the platform recorded for
+ *  it, or, with none recorded, a name that is the run's id or ends with it.
+ *  A job that registers its own endpoint (a study viewer) leaves the record
+ *  empty, and those workflows name the endpoint <prefix>-<run id>; the
+ *  server applies the same rule (sessions.ts). */
+export function sessionOfRun(s: Pick<SessionInfo, 'name' | 'run'>, slug: string): boolean {
+  if (!slug) return false
+  if (s.run) return s.run.slug === slug
+  return s.name === slug || s.name.endsWith(`-${slug}`)
+}
+
 /** The windows this page opened, by session, so a second Open focuses the
  *  window the session already has. The browser cannot find them by name:
  *  each is cut off from this page (no opener), so the session gets no
