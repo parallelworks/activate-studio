@@ -2,6 +2,38 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.121 (2026-10-13)
+
+### Change log through v1.120 (#456)
+
+Regenerated with `node scripts/release-notes.mjs --changelog` after the v1.120 release.
+
+### Chat: retry cut-off replies, library in Scope, steady tool rows; Workflows side view (#457)
+
+Five chat and Workflows changes, all from using the Studio on a live deployment.
+
+**Retry a reply that was cut off.** A turn interrupted by a restart, or one that failed or was stopped before any text, left the conversation ending on the user's message with nothing to click. Such a message now comes back from `GET /api/chat/conversations/:id` with an `error`. The chat package already renders that as a notice with **Retry**, which resends the message. The error is computed on read, only for conversations with no reply streaming (`beginAnswer` marks one while it streams), and is never stored. In the browser, a stream that closes with neither `done` nor `error` and no text throws, so the reply shows the error at once. A stopped or failed turn now keeps its tool calls along with its text, so its errors can still be read.
+
+**Library inside Scope.** The chat's library picker is now part of the Scope menu, which has a Library section (each library, or all of them) and a Labels section. The button reads "Scope" followed by the library's name.
+
+**Steady streaming.** While a reply streams, the package showed the last lines of the model's thinking and dropped them when a tool or the answer started. With a model that reasons between tools, that opened and closed on every round. It also drew each tool call as two lines that then folded into a one-line "Ran N tools" row. The thinking now stays one line until clicked. A tool call's result summary sits on the same row as its name, so a call is the height of the row it folds into. Measured on a four-round stand-in model, the thinking held at 36 px and each tool row at 36 px through the whole turn; before, they moved between 36, 57, 65 and 88 px. These are CSS rules on the package's markup.
+
+**Side view on the Workflows page.** The chat's side view is split into a shared panel, the chat's host (which follows runs) and a page host.
+- On the Workflows page, a session name opens the session in the side view, with **Window** and **New tab** beside it.
+- A run id opens the run's Form, Graph and Session tabs, and a run launched from a tile's form opens there.
+- A session the Studio cannot relay still opens in a window.
+- Side view messages now carry a target, because the chat stays mounted behind other pages and would otherwise pick them up too.
+
+**Credential failures named.** When a platform tool's `pw` command is refused for its credential (a 401 problem document, `no context configured`, or `could not extract platform host from credential`), the tool now tells the model whose credential failed and that the fix is a current key. Previously the model got the raw output and treated it as an input or syntax error. The check matches only the problem-document shape, so a listing that contains the word "Unauthorized" is left alone.
+
+Tests: no-reply flagging, including while a reply streams and that the flag is never stored, and the credential-failure messages.
+
+Checked in headless Chrome:
+- The Scope menu with two libraries.
+- A reply cut off by killing the server mid-stream, then restarting it: the message showed the notice and Retry, and Retry produced the reply.
+- Block heights traced while a reply streamed.
+- The Workflows page opening a session and a run in the side view, with the chat's side view left empty.
+
 ## v1.120 (2026-10-13)
 
 ### Change log through v1.119 (#454)
