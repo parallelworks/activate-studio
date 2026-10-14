@@ -2,6 +2,20 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.119 (2026-10-13)
+
+### Change log through v1.118 (#452)
+
+Regenerated with `node scripts/release-notes.mjs --changelog` after the v1.118 release.
+
+### Session embeds by run: show the run's session card instead of a note (#453)
+
+A model embedded the session a run opened as `![…](/?embed=session&run=<run id>)`. That form has no session name, so since #445 the reply showed "This reply asked for a \"session\" view, which the Studio does not have." Before #445, the same form loaded the whole Studio inside the reply.
+
+`/api/sessions/item` now takes `run=` and returns that run's session, preferring a running one; it matches with `sessionOfRun`, the same rule the side view and the run watcher use. The session card passes `run=` through, titles itself "Session of <run>" until the session loads, and keeps asking while the run's session is not up yet.
+
+Tests: `server/test/sessions.test.mjs` covers the run lookup and the not-yet case. On the local stand-in platform, a stored reply with a `run=` embed rendered the session card with the study viewer inline at full height.
+
 ## v1.118 (2026-10-13)
 
 ### Change log through v1.117 (#450)
