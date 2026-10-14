@@ -405,7 +405,7 @@ export const TOOL_SPECS: ToolSpec[] = [
         type: 'object',
         properties: {
           run: { type: 'string', description: 'Keep only the sessions this run opened (a run slug from run_workflow or workflow_runs)' },
-          match: { type: 'string', description: 'Keep only sessions whose name, run, or workflow contains this text, case-insensitive (for example modo, doe, explorer)' },
+          match: { type: 'string', description: 'Keep only sessions whose name, run, or workflow contains any of these words, case-insensitive (for example "modo", or "modo 00006")' },
           all: { type: 'boolean', description: 'Include sessions that are not running; default false' },
         },
         required: [],
@@ -955,11 +955,31 @@ function pwCli(args: string[], timeoutMs = 30_000): Promise<string> {
       if (err && isMissingCli(err)) return reject(new Error(NO_CLI_MESSAGE))
       const denied = cliAuthFailure(String(stdout ?? ''), String(stderr ?? ''), !!userKey)
       if (denied) return reject(new Error(denied))
-      if (err) return reject(new Error(stderr || err.message))
+      // A refused request comes back as the platform's problem document on
+      // stdout with nothing on stderr; passing stderr or "Command failed"
+      // left the model guessing at syntax and credentials.
+      if (err) return reject(new Error(problemMessage(String(stdout ?? '')) ?? (cliNoise(String(stderr ?? '')) || err.message)))
       resolve(stdout)
     })
   })
 }
+
+/** The platform's problem document, when the CLI printed one for a refused request. */
+export function problemMessage(stdout: string): string | null {
+  if (!stdout.includes('{')) return null
+  let doc: any
+  try { doc = jsonFromCli<any>(stdout) } catch { return null }
+  if (!doc || typeof doc !== 'object' || typeof doc.status !== 'number' || doc.status < 400) return null
+  const parts: string[] = [String(doc.detail || doc.title || `status ${doc.status}`)]
+  for (const e of Array.isArray(doc.errors) ? doc.errors.slice(0, 8) : []) {
+    const at = String(e?.pointer ?? '').replace(/^#\/?/, '').replace(/\//g, '.')
+    parts.push(`${at || 'input'}: ${e?.detail ?? e?.code ?? 'invalid'}`)
+  }
+  return `The platform refused the request (${doc.status}): ${parts.join('; ')}`
+}
+
+/** stderr without the CLI's upgrade notice. */
+const cliNoise = (stderr: string) => stderr.split('\n').filter(l => !/new version of the PW CLI|pw upgrade/i.test(l)).join('\n').trim()
 
 /**
  * The CLI's answer when the credential it ran with was refused or missing.
@@ -1717,11 +1737,13 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
         const { listSessions, sessionEmbed, sessionOfRun } = await import('../sessions.js')
         const run = args.run ? String(args.run) : ''
         const match = args.match ? String(args.match).trim().toLowerCase() : ''
+        // Models write "modo|dettrain|00006" or "modo dettrain": any word matches.
+        const words = match.split(/[|,\s]+/).filter(Boolean)
         // A session a job registers for itself (a study viewer) has no run
         // recorded; it is the run's by name, as the session cards match it.
         const rows = (await listSessions(key))
           .filter(x => (!run || sessionOfRun(x, run)) && (args.all === true || x.status === 'running'))
-          .filter(x => !match || [x.name, x.run?.slug, x.run?.workflow].some(v => String(v ?? '').toLowerCase().includes(match)))
+          .filter(x => !words.length || words.some(w => [x.name, x.run?.slug, x.run?.workflow].some(v => String(v ?? '').toLowerCase().includes(w))))
         if (!rows.length) return { result: run ? `Run ${run} has no ${args.all === true ? '' : 'running '}session.` : match ? `No ${args.all === true ? '' : 'running '}session matches "${match}".` : 'No running sessions.', summary: 'none' }
         const lines = rows.map(x => [
           `${x.name} (${x.type || 'session'}, ${x.status}${x.user ? `, owner ${x.user}` : ''}${x.resource ? `, on ${x.resource}` : ''}${x.run ? `, opened by run ${x.run.slug} of ${x.run.workflow}` : run ? `, the session of run ${run}` : ''})`,
