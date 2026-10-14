@@ -2,6 +2,40 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.120 (2026-10-13)
+
+### Change log through v1.119 (#454)
+
+Regenerated with `node scripts/release-notes.mjs --changelog` after the v1.119 release.
+
+### Workflow forms: render the layout schema (#455)
+
+Workflow forms that define `$meta.layout` now render with it in the Workflows tab and in the side view's Form tab. The layout can define sections, stacks and responsive grids, at the top of the inputs or inside a group. The layout's scoped `css` is enabled; the renderer accepts only layout and appearance properties.
+
+The layout renderer ships in `@parallelworks/ui` 0.45, so this PR moves from 0.34 to 0.45. In 0.45 the form engine is react-hook-form instead of Formik, so the Studio code changed to match:
+
+- The launch form creates its own `useForm()`, hands it to `DynamicForm`, and submits `getValues()`. Formik is removed.
+- The Studio's own fields (cluster, partition, bucket, text) bind with `useFieldValue` and are framed with `Field`.
+- The partition field now uses the cluster value the form has already resolved from `resource: ${{ inputs.resource }}`. It watches the input only when the expression arrives unresolved.
+- Settings uses `Switch`, with readable labels. The tooltip provider and the chat notices now come from the UI provider.
+- The theme fallbacks in `styles.css` are regenerated from 0.45's `deriveTheme`, which now derives 55 tokens. One visible effect: body text is #0a101b on light and #dee9f4 on dark, where it used to be pure black and white.
+
+On the server, the chat tools and the workflow composer skip `$meta` when they list a workflow's inputs. The composer also leaves the source workflows' layouts out of a composed form, because each layout names its own workflow's fields.
+
+The schema test fixture is refreshed from the published `workflow.schema.json`, which now defines `formLayout` and the per-input `width`.
+
+Tests added:
+- The form route keeps `$meta.layout`, at the top level and inside a group.
+- A composed workflow carries no `$meta`.
+- A laid-out workflow passes the platform schema, and an undefined layout node fails it.
+
+Checked in headless Chrome against a stand-in CLI with a laid-out study form:
+- Sections, the two-column cluster and partition row, the group's grid and a CSS-bordered grid render in both themes and collapse at phone width.
+- The partition list fills from the chosen cluster.
+- A saved configuration loads into the form.
+- Validate submits the cluster, partition and nested group values.
+- Chat, the Settings switches and the run pane's Form tab work on 0.45, with no console errors.
+
 ## v1.119 (2026-10-13)
 
 ### Change log through v1.118 (#452)
