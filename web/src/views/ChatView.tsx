@@ -156,7 +156,6 @@ export function ChatView() {
   // Which library the assistant searches here: the knowledge base unless
   // the user names one, or all of them.
   const [chatLib, setChatLib] = useState<string | null>(() => { try { return localStorage.getItem('ade-chat-library') } catch { return null } })
-  const [libOpen, setLibOpen] = useState(false)
   useEffect(() => {
     setChatLibrary(chatLib)
     try { chatLib ? localStorage.setItem('ade-chat-library', chatLib) : localStorage.removeItem('ade-chat-library') } catch { /* per session */ }
@@ -348,6 +347,10 @@ export function ChatView() {
     )
   }, [])
   const cfg = useAppConfig()
+  // The library the chat searches is part of its scope, chosen in the same
+  // menu as the labels; the button names it when there is more than one.
+  const hasLibraries = (cfg.libraries?.length ?? 0) > 1
+  const libLabel = chatLib === 'all' ? 'All libraries' : (cfg.libraries?.find(l => chatLib ? l.id === chatLib : l.primary)?.label ?? chatLib ?? 'Knowledge base')
 
   const canvasRef = useRef<HTMLDivElement>(null)
 
@@ -537,76 +540,73 @@ export function ChatView() {
                 )}
               </div>
             )}
-            {(cfg.libraries?.length ?? 0) > 1 && (
-              <div className={`chat-persona-anchor ${libOpen ? 'open' : ''}`}>
-                <button className={`scope-btn ${chatLib ? 'active' : ''}`} title="Which library the assistant searches and queries in this chat" onClick={() => setLibOpen(o => !o)}>
-                  <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M2.5 3.5h3v9h-3zM6.5 3.5h3v9h-3zM10.5 4l2.6-.7 2.2 8.7-2.6.7z"/></svg>
-                  <span className="persona-label">{chatLib === 'all' ? 'All libraries' : chatLib ? (cfg.libraries?.find(l => l.id === chatLib)?.label ?? chatLib) : 'Library'}</span>
-                </button>
-                {libOpen && (
-                  <>
-                    <div className="scope-overlay" onClick={() => setLibOpen(false)} />
-                    <div className="scope-menu card">
-                      <div className="scope-menu-head">Library for this chat</div>
-                      {(cfg.libraries ?? []).map(l => (
-                        <button key={l.id} className={`persona-row ${(chatLib ?? 'kb') === l.id ? 'on' : ''}`} onClick={() => { setChatLib(l.primary ? null : l.id); setLibOpen(false) }}>
-                          <span className="persona-name">{l.label}</span>
-                          <span className="muted">{l.primary ? 'the knowledge base' : l.site ? `your library on ${l.site}` : 'read only'}</span>
-                        </button>
-                      ))}
-                      <button className={`persona-row ${chatLib === 'all' ? 'on' : ''}`} onClick={() => { setChatLib('all'); setLibOpen(false) }}>
-                        <span className="persona-name">All libraries</span>
-                        <span className="muted">search and query every library at once</span>
-                      </button>
-                    </div>
-                  </>
-                )}
-              </div>
-            )}
-            {vocab.length > 0 && (
+            {(hasLibraries || vocab.length > 0) && (
             <div className={`chat-scope-anchor ${scopeOpen ? 'open' : ''}`}>
               <button
-                className={`scope-btn ${scope.size ? 'active' : ''}`}
-                title="Limit knowledge base retrieval in this chat to items carrying the selected labels"
+                className={`scope-btn ${scope.size || chatLib ? 'active' : ''}`}
+                title="What the assistant searches in this chat: which library, and which labels"
                 onClick={() => setScopeOpen(o => !o)}
               >
                 <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M1.5 3h13l-5 5.5V13l-3 1.5V8.5z"/></svg>
-                Scope{scope.size > 0 && <span className="scope-count">{scope.size}</span>}
+                <span className="persona-label">Scope{hasLibraries && <span className="scope-sub">{libLabel}</span>}</span>
+                {scope.size > 0 && <span className="scope-count">{scope.size}</span>}
               </button>
               {scopeOpen && (
                 <>
                   <div className="scope-overlay" onClick={() => setScopeOpen(false)} />
                   <div className="scope-menu card">
-                    <div className="scope-menu-head">Limit this chat to labels</div>
-                    {vocab.length > 8 && (
-                      <input
-                        className="field scope-filter"
-                        value={scopeFilter}
-                        onChange={e => setScopeFilter(e.target.value)}
-                        placeholder="Filter labels"
-                        autoFocus
-                      />
+                    {hasLibraries && (
+                      <>
+                        <div className="scope-menu-head">Library</div>
+                        <div className="scope-libs">
+                          {(cfg.libraries ?? []).map(l => (
+                            <button key={l.id} className={`persona-row ${(chatLib ?? 'kb') === l.id ? 'on' : ''}`} onClick={() => setChatLib(l.primary ? null : l.id)}>
+                              <span className="persona-name">{l.label}</span>
+                              <span className="muted">{l.primary ? 'the knowledge base' : l.site ? `your library on ${l.site}` : 'read only'}</span>
+                            </button>
+                          ))}
+                          <button className={`persona-row ${chatLib === 'all' ? 'on' : ''}`} onClick={() => setChatLib('all')}>
+                            <span className="persona-name">All libraries</span>
+                            <span className="muted">search and query every library at once</span>
+                          </button>
+                        </div>
+                      </>
                     )}
-                    <div className="scope-list">
-                      {visibleVocab.map(v => (
-                        <label key={v.tag} className="scope-item">
+                    {vocab.length > 0 && (
+                      <>
+                        <div className="scope-menu-head">Labels</div>
+                        {vocab.length > 8 && (
                           <input
-                            type="checkbox"
-                            checked={scope.has(v.tag)}
-                            onChange={() => toggleScope(v.tag)}
+                            className="field scope-filter"
+                            value={scopeFilter}
+                            onChange={e => setScopeFilter(e.target.value)}
+                            placeholder="Filter labels"
                           />
-                          <span className="scope-tag">{v.tag}</span>
-                          <span className="scope-n">{v.count}</span>
-                        </label>
-                      ))}
-                      {visibleVocab.length === 0 && <div className="muted scope-empty">No labels match.</div>}
-                    </div>
+                        )}
+                        <div className="scope-list">
+                          {visibleVocab.map(v => (
+                            <label key={v.tag} className="scope-item">
+                              <input
+                                type="checkbox"
+                                checked={scope.has(v.tag)}
+                                onChange={() => toggleScope(v.tag)}
+                              />
+                              <span className="scope-tag">{v.tag}</span>
+                              <span className="scope-n">{v.count}</span>
+                            </label>
+                          ))}
+                          {visibleVocab.length === 0 && <div className="muted scope-empty">No labels match.</div>}
+                        </div>
+                      </>
+                    )}
                     <div className="scope-menu-foot">
-                      <button
-                        className="scope-clear"
-                        disabled={!scope.size}
-                        onClick={() => { setScope(new Set()); setLabelScope([]) }}
-                      >Clear all</button>
+                      {vocab.length > 0
+                        ? <button
+                            className="scope-clear"
+                            disabled={!scope.size}
+                            onClick={() => { setScope(new Set()); setLabelScope([]) }}
+                          >Clear labels</button>
+                        : <span />}
                       <button className="btn-secondary" onClick={() => setScopeOpen(false)}>Done</button>
                     </div>
                   </div>

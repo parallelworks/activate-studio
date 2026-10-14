@@ -216,53 +216,55 @@ export function popOut(item: SideItem): void {
   if (!openBeside(item.url, item.id)) window.open(item.url, '_blank', 'noopener')
 }
 
+/** A session sent to a side view, from a session card in a reply or a page. */
+interface SideSession { name?: string; url?: string | null; ownHost?: boolean; platformUrl?: string | null }
+
+function sessionItem(s: SideSession): SideItem | null {
+  if (!s?.name || !s.url) return null
+  let host: string | null = null
+  try { host = s.ownHost ? new URL(s.url).host : null } catch { /* no address */ }
+  return { kind: 'session', id: `session:${s.name}`, name: s.name, url: s.url, host, platformUrl: s.platformUrl ?? null }
+}
+
+/** Sends a session or a run to the side view of a page with no chat. The
+ *  chat stays mounted behind other pages, so its side view takes only
+ *  messages with no target (the session cards in its replies). */
+export function openInSideView(what: { session: SideSession } | { run: string }): void {
+  window.postMessage({ type: 'ade-side-view', target: 'page', ...what }, window.location.origin)
+}
+
 /**
- * The side view beside the chat: tabs for the runs the conversation
- * launched and the sessions sent to it, each able to pop out into a window
- * beside the Studio. A run that appears while the viewer watches opens it;
- * a conversation opened with a run already in it starts with it hidden,
- * with a button at the edge to show it.
+ * A side view's tabs and visibility. A session card in a reply (a
+ * same-origin frame) or the page itself opens a tab with an `ade-side-view`
+ * message carrying a session or a run id.
  */
-export function SideViewHost() {
-  const { currentConversation, streamingParts } = useChat()
-  const slug = useMemo(
-    () => latestRunSlug((currentConversation?.messages ?? []) as MessageLike[], (streamingParts ?? []) as PartLike[]),
-    [currentConversation, streamingParts],
-  )
+function useSideItems(target: 'chat' | 'page') {
   const [items, setItems] = useState<SideItem[]>([])
   const [active, setActive] = useState<string | null>(null)
   const [hidden, setHidden] = useState(true)
-  const conv = currentConversation?.id ?? null
-  const seen = useRef<{ conv: string | null; slug: string | null } | null>(null)
-  useEffect(() => {
-    const prev = seen.current
-    const run: SideItem | null = slug ? { kind: 'run', id: `run:${slug}`, slug } : null
-    if (!prev || prev.conv !== conv) {
-      seen.current = { conv, slug }
-      setItems(run ? [run] : []); setActive(run?.id ?? null); setHidden(true)
-      return
-    }
-    if (run && slug !== prev.slug) { seen.current = { conv, slug }; setItems(xs => upsert(xs, run)); setActive(run.id); setHidden(false) }
-  }, [conv, slug])
-  // A session card in a reply sends its session here (it is a same-origin
-  // frame inside the chat).
   useEffect(() => {
     const on = (e: MessageEvent) => {
       if (e.origin !== window.location.origin || e.data?.type !== 'ade-side-view') return
-      const s = e.data.session as { name?: string; url?: string | null; ownHost?: boolean; platformUrl?: string | null } | undefined
-      if (!s?.name || !s.url) return
-      let host: string | null = null
-      try { host = s.ownHost ? new URL(s.url).host : null } catch { /* no address */ }
-      const item: SideItem = { kind: 'session', id: `session:${s.name}`, name: s.name, url: s.url, host, platformUrl: s.platformUrl ?? null }
+      if ((e.data.target === 'page' ? 'page' : 'chat') !== target) return
+      const run = typeof e.data.run === 'string' && RUN_ID.test(e.data.run) ? e.data.run as string : null
+      const item: SideItem | null = run ? { kind: 'run', id: `run:${run}`, slug: run } : sessionItem(e.data.session)
+      if (!item) return
       setItems(xs => upsert(xs, item)); setActive(item.id); setHidden(false)
     }
     window.addEventListener('message', on)
     return () => window.removeEventListener('message', on)
   }, [])
+  return { items, setItems, active, setActive, hidden, setHidden }
+}
+
+/** The side view: a tab per run or session, Pop out (a window beside the
+ *  Studio) and Hide; hidden, a button at the edge brings it back. */
+function SideView({ side, beside }: { side: ReturnType<typeof useSideItems>; beside: string }) {
+  const { items, setItems, active, setActive, hidden, setHidden } = side
   if (!items.length) return null
   if (hidden) {
     return (
-      <button type="button" className="run-pane-reopen" title="Show the side view beside the chat" onClick={() => setHidden(false)}>
+      <button type="button" className="run-pane-reopen" title={`Show the side view beside ${beside}`} onClick={() => setHidden(false)}>
         {items.length === 1 ? label(items[0]) : `Side view (${items.length})`}
       </button>
     )
@@ -293,4 +295,39 @@ export function SideViewHost() {
         : <SessionPane key={cur.id} item={cur} />}
     </div>
   )
+}
+
+/**
+ * The side view beside the chat: tabs for the runs the conversation
+ * launched and the sessions sent to it. A run that appears while the viewer
+ * watches opens it; a conversation opened with a run already in it starts
+ * with it hidden, with a button at the edge to show it.
+ */
+export function SideViewHost() {
+  const { currentConversation, streamingParts } = useChat()
+  const slug = useMemo(
+    () => latestRunSlug((currentConversation?.messages ?? []) as MessageLike[], (streamingParts ?? []) as PartLike[]),
+    [currentConversation, streamingParts],
+  )
+  const side = useSideItems('chat')
+  const { setItems, setActive, setHidden } = side
+  const conv = currentConversation?.id ?? null
+  const seen = useRef<{ conv: string | null; slug: string | null } | null>(null)
+  useEffect(() => {
+    const prev = seen.current
+    const run: SideItem | null = slug ? { kind: 'run', id: `run:${slug}`, slug } : null
+    if (!prev || prev.conv !== conv) {
+      seen.current = { conv, slug }
+      setItems(run ? [run] : []); setActive(run?.id ?? null); setHidden(true)
+      return
+    }
+    if (run && slug !== prev.slug) { seen.current = { conv, slug }; setItems(xs => upsert(xs, run)); setActive(run.id); setHidden(false) }
+  }, [conv, slug, setItems, setActive, setHidden])
+  return <SideView side={side} beside="the chat" />
+}
+
+/** The side view on a page with no chat (Workflows): runs and sessions the
+ *  page sends with openInSideView. */
+export function PageSideViewHost() {
+  return <SideView side={useSideItems('page')} beside="this page" />
 }

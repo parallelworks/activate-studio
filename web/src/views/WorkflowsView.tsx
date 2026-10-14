@@ -4,6 +4,7 @@ import { DynamicForm, initializeValues } from '@parallelworks/ui/form'
 import { Streamdown } from 'streamdown'
 import { useWorkflowFields, forgetPlatformData } from '../components/WorkflowFields'
 import { openSessionWindow, sessionOfRun, type SessionInfo } from '../components/SessionView'
+import { openInSideView, PageSideViewHost } from '../components/RunPane'
 
 /**
  * The Workflows tab: this Studio's curated set of ACTIVATE workflows, as
@@ -46,7 +47,7 @@ export function WorkflowsView() {
   const [open, setOpen] = useState<string | null>(null)
   const [runs, setRuns] = useState<RunRow[]>([])
   // Running sessions: the apps workflows open, and endpoints. Each opens
-  // in a window of its own.
+  // in the side view, or a window of its own when the Studio cannot relay it.
   const [sessions, setSessions] = useState<SessionInfo[]>([])
   const loadTiles = () => {
     setError('')
@@ -66,11 +67,11 @@ export function WorkflowsView() {
     return () => window.removeEventListener('ade:workflows-home', home)
   }, [])
 
-  if (open) {
-    const t = tiles?.find(x => x.name === open)
-    return <WorkflowRunner name={open} kind={t?.kind ?? 'account'} title={t?.displayName ?? open} onBack={() => { setOpen(null); loadRuns() }} onLaunched={loadRuns} />
-  }
-  return (
+  // A session the Studio can relay shows in the side view, as in chat;
+  // one served only under the platform's address opens in a window.
+  const showSession = (x: SessionInfo) => { if (x.ownHost && x.url) openInSideView({ session: x }); else openSessionWindow(x) }
+  const t = open ? tiles?.find(x => x.name === open) : undefined
+  const list = (
     <div className="overview-view workflows-view">
       {error && <p className="banner-error">{error}</p>}
       {!configured && <p className="muted">No workflows are offered yet. An administrator picks them under Settings, Workflows.</p>}
@@ -95,10 +96,11 @@ export function WorkflowsView() {
             {sessions.map(x => (
               <div key={`${x.user}/${x.name}`} className="session-row">
                 <span className="status-dot ok" />
-                <button type="button" className="link-button session-row-name" onClick={() => openSessionWindow(x)} title="Open in a window of its own">{x.name}</button>
+                <button type="button" className="link-button session-row-name" onClick={() => showSession(x)} title={x.ownHost ? 'Show it in the side view' : 'Open in a window of its own'}>{x.name}</button>
                 <span className="muted session-meta">
                   {[x.run ? `${x.run.workflow} · ${x.run.slug}` : x.type, x.resource ? `on ${x.resource}` : '', x.user].filter(Boolean).join(' · ')}
                 </span>
+                {x.ownHost && x.url && <button type="button" className="btn-ghost" title="Open in a window beside the Studio" onClick={() => openSessionWindow(x)}>Window</button>}
                 {x.url && <a className="btn-ghost" href={x.url} target="_blank" rel="noopener noreferrer">New tab</a>}
               </div>
             ))}
@@ -114,12 +116,12 @@ export function WorkflowsView() {
               <tbody>
                 {runs.map(r => (
                   <tr key={r.slug}>
-                    <td><code>{r.slug}</code></td>
+                    <td><button type="button" className="link-button" title="Show the run's form, graph, and session in the side view" onClick={() => openInSideView({ run: r.slug })}><code>{r.slug}</code></button></td>
                     <td>{tiles?.find(t => t.name === r.workflow)?.displayName ?? r.workflow}</td>
                     <td>{new Date(r.launchedAt).toLocaleString()}</td>
                     <td className={`wf-state ${r.state}`}>{r.state}</td>
                     <td>{sessions.filter(x => sessionOfRun(x, r.slug)).map(x => (
-                      <button key={x.name} type="button" className="link-button" onClick={() => openSessionWindow(x)} title="Open in a window of its own">{x.name}</button>
+                      <button key={x.name} type="button" className="link-button" onClick={() => showSession(x)} title={x.ownHost ? 'Show it in the side view' : 'Open in a window of its own'}>{x.name}</button>
                     ))}</td>
                   </tr>
                 ))}
@@ -130,9 +132,18 @@ export function WorkflowsView() {
       )}
     </div>
   )
+  return (
+    <div className="wf-with-side">
+      {open
+        ? <WorkflowRunner name={open} kind={t?.kind ?? 'account'} title={t?.displayName ?? open} onBack={() => { setOpen(null); loadRuns() }}
+            onLaunched={slug => { loadRuns(); if (slug) openInSideView({ run: slug }) }} />
+        : list}
+      <PageSideViewHost />
+    </div>
+  )
 }
 
-function WorkflowRunner({ name, kind, title, onBack, onLaunched }: { name: string; kind: string; title: string; onBack: () => void; onLaunched: () => void }) {
+function WorkflowRunner({ name, kind, title, onBack, onLaunched }: { name: string; kind: string; title: string; onBack: () => void; onLaunched: (slug: string | null) => void }) {
   const [doc, setDoc] = useState<FormDoc | null>(null)
   const [error, setError] = useState('')
   const [preset, setPreset] = useState('')
@@ -175,7 +186,7 @@ function WorkflowRunner({ name, kind, title, onBack, onLaunched }: { name: strin
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ inputs: values, dryRun, trust }),
       }))
       setResult({ ok: r.ok, text: r.ok && dryRun ? 'Validation passed. The platform accepts these inputs.' : r.message })
-      if (r.ok && !dryRun) onLaunched()
+      if (r.ok && !dryRun) onLaunched(r.slug ?? null)
     } catch (e) { setResult({ ok: false, text: String((e as Error).message) }) } finally { setBusy('') }
   }
   const install = async () => {

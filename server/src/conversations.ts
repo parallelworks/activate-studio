@@ -100,6 +100,8 @@ export interface StoredMessage {
   tokensUsed?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }
   /** How the turn's last model call ended (stop, length, content_filter). */
   finishReason?: string
+  /** Set on read only (see withUnanswered); never stored. */
+  error?: string
 }
 
 export interface StoredConversation {
@@ -208,6 +210,40 @@ export function appendConversationNote(conversationId: string, content: string):
   return true
 }
 
+/** Conversations with a reply streaming now, counted per conversation. */
+const answering = new Map<string, number>()
+
+/** Marks a conversation as being answered until the returned function runs. */
+export function beginAnswer(conversationId: string | undefined): () => void {
+  if (!conversationId) return () => {}
+  answering.set(conversationId, (answering.get(conversationId) ?? 0) + 1)
+  let done = false
+  return () => {
+    if (done) return
+    done = true
+    const n = (answering.get(conversationId) ?? 1) - 1
+    if (n > 0) answering.set(conversationId, n)
+    else answering.delete(conversationId)
+  }
+}
+
+export const NO_REPLY_NOTE = 'No reply was saved for this message. It was stopped or interrupted, for example by a restart of the Studio, before the assistant answered.'
+
+/**
+ * A user message with no reply under it, in a conversation nothing is
+ * answering now, lost its reply: the Studio restarted mid-turn, or the turn
+ * failed or was stopped before any text. The chat shows a message's `error`
+ * with a Retry button that sends it again, so those messages carry one.
+ * Computed on read, never stored, so a retried message's sibling stays clean
+ * in the file.
+ */
+export function withUnanswered(c: StoredConversation): StoredConversation {
+  if (answering.has(c.id)) return c
+  const parents = new Set(c.messages.map(m => m.parentId).filter(Boolean))
+  if (!c.messages.some(m => m.role === 'user' && !parents.has(m.id))) return c
+  return { ...c, messages: c.messages.map(m => m.role === 'user' && !parents.has(m.id) ? { ...m, error: NO_REPLY_NOTE } : m) }
+}
+
 export function recordAssistantTurn(conversationId: string | undefined, message: StoredMessage): void {
   if (!conversationId) return
   const c = load().find(x => x.id === conversationId)
@@ -226,7 +262,7 @@ export async function conversationRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/api/chat/conversations/:id', async req => {
     const c = findVisible((req.params as { id: string }).id, req.user?.username)
-    return { ...c, isOwner: true, canCollaborate: true }
+    return { ...withUnanswered(c), isOwner: true, canCollaborate: true }
   })
 
   app.post('/api/chat/conversations', async req => {

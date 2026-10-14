@@ -15,6 +15,8 @@ async function listModels(): Promise<ModelsList> {
 }
 
 /** Stream one completion from the server's tool-loop endpoint over SSE. */
+const CUT_OFF = 'The reply was cut off before it arrived, for example by a restart of the Studio. Retry sends the message again.'
+
 const streamFromServer: StreamCompletion = async (req, handlers, signal) => {
   const res = await fetch('/api/chat/stream', {
     method: 'POST',
@@ -96,7 +98,14 @@ const streamFromServer: StreamCompletion = async (req, handlers, signal) => {
     }
   }
   for (;;) {
-    const { done, value } = await reader.read()
+    let chunk: ReadableStreamReadResult<Uint8Array>
+    try { chunk = await reader.read() } catch (e) {
+      // Stop aborts the read; anything else is the connection dropping.
+      if (signal?.aborted) throw e
+      if (content) break
+      throw new Error(CUT_OFF)
+    }
+    const { done, value } = chunk
     if (done) break
     buf += decoder.decode(value, { stream: true })
     let sep
@@ -107,6 +116,10 @@ const streamFromServer: StreamCompletion = async (req, handlers, signal) => {
   }
   if (buf.trim()) handleBlock(buf)
   if (errorMessage && !content) throw new Error(errorMessage)
+  // The server ends every turn with done or error. A stream that closed with
+  // neither and said nothing was cut off (the Studio restarted, the network
+  // dropped); an error here gives the message the chat's Retry button.
+  if (!finishReason && !content && !signal?.aborted) throw new Error(CUT_OFF)
 
   return {
     content,

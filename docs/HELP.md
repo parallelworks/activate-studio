@@ -15,13 +15,14 @@
 Ask in plain language. The assistant searches the knowledge base, reads the files that matter, and links each source. Past conversations are kept and are searchable themselves.
 
 - **Attach** files or images with the paperclip; they are added to the library and indexed.
-- **Scope**, at the top right, limits answers to material with the labels you choose.
-- **Library**, at the top right, chooses which library the assistant searches in this chat, or all of them.
+- **Scope**, at the top right, chooses which library the assistant searches in this chat, or all of them, and limits answers to material with the labels you choose.
 - Type **/** to pick a skill, a tool, or a persona to use.
 - Ask it to run work on a connected HPC system; it follows the run and explains a failure if there is one. A side view beside the chat shows the run: its form as submitted, the live graph of its jobs, and the web session it opens, such as a study viewer. **Beside chat** on a session card adds the session as a tab there, and **Pop out** opens a tab in a window beside the Studio.
 - **Select chats**, above New chat, deletes old conversations together.
 - In a shared session, add your own model key under Settings, "Model access", to chat as yourself.
 - A reply with no answer says why: the model reasoned without answering, ran tools without answering, or returned an empty reply, which some providers do when they decline a request. A provider that is rate limiting is retried twice after short waits. Either way the reply ends with **Retry with** links to the other models; nothing is sent to another model until you click one.
+- A message whose reply was cut off, for example when the Studio restarted, says so and offers **Retry**, which sends it again.
+- While a reply streams, its thinking and tool calls stay folded to one line each; click one to open it.
 
 ## Library
 
@@ -71,7 +72,7 @@ On the ACTIVATE platform, the Workflows tab shows the workflows chosen for {appN
 - A workflow kept in a repository shows its README beside the form, with how it works and what its inputs change. **Hide README** puts it away.
 - A workflow from GitHub that asks for access to your account variables waits until you tick the approval.
 - Administrators choose the set under Settings, "Workflows".
-- Apps that runs open, such as a design explorer or a notebook, are listed under **Sessions**. Click one to open it in a window of its own, or press **New tab**. When the Studio is open inside ACTIVATE, the session opens on its ACTIVATE page in a new tab. A session started from chat also appears in that conversation.
+- Apps that runs open, such as a design explorer or a notebook, are listed under **Sessions**. Click one to show it in a side view on the page, as in chat, or press **Window** or **New tab**. Click a run's id to show its form, graph, and session there; a run started from a form opens there too. When the Studio is open inside ACTIVATE, the session opens on its ACTIVATE page in a new tab. A session started from chat also appears in that conversation.
 
 ## Agents
 

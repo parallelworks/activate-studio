@@ -5,12 +5,14 @@ The details behind the user guide ([`HELP.md`](HELP.md)), by part of the app. Th
 ## Chat
 
 - Replies can show things inline: images, document pages, a workflow's steps as an interactive diagram, and an interactive 3D model.
-- **Scope** limits the assistant's retrieval for the conversation to the chosen labels; the limit is enforced on the server.
+- **Scope** sets the library the conversation searches (one library, or all of them) and limits its retrieval to the chosen labels; both are enforced on the server.
 - The assistant recommends workflows from the account's catalog, checks a run with a dry run first, and launches it only when asked. It lists and inspects runs, including their errors and the end of their logs.
 - When it launches work on an HPC system it reads the site's partitions, walltime limits, and saved configurations from the platform, and follows the run to the end. If the platform's per-user workspace has shut down while idle, a launch starts it and tries again.
 - An attachment is filed into the library and indexed, and its content, including text read from images, is part of the conversation. Clicking its tile later opens the file in the Library.
 - The **/** list filters as you type; the arrow keys move, Enter or Tab inserts, and Escape closes. `/skill_name` applies a skill, `/tool_name` runs a tool, `/agent_name` adopts an agent file for one message, and `/help` lists them all.
-- The thinking line above a reply expands to show the reasoning and each tool call as it happens, and stays with the message afterward.
+- The thinking line above a reply expands to show the reasoning and each tool call as it happens, and stays with the message afterward. While the reply streams, the thinking stays one line until clicked, and each tool call is one row, its result summary beside its name, so nothing opens or closes on its own as the answer arrives.
+- A user message with no reply under it, in a conversation that nothing is answering, shows that no reply was saved, with **Retry**: the Studio restarted mid-turn, or the turn failed or was stopped before any text. A turn that is stopped or fails keeps the text and the tool calls it had, so their errors stay readable.
+- When a platform tool's command is refused for its credential, the assistant is told whose credential failed (the user's key, or the deployment's when the user has none) and that the fix is a current key under Settings, "Model access", not a change to the command.
 - A long reply folds behind **Show more**, except the latest one, so opening a conversation ends on the last line of its answer.
 - In a conversation of six or more messages, a column of ticks along the thread's left edge marks each message. Pointing at a tick previews the message; clicking it scrolls there.
 - A model whose provider has locked or rejected its key shows **[locked]** or **[unavailable]** in the model list, with a notice above the conversation. Settings, "Model access" has the unlock link and **Re-check**.
