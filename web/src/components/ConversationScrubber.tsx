@@ -162,8 +162,16 @@ export function ConversationScrubber() {
     setCardTop(t.top - wrap.getBoundingClientRect().top + t.height / 2)
   }, [])
 
+  // Scrolls the thread only. scrollIntoView with block 'start' on a message
+  // near the end asked for more than the thread could scroll, and the
+  // browser took the rest from the panes around it, sliding the whole
+  // Studio up out of reach.
   const jump = useCallback((i: number) => {
-    messageNodes()[i]?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    const node = messageNodes()[i]
+    const thread = scrollHost()
+    if (!node || !thread) return
+    const top = node.getBoundingClientRect().top - thread.getBoundingClientRect().top + thread.scrollTop
+    thread.scrollTo({ top: Math.max(0, top - 8), behavior: 'smooth' })
   }, [])
 
   // The rail belongs against the thread's left edge, and the thread starts

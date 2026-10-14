@@ -187,6 +187,11 @@ button { font-family: inherit; }
 
 .app { display: flex; flex-direction: column; height: 100%; }
 .app-body { display: flex; flex: 1; min-height: 0; }
+/* The shell under the banner never scrolls; each pane scrolls itself.
+   clip, not hidden: a hidden box can still be scrolled by a script (a
+   frame's scrollIntoView or focus), which slid the whole shell up and
+   sideways out of the user's reach. */
+.app, .app-body, .app-body > main.content { overflow: clip; }
 /* The element between the app body and the views. A flex item's default
    min-height is auto, which refuses to shrink below its content: in the
    phone's column that let a tall page (Settings, measured at 2102px in an
@@ -403,7 +408,7 @@ main.content { min-height: 0; min-width: 0; background: var(--pw-content-bg); }
 
 /* ---- chat view: full canvas in a bordered card, native ai-chat layout ---- */
 .chat-wrap { flex: 1; min-height: 0; padding: 12px; display: flex; }
-.chat-canvas { flex: 1; min-height: 0; background: var(--pw-panel); overflow: hidden; position: relative; }
+.chat-canvas { flex: 1; min-height: 0; background: var(--pw-panel); overflow: hidden; overflow: clip; position: relative; }
 .chat-canvas > * { height: 100%; }
 /* The conversations rail's width, resize separator, and collapse belong
    to the chat package; overriding its width here is what made the

@@ -121,7 +121,8 @@ test('the relay serves a session of the viewer with the key, and nothing else', 
   const page = await app.inject({ url: '/api/session-proxy/explorer-00012.sessions.test/' })
   assert.equal(page.statusCode, 200)
   assert.match(page.headers['content-type'], /text\/html/)
-  assert.equal(page.body, '<html>viewer</html>')
+  // A page arrives with the frame scroll guard ahead of its own content.
+  assert.match(page.body, /^<script>\/\* ACTIVATE Studio: keep this page's scrolling inside its frame \*\/[\s\S]*<\/script><html>viewer<\/html>$/)
   const status = await app.inject({ url: '/api/session-proxy/explorer-00012.sessions.test/status.json?t=1' })
   assert.deepEqual(status.json(), { total: 16 })
   assert.equal(status.headers['x-frame-options'], undefined, 'the host\'s framing rule stays with the host')
@@ -140,3 +141,11 @@ test('one session can be named by the run that opened it, the running one first'
   assert.equal(none.statusCode, 404, 'a run with no session yet; the card keeps asking until it has one')
 })
 
+
+test('a relayed page gets the frame scroll guard ahead of its own scripts', async () => {
+  const { withScrollGuard, FRAME_SCROLL_GUARD } = await import('../dist/runPane.js')
+  const page = withScrollGuard('<!doctype html><html><head><title>t</title><script src="app.js"></script></head><body></body></html>')
+  assert.ok(page.indexOf(FRAME_SCROLL_GUARD) > 0 && page.indexOf(FRAME_SCROLL_GUARD) < page.indexOf('app.js'))
+  assert.ok(withScrollGuard('<p>no head</p>').startsWith(FRAME_SCROLL_GUARD))
+  assert.ok(withScrollGuard('<!DOCTYPE html><p>x</p>').startsWith('<!DOCTYPE html>' + FRAME_SCROLL_GUARD))
+})
