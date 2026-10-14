@@ -76,7 +76,7 @@ export function openSessionWindow(s: { user: string; name: string; url: string |
   return true
 }
 
-export function SessionView({ user, name, host = '', initial }: { user: string; name: string; host?: string; initial?: SessionInfo }) {
+export function SessionView({ user, name, host = '', run = '', initial }: { user: string; name: string; host?: string; run?: string; initial?: SessionInfo }) {
   // A card inside a chat reply is a same-origin frame of the chat page,
   // which keeps the side view.
   const inChat = (() => { try { return window.parent !== window && window.parent.location.origin === window.location.origin } catch { return false } })()
@@ -91,7 +91,7 @@ export function SessionView({ user, name, host = '', initial }: { user: string; 
     let stop = false
     let timer = 0
     const load = () => {
-      fetch(`/api/sessions/item?user=${encodeURIComponent(user)}&name=${encodeURIComponent(name)}${host ? `&host=${encodeURIComponent(host)}` : ''}`)
+      fetch(`/api/sessions/item?user=${encodeURIComponent(user)}&name=${encodeURIComponent(name)}${host ? `&host=${encodeURIComponent(host)}` : ''}${run ? `&run=${encodeURIComponent(run)}` : ''}`)
         .then(async r => {
           const d = await r.json().catch(() => ({}))
           if (!r.ok) throw new Error((d as { error?: string }).error ?? `${r.status}`)
@@ -106,7 +106,7 @@ export function SessionView({ user, name, host = '', initial }: { user: string; 
     }
     load()
     return () => { stop = true; window.clearTimeout(timer) }
-  }, [user, name, host])
+  }, [user, name, host, run])
 
   const running = s?.status === 'running'
 
@@ -126,7 +126,7 @@ export function SessionView({ user, name, host = '', initial }: { user: string; 
     <div className="session-view" ref={rootRef}>
       <div className="session-bar">
         <span className={`status-dot ${running ? 'ok' : 'warn'}`} />
-        <span className="session-name">{s?.name ?? name}</span>
+        <span className="session-name">{s?.name ?? (name || (run ? `Session of ${run}` : host))}</span>
         <span className="muted session-meta">
           {[s?.run ? `${s.run.workflow} · ${s.run.slug}` : s?.type, s?.resource ? `on ${s.resource}` : '', s && !running ? (s.status || 'not running') : ''].filter(Boolean).join(' · ')}
         </span>
