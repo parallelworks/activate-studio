@@ -337,6 +337,21 @@ export function credentialRejectionMessage(owner: 'personal' | 'deployment', kin
   return `The platform rejected your stored ${kind === 'token' ? 'token' : 'credential'} (401). If it was a platform token it has likely expired, since tokens last 24 hours from login. Paste a fresh token under Settings, Model access, or an API key from Account, API keys, which does not expire.`
 }
 
+/**
+ * The chat client sends earlier turns' tool calls in the history: an
+ * assistant message carrying tool_calls, then one tool message per result.
+ * The history here is role and text only, which strips the call ids, and a
+ * gateway refuses a tool message without one ("Tool message missing
+ * tool_call_id"), so every follow-up to a reply that used tools failed.
+ * Earlier turns contribute their text; this turn's tool calls are sent by
+ * the turn loop below with their ids.
+ */
+export function isEarlierToolTraffic(m: { role?: string; content?: unknown; tool_calls?: unknown }): boolean {
+  if (m.role === 'tool') return true
+  const text = typeof m.content === 'string' ? m.content.trim() : ''
+  return m.role === 'assistant' && Array.isArray(m.tool_calls) && !text
+}
+
 /** Streams currently being answered; a shutdown waits for them (briefly). */
 let inFlight = 0
 export function streamsInFlight(): number { return inFlight }
@@ -926,6 +941,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     for (let i = 0; i < raw.length; i++) {
       const m = raw[i]
       if (m.role === 'system') continue
+      if (isEarlierToolTraffic(m)) continue
       let content = typeof m.content === 'string' ? m.content : m.content == null ? '' : JSON.stringify(m.content)
       if (i === lastUserIdx && content.trim().startsWith('/')) {
         const expanded = expandSlashCommand(content)
