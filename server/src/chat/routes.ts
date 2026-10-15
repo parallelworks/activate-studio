@@ -7,12 +7,12 @@ import { listRuns } from '../runs.js'
 import { GATEWAY_BASE, MAX_TOOL_ITERATIONS, SIDECAR_ENDPOINT, INDEX_BASE } from '../config.js'
 import { providerReason } from './gateway.js'
 import { aiHealth, gatewayConfigured, isSidecarModel, listModels, listSidecarModels, modelFailure, probeProvider, probeableProvider, extractUnlockUrl, invalidateProviderProbes, sidecarConfigured, sidecarTarget, StreamedTurnError, streamTurn, WireMessage, WireToolCall, type TokenUsage } from './gateway.js'
-import { TOOL_CALLS, TOOL_SPECS, activeToolSpecs, activeToolSpecsWithRemote, commandFor, customToolSpecs, executeTool, expandSlashCommand, skillToolSpec } from './tools.js'
+import { MORE_TOOLS, TOOL_CALLS, TOOL_GROUPS, TOOL_SPECS, activeToolSpecs, activeToolSpecsWithRemote, commandFor, customToolSpecs, executeTool, expandSlashCommand, initialToolGroups, selectToolSpecs, skillToolSpec, toolGroupOf } from './tools.js'
 import { systemPrompt } from './context.js'
 import { attachmentContext } from '../attachments.js'
 import { effectiveSettings } from '../settings.js'
 import { agentPrompt } from '../extensions.js'
-import { beginAnswer, recordAssistantTurn, recordUserTurn, StoredToolCallPart } from '../conversations.js'
+import { beginAnswer, recordAssistantTurn, recordUserTurn, StoredToolCallPart, toolsUsedIn } from '../conversations.js'
 import { clearSharedKey, clearUserKey, getSharedKeyStatus, getUserKeyStatus, KEY_COOKIE, KEY_COOKIE_P, personalKeysDisabled, resolveUserCred, resolveUserKey, sealKeyCookie, setUserKey, shareUserKey } from '../credentials.js'
 import { authEnabled } from '../auth.js'
 
@@ -987,8 +987,14 @@ ${ctx}` : ctx
     const scopeNote = labelScope.length
       ? `\n\nThe user has scoped this conversation to knowledge base material labeled: ${labelScope.join(', ')}. search_kb is restricted server-side to those labels for this conversation. Ground answers in that material, and say so when the scoped material has nothing relevant rather than answering from outside the scope.`
       : ''
+    // Only the tool groups this reply needs go to the model (TOOL_GROUPS):
+    // what the last two user messages ask about, and what the conversation
+    // used before. The model can add a group with more_tools. The prompt's
+    // platform section goes with the workflow and agent groups.
+    const recentUserText = raw.filter(m => m.role === 'user').slice(-2).map(m => typeof m.content === 'string' ? m.content : '').join('\n')
+    const activeGroups = initialToolGroups(recentUserText, toolsUsedIn(body.conversationId))
     const messages: WireMessage[] = [
-      { role: 'system', content: `${await systemPrompt()}\n\nToday's date is ${today}. Treat earlier dates as past; call out deadlines that have already passed.${scopeNote}${persona ? `\n\n--- DEPLOYMENT AGENT INSTRUCTIONS (extensions/agents/default.md) ---\n${persona}` : ''}` },
+      { role: 'system', content: `${await systemPrompt({ platform: activeGroups.has('workflows') || activeGroups.has('agents') })}\n\nToday's date is ${today}. Treat earlier dates as past; call out deadlines that have already passed.${scopeNote}${persona ? `\n\n--- DEPLOYMENT AGENT INSTRUCTIONS (extensions/agents/default.md) ---\n${persona}` : ''}` },
       ...history,
     ]
 
@@ -1009,7 +1015,7 @@ ${ctx}` : ctx
     const requestStart = Date.now()
     // Where a reply's time goes, logged when it finishes: the model's rounds
     // against the tools they ran, and how long the first model answer took.
-    const timing = { rounds: 0, toolCalls: 0, modelMs: 0, toolMs: 0, seedMs: 0, firstModelMs: 0 }
+    const timing = { rounds: 0, toolCalls: 0, modelMs: 0, toolMs: 0, seedMs: 0, firstModelMs: 0, perRound: [] as string[] }
     const markThinking = () => { if (!reasoningStart) reasoningStart = Date.now() }
     const allocation = body.allocation ?? process.env.PW_ALLOCATION ?? null
     const callbacks = {
@@ -1229,7 +1235,7 @@ ${ctx}` : ctx
       let hitLimit = true
       for (let iter = 0; iter < maxRounds; iter++) {
         turnBreak = true
-        const toolSpecs = await activeToolSpecsWithRemote()
+        const toolSpecs = selectToolSpecs(await activeToolSpecsWithRemote(), activeGroups)
         const maxTokens = fitWindow(messages as WireMessage[], String(body.model ?? ''), JSON.stringify(toolSpecs).length)
         const modelStart = Date.now()
         const turn = await turnWithRetry(
@@ -1238,6 +1244,8 @@ ${ctx}` : ctx
         timing.rounds++
         timing.modelMs += Date.now() - modelStart
         if (!timing.firstModelMs) timing.firstModelMs = Date.now() - requestStart
+        // ms, characters sent, characters written, calls asked for
+        timing.perRound.push(`${Date.now() - modelStart}ms in${JSON.stringify(messages).length + JSON.stringify(toolSpecs).length} out${turn.content.length + JSON.stringify(turn.toolCalls ?? []).length} calls${turn.toolCalls?.length ?? 0}`)
         if (turn.usage) usageTotal = addUsage(usageTotal, turn.usage)
         finalModel = turn.model ?? finalModel
         if (turn.finishReason === 'tool_calls' && turn.toolCalls.length > 0) {
@@ -1275,6 +1283,19 @@ ${ctx}` : ctx
               const i = cursor++
               if (i >= calls.length) return
               const tc = calls[i]
+              if (tc.function.name === MORE_TOOLS) {
+                let group = ''
+                try { group = String(JSON.parse(tc.function.arguments || '{}').group ?? '') } catch { /* named below */ }
+                const def = TOOL_GROUPS[group]
+                if (def) activeGroups.add(group)
+                outcomes[i] = def
+                  ? { result: `Added the ${group} tools: ${def.names.join(', ')}. Use them in your next step.`, summary: `added ${group} tools` }
+                  : { result: `No tool group "${group}". Groups: ${Object.keys(TOOL_GROUPS).join(', ')}.`, summary: 'unknown group', failed: true }
+                continue
+              }
+              // A tool from a group not sent this reply still runs, and its group joins.
+              const calledGroup = toolGroupOf(tc.function.name)
+              if (calledGroup) activeGroups.add(calledGroup)
               const key = `${tc.function.name}:${tc.function.arguments}`
               if (toolCache.has(key)) {
                 outcomes[i] = {

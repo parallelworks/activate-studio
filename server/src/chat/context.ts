@@ -41,8 +41,23 @@ export function personaCatalog(): string {
   }
 }
 
-export async function systemPrompt(): Promise<string> {
-  const base = (await staticPrompt()).replace('PERSONA_CATALOG_PLACEHOLDER', personaCatalog())
+const PLATFORM_START = '<!--platform-->'
+const PLATFORM_END = '<!--/platform-->'
+
+/**
+ * The prompt for one reply. The platform section (the workflow catalog, HPC
+ * guidance, delegation modes) goes only when a reply has the workflow or
+ * agent tools; a question about documents carried those 8,000 characters
+ * on every round without using them.
+ */
+export async function systemPrompt(opts: { platform?: boolean } = {}): Promise<string> {
+  let base = (await staticPrompt()).replace('PERSONA_CATALOG_PLACEHOLDER', personaCatalog())
+  const a = base.indexOf(PLATFORM_START), b = base.indexOf(PLATFORM_END)
+  if (a >= 0 && b > a) {
+    base = opts.platform === false
+      ? base.slice(0, a) + 'Platform tools are not listed for this reply: the workflows and apps the account offers, launching and following runs on HPC systems, sessions, clusters, and agents. Call more_tools to add them whenever a request touches any of these.' + base.slice(b + PLATFORM_END.length)
+      : base.slice(0, a) + base.slice(a + PLATFORM_START.length, b) + base.slice(b + PLATFORM_END.length)
+  }
   // The mission is spliced fresh on every call so a Settings edit takes
   // effect without a restart; everything expensive stays cached.
   const mission = String(effectiveSettings().kbMission ?? '').trim()
@@ -84,13 +99,13 @@ async function staticPrompt(): Promise<string> {
     'PERSONA_CATALOG_PLACEHOLDER',
     'For questions about the Studio application itself, how to use a view, what a control does, how labels or search or the index work, call studio_docs and answer from the returned guide instead of searching the knowledge base.',
     '',
-    'Platform workflows registered in this account. These are composable building blocks: recommend which fit a task, preview a DAG with get_workflow before anything runs, validate with run_workflow dry_run when acting on your own initiative, and treat a user request to run something as the authorization to run it, with no second confirmation. Monitor with workflow_runs and workflow_run_detail. pw_help discovers the wider platform command surface.',
+    PLATFORM_START + 'Platform workflows registered in this account. These are composable building blocks: recommend which fit a task, preview a DAG with get_workflow before anything runs, validate with run_workflow dry_run when acting on your own initiative, and treat a user request to run something as the authorization to run it, with no second confirmation. Monitor with workflow_runs and workflow_run_detail. pw_help discovers the wider platform command surface.',
     workflows || '(workflow list unavailable)',
     '',
     'Running work on the HPC systems this account is connected to is a core job of this Studio, and the user is not expected to know scheduler syntax, queue names, or which account and QoS to charge. Treat a request like "run an abliterated ollama model on the cluster" as complete: identify the workflow from the catalog, call workflow_configs on it, and launch the configuration whose name matches the system the user named, passing it as run_workflow config with dry_run false. Those configurations already carry the partition, QoS, walltime and GPU directives that work at that site, so prefer one over scheduler settings you compose yourself, and never ask the user for a partition or an account that a configuration already supplies. When a request names a system that has no configuration, take the partitions, walltime ceilings and required fields from hpc_environments for that system, check list_clusters for whether it runs Slurm or PBS, and say which values you chose and why. Ask the user only for what genuinely cannot be resolved, such as a site account code that appears nowhere.',
     'When a workflow tool fails because no platform credential is available, stop and relay the remedy the error names, which is adding a platform credential under Settings, Model access. Do not answer from memory of earlier sessions, and never embed a workflow DAG in the reply unless get_workflow succeeded for that workflow this conversation: the embed makes the same failing request and renders an error box where the answer should be.',
     'Delegation has two execution modes. local is for quick parallel lookups, minutes each. campaign submits every agent as a platform workflow run on a connected system: use it when the work is long, the agents are many, or the user says campaign, and pick the system from hpc_status placement when the user does not name one. Campaign agents survive server restarts and appear with their run identifiers in the Agents tab.',
-    'After a real launch, report the run identifier and call watch_run, then keep calling it to follow the run while the user waits. Say which system the job landed on and which job step is executing, and when the workflow serves a session or an endpoint, say that it is coming up and give its name, since that is what the user will select as a model or open. If a run ends in error or canceled, read workflow_run_detail and explain the failure in terms of the submission, for example a walltime over the partition ceiling or a GPU request the nodes cannot satisfy, rather than pasting the log.',
+    'After a real launch, report the run identifier and call watch_run, then keep calling it to follow the run while the user waits. Say which system the job landed on and which job step is executing, and when the workflow serves a session or an endpoint, say that it is coming up and give its name, since that is what the user will select as a model or open. If a run ends in error or canceled, read workflow_run_detail and explain the failure in terms of the submission, for example a walltime over the partition ceiling or a GPU request the nodes cannot satisfy, rather than pasting the log.' + PLATFORM_END,
     '',
     conventions
       ? 'The knowledge base ships its own working conventions, loaded below. Its rules on tone, terminology, and claims not to make are binding for every draft you produce here, because text produced in this interface can end up in deliverables.'

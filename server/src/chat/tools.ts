@@ -101,15 +101,15 @@ export const TOOL_SPECS: ToolSpec[] = [
     function: {
       name: 'read_kb_file',
       description:
-        'Read a file from the knowledge base by its relative path (as returned by search_kb or list_kb_dir). Returns text content; DOCX/PDF return extracted text when available.',
+        'Read files from the knowledge base by relative path (as returned by search_kb or list_kb_dir). Returns text content; DOCX/PDF return extracted text when available. To read several files, pass them together in paths in one call: each comes back under its own heading, the first part of each when there are many.',
       parameters: {
         type: 'object',
         properties: {
           path: { type: 'string', description: 'Path relative to the knowledge base root' },
+          paths: { type: 'array', items: { type: 'string' }, description: 'Several paths to read in one call, up to 25' },
           offset: { type: 'number', description: 'Character offset to start from, default 0' },
           library: { type: 'string', description: 'Which library: an id from list_libraries; default the one selected in this conversation' },
         },
-        required: ['path'],
       },
     },
   },
@@ -812,6 +812,64 @@ export function activeToolSpecs(): ToolSpec[] {
   return [...TOOL_SPECS, ...customToolSpecs(), ...(skill ? [skill] : [])].filter(t => !disabled.has(t.function.name))
 }
 
+/**
+ * Tools that go to the model only when a conversation needs them. All 50
+ * tool definitions went out on every round, about 45,000 characters, and
+ * a round's time grows with what it sends: a question about documents ran
+ * 40 seconds where pw code took 24 with the same model. The knowledge base
+ * tools, skills, and custom and remote tools always go; a group joins when
+ * the question names its subject, when the conversation used it before, or
+ * when the model asks for it with more_tools.
+ */
+export const TOOL_GROUPS: Record<string, { summary: string; names: string[]; cue: RegExp }> = {
+  workflows: {
+    summary: 'platform workflows: find, compose, validate, and run them; follow runs; list sessions and clusters; serve models',
+    names: ['list_workflows', 'list_github_workflows', 'get_workflow', 'pw_help', 'compose_workflow', 'serve_model', 'validate_workflow',
+      'workflow_configs', 'hpc_environments', 'run_workflow', 'watch_run', 'workflow_runs', 'workflow_run_detail', 'list_sessions',
+      'list_clusters', 'hpc_status', 'cluster_command'],
+    cue: /\b(workflows?|runs?|running|launch|submit|jobs?|clusters?|hpc|slurm|pbs|partition|qos|queue|sessions?|explorer|endpoints?|serve|deploy|dry.?run|allocation|compute|nodes?|study|studies|sweep|doe|optimi[sz]|activate|account|apps?|applications?|catalog|marketplace|platform|gpus?|models? (server|endpoint))/i,
+  },
+  agents: {
+    summary: 'pw code agents on connected systems and delegated subtasks',
+    names: ['agent_sites', 'agent_sessions', 'start_agent', 'agent_status', 'agent_steer', 'agent_goal', 'agent_approve', 'agent_stop', 'delegate', 'task_status'],
+    cue: /\b(agents?|delegat|pw code|subtasks?|steer|in parallel)/i,
+  },
+  editing: {
+    summary: 'writing files into the knowledge base and suggesting or applying labels',
+    names: ['write_kb_file', 'suggest_labels', 'apply_labels'],
+    cue: /\b(labels?|tags?|tagging|write|save|create|draft|edit|update|append|notes?|file it|add (a|an|the) )/i,
+  },
+}
+export const MORE_TOOLS = 'more_tools'
+
+export function toolGroupOf(name: string): string | null {
+  for (const [g, def] of Object.entries(TOOL_GROUPS)) if (def.names.includes(name)) return g
+  return null
+}
+
+/** The groups a reply starts with: those its recent user text calls for, and those the conversation already used. */
+export function initialToolGroups(userText: string, usedTools: string[] = []): Set<string> {
+  const groups = new Set<string>()
+  for (const [g, def] of Object.entries(TOOL_GROUPS)) if (def.cue.test(userText)) groups.add(g)
+  for (const name of usedTools) { const g = toolGroupOf(name); if (g) groups.add(g) }
+  return groups
+}
+
+/** The tools to send this round: everything outside a group, the active groups, and more_tools for the rest. */
+export function selectToolSpecs(all: ToolSpec[], active: Set<string>): ToolSpec[] {
+  const out = all.filter(t => { const g = toolGroupOf(t.function.name); return !g || active.has(g) })
+  const offered = Object.entries(TOOL_GROUPS).filter(([g, def]) => !active.has(g) && all.some(t => def.names.includes(t.function.name)))
+  if (!offered.length) return out
+  return [...out, {
+    type: 'function',
+    function: {
+      name: MORE_TOOLS,
+      description: `More tools exist than are listed. Call this to add a group when the request needs it: ${offered.map(([g, def]) => `${g} (${def.summary})`).join('; ')}.`,
+      parameters: { type: 'object', properties: { group: { type: 'string', enum: offered.map(([g]) => g) } }, required: ['group'] },
+    },
+  } as ToolSpec]
+}
+
 /** The tool list including any attached MCP servers. Async because a
  *  remote listing is a network call; cached for a minute in the client. */
 export async function activeToolSpecsWithRemote(): Promise<ToolSpec[]> {
@@ -1222,7 +1280,29 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
         return { result: rels.length ? rels.join('\n') : 'No matches.', summary: `${rels.length} hits (grep fallback)` }
       }
       case 'read_kb_file': {
+        // Several files in one call: a question about every proposal read
+        // them one call each, and each round trip to the model is seconds.
+        if (Array.isArray(args.paths) && args.paths.length) {
+          const paths = (args.paths as unknown[]).map(String).filter(Boolean).slice(0, 25)
+          const lib = namedLibrary(args.library)
+          if (!lib.site && !lib.sourceRoot) throw new Error(`${lib.label} has no files on this host; it can be searched but not read`)
+          // Split a 30,000-character budget between the files, at least 1,200
+          // each: every result rides along in each later round of the reply.
+          const each = Math.max(1_200, Math.floor(30_000 / paths.length))
+          const parts = await Promise.all(paths.map(async rel => {
+            try {
+              const fc = lib.site ? await (await import('../userLibraries.js')).remoteFile(lib.indexRoot, rel) : await readFileContent(rel, lib.sourceRoot!)
+              if (fc.content == null) return `### ${rel}\nBinary file (${fc.kind}, ${fc.size} bytes); no text available.`
+              const more = fc.content.length > each ? `\n[first ${each} of ${fc.content.length} characters; read it alone with path and offset for the rest]` : ''
+              return `### ${rel}\n${fc.content.slice(0, each)}${more}`
+            } catch (e) {
+              return `### ${rel}\nnot read: ${String((e as Error).message ?? e).slice(0, 200)}`
+            }
+          }))
+          return { result: parts.join('\n\n'), summary: `${paths.length} files` }
+        }
         const rel = String(args.path ?? '')
+        if (!rel) throw new Error('path or paths is required')
         const offset = Math.max(0, Number(args.offset) || 0)
         const lib = namedLibrary(args.library)
         if (!lib.site && !lib.sourceRoot) throw new Error(`${lib.label} has no files on this host; it can be searched but not read`)
