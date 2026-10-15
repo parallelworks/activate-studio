@@ -244,6 +244,14 @@ export function withUnanswered(c: StoredConversation): StoredConversation {
   return { ...c, messages: c.messages.map(m => m.role === 'user' && !parents.has(m.id) ? { ...m, error: NO_REPLY_NOTE } : m) }
 }
 
+/** The tools a conversation's recent replies used, so a follow-up keeps them. */
+export function toolsUsedIn(conversationId: string | undefined, lastMessages = 8): string[] {
+  if (!conversationId) return []
+  const c = load().find(x => x.id === conversationId)
+  if (!c) return []
+  return [...new Set(c.messages.slice(-lastMessages).flatMap(m => (m.parts ?? []).map(p => p.name)))]
+}
+
 export function recordAssistantTurn(conversationId: string | undefined, message: StoredMessage): void {
   if (!conversationId) return
   const c = load().find(x => x.id === conversationId)
