@@ -132,6 +132,49 @@ function ftsExpr(query: string): string {
 }
 
 /**
+ * The same expression with every term a bareword, for gufi_vt, which
+ * carries a statement's SQL in double quotes and so cannot take fts5's
+ * quoted terms. Null when a term is more than letters, digits, and
+ * underscores; such a search runs per library instead.
+ */
+export function ftsExprBare(query: string): string | null {
+  const bare = (t: string): string | null => {
+    const s = t.replace(/"/g, '')
+    if (!/^[\p{L}\p{N}_]+$/u.test(s)) return null
+    return /^(AND|OR|NOT|NEAR)$/.test(s) ? s.toLowerCase() : s
+  }
+  const parts: string[] = []
+  for (const g of parseSearchQuery(query).groups) {
+    const pos: string[] = []
+    for (const i of g.items) { const b = bare(i.text); if (b === null) return null; pos.push(b + (i.prefix ? '*' : '')) }
+    if (!pos.length) continue
+    let e = pos.length > 1 ? `(${pos.join(' AND ')})` : pos[0]
+    for (const n of g.negatives) { const b = bare(n.text); if (b === null) return null; e = `(${e} NOT ${b})` }
+    parts.push(e)
+  }
+  return parts.length ? (parts.length > 1 ? parts.join(' OR ') : parts[0]) : null
+}
+
+/** Full-text search's per-directory SQL, for an fts5 expression. */
+export function ftsSql(expr: string, limit: number): string {
+  return `SELECT rpath(sname, sroll)||'/'||vrpentries.name, vrpentries.name, size, mtime, ` +
+    `replace(replace(snippet(words, 2, '[', ']', ' … ', 12), char(10), ' '), char(13), ' ') ` +
+    `FROM vrpentries INNER JOIN words ON inode=CAST(tinode AS TEXT) ` +
+    `WHERE wordf MATCH ${q(expr)} LIMIT ${limit};`
+}
+
+/** Name search's per-directory SQL, or null when the query names nothing. */
+export function namesSql(queryText: string, limit: number): string | null {
+  const where = nameWhere(parseSearchQuery(queryText))
+  return where === '0' ? null : `SELECT rpath(sname, sroll)||'/'||name, name, size, mtime FROM vrpentries WHERE ${where} LIMIT ${limit};`
+}
+
+/** A full-text row as a hit, its path already relative to the library. */
+export const ftsHit = (r: string[], rel: string): SearchHit => ({ path: rel, name: r[1], size: Number(r[2]) || 0, mtime: Number(r[3]) || 0, snippet: r[4] ?? '', score: 1, mode: 'fts' })
+/** A name row as a hit, its path already relative to the library. */
+export const nameHit = (r: string[], rel: string): SearchHit => ({ path: rel, name: r[1], size: Number(r[2]) || 0, mtime: Number(r[3]) || 0, snippet: '', score: 0.5, mode: 'name' })
+
+/**
  * A filename clause for one term. Filenames are matched by substring,
  * which is what people expect of a name search, except that a short
  * term is required to start a word: "tin" must not surface routine.md.
@@ -194,40 +237,16 @@ export async function queryPerDir(sql: string, opts: { threads?: number; subdir?
 export async function searchFts(queryText: string, limit = 20, indexRoot?: string): Promise<SearchHit[]> {
   const expr = ftsExpr(queryText)
   if (!expr) return []
-  const sql =
-    `SELECT rpath(sname, sroll)||'/'||vrpentries.name, vrpentries.name, size, mtime, ` +
-    `replace(replace(snippet(words, 2, '[', ']', ' … ', 12), char(10), ' '), char(13), ' ') ` +
-    `FROM vrpentries INNER JOIN words ON inode=CAST(tinode AS TEXT) ` +
-    `WHERE wordf MATCH ${q(expr)} LIMIT ${limit};`
-  const rows = await queryPerDir(sql, { indexRoot })
-  return rows.slice(0, limit * 3).map(r => ({
-    path: toKbRel(r[0], indexRoot),
-    name: r[1],
-    size: Number(r[2]) || 0,
-    mtime: Number(r[3]) || 0,
-    snippet: r[4] ?? '',
-    score: 1,
-    mode: 'fts' as const,
-  }))
+  const rows = await queryPerDir(ftsSql(expr, limit), { indexRoot })
+  return rows.slice(0, limit * 3).map(r => ftsHit(r, toKbRel(r[0], indexRoot)))
 }
 
 /** Filename substring search over entries metadata (no enrichment needed). */
 export async function searchNames(queryText: string, limit = 20, indexRoot?: string): Promise<SearchHit[]> {
-  const where = nameWhere(parseSearchQuery(queryText))
-  if (where === '0') return []
-  const sql =
-    `SELECT rpath(sname, sroll)||'/'||name, name, size, mtime ` +
-    `FROM vrpentries WHERE ${where} LIMIT ${limit};`
+  const sql = namesSql(queryText, limit)
+  if (!sql) return []
   const rows = await queryPerDir(sql, { indexRoot })
-  return rows.slice(0, limit).map(r => ({
-    path: toKbRel(r[0], indexRoot),
-    name: r[1],
-    size: Number(r[2]) || 0,
-    mtime: Number(r[3]) || 0,
-    snippet: '',
-    score: 0.5,
-    mode: 'name' as const,
-  }))
+  return rows.slice(0, limit).map(r => nameHit(r, toKbRel(r[0], indexRoot)))
 }
 
 /** gufi_query prints paths rooted at the index tree; strip the index prefix. */

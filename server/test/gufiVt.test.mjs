@@ -180,3 +180,27 @@ test('a cluster library is counted once per build', { skip: !haveGufi && 'GUFI n
     assert.ok(runs() > once)
   } finally { fs.writeFileSync(file, before) }
 })
+
+test('a search across libraries runs its name matches as one gufi_vt statement, with the same hits as per library', { skip: !haveGufi && 'GUFI not installed' }, async () => {
+  V.resetGufiVtForTests()
+  const L = await import('../dist/libraryScope.js')
+  const libs = L.scopeLibraries('all', null)
+  const pick = hits => hits.map(h => `${h.library.id}:${h.path}`).sort()
+  for (const q of ['tiny', 'note', 'log']) {
+    const { result: vt, commands } = await T.traced(() => L.searchScope(libs, q, 20, { semantic: false }))
+    assert.ok(commands.some(c => c.engine === 'gufi_vt'), `${q}: ran as gufi_vt`)
+    V.forceGufiVtForTests(false)
+    const merged = await L.searchScope(libs, q, 20, { semantic: false })
+    V.forceGufiVtForTests(null)
+    assert.deepEqual(pick(vt), pick(merged), q)
+    assert.ok(vt.length > 0, `${q}: found something`)
+  }
+})
+
+test('a full-text expression goes to gufi_vt only when every term is a bareword', async () => {
+  const G = await import('../dist/gufi.js')
+  assert.equal(G.ftsExprBare('pressure pulse'), '(pressure AND pulse)')
+  assert.equal(G.ftsExprBare('mod*'), 'mod*')
+  assert.equal(G.ftsExprBare('det-train'), null)
+  assert.ok(!G.ftsSql(G.ftsExprBare('pressure pulse'), 10).includes('"'), 'no double quotes for gufi_vt to choke on')
+})

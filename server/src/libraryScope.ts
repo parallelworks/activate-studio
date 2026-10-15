@@ -1,5 +1,6 @@
 import { getLibrary, listLibraries, type Library } from './libraries.js'
-import { blendHits, searchFts, searchNames, searchVector, type SearchHit } from './gufi.js'
+import { blendHits, ftsExprBare, ftsHit, ftsSql, nameHit, namesSql, searchFts, searchNames, searchVector, type SearchHit } from './gufi.js'
+import { gufiVtAvailable, runAcross } from './gufiVt.js'
 
 /**
  * Which libraries a request means: one, by id (the knowledge base when
@@ -27,15 +28,45 @@ export interface ScopedHit extends SearchHit { library: { id: string; label: str
 export async function searchScope(libs: Library[], q: string, limit: number, opts: { semantic: boolean; nameLimit?: number }): Promise<ScopedHit[]> {
   const SEP = '\u0001'
   const tag = (l: Library) => (hits: SearchHit[]) => hits.map(h => ({ ...h, path: `${l.id}${SEP}${h.path}` }))
+  const nameLimit = opts.nameLimit ?? Math.min(Math.max(10, Math.floor(limit / 5)), 50)
+  const ftsLibs = libs.filter(l => l.caps.fullText || l.primary)
+  // Across several libraries, full-text and name matches run as one gufi_vt
+  // statement each (gufiVt.ts), as Query does. A library gufi_vt could not
+  // answer, and a search gufi_vt cannot carry, run on their own below.
+  const vt = libs.length > 1 && await gufiVtAvailable()
+  const viaVt = { fts: new Set<string>(), names: new Set<string>() }
+  const vtHits: { fts: SearchHit[]; names: SearchHit[] } = { fts: [], names: [] }
+  if (vt) {
+    const bare = ftsExprBare(q)
+    const nSql = namesSql(q, nameLimit)
+    const across = async (which: 'fts' | 'names', sql: string, members: Library[], cap: number, hit: (r: string[], rel: string) => SearchHit) => {
+      const r = await runAcross(members.map(lib => ({ lib, plan: { stages: { E: sql }, columns: [] } })), null).catch(() => null)
+      if (!r) return
+      const failed = new Set(r.failed.map(f => f.library))
+      const count = new Map<string, number>()
+      for (const l of members) if (!failed.has(l.label)) viaVt[which].add(l.id)
+      for (const { id, row } of r.rows) {
+        const n = (count.get(id) ?? 0) + 1
+        if (n > cap) continue
+        count.set(id, n)
+        vtHits[which].push({ ...hit(row, row[0]), path: `${id}${SEP}${row[0]}` })
+      }
+    }
+    await Promise.all([
+      bare && ftsLibs.length > 1 ? across('fts', ftsSql(bare, limit), ftsLibs, limit * 3, ftsHit) : Promise.resolve(),
+      nSql ? across('names', nSql, libs, nameLimit, nameHit) : Promise.resolve(),
+    ])
+  }
   const per = await Promise.all(libs.map(async l => {
     const t = tag(l)
     const [fts, names, vec] = await Promise.all([
-      l.caps.fullText || l.primary ? searchFts(q, limit, l.indexRoot).then(t, () => []) : Promise.resolve([]),
-      searchNames(q, opts.nameLimit ?? Math.min(Math.max(10, Math.floor(limit / 5)), 50), l.indexRoot).then(t, () => []),
+      (l.caps.fullText || l.primary) && !viaVt.fts.has(l.id) ? searchFts(q, limit, l.indexRoot).then(t, () => []) : Promise.resolve([]),
+      !viaVt.names.has(l.id) ? searchNames(q, nameLimit, l.indexRoot).then(t, () => []) : Promise.resolve([]),
       opts.semantic && (l.caps.vectors || l.primary) ? searchVector(q, Math.min(limit, 10), l.indexRoot).then(t, () => []) : Promise.resolve([]),
     ])
     return { fts, names, vec }
   }))
+  per.push({ fts: vtHits.fts, names: vtHits.names, vec: [] })
   const blended = blendHits(per.flatMap(p => p.fts), per.flatMap(p => p.names), per.flatMap(p => p.vec), limit)
   const byId = new Map(libs.map(l => [l.id, l]))
   return blended.map(h => {
