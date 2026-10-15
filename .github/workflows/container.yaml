@@ -71,7 +71,7 @@ jobs:
     outputs:
       image: ${{ steps.files.outputs.image }}
     steps:
-      - uses: step-security/harden-runner@351661ca32ac09a36dc5ee2d536e3128f2a3c8ed # v2.22.0
+      - uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: block
           allowed-endpoints: >
@@ -125,7 +125,7 @@ jobs:
       # the Azure mirror is down) and Debian's, Docker Hub for the base
       # images, npm, and Hugging Face for the model. Anything else is
       # blocked and shows in the job's StepSecurity report.
-      - uses: step-security/harden-runner@351661ca32ac09a36dc5ee2d536e3128f2a3c8ed # v2.22.0
+      - uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: block
           allowed-endpoints: >
@@ -255,7 +255,7 @@ jobs:
       # Audit, not block, until a release run shows this job's full set
       # (Sigstore and the OIDC token service for the attestation among it).
       # It runs no build code.
-      - uses: step-security/harden-runner@351661ca32ac09a36dc5ee2d536e3128f2a3c8ed # v2.22.0
+      - uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
 
