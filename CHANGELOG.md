@@ -2,6 +2,33 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.129 (2026-10-15)
+
+### Change log through v1.128 (#473)
+
+Regenerated with `node scripts/release-notes.mjs --changelog` after the v1.128 release.
+
+### Chat: steer a running reply; launches fill site settings and place plain-named inputs (#474)
+
+**Steering a running reply.** Until now, a message sent while a reply was running waited in the chat's queue until the reply ended, so there was no way to correct course mid-turn. Now:
+- The Studio also hands the message to the running reply (`POST /api/chat/steer`).
+- The reply takes it in as a user message before its next model call, and notes "You added" in the reply.
+- A `steer` stream event then removes it from the queue, so it isn't sent again.
+- A message the reply doesn't reach (it was already writing its final answer), or one with attachments, still goes out afterwards.
+
+Tested on a bench with a multi-round stand-in model: a message sent two seconds into a reply reached the next model call, the reply showed the note, and the conversation stored one question and one reply.
+
+**Launches that small models can make.** A smaller model kept failing to build a workflow launch: nested input paths, plus a scheduler account and QoS that the old refusal described as impossible to infer. `run_workflow` now accepts the workflow, a system name and inputs by plain name, and fills in the rest:
+- Inputs are placed where the workflow declares them (`batch_size` → `optimizer.batch_size`) when exactly one declared input has that name.
+- An empty scheduler account, QoS or partition is filled from the user's most recent completed run on that system, checking the same workflow's runs first. The result names the run the values came from.
+- A dry run says that nothing ran and how to launch it.
+- A refusal names the missing field and, if no earlier run had it, says to ask the user.
+- The run list's `{runs: [...]}` shape is now read.
+
+Tested against a live platform as a dry run: only the workflow, its saved configuration, the system name, and `{batch_size, max_iterations}` validated. The account, QoS and partition were filled from the user's earlier run, and both inputs were placed under the optimizer group.
+
+Tests: plain-name placement, including an ambiguous name that stays put. The full suite passes.
+
 ## v1.128 (2026-10-14)
 
 ### Change log through v1.127 (#471)
