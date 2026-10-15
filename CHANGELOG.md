@@ -2,6 +2,30 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.130 (2026-10-15)
+
+### Change log through v1.129 (#475)
+
+Regenerated with `node scripts/release-notes.mjs --changelog` after the v1.129 release.
+
+### Search across libraries runs through gufi_vt (#477)
+
+Query has used `gufi_vt` across libraries since v1.109. Search still ran `gufi_query` per library and merged the results, so cross-library searches never showed `gufi_vt`.
+
+**What runs through gufi_vt now.** For a search across several libraries:
+- Name matches run as one `gufi_vt` statement.
+- Full-text matches also run as one statement, when every search word is a bareword. `gufi_vt` carries a statement's SQL in double quotes, so fts5's quoted terms can't go through it; `ftsExprBare` writes the same expression with barewords (an uppercase operator word is lowercased), or returns null. A word with punctuation keeps the per-library path.
+- A library `gufi_vt` can't reach, and results by meaning, still run per library.
+
+The statement is recorded through `runAcross`, so it shows in the GUFI commands panel as Query's does. The SQL builders (`ftsSql`, `namesSql`) and row mappers are shared with the per-library path.
+
+**Tests.**
+- End to end with GUFI installed, on the existing two synthetic trees: one local library and one cluster library through the remote wrapper. Name searches run as `gufi_vt` and return the same hits as the per-library path.
+- Bareword expressions.
+- On the dev indexes, with caps lifted so both paths return every hit, four searches matched exactly (710, 54, 319 and 43 hits).
+
+**Speed.** `gufi_vt` answers its locations one after another, so these searches took 110 to 190 ms against 40 to 70 ms for the parallel per-library path.
+
 ## v1.129 (2026-10-15)
 
 ### Change log through v1.128 (#473)
