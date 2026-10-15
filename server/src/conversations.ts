@@ -223,8 +223,33 @@ export function beginAnswer(conversationId: string | undefined): () => void {
     done = true
     const n = (answering.get(conversationId) ?? 1) - 1
     if (n > 0) answering.set(conversationId, n)
-    else answering.delete(conversationId)
+    else { answering.delete(conversationId); steers.delete(conversationId) }
   }
+}
+
+/**
+ * Messages sent while a reply is running, for that reply to take in at its
+ * next step. The chat holds a message sent mid-reply in its queue until the
+ * reply ends; steering hands it to the running reply instead, between tool
+ * rounds, so it can change what the model does next. One the reply does not
+ * reach (it was already writing its answer) is dropped here and goes out
+ * from the chat's queue afterwards as usual.
+ */
+const steers = new Map<string, { id: string; text: string }[]>()
+
+export function queueSteer(conversationId: string, id: string, text: string): boolean {
+  if (!answering.has(conversationId)) return false
+  const list = steers.get(conversationId) ?? []
+  if (!list.some(s => s.id === id)) list.push({ id, text })
+  steers.set(conversationId, list)
+  return true
+}
+
+export function takeSteers(conversationId: string | undefined): { id: string; text: string }[] {
+  if (!conversationId) return []
+  const list = steers.get(conversationId) ?? []
+  steers.delete(conversationId)
+  return list
 }
 
 export const NO_REPLY_NOTE = 'No reply was saved for this message. It was stopped or interrupted, for example by a restart of the Studio, before the assistant answered.'
@@ -300,6 +325,15 @@ export async function conversationRoutes(app: FastifyInstance): Promise<void> {
   // reindex for any number of conversations. Only the caller's own (or
   // unowned) conversations go; others it can see under shared history are
   // reported as skipped, not deleted.
+  // A message for the reply running in this conversation (see queueSteer).
+  app.post('/api/chat/steer', async req => {
+    const b = (req.body ?? {}) as { conversationId?: string; id?: string; text?: string }
+    const id = String(b.id ?? ''), text = String(b.text ?? '').trim()
+    if (!b.conversationId || !id || !text) throw new KbError(400, 'conversationId, id, and text are required')
+    findVisible(String(b.conversationId), req.user?.username)
+    return { queued: queueSteer(String(b.conversationId), id, text.slice(0, 4000)) }
+  })
+
   app.post('/api/chat/conversations/delete', async req => {
     const raw = (req.body as { ids?: unknown } | null)?.ids
     if (!Array.isArray(raw) || !raw.length) throw new KbError(400, 'ids must be a non-empty list')

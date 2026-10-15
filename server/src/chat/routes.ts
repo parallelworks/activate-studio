@@ -12,7 +12,7 @@ import { systemPrompt } from './context.js'
 import { attachmentContext } from '../attachments.js'
 import { effectiveSettings } from '../settings.js'
 import { agentPrompt } from '../extensions.js'
-import { beginAnswer, recordAssistantTurn, recordUserTurn, StoredToolCallPart, toolsUsedIn } from '../conversations.js'
+import { beginAnswer, recordAssistantTurn, recordUserTurn, StoredToolCallPart, takeSteers, toolsUsedIn } from '../conversations.js'
 import { clearSharedKey, clearUserKey, getSharedKeyStatus, getUserKeyStatus, KEY_COOKIE, KEY_COOKIE_P, personalKeysDisabled, resolveUserCred, resolveUserKey, sealKeyCookie, setUserKey, shareUserKey } from '../credentials.js'
 import { authEnabled } from '../auth.js'
 
@@ -1235,6 +1235,15 @@ ${ctx}` : ctx
       let hitLimit = true
       for (let iter = 0; iter < maxRounds; iter++) {
         turnBreak = true
+        // Messages the user sent while this reply was running, taken in
+        // before the model's next step, and shown in the reply.
+        for (const s of takeSteers(body.conversationId)) {
+          messages.push({ role: 'user', content: `I am adding this while you work; take it into account from here on: ${s.text}` })
+          const note = `\n\n*You added:* ${s.text.replace(/\s+/g, ' ')}\n\n`
+          finalContent += note
+          sse(res, 'content', { text: note })
+          sse(res, 'steer', { id: s.id })
+        }
         const toolSpecs = selectToolSpecs(await activeToolSpecsWithRemote(), activeGroups)
         const maxTokens = fitWindow(messages as WireMessage[], String(body.model ?? ''), JSON.stringify(toolSpecs).length)
         const modelStart = Date.now()

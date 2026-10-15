@@ -288,7 +288,7 @@ export const TOOL_SPECS: ToolSpec[] = [
     function: {
       name: 'run_workflow',
       description:
-        'Run a platform workflow, or validate it with dry_run. Pass config to start from a saved configuration from workflow_configs, which is the reliable way to get site-correct scheduler settings; inputs are merged on top of it and win. When composing or exploring on your own initiative, validate with dry_run:true. When the user has asked in this conversation to run a workflow, their request is the authorization: launch the real run without asking again for confirmation. After a real run, report the run id and call watch_run.',
+        'Run a platform workflow, or validate it with dry_run. The simplest launch names the workflow, the system in resource (for example vega), and inputs by their plain names ({"batch_size": 4}); the Studio places each input where the workflow declares it and fills the cluster reference, partition, scheduler account, and QoS from the user\'s last completed run on that system, saying what it filled. Pass config to start from a saved configuration from workflow_configs; inputs are merged on top of it and win. When composing or exploring on your own initiative, validate with dry_run:true. When the user has asked in this conversation to run a workflow, their request is the authorization: launch the real run without asking again for confirmation. After a real run, report the run id and call watch_run.',
       parameters: {
         type: 'object',
         properties: {
@@ -1168,6 +1168,81 @@ function pathGet(obj: Record<string, unknown>, dotted: string): unknown {
   return dotted.split('.').reduce<unknown>((o, k) => (o && typeof o === 'object' ? (o as Record<string, unknown>)[k] : undefined), obj)
 }
 
+/**
+ * Inputs a model wrote by plain name ({"batch_size": 4}) placed at the path
+ * the workflow declares for them (optimizer.batch_size), when exactly one
+ * declared input has that name. Small models rarely get the nesting right,
+ * and a misplaced value is silently ignored by the workflow.
+ */
+export function placeFlatInputs(inputs: Record<string, any>, declared: { path: string }[]): string[] {
+  const top = new Set(declared.map(d => d.path.split('.')[0]))
+  const moved: string[] = []
+  for (const k of Object.keys(inputs)) {
+    if (top.has(k)) continue
+    const hits = declared.filter(d => d.path.split('.').pop() === k)
+    if (hits.length !== 1) continue
+    setPath(inputs, hits[0].path, inputs[k])
+    delete inputs[k]
+    moved.push(`${k} → ${hits[0].path}`)
+  }
+  return moved
+}
+
+/** The first value under a key named key anywhere in a run's inputs. */
+function findKey(obj: unknown, key: string): unknown {
+  if (!obj || typeof obj !== 'object') return undefined
+  for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
+    if (k === key && v != null && v !== '' && typeof v !== 'object') return v
+    const deeper = findKey(v, key)
+    if (deeper !== undefined) return deeper
+  }
+  return undefined
+}
+
+const siteCache = new Map<string, { at: number; v: { account?: string; qos?: string; partition?: string; from?: string } }>()
+
+/**
+ * The scheduler account, QoS, and partition of the user's most recent
+ * completed run on a system. Those are per user and per site, so no
+ * workflow default carries them, and a small model told they "cannot be
+ * guessed" gave up; the user's own last good run is the right answer.
+ */
+async function siteDefaults(cluster: string, workflow = ''): Promise<{ account?: string; qos?: string; partition?: string; from?: string }> {
+  const name = cluster.replace(/^pw:\/\/[^/]+\//, '').toLowerCase()
+  const hit = siteCache.get(name)
+  if (hit && Date.now() - hit.at < 10 * 60_000) return hit.v
+  const out: { account?: string; qos?: string; partition?: string; from?: string } = {}
+  try {
+    const listed = jsonFromCli<any>(await pwCli(['workflows', 'runs', 'list', '-o', 'json'], 60_000))
+    const runs: any[] = Array.isArray(listed) ? listed : Array.isArray(listed?.runs) ? listed.runs : []
+    // Completed runs, the same workflow's first, newest first within each.
+    const wf = workflow.replace(/^.*\//, '').toLowerCase()
+    const done = runs.filter(r => /complete/i.test(String(r?.status ?? '')))
+      .sort((a, b) => Number(String(b?.workflowName ?? '').toLowerCase() === wf) - Number(String(a?.workflowName ?? '').toLowerCase() === wf)
+        || String(b?.createdAt ?? '').localeCompare(String(a?.createdAt ?? '')))
+      .slice(0, 40)
+    const { platformJson } = await import('../platformRecords.js')
+    const key = toolContext.getStore()?.userKey || gatewayKey()
+    // Six at a time, in order, stopping at the first run on this system that carries an account or QoS.
+    for (let i = 0; i < done.length && !out.from; i += 6) {
+      const batch = await Promise.all(done.slice(i, i + 6).map(r =>
+        platformJson<any>(`/api/workflow-runs/${encodeURIComponent(String(r.slug))}`, key).then(run => ({ r, inputs: run?.inputs })).catch(() => ({ r, inputs: null }))))
+      for (const { r, inputs } of batch) {
+        if (!inputs || !JSON.stringify(inputs).toLowerCase().includes(name)) continue
+        const account = findKey(inputs, 'account'), qos = findKey(inputs, 'qos'), partition = findKey(inputs, 'partition')
+        if (account === undefined && qos === undefined) continue
+        if (account !== undefined) out.account = String(account)
+        if (qos !== undefined) out.qos = String(qos)
+        if (partition !== undefined) out.partition = String(partition)
+        out.from = String(r.slug)
+        break
+      }
+    }
+  } catch { /* nothing to offer */ }
+  siteCache.set(name, { at: Date.now(), v: out })
+  return out
+}
+
 async function resolveResource(name: string): Promise<string> {
   const raw = name.trim()
   if (raw.startsWith('pw://')) return raw
@@ -1586,6 +1661,42 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
           }
           cliArgs.push('-i', JSON.stringify(inputs))
         }
+        // Inputs written by plain name go where the workflow declares them,
+        // and an empty scheduler account, QoS, or partition is taken from
+        // the user's last completed run on the target system.
+        let fillNote = ''
+        try {
+          const doc = await wfDoc(wfName)
+          const declared = declaredInputs(doc)
+          let merged = inputs
+          if (args.config && !Object.keys(inputs).length) {
+            const cfg = (doc?.configurations ?? []).find((c: any) => String(c.name ?? c.id ?? '').toLowerCase() === String(args.config).toLowerCase())
+            if (cfg?.inputs) merged = mergeInputs(cfg.inputs, {})
+          }
+          const moved = placeFlatInputs(merged, declared)
+          const clusterSlot = declared.find(r => r.type === 'compute-clusters')?.path
+          const cluster = String(args.resource ?? (clusterSlot ? (pathGet(merged, clusterSlot) ?? '') : '') ?? '')
+          const filled: string[] = []
+          const schedulerOn = findKey(merged, 'scheduler') !== false && findKey(merged, 'scheduler') !== 'false'
+          if (cluster && schedulerOn) {
+            const want = (t: string, leaf: string) => declared.filter(r => (r.type === t || r.path.endsWith(`slurm.${leaf}`)) && !pathGet(merged, r.path))
+            const empty = { account: want('slurm-accounts', 'account'), qos: want('slurm-qos', 'qos'), partition: want('slurm-partitions', 'partition') }
+            if (empty.account.length || empty.qos.length || empty.partition.length) {
+              const site = await siteDefaults(cluster, wfName)
+              for (const k of ['account', 'qos', 'partition'] as const) {
+                if (!site[k]) continue
+                for (const r of empty[k]) { setPath(merged, r.path, site[k]); filled.push(`${k} ${site[k]}`) }
+              }
+              if (filled.length) fillNote = `\nFilled from your run ${site.from} on ${cluster.replace(/^pw:\/\/[^/]+\//, '')}: ${[...new Set(filled)].join(', ')}.`
+            }
+          }
+          if (moved.length) fillNote += `\nPlaced inputs: ${moved.join('; ')}.`
+          if (moved.length || filled.length) {
+            inputs = merged
+            const i = cliArgs.indexOf('-i')
+            if (i >= 0) cliArgs[i + 1] = JSON.stringify(inputs); else cliArgs.push('-i', JSON.stringify(inputs))
+          }
+        } catch { /* the submission will say what is missing */ }
         // A workflow with saved configurations is launched from one of them
         // or for a named system. A launch that names neither, and gives the
         // workflow's compute-clusters input no value, runs against whatever
@@ -1641,7 +1752,7 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
           // so name it instead of returning the raw validation line.
           const msg = String((e as Error).message ?? e)
           if (/missing required field/i.test(msg)) {
-            const missing = msg.split(':').pop()?.trim() ?? 'a required field'
+            const missing = /missing required fields?:\s*([^;]+)/i.exec(msg)?.[1]?.trim() ?? msg.split(':').pop()?.trim() ?? 'a required field'
             let known = ''
             try {
               const doc = await wfDoc(wfName)
@@ -1652,8 +1763,7 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
             } catch { /* the plain message still helps */ }
             return {
               result: `The submission was rejected for a missing value: ${missing}.${known}`
-                + ' Site account and QoS are per user and cannot be inferred from the system itself,'
-                + ' so take them from a saved configuration for that system, or ask the user for the project account to charge.',
+                + ' No earlier completed run of yours on this system carried it either, so ask the user for that value (for example the project account to charge) and launch again with it in inputs.',
               summary: 'missing required input',
             }
           }
@@ -1665,7 +1775,9 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
         try {
           const r = jsonFromCli<any>(trimmed)
           const run = r?.run ?? r
-          if (run?.slug || run?.id) where = `\nRun ${run.slug ?? run.id}. Follow it with watch_run.`
+          if (run?.slug || run?.id) where = dryRun
+            ? '\nThe inputs are valid; nothing ran. To launch it, call run_workflow again with the same arguments and dry_run false.'
+            : `\nRun ${run.slug ?? run.id}. Follow it with watch_run.`
           if (!dryRun && (run?.slug || run?.id)) launched = String(run.slug ?? run.id)
           // A real launch is registered so it is followed across a Studio
           // restart and its end is reported into this conversation.
@@ -1676,7 +1788,7 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
         } catch { /* text output is fine */ }
         const wsNote = wsStarted ? '\n(The platform user workspace was not running; it was started and the launch retried.)' : ''
         return {
-          result: (trimmed.slice(0, TOOL_OUTPUT_CAP) || (dryRun ? 'Validation passed.' : 'Run submitted.')) + where + partitionNote + wsNote,
+          result: (trimmed.slice(0, TOOL_OUTPUT_CAP) || (dryRun ? 'Validation passed.' : 'Run submitted.')) + where + partitionNote + fillNote + wsNote,
           // The run's id in the summary is what the chat's run pane follows.
           summary: dryRun ? 'dry run ok' : launched ? `run submitted: ${launched}` : 'run submitted',
         }

@@ -52,3 +52,12 @@ test('earlier turns reach the model as text: their tool calls and results are le
   assert.equal(isEarlierToolTraffic({ role: 'assistant', content: 'Plain answer.' }), false)
   assert.equal(isEarlierToolTraffic({ role: 'user', content: 'And the margins?' }), false)
 })
+
+test('inputs written by plain name go where the workflow declares them, when exactly one input has that name', async () => {
+  const { placeFlatInputs } = await import('../dist/chat/tools.js')
+  const declared = [{ path: 'resource' }, { path: 'optimizer.batch_size' }, { path: 'optimizer.seed' }, { path: 'cluster.seed' }]
+  const inputs = { batch_size: 4, seed: 7, resource: 'pw://u/x' }
+  const moved = placeFlatInputs(inputs, declared)
+  assert.deepEqual(inputs, { resource: 'pw://u/x', seed: 7, optimizer: { batch_size: 4 } }, 'an ambiguous name stays where it was')
+  assert.deepEqual(moved, ['batch_size → optimizer.batch_size'])
+})

@@ -469,6 +469,7 @@ export function ChatView() {
             })()}
           </ChatLayout>
           {activeId && !showAttachments && !showManage && <ConversationScrubber />}
+          <SteerBridge />
           {!showAttachments && !showManage && <SlashPalette canvas={canvasRef} />}
           {!showAttachments && !showManage && <NextUp canvas={canvasRef} />}
           {voiceOpen && cfg.features?.voice?.url && <VoiceOverlay url={cfg.features.voice.url} onClose={() => setVoiceOpen(false)} />}
@@ -620,4 +621,36 @@ export function ChatView() {
       </div>
     </ChatProvider>
   )
+}
+
+/**
+ * Steering: a message sent while a reply is running waits in the chat's
+ * queue until the reply ends. This hands it to the running reply as well,
+ * which takes it in before its next step (POST /api/chat/steer); once the
+ * server says it did (a steer event), it leaves the queue. A message the
+ * reply does not reach, or one with attachments, goes out from the queue
+ * after the reply as before.
+ */
+function SteerBridge() {
+  const { queuedMessages, isStreaming, currentConversation, removeQueuedMessage } = useChat()
+  const posted = useRef(new Set<string>())
+  useEffect(() => {
+    const on = (e: Event) => { const id = String((e as CustomEvent).detail ?? ''); if (id) removeQueuedMessage(id) }
+    window.addEventListener('ade-steer-applied', on)
+    return () => window.removeEventListener('ade-steer-applied', on)
+  }, [removeQueuedMessage])
+  const conversationId = currentConversation?.id
+  useEffect(() => {
+    if (!isStreaming || !conversationId) return
+    for (const m of queuedMessages ?? []) {
+      const text = typeof m.content === 'string' ? m.content.trim() : ''
+      if (posted.current.has(m.id) || !text || (m.attachments?.length ?? 0) > 0) continue
+      posted.current.add(m.id)
+      void fetch('/api/chat/steer', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ conversationId, id: m.id, text }),
+      }).catch(() => { /* it stays queued and goes out after the reply */ })
+    }
+  }, [queuedMessages, isStreaming, conversationId])
+  return null
 }
