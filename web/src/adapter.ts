@@ -84,6 +84,10 @@ const streamFromServer: StreamCompletion = async (req, handlers, signal) => {
           })
         }
         break
+      case 'steer':
+        // The running reply took a message queued during it (SteerBridge).
+        window.dispatchEvent(new CustomEvent('ade-steer-applied', { detail: String(payload.id ?? '') }))
+        break
       case 'done':
         finishReason = payload.finishReason ?? 'stop'
         model = payload.model ?? null

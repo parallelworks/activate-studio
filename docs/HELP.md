@@ -22,6 +22,7 @@ Ask in plain language. The assistant searches the knowledge base, reads the file
 - **Select chats**, above New chat, deletes old conversations together.
 - In a shared session, add your own model key under Settings, "Model access", to chat as yourself.
 - A reply with no answer says why: the model reasoned without answering, ran tools without answering, or returned an empty reply, which some providers do when they decline a request. A provider that is rate limiting is retried twice after short waits. Either way the reply ends with **Retry with** links to the other models; nothing is sent to another model until you click one.
+- Send a message while a reply is running to steer it: the reply takes it in at its next step and shows "You added" where it did. A message sent while the reply is writing its final answer goes out after it, as before.
 - A message whose reply was cut off, for example when the Studio restarted, says so and offers **Retry**, which sends it again.
 - While a reply streams, its thinking and tool calls stay folded to one line each; click one to open it.
 
