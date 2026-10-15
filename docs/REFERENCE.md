@@ -39,6 +39,7 @@ The details behind the user guide ([`HELP.md`](HELP.md)), by part of the app. Th
 - A result opens on its first match, with the query in the viewer's find bar.
 - Hover a result to tick it; **Select all** and **Labels…** label the whole result set at once.
 - **Load more matches** extends a search to 1,000 results.
+- Across all libraries, name matches, and full-text matches where every search word is plain letters and digits, run as one `gufi_vt` statement per kind, as Query does; the GUFI commands panel shows it. A word with punctuation, a library `gufi_vt` cannot reach, and results by meaning run per library and merge. Both ways return the same matches.
 
 ## Workflows
 
