@@ -2,6 +2,37 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.128 (2026-10-14)
+
+### Change log through v1.127 (#471)
+
+Regenerated with `node scripts/release-notes.mjs --changelog` after the v1.127 release.
+
+### Chat: send only the tools a reply needs; read many files in one call (#472)
+
+A user found Studio chat much slower than pw code. With the same model and the same question about documents, the Studio took 40 seconds and pw code 24.
+
+**What the timing showed.** Per-round timing (added here to the `reply timing` log) found the cause. Every round carried all 50 tool definitions (about 45,000 characters), plus the system prompt's workflow catalog and HPC guidance (about 8,000). Each file read was also its own tool call.
+
+**Tool groups.**
+- The knowledge-base tools, skills, and custom and remote tools always go.
+- The workflow and HPC tools, the agent tools, and the file-writing and labeling tools are sent when any of these holds: the last two user messages name their subject, the conversation used them before, or the model asks with the new `more_tools` tool.
+- A tool from a group that wasn't sent still runs, and its group is added.
+- The prompt's platform section goes with the workflow and agent groups. Otherwise a one-line pointer to `more_tools` takes its place.
+
+**Batch reads.** `read_kb_file` takes up to 25 `paths` in one call and splits a 30,000-character budget between them.
+
+**Measured.** The question "list every in-process proposal with a line from its intake", against a copy of the same index with the same model, two runs each:
+
+| | Run 1 | Run 2 | Proposals named |
+|---|---|---|---|
+| Before | 43.7 s | 39.9 s | 34 of 34 |
+| After | 34.6 s | 25.2 s | 34 of 34 |
+
+Without a cue word, "Is anything I started yesterday still going?" called `more_tools` and then the run and session tools. An account question now matches its cue words directly.
+
+Tests: group selection for document and platform questions, groups carried over from earlier tool use, and a batch read with a missing file. The full suite passes.
+
 ## v1.127 (2026-10-14)
 
 ### Change log through v1.126 (#469)
