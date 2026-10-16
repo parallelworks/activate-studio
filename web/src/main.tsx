@@ -14,6 +14,7 @@ import '@parallelworks/ui/fonts.css'
 import './layers.css'
 import '@parallelworks/ui/styles.css'
 import '@parallelworks/ui/theme.css'
+import '@parallelworks/ui/logviewer.css'
 import './styles.css'
 
 // The shell never scrolls; each pane scrolls itself. A scrollIntoView or
