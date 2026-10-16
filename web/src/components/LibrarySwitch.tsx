@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react'
+import { Select, cx, fieldBox } from '@parallelworks/ui'
+import { ChevronDownIcon } from '@parallelworks/ui/icons'
 import { currentLibrary, onLibraryChange, setLibrary, type PublicLibrary } from '../api'
 
 /**
@@ -12,19 +14,27 @@ export function LibrarySwitch({ libraries }: { libraries: PublicLibrary[] }) {
   useEffect(() => onLibraryChange(setId), [])
   const known = id === ALL_LIBRARIES || libraries.some(l => l.id === id) ? id : (libraries[0]?.id ?? 'kb')
   if (libraries.length < 2) return null
+  const items = [
+    ...libraries.map(l => ({ value: l.id, label: `${l.label}${l.site ? ` (on ${l.site})` : l.writable ? '' : ' (read only)'}` })),
+    { value: ALL_LIBRARIES, label: 'All libraries' },
+  ]
+  // A trigger of its own, drawn as the default one is, so the picker can
+  // carry its hint: the default trigger takes no tooltip.
   return (
-    <select
-      className="library-switch"
+    <Select
+      items={items}
       value={known}
-      title="Which library to browse and search"
+      onValueChange={v => { if (v != null) setLibrary(v) }}
       aria-label="Library"
-      onChange={e => setLibrary(e.target.value)}
-    >
-      {libraries.map(l => (
-        <option key={l.id} value={l.id}>{l.label}{l.site ? ` (on ${l.site})` : l.writable ? '' : ' (read only)'}</option>
-      ))}
-      <option value={ALL_LIBRARIES}>All libraries</option>
-    </select>
+      size="sm"
+      triggerTooltip="Which library to browse and search"
+      trigger={
+        <button type="button" className={cx(fieldBox({ size: 'sm' }), 'flex cursor-pointer items-center justify-between gap-2 pr-1.5 text-left', 'library-switch')}>
+          <span className="truncate">{items.find(i => i.value === known)?.label ?? known}</span>
+          <ChevronDownIcon aria-hidden="true" className="shrink-0 text-(--theme-muted-text-color)" />
+        </button>
+      }
+    />
   )
 }
 

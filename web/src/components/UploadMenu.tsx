@@ -1,4 +1,5 @@
-import { useRef, useState } from 'react'
+import { useId, useRef, useState } from 'react'
+import { Button, Input, Popover } from '@parallelworks/ui'
 import { api } from '../api'
 import { uploadBatched, UploadProgress } from '../upload'
 
@@ -8,12 +9,13 @@ export function UploadMenu({ targetDir, onTargetDir, onDone, onProgress }: {
   onDone: (savedPaths: string[]) => void
   onProgress: (p: UploadProgress | null) => void
 }) {
-  const [open, setOpen] = useState(false)
   const [url, setUrl] = useState('')
   const [newDir, setNewDir] = useState('')
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
+  const newDirId = useId()
+  const urlId = useId()
 
   const sendFiles = async (files: File[]) => {
     if (!files.length) return
@@ -60,61 +62,64 @@ export function UploadMenu({ targetDir, onTargetDir, onDone, onProgress }: {
   }
 
   return (
-    <div className="upload-menu">
-      <button className="btn-primary" onClick={() => setOpen(o => !o)}>+ Add</button>
-      {open && (
-        <div className="upload-pop card-pop">
-          <label className="field-label">Destination folder</label>
-          <input
-            className="field"
-            value={targetDir}
-            onChange={e => onTargetDir(e.target.value.replace(/^\/+/, ''))}
-            placeholder="uploads"
-          />
-          <div
-            className="dropzone"
-            onDragOver={e => e.preventDefault()}
-            onDrop={e => {
-              e.preventDefault()
-              e.stopPropagation()
-              void sendFiles([...e.dataTransfer.files])
-            }}
-            onClick={() => fileInput.current?.click()}
-          >
-            Drop files here or click to choose. Any number of files works; progress shows below the tree.
-            <input
-              ref={fileInput}
-              type="file"
-              multiple
-              hidden
-              onChange={e => { void sendFiles([...(e.target.files ?? [])]); e.target.value = '' }}
-            />
-          </div>
-          <label className="field-label">Or create a new folder</label>
-          <div className="url-row">
-            <input
-              className="field"
-              value={newDir}
-              onChange={e => setNewDir(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && makeDir()}
-              placeholder="e.g. papers/2026"
-            />
-            <button className="btn-primary" onClick={makeDir} disabled={busy || !newDir.trim()}>Create</button>
-          </div>
-          <label className="field-label">Or add a web page / PDF by URL</label>
-          <div className="url-row">
-            <input
-              className="field"
-              value={url}
-              onChange={e => setUrl(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && sendUrl()}
-              placeholder="https://…"
-            />
-            <button className="btn-primary" onClick={sendUrl} disabled={busy}>Add</button>
-          </div>
-          {note && <div className="upload-status">{note}</div>}
-        </div>
-      )}
-    </div>
+    <Popover
+      trigger={<Button variant="primary" size="sm">+ Add</Button>}
+      align="start"
+      initialFocus="popup"
+      aria-label="Add to the library"
+      className="upload-pop"
+    >
+      <Input
+        label="Destination folder"
+        size="sm"
+        value={targetDir}
+        onChange={e => onTargetDir(e.target.value.replace(/^\/+/, ''))}
+        placeholder="uploads"
+      />
+      <div
+        className="dropzone"
+        onDragOver={e => e.preventDefault()}
+        onDrop={e => {
+          e.preventDefault()
+          e.stopPropagation()
+          void sendFiles([...e.dataTransfer.files])
+        }}
+        onClick={() => fileInput.current?.click()}
+      >
+        Drop files here or click to choose. Any number of files works; progress shows below the tree.
+        <input
+          ref={fileInput}
+          type="file"
+          multiple
+          hidden
+          onChange={e => { void sendFiles([...(e.target.files ?? [])]); e.target.value = '' }}
+        />
+      </div>
+      <label className="field-label" htmlFor={newDirId}>Or create a new folder</label>
+      <div className="url-row">
+        <Input
+          id={newDirId}
+          size="sm"
+          value={newDir}
+          onChange={e => setNewDir(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && makeDir()}
+          placeholder="e.g. papers/2026"
+        />
+        <Button variant="primary" size="sm" onClick={makeDir} disabled={busy || !newDir.trim()}>Create</Button>
+      </div>
+      <label className="field-label" htmlFor={urlId}>Or add a web page / PDF by URL</label>
+      <div className="url-row">
+        <Input
+          id={urlId}
+          size="sm"
+          value={url}
+          onChange={e => setUrl(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && sendUrl()}
+          placeholder="https://…"
+        />
+        <Button variant="primary" size="sm" onClick={sendUrl} disabled={busy}>Add</Button>
+      </div>
+      {note && <div className="upload-status">{note}</div>}
+    </Popover>
   )
 }

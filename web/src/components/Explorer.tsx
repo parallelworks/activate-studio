@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import { Checkbox, IconButton } from '@parallelworks/ui'
 import { api, KbEntry } from '../api'
 
 function formatSize(n: number): string {
@@ -27,16 +28,11 @@ const FileIcon = () => (
   </svg>
 )
 
+/** A row's selection box. The span keeps a press on the box from also
+ *  reaching the row, which would open the file. */
 export const RowCheck = ({ checked, onToggle }: { checked: boolean; onToggle: () => void }) => (
-  <span
-    className={`row-check ${checked ? 'checked' : ''}`}
-    title="Select for multi-item labeling"
-    onClick={e => { e.stopPropagation(); onToggle() }}
-  >
-    <svg viewBox="0 0 14 14" width="13" height="13">
-      <rect x="1" y="1" width="12" height="12" rx="3" fill={checked ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.3" />
-      {checked && <path d="M4 7.2 6.2 9.4 10 5" fill="none" stroke="#fff" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />}
-    </svg>
+  <span className="row-check" title="Select for multi-item labeling" onClick={e => e.stopPropagation()}>
+    <Checkbox checked={checked} onCheckedChange={() => onToggle()} aria-label="Select for multi-item labeling" />
   </span>
 )
 
@@ -170,8 +166,8 @@ function DirNode(props: NodeProps) {
           <FolderIcon open={open} />
           <span className="tree-label">{name}</span>
           <TreeTags tags={tags} show={showLabels} />
-          <button className="row-tag" title="Labels for this directory (applies to everything beneath it)"
-            onClick={e => { e.stopPropagation(); onLabel(path) }}><TagIcon /></button>
+          <IconButton className="row-tag" size="xs" icon={<TagIcon />} label="Labels for this directory (applies to everything beneath it)"
+            onClick={e => { e.stopPropagation(); onLabel(path) }} />
         </div>
       )}
       {open && entries?.map(e =>
@@ -199,8 +195,10 @@ function DirNode(props: NodeProps) {
             <FileIcon />
             <span className="tree-label">{e.name}</span>
             <TreeTags tags={e.tags} show={showLabels} />
-            <button className="row-tag" title="Labels for this file"
-              onClick={ev => { ev.stopPropagation(); onLabel(e.path) }}><TagIcon /></button>
+            {/* An empty title keeps the row's own title from showing over
+                the button's tooltip. */}
+            <IconButton className="row-tag" size="xs" icon={<TagIcon />} label="Labels for this file" title=""
+              onClick={ev => { ev.stopPropagation(); onLabel(e.path) }} />
           </div>
         ),
       )}
