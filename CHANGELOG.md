@@ -2,6 +2,20 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.131 (2026-10-15)
+
+### Change log through v1.130 (#478)
+
+Regenerated with `node scripts/release-notes.mjs --changelog` after the v1.130 release.
+
+### Search across libraries: parallel by default, gufi_vt as a setting (#479)
+
+Settings, General gains *Search across libraries*, which picks how a search over several libraries runs. The default runs each library in parallel and merges the results, as before #477. The other option, gufi_vt, runs name matches and bareword full-text matches as one gufi_vt statement per kind, as #477 introduced.
+
+gufi_vt answers its locations one after another, so on local libraries it measured two to three times slower than the parallel path. Running gufi_vt locations in parallel (for example through pdsh) would make the comparison fair and is a possible follow-up. Query is unchanged and uses gufi_vt either way.
+
+`STUDIO_SEARCH_ENGINE=gufi_vt` sets the default for a deployment. Both paths return the same matches; the tests cover the default (no gufi_vt statement) and the setting (gufi_vt statement, same hits as per library).
+
 ## v1.130 (2026-10-15)
 
 ### Change log through v1.129 (#475)
