@@ -2,6 +2,20 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.133 (2026-10-16)
+
+### Change log through v1.132 (#482)
+
+Regenerated with `node scripts/release-notes.mjs --changelog` after the v1.132 release.
+
+### Run files behind a stopped workspace: request a start and say so (#483)
+
+The platform serves run files from the user's workspace, which scales down when idle. When it is down, `GET /api/workflow-runs/<slug>/files` answers 400 "User workspace not found or is not running", and the step dialog's route reported that as a missing file.
+
+The route now recognizes that answer (the same matcher launches use), requests one `pw workspace start` per credential at most every three minutes, and answers 503 with an explanation. The step dialog shows that explanation where the log goes; it polls every two seconds, so the log replaces it once the workspace is up. Other platform failures now carry the platform's message instead of reading as a missing file.
+
+Tested: a stopped workspace answers 503 with the explanation and two polls request one start.
+
 ## v1.132 (2026-10-16)
 
 ### Change log through v1.131 (#480)
