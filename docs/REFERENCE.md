@@ -39,7 +39,7 @@ The details behind the user guide ([`HELP.md`](HELP.md)), by part of the app. Th
 - A result opens on its first match, with the query in the viewer's find bar.
 - Hover a result to tick it; **Select all** and **Labels…** label the whole result set at once.
 - **Load more matches** extends a search to 1,000 results.
-- Across all libraries, name matches, and full-text matches where every search word is plain letters and digits, run as one `gufi_vt` statement per kind, as Query does; the GUFI commands panel shows it. A word with punctuation, a library `gufi_vt` cannot reach, and results by meaning run per library and merge. Both ways return the same matches.
+- Across all libraries, search runs each library in parallel and merges the results. Settings, General, Search across libraries switches it to `gufi_vt`, as Query uses: name matches, and full-text matches where every search word is plain letters and digits, then run as one `gufi_vt` statement per kind, shown in the GUFI commands panel, while a word with punctuation, a library `gufi_vt` cannot reach, and results by meaning still run per library. Both ways return the same matches. `gufi_vt` answers its libraries one after another, so the parallel default is faster. The environment variable `STUDIO_SEARCH_ENGINE=gufi_vt` sets the default for a deployment.
 
 ## Workflows
 

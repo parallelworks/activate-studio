@@ -181,20 +181,33 @@ test('a cluster library is counted once per build', { skip: !haveGufi && 'GUFI n
   } finally { fs.writeFileSync(file, before) }
 })
 
-test('a search across libraries runs its name matches as one gufi_vt statement, with the same hits as per library', { skip: !haveGufi && 'GUFI not installed' }, async () => {
+test('a search across libraries runs each library in parallel by default', { skip: !haveGufi && 'GUFI not installed' }, async () => {
   V.resetGufiVtForTests()
+  const S = await import('../dist/settings.js')
+  assert.equal(S.effectiveSettings().searchEngine, 'parallel')
   const L = await import('../dist/libraryScope.js')
-  const libs = L.scopeLibraries('all', null)
-  const pick = hits => hits.map(h => `${h.library.id}:${h.path}`).sort()
-  for (const q of ['tiny', 'note', 'log']) {
-    const { result: vt, commands } = await T.traced(() => L.searchScope(libs, q, 20, { semantic: false }))
-    assert.ok(commands.some(c => c.engine === 'gufi_vt'), `${q}: ran as gufi_vt`)
-    V.forceGufiVtForTests(false)
-    const merged = await L.searchScope(libs, q, 20, { semantic: false })
-    V.forceGufiVtForTests(null)
-    assert.deepEqual(pick(vt), pick(merged), q)
-    assert.ok(vt.length > 0, `${q}: found something`)
-  }
+  const { result, commands } = await T.traced(() => L.searchScope(L.scopeLibraries('all', null), 'tiny', 20, { semantic: false }))
+  assert.ok(!commands.some(c => c.engine === 'gufi_vt'), 'no gufi_vt statement')
+  assert.ok(result.length > 0, 'found something')
+})
+
+test('with the gufi_vt setting, a search across libraries runs its name matches as one gufi_vt statement, with the same hits as per library', { skip: !haveGufi && 'GUFI not installed' }, async () => {
+  V.resetGufiVtForTests()
+  process.env.STUDIO_SEARCH_ENGINE = 'gufi_vt'
+  try {
+    const L = await import('../dist/libraryScope.js')
+    const libs = L.scopeLibraries('all', null)
+    const pick = hits => hits.map(h => `${h.library.id}:${h.path}`).sort()
+    for (const q of ['tiny', 'note', 'log']) {
+      const { result: vt, commands } = await T.traced(() => L.searchScope(libs, q, 20, { semantic: false }))
+      assert.ok(commands.some(c => c.engine === 'gufi_vt'), `${q}: ran as gufi_vt`)
+      V.forceGufiVtForTests(false)
+      const merged = await L.searchScope(libs, q, 20, { semantic: false })
+      V.forceGufiVtForTests(null)
+      assert.deepEqual(pick(vt), pick(merged), q)
+      assert.ok(vt.length > 0, `${q}: found something`)
+    }
+  } finally { delete process.env.STUDIO_SEARCH_ENGINE }
 })
 
 test('a full-text expression goes to gufi_vt only when every term is a bareword', async () => {

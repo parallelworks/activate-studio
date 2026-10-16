@@ -1,6 +1,7 @@
 import { getLibrary, listLibraries, type Library } from './libraries.js'
 import { blendHits, ftsExprBare, ftsHit, ftsSql, nameHit, namesSql, searchFts, searchNames, searchVector, type SearchHit } from './gufi.js'
 import { gufiVtAvailable, runAcross } from './gufiVt.js'
+import { effectiveSettings } from './settings.js'
 
 /**
  * Which libraries a request means: one, by id (the knowledge base when
@@ -30,10 +31,13 @@ export async function searchScope(libs: Library[], q: string, limit: number, opt
   const tag = (l: Library) => (hits: SearchHit[]) => hits.map(h => ({ ...h, path: `${l.id}${SEP}${h.path}` }))
   const nameLimit = opts.nameLimit ?? Math.min(Math.max(10, Math.floor(limit / 5)), 50)
   const ftsLibs = libs.filter(l => l.caps.fullText || l.primary)
-  // Across several libraries, full-text and name matches run as one gufi_vt
-  // statement each (gufiVt.ts), as Query does. A library gufi_vt could not
-  // answer, and a search gufi_vt cannot carry, run on their own below.
-  const vt = libs.length > 1 && await gufiVtAvailable()
+  // With Settings, General, "Search across libraries" set to gufi_vt,
+  // full-text and name matches run as one gufi_vt statement each
+  // (gufiVt.ts), as Query does; a library gufi_vt could not answer, and a
+  // search gufi_vt cannot carry, run on their own below. The default runs
+  // every library in parallel, which measured two to three times faster
+  // here, since gufi_vt answers its locations one after another.
+  const vt = libs.length > 1 && effectiveSettings().searchEngine === 'gufi_vt' && await gufiVtAvailable()
   const viaVt = { fts: new Set<string>(), names: new Set<string>() }
   const vtHits: { fts: SearchHit[]; names: SearchHit[] } = { fts: [], names: [] }
   if (vt) {
