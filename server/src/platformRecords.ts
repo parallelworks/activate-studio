@@ -11,6 +11,18 @@ export async function platformJson<T = unknown>(path: string, key: string | null
 }
 
 /**
+ * A platform API response with its status and parsed body, for callers
+ * that act on why a request failed. Null when the platform is unreachable.
+ */
+export async function platformFetch(path: string, key: string, timeoutMs = 20_000): Promise<{ ok: boolean; status: number; body: any } | null> {
+  let host: string
+  try { host = new URL(GATEWAY_BASE).origin } catch { return null }
+  const res = await fetch(`${host}${path}`, { headers: { Authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(timeoutMs) }).catch(() => null)
+  if (!res) return null
+  return { ok: res.ok, status: res.status, body: await res.json().catch(() => null) }
+}
+
+/**
  * A workflow's record from the platform API, or null when the API cannot
  * give it (the caller then asks the CLI). Read this way first because
  * `pw workflows get -o json` hands the YAML over as a Go map, whose keys
