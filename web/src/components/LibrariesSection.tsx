@@ -1,6 +1,9 @@
 import { Fragment, useEffect, useState } from 'react'
+import { Button, DescriptionList, DescriptionListItem, Input, Table, toast } from '@parallelworks/ui'
 import { api, type SettingsLibrary } from '../api'
 import { UserLibrariesSection } from './UserLibrariesSection'
+
+const failed = (e: unknown) => toast.error(String((e as Error).message ?? e))
 
 /**
  * Settings > Libraries: what is mounted, what each supports, and adding
@@ -10,23 +13,22 @@ import { UserLibrariesSection } from './UserLibrariesSection'
  */
 export function LibrariesSection() {
   const [libs, setLibs] = useState<SettingsLibrary[]>([])
-  const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
   const [form, setForm] = useState({ id: '', label: '', indexRoot: '', sourceRoot: '' })
-  const load = () => api.libraries().then(r => setLibs(r.libraries)).catch(e => setNote(String((e as Error).message ?? e)))
+  const load = () => api.libraries().then(r => setLibs(r.libraries)).catch(failed)
   useEffect(() => { void load() }, [])
   const add = async () => {
-    setBusy(true); setNote('')
+    setBusy(true)
     try {
       await api.addLibrary({ id: form.id.trim(), label: form.label.trim() || undefined, indexRoot: form.indexRoot.trim(), sourceRoot: form.sourceRoot.trim() || undefined })
       setForm({ id: '', label: '', indexRoot: '', sourceRoot: '' })
-      setNote('Added. It appears in the Library switcher now.')
+      toast.success('Added. It appears in the Library switcher now.')
       await load()
-    } catch (e) { setNote(String((e as Error).message ?? e)) } finally { setBusy(false) }
+    } catch (e) { failed(e) } finally { setBusy(false) }
   }
   const remove = async (id: string) => {
-    setBusy(true); setNote('')
-    try { await api.removeLibrary(id); await load() } catch (e) { setNote(String((e as Error).message ?? e)) } finally { setBusy(false) }
+    setBusy(true)
+    try { await api.removeLibrary(id); await load() } catch (e) { failed(e) } finally { setBusy(false) }
   }
   return (
     <>
@@ -38,55 +40,43 @@ export function LibrariesSection() {
       </p>
       <UserLibrariesSection />
       <div className="tool-group">Libraries on this host</div>
-      <div className="rag-calls-wrap">
-        <table className="rag-calls-table libraries-table">
-          <thead>
-            <tr><th>Library</th><th>Access</th><th>Files on this host</th><th>Full-text search</th><th>Semantic search</th><th></th></tr>
-          </thead>
-          <tbody>
-            {libs.map(l => (
-              <tr key={l.id}>
-                <td>
-                  <div className="lib-name">{l.label}</div>
-                  <div className="lib-id">{l.id}{l.primary ? ', the knowledge base' : l.pinned ? ', set by the deployment' : ''}</div>
-                  <dl className="lib-paths">
-                    <dt>Index</dt><dd><PathText path={l.indexRoot} /></dd>
-                    <dt>Source</dt><dd>{l.sourceRoot ? <PathText path={l.sourceRoot} /> : <span className="muted">not on this host</span>}</dd>
-                  </dl>
-                </td>
-                <td>{l.writable ? 'Read and write' : 'Read only'}</td>
-                <td><Mark on={l.source} /></td>
-                <td><Mark on={l.caps.fullText} /></td>
-                <td><Mark on={l.caps.vectors} /></td>
-                <td className="lib-actions">{!l.pinned && <button className="btn-secondary" disabled={busy} onClick={() => void remove(l.id)}>Remove</button>}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <Table density="compact" className="libraries-table" wrapperClassName="rag-calls-wrap libraries-wrap">
+        <Table.Header>Library</Table.Header>
+        <Table.Header>Access</Table.Header>
+        <Table.Header>Files on this host</Table.Header>
+        <Table.Header>Full-text search</Table.Header>
+        <Table.Header>Semantic search</Table.Header>
+        <Table.Header />
+        {libs.map(l => (
+          <tr key={l.id}>
+            <Table.Item wrap>
+              <div className="lib-name">{l.label}</div>
+              <div className="lib-id">{l.id}{l.primary ? ', the knowledge base' : l.pinned ? ', set by the deployment' : ''}</div>
+              <DescriptionList className="lib-paths">
+                <DescriptionListItem label="Index" mono copy><PathText path={l.indexRoot} /></DescriptionListItem>
+                <DescriptionListItem label="Source" mono={!!l.sourceRoot} copy={!!l.sourceRoot}>
+                  {l.sourceRoot ? <PathText path={l.sourceRoot} /> : <span className="muted">not on this host</span>}
+                </DescriptionListItem>
+              </DescriptionList>
+            </Table.Item>
+            <Table.Item>{l.writable ? 'Read and write' : 'Read only'}</Table.Item>
+            <Table.Item><Mark on={l.source} /></Table.Item>
+            <Table.Item><Mark on={l.caps.fullText} /></Table.Item>
+            <Table.Item><Mark on={l.caps.vectors} /></Table.Item>
+            <Table.Item className="lib-actions">{!l.pinned && <Button variant="secondary" size="sm" disabled={busy} onClick={() => void remove(l.id)}>Remove</Button>}</Table.Item>
+          </tr>
+        ))}
+      </Table>
       <div className="tool-group">Add a library</div>
       <p className="muted view-sub">The Studio checks the path before mounting it and says what it found.</p>
       <div className="settings-grid">
-        <div>
-          <label className="field-label">Identifier</label>
-          <input className="field" placeholder="site-scratch" value={form.id} onChange={e => setForm({ ...form, id: e.target.value })} />
-        </div>
-        <div>
-          <label className="field-label">Label</label>
-          <input className="field" placeholder="Scratch filesystem" value={form.label} onChange={e => setForm({ ...form, label: e.target.value })} />
-        </div>
-        <div>
-          <label className="field-label">Index root (a GUFI tree)</label>
-          <input className="field" placeholder="/gufi/scratch" value={form.indexRoot} onChange={e => setForm({ ...form, indexRoot: e.target.value })} />
-        </div>
-        <div>
-          <label className="field-label">Source root, if the files are on this host</label>
-          <input className="field" placeholder="/lustre/scratch" value={form.sourceRoot} onChange={e => setForm({ ...form, sourceRoot: e.target.value })} />
-        </div>
+        <Input label="Identifier" placeholder="site-scratch" value={form.id} onChange={e => setForm({ ...form, id: e.target.value })} />
+        <Input label="Label" placeholder="Scratch filesystem" value={form.label} onChange={e => setForm({ ...form, label: e.target.value })} />
+        <Input label="Index root (a GUFI tree)" placeholder="/gufi/scratch" value={form.indexRoot} onChange={e => setForm({ ...form, indexRoot: e.target.value })} />
+        <Input label="Source root, if the files are on this host" placeholder="/lustre/scratch" value={form.sourceRoot} onChange={e => setForm({ ...form, sourceRoot: e.target.value })} />
       </div>
       <div className="query-actions">
-        <button className="btn-primary" disabled={busy || !form.id.trim() || !form.indexRoot.trim()} onClick={() => void add()}>{busy ? 'Probing…' : 'Add library'}</button>
-        {note && <span className="muted">{note}</span>}
+        <Button variant="primary" loading={busy} disabled={!form.id.trim() || !form.indexRoot.trim()} onClick={() => void add()}>{busy ? 'Probing…' : 'Add library'}</Button>
       </div>
     </>
   )

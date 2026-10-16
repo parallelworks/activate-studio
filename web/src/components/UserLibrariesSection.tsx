@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { Button, Checkbox, DescriptionList, DescriptionListItem, Field, Input, Select, StatusDot, Table, toast } from '@parallelworks/ui'
 import { api, type UserLibrary } from '../api'
 import { reloadAppConfig } from '../config'
 
@@ -12,18 +13,19 @@ export function UserLibrariesSection() {
   const [libs, setLibs] = useState<UserLibrary[]>([])
   const [available, setAvailable] = useState(true)
   const [sites, setSites] = useState<string[]>([])
-  const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
   const [form, setForm] = useState({ site: '', sourceDir: '$WORKDIR', label: '', slurm: false, partition: '', account: '' })
   const ready = useRef(new Set<string>())
 
+  // The list reloads every 15s during a build; one toast stands for a
+  // failure that repeats rather than stacking another each time.
   const load = () => api.userLibraries().then(r => {
     setAvailable(r.available); setLibs(r.libraries)
     // A library that just finished joins the switcher.
     const now = new Set(r.libraries.filter(l => l.state === 'ready').map(l => l.id))
     if ([...now].some(id => !ready.current.has(id)) && ready.current.size + now.size > 0) reloadAppConfig()
     ready.current = now
-  }).catch(e => setNote(String((e as Error).message ?? e)))
+  }).catch(e => toast.error(String((e as Error).message ?? e), { id: 'user-libraries-load' }))
 
   useEffect(() => {
     void load()
@@ -41,8 +43,8 @@ export function UserLibrariesSection() {
   }, [running])
 
   const act = async (fn: () => Promise<unknown>, done?: string) => {
-    setBusy(true); setNote('')
-    try { await fn(); if (done) setNote(done); await load() } catch (e) { setNote(String((e as Error).message ?? e)) } finally { setBusy(false) }
+    setBusy(true)
+    try { await fn(); if (done) toast.success(done); await load() } catch (e) { toast.error(String((e as Error).message ?? e)) } finally { setBusy(false) }
   }
   const add = () => act(async () => {
     await api.addUserLibrary({
@@ -61,71 +63,66 @@ export function UserLibrariesSection() {
         Directories on your clusters, indexed there with your own key and searched there as you. Only you see them.
       </p>
       {libs.length > 0 && (
-        <div className="rag-calls-wrap">
-          <table className="rag-calls-table libraries-table">
-            <thead><tr><th>Library</th><th>State</th><th>Contents</th><th></th></tr></thead>
-            <tbody>
-              {libs.map(l => (
-                <tr key={l.id}>
-                  <td>
-                    <div className="lib-name">{l.label}</div>
-                    <div className="lib-id">{l.id}, on {l.site}, read only</div>
-                    <dl className="lib-paths">
-                      <dt>Index</dt><dd>{l.indexRoot ? <code>{l.site}:{l.indexRoot}</code> : <span className="muted">being built</span>}</dd>
-                      <dt>Source</dt><dd><code>{l.site}:{l.sourceRoot ?? l.sourceDir}</code></dd>
-                    </dl>
-                  </td>
-                  <td>
-                    <span className={`status-dot ${l.state === 'ready' ? 'ok' : l.state === 'failed' ? 'warn' : 'ok pulse'}`} />{' '}
-                    {l.state === 'building' ? 'Building' : l.state === 'updating' ? 'Updating' : l.state === 'failed' ? 'Failed' : 'Ready'}
-                    {l.run && (l.state === 'building' || l.state === 'updating') && <div className="lib-id">run {l.run.slug}</div>}
-                    {l.error && <div className="lib-id">{l.error}</div>}
-                  </td>
-                  <td>
-                    {l.directories != null && <div>{l.directories.toLocaleString()} folders, {(l.files ?? 0).toLocaleString()} files</div>}
-                    {l.builtAt && <div className="lib-id">indexed {when(l.builtAt)}</div>}
-                  </td>
-                  <td className="lib-actions">
-                    <button className="btn-secondary" disabled={busy || l.state === 'building' || l.state === 'updating'} onClick={() => void act(() => api.refreshUserLibrary(l.id), 'Updating the index on the cluster.')}>Refresh</button>
-                    <button className="btn-secondary" disabled={busy} onClick={() => void act(async () => { await api.removeUserLibrary(l.id); reloadAppConfig() })}>Remove</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <Table density="compact" className="libraries-table" wrapperClassName="rag-calls-wrap libraries-wrap">
+          <Table.Header>Library</Table.Header>
+          <Table.Header>State</Table.Header>
+          <Table.Header>Contents</Table.Header>
+          <Table.Header />
+          {libs.map(l => {
+            const building = l.state === 'building' || l.state === 'updating'
+            return (
+              <tr key={l.id}>
+                <Table.Item wrap>
+                  <div className="lib-name">{l.label}</div>
+                  <div className="lib-id">{l.id}, on {l.site}, read only</div>
+                  <DescriptionList className="lib-paths">
+                    <DescriptionListItem label="Index" mono={!!l.indexRoot} copy={!!l.indexRoot}>
+                      {l.indexRoot ? `${l.site}:${l.indexRoot}` : <span className="muted">being built</span>}
+                    </DescriptionListItem>
+                    <DescriptionListItem label="Source" mono copy>{`${l.site}:${l.sourceRoot ?? l.sourceDir}`}</DescriptionListItem>
+                  </DescriptionList>
+                </Table.Item>
+                <Table.Item wrap>
+                  <StatusDot variant={l.state === 'failed' ? 'warning' : 'success'} pulse={building} />{' '}
+                  {l.state === 'building' ? 'Building' : l.state === 'updating' ? 'Updating' : l.state === 'failed' ? 'Failed' : 'Ready'}
+                  {l.run && building && <div className="lib-id">run {l.run.slug}</div>}
+                  {l.error && <div className="lib-id">{l.error}</div>}
+                </Table.Item>
+                <Table.Item>
+                  {l.directories != null && <div>{l.directories.toLocaleString()} folders, {(l.files ?? 0).toLocaleString()} files</div>}
+                  {l.builtAt && <div className="lib-id">indexed {when(l.builtAt)}</div>}
+                </Table.Item>
+                <Table.Item className="lib-actions">
+                  <Button variant="secondary" size="sm" disabled={busy || building} onClick={() => void act(() => api.refreshUserLibrary(l.id), 'Updating the index on the cluster.')}>Refresh</Button>
+                  <Button variant="secondary" size="sm" disabled={busy} onClick={() => void act(async () => { await api.removeUserLibrary(l.id); reloadAppConfig() })}>Remove</Button>
+                </Table.Item>
+              </tr>
+            )
+          })}
+        </Table>
       )}
       <div className="settings-grid">
+        <Field label="Cluster">
+          <Select items={sites.map(s => ({ value: s, label: s }))} value={form.site || null}
+            placeholder="No active clusters" disabled={!sites.length}
+            onValueChange={v => v && setForm({ ...form, site: v })} />
+        </Field>
+        <Input label="Directory" placeholder="$WORKDIR" value={form.sourceDir} onChange={e => setForm({ ...form, sourceDir: e.target.value })} />
+        <Input label="Label" placeholder={`${form.site || 'cluster'} ${form.sourceDir || '$WORKDIR'}`} value={form.label} onChange={e => setForm({ ...form, label: e.target.value })} />
         <div>
-          <label className="field-label">Cluster</label>
-          <select className="field" value={form.site} onChange={e => setForm({ ...form, site: e.target.value })}>
-            {!sites.length && <option value="">No active clusters</option>}
-            {sites.map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
-        </div>
-        <div>
-          <label className="field-label">Directory</label>
-          <input className="field" placeholder="$WORKDIR" value={form.sourceDir} onChange={e => setForm({ ...form, sourceDir: e.target.value })} />
-        </div>
-        <div>
-          <label className="field-label">Label</label>
-          <input className="field" placeholder={`${form.site || 'cluster'} ${form.sourceDir || '$WORKDIR'}`} value={form.label} onChange={e => setForm({ ...form, label: e.target.value })} />
-        </div>
-        <div>
-          <label className="field-label">
-            <input type="checkbox" checked={form.slurm} onChange={e => setForm({ ...form, slurm: e.target.checked })} /> Build as a Slurm job (otherwise on the login node)
-          </label>
+          <Field controlFirst label="Build as a Slurm job (otherwise on the login node)">
+            <Checkbox checked={form.slurm} onCheckedChange={v => setForm({ ...form, slurm: v })} />
+          </Field>
           {form.slurm && (
             <div className="user-lib-slurm">
-              <input className="field" placeholder="Partition" value={form.partition} onChange={e => setForm({ ...form, partition: e.target.value })} />
-              <input className="field" placeholder="Account, if the site requires one" value={form.account} onChange={e => setForm({ ...form, account: e.target.value })} />
+              <Input aria-label="Partition" placeholder="Partition" value={form.partition} onChange={e => setForm({ ...form, partition: e.target.value })} />
+              <Input aria-label="Account" placeholder="Account, if the site requires one" value={form.account} onChange={e => setForm({ ...form, account: e.target.value })} />
             </div>
           )}
         </div>
       </div>
       <div className="query-actions">
-        <button className="btn-primary" disabled={busy || !form.site || (form.slurm && !form.partition.trim())} onClick={() => void add()}>{busy ? 'Starting…' : 'Add from cluster'}</button>
-        {note && <span className="muted">{note}</span>}
+        <Button variant="primary" loading={busy} disabled={!form.site || (form.slurm && !form.partition.trim())} onClick={() => void add()}>{busy ? 'Starting…' : 'Add from cluster'}</Button>
       </div>
     </>
   )
