@@ -3,6 +3,7 @@ import './install'
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { UIProvider } from '@parallelworks/ui'
+import { useRunFile } from './runFile'
 import App from './App'
 import { rememberHashChanges, restoreLastHash } from './lastLocation'
 import { applyRememberedFavicon } from './config'
@@ -13,6 +14,7 @@ import '@parallelworks/ui/fonts.css'
 import './layers.css'
 import '@parallelworks/ui/styles.css'
 import '@parallelworks/ui/theme.css'
+import '@parallelworks/ui/logviewer.css'
 import './styles.css'
 
 // The shell never scrolls; each pane scrolls itself. A scrollIntoView or
@@ -43,11 +45,8 @@ const loadWorkflowEngine = () =>
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <UIProvider engine={loadWorkflowEngine}>
+    <UIProvider engine={loadWorkflowEngine} data={{ useRunFile }}>
       <App />
-      {/* The UI package's help icons and truncated labels (the workflow
-          form's input tooltips among them) only mark their anchors; this
-          one tooltip, rendered once at the root, is what shows the text. */}
     </UIProvider>
   </React.StrictMode>,
 )

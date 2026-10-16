@@ -28,6 +28,8 @@ const seen = []
 globalThis.fetch = async (url, init) => {
   seen.push({ url: String(url), auth: init?.headers?.Authorization ?? null })
   if (String(url) === 'https://platform.test/api/sessions') return Response.json(RAW)
+  // A run's files, which the platform returns as a JSON string.
+  if (String(url) === 'https://platform.test/api/workflow-runs/design-explorer-00012/files?file=logs%2Fmain%2Fstep_0%2Flogs.out') return Response.json('step 0 output\n')
   // The study viewer's own host, behind the platform key.
   if (String(url).startsWith('https://explorer-00012.sessions.test/')) {
     if (init?.headers?.Authorization !== 'Bearer deploy-key') return new Response('', { status: 307, headers: { location: 'https://platform.test/login' } })
@@ -148,4 +150,14 @@ test('a relayed page gets the frame scroll guard ahead of its own scripts', asyn
   assert.ok(page.indexOf(FRAME_SCROLL_GUARD) > 0 && page.indexOf(FRAME_SCROLL_GUARD) < page.indexOf('app.js'))
   assert.ok(withScrollGuard('<p>no head</p>').startsWith(FRAME_SCROLL_GUARD))
   assert.ok(withScrollGuard('<!DOCTYPE html><p>x</p>').startsWith('<!DOCTYPE html>' + FRAME_SCROLL_GUARD))
+})
+
+test('a run file reaches the step dialogs through the viewer\'s key; a path outside the run is refused', async () => {
+  const ok = await app.inject({ url: '/api/runs/file?slug=design-explorer-00012&path=logs/main/step_0/logs.out' })
+  assert.deepEqual(ok.json(), { text: 'step 0 output\n' })
+  assert.equal(seen.at(-1).auth, 'Bearer deploy-key')
+  assert.equal((await app.inject({ url: '/api/runs/file?slug=design-explorer-00012&path=missing.out' })).statusCode, 404)
+  for (const bad of ['../etc/passwd', '/etc/passwd', 'logs/../../x', ''])
+    assert.equal((await app.inject({ url: `/api/runs/file?slug=design-explorer-00012&path=${encodeURIComponent(bad)}` })).statusCode, 400, bad)
+  assert.equal((await app.inject({ url: '/api/runs/file?slug=../x&path=logs.out' })).statusCode, 400)
 })

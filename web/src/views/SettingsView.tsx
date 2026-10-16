@@ -1,7 +1,12 @@
 import { LibrariesSection } from '../components/LibrariesSection'
 import { WorkflowsSection } from '../components/WorkflowsSection'
 import { useEffect, useState } from 'react'
-import { CopyToClipboard, Switch } from '@parallelworks/ui'
+import {
+  ActionMenu, Autocomplete, Button, Callout, type CalloutTone, Checkbox, CopyButton, CopyCodeBlock,
+  DescriptionList, DescriptionListItem, DisclosurePanel, EmptyState, Field, Input, Loader, NumberInput,
+  RefreshButton, Select, type SelectItem, StatusDot, Switch, Table, Textarea, cx, fieldBox,
+} from '@parallelworks/ui'
+import { ChevronDownIcon } from '@parallelworks/ui/icons'
 import { ACCENTS, SURFACES, applyAccent, applySurface } from '../accents'
 import { useAppConfig } from '../config'
 import { bannerInk } from '../components/ClassificationBanner'
@@ -76,6 +81,22 @@ const BANNER_PRESETS: { label: string; text: string; color: string }[] = [
   { label: 'Top Secret / SCI', text: '***** TOP SECRET // SCI *****', color: '#fce83a' },
 ]
 
+const THEMES: SelectItem<Effective['theme']>[] = [
+  { value: 'light', label: 'light' },
+  { value: 'dark', label: 'dark' },
+]
+
+const SEARCH_ENGINES: SelectItem<Effective['searchEngine']>[] = [
+  { value: 'parallel', label: 'Each library in parallel, merged (faster)' },
+  { value: 'gufi_vt', label: 'One gufi_vt statement over all libraries' },
+]
+
+const AGENT_EXECUTION: SelectItem<Effective['agentExecution']>[] = [
+  { value: 'runner', label: 'Studio runner: one-shot pw code runs' },
+  { value: 'sessions', label: 'pw code sessions' },
+  { value: 'both', label: 'Both, chosen per task' },
+]
+
 type SectionId = 'general' | 'access' | 'tools' | 'rag' | 'previews' | 'ext' | 'libraries' | 'workflows'
 
 /**
@@ -98,41 +119,23 @@ export function settingsSections(opts: { authEnabled: boolean; platform?: boolea
   ]
 }
 
-/** Dropdown over the live model catalog; a saved value not in the catalog
- *  stays selectable so settings never silently break. */
-function ModelSelect({ value, models, allowEmpty, emptyLabel, onChange }: {
+/** A model id, suggested from the live model catalog. Free text, so a saved
+ *  value the catalog no longer lists keeps working, and a standalone
+ *  deployment with no catalog (a local endpoint) can still name its model.
+ *  Empty means none, which the placeholder spells out. */
+function ModelInput({ value, models, emptyLabel, onChange }: {
   value: string
   models: string[]
-  allowEmpty?: boolean
   emptyLabel?: string
   onChange: (v: string) => void
 }) {
-  // Standalone deployments may list no models (local endpoint, no catalog);
-  // the picker always offers typing an id directly.
-  const [typing, setTyping] = useState<string | null>(null)
-  const opts = [...new Set([...(value && !models.includes(value) ? [value] : []), ...models])]
-  if (typing !== null) {
-    return (
-      <input className="field" autoFocus value={typing}
-        placeholder="model id, e.g. llama-3.3-70b"
-        onChange={e => setTyping(e.target.value)}
-        onBlur={() => { const v = typing.trim(); setTyping(null); if (v) onChange(v) }}
-        onKeyDown={e => {
-          if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
-          if (e.key === 'Escape') setTyping(null)
-        }}
-      />
-    )
-  }
   return (
-    <select className="field" value={value} onChange={e => {
-      if (e.target.value === '__type__') setTyping(value)
-      else onChange(e.target.value)
-    }}>
-      {allowEmpty && <option value="">{emptyLabel ?? '(none)'}</option>}
-      {opts.map(m => <option key={m} value={m}>{m}</option>)}
-      <option value="__type__">Type a model id…</option>
-    </select>
+    <Autocomplete
+      items={models}
+      value={value}
+      placeholder={emptyLabel ?? 'model id, e.g. llama-3.3-70b'}
+      onValueChange={v => onChange(v.trim())}
+    />
   )
 }
 
@@ -294,18 +297,38 @@ export function SettingsView() {
     }
   }
 
-  if (!form) return <div className="settings-view"><div className="card settings-card"><p className="muted pad">{note || 'Loading…'}</p></div></div>
+  if (!form) return (
+    <div className="settings-view">
+      <div className="card settings-card">
+        {note ? <Callout tone="error">{note}</Callout> : <p className="muted pad"><Loader inline size={16} label="Loading…" /></p>}
+      </div>
+    </div>
+  )
 
   const pickableModels = models.filter(m => !/studio-(agent|rag)/.test(m))
 
   const sections = settingsSections({ authEnabled: !!me?.authEnabled, platform: !!cfg.platform })
 
+  const mcpJson = JSON.stringify({ mcpServers: { 'studio-kb': { type: 'http', url: `${location.origin}/api/mcp`, ...(me?.authEnabled ? { headers: { Authorization: 'Bearer <platform token>' } } : {}) } } }, null, 2)
   const saveRow = (reload = true) => (
     <div className="query-actions">
-      <button className="btn-primary" onClick={() => void save(reload)} disabled={busy}>{busy ? 'Saving…' : 'Save settings'}</button>
+      <Button variant="primary" onClick={() => void save(reload)} loading={busy}>{busy ? 'Saving…' : 'Save settings'}</Button>
       {note && <span className="muted">{note}</span>}
     </div>
   )
+
+  // The access banner's tone follows the credential's state: none loaded
+  // (a warning where the deployment requires one), working, or failing.
+  const accessTone: CalloutTone = !me || me.mode === 'none'
+    ? (form.requirePersonalKey ? 'warning' : 'default')
+    : accessHealth?.status === 'ok' ? 'success' : accessHealth ? 'error' : 'default'
+  const ragEpTone: CalloutTone = ragEp?.state === 'running' ? 'success' : ragEp?.state === 'error' ? 'error' : 'default'
+  const surfaces: SelectItem<string>[] = Object.entries(SURFACES).map(([k, v]) => ({ value: k, label: v.label }))
+  const providers: SelectItem<typeof providerMode>[] = [
+    { value: 'platform', label: me?.gatewayHost ? `This deployment's gateway (${me.gatewayHost})` : "This deployment's gateway (default)" },
+    { value: 'activate', label: 'Another ACTIVATE platform…' },
+    { value: 'custom', label: 'OpenAI-compatible endpoint…' },
+  ]
 
   return (
     <div className="settings-view">
@@ -346,19 +369,11 @@ export function SettingsView() {
                 Saved settings apply immediately and override the deployment's environment defaults; they live beside the index, not in the repository. Brand icon and model credentials stay in the environment (see docs/CUSTOMIZATION.md).
               </p>
               <div className="settings-grid">
-                <div>
-                  <label className="field-label">Product name</label>
-                  <input className="field" value={form.appName} onChange={e => setForm({ ...form, appName: e.target.value })} />
-                </div>
-                <div>
-                  <label className="field-label">Default theme</label>
-                  <select className="field" value={form.theme} onChange={e => setForm({ ...form, theme: e.target.value as 'light' | 'dark' })}>
-                    <option value="light">light</option>
-                    <option value="dark">dark</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="field-label">Accent color</label>
+                <Input label="Product name" value={form.appName} onChange={e => setForm({ ...form, appName: e.target.value })} />
+                <Field label="Default theme">
+                  <Select items={THEMES} value={form.theme} onValueChange={v => v && setForm({ ...form, theme: v })} />
+                </Field>
+                <Field group label="Accent color">
                   <div className="accent-row">
                     {Object.entries(ACCENTS).map(([k, a]) => (
                       <button
@@ -378,131 +393,118 @@ export function SettingsView() {
                       onChange={e => { const v = `custom:${e.target.value}`; setForm({ ...form, accent: v }); applyAccent(v) }}
                     />
                   </div>
-                </div>
-                <div>
-                  <label className="field-label">Surface tone</label>
-                  <select className="field" value={form.surface}
-                    onChange={e => { setForm({ ...form, surface: e.target.value }); applySurface(e.target.value) }}>
-                    {Object.entries(SURFACES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="field-label">Brand icon (URL, or a path on the server)</label>
-                  <input className="field" value={form.iconUrl} placeholder="https://example.org/logo.png"
-                    onChange={e => setForm({ ...form, iconUrl: e.target.value })} />
-                </div>
-                <div>
-                  <label className="field-label">Brand icon for dark mode (optional)</label>
-                  <input className="field" value={form.iconUrlDark} placeholder="leave empty to use the same image"
-                    onChange={e => setForm({ ...form, iconUrlDark: e.target.value })} />
-                </div>
+                </Field>
+                <Field label="Surface tone">
+                  <Select items={surfaces} value={form.surface}
+                    onValueChange={v => { if (v) { setForm({ ...form, surface: v }); applySurface(v) } }} />
+                </Field>
+                <Input label="Brand icon (URL, or a path on the server)" value={form.iconUrl} placeholder="https://example.org/logo.png"
+                  onChange={e => setForm({ ...form, iconUrl: e.target.value })} />
+                <Input label="Brand icon for dark mode (optional)" value={form.iconUrlDark} placeholder="leave empty to use the same image"
+                  onChange={e => setForm({ ...form, iconUrlDark: e.target.value })} />
                 <div className="banner-field">
-                  <label className="field-label">Classification banner (empty for none)</label>
-                  <div className="banner-row">
-                    <select className="field banner-preset" value=""
-                      onChange={e => {
-                        const p = BANNER_PRESETS.find(x => x.label === e.target.value)
-                        if (p) setForm({ ...form, bannerText: p.text, bannerColor: p.color })
-                      }}>
-                      <option value="">Marking…</option>
-                      {BANNER_PRESETS.map(p => <option key={p.label} value={p.label}>{p.label}</option>)}
-                    </select>
-                    <input className="field banner-text" value={form.bannerText ?? ''}
-                      placeholder="Text across the top, or pick a marking"
-                      onChange={e => setForm({ ...form, bannerText: e.target.value })} />
-                    <input className="field banner-hex" value={form.bannerColor ?? ''} placeholder="#24612e"
-                      onChange={e => setForm({ ...form, bannerColor: e.target.value })} />
-                  </div>
-                  {(form.bannerText ?? '').trim() && (
-                    <div className="cls-banner banner-preview"
-                      style={{ background: form.bannerColor, color: bannerInk(form.bannerColor) }}>
-                      {form.bannerText}
+                  <Field label="Classification banner (empty for none)">
+                    <div className="banner-row">
+                      <ActionMenu label="Marking" align="start"
+                        triggerClassName={cx(fieldBox(), 'banner-preset')}
+                        items={BANNER_PRESETS.map(p => ({
+                          label: p.label,
+                          onClick: () => setForm({ ...form, bannerText: p.text, bannerColor: p.color }),
+                        }))}>
+                        Marking… <ChevronDownIcon aria-hidden="true" />
+                      </ActionMenu>
+                      <Input className="banner-text" value={form.bannerText ?? ''}
+                        placeholder="Text across the top, or pick a marking"
+                        onChange={e => setForm({ ...form, bannerText: e.target.value })} />
+                      {/* Every library control in one field takes the field's
+                          id, so the color, a second box, is a plain input in
+                          the library's field look. */}
+                      <input className={cx(fieldBox(), 'banner-hex')} aria-label="Banner color" value={form.bannerColor ?? ''} placeholder="#24612e"
+                        onChange={e => setForm({ ...form, bannerColor: e.target.value })} />
                     </div>
-                  )}
+                    {(form.bannerText ?? '').trim() && (
+                      <div className="cls-banner banner-preview"
+                        style={{ background: form.bannerColor, color: bannerInk(form.bannerColor) }}>
+                        {form.bannerText}
+                      </div>
+                    )}
+                  </Field>
                   <label className="key-persist">
-                    <input type="checkbox" checked={!!form.bannerWhenEmbedded}
-                      onChange={e => setForm({ ...form, bannerWhenEmbedded: e.target.checked })} />
+                    <Checkbox checked={!!form.bannerWhenEmbedded}
+                      onCheckedChange={v => setForm({ ...form, bannerWhenEmbedded: v })} />
                     <span>Show it inside the platform frame too, which already draws its own</span>
                   </label>
                 </div>
-                <div>
-                  <label className="field-label">Search across libraries</label>
-                  <select className="field" value={form.searchEngine ?? 'parallel'} onChange={e => setForm({ ...form, searchEngine: e.target.value as Effective['searchEngine'] })}>
-                    <option value="parallel">Each library in parallel, merged (faster)</option>
-                    <option value="gufi_vt">One gufi_vt statement over all libraries</option>
-                  </select>
-                  <p className="muted key-note">Both return the same matches. gufi_vt answers its libraries one after another; Query uses it either way.</p>
-                </div>
-                <div>
-                  <label className="field-label">Background sync interval (seconds, 0 pauses)</label>
-                  <input className="field" type="number" min={0} max={86400} value={form.sweepIntervalSec}
-                    onChange={e => setForm({ ...form, sweepIntervalSec: Number(e.target.value) })} />
-                </div>
-                <div>
-                  <label className="field-label">Corpus history snapshot (seconds between points)</label>
-                  <input className="field" type="number" min={0} max={2592000} step={3600} value={form.historyIntervalSec}
-                    onChange={e => setForm({ ...form, historyIntervalSec: Number(e.target.value) })} />
-                  <p className="muted key-note">
+                <Field label="Search across libraries"
+                  description="Both return the same matches. gufi_vt answers its libraries one after another; Query uses it either way.">
+                  <Select items={SEARCH_ENGINES} value={form.searchEngine ?? 'parallel'} onValueChange={v => v && setForm({ ...form, searchEngine: v })} />
+                </Field>
+                <Field label="Background sync interval (seconds, 0 pauses)">
+                  <NumberInput min={0} max={86400} value={form.sweepIntervalSec}
+                    onValueChange={v => setForm({ ...form, sweepIntervalSec: v ?? 0 })} />
+                </Field>
+                <Field label="Corpus history snapshot (seconds between points)"
+                  description={<>
                     86400 is one point a day, summarizing everything that changed since the previous point. 0 captures
                     every index pass, which is a churn log on a busy corpus. Days with no change are recorded as a
                     check either way.
-                  </p>
-                </div>
-                <div>
-                  <label className="field-label">Vision model for image captioning</label>
-                  <ModelSelect
+                  </>}>
+                  <NumberInput min={0} max={2592000} step={3600} value={form.historyIntervalSec}
+                    onValueChange={v => setForm({ ...form, historyIntervalSec: v ?? 0 })} />
+                </Field>
+                <Field label="Vision model for image captioning"
+                  description={form.visionModel && deploymentCred === false ? <>
+                    Captioning runs during background indexing, when no user is present, so it uses
+                    the deployment credential or the host's pw CLI login rather than a personal key.
+                    This deployment has neither, so images will be indexed by OCR and filename only.
+                  </> : undefined}>
+                  <ModelInput
                     value={form.visionModel}
                     models={pickableModels}
-                    allowEmpty
                     emptyLabel="disabled (no image captioning)"
                     onChange={v => setForm({ ...form, visionModel: v })}
                   />
-                  {form.visionModel && deploymentCred === false && (
-                    <p className="muted key-note">
-                      Captioning runs during background indexing, when no user is present, so it uses
-                      the deployment credential or the host's pw CLI login rather than a personal key.
-                      This deployment has neither, so images will be indexed by OCR and filename only.
-                    </p>
-                  )}
-                </div>
+                </Field>
               </div>
               {me?.authEnabled && (
                 <label className="key-persist">
-                  <input type="checkbox" checked={form.requirePersonalKey}
-                    onChange={e => setForm({ ...form, requirePersonalKey: e.target.checked })} />
+                  <Checkbox checked={form.requirePersonalKey}
+                    onCheckedChange={v => setForm({ ...form, requirePersonalKey: v })} />
                   Require each user to add their own model credential (chat and models refuse the deployment credential, though a key another user has shared here is accepted; browsing, search, and adding material stay open to everyone)
                 </label>
               )}
               {me?.authEnabled && (
                 <label className="key-persist">
-                  <input type="checkbox" checked={form.allowKeySharing}
-                    onChange={e => setForm({ ...form, allowKeySharing: e.target.checked })} />
+                  <Checkbox checked={form.allowKeySharing}
+                    onCheckedChange={v => setForm({ ...form, allowKeySharing: v })} />
                   Let a user share their own model credential with everyone here, standing in for the deployment credential (useful where the deployment has none; the sharer's quota covers the group)
                 </label>
               )}
               {me?.authEnabled && (
                 <label className="key-persist">
-                  <input type="checkbox" checked={form.chatSharedHistory}
-                    onChange={e => setForm({ ...form, chatSharedHistory: e.target.checked })} />
+                  <Checkbox checked={form.chatSharedHistory}
+                    onCheckedChange={v => setForm({ ...form, chatSharedHistory: v })} />
                   Allow users to see each other's chat sessions in the chat interface (the rail still defaults each user to their own, with a toggle to show all; off removes that option entirely; exported transcripts remain in the knowledge base tree either way)
                 </label>
               )}
-              <label className="field-label">Mission and context</label>
-              <textarea
-                className="field prompts-box"
-                rows={4}
-                value={form.kbMission ?? ''}
-                placeholder="What this Studio is for: the program or project it serves, what the corpus holds, terms the assistant should know. Injected into the assistant's system prompt."
-                onChange={e => setForm({ ...form, kbMission: e.target.value })}
-              />
-              <p className="muted key-note">The assistant treats this as authoritative about the deployment's purpose, and it never invents expansions for acronyms the mission and corpus leave undefined.</p>
-              <label className="field-label">Chat starter prompts (one per line)</label>
-              <textarea
-                className="field prompts-box"
-                rows={10}
-                value={form.suggestedPrompts.join('\n')}
-                onChange={e => setForm({ ...form, suggestedPrompts: e.target.value.split('\n') })}
-              />
+              <Field className="settings-field" label="Mission and context"
+                description="The assistant treats this as authoritative about the deployment's purpose, and it never invents expansions for acronyms the mission and corpus leave undefined.">
+                <Textarea
+                  className="prompts-box"
+                  rows={4}
+                  value={form.kbMission ?? ''}
+                  placeholder="What this Studio is for: the program or project it serves, what the corpus holds, terms the assistant should know. Injected into the assistant's system prompt."
+                  onChange={e => setForm({ ...form, kbMission: e.target.value })}
+                />
+              </Field>
+              <Field className="settings-field" label="Chat starter prompts (one per line)">
+                <Textarea
+                  className="prompts-box"
+                  rows={10}
+                  value={form.suggestedPrompts.join('\n')}
+                  onChange={e => setForm({ ...form, suggestedPrompts: e.target.value.split('\n') })}
+                />
+              </Field>
               {saveRow()}
             </>
           )}
@@ -516,29 +518,22 @@ export function SettingsView() {
                 </p>
               ) : (
                 <>
-                  <div className={`rag-banner ${me.mode !== 'none' && accessHealth?.status === 'ok' ? 'connected' : me.mode !== 'none' && accessHealth && accessHealth.status !== 'ok' ? 'errored' : ''}`}>
-                    <div className="rag-banner-head">
-                      <span className={`status-dot ${me.mode === 'none' ? (form.requirePersonalKey ? 'warn' : 'off') : accessHealth?.status === 'ok' ? 'ok' : accessHealth ? 'warn' : 'off'}`} />
-                      <strong>
-                        {me.mode === 'none' && (form.requirePersonalKey
-                          ? 'Not connected; this deployment requires your own model credential'
-                          : 'No personal key loaded; requests use the deployment credential')}
-                        {me.mode !== 'none' && accessHealth?.status === 'ok' && `Connected with your ${me.kind === 'token' ? 'token' : 'key'} ending ${me.last4}`}
-                        {me.mode !== 'none' && accessHealth && accessHealth.status !== 'ok' && (
-                          accessHealth.status === 'auth'
-                            ? (me.credExpired
-                              ? `Your token ending ${me.last4} expired ${new Date(me.credExpiresAt!).toLocaleString()}`
-                              : `${accessHealth.gatewayHost ?? 'The platform'} rejected your ${me.kind === 'token' ? 'token' : 'key'} ending ${me.last4}`)
-                            : `Could not reach ${accessHealth.gatewayHost ?? 'the platform'} with your ${me.kind === 'token' ? 'token' : 'key'} ending ${me.last4} (${accessHealth.status})`
-                        )}
-                        {me.mode !== 'none' && !accessHealth && `Your ${me.kind === 'token' ? 'token' : 'key'} ending ${me.last4} is loaded`}
-                      </strong>
-                      {me.mode !== 'none' && (
-                        <span className="rag-banner-actions">
-                          <button className="btn-secondary" onClick={refreshAccess}>Re-check</button>
-                        </span>
+                  <Callout className="rag-banner" tone={accessTone}
+                    title={<>
+                      {me.mode === 'none' && (form.requirePersonalKey
+                        ? 'Not connected; this deployment requires your own model credential'
+                        : 'No personal key loaded; requests use the deployment credential')}
+                      {me.mode !== 'none' && accessHealth?.status === 'ok' && `Connected with your ${me.kind === 'token' ? 'token' : 'key'} ending ${me.last4}`}
+                      {me.mode !== 'none' && accessHealth && accessHealth.status !== 'ok' && (
+                        accessHealth.status === 'auth'
+                          ? (me.credExpired
+                            ? `Your token ending ${me.last4} expired ${new Date(me.credExpiresAt!).toLocaleString()}`
+                            : `${accessHealth.gatewayHost ?? 'The platform'} rejected your ${me.kind === 'token' ? 'token' : 'key'} ending ${me.last4}`)
+                          : `Could not reach ${accessHealth.gatewayHost ?? 'the platform'} with your ${me.kind === 'token' ? 'token' : 'key'} ending ${me.last4} (${accessHealth.status})`
                       )}
-                    </div>
+                      {me.mode !== 'none' && !accessHealth && `Your ${me.kind === 'token' ? 'token' : 'key'} ending ${me.last4} is loaded`}
+                    </>}
+                    action={me.mode !== 'none' ? <Button variant="secondary" size="sm" onClick={refreshAccess}>Re-check</Button> : undefined}>
                     {me.mode !== 'none' && accessHealth?.unlockUrl && (
                       <p className="identity-note">
                         The provider reports this key is locked, which it does on a schedule. <a href={accessHealth.unlockUrl} target="_blank" rel="noopener noreferrer">Unlock
@@ -575,7 +570,7 @@ export function SettingsView() {
                         {accessHealth?.status === 'auth' && ' Platform tokens last 24 hours from login. Paste a fresh token below, or an API key from your ACTIVATE account (Account, API keys), which does not expire.'}
                       </p>
                     )}
-                  </div>
+                  </Callout>
                   {me.mode === 'none' && (
                     <p className="muted view-sub">
                       {form.requirePersonalKey
@@ -584,71 +579,67 @@ export function SettingsView() {
                     </p>
                   )}
                   <div className="key-row">
-                    <input
-                      className="field grow"
-                      type="password"
-                      value={keyInput}
-                      placeholder="Paste a platform token or API key (full access), or an AI gateway / provider key (chat only)"
-                      autoComplete="off"
-                      onChange={e => setKeyInput(e.target.value)}
-                    />
-                    <button className="btn-primary" disabled={keyBusy || !keyInput.trim()}
+                    {/* The box brings a show-typed-text button, so it sits in
+                        a wrapper that takes the row's spare width. */}
+                    <div className="grow">
+                      <Input
+                        type="password"
+                        aria-label="Model credential"
+                        value={keyInput}
+                        placeholder="Paste a platform token or API key (full access), or an AI gateway / provider key (chat only)"
+                        autoComplete="off"
+                        onChange={e => setKeyInput(e.target.value)}
+                      />
+                    </div>
+                    <Button variant="primary" disabled={keyBusy || !keyInput.trim()}
                       onClick={async () => { if (await keyAction('set', { key: keyInput.trim(), persist: persistKey, baseUrl: effectiveBaseUrl() })) { setKeyInput(''); void testKey() } }}>
                       Save and test
-                    </button>
-                    <button className="btn-secondary" disabled={keyBusy || (!keyInput.trim() && me.mode === 'none')}
-                      onClick={() => void testKey(keyInput.trim() || undefined)}>Test</button>
+                    </Button>
+                    <Button variant="secondary" disabled={keyBusy || (!keyInput.trim() && me.mode === 'none')}
+                      onClick={() => void testKey(keyInput.trim() || undefined)}>Test</Button>
                     {me.mode !== 'none' && (
-                      <button className="btn-danger-outline" disabled={keyBusy} onClick={() => void keyAction('clear')}>Remove</button>
+                      <Button variant="danger" disabled={keyBusy} onClick={() => void keyAction('clear')}>Remove</Button>
                     )}
                   </div>
                   <div className="key-row provider-row">
-                    <label className="field-label provider-label">Credential provider</label>
-                    <select className="field" value={providerMode} onChange={e => setProviderMode(e.target.value as typeof providerMode)}>
-                      <option value="platform">{me?.gatewayHost ? `This deployment's gateway (${me.gatewayHost})` : "This deployment's gateway (default)"}</option>
-                      <option value="activate">Another ACTIVATE platform…</option>
-                      <option value="custom">OpenAI-compatible endpoint…</option>
-                    </select>
+                    <Field layout="inline" compact label="Credential provider" className="provider-field">
+                      <Select className="provider-select" items={providers} value={providerMode} onValueChange={v => v && setProviderMode(v)} />
+                    </Field>
                     {providerMode === 'activate' && (
-                      <input className="field grow" value={providerHost} autoComplete="off"
+                      <Input className="grow" aria-label="Platform host" value={providerHost} autoComplete="off"
                         placeholder="platform host, e.g. activate.parallel.works"
                         onChange={e => setProviderHost(e.target.value)} />
                     )}
                     {providerMode === 'custom' && (
-                      <input className="field grow" value={baseUrlInput} autoComplete="off"
+                      <Input className="grow" aria-label="Base URL" value={baseUrlInput} autoComplete="off"
                         placeholder="base URL, e.g. https://host/v1"
                         onChange={e => setBaseUrlInput(e.target.value)} />
                     )}
                   </div>
                   <label className="key-persist">
-                    <input type="checkbox" checked={persistKey} onChange={e => setPersistKey(e.target.checked)} />
+                    <Checkbox checked={persistKey} onCheckedChange={setPersistKey} />
                     Remember in this browser (a sealed Secure cookie; the server holds it in memory only); unchecked keeps it for about 12 hours
                   </label>
                   {me.shared?.active ? (
-                    <div className="rag-banner connected shared-key">
-                      <div className="rag-banner-head">
-                        <span className={`status-dot ${me.shared.credExpired ? 'warn' : 'ok'}`} />
-                        <strong>
-                          Key ending {me.shared.last4} is shared with everyone on this deployment
-                          {me.shared.sharedBy ? `, by ${me.shared.mine ? 'you' : me.shared.sharedBy}` : ''}
-                          {me.shared.sharedAt ? ` on ${me.shared.sharedAt.slice(0, 10)}` : ''}
-                          {me.shared.credExpired ? '; it has expired and is no longer used' : ''}
-                        </strong>
-                        <span className="rag-banner-actions">
-                          <button className="btn-danger-outline" disabled={keyBusy}
-                            onClick={() => void keyAction('unshare')}>Stop sharing</button>
-                        </span>
-                      </div>
+                    <Callout className="rag-banner shared-key" tone={me.shared.credExpired ? 'warning' : 'success'}
+                      title={<>
+                        Key ending {me.shared.last4} is shared with everyone on this deployment
+                        {me.shared.sharedBy ? `, by ${me.shared.mine ? 'you' : me.shared.sharedBy}` : ''}
+                        {me.shared.sharedAt ? ` on ${me.shared.sharedAt.slice(0, 10)}` : ''}
+                        {me.shared.credExpired ? '; it has expired and is no longer used' : ''}
+                      </>}
+                      action={<Button variant="danger" size="sm" disabled={keyBusy}
+                        onClick={() => void keyAction('unshare')}>Stop sharing</Button>}>
                       <p className="muted key-note">
                         Anyone here without a key of their own calls the gateway with this one, so its owner's
                         quota and usage cover the deployment. Their own keys still take precedence. Anyone can
                         stop the sharing, since the person who started it may not be around when it needs to end.
                       </p>
-                    </div>
+                    </Callout>
                   ) : me.sharingAllowed && (
                     <div className="key-row share-row">
-                      <button className="btn-secondary" disabled={keyBusy || me.mode === 'none'}
-                        onClick={() => void keyAction('share')}>Share this key with everyone</button>
+                      <Button variant="secondary" disabled={keyBusy || me.mode === 'none'}
+                        onClick={() => void keyAction('share')}>Share this key with everyone</Button>
                       <span className="muted key-note">
                         {me.mode === 'none'
                           ? 'Add your own key above first; you can then share it with everyone here.'
@@ -672,12 +663,11 @@ export function SettingsView() {
                 Everything the chat assistant can call. Built-in tools are part of the server; unchecking one hides it from the model, and clicking a name shows what it actually calls plus its exact specification, so you can copy the shape into a custom tool or extension file with your own changes. Custom tools are commands you define here (saved with these settings, not as files); each appears to the assistant as a callable tool and runs on this server with its output returned to the conversation.
               </p>
               <div className="settings-grid">
-                <div>
-                  <label className="field-label">Most tool rounds per reply</label>
-                  <input className="field" type="number" min={5} max={200} value={form.maxToolRounds}
-                    onChange={e => setForm({ ...form, maxToolRounds: Number(e.target.value) })} />
-                  <p className="muted key-note">Each round is one model call and the tools it asks for. At the limit the assistant answers from what it has and says it stopped.</p>
-                </div>
+                <Field label="Most tool rounds per reply"
+                  description="Each round is one model call and the tools it asks for. At the limit the assistant answers from what it has and says it stopped.">
+                  <NumberInput min={5} max={200} value={form.maxToolRounds}
+                    onValueChange={v => setForm({ ...form, maxToolRounds: v ?? 0 })} />
+                </Field>
               </div>
               <div className="tools-grid">
               {TOOL_GROUPS.map(([group, names]) => {
@@ -689,17 +679,19 @@ export function SettingsView() {
                     {rows.map(t => (
                       <div key={t.name}>
                         <div className="tool-row">
-                          <input
-                            type="checkbox"
+                          <Checkbox
+                            aria-label={t.name}
                             checked={!form.disabledTools.includes(t.name)}
-                            onChange={e => setForm({
+                            onCheckedChange={on => setForm({
                               ...form,
-                              disabledTools: e.target.checked
+                              disabledTools: on
                                 ? form.disabledTools.filter(n => n !== t.name)
                                 : [...form.disabledTools, t.name],
                             })}
                           />
                           <button className="tool-name" title="Show the parameter schema this tool accepts"
+                            aria-expanded={specOpen === t.name}
+                            aria-controls={specOpen === t.name ? `tool-spec-${t.name}` : undefined}
                             onClick={() => setSpecOpen(o => o === t.name ? null : t.name)}>
                             <code>{t.name}</code>
                           </button>
@@ -710,9 +702,9 @@ export function SettingsView() {
                             with the wire schema on top of it. */}
                         {t.calls && <p className="tool-calls">{t.calls}</p>}
                         {t.command && <p className="tool-calls"><code>{t.command}</code></p>}
-                        {specOpen === t.name && (
+                        <DisclosurePanel open={specOpen === t.name} id={`tool-spec-${t.name}`}>
                           <pre className="tool-spec">{JSON.stringify({ name: t.name, description: t.description, parameters: t.parameters }, null, 2)}</pre>
-                        )}
+                        </DisclosurePanel>
                       </div>
                     ))}
                   </div>
@@ -723,16 +715,16 @@ export function SettingsView() {
               <div className="custom-tools">
                 {form.customTools.map((t, i) => (
                   <div className="custom-tool-row" key={i}>
-                    <input className="field" placeholder="tool_name" value={t.name}
+                    <Input placeholder="tool_name" aria-label="Tool name" value={t.name}
                       onChange={e => setForm({ ...form, customTools: form.customTools.map((x, j) => j === i ? { ...x, name: e.target.value } : x) })} />
-                    <input className="field" placeholder="What it does, for the model" value={t.description}
+                    <Input placeholder="What it does, for the model" aria-label="Tool description" value={t.description}
                       onChange={e => setForm({ ...form, customTools: form.customTools.map((x, j) => j === i ? { ...x, description: e.target.value } : x) })} />
-                    <input className="field mono" placeholder="command to run" value={t.command}
+                    <Input mono placeholder="command to run" aria-label="Command" value={t.command}
                       onChange={e => setForm({ ...form, customTools: form.customTools.map((x, j) => j === i ? { ...x, command: e.target.value } : x) })} />
-                    <button className="btn-danger-outline" onClick={() => setForm({ ...form, customTools: form.customTools.filter((_, j) => j !== i) })}>Remove</button>
+                    <Button variant="danger" onClick={() => setForm({ ...form, customTools: form.customTools.filter((_, j) => j !== i) })}>Remove</Button>
                   </div>
                 ))}
-                <button className="btn-secondary" onClick={() => setForm({ ...form, customTools: [...form.customTools, { name: '', description: '', command: '' }] })}>Add custom tool</button>
+                <Button variant="secondary" onClick={() => setForm({ ...form, customTools: [...form.customTools, { name: '', description: '', command: '' }] })}>Add custom tool</Button>
               </div>
               {saveRow()}
             </>
@@ -742,19 +734,17 @@ export function SettingsView() {
             <>
               <h1>External access</h1>
               <p className="muted view-sub">Two ways to use this knowledge base from outside. They are independent, and a deployment can serve either or both.</p>
-              <dl className="access-compare">
-                <div>
-                  <dt>Knowledge tools (MCP)</dt>
-                  <dd>The client brings its own model and calls the corpus tools directly. Answers come from the caller's model, grounded by our search. Suits pw code, other agentic clients, and IDE assistants.</dd>
-                </div>
-                <div>
-                  <dt>Grounded model (OpenAI-compatible)</dt>
-                  <dd>This deployment answers as a model, with retrieval built in. Suits any client that can only point at an OpenAI base URL, and it is what the platform model catalog publishes.</dd>
-                </div>
-              </dl>
+              <DescriptionList className="access-compare">
+                <DescriptionListItem label="Knowledge tools (MCP)">
+                  The client brings its own model and calls the corpus tools directly. Answers come from the caller's model, grounded by our search. Suits pw code, other agentic clients, and IDE assistants.
+                </DescriptionListItem>
+                <DescriptionListItem label="Grounded model (OpenAI-compatible)">
+                  This deployment answers as a model, with retrieval built in. Suits any client that can only point at an OpenAI base URL, and it is what the platform model catalog publishes.
+                </DescriptionListItem>
+              </DescriptionList>
               <div className="tool-group">Knowledge tools over MCP (your model, our tools)</div>
               <p className="muted view-sub">
-                <CopyToClipboard text={`${location.origin}/api/mcp`}><code>{location.origin}/api/mcp</code></CopyToClipboard> serves
+                <code>{location.origin}/api/mcp</code><CopyButton text={`${location.origin}/api/mcp`} label="MCP address" /> serves
                 this knowledge base over the Model Context Protocol: the client brings its own model and calls the corpus tools
                 directly (search, read, list, query, labels, docs). Read-only; adding material, labels, and platform actions stay
                 with this assistant. {me?.authEnabled
@@ -766,9 +756,9 @@ export function SettingsView() {
                 <span>Serve MCP at /api/mcp. Individual tools can be disabled in the tool catalog above.</span>
               </div>
               <p className="field-label">pw code</p>
-              <CopyToClipboard text={`pw code mcp add --transport http studio-kb ${location.origin}/api/mcp`}>
-                <code className="mcp-snippet">pw code mcp add --transport http studio-kb {location.origin}/api/mcp</code>
-              </CopyToClipboard>
+              <CopyCodeBlock className="mcp-snippet" text={`pw code mcp add --transport http studio-kb ${location.origin}/api/mcp`} label="pw code command">
+                pw code mcp add --transport http studio-kb {location.origin}/api/mcp
+              </CopyCodeBlock>
               <p className="muted key-note">pw code signs its platform requests with your existing CLI login, so no token goes in the command.</p>
               <div className="tool-group">Delegation (the assistant working in parallel)</div>
               <p className="muted view-sub">
@@ -788,30 +778,23 @@ export function SettingsView() {
                 <span>Let the assistant delegate subtasks to concurrent agents</span>
               </div>
               <div className="settings-grid">
+                <Field label="Most agents per task" description="Counting subtasks the agents themselves start.">
+                  <NumberInput min={1} max={24} value={form.delegationMaxAgents}
+                    onValueChange={v => setForm({ ...form, delegationMaxAgents: v ?? 0 })} />
+                </Field>
+                <Field label="How deep agents may delegate" description="0 stops agents starting their own subtasks; 1 lets them go one level.">
+                  <NumberInput min={0} max={3} value={form.delegationMaxDepth}
+                    onValueChange={v => setForm({ ...form, delegationMaxDepth: v ?? 0 })} />
+                </Field>
                 <div>
-                  <label className="field-label">Most agents per task</label>
-                  <input className="field" type="number" min={1} max={24} value={form.delegationMaxAgents}
-                    onChange={e => setForm({ ...form, delegationMaxAgents: Number(e.target.value) })} />
-                  <p className="muted key-note">Counting subtasks the agents themselves start.</p>
-                </div>
-                <div>
-                  <label className="field-label">How deep agents may delegate</label>
-                  <input className="field" type="number" min={0} max={3} value={form.delegationMaxDepth}
-                    onChange={e => setForm({ ...form, delegationMaxDepth: Number(e.target.value) })} />
-                  <p className="muted key-note">0 stops agents starting their own subtasks; 1 lets them go one level.</p>
-                </div>
-                <div>
-                  <label className="field-label">Agent execution</label>
-                  <select className="field" value={form.agentExecution} onChange={e => setForm({ ...form, agentExecution: e.target.value as Effective['agentExecution'] })}>
-                    <option value="runner">Studio runner: one-shot pw code runs</option>
-                    <option value="sessions">pw code sessions</option>
-                    <option value="both">Both, chosen per task</option>
-                  </select>
-                  <p className="muted key-note">
-                    Sessions run in this host's pw code daemon: their progress is live on the Agents tab, a person
-                    approves what an agent asks to do, and a working agent can be steered. With remote control on,
-                    they can also be watched from ACTIVATE's agents page. Campaigns on other systems use the runner.
-                  </p>
+                  <Field label="Agent execution"
+                    description={<>
+                      Sessions run in this host's pw code daemon: their progress is live on the Agents tab, a person
+                      approves what an agent asks to do, and a working agent can be steered. With remote control on,
+                      they can also be watched from ACTIVATE's agents page. Campaigns on other systems use the runner.
+                    </>}>
+                    <Select items={AGENT_EXECUTION} value={form.agentExecution} onValueChange={v => v && setForm({ ...form, agentExecution: v })} />
+                  </Field>
                   {runtime && (
                     <p className="muted key-note">
                       {runtime.local.version
@@ -835,31 +818,29 @@ export function SettingsView() {
                 const st = mcpStatus.find(x => x.name === srv.name)
                 return (
                   <div className="mcp-server-row" key={i}>
-                    <input className="field" placeholder="name (hubspot)" value={srv.name}
+                    <Input placeholder="name (hubspot)" aria-label="Server name" value={srv.name}
                       onChange={e => { const next = [...form.mcpServers]; next[i] = { ...srv, name: e.target.value }; setForm({ ...form, mcpServers: next }) }} />
-                    <input className="field" placeholder="https://host/mcp" value={srv.url}
+                    <Input placeholder="https://host/mcp" aria-label="Server URL" value={srv.url}
                       onChange={e => { const next = [...form.mcpServers]; next[i] = { ...srv, url: e.target.value }; setForm({ ...form, mcpServers: next }) }} />
-                    <input className="field" placeholder="Authorization: Bearer <token>" value={srv.header ?? ''}
+                    <Input placeholder="Authorization: Bearer <token>" aria-label="Authorization header" value={srv.header ?? ''}
                       onChange={e => { const next = [...form.mcpServers]; next[i] = { ...srv, header: e.target.value }; setForm({ ...form, mcpServers: next }) }} />
-                    <button className="btn-secondary" onClick={() => setForm({ ...form, mcpServers: form.mcpServers.filter((_, j) => j !== i) })}>Remove</button>
+                    <Button variant="secondary" onClick={() => setForm({ ...form, mcpServers: form.mcpServers.filter((_, j) => j !== i) })}>Remove</Button>
                     <span className="mcp-server-state">
                       {st ? (st.error
-                        ? <><span className="status-dot warn" /> {st.error}</>
-                        : <><span className="status-dot ok" /> {st.tools} tools</>)
+                        ? <><StatusDot variant="warning" /> {st.error}</>
+                        : <><StatusDot variant="success" /> {st.tools} tools</>)
                         : <span className="muted">save to connect</span>}
                     </span>
                   </div>
                 )
               })}
               <div className="query-actions">
-                <button className="btn-secondary" onClick={() => setForm({ ...form, mcpServers: [...(form.mcpServers ?? []), { name: '', url: '', header: '' }] })}>Attach a server</button>
+                <Button variant="secondary" onClick={() => setForm({ ...form, mcpServers: [...(form.mcpServers ?? []), { name: '', url: '', header: '' }] })}>Attach a server</Button>
               </div>
               {saveRow(false)}
 
               <p className="field-label">Other MCP clients (settings JSON)</p>
-              <CopyToClipboard text={JSON.stringify({ mcpServers: { 'studio-kb': { type: 'http', url: `${location.origin}/api/mcp`, ...(me?.authEnabled ? { headers: { Authorization: 'Bearer <platform token>' } } : {}) } } }, null, 2)}>
-                <code className="mcp-snippet">{JSON.stringify({ mcpServers: { 'studio-kb': { type: 'http', url: `${location.origin}/api/mcp`, ...(me?.authEnabled ? { headers: { Authorization: 'Bearer <platform token>' } } : {}) } } }, null, 2)}</code>
-              </CopyToClipboard>
+              <CopyCodeBlock className="mcp-snippet" text={mcpJson} label="MCP settings">{mcpJson}</CopyCodeBlock>
               {saveRow(false)}
 
 
@@ -877,7 +858,7 @@ export function SettingsView() {
               {form.ragProxyEnabled && (<>
               <p className="muted view-sub">
                 The endpoint at{' '}
-                <CopyToClipboard text={`${location.origin}/v1`}><code>{location.origin}/v1</code></CopyToClipboard> lets
+                <code>{location.origin}/v1</code><CopyButton text={`${location.origin}/v1`} label="endpoint address" /> lets
                 any OpenAI-speaking client (pw code, SDKs, other agents) use the knowledge base as a grounded model.
                 Callers authenticate with their own gateway API key as the bearer token; the endpoint holds no credentials of its own.
               </p>
@@ -885,38 +866,35 @@ export function SettingsView() {
                 Pick the underlying model per request as <code>studio-agent/&lt;model-id&gt;</code> (any other model id behaves like studio-rag with that model), or set the default below. Headers <code>X-RAG-Top-K</code>, <code>X-RAG-Tags</code>, and <code>X-RAG-Off: 1</code> tune retrieval per request.
               </p>
               <div className="settings-grid">
-                <div>
-                  <label className="field-label">Default underlying model (for bare studio-agent / studio-rag)</label>
-                  <ModelSelect
+                <Field label="Default underlying model (for bare studio-agent / studio-rag)">
+                  <ModelInput
                     value={form.ragDefaultModel}
                     models={pickableModels}
-                    allowEmpty
                     emptyLabel="none (callers must pass studio-agent/<model-id>)"
                     onChange={v => setForm({ ...form, ragDefaultModel: v })}
                   />
-                </div>
-                <div>
-                  <label className="field-label">Retrieved context blocks (top K)</label>
-                  <input className="field" type="number" min={1} max={20} value={form.ragTopK}
-                    onChange={e => setForm({ ...form, ragTopK: Number(e.target.value) })} />
-                </div>
+                </Field>
+                <Field label="Retrieved context blocks (top K)">
+                  <NumberInput min={1} max={20} value={form.ragTopK}
+                    onValueChange={v => setForm({ ...form, ragTopK: v ?? 0 })} />
+                </Field>
               </div>
               <label className="key-persist">
-                <input type="checkbox" checked={form.ragAllowDeploymentKey}
-                  onChange={e => setForm({ ...form, ragAllowDeploymentKey: e.target.checked })} />
+                <Checkbox checked={form.ragAllowDeploymentKey}
+                  onCheckedChange={v => setForm({ ...form, ragAllowDeploymentKey: v })} />
                 Allow callers without a bearer key to use the deployment credential (off means every caller must present their own key)
               </label>
               <label className="key-persist">
-                <input type="checkbox" checked={form.ragAdvertiseAgentModel}
-                  onChange={e => setForm({ ...form, ragAdvertiseAgentModel: e.target.checked })} />
+                <Checkbox checked={form.ragAdvertiseAgentModel}
+                  onCheckedChange={v => setForm({ ...form, ragAdvertiseAgentModel: v })} />
                 Advertise <code>studio-agent</code> in model listings
               </label>
               <p className="muted key-note toggle-note">
                 Runs the full assistant pipeline on the server (system prompt, search, read, query, labels) and returns a finished cited answer. Slower, several model calls per question. The right choice inside tool-calling harnesses such as pw code.
               </p>
               <label className="key-persist">
-                <input type="checkbox" checked={form.ragAdvertiseRagModel}
-                  onChange={e => setForm({ ...form, ragAdvertiseRagModel: e.target.checked })} />
+                <Checkbox checked={form.ragAdvertiseRagModel}
+                  onCheckedChange={v => setForm({ ...form, ragAdvertiseRagModel: v })} />
                 Advertise <code>studio-rag</code> in model listings
               </label>
               <p className="muted key-note toggle-note">
@@ -924,16 +902,13 @@ export function SettingsView() {
               </p>
               <p className="muted key-note">Both stay callable by name whether advertised or not.</p>
               <div className="settings-grid">
-                <div>
-                  <label className="field-label">Platform registration name (how the model appears in catalogs and dropdowns)</label>
-                  <input className="field" value={form.ragEndpointName}
-                    placeholder="defaults to <product-name>-rag"
-                    onChange={e => setForm({ ...form, ragEndpointName: e.target.value })} />
-                </div>
+                <Input label="Platform registration name (how the model appears in catalogs and dropdowns)" value={form.ragEndpointName}
+                  placeholder="defaults to <product-name>-rag"
+                  onChange={e => setForm({ ...form, ragEndpointName: e.target.value })} />
               </div>
               <label className="key-persist">
-                <input type="checkbox" checked={form.ragEndpointAutoStart}
-                  onChange={e => setForm({ ...form, ragEndpointAutoStart: e.target.checked })} />
+                <Checkbox checked={form.ragEndpointAutoStart}
+                  onCheckedChange={v => setForm({ ...form, ragEndpointAutoStart: v })} />
                 Register on the platform automatically at startup
               </label>
               {saveRow(false)}
@@ -941,71 +916,64 @@ export function SettingsView() {
               <p className="muted view-sub">
                 Publishes this /v1 surface into the platform chat and AI provider catalog (via <code>pw endpoints run --openai</code> around a local forwarder), so users pick the corpus-grounded models like any other. Platform callers reach it with their own credentials; the deployment credential covers only keyless clients such as pw code. Requires an authenticated pw CLI on the host.
               </p>
-              <div className={`rag-banner ${ragEp?.state === 'running' ? 'connected' : ragEp?.state === 'error' ? 'errored' : ''}`}>
-                <div className="rag-banner-head">
-                  <span className={`status-dot ${ragEp?.state === 'running' ? 'ok' : ragEp?.state === 'error' ? 'warn' : 'off'}`} />
-                  <strong>
-                    {ragEp?.state === 'running' ? 'Connected: published in the platform model catalog' :
-                     ragEp?.state === 'starting' ? 'Registering…' :
-                     ragEp?.state === 'error' ? 'Registration failed' : 'Not registered on the platform'}
-                  </strong>
-                  <span className="rag-banner-actions">
-                    {ragEp?.state === 'running' || ragEp?.state === 'starting'
-                      ? <button className="btn-secondary" onClick={() => void ragEpAction('stop')}>Stop</button>
-                      : <button className="btn-primary" onClick={() => void ragEpAction('start')}>Register now</button>}
-                    <button className="btn-secondary" onClick={refreshRagEp}>Refresh</button>
-                  </span>
-                </div>
+              <Callout className="rag-banner" tone={ragEpTone}
+                title={ragEp?.state === 'running' ? 'Connected: published in the platform model catalog' :
+                  ragEp?.state === 'starting' ? 'Registering…' :
+                  ragEp?.state === 'error' ? 'Registration failed' : 'Not registered on the platform'}
+                action={<>
+                  {ragEp?.state === 'running' || ragEp?.state === 'starting'
+                    ? <Button variant="secondary" size="sm" onClick={() => void ragEpAction('stop')}>Stop</Button>
+                    : <Button variant="primary" size="sm" onClick={() => void ragEpAction('start')}>Register now</Button>}
+                  <RefreshButton size="sm" onRefresh={refreshRagEp} />
+                </>}>
                 {ragEp?.state === 'running' && ragEp.name && (
                   <div className="rag-banner-models">
                     Users can now select {form.ragAdvertiseAgentModel && form.ragAdvertiseRagModel ? 'these models' : 'this model'} anywhere on the platform:
                     <div className="rag-chip-row">
                       {form.ragAdvertiseAgentModel && (
-                        <CopyToClipboard text={`session:${cfg.user.username}:${ragEp.name}/studio-agent`}>
-                          <code>session:{cfg.user.username}:{ragEp.name}/studio-agent</code>
-                        </CopyToClipboard>
+                        <span><code>session:{cfg.user.username}:{ragEp.name}/studio-agent</code><CopyButton text={`session:${cfg.user.username}:${ragEp.name}/studio-agent`} label="model name" /></span>
                       )}
                       {form.ragAdvertiseRagModel && (
-                        <CopyToClipboard text={`session:${cfg.user.username}:${ragEp.name}/studio-rag`}>
-                          <code>session:{cfg.user.username}:{ragEp.name}/studio-rag</code>
-                        </CopyToClipboard>
+                        <span><code>session:{cfg.user.username}:{ragEp.name}/studio-rag</code><CopyButton text={`session:${cfg.user.username}:${ragEp.name}/studio-rag`} label="model name" /></span>
                       )}
                       {!form.ragAdvertiseAgentModel && !form.ragAdvertiseRagModel && <span className="muted">No models advertised; enable a toggle above.</span>}
                     </div>
                   </div>
                 )}
                 {ragEp?.detail && ragEp.state !== 'running' && <p className="muted key-note">{ragEp.detail}</p>}
-              </div>
+              </Callout>
               </>)}
               {form.ragProxyEnabled && (<>
               <div className="tool-group">Recent grounded-model calls</div>
               <p className="muted view-sub">
                 The last 50 calls to this /v1 surface, most recent first, held in memory and cleared on restart. Question text is not recorded; the distilled retrieval terms are.
               </p>
-              <button className="btn-secondary" onClick={refreshRagCalls}>Refresh</button>
+              <RefreshButton onRefresh={refreshRagCalls} />
               {!ragCalls.length && <p className="muted key-note">No calls since the server started; they appear here as clients use the endpoint.</p>}
               {ragCalls.length > 0 && (
-                <div className="rag-calls-wrap">
-                  <table className="rag-calls-table">
-                    <thead><tr><th>Time</th><th>Model</th><th>Underlying</th><th>Credential</th><th>Duration</th><th>Retrieval</th><th>Status</th></tr></thead>
-                    <tbody>
-                      {ragCalls.map((c, i) => (
-                        <tr key={i}>
-                          <td>{new Date(c.at).toLocaleTimeString()}</td>
-                          <td><code>{c.model}</code></td>
-                          <td><code>{c.underlying || '-'}</code></td>
-                          <td>{c.authSource.includes('injected') ? 'deployment (keyless caller)'
-                            : c.authSource.includes('stored personal') ? 'personal key'
-                            : c.authSource.includes('deployment') ? 'deployment'
-                            : c.authSource === 'none' ? 'none' : 'caller key'}</td>
-                          <td>{c.durationMs == null ? 'running' : `${(c.durationMs / 1000).toFixed(1)}s`}</td>
-                          <td>{c.retrieval ? `${c.retrieval.blocks} blocks (${c.retrieval.terms.join(', ')})` : c.mode === 'agent' ? 'agent tool loop' : '-'}</td>
-                          <td>{c.status}{c.detail ? `; ${c.detail}` : ''}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <Table density="compact" className="rag-calls-log" wrapperClassName="rag-calls-wrap">
+                  <Table.Header>Time</Table.Header>
+                  <Table.Header>Model</Table.Header>
+                  <Table.Header>Underlying</Table.Header>
+                  <Table.Header>Credential</Table.Header>
+                  <Table.Header>Duration</Table.Header>
+                  <Table.Header>Retrieval</Table.Header>
+                  <Table.Header>Status</Table.Header>
+                  {ragCalls.map((c, i) => (
+                    <tr key={i}>
+                      <Table.Item>{new Date(c.at).toLocaleTimeString()}</Table.Item>
+                      <Table.Item><code>{c.model}</code></Table.Item>
+                      <Table.Item><code>{c.underlying || '-'}</code></Table.Item>
+                      <Table.Item>{c.authSource.includes('injected') ? 'deployment (keyless caller)'
+                        : c.authSource.includes('stored personal') ? 'personal key'
+                        : c.authSource.includes('deployment') ? 'deployment'
+                        : c.authSource === 'none' ? 'none' : 'caller key'}</Table.Item>
+                      <Table.Item>{c.durationMs == null ? 'running' : `${(c.durationMs / 1000).toFixed(1)}s`}</Table.Item>
+                      <Table.Item wrap>{c.retrieval ? `${c.retrieval.blocks} blocks (${c.retrieval.terms.join(', ')})` : c.mode === 'agent' ? 'agent tool loop' : '-'}</Table.Item>
+                      <Table.Item wrap>{c.status}{c.detail ? `; ${c.detail}` : ''}</Table.Item>
+                    </tr>
+                  ))}
+                </Table>
               )}
               </>)}
             </>
@@ -1031,8 +999,7 @@ export function SettingsView() {
                 a Voice button appears above the chat. The deployment has to be reachable from the browser you use, so a
                 closed network needs its own Unmute rather than one running elsewhere.
               </p>
-              <label className="field-label">Unmute session URL</label>
-              <input className="field" value={form.voiceUrl} placeholder="https://unmute.example" onChange={e => setForm({ ...form, voiceUrl: e.target.value })} />
+              <Input label="Unmute session URL" value={form.voiceUrl} placeholder="https://unmute.example" onChange={e => setForm({ ...form, voiceUrl: e.target.value })} />
               {saveRow()}
             </>
           )}
@@ -1048,20 +1015,30 @@ export function SettingsView() {
                 <div>
                   <div className="tool-group">Tool files ({ext?.tools.length ?? 0})</div>
                   {ext?.tools.length
-                    ? ext.tools.map(t => <div className="ext-row" key={t.file}><code>{t.name}</code><span className="tool-desc">{t.description}{t.command ? <> (<code>{t.command}</code>)</> : null}</span></div>)
-                    : <p className="muted ext-empty">None yet. Drop a JSON file in tools/.</p>}
+                    ? <DescriptionList>{ext.tools.map(t => (
+                      <DescriptionListItem key={t.file} label={<code>{t.name}</code>}>
+                        {t.description}{t.command ? <> (<code>{t.command}</code>)</> : null}
+                      </DescriptionListItem>
+                    ))}</DescriptionList>
+                    : <EmptyState variant="bare" title="None yet. Drop a JSON file in tools/." />}
                 </div>
                 <div>
                   <div className="tool-group">Skills ({ext?.skills.length ?? 0})</div>
                   {ext?.skills.length
-                    ? ext.skills.map(t => <div className="ext-row" key={t.file}><code>{t.name}</code><span className="tool-desc">{t.description}</span></div>)
-                    : <p className="muted ext-empty">None yet. Drop a markdown file in skills/.</p>}
+                    ? <DescriptionList>{ext.skills.map(t => (
+                      <DescriptionListItem key={t.file} label={<code>{t.name}</code>}>{t.description}</DescriptionListItem>
+                    ))}</DescriptionList>
+                    : <EmptyState variant="bare" title="None yet. Drop a markdown file in skills/." />}
                 </div>
                 <div>
                   <div className="tool-group">Agents ({ext?.agents.length ?? 0})</div>
                   {ext?.agents.length
-                    ? ext.agents.map(t => <div className="ext-row" key={t.file}><code>{t.file}</code><span className="tool-desc">{t.active ? 'active (appended to the system prompt)' : 'inactive; rename to default.md to activate'}</span></div>)
-                    : <p className="muted ext-empty">None yet. Drop default.md in agents/.</p>}
+                    ? <DescriptionList>{ext.agents.map(t => (
+                      <DescriptionListItem key={t.file} label={<code>{t.file}</code>}>
+                        {t.active ? 'active (appended to the system prompt)' : 'inactive; rename to default.md to activate'}
+                      </DescriptionListItem>
+                    ))}</DescriptionList>
+                    : <EmptyState variant="bare" title="None yet. Drop default.md in agents/." />}
                 </div>
               </div>
             </>

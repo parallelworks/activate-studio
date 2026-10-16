@@ -1,5 +1,8 @@
 import { Suspense, useEffect, useMemo, useState } from 'react'
 import { useForm } from 'react-hook-form'
+import {
+  Button, Callout, Checkbox, Field, Loader, RunStatusIcon, Select, StatusBadge, StatusDot, Table, type RunStatus,
+} from '@parallelworks/ui'
 import { DynamicForm, initializeValues } from '@parallelworks/ui/form'
 import { Streamdown } from 'streamdown'
 import { useWorkflowFields, forgetPlatformData } from '../components/WorkflowFields'
@@ -41,6 +44,13 @@ function SourceLine({ source }: { source: WorkflowSource }) {
   )
 }
 interface RunRow { slug: string; workflow: string; launchedAt: string; state: string; endedAt: string | null }
+
+const RUN_STATUSES = new Set(['started', 'running', 'completed', 'error', 'failed', 'canceled', 'skipped', 'faulted', 'canceling', 'skipped-failed'])
+/** A run's state as the status icon knows it, or null for one it does not. */
+function runStatus(state: string): RunStatus | null {
+  const s = state === 'cancelled' ? 'canceled' : state
+  return RUN_STATUSES.has(s) ? (s as RunStatus) : null
+}
 
 async function json<T>(res: Response): Promise<T> {
   const d = await res.json().catch(() => ({}))
@@ -89,7 +99,7 @@ export function WorkflowsView() {
   const t = open ? tiles?.find(x => x.name === open) : undefined
   const list = (
     <div className="overview-view workflows-view">
-      {error && <p className="banner-error">{error}</p>}
+      {error && <Callout tone="error">{error}</Callout>}
       {!configured && <p className="muted">No workflows are offered yet. An administrator picks them under Settings, Workflows.</p>}
       {tiles && tiles.length > 0 && (
         <div className="wf-tiles">
@@ -98,7 +108,7 @@ export function WorkflowsView() {
               title={t.description || t.displayName} onClick={() => setOpen(t.name)}>
               <span className="wf-icon"><TileIcon src={t.icon} letter={t.displayName.slice(0, 1)} /></span>
               <span className="wf-name">{t.displayName}</span>
-              {t.kind && t.kind !== 'account' && <span className="wf-kind">{t.kind === 'marketplace' ? 'Marketplace' : 'GitHub'}</span>}
+              {t.kind && t.kind !== 'account' && <StatusBadge variant="muted">{t.kind === 'marketplace' ? 'Marketplace' : 'GitHub'}</StatusBadge>}
               {!t.installed && t.available && <span className="wf-note">Not in your account yet</span>}
               {!t.available && <span className="wf-note">Not found on the platform</span>}
             </button>
@@ -111,13 +121,13 @@ export function WorkflowsView() {
           <div className="session-list">
             {sessions.map(x => (
               <div key={`${x.user}/${x.name}`} className="session-row">
-                <span className="status-dot ok" />
-                <button type="button" className="link-button session-row-name" onClick={() => showSession(x)} title={x.ownHost ? 'Show it in the side view' : 'Open in a window of its own'}>{x.name}</button>
+                <StatusDot variant="success" size={7} />
+                <Button variant="ghost" size="sm" className="session-row-name" onClick={() => showSession(x)} title={x.ownHost ? 'Show it in the side view' : 'Open in a window of its own'}>{x.name}</Button>
                 <span className="muted session-meta">
                   {[x.run ? `${x.run.workflow} · ${x.run.slug}` : x.type, x.resource ? `on ${x.resource}` : '', x.user].filter(Boolean).join(' · ')}
                 </span>
-                {x.ownHost && x.url && <button type="button" className="btn-ghost" title="Open in a window beside the Studio" onClick={() => openSessionWindow(x)}>Window</button>}
-                {x.url && <a className="btn-ghost" href={x.url} target="_blank" rel="noopener noreferrer">New tab</a>}
+                {x.ownHost && x.url && <Button variant="ghost" size="sm" title="Open in a window beside the Studio" onClick={() => openSessionWindow(x)}>Window</Button>}
+                {x.url && <Button variant="ghost" size="sm" href={x.url} target="_blank" rel="noopener noreferrer">New tab</Button>}
               </div>
             ))}
           </div>
@@ -127,22 +137,30 @@ export function WorkflowsView() {
         <>
           <div className="tool-group">Recent runs</div>
           <div className="rag-calls-wrap">
-            <table className="rag-calls-table">
-              <thead><tr><th>Run</th><th>Workflow</th><th>Started</th><th>State</th><th>Session</th></tr></thead>
-              <tbody>
-                {runs.map(r => (
+            <Table density="compact">
+              <Table.Header>Run</Table.Header>
+              <Table.Header>Workflow</Table.Header>
+              <Table.Header>Started</Table.Header>
+              <Table.Header>State</Table.Header>
+              <Table.Header>Session</Table.Header>
+              {runs.map(r => {
+                const status = runStatus(r.state)
+                return (
                   <tr key={r.slug}>
-                    <td><button type="button" className="link-button" title="Show the run's form, graph, and session in the side view" onClick={() => openInSideView({ run: r.slug })}><code>{r.slug}</code></button></td>
-                    <td>{tiles?.find(t => t.name === r.workflow)?.displayName ?? r.workflow}</td>
-                    <td>{new Date(r.launchedAt).toLocaleString()}</td>
-                    <td className={`wf-state ${r.state}`}>{r.state}</td>
-                    <td>{sessions.filter(x => sessionOfRun(x, r.slug)).map(x => (
-                      <button key={x.name} type="button" className="link-button" onClick={() => showSession(x)} title={x.ownHost ? 'Show it in the side view' : 'Open in a window of its own'}>{x.name}</button>
-                    ))}</td>
+                    <Table.Item><Button variant="ghost" size="sm" title="Show the run's form, graph, and session in the side view" onClick={() => openInSideView({ run: r.slug })}><code>{r.slug}</code></Button></Table.Item>
+                    <Table.Item>{tiles?.find(t => t.name === r.workflow)?.displayName ?? r.workflow}</Table.Item>
+                    <Table.Item>{new Date(r.launchedAt).toLocaleString()}</Table.Item>
+                    <Table.Item>
+                      {/* The word says the state; the icon only shows it. */}
+                      <span className="wf-run-state">{status && <span aria-hidden="true"><RunStatusIcon status={status} /></span>}{r.state}</span>
+                    </Table.Item>
+                    <Table.Item>{sessions.filter(x => sessionOfRun(x, r.slug)).map(x => (
+                      <Button key={x.name} variant="ghost" size="sm" onClick={() => showSession(x)} title={x.ownHost ? 'Show it in the side view' : 'Open in a window of its own'}>{x.name}</Button>
+                    ))}</Table.Item>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                )
+              })}
+            </Table>
           </div>
         </>
       )}
@@ -195,7 +213,7 @@ function WorkflowRunner({ name, kind, title, onBack, onLaunched }: { name: strin
     try { return initializeValues(doc.form, saved) ?? saved } catch { return saved }
   }, [doc, preset])
   const submit = async (dryRun: boolean) => {
-    const { editorKeyPostfix: _, ...values } = form.getValues()
+    const values = form.getValues()
     setBusy(dryRun ? 'validate' : 'run'); setResult(null)
     try {
       const r = await json<{ ok: boolean; message: string; slug?: string | null }>(await fetch(`/api/workflows/item/run?w=${encodeURIComponent(name)}`, {
@@ -214,44 +232,47 @@ function WorkflowRunner({ name, kind, title, onBack, onLaunched }: { name: strin
   return (
     <div className={`overview-view workflows-view wf-runner${hasReadme && showReadme ? ' with-readme' : ''}`}>
       <header className="wf-runner-head">
-        <button className="btn-link wf-back" onClick={onBack}>&larr; All workflows</button>
+        <Button variant="ghost" size="sm" className="wf-back" onClick={onBack}>&larr; All workflows</Button>
         <div className="wf-title-row">
           <h1 className="wf-title">{doc?.displayName ?? title}</h1>
-          {hasReadme && <button type="button" className="btn-ghost wf-readme-toggle" onClick={toggleReadme}>{showReadme ? 'Hide README' : 'Show README'}</button>}
+          {hasReadme && <Button variant="ghost" size="sm" className="wf-readme-toggle" onClick={toggleReadme}>{showReadme ? 'Hide README' : 'Show README'}</Button>}
         </div>
         {doc?.description && <p className="wf-desc">{doc.description}</p>}
         {doc?.source && <SourceLine source={doc.source} />}
       </header>
       <div className="wf-runner-body">
       <div className="wf-runner-main">
-      {error && <p className="banner-error">{error}</p>}
+      {error && <Callout tone="error">{error}</Callout>}
       {needsInstall && (
         <div className="card wf-install">
           <p>This workflow is not in your ACTIVATE account yet. Adding it copies the Studio's version into your account, so it runs under your allocation and permissions.</p>
-          <button className="btn-primary" disabled={!!busy} onClick={() => void install()}>{busy === 'install' ? 'Adding…' : 'Add to my workflows'}</button>
+          <Button variant="primary" loading={busy === 'install'} disabled={!!busy} onClick={() => void install()}>{busy === 'install' ? 'Adding…' : 'Add to my workflows'}</Button>
         </div>
       )}
       {doc && (
         <>
           {doc.configurations.length > 0 && (
             <div className="wf-preset">
-              <label className="field-label">Start from a saved configuration</label>
-              <select className="field" value={preset} onChange={e => setPreset(e.target.value)}>
-                <option value="">None, use the workflow's defaults</option>
-                {doc.configurations.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
-              </select>
+              <Field label="Start from a saved configuration" layout="inline">
+                <Select
+                  className="wf-preset-select"
+                  items={[{ value: '', label: "None, use the workflow's defaults" }, ...doc.configurations.map(c => ({ value: c.name, label: c.name }))]}
+                  value={preset}
+                  onValueChange={v => setPreset(v ?? '')}
+                />
+              </Field>
             </div>
           )}
           <div className="wf-form">
             {doc.form && Object.keys(doc.form).length
-              ? <Suspense fallback={<p className="muted">Loading form…</p>}>
+              ? <Suspense fallback={<Loader size={24} label="Loading form…" />}>
                   <DynamicForm key={`${name}:${preset}`} form={form} formJSONs={doc.form} initialValues={initial} reinitialize
                     fields={fields} workflowForm labelPosition="left" contextKey={preset || 'defaults'} allowLayoutCSS />
                 </Suspense>
               : <p className="muted">This workflow takes no inputs.</p>}
           </div>
           {!!doc.permissions?.length && (
-            <div className="card wf-trust">
+            <Callout tone="warning" className="wf-trust">
               <p>
                 This workflow's repository asks for access to your account variables
                 ({doc.permissions.includes('*') ? 'all of them' : doc.permissions.join(', ')}). The platform runs it only once you
@@ -259,14 +280,14 @@ function WorkflowRunner({ name, kind, title, onBack, onLaunched }: { name: strin
                 with <code>pw workflows permissions revoke</code>.
               </p>
               <label className="wf-trust-check">
-                <input type="checkbox" checked={trust} onChange={e => setTrust(e.target.checked)} />
+                <Checkbox checked={trust} onCheckedChange={setTrust} />
                 Allow this access when I validate or run it
               </label>
-            </div>
+            </Callout>
           )}
           <div className="wf-actions">
-            <button className="btn-primary" disabled={!!busy || (!!doc.permissions?.length && !trust)} onClick={() => void submit(false)}>{busy === 'run' ? 'Starting…' : 'Run'}</button>
-            <button className="btn-secondary" disabled={!!busy || (!!doc.permissions?.length && !trust)} onClick={() => void submit(true)}>{busy === 'validate' ? 'Validating…' : 'Validate'}</button>
+            <Button variant="primary" loading={busy === 'run'} disabled={!!busy || (!!doc.permissions?.length && !trust)} onClick={() => void submit(false)}>{busy === 'run' ? 'Starting…' : 'Run'}</Button>
+            <Button loading={busy === 'validate'} disabled={!!busy || (!!doc.permissions?.length && !trust)} onClick={() => void submit(true)}>{busy === 'validate' ? 'Validating…' : 'Validate'}</Button>
             {result && <span className={`wf-result ${result.ok ? 'wf-ok' : 'wf-fail'}`}>{result.text}</span>}
           </div>
         </>

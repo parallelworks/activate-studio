@@ -1,4 +1,4 @@
-import { fireEvent, render } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { api, currentLibrary, setLibrary, settleLibraries, withLibrary } from '../src/api'
 import { LibrarySwitch, libraryWritable } from '../src/components/LibrarySwitch'
@@ -18,17 +18,25 @@ describe('libraries on the client', () => {
     setLibrary('kb')
   })
 
-  it('renders a switcher only when there is a choice, marks read-only ones, and switches', () => {
-    const { container: one } = render(<LibrarySwitch libraries={[libs[0]]} />)
-    expect(one.querySelector('select')).toBeNull()
-    const { container } = render(<LibrarySwitch libraries={libs} />)
-    const select = container.querySelector('select') as HTMLSelectElement
-    expect(select.options.length).toBe(3)
-    expect(select.options[1].text).toContain('read only')
-    expect(select.options[2].text).toBe('All libraries')
+  it('renders a switcher only when there is a choice, marks read-only ones, and switches', async () => {
+    const { unmount } = render(<LibrarySwitch libraries={[libs[0]]} />)
+    expect(screen.queryByRole('combobox')).toBeNull()
+    unmount()
+    setLibrary('kb')
+    render(<LibrarySwitch libraries={libs} />)
+    const trigger = screen.getByRole('combobox', { name: 'Library' })
+    expect(trigger).toHaveTextContent('Knowledge base')
+    fireEvent.click(trigger)
+    const options = await screen.findAllByRole('option')
+    expect(options.length).toBe(3)
+    expect(options[1]).toHaveTextContent('read only')
+    expect(options[2]).toHaveTextContent('All libraries')
     expect(libraryWritable(libs, 'all')).toBe(false)
-    fireEvent.change(select, { target: { value: 'scratch' } })
-    expect(currentLibrary()).toBe('scratch')
+    // A mouse click commits only when the press started on the option.
+    fireEvent.pointerDown(options[1])
+    fireEvent.click(options[1])
+    await waitFor(() => expect(currentLibrary()).toBe('scratch'))
+    expect(trigger).toHaveTextContent('Scratch (read only)')
     expect(libraryWritable(libs, 'scratch')).toBe(false)
     expect(libraryWritable(libs, 'kb')).toBe(true)
     setLibrary('kb')

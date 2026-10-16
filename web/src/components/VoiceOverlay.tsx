@@ -1,3 +1,5 @@
+import { Button, Modal } from '@parallelworks/ui'
+
 /**
  * Voice conversations, as a feature preview. The Unmute deployment is its
  * own platform session on its own domain, so an iframe of it is a
@@ -13,17 +15,24 @@
  */
 export function VoiceOverlay({ url, onClose }: { url: string; onClose: () => void }) {
   return (
-    <div className="voice-panel card" role="dialog" aria-label="Voice conversation">
-      <h3>Talk with the assistant</h3>
+    <Modal
+      open
+      onClose={onClose}
+      size="md"
+      className="voice-modal"
+      title="Talk with the assistant"
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>Not now</Button>
+          <Button variant="primary" href={url} target="_blank" rel="noopener noreferrer" onClick={onClose}>Open voice</Button>
+        </>
+      }
+    >
       <p className="muted view-sub">
         Voice opens in its own tab: it listens, decides when you have finished a thought, answers aloud, and can be
         interrupted. The assistant behind it is this one, with the same knowledge base, tools, and workflows.
       </p>
       <p className="muted view-sub">Feature preview. The conversation stays in that tab and is not recorded here yet.</p>
-      <div className="query-actions">
-        <a className="btn-primary" href={url} target="_blank" rel="noopener noreferrer" onClick={onClose}>Open voice</a>
-        <button className="btn-secondary" onClick={onClose}>Not now</button>
-      </div>
-    </div>
+    </Modal>
   )
 }

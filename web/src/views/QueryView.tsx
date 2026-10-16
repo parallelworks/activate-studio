@@ -1,4 +1,9 @@
 import { useEffect, useState } from 'react'
+import {
+  ActionMenu, Button, buttonClasses, Callout, Field, IconButton, Input, NumberInput, Select, Table, Tabs, Textarea,
+  type SelectItem, type TabItem,
+} from '@parallelworks/ui'
+import { ChevronDownIcon, CloseIcon } from '@parallelworks/ui/icons'
 import { TagMenu } from '../components/TagMenu'
 import { RowCheck } from '../components/Explorer'
 import { ALL_LIBRARIES, LibrarySwitch } from '../components/LibrarySwitch'
@@ -22,34 +27,64 @@ interface QueryResult {
 interface Filter { field: string; op: string; value: string }
 interface SavedQuery { id: string; name: string; payload: any; createdAt: string }
 
-const CANNED = [
-  { id: 'largest', label: 'Largest files' },
-  { id: 'newest', label: 'Most recently modified' },
-  { id: 'oldest', label: 'Oldest files' },
-  { id: 'recent', label: 'Changed in the last N days' },
-  { id: 'by_extension', label: 'Totals by file extension' },
-  { id: 'big_directories', label: 'Biggest directories' },
+type Mode = 'builder' | 'canned' | 'sql'
+const MODES: TabItem<Mode>[] = [
+  { value: 'canned', label: 'Canned queries' },
+  { value: 'builder', label: 'Builder' },
+  { value: 'sql', label: 'SQL' },
 ]
 
-const FIELDS = [
-  { id: 'name', label: 'File name' },
-  { id: 'path', label: 'Path' },
-  { id: 'extension', label: 'Extension' },
-  { id: 'size', label: 'Size (bytes)' },
-  { id: 'modified', label: 'Modified (YYYY-MM-DD)' },
-  { id: 'text', label: 'Text content' },
-  { id: 'label', label: 'Label' },
+const CANNED: SelectItem<string>[] = [
+  { value: 'largest', label: 'Largest files' },
+  { value: 'newest', label: 'Most recently modified' },
+  { value: 'oldest', label: 'Oldest files' },
+  { value: 'recent', label: 'Changed in the last N days' },
+  { value: 'by_extension', label: 'Totals by file extension' },
+  { value: 'big_directories', label: 'Biggest directories' },
 ]
-const OPS: Record<string, { id: string; label: string }[]> = {
+
+const FIELDS: SelectItem<string>[] = [
+  { value: 'name', label: 'File name' },
+  { value: 'path', label: 'Path' },
+  { value: 'extension', label: 'Extension' },
+  { value: 'size', label: 'Size (bytes)' },
+  { value: 'modified', label: 'Modified (YYYY-MM-DD)' },
+  { value: 'text', label: 'Text content' },
+  { value: 'label', label: 'Label' },
+]
+const OPS: Record<string, SelectItem<string>[]> = {
   default: [
-    { id: 'contains', label: 'contains' },
-    { id: 'not_contains', label: 'does not contain' },
-    { id: 'eq', label: 'equals' },
-    { id: 'gt', label: 'greater than' },
-    { id: 'lt', label: 'less than' },
+    { value: 'contains', label: 'contains' },
+    { value: 'not_contains', label: 'does not contain' },
+    { value: 'eq', label: 'equals' },
+    { value: 'gt', label: 'greater than' },
+    { value: 'lt', label: 'less than' },
   ],
-  text: [{ id: 'match', label: 'matches' }],
+  text: [{ value: 'match', label: 'matches' }],
 }
+
+const SOURCES: SelectItem<'files' | 'directories'>[] = [
+  { value: 'files', label: 'Files' },
+  { value: 'directories', label: 'Directories' },
+]
+const GROUPINGS: SelectItem<'none' | 'extension' | 'directory'>[] = [
+  { value: 'none', label: 'No grouping' },
+  { value: 'extension', label: 'Extension' },
+  { value: 'directory', label: 'Directory' },
+]
+const FILE_SORTS: SelectItem<string>[] = [
+  { value: 'size', label: 'size' },
+  { value: 'modified', label: 'modified' },
+  { value: 'name', label: 'name' },
+]
+const GROUP_SORTS: SelectItem<string>[] = [
+  { value: 'bytes', label: 'bytes' },
+  { value: 'files', label: 'file count' },
+]
+const ORDERS: SelectItem<'asc' | 'desc'>[] = [
+  { value: 'desc', label: 'descending' },
+  { value: 'asc', label: 'ascending' },
+]
 
 function fmtBytes(v: string): string {
   const n = Number(v)
@@ -61,18 +96,19 @@ function fmtBytes(v: string): string {
 }
 
 export function QueryView({ onOpen }: { onOpen: (path: string) => void }) {
-  const [mode, setMode] = useState<'builder' | 'canned' | 'sql'>('canned')
+  const [mode, setMode] = useState<Mode>('canned')
   // builder state
   const [source, setSource] = useState<'files' | 'directories'>('files')
   const [filters, setFilters] = useState<Filter[]>([{ field: 'name', op: 'contains', value: '' }])
   const [groupBy, setGroupBy] = useState<'none' | 'extension' | 'directory'>('none')
   const [sort, setSort] = useState('size')
   const [dir, setDir] = useState<'asc' | 'desc'>('desc')
-  const [limit, setLimit] = useState(50)
+  // An emptied number box is null; the server takes it as its default.
+  const [limit, setLimit] = useState<number | null>(50)
   // canned state
   const [canned, setCanned] = useState('largest')
-  const [n, setN] = useState(25)
-  const [days, setDays] = useState(7)
+  const [n, setN] = useState<number | null>(25)
+  const [days, setDays] = useState<number | null>(7)
   // shared
   const [subtree, setSubtree] = useState('')
   const [sql, setSql] = useState("SELECT rpath(sname, sroll)||'/'||vrpentries.name, size FROM vrpentries WHERE size > 1000000")
@@ -213,145 +249,119 @@ export function QueryView({ onOpen }: { onOpen: (path: string) => void }) {
     })
   }
 
+  // A sort the current grouping does not offer shows as the first that it
+  // does, which is the column the server sorts by in its place.
+  const sortItems = groupBy === 'none' && source === 'files' ? FILE_SORTS : GROUP_SORTS
+  const shownSort = sortItems.some(o => o.value === sort) ? sort : sortItems[0].value
+
   const cfg = useAppConfig()
   return (
     <div className="query-view">
       <div className="query-controls card">
         {(cfg.libraries?.length ?? 0) > 1 && <div className="scope-bar"><span className="muted">Querying</span><LibrarySwitch libraries={cfg.libraries ?? []} /></div>}
-        <div className="query-mode">
-          <button className={mode === 'canned' ? 'active' : ''} onClick={() => setMode('canned')}>Canned queries</button>
-          <button className={mode === 'builder' ? 'active' : ''} onClick={() => setMode('builder')}>Builder</button>
-          <button className={mode === 'sql' ? 'active' : ''} onClick={() => setMode('sql')}>SQL</button>
-          {saved.length > 0 && (
-            <select
-              className="field saved-select"
-              value=""
-              onChange={e => {
-                const s = saved.find(x => x.id === e.target.value)
-                if (s) loadSavedQuery(s)
-              }}
+        <Tabs
+          label="Query mode"
+          items={MODES}
+          value={mode}
+          onValueChange={setMode}
+          className="query-tabs"
+          end={saved.length > 0 && (
+            <ActionMenu
+              label="Saved queries"
+              align="end"
+              triggerClassName={buttonClasses({ variant: 'outline', size: 'sm' })}
+              items={saved.map(s => ({ label: s.name, onClick: () => loadSavedQuery(s) }))}
             >
-              <option value="">Saved queries…</option>
-              {saved.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
+              Saved queries… <ChevronDownIcon aria-hidden="true" />
+            </ActionMenu>
           )}
-        </div>
+        />
         {mode === 'builder' && (
           <div className="query-form">
             <div className="query-row">
-              <div>
-                <label className="field-label">Source</label>
-                <select className="field" value={source} onChange={e => setSource(e.target.value as any)}>
-                  <option value="files">Files</option>
-                  <option value="directories">Directories</option>
-                </select>
-              </div>
+              <Field label="Source" size="sm" className="query-cell">
+                <Select className="query-pick" items={SOURCES} value={source} onValueChange={v => { if (v) setSource(v) }} />
+              </Field>
               {source === 'files' && (
-                <div>
-                  <label className="field-label">Group by</label>
-                  <select className="field" value={groupBy} onChange={e => setGroupBy(e.target.value as any)}>
-                    <option value="none">No grouping</option>
-                    <option value="extension">Extension</option>
-                    <option value="directory">Directory</option>
-                  </select>
-                </div>
+                <Field label="Group by" size="sm" className="query-cell">
+                  <Select className="query-pick" items={GROUPINGS} value={groupBy} onValueChange={v => { if (v) setGroupBy(v) }} />
+                </Field>
               )}
-              <div>
-                <label className="field-label">Sort by</label>
-                <select className="field" value={sort} onChange={e => setSort(e.target.value)}>
-                  {groupBy === 'none' && source === 'files'
-                    ? <><option value="size">size</option><option value="modified">modified</option><option value="name">name</option></>
-                    : <><option value="bytes">bytes</option><option value="files">file count</option></>}
-                </select>
-              </div>
-              <div>
-                <label className="field-label">Order</label>
-                <select className="field" value={dir} onChange={e => setDir(e.target.value as any)}>
-                  <option value="desc">descending</option>
-                  <option value="asc">ascending</option>
-                </select>
-              </div>
-              <div>
-                <label className="field-label">Limit</label>
-                <input className="field" type="number" min={1} max={2000} value={limit} onChange={e => setLimit(Number(e.target.value))} />
-              </div>
+              <Field label="Sort by" size="sm" className="query-cell">
+                <Select className="query-pick" items={sortItems} value={shownSort} onValueChange={v => { if (v) setSort(v) }} />
+              </Field>
+              <Field label="Order" size="sm" className="query-cell">
+                <Select className="query-pick" items={ORDERS} value={dir} onValueChange={v => { if (v) setDir(v) }} />
+              </Field>
+              <Field label="Limit" size="sm" className="query-cell">
+                <NumberInput className="query-num" min={1} max={2000} value={limit} onValueChange={setLimit} />
+              </Field>
             </div>
             <label className="field-label">Filters (all must match)</label>
             {filters.map((f, i) => (
               <div className="query-row filter-row" key={i}>
-                <select className="field" value={f.field} onChange={e => {
-                  const field = e.target.value
-                  setFilter(i, { field, op: field === 'text' ? 'match' : 'contains' })
-                }}>
-                  {FIELDS.map(fd => <option key={fd.id} value={fd.id}>{fd.label}</option>)}
-                </select>
-                <select className="field" value={f.op} onChange={e => setFilter(i, { op: e.target.value })}>
-                  {(f.field === 'text' ? OPS.text : OPS.default).map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
-                </select>
-                <input className="field grow" value={f.value} onChange={e => setFilter(i, { value: e.target.value })}
+                <Select aria-label="Field" className="query-pick query-pick-wide" items={FIELDS} value={f.field} onValueChange={field => {
+                  if (field) setFilter(i, { field, op: field === 'text' ? 'match' : 'contains' })
+                }} />
+                <Select aria-label="Condition" className="query-pick" items={f.field === 'text' ? OPS.text : OPS.default}
+                  value={f.op} onValueChange={op => { if (op) setFilter(i, { op }) }} />
+                <Input aria-label="Value" className="grow" value={f.value} onChange={e => setFilter(i, { value: e.target.value })}
                   placeholder={f.field === 'modified' ? '2026-01-01' : 'value'} />
-                <button className="btn-secondary" onClick={() => setFilters(fs => fs.filter((_, j) => j !== i))}>×</button>
+                <IconButton variant="outline" size="md" icon={<CloseIcon />} label="Remove filter"
+                  onClick={() => setFilters(fs => fs.filter((_, j) => j !== i))} />
               </div>
             ))}
-            <button className="btn-secondary add-filter" onClick={() => setFilters(fs => [...fs, { field: 'name', op: 'contains', value: '' }])}>
+            <Button className="add-filter" onClick={() => setFilters(fs => [...fs, { field: 'name', op: 'contains', value: '' }])}>
               + Add filter
-            </button>
+            </Button>
           </div>
         )}
         {mode === 'canned' && (
           <div className="query-form">
-            <label className="field-label">Query</label>
-            <select className="field" value={canned} onChange={e => setCanned(e.target.value)}>
-              {CANNED.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
-            </select>
+            <Field label="Query" size="sm">
+              <Select className="query-canned" items={CANNED} value={canned} onValueChange={v => { if (v) setCanned(v) }} />
+            </Field>
             <div className="query-row">
-              <div>
-                <label className="field-label">Limit</label>
-                <input className="field" type="number" min={1} max={2000} value={n} onChange={e => setN(Number(e.target.value))} />
-              </div>
+              <Field label="Limit" size="sm" className="query-cell">
+                <NumberInput className="query-num" min={1} max={2000} value={n} onValueChange={setN} />
+              </Field>
               {canned === 'recent' && (
-                <div>
-                  <label className="field-label">Days</label>
-                  <input className="field" type="number" min={1} value={days} onChange={e => setDays(Number(e.target.value))} />
-                </div>
+                <Field label="Days" size="sm" className="query-cell">
+                  <NumberInput className="query-num" min={1} value={days} onValueChange={setDays} />
+                </Field>
               )}
             </div>
           </div>
         )}
         {mode === 'sql' && (
           <div className="query-form">
-            <label className="field-label">
-              Per-directory SELECT over the GUFI tables (vrpentries, vrsummary, words, gchunks). Read-only.
-            </label>
-            <textarea className="field sql-box" value={sql} onChange={e => setSql(e.target.value)} rows={4} spellCheck={false} />
+            <Field label="Per-directory SELECT over the GUFI tables (vrpentries, vrsummary, words, gchunks). Read-only." size="sm">
+              <Textarea className="sql-box" mono value={sql} onChange={e => setSql(e.target.value)} rows={4} spellCheck={false} />
+            </Field>
           </div>
         )}
-        <div className="query-row">
-          <div className="grow">
-            <label className="field-label">Scope (subtree, empty for whole corpus)</label>
-            <input className="field" value={subtree} onChange={e => setSubtree(e.target.value)} placeholder="e.g. proposals" />
-          </div>
-        </div>
+        <Field label="Scope (subtree, empty for whole corpus)" size="sm" className="query-scope">
+          <Input value={subtree} onChange={e => setSubtree(e.target.value)} placeholder="e.g. proposals" />
+        </Field>
         <div className="query-actions">
-          <button className="btn-primary" onClick={() => runQuery()} disabled={busy}>{busy ? 'Running…' : 'Run query'}</button>
-          <button
-            className="btn-secondary"
+          <Button variant="primary" loading={busy} onClick={() => runQuery()}>{busy ? 'Running…' : 'Run query'}</Button>
+          <Button
             onClick={() => {
               setResult(null); setError(null); setSel(new Set()); setTagMenuOpen(false)
               setFilters([{ field: 'name', op: 'contains', value: '' }])
               setGroupBy('none'); setSort('size'); setDir('desc'); setLimit(50)
               setSubtree(''); setCanned('largest'); setN(25); setDays(7)
             }}
-          >Reset</button>
+          >Reset</Button>
           {savingOpen ? (
             <span className="confirm-group">
-              <input className="field" value={saveName} onChange={e => setSaveName(e.target.value)}
+              <Input aria-label="Query name" value={saveName} onChange={e => setSaveName(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && saveQuery()} placeholder="Query name" autoFocus />
-              <button className="btn-secondary" onClick={saveQuery}>Save</button>
-              <button className="btn-secondary" onClick={() => setSavingOpen(false)}>Cancel</button>
+              <Button onClick={saveQuery}>Save</Button>
+              <Button onClick={() => setSavingOpen(false)}>Cancel</Button>
             </span>
           ) : (
-            <button className="btn-secondary" onClick={() => setSavingOpen(true)}>Save query</button>
+            <Button onClick={() => setSavingOpen(true)}>Save query</Button>
           )}
           {result && <span className="muted">{result.rows.length} rows in {result.elapsedMs} ms{result.truncated ? ' (truncated)' : ''}{result.failed?.length ? `; not answered: ${result.failed.map(f => `${f.library} (${f.error})`).join(', ')}` : ''}</span>}
         </div>
@@ -359,13 +369,13 @@ export function QueryView({ onOpen }: { onOpen: (path: string) => void }) {
           <div className="saved-list">
             {saved.slice(0, 8).map(s => (
               <span key={s.id} className="saved-chip">
-                <button className="saved-load" onClick={() => loadSavedQuery(s)}>{s.name}</button>
-                <button className="saved-del" title="Delete saved query" onClick={() => deleteSaved(s.id)}>×</button>
+                <Button variant="ghost" size="xs" onClick={() => loadSavedQuery(s)}>{s.name}</Button>
+                <IconButton size="xs" icon={<CloseIcon />} label="Delete saved query" onClick={() => deleteSaved(s.id)} />
               </span>
             ))}
           </div>
         )}
-        {error && <p className="error">{error}</p>}
+        {error && <Callout tone="error" live className="query-error">{error}</Callout>}
         <GufiCommands commands={result?.gufi} />
       </div>
       {result && (
@@ -374,49 +384,38 @@ export function QueryView({ onOpen }: { onOpen: (path: string) => void }) {
             <div className="results-head results-toolbar">
               <span>{result.columns[pathCol] === 'directory' ? 'Label directories' : 'Label files'} from these results</span>
               <span className="results-actions">
-                <button
-                  className="btn-secondary"
-                  onClick={() => setSel(allSelected ? new Set() : new Set(rowKeys))}
-                >{allSelected ? 'Clear selection' : 'Select all'}</button>
-                <button
-                  className="btn-secondary"
-                  disabled={!sel.size}
-                  onClick={() => setTagMenuOpen(o => !o)}
-                >Labels…{sel.size ? ` (${sel.size})` : ''}</button>
+                <Button size="sm" onClick={() => setSel(allSelected ? new Set() : new Set(rowKeys))}>
+                  {allSelected ? 'Clear selection' : 'Select all'}
+                </Button>
+                <Button size="sm" disabled={!sel.size} onClick={() => setTagMenuOpen(o => !o)}>
+                  Labels…{sel.size ? ` (${sel.size})` : ''}
+                </Button>
               </span>
             </div>
           )}
-          <div className="table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  {pathCol >= 0 && <th className="sel-col" />}
-                  {result.columns.map(c => <th key={c}>{c}</th>)}
-                </tr>
-              </thead>
-              <tbody>
-                {result.rows.map((r, i) => (
-                  <tr key={i} className={pathCol >= 0 && sel.has(r[pathCol]) ? 'multi' : ''}>
-                    {pathCol >= 0 && (
-                      <td className="sel-col">
-                        {r[pathCol] && <RowCheck checked={sel.has(r[pathCol])} onToggle={() => toggleSel(r[pathCol])} />}
-                      </td>
-                    )}
-                    {r.map((cell, j) => {
-                      const isBytes = result.columns[j] === 'bytes'
-                      const looksPath = result.columns[j] !== 'library' && (result.columns[j] === 'path' || result.columns[j] === 'directory' || cell.includes('/'))
-                      return (
-                        <td key={j} className={looksPath ? 'cell-path' : ''}
-                          onClick={looksPath ? () => maybeOpen(cell, i) : undefined}>
-                          {isBytes ? fmtBytes(cell) : cell}
-                        </td>
-                      )
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <Table stickyHeader density="compact" borderless wrapperClassName="table-scroll">
+            {pathCol >= 0 && <Table.Header className="sel-col" />}
+            {result.columns.map(c => <Table.Header key={c}>{c}</Table.Header>)}
+            {result.rows.map((r, i) => (
+              <tr key={i} className={pathCol >= 0 && sel.has(r[pathCol]) ? 'multi' : ''}>
+                {pathCol >= 0 && (
+                  <Table.Item className="sel-col">
+                    {r[pathCol] && <RowCheck checked={sel.has(r[pathCol])} onToggle={() => toggleSel(r[pathCol])} />}
+                  </Table.Item>
+                )}
+                {r.map((cell, j) => {
+                  const isBytes = result.columns[j] === 'bytes'
+                  const looksPath = result.columns[j] !== 'library' && (result.columns[j] === 'path' || result.columns[j] === 'directory' || cell.includes('/'))
+                  return (
+                    <Table.Item key={j} className={looksPath ? 'cell-path' : ''}
+                      onClick={looksPath ? () => maybeOpen(cell, i) : undefined}>
+                      {isBytes ? fmtBytes(cell) : cell}
+                    </Table.Item>
+                  )
+                })}
+              </tr>
+            ))}
+          </Table>
         </div>
       )}
       {tagMenuOpen && sel.size > 0 && (

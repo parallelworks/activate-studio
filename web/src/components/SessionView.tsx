@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { Button, Callout, StatusDot } from '@parallelworks/ui'
 import { openBeside, openFullView } from '../sideBySide'
 
 /**
@@ -125,29 +126,29 @@ export function SessionView({ user, name, host = '', run = '', initial }: { user
   return (
     <div className="session-view" ref={rootRef}>
       <div className="session-bar">
-        <span className={`status-dot ${running ? 'ok' : 'warn'}`} />
+        <StatusDot variant={running ? 'success' : 'warning'} size={7} />
         <span className="session-name">{s?.name ?? (name || (run ? `Session of ${run}` : host))}</span>
         <span className="muted session-meta">
           {[s?.run ? `${s.run.workflow} · ${s.run.slug}` : s?.type, s?.resource ? `on ${s.resource}` : '', s && !running ? (s.status || 'not running') : ''].filter(Boolean).join(' · ')}
         </span>
         {running && s?.url && (
           <span className="session-bar-actions">
-            <button type="button" className="btn-primary" onClick={() => setBlocked(!openSessionWindow(s))}
-              title={insidePlatform() ? 'Open its page on ACTIVATE, which shows it embedded' : 'Open in a window of its own'}>{insidePlatform() && s.platformUrl ? 'Open in ACTIVATE' : 'Open'}</button>
+            <Button variant="primary" onClick={() => setBlocked(!openSessionWindow(s))}
+              title={insidePlatform() ? 'Open its page on ACTIVATE, which shows it embedded' : 'Open in a window of its own'}>{insidePlatform() && s.platformUrl ? 'Open in ACTIVATE' : 'Open'}</Button>
             {inChat && s.ownHost && (
               <>
-                <button type="button" className="btn-secondary" onClick={() => setInline(v => !v)}>{inline ? 'Hide' : 'Show here'}</button>
-                <button type="button" className="btn-secondary" title="Show it in the side view beside the chat"
-                  onClick={() => window.parent.postMessage({ type: 'ade-side-view', session: s }, window.location.origin)}>Beside chat</button>
-                <button type="button" className="btn-secondary" title="Show it over the whole Studio; Close or Escape returns"
-                  onClick={() => openFullView(s, true)}>Full screen</button>
+                <Button variant="secondary" onClick={() => setInline(v => !v)}>{inline ? 'Hide' : 'Show here'}</Button>
+                <Button variant="secondary" title="Show it in the side view beside the chat"
+                  onClick={() => window.parent.postMessage({ type: 'ade-side-view', session: s }, window.location.origin)}>Beside chat</Button>
+                <Button variant="secondary" title="Show it over the whole Studio; Close or Escape returns"
+                  onClick={() => openFullView(s, true)}>Full screen</Button>
               </>
             )}
-            <a className="btn-secondary" href={s.url} target="_blank" rel="noopener noreferrer">Open in new tab</a>
+            <Button variant="secondary" href={s.url} target="_blank" rel="noopener noreferrer">Open in new tab</Button>
           </span>
         )}
       </div>
-      {error && !s && <p className="session-note banner-error">{error}</p>}
+      {error && !s && <Callout variant="bar" tone="error">{error}</Callout>}
       {s && !running && <p className="session-note muted">Session {name} is {s.status || 'not running'}. This card updates when it is running.</p>}
       {blocked && <p className="session-note muted">This session has no address yet.</p>}
       {inChat && inline && running && s?.ownHost && s.url && (

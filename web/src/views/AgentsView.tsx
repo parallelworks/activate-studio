@@ -1,6 +1,11 @@
 import React, { useCallback, useEffect, useState } from 'react'
+import {
+  Button, buttonClasses, EmptyState, Field, Input, Pagination, ProgressBar, SearchInput, SegmentedControl,
+  StatusBadge, StatusDot, Tabs, Textarea, toast, type BadgeVariant,
+} from '@parallelworks/ui'
+import { LogViewer } from '@parallelworks/ui/logviewer'
 import { PersonaIcon } from '../components/PersonaIcon'
-import { FleetPage } from './FleetPage'
+import { FleetPage, topicVariant } from './FleetPage'
 
 /**
  * Personas and skills: the two ways a markdown file changes how the
@@ -173,7 +178,7 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
       })
       const d = await res.json()
       if (!res.ok) throw new Error(d.error ?? `${res.status}`)
-      setNote(`Saved ${d.name}. It is available in chat now.`)
+      toast.success(`Saved ${d.name}. It is available in chat now.`)
       setName(''); setDescription(''); setBody(''); setIcon(''); setEditing(null)
       await load()
     } catch (e) {
@@ -215,21 +220,6 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
 
   const PAGE = 12
   const pageOf = <T,>(rows: T[], page: number) => rows.slice(page * PAGE, page * PAGE + PAGE)
-  const pager = (rows: unknown[], page: number, setPage: (n: number) => void) => {
-    if (rows.length <= PAGE) return null
-    const last = Math.ceil(rows.length / PAGE) - 1
-    const from = page * PAGE + 1
-    const to = Math.min(rows.length, page * PAGE + PAGE)
-    return (
-      <div className="agents-pager">
-        <span className="muted">{from}–{to} of {rows.length}</span>
-        <span className="agents-pager-btns">
-          <button className="btn-secondary" disabled={page === 0} onClick={() => setPage(page - 1)}>Previous</button>
-          <button className="btn-secondary" disabled={page >= last} onClick={() => setPage(page + 1)}>Next</button>
-        </span>
-      </div>
-    )
-  }
 
   const onFile = (f: File | undefined) => {
     if (!f) return
@@ -237,8 +227,8 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
   }
 
   const fmtTokens = (n: number) => n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n)
-  const STATE_DOT: Record<string, string> = { working: 'ok', completed: 'off', 'input-required': 'warn' }
-  const dotFor = (st: string) => STATE_DOT[st] ?? 'warn'
+  const STATE_TONE: Record<string, BadgeVariant> = { working: 'success', completed: 'muted', 'input-required': 'warning' }
+  const toneFor = (st: string) => STATE_TONE[st] ?? 'warning'
   const doneCount = (mi: TaskRow) => mi.agents - mi.running
   // Where the agents run. Shown once in the task header when they share a
   // machine, and on each row only when they are spread across machines.
@@ -249,13 +239,11 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
   return (
     <div className="overview-view agents-view">
       <div className="card ov-head">
-        <div className="viewer-tabs agents-tabs">
-          <button className={page === 'fleet' ? 'active' : ''} onClick={() => setPage('fleet')}>Fleet</button>
-          <button className={page === 'tasks' ? 'active' : ''} onClick={() => setPage('tasks')}>
-            Tasks{taskRuns.some(t => t.state === 'working') ? <span className="tab-live-dot" /> : null}
-          </button>
-          <button className={page === 'library' ? 'active' : ''} onClick={() => setPage('library')}>Personas and skills</button>
-        </div>
+        <Tabs label="Agents" className="agents-tabs" value={page} onValueChange={setPage} items={[
+          { value: 'fleet', label: 'Fleet' },
+          { value: 'tasks', label: 'Tasks', badge: taskRuns.some(t => t.state === 'working') ? <StatusDot variant="success" pulse /> : null },
+          { value: 'library', label: 'Personas and skills' },
+        ]} />
       </div>
 
       {page === 'fleet' && <FleetPage personas={personas} onOpenTask={id => { setOpenTask(id); setPageState('tasks') }} />}
@@ -263,19 +251,18 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
       {page === 'tasks' && (
         <section className="card task-board-card">
           {taskRuns.length === 0 && (
-            <div className="task-empty">
-              <h3>No delegated work yet</h3>
-              <p className="muted view-sub">
+            <EmptyState variant="bare" className="task-empty" title="No delegated work yet" description={<>
+              <span>
                 Ask the assistant in Chat to fan work out, for example <i>"delegate a campaign across these
                 five input decks"</i>, and the task appears here as a live board.
-              </p>
-              <p className="muted view-sub">
+              </span>
+              <span>
                 Each subtask is a pw code agent: a one-shot run or a pw code session you can watch, steer, and
                 approve requests for (Settings, External access, Agent execution), or a campaign of platform workflow
                 runs on a connected HPC system for long work. Results land under <code>tasks/</code> in
                 the knowledge base, and the agent ceiling and depth are set under Settings, External access, Delegation.
-              </p>
-            </div>
+              </span>
+            </>} />
           )}
           {taskRuns.length > 0 && (
             <div className="task-cards">
@@ -283,16 +270,16 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
                 <div key={mi.id} className={`task-card${openTask === mi.id ? ' selected' : ''}${mi.state === 'working' ? ' live' : ''}`}
                   onClick={() => setOpenTask(openTask === mi.id ? null : mi.id)}>
                   <div className="task-card-top">
-                    <span className={`status-dot ${dotFor(mi.state)}${mi.state === 'working' ? ' pulse' : ''}`} />
+                    <StatusDot variant={toneFor(mi.state)} pulse={mi.state === 'working'} />
                     <span className="task-card-state">{mi.state === 'working' ? `${mi.running} agent${mi.running === 1 ? '' : 's'} working` : mi.state}</span>
                     {(mi as { execution?: string }).execution === 'campaign' && (
-                      <span className="task-badge">campaign · {((mi as { resource?: string }).resource ?? '').split('/').pop() || '?'}</span>
+                      <StatusBadge>campaign · {((mi as { resource?: string }).resource ?? '').split('/').pop() || '?'}</StatusBadge>
                     )}
-                    {mi.runtime === 'session' && <span className="task-badge">pw code sessions</span>}
-                    {!!mi.waiting && <span className="task-badge task-badge-warn">{mi.waiting} waiting for approval</span>}
+                    {mi.runtime === 'session' && <StatusBadge>pw code sessions</StatusBadge>}
+                    {!!mi.waiting && <StatusBadge variant="warning">{mi.waiting} waiting for approval</StatusBadge>}
                   </div>
                   <div className="task-card-objective">{mi.objective}</div>
-                  <div className="task-progress"><div className="task-progress-fill" style={{ width: `${mi.agents ? Math.round(100 * doneCount(mi) / mi.agents) : 0}%` }} /></div>
+                  <ProgressBar value={doneCount(mi)} max={Math.max(1, mi.agents)} tone="success" size="sm" aria-label="Agents done" />
                   <div className="task-card-meta">
                     <span>{doneCount(mi)} of {mi.agents} done{mi.usage?.total ? ` · ${fmtTokens(mi.usage.total)} tok` : ''}</span>
                     <span>{mi.id.slice(0, 10)}</span>
@@ -306,10 +293,10 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
               <h3>Workflow runs launched from chat</h3>
               {runs.slice(0, 12).map(r => (
                 <div key={r.slug} className="run-row">
-                  <span className={`status-dot ${r.state === 'running' ? 'ok pulse' : r.state === 'completed' ? 'off' : 'warn'}`} />
+                  <StatusDot variant={r.state === 'running' ? 'success' : r.state === 'completed' ? 'muted' : 'warning'} pulse={r.state === 'running'} />
                   <span className="run-slug">{r.slug}</span>
                   <span className="muted run-meta">{r.workflow}{r.resource ? ` on ${r.resource.replace(/^pw:\/\/[^/]+\//, '')}` : ''} · {r.state}{r.endedAt ? '' : ' · since ' + new Date(r.launchedAt).toLocaleTimeString()}</span>
-                  {r.conversationId && <a className="link-button" href={`#chat=${r.conversationId}`}>chat</a>}
+                  {r.conversationId && <a href={`#chat=${r.conversationId}`}>chat</a>}
                 </div>
               ))}
             </div>
@@ -317,13 +304,13 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
           {openTask && detail && (
             <div className="task-detail">
               <div className="task-detail-head">
-                <span className={`status-dot ${dotFor(detail.state)}${detail.state === 'working' ? ' pulse' : ''}`} />
+                <StatusDot variant={toneFor(detail.state)} pulse={detail.state === 'working'} />
                 <span className="task-detail-title">
                   <span className="task-detail-objective">{detail.objective}</span>
                   {sharedHost && <span className="tree-host" title={`Every agent in this task runs on ${sharedHost}`}>on {hostLabel(sharedHost)}</span>}
                 </span>
                 {detail.state === 'working' && (
-                  <button className="btn-secondary" onClick={async () => { await fetch(`/api/tasks/${encodeURIComponent(detail.id)}/stop`, { method: 'POST' }) }}>Cancel</button>
+                  <Button variant="secondary" onClick={async () => { await fetch(`/api/tasks/${encodeURIComponent(detail.id)}/stop`, { method: 'POST' }) }}>Cancel</Button>
                 )}
               </div>
               {detail.agents.some(a => a.approvals?.length) && (
@@ -333,8 +320,8 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
                     <div key={`${a.name}:${ap.id}`} className="task-approval">
                       <span><b>{a.name}</b> asks: {ap.text}</span>
                       <span className="task-approval-actions">
-                        <button className="btn-primary" onClick={() => void answer(a.name, ap.id, true)}>Approve</button>
-                        <button className="btn-secondary" onClick={() => void answer(a.name, ap.id, false)}>Deny</button>
+                        <Button variant="primary" onClick={() => void answer(a.name, ap.id, true)}>Approve</Button>
+                        <Button variant="secondary" onClick={() => void answer(a.name, ap.id, false)}>Deny</Button>
                       </span>
                     </div>
                   )))}
@@ -350,12 +337,12 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
                         onClick={() => setOpenAgent(openAgent === a.name ? null : a.name)}
                         title="Show this agent's live output">
                         {a.depth > 0 && <span className="tree-elbow" style={{ left: `${a.depth * 20 - 8}px` }} />}
-                        <span className={`status-dot ${dotFor(a.state)}${a.state === 'working' ? ' pulse' : ''}`} />
+                        <StatusDot variant={toneFor(a.state)} pulse={a.state === 'working'} />
                         <span className="tree-name">{a.name}</span>
                         {a.host && !sharedHost && <span className="tree-host" title={`Runs on ${a.host}`}>{hostLabel(a.host)}</span>}
                         <span className="tree-note muted">{a.state === 'working' ? a.note : a.state}{a.usage?.total ? ` · ${fmtTokens(a.usage.total)} tok${a.usage.cost != null ? ` · $${a.usage.cost.toFixed(2)}` : ''}` : ''}</span>
                         {a.resultPath && (
-                          <button className="link-button" onClick={e => { e.stopPropagation(); onOpen(a.resultPath!) }}>result</button>
+                          <Button variant="ghost" size="sm" onClick={e => { e.stopPropagation(); onOpen(a.resultPath!) }}>result</Button>
                         )}
                       </div>
                       {openAgent === a.name && (
@@ -372,14 +359,18 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
                           )}
                           {a.sessionId && (a.state === 'working' || a.state === 'input-required') && (
                             <div className="agent-steer">
-                              <input className="field" value={steer} placeholder="Direction for this agent, delivered without ending its turn"
+                              <Input size="sm" value={steer} placeholder="Direction for this agent, delivered without ending its turn"
                                 onChange={e => setSteer(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') void sendSteer(a.name) }} />
-                              <button className="btn-secondary" disabled={!steer.trim()} onClick={() => void sendSteer(a.name)}>Steer</button>
+                              <Button variant="secondary" size="sm" disabled={!steer.trim()} onClick={() => void sendSteer(a.name)}>Steer</Button>
                               {actNote && <span className="muted">{actNote}</span>}
                             </div>
                           )}
                           {a.usage?.total ? <p className="muted">tokens: {fmtTokens(a.usage.input)} in, {fmtTokens(a.usage.output)} out, {fmtTokens(a.usage.total)} total{a.usage.cost != null ? `, $${a.usage.cost.toFixed(3)}` : ''}</p> : null}
-                          <pre className="agent-live">{agentTail || (a.state === 'working' ? 'No output yet; the log fills as the agent works.' : 'No output was captured for this agent.')}</pre>
+                          {/* The server sends the last 16 KB, so the viewer follows the end
+                              as each poll replaces it; there is nothing older to page in. */}
+                          {agentTail
+                            ? <div className="agent-live"><LogViewer log={agentTail} height={300} downloadName={`${a.name}.log`} /></div>
+                            : <p className="muted">{a.state === 'working' ? 'No output yet; the log fills as the agent works.' : 'No output was captured for this agent.'}</p>}
                         </div>
                       )}
                     </React.Fragment>
@@ -390,7 +381,7 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
                   {detail.board.slice(-40).map(b => (
                     <div key={b.seq} className="task-msg">
                       <span className="task-msg-meta">
-                        <span className={`task-topic t-${b.topic}`}>{b.topic}</span>
+                        <StatusBadge variant={topicVariant(b.topic)} className="task-topic">{b.topic}</StatusBadge>
                         {b.at.slice(11, 19)} · {b.from}
                       </span>
                       <span>{b.body.slice(0, 300)}</span>
@@ -406,9 +397,8 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
       {page === 'library' && (<>
       {(personas.length + skills.length) > 8 && (
         <div className="card agents-filter">
-          <input className="field" value={filter} onChange={e => setFilter(e.target.value)}
-            placeholder={`Filter ${personas.length + skills.length} definitions by name or description`} />
-          {filter && <button className="link-button" onClick={() => setFilter('')}>clear</button>}
+          <SearchInput value={filter} onValueChange={setFilter}
+            label={`Filter ${personas.length + skills.length} definitions by name or description`} />
         </div>
       )}
 
@@ -428,18 +418,18 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
               <span className="ov-row-meta">
                 {p.description || 'no description'}
                 {p.shared && (
-                  <button className="link-button agents-del"
-                    onClick={e => { e.stopPropagation(); onOpen(`.agents/${p.name}.md`) }}>in library</button>
+                  <Button variant="ghost" size="sm" className="agents-del"
+                    onClick={e => { e.stopPropagation(); onOpen(`.agents/${p.name}.md`) }}>in library</Button>
                 )}
-                <button className="link-button agents-del" title="Open a copy in the editor, to change without touching the original"
-                  onClick={e => { e.stopPropagation(); void duplicate(p.name) }}>duplicate</button>
-                <button className="link-button agents-del"
-                  onClick={e => { e.stopPropagation(); remove(p.name) }}>remove</button>
+                <Button variant="ghost" size="sm" className="agents-del" title="Open a copy in the editor, to change without touching the original"
+                  onClick={e => { e.stopPropagation(); void duplicate(p.name) }}>duplicate</Button>
+                <Button variant="ghost" size="sm" className="agents-del"
+                  onClick={e => { e.stopPropagation(); remove(p.name) }}>remove</Button>
               </span>
             </div>
           ))}
           {shownPersonas.length === 0 && <p className="muted">{filter ? 'None match that filter.' : 'None yet. The first one you add appears in the chat Persona control.'}</p>}
-          {pager(shownPersonas, pPage, setPPage)}
+          <Pagination className="agents-pager" page={pPage} pageSize={PAGE} total={shownPersonas.length} onPageChange={setPPage} />
         </section>
 
         <section className="card ov-list">
@@ -456,79 +446,75 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
             </div>
           ))}
           {shownSkills.length === 0 && <p className="muted">{filter ? 'None match that filter.' : 'None yet.'}</p>}
-          {pager(shownSkills, sPage, setSPage)}
+          <Pagination className="agents-pager" page={sPage} pageSize={PAGE} total={shownSkills.length} onPageChange={setSPage} />
         </section>
       </div>
 
       <section className="card settings-card">
         <h3>{editing ? `Editing ${editing}` : 'Add one'}</h3>
         <div className="agents-kind">
-          <button className={`btn-secondary ${kind === 'persona' ? 'active' : ''}`} onClick={() => setKind('persona')}>Persona</button>
-          <button className={`btn-secondary ${kind === 'skill' ? 'active' : ''}`} onClick={() => setKind('skill')}>Skill</button>
-          <label className="btn-secondary agents-file">
+          <SegmentedControl label="Kind" value={kind} onValueChange={setKind}
+            options={[{ value: 'persona', label: 'Persona' }, { value: 'skill', label: 'Skill' }]} />
+          <label className={`${buttonClasses()} agents-file`}>
             Choose a .md file
             <input type="file" accept=".md,text/markdown" onChange={e => onFile(e.target.files?.[0])} />
           </label>
         </div>
-        <div className="settings-grid">
-          <div>
-            <label className="field-label">Name</label>
-            <input className="field" value={name} onChange={e => setName(e.target.value)} placeholder="proposal-reviewer" />
-          </div>
-          <div>
-            <label className="field-label">Description</label>
-            <input className="field" value={description} onChange={e => setDescription(e.target.value)}
+        <div className="agents-form">
+          <div className="settings-grid">
+            <Input label="Name" value={name} onChange={e => setName(e.target.value)} placeholder="proposal-reviewer" />
+            <Input label="Description" value={description} onChange={e => setDescription(e.target.value)}
               placeholder={kind === 'skill' ? 'when the assistant should load this' : 'what this persona is for'} />
           </div>
-        </div>
-        {kind === 'persona' && (
-          <>
-            <label className="field-label">Icon</label>
-            <div className="persona-icon-row">
-              <PersonaIcon icon={icon} name={name || '?'} size={34} />
-              <input className="field persona-icon-field" value={icon} onChange={e => setIcon(e.target.value)}
-                placeholder="an emoji, or upload an image" />
-              <label className={`btn-secondary agents-file${name ? '' : ' disabled'}`}
-                title={name ? 'Choose an image for this persona' : 'Name the persona first: the image file is named after it'}>
-                {name ? 'Upload image' : 'Upload image (name it first)'}
-                <input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml,image/gif"
-                  disabled={!name}
-                  onChange={async e => {
-                    const f = e.target.files?.[0]
-                    if (!f || !name) return
-                    const fd = new FormData()
-                    fd.append('file', f)
-                    const res = await fetch(`/api/extensions/persona-icon?name=${encodeURIComponent(name)}`, { method: 'POST', body: fd })
-                    const d = await res.json()
-                    if (res.ok) {
-                      setIcon(d.icon)
-                      setNote(d.attached ? 'Icon uploaded and attached.' : 'Icon uploaded. Save the persona to attach it.')
-                      if (d.attached) await load()
-                    }
-                    else setNote(d.error ?? `upload failed (${res.status})`)
-                    e.target.value = ''
-                  }} />
-              </label>
-              {icon && <button className="link-button" onClick={() => setIcon('')}>clear</button>}
-            </div>
-            <p className="muted key-note">
+          {kind === 'persona' && (
+            <Field label="Icon" description={<>
               An image is stored in the knowledge base under <code>.agents/icons</code>, so it travels with the
               persona. Name the persona first, since the file is named after it. With no icon, the initials stand in.
-            </p>
-          </>
-        )}
-        <label className="field-label">Markdown</label>
-        <textarea className="field agents-body" value={body} onChange={e => onBody(e.target.value)}
-          placeholder={'Paste the file. Frontmatter is read into the fields above and rewritten on save.'} />
+            </>}>
+              {control => (
+                <div className="persona-icon-row">
+                  <PersonaIcon icon={icon} name={name || '?'} size={34} />
+                  <Input {...control} className="persona-icon-field" value={icon} onChange={e => setIcon(e.target.value)}
+                    placeholder="an emoji, or upload an image" />
+                  {/* aria-disabled draws the button disabled; the input inside is what is disabled. */}
+                  <label className={`${buttonClasses()} agents-file`} aria-disabled={!name}
+                    title={name ? 'Choose an image for this persona' : 'Name the persona first: the image file is named after it'}>
+                    {name ? 'Upload image' : 'Upload image (name it first)'}
+                    <input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml,image/gif"
+                      disabled={!name}
+                      onChange={async e => {
+                        const f = e.target.files?.[0]
+                        if (!f || !name) return
+                        const fd = new FormData()
+                        fd.append('file', f)
+                        const res = await fetch(`/api/extensions/persona-icon?name=${encodeURIComponent(name)}`, { method: 'POST', body: fd })
+                        const d = await res.json()
+                        if (res.ok) {
+                          setIcon(d.icon)
+                          setNote(d.attached ? 'Icon uploaded and attached.' : 'Icon uploaded. Save the persona to attach it.')
+                          if (d.attached) await load()
+                        }
+                        else setNote(d.error ?? `upload failed (${res.status})`)
+                        e.target.value = ''
+                      }} />
+                  </label>
+                  {icon && <Button variant="ghost" size="sm" onClick={() => setIcon('')}>clear</Button>}
+                </div>
+              )}
+            </Field>
+          )}
+          <Textarea label="Markdown" className="agents-body" value={body} onChange={e => onBody(e.target.value)}
+            placeholder={'Paste the file. Frontmatter is read into the fields above and rewritten on save.'} />
+        </div>
         <div className="query-actions">
-          <button className="btn-primary" onClick={() => void save()} disabled={busy || !name || !body}>
+          <Button variant="primary" loading={busy} onClick={() => void save()} disabled={!name || !body}>
             {busy ? 'Saving…' : editing ? `Save ${editing}` : `Save ${kind}`}
-          </button>
+          </Button>
           {editing && (
             <>
-              <button className="btn-secondary" onClick={() => { setEditing(null); setName(''); setDescription(''); setBody(''); setNote('') }}>Cancel</button>
+              <Button variant="secondary" onClick={() => { setEditing(null); setName(''); setDescription(''); setBody(''); setNote('') }}>Cancel</Button>
               {kind === 'persona' && personas.find(p => p.name === editing)?.shared && (
-                <button className="btn-secondary" onClick={() => onOpen(`.agents/${editing}.md`)}>Read it rendered</button>
+                <Button variant="secondary" onClick={() => onOpen(`.agents/${editing}.md`)}>Read it rendered</Button>
               )}
             </>
           )}

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Callout, Loader, Table } from '@parallelworks/ui'
 import { api, IndexStatus } from '../api'
 import { SemanticMap, TopologyMap } from '../components/CorpusMaps'
 import { currentLibrary, onLibraryChange } from '../api'
@@ -96,7 +97,7 @@ export function OverviewView({ onOpen }: { onOpen: (path: string) => void }) {
         <div className="scope-bar">
           <span className="muted">Statistics for</span>
           <LibrarySwitch libraries={cfg.libraries ?? []} />
-          {loading && <span className="scope-loading" role="status"><span className="spinner" />Counting…</span>}
+          {loading && <Loader inline size={14} label="Counting…" />}
         </div>
       )}
       <div className="ov-tiles">
@@ -110,34 +111,33 @@ export function OverviewView({ onOpen }: { onOpen: (path: string) => void }) {
         <div className="card ov-tile"><span className="stat-num">{tags.length}</span><span className="stat-label">labels in use</span></div>
       </div>
       {stats?.libraries && (
-        <div className="rag-calls-wrap">
-          <table className="rag-calls-table">
-            <thead><tr><th>Library</th><th>Files</th><th>Directories</th><th>Size</th></tr></thead>
-            <tbody>
-              {stats.libraries.map(l => (
-                <tr key={l.id}>
-                  <td>{l.label}{l.site ? <span className="muted"> on {l.site}</span> : null}</td>
-                  {l.available
-                    ? <><td>{(l.files ?? 0).toLocaleString()}</td><td>{(l.dirs ?? 0).toLocaleString()}</td><td>{fmtBytes(l.totalBytes ?? 0)}</td></>
-                    : <td colSpan={3} className="muted">{l.error ?? 'not available'}</td>}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <Table density="compact" wrapperClassName="ov-libraries">
+          <Table.Header>Library</Table.Header>
+          <Table.Header>Files</Table.Header>
+          <Table.Header>Directories</Table.Header>
+          <Table.Header>Size</Table.Header>
+          {stats.libraries.map(l => (
+            <tr key={l.id}>
+              <Table.Item>{l.label}{l.site ? <span className="muted"> on {l.site}</span> : null}</Table.Item>
+              {l.available
+                ? <><Table.Item>{(l.files ?? 0).toLocaleString()}</Table.Item><Table.Item>{(l.dirs ?? 0).toLocaleString()}</Table.Item><Table.Item>{fmtBytes(l.totalBytes ?? 0)}</Table.Item></>
+                : <Table.Item colSpan={3} wrap className="muted">{l.error ?? 'not available'}</Table.Item>}
+            </tr>
+          ))}
+        </Table>
       )}
 
       {idx?.lastError && (
-        <div className="card ov-error">Last sync reported: {idx.lastError.slice(0, 300)}</div>
+        <Callout tone="error">Last sync reported: {idx.lastError.slice(0, 300)}</Callout>
       )}
 
       {/* A format with no extractor indexes as its filename, which is worth
           saying out loud rather than leaving to be discovered. */}
       {extractors.some(x => !x.available) && (
-        <div className="card ov-note">
+        <Callout tone="info">
           Not all document formats can be read on this host, so these index by filename only:{' '}
           {extractors.filter(x => !x.available).map(x => `${x.covers} (needs ${x.name})`).join(', ')}.
-        </div>
+        </Callout>
       )}
 
       <div className="ov-grid">
@@ -165,7 +165,7 @@ export function OverviewView({ onOpen }: { onOpen: (path: string) => void }) {
               <span className="ov-row-path">{r[0]}</span>
               <span className="ov-row-meta">{fmtBytes(Number(r[1]))}</span>
             </div>
-          )) ?? <p className="muted pad">Loading…</p>}
+          )) ?? <Loader size={24} />}
         </section>
 
         <section className="card ov-list">
@@ -176,7 +176,7 @@ export function OverviewView({ onOpen }: { onOpen: (path: string) => void }) {
               <span className="ov-row-path">{r[0]}</span>
               <span className="ov-row-meta">{r[2]?.slice(0, 10)}</span>
             </div>
-          )) ?? <p className="muted pad">Loading…</p>}
+          )) ?? <Loader size={24} />}
         </section>
 
         {tags.length > 0 && (

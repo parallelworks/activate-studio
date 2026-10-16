@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { Callout, Loader } from '@parallelworks/ui'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 
@@ -41,12 +42,15 @@ function decodeModel(buf: ArrayBuffer): ModelPayload {
 
 export function ModelViewer({ path }: { path: string }) {
   const mountRef = useRef<HTMLDivElement | null>(null)
-  const [status, setStatus] = useState<string>('Loading model…')
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
   const [info, setInfo] = useState<string>('')
 
   useEffect(() => {
     const mount = mountRef.current
     if (!mount) return
+    setLoading(true)
+    setError('')
     let disposed = false
     let raf = 0
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
@@ -113,10 +117,10 @@ export function ModelViewer({ path }: { path: string }) {
         camera.updateProjectionMatrix()
         controls.update()
 
-        setStatus('')
+        setLoading(false)
         setInfo(`${payload.format.toUpperCase()}, ${payload.triangles.toLocaleString()} triangles, ${payload.meshes.length} ${payload.meshes.length === 1 ? 'body' : 'bodies'}. Drag to rotate, scroll to zoom, right-drag to pan.`)
       })
-      .catch(e => { if (!disposed) setStatus(`Could not load model: ${String((e as Error).message ?? e)}`) })
+      .catch(e => { if (!disposed) { setLoading(false); setError(`Could not load model: ${String((e as Error).message ?? e)}`) } })
 
     const tick = () => {
       controls.update()
@@ -145,7 +149,8 @@ export function ModelViewer({ path }: { path: string }) {
   return (
     <div className="model-viewer">
       <div ref={mountRef} className="model-canvas" />
-      {status && <p className="muted pad">{status}</p>}
+      {loading && <div className="muted pad"><Loader inline size={16} label="Loading model…" /></div>}
+      {error && <Callout tone="error" className="viewer-callout">{error}</Callout>}
       {info && <p className="model-info">{info}</p>}
     </div>
   )

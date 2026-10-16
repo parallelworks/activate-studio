@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from 'react'
+import { Button, Checkbox, ConfirmModal, EmptyState, SearchInput, toast } from '@parallelworks/ui'
 import { useChat } from '@parallelworks/ui/ai'
 import { deleteConversations, isOwnConversation } from '../adapter'
 
@@ -28,7 +29,6 @@ export function ChatsManager({ activeId, onOpen, onActiveDeleted, onClose }: {
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const [confirming, setConfirming] = useState(false)
   const [busy, setBusy] = useState(false)
-  const [note, setNote] = useState('')
   const lastClicked = useRef<number | null>(null)
 
   const shown = useMemo(() => {
@@ -70,18 +70,20 @@ export function ChatsManager({ activeId, onOpen, onActiveDeleted, onClose }: {
     })
   }
 
+  // A failure is reported and the dialog closes, leaving the selection for
+  // another try.
   const remove = async () => {
     const ids = [...picked]
-    setBusy(true); setNote('')
+    setBusy(true)
     try {
       const r = await deleteConversations(ids)
       if (activeId && r.deleted.includes(activeId)) onActiveDeleted()
       setPicked(new Set())
-      setConfirming(false)
       await loadConversations()
-      setNote(`Deleted ${r.deleted.length} conversation${r.deleted.length === 1 ? '' : 's'}.${r.skipped.length ? ` ${r.skipped.length} could not be deleted.` : ''}`)
+      const done = `Deleted ${r.deleted.length} conversation${r.deleted.length === 1 ? '' : 's'}.${r.skipped.length ? ` ${r.skipped.length} could not be deleted.` : ''}`
+      if (r.skipped.length) toast.warning(done); else toast.success(done)
     } catch (e) {
-      setNote(`Delete failed: ${(e as Error).message}`)
+      toast.error(`Delete failed: ${(e as Error).message}`)
     } finally { setBusy(false) }
   }
 
@@ -90,36 +92,37 @@ export function ChatsManager({ activeId, onOpen, onActiveDeleted, onClose }: {
       <div className="chats-manager-head">
         <h2>Conversations</h2>
         <span className="muted">{rows.length}</span>
-        <button className="btn-secondary chats-manager-close" onClick={onClose}>Done</button>
+        <Button variant="secondary" className="chats-manager-close" onClick={onClose}>Done</Button>
       </div>
       <div className="chats-manager-bar">
         <label className="chats-check-all">
-          <input type="checkbox" checked={allShownPicked} disabled={!deletable.length} onChange={toggleAll} />
+          <Checkbox checked={allShownPicked} disabled={!deletable.length} onCheckedChange={toggleAll} />
           <span>{filter ? 'All shown' : 'All'}</span>
         </label>
-        <input className="field chats-filter" placeholder="Filter by title" value={filter} onChange={e => setFilter(e.target.value)} />
-        {!confirming
-          ? <button className="btn-danger" disabled={!picked.size || busy} onClick={() => setConfirming(true)}>
-              Delete{picked.size ? ` ${picked.size}` : ''}
-            </button>
-          : <span className="chats-confirm">
-              <span>Delete {picked.size} conversation{picked.size === 1 ? '' : 's'} and their transcripts? This cannot be undone.</span>
-              <button className="btn-danger" disabled={busy} onClick={() => void remove()}>{busy ? 'Deleting…' : 'Delete'}</button>
-              <button className="btn-secondary" disabled={busy} onClick={() => setConfirming(false)}>Cancel</button>
-            </span>}
+        <SearchInput className="chats-filter" label="Filter by title" value={filter} onValueChange={setFilter} />
+        <Button variant="outline" disabled={!picked.size || busy} onClick={() => setConfirming(true)}>
+          Delete{picked.size ? ` ${picked.size}` : ''}
+        </Button>
       </div>
-      {note && <p className="muted chats-note">{note}</p>}
+      <ConfirmModal
+        open={confirming}
+        onClose={() => setConfirming(false)}
+        title={`Delete ${picked.size} conversation${picked.size === 1 ? '' : 's'} and their transcripts?`}
+        description="This cannot be undone."
+        confirmLabel={busy ? 'Deleting…' : 'Delete'}
+        destructive
+        onConfirm={remove}
+      />
       <ul className="chats-list" role="list">
         {shown.map((c, i) => {
           const own = isOwnConversation(c)
           return (
             <li key={c.id} className={`chats-row${picked.has(c.id) ? ' picked' : ''}${own ? '' : ' locked'}`}>
-              <input
-                type="checkbox"
+              <Checkbox
                 aria-label={`Select ${c.title || 'Untitled'}`}
                 checked={picked.has(c.id)}
                 disabled={!own}
-                onChange={() => { /* handled on click, which carries the shift key */ }}
+                // Toggled on click, which carries the shift key.
                 onClick={e => toggle(i, e.shiftKey)}
               />
               <button className="chats-row-open" onClick={() => onOpen(c.id)} title="Open">
@@ -131,8 +134,8 @@ export function ChatsManager({ activeId, onOpen, onActiveDeleted, onClose }: {
             </li>
           )
         })}
-        {!shown.length && <li className="muted chats-empty">{rows.length ? 'No conversation matches.' : 'No conversations yet.'}</li>}
       </ul>
+      {!shown.length && <EmptyState variant="bare" title={rows.length ? 'No conversation matches.' : 'No conversations yet.'} />}
     </div>
   )
 }

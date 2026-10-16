@@ -1,17 +1,84 @@
-import { useEffect, useState } from 'react'
+import { ReactElement, useEffect, useId, useState } from 'react'
+import { Button, Callout, IconButton, Input, Loader, Popover, PopoverClose, toast } from '@parallelworks/ui'
+import { CloseIcon } from '@parallelworks/ui/icons'
 import { api } from '../api'
 
-export function TagMenu({ paths, onClose, onApplied }: {
+type TagMenuProps = {
   paths: string[]
-  onClose: () => void
   /** Called after each successful apply with the server's path -> tags map. */
+  onApplied: (updated: Record<string, string[]>) => void
+} & (
+  | {
+      /** The button that opens it. Pass `open` and `onOpenChange` to open it
+       *  from elsewhere too, such as a row's label button. */
+      trigger: ReactElement
+      open?: boolean
+      onOpenChange?: (open: boolean) => void
+      align?: 'start' | 'center' | 'end'
+      onClose?: never
+    }
+  | {
+      /** Mounted while open, with no trigger: it opens under the window's
+       *  top-right corner, and this runs when it is dismissed. */
+      onClose: () => void
+      trigger?: never
+      open?: never
+      onOpenChange?: never
+      align?: never
+    }
+)
+
+/** The labels panel for a set of paths. */
+export function TagMenu(props: TagMenuProps) {
+  const headId = useId()
+  const [corner] = useState(() => ({ clientX: window.innerWidth - 20, clientY: 58 }))
+  const panel = <TagPanel paths={props.paths} headId={headId} onApplied={props.onApplied} />
+  if (props.trigger) {
+    return (
+      <Popover
+        trigger={props.trigger}
+        open={props.open}
+        onOpenChange={props.onOpenChange}
+        align={props.align}
+        initialFocus="popup"
+        aria-labelledby={headId}
+        className="tag-panel"
+      >
+        {panel}
+      </Popover>
+    )
+  }
+  const { onClose } = props
+  // Closing waits for the press that dismissed it to finish, so a caller's
+  // own toggle, pressed to close the menu, does not open it again.
+  return (
+    <Popover
+      at={corner}
+      open
+      onOpenChange={next => { if (!next) setTimeout(onClose) }}
+      align="end"
+      initialFocus="popup"
+      aria-labelledby={headId}
+      className="tag-panel"
+    >
+      {panel}
+    </Popover>
+  )
+}
+
+/** The panel's body, mounted only while it is open, so the labels are read
+ *  fresh each time it opens. */
+function TagPanel({ paths, headId, onApplied }: {
+  paths: string[]
+  headId: string
   onApplied: (updated: Record<string, string[]>) => void
 }) {
   const [vocab, setVocab] = useState<{ tag: string; count: number }[]>([])
   const [current, setCurrent] = useState<string[]>([])
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
-  const [note, setNote] = useState('')
+  const [error, setError] = useState('')
+  const inputId = useId()
 
   useEffect(() => {
     api.tagVocabulary().then(v => setVocab(v.tags)).catch(() => {})
@@ -21,14 +88,14 @@ export function TagMenu({ paths, onClose, onApplied }: {
 
   const apply = async (add: string[], remove: string[]) => {
     setBusy(true)
-    setNote('')
+    setError('')
     try {
       const r = await api.applyTags(paths, add, remove)
       setCurrent(c => [...new Set([...c.filter(t => !remove.includes(t)), ...add])])
       onApplied(r.updated ?? {})
-      setNote('Applied and re-indexed.')
+      toast.success('Applied and re-indexed.')
     } catch (e) {
-      setNote(String((e as Error).message ?? e))
+      setError(String((e as Error).message ?? e))
     } finally {
       setBusy(false)
     }
@@ -41,12 +108,10 @@ export function TagMenu({ paths, onClose, onApplied }: {
 
   return (
     <>
-      <div className="tag-overlay" onClick={onClose} />
-      <div className="tag-panel card">
       <div className="tag-pop-head">
-        <span className="field-label">Labels for {paths.length === 1 ? paths[0].split('/').pop() : `${paths.length} items`}</span>
-        {busy && <span className="spinner" />}
-        <button className="btn-secondary" onClick={onClose}>Close</button>
+        <span className="field-label" id={headId}>Labels for {paths.length === 1 ? paths[0].split('/').pop() : `${paths.length} items`}</span>
+        {busy && <Loader inline size={12} />}
+        <PopoverClose render={<Button variant="secondary" size="sm" />}>Close</PopoverClose>
       </div>
       {paths.length > 1000 && (
         <p className="muted tag-note">Labels apply to the first 1,000 selected items per action.</p>
@@ -56,14 +121,14 @@ export function TagMenu({ paths, onClose, onApplied }: {
           {current.map(t => (
             <span key={t} className="tag-pill on">
               {t}
-              <button title="Remove label" onClick={() => void apply([], [t])} disabled={busy}>×</button>
+              <IconButton className="tag-remove" size="xs" icon={<CloseIcon />} label="Remove label" onClick={() => void apply([], [t])} disabled={busy} />
             </span>
           ))}
         </div>
       )}
       {vocab.filter(v => !current.includes(v.tag)).length > 0 && (
         <>
-          <label className="field-label">Existing labels</label>
+          <div className="field-label">Existing labels</div>
           <div className="tag-row">
             {vocab.filter(v => !current.includes(v.tag)).slice(0, 14).map(v => (
               <button key={v.tag} className="tag-pill" onClick={() => void apply([v.tag], [])} disabled={busy}>
@@ -73,14 +138,13 @@ export function TagMenu({ paths, onClose, onApplied }: {
           </div>
         </>
       )}
-      <label className="field-label">New label</label>
+      <label className="field-label" htmlFor={inputId}>New label</label>
       <div className="url-row">
-        <input className="field" value={input} onChange={e => setInput(e.target.value)}
+        <Input id={inputId} size="sm" value={input} onChange={e => setInput(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && addFromInput()} placeholder="e.g. validated, research, experiment" />
-        <button className="btn-primary" onClick={addFromInput} disabled={busy || !input.trim()}>Add</button>
+        <Button variant="primary" size="sm" onClick={addFromInput} disabled={busy || !input.trim()}>Add</Button>
       </div>
-      {note && <p className="muted tag-note">{note}</p>}
-      </div>
+      {error && <Callout tone="error" size="sm" className="tag-note">{error}</Callout>}
     </>
   )
 }

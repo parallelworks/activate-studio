@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { StatusBadge, type BadgeVariant } from '@parallelworks/ui'
 
 /**
  * A command palette for the composer: type "/" and the slash-invocable
@@ -12,6 +13,8 @@ import { useEffect, useRef, useState } from 'react'
  * controlled React textarea learns about text it did not type itself.
  */
 interface Item { name: string; kind: 'command' | 'skill' | 'agent' | 'tool'; description: string }
+
+const KIND_TONE: Record<Item['kind'], BadgeVariant> = { command: 'muted', tool: 'muted', skill: 'success', agent: 'info' }
 
 const META: Item[] = [
   { name: 'help', kind: 'command', description: 'List every slash command, skill, agent, and tool' },
@@ -117,7 +120,7 @@ export function SlashPalette({ canvas }: { canvas: React.RefObject<HTMLDivElemen
           onMouseEnter={() => setIndex(i)}
         >
           <span className="slash-name">/{it.name}</span>
-          <span className={`slash-kind k-${it.kind}`}>{it.kind}</span>
+          <StatusBadge variant={KIND_TONE[it.kind]}>{it.kind}</StatusBadge>
           <span className="slash-desc">{it.description}</span>
         </div>
       ))}

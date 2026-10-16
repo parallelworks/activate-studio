@@ -1,5 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
-import { useChat } from '@parallelworks/ui/ai'
+import { Button, Callout, EmptyState, IconButton, Loader, StatusDot, Tabs, type BadgeVariant } from '@parallelworks/ui'
+import { CloseIcon } from '@parallelworks/ui/icons'
+import { useChat, useChatStream } from '@parallelworks/ui/ai'
 import { initializeValues } from '@parallelworks/ui/form'
 import { useWorkflowFields } from './WorkflowFields'
 import { insidePlatform } from './SessionView'
@@ -60,6 +62,17 @@ const json = async <T,>(r: Response): Promise<T> => {
   if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `${r.status}`)
   return r.json() as Promise<T>
 }
+
+/** A run's status as a dot: blue and pulsing while it runs. */
+function RunDot({ status }: { status: string }) {
+  const tone: BadgeVariant = status === 'running' || status === 'starting' ? 'info'
+    : status === 'completed' ? 'success'
+    : status === 'error' || status === 'failed' ? 'error' : 'muted'
+  return <StatusDot variant={tone} pulse={tone === 'info'} className="run-dot" />
+}
+
+/** One line saying what is still on its way. */
+const loadingLine = (label: string) => <Loader inline size={14} label={label} />
 
 function since(iso?: string): string {
   if (!iso) return ''
@@ -129,26 +142,30 @@ export function RunPane({ slug, onClose }: { slug: string; onClose: () => void }
     <aside className="run-pane card" aria-label={`Run ${slug}`}>
       <header className="run-pane-head">
         <div className="run-pane-title">
-          <span className={`run-dot run-${status}`} />
+          <RunDot status={status} />
           <strong>{doc?.displayName ?? run?.workflowName ?? 'Run'}</strong>
           <span className="muted">{slug} · {status}{run?.createdAt ? ` · submitted ${since(run.createdAt)}` : ''}</span>
         </div>
-        <button type="button" className="btn-ghost run-pane-close" title="Close the run pane" onClick={onClose}>×</button>
+        <IconButton label="Close the run pane" icon={<CloseIcon />} onClick={onClose} />
       </header>
-      <nav className="run-pane-tabs" role="tablist">
-        <button role="tab" aria-selected={tab === 'form'} className={tab === 'form' ? 'on' : ''} onClick={() => pick('form')}>Form</button>
-        <button role="tab" aria-selected={tab === 'graph'} className={tab === 'graph' ? 'on' : ''} onClick={() => pick('graph')}>Graph</button>
-        <button role="tab" aria-selected={tab === 'session'} className={tab === 'session' ? 'on' : ''} onClick={() => pick('session')} disabled={!session}>
-          Session{session ? '' : ' (waiting)'}
-        </button>
-      </nav>
+      <Tabs
+        label="Run"
+        className="run-pane-tabs"
+        value={tab}
+        onValueChange={pick}
+        items={[
+          { value: 'form', label: 'Form' },
+          { value: 'graph', label: 'Graph' },
+          { value: 'session', label: `Session${session ? '' : ' (waiting)'}`, disabled: !session },
+        ]}
+      />
       <div className="run-pane-body">
-        {error && !run && <p className="banner-error">{error}</p>}
+        {error && !run && <Callout variant="bar" tone="error">{error}</Callout>}
         {tab === 'form' && (
           <div className="run-pane-form">
             <p className={`run-executed${run ? ' on' : ''}`}>{run ? `Executed ${run.createdAt ? new Date(run.createdAt).toLocaleTimeString() : ''} from this conversation` : 'Submitting…'}</p>
             {doc?.form && Object.keys(doc.form).length
-              ? <Suspense fallback={<p className="muted">Loading form…</p>}>
+              ? <Suspense fallback={<p className="muted">{loadingLine('Loading form…')}</p>}>
                   <fieldset disabled className="run-pane-fieldset">
                     <DynamicForm key={`${slug}:${doc.displayName ?? ''}`} formJSONs={doc.form as any} initialValues={initial as any}
                       fields={fields} workflowForm labelPosition="left" contextKey={slug} allowLayoutCSS />
@@ -156,26 +173,26 @@ export function RunPane({ slug, onClose }: { slug: string; onClose: () => void }
                 </Suspense>
               : run?.inputs
                 ? <pre className="run-pane-inputs">{JSON.stringify(run.inputs, null, 2)}</pre>
-                : <p className="muted">Loading the run…</p>}
+                : <p className="muted">{loadingLine('Loading the run…')}</p>}
           </div>
         )}
         {tab === 'graph' && (
           run?.executedJobs && Object.keys(run.executedJobs).length
-            ? <Suspense fallback={<p className="muted">Loading graph…</p>}><div className="run-pane-graph"><DependencyGraph run={run as any} removeBorder /></div></Suspense>
-            : <p className="muted pad">The run's jobs appear here as the platform starts them.</p>
+            ? <Suspense fallback={<p className="muted">{loadingLine('Loading graph…')}</p>}><div className="run-pane-graph"><DependencyGraph run={run as any} removeBorder /></div></Suspense>
+            : <EmptyState variant="bare" title="The run's jobs appear here as the platform starts them." />
         )}
         {tab === 'session' && (
           host
             ? <iframe className="run-pane-frame" title={session!.name} src={`/api/session-proxy/${host}/`} />
             : session
-              ? <p className="muted pad">This session is served under the platform's own address. <a href={session.url ?? '#'} target="_blank" rel="noreferrer">Open it in a new tab</a>.</p>
-              : <p className="muted pad">The run's session appears here once it is online.</p>
+              ? <EmptyState variant="bare" title={<>This session is served under the platform's own address. <a href={session.url ?? '#'} target="_blank" rel="noreferrer">Open it in a new tab</a>.</>} />
+              : <EmptyState variant="bare" title="The run's session appears here once it is online." />
         )}
       </div>
       {session?.url && tab === 'session' && (
         <footer className="run-pane-foot">
           <span className="muted">{session.name}</span>
-          <button type="button" className="link-btn" onClick={() => popOut({ kind: 'session', id: `session:${session.name}`, name: session.name, url: session.url!, host, platformUrl: null })}>Open beside the Studio</button>
+          <Button variant="ghost" size="sm" onClick={() => popOut({ kind: 'session', id: `session:${session.name}`, name: session.name, url: session.url!, host, platformUrl: null })}>Open beside the Studio</Button>
         </footer>
       )}
     </aside>
@@ -196,12 +213,12 @@ function SessionPane({ item }: { item: Extract<SideItem, { kind: 'session' }> })
   return (
     <aside className="run-pane card" aria-label={item.name}>
       <header className="run-pane-head">
-        <div className="run-pane-title"><span className="run-dot run-running" /><strong>{item.name}</strong><span className="muted">session</span></div>
+        <div className="run-pane-title"><RunDot status="running" /><strong>{item.name}</strong><span className="muted">session</span></div>
       </header>
       <div className="run-pane-body">
         {item.host
           ? <iframe className="run-pane-frame" title={item.name} src={`/api/session-proxy/${item.host}/`} />
-          : <p className="muted pad">This session is served under the platform's own address, so it cannot show here. Pop it out to open it beside the Studio.</p>}
+          : <EmptyState variant="bare" title="This session is served under the platform's own address, so it cannot show here. Pop it out to open it beside the Studio." />}
       </div>
     </aside>
   )
@@ -252,17 +269,17 @@ export function FullViewHost() {
   return (
     <div className="full-view" role="dialog" aria-label={item.name}>
       <div className="full-view-bar">
-        <span className="run-dot run-running" />
+        <RunDot status="running" />
         <strong className="full-view-name">{item.name}</strong>
         <span className="full-view-actions">
-          <button type="button" className="btn-ghost" title="Open in a window beside this one" onClick={() => popOut(item)}>Pop out</button>
-          <a className="btn-ghost" href={item.url} target="_blank" rel="noopener noreferrer">New tab</a>
-          <button type="button" className="btn-secondary" title="Close (Escape)" onClick={() => setItem(null)}>Close</button>
+          <Button variant="ghost" size="sm" title="Open in a window beside this one" onClick={() => popOut(item)}>Pop out</Button>
+          <Button variant="ghost" size="sm" href={item.url} target="_blank" rel="noopener noreferrer">New tab</Button>
+          <Button variant="secondary" size="sm" title="Close (Escape)" onClick={() => setItem(null)}>Close</Button>
         </span>
       </div>
       {item.host
         ? <iframe className="full-view-frame" title={item.name} src={`/api/session-proxy/${item.host}/`} />
-        : <p className="muted pad">This session is served under the platform's own address, so it cannot show here. Pop it out to open it beside the Studio.</p>}
+        : <EmptyState variant="bare" title="This session is served under the platform's own address, so it cannot show here. Pop it out to open it beside the Studio." />}
     </div>
   )
 }
@@ -305,9 +322,9 @@ function SideView({ side, beside }: { side: ReturnType<typeof useSideItems>; bes
   if (!items.length) return null
   if (hidden) {
     return (
-      <button type="button" className="run-pane-reopen" title={`Show the side view beside ${beside}`} onClick={() => setHidden(false)}>
+      <Button variant="secondary" size="sm" className="run-pane-reopen" title={`Show the side view beside ${beside}`} onClick={() => setHidden(false)}>
         {items.length === 1 ? label(items[0]) : `Side view (${items.length})`}
-      </button>
+      </Button>
     )
   }
   const cur = items.find(i => i.id === active) ?? items[items.length - 1]
@@ -328,11 +345,11 @@ function SideView({ side, beside }: { side: ReturnType<typeof useSideItems>; bes
         ))}
         <span className="side-tabs-actions">
           {cur.kind === 'session' && cur.host && (
-            <button type="button" className="btn-ghost" title="Show it over the whole Studio"
-              onClick={() => openFullView({ name: cur.name, url: cur.url, ownHost: true, platformUrl: cur.platformUrl }, false)}>Full screen</button>
+            <Button variant="ghost" size="sm" title="Show it over the whole Studio"
+              onClick={() => openFullView({ name: cur.name, url: cur.url, ownHost: true, platformUrl: cur.platformUrl }, false)}>Full screen</Button>
           )}
-          <button type="button" className="btn-ghost" title="Open in a window beside this one" onClick={() => popOut(cur)}>Pop out</button>
-          <button type="button" className="btn-ghost" title="Hide the side view" onClick={() => setHidden(true)}>Hide</button>
+          <Button variant="ghost" size="sm" title="Open in a window beside this one" onClick={() => popOut(cur)}>Pop out</Button>
+          <Button variant="ghost" size="sm" title="Hide the side view" onClick={() => setHidden(true)}>Hide</Button>
         </span>
       </div>
       {cur.kind === 'run'
@@ -349,7 +366,8 @@ function SideView({ side, beside }: { side: ReturnType<typeof useSideItems>; bes
  * with it hidden, with a button at the edge to show it.
  */
 export function SideViewHost() {
-  const { currentConversation, streamingParts } = useChat()
+  const { currentConversation } = useChat()
+  const { streamingParts } = useChatStream()
   const slug = useMemo(
     () => latestRunSlug((currentConversation?.messages ?? []) as MessageLike[], (streamingParts ?? []) as PartLike[]),
     [currentConversation, streamingParts],

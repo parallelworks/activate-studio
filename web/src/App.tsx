@@ -1,4 +1,5 @@
 import { ReactElement, Suspense, lazy, useEffect, useRef, useState } from 'react'
+import { IconButton, LetterBadge, SearchInput } from '@parallelworks/ui'
 import { buildOpenHash, parseOpenHash } from './nav'
 import { currentLibrary, setLibrary, settleLibraries } from './api'
 import { rememberHash } from './lastLocation'
@@ -416,22 +417,21 @@ export default function App() {
                 shows the slot empty rather than the wrong name. */}
             {brandIcon
               ? <img className="brand-icon" src={brandIcon} alt="" />
-              : <span className="brand-badge">{(cfg.appName[0] ?? 'S').toUpperCase()}</span>}
+              : <LetterBadge className="brand-badge" text={(cfg.appName[0] ?? 'S').toUpperCase()} />}
             {(cfg.loaded || cfg.brandRemembered) && <span className="brand-text"><b>{cfg.appName}</b></span>}
           </div>
-          <button
+          <IconButton
             className="nav-collapse"
-            title={navCollapsed ? 'Expand navigation' : 'Collapse navigation'}
+            label={navCollapsed ? 'Expand navigation' : 'Collapse navigation'}
             onClick={() => setNavCollapsed(c => !c)}
-          >
-            <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="1.75" y="2.25" width="12.5" height="11.5" rx="2"/><path d="M6 2.5v11"/></svg>
-          </button>
+            icon={<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="1.75" y="2.25" width="12.5" height="11.5" rx="2"/><path d="M6 2.5v11"/></svg>}
+          />
         </div>
         {allowed('search') && (
           <form className="sidenav-search" role="search" onSubmit={e => { e.preventDefault(); submitNavSearch() }}>
-            <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3.5 3.5"/></svg>
-            <input ref={navSearchRef} value={navQuery} onChange={e => setNavQuery(e.target.value)} placeholder="Search"
-              aria-label="Search the knowledge base" onKeyDown={e => { if (e.key === 'Escape') { setNavQuery(''); e.currentTarget.blur() } }} />
+            <SearchInput ref={navSearchRef} className="sidenav-search-box" value={navQuery} onValueChange={setNavQuery}
+              label="Search the knowledge base" placeholder="Search"
+              onKeyDown={e => { if (e.key === 'Escape') { setNavQuery(''); e.currentTarget.blur() } }} />
             <kbd>{isMac ? '⌘K' : 'Ctrl K'}</kbd>
           </form>
         )}

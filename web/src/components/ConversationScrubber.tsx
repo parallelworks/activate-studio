@@ -64,8 +64,8 @@ export interface BlockLike {
 export function selectMessageBlocks<T extends BlockLike>(children: T[]): T[] {
   return children.filter(c =>
     !!c.textContent?.trim()
-    && !c.querySelector('[class*="group/queued"]')
-    && !c.className.includes('group/queued'))
+    && !c.querySelector('.chat-queued')
+    && !c.className.split(/\s+/).includes('chat-queued'))
 }
 
 /** The message blocks currently on screen, in order. */

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Callout } from '@parallelworks/ui'
 import { parseAllDocuments } from 'yaml'
 
 /** Structured previews for JSON and YAML: the parsed document as a
@@ -96,7 +97,7 @@ export function DataTree({ text, format }: { text: string; format: 'json' | 'yam
         <div key={i} className="tree-doc">
           {docs.length > 1 && <p className="tree-doc-label">document {i + 1}</p>}
           {'error' in doc ? (
-            <p className="error">This file did not parse as {format.toUpperCase()}: {doc.error}. The Source tab shows it as written.</p>
+            <Callout tone="error">This file did not parse as {format.toUpperCase()}: {doc.error}. The Source tab shows it as written.</Callout>
           ) : (
             <Node name={null} value={doc.value} depth={0} />
           )}
