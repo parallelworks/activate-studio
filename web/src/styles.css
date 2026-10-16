@@ -322,13 +322,7 @@ main.content { min-height: 0; min-width: 0; background: var(--pw-content-bg); }
 .suggest-tags { display: flex; gap: 4px; flex-shrink: 0; }
 .suggest-tags code { font-size: 11px; padding: 1px 5px; border-radius: 3px; background: var(--theme-hover, #eef2f7); }
 .suggest-actions { display: flex; gap: 6px; margin-top: 8px; }
-.suggest-empty { font-size: 12px; padding: 4px 0; }
-.move-menu { padding: 6px 8px 2px; }
-.move-menu .field { width: 100%; font-size: 13px; }
 .upload-current { font-size: 12px; color: var(--pw-muted); margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* Indexing reports no count, so the bar sweeps instead of filling. */
-.upload-bar.indeterminate > div { animation: upload-sweep 1.1s ease-in-out infinite; transform-origin: left center; }
-@keyframes upload-sweep { 0% { opacity: 0.35; } 50% { opacity: 1; } 100% { opacity: 0.35; } }
 .share-row { margin-top: 12px; align-items: center; gap: 10px; }
 .share-row .key-note { margin: 0; }
 
@@ -357,13 +351,6 @@ main.content { min-height: 0; min-width: 0; background: var(--pw-content-bg); }
 .brand-text b { color: var(--pw-text); font-weight: 600; margin-right: 3px; }
 .nav-collapse { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--pw-muted); cursor: pointer; flex-shrink: 0; }
 .nav-collapse:hover { background: var(--pw-nav-hover); color: var(--pw-text); }
-.rail-collapse, .rail-expander {
-  border: 1px solid var(--pw-border); border-radius: 6px; background: var(--pw-panel);
-  color: var(--pw-muted); cursor: pointer; font-size: 12px; line-height: 1;
-  padding: 3px 7px; flex-shrink: 0;
-}
-.rail-collapse:hover, .rail-expander:hover { color: var(--pw-navy); border-color: var(--pw-muted); }
-.rail-expander { height: 30px; }
 .rail-actions { display: flex; align-items: center; gap: 6px; }
 
 .sidenav.collapsed { width: 64px; padding: 12px; }
@@ -486,10 +473,6 @@ main.content { min-height: 0; min-width: 0; background: var(--pw-content-bg); }
 .library { display: flex; padding: 12px; flex: 1; min-height: 0; }
 .library-card { flex: 1; display: flex; min-height: 0; min-width: 0; overflow: hidden; }
 .library.drop-over .library-rail { outline: 2px dashed var(--pw-link); outline-offset: -2px; }
-.drop-note {
-  padding: 6px 12px; font-size: 12px; color: var(--pw-muted);
-  border-bottom: 1px solid var(--pw-border); background: var(--theme-hover, #f8fbff);
-}
 /* The chat rail sits a step lighter than its card, and the other views'
    rails were left flat against theirs, so the two pages read differently in
    dark mode. They all take the same muted-panel token now. */
@@ -552,17 +535,8 @@ main.content { min-height: 0; min-width: 0; background: var(--pw-content-bg); }
   background: transparent; border: 1px solid var(--theme-border); color: var(--pw-muted); white-space: nowrap;
 }
 
-.select-toggle.active { background: var(--pw-active-pill); color: var(--pw-navy); border-color: #9cc6e4; }
-
 /* ---- upload ---- */
-.upload-menu { position: relative; }
-.upload-pop { left: 0; right: auto; }
-.card-pop {
-  position: absolute; right: 0; top: calc(100% + 6px); z-index: 30;
-  width: 300px; padding: 12px;
-  background: var(--pw-panel); border: 1px solid var(--pw-border-strong);
-  border-radius: 10px; box-shadow: 0 8px 24px rgba(16, 24, 40, 0.12);
-}
+.upload-pop { width: 300px; }
 .field-label { display: block; font-size: 11px; font-weight: 600; color: var(--pw-muted); margin: 8px 0 4px; }
 /* Inputs and selects to the shared spec: 32px, the contract's input and
    border colors, and the accent focus ring. */
@@ -649,6 +623,10 @@ textarea.field { line-height: 1.5; }
 .viewer.empty { align-items: center; justify-content: center; }
 .empty-state { text-align: center; max-width: 380px; }
 .empty-state h2 { font-size: 14px; font-weight: 500; color: var(--pw-text); margin: 0 0 6px; }
+.viewer-callout { margin: 18px 24px; max-width: 640px; }
+.viewer-callout p { margin: 0; }
+.viewer-callout p + p { margin-top: 4px; }
+.viewer-callout-path { font-family: ui-monospace, monospace; word-break: break-all; }
 .viewer-head {
   display: flex; justify-content: space-between; gap: 12px; align-items: center;
   padding: 10px 20px; border-bottom: 1px solid var(--pw-border);
@@ -695,11 +673,10 @@ textarea.field { line-height: 1.5; }
 }
 .viewer-tabs button:hover { color: var(--pw-text); }
 .viewer-tabs button.active { color: var(--pw-text); font-weight: 500; border-bottom-color: var(--pw-text); }
+/* The file viewer's tab row stays under the header as the file scrolls. */
+.file-tabs { padding: 8px 20px 0; background: var(--pw-panel); position: sticky; top: 49px; z-index: 4; }
 .pdf-frame { width: 100%; height: calc(100vh - 140px); border: none; display: block; }
-.index-note {
-  margin: 0 0 14px; padding: 8px 12px; border-radius: 6px;
-  background: var(--theme-warning-muted); border: 1px solid color-mix(in srgb, var(--theme-warning) 35%, transparent); color: color-mix(in srgb, var(--theme-warning) 75%, var(--theme-app)); font-size: 13px;
-}
+.index-note { margin: 0 0 14px; }
 .btn-danger { border: none; background: var(--theme-error); color: #fff; }
 .btn-danger:hover { opacity: 0.9; }
 .btn-danger:disabled { opacity: 0.6; cursor: default; }
@@ -831,28 +808,17 @@ textarea.field { line-height: 1.5; }
 .tree-row.drop-target { outline: 2px dashed var(--pw-link); outline-offset: -2px; background: var(--theme-hover, #f0f7ff); }
 .upload-panel { border-top: 1px solid var(--pw-border); padding: 8px 12px; font-size: 12px; }
 .upload-panel-head { display: flex; justify-content: space-between; gap: 8px; color: var(--pw-muted); }
-.upload-bar { height: 5px; border-radius: 3px; background: var(--pw-border); margin: 6px 0 2px; overflow: hidden; }
-.upload-bar > div { height: 100%; background: var(--pw-link); transition: width 0.25s ease; }
-.upload-failed { color: #dc2626; font-size: 12px; margin-top: 3px; }
+.upload-progress { margin: 6px 0 2px; }
+.upload-failed { margin-top: 4px; }
 .theme-btn { margin-left: 0; }
 
 /* ---- labels / tags ---- */
-.row-check { display: inline-flex; width: 15px; flex-shrink: 0; color: var(--pw-muted-2); opacity: 0; cursor: pointer; }
+.row-check { display: inline-flex; flex-shrink: 0; opacity: 0; }
 .tree-row:hover .row-check, .explorer.has-sel .row-check { opacity: 1; }
-.row-check.checked { color: var(--pw-link); }
-.row-check:hover { color: var(--pw-navy); }
 
-.row-tag {
-  margin-left: auto; border: none; background: none; padding: 1px 4px;
-  color: var(--pw-muted-2); cursor: pointer; opacity: 0; flex-shrink: 0;
-}
-.tree-row:hover .row-check { display: inline-flex; width: 15px; flex-shrink: 0; color: var(--pw-muted-2); opacity: 0; cursor: pointer; }
-.tree-row:hover .row-check, .explorer.has-sel .row-check { opacity: 1; }
-.row-check.checked { color: var(--pw-link); }
-.row-check:hover { color: var(--pw-navy); }
-
-.row-tag { opacity: 1; }
-.row-tag:hover { color: var(--pw-text); }
+.row-tag { margin-left: auto; flex-shrink: 0; }
+/* Smaller than the library's smallest, so the tree keeps its 24px rows. */
+.explorer .row-tag { width: 20px; height: 20px; }
 /* With a pointer, a row's label button shows when the row is hovered or
    selected; on touch screens it stays visible, since there is no hover. */
 @media (hover: hover) {
@@ -871,15 +837,8 @@ textarea.field { line-height: 1.5; }
   background: var(--theme-warning-muted); font-size: 12px; color: color-mix(in srgb, var(--theme-warning) 75%, var(--theme-app));
 }
 .multi-bar > span:first-child { flex: 1 0 100%; font-weight: 500; }
-.multi-bar button { white-space: nowrap; font-size: 12px; padding: 4px 9px; }
-.multi-bar .confirm-group { display: flex; gap: 6px; }
-.multi-bar .link-btn2 { margin-left: auto; }
-.link-btn2 { background: none; border: none; padding: 0; color: var(--pw-link); font-size: 12px; cursor: pointer; text-decoration: underline; }
-.tag-overlay { position: fixed; inset: 0; z-index: 40; }
-.tag-panel {
-  position: fixed; top: 64px; right: 20px; z-index: 41; width: 340px;
-  padding: 14px; box-shadow: var(--theme-shadow-lg);
-}
+.multi-bar .multi-clear { margin-left: auto; }
+.tag-panel { width: 340px; }
 .tag-pop-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .tag-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
 .tag-pill {
@@ -894,7 +853,7 @@ textarea.field { line-height: 1.5; }
 .tag-pill.inherited { background: transparent; border-style: dashed; color: var(--pw-muted); cursor: default; }
 .tag-pill.inherited::before { background: var(--pw-muted); }
 .tag-pill.small { padding: 0.5px 7px; font-size: 11px; }
-.tag-pill button { border: none; background: none; color: inherit; cursor: pointer; padding: 0; font-size: 12px; }
+.tag-pill .tag-remove { width: 16px; height: 16px; color: inherit; }
 .tag-count { color: #7ba7bd; font-weight: 400; }
 .tag-note { margin: 8px 0 0; font-size: 12px; }
 .viewer-tags { margin-left: 10px; display: inline-flex; gap: 5px; vertical-align: 1px; }
@@ -1425,27 +1384,8 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .help-hint { max-width: 780px; margin-top: 18px; font-size: 13px; }
 .help-content .help-stats { margin-top: 18px; }
 
-/* Tree right-click context menu */
-.ctx-menu {
-  position: fixed; z-index: 60; min-width: 200px; max-width: 280px;
-  padding: 6px; display: flex; flex-direction: column; gap: 2px;
-  background: var(--pw-panel); box-shadow: var(--theme-shadow-lg);
-}
-.ctx-title {
-  font-size: 11px; font-weight: 600; color: var(--pw-muted); padding: 4px 10px 6px;
-  border-bottom: 1px solid var(--pw-border); margin-bottom: 3px;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.ctx-menu > button {
-  border: none; background: none; text-align: left; cursor: pointer;
-  font-size: 13px; color: var(--pw-text); padding: 7px 10px; border-radius: 6px;
-}
-.ctx-menu > button:hover { background: var(--pw-hover-row, #f3f4f6); }
-.ctx-menu > button.ctx-danger { color: var(--theme-error-text); }
-.ctx-menu > button.ctx-danger.confirm { background: var(--theme-error-muted); }
-.ctx-input { display: flex; gap: 6px; padding: 4px 8px; }
-.ctx-input .field { font-size: 13px; padding: 5px 8px; min-width: 0; }
-.ctx-err { font-size: 12px; color: #dc2626; padding: 4px 10px; }
+/* The tree's New folder and Rename dialog */
+.name-dialog-error { margin-top: 10px; }
 
 
 /* Your model access card */
@@ -1925,8 +1865,6 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
   .library { flex-direction: column; }
   .library-rail { width: 100% !important; max-height: 40vh; }
   .library .divider { display: none; }
-  .card-pop { width: min(300px, calc(100vw - 24px)); }
-  .tag-panel { width: min(340px, calc(100vw - 24px)); right: 12px; }
   .query-row .grow, .query-form select.field { max-width: 100%; }
 
   /* Chat. The conversations list is the package's drawer at this width
@@ -1938,14 +1876,11 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 }
 
 /* ---- library switcher: lives in the Library rail header ---- */
-.library-switch {
-  font: inherit; font-size: 12px; color: var(--pw-text); background: var(--pw-panel);
-  border: 1px solid var(--pw-border); border-radius: 6px; padding: 2px 6px; max-width: 60%;
-}
+.library-switch { width: auto; max-width: 60%; }
 /* In the tree's header the picker takes what the buttons leave and
    truncates; at its natural width a long library name pushed + Add and the
    collapse button past the pane's edge. */
-.rail-head .library-switch { margin-right: auto; flex: 1 1 0; min-width: 0; max-width: none; text-overflow: ellipsis; }
+.rail-head .library-switch { margin-right: auto; flex: 1 1 0; min-width: 0; max-width: none; }
 .rail-head .rail-actions { flex-shrink: 0; }
 
 /* ---- Settings > Libraries ---- */

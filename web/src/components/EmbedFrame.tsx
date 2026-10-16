@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { IconButton } from '@parallelworks/ui'
 import { useEffectiveTheme } from '../theme'
 
 /**
@@ -81,14 +82,12 @@ export function EmbedFrame({ src, title }: { src: string; title: string }) {
   return (
     <div ref={wrapRef} className={`chat-embed-wrap${mode === 'overlay' ? ' overlay' : ''}${mode === 'native' ? ' native-full' : ''}`}>
       <iframe ref={frameRef} src={themed} title={title} className="chat-embed-frame" style={height && mode === 'inline' ? { height } : undefined} />
-      {height == null && <button
-        type="button"
+      {height == null && <IconButton
+        variant="outline"
         className="chat-embed-expand"
-        title={full ? 'Exit full screen (Esc)' : 'Full screen'}
-        aria-label={full ? 'Exit full screen' : 'Full screen'}
+        label={full ? 'Exit full screen (Esc)' : 'Full screen'}
         onClick={full ? exit : enter}
-      >
-        {full ? (
+        icon={full ? (
           <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
             <path d="M6 2v4H2M10 2v4h4M6 14v-4H2M10 14v-4h4" />
           </svg>
@@ -97,7 +96,7 @@ export function EmbedFrame({ src, title }: { src: string; title: string }) {
             <path d="M2 6V2h4M14 6V2h-4M2 10v4h4M14 10v4h-4" />
           </svg>
         )}
-      </button>}
+      />}
     </div>
   )
 }

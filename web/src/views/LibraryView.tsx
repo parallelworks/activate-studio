@@ -1,7 +1,11 @@
 import { ALL_LIBRARIES, LibrarySwitch, libraryWritable } from '../components/LibrarySwitch'
 import { currentLibrary, onLibraryChange } from '../api'
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  Button, Callout, Checkbox, ConfirmModal, EmptyState, IconButton, Input, Modal, ProgressBar, RefreshButton,
+  toast, useContextMenu, type MenuEntry,
+} from '@parallelworks/ui'
 import type { Display } from '../App'
 import { api } from '../api'
 import { Explorer, visibleRowPaths } from '../components/Explorer'
@@ -37,7 +41,6 @@ export function LibraryView({ display, onDisplay }: {
   const [multiSel, setMultiSel] = useState<Set<string>>(new Set())
   const [tagMenuOpen, setTagMenuOpen] = useState(false)
   const [selectMode, setSelectMode] = useState(false)
-  const [moveMenuOpen, setMoveMenuOpen] = useState(false)
   const [allDirs, setAllDirs] = useState<string[]>([])
   /** Proposed labels awaiting review; nothing is applied until accepted. */
   const [suggest, setSuggest] = useState<{
@@ -50,86 +53,82 @@ export function LibraryView({ display, onDisplay }: {
   const [showLabels, setShowLabels] = useState(() => localStorage.getItem('ade-tree-labels') === '1')
   const [tagsTick, setTagsTick] = useState(0)
   const [confirmDelete, setConfirmDelete] = useState(false)
-  const [bulkNote, setBulkNote] = useState('')
-  // Right-click context menu on tree rows.
-  const [ctx, setCtx] = useState<{ path: string; isDir: boolean; x: number; y: number } | null>(null)
-  const [ctxConfirm, setCtxConfirm] = useState(false)
-  const [ctxNewDir, setCtxNewDir] = useState<string | null>(null)
-  const [ctxBusy, setCtxBusy] = useState(false)
-  const [ctxErr, setCtxErr] = useState('')
-  const [ctxRename, setCtxRename] = useState<string | null>(null)
+  // Right-click context menu on tree rows. Its New folder and Rename take a
+  // name in a dialog, and its Delete asks first.
+  const { openMenu, contextMenu } = useContextMenu()
+  const [nameDialog, setNameDialog] = useState<{
+    mode: 'mkdir' | 'rename'
+    path: string
+    isDir: boolean
+    value: string
+    busy: boolean
+    error: string
+  } | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<{ path: string; isDir: boolean; error: string } | null>(null)
+  /** A menu choice that opens a dialog, run once the menu has closed and
+   *  handed focus back, so the dialog keeps the focus it takes. */
+  const afterMenu = useRef<(() => void) | null>(null)
   /** Cut or copied paths, waiting for a destination. */
   const [clipboard, setClipboard] = useState<{ mode: 'cut' | 'copy'; paths: string[] } | null>(null)
-
-  const closeCtx = () => { setCtx(null); setCtxConfirm(false); setCtxNewDir(null); setCtxRename(null); setCtxBusy(false); setCtxErr('') }
+  const selPaths = useMemo(() => [...multiSel], [multiSel])
 
   const ctxDelete = async () => {
-    if (!ctx) return
-    setCtxBusy(true)
-    setCtxErr('')
+    const t = deleteTarget
+    if (!t) return
+    setDeleteTarget({ ...t, error: '' })
     try {
-      if (ctx.isDir) await api.deleteDir(ctx.path)
-      else await api.deleteFile(ctx.path)
+      if (t.isDir) await api.deleteDir(t.path)
+      else await api.deleteFile(t.path)
       window.dispatchEvent(new Event('ade-kb-changed'))
-      if (display?.kind === 'file' && (display.target === ctx.path || display.target.startsWith(ctx.path + '/'))) onDisplay(null)
+      if (display?.kind === 'file' && (display.target === t.path || display.target.startsWith(t.path + '/'))) onDisplay(null)
       setRefreshKey(k => k + 1)
       window.dispatchEvent(new Event('ade-kb-changed'))
-      closeCtx()
+      setDeleteTarget(null)
     } catch (e) {
-      setCtxErr(String((e as Error).message ?? e))
-      setCtxBusy(false)
+      setDeleteTarget({ ...t, error: String((e as Error).message ?? e) })
     }
   }
 
-  const ctxDoRename = async () => {
-    if (!ctx || ctxRename === null || !ctxRename.trim()) return
-    setCtxBusy(true)
-    setCtxErr('')
+  /** New folder or Rename, from the name typed in the dialog. */
+  const submitName = async () => {
+    const d = nameDialog
+    if (!d || d.busy || !d.value.trim()) return
+    setNameDialog({ ...d, busy: true, error: '' })
     try {
-      const r = await api.rename(ctx.path, ctxRename.trim())
-      // A renamed file that is open in the viewer should follow its name.
-      if (r.renamed && !ctx.isDir && selectedFile === ctx.path) onDisplay({ kind: 'file', target: r.renamed.to })
-      window.dispatchEvent(new CustomEvent('ade-kb-changed'))
-      closeCtx()
+      if (d.mode === 'rename') {
+        const r = await api.rename(d.path, d.value.trim())
+        // A renamed file that is open in the viewer should follow its name.
+        if (r.renamed && !d.isDir && selectedFile === d.path) onDisplay({ kind: 'file', target: r.renamed.to })
+        window.dispatchEvent(new CustomEvent('ade-kb-changed'))
+      } else {
+        const name = d.value.trim().replace(/^\/+|\/+$/g, '')
+        const r = await api.mkdir(d.path ? `${d.path}/${name}` : name)
+        setTargetDir(r.created)
+        setRefreshKey(k => k + 1)
+        window.dispatchEvent(new Event('ade-kb-changed'))
+      }
+      setNameDialog(null)
     } catch (e) {
-      setCtxErr(String((e as Error).message ?? e))
-      setCtxBusy(false)
-    }
-  }
-
-  const ctxMakeDir = async () => {
-    if (!ctx || !ctxNewDir?.trim()) return
-    setCtxBusy(true)
-    setCtxErr('')
-    try {
-      const name = ctxNewDir.trim().replace(/^\/+|\/+$/g, '')
-      const r = await api.mkdir(ctx.path ? `${ctx.path}/${name}` : name)
-      setTargetDir(r.created)
-      setRefreshKey(k => k + 1)
-      window.dispatchEvent(new Event('ade-kb-changed'))
-      closeCtx()
-    } catch (e) {
-      setCtxErr(String((e as Error).message ?? e))
-      setCtxBusy(false)
+      const error = String((e as Error).message ?? e)
+      setNameDialog(cur => cur && { ...cur, busy: false, error })
     }
   }
 
   const bulkDelete = async () => {
     const files = [...multiSel]
-    setConfirmDelete(false)
-    setBulkNote('Deleting…')
     try {
       const r = await api.deleteFiles(files)
       window.dispatchEvent(new Event('ade-kb-changed'))
       const skippedDirs = r.skipped.filter((x: { reason: string }) => x.reason.includes('directories'))
-      setBulkNote(`${r.deleted.length} deleted${r.skipped.length ? `, ${r.skipped.length} skipped${skippedDirs.length ? ' (directories are not deletable)' : ''}` : ''}`)
+      const note = `${r.deleted.length} deleted${r.skipped.length ? `, ${r.skipped.length} skipped${skippedDirs.length ? ' (directories are not deletable)' : ''}` : ''}`
+      if (r.skipped.length) toast.warning(note)
+      else toast.success(note)
       setMultiSel(new Set())
       setRefreshKey(k => k + 1)
       if (display?.kind === 'file' && r.deleted.includes(display.target)) onDisplay(null)
     } catch (e) {
-      setBulkNote(String((e as Error).message ?? e))
+      toast.error(String((e as Error).message ?? e))
     }
-    setTimeout(() => setBulkNote(''), 6000)
   }
   const drag = useRef<{ startX: number; startWidth: number } | null>(null)
   const cfg = useAppConfig()
@@ -329,6 +328,60 @@ export function LibraryView({ display, onDisplay }: {
     window.dispatchEvent(new CustomEvent('ade-kb-changed'))
   }
 
+  /** Pick a destination for the selection from every folder in the library. */
+  const openMoveMenu = async (at: HTMLElement) => {
+    const dirs = allDirs.length ? allDirs : (await api.dirs().catch(() => ({ dirs: [] as string[] }))).dirs
+    if (!allDirs.length) setAllDirs(dirs)
+    const paths = [...multiSel]
+    openMenu(at, [
+      { label: `${cfg.kbLabel} (root)`, onClick: () => void moveInto('', paths) },
+      ...dirs.map(d => ({ label: d, onClick: () => void moveInto(d, paths) })),
+    ], {
+      search: { placeholder: `Move ${paths.length} ${paths.length === 1 ? 'item' : 'items'} to…`, empty: 'No matching folder' },
+    })
+  }
+
+  const openContextMenu = (path: string, isDir: boolean, x: number, y: number) => {
+    const later = (run: () => void) => () => { afterMenu.current = run }
+    // Cut and copy take the whole selection when the row is part of it.
+    const group = multiSel.has(path) && multiSel.size > 1 ? ` ${multiSel.size} items` : ''
+    const targets = () => (multiSel.has(path) ? [...multiSel] : [path])
+    const items: MenuEntry[] = []
+    if (!isDir) items.push({ label: 'Open', onClick: () => onDisplay({ kind: 'file', target: path }) })
+    if (writableAt(path) && isDir) {
+      items.push({ label: 'New folder', onClick: later(() => setNameDialog({ mode: 'mkdir', path, isDir, value: '', busy: false, error: '' })) })
+    }
+    if (changeableAt(path)) {
+      items.push({ label: 'Rename…', onClick: later(() => setNameDialog({ mode: 'rename', path, isDir, value: path.split('/').pop() ?? '', busy: false, error: '' })) })
+    }
+    if (isDir) items.push({ label: 'Suggest labels…', onClick: () => void runSuggest(path) })
+    if (path) {
+      items.push(
+        { label: 'Add to chat', onClick: () => addToChat(path) },
+        { label: 'Copy path', copy: { text: path, label: 'path' } },
+        { label: `Cut${group}`, onClick: () => setClipboard({ mode: 'cut', paths: targets() }) },
+        { label: `Copy${group}`, onClick: () => setClipboard({ mode: 'copy', paths: targets() }) },
+      )
+    }
+    if (isDir && clipboard?.paths.length) {
+      const n = clipboard.paths.length
+      items.push({ label: `Paste ${n} ${n === 1 ? 'item' : 'items'}`, onClick: () => void pasteInto(path) })
+    }
+    if (path) {
+      items.push({ label: 'Labels…', onClick: later(() => { setMultiSel(new Set([path])); setTagMenuOpen(true); setSelectMode(true) }) })
+    }
+    if (path && !(inAll && !path.includes('/'))) {
+      items.push({ label: isDir ? 'Delete folder…' : 'Delete…', destructive: true, onClick: later(() => setDeleteTarget({ path, isDir, error: '' })) })
+    }
+    openMenu({ clientX: x, clientY: y }, items, {
+      onClose: () => {
+        const run = afterMenu.current
+        afterMenu.current = null
+        run?.()
+      },
+    })
+  }
+
   const railRef = useRef<HTMLElement>(null)
 
   const onDividerDown = useCallback((e: React.MouseEvent) => {
@@ -376,37 +429,29 @@ export function LibraryView({ display, onDisplay }: {
       <div className="library-card card">
         {railCollapsed ? (
           <div className="rail-strip">
-            <button className="rail-expander" title="Expand knowledge base tree" onClick={() => setRailCollapsed(false)}>»</button>
+            <IconButton icon="»" label="Expand knowledge base tree" onClick={() => setRailCollapsed(false)} />
           </div>
         ) : (
           <>
             <aside ref={railRef} className="library-rail" style={{ width: railWidth }}>
-              <div className="rail-head" title={cfg.kbLabel}>
+              <div className="rail-head">
                 {cfg.libraries && cfg.libraries.length > 1
                   ? <LibrarySwitch libraries={cfg.libraries} />
-                  : <span className="rail-title">Library</span>}
+                  : <span className="rail-title" title={cfg.kbLabel}>Library</span>}
                 <span className="rail-actions">
-                  <button
-                    className={`rail-collapse select-toggle ${showLabels ? 'active' : ''}`}
-                    title="Show applied labels in the tree"
+                  <IconButton
+                    label="Show applied labels in the tree"
+                    pressed={showLabels}
                     onClick={() => setShowLabels(v => !v)}
-                  >
-                    <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M2 2h5.2L14 8.8a1 1 0 0 1 0 1.4L10.2 14a1 1 0 0 1-1.4 0L2 7.2V2z"/><circle cx="5.2" cy="5.2" r="1" fill="currentColor" stroke="none"/></svg>
-                  </button>
-                  <button
-                    className={`rail-collapse select-toggle ${selectMode ? 'active' : ''}`}
-                    title="Select multiple items for labeling or deletion"
+                    icon={<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M2 2h5.2L14 8.8a1 1 0 0 1 0 1.4L10.2 14a1 1 0 0 1-1.4 0L2 7.2V2z"/><circle cx="5.2" cy="5.2" r="1" fill="currentColor" stroke="none"/></svg>}
+                  />
+                  <IconButton
+                    label="Select multiple items for labeling or deletion"
+                    pressed={selectMode}
                     onClick={() => { setSelectMode(m => !m); setMultiSel(new Set()); setTagMenuOpen(false); setConfirmDelete(false) }}
-                  >
-                    <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.4"><rect x="2" y="2" width="8" height="8" rx="2"/><path d="M4.5 6l1.6 1.6L9 4.7"/><path d="M12.5 6.5v5a1.5 1.5 0 0 1-1.5 1.5H6"/></svg>
-                  </button>
-                  <button
-                    className="rail-collapse"
-                    title="Refresh the tree (picks up files added outside the app, like chat-session exports)"
-                    onClick={() => setRefreshKey(k => k + 1)}
-                  >
-                    <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9"/><path d="M13.5 1.5v3h-3"/></svg>
-                  </button>
+                    icon={<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.4"><rect x="2" y="2" width="8" height="8" rx="2"/><path d="M4.5 6l1.6 1.6L9 4.7"/><path d="M12.5 6.5v5a1.5 1.5 0 0 1-1.5 1.5H6"/></svg>}
+                  />
+                  <RefreshButton iconOnly size="sm" onRefresh={() => setRefreshKey(k => k + 1)} />
                   <UploadMenu
                     targetDir={targetDir}
                     onTargetDir={setTargetDir}
@@ -416,52 +461,33 @@ export function LibraryView({ display, onDisplay }: {
                     }}
                     onProgress={setProgress}
                   />
-                  <button className="rail-collapse" title="Collapse tree" onClick={() => setRailCollapsed(true)}>«</button>
+                  <IconButton icon="«" label="Collapse tree" onClick={() => setRailCollapsed(true)} />
                 </span>
               </div>
               {selectMode && (
                 <div className="multi-bar">
                   <span>{multiSel.size} selected</span>
-                  <button className="btn-secondary" disabled={!multiSel.size} onClick={() => setTagMenuOpen(o => !o)}>Labels…</button>
-                  <button className="btn-secondary" disabled={!multiSel.size}
-                    onClick={async () => {
-                      setMoveMenuOpen(o => !o)
-                      if (!allDirs.length) setAllDirs((await api.dirs().catch(() => ({ dirs: [] }))).dirs)
-                    }}>Move to…</button>
-                  {confirmDelete ? (
-                    <span className="confirm-group">
-                      <button className="btn-danger" onClick={bulkDelete}>Delete {multiSel.size}</button>
-                      <button className="btn-secondary" onClick={() => setConfirmDelete(false)}>Cancel</button>
-                    </span>
-                  ) : (
-                    <button className="btn-danger-outline" disabled={!multiSel.size} onClick={() => setConfirmDelete(true)}>Delete…</button>
-                  )}
-                  <button className="link-btn2" onClick={() => setMultiSel(new Set())}>clear</button>
-                  {moveMenuOpen && (
-                    <div className="move-menu">
-                      <select className="field" defaultValue=""
-                        onChange={e => {
-                          const dest = e.target.value
-                          if (dest === '') return
-                          setMoveMenuOpen(false)
-                          void moveInto(dest === '/' ? '' : dest, [...multiSel])
-                        }}>
-                        <option value="">Move {multiSel.size} {multiSel.size === 1 ? 'item' : 'items'} to…</option>
-                        <option value="/">{cfg.kbLabel} (root)</option>
-                        {allDirs.map(d => <option key={d} value={d}>{d}</option>)}
-                      </select>
-                    </div>
-                  )}
-                  {tagMenuOpen && (
-                    <TagMenu
-                      paths={[...multiSel]}
-                      onClose={() => setTagMenuOpen(false)}
-                      onApplied={() => window.dispatchEvent(new Event('ade-tags-changed'))}
-                    />
-                  )}
+                  <TagMenu
+                    paths={selPaths}
+                    open={tagMenuOpen}
+                    onOpenChange={setTagMenuOpen}
+                    align="start"
+                    trigger={<Button variant="secondary" size="sm" disabled={!multiSel.size}>Labels…</Button>}
+                    onApplied={() => window.dispatchEvent(new Event('ade-tags-changed'))}
+                  />
+                  <Button variant="secondary" size="sm" disabled={!multiSel.size} onClick={e => void openMoveMenu(e.currentTarget)}>Move to…</Button>
+                  <Button variant="outline" size="sm" disabled={!multiSel.size} onClick={() => setConfirmDelete(true)}>Delete…</Button>
+                  <Button variant="ghost" size="sm" className="multi-clear" onClick={() => setMultiSel(new Set())}>clear</Button>
+                  <ConfirmModal
+                    open={confirmDelete}
+                    onClose={() => setConfirmDelete(false)}
+                    title={`Delete ${multiSel.size} ${multiSel.size === 1 ? 'item' : 'items'}?`}
+                    confirmLabel={`Delete ${multiSel.size}`}
+                    destructive
+                    onConfirm={bulkDelete}
+                  />
                 </div>
               )}
-              {bulkNote && <div className="drop-note">{bulkNote}</div>}
               <Explorer
                 refreshTick={refreshKey}
                 onOpen={p => { anchor.current = p; onDisplay({ kind: 'file', target: p }) }}
@@ -474,7 +500,7 @@ export function LibraryView({ display, onDisplay }: {
                 onSelectRange={selectRange}
                 onMoveInto={(dir, paths) => void moveInto(dir, paths)}
                 onLabel={p => { setMultiSel(new Set([p])); setTagMenuOpen(true); setSelectMode(true) }}
-                onContext={(path, isDir, x, y) => { setCtxConfirm(false); setCtxNewDir(null); setCtxErr(''); setCtx({ path, isDir, x, y }) }}
+                onContext={openContextMenu}
                 selectMode={selectMode}
                 showLabels={showLabels || selectMode}
                 tagsTick={tagsTick}
@@ -489,23 +515,26 @@ export function LibraryView({ display, onDisplay }: {
                           ? 'Could not propose labels'
                           : `${suggest.rows.length} of ${suggest.considered ?? 0} unlabelled files have proposals`}
                     </span>
-                    <button className="link-btn2" onClick={() => setSuggest(null)}>dismiss</button>
+                    <Button variant="ghost" size="sm" onClick={() => setSuggest(null)}>dismiss</Button>
                   </div>
-                  {suggest.error && <div className="upload-failed">{suggest.error}</div>}
+                  {suggest.error && <Callout tone="error" size="sm" className="upload-failed">{suggest.error}</Callout>}
                   {!suggest.busy && !suggest.error && !suggest.rows.length && (
-                    <div className="muted suggest-empty">Nothing to propose here. Everything already carries a label, or there was no text to read.</div>
+                    <EmptyState
+                      variant="bare"
+                      title="Nothing to propose here."
+                      description="Everything already carries a label, or there was no text to read."
+                    />
                   )}
                   {suggest.rows.length > 0 && (
                     <>
                       <div className="suggest-rows">
                         {suggest.rows.map((row, i) => (
                           <label className="suggest-row" key={row.path} title={row.why}>
-                            <input
-                              type="checkbox"
+                            <Checkbox
                               checked={row.accept}
-                              onChange={e => setSuggest(s2 => s2 && {
+                              onCheckedChange={accept => setSuggest(s2 => s2 && {
                                 ...s2,
-                                rows: s2.rows.map((r, j) => (j === i ? { ...r, accept: e.target.checked } : r)),
+                                rows: s2.rows.map((r, j) => (j === i ? { ...r, accept } : r)),
                               })}
                             />
                             <span className="suggest-path">{row.path}</span>
@@ -514,13 +543,13 @@ export function LibraryView({ display, onDisplay }: {
                         ))}
                       </div>
                       <div className="suggest-actions">
-                        <button className="btn-primary" disabled={suggest.busy || !suggest.rows.some(r => r.accept)}
+                        <Button variant="primary" size="sm" loading={suggest.busy} disabled={!suggest.rows.some(r => r.accept)}
                           onClick={() => void applySuggestions()}>
                           {suggest.busy ? 'Applying…' : `Apply ${suggest.rows.filter(r => r.accept).length}`}
-                        </button>
-                        <button className="btn-secondary" onClick={() => setSuggest(s2 => s2 && { ...s2, rows: s2.rows.map(r => ({ ...r, accept: false })) })}>
+                        </Button>
+                        <Button variant="secondary" size="sm" onClick={() => setSuggest(s2 => s2 && { ...s2, rows: s2.rows.map(r => ({ ...r, accept: false })) })}>
                           Clear all
-                        </button>
+                        </Button>
                       </div>
                     </>
                   )}
@@ -541,25 +570,27 @@ export function LibraryView({ display, onDisplay }: {
                             : `Uploading to ${progress.dir || 'root'}: ${progress.done} / ${progress.total}${progress.totalBytes ? ` (${fmtBytes(progress.bytes)} of ${fmtBytes(progress.totalBytes)})` : ''}`}
                     </span>
                     {progress.phase === 'uploading' && progress.kind !== 'move' && uploadAbort.current ? (
-                      <button className="link-btn2" onClick={() => uploadAbort.current?.abort()}>cancel</button>
+                      <Button variant="ghost" size="sm" onClick={() => uploadAbort.current?.abort()}>cancel</Button>
                     ) : (
-                      <button className="link-btn2" onClick={() => setProgress(null)}>dismiss</button>
+                      <Button variant="ghost" size="sm" onClick={() => setProgress(null)}>dismiss</Button>
                     )}
                   </div>
                   {/* Bytes drive the bar while uploading, so one large file
                       still moves; indexing has no count to report, so the
                       bar runs indeterminate until the job comes back. */}
-                  <div className={`upload-bar ${progress.phase === 'indexing' ? 'indeterminate' : ''}`}>
-                    <div style={{ width: progress.phase === 'indexing' ? '100%' : `${(progress.totalBytes && progress.kind !== 'move' ? progress.bytes / progress.totalBytes : progress.done / Math.max(progress.total, 1)) * 100}%` }} />
-                  </div>
+                  <ProgressBar
+                    className="upload-progress"
+                    aria-label={progress.kind === 'move' ? 'Move progress' : 'Upload progress'}
+                    value={progress.phase === 'indexing' ? null : (progress.totalBytes && progress.kind !== 'move' ? progress.bytes / progress.totalBytes : progress.done / Math.max(progress.total, 1)) * 100}
+                  />
                   {progress.phase !== 'done' && progress.current && (
                     <div className="upload-current">{progress.current}</div>
                   )}
                   {progress.indexError && (
-                    <div className="upload-failed">Uploaded, but indexing failed, so these files are not searchable yet: {progress.indexError}</div>
+                    <Callout tone="error" size="sm" className="upload-failed">Uploaded, but indexing failed, so these files are not searchable yet: {progress.indexError}</Callout>
                   )}
                   {progress.failed.length > 0 && (
-                    <div className="upload-failed">{progress.failed.length} failed: {progress.failed.slice(0, 3).map(f => f.name).join(', ')}{progress.failed.length > 3 ? '…' : ''}</div>
+                    <Callout tone="error" size="sm" className="upload-failed">{progress.failed.length} failed: {progress.failed.slice(0, 3).map(f => f.name).join(', ')}{progress.failed.length > 3 ? '…' : ''}</Callout>
                   )}
                 </div>
               )}
@@ -579,101 +610,51 @@ export function LibraryView({ display, onDisplay }: {
           )}
         </section>
       </div>
-      {ctx && (
-        <>
-          <div className="scope-overlay" onClick={closeCtx} onContextMenu={e => { e.preventDefault(); closeCtx() }} />
-          <div
-            className="ctx-menu card"
-            style={{ left: Math.min(ctx.x, window.innerWidth - 230), top: Math.min(ctx.y, window.innerHeight - 210) }}
-          >
-            <div className="ctx-title" title={ctx.path || cfg.kbLabel}>{ctx.path ? ctx.path.split('/').pop() : cfg.kbLabel}</div>
-            {!ctx.isDir && (
-              <button onClick={() => { onDisplay({ kind: 'file', target: ctx.path }); closeCtx() }}>Open</button>
-            )}
-            {writableAt(ctx.path) && ctx.isDir && (ctxNewDir === null ? (
-              <button onClick={() => setCtxNewDir('')}>New folder</button>
-            ) : (
-              <div className="ctx-input">
-                <input
-                  className="field"
-                  autoFocus
-                  value={ctxNewDir}
-                  placeholder="folder name"
-                  onChange={e => setCtxNewDir(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') void ctxMakeDir(); if (e.key === 'Escape') setCtxNewDir(null) }}
-                />
-                <button className="btn-secondary" disabled={ctxBusy || !ctxNewDir.trim()} onClick={() => void ctxMakeDir()}>Create</button>
-              </div>
-            ))}
-            {changeableAt(ctx.path) && (ctxRename === null ? (
-              <button onClick={() => setCtxRename(ctx.path.split('/').pop() ?? '')}>Rename…</button>
-            ) : (
-              <div className="ctx-input">
-                <input
-                  className="field"
-                  autoFocus
-                  value={ctxRename}
-                  placeholder="new name"
-                  onChange={e => setCtxRename(e.target.value)}
-                  onFocus={e => {
-                    // Select the stem, leaving the extension alone, which is
-                    // what a rename usually changes.
-                    const dot = e.target.value.lastIndexOf('.')
-                    e.target.setSelectionRange(0, dot > 0 ? dot : e.target.value.length)
-                  }}
-                  onKeyDown={e => { if (e.key === 'Enter') void ctxDoRename(); if (e.key === 'Escape') setCtxRename(null) }}
-                />
-                <button className="btn-secondary" disabled={ctxBusy || !ctxRename.trim()} onClick={() => void ctxDoRename()}>
-                  {ctxBusy ? 'Renaming…' : 'Rename'}
-                </button>
-              </div>
-            ))}
-            {ctx.isDir && (
-              <button onClick={() => { void runSuggest(ctx.path); closeCtx() }}>Suggest labels…</button>
-            )}
-            {ctx.path && (
-              <button onClick={() => { addToChat(ctx.path); closeCtx() }}>Add to chat</button>
-            )}
-            {ctx.path && (
-              <button onClick={async () => {
-                await navigator.clipboard.writeText(ctx.path).catch(() => {})
-                setCtxErr('Path copied')
-                setTimeout(closeCtx, 700)
-              }}>Copy path</button>
-            )}
-            {ctx.path && (
-              <button onClick={() => {
-                const paths = multiSel.has(ctx.path) ? [...multiSel] : [ctx.path]
-                setClipboard({ mode: 'cut', paths })
-                closeCtx()
-              }}>Cut{multiSel.has(ctx.path) && multiSel.size > 1 ? ` ${multiSel.size} items` : ''}</button>
-            )}
-            {ctx.path && (
-              <button onClick={() => {
-                const paths = multiSel.has(ctx.path) ? [...multiSel] : [ctx.path]
-                setClipboard({ mode: 'copy', paths })
-                closeCtx()
-              }}>Copy{multiSel.has(ctx.path) && multiSel.size > 1 ? ` ${multiSel.size} items` : ''}</button>
-            )}
-            {ctx.isDir && clipboard?.paths.length && (
-              <button onClick={() => { void pasteInto(ctx.path); closeCtx() }}>
-                Paste {clipboard.paths.length} {clipboard.paths.length === 1 ? 'item' : 'items'}
-              </button>
-            )}
-            {ctx.path && (
-              <button onClick={() => { setMultiSel(new Set([ctx.path])); setTagMenuOpen(true); setSelectMode(true); closeCtx() }}>Labels…</button>
-            )}
-            {!ctx.path || (inAll && !ctx.path.includes('/')) ? null : !ctxConfirm ? (
-              <button className="ctx-danger" onClick={() => setCtxConfirm(true)}>{ctx.isDir ? 'Delete folder…' : 'Delete…'}</button>
-            ) : (
-              <button className="ctx-danger confirm" disabled={ctxBusy} onClick={() => void ctxDelete()}>
-                {ctxBusy ? 'Deleting…' : ctx.isDir ? 'Really delete folder and all contents' : 'Really delete this file'}
-              </button>
-            )}
-            {ctxErr && <div className="ctx-err">{ctxErr}</div>}
-          </div>
-        </>
+      {contextMenu}
+      {nameDialog && (
+        <Modal
+          open
+          onClose={() => setNameDialog(null)}
+          size="sm"
+          title={nameDialog.mode === 'rename' ? 'Rename' : 'New folder'}
+          description={nameDialog.path || cfg.kbLabel}
+          footer={
+            <>
+              <Button variant="ghost" size="sm" onClick={() => setNameDialog(null)}>Cancel</Button>
+              <Button variant="primary" size="sm" loading={nameDialog.busy} disabled={!nameDialog.value.trim()} onClick={() => void submitName()}>
+                {nameDialog.mode === 'rename' ? (nameDialog.busy ? 'Renaming…' : 'Rename') : 'Create'}
+              </Button>
+            </>
+          }
+        >
+          <Input
+            aria-label={nameDialog.mode === 'rename' ? 'New name' : 'Folder name'}
+            value={nameDialog.value}
+            placeholder={nameDialog.mode === 'rename' ? 'new name' : 'folder name'}
+            onChange={e => { const value = e.target.value; setNameDialog(d => d && { ...d, value }) }}
+            onFocus={nameDialog.mode === 'rename' ? e => {
+              // Select the stem, leaving the extension alone, which is
+              // what a rename usually changes.
+              const dot = e.target.value.lastIndexOf('.')
+              e.target.setSelectionRange(0, dot > 0 ? dot : e.target.value.length)
+            } : undefined}
+            onKeyDown={e => { if (e.key === 'Enter') void submitName() }}
+          />
+          {nameDialog.error && <Callout tone="error" size="sm" className="name-dialog-error">{nameDialog.error}</Callout>}
+        </Modal>
       )}
+      <ConfirmModal
+        open={deleteTarget !== null}
+        onClose={() => setDeleteTarget(null)}
+        title={deleteTarget?.isDir ? 'Delete folder and all contents?' : 'Delete this file?'}
+        description={deleteTarget?.path}
+        confirmLabel={deleteTarget?.isDir ? 'Delete folder' : 'Delete'}
+        destructive
+        closeOnConfirm={false}
+        onConfirm={ctxDelete}
+      >
+        {deleteTarget?.error ? <Callout tone="error" size="sm">{deleteTarget.error}</Callout> : undefined}
+      </ConfirmModal>
     </div>
   )
 }

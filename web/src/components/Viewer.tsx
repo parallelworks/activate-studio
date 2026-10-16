@@ -1,4 +1,5 @@
 import { ReactElement, Suspense, lazy, useEffect, useRef, useState } from 'react'
+import { Button, Callout, ConfirmModal, EmptyState, Loader, TabPanel, Tabs } from '@parallelworks/ui'
 import { Streamdown } from 'streamdown'
 import { api, withLibrary, FileContent } from '../api'
 import { forgetHash } from '../lastLocation'
@@ -51,8 +52,8 @@ function PdfPages({ path, markdown }: { path: string; markdown: boolean }) {
       </div>
     )
   }
-  if (error) return <p className="error pad">Could not render this document: {error}</p>
-  if (pages === null) return <p className="muted pad">Rendering preview…</p>
+  if (error) return <Callout tone="error" className="viewer-callout">Could not render this document: {error}</Callout>
+  if (pages === null) return <div className="muted pad"><Loader inline size={16} label="Rendering preview…" /></div>
   const shown = Math.min(pages, PDF_PAGE_CAP)
   return (
     <div className="pdf-pages">
@@ -115,9 +116,7 @@ export function Viewer({ path, find, onDeleted }: {
   const [error, setError] = useState<string | null>(null)
   const [tab, setTab] = useState<Tab>('preview')
   const [confirming, setConfirming] = useState(false)
-  const [deleting, setDeleting] = useState(false)
   const [tags, setTags] = useState<{ own: string[]; inherited: string[] }>({ own: [], inherited: [] })
-  const [labelsOpen, setLabelsOpen] = useState(false)
   // Find in this file. Matches are painted with the CSS Custom Highlight
   // API rather than by wrapping text in <mark>, because the rendered
   // Markdown and the text bodies are React's DOM and rewriting their text
@@ -207,26 +206,26 @@ export function Viewer({ path, find, onDeleted }: {
   if (!path) {
     return (
       <div className="viewer empty">
-        <div className="empty-state">
-          <h2>Nothing open</h2>
-          <p className="muted">Pick a file from the tree, drop new material on the Add button, or find something in Search.</p>
-        </div>
+        <EmptyState
+          variant="bare"
+          title="Nothing open"
+          description="Pick a file from the tree, drop new material on the Add button, or find something in Search."
+        />
       </div>
     )
   }
   if (error) {
     return (
       <div className="viewer">
-        <div className="empty-state">
-          <h2>Cannot open this file</h2>
-          <p className="muted">{path}</p>
-          <p className="error">{error}</p>
-          <p className="muted">It may have been moved, renamed, or deleted since this link was made.</p>
-        </div>
+        <Callout tone="error" title="Cannot open this file" className="viewer-callout">
+          <p className="viewer-callout-path">{path}</p>
+          <p>{error}</p>
+          <p>It may have been moved, renamed, or deleted since this link was made.</p>
+        </Callout>
       </div>
     )
   }
-  if (!file) return <div className="viewer"><p className="muted">Loading {path}…</p></div>
+  if (!file) return <div className="viewer"><div className="muted pad"><Loader inline size={16} label={`Loading ${path}…`} /></div></div>
 
   const suffix = suffixOf(path)
   const isMarkdown = suffix === '.md'
@@ -249,14 +248,13 @@ export function Viewer({ path, find, onDeleted }: {
   // Markdown turns its columns into code blocks and reflows its rows.
   const extractedMarkdown = file.source === 'extracted' && file.format === 'markdown'
 
+  // A failed delete replaces the view with the error, as a failed open does.
   const doDelete = async () => {
-    setDeleting(true)
     try {
       await api.deleteFile(path)
       onDeleted(path)
     } catch (e) {
       setError(String(e))
-      setDeleting(false)
     }
   }
 
@@ -264,7 +262,7 @@ export function Viewer({ path, find, onDeleted }: {
     ? <p className="muted pad">No text is stored in the index for this file{isImage ? ' yet; the next index pass adds OCR text and a description' : ''}.</p>
     : (
       <div className="viewer-body">
-        <p className="index-note">This is the text representation stored in the search index, not the original file.</p>
+        <Callout tone="warning" size="sm" className="index-note">This is the text representation stored in the search index, not the original file.</Callout>
         {isMarkdown || extractedMarkdown
           ? <div className="md-body"><Streamdown>{file.content}</Streamdown></div>
           : <pre className="text-body">{file.content}</pre>}
@@ -289,7 +287,7 @@ export function Viewer({ path, find, onDeleted }: {
       className="html-preview-frame"
     />
   ) : isModel ? (
-    <Suspense fallback={<p className="muted pad">Loading the 3D viewer…</p>}><ModelViewer path={path} /></Suspense>
+    <Suspense fallback={<div className="muted pad"><Loader inline size={16} label="Loading the 3D viewer…" /></div>}><ModelViewer path={path} /></Suspense>
   ) : isImage ? (
     <div className="viewer-body"><img src={api.rawUrl(path)} alt={path} style={{ maxWidth: '100%' }} /></div>
   ) : isPdf || isOffice ? (
@@ -336,64 +334,63 @@ export function Viewer({ path, find, onDeleted }: {
         </span>
         <span className="viewer-meta">
           <span>{new Date(file.mtime * 1000).toISOString().slice(0, 10)}</span>
-          <span className="upload-menu">
-            <button className="btn-secondary" onClick={() => setFindOpen(o => !o)} title="Find text in this file">Find</button>
-            <button className="btn-secondary" onClick={() => setLabelsOpen(o => !o)}>Labels</button>
-            {labelsOpen && (
-              <TagMenu
-                paths={[file.path]}
-                onClose={() => setLabelsOpen(false)}
-                onApplied={() => window.dispatchEvent(new Event('ade-tags-changed'))}
-              />
-            )}
-          </span>
-          <a className="btn-primary" href={api.downloadUrl(file.path)}>Download</a>
-          {confirming ? (
-            <span className="confirm-group">
-              <button className="btn-danger" onClick={doDelete} disabled={deleting}>
-                {deleting ? 'Deleting…' : 'Confirm delete'}
-              </button>
-              <button className="btn-secondary" onClick={() => setConfirming(false)} disabled={deleting}>Cancel</button>
-            </span>
-          ) : (
-            <button className="btn-danger-outline" onClick={() => setConfirming(true)}>Delete</button>
-          )}
+          <Button variant="secondary" size="sm" onClick={() => setFindOpen(o => !o)} title="Find text in this file">Find</Button>
+          <TagMenu
+            paths={[file.path]}
+            trigger={<Button variant="secondary" size="sm">Labels</Button>}
+            align="end"
+            onApplied={() => window.dispatchEvent(new Event('ade-tags-changed'))}
+          />
+          <Button variant="primary" size="sm" href={api.downloadUrl(file.path)} reloadDocument>Download</Button>
+          <Button variant="outline" size="sm" onClick={() => setConfirming(true)}>Delete</Button>
+          <ConfirmModal
+            open={confirming}
+            onClose={() => setConfirming(false)}
+            title="Delete this file?"
+            description={file.path}
+            confirmLabel="Delete"
+            destructive
+            onConfirm={doDelete}
+          />
         </span>
       </div>
-      {views.length > 0 && (
-        <div className="viewer-tabs">
-          {views.map(v => (
-            <button key={v.key} className={active === v.key ? 'active' : ''} onClick={() => setTab(v.key)}>{v.label}</button>
-          ))}
+      {/* The find bar and the body sit inside the tabs, so the shown view is
+          the tab's panel. A file with one view shows no tab row. */}
+      <Tabs
+        label="File views"
+        items={views.map(v => ({ value: v.key, label: v.label }))}
+        value={active}
+        onValueChange={setTab}
+        className="file-tabs"
+      >
+        {(findOpen || findText) && (
+          <div className="find-bar">
+            <input
+              value={findText}
+              autoFocus
+              placeholder="Find in this file"
+              onChange={e => { setFindText(e.target.value); setHitIdx(0) }}
+              onKeyDown={e => {
+                if (e.key === 'Enter' && hitCount) setHitIdx(i => e.shiftKey ? (i - 1 + hitCount) % hitCount : (i + 1) % hitCount)
+                if (e.key === 'Escape') { setFindOpen(false); setFindText('') }
+              }}
+            />
+            <span className="find-count muted">
+              {hitCount
+                ? `${Math.min(hitIdx, hitCount - 1) + 1} of ${hitCount}`
+                : (isPdf || isOffice || isImage) && active === 'preview' && file.content != null
+                  ? <>Pages are images; <Button variant="ghost" size="sm" onClick={() => setTab('indexed')}>show matches in the indexed text</Button></>
+                  : findText ? 'No matches' : ''}
+            </span>
+            <Button variant="secondary" size="sm" disabled={!hitCount} onClick={() => setHitIdx(i => (i - 1 + hitCount) % hitCount)}>Previous</Button>
+            <Button variant="secondary" size="sm" disabled={!hitCount} onClick={() => setHitIdx(i => (i + 1) % hitCount)}>Next</Button>
+            <Button variant="secondary" size="sm" onClick={() => { setFindOpen(false); setFindText('') }}>Close</Button>
+          </div>
+        )}
+        <div ref={bodyRef} className="viewer-find-scope">
+          <TabPanel value={active}>{views.find(v => v.key === active)?.node ?? previewView}</TabPanel>
         </div>
-      )}
-      {(findOpen || findText) && (
-        <div className="find-bar">
-          <input
-            value={findText}
-            autoFocus
-            placeholder="Find in this file"
-            onChange={e => { setFindText(e.target.value); setHitIdx(0) }}
-            onKeyDown={e => {
-              if (e.key === 'Enter' && hitCount) setHitIdx(i => e.shiftKey ? (i - 1 + hitCount) % hitCount : (i + 1) % hitCount)
-              if (e.key === 'Escape') { setFindOpen(false); setFindText('') }
-            }}
-          />
-          <span className="find-count muted">
-            {hitCount
-              ? `${Math.min(hitIdx, hitCount - 1) + 1} of ${hitCount}`
-              : (isPdf || isOffice || isImage) && active === 'preview' && file.content != null
-                ? <>Pages are images; <button className="link-button" onClick={() => setTab('indexed')}>show matches in the indexed text</button></>
-                : findText ? 'No matches' : ''}
-          </span>
-          <button className="btn-secondary" disabled={!hitCount} onClick={() => setHitIdx(i => (i - 1 + hitCount) % hitCount)}>Previous</button>
-          <button className="btn-secondary" disabled={!hitCount} onClick={() => setHitIdx(i => (i + 1) % hitCount)}>Next</button>
-          <button className="btn-secondary" onClick={() => { setFindOpen(false); setFindText('') }}>Close</button>
-        </div>
-      )}
-      <div ref={bodyRef} className="viewer-find-scope">
-        {views.find(v => v.key === active)?.node ?? previewView}
-      </div>
+      </Tabs>
     </div>
   )
 }
