@@ -3,15 +3,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { api, currentLibrary, setLibrary, settleLibraries, withLibrary } from '../src/api'
 import { LibrarySwitch, libraryWritable } from '../src/components/LibrarySwitch'
 
-// jsdom's selector engine recurses until the stack runs out on the top-layer
-// states that popup positioning asks about, so opening the picker took
-// seconds per frame; no element here is ever in the top layer.
-const nativeMatches = Element.prototype.matches
-Element.prototype.matches = function (this: Element, selector: string) {
-  if (/:(modal|popover-open|fullscreen)\b/.test(selector)) return false
-  return nativeMatches.call(this, selector)
-}
-
 const libs = [
   { id: 'kb', label: 'Knowledge base', primary: true, writable: true, pinned: true, source: true, caps: { index: true, fullText: true, vectors: true } },
   { id: 'scratch', label: 'Scratch', primary: false, writable: false, pinned: true, source: false, caps: { index: true, fullText: false, vectors: false } },
