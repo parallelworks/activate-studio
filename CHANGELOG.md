@@ -2,6 +2,37 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.132 (2026-10-16)
+
+### Change log through v1.131 (#480)
+
+Regenerated with `node scripts/release-notes.mjs --changelog` after the v1.131 release.
+
+### UI library 0.59 and its components throughout the Studio (#481)
+
+Moves @parallelworks/ui from 0.45 to 0.59 and replaces the Studio's hand-built controls with the package's components wherever one fits.
+
+Library update. CopyToClipboard became CopyButton and CopyCodeBlock; streaming parts moved from useChat to useChatStream; chat links gained a newChat target. monaco-editor is added as the package expects; it loads only when an editor opens. The main script grows by about 50 KB and the stylesheet loaded at start shrinks by about 6 KB. The derived theme defaults are regenerated for the new tokens.
+
+Run view. A step in the run graph now opens its summary, its log as it grows, and its script. The package reads these through the provider's useRunFile, bound to a new /api/runs/file route that relays the platform's run file API with the viewer's key and refuses paths outside the run directory.
+
+Components. Across 30 files the Studio now uses the package's Button, IconButton, RefreshButton, Input, Textarea, NumberInput, Select, Autocomplete, ActionMenu, Checkbox, Switch, Callout, EmptyState, Loader, Skeleton, StatusDot, StatusBadge, Tabs, Disclosure, DescriptionList, Table, Popover, Modal, ConfirmModal, the context menu, SearchInput, SegmentedControl, ToggleGroup, Pagination, ProgressBar, CopyButton, CopyCodeBlock, LetterBadge and RunStatusIcon, plus LogViewer for an agent's live output, a read-only Editor for workflow YAML, and EditorField for workflow code inputs. About 600 lines of the Studio's own CSS are removed.
+
+Kept hand-built because the package has no fit: the library tree (drag to move, range selection, label chips per row), the file viewer's source view and find bar, the side view's closable tabs, the full-screen session view, the sidebar and its mobile sheet, the vertical Help and Settings rails, the treemap and 3D viewer, and the SQL box (the code editor would take over Ctrl/Cmd+K and Tab).
+
+Behavior changes worth knowing:
+- Deleting files, folders and conversations confirms in a dialog instead of an inline second button.
+- New folder and Rename open a small dialog from the right-click menu.
+- Transient notes (copied, saved, applied) are toasts.
+- A search box clears on Escape.
+- Number fields clamp to their range when you leave them.
+- The row checkbox in the library tree works from the keyboard.
+- The page-wide link color now sits in the package's base layer, so a Button rendered as a link keeps its colors.
+
+Not adopted: @parallelworks/problem and @parallelworks/i18n assume a localized client that shows messages by error code from a catalog. The Studio has no locales and its server errors carry specific English text, so adopting them now would make errors less specific. The Go packages (server, pgdb, spa) do not apply to a Node server.
+
+Checked: typecheck, 312 server and 77 web tests, the production build, and a screenshot tour of every view in light and dark mode against the current release on the same synthetic data, with no console errors.
+
 ## v1.131 (2026-10-15)
 
 ### Change log through v1.130 (#478)
