@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
-import { useChat } from '@parallelworks/ui/ai'
+import { useChat, useChatStream } from '@parallelworks/ui/ai'
 import { initializeValues } from '@parallelworks/ui/form'
 import { useWorkflowFields } from './WorkflowFields'
 import { insidePlatform } from './SessionView'
@@ -349,7 +349,8 @@ function SideView({ side, beside }: { side: ReturnType<typeof useSideItems>; bes
  * with it hidden, with a button at the edge to show it.
  */
 export function SideViewHost() {
-  const { currentConversation, streamingParts } = useChat()
+  const { currentConversation } = useChat()
+  const { streamingParts } = useChatStream()
   const slug = useMemo(
     () => latestRunSlug((currentConversation?.messages ?? []) as MessageLike[], (streamingParts ?? []) as PartLike[]),
     [currentConversation, streamingParts],

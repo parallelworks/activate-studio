@@ -121,6 +121,18 @@ export async function runPaneRoutes(app: FastifyInstance): Promise<void> {
     return run
   })
 
+  // A file in a run's directory (a step's log, its script, its summary), for
+  // the step dialogs of the run view. The platform returns it as a JSON
+  // string; a path outside the run directory is refused here first.
+  app.get('/api/runs/file', async req => {
+    const { slug = '', path = '' } = req.query as { slug?: string; path?: string }
+    if (!SLUG.test(slug)) throw new KbError(400, 'slug required')
+    if (!path || path.length > 512 || path.startsWith('/') || path.split('/').includes('..')) throw new KbError(400, 'a path inside the run directory is required')
+    const text = await platformJson(`/api/workflow-runs/${encodeURIComponent(slug)}/files?file=${encodeURIComponent(path)}`, keyOf(req))
+    if (typeof text !== 'string') throw new KbError(404, `No file ${path} in run ${slug}.`)
+    return { text }
+  })
+
   const relay = async (req: FastifyRequest, reply: FastifyReply) => {
     const { host } = req.params as { host: string }
     const key = keyOf(req)

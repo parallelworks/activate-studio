@@ -1,7 +1,7 @@
 import { LibrariesSection } from '../components/LibrariesSection'
 import { WorkflowsSection } from '../components/WorkflowsSection'
 import { useEffect, useState } from 'react'
-import { CopyToClipboard, Switch } from '@parallelworks/ui'
+import { CopyButton, CopyCodeBlock, Switch } from '@parallelworks/ui'
 import { ACCENTS, SURFACES, applyAccent, applySurface } from '../accents'
 import { useAppConfig } from '../config'
 import { bannerInk } from '../components/ClassificationBanner'
@@ -300,6 +300,7 @@ export function SettingsView() {
 
   const sections = settingsSections({ authEnabled: !!me?.authEnabled, platform: !!cfg.platform })
 
+  const mcpJson = JSON.stringify({ mcpServers: { 'studio-kb': { type: 'http', url: `${location.origin}/api/mcp`, ...(me?.authEnabled ? { headers: { Authorization: 'Bearer <platform token>' } } : {}) } } }, null, 2)
   const saveRow = (reload = true) => (
     <div className="query-actions">
       <button className="btn-primary" onClick={() => void save(reload)} disabled={busy}>{busy ? 'Saving…' : 'Save settings'}</button>
@@ -754,7 +755,7 @@ export function SettingsView() {
               </dl>
               <div className="tool-group">Knowledge tools over MCP (your model, our tools)</div>
               <p className="muted view-sub">
-                <CopyToClipboard text={`${location.origin}/api/mcp`}><code>{location.origin}/api/mcp</code></CopyToClipboard> serves
+                <code>{location.origin}/api/mcp</code><CopyButton text={`${location.origin}/api/mcp`} label="MCP address" /> serves
                 this knowledge base over the Model Context Protocol: the client brings its own model and calls the corpus tools
                 directly (search, read, list, query, labels, docs). Read-only; adding material, labels, and platform actions stay
                 with this assistant. {me?.authEnabled
@@ -766,9 +767,9 @@ export function SettingsView() {
                 <span>Serve MCP at /api/mcp. Individual tools can be disabled in the tool catalog above.</span>
               </div>
               <p className="field-label">pw code</p>
-              <CopyToClipboard text={`pw code mcp add --transport http studio-kb ${location.origin}/api/mcp`}>
-                <code className="mcp-snippet">pw code mcp add --transport http studio-kb {location.origin}/api/mcp</code>
-              </CopyToClipboard>
+              <CopyCodeBlock className="mcp-snippet" text={`pw code mcp add --transport http studio-kb ${location.origin}/api/mcp`} label="pw code command">
+                pw code mcp add --transport http studio-kb {location.origin}/api/mcp
+              </CopyCodeBlock>
               <p className="muted key-note">pw code signs its platform requests with your existing CLI login, so no token goes in the command.</p>
               <div className="tool-group">Delegation (the assistant working in parallel)</div>
               <p className="muted view-sub">
@@ -857,9 +858,7 @@ export function SettingsView() {
               {saveRow(false)}
 
               <p className="field-label">Other MCP clients (settings JSON)</p>
-              <CopyToClipboard text={JSON.stringify({ mcpServers: { 'studio-kb': { type: 'http', url: `${location.origin}/api/mcp`, ...(me?.authEnabled ? { headers: { Authorization: 'Bearer <platform token>' } } : {}) } } }, null, 2)}>
-                <code className="mcp-snippet">{JSON.stringify({ mcpServers: { 'studio-kb': { type: 'http', url: `${location.origin}/api/mcp`, ...(me?.authEnabled ? { headers: { Authorization: 'Bearer <platform token>' } } : {}) } } }, null, 2)}</code>
-              </CopyToClipboard>
+              <CopyCodeBlock className="mcp-snippet" text={mcpJson} label="MCP settings">{mcpJson}</CopyCodeBlock>
               {saveRow(false)}
 
 
@@ -877,7 +876,7 @@ export function SettingsView() {
               {form.ragProxyEnabled && (<>
               <p className="muted view-sub">
                 The endpoint at{' '}
-                <CopyToClipboard text={`${location.origin}/v1`}><code>{location.origin}/v1</code></CopyToClipboard> lets
+                <code>{location.origin}/v1</code><CopyButton text={`${location.origin}/v1`} label="endpoint address" /> lets
                 any OpenAI-speaking client (pw code, SDKs, other agents) use the knowledge base as a grounded model.
                 Callers authenticate with their own gateway API key as the bearer token; the endpoint holds no credentials of its own.
               </p>
@@ -961,14 +960,10 @@ export function SettingsView() {
                     Users can now select {form.ragAdvertiseAgentModel && form.ragAdvertiseRagModel ? 'these models' : 'this model'} anywhere on the platform:
                     <div className="rag-chip-row">
                       {form.ragAdvertiseAgentModel && (
-                        <CopyToClipboard text={`session:${cfg.user.username}:${ragEp.name}/studio-agent`}>
-                          <code>session:{cfg.user.username}:{ragEp.name}/studio-agent</code>
-                        </CopyToClipboard>
+                        <span><code>session:{cfg.user.username}:{ragEp.name}/studio-agent</code><CopyButton text={`session:${cfg.user.username}:${ragEp.name}/studio-agent`} label="model name" /></span>
                       )}
                       {form.ragAdvertiseRagModel && (
-                        <CopyToClipboard text={`session:${cfg.user.username}:${ragEp.name}/studio-rag`}>
-                          <code>session:{cfg.user.username}:{ragEp.name}/studio-rag</code>
-                        </CopyToClipboard>
+                        <span><code>session:{cfg.user.username}:{ragEp.name}/studio-rag</code><CopyButton text={`session:${cfg.user.username}:${ragEp.name}/studio-rag`} label="model name" /></span>
                       )}
                       {!form.ragAdvertiseAgentModel && !form.ragAdvertiseRagModel && <span className="muted">No models advertised; enable a toggle above.</span>}
                     </div>

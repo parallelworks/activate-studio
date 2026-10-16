@@ -3,6 +3,7 @@ import './install'
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { UIProvider } from '@parallelworks/ui'
+import { useRunFile } from './runFile'
 import App from './App'
 import { rememberHashChanges, restoreLastHash } from './lastLocation'
 import { applyRememberedFavicon } from './config'
@@ -43,11 +44,8 @@ const loadWorkflowEngine = () =>
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <UIProvider engine={loadWorkflowEngine}>
+    <UIProvider engine={loadWorkflowEngine} data={{ useRunFile }}>
       <App />
-      {/* The UI package's help icons and truncated labels (the workflow
-          form's input tooltips among them) only mark their anchors; this
-          one tooltip, rendered once at the root, is what shows the text. */}
     </UIProvider>
   </React.StrictMode>,
 )

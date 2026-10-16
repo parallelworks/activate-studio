@@ -5,7 +5,7 @@ import { NextUp } from '../components/NextUp'
 import { VoiceOverlay } from '../components/VoiceOverlay'
 import { rememberHash } from '../lastLocation'
 import {
-  ChatProvider, ChatLayout, ChatThread, ChatEmptyState, AttachmentManager, useChat,
+  ChatProvider, ChatLayout, ChatThread, ChatEmptyState, AttachmentManager, useChat, type ChatLinkProps,
 } from '@parallelworks/ui/ai'
 import { ChatsManager } from '../components/ChatsManager'
 import { ManageChatsRailItem } from '../components/ManageChatsRailItem'
@@ -324,13 +324,17 @@ export function ChatView() {
   // The package's default link is a real anchor (/chat/<id>) meant for a
   // routed host; without interception it full-page navigates and loses the
   // SPA state, which read as "sessions do not load".
-  const LinkComponent = useCallback(function StudioChatLink({ target, className, title, onClick, children }: {
-    target: { kind: 'conversation'; id: string } | { kind: 'attachments' } | { kind: 'external'; href: string }
-    className?: string
-    title?: string
-    onClick?: (e: React.MouseEvent) => void
-    children?: React.ReactNode
-  }) {
+  const startNewChat = useCallback(() => {
+    setActiveId(null); setShowAttachments(false); setShowManage(false)
+    // Land the cursor in the composer so typing starts immediately.
+    const focus = (tries: number) => {
+      const box = document.querySelector<HTMLTextAreaElement>('.chat-canvas textarea')
+      if (box) box.focus()
+      else if (tries > 0) setTimeout(() => focus(tries - 1), 100)
+    }
+    setTimeout(() => focus(5), 50)
+  }, [])
+  const LinkComponent = useCallback(function StudioChatLink({ target, className, title, onClick, children }: ChatLinkProps) {
     return (
       <a
         href="#"
@@ -340,12 +344,13 @@ export function ChatView() {
           e.preventDefault()
           onClick?.(e)
           if (target.kind === 'conversation') { setActiveId(target.id); setShowAttachments(false); setShowManage(false) }
+          else if (target.kind === 'newChat') startNewChat()
           else if (target.kind === 'attachments') { setShowAttachments(true); setShowManage(false) }
           else if (target.kind === 'external') window.open(target.href, '_blank', 'noopener')
         }}
       >{children}</a>
     )
-  }, [])
+  }, [startNewChat])
   const cfg = useAppConfig()
   // The library the chat searches is part of its scope, chosen in the same
   // menu as the labels; the button names it when there is more than one.
@@ -380,16 +385,7 @@ export function ChatView() {
       currentUser={cfg.user}
       navigation={{
         toConversation: id => { setActiveId(id); setShowAttachments(false); setShowManage(false) },
-        toNewChat: () => {
-          setActiveId(null); setShowAttachments(false); setShowManage(false)
-          // Land the cursor in the composer so typing starts immediately.
-          const focus = (tries: number) => {
-            const box = document.querySelector<HTMLTextAreaElement>('.chat-canvas textarea')
-            if (box) box.focus()
-            else if (tries > 0) setTimeout(() => focus(tries - 1), 100)
-          }
-          setTimeout(() => focus(5), 50)
-        },
+        toNewChat: startNewChat,
       }}
       activeConversationId={activeId}
       config={{

@@ -10,7 +10,7 @@ function block(css: string, selector: string): Record<string, string> {
   const at = region.indexOf(`${selector} {`)
   const body = region.slice(at, region.indexOf('}', at))
   const out: Record<string, string> = {}
-  for (const m of body.matchAll(/(--theme-[a-z-]+):\s*([^;]+);/g)) out[m[1]] = m[2].trim()
+  for (const m of body.matchAll(/(--theme-[a-z0-9-]+):\s*([^;]+);/g)) out[m[1]] = m[2].trim()
   return out
 }
 

@@ -18,26 +18,37 @@ a { color: var(--pw-link); }
   --theme-input-disabled-bg: #ebeef1;
   --theme-app: #0a101b;
   --theme-muted-text-color: #4e5664;
-  --theme-placeholder: #808999;
+  --theme-placeholder: #7e8796;
   --theme-link: #06354f;
   --theme-border: #cacdd0;
-  --theme-border-strong: #a3a6a9;
+  --theme-border-field: #bdc0c3;
+  --theme-border-strong: #848689;
   --theme-accent: #06354f;
   --theme-accent-text: #ffffff;
   --theme-accent-hover: #002841;
   --theme-accent-subtle: #d3ebfc;
   --theme-focus: #06354f;
   --theme-focus-ring: rgba(6, 53, 79, 0.25);
-  --theme-success: #005f23;
-  --theme-success-muted: rgba(0, 95, 35, 0.1);
-  --theme-error: #95050f;
-  --theme-error-muted: rgba(149, 5, 15, 0.1);
-  --theme-warning: #794800;
-  --theme-warning-muted: rgba(121, 72, 0, 0.1);
-  --theme-info: #004caa;
-  --theme-info-muted: rgba(0, 76, 170, 0.1);
-  --theme-favorite: #920242;
-  --theme-favorite-muted: rgba(146, 2, 66, 0.1);
+  --theme-success: #00973d;
+  --theme-success-text: #006226;
+  --theme-success-solid: #00873c;
+  --theme-success-muted: rgba(0, 151, 61, 0.1);
+  --theme-error: #ea4841;
+  --theme-error-text: #a11a1b;
+  --theme-error-solid: #db3934;
+  --theme-error-muted: rgba(234, 72, 65, 0.1);
+  --theme-warning: #bd7100;
+  --theme-warning-text: #7b4a00;
+  --theme-warning-solid: #a76900;
+  --theme-warning-muted: rgba(189, 113, 0, 0.1);
+  --theme-info: #0681f8;
+  --theme-info-text: #0050af;
+  --theme-info-solid: #0073e8;
+  --theme-info-muted: rgba(6, 129, 248, 0.1);
+  --theme-favorite: #e7457a;
+  --theme-favorite-text: #9e174b;
+  --theme-favorite-solid: #d7366e;
+  --theme-favorite-muted: rgba(231, 69, 122, 0.1);
   --theme-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.07);
   --theme-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.07), 0 2px 4px -2px rgba(0, 0, 0, 0.07);
   --theme-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.07), 0 4px 6px -4px rgba(0, 0, 0, 0.07);
@@ -64,6 +75,22 @@ a { color: var(--pw-link); }
   --theme-ansi-magenta: #8d3a88;
   --theme-ansi-cyan: #00666c;
   --theme-ansi-white: #555d6c;
+  --theme-category-1: #ffcfce;
+  --theme-category-1-text: #6e3537;
+  --theme-category-2: #f7d6b8;
+  --theme-category-2-text: #673f12;
+  --theme-category-3: #dfe1b7;
+  --theme-category-3-text: #4e4e11;
+  --theme-category-4: #c1e8cd;
+  --theme-category-4-text: #1f5636;
+  --theme-category-5: #b3e9eb;
+  --theme-category-5-text: #00555a;
+  --theme-category-6: #c0e2ff;
+  --theme-category-6-text: #1f4e73;
+  --theme-category-7: #dcd8ff;
+  --theme-category-7-text: #4a4273;
+  --theme-category-8: #f5d0ec;
+  --theme-category-8-text: #63385a;
 }
 [data-theme='dark'] {
   color-scheme: dark;
@@ -71,31 +98,42 @@ a { color: var(--pw-link); }
   --theme-panel-bg: #111923;
   --theme-panel-hover: #1a232d;
   --theme-muted-panel-bg: #17202b;
-  --theme-hover: #1b242e;
+  --theme-hover: #2f3944;
   --theme-input-bg: #141d27;
   --theme-input-disabled-bg: #0e1721;
-  --theme-app: #dee9f4;
-  --theme-muted-text-color: #bfc9d4;
-  --theme-placeholder: #99a3ae;
-  --theme-link: #8dcffb;
+  --theme-app: #e6f1fd;
+  --theme-muted-text-color: #c6d0db;
+  --theme-placeholder: #9aa4af;
+  --theme-link: #95d7ff;
   --theme-border: #2b333c;
-  --theme-border-strong: #4b545d;
+  --theme-border-field: #363e47;
+  --theme-border-strong: #626a75;
   --theme-accent: #7fc0ec;
   --theme-accent-text: #000000;
   --theme-accent-hover: #8fd0fd;
   --theme-accent-subtle: #082334;
   --theme-focus: #7fc0ec;
   --theme-focus-ring: rgba(127, 192, 236, 0.35);
-  --theme-success: #67e488;
-  --theme-success-muted: rgba(103, 228, 136, 0.15);
-  --theme-error: #ffbcb2;
-  --theme-error-muted: rgba(255, 188, 178, 0.15);
-  --theme-warning: #ffc16d;
-  --theme-warning-muted: rgba(255, 193, 109, 0.15);
-  --theme-info: #a8d0ff;
-  --theme-info-muted: rgba(168, 208, 255, 0.15);
-  --theme-favorite: #ffbac9;
-  --theme-favorite-muted: rgba(255, 186, 201, 0.15);
+  --theme-success: #00bf54;
+  --theme-success-text: #6ae78b;
+  --theme-success-solid: #00873c;
+  --theme-success-muted: rgba(0, 191, 84, 0.15);
+  --theme-error: #ff6056;
+  --theme-error-text: #ffc0b6;
+  --theme-error-solid: #db3934;
+  --theme-error-muted: rgba(255, 96, 86, 0.15);
+  --theme-warning: #dd8900;
+  --theme-warning-text: #ffc571;
+  --theme-warning-solid: #a76900;
+  --theme-warning-muted: rgba(221, 137, 0, 0.15);
+  --theme-info: #499fff;
+  --theme-info-text: #aad3ff;
+  --theme-info-solid: #0073e9;
+  --theme-info-muted: rgba(73, 159, 255, 0.15);
+  --theme-favorite: #fe5c8e;
+  --theme-favorite-text: #ffbecd;
+  --theme-favorite-solid: #d7366e;
+  --theme-favorite-muted: rgba(254, 92, 142, 0.15);
   --theme-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
   --theme-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.35), 0 2px 4px -2px rgba(0, 0, 0, 0.35);
   --theme-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.35), 0 4px 6px -4px rgba(0, 0, 0, 0.35);
@@ -122,6 +160,22 @@ a { color: var(--pw-link); }
   --theme-ansi-magenta: #ffa8fb;
   --theme-ansi-cyan: #00dae4;
   --theme-ansi-white: #dee8f4;
+  --theme-category-1: #593030;
+  --theme-category-1-text: #fed2d0;
+  --theme-category-2: #533618;
+  --theme-category-2-text: #f6d8bc;
+  --theme-category-3: #3f4017;
+  --theme-category-3-text: #dfe2bc;
+  --theme-category-4: #20462f;
+  --theme-category-4-text: #c5e8d0;
+  --theme-category-5: #034649;
+  --theme-category-5-text: #b8e9eb;
+  --theme-category-6: #1f405b;
+  --theme-category-6-text: #c3e2fe;
+  --theme-category-7: #3d375a;
+  --theme-category-7-text: #ddd9fe;
+  --theme-category-8: #50314a;
+  --theme-category-8-text: #f4d2eb;
 }
 /* END derived theme defaults */
 
@@ -657,7 +711,7 @@ textarea.field { line-height: 1.5; }
 .btn-danger { border: none; background: var(--theme-error); color: #fff; }
 .btn-danger:hover { opacity: 0.9; }
 .btn-danger:disabled { opacity: 0.6; cursor: default; }
-.btn-danger-outline { border: 1px solid color-mix(in srgb, var(--theme-error) 45%, var(--theme-border)); background: var(--theme-panel-bg); color: var(--theme-error); }
+.btn-danger-outline { border: 1px solid color-mix(in srgb, var(--theme-error) 45%, var(--theme-border)); background: var(--theme-panel-bg); color: var(--theme-error-text); }
 .btn-danger-outline:hover { background: var(--theme-error-muted); }
 .confirm-group { display: inline-flex; gap: 6px; }
 
@@ -1442,7 +1496,7 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
   font-size: 13px; color: var(--pw-text); padding: 7px 10px; border-radius: 6px;
 }
 .ctx-menu > button:hover { background: var(--pw-hover-row, #f3f4f6); }
-.ctx-menu > button.ctx-danger { color: var(--theme-error); }
+.ctx-menu > button.ctx-danger { color: var(--theme-error-text); }
 .ctx-menu > button.ctx-danger.confirm { background: var(--theme-error-muted); }
 .ctx-input { display: flex; gap: 6px; padding: 4px 8px; }
 .ctx-input .field { font-size: 13px; padding: 5px 8px; min-width: 0; }
@@ -1822,9 +1876,7 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .access-compare dd { margin: 0; font-size: 13px; color: var(--pw-muted); line-height: 1.55; }
 .access-compare > div { border-left: 2px solid var(--pw-border-strong); padding-left: 12px; }
 .access-switch { display: flex; align-items: center; gap: 10px; margin: 10px 0 8px; font-size: 13px; }
-.mcp-snippet { display: block; background: var(--pw-bg); border: 1px solid var(--pw-border); border-radius: 6px;
-  padding: 8px 10px; font-size: 12px; line-height: 1.5; overflow-x: auto; white-space: pre-wrap; word-break: break-all;
-  cursor: copy; margin-bottom: 6px; }
+.mcp-snippet { margin-bottom: 6px; }
 
 /* The More button and its sheet are phone furniture; at desktop width
    the full rail carries every destination and these never render. */
@@ -2071,16 +2123,6 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
    box (fieldBox), and the Studio's own pickers use the same box. The rule
    that once gave the library's bare inputs a border drew a second box
    inside the number fields and dropdowns once the library drew its own. */
-/* The UI library's Yes/No switch paints its handle and its unselected half
-   with a fixed white-to-gray gradient and has no dark variant. */
-[data-theme='dark'] [role=switch] [class*="from-[#e6e6e6]"] {
-  background-image: linear-gradient(to bottom, color-mix(in srgb, var(--pw-text) 10%, var(--pw-panel)), color-mix(in srgb, var(--pw-text) 6%, var(--pw-panel)));
-  color: var(--pw-text);
-}
-/* The handle, a step lighter so it stays distinct from the label beside it. */
-[data-theme='dark'] [role=switch] [class*="from-white"] {
-  background-image: linear-gradient(to bottom, color-mix(in srgb, var(--pw-text) 28%, var(--pw-panel)), color-mix(in srgb, var(--pw-text) 20%, var(--pw-panel)));
-}
 
 /* Workflow runner page and form layout. The form is the platform's own
    renderer; these rules give it the Studio's proportions: a fixed label
