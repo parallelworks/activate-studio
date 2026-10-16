@@ -30,6 +30,8 @@ globalThis.fetch = async (url, init) => {
   if (String(url) === 'https://platform.test/api/sessions') return Response.json(RAW)
   // A run's files, which the platform returns as a JSON string.
   if (String(url) === 'https://platform.test/api/workflow-runs/design-explorer-00012/files?file=logs%2Fmain%2Fstep_0%2Flogs.out') return Response.json('step 0 output\n')
+  // The platform reads run files from the user's workspace, here scaled down.
+  if (String(url).startsWith('https://platform.test/api/workflow-runs/design-explorer-00013/files')) return Response.json({ error: true, message: 'User workspace not found or is not running', code: 'invalid_request' }, { status: 400 })
   // The study viewer's own host, behind the platform key.
   if (String(url).startsWith('https://explorer-00012.sessions.test/')) {
     if (init?.headers?.Authorization !== 'Bearer deploy-key') return new Response('', { status: 307, headers: { location: 'https://platform.test/login' } })
@@ -160,4 +162,15 @@ test('a run file reaches the step dialogs through the viewer\'s key; a path outs
   for (const bad of ['../etc/passwd', '/etc/passwd', 'logs/../../x', ''])
     assert.equal((await app.inject({ url: `/api/runs/file?slug=design-explorer-00012&path=${encodeURIComponent(bad)}` })).statusCode, 400, bad)
   assert.equal((await app.inject({ url: '/api/runs/file?slug=../x&path=logs.out' })).statusCode, 400)
+})
+
+test('a run file behind a stopped workspace asks for one start and says so', async () => {
+  const starts = []
+  ;(await import('../dist/runPane.js')).setRunPaneWorkspaceStart(async key => { starts.push(key) })
+  for (let i = 0; i < 2; i++) {
+    const r = await app.inject({ url: '/api/runs/file?slug=design-explorer-00013&path=logs.out' })
+    assert.equal(r.statusCode, 503)
+    assert.match(r.body, /workspace was not running/)
+  }
+  assert.deepEqual(starts, ['deploy-key'], 'one start for both polls')
 })

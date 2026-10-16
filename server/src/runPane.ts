@@ -1,7 +1,10 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { Readable } from 'node:stream'
 import { KbError } from './kb.js'
-import { platformJson } from './platformRecords.js'
+import { execFile } from 'node:child_process'
+import { PW_CLI } from './config.js'
+import { platformFetch, platformJson } from './platformRecords.js'
+import { isWorkspaceDown } from './workspace.js'
 import { listSessions, sessionKeyFor, type SessionRow } from './sessions.js'
 
 /**
@@ -106,6 +109,16 @@ export function withScrollGuard(html: string): string {
   return doctype ? doctype[0] + FRAME_SCROLL_GUARD + html.slice(doctype[0].length) : FRAME_SCROLL_GUARD + html
 }
 
+type StartWorkspace = (key: string) => Promise<unknown>
+let startWorkspace: StartWorkspace = key => new Promise(resolve =>
+  execFile(PW_CLI, ['workspace', 'start'], { timeout: 120_000, env: { ...process.env, PW_API_KEY: key } }, () => resolve(null)))
+/** Tests replace the workspace start. */
+export function setRunPaneWorkspaceStart(fn: StartWorkspace): void { startWorkspace = fn }
+// One start request per credential while a start is likely under way; the
+// step dialog polls every two seconds and must not ask on every poll.
+const startedAt = new Map<string, number>()
+const START_EVERY_MS = 3 * 60_000
+
 export async function runPaneRoutes(app: FastifyInstance): Promise<void> {
   const keyOf = (req: FastifyRequest) => {
     const key = sessionKeyFor(req.user?.id)
@@ -123,14 +136,28 @@ export async function runPaneRoutes(app: FastifyInstance): Promise<void> {
 
   // A file in a run's directory (a step's log, its script, its summary), for
   // the step dialogs of the run view. The platform returns it as a JSON
-  // string; a path outside the run directory is refused here first.
+  // string; a path outside the run directory is refused here first. The
+  // platform reads run files from the user's workspace, which scales down
+  // when idle: then one start is requested, and the dialog's next polls
+  // find the file once the workspace is up.
   app.get('/api/runs/file', async req => {
     const { slug = '', path = '' } = req.query as { slug?: string; path?: string }
     if (!SLUG.test(slug)) throw new KbError(400, 'slug required')
     if (!path || path.length > 512 || path.startsWith('/') || path.split('/').includes('..')) throw new KbError(400, 'a path inside the run directory is required')
-    const text = await platformJson(`/api/workflow-runs/${encodeURIComponent(slug)}/files?file=${encodeURIComponent(path)}`, keyOf(req))
-    if (typeof text !== 'string') throw new KbError(404, `No file ${path} in run ${slug}.`)
-    return { text }
+    const key = keyOf(req)
+    const res = await platformFetch(`/api/workflow-runs/${encodeURIComponent(slug)}/files?file=${encodeURIComponent(path)}`, key)
+    if (!res) throw new KbError(502, 'The platform did not answer.')
+    if (res.ok && typeof res.body === 'string') return { text: res.body }
+    const message = String(res.body?.message ?? res.body?.error ?? '')
+    if (isWorkspaceDown(message)) {
+      if (Date.now() - (startedAt.get(key) ?? 0) > START_EVERY_MS) {
+        startedAt.set(key, Date.now())
+        void startWorkspace(key)
+      }
+      throw new KbError(503, 'Your platform workspace was not running, so a start was requested; run files appear once it is up, usually within a minute or two.')
+    }
+    if (res.status === 404) throw new KbError(404, `No file ${path} in run ${slug}.`)
+    throw new KbError(502, message ? `The platform could not read ${path}: ${message}` : `The platform could not read ${path} (HTTP ${res.status}).`)
   })
 
   const relay = async (req: FastifyRequest, reply: FastifyReply) => {

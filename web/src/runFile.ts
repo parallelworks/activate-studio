@@ -18,6 +18,9 @@ export function useRunFile(slug: string, path: string | null, options?: { refres
     const load = () => fetch(`/api/runs/file?slug=${encodeURIComponent(slug)}&path=${encodeURIComponent(path)}`, { signal: ctrl.signal })
       .then(async r => {
         const body = await r.json().catch(() => ({}))
+        // The workspace that serves run files is starting: say so where the
+        // log goes, and the next poll replaces it with the log itself.
+        if (r.status === 503 && body?.error) { if (live) setState({ data: String(body.error), isLoading: false, error: undefined }); return }
         if (!r.ok) throw new Error(body?.error ?? `HTTP ${r.status}`)
         if (live) setState({ data: String(body.text ?? ''), isLoading: false, error: undefined })
       })
