@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type ComponentProps, type ReactNode } from 'react'
 import { useWatch } from 'react-hook-form'
-import { Field, fieldBox } from '@parallelworks/ui'
+import { Field, Input, Select } from '@parallelworks/ui'
+import { EditorField } from '@parallelworks/ui/editor'
 import { fieldFrame, useFieldValue, type FieldComponent } from '@parallelworks/ui/form'
 
 /**
@@ -38,19 +39,17 @@ function clusterName(v: unknown): string {
   return String((v as { name?: unknown }).name ?? '')
 }
 
-function Select({ frame, value, options, onChange, disabled, placeholder, note }: {
+function Picker({ frame, value, options, onChange, disabled, placeholder, note }: {
   frame: Props; value: string
   options: { value: string; label: string }[]; onChange: (v: string) => void; disabled: boolean; placeholder: string; note?: ReactNode
 }) {
   const f = fieldFrame(frame)
+  // The placeholder is an option, so a pick can be taken back; a value not
+  // (yet) among the options shows it, as a native select would.
   return (
     <Field {...f} description={note ?? f.description}>
-      {(c) => (
-        <select {...c} className={`${fieldBox()} wf-select`} value={value} disabled={disabled} onChange={e => onChange(e.target.value)}>
-          <option value="">{placeholder}</option>
-          {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
-      )}
+      <Select items={[{ value: '', label: placeholder }, ...options]} value={options.some(o => o.value === value) ? value : ''}
+        disabled={disabled} onValueChange={v => onChange(v ?? '')} />
     </Field>
   )
 }
@@ -78,7 +77,7 @@ const ClusterField: FieldComponent = (props) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [opts])
   return (
-    <Select frame={props} value={current} disabled={disabled} placeholder={err ? 'Clusters unavailable' : 'Select a cluster'}
+    <Picker frame={props} value={current} disabled={disabled} placeholder={err ? 'Clusters unavailable' : 'Select a cluster'}
       options={opts.map(o => ({ value: o.value, label: `${o.label}${o.status && o.status !== 'active' ? ` (${o.status})` : ''}` }))}
       onChange={pick} note={err ? `Could not list clusters: ${err}` : undefined} />
   )
@@ -102,7 +101,7 @@ const PartitionField: FieldComponent = (props) => {
       .then(d => setOpts(d.partitions.map(p => ({ value: p.value, label: `${p.label}${p.state ? `, ${p.state}` : ''}${p.availNodes != null ? `, ${p.availNodes}/${p.totalNodes} nodes free` : ''}` }))))
       .catch(() => setOpts([]))
   }, [cluster])
-  return <Select frame={props} value={String(currentValue ?? '')} disabled={disabled || !cluster}
+  return <Picker frame={props} value={String(currentValue ?? '')} disabled={disabled || !cluster}
     placeholder={cluster ? 'Select a partition' : 'Choose a cluster first'} options={opts} onChange={v => onChange(v)} />
 }
 
@@ -112,24 +111,23 @@ const BucketField: FieldComponent = (props) => {
   const [opts, setOpts] = useState<{ value: string; label: string }[]>([])
   useEffect(() => { load<{ buckets: { value: string; label: string }[] }>('/api/platform/buckets').then(d => setOpts(d.buckets)).catch(() => setOpts([])) }, [])
   const current = typeof currentValue === 'object' && currentValue ? String((currentValue as { _studioRef?: string; uri?: string })._studioRef ?? (currentValue as { uri?: string }).uri ?? '') : String(currentValue ?? '')
-  return <Select frame={props} value={current} disabled={disabled} placeholder="Select a bucket" options={opts}
+  return <Picker frame={props} value={current} disabled={disabled} placeholder="Select a bucket" options={opts}
     onChange={v => onChange(v ? { _studioRef: v, uri: v } : '')} />
 }
 
 /** A plain text control for types whose options the public API does not expose. */
-function textField(kind: 'text' | 'password' | 'textarea', hint?: string): FieldComponent {
+function textField(kind: 'text' | 'password', hint?: string): FieldComponent {
   const F: FieldComponent = (props) => {
     const { field, disabled } = props
     const [currentValue, onChange] = useFieldValue<unknown>(nameOf(props))
     const f = fieldFrame(props)
     return (
       <Field {...f} description={hint ?? f.description}>
-        {(c) => kind === 'textarea'
-          ? <textarea {...c} className={`${fieldBox({ multiline: true })} wf-editor`} rows={8} disabled={disabled}
-              value={String(currentValue ?? '')} onChange={e => onChange(e.target.value)} />
-          : <input {...c} className={fieldBox()} type={kind} disabled={disabled}
-              placeholder={String((field as { placeholder?: unknown }).placeholder ?? '')}
-              value={String(currentValue ?? '')} onChange={e => onChange(e.target.value)} />}
+        {(c) => (
+          <Input {...c} type={kind} disabled={disabled}
+            placeholder={String((field as { placeholder?: unknown }).placeholder ?? '')}
+            value={String(currentValue ?? '')} onChange={e => onChange(e.target.value)} />
+        )}
       </Field>
     )
   }
@@ -148,7 +146,7 @@ export function useWorkflowFields(): Record<string, FieldComponent> {
     'kubernetes-namespaces': textField('text'),
     'kubernetes-pvc': textField('text'),
     instances: textField('text'),
-    editor: textField('textarea'),
+    editor: EditorField,
     password: textField('password'),
   }), [])
 }

@@ -1,5 +1,8 @@
 import { Suspense, useEffect, useRef, useState } from 'react'
+import { Button, Callout, IconButton, Loader, Table, Tabs, type TabItem } from '@parallelworks/ui'
+import { Editor } from '@parallelworks/ui/editor'
 import { DependencyGraphPreview } from '@parallelworks/ui/graph'
+import { ZoomInIcon, ZoomOutIcon } from '@parallelworks/ui/icons'
 
 interface DagData {
   name: string
@@ -18,6 +21,13 @@ const NODE_W = 190
 const NODE_H = 54
 const GAP_X = 70
 const GAP_Y = 24
+
+type Tab = 'dag' | 'inputs' | 'yaml'
+
+// The YAML shows whole, up to most of the window, so the page scrolls it
+// with everything else; the line height is set to match.
+const YAML_LINE = 20
+const yamlHeight = (text: string) => `min(${text.split('\n').length * YAML_LINE + 16}px, 75vh)`
 
 /** Longest-path layering: a node sits one level right of its deepest dependency. */
 function layout(dag: DagData) {
@@ -56,7 +66,7 @@ export function DagViewer({ workflow, path }: { workflow?: string; path?: string
   const [dag, setDag] = useState<DagData | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [selectedNode, setSelectedNode] = useState<string | null>(null)
-  const [tab, setTab] = useState<'dag' | 'inputs' | 'yaml'>('dag')
+  const [tab, setTab] = useState<Tab>('dag')
   // Pan/zoom viewBox; null = fit the whole DAG to the canvas.
   const [view, setView] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
   const svgRef = useRef<SVGSVGElement | null>(null)
@@ -79,10 +89,15 @@ export function DagViewer({ workflow, path }: { workflow?: string; path?: string
       .catch(e => setError(String(e?.message ?? e)))
   }, [workflow, path])
 
-  if (error) return <div className="viewer"><p className="error">Could not load workflow {path ?? workflow}: {error}</p></div>
-  if (!dag) return <div className="viewer"><p className="muted pad">Loading workflow {path ?? workflow}…</p></div>
+  if (error) return <div className="viewer"><Callout tone="error" className="dag-message">Could not load workflow {path ?? workflow}: {error}</Callout></div>
+  if (!dag) return <div className="viewer"><div className="dag-message"><Loader size={28} label={`Loading workflow ${path ?? workflow}…`} /></div></div>
 
   const schemaWarnings = dag.schemaErrors ?? []
+  const tabs: TabItem<Tab>[] = [
+    { value: 'dag', label: 'DAG' },
+    ...(dag.form && Object.keys(dag.form).length > 0 ? [{ value: 'inputs' as const, label: 'Inputs' }] : []),
+    { value: 'yaml', label: 'workflow.yaml' },
+  ]
   const { pos, width, height } = layout(dag)
   const selected = dag.nodes.find(n => n.id === selectedNode)
 
@@ -134,39 +149,34 @@ export function DagViewer({ workflow, path }: { workflow?: string; path?: string
         <span className="viewer-meta">{dag.nodes.length} jobs, {dag.edges.length} dependencies</span>
       </div>
       {schemaWarnings.length > 0 && (
-        <div className="dag-schema-warn">
-          <strong>This YAML does not pass the platform workflow schema; it will not run as written.</strong>
+        <Callout tone="warning" className="dag-schema-warn" title="This YAML does not pass the platform workflow schema; it will not run as written.">
           <ul>{schemaWarnings.slice(0, 8).map((w, i) => <li key={i}>{w}</li>)}</ul>
-        </div>
+        </Callout>
       )}
-      {dag.yamlText && (
-        <div className="viewer-tabs">
-          <button className={tab === 'dag' ? 'active' : ''} onClick={() => setTab('dag')}>DAG</button>
-          {dag.form && Object.keys(dag.form).length > 0 && (
-            <button className={tab === 'inputs' ? 'active' : ''} onClick={() => setTab('inputs')}>Inputs</button>
-          )}
-          <button className={tab === 'yaml' ? 'active' : ''} onClick={() => setTab('yaml')}>workflow.yaml</button>
-        </div>
-      )}
+      {dag.yamlText && <Tabs label="Workflow views" items={tabs} value={tab} onValueChange={setTab} sticky className="dag-tabs" />}
       {tab === 'yaml' && dag.yamlText ? (
-        <div className="viewer-body"><pre className="text-body">{dag.yamlText}</pre></div>
+        <div className="viewer-body">
+          <Editor value={dag.yamlText} language="yaml" readOnly height={yamlHeight(dag.yamlText)}
+            fontSize={13} lineHeight={YAML_LINE} minimap={{ enabled: false }} />
+        </div>
       ) : tab === 'inputs' && dag.form ? (
         // What a run of this workflow asks for, as the platform's parser
         // resolves it from the document.
         <div className="viewer-body">
-          <table className="rag-calls-table wf-inputs">
-            <thead><tr><th>Input</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
-            <tbody>
-              {Object.entries(dag.form).map(([id, f]) => (
-                <tr key={id}>
-                  <td>{f?.label || id}</td>
-                  <td><code>{f?.type ?? 'string'}</code></td>
-                  <td>{f?.default === undefined || f?.default === '' ? '-' : <code>{String(f.default)}</code>}</td>
-                  <td>{f?.tooltip ?? ''}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <Table density="compact">
+            <Table.Header>Input</Table.Header>
+            <Table.Header>Type</Table.Header>
+            <Table.Header>Default</Table.Header>
+            <Table.Header>Description</Table.Header>
+            {Object.entries(dag.form).map(([id, f]) => (
+              <tr key={id}>
+                <Table.Item>{f?.label || id}</Table.Item>
+                <Table.Item><code>{f?.type ?? 'string'}</code></Table.Item>
+                <Table.Item>{f?.default === undefined || f?.default === '' ? '-' : <code>{String(f.default)}</code>}</Table.Item>
+                <Table.Item wrap>{f?.tooltip ?? ''}</Table.Item>
+              </tr>
+            ))}
+          </Table>
         </div>
       ) : dag.yaml ? (
         // The platform's own dependency graph, so the workflow reads the
@@ -180,9 +190,9 @@ export function DagViewer({ workflow, path }: { workflow?: string; path?: string
       ) : (
       <div className="dag-canvas own-dag">
         <div className="dag-controls">
-          <button title="Zoom in" onClick={() => zoom(1 / 1.3)}>+</button>
-          <button title="Zoom out" onClick={() => zoom(1.3)}>−</button>
-          <button title="Fit the whole workflow" onClick={() => setView(null)}>Fit</button>
+          <IconButton variant="secondary" icon={<ZoomInIcon />} label="Zoom in" onClick={() => zoom(1 / 1.3)} />
+          <IconButton variant="secondary" icon={<ZoomOutIcon />} label="Zoom out" onClick={() => zoom(1.3)} />
+          <Button size="sm" title="Fit the whole workflow" onClick={() => setView(null)}>Fit</Button>
         </div>
         <svg
           ref={svgRef}

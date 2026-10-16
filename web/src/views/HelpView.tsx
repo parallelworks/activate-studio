@@ -1,4 +1,5 @@
 import { ReactElement, useEffect, useState } from 'react'
+import { Disclosure } from '@parallelworks/ui'
 import { Streamdown } from 'streamdown'
 import { api, IndexStatus } from '../api'
 import { useAppConfig } from '../config'
@@ -117,15 +118,11 @@ export function HelpView() {
               </button>
             ))
             if (!g.name) return <div key={`flat-${i}`}>{pages}</div>
-            const open = isOpen(g.name, g.items, i)
             return (
-              <div key={g.name} className="help-nav-group">
-                <button className="help-nav-group-head" aria-expanded={open} onClick={() => setChosen(c => ({ ...c, [g.name!]: !open }))}>
-                  <span>{g.name}</span>
-                  <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="m6 4 4 4-4 4"/></svg>
-                </button>
-                {open && <div className="help-nav-group-pages">{pages}</div>}
-              </div>
+              <Disclosure key={g.name} className="help-nav-group" summaryClassName="help-group-toggle" panelClassName="help-nav-group-pages"
+                summary={<span>{g.name}</span>} open={isOpen(g.name, g.items, i)} onOpenChange={next => setChosen(c => ({ ...c, [g.name!]: next }))}>
+                {pages}
+              </Disclosure>
             )
           })}
         </nav>

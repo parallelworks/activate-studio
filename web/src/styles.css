@@ -612,14 +612,11 @@ textarea.field { line-height: 1.5; }
 .btn-ghost { border: none; background: transparent; color: var(--pw-text); }
 .btn-ghost:hover { background: var(--theme-hover); }
 
-.pill {
-  display: inline-block; padding: 1.5px 8px; border-radius: 999px;
-  font-size: 11px; font-weight: 600; letter-spacing: 0.02em;
-  white-space: nowrap; flex-shrink: 0;
+/* A semantic match's badge: the badge tones have no purple. */
+.pill-vector {
+  background: color-mix(in srgb, #8b5cf6 14%, transparent); color: color-mix(in srgb, #8b5cf6 75%, var(--theme-app));
+  border-color: color-mix(in srgb, #8b5cf6 25%, transparent);
 }
-.pill-fts { background: var(--theme-info-muted); color: color-mix(in srgb, var(--theme-info) 80%, var(--theme-app)); }
-.pill-vector { background: color-mix(in srgb, #8b5cf6 14%, transparent); color: color-mix(in srgb, #8b5cf6 75%, var(--theme-app)); }
-.pill-name { background: var(--theme-hover); color: var(--pw-muted); }
 
 /* ---- search view ---- */
 /* The whole view scrolls as one page (wheel works anywhere over it); rows
@@ -632,11 +629,7 @@ textarea.field { line-height: 1.5; }
 .search-hero { padding: 20px 24px; }
 
 .search-bar { display: flex; gap: 8px; margin-top: 14px; }
-.search-bar input {
-  flex: 1; padding: 9px 12px; font-size: 14px;
-  border: 1px solid var(--pw-border-strong); border-radius: 8px; background: #f9fafb;
-}
-.search-bar input:focus { outline: 2px solid var(--theme-focus-ring, #bfdbfe); border-color: var(--pw-link); background: var(--pw-input-bg, #fff); }
+.search-bar .search-box { flex: 1; }
 .search-results { overflow: hidden; }
 .search-bar { max-width: 720px; }
 .results-head {
@@ -700,7 +693,7 @@ textarea.field { line-height: 1.5; }
   font-size: 14px; color: var(--pw-muted); border-bottom: 2px solid transparent;
   margin-bottom: -1px;
 }
-.viewer-tabs button:hover, .query-mode button:hover { color: var(--pw-text); }
+.viewer-tabs button:hover { color: var(--pw-text); }
 .viewer-tabs button.active { color: var(--pw-text); font-weight: 500; border-bottom-color: var(--pw-text); }
 .pdf-frame { width: 100%; height: calc(100vh - 140px); border: none; display: block; }
 .index-note {
@@ -717,52 +710,37 @@ textarea.field { line-height: 1.5; }
 /* ---- query view ---- */
 .query-view { padding: 12px; overflow: auto; flex: 1; display: flex; flex-direction: column; gap: 12px; }
 .query-controls { padding: 20px 24px; }
-.query-mode { display: flex; gap: 2px; border-bottom: 1px solid var(--pw-border); margin-bottom: 12px; }
-.query-mode button {
-  padding: 7px 14px; border: none; background: none; cursor: pointer;
-  font-size: 14px; color: var(--pw-muted); border-bottom: 2px solid transparent; margin-bottom: -1px;
-}
-.query-mode button.active { color: var(--pw-text); font-weight: 500; border-bottom-color: var(--pw-text); }
-.query-form select.field { max-width: 340px; }
-.query-row { display: flex; gap: 12px; margin-top: 4px; }
-.query-row input[type=number] { width: 90px; }
+.query-tabs { margin-bottom: 12px; }
+.query-canned { max-width: 340px; }
+.query-row { display: flex; gap: 12px; margin-top: 12px; }
+/* A Field fills its row; here each sizes to its control. */
+.query-cell { width: auto; }
+.query-num { width: 104px; }
+/* Wide enough for the longest option, so the box keeps its size as the pick changes. */
+.query-pick { width: auto; min-width: 10.5rem; }
+.query-pick-wide { min-width: 13.5rem; }
 .query-row .grow { flex: 1; max-width: 420px; }
-.sql-box { font-family: ui-monospace, monospace; font-size: 13px; resize: vertical; }
-.filter-row { align-items: center; }
-.filter-row select.field { width: auto; }
+.sql-box { font-size: 13px; }
+.filter-row { align-items: center; margin-top: 4px; }
 .filter-row .grow { flex: 1; }
 .add-filter { margin-top: 6px; align-self: flex-start; }
-.saved-select { margin-left: auto; max-width: 220px; margin-bottom: 6px; }
+.query-scope { margin-top: 12px; max-width: 420px; }
 .saved-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
 /* The GUFI commands behind a search or query, collapsed under the form. */
 .gufi-cmds { margin-top: 10px; font-size: 0.82rem; }
-.gufi-cmds > summary { cursor: pointer; color: var(--pw-muted); user-select: none; }
+.gufi-cmds-summary { color: var(--pw-muted); font-size: inherit; user-select: none; }
 .gufi-cmd { margin-top: 8px; }
-.gufi-cmd-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
-.gufi-cmd pre {
-  margin: 4px 0 0; padding: 8px 10px; border-radius: 6px;
-  background: rgba(127, 127, 127, 0.1);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.76rem;
-  white-space: pre-wrap; overflow-wrap: anywhere;
-}
+/* Long commands wrap rather than scroll; the right padding clears the copy button. */
+.gufi-cmd pre { margin: 4px 0 0; padding: 8px 2.75rem 8px 10px; font-size: 0.76rem; white-space: pre-wrap; overflow-wrap: anywhere; }
 .saved-chip {
   display: inline-flex; align-items: center; border: 1px solid var(--pw-border-strong);
   /* Was a hardcoded white, which left the label unreadable in dark mode. */
   border-radius: 999px; overflow: hidden; background: var(--pw-panel);
 }
-.saved-load { border: none; background: none; padding: 3px 4px 3px 12px; font-size: 12px; color: var(--pw-navy); cursor: pointer; }
-.saved-load:hover { text-decoration: underline; }
-.saved-del { border: none; background: none; padding: 3px 9px 3px 4px; font-size: 12px; color: var(--pw-muted-2); cursor: pointer; }
-.saved-del:hover { color: #dc2626; }
 .query-actions { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
+.query-error { margin-top: 12px; }
 .query-results { overflow: hidden; }
 .table-scroll { overflow: auto; max-height: calc(100vh - 320px); }
-.table-scroll table { border-collapse: collapse; width: 100%; font-size: 13px; }
-.table-scroll th {
-  text-align: left; padding: 8px 14px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;
-  color: var(--pw-muted); border-bottom: 1px solid var(--pw-border); position: sticky; top: 0; background: var(--pw-panel);
-}
-.table-scroll td { padding: 6px 14px; border-bottom: 1px solid #f0f2f5; white-space: nowrap; }
 .table-scroll td.cell-path { font-family: ui-monospace, monospace; font-size: 12px; color: var(--pw-text); cursor: pointer; }
 .table-scroll td.cell-path:hover { color: var(--pw-link); }
 .table-scroll td.cell-path:hover { text-decoration: underline; }
@@ -787,11 +765,8 @@ textarea.field { line-height: 1.5; }
    text color. Give them the theme's border token instead. */
 .platform-dag *, .platform-dag *::before, .platform-dag *::after { border-color: var(--theme-border); }
 .dag-controls { position: absolute; top: 10px; right: 12px; z-index: 5; display: flex; gap: 4px; }
-.dag-controls button {
-  border: 1px solid var(--pw-border); border-radius: 6px; background: var(--pw-panel);
-  color: var(--pw-muted); cursor: pointer; font-size: 13px; line-height: 1; padding: 5px 8px; min-width: 26px;
-}
-.dag-controls button:hover { color: var(--pw-navy); border-color: var(--pw-muted); }
+.dag-tabs { padding: 0 20px; background: var(--pw-panel); }
+.dag-message { margin: 16px 20px; }
 .dag-steps { border-top: 1px solid var(--pw-border); padding: 12px 24px 18px; }
 .dag-steps-title { font-size: 13px; font-weight: 600; color: var(--pw-text); margin-bottom: 6px; }
 .dag-steps ol { margin: 0; padding-left: 20px; font-size: 13px; color: #3c4656; line-height: 1.7; }
@@ -1021,7 +996,6 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 /* Multi-select labeling on search and query results */
 .results-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .results-actions { display: flex; gap: 8px; }
-.results-actions .btn-secondary { font-size: 12px; padding: 3px 10px; text-transform: none; letter-spacing: normal; }
 .result-top { justify-content: flex-start; }
 .result-pills { margin-left: auto; }
 .result-row .row-check { opacity: 0; }
@@ -1212,11 +1186,7 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .chat-embed-wrap:fullscreen { background: var(--pw-panel); padding: 12px; }
 /* A drafted workflow that fails the platform schema still draws, but says
    plainly that it will not run, with the schema's own complaints. */
-.dag-schema-warn {
-  margin: 8px 12px 0; padding: 8px 12px; border-radius: 8px;
-  border: 1px solid var(--pw-amber); background: color-mix(in srgb, var(--pw-amber) 12%, var(--pw-panel));
-  font-size: 13px; color: var(--pw-text);
-}
+.dag-schema-warn { margin: 8px 12px 0; }
 .dag-schema-warn ul { margin: 4px 0 0; padding-left: 18px; }
 .dag-schema-warn li { margin: 2px 0; }
 /* The Workflow tab hosts the DAG viewer inside the Library viewer; the
@@ -1441,6 +1411,10 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .help-nav .help-nav-group-head { justify-content: space-between; font-weight: 500; }
 .help-nav .help-nav-group-head svg { width: 12px; height: 12px; transition: transform 0.2s cubic-bezier(0.25, 0.1, 0.25, 1); }
 .help-nav .help-nav-group-head[aria-expanded='true'] svg { transform: rotate(90deg); }
+/* Help's groups are Disclosures, whose chevron turns by itself; the rotate
+   above would turn it a second time. */
+.help-nav .help-group-toggle { justify-content: space-between; font-weight: 500; }
+.help-nav .help-group-toggle svg { width: 12px; height: 12px; }
 .help-nav-group-pages { display: flex; flex-direction: column; gap: 1px; margin-left: 14px; padding-left: 8px; border-left: 1px solid var(--pw-border); }
 .help-nav button.active { background: color-mix(in srgb, var(--pw-link) 10%, transparent); color: var(--pw-text); }
 .help-content { flex: 1; overflow-y: auto; padding: 26px 40px 40px; }
@@ -2008,11 +1982,10 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .wf-ok { color: var(--ok, #24612e); }
 .wf-fail { color: var(--danger, #b42318); white-space: pre-wrap; }
 .wf-install { max-width: 40rem; padding: 1rem; }
-.wf-trust { max-width: 46rem; padding: 0.75rem 1rem; margin-block: 0.75rem; }
+.wf-trust { max-width: 46rem; margin-block: 0.75rem; }
 .wf-trust p { margin: 0 0 0.5rem; }
 .wf-trust-check { display: flex; align-items: center; gap: 0.5rem; font-weight: 500; }
-.wf-state.completed { color: var(--ok, #24612e); }
-.wf-state.error, .wf-state.failed { color: var(--danger, #b42318); }
+.wf-run-state { display: inline-flex; align-items: center; gap: 6px; }
 .wf-picked { padding-left: 1.25rem; margin: 0.5rem 0 1rem; }
 .wf-picked li { display: flex; gap: 0.6rem; align-items: baseline; flex-wrap: wrap; padding: 0.2rem 0; }
 .wf-picked-name { font-weight: 600; }
@@ -2077,7 +2050,6 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
   .chats-manager { padding: 12px 14px 24px; }
   .chats-row-meta { display: none; }
 }
-.wf-kind { font-size: 11px; color: var(--pw-muted); border: 1px solid var(--pw-border); border-radius: 999px; padding: 0 7px; }
 
 /* Workflow form inputs are drawn by the form library, every one in its own
    box (fieldBox), and the Studio's own pickers use the same box. The rule
@@ -2117,15 +2089,14 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .wf-readme .md-body h2 { font-size: 15px; margin: 18px 0 6px; }
 .wf-readme .md-body h3, .wf-readme .md-body h4 { font-size: 13px; margin: 14px 0 4px; }
 .wf-readme .md-body p, .wf-readme .md-body li { font-size: 13px; }
-.wf-back { display: inline-block; margin: 0 0 10px; padding: 0; font-size: 13px; color: var(--pw-muted); }
-.wf-back:hover { color: var(--pw-text); }
+/* The button's own inset, pulled back so the arrow lines up with the title. */
+.wf-back { margin: 0 0 10px -10px; }
 .wf-title { margin: 0; font-size: 20px; font-weight: 600; color: var(--pw-text); }
 .wf-desc { margin: 4px 0 0; font-size: 14px; color: var(--pw-muted); }
 .wf-source { margin: 4px 0 0; font-size: 12px; color: var(--pw-muted); overflow-wrap: anywhere; }
 .wf-source code { font-size: 12px; }
 .wf-preset { display: flex; align-items: center; gap: 12px; margin: 0 0 18px; padding: 10px 12px; border: 1px solid var(--pw-border); border-radius: 8px; background: color-mix(in srgb, var(--pw-text) 3%, var(--pw-content-bg)); }
-.wf-preset .field-label { flex: 0 0 198px; margin: 0; font-size: 13px; color: var(--pw-text); }
-.wf-preset .field { max-width: 420px; }
+.wf-preset-select { max-width: 420px; }
 
 .wf-form { font-size: 14px; }
 /* The form library (0.45) draws its own section headers, rules, labels,
@@ -2135,12 +2106,10 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 /* Action bar: Run and Validate stay on screen at the foot of long forms. */
 .wf-actions { position: sticky; bottom: 0; z-index: 3; display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
   margin-top: 4px; padding: 12px 0 14px; border-top: 1px solid var(--pw-border); background: var(--pw-content-bg); }
-.wf-actions .btn-primary, .wf-actions .btn-secondary { min-height: 32px; padding: 6px 16px; font-size: 13px; }
 .wf-result { flex: 1 1 280px; font-size: 13px; }
 
 @media (max-width: 720px) {
   .wf-preset { flex-direction: column; align-items: stretch; }
-  .wf-preset .field-label { flex: none; }
 }
 
 /* Settings, From GitHub: paths stay in their column; summaries stop at three lines. */
@@ -2168,11 +2137,6 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .search-view > .search-hero, .query-view > .query-controls { border-bottom: 1px solid var(--pw-border); }
 .search-hero { padding: 12px 20px; }
 .search-bar { margin-top: 0; }
-.search-bar input {
-  min-height: 32px; padding: 5px 10px; font-size: 14px;
-  border: 1px solid var(--theme-border); border-radius: 6px; background: var(--theme-input-bg); color: var(--pw-text);
-}
-.search-bar input:focus { outline: none; border-color: var(--theme-link); box-shadow: 0 0 0 3px var(--theme-focus-ring); }
 .search-results .results-head, .query-view .results-head {
   position: sticky; top: 0; z-index: 2; padding: 6px 20px;
   font-size: 12px; font-weight: 500; text-transform: none; letter-spacing: 0;
@@ -2191,8 +2155,6 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
   .overview-view { padding: 14px; }
   .agents-view > :not(.ov-head) { margin-inline: 14px; }
 }
-/* Toolbar buttons inside list headings take the compact 28px size. */
-.results-head .btn-secondary, .results-toolbar .btn-secondary { min-height: 28px; padding: 0 10px; font-size: 13px; }
 
 /* Settings > Libraries > Your libraries: the Slurm fields under their checkbox. */
 .user-lib-slurm { display: flex; gap: 8px; margin-top: 6px; }
@@ -2200,7 +2162,6 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 
 /* The library a page searches, queries, or counts, above its controls. */
 .scope-bar { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; font-size: 13px; }
-.pill-library { border: 1px solid var(--pw-border-strong); color: var(--pw-muted); }
 
 /* The run the assistant launched, beside the conversation: its form as
    submitted, the platform's graph of it, and the session it opened. */

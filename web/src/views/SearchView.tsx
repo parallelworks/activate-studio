@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Button, EmptyState, SearchInput, StatusBadge, ToggleGroup, type BadgeVariant } from '@parallelworks/ui'
 import { api, SearchHit } from '../api'
 import { TagMenu } from '../components/TagMenu'
 import { RowCheck } from '../components/Explorer'
@@ -11,6 +12,12 @@ const MODE_LABEL: Record<SearchHit['mode'], string> = {
   fts: 'full text',
   vector: 'semantic',
   name: 'filename',
+}
+// The badge tones have no purple; semantic matches keep theirs from .pill-vector.
+const MODE_TONE: Record<SearchHit['mode'], BadgeVariant> = {
+  fts: 'info',
+  vector: 'default',
+  name: 'muted',
 }
 
 export function SearchView({ onOpen }: { onOpen: (path: string, q?: string) => void }) {
@@ -79,30 +86,25 @@ export function SearchView({ onOpen }: { onOpen: (path: string, q?: string) => v
       <div className="search-hero card">
         {(cfg.libraries?.length ?? 0) > 1 && <div className="scope-bar"><span className="muted">Searching</span><LibrarySwitch libraries={cfg.libraries ?? []} /></div>}
         <div className="search-bar">
-          <input
+          <SearchInput
+            className="search-box"
             value={q}
-            onChange={e => setQ(e.target.value)}
+            onValueChange={setQ}
             onKeyDown={e => e.key === 'Enter' && run()}
             placeholder={'Whole words; "exact phrase", OR, -exclude, prefix*'}
             autoFocus
           />
-          <button className="btn-primary" onClick={() => run()} disabled={busy}>{busy ? 'Searching…' : 'Search'}</button>
+          <Button variant="primary" loading={busy} onClick={() => run()}>{busy ? 'Searching…' : 'Search'}</Button>
         </div>
         {vocab.length > 0 && (
           <div className="search-label-filter">
             <span className="lbl">Labels</span>
-            {vocab.map(v => (
-              <button
-                key={v.tag}
-                className={`tag-pill ${activeTags.has(v.tag) ? 'on' : ''}`}
-                onClick={() => setActiveTags(s => {
-                  const next = new Set(s)
-                  if (next.has(v.tag)) next.delete(v.tag)
-                  else next.add(v.tag)
-                  return next
-                })}
-              >{v.tag}</button>
-            ))}
+            <ToggleGroup
+              label="Labels"
+              options={vocab.map(v => ({ value: v.tag, label: v.tag, count: v.count }))}
+              value={[...activeTags]}
+              onValueChange={next => setActiveTags(new Set(next))}
+            />
           </div>
         )}
         {note && <p className="muted">{note}</p>}
@@ -114,19 +116,16 @@ export function SearchView({ onOpen }: { onOpen: (path: string, q?: string) => v
             <span>{hits.length} result{hits.length === 1 ? '' : 's'}</span>
             {hits.length > 0 && (
               <span className="results-actions">
-                <button
-                  className="btn-secondary"
-                  onClick={() => setSel(allSelected ? new Set() : new Set(hits.map(h => h.path)))}
-                >{allSelected ? 'Clear selection' : 'Select all'}</button>
-                <button
-                  className="btn-secondary"
-                  disabled={!sel.size}
-                  onClick={() => setTagMenuOpen(o => !o)}
-                >Labels…{sel.size ? ` (${sel.size})` : ''}</button>
+                <Button size="sm" onClick={() => setSel(allSelected ? new Set() : new Set(hits.map(h => h.path)))}>
+                  {allSelected ? 'Clear selection' : 'Select all'}
+                </Button>
+                <Button size="sm" disabled={!sel.size} onClick={() => setTagMenuOpen(o => !o)}>
+                  Labels…{sel.size ? ` (${sel.size})` : ''}
+                </Button>
               </span>
             )}
           </div>
-          {hits.length === 0 && <p className="muted pad">No matches.</p>}
+          {hits.length === 0 && <EmptyState variant="bare" title="No matches." />}
           {hits.map(h => (
             <div key={`${h.library?.id ?? ''}/${h.path}`} className={`result-row ${sel.has(h.path) ? 'multi' : ''}`}
               onClick={() => onOpen(currentLibrary() === ALL_LIBRARIES && h.library ? `${h.library.id}/${h.path}` : h.path, q)}>
@@ -134,9 +133,11 @@ export function SearchView({ onOpen }: { onOpen: (path: string, q?: string) => v
                 <RowCheck checked={sel.has(h.path)} onToggle={() => toggleSel(h.path)} />
                 <span className="result-path">{h.path}</span>
                 <span className="result-pills">
-                  {currentLibrary() === ALL_LIBRARIES && h.library && <span className="pill pill-library" title="The library this match is in">{h.library.label}</span>}
+                  {currentLibrary() === ALL_LIBRARIES && h.library && (
+                    <span title="The library this match is in"><StatusBadge>{h.library.label}</StatusBadge></span>
+                  )}
                   {(h.tags ?? []).map(t => <span key={t} className="tag-pill on small">{t}</span>)}
-                  <span className={`pill pill-${h.mode}`}>{MODE_LABEL[h.mode]}</span>
+                  <StatusBadge variant={MODE_TONE[h.mode]} className={h.mode === 'vector' ? 'pill-vector' : undefined}>{MODE_LABEL[h.mode]}</StatusBadge>
                 </span>
               </div>
               {h.snippet && <div className="result-snippet">{h.snippet}</div>}
@@ -144,9 +145,9 @@ export function SearchView({ onOpen }: { onOpen: (path: string, q?: string) => v
           ))}
           {hits.length >= lastLimit && lastLimit < 1000 && (
             <div className="results-more">
-              <button className="btn-secondary" disabled={busy} onClick={() => run(1000)}>
+              <Button loading={busy} onClick={() => run(1000)}>
                 {busy ? 'Loading…' : 'Load more matches (up to 1,000)'}
-              </button>
+              </Button>
             </div>
           )}
         </div>
