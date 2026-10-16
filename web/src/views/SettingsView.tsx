@@ -15,6 +15,7 @@ interface Effective {
   iconUrl: string
   iconUrlDark: string
   sweepIntervalSec: number
+  searchEngine: 'parallel' | 'gufi_vt'
   historyIntervalSec: number
   suggestedPrompts: string[]
   visionModel: string
@@ -423,6 +424,14 @@ export function SettingsView() {
                       onChange={e => setForm({ ...form, bannerWhenEmbedded: e.target.checked })} />
                     <span>Show it inside the platform frame too, which already draws its own</span>
                   </label>
+                </div>
+                <div>
+                  <label className="field-label">Search across libraries</label>
+                  <select className="field" value={form.searchEngine ?? 'parallel'} onChange={e => setForm({ ...form, searchEngine: e.target.value as Effective['searchEngine'] })}>
+                    <option value="parallel">Each library in parallel, merged (faster)</option>
+                    <option value="gufi_vt">One gufi_vt statement over all libraries</option>
+                  </select>
+                  <p className="muted key-note">Both return the same matches. gufi_vt answers its libraries one after another; Query uses it either way.</p>
                 </div>
                 <div>
                   <label className="field-label">Background sync interval (seconds, 0 pauses)</label>

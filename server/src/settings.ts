@@ -34,6 +34,9 @@ export interface StudioSettings {
   iconUrl?: string
   iconUrlDark?: string
   sweepIntervalSec?: number
+  /** How a search across libraries runs: each library in parallel, merged
+   *  here (the default), or as one gufi_vt statement. */
+  searchEngine?: 'parallel' | 'gufi_vt'
   suggestedPrompts?: string[]
   visionModel?: string
   disabledTools?: string[]
@@ -108,6 +111,7 @@ export function effectiveSettings(): Required<StudioSettings> {
     iconUrl: s.iconUrl ?? process.env.APP_ICON ?? '',
     iconUrlDark: s.iconUrlDark ?? process.env.APP_ICON_DARK ?? '',
     sweepIntervalSec: s.sweepIntervalSec ?? Number(process.env.SWEEP_INTERVAL_SEC ?? 300),
+    searchEngine: s.searchEngine ?? (process.env.STUDIO_SEARCH_ENGINE === 'gufi_vt' ? 'gufi_vt' : 'parallel'),
     suggestedPrompts: s.suggestedPrompts ?? envPrompts(),
     visionModel: s.visionModel ?? process.env.ADE_VISION_MODEL ?? '',
     disabledTools: s.disabledTools ?? [],
@@ -220,6 +224,10 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
       const a = String(body.surface)
       if (!/^[a-z][a-z0-9-]{0,23}$/.test(a)) throw new KbError(400, 'invalid surface name')
       next.surface = a
+    }
+    if (body.searchEngine !== undefined) {
+      if (body.searchEngine !== 'parallel' && body.searchEngine !== 'gufi_vt') throw new KbError(400, 'search engine must be parallel or gufi_vt')
+      next.searchEngine = body.searchEngine
     }
     if (body.sweepIntervalSec !== undefined) {
       const n = Number(body.sweepIntervalSec)
