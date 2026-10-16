@@ -1,4 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  Button, Callout, Checkbox, EmptyState, Popover, PopoverClose, SearchInput, SegmentedControl,
+} from '@parallelworks/ui'
 import { useEffectiveTheme } from '../theme'
 import { SlashPalette } from '../components/SlashPalette'
 import { NextUp } from '../components/NextUp'
@@ -146,7 +149,6 @@ export function ChatView() {
   // Off means the server will not return anyone else's conversations,
   // so the show-all toggle has nothing to show and is hidden.
   const [sharedHistory, setSharedHistory] = useState(true)
-  const [scopeOpen, setScopeOpen] = useState(false)
   // Personas: a standing stance for the conversation, distinct from
   // skills, which the assistant loads per task. Remembered per browser so
   // a reload keeps the chosen one.
@@ -366,8 +368,7 @@ export function ChatView() {
 
   setViewerUsername(cfg.user?.username ?? '')
 
-  const toggleChatFilter = () => {
-    const next = chatFilter === 'all' ? 'mine' : 'all'
+  const changeChatFilter = (next: 'all' | 'mine') => {
     setChatListFilter(next)
     setChatFilterState(next)
     // A list refresh, not a remount: bumping the provider epoch here tore
@@ -420,9 +421,15 @@ export function ChatView() {
         <div ref={canvasRef} className={`chat-canvas card${railOpen ? ' rail-open' : ''}`}>
           {credNote && (
             <div className="cred-banner">
-              <span className="cred-banner-text">{credNote}</span>
-              <button className="btn-primary" onClick={() => { location.hash = '#view=settings:access' }}>Open Settings</button>
-              <button className="btn-secondary" onClick={dismissNote}>Dismiss</button>
+              <Callout
+                variant="bar"
+                tone="warning"
+                live
+                action={<Button variant="primary" size="sm" onClick={() => { location.hash = '#view=settings:access' }}>Open Settings</Button>}
+                onDismiss={dismissNote}
+              >
+                {credNote}
+              </Callout>
             </div>
           )}
                     <FilterReloader />
@@ -470,13 +477,14 @@ export function ChatView() {
           {!showAttachments && !showManage && <NextUp canvas={canvasRef} />}
           {voiceOpen && cfg.features?.voice?.url && <VoiceOverlay url={cfg.features.voice.url} onClose={() => setVoiceOpen(false)} />}
           {multiUser && sharedHistory && !showAttachments && (
-            <button
-              className={`chat-filter-btn ${chatFilter === 'mine' ? 'active' : ''}`}
-              title="Show every conversation on this deployment, or only yours"
-              onClick={toggleChatFilter}
-            >
-              {chatFilter === 'mine' ? 'Showing my chats' : 'Showing all chats'}
-            </button>
+            <div className="chat-filter" title="Show every conversation on this deployment, or only yours">
+              <SegmentedControl
+                label="Conversations shown"
+                value={chatFilter}
+                onValueChange={changeChatFilter}
+                options={[{ value: 'mine', label: 'My chats' }, { value: 'all', label: 'All chats' }]}
+              />
+            </div>
           )}
           <div className="chat-controls" hidden={showManage}>
             {cfg.features?.voice?.enabled && (
@@ -485,131 +493,123 @@ export function ChatView() {
                 <span className="persona-label">Voice</span>
               </button>
             )}
-            {(
-              <div className={`chat-persona-anchor ${personaOpen ? 'open' : ''}`}>
+            <Popover
+              open={personaOpen}
+              onOpenChange={setPersonaOpen}
+              title="Persona for this conversation"
+              align="end"
+              // A long list opens on its filter, which takes focus itself;
+              // otherwise focus moves to the panel, which scrolls nothing.
+              initialFocus={personaList.length > 8 ? 'none' : 'popup'}
+              className="scope-menu persona-menu"
+              trigger={
                 <button
                   className={`scope-btn ${persona ? 'active' : ''}`}
                   title="The standing persona for this conversation, from the shared library"
-                  onClick={() => setPersonaOpen(o => !o)}
                 >
                   {persona
                     ? <PersonaIcon icon={personaList.find(p => p.name === persona)?.icon} name={persona} size={16} />
                     : <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.4"><circle cx="8" cy="5.5" r="2.8"/><path d="M2.6 14c.6-3 2.8-4.5 5.4-4.5s4.8 1.5 5.4 4.5"/></svg>}
                   <span className="persona-label">{persona ? personaList.find(p => p.name === persona)?.name ?? persona : 'Persona'}</span>
                 </button>
-                {personaOpen && (
-                  <>
-                    <div className="scope-overlay" onClick={() => setPersonaOpen(false)} />
-                    <div className="scope-menu card">
-                      <div className="scope-menu-head">Persona for this conversation</div>
-                      <button className={`persona-row ${!persona ? 'on' : ''}`} onClick={() => { setPersonaState(null); setPersonaOpen(false) }}>
-                        <span className="persona-name">Default</span>
-                        <span className="muted">how this workspace normally answers</span>
-                      </button>
-                      {personaList.length > 8 && (
-                        <input
-                          className="field scope-filter"
-                          placeholder={`Filter ${personaList.length} personas`}
-                          value={personaFilter}
-                          onChange={e => setPersonaFilter(e.target.value)}
-                          autoFocus
-                        />
-                      )}
-                      {personaList.length === 0 && (
-                        <p className="muted pad">
-                          No personas yet. Add one in the Agents tab and it appears here.
-                        </p>
-                      )}
-                      {personaList
-                        .filter(p => {
-                          const q = personaFilter.trim().toLowerCase()
-                          return !q || p.name.toLowerCase().includes(q) || (p.description ?? '').toLowerCase().includes(q)
-                        })
-                        .map(p => (
-                        <button key={p.name} className={`persona-row ${persona === p.name ? 'on' : ''}`}
-                          onClick={() => { setPersonaState(p.name); setPersonaOpen(false) }}>
-                          <span className="persona-name"><PersonaIcon icon={p.icon} name={p.name} size={18} />{p.name}{p.shared && <span className="persona-shared">shared</span>}</span>
-                          {p.description && <span className="muted">{p.description}</span>}
-                        </button>
-                      ))}
-                    </div>
-                  </>
-                )}
-              </div>
-            )}
-            {(hasLibraries || vocab.length > 0) && (
-            <div className={`chat-scope-anchor ${scopeOpen ? 'open' : ''}`}>
-              <button
-                className={`scope-btn ${scope.size || chatLib ? 'active' : ''}`}
-                title="What the assistant searches in this chat: which library, and which labels"
-                onClick={() => setScopeOpen(o => !o)}
-              >
-                <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M1.5 3h13l-5 5.5V13l-3 1.5V8.5z"/></svg>
-                <span className="persona-label">Scope{hasLibraries && <span className="scope-sub">{libLabel}</span>}</span>
-                {scope.size > 0 && <span className="scope-count">{scope.size}</span>}
+              }
+            >
+              <button className={`persona-row ${!persona ? 'on' : ''}`} onClick={() => { setPersonaState(null); setPersonaOpen(false) }}>
+                <span className="persona-name">Default</span>
+                <span className="muted">how this workspace normally answers</span>
               </button>
-              {scopeOpen && (
+              {personaList.length > 8 && (
+                <SearchInput
+                  size="sm"
+                  label={`Filter ${personaList.length} personas`}
+                  value={personaFilter}
+                  onValueChange={setPersonaFilter}
+                  autoFocus
+                />
+              )}
+              {personaList.length === 0 && (
+                <EmptyState variant="bare" title="No personas yet. Add one in the Agents tab and it appears here." />
+              )}
+              {personaList
+                .filter(p => {
+                  const q = personaFilter.trim().toLowerCase()
+                  return !q || p.name.toLowerCase().includes(q) || (p.description ?? '').toLowerCase().includes(q)
+                })
+                .map(p => (
+                <button key={p.name} className={`persona-row ${persona === p.name ? 'on' : ''}`}
+                  onClick={() => { setPersonaState(p.name); setPersonaOpen(false) }}>
+                  <span className="persona-name"><PersonaIcon icon={p.icon} name={p.name} size={18} />{p.name}{p.shared && <span className="persona-shared">shared</span>}</span>
+                  {p.description && <span className="muted">{p.description}</span>}
+                </button>
+              ))}
+            </Popover>
+            {(hasLibraries || vocab.length > 0) && (
+            <Popover
+              aria-label="Chat scope"
+              align="end"
+              initialFocus="popup"
+              className="scope-menu chat-scope-menu"
+              trigger={
+                <button
+                  className={`scope-btn ${scope.size || chatLib ? 'active' : ''}`}
+                  title="What the assistant searches in this chat: which library, and which labels"
+                >
+                  <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M1.5 3h13l-5 5.5V13l-3 1.5V8.5z"/></svg>
+                  <span className="persona-label">Scope{hasLibraries && <span className="scope-sub">{libLabel}</span>}</span>
+                  {scope.size > 0 && <span className="scope-count">{scope.size}</span>}
+                </button>
+              }
+            >
+              {hasLibraries && (
                 <>
-                  <div className="scope-overlay" onClick={() => setScopeOpen(false)} />
-                  <div className="scope-menu card">
-                    {hasLibraries && (
-                      <>
-                        <div className="scope-menu-head">Library</div>
-                        <div className="scope-libs">
-                          {(cfg.libraries ?? []).map(l => (
-                            <button key={l.id} className={`persona-row ${(chatLib ?? 'kb') === l.id ? 'on' : ''}`} onClick={() => setChatLib(l.primary ? null : l.id)}>
-                              <span className="persona-name">{l.label}</span>
-                              <span className="muted">{l.primary ? 'the knowledge base' : l.site ? `your library on ${l.site}` : 'read only'}</span>
-                            </button>
-                          ))}
-                          <button className={`persona-row ${chatLib === 'all' ? 'on' : ''}`} onClick={() => setChatLib('all')}>
-                            <span className="persona-name">All libraries</span>
-                            <span className="muted">search and query every library at once</span>
-                          </button>
-                        </div>
-                      </>
-                    )}
-                    {vocab.length > 0 && (
-                      <>
-                        <div className="scope-menu-head">Labels</div>
-                        {vocab.length > 8 && (
-                          <input
-                            className="field scope-filter"
-                            value={scopeFilter}
-                            onChange={e => setScopeFilter(e.target.value)}
-                            placeholder="Filter labels"
-                          />
-                        )}
-                        <div className="scope-list">
-                          {visibleVocab.map(v => (
-                            <label key={v.tag} className="scope-item">
-                              <input
-                                type="checkbox"
-                                checked={scope.has(v.tag)}
-                                onChange={() => toggleScope(v.tag)}
-                              />
-                              <span className="scope-tag">{v.tag}</span>
-                              <span className="scope-n">{v.count}</span>
-                            </label>
-                          ))}
-                          {visibleVocab.length === 0 && <div className="muted scope-empty">No labels match.</div>}
-                        </div>
-                      </>
-                    )}
-                    <div className="scope-menu-foot">
-                      {vocab.length > 0
-                        ? <button
-                            className="scope-clear"
-                            disabled={!scope.size}
-                            onClick={() => { setScope(new Set()); setLabelScope([]) }}
-                          >Clear labels</button>
-                        : <span />}
-                      <button className="btn-secondary" onClick={() => setScopeOpen(false)}>Done</button>
-                    </div>
+                  <div className="scope-menu-head">Library</div>
+                  <div className="scope-libs">
+                    {(cfg.libraries ?? []).map(l => (
+                      <button key={l.id} className={`persona-row ${(chatLib ?? 'kb') === l.id ? 'on' : ''}`} onClick={() => setChatLib(l.primary ? null : l.id)}>
+                        <span className="persona-name">{l.label}</span>
+                        <span className="muted">{l.primary ? 'the knowledge base' : l.site ? `your library on ${l.site}` : 'read only'}</span>
+                      </button>
+                    ))}
+                    <button className={`persona-row ${chatLib === 'all' ? 'on' : ''}`} onClick={() => setChatLib('all')}>
+                      <span className="persona-name">All libraries</span>
+                      <span className="muted">search and query every library at once</span>
+                    </button>
                   </div>
                 </>
               )}
-            </div>
+              {vocab.length > 0 && (
+                <>
+                  <div className="scope-menu-head">Labels</div>
+                  {vocab.length > 8 && (
+                    <SearchInput size="sm" label="Filter labels" value={scopeFilter} onValueChange={setScopeFilter} />
+                  )}
+                  <div className="scope-list">
+                    {visibleVocab.map(v => (
+                      <label key={v.tag} className="scope-item">
+                        <Checkbox
+                          checked={scope.has(v.tag)}
+                          onCheckedChange={() => toggleScope(v.tag)}
+                        />
+                        <span className="scope-tag">{v.tag}</span>
+                        <span className="scope-n">{v.count}</span>
+                      </label>
+                    ))}
+                    {visibleVocab.length === 0 && <EmptyState variant="bare" title="No labels match." />}
+                  </div>
+                </>
+              )}
+              <div className="scope-menu-foot">
+                {vocab.length > 0
+                  ? <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={!scope.size}
+                      onClick={() => { setScope(new Set()); setLabelScope([]) }}
+                    >Clear labels</Button>
+                  : <span />}
+                <PopoverClose render={<Button variant="secondary" size="sm" />}>Done</PopoverClose>
+              </div>
+            </Popover>
             )}
           </div>
         </div>

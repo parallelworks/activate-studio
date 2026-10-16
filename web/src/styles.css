@@ -345,15 +345,12 @@ main.content { min-height: 0; min-width: 0; background: var(--pw-content-bg); }
 .icon-btn { display: inline-flex; align-items: center; padding: 4px 6px; }
 .sidenav-brand { display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 26px; }
 .brand-badge {
-  width: 24px; height: 24px; border-radius: 6px; flex-shrink: 0;
+  width: 24px; height: 24px; border-radius: 6px; border-color: var(--theme-accent);
   background: var(--theme-accent); color: var(--theme-accent-text); font-weight: 800; font-size: 13px;
-  display: flex; align-items: center; justify-content: center;
 }
 .brand-icon { width: 26px; height: 26px; flex-shrink: 0; object-fit: contain; }
 .brand-text { font-size: 14px; color: var(--pw-muted); white-space: nowrap; overflow: hidden; }
 .brand-text b { color: var(--pw-text); font-weight: 600; margin-right: 3px; }
-.nav-collapse { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--pw-muted); cursor: pointer; flex-shrink: 0; }
-.nav-collapse:hover { background: var(--pw-nav-hover); color: var(--pw-text); }
 .rail-actions { display: flex; align-items: center; gap: 6px; }
 
 .sidenav.collapsed { width: 64px; padding: 12px; }
@@ -380,15 +377,9 @@ main.content { min-height: 0; min-width: 0; background: var(--pw-content-bg); }
 
 .sidenav-secondary { margin-top: auto; padding-bottom: 8px; }
 /* The sidebar's search box, after the platform's: full width under the
-   brand, a 12px icon, a muted placeholder, and the shortcut at the right. */
-.sidenav-search {
-  display: flex; align-items: center; gap: 8px; margin: 0 0 10px;
-  padding: 6px 10px; border: 1px solid var(--pw-border); border-radius: 6px;
-  background: var(--pw-panel); color: var(--pw-muted);
-}
-.sidenav-search:focus-within { border-color: var(--pw-link); }
-.sidenav-search input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--pw-text); font: inherit; font-size: 14px; padding: 0; }
-.sidenav-search input::placeholder { color: var(--pw-muted); }
+   brand, with the shortcut beside it. */
+.sidenav-search { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; }
+.sidenav-search-box { flex: 1; min-width: 0; }
 .sidenav-search kbd { font: inherit; font-size: 11px; color: var(--pw-muted); border: 1px solid var(--pw-border); border-radius: 4px; padding: 0 4px; line-height: 16px; }
 .sidenav.collapsed .sidenav-search { display: none; }
 
@@ -418,6 +409,7 @@ main.content { min-height: 0; min-width: 0; background: var(--pw-content-bg); }
 .status-line { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--pw-muted); padding: 2px 0; }
 /* Reserves the footer's height while its first read is in flight. */
 .footer-pending { min-height: 74px; }
+.footer-skeleton { margin: 4px 0 10px; }
 .status-line.muted2 { color: var(--pw-muted); }
 .status-dot { width: 7px; height: 7px; border-radius: 50%; }
 .status-dot.ok { background: var(--pw-green); }
@@ -427,6 +419,7 @@ main.content { min-height: 0; min-width: 0; background: var(--pw-content-bg); }
   color: var(--pw-link); font-size: 12px; cursor: pointer; text-decoration: underline;
 }
 .link-btn:disabled { color: var(--pw-muted-2); cursor: default; }
+.footer-sync { margin-left: auto; }
 
 /* ---- content area ---- */
 .content { flex: 1; min-width: 0; display: flex; flex-direction: column; }
@@ -970,8 +963,6 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 
 /* Conversation label scope: compact control floated into the right-pane
    header bar, opening a multi-select dropdown that scales to many labels. */
-/* height:auto beats the .chat-canvas > * { height:100% } rule, which would
-   stretch the anchor to the canvas bottom and drop the menu off-screen. */
 /* Scope and Persona share one row over the package's header. They were
    two absolutely-positioned elements with a hand-tuned offset between
    them, which is how the persona control ended up somewhere nobody could
@@ -980,8 +971,6 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
    direct children, which made this row full-height and centred the
    buttons halfway down the canvas. */
 .chat-controls { position: absolute; top: 11px; right: 16px; z-index: 8; display: flex; align-items: center; gap: 6px; height: auto; }
-.chat-scope-anchor, .chat-persona-anchor { position: relative; height: auto; }
-.chat-persona-anchor .scope-menu { right: 0; }
 @media (max-width: 760px) {
   /* These controls float over the package's own header, which holds the
      model picker. On a phone the picker is wide enough to run under them,
@@ -998,9 +987,6 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
     overflow: hidden;
   }
 }
-/* Below ai-chat's side panels (z 10-20) so their close controls stay
-   clickable; raised only while the scope menu itself is open. */
-.chat-scope-anchor.open { z-index: 60; }
 .scope-btn {
   display: inline-flex; align-items: center; gap: 6px;
   border: 1px solid var(--pw-border); border-radius: 8px;
@@ -1014,16 +1000,12 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
   font-size: 11px; font-weight: 600; line-height: 15px; padding: 0 5px;
 }
 .scope-overlay { position: fixed; inset: 0; z-index: 39; }
-.scope-menu {
-  position: absolute; top: calc(100% + 6px); right: 0; z-index: 40;
-  width: 250px; padding: 10px; display: flex; flex-direction: column; gap: 8px;
-  background: var(--pw-panel); box-shadow: var(--theme-shadow-lg);
-}
+/* The Persona and Scope popovers; the popover draws the panel. */
+.scope-menu { width: 250px; display: flex; flex-direction: column; gap: 8px; }
 .scope-menu-head {
   font-size: 11px; font-weight: 600; letter-spacing: 0.05em;
   text-transform: uppercase; color: var(--pw-muted);
 }
-.scope-filter { font-size: 13px; padding: 5px 8px; }
 .scope-list { max-height: 260px; overflow-y: auto; display: flex; flex-direction: column; }
 .scope-item {
   display: flex; align-items: center; gap: 8px; padding: 5px 4px;
@@ -1032,14 +1014,7 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .scope-item:hover { background: var(--pw-hover-row, #f8fafc); }
 .scope-tag { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .scope-n { color: var(--pw-muted); font-size: 12px; }
-.scope-empty { font-size: 13px; padding: 4px; }
 .scope-menu-foot { display: flex; justify-content: space-between; align-items: center; }
-.scope-clear {
-  background: none; border: none; color: var(--pw-link); cursor: pointer;
-  font-size: 12px; padding: 2px 6px;
-}
-.scope-clear:hover { text-decoration: underline; }
-.scope-clear:disabled { color: var(--pw-muted-2); cursor: default; text-decoration: none; }
 
 /* Streaming thinking peek: a little more room than the package's 5rem so
    whole sentences fit, and calmer type for the reasoning text. */
@@ -1047,24 +1022,19 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .chat-canvas [class*="border-l-2"] [class*="text-sm"] { line-height: 1.55; }
 .status-dot.off { background: var(--pw-muted-2); }
 
-/* Identity detail popover, opening upward from the footer identity line */
-.identity-line { position: relative; }
+/* The footer lines' detail popovers, opening upward from each line */
 .identity-btn {
   display: inline-flex; align-items: center; gap: 6px;
   background: none; border: none; padding: 0; cursor: pointer;
   font-size: 12px; color: var(--pw-muted); font-family: inherit;
 }
 .identity-btn:hover { color: var(--pw-navy); }
-.identity-panel {
-  position: absolute; bottom: calc(100% + 10px); left: 0; z-index: 40;
-  width: 300px; padding: 10px; display: flex; flex-direction: column; gap: 8px;
-  background: var(--pw-panel); box-shadow: var(--theme-shadow-lg);
-}
-.identity-table { border-collapse: collapse; font-size: 12px; width: 100%; }
-.identity-table td { padding: 4px 0; vertical-align: top; line-height: 1.45; }
-.identity-table tr + tr td { border-top: 1px solid var(--pw-border); }
-.identity-table td.k { color: var(--pw-muted); padding-right: 14px; white-space: nowrap; width: 1%; }
-.identity-table td.v { color: var(--pw-text); word-break: normal; overflow-wrap: anywhere; white-space: pre-line; }
+.identity-panel { width: 300px; display: flex; flex-direction: column; gap: 8px; }
+/* A value may hold several lines, such as a token's audiences. */
+.identity-list [data-value] { white-space: pre-line; }
+.identity-sub dt { padding-left: 12px; }
+.identity-dot { margin-right: 6px; vertical-align: middle; }
+.identity-actions { display: flex; gap: 6px; }
 .identity-claims {
   margin: 0; padding: 8px; font-size: 11px; line-height: 1.5;
   background: var(--pw-bg); border: 1px solid var(--pw-border); border-radius: 6px;
@@ -1077,7 +1047,6 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 /* Stats view: clickable rows and label pills jump to a prefilled query */
 .ov-click { cursor: pointer; }
 .ov-tags button.tag-pill { cursor: pointer; font-family: inherit; }
-.status-dot.inline { display: inline-block; margin-right: 6px; vertical-align: middle; }
 .rail-head-actions { justify-content: flex-end; }
 
 /* Inline images in chat replies: bounded, framed, click target stays the
@@ -1246,7 +1215,6 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .run-row { display: flex; align-items: center; gap: 8px; padding: 4px 6px; font-size: 13px; }
 .run-slug { font-family: ui-monospace, monospace; }
 .run-meta { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.updated-line .btn-secondary.small { padding: 1px 8px; font-size: 11px; margin-left: 6px; }
 
 /* Per-agent drill-down in the delegated-tasks tree. */
 .agent-detail { padding: 6px 8px; }
@@ -1276,6 +1244,8 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .session-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .session-meta { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .session-bar-actions { margin-left: auto; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; flex: 0 1 auto; min-width: 0; }
+/* Open in new tab keeps the button's colors (see .full-view-actions a). */
+.session-bar-actions a { color: revert-layer; }
 .session-note { margin: 0; padding: 20px 14px; font-size: 13px; }
 .session-list { display: flex; flex-direction: column; gap: 2px; margin-bottom: 16px; }
 .session-row { display: flex; align-items: center; gap: 8px; padding: 4px 8px; border-radius: 6px; font-size: 13px; }
@@ -1402,15 +1372,7 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .chat-canvas .theme-panel.border-r a,
 .chat-canvas aside li span, .chat-canvas aside button span, .chat-canvas aside a span { font-size: 13px; }
 
-.chat-filter-btn {
-  position: absolute; left: 12px; bottom: 10px; z-index: 4;
-  height: auto;
-  font-size: 12px; padding: 4px 10px; border-radius: 999px;
-  border: 1px solid var(--pw-border); background: var(--pw-panel);
-  color: var(--pw-muted); cursor: pointer;
-}
-.chat-filter-btn:hover { color: var(--pw-text); border-color: var(--pw-border-strong); }
-.chat-filter-btn.active { color: var(--pw-navy); border-color: var(--pw-navy); }
+.chat-filter { position: absolute; left: 12px; bottom: 10px; z-index: 4; height: auto; }
 
 /* The deployment's mark above the empty chat's greeting. Drawn as a
    pseudo-element on the package's own h1, so it sits immediately above
@@ -1428,19 +1390,9 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
   background: var(--empty-brand-icon) center / contain no-repeat;
 }
 
-/* Voice preview: a small panel, since the session opens in its own tab. */
-.voice-panel {
-  position: absolute; z-index: 40; left: 50%; top: 50%; transform: translate(-50%, -50%);
-  width: min(440px, calc(100vw - 32px)); padding: 18px 20px;
-  box-shadow: 0 12px 32px rgba(16, 24, 40, 0.24);
-}
-.voice-panel h3 { margin: 0 0 10px; font-size: 13px; font-weight: 600; color: var(--pw-text); }
-
-/* Voice preview: Unmute's interface over the chat. */
-.voice-overlay { position: absolute; inset: 0; z-index: 40; display: flex; flex-direction: column; background: #000; }
-.voice-overlay-bar { display: flex; align-items: center; gap: 12px; padding: 8px 12px; background: var(--pw-panel); border-bottom: 1px solid var(--pw-border); }
-.voice-overlay-title { flex: 1; font-size: 13px; font-weight: 600; }
-.voice-overlay-frame { flex: 1; border: 0; width: 100%; background: #000; }
+/* Voice preview. Its Open link takes the button's colors from the UI
+   package's layer, which the page-wide link color would outrank. */
+.voice-modal a { color: revert-layer; }
 .voice-btn { margin-right: 6px; }
 
 /* What to type next: chips above the composer while it is empty. */
@@ -1474,9 +1426,6 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 }
 .slash-item.current { background: var(--pw-hover-row); }
 .slash-name { font-family: ui-monospace, monospace; font-weight: 600; white-space: nowrap; }
-.slash-kind { font-size: 11px; padding: 0 6px; border-radius: 999px; border: 1px solid var(--pw-border-strong); color: var(--pw-muted); text-transform: uppercase; letter-spacing: .04em; }
-.slash-kind.k-skill { color: var(--pw-green); border-color: var(--pw-green); }
-.slash-kind.k-agent { color: var(--pw-navy); border-color: var(--pw-navy); }
 .slash-desc { color: var(--pw-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .slash-foot { font-size: 11px; padding: 6px 10px 2px; }
 
@@ -1584,15 +1533,13 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 
 /* Missing-credential banner over the chat, with a path to fix it */
 .cred-banner {
-  /* height:auto beats .chat-canvas > * { height:100% } (same trap as the
-     scope anchor). A slim toast below the header bar. */
+  /* height:auto beats .chat-canvas > * { height:100% }. A slim strip
+     below the header bar, on the panel's ground so the thread does not
+     show through the callout's tint. */
   position: absolute; top: 64px; left: 50%; transform: translateX(-50%); z-index: 35; height: auto;
-  display: flex; align-items: center; gap: 12px; max-width: 680px;
-  background: var(--pw-panel); border: 1px solid var(--pw-border-strong);
-  border-left: 3px solid var(--pw-amber, #d97706);
-  border-radius: 10px; padding: 10px 14px; box-shadow: var(--theme-shadow-lg);
+  max-width: 680px; background: var(--pw-panel);
+  border-radius: 10px; overflow: hidden; box-shadow: var(--theme-shadow-lg);
 }
-.cred-banner-text { font-size: 13px; line-height: 1.5; color: var(--pw-text); }
 
 .provider-row { align-items: center; }
 /* The provider field takes its own width in the row, not all of it. */
@@ -1601,8 +1548,6 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .settings-content .key-row + .key-row, .settings-content .key-row + .key-persist { margin-top: 10px; }
 .settings-content .key-row { margin-top: 4px; }
 
-
-.cred-banner .btn-primary, .cred-banner .btn-secondary { white-space: nowrap; flex-shrink: 0; }
 
 .extracted-fallback {
   white-space: pre-wrap;
@@ -1727,7 +1672,7 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .task-msg-meta { font-size: 11px; color: var(--pw-muted); }
 .agents-filter { padding: 10px 14px; }
 /* A long library scrolls inside the menu instead of running off screen. */
-.chat-persona-anchor .scope-menu { max-height: min(60vh, 520px); overflow-y: auto; }
+.persona-menu { max-height: min(60vh, 520px, var(--available-height)); }
 .agents-kind { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
 /* A file input laid over a label drawn as a button. */
 .agents-file { overflow: hidden; }
@@ -1737,7 +1682,6 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .agents-file[aria-disabled='true'] input { cursor: not-allowed; }
 .agents-body { width: 100%; min-height: 45vh; font-family: ui-monospace, monospace; font-size: 13px; line-height: 1.6; resize: vertical; }
 .agents-del { margin-left: 4px; }
-.chat-persona-anchor { position: relative; }
 .persona-row { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%;
   padding: 7px 10px; border: 0; background: none; border-radius: 6px; cursor: pointer; text-align: left; font-size: 13px; }
 .persona-row:hover { background: var(--theme-hover); }
@@ -1869,8 +1813,8 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
      (ChatView switches it at this breakpoint); the bottom-bar Chat item
      opens it. The show-all filter rides on the open drawer, above the
      package's drawer layer. */
-  .chat-canvas.rail-open .chat-filter-btn { display: block; z-index: 31; }
-  .chat-rail-handle, .chat-filter-btn { display: none; }
+  .chat-canvas.rail-open .chat-filter { display: block; z-index: 31; }
+  .chat-rail-handle, .chat-filter { display: none; }
 }
 
 /* ---- library switcher: lives in the Library rail header ---- */
@@ -1964,18 +1908,14 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .chats-manager-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding-bottom: 10px; border-bottom: 1px solid var(--pw-border); position: sticky; top: -18px; background: var(--pw-panel); z-index: 1; padding-top: 6px; }
 .chats-check-all { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--pw-text); white-space: nowrap; }
 .chats-filter { flex: 1; min-width: 160px; max-width: 360px; }
-.chats-confirm { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; color: var(--pw-text); }
-.chats-note { margin: 8px 0 0; font-size: 13px; }
 .chats-list { list-style: none; margin: 0; padding: 0; }
 .chats-row { display: flex; align-items: center; gap: 10px; padding: 2px 4px; border-bottom: 1px solid var(--pw-border); }
 .chats-row.picked { background: color-mix(in srgb, var(--pw-text) 6%, var(--pw-panel)); }
 .chats-row.locked { opacity: 0.7; }
-.chats-row input[type=checkbox] { flex-shrink: 0; width: 15px; height: 15px; }
 .chats-row-open { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 12px; padding: 8px 4px; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .chats-row-open:hover .chats-row-title { text-decoration: underline; }
 .chats-row-title { flex: 1; min-width: 0; font-size: 14px; color: var(--pw-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .chats-row-meta { flex-shrink: 0; font-size: 12px; color: var(--pw-muted); }
-.chats-empty { padding: 16px 4px; font-size: 13px; }
 @media (max-width: 720px) {
   .chats-manager { padding: 12px 14px 24px; }
   .chats-row-meta { display: none; }
@@ -2100,16 +2040,8 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .run-pane-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 14px 6px; }
 .run-pane-title { display: flex; align-items: baseline; gap: 8px; min-width: 0; font-size: 13px; }
 .run-pane-title .muted { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.run-pane-close { font-size: 18px; line-height: 1; padding: 2px 8px; }
-.run-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; align-self: center; background: var(--pw-muted); }
-.run-dot.run-running, .run-dot.run-starting { background: #2563eb; animation: run-pulse 1.4s ease-in-out infinite; }
-.run-dot.run-completed { background: #16a34a; }
-.run-dot.run-error, .run-dot.run-failed { background: #dc2626; }
-@keyframes run-pulse { 50% { opacity: 0.35; } }
-.run-pane-tabs { display: flex; gap: 4px; padding: 0 12px; border-bottom: 1px solid var(--pw-border); }
-.run-pane-tabs button { background: none; border: 0; border-bottom: 2px solid transparent; padding: 6px 10px; font-size: 13px; color: var(--pw-muted); cursor: pointer; }
-.run-pane-tabs button.on { color: var(--pw-text); border-bottom-color: var(--pw-link); }
-.run-pane-tabs button:disabled { cursor: default; opacity: 0.6; }
+.run-dot { flex-shrink: 0; align-self: center; }
+.run-pane-tabs { padding: 0 12px; }
 .run-pane-body { flex: 1; min-height: 0; overflow: auto; position: relative; }
 .run-pane-form { padding: 12px 14px; }
 .run-pane-fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
@@ -2119,7 +2051,7 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .run-pane-graph { height: 100%; min-height: 420px; }
 .run-pane-frame { width: 100%; height: 100%; min-height: 480px; border: 0; display: block; background: #fff; }
 .run-pane-foot { display: flex; justify-content: space-between; gap: 8px; padding: 6px 14px; border-top: 1px solid var(--pw-border); font-size: 12px; }
-.run-pane-reopen { position: absolute; right: 18px; top: 64px; z-index: 5; font-size: 12px; padding: 4px 10px; border-radius: 14px; border: 1px solid var(--pw-border-strong); background: var(--pw-panel); color: var(--pw-text); cursor: pointer; }
+.run-pane-reopen { position: absolute; right: 18px; top: 64px; z-index: 5; }
 .chat-wrap { position: relative; }
 @media (max-width: 1000px) {
   .chat-wrap:has(.run-pane) { flex-direction: column; }
@@ -2144,7 +2076,6 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .side-tab-label { background: none; border: 0; padding: 4px 8px; font-size: 12px; color: var(--pw-text); cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .side-tab-x { background: none; border: 0; padding: 2px 6px; color: var(--pw-muted); cursor: pointer; }
 .side-tabs-actions { margin-left: auto; display: flex; gap: 4px; flex-shrink: 0; }
-.side-tabs-actions .btn-ghost { font-size: 12px; padding: 3px 8px; }
 @media (max-width: 1000px) { .side-view { flex: 0 0 55%; } }
 /* A run popped out into a window of its own fills it. */
 .run-embed { height: 100vh; display: flex; }
@@ -2155,7 +2086,7 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 /* The Scope menu holds the chat's library and its labels: the button names
    the library after "Scope", and the menu scrolls when both are long. */
 .scope-sub { margin-left: 6px; padding-left: 6px; border-left: 1px solid var(--pw-border); font-weight: 500; }
-.chat-scope-anchor .scope-menu { width: 270px; max-height: min(70vh, 560px); overflow-y: auto; }
+.chat-scope-menu { width: 270px; max-height: min(70vh, 560px, var(--available-height)); }
 .scope-libs { display: flex; flex-direction: column; gap: 2px; }
 /* A reply that is still streaming keeps a steady shape. The package shows
    the latest lines of the model's thinking under the label while it thinks
@@ -2190,5 +2121,7 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .full-view-bar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--pw-border); min-width: 0; }
 .full-view-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
 .full-view-actions { margin-left: auto; display: flex; gap: 6px; flex-shrink: 0; }
-.full-view-actions .btn-ghost, .full-view-actions .btn-secondary { font-size: 12px; padding: 4px 10px; }
+/* New tab takes the button's colors from the UI package's layer, which the
+   page-wide link color would outrank. */
+.full-view-actions a { color: revert-layer; }
 .full-view-frame { flex: 1; width: 100%; min-height: 0; border: 0; display: block; background: #fff; }

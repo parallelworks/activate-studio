@@ -1,4 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactElement, type ReactNode } from 'react'
+import {
+  Button, DescriptionList, DescriptionListItem, Popover, PopoverClose, Skeleton, StatusDot, type BadgeVariant,
+} from '@parallelworks/ui'
 import { api, IndexStatus } from '../api'
 import { onLibraryChange } from '../api'
 import type { LibraryStats } from '../api'
@@ -12,53 +15,73 @@ function ago(iso: string | null): string {
   return `${Math.round(s / 3600)}h ago`
 }
 
-function IndexPanel({ idx, gufi, stats, onClose, onSync, syncing }: {
+type Dot = 'ok' | 'warn' | 'off'
+const DOT_TONE: Record<Dot, BadgeVariant> = { ok: 'success', warn: 'warning', off: 'muted' }
+
+/** A footer line's details, opening upward from it. Focus moves to the panel
+ *  itself, which never scrolls the page the way focusing a control in it can. */
+function FooterPanel({ trigger, title, children }: { trigger: ReactElement; title: ReactNode; children: ReactNode }) {
+  return (
+    <Popover trigger={trigger} title={title} side="top" align="start" initialFocus="popup" className="identity-panel">
+      {children}
+    </Popover>
+  )
+}
+
+function CloseButton() {
+  return <PopoverClose render={<Button variant="secondary" size="sm" />}>Close</PopoverClose>
+}
+
+function IndexPanel({ trigger, idx, gufi, stats, onSync, syncing }: {
+  trigger: ReactElement
   idx: IndexStatus | null
   gufi: boolean | null
   stats: { files?: number; dirs?: number; totalBytes?: number; libraries?: LibraryStats[] } | null
-  onClose: () => void
   onSync: () => void
   syncing: boolean
 }) {
   const gb = stats?.totalBytes ? `${(stats.totalBytes / 1e9).toFixed(2)} GB` : ''
-  const rows: [string, string, 'ok' | 'warn' | 'off' | null][] = [
+  // A row marked in its last field is a library's, indented under the total.
+  const rows: [string, string, Dot | null, boolean?][] = [
     ['GUFI engine', gufi === null ? 'checking…' : gufi ? 'available' : 'unavailable (search falls back to grep)', gufi === null ? 'off' : gufi ? 'ok' : 'warn'],
     ['Indexed', stats?.files ? `${stats.files.toLocaleString()} files in ${stats.dirs?.toLocaleString()} directories, ${gb}${stats.libraries ? `, across ${stats.libraries.length} libraries` : ''}` : 'loading…', null],
-    ...(stats?.libraries ?? []).map(l => [`  ${l.label}${l.site ? ` (on ${l.site})` : ''}`, l.available ? `${(l.files ?? 0).toLocaleString()} files in ${(l.dirs ?? 0).toLocaleString()} directories` : (l.error ?? 'not available'), l.available ? 'ok' : 'warn'] as [string, string, 'ok' | 'warn' | 'off' | null]),
+    ...(stats?.libraries ?? []).map(l => [`${l.label}${l.site ? ` (on ${l.site})` : ''}`, l.available ? `${(l.files ?? 0).toLocaleString()} files in ${(l.dirs ?? 0).toLocaleString()} directories` : (l.error ?? 'not available'), l.available ? 'ok' : 'warn', true] as [string, string, Dot | null, boolean]),
     ['Sync loop', idx ? (idx.running ? 'sweep running now' : `every ${idx.sweepIntervalSec}s, last ${ago(idx.lastSweepAt ?? null)}${idx.lastSweepMs != null ? ` (${idx.lastSweepMs} ms)` : ''}`) : 'loading…', idx?.running ? 'ok' : null],
     ['Last result', idx?.lastError ? idx.lastError : idx?.lastSweepAt ? 'clean' : 'no sweep yet this server start', idx?.lastError ? 'warn' : idx?.lastSweepAt ? 'ok' : 'off'],
   ]
+  const busy = syncing || !!idx?.running
   return (
-    <>
-      <div className="scope-overlay" onClick={onClose} />
-      <div className="identity-panel card">
-        <div className="scope-menu-head">Index health</div>
-        <table className="identity-table">
-          <tbody>
-            {rows.map(([k, v, dot]) => (
-              <tr key={k}>
-                <td className="k">{k}</td>
-                <td className="v">{dot && <span className={`status-dot inline ${dot}`} />}{v}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {(idx?.lastChanges?.length ?? 0) > 0 && (
-          <>
-            <div className="scope-menu-head">Last sweep re-indexed</div>
-            <pre className="identity-claims">{idx!.lastChanges.slice(0, 10).join('\n')}</pre>
-          </>
-        )}
-        <div className="scope-menu-foot">
-          <span className="muted identity-src">GET /api/index/status</span>
-          <span>
-            <button className="btn-secondary" onClick={onSync} disabled={syncing || idx?.running}>{syncing || idx?.running ? 'syncing…' : 'Sync now'}</button>
-            {' '}
-            <button className="btn-secondary" onClick={onClose}>Close</button>
-          </span>
-        </div>
+    <FooterPanel trigger={trigger} title="Index health">
+      <DescriptionList variant="divided" className="identity-list">
+        {rows.map(([k, v, dot, sub]) => (
+          <DescriptionListItem key={k} label={k} className={sub ? 'identity-sub' : undefined}>
+            {dot && <StatusDot variant={DOT_TONE[dot]} size={7} className="identity-dot" />}{v}
+          </DescriptionListItem>
+        ))}
+      </DescriptionList>
+      {(idx?.lastChanges?.length ?? 0) > 0 && (
+        <>
+          <div className="scope-menu-head">Last sweep re-indexed</div>
+          <pre className="identity-claims">{idx!.lastChanges.slice(0, 10).join('\n')}</pre>
+        </>
+      )}
+      <div className="scope-menu-foot">
+        <span className="muted identity-src">GET /api/index/status</span>
+        <span className="identity-actions">
+          <Button variant="secondary" size="sm" onClick={onSync} loading={busy}>{busy ? 'syncing…' : 'Sync now'}</Button>
+          <CloseButton />
+        </span>
       </div>
-    </>
+    </FooterPanel>
+  )
+}
+
+/** Plain rows of a panel's details. */
+function DetailRows({ rows }: { rows: [string, string][] }) {
+  return (
+    <DescriptionList variant="divided" className="identity-list">
+      {rows.map(([k, v]) => <DescriptionListItem key={k} label={k}>{v}</DescriptionListItem>)}
+    </DescriptionList>
   )
 }
 
@@ -81,7 +104,7 @@ const AI_LABEL: Record<AiHealth['status'], string> = {
   'key-required': 'add your model key',
 }
 
-function AiPanel({ ai, onClose, onRecheck }: { ai: AiHealth; onClose: () => void; onRecheck: () => void }) {
+function AiPanel({ trigger, ai, onRecheck }: { trigger: ReactElement; ai: AiHealth; onRecheck: () => void }) {
   const rows: [string, string][] = [
     ['Status', AI_LABEL[ai.status] + (ai.status === 'ok' ? ` (${ai.models} models)` : '')],
     ['Gateway', ai.gatewayHost],
@@ -90,32 +113,25 @@ function AiPanel({ ai, onClose, onRecheck }: { ai: AiHealth; onClose: () => void
   if (ai.message) rows.push(['Detail', ai.message])
   if (ai.lastCallFailure) rows.push(['Last call failure', `${new Date(ai.lastCallFailure.at).toLocaleTimeString()}: ${ai.lastCallFailure.message.slice(0, 160)}`])
   return (
-    <>
-      <div className="scope-overlay" onClick={onClose} />
-      <div className="identity-panel card">
-        <div className="scope-menu-head">Model availability</div>
-        <table className="identity-table"><tbody>
-          {rows.map(([k, v]) => <tr key={k}><td className="k">{k}</td><td className="v">{v}</td></tr>)}
-        </tbody></table>
-        {ai.unlockUrl ? (
-          <p className="identity-note">
-            The provider locked this key, which it does on a schedule.{' '}
-            <a href={ai.unlockUrl} target="_blank" rel="noopener noreferrer">Unlock your key</a>, then re-check.
-          </p>
-        ) : ai.status === 'auth' ? (
-          <p className="identity-note">The gateway rejected the credential. Some providers lock keys on a schedule; unlock the key at your provider, then re-check.</p>
-        ) : null}
-        <p className="identity-note">Checked via the model listing; a key can also fail at call time, which shows under last call failure.</p>
-        <div className="scope-menu-foot">
-          <span className="muted identity-src">GET /api/ai/health</span>
-          <span>
-            <button className="btn-secondary" onClick={onRecheck}>Re-check</button>
-            {' '}
-            <button className="btn-secondary" onClick={onClose}>Close</button>
-          </span>
-        </div>
+    <FooterPanel trigger={trigger} title="Model availability">
+      <DetailRows rows={rows} />
+      {ai.unlockUrl ? (
+        <p className="identity-note">
+          The provider locked this key, which it does on a schedule.{' '}
+          <a href={ai.unlockUrl} target="_blank" rel="noopener noreferrer">Unlock your key</a>, then re-check.
+        </p>
+      ) : ai.status === 'auth' ? (
+        <p className="identity-note">The gateway rejected the credential. Some providers lock keys on a schedule; unlock the key at your provider, then re-check.</p>
+      ) : null}
+      <p className="identity-note">Checked via the model listing; a key can also fail at call time, which shows under last call failure.</p>
+      <div className="scope-menu-foot">
+        <span className="muted identity-src">GET /api/ai/health</span>
+        <span className="identity-actions">
+          <Button variant="secondary" size="sm" onClick={onRecheck}>Re-check</Button>
+          <CloseButton />
+        </span>
       </div>
-    </>
+    </FooterPanel>
   )
 }
 
@@ -133,7 +149,7 @@ const BUILD_SOURCE: Record<Build['source'], string> = {
   package: 'no tag or stamp found; package version only',
 }
 
-function BuildPanel({ build, onClose }: { build: Build; onClose: () => void }) {
+function BuildPanel({ trigger, build }: { trigger: ReactElement; build: Build }) {
   const rows: [string, string][] = [
     ['Version', build.version],
     ['Commit', build.commit ?? 'unknown'],
@@ -142,24 +158,18 @@ function BuildPanel({ build, onClose }: { build: Build; onClose: () => void }) {
     ['Source', BUILD_SOURCE[build.source]],
   ]
   return (
-    <>
-      <div className="scope-overlay" onClick={onClose} />
-      <div className="identity-panel card">
-        <div className="scope-menu-head">Build</div>
-        <table className="identity-table"><tbody>
-          {rows.map(([k, v]) => <tr key={k}><td className="k">{k}</td><td className="v">{v}</td></tr>)}
-        </tbody></table>
-        <p className="identity-note">
-          Compare this against the release you deployed. A redeploy that did not take leaves
-          the old commit and build time here, which is otherwise indistinguishable from one
-          that worked.
-        </p>
-        <div className="scope-menu-foot">
-          <span className="muted identity-src">GET /api/version</span>
-          <button className="btn-secondary" onClick={onClose}>Close</button>
-        </div>
+    <FooterPanel trigger={trigger} title="Build">
+      <DetailRows rows={rows} />
+      <p className="identity-note">
+        Compare this against the release you deployed. A redeploy that did not take leaves
+        the old commit and build time here, which is otherwise indistinguishable from one
+        that worked.
+      </p>
+      <div className="scope-menu-foot">
+        <span className="muted identity-src">GET /api/version</span>
+        <CloseButton />
       </div>
-    </>
+    </FooterPanel>
   )
 }
 
@@ -172,7 +182,7 @@ interface WhoAmI {
   claims: Record<string, unknown> | null
 }
 
-function IdentityPanel({ who, onClose }: { who: WhoAmI; onClose: () => void }) {
+function IdentityPanel({ trigger, who }: { trigger: ReactElement; who: WhoAmI }) {
   const rows: [string, string][] = who.verified
     ? [
         ['Username', who.user?.username ?? ''],
@@ -185,37 +195,27 @@ function IdentityPanel({ who, onClose }: { who: WhoAmI; onClose: () => void }) {
       ]
     : []
   return (
-    <>
-      <div className="scope-overlay" onClick={onClose} />
-      <div className="identity-panel card">
-        <div className="scope-menu-head">{who.verified ? 'Platform-verified identity' : 'Identity not verified'}</div>
-        {who.verified ? (
-          <>
-            <table className="identity-table">
-              <tbody>
-                {rows.map(([k, v]) => (
-                  <tr key={k}><td className="k">{k}</td><td className="v">{v}</td></tr>
-                ))}
-              </tbody>
-            </table>
-            <div className="scope-menu-head">Raw token claims</div>
-            <pre className="identity-claims">{JSON.stringify(who.claims, null, 2)}</pre>
-          </>
-        ) : (
-          <p className="identity-note">
-            This connection carried no valid platform token. Verification is enabled and the
-            server expects a short-lived JWT in the <code>{who.header}</code> header, which the
-            platform session proxy adds when the app is reached through it. Direct access
-            (localhost, the bare subdomain outside the proxy) has no such header. If this shows
-            while using the platform, check the server log for a token verification warning.
-          </p>
-        )}
-        <div className="scope-menu-foot">
-          <span className="muted identity-src">GET /api/whoami</span>
-          <button className="btn-secondary" onClick={onClose}>Close</button>
-        </div>
+    <FooterPanel trigger={trigger} title={who.verified ? 'Platform-verified identity' : 'Identity not verified'}>
+      {who.verified ? (
+        <>
+          <DetailRows rows={rows} />
+          <div className="scope-menu-head">Raw token claims</div>
+          <pre className="identity-claims">{JSON.stringify(who.claims, null, 2)}</pre>
+        </>
+      ) : (
+        <p className="identity-note">
+          This connection carried no valid platform token. Verification is enabled and the
+          server expects a short-lived JWT in the <code>{who.header}</code> header, which the
+          platform session proxy adds when the app is reached through it. Direct access
+          (localhost, the bare subdomain outside the proxy) has no such header. If this shows
+          while using the platform, check the server log for a token verification warning.
+        </p>
+      )}
+      <div className="scope-menu-foot">
+        <span className="muted identity-src">GET /api/whoami</span>
+        <CloseButton />
       </div>
-    </>
+    </FooterPanel>
   )
 }
 
@@ -224,13 +224,9 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
   const [idx, setIdx] = useState<IndexStatus | null>(null)
   const [syncing, setSyncing] = useState(false)
   const [who, setWho] = useState<WhoAmI | null>(null)
-  const [idOpen, setIdOpen] = useState(false)
-  const [idxOpen, setIdxOpen] = useState(false)
   const [gufi, setGufi] = useState<boolean | null>(null)
   const [ai, setAi] = useState<AiHealth | null>(null)
-  const [aiOpen, setAiOpen] = useState(false)
   const [build, setBuild] = useState<Build | null>(null)
-  const [buildOpen, setBuildOpen] = useState(false)
 
   // Each line waited on its own request, so the footer assembled itself a
   // row at a time while the page settled. The first pass is awaited as a
@@ -282,80 +278,87 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
     setSyncing(false)
   }
 
+  const busy = syncing || !!idx?.running
   if (collapsed) {
     return (
       <div className="sidenav-footer">
         <div className="status-line" title={stats?.files ? `${stats.files.toLocaleString()} files indexed, sync ${ago(idx?.lastSweepAt ?? null)}` : 'index loading'}>
-          <span className={`status-dot ${idx?.lastError ? 'warn' : 'ok'}`} />
+          <StatusDot variant={idx?.lastError ? 'warning' : 'success'} size={7} />
         </div>
       </div>
     )
   }
   // Hold the space so the sidebar does not shift when the rows arrive.
-  if (!ready) return <div className="sidenav-footer footer-pending" />
+  if (!ready) return <div className="sidenav-footer footer-pending"><Skeleton count={3} width="70%" height={10} className="footer-skeleton" /></div>
   return (
     <div className="sidenav-footer">
       {who?.authEnabled && (
-        <div className="status-line identity-line" title="Click for identity details">
-          <button className="identity-btn" onClick={() => setIdOpen(o => !o)}>
-            <span className={`status-dot ${who.verified ? 'ok' : 'off'}`} />
-            {who.verified ? who.user?.username : 'identity not verified'}
-          </button>
-          {idOpen && <IdentityPanel who={who} onClose={() => setIdOpen(false)} />}
+        <div className="status-line" title="Click for identity details">
+          <IdentityPanel
+            who={who}
+            trigger={
+              <button className="identity-btn">
+                <StatusDot variant={who.verified ? 'success' : 'muted'} size={7} />
+                {who.verified ? who.user?.username : 'identity not verified'}
+              </button>
+            }
+          />
         </div>
       )}
       {ai && (
-        <div className="status-line identity-line" title="Click for model availability details">
-          <button className="identity-btn" onClick={() => setAiOpen(o => !o)}>
-            <span className={`status-dot ${ai.status === 'ok' ? 'ok' : ai.status === 'unconfigured' ? 'off' : 'warn'}`} />
-            {ai.status === 'ok' ? `${ai.models} models ready` : AI_LABEL[ai.status]}
-          </button>
-          {aiOpen && (
-            <AiPanel
-              ai={ai}
-              onClose={() => setAiOpen(false)}
-              onRecheck={() => { fetch('/api/ai/health?fresh=1').then(r => r.json()).then(setAi).catch(() => {}) }}
-            />
-          )}
+        <div className="status-line" title="Click for model availability details">
+          <AiPanel
+            ai={ai}
+            onRecheck={() => { fetch('/api/ai/health?fresh=1').then(r => r.json()).then(setAi).catch(() => {}) }}
+            trigger={
+              <button className="identity-btn">
+                <StatusDot variant={ai.status === 'ok' ? 'success' : ai.status === 'unconfigured' ? 'muted' : 'warning'} size={7} />
+                {ai.status === 'ok' ? `${ai.models} models ready` : AI_LABEL[ai.status]}
+              </button>
+            }
+          />
         </div>
       )}
       {updated && (
-        <div className="status-line identity-line updated-line" title="A new version was deployed while this page was open">
-          <span className="status-dot warn" />
+        <div className="status-line" title="A new version was deployed while this page was open">
+          <StatusDot variant="warning" size={7} />
           Updated to {updated.version}
-          <button className="btn-secondary small" onClick={() => location.reload()}>Reload</button>
+          <Button variant="secondary" size="xs" onClick={() => location.reload()}>Reload</Button>
         </div>
       )}
       {build && (
-        <div className="status-line identity-line" title="Click for build details">
-          <button className="identity-btn" onClick={() => setBuildOpen(o => !o)}>
-            <span className={`status-dot ${build.version === 'dev' ? 'off' : 'ok'}`} />
-            {build.version}
-          </button>
-          {buildOpen && <BuildPanel build={build} onClose={() => setBuildOpen(false)} />}
+        <div className="status-line" title="Click for build details">
+          <BuildPanel
+            build={build}
+            trigger={
+              <button className="identity-btn">
+                <StatusDot variant={build.version === 'dev' ? 'muted' : 'success'} size={7} />
+                {build.version}
+              </button>
+            }
+          />
         </div>
       )}
-      <div className="status-line identity-line" title="Click for index health details">
-        <button className="identity-btn" onClick={() => setIdxOpen(o => !o)}>
-          <span className={`status-dot ${idx?.lastError ? 'warn' : 'ok'}`} />
-          {stats?.files ? `${stats.files.toLocaleString()} files indexed` : 'index loading'}
-        </button>
-        {idxOpen && (
-          <IndexPanel
-            idx={idx}
-            gufi={gufi}
-            stats={stats}
-            onClose={() => setIdxOpen(false)}
-            onSync={() => { void sync() }}
-            syncing={syncing}
-          />
-        )}
+      <div className="status-line" title="Click for index health details">
+        <IndexPanel
+          idx={idx}
+          gufi={gufi}
+          stats={stats}
+          onSync={() => { void sync() }}
+          syncing={syncing}
+          trigger={
+            <button className="identity-btn">
+              <StatusDot variant={idx?.lastError ? 'warning' : 'success'} size={7} />
+              {stats?.files ? `${stats.files.toLocaleString()} files indexed` : 'index loading'}
+            </button>
+          }
+        />
       </div>
       <div className="status-line muted2">
         sync {ago(idx?.lastSweepAt ?? null)}
-        <button className="link-btn" onClick={sync} disabled={syncing || idx?.running}>
-          {syncing || idx?.running ? 'syncing…' : 'sync now'}
-        </button>
+        <Button variant="ghost" size="xs" className="footer-sync" onClick={sync} loading={busy}>
+          {busy ? 'syncing…' : 'sync now'}
+        </Button>
       </div>
     </div>
   )
