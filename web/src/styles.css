@@ -314,7 +314,6 @@ main.content { min-height: 0; min-width: 0; background: var(--pw-content-bg); }
   font-size: 12px; font-weight: 500; white-space: nowrap;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
 }
-.ov-note { padding: 10px 12px; font-size: 13px; color: var(--pw-muted); }
 /* Label proposals: a review list, not an action. Nothing is applied until
    the reader accepts it. */
 .suggest-panel .suggest-rows { max-height: 260px; overflow: auto; margin-top: 6px; }
@@ -811,7 +810,8 @@ textarea.field { line-height: 1.5; }
 .overview-view { padding: 12px; overflow: auto; flex: 1; display: flex; flex-direction: column; gap: 12px; }
 .ov-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
 .ov-tile { padding: 16px 20px; display: flex; flex-direction: column; gap: 2px; }
-.ov-error { padding: 12px 20px; color: #dc2626; font-size: 13px; }
+/* The libraries table takes the cards' corners beside it. */
+.ov-libraries > div { border-radius: 10px; }
 .ov-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 12px; }
 .ov-chart, .ov-list { padding: 16px 20px; }
 .ov-chart h3, .ov-list h3 { margin: 0 0 12px; font-size: 13px; font-weight: 600; color: var(--pw-text); }
@@ -1224,19 +1224,16 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .workflow-tab-body { flex: 1; min-height: 480px; display: flex; flex-direction: column; }
 .workflow-tab-body .viewer { flex: 1; }
 /* The task board: cards for the fleet, a tree and a feed for one task. */
-.agents-tabs { margin-top: 0; }
-.tab-live-dot {
-  display: inline-block; width: 7px; height: 7px; border-radius: 50%;
-  background: var(--pw-green); margin-left: 6px; vertical-align: 2px;
-  animation: task-pulse 1.6s ease-in-out infinite;
-}
+/* The card under the tabs draws the rule across the full width. */
+.agents-tabs { border-bottom: 0; padding-top: 8px; }
 /* .card carries no padding of its own; sections add it. Same inset as
    .ov-list so this card's content lines up with every other page. */
 .task-board-card { display: flex; flex-direction: column; gap: 14px; padding: 16px 20px; }
-.task-empty .view-sub:last-child { margin-bottom: 0; }
-.task-empty { max-width: 62ch; }
-.task-empty h3, .task-board-card h3 { margin: 0 0 12px; font-size: 13px; font-weight: 600; color: var(--pw-text); }
-.task-empty p { line-height: 1.6; }
+.task-board-card h3 { margin: 0 0 12px; font-size: 13px; font-weight: 600; color: var(--pw-text); }
+/* The empty boards explain themselves in a paragraph or two, wider than
+   the library's empty state sets its description. */
+.task-empty p { line-height: 1.6; max-width: 62ch; }
+.task-empty p > span + span { display: block; margin-top: 8px; }
 .task-cards {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px;
 }
@@ -1249,17 +1246,11 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .task-card.selected { border-color: var(--pw-navy); box-shadow: 0 0 0 1px var(--pw-navy); }
 .task-card-top { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--pw-muted); }
 .task-card-state { flex: 1; }
-.task-badge {
-  font-size: 11px; padding: 1px 7px; border-radius: 999px;
-  border: 1px solid var(--pw-border-strong); color: var(--pw-muted); white-space: nowrap;
-}
 .task-card-objective {
   margin: 7px 0 9px; font-size: 13px; font-weight: 600; line-height: 1.4;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
   min-height: 2.6em;
 }
-.task-progress { height: 4px; border-radius: 2px; background: var(--pw-border); overflow: hidden; }
-.task-progress-fill { height: 100%; background: var(--pw-green); transition: width .4s ease; }
 .task-card-meta { display: flex; justify-content: space-between; margin-top: 7px; font-size: 11px; color: var(--pw-muted); }
 @keyframes task-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
 .status-dot.pulse { animation: task-pulse 1.6s ease-in-out infinite; }
@@ -1295,13 +1286,7 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 }
 @media (max-width: 900px) { .task-feed { border-left: 0; padding-left: 0; border-top: 1px solid var(--pw-border); padding-top: 10px; } }
 .task-feed-title { font-size: 11px; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; }
-.task-topic {
-  display: inline-block; font-size: 11px; padding: 0 6px; border-radius: 999px; margin-right: 6px;
-  border: 1px solid var(--pw-border-strong); color: var(--pw-muted);
-}
-.task-topic.t-complete { color: var(--pw-green); border-color: var(--pw-green); }
-.task-topic.t-failed, .task-topic.t-refused { color: var(--pw-amber); border-color: var(--pw-amber); }
-.task-topic.t-spawn { color: var(--pw-navy); border-color: var(--pw-navy); }
+.task-topic { margin-right: 6px; }
 
 /* Fleet: standing agents. */
 .fleet-head { display: flex; align-items: center; justify-content: space-between; }
@@ -1313,22 +1298,16 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .fleet-template { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 10px 12px; border: 1px dashed var(--pw-border-strong); border-radius: 10px; background: var(--pw-panel); cursor: pointer; text-align: left; font: inherit; color: var(--pw-text); font-size: 13px; }
 .fleet-template:hover { border-style: solid; border-color: var(--pw-navy); }
 .fleet-template-name { font-weight: 600; }
-.fleet-form { display: flex; flex-direction: column; gap: 6px; border: 1px solid var(--pw-border); border-radius: 10px; padding: 12px 14px; }
-.fleet-goal { min-height: 120px; resize: vertical; }
-.fleet-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px 14px; }
-.fleet-grid .field-label { display: flex; flex-direction: column; gap: 4px; }
+.fleet-form { display: flex; flex-direction: column; gap: 12px; border: 1px solid var(--pw-border); border-radius: 10px; padding: 12px 14px; }
+.fleet-goal { min-height: 120px; }
+.fleet-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px 14px; }
 .fleet-check { display: flex; align-items: center; gap: 8px; font-size: 13px; }
-.fleet-error { color: var(--pw-amber); font-size: 13px; margin: 0; }
 .fleet-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
 .fleet-note { font-size: 12px; margin: -4px 0 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fleet-goal-text { font-size: 13px; white-space: pre-wrap; margin: 0 0 10px; }
 .fleet-journal { display: flex; flex-direction: column; gap: 8px; max-height: 420px; overflow-y: auto; border-top: 1px solid var(--pw-border); padding-top: 10px; }
 .fleet-journal-text { white-space: pre-wrap; font-size: 13px; }
 .fleet-message { display: flex; gap: 8px; margin-top: 10px; }
-.fleet-message .field { flex: 1; }
-.task-topic.t-result { color: var(--pw-green); border-color: var(--pw-green); }
-.task-topic.t-message, .task-topic.t-event { color: var(--pw-navy); border-color: var(--pw-navy); }
-.task-topic.t-error { color: var(--pw-amber); border-color: var(--pw-amber); }
 
 /* Platform runs launched from chat, on the Tasks page. */
 .run-list { border-top: 1px solid var(--pw-border); padding-top: 12px; }
@@ -1339,8 +1318,6 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .updated-line .btn-secondary.small { padding: 1px 8px; font-size: 11px; margin-left: 6px; }
 
 /* Per-agent drill-down in the delegated-tasks tree. */
-.agent-row { cursor: pointer; }
-.agent-row.open td { background: var(--pw-hover-row); }
 .agent-detail { padding: 6px 8px; }
 /* An agent waiting on a person: the request and the two answers, above the
    tree so it is seen without opening the agent. */
@@ -1348,15 +1325,9 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .task-approval { display: flex; align-items: center; gap: 10px; justify-content: space-between; padding: 4px 0; font-size: 13px; }
 .task-approval > span:first-child { min-width: 0; overflow-wrap: anywhere; }
 .task-approval-actions { display: flex; gap: 6px; flex-shrink: 0; }
-.task-badge-warn { background: var(--theme-warning-muted); color: color-mix(in srgb, var(--theme-warning) 75%, var(--theme-app)); }
 .agent-steer { display: flex; gap: 6px; align-items: center; margin: 6px 0; flex-wrap: wrap; }
-.agent-steer .field { flex: 1 1 16rem; min-width: 0; }
-.agent-live {
-  max-height: 260px; overflow: auto; margin: 6px 0 2px;
-  padding: 8px 10px; border-radius: 6px;
-  background: var(--pw-input-bg); border: 1px solid var(--pw-border);
-  font-size: 12px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere;
-}
+.agent-steer input { flex: 1 1 16rem; }
+.agent-live { margin: 6px 0 2px; border: 1px solid var(--pw-border); border-radius: 6px; overflow: hidden; }
 .embed-root { height: 100vh; display: flex; flex-direction: column; background: var(--pw-panel); }
 .embed-root .viewer { flex: 1; min-height: 0; }
 
@@ -1779,10 +1750,10 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .hist-head-note { font-weight: 400; }
 .hist-crumbs { margin: 0 0 10px; font-size: 13px; }
 .hist-counts { display: flex; flex-wrap: wrap; gap: 12px; margin: 0 0 12px; font-size: 13px; }
-.hist-tally.add { color: var(--pw-green); }
+.hist-tally.add { color: var(--theme-success-text); }
 .hist-tally.mod { color: var(--pw-link); }
-.hist-tally.move { color: var(--pw-amber); }
-.hist-tally.del { color: #dc2626; }
+.hist-tally.move { color: var(--theme-warning-text); }
+.hist-tally.del { color: var(--theme-error-text); }
 .hist-changes { margin-bottom: 12px; }
 .hist-change-label { font-weight: 600; font-size: 13px; margin: 0 0 4px; color: var(--pw-navy); }
 .hist-stored { margin: -8px 0 8px; font-size: 12px; }
@@ -1790,11 +1761,10 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .hist-tick-row .hist-tick { flex: 1; min-width: 0; }
 /* The delete affordance appears on hover, the same pattern as removing a
    saved query, so the rail stays quiet until the reader reaches for it. */
-.hist-tick-del { border: 0; background: none; color: transparent; cursor: pointer;
-  font-size: 13px; line-height: 1; padding: 3px 5px; border-radius: 4px; }
-.hist-tick-row:hover .hist-tick-del { color: var(--pw-muted); }
-.hist-tick-del:hover { color: #dc2626; background: var(--theme-hover); }
-.hist-prune { margin-top: 8px; font-size: 12px; }
+.hist-tick-del { opacity: 0; }
+.hist-tick-row:hover .hist-tick-del, .hist-tick-del:focus-visible { opacity: 1; }
+.hist-tick-del:hover { color: var(--theme-error-text); }
+.hist-prune { margin-top: 8px; align-self: flex-start; }
 .hist-check { padding: 4px 8px 4px 18px; font-size: 12px; color: var(--pw-muted); }
 .hist-tick { position: relative; padding: 5px 8px 5px 18px; border: 0; background: none; color: var(--pw-muted);
   font-size: 13px; text-align: left; cursor: pointer; border-radius: 6px; }
@@ -1826,42 +1796,32 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
   max-height: 60vh;
   resize: vertical;
 }
-.agents-pager { display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--pw-border); font-size: 12px; }
-.agents-pager-btns { display: flex; gap: 6px; }
-.agents-pager .btn-secondary { font-size: 12px; padding: 3px 10px; }
+.agents-form { display: flex; flex-direction: column; gap: 14px; }
+.agents-form .settings-grid { margin-bottom: 0; }
+.agents-pager { margin-top: 10px; padding-inline: 0; border-top: 1px solid var(--pw-border); }
 .persona-icon { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
   border-radius: 6px; object-fit: cover; vertical-align: middle; }
 .persona-icon.initials { background: var(--pw-active-pill); color: var(--pw-navy); font-weight: 700; letter-spacing: 0.02em; }
 .persona-icon.glyph { line-height: 1; }
-.persona-icon-row { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; flex-wrap: wrap; }
+.persona-icon-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .persona-icon-field { flex: 1; min-width: 160px; }
 .agents-view .ov-row-path { display: flex; align-items: center; gap: 8px; }
 .persona-row .persona-name { display: flex; align-items: center; gap: 8px; }
 .task-detail { margin-top: 10px; border-top: 1px solid var(--pw-border); padding-top: 10px; }
-.task-table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 8px 0 12px; }
-.task-table th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--pw-muted); padding: 3px 8px 3px 0; }
-.task-table td { padding: 4px 8px 4px 0; border-top: 1px solid var(--pw-border); }
-.task-board { display: flex; flex-direction: column; gap: 5px; max-height: 260px; overflow-y: auto;
-  background: var(--pw-bg); border: 1px solid var(--pw-border); border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; }
 .task-msg { font-size: 13px; display: flex; flex-direction: column; }
 .task-msg-meta { font-size: 11px; color: var(--pw-muted); }
-.agents-filter { display: flex; align-items: center; gap: 10px; padding: 10px 14px; }
-.agents-filter .field { flex: 1; }
+.agents-filter { padding: 10px 14px; }
 /* A long library scrolls inside the menu instead of running off screen. */
 .chat-persona-anchor .scope-menu { max-height: min(60vh, 520px); overflow-y: auto; }
 .agents-kind { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
-.agents-kind .btn-secondary.active { border-color: var(--pw-link); color: var(--pw-link); }
-.agents-file { position: relative; overflow: hidden; cursor: pointer; display: inline-flex; align-items: center; }
-.agents-file:hover { border-color: var(--pw-link); color: var(--pw-link); }
+/* A file input laid over a label drawn as a button. */
+.agents-file { overflow: hidden; }
+.agents-file input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
 /* A control that cannot act should look like it: greyed, not pressable,
    and saying its precondition in the label rather than after a click. */
-.agents-file.disabled { opacity: 0.5; cursor: not-allowed; }
-.agents-file.disabled:hover { border-color: var(--pw-border); color: var(--pw-muted); }
-.agents-file.disabled input { cursor: not-allowed; }
-.agents-file input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.agents-file[aria-disabled='true'] input { cursor: not-allowed; }
 .agents-body { width: 100%; min-height: 45vh; font-family: ui-monospace, monospace; font-size: 13px; line-height: 1.6; resize: vertical; }
-.agents-del { margin-left: 10px; font-size: 12px; }
+.agents-del { margin-left: 4px; }
 .chat-persona-anchor { position: relative; }
 .persona-row { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%;
   padding: 7px 10px; border: 0; background: none; border-radius: 6px; cursor: pointer; text-align: left; font-size: 13px; }
@@ -2084,7 +2044,7 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .sidenav-brand .brand-text b { color: var(--pw-text); letter-spacing: 0; font-weight: 600; }
 /* The Agents tabs no longer sit under a title. */
 .agents-view .ov-head { padding: 0 20px; }
-.hist-view > .empty-state { grid-column: 1 / -1; }
+.hist-view > .hist-empty { grid-column: 1 / -1; }
 
 /* Chat rail: Select chats, and the bulk selection panel it opens. */
 /* The package's New chat group below opens with 8px of padding; the
@@ -2240,7 +2200,6 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 
 /* The library a page searches, queries, or counts, above its controls. */
 .scope-bar { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; font-size: 13px; }
-.scope-loading { display: inline-flex; align-items: center; gap: 6px; color: var(--pw-muted); }
 .pill-library { border: 1px solid var(--pw-border-strong); color: var(--pw-muted); }
 
 /* The run the assistant launched, beside the conversation: its form as

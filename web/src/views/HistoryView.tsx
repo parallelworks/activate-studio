@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Button, EmptyState, IconButton, Loader } from '@parallelworks/ui'
+import { CloseIcon } from '@parallelworks/ui/icons'
 
 /**
  * The corpus over time: pick a moment on the scrubber and the panel shows
@@ -112,19 +114,17 @@ export function HistoryView({ onOpen }: { onOpen: (path: string) => void }) {
     return parts.map((p, i) => ({ name: p, path: parts.slice(0, i + 1).join('/') }))
   }, [dir])
 
-  if (snaps === null) return <div className="hist-view"><p className="muted pad">Loading history…</p></div>
+  if (snaps === null) return <div className="hist-view"><Loader size={24} label="Loading history…" /></div>
 
   if (snaps.length === 0) {
     return (
       <div className="hist-view">
-        <div className="empty-state">
-          <h2>No history yet</h2>
-          <p className="muted">
+        <EmptyState className="hist-empty" title="No history yet"
+          description={<>
             A snapshot is recorded after each index pass, and the timeline needs at least one to start.
             Snapshots hold the list of files with their sizes and dates, not their contents.
-          </p>
-          <button className="btn-primary" onClick={capture} disabled={busy}>{busy ? 'Capturing…' : 'Capture the first snapshot'}</button>
-        </div>
+          </>}
+          action={<Button variant="primary" loading={busy} onClick={() => void capture()}>{busy ? 'Capturing…' : 'Capture the first snapshot'}</Button>} />
       </div>
     )
   }
@@ -161,12 +161,12 @@ export function HistoryView({ onOpen }: { onOpen: (path: string) => void }) {
                   : ` · ${snaps.length - 1 - idx} pass${snaps.length - 1 - idx === 1 ? '' : 'es'} ago`}
               </span>
             </h3>
-            <button className="btn-secondary" onClick={capture} disabled={busy}>{busy ? 'Capturing…' : 'Capture now'}</button>
+            <Button variant="secondary" loading={busy} onClick={() => void capture()}>{busy ? 'Capturing…' : 'Capture now'}</Button>
           </div>
           <p className="hist-crumbs">
-            <button className="link-button" onClick={() => setDir('')}>knowledge base</button>
+            <Button variant="ghost" size="sm" onClick={() => setDir('')}>knowledge base</Button>
             {crumbs.map(c => (
-              <span key={c.path}> / <button className="link-button" onClick={() => setDir(c.path)}>{c.name}</button></span>
+              <span key={c.path}> / <Button variant="ghost" size="sm" onClick={() => setDir(c.path)}>{c.name}</Button></span>
             ))}
           </p>
           {level?.dirs?.map(d => (
@@ -216,7 +216,7 @@ export function HistoryView({ onOpen }: { onOpen: (path: string) => void }) {
                 <p className="muted">Nothing changed in this pass.</p>
               )}
             </>
-          ) : <p className="muted">Comparing…</p>}
+          ) : <Loader inline size={14} label="Comparing…" />}
         </section>
       </div>
 
@@ -244,12 +244,12 @@ export function HistoryView({ onOpen }: { onOpen: (path: string) => void }) {
               <span className="hist-tick-label">{when(s.takenAt)}</span>
               {i === snaps.length - 1 && <span className="hist-now"> now</span>}
             </button>
-            <button className="hist-tick-del" title={`Delete this snapshot (${bytes(s.disk)})`} onClick={() => remove(s.id)}>×</button>
+            <IconButton className="hist-tick-del" icon={<CloseIcon />} label={`Delete this snapshot (${bytes(s.disk)})`} onClick={() => remove(s.id)} />
           </div>
           )
         })}
         {snaps.length > 10 && (
-          <button className="link-button hist-prune" onClick={() => pruneTo(10)}>Remove all but the last 10</button>
+          <Button variant="ghost" size="sm" className="hist-prune" onClick={() => pruneTo(10)}>Remove all but the last 10</Button>
         )}
       </section>
     </div>
