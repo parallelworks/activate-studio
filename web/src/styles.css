@@ -302,6 +302,9 @@ main.content { min-height: 0; min-width: 0; background: var(--pw-content-bg); }
 .banner-field { grid-column: 1 / -1; }
 .banner-row { display: flex; gap: 8px; align-items: center; }
 .banner-row .banner-preset { flex: 0 0 150px; }
+/* The marking menu's trigger reads as the picker it is: a field box with
+   its chevron at the end. */
+.banner-preset { display: flex; align-items: center; justify-content: space-between; gap: 6px; cursor: pointer; }
 .banner-row .banner-text { flex: 1 1 auto; min-width: 0; }
 .banner-row .banner-hex { flex: 0 0 100px; font-family: ui-monospace, monospace; }
 @media (max-width: 720px) { .banner-row { flex-wrap: wrap; } .banner-row .banner-text { flex-basis: 100%; } }
@@ -806,6 +809,8 @@ textarea.field { line-height: 1.5; }
 .settings-card { padding: 20px 26px; min-width: 0; }
 .settings-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; margin-bottom: 14px; }
 .prompts-box { font-size: 13px; resize: vertical; }
+/* A labeled field standing on its own below the grid, such as the mission. */
+.settings-field { margin-top: 14px; max-width: var(--settings-measure); }
 
 /* ---- overview ---- */
 .overview-view { padding: 12px; overflow: auto; flex: 1; display: flex; flex-direction: column; gap: 12px; }
@@ -999,13 +1004,10 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 }
 .tool-row { display: grid; grid-template-columns: 20px 170px 1fr; align-items: baseline; gap: 8px; font-size: 13px; cursor: pointer; padding: 3px 0; min-width: 0; }
 .ext-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 0 28px; }
-.ext-row { display: grid; grid-template-columns: 150px 1fr; gap: 8px; font-size: 13px; padding: 3px 0; }
-.ext-empty { font-size: 12px; margin: 2px 0 0; }
 .tool-row code { font-size: 12px; color: var(--pw-navy); white-space: nowrap; }
-.tool-row .tool-desc, .ext-row .tool-desc { color: var(--pw-muted); min-width: 0; line-height: 1.45; }
+.tool-row .tool-desc { color: var(--pw-muted); min-width: 0; line-height: 1.45; }
 .custom-tools { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; align-items: flex-start; }
 .custom-tool-row { display: grid; grid-template-columns: 160px 1fr 1fr auto; gap: 8px; width: 100%; }
-.custom-tool-row .mono { font-family: var(--font-mono); font-size: 12px; }
 
 
 .tool-name { border: none; background: none; padding: 0; cursor: pointer; text-align: left; }
@@ -1670,10 +1672,13 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .rag-calls-table td:last-child, .rag-calls-table td:nth-child(6) { white-space: normal; min-width: 120px; }
 .rag-calls-table th { font-weight: 600; color: var(--pw-muted); }
 .rag-calls-table code { font-size: 12px; }
+.rag-calls-log td:nth-child(6), .rag-calls-log td:last-child { min-width: 120px; }
 
 /* Settings docs layout shares the help layout; section-specific bits */
 .settings-content { --settings-measure: 1150px; }
-.settings-content .settings-grid { max-width: var(--settings-measure); }
+/* The grid's labeled fields carry no top margin of their own, as the
+   caption labels before them did, so the grid keeps that space. */
+.settings-content .settings-grid { max-width: var(--settings-measure); margin-top: 8px; }
 .settings-content .view-sub, .settings-content .key-trust, .settings-content .rag-modes,
 .settings-content .prompts-box, .settings-content .key-row { max-width: var(--settings-measure); }
 .settings-content h1 { margin-bottom: 10px; }
@@ -1683,13 +1688,8 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .rag-ep-status code { font-size: 12px; }
 .prompts-box { min-height: 200px; resize: vertical; }
 
-/* RAG endpoint registration banner and model chips */
-.rag-banner { border: 1px solid var(--pw-border); border-radius: 10px; padding: 12px 14px; max-width: var(--settings-measure); margin: 4px 0 14px; }
-.rag-banner.connected { border-color: color-mix(in srgb, var(--theme-success) 45%, var(--theme-border)); background: var(--theme-success-muted); }
-.rag-banner.errored { border-color: color-mix(in srgb, var(--theme-error) 45%, var(--theme-border)); background: var(--theme-error-muted); }
-.rag-banner-head { display: flex; align-items: center; gap: 9px; font-size: 14px; }
-.rag-banner-head strong { font-weight: 600; color: var(--pw-text); }
-.rag-banner-actions { margin-left: auto; display: flex; gap: 6px; }
+/* Model access and endpoint registration banners (Callouts) and model chips */
+.rag-banner { max-width: var(--settings-measure); margin: 4px 0 14px; }
 .rag-banner-models { margin-top: 10px; font-size: 13px; color: var(--pw-muted); }
 .rag-chip-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; max-width: var(--settings-measure); }
 .rag-chip-row code {
@@ -1710,8 +1710,9 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .cred-banner-text { font-size: 13px; line-height: 1.5; color: var(--pw-text); }
 
 .provider-row { align-items: center; }
-.provider-label { margin: 0 4px 0 0; white-space: nowrap; }
-.provider-row select.field { width: auto; min-width: 260px; }
+/* The provider field takes its own width in the row, not all of it. */
+.provider-field { width: auto; }
+.provider-select { min-width: 260px; }
 .settings-content .key-row + .key-row, .settings-content .key-row + .key-persist { margin-top: 10px; }
 .settings-content .key-row { margin-top: 4px; }
 
@@ -1871,10 +1872,7 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .persona-shared { font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.04em;
   color: var(--pw-muted); border: 1px solid var(--pw-border-strong); border-radius: 4px; padding: 0 4px; }
 .persona-row .muted { font-size: 12px; line-height: 1.4; }
-.access-compare { margin: 0 0 14px; display: grid; gap: 10px; }
-.access-compare dt { font-size: 13px; font-weight: 650; color: var(--pw-navy); margin-bottom: 2px; }
-.access-compare dd { margin: 0; font-size: 13px; color: var(--pw-muted); line-height: 1.55; }
-.access-compare > div { border-left: 2px solid var(--pw-border-strong); padding-left: 12px; }
+.access-compare { margin: 0 0 14px; }
 .access-switch { display: flex; align-items: center; gap: 10px; margin: 10px 0 8px; font-size: 13px; }
 .mcp-snippet { margin-bottom: 6px; }
 
@@ -2015,8 +2013,6 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .rail-head .rail-actions { flex-shrink: 0; }
 
 /* ---- Settings > Libraries ---- */
-.libraries-table { margin-bottom: 18px; }
-.libraries-table td { vertical-align: middle; padding-top: 8px; padding-bottom: 8px; }
 .libraries-table .lib-name { font-weight: 600; color: var(--pw-text); }
 .libraries-table .lib-id { font-size: 12px; color: var(--pw-muted); margin-top: 2px; }
 /* Where a library points: its GUFI index and, when the files are here, the
@@ -2025,15 +2021,13 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 /* The narrow columns give way to the paths: headers may take two lines,
    and the actions column needs only its Remove button. */
 .libraries-table th { white-space: normal; vertical-align: bottom; }
-.libraries-table td.lib-actions { min-width: 0; }
-.libraries-table .lib-paths { white-space: normal; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 2px 8px; margin: 6px 0 0; font-size: 12px; }
-.libraries-table .lib-paths dt { color: var(--pw-muted); }
-.libraries-table .lib-paths dd { margin: 0; min-width: 0; }
+.libraries-table .lib-paths { margin-top: 6px; }
 .libraries-table .lib-seg { white-space: nowrap; }
-.libraries-table .lib-paths code { font-size: 11px; user-select: all; }
 .libraries-table .lib-yes { color: var(--pw-text); }
 .libraries-table .lib-no { color: var(--pw-muted); }
 .libraries-table .lib-actions { text-align: right; width: 1%; }
+.libraries-table .lib-actions > * + * { margin-left: 6px; }
+.libraries-wrap { margin-bottom: 18px; }
 
 /* Workflows tab */
 .wf-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(10.5rem, 1fr)); gap: 0.75rem; margin: 1rem 0 1.5rem; }
@@ -2058,6 +2052,7 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .wf-picked-name { font-weight: 600; }
 .wf-picked-actions { margin-left: auto; display: flex; gap: 0.25rem; }
 .wf-catalog td:first-child { width: 2rem; }
+.wf-load-error { margin-top: 10px; max-width: var(--settings-measure); }
 
 /* Page header bar for the list-style views: the section's name and a short
    note, flush with the content, ruled off below. */
@@ -2236,7 +2231,7 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 
 /* Settings > Libraries > Your libraries: the Slurm fields under their checkbox. */
 .user-lib-slurm { display: flex; gap: 8px; margin-top: 6px; }
-.user-lib-slurm .field { flex: 1; min-width: 0; }
+.user-lib-slurm > input { flex: 1; min-width: 0; }
 
 /* The library a page searches, queries, or counts, above its controls. */
 .scope-bar { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; font-size: 13px; }

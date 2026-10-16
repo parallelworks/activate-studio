@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Button, Callout, Checkbox, IconButton, Input, Loader, SearchInput, Table, toast } from '@parallelworks/ui'
+import { ArrowDownIcon, ArrowUpIcon } from '@parallelworks/ui/icons'
 
 /**
  * Settings > Workflows: which platform workflows this Studio offers on its
@@ -21,7 +23,7 @@ export function WorkflowsSection() {
   const [ghBase, setGhBase] = useState('')
   const [picked, setPicked] = useState<string[]>([])
   const [filter, setFilter] = useState('')
-  const [note, setNote] = useState('')
+  const [loadError, setLoadError] = useState('')
   const [busy, setBusy] = useState(false)
   const [dirty, setDirty] = useState(false)
 
@@ -33,7 +35,7 @@ export function WorkflowsSection() {
       setCatalog(d.workflows)
       setSource(d.source === 'viewer' ? 'viewer' : 'deployment')
       setMarket(Array.isArray(d.marketplace) ? d.marketplace : [])
-    }).catch(e => setNote(`Cannot list the platform's workflows: ${(e as Error).message}`))
+    }).catch(e => setLoadError(`Cannot list the platform's workflows: ${(e as Error).message}`))
   }, [])
 
   const byName = useMemo(() => new Map<string, { displayName: string }>([
@@ -74,13 +76,13 @@ export function WorkflowsSection() {
     setPicked(p => { const n = [...p]; [n[i], n[j]] = [n[j], n[i]]; return n })
   }
   const save = async () => {
-    setBusy(true); setNote('')
+    setBusy(true)
     try {
       const r = await fetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workflowCollection: picked }) })
       const d = await r.json()
       if (!r.ok) throw new Error(d.error ?? `${r.status}`)
-      setDirty(false); setNote('Saved. The Workflows tab shows the new set on its next load.')
-    } catch (e) { setNote(String((e as Error).message)) } finally { setBusy(false) }
+      setDirty(false); toast.success('Saved. The Workflows tab shows the new set on its next load.')
+    } catch (e) { toast.error(String((e as Error).message)) } finally { setBusy(false) }
   }
 
   return (
@@ -103,59 +105,55 @@ export function WorkflowsSection() {
               <code className="muted">{n}</code>
               {catalog && !n.includes('/') && !byName.has(n) && <span className="wf-fail">not on the platform account</span>}
               <span className="wf-picked-actions">
-                <button className="btn-link" disabled={i === 0} onClick={() => move(i, -1)} aria-label="Move up">&uarr;</button>
-                <button className="btn-link" disabled={i === picked.length - 1} onClick={() => move(i, 1)} aria-label="Move down">&darr;</button>
-                <button className="btn-link" onClick={() => toggle(n)}>Remove</button>
+                <IconButton icon={<ArrowUpIcon />} label="Move up" disabled={i === 0} onClick={() => move(i, -1)} />
+                <IconButton icon={<ArrowDownIcon />} label="Move down" disabled={i === picked.length - 1} onClick={() => move(i, 1)} />
+                <Button variant="ghost" size="sm" onClick={() => toggle(n)}>Remove</Button>
               </span>
             </li>
           ))}
         </ol>
       )}
       <div className="query-actions">
-        <button className="btn-primary" disabled={busy || !dirty} onClick={() => void save()}>{busy ? 'Saving…' : 'Save'}</button>
-        {note && <span className="muted">{note}</span>}
+        <Button variant="primary" loading={busy} disabled={!dirty} onClick={() => void save()}>{busy ? 'Saving…' : 'Save'}</Button>
       </div>
 
       <div className="tool-group">On the account{catalog ? ` (${catalog.length})` : ''}</div>
       {catalog && source === 'viewer' && (
         <p className="muted">Listed from your own account, because the deployment's platform credential is not usable. Until it is renewed, other viewers can run a workflow picked here only if it is already in their own account.</p>
       )}
-      <input className="field" placeholder="Filter by name or tag" value={filter} onChange={e => setFilter(e.target.value)} />
-      {!catalog && !note && <p className="muted">Loading…</p>}
+      <SearchInput label="Filter by name or tag" value={filter} onValueChange={setFilter} />
+      {loadError && <Callout tone="error" className="wf-load-error">{loadError}</Callout>}
+      {!catalog && !loadError && <p className="muted"><Loader inline size={16} label="Loading…" /></p>}
       {catalog && (
-        <div className="rag-calls-wrap">
-          <table className="rag-calls-table wf-catalog">
-            <thead><tr><th></th><th>Workflow</th><th>Description</th></tr></thead>
-            <tbody>
-              {shown.map(w => (
-                <tr key={w.name}>
-                  <td><input type="checkbox" checked={picked.includes(w.name)} onChange={() => toggle(w.name)} aria-label={`Offer ${w.displayName}`} /></td>
-                  <td><div>{w.displayName}</div><code className="muted">{w.name}</code></td>
-                  <td className="muted">{w.description}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <Table density="compact" className="wf-catalog" wrapperClassName="rag-calls-wrap">
+          <Table.Header />
+          <Table.Header>Workflow</Table.Header>
+          <Table.Header>Description</Table.Header>
+          {shown.map(w => (
+            <tr key={w.name}>
+              <Table.Item><Checkbox checked={picked.includes(w.name)} onCheckedChange={() => toggle(w.name)} aria-label={`Offer ${w.displayName}`} /></Table.Item>
+              <Table.Item><div>{w.displayName}</div><code className="muted">{w.name}</code></Table.Item>
+              <Table.Item wrap className="muted">{w.description}</Table.Item>
+            </tr>
+          ))}
+        </Table>
       )}
 
       <div className="tool-group">Marketplace{market.length ? ` (${market.length})` : ''}</div>
       {market.length === 0 && catalog && <p className="muted">No marketplace workflows are listed for this account.</p>}
       {shownMarket.length > 0 && (
-        <div className="rag-calls-wrap">
-          <table className="rag-calls-table wf-catalog">
-            <thead><tr><th></th><th>Workflow</th><th>Description</th></tr></thead>
-            <tbody>
-              {shownMarket.map(w => (
-                <tr key={w.name}>
-                  <td><input type="checkbox" checked={picked.includes(w.name)} onChange={() => toggle(w.name)} aria-label={`Offer ${w.displayName}`} /></td>
-                  <td><div>{w.displayName}</div><code className="muted">{w.name}</code></td>
-                  <td className="muted">{w.description}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <Table density="compact" className="wf-catalog" wrapperClassName="rag-calls-wrap">
+          <Table.Header />
+          <Table.Header>Workflow</Table.Header>
+          <Table.Header>Description</Table.Header>
+          {shownMarket.map(w => (
+            <tr key={w.name}>
+              <Table.Item><Checkbox checked={picked.includes(w.name)} onCheckedChange={() => toggle(w.name)} aria-label={`Offer ${w.displayName}`} /></Table.Item>
+              <Table.Item><div>{w.displayName}</div><code className="muted">{w.name}</code></Table.Item>
+              <Table.Item wrap className="muted">{w.description}</Table.Item>
+            </tr>
+          ))}
+        </Table>
       )}
 
       <div className="tool-group">From GitHub</div>
@@ -166,26 +164,24 @@ export function WorkflowsSection() {
         they are in the repository, without a copy in anyone's account.
       </p>
       <div className="query-actions">
-        <input className="field" placeholder="github.com/parallelworks/workflows/workflows@canary" value={gh} onChange={e => setGh(e.target.value)}
+        <Input aria-label="GitHub repository" placeholder="github.com/parallelworks/workflows/workflows@canary" value={gh} onChange={e => setGh(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter') void findGithub() }} />
-        <button className="btn-secondary" disabled={ghBusy || !gh.trim()} onClick={() => void findGithub()}>{ghBusy ? 'Looking…' : 'Find workflows'}</button>
+        <Button variant="secondary" loading={ghBusy} disabled={!gh.trim()} onClick={() => void findGithub()}>{ghBusy ? 'Looking…' : 'Find workflows'}</Button>
       </div>
       {ghNote && <p className="muted">{ghNote}</p>}
       {ghRows.length > 0 && (
-        <div className="rag-calls-wrap">
-          <table className="rag-calls-table wf-catalog wf-gh">
-            <thead><tr><th></th><th>Workflow</th><th>Description</th></tr></thead>
-            <tbody>
-              {shownGh.map(w => (
-                <tr key={w.entry}>
-                  <td><input type="checkbox" checked={picked.includes(w.entry)} onChange={() => toggle(w.entry)} aria-label={`Offer ${w.title}`} /></td>
-                  <td><div>{w.title}</div><code className="muted" title={w.entry}>{relPath(w.entry)}</code></td>
-                  <td className="muted"><span className="wf-clamp">{w.description}</span></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <Table density="compact" className="wf-catalog wf-gh" wrapperClassName="rag-calls-wrap">
+          <Table.Header />
+          <Table.Header>Workflow</Table.Header>
+          <Table.Header>Description</Table.Header>
+          {shownGh.map(w => (
+            <tr key={w.entry}>
+              <Table.Item><Checkbox checked={picked.includes(w.entry)} onCheckedChange={() => toggle(w.entry)} aria-label={`Offer ${w.title}`} /></Table.Item>
+              <Table.Item><div>{w.title}</div><code className="muted" title={w.entry}>{relPath(w.entry)}</code></Table.Item>
+              <Table.Item wrap className="muted"><span className="wf-clamp">{w.description}</span></Table.Item>
+            </tr>
+          ))}
+        </Table>
       )}
     </>
   )
