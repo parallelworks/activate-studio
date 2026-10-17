@@ -14,7 +14,8 @@
 
 Ask in plain language. The assistant searches the knowledge base, reads the files that matter, and links each source. Past conversations are kept and are searchable themselves.
 
-- **Attach** files or images with the paperclip; they are added to the library and indexed.
+- **Attach** files or images with **+**, then **Add files**; they are added to the library and indexed.
+- **+**, then **Tools**, switches kinds of tools on or off for your chats: the knowledge base, platform workflows, agents, editing the library, extensions, and each attached MCP server. Switch off workflows to keep a chat from launching anything, or editing to keep it read only. A dot on **+** means something is off; the choice is kept in this browser.
 - **Scope**, at the top right, chooses which library the assistant searches in this chat, or all of them, and limits answers to material with the labels you choose.
 - Type **/** to pick a skill, a tool, or a persona to use.
 - Ask it to run work on a connected HPC system; it follows the run and explains a failure if there is one. A side view beside the chat shows the run: its form as submitted, the live graph of its jobs, and the web session it opens, such as a study viewer. Click a step in the graph to read its summary, its log as it grows, and the script it ran. **Beside chat** on a session card adds the session as a tab there, **Full screen** shows it over the whole Studio (Close or Escape returns), and **Pop out** opens a tab in a window beside the Studio.
