@@ -2,6 +2,26 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.135 (2026-10-17)
+
+### Change log through v1.134 (#486)
+
+Regenerated with `node scripts/release-notes.mjs --changelog` after the v1.134 release.
+
+### Readers switch the assistant's tools by kind from the composer (#487)
+
+UI 0.65 gives the chat composer a **+** menu with **Tools** when the adapter lists tools. The Studio now lists one switch per kind of tool, not per tool: Knowledge base, Platform workflows, Agents, Editing the library, Extensions, and each attached MCP server. Only kinds this deployment offers appear. The package remembers the choice per reader in the browser and sends the ids left on with each request.
+
+On the server, `GET /api/chat/tool-options` lists the switches, and `/api/chat/stream` takes `tools`:
+- A group switched off is not sent to the model, not offered by `more_tools`, and not added because the question mentions its subject.
+- A call to a tool switched off does not run; the model is told the reader switched that kind off, and answers accordingly.
+- With Knowledge base off, the first-turn search seed is skipped too.
+- A request without `tools` gets every tool, as before.
+
+Switching off workflows keeps a chat from launching anything, and switching off editing makes it read only.
+
+Tested: unit tests for the mapping and for `more_tools` offering only what is on. The turn loop was also run against a stand-in model that calls `run_workflow` with only Knowledge base on: the model was offered the eight knowledge base tools, the call did not run, and the model was told why. A screenshot of the menu with all five switches was checked.
+
 ## v1.134 (2026-10-17)
 
 ### Change log through v1.133 (#484)
