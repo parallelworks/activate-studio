@@ -31,6 +31,7 @@ const streamFromServer: StreamCompletion = async (req, handlers, signal) => {
       labelScope: getLabelScope(),
       library: getChatLibrary(),
       agent: getPersona(),
+      tools: req.tools,
     }),
     signal,
   })
@@ -202,6 +203,16 @@ export function createStudioAdapter(): ChatAdapter {
       remove: async id => { await fetch(`/api/chat/conversations/${id}`, { method: 'DELETE' }).then(r => json(r)) },
     },
     models: { list: listModels },
+    // The composer's Tools menu: one switch per kind of tool the server
+    // offers. The package remembers the reader's choice and sends the ids
+    // left on as req.tools.
+    tools: {
+      list: async () => {
+        const res = await fetch('/api/chat/tool-options')
+        if (!res.ok) throw new Error(`tool options: ${res.status}`)
+        return ((await res.json()) as { tools?: { id: string; label: string; description?: string }[] }).tools ?? []
+      },
+    },
     streamCompletion: streamFromServer,
     // onOpen is part of the package's adapter surface as of 0.1.0; it was
     // AttachmentsAdapter type, hence the cast. Attachments live in the KB

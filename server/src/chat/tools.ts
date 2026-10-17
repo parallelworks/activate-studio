@@ -870,6 +870,50 @@ export function selectToolSpecs(all: ToolSpec[], active: Set<string>): ToolSpec[
   } as ToolSpec]
 }
 
+/**
+ * The switches a reader sees under the composer's Tools menu: one per kind
+ * of tool, not per tool, since forty-odd names such as workflow_run_detail
+ * mean little to a reader. The chat package remembers the choice in the
+ * browser and sends the ids left on with each request.
+ */
+const TOOL_OPTION_TEXT: Record<string, { label: string; description: string }> = {
+  kb: { label: 'Knowledge base', description: 'Search, read and query the library' },
+  workflows: { label: 'Platform workflows', description: 'Run and follow workflows and sessions' },
+  agents: { label: 'Agents', description: 'Start pw code agents and subtasks' },
+  editing: { label: 'Editing the library', description: 'Write files and apply labels' },
+  extensions: { label: 'Extensions', description: "This deployment's own tools and skills" },
+}
+
+/** Which of the reader's switches a tool belongs to. */
+export function toolOptionOf(name: string): string {
+  const group = toolGroupOf(name)
+  if (group) return group
+  if (name === 'use_skill' || customToolSpecs().some(t => t.function.name === name)) return 'extensions'
+  if (isRemoteTool(name)) return `mcp:${name.slice(0, name.indexOf('__'))}`
+  return 'kb'
+}
+
+/** The reader's switches for what this deployment offers now, in a fixed order. */
+export async function readerToolOptions(): Promise<{ id: string; label: string; description: string }[]> {
+  const ids = new Set((await activeToolSpecsWithRemote()).map(t => toolOptionOf(t.function.name)))
+  const fixed = Object.keys(TOOL_OPTION_TEXT).filter(id => ids.has(id)).map(id => ({ id, ...TOOL_OPTION_TEXT[id] }))
+  const servers = [...ids].filter(id => id.startsWith('mcp:')).sort().map(id => ({
+    id, label: id.slice(4), description: 'Tools from an attached MCP server',
+  }))
+  return [...fixed, ...servers]
+}
+
+/** Whether the reader left a tool's switch on; null means no choice was sent. */
+export function readerAllows(name: string, allowed: Set<string> | null): boolean {
+  return !allowed || name === MORE_TOOLS || allowed.has(toolOptionOf(name))
+}
+
+/** The switch's label, for telling the model which one is off. */
+export function toolOptionLabel(name: string): string {
+  const id = toolOptionOf(name)
+  return TOOL_OPTION_TEXT[id]?.label ?? id.replace(/^mcp:/, 'MCP server ')
+}
+
 /** The tool list including any attached MCP servers. Async because a
  *  remote listing is a network call; cached for a minute in the client. */
 export async function activeToolSpecsWithRemote(): Promise<ToolSpec[]> {

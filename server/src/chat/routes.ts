@@ -7,7 +7,7 @@ import { listRuns } from '../runs.js'
 import { GATEWAY_BASE, MAX_TOOL_ITERATIONS, SIDECAR_ENDPOINT, INDEX_BASE } from '../config.js'
 import { providerReason } from './gateway.js'
 import { aiHealth, gatewayConfigured, isSidecarModel, listModels, listSidecarModels, modelFailure, probeProvider, probeableProvider, extractUnlockUrl, invalidateProviderProbes, sidecarConfigured, sidecarTarget, StreamedTurnError, streamTurn, WireMessage, WireToolCall, type TokenUsage } from './gateway.js'
-import { MORE_TOOLS, TOOL_CALLS, TOOL_GROUPS, TOOL_SPECS, activeToolSpecs, activeToolSpecsWithRemote, commandFor, customToolSpecs, executeTool, expandSlashCommand, initialToolGroups, selectToolSpecs, skillToolSpec, toolGroupOf } from './tools.js'
+import { MORE_TOOLS, TOOL_CALLS, TOOL_GROUPS, TOOL_SPECS, activeToolSpecs, activeToolSpecsWithRemote, commandFor, customToolSpecs, executeTool, expandSlashCommand, initialToolGroups, readerAllows, readerToolOptions, selectToolSpecs, skillToolSpec, toolGroupOf, toolOptionLabel } from './tools.js'
 import { systemPrompt } from './context.js'
 import { attachmentContext } from '../attachments.js'
 import { effectiveSettings } from '../settings.js'
@@ -25,6 +25,8 @@ interface StreamBody {
   allocation?: string | null
   labelScope?: string[]
   agent?: string | null
+  /** The reader's tool switches left on (readerToolOptions ids); absent means all. */
+  tools?: string[]
 }
 
 function sse(res: NodeJS.WritableStream, event: string, data: unknown): void {
@@ -858,6 +860,9 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     return reply.send(suggestNext(c))
   })
 
+  // The composer's Tools menu: one switch per kind of tool this deployment offers.
+  app.get('/api/chat/tool-options', async () => ({ tools: await readerToolOptions() }))
+
   app.get('/api/chat/tools', async () => {
     const eff = effectiveSettings()
     const disabled = new Set(eff.disabledTools)
@@ -992,7 +997,11 @@ ${ctx}` : ctx
     // used before. The model can add a group with more_tools. The prompt's
     // platform section goes with the workflow and agent groups.
     const recentUserText = raw.filter(m => m.role === 'user').slice(-2).map(m => typeof m.content === 'string' ? m.content : '').join('\n')
+    // The reader's Tools switches: a group switched off is never sent or
+    // offered, and a call to a tool switched off does not run.
+    const readerTools = Array.isArray(body.tools) ? new Set(body.tools.map(String)) : null
     const activeGroups = initialToolGroups(recentUserText, toolsUsedIn(body.conversationId))
+    if (readerTools) for (const g of [...activeGroups]) if (!readerTools.has(g)) activeGroups.delete(g)
     const messages: WireMessage[] = [
       { role: 'system', content: `${await systemPrompt({ platform: activeGroups.has('workflows') || activeGroups.has('agents') })}\n\nToday's date is ${today}. Treat earlier dates as past; call out deadlines that have already passed.${scopeNote}${persona ? `\n\n--- DEPLOYMENT AGENT INSTRUCTIONS (extensions/agents/default.md) ---\n${persona}` : ''}` },
       ...history,
@@ -1214,7 +1223,7 @@ ${ctx}` : ctx
       // from memory no matter the instructions, so the first turn arrives
       // pre-grounded: the server runs the search itself and seeds the
       // result into the transcript, making citation the easy path.
-      if (foldSystem && !messages.some(m => (m as WireMessage).role === 'tool')) {
+      if (foldSystem && readerAllows('search_kb', readerTools) && !messages.some(m => (m as WireMessage).role === 'tool')) {
         const q = String((lastUserQuestion as WireMessage | undefined)?.content ?? '').trim()
         if (q && q.length > 12) {
           try {
@@ -1244,7 +1253,7 @@ ${ctx}` : ctx
           sse(res, 'content', { text: note })
           sse(res, 'steer', { id: s.id })
         }
-        const toolSpecs = selectToolSpecs(await activeToolSpecsWithRemote(), activeGroups)
+        const toolSpecs = selectToolSpecs((await activeToolSpecsWithRemote()).filter(t => readerAllows(t.function.name, readerTools)), activeGroups)
         const maxTokens = fitWindow(messages as WireMessage[], String(body.model ?? ''), JSON.stringify(toolSpecs).length)
         const modelStart = Date.now()
         const turn = await turnWithRetry(
@@ -1296,10 +1305,21 @@ ${ctx}` : ctx
                 let group = ''
                 try { group = String(JSON.parse(tc.function.arguments || '{}').group ?? '') } catch { /* named below */ }
                 const def = TOOL_GROUPS[group]
+                if (def && readerTools && !readerTools.has(group)) {
+                  outcomes[i] = { result: `The reader switched off the ${group} tools for this chat. Answer without them, or say what switching them on would let you do.`, summary: 'switched off by the reader', failed: true }
+                  continue
+                }
                 if (def) activeGroups.add(group)
                 outcomes[i] = def
                   ? { result: `Added the ${group} tools: ${def.names.join(', ')}. Use them in your next step.`, summary: `added ${group} tools` }
                   : { result: `No tool group "${group}". Groups: ${Object.keys(TOOL_GROUPS).join(', ')}.`, summary: 'unknown group', failed: true }
+                continue
+              }
+              if (!readerAllows(tc.function.name, readerTools)) {
+                outcomes[i] = {
+                  result: `The reader switched off ${toolOptionLabel(tc.function.name)} for this chat, so ${tc.function.name} did not run. Answer without it, or say what switching it on would let you do.`,
+                  summary: 'switched off by the reader', failed: true,
+                }
                 continue
               }
               // A tool from a group not sent this reply still runs, and its group joins.
