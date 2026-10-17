@@ -2,6 +2,24 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.134 (2026-10-17)
+
+### Change log through v1.133 (#484)
+
+Regenerated with `node scripts/release-notes.mjs --changelog` after the v1.133 release.
+
+### UI package 0.65; the theme test can rewrite its own defaults (#485)
+
+Moves `@parallelworks/ui` from 0.59 to 0.65.
+
+- 0.64 puts the package on the scale the platform's apps share: 32px fields, a 48px header, 16px titles, 12px panels and 16px padding. Every view was compared against v1.133 on the same data in light mode, and the key views in dark, with no breakage or console errors.
+- 0.63 shows a run's step summaries as cards under its graph, and 0.64.1 shows a step's whole summary table; both work through the run file route added in v1.132.
+- 0.65's derived theme changes the sidebar's active colors, so the shipped theme defaults are regenerated.
+
+The theme defaults test fails whenever a package release changes `deriveTheme`. With `UPDATE_THEME_DEFAULTS=1` it now rewrites the block from the release in use, so a bump no longer needs the block edited by hand.
+
+0.65 also lets readers choose which of the host's tools the chat assistant may use. Adopting that needs the Studio's adapter to list its tools and the server to honor the choice, so it follows in its own pull request.
+
 ## v1.133 (2026-10-16)
 
 ### Change log through v1.132 (#482)
