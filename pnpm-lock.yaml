@@ -61,8 +61,8 @@ importers:
   web:
     dependencies:
       '@parallelworks/ui':
-        specifier: ^0.59.0
-        version: 0.59.0(@date-fns/tz@1.5.0)(@types/react@19.2.18)(date-fns@4.4.0)(monaco-editor@0.57.0)(react-dom@19.2.8(react@19.2.8))(react-hook-form@7.90.0(@types/react@19.2.18)(react@19.2.8))(react@19.2.8)
+        specifier: ^0.65.0
+        version: 0.65.0(@date-fns/tz@1.5.0)(@types/react@19.2.18)(date-fns@4.4.0)(monaco-editor@0.57.0)(react-dom@19.2.8(react@19.2.8))(react-hook-form@7.90.0(@types/react@19.2.18)(react@19.2.8))(react@19.2.8)
       '@parallelworks/workflow-parser':
         specifier: ^0.8.0
         version: 0.8.0
@@ -736,8 +736,8 @@ packages:
     os: [linux]
     libc: [glibc]
 
-  '@parallelworks/ui@0.59.0':
-    resolution: {integrity: sha512-JY4MHesE5KQ3UnEMRb4L5+4dcnFxy6nKcpQMPXpuqrpVjWvZtE/zt+4JEujDjK4bUBRC5DICBrcEdBu/ifGucw==}
+  '@parallelworks/ui@0.65.0':
+    resolution: {integrity: sha512-SFNHei4oFyANZJUbiRy+cLYfsjn8Ae1LZubl2sQrizHcwRHX/ov0jE5tXWPyK6fjK/DS6MoIKwJIvfY3SxVpCw==}
     peerDependencies:
       monaco-editor: ^0.57.0
       react: ^19.0.0
@@ -3111,7 +3111,7 @@ snapshots:
   '@napi-rs/lzma-linux-x64-gnu@1.5.1':
     optional: true
 
-  '@parallelworks/ui@0.59.0(@date-fns/tz@1.5.0)(@types/react@19.2.18)(date-fns@4.4.0)(monaco-editor@0.57.0)(react-dom@19.2.8(react@19.2.8))(react-hook-form@7.90.0(@types/react@19.2.18)(react@19.2.8))(react@19.2.8)':
+  '@parallelworks/ui@0.65.0(@date-fns/tz@1.5.0)(@types/react@19.2.18)(date-fns@4.4.0)(monaco-editor@0.57.0)(react-dom@19.2.8(react@19.2.8))(react-hook-form@7.90.0(@types/react@19.2.18)(react@19.2.8))(react@19.2.8)':
     dependencies:
       '@base-ui/react': 1.9.0(@date-fns/tz@1.5.0)(@types/react@19.2.18)(date-fns@4.4.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@daypicker/react': 10.0.2(@types/react@19.2.18)(react@19.2.8)
