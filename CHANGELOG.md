@@ -2,6 +2,24 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.137 (2026-10-19)
+
+### Change log through v1.136 (#490)
+
+Regenerated with `node scripts/release-notes.mjs --changelog` after the v1.136 release.
+
+### Stats: count a library in one aggregated pass, and keep a cluster library's counts across restarts (#491)
+
+The Stats page was slow for a library on a cluster, enough to look stuck on a large one.
+
+The totals (files, bytes, directories) and the file-type breakdown were two per-directory `gufi_query` runs. Every row came back to the Studio to be summed: one row per directory, and one per directory and extension. Over `pw ssh` to a large cluster library, that transfer was most of the wait.
+
+They are now one query in GUFI's aggregate form (`-I`, `-K`, `-E`, `-J`, `-G`), as the Largest files and Changed lists already were. Each directory adds its counts to a per-thread table, the merge happens where the index is, and a few dozen rows come back. That is one traversal of the index, not two, and almost nothing to transfer. On the test index the one-pass answer equals the two-query answer exactly.
+
+A cluster library's counts were already kept in memory until its next build. They are now also written to `remote-stats.json` beside the index, so the first Stats view after a restart or deploy does not count the library again.
+
+Tested: the cluster library test now requires one `gufi_query` run per count, checks the type breakdown and directory count, and checks the counts reach disk.
+
 ## v1.136 (2026-10-19)
 
 ### Change log through v1.135 (#488)
