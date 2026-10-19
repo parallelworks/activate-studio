@@ -2,6 +2,18 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.136 (2026-10-19)
+
+### Change log through v1.135 (#488)
+
+Regenerated with `node scripts/release-notes.mjs --changelog` after the v1.135 release.
+
+### Stats: read the file lists by column name, across libraries too (#489)
+
+With **All libraries** chosen and more than one library mounted, `/api/query` answers with a leading `library` column. The Stats page's Largest files and Changed in the last 7 days lists read their rows by position, so each row showed the library's name where the path goes, "NaN GB" for the size, and the file size where the date goes. A deployment with one library never showed it.
+
+The lists now read the `path`, `bytes` and `modified` columns by name, show the library on hover, and open a file in its own library (`<library>/<path>`, as the Query page does). A test covers both shapes.
+
 ## v1.135 (2026-10-17)
 
 ### Change log through v1.134 (#486)
