@@ -8,7 +8,27 @@ import { LibrarySwitch } from '../components/LibrarySwitch'
 import { useAppConfig } from '../config'
 
 interface ExtRow { ext: string; count: number; bytes: number }
-interface QueryResult { columns: string[]; rows: string[][] }
+interface QueryResult { columns: string[]; rows: string[][]; rowLibraries?: string[] }
+
+/**
+ * A file list's rows read by column name. An answer across libraries leads
+ * with the library's name, which shifted every position by one; rowLibraries
+ * says which library each row came from, and such a file opens as
+ * <library>/<path>, as the Query page opens it.
+ */
+export function fileRows(r: QueryResult): { key: string; path: string; bytes: number; modified: string; library: string | null; open: string }[] {
+  const at = (name: string) => r.columns.indexOf(name)
+  const [path, bytes, modified, library] = [at('path'), at('bytes'), at('modified'), at('library')]
+  return r.rows.map((row, i) => {
+    const lib = r.rowLibraries?.[i]
+    const p = row[path] ?? ''
+    return {
+      key: `${lib ?? ''}:${p}`, path: p, bytes: Number(row[bytes]), modified: row[modified] ?? '',
+      library: library >= 0 ? row[library] : null,
+      open: library >= 0 && lib && lib !== 'all' ? `${lib}/${p}` : p,
+    }
+  })
+}
 
 function fmtBytes(n: number): string {
   if (n < 1024) return `${n} B`
@@ -160,23 +180,23 @@ export function OverviewView({ onOpen }: { onOpen: (path: string) => void }) {
 
         <section className="card ov-list">
           <h3>Largest files</h3>
-          {largest?.rows.map(r => (
-            <div className="ov-row" key={r[0]} onClick={() => onOpen(r[0])}>
-              <span className="ov-row-path">{r[0]}</span>
-              <span className="ov-row-meta">{fmtBytes(Number(r[1]))}</span>
+          {largest ? fileRows(largest).map(f => (
+            <div className="ov-row" key={f.key} onClick={() => onOpen(f.open)} title={f.library ?? undefined}>
+              <span className="ov-row-path">{f.path}</span>
+              <span className="ov-row-meta">{fmtBytes(f.bytes)}</span>
             </div>
-          )) ?? <Loader size={24} />}
+          )) : <Loader size={24} />}
         </section>
 
         <section className="card ov-list">
           <h3>Changed in the last 7 days</h3>
           {recent?.rows.length === 0 && <p className="muted pad">No changes recorded.</p>}
-          {recent?.rows.map(r => (
-            <div className="ov-row" key={r[0]} onClick={() => onOpen(r[0])}>
-              <span className="ov-row-path">{r[0]}</span>
-              <span className="ov-row-meta">{r[2]?.slice(0, 10)}</span>
+          {recent ? fileRows(recent).map(f => (
+            <div className="ov-row" key={f.key} onClick={() => onOpen(f.open)} title={f.library ?? undefined}>
+              <span className="ov-row-path">{f.path}</span>
+              <span className="ov-row-meta">{f.modified.slice(0, 10)}</span>
             </div>
-          )) ?? <Loader size={24} />}
+          )) : <Loader size={24} />}
         </section>
 
         {tags.length > 0 && (
