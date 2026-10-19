@@ -170,8 +170,12 @@ test('a cluster library is counted once per build', { skip: !haveGufi && 'GUFI n
     const root = U.remoteRootOf('single', 'u-count')
     const first = await G.corpusStats(root)
     assert.equal(first.files, 3)
+    assert.equal(first.totalBytes, 7505)
+    assert.equal(first.dirs, 2)
+    assert.deepEqual(first.byExt, [{ ext: 'txt', count: 2, bytes: 2505 }, { ext: 'bin', count: 1, bytes: 5000 }])
     const once = runs()
-    assert.ok(once > 0)
+    assert.equal(once, 1, 'totals and types in one aggregated pass')
+    assert.ok(JSON.parse(fs.readFileSync(path.join(process.env.INDEX_BASE, 'remote-stats.json'), 'utf8'))[root], 'kept on disk for a restart')
     assert.deepEqual(await G.corpusStats(root), first)
     assert.equal(runs(), once)
     // A rebuild is counted again.

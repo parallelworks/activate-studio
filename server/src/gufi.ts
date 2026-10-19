@@ -233,6 +233,15 @@ export async function queryPerDir(sql: string, opts: { threads?: number; subdir?
   return parseRows(stdout, 1)
 }
 
+/** A query in GUFI's aggregate form (-I, -K, -E, -J, -G stages): the merge
+ *  happens where the index is, and only the final rows come back. */
+async function queryAggregate(stages: string[], opts: { indexRoot?: string } = {}): Promise<string[][]> {
+  const root = opts.indexRoot ?? GUFI_INDEX
+  if (root.startsWith(REMOTE_PREFIX)) return parseRows(await remoteQuery(root, ['-n', '4', '-d', DELIM, '-a', '1', ...stages]), 1)
+  const { stdout } = await run('gufi_query', ['-n', '8', '-d', DELIM, '-a', '1', ...stages, root])
+  return parseRows(stdout, 1)
+}
+
 /** Full-text search over enriched fts5 `words` tables, joined to entries by inode. */
 export async function searchFts(queryText: string, limit = 20, indexRoot?: string): Promise<SearchHit[]> {
   const expr = ftsExpr(queryText)
@@ -382,8 +391,14 @@ export interface CorpusStats {
 
 // A library on a cluster changes only when it is rebuilt, and counting it
 // over the remote session takes seconds, so its figures are kept until the
-// next build. The owner's key is still checked on every call.
-const remoteStats = new Map<string, { builtAt: string; stats: CorpusStats }>()
+// next build, on disk as well, so a restart does not count it again. The
+// owner's key is still checked on every call.
+const REMOTE_STATS_FILE = path.join(INDEX_BASE, 'remote-stats.json')
+const remoteStats = new Map<string, { builtAt: string; stats: CorpusStats }>(
+  (() => { try { return Object.entries(JSON.parse(fs.readFileSync(REMOTE_STATS_FILE, 'utf8'))) } catch { return [] } })() as [string, { builtAt: string; stats: CorpusStats }][])
+function keepRemoteStats(): void {
+  try { fs.writeFileSync(REMOTE_STATS_FILE, JSON.stringify(Object.fromEntries(remoteStats))) } catch { /* the in-memory copy still serves */ }
+}
 
 export async function corpusStats(indexRoot?: string): Promise<CorpusStats> {
   if (indexRoot?.startsWith(REMOTE_PREFIX)) {
@@ -391,33 +406,40 @@ export async function corpusStats(indexRoot?: string): Promise<CorpusStats> {
     const hit = remoteStats.get(indexRoot)
     if (builtAt && hit?.builtAt === builtAt) return hit.stats
     const stats = await countCorpus(indexRoot)
-    if (builtAt) remoteStats.set(indexRoot, { builtAt, stats })
+    if (builtAt) { remoteStats.set(indexRoot, { builtAt, stats }); keepRemoteStats() }
     return stats
   }
   if (!gufiAvailable()) return { available: false }
   return countCorpus(indexRoot)
 }
 
+/**
+ * Totals and the file-type breakdown in one pass, aggregated where the index
+ * is. Each directory adds its counts by extension and its summary to a
+ * per-thread table, and only the merged rows come back: a few dozen, where
+ * the two per-directory queries this replaces returned one row per
+ * directory, which over the remote session to a large cluster library was
+ * most of the wait. Summary rows are keyed with a leading \x01, which no
+ * extension has.
+ */
 async function countCorpus(indexRoot?: string): Promise<CorpusStats> {
-  const sumSql = `SELECT totfiles, totsize FROM vrsummary;`
-  const rows = await queryPerDir(sumSql, { indexRoot })
-  let files = 0, totalBytes = 0
-  for (const r of rows) { files += Number(r[0]) || 0; totalBytes += Number(r[1]) || 0 }
-  const extSql =
-    `SELECT lower(CASE WHEN name LIKE '%.%' THEN replace(name, rtrim(name, replace(name, '.', '')), '') ELSE '' END), ` +
-    `count(*), sum(size) FROM vrpentries GROUP BY 1;`
-  const extRows = await queryPerDir(extSql, { indexRoot })
-  const agg = new Map<string, { count: number; bytes: number }>()
-  for (const r of extRows) {
-    const ext = r[0] || '(none)'
-    const cur = agg.get(ext) ?? { count: 0, bytes: 0 }
-    cur.count += Number(r[1]) || 0
-    cur.bytes += Number(r[2]) || 0
-    agg.set(ext, cur)
+  const ext = `lower(CASE WHEN name LIKE '%.%' THEN replace(name, rtrim(name, replace(name, '.', '')), '') ELSE '' END)`
+  const rows = await queryAggregate([
+    '-I', 'CREATE TABLE t (k TEXT, n INT64, b INT64);',
+    '-K', 'CREATE TABLE agg (k TEXT, n INT64, b INT64);',
+    '-E', `INSERT INTO t SELECT ${ext}, count(*), sum(size) FROM vrpentries GROUP BY 1; ` +
+      `INSERT INTO t SELECT char(1)||'summary', sum(totfiles), sum(totsize) FROM vrsummary; ` +
+      `INSERT INTO t SELECT char(1)||'dirs', count(*), 0 FROM vrsummary;`,
+    '-J', 'INSERT INTO agg SELECT * FROM t;',
+    '-G', 'SELECT k, sum(n), sum(b) FROM agg GROUP BY k;',
+  ], { indexRoot })
+  let files = 0, totalBytes = 0, dirs = 0
+  const byExt: { ext: string; count: number; bytes: number }[] = []
+  for (const [k, n, b] of rows) {
+    if (k === '\x01summary') { files = Number(n) || 0; totalBytes = Number(b) || 0 }
+    else if (k === '\x01dirs') dirs = Number(n) || 0
+    else byExt.push({ ext: k || '(none)', count: Number(n) || 0, bytes: Number(b) || 0 })
   }
-  const byExt = [...agg.entries()]
-    .map(([ext, v]) => ({ ext, ...v }))
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 25)
-  return { available: true, files, dirs: rows.length, totalBytes, byExt }
+  byExt.sort((a, b) => b.count - a.count)
+  return { available: true, files, dirs, totalBytes, byExt: byExt.slice(0, 25) }
 }
