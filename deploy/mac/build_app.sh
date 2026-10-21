@@ -260,17 +260,29 @@ else
   echo "  browser window (the native one is compiled only on a Mac)"
 fi
 chmod 755 "$APP/Contents/MacOS/$APP_NAME" "$RES/launcher.sh" "$RES/studio-run.sh"
-# The 512-pixel web icon goes into an .icns as is (macOS reads PNG entries).
+# The app's icon, from the 1024-pixel image on Apple's icon grid
+# (AppIcon.svg is its source). On a Mac, every size the .icns holds is made
+# with sips and iconutil; elsewhere the one 1024-pixel PNG goes in as is,
+# which macOS scales (it reads PNG entries).
 ICON=
-if python3 - "$PROJECT_ROOT/web/public/icon-512.png" "$RES/AppIcon.icns" <<'PY'
+ICON_PNG="$HERE/AppIcon-1024.png"
+if command -v iconutil >/dev/null 2>&1 && command -v sips >/dev/null 2>&1; then
+  mkdir -p "$WORK/AppIcon.iconset"
+  for s in 16 32 128 256 512; do
+    sips -z "$s" "$s" "$ICON_PNG" --out "$WORK/AppIcon.iconset/icon_${s}x${s}.png" >/dev/null
+    sips -z "$((s * 2))" "$((s * 2))" "$ICON_PNG" --out "$WORK/AppIcon.iconset/icon_${s}x${s}@2x.png" >/dev/null
+  done
+  iconutil -c icns "$WORK/AppIcon.iconset" -o "$RES/AppIcon.icns" && ICON=AppIcon
+elif python3 - "$ICON_PNG" "$RES/AppIcon.icns" <<'PY'
 import struct, sys
 png = open(sys.argv[1], 'rb').read()
-if png[:8] != b'\x89PNG\r\n\x1a\n' or struct.unpack('>II', png[16:24]) != (512, 512):
+if png[:8] != b'\x89PNG\r\n\x1a\n' or struct.unpack('>II', png[16:24]) != (1024, 1024):
     sys.exit(1)
-entry = b'ic09' + struct.pack('>I', 8 + len(png)) + png
+entry = b'ic10' + struct.pack('>I', 8 + len(png)) + png
 open(sys.argv[2], 'wb').write(b'icns' + struct.pack('>I', 8 + len(entry)) + entry)
 PY
-then ICON=AppIcon; else echo "  no 512-pixel PNG icon; the app uses the generic icon"; fi
+then ICON=AppIcon; fi
+[ -n "$ICON" ] || echo "  no app icon could be made; the app uses the generic icon"
 
 NEEDS="$(python3 "$HERE/macho_check.py" --print-minos "$RES/node/bin/node" "$RES"/python/bin/python3.* \
   "$RES"/python/lib/*.dylib "$RES"/python/lib/python3.*/lib-dynload/*.so "$G"/bin/* "$G"/lib/*.dylib)"
@@ -328,7 +340,32 @@ if command -v hdiutil >/dev/null 2>&1; then
   mkdir -p "$WORK/dmg"
   ditto "$APP" "$WORK/dmg/$APP_NAME.app"
   ln -s /Applications "$WORK/dmg/Applications"
-  hdiutil create -quiet -volname "$APP_NAME" -srcfolder "$WORK/dmg" -ov -format UDZO "$ASSET.dmg"
+  if [ -n "$ICON" ]; then
+    # The volume's own icon, which Finder shows in the window's title bar
+    # and the sidebar: .VolumeIcon.icns at its root, used once the root has
+    # the custom-icon Finder flag. The flag is set on the mounted volume, so
+    # the image is made writable first and compressed after.
+    cp "$RES/$ICON.icns" "$WORK/dmg/.VolumeIcon.icns"
+    hdiutil create -quiet -volname "$APP_NAME" -srcfolder "$WORK/dmg" -ov -format UDRW "$WORK/rw.dmg"
+    mkdir -p "$WORK/mnt"
+    hdiutil attach -quiet -nobrowse -noautoopen -mountpoint "$WORK/mnt" "$WORK/rw.dmg"
+    # Finder info: 32 bytes, with kHasCustomIcon (0x0400) in the flags at byte 8.
+    xattr -wx com.apple.FinderInfo 0000000000000000040000000000000000000000000000000000000000000000 "$WORK/mnt"
+    hdiutil detach -quiet "$WORK/mnt"
+    hdiutil convert -quiet "$WORK/rw.dmg" -format UDZO -ov -o "$ASSET.dmg"
+    rm -f "$WORK/rw.dmg"
+    # Checked on the finished image, read only.
+    hdiutil attach -quiet -nobrowse -noautoopen -readonly -mountpoint "$WORK/mnt" "$ASSET.dmg"
+    flags="$(xattr -px com.apple.FinderInfo "$WORK/mnt" 2>/dev/null | tr -d ' \n' | cut -c17-20 || true)"
+    have_icon=0; [ -f "$WORK/mnt/.VolumeIcon.icns" ] && have_icon=1
+    hdiutil detach -quiet "$WORK/mnt"
+    if [ "$have_icon" != 1 ] || [ "$((0x${flags:-0} & 0x0400))" = 0 ]; then
+      echo "build_app: the disk image's volume icon did not take (icon file $have_icon, Finder flags ${flags:-none})." >&2
+      exit 1
+    fi
+  else
+    hdiutil create -quiet -volname "$APP_NAME" -srcfolder "$WORK/dmg" -ov -format UDZO "$ASSET.dmg"
+  fi
 fi
 
 echo

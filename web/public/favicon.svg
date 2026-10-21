@@ -1,4 +1,11 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <rect width="32" height="32" rx="7" fill="#06354f"/>
-  <text x="16" y="22.5" font-family="Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#ffffff" text-anchor="middle">S</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- The Studio's icon. Rendered to web/public/icon-192.png and
+       icon-512.png, and served as web/public/favicon.svg. -->
+  <rect x="16" y="16" width="480" height="480" rx="106" fill="#2997d3"/>
+  <g fill="#fff">
+    <rect x="140" y="162" width="150" height="44" rx="22"/>
+    <rect x="140" y="234" width="232" height="44" rx="22"/>
+    <rect x="140" y="306" width="190" height="44" rx="22"/>
+    <path d="M366 88 Q373 143 428 150 Q373 157 366 212 Q359 157 304 150 Q359 143 366 88 Z"/>
+  </g>
 </svg>
