@@ -71,6 +71,8 @@ esac
     assert.equal(first.INDEX_BASE, path.join(data, 'index'))
     assert.equal(first.PYTHON_BIN, path.join(res, 'python', 'bin', 'python3'))
     assert.equal(first.STUDIO_GUFI_PREFIX, path.join(res, 'gufi'))
+    // No bytecode caches written into the signed app.
+    assert.equal(first.PYTHONDONTWRITEBYTECODE, '1')
     assert.ok(first.PATH.startsWith(path.join(res, 'node', 'bin') + ':'))
     // The default folder is created for the server to seed.
     assert.equal(first.KB_ROOT, path.join(home, 'Documents', 'ACTIVATE Studio'))

@@ -6,11 +6,13 @@
 # Mach-O with an intact signature whose libraries resolve inside the app or
 # the system, that nothing built for Linux slipped in, and the size.
 #
-# On a Mac, --run also runs what was bundled: Node, Python, and GUFI
-# indexing and querying a small folder, embedding with the model, the
-# indexer scripts, and the server itself from the app's own run loop on a
-# spare port, all with no DYLD_* variables set. --launch then exercises the
-# launcher and its LaunchAgent with a temporary home directory.
+# On a Mac, --run also runs what was bundled: Node, Python, the app's
+# executable, and GUFI indexing and querying a small folder, embedding with
+# the model, the indexer scripts, and the server itself from the app's own
+# run loop on a spare port, all with no DYLD_* variables set. --launch then
+# exercises the launcher and its LaunchAgent with a temporary home
+# directory. On a Mac older than the app's LSMinimumSystemVersion they are
+# skipped. Signed by sign_app.sh, all of it runs under the hardened runtime.
 #
 # Usage: deploy/mac/check_app.sh "path/to/ACTIVATE Studio.app" [--run] [--launch]
 set -euo pipefail
@@ -75,7 +77,8 @@ assert b'ic10' in types, types
 PY
 check "no link in the bundle leads nowhere" sh -c 'find "$1" -type l | while IFS= read -r l; do [ -e "$l" ] || exit 1; done' sh "$APP"
 if command -v codesign >/dev/null 2>&1; then
-  # The seal build_app.sh puts on the bundle, over every file in it.
+  # The bundle's seal over every file in it: ad hoc from build_app.sh, or
+  # with a certificate from sign_app.sh.
   if out="$(codesign --verify --deep --strict "$APP" 2>&1)"; then
     ok "the bundle's signature seals the app (codesign --verify --deep --strict)"
   else
@@ -125,6 +128,24 @@ for d, _dirs, files in os.walk(sys.argv[1]):
 PY
 )"
 if [ -z "$elf" ]; then ok "no Linux (ELF) binaries"; else bad "Linux binaries in the app:"; printf '        %s\n' "$elf"; fi
+# Signed by sign_app.sh, with the hardened runtime: every Mach-O file, as
+# file(1) finds them, is signed the same way, as notarization requires and
+# library validation assumes.
+if command -v codesign >/dev/null 2>&1 && codesign -dv "$APP" 2>&1 | grep -q '^CodeDirectory .*flags=0x[0-9a-f]*([^)]*runtime'; then
+  team="$(codesign -dvv "$APP" 2>&1 | sed -n 's/^TeamIdentifier=//p')"
+  unlike="$(find "$APP" -type f -print0 | xargs -0 file -N -F $'\t' | awk -F '\t' '$2 ~ /Mach-O/ { print $1 }' |
+    while IFS= read -r f; do
+      i="$(codesign -dvv "$f" 2>&1 || true)"
+      if ! grep -q '^CodeDirectory .*flags=0x[0-9a-f]*([^)]*runtime' <<<"$i" || [ "$(sed -n 's/^TeamIdentifier=//p' <<<"$i")" != "$team" ]; then
+        printf '%s\n' "${f#"$APP"/}"
+      fi
+    done)"
+  if [ -z "$unlike" ]; then
+    ok "every Mach-O file has the hardened runtime and the bundle's team ($team)"
+  else
+    bad "Mach-O files not signed like the bundle:"; printf '%s\n' "$unlike" | sed 's/^/        /'
+  fi
+fi
 
 echo "Size"
 echo "  $(du -sh "$APP" | cut -f1)  total"
@@ -135,11 +156,15 @@ done
 if [ "$RUN" = 1 ]; then
   if [ "$(uname -s)" != Darwin ] || [ "$(uname -m)" != arm64 ]; then
     echo "--run needs a Mac with Apple silicon; skipped"
+  elif ! python3 -c 'import sys; v = lambda s: [int(x) for x in s.split(".")]; sys.exit(0 if v(sys.argv[1]) <= v(sys.argv[2]) else 1)' \
+    "$MIN" "$(sw_vers -productVersion)"; then
+    echo "--run: the app needs macOS $MIN and this Mac has $(sw_vers -productVersion); skipped"
   else
     T="$(mktemp -d)"
     trap 'rm -rf "$T"' EXIT
-    # The environment launchd gives an agent, with nothing from this shell.
-    clean() { env -i HOME="$T/home" PATH=/usr/bin:/bin:/usr/sbin:/sbin "$@"; }
+    # The environment launchd gives an agent, with nothing from this shell,
+    # and no Python bytecode caches, as studio-run.sh runs the server.
+    clean() { env -i HOME="$T/home" PATH=/usr/bin:/bin:/usr/sbin:/sbin PYTHONDONTWRITEBYTECODE=1 "$@"; }
     mkdir -p "$T/home" "$T/corpus/notes"
     printf 'the index is a tree of per-directory databases\n' >"$T/corpus/notes/design.md"
     printf 'a recipe for lemon cake\n' >"$T/corpus/cake.txt"
@@ -147,6 +172,8 @@ if [ "$RUN" = 1 ]; then
     echo "Running"
     check "node runs" clean "$R/node/bin/node" -e 'process.exit(process.versions.node.startsWith("26.") ? 0 : 1)'
     check "python runs, with sqlite3" clean "$R/python/bin/python3" -c 'import sqlite3, json, zipfile, urllib.request'
+    # The window, started only far enough to hand --help to the launcher.
+    check "the app's executable starts" sh -c "env -i HOME='$T/home' PATH=/usr/bin:/bin '$C/MacOS/ACTIVATE Studio' --help | grep -q -- --uninstall"
     if command -v codesign >/dev/null 2>&1; then
       check "codesign accepts every GUFI file" sh -c "for f in '$G'/bin/* '$G'/lib/*.dylib; do file -b \"\$f\" | grep -q Mach-O || continue; codesign --verify \"\$f\" || exit 1; done"
     fi
@@ -227,6 +254,16 @@ if [ "$RUN" = 1 ]; then
       sleep 2
       check "and the server is gone" sh -c "! curl -fsS -m 2 http://127.0.0.1:$PORT_FREE/api/version"
       launchctl enable "gui/$(id -u)/$LABEL" 2>/dev/null || true
+    fi
+
+    # Nothing written into the app while it ran: a file added or changed
+    # there breaks the signature's seal.
+    if command -v codesign >/dev/null 2>&1; then
+      if out="$(codesign --verify --deep --strict --verbose=4 "$APP" 2>&1)"; then
+        ok "running it left the app as it was signed"
+      else
+        bad "running it changed the app:"; printf '%s\n' "$out" | head -n 20 | sed 's/^/        /'
+      fi
     fi
   fi
 fi

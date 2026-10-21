@@ -75,6 +75,42 @@ To cut a release: merge; regenerate the change log with `--next vX.Y` and merge 
 
 The macOS app is built only for the releases that should reach Mac users, since releases are frequent: `gh workflow run mac-app.yml -f release=vX.Y` (or the Actions tab) builds that tag on a Mac, signs its update manifest, attaches the app to the release, and puts the same files in the `macos` release, the fixed address the installer and the docs use. Installed apps update to the newest release that has the app, and their update notice lists the changes of the releases in between.
 
+### Signing and notarizing the macOS app
+
+With the secrets and the variable below, the release build also signs the app with the Developer ID certificate, notarizes its disk image, and staples the tickets (the `sign` job in `mac-app.yml`), so the app opens without the Open Anyway step. That job runs only the `deploy/mac` scripts from the release's tag, on the app the build job made, and it is the only job that sees these secrets. Without `APPLE_TEAM_ID`, or with any secret missing, it signs nothing and the release carries the app signed ad hoc. On every pull request, the `hardened` job signs a copy of the app the same way with a throwaway self-signed identity and runs it, which shows a file left unsigned or entitlements other than `deploy/mac/entitlements` names. macOS does not enforce the hardened runtime for a signature without Apple's certificate chain, so whether each program has the entitlements it needs shows only when the `sign` job runs the app signed with the certificate.
+
+| Name | Kind | Value |
+|---|---|---|
+| `MACOS_SIGNING_P12` | secret | the Developer ID Application certificate with its private key, a .p12 file in base64 |
+| `MACOS_SIGNING_P12_PASSWORD` | secret | the .p12's password |
+| `NOTARY_KEY_P8` | secret | the text of an App Store Connect API key's .p8 file |
+| `NOTARY_KEY_ID` | secret | that key's ID |
+| `NOTARY_ISSUER_ID` | secret | the issuer ID shown with the account's API keys |
+| `APPLE_TEAM_ID` | variable | the Apple Developer team ID; the job signs only when it is set |
+
+*The certificate:* the team's Account Holder creates a Developer ID Application certificate in the Apple Developer account (Certificates, Identifiers & Profiles), from a certificate signing request made with Keychain Access (Certificate Assistant, Request a Certificate From a Certificate Authority, saved to disk); Xcode's Settings, Accounts, Manage Certificates does both in one step. On that Mac, Keychain Access then lists it under My Certificates with its private key: select it, choose File, Export Items, and save a .p12 with a password.
+
+```
+base64 -i DeveloperID.p12 | tr -d '\n' | gh secret set MACOS_SIGNING_P12 -R parallelworks/activate-studio
+gh secret set MACOS_SIGNING_P12_PASSWORD -R parallelworks/activate-studio
+```
+
+*The notary key:* in App Store Connect, Users and Access, Integrations, App Store Connect API, generate a team key with Developer access. Its .p8 file downloads once; the key ID is in the key's row and the issuer ID above the list.
+
+```
+gh secret set NOTARY_KEY_P8 -R parallelworks/activate-studio < AuthKey_KEYID.p8
+gh secret set NOTARY_KEY_ID -R parallelworks/activate-studio
+gh secret set NOTARY_ISSUER_ID -R parallelworks/activate-studio
+```
+
+*The team ID:* the ten characters on the Apple Developer account's Membership details page.
+
+```
+gh variable set APPLE_TEAM_ID -R parallelworks/activate-studio
+```
+
+Given no value, `gh secret set` asks for it without showing it. The job picks the identity in the .p12 by its kind and team, so a renewed certificate (each lasts five years) needs only the two certificate secrets replaced; apps signed with the old one keep opening, since every signature carries a secure timestamp.
+
 ## Reporting bugs and security issues
 
 Use the issue templates for bugs and feature requests. Report a vulnerability privately through the repository's Security tab rather than in an issue; see [`SECURITY.md`](SECURITY.md).

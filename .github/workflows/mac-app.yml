@@ -1,8 +1,12 @@
 # Build the macOS app on a Mac, where its own window (deploy/mac/shell) is
 # compiled and the .dmg is made, and run the checks only a Mac can: the
 # bundled Node, Python and GUFI, the server from the app's run loop, and
-# the launcher with its LaunchAgent. Asked to for a published release
-# (the release input), it builds that tag, signs the update manifest, and
+# the launcher with its LaunchAgent. A copy of the app is also signed the
+# way a release signs it, with a throwaway identity, and run (the hardened
+# job). Asked to for a published release (the release input), it builds
+# that tag; signs, notarizes and staples the app with the Developer ID
+# certificate when the repository has the signing secrets (the sign job;
+# without them the app stays signed ad hoc); signs the update manifest; and
 # attaches the app to the release, so installed copies can update to it;
 # and it puts the same files in the macos release, the fixed address the
 # installer and the docs use. Releases are frequent and most do not get a
@@ -102,20 +106,11 @@ jobs:
           OUT_DIR: ${{ runner.temp }}/out
         run: deploy/mac/build_app.sh
 
+      # On a runner older than the app's minimum macOS, static checks only.
       - name: check it on this Mac
         env:
           OUT_DIR: ${{ runner.temp }}/out
-        run: |
-          set -euo pipefail
-          app="$OUT_DIR/ACTIVATE Studio.app"
-          need="$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$app/Contents/Info.plist")"
-          have="$(sw_vers -productVersion)"
-          if python3 -c 'import sys; v = lambda s: [int(x) for x in s.split(".")]; sys.exit(0 if v(sys.argv[1]) <= v(sys.argv[2]) else 1)' "$need" "$have"; then
-            deploy/mac/check_app.sh "$app" --run --launch
-          else
-            echo "The app needs macOS $need and this runner has $have: static checks only."
-            deploy/mac/check_app.sh "$app"
-          fi
+        run: deploy/mac/check_app.sh "$OUT_DIR/ACTIVATE Studio.app" --run --launch
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -128,11 +123,197 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-  # Sign and attach to the release. The only job that can write, and the
-  # only one that sees the signing key; it runs no build code.
-  release:
-    if: github.event_name == 'workflow_dispatch' && inputs.release != ''
+  # The release signing, on every build but a release's: a copy of the app
+  # is signed with the sign job's scripts and keychain steps, but with a
+  # throwaway self-signed identity in place of the Developer ID certificate;
+  # its disk image is made; and it is run. That shows a file left unsigned,
+  # entitlements other than deploy/mac/entitlements names, or a signed app
+  # that fails to run or that running changes. It cannot show a missing
+  # entitlement: macOS treats a signature without Apple's certificate chain
+  # as ad hoc, and for ad hoc code it enforces neither the hardened runtime
+  # (Node compiles code without allow-jit, DYLD_* variables work) nor
+  # library validation. The sign job's run of the signed app shows that,
+  # for a release.
+  hardened:
+    if: inputs.release == ''
     needs: build
+    runs-on: macos-15
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            deploy/mac/keychain.sh
+            deploy/mac/sign_app.sh
+            deploy/mac/make_dmg.sh
+            deploy/mac/check_app.sh
+            deploy/mac/macho_check.py
+            deploy/mac/install.sh
+            deploy/mac/entitlements/
+          sparse-checkout-cone-mode: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: activate-studio-macos-arm64
+          path: ${{ runner.temp }}/in
+      - name: unpack the app
+        run: |
+          set -euo pipefail
+          (cd "$RUNNER_TEMP/in" && shasum -a 256 -c activate-studio-macos-arm64.tar.gz.sha256)
+          mkdir -p "$RUNNER_TEMP/app"
+          tar -xzf "$RUNNER_TEMP/in/activate-studio-macos-arm64.tar.gz" -C "$RUNNER_TEMP/app"
+      - name: sign it with a throwaway identity
+        run: |
+          set -euo pipefail
+          id="$(deploy/mac/keychain.sh create-test "$RUNNER_TEMP/test.keychain-db")"
+          deploy/mac/sign_app.sh "$RUNNER_TEMP/app/ACTIVATE Studio.app" "$id" "$RUNNER_TEMP/test.keychain-db"
+          deploy/mac/make_dmg.sh "$RUNNER_TEMP/app/ACTIVATE Studio.app" "$RUNNER_TEMP/test.dmg"
+      - name: run the signed app
+        run: deploy/mac/check_app.sh "$RUNNER_TEMP/app/ACTIVATE Studio.app" --run --launch
+      - name: remove the keychain
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/test.keychain-db" 2>/dev/null || true
+          rm -f "$RUNNER_TEMP/test.keychain-db"
+
+  # For a release: sign the app with the Developer ID certificate, notarize
+  # and staple it. The only job that sees the signing and notary secrets; it
+  # cannot write to the repository and runs only the deploy/mac scripts
+  # below, from the release's tag, on the app the build job made. Without
+  # every secret, or for a tag from before these scripts, it signs nothing,
+  # and the release carries the ad hoc app.
+  sign:
+    if: github.event_name == 'workflow_dispatch' && inputs.release != '' && vars.APPLE_TEAM_ID != ''
+    needs: build
+    runs-on: macos-15
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    outputs:
+      signed: ${{ steps.signed.outputs.signed }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.release }}
+          sparse-checkout: |
+            deploy/mac/keychain.sh
+            deploy/mac/sign_app.sh
+            deploy/mac/make_dmg.sh
+            deploy/mac/notarize.sh
+            deploy/mac/check_app.sh
+            deploy/mac/macho_check.py
+            deploy/mac/install.sh
+            deploy/mac/entitlements/
+          sparse-checkout-cone-mode: false
+      # Whether each secret is set, not its value, which stays in the
+      # environment.
+      - name: what signing needs
+        id: ready
+        env:
+          MACOS_SIGNING_P12: ${{ secrets.MACOS_SIGNING_P12 }}
+          MACOS_SIGNING_P12_PASSWORD: ${{ secrets.MACOS_SIGNING_P12_PASSWORD }}
+          NOTARY_KEY_P8: ${{ secrets.NOTARY_KEY_P8 }}
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
+        run: |
+          missing=
+          for name in MACOS_SIGNING_P12 MACOS_SIGNING_P12_PASSWORD NOTARY_KEY_P8 NOTARY_KEY_ID NOTARY_ISSUER_ID; do
+            if [ -z "${!name}" ]; then missing="$missing $name"; fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::notice title=Not notarized::The repository has no secret$missing, so the release carries the ad hoc signed app."
+          elif [ ! -f deploy/mac/sign_app.sh ]; then
+            echo "::notice title=Not notarized::The release's tag has no deploy/mac/sign_app.sh, so the release carries the ad hoc signed app."
+          else
+            echo "ready=true" >>"$GITHUB_OUTPUT"
+          fi
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: steps.ready.outputs.ready == 'true'
+        with:
+          name: activate-studio-macos-arm64
+          path: ${{ runner.temp }}/in
+      - name: unpack the app
+        if: steps.ready.outputs.ready == 'true'
+        run: |
+          set -euo pipefail
+          (cd "$RUNNER_TEMP/in" && shasum -a 256 -c activate-studio-macos-arm64.tar.gz.sha256)
+          mkdir -p "$RUNNER_TEMP/sign" "$RUNNER_TEMP/out"
+          tar -xzf "$RUNNER_TEMP/in/activate-studio-macos-arm64.tar.gz" -C "$RUNNER_TEMP/sign"
+      # A keychain of its own, with the certificate; the identity is the
+      # team's Developer ID Application certificate in it.
+      - name: the signing keychain
+        if: steps.ready.outputs.ready == 'true'
+        env:
+          MACOS_SIGNING_P12: ${{ secrets.MACOS_SIGNING_P12 }}
+          MACOS_SIGNING_P12_PASSWORD: ${{ secrets.MACOS_SIGNING_P12_PASSWORD }}
+          TEAM: ${{ vars.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          kc="$RUNNER_TEMP/signing.keychain-db"
+          deploy/mac/keychain.sh create "$kc"
+          id="$(deploy/mac/keychain.sh developer-id "$kc" "$TEAM")"
+          echo "SIGN_KEYCHAIN=$kc" >>"$GITHUB_ENV"
+          echo "SIGN_IDENTITY=$id" >>"$GITHUB_ENV"
+      - name: sign the app
+        if: steps.ready.outputs.ready == 'true'
+        run: deploy/mac/sign_app.sh "$RUNNER_TEMP/sign/ACTIVATE Studio.app" "$SIGN_IDENTITY" "$SIGN_KEYCHAIN"
+      - name: disk image
+        if: steps.ready.outputs.ready == 'true'
+        run: deploy/mac/make_dmg.sh "$RUNNER_TEMP/sign/ACTIVATE Studio.app" "$RUNNER_TEMP/out/activate-studio-macos-arm64.dmg"
+      - name: notarize and staple
+        if: steps.ready.outputs.ready == 'true'
+        env:
+          NOTARY_KEY_P8: ${{ secrets.NOTARY_KEY_P8 }}
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
+        run: deploy/mac/notarize.sh "$RUNNER_TEMP/sign/ACTIVATE Studio.app" "$RUNNER_TEMP/out/activate-studio-macos-arm64.dmg"
+      - name: remove the signing keychain
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/signing.keychain-db" 2>/dev/null || true
+          rm -f "$RUNNER_TEMP/signing.keychain-db"
+      # The archive the installer and updates take, of the stapled app.
+      - name: pack the stapled app
+        if: steps.ready.outputs.ready == 'true'
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/sign"
+          COPYFILE_DISABLE=1 tar --no-mac-metadata -czf "$RUNNER_TEMP/out/activate-studio-macos-arm64.tar.gz" "ACTIVATE Studio.app"
+          cd "$RUNNER_TEMP/out"
+          shasum -a 256 activate-studio-macos-arm64.tar.gz >activate-studio-macos-arm64.tar.gz.sha256
+          cp "$RUNNER_TEMP/in/install.sh" install.sh
+      # After packing: running it writes into the bundle (Python's caches).
+      - name: run the signed app on this Mac
+        if: steps.ready.outputs.ready == 'true'
+        run: deploy/mac/check_app.sh "$RUNNER_TEMP/sign/ACTIVATE Studio.app" --run --launch
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: steps.ready.outputs.ready == 'true'
+        with:
+          name: activate-studio-macos-arm64-signed
+          path: |
+            ${{ runner.temp }}/out/activate-studio-macos-arm64.tar.gz
+            ${{ runner.temp }}/out/activate-studio-macos-arm64.tar.gz.sha256
+            ${{ runner.temp }}/out/activate-studio-macos-arm64.dmg
+            ${{ runner.temp }}/out/install.sh
+          if-no-files-found: error
+          retention-days: 30
+      - name: signed
+        id: signed
+        if: steps.ready.outputs.ready == 'true'
+        run: echo "signed=true" >>"$GITHUB_OUTPUT"
+
+  # Sign the update manifest and attach to the release: the notarized app
+  # when the sign job made one, otherwise the build's ad hoc one. The only
+  # job that can write, and the only one that sees the update signing key;
+  # it runs no build code.
+  release:
+    if: >-
+      !cancelled() && github.event_name == 'workflow_dispatch' && inputs.release != ''
+      && needs.build.result == 'success' && (needs.sign.result == 'success' || needs.sign.result == 'skipped')
+    needs: [build, sign]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -157,6 +338,12 @@ jobs:
             deploy/mac/update-signing.pub
           sparse-checkout-cone-mode: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: needs.sign.outputs.signed == 'true'
+        with:
+          name: activate-studio-macos-arm64-signed
+          path: ${{ runner.temp }}/out
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: needs.sign.outputs.signed != 'true'
         with:
           name: activate-studio-macos-arm64
           path: ${{ runner.temp }}/out

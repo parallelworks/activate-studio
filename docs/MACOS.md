@@ -101,7 +101,16 @@ refuses a key that does not match `update-signing.pub`, takes the version
 from the app in the archive, and needs OpenSSL 3 (`brew install openssl@3`
 on a Mac).
 
-*Opening an unsigned app:* the app is not yet signed by Apple. The curl
+*Signed and notarized:* a release built while the repository has the
+Developer ID signing secrets (see [CONTRIBUTING.md](../CONTRIBUTING.md))
+carries an app and disk image signed with Parallel Works' Developer ID
+certificate and notarized by Apple, with the ticket stapled to both. It
+opens from a browser download or the disk image with only macOS's usual
+question about an app from the internet, and every program in it runs
+under the hardened runtime.
+
+*Opening an app signed ad hoc:* a build without those secrets, such as a
+fork's or a release made before they were set, is signed ad hoc. The curl
 installer does not meet this, since a download made with curl carries no
 quarantine flag. An app downloaded with a browser, including from the disk
 image, is blocked the first time: on macOS 15 and later, open System
@@ -129,6 +138,17 @@ the app with `deploy/mac/check_app.sh`, which on a Mac also runs it with
 icon is `deploy/mac/AppIcon-1024.png`, drawn from `deploy/mac/AppIcon.svg`
 on Apple's icon grid; the disk image's volume shows it too. The web icons
 come from `web/icons/`.
+
+*Signing and notarizing:* on a Mac, `deploy/mac/sign_app.sh APP IDENTITY
+[KEYCHAIN]` signs every program and library in the app, then the bundle,
+with the hardened runtime, a secure timestamp, and the entitlements in
+`deploy/mac/entitlements` (Node's JIT, and the microphone for the window's
+voice input); `deploy/mac/make_dmg.sh APP OUT.dmg` makes the disk image;
+`deploy/mac/notarize.sh APP DMG` signs the image, notarizes it with an
+App Store Connect API key, staples the ticket to the image and the app,
+and checks both with Gatekeeper. `deploy/mac/keychain.sh` keeps the
+certificate in a keychain of its own. The release workflow runs these in
+that order, then packs the archive from the stapled app.
 
 ## From a clone
 
