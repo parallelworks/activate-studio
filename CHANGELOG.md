@@ -2,6 +2,61 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.141 (2026-10-21)
+
+### Change log through v1.140 (#502)
+
+Regenerated with `node scripts/release-notes.mjs --changelog` after the v1.140 release.
+
+### Standalone macOS Studio: app, setup, libraries over ssh, updates (#494)
+
+A Studio someone downloads and runs on a Mac without a platform account: install it, open it as an app, set it up in a first-run wizard, index a local folder (read/write), and connect GUFI indexes on other machines over ssh (read-only). Draft until it has run on a Mac by hand.
+
+**macOS app** (`deploy/mac`)
+- `ACTIVATE Studio.app` carries Node, GUFI, a standalone Python for the indexer, and the embedding model. GUFI is built for macOS 14 by `build_gufi.sh` (below); GUFI's own macOS package, relinked inside the app, is the fallback.
+- A LaunchAgent keeps the server on 127.0.0.1, restarts it on exit 75 (setup changed the folder), and backs off after a crash.
+- Built on a Mac, the app is its own window (`shell/StudioShell.swift`, WKWebView). It handles file pickers, downloads and pop-outs, and outside links open in the browser. Built elsewhere, it opens a browser's app window.
+- `install.sh` installs without admin rights or a quarantine prompt; a .dmg is built on a Mac.
+
+**Setup** (`server/src/setup.ts`, `SetupWizard.tsx`)
+- A seven-step first-run wizard on a single-user install, every step skippable: the Studio's name, a light and an optional dark icon (PNG, JPEG, SVG or WebP up to 1 MB, also the tab icon), and the accent; AI features on or off; the sidebar pages; the folder to index, with the first build and its progress; other libraries. Hosted deployments never see it.
+- AI features: an OpenAI-compatible base URL and key, with Test listing the endpoint's models or saying what failed, and a default model. The key is optional for a model server that takes none. Off, Chat and Agents leave the sidebar, the chat routes answer without calling a model, and label suggestions and Add to chat leave the Library menu (`aiEnabled`, or `AI_ENABLED=0`).
+- Other libraries: an index on this machine (typed or picked), over ssh, or on a running cluster over `pw ssh` when the pw CLI is signed in (`/api/user-libraries/pw`), each with a connection test before it is added.
+- Everything in the wizard is also in Settings, and Settings, General, Run setup again reopens it.
+
+**Libraries over ssh** (`remoteExec.ts`, `userLibraries.ts`, `SshLibraryForm.tsx`)
+- Plain ssh is a second transport beside `pw ssh`, with a loop portable to macOS hosts.
+- An existing GUFI index on another machine is a read-only library that works in the tree, previews, search, Query, Stats and gufi_vt across libraries.
+- A connection test checks ssh, finds GUFI off the PATH, and validates the index.
+- Refused where users sign in, since the ssh identity is the server account's.
+
+**Libraries page.** One list of every library (the main folder, indexes on this machine, over ssh, built on a cluster), with one Add flow that offers only the kinds the install supports. No platform wording in a standalone install.
+
+**Updates** (`server/src/updates.ts`, `UpdatesSection.tsx`, `sign_release.sh`)
+- The app checks this repository's releases and installs only a manifest signed with ed25519. The public key is in the app; the private key is the repository secret `STUDIO_UPDATE_SIGNING_KEY`.
+- It checks version, size and SHA-256, then swaps the bundle and restarts the agent.
+- It keeps the previous version for Roll back, and rolls back on its own after three failed starts.
+- Policy: check, install when idle, channel.
+- A clone run with pnpm start is told the update command. Hosted deployments never check.
+
+**GUFI for macOS 14 and later** (`build_gufi.sh`, `check_gufi.sh`, `gufi-macos.yml`)
+- GUFI's own package needs macOS 27. `build_gufi.sh` builds GUFI from source with a macOS 14 deployment target, with libomp and pcre2 built for the same floor, relinked to load only from the tree, ad hoc signed, with the bundled components' licenses.
+- The vendored llama.cpp needs standard headers it no longer gets through others under LLVM 23, so a compiler wrapper force-includes them. GUFI's install writes an example config to `/etc/GUFI`, so it installs under a `DESTDIR`.
+- `mac-app.yml` builds and checks the app on a Mac for pull requests that change it, and for a published release signs the update manifest and attaches the app. It currently takes GUFI from gufi-macos run 39542085829 (`GUFI_RUN`), whose artifact expires on 2026-11-20; a `gufi-*` release of the archive replaces it before this merges.
+
+**Verified:**
+- 389 server and 130 web tests.
+- A real sshd with two remote indexes beside a local library.
+- A real-key signature verified by the key in the app.
+- gufi-macos run 39542085829: GUFI built for macOS 14 passed indexing, query, gufi_vt through the shell, embeddings, vector search, and a dyld check that every library loads from the tree or the system, on macos-14 and macos-15 runners.
+- mac-app run 39543812184 on macos-15 with that GUFI: the native window compiles and the .dmg builds; the bundled Node, Python and GUFI run; the indexer extracts and embeds; the server starts from the app's run loop, builds a full index, and search finds a file by its text; TERM stops the loop and the server; the launcher loads the LaunchAgent, finds it running when opened again, and --stop stops it.
+- The unit tests on macos (ci run 39543812246).
+
+**Not yet verified:**
+- An update's swap and the rollback after failed starts, on a Mac (covered by tests with a stand-in launchctl)
+- macOS App Management when the app replaces itself
+- Opening the .dmg and the window by hand on a Mac
+
 ## v1.140 (2026-10-20)
 
 ### Change log through v1.139 (#500)
