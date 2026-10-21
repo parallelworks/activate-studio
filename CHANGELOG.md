@@ -2,6 +2,27 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.139 (2026-10-20)
+
+### Change log through v1.138 (#498)
+
+Regenerated with `node scripts/release-notes.mjs --changelog` after the v1.138 release.
+
+### Scrubber: the end of a thread is its last message (#499)
+
+The scrubber's current tick was the last message whose top had reached the top of the thread. The final few messages are shorter than the window and never get there. So at the very end of a 40-message thread the highlight sat on tick 35, and a click on ticks 36 to 40 changed nothing visible, since the thread could not scroll further.
+
+Now:
+- at the end, the last message is current;
+- a click on one of the final ticks keeps that tick current until the thread is scrolled away from the end.
+
+The rule is a small pure function with unit tests. It was also checked in a browser on a 40-message thread:
+- opened at the end: 40 of 40 current (was 35);
+- clicked 38 at the end: 38;
+- scrolled up 1500 px: the highlight follows;
+- back at the end: 40;
+- tick 1 still goes to the top.
+
 ## v1.138 (2026-10-20)
 
 ### Change log through v1.137 (#492)
