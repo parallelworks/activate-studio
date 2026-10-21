@@ -98,11 +98,6 @@ mkdir -p "$DEPS" "$STAGE" "$TREE/bin" "$TREE/lib" "$TREE/licenses"
 export MACOSX_DEPLOYMENT_TARGET="$TARGET"
 SDKROOT="${SDKROOT:-$(xcrun --sdk macosx --show-sdk-path)}"
 export SDKROOT HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1
-# The llama.cpp that GUFI's sqlite-lembed vendors uses errno and
-# EXIT_FAILURE without including <cerrno> or <cstdlib>, which the libc++ of
-# newer LLVM no longer pulls in through other headers. Every C++ compile
-# includes them first; nested CMake and configure runs read CXXFLAGS too.
-export CXXFLAGS="${CXXFLAGS:-} -include errno.h -include stdlib.h"
 
 echo "Build tools from Homebrew..."
 # GUFI's contrib/CI/macos.sh list, less pcre2 and libomp, which are built
@@ -113,7 +108,21 @@ if [ "${SKIP_BREW:-}" != 1 ]; then
 fi
 BREW_PREFIX="$(brew --prefix)"
 LLVM_PREFIX="$(brew --prefix llvm)"
-export CC="$LLVM_PREFIX/bin/clang" CXX="$LLVM_PREFIX/bin/clang++"
+# The llama.cpp that GUFI's sqlite-lembed vendors uses errno and
+# EXIT_FAILURE without including <cerrno> or <cstdlib>, which the libc++ of
+# newer LLVM no longer pulls in through other headers. GUFI's dependency
+# build sets its own flags for that project, so CXXFLAGS does not reach it;
+# the C++ compiler itself is a wrapper that includes both in every compile.
+mkdir -p "$WORK/cxx"
+cat >"$WORK/cxx/clang++" <<EOF
+#!/bin/sh
+case " \$* " in
+  *" -c "*) exec "$LLVM_PREFIX/bin/clang++" -include errno.h -include stdlib.h "\$@" ;;
+esac
+exec "$LLVM_PREFIX/bin/clang++" "\$@"
+EOF
+chmod 755 "$WORK/cxx/clang++"
+export CC="$LLVM_PREFIX/bin/clang" CXX="$WORK/cxx/clang++"
 COMPILER="$("$CC" --version | head -n 1)"
 SDK_VERSION="$(xcrun --sdk macosx --show-sdk-version)"
 echo "  $COMPILER, macOS SDK $SDK_VERSION, deployment target $TARGET"
