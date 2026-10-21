@@ -215,15 +215,17 @@ describe('the update notice', () => {
     localStorage.setItem('ade-update-later', 'v1.142')
     const s = server({ updates: status({ state: 'verifying' }) })
     stubServer(s)
+    const intervals = vi.spyOn(window, 'setInterval')
     render(<><UpdateNotice pollMs={5} /><UpdatesSection pollMs={5} /></>)
     expect(await screen.findByText('Updating to version v1.142')).toBeInTheDocument()
     expect(within(notice()!).getByText("Checking the download's signature and checksum")).toBeInTheDocument()
-    // One page, one follower: the two do not each poll.
+    // One page, one follower: the two do not each poll. Counted by the
+    // timers at the poll interval, which a slow runner cannot change.
     const before = s.calls.filter(c => c.url === '/api/updates').length
     await act(async () => { await new Promise(r => setTimeout(r, 60)) })
-    const polls = s.calls.filter(c => c.url === '/api/updates').length - before
-    expect(polls).toBeGreaterThan(2)
-    expect(polls).toBeLessThan(16)
+    expect(s.calls.filter(c => c.url === '/api/updates').length - before).toBeGreaterThan(2)
+    expect(intervals.mock.calls.filter(([, ms]) => ms === 5)).toHaveLength(1)
+    intervals.mockRestore()
   })
 })
 
