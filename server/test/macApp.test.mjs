@@ -60,7 +60,9 @@ esac
     env: { HOME: home, PATH: '/usr/bin:/bin', OUT: out, CHOSEN: chosen }, stdio: 'ignore',
   })
   try {
-    assert.ok(await waitFor(() => fs.existsSync(path.join(out, 'args.3'))), 'three starts')
+    // at.N is the stand-in's last write for a start, done once it has text.
+    const written = f => fs.existsSync(f) && fs.readFileSync(f, 'utf8').trim() !== ''
+    assert.ok(await waitFor(() => written(path.join(out, 'at.3'))), 'three starts')
     const first = envOf(path.join(out, 'env.1'))
     assert.equal(first.HOST, '127.0.0.1')
     assert.equal(first.PORT, '4180')
