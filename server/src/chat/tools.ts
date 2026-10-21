@@ -18,6 +18,7 @@ import { workflowDefinition } from '../workflowsTab.js'
 import { browseGithub, githubSummary } from '../githubWorkflows.js'
 import { gatewayKey } from './gateway.js'
 import { formatCommands, traced } from '../gufiTrace.js'
+import { ASKS_FIRST_TOOLS, asksFirst, platformToolSpecs, prepareArgs, runPlatformTool } from './platformTools.js'
 
 export interface ToolSpec {
   type: 'function'
@@ -69,6 +70,12 @@ export const TOOL_CALLS: Record<string, string> = {
   use_skill: 'loads extensions/skills/<name>.md into the conversation',
   delegate: 'spawns concurrent pw code one-shot agents with a server-enforced ceiling and depth limit; results are written under tasks/ in the corpus',
   task_status: 'reads the in-memory task board and its subtask tree',
+  list_storage: 'GET /api/storage on the platform with the user\'s key; each item reduced to its name, display name, category, type, owner, cloud, region, size, status, attachment, URI, and group',
+  start_cluster: 'POST /api/organizations/<organization>/users/<user>/clusters/<name>/provision on the platform with the user\'s key, after the user approves the call in the chat',
+  resume_cluster: 'POST /api/organizations/<organization>/users/<user>/clusters/<name>/resume on the platform with the user\'s key, after the user approves the call in the chat',
+  stop_cluster: 'POST /api/organizations/<organization>/users/<user>/clusters/<name>/stop on the platform with the user\'s key, after the user approves the call (or chooses destroy_cluster instead) in the chat',
+  destroy_cluster: 'POST /api/organizations/<organization>/users/<user>/clusters/<name>/destroy on the platform with the user\'s key, after the user approves the call (or chooses stop_cluster instead) in the chat',
+  cancel_workflow_run: 'POST /api/workflow-runs/<slug>/cancel on the platform with the user\'s key, after the user approves the call in the chat',
 }
 
 /** The documents studio_docs can read, by the name the model passes. */
@@ -631,6 +638,10 @@ export const TOOL_SPECS: ToolSpec[] = [
       },
     },
   },
+  // The platform operations the platform's own web chat offers, by the same
+  // names and descriptions (platformTools.ts); the ones that change
+  // something run only after the user approves each call.
+  ...platformToolSpecs(),
 ]
 
 const TOOL_OUTPUT_CAP = 24_000
@@ -813,6 +824,15 @@ export function activeToolSpecs(): ToolSpec[] {
 }
 
 /**
+ * The tool list for a turn no person is present for, such as the
+ * OpenAI-compatible endpoint other tools call: everything but the tools
+ * that change something, since nobody could approve their calls.
+ */
+export function unattendedToolSpecs(): ToolSpec[] {
+  return activeToolSpecs().filter(t => !asksFirst(t.function.name))
+}
+
+/**
  * Tools that go to the model only when a conversation needs them. All 50
  * tool definitions went out on every round, about 45,000 characters, and
  * a round's time grows with what it sends: a question about documents ran
@@ -823,11 +843,18 @@ export function activeToolSpecs(): ToolSpec[] {
  */
 export const TOOL_GROUPS: Record<string, { summary: string; names: string[]; cue: RegExp }> = {
   workflows: {
-    summary: 'platform workflows: find, compose, validate, and run them; follow runs; list sessions and clusters; serve models',
+    summary: 'platform workflows: find, compose, validate, and run them; follow runs; list sessions, clusters, and storage; serve models',
     names: ['list_workflows', 'list_github_workflows', 'get_workflow', 'pw_help', 'compose_workflow', 'serve_model', 'validate_workflow',
       'workflow_configs', 'hpc_environments', 'run_workflow', 'watch_run', 'workflow_runs', 'workflow_run_detail', 'list_sessions',
-      'list_clusters', 'hpc_status', 'cluster_command'],
-    cue: /\b(workflows?|runs?|running|launch|submit|jobs?|clusters?|hpc|slurm|pbs|partition|qos|queue|sessions?|explorer|endpoints?|serve|deploy|dry.?run|allocation|compute|nodes?|study|studies|sweep|doe|optimi[sz]|activate|account|apps?|applications?|catalog|marketplace|platform|gpus?|models? (server|endpoint))/i,
+      'list_clusters', 'list_storage', 'hpc_status', 'cluster_command'],
+    cue: /\b(workflows?|runs?|running|launch|submit|jobs?|clusters?|hpc|slurm|pbs|partition|qos|queue|sessions?|explorer|endpoints?|serve|deploy|dry.?run|allocation|compute|nodes?|study|studies|sweep|doe|optimi[sz]|activate|account|apps?|applications?|catalog|marketplace|platform|gpus?|models? (server|endpoint)|storage|buckets?|disks?|file ?systems?|lustre|nfs)/i,
+  },
+  // Each call to these waits for the user's approval in the chat, so they
+  // are their own group and their own switch in the reader's Tools menu.
+  changes: {
+    summary: 'starting, resuming, stopping, and destroying cloud clusters and cancelling workflow runs; the user approves each call',
+    names: [...ASKS_FIRST_TOOLS],
+    cue: /\b(start|resume|restart|stop|shut ?down|destroy|tear ?down|cancel|abort|turn (on|off)|spin (up|down)|power (on|off|up|down))\b[^.?!\n]{0,60}\b(clusters?|controllers?|runs?|jobs?)\b|\b(clusters?|runs?)\b[^.?!\n]{0,40}\b(start|resume|stop|destroy|cancel)/i,
   },
   agents: {
     summary: 'pw code agents on connected systems and delegated subtasks',
@@ -879,6 +906,7 @@ export function selectToolSpecs(all: ToolSpec[], active: Set<string>): ToolSpec[
 const TOOL_OPTION_TEXT: Record<string, { label: string; description: string }> = {
   kb: { label: 'Knowledge base', description: 'Search, read and query the library' },
   workflows: { label: 'Platform workflows', description: 'Run and follow workflows and sessions' },
+  changes: { label: 'Platform changes', description: 'Start, stop, and destroy clusters and cancel runs' },
   agents: { label: 'Agents', description: 'Start pw code agents and subtasks' },
   editing: { label: 'Editing the library', description: 'Write files and apply labels' },
   extensions: { label: 'Extensions', description: "This deployment's own tools and skills" },
@@ -894,9 +922,10 @@ export function toolOptionOf(name: string): string {
 }
 
 /** The reader's switches for what this deployment offers now, in a fixed order. */
-export async function readerToolOptions(): Promise<{ id: string; label: string; description: string }[]> {
+export async function readerToolOptions(): Promise<{ id: string; label: string; description: string; asksFirst?: boolean }[]> {
   const ids = new Set((await activeToolSpecsWithRemote()).map(t => toolOptionOf(t.function.name)))
-  const fixed = Object.keys(TOOL_OPTION_TEXT).filter(id => ids.has(id)).map(id => ({ id, ...TOOL_OPTION_TEXT[id] }))
+  // The chat package marks a switch whose calls wait for the reader's approval.
+  const fixed = Object.keys(TOOL_OPTION_TEXT).filter(id => ids.has(id)).map(id => ({ id, ...TOOL_OPTION_TEXT[id], ...(id === 'changes' ? { asksFirst: true } : {}) }))
   const servers = [...ids].filter(id => id.startsWith('mcp:')).sort().map(id => ({
     id, label: id.slice(4), description: 'Tools from an attached MCP server',
   }))
@@ -2322,6 +2351,26 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
           summary: `task ${mid}: ${sum.state}`,
         }
       }
+      case 'list_storage': {
+        const key = toolContext.getStore()?.userKey || gatewayKey()
+        if (!key) return { result: 'No platform credential: the user can add their ACTIVATE API key under Settings, Model access.', summary: 'no credential' }
+        const prepared = prepareArgs(name, args, null)
+        if ('problem' in prepared) return { result: prepared.problem, summary: 'invalid arguments' }
+        const out = await runPlatformTool(name, prepared.args, key)
+        let count: number | null = null
+        try { const v = JSON.parse(out.result); if (Array.isArray(v)) count = v.length } catch { /* truncated or an error */ }
+        return { result: out.result, summary: out.failed ? 'failed' : count === null ? 'storage listed' : `${count} storage item${count === 1 ? '' : 's'}` }
+      }
+      // These change something on the platform. The chat route holds each
+      // call until the person who asked approves it and runs it from the
+      // hold (approvals.ts); a call that reaches this point came from
+      // somewhere no one can approve it, so it does not run.
+      case 'start_cluster':
+      case 'resume_cluster':
+      case 'stop_cluster':
+      case 'destroy_cluster':
+      case 'cancel_workflow_run':
+        return { result: `${name} changes something on the platform and runs only after the user approves the call in the Studio chat. Nothing ran.`, summary: 'needs the user\'s approval' }
       default: {
         if (isRemoteTool(name)) {
           const out = await callRemoteTool(name, args)

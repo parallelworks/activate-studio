@@ -22,6 +22,7 @@ import { EmbedFrame } from '../components/EmbedFrame'
 import { SideViewHost } from '../components/RunPane'
 import { PanelToggle } from '../components/StatusPanel'
 import { modelLabel, share } from '../statusShare'
+import { ToolApproval } from '../components/ToolApproval'
 
 const MODEL_STORAGE_KEY = 'studio.chat.lastModel'
 
@@ -416,9 +417,18 @@ export function ChatView() {
               <img {...props} />
             ),
         },
+        // A call that changes something on the platform waits for the
+        // user's answer; the Studio draws the package's approval block with
+        // the alternative the server allows beside it.
+        slots: { partRenderers: { approval: ToolApproval } },
         strings: {
           thinking: {
             thoughtFor: (duration: string) => `Worked for ${duration}`,
+          },
+          agentTranscript: {
+            approvalPending: 'Waiting for an answer',
+            denyWithFeedback: 'No, and tell the assistant why',
+            feedbackPlaceholder: 'Tell the assistant what to do instead…',
           },
           emptyState: {
             noProvidersTitle: 'Model credential needed',

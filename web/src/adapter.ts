@@ -32,6 +32,9 @@ const streamFromServer: StreamCompletion = async (req, handlers, signal) => {
       library: getChatLibrary(),
       agent: getPersona(),
       tools: req.tools,
+      // The user's answer to a call held for approval; the server runs what
+      // it held for that call, never what the request says to run.
+      ...(req.resume ? { resume: req.resume } : {}),
     }),
     signal,
   })
@@ -76,6 +79,9 @@ const streamFromServer: StreamCompletion = async (req, handlers, signal) => {
             name: payload.name,
             args: payload.args ?? '',
           })
+        } else if (payload.phase === 'wait') {
+          // Held for the user's approval; an approval event follows.
+          handlers.onPart?.({ type: 'tool_wait', id: payload.id })
         } else {
           handlers.onPart?.({
             type: 'tool_end',
@@ -84,6 +90,11 @@ const streamFromServer: StreamCompletion = async (req, handlers, signal) => {
             isError: !!payload.error,
           })
         }
+        break
+      case 'approval':
+        // A call the server holds until the user answers it; the package
+        // draws the request and sends the answer back as req.resume.
+        if (payload.approval?.id) handlers.onPart?.({ type: 'approval_request', approval: payload.approval })
         break
       case 'steer':
         // The running reply took a message queued during it (SteerBridge).
