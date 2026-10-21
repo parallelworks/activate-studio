@@ -2,6 +2,22 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.147 (2026-10-21)
+
+### Mac app: built for the releases it is asked for, with the newest at a fixed macos release (#515)
+
+Releases go out several times a day, and building, signing and attaching the macOS app to every one of them would make Mac users update as often. The macOS build now runs only for the releases it is asked for, and installed apps update to the newest release that has the app.
+
+**Workflow.** `mac-app.yml` no longer runs on every published release. Run with a `release` input (`gh workflow run mac-app.yml -f release=vX.Y`, or the Actions tab), it builds that tag on a Mac, signs the update manifest, and attaches the app to that release. It also puts the same files in the `macos` release, a prerelease that is never latest and that the app's update check skips, which always holds the newest app; a build for an older version than the one there leaves it alone. Pull requests that change the macOS app still build and check it.
+
+**Fixed address.** The installer, the README and `docs/MACOS.md` point at `releases/download/macos/…` instead of `releases/latest/download/…`, which would stop working on the first release without the app.
+
+**Updates.** The app already takes the newest release that carries the signed app. Its sooner check (30 minutes instead of six hours) now applies only while a release without the app is less than two hours old, since most such releases will never get one. The update notice lists the changes of the releases in between.
+
+**Docs.** CONTRIBUTING.md says how to build the app for a release; `docs/MACOS.md` says not every release carries the app.
+
+Verified: 419 server and 150 web tests, including a test that an older release without the app does not bring the next check forward.
+
 ## v1.146 (2026-10-21)
 
 ### Change log through v1.145 (#513)
@@ -33,6 +49,10 @@ A newer version was announced only by a small link in the footer, and the change
 **Release order.** `scripts/release-notes.mjs --changelog --next vX.Y` writes the untagged commits as vX.Y, so a release regenerates the change log before it tags and the version's own build carries its notes. CONTRIBUTING.md describes the order.
 
 Verified: 419 server and 150 web tests (notes parsing, failed-build versions, a missing change log, the notice per mode, Later per version, install progress, What's new, the after-update notice); CHANGELOG.md checked present in the app, the bundle and the image; screenshots in light and dark at desktop and phone width.
+
+### Change log through v1.146 (#514)
+
+Regenerated with `node scripts/release-notes.mjs --changelog --next v1.146` before tagging v1.146.
 
 ## v1.145 (2026-10-21)
 
