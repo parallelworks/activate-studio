@@ -73,6 +73,7 @@ while i < len(data):
     i += n
 assert b'ic10' in types, types
 PY
+check "no link in the bundle leads nowhere" sh -c 'find "$1" -type l | while IFS= read -r l; do [ -e "$l" ] || exit 1; done' sh "$APP"
 if command -v codesign >/dev/null 2>&1; then
   # The seal build_app.sh puts on the bundle, over every file in it.
   if out="$(codesign --verify --deep --strict "$APP" 2>&1)"; then

@@ -319,6 +319,12 @@ PY
 printf 'APPL????' >"$APP/Contents/PkgInfo"
 echo "  LSMinimumSystemVersion $MIN_MACOS (bundled binaries need $NEEDS)"
 
+# Links that lead nowhere, such as the one pnpm leaves in .pnpm/node_modules
+# for the workspace's own server package (it points at the source checkout
+# the app was built from): nothing follows them, and a signature check of
+# the bundle fails on them.
+find "$APP" -type l | while IFS= read -r l; do [ -e "$l" ] || rm -f "$l"; done
+
 # The bundle's own signature, ad hoc: it seals the Info.plist and every file
 # in the bundle. A downloaded app whose bundle has none is reported by
 # Gatekeeper as damaged, with no way to open it. Last, since any change to
