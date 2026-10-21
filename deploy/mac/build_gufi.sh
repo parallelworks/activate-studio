@@ -210,13 +210,15 @@ echo "  $GUFI_DESCRIBE ($GUFI_COMMIT)"
     -DOpenMP_libomp_LIBRARY="$DEPS/lib/libomp.dylib"
   run cmake --build "$BUILD" -j "$JOBS"
   # The Local component is what GUFI's package holds: the tools, and the
-  # bundled dependencies' libraries, which a plain install leaves out.
-  run cmake --install "$BUILD" --component Local --prefix "$STAGE"
+  # bundled dependencies' libraries, which a plain install leaves out. It
+  # also installs an example config at the absolute /etc/GUFI, so the
+  # install goes under a root of its own and only the prefix is used.
+  run env DESTDIR="$WORK/root" cmake --install "$BUILD" --component Local --prefix "$STAGE"
 )
 
 echo "Assembling the tree..."
-cp -R "$STAGE/bin/." "$TREE/bin/"
-cp -R "$STAGE/lib/." "$TREE/lib/"
+cp -R "$WORK/root$STAGE/bin/." "$TREE/bin/"
+cp -R "$WORK/root$STAGE/lib/." "$TREE/lib/"
 cp "$DEPS/lib/libomp.dylib" "$TREE/lib/"
 cp -L "$DEPS/lib/libpcre2-8.0.dylib" "$TREE/lib/"
 # What build_app.sh leaves out of GUFI's package: libraries nothing here
