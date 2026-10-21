@@ -430,6 +430,122 @@ test('a clone is told of the newest release, signed app or not', async () => {
   process.env.STUDIO_APP_BUNDLE = APP
 })
 
+/** Notes as scripts/release-notes.mjs writes them: the change log's own
+ *  regeneration first, then one entry per pull request. */
+const notes = (prev, ...titles) => [
+  `### Change log through ${prev} (#${++seq})`, '', 'Regenerated after the release.', '',
+  ...titles.flatMap(t => [`### ${t} (#${++seq})`, '', `What "${t}" changed.`, '']),
+].join('\n')
+const withNotes = (rel, body) => ({ ...rel, body })
+const titles = r => r.entries.map(e => e.title)
+
+test('the status lists every release an update brings, a failed macOS build included, housekeeping left out', async () => {
+  await fresh('v1.139')
+  setReleases([
+    withNotes(release('v1.138'), notes('v1.137', 'Older change')),
+    withNotes(release('v1.140'), notes('v1.139', 'Search: faster', 'Settings: a sidebar switch')),
+    // Its macOS build failed: no app attached, but its changes are in v1.142.
+    withNotes({ ...release('v1.141'), assets: [] }, notes('v1.140', 'Chat: retry a reply')),
+    withNotes(release('v1.142'), notes('v1.141', 'Icons: a drawn icon')),
+    withNotes(release('v1.143', { prerelease: true }), notes('v1.142', 'A test version')),
+    // Published, its build not finished: beyond what the app would install.
+    withNotes({ ...release('v1.144'), assets: [] }, notes('v1.143', 'Not built yet')),
+  ])
+  let s = (await j('POST', '/api/updates/check')).body
+  assert.equal(s.latest.version, 'v1.142')
+  assert.equal(s.command, null)
+  assert.deepEqual(s.releases.map(r => r.version), ['v1.142', 'v1.141', 'v1.140'])
+  assert.deepEqual(s.releases.map(titles), [['Icons: a drawn icon'], ['Chat: retry a reply'], ['Search: faster', 'Settings: a sidebar switch']])
+  assert.deepEqual(Object.keys(s.releases[0]).sort(), ['entries', 'publishedAt', 'url', 'version'])
+  assert.equal(s.releases[0].publishedAt, '2026-10-20T12:00:00Z')
+  assert.match(s.releases[0].url, /\/releases\/v1\.142$/)
+  assert.deepEqual(Object.keys(s.releases[2].entries[0]).sort(), ['body', 'pr', 'title'])
+  assert.equal(s.releases[2].entries[0].body, 'What "Search: faster" changed.')
+  assert.ok(Number.isInteger(s.releases[2].entries[0].pr))
+
+  // Pre-releases count on that channel only.
+  await j('PUT', '/api/settings', { updates: { check: true, install: 'manual', channel: 'prerelease' } })
+  s = (await j('GET', '/api/updates')).body
+  assert.equal(s.latest.version, 'v1.143')
+  assert.deepEqual(s.releases.map(r => r.version), ['v1.143', 'v1.142', 'v1.141', 'v1.140'])
+  await j('PUT', '/api/settings', { updates: { check: true, install: 'manual', channel: 'stable' } })
+
+  // A clone takes the newest release, built or not, and is given the commands.
+  delete process.env.STUDIO_APP_BUNDLE
+  s = (await j('GET', '/api/updates')).body
+  assert.equal(s.mode, 'clone')
+  assert.equal(s.command, 'git pull\npnpm install\npnpm build')
+  assert.deepEqual(s.releases.map(r => r.version), ['v1.144', 'v1.142', 'v1.141', 'v1.140'])
+  process.env.STUDIO_APP_BUNDLE = APP
+
+  // Nothing newer: no releases.
+  U.resetUpdatesForTests({ version: 'v1.142' })
+  s = (await j('GET', '/api/updates')).body
+  assert.equal(s.available, false)
+  assert.deepEqual(s.releases, [])
+
+  // An app its user cannot write to is not a clone of the repository.
+  if (process.getuid() !== 0) {
+    const locked = path.join(tmp, 'locked-command')
+    appTree(path.join(locked, 'ACTIVATE Studio.app'), 'v1.139')
+    fs.chmodSync(locked, 0o555)
+    process.env.STUDIO_APP_BUNDLE = path.join(locked, 'ACTIVATE Studio.app')
+    s = (await j('GET', '/api/updates')).body
+    assert.equal(s.mode, 'clone')
+    assert.equal(s.command, null)
+    fs.chmodSync(locked, 0o755)
+    process.env.STUDIO_APP_BUNDLE = APP
+  }
+})
+
+test('the change log: the bundled file, with the notes of releases up to the running version it lacks', async () => {
+  const file = path.join(tmp, 'CHANGELOG.md')
+  write(file, `# Change log\n\nEvery version, newest first.\n\n## v1.139 (2026-10-18)\n\n${notes('v1.138', 'Chat: retry a reply')}\n## v1.138 (2026-10-17)\n\n${notes('v1.137', 'Search: faster')}\n## v1.137 (2026-10-16)\n\n_No pull requests; tag only._\n`)
+  process.env.STUDIO_CHANGELOG_FILE = file
+  try {
+    // v1.140's build carries the change log through v1.139; the check that
+    // found v1.140 saved its notes.
+    await fresh('v1.140')
+    setReleases([
+      withNotes(release('v1.141'), notes('v1.140', 'Not installed yet')),
+      withNotes(release('v1.140'), notes('v1.139', 'Icons: a drawn icon')),
+      withNotes(release('v1.139'), notes('v1.138', 'Chat: retry a reply, as released')),
+    ])
+    await j('POST', '/api/updates/check')
+    let r = await j('GET', '/api/changelog')
+    assert.equal(r.status, 200)
+    assert.equal(r.body.included, true)
+    assert.equal(r.body.current, 'v1.140')
+    assert.deepEqual(r.body.versions.map(v => [v.version, v.date, titles(v)]), [
+      ['v1.140', '2026-10-20', ['Icons: a drawn icon']],
+      ['v1.139', '2026-10-18', ['Chat: retry a reply']],
+      ['v1.138', '2026-10-17', ['Search: faster']],
+    ], 'newest first; the bundled log wins where both have a version; a tag with no entries is left out')
+    r = await j('GET', '/api/changelog?after=v1.138')
+    assert.deepEqual(r.body.versions.map(v => v.version), ['v1.140', 'v1.139'])
+    r = await j('GET', '/api/changelog?after=v1.140')
+    assert.deepEqual(r.body.versions, [])
+
+    // A build without the file says so, and still has the saved notes.
+    process.env.STUDIO_CHANGELOG_FILE = path.join(tmp, 'no-such-CHANGELOG.md')
+    r = await j('GET', '/api/changelog')
+    assert.equal(r.status, 200)
+    assert.equal(r.body.included, false)
+    assert.deepEqual(r.body.versions.map(v => v.version), ['v1.140', 'v1.139'])
+
+    // A hosted Studio has the bundled file only: it never checks.
+    process.env.STUDIO_CHANGELOG_FILE = file
+    process.env.PW_PLATFORM_HOST = 'platform.test'
+    r = await j('GET', '/api/changelog')
+    assert.equal(r.status, 200)
+    assert.deepEqual(r.body.versions.map(v => v.version), ['v1.139', 'v1.138'])
+    delete process.env.PW_PLATFORM_HOST
+  } finally {
+    delete process.env.STUDIO_CHANGELOG_FILE
+    delete process.env.PW_PLATFORM_HOST
+  }
+})
+
 const opensslVersion = spawnSync('openssl', ['version'], { encoding: 'utf8' }).stdout ?? ''
 test('sign_release.sh signs a manifest the server accepts, from a key file or the key in a variable', { skip: /^OpenSSL [3-9]/.test(opensslVersion) ? false : 'needs OpenSSL 3' }, async () => {
   const dir = fs.mkdtempSync(path.join(tmp, 'sign-'))
