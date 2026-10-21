@@ -68,6 +68,25 @@ export function selectMessageBlocks<T extends BlockLike>(children: T[]): T[] {
     && !c.className.split(/\s+/).includes('chat-queued'))
 }
 
+/**
+ * Which tick is where the reader is: the last message whose top has reached
+ * the top of the thread. At the very end that rule fails, because the
+ * final few messages are shorter than the window and never get there, so
+ * the end means the last message, or, after a click on one of those final
+ * ticks, the one clicked. `tops` are the messages' tops relative to the
+ * thread's top. Exported for the tests.
+ */
+export function currentTick(tops: number[], atEnd: boolean, pinned: number | null): number {
+  if (!tops.length) return 0
+  if (atEnd) return pinned != null && pinned < tops.length ? pinned : tops.length - 1
+  let best = 0
+  for (let i = 0; i < tops.length; i++) {
+    if (tops[i] <= 8) best = i
+    else break
+  }
+  return best
+}
+
 /** The message blocks currently on screen, in order. */
 function messageNodes(): HTMLElement[] {
   const list = messageList()
@@ -111,6 +130,10 @@ export function ConversationScrubber() {
   const [cardTop, setCardTop] = useState(0)
   const cardRef = useRef<HTMLDivElement>(null)
   const [current, setCurrent] = useState(0)
+  // A click on a tick the thread cannot scroll to the top (one of the last
+  // few) keeps that tick current once the scroll reaches the end, until the
+  // reader scrolls away from the end.
+  const pinned = useRef<{ index: number; reached: boolean } | null>(null)
 
   const messages = (currentConversation?.messages ?? []) as Msg[]
   const conversationId = currentConversation?.id ?? null
@@ -171,7 +194,14 @@ export function ConversationScrubber() {
     const thread = scrollHost()
     if (!node || !thread) return
     const top = node.getBoundingClientRect().top - thread.getBoundingClientRect().top + thread.scrollTop
-    thread.scrollTo({ top: Math.max(0, top - 8), behavior: 'smooth' })
+    const want = Math.max(0, top - 8)
+    pinned.current = want > thread.scrollHeight - thread.clientHeight - 4 ? { index: i, reached: false } : null
+    // Already at the end, nothing scrolls and no scroll event says so.
+    if (pinned.current && thread.scrollTop >= thread.scrollHeight - thread.clientHeight - 4) {
+      pinned.current.reached = true
+      setCurrent(i)
+    }
+    thread.scrollTo({ top: want, behavior: 'smooth' })
   }, [])
 
   // The rail belongs against the thread's left edge, and the thread starts
@@ -208,14 +238,14 @@ export function ConversationScrubber() {
       if (frame) return
       frame = requestAnimationFrame(() => {
         frame = 0
-        const nodes = messageNodes()
         const top = host.getBoundingClientRect().top
-        let best = 0
-        for (let i = 0; i < nodes.length; i++) {
-          if (nodes[i].getBoundingClientRect().top - top <= 8) best = i
-          else break
-        }
-        setCurrent(best)
+        const tops = messageNodes().map(n => n.getBoundingClientRect().top - top)
+        const atEnd = host.scrollTop >= host.scrollHeight - host.clientHeight - 4
+        const pin = pinned.current
+        if (pin && atEnd) pin.reached = true
+        // Scrolled away from the end after reaching it: the click is spent.
+        else if (pin?.reached) pinned.current = null
+        setCurrent(currentTick(tops, atEnd, pinned.current?.index ?? null))
       })
     }
     host.addEventListener('scroll', onScroll, { passive: true })
