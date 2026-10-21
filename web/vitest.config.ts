@@ -10,5 +10,8 @@ export default defineConfig({
     // Node 25+ defines its own localStorage global, unusable without
     // --localstorage-file, and it shadows jsdom's.
     execArgv: ['--no-experimental-webstorage'],
+    // Processed by Vite rather than loaded by Node, so the CSS its lazily
+    // loaded Markdown renderer imports (KaTeX's) does not fail a test run.
+    server: { deps: { inline: ['@parallelworks/ui'] } },
   },
 })
