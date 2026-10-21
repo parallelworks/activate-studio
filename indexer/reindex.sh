@@ -18,7 +18,9 @@ mkdir -p "$STAGING"
 # -x records extended attributes; thread count sized to the host.
 SKIP_FILE="$INDEX_BASE/skip-dirs.txt"
 printf '%s\n' .git node_modules .venv venv __pycache__ dist build .cache .pytest_cache screenshots .ipynb_checkpoints .claude .github > "$SKIP_FILE"
-"$GUFI_BIN/gufi_dir2index" -x -n "$(nproc)" --skip-file "$SKIP_FILE" "$KB_ROOT" "$STAGING"
+# nproc is GNU; macOS answers through sysctl.
+THREADS="$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)"
+"$GUFI_BIN/gufi_dir2index" -x -n "$THREADS" --skip-file "$SKIP_FILE" "$KB_ROOT" "$STAGING"
 
 # Enrichment: extract text into fts5 tables inside the staged index and
 # refresh the on-disk extract cache used for previews.

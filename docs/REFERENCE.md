@@ -72,6 +72,18 @@ A file's own labels show green in the viewer, and labels it inherits from a fold
 
 Settings, "Feature previews" turns on capabilities still in preview. **Voice conversations** add a Voice button above the chat for a spoken conversation with the assistant, which can use its tools while you talk. It runs on a separate Unmute deployment (the `unmute` workflow).
 
+## Setup
+
+Setup is for a single-user install, where nobody signs in. With sign-in on, `GET /api/setup/status` answers only `{firstRun: false, standalone: false, canRestart: false}` and the other setup routes refuse with 403.
+
+- `GET /api/setup/status` (`?files=1` adds the indexed file count): `firstRun` (sign-in off, setup not done, and not deployed by the platform, which sets `PW_PLATFORM_HOST`), `standalone`, `canRestart` (a launcher with `STUDIO_CONFIG_FILE` and `STUDIO_RESTARTABLE=1`), `launcher`, `primary` (`path`, `exists`, `writable`, `indexed`, `files`), `gufi` (`found`, `bin`, `semantic`), `embedModel` (`path`, `found`), `libraries`, and `job`, a setup index build still running.
+- `GET /api/setup/browse?path=`: the folders in a folder, sorted, without dot-folders, with `parent` and `writable`. `~` is the home folder, and a relative path is taken from it. A path that does not exist is a 404.
+- `POST /api/setup/primary-folder {path}`: the folder must exist, be writable, and neither contain the Studio's index nor sit inside it. With a launcher it saves `KB_ROOT` to the launcher's settings file and restarts: `{saved: true, restarting: true}`. A settings file without a restart answers `{saved: true, restarting: false, note}`; no launcher answers `{saved: false, restarting: false, note}`, naming the `KB_ROOT` to set.
+- `POST /api/setup/index`: one job over the whole primary folder, its top-level files and then each top-level folder, through the same passes and lock as other indexing. `GET /api/index/job/<id>` follows it; its `progress` carries `phase` (`files`, `directories`, `finishing`, `done`), `done`, `total`, `current` and `failed`. A request while a build runs returns that build. A build for a different folder than the last one clears the old folder's extraction caches and index tree first, and afterwards the sweep records the folder as indexed, so it looks only for later changes.
+- `POST /api/setup/complete`: saves `setupDone`.
+
+The sidebar switches save the `sections` setting (`PUT /api/settings {sections}`). An empty list shows every page, including pages a later version adds.
+
 ## Using it from other tools
 
 The deployment serves an OpenAI-compatible endpoint with two models:

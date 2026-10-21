@@ -35,7 +35,7 @@ The folder tree beside a viewer. Markdown, code, images, PDFs, office documents,
 - **Find**, in the viewer's header, searches the open file.
 - **Indexed text** shows what search sees for a file, including text read from images.
 - If several libraries are available, the picker at the top of the tree switches between them. **All libraries**, the default, shows them as one tree, a folder each; Search, Query, and Stats then cover all of them, and files can still be added and changed inside the knowledge base's folder. Each tab remembers its own choice.
-- To browse a directory on one of your clusters, add it under Settings, Libraries, **Your libraries**. The Studio indexes it there with your key, and it appears in the picker for you alone when the index is ready.
+- Settings, Libraries lists every library {appName} searches, with where it is, its state, and what it can search. **Add a library** adds a GUFI index on this machine or, where offered, one on another machine over ssh or one built on one of your clusters. On a computer of its own, the main folder's row changes the folder and rebuilds its index.
 
 ## Search
 
@@ -101,9 +101,21 @@ The address bar follows what you are looking at, so back and forward work and a 
 - **Install app**, in the navigation, installs {appName} as a desktop app in its own window. If a classification banner is shown, the chevron in Chrome's title bar moves the banner into the title bar. The loading screen draws the banner as it was last shown, so the title bar has no gap while the app starts.
 - The bottom of the navigation shows who you are signed in as, whether the models are reachable, and the state of the index; click any of them for details.
 
+## Setup and the sidebar
+
+On a computer of its own, with nobody signing in, {appName} opens with a short setup: which pages the sidebar shows, the folder to index, and GUFI indexes on other machines to add over ssh. Choosing another folder restarts {appName} on it when it runs as the macOS app; elsewhere, set `KB_ROOT` and restart. **Build the index** then indexes the whole folder and shows its progress. Settings, General, **Run setup again** opens the setup later.
+
+Settings, General, **Sidebar** has a switch for each page. A page switched off leaves the navigation, and a link to it opens the first page still shown. Settings and Help always show, and the switches apply to everyone using this {appName}.
+
 ## Using it from other tools
 
 Other tools can use this knowledge base. pw code and other MCP clients can search it directly, and any OpenAI-compatible client can use it as a model that answers from it. Settings, "External access" has the addresses and the exact commands.
+
+## Updates
+
+Settings, General, **Updates** shows the version running and the latest release with its notes; when a newer one exists, the version at the bottom of the navigation says **update available**. In the macOS app, **Update now** downloads the release, checks its signature, installs it and restarts, and the page reloads on the new version. **Roll back** returns to the version installed before it.
+
+The app checks a minute after it starts and every six hours unless **Check for updates automatically** is off; with **Install updates automatically when idle** on, it installs a new version once no chat reply or indexing has run for ten minutes. A copy run from a clone of the repository shows the commands that update it, and a hosted deployment is updated by its operator and has no Updates section.
 
 ## The index
 

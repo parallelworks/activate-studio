@@ -2,7 +2,7 @@ import { execFile, execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import fsp from 'node:fs/promises'
 import path from 'node:path'
-import { EXCLUDE_DIRS, GUFI_BIN, GUFI_INDEX, INDEX_BASE, KB_ROOT, PROJECT_ROOT, PYTHON_BIN } from './config.js'
+import { EXCLUDE_DIRS, GUFI_BIN, GUFI_INDEX, INDEX_BASE, KB_ROOT, PROJECT_ROOT, PYTHON_BIN, gufiEnv, indexerEnv } from './config.js'
 import { invalidateDbList } from './gufi.js'
 import { downmarkNative, runPreExtract } from './preextract.js'
 import { invalidateContext } from './chat/context.js'
@@ -76,12 +76,26 @@ export interface IndexJob {
   finishedAt: string | null
   ms: number | null
   error: string | null
+  /** How far a job over several directories has got. */
+  progress?: IndexProgress
+}
+
+export interface IndexProgress {
+  phase: string
+  done: number
+  total: number
+  /** The directory being indexed now. */
+  current: string | null
+  /** Directories that could not be indexed, with why. */
+  failed: string[]
 }
 
 let jobSeq = 0
 const jobs = new Map<number, IndexJob>()
 
-export function startIndexJob(rel: string): IndexJob {
+/** `work` replaces the default pass over one directory, for a job that
+ *  covers more (the setup's whole-folder build) and reports its progress. */
+export function startIndexJob(rel: string, work?: (job: IndexJob) => Promise<{ ms: number }>): IndexJob {
   const job: IndexJob = {
     id: ++jobSeq,
     dir: rel,
@@ -97,7 +111,7 @@ export function startIndexJob(rel: string): IndexJob {
   void (async () => {
     job.state = 'running'
     try {
-      const { ms } = await reindexForDir(rel)
+      const { ms } = await (work ? work(job) : reindexForDir(rel))
       job.ms = ms
       job.state = 'done'
     } catch (e) {
@@ -112,6 +126,12 @@ export function startIndexJob(rel: string): IndexJob {
 
 export function getIndexJob(id: number): IndexJob | null { return jobs.get(id) ?? null }
 
+/** Whether any index job is queued or running (an update waits for none). */
+export function indexJobsRunning(): boolean {
+  for (const j of jobs.values()) if (j.state === 'queued' || j.state === 'running') return true
+  return false
+}
+
 /** Where indexing reports what went wrong inside a pass that still
  *  succeeded; the sweep timer points it at the server log. */
 let indexLog: (msg: string) => void = m => console.warn(m)
@@ -119,7 +139,10 @@ let indexLog: (msg: string) => void = m => console.warn(m)
 function run(cmd: string, args: string[], timeoutMs = 10 * 60_000): Promise<string> {
   // Settings can change the captioning model at runtime.
   const vm = effectiveSettings().visionModel
-  const env = vm ? { ...process.env, ADE_VISION_MODEL: vm } : process.env
+  const extra: Record<string, string> = vm ? { ADE_VISION_MODEL: vm } : {}
+  // GUFI's tools get its libraries on the loader path; the indexer scripts
+  // get only GUFI_BIN (config.ts says why).
+  const env = path.resolve(path.dirname(cmd)) === path.resolve(GUFI_BIN) ? gufiEnv(extra) : indexerEnv(extra)
   return new Promise((resolve, reject) => {
     execFile(cmd, args, { timeout: timeoutMs, maxBuffer: 32 * 1024 * 1024, env }, (err, so, se) => {
       if (err) return reject(new Error(`${path.basename(cmd)}: ${se || err.message}`))
@@ -405,10 +428,21 @@ export async function sweep(log: (msg: string) => void): Promise<string[]> {
  */
 async function primeSweepState(): Promise<void> {
   if (fs.existsSync(SWEEP_STATE)) return
+  await saveSweepState(await sweepSnapshot())
+}
+
+/** Each directory's latest change, keyed as the sweep records them. */
+export async function sweepSnapshot(): Promise<Record<string, number>> {
   const scan = await scanKbDirs()
   const next: Record<string, number> = {}
   for (const [rel, s] of scan) next[rel === '' ? '.' : rel] = s.latest
-  await fsp.writeFile(SWEEP_STATE, JSON.stringify(next))
+  return next
+}
+
+/** Record a snapshot as indexed, so the next sweep looks only for later changes. */
+export async function saveSweepState(state: Record<string, number>): Promise<void> {
+  await fsp.mkdir(INDEX_BASE, { recursive: true })
+  await fsp.writeFile(SWEEP_STATE, JSON.stringify(state))
 }
 
 export function startSweepTimer(log: (msg: string) => void): void {

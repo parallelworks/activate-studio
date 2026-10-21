@@ -2,7 +2,7 @@ import { getLibrary, requireWritable } from './libraries.js'
 import { execFile } from 'node:child_process'
 import path from 'node:path'
 import type { FastifyInstance } from 'fastify'
-import { EXCLUDE_DIRS, GUFI_BIN, GUFI_INDEX, KB_ROOT, gufiAvailable, PYTHON_BIN } from './config.js'
+import { EXCLUDE_DIRS, GUFI_BIN, GUFI_INDEX, KB_ROOT, gufiAvailable, gufiEnv, PYTHON_BIN } from './config.js'
 import { KbError, resolveKb } from './kb.js'
 import { reindexForDir, reindexForFile } from './indexing.js'
 import { identify, inodeOf, overlayAdopt, overlayByInode, overlayEmpty, overlayEntries, overlayFlush, overlayGet, overlayNotePath, overlayPrune, overlayRekey, overlaySet, sameObject } from './tagsOverlay.js'
@@ -70,7 +70,7 @@ export function invalidateTagMaps(): void { cache = null }
 function gufiRows(sql: string): Promise<string[][]> {
   return new Promise((resolve, reject) => {
     execFile(path.join(GUFI_BIN, 'gufi_query'), ['-n', '8', '-d', DELIM, '-E', sql, GUFI_INDEX],
-      { timeout: 60_000, maxBuffer: 32 * 1024 * 1024 },
+      { timeout: 60_000, maxBuffer: 32 * 1024 * 1024, env: gufiEnv() },
       (err, so) => (err && !so ? reject(new Error(err.message)) : resolve(
         (so ?? '').split('\n').filter(Boolean).map(l => l.split(DELIM)))))
   })

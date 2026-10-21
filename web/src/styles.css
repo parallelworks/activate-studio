@@ -1745,9 +1745,31 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .libraries-table .lib-seg { white-space: nowrap; }
 .libraries-table .lib-yes { color: var(--pw-text); }
 .libraries-table .lib-no { color: var(--pw-muted); }
-.libraries-table .lib-actions { text-align: right; width: 1%; }
+.libraries-table .lib-actions { text-align: right; width: 1%; white-space: nowrap; }
 .libraries-table .lib-actions > * + * { margin-left: 6px; }
 .libraries-wrap { margin-bottom: 18px; }
+/* A row's progress, such as the main folder's index build, runs across the
+   table under it, so the row above keeps no rule between them. */
+.libraries-table tr.lib-has-detail > td { border-bottom: 0; }
+.libraries-table tr.lib-detail > td { padding-top: 0; width: auto; }
+.libraries-table .lib-build { display: flex; flex-direction: column; gap: 8px; max-width: 40rem; }
+.lib-kinds { width: min(26rem, calc(100vw - 2rem)); display: flex; flex-direction: column; gap: 6px; }
+.lib-add-form { margin-top: 12px; }
+.lib-add-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+/* On a phone each library is a block: name and paths, then its state, what
+   it searches (named, since the headers are gone), and its actions. */
+@media (max-width: 640px) {
+  .libraries-table thead { display: none; }
+  .libraries-table, .libraries-table tbody, .libraries-table tr, .libraries-table td { display: block; width: auto; }
+  .libraries-table td:first-child { width: auto; padding-right: 0.75rem; }
+  .libraries-table td { border-bottom: 0; }
+  .libraries-table tr { border-bottom: 1px solid var(--pw-border); padding-bottom: 6px; }
+  .libraries-table tr.lib-has-detail { border-bottom: 0; }
+  .libraries-table td.lib-cap { display: inline-block; }
+  .libraries-table td.lib-cap::before { content: attr(data-label) ": "; color: var(--pw-muted); }
+  .libraries-table td.lib-actions { display: flex; flex-wrap: wrap; gap: 6px; white-space: normal; }
+  .libraries-table .lib-actions > * + * { margin-left: 0; }
+}
 
 /* Workflows tab */
 .wf-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(10.5rem, 1fr)); gap: 0.75rem; margin: 1rem 0 1.5rem; }

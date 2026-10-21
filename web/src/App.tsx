@@ -17,9 +17,10 @@ import { WorkflowsView } from './views/WorkflowsView'
 import { AgentsView } from './views/AgentsView'
 import { HelpView } from './views/HelpView'
 import { SettingsView } from './views/SettingsView'
+import { SetupWizard } from './views/SetupWizard'
 import { StatusFooter } from './components/StatusFooter'
 import { ClassificationBanner, bannerInk, bannerShownColor } from './components/ClassificationBanner'
-import { useAppConfig } from './config'
+import { sectionAllowed, shownView, useAppConfig } from './config'
 import { applyAccent, applySurface } from './accents'
 import { FullViewHost, RunPane } from './components/RunPane'
 
@@ -155,14 +156,31 @@ export default function App() {
   // A deployment can leave sections out, which is how the Studio becomes an
   // index viewer with no assistant. Settings and Help always stay reachable.
   // The Workflows tab lists platform workflows, so it exists only there.
-  const allowed = (id: ViewId) => (id !== 'workflows' || !!cfg.platform) && (!cfg.sections || cfg.sections.includes(id) || id === 'settings' || id === 'help')
+  const allowed = (id: ViewId) => sectionAllowed(id, cfg)
+  // A hidden page is not reachable by a link or the address either: asking
+  // for one shows the first page that is shown, in place of the request.
   useEffect(() => {
-    if (cfg.loaded && !allowed(view)) {
-      const first = NAV.find(i => allowed(i.id))
-      if (first) setView(first.id)
-    }
+    if (!cfg.loaded) return
+    const next = shownView(view, NAV.map(n => n.id), cfg)
+    if (next === view) return
+    history.replaceState(null, '', location.pathname + location.search + (next === 'chat' ? '' : `#view=${next}`))
+    setView(next)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cfg.loaded, cfg.sections])
+  }, [cfg.loaded, cfg.sections, cfg.platform, view])
+
+  // First-run setup on a single-user install, and again from Settings. A
+  // framed page is a session inside the platform, or an embed, never a first run.
+  const [setupOpen, setSetupOpen] = useState(false)
+  useEffect(() => {
+    const open = () => setSetupOpen(true)
+    window.addEventListener('ade:setup-open', open)
+    if (!new URLSearchParams(location.search).has('embed') && window.parent === window) {
+      fetch('/api/setup/status').then(r => (r.ok ? r.json() : null))
+        .then((s: { firstRun?: boolean } | null) => { if (s?.firstRun) setSetupOpen(true) })
+        .catch(() => {})
+    }
+    return () => window.removeEventListener('ade:setup-open', open)
+  }, [])
 
   const [theme, setTheme] = useState<'light' | 'dark' | null>(() => {
     const t = localStorage.getItem('ade-theme')
@@ -407,7 +425,8 @@ export default function App() {
   return (
     <div className="app">
       <ClassificationBanner />
-      <div className="app-body">
+      {/* The setup panel covers the app; the app behind it takes no focus or clicks. */}
+      <div className="app-body" inert={setupOpen}>
       <nav className={`sidenav ${navCollapsed ? 'collapsed' : ''}`}>
         <div className="sidenav-head">
           <div className="sidenav-brand" title={cfg.loaded ? cfg.appName : undefined}>
@@ -567,6 +586,7 @@ export default function App() {
       </main>
       <FullViewHost />
       </div>
+      {setupOpen && <SetupWizard onClose={changed => { setSetupOpen(false); if (changed) location.reload() }} />}
     </div>
   )
 }

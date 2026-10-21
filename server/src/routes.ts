@@ -6,7 +6,7 @@ import { execFile } from 'node:child_process'
 import path from 'node:path'
 import fs, { createReadStream } from 'node:fs'
 import fsp from 'node:fs/promises'
-import { EXCLUDE_DIRS, GATEWAY_BASE, GUFI_INDEX, INDEX_BASE, KB_ROOT, PROJECT_ROOT, PW_CLI, gufiAvailable } from './config.js'
+import { EXCLUDE_DIRS, GATEWAY_BASE, GUFI_INDEX, INDEX_BASE, KB_ROOT, PROJECT_ROOT, PW_CLI, gufiAvailable, indexerEnv } from './config.js'
 import { KbError, extractPath, listDir, moveCacheEntry, readFileContent, resolveKb } from './kb.js'
 import { CONVERTIBLE, mimeFor, officeToPdf, OfficePreviewUnavailable, pdfPageCount, pdfPagePng, pdfPreviewPaths, previewPdfFor, removePdfPreview } from './preview.js'
 import { blendHits, corpusStats, searchFts, searchNames, searchVector, wantsSemantic } from './gufi.js'
@@ -702,7 +702,8 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
   app.post('/api/reindex', async (req, reply) => {
     requireWritable(libOf(req))
     const script = path.join(PROJECT_ROOT, 'indexer', 'reindex.sh')
-    execFile('bash', [script], { timeout: 15 * 60_000 }, err => {
+    // The script reads GUFI_BIN, which names the GUFI this server found.
+    execFile('bash', [script], { timeout: 15 * 60_000, env: indexerEnv() }, err => {
       if (err) app.log.error({ err }, 'reindex failed')
       else invalidateContext()
     })

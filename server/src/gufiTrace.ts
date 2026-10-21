@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
+import { shellFor, siteName } from './remoteExec.js'
 
 /**
  * The GUFI commands a request ran, so the Search and Query views can show
@@ -40,7 +41,7 @@ export function noteGufi(argv: string[], o: { engine?: GufiCommand['engine']; si
 export function formatCommands(commands: GufiCommand[], cap = 4000): string {
   const text = commands.map(c => [
     c.engine === 'gufi_vt' ? '# one gufi_vt statement over the libraries' : '',
-    c.site ? `# on ${c.site} (pw ssh ${c.site})` : '',
+    c.site ? `# on ${siteName(c.site)} (${shellFor(c.site).join(' ')})` : '',
     c.command,
   ].filter(Boolean).join('\n')).join('\n\n')
   return text.length > cap ? `${text.slice(0, cap)}\n[truncated]` : text

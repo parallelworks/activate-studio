@@ -5,6 +5,7 @@ import {
 import { api, IndexStatus } from '../api'
 import { onLibraryChange } from '../api'
 import type { LibraryStats } from '../api'
+import { UPDATES_CHANGED, openUpdates, updatesApi, type UpdatesStatus } from '../api'
 
 function ago(iso: string | null): string {
   // Null just means no sweep has completed since the server started.
@@ -267,6 +268,26 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
     return () => { clearInterval(t); document.removeEventListener('visibilitychange', onVis) }
   }, [])
 
+  // A newer release the Studio can tell about. The version line says so and
+  // opens Settings, General at the Updates section. The server checks every
+  // few hours, so reading its answer now and then is enough; the section
+  // reports a check made there at once.
+  const [update, setUpdate] = useState<string | null>(null)
+  useEffect(() => {
+    let none = false
+    const show = (s: UpdatesStatus | null) => {
+      // A hosted deployment has no updates and is not asked again.
+      if (!s || s.mode === 'hosted') { none = true; setUpdate(null); return }
+      setUpdate(s.available && s.latest ? s.latest.version : null)
+    }
+    const read = () => { if (!none) updatesApi.status().then(show).catch(() => {}) }
+    read()
+    const t = setInterval(read, 10 * 60_000)
+    const onChange = (e: Event) => show((e as CustomEvent<UpdatesStatus>).detail)
+    window.addEventListener(UPDATES_CHANGED, onChange)
+    return () => { clearInterval(t); window.removeEventListener(UPDATES_CHANGED, onChange) }
+  }, [])
+
   const sync = async () => {
     setSyncing(true)
     try {
@@ -337,6 +358,12 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
               </button>
             }
           />
+          {update && (
+            <Button variant="ghost" size="xs" className="footer-sync" title={`Version ${update} is available. Opens Settings, General, Updates.`}
+              onClick={openUpdates}>
+              update available
+            </Button>
+          )}
         </div>
       )}
       <div className="status-line" title="Click for index health details">

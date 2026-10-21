@@ -150,3 +150,49 @@ export function useAppConfig(): AppConfig {
 
 /** Asks the app to fetch its configuration again, as after a library is added. */
 export function reloadAppConfig(): void { window.dispatchEvent(new Event('ade:config-changed')) }
+
+/** Sidebar pages that can be switched off, in sidebar order. */
+export const SECTION_SWITCHES: { id: string; label: string }[] = [
+  { id: 'chat', label: 'Chat' },
+  { id: 'library', label: 'Library' },
+  { id: 'search', label: 'Search' },
+  { id: 'query', label: 'Query' },
+  { id: 'overview', label: 'Stats' },
+  { id: 'history', label: 'History' },
+  { id: 'workflows', label: 'Workflows' },
+  { id: 'agents', label: 'Agents' },
+]
+/** Always reachable, whatever is switched off. */
+export const ALWAYS_SHOWN = ['settings', 'help']
+
+/** Whether a page shows: in the saved sections (none saved means all), or
+ *  always shown. Workflows lists platform workflows, so it also needs one. */
+export function sectionAllowed(id: string, cfg: { sections?: string[]; platform?: boolean }): boolean {
+  if (id === 'workflows' && !cfg.platform) return false
+  return !cfg.sections?.length || cfg.sections.includes(id) || ALWAYS_SHOWN.includes(id)
+}
+
+/** The page to show for a requested one: itself when allowed, otherwise the
+ *  first allowed page in sidebar order. */
+export function shownView<T extends string>(view: T, order: readonly T[], cfg: { sections?: string[]; platform?: boolean }): T {
+  if (sectionAllowed(view, cfg)) return view
+  return order.find(id => sectionAllowed(id, cfg)) ?? view
+}
+
+/** The sections setting for the pages switched on: empty when all are, so a
+ *  page added in a later version shows too. */
+export function sectionsSetting(shown: string[]): string[] {
+  if (SECTION_SWITCHES.every(s => shown.includes(s.id))) return []
+  return [...SECTION_SWITCHES.map(s => s.id).filter(id => shown.includes(id)), ...ALWAYS_SHOWN]
+}
+
+/** Save which pages the sidebar shows, and have the app pick it up. */
+export async function saveSections(sections: string[]): Promise<void> {
+  const res = await fetch('/api/settings', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sections }),
+  })
+  if (!res.ok) throw new Error(((await res.json().catch(() => ({}))) as { error?: string }).error ?? `${res.status}`)
+  reloadAppConfig()
+}

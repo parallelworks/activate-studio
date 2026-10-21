@@ -51,12 +51,54 @@ STUDIO_SECTIONS='library,search,overview'
 Libraries set this way are pinned: they appear for every user and cannot
 be removed from Settings.
 
-*By an administrator:* Settings > Libraries lists what is mounted, with
-each library's index root and source root, and what each supports, and
-adds one by path. The paths appear only there (`GET /api/libraries`); the
-client config every viewer loads lists libraries without them. The Studio probes the tree and
-refuses a path that is not a GUFI index, with the reason. Added libraries
-are kept in `libraries.json` under the index base.
+*In Settings, Libraries:* see the next section. Libraries added there are
+kept in `libraries.json` under the index base, or, for those over ssh or
+built on a cluster, in the user's own list (below).
+
+## The Libraries page
+
+Settings, Libraries is one list of every library the Studio searches, and
+one **Add a library** control. Each row gives the library's name, its kind
+in plain words with what the Studio may do with it (read and write, or
+read only), where it is (the index directory, and the files when the
+Studio can open them), its state, whether it supports full-text search and
+search by meaning, and its actions:
+
+| Kind | Where it comes from | Actions |
+|---|---|---|
+| Main folder, read and write | `KB_ROOT` | **Change folder** and **Rebuild index**, on a single-user install |
+| GUFI index on this machine | `POST /api/libraries`, or `STUDIO_LIBRARIES` (set by the deployment) | **Remove**, except for one the deployment set |
+| GUFI index over ssh | `POST /api/user-libraries/ssh` | **Check**, **Remove** |
+| Index built on a cluster | `POST /api/user-libraries` | **Refresh**, **Remove** |
+
+**Add a library** lists only the kinds this install supports: an index on
+this machine always; one over ssh where sign-in is off; one built on a
+cluster only where the Studio reaches a platform (the client config's
+`platform`). With one kind it opens that form directly. A standalone
+install therefore shows no cluster, workflow, or scheduler fields. The
+ssh form is the one the setup wizard uses (`SshLibraryForm`).
+
+For an index on this machine the form takes the index directory (the one
+with `db.db`), the source directory if the files are on this machine, a
+label, and an identifier. The identifier is optional: without one the
+server makes it from the label, else from the index directory's name,
+lowercased, and adds `-2`, `-3` to keep it unique. `kb` and `all` are never
+used, since a request already means the main folder and every library by
+them. The paths appear only on this page (`GET /api/libraries`); the
+client config every viewer loads lists libraries without them. The Studio
+probes the tree and refuses a path that is not a GUFI index, with the
+reason.
+
+On a single-user install the main folder's row also shows whether its
+index is built, its file count (`GET /api/setup/status?files=1`, asked
+after the page has loaded since it walks the index), and two actions.
+**Change folder** opens the setup wizard's folder picker in a dialog and
+saves the choice through `POST /api/setup/primary-folder`; where the app's
+launcher runs the Studio it restarts on the new folder and the page waits
+for it, and elsewhere the page says to set `KB_ROOT` and restart.
+**Rebuild index** (or **Build index**) runs `POST /api/setup/index` and
+shows the job's progress under the row. Where users sign in, neither
+action is offered and the state comes from the probe.
 
 ## Indexes on a cluster
 
@@ -88,10 +130,11 @@ update runs from the directory that holds the indexed one, because GUFI
 creates a temporary file there; where that directory is not writable, the
 run rebuilds instead. An index takes about 50 KB per directory.
 
-## Your libraries
+## Indexes built on a cluster
 
-A user adds a directory on one of their clusters under Settings, Libraries,
-"Your libraries": a cluster from their active clusters, a directory
+Where the Studio reaches a platform, a user adds a directory on one of
+their clusters under Settings, Libraries, **Add a library**, "An index
+built on a cluster": a cluster from their active clusters, a directory
 (`$WORKDIR` by default), a label, and optionally a Slurm partition and
 account. The Studio then:
 
@@ -125,6 +168,52 @@ one to the cluster, so search and statistics work unchanged. Definitions
 live in `INDEX_BASE/users/<owner hash>/libraries.json`. Routes:
 `GET /api/user-libraries`, `POST /api/user-libraries`,
 `POST /api/user-libraries/<id>/refresh`, `DELETE /api/user-libraries/<id>`.
+
+## Libraries over ssh
+
+A library can also be an existing GUFI index on another machine that the
+Studio's host reaches with plain ssh: Settings, Libraries, **Add a
+library**, "A GUFI index on another machine over ssh", or the setup wizard. The Studio runs
+`ssh -T -o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=30 [-p port] <destination>`
+with the keys, agent, and `~/.ssh/config` of the account it runs as, and
+keeps one session per destination, as it does per cluster. Nothing is
+built or written on that machine: the library is ready once its
+connection test passes, and it is read only.
+
+The remote machine needs:
+
+- key access with no prompt (BatchMode refuses password and passphrase
+  prompts, so load the key into your agent), and its host key in
+  `known_hosts`: connect once from a terminal and accept it;
+- bash, and GUFI's `gufi_query`. The test looks on the PATH of a
+  non-interactive login, then in `/usr/local/bin`, `~/usr/local/bin`, and
+  `/opt/gufi/bin`; anywhere else goes in the GUFI bin directory field. On
+  macOS, GUFI's tools are started with `DYLD_LIBRARY_PATH=<prefix>/lib`,
+  `<prefix>` being the directory above the bin directory;
+- an index built there with `gufi_dir2index`. The index directory is the
+  one with `db.db`, which `gufi_dir2index` writes one level below its
+  output directory, named after the indexed directory.
+
+A source directory is optional. With it, text files open as previews read
+over ssh; without it, the library is browsed and searched by name and
+metadata. Paths may start with `~`, which is resolved on the remote
+machine.
+
+The connection test reports four steps, each with what to change when it
+fails: ssh reaches the host; `gufi_query` is found and runs, with its
+version; the index directory has a `db.db`, counted with one aggregate
+`gufi_query`; the source directory is readable. Adding runs the test again
+on the server. **Check** reruns it and updates the counts and the index
+time (the modified time of the index's `db.db`), which is also when
+Statistics counts the library again.
+
+The ssh identity is the server account's, so libraries over ssh are
+offered only on a Studio with sign-in off, which has one user; with
+sign-in on, the routes answer 403. Routes:
+`POST /api/user-libraries/ssh/test` and `POST /api/user-libraries/ssh`,
+both with `{label?, destination, port?, indexRoot, gufiBin?, sourceRoot?}`;
+listing, refresh, and removal use the routes above, and list entries
+carry `transport` (`pw` or `ssh`), `destination`, and `port`.
 
 ## One library or all
 

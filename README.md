@@ -6,6 +6,8 @@ A web workspace over a folder of documents. It indexes the folder, including the
 
 ## Quick start
 
+**On a Mac (Apple silicon):** `curl -fsSL https://github.com/parallelworks/activate-studio/releases/latest/download/install.sh | bash` installs the ACTIVATE Studio app, which runs the Studio on your own folder with nothing else to install. See [`docs/MACOS.md`](docs/MACOS.md).
+
 **On ACTIVATE:** run the workflow in [`deploy/workflow.yaml`](deploy/workflow.yaml) on a connected resource and set its "Knowledge Base Directory" to your folder. It builds the index and opens the Studio as a session. The platform's models work with no setup.
 
 **On your own machine** (Linux or macOS, with Node 26 and pnpm):
@@ -20,7 +22,7 @@ indexer/reindex.sh                         # indexes the folder
 pnpm start                                 # then open http://localhost:4080
 ```
 
-Without `KB_ROOT`, it opens a small sample folder. Any OpenAI-compatible endpoint works in place of OpenAI's. On a Mac, see [`docs/MACOS.md`](docs/MACOS.md).
+Without `KB_ROOT`, it opens a small sample folder. Any OpenAI-compatible endpoint works in place of OpenAI's. A clone on a Mac is covered in [`docs/MACOS.md`](docs/MACOS.md) too.
 
 ## What it does
 
@@ -46,7 +48,7 @@ The in-app Help is the user guide: [`docs/HELP.md`](docs/HELP.md), with the deta
 | [`docs/WORKFLOWS.md`](docs/WORKFLOWS.md) | the Workflows tab |
 | [`docs/AGENTS.md`](docs/AGENTS.md) | delegated agents |
 | [`docs/MULTI-USER.md`](docs/MULTI-USER.md) | several people on one deployment |
-| [`docs/MACOS.md`](docs/MACOS.md) | running on macOS |
+| [`docs/MACOS.md`](docs/MACOS.md) | the macOS app, and running from a clone on macOS |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | how the index, retrieval, and server work |
 
 ## Built on

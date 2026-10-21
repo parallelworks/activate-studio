@@ -8,7 +8,9 @@ import {
 } from '@parallelworks/ui'
 import { ChevronDownIcon } from '@parallelworks/ui/icons'
 import { ACCENTS, SURFACES, applyAccent, applySurface } from '../accents'
-import { useAppConfig } from '../config'
+import { UpdatesSection } from '../components/UpdatesSection'
+import { saveSections, useAppConfig } from '../config'
+import { SidebarSwitches } from './SetupWizard'
 import { bannerInk } from '../components/ClassificationBanner'
 
 interface Effective {
@@ -50,6 +52,7 @@ interface Effective {
   bannerWhenEmbedded: boolean
   allowKeySharing: boolean
   kbMission: string
+  sections: string[]
 }
 
 interface CatalogTool { name: string; description: string; builtin: boolean; enabled: boolean; parameters?: unknown; command?: string; implementation?: string; calls?: string }
@@ -157,6 +160,9 @@ export function SettingsView() {
     shared?: { active: boolean; last4?: string; sharedBy?: string; sharedAt?: string; credExpired?: boolean; mine?: boolean }
     sharingAllowed?: boolean } | null>(null)
   const [keyInput, setKeyInput] = useState('')
+  // Setup runs only on a single-user install (sign-in off).
+  const [setupAvailable, setSetupAvailable] = useState(false)
+  const [sectionsNote, setSectionsNote] = useState('')
   const [providerMode, setProviderMode] = useState<'platform' | 'activate' | 'custom'>('platform')
   const [providerHost, setProviderHost] = useState('')
   const [baseUrlInput, setBaseUrlInput] = useState('')
@@ -206,6 +212,7 @@ export function SettingsView() {
       .then(d => setModels((d.models ?? []).map((m: { id: string }) => m.id)))
       .catch(() => {})
     fetch('/api/me/model-key').then(r => r.json()).then(d => { setMe(d); if (d?.verified && d.mode !== 'none') refreshAccess() }).catch(() => {})
+    fetch('/api/setup/status').then(r => r.json()).then(d => setSetupAvailable(!!d?.standalone)).catch(() => {})
     refreshRagEp()
     refreshRagCalls()
     const onSection = (e: Event) => {
@@ -466,6 +473,22 @@ export function SettingsView() {
                   />
                 </Field>
               </div>
+              <div className="settings-field">
+                <p style={{ margin: '0 0 2px', fontSize: 13, fontWeight: 500 }}>Sidebar</p>
+                <p className="muted view-sub">Pages the sidebar shows; Settings and Help always show. Saved as you switch.</p>
+                <SidebarSwitches value={form.sections} platform={!!cfg.platform} onChange={next => {
+                  setForm({ ...form, sections: next })
+                  setSectionsNote('')
+                  saveSections(next).catch(e => setSectionsNote(String((e as Error).message ?? e)))
+                }} />
+                {sectionsNote && <Callout tone="error" live>{sectionsNote}</Callout>}
+              </div>
+              {setupAvailable && (
+                <div className="settings-field query-actions">
+                  <Button variant="secondary" onClick={() => window.dispatchEvent(new Event('ade:setup-open'))}>Run setup again</Button>
+                  <span className="muted">The sidebar, the folder to index, and remote indexes, a step at a time.</span>
+                </div>
+              )}
               {me?.authEnabled && (
                 <label className="key-persist">
                   <Checkbox checked={form.requirePersonalKey}
@@ -506,6 +529,7 @@ export function SettingsView() {
                 />
               </Field>
               {saveRow()}
+              <UpdatesSection onPolicySaved={updates => setForm(f => f && ({ ...f, updates } as Effective))} />
             </>
           )}
 

@@ -1,0 +1,167 @@
+// First-run setup on a single-user install: the status the wizard reads,
+// the folder browser, saving a new primary folder through the launcher,
+// a whole-folder index build through GUFI, and the record that setup is done.
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+
+const HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'setup-home-'))
+const KB = fs.mkdtempSync(path.join(os.tmpdir(), 'setup-kb-'))
+const IX = fs.mkdtempSync(path.join(os.tmpdir(), 'setup-ix-'))
+const OTHER = fs.mkdtempSync(path.join(os.tmpdir(), 'setup-other-'))
+process.env.HOME = HOME
+process.env.KB_ROOT = KB
+process.env.INDEX_BASE = IX
+const GUFI = process.env.GUFI_BIN || '/opt/gufi/bin'
+process.env.GUFI_BIN = GUFI
+for (const k of ['AUTH_JWKS_URL', 'STUDIO_CONFIG_FILE', 'STUDIO_RESTARTABLE', 'PW_PLATFORM_HOST']) delete process.env[k]
+
+fs.mkdirSync(path.join(HOME, 'beta'))
+fs.mkdirSync(path.join(HOME, 'Alpha'))
+fs.mkdirSync(path.join(HOME, '.hidden'))
+fs.writeFileSync(path.join(HOME, 'file.txt'), 'not a folder')
+
+fs.writeFileSync(path.join(KB, 'README.md'), '# top level readme\n')
+fs.mkdirSync(path.join(KB, 'notes'))
+fs.writeFileSync(path.join(KB, 'notes', 'alpha.md'), 'The quick brown fox met a zebracorn in the field.\n')
+fs.mkdirSync(path.join(KB, 'docs', 'sub'), { recursive: true })
+fs.writeFileSync(path.join(KB, 'docs', 'sub', 'beta.txt'), 'nested text file\n')
+
+const { default: Fastify } = await import('fastify')
+const { kbRoutes, sanitizedErrorHandler } = await import('../dist/routes.js')
+const { setupRoutes } = await import('../dist/setup.js')
+const L = await import('../dist/lifecycle.js')
+
+const app = Fastify()
+app.setErrorHandler(sanitizedErrorHandler(app))
+await app.register(kbRoutes)
+await app.register(setupRoutes)
+await app.ready()
+const j = async (method, url, body) => {
+  const res = await app.inject({ method, url, ...(body ? { payload: body } : {}) })
+  return { status: res.statusCode, body: res.json() }
+}
+
+test('status: a single-user install without setupDone is a first run', async () => {
+  const r = await j('GET', '/api/setup/status')
+  assert.equal(r.status, 200)
+  assert.equal(r.body.firstRun, true)
+  assert.equal(r.body.standalone, true)
+  assert.equal(r.body.canRestart, false)
+  assert.equal(r.body.primary.path, KB)
+  assert.equal(r.body.primary.writable, true)
+  assert.equal(r.body.primary.indexed, false)
+  assert.equal(r.body.gufi.bin, GUFI)
+  assert.equal(r.body.embedModel.found, false)
+  assert.equal(r.body.libraries[0].id, 'kb')
+  // A Studio the platform deploys is configured there.
+  process.env.PW_PLATFORM_HOST = 'platform.test'
+  assert.equal((await j('GET', '/api/setup/status')).body.firstRun, false)
+  delete process.env.PW_PLATFORM_HOST
+})
+
+test('browse lists folders only, sorted, without dot-folders, and refuses what is not there', async () => {
+  const r = await j('GET', '/api/setup/browse')
+  assert.equal(r.status, 200)
+  assert.equal(r.body.path, HOME)
+  assert.equal(r.body.parent, path.dirname(HOME))
+  assert.equal(r.body.writable, true)
+  assert.deepEqual(r.body.dirs, [{ name: 'Alpha', path: path.join(HOME, 'Alpha') }, { name: 'beta', path: path.join(HOME, 'beta') }])
+  const tilde = await j('GET', `/api/setup/browse?path=${encodeURIComponent('~/Alpha')}`)
+  assert.equal(tilde.body.path, path.join(HOME, 'Alpha'))
+  assert.deepEqual(tilde.body.dirs, [])
+  assert.equal((await j('GET', `/api/setup/browse?path=${encodeURIComponent(path.join(HOME, 'nope'))}`)).status, 404)
+  assert.equal((await j('GET', `/api/setup/browse?path=${encodeURIComponent(path.join(HOME, 'file.txt'))}`)).status, 400)
+  assert.equal((await j('GET', '/api/setup/browse?path=/')).body.parent, null)
+})
+
+test('primary folder: validated, and saved only where a launcher can carry it', async () => {
+  assert.equal((await j('POST', '/api/setup/primary-folder', {})).status, 400)
+  assert.equal((await j('POST', '/api/setup/primary-folder', { path: path.join(HOME, 'nope') })).status, 400)
+  assert.equal((await j('POST', '/api/setup/primary-folder', { path: path.join(HOME, 'file.txt') })).status, 400)
+  // A folder that holds the index would index the index.
+  const holder = await j('POST', '/api/setup/primary-folder', { path: path.dirname(IX) })
+  assert.equal(holder.status, 400)
+  assert.match(holder.body.error, /own index/)
+  const same = await j('POST', '/api/setup/primary-folder', { path: KB })
+  assert.deepEqual([same.body.saved, same.body.restarting], [true, false])
+
+  const none = await j('POST', '/api/setup/primary-folder', { path: OTHER })
+  assert.equal(none.status, 200)
+  assert.equal(none.body.saved, false)
+  assert.equal(none.body.restarting, false)
+  assert.match(none.body.note, new RegExp(`KB_ROOT=${OTHER}`))
+
+  const conf = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'setup-conf-')), 'studio.env')
+  process.env.STUDIO_CONFIG_FILE = conf
+  const noRestart = await j('POST', '/api/setup/primary-folder', { path: '~/beta' })
+  assert.deepEqual([noRestart.body.saved, noRestart.body.restarting], [true, false])
+  assert.match(noRestart.body.note, /Restart/)
+  assert.equal(L.readLauncherSettings().KB_ROOT, path.join(HOME, 'beta'))
+
+  process.env.STUDIO_RESTARTABLE = '1'
+  let code = null
+  L.setStopper(c => { code = c })
+  assert.equal((await j('GET', '/api/setup/status')).body.canRestart, true)
+  const restart = await j('POST', '/api/setup/primary-folder', { path: OTHER })
+  assert.deepEqual(restart.body, { saved: true, restarting: true })
+  assert.equal(L.readLauncherSettings().KB_ROOT, OTHER)
+  await new Promise(r => setTimeout(r, 400))
+  assert.equal(code, L.RESTART_EXIT_CODE)
+  delete process.env.STUDIO_CONFIG_FILE
+  delete process.env.STUDIO_RESTARTABLE
+})
+
+const noGufi = !fs.existsSync(path.join(GUFI, 'gufi_dir2index')) && `no GUFI at ${GUFI}`
+
+test('the setup index covers the whole folder and makes it searchable', { skip: noGufi, timeout: 120_000 }, async () => {
+  // Left over from another folder: a cache entry, and an index tree for a
+  // directory that is not here.
+  fs.writeFileSync(path.join(IX, 'indexed-root'), '/somewhere/else\n')
+  fs.mkdirSync(path.join(IX, 'extract'), { recursive: true })
+  fs.writeFileSync(path.join(IX, 'extract', 'stale.pdf.txt'), 'old text')
+  const gone = path.join(IX, 'gufi', path.basename(KB), 'gone')
+  fs.mkdirSync(gone, { recursive: true })
+
+  const start = await j('POST', '/api/setup/index')
+  assert.equal(start.status, 200)
+  // A second request while it runs follows the same job.
+  assert.equal((await j('POST', '/api/setup/index')).body.id, start.body.id)
+  let job = start.body
+  const until = Date.now() + 100_000
+  while (job.state !== 'done' && job.state !== 'error' && Date.now() < until) {
+    await new Promise(r => setTimeout(r, 200))
+    job = (await j('GET', `/api/index/job/${start.body.id}`)).body
+  }
+  assert.equal(job.state, 'done', job.error ?? '')
+  assert.deepEqual(job.progress.failed, [])
+  assert.equal(job.progress.total, 3)
+  assert.equal(job.progress.done, 3)
+  assert.equal(job.progress.phase, 'done')
+
+  assert.equal(fs.existsSync(path.join(IX, 'extract', 'stale.pdf.txt')), false)
+  assert.equal(fs.existsSync(gone), false)
+  assert.equal(fs.readFileSync(path.join(IX, 'indexed-root'), 'utf8').trim(), KB)
+  const sweep = JSON.parse(fs.readFileSync(path.join(IX, 'sweep-state.json'), 'utf8'))
+  assert.deepEqual(Object.keys(sweep).sort(), ['.', 'docs', 'docs/sub', 'notes'])
+
+  const status = await j('GET', '/api/setup/status?files=1')
+  assert.equal(status.body.primary.indexed, true)
+  assert.equal(status.body.primary.files, 3)
+  assert.equal(status.body.job, null)
+
+  const hits = await j('GET', '/api/search?q=zebracorn')
+  assert.equal(hits.status, 200)
+  assert.ok(hits.body.hits.some(h => h.path === 'notes/alpha.md'), JSON.stringify(hits.body))
+  const nested = await j('GET', '/api/search?q=beta.txt')
+  assert.ok(nested.body.hits.some(h => h.path === 'docs/sub/beta.txt'), JSON.stringify(nested.body))
+})
+
+test('complete records setupDone, and the next status is not a first run', async () => {
+  const r = await j('POST', '/api/setup/complete')
+  assert.deepEqual(r.body, { setupDone: true })
+  assert.equal(JSON.parse(fs.readFileSync(path.join(IX, 'settings.json'), 'utf8')).setupDone, true)
+  assert.equal((await j('GET', '/api/setup/status')).body.firstRun, false)
+})

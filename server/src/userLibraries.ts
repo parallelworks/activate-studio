@@ -8,7 +8,7 @@ import { authEnabled } from './auth.js'
 import { gatewayKey } from './chat/gateway.js'
 import { resolveUserCred } from './credentials.js'
 import { classify, KbError, type FileContent, type KbEntry } from './kb.js'
-import { remoteRun } from './remoteExec.js'
+import { remoteRun, siteName, SSH_DESTINATION, sshSite, type RemoteResult } from './remoteExec.js'
 import { noteGufi } from './gufiTrace.js'
 
 /**
@@ -21,6 +21,12 @@ import { noteGufi } from './gufiTrace.js'
  * gufi on the cluster as that user, over their remote session
  * (remoteExec.ts), so they see what their account there can read.
  *
+ * A library can also be an existing GUFI index on a host the user reaches
+ * with plain ssh (their keys, agent, and ~/.ssh/config): no workflow and
+ * no build, ready once the connection test passes, always read only. The
+ * Studio's own ssh identity is the server account's, so these are offered
+ * only on a Studio with sign-in off, which has one user.
+ *
  * A user library's index root, as the rest of the Studio sees it, is an
  * opaque reference ("remote:<owner>:<id>"); gufi.ts hands any query on one
  * to remoteQuery here. Paths and keys never reach the browser.
@@ -29,7 +35,17 @@ import { noteGufi } from './gufiTrace.js'
 export interface UserLibraryDef {
   id: string
   label: string
+  /** How the host is reached: `pw ssh` to a cluster on the platform (the
+   *  default, and what every library saved before ssh has), or plain ssh. */
+  transport?: 'pw' | 'ssh'
+  /** The cluster; over ssh, the destination, as the library is labeled. */
   site: string
+  /** Over ssh: user@host or an ~/.ssh/config alias, and a port other than ssh's default. */
+  destination?: string | null
+  port?: number | null
+  /** Over ssh, from the last connection test: the host's `uname -s` and gufi_query's version. */
+  os?: string | null
+  gufiVersion?: string | null
   /** The cluster as a workflow input: pw://<owner>/<site>. */
   resource: string
   /** The directory as asked for, e.g. $WORKDIR. */
@@ -97,17 +113,30 @@ function updateDef(owner: string, id: string, patch: Partial<UserLibraryDef>): U
 
 export const remoteRootOf = (owner: string, id: string) => `${REMOTE_PREFIX}${ownerHash(owner)}:${id}`
 
-/** What a remote root resolves to, or null for a local path. */
-export function remoteTarget(root: string | undefined | null): { site: string; key: string; gufiBin: string; indexRoot: string; sourceRoot: string | null; builtAt: string | null } | null {
+const SSH_SINGLE_USER = 'Libraries over ssh use the ssh keys of the account the Studio runs as, so they are offered only on a Studio with sign-in off.'
+/** Whether a viewer may use libraries over ssh: only the one user of a
+ *  Studio with sign-in off. */
+export function sshAllowed(viewerId: string | null | undefined): boolean {
+  return !authEnabled() && ownerOf(viewerId) === 'single'
+}
+
+/** What a remote root resolves to, or null for a local path. `dyldLib` is
+ *  set for a macOS host: where its GUFI tools' libraries are. */
+export function remoteTarget(root: string | undefined | null): { site: string; key: string; gufiBin: string; indexRoot: string; sourceRoot: string | null; builtAt: string | null; dyldLib: string | null } | null {
   if (!root || !root.startsWith(REMOTE_PREFIX)) return null
   const [hash, id] = root.slice(REMOTE_PREFIX.length).split(':')
   let owner = ''
   try { owner = fs.readFileSync(path.join(INDEX_BASE, 'users', hash, 'owner'), 'utf8') } catch { throw new KbError(404, 'no such library') }
   const d = loadUserLibraries(owner).find(x => x.id === id)
   if (!d || !d.indexRoot || !d.gufiBin) throw new KbError(409, 'this library is not built yet')
+  const dyldLib = d.os === 'Darwin' ? `${path.posix.dirname(d.gufiBin)}/lib` : null
+  if (d.transport === 'ssh') {
+    if (owner !== 'single' || authEnabled()) throw new KbError(403, SSH_SINGLE_USER)
+    return { site: sshSite(String(d.destination ?? ''), d.port ?? null), key: '', gufiBin: d.gufiBin, indexRoot: d.indexRoot, sourceRoot: d.sourceRoot, builtAt: d.builtAt, dyldLib }
+  }
   const key = keyOf(owner)
   if (!key) throw new KbError(409, 'This library is read with your own platform key: add your ACTIVATE API key under Settings, Model access.')
-  return { site: d.site, key, gufiBin: d.gufiBin, indexRoot: d.indexRoot, sourceRoot: d.sourceRoot, builtAt: d.builtAt }
+  return { site: d.site, key, gufiBin: d.gufiBin, indexRoot: d.indexRoot, sourceRoot: d.sourceRoot, builtAt: d.builtAt, dyldLib }
 }
 
 /** Runs gufi_query on the library's cluster, as gufi.ts would locally. */
@@ -116,9 +145,9 @@ export async function remoteQuery(root: string, args: string[], subdir?: string)
   const target = subdir ? path.posix.join(t.indexRoot, cleanRel(subdir)) : t.indexRoot
   const t0 = Date.now()
   const r = await remoteRun(t.site, t.key, [`${t.gufiBin}/gufi_query`, ...args, target])
-  noteGufi([`${t.gufiBin}/gufi_query`, ...args, target], { site: t.site, ms: Date.now() - t0 })
+  noteGufi([`${t.gufiBin}/gufi_query`, ...args, target], { site: siteName(t.site), ms: Date.now() - t0 })
   // Like the local runner: a nonzero exit with rows still means rows.
-  if (r.code !== 0 && !r.stdout) throw new KbError(502, `gufi_query on ${t.site} failed: ${r.stderr.trim().split('\n').pop() ?? r.code}`)
+  if (r.code !== 0 && !r.stdout) throw new KbError(502, `gufi_query on ${siteName(t.site)} failed: ${r.stderr.trim().split('\n').pop() ?? r.code}`)
   return r.stdout
 }
 
@@ -139,8 +168,10 @@ export async function remoteTree(root: string, rel: string): Promise<KbEntry[]> 
   const target = sub ? path.posix.join(t.indexRoot, sub) : t.indexRoot
   // One round trip for both listings; the SQL is fixed text and the paths
   // arrive as positional arguments, so nothing user-typed meets a shell.
-  const script = `"$1"/gufi_query -d "$3" -n 1 --min-level 0 --max-level 0 -E 'SELECT name, type, size, mtime FROM vrpentries;' "$2"; printf '\\n__DIRS__\\n'; "$1"/gufi_query -d "$3" -n 1 --min-level 1 --max-level 1 -S 'SELECT name, mtime FROM vrsummary;' "$2"`
-  const r = await remoteRun(t.site, t.key, ['bash', '-c', script, '_', t.gufiBin, target, '\x1e'])
+  // On macOS the library path is set inside the script: the system bash
+  // starts without any DYLD_* variable it was given.
+  const script = `[ -z "$4" ] || export DYLD_LIBRARY_PATH="$4"; "$1"/gufi_query -d "$3" -n 1 --min-level 0 --max-level 0 -E 'SELECT name, type, size, mtime FROM vrpentries;' "$2"; printf '\\n__DIRS__\\n'; "$1"/gufi_query -d "$3" -n 1 --min-level 1 --max-level 1 -S 'SELECT name, mtime FROM vrsummary;' "$2"`
+  const r = await remoteRun(t.site, t.key, ['bash', '-c', script, '_', t.gufiBin, target, '\x1e', t.dyldLib ?? ''])
   const [filesPart, dirsPart = ''] = r.stdout.split('\n__DIRS__\n')
   const rows = (s: string) => s.split('\n').filter(Boolean).map(l => l.split('\x1e'))
   const at = (name: string) => (sub ? `${sub}/${name}` : name)
@@ -149,6 +180,10 @@ export async function remoteTree(root: string, rel: string): Promise<KbEntry[]> 
   const byName = (a: KbEntry, b: KbEntry) => a.name.localeCompare(b.name)
   return [...dirs.sort(byName), ...files.sort(byName)]
 }
+
+// stat's format option differs: GNU and busybox take -c, macOS and BSD -f.
+// Defines `st <gnu format> <bsd format> <file>` in a bash script.
+const STAT = 'st() { if stat -c %s / >/dev/null 2>&1; then stat -c "$1" -- "$3"; else stat -f "$2" -- "$3"; fi; }; st'
 
 /** A file of a library on a cluster: text files are previewed, others say
  *  where they are. */
@@ -161,8 +196,8 @@ export async function remoteFile(root: string, rel: string): Promise<FileContent
   const text = TEXT_SUFFIXES.has(path.posix.extname(sub).toLowerCase())
   // Size and modified time from the file itself, then the text when it is
   // text, in one round trip.
-  const r = await remoteRun(t.site, t.key, ['bash', '-c', 'stat -c "%s %Y" -- "$1" || exit 3; [ "$2" = 1 ] && head -c "$3" -- "$1"; exit 0', '_', abs, text ? '1' : '0', String(PREVIEW_BYTES + 1)])
-  if (r.code !== 0) throw new KbError(404, `${t.site}: ${r.stderr.trim().split('\n').pop() ?? 'cannot read the file'}`)
+  const r = await remoteRun(t.site, t.key, ['bash', '-c', `${STAT} "%s %Y" "%z %m" "$1" || exit 3; [ "$2" = 1 ] && head -c "$3" -- "$1"; exit 0`, '_', abs, text ? '1' : '0', String(PREVIEW_BYTES + 1)])
+  if (r.code !== 0) throw new KbError(404, `${siteName(t.site)}: ${r.stderr.trim().split('\n').pop() ?? 'cannot read the file'}`)
   const nl = r.stdout.indexOf('\n')
   const [size, mtime] = r.stdout.slice(0, nl < 0 ? undefined : nl).split(' ').map(Number)
   const base = { path: sub, kind, size: size || 0, mtime: mtime || 0 }
@@ -180,9 +215,9 @@ export async function remoteDownload(root: string, rel: string): Promise<{ name:
   if (!t.sourceRoot) throw new KbError(409, 'the source directory of this library is not known')
   const sub = cleanRel(rel)
   const abs = path.posix.join(t.sourceRoot, sub)
-  const r = await remoteRun(t.site, t.key, ['bash', '-c', 's=$(stat -c %s -- "$1") || exit 3; [ "$s" -le "$2" ] || exit 4; cat -- "$1"', '_', abs, String(DOWNLOAD_MAX)], 300_000)
-  if (r.code === 4) throw new KbError(413, `This file is over ${DOWNLOAD_MAX / 1024 / 1024} MB; copy it from ${t.site} directly.`)
-  if (r.code !== 0) throw new KbError(404, `${t.site}: ${r.stderr.trim().split('\n').pop() ?? 'cannot read the file'}`)
+  const r = await remoteRun(t.site, t.key, ['bash', '-c', `s=$(${STAT} %s %z "$1") || exit 3; [ "$s" -le "$2" ] || exit 4; cat -- "$1"`, '_', abs, String(DOWNLOAD_MAX)], 300_000)
+  if (r.code === 4) throw new KbError(413, `This file is over ${DOWNLOAD_MAX / 1024 / 1024} MB; copy it from ${siteName(t.site)} directly.`)
+  if (r.code !== 0) throw new KbError(404, `${siteName(t.site)}: ${r.stderr.trim().split('\n').pop() ?? 'cannot read the file'}`)
   return { name: path.posix.basename(sub), body: r.raw }
 }
 
@@ -329,12 +364,209 @@ export async function refreshUserLibrary(viewerId: string | null | undefined, id
   const owner = ownerOf(viewerId)
   const d = owner ? loadUserLibraries(owner).find(x => x.id === id) : null
   if (!owner || !d) throw new KbError(404, 'no such library')
+  if (d.transport === 'ssh') return recheckSsh(viewerId, owner, d)
   if (d.state === 'building' || d.state === 'updating') return d
   const key = keyOf(owner)
   if (!key) throw new KbError(409, 'add your ACTIVATE API key under Settings, Model access')
   const mode = d.indexRoot ? 'update' : 'build'
   const slug = await launch(d, key, mode)
   return updateDef(owner, id, { state: d.indexRoot ? 'updating' : 'building', error: null, run: { slug, mode, startedAt: new Date().toISOString() } })!
+}
+
+// ---- libraries over plain ssh ----
+
+export interface SshLibraryInput { label?: unknown; destination?: unknown; port?: unknown; indexRoot?: unknown; gufiBin?: unknown; sourceRoot?: unknown }
+export interface SshSpec { destination: string; port: number | null; indexRoot: string; gufiBin: string | null; sourceRoot: string | null }
+export interface SshStep { name: 'ssh' | 'gufi' | 'index' | 'source'; ok: boolean; detail: string }
+export interface SshProbe {
+  ok: boolean
+  steps: SshStep[]
+  gufiBin?: string
+  gufiVersion?: string
+  directories?: number
+  /** For adding the library: the host's `uname -s`, the paths with ~
+   *  resolved, the file count, and when the index root was last written. */
+  os?: string
+  indexRoot?: string
+  sourceRoot?: string | null
+  files?: number
+  builtAt?: string | null
+}
+
+/** A path on the remote host: absolute, or under ~, which the test
+ *  resolves there. */
+function remotePath(v: unknown, what: string): string | null {
+  const s = String(v ?? '').trim()
+  if (!s) return null
+  if (s.length > 1024 || /[\0-\x1f\x7f]/.test(s) || !/^(?:\/|~(?:\/|$))/.test(s) || s.split('/').includes('..')) {
+    throw new KbError(400, `${what}: an absolute path on that host, or one under ~`)
+  }
+  return s.length > 1 ? s.replace(/\/+$/, '') : s
+}
+
+/** A request's fields, checked: nothing here reaches a shell, but ssh
+ *  would take a destination starting with "-" as an option. */
+export function sshSpec(a: SshLibraryInput): SshSpec {
+  const destination = String(a.destination ?? '').trim()
+  if (!SSH_DESTINATION.test(destination)) {
+    throw new KbError(400, 'destination: user@host, or a Host alias from your ~/.ssh/config, in letters, digits, dots, dashes, and underscores (for an IPv6 address, use an alias)')
+  }
+  const port = a.port === '' || a.port == null ? null : Number(a.port)
+  if (port != null && !(Number.isInteger(port) && port >= 1 && port <= 65535)) throw new KbError(400, 'port: a number from 1 to 65535')
+  const indexRoot = remotePath(a.indexRoot, 'index directory')
+  if (!indexRoot) throw new KbError(400, 'index directory: the top of the GUFI index on that host, the directory with its db.db')
+  return { destination, port, indexRoot, gufiBin: remotePath(a.gufiBin, 'GUFI bin directory'), sourceRoot: remotePath(a.sourceRoot, 'source directory') }
+}
+
+const lastLine = (s: string) => s.trim().split('\n').filter(Boolean).pop() ?? ''
+
+/** What a failed ssh session means, and what the user can do about it. */
+function sshAdvice(message: string, spec: SshSpec): string {
+  const dest = spec.destination
+  const said = message.replace(`${siteName(sshSite(dest, spec.port))}: `, '')
+  if (/ENOENT/.test(said)) return 'There is no ssh client on the machine the Studio runs on.'
+  if (/Permission denied/i.test(said)) return `${dest} did not accept a key and asked for a password or another prompt, which the Studio cannot answer. Set up key access (for example ssh-copy-id ${dest}), load the key into your ssh agent or name it in ~/.ssh/config, then test again.`
+  if (/Host key verification failed|IDENTIFICATION HAS CHANGED/i.test(said)) return `The host key of ${dest} is not known here yet, or has changed. Connect once from a terminal (ssh ${dest}) and check and accept the key, then test again.`
+  if (/Could not resolve hostname|not known|nodename nor servname/i.test(said)) return `The host name in ${dest} does not resolve. Check the spelling, or the Host entry in ~/.ssh/config.`
+  if (/Connection refused/i.test(said)) return `Nothing accepted the connection on port ${spec.port ?? 22}. Check the port, and that the ssh server runs on ${dest}.`
+  if (/timed out|No route to host|Network is unreachable|did not finish/i.test(said)) return `${dest} did not answer. Check the address, and that this machine can reach it (a VPN, for example).`
+  if (/bash: .*not found|bash: No such file/i.test(said)) return `bash is not installed on ${dest}; the Studio runs its commands there through bash.`
+  return `The ssh connection failed: ${said}`
+}
+
+// The index root: a directory with a db.db, and that file's modified time.
+// Without one, the directories below that have one, since gufi_dir2index
+// writes the index one level down, named after the indexed directory.
+const INDEX_CHECK = `[ -d "$1" ] || exit 3
+if [ ! -f "$1/db.db" ]; then for f in "$1"/*/db.db; do [ -f "$f" ] && printf '%s\\n' "\${f%/db.db}"; done | head -n 3; exit 4; fi
+[ -r "$1/db.db" ] || exit 5
+if stat -c %Y / >/dev/null 2>&1; then stat -c %Y -- "$1/db.db"; else stat -f %m -- "$1/db.db"; fi`
+
+// The first gufi_query among the directories given.
+const FIND_GUFI = 'for d in "$@"; do [ -f "$d/gufi_query" ] && [ -x "$d/gufi_query" ] && { printf "%s\\n" "$d"; exit 0; }; done; exit 1'
+
+/**
+ * The connection test, step by step: ssh reaches the host; gufi_query is
+ * there (the directory given, else the PATH a non-interactive login has,
+ * then where GUFI's packages install it) and runs; the index directory is
+ * a GUFI index, counted with one aggregate gufi_query; the source
+ * directory, when given, is readable. Each step says what it found or
+ * what to change.
+ */
+export async function probeSsh(spec: SshSpec): Promise<SshProbe> {
+  const site = sshSite(spec.destination, spec.port)
+  const dest = spec.destination
+  const steps: SshStep[] = []
+  const done = (extra: Partial<SshProbe> = {}): SshProbe => ({ ok: steps.every(s => s.ok), steps, ...extra })
+  const run = (argv: string[], ms = 60_000): Promise<RemoteResult> =>
+    remoteRun(site, '', argv, ms).catch((e: Error) => ({ code: -1, stdout: '', stderr: e.message, raw: Buffer.alloc(0) }))
+
+  const hello = await run(['sh', '-c', 'uname -s; printf "%s\\n" "$HOME"'], 45_000)
+  if (hello.code !== 0) {
+    steps.push({ name: 'ssh', ok: false, detail: sshAdvice(hello.stderr || `exit ${hello.code}`, spec) })
+    return done()
+  }
+  const [os = '', home = ''] = hello.stdout.trim().split('\n')
+  const mac = os === 'Darwin'
+  steps.push({ name: 'ssh', ok: true, detail: `Connected to ${dest}${spec.port ? ` on port ${spec.port}` : ''}, a ${mac ? 'macOS' : os || 'Unix'} host.` })
+  const expand = (p: string | null) => (p && /^~(?=\/|$)/.test(p) && home.startsWith('/') ? home.replace(/\/+$/, '') + p.slice(1) : p)
+
+  const given = expand(spec.gufiBin)
+  const search = given ? FIND_GUFI : `c=$(command -v gufi_query 2>/dev/null); case "$c" in /*) set -- "\${c%/*}" "$@" ;; esac; ${FIND_GUFI}`
+  const found = await run(['sh', '-c', search, '_', ...(given ? [given] : ['/usr/local/bin', `${home}/usr/local/bin`, '/opt/gufi/bin'])])
+  const bin = found.code === 0 ? lastLine(found.stdout) : ''
+  let version = ''
+  if (!bin.startsWith('/')) {
+    steps.push({ name: 'gufi', ok: false, detail: given
+      ? `There is no gufi_query in ${given} on ${dest}. Give the directory that holds it, such as /usr/local/bin.`
+      : `gufi_query was not found on ${dest}: not on the PATH an ssh login gets, nor in /usr/local/bin, ~/usr/local/bin, or /opt/gufi/bin. Install GUFI there, or give the directory that holds gufi_query as the GUFI bin directory.` })
+  } else {
+    const v = await run([`${bin}/gufi_query`, '--version'])
+    version = v.code === 0 ? lastLine(v.stdout).slice(0, 80) : ''
+    steps.push(v.code === 0
+      ? { name: 'gufi', ok: true, detail: `gufi_query ${version || '(no version)'} in ${bin}.` }
+      : { name: 'gufi', ok: false, detail: `gufi_query in ${bin} did not run: ${lastLine(v.stderr) || `exit ${v.code}`}.${mac ? ` On macOS its libraries are expected in ${path.posix.dirname(bin)}/lib.` : ''}` })
+  }
+
+  const indexRoot = expand(spec.indexRoot)!
+  const at = await run(['sh', '-c', INDEX_CHECK, '_', indexRoot])
+  let directories: number | undefined, files: number | undefined, builtAt: string | null = null
+  if (at.code === 0) {
+    const mtime = Number(lastLine(at.stdout))
+    builtAt = mtime > 0 ? new Date(mtime * 1000).toISOString() : null
+    if (!version) steps.push({ name: 'index', ok: true, detail: `${indexRoot} has a db.db; its directories are counted once gufi_query runs.` })
+    else {
+      const c = await run([`${bin}/gufi_query`, '-n', '4', '-d', '|', '-a', '1',
+        '-I', 'CREATE TABLE t (d INT64, f INT64);', '-K', 'CREATE TABLE agg (d INT64, f INT64);',
+        '-E', 'INSERT INTO t SELECT count(*), sum(totfiles) FROM vrsummary;', '-J', 'INSERT INTO agg SELECT * FROM t;',
+        '-G', 'SELECT sum(d), sum(f) FROM agg;', indexRoot], 60_000)
+      const [d, f] = lastLine(c.stdout).split('|').map(Number)
+      if (c.stdout.trim() && Number.isFinite(d)) {
+        directories = d; files = Number.isFinite(f) ? f : undefined
+        steps.push({ name: 'index', ok: true, detail: `A GUFI index of ${d.toLocaleString('en-US')} directories${files != null ? ` and ${files.toLocaleString('en-US')} files` : ''}.` })
+      } else if (/did not finish/.test(c.stderr)) {
+        steps.push({ name: 'index', ok: true, detail: `${indexRoot} has a db.db; counting its directories took over a minute, so the count is left out.` })
+      } else {
+        steps.push({ name: 'index', ok: false, detail: `gufi_query could not read the index in ${indexRoot}: ${lastLine(c.stderr) || `exit ${c.code}`}.` })
+      }
+    }
+  } else {
+    const below = at.code === 4 ? at.stdout.trim().split('\n').filter(Boolean) : []
+    steps.push({ name: 'index', ok: false, detail:
+      at.code === 3 ? `${indexRoot} is not a directory on ${dest}.`
+      : at.code === 4 ? `${indexRoot} has no db.db, so it is not the top of a GUFI index. ${below.length ? `The index may be one level down: ${below.join(', ')}.` : 'Give the directory gufi_dir2index created, the one holding db.db.'}`
+      : at.code === 5 ? `The ssh login cannot read ${indexRoot}/db.db.`
+      : `The index could not be checked: ${lastLine(at.stderr) || `exit ${at.code}`}.` })
+  }
+
+  const sourceRoot = expand(spec.sourceRoot)
+  if (sourceRoot) {
+    const s = await run(['sh', '-c', '[ -d "$1" ] || exit 3; [ -r "$1" ] && [ -x "$1" ] || exit 4', '_', sourceRoot])
+    steps.push(s.code === 0
+      ? { name: 'source', ok: true, detail: `${sourceRoot} is readable; files open from there.` }
+      : { name: 'source', ok: false, detail: s.code === 3 ? `${sourceRoot} is not a directory on ${dest}. Leave the source directory empty to browse and search names only.`
+        : s.code === 4 ? `${sourceRoot} is there, but the ssh login cannot read it.` : `The source directory could not be checked: ${lastLine(s.stderr) || `exit ${s.code}`}.` })
+  }
+  return done({ gufiBin: bin.startsWith('/') ? bin : undefined, gufiVersion: version || undefined, directories, files, os, indexRoot, sourceRoot, builtAt })
+}
+
+/** Adds an existing GUFI index on a host over ssh, after the connection
+ *  test passes here again: ready at once, read only, nothing built. */
+export async function addFromSsh(viewerId: string | null | undefined, a: SshLibraryInput): Promise<UserLibraryDef> {
+  if (!sshAllowed(viewerId)) throw new KbError(403, SSH_SINGLE_USER)
+  const owner = ownerOf(viewerId)!
+  const spec = sshSpec(a)
+  const p = await probeSsh(spec)
+  if (!p.ok) throw new KbError(400, `The connection test did not pass. ${p.steps.find(s => !s.ok)?.detail ?? ''}`.trim())
+  const indexRoot = p.indexRoot!
+  const defs = loadUserLibraries(owner)
+  const same = defs.find(d => d.transport === 'ssh' && d.destination === spec.destination && (d.port ?? null) === spec.port && d.indexRoot === indexRoot)
+  if (same) throw new KbError(409, `This index is already a library: ${same.label}.`)
+  const host = spec.destination.replace(/^.*@/, '')
+  const name = path.posix.basename(indexRoot) || 'index'
+  const label = (String(a.label ?? '').trim() || `${name} on ${host}`).slice(0, 60)
+  const base = `u-${`${host}-${name}`.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 30) || 'library'}`
+  let id = base
+  for (let i = 2; defs.some(d => d.id === id); i++) id = `${base}-${i}`
+  const def: UserLibraryDef = {
+    id, label, transport: 'ssh', site: spec.destination, destination: spec.destination, port: spec.port, os: p.os || null, gufiVersion: p.gufiVersion ?? null,
+    resource: sshSite(spec.destination, spec.port), sourceDir: p.sourceRoot ?? '', sourceRoot: p.sourceRoot ?? null, indexRoot, gufiBin: p.gufiBin!,
+    state: 'ready', run: null, error: null, builtAt: p.builtAt ?? new Date().toISOString(), directories: p.directories ?? null, files: p.files ?? null, scheduler: null,
+  }
+  saveUserLibraries(owner, [...defs, def])
+  return def
+}
+
+/** Refresh, for a library over ssh: nothing to rebuild, so the connection
+ *  test runs again and the counts and index time are brought up to date. */
+async function recheckSsh(viewerId: string | null | undefined, owner: string, d: UserLibraryDef): Promise<UserLibraryDef> {
+  if (!sshAllowed(viewerId)) throw new KbError(403, SSH_SINGLE_USER)
+  const p = await probeSsh(sshSpec({ destination: d.destination, port: d.port, indexRoot: d.indexRoot, gufiBin: d.gufiBin, sourceRoot: d.sourceRoot }))
+  const failed = p.steps.find(s => !s.ok)
+  return updateDef(owner, d.id, failed ? { error: failed.detail } : {
+    error: null, os: p.os || d.os || null, gufiVersion: p.gufiVersion ?? d.gufiVersion ?? null,
+    directories: p.directories ?? d.directories, files: p.files ?? d.files, builtAt: p.builtAt ?? d.builtAt,
+  })!
 }
 
 export function removeUserLibrary(viewerId: string | null | undefined, id: string): void {
@@ -347,15 +579,21 @@ export function removeUserLibrary(viewerId: string | null | undefined, id: strin
 
 /** The shape Settings shows: no keys, and the remote paths, which are the user's own. */
 export function publicUserLibrary(d: UserLibraryDef) {
-  return { id: d.id, label: d.label, site: d.site, sourceDir: d.sourceDir, sourceRoot: d.sourceRoot, indexRoot: d.indexRoot, state: d.state,
+  return { id: d.id, label: d.label, transport: d.transport ?? 'pw', site: d.site, destination: d.destination ?? null, port: d.port ?? null, gufiVersion: d.gufiVersion ?? null, sourceDir: d.sourceDir, sourceRoot: d.sourceRoot, indexRoot: d.indexRoot, state: d.state,
     run: d.run ? { slug: d.run.slug, mode: d.run.mode, startedAt: d.run.startedAt } : null, error: d.error, builtAt: d.builtAt,
     directories: d.directories, files: d.files, scheduler: d.scheduler }
 }
 
 export async function userLibraryRoutes(app: FastifyInstance): Promise<void> {
   const viewer = (req: { user?: { id?: string } }) => req.user?.id ?? null
-  app.get('/api/user-libraries', async req => ({ libraries: (await listUserLibraries(viewer(req))).map(publicUserLibrary), available: !!ownerOf(viewer(req)) }))
+  app.get('/api/user-libraries', async req => ({ libraries: (await listUserLibraries(viewer(req))).map(publicUserLibrary), available: !!ownerOf(viewer(req)), ssh: sshAllowed(viewer(req)) }))
   app.post('/api/user-libraries', async req => publicUserLibrary(await addFromCluster(viewer(req), (req.body ?? {}) as AddFromCluster)))
+  app.post('/api/user-libraries/ssh/test', async req => {
+    if (!sshAllowed(viewer(req))) throw new KbError(403, SSH_SINGLE_USER)
+    const p = await probeSsh(sshSpec((req.body ?? {}) as SshLibraryInput))
+    return { ok: p.ok, steps: p.steps, gufiBin: p.gufiBin, gufiVersion: p.gufiVersion, directories: p.directories }
+  })
+  app.post('/api/user-libraries/ssh', async req => publicUserLibrary(await addFromSsh(viewer(req), (req.body ?? {}) as SshLibraryInput)))
   app.post('/api/user-libraries/:id/refresh', async req => publicUserLibrary(await refreshUserLibrary(viewer(req), (req.params as { id: string }).id)))
   app.delete('/api/user-libraries/:id', async req => { removeUserLibrary(viewer(req), (req.params as { id: string }).id); return { ok: true } })
 }

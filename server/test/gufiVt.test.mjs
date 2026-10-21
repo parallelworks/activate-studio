@@ -86,7 +86,7 @@ test('the script has a table per location and the order outside the union', () =
   assert.match(s, /temp\.loc_1 USING gufi_vt\(index='\/c\/idx'.*remote_arg='tok'\);/)
   assert.match(s, /SELECT 'kb', \* FROM temp\.loc_0 UNION ALL SELECT 'u-p', \* FROM temp\.loc_1 ORDER BY 3 DESC LIMIT 5;$/)
   // As a person runs it: over pw ssh, with the cluster's GUFI on the PATH.
-  assert.match(V.vtScript([{ id: 'u-p', index: '/c/idx', plan, remote: { token: 'tok', site: 'cluster-a', gufiBin: '/c/bin' } }], null, V.viaPwSsh),
+  assert.match(V.vtScript([{ id: 'u-p', index: '/c/idx', plan, remote: { token: 'tok', site: 'cluster-a', gufiBin: '/c/bin' } }], null, V.viaShell),
     /remote_cmd='pw', remote_arg='ssh', remote_arg='cluster-a', remote_arg='env', remote_arg='PATH=\/c\/bin:\$PATH'\);/)
   assert.equal(V.vtEligible({ stages: { E: 'SELECT "name" FROM vrpentries;' }, columns: [] }), false)
 })
@@ -97,6 +97,9 @@ test('commands are shown as a shell takes them', () => {
   assert.equal(T.shellQuote('\x1e'), "$'\\x1e'")
   const text = T.formatCommands([{ engine: 'gufi_query', site: 'cluster-a', command: 'gufi_query -E x /i' }])
   assert.equal(text, '# on cluster-a (pw ssh cluster-a)\ngufi_query -E x /i')
+  const overSsh = T.formatCommands([{ engine: 'gufi_query', site: 'ssh://alex@hpc.example:2222', command: 'gufi_query -E x /i' }])
+  assert.equal(overSsh, '# on alex@hpc.example:2222 (ssh -p 2222 alex@hpc.example)\ngufi_query -E x /i')
+  assert.deepEqual(V.viaShell({ token: 't', site: 'ssh://hpc.example', gufiBin: '/g/bin' }), ['ssh', 'hpc.example', 'env', 'PATH=/g/bin:$PATH'])
 })
 
 test('the way in refuses a wrong secret, an unknown token, and other commands', async () => {
