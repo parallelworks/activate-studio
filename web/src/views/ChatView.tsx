@@ -20,6 +20,8 @@ import { PersonaIcon } from '../components/PersonaIcon'
 import { ConversationScrubber } from '../components/ConversationScrubber'
 import { EmbedFrame } from '../components/EmbedFrame'
 import { SideViewHost } from '../components/RunPane'
+import { PanelToggle } from '../components/StatusPanel'
+import { modelLabel, share } from '../statusShare'
 
 const MODEL_STORAGE_KEY = 'studio.chat.lastModel'
 
@@ -71,6 +73,17 @@ export function RetryWithModel() {
     setPending(null)
     void sendMessage(pending.content, pending.attachmentIds, pending.parentId)
   }, [pending, isStreaming, selectedProvider, sendMessage])
+  return null
+}
+
+/** Tells the status panel which model the chat has selected, which is the
+ *  package's default until the viewer picks one. */
+function ModelShare() {
+  const { selectedProvider, models } = useChat()
+  const m = models.find(x => x.id === selectedProvider)
+  const model = m ? modelLabel(m) : selectedProvider ? modelLabel({ id: selectedProvider }) : null
+  const provider = m?.provider ?? null
+  useEffect(() => { share({ model, modelProvider: provider }) }, [model, provider])
   return null
 }
 
@@ -432,8 +445,9 @@ export function ChatView() {
               </Callout>
             </div>
           )}
-                    <FilterReloader />
-                    <RetryWithModel />
+          <FilterReloader />
+          <RetryWithModel />
+          <ModelShare />
           <ChatLayout
             sidebarMode={phone ? 'drawer' : 'inline'}
             drawerToggle={false}
@@ -611,7 +625,10 @@ export function ChatView() {
               </div>
             </Popover>
             )}
+            <PanelToggle className="chat-panel-toggle" />
           </div>
+          {/* Managing chats hides the controls above; the panel toggle stays. */}
+          {showManage && <div className="chat-controls"><PanelToggle className="chat-panel-toggle" /></div>}
         </div>
         <SideViewHost />
       </div>

@@ -6,6 +6,7 @@ import { initializeValues } from '@parallelworks/ui/form'
 import { useWorkflowFields } from './WorkflowFields'
 import { insidePlatform } from './SessionView'
 import { openBeside, openFullView } from '../sideBySide'
+import { setSideShown } from '../panelState'
 
 /**
  * The run the assistant launched, beside the conversation: the workflow's
@@ -284,17 +285,25 @@ export function FullViewHost() {
   )
 }
 
+type SideRequest = { session: SideSession } | { run: string }
+/** Page side views mounted now, and a request made while there was none
+ *  (from another page, which then switches to the Workflows page). */
+let pageHosts = 0
+let pendingPage: SideRequest | null = null
+
 /** Sends a session or a run to the side view of a page with no chat. The
  *  chat stays mounted behind other pages, so its side view takes only
  *  messages with no target (the session cards in its replies). */
-export function openInSideView(what: { session: SideSession } | { run: string }): void {
+export function openInSideView(what: SideRequest): void {
+  if (!pageHosts) { pendingPage = what; return }
   window.postMessage({ type: 'ade-side-view', target: 'page', ...what }, window.location.origin)
 }
 
 /**
  * A side view's tabs and visibility. A session card in a reply (a
  * same-origin frame) or the page itself opens a tab with an `ade-side-view`
- * message carrying a session or a run id.
+ * message carrying a session or a run id. It tells the status panel
+ * whether it is showing, and hides when the panel asks for the room.
  */
 function useSideItems(target: 'chat' | 'page') {
   const [items, setItems] = useState<SideItem[]>([])
@@ -310,8 +319,23 @@ function useSideItems(target: 'chat' | 'page') {
       setItems(xs => upsert(xs, item)); setActive(item.id); setHidden(false)
     }
     window.addEventListener('message', on)
-    return () => window.removeEventListener('message', on)
+    const hide = (e: Event) => { if ((e as CustomEvent).detail === target) setHidden(true) }
+    window.addEventListener('ade:side-view-hide', hide)
+    if (target === 'page') {
+      pageHosts++
+      if (pendingPage) { const what = pendingPage; pendingPage = null; openInSideView(what) }
+    }
+    return () => {
+      window.removeEventListener('message', on)
+      window.removeEventListener('ade:side-view-hide', hide)
+      if (target === 'page') pageHosts--
+    }
   }, [])
+  const shown = items.length > 0 && !hidden
+  useEffect(() => {
+    setSideShown(target, shown)
+    return () => setSideShown(target, false)
+  }, [target, shown])
   return { items, setItems, active, setActive, hidden, setHidden }
 }
 
