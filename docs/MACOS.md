@@ -9,14 +9,15 @@ path; the clone is for working on the Studio itself.
 *Install:* in Terminal,
 
 ```
-curl -fsSL https://github.com/parallelworks/activate-studio/releases/latest/download/install.sh | bash
+curl -fsSL https://github.com/parallelworks/activate-studio/releases/download/macos/install.sh | bash
 ```
 
 This puts `ACTIVATE Studio.app` in `~/Applications`, without
 administrator rights, and opens it. The alternative is the disk image,
 `activate-studio-macos-arm64.dmg` on the
-[releases](https://github.com/parallelworks/activate-studio/releases)
-page: open it and drag the app to Applications.
+[macOS release](https://github.com/parallelworks/activate-studio/releases/tag/macos)
+page, which always holds the newest app: open it and drag the app to
+Applications.
 
 *First open:* the app starts the Studio's server in the background and
 shows the Studio in its own window, with its own Dock icon and menus; no
@@ -61,8 +62,10 @@ starts and every six hours after that. A notice at the top of every page,
 and Settings, General, show the newest release with the changes in every
 version newer than the one running, and Update now; Later hides the notice
 until a newer version is out. It takes the newest release that carries
-the signed app; while a newer one is still
-waiting for its macOS build, it checks again after 30 minutes. The download
+the signed app. Not every release does: the macOS build runs only for the
+releases it is asked for, so the app skips the others and the notice lists
+their changes with the next one it can install. While a release published
+in the last two hours has no app yet, it checks again after 30 minutes. The download
 goes to `~/Library/Application Support/ACTIVATE Studio/updates` and is
 installed only if the release's manifest is signed by the release key
 (the app carries its public half, `Contents/Resources/update-signing.pub`),

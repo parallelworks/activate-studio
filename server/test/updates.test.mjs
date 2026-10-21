@@ -405,8 +405,8 @@ test('after an update the server clears the mark once up, and reports a rollback
 
 test('the app takes the newest release that carries the signed app, and checks again soon while a newer one waits for it', async () => {
   await fresh('v1.139', { timings: { firstCheckMs: 20, soonMs: 150, intervalMs: 3_600_000 } })
-  // v1.141 is published; its macOS build has not attached the app yet.
-  setReleases([{ ...release('v1.141'), assets: [] }, release('v1.140')])
+  // v1.141 was just published; its macOS build has not attached the app yet.
+  setReleases([{ ...release('v1.141'), assets: [], published_at: new Date().toISOString() }, release('v1.140')])
   const before = apiRequests.length
   U.startUpdates(() => {})
   assert.ok(await until(() => apiRequests.length > before), 'the first check')
@@ -417,6 +417,18 @@ test('the app takes the newest release that carries the signed app, and checks a
   // The build attaches it, and the sooner check finds it.
   setReleases([release('v1.141'), release('v1.140')])
   assert.ok(await until(async () => (await j('GET', '/api/updates')).body.latest?.version === 'v1.141', 3000), 'checked again within the shorter wait')
+  U.resetUpdatesForTests()
+})
+
+test('a release the macOS build was not asked for, published hours ago, does not bring the next check forward', async () => {
+  await fresh('v1.139', { timings: { firstCheckMs: 20, soonMs: 50, intervalMs: 3_600_000 } })
+  setReleases([{ ...release('v1.141'), assets: [], published_at: new Date(Date.now() - 3 * 3600_000).toISOString() }, release('v1.140')])
+  const before = apiRequests.length
+  U.startUpdates(() => {})
+  assert.ok(await until(() => apiRequests.length > before), 'the first check')
+  assert.equal((await j('GET', '/api/updates')).body.latest.version, 'v1.140')
+  await sleep(300)
+  assert.equal(apiRequests.length, before + 1, 'no sooner check')
   U.resetUpdatesForTests()
 })
 

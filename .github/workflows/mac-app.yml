@@ -1,8 +1,12 @@
 # Build the macOS app on a Mac, where its own window (deploy/mac/shell) is
 # compiled and the .dmg is made, and run the checks only a Mac can: the
 # bundled Node, Python and GUFI, the server from the app's run loop, and
-# the launcher with its LaunchAgent. For a published release, sign the
-# update manifest and attach the app, so installed copies can update.
+# the launcher with its LaunchAgent. Asked to for a published release
+# (the release input), it builds that tag, signs the update manifest, and
+# attaches the app to the release, so installed copies can update to it;
+# and it puts the same files in the macos release, the fixed address the
+# installer and the docs use. Releases are frequent and most do not get a
+# macOS build; the app updates to the newest release that has one.
 #
 # GUFI comes from, in order: the gufi_run input (a gufi-macos run whose
 # archive to use, to try a new GUFI build), GUFI_RUN below (the same, for
@@ -15,11 +19,12 @@ name: mac-app
 on:
   workflow_dispatch:
     inputs:
+      release:
+        description: A published release (such as v1.150) to build the app for and attach it to; blank to build and check only
+        default: ""
       gufi_run:
         description: A gufi-macos run id whose GUFI archive to use
         default: ""
-  release:
-    types: [published]
   # A change to the app or its build is built and checked on a Mac.
   pull_request:
     paths:
@@ -35,7 +40,7 @@ env:
   GUFI_RELEASE: gufi-1713537-macos14
 
 concurrency:
-  group: mac-app-${{ github.ref }}
+  group: mac-app-${{ inputs.release || github.ref }}
 
 jobs:
   build:
@@ -45,11 +50,20 @@ jobs:
       contents: read
       actions: read
     steps:
+      - name: the release
+        if: inputs.release != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE: ${{ inputs.release }}
+        run: |
+          [[ "$RELEASE" =~ ^v[0-9]+\.[0-9]+(\.[0-9]+)?$ ]] || { echo "release must look like v1.150, not '$RELEASE'"; exit 1; }
+          gh release view "$RELEASE" -R "$GITHUB_REPOSITORY" --json tagName >/dev/null
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           # git describe names the build; a release builds at its own tag.
           fetch-depth: 0
+          ref: ${{ inputs.release }}
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 26
@@ -117,7 +131,7 @@ jobs:
   # Sign and attach to the release. The only job that can write, and the
   # only one that sees the signing key; it runs no build code.
   release:
-    if: github.event_name == 'release'
+    if: github.event_name == 'workflow_dispatch' && inputs.release != ''
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -149,15 +163,37 @@ jobs:
       - name: sign the update manifest
         env:
           STUDIO_UPDATE_SIGNING_KEY: ${{ secrets.STUDIO_UPDATE_SIGNING_KEY }}
-          TAG: ${{ github.event.release.tag_name }}
+          TAG: ${{ inputs.release }}
         run: deploy/mac/sign_release.sh "$RUNNER_TEMP/out/activate-studio-macos-arm64.tar.gz" "$TAG"
       - name: attach to the release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.event.release.tag_name }}
+          TAG: ${{ inputs.release }}
         run: |
+          set -euo pipefail
           cd "$RUNNER_TEMP/out"
-          gh release upload "$TAG" -R "$GITHUB_REPOSITORY" --clobber \
-            activate-studio-macos-arm64.tar.gz activate-studio-macos-arm64.tar.gz.sha256 \
-            activate-studio-macos-arm64.manifest.json activate-studio-macos-arm64.manifest.json.sig \
-            activate-studio-macos-arm64.dmg install.sh
+          files=(activate-studio-macos-arm64.tar.gz activate-studio-macos-arm64.tar.gz.sha256
+            activate-studio-macos-arm64.manifest.json activate-studio-macos-arm64.manifest.json.sig
+            activate-studio-macos-arm64.dmg install.sh)
+          gh release upload "$TAG" -R "$GITHUB_REPOSITORY" --clobber "${files[@]}"
+          # The macos release holds the newest app at a fixed address: a
+          # prerelease that is never latest, which the app's update check
+          # skips (its tag is not a version). An older version than the one
+          # there leaves it alone.
+          if gh release view macos -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            have="$(gh release download macos -R "$GITHUB_REPOSITORY" -p activate-studio-macos-arm64.manifest.json -O - 2>/dev/null |
+              python3 -c 'import json, sys; print(json.load(sys.stdin)["version"])' 2>/dev/null || true)"
+            if [ -n "$have" ] && [ "$(printf '%s\n%s\n' "${have#v}" "${TAG#v}" | sort -V | tail -n 1)" != "${TAG#v}" ]; then
+              echo "The macos release has $have, newer than $TAG; left as it is."
+              exit 0
+            fi
+          else
+            gh release create macos -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease --latest=false \
+              --title "ACTIVATE Studio for macOS" --notes "The newest macOS app."
+          fi
+          gh release upload macos -R "$GITHUB_REPOSITORY" --clobber "${files[@]}"
+          gh release edit macos -R "$GITHUB_REPOSITORY" --notes "ACTIVATE Studio $TAG for macOS, Apple silicon, macOS 14 or later.
+
+          Install: \`curl -fsSL https://github.com/$GITHUB_REPOSITORY/releases/download/macos/install.sh | bash\`, or open the disk image and drag the app to Applications.
+
+          Changes: https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG and the releases before it. Installed copies update themselves."
