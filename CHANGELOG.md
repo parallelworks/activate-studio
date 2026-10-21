@@ -2,6 +2,36 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.140 (2026-10-20)
+
+### Change log through v1.139 (#500)
+
+Regenerated with `node scripts/release-notes.mjs --changelog` after the v1.139 release.
+
+### Status panel: activity, libraries, model and connections at a glance (#501)
+
+A collapsible panel on the right of the Studio shows what is going on without leaving the page. It is toggled from the top right of each page; while it is open, the toggle sits in the panel's own bar. Each card has a one-line summary on its header row and opens for detail. Open and closed states are remembered, and a card with nothing to show is left out.
+
+**Activity**
+- Agent tasks that are running or waiting on you, and standing agents. A task opens on the Agents page, a standing agent on the Fleet page (new `#view=agents:fleet`).
+- Your workflow runs, running ones first. A run opens in the side view.
+- Open sessions, the first six, then a link to the rest.
+- Agent rows follow the Agents page's visibility. Run and session rows need Workflows and a platform.
+
+**Libraries.** Each library with its kind, state and file count, the sync line with Sync now, and a link to Settings, Libraries.
+
+**Model.** The chat's selected model, its provider and its health.
+
+**Connections.** The platform, attached MCP servers (from a new cached form of `GET /api/settings/mcp-servers?cached=1`, so polling contacts no server), and the clusters behind your libraries. The header counts what needs attention.
+
+**Layout and load**
+- The panel is 300 px. It starts closed below 1200 px wide, overlays the page below 1000 px, and is absent on phones.
+- On the chat and Workflows pages it gives way to the run and session side view, and the toggle brings it back.
+- It refreshes every 10 s only while open and the tab is visible, from routes the Studio answers from its own state. The platform session list is read once a minute.
+- No context meter: the chat package reports tokens per reply, not how full the conversation is.
+
+Tested: web tests for the toggle, each card's summary, visibility rules and opening a run; a server test for the cached route. Checked in a browser in light and dark, on the chat and Library pages, on UI 0.84.2.
+
 ## v1.139 (2026-10-20)
 
 ### Change log through v1.138 (#498)
