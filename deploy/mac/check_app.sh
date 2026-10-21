@@ -60,6 +60,19 @@ assert pem[0] == '-----BEGIN PUBLIC KEY-----' and pem[-1] == '-----END PUBLIC KE
 der = base64.b64decode(''.join(pem[1:-1]))
 assert len(der) == 44 and der[:12] == bytes.fromhex('302a300506032b6570032100')
 PY
+check "the app has its icon (an .icns with a 1024-pixel image)" python3 - "$C/Info.plist" <<'PY'
+import os, plistlib, struct, sys
+info = plistlib.load(open(sys.argv[1], 'rb'))
+path = os.path.join(os.path.dirname(sys.argv[1]), 'Resources', info['CFBundleIconFile'] + '.icns')
+data = open(path, 'rb').read()
+assert data[:4] == b'icns' and struct.unpack('>I', data[4:8])[0] == len(data)
+types, i = set(), 8
+while i < len(data):
+    t, n = data[i:i + 4], struct.unpack('>I', data[i + 4:i + 8])[0]
+    types.add(t)
+    i += n
+assert b'ic10' in types, types
+PY
 check "the model is the full file (over 10 MB)" test "$(( $(wc -c <"$R/models/minilm384.gguf") ))" -gt 10000000
 check "the document converter's macOS arm64 binary is there" \
   sh -c "find '$R/app/server/node_modules' -path '*downmark-darwin-arm64/bin/downmark' -type f | grep -q ."

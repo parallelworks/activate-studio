@@ -382,7 +382,9 @@ test('automatic install verifies first, then waits until the Studio has been idl
   const quiet = Date.now()
   busy = false
   assert.ok(await until(() => calls().includes(kickstart)), 'installed once idle')
-  assert.ok(Date.now() - quiet >= 400, 'after the idle period')
+  // Idle counts from the server's last poll that saw it busy, which can be
+  // up to one poll (25 ms) before quiet.
+  assert.ok(Date.now() - quiet >= 400 - 25, 'after the idle period')
   assert.equal(versionIn(APP), 'v1.140')
   assert.equal(versionIn(PREVIOUS), 'v1.139')
   assert.ok(!fs.existsSync(NEW))

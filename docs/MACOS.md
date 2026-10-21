@@ -115,7 +115,10 @@ the app, `activate-studio-macos-arm64.tar.gz` with its `.sha256`,
 `install.sh`, and on a Mac the disk image to `deploy/mac/out`. It checks
 the app with `deploy/mac/check_app.sh`, which on a Mac also runs it with
 `--run`. `install.sh` installs from a local archive too:
-`bash install.sh path/to/activate-studio-macos-arm64.tar.gz`.
+`bash install.sh path/to/activate-studio-macos-arm64.tar.gz`. The app's
+icon is `deploy/mac/AppIcon-1024.png`, drawn from `deploy/mac/AppIcon.svg`
+on Apple's icon grid; the disk image's volume shows it too. The web icons
+come from `web/icons/`.
 
 ## From a clone
 

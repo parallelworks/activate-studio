@@ -260,17 +260,29 @@ else
   echo "  browser window (the native one is compiled only on a Mac)"
 fi
 chmod 755 "$APP/Contents/MacOS/$APP_NAME" "$RES/launcher.sh" "$RES/studio-run.sh"
-# The 512-pixel web icon goes into an .icns as is (macOS reads PNG entries).
+# The app's icon, from the 1024-pixel image on Apple's icon grid
+# (AppIcon.svg is its source). On a Mac, every size the .icns holds is made
+# with sips and iconutil; elsewhere the one 1024-pixel PNG goes in as is,
+# which macOS scales (it reads PNG entries).
 ICON=
-if python3 - "$PROJECT_ROOT/web/public/icon-512.png" "$RES/AppIcon.icns" <<'PY'
+ICON_PNG="$HERE/AppIcon-1024.png"
+if command -v iconutil >/dev/null 2>&1 && command -v sips >/dev/null 2>&1; then
+  mkdir -p "$WORK/AppIcon.iconset"
+  for s in 16 32 128 256 512; do
+    sips -z "$s" "$s" "$ICON_PNG" --out "$WORK/AppIcon.iconset/icon_${s}x${s}.png" >/dev/null
+    sips -z "$((s * 2))" "$((s * 2))" "$ICON_PNG" --out "$WORK/AppIcon.iconset/icon_${s}x${s}@2x.png" >/dev/null
+  done
+  iconutil -c icns "$WORK/AppIcon.iconset" -o "$RES/AppIcon.icns" && ICON=AppIcon
+elif python3 - "$ICON_PNG" "$RES/AppIcon.icns" <<'PY'
 import struct, sys
 png = open(sys.argv[1], 'rb').read()
-if png[:8] != b'\x89PNG\r\n\x1a\n' or struct.unpack('>II', png[16:24]) != (512, 512):
+if png[:8] != b'\x89PNG\r\n\x1a\n' or struct.unpack('>II', png[16:24]) != (1024, 1024):
     sys.exit(1)
-entry = b'ic09' + struct.pack('>I', 8 + len(png)) + png
+entry = b'ic10' + struct.pack('>I', 8 + len(png)) + png
 open(sys.argv[2], 'wb').write(b'icns' + struct.pack('>I', 8 + len(entry)) + entry)
 PY
-then ICON=AppIcon; else echo "  no 512-pixel PNG icon; the app uses the generic icon"; fi
+then ICON=AppIcon; fi
+[ -n "$ICON" ] || echo "  no app icon could be made; the app uses the generic icon"
 
 NEEDS="$(python3 "$HERE/macho_check.py" --print-minos "$RES/node/bin/node" "$RES"/python/bin/python3.* \
   "$RES"/python/lib/*.dylib "$RES"/python/lib/python3.*/lib-dynload/*.so "$G"/bin/* "$G"/lib/*.dylib)"
