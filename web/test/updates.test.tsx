@@ -131,9 +131,10 @@ describe('the Updates section', () => {
   it('waits on a restart it finds under way, and says so when the new version does not come back in time', async () => {
     stubServer(server({ updates: status({ state: 'restarting' }) }))
     const reload = vi.fn()
-    render(<UpdatesSection pollMs={5} giveUpMs={40} reload={reload} />)
+    // Long enough that a slow runner still sees the wait before it gives up.
+    render(<UpdatesSection pollMs={5} giveUpMs={500} reload={reload} />)
     expect(await screen.findByText('Restarting…')).toBeInTheDocument()
-    expect(await screen.findByText('Version v1.141 did not start within three minutes')).toBeInTheDocument()
+    expect(await screen.findByText('Version v1.141 did not start within three minutes', {}, { timeout: 3000 })).toBeInTheDocument()
     expect(reload).not.toHaveBeenCalled()
   })
 
