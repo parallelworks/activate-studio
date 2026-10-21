@@ -118,6 +118,16 @@ export async function remoteStatus(): Promise<{ name: string; url: string; tools
   return servers.map((s, i) => ({ name: s.name, url: s.url, tools: all[i].tools.length, error: all[i].error }))
 }
 
+/** Connection state as last seen, without contacting any server, for the
+ *  status panel's polling. checkedAt is null for a server not contacted
+ *  since the start or the last settings change. */
+export function cachedRemoteStatus(): { name: string; url: string; tools: number; error: string | null; checkedAt: string | null }[] {
+  return remoteServers().map(s => {
+    const hit = cache.get(s.name)
+    return { name: s.name, url: s.url, tools: hit?.tools.length ?? 0, error: hit?.error ?? null, checkedAt: hit ? new Date(hit.at).toISOString() : null }
+  })
+}
+
 export function isRemoteTool(name: string): boolean {
   const i = name.indexOf(SEP)
   return i > 0 && remoteServers().some(s => s.name === name.slice(0, i))
