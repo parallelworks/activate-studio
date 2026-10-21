@@ -57,6 +57,10 @@ Do not include hostnames, account codes, or names of the systems or organization
 
 `docs/HELP.md` is the user guide: the app's Help page shows it, and the assistant reads it to answer questions about the Studio. A change people will see updates it in the same pull request, and the README too when the change alters what the Studio offers. Keep the guide short and task-first: what a part of the app is for and the few things people do there, in plain words. Details go in `docs/REFERENCE.md` or the topic documents under `docs/`, which the assistant also reads. Name settings exactly as the Settings page labels them. A new document under `docs/` goes in the README's documentation table and in the `STUDIO_DOCS` list in `server/src/chat/tools.ts`, so the assistant can read it.
 
+## Keeping up with the UI package
+
+The Studio's interface is built from `@parallelworks/ui` (the [foundation](https://github.com/parallelworks/foundation) repository), which releases often. A daily workflow, `foundation-watch`, keeps one issue labeled `foundation-update` open while the lockfile is behind npm, with the changelog in between; it closes the issue once the Studio catches up. To take a release: bump with pnpm from the root, run `UPDATE_THEME_DEFAULTS=1 npx vitest run test/themeDefaults.test.ts` in `web` if the theme test fails, check every view in light and dark against the previous release, and adopt what the changelog adds that the Studio builds itself.
+
 ## Releases
 
 Every version is a tag, and every tag is a GitHub Release whose notes are the descriptions of the pull requests it contains. `CHANGELOG.md` is the same record for every version at once. Both come from one script:

@@ -100,6 +100,7 @@ The address bar follows what you are looking at, so back and forward work and a 
 - The navigation groups its pages under **Knowledge** and **Run**; click a group's name to fold it away, and {appName} remembers.
 - **Install app**, in the navigation, installs {appName} as a desktop app in its own window. If a classification banner is shown, the chevron in Chrome's title bar moves the banner into the title bar. The loading screen draws the banner as it was last shown, so the title bar has no gap while the app starts.
 - The bottom of the navigation shows who you are signed in as, whether the models are reachable, and the state of the index; click any of them for details.
+- The **status panel** at the right shows what is running (agent tasks, standing agents, workflow runs, open sessions), your libraries and the last index sync, the model in use, and connections that need attention. The panel button at the top right of each page opens and closes it, and {appName} remembers. Click a card's header for its detail; click a run or session to open it beside the chat or on the Workflows page. While a run or session is open beside the chat, the panel steps aside. Phones do not show it.
 
 ## Setup and the sidebar
 

@@ -2,6 +2,96 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.140 (2026-10-20)
+
+### Change log through v1.139 (#500)
+
+Regenerated with `node scripts/release-notes.mjs --changelog` after the v1.139 release.
+
+### Status panel: activity, libraries, model and connections at a glance (#501)
+
+A collapsible panel on the right of the Studio shows what is going on without leaving the page. It is toggled from the top right of each page; while it is open, the toggle sits in the panel's own bar. Each card has a one-line summary on its header row and opens for detail. Open and closed states are remembered, and a card with nothing to show is left out.
+
+**Activity**
+- Agent tasks that are running or waiting on you, and standing agents. A task opens on the Agents page, a standing agent on the Fleet page (new `#view=agents:fleet`).
+- Your workflow runs, running ones first. A run opens in the side view.
+- Open sessions, the first six, then a link to the rest.
+- Agent rows follow the Agents page's visibility. Run and session rows need Workflows and a platform.
+
+**Libraries.** Each library with its kind, state and file count, the sync line with Sync now, and a link to Settings, Libraries.
+
+**Model.** The chat's selected model, its provider and its health.
+
+**Connections.** The platform, attached MCP servers (from a new cached form of `GET /api/settings/mcp-servers?cached=1`, so polling contacts no server), and the clusters behind your libraries. The header counts what needs attention.
+
+**Layout and load**
+- The panel is 300 px. It starts closed below 1200 px wide, overlays the page below 1000 px, and is absent on phones.
+- On the chat and Workflows pages it gives way to the run and session side view, and the toggle brings it back.
+- It refreshes every 10 s only while open and the tab is visible, from routes the Studio answers from its own state. The platform session list is read once a minute.
+- No context meter: the chat package reports tokens per reply, not how full the conversation is.
+
+Tested: web tests for the toggle, each card's summary, visibility rules and opening a run; a server test for the cached route. Checked in a browser in light and dark, on the chat and Library pages, on UI 0.84.2.
+
+## v1.139 (2026-10-20)
+
+### Change log through v1.138 (#498)
+
+Regenerated with `node scripts/release-notes.mjs --changelog` after the v1.138 release.
+
+### Scrubber: the end of a thread is its last message (#499)
+
+The scrubber's current tick was the last message whose top had reached the top of the thread. The final few messages are shorter than the window and never get there. So at the very end of a 40-message thread the highlight sat on tick 35, and a click on ticks 36 to 40 changed nothing visible, since the thread could not scroll further.
+
+Now:
+- at the end, the last message is current;
+- a click on one of the final ticks keeps that tick current until the thread is scrolled away from the end.
+
+The rule is a small pure function with unit tests. It was also checked in a browser on a 40-message thread:
+- opened at the end: 40 of 40 current (was 35);
+- clicked 38 at the end: 38;
+- scrolled up 1500 px: the highlight follows;
+- back at the end: 40;
+- tick 1 still goes to the top.
+
+## v1.138 (2026-10-20)
+
+### Change log through v1.137 (#492)
+
+Regenerated with `node scripts/release-notes.mjs --changelog` after the v1.137 release.
+
+### Remove a stray Python wheel committed with the UI 0.65 update (#493)
+
+A 9.5 MB zizmor wheel, downloaded while auditing a workflow, was committed at the repository root with #485. Nothing uses it. This removes it and ignores `*.whl`.
+
+### A daily watch on the @parallelworks packages (#495)
+
+The UI package releases several times a day. Dependabot proposes npm updates weekly with a seven-day cooldown, so it would always trail it, and it has not opened an npm pull request in this repository. Its settings are unchanged here.
+
+`foundation-watch` runs once a day and on demand. It reads the `@parallelworks` versions the lockfile resolves and compares them with npm. While the Studio is behind, it keeps one issue labeled `foundation-update` open:
+- The issue gives a table of the packages behind, and each package's changelog between the two versions, from the repository its npm metadata names. Breaking changes are called out.
+- A newer release updates the issue and adds a comment, so watchers are notified.
+- When the lockfile catches up, the issue closes.
+
+The job has `contents: read` and `issues: write` only. It runs behind the same egress allowlist as CI plus raw.githubusercontent.com for the changelogs, and passes nothing from the event into a shell. zizmor reports no findings. CONTRIBUTING describes how to take a release.
+
+Tested with `DRY_RUN=1` against an older lockfile (ui 0.59.0 behind 0.65.0, with the changelog for each release) and against a current one.
+
+### UI package 0.84.2 (#497)
+
+Moves `@parallelworks/ui` from 0.65 to 0.84.2, the release the foundation watch reported in #496. No release in between is marked breaking, and the typecheck needed no changes.
+
+The theme adds a backdrop token, so the shipped theme defaults are regenerated (`UPDATE_THEME_DEFAULTS=1`).
+
+Every view was compared against main on the same data, in light and dark mode, including an open conversation, the library's context menu and the footer's build panel. The only visible difference is relative times: "last week" for "7 days ago", and dates such as "Oct 13" in the conversation list. There were no console errors.
+
+Adopting what the new releases add follows in separate changes:
+- chat holding a changing tool call until the reader allows it, for the platform tools;
+- tool calls named in words;
+- the danger-outline and file-picker buttons;
+- toned cards, and the shared context menu.
+
+Closes #496.
+
 ## v1.137 (2026-10-19)
 
 ### Change log through v1.136 (#490)

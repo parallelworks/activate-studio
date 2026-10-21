@@ -55,6 +55,7 @@
   --theme-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.07), 0 2px 4px -2px rgba(0, 0, 0, 0.07);
   --theme-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.07), 0 4px 6px -4px rgba(0, 0, 0, 0.07);
   --theme-shadow-xl: 0 25px 80px -20px rgba(0, 0, 0, 0.2), 0 10px 30px -10px rgba(0, 0, 0, 0.1);
+  --theme-backdrop: rgba(0, 0, 0, 0.4);
   --theme-sidebar-bg: #e6e9ec;
   --theme-sidebar-text: #000000;
   --theme-sidebar-hover: #d5d8dc;
@@ -140,6 +141,7 @@
   --theme-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.35), 0 2px 4px -2px rgba(0, 0, 0, 0.35);
   --theme-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.35), 0 4px 6px -4px rgba(0, 0, 0, 0.35);
   --theme-shadow-xl: 0 25px 80px -20px rgba(0, 0, 0, 0.6), 0 10px 30px -10px rgba(0, 0, 0, 0.4);
+  --theme-backdrop: rgba(0, 0, 0, 0.65);
   --theme-sidebar-bg: #040a11;
   --theme-sidebar-text: #dde7f3;
   --theme-sidebar-hover: #141c24;
@@ -2051,3 +2053,59 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .full-view-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
 .full-view-actions { margin-left: auto; display: flex; gap: 6px; flex-shrink: 0; }
 .full-view-frame { flex: 1; width: 100%; min-height: 0; border: 0; display: block; background: #fff; }
+
+/* The status panel at the right of every page: stacked cards on the
+   navigation's ground, each a header line that opens to its detail.
+   Narrower than 1000px it lies over the page instead of narrowing it, and
+   a phone is not offered it. */
+.status-panel {
+  flex: 0 0 300px; width: 300px; min-height: 0; display: flex; flex-direction: column;
+  background: var(--pw-bg); border-left: 1px solid var(--pw-border);
+}
+.status-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 48px; padding: 0 12px 0 18px; flex-shrink: 0; }
+.status-panel-title { font-size: 13px; font-weight: 600; color: var(--pw-text); }
+.status-panel-cards { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding: 2px 12px 16px; }
+.status-card { flex-shrink: 0; background: var(--pw-panel); border: 1px solid var(--pw-border); border-radius: 12px; }
+.status-card-head {
+  display: flex; align-items: center; gap: 6px; width: 100%; min-width: 0; padding: 12px 14px;
+  border: 0; border-radius: 12px; background: none; color: var(--pw-text); font: inherit; text-align: left; cursor: pointer;
+}
+.status-card-title { flex-shrink: 0; font-size: 14px; font-weight: 500; }
+.status-card-chev { flex-shrink: 0; color: var(--pw-muted); transition: transform 0.2s ease; }
+.status-card-chev.open { transform: rotate(90deg); }
+.status-card-head:hover .status-card-chev { color: var(--pw-text); }
+.status-card-summary { margin-left: auto; min-width: 0; display: flex; align-items: center; gap: 6px; padding-left: 8px; font-size: 13px; color: var(--pw-muted); }
+.status-card-summary > :first-child { flex-shrink: 0; }
+.status-card-summary-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.status-card-inner { padding: 0 8px 10px; }
+.status-group + .status-group { margin-top: 6px; }
+.status-group-label { padding: 2px 6px; font-size: 11px; font-weight: 500; color: var(--pw-muted); }
+.status-row {
+  display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; padding: 5px 6px;
+  border: 0; border-radius: 6px; background: none; color: var(--pw-text); font: inherit; font-size: 13px; line-height: 18px; text-align: left;
+}
+button.status-row { cursor: pointer; }
+button.status-row:hover { background: var(--pw-hover-row); }
+.status-row-dot { flex-shrink: 0; }
+.status-row-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.status-row-meta { flex: 0 0 auto; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--pw-muted); }
+.status-row-text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+.status-row-sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; line-height: 16px; color: var(--pw-muted); }
+.status-row:has(.status-row-sub) .status-row-dot { align-self: flex-start; margin-top: 6px; }
+.status-sync { display: flex; align-items: center; gap: 8px; margin-top: 4px; padding: 6px 6px 2px; border-top: 1px solid color-mix(in srgb, var(--pw-border) 70%, transparent); font-size: 12px; color: var(--pw-muted); }
+.status-link, .status-more {
+  display: block; margin-top: 2px; padding: 4px 6px; border: 0; background: none;
+  font: inherit; font-size: 12px; color: var(--pw-link); text-align: left; cursor: pointer;
+}
+.status-link:hover, .status-more:hover { text-decoration: underline; }
+/* Its toggle: at the end of a page header, beside the chat's own controls,
+   and over the top right of the pages that draw their own tops. */
+.page-head-toggle { margin-left: auto; }
+.view.with-toggle { position: relative; }
+.panel-toggle-float { position: absolute; top: 10px; right: 14px; z-index: 6; }
+.view:has(> .panel-toggle-float) .library-main .viewer-head { padding-right: 58px; }
+.chat-canvas:has(.chats-manager) .chats-manager-head { padding-right: 40px; }
+@media (max-width: 1000px) {
+  .status-panel { position: absolute; top: 0; right: 0; bottom: 0; z-index: 20; box-shadow: -8px 0 24px rgba(16, 24, 40, 0.12); }
+}
+@media (max-width: 760px) { .status-panel, .panel-toggle { display: none; } }

@@ -23,6 +23,8 @@ import { ClassificationBanner, bannerInk, bannerShownColor } from './components/
 import { sectionAllowed, shownView, useAppConfig } from './config'
 import { applyAccent, applySurface } from './accents'
 import { FullViewHost, RunPane } from './components/RunPane'
+import { PanelToggle, StatusPanel } from './components/StatusPanel'
+import { setPanelView } from './panelState'
 
 type ViewId = 'chat' | 'library' | 'search' | 'query' | 'overview' | 'history' | 'agents' | 'workflows' | 'settings' | 'help'
 export type Display = { kind: 'file'; target: string; q?: string; lib?: string } | { kind: 'workflow_dag'; target: string }
@@ -212,6 +214,8 @@ export default function App() {
   }, [view])
 
   useEffect(() => { localStorage.setItem('ade-nav-collapsed', navCollapsed ? '1' : '0') }, [navCollapsed])
+  // The status panel steps aside for the side view of the page on screen.
+  useEffect(() => { setPanelView(view) }, [view])
   useEffect(() => { if (cfg.loaded) document.title = cfg.appName }, [cfg])
   // The tab's library: its own choice, else All libraries where there are
   // several, once the configuration says which exist.
@@ -569,11 +573,16 @@ export default function App() {
           <header className="page-head">
             <h1>{NAV.find(n => n.id === view)?.label}</h1>
             {PAGE_NOTES[view] && <span className="page-note" title={PAGE_NOTES[view]}>{PAGE_NOTES[view]}</span>}
+            <PanelToggle className="page-head-toggle" />
           </header>
         )}
+        {/* Chat puts the status panel's toggle beside its own controls; the
+            library, settings, and help have no header, so it floats at
+            their top right. */}
         <div className={`view view-chat${view === 'chat' ? '' : ' hidden'}`}><ChatView /></div>
-        <div className={view === 'library' ? 'view' : 'view hidden'}>
+        <div className={view === 'library' ? 'view with-toggle' : 'view hidden'}>
           <LibraryView display={display} onDisplay={setDisplay} />
+          {view === 'library' && <PanelToggle className="panel-toggle-float" />}
         </div>
         <div className={view === 'search' ? 'view' : 'view hidden'}><SearchView onOpen={openFile} /></div>
         <div className={view === 'query' ? 'view' : 'view hidden'}><QueryView onOpen={openFile} /></div>
@@ -581,9 +590,16 @@ export default function App() {
         <div className={view === 'history' ? 'view' : 'view hidden'}><HistoryView onOpen={openFile} /></div>
         <div className={view === 'agents' ? 'view' : 'view hidden'}><AgentsView onOpen={openFile} /></div>
         {cfg.platform && view === 'workflows' && <div className="view"><WorkflowsView /></div>}
-        <div className={view === 'settings' ? 'view' : 'view hidden'}><SettingsView /></div>
-        <div className={view === 'help' ? 'view' : 'view hidden'}><HelpView /></div>
+        <div className={view === 'settings' ? 'view with-toggle' : 'view hidden'}>
+          <SettingsView />
+          {view === 'settings' && <PanelToggle className="panel-toggle-float" />}
+        </div>
+        <div className={view === 'help' ? 'view with-toggle' : 'view hidden'}>
+          <HelpView />
+          {view === 'help' && <PanelToggle className="panel-toggle-float" />}
+        </div>
       </main>
+      <StatusPanel view={view} cfg={cfg} />
       <FullViewHost />
       </div>
       {setupOpen && <SetupWizard onClose={changed => { setSetupOpen(false); if (changed) location.reload() }} />}

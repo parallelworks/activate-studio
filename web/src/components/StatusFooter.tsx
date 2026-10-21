@@ -6,6 +6,7 @@ import { api, IndexStatus } from '../api'
 import { onLibraryChange } from '../api'
 import type { LibraryStats } from '../api'
 import { UPDATES_CHANGED, openUpdates, updatesApi, type UpdatesStatus } from '../api'
+import { share, syncIndex, type AiHealth } from '../statusShare'
 
 function ago(iso: string | null): string {
   // Null just means no sweep has completed since the server started.
@@ -86,18 +87,7 @@ function DetailRows({ rows }: { rows: [string, string][] }) {
   )
 }
 
-interface AiHealth {
-  ok: boolean
-  status: 'ok' | 'auth' | 'unreachable' | 'unconfigured' | 'key-required'
-  models: number
-  gatewayHost: string
-  message: string | null
-  lastCallFailure: { at: string; message: string; auth: boolean } | null
-  checkedAt: string
-  unlockUrl?: string | null
-}
-
-const AI_LABEL: Record<AiHealth['status'], string> = {
+export const AI_LABEL: Record<AiHealth['status'], string> = {
   ok: 'models ready',
   auth: 'model key rejected',
   unreachable: 'models unreachable',
@@ -234,12 +224,14 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
   // whole and the footer appears once, complete; later refreshes update in
   // place, where a line changing is meaningful rather than noise.
   const [ready, setReady] = useState(false)
+  // What it reads is shared with the status panel, which shows the same
+  // health and counts without asking the server again.
   const refresh = () => Promise.allSettled([
-    api.stats().then(s => setStats(s as typeof stats)),
+    api.stats().then(s => { setStats(s as typeof stats); share({ stats: s }) }),
     api.indexStatus().then(setIdx),
-    fetch('/api/whoami').then(r => r.json()).then(setWho),
+    fetch('/api/whoami').then(r => r.json()).then((w: WhoAmI) => { setWho(w); share({ authEnabled: !!w.authEnabled }) }),
     api.health().then(h => setGufi(h.gufi)).catch(() => setGufi(null)),
-    fetch('/api/ai/health').then(r => r.json()).then(setAi).catch(() => setAi(null)),
+    fetch('/api/ai/health').then(r => r.json()).then((h: AiHealth) => { setAi(h); share({ ai: h }) }).catch(() => { setAi(null); share({ ai: null }) }),
   ])
   useEffect(() => {
     void refresh().then(() => setReady(true))
@@ -290,11 +282,7 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
 
   const sync = async () => {
     setSyncing(true)
-    try {
-      await api.sweepNow()
-      // Tell the library to drop its cached tree state.
-      window.dispatchEvent(new Event('ade-kb-changed'))
-    } catch { /* surfaced via status */ }
+    await syncIndex()
     refresh()
     setSyncing(false)
   }
@@ -330,7 +318,7 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
         <div className="status-line" title="Click for model availability details">
           <AiPanel
             ai={ai}
-            onRecheck={() => { fetch('/api/ai/health?fresh=1').then(r => r.json()).then(setAi).catch(() => {}) }}
+            onRecheck={() => { fetch('/api/ai/health?fresh=1').then(r => r.json()).then((h: AiHealth) => { setAi(h); share({ ai: h }) }).catch(() => {}) }}
             trigger={
               <button className="identity-btn">
                 <StatusDot variant={ai.status === 'ok' ? 'success' : ai.status === 'unconfigured' ? 'muted' : 'warning'} size={7} />

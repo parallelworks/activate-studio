@@ -75,13 +75,19 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
     (localStorage.getItem('ade-agents-page') as 'fleet' | 'tasks' | 'library') || 'fleet')
   const setPage = (v: 'fleet' | 'tasks' | 'library') => { setPageState(v); localStorage.setItem('ade-agents-page', v) }
   useEffect(() => {
+    // #view=agents:fleet opens the standing agents; any other section is a
+    // task id (they start with a date, so none is "fleet").
+    const openSection = (section: string) => {
+      if (section === 'fleet') setPageState('fleet')
+      else { setOpenTask(section); setPageState('tasks') }
+    }
     const on = (e: Event) => {
       const d = (e as CustomEvent).detail as { view?: string; section?: string }
-      if (d?.view === 'agents' && d.section) { setOpenTask(d.section); setPageState('tasks') }
+      if (d?.view === 'agents' && d.section) openSection(d.section)
     }
     window.addEventListener('ade-view-section', on)
     const m = location.hash.match(/^#view=agents:([a-z0-9-]+)$/)
-    if (m) { setOpenTask(m[1]); setPageState('tasks') }
+    if (m) openSection(m[1])
     return () => window.removeEventListener('ade-view-section', on)
   }, [])
   // The drill-down behind one agent's row: its live output, polled while

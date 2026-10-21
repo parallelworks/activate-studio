@@ -6,7 +6,7 @@ import type { FastifyInstance } from 'fastify'
 import { INDEX_BASE, KB_ROOT } from './config.js'
 import { KbError } from './kb.js'
 import { gatewayConfigured } from './chat/gateway.js'
-import { invalidateRemote, remoteStatus } from './mcpClient.js'
+import { cachedRemoteStatus, invalidateRemote, remoteStatus } from './mcpClient.js'
 
 /**
  * Runtime-editable settings, stored beside the index. Environment variables
@@ -223,8 +223,11 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
   }))
 
   // Connection state for each attached MCP server, so the page can show
-  // whether it answered and how many tools it offered.
-  app.get('/api/settings/mcp-servers', async () => ({ servers: await remoteStatus() }))
+  // whether it answered and how many tools it offered. ?cached=1 reports
+  // the last state seen and contacts no server, which is what a poll wants.
+  app.get('/api/settings/mcp-servers', async req => ({
+    servers: (req.query as { cached?: string }).cached === '1' ? cachedRemoteStatus() : await remoteStatus(),
+  }))
 
   app.put('/api/settings', async req => {
     const body = req.body as StudioSettings

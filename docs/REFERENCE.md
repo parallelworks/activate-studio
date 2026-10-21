@@ -50,6 +50,10 @@ The full description, including where tiles come from, approvals for GitHub work
 
 Fleet agents each have a goal, a persona, a budget, and triggers: a schedule, a workflow run ending, or files changing under a folder. An agent wakes, does one bounded round of work with the assistant's tools, writes the outcome to its journal, and waits under **Needs you** when it needs a person; a message in its box is answered on its next round. Delegated tasks, the ways agents run, approvals, and steering are in [`AGENTS.md`](AGENTS.md).
 
+## Status panel
+
+While open and the tab is visible, the panel reads `GET /api/tasks`, `/api/fleet`, `/api/runs`, `/api/index/status`, and `/api/settings/mcp-servers?cached=1` every 10 seconds, all answered from the Studio's own state, and `GET /api/sessions` and `/api/user-libraries`, which can reach the platform, once a minute. Model health and index counts come from the navigation footer's own reads. Closed, it reads nothing. `?cached=1` returns each attached MCP server's last known state without contacting it, with `checkedAt` null for a server not contacted since the server started or the settings changed; without the flag the route checks each server, at most once a minute, as Settings does. Agent rows follow the Agents section, and run and session rows need Workflows and a platform credential.
+
 ## Query
 
 - **Canned** queries: largest, newest, oldest, recently changed, totals by extension, and biggest folders.
