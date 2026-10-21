@@ -2,6 +2,28 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.148 (2026-10-21)
+
+### Mac app: signed with the Developer ID certificate, notarized and stapled for releases (#516)
+
+The macOS app was signed ad hoc, so a copy downloaded with a browser, or dragged from the disk image, was blocked until the user found Open Anyway in System Settings. A release build now signs the app with the Developer ID certificate, under the hardened runtime, notarizes the disk image, and staples the ticket to the image and the app, when the repository has the signing secrets; macOS then opens it with only its usual question about an app from the internet. Without the secrets, the release carries the ad hoc app as before.
+
+**Scripts.** `deploy/mac/sign_app.sh` signs every Mach-O file in the bundle (42: Node, Python and its libraries, GUFI, the document converter), then the bundle, with `--options runtime --timestamp` and the entitlements in `deploy/mac/entitlements`, and checks every signature. `deploy/mac/make_dmg.sh` is the disk image code moved out of `build_app.sh`, which calls it and keeps its ad hoc seal. `deploy/mac/notarize.sh` signs the image, submits it with `notarytool --wait`, prints the notary log on rejection, staples the image and the app, and checks them with `stapler validate` and `spctl`. `deploy/mac/keychain.sh` holds the certificate in a temporary keychain.
+
+**Entitlements.** Node: `allow-jit` and `allow-unsigned-executable-memory`. The window: `device.audio-input`, for the chat's voice input. Python, GUFI and the converter: none. Nothing has `disable-library-validation`, since every library the bundled programs load is in the bundle and signed by the same team.
+
+**Workflow.** A `sign` job runs after `build` for a release dispatch when `vars.APPLE_TEAM_ID` is set. It checks out only those scripts and the entitlements at the release's tag, signs and notarizes the build's app, packs the archive from the stapled app, runs `check_app.sh --run --launch` on it, and uploads the signed files; `release` attaches them. It is the only job that sees the signing secrets. When a secret is missing, or the tag predates these scripts, it signs nothing and `release` attaches the ad hoc app.
+
+**Pull requests.** A `hardened` job signs a copy of the app the same way with a throwaway self-signed identity and runs it. That catches a file left unsigned, wrong entitlements, or a signed app that fails to run or that running changes. It cannot catch a missing entitlement: on the macos-15 runner, macOS treats a signature without Apple's certificate chain as ad hoc and enforces neither the hardened runtime nor library validation for it (Node signed without `allow-jit` still compiled code, and `DYLD_INSERT_LIBRARIES` was honored). Only the `sign` job's run with the certificate shows that.
+
+**Bytecode caches.** Python wrote about 70 `.pyc` files into the app on first use, which breaks the signature's seal. The run loop now sets `PYTHONDONTWRITEBYTECODE`, and `check_app.sh --run` ends by checking that the app still verifies.
+
+**Docs.** `docs/MACOS.md` describes the signed and notarized app, keeps the Open Anyway steps for ad hoc builds, and lists the scripts. `CONTRIBUTING.md` lists the five secrets and the variable, how to create each, and the `gh` commands to set them.
+
+Verified: with the real certificate and API key, the `sign` job (run from this branch through a temporary commit that let it run without a release, since dropped; no release was touched) signed the app, had the disk image notarized (Accepted, about 30 minutes for the team's first submission), stapled both, and `spctl` accepted the app and the image as `source=Notarized Developer ID`; `check_app.sh --run --launch` passed every check on the signed app ([run](https://github.com/parallelworks/activate-studio/actions/runs/39618053188)). This pull request's build and `hardened` jobs pass ([run](https://github.com/parallelworks/activate-studio/actions/runs/39623868324)); the runner probes are [here](https://github.com/parallelworks/activate-studio/actions/runs/39614182064) and [here](https://github.com/parallelworks/activate-studio/actions/runs/39616562185). 420 server and 150 web tests pass.
+
+Not covered: the app inside the disk image carries no ticket of its own, so a copy dragged out of the image is checked with Apple's servers on first open. The archive the installer and updates use has the stapled app.
+
 ## v1.147 (2026-10-21)
 
 ### Mac app: built for the releases it is asked for, with the newest at a fixed macos release (#515)
@@ -17,6 +39,10 @@ Releases go out several times a day, and building, signing and attaching the mac
 **Docs.** CONTRIBUTING.md says how to build the app for a release; `docs/MACOS.md` says not every release carries the app.
 
 Verified: 419 server and 150 web tests, including a test that an older release without the app does not bring the next check forward.
+
+### Change log through v1.147 (#517)
+
+Regenerated with `node scripts/release-notes.mjs --changelog --next v1.147` before tagging v1.147.
 
 ## v1.146 (2026-10-21)
 
