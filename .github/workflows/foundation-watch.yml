@@ -1,0 +1,46 @@
+# Once a day, compare the @parallelworks packages in the lockfile with npm
+# and keep one issue open, labeled foundation-update, listing the releases
+# the Studio has not taken yet and their changelogs. The UI package moves
+# several times a day, and Dependabot's weekly, cooled-down npm updates
+# would always trail it. The script only reads the repository and writes
+# that issue.
+name: foundation-watch
+
+on:
+  schedule:
+    - cron: '23 13 * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: foundation-watch
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: step-security/harden-runner@351661ca32ac09a36dc5ee2d536e3128f2a3c8ed # v2.22.0
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            github.com:443
+            registry.npmjs.org:443
+            raw.githubusercontent.com:443
+            nodejs.org:443
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 26
+      - name: Compare with npm and keep the issue current
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: node .github/scripts/foundation-watch.mjs
