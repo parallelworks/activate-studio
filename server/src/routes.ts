@@ -6,7 +6,7 @@ import { execFile } from 'node:child_process'
 import path from 'node:path'
 import fs, { createReadStream } from 'node:fs'
 import fsp from 'node:fs/promises'
-import { EXCLUDE_DIRS, GATEWAY_BASE, GUFI_INDEX, INDEX_BASE, KB_ROOT, PROJECT_ROOT, PW_CLI, gufiAvailable } from './config.js'
+import { EXCLUDE_DIRS, GATEWAY_BASE, GUFI_INDEX, INDEX_BASE, KB_ROOT, PROJECT_ROOT, PW_CLI, gufiAvailable, indexerEnv } from './config.js'
 import { KbError, extractPath, listDir, moveCacheEntry, readFileContent, resolveKb } from './kb.js'
 import { CONVERTIBLE, mimeFor, officeToPdf, OfficePreviewUnavailable, pdfPageCount, pdfPagePng, pdfPreviewPaths, previewPdfFor, removePdfPreview } from './preview.js'
 import { blendHits, corpusStats, searchFts, searchNames, searchVector, wantsSemantic } from './gufi.js'
@@ -88,7 +88,7 @@ function configuredIcon(dark: boolean): string | undefined {
   return s.iconUrl || process.env.APP_ICON
 }
 
-function brandUrl(kind: 'icon' | 'favicon', dark = false): string | null {
+export function brandUrl(kind: 'icon' | 'favicon', dark = false): string | null {
   const configured = kind === 'favicon' && process.env.APP_FAVICON && !dark
     ? process.env.APP_FAVICON
     : configuredIcon(dark)
@@ -100,6 +100,13 @@ function brandUrl(kind: 'icon' | 'favicon', dark = false): string | null {
   if (!isUrl(configured)) { try { stamp += `:${fs.statSync(configured).mtimeMs}` } catch { /* existence checked above */ } }
   const v = crypto.createHash('sha1').update(stamp).digest('hex').slice(0, 10)
   return `${kind === 'icon' ? '/api/brand-icon' : '/api/favicon'}?${dark ? 'variant=dark&' : ''}v=${v}`
+}
+
+/** A brand image is an image and nothing else: an SVG opened on its own
+ *  runs no script and loads nothing. */
+function imageOnly(reply: { header: (k: string, v: string) => unknown }): void {
+  reply.header('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox")
+  reply.header('X-Content-Type-Options', 'nosniff')
 }
 
 export interface WebManifestIcon { src: string; type: string; sizes: string; purpose?: string }
@@ -241,6 +248,8 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
       features: { voice: { enabled: !!eff.voiceEnabled && !!eff.voiceUrl, url: eff.voiceUrl || '' } },
       libraries: listLibraries(eff.kbLabel, req.user?.id ?? null).map(publicLibrary),
       sections: eff.sections.length ? eff.sections : undefined,
+      // Off hides Chat, Agents and the footer's model line.
+      aiEnabled: eff.aiEnabled,
       // A platform credential is what the Workflows tab needs; without one
       // (a Studio off ACTIVATE) the tab is not offered.
       platform: platformAvailable(req.user?.id),
@@ -273,11 +282,13 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
     if (isUrl(icon)) {
       const got = await fetchRemoteIcon(icon)
       if (!got) throw new KbError(502, 'could not load the configured brand image')
+      imageOnly(reply)
       reply.header('Content-Type', got.type)
       reply.header('Cache-Control', 'public, max-age=600')
       return reply.send(got.body)
     }
     if (!icon || !fs.existsSync(icon)) throw new KbError(404, 'no brand icon configured')
+    imageOnly(reply)
     reply.header('Content-Type', mimeFor(icon))
     reply.header('Cache-Control', 'public, max-age=3600')
     return reply.send(createReadStream(icon))
@@ -290,12 +301,14 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
     if (isUrl(configured)) {
       const got = await fetchRemoteIcon(configured)
       if (!got) throw new KbError(502, 'could not load the configured favicon')
+      imageOnly(reply)
       reply.header('Content-Type', got.type)
       reply.header('Cache-Control', 'public, max-age=600')
       return reply.send(got.body)
     }
     const icon = configured && fs.existsSync(configured) ? configured : faviconFile()
     if (!icon) throw new KbError(404, 'no favicon configured')
+    imageOnly(reply)
     reply.header('Content-Type', mimeFor(icon))
     reply.header('Cache-Control', 'public, max-age=3600')
     return reply.send(createReadStream(icon))
@@ -477,6 +490,7 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
   app.post('/api/kb/label-suggestions', async req => {
     const body = req.body as { dir?: string; limit?: number; includeLabelled?: boolean; model?: string }
     const eff = effectiveSettings()
+    if (!eff.aiEnabled) throw new KbError(409, 'AI features are off in this Studio, so labels are not suggested.')
     const cred = resolveUserCred(req.user?.id)
     let model = String(body.model ?? '') || eff.ragDefaultModel
     if (!model) {
@@ -702,7 +716,8 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
   app.post('/api/reindex', async (req, reply) => {
     requireWritable(libOf(req))
     const script = path.join(PROJECT_ROOT, 'indexer', 'reindex.sh')
-    execFile('bash', [script], { timeout: 15 * 60_000 }, err => {
+    // The script reads GUFI_BIN, which names the GUFI this server found.
+    execFile('bash', [script], { timeout: 15 * 60_000, env: indexerEnv() }, err => {
       if (err) app.log.error({ err }, 'reindex failed')
       else invalidateContext()
     })

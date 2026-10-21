@@ -2,7 +2,7 @@ import path from 'node:path'
 import fs from 'node:fs'
 import { execFile } from 'node:child_process'
 import type { FastifyInstance } from 'fastify'
-import { GUFI_BIN, GUFI_INDEX, INDEX_BASE, KB_ROOT } from './config.js'
+import { GUFI_BIN, GUFI_INDEX, INDEX_BASE, KB_ROOT, gufiEnv } from './config.js'
 import { queryPerDir } from './gufi.js'
 import { gufiAvailable } from './config.js'
 
@@ -64,7 +64,7 @@ async function collectFileVectors(dbs: string[]): Promise<Map<string, number[]>>
   const chunks = new Map<string, { sum: number[]; n: number }>()
   const esc = (s: string) => `'${s.replace(/'/g, "''")}'`
   const runScript = (lines: string[]) => new Promise<string>(resolve => {
-    const child = execFile(path.join(GUFI_BIN, 'gufi_sqlite3'), [], { timeout: 600_000, maxBuffer: 512 * 1024 * 1024 },
+    const child = execFile(path.join(GUFI_BIN, 'gufi_sqlite3'), [], { timeout: 600_000, maxBuffer: 512 * 1024 * 1024, env: gufiEnv() },
       (_err, so) => resolve(so ?? ''))
     child.stdin?.write(lines.join('\n'))
     child.stdin?.end()

@@ -7,8 +7,12 @@ import {
   RefreshButton, Select, type SelectItem, StatusDot, Switch, Table, Textarea, cx, fieldBox,
 } from '@parallelworks/ui'
 import { ChevronDownIcon } from '@parallelworks/ui/icons'
-import { ACCENTS, SURFACES, applyAccent, applySurface } from '../accents'
-import { useAppConfig } from '../config'
+import { SURFACES, applySurface } from '../accents'
+import { AccentSwatches } from '../components/AccentSwatches'
+import { BrandIcons, type Branding } from '../components/BrandIcons'
+import { UpdatesSection } from '../components/UpdatesSection'
+import { saveAiEnabled, saveSections, useAppConfig } from '../config'
+import { SidebarSwitches } from './SetupWizard'
 import { bannerInk } from '../components/ClassificationBanner'
 
 interface Effective {
@@ -50,6 +54,8 @@ interface Effective {
   bannerWhenEmbedded: boolean
   allowKeySharing: boolean
   kbMission: string
+  sections: string[]
+  aiEnabled: boolean
 }
 
 interface CatalogTool { name: string; description: string; builtin: boolean; enabled: boolean; parameters?: unknown; command?: string; implementation?: string; calls?: string }
@@ -100,18 +106,19 @@ const AGENT_EXECUTION: SelectItem<Effective['agentExecution']>[] = [
 type SectionId = 'general' | 'access' | 'tools' | 'rag' | 'previews' | 'ext' | 'libraries' | 'workflows'
 
 /**
- * The settings rail, in order. Model access appears only where the
- * deployment signs users in. Feature previews is its own section rather
+ * The settings rail, in order. Model access appears where the deployment
+ * signs users in, and on a single-user install (`single`), where it holds
+ * the one user's model endpoint. Feature previews is its own section rather
  * than a heading at the foot of another one: a capability nobody can
  * find is off for everyone regardless of the switch. Workflows appears
  * only when the Studio runs on the platform, since it lists the platform's.
  */
-export function settingsSections(opts: { authEnabled: boolean; platform?: boolean }): { id: SectionId; label: string; group: string | null }[] {
+export function settingsSections(opts: { authEnabled: boolean; platform?: boolean; single?: boolean }): { id: SectionId; label: string; group: string | null }[] {
   return [
     { id: 'general', label: 'General', group: 'Studio' },
     { id: 'libraries', label: 'Libraries', group: 'Studio' },
     ...(opts.platform ? [{ id: 'workflows' as SectionId, label: 'Workflows', group: 'Studio' }] : []),
-    ...(opts.authEnabled ? [{ id: 'access' as SectionId, label: 'Model access', group: 'Assistant' }] : []),
+    ...(opts.authEnabled || opts.single ? [{ id: 'access' as SectionId, label: 'Model access', group: 'Assistant' }] : []),
     { id: 'tools', label: 'Assistant tools', group: 'Assistant' },
     { id: 'previews', label: 'Feature previews', group: 'Assistant' },
     { id: 'ext', label: 'Extensions', group: 'Assistant' },
@@ -153,10 +160,15 @@ export function SettingsView() {
   const [railOpen, setRailOpen] = useState<Record<string, boolean>>({})
   const [runtime, setRuntime] = useState<{ local: { available: boolean; reason: string | null; version: string | null; remoteStart: boolean | null; remoteMaxPermissionMode: string | null } } | null>(null)
   const [specOpen, setSpecOpen] = useState<string | null>(null)
-  const [me, setMe] = useState<{ authEnabled?: boolean; verified: boolean; mode: 'stored' | 'session' | 'none'; last4?: string; addedAt?: string; sessionExpiresAt?: string; kind?: string; credExpiresAt?: string | null; credExpired?: boolean; baseUrl?: string | null; gatewayHost?: string
+  const [me, setMe] = useState<{ authEnabled?: boolean; single?: boolean; verified: boolean; mode: 'stored' | 'session' | 'none'; last4?: string; addedAt?: string; sessionExpiresAt?: string; kind?: string; credExpiresAt?: string | null; credExpired?: boolean; baseUrl?: string | null; gatewayHost?: string
     shared?: { active: boolean; last4?: string; sharedBy?: string; sharedAt?: string; credExpired?: boolean; mine?: boolean }
     sharingAllowed?: boolean } | null>(null)
   const [keyInput, setKeyInput] = useState('')
+  // Setup runs only on a single-user install (sign-in off), which also
+  // uploads its icons rather than naming them.
+  const [setupAvailable, setSetupAvailable] = useState(false)
+  const [branding, setBranding] = useState<Branding | null>(null)
+  const [sectionsNote, setSectionsNote] = useState('')
   const [providerMode, setProviderMode] = useState<'platform' | 'activate' | 'custom'>('platform')
   const [providerHost, setProviderHost] = useState('')
   const [baseUrlInput, setBaseUrlInput] = useState('')
@@ -192,20 +204,38 @@ export function SettingsView() {
     setTimeout(refreshRagEp, 8000)
   }
 
-  useEffect(() => {
-    fetch('/api/settings/mcp-servers').then(r => r.json()).then(d => setMcpStatus(d.servers ?? [])).catch(() => {})
+  // The setup wizard saves some of the same settings; once it closes, the
+  // form starts again from what is saved, so Save settings cannot put back
+  // what the wizard changed.
+  const loadForm = () => {
     fetch('/api/settings').then(r => r.json())
       .then(d => { setForm(d.effective); setDeploymentCred(d.deploymentCredential ?? null) })
       .catch(() => setNote('Could not load settings.'))
+    fetch('/api/setup/status').then(r => r.json()).then(d => { setSetupAvailable(!!d?.standalone); setBranding(d?.branding ?? null) }).catch(() => {})
+    fetch('/api/me/model-key').then(r => r.json()).then(d => {
+      setMe(d)
+      // A single-user install connects an endpoint of its own.
+      if (d?.single) { setProviderMode('custom'); setBaseUrlInput(d.baseUrl ?? '') }
+      if (d?.verified && d.mode !== 'none') refreshAccess()
+    }).catch(() => {})
+    fetch('/api/chat/models?config=1').then(r => r.json())
+      .then(d => setModels((d.models ?? []).map((m: { id: string }) => m.id)))
+      .catch(() => {})
+  }
+  useEffect(() => {
+    window.addEventListener('ade:setup-closed', loadForm)
+    return () => window.removeEventListener('ade:setup-closed', loadForm)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
+    fetch('/api/settings/mcp-servers').then(r => r.json()).then(d => setMcpStatus(d.servers ?? [])).catch(() => {})
+    loadForm()
     fetch('/api/chat/tools').then(r => r.json())
       .then(d => setCatalog(d.tools ?? []))
       .catch(() => {})
     fetch('/api/extensions').then(r => r.json()).then(setExt).catch(() => {})
     fetch('/api/tasks/runtime').then(r => r.json()).then(setRuntime).catch(() => {})
-    fetch('/api/chat/models?config=1').then(r => r.json())
-      .then(d => setModels((d.models ?? []).map((m: { id: string }) => m.id)))
-      .catch(() => {})
-    fetch('/api/me/model-key').then(r => r.json()).then(d => { setMe(d); if (d?.verified && d.mode !== 'none') refreshAccess() }).catch(() => {})
     refreshRagEp()
     refreshRagCalls()
     const onSection = (e: Event) => {
@@ -307,7 +337,7 @@ export function SettingsView() {
 
   const pickableModels = models.filter(m => !/studio-(agent|rag)/.test(m))
 
-  const sections = settingsSections({ authEnabled: !!me?.authEnabled, platform: !!cfg.platform })
+  const sections = settingsSections({ authEnabled: !!me?.authEnabled, platform: !!cfg.platform, single: !!me?.single })
 
   const mcpJson = JSON.stringify({ mcpServers: { 'studio-kb': { type: 'http', url: `${location.origin}/api/mcp`, ...(me?.authEnabled ? { headers: { Authorization: 'Bearer <platform token>' } } : {}) } } }, null, 2)
   const saveRow = (reload = true) => (
@@ -366,7 +396,9 @@ export function SettingsView() {
             <>
               <h1>General</h1>
               <p className="muted view-sub">
-                Saved settings apply immediately and override the deployment's environment defaults; they live beside the index, not in the repository. Brand icon and model credentials stay in the environment (see docs/CUSTOMIZATION.md).
+                {setupAvailable
+                  ? 'Saved settings apply immediately and live beside the index. Icons and AI features save as you change them; the rest with Save settings.'
+                  : "Saved settings apply immediately and override the deployment's environment defaults; they live beside the index, not in the repository. Model credentials stay in the environment (see docs/CUSTOMIZATION.md)."}
               </p>
               <div className="settings-grid">
                 <Input label="Product name" value={form.appName} onChange={e => setForm({ ...form, appName: e.target.value })} />
@@ -374,34 +406,27 @@ export function SettingsView() {
                   <Select items={THEMES} value={form.theme} onValueChange={v => v && setForm({ ...form, theme: v })} />
                 </Field>
                 <Field group label="Accent color">
-                  <div className="accent-row">
-                    {Object.entries(ACCENTS).map(([k, a]) => (
-                      <button
-                        key={k}
-                        type="button"
-                        className={`accent-swatch ${form.accent === k ? 'active' : ''}`}
-                        title={a.label}
-                        style={{ background: a.light[0] }}
-                        onClick={() => { setForm({ ...form, accent: k }); applyAccent(k) }}
-                      />
-                    ))}
-                    <input
-                      type="color"
-                      className={`accent-swatch accent-custom ${form.accent.startsWith('custom:') ? 'active' : ''}`}
-                      title="Custom accent"
-                      value={form.accent.startsWith('custom:') ? form.accent.slice(7) : '#06354f'}
-                      onChange={e => { const v = `custom:${e.target.value}`; setForm({ ...form, accent: v }); applyAccent(v) }}
-                    />
-                  </div>
+                  <AccentSwatches value={form.accent} onChange={v => setForm({ ...form, accent: v })} />
                 </Field>
                 <Field label="Surface tone">
                   <Select items={surfaces} value={form.surface}
                     onValueChange={v => { if (v) { setForm({ ...form, surface: v }); applySurface(v) } }} />
                 </Field>
-                <Input label="Brand icon (URL, or a path on the server)" value={form.iconUrl} placeholder="https://example.org/logo.png"
-                  onChange={e => setForm({ ...form, iconUrl: e.target.value })} />
-                <Input label="Brand icon for dark mode (optional)" value={form.iconUrlDark} placeholder="leave empty to use the same image"
-                  onChange={e => setForm({ ...form, iconUrlDark: e.target.value })} />
+                {setupAvailable ? (
+                  <Field group label="Icon">
+                    <BrandIcons value={branding} onChange={b => {
+                      setBranding(b)
+                      setForm(f => f && { ...f, iconUrl: b.iconUrl ?? '', iconUrlDark: b.iconUrlDark ?? '' })
+                    }} />
+                  </Field>
+                ) : (
+                  <>
+                    <Input label="Brand icon (URL, or a path on the server)" value={form.iconUrl} placeholder="https://example.org/logo.png"
+                      onChange={e => setForm({ ...form, iconUrl: e.target.value })} />
+                    <Input label="Brand icon for dark mode (optional)" value={form.iconUrlDark} placeholder="leave empty to use the same image"
+                      onChange={e => setForm({ ...form, iconUrlDark: e.target.value })} />
+                  </>
+                )}
                 <div className="banner-field">
                   <Field label="Classification banner (empty for none)">
                     <div className="banner-row">
@@ -466,6 +491,40 @@ export function SettingsView() {
                   />
                 </Field>
               </div>
+              <div className="settings-field">
+                <p style={{ margin: '0 0 2px', fontSize: 13, fontWeight: 500 }}>AI features</p>
+                <p className="muted view-sub">
+                  Off takes Chat and Agents out of the sidebar and sends nothing to a model; search, the library, query and
+                  statistics work as before. Saved as you switch.
+                  {me?.single && ' The model endpoint is under Model access.'}
+                </p>
+                <div className="access-switch">
+                  <Switch checked={form.aiEnabled !== false} aria-label="AI features" onLabel="On" offLabel="Off"
+                    onCheckedChange={v => {
+                      setSectionsNote('')
+                      saveAiEnabled(v, form.sections)
+                        .then(sections => setForm(f => f && { ...f, aiEnabled: v, sections }))
+                        .catch(e => setSectionsNote(String((e as Error).message ?? e)))
+                    }} />
+                  <span>Chat, Agents, and other features that call a model</span>
+                </div>
+              </div>
+              <div className="settings-field">
+                <p style={{ margin: '0 0 2px', fontSize: 13, fontWeight: 500 }}>Sidebar</p>
+                <p className="muted view-sub">Pages the sidebar shows; Settings and Help always show. Saved as you switch.</p>
+                <SidebarSwitches value={form.sections} platform={!!cfg.platform} aiEnabled={form.aiEnabled !== false} onChange={next => {
+                  setForm({ ...form, sections: next })
+                  setSectionsNote('')
+                  saveSections(next).catch(e => setSectionsNote(String((e as Error).message ?? e)))
+                }} />
+                {sectionsNote && <Callout tone="error" live>{sectionsNote}</Callout>}
+              </div>
+              {setupAvailable && (
+                <div className="settings-field query-actions">
+                  <Button variant="secondary" onClick={() => window.dispatchEvent(new Event('ade:setup-open'))}>Run setup again</Button>
+                  <span className="muted">The name and icon, AI features, the sidebar, the folder to index, and other libraries, a step at a time.</span>
+                </div>
+              )}
               {me?.authEnabled && (
                 <label className="key-persist">
                   <Checkbox checked={form.requirePersonalKey}
@@ -506,6 +565,7 @@ export function SettingsView() {
                 />
               </Field>
               {saveRow()}
+              <UpdatesSection onPolicySaved={updates => setForm(f => f && ({ ...f, updates } as Effective))} />
             </>
           )}
 
@@ -520,9 +580,11 @@ export function SettingsView() {
                 <>
                   <Callout className="rag-banner" tone={accessTone}
                     title={<>
-                      {me.mode === 'none' && (form.requirePersonalKey
-                        ? 'Not connected; this deployment requires your own model credential'
-                        : 'No personal key loaded; requests use the deployment credential')}
+                      {me.mode === 'none' && (me.single
+                        ? 'No model endpoint set'
+                        : form.requirePersonalKey
+                          ? 'Not connected; this deployment requires your own model credential'
+                          : 'No personal key loaded; requests use the deployment credential')}
                       {me.mode !== 'none' && accessHealth?.status === 'ok' && `Connected with your ${me.kind === 'token' ? 'token' : 'key'} ending ${me.last4}`}
                       {me.mode !== 'none' && accessHealth && accessHealth.status !== 'ok' && (
                         accessHealth.status === 'auth'
@@ -550,11 +612,13 @@ export function SettingsView() {
                     )}
                     {me.mode !== 'none' && accessHealth?.status === 'ok' && (
                       <div className="rag-banner-models">
-                        {models.length || accessHealth.models} models available to you{accessHealth.gatewayHost ? ` via ${accessHealth.gatewayHost}` : ''}:
-                        <div className="rag-chip-row">
-                          {models.slice(0, 12).map(m => <code key={m}>{m}</code>)}
-                          {models.length > 12 && <span className="muted">and {models.length - 12} more</span>}
-                        </div>
+                        {models.length || accessHealth.models} models available to you{accessHealth.gatewayHost ? ` via ${accessHealth.gatewayHost}` : ''}{models.length ? ':' : '.'}
+                        {models.length > 0 && (
+                          <div className="rag-chip-row">
+                            {models.slice(0, 12).map(m => <code key={m}>{m}</code>)}
+                            {models.length > 12 && <span className="muted">and {models.length - 12} more</span>}
+                          </div>
+                        )}
                       </div>
                     )}
                     {me.mode !== 'none' && accessHealth && accessHealth.status !== 'ok' && accessHealth.message && (
@@ -562,18 +626,20 @@ export function SettingsView() {
                     )}
                     {me.mode !== 'none' && (
                       <p className="muted key-note">
-                        {me.mode === 'stored' && `Added ${me.addedAt?.slice(0, 10)}, remembered in this browser.`}
+                        {me.mode === 'stored' && `Added ${me.addedAt?.slice(0, 10)}, ${me.single ? 'stored on this computer' : 'remembered in this browser'}.`}
                         {me.mode === 'session' && `Held in memory (until ${me.sessionExpiresAt ? new Date(me.sessionExpiresAt).toLocaleTimeString() : 'soon'}; a remembered key renews this from the browser cookie automatically).`}
                         {me.credExpiresAt && !me.credExpired && ` The ${me.kind === 'token' ? 'token itself expires' : 'credential expires'} ${new Date(me.credExpiresAt).toLocaleString()}.`}
                         {me.baseUrl && ` Provider: ${me.baseUrl}.`}
                         {me.credExpired && ' This token has expired.'}
-                        {accessHealth?.status === 'auth' && ' Platform tokens last 24 hours from login. Paste a fresh token below, or an API key from your ACTIVATE account (Account, API keys), which does not expire.'}
+                        {accessHealth?.status === 'auth' && !me.single && ' Platform tokens last 24 hours from login. Paste a fresh token below, or an API key from your ACTIVATE account (Account, API keys), which does not expire.'}
                       </p>
                     )}
                   </Callout>
                   {me.mode === 'none' && (
                     <p className="muted view-sub">
-                      {form.requirePersonalKey
+                      {me.single
+                        ? "An OpenAI-compatible endpoint (a provider, a gateway, or a model server such as vLLM or Ollama) and its key. Without one, model calls go to the platform this computer's pw CLI is signed in to, if any."
+                        : form.requirePersonalKey
                         ? 'Add your own credential below to use chat and models on this deployment. A platform token or platform API key covers everything, chat plus workflow tools and the DAG viewer; an AI gateway API key or a provider key covers chat only. Browsing, search, and adding material work without one.'
                         : 'Add your own credential to call the gateway (and platform tools) as yourself. A platform token or platform API key covers everything; an AI gateway API key or a provider key covers chat only.'}
                     </p>
@@ -586,7 +652,7 @@ export function SettingsView() {
                         type="password"
                         aria-label="Model credential"
                         value={keyInput}
-                        placeholder="Paste a platform token or API key (full access), or an AI gateway / provider key (chat only)"
+                        placeholder={me.single ? "The endpoint's API key" : 'Paste a platform token or API key (full access), or an AI gateway / provider key (chat only)'}
                         autoComplete="off"
                         onChange={e => setKeyInput(e.target.value)}
                       />
@@ -616,10 +682,12 @@ export function SettingsView() {
                         onChange={e => setBaseUrlInput(e.target.value)} />
                     )}
                   </div>
-                  <label className="key-persist">
-                    <Checkbox checked={persistKey} onCheckedChange={setPersistKey} />
-                    Remember in this browser (a sealed Secure cookie; the server holds it in memory only); unchecked keeps it for about 12 hours
-                  </label>
+                  {!me.single && (
+                    <label className="key-persist">
+                      <Checkbox checked={persistKey} onCheckedChange={setPersistKey} />
+                      Remember in this browser (a sealed Secure cookie; the server holds it in memory only); unchecked keeps it for about 12 hours
+                    </label>
+                  )}
                   {me.shared?.active ? (
                     <Callout className="rag-banner shared-key" tone={me.shared.credExpired ? 'warning' : 'success'}
                       title={<>
@@ -648,7 +716,7 @@ export function SettingsView() {
                     </div>
                   )}
                   <p className="muted key-trust">
-                    A key added here is available to this server and its operator; encryption at rest protects the stored file, not the running process. Use a key you can revoke. If your provider locks keys on a schedule, Test tells you the key’s current state. With a custom provider, chat and models use that provider while platform tools (clusters, workflows) fall back to the deployment credential; a non-platform key is never passed to platform commands.
+                    {me.single ? 'The key is stored on this computer, encrypted, beside the index. ' : ''}A key added here is available to this server and its operator; encryption at rest protects the stored file, not the running process. Use a key you can revoke. If your provider locks keys on a schedule, Test tells you the key’s current state. With a custom provider, chat and models use that provider while platform tools (clusters, workflows) fall back to the deployment credential; a non-platform key is never passed to platform commands.
                   </p>
                   {keyNote && <p className="muted key-note">{keyNote}</p>}
                 </>

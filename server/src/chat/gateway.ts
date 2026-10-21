@@ -181,6 +181,8 @@ export interface AiHealth {
   checkedAt: string
   /** Present when the provider reports a locked key with its unlock link. */
   unlockUrl?: string | null
+  /** The model ids, when asked for (a key being tested). */
+  ids?: string[]
 }
 
 /** Live callability check: exercises the gateway with the current
@@ -324,7 +326,7 @@ export async function probeProvider(prefix: string, sampleModelId: string, key?:
   return v
 }
 
-export async function aiHealth(key?: string | null, baseUrl?: string | null): Promise<AiHealth> {
+export async function aiHealth(key?: string | null, baseUrl?: string | null, opts: { ids?: boolean } = {}): Promise<AiHealth> {
   const checkedAt = new Date().toISOString()
   const apiBase = baseUrl || GATEWAY_BASE
   const gatewayHost = (() => { try { return new URL(apiBase).host } catch { return apiBase } })()
@@ -350,13 +352,16 @@ export async function aiHealth(key?: string | null, baseUrl?: string | null): Pr
           ? 'The provider locked this API key (it does so on a schedule); unlock it and re-check.'
           : auth
             ? `${gatewayHost} rejected this credential (${res.status}). A platform token lasts 24 hours from login; an API key from Account, API keys does not expire.`
-            : `${res.status}: ${text.slice(0, 200)}`,
+            : res.status === 404
+              ? `${apiBase}/models does not exist (404). An OpenAI-compatible base URL usually ends in /v1.`
+              : `${res.status}: ${text.slice(0, 200)}`,
         unlockUrl,
       }
     }
     const data = JSON.parse(text) as { data?: unknown[]; models?: unknown[] }
-    const n = Array.isArray(data.data) ? data.data.length : Array.isArray(data.models) ? data.models.length : 0
-    return { ...base, ok: true, status: 'ok', models: n, message: null }
+    const list = Array.isArray(data.data) ? data.data : Array.isArray(data.models) ? data.models : []
+    const ids = opts.ids ? list.map(m => String((m as { id?: unknown })?.id ?? '')).filter(Boolean).slice(0, 500) : undefined
+    return { ...base, ok: true, status: 'ok', models: list.length, message: null, ...(ids ? { ids } : {}) }
   } catch (e) {
     return { ...base, ok: false, status: 'unreachable', message: String((e as Error).message ?? e).slice(0, 200) }
   }

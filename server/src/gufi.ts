@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
-import { GUFI_BIN, GUFI_INDEX, INDEX_BASE, gufiAvailable } from './config.js'
+import { GUFI_BIN, GUFI_INDEX, INDEX_BASE, gufiAvailable, gufiEnv } from './config.js'
 import { REMOTE_PREFIX, remoteIndexRoot, remoteQuery, remoteTarget } from './userLibraries.js'
 import { noteGufi } from './gufiTrace.js'
 
@@ -21,7 +21,7 @@ export interface SearchHit {
 function run(bin: string, args: string[], timeoutMs = 60_000): Promise<{ stdout: string; stderr: string }> {
   const t0 = Date.now()
   return new Promise((resolve, reject) => {
-    execFile(path.join(GUFI_BIN, bin), args, { timeout: timeoutMs, maxBuffer: 64 * 1024 * 1024 }, (err, stdout, stderr) => {
+    execFile(path.join(GUFI_BIN, bin), args, { timeout: timeoutMs, maxBuffer: 64 * 1024 * 1024, env: gufiEnv() }, (err, stdout, stderr) => {
       if (bin === 'gufi_query') noteGufi([path.join(GUFI_BIN, bin), ...args], { ms: Date.now() - t0 })
       // gufi_query exits nonzero when some per-dir SQL fails (e.g. a table absent
       // in an unenriched directory); rows already emitted are still valid.
@@ -320,7 +320,7 @@ async function listVectorDbs(indexRoot: string = GUFI_INDEX): Promise<string[]> 
     'DETACH c;',
   ])
   const { stdout } = await new Promise<{ stdout: string }>(resolve => {
-    const child = execFile(path.join(GUFI_BIN, 'gufi_sqlite3'), [], { timeout: 60_000, maxBuffer: 32 * 1024 * 1024 },
+    const child = execFile(path.join(GUFI_BIN, 'gufi_sqlite3'), [], { timeout: 60_000, maxBuffer: 32 * 1024 * 1024, env: gufiEnv() },
       (_err, so) => resolve({ stdout: so ?? '' }))
     child.stdin?.write(script.join('\n'))
     child.stdin?.end()
@@ -354,7 +354,7 @@ export async function searchVector(queryText: string, limit = 10, indexRoot: str
     script.push('DETACH d;')
   }
   const { stdout } = await new Promise<{ stdout: string }>((resolve, reject) => {
-    const child = execFile(path.join(GUFI_BIN, 'gufi_sqlite3'), [], { timeout: 60_000, maxBuffer: 32 * 1024 * 1024 },
+    const child = execFile(path.join(GUFI_BIN, 'gufi_sqlite3'), [], { timeout: 60_000, maxBuffer: 32 * 1024 * 1024, env: gufiEnv() },
       (err, so) => err && !so ? reject(new Error(`gufi_sqlite3: ${err.message}`)) : resolve({ stdout: so }))
     child.stdin?.write(script.join('\n'))
     child.stdin?.end()

@@ -5,7 +5,9 @@ import {
 import { api, IndexStatus } from '../api'
 import { onLibraryChange } from '../api'
 import type { LibraryStats } from '../api'
+import { UPDATES_CHANGED, openUpdates, updatesApi, type UpdatesStatus } from '../api'
 import { share, syncIndex, type AiHealth } from '../statusShare'
+import { useAppConfig } from '../config'
 
 function ago(iso: string | null): string {
   // Null just means no sweep has completed since the server started.
@@ -92,6 +94,7 @@ export const AI_LABEL: Record<AiHealth['status'], string> = {
   unreachable: 'models unreachable',
   unconfigured: 'models not configured',
   'key-required': 'add your model key',
+  off: 'AI features off',
 }
 
 function AiPanel({ trigger, ai, onRecheck }: { trigger: ReactElement; ai: AiHealth; onRecheck: () => void }) {
@@ -210,6 +213,8 @@ function IdentityPanel({ trigger, who }: { trigger: ReactElement; who: WhoAmI })
 }
 
 export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
+  // With AI features off there is no model line.
+  const cfg = useAppConfig()
   const [stats, setStats] = useState<{ files?: number; dirs?: number; totalBytes?: number; libraries?: LibraryStats[] } | null>(null)
   const [idx, setIdx] = useState<IndexStatus | null>(null)
   const [syncing, setSyncing] = useState(false)
@@ -259,6 +264,26 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
     return () => { clearInterval(t); document.removeEventListener('visibilitychange', onVis) }
   }, [])
 
+  // A newer release the Studio can tell about. The version line says so and
+  // opens Settings, General at the Updates section. The server checks every
+  // few hours, so reading its answer now and then is enough; the section
+  // reports a check made there at once.
+  const [update, setUpdate] = useState<string | null>(null)
+  useEffect(() => {
+    let none = false
+    const show = (s: UpdatesStatus | null) => {
+      // A hosted deployment has no updates and is not asked again.
+      if (!s || s.mode === 'hosted') { none = true; setUpdate(null); return }
+      setUpdate(s.available && s.latest ? s.latest.version : null)
+    }
+    const read = () => { if (!none) updatesApi.status().then(show).catch(() => {}) }
+    read()
+    const t = setInterval(read, 10 * 60_000)
+    const onChange = (e: Event) => show((e as CustomEvent<UpdatesStatus>).detail)
+    window.addEventListener(UPDATES_CHANGED, onChange)
+    return () => { clearInterval(t); window.removeEventListener(UPDATES_CHANGED, onChange) }
+  }, [])
+
   const sync = async () => {
     setSyncing(true)
     await syncIndex()
@@ -293,7 +318,7 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
           />
         </div>
       )}
-      {ai && (
+      {ai && cfg.aiEnabled !== false && (
         <div className="status-line" title="Click for model availability details">
           <AiPanel
             ai={ai}
@@ -321,10 +346,16 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
             trigger={
               <button className="identity-btn">
                 <StatusDot variant={build.version === 'dev' ? 'muted' : 'success'} size={7} />
-                {build.version}
+                <span className="identity-text">{build.version}</span>
               </button>
             }
           />
+          {update && (
+            <Button variant="ghost" size="xs" className="footer-sync" title={`Version ${update} is available. Opens Settings, General, Updates.`}
+              onClick={openUpdates}>
+              update available
+            </Button>
+          )}
         </div>
       )}
       <div className="status-line" title="Click for index health details">

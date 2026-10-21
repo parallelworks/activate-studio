@@ -1,6 +1,7 @@
 import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
+import { authEnabled } from './auth.js'
 import { INDEX_BASE } from './config.js'
 
 /**
@@ -20,6 +21,11 @@ import { INDEX_BASE } from './config.js'
  *  - keys are never logged and never included in error messages.
  *  - "session only" keys are held in memory with a TTL and are never
  *    written to disk at all.
+ *
+ * A Studio with sign-in off has one user (SINGLE_OWNER). Its key is kept
+ * in the vault, encrypted: there is no identity to seal a browser cookie
+ * to, and the app restarts with the computer, so a key held in memory
+ * would be lost each time.
  */
 
 /** Env-only kill switch (deliberately not a runtime setting: a security
@@ -39,6 +45,10 @@ interface VaultEntry { blob: string; last4: string; addedAt: string; kind?: 'api
  *  A platform subject is a uuid, so it cannot collide, and setUserKey
  *  refuses it outright. */
 const SHARED_SUB = '__shared__'
+
+/** The one user of a Studio with sign-in off, as userLibraries names them. */
+export const SINGLE_OWNER = 'single'
+const onDisk = (sub: string) => sub === SINGLE_OWNER && !authEnabled()
 
 /** A JWT-shaped credential is a short-term token; surface its expiry so
  *  the UI can say when it dies instead of failing mysteriously. */
@@ -119,6 +129,12 @@ export function setUserKey(sub: string, key: string, persist: boolean, baseUrl?:
   const last4 = trimmed.replace(/=+$/, '').slice(-4)
   const addedAt = new Date().toISOString()
   const { kind, expiresAt } = inspect(trimmed)
+  if (onDisk(sub)) {
+    const vault = loadVault()
+    vault[sub] = { blob: encrypt(trimmed), last4, addedAt, kind, expiresAt, baseUrl: url }
+    saveVault(vault)
+    return
+  }
   // Personal keys live in memory only; the browser's sealed cookie is the
   // durable copy (persist governs whether the route sets it). The vault
   // file now holds nothing but the deployment shared key, and any personal
@@ -133,7 +149,7 @@ export function setUserKey(sub: string, key: string, persist: boolean, baseUrl?:
  *  vault so nothing personal stays at rest. The shared key remains. */
 export function scrubPersonalVaultEntries(): number {
   const vault = loadVault()
-  const doomed = Object.keys(vault).filter(k => k !== SHARED_SUB)
+  const doomed = Object.keys(vault).filter(k => k !== SHARED_SUB && !onDisk(k))
   if (!doomed.length) return 0
   for (const k of doomed) delete vault[k]
   saveVault(vault)
@@ -233,6 +249,14 @@ function expired(iso: string | null | undefined): boolean {
 }
 
 export function getUserKeyStatus(sub: string): UserKeyStatus {
+  if (onDisk(sub)) {
+    const e = loadVault()[sub]
+    if (!e) return { mode: 'none' }
+    return {
+      mode: 'stored', last4: e.last4, addedAt: e.addedAt, kind: e.kind ?? 'api-key',
+      credExpiresAt: e.expiresAt ?? null, credExpired: expired(e.expiresAt), baseUrl: e.baseUrl ?? null,
+    }
+  }
   const s = liveSession(sub)
   if (s) {
     return {
@@ -246,11 +270,18 @@ export function getUserKeyStatus(sub: string): UserKeyStatus {
 }
 
 /** The caller's own key when they have one; null means use the
- *  deployment credential (current shared-session default). */
+ *  deployment credential (current shared-session default). With sign-in
+ *  off, a request without a user is the one user's. */
 export interface UserCred { key: string; baseUrl: string | null }
 
 export function resolveUserCred(sub: string | null | undefined): UserCred | null {
+  if (!sub && !authEnabled()) sub = SINGLE_OWNER
   if (!sub || sub === SHARED_SUB || personalKeysDisabled()) return null
+  if (onDisk(sub)) {
+    const e = loadVault()[sub]
+    const key = e && !expired(e.expiresAt) ? decrypt(e.blob) : null
+    return key ? { key, baseUrl: e.baseUrl ?? null } : null
+  }
   const s = liveSession(sub)
   if (s) return expired(s.credExpiresAt) ? null : { key: s.key, baseUrl: s.baseUrl }
   return null

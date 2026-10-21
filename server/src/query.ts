@@ -4,7 +4,7 @@ import fs from 'node:fs'
 import fsp from 'node:fs/promises'
 import path from 'node:path'
 import type { FastifyInstance } from 'fastify'
-import { GUFI_BIN, GUFI_INDEX, INDEX_BASE, gufiAvailable } from './config.js'
+import { GUFI_BIN, GUFI_INDEX, INDEX_BASE, gufiAvailable, gufiEnv } from './config.js'
 import { KbError } from './kb.js'
 import { tagMaps } from './tags.js'
 import { scopeLibraries } from './libraryScope.js'
@@ -50,7 +50,7 @@ async function run(args: string[], subtree?: string, timeoutMs = 60_000): Promis
   const argv = [path.join(GUFI_BIN, 'gufi_query'), ...args, scopePath(subtree)]
   const t0 = Date.now()
   return new Promise((resolve, reject) => {
-    execFile(argv[0], argv.slice(1), { timeout: timeoutMs, maxBuffer: 64 * 1024 * 1024 }, (err, so, se) => {
+    execFile(argv[0], argv.slice(1), { timeout: timeoutMs, maxBuffer: 64 * 1024 * 1024, env: gufiEnv() }, (err, so, se) => {
       noteGufi(argv, { ms: Date.now() - t0 })
       if (err && !so) reject(new Error(se?.slice(0, 500) || err.message))
       else resolve({ stdout: so, stderr: se ?? '' })

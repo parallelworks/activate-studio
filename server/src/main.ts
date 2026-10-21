@@ -1,5 +1,6 @@
 import Fastify from 'fastify'
 import { fleetRoutes, startFleet } from './fleet.js'
+import { setStopper } from './lifecycle.js'
 import { setRunsLog, watchRegisteredRuns } from './runs.js'
 import { streamsInFlight } from './chat/routes.js'
 import fastifyStatic from '@fastify/static'
@@ -22,13 +23,14 @@ import { conversationRoutes } from './conversations.js'
 import { authHook, authEnabled } from './auth.js'
 import { hydrateFromCookie, scrubPersonalVaultEntries } from './credentials.js'
 import { settingsRoutes } from './settings.js'
+import { setupRoutes } from './setup.js'
 import { chatRoutes } from './chat/routes.js'
 import { mcpRoutes } from './mcp.js'
 import { taskRoutes } from './tasks.js'
 import { ragProxyRoutes } from './ragProxy.js'
 import { maybeAutoStart, ragEndpointRoutes } from './ragEndpoint.js'
 import { gatewayConfigured } from './chat/gateway.js'
-import { startSweepTimer } from './indexing.js'
+import { indexJobsRunning, indexStatus, startSweepTimer } from './indexing.js'
 import { seedKnowledgeBase } from './seed.js'
 import { probeAll } from './libraries.js'
 import { workflowsTabRoutes } from './workflowsTab.js'
@@ -36,6 +38,7 @@ import { sessionRoutes } from './sessions.js'
 import { agentSiteRoutes } from './agentSites.js'
 import { userLibraryRoutes } from './userLibraries.js'
 import { workflowReadmeRoutes } from './workflowReadme.js'
+import { setUpdateBusyCheck, startUpdates, updateRoutes } from './updates.js'
 
 const app = Fastify({ logger: { level: 'info' } })
 await app.register(fastifyMultipart)
@@ -103,6 +106,8 @@ seedExtensions(m => app.log.info(m))
 await app.register(extensionRoutes)
 await app.register(conversationRoutes)
 await app.register(settingsRoutes)
+await app.register(setupRoutes)
+await app.register(updateRoutes)
 await app.register(chatRoutes)
 await app.register(mcpRoutes)
 await app.register(taskRoutes)
@@ -128,6 +133,9 @@ await app.listen({ host: HOST, port: PORT })
 // so their end still reaches the conversations that asked for them.
 setRunsLog(msg => app.log.info(msg))
 startFleet(msg => app.log.info(msg))
+// An automatic update waits until no answer is streaming and nothing is indexing.
+setUpdateBusyCheck(() => streamsInFlight() > 0 || indexStatus().running || indexJobsRunning())
+startUpdates(msg => app.log.info(msg))
 {
   const n = watchRegisteredRuns()
   if (n) app.log.info(`following ${n} workflow run(s) registered before this start`)
@@ -139,15 +147,16 @@ startFleet(msg => app.log.info(msg))
 // is replaced by the deploy regardless, so this is about not losing what
 // the server was in the middle of recording, not about keeping clients.
 let stopping = false
-const stop = async (sig: string) => {
+const stop = async (sig: string, code = 0) => {
   if (stopping) return
   stopping = true
   const t0 = Date.now()
   app.log.info(`${sig}: draining ${streamsInFlight()} in-flight stream(s)`)
   while (streamsInFlight() > 0 && Date.now() - t0 < 20_000) await new Promise(r => setTimeout(r, 250))
   await app.close().catch(() => {})
-  process.exit(0)
+  process.exit(code)
 }
+setStopper(code => { void stop('restart', code) })
 process.on('SIGTERM', () => { void stop('SIGTERM') })
 process.on('SIGINT', () => { void stop('SIGINT') })
 

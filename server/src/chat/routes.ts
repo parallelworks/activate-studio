@@ -13,7 +13,7 @@ import { attachmentContext } from '../attachments.js'
 import { effectiveSettings } from '../settings.js'
 import { agentPrompt } from '../extensions.js'
 import { beginAnswer, recordAssistantTurn, recordUserTurn, StoredToolCallPart, takeSteers, toolsUsedIn } from '../conversations.js'
-import { clearSharedKey, clearUserKey, getSharedKeyStatus, getUserKeyStatus, KEY_COOKIE, KEY_COOKIE_P, personalKeysDisabled, resolveUserCred, resolveUserKey, sealKeyCookie, setUserKey, shareUserKey } from '../credentials.js'
+import { clearSharedKey, clearUserKey, getSharedKeyStatus, getUserKeyStatus, KEY_COOKIE, KEY_COOKIE_P, personalKeysDisabled, resolveUserCred, resolveUserKey, sealKeyCookie, setUserKey, shareUserKey, SINGLE_OWNER } from '../credentials.js'
 import { authEnabled } from '../auth.js'
 
 interface StreamBody {
@@ -36,6 +36,9 @@ function sse(res: NodeJS.WritableStream, event: string, data: unknown): void {
 // Without a cap, a reasoning model can generate to its context limit
 // before answering, which on a modest GPU reads as a hang.
 const MAX_COMPLETION_TOKENS = Number(process.env.CHAT_MAX_TOKENS ?? 8192)
+
+/** What the chat answers, and the model routes say, with AI features off. */
+export const AI_OFF = 'AI features are off in this Studio.'
 
 /** Known context window for a model, from the chatModelWindows setting. */
 function windowFor(model: string): number | null {
@@ -634,6 +637,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
   }
 
   app.get('/api/chat/models', async (req, reply) => {
+    if (!effectiveSettings().aiEnabled) return reply.send({ models: [], unreachableSessions: [], error: AI_OFF })
     if (!gatewayConfigured() && !resolveUserKey(req.user?.id) && !sidecarConfigured()) {
       return reply.send({ models: [], unreachableSessions: [], error: 'no gateway credential: set PW_API_KEY or authenticate the pw CLI' })
     }
@@ -686,6 +690,9 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
 
   // Live model-callability check for the footer status line.
   app.get('/api/ai/health', async req => {
+    if (!effectiveSettings().aiEnabled) {
+      return { ok: false, status: 'off', models: 0, gatewayHost: '', message: AI_OFF, lastCallFailure: null, checkedAt: new Date().toISOString() }
+    }
     const cred = resolveUserCred(req.user?.id)
     if (effectiveSettings().requirePersonalKey && authEnabled() && !personalKeysDisabled() && !cred && !getSharedKeyStatus().active) {
       return {
@@ -731,17 +738,26 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     }
   }
 
+  // With sign-in off the one user keeps a key too (an OpenAI-compatible
+  // endpoint, say), stored on this computer rather than in a cookie.
+  const keyOwner = (req: FastifyRequest): string | null =>
+    req.user?.id ?? (authEnabled() || personalKeysDisabled() ? null : SINGLE_OWNER)
+  const gatewayHostName = () => { try { return new URL(GATEWAY_BASE).host } catch { return GATEWAY_BASE } }
+  const statusFor = (req: FastifyRequest, owner: string) => req.user
+    ? keyStatusPayload(owner)
+    : { authEnabled: false, verified: true, single: true, gatewayHost: gatewayHostName(), ...getUserKeyStatus(owner), shared: { active: false }, sharingAllowed: false }
+
   app.get('/api/me/model-key', async req => {
-    // Standalone deployments (no platform identity configured) run single
-    // user on the deployment credential; the personal-key surface is an
-    // ACTIVATE-session feature and stays hidden there.
-    const gatewayHost = (() => { try { return new URL(GATEWAY_BASE).host } catch { return GATEWAY_BASE } })()
+    // With sign-in off the one user's key is reported as theirs (single);
+    // with personal keys disabled the surface stays hidden.
+    const gatewayHost = gatewayHostName()
     // The chat rail offers a show-all-conversations toggle. With shared
     // history off the server already refuses other people's conversations,
     // so the toggle was a control that could only fail; the client needs
     // the setting to hide it rather than discover that by clicking.
     const sharedHistory = effectiveSettings().chatSharedHistory !== false
-    if (!authEnabled() || personalKeysDisabled()) return { authEnabled: false, verified: false, mode: 'none', gatewayHost, sharedHistory }
+    if (personalKeysDisabled()) return { authEnabled: false, verified: false, mode: 'none', gatewayHost, sharedHistory }
+    if (!authEnabled()) return { ...statusFor(req, SINGLE_OWNER), sharedHistory }
     if (!req.user) return { authEnabled: true, verified: false, mode: 'none', gatewayHost, sharedHistory }
     return { ...keyStatusPayload(req.user.id), sharedHistory }
   })
@@ -777,39 +793,48 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
   }
 
   app.post('/api/me/model-key', async (req, reply) => {
-    if (!req.user) return reply.status(403).send({ error: 'Personal keys need a platform-verified identity; open the app through the platform.' })
+    const owner = keyOwner(req)
+    if (!owner) return reply.status(403).send({ error: 'Personal keys need a platform-verified identity; open the app through the platform.' })
     const body = req.body as { key?: string; persist?: boolean; baseUrl?: string }
     const key = String(body.key ?? '').trim()
     if (!key) return reply.status(400).send({ error: 'key required' })
-    try { setUserKey(req.user.id, key, false, body.baseUrl) } catch (e) { return reply.status(400).send({ error: String((e as Error).message ?? e) }) }
-    if (body.persist !== false) setKeyCookies(reply, req.user.id)
-    else clearKeyCookies(reply)
-    return keyStatusPayload(req.user.id)
+    try { setUserKey(owner, key, false, body.baseUrl) } catch (e) { return reply.status(400).send({ error: String((e as Error).message ?? e) }) }
+    invalidateProviderProbes(); listings.clear()
+    if (req.user) {
+      if (body.persist !== false) setKeyCookies(reply, owner)
+      else clearKeyCookies(reply)
+    }
+    return statusFor(req, owner)
   })
 
   app.post('/api/me/model-key/clear', async (req, reply) => {
-    if (!req.user) return reply.status(403).send({ error: 'not verified' })
-    clearUserKey(req.user.id)
-    clearKeyCookies(reply)
-    return keyStatusPayload(req.user.id)
+    const owner = keyOwner(req)
+    if (!owner) return reply.status(403).send({ error: 'not verified' })
+    clearUserKey(owner)
+    if (req.user) clearKeyCookies(reply)
+    return statusFor(req, owner)
   })
 
   app.put('/api/me/model-key', async (req, reply) => {
-    if (!req.user) return reply.status(403).send({ error: 'Personal keys need a platform-verified identity; open the app through the platform.' })
+    const owner = keyOwner(req)
+    if (!owner) return reply.status(403).send({ error: 'Personal keys need a platform-verified identity; open the app through the platform.' })
     const body = req.body as { key?: string; persist?: boolean }
     const key = String(body.key ?? '').trim()
     if (!key) return reply.status(400).send({ error: 'key required' })
-    setUserKey(req.user.id, key, false)
-    if (body.persist !== false) setKeyCookies(reply, req.user.id)
-    else clearKeyCookies(reply)
-    return keyStatusPayload(req.user.id)
+    setUserKey(owner, key, false)
+    if (req.user) {
+      if (body.persist !== false) setKeyCookies(reply, owner)
+      else clearKeyCookies(reply)
+    }
+    return statusFor(req, owner)
   })
 
   app.delete('/api/me/model-key', async (req, reply) => {
-    if (!req.user) return reply.status(403).send({ error: 'not verified' })
-    clearUserKey(req.user.id)
-    clearKeyCookies(reply)
-    return keyStatusPayload(req.user.id)
+    const owner = keyOwner(req)
+    if (!owner) return reply.status(403).send({ error: 'not verified' })
+    clearUserKey(owner)
+    if (req.user) clearKeyCookies(reply)
+    return statusFor(req, owner)
   })
 
   // Promote the caller's own key to stand in for the deployment credential,
@@ -837,13 +862,15 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     // A re-check is the user saying "I changed something, look again":
     // the provider probe cache must not outlive that.
     invalidateProviderProbes(); listings.clear()
-    if (!req.user) return reply.status(403).send({ error: 'not verified' })
+    const owner = keyOwner(req)
+    if (!owner) return reply.status(403).send({ error: 'not verified' })
     const body = req.body as { key?: string; baseUrl?: string } | null
-    const stored = resolveUserCred(req.user.id)
+    const stored = resolveUserCred(owner)
     const candidate = String(body?.key ?? '').trim() || stored?.key
     const baseUrl = String(body?.baseUrl ?? '').trim() || stored?.baseUrl || null
     if (!candidate) return reply.status(400).send({ error: 'no key to test' })
-    return aiHealth(candidate, baseUrl)
+    if (baseUrl && !/^https?:\/\/[^/\s]+/i.test(baseUrl)) return reply.status(400).send({ error: 'the base URL must start with http:// or https://' })
+    return aiHealth(candidate, baseUrl, { ids: true })
   })
 
   // Tool catalog for the Settings page: built-ins plus custom, with state.
@@ -902,6 +929,13 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
       'X-Accel-Buffering': 'no',
     })
     const res = reply.raw
+    // Nothing is sent to a model, and the turn is not recorded.
+    if (!effectiveSettings().aiEnabled) {
+      sse(res, 'content', { text: AI_OFF })
+      sse(res, 'done', { finishReason: 'stop', model: null })
+      res.end()
+      return reply
+    }
     inFlight++
     res.on('close', () => { inFlight = Math.max(0, inFlight - 1) })
     // While this runs, the conversation's newest user message is not

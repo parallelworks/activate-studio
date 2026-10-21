@@ -1,0 +1,163 @@
+# Build the macOS app on a Mac, where its own window (deploy/mac/shell) is
+# compiled and the .dmg is made, and run the checks only a Mac can: the
+# bundled Node, Python and GUFI, the server from the app's run loop, and
+# the launcher with its LaunchAgent. For a published release, sign the
+# update manifest and attach the app, so installed copies can update.
+#
+# GUFI comes from, in order: the gufi_run input (a gufi-macos run whose
+# archive to use), GUFI_RUN below (the same, for runs without inputs; its
+# archive expires after 30 days), the GUFI_RELEASE tag below (an archive
+# built for an older macOS by gufi-macos.yml), else GUFI's own package,
+# which needs macOS 27; with that one the run checks are skipped on older
+# runners.
+name: mac-app
+
+on:
+  workflow_dispatch:
+    inputs:
+      gufi_run:
+        description: A gufi-macos run id whose GUFI archive to use
+        default: ""
+  release:
+    types: [published]
+  # A change to the app or its build is built and checked on a Mac.
+  pull_request:
+    paths:
+      - deploy/mac/**
+      - .github/workflows/mac-app.yml
+
+permissions: {}
+
+env:
+  # A gufi-macos run whose archive the app uses: GUFI built for macOS 14.
+  GUFI_RUN: "39542085829"
+  # A gufi-* release whose gufi-macos-arm64.tar.gz the app uses.
+  GUFI_RELEASE: ""
+
+concurrency:
+  group: mac-app-${{ github.ref }}
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 75
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # git describe names the build; a release builds at its own tag.
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 26
+          # No cache: this job's output is what releases ship.
+          package-manager-cache: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - name: install and build
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+
+      - name: GUFI
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GUFI_RUN_INPUT: ${{ inputs.gufi_run }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/gufi"
+          run="${GUFI_RUN_INPUT:-$GUFI_RUN}"
+          if [ -n "$run" ]; then
+            gh run download "$run" -R "$GITHUB_REPOSITORY" -n gufi-macos-arm64 -D "$RUNNER_TEMP/gufi"
+          elif [ -n "$GUFI_RELEASE" ]; then
+            gh release download "$GUFI_RELEASE" -R "$GITHUB_REPOSITORY" -p 'gufi-macos-arm64.tar.gz*' -D "$RUNNER_TEMP/gufi"
+          fi
+          if [ -f "$RUNNER_TEMP/gufi/gufi-macos-arm64.tar.gz" ]; then
+            (cd "$RUNNER_TEMP/gufi" && shasum -a 256 -c gufi-macos-arm64.tar.gz.sha256)
+            echo "GUFI_TARBALL=$RUNNER_TEMP/gufi/gufi-macos-arm64.tar.gz" >> "$GITHUB_ENV"
+          else
+            echo "No GUFI archive: the app uses GUFI's own macOS package."
+          fi
+
+      - name: build the app
+        env:
+          SKIP_BUILD: "1"
+          OUT_DIR: ${{ runner.temp }}/out
+        run: deploy/mac/build_app.sh
+
+      - name: check it on this Mac
+        env:
+          OUT_DIR: ${{ runner.temp }}/out
+        run: |
+          set -euo pipefail
+          app="$OUT_DIR/ACTIVATE Studio.app"
+          need="$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$app/Contents/Info.plist")"
+          have="$(sw_vers -productVersion)"
+          if python3 -c 'import sys; v = lambda s: [int(x) for x in s.split(".")]; sys.exit(0 if v(sys.argv[1]) <= v(sys.argv[2]) else 1)' "$need" "$have"; then
+            deploy/mac/check_app.sh "$app" --run --launch
+          else
+            echo "The app needs macOS $need and this runner has $have: static checks only."
+            deploy/mac/check_app.sh "$app"
+          fi
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: activate-studio-macos-arm64
+          path: |
+            ${{ runner.temp }}/out/activate-studio-macos-arm64.tar.gz
+            ${{ runner.temp }}/out/activate-studio-macos-arm64.tar.gz.sha256
+            ${{ runner.temp }}/out/activate-studio-macos-arm64.dmg
+            ${{ runner.temp }}/out/install.sh
+          if-no-files-found: error
+          retention-days: 30
+
+  # Sign and attach to the release. The only job that can write, and the
+  # only one that sees the signing key; it runs no build code.
+  release:
+    if: github.event_name == 'release'
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: step-security/harden-runner@351661ca32ac09a36dc5ee2d536e3128f2a3c8ed # v2.22.0
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            github.com:443
+            uploads.github.com:443
+            objects.githubusercontent.com:443
+            release-assets.githubusercontent.com:443
+            results-receiver.actions.githubusercontent.com:443
+            *.blob.core.windows.net:443
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            deploy/mac/sign_release.sh
+            deploy/mac/update-signing.pub
+          sparse-checkout-cone-mode: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: activate-studio-macos-arm64
+          path: ${{ runner.temp }}/out
+      - name: sign the update manifest
+        env:
+          STUDIO_UPDATE_SIGNING_KEY: ${{ secrets.STUDIO_UPDATE_SIGNING_KEY }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: deploy/mac/sign_release.sh "$RUNNER_TEMP/out/activate-studio-macos-arm64.tar.gz" "$TAG"
+      - name: attach to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          cd "$RUNNER_TEMP/out"
+          gh release upload "$TAG" -R "$GITHUB_REPOSITORY" --clobber \
+            activate-studio-macos-arm64.tar.gz activate-studio-macos-arm64.tar.gz.sha256 \
+            activate-studio-macos-arm64.manifest.json activate-studio-macos-arm64.manifest.json.sig \
+            activate-studio-macos-arm64.dmg install.sh

@@ -2,8 +2,11 @@ import path from 'node:path'
 import fs from 'node:fs'
 import os from 'node:os'
 import { execFileSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 
-export const PROJECT_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', '..')
+// fileURLToPath, not URL.pathname: the macOS app lives under "ACTIVATE Studio.app",
+// and a pathname keeps the space percent-encoded.
+export const PROJECT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
 export const KB_ROOT = process.env.KB_ROOT ?? ((): string => {
   // Deployments always set KB_ROOT; the fallback is for someone running from
   // a clone on their own machine, where /data is a Linux server convention
@@ -17,26 +20,104 @@ export const INDEX_BASE = process.env.INDEX_BASE ?? path.join(PROJECT_ROOT, 'ind
 // gufi_dir2index mirrors the source tree under INDEX_BASE/gufi/<basename of KB_ROOT>
 export const GUFI_INDEX = path.join(INDEX_BASE, 'gufi', path.basename(KB_ROOT))
 export const EXTRACT_CACHE = path.join(INDEX_BASE, 'extract')
-/** GUFI binaries: env override first, then installs near the app (the
- *  deploy workflows place gufi-install beside the app directory, and a
- *  source checkout may carry one at the repo root or the current
- *  directory), then PATH, then the container image's /opt/gufi. */
-export const GUFI_BIN = (() => {
-  if (process.env.GUFI_BIN) return process.env.GUFI_BIN
-  const nearby = [
-    path.join(PROJECT_ROOT, 'gufi-install', 'bin'),
-    path.join(PROJECT_ROOT, '..', 'gufi-install', 'bin'),
-    path.join(process.cwd(), 'gufi-install', 'bin'),
-  ]
-  for (const c of nearby) {
-    if (fs.existsSync(path.join(c, 'gufi_query'))) return c
-  }
+/** Where findGufiBin looks besides the environment, for tests to replace. */
+export interface GufiSearch {
+  projectRoot: string
+  cwd: string
+  /** The directory holding gufi_query on PATH, or null. */
+  onPath: () => string | null
+  /** The usual install locations, in order. */
+  prefixes: string[]
+}
+
+function gufiOnPath(): string | null {
   try {
     const found = execFileSync('sh', ['-c', 'command -v gufi_query'], { encoding: 'utf8' }).trim()
-    if (found) return path.dirname(found)
-  } catch { /* not on PATH */ }
+    return found ? path.dirname(found) : null
+  } catch { return null /* not on PATH */ }
+}
+
+/** The container image's /opt/gufi, then GUFI's macOS package, which
+ *  installs to /usr/local for all users or ~/usr/local for one. */
+export const GUFI_PREFIXES = ['/opt/gufi/bin', '/usr/local/bin', path.join(os.homedir(), 'usr', 'local', 'bin')]
+
+/** GUFI binaries: GUFI_BIN first; then a GUFI bundled with the app (the
+ *  macOS app's launcher sets STUDIO_GUFI_PREFIX); installs near the app
+ *  (the deploy workflows place gufi-install beside the app directory, and
+ *  a source checkout may carry one at the repo root or the current
+ *  directory); PATH; then the usual prefixes. Each candidate counts only
+ *  where gufi_query exists; with none, /opt/gufi/bin as before. */
+export function findGufiBin(env: NodeJS.ProcessEnv = process.env, search: Partial<GufiSearch> = {}): string {
+  if (env.GUFI_BIN) return env.GUFI_BIN
+  const projectRoot = search.projectRoot ?? PROJECT_ROOT
+  const cwd = search.cwd ?? process.cwd()
+  const has = (dir: string) => fs.existsSync(path.join(dir, 'gufi_query'))
+  const first = [
+    ...(env.STUDIO_GUFI_PREFIX ? [path.join(env.STUDIO_GUFI_PREFIX, 'bin')] : []),
+    path.join(projectRoot, 'gufi-install', 'bin'),
+    path.join(projectRoot, '..', 'gufi-install', 'bin'),
+    path.join(cwd, 'gufi-install', 'bin'),
+  ]
+  for (const c of first) if (has(c)) return c
+  const found = (search.onPath ?? gufiOnPath)()
+  if (found) return found
+  for (const c of search.prefixes ?? GUFI_PREFIXES) if (has(c)) return c
   return '/opt/gufi/bin'
-})()
+}
+
+export const GUFI_BIN = findGufiBin()
+
+/** GUFI's libraries, beside its bin directory. */
+export const gufiLibDir = (bin: string) => path.join(path.dirname(bin), 'lib')
+export const GUFI_LIB = gufiLibDir(GUFI_BIN)
+
+/** gufi_vt as a module another SQLite can load (gufi_sqlite3 carries it
+ *  already): gufi_vt.so on Linux, gufi_vt.dylib on macOS. */
+export const gufiVtModule = (lib: string, platform: NodeJS.Platform = process.platform) =>
+  path.join(lib, platform === 'darwin' ? 'gufi_vt.dylib' : 'gufi_vt.so')
+export const GUFI_VT_MODULE = gufiVtModule(GUFI_LIB)
+
+/** The variable the platform's dynamic loader searches first. */
+export const libraryPathVar = (platform: NodeJS.Platform = process.platform) =>
+  platform === 'darwin' ? 'DYLD_LIBRARY_PATH' : 'LD_LIBRARY_PATH'
+
+/**
+ * The environment for a program that runs GUFI. Every GUFI tool gets
+ * GUFI_BIN, GUFI_BIN first on PATH (gufi_vt runs gufi_query by name), and
+ * GUFI's lib directory first on the loader's path, which GUFI's macOS
+ * package needs (DYLD_LIBRARY_PATH) and a Linux install already has
+ * through its rpath, so there it changes nothing. A system lib directory
+ * is never added, since the loader searches it anyway.
+ *
+ * The indexer scripts (Python) get GUFI_BIN alone, `libraries: false`: a
+ * loader path that reaches GUFI's own sqlite breaks Python's sqlite3
+ * module (deploy/app.def). They reach GUFI only through gufi_sqlite3,
+ * which the macOS app's copy runs without help (deploy/mac/macho_relink.py)
+ * and a Linux install through its rpath.
+ */
+export function gufiEnvFor(
+  bin: string,
+  base: NodeJS.ProcessEnv,
+  extra: Record<string, string> = {},
+  opts: { libraries?: boolean; platform?: NodeJS.Platform } = {},
+): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...base, ...extra, GUFI_BIN: bin }
+  if (opts.libraries === false) return env
+  env.PATH = [bin, base.PATH].filter(Boolean).join(path.delimiter)
+  const lib = gufiLibDir(bin)
+  const system = ['/lib', '/usr/lib'].includes(lib)
+  if (!system && fs.existsSync(lib)) {
+    const v = libraryPathVar(opts.platform)
+    env[v] = [lib, base[v]].filter(Boolean).join(path.delimiter)
+  }
+  return env
+}
+
+/** gufiEnvFor this server's GUFI and environment: for GUFI's tools. */
+export const gufiEnv = (extra: Record<string, string> = {}) => gufiEnvFor(GUFI_BIN, process.env, extra)
+/** The same for the indexer scripts: GUFI_BIN, and no loader path. */
+export const indexerEnv = (extra: Record<string, string> = {}) =>
+  gufiEnvFor(GUFI_BIN, process.env, extra, { libraries: false })
 
 export const PORT = Number(process.env.PORT ?? 4080)
 export const HOST = process.env.HOST ?? '0.0.0.0'

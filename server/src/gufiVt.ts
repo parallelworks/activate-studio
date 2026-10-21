@@ -2,10 +2,11 @@ import { execFile } from 'node:child_process'
 import { randomBytes, timingSafeEqual } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import type { FastifyInstance } from 'fastify'
-import { GUFI_BIN, HOST, PORT } from './config.js'
+import { GUFI_BIN, HOST, PORT, gufiEnv } from './config.js'
 import type { Library } from './libraries.js'
-import { remoteRun } from './remoteExec.js'
+import { remoteRun, shellFor } from './remoteExec.js'
 import { REMOTE_PREFIX, remoteTarget } from './userLibraries.js'
 import { noteGufi } from './gufiTrace.js'
 
@@ -37,7 +38,7 @@ export interface Plan {
 export interface VtOrder { col: number; desc: boolean; limit: number }
 export interface VtResult { rows: { id: string; row: string[] }[]; failed: { library: string; error: string }[]; elapsedMs: number }
 
-const WRAPPER = new URL('./gufiVtRemote.js', import.meta.url).pathname
+const WRAPPER = fileURLToPath(new URL('./gufiVtRemote.js', import.meta.url))
 const SECRET = randomBytes(32).toString('hex')
 const TOKEN_TTL_MS = 10 * 60_000
 const THREADS = 4
@@ -66,7 +67,7 @@ export function gufiVtAvailable(): Promise<boolean> {
     // A remote location whose command prints nothing and exits 0 answers
     // with no rows; a build without remote_cmd refuses the table.
     const probe = "CREATE VIRTUAL TABLE temp.p USING gufi_vt(index='/', E=\"SELECT name FROM vrpentries;\", remote_cmd='/bin/true'); SELECT count(*) FROM temp.p;"
-    execFile(sqlite, [':memory:', probe], { timeout: 15_000, env: { ...process.env, PATH: `${GUFI_BIN}:${process.env.PATH ?? ''}` } },
+    execFile(sqlite, [':memory:', probe], { timeout: 15_000, env: gufiEnv() },
       (err, out) => resolve(!err && String(out).trim() === '0'))
   })
   return available
@@ -80,8 +81,8 @@ interface VtLocation { id: string; index: string; plan: Plan; remote?: { token: 
 /** A remote location's command as the Studio runs it: the wrapper. */
 const viaStudio = (r: NonNullable<VtLocation['remote']>) => [process.execPath, WRAPPER, r.token]
 /** The same location as a person runs it from a terminal: gufi_vt's usual
- *  remote form, over pw ssh, with the cluster's GUFI on the PATH there. */
-export const viaPwSsh = (r: NonNullable<VtLocation['remote']>) => ['pw', 'ssh', r.site, 'env', `PATH=${r.gufiBin}:$PATH`]
+ *  remote form, over ssh or pw ssh, with the host's GUFI on the PATH there. */
+export const viaShell = (r: NonNullable<VtLocation['remote']>) => [...shellFor(r.site), 'env', `PATH=${r.gufiBin}:$PATH`]
 
 /** The script for a set of locations: one table each, then the union. */
 export function vtScript(locs: VtLocation[], order: VtOrder | null, remoteCmd = viaStudio): string {
@@ -141,13 +142,13 @@ export async function runAcross(items: { lib: Library; plan: Plan }[], order: Vt
     out = await new Promise<string>((resolve, reject) => {
       execFile(sqlite, ['-d', 'x', ':memory:', script], {
         timeout: 300_000, maxBuffer: 64 * 1024 * 1024,
-        env: { ...process.env, PATH: `${GUFI_BIN}:${process.env.PATH ?? ''}`, STUDIO_GUFI_VT_URL: selfUrl(), STUDIO_GUFI_VT_SECRET: SECRET },
+        env: gufiEnv({ STUDIO_GUFI_VT_URL: selfUrl(), STUDIO_GUFI_VT_SECRET: SECRET }),
       }, (err, so, se) => (err ? reject(new Error(String(se || err.message).trim().split('\n').slice(-2).join(' ').slice(0, 300))) : resolve(String(so))))
     })
   } finally {
     // Shown as a person would run it: gufi_vt's own remote form for the
     // statement, then what each cluster ran.
-    noteGufi([sqlite, '-d', 'x', ':memory:'], { engine: 'gufi_vt', ms: Date.now() - t1, script: vtScript(locs, order, viaPwSsh) })
+    noteGufi([sqlite, '-d', 'x', ':memory:'], { engine: 'gufi_vt', ms: Date.now() - t1, script: vtScript(locs, order, viaShell) })
     for (const l of locs) {
       if (!l.remote) continue
       const loc = tokens.get(l.remote.token)

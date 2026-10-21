@@ -16,7 +16,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { execFile } from 'node:child_process'
-import { GUFI_BIN, GUFI_INDEX, INDEX_BASE, KB_ROOT, gufiAvailable } from './config.js'
+import { GUFI_BIN, GUFI_INDEX, INDEX_BASE, KB_ROOT, gufiAvailable, gufiEnv } from './config.js'
 import { KbError } from './kb.js'
 import { loadUserLibraries, ownerOf, remoteRootOf } from './userLibraries.js'
 
@@ -106,7 +106,7 @@ function pinnedDefs(): LibraryDef[] {
 
 function sqlite(script: string, timeoutMs = 10_000): Promise<string> {
   return new Promise((resolve, reject) => {
-    const child = execFile(path.join(GUFI_BIN, 'gufi_sqlite3'), [], { timeout: timeoutMs, maxBuffer: 1 << 20 },
+    const child = execFile(path.join(GUFI_BIN, 'gufi_sqlite3'), [], { timeout: timeoutMs, maxBuffer: 1 << 20, env: gufiEnv() },
       (err, so) => (err && !so ? reject(err) : resolve(so)))
     child.stdin?.end(script)
   })
@@ -231,8 +231,26 @@ export function requireWritable(lib: Library): void {
   if (!lib.writable) throw new KbError(403, `${lib.label} is read only`)
 }
 
+/** Names a request can use that are not a library: "all" means every one. */
+const RESERVED = new Set([PRIMARY_ID, 'all'])
+
+/** An id for a library added without one: from its label, else its index
+ *  directory's name, unique among the libraries. Not "u-...", which a
+ *  user's own libraries use. */
+export function libraryIdFor(label: string | undefined, indexRoot: string): string {
+  const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 34).replace(/-+$/, '')
+  let base = slug(label ?? '') || slug(path.basename(path.resolve(indexRoot || '.'))) || 'library'
+  if (base.startsWith('u-')) base = `lib-${base}`.slice(0, 34)
+  const taken = new Set([...RESERVED, ...listLibraries().map(l => l.id)])
+  let id = base
+  for (let i = 2; taken.has(id); i++) id = `${base}-${i}`
+  return id
+}
+
 export async function addLibrary(def: LibraryDef): Promise<Library> {
+  if (!def.id && typeof def.indexRoot === 'string' && def.indexRoot) def = { ...def, id: libraryIdFor(def.label, def.indexRoot) }
   if (!isDef(def)) throw new KbError(400, 'a library needs an id (letters, digits, dash, underscore) and an index root')
+  if (def.id === 'all') throw new KbError(409, 'all is reserved: it names every library at once')
   if (def.id === PRIMARY_ID || listLibraries().some(l => l.id === def.id)) throw new KbError(409, `a library named ${def.id} already exists`)
   const abs = path.resolve(def.indexRoot)
   if (!fs.existsSync(abs)) throw new KbError(400, `no such directory: ${def.indexRoot}`)

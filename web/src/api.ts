@@ -14,9 +14,14 @@ export interface PublicLibrary {
 }
 /** Settings' listing adds where each library points. */
 export interface SettingsLibrary extends PublicLibrary { indexRoot: string; sourceRoot: string | null }
-/** A user's own library on one of their clusters. */
+/** A user's own library on one of their clusters, or on another machine over ssh. */
 export interface UserLibrary {
   id: string; label: string; site: string; sourceDir: string; sourceRoot: string | null; indexRoot: string | null
+  transport?: 'pw' | 'ssh'
+  /** An index that was there already, connected rather than built. */
+  existing?: boolean
+  destination?: string | null
+  port?: number | null
   state: 'building' | 'ready' | 'updating' | 'failed'
   run: { slug: string; mode: 'build' | 'update'; startedAt: string } | null
   error: string | null; builtAt: string | null; directories: number | null; files: number | null
@@ -296,7 +301,8 @@ export const api = {
   startIndexJob: (dir: string) => postJson<IndexJob>('/api/index/job', { path: dir }),
   indexJob: (id: number) => getJson<IndexJob>(`/api/index/job/${id}`),
   libraries: () => getJson<{ libraries: SettingsLibrary[] }>('/api/libraries'),
-  userLibraries: () => getJson<{ libraries: UserLibrary[]; available: boolean }>('/api/user-libraries'),
+  /** `ssh`: indexes over ssh are offered; `pw`: indexes on a cluster over pw ssh are. */
+  userLibraries: () => getJson<{ libraries: UserLibrary[]; available: boolean; ssh?: boolean; pw?: boolean }>('/api/user-libraries'),
   addUserLibrary: (body: { site: string; sourceDir: string; label?: string; scheduler?: { partition: string; account?: string } | null }) =>
     postJson<UserLibrary>('/api/user-libraries', body),
   refreshUserLibrary: (id: string) => postJson<UserLibrary>(`/api/user-libraries/${encodeURIComponent(id)}/refresh`, {}),
@@ -311,6 +317,77 @@ export const api = {
     const res = await fetch(`/api/libraries/${encodeURIComponent(id)}`, { method: 'DELETE' })
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `remove: ${res.status}`)
   },
+}
+
+// ---- updates ----
+// Only the macOS app installs updates; a clone is told the version and the
+// command, and a hosted deployment has none (its routes answer 403).
+export interface UpdatePolicy { check: boolean; install: 'manual' | 'auto'; channel: 'stable' | 'prerelease' }
+export type UpdateState = 'idle' | 'checking' | 'downloading' | 'verifying' | 'installing' | 'restarting' | 'error'
+export interface UpdatesStatus {
+  mode: 'app' | 'clone' | 'hosted'
+  current: { version: string; builtAt: string | null }
+  policy: UpdatePolicy
+  latest: { version: string; publishedAt: string | null; notes: string | null; url: string | null } | null
+  available: boolean
+  canInstall: boolean
+  /** Why it cannot install, in plain words. */
+  reason: string | null
+  state: UpdateState
+  progress: { bytes: number; total: number | null } | null
+  error: string | null
+  checkedAt: string | null
+  /** The version a rollback goes back to. */
+  previous: { version: string } | null
+  /** The last update changed the app's own window, which reopening runs. */
+  reopen?: boolean
+}
+
+async function sendUpdates(url: string, method: 'POST' | 'PUT', body: unknown = {}): Promise<unknown> {
+  const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error((data as { error?: string }).error ?? `${url}: ${res.status}`)
+  return data
+}
+
+export const updatesApi = {
+  /** Null where there are no updates: a hosted deployment answers 403, and a
+   *  server from before updates has no such route. */
+  status: async (): Promise<UpdatesStatus | null> => {
+    const res = await fetch('/api/updates')
+    if (res.status === 403 || res.status === 404) return null
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error((data as { error?: string }).error ?? `/api/updates: ${res.status}`)
+    return 'mode' in data && 'current' in data ? data as UpdatesStatus : null
+  },
+  check: () => sendUpdates('/api/updates/check', 'POST') as Promise<UpdatesStatus>,
+  install: () => sendUpdates('/api/updates/install', 'POST') as Promise<UpdatesStatus>,
+  rollback: () => sendUpdates('/api/updates/rollback', 'POST') as Promise<UpdatesStatus>,
+  /** Saved with the other settings. */
+  savePolicy: (updates: UpdatePolicy) => sendUpdates('/api/settings', 'PUT', { updates }).then(() => undefined),
+}
+
+/** Sent with the status whenever the Updates section learns something, so
+ *  the footer's version line follows without waiting for its next read. */
+export const UPDATES_CHANGED = 'ade:updates-changed'
+const UPDATES_FOCUS = 'ade:updates-focus'
+let updatesFocusPending = false
+
+/** Opens Settings, General at the Updates section. */
+export function openUpdates(): void {
+  updatesFocusPending = true
+  location.hash = '#view=settings:general'
+  // Already on that page, the hash does not change; the section scrolls itself.
+  window.dispatchEvent(new Event(UPDATES_FOCUS))
+}
+
+/** Calls `fn` when the Updates section is asked for, at once if it was asked
+ *  for before the section was there to see it. */
+export function onUpdatesFocus(fn: () => void): () => void {
+  const run = () => { updatesFocusPending = false; fn() }
+  if (updatesFocusPending) run()
+  window.addEventListener(UPDATES_FOCUS, run)
+  return () => window.removeEventListener(UPDATES_FOCUS, run)
 }
 
 export interface UploadResult { saved: string[]; indexMs?: number; indexed?: boolean; indexError?: string; deferred?: boolean }

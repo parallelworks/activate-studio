@@ -411,7 +411,10 @@ main.content { min-height: 0; min-width: 0; background: var(--pw-content-bg); }
 .footer-pending { min-height: 74px; }
 .footer-skeleton { margin: 4px 0 10px; }
 .status-line.muted2 { color: var(--pw-muted); }
-.footer-sync { margin-left: auto; }
+.footer-sync { margin-left: auto; flex-shrink: 0; white-space: nowrap; }
+/* A long build name (a clone's git describe) stays on one line. */
+.status-line .identity-btn { min-width: 0; }
+.identity-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ---- content area ---- */
 .content { flex: 1; min-width: 0; display: flex; flex-direction: column; }
@@ -846,6 +849,21 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 }
 .accent-swatch.active { box-shadow: 0 0 0 2px var(--pw-navy); }
 [data-theme='dark'] .accent-swatch { border-color: var(--pw-panel); }
+
+/* The Studio's icons, each previewed on the background it is for. */
+.brand-icons { display: flex; flex-direction: column; gap: 6px; }
+.brand-icon-slots { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.brand-icon-slot { display: flex; gap: 12px; align-items: flex-start; }
+.brand-icon-preview {
+  flex: none; width: 56px; height: 56px; border-radius: 10px; border: 1px solid var(--pw-border);
+  display: flex; align-items: center; justify-content: center; font-size: 11px;
+}
+.brand-icon-preview.light { background: #f4f4f5; color: #6b7280; }
+.brand-icon-preview.dark { background: #111214; color: #9ca3af; border-color: #2a2d33; }
+.brand-icon-preview img { max-width: 40px; max-height: 40px; object-fit: contain; }
+.brand-icon-name { font-size: 13px; font-weight: 500; }
+.brand-icon-note, .brand-icon-help { font-size: 12px; margin: 0; }
+.brand-icon-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 
 .accent-custom { padding: 0; overflow: hidden; }
 .accent-custom::-webkit-color-swatch-wrapper { padding: 0; }
@@ -1747,9 +1765,36 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .libraries-table .lib-seg { white-space: nowrap; }
 .libraries-table .lib-yes { color: var(--pw-text); }
 .libraries-table .lib-no { color: var(--pw-muted); }
-.libraries-table .lib-actions { text-align: right; width: 1%; }
+.libraries-table .lib-actions { text-align: right; width: 1%; white-space: nowrap; }
 .libraries-table .lib-actions > * + * { margin-left: 6px; }
 .libraries-wrap { margin-bottom: 18px; }
+/* A row's progress, such as the main folder's index build, runs across the
+   table under it, so the row above keeps no rule between them. */
+.libraries-table tr.lib-has-detail > td { border-bottom: 0; }
+.libraries-table tr.lib-detail > td { padding-top: 0; width: auto; }
+.libraries-table .lib-build { display: flex; flex-direction: column; gap: 8px; max-width: 40rem; }
+.lib-kinds { width: min(26rem, calc(100vw - 2rem)); display: flex; flex-direction: column; gap: 6px; }
+.lib-add-form { margin-top: 12px; }
+.local-library-browse { margin-bottom: 14px; max-width: var(--settings-measure); }
+/* The setup wizard's steps, done and to come. */
+.setup-progress { display: flex; gap: 4px; margin: 6px 0 2px; }
+.setup-progress span { flex: 1; height: 3px; border-radius: 2px; background: var(--pw-border); }
+.setup-progress span.on { background: var(--pw-navy); }
+.lib-add-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+/* On a phone each library is a block: name and paths, then its state, what
+   it searches (named, since the headers are gone), and its actions. */
+@media (max-width: 640px) {
+  .libraries-table thead { display: none; }
+  .libraries-table, .libraries-table tbody, .libraries-table tr, .libraries-table td { display: block; width: auto; }
+  .libraries-table td:first-child { width: auto; padding-right: 0.75rem; }
+  .libraries-table td { border-bottom: 0; }
+  .libraries-table tr { border-bottom: 1px solid var(--pw-border); padding-bottom: 6px; }
+  .libraries-table tr.lib-has-detail { border-bottom: 0; }
+  .libraries-table td.lib-cap { display: inline-block; }
+  .libraries-table td.lib-cap::before { content: attr(data-label) ": "; color: var(--pw-muted); }
+  .libraries-table td.lib-actions { display: flex; flex-wrap: wrap; gap: 6px; white-space: normal; }
+  .libraries-table .lib-actions > * + * { margin-left: 0; }
+}
 
 /* Workflows tab */
 .wf-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(10.5rem, 1fr)); gap: 0.75rem; margin: 1rem 0 1.5rem; }

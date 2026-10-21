@@ -10,6 +10,9 @@ __pycache__/
 .DS_Store
 studio-bundle.tar.gz
 deploy/.cache/
+# deploy/mac/build_app.sh: its outputs and its download cache.
+deploy/mac/out/
+deploy/mac/.cache/
 CLAUDE.md
 
 # Written by deploy/make_bundle.sh into the bundle, never into the repo.

@@ -149,4 +149,26 @@ test('a pinned library cannot be removed from settings; an added one can', async
   assert.throws(() => getLibrary('site'), /no library named site/)
 })
 
+test('a library added without an identifier is named from its label, else its directory', async () => {
+  const one = await j('POST', '/api/libraries', { label: 'Lab archive', indexRoot: SITE_IDX })
+  assert.equal(one.status, 200)
+  assert.equal(one.body.library.id, 'lab-archive')
+  assert.equal(one.body.library.label, 'Lab archive')
+  const two = await j('POST', '/api/libraries', { id: '', label: 'Lab archive', indexRoot: SITE_IDX })
+  assert.equal(two.body.library.id, 'lab-archive-2')
+  const bare = await j('POST', '/api/libraries', { indexRoot: SITE_IDX })
+  assert.equal(bare.status, 200)
+  assert.equal(bare.body.library.id, path.basename(SITE_IDX).toLowerCase().replace(/[^a-z0-9]+/g, '-'))
+  // Names a request already means something by are never taken.
+  const all = await j('POST', '/api/libraries', { label: 'All', indexRoot: SITE_IDX })
+  assert.equal(all.body.library.id, 'all-2')
+  const kb = await j('POST', '/api/libraries', { label: 'KB', indexRoot: SITE_IDX })
+  assert.equal(kb.body.library.id, 'kb-2')
+  const reserved = await j('POST', '/api/libraries', { id: 'all', indexRoot: SITE_IDX })
+  assert.equal(reserved.status, 409)
+  for (const id of ['lab-archive', 'lab-archive-2', bare.body.library.id, 'all-2', 'kb-2']) {
+    assert.equal((await j('DELETE', `/api/libraries/${id}`)).status, 200)
+  }
+})
+
 test.after(async () => { await app.close() })

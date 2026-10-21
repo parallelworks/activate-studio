@@ -76,6 +76,35 @@ A file's own labels show green in the viewer, and labels it inherits from a fold
 
 Settings, "Feature previews" turns on capabilities still in preview. **Voice conversations** add a Voice button above the chat for a spoken conversation with the assistant, which can use its tools while you talk. It runs on a separate Unmute deployment (the `unmute` workflow).
 
+## Setup
+
+Setup is for a single-user install, where nobody signs in. With sign-in on, `GET /api/setup/status` answers only `{firstRun: false, standalone: false, canRestart: false}` and the other setup routes, the icon routes included, refuse with 403.
+
+- `GET /api/setup/status` (`?files=1` adds the indexed file count): `firstRun` (sign-in off, setup not done, and not deployed by the platform, which sets `PW_PLATFORM_HOST`), `standalone`, `canRestart` (a launcher with `STUDIO_CONFIG_FILE` and `STUDIO_RESTARTABLE=1`), `launcher`, `primary` (`path`, `exists`, `writable`, `indexed`, `files`), `gufi` (`found`, `bin`, `semantic`), `embedModel` (`path`, `found`), `branding` (`light` and `dark`, the addresses the browser loads for the icons set, `dark` only for one of its own; `iconUrl` and `iconUrlDark`, the settings), `libraries`, and `job`, a setup index build still running.
+- `POST /api/setup/icon` (`?variant=dark` for dark mode): `multipart/form-data` with one file. PNG, JPEG, SVG or WebP, told by the file's first bytes rather than its name, at most 1 MB: over that is a 413, anything else a 415, and a body that is not multipart a 400. An SVG with a script, an event handler, a `foreignObject`, embedded content, a DOCTYPE or entity, a stylesheet or CSS import, a `javascript:` link, or an `href` or `url()` to anything but a `#fragment` or a `data:image` raster is refused with 415, naming what it found. The file is stored as `INDEX_BASE/branding/icon-<16 hex of its sha256>.<type>` and set as `iconUrl` (or `iconUrlDark`), which `/api/brand-icon` and `/api/favicon` serve, so the tab icon follows; a file no setting names any more is deleted. Answers the `branding` state.
+- `DELETE /api/setup/icon` (`?variant=dark`): clears that icon; dark mode then shows the light one, and with neither the default mark shows.
+- `GET /api/setup/browse?path=`: the folders in a folder, sorted, without dot-folders, with `parent` and `writable`. `~` is the home folder, and a relative path is taken from it. A path that does not exist is a 404.
+- `POST /api/setup/primary-folder {path}`: the folder must exist, be writable, and neither contain the Studio's index nor sit inside it. With a launcher it saves `KB_ROOT` to the launcher's settings file and restarts: `{saved: true, restarting: true}`. A settings file without a restart answers `{saved: true, restarting: false, note}`; no launcher answers `{saved: false, restarting: false, note}`, naming the `KB_ROOT` to set.
+- `POST /api/setup/index`: one job over the whole primary folder, its top-level files and then each top-level folder, through the same passes and lock as other indexing. `GET /api/index/job/<id>` follows it; its `progress` carries `phase` (`files`, `directories`, `finishing`, `done`), `done`, `total`, `current` and `failed`. A request while a build runs returns that build. A build for a different folder than the last one clears the old folder's extraction caches and index tree first, and afterwards the sweep records the folder as indexed, so it looks only for later changes.
+- `POST /api/setup/complete`: saves `setupDone`.
+
+The sidebar switches save the `sections` setting (`PUT /api/settings {sections}`). An empty list shows every page, including pages a later version adds. The wizard's name and accent save `appName` and `accent` the same way, and its library step uses the Libraries routes ([`LIBRARIES.md`](LIBRARIES.md)).
+
+Brand images (`/api/brand-icon`, `/api/favicon`) are served with `Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox` and `X-Content-Type-Options: nosniff`, so an SVG opened on its own runs nothing and loads nothing.
+
+## AI features
+
+The `aiEnabled` setting (`PUT /api/settings {aiEnabled}`; the client config carries it) is on unless a deployment sets `AI_ENABLED=0` or saves it off. Off:
+
+- Chat and Agents leave the sidebar, and a link to either opens the first page shown. The wizard and Settings also take them out of the `sections` setting, and put them back when AI features are turned on; their switches under Sidebar are disabled meanwhile.
+- The footer drops its model line.
+- `POST /api/chat/stream` answers "AI features are off in this Studio." as the reply's text and ends, without calling a model or recording the turn. `GET /api/chat/models` lists no models, with that message as `error`; `GET /api/ai/health` answers `status: "off"`; `/v1` refuses with 403; `POST /api/kb/label-suggestions` refuses with 409; indexing captions no images.
+- Search, the library, query, statistics, history and the MCP endpoint are unchanged.
+
+With sign-in off the personal model key routes act for the one user, and their answers carry `single: true`: `GET /api/me/model-key` reports the key (`mode`, `last4`, `baseUrl`), `POST /api/me/model-key {key, baseUrl}` saves it, `POST /api/me/model-key/clear` removes it, and `POST /api/me/model-key/test {key, baseUrl}` asks the endpoint's `/models`. The test answers `status` `ok` with `models` and the model `ids` (at most 500), `ok` with `models: 0` for an endpoint that offers none, `auth` for a refused key, or `unreachable` with a `message`; a 404 names the missing `/models` and says a base URL usually ends in /v1, and a base URL that is not http(s) is a 400. The key is kept in the vault beside the index (`user-credentials.json`), encrypted with the `.credentials-secret` beside it, since there is no sign-in to tie a browser cookie to; the startup scrub of personal entries keeps it while sign-in is off. A request without a user then uses it wherever a user's key is used: chat, the model listing, the footer's health check, and label suggestions. With sign-in on, or with `DISABLE_PERSONAL_KEYS=1`, nothing changes. The wizard saves the default model it offers as `ragDefaultModel`, the default for label suggestions and the grounded model, and as the chat's remembered model in the browser (`aiChat.model`).
+
+Settings, General has the name, the icon (uploaded, on a single-user install), the accent, and the AI features switch, which saves as it is switched. Settings, Model access appears on a single-user install for the endpoint.
+
 ## Using it from other tools
 
 The deployment serves an OpenAI-compatible endpoint with two models:

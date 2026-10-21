@@ -21,6 +21,20 @@ const AGENT_EXECUTIONS: AgentExecution[] = ['runner', 'sessions', 'both']
 const asExecution = (v: unknown): AgentExecution | undefined =>
   AGENT_EXECUTIONS.includes(v as AgentExecution) ? v as AgentExecution : undefined
 
+/** Whether the Studio looks for new releases, and whether the macOS app
+ *  installs them on its own (updates.ts). */
+export interface UpdatePolicy {
+  check: boolean
+  install: 'manual' | 'auto'
+  channel: 'stable' | 'prerelease'
+}
+const UPDATE_DEFAULTS: UpdatePolicy = { check: true, install: 'manual', channel: 'stable' }
+const asPolicy = (v: Partial<UpdatePolicy> | undefined): UpdatePolicy => ({
+  check: typeof v?.check === 'boolean' ? v.check : UPDATE_DEFAULTS.check,
+  install: v?.install === 'auto' ? 'auto' : 'manual',
+  channel: v?.channel === 'prerelease' ? 'prerelease' : 'stable',
+})
+
 export interface StudioSettings {
   appName?: string
   kbLabel?: string
@@ -75,6 +89,12 @@ export interface StudioSettings {
   /** Feature preview: voice conversations through an Unmute deployment. */
   voiceEnabled?: boolean
   voiceUrl?: string
+  /** The first-run setup was finished or skipped (single-user installs). */
+  setupDone?: boolean
+  /** Chat, agents and every other model call. Off leaves search, the
+   *  library, query and statistics as they are. */
+  aiEnabled?: boolean
+  updates?: UpdatePolicy
 }
 
 let cache: StudioSettings | null = null
@@ -136,6 +156,9 @@ export function effectiveSettings(): Required<StudioSettings> {
     agentExecution: s.agentExecution ?? asExecution(process.env.AGENT_EXECUTION) ?? 'runner',
     voiceEnabled: s.voiceEnabled ?? process.env.VOICE_ENABLED === '1',
     voiceUrl: s.voiceUrl ?? process.env.VOICE_URL ?? '',
+    setupDone: s.setupDone ?? false,
+    aiEnabled: s.aiEnabled ?? process.env.AI_ENABLED !== '0',
+    updates: asPolicy(s.updates),
     customTools: s.customTools ?? [],
     ragDefaultModel: s.ragDefaultModel ?? process.env.RAG_DEFAULT_MODEL ?? '',
     ragTopK: s.ragTopK ?? Math.min(Math.max(Number(process.env.RAG_TOP_K) || 6, 1), 20),
@@ -181,6 +204,15 @@ export function effectiveSettings(): Required<StudioSettings> {
       ollama: { workflow: 'ollama-endpoint', inputs: {} },
     }),
   }
+}
+
+/** Save some settings outside the Settings form, keeping the rest. */
+export async function updateSettings(patch: StudioSettings): Promise<StudioSettings> {
+  const next: StudioSettings = { ...loadSettings(), ...patch }
+  await fsp.mkdir(INDEX_BASE, { recursive: true })
+  await fsp.writeFile(FILE, JSON.stringify(next, null, 1))
+  cache = next
+  return next
 }
 
 export async function settingsRoutes(app: FastifyInstance): Promise<void> {
@@ -255,6 +287,7 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
       }
     }
     if (body.delegationEnabled !== undefined) next.delegationEnabled = !!body.delegationEnabled
+    if (body.aiEnabled !== undefined) next.aiEnabled = Boolean(body.aiEnabled)
     if (body.agentExecution !== undefined) {
       const v = asExecution(body.agentExecution)
       if (!v) throw new KbError(400, 'agent execution must be runner, sessions, or both')
@@ -348,6 +381,14 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
       const raw = String(body.serveWorkflows).slice(0, 4000)
       try { JSON.parse(raw) } catch { throw new KbError(400, 'serveWorkflows must be JSON') }
       next.serveWorkflows = raw
+    }
+    if (body.updates !== undefined) {
+      const u = body.updates as Partial<UpdatePolicy> | null
+      if (!u || typeof u !== 'object' || Array.isArray(u)) throw new KbError(400, 'updates must be an object')
+      if (u.check !== undefined && typeof u.check !== 'boolean') throw new KbError(400, 'updates.check must be true or false')
+      if (u.install !== undefined && u.install !== 'manual' && u.install !== 'auto') throw new KbError(400, 'updates.install must be manual or auto')
+      if (u.channel !== undefined && u.channel !== 'stable' && u.channel !== 'prerelease') throw new KbError(400, 'updates.channel must be stable or prerelease')
+      next.updates = asPolicy({ ...asPolicy(next.updates), ...u })
     }
     if (body.ragEndpointName !== undefined) {
       const n = String(body.ragEndpointName).toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40)

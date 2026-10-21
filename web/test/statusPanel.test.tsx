@@ -5,7 +5,7 @@ import { reloadPanelState, setPanelView, setSideShown } from '../src/panelState'
 import { share } from '../src/statusShare'
 import { PageSideViewHost } from '../src/components/RunPane'
 import {
-  PanelToggle, StatusPanel, activitySummary, connectionsSummary, connectionLines, librariesSummary, libraryLines, resetStatusPanelForTests,
+  PanelToggle, StatusPanel, activitySummary, connectionsSummary, connectionLines, librariesSummary, libraryLines, modelSummary, resetStatusPanelForTests,
 } from '../src/components/StatusPanel'
 
 const lib = { id: 'kb', label: 'Knowledge base', primary: true, writable: true, pinned: true, source: true, caps: { index: true, fullText: true, vectors: false } }
@@ -128,6 +128,9 @@ describe('the cards', () => {
     const conns = connectionLines({ platform: false, authEnabled: true, ai: null, mcp: [{ name: 'crm', tools: 4, error: null, checkedAt: ago(1) }], libs: [lib], userLibs: null })
     expect(conns.map(c => `${c.name}: ${c.meta}`)).toEqual(['Platform: needs your key', 'crm: connected, 4 tools'])
     expect(connectionsSummary(conns).text).toBe('1 needs attention')
+    const ai = { ok: false, models: 0, gatewayHost: '', message: null, lastCallFailure: null, checkedAt: ago(1) }
+    expect(modelSummary({ ...ai, status: 'off' }, null)).toEqual({ text: 'AI features off', tone: 'muted' })
+    expect(modelSummary({ ...ai, status: 'auth' }, null)).toEqual({ text: 'model key rejected', tone: 'warning' })
   })
 
   it('leave out agents where the Agents page is hidden, and runs and sessions without Workflows or a platform', async () => {
