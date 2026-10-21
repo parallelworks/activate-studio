@@ -55,7 +55,8 @@ function fromGit(): BuildInfo | null {
   if (!commit) return null
   // Exact tag if this commit is one, otherwise the last tag with a distance
   // suffix, which reads as "past v1.0" rather than claiming to be it.
-  const described = git(['describe', '--tags', '--always', '--dirty'])
+  // Only the app's own tags: the repository also has gufi-* tags.
+  const described = git(['describe', '--tags', '--match', 'v*', '--always', '--dirty'])
   return {
     version: described && /^v/.test(described) ? described : 'dev',
     commit,

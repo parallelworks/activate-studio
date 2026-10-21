@@ -35,7 +35,7 @@ echo "Staging web, indexer, docs, starters..."
 # this a refresh that silently failed is indistinguishable from one that
 # worked, since PROJECT_ROOT in a deployment is app/ and there is no git
 # checkout there to ask.
-VERSION="$(cd "$PROJECT_ROOT" && git describe --tags --always --dirty 2>/dev/null || echo dev)"
+VERSION="$(cd "$PROJECT_ROOT" && git describe --tags --match 'v*' --always --dirty 2>/dev/null || echo dev)"
 case "$VERSION" in v*) ;; *) VERSION="dev" ;; esac
 COMMIT="$(cd "$PROJECT_ROOT" && git rev-parse --short HEAD 2>/dev/null || echo unknown)"
 printf '{\n "version": "%s",\n "commit": "%s",\n "builtAt": "%s"\n}\n' \

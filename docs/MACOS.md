@@ -255,41 +255,12 @@ from one of two sources:
 
 | Source | Set with | Oldest macOS |
 |---|---|---|
-| GUFI's own macOS package, with Homebrew's `libomp` and `pcre2` bottles (the default) | `GUFI_PKG`, or the pinned download | 27 |
-| An archive from `deploy/mac/build_gufi.sh` | `GUFI_TARBALL=path/to/gufi-macos-arm64.tar.gz` | its deployment target, 14 by default |
+| An archive from `deploy/mac/build_gufi.sh`; the app's releases use the published one | `GUFI_TARBALL=path/to/gufi-macos-arm64.tar.gz` | its deployment target, 14 by default |
+| GUFI's own macOS package, with Homebrew's `libomp` and `pcre2` bottles (when no archive is given) | `GUFI_PKG`, or the pinned download | 27 |
 
 The app's `LSMinimumSystemVersion` is the newest macOS any bundled binary
 declares, and GUFI is the one that sets it (the bundled Node needs 13.5).
 GUFI's package is built without a deployment target, so its binaries need
-the macOS release that built them.
-
-*Building GUFI:* `deploy/mac/build_gufi.sh` runs on a Mac with Apple
-silicon, Homebrew and the Command Line Tools. It builds GUFI with
-sqlite-vec, sqlite-lembed and llama.cpp for `MACOSX_DEPLOYMENT_TARGET`
-(default `14.0`), and builds LLVM's OpenMP runtime and PCRE2 from their
-release sources for the same target, since Homebrew's bottles of those
-need a newer macOS. It then relinks the tree, signs it ad hoc, checks that
-no file needs a newer macOS or loads anything from outside the tree and the
-system, and writes `gufi-macos-arm64.tar.gz`, its `.sha256`, and a manifest
-(GUFI commit, deployment target, component versions) to `deploy/mac/out`.
-`GUFI_REF` picks the GUFI branch, tag or commit; the default is the commit
-GUFI's package was built from.
-
-```
-deploy/mac/build_gufi.sh
-deploy/mac/check_gufi.sh deploy/mac/out/gufi-macos-arm64.tar.gz
-GUFI_TARBALL=deploy/mac/out/gufi-macos-arm64.tar.gz deploy/mac/build_app.sh
-```
-
-`check_gufi.sh` checks the files on any host. On a Mac it also indexes a
-folder, queries it with `gufi_query` and through `gufi_vt`, embeds text
-with the model, and searches with sqlite-vec, all with no `DYLD_*`
-variables set.
-
-*In CI:* the `gufi-macos` workflow, run from the Actions tab, builds on a
-`macos-15` runner, runs `check_gufi.sh` there and on the runners named in
-`test_runners` (default `macos-14`, the oldest macOS the default build
-targets), and keeps the archive as a workflow artifact. Pushing a tag
-named `gufi-*` builds with the defaults and attaches the archive to that
-tag's release, as a prerelease that is never marked latest, so the app's
-installer keeps finding the app's own release.
+the macOS release that built them. [`GUFI-MACOS.md`](GUFI-MACOS.md) covers
+the published archive, how to build and check it, and how a new one is
+published.
