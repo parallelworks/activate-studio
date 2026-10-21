@@ -328,7 +328,32 @@ if command -v hdiutil >/dev/null 2>&1; then
   mkdir -p "$WORK/dmg"
   ditto "$APP" "$WORK/dmg/$APP_NAME.app"
   ln -s /Applications "$WORK/dmg/Applications"
-  hdiutil create -quiet -volname "$APP_NAME" -srcfolder "$WORK/dmg" -ov -format UDZO "$ASSET.dmg"
+  if [ -n "$ICON" ]; then
+    # The volume's own icon, which Finder shows in the window's title bar
+    # and the sidebar: .VolumeIcon.icns at its root, used once the root has
+    # the custom-icon Finder flag. The flag is set on the mounted volume, so
+    # the image is made writable first and compressed after.
+    cp "$RES/$ICON.icns" "$WORK/dmg/.VolumeIcon.icns"
+    hdiutil create -quiet -volname "$APP_NAME" -srcfolder "$WORK/dmg" -ov -format UDRW "$WORK/rw.dmg"
+    mkdir -p "$WORK/mnt"
+    hdiutil attach -quiet -nobrowse -noautoopen -mountpoint "$WORK/mnt" "$WORK/rw.dmg"
+    # Finder info: 32 bytes, with kHasCustomIcon (0x0400) in the flags at byte 8.
+    xattr -wx com.apple.FinderInfo 0000000000000000040000000000000000000000000000000000000000000000 "$WORK/mnt"
+    hdiutil detach -quiet "$WORK/mnt"
+    hdiutil convert -quiet "$WORK/rw.dmg" -format UDZO -ov -o "$ASSET.dmg"
+    rm -f "$WORK/rw.dmg"
+    # Checked on the finished image, read only.
+    hdiutil attach -quiet -nobrowse -noautoopen -readonly -mountpoint "$WORK/mnt" "$ASSET.dmg"
+    flags="$(xattr -px com.apple.FinderInfo "$WORK/mnt" 2>/dev/null | tr -d ' \n' | cut -c17-20 || true)"
+    have_icon=0; [ -f "$WORK/mnt/.VolumeIcon.icns" ] && have_icon=1
+    hdiutil detach -quiet "$WORK/mnt"
+    if [ "$have_icon" != 1 ] || [ "$((0x${flags:-0} & 0x0400))" = 0 ]; then
+      echo "build_app: the disk image's volume icon did not take (icon file $have_icon, Finder flags ${flags:-none})." >&2
+      exit 1
+    fi
+  else
+    hdiutil create -quiet -volname "$APP_NAME" -srcfolder "$WORK/dmg" -ov -format UDZO "$ASSET.dmg"
+  fi
 fi
 
 echo
