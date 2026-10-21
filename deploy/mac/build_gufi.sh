@@ -151,7 +151,8 @@ if [ -n "${GUFI_SRC:-}" ]; then
   GUFI_REF="(a local checkout)"
   echo "  building $SRC as it is"
 else
-  SRC="$WORK/GUFI"
+  # Not "$WORK/GUFI": macOS file systems ignore case, and that is $TREE.
+  SRC="$WORK/gufi-src"
   # A full clone: GUFI's CMake names the version with git describe --tags.
   git clone --quiet "$GUFI_REPO" "$SRC"
   commit="$(git -C "$SRC" rev-parse --verify --quiet "$GUFI_REF^{commit}" ||
