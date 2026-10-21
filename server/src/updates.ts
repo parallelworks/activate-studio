@@ -77,7 +77,7 @@ interface Prepared { version: string; from: string; shellChanged: boolean }
 /** A check the update failed, as opposed to a network or disk failure. */
 class Refused extends Error {}
 
-const TIMINGS = { firstCheckMs: 60_000, intervalMs: 6 * 3600_000, idleMs: 10 * 60_000, idlePollMs: 30_000, healthyMs: 60_000 }
+const TIMINGS = { firstCheckMs: 60_000, intervalMs: 6 * 3600_000, soonMs: 30 * 60_000, idleMs: 10 * 60_000, idlePollMs: 30_000, healthyMs: 60_000 }
 const timings = { ...TIMINGS }
 const st: { state: UpdateState; error: string | null; progress: UpdateStatus['progress'] } = { state: 'idle', error: null, progress: null }
 let saved: Saved | null = null
@@ -268,14 +268,28 @@ async function fetchReleases(): Promise<void> {
   await writeJson(inUpdates('state.json'), saved)
 }
 
-/** The newest release the channel allows. */
-function latestRelease(channel: UpdatePolicy['channel']): Release | null {
+/** Whether a release carries the signed macOS app the app installs from. */
+const hasApp = (r: Release) => !!(r.assets[ASSET] && r.assets[MANIFEST] && r.assets[SIGNATURE])
+
+/** The newest release the channel allows. For the app, the newest that
+ *  carries the signed app: a release is published before its macOS build
+ *  attaches the app, and one whose build failed never gets it. */
+function latestRelease(channel: UpdatePolicy['channel'], needsApp = updateMode() === 'app'): Release | null {
   let best: Release | null = null
   for (const r of loadSaved().releases) {
     if (r.prerelease && channel !== 'prerelease') continue
+    if (needsApp && !hasApp(r)) continue
     if (!best || compareVersions(r.tag, best.tag) > 0) best = r
   }
   return best
+}
+
+/** A release newer than any the app can install is still waiting for its
+ *  macOS build, so the next check comes sooner. */
+function appPending(channel: UpdatePolicy['channel']): boolean {
+  const any = latestRelease(channel, false)
+  const usable = latestRelease(channel, true)
+  return !!any && !hasApp(any) && (!usable || compareVersions(any.tag, usable.tag) > 0)
 }
 
 // ---- status ----
@@ -673,8 +687,9 @@ export function startUpdates(logger: (msg: string) => void): void {
   const schedule = (ms: number) => {
     checkTimer = setTimeout(() => {
       void (async () => {
-        if (effectiveSettings().updates.check && updateMode() !== 'hosted') await check()
-        schedule(timings.intervalMs)
+        const policy = effectiveSettings().updates
+        if (policy.check && updateMode() !== 'hosted') await check()
+        schedule(policy.check && updateMode() === 'app' && appPending(policy.channel) ? timings.soonMs : timings.intervalMs)
       })()
     }, ms)
     checkTimer.unref?.()
