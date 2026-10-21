@@ -66,11 +66,12 @@ The Studio's interface is built from `@parallelworks/ui` (the [foundation](https
 Every version is a tag, and every tag is a GitHub Release whose notes are the descriptions of the pull requests it contains. `CHANGELOG.md` is the same record for every version at once. Both come from one script:
 
 ```
-node scripts/release-notes.mjs v1.59        # notes for one version
-node scripts/release-notes.mjs --changelog  # regenerate CHANGELOG.md
+node scripts/release-notes.mjs v1.59                       # notes for one version
+node scripts/release-notes.mjs --changelog                 # regenerate CHANGELOG.md
+node scripts/release-notes.mjs --changelog --next v1.60    # with the untagged commits as v1.60
 ```
 
-To cut a release: merge, tag `vX.Y`, push the tag, publish with `gh release create vX.Y --title vX.Y --notes "$(node scripts/release-notes.mjs vX.Y)"`, and regenerate the change log in a pull request.
+To cut a release: merge; regenerate the change log with `--next vX.Y` and merge it in a pull request titled "Change log through vX.Y"; tag that commit `vX.Y` and push the tag; publish with `gh release create vX.Y --title vX.Y --notes "$(node scripts/release-notes.mjs vX.Y)"`. The change log comes before the tag so the version's own build carries its notes, which the app shows after an update and under What's new. Publishing the release runs the macOS build, which attaches the app.
 
 ## Reporting bugs and security issues
 
