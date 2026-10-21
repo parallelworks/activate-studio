@@ -175,8 +175,10 @@ SQL
   # shellcheck disable=SC2016
   check "sqlite-vec puts the related text first" clean /bin/sh -c \
     'gufi_sqlite3 <"$0" | head -n 1 | grep -x 1' "$T/search.sql"
+  # dyld's lines are "dyld[pid]: /path", or on macOS 15 "dyld[pid]: <uuid>
+  # /path" with "delayed: <name>" lines for libraries it defers.
   loaded="$(env -i HOME="$T/home" DYLD_PRINT_LIBRARIES=1 "$G/bin/gufi_sqlite3" <"$T/search.sql" 2>&1 >/dev/null |
-    sed -n 's/^dyld\[[0-9]*\]: //p' || true)"
+    sed -n 's/^dyld\[[0-9]*\]: \(<[^>]*> \)\{0,1\}\(\/.*\)/\2/p' || true)"
   outside="$(printf '%s\n' "$loaded" | grep -v -e "^$G/" -e '^/usr/lib/' -e '^/System/' | grep . || true)"
   if [ -z "$loaded" ]; then
     bad "dyld listed no libraries for gufi_sqlite3"
