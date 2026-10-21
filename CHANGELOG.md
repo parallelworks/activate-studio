@@ -2,6 +2,38 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.146 (2026-10-21)
+
+### Change log through v1.145 (#513)
+
+Regenerated with `node scripts/release-notes.mjs --changelog` after the v1.145 release.
+
+### Mac app: GUFI from its published release, and a page on building GUFI for macOS (#511)
+
+The app's macOS build took GUFI from a gufi-macos workflow run, whose archive GitHub deletes after 30 days (2026-11-20). The archive is now published as the prerelease `gufi-1713537-macos14`, built and checked by the `gufi-macos` workflow on its tag (macOS 15 build, macOS 14 check), and `mac-app.yml` takes it from there (`GUFI_RELEASE`). The run input stays for trying a new GUFI build.
+
+`docs/GUFI-MACOS.md` is new: the published archive and its contents and versions, how to use it outside the app, how to build and check it, what each step of `build_gufi.sh` does and why, and how a new archive is published. `docs/MACOS.md`'s GUFI section now points to it, and the README lists it.
+
+Verified: the Mac build on this pull request takes GUFI from the release.
+
+Also: the build names its version with `git describe --tags`, which now also matches the `gufi-*` tag, so a commit whose nearest tag is the GUFI one would be named after it (and report `dev`). `server/src/version.ts`, `deploy/make_bundle.sh` and `deploy/mac/build_app.sh` now pass `--match 'v*'`.
+
+### Updates: a notice for new versions, What's new in the app, and the change log in every build (#512)
+
+A newer version was announced only by a small link in the footer, and the change log existed only in the repository.
+
+**Update notice** (the macOS app and a clone; never a hosted deployment). When a newer version is available, a notice at the top of every page names it and lists the changes in every version since the running one, newest first, each title opening to its description. In the app it offers Update now (or says why it cannot install, with the release page), Later and Settings, and shows the install's progress in place; a clone gets the update commands. Later hides it for that version; a newer version shows it again. Automatic install stays an option that defaults to off.
+
+**What's new.** The change log ships in every build (the macOS app, the workflow bundle and the container image) and is served by `GET /api/changelog`. Help has a What's new page, also reached from the footer's version panel and Settings, Updates.
+
+**After an update.** The first time the app opens on a newer version than this browser last saw, a notice lists the changes since then, from the bundled change log, once.
+
+**Server.** `server/src/changelog.ts` parses the change log and release notes into versions with `{title, pr, body}` entries, leaving out "Change log through" entries. `GET /api/updates` gains `releases` (every release newer than the running one up to the one it would install, including one whose macOS build failed) and `command` (the update commands, for a clone only). The install flow moved into one shared store (`web/src/updateFlow.ts`), so the notice, the footer and Settings follow one install.
+
+**Release order.** `scripts/release-notes.mjs --changelog --next vX.Y` writes the untagged commits as vX.Y, so a release regenerates the change log before it tags and the version's own build carries its notes. CONTRIBUTING.md describes the order.
+
+Verified: 419 server and 150 web tests (notes parsing, failed-build versions, a missing change log, the notice per mode, Later per version, install progress, What's new, the after-update notice); CHANGELOG.md checked present in the app, the bundle and the image; screenshots in light and dark at desktop and phone width.
+
 ## v1.145 (2026-10-21)
 
 ### Change log through v1.144 (#510)
