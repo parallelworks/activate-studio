@@ -98,6 +98,11 @@ mkdir -p "$DEPS" "$STAGE" "$TREE/bin" "$TREE/lib" "$TREE/licenses"
 export MACOSX_DEPLOYMENT_TARGET="$TARGET"
 SDKROOT="${SDKROOT:-$(xcrun --sdk macosx --show-sdk-path)}"
 export SDKROOT HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1
+# The llama.cpp that GUFI's sqlite-lembed vendors uses errno and
+# EXIT_FAILURE without including <cerrno> or <cstdlib>, which the libc++ of
+# newer LLVM no longer pulls in through other headers. Every C++ compile
+# includes them first; nested CMake and configure runs read CXXFLAGS too.
+export CXXFLAGS="${CXXFLAGS:-} -include errno.h -include stdlib.h"
 
 echo "Build tools from Homebrew..."
 # GUFI's contrib/CI/macos.sh list, less pcre2 and libomp, which are built
