@@ -101,7 +101,7 @@ export const PLATFORM_TOOLS: PlatformTool[] = [
     operation: 'cancel-workflow-run',
     method: 'POST',
     path: '/api/workflow-runs/{slug}/cancel',
-    description: 'Cancel a running workflow run, by the slug list_workflow_runs gives it.',
+    description: 'Cancel a running workflow run, by the slug workflow_runs gives it.',
     parameters: { type: 'object', properties: { slug: { type: 'string', description: 'The slug identifier of the workflow run to cancel.' } }, required: ['slug'] },
   },
 ]

@@ -40,7 +40,7 @@ const DESCRIPTIONS = {
   resume_cluster: 'Resume a stopped cloud cluster, restarting its controller. It starts billing again. Leave user out for the user\'s own cluster.',
   stop_cluster: 'Stop a running cloud cluster\'s controller to stop its compute billing. It keeps its disks and settings and can be resumed. Leave user out for the user\'s own cluster.',
   destroy_cluster: 'Destroy a cloud cluster\'s provisioned resources, including its disks, so nothing bills. Its definition stays, so it can be started again later from scratch. Use stop_cluster to keep its disks. Leave user out for the user\'s own cluster.',
-  cancel_workflow_run: 'Cancel a running workflow run, by the slug list_workflow_runs gives it.',
+  cancel_workflow_run: 'Cancel a running workflow run, by the slug workflow_runs gives it.',
 }
 
 test('the six tools carry the platform chat\'s names and descriptions; the changing ones say the user approves', () => {
