@@ -18,6 +18,11 @@ on:
         default: ""
   release:
     types: [published]
+  # A change to the app or its build is built and checked on a Mac.
+  pull_request:
+    paths:
+      - deploy/mac/**
+      - .github/workflows/mac-app.yml
 
 permissions: {}
 
