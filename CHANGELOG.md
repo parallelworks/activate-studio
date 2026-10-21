@@ -2,6 +2,22 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.145 (2026-10-21)
+
+### Change log through v1.144 (#510)
+
+Regenerated with `node scripts/release-notes.mjs --changelog` after the v1.144 release.
+
+### Mac app: sign the bundle as a whole, so a downloaded copy is not reported as damaged (#509)
+
+The app's programs were signed one by one, but the bundle itself had no signature (no `Contents/_CodeSignature`). Opened from a browser download, which carries the quarantine flag, macOS reported the app as damaged and offered no way to open it.
+
+`build_app.sh` now signs the bundle ad hoc as its last change on a Mac, which seals the Info.plist and every file in it. Before that it removes links that lead nowhere: pnpm leaves one in `.pnpm/node_modules` for the workspace's own server package, pointing at the source checkout the app was built from, and a signature check of the bundle fails on it. `check_app.sh` checks for such links on any host and, on a Mac, verifies the seal with `codesign --verify --deep --strict`, printing codesign's reason when it fails.
+
+A downloaded copy is still not signed by an identified developer, so its first open goes through Privacy & Security, Open Anyway, as `docs/MACOS.md` describes; the docs now say that releases up to v1.144 are reported as damaged and that clearing the quarantine flag opens them.
+
+Verified: the Mac build on this pull request (both new checks pass, and the app runs from its run loop and LaunchAgent).
+
 ## v1.144 (2026-10-21)
 
 ### Change log through v1.143 (#507)
