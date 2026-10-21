@@ -55,6 +55,7 @@
   --theme-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.07), 0 2px 4px -2px rgba(0, 0, 0, 0.07);
   --theme-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.07), 0 4px 6px -4px rgba(0, 0, 0, 0.07);
   --theme-shadow-xl: 0 25px 80px -20px rgba(0, 0, 0, 0.2), 0 10px 30px -10px rgba(0, 0, 0, 0.1);
+  --theme-backdrop: rgba(0, 0, 0, 0.4);
   --theme-sidebar-bg: #e6e9ec;
   --theme-sidebar-text: #000000;
   --theme-sidebar-hover: #d5d8dc;
@@ -140,6 +141,7 @@
   --theme-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.35), 0 2px 4px -2px rgba(0, 0, 0, 0.35);
   --theme-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.35), 0 4px 6px -4px rgba(0, 0, 0, 0.35);
   --theme-shadow-xl: 0 25px 80px -20px rgba(0, 0, 0, 0.6), 0 10px 30px -10px rgba(0, 0, 0, 0.4);
+  --theme-backdrop: rgba(0, 0, 0, 0.65);
   --theme-sidebar-bg: #040a11;
   --theme-sidebar-text: #dde7f3;
   --theme-sidebar-hover: #141c24;
