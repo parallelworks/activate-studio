@@ -82,7 +82,7 @@ mkdir -p "$OUT_DIR" "$CACHE_DIR"
 WORK="$(mktemp -d "$OUT_DIR/.work.XXXXXX")"
 trap 'rm -rf "$WORK"' EXIT
 
-DESCRIBE="$(git -C "$PROJECT_ROOT" describe --tags --always --dirty 2>/dev/null || echo dev)"
+DESCRIBE="$(git -C "$PROJECT_ROOT" describe --tags --match 'v*' --always --dirty 2>/dev/null || echo dev)"
 COMMIT="$(git -C "$PROJECT_ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)"
 case "$DESCRIBE" in v*) VERSION="$DESCRIBE" ;; *) VERSION=dev ;; esac
 SHORT_VERSION="$(printf '%s' "$VERSION" | sed -n 's/^v\([0-9][0-9.]*[0-9]\).*/\1/p')"
