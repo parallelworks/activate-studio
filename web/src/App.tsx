@@ -168,7 +168,7 @@ export default function App() {
     history.replaceState(null, '', location.pathname + location.search + (next === 'chat' ? '' : `#view=${next}`))
     setView(next)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cfg.loaded, cfg.sections, cfg.platform, view])
+  }, [cfg.loaded, cfg.sections, cfg.platform, cfg.aiEnabled, view])
 
   // First-run setup on a single-user install, and again from Settings. A
   // framed page is a session inside the platform, or an embed, never a first run.
@@ -229,7 +229,8 @@ export default function App() {
   useEffect(() => {
     // The remembered brand fills these on the first frame, so this runs
     // without waiting for the configuration request.
-    const favicon = effectiveTheme === 'dark' ? (cfg.faviconUrlDark ?? cfg.faviconUrl) : cfg.faviconUrl
+    // With no icon of its own (one just removed, say), the bundled mark.
+    const favicon = (effectiveTheme === 'dark' ? (cfg.faviconUrlDark ?? cfg.faviconUrl) : cfg.faviconUrl) ?? (cfg.loaded ? '/favicon.svg' : null)
     if (!favicon) return
     let link = document.querySelector<HTMLLinkElement>('link[rel="icon"]')
     if (!link) {

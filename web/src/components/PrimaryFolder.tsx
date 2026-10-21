@@ -25,6 +25,8 @@ export interface SetupStatus {
   primary?: { path: string; exists: boolean; writable: boolean; indexed: boolean; files?: number }
   gufi?: { found: boolean; bin: string; semantic: boolean }
   embedModel?: { path: string; found: boolean }
+  /** The Studio's own icons, as the browser loads them (BrandIcons). */
+  branding?: { light: string | null; dark: string | null; iconUrl?: string; iconUrlDark?: string }
   libraries?: PublicLibrary[]
   job?: IndexJob | null
 }
@@ -72,6 +74,76 @@ function useAlive() {
 const row: CSSProperties = { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }
 const FOLDER_ICON = <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M1.5 3.5A1 1 0 0 1 2.5 2.5h3l1.5 2h6a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1v-9z"/></svg>
 
+/** The folders on this computer, one folder at a time (/api/setup/browse). */
+function useFolderListing(start: string) {
+  const [listing, setListing] = useState<Listing | null>(null)
+  const [pathInput, setPathInput] = useState('')
+  const [error, setError] = useState('')
+  const [browsing, setBrowsing] = useState(false)
+  const alive = useAlive()
+  const browse = async (p: string) => {
+    setBrowsing(true)
+    setError('')
+    try {
+      const l = await json<Listing>(`/api/setup/browse?path=${encodeURIComponent(p)}`)
+      if (!alive.current) return
+      setListing(l)
+      setPathInput(l.path)
+    } catch (e) {
+      if (alive.current) setError(errText(e))
+    } finally {
+      if (alive.current) setBrowsing(false)
+    }
+  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { void browse(start) }, [])
+  return { listing, pathInput, setPathInput, error, browsing, browse }
+}
+
+/** The path box, Open and Up, and the folders inside the one open. */
+function FolderList({ f }: { f: ReturnType<typeof useFolderListing> }) {
+  return (
+    <>
+      <form style={row} onSubmit={e => { e.preventDefault(); void f.browse(f.pathInput) }}>
+        <div style={{ flex: '1 1 260px' }}>
+          <Input aria-label="Folder" value={f.pathInput} onChange={e => f.setPathInput(e.target.value)} placeholder="~/Documents" />
+        </div>
+        <Button type="submit" variant="secondary" disabled={f.browsing}>Open</Button>
+        <Button variant="ghost" disabled={!f.listing?.parent || f.browsing} onClick={() => f.listing?.parent && void f.browse(f.listing.parent)}>Up</Button>
+      </form>
+      {f.error && <Callout tone="error">{f.error}</Callout>}
+      {f.listing && (
+        <div style={{ border: '1px solid var(--pw-border)', borderRadius: 8, maxHeight: 220, overflowY: 'auto' }}>
+          {f.listing.dirs.length ? f.listing.dirs.map(d => (
+            <Button key={d.path} variant="ghost" size="sm" style={{ width: '100%', justifyContent: 'flex-start' }}
+              icon={FOLDER_ICON} disabled={f.browsing} onClick={() => void f.browse(d.path)}>
+              {d.name}
+            </Button>
+          )) : <EmptyState variant="bare" title="No folders inside" />}
+        </div>
+      )}
+    </>
+  )
+}
+
+/** Browse the folders on this computer and pick one, as for an index
+ *  directory. Single-user installs only, like the browse route. */
+export function FolderBrowser({ start, pickLabel = 'Use this folder', onPick }: {
+  start: string
+  pickLabel?: string
+  onPick: (path: string) => void
+}) {
+  const f = useFolderListing(start)
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <FolderList f={f} />
+      <div style={row}>
+        <Button variant="secondary" disabled={!f.listing || f.browsing} onClick={() => f.listing && onPick(f.listing.path)}>{pickLabel}</Button>
+      </div>
+    </div>
+  )
+}
+
 /**
  * Browse the folders on this computer and make one the primary. Where the
  * launcher can restart the Studio it does, and this waits for it to come
@@ -90,32 +162,13 @@ export function FolderPicker({ current, start, disabled = false, pollMs = 1000, 
   /** Once the Studio is back on the new folder; may give the folder now in use. */
   onChanged?: () => Promise<string | null | undefined> | void
 }) {
-  const [listing, setListing] = useState<Listing | null>(null)
-  const [pathInput, setPathInput] = useState('')
-  const [browseError, setBrowseError] = useState('')
-  const [browsing, setBrowsing] = useState(false)
+  const f = useFolderListing(start)
+  const { listing } = f
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState<{ tone: CalloutTone; text: string } | null>(null)
   const [restart, setRestart] = useState<'idle' | 'waiting' | 'back' | 'timeout'>('idle')
   const [changedTo, setChangedTo] = useState('')
   const alive = useAlive()
-
-  const browse = async (p: string) => {
-    setBrowsing(true)
-    setBrowseError('')
-    try {
-      const l = await json<Listing>(`/api/setup/browse?path=${encodeURIComponent(p)}`)
-      if (!alive.current) return
-      setListing(l)
-      setPathInput(l.path)
-    } catch (e) {
-      if (alive.current) setBrowseError(errText(e))
-    } finally {
-      if (alive.current) setBrowsing(false)
-    }
-  }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { void browse(start) }, [])
 
   const choose = async () => {
     if (!listing) return
@@ -137,7 +190,7 @@ export function FolderPicker({ current, start, disabled = false, pollMs = 1000, 
         const now = (await onChanged?.()) || chosen
         if (!alive.current) return
         setChangedTo(now)
-        void browse(now)
+        void f.browse(now)
       } else if (r.note) {
         setNote({ tone: r.saved ? 'info' : 'warning', text: r.note })
       }
@@ -156,24 +209,7 @@ export function FolderPicker({ current, start, disabled = false, pollMs = 1000, 
         <Loader inline size={16} label="Restarting the Studio with the new folder…" />
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <form style={row} onSubmit={e => { e.preventDefault(); void browse(pathInput) }}>
-            <div style={{ flex: '1 1 260px' }}>
-              <Input aria-label="Folder" value={pathInput} onChange={e => setPathInput(e.target.value)} placeholder="~/Documents" />
-            </div>
-            <Button type="submit" variant="secondary" disabled={browsing}>Open</Button>
-            <Button variant="ghost" disabled={!listing?.parent || browsing} onClick={() => listing?.parent && void browse(listing.parent)}>Up</Button>
-          </form>
-          {browseError && <Callout tone="error">{browseError}</Callout>}
-          {listing && (
-            <div style={{ border: '1px solid var(--pw-border)', borderRadius: 8, maxHeight: 220, overflowY: 'auto' }}>
-              {listing.dirs.length ? listing.dirs.map(d => (
-                <Button key={d.path} variant="ghost" size="sm" style={{ width: '100%', justifyContent: 'flex-start' }}
-                  icon={FOLDER_ICON} disabled={browsing} onClick={() => void browse(d.path)}>
-                  {d.name}
-                </Button>
-              )) : <EmptyState variant="bare" title="No folders inside" />}
-            </div>
-          )}
+          <FolderList f={f} />
           <div style={row}>
             <Button variant="primary" loading={busy}
               disabled={!listing || !listing.writable || listing.path === current || disabled}

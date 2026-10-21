@@ -14,9 +14,14 @@ export interface PublicLibrary {
 }
 /** Settings' listing adds where each library points. */
 export interface SettingsLibrary extends PublicLibrary { indexRoot: string; sourceRoot: string | null }
-/** A user's own library on one of their clusters. */
+/** A user's own library on one of their clusters, or on another machine over ssh. */
 export interface UserLibrary {
   id: string; label: string; site: string; sourceDir: string; sourceRoot: string | null; indexRoot: string | null
+  transport?: 'pw' | 'ssh'
+  /** An index that was there already, connected rather than built. */
+  existing?: boolean
+  destination?: string | null
+  port?: number | null
   state: 'building' | 'ready' | 'updating' | 'failed'
   run: { slug: string; mode: 'build' | 'update'; startedAt: string } | null
   error: string | null; builtAt: string | null; directories: number | null; files: number | null
@@ -296,7 +301,8 @@ export const api = {
   startIndexJob: (dir: string) => postJson<IndexJob>('/api/index/job', { path: dir }),
   indexJob: (id: number) => getJson<IndexJob>(`/api/index/job/${id}`),
   libraries: () => getJson<{ libraries: SettingsLibrary[] }>('/api/libraries'),
-  userLibraries: () => getJson<{ libraries: UserLibrary[]; available: boolean }>('/api/user-libraries'),
+  /** `ssh`: indexes over ssh are offered; `pw`: indexes on a cluster over pw ssh are. */
+  userLibraries: () => getJson<{ libraries: UserLibrary[]; available: boolean; ssh?: boolean; pw?: boolean }>('/api/user-libraries'),
   addUserLibrary: (body: { site: string; sourceDir: string; label?: string; scheduler?: { partition: string; account?: string } | null }) =>
     postJson<UserLibrary>('/api/user-libraries', body),
   refreshUserLibrary: (id: string) => postJson<UserLibrary>(`/api/user-libraries/${encodeURIComponent(id)}/refresh`, {}),

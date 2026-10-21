@@ -24,6 +24,8 @@ export interface AppConfig {
   sections?: string[]
   /** Running on the ACTIVATE platform, with a credential to reach it. */
   platform?: boolean
+  /** False when AI features are off: no Chat, no Agents, no model line. */
+  aiEnabled?: boolean
   /** How many workflows this Studio offers on its Workflows tab. */
   workflowCount?: number
   user: { id: string; username: string; name?: string }
@@ -131,6 +133,7 @@ export function useAppConfig(): AppConfig {
           libraries: Array.isArray(d.libraries) ? d.libraries : undefined,
           sections: Array.isArray(d.sections) && d.sections.length ? d.sections : undefined,
           platform: !!d.platform,
+          aiEnabled: d.aiEnabled !== false,
           workflowCount: typeof d.workflowCount === 'number' ? d.workflowCount : 0,
           loaded: true,
         }
@@ -164,17 +167,21 @@ export const SECTION_SWITCHES: { id: string; label: string }[] = [
 ]
 /** Always reachable, whatever is switched off. */
 export const ALWAYS_SHOWN = ['settings', 'help']
+/** The pages that call a model, gone while AI features are off. */
+export const AI_SECTIONS = ['chat', 'agents']
 
 /** Whether a page shows: in the saved sections (none saved means all), or
- *  always shown. Workflows lists platform workflows, so it also needs one. */
-export function sectionAllowed(id: string, cfg: { sections?: string[]; platform?: boolean }): boolean {
+ *  always shown. Workflows lists platform workflows, so it also needs one,
+ *  and Chat and Agents need AI features on. */
+export function sectionAllowed(id: string, cfg: { sections?: string[]; platform?: boolean; aiEnabled?: boolean }): boolean {
   if (id === 'workflows' && !cfg.platform) return false
+  if (AI_SECTIONS.includes(id) && cfg.aiEnabled === false) return false
   return !cfg.sections?.length || cfg.sections.includes(id) || ALWAYS_SHOWN.includes(id)
 }
 
 /** The page to show for a requested one: itself when allowed, otherwise the
  *  first allowed page in sidebar order. */
-export function shownView<T extends string>(view: T, order: readonly T[], cfg: { sections?: string[]; platform?: boolean }): T {
+export function shownView<T extends string>(view: T, order: readonly T[], cfg: { sections?: string[]; platform?: boolean; aiEnabled?: boolean }): T {
   if (sectionAllowed(view, cfg)) return view
   return order.find(id => sectionAllowed(id, cfg)) ?? view
 }
@@ -186,13 +193,27 @@ export function sectionsSetting(shown: string[]): string[] {
   return [...SECTION_SWITCHES.map(s => s.id).filter(id => shown.includes(id)), ...ALWAYS_SHOWN]
 }
 
-/** Save which pages the sidebar shows, and have the app pick it up. */
-export async function saveSections(sections: string[]): Promise<void> {
+/** Save some settings and have the app pick them up. */
+export async function saveSettings(patch: Record<string, unknown>): Promise<void> {
   const res = await fetch('/api/settings', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sections }),
+    body: JSON.stringify(patch),
   })
   if (!res.ok) throw new Error(((await res.json().catch(() => ({}))) as { error?: string }).error ?? `${res.status}`)
   reloadAppConfig()
+}
+
+/** Save which pages the sidebar shows, and have the app pick it up. */
+export async function saveSections(sections: string[]): Promise<void> {
+  await saveSettings({ sections })
+}
+
+/** Turn AI features on or off. Chat and Agents leave the sidebar's saved
+ *  pages with it, and come back with it. */
+export async function saveAiEnabled(on: boolean, sections: string[] | undefined): Promise<string[]> {
+  const shown = SECTION_SWITCHES.map(s => s.id).filter(id => !AI_SECTIONS.includes(id) && (!sections?.length || sections.includes(id)))
+  const next = sectionsSetting(on ? [...shown, ...AI_SECTIONS] : shown)
+  await saveSettings({ aiEnabled: on, sections: next })
+  return next
 }

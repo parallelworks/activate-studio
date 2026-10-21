@@ -103,8 +103,9 @@ let spawnSsh: Spawn = (site, key, command) => {
   if (site.startsWith(SSH_SCHEME)) return spawn('ssh', sshArgv(site, command), { stdio: ['pipe', 'pipe', 'pipe'] })
   let host = ''
   try { host = new URL(GATEWAY_BASE).hostname } catch { /* the CLI's own context */ }
+  // Without a key of its own the CLI uses its own sign-in.
   return spawn(PW_CLI, ['ssh', ...(host ? ['--platform-host', host] : []), site, command],
-    { stdio: ['pipe', 'pipe', 'pipe'], env: { ...process.env, PW_API_KEY: key } })
+    { stdio: ['pipe', 'pipe', 'pipe'], env: key ? { ...process.env, PW_API_KEY: key } : process.env })
 }
 /** Test seam: what runs in place of `pw ssh <site> <command>` or
  *  `ssh ... <destination> <command>`. */

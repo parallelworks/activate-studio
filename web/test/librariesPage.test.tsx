@@ -127,6 +127,9 @@ describe('the kinds of library an install offers', () => {
     expect(libraryKinds({ ssh: true, platform: false, userLibraries: true })).toEqual(['local', 'ssh'])
     expect(libraryKinds({ ssh: true, platform: true, userLibraries: true })).toEqual(['local', 'ssh', 'cluster'])
     expect(libraryKinds({ ssh: false, platform: true, userLibraries: false })).toEqual(['local'])
+    // An existing index on a cluster, where the pw CLI is here and signed in.
+    expect(libraryKinds({ ssh: true, platform: true, userLibraries: true, pw: true })).toEqual(['local', 'ssh', 'pw', 'cluster'])
+    expect(libraryKinds({ ssh: true, platform: false, userLibraries: true, pw: true })).toEqual(['local', 'ssh', 'pw'])
   })
 })
 

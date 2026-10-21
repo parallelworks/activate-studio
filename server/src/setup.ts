@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import fsp from 'node:fs/promises'
 import os from 'node:os'
@@ -10,12 +11,13 @@ import { getIndexJob, incrementalIndexDir, indexRootDb, saveSweepState, startInd
 import { KbError } from './kb.js'
 import { listLibraries, publicLibrary } from './libraries.js'
 import { canRestart, launcherConfigFile, requestRestart, saveLauncherSetting } from './lifecycle.js'
-import { effectiveSettings, updateSettings } from './settings.js'
+import { brandUrl } from './routes.js'
+import { effectiveSettings, loadSettings, updateSettings } from './settings.js'
 
 /**
- * First-run setup for a single-user install (the macOS app): which folder
- * is the primary library, a build of its whole index, and a record that
- * setup is done. Everything but the status refuses where users sign in; a
+ * First-run setup for a single-user install (the macOS app): the Studio's
+ * icon, which folder is the primary library, a build of its whole index,
+ * and a record that setup is done. Everything but the status refuses where users sign in; a
  * hosted Studio is configured by its deployment, and listing the server's
  * folders is for the person whose computer it is.
  */
@@ -92,6 +94,73 @@ async function forgetOtherFolder(): Promise<void> {
 
 const message = (e: unknown) => String((e as Error)?.message ?? e).slice(0, 300)
 
+// ---- the Studio's icon ----
+
+const BRANDING = path.join(INDEX_BASE, 'branding')
+export const ICON_MAX_BYTES = 1024 * 1024
+
+/** The image type by its first bytes, not its name: png, jpg, webp, or an
+ *  SVG document. */
+export function iconType(body: Buffer): 'png' | 'jpg' | 'webp' | 'svg' | null {
+  if (body.length >= 8 && body.readUInt32BE(0) === 0x89504e47 && body.readUInt32BE(4) === 0x0d0a1a0a) return 'png'
+  if (body.length >= 3 && body[0] === 0xff && body[1] === 0xd8 && body[2] === 0xff) return 'jpg'
+  if (body.length >= 12 && body.toString('latin1', 0, 4) === 'RIFF' && body.toString('latin1', 8, 12) === 'WEBP') return 'webp'
+  if (body.includes(0)) return null
+  const text = body.toString('utf8').replace(/^\uFEFF/, '').trimStart()
+  return text.startsWith('<') && /<svg[\s>]/i.test(text) ? 'svg' : null
+}
+
+/**
+ * Why an SVG cannot be a brand icon, or null when it can. The icon is shown
+ * in <img>, where nothing in it runs, and served with a policy that blocks
+ * scripts besides; anything active or loaded from elsewhere is refused
+ * here too, so the file kept is a plain drawing.
+ */
+export function svgProblem(svg: string): string | null {
+  const checks: [RegExp, string][] = [
+    [/<script\b/i, 'a script'],
+    [/<foreignObject\b/i, 'a foreignObject'],
+    [/<(?:iframe|embed|object)\b/i, 'embedded content'],
+    [/<!(?:ENTITY|DOCTYPE)\b/i, 'a DOCTYPE or entity'],
+    [/<\?xml-stylesheet\b/i, 'a stylesheet reference'],
+    [/\son[a-z]+\s*=/i, 'an event handler'],
+    [/javascript:/i, 'a javascript: link'],
+    [/@import\b/i, 'a CSS import'],
+    [/\bhref\s*=(?!\s*["']?\s*(?:#|data:image\/(?:png|jpe?g|gif|webp);))/i, 'a link to another file'],
+    [/url\((?!\s*["']?\s*(?:#|data:image\/(?:png|jpe?g|gif|webp);))/i, 'a reference to another file'],
+    [/<(?:set|animate)\b[^>]*attributeName\s*=\s*["']?(?:xlink:)?href/i, 'an animated link'],
+  ]
+  const hit = checks.find(([re]) => re.test(svg))
+  return hit ? `This SVG contains ${hit[1]}. Export it as a plain SVG, or as a PNG.` : null
+}
+
+/** The icons set for the Studio, as the browser loads them: the light one,
+ *  and the dark one only when one is set of its own. */
+function brandingState() {
+  const eff = effectiveSettings()
+  return {
+    light: eff.iconUrl ? brandUrl('icon') : null,
+    dark: eff.iconUrlDark ? brandUrl('icon', true) : null,
+    iconUrl: eff.iconUrl,
+    iconUrlDark: eff.iconUrlDark,
+  }
+}
+
+/** Icon files no setting names any more. */
+async function dropUnusedIcons(): Promise<void> {
+  const s = loadSettings()
+  const keep = new Set([s.iconUrl, s.iconUrlDark].filter(Boolean))
+  let names: string[] = []
+  try { names = await fsp.readdir(BRANDING) } catch { return }
+  for (const n of names) {
+    const f = path.join(BRANDING, n)
+    if (/^icon-[0-9a-f]{16}\.(png|jpg|webp|svg)$/.test(n) && !keep.has(f)) await fsp.rm(f, { force: true })
+  }
+}
+
+const variantOf = (q: unknown): 'iconUrl' | 'iconUrlDark' =>
+  String((q as { variant?: string } | null)?.variant ?? '') === 'dark' ? 'iconUrlDark' : 'iconUrl'
+
 /** The whole primary folder: its own files, then each top-level directory,
  *  through the same passes (and lock) as any other indexing. */
 async function buildWholeFolder(job: IndexJob): Promise<{ ms: number }> {
@@ -161,6 +230,7 @@ export async function setupRoutes(app: FastifyInstance): Promise<void> {
       },
       gufi: { found, bin: GUFI_BIN, semantic: found && model && fs.existsSync(path.join(GUFI_BIN, 'gufi_sqlite3')) },
       embedModel: { path: EMBED_MODEL, found: model },
+      branding: brandingState(),
       libraries: listLibraries(eff.kbLabel, req.user?.id ?? null).map(publicLibrary),
       job: runningJob(),
     }
@@ -228,6 +298,47 @@ export async function setupRoutes(app: FastifyInstance): Promise<void> {
     const job = startIndexJob('', buildWholeFolder)
     setupJobId = job.id
     return job
+  })
+
+  // The Studio's icon, uploaded from this computer: for the light theme, or
+  // with ?variant=dark for the dark one. Stored under INDEX_BASE/branding
+  // with its content's hash in the name, and set as iconUrl or iconUrlDark,
+  // which /api/brand-icon and /api/favicon serve.
+  app.post('/api/setup/icon', async req => {
+    requireSingleUser()
+    const field = variantOf(req.query)
+    let body: Buffer
+    try {
+      const part = await req.file({ limits: { fileSize: ICON_MAX_BYTES, files: 1 } })
+      if (!part) throw new KbError(400, 'no image in the request')
+      body = await part.toBuffer()
+      if (part.file.truncated) throw new KbError(413, 'The icon is over 1 MB.')
+    } catch (e) {
+      if (e instanceof KbError) throw e
+      const code = (e as { code?: string }).code ?? ''
+      if (code === 'FST_REQ_FILE_TOO_LARGE') throw new KbError(413, 'The icon is over 1 MB.')
+      throw new KbError(400, 'send the icon as multipart/form-data')
+    }
+    const type = iconType(body)
+    if (!type) throw new KbError(415, 'The icon must be a PNG, JPEG, SVG or WebP image.')
+    if (type === 'svg') {
+      const problem = svgProblem(body.toString('utf8'))
+      if (problem) throw new KbError(415, problem)
+    }
+    await fsp.mkdir(BRANDING, { recursive: true })
+    const file = path.join(BRANDING, `icon-${createHash('sha256').update(body).digest('hex').slice(0, 16)}.${type}`)
+    await fsp.writeFile(file, body)
+    await updateSettings({ [field]: file })
+    await dropUnusedIcons()
+    return brandingState()
+  })
+
+  // Back to no icon of the Studio's own (the dark one falls back to the light).
+  app.delete('/api/setup/icon', async req => {
+    requireSingleUser()
+    await updateSettings({ [variantOf(req.query)]: '' })
+    await dropUnusedIcons()
+    return brandingState()
   })
 
   app.post('/api/setup/complete', async () => {

@@ -165,7 +165,7 @@ export function librariesSummary(lines: LibLine[], idx: IndexStatus | null): Sum
 export function modelSummary(ai: AiHealth | null, model: string | null): Summary {
   if (!ai) return { text: model ?? '', tone: null }
   if (ai.status === 'ok') return { text: model ?? `${ai.models} models`, tone: 'success' }
-  return { text: AI_LABEL[ai.status], tone: ai.status === 'unconfigured' ? 'muted' : 'warning' }
+  return { text: AI_LABEL[ai.status], tone: ai.status === 'unconfigured' || ai.status === 'off' ? 'muted' : 'warning' }
 }
 
 export interface ConnLine { key: string; name: string; meta: string; tone: BadgeVariant; title?: string; onClick?: () => void }
@@ -452,7 +452,7 @@ function PanelCards({ view, cfg }: { view: string; cfg: AppConfig }) {
         <Card id="model" title="Model" summary={modelSummary(shared.ai, model)}>
           {model && <Row tone={shared.ai?.status === 'ok' ? 'success' : 'muted'} name={model} meta={shared.modelProvider ?? 'selected'} title={model} />}
           {shared.ai && (
-            <Row tone={shared.ai.status === 'ok' ? 'success' : shared.ai.status === 'unconfigured' ? 'muted' : 'warning'}
+            <Row tone={shared.ai.status === 'ok' ? 'success' : shared.ai.status === 'unconfigured' || shared.ai.status === 'off' ? 'muted' : 'warning'}
               name={shared.ai.status === 'ok' ? `${shared.ai.models} models ready` : AI_LABEL[shared.ai.status]}
               sub={shared.ai.status === 'ok' ? undefined : shared.ai.message ?? undefined}
               title={shared.ai.gatewayHost ? `Through ${shared.ai.gatewayHost}` : undefined} />

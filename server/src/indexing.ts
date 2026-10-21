@@ -137,8 +137,10 @@ export function indexJobsRunning(): boolean {
 let indexLog: (msg: string) => void = m => console.warn(m)
 
 function run(cmd: string, args: string[], timeoutMs = 10 * 60_000): Promise<string> {
-  // Settings can change the captioning model at runtime.
-  const vm = effectiveSettings().visionModel
+  // Settings can change the captioning model at runtime; with AI features
+  // off, images are indexed by OCR and name only.
+  const eff = effectiveSettings()
+  const vm = eff.aiEnabled ? eff.visionModel : ''
   const extra: Record<string, string> = vm ? { ADE_VISION_MODEL: vm } : {}
   // GUFI's tools get its libraries on the loader path; the indexer scripts
   // get only GUFI_BIN (config.ts says why).

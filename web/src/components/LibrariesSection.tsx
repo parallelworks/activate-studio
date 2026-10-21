@@ -11,22 +11,29 @@ import { FolderPicker, IndexBuildProgress, errText, json, useIndexBuild, type Se
 import { SshLibraryForm } from './SshLibraryForm'
 
 /** A user library as listed, with how it is reached. */
-type UserLib = UserLibrary & { transport?: 'pw' | 'ssh'; destination?: string | null; port?: number | null }
-interface UserList { libraries: UserLib[]; available: boolean; ssh: boolean }
+type UserLib = UserLibrary
+interface UserList { libraries: UserLib[]; available: boolean; ssh: boolean; pw: boolean }
 
 /** The kinds of library a user can add, as the Add a library menu offers them. */
-export type LibraryKind = 'local' | 'ssh' | 'cluster'
-const KINDS: Record<LibraryKind, { label: string; description: string; icon: ReactNode }> = {
+export type LibraryKind = 'local' | 'ssh' | 'pw' | 'cluster'
+export const KINDS: Record<LibraryKind, { label: string; description: string; icon: ReactNode }> = {
   local: { label: 'A GUFI index on this machine', description: 'An index already built here. Read only.', icon: <DesktopIcon /> },
   ssh: { label: 'A GUFI index on another machine over ssh', description: 'Read with your own ssh keys. Nothing is written there.', icon: <TerminalIcon /> },
+  pw: { label: 'A GUFI index on a cluster, through ACTIVATE', description: 'An index already on one of your running clusters, read over pw ssh. Nothing is written there.', icon: <ClusterIcon /> },
   cluster: { label: 'An index built on a cluster', description: 'Built on one of your clusters with your own key. Only you see it.', icon: <ClusterIcon /> },
 }
 
 /** The kinds this install supports: an index on this machine always, one
- *  over ssh where the server allows it (sign-in off), and one built on a
- *  cluster only where the Studio reaches a platform. */
-export function libraryKinds(opts: { ssh: boolean; platform: boolean; userLibraries: boolean }): LibraryKind[] {
-  return ['local', ...(opts.ssh ? ['ssh' as const] : []), ...(opts.platform && opts.userLibraries ? ['cluster' as const] : [])]
+ *  over ssh where the server allows it (sign-in off), an existing one on a
+ *  cluster where the pw CLI is here with a key to act with, and one built
+ *  on a cluster only where the Studio reaches a platform. */
+export function libraryKinds(opts: { ssh: boolean; platform: boolean; userLibraries: boolean; pw?: boolean }): LibraryKind[] {
+  return [
+    'local',
+    ...(opts.ssh ? ['ssh' as const] : []),
+    ...(opts.pw ? ['pw' as const] : []),
+    ...(opts.platform && opts.userLibraries ? ['cluster' as const] : []),
+  ]
 }
 
 type Tone = 'success' | 'warning' | 'error' | 'info'
@@ -60,7 +67,7 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
   const cfg = useAppConfig()
   const [libs, setLibs] = useState<SettingsLibrary[] | null>(null)
   const [loadError, setLoadError] = useState('')
-  const [user, setUser] = useState<UserList>({ libraries: [], available: false, ssh: false })
+  const [user, setUser] = useState<UserList>({ libraries: [], available: false, ssh: false, pw: false })
   const [status, setStatus] = useState<SetupStatus | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [adding, setAdding] = useState<LibraryKind | null>(null)
@@ -75,7 +82,7 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
   const loadUser = () => api.userLibraries().then(r => {
     const list = r as Partial<UserList>
     const libraries = list.libraries ?? []
-    setUser({ libraries, available: !!list.available, ssh: !!list.ssh })
+    setUser({ libraries, available: !!list.available, ssh: !!list.ssh, pw: !!list.pw })
     // A library that just finished building joins the switcher.
     const now = new Set(libraries.filter(l => l.state === 'ready').map(l => l.id))
     if ([...now].some(id => !ready.current.has(id)) && ready.current.size + now.size > 0) reloadAppConfig()
@@ -221,6 +228,30 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
       })
       continue
     }
+    if (l.existing) {
+      const notes: ReactNode[] = [contents, l.builtAt && `index written ${when(l.builtAt)}`, l.error].filter(Boolean)
+      rows.push({
+        key: l.id, name: l.label, kind: 'GUFI index on a cluster over pw ssh, read only',
+        where: (
+          <DescriptionList className="lib-paths">
+            <DescriptionListItem label="Index" mono copy>{`${l.site}:${l.indexRoot ?? ''}`}</DescriptionListItem>
+            {l.sourceRoot
+              ? <DescriptionListItem label="Files" mono copy>{`${l.site}:${l.sourceRoot}`}</DescriptionListItem>
+              : <DescriptionListItem label="Files"><span className="muted">none: names and metadata only</span></DescriptionListItem>}
+          </DescriptionList>
+        ),
+        state: l.error ? { tone: 'warning', text: 'Check failed', notes } : { tone: 'success', text: 'Ready', notes },
+        fullText: !!caps?.fullText, meaning: !!caps?.vectors,
+        actions: (
+          <>
+            <Button variant="secondary" size="sm" loading={busy === l.id} disabled={busy !== null}
+              onClick={() => void act(l.id, async () => { await api.refreshUserLibrary(l.id); await loadUser() }, `Checked the index on ${l.site}.`)}>Check</Button>
+            {remove}
+          </>
+        ),
+      })
+      continue
+    }
     const building = l.state === 'building' || l.state === 'updating'
     const notes: ReactNode[] = [
       building && l.run ? `run ${l.run.slug}` : null, l.error, contents, l.builtAt && `indexed ${when(l.builtAt)}`,
@@ -251,7 +282,7 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
     })
   }
 
-  const kinds = libraryKinds({ ssh: user.ssh, platform: !!cfg.platform, userLibraries: user.available })
+  const kinds = libraryKinds({ ssh: user.ssh, platform: !!cfg.platform, userLibraries: user.available, pw: user.pw })
   const primary = libs?.find(l => l.primary)
   const primaryPath = standalone?.primary?.path ?? primary?.sourceRoot ?? null
   const addButton = (
@@ -312,8 +343,9 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
             <div className="tool-group">{KINDS[adding].label}</div>
             <IconButton icon={<CloseIcon />} label="Close" size="sm" onClick={() => setAdding(null)} />
           </div>
-          {adding === 'local' && <LocalLibraryForm onAdded={lib => added(`Added ${lib.label}. It is in the Library switcher.`)} />}
+          {adding === 'local' && <LocalLibraryForm browse={!!standalone} onAdded={lib => added(`Added ${lib.label}. It is in the Library switcher.`)} />}
           {adding === 'ssh' && <SshLibraryForm onAdded={lib => added(`Added ${lib.label}. It is in the Library switcher.`)} />}
+          {adding === 'pw' && <SshLibraryForm transport="pw" onAdded={lib => added(`Added ${lib.label}. It is in the Library switcher.`)} />}
           {adding === 'cluster' && (
             <ClusterLibraryForm onStarted={() => added('Building the index on the cluster. It appears in the Library switcher when it is ready.')} />
           )}

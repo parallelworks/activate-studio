@@ -256,6 +256,9 @@ export async function ragProxyRoutes(app: FastifyInstance): Promise<void> {
     if (req.url.startsWith('/v1/') && !effectiveSettings().ragProxyEnabled) {
       return reply.status(403).send({ error: 'The grounded-model endpoint is disabled for this deployment (Settings, External access)' })
     }
+    if (req.url.startsWith('/v1/') && !effectiveSettings().aiEnabled) {
+      return reply.status(403).send({ error: 'AI features are off in this Studio.' })
+    }
   })
 
   app.get('/v1/models', async (req, reply) => {

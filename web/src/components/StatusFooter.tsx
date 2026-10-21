@@ -7,6 +7,7 @@ import { onLibraryChange } from '../api'
 import type { LibraryStats } from '../api'
 import { UPDATES_CHANGED, openUpdates, updatesApi, type UpdatesStatus } from '../api'
 import { share, syncIndex, type AiHealth } from '../statusShare'
+import { useAppConfig } from '../config'
 
 function ago(iso: string | null): string {
   // Null just means no sweep has completed since the server started.
@@ -93,6 +94,7 @@ export const AI_LABEL: Record<AiHealth['status'], string> = {
   unreachable: 'models unreachable',
   unconfigured: 'models not configured',
   'key-required': 'add your model key',
+  off: 'AI features off',
 }
 
 function AiPanel({ trigger, ai, onRecheck }: { trigger: ReactElement; ai: AiHealth; onRecheck: () => void }) {
@@ -211,6 +213,8 @@ function IdentityPanel({ trigger, who }: { trigger: ReactElement; who: WhoAmI })
 }
 
 export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
+  // With AI features off there is no model line.
+  const cfg = useAppConfig()
   const [stats, setStats] = useState<{ files?: number; dirs?: number; totalBytes?: number; libraries?: LibraryStats[] } | null>(null)
   const [idx, setIdx] = useState<IndexStatus | null>(null)
   const [syncing, setSyncing] = useState(false)
@@ -314,7 +318,7 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
           />
         </div>
       )}
-      {ai && (
+      {ai && cfg.aiEnabled !== false && (
         <div className="status-line" title="Click for model availability details">
           <AiPanel
             ai={ai}

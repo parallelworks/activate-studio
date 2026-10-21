@@ -88,3 +88,37 @@ describe('adding a library over ssh', () => {
     expect(await screen.findByText('destination: user@host, or a Host alias')).toBeInTheDocument()
   })
 })
+
+describe('connecting an index on a cluster over pw ssh', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('picks a running cluster, tests the same steps, and adds through the pw routes', async () => {
+    const calls: { url: string; body: unknown }[] = []
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      const body = init?.body ? JSON.parse(String(init.body)) : undefined
+      calls.push({ url, body })
+      const reply = (b: unknown) => new Response(JSON.stringify(b), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      if (url === '/api/agent-sites') return reply({ sites: [{ name: 'this-host', kind: 'local' }, { name: 'cluster-a', kind: 'cluster' }, { name: 'cluster-b', kind: 'cluster' }] })
+      if (url === '/api/user-libraries/pw/test') {
+        return reply({ ...passing, steps: [{ name: 'ssh', ok: true, detail: 'Connected to cluster-a, a Linux host.' }, ...passing.steps.slice(1)], gufiBin: '/home/me/.activate-studio/gufi/abc/bin' })
+      }
+      return reply({ id: 'u-cluster-a-idx', label: 'idx on cluster-a' })
+    }))
+    const onAdded = vi.fn()
+    render(<SshLibraryForm transport="pw" onAdded={onAdded} />)
+    expect(screen.queryByLabelText('Host')).toBeNull()
+    // The first running cluster is chosen; the local site is not offered.
+    await waitFor(() => expect(button('Test connection')).toBeDisabled())
+    fill('Index directory', '~/idx')
+    await waitFor(() => expect(button('Test connection')).toBeEnabled())
+    fireEvent.click(button('Test connection'))
+    await screen.findByText('Connected to cluster-a, a Linux host.')
+    expect(calls.find(c => c.url === '/api/user-libraries/pw/test')?.body).toEqual({ cluster: 'cluster-a', indexRoot: '~/idx' })
+    expect(screen.getByLabelText('GUFI bin directory')).toHaveValue('/home/me/.activate-studio/gufi/abc/bin')
+    expect(screen.getByLabelText('Label')).toHaveAttribute('placeholder', 'idx on cluster-a')
+    await waitFor(() => expect(button('Add library')).toBeEnabled())
+    fireEvent.click(button('Add library'))
+    await waitFor(() => expect(onAdded).toHaveBeenCalledWith({ id: 'u-cluster-a-idx', label: 'idx on cluster-a' }))
+    expect(calls.find(c => c.url === '/api/user-libraries/pw')?.body).toEqual({ cluster: 'cluster-a', indexRoot: '~/idx', gufiBin: '/home/me/.activate-studio/gufi/abc/bin' })
+  })
+})

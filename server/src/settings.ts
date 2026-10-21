@@ -91,6 +91,9 @@ export interface StudioSettings {
   voiceUrl?: string
   /** The first-run setup was finished or skipped (single-user installs). */
   setupDone?: boolean
+  /** Chat, agents and every other model call. Off leaves search, the
+   *  library, query and statistics as they are. */
+  aiEnabled?: boolean
   updates?: UpdatePolicy
 }
 
@@ -154,6 +157,7 @@ export function effectiveSettings(): Required<StudioSettings> {
     voiceEnabled: s.voiceEnabled ?? process.env.VOICE_ENABLED === '1',
     voiceUrl: s.voiceUrl ?? process.env.VOICE_URL ?? '',
     setupDone: s.setupDone ?? false,
+    aiEnabled: s.aiEnabled ?? process.env.AI_ENABLED !== '0',
     updates: asPolicy(s.updates),
     customTools: s.customTools ?? [],
     ragDefaultModel: s.ragDefaultModel ?? process.env.RAG_DEFAULT_MODEL ?? '',
@@ -283,6 +287,7 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
       }
     }
     if (body.delegationEnabled !== undefined) next.delegationEnabled = !!body.delegationEnabled
+    if (body.aiEnabled !== undefined) next.aiEnabled = Boolean(body.aiEnabled)
     if (body.agentExecution !== undefined) {
       const v = asExecution(body.agentExecution)
       if (!v) throw new KbError(400, 'agent execution must be runner, sessions, or both')

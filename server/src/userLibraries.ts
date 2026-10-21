@@ -27,6 +27,11 @@ import { noteGufi } from './gufiTrace.js'
  * Studio's own ssh identity is the server account's, so these are offered
  * only on a Studio with sign-in off, which has one user.
  *
+ * An existing index on one of the user's clusters is connected the same
+ * way over `pw ssh` (transport 'pw', `existing`): the same test, nothing
+ * built, read only, read with the user's platform key or, with sign-in
+ * off, the pw CLI's own sign-in on this computer.
+ *
  * A user library's index root, as the rest of the Studio sees it, is an
  * opaque reference ("remote:<owner>:<id>"); gufi.ts hands any query on one
  * to remoteQuery here. Paths and keys never reach the browser.
@@ -43,6 +48,9 @@ export interface UserLibraryDef {
   /** Over ssh: user@host or an ~/.ssh/config alias, and a port other than ssh's default. */
   destination?: string | null
   port?: number | null
+  /** An index that was there already (over ssh always): connected after a
+   *  connection test rather than built by the index workflow. */
+  existing?: boolean
   /** Over ssh, from the last connection test: the host's `uname -s` and gufi_query's version. */
   os?: string | null
   gufiVersion?: string | null
@@ -364,7 +372,7 @@ export async function refreshUserLibrary(viewerId: string | null | undefined, id
   const owner = ownerOf(viewerId)
   const d = owner ? loadUserLibraries(owner).find(x => x.id === id) : null
   if (!owner || !d) throw new KbError(404, 'no such library')
-  if (d.transport === 'ssh') return recheckSsh(viewerId, owner, d)
+  if (d.transport === 'ssh' || d.existing) return recheckExisting(viewerId, owner, d)
   if (d.state === 'building' || d.state === 'updating') return d
   const key = keyOf(owner)
   if (!key) throw new KbError(409, 'add your ACTIVATE API key under Settings, Model access')
@@ -445,41 +453,54 @@ if stat -c %Y / >/dev/null 2>&1; then stat -c %Y -- "$1/db.db"; else stat -f %m 
 // The first gufi_query among the directories given.
 const FIND_GUFI = 'for d in "$@"; do [ -f "$d/gufi_query" ] && [ -x "$d/gufi_query" ] && { printf "%s\\n" "$d"; exit 0; }; done; exit 1'
 
+/** Where a connection test runs: the session's site and key, the host as
+ *  messages name it, and what a failed session means there. */
+interface ProbeHost {
+  site: string
+  key: string
+  name: string
+  /** How the first step reads once connected, e.g. "me@box on port 2222". */
+  reached: string
+  advice: (message: string) => string
+}
+
 /**
- * The connection test, step by step: ssh reaches the host; gufi_query is
- * there (the directory given, else the PATH a non-interactive login has,
- * then where GUFI's packages install it) and runs; the index directory is
- * a GUFI index, counted with one aggregate gufi_query; the source
- * directory, when given, is readable. Each step says what it found or
- * what to change.
+ * The connection test, step by step: ssh (or pw ssh) reaches the host;
+ * gufi_query is there (the directory given, else the PATH a non-interactive
+ * login has, then where GUFI's packages and the Studio's index workflow
+ * install it) and runs; the index directory is a GUFI index, counted with
+ * one aggregate gufi_query; the source directory, when given, is readable.
+ * Each step says what it found or what to change.
  */
-export async function probeSsh(spec: SshSpec): Promise<SshProbe> {
-  const site = sshSite(spec.destination, spec.port)
-  const dest = spec.destination
+async function probeIndex(h: ProbeHost, spec: { indexRoot: string; gufiBin: string | null; sourceRoot: string | null }): Promise<SshProbe> {
+  const dest = h.name
   const steps: SshStep[] = []
   const done = (extra: Partial<SshProbe> = {}): SshProbe => ({ ok: steps.every(s => s.ok), steps, ...extra })
   const run = (argv: string[], ms = 60_000): Promise<RemoteResult> =>
-    remoteRun(site, '', argv, ms).catch((e: Error) => ({ code: -1, stdout: '', stderr: e.message, raw: Buffer.alloc(0) }))
+    remoteRun(h.site, h.key, argv, ms).catch((e: Error) => ({ code: -1, stdout: '', stderr: e.message, raw: Buffer.alloc(0) }))
 
   const hello = await run(['sh', '-c', 'uname -s; printf "%s\\n" "$HOME"'], 45_000)
   if (hello.code !== 0) {
-    steps.push({ name: 'ssh', ok: false, detail: sshAdvice(hello.stderr || `exit ${hello.code}`, spec) })
+    steps.push({ name: 'ssh', ok: false, detail: h.advice(hello.stderr || `exit ${hello.code}`) })
     return done()
   }
   const [os = '', home = ''] = hello.stdout.trim().split('\n')
   const mac = os === 'Darwin'
-  steps.push({ name: 'ssh', ok: true, detail: `Connected to ${dest}${spec.port ? ` on port ${spec.port}` : ''}, a ${mac ? 'macOS' : os || 'Unix'} host.` })
+  steps.push({ name: 'ssh', ok: true, detail: `Connected to ${h.reached}, a ${mac ? 'macOS' : os || 'Unix'} host.` })
   const expand = (p: string | null) => (p && /^~(?=\/|$)/.test(p) && home.startsWith('/') ? home.replace(/\/+$/, '') + p.slice(1) : p)
 
   const given = expand(spec.gufiBin)
-  const search = given ? FIND_GUFI : `c=$(command -v gufi_query 2>/dev/null); case "$c" in /*) set -- "\${c%/*}" "$@" ;; esac; ${FIND_GUFI}`
+  // The PATH first, then the GUFI the index workflow installs in the
+  // account (newest first, the one its indexes were built with), then the
+  // usual places.
+  const search = given ? FIND_GUFI : `c=$(command -v gufi_query 2>/dev/null); s=$(ls -dt "$HOME"/.activate-studio/gufi/*/bin 2>/dev/null); set -- $s "$@"; case "$c" in /*) set -- "\${c%/*}" "$@" ;; esac; ${FIND_GUFI}`
   const found = await run(['sh', '-c', search, '_', ...(given ? [given] : ['/usr/local/bin', `${home}/usr/local/bin`, '/opt/gufi/bin'])])
   const bin = found.code === 0 ? lastLine(found.stdout) : ''
   let version = ''
   if (!bin.startsWith('/')) {
     steps.push({ name: 'gufi', ok: false, detail: given
       ? `There is no gufi_query in ${given} on ${dest}. Give the directory that holds it, such as /usr/local/bin.`
-      : `gufi_query was not found on ${dest}: not on the PATH an ssh login gets, nor in /usr/local/bin, ~/usr/local/bin, or /opt/gufi/bin. Install GUFI there, or give the directory that holds gufi_query as the GUFI bin directory.` })
+      : `gufi_query was not found on ${dest}: not on the PATH an ssh login gets, nor in ~/.activate-studio/gufi, /usr/local/bin, ~/usr/local/bin, or /opt/gufi/bin. Install GUFI there, or give the directory that holds gufi_query as the GUFI bin directory.` })
   } else {
     const v = await run([`${bin}/gufi_query`, '--version'])
     version = v.code === 0 ? lastLine(v.stdout).slice(0, 80) : ''
@@ -530,6 +551,99 @@ export async function probeSsh(spec: SshSpec): Promise<SshProbe> {
   return done({ gufiBin: bin.startsWith('/') ? bin : undefined, gufiVersion: version || undefined, directories, files, os, indexRoot, sourceRoot, builtAt })
 }
 
+/** The connection test over plain ssh. */
+export function probeSsh(spec: SshSpec): Promise<SshProbe> {
+  return probeIndex({
+    site: sshSite(spec.destination, spec.port), key: '', name: spec.destination,
+    reached: `${spec.destination}${spec.port ? ` on port ${spec.port}` : ''}`,
+    advice: m => sshAdvice(m, spec),
+  }, spec)
+}
+
+// ---- existing indexes on a cluster, over pw ssh ----
+
+export interface PwLibraryInput { label?: unknown; cluster?: unknown; indexRoot?: unknown; gufiBin?: unknown; sourceRoot?: unknown }
+export interface PwSpec { cluster: string; indexRoot: string; gufiBin: string | null; sourceRoot: string | null }
+
+/** A cluster's name as pw ssh takes it: nothing it would read as an option. */
+const CLUSTER = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,119}$/
+
+export function pwSpec(a: PwLibraryInput): PwSpec {
+  const cluster = String(a.cluster ?? '').trim()
+  if (!CLUSTER.test(cluster)) throw new KbError(400, 'cluster: the name of one of your running clusters')
+  const indexRoot = remotePath(a.indexRoot, 'index directory')
+  if (!indexRoot) throw new KbError(400, 'index directory: the top of the GUFI index on that cluster, the directory with its db.db')
+  return { cluster, indexRoot, gufiBin: remotePath(a.gufiBin, 'GUFI bin directory'), sourceRoot: remotePath(a.sourceRoot, 'source directory') }
+}
+
+/** What a failed pw ssh session means, and what the user can do about it. */
+function pwAdvice(message: string, cluster: string): string {
+  const said = message.replace(`${cluster}: `, '')
+  if (/ENOENT/.test(said)) return 'The pw CLI is not installed on the machine the Studio runs on.'
+  if (/authenticat|unauthori[sz]ed|\b401\b|expired|not logged in|sign in/i.test(said)) return 'The pw CLI was refused: its sign-in is missing or has expired. Run pw auth on the machine the Studio runs on, then test again.'
+  if (/not found|no such|does not exist|not running|not active|unknown (?:resource|cluster)|could not find/i.test(said)) return `${cluster} is not one of your running clusters. Start it on ACTIVATE, or choose another.`
+  if (/timed out|did not finish|No route to host|Network is unreachable/i.test(said)) return `${cluster} did not answer. Check that it is running.`
+  if (/bash: .*not found|bash: No such file/i.test(said)) return `bash is not installed on ${cluster}; the Studio runs its commands there through bash.`
+  return `pw ssh to ${cluster} failed: ${said}`
+}
+
+/** The connection test over pw ssh, with the owner's platform key. */
+export function probePw(spec: PwSpec, key: string): Promise<SshProbe> {
+  return probeIndex({ site: spec.cluster, key, name: spec.cluster, reached: spec.cluster, advice: m => pwAdvice(m, spec.cluster) }, spec)
+}
+
+/** Whether the pw CLI is on this machine, at PW_CLI or on the PATH. */
+export function pwCliFound(): boolean {
+  const runnable = (f: string) => { try { fs.accessSync(f, fs.constants.X_OK); return fs.statSync(f).isFile() } catch { return false } }
+  if (PW_CLI.includes('/')) return runnable(PW_CLI)
+  return (process.env.PATH ?? '').split(path.delimiter).some(d => !!d && runnable(path.join(d, PW_CLI)))
+}
+
+/** The key a viewer's pw ssh acts with, or why there is none. */
+function pwKey(viewerId: string | null | undefined): { owner: string; key: string } {
+  const owner = ownerOf(viewerId)
+  if (!owner) throw new KbError(401, 'sign in to add your own libraries')
+  const key = keyOf(owner)
+  if (!key) {
+    throw new KbError(409, owner === 'single'
+      ? 'The pw CLI on this computer is not signed in. Run pw auth, then test again.'
+      : 'Indexes on your clusters are read with your own platform key: add your ACTIVATE API key under Settings, Model access.')
+  }
+  return { owner, key }
+}
+
+/** Whether a viewer can connect an index on a cluster: the pw CLI is here
+ *  and there is a key to act with. */
+export function pwAllowed(viewerId: string | null | undefined): boolean {
+  const owner = ownerOf(viewerId)
+  return !!owner && !!keyOf(owner) && pwCliFound()
+}
+
+/** Adds an existing GUFI index on a cluster over pw ssh, after the
+ *  connection test passes here again: ready at once, read only. */
+export async function addFromPw(viewerId: string | null | undefined, a: PwLibraryInput): Promise<UserLibraryDef> {
+  const { owner, key } = pwKey(viewerId)
+  const spec = pwSpec(a)
+  const p = await probePw(spec, key)
+  if (!p.ok) throw new KbError(400, `The connection test did not pass. ${p.steps.find(s => !s.ok)?.detail ?? ''}`.trim())
+  const indexRoot = p.indexRoot!
+  const defs = loadUserLibraries(owner)
+  const same = defs.find(d => d.transport !== 'ssh' && d.site === spec.cluster && d.indexRoot === indexRoot)
+  if (same) throw new KbError(409, `This index is already a library: ${same.label}.`)
+  const name = path.posix.basename(indexRoot) || 'index'
+  const label = (String(a.label ?? '').trim() || `${name} on ${spec.cluster}`).slice(0, 60)
+  const base = `u-${`${spec.cluster}-${name}`.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 30) || 'library'}`
+  let id = base
+  for (let i = 2; defs.some(d => d.id === id); i++) id = `${base}-${i}`
+  const def: UserLibraryDef = {
+    id, label, transport: 'pw', existing: true, site: spec.cluster, destination: null, port: null, os: p.os || null, gufiVersion: p.gufiVersion ?? null,
+    resource: spec.cluster, sourceDir: p.sourceRoot ?? '', sourceRoot: p.sourceRoot ?? null, indexRoot, gufiBin: p.gufiBin!,
+    state: 'ready', run: null, error: null, builtAt: p.builtAt ?? new Date().toISOString(), directories: p.directories ?? null, files: p.files ?? null, scheduler: null,
+  }
+  saveUserLibraries(owner, [...defs, def])
+  return def
+}
+
 /** Adds an existing GUFI index on a host over ssh, after the connection
  *  test passes here again: ready at once, read only, nothing built. */
 export async function addFromSsh(viewerId: string | null | undefined, a: SshLibraryInput): Promise<UserLibraryDef> {
@@ -557,11 +671,17 @@ export async function addFromSsh(viewerId: string | null | undefined, a: SshLibr
   return def
 }
 
-/** Refresh, for a library over ssh: nothing to rebuild, so the connection
- *  test runs again and the counts and index time are brought up to date. */
-async function recheckSsh(viewerId: string | null | undefined, owner: string, d: UserLibraryDef): Promise<UserLibraryDef> {
-  if (!sshAllowed(viewerId)) throw new KbError(403, SSH_SINGLE_USER)
-  const p = await probeSsh(sshSpec({ destination: d.destination, port: d.port, indexRoot: d.indexRoot, gufiBin: d.gufiBin, sourceRoot: d.sourceRoot }))
+/** Refresh, for an index that was there already: nothing to rebuild, so
+ *  the connection test runs again and the counts and index time are
+ *  brought up to date. */
+async function recheckExisting(viewerId: string | null | undefined, owner: string, d: UserLibraryDef): Promise<UserLibraryDef> {
+  let p: SshProbe
+  if (d.transport === 'ssh') {
+    if (!sshAllowed(viewerId)) throw new KbError(403, SSH_SINGLE_USER)
+    p = await probeSsh(sshSpec({ destination: d.destination, port: d.port, indexRoot: d.indexRoot, gufiBin: d.gufiBin, sourceRoot: d.sourceRoot }))
+  } else {
+    p = await probePw(pwSpec({ cluster: d.site, indexRoot: d.indexRoot, gufiBin: d.gufiBin, sourceRoot: d.sourceRoot }), pwKey(viewerId).key)
+  }
   const failed = p.steps.find(s => !s.ok)
   return updateDef(owner, d.id, failed ? { error: failed.detail } : {
     error: null, os: p.os || d.os || null, gufiVersion: p.gufiVersion ?? d.gufiVersion ?? null,
@@ -579,14 +699,16 @@ export function removeUserLibrary(viewerId: string | null | undefined, id: strin
 
 /** The shape Settings shows: no keys, and the remote paths, which are the user's own. */
 export function publicUserLibrary(d: UserLibraryDef) {
-  return { id: d.id, label: d.label, transport: d.transport ?? 'pw', site: d.site, destination: d.destination ?? null, port: d.port ?? null, gufiVersion: d.gufiVersion ?? null, sourceDir: d.sourceDir, sourceRoot: d.sourceRoot, indexRoot: d.indexRoot, state: d.state,
+  return { id: d.id, label: d.label, transport: d.transport ?? 'pw', existing: d.transport === 'ssh' || !!d.existing, site: d.site, destination: d.destination ?? null, port: d.port ?? null, gufiVersion: d.gufiVersion ?? null, sourceDir: d.sourceDir, sourceRoot: d.sourceRoot, indexRoot: d.indexRoot, state: d.state,
     run: d.run ? { slug: d.run.slug, mode: d.run.mode, startedAt: d.run.startedAt } : null, error: d.error, builtAt: d.builtAt,
     directories: d.directories, files: d.files, scheduler: d.scheduler }
 }
 
 export async function userLibraryRoutes(app: FastifyInstance): Promise<void> {
   const viewer = (req: { user?: { id?: string } }) => req.user?.id ?? null
-  app.get('/api/user-libraries', async req => ({ libraries: (await listUserLibraries(viewer(req))).map(publicUserLibrary), available: !!ownerOf(viewer(req)), ssh: sshAllowed(viewer(req)) }))
+  app.get('/api/user-libraries', async req => ({
+    libraries: (await listUserLibraries(viewer(req))).map(publicUserLibrary), available: !!ownerOf(viewer(req)), ssh: sshAllowed(viewer(req)), pw: pwAllowed(viewer(req)),
+  }))
   app.post('/api/user-libraries', async req => publicUserLibrary(await addFromCluster(viewer(req), (req.body ?? {}) as AddFromCluster)))
   app.post('/api/user-libraries/ssh/test', async req => {
     if (!sshAllowed(viewer(req))) throw new KbError(403, SSH_SINGLE_USER)
@@ -594,6 +716,13 @@ export async function userLibraryRoutes(app: FastifyInstance): Promise<void> {
     return { ok: p.ok, steps: p.steps, gufiBin: p.gufiBin, gufiVersion: p.gufiVersion, directories: p.directories }
   })
   app.post('/api/user-libraries/ssh', async req => publicUserLibrary(await addFromSsh(viewer(req), (req.body ?? {}) as SshLibraryInput)))
+  // The same test and library for an existing index on a cluster, over pw ssh.
+  app.post('/api/user-libraries/pw/test', async req => {
+    const { key } = pwKey(viewer(req))
+    const p = await probePw(pwSpec((req.body ?? {}) as PwLibraryInput), key)
+    return { ok: p.ok, steps: p.steps, gufiBin: p.gufiBin, gufiVersion: p.gufiVersion, directories: p.directories }
+  })
+  app.post('/api/user-libraries/pw', async req => publicUserLibrary(await addFromPw(viewer(req), (req.body ?? {}) as PwLibraryInput)))
   app.post('/api/user-libraries/:id/refresh', async req => publicUserLibrary(await refreshUserLibrary(viewer(req), (req.params as { id: string }).id)))
   app.delete('/api/user-libraries/:id', async req => { removeUserLibrary(viewer(req), (req.params as { id: string }).id); return { ok: true } })
 }

@@ -18,6 +18,8 @@ vi.mock('../src/components/StatusFooter', () => page('StatusFooter'))
 vi.mock('../src/components/RunPane', () => ({ ...page('RunPane'), ...page('FullViewHost') }))
 
 let firstRun = false
+let aiEnabled = true
+let sections: string[] | undefined = ['library', 'search', 'settings', 'help']
 
 describe('sidebar switches', () => {
   beforeEach(() => {
@@ -25,7 +27,7 @@ describe('sidebar switches', () => {
     vi.stubGlobal('fetch', vi.fn(async (input: string) => {
       const url = String(input)
       const body = url === '/api/config'
-        ? { appName: 'Studio', sections: ['library', 'search', 'settings', 'help'], platform: false, user: { id: 'u', username: 'u' } }
+        ? { appName: 'Studio', sections, aiEnabled, platform: false, user: { id: 'u', username: 'u' } }
         : url.startsWith('/api/setup/status') ? { firstRun, standalone: true, canRestart: false } : {}
       return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })
     }))
@@ -54,6 +56,25 @@ describe('sidebar switches', () => {
     history.pushState(null, '', `${location.pathname}#view=chat`)
     window.dispatchEvent(new HashChangeEvent('hashchange'))
     await waitFor(() => expect(location.hash).toBe('#view=library'))
+  })
+
+  it('with AI features off, leaves out Chat and Agents even when every page is on', async () => {
+    aiEnabled = false
+    sections = undefined
+    history.replaceState(null, '', `${location.pathname}#view=agents`)
+    const { container } = render(<App />)
+    // The configuration is cached from the last test; ask for it again.
+    window.dispatchEvent(new Event('ade:config-changed'))
+    await waitFor(() => expect(location.hash).toBe('#view=library'))
+    await waitFor(() => expect(within(container.querySelector('.sidenav') as HTMLElement).getByTitle('Query')).toBeInTheDocument())
+    const nav = container.querySelector('.sidenav') as HTMLElement
+    expect(within(nav).queryByTitle('Chat')).toBeNull()
+    expect(within(nav).queryByTitle('Agents')).toBeNull()
+    expect(within(nav).getByTitle('Query')).toBeInTheDocument()
+    expect(within(nav).getByTitle('Library')).toBeInTheDocument()
+    aiEnabled = true
+    sections = ['library', 'search', 'settings', 'help']
+    window.dispatchEvent(new Event('ade:config-changed'))
   })
 
   it('opens the setup wizard over the app on a first run', async () => {

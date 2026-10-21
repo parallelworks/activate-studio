@@ -69,20 +69,27 @@ search by meaning, and its actions:
 | Main folder, read and write | `KB_ROOT` | **Change folder** and **Rebuild index**, on a single-user install |
 | GUFI index on this machine | `POST /api/libraries`, or `STUDIO_LIBRARIES` (set by the deployment) | **Remove**, except for one the deployment set |
 | GUFI index over ssh | `POST /api/user-libraries/ssh` | **Check**, **Remove** |
+| GUFI index on a cluster over pw ssh | `POST /api/user-libraries/pw` | **Check**, **Remove** |
 | Index built on a cluster | `POST /api/user-libraries` | **Refresh**, **Remove** |
 
 **Add a library** lists only the kinds this install supports: an index on
-this machine always; one over ssh where sign-in is off; one built on a
-cluster only where the Studio reaches a platform (the client config's
-`platform`). With one kind it opens that form directly. A standalone
-install therefore shows no cluster, workflow, or scheduler fields. The
-ssh form is the one the setup wizard uses (`SshLibraryForm`).
+this machine always; one over ssh where sign-in is off; an existing one on
+a cluster over pw ssh where the pw CLI is on this machine and there is a
+platform key to act with (the listing's `pw`); one built on a cluster only
+where the Studio reaches a platform (the client config's `platform`). With
+one kind it opens that form directly. A standalone install without a
+signed-in pw CLI therefore shows no cluster, workflow, or scheduler
+fields. The ssh form, which also connects an index on a cluster
+(`transport="pw"`), and the form for an index on this machine are the
+ones the setup wizard uses (`SshLibraryForm`, `LocalLibraryForm`).
 
 For an index on this machine the form takes the index directory (the one
 with `db.db`), the source directory if the files are on this machine, a
 label, and an identifier. The identifier is optional: without one the
 server makes it from the label, else from the index directory's name,
-lowercased, and adds `-2`, `-3` to keep it unique. `kb` and `all` are never
+lowercased, and adds `-2`, `-3` to keep it unique. On a single-user
+install either directory can also be picked from this computer's folders
+(**Browse**, through `GET /api/setup/browse`). `kb` and `all` are never
 used, since a request already means the main folder and every library by
 them. The paths appear only on this page (`GET /api/libraries`); the
 client config every viewer loads lists libraries without them. The Studio
@@ -186,8 +193,10 @@ The remote machine needs:
   prompts, so load the key into your agent), and its host key in
   `known_hosts`: connect once from a terminal and accept it;
 - bash, and GUFI's `gufi_query`. The test looks on the PATH of a
-  non-interactive login, then in `/usr/local/bin`, `~/usr/local/bin`, and
-  `/opt/gufi/bin`; anywhere else goes in the GUFI bin directory field. On
+  non-interactive login, then in `~/.activate-studio/gufi/*/bin` (where
+  the index workflow installs GUFI, newest first), `/usr/local/bin`,
+  `~/usr/local/bin`, and `/opt/gufi/bin`; anywhere else goes in the GUFI
+  bin directory field. On
   macOS, GUFI's tools are started with `DYLD_LIBRARY_PATH=<prefix>/lib`,
   `<prefix>` being the directory above the bin directory;
 - an index built there with `gufi_dir2index`. The index directory is the
@@ -214,6 +223,38 @@ sign-in on, the routes answer 403. Routes:
 both with `{label?, destination, port?, indexRoot, gufiBin?, sourceRoot?}`;
 listing, refresh, and removal use the routes above, and list entries
 carry `transport` (`pw` or `ssh`), `destination`, and `port`.
+
+## Libraries over pw ssh
+
+An existing GUFI index on one of the user's running clusters is connected
+the same way, with `pw ssh <cluster>` in place of ssh: Settings,
+Libraries, **Add a library**, "A GUFI index on a cluster, through
+ACTIVATE", or the setup wizard's Other libraries step. The cluster is
+picked from the user's running clusters (`GET /api/agent-sites`, the list
+the cluster form uses). `pw ssh` acts with the owner's platform key; with
+sign-in off that is the deployment credential, which on a computer of its
+own is the pw CLI's sign-in there. Nothing is built or written on the cluster: the
+library is ready once its connection test passes, and it is read only.
+An index the workflow built for another Studio can be connected this way.
+
+The test has the four steps of the ssh test, and the same messages:
+`pw ssh` reaches the cluster; `gufi_query` is found and runs; the index
+directory has a `db.db`, counted with one aggregate `gufi_query`; the
+source directory, when given, is readable. A failed first step says what
+it means: the pw CLI is not on this machine, its sign-in is missing or
+has expired (run `pw auth`), or the cluster is not one of the user's
+running clusters. **Check** reruns the test and updates the counts; it
+never starts the index workflow.
+
+Routes: `POST /api/user-libraries/pw/test` and `POST /api/user-libraries/pw`,
+both with `{label?, cluster, indexRoot, gufiBin?, sourceRoot?}`. The
+cluster name starts with a letter or digit, so `pw ssh` cannot read it as
+an option, and the paths follow the ssh rules (absolute, or under `~`).
+Without a key to act with they answer 409. `GET /api/user-libraries`
+carries `pw`: whether the pw CLI is found (`PW_CLI`, or `pw` on the PATH)
+and there is a key. List entries carry `transport: "pw"` and
+`existing: true`, which a library over ssh carries too; a library built
+on a cluster has `existing: false`.
 
 ## One library or all
 

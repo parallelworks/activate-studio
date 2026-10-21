@@ -11,9 +11,11 @@ describe('the settings rail', () => {
     expect(ids.indexOf('previews')).toBeLessThan(ids.indexOf('ext'))
   })
 
-  it('shows Model access only where the deployment signs users in', () => {
+  it('shows Model access where the deployment signs users in, and on a single-user install', () => {
     expect(settingsSections({ authEnabled: false }).map(s => s.id)).not.toContain('access')
     expect(settingsSections({ authEnabled: true }).map(s => s.id)).toContain('access')
+    // Sign-in off with personal keys allowed: the one user's model endpoint.
+    expect(settingsSections({ authEnabled: false, single: true }).map(s => s.id)).toContain('access')
   })
 
   it('shows Workflows only when the Studio runs on the platform', () => {

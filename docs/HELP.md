@@ -104,7 +104,15 @@ The address bar follows what you are looking at, so back and forward work and a 
 
 ## Setup and the sidebar
 
-On a computer of its own, with nobody signing in, {appName} opens with a short setup: which pages the sidebar shows, the folder to index, and GUFI indexes on other machines to add over ssh. Choosing another folder restarts {appName} on it when it runs as the macOS app; elsewhere, set `KB_ROOT` and restart. **Build the index** then indexes the whole folder and shows its progress. Settings, General, **Run setup again** opens the setup later.
+On a computer of its own, with nobody signing in, {appName} opens with a short setup, one step at a time, and any step can be skipped:
+
+- **Your Studio**: the name, an icon for light mode and an optional one for dark mode (PNG, JPEG, SVG or WebP, up to 1 MB; the browser tab uses it too), and the accent color.
+- **AI features**: on, with the OpenAI-compatible endpoint, its key and the default model; **Test** lists the models the endpoint offers or says what failed. Off, Chat and Agents leave the sidebar, the footer drops its model line, and nothing is sent to a model; search, the library, query and statistics work as before.
+- **Sidebar**: which pages it shows.
+- **Your folder**: the folder to index. Choosing another folder restarts {appName} on it when it runs as the macOS app; elsewhere, set `KB_ROOT` and restart. **Build the index** indexes the whole folder and shows its progress.
+- **Other libraries**: GUFI indexes that already exist, on this computer (typed or picked from its folders), on another machine over ssh, or, when the pw CLI here is signed in, on one of your running clusters through ACTIVATE.
+
+Settings, General, **Run setup again** opens the setup later. Everything in it is also in Settings: the name, icon, accent and AI features in General, the endpoint in Model access, and libraries in Libraries.
 
 Settings, General, **Sidebar** has a switch for each page. A page switched off leaves the navigation, and a link to it opens the first page still shown. Settings and Help always show, and the switches apply to everyone using this {appName}.
 

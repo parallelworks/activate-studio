@@ -847,6 +847,21 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .accent-swatch.active { box-shadow: 0 0 0 2px var(--pw-navy); }
 [data-theme='dark'] .accent-swatch { border-color: var(--pw-panel); }
 
+/* The Studio's icons, each previewed on the background it is for. */
+.brand-icons { display: flex; flex-direction: column; gap: 6px; }
+.brand-icon-slots { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.brand-icon-slot { display: flex; gap: 12px; align-items: flex-start; }
+.brand-icon-preview {
+  flex: none; width: 56px; height: 56px; border-radius: 10px; border: 1px solid var(--pw-border);
+  display: flex; align-items: center; justify-content: center; font-size: 11px;
+}
+.brand-icon-preview.light { background: #f4f4f5; color: #6b7280; }
+.brand-icon-preview.dark { background: #111214; color: #9ca3af; border-color: #2a2d33; }
+.brand-icon-preview img { max-width: 40px; max-height: 40px; object-fit: contain; }
+.brand-icon-name { font-size: 13px; font-weight: 500; }
+.brand-icon-note, .brand-icon-help { font-size: 12px; margin: 0; }
+.brand-icon-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+
 .accent-custom { padding: 0; overflow: hidden; }
 .accent-custom::-webkit-color-swatch-wrapper { padding: 0; }
 .accent-custom::-webkit-color-swatch { border: none; border-radius: 50%; }
@@ -1757,6 +1772,11 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .libraries-table .lib-build { display: flex; flex-direction: column; gap: 8px; max-width: 40rem; }
 .lib-kinds { width: min(26rem, calc(100vw - 2rem)); display: flex; flex-direction: column; gap: 6px; }
 .lib-add-form { margin-top: 12px; }
+.local-library-browse { margin-bottom: 14px; max-width: var(--settings-measure); }
+/* The setup wizard's steps, done and to come. */
+.setup-progress { display: flex; gap: 4px; margin: 6px 0 2px; }
+.setup-progress span { flex: 1; height: 3px; border-radius: 2px; background: var(--pw-border); }
+.setup-progress span.on { background: var(--pw-navy); }
 .lib-add-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 /* On a phone each library is a block: name and paths, then its state, what
    it searches (named, since the headers are gone), and its actions. */
