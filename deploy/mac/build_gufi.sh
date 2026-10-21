@@ -117,7 +117,7 @@ LLVM_PREFIX="$(brew --prefix llvm)"
 # every compile.
 mkdir -p "$WORK/cxx"
 INCLUDES=""
-for h in cerrno cstdlib cstring cstdint climits cmath algorithm functional memory string vector; do
+for h in cerrno cstdlib cstring cstdint climits cmath new algorithm functional memory string vector; do
   INCLUDES="$INCLUDES -include $h"
 done
 cat >"$WORK/cxx/clang++" <<EOF
