@@ -2,6 +2,28 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.142 (2026-10-21)
+
+### Change log through v1.141 (#503)
+
+Regenerated with `node scripts/release-notes.mjs --changelog` after the v1.141 release.
+
+### Chat: platform storage and cluster tools, with changes approved first (#504)
+
+The chat gains the platform tools the platform's own web chat has and the Studio lacked, with the same names and descriptions: `list_storage`, and five that change something, `start_cluster`, `resume_cluster`, `stop_cluster`, `destroy_cluster` and `cancel_workflow_run`. They call the platform API with the viewer's own key (`server/src/chat/platformTools.ts`). Results keep only the listed fields and are capped at 16 KB; a failure passes back the platform's own message.
+
+**Approval** (`server/src/chat/approvals.ts`)
+- A call to a changing tool does not run. The server holds it with the conversation, the tool call, the tool, its arguments in canonical form, a hash of the tool's definition, and the viewer, then pauses the reply.
+- The client's answer names the call and whether it is allowed; the server runs what the hold records, once, and the reply continues with the result. Deny tells the model the user declined, with their note if they wrote one.
+- Refused: an answer from another viewer or from nobody, changed arguments, an alternative the hold does not allow, an expired hold (30 minutes), or a tool whose definition changed since the hold.
+- `stop_cluster` and `destroy_cluster` each offer the other in their approval, with the same arguments.
+- The changing tools are offered only to a verified person with their own platform key, in their own conversation. The OpenAI-compatible endpoint, MCP, and the general tool runner never run them.
+- The cluster tools' organization comes from the viewer's platform account, never from the model.
+
+**UI.** The approval uses the chat package's own approval block (`ToolApproval.tsx`), with a button under it for the alternative, which the block has no control for. Settings lists the changing tools under a "Platform changes" switch marked as asking first.
+
+**Verified:** 410 server and 137 web tests, including hold, approve, deny, run instead, changed arguments, expiry, changed definition, another viewer, someone else's conversation, no key or no person, and field projection. `list_storage` and the account lookup were run read-only against a platform. The changing tools were run only against a stub.
+
 ## v1.141 (2026-10-21)
 
 ### Change log through v1.140 (#502)
