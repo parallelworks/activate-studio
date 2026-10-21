@@ -108,16 +108,22 @@ if [ "${SKIP_BREW:-}" != 1 ]; then
 fi
 BREW_PREFIX="$(brew --prefix)"
 LLVM_PREFIX="$(brew --prefix llvm)"
-# The llama.cpp that GUFI's sqlite-lembed vendors uses errno and
-# EXIT_FAILURE without including <cerrno> or <cstdlib>, which the libc++ of
-# newer LLVM no longer pulls in through other headers. GUFI's dependency
-# build sets its own flags for that project, so CXXFLAGS does not reach it;
-# the C++ compiler itself is a wrapper that includes both in every compile.
+# The llama.cpp that GUFI's sqlite-lembed vendors leans on headers that
+# older C++ libraries pulled in through others (errno, EXIT_FAILURE and
+# std::fill without <cerrno>, <cstdlib> and <algorithm>), which the libc++
+# of newer LLVM with this SDK no longer does. GUFI's dependency build sets
+# its own flags for that project, so CXXFLAGS does not reach it; the C++
+# compiler itself is a wrapper that includes the common standard headers in
+# every compile.
 mkdir -p "$WORK/cxx"
+INCLUDES=""
+for h in cerrno cstdlib cstring cstdint climits cmath algorithm functional memory string vector; do
+  INCLUDES="$INCLUDES -include $h"
+done
 cat >"$WORK/cxx/clang++" <<EOF
 #!/bin/sh
 case " \$* " in
-  *" -c "*) exec "$LLVM_PREFIX/bin/clang++" -include errno.h -include stdlib.h "\$@" ;;
+  *" -c "*) exec "$LLVM_PREFIX/bin/clang++" $INCLUDES "\$@" ;;
 esac
 exec "$LLVM_PREFIX/bin/clang++" "\$@"
 EOF
