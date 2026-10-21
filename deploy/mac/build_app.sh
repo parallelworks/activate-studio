@@ -20,7 +20,7 @@
 #
 # Outputs in OUT_DIR: ACTIVATE Studio.app; activate-studio-macos-arm64.tar.gz
 # with its .sha256 and install.sh (the release assets install.sh fetches);
-# activate-studio-macos-arm64.dmg on macOS.
+# activate-studio-macos-arm64.dmg on macOS (deploy/mac/make_dmg.sh).
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -330,7 +330,8 @@ find "$APP" -type l | while IFS= read -r l; do [ -e "$l" ] || rm -f "$l"; done
 # The bundle's own signature, ad hoc: it seals the Info.plist and every file
 # in the bundle. A downloaded app whose bundle has none is reported by
 # Gatekeeper as damaged, with no way to open it. Last, since any change to
-# the bundle after it breaks the seal.
+# the bundle after it breaks the seal. A release with the Developer ID
+# certificate replaces it (sign_app.sh, then notarize.sh).
 if command -v codesign >/dev/null 2>&1; then
   echo "Signing the app (ad hoc)..."
   codesign --force --sign - "$APP"
@@ -352,50 +353,8 @@ cp "$HERE/install.sh" "$OUT_DIR/install.sh"
 chmod 755 "$OUT_DIR/install.sh"
 
 if command -v hdiutil >/dev/null 2>&1; then
-  # hdiutil fails now and then on CI runners ("Resource busy", mostly on
-  # detach while the system still holds the new volume): each call is tried
-  # a few times, a detach is forced last, and the message shows if it gives up.
-  hdi() {
-    local n out
-    for n in 1 2 3 4 5; do
-      if out="$(hdiutil "$@" 2>&1)"; then return 0; fi
-      sleep "$((n * 2))"
-    done
-    if [ "$1" = detach ] && out="$(hdiutil detach -force "${@: -1}" 2>&1)"; then return 0; fi
-    echo "build_app: hdiutil $1 failed: $out" >&2
-    return 1
-  }
   echo "Disk image..."
-  rm -rf "$WORK/dmg" "$ASSET.dmg"
-  mkdir -p "$WORK/dmg"
-  ditto "$APP" "$WORK/dmg/$APP_NAME.app"
-  ln -s /Applications "$WORK/dmg/Applications"
-  if [ -n "$ICON" ]; then
-    # The volume's own icon, which Finder shows in the window's title bar
-    # and the sidebar: .VolumeIcon.icns at its root, used once the root has
-    # the custom-icon Finder flag. The flag is set on the mounted volume, so
-    # the image is made writable first and compressed after.
-    cp "$RES/$ICON.icns" "$WORK/dmg/.VolumeIcon.icns"
-    hdi create -volname "$APP_NAME" -srcfolder "$WORK/dmg" -ov -format UDRW "$WORK/rw.dmg"
-    mkdir -p "$WORK/mnt"
-    hdi attach -nobrowse -noautoopen -mountpoint "$WORK/mnt" "$WORK/rw.dmg"
-    # Finder info: 32 bytes, with kHasCustomIcon (0x0400) in the flags at byte 8.
-    xattr -wx com.apple.FinderInfo 0000000000000000040000000000000000000000000000000000000000000000 "$WORK/mnt"
-    hdi detach "$WORK/mnt"
-    hdi convert "$WORK/rw.dmg" -format UDZO -ov -o "$ASSET.dmg"
-    rm -f "$WORK/rw.dmg"
-    # Checked on the finished image, read only.
-    hdi attach -nobrowse -noautoopen -readonly -mountpoint "$WORK/mnt" "$ASSET.dmg"
-    flags="$(xattr -px com.apple.FinderInfo "$WORK/mnt" 2>/dev/null | tr -d ' \n' | cut -c17-20 || true)"
-    have_icon=0; [ -f "$WORK/mnt/.VolumeIcon.icns" ] && have_icon=1
-    hdi detach "$WORK/mnt"
-    if [ "$have_icon" != 1 ] || [ "$((0x${flags:-0} & 0x0400))" = 0 ]; then
-      echo "build_app: the disk image's volume icon did not take (icon file $have_icon, Finder flags ${flags:-none})." >&2
-      exit 1
-    fi
-  else
-    hdi create -volname "$APP_NAME" -srcfolder "$WORK/dmg" -ov -format UDZO "$ASSET.dmg"
-  fi
+  "$HERE/make_dmg.sh" "$APP" "$OUT_DIR/$ASSET.dmg"
 fi
 
 echo
