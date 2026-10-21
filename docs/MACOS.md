@@ -98,8 +98,10 @@ installer does not meet this, since a download made with curl carries no
 quarantine flag. An app downloaded with a browser, including from the disk
 image, is blocked the first time: on macOS 15 and later, open System
 Settings, Privacy & Security, and click Open Anyway; on earlier versions,
-Control-click the app and choose Open. Clearing the flag in Terminal also
-works:
+Control-click the app and choose Open. Releases up to v1.144 lack the
+bundle's own signature, so macOS reports them as damaged instead and
+offers no Open Anyway; clearing the flag in Terminal opens those, and
+works for any release:
 
 ```
 xattr -dr com.apple.quarantine "/Applications/ACTIVATE Studio.app"

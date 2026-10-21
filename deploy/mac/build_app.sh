@@ -319,6 +319,15 @@ PY
 printf 'APPL????' >"$APP/Contents/PkgInfo"
 echo "  LSMinimumSystemVersion $MIN_MACOS (bundled binaries need $NEEDS)"
 
+# The bundle's own signature, ad hoc: it seals the Info.plist and every file
+# in the bundle. A downloaded app whose bundle has none is reported by
+# Gatekeeper as damaged, with no way to open it. Last, since any change to
+# the bundle after it breaks the seal.
+if command -v codesign >/dev/null 2>&1; then
+  echo "Signing the app (ad hoc)..."
+  codesign --force --sign - "$APP"
+fi
+
 echo "Checking the app..."
 "$HERE/check_app.sh" "$APP"
 

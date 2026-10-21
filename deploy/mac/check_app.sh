@@ -73,6 +73,10 @@ while i < len(data):
     i += n
 assert b'ic10' in types, types
 PY
+if command -v codesign >/dev/null 2>&1; then
+  # The seal build_app.sh puts on the bundle, over every file in it.
+  check "the bundle's signature seals the app (codesign --verify --deep --strict)" codesign --verify --deep --strict "$APP"
+fi
 check "the model is the full file (over 10 MB)" test "$(( $(wc -c <"$R/models/minilm384.gguf") ))" -gt 10000000
 check "the document converter's macOS arm64 binary is there" \
   sh -c "find '$R/app/server/node_modules' -path '*downmark-darwin-arm64/bin/downmark' -type f | grep -q ."
