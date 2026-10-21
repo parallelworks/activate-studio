@@ -58,7 +58,7 @@ interface Effective {
   aiEnabled: boolean
 }
 
-interface CatalogTool { name: string; description: string; builtin: boolean; enabled: boolean; parameters?: unknown; command?: string; implementation?: string; calls?: string }
+interface CatalogTool { name: string; description: string; builtin: boolean; enabled: boolean; parameters?: unknown; command?: string; implementation?: string; calls?: string; asksFirst?: boolean }
 interface RagCall {
   at: string; model: string; mode: string; underlying: string; authSource: string
   durationMs: number | null; status: string; detail: string | null
@@ -70,8 +70,8 @@ interface Extensions { dir: string; tools: ExtDoc[]; skills: ExtDoc[]; agents: E
 
 const TOOL_GROUPS: [string, string[]][] = [
   ['Knowledge base', ['search_kb', 'read_kb_file', 'write_kb_file', 'list_kb_dir', 'query_corpus', 'get_labels', 'suggest_labels', 'apply_labels']],
-  ['Workflows', ['list_workflows', 'list_github_workflows', 'get_workflow', 'compose_workflow', 'serve_model', 'run_workflow', 'workflow_runs', 'workflow_run_detail', 'list_sessions', 'pw_help']],
-  ['Clusters', ['list_clusters', 'hpc_status', 'cluster_command']],
+  ['Workflows', ['list_workflows', 'list_github_workflows', 'get_workflow', 'compose_workflow', 'serve_model', 'run_workflow', 'workflow_runs', 'workflow_run_detail', 'cancel_workflow_run', 'list_sessions', 'pw_help']],
+  ['Clusters and storage', ['list_clusters', 'start_cluster', 'resume_cluster', 'stop_cluster', 'destroy_cluster', 'list_storage', 'hpc_status', 'cluster_command']],
   ['pw code agents', ['agent_sites', 'agent_sessions', 'start_agent', 'agent_status', 'agent_steer', 'agent_goal', 'agent_approve', 'agent_stop']],
   ['Display and skills', ['show_in_viewer', 'use_skill', 'studio_docs']],
 ]
@@ -763,7 +763,10 @@ export function SettingsView() {
                             onClick={() => setSpecOpen(o => o === t.name ? null : t.name)}>
                             <code>{t.name}</code>
                           </button>
-                          <span className="tool-desc">{t.description}</span>
+                          <span className="tool-desc">
+                            {t.asksFirst && <span className="tool-asks" title="Each call waits for the user's approval in the chat">Asks first</span>}
+                            {t.description}
+                          </span>
                         </div>
                         {/* What the tool actually runs is the useful part, so
                             it sits under every row rather than behind a click
