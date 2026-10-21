@@ -56,7 +56,7 @@ function appTree(dir, version, { key = PUB, id = LABEL, shell = '#!/bin/sh\n', n
 \t<key>CFBundleIdentifier</key>
 \t<string>${id}</string>
 \t<key>LSMinimumSystemVersion</key>
-\t<string>26.0</string>
+\t<string>14.0</string>
 </dict>
 </plist>
 `)
@@ -115,7 +115,7 @@ function release(tag, { manifest = {}, signWith = privateKey, archiveVersion = t
     sig = fs.readFileSync(given.sig)
   } else {
     archive = fs.readFileSync(archiveOf(archiveVersion, app))
-    man = Buffer.from(JSON.stringify({ version: tag, asset: ASSET, sha256: sha(archive), size: archive.length, minMacos: '26.0', builtAt: '2026-10-20T00:00:00Z', ...manifest }, null, 1) + '\n')
+    man = Buffer.from(JSON.stringify({ version: tag, asset: ASSET, sha256: sha(archive), size: archive.length, minMacos: '14.0', builtAt: '2026-10-20T00:00:00Z', ...manifest }, null, 1) + '\n')
     sig = Buffer.from(crypto.sign(null, man, signWith).toString('base64') + '\n')
   }
   const assets = []
@@ -424,7 +424,7 @@ test('sign_release.sh signs a manifest the server accepts, from a key file or th
   const manifestFile = archive.replace(/\.tar\.gz$/, '.manifest.json')
   const man = JSON.parse(fs.readFileSync(manifestFile, 'utf8'))
   assert.deepEqual({ ...man, builtAt: undefined }, {
-    version: 'v1.140', asset: ASSET, sha256: sha(fs.readFileSync(archive)), size: fs.statSync(archive).size, minMacos: '26.0', builtAt: undefined,
+    version: 'v1.140', asset: ASSET, sha256: sha(fs.readFileSync(archive)), size: fs.statSync(archive).size, minMacos: '14.0', builtAt: undefined,
   })
 
   await fresh('v1.139', { app: { key: fs.readFileSync(pub, 'utf8') } })

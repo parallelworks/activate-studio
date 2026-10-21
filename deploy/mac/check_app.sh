@@ -153,7 +153,9 @@ if [ "$RUN" = 1 ]; then
     PORT_FREE="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')"
     mkdir -p "$T/data"
     printf "PORT='%s'\nKB_ROOT='%s'\n" "$PORT_FREE" "$T/corpus" >"$T/data/studio.env"
-    clean /bin/bash "$R/studio-run.sh" "$T/data" &
+    # Started directly, not through clean(), so $! is the run loop itself
+    # rather than a subshell that TERM would end without reaching it.
+    env -i HOME="$T/home" PATH=/usr/bin:/bin:/usr/sbin:/sbin /bin/bash "$R/studio-run.sh" "$T/data" &
     loop=$!
     up=0
     for _ in $(seq 1 90); do
@@ -174,12 +176,16 @@ if [ "$RUN" = 1 ]; then
     done
     if [ "$found" = 1 ]; then ok "and search finds a file by its text"; else bad "search found nothing after the index:"; tail -n 30 "$T/data/logs/studio.log" | sed 's/^/        /'; fi
     kill -TERM "$loop" 2>/dev/null || true
+    # The loop waits for the server's own graceful stop, which launchd
+    # allows 30 seconds (ExitTimeOut).
     stopped=0
-    for _ in $(seq 1 40); do if ! kill -0 "$loop" 2>/dev/null; then stopped=1; break; fi; sleep 0.5; done
+    for _ in $(seq 1 70); do if ! kill -0 "$loop" 2>/dev/null; then stopped=1; break; fi; sleep 0.5; done
     if [ "$stopped" = 1 ] && ! curl -fsS -m 2 "http://127.0.0.1:$PORT_FREE/api/version" >/dev/null 2>&1; then
       ok "TERM stops the run loop and the server"
     else
       bad "the run loop or server kept running after TERM"
+      # So the launcher checks below do not reach a leftover server.
+      for p in $(lsof -ti "tcp:$PORT_FREE" -sTCP:LISTEN 2>/dev/null) $loop; do kill -KILL "$p" 2>/dev/null || true; done
     fi
 
     if [ "$LAUNCH" = 1 ]; then
@@ -187,6 +193,8 @@ if [ "$RUN" = 1 ]; then
       L="$R/launcher.sh"
       H="$T/home"
       LABEL=com.parallelworks.activate-studio
+      # A port of its own, so nothing left from the checks above answers.
+      PORT_FREE="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')"
       mkdir -p "$H/Library/Application Support/ACTIVATE Studio"
       printf "PORT='%s'\nKB_ROOT='%s'\n" "$PORT_FREE" "$T/corpus" >"$H/Library/Application Support/ACTIVATE Studio/studio.env"
       check "opening the app starts the agent and the server" env HOME="$H" STUDIO_NO_BROWSER=1 "$L"

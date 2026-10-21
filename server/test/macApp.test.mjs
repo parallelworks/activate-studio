@@ -194,8 +194,10 @@ test('install.sh verifies the archive and puts the app in place, replacing an ol
   const sum = spawnSync('sh', ['-c', `sha256sum "${archive}" 2>/dev/null || shasum -a 256 "${archive}"`], { encoding: 'utf8' }).stdout.split(/\s+/)[0]
   const dest = path.join(root, 'Applications')
   write(path.join(dest, 'ACTIVATE Studio.app', 'Contents', 'Resources', 'marker'), 'old')
-  // On a Mac the installer stops a running agent first; a stand-in takes the call.
+  // On a Mac the installer stops a running agent first and opens the app
+  // with open; stand-ins take both calls, and open runs the app directly.
   write(path.join(root, 'bin', 'launchctl'), '#!/bin/sh\n', 0o755)
+  write(path.join(root, 'bin', 'open'), '#!/bin/sh\nexec "$1/Contents/MacOS/ACTIVATE Studio"\n', 0o755)
   const env = { HOME: root, PATH: `${path.join(root, 'bin')}:${process.env.PATH}`, STUDIO_INSTALL_DIR: dest, STUDIO_INSTALL_ANY_HOST: '1' }
   const install = args => spawnSync('bash', [path.join(MAC, 'install.sh'), ...args], { env, encoding: 'utf8' })
 

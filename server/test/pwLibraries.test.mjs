@@ -83,7 +83,8 @@ test('the connection test reaches the cluster with pw ssh and passes step by ste
   const r = await probe({ cluster, indexRoot: '~/idx/proj', sourceRoot: '~/proj' })
   assert.equal(r.ok, true, JSON.stringify(r.steps))
   assert.deepEqual(r.steps.map(s => [s.name, s.ok]), [['ssh', true], ['gufi', true], ['index', true], ['source', true]])
-  assert.equal(r.steps[0].detail, 'Connected to cluster-a, a Linux host.')
+  // The stand-in pw runs the probe here, so the host is this one.
+  assert.equal(r.steps[0].detail, `Connected to cluster-a, a ${process.platform === 'darwin' ? 'macOS' : 'Linux'} host.`)
   // Not on the login's PATH: found where the index workflow installs it.
   assert.equal(r.gufiBin, bin)
   assert.equal(r.gufiVersion, 'gufi_query 0.6.9')
