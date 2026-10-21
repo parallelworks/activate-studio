@@ -403,6 +403,33 @@ test('after an update the server clears the mark once up, and reports a rollback
   U.resetUpdatesForTests()
 })
 
+test('the app takes the newest release that carries the signed app, and checks again soon while a newer one waits for it', async () => {
+  await fresh('v1.139', { timings: { firstCheckMs: 20, soonMs: 150, intervalMs: 3_600_000 } })
+  // v1.141 is published; its macOS build has not attached the app yet.
+  setReleases([{ ...release('v1.141'), assets: [] }, release('v1.140')])
+  const before = apiRequests.length
+  U.startUpdates(() => {})
+  assert.ok(await until(() => apiRequests.length > before), 'the first check')
+  const s = (await j('GET', '/api/updates')).body
+  assert.equal(s.latest.version, 'v1.140')
+  assert.equal(s.available, true)
+  assert.equal(s.canInstall, true, s.reason)
+  // The build attaches it, and the sooner check finds it.
+  setReleases([release('v1.141'), release('v1.140')])
+  assert.ok(await until(async () => (await j('GET', '/api/updates')).body.latest?.version === 'v1.141', 3000), 'checked again within the shorter wait')
+  U.resetUpdatesForTests()
+})
+
+test('a clone is told of the newest release, signed app or not', async () => {
+  await fresh('v1.139')
+  delete process.env.STUDIO_APP_BUNDLE
+  setReleases([{ ...release('v1.141'), assets: [] }, release('v1.140')])
+  const s = (await j('POST', '/api/updates/check')).body
+  assert.equal(s.mode, 'clone')
+  assert.equal(s.latest.version, 'v1.141')
+  process.env.STUDIO_APP_BUNDLE = APP
+})
+
 const opensslVersion = spawnSync('openssl', ['version'], { encoding: 'utf8' }).stdout ?? ''
 test('sign_release.sh signs a manifest the server accepts, from a key file or the key in a variable', { skip: /^OpenSSL [3-9]/.test(opensslVersion) ? false : 'needs OpenSSL 3' }, async () => {
   const dir = fs.mkdtempSync(path.join(tmp, 'sign-'))

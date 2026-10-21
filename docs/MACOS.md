@@ -58,7 +58,9 @@ settings unless `--purge` is added. Neither touches the documents.
 
 *Updates:* the app checks this repository's releases a minute after it
 starts and every six hours after that; Settings, General shows the running
-version, the newest release with its notes, and Update now. The download
+version, the newest release with its notes, and Update now. It takes the
+newest release that carries the signed app; while a newer one is still
+waiting for its macOS build, it checks again after 30 minutes. The download
 goes to `~/Library/Application Support/ACTIVATE Studio/updates` and is
 installed only if the release's manifest is signed by the release key
 (the app carries its public half, `Contents/Resources/update-signing.pub`),
