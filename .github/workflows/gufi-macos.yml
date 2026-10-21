@@ -1,28 +1,155 @@
-# Build GUFI on a clean macOS runner and exercise the pieces the Studio
-# depends on. Run by hand rather than on every push: the AI dependency path
-# compiles llama.cpp and takes far longer than the test suite.
+# Build GUFI for the macOS app and check it on the oldest macOS it targets.
 #
-# What this answers that a local build cannot: whether GUFI builds and its
-# vector stack works on a machine nobody has configured, which is the state
-# a new Mac user is in.
+# deploy/mac/build_gufi.sh builds GUFI from source on a macos-15 runner for
+# a deployment target (macOS 14 by default), with every library it loads,
+# as a relocatable tree; deploy/mac/check_gufi.sh then indexes, queries,
+# embeds and searches with it, unpacked on a clean runner of each test
+# macOS. The archive is kept as a workflow artifact, and a gufi-* tag also
+# attaches it to that tag's release, from where deploy/mac/build_app.sh
+# takes it (GUFI_TARBALL).
+#
+#   workflow_dispatch     : build and check with the inputs below
+#   push of a gufi-* tag  : build and check with the defaults, then release
+#
+# Run by hand or by tag rather than on every push: llama.cpp and GUFI take
+# far longer to build than the test suite. check_setup_script also runs
+# indexer/setup_gufi.sh, the from-source path for a clone, on a runner
+# nobody has configured, which is the state a new Mac user is in.
+#
+# No job on a macOS runner uses harden-runner: there it can only audit
+# egress, not block it (its README, at the version ci.yml pins).
 name: gufi-macos
 
 on:
   workflow_dispatch:
     inputs:
       gufi_ref:
-        description: GUFI branch, tag, or commit
-        default: main
+        description: GUFI branch, tag or commit (blank for the commit build_gufi.sh pins)
+        default: ""
+      deployment_target:
+        description: Oldest macOS the build runs on
+        default: "14.0"
+      test_runners:
+        description: Runners to check the build on, a JSON list; include one running the deployment target
+        default: '["macos-14"]'
+      check_setup_script:
+        description: Also check indexer/setup_gufi.sh, the from-source path for a clone
+        type: boolean
+        default: false
       dep_ai:
-        description: Build the AI dependencies (sqlite-vec and sqlite-lembed)
+        description: For that check, build the AI dependencies (sqlite-vec and sqlite-lembed)
         type: boolean
         default: true
+  push:
+    tags: ["gufi-*"]
 
+# Read-only token for the build and the checks.
 permissions:
   contents: read
 
 jobs:
   build:
+    runs-on: macos-15
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: build GUFI
+        env:
+          # Through env, not ${{ }} in the script: both are free text, and
+          # build_gufi.sh refuses anything that is not a ref or a version.
+          GUFI_REF: ${{ inputs.gufi_ref }}
+          MACOSX_DEPLOYMENT_TARGET: ${{ inputs.deployment_target || '14.0' }}
+        run: OUT_DIR="$RUNNER_TEMP/gufi" deploy/mac/build_gufi.sh
+
+      # Unpacked from the archive into a fresh directory, after the build's
+      # own directories are gone, so nothing can load from where it was built.
+      - name: run it
+        run: deploy/mac/check_gufi.sh "$RUNNER_TEMP/gufi/gufi-macos-arm64.tar.gz"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: gufi-macos-arm64
+          path: |
+            ${{ runner.temp }}/gufi/gufi-macos-arm64.tar.gz
+            ${{ runner.temp }}/gufi/gufi-macos-arm64.tar.gz.sha256
+            ${{ runner.temp }}/gufi/gufi-macos-arm64.manifest.json
+          if-no-files-found: error
+          retention-days: 30
+
+  # The same checks on runners that did not build it, the oldest macOS the
+  # build targets among them: a library or symbol that release lacks fails
+  # here, which no check on the build machine can show.
+  test:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: ${{ fromJSON(inputs.test_runners || '["macos-14"]') }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: gufi-macos-arm64
+          path: ${{ runner.temp }}/gufi
+      - name: run it
+        run: deploy/mac/check_gufi.sh "$RUNNER_TEMP/gufi/gufi-macos-arm64.tar.gz"
+
+  # Only this job can write to the repository, and it runs no build code.
+  release:
+    needs: [build, test]
+    if: startsWith(github.ref, 'refs/tags/gufi-')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write     # create the release and upload its assets
+    steps:
+      # GitHub's API and uploads, and the artifact storage.
+      - uses: step-security/harden-runner@351661ca32ac09a36dc5ee2d536e3128f2a3c8ed # v2.22.0
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            github.com:443
+            uploads.github.com:443
+            results-receiver.actions.githubusercontent.com:443
+            *.blob.core.windows.net:443
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: gufi-macos-arm64
+
+      - name: attach to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          sha256sum -c gufi-macos-arm64.tar.gz.sha256
+          python3 - gufi-macos-arm64.manifest.json >notes.md <<'PY'
+          import json, sys
+          m = json.load(open(sys.argv[1]))
+          print(f"GUFI {m['gufi']['version']} ({m['gufi']['commit']}) for macOS {m['deploymentTarget']} "
+                f"and later on Apple silicon, built by deploy/mac/build_gufi.sh. "
+                f"Use it with GUFI_TARBALL=gufi-macos-arm64.tar.gz deploy/mac/build_app.sh.")
+          PY
+          # A prerelease that is never "latest": the app's installer and its
+          # update check read the latest release, which stays the app's.
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --prerelease --latest=false \
+              --title "GUFI for macOS ($TAG)" --notes-file notes.md
+          fi
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber \
+            gufi-macos-arm64.tar.gz gufi-macos-arm64.tar.gz.sha256 gufi-macos-arm64.manifest.json
+
+  # indexer/setup_gufi.sh, which a clone uses to build GUFI into a prefix.
+  setup-script:
+    if: inputs.check_setup_script
     runs-on: macos-15
     timeout-minutes: 90
     steps:
@@ -36,7 +163,7 @@ jobs:
           GUFI_PREFIX: ${{ github.workspace }}/gufi
           GUFI_AI: ${{ inputs.dep_ai && '1' || '0' }}
           # Through env, not ${{ }} in the script: the ref is free text.
-          GUFI_REF: ${{ inputs.gufi_ref }}
+          GUFI_REF: ${{ inputs.gufi_ref || 'main' }}
         run: |
           set -x
           git clone https://github.com/mar-file-system/GUFI "$GUFI_SRC"
@@ -45,13 +172,13 @@ jobs:
 
       - name: what got built
         run: |
-          ls "${{ github.workspace }}/gufi/bin"
-          "${{ github.workspace }}/gufi/bin/gufi_query" -H 2>&1 | head -20 || true
+          ls "$GITHUB_WORKSPACE/gufi/bin"
+          "$GITHUB_WORKSPACE/gufi/bin/gufi_query" -H 2>&1 | head -20 || true
 
       - name: index a tree and query it
         run: |
           set -e
-          BIN="${{ github.workspace }}/gufi/bin"
+          BIN="$GITHUB_WORKSPACE/gufi/bin"
           mkdir -p corpus/notes
           printf 'the index is a tree of per-directory databases\n' > corpus/notes/design.txt
           printf 'nothing to do with the other file\n' > corpus/unrelated.md
@@ -59,22 +186,19 @@ jobs:
           "$BIN/gufi_query" -d ' ' -E "SELECT name, size FROM vrpentries;" idx/corpus
 
       - name: embed a phrase and search vectors
-        if: ${{ inputs.dep_ai }}
+        if: inputs.dep_ai
         run: |
           set -e
-          BIN="${{ github.workspace }}/gufi/bin"
-          MODEL="$(find "${{ github.workspace }}" -name 'minilm384.gguf' | head -1)"
+          BIN="$GITHUB_WORKSPACE/gufi/bin"
+          MODEL="$(find "$GITHUB_WORKSPACE" -name 'minilm384.gguf' | head -1)"
           test -n "$MODEL"
           # The pattern the Studio uses: load the model, embed the question
           # with lembed, store document vectors in a vec0 table, and take the
-          # nearest by distance.
+          # nearest by distance. gufi_sqlite3 runs each line as a statement.
           "$BIN/gufi_sqlite3" <<SQL
-          .bail on
           INSERT INTO temp.lembed_models(name, model) SELECT 'm', lembed_model_from_file('$MODEL');
           CREATE VIRTUAL TABLE v USING vec0(id INTEGER PRIMARY KEY, fp384 float[384]);
-          INSERT INTO v(id, fp384) VALUES
-            (1, lembed('m', 'a tree of per-directory databases holding file metadata')),
-            (2, lembed('m', 'a recipe for lemon cake'));
+          INSERT INTO v(id, fp384) VALUES (1, lembed('m', 'a tree of per-directory databases holding file metadata')), (2, lembed('m', 'a recipe for lemon cake'));
           CREATE TABLE q AS SELECT lembed('m', 'how is the file index laid out') AS e;
           SELECT id, distance FROM v WHERE fp384 MATCH (SELECT e FROM q) ORDER BY distance LIMIT 2;
           SQL
@@ -85,9 +209,9 @@ jobs:
           corepack enable
           pnpm install --frozen-lockfile
           pnpm build
-          GUFI_PREFIX="${{ github.workspace }}/gufi" \
-          KB_ROOT="${{ github.workspace }}/corpus" \
-          INDEX_BASE="${{ github.workspace }}/studio-index" \
+          GUFI_PREFIX="$GITHUB_WORKSPACE/gufi" \
+          KB_ROOT="$GITHUB_WORKSPACE/corpus" \
+          INDEX_BASE="$GITHUB_WORKSPACE/studio-index" \
             node -e "
               process.env.PATH = process.env.GUFI_PREFIX + '/bin:' + process.env.PATH
               const { gufiAvailable } = await import('./server/dist/config.js')
