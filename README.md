@@ -34,7 +34,7 @@ Without `KB_ROOT`, it opens a small sample folder. Any OpenAI-compatible endpoin
 - **Agents** take the parts of a larger request in parallel; you can watch them, approve what they ask to do, and steer them.
 - **Other tools**, such as pw code, can search the same knowledge base over MCP or an OpenAI-compatible endpoint.
 
-The in-app Help is the user guide: [`docs/HELP.md`](docs/HELP.md), with the details in [`docs/REFERENCE.md`](docs/REFERENCE.md).
+The in-app Help is the user guide: [`docs/HELP.md`](docs/HELP.md), with the details in [`docs/REFERENCE.md`](docs/REFERENCE.md). Its What's new page shows [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Documentation
 

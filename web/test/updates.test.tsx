@@ -148,7 +148,7 @@ describe('the Updates section', () => {
 
   it('in a clone, shows the commands that update it and no automatic install', async () => {
     const reason = 'This Studio runs from a clone of the repository.'
-    stubServer(server({ updates: status({ mode: 'clone', canInstall: false, reason }) }))
+    stubServer(server({ updates: status({ mode: 'clone', canInstall: false, reason, command: CLONE_UPDATE_COMMAND }) }))
     const { container } = render(<UpdatesSection />)
     expect(await screen.findByText(reason)).toBeInTheDocument()
     expect(container.querySelector('pre, code')).not.toBeNull()

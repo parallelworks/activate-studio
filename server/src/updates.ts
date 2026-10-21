@@ -6,6 +6,7 @@ import path from 'node:path'
 import { promisify } from 'node:util'
 import type { FastifyInstance } from 'fastify'
 import { authEnabled } from './auth.js'
+import { parseNotes, readChangelog, type ChangeEntry, type ChangeVersion } from './changelog.js'
 import { INDEX_BASE } from './config.js'
 import { KbError } from './kb.js'
 import { requestRestart } from './lifecycle.js'
@@ -33,6 +34,8 @@ const APP_NAME = 'ACTIVATE Studio.app'
 const BUNDLE_ID = 'com.parallelworks.activate-studio'
 const LABEL = 'com.parallelworks.activate-studio'
 const REQUEST_TIMEOUT_MS = 15_000
+/** How a clone of the repository updates itself, before a restart. */
+const CLONE_COMMAND = 'git pull\npnpm install\npnpm build'
 
 const execFileP = promisify(execFile)
 
@@ -44,10 +47,15 @@ export interface UpdateStatus {
   current: { version: string; builtAt: string | null }
   policy: UpdatePolicy
   latest: { version: string; publishedAt: string | null; notes: string; url: string } | null
+  /** The releases newer than the running version, up to and including
+   *  `latest`, newest first, each with its notes as entries. */
+  releases: UpdateRelease[]
   available: boolean
   canInstall: boolean
   /** Why it cannot install, in plain words. */
   reason: string | null
+  /** The commands that update a clone of the repository; null otherwise. */
+  command: string | null
   state: UpdateState
   progress: { bytes: number; total: number } | null
   error: string | null
@@ -57,6 +65,13 @@ export interface UpdateStatus {
   /** The last update changed the app's own executable: the window has to
    *  be reopened to run it (the launcher clears this when the app opens). */
   reopen: boolean
+}
+
+export interface UpdateRelease {
+  version: string
+  publishedAt: string | null
+  url: string
+  entries: ChangeEntry[]
 }
 
 interface Release {
@@ -301,7 +316,7 @@ function refusal(mode: UpdateMode, rel: Release | null, available: boolean): str
   if (mode === 'clone') {
     const b = appBundle()
     if (b) return `The folder holding the app (${path.dirname(b)}) is not writable, so the app cannot replace itself. Move the app to ~/Applications, or install the new version from the releases page.`
-    return 'This Studio runs from a clone of the repository and does not update itself. To update it: git pull && pnpm install && pnpm build, then start it again.'
+    return `This Studio runs from a clone of the repository and does not update itself. To update it: ${CLONE_COMMAND.split('\n').join(' && ')}, then start it again.`
   }
   if (!publicKey()) return 'This copy of the app carries no update signing key, so it cannot verify a download. Install the new version from the releases page.'
   if (!rel || !available) return null
@@ -316,6 +331,17 @@ function previousVersion(): { version: string } | null {
   return v ? { version: v } : null
 }
 
+/** The releases an update to `rel` brings: those newer than `from` up to
+ *  and including it, on the channel, newest first. A release the app cannot
+ *  install (its macOS build failed, or has not finished) still counts, since
+ *  its changes are in the later one. */
+function releasesUpTo(rel: Release, channel: UpdatePolicy['channel'], from: string): UpdateRelease[] {
+  return loadSaved().releases
+    .filter(r => (!r.prerelease || channel === 'prerelease') && isNewer(r.tag, from) && compareVersions(r.tag, rel.tag) <= 0)
+    .sort((a, b) => compareVersions(b.tag, a.tag))
+    .map(r => ({ version: r.tag, publishedAt: r.publishedAt, url: r.url, entries: parseNotes(r.notes) }))
+}
+
 export function updateStatus(): UpdateStatus {
   const mode = updateMode()
   const policy = effectiveSettings().updates
@@ -328,15 +354,46 @@ export function updateStatus(): UpdateStatus {
     current: cur,
     policy,
     latest: rel ? { version: rel.tag, publishedAt: rel.publishedAt, notes: rel.notes, url: rel.url } : null,
+    releases: rel && available ? releasesUpTo(rel, policy.channel, cur.version) : [],
     available,
     canInstall: mode === 'app' && available && reason === null,
     reason,
+    command: mode === 'clone' && !appBundle() ? CLONE_COMMAND : null,
     state: st.state,
     progress: st.progress,
     error: st.error ?? rollbackNote,
     checkedAt: loadSaved().checkedAt,
     previous: previousVersion(),
     reopen: mode === 'app' && fs.existsSync(inUpdates('reopen')),
+  }
+}
+
+// ---- the change log ----
+
+/** The change log for this version: the one the build carries, and, in the
+ *  app or a clone, the notes of releases up to the running version that it
+ *  lacks. The change log is regenerated after each release, so a build
+ *  carries it as of the version before its own; the app has the notes of
+ *  its own version from the check that found it. Versions with no entries
+ *  left (housekeeping only, or a tag with no pull requests) are left out.
+ *  `after` keeps only the versions newer than it. */
+export function changelog(after: string | null = null): { included: boolean; current: string; versions: ChangeVersion[] } {
+  const cur = running().version
+  const { included, versions } = readChangelog()
+  const all = [...versions]
+  if (updateMode() !== 'hosted' && parseVersion(cur)) {
+    for (const r of loadSaved().releases) {
+      if (isNewer(r.tag, cur) || all.some(v => sameVersion(v.version, r.tag))) continue
+      all.push({ version: r.tag, date: r.publishedAt ? r.publishedAt.slice(0, 10) : null, entries: parseNotes(r.notes) })
+    }
+  }
+  const since = after && parseVersion(after) ? after : null
+  return {
+    included,
+    current: cur,
+    versions: all
+      .filter(v => v.entries.length && (!since || isNewer(v.version, since)))
+      .sort((a, b) => compareVersions(b.version, a.version)),
   }
 }
 
@@ -728,6 +785,12 @@ export async function updateRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/updates', async () => {
     refuseHosted()
     return updateStatus()
+  })
+
+  // Every mode, hosted included: What's new reads it.
+  app.get('/api/changelog', async req => {
+    const after = (req.query as { after?: unknown }).after
+    return changelog(typeof after === 'string' && after ? after : null)
   })
 
   app.post('/api/updates/check', async () => {

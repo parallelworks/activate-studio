@@ -115,10 +115,12 @@ mv "$WORK/server/node_modules" "$RES/app/server/node_modules"
 cp "$WORK/server/package.json" "$RES/app/server/package.json"
 cp -R "$PROJECT_ROOT/server/dist" "$RES/app/server/dist"
 
-echo "Staging web, indexer, docs, starters..."
+echo "Staging web, indexer, docs, change log, starters..."
 cp -R "$PROJECT_ROOT/web/dist" "$RES/app/web/dist"
 cp -R "$PROJECT_ROOT/indexer" "$RES/app/indexer"
 cp -R "$PROJECT_ROOT/docs" "$RES/app/docs"
+# What's new and the notice after an update read it.
+cp "$PROJECT_ROOT/CHANGELOG.md" "$RES/app/CHANGELOG.md"
 cp -R "$PROJECT_ROOT/extensions-starter" "$RES/app/extensions-starter"
 cp "$PROJECT_ROOT/deploy/gufi-index.yaml" "$RES/app/deploy/"
 cp "$PROJECT_ROOT/package.json" "$RES/app/package.json"
@@ -350,6 +352,19 @@ cp "$HERE/install.sh" "$OUT_DIR/install.sh"
 chmod 755 "$OUT_DIR/install.sh"
 
 if command -v hdiutil >/dev/null 2>&1; then
+  # hdiutil fails now and then on CI runners ("Resource busy", mostly on
+  # detach while the system still holds the new volume): each call is tried
+  # a few times, a detach is forced last, and the message shows if it gives up.
+  hdi() {
+    local n out
+    for n in 1 2 3 4 5; do
+      if out="$(hdiutil "$@" 2>&1)"; then return 0; fi
+      sleep "$((n * 2))"
+    done
+    if [ "$1" = detach ] && out="$(hdiutil detach -force "${@: -1}" 2>&1)"; then return 0; fi
+    echo "build_app: hdiutil $1 failed: $out" >&2
+    return 1
+  }
   echo "Disk image..."
   rm -rf "$WORK/dmg" "$ASSET.dmg"
   mkdir -p "$WORK/dmg"
@@ -361,25 +376,25 @@ if command -v hdiutil >/dev/null 2>&1; then
     # the custom-icon Finder flag. The flag is set on the mounted volume, so
     # the image is made writable first and compressed after.
     cp "$RES/$ICON.icns" "$WORK/dmg/.VolumeIcon.icns"
-    hdiutil create -quiet -volname "$APP_NAME" -srcfolder "$WORK/dmg" -ov -format UDRW "$WORK/rw.dmg"
+    hdi create -volname "$APP_NAME" -srcfolder "$WORK/dmg" -ov -format UDRW "$WORK/rw.dmg"
     mkdir -p "$WORK/mnt"
-    hdiutil attach -quiet -nobrowse -noautoopen -mountpoint "$WORK/mnt" "$WORK/rw.dmg"
+    hdi attach -nobrowse -noautoopen -mountpoint "$WORK/mnt" "$WORK/rw.dmg"
     # Finder info: 32 bytes, with kHasCustomIcon (0x0400) in the flags at byte 8.
     xattr -wx com.apple.FinderInfo 0000000000000000040000000000000000000000000000000000000000000000 "$WORK/mnt"
-    hdiutil detach -quiet "$WORK/mnt"
-    hdiutil convert -quiet "$WORK/rw.dmg" -format UDZO -ov -o "$ASSET.dmg"
+    hdi detach "$WORK/mnt"
+    hdi convert "$WORK/rw.dmg" -format UDZO -ov -o "$ASSET.dmg"
     rm -f "$WORK/rw.dmg"
     # Checked on the finished image, read only.
-    hdiutil attach -quiet -nobrowse -noautoopen -readonly -mountpoint "$WORK/mnt" "$ASSET.dmg"
+    hdi attach -nobrowse -noautoopen -readonly -mountpoint "$WORK/mnt" "$ASSET.dmg"
     flags="$(xattr -px com.apple.FinderInfo "$WORK/mnt" 2>/dev/null | tr -d ' \n' | cut -c17-20 || true)"
     have_icon=0; [ -f "$WORK/mnt/.VolumeIcon.icns" ] && have_icon=1
-    hdiutil detach -quiet "$WORK/mnt"
+    hdi detach "$WORK/mnt"
     if [ "$have_icon" != 1 ] || [ "$((0x${flags:-0} & 0x0400))" = 0 ]; then
       echo "build_app: the disk image's volume icon did not take (icon file $have_icon, Finder flags ${flags:-none})." >&2
       exit 1
     fi
   else
-    hdiutil create -quiet -volname "$APP_NAME" -srcfolder "$WORK/dmg" -ov -format UDZO "$ASSET.dmg"
+    hdi create -volname "$APP_NAME" -srcfolder "$WORK/dmg" -ov -format UDZO "$ASSET.dmg"
   fi
 fi
 

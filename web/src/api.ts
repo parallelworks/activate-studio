@@ -323,16 +323,25 @@ export const api = {
 // Only the macOS app installs updates; a clone is told the version and the
 // command, and a hosted deployment has none (its routes answer 403).
 export interface UpdatePolicy { check: boolean; install: 'manual' | 'auto'; channel: 'stable' | 'prerelease' }
+/** One pull request's change: its title, and its description as markdown. */
+export interface ChangeEntry { title: string; pr: number | null; body: string }
+/** A release an update brings, with its notes as entries. */
+export interface UpdateRelease { version: string; publishedAt: string | null; url: string | null; entries: ChangeEntry[] }
 export type UpdateState = 'idle' | 'checking' | 'downloading' | 'verifying' | 'installing' | 'restarting' | 'error'
 export interface UpdatesStatus {
   mode: 'app' | 'clone' | 'hosted'
   current: { version: string; builtAt: string | null }
   policy: UpdatePolicy
   latest: { version: string; publishedAt: string | null; notes: string | null; url: string | null } | null
+  /** Every release newer than the running one, up to and including
+   *  `latest`, newest first. */
+  releases?: UpdateRelease[]
   available: boolean
   canInstall: boolean
   /** Why it cannot install, in plain words. */
   reason: string | null
+  /** The commands that update a clone of the repository. */
+  command?: string | null
   state: UpdateState
   progress: { bytes: number; total: number | null } | null
   error: string | null
@@ -367,9 +376,6 @@ export const updatesApi = {
   savePolicy: (updates: UpdatePolicy) => sendUpdates('/api/settings', 'PUT', { updates }).then(() => undefined),
 }
 
-/** Sent with the status whenever the Updates section learns something, so
- *  the footer's version line follows without waiting for its next read. */
-export const UPDATES_CHANGED = 'ade:updates-changed'
 const UPDATES_FOCUS = 'ade:updates-focus'
 let updatesFocusPending = false
 
@@ -388,6 +394,43 @@ export function onUpdatesFocus(fn: () => void): () => void {
   if (updatesFocusPending) run()
   window.addEventListener(UPDATES_FOCUS, run)
   return () => window.removeEventListener(UPDATES_FOCUS, run)
+}
+
+// ---- the change log ----
+/** A version of the change log with its entries. */
+export interface ChangeVersion { version: string; date: string | null; entries: ChangeEntry[] }
+export interface Changelog {
+  /** False when this build carries no CHANGELOG.md. */
+  included: boolean
+  current: string
+  /** Newest first. */
+  versions: ChangeVersion[]
+}
+/** The change log; `after` keeps the versions newer than it. */
+export const changelogApi = {
+  get: async (after?: string): Promise<Changelog> => {
+    const url = `/api/changelog${after ? `?after=${encodeURIComponent(after)}` : ''}`
+    const res = await fetch(url)
+    if (!res.ok) throw new Error(`/api/changelog: ${res.status}`)
+    return res.json() as Promise<Changelog>
+  },
+}
+
+/** Where What's new lives: a page of Help. */
+export const WHATS_NEW_HASH = '#view=help:whats-new'
+const WHATS_NEW = 'ade:whats-new'
+
+/** Opens Help at What's new. */
+export function openWhatsNew(): void {
+  location.hash = WHATS_NEW_HASH
+  // Already there, the hash does not change; Help switches pages itself.
+  window.dispatchEvent(new Event(WHATS_NEW))
+}
+
+/** Calls `fn` when What's new is asked for. */
+export function onWhatsNew(fn: () => void): () => void {
+  window.addEventListener(WHATS_NEW, fn)
+  return () => window.removeEventListener(WHATS_NEW, fn)
 }
 
 export interface UploadResult { saved: string[]; indexMs?: number; indexed?: boolean; indexError?: string; deferred?: boolean }

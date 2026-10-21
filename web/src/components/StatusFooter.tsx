@@ -5,7 +5,8 @@ import {
 import { api, IndexStatus } from '../api'
 import { onLibraryChange } from '../api'
 import type { LibraryStats } from '../api'
-import { UPDATES_CHANGED, openUpdates, updatesApi, type UpdatesStatus } from '../api'
+import { openUpdates, openWhatsNew } from '../api'
+import { useUpdateFlow } from '../updateFlow'
 import { share, syncIndex, type AiHealth } from '../statusShare'
 import { useAppConfig } from '../config'
 
@@ -160,7 +161,10 @@ function BuildPanel({ trigger, build }: { trigger: ReactElement; build: Build })
       </p>
       <div className="scope-menu-foot">
         <span className="muted identity-src">GET /api/version</span>
-        <CloseButton />
+        <span className="identity-actions">
+          <PopoverClose render={<Button variant="secondary" size="sm" />} onClick={openWhatsNew}>What's new</PopoverClose>
+          <CloseButton />
+        </span>
       </div>
     </FooterPanel>
   )
@@ -265,24 +269,13 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
   }, [])
 
   // A newer release the Studio can tell about. The version line says so and
-  // opens Settings, General at the Updates section. The server checks every
-  // few hours, so reading its answer now and then is enough; the section
-  // reports a check made there at once.
-  const [update, setUpdate] = useState<string | null>(null)
-  useEffect(() => {
-    let none = false
-    const show = (s: UpdatesStatus | null) => {
-      // A hosted deployment has no updates and is not asked again.
-      if (!s || s.mode === 'hosted') { none = true; setUpdate(null); return }
-      setUpdate(s.available && s.latest ? s.latest.version : null)
-    }
-    const read = () => { if (!none) updatesApi.status().then(show).catch(() => {}) }
-    read()
-    const t = setInterval(read, 10 * 60_000)
-    const onChange = (e: Event) => show((e as CustomEvent<UpdatesStatus>).detail)
-    window.addEventListener(UPDATES_CHANGED, onChange)
-    return () => { clearInterval(t); window.removeEventListener(UPDATES_CHANGED, onChange) }
-  }, [])
+  // opens Settings, General at the Updates section. The page's update flow
+  // reads the server's answer now and then (the server checks every few
+  // hours) and at once after a check from Settings; a hosted deployment has
+  // no updates.
+  const flow = useUpdateFlow()
+  const update = !flow.none && flow.status?.mode !== 'hosted' && flow.status?.available && flow.status.latest
+    ? flow.status.latest.version : null
 
   const sync = async () => {
     setSyncing(true)

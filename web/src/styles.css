@@ -2148,3 +2148,49 @@ button.status-row:hover { background: var(--pw-hover-row); }
   .status-panel { position: absolute; top: 0; right: 0; bottom: 0; z-index: 20; box-shadow: -8px 0 24px rgba(16, 24, 40, 0.12); }
 }
 @media (max-width: 760px) { .status-panel, .panel-toggle { display: none; } }
+
+/* Changes by version: the update notice, Settings, Updates, and What's new.
+   Each title opens its pull request's description. */
+.changes-version + .changes-version { margin-top: 10px; }
+.changes-version-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; margin: 0 0 2px; font-size: 13px; font-weight: 600; color: var(--pw-text); }
+.changes-version-date { font-size: 12px; font-weight: 400; }
+.changes-entries { list-style: none; margin: 0; padding: 0; }
+.changes-entry-title { width: 100%; padding: 3px 0; font-size: 13px; line-height: 18px; color: var(--pw-text); }
+.changes-entry-title:hover { color: var(--pw-link); }
+.changes-entry-body { padding: 2px 0 10px 14px; border-left: 2px solid var(--pw-border); margin: 2px 0 6px 2px; }
+.changes-md { font-size: 13px; line-height: 1.55; overflow-wrap: anywhere; }
+.changes-md :is(h1, h2, h3, h4) { margin: 10px 0 4px; font-size: 13px; font-weight: 600; }
+.changes-md :is(ul, ol) { padding-left: 18px; }
+.changes-pr { margin: 6px 0 0; font-size: 12px; }
+.changes-none { margin: 0; font-size: 13px; }
+.changes-scroll { max-height: 260px; overflow-y: auto; margin-top: 8px; padding-right: 8px; }
+
+/* The notices above every page: an update to install, and once after one. */
+.update-notice { flex-shrink: 0; }
+.update-notice p { margin: 0; }
+.update-notice .update-notice-sub { margin-top: 2px; color: var(--pw-muted); }
+/* The callout colors its text by tone; the changes read as body text, in a
+   scrolling area ruled above and below so a cut-off line reads as more. */
+.update-notice .update-notice-list { color: var(--pw-text); }
+.update-notice-list {
+  max-height: min(16rem, 34vh); overflow-y: auto; margin-top: 8px; padding: 6px 8px 6px 0;
+  border-block: 1px solid color-mix(in srgb, currentColor 14%, transparent);
+}
+.update-notice-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
+.update-notice-link { font-size: 13px; }
+.update-notice .update-notice-error { margin-top: 8px; color: var(--theme-error-text); }
+.update-notice .update-notice-reason { margin-top: 8px; color: var(--pw-muted); }
+.update-notice-command { margin-top: 8px; }
+.update-notice .update-notice-command p { margin-bottom: 6px; color: var(--pw-text); }
+.update-notice-progress { margin-top: 6px; max-width: 34rem; }
+.updated-list ul { margin: 2px 0 0; padding-left: 18px; list-style: disc; }
+.updated-list .changes-version-name { font-weight: 600; }
+.updated-version + .updated-version { margin-top: 6px; }
+
+/* Help, What's new */
+.whats-new { max-width: 780px; }
+.whats-new .help-hint { margin: 0 0 16px; }
+.whats-new .changes-version + .changes-version { margin-top: 18px; }
+.whats-new .changes-version-head { font-size: 15px; margin-bottom: 4px; }
+.whats-new .changes-entry-title { font-size: 14px; padding: 4px 0; }
+.whats-new .query-actions { margin-top: 18px; }
