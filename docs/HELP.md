@@ -123,9 +123,11 @@ Other tools can use this knowledge base. pw code and other MCP clients can searc
 
 ## Updates
 
-Settings, General, **Updates** shows the version running and the latest release with its notes; when a newer one exists, the version at the bottom of the navigation says **update available**. In the macOS app, **Update now** downloads the release, checks its signature, installs it and restarts, and the page reloads on the new version. **Roll back** returns to the version installed before it.
+When a newer version is available, a notice at the top of every page lists the changes in each newer version; click one to read it. In the macOS app, **Update now** downloads the release, checks its signature, installs it and restarts, and the page reloads on the new version. A copy run from a clone of the repository shows the commands that update it. **Later** hides the notice until a newer version comes out; the version at the bottom of the navigation still says **update available**.
 
-The app checks a minute after it starts and every six hours unless **Check for updates automatically** is off; with **Install updates automatically when idle** on, it installs a new version once no chat reply or indexing has run for ten minutes. A copy run from a clone of the repository shows the commands that update it, and a hosted deployment is updated by its operator and has no Updates section.
+Settings, General, **Updates** has the same, and **Roll back**, which returns to the version installed before. The app checks a minute after it starts and every six hours unless **Check for updates automatically** is off; with **Install updates automatically when idle** on, it installs a new version once no chat reply or indexing has run for ten minutes. The first time {appName} opens on a new version, a notice says **Updated to** that version and lists its changes. A hosted deployment is updated by its operator and shows none of these.
+
+**What's new**, at the top of Help, lists every version's changes, newest first. The version at the bottom of the navigation and Settings, Updates open it too.
 
 ## The index
 

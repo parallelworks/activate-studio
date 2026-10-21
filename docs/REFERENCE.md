@@ -104,6 +104,19 @@ The sidebar switches save the `sections` setting (`PUT /api/settings {sections}`
 
 Brand images (`/api/brand-icon`, `/api/favicon`) are served with `Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox` and `X-Content-Type-Options: nosniff`, so an SVG opened on its own runs nothing and loads nothing.
 
+## Updates
+
+How the macOS app checks, verifies, installs and rolls back is in [`MACOS.md`](MACOS.md). A Studio is in one of three update modes: `app` (the macOS app, which installs), `clone` (told the newest version and how to update), and `hosted` (sign-in on, or `PW_PLATFORM_HOST` set: no checks, and the update routes refuse with 403).
+
+- `GET /api/updates`: `mode`, `current` (`version`, `builtAt`), `policy` (`check`, `install` `manual` or `auto`, `channel` `stable` or `prerelease`), `latest` (`version`, `publishedAt`, `notes`, `url`), `releases`, `available`, `canInstall`, `reason`, `command`, `state`, `progress`, `error`, `checkedAt`, `previous`, `reopen`. `latest` is the newest release on the channel; for the app, the newest that carries the signed app. `releases` lists every release newer than the running version up to and including `latest`, newest first, each with `version`, `publishedAt`, `url` and `entries` (`title`, `pr`, `body`) parsed from its notes. A release whose macOS build failed is in the list when a later one is installable, since its changes come with it. `command` is the commands that update a clone of the repository (`git pull`, `pnpm install`, `pnpm build`), and null for the app, including an app its user cannot write to.
+- `POST /api/updates/check`, `/install`, `/rollback` answer the same status.
+- `GET /api/changelog` (`?after=vX.Y` keeps the versions newer than that): `included` (false when the build carries no change log), `current` (the running version), and `versions`, newest first, each with `version`, `date` and `entries`. It reads `CHANGELOG.md` at the top of the app (`STUDIO_CHANGELOG_FILE` names another). The change log is regenerated after each release, so a build carries it as of the version before its own; in the app and a clone, the notes of saved releases up to the running version fill in what the file lacks. Versions with no entries are left out. It answers in every mode.
+- Release notes and the change log share one format, from `scripts/release-notes.mjs`: a `### <pull request title> (#N)` heading per change, its description below, and in the change log a `## vX.Y (date)` heading per version. Entries titled "Change log through vX" regenerate the change log and are left out; notes with no such headings are one entry titled "Release notes".
+- The update notice shows in `app` and `clone` modes while `available` is true. **Later** stores the version in this browser (`ade-update-later` in local storage); a newer `latest` shows the notice again. During an install it follows the same flow as Settings, one poll for the page, and reloads once `/api/version` reports the new version.
+- The notice after an update compares the running version with the last one this browser saw (`ade-seen-version`). A first visit records it and shows nothing; a newer version shows the entries from `GET /api/changelog?after=<last seen>` once, and records the new one. Hosted deployments do not show it.
+- What's new is a page of Help (`#view=help:whats-new`), also opened from the footer's version panel and Settings, Updates. It shows the first ten versions, and **Show older versions** adds twenty at a time.
+- `CHANGELOG.md` ships in the macOS app (`Contents/Resources/app`, checked by `deploy/mac/check_app.sh`), the workflow bundle (`deploy/make_bundle.sh`), and the container image (`deploy/app.def`, whose smoke test asks `/api/changelog` for it).
+
 ## AI features
 
 The `aiEnabled` setting (`PUT /api/settings {aiEnabled}`; the client config carries it) is on unless a deployment sets `AI_ENABLED=0` or saves it off. Off:

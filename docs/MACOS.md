@@ -57,9 +57,11 @@ removes the background server and the app, and keeps the index, logs and
 settings unless `--purge` is added. Neither touches the documents.
 
 *Updates:* the app checks this repository's releases a minute after it
-starts and every six hours after that; Settings, General shows the running
-version, the newest release with its notes, and Update now. It takes the
-newest release that carries the signed app; while a newer one is still
+starts and every six hours after that. A notice at the top of every page,
+and Settings, General, show the newest release with the changes in every
+version newer than the one running, and Update now; Later hides the notice
+until a newer version is out. It takes the newest release that carries
+the signed app; while a newer one is still
 waiting for its macOS build, it checks again after 30 minutes. The download
 goes to `~/Library/Application Support/ACTIVATE Studio/updates` and is
 installed only if the release's manifest is signed by the release key
@@ -67,10 +69,11 @@ installed only if the release's manifest is signed by the release key
 names this app's archive and a newer version than the one running, and
 matches the download's size and SHA-256. The new copy then takes the app's place, the old one is
 kept beside it as `.ACTIVATE Studio.app.previous` (hidden in Finder), and
-the server restarts on the new version while the window reloads. If the
-update changed the window itself, Settings asks for the app to be
-reopened. Settings can also turn the checks off, follow prereleases, or
-install updates automatically, which happens once an update is verified
+the server restarts on the new version while the window reloads; the
+reloaded page lists, once, what the new version changed. If the update
+changed the window itself, Settings asks for the app to be reopened.
+Settings can also turn the checks off, follow prereleases, or install
+updates automatically, which happens once an update is verified
 and the Studio has had no chat answer or indexing running for ten
 minutes. An app in a folder its user cannot write to, such as
 `/Applications` for a standard account, reports updates without
