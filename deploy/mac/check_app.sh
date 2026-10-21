@@ -47,7 +47,7 @@ for f in \
   Resources/models/minilm384.gguf Resources/app/build-info.json Resources/app/package.json \
   Resources/app/server/dist/main.js Resources/app/server/node_modules/fastify/package.json \
   Resources/app/web/dist/index.html Resources/app/indexer/enrich.py Resources/app/indexer/embed.py \
-  Resources/app/indexer/reindex.sh Resources/app/docs/HELP.md Resources/app/deploy/gufi-index.yaml \
+  Resources/app/indexer/reindex.sh Resources/app/docs/HELP.md Resources/app/CHANGELOG.md Resources/app/deploy/gufi-index.yaml \
   Resources/gufi/bin/gufi_query Resources/gufi/bin/gufi_dir2index Resources/gufi/bin/gufi_sqlite3 \
   Resources/gufi/lib/gufi_vt.dylib Resources/gufi/lib/vec0.dylib Resources/gufi/lib/lembed0.dylib \
   Resources/gufi/lib/libomp.dylib Resources/gufi/lib/libpcre2-8.0.dylib Resources/gufi/licenses/GUFI-LICENSE.txt; do

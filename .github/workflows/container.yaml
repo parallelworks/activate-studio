@@ -210,10 +210,17 @@ jobs:
             sleep 2
           done
 
+          # The change log ships in the image; What's new reads it.
+          included=""
+          if [ "$ok" = 1 ]; then
+            included=$(curl -fsS --max-time 10 http://127.0.0.1:8080/api/changelog | grep -o '"included":[a-z]*' || true)
+          fi
+
           echo; echo "----- container log -----"; cat "$log"
           kill "$pid" 2>/dev/null || true
 
           [ "$ok" = 1 ] || { echo "::error::server never answered /healthz"; exit 1; }
+          [ "$included" = '"included":true' ] || { echo "::error::the image carries no CHANGELOG.md ($included)"; exit 1; }
           # Assert success rather than the absence of start.sh's warning,
           # which would also be absent if indexing never ran at all.
           if ! grep -q "index rebuilt at" "$log"; then

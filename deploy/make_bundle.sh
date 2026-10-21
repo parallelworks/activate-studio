@@ -30,7 +30,7 @@ mkdir -p "$STAGE/app"
 # The deploy records a prod-only install; restore the dev one.
 (cd "$PROJECT_ROOT" && pnpm install --frozen-lockfile >/dev/null)
 
-echo "Staging web, indexer, docs, starters..."
+echo "Staging web, indexer, docs, change log, starters..."
 # Stamp the build so a running deployment can say which one it is. Without
 # this a refresh that silently failed is indistinguishable from one that
 # worked, since PROJECT_ROOT in a deployment is app/ and there is no git
@@ -46,6 +46,8 @@ mkdir -p "$STAGE/app/web"
 cp -r "$PROJECT_ROOT/web/dist" "$STAGE/app/web/dist"
 cp -r "$PROJECT_ROOT/indexer" "$STAGE/app/indexer"
 cp -r "$PROJECT_ROOT/docs" "$STAGE/app/docs"
+# What's new reads it.
+cp "$PROJECT_ROOT/CHANGELOG.md" "$STAGE/app/CHANGELOG.md"
 # The index workflow the Studio registers for users' cluster libraries.
 mkdir -p "$STAGE/app/deploy" && cp "$PROJECT_ROOT/deploy/gufi-index.yaml" "$STAGE/app/deploy/"
 cp -r "$PROJECT_ROOT/extensions-starter" "$STAGE/app/extensions-starter"

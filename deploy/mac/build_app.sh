@@ -115,10 +115,12 @@ mv "$WORK/server/node_modules" "$RES/app/server/node_modules"
 cp "$WORK/server/package.json" "$RES/app/server/package.json"
 cp -R "$PROJECT_ROOT/server/dist" "$RES/app/server/dist"
 
-echo "Staging web, indexer, docs, starters..."
+echo "Staging web, indexer, docs, change log, starters..."
 cp -R "$PROJECT_ROOT/web/dist" "$RES/app/web/dist"
 cp -R "$PROJECT_ROOT/indexer" "$RES/app/indexer"
 cp -R "$PROJECT_ROOT/docs" "$RES/app/docs"
+# What's new and the notice after an update read it.
+cp "$PROJECT_ROOT/CHANGELOG.md" "$RES/app/CHANGELOG.md"
 cp -R "$PROJECT_ROOT/extensions-starter" "$RES/app/extensions-starter"
 cp "$PROJECT_ROOT/deploy/gufi-index.yaml" "$RES/app/deploy/"
 cp "$PROJECT_ROOT/package.json" "$RES/app/package.json"
