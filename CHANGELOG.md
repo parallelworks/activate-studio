@@ -2,6 +2,20 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.144 (2026-10-21)
+
+### Change log through v1.143 (#507)
+
+Regenerated with `node scripts/release-notes.mjs --changelog` after the v1.143 release.
+
+### Updates: the newest release that carries the signed app (#508)
+
+A release is published before its macOS build attaches the app, about ten minutes later, and a release whose build fails never gets it. The app took the newest release regardless, so a check in that window, or after a failed build, reported that the release has no signed macOS app and offered nothing until the next check six hours later.
+
+The app now takes the newest release that carries the signed app (archive, manifest and signature), and while a newer release is still waiting for its build it checks again after 30 minutes. A clone is still told of the newest release, since it updates with git.
+
+Verified: 412 server and 137 web tests, including a check that sees a release without the app, offers the one before it, and finds the new one on the sooner check; that test fails on the old code.
+
 ## v1.143 (2026-10-21)
 
 ### Change log through v1.142 (#505)
