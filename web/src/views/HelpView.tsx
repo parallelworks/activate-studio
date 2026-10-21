@@ -1,8 +1,9 @@
 import { ReactElement, useEffect, useState } from 'react'
 import { Disclosure } from '@parallelworks/ui'
 import { Streamdown } from 'streamdown'
-import { api, IndexStatus } from '../api'
+import { api, IndexStatus, onWhatsNew } from '../api'
 import { useAppConfig } from '../config'
+import { WhatsNew } from '../components/WhatsNew'
 
 const SECTION_ICONS: Record<string, ReactElement> = {
   chat: <svg viewBox="0 0 16 16" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M14 10.5a1.5 1.5 0 0 1-1.5 1.5H5l-3 3V3.5A1.5 1.5 0 0 1 3.5 2h9A1.5 1.5 0 0 1 14 3.5v7z"/></svg>,
@@ -55,7 +56,12 @@ function ago(iso: string | null): string {
   return `${Math.round(s / 3600)} hours ago`
 }
 
-const slugOf = (t: string) => t.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+/** The change log's page, which is not part of the guide's markdown. */
+const WHATS_NEW = "What's new"
+const WHATS_NEW_SLUG = 'whats-new'
+const WHATS_NEW_ICON = <svg viewBox="0 0 16 16" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M8 1.8 9.6 6.4 14.2 8 9.6 9.6 8 14.2 6.4 9.6 1.8 8 6.4 6.4z"/></svg>
+
+const slugOf = (t: string) => (t === WHATS_NEW ? WHATS_NEW_SLUG : t.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, ''))
 
 export function HelpView() {
   const cfg = useAppConfig()
@@ -78,17 +84,32 @@ export function HelpView() {
 
   const { intro, sections } = parseHelp(md)
 
-  // Restore the section from the hash once the markdown has arrived.
+  // A link to a page of Help (#view=help:<page>) after this view is up, and
+  // What's new asked for from the footer or Settings.
   useEffect(() => {
-    if (!pendingSlug || !sections.length) return
+    const onSection = (e: Event) => {
+      const d = (e as CustomEvent).detail as { view?: string; section?: string }
+      if (d?.view === 'help' && d.section) setPendingSlug(d.section)
+    }
+    window.addEventListener('ade-view-section', onSection)
+    const off = onWhatsNew(() => setActive(WHATS_NEW))
+    return () => { window.removeEventListener('ade-view-section', onSection); off() }
+  }, [])
+
+  // Restore the section from the hash once the markdown has arrived. What's
+  // new does not wait for it.
+  useEffect(() => {
+    if (!pendingSlug) return
+    if (pendingSlug === WHATS_NEW_SLUG) { setActive(WHATS_NEW); setPendingSlug(null); return }
+    if (!sections.length) return
     if (pendingSlug === 'overview') { setActive('Overview'); setPendingSlug(null); return }
     const hit = sections.find(s => slugOf(s.title) === pendingSlug)
     if (hit) setActive(hit.title)
     setPendingSlug(null)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [md])
+  }, [md, pendingSlug])
 
-  const current = (active === 'Overview' ? null : sections.find(s => s.title === active)) ?? null
+  const current = (active === 'Overview' || active === WHATS_NEW ? null : sections.find(s => s.title === active)) ?? null
   // The rail's groups, in order. Only the group being read starts open, so
   // the guide opens as a few headings, not a wall of pages.
   const groups = sections.reduce<{ name: string | null; items: Section[] }[]>((acc, sec) => {
@@ -111,6 +132,7 @@ export function HelpView() {
             <span>User guide</span>
           </div>
           <button className={active === 'Overview' ? 'active' : ''} onClick={() => goSection('Overview')}>Overview</button>
+          <button className={active === WHATS_NEW ? 'active' : ''} onClick={() => goSection(WHATS_NEW)}>{WHATS_NEW_ICON} <span>{WHATS_NEW}</span></button>
           {groups.map((g, i) => {
             const pages = g.items.map(s => (
               <button key={s.title} className={active === s.title ? 'active' : ''} onClick={() => goSection(s.title)}>
@@ -127,7 +149,9 @@ export function HelpView() {
           })}
         </nav>
         <article className="help-content">
-          {current === null ? (
+          {active === WHATS_NEW ? (
+            <WhatsNew />
+          ) : current === null ? (
             <>
               <h1>{cfg.appName}</h1>
               <div className="md-body"><Streamdown>{intro}</Streamdown></div>
