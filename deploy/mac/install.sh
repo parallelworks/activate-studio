@@ -2,7 +2,7 @@
 # Install ACTIVATE Studio on a Mac with Apple silicon, for the current user
 # (no administrator rights):
 #
-#   curl -fsSL https://github.com/parallelworks/activate-studio/releases/latest/download/install.sh | bash
+#   curl -fsSL https://github.com/parallelworks/activate-studio/releases/download/macos/install.sh | bash
 #
 # or from an archive already on disk, with its .sha256 beside it:
 #
@@ -15,7 +15,7 @@
 # is there is removed. STUDIO_NO_OPEN=1 installs without opening it.
 set -euo pipefail
 
-STUDIO_URL="${STUDIO_URL:-https://github.com/parallelworks/activate-studio/releases/latest/download/activate-studio-macos-arm64.tar.gz}"
+STUDIO_URL="${STUDIO_URL:-https://github.com/parallelworks/activate-studio/releases/download/macos/activate-studio-macos-arm64.tar.gz}"
 DEST_DIR="${STUDIO_INSTALL_DIR:-$HOME/Applications}"
 APP_NAME="ACTIVATE Studio.app"
 LABEL=com.parallelworks.activate-studio

@@ -299,12 +299,16 @@ function latestRelease(channel: UpdatePolicy['channel'], needsApp = updateMode()
   return best
 }
 
-/** A release newer than any the app can install is still waiting for its
- *  macOS build, so the next check comes sooner. */
-function appPending(channel: UpdatePolicy['channel']): boolean {
+/** A release newer than any the app can install, published within the
+ *  last PENDING_MS, may still get its macOS build, so the next check comes
+ *  sooner. Older ones are releases the build was not asked for. */
+const PENDING_MS = 2 * 3600_000
+function appPending(channel: UpdatePolicy['channel'], now = Date.now()): boolean {
   const any = latestRelease(channel, false)
   const usable = latestRelease(channel, true)
-  return !!any && !hasApp(any) && (!usable || compareVersions(any.tag, usable.tag) > 0)
+  if (!any || hasApp(any) || (usable && compareVersions(any.tag, usable.tag) <= 0)) return false
+  const at = any.publishedAt ? Date.parse(any.publishedAt) : NaN
+  return Number.isFinite(at) && now - at < PENDING_MS
 }
 
 // ---- status ----
