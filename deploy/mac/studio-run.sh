@@ -95,9 +95,11 @@ while [ "$stopping" = 0 ]; do
       mkdir -p "$KB_ROOT"
     fi
     # Not settings: loopback only, the launcher's restart and settings file,
-    # and where the app and its data are, for updates.
+    # and where the app and its data are, for updates. Python writes no
+    # bytecode caches, which would land inside the app and break its
+    # signature's seal.
     export HOST=127.0.0.1 STUDIO_CONFIG_FILE="$CONFIG" STUDIO_RESTARTABLE=1 \
-      STUDIO_APP_BUNDLE="$APP" STUDIO_DATA_DIR="$DATA"
+      STUDIO_APP_BUNDLE="$APP" STUDIO_DATA_DIR="$DATA" PYTHONDONTWRITEBYTECODE=1
     export PATH="$RES/node/bin:${PATH:-/usr/bin:/bin:/usr/sbin:/sbin}:/usr/local/bin:/opt/homebrew/bin:$HOME/.local/bin"
     # The embedding model ships with the app; the index refers to it.
     model="$INDEX_BASE/models/minilm384.gguf"

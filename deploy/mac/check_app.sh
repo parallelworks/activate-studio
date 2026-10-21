@@ -138,8 +138,9 @@ if [ "$RUN" = 1 ]; then
   else
     T="$(mktemp -d)"
     trap 'rm -rf "$T"' EXIT
-    # The environment launchd gives an agent, with nothing from this shell.
-    clean() { env -i HOME="$T/home" PATH=/usr/bin:/bin:/usr/sbin:/sbin "$@"; }
+    # The environment launchd gives an agent, with nothing from this shell,
+    # and no Python bytecode caches, as studio-run.sh runs the server.
+    clean() { env -i HOME="$T/home" PATH=/usr/bin:/bin:/usr/sbin:/sbin PYTHONDONTWRITEBYTECODE=1 "$@"; }
     mkdir -p "$T/home" "$T/corpus/notes"
     printf 'the index is a tree of per-directory databases\n' >"$T/corpus/notes/design.md"
     printf 'a recipe for lemon cake\n' >"$T/corpus/cake.txt"
@@ -227,6 +228,16 @@ if [ "$RUN" = 1 ]; then
       sleep 2
       check "and the server is gone" sh -c "! curl -fsS -m 2 http://127.0.0.1:$PORT_FREE/api/version"
       launchctl enable "gui/$(id -u)/$LABEL" 2>/dev/null || true
+    fi
+
+    # Nothing written into the app while it ran: a file added or changed
+    # there breaks the signature's seal.
+    if command -v codesign >/dev/null 2>&1; then
+      if out="$(codesign --verify --deep --strict --verbose=4 "$APP" 2>&1)"; then
+        ok "running it left the app as it was signed"
+      else
+        bad "running it changed the app:"; printf '%s\n' "$out" | head -n 20 | sed 's/^/        /'
+      fi
     fi
   fi
 fi
