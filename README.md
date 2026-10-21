@@ -49,6 +49,7 @@ The in-app Help is the user guide: [`docs/HELP.md`](docs/HELP.md), with the deta
 | [`docs/AGENTS.md`](docs/AGENTS.md) | delegated agents |
 | [`docs/MULTI-USER.md`](docs/MULTI-USER.md) | several people on one deployment |
 | [`docs/MACOS.md`](docs/MACOS.md) | the macOS app, and running from a clone on macOS |
+| [`docs/GUFI-MACOS.md`](docs/GUFI-MACOS.md) | GUFI built for macOS 14 and later: the published archive, building and checking it |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | how the index, retrieval, and server work |
 
 ## Built on

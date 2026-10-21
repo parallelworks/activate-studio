@@ -5,11 +5,11 @@
 # update manifest and attach the app, so installed copies can update.
 #
 # GUFI comes from, in order: the gufi_run input (a gufi-macos run whose
-# archive to use), GUFI_RUN below (the same, for runs without inputs; its
-# archive expires after 30 days), the GUFI_RELEASE tag below (an archive
-# built for an older macOS by gufi-macos.yml), else GUFI's own package,
-# which needs macOS 27; with that one the run checks are skipped on older
-# runners.
+# archive to use, to try a new GUFI build), GUFI_RUN below (the same, for
+# runs without inputs; a run's archive expires after 30 days), the
+# GUFI_RELEASE tag below (the published archive, built for macOS 14 by
+# gufi-macos.yml; see docs/GUFI-MACOS.md), else GUFI's own package, which
+# needs macOS 27; with that one the run checks are skipped on older runners.
 name: mac-app
 
 on:
@@ -29,10 +29,10 @@ on:
 permissions: {}
 
 env:
-  # A gufi-macos run whose archive the app uses: GUFI built for macOS 14.
-  GUFI_RUN: "39542085829"
-  # A gufi-* release whose gufi-macos-arm64.tar.gz the app uses.
-  GUFI_RELEASE: ""
+  # A gufi-macos run whose archive the app uses, ahead of the release.
+  GUFI_RUN: ""
+  # The gufi-* release whose gufi-macos-arm64.tar.gz the app uses.
+  GUFI_RELEASE: gufi-1713537-macos14
 
 concurrency:
   group: mac-app-${{ github.ref }}
