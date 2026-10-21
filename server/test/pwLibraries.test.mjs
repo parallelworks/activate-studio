@@ -130,7 +130,7 @@ test('added, the library is ready and read only, and reads the tree and files on
   const added = await post('/api/user-libraries/pw', { cluster, indexRoot: '~/idx/proj', sourceRoot: '~/proj' })
   assert.equal(added.status, 200, JSON.stringify(added.body))
   const d = added.body
-  assert.deepEqual([d.transport, d.existing, d.state, d.site, d.label, d.run], ['pw', true, 'ready', cluster, 'proj on cluster-a', null])
+  assert.deepEqual([d.transport, d.existing, d.state, d.site, d.label, d.run], ['pw', true, 'ready', cluster, 'proj', null])
   assert.deepEqual([d.indexRoot, d.sourceRoot, d.directories, d.files], [index, path.join(home, 'proj'), 2, 3])
   assert.equal((await post('/api/user-libraries/pw', { cluster, indexRoot: index })).status, 409, 'the same index twice')
 

@@ -190,7 +190,7 @@ test('on a macOS host the test finds GUFI on the PATH and every GUFI command get
   assert.ok(lines().every(l => l === path.join(macGufi, 'lib')), lines().join(' '))
   const added = await post('/api/user-libraries/ssh', { destination: 'me@mac-box', indexRoot: index, sourceRoot: path.join(home, 'proj') })
   assert.equal(added.status, 200, JSON.stringify(added.body))
-  assert.equal(added.body.label, 'proj on mac-box')
+  assert.equal(added.body.label, 'proj')
   // The tree runs gufi_query from a bash script, which macOS starts without
   // DYLD_* variables; the script sets the path itself.
   fs.rmSync(dyldLog)

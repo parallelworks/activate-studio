@@ -631,7 +631,7 @@ export async function addFromPw(viewerId: string | null | undefined, a: PwLibrar
   const same = defs.find(d => d.transport !== 'ssh' && d.site === spec.cluster && d.indexRoot === indexRoot)
   if (same) throw new KbError(409, `This index is already a library: ${same.label}.`)
   const name = path.posix.basename(indexRoot) || 'index'
-  const label = (String(a.label ?? '').trim() || `${name} on ${spec.cluster}`).slice(0, 60)
+  const label = (String(a.label ?? '').trim() || name).slice(0, 60)
   const base = `u-${`${spec.cluster}-${name}`.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 30) || 'library'}`
   let id = base
   for (let i = 2; defs.some(d => d.id === id); i++) id = `${base}-${i}`
@@ -658,7 +658,7 @@ export async function addFromSsh(viewerId: string | null | undefined, a: SshLibr
   if (same) throw new KbError(409, `This index is already a library: ${same.label}.`)
   const host = spec.destination.replace(/^.*@/, '')
   const name = path.posix.basename(indexRoot) || 'index'
-  const label = (String(a.label ?? '').trim() || `${name} on ${host}`).slice(0, 60)
+  const label = (String(a.label ?? '').trim() || name).slice(0, 60)
   const base = `u-${`${host}-${name}`.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 30) || 'library'}`
   let id = base
   for (let i = 2; defs.some(d => d.id === id); i++) id = `${base}-${i}`

@@ -360,6 +360,22 @@ describe('the setup wizard', () => {
     expect(screen.getByText(/^Sidebar: Library, Search/)).not.toHaveTextContent('Chat')
   })
 
+  it('takes an endpoint with no key, such as a local model server', async () => {
+    const s = server()
+    open(s)
+    next()
+    next()
+    heading('AI features')
+    fireEvent.change(await screen.findByLabelText('Base URL'), { target: { value: 'http://127.0.0.1:11434/v1' } })
+    expect(screen.getByLabelText('API key')).toHaveAttribute('placeholder', 'empty if the endpoint needs none')
+    fireEvent.click(screen.getByRole('button', { name: 'Test' }))
+    expect(await screen.findByText('2 models offered by models.example')).toBeInTheDocument()
+    expect(sent(s, 'POST', '/api/me/model-key/test').at(-1)).toEqual({ key: 'none', baseUrl: 'http://127.0.0.1:11434/v1' })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect(await screen.findByText('Saved. The Studio uses small-model through 127.0.0.1:11434.')).toBeInTheDocument()
+    expect(sent(s, 'POST', '/api/me/model-key')).toEqual([{ key: 'none', baseUrl: 'http://127.0.0.1:11434/v1', persist: true }])
+  })
+
   it('without a launcher says how to change the folder, and Skip setup records it as done', async () => {
     const s = server({ indexed: true, restartOnSave: false })
     const onClose = open(s)

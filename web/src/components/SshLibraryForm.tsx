@@ -116,7 +116,7 @@ export function SshLibraryForm({ onAdded, compact = false, transport = 'ssh' }: 
           description={help('The indexed files, for previews. Without it, names and metadata only.')} onChange={e => set({ sourceRoot: e.target.value })} />
         <Input label="GUFI bin directory" hint="optional" mono placeholder="found by the test" spellCheck={false} value={form.gufiBin}
           description={help('Where gufi_query is. The test looks on the PATH, in ~/.activate-studio/gufi, /usr/local/bin, ~/usr/local/bin, and /opt/gufi/bin.')} onChange={e => set({ gufiBin: e.target.value })} />
-        <Input label="Label" hint="optional" placeholder={paths.indexRoot && host ? `${indexName} on ${host}` : 'Shown in the Library switcher'} value={form.label}
+        <Input label="Label" hint="optional" placeholder={paths.indexRoot && host ? indexName : 'Shown in the Library switcher'} value={form.label}
           onChange={e => setForm(f => ({ ...f, label: e.target.value }))} />
       </div>
       {result && (

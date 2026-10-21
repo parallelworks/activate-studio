@@ -68,6 +68,11 @@ interface KeyTest { ok: boolean; status: string; models: number; gatewayHost?: s
 
 const hostOf = (url: string | null | undefined) => { try { return new URL(String(url)).host } catch { return '' } }
 
+/** Stored for an endpoint that takes no key (a local vLLM or Ollama), which
+ *  ignores the bearer token the Studio sends. */
+export const NO_KEY = 'none'
+const sameUrl = (a: string | null | undefined, b: string) => String(a ?? '').trim().replace(/\/+$/, '') === b.trim().replace(/\/+$/, '')
+
 /** What a failed key test means, in plain words. */
 export function keyTestProblem(t: KeyTest, baseUrl: string): string | null {
   const host = t.gatewayHost || hostOf(baseUrl) || 'The endpoint'
@@ -101,7 +106,11 @@ function AiStep({ enabled, sections, me, onSaved }: {
   const [error, setError] = useState('')
   const [saved, setSaved] = useState('')
 
-  const fields = JSON.stringify([baseUrl.trim(), key.trim()])
+  // An empty key field keeps the stored key for the same endpoint, and
+  // otherwise means the endpoint takes none.
+  const keep = !key.trim() && !!me && me.mode !== 'none' && sameUrl(me.baseUrl, baseUrl)
+  const sent = key.trim() || (keep ? '' : NO_KEY)
+  const fields = JSON.stringify([baseUrl.trim(), sent])
   const result = test?.fields === fields ? test.result : null
   const problem = result ? keyTestProblem(result, baseUrl) : null
   const ids = result && !problem ? result.ids ?? [] : []
@@ -113,7 +122,7 @@ function AiStep({ enabled, sections, me, onSaved }: {
   const runTest = async () => {
     setBusy('test'); setError(''); setSaved('')
     try {
-      const r = await post<KeyTest>('/api/me/model-key/test', { key: key.trim(), baseUrl: baseUrl.trim() })
+      const r = await post<KeyTest>('/api/me/model-key/test', { key: sent, baseUrl: baseUrl.trim() })
       setTest({ fields, result: r })
       setModel(m => (r.ids?.includes(m) ? m : r.ids?.[0] ?? ''))
     } catch (e) { setError(errText(e)) } finally { setBusy(null) }
@@ -121,7 +130,7 @@ function AiStep({ enabled, sections, me, onSaved }: {
   const save = async () => {
     setBusy('save'); setError('')
     try {
-      const status = await post<KeyStatus>('/api/me/model-key', { key: key.trim(), baseUrl: baseUrl.trim(), persist: true })
+      const status = keep ? me! : await post<KeyStatus>('/api/me/model-key', { key: sent, baseUrl: baseUrl.trim(), persist: true })
       // The default for label suggestions and the grounded model, and the
       // chat's own remembered pick.
       await saveSettings({ ragDefaultModel: model })
@@ -152,16 +161,20 @@ function AiStep({ enabled, sections, me, onSaved }: {
             on this computer, encrypted.
           </p>
           {me && me.mode !== 'none' && me.baseUrl && !saved && (
-            <Callout tone="success">In use: the key ending {me.last4} for {hostOf(me.baseUrl)}. Enter a key below to replace it.</Callout>
+            <Callout tone="success">
+              {me.last4 === NO_KEY
+                ? `In use: ${hostOf(me.baseUrl)}, with no key.`
+                : `In use: the key ending ${me.last4} for ${hostOf(me.baseUrl)}. Enter a key below to replace it.`}
+            </Callout>
           )}
           <div className="settings-grid" style={{ marginBottom: 0 }}>
             <Input label="Base URL" placeholder="https://host/v1" autoComplete="off" spellCheck={false} value={baseUrl}
               onChange={e => { setBaseUrl(e.target.value); setSaved('') }} />
-            <Input label="API key" type="password" autoComplete="off" placeholder="any text if the endpoint needs none" value={key}
+            <Input label="API key" type="password" autoComplete="off" placeholder={keep ? 'the saved key' : 'empty if the endpoint needs none'} value={key}
               onChange={e => { setKey(e.target.value); setSaved('') }} />
           </div>
           <div style={row}>
-            <Button variant="secondary" loading={busy === 'test'} disabled={!baseUrl.trim() || !key.trim() || busy !== null} onClick={() => void runTest()}>Test</Button>
+            <Button variant="secondary" loading={busy === 'test'} disabled={!baseUrl.trim() || busy !== null} onClick={() => void runTest()}>Test</Button>
           </div>
           {problem && <Callout tone="error" live>{problem}</Callout>}
           {result && !problem && (

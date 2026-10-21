@@ -346,7 +346,7 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
             trigger={
               <button className="identity-btn">
                 <StatusDot variant={build.version === 'dev' ? 'muted' : 'success'} size={7} />
-                {build.version}
+                <span className="identity-text">{build.version}</span>
               </button>
             }
           />

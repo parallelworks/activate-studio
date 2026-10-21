@@ -13,7 +13,7 @@ import { Viewer } from '../components/Viewer'
 import { DagViewer } from '../components/DagViewer'
 import { UploadMenu } from '../components/UploadMenu'
 import { TagMenu } from '../components/TagMenu'
-import { useAppConfig } from '../config'
+import { sectionAllowed, useAppConfig } from '../config'
 import { collectDropped, uploadBatched, UploadProgress } from '../upload'
 
 const RAIL_MIN = 220
@@ -354,10 +354,11 @@ export function LibraryView({ display, onDisplay }: {
     if (changeableAt(path)) {
       items.push({ label: 'Rename…', onClick: later(() => setNameDialog({ mode: 'rename', path, isDir, value: path.split('/').pop() ?? '', busy: false, error: '' })) })
     }
-    if (isDir) items.push({ label: 'Suggest labels…', onClick: () => void runSuggest(path) })
+    // Both call a model, so they are offered only with AI features on.
+    if (isDir && cfg.aiEnabled !== false) items.push({ label: 'Suggest labels…', onClick: () => void runSuggest(path) })
+    if (path && sectionAllowed('chat', cfg)) items.push({ label: 'Add to chat', onClick: () => addToChat(path) })
     if (path) {
       items.push(
-        { label: 'Add to chat', onClick: () => addToChat(path) },
         { label: 'Copy path', copy: { text: path, label: 'path' } },
         { label: `Cut${group}`, onClick: () => setClipboard({ mode: 'cut', paths: targets() }) },
         { label: `Copy${group}`, onClick: () => setClipboard({ mode: 'copy', paths: targets() }) },

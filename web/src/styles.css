@@ -411,7 +411,10 @@ main.content { min-height: 0; min-width: 0; background: var(--pw-content-bg); }
 .footer-pending { min-height: 74px; }
 .footer-skeleton { margin: 4px 0 10px; }
 .status-line.muted2 { color: var(--pw-muted); }
-.footer-sync { margin-left: auto; }
+.footer-sync { margin-left: auto; flex-shrink: 0; white-space: nowrap; }
+/* A long build name (a clone's git describe) stays on one line. */
+.status-line .identity-btn { min-width: 0; }
+.identity-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ---- content area ---- */
 .content { flex: 1; min-width: 0; display: flex; flex-direction: column; }

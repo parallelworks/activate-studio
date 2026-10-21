@@ -45,7 +45,7 @@ describe('adding a library over ssh', () => {
     expect(calls[0]).toEqual({ url: '/api/user-libraries/ssh/test', body: { destination: 'me@box', indexRoot: '/data/index' } })
     expect(screen.getByText('A GUFI index of 12 directories and 40 files.')).toBeInTheDocument()
     expect(screen.getByLabelText('GUFI bin directory')).toHaveValue('/usr/local/bin')
-    expect(screen.getByLabelText('Label')).toHaveAttribute('placeholder', 'index on box')
+    expect(screen.getByLabelText('Label')).toHaveAttribute('placeholder', 'index')
     await waitFor(() => expect(button('Add library')).toBeEnabled())
 
     fireEvent.click(button('Add library'))
@@ -102,7 +102,7 @@ describe('connecting an index on a cluster over pw ssh', () => {
       if (url === '/api/user-libraries/pw/test') {
         return reply({ ...passing, steps: [{ name: 'ssh', ok: true, detail: 'Connected to cluster-a, a Linux host.' }, ...passing.steps.slice(1)], gufiBin: '/home/me/.activate-studio/gufi/abc/bin' })
       }
-      return reply({ id: 'u-cluster-a-idx', label: 'idx on cluster-a' })
+      return reply({ id: 'u-cluster-a-idx', label: 'idx' })
     }))
     const onAdded = vi.fn()
     render(<SshLibraryForm transport="pw" onAdded={onAdded} />)
@@ -115,10 +115,10 @@ describe('connecting an index on a cluster over pw ssh', () => {
     await screen.findByText('Connected to cluster-a, a Linux host.')
     expect(calls.find(c => c.url === '/api/user-libraries/pw/test')?.body).toEqual({ cluster: 'cluster-a', indexRoot: '~/idx' })
     expect(screen.getByLabelText('GUFI bin directory')).toHaveValue('/home/me/.activate-studio/gufi/abc/bin')
-    expect(screen.getByLabelText('Label')).toHaveAttribute('placeholder', 'idx on cluster-a')
+    expect(screen.getByLabelText('Label')).toHaveAttribute('placeholder', 'idx')
     await waitFor(() => expect(button('Add library')).toBeEnabled())
     fireEvent.click(button('Add library'))
-    await waitFor(() => expect(onAdded).toHaveBeenCalledWith({ id: 'u-cluster-a-idx', label: 'idx on cluster-a' }))
+    await waitFor(() => expect(onAdded).toHaveBeenCalledWith({ id: 'u-cluster-a-idx', label: 'idx' }))
     expect(calls.find(c => c.url === '/api/user-libraries/pw')?.body).toEqual({ cluster: 'cluster-a', indexRoot: '~/idx', gufiBin: '/home/me/.activate-studio/gufi/abc/bin' })
   })
 })
