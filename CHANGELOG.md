@@ -2,6 +2,29 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.143 (2026-10-21)
+
+### Change log through v1.142 (#505)
+
+Regenerated with `node scripts/release-notes.mjs --changelog` after the v1.142 release.
+
+### Icons: a drawn Studio icon for the app, the disk image and web apps (#506)
+
+The app, the disk image and installed web apps showed a plain letter S, and the disk image's volume had no icon at all, so Finder showed a generic disk in its title bar and sidebar.
+
+**Icon.** A drawn icon (three text lines and a sparkle on a blue rounded square), from SVG sources:
+- `web/icons/icon.svg` renders `icon-192.png`, `icon-512.png` and is served as `favicon.svg`.
+- `web/icons/icon-maskable.svg` fills the square with the mark inside the crop-safe circle, for `icon-maskable-512.png` and `apple-touch-icon.png`.
+- `deploy/mac/AppIcon.svg` is the macOS icon on Apple's grid (an 824-pixel rounded square on a 1024 canvas, with a shadow), rendered to `deploy/mac/AppIcon-1024.png`.
+
+**Mac app.** `build_app.sh` makes the `.icns` from the 1024-pixel image: every size with `sips` and `iconutil` on a Mac, the single 1024-pixel entry elsewhere. `check_app.sh` checks that the app's `.icns` holds the 1024-pixel image.
+
+**Disk image.** `build_app.sh` puts the app's icon at the volume root as `.VolumeIcon.icns` and sets the custom-icon Finder flag on the mounted volume (made writable, then compressed), and fails the build if the finished image lacks either.
+
+Also: the automatic-install update test allowed no slack for the server's idle poll, so it failed now and then; it now allows one poll interval.
+
+Verified: 410 server and 137 web tests; the icons at 16 to 1024 pixels; the Mac build on this pull request.
+
 ## v1.142 (2026-10-21)
 
 ### Change log through v1.141 (#503)
