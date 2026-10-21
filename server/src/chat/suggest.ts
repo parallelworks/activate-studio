@@ -1,4 +1,4 @@
-import type { StoredConversation, StoredMessage } from '../conversations.js'
+import type { StoredConversation, StoredMessage, StoredToolCallPart } from '../conversations.js'
 
 /**
  * What a person might type next, read off the turn that just ended. The
@@ -30,7 +30,10 @@ export function suggestNext(c: StoredConversation): { after: string | null; sugg
   const tail = content.trim().split('\n').filter(Boolean).pop() ?? ''
   if (/NEEDS DECISION:/i.test(content) || /\?\s*$/.test(tail)) return { after: m.id, suggestions: [] }
 
-  const calls = (m.parts ?? []).filter(p => p.kind === 'tool_call')
+  // A call waiting for the user's approval: the answer is the next step.
+  if ((m.parts ?? []).some(p => p.kind === 'approval' && !p.resolved)) return { after: m.id, suggestions: [] }
+
+  const calls = (m.parts ?? []).filter((p): p is StoredToolCallPart => p.kind === 'tool_call')
   const argsOf = (p: { args: string }): Record<string, unknown> => { try { return JSON.parse(p.args || '{}') } catch { return {} } }
   const failed = calls.filter(p => p.status === 'error')
 

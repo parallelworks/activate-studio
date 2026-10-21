@@ -9,6 +9,7 @@ import { applyTagsCore } from './tags.js'
 import { reindexForDir } from './indexing.js'
 import { effectiveSettings } from './settings.js'
 import { authEnabled } from './auth.js'
+import { heldCallsIn, viewerOf } from './chat/approvals.js'
 
 /**
  * Server-side conversation store, one JSON file beside the index. Browser
@@ -74,15 +75,39 @@ async function exportToKb(c: StoredConversation): Promise<void> {
 }
 
 /** Tool call made during the turn, in ai-chat's ToolCallPart shape; the
- *  package renders these as tool blocks above the message content. */
+ *  package renders these as tool blocks above the message content. A call
+ *  held for the user's approval is 'waiting' until it is answered, and then
+ *  carries the decision. */
 export interface StoredToolCallPart {
   kind: 'tool_call'
   id: string
   name: string
   args: string
-  status: 'ok' | 'error'
+  status: 'ok' | 'error' | 'waiting'
   result?: string
+  decision?: { status: 'approved' | 'denied'; by: 'user'; name?: string; at?: string; note?: string }
 }
+
+/** A held call's approval request, in ai-chat's ApprovalPart shape; its id
+ *  is the tool call's. */
+export interface StoredApprovalPart {
+  kind: 'approval'
+  id: string
+  approvalKind: 'confirm'
+  toolName?: string
+  subject?: 'call'
+  header?: string
+  command?: string
+  reason?: string
+  canAllowDirectory?: boolean
+  expiresAt?: string
+  waitingOn?: string
+  resolved?: boolean
+  answer?: string
+  instead?: { tool: string; label: string; description?: string }[]
+}
+
+export type StoredPart = StoredToolCallPart | StoredApprovalPart
 
 export interface StoredMessage {
   id: string
@@ -95,7 +120,7 @@ export interface StoredMessage {
   /** Milliseconds spent thinking before the first answer token; ai-chat
    *  renders it as "Thought for Ns" on the stored message. */
   reasoningDuration?: number
-  parts?: StoredToolCallPart[]
+  parts?: StoredPart[]
   /** Token counts summed over the turn's model calls, when the gateway reported them. */
   tokensUsed?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }
   /** How the turn's last model call ended (stop, length, content_filter). */
@@ -269,12 +294,46 @@ export function withUnanswered(c: StoredConversation): StoredConversation {
   return { ...c, messages: c.messages.map(m => m.role === 'user' && !parents.has(m.id) ? { ...m, error: NO_REPLY_NOTE } : m) }
 }
 
+/**
+ * A call held for someone's approval names that person to everyone else
+ * who opens the conversation, and the chat shows it as waiting on them
+ * rather than offering its buttons; the server refuses anyone else's answer
+ * in any case. Computed on read, never stored.
+ */
+export function withHolders(c: StoredConversation, viewerId: string | null): StoredConversation {
+  const others = new Map(heldCallsIn(c.id).filter(r => r.viewer !== viewerId).map(r => [r.toolCallId, r.viewerName]))
+  if (!others.size) return c
+  return {
+    ...c,
+    messages: c.messages.map(m => !m.parts?.some(p => p.kind === 'approval' && others.has(p.id)) ? m : {
+      ...m, parts: m.parts.map(p => p.kind === 'approval' && !p.resolved && others.has(p.id) ? { ...p, waitingOn: others.get(p.id) } : p),
+    }),
+  }
+}
+
 /** The tools a conversation's recent replies used, so a follow-up keeps them. */
 export function toolsUsedIn(conversationId: string | undefined, lastMessages = 8): string[] {
   if (!conversationId) return []
   const c = load().find(x => x.id === conversationId)
   if (!c) return []
-  return [...new Set(c.messages.slice(-lastMessages).flatMap(m => (m.parts ?? []).map(p => p.name)))]
+  return [...new Set(c.messages.slice(-lastMessages).flatMap(m => (m.parts ?? []).flatMap(p => p.kind === 'tool_call' ? [p.name] : [])))]
+}
+
+/**
+ * Settles a held call in the stored message that asked for it: the call's
+ * status, result, and decision (and its name, when the user ran another
+ * tool in its place), and the approval marked answered.
+ */
+export function settleHeldPart(conversationId: string, messageId: string, toolCallId: string, o: {
+  name: string; status: 'ok' | 'error'; result: string; decision: StoredToolCallPart['decision']; answer: string
+}): boolean {
+  const m = load().find(x => x.id === conversationId)?.messages.find(x => x.id === messageId)
+  if (!m?.parts) return false
+  m.parts = m.parts.map(p => p.id !== toolCallId ? p
+    : p.kind === 'tool_call' ? { ...p, name: o.name, status: o.status, result: o.result, decision: o.decision }
+    : { ...p, resolved: true, answer: o.answer })
+  persist()
+  return true
 }
 
 export function recordAssistantTurn(conversationId: string | undefined, message: StoredMessage): void {
@@ -295,7 +354,7 @@ export async function conversationRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/api/chat/conversations/:id', async req => {
     const c = findVisible((req.params as { id: string }).id, req.user?.username)
-    return { ...withUnanswered(c), isOwner: true, canCollaborate: true }
+    return { ...withHolders(withUnanswered(c), viewerOf(req)?.id ?? null), isOwner: true, canCollaborate: true }
   })
 
   app.post('/api/chat/conversations', async req => {

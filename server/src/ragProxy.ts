@@ -5,7 +5,7 @@ import { annotateHits } from './tags.js'
 import { readFileContent } from './kb.js'
 import { gatewayKey, streamTurn, WireMessage } from './chat/gateway.js'
 import { resolveUserKey } from './credentials.js'
-import { activeToolSpecs, executeTool } from './chat/tools.js'
+import { executeTool, unattendedToolSpecs } from './chat/tools.js'
 import { systemPrompt } from './chat/context.js'
 import { effectiveSettings } from './settings.js'
 
@@ -193,7 +193,9 @@ async function agenticCompletion(
   const toolCache = new Map<string, string>()
   for (let iter = 0; iter < MAX_TOOL_ITERATIONS; iter++) {
     const turn = await streamTurn(
-      { model: underlying, messages, tools: activeToolSpecs(), tool_choice: 'auto' },
+      // No person is present to approve a change here, so the tools that
+      // change something are not offered (and would not run if called).
+      { model: underlying, messages, tools: unattendedToolSpecs(), tool_choice: 'auto' },
       null, cb, signal, key,
     )
     if (turn.finishReason === 'tool_calls' && turn.toolCalls.length > 0) {

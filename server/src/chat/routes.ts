@@ -2,10 +2,13 @@ import type { FastifyInstance, FastifyRequest } from 'fastify'
 import fs from 'node:fs'
 import path from 'node:path'
 import { suggestNext } from './suggest.js'
-import { getConversation } from '../conversations.js'
+import { getConversation, settleHeldPart, type StoredApprovalPart, type StoredPart } from '../conversations.js'
 import { listRuns } from '../runs.js'
 import { GATEWAY_BASE, MAX_TOOL_ITERATIONS, SIDECAR_ENDPOINT, INDEX_BASE } from '../config.js'
-import { providerReason } from './gateway.js'
+import { gatewayKey, providerReason } from './gateway.js'
+import { answerHeld, changesAvailable, holdCall, newHold, viewerOf } from './approvals.js'
+import { approvalPart, asksFirst, insteadOf, isPlatformTool, platformTool, prepareArgs, viewerAccount, type CallArgs } from './platformTools.js'
+import { platformOrigin } from '../sessions.js'
 import { aiHealth, gatewayConfigured, isSidecarModel, listModels, listSidecarModels, modelFailure, probeProvider, probeableProvider, extractUnlockUrl, invalidateProviderProbes, sidecarConfigured, sidecarTarget, StreamedTurnError, streamTurn, WireMessage, WireToolCall, type TokenUsage } from './gateway.js'
 import { MORE_TOOLS, TOOL_CALLS, TOOL_GROUPS, TOOL_SPECS, activeToolSpecs, activeToolSpecsWithRemote, commandFor, customToolSpecs, executeTool, expandSlashCommand, initialToolGroups, readerAllows, readerToolOptions, selectToolSpecs, skillToolSpec, toolGroupOf, toolOptionLabel } from './tools.js'
 import { systemPrompt } from './context.js'
@@ -27,6 +30,9 @@ interface StreamBody {
   agent?: string | null
   /** The reader's tool switches left on (readerToolOptions ids); absent means all. */
   tools?: string[]
+  /** The user's answer to a call held for approval, which resumes the reply
+   *  that paused for it (the chat package's ToolApprovalAnswer). */
+  resume?: { messageId?: string; toolCallId?: string; allowed?: boolean; feedback?: string; tool?: string; args?: string }
 }
 
 function sse(res: NodeJS.WritableStream, event: string, data: unknown): void {
@@ -888,7 +894,15 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
   })
 
   // The composer's Tools menu: one switch per kind of tool this deployment offers.
-  app.get('/api/chat/tool-options', async () => ({ tools: await readerToolOptions() }))
+  // The switch for the tools that change something is listed only to a
+  // viewer they can be offered to (approvals.ts).
+  app.get('/api/chat/tool-options', async req => {
+    const options = await readerToolOptions()
+    const cred = resolveUserCred(req.user?.id)
+    const own = cred && !cred.baseUrl ? cred.key : null
+    const ok = changesAvailable({ viewer: viewerOf(req), key: authEnabled() ? own : (own || gatewayKey() || null) }).ok
+    return { tools: ok ? options : options.filter(o => o.id !== 'changes') }
+  })
 
   app.get('/api/chat/tools', async () => {
     const eff = effectiveSettings()
@@ -900,6 +914,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
           enabled: !disabled.has(t.function.name), parameters: t.function.parameters,
           implementation: 'built-in (server/src/chat/tools.ts)',
           calls: TOOL_CALLS[t.function.name],
+          ...(asksFirst(t.function.name) ? { asksFirst: true, instead: insteadOf(t.function.name) } : {}),
         })),
         ...customToolSpecs().map(t => ({
           name: t.function.name, description: t.function.description, builtin: false,
@@ -973,12 +988,17 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     // Client history arrives in wire shape; keep only fields the gateway
     // needs, expanding attachment references into their extracted text and
     // resolving a /command on the newest user message.
+    // A reply resuming after the user answered a held call continues from
+    // the user message that started it: the paused reply the client shows
+    // after that message is replayed from the held record instead.
+    const resume = body.resume && typeof body.resume === 'object' && body.resume.toolCallId ? body.resume : null
     const raw = body.messages ?? []
     const lastUserIdx = raw.map(m => m.role).lastIndexOf('user')
+    const used = resume && lastUserIdx >= 0 ? raw.slice(0, lastUserIdx + 1) : raw
     let listing: string | null = null
     const history: WireMessage[] = []
-    for (let i = 0; i < raw.length; i++) {
-      const m = raw[i]
+    for (let i = 0; i < used.length; i++) {
+      const m = used[i]
       if (m.role === 'system') continue
       if (isEarlierToolTraffic(m)) continue
       let content = typeof m.content === 'string' ? m.content : m.content == null ? '' : JSON.stringify(m.content)
@@ -998,9 +1018,10 @@ ${ctx}` : ctx
     }
 
     // Persist the turn server-side; the raw text is what the user typed,
-    // not the slash or attachment expansion.
+    // not the slash or attachment expansion. A resumed reply's user message
+    // is already stored.
     const lastUser = lastUserIdx >= 0 ? raw[lastUserIdx] : null
-    recordUserTurn(
+    if (!resume) recordUserTurn(
       body.conversationId,
       body.userMessageId,
       typeof lastUser?.content === 'string' ? lastUser.content : '',
@@ -1020,6 +1041,20 @@ ${ctx}` : ctx
     // pw CLI tools only accept a PW credential; a custom-provider key must
     // never leak into platform executions.
     const pwToolKey = userCred && !userCred.baseUrl ? userCred.key : null
+    // The tools that change something on the platform ask first: each call
+    // waits for the person who asked to approve it (approvals.ts). They are
+    // offered only to a person present, with their own platform key, in
+    // their own conversation; the platform reads go wherever the other
+    // platform tools do, a platform and a credential.
+    const viewer = viewerOf(req)
+    const changeKey = authEnabled() ? pwToolKey : (pwToolKey || gatewayKey() || null)
+    const changes = changesAvailable({
+      viewer, key: changeKey,
+      owner: body.conversationId ? getConversation(body.conversationId)?.owner ?? null : null,
+      username: req.user?.username ?? null,
+    })
+    const platformReads = !!platformOrigin() && !!(pwToolKey || gatewayKey())
+    const offered = (name: string) => !isPlatformTool(name) || (asksFirst(name) ? changes.ok : platformReads)
     const labelScope = Array.isArray(body.labelScope)
       ? body.labelScope.map(String).filter(Boolean).slice(0, 16)
       : []
@@ -1040,6 +1075,10 @@ ${ctx}` : ctx
       { role: 'system', content: `${await systemPrompt({ platform: activeGroups.has('workflows') || activeGroups.has('agents') })}\n\nToday's date is ${today}. Treat earlier dates as past; call out deadlines that have already passed.${scopeNote}${persona ? `\n\n--- DEPLOYMENT AGENT INSTRUCTIONS (extensions/agents/default.md) ---\n${persona}` : ''}` },
       ...history,
     ]
+    // Everything after this is the reply's own: what a held call replays.
+    const baseLen = messages.length
+    // The stored message a resumed reply continues; it is the new message's parent.
+    let resumedFrom: string | null = null
 
     let finalContent = ''
     let usageTotal: TokenUsage = {}
@@ -1052,7 +1091,7 @@ ${ctx}` : ctx
     let turnBreak = false
     // Tool calls made across the turn, persisted as message parts so the
     // client renders them as tool blocks rather than thinking text.
-    const finalParts: StoredToolCallPart[] = []
+    const finalParts: StoredPart[] = []
     let reasoningStart = 0
     let reasoningDuration = 0
     const requestStart = Date.now()
@@ -1079,24 +1118,27 @@ ${ctx}` : ctx
       onReasoning: (t: string) => { markThinking(); modelReasoned = true; finalReasoning += t; sse(res, 'reasoning', { text: t }) },
     }
     let recorded = false
-    const finish = (finishReason: string | null) => {
+    const finish = (finishReason: string | null, id?: string) => {
       req.log.info({ model: body.model, ...timing, totalMs: Date.now() - requestStart, finishReason }, 'reply timing')
-      const messageId = `srv-${Date.now()}`
+      const messageId = id ?? `srv-${Date.now()}`
+      // A reply paused for the user's approval has not ended; it is not empty.
+      const paused = finishReason === 'tool_approval'
+      const callCount = finalParts.filter(p => p.kind === 'tool_call').length
       recorded = true
       // The duration row in the client renders only when reasoning text
       // exists. A turn that worked through tools with no visible reasoning
       // (session models: the gateway strips it) still deserves its timing,
       // so it gets a one-line summary carrying the whole turn's elapsed.
-      if (!finalReasoning.trim() && finalParts.length) {
+      if (!finalReasoning.trim() && callCount) {
         const elapsed = Date.now() - requestStart
         if (!reasoningDuration) reasoningDuration = elapsed
         const secs = Math.max(1, Math.round(elapsed / 1000))
-        finalReasoning = `Ran ${finalParts.length} tool call${finalParts.length === 1 ? '' : 's'} in ${secs}s.`
+        finalReasoning = `Ran ${callCount} tool call${callCount === 1 ? '' : 's'} in ${secs}s.`
         sse(res, 'reasoning', { text: finalReasoning })
       }
       recordAssistantTurn(body.conversationId, {
         id: messageId, role: 'assistant', content: finalContent,
-        parentId: body.userMessageId ?? null, timestamp: new Date().toISOString(),
+        parentId: resumedFrom ?? body.userMessageId ?? null, timestamp: new Date().toISOString(),
         model: finalModel,
         reasoning: finalReasoning || undefined,
         reasoningDuration: reasoningDuration || (reasoningStart ? Date.now() - reasoningStart : undefined),
@@ -1104,11 +1146,11 @@ ${ctx}` : ctx
         parts: finalParts.length ? finalParts : undefined,
         finishReason: finishReason ?? undefined,
       })
-      if (!finalContent.trim()) {
-        req.log.warn({ model: body.model, finishReason, usage: usageTotal, toolCalls: finalParts.length, modelReasoned }, 'empty reply')
+      if (!finalContent.trim() && !paused) {
+        req.log.warn({ model: body.model, finishReason, usage: usageTotal, toolCalls: callCount, modelReasoned }, 'empty reply')
         // A model that reasoned may answer on a second try; one that
         // returned nothing has declined, so only other models are offered.
-        const note = emptyReplyNote({ modelReasoned, toolCalls: finalParts.length, finishReason, completionTokens: usageTotal.total_tokens ? usageTotal.completion_tokens ?? null : null })
+        const note = emptyReplyNote({ modelReasoned, toolCalls: callCount, finishReason, completionTokens: usageTotal.total_tokens ? usageTotal.completion_tokens ?? null : null })
           + retryLinks(retryChoices(req, String(body.model ?? '')), modelReasoned ? String(body.model ?? '') : null, body.userMessageId ?? null)
         finalContent = note
         sse(res, 'content', { text: note })
@@ -1253,6 +1295,46 @@ ${ctx}` : ctx
       // model stuck re-issuing one call burns no time and gets told to move on.
       const toolCache = new Map<string, string>()
       let usedTools = false
+      // The user answered a held call. The record says what runs (the held
+      // call, or the alternative it allows), with its own arguments and the
+      // viewer's key; the answer only says which call and whether. The
+      // outcome goes into the message that asked, and the reply carries on
+      // from where it paused.
+      if (resume) {
+        const answered = await answerHeld({
+          conversationId: String(body.conversationId ?? ''),
+          messageId: String(resume.messageId ?? ''),
+          toolCallId: String(resume.toolCallId),
+          allowed: resume.allowed === true,
+          ...(resume.tool ? { tool: String(resume.tool) } : {}),
+          ...(resume.args !== undefined ? { args: String(resume.args) } : {}),
+          ...(resume.feedback ? { feedback: String(resume.feedback).slice(0, 2000) } : {}),
+        }, viewer, changeKey, tool => activeToolSpecs().some(t => t.function.name === tool))
+        if (!answered.ok) {
+          req.log.warn({ toolCallId: resume.toolCallId, why: answered.why }, 'held call answer refused')
+          sse(res, 'tool', { phase: 'result', id: String(resume.toolCallId), name: '', summary: `not run: ${answered.why}`, error: true })
+          sse(res, 'error', { message: answered.why })
+          res.end()
+          return reply
+        }
+        const { rec } = answered
+        req.log.info({ tool: answered.tool, held: rec.tool, allowed: resume.allowed === true, failed: answered.failed }, 'held call answered')
+        resumedFrom = rec.messageId
+        sse(res, 'tool', { phase: 'result', id: rec.toolCallId, name: answered.tool, summary: answered.summary, error: answered.failed })
+        settleHeldPart(rec.conversationId, rec.messageId, rec.toolCallId, {
+          name: answered.tool,
+          status: answered.failed ? 'error' : 'ok',
+          result: answered.summary,
+          decision: {
+            status: resume.allowed === true ? 'approved' : 'denied', by: 'user', name: viewer?.name, at: new Date().toISOString(),
+            ...(resume.feedback ? { note: String(resume.feedback).slice(0, 200) } : {}),
+          },
+          answer: resume.allowed === true ? 'Allowed' : 'Declined',
+        })
+        messages.push(...rec.turn, { role: 'tool', tool_call_id: rec.toolCallId, content: answered.result })
+        for (const g of rec.groups) if (!readerTools || readerTools.has(g)) activeGroups.add(g)
+        usedTools = true
+      }
       // Single-turn backends rationalize textbook questions as answerable
       // from memory no matter the instructions, so the first turn arrives
       // pre-grounded: the server runs the search itself and seeds the
@@ -1287,7 +1369,8 @@ ${ctx}` : ctx
           sse(res, 'content', { text: note })
           sse(res, 'steer', { id: s.id })
         }
-        const toolSpecs = selectToolSpecs((await activeToolSpecsWithRemote()).filter(t => readerAllows(t.function.name, readerTools)), activeGroups)
+        const available = (await activeToolSpecsWithRemote()).filter(t => readerAllows(t.function.name, readerTools) && offered(t.function.name))
+        const toolSpecs = selectToolSpecs(available, activeGroups)
         const maxTokens = fitWindow(messages as WireMessage[], String(body.model ?? ''), JSON.stringify(toolSpecs).length)
         const modelStart = Date.now()
         const turn = await turnWithRetry(
@@ -1321,10 +1404,40 @@ ${ctx}` : ctx
           }))
           finalParts.push(...iterParts)
           calls.forEach((tc, i) => {
+            // The model's call and its result carry the same id, which is
+            // also how an answer to a held call names it.
+            if (!tc.id) tc.id = iterParts[i].id
             req.log.info({ tool: tc.function.name, args: tc.function.arguments.slice(0, 300), iter }, 'tool call')
             markThinking()
             sse(res, 'tool', { phase: 'call', id: iterParts[i].id, name: tc.function.name, args: tc.function.arguments })
           })
+          // A call to a tool that changes something is held for the user's
+          // approval rather than run (approvals.ts). One is held per round,
+          // the first asked for; the round's other calls run, and the reply
+          // pauses after them until the user answers.
+          let held: { i: number; tool: string; args: CallArgs; canonical: string } | null = null
+          const notRun = new Map<number, { result: string; summary: string; failed: true }>()
+          for (let i = 0; i < calls.length; i++) {
+            const name = calls[i].function.name
+            if (!asksFirst(name) || !readerAllows(name, readerTools)) continue
+            const why = !changes.ok ? `${name} is not available in this chat: ${changes.why}. Nothing ran.`
+              : !available.some(t => t.function.name === name) ? `${name} is turned off for this deployment. Nothing ran.`
+              : !body.conversationId ? `${name} needs a saved conversation to ask the user in. Nothing ran.`
+              : held ? `Only one change waits for the user's approval at a time, so ${name} did not run. Call it again after the user answers ${held.tool}.`
+              : null
+            if (why) { notRun.set(i, { result: why, summary: 'not run', failed: true }); continue }
+            // A parameter the model may leave out (the cluster's owner) is the
+            // viewer's own, read from their platform account.
+            const needsAccount = !!platformTool(name)?.defaults?.length
+            const account = needsAccount ? await viewerAccount(changeKey!) : null
+            const prepared = prepareArgs(name, calls[i].function.arguments, account?.username ?? null)
+            if ('problem' in prepared) {
+              const problem = needsAccount && !account ? `Your platform account could not be read with your key, so ${name} could not be prepared. Nothing ran.` : `${prepared.problem} Nothing ran.`
+              notRun.set(i, { result: problem, summary: 'not run', failed: true })
+              continue
+            }
+            held = { i, tool: name, args: prepared.args, canonical: prepared.canonical }
+          }
           const outcomes: { result: string; summary: string; failed?: boolean; shown?: string }[] = new Array(calls.length)
           const toolStart = Date.now()
           timing.toolCalls += calls.length
@@ -1349,6 +1462,9 @@ ${ctx}` : ctx
                   : { result: `No tool group "${group}". Groups: ${Object.keys(TOOL_GROUPS).join(', ')}.`, summary: 'unknown group', failed: true }
                 continue
               }
+              const refused = notRun.get(i)
+              if (refused) { outcomes[i] = refused; continue }
+              if (held?.i === i) { outcomes[i] = { result: '', summary: 'waiting for approval' }; continue }
               if (!readerAllows(tc.function.name, readerTools)) {
                 outcomes[i] = {
                   result: `The reader switched off ${toolOptionLabel(tc.function.name)} for this chat, so ${tc.function.name} did not run. Answer without it, or say what switching it on would let you do.`,
@@ -1380,6 +1496,8 @@ ${ctx}` : ctx
           }))
           timing.toolMs += Date.now() - toolStart
           calls.forEach((tc, i) => {
+            // The held call has no result yet; its row waits for the answer.
+            if (held?.i === i) { iterParts[i].status = 'waiting'; return }
             const { result, summary, failed, shown } = outcomes[i]
             // The tool block shows the summary line, and when expanded what
             // the tool ran; the model gets the result only.
@@ -1389,6 +1507,24 @@ ${ctx}` : ctx
             sse(res, 'tool', { phase: 'result', id: iterParts[i].id, name: tc.function.name, summary: block, error: !!failed })
             messages.push({ role: 'tool', tool_call_id: tc.id ?? `${tc.function.name}-${iter}`, content: result })
           })
+          if (held && viewer && body.conversationId) {
+            // Pause: the call and its approval request are stored with this
+            // message, and the record of what may run waits for the answer.
+            const id = iterParts[held.i].id
+            const messageId = `srv-${Date.now()}`
+            const rec = newHold({
+              conversationId: body.conversationId, messageId, toolCallId: id, tool: held.tool, args: held.canonical,
+              viewer: viewer.id, viewerName: viewer.name, turn: messages.slice(baseLen), groups: [...activeGroups],
+            })
+            const approval = approvalPart(held.tool, held.args, id, rec.expiresAt) as unknown as StoredApprovalPart
+            finalParts.push(approval)
+            holdCall(rec)
+            req.log.info({ tool: held.tool, conversation: body.conversationId }, 'tool call held for approval')
+            sse(res, 'tool', { phase: 'wait', id, name: held.tool })
+            sse(res, 'approval', { approval })
+            finish('tool_approval', messageId)
+            return reply
+          }
           continue
         }
         // A turn with no tool calls and no text of its own is not an
@@ -1497,7 +1633,7 @@ ${ctx}` : ctx
     if (!recorded && (finalContent || finalParts.length)) {
       recordAssistantTurn(body.conversationId, {
         id: `srv-${Date.now()}`, role: 'assistant', content: finalContent,
-        parentId: body.userMessageId ?? null, timestamp: new Date().toISOString(),
+        parentId: resumedFrom ?? body.userMessageId ?? null, timestamp: new Date().toISOString(),
         model: finalModel,
         reasoning: finalReasoning || undefined,
         reasoningDuration: reasoningDuration || (reasoningStart ? Date.now() - reasoningStart : undefined),
