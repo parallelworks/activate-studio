@@ -2,6 +2,72 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.158 (2026-10-22)
+
+### feat(index): embed with ONNX Runtime and the int8 MiniLM model, with mean pooling (#539)
+
+Search by meaning used sqlite-lembed inside gufi_sqlite3 with a Q8 GGUF of all-MiniLM-L6-v2. Its vectors match that model with CLS pooling (cosine 0.9997 against an ONNX run with CLS pooling). The model is trained for mean pooling, so ranking was below what the model gives. This PR embeds with ONNX Runtime and the int8 export of the same model, with mean pooling, and packages it for the macOS app, the container image, clones and the hosted workflow.
+
+**Indexing** (`indexer/embed.py`, `indexer/embed_onnx.py`)
+- Backend choice. ONNX is used when onnxruntime, tokenizers and numpy import and `INDEX_BASE/models/minilm-l6` holds `model.onnx` and `tokenizer.json`. Otherwise it falls back to lembed, as on a remote host or an older install. `--backend onnx|lembed` forces one.
+- The model: int8, mean pooling and L2 normalization, cut at 256 tokens. `--max-tokens 128` is an option, at about 40 percent of the CPU and slightly lower ranking.
+- Threads: the `--jobs` budget is split across at most eight spawned processes of several ONNX Runtime threads each. Tokenizer and BLAS thread pools are limited to one.
+- The embedding cache is keyed by model id: `minilm-l6-mean-int8`, `-t128`, or `minilm384`.
+- Each folder's `db.db` names its model in a one-row `gvecmodel` table; a folder without one holds `minilm384` vectors.
+- A pass over one folder of an index on another model widens to the whole index, so an index never mixes models. Old vectors keep answering until then, and the libraries probe still sees `gvec`.
+
+**Queries** (`server/src/embedWorker.ts`, `indexer/embed_query.py`, `server/src/gufi.ts`)
+- `searchVector` reads each folder's model and embeds the query once per model.
+- For the ONNX model it uses a persistent Python worker, speaking JSON lines on stdin and stdout. It is started at the first such search, stopped after ten idle minutes, and ends with the server. A worker that cannot start is not retried for five minutes.
+- The query vector goes into the vec0 KNN as a blob literal. `minilm384` folders still use lembed.
+- `vectorModels(indexRoot)` reports the mix.
+
+**Packaging**
+- `indexer/fetch_embed.py` (standard library only) installs the packages and the model as pinned in `indexer/embed_deps.json`: wheel URLs and SHA-256 for Linux x86_64 and aarch64 and macOS arm64, CPython 3.11 to 3.13, and the model at Hugging Face revision 751bff37. Downloads are cached; offline, it fails with a plain message and the GGUF path keeps working.
+- The macOS app gets the packages in its Python's site-packages and the model in `Resources/models/minilm-l6`. `studio-run.sh` links it into the index folder, and the minimum macOS check covers the new binaries (macOS 14, as now).
+- `check_app.sh` checks:
+  - the pinned model's hash and the imports;
+  - an ONNX embed with its marker, and the lembed fallback;
+  - the query worker;
+  - a search by meaning through the running server that only the vectors can answer.
+- The container gets `/app/indexer/.deps` for bookworm's Python 3.11, the model is linked into `INDEX_BASE`, and the final stage proves an embed. `container.yaml` allows `files.pythonhosted.org`.
+- Clones: `setup_gufi.sh` runs the fetcher into `indexer/.deps` (gitignored).
+- Hosted: `make_bundle.sh` carries the model, and the workflow's index step fetches the packages for the resource's Python into `cache/`.
+- NOTICE lists the model (Apache-2.0), ONNX Runtime (MIT), tokenizers (Apache-2.0) and NumPy (BSD-3-Clause).
+
+**Measured** (a shared 12-core host, load about 8 from other work, so the absolute times are high)
+
+| | per passage, pinned to one core | 17,000-file corpus (119,180 passages to embed), `--jobs 8` |
+|---|---|---|
+| lembed, GGUF Q8, CLS | 81 ms | 899 s |
+| ONNX int8, mean, 256 tokens (the default) | 26.6 ms | 668 s |
+| ONNX int8, mean, 128 tokens (`--max-tokens 128`) | 11.5 ms | 301 s |
+
+Per core, ONNX uses about a third of lembed's CPU at 256 tokens and a seventh at 128. On this shared host, lembed starts about 3.5 threads per process, about 28 at `--jobs 8` against ONNX's 8, so it takes a larger share of a busy machine: the corpus times understate the gain. The per-core figures are the better guide to an idle Mac. Batch 16 was as fast as 32 and used about 370 MB per embedding process against 630 MB.
+
+Ranking: 82 queries made from the docs' section headings, retrieving the file among 166 passages:
+
+| | top-1 | top-3 | MRR |
+|---|---|---|---|
+| CLS, as the GGUF path (256 tokens) | 0.32 | 0.60 | 0.491 |
+| ONNX int8, mean, 256 tokens | 0.39 | 0.60 | 0.540 |
+| ONNX int8, mean, 128 tokens | 0.35 | 0.59 | 0.521 |
+
+int8 ranks no worse than fp32 (MRR 0.540 against 0.517). This is a small evaluation.
+
+**Size**: the macOS app grows by about 118 MB unpacked (onnxruntime 71 MB, numpy 14 MB, tokenizers 9.5 MB, the model 23 MB), about 41 MB compressed.
+
+**Tests**: `server/test/embedOnnx.test.mjs` covers the worker protocol with a stand-in worker (it runs everywhere): vectors, ids, a worker that cannot start, and one that stops mid-request. Where `STUDIO_TEST_ONNX_DIR` (and `STUDIO_TEST_GGUF`) name the models, it also covers:
+- an ONNX-embedded index and its markers;
+- searches by paraphrase;
+- a GGUF-embedded index searched with lembed;
+- widening in both directions;
+- the 128-token model id.
+
+Rebased on v1.156: #540's `--max-chunks` and `--documents-only` work with the ONNX backend, and the cache is shared between them. With the models present, the server suite passes 496 of 496, including 8 of 8 in the new file. The web suite passes 214 of 214. Without the models, as in CI, the 4 ONNX tests in the new file skip. `macApp.test.mjs` checks the new link.
+
+The mac-app workflow runs on this PR because `deploy/mac/**` changed. On the head before the rebase, its build passed every app check on a macOS 15 runner, including the ONNX embed with its marker and a search by meaning through the app's own server. The copy signed with a throwaway identity under the hardened runtime ran too. The container image built with the packages and its embed check passed. Notarization of the new binaries is left to the next release's sign job. Remote libraries keep the GGUF path, since their builds copy only `enrich.py` and `embed.py`.
+
 ## v1.157 (2026-10-22)
 
 ### fix(chat): in a narrow window the conversation list has a button again (#542)
@@ -11,6 +77,10 @@ Under 760 px wide the chat uses its phone layout, where the conversation list is
 The package's own drawer button (Open sidebar) now shows above the thread whenever the list is a drawer. The bottom-bar shortcut stays. Wider windows are unchanged: the list is inline with its collapse control at the bottom.
 
 Checked in Chromium at 740 x 820: the button shows at the top left and opens the list. At 1300 px the inline list and its control are as before. Web suite passes.
+
+### Change log through v1.157 (#543)
+
+Regenerated with `node scripts/release-notes.mjs --changelog --next v1.157` before tagging v1.157.
 
 ## v1.156 (2026-10-22)
 
