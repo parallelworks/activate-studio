@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Callout, Loader, RefreshButton, StatusDot, Table } from '@parallelworks/ui'
 import { api, type FormatReadiness } from '../api'
 import { indexSummary, useIndexStatus } from '../indexActivity'
+import { useShared } from '../statusShare'
 import { IndexControls, IndexJobView, IndexRuns, LastBuild, useIndexControls } from '../components/IndexActivity'
 import { SemanticMap, TopologyMap } from '../components/CorpusMaps'
 import { currentLibrary, onLibraryChange } from '../api'
@@ -62,6 +63,7 @@ export function OverviewView({ onOpen }: { onOpen: (path: string) => void }) {
   // The index status every view shows; the page follows a running job.
   const idx = useIndexStatus()
   const controls = useIndexControls()
+  const { authEnabled } = useShared()
   const [missing, setMissing] = useState<FormatReadiness[]>([])
   const [updatedAt, setUpdatedAt] = useState<number | null>(null)
   const [tags, setTags] = useState<{ tag: string; count: number }[]>([])
@@ -269,7 +271,9 @@ export function OverviewView({ onOpen }: { onOpen: (path: string) => void }) {
       <section className="card ov-list ov-runs">
         <div className="ov-runs-head">
           <h3>Index runs</h3>
-          <IndexControls canDelete={false} />
+          {/* Building is for a single-user install; a deployment that signs
+              users in builds its own index. The log is for everyone. */}
+          <IndexControls canDelete={false} canBuild={authEnabled === false} />
         </div>
         <LastBuild status={idx} />
         <IndexRuns runs={idx?.runs ?? []} />

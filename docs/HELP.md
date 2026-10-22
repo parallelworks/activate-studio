@@ -42,7 +42,7 @@ The folder tree beside a viewer. Markdown, code, images, PDFs, office documents,
 - **Indexed text** shows what search sees for a file, including text read from images.
 - If several libraries are available, the picker at the top of the tree switches between them. **All libraries**, the default, shows them as one tree, a folder each; Search, Query, and Stats then cover all of them, and files can still be added and changed inside the knowledge base's folder. Each tab remembers its own choice.
 - With the status panel open, the **Details** card describes what you last clicked in the tree, or the library itself: its size, files and folders, the latest change, the file types taking the most space, its labels and those inside it, and which library and index it comes from.
-- Settings, Libraries lists every library {appName} searches, with where it is, its state, and what it can search. **Add a library** asks where (this computer, or a remote system reached over ssh or pw ssh) and how: build an index of a folder, or connect a GUFI index that already exists. A build checks GUFI and the folders first, asks before making a folder that does not exist, and shows its progress in the list. A folder on this computer is kept in step as it changes. On a computer of its own, the main folder's row changes the folder and rebuilds its index.
+- Settings, Libraries lists every library {appName} searches, with where it is, its state, and what it can search. **Add a library** asks where (this computer, or a remote system reached over ssh or pw ssh) and how: build an index of a folder, or connect a GUFI index that already exists. A build checks GUFI and the folders first, asks before making a folder that does not exist, and shows its progress in the list. A folder on this computer is kept in step as it changes. On a computer of its own, the main folder's row changes the folder, builds or updates its index, stops a build, deletes the index (never the files), and shows the index log.
 
 ## Search
 
@@ -69,7 +69,7 @@ Structured questions about the files themselves (largest, newest, totals by type
 
 ## Stats
 
-The knowledge base at a glance: size, file types, labels, and recent changes. Click any figure to see the files behind it.
+The knowledge base at a glance: size, file types, labels, and recent changes. Click any figure to see the files behind it. While the index is being built the page follows it, phase by phase; **Refresh** reads everything again, and **Index runs** lists recent builds and syncs with how long each phase took.
 
 # Run work
 
@@ -159,5 +159,9 @@ Settings, General, **Updates** has the same, and **Roll back**, which returns to
 ## The index
 
 {appName} is built on GUFI, the Grand Unified File Index from Los Alamos National Laboratory: a tree of small databases, one per folder, holding each file's details, its text, and search vectors. Access follows the file system's permissions, and a change re-indexes only the folder it touched.
+
+A build runs in four phases, each with its own count: **names** (every file and folder, searchable by name as soon as this phase ends), **documents** (PDFs and Office files converted to text), **text** (images, other formats, and the full-text tables), and **meaning** (embeddings for search by meaning). The index line at the bottom of the navigation, Settings, Libraries, and Stats all show the same progress. Click the index line for the phases, **Stop**, and **View log**, the index log as plain text. Text and embeddings are kept between builds, so updating an index, or choosing a folder that was indexed before, redoes only what changed.
+
+Settings, **Indexing** sets how many threads each phase uses (one per processor core by default), which readers run (document text, the PDF reader for files the converter cannot read, LibreOffice for older Office files, OCR, image descriptions when AI features are on), whether embeddings are made, and where the index is kept. It also lists which file types this computer can read and which index by name only.
 
 Knowledge base for this deployment: **{kbLabel}**

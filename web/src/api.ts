@@ -251,6 +251,7 @@ export interface IndexSettings {
 export interface IndexSettingsInfo {
   settings: IndexSettings
   defaults: IndexSettings
+  single: boolean
   cpus: number
   threads: number
   readers: ReadersReport

@@ -67,7 +67,7 @@ search by meaning, and its actions:
 
 | Kind | Where it comes from | Actions |
 |---|---|---|
-| Main folder, read and write | `KB_ROOT` | **Change folder** and **Rebuild index**, on a single-user install |
+| Main folder, read and write | `KB_ROOT` | **Change folder**, **Build index** or **Update index** (**Stop indexing** while it runs), and under the row **Delete index** and **View log**, on a single-user install; **View log** anywhere |
 | Index of a folder on this machine, kept in step with it | `POST /api/libraries/build` | **Rebuild**, **Remove** |
 | GUFI index on this machine | `POST /api/libraries`, or `STUDIO_LIBRARIES` (set by the deployment) | **Remove**, except for one the deployment set |
 | Index built on a remote system over ssh or pw ssh | `POST /api/user-libraries/ssh/build`, `POST /api/user-libraries/pw/build` | **Rebuild**, **Remove** |
@@ -115,9 +115,16 @@ after the page has loaded since it walks the index), and two actions.
 saves the choice through `POST /api/setup/primary-folder`; where the app's
 launcher runs the Studio it restarts on the new folder and the page waits
 for it, and elsewhere the page says to set `KB_ROOT` and restart.
-**Rebuild index** (or **Build index**) runs `POST /api/setup/index` and
-shows the job's progress under the row. Where users sign in, neither
-action is offered and the state comes from the probe.
+**Build index** (**Update index** once there is one) runs
+`POST /api/index/build`, and the job's phases, each with its count and
+time, show under the row as it runs, read from `GET /api/index/status`
+like the footer and Stats; **Stop indexing** stops it, and the row then
+says the index is incomplete until it is updated. Under the row,
+**Delete index** asks first, in the row itself, and deletes the index and
+its caches, never the files (`DELETE /api/index?confirm=1`); **View log**
+shows the index log. Where users sign in, only **View log** is offered and
+the state comes from the probe. See [REFERENCE.md](REFERENCE.md#indexing)
+for the jobs and their phases.
 
 ## Libraries built from a folder on this computer
 

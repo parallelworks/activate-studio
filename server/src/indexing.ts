@@ -202,9 +202,12 @@ function pump(): void {
       job.finishedAt = new Date().toISOString()
       if (job.progress) { job.progress.phase = job.state === 'done' ? 'done' : job.state; job.progress.current = null }
       log(`${job.label}: ${job.state} in ${fmtMs(job.ms)}${job.error ? `: ${job.error}` : ''}${job.warningCount ? ` (${job.warningCount} files could not be read)` : ''}`)
-      for (const p of job.phases) if (p.ms !== null || p.state === 'skipped') log(`  ${p.id}: ${p.state}${p.ms !== null ? ` in ${fmtMs(p.ms)}` : ''}${p.total ? `, ${p.done} of ${p.total} ${p.unit}` : ''}${p.note ? ` (${p.note})` : ''}`)
+      // A folder's pass after an upload or a save is routine; its phases are
+      // logged, and it is kept among the runs, only when it went wrong.
+      const routine = job.kind === 'folder' && job.state === 'done'
+      if (!routine) for (const p of job.phases) if (p.ms !== null || p.state === 'skipped') log(`  ${p.id}: ${p.state}${p.ms !== null ? ` in ${fmtMs(p.ms)}` : ''}${p.total ? `, ${p.done} of ${p.total} ${p.unit}` : ''}${p.note ? ` (${p.note})` : ''}`)
       lastFinished = { ...job }
-      if (job.kind !== 'sweep' || job.state !== 'done' || job.dir) recordRun(job)
+      if (!routine) recordRun(job)
       if (job.state === 'error') status.lastError = `${job.label}: ${job.error}`
       else if (job.state === 'done' && (job.kind === 'build' || job.kind === 'delete')) status.lastError = null
       current = null
@@ -414,7 +417,11 @@ function runTool(ctx: JobCtx, ph: ReturnType<typeof phase> | null, cmd: string, 
         } catch { /* a malformed line is dropped */ }
         return
       }
-      if (line.trim()) { out.push(line); ctx.log(`${name}: ${line.trim().slice(0, 500)}`) }
+      if (!line.trim()) return
+      out.push(line)
+      // What a program reports on success is worth keeping for a build; a
+      // folder's routine pass would fill the log with it.
+      if (ctx.job.kind === 'build') ctx.log(`${name}: ${line.trim().slice(0, 500)}`)
     })
     createInterface({ input: child.stderr! }).on('line', line => {
       last = Date.now()
@@ -720,7 +727,14 @@ function readMark(): string {
  * updates that index rather than building one from nothing. Runs at start
  * and before a build.
  */
-export async function reconcileFolder(log: (m: string) => void = indexLog): Promise<void> {
+let reconciling: Promise<void> | null = null
+export function reconcileFolder(log: (m: string) => void = indexLog): Promise<void> {
+  // One at a time: the start and a build asking at once must not both move things.
+  reconciling ??= reconcileOnce(log).finally(() => { reconciling = null })
+  return reconciling
+}
+
+async function reconcileOnce(log: (m: string) => void): Promise<void> {
   const was = readMark()
   if (was === KB_ROOT) return
   if (was) {
@@ -1036,7 +1050,7 @@ export function startSweepTimer(log: (msg: string) => void): void {
   const tick = async (): Promise<void> => {
     const sec = effectiveSettings().sweepIntervalSec
     status.sweepIntervalSec = sec
-    if (sec > 0) {
+    if (sec > 0 && !indexJobsRunning()) {
       await sweep(log)
       // History rides the sweep rather than waiting for a visit: a change
       // becomes a snapshot within one interval, and an unchanged pass

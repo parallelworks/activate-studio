@@ -187,6 +187,8 @@ async function renderPage(s: Server) {
 }
 
 const rowOf = (name: string) => screen.getByText(name, { selector: '.lib-name' }).closest('tr') as HTMLElement
+/** The line under a library's row: a build's progress, the index's other controls. */
+const detailOf = (name: string) => rowOf(name).nextElementSibling as HTMLElement
 const posted = (s: Server, url: string) => s.calls.filter(c => c.method === 'POST' && c.url.split('?')[0] === url)
 
 describe('what Add a library offers', () => {
@@ -224,7 +226,8 @@ describe('Settings, Libraries', () => {
     expect(within(main).getByText('Indexed')).toBeInTheDocument()
     expect(within(main).getByRole('button', { name: 'Change folder' })).toBeInTheDocument()
     expect(await within(main).findByRole('button', { name: 'Update index' })).toBeEnabled()
-    expect(within(main).getByRole('button', { name: 'Delete index' })).toBeInTheDocument()
+    expect(within(detailOf('Notes')).getByRole('button', { name: 'Delete index' })).toBeInTheDocument()
+    expect(within(detailOf('Notes')).getByRole('button', { name: 'View log' })).toBeInTheDocument()
     expect(within(main).getAllByText('Yes')).toHaveLength(2)
 
     const site = rowOf('Site index')
@@ -428,15 +431,15 @@ describe('Settings, Libraries', () => {
   it('deletes the index only after an inline confirmation, and never the files', async () => {
     const s = server()
     await renderPage(s)
-    const main = await waitFor(() => rowOf('Notes'))
-    fireEvent.click(await within(main).findByRole('button', { name: 'Delete index' }))
-    const confirm = within(main).getByRole('group', { name: 'Delete the index' })
+    await waitFor(() => rowOf('Notes'))
+    fireEvent.click(await within(detailOf('Notes')).findByRole('button', { name: 'Delete index' }))
+    const confirm = within(detailOf('Notes')).getByRole('group', { name: 'Delete the index' })
     expect(confirm.textContent).toMatch(/The files in the folder are not touched/)
     // Keeping it sends nothing.
     fireEvent.click(within(confirm).getByRole('button', { name: 'Keep it' }))
     expect(s.calls.some(c => c.method === 'DELETE')).toBe(false)
-    fireEvent.click(within(rowOf('Notes')).getByRole('button', { name: 'Delete index' }))
-    fireEvent.click(within(rowOf('Notes')).getByRole('button', { name: 'Delete the index' }))
+    fireEvent.click(within(detailOf('Notes')).getByRole('button', { name: 'Delete index' }))
+    fireEvent.click(within(detailOf('Notes')).getByRole('button', { name: 'Delete the index' }))
     await waitFor(() => expect(s.calls.filter(c => c.method === 'DELETE').map(c => c.url)).toEqual(['/api/index?confirm=1']))
     expect(await within(rowOf('Notes')).findByText('Not indexed yet')).toBeInTheDocument()
     expect(within(rowOf('Notes')).getByRole('button', { name: 'Build index' })).toBeInTheDocument()
@@ -445,7 +448,8 @@ describe('Settings, Libraries', () => {
   it('shows the index log from the main folder\'s row', async () => {
     const s = server()
     await renderPage(s)
-    fireEvent.click(await within(await waitFor(() => rowOf('Notes'))).findByRole('button', { name: 'View log' }))
+    await waitFor(() => rowOf('Notes'))
+    fireEvent.click(await within(detailOf('Notes')).findByRole('button', { name: 'View log' }))
     const dialog = await screen.findByRole('dialog', { name: 'Index log' })
     expect(await within(dialog).findByText(/Updating the index: started on 8 threads/)).toBeInTheDocument()
     expect(within(dialog).getByText('/data/logs/indexing.log')).toBeInTheDocument()
@@ -459,8 +463,9 @@ describe('Settings, Libraries', () => {
     expect(within(main).getByText('Indexed')).toBeInTheDocument()
     expect(within(main).queryByRole('button', { name: 'Change folder' })).toBeNull()
     expect(within(main).queryByRole('button', { name: /index/ })).toBeNull()
-    // The log is there to read on any Studio.
-    expect(await within(main).findByRole('button', { name: 'View log' })).toBeInTheDocument()
+    // The log is there to read on any Studio, under the row.
+    expect(await within(detailOf('Notes')).findByRole('button', { name: 'View log' })).toBeInTheDocument()
+    expect(within(detailOf('Notes')).queryByRole('button', { name: 'Delete index' })).toBeNull()
     expect(s.calls.some(c => c.url.startsWith('/api/setup/browse'))).toBe(false)
   })
 })

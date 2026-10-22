@@ -5,7 +5,7 @@ import {
 import { api, IndexStatus } from '../api'
 import { onLibraryChange } from '../api'
 import { elapsed, fmtDuration, indexSummary, kickIndexStatus, useIndexStatus } from '../indexActivity'
-import { IndexJobView, IndexLogButton, jobOutcome } from './IndexActivity'
+import { IndexJobView, IndexLogButton, IndexLogHost, jobOutcome } from './IndexActivity'
 import type { LibraryStats } from '../api'
 import { openAbout, openUpdates, openWhatsNew } from '../api'
 import { useUpdateFlow } from '../updateFlow'
@@ -318,6 +318,7 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
   if (!ready) return <div className="sidenav-footer footer-pending"><Skeleton count={3} width="70%" height={10} className="footer-skeleton" /></div>
   return (
     <div className="sidenav-footer">
+      <IndexLogHost />
       {who?.authEnabled && (
         <div className="status-line" title="Click for identity details">
           <IdentityPanel

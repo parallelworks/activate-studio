@@ -7,7 +7,7 @@ import { api, type BuildProgress, type SettingsLibrary, type UserLibrary } from 
 import { reloadAppConfig, useAppConfig } from '../config'
 import { AddLibrary } from './AddLibrary'
 import { FolderPicker, errText, json, type SetupStatus } from './PrimaryFolder'
-import { IndexControls, IndexJobView, LastBuild, useIndexControls } from './IndexActivity'
+import { IndexControls, IndexJobView, LastBuild } from './IndexActivity'
 import { useIndexStatus } from '../indexActivity'
 
 /** A user library as listed, with how it is reached. */
@@ -107,7 +107,6 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
   }
   // The main folder's indexing, as every other view shows it.
   const ix = useIndexStatus()
-  const controls = useIndexControls()
   const indexing = !!ix?.running
   const wasIndexing = useRef(false)
   useEffect(() => {
@@ -197,12 +196,17 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
           <>
             {standalone && <Button variant="secondary" size="sm" disabled={indexing} onClick={() => setChanging(true)}>Change folder</Button>}
             {/* A hosted Studio's deployment builds its index; this page shows it and its log. */}
-            <IndexControls canDelete={!!standalone} canBuild={!!standalone && !!gufi?.found && !!p?.exists} folder={l.sourceRoot} />
+            <IndexControls part="primary" canDelete={!!standalone} canBuild={!!standalone && !!gufi?.found && !!p?.exists} folder={l.sourceRoot} />
           </>
         ),
-        detail: job
-          ? <div className="lib-build"><IndexJobView job={job} onStop={() => void controls.stop()} stopping={controls.busy === 'stop'} /></div>
-          : ix?.lastBuild?.kind === 'build' ? <div className="lib-build"><LastBuild status={ix} /></div> : undefined,
+        // Under the row: the build as it runs, or how the last one went, and
+        // the index's other controls, the delete's confirmation among them.
+        detail: (
+          <div className="lib-build">
+            {job ? <IndexJobView job={job} /> : <LastBuild status={ix} />}
+            <IndexControls part="secondary" canDelete={!!standalone} folder={l.sourceRoot} />
+          </div>
+        ),
       })
       continue
     }

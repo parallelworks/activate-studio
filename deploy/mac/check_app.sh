@@ -87,6 +87,7 @@ if command -v codesign >/dev/null 2>&1; then
   fi
 fi
 check "the model is the full file (over 10 MB)" test "$(( $(wc -c <"$R/models/minilm384.gguf") ))" -gt 10000000
+check "pypdf is in the app's Python, for PDFs downmark cannot read" sh -c "ls -d '$R'/python/lib/python3.*/site-packages/pypdf/__init__.py '$R'/python/lib/python3.*/site-packages/pypdf-*.dist-info/licenses"
 check "the document converter's macOS arm64 binary is there" \
   sh -c "find '$R/app/server/node_modules' -path '*downmark-darwin-arm64/bin/downmark' -type f | grep -q ."
 check "and no Linux build of it" sh -c "! find '$R/app/server/node_modules' -name 'downmark-linux-*' | grep -q ."
@@ -172,7 +173,7 @@ if [ "$RUN" = 1 ]; then
 
     echo "Running"
     check "node runs" clean "$R/node/bin/node" -e 'process.exit(process.versions.node.startsWith("26.") ? 0 : 1)'
-    check "python runs, with sqlite3" clean "$R/python/bin/python3" -c 'import sqlite3, json, zipfile, urllib.request'
+    check "python runs, with sqlite3 and pypdf" clean "$R/python/bin/python3" -c 'import sqlite3, json, zipfile, urllib.request, pypdf'
     # The window, started only far enough to hand --help to the launcher.
     check "the app's executable starts" sh -c "env -i HOME='$T/home' PATH=/usr/bin:/bin '$C/MacOS/ACTIVATE Studio' --help | grep -q -- --uninstall"
     if command -v codesign >/dev/null 2>&1; then
@@ -198,6 +199,13 @@ if [ "$RUN" = 1 ]; then
       --kb-root "$T/corpus" --index "$T/idx/corpus" --extract-cache "$T/extract"
     check "the indexer embeds through gufi_sqlite3" clean "$R/python/bin/python3" "$R/app/indexer/embed.py" \
       --index "$T/idx/corpus" --model "$R/models/minilm384.gguf" --gufi-sqlite3 "$G/bin/gufi_sqlite3"
+    # A PDF out of the box: downmark's binary first, the bundled pypdf for one
+    # it leaves (no poppler on a Mac).
+    if [ -f "$HERE/../../testdata/corpus/docs/report.pdf" ]; then
+      mkdir -p "$T/pdfs/docs" && cp "$HERE/../../testdata/corpus/docs/report.pdf" "$T/pdfs/docs/"
+      check "downmark's binary reads a PDF" clean /bin/sh -c 'b="$(find "$1" -path "*downmark-darwin-arm64/bin/downmark" -type f | head -1)"; "$b" "$2" | grep -q BOUNDARY-LAYER-4417' sh "$R/app/server/node_modules" "$T/pdfs/docs/report.pdf"
+      check "the bundled pypdf reads it too" clean "$R/python/bin/python3" -c "import sys; from pypdf import PdfReader; sys.exit(0 if 'BOUNDARY-LAYER-4417' in ''.join(p.extract_text() or '' for p in PdfReader('$T/pdfs/docs/report.pdf').pages) else 1)"
+    fi
 
     # The server from the app's own run loop, as the LaunchAgent runs it.
     PORT_FREE="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')"

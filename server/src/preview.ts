@@ -4,6 +4,7 @@ import fs from 'node:fs'
 import fsp from 'node:fs/promises'
 import path from 'node:path'
 import { INDEX_BASE } from './config.js'
+import { sofficeFound } from './extractors.js'
 
 export const MIME: Record<string, string> = {
   '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
@@ -22,9 +23,10 @@ export const CONVERTIBLE = new Set(['.docx', '.pptx', '.xlsx', '.doc', '.ppt', '
 
 const PDF_CACHE = path.join(INDEX_BASE, 'pdf-preview')
 const SOFFICE_HOME = path.join(INDEX_BASE, '.soffice')
-// Hosts without a system LibreOffice can point this at a wrapper (the
-// deploy workflow writes one that runs soffice inside a container).
-const SOFFICE_BIN = process.env.SOFFICE_BIN ?? 'soffice'
+// Hosts without a system LibreOffice can point SOFFICE_BIN at a wrapper (the
+// deploy workflow writes one that runs soffice inside a container); on a
+// Mac, an installed LibreOffice.app is used where it is (extractors.ts).
+const sofficeBin = () => sofficeFound() ?? 'soffice'
 
 /** Raised when an office document cannot be rendered on this host, which
  *  is a deployment fact rather than a fault in the file. */
@@ -55,7 +57,7 @@ export function officeToPdf(absSource: string, relPath: string): Promise<string>
     await fsp.mkdir(outDir, { recursive: true })
     await fsp.mkdir(SOFFICE_HOME, { recursive: true })
     await new Promise<void>((resolve, reject) => {
-      execFile(SOFFICE_BIN, ['--headless', '--convert-to', 'pdf', '--outdir', outDir, absSource], {
+      execFile(sofficeBin(), ['--headless', '--convert-to', 'pdf', '--outdir', outDir, absSource], {
         timeout: 120_000,
         env: { ...process.env, HOME: SOFFICE_HOME },
       }, (err, _so, se) => {
@@ -65,7 +67,7 @@ export function officeToPdf(absSource: string, relPath: string): Promise<string>
         // the extracted text, which is already indexed.
         const missing = (err as NodeJS.ErrnoException).code === 'ENOENT'
         reject(new OfficePreviewUnavailable(missing
-          ? `LibreOffice is not available on this deployment (${SOFFICE_BIN} not found), so Word, PowerPoint and Excel files cannot be rendered here.`
+          ? `LibreOffice is not available on this deployment (${sofficeBin()} not found), so Word, PowerPoint and Excel files cannot be rendered here.${process.platform === 'darwin' ? ' Install LibreOffice in Applications to preview them; their text is still shown.' : ''}`
           : `conversion failed: ${se || err.message}`))
       })
     })

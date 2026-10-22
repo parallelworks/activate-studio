@@ -149,6 +149,9 @@ export async function indexRoutes(app: FastifyInstance): Promise<void> {
     return {
       settings: indexSettings(),
       defaults: INDEX_SETTINGS_DEFAULTS,
+      // A single-user install builds and deletes its index here; a Studio
+      // that signs users in has its index managed by the deployment.
+      single: !authEnabled(),
       cpus: cpuCount(),
       threads: threadsFor(),
       readers: extractorReport(readerOptions()),

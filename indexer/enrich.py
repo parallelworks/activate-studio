@@ -531,7 +531,9 @@ def main() -> int:
                     continue
                 suffix = os.path.splitext(e.name)[1].lower()
                 image = suffix in IMAGE_SUFFIXES
-                cacheable = suffix in documents or suffix in legacy or (image and images_useful)
+                # An image's text already read is kept even when nothing here
+                # would read it again (OCR turned off since, say).
+                cacheable = suffix in documents or suffix in legacy or image
                 if suffix not in TEXT_SUFFIXES and not cacheable:
                     continue
                 if suffix in TEXT_SUFFIXES:
@@ -560,6 +562,8 @@ def main() -> int:
                     # read again to see.
                     if suffix == '.pdf' and options['ocr'] and cache_file.stat().st_size < OCR_TEXT_CEILING * 4:
                         tasks.append((key, str(src_dir / e.name), str(cache_file), suffix, 'recheck'))
+                    continue
+                if image and not images_useful:
                     continue
                 tasks.append((key, str(src_dir / e.name), str(cache_file), suffix, 'extract'))
                 files.append((e.name, suffix, st.st_ino, key))

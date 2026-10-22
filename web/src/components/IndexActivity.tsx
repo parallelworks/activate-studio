@@ -52,7 +52,7 @@ export function IndexPhaseList({ job }: { job: IndexJob }) {
 }
 
 /** A running job: what it is, how far, how long so far, and its phases. */
-export function IndexJobView({ job, onStop, stopping }: { job: IndexJob; onStop?: () => void; stopping?: boolean }) {
+export function IndexJobView({ job, onStop, stopping, log = true }: { job: IndexJob; onStop?: () => void; stopping?: boolean; log?: boolean }) {
   const [, tick] = useState(0)
   useEffect(() => {
     const t = window.setInterval(() => tick(x => x + 1), 1000)
@@ -73,7 +73,7 @@ export function IndexJobView({ job, onStop, stopping }: { job: IndexJob; onStop?
       {onStop && (
         <div className="ix-actions">
           <Button variant="secondary" size="sm" loading={stopping} onClick={onStop}>Stop</Button>
-          <IndexLogButton />
+          {log && <IndexLogButton />}
         </div>
       )}
     </div>
@@ -125,12 +125,33 @@ export function IndexLogDialog({ open, onClose }: { open: boolean; onClose: () =
   )
 }
 
+// One log dialog for the page, held by a host that stays mounted (the
+// footer's), so a button inside a popover that closes as the dialog opens
+// still opens it. Without a host, a button keeps a dialog of its own.
+let hosts = 0
+const logOpeners = new Set<() => void>()
+
+/** Holds the page's index log dialog; StatusFooter mounts it. */
+export function IndexLogHost() {
+  const [open, setOpen] = useState(false)
+  useEffect(() => {
+    const opener = () => setOpen(true)
+    hosts++
+    logOpeners.add(opener)
+    return () => { hosts--; logOpeners.delete(opener) }
+  }, [])
+  return <IndexLogDialog open={open} onClose={() => setOpen(false)} />
+}
+
 export function IndexLogButton({ size = 'sm', variant = 'ghost', label = 'View log' }: { size?: 'xs' | 'sm'; variant?: 'ghost' | 'secondary'; label?: string }) {
   const [open, setOpen] = useState(false)
+  const show = () => {
+    if (hosts > 0) { for (const fn of logOpeners) { fn(); break } } else setOpen(true)
+  }
   return (
     <>
-      <Button variant={variant} size={size} onClick={() => setOpen(true)}>{label}</Button>
-      <IndexLogDialog open={open} onClose={() => setOpen(false)} />
+      <Button variant={variant} size={size} onClick={show}>{label}</Button>
+      {hosts === 0 && <IndexLogDialog open={open} onClose={() => setOpen(false)} />}
     </>
   )
 }
@@ -181,12 +202,21 @@ export function useIndexControls() {
   }
 }
 
-export function IndexControls({ canDelete, canBuild = true, folder }: { canDelete: boolean; canBuild?: boolean; folder?: string | null }) {
+export function IndexControls({ canDelete, canBuild = true, folder, part = 'all' }: {
+  canDelete: boolean
+  canBuild?: boolean
+  folder?: string | null
+  /** In a table row: the build or stop button (`primary`), and the
+   *  delete and log controls under the row (`secondary`). */
+  part?: 'all' | 'primary' | 'secondary'
+}) {
   const c = useIndexControls()
   const s = c.status
   const running = !!s?.running
   const indexed = !!s?.indexed
-  if (c.confirming) {
+  const primary = part !== 'secondary'
+  const secondary = part !== 'primary'
+  if (c.confirming && secondary) {
     return (
       <div className="ix-confirm" role="group" aria-label="Delete the index">
         <p>
@@ -204,17 +234,17 @@ export function IndexControls({ canDelete, canBuild = true, folder }: { canDelet
   return (
     <>
       <div className="ix-actions">
-        {running ? (
+        {primary && (running ? (
           <Button variant="secondary" size="sm" loading={c.busy === 'stop'} onClick={() => void c.stop()}>Stop indexing</Button>
         ) : canBuild && (
           <Button variant="secondary" size="sm" loading={c.busy === 'build'} onClick={() => void c.build()}>
             {indexed ? 'Update index' : 'Build index'}
           </Button>
-        )}
-        {canDelete && indexed && !running && (
+        ))}
+        {secondary && canDelete && indexed && !running && (
           <Button variant="ghost" size="sm" onClick={() => c.setConfirming(true)}>Delete index</Button>
         )}
-        <IndexLogButton />
+        {secondary && <IndexLogButton />}
       </div>
       {c.error && <Callout tone="error">{c.error}</Callout>}
     </>

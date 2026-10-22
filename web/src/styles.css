@@ -1850,7 +1850,6 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .libraries-table .lib-actions .ix-actions { display: inline-flex; vertical-align: middle; flex-wrap: nowrap; }
 .ix-confirm { display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
 .ix-confirm p { margin: 0; }
-.libraries-table .lib-actions .ix-confirm { white-space: normal; text-align: left; width: 20rem; max-width: calc(100vw - 3rem); }
 .ix-log-path { font-family: ui-monospace, monospace; font-size: 12px; word-break: break-all; }
 .ix-log-full { font-size: 13px; color: var(--pw-link); margin-right: auto; }
 .ix-section { display: flex; flex-direction: column; gap: 10px; max-width: var(--settings-measure, 44rem); margin-bottom: 18px; }

@@ -110,7 +110,7 @@ export function IndexingSection({ models = [], visionModel = '', deploymentCred 
         {status?.job
           ? <IndexJobView job={status.job} onStop={() => void controls.stop()} stopping={controls.busy === 'stop'} />
           : <LastBuild status={status} />}
-        <IndexControls canDelete={!!info.location.canChange} folder={info.location.folder} />
+        <IndexControls canDelete={info.single} canBuild={info.single} folder={info.location.folder} />
       </section>
 
       <div className="settings-grid">
@@ -135,7 +135,7 @@ export function IndexingSection({ models = [], visionModel = '', deploymentCred 
           </span>
         </label>
         <Field label="PDFs downmark cannot read"
-          description={`${reader('pdftotext')?.note ?? ''} ${reader('pypdf')?.note ?? ''}`.trim()}>
+          description={['pdftotext', 'pypdf'].map(n => `${n}: ${reader(n)?.note.replace(/^./, c => c.toLowerCase()) ?? 'unknown'}`).join(' ')}>
           <Select items={PDF_READERS} value={s.pdfReader} disabled={!s.documents || saving !== null}
             onValueChange={v => v && void save({ pdfReader: v }, 'pdfReader')} />
         </Field>

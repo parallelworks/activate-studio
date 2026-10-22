@@ -58,8 +58,29 @@ platform features work too.
 | | |
 |---|---|
 | Documents | `~/Documents/ACTIVATE Studio`, until another folder is chosen |
-| Index and logs | `~/Library/Application Support/ACTIVATE Studio/index` and `logs` |
+| Index and logs | `~/Library/Application Support/ACTIVATE Studio/index` and `logs`; Settings, Indexing can keep the index elsewhere, such as on another disk |
+| Index log | `~/Library/Application Support/ACTIVATE Studio/logs/indexing.log`, also shown by View log at the bottom of the navigation and in Settings, Libraries |
 | Settings | `~/Library/Application Support/ACTIVATE Studio/studio.env`: `KEY='value'` lines read before each start, such as `PORT='4180'` or a model endpoint (`OPENAI_BASE_URL`, `OPENAI_API_KEY`) |
+
+*What it reads:* PDFs and Word, PowerPoint and Excel files are read out
+of the box: downmark, which comes with the app, converts them, and the
+app's Python carries pypdf for a PDF downmark cannot read, so poppler is
+not needed. Older formats (`.ppt`, `.xls`, OpenDocument) are read through
+LibreOffice when it is installed in Applications, which also renders
+previews of Office documents; the app does not include it. Text in images
+and scanned pages is read by tesseract when it is installed
+(`brew install tesseract`), and images are described by a vision model when
+AI features are on and one is chosen under Settings, Indexing. Settings,
+Indexing lists what this Mac reads and what is found by name only.
+
+*Indexing:* the first build makes every file searchable by name within
+seconds, then reads documents, images and text, then makes the embeddings
+for search by meaning, each phase with its own count at the bottom of the
+navigation, in Settings, Libraries and on Stats. Each phase uses one thread
+per processor core unless Settings, Indexing says otherwise. A build can be
+stopped and resumed with Update index; the cached text and embeddings are
+kept, so it continues rather than starting over, and so does choosing a
+folder that was indexed before.
 
 *Stop or uninstall:*
 
@@ -280,9 +301,10 @@ dependency path. Build with `GUFI_AI=0` to get everything except
 semantic search, and treat the vector build as a separate exercise.
 
 *Searches return nothing after adding files:* the index updates when the
-Studio writes a file itself. For material copied in from the outside,
-re-run `indexer/reindex.sh`, or use the Library's upload so the subtree
-is re-indexed for you.
+Studio writes a file itself, and the sync picks up material copied in from
+outside within its interval (Settings, General), or at once with sync now
+at the bottom of the navigation. View log there shows what each index job
+did, and which files could not be read.
 
 *Apple silicon versus Intel:* both work. Homebrew installs to different
 prefixes on each, which is why the scripts ask `brew --prefix` rather
