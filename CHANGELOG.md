@@ -2,6 +2,125 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.149 (2026-10-22)
+
+### ci: bump the actions group across 1 directory with 2 updates (#476)
+
+Bumps the actions group with 2 updates in the / directory: [step-security/harden-runner](https://github.com/step-security/harden-runner) and [actions/setup-node](https://github.com/actions/setup-node).
+
+Updates `step-security/harden-runner` from 2.22.0 to 2.22.1
+<details>
+<summary>Release notes</summary>
+<p><em>Sourced from <a href="https://github.com/step-security/harden-runner/releases">step-security/harden-runner's releases</a>.</em></p>
+<blockquote>
+<h2>v2.22.1</h2>
+<h2>What's Changed</h2>
+<ul>
+<li>Fixed security rules not initializing on GHES self-hosted runners</li>
+<li>Fixed GHES connectivity in block mode by implicitly allowing the GHES hostname</li>
+</ul>
+<p><strong>Full Changelog</strong>: <a href="https://github.com/step-security/harden-runner/compare/v2.22.0...v2.22.1">https://github.com/step-security/harden-runner/compare/v2.22.0...v2.22.1</a></p>
+</blockquote>
+</details>
+<details>
+<summary>Commits</summary>
+<ul>
+<li><a href="https://github.com/step-security/harden-runner/commit/ccd8616d44fd3846e67624a50d5aad6d37bf2d25"><code>ccd8616</code></a> Merge pull request <a href="https://redirect.github.com/step-security/harden-runner/issues/704">#704</a> from h0x0er/jatin/ghes-endp</li>
+<li><a href="https://github.com/step-security/harden-runner/commit/037ccfd0b8acd0743d7ce4b3e53f67dc16f831b9"><code>037ccfd</code></a> implicitly add ghes endpoint in allowList</li>
+<li><a href="https://github.com/step-security/harden-runner/commit/e7438c7b4d9fde75004beb1805ca407c067d5340"><code>e7438c7</code></a> Merge pull request <a href="https://redirect.github.com/step-security/harden-runner/issues/703">#703</a> from h0x0er/jatin/ghes-codebuild-fixes</li>
+<li><a href="https://github.com/step-security/harden-runner/commit/afb0b33c8978810916155d52997450fe76eea40a"><code>afb0b33</code></a> fixes for armour rules not getting initialised</li>
+<li>See full diff in <a href="https://github.com/step-security/harden-runner/compare/351661ca32ac09a36dc5ee2d536e3128f2a3c8ed...ccd8616d44fd3846e67624a50d5aad6d37bf2d25">compare view</a></li>
+</ul>
+</details>
+<br />
+
+Updates `actions/setup-node` from 7.0.0 to 7.1.0
+<details>
+<summary>Release notes</summary>
+<p><em>Sourced from <a href="https://github.com/actions/setup-node/releases">actions/setup-node's releases</a>.</em></p>
+<blockquote>
+<h2>v7.1.0</h2>
+<h2>What's Changed</h2>
+<h3>Enhancements:</h3>
+<ul>
+<li>Add support for mise.toml file by <a href="https://github.com/gperdomor"><code>@​gperdomor</code></a> in <a href="https://redirect.github.com/actions/setup-node/pull/1421">actions/setup-node#1421</a></li>
+<li>Support absolute paths in node-version-file by <a href="https://github.com/v-mahabaleshwars"><code>@​v-mahabaleshwars</code></a> in <a href="https://redirect.github.com/actions/setup-node/pull/1633">actions/setup-node#1633</a></li>
+</ul>
+<h3>Bug fixes:</h3>
+<ul>
+<li>Add Node version validation and manifest fetch retry by <a href="https://github.com/v-jitenderpalsingh"><code>@​v-jitenderpalsingh</code></a> in <a href="https://redirect.github.com/actions/setup-node/pull/1580">actions/setup-node#1580</a></li>
+</ul>
+<h3>Documentation updates:</h3>
+<ul>
+<li>README.md: bump actions/checkout to latest version 7 by <a href="https://github.com/deining"><code>@​deining</code></a> in <a href="https://redirect.github.com/actions/setup-node/pull/1578">actions/setup-node#1578</a></li>
+<li>docs: add V7 ESM migration and NODE_AUTH_TOKEN behavior change by <a href="https://github.com/v-gowridurgad"><code>@​v-gowridurgad</code></a> in <a href="https://redirect.github.com/actions/setup-node/pull/1593">actions/setup-node#1593</a></li>
+<li>Fixed cache recommendation syntax by <a href="https://github.com/SubJunk"><code>@​SubJunk</code></a> in <a href="https://redirect.github.com/actions/setup-node/pull/1603">actions/setup-node#1603</a></li>
+</ul>
+<h3>Dependency updates:</h3>
+<ul>
+<li>Update workflow pins and migrate Node matrices to modern versions by <a href="https://github.com/v-HarithaVattikuti"><code>@​v-HarithaVattikuti</code></a> in <a href="https://redirect.github.com/actions/setup-node/pull/1583">actions/setup-node#1583</a></li>
+<li>Upgrade  <code>@​actions/cache</code> to 6.2.0 by <a href="https://github.com/philip-gai"><code>@​philip-gai</code></a> in <a href="https://redirect.github.com/actions/setup-node/pull/1584">actions/setup-node#1584</a></li>
+<li>Pin <code>@​types/node</code> to v24 by <a href="https://github.com/v-priyagupta108"><code>@​v-priyagupta108</code></a> in <a href="https://redirect.github.com/actions/setup-node/pull/1585">actions/setup-node#1585</a></li>
+<li>Override brace-expansion to 5.0.8 by <a href="https://github.com/v-priyagupta108"><code>@​v-priyagupta108</code></a> with <a href="https://github.com/Copilot"><code>@​Copilot</code></a> in <a href="https://redirect.github.com/actions/setup-node/pull/1599">actions/setup-node#1599</a></li>
+<li>Upgrade  actions/checkout from 7.0.0 to 7.0.1 by <a href="https://github.com/dependabot"><code>@​dependabot</code></a> in <a href="https://redirect.github.com/actions/setup-node/pull/1598">actions/setup-node#1598</a></li>
+<li>Upgrade  prettier from 3.8.4 to 3.9.6 by <a href="https://github.com/dependabot"><code>@​dependabot</code></a> in <a href="https://redirect.github.com/actions/setup-node/pull/1590">actions/setup-node#1590</a></li>
+<li>Upgrade  <code>@​vercel/ncc</code> from 0.44.0 to 0.45.0 by <a href="https://github.com/dependabot"><code>@​dependabot</code></a> in <a href="https://redirect.github.com/actions/setup-node/pull/1610">actions/setup-node#1610</a></li>
+<li>Upgrade  pnpm/action-setup from 6.0.9 to 6.0.10 by <a href="https://github.com/dependabot"><code>@​dependabot</code></a> in <a href="https://redirect.github.com/actions/setup-node/pull/1602">actions/setup-node#1602</a></li>
+<li>Upgrade  baseline-browser-mapping from 2.10.38 to 2.11.22 by <a href="https://github.com/dependabot"><code>@​dependabot</code></a> in <a href="https://redirect.github.com/actions/setup-node/pull/1629">actions/setup-node#1629</a></li>
+<li>Upgrade <code>@​types/semver</code> from 7.7.1 to 7.8.0 by <a href="https://github.com/dependabot"><code>@​dependabot</code></a> in <a href="https://redirect.github.com/actions/setup-node/pull/1616">actions/setup-node#1616</a></li>
+<li>Upgrade <code>@​typescript-eslint/parser</code> from 8.62.0 to 8.70.0 by <a href="https://github.com/dependabot"><code>@​dependabot</code></a> in <a href="https://redirect.github.com/actions/setup-node/pull/1615">actions/setup-node#1615</a></li>
+<li>Upgrade pnpm/action-setup from 6.0.10 to 6.1.0 by <a href="https://github.com/dependabot"><code>@​dependabot</code></a> in <a href="https://redirect.github.com/actions/setup-node/pull/1631">actions/setup-node#1631</a></li>
+<li>Upgrade jest-each from 30.4.1 to 30.5.2 by <a href="https://github.com/dependabot"><code>@​dependabot</code></a> in <a href="https://redirect.github.com/actions/setup-node/pull/1636">actions/setup-node#1636</a></li>
+<li>Upgrade eslint-plugin-n from 18.1.0 to 18.3.0 by <a href="https://github.com/dependabot"><code>@​dependabot</code></a> in <a href="https://redirect.github.com/actions/setup-node/pull/1638">actions/setup-node#1638</a></li>
+<li>Update dependencies and add license files by <a href="https://github.com/v-HarithaVattikuti"><code>@​v-HarithaVattikuti</code></a> in <a href="https://redirect.github.com/actions/setup-node/pull/1642">actions/setup-node#1642</a></li>
+<li>Upgrade eslint from 10.5.0 to 10.11.0 and package.json from 7.0.0 to 7.1.0 by <a href="https://github.com/dependabot"><code>@​dependabot</code></a> in <a href="https://redirect.github.com/actions/setup-node/pull/1635">actions/setup-node#1635</a></li>
+</ul>
+<h2>New Contributors</h2>
+<ul>
+<li><a href="https://github.com/v-jitenderpalsingh"><code>@​v-jitenderpalsingh</code></a> made their first contribution in <a href="https://redirect.github.com/actions/setup-node/pull/1580">actions/setup-node#1580</a></li>
+<li><a href="https://github.com/philip-gai"><code>@​philip-gai</code></a> made their first contribution in <a href="https://redirect.github.com/actions/setup-node/pull/1584">actions/setup-node#1584</a></li>
+<li><a href="https://github.com/gperdomor"><code>@​gperdomor</code></a> made their first contribution in <a href="https://redirect.github.com/actions/setup-node/pull/1421">actions/setup-node#1421</a></li>
+<li><a href="https://github.com/SubJunk"><code>@​SubJunk</code></a> made their first contribution in <a href="https://redirect.github.com/actions/setup-node/pull/1603">actions/setup-node#1603</a></li>
+</ul>
+<p><strong>Full Changelog</strong>: <a href="https://github.com/actions/setup-node/compare/v7.0.0...v7.1.0">https://github.com/actions/setup-node/compare/v7.0.0...v7.1.0</a></p>
+</blockquote>
+</details>
+<details>
+<summary>Commits</summary>
+<ul>
+<li><a href="https://github.com/actions/setup-node/commit/949feb2413d6458794dcd2491c4babbbce0c15c1"><code>949feb2</code></a> Bump eslint from 10.5.0 to 10.11.0 and package.json from 7.0.0 to 7.1.0 (<a href="https://redirect.github.com/actions/setup-node/issues/1635">#1635</a>)</li>
+<li><a href="https://github.com/actions/setup-node/commit/7207c4f1189c7ee83ddf20c7c68bd1af6fdd751c"><code>7207c4f</code></a> chore: update dependencies and add license files (<a href="https://redirect.github.com/actions/setup-node/issues/1642">#1642</a>)</li>
+<li><a href="https://github.com/actions/setup-node/commit/54337e0d02de9202d0948aaff36ad556375497b9"><code>54337e0</code></a> Bump eslint-plugin-n from 18.1.0 to 18.3.0 (<a href="https://redirect.github.com/actions/setup-node/issues/1638">#1638</a>)</li>
+<li><a href="https://github.com/actions/setup-node/commit/fb54fa8c14c63410cc752f0ae3b7b3ca6af161fc"><code>fb54fa8</code></a> Bump jest-each from 30.4.1 to 30.5.2 (<a href="https://redirect.github.com/actions/setup-node/issues/1636">#1636</a>)</li>
+<li><a href="https://github.com/actions/setup-node/commit/7f84f1d52d0c56afb45c62fee31a93b843cea4d6"><code>7f84f1d</code></a> Bump pnpm/action-setup from 6.0.10 to 6.1.0 (<a href="https://redirect.github.com/actions/setup-node/issues/1631">#1631</a>)</li>
+<li><a href="https://github.com/actions/setup-node/commit/0c54c7b07420dcba69a7d832587f55ebdf771c9e"><code>0c54c7b</code></a> Bump <code>@​typescript-eslint/parser</code> from 8.62.0 to 8.70.0 (<a href="https://redirect.github.com/actions/setup-node/issues/1615">#1615</a>)</li>
+<li><a href="https://github.com/actions/setup-node/commit/a8294190049a9c296f01b9a432aff41dd83d8284"><code>a829419</code></a> Bump <code>@​types/semver</code> from 7.7.1 to 7.8.0 (<a href="https://redirect.github.com/actions/setup-node/issues/1616">#1616</a>)</li>
+<li><a href="https://github.com/actions/setup-node/commit/680d1e489b82f1243de15bc7665c0007e3c9a860"><code>680d1e4</code></a> Support absolute paths in node-version-file (<a href="https://redirect.github.com/actions/setup-node/issues/1633">#1633</a>)</li>
+<li><a href="https://github.com/actions/setup-node/commit/db0fb3a98ed314b69026b6e8c9be26a7e2fe65a8"><code>db0fb3a</code></a> Bump baseline-browser-mapping from 2.10.38 to 2.11.22 (<a href="https://redirect.github.com/actions/setup-node/issues/1629">#1629</a>)</li>
+<li><a href="https://github.com/actions/setup-node/commit/94196ee1d15439c1b6651cd87ef14e88ec435966"><code>94196ee</code></a> Bump pnpm/action-setup from 6.0.9 to 6.0.10 (<a href="https://redirect.github.com/actions/setup-node/issues/1602">#1602</a>)</li>
+<li>Additional commits viewable in <a href="https://github.com/actions/setup-node/compare/820762786026740c76f36085b0efc47a31fe5020...949feb2413d6458794dcd2491c4babbbce0c15c1">compare view</a></li>
+</ul>
+</details>
+<br />
+
+### chore(deploy): bump base image digests (#435)
+
+The pinned base images in `deploy/app.def` have new digests upstream, usually Node or Debian security fixes. Opened by the base-images workflow; ci and container run on this branch by dispatch.
+
+### notarize.sh: retry stapler validate, which a dropped connection to Apple fails (#519)
+
+The v1.148 macOS build was notarized, its ticket stapled, and Gatekeeper accepted the app and the disk image, but `stapler validate` on the disk image lost its connection to Apple's ticket service ("The network connection was lost", error 68) and failed the sign job. Validation fetches the ticket again to compare, so it is now tried up to five times with a growing wait, as stapling already is.
+
+Verified: `bash -n`; the sign job uses the scripts at the release's tag, so the next release with a macOS build exercises it.
+
+### UI package 0.89; treemap labels readable on light cells (#520)
+
+@parallelworks/ui 0.84.2 to 0.89.0. The releases in between fix the chat input losing focus after the first message, password managers offering to fill the chat input, and a held call whose answer the server refuses losing its choices; status dots become the lit lamp; chart series take colors in a fixed order; lists gain filter toggles. The bundle is 6 KB larger in total.
+
+Every view was compared against v1.148 in light and dark on the same data: the differences are the status dots. The comparison also showed the corpus treemap's white labels hard to read on the palette's lighter cells; each label now takes dark or white text by contrast with its cell. The treemap reads the accent as the browser resolves it, since a theme may define it as `light-dark(...)` rather than a hex value.
+
+Verified: 420 server and 151 web tests (one new, for the label ink); the screenshot tour in both themes with no console errors.
+
 ## v1.148 (2026-10-21)
 
 ### Mac app: signed with the Developer ID certificate, notarized and stapled for releases (#516)
@@ -23,6 +142,10 @@ The macOS app was signed ad hoc, so a copy downloaded with a browser, or dragged
 Verified: with the real certificate and API key, the `sign` job (run from this branch through a temporary commit that let it run without a release, since dropped; no release was touched) signed the app, had the disk image notarized (Accepted, about 30 minutes for the team's first submission), stapled both, and `spctl` accepted the app and the image as `source=Notarized Developer ID`; `check_app.sh --run --launch` passed every check on the signed app ([run](https://github.com/parallelworks/activate-studio/actions/runs/39618053188)). This pull request's build and `hardened` jobs pass ([run](https://github.com/parallelworks/activate-studio/actions/runs/39623868324)); the runner probes are [here](https://github.com/parallelworks/activate-studio/actions/runs/39614182064) and [here](https://github.com/parallelworks/activate-studio/actions/runs/39616562185). 420 server and 150 web tests pass.
 
 Not covered: the app inside the disk image carries no ticket of its own, so a copy dragged out of the image is checked with Apple's servers on first open. The archive the installer and updates use has the stapled app.
+
+### Change log through v1.148 (#518)
+
+Regenerated with `node scripts/release-notes.mjs --changelog --next v1.148` before tagging v1.148.
 
 ## v1.147 (2026-10-21)
 
