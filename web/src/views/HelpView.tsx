@@ -1,9 +1,10 @@
 import { ReactElement, useEffect, useState } from 'react'
 import { Disclosure } from '@parallelworks/ui'
 import { Streamdown } from 'streamdown'
-import { api, IndexStatus, onWhatsNew } from '../api'
+import { api, IndexStatus, onAbout, onWhatsNew } from '../api'
 import { useAppConfig } from '../config'
 import { WhatsNew } from '../components/WhatsNew'
+import { About } from '../components/About'
 
 const SECTION_ICONS: Record<string, ReactElement> = {
   chat: <svg viewBox="0 0 16 16" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M14 10.5a1.5 1.5 0 0 1-1.5 1.5H5l-3 3V3.5A1.5 1.5 0 0 1 3.5 2h9A1.5 1.5 0 0 1 14 3.5v7z"/></svg>,
@@ -61,7 +62,13 @@ const WHATS_NEW = "What's new"
 const WHATS_NEW_SLUG = 'whats-new'
 const WHATS_NEW_ICON = <svg viewBox="0 0 16 16" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M8 1.8 9.6 6.4 14.2 8 9.6 9.6 8 14.2 6.4 9.6 1.8 8 6.4 6.4z"/></svg>
 
-const slugOf = (t: string) => (t === WHATS_NEW ? WHATS_NEW_SLUG : t.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, ''))
+/** Who builds the Studio, its version and license; not part of the guide's
+ *  markdown either. */
+const ABOUT = 'About'
+const ABOUT_SLUG = 'about'
+const ABOUT_ICON = <svg viewBox="0 0 16 16" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.4"><circle cx="8" cy="8" r="6.5"/><path d="M8 7.2v4"/><circle cx="8" cy="4.9" r="0.3" fill="currentColor"/></svg>
+
+const slugOf = (t: string) => (t === WHATS_NEW ? WHATS_NEW_SLUG : t === ABOUT ? ABOUT_SLUG : t.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, ''))
 
 export function HelpView() {
   const cfg = useAppConfig()
@@ -93,14 +100,16 @@ export function HelpView() {
     }
     window.addEventListener('ade-view-section', onSection)
     const off = onWhatsNew(() => setActive(WHATS_NEW))
-    return () => { window.removeEventListener('ade-view-section', onSection); off() }
+    const offAbout = onAbout(() => setActive(ABOUT))
+    return () => { window.removeEventListener('ade-view-section', onSection); off(); offAbout() }
   }, [])
 
   // Restore the section from the hash once the markdown has arrived. What's
-  // new does not wait for it.
+  // new and About do not wait for it.
   useEffect(() => {
     if (!pendingSlug) return
     if (pendingSlug === WHATS_NEW_SLUG) { setActive(WHATS_NEW); setPendingSlug(null); return }
+    if (pendingSlug === ABOUT_SLUG) { setActive(ABOUT); setPendingSlug(null); return }
     if (!sections.length) return
     if (pendingSlug === 'overview') { setActive('Overview'); setPendingSlug(null); return }
     const hit = sections.find(s => slugOf(s.title) === pendingSlug)
@@ -109,7 +118,7 @@ export function HelpView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [md, pendingSlug])
 
-  const current = (active === 'Overview' || active === WHATS_NEW ? null : sections.find(s => s.title === active)) ?? null
+  const current = (active === 'Overview' || active === WHATS_NEW || active === ABOUT ? null : sections.find(s => s.title === active)) ?? null
   // The rail's groups, in order. Only the group being read starts open, so
   // the guide opens as a few headings, not a wall of pages.
   const groups = sections.reduce<{ name: string | null; items: Section[] }[]>((acc, sec) => {
@@ -147,10 +156,13 @@ export function HelpView() {
               </Disclosure>
             )
           })}
+          <button className={`help-nav-about${active === ABOUT ? ' active' : ''}`} onClick={() => goSection(ABOUT)}>{ABOUT_ICON} <span>{ABOUT}</span></button>
         </nav>
         <article className="help-content">
           {active === WHATS_NEW ? (
             <WhatsNew />
+          ) : active === ABOUT ? (
+            <About />
           ) : current === null ? (
             <>
               <h1>{cfg.appName}</h1>

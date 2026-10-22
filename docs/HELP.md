@@ -1,12 +1,15 @@
-{appName} is a workspace over a knowledge base: a team's documents, images, spreadsheets, and code, indexed so people and the assistant can find and use them. Ask the assistant a question and it answers from those files, with a link to each source.
+### Quick start
 
-### Start here
+Files collect in many folders, drives, and systems. Finding one means remembering where it was saved, and answering a question from a set of documents means opening them one at a time.
 
-1. **Ask a question.** Open **Chat** and ask in plain language, for example "what did we decide about the cooling design?". The answer links the files it used; click one to open it.
-2. **Find a file.** Type a word or phrase in **Search**. Click a result to open the file at the match.
-3. **Browse.** **Library** shows the folders. Click a file to view it: documents, images, PDFs, office files, and 3D models open in place.
-4. **Add material.** Drag files or folders onto the Library tree. They are searchable within seconds.
-5. **Run a workflow** (on the ACTIVATE platform). Open **Workflows**, choose a tile, fill in the form, and press **Run**.
+{appName} indexes your folders with GUFI. **Search** finds files by name, by the words inside them (PDFs, office documents, and text in images included), and by meaning. **Query** answers questions about the files themselves, such as the largest, the newest, or the totals by type. **Chat** answers questions from the files and links each source it used.
+
+Files stay where they are. {appName} keeps its index in a folder of its own, reads each file in place, and follows the file system's permissions. Indexing, search, and query run where {appName} runs and need no network connection; Chat sends text only to the model endpoint you configure, which can be on the same computer. The same index works for a folder on a laptop and for a cluster's file systems.
+
+1. **Choose a folder.** On a computer of its own, setup asks which folder to index; Settings, Libraries changes it later.
+2. **Search.** Type a word or phrase in **Search**, then click a result to open the file at the match.
+3. **Ask.** Open **Chat** and ask in plain language. The answer links the files it used.
+4. **Query.** Open **Query** and pick a canned query, or build one, to list files by size, age, type, or label.
 
 # Basics
 
@@ -59,7 +62,7 @@ Labels organize files without moving them. Label a folder and everything in it c
 
 ## Query
 
-Structured questions about the files themselves (largest, newest, totals by type) answered in milliseconds. Start from a canned query, use the builder, or write read-only SQL, and save the ones you reuse. **GUFI commands** under the form shows what ran, ready to copy.
+Structured questions about the files themselves (largest, newest, totals by type) answered in milliseconds. Start from a canned query, use the builder, or write read-only SQL, and save the ones you reuse. **GUFI commands** under the form shows what ran, ready to copy, and the code button beside a saved query shows the SQL it runs and its command.
 
 ## Stats
 
@@ -101,6 +104,7 @@ The address bar follows what you are looking at, so back and forward work and a 
 - The navigation groups its pages under **Knowledge** and **Run**; click a group's name to fold it away, and {appName} remembers.
 - **Install app**, in the navigation, installs {appName} as a desktop app in its own window. If a classification banner is shown, the chevron in Chrome's title bar moves the banner into the title bar. The loading screen draws the banner as it was last shown, so the title bar has no gap while the app starts.
 - The bottom of the navigation shows who you are signed in as, whether the models are reachable, and the state of the index; click any of them for details.
+- **About**, at the foot of Help's list and in the version's panel at the bottom of the navigation, shows the version and license. ACTIVATE Studio is built and maintained by Parallel Works.
 - The **status panel** at the right shows what is running (agent tasks, standing agents, workflow runs, open sessions), your libraries and the last index sync, the model in use, and connections that need attention. The panel button at the top right of each page opens and closes it, and {appName} remembers. Click a card's header for its detail; click a run or session to open it beside the chat or on the Workflows page. While a run or session is open beside the chat, the panel steps aside. Phones do not show it.
 
 ## Setup and the sidebar

@@ -23,6 +23,7 @@ import { SideViewHost } from '../components/RunPane'
 import { PanelToggle } from '../components/StatusPanel'
 import { modelLabel, share } from '../statusShare'
 import { ToolApproval } from '../components/ToolApproval'
+import { EmptyChatBrand } from '../components/EmptyChatBrand'
 
 const MODEL_STORAGE_KEY = 'studio.chat.lastModel'
 
@@ -477,23 +478,12 @@ export function ChatView() {
                 onActiveDeleted={() => setActiveId(null)}
                 onClose={() => setShowManage(false)}
               />
-            ) : showAttachments ? <AttachmentManager /> : activeId ? <ChatThread conversationId={activeId} /> : (() => {
-              // The same dark-aware pick the sidebar makes, so the two never
-              // disagree about which mark to show, and read live so a theme
-              // toggle swaps it. The icon rides as a pseudo-element on the
-              // package's greeting heading, so it sits directly above "what's
-              // on your mind" wherever the package centers it.
-              const dark = effectiveTheme === 'dark'
-              const icon = dark ? (cfg.iconUrlDark ?? cfg.iconUrl) : cfg.iconUrl
-              return (
-                <div
-                  className={`empty-with-brand${icon ? ' has-icon' : ''}`}
-                  style={icon ? { ['--empty-brand-icon' as string]: `url("${icon}")` } : undefined}
-                >
-                  <ChatEmptyState />
-                </div>
-              )
-            })()}
+            ) : showAttachments ? <AttachmentManager /> : activeId ? <ChatThread conversationId={activeId} /> : (
+              // Read live, so a theme toggle swaps a light and a dark icon.
+              <EmptyChatBrand cfg={cfg} dark={effectiveTheme === 'dark'}>
+                <ChatEmptyState />
+              </EmptyChatBrand>
+            )}
           </ChatLayout>
           {activeId && !showAttachments && !showManage && <ConversationScrubber />}
           <SteerBridge />
