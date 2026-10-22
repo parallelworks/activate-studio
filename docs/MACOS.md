@@ -111,8 +111,13 @@ names this app's archive and a newer version than the one running, and
 matches the download's size and SHA-256. The new copy then takes the app's place, the old one is
 kept beside it as `.ACTIVATE Studio.app.previous` (hidden in Finder), and
 the server restarts on the new version while the window reloads; the
-reloaded page lists, once, what the new version changed. If the update
-changed the window itself, Settings asks for the app to be reopened.
+reloaded page lists, once, what the new version changed. The window is
+part of the old copy until the app opens again, so if the update changed
+it (the title bar, the Dock icon), the app reopens: on its own after an
+update the person started with **Update now** or **Roll back**, and from
+**Reopen now** in the notice or in Settings after one installed
+automatically. The updater also has LaunchServices look at the new copy
+(`lsregister -f`), so Finder and the Dock show its icon.
 Settings can also turn the checks off, follow prereleases, or install
 updates automatically, which happens once an update is verified
 and the Studio has had no chat answer or indexing running for ten
