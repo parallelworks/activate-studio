@@ -165,7 +165,7 @@ function enqueue(kind: JobKind, dir: string, label: string, run: (ctx: JobCtx) =
   }
   jobs.set(rec.pub.id, rec)
   // Old jobs are only interesting while a page is still polling them.
-  for (const [id, r] of jobs) if (jobs.size > 30 && r !== current && !queue.includes(r)) jobs.delete(id)
+  for (const [id, r] of jobs) if (jobs.size > 30 && r.pub.state !== 'running' && r.pub.state !== 'queued') jobs.delete(id)
   queue.push(rec)
   setImmediate(pump)
   return rec
@@ -586,8 +586,8 @@ async function afterChange(rel: string): Promise<void> {
   // put them back. Lazy import avoids a module cycle.
   const { reapplyTagOverlay } = await import('./tags.js')
   await reapplyTagOverlay(rel).catch(() => {})
-  const { invalidateProbe } = await import('./libraries.js')
-  invalidateProbe(GUFI_INDEX)
+  const { forgetProbe } = await import('./libraries.js')
+  forgetProbe(GUFI_INDEX)
 }
 
 // ---- one folder, and the files at the top ----
@@ -677,15 +677,33 @@ export function reindexForDir(rel: string): Promise<{ ms: number }> {
  * An index job over one directory, returned at once so an upload can answer
  * as soon as the files are on disk; its progress is read through
  * GET /api/index/job/:id. `work` replaces the default pass, for callers with
- * a job of their own.
+ * a job of their own (a library built from another folder, libraryBuild.ts):
+ * that runs at once, beside the main folder's queue, with its own lock and
+ * its own `progress`, and is not part of the main folder's status.
  */
 export function startIndexJob(rel: string, work?: (job: IndexJob) => Promise<{ ms: number }>): IndexJob {
-  if (work) return enqueue('folder', rel, `Indexing ${rel || 'the folder'}`, async ctx => { await work(ctx.job) }).pub
+  if (work) return startOwnJob(rel, work)
   const cleaned = rel.replace(/^\/+|\/+$/g, '')
   const top = cleaned.split('/')[0]
   return top
     ? enqueue('folder', top, `Updating ${top}`, ctx => indexSubtree(ctx, cleanRel(top)), `folder:${top}`).pub
     : enqueue('folder', '', 'Updating the files at the top', indexRootFiles, 'folder:').pub
+}
+
+function startOwnJob(rel: string, work: (job: IndexJob) => Promise<{ ms: number }>): IndexJob {
+  const job: IndexJob = {
+    id: ++jobSeq, kind: 'folder', dir: rel, label: `Indexing ${rel}`, state: 'running', startedAt: new Date().toISOString(),
+    runningAt: new Date().toISOString(), finishedAt: null, ms: null, error: null, threads: threadsFor(), phases: [],
+    searchableAt: null, warnings: [], warningCount: 0,
+  }
+  const done = new Promise<{ ms: number }>(() => {})
+  jobs.set(job.id, { pub: job, run: async () => {}, abort: new AbortController(), done, resolve: () => {}, reject: () => {}, key: null })
+  const t0 = Date.now()
+  void work(job).then(({ ms }) => { job.ms = ms; job.state = 'done' }, e => {
+    job.error = String((e as Error)?.message ?? e).slice(0, 400)
+    job.state = 'error'
+  }).finally(() => { job.finishedAt = new Date().toISOString(); job.ms ??= Date.now() - t0 })
+  return job
 }
 
 // ---- the whole folder ----

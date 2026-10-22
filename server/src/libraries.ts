@@ -364,11 +364,6 @@ export function settingsLibrary(l: Library): PublicLibrary & { indexRoot: string
   }
 }
 
-/** Forget what a tree was found to support, after it was rebuilt or deleted. */
-export function invalidateProbe(indexRoot: string): void {
-  probeCache.delete(path.resolve(indexRoot))
-}
-
 /** Tests replace the stored set and the probe memory between cases. */
 export function resetLibrariesForTests(): void {
   added = null
