@@ -1,13 +1,21 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <!-- The Studio's icon for platforms that crop it to their own shape:
-       the color fills the square and the mark sits inside the central
+       the gradient fills the square and the mark sits inside the central
        circle every crop keeps. Rendered to web/public/icon-maskable-512.png
        and apple-touch-icon.png (180 pixels). -->
-  <rect width="512" height="512" fill="#2997d3"/>
-  <g fill="#fff" transform="translate(256 256) scale(0.92) translate(-284 -219)">
-    <rect x="140" y="162" width="150" height="44" rx="22"/>
-    <rect x="140" y="234" width="232" height="44" rx="22"/>
-    <rect x="140" y="306" width="190" height="44" rx="22"/>
-    <path d="M366 88 Q373 143 428 150 Q373 157 366 212 Q359 157 304 150 Q359 143 366 88 Z"/>
+
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1d4f91"/><stop offset="1" stop-color="#0b1d36"/></linearGradient>
+    <radialGradient id="hl" cx="0.25" cy="0.12" r="0.9"><stop offset="0" stop-color="#fff" stop-opacity="0.18"/><stop offset="0.55" stop-color="#fff" stop-opacity="0"/></radialGradient>
+    <linearGradient id="sp" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#9be7ff"/><stop offset="1" stop-color="#4cc3ff"/></linearGradient>
+    <filter id="sh" x="-10%" y="-10%" width="120%" height="125%"><feDropShadow dx="0" dy="12" stdDeviation="14" flood-color="#000" flood-opacity="0.32"/></filter>
+  </defs>
+  <rect width="512" height="512" fill="url(#bg)"/><rect width="512" height="512" fill="url(#hl)"/>
+  <g transform="translate(256 256) scale(0.92) translate(-285 -219)">
+  <g fill="#ffffff">
+    <rect x="140" y="164" width="150" height="40" rx="20"/>
+    <rect x="140" y="236" width="232" height="40" rx="20"/>
+    <rect x="140" y="308" width="190" height="40" rx="20" opacity="0.92"/>
   </g>
+  <path d="M366 86 Q372 143 430 150 Q372 157 366 214 Q360 157 302 150 Q360 143 366 86 Z" fill="url(#sp)"/></g>
 </svg>
