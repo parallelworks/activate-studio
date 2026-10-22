@@ -4,8 +4,9 @@ A library is an index the Studio has mounted. The knowledge base the server
 builds and owns is the first library; it is the only one the Studio writes
 to, and every request that does not name a library means it, so nothing
 that existed before libraries has changed. Any other library is read only:
-a site's index built by root on a schedule, or an index someone handed
-over on a drive.
+a site's index built by root on a schedule, an index someone handed over
+on a drive, or an index the Studio builds itself of a folder on this
+computer or on a remote system.
 
 ## What a library carries
 
@@ -25,9 +26,9 @@ readable. Nothing is asked of GUFI and nothing is written into the index.
 
 Browsing, filename and metadata search, statistics, and opening files
 when a source root is set. Full-text and semantic search need the
-Studio's enrichment tables, which today are written only into the primary
-index; on any other library those modes are skipped and search still
-answers from names and metadata. Upload, move, rename, delete, labels on
+Studio's enrichment tables, which are written into the primary index and
+into the indexes the Studio builds (below); on any other library those
+modes are skipped and search still answers from names and metadata. Upload, move, rename, delete, labels on
 files, and re-indexing are refused with a 403 that says the library is
 read only, and the interface does not offer them.
 
@@ -67,21 +68,32 @@ search by meaning, and its actions:
 | Kind | Where it comes from | Actions |
 |---|---|---|
 | Main folder, read and write | `KB_ROOT` | **Change folder** and **Rebuild index**, on a single-user install |
+| Index of a folder on this machine, kept in step with it | `POST /api/libraries/build` | **Rebuild**, **Remove** |
 | GUFI index on this machine | `POST /api/libraries`, or `STUDIO_LIBRARIES` (set by the deployment) | **Remove**, except for one the deployment set |
+| Index built on a remote system over ssh or pw ssh | `POST /api/user-libraries/ssh/build`, `POST /api/user-libraries/pw/build` | **Rebuild**, **Remove** |
 | GUFI index over ssh | `POST /api/user-libraries/ssh` | **Check**, **Remove** |
-| GUFI index on a cluster over pw ssh | `POST /api/user-libraries/pw` | **Check**, **Remove** |
-| Index built on a cluster | `POST /api/user-libraries` | **Refresh**, **Remove** |
+| GUFI index on a remote system over pw ssh | `POST /api/user-libraries/pw` | **Check**, **Remove** |
+| Index built on a cluster by the platform's workflow | `POST /api/user-libraries` | **Refresh**, **Remove** |
 
-**Add a library** lists only the kinds this install supports: an index on
-this machine always; one over ssh where sign-in is off; an existing one on
-a cluster over pw ssh where the pw CLI is on this machine and there is a
-platform key to act with (the listing's `pw`); one built on a cluster only
-where the Studio reaches a platform (the client config's `platform`). With
-one kind it opens that form directly. A standalone install without a
-signed-in pw CLI therefore shows no cluster, workflow, or scheduler
-fields. The ssh form, which also connects an index on a cluster
-(`transport="pw"`), and the form for an index on this machine are the
-ones the setup wizard uses (`SshLibraryForm`, `LocalLibraryForm`).
+**Add a library** (`web/src/components/AddLibrary.tsx`) asks two things.
+*Where:* this computer, or a remote system. *How:* build an index of a
+folder, or connect a GUFI index that already exists. A remote system is
+reached with **Connect with** ssh or pw ssh, and on a Studio the platform
+hosts the platform's index workflow is a third way to build. Only what
+this install supports is offered: building here and anything over ssh
+where sign-in is off (`canBuild` in `GET /api/libraries`, `ssh` in
+`GET /api/user-libraries`); pw ssh where the pw CLI is on this machine
+with a key to act with (`pw`); the workflow where the platform hosts the
+Studio, which is sign-in on or `PW_PLATFORM_HOST` set (`workflow`), and
+the client config's `platform`. A choice with one option is not shown. A
+Studio on someone's own computer therefore never shows workflow or
+scheduler fields: it builds on a remote system over the session instead.
+A build shows its phase and the folders indexed so far under its row
+while it runs, and the library joins the Library switcher when it is
+ready. The ssh form (`SshLibraryForm`, `transport="pw"` for pw ssh, `mode`
+connect or build) and the form for this machine (`LocalLibraryForm`,
+`mode` connect or build) are the ones the setup wizard uses; their
+default mode is connect.
 
 For an index on this machine the form takes the index directory (the one
 with `db.db`), the source directory if the files are on this machine, a
@@ -106,6 +118,128 @@ for it, and elsewhere the page says to set `KB_ROOT` and restart.
 **Rebuild index** (or **Build index**) runs `POST /api/setup/index` and
 shows the job's progress under the row. Where users sign in, neither
 action is offered and the state comes from the probe.
+
+## Libraries built from a folder on this computer
+
+On a Studio with sign-in off, **Add a library**, "This computer", "Build
+an index of a folder" indexes a folder here as the main folder is
+indexed (`server/src/libraryBuild.ts`): `gufi_dir2index -x`, then text
+extraction (`preextract` and `indexer/enrich.py`), then embeddings
+(`indexer/embed.py`) where the model is installed, so full-text and
+semantic search work there. It takes a source folder, an index folder
+(optional), a label, and an identifier.
+
+**Check** (`POST /api/libraries/build/check`) reports four steps: GUFI
+is in `GUFI_BIN`; the source folder is readable, or does not exist yet
+and can be made; the index folder is new, empty, or holds an index the
+Studio built of this folder (`.studio-index.json`), is outside the
+source folder, and is not inside the main folder's index; and what text
+extraction covers. A source folder that is the main folder, holds the
+Studio's own data folder, or is inside it, is refused. Without an index
+folder the index goes in the Studio's own, `INDEX_BASE/libraries/<id>/index`.
+**Build the index** (`POST /api/libraries/build`) asks before making a
+folder that does not exist, and the server makes one only when the
+request carries `create: true`; without it the answer is 409 naming the
+folders. The build runs as an index job (`GET /api/index/job/<id>`); its
+phase and folder count also show on the library's row
+(`GET /api/libraries`, `build.progress`). The tree is written beside the
+old one (`<index folder>/.build`) and swapped in when complete, so search
+keeps answering during a rebuild. The index folder holds the tree,
+`<index folder>/<name of the source folder>`, and `.studio-index.json`;
+the extracted text goes in `INDEX_BASE/libraries/<id>/extract`, so a
+file of this library never shows the main folder's text for the same
+path.
+
+The library is kept in step with its folder on the sweep interval
+(Settings, General; 0 pauses it): folders whose content changed since the
+last pass are indexed again, the topmost of each changed branch, with
+extraction and embeddings for those alone, and the index of a folder that
+is gone is removed. Files added to the folder by any means are picked up
+this way. A build that a restart interrupted runs again at startup.
+**Rebuild** (`POST /api/libraries/<id>/rebuild`) indexes the whole folder
+again. **Remove** forgets the library and removes
+`INDEX_BASE/libraries/<id>`; an index folder that was chosen for it stays
+where it is, and the source folder is never touched.
+
+These libraries are read only in the Studio for now: no uploads, new
+folders, renames, deletes, or labels from the Studio. Writing to them
+would need the write routes, the extraction and preview caches, the label
+overlay, and the incremental indexer, which all assume the main folder
+today, to take a library's own folder, index, and caches; that is one
+change across the indexing code, left for when it can be made in one
+piece.
+
+## Indexes built on a remote system
+
+**Add a library**, "A remote system", "Build an index of a folder" builds
+the index on the remote system itself, over the same session the Studio
+uses to read it: plain ssh (`user@host` or `user@host:port`, with your
+keys, agent, and `~/.ssh/config`, on a Studio with sign-in off) or
+`pw ssh` to one of the systems the signed-in pw CLI reaches, picked from
+a list (`GET /api/agent-sites`). No workflow and no scheduler are
+involved (`server/src/remoteBuild.ts`).
+
+**Test connection** (`POST /api/user-libraries/ssh/build/test`, or
+`.../pw/build/test`) reports five steps: the session reaches the system;
+GUFI is installed there, both `gufi_dir2index` and `gufi_query`, looked
+for where the connection test looks for `gufi_query`, and if not, a plain
+message saying so and where to get it; the source folder is readable, or
+does not exist yet and can be made; the index folder is new, empty, or
+holds an index the Studio built of this folder, outside the source
+folder; and whether text extraction can run there, which needs Python
+3.10 or later with SQLite's full-text module and only adds a note when it
+cannot. Without an index folder the index goes in
+`~/.activate-studio/indexes/<name>-<hash>` there, as the index workflow
+does, and that folder needs no confirmation. Paths are absolute or start
+with `~`, which is resolved there. **Build the index**
+(`POST /api/user-libraries/ssh/build` or `.../pw/build`, with
+`{label?, destination | cluster, sourceRoot, indexRoot?, gufiBin?, create?}`)
+asks before making a folder the user named, and the server tests again
+first.
+
+The build runs on the remote system as a process of its own, detached
+from the session (`setsid` where there is one, `nohup` always), so it
+goes on when the session or the Studio stops. Its state is a folder there,
+`~/.activate-studio/builds/<build id>`: the script, its phase, process id,
+exit status, error, and logs. It runs `gufi_dir2index -x` into
+`<index folder>/.build` and swaps the tree in when complete; where Python
+is there, the Studio copies `enrich.py` into the state folder and runs
+it, keeping extracted text in `<index folder>/.extract`, and where a GUFI
+with the embedding extension and `~/.activate-studio/models/minilm384.gguf`
+are there too, `embed.py`. It then counts the index and writes
+`.studio-index.json`, with `fullText` true only when that system's
+`gufi_query` can read the text tables. The Studio follows the build as a
+background job (`GET /api/jobs/<id>`), reading its state every few
+seconds over the session and keeping the phase and folder count on the
+library; after a restart the next listing follows it again, and an
+update does not wait for it. When it ends the library is ready with its
+counts, or says why not; a rebuild that fails leaves the index it had.
+**Rebuild** runs the build again beside the current index. **Remove**
+forgets the library and leaves the index there. Search on these
+libraries covers names, metadata, and, with extraction, full text;
+results by meaning are not read from a remote index yet.
+
+## The Details card
+
+On the Library page the status panel's first card, **Details**, describes
+what was last clicked in the tree, a folder or a file, or with nothing
+clicked the library itself (`web/src/components/LibraryDetails.tsx`).
+It reads `GET /api/kb/details?path=<path>&library=<id>`
+(`server/src/libraryDetails.ts`), answered from the library's index
+wherever it is, on this computer or over the session:
+
+| Field | From |
+|---|---|
+| `size`, `files`, `dirs` (below the folder), `mtime` (the latest change below it) | one aggregate `gufi_query` over the folder's subtree (`treeStats` in `gufi.ts`) |
+| `types`, the extensions taking the most space | the same query |
+| `labels.within`, labels applied below the folder, with counts | a second aggregate over the xattrs tables; for the main folder, the label maps search uses, overlay included |
+| `labels.own`, `labels.inherited` | for the main folder, the labels search uses; elsewhere the entry's own xattr |
+| a file's `size`, `mtime`, and labels | its entry in its folder's index, or the file itself before it is indexed |
+| `library`, `index` | the library and, on a single-user Studio or for the viewer's own remote libraries, where its index is |
+
+Answers are kept 20 seconds on the server and 30 in the page, and are
+dropped when the library changes. With All libraries the path starts with
+the library's id, and nothing is asked until something is clicked.
 
 ## Indexes on a cluster
 
@@ -139,11 +273,14 @@ run rebuilds instead. An index takes about 50 KB per directory.
 
 ## Indexes built on a cluster
 
-Where the Studio reaches a platform, a user adds a directory on one of
-their clusters under Settings, Libraries, **Add a library**, "An index
-built on a cluster": a cluster from their active clusters, a directory
+On a Studio the platform hosts, a user can also build through the
+platform's index workflow: Settings, Libraries, **Add a library**, "A
+remote system", "Build an index of a folder", **Connect with** "Platform
+workflow": a cluster from their active clusters, a directory
 (`$WORKDIR` by default), a label, and optionally a Slurm partition and
-account. The Studio then:
+account. A Studio on someone's own computer does not offer this; it
+builds on the remote system over ssh or pw ssh instead (above). The
+Studio then:
 
 - registers the index workflow in the user's account the first time, named
   `studio-gufi-index-<hash>` after the workflow's content, so a changed
@@ -180,7 +317,9 @@ live in `INDEX_BASE/users/<owner hash>/libraries.json`. Routes:
 
 A library can also be an existing GUFI index on another machine that the
 Studio's host reaches with plain ssh: Settings, Libraries, **Add a
-library**, "A GUFI index on another machine over ssh", or the setup wizard. The Studio runs
+library**, "A remote system", "Connect an existing index", **Connect
+with** ssh, or the setup wizard. The host is written `user@host`, an
+alias from `~/.ssh/config`, or either with `:port`. The Studio runs
 `ssh -T -o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=30 [-p port] <destination>`
 with the keys, agent, and `~/.ssh/config` of the account it runs as, and
 keeps one session per destination, as it does per cluster. Nothing is
@@ -228,10 +367,10 @@ carry `transport` (`pw` or `ssh`), `destination`, and `port`.
 
 An existing GUFI index on one of the user's running clusters is connected
 the same way, with `pw ssh <cluster>` in place of ssh: Settings,
-Libraries, **Add a library**, "A GUFI index on a cluster, through
-ACTIVATE", or the setup wizard's Other libraries step. The cluster is
-picked from the user's running clusters (`GET /api/agent-sites`, the list
-the cluster form uses). `pw ssh` acts with the owner's platform key; with
+Libraries, **Add a library**, "A remote system", "Connect an existing
+index", **Connect with** pw ssh, or the setup wizard's Other libraries
+step. The system is picked from the list the signed-in pw CLI gives
+(`GET /api/agent-sites`, the list the cluster form uses). `pw ssh` acts with the owner's platform key; with
 sign-in off that is the deployment credential, which on a computer of its
 own is the pw CLI's sign-in there. Nothing is built or written on the cluster: the
 library is ready once its connection test passes, and it is read only.
@@ -252,9 +391,12 @@ cluster name starts with a letter or digit, so `pw ssh` cannot read it as
 an option, and the paths follow the ssh rules (absolute, or under `~`).
 Without a key to act with they answer 409. `GET /api/user-libraries`
 carries `pw`: whether the pw CLI is found (`PW_CLI`, or `pw` on the PATH)
-and there is a key. List entries carry `transport: "pw"` and
-`existing: true`, which a library over ssh carries too; a library built
-on a cluster has `existing: false`.
+and there is a key, and `workflow`: whether the index workflow is
+offered. List entries carry `transport: "pw"` and `existing: true`,
+which a connected library over ssh carries too; a library built on a
+cluster or on a remote system has `existing: false`, and one the Studio
+built over the session also `built: true`, `indexDir`, `progress` while
+it runs, and `fullText` and `vectors`.
 
 ## One library or all
 
@@ -350,9 +492,12 @@ and a reload land in the right library.
 
 ## Not yet
 
-Enrichment for read-only libraries, in sidecar databases beside the index
-on GUFI's external attach mechanism, so full-text and semantic search work
-there too. Search across libraries as one gufi_vt statement; it runs
+Writing to a library built from a folder on this computer (uploads, new
+folders, renames, deletes, labels), which needs the indexing code to take
+a library's own folder, index, and caches. Results by meaning from an
+index on a remote system. Enrichment for connected read-only libraries,
+in sidecar databases beside the index on GUFI's external attach
+mechanism, so full-text and semantic search work there too. Search across libraries as one gufi_vt statement; it runs
 library by library. Refreshing a
 user's library on a schedule, which needs the user's key at that time:
 personal keys live in memory and the browser's sealed cookie, so until

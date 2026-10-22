@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { libraryKinds } from '../src/components/LibrariesSection'
+import { addChoices } from '../src/components/AddLibrary'
 
 const caps = (fullText: boolean, vectors = false) => ({ index: true, fullText, vectors })
 
@@ -24,10 +24,22 @@ const LISTINGS: Record<string, { path: string; parent: string | null; writable: 
   '/home/u/Research': { path: '/home/u/Research', parent: '/home/u', writable: true, dirs: [] },
 }
 
+const BUILT_HERE = {
+  id: 'papers', label: 'Papers', primary: false, writable: false, pinned: false, source: true, caps: caps(true), indexRoot: '/home/u/indexes/papers/papers', sourceRoot: '/home/u/papers',
+  build: { indexDir: '/home/u/indexes/papers', managed: false, state: 'building', error: null, builtAt: null, files: null, dirs: null, progress: { phase: 'Indexing folders', done: 120, total: 0, current: '120 folders' } },
+}
+const BUILT_REMOTE = {
+  ...SSH, id: 'u-box-data', label: 'data on box', existing: false, built: true, indexDir: '/home/me/.activate-studio/indexes/data-1a2b3c4d', sourceDir: '/home/me/data',
+  indexRoot: null, state: 'building', directories: null, files: null, builtAt: null, progress: { phase: 'Extracting text', done: 0, total: 0, current: null },
+}
+
 interface Server {
   platform: boolean
   standalone: boolean
   ssh: boolean
+  pw?: boolean
+  workflow?: boolean
+  canBuild?: boolean
   libs: Record<string, unknown>[]
   user: Record<string, unknown>[]
   primary: string
@@ -55,7 +67,34 @@ function stubServer(s: Server) {
     if (path === '/api/config') {
       return reply({ appName: 'Studio', platform: s.platform, user: { id: 'u', username: 'u' }, libraries: s.libs.map(l => ({ ...l, indexRoot: undefined, sourceRoot: undefined })) })
     }
-    if (path === '/api/libraries' && method === 'GET') return reply({ libraries: s.libs.map(l => (l.primary ? { ...l, sourceRoot: s.primary, label: s.primary.split('/').pop() } : l)) })
+    if (path === '/api/libraries' && method === 'GET') return reply({ canBuild: !!s.canBuild, libraries: s.libs.map(l => (l.primary ? { ...l, sourceRoot: s.primary, label: s.primary.split('/').pop() } : l)) })
+    if (path === '/api/libraries/build/check') {
+      const b = body as { sourceRoot: string; indexRoot?: string }
+      return reply({ ok: true, create: [b.sourceRoot, ...(b.indexRoot ? [b.indexRoot] : [])], steps: [
+        { name: 'gufi', ok: true, detail: 'GUFI is in /opt/gufi/bin.' },
+        { name: 'source', ok: true, detail: `${b.sourceRoot} does not exist yet; it is created, empty, when the build starts.` },
+        { name: 'index', ok: true, detail: 'The index is written in the Studio\'s own data folder.' },
+        { name: 'extract', ok: true, detail: 'Text is extracted from documents and images.' },
+      ] })
+    }
+    if (path === '/api/libraries/build') {
+      s.libs = [...s.libs, BUILT_HERE]
+      return reply({ library: BUILT_HERE, job: { id: 9 } })
+    }
+    if (/^\/api\/libraries\/[^/]+\/rebuild$/.test(path)) return reply({ library: s.libs.find(l => path.includes(String(l.id))) })
+    if (path === '/api/user-libraries/ssh/build/test') {
+      return reply({ ok: true, create: ['/home/me/data'], indexDir: '/home/me/.activate-studio/indexes/data-1a2b3c4d', gufiBin: '/opt/gufi/bin', steps: [
+        { name: 'ssh', ok: true, detail: 'Connected to me@box on port 2222, a Linux host.' },
+        { name: 'gufi', ok: true, detail: 'gufi_query 0.7.0 in /opt/gufi/bin.' },
+        { name: 'source', ok: true, detail: '/home/me/data does not exist yet; it is created, empty, when the build starts.' },
+        { name: 'index', ok: true, detail: 'The index is written in /home/me/.activate-studio/indexes/data-1a2b3c4d.' },
+        { name: 'extract', ok: true, warn: true, detail: 'No Python 3.10 or later with SQLite\'s full-text module on me@box, so the index has names and metadata only.' },
+      ] })
+    }
+    if (path === '/api/user-libraries/ssh/build') {
+      s.user = [...s.user, BUILT_REMOTE]
+      return reply(BUILT_REMOTE)
+    }
     if (path === '/api/libraries' && method === 'POST') {
       const b = body as { id: string; label?: string; indexRoot: string }
       const lib = { id: b.id || 'lab', label: b.label ?? 'lab', primary: false, writable: false, pinned: false, source: false, caps: caps(false), indexRoot: b.indexRoot, sourceRoot: null }
@@ -66,7 +105,7 @@ function stubServer(s: Server) {
       s.libs = s.libs.filter(l => l.id !== decodeURIComponent(path.slice('/api/libraries/'.length)))
       return reply({ ok: true })
     }
-    if (path === '/api/user-libraries' && method === 'GET') return reply({ libraries: s.user, available: true, ssh: s.ssh })
+    if (path === '/api/user-libraries' && method === 'GET') return reply({ libraries: s.user, available: true, ssh: s.ssh, pw: !!s.pw, workflow: !!s.workflow })
     if (path === '/api/user-libraries' && method === 'POST') {
       const lib = { ...CLUSTER, id: 'u-c2', site: (body as { site: string }).site }
       s.user = [...s.user, lib]
@@ -121,15 +160,24 @@ async function renderPage(s: Server) {
 const rowOf = (name: string) => screen.getByText(name, { selector: '.lib-name' }).closest('tr') as HTMLElement
 const posted = (s: Server, url: string) => s.calls.filter(c => c.method === 'POST' && c.url.split('?')[0] === url)
 
-describe('the kinds of library an install offers', () => {
-  it('always an index on this machine, ssh where allowed, and a cluster only with a platform', () => {
-    expect(libraryKinds({ ssh: false, platform: false, userLibraries: true })).toEqual(['local'])
-    expect(libraryKinds({ ssh: true, platform: false, userLibraries: true })).toEqual(['local', 'ssh'])
-    expect(libraryKinds({ ssh: true, platform: true, userLibraries: true })).toEqual(['local', 'ssh', 'cluster'])
-    expect(libraryKinds({ ssh: false, platform: true, userLibraries: false })).toEqual(['local'])
-    // An existing index on a cluster, where the pw CLI is here and signed in.
-    expect(libraryKinds({ ssh: true, platform: true, userLibraries: true, pw: true })).toEqual(['local', 'ssh', 'pw', 'cluster'])
-    expect(libraryKinds({ ssh: true, platform: false, userLibraries: true, pw: true })).toEqual(['local', 'ssh', 'pw'])
+describe('what Add a library offers', () => {
+  it('this computer always; building here, a remote system, and the workflow only where offered', () => {
+    const none = addChoices({ buildHere: false, ssh: false, pw: false, workflow: false })
+    expect(none.where).toEqual(['here'])
+    expect(none.how('here')).toEqual(['connect'])
+    // A computer of its own: build here, and a remote system over ssh or pw ssh, never the workflow.
+    const mine = addChoices({ buildHere: true, ssh: true, pw: true, workflow: false })
+    expect(mine.where).toEqual(['here', 'remote'])
+    expect(mine.how('here')).toEqual(['build', 'connect'])
+    expect(mine.how('remote')).toEqual(['build', 'connect'])
+    expect(mine.via('remote', 'build')).toEqual(['ssh', 'pw'])
+    // A hosted Studio: no ssh, and the workflow builds on a cluster.
+    const hosted = addChoices({ buildHere: false, ssh: false, pw: true, workflow: true })
+    expect(hosted.how('here')).toEqual(['connect'])
+    expect(hosted.via('remote', 'build')).toEqual(['pw', 'workflow'])
+    expect(hosted.via('remote', 'connect')).toEqual(['pw'])
+    const workflowOnly = addChoices({ buildHere: false, ssh: false, pw: false, workflow: true })
+    expect(workflowOnly.how('remote')).toEqual(['build'])
   })
 })
 
@@ -185,19 +233,21 @@ describe('Settings, Libraries', () => {
     expect(s.calls.some(c => c.method === 'DELETE' && c.url === '/api/libraries/site')).toBe(true)
   })
 
-  it('a standalone install offers only the kinds it supports, in plain words', async () => {
-    const s = server({ platform: false, ssh: true })
+  it('a standalone install chooses where and how, and connects an index over ssh', async () => {
+    const s = server({ platform: true, ssh: true, canBuild: true })
     await renderPage(s)
     await waitFor(() => rowOf('Notes'))
     fireEvent.click(screen.getByRole('button', { name: 'Add a library' }))
-    expect(await screen.findByRole('button', { name: /A GUFI index on this machine/ })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /A GUFI index on another machine over ssh/ })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /An index built on a cluster/ })).toBeNull()
-    expect(document.body.textContent).not.toMatch(/platform|Slurm|\$WORKDIR|cluster/i)
-    expect(s.calls.some(c => c.url.startsWith('/api/agent-sites'))).toBe(false)
+    expect(await screen.findByRole('button', { name: 'This computer' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Build an index of a folder' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Source folder')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'A remote system' }))
+    // No workflow or scheduler on a computer of its own, even with a platform.
+    expect(screen.queryByRole('button', { name: 'Platform workflow' })).toBeNull()
+    expect(document.body.textContent).not.toMatch(/Slurm|\$WORKDIR/)
 
-    // Over ssh: the shared form, and the new library joins the list.
-    fireEvent.click(screen.getByRole('button', { name: /A GUFI index on another machine over ssh/ }))
+    // Connect an existing index over ssh: the shared form, and the new library joins the list.
+    fireEvent.click(screen.getByRole('button', { name: 'Connect an existing index' }))
     fireEvent.change(await screen.findByLabelText('Host'), { target: { value: 'me@lab' } })
     fireEvent.change(screen.getByLabelText('Index directory'), { target: { value: '/data/index' } })
     fireEvent.click(screen.getByRole('button', { name: 'Test connection' }))
@@ -209,13 +259,70 @@ describe('Settings, Libraries', () => {
     expect(screen.queryByLabelText('Host')).toBeNull()
   })
 
-  it('with a platform, offers an index built on a cluster and starts the build', async () => {
-    const s = server({ platform: true, ssh: false })
+  it('builds a folder on this computer: check, confirm the folders it makes, then progress in the list', async () => {
+    const s = server({ ssh: false, canBuild: true })
     await renderPage(s)
     await waitFor(() => rowOf('Notes'))
     fireEvent.click(screen.getByRole('button', { name: 'Add a library' }))
-    expect(screen.queryByRole('button', { name: /over ssh/ })).toBeNull()
-    fireEvent.click(await screen.findByRole('button', { name: /An index built on a cluster/ }))
+    // Only this computer here: no Where choice, and build comes first.
+    expect(screen.queryByRole('button', { name: 'A remote system' })).toBeNull()
+    fireEvent.change(await screen.findByLabelText('Source folder'), { target: { value: '~/papers' } })
+    expect(screen.getByRole('button', { name: 'Build the index' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Check' }))
+    expect(await screen.findByText('~/papers does not exist yet; it is created, empty, when the build starts.')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Build the index' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Create this folder?' })
+    expect(within(dialog).getByText('~/papers')).toBeInTheDocument()
+    expect(posted(s, '/api/libraries/build')).toHaveLength(0)
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Create it and build' }))
+    await waitFor(() => expect(posted(s, '/api/libraries/build')).toHaveLength(1))
+    expect(posted(s, '/api/libraries/build')[0].body).toEqual({ sourceRoot: '~/papers', create: true })
+    const row = await waitFor(() => rowOf('Papers'))
+    expect(within(row).getByText('Index of a folder on this machine, kept in step with it, read only')).toBeInTheDocument()
+    expect(within(row).getByText('Building')).toBeInTheDocument()
+    expect(within(row).getByRole('button', { name: 'Rebuild' })).toBeDisabled()
+    expect(screen.getByRole('progressbar', { name: /Indexing folders/ })).toBeInTheDocument()
+    expect(screen.getByText('120 folders')).toBeInTheDocument()
+  })
+
+  it('builds on a remote system over ssh, with the plain note when text extraction cannot run there', async () => {
+    const s = server({ ssh: true, canBuild: true })
+    await renderPage(s)
+    await waitFor(() => rowOf('Notes'))
+    fireEvent.click(screen.getByRole('button', { name: 'Add a library' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'A remote system' }))
+    fireEvent.change(await screen.findByLabelText('Host'), { target: { value: 'me@box:2222' } })
+    fireEvent.change(screen.getByLabelText('Source folder'), { target: { value: '~/data' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Test connection' }))
+    expect(await screen.findByText(/no Python 3\.10 or later/i)).toBeInTheDocument()
+    expect(posted(s, '/api/user-libraries/ssh/build/test')[0].body).toEqual({ destination: 'me@box:2222', sourceRoot: '~/data' })
+    fireEvent.click(screen.getByRole('button', { name: 'Build the index' }))
+    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Create it and build' }))
+    const row = await waitFor(() => rowOf('data on box'))
+    expect(posted(s, '/api/user-libraries/ssh/build')[0].body).toEqual({ destination: 'me@box:2222', sourceRoot: '~/data', gufiBin: '/opt/gufi/bin', create: true })
+    expect(within(row).getByText('Index built on me@box over ssh, read only')).toBeInTheDocument()
+    expect(within(row).getByTitle('me@box:/home/me/data')).toBeInTheDocument()
+    expect(screen.getByRole('progressbar', { name: /Extracting text/ })).toBeInTheDocument()
+  })
+
+  it('a built library rebuilds from its row', async () => {
+    const s = server({ libs: [PRIMARY, { ...BUILT_HERE, build: { ...BUILT_HERE.build, state: 'ready', files: 40, dirs: 6, builtAt: '2026-10-20T00:00:00Z', progress: null } }] })
+    await renderPage(s)
+    const row = await waitFor(() => rowOf('Papers'))
+    expect(within(row).getByText('Ready')).toBeInTheDocument()
+    expect(within(row).getByText('6 folders, 40 files')).toBeInTheDocument()
+    fireEvent.click(within(row).getByRole('button', { name: 'Rebuild' }))
+    await waitFor(() => expect(posted(s, '/api/libraries/papers/rebuild')).toHaveLength(1))
+  })
+
+  it('a hosted Studio with a platform builds on a cluster through the workflow', async () => {
+    const s = server({ platform: true, ssh: false, workflow: true, standalone: false })
+    await renderPage(s)
+    await waitFor(() => rowOf('Notes'))
+    fireEvent.click(screen.getByRole('button', { name: 'Add a library' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'A remote system' }))
+    // Only the workflow reaches a remote system here, and it only builds.
+    expect(screen.queryByRole('button', { name: 'Connect an existing index' })).toBeNull()
     await waitFor(() => expect(screen.getByRole('button', { name: 'Build the index' })).toBeEnabled())
     expect(screen.getByLabelText('Directory')).toHaveValue('$WORKDIR')
     fireEvent.click(screen.getByRole('button', { name: 'Build the index' }))

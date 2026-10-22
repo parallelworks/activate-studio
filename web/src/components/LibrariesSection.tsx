@@ -1,39 +1,36 @@
 import { Fragment, type ReactNode, useEffect, useRef, useState } from 'react'
 import {
-  Button, Callout, DescriptionList, DescriptionListItem, IconButton, Loader, MethodButton, Modal, Popover, StatusBadge, Table, toast,
+  Button, Callout, DescriptionList, DescriptionListItem, IconButton, Loader, Modal, ProgressBar, StatusBadge, Table, toast,
 } from '@parallelworks/ui'
-import { AddIcon, CloseIcon, ClusterIcon, DesktopIcon, TerminalIcon } from '@parallelworks/ui/icons'
-import { api, type SettingsLibrary, type UserLibrary } from '../api'
+import { AddIcon, CloseIcon } from '@parallelworks/ui/icons'
+import { api, type BuildProgress, type SettingsLibrary, type UserLibrary } from '../api'
 import { reloadAppConfig, useAppConfig } from '../config'
-import { ClusterLibraryForm } from './ClusterLibraryForm'
-import { LocalLibraryForm } from './LocalLibraryForm'
+import { AddLibrary } from './AddLibrary'
 import { FolderPicker, IndexBuildProgress, errText, json, useIndexBuild, type SetupStatus } from './PrimaryFolder'
-import { SshLibraryForm } from './SshLibraryForm'
 
 /** A user library as listed, with how it is reached. */
 type UserLib = UserLibrary
-interface UserList { libraries: UserLib[]; available: boolean; ssh: boolean; pw: boolean }
+interface UserList { libraries: UserLib[]; available: boolean; ssh: boolean; pw: boolean; workflow: boolean }
 
-/** The kinds of library a user can add, as the Add a library menu offers them. */
+/** The kinds of library, in the words the setup wizard's Other libraries
+ *  step uses for the forms it shares with this page. */
 export type LibraryKind = 'local' | 'ssh' | 'pw' | 'cluster'
-export const KINDS: Record<LibraryKind, { label: string; description: string; icon: ReactNode }> = {
-  local: { label: 'A GUFI index on this machine', description: 'An index already built here. Read only.', icon: <DesktopIcon /> },
-  ssh: { label: 'A GUFI index on another machine over ssh', description: 'Read with your own ssh keys. Nothing is written there.', icon: <TerminalIcon /> },
-  pw: { label: 'A GUFI index on a cluster, through ACTIVATE', description: 'An index already on one of your running clusters, read over pw ssh. Nothing is written there.', icon: <ClusterIcon /> },
-  cluster: { label: 'An index built on a cluster', description: 'Built on one of your clusters with your own key. Only you see it.', icon: <ClusterIcon /> },
+export const KINDS: Record<LibraryKind, { label: string; description: string }> = {
+  local: { label: 'A GUFI index on this machine', description: 'An index already built here. Read only.' },
+  ssh: { label: 'A GUFI index on another machine over ssh', description: 'Read with your own ssh keys. Nothing is written there.' },
+  pw: { label: 'A GUFI index on a remote system, over pw ssh', description: 'An index already on one of the systems the pw CLI reaches, read over pw ssh. Nothing is written there.' },
+  cluster: { label: 'An index built on a cluster', description: 'Built on one of your clusters with your own key. Only you see it.' },
 }
 
-/** The kinds this install supports: an index on this machine always, one
- *  over ssh where the server allows it (sign-in off), an existing one on a
- *  cluster where the pw CLI is here with a key to act with, and one built
- *  on a cluster only where the Studio reaches a platform. */
-export function libraryKinds(opts: { ssh: boolean; platform: boolean; userLibraries: boolean; pw?: boolean }): LibraryKind[] {
-  return [
-    'local',
-    ...(opts.ssh ? ['ssh' as const] : []),
-    ...(opts.pw ? ['pw' as const] : []),
-    ...(opts.platform && opts.userLibraries ? ['cluster' as const] : []),
-  ]
+const isBuilding = (state: string | undefined) => state === 'building' || state === 'updating'
+
+/** A build's progress under its row: the phase, and folders so far. */
+function BuildLine({ progress }: { progress: BuildProgress | null | undefined }) {
+  return (
+    <div className="lib-build">
+      <ProgressBar label={progress?.phase ?? 'Starting'} value={null} detail={progress?.current ?? undefined} />
+    </div>
+  )
 }
 
 type Tone = 'success' | 'warning' | 'error' | 'info'
@@ -57,32 +54,42 @@ const counts = (dirs: number | null, files: number | null) =>
 
 /**
  * Settings > Libraries: one list of every library the Studio searches, and
- * one control to add another. The main folder is the one the Studio indexes
- * itself and writes to; on a single-user install it can be changed and its
- * index rebuilt here. Every other library is read only: a GUFI index on
- * this machine (/api/libraries), one on another machine over ssh, or one
- * built on a cluster through the platform (both /api/user-libraries).
+ * one control to add another (AddLibrary). The main folder is the one the
+ * Studio indexes itself and writes to; on a single-user install it can be
+ * changed and its index rebuilt here. Every other library is read only: an
+ * index the Studio builds of a folder on this machine, or a GUFI index
+ * already there (/api/libraries); an index it builds on a remote system
+ * over ssh or pw ssh, one already there, or one built on a cluster through
+ * the platform (/api/user-libraries). Builds show their progress under
+ * their row.
  */
 export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
   const cfg = useAppConfig()
   const [libs, setLibs] = useState<SettingsLibrary[] | null>(null)
   const [loadError, setLoadError] = useState('')
-  const [user, setUser] = useState<UserList>({ libraries: [], available: false, ssh: false, pw: false })
+  const [user, setUser] = useState<UserList>({ libraries: [], available: false, ssh: false, pw: false, workflow: false })
+  const [canBuild, setCanBuild] = useState(false)
   const [status, setStatus] = useState<SetupStatus | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
-  const [adding, setAdding] = useState<LibraryKind | null>(null)
-  const [menuOpen, setMenuOpen] = useState(false)
+  const [adding, setAdding] = useState(false)
   const [changing, setChanging] = useState(false)
   const [restarting, setRestarting] = useState(false)
   const ready = useRef(new Set<string>())
+  const readyHere = useRef<Set<string> | null>(null)
 
-  const loadLibs = () => api.libraries().then(r => { setLibs(r.libraries); setLoadError('') }).catch(e => setLoadError(errText(e)))
-  // The list reloads every 15s during a cluster build; one toast stands for
-  // a failure that repeats rather than stacking another each time.
+  const loadLibs = () => api.libraries().then(r => {
+    setLibs(r.libraries); setCanBuild(!!r.canBuild); setLoadError('')
+    // A library built here that just finished joins the switcher.
+    const now = new Set(r.libraries.filter(l => l.build && !isBuilding(l.build.state) && l.caps.index).map(l => l.id))
+    if (readyHere.current && [...now].some(id => !readyHere.current!.has(id))) reloadAppConfig()
+    readyHere.current = now
+  }).catch(e => setLoadError(errText(e)))
+  // The list reloads while a build runs; one toast stands for a failure
+  // that repeats rather than stacking another each time.
   const loadUser = () => api.userLibraries().then(r => {
     const list = r as Partial<UserList>
     const libraries = list.libraries ?? []
-    setUser({ libraries, available: !!list.available, ssh: !!list.ssh, pw: !!list.pw })
+    setUser({ libraries, available: !!list.available, ssh: !!list.ssh, pw: !!list.pw, workflow: !!list.workflow })
     // A library that just finished building joins the switcher.
     const now = new Set(libraries.filter(l => l.state === 'ready').map(l => l.id))
     if ([...now].some(id => !ready.current.has(id)) && ready.current.size + now.size > 0) reloadAppConfig()
@@ -105,14 +112,22 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
     void loadStatus().then(s => { if (s?.job) void build.follow(s.job) })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-  // Follow running cluster builds.
-  const running = user.libraries.some(l => l.state === 'building' || l.state === 'updating')
+  // Follow running builds: every few seconds for those the Studio runs
+  // itself (here, or on a remote system over the session), every 15 s for
+  // the platform's workflow runs.
+  const followHere = (libs ?? []).some(l => isBuilding(l.build?.state))
+  const followRemote = user.libraries.some(l => l.built && isBuilding(l.state))
+  const followRuns = user.libraries.some(l => !l.built && isBuilding(l.state))
   useEffect(() => {
-    if (!running) return
-    const t = window.setInterval(() => { void loadUser() }, 15_000)
+    if (!followHere && !followRemote && !followRuns) return
+    const fast = followHere || followRemote
+    const t = window.setInterval(() => {
+      if (followHere) void loadLibs()
+      if (followRemote || followRuns) void loadUser()
+    }, fast ? Math.max(pollMs * 2, 2000) : 15_000)
     return () => window.clearInterval(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [running])
+  }, [followHere, followRemote, followRuns])
 
   const act = async (key: string, fn: () => Promise<unknown>, done?: string) => {
     setBusy(key)
@@ -120,7 +135,7 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
   }
   const added = (message: string) => {
     toast.success(message)
-    setAdding(null)
+    setAdding(false)
     void loadLibs()
     void loadUser()
     reloadAppConfig()
@@ -175,6 +190,36 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
       })
       continue
     }
+    if (l.build) {
+      const b = l.build
+      const notes: ReactNode[] = [counts(b.dirs, b.files), b.builtAt && `indexed ${when(b.builtAt)}`, b.error].filter(Boolean)
+      rows.push({
+        key: l.id, name: l.label, kind: 'Index of a folder on this machine, kept in step with it, read only',
+        where: (
+          <DescriptionList className="lib-paths">
+            <DescriptionListItem label="Folder" mono copy>{l.sourceRoot ? <PathText path={l.sourceRoot} /> : null}</DescriptionListItem>
+            <DescriptionListItem label="Index" mono copy><PathText path={l.indexRoot} /></DescriptionListItem>
+          </DescriptionList>
+        ),
+        state: b.state === 'building' ? { tone: 'info', text: 'Building', pulse: true, notes }
+          : b.state === 'updating' ? { tone: 'info', text: 'Updating', pulse: true, notes }
+          : b.state === 'failed' ? { tone: 'error', text: 'Failed', notes }
+          : b.error ? { tone: 'warning', text: 'Ready; the last pass failed', notes }
+          : { tone: 'success', text: 'Ready', notes },
+        fullText: l.caps.fullText, meaning: l.caps.vectors,
+        actions: (
+          <>
+            <Button variant="secondary" size="sm" loading={busy === l.id} disabled={busy !== null || isBuilding(b.state)}
+              onClick={() => void act(l.id, async () => { await api.rebuildLibrary(l.id); await loadLibs() }, `Rebuilding ${l.label}.`)}>Rebuild</Button>
+            <Button variant="secondary" size="sm" aria-label={`Remove ${l.label}`} disabled={busy !== null || isBuilding(b.state)}
+              onClick={() => void act(l.id, async () => { await api.removeLibrary(l.id); await loadLibs(); reloadAppConfig() },
+                b.managed ? `Removed ${l.label} and its index.` : `Removed ${l.label}. Its index stays in ${b.indexDir}.`)}>Remove</Button>
+          </>
+        ),
+        detail: isBuilding(b.state) ? <BuildLine progress={b.progress} /> : undefined,
+      })
+      continue
+    }
     rows.push({
       key: l.id, name: l.label, kind: `GUFI index on this machine, read only${l.pinned ? ', set by the deployment' : ''}`,
       where: (
@@ -202,6 +247,35 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
         onClick={() => void act(l.id, async () => { await api.removeUserLibrary(l.id); await loadUser(); reloadAppConfig() })}>Remove</Button>
     )
     const contents = counts(l.directories, l.files)
+    if (l.built) {
+      const host = l.transport === 'ssh' ? (l.destination ?? l.site) : l.site
+      const notes: ReactNode[] = [contents, l.builtAt && `indexed ${when(l.builtAt)}`, l.error].filter(Boolean)
+      rows.push({
+        key: l.id, name: l.label, kind: `Index built on ${host} over ${l.transport === 'ssh' ? 'ssh' : 'pw ssh'}, read only`,
+        where: (
+          <DescriptionList className="lib-paths">
+            <DescriptionListItem label="Folder" mono copy><PathText path={`${host}:${l.sourceRoot ?? l.sourceDir}`} /></DescriptionListItem>
+            <DescriptionListItem label="Index" mono copy><PathText path={`${host}:${l.indexRoot ?? l.indexDir ?? ''}`} /></DescriptionListItem>
+            {l.port ? <DescriptionListItem label="Port" mono>{String(l.port)}</DescriptionListItem> : null}
+          </DescriptionList>
+        ),
+        state: l.state === 'building' ? { tone: 'info', text: 'Building', pulse: true, notes }
+          : l.state === 'updating' ? { tone: 'info', text: 'Updating', pulse: true, notes }
+          : l.state === 'failed' ? { tone: 'error', text: 'Failed', notes }
+          : l.error ? { tone: 'warning', text: 'Ready; the last build failed', notes }
+          : { tone: 'success', text: 'Ready', notes },
+        fullText: !!l.fullText, meaning: !!l.vectors,
+        actions: (
+          <>
+            <Button variant="secondary" size="sm" loading={busy === l.id} disabled={busy !== null || isBuilding(l.state)}
+              onClick={() => void act(l.id, async () => { await api.refreshUserLibrary(l.id); await loadUser() }, `Rebuilding the index on ${host}.`)}>Rebuild</Button>
+            {remove}
+          </>
+        ),
+        detail: isBuilding(l.state) ? <BuildLine progress={l.progress} /> : undefined,
+      })
+      continue
+    }
     if (l.transport === 'ssh') {
       const dest = l.destination ?? l.site
       const notes: ReactNode[] = [contents, l.builtAt && `index written ${when(l.builtAt)}`, l.error].filter(Boolean)
@@ -282,19 +356,16 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
     })
   }
 
-  const kinds = libraryKinds({ ssh: user.ssh, platform: !!cfg.platform, userLibraries: user.available, pw: user.pw })
   const primary = libs?.find(l => l.primary)
   const primaryPath = standalone?.primary?.path ?? primary?.sourceRoot ?? null
-  const addButton = (
-    <Button variant="primary" icon={<AddIcon />} onClick={kinds.length === 1 ? () => setAdding(kinds[0]) : undefined}>Add a library</Button>
-  )
+  const options = { buildHere: canBuild, ssh: user.ssh, pw: user.pw, workflow: user.workflow && !!cfg.platform && user.available }
 
   return (
     <>
       <h1>Libraries</h1>
       <p className="muted view-sub">
         Every library searched here. The main folder is the only one written to; the others are indexes read where
-        they are.
+        they are, built here or connected as they are.
       </p>
       {!libs ? <Loader inline size={16} label="Loading…" /> : (
         <Table density="compact" className="libraries-table" wrapperClassName="rag-calls-wrap libraries-wrap">
@@ -325,30 +396,23 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
         </Table>
       )}
 
-      <div className="query-actions lib-add">
-        {kinds.length > 1 ? (
-          <Popover trigger={addButton} open={menuOpen} onOpenChange={setMenuOpen} align="start" initialFocus="popup"
-            aria-label="Kinds of library" className="lib-kinds">
-            {kinds.map(k => (
-              <MethodButton key={k} icon={KINDS[k].icon} label={KINDS[k].label} description={KINDS[k].description}
-                onClick={() => { setAdding(k); setMenuOpen(false) }} />
-            ))}
-          </Popover>
-        ) : addButton}
-      </div>
+      {!adding && (
+        <div className="query-actions lib-add">
+          <Button variant="primary" icon={<AddIcon />} onClick={() => setAdding(true)}>Add a library</Button>
+        </div>
+      )}
 
       {adding && (
-        <section className="lib-add-form" aria-label={KINDS[adding].label}>
+        <section className="lib-add-form" aria-label="Add a library">
           <div className="lib-add-head">
-            <div className="tool-group">{KINDS[adding].label}</div>
-            <IconButton icon={<CloseIcon />} label="Close" size="sm" onClick={() => setAdding(null)} />
+            <div className="tool-group">Add a library</div>
+            <IconButton icon={<CloseIcon />} label="Close" size="sm" onClick={() => setAdding(false)} />
           </div>
-          {adding === 'local' && <LocalLibraryForm browse={!!standalone} onAdded={lib => added(`Added ${lib.label}. It is in the Library switcher.`)} />}
-          {adding === 'ssh' && <SshLibraryForm onAdded={lib => added(`Added ${lib.label}. It is in the Library switcher.`)} />}
-          {adding === 'pw' && <SshLibraryForm transport="pw" onAdded={lib => added(`Added ${lib.label}. It is in the Library switcher.`)} />}
-          {adding === 'cluster' && (
-            <ClusterLibraryForm onStarted={() => added('Building the index on the cluster. It appears in the Library switcher when it is ready.')} />
-          )}
+          <AddLibrary options={options} browse={!!standalone}
+            onAdded={(lib, started) => added(started
+              ? `Building ${lib.label}. Its progress shows in the list; it is searchable once the build is done.`
+              : `Added ${lib.label}. It is in the Library switcher.`)}
+            onStarted={() => added('Building the index on the cluster. It appears in the Library switcher when it is ready.')} />
         </section>
       )}
 

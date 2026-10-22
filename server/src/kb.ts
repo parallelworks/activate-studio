@@ -113,7 +113,9 @@ export interface FileContent {
   format?: 'markdown' | 'text'
 }
 
-export async function readFileContent(rel: string, root: string = KB_ROOT): Promise<FileContent> {
+/** `cacheRoot` is where the library keeps its extracted text, the main
+ *  folder's cache unless a library the Studio built gives its own. */
+export async function readFileContent(rel: string, root: string = KB_ROOT, cacheRoot: string = EXTRACT_CACHE): Promise<FileContent> {
   const abs = resolveKb(rel, root)
   const st = await fs.stat(abs)
   if (st.isDirectory()) throw new KbError(400, 'path is a directory')
@@ -132,7 +134,7 @@ export async function readFileContent(rel: string, root: string = KB_ROOT): Prom
   if (kind === 'extracted' || kind === 'image') {
     // Extracted text for documents; OCR plus vision caption for images.
     try {
-      const raw = await fs.readFile(extractPath(rel), 'utf8')
+      const raw = await fs.readFile(path.join(cacheRoot, rel + '.txt'), 'utf8')
       if (raw.trim()) {
         // The provenance line is metadata, not content: it decides how the
         // text is rendered and is then dropped from what the reader sees.

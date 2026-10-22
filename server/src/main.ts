@@ -38,6 +38,8 @@ import { accessRoutes } from './accessRoutes.js'
 import { sessionRoutes } from './sessions.js'
 import { agentSiteRoutes } from './agentSites.js'
 import { userLibraryRoutes } from './userLibraries.js'
+import { libraryBuildRoutes, startLibrarySync } from './libraryBuild.js'
+import { libraryDetailsRoutes } from './libraryDetails.js'
 import { workflowReadmeRoutes } from './workflowReadme.js'
 import { setUpdateBusyCheck, startUpdates, updateRoutes } from './updates.js'
 
@@ -93,6 +95,8 @@ await app.register(sessionRoutes)
 await app.register(runPaneRoutes)
 await app.register(agentSiteRoutes)
 await app.register(userLibraryRoutes)
+await app.register(libraryBuildRoutes)
+await app.register(libraryDetailsRoutes)
 await app.register(workflowReadmeRoutes)
 await app.register(ragProxyRoutes)
 await app.register(ragEndpointRoutes)
@@ -120,6 +124,7 @@ await app.register(fleetRoutes)
 await seedKnowledgeBase(msg => app.log.info(msg))
 for (const l of await probeAll()) app.log.info(`library ${l.id}: index=${l.caps.index} fullText=${l.caps.fullText} vectors=${l.caps.vectors} files=${l.sourceRoot ? 'yes' : 'no'}${l.writable ? ' writable' : ''}`)
 startSweepTimer(msg => app.log.info(msg))
+startLibrarySync(msg => app.log.info(msg))
 // Deploy-time full reindexes rebuild the index without overlay labels
 // (xattr-less filesystems); restore them once the server is up.
 void import('./extensions.js').then(m => m.labelPersonas())

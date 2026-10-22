@@ -4,7 +4,9 @@
  * The knowledge base the server builds and owns is the first library,
  * writable, and everything that exists today keeps working against it
  * without naming it. Any other library is read only: a root-built site
- * index, or an index someone handed over, reached through a local tree.
+ * index, an index someone handed over, reached through a local tree, or an
+ * index the Studio builds of a folder here and keeps in step with it
+ * (`build`, libraryBuild.ts).
  * Each carries what it supports, which the Studio learns by probing the
  * tree once when the library is added; nothing is asked of GUFI and
  * nothing is written into the index.
@@ -35,6 +37,10 @@ export interface Library {
   indexRoot: string
   /** Where the files are, when they are reachable from this host. */
   sourceRoot: string | null
+  /** Extracted text of the files, for a library the Studio built. */
+  cacheRoot?: string | null
+  /** For a library the Studio built of a folder on this computer. */
+  build?: LocalBuild | null
   /** Only the primary may add files, index, and enrich. */
   writable: boolean
   primary: boolean
@@ -50,6 +56,25 @@ export interface LibraryDef {
   label?: string
   indexRoot: string
   sourceRoot?: string | null
+  /** Set for an index the Studio built of a folder on this computer
+   *  (libraryBuild.ts), which it keeps in sync with the folder. */
+  build?: LocalBuild
+}
+
+/** An index the Studio builds of a folder on this computer. */
+export interface LocalBuild {
+  /** The folder the index is written in: the tree is <indexDir>/<the
+   *  source folder's name>, beside .studio-index.json. */
+  indexDir: string
+  /** The extracted text of its documents. */
+  cacheRoot: string
+  /** The index folder is the Studio's own, removed with the library. */
+  managed: boolean
+  state: 'building' | 'ready' | 'updating' | 'failed'
+  error: string | null
+  builtAt: string | null
+  files: number | null
+  dirs: number | null
 }
 
 /** The shape the client sees. Paths stay on the server. */
@@ -64,6 +89,10 @@ export interface PublicLibrary {
   /** The cluster a user's own library lives on. */
   site?: string | null
 }
+
+/** Where a library the Studio built keeps its own files: the extraction
+ *  cache, and the index unless another folder was chosen for it. */
+export const builtLibraryDir = (id: string) => path.join(INDEX_BASE, 'libraries', id)
 
 export const PRIMARY_ID = 'kb'
 const FILE = path.join(INDEX_BASE, 'libraries.json')
@@ -176,6 +205,8 @@ function fromDef(d: LibraryDef, pinned: boolean): Library {
     label: d.label || path.basename(abs) || d.id,
     indexRoot: abs,
     sourceRoot: d.sourceRoot ? path.resolve(d.sourceRoot) : null,
+    cacheRoot: d.build?.cacheRoot ?? null,
+    build: d.build ?? null,
     writable: false,
     primary: false,
     pinned,
@@ -192,7 +223,7 @@ function userLibrariesOf(viewerId: string | null | undefined): Library[] {
   if (!owner) return []
   return loadUserLibraries(owner).filter(d => d.indexRoot && d.gufiBin).map(d => ({
     id: d.id, label: d.label, indexRoot: remoteRootOf(owner, d.id), sourceRoot: null,
-    writable: false, primary: false, pinned: false, caps: { index: true, fullText: false, vectors: false }, site: d.site,
+    writable: false, primary: false, pinned: false, caps: { index: true, fullText: !!d.fullText, vectors: !!d.vectors }, site: d.site,
   }))
 }
 
@@ -247,11 +278,17 @@ export function libraryIdFor(label: string | undefined, indexRoot: string): stri
   return id
 }
 
+/** An id a new library may take, or the reason it may not. */
+export function checkNewId(id: string): void {
+  if (!ID_RE.test(id)) throw new KbError(400, 'a library needs an id (letters, digits, dash, underscore) and an index root')
+  if (id === 'all') throw new KbError(409, 'all is reserved: it names every library at once')
+  if (id === PRIMARY_ID || listLibraries().some(l => l.id === id)) throw new KbError(409, `a library named ${id} already exists`)
+}
+
 export async function addLibrary(def: LibraryDef): Promise<Library> {
   if (!def.id && typeof def.indexRoot === 'string' && def.indexRoot) def = { ...def, id: libraryIdFor(def.label, def.indexRoot) }
   if (!isDef(def)) throw new KbError(400, 'a library needs an id (letters, digits, dash, underscore) and an index root')
-  if (def.id === 'all') throw new KbError(409, 'all is reserved: it names every library at once')
-  if (def.id === PRIMARY_ID || listLibraries().some(l => l.id === def.id)) throw new KbError(409, `a library named ${def.id} already exists`)
+  checkNewId(def.id)
   const abs = path.resolve(def.indexRoot)
   if (!fs.existsSync(abs)) throw new KbError(400, `no such directory: ${def.indexRoot}`)
   if (def.sourceRoot && !fs.existsSync(path.resolve(def.sourceRoot))) throw new KbError(400, `no such directory: ${def.sourceRoot}`)
@@ -261,22 +298,70 @@ export async function addLibrary(def: LibraryDef): Promise<Library> {
   return getLibrary(def.id)
 }
 
+/** A library the Studio is to build of a folder on this computer: listed
+ *  at once, searchable once its index is there (libraryBuild.ts). */
+export function addBuiltLibrary(def: LibraryDef & { build: LocalBuild }): Library {
+  checkNewId(def.id)
+  saveAdded([...loadAdded(), {
+    id: def.id, label: def.label?.slice(0, 60) || undefined, indexRoot: path.resolve(def.indexRoot),
+    sourceRoot: def.sourceRoot ? path.resolve(def.sourceRoot) : null, build: def.build,
+  }])
+  return getLibrary(def.id)
+}
+
+/** The stored definition of a library added in Settings. */
+export function addedDef(id: string): LibraryDef | null {
+  return loadAdded().find(d => d.id === id) ?? null
+}
+
+/** Records a built library's state. */
+export function updateBuild(id: string, patch: Partial<LocalBuild>): LibraryDef | null {
+  const defs = loadAdded()
+  const d = defs.find(x => x.id === id)
+  if (!d?.build) return null
+  d.build = { ...d.build, ...patch }
+  saveAdded(defs)
+  return d
+}
+
+/** Forget what a tree was found to support, after it was built again. */
+export function forgetProbe(indexRoot: string): void { probeCache.delete(path.resolve(indexRoot)) }
+
 export function removeLibrary(id: string): void {
   const lib = getLibrary(id)
   if (lib.primary || lib.pinned) throw new KbError(403, `${lib.label} is set by the deployment and cannot be removed here`)
+  const def = addedDef(id)
+  if (def?.build && (def.build.state === 'building' || def.build.state === 'updating')) {
+    throw new KbError(409, `${lib.label} is being indexed; remove it once the build has finished`)
+  }
   saveAdded(loadAdded().filter(d => d.id !== id))
+  // A built library's extraction cache is the Studio's, and so is its index
+  // when it is in the Studio's own folder; an index in a folder that was
+  // chosen for it stays where it is.
+  if (def?.build) fs.rmSync(builtLibraryDir(id), { recursive: true, force: true })
 }
 
 export function publicLibrary(l: Library): PublicLibrary {
   return { id: l.id, label: l.label, primary: l.primary, writable: l.writable, pinned: l.pinned, source: !!l.sourceRoot || !!l.site, caps: l.caps, site: l.site ?? null }
 }
 
+/** What Settings shows of a build: its state and, while it runs, how far it
+ *  has got (from libraryBuild.ts, which keeps that in memory). */
+export interface PublicBuild extends Omit<LocalBuild, 'cacheRoot'> { progress: BuildProgress | null }
+export interface BuildProgress { phase: string; done: number; total: number; current: string | null }
+let progressOf: (id: string) => BuildProgress | null = () => null
+export function setBuildProgressSource(fn: (id: string) => BuildProgress | null): void { progressOf = fn }
+
 /** A library as Settings shows it: with its index and source roots, so
  *  whoever manages the libraries can see what each one points at. Only the
  *  Settings routes send this; the client config every viewer loads keeps
  *  to publicLibrary, without paths. */
-export function settingsLibrary(l: Library): PublicLibrary & { indexRoot: string; sourceRoot: string | null } {
-  return { ...publicLibrary(l), indexRoot: l.indexRoot, sourceRoot: l.sourceRoot }
+export function settingsLibrary(l: Library): PublicLibrary & { indexRoot: string; sourceRoot: string | null; build?: PublicBuild } {
+  const b = l.build
+  return {
+    ...publicLibrary(l), indexRoot: l.indexRoot, sourceRoot: l.sourceRoot,
+    ...(b ? { build: { indexDir: b.indexDir, managed: b.managed, state: b.state, error: b.error, builtAt: b.builtAt, files: b.files, dirs: b.dirs, progress: progressOf(l.id) } } : {}),
+  }
 }
 
 /** Tests replace the stored set and the probe memory between cases. */

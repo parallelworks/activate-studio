@@ -15,6 +15,7 @@ import { UploadMenu } from '../components/UploadMenu'
 import { TagMenu } from '../components/TagMenu'
 import { sectionAllowed, useAppConfig } from '../config'
 import { collectDropped, uploadBatched, UploadProgress } from '../upload'
+import { selectLibraryEntry } from '../components/LibraryDetails'
 
 const RAIL_MIN = 220
 const RAIL_MAX = 520
@@ -419,6 +420,10 @@ export function LibraryView({ display, onDisplay }: {
 
   const selectedFile = display?.kind === 'file' ? display.target : null
   const [dropOver, setDropOver] = useState(false)
+  // The status panel describes what was last chosen in the tree: the file
+  // open in the viewer, or a folder clicked since.
+  useEffect(() => { if (selectedFile) selectLibraryEntry({ path: selectedFile, isDir: false }) }, [selectedFile])
+  useEffect(() => () => selectLibraryEntry(null), [])
 
   return (
     <div
@@ -492,7 +497,7 @@ export function LibraryView({ display, onDisplay }: {
               <Explorer
                 refreshTick={refreshKey}
                 onOpen={p => { anchor.current = p; onDisplay({ kind: 'file', target: p }) }}
-                onDirFocus={dir => { anchor.current = dir; setTargetDir(dir || uploadsDir) }}
+                onDirFocus={dir => { anchor.current = dir; setTargetDir(dir || uploadsDir); selectLibraryEntry({ path: dir, isDir: true }) }}
                 selected={selectedFile}
                 rootLabel={cfg.kbLabel}
                 multiSelected={multiSel}

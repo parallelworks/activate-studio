@@ -8,6 +8,7 @@ import { modelLabel, syncIndex, useShared, type AiHealth, type KbStats } from '.
 import { AI_LABEL } from './StatusFooter'
 import { openInSideView } from './RunPane'
 import { openSessionWindow, type SessionInfo } from './SessionView'
+import { DetailsBody, detailsSummary, useEntryDetails } from './LibraryDetails'
 
 /**
  * The status panel at the right of every page: what is running, the
@@ -268,7 +269,7 @@ function useStatusData(agents: boolean, runs: boolean): [StatusData, (p: Partial
 // ---- the parts ----
 
 const CARDS_KEY = 'ade-status-cards'
-const CARD_DEFAULTS: Record<string, boolean> = { activity: true }
+const CARD_DEFAULTS: Record<string, boolean> = { activity: true, details: true }
 function readCards(): Record<string, boolean> {
   try { return JSON.parse(localStorage.getItem(CARDS_KEY) ?? '{}') as Record<string, boolean> } catch { return {} }
 }
@@ -364,6 +365,8 @@ function PanelCards({ view, cfg }: { view: string; cfg: AppConfig }) {
   const runsOn = !!cfg.platform && shown('workflows')
   const [data, patch] = useStatusData(agentsOn, runsOn)
   const shared = useShared()
+  // On the Library page, what is selected in its tree (LibraryDetails.tsx).
+  const details = useEntryDetails(view === 'library')
   const [syncing, setSyncing] = useState(false)
   const sync = async () => {
     setSyncing(true)
@@ -390,6 +393,11 @@ function PanelCards({ view, cfg }: { view: string; cfg: AppConfig }) {
 
   return (
     <div className="status-panel-cards">
+      {view === 'library' && (
+        <Card id="details" title="Details" summary={{ text: detailsSummary(details), tone: null }}>
+          <DetailsBody state={details} />
+        </Card>
+      )}
       {hasActivity && (
         <Card id="activity" title="Activity" summary={activitySummary({ tasks, fleet, runs: myRuns, sessions })}>
           {(tasks.length > 0 || fleet.length > 0) && (

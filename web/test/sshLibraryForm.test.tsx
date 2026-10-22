@@ -122,3 +122,64 @@ describe('connecting an index on a cluster over pw ssh', () => {
     expect(calls.find(c => c.url === '/api/user-libraries/pw')?.body).toEqual({ cluster: 'cluster-a', indexRoot: '~/idx', gufiBin: '/home/me/.activate-studio/gufi/abc/bin' })
   })
 })
+
+describe('building an index on a remote system', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('over pw ssh: picks a system, checks GUFI and the folders, asks before making them, then builds', async () => {
+    const calls: { url: string; body: unknown }[] = []
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      const body = init?.body ? JSON.parse(String(init.body)) : undefined
+      calls.push({ url, body })
+      const reply = (b: unknown) => new Response(JSON.stringify(b), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      if (url === '/api/agent-sites') return reply({ sites: [{ name: 'cluster-a', kind: 'cluster' }, { name: 'cluster-b', kind: 'cluster' }] })
+      if (url === '/api/user-libraries/pw/build/test') {
+        return reply({ ok: true, gufiBin: '/home/me/gufi/bin', indexDir: '/home/me/indexes/runs', create: ['/home/me/indexes/runs'], steps: [
+          { name: 'ssh', ok: true, detail: 'Connected to cluster-b, a Linux host.' },
+          { name: 'gufi', ok: true, detail: 'gufi_query 0.7.0 in /home/me/gufi/bin.' },
+          { name: 'source', ok: true, detail: '/home/me/runs is readable.' },
+          { name: 'index', ok: true, detail: '/home/me/indexes/runs does not exist yet; it is created when the build starts.' },
+          { name: 'extract', ok: true, detail: 'Text is extracted there with Python 3.11, so search covers what the files say.' },
+        ] })
+      }
+      return reply({ id: 'u-cluster-b-runs', label: 'runs' })
+    }))
+    const onAdded = vi.fn()
+    render(<SshLibraryForm transport="pw" mode="build" onAdded={onAdded} />)
+    expect(screen.queryByLabelText('Index directory')).toBeNull()
+    await waitFor(() => expect(button('Test connection')).toBeDisabled())
+    // The systems the pw CLI reaches, in a list.
+    fireEvent.click(screen.getByRole('combobox'))
+    const b = await screen.findByRole('option', { name: 'cluster-b' })
+    // A mouse click commits only when the press started on the option.
+    fireEvent.pointerDown(b)
+    fireEvent.click(b)
+    await waitFor(() => expect(screen.getByRole('combobox')).toHaveTextContent('cluster-b'))
+    fill('Source folder', '~/runs')
+    fill('Index folder', '~/indexes/runs')
+    fireEvent.click(button('Test connection'))
+    await screen.findByText('Connected to cluster-b, a Linux host.')
+    expect(screen.getByText('Text extraction')).toBeInTheDocument()
+    expect(calls.find(c => c.url === '/api/user-libraries/pw/build/test')?.body).toEqual({ cluster: 'cluster-b', sourceRoot: '~/runs', indexRoot: '~/indexes/runs' })
+    expect(screen.getByLabelText('Label')).toHaveAttribute('placeholder', 'runs')
+    await waitFor(() => expect(button('Build the index')).toBeEnabled())
+    fireEvent.click(button('Build the index'))
+    const dialog = await screen.findByRole('dialog', { name: 'Create this folder?' })
+    expect(dialog).toHaveTextContent('/home/me/indexes/runs')
+    expect(dialog).toHaveTextContent('on cluster-b')
+    fireEvent.click(screen.getByRole('button', { name: 'Create it and build' }))
+    await waitFor(() => expect(onAdded).toHaveBeenCalledWith({ id: 'u-cluster-b-runs', label: 'runs' }))
+    expect(calls.find(c => c.url === '/api/user-libraries/pw/build')?.body).toEqual({ cluster: 'cluster-b', sourceRoot: '~/runs', indexRoot: '~/indexes/runs', gufiBin: '/home/me/gufi/bin', create: true })
+  })
+
+  it('a host written with its port is sent as written; the server splits it', async () => {
+    const calls = stubFetch([{ ok: false, steps: [{ name: 'gufi', ok: false, detail: 'GUFI is not installed on me@box: gufi_dir2index and gufi_query were not found.' }] }])
+    render(<SshLibraryForm mode="build" />)
+    fill('Host', 'me@box:2222')
+    fill('Source folder', '/data')
+    fireEvent.click(button('Test connection'))
+    await screen.findByText(/^GUFI is not installed on me@box/)
+    expect(calls[0]).toEqual({ url: '/api/user-libraries/ssh/build/test', body: { destination: 'me@box:2222', sourceRoot: '/data' } })
+    expect(button('Build the index')).toBeDisabled()
+  })
+})
