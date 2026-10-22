@@ -22,3 +22,10 @@ test('a rejected deployment credential points at the operator and the personal f
   assert.match(m, /deployment credential/)
   assert.match(m, /Settings, Model access/)
 })
+
+test('with sign-in off, a rejected pw CLI sign-in names the context and how to renew it', () => {
+  const m = credentialRejectionMessage('cli', null, null, 'work')
+  assert.match(m, /pw CLI context work \(401\)/)
+  assert.match(m, /Sign in again under Settings, Model access/)
+  assert.doesNotMatch(m, /operator/)
+})

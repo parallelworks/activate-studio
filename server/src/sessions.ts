@@ -86,7 +86,7 @@ export function sessionOfRun(s: SessionRow, slug: string): boolean {
 
 /** The platform key a user's requests run with: their own, else the deployment's. */
 export function sessionKeyFor(userId: string | null | undefined): string | null {
-  const cred = userId ? resolveUserCred(userId) : null
+  const cred = resolveUserCred(userId)
   if (cred && !cred.baseUrl && cred.key) return cred.key
   return gatewayKey() || null
 }

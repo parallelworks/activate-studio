@@ -15,6 +15,7 @@ import { extractorReport, getIndexJob, incrementalIndexDir, indexRootDb, indexSt
 import { copyPaths, movePaths, reindexRoots, renamePath } from './move.js'
 import { suggestLabels } from './labeling.js'
 import { resolveUserCred } from './credentials.js'
+import { ensureFreshAccess } from './access.js'
 import { listModels } from './chat/gateway.js'
 import { getJob, startJob } from './jobs.js'
 import { buildInfo } from './version.js'
@@ -738,11 +739,12 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
    * the CLI's own login.
    */
   const platformApi = async (path: string, userId?: string): Promise<unknown | null> => {
+    await ensureFreshAccess(8_000)
     // The caller's own platform token first: a bring-your-own-key
     // deployment has no credential of its own, and its users do. A custom
     // provider key is never a platform token, so one carrying a baseUrl is
     // skipped rather than sent to the platform.
-    const cred = userId ? resolveUserCred(userId) : null
+    const cred = resolveUserCred(userId)
     const key = (cred && !cred.baseUrl ? cred.key : null) || gatewayKey()
     if (!key) return null
     let host: string
@@ -762,7 +764,7 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
   // platform API, so every workflow surface failed while Settings said
   // connected.
   const credentialRemedy = (userId: string | undefined, cliError: string): string => {
-    const cred = userId ? resolveUserCred(userId) : null
+    const cred = resolveUserCred(userId)
     const yours = cred
       ? (cred.baseUrl
         ? 'your stored credential is a provider key, which covers chat only and is never sent to the platform'

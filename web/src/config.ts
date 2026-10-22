@@ -143,10 +143,16 @@ export function useAppConfig(): AppConfig {
       .catch(() => setCfg({ ...DEFAULTS, loaded: true }))
     if (!cached) void load()
     // A change the server knows about (a library that finished building)
-    // asks every view for the configuration again.
+    // asks every view for the configuration again. So does a change of model
+    // access: whether the Workflows page shows depends on a platform
+    // credential, and without this it appeared only after a reload.
     const reload = () => { void load() }
     window.addEventListener('ade:config-changed', reload)
-    return () => window.removeEventListener('ade:config-changed', reload)
+    window.addEventListener('ade:model-access-changed', reload)
+    return () => {
+      window.removeEventListener('ade:config-changed', reload)
+      window.removeEventListener('ade:model-access-changed', reload)
+    }
   }, [])
   return cfg
 }

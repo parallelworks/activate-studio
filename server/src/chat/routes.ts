@@ -4,12 +4,13 @@ import path from 'node:path'
 import { suggestNext } from './suggest.js'
 import { getConversation, settleHeldPart, type StoredApprovalPart, type StoredPart } from '../conversations.js'
 import { listRuns } from '../runs.js'
-import { GATEWAY_BASE, MAX_TOOL_ITERATIONS, SIDECAR_ENDPOINT, INDEX_BASE } from '../config.js'
+import { GATEWAY_BASE, MAX_TOOL_ITERATIONS, PW_API_KEY, SIDECAR_ENDPOINT, INDEX_BASE } from '../config.js'
 import { gatewayKey, providerReason } from './gateway.js'
+import { credentialContextName, ensureFreshAccess } from '../access.js'
 import { answerHeld, changesAvailable, holdCall, newHold, viewerOf } from './approvals.js'
 import { approvalPart, asksFirst, insteadOf, isPlatformTool, platformTool, prepareArgs, viewerAccount, type CallArgs } from './platformTools.js'
 import { platformOrigin } from '../sessions.js'
-import { aiHealth, gatewayConfigured, isSidecarModel, listModels, listSidecarModels, modelFailure, probeProvider, probeableProvider, extractUnlockUrl, invalidateProviderProbes, sidecarConfigured, sidecarTarget, StreamedTurnError, streamTurn, WireMessage, WireToolCall, type TokenUsage } from './gateway.js'
+import { aiHealth, gatewayConfigured, GatewayUnreachable, isSidecarModel, listModels, listSidecarModels, modelFailure, probeProvider, probeableProvider, extractUnlockUrl, invalidateProviderProbes, sidecarConfigured, sidecarTarget, StreamedTurnError, streamTurn, WireMessage, WireToolCall, type TokenUsage } from './gateway.js'
 import { MORE_TOOLS, TOOL_CALLS, TOOL_GROUPS, TOOL_SPECS, activeToolSpecs, activeToolSpecsWithRemote, commandFor, customToolSpecs, executeTool, expandSlashCommand, initialToolGroups, readerAllows, readerToolOptions, selectToolSpecs, skillToolSpec, toolGroupOf, toolOptionLabel } from './tools.js'
 import { systemPrompt } from './context.js'
 import { attachmentContext } from '../attachments.js'
@@ -337,7 +338,12 @@ export function addUsage(a: TokenUsage, b: TokenUsage): TokenUsage {
   return { prompt_tokens: prompt, completion_tokens: completion, total_tokens: tot(a) + tot(b) }
 }
 
-export function credentialRejectionMessage(owner: 'personal' | 'deployment', kind: string | null, credExpiresAt: string | null): string {
+export function credentialRejectionMessage(owner: 'personal' | 'deployment' | 'cli', kind: string | null, credExpiresAt: string | null, context: string | null = null): string {
+  // With sign-in off, the "deployment credential" is the person's own pw CLI
+  // sign-in, which they can renew themselves.
+  if (owner === 'cli') {
+    return `The platform rejected the pw CLI context ${context ?? ''} (401). Sign in again under Settings, Model access (or with pw auth), or choose another context there.`
+  }
   if (owner === 'deployment') {
     return 'The platform rejected the deployment credential (401). An operator must replace it in the deployment settings; until then, add your own token or API key under Settings, Model access.'
   }
@@ -500,8 +506,11 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
       .slice(0, 4)
       .map((m: any) => ({ id: String(m.id), name: String(m.name || m.id) }))
   }
+  // Without a credential of the viewer's own, the listing is the
+  // deployment credential's, which changes when another pw CLI context is
+  // chosen, so that credential and its gateway are part of the key.
   const listingKey = (cred: { key?: string | null; baseUrl?: string | null } | null, viewer: string) =>
-    `${viewer}|${(cred?.key ?? '').slice(-8)}|${cred?.baseUrl ?? ''}`
+    `${viewer}|${(cred?.key ?? gatewayKey()).slice(-8)}|${cred ? cred.baseUrl ?? '' : GATEWAY_BASE}`
 
   // Everything up to the cache: catalog, provider probes, availability marks.
   class ListingReply extends Error { constructor(public payload: unknown) { super('listing reply') } }
@@ -530,8 +539,13 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
         const st = cred && req.user ? getUserKeyStatus(req.user.id) : null
         throw new ListingReply({
           models: sidecar, unreachableSessions: [], credential: 'rejected',
-          error: credentialRejectionMessage(cred ? 'personal' : 'deployment', st?.kind ?? null, st?.credExpiresAt ?? null),
+          error: credentialRejectionMessage(cred ? 'personal' : !authEnabled() && !PW_API_KEY && credentialContextName() ? 'cli' : 'deployment', st?.kind ?? null, st?.credExpiresAt ?? null, credentialContextName()),
         })
+      }
+      // No network, or the host is down: an ordinary state with its own
+      // sentence, and the model served here (if any) still listed.
+      if (e instanceof GatewayUnreachable && !sidecar.length) {
+        throw new ListingReply({ models: [], unreachableSessions: [], error: e.message, offline: true })
       }
       if (!sidecar.length) throw e
       app.log.warn({ err: e }, 'gateway model listing failed; serving the local model only')
@@ -556,9 +570,12 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     // is serving, on the machine the Studio is running on.
     const localBase = /(^|\/\/)(localhost|127\.0\.0\.1)/.test(cred?.baseUrl || GATEWAY_BASE)
     const engineName: Record<string, string> = { vllm: 'vLLM', ollama: 'Ollama', llamacpp: 'llama.cpp' }
+    // An endpoint elsewhere that names no owner (GitHub Models names a
+    // publisher instead) is filed under its publisher or its host.
+    const endpointHost = (() => { try { return new URL(cred?.baseUrl || GATEWAY_BASE).host } catch { return 'local' } })()
     models = models.map((m: any) => {
       if (m.provider || m.provider_name) return m
-      const engine = engineName[String(m.owned_by || '').toLowerCase()] || String(m.owned_by || 'local')
+      const engine = engineName[String(m.owned_by || '').toLowerCase()] || String(m.owned_by || m.publisher || (localBase ? 'local' : endpointHost))
       return {
         ...m,
         provider: localBase ? `Served here (${engine})` : engine,
@@ -644,6 +661,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/api/chat/models', async (req, reply) => {
     if (!effectiveSettings().aiEnabled) return reply.send({ models: [], unreachableSessions: [], error: AI_OFF })
+    await ensureFreshAccess(8_000)
     if (!gatewayConfigured() && !resolveUserKey(req.user?.id) && !sidecarConfigured()) {
       return reply.send({ models: [], unreachableSessions: [], error: 'no gateway credential: set PW_API_KEY or authenticate the pw CLI' })
     }
@@ -708,6 +726,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
       }
     }
     if (String((req.query as { fresh?: string }).fresh ?? '') === '1') invalidateProviderProbes()
+    await ensureFreshAccess(5_000)
     const health = await aiHealth(cred?.key, cred?.baseUrl)
     // Whether the credential also reaches the platform API, which is what
     // the workflow tools and the DAG viewer use. Two different products
@@ -719,7 +738,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     let platformAccess: boolean | null = null
     const probeKey = cred && !cred.baseUrl ? cred.key : null
     if (cred?.baseUrl) platformAccess = false
-    else if (probeKey) {
+    else if (probeKey && health.status !== 'offline') {
       try {
         const host = new URL(GATEWAY_BASE).origin
         const res = await fetch(`${host}/api/workflows`, {
@@ -874,7 +893,12 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     const stored = resolveUserCred(owner)
     const candidate = String(body?.key ?? '').trim() || stored?.key
     const baseUrl = String(body?.baseUrl ?? '').trim() || stored?.baseUrl || null
-    if (!candidate) return reply.status(400).send({ error: 'no key to test' })
+    if (!candidate) {
+      // Nothing stored: test what requests use instead, the pw CLI's
+      // credential or the deployment's.
+      if (!body?.key && !authEnabled()) { await ensureFreshAccess(); return aiHealth(null, null, { ids: true }) }
+      return reply.status(400).send({ error: 'no key to test' })
+    }
     if (baseUrl && !/^https?:\/\/[^/\s]+/i.test(baseUrl)) return reply.status(400).send({ error: 'the base URL must start with http:// or https://' })
     return aiHealth(candidate, baseUrl, { ids: true })
   })
@@ -971,6 +995,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     res.on('close', () => clearInterval(keepalive))
 
     const userCred = resolveUserCred(req.user?.id)
+    if (!userCred) await ensureFreshAccess()
     if (effectiveSettings().requirePersonalKey && authEnabled() && !personalKeysDisabled() && !userCred && !getSharedKeyStatus().active) {
       sse(res, 'error', {
         message: 'This deployment requires your own model credential. Add your API key or platform token in Settings, Model access, then retry. Browsing, search, and adding material work without one.',
@@ -1615,7 +1640,7 @@ ${ctx}` : ctx
           return reply
         }
         let userMsg: string | null = null
-        if (err?.name === 'GatewayAuthError') {
+        if (err?.name === 'GatewayAuthError' || err instanceof GatewayUnreachable) {
           userMsg = msg
         } else if (/^gateway chat /.test(msg)) {
           userMsg = gatewayChatMessage(msg, model)

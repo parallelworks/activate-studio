@@ -1,5 +1,6 @@
 import { effectiveSettings } from './settings.js'
 import type { ToolSpec } from './chat/tools.js'
+import { networkFailure, unreachableMessage } from './net.js'
 
 /**
  * The other half of MCP: this Studio as a client of remote MCP servers.
@@ -31,6 +32,10 @@ export interface RemoteMcpServer { name: string; url: string; header?: string }
 interface Entry { at: number; tools: ToolSpec[]; error: string | null; session: string | null }
 
 const TTL_MS = 60_000
+/** Listing a server (initialize, then tools/list) gets this long per step.
+ *  A chat turn waits for the listing, so a server that cannot be reached
+ *  costs a few seconds once a minute, not the call timeout every turn. */
+const LIST_TIMEOUT_MS = 5_000
 const cache = new Map<string, Entry>()
 
 /** Separates the server name from the remote tool name. Double underscore
@@ -85,9 +90,9 @@ async function listFor(s: RemoteMcpServer): Promise<Entry> {
       protocolVersion: '2025-06-18',
       capabilities: {},
       clientInfo: { name: 'activate-studio', version: '0.1.0' },
-    }, null)
+    }, null, LIST_TIMEOUT_MS)
     entry.session = init.session
-    const listed = await rpc(s, 'tools/list', {}, entry.session)
+    const listed = await rpc(s, 'tools/list', {}, entry.session, LIST_TIMEOUT_MS)
     entry.tools = (listed.result?.tools ?? []).slice(0, 60).map((t: any) => ({
       type: 'function' as const,
       function: {
@@ -99,7 +104,10 @@ async function listFor(s: RemoteMcpServer): Promise<Entry> {
   } catch (e) {
     // An unreachable or misconfigured server contributes no tools and
     // never breaks the assistant's own.
-    entry.error = String((e as Error).message ?? e).slice(0, 200)
+    const f = networkFailure(e)
+    let host = s.url
+    try { host = new URL(s.url).host } catch { /* shown as written */ }
+    entry.error = f ? unreachableMessage(host, f).split('. ')[0] + '.' : String((e as Error).message ?? e).slice(0, 200)
   }
   cache.set(s.name, entry)
   return entry

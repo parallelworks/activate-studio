@@ -1,0 +1,21 @@
+/* Settings, Model access. Sizes follow the settings page's own measure. */
+.model-access .access-source { margin: 6px 0 12px; max-width: var(--settings-measure); }
+.model-access .access-panel { max-width: var(--settings-measure); }
+.model-access .access-actions { margin-top: 10px; }
+.model-access .access-override { margin: 0 0 8px; }
+.model-access .access-note { margin-top: 12px; }
+.model-access .cli-contexts-wrap { max-width: var(--settings-measure); margin: 6px 0 4px; overflow-x: auto; }
+.model-access .cli-contexts td { vertical-align: top; }
+.model-access .cli-contexts tr.in-use td { background: var(--pw-active-pill); }
+.model-access .ctx-badge { margin-left: 6px; }
+.model-access .ctx-error { font-size: 12px; margin-top: 2px; }
+.model-access .device-code-row { display: flex; align-items: center; gap: 8px; margin: 8px 0 2px; }
+.model-access .device-code-value {
+  font-size: 22px; letter-spacing: 0.12em; font-weight: 600; padding: 4px 10px;
+  border-radius: 6px; border: 1px solid var(--pw-border); background: var(--pw-input-bg);
+}
+.model-access .access-subs { margin-top: 18px; }
+@media (max-width: 520px) {
+  .model-access .key-row .grow { min-width: 0; flex-basis: 100%; }
+  .model-access .provider-select { min-width: 0; }
+}

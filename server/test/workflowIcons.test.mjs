@@ -19,6 +19,8 @@ const DERIVED = '/api/repositories/thumbnail?path=thumbnails%2Fy.png&ref=main&re
 const seen = []
 globalThis.fetch = async (url, init) => {
   const u = String(url)
+  // The platform reachability check (a HEAD of the platform) is not an icon fetch.
+  if (init?.method === 'HEAD') return new Response(null, { status: 200 })
   seen.push({ url: u, auth: init?.headers?.Authorization ?? null })
   if (u.startsWith('https://gitlab.example.mil/')) throw new Error('certificate not trusted')
   if (u === `https://platform.test${FALLBACK}` || u === `https://platform.test${DERIVED}`) return new Response(PNG, { status: 200, headers: { 'content-type': 'image/png' } })

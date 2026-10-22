@@ -29,11 +29,16 @@ import { browseGithub, githubDefinition, githubSummary, resolveGithubEntry } fro
 import { recordRun, listRuns, markRunEnded, isTerminalRunState } from './runs.js'
 import { withWorkspace } from './workspace.js'
 import { workflowRecord } from './platformRecords.js'
+import { ensureFreshAccess, platformReachability } from './access.js'
+import { cliNetworkFailure, unreachableMessage } from './net.js'
 
 /** The credential platform calls run under: the viewer's own platform key,
- *  else the deployment's. A provider key (one with a baseUrl) is chat-only. */
+ *  else the deployment's. A provider key (one with a baseUrl) is chat-only.
+ *  With sign-in off there is no viewer id, and the one user's stored key is
+ *  theirs (resolveUserCred reads it), so a platform key saved in Model access
+ *  reaches the Workflows page as it reaches chat. */
 export function platformKeyFor(userId: string | undefined): { key: string | null; own: boolean } {
-  const cred = userId ? resolveUserCred(userId) : null
+  const cred = resolveUserCred(userId)
   if (cred && !cred.baseUrl && cred.key) return { key: cred.key, own: true }
   const dep = gatewayKey()
   return { key: dep || null, own: false }
@@ -63,9 +68,23 @@ export function platformError(e: unknown): KbError {
   if (/authentication has expired|please authenticate|401|unauthorized/i.test(text)) {
     return new KbError(401, 'The platform credential has expired. Add your own platform API key under Settings, Model access, or renew the deployment credential.')
   }
+  if (cliNetworkFailure(text)) {
+    let host = ''
+    try { host = new URL(GATEWAY_BASE).host } catch { /* named generically */ }
+    return new KbError(503, unreachableMessage(host, null))
+  }
   return new KbError(502, `The platform did not answer: ${text.split('\n')[0].slice(0, 300)}`)
 }
-const call: Cli = (args, key, t) => cli(args, key, t).catch(e => { throw platformError(e) })
+/** Fails at once, in plain words, when the platform cannot be reached, rather
+ *  than after the CLI's own timeout of a minute or more. */
+async function requireReachable(): Promise<void> {
+  const r = await platformReachability()
+  if (!r.ok) throw new KbError(503, r.message ?? 'The platform cannot be reached.')
+}
+const call: Cli = async (args, key, t) => {
+  await requireReachable()
+  return cli(args, key, t).catch(e => { throw platformError(e) })
+}
 /** The platform CLI with a viewer's key, for the other workflow routes. */
 export const workflowsCli: Cli = (args, key, t) => call(args, key, t)
 
@@ -260,6 +279,9 @@ const runChecked = new Map<string, number>()
 const iconCache = new Map<string, { at: number; type: string; body: Buffer }>()
 
 export async function workflowsTabRoutes(app: FastifyInstance): Promise<void> {
+  // A pw CLI sign-in about to expire is renewed before the credential is
+  // read for these routes; at once when it has time left.
+  app.addHook('preHandler', async () => { await ensureFreshAccess(8_000) })
   const viewer = (req: { user?: { id?: string; username?: string } }) => {
     const { key, own } = platformKeyFor(req.user?.id)
     if (!key) throw new KbError(409, 'No platform credential: add your ACTIVATE API key under Settings, Model access.')
@@ -469,6 +491,7 @@ export async function workflowsTabRoutes(app: FastifyInstance): Promise<void> {
     const body = req.body as { inputs?: Record<string, unknown>; dryRun?: boolean; trust?: boolean }
     const v = viewer(req)
     if (!curatedNames().includes(e.entry)) throw new KbError(403, `${e.entry} is not in this Studio's workflow collection`)
+    await requireReachable()
     const d = await definitionOf(e, v.key)
     let values: Record<string, unknown> = body.inputs ?? {}
     try { values = prepareSubmittableValues(d.yaml, values, v.username ?? '') } catch { /* submit as given */ }

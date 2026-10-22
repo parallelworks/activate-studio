@@ -11,6 +11,7 @@ import { INDEX_BASE } from './config.js'
 import { KbError } from './kb.js'
 import { requestRestart } from './lifecycle.js'
 import { effectiveSettings, type UpdatePolicy } from './settings.js'
+import { networkFailure } from './net.js'
 import { buildInfo } from './version.js'
 
 /**
@@ -60,6 +61,10 @@ export interface UpdateStatus {
   progress: { bytes: number; total: number } | null
   error: string | null
   checkedAt: string | null
+  /** The last check could not reach the release server (no network, most
+   *  likely). Not an error: the next check comes sooner, and nothing else
+   *  depends on it. */
+  offline: boolean
   /** A rollback is available. */
   previous: { version: string } | null
   /** The last update changed the app's own executable: the window has to
@@ -94,7 +99,7 @@ class Refused extends Error {}
 
 const TIMINGS = { firstCheckMs: 60_000, intervalMs: 6 * 3600_000, soonMs: 30 * 60_000, idleMs: 10 * 60_000, idlePollMs: 30_000, healthyMs: 60_000 }
 const timings = { ...TIMINGS }
-const st: { state: UpdateState; error: string | null; progress: UpdateStatus['progress'] } = { state: 'idle', error: null, progress: null }
+const st: { state: UpdateState; error: string | null; progress: UpdateStatus['progress']; offline: boolean } = { state: 'idle', error: null, progress: null, offline: false }
 let saved: Saved | null = null
 let prepared: Prepared | null = null
 let op: Promise<void> | null = null
@@ -367,6 +372,7 @@ export function updateStatus(): UpdateStatus {
     progress: st.progress,
     error: st.error ?? rollbackNote,
     checkedAt: loadSaved().checkedAt,
+    offline: st.offline,
     previous: previousVersion(),
     reopen: mode === 'app' && fs.existsSync(inUpdates('reopen')),
   }
@@ -599,7 +605,9 @@ function fail(e: unknown): void {
   st.state = 'error'
   st.progress = null
   installWanted = false
-  st.error = e instanceof Refused ? e.message : `The update failed: ${plain(e)}.`
+  const f = e instanceof Refused ? null : networkFailure(e)
+  st.error = e instanceof Refused ? e.message
+    : `The update failed: ${plain(e)}.${f ? ' The connection to the release server was lost; try again once this computer is online.' : ''}`
 }
 
 async function install(rel: Release): Promise<void> {
@@ -636,9 +644,19 @@ async function check(): Promise<void> {
       await fetchReleases()
       st.state = 'idle'
       st.error = null
+      st.offline = false
     } catch (e) {
-      st.state = 'error'
-      st.error = `The check for updates failed: ${plain(e)}.`
+      if (networkFailure(e)) {
+        // Offline is a state of the computer, not a fault of the check.
+        st.state = 'idle'
+        st.error = null
+        st.offline = true
+        log(`update check: release server not reachable (${networkFailure(e)!.code}); checking again later`)
+      } else {
+        st.state = 'error'
+        st.error = `The check for updates failed: ${plain(e)}.`
+        st.offline = false
+      }
     }
   })().finally(() => { op = null })
   await op
@@ -750,7 +768,7 @@ export function startUpdates(logger: (msg: string) => void): void {
       void (async () => {
         const policy = effectiveSettings().updates
         if (policy.check && updateMode() !== 'hosted') await check()
-        schedule(policy.check && updateMode() === 'app' && appPending(policy.channel) ? timings.soonMs : timings.intervalMs)
+        schedule(policy.check && ((updateMode() === 'app' && appPending(policy.channel)) || st.offline) ? timings.soonMs : timings.intervalMs)
       })()
     }, ms)
     checkTimer.unref?.()
@@ -766,7 +784,7 @@ export function resetUpdatesForTests(opts: Partial<typeof timings> & { version?:
   const { version, ...rest } = opts
   Object.assign(timings, TIMINGS, rest)
   versionOverride = version ?? null
-  Object.assign(st, { state: 'idle', error: null, progress: null })
+  Object.assign(st, { state: 'idle', error: null, progress: null, offline: false })
   saved = null
   prepared = null
   op = null

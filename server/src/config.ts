@@ -138,23 +138,43 @@ export const PYTHON_BIN = (() => {
   return 'python3'
 })()
 
+/** The pw CLI's credential store: PW_CREDENTIALS_DIR, as the CLI reads it,
+ *  else ~/.config/pw. */
+export function pwCredentialsFile(): string {
+  const dir = process.env.PW_CREDENTIALS_DIR || path.join(os.homedir(), '.config', 'pw')
+  return path.join(dir, 'credentials')
+}
+
+/** The gateway on a platform host. */
+export const gatewayFor = (server: string) => `https://${server}/api/openai/v1`
+
 /** The pw CLI's active context (PW_CONTEXT, then currentIdentity in its
  *  credential store) names the platform host the user is actually working
  *  against, so it decides the default gateway; env overrides still win.
- *  Read once at startup, like the rest of this module. */
+ *  This is the value at startup; access.ts moves it when another context
+ *  is chosen in Model access. */
 function cliContextGateway(): string | null {
   try {
-    const file = path.join(os.homedir(), '.config', 'pw', 'credentials')
-    const data = JSON.parse(fs.readFileSync(file, 'utf8'))
+    const data = JSON.parse(fs.readFileSync(pwCredentialsFile(), 'utf8'))
     const name = process.env.PW_CONTEXT || data.currentIdentity
     const server = data.identities?.[name]?.server
-    return server ? `https://${server}/api/openai/v1` : null
+    return server ? gatewayFor(server) : null
   } catch {
     return null
   }
 }
 
-export const GATEWAY_BASE = (process.env.PW_GATEWAY_URL ?? process.env.OPENAI_BASE_URL ?? cliContextGateway() ?? 'https://activate.parallel.works/api/openai/v1').replace(/\/$/, '')
+/** True when the environment names the gateway, which no context choice overrides. */
+export const GATEWAY_FROM_ENV = !!(process.env.PW_GATEWAY_URL ?? process.env.OPENAI_BASE_URL)
+/** The model gateway, and through its host, the platform. A live binding:
+ *  importers read the current value at each use, so choosing another pw CLI
+ *  context moves every caller at once. */
+export let GATEWAY_BASE = (process.env.PW_GATEWAY_URL ?? process.env.OPENAI_BASE_URL ?? cliContextGateway() ?? 'https://activate.parallel.works/api/openai/v1').replace(/\/$/, '')
+/** Point the gateway at another base; a gateway set in the environment stays. */
+export function setGatewayBase(url: string): void {
+  if (GATEWAY_FROM_ENV || !url) return
+  GATEWAY_BASE = url.replace(/\/$/, '')
+}
 export const PW_API_KEY = process.env.PW_API_KEY ?? process.env.OPENAI_API_KEY ?? ''
 
 // Directory names never entered when browsing, indexing, or searching.

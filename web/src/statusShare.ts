@@ -10,7 +10,7 @@ import { api, type LibraryStats } from './api'
 
 export interface AiHealth {
   ok: boolean
-  status: 'ok' | 'auth' | 'unreachable' | 'unconfigured' | 'key-required' | 'off'
+  status: 'ok' | 'auth' | 'unreachable' | 'offline' | 'unconfigured' | 'key-required' | 'off'
   models: number
   gatewayHost: string
   message: string | null
