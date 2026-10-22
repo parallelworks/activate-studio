@@ -148,3 +148,14 @@ test('one folder of an index on the other model is embedded with all of it', { s
   assert.equal((await G.searchVector('will it rain tomorrow', 3, index))[0]?.name, 'forecast.md')
   W.stopQueryWorker()
 })
+
+test('passages cut at 128 tokens are a model of their own, and changing the length embeds the index again', { skip: skipOnnx }, async () => {
+  buildIndex()
+  embed('--model', path.join(models, 'minilm384.gguf'), '--max-tokens', '128')
+  assert.equal(markerOf('kitchen'), 'minilm-l6-mean-int8-t128')
+  assert.equal((await G.searchVector('recipe for baking a loaf', 3, index))[0]?.name, 'bread.md', 'the query worker serves it too')
+  const out = embed('--model', path.join(models, 'minilm384.gguf'), '--subdir', 'weather')
+  assert.match(out, /holds vectors of minilm-l6-mean-int8-t128: embedding all of it with minilm-l6-mean-int8/)
+  assert.deepEqual(await G.vectorModels(index), { 'minilm-l6-mean-int8': 3 })
+  W.stopQueryWorker()
+})

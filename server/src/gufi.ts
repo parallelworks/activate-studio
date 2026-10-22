@@ -4,7 +4,7 @@ import path from 'node:path'
 import { GUFI_BIN, GUFI_INDEX, INDEX_BASE, gufiAvailable, gufiEnv } from './config.js'
 import { REMOTE_PREFIX, remoteIndexRoot, remoteQuery, remoteTarget } from './userLibraries.js'
 import { noteGufi } from './gufiTrace.js'
-import { ONNX_MODEL_ID, embedQueries, onnxModelPresent } from './embedWorker.js'
+import { embedQueries, isOnnxModel, onnxModelPresent } from './embedWorker.js'
 
 const DELIM = '\x1e' // record separator; never appears in KB text
 
@@ -387,14 +387,16 @@ export async function searchVector(queryText: string, limit = 10, indexRoot: str
     )
     tableFor.set(LEGACY_MODEL, 'temp.qv')
   }
-  if (vecDbs.some(v => v.model === ONNX_MODEL_ID)) {
+  const onnxModels = [...new Set(vecDbs.map(v => v.model).filter(isOnnxModel))]
+  if (onnxModels.length) {
     const vec = await embedQueries([queryText.slice(0, 500)]).then(v => v[0], e => {
       console.warn(`search by meaning: ${(e as Error).message}`)
       return null
     })
     if (vec && vec.length === 384 * 4) {
+      // A query is short, so one vector serves every truncation length.
       script.push(`CREATE TABLE temp.qo AS SELECT X'${vec.toString('hex')}' AS qe;`)
-      tableFor.set(ONNX_MODEL_ID, 'temp.qo')
+      for (const m of onnxModels) tableFor.set(m, 'temp.qo')
     }
   }
   const searched = vecDbs.filter(v => tableFor.has(v.model))

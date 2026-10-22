@@ -9,7 +9,8 @@ Embed: only the chunks whose hash is not in the embedding cache are
 embedded. Two backends give the same 384 dimensions:
 
   onnx    all-MiniLM-L6-v2, int8, mean pooling, through ONNX Runtime
-          (embed_onnx.py; model id minilm-l6-mean-int8). Used whenever its
+          (embed_onnx.py; model id minilm-l6-mean-int8, with -t128 when
+          --max-tokens 128 cuts passages shorter). Used whenever its
           packages import and --onnx names a folder with the model. The
           --jobs threads are shared by a few processes, each embedding
           batches with several ONNX Runtime threads.
@@ -159,11 +160,11 @@ def open_cache(path: Path) -> sqlite3.Connection:
 _embedder = None
 
 
-def _onnx_init(model_dir: str, threads: int) -> None:
+def _onnx_init(model_dir: str, threads: int, max_tokens: int) -> None:
     global _embedder
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     import embed_onnx
-    _embedder = embed_onnx.Embedder(model_dir, threads)
+    _embedder = embed_onnx.Embedder(model_dir, threads, max_tokens)
 
 
 def _onnx_task(pending_db: str, lo: int, hi: int) -> list:
@@ -194,7 +195,7 @@ def choose_backend(args) -> tuple:
             import embed_onnx
             why = embed_onnx.unavailable(onnx_dir)
             if why is None:
-                return 'onnx', embed_onnx.MODEL_ID, onnx_dir, None
+                return 'onnx', embed_onnx.model_id(args.max_tokens), onnx_dir, None
         except Exception as exc:  # an old Python, or a broken install
             why = str(exc)
         if args.backend == 'onnx':
@@ -237,6 +238,8 @@ def main() -> int:
     ap.add_argument('--onnx', default='', help='folder with model.onnx and tokenizer.json (default: minilm-l6 beside --model)')
     ap.add_argument('--backend', choices=('auto', 'onnx', 'lembed'), default='auto',
                     help='auto: ONNX when its packages and model are here, else lembed')
+    ap.add_argument('--max-tokens', type=int, choices=(128, 256), default=256,
+                    help='ONNX backend: tokens of each passage embedded; 128 costs about 40 percent of the CPU of 256')
     ap.add_argument('--gufi-sqlite3',
                     default=os.path.join(os.environ.get('GUFI_BIN', '/opt/gufi/bin'), 'gufi_sqlite3'),
                     help='gufi_sqlite3 binary; defaults under $GUFI_BIN')
@@ -372,7 +375,7 @@ def run(args, jobs: int, dbs: list, scratch: Path, progress: Progress) -> int:
         cache = open_cache(cache_path)
         try:
             with ProcessPoolExecutor(procs, mp_context=multiprocessing.get_context('spawn'),
-                                     initializer=_onnx_init, initargs=(args.onnx, threads)) as pool:
+                                     initializer=_onnx_init, initargs=(args.onnx, threads, args.max_tokens)) as pool:
                 tasks = [pool.submit(_onnx_task, str(scratch / 'pending.db'), lo, min(lo + ONNX_TASK - 1, n_pending))
                          for lo in range(1, n_pending + 1, ONNX_TASK)]
                 for task in as_completed(tasks):

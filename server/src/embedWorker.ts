@@ -16,6 +16,9 @@ import { INDEX_BASE, PROJECT_ROOT, PYTHON_BIN, indexerEnv } from './config.js'
  */
 
 export const ONNX_MODEL_ID = 'minilm-l6-mean-int8'
+/** Whether vectors marked with this model id come from the ONNX model (any
+ *  truncation length: minilm-l6-mean-int8, or with a -t128 suffix). */
+export const isOnnxModel = (id: string) => id === ONNX_MODEL_ID || id.startsWith(`${ONNX_MODEL_ID}-t`)
 export const ONNX_DIR = path.join(INDEX_BASE, 'models', 'minilm-l6')
 
 /** Whether the ONNX model's files are where the worker and embed.py look. */

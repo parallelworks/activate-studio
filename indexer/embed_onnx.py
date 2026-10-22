@@ -9,7 +9,10 @@ which ranks passages worse, and costs more than twice the CPU per passage.
 
 Vectors are 384 float32 values, L2-normalized, little-endian: the layout
 sqlite-vec's float[384] columns take as a blob. Texts are cut at 256
-tokens, the length the model was tuned for.
+tokens by default, about the 800 characters of a passage embed.py hands
+over. At 128, the length the model was trained at, a passage costs about
+40 percent of the CPU and ranks slightly lower; its vectors are a model of
+their own (MODEL_ID with a -t128 suffix), so an index never mixes them.
 """
 from __future__ import annotations
 
@@ -18,8 +21,20 @@ from pathlib import Path
 
 MODEL_ID = 'minilm-l6-mean-int8'
 MAX_TOKENS = 256
-BATCH = 32
+TOKEN_CHOICES = (128, 256)
+# 16 texts a batch: as fast as 32, with about 60 percent of the memory.
+BATCH = 16
 DIMS = 384
+
+
+def model_id(max_tokens: int = MAX_TOKENS) -> str:
+    """The id an index's vectors are marked with, for a truncation length."""
+    return MODEL_ID if max_tokens == MAX_TOKENS else f'{MODEL_ID}-t{max_tokens}'
+
+
+def is_model(mid: str) -> bool:
+    """Whether vectors marked mid come from this model (any truncation)."""
+    return mid == MODEL_ID or mid.startswith(MODEL_ID + '-t')
 
 # Where fetch_embed.py --deps puts the packages for a clone or a container;
 # the macOS app carries them in its own Python instead.
@@ -51,7 +66,7 @@ class Embedder:
     the indexer runs several single-threaded embedders side by side, which
     gets through more passages per core than one with many threads."""
 
-    def __init__(self, model_dir, threads: int = 1):
+    def __init__(self, model_dir, threads: int = 1, max_tokens: int = MAX_TOKENS):
         _add_deps()
         import numpy as np
         import onnxruntime as ort
@@ -60,8 +75,8 @@ class Embedder:
         d = Path(model_dir)
         tok = Tokenizer.from_file(str(d / 'tokenizer.json'))
         # The file pads and cuts every text to 128 tokens; pad a batch only
-        # to its longest text, and cut at the model's 256.
-        tok.enable_truncation(MAX_TOKENS)
+        # to its longest text, and cut where asked.
+        tok.enable_truncation(max_tokens)
         tok.enable_padding(pad_id=0, pad_token='[PAD]')
         self.tok = tok
         so = ort.SessionOptions()
