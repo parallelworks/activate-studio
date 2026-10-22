@@ -2,6 +2,16 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.157 (2026-10-22)
+
+### fix(chat): in a narrow window the conversation list has a button again (#542)
+
+Under 760 px wide the chat uses its phone layout, where the conversation list is a drawer. The drawer opened only from the bottom bar's Chat item, tapped again while already on Chat, and nothing showed that. A macOS app window can be as narrow as 720 px, so at half a laptop screen there was no visible way to reach the list or its collapse control.
+
+The package's own drawer button (Open sidebar) now shows above the thread whenever the list is a drawer. The bottom-bar shortcut stays. Wider windows are unchanged: the list is inline with its collapse control at the bottom.
+
+Checked in Chromium at 740 x 820: the button shows at the top left and opens the list. At 1300 px the inline list and its control are as before. Web suite passes.
+
 ## v1.156 (2026-10-22)
 
 ### Updates: the app reopens after an update that changed its window, and shows the new icon (#535)
@@ -53,6 +63,10 @@ Remote builds pass the level to embed.py there, and Off skips embedding.
 - The pw-not-found reason points at the location setting in Model access.
 
 **Tests:** server 488/488 (new: per-library levels, the route, the legacy switch, embed.py's selection run in Python); web 211/211 (the Search page line and help, the Libraries selector, the setup control). HELP, REFERENCE and LIBRARIES are updated.
+
+### Change log through v1.156 (#541)
+
+Regenerated with `node scripts/release-notes.mjs --changelog --next v1.156` before tagging v1.156.
 
 ## v1.155 (2026-10-22)
 
