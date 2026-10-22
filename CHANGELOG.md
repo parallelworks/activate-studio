@@ -2,7 +2,49 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
-## v1.149 (2026-10-22)
+## v1.150 (2026-10-22)
+
+### Update notice: one line, with the changes in a dialog, so the chat keeps its room (#521)
+
+The update notice listed every newer version's changes, and for a clone the update commands, above every page: about 325 px at an 820 px window, so the chat's thread lost 40% of its height and on a new chat the composer and starters were pushed down to the bottom edge. In the macOS app, with several versions to list, it was taller still.
+
+The notice is now one line: the version, the version running, What's new (with the number of changes), Update now in the app, and Later. What's new opens a dialog with the changes newest first (each opening to its description), the commands for a clone, or the reason the app cannot install, with Update now and Later in its footer. The once-after-an-update notice is one line too, with how many changes came since and What's new.
+
+Measured at 1300×820 with a long thread: the thread's visible height is 767 px with the notice (495 before, 820 without one), the composer stays at the bottom, and a new chat's composer sits in the middle again.
+
+Verified: the notice tests (13), the full suite, and screenshots in light, dark and at 400 px.
+
+### Mac title bar in the page's color, About with Parallel Works, a quick start in Help, and SQL for saved queries (#522)
+
+The macOS window's title bar now takes the color an installed web app's title bar takes, the Studio's own mark shows in the empty chat when no icon is uploaded, an About page says who builds the Studio, Help opens with a short quick start, and a saved query shows the SQL it runs.
+
+**macOS title bar.** The window's title bar follows the color the page names in its `theme-color` tag, which is the color the installed web app's title bar takes (`webManifest` in `server/src/routes.ts`): the classification banner's when one is set, otherwise the page's ground in its light or dark theme. The shell observes `WKWebView.themeColor`, so a theme toggle, a change of system appearance, or a new banner color repaints the bar while the app is open; the last color is kept in the app's defaults so the next launch opens with it. The bar is transparent over the window's background color, and the title and window controls take the light or dark appearance that reads on the color (the WCAG rule the banner text uses). That appearance is set on the title bar view only, since the page follows the window's appearance for its own light and dark. Popped-out session windows do the same.
+
+**About.** The app menu's About ACTIVATE Studio shows the standard panel with "Built and maintained by Parallel Works" (linked to parallelworks.com) as its credits, and `Info.plist` carries `NSHumanReadableCopyright` from `NOTICE`; `check_app.sh` checks it. In the web app, Help has an About page at the foot of its list, also opened from the footer's version panel: the version and commit, the license, the source repository, GUFI, and the same line.
+
+**Empty chat.** Without an uploaded icon, the empty chat shows the Studio's mark (`/favicon.svg`) above its greeting, where an uploaded icon shows.
+
+**Help.** The overview opens with a quick start of about 240 words: the problem, what the Studio does about it, why it works the way it does, and four first steps. On a phone, Help's groups now lay their pages along the strip of pages instead of hanging below it.
+
+**Saved query SQL.** `POST /api/query/sql` takes the body `POST /api/query` takes and answers the query's `gufi_query` stages (`-I`, `-K`, `-E`, `-J`, `-G`, or `-E` alone for raw SQL) and its command for each library in scope, as a run would record it, without running anything. The code button beside a saved query shows them, each with a copy button.
+
+**Verified.** `pnpm test` passes, with new tests for the compiled SQL (stages for each query form, the command matching what a run records, a cluster library's command), the saved query's SQL panel, the default chat icon, and About from Help and the footer. Screenshots in light and dark at desktop and phone widths of the empty chat, Help's overview and About, the version panel, and the SQL panel. The page reports `#f4f4f5` in light and `#111214` in dark, switching when the system appearance changes, and the banner's color when one is set. `build_app.sh` run on Linux writes `NSHumanReadableCopyright` and passes `check_app.sh`. The native window cannot be captured on CI; this pull request's macOS build compiles the shell and runs the app's checks.
+
+### Model access: where it comes from, pw CLI contexts and sign-in, and working offline (#525)
+
+Model access did not say where models and platform access came from. With the pw CLI signed in, chat used the CLI's credential while Settings showed nothing, and the Workflows page appeared only some time after Save settings.
+
+**Where access comes from.** Model access names the source in use (a stored key, an endpoint, the deployment credential, or the pw CLI and its context) and, without sign-in, lists the CLI's contexts: use one, or follow whatever `pw context use` sets. The choice moves the gateway to that platform and sets `PW_CONTEXT` for every `pw` command the server runs, so chat, the Workflows page and the platform tools agree. An expired CLI sign-in is renewed through `pw auth token --print --context <name>`.
+
+**Workflows appearing late.** A change in Model access now announces itself, and the app configuration, footer and chat re-read it, so Workflows appears without a reload. With sign-in off, a key saved in Model access now reaches the Workflows page and sessions too.
+
+**Signing in.** The platform's device authorization is the pw CLI's own client, so Sign in runs `pw auth login --device <host>` and shows its address and code. ChatGPT plans and GitHub Copilot connect through the platform's own provider connections with the user's platform credential; no other product's OAuth client is used. GitHub Models is an endpoint preset with a personal access token.
+
+**Offline.** No network reads as one plain sentence with short timeouts: the model list and health say offline (a local model server keeps working), the Workflows page checks the platform answers before running `pw`, MCP listing is limited to 5 seconds a step, and the update check says it will try again later.
+
+Verified: 450 server and 159 web tests, including blocked-network tests (ENOTFOUND, ECONNRESET, timeouts) and the context and sign-in flows against stand-ins; the context listing and switching against a real pw CLI; screenshots of each state in light, dark and at 400 px. Together with #521 and #522 merged locally, the full suite passes (454 server, 167 web).
+
+## v1.149 (2026-10-21)
 
 ### ci: bump the actions group across 1 directory with 2 updates (#476)
 
@@ -120,6 +162,10 @@ Verified: `bash -n`; the sign job uses the scripts at the release's tag, so the 
 Every view was compared against v1.148 in light and dark on the same data: the differences are the status dots. The comparison also showed the corpus treemap's white labels hard to read on the palette's lighter cells; each label now takes dark or white text by contrast with its cell. The treemap reads the accent as the browser resolves it, since a theme may define it as `light-dark(...)` rather than a hex value.
 
 Verified: 420 server and 151 web tests (one new, for the label ink); the screenshot tour in both themes with no console errors.
+
+### Change log through v1.149 (#523)
+
+Regenerated with `node scripts/release-notes.mjs --changelog --next v1.149` before tagging v1.149.
 
 ## v1.148 (2026-10-21)
 
