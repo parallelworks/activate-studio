@@ -34,7 +34,7 @@ const BUILT_REMOTE = {
 }
 /** A build job as /api/index/status carries it, in its text phase. */
 const phases = (state: 'running' | 'done') => [
-  { id: 'names', label: 'Names and folders', state: 'done', done: 3, total: 3, unit: 'folders', step: null, ms: 40, note: '3 folders' },
+  { id: 'names', label: 'Names and folders', state: 'done', done: 3, total: 3, unit: 'folders', step: null, ms: 40, note: null },
   { id: 'documents', label: 'Documents (PDF, Word, PowerPoint, Excel)', state: 'done', done: 2, total: 2, unit: 'documents', step: null, ms: 900, note: '2 converted' },
   { id: 'text', label: 'Text, images and full-text search', state, done: state === 'done' ? 9 : 4, total: 9, unit: 'items', step: 'extract', ms: state === 'done' ? 1200 : null, note: null },
   { id: 'meaning', label: 'Search by meaning', state: state === 'done' ? 'done' : 'pending', done: state === 'done' ? 30 : 0, total: state === 'done' ? 30 : 0, unit: 'passages', step: null, ms: state === 'done' ? 400 : null, note: null },
@@ -408,6 +408,7 @@ describe('Settings, Libraries', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Update index' }))
     expect(await screen.findByText('4 of 9 items')).toBeInTheDocument()
     expect(screen.getByText('3 of 3 folders')).toBeInTheDocument()
+    expect(screen.getByText('2 of 2 documents · 2 converted')).toBeInTheDocument()
     expect(screen.getAllByRole('progressbar').length).toBeGreaterThan(0)
     expect(within(rowOf('Notes')).getByText('Indexing')).toBeInTheDocument()
     expect(posted(s, '/api/index/build')).toHaveLength(1)

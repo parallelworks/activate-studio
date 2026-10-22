@@ -84,7 +84,9 @@ describe('one status for every view', () => {
     expect(await within(footer).findByText('Indexing: text 45%', {}, { timeout: 5000 })).toBeInTheDocument()
     const stats = screen.getByTestId('stats')
     // The tile reads the same job; the page shows its phases with counts.
-    expect(stats.querySelector('.ov-index-state')?.textContent).toBe('61%')
+    expect(stats.querySelector('.ov-index-state')?.textContent).toBe('text 45%')
+    // The job's bar names the phase it is in, not a share of the whole.
+    expect(within(stats).getByText('phase 3 of 4')).toBeInTheDocument()
     expect(within(stats).getByText('450 of 1,000 items')).toBeInTheDocument()
     expect(within(stats).getByText('Search by name works now; text and meaning are added as they are read.')).toBeInTheDocument()
     expect(within(stats).getByRole('button', { name: 'Stop' })).toBeInTheDocument()

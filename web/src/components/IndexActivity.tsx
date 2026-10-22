@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { Button, Callout, CodeBlock, Modal, ProgressBar, StatusDot, Table, toast, type BadgeVariant } from '@parallelworks/ui'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { Button, Callout, CopyButton, Modal, ProgressBar, StatusDot, Table, toast, type BadgeVariant } from '@parallelworks/ui'
 import { api, type IndexJob, type IndexPhase, type IndexStatus } from '../api'
 import { elapsed, fmtDuration, jobPercent, kickIndexStatus, phaseTimes, useIndexStatus } from '../indexActivity'
 
@@ -27,26 +27,32 @@ function phaseCount(p: IndexPhase): string {
   return p.note ?? ''
 }
 
-/** Each phase on a line: its state, what it has done, and how long it took. */
+/** Each phase: its state, its name and how long it took, then what it has
+ *  done (and a bar while it runs), so a narrow panel reads as well as a page. */
 export function IndexPhaseList({ job }: { job: IndexJob }) {
   const phases = job.phases ?? []
   if (!phases.length) return null
   return (
     <ol className="ix-phases" aria-label="Phases">
-      {phases.map(p => (
-        <li key={p.id} className={`ix-phase ix-${p.state}`}>
-          <div className="ix-phase-head">
-            <StatusDot variant={PHASE_TONE[p.state]} pulse={p.state === 'running'} size={7} />
-            <span className="ix-phase-label">{p.label}</span>
-            <span className="ix-phase-count">{phaseCount(p)}</span>
-            {p.ms != null && <span className="ix-phase-time">{fmtDuration(p.ms)}</span>}
-          </div>
-          {p.state === 'running' && (
-            <ProgressBar aria-label={p.label} size="sm" value={p.total ? p.done : null} max={p.total || 1} showValue="none" />
-          )}
-          {p.state === 'done' && p.note && <div className="ix-phase-note">{p.note}</div>}
-        </li>
-      ))}
+      {phases.map(p => {
+        const count = phaseCount(p)
+        const note = p.state === 'done' && p.note && p.note !== count ? p.note : null
+        return (
+          <li key={p.id} className={`ix-phase ix-${p.state}`}>
+            <div className="ix-phase-head">
+              <StatusDot variant={PHASE_TONE[p.state]} pulse={p.state === 'running'} size={7} />
+              <span className="ix-phase-label">{p.label}</span>
+              {p.ms != null && <span className="ix-phase-time">{fmtDuration(p.ms)}</span>}
+            </div>
+            <div className="ix-phase-count">{[count, note].filter(Boolean).join(' · ')}</div>
+            {p.state === 'running' && (
+              <div className="ix-phase-bar">
+                <ProgressBar aria-label={p.label} size="sm" value={p.total ? p.done : null} max={p.total || 1} showValue="none" />
+              </div>
+            )}
+          </li>
+        )
+      })}
     </ol>
   )
 }
@@ -59,9 +65,14 @@ export function IndexJobView({ job, onStop, stopping, log = true }: { job: Index
     return () => window.clearInterval(t)
   }, [])
   const pct = jobPercent(job)
+  // Phases take very different times (embeddings the longest), so the bar
+  // says which phase it is in rather than a percentage of the whole.
+  const ran = (job.phases ?? []).filter(p => p.state !== 'skipped')
+  const at = ran.findIndex(p => p.state === 'running')
+  const which = at >= 0 ? `phase ${at + 1} of ${ran.length}` : ''
   return (
     <div className="ix-job" aria-live="polite">
-      <ProgressBar label={job.label ?? 'Indexing'} value={pct} max={100}
+      <ProgressBar label={job.label ?? 'Indexing'} value={pct} max={100} status={which || undefined}
         detail={`${fmtDuration(elapsed(job))} so far, on ${job.threads ?? '?'} threads${job.state === 'queued' ? ', waiting for the job ahead' : ''}`} />
       <IndexPhaseList job={job} />
       {job.searchableAt && job.kind === 'build' && (
@@ -119,7 +130,7 @@ export function IndexLogDialog({ open, onClose }: { open: boolean; onClose: () =
       )}>
       {error && <Callout tone="error">{error}</Callout>}
       {text === null ? <p className="muted">Loading…</p>
-        : text.trim() ? <CodeBlock code={text} language="text" maxHeight="60vh" wrap copy label="Index log" />
+        : text.trim() ? <LogText text={text} />
           : <p className="muted">Nothing has been logged yet. The log fills as the index is built or synced.</p>}
     </Modal>
   )
@@ -141,6 +152,24 @@ export function IndexLogHost() {
     return () => { hosts--; logOpeners.delete(opener) }
   }, [])
   return <IndexLogDialog open={open} onClose={() => setOpen(false)} />
+}
+
+/** The log's lines, newest last, kept scrolled to the end as lines arrive
+ *  unless the reader has scrolled up to look at something. */
+function LogText({ text }: { text: string }) {
+  const ref = useRef<HTMLPreElement>(null)
+  const following = useRef(true)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (el && following.current) el.scrollTop = el.scrollHeight
+  }, [text])
+  return (
+    <div className="ix-log">
+      <div className="ix-log-copy"><CopyButton text={text} label="Copy the log" /></div>
+      <pre ref={ref} tabIndex={0} aria-label="Index log lines"
+        onScroll={e => { const el = e.currentTarget; following.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24 }}>{text}</pre>
+    </div>
+  )
 }
 
 export function IndexLogButton({ size = 'sm', variant = 'ghost', label = 'View log' }: { size?: 'xs' | 'sm'; variant?: 'ghost' | 'secondary'; label?: string }) {

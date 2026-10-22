@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Callout, Loader, RefreshButton, StatusDot, Table } from '@parallelworks/ui'
 import { api, type FormatReadiness } from '../api'
-import { indexSummary, useIndexStatus } from '../indexActivity'
+import { indexSummary, phaseLine, useIndexStatus } from '../indexActivity'
 import { useShared } from '../statusShare'
 import { IndexControls, IndexJobView, IndexRuns, LastBuild, useIndexControls } from '../components/IndexActivity'
 import { SemanticMap, TopologyMap } from '../components/CorpusMaps'
@@ -161,7 +161,7 @@ export function OverviewView({ onOpen }: { onOpen: (path: string) => void }) {
         <div className="card ov-tile" title={ix.detail ?? undefined}>
           <span className="stat-num ov-index-state">
             <StatusDot variant={ix.tone} pulse={ix.pulse} size={9} />
-            {ix.running ? (ix.percent != null ? `${ix.percent}%` : 'indexing') : ix.tone === 'success' ? 'healthy' : ix.tone === 'muted' ? 'not built' : 'attention'}
+            {ix.running ? (phaseLine(idx?.job) ?? 'indexing') : ix.tone === 'success' ? 'healthy' : ix.tone === 'muted' ? 'not built' : 'attention'}
           </span>
           <span className="stat-label">{ix.running ? 'indexing now' : `index · sync ${ago(idx?.lastSweepAt ?? null)}`}</span>
         </div>

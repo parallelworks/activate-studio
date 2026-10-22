@@ -1836,14 +1836,13 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
    footer's index panel, Settings, Libraries and Statistics. */
 .ix-job { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .ix-phases { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-.ix-phase { display: flex; flex-direction: column; gap: 4px; }
-.ix-phase-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; font-size: 13px; }
-.ix-phase-head > :first-child { align-self: center; }
-.ix-phase-label { color: var(--pw-text); }
+.ix-phase { display: flex; flex-direction: column; gap: 3px; }
+.ix-phase-head { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.ix-phase-label { color: var(--pw-text); min-width: 0; }
 .ix-pending .ix-phase-label, .ix-skipped .ix-phase-label { color: var(--pw-muted); }
-.ix-phase-count { color: var(--pw-muted); font-variant-numeric: tabular-nums; }
-.ix-phase-time { margin-left: auto; color: var(--pw-muted); font-variant-numeric: tabular-nums; }
-.ix-phase-note { font-size: 12px; color: var(--pw-muted); padding-left: 15px; }
+.ix-phase-count { font-size: 12px; color: var(--pw-muted); font-variant-numeric: tabular-nums; padding-left: 15px; }
+.ix-phase-time { margin-left: auto; color: var(--pw-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ix-phase-bar { padding-left: 15px; }
 .ix-note { margin: 0; font-size: 12px; color: var(--pw-muted); }
 .ix-note.ix-warn { color: var(--pw-text); }
 .ix-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
@@ -1851,6 +1850,10 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .ix-confirm { display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
 .ix-confirm p { margin: 0; }
 .ix-log-path { font-family: ui-monospace, monospace; font-size: 12px; word-break: break-all; }
+.ix-log { position: relative; }
+.ix-log pre { margin: 0; max-height: 60vh; overflow: auto; padding: 10px 12px; border: 1px solid var(--pw-border); border-radius: 8px;
+  background: var(--pw-input-bg, var(--pw-panel)); color: var(--pw-text); font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; word-break: break-word; }
+.ix-log-copy { position: absolute; top: 6px; right: 18px; }
 .ix-log-full { font-size: 13px; color: var(--pw-link); margin-right: auto; }
 .ix-section { display: flex; flex-direction: column; gap: 10px; max-width: var(--settings-measure, 44rem); margin-bottom: 18px; }
 .ix-h2 { font-size: 15px; font-weight: 600; margin: 22px 0 8px; }
@@ -1866,14 +1869,15 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
    it searches (named, since the headers are gone), and its actions. */
 @media (max-width: 640px) {
   .libraries-table thead { display: none; }
-  .libraries-table, .libraries-table tbody, .libraries-table tr, .libraries-table td { display: block; width: auto; }
+  /* The table's cells have a fixed row height, which a block cannot keep. */
+  .libraries-table, .libraries-table tbody, .libraries-table tr, .libraries-table td { display: block; width: auto; height: auto; }
   .libraries-table td:first-child { width: auto; padding-right: 0.75rem; }
   .libraries-table td { border-bottom: 0; height: auto; }
   .libraries-table tr { border-bottom: 1px solid var(--pw-border); padding-bottom: 6px; }
   .libraries-table tr.lib-has-detail { border-bottom: 0; }
   .libraries-table td.lib-cap { display: inline-block; }
   .libraries-table td.lib-cap::before { content: attr(data-label) ": "; color: var(--pw-muted); }
-  .libraries-table td.lib-actions { display: flex; flex-wrap: wrap; gap: 6px; white-space: normal; }
+  .libraries-table td.lib-actions { display: flex; flex-wrap: wrap; gap: 6px; white-space: normal; width: auto; }
   .libraries-table .lib-actions > * + * { margin-left: 0; }
 }
 

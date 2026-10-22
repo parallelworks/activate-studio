@@ -85,7 +85,7 @@ function IndexPanel({ trigger, idx, gufi, stats, onSync, syncing }: {
         <span className="muted identity-src">GET /api/index/status</span>
         <span className="identity-actions">
           {!job && <IndexLogButton variant="secondary" />}
-          <Button variant="secondary" size="sm" onClick={onSync} loading={busy} disabled={busy}>{busy ? (job ? 'indexing…' : 'syncing…') : 'Sync now'}</Button>
+          <Button variant="secondary" size="sm" onClick={onSync} loading={syncing} disabled={busy}>{busy ? (job ? 'indexing…' : 'syncing…') : 'Sync now'}</Button>
           <CloseButton />
         </span>
       </div>

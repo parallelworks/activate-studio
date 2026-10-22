@@ -105,6 +105,13 @@ export function jobPercent(job: IndexJob | null | undefined): number | null {
   return Math.round((sum / phases.length) * 100)
 }
 
+/** The running phase as a short line: "meaning 21%". */
+export function phaseLine(job: IndexJob | null | undefined): string | null {
+  const ph = currentPhase(job)
+  if (!ph) return null
+  return `${SHORT[ph.id]}${ph.total > 0 ? ` ${Math.min(100, Math.round((ph.done / ph.total) * 100))}%` : ''}`
+}
+
 export function indexSummary(s: IndexStatus | null, files?: number): IndexSummary {
   const base = { pulse: false, detail: null, percent: null, running: false }
   if (!s) return { ...base, tone: 'muted', text: 'index loading' }

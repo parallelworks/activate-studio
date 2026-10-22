@@ -132,7 +132,8 @@ export function extractorReport(opts: ReaderOptions): { extractors: ExtractorRep
     formats.push({ formats: '.pdf, .docx, .pptx, .xlsx, .doc', readers: [], ok: false, note: 'Document text is turned off under Settings, Indexing; these index by name only.' })
   } else {
     formats.push({ formats: '.docx, .pptx, .xlsx', readers: ['downmark'], ok: true, note: 'Read by downmark, with a standard-library reader for any it cannot.' })
-    formats.push({ formats: '.doc', readers: ['downmark', ...(opts.legacyOffice && p.soffice ? ['LibreOffice'] : [])], ok: true, note: 'Read by downmark.' })
+    const doc = ['downmark', ...(opts.legacyOffice && p.soffice ? ['LibreOffice'] : [])]
+    formats.push({ formats: '.doc', readers: doc, ok: true, note: `Read by ${doc.join(', then ')}.` })
     formats.push({
       formats: '.pdf', readers: pdfVia, ok: pdfVia.length > 0,
       note: pdfVia.length ? `Read by ${pdfVia.join(', then ')}.` : 'No PDF reader on this host; PDFs index by name only. Install poppler (pdftotext) or pypdf.',

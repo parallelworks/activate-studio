@@ -410,7 +410,8 @@ function runTool(ctx: JobCtx, ph: ReturnType<typeof phase> | null, cmd: string, 
         } catch { /* a malformed line is dropped */ }
         return
       }
-      if (!line.trim()) return
+      // gufi_dir2index notes that the staging directory made for it exists.
+      if (!line.trim() || /Already exists!$/.test(line)) return
       out.push(line)
       // What a program reports on success is worth keeping for a build; a
       // folder's routine pass would fill the log with it.
@@ -500,7 +501,7 @@ async function namesPhase(ctx: JobCtx, src: string, staging: string, maxLevel0 =
       ['-x', '-n', String(ctx.threads), ...(maxLevel0 ? ['--max-level', '0'] : []), '--skip-file', ensureSkipFile(), src, staging],
       gufiEnv())
   } finally { clearInterval(poll) }
-  ph.finish(`${total.toLocaleString('en-US')} folders`)
+  ph.finish()
   return built
 }
 
