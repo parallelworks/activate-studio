@@ -202,11 +202,30 @@ test('the setup index covers the whole folder and makes it searchable', { skip: 
     job = (await j('GET', `/api/index/job/${start.body.id}`)).body
   }
   assert.equal(job.state, 'done', job.error ?? '')
+  assert.equal(job.kind, 'build')
   assert.deepEqual(job.progress.failed, [])
-  assert.equal(job.progress.total, 3)
-  assert.equal(job.progress.done, 3)
   assert.equal(job.progress.phase, 'done')
+  // Each phase with its own count: four folders named, their text read,
+  // and no embeddings without the model.
+  const phase = id => job.phases.find(p => p.id === id)
+  assert.equal(phase('names').state, 'done')
+  assert.equal(phase('names').total, 4)
+  assert.equal(phase('names').done, 4)
+  assert.equal(phase('text').state, 'done')
+  assert.equal(phase('text').done, phase('text').total)
+  assert.equal(phase('meaning').state, 'skipped')
+  assert.ok(job.searchableAt, 'the names were put in place')
+  assert.ok(job.ms >= 0)
+  // The status every view reads says the same, and keeps the timings.
+  const st = (await j('GET', '/api/index/status')).body
+  assert.equal(st.running, false)
+  assert.equal(st.job, null)
+  assert.equal(st.indexed, true)
+  assert.equal(st.lastBuild.id, job.id)
+  assert.equal(st.lastBuild.state, 'done')
+  assert.equal(st.incomplete, false)
 
+  // The other folder's cache went aside with its index, not into this one's.
   assert.equal(fs.existsSync(path.join(IX, 'extract', 'stale.pdf.txt')), false)
   assert.equal(fs.existsSync(gone), false)
   assert.equal(fs.readFileSync(path.join(IX, 'indexed-root'), 'utf8').trim(), KB)

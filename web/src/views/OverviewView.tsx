@@ -1,6 +1,8 @@
-import { useEffect, useState } from 'react'
-import { Callout, Loader, Table } from '@parallelworks/ui'
-import { api, IndexStatus } from '../api'
+import { useEffect, useRef, useState } from 'react'
+import { Callout, Loader, RefreshButton, StatusDot, Table } from '@parallelworks/ui'
+import { api, type FormatReadiness } from '../api'
+import { indexSummary, useIndexStatus } from '../indexActivity'
+import { IndexControls, IndexJobView, IndexRuns, LastBuild, useIndexControls } from '../components/IndexActivity'
 import { SemanticMap, TopologyMap } from '../components/CorpusMaps'
 import { currentLibrary, onLibraryChange } from '../api'
 import type { LibraryStats } from '../api'
@@ -57,8 +59,11 @@ function jumpToQuery(filters: { field: string; op: string; value: string }[], so
 export function OverviewView({ onOpen }: { onOpen: (path: string) => void }) {
   const [stats, setStats] = useState<{ files?: number; dirs?: number; totalBytes?: number; byExt?: ExtRow[]; libraries?: LibraryStats[] } | null>(null)
   const cfg = useAppConfig()
-  const [idx, setIdx] = useState<IndexStatus | null>(null)
-  const [extractors, setExtractors] = useState<{ name: string; available: boolean; covers: string }[]>([])
+  // The index status every view shows; the page follows a running job.
+  const idx = useIndexStatus()
+  const controls = useIndexControls()
+  const [missing, setMissing] = useState<FormatReadiness[]>([])
+  const [updatedAt, setUpdatedAt] = useState<number | null>(null)
   const [tags, setTags] = useState<{ tag: string; count: number }[]>([])
   const [largest, setLargest] = useState<QueryResult | null>(null)
   const [recent, setRecent] = useState<QueryResult | null>(null)
@@ -77,13 +82,18 @@ export function OverviewView({ onOpen }: { onOpen: (path: string) => void }) {
   // while they load, so the last library's numbers never stand in for it,
   // and an answer for a library no longer selected is dropped.
   const [loading, setLoading] = useState(true)
+  const waiters = useRef<(() => void)[]>([])
   useEffect(() => {
     let live = true
     const keep = <T,>(set: (v: T) => void) => (v: T) => { if (live) set(v) }
     setStats(null); setLargest(null); setRecent(null); setLoading(true)
-    api.stats().then(keep(setStats)).catch(() => {}).finally(() => { if (live) setLoading(false) })
-    api.indexStatus().then(keep(setIdx)).catch(() => {})
-    api.extractors().then(r => { if (live) setExtractors(r.extractors) }).catch(() => {})
+    api.stats().then(keep(setStats)).catch(() => {}).finally(() => {
+      if (!live) return
+      setLoading(false)
+      setUpdatedAt(Date.now())
+      for (const done of waiters.current.splice(0)) done()
+    })
+    api.extractors().then(r => { if (live) setMissing(r.missing ?? []) }).catch(() => {})
     api.tagVocabulary().then(v => { if (live) setTags(v.tags) }).catch(() => {})
     const q = (body: unknown, set: (r: QueryResult) => void) =>
       fetch('/api/query', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...(body as object), ...(currentLibrary() !== 'kb' ? { library: currentLibrary() } : {}) }) })
@@ -108,25 +118,50 @@ export function OverviewView({ onOpen }: { onOpen: (path: string) => void }) {
     return () => { live = false }
   }, [epoch])
 
+  // While a job runs, the counts are read again every few seconds, so the
+  // page grows with the index; the whole page reloads when the job ends.
+  const running = !!idx?.running
+  useEffect(() => {
+    if (!running) return
+    const t = window.setInterval(() => {
+      api.stats().then(s => { setStats(s); setUpdatedAt(Date.now()) }).catch(() => {})
+    }, 5000)
+    return () => window.clearInterval(t)
+  }, [running])
+  // Resolves once the counts are back, so the button spins until then.
+  const refresh = () => new Promise<void>(resolve => { waiters.current.push(resolve); setEpoch(e => e + 1) })
+  const ix = indexSummary(idx, stats?.files)
+
   const byExt = [...(stats?.byExt ?? [])].filter(e => e.ext !== "(none)").sort((a, b) => b.bytes - a.bytes).slice(0, 12)
   const maxBytes = Math.max(...byExt.map(e => e.bytes), 1)
 
   return (
     <div className="overview-view">
-      {(cfg.libraries?.length ?? 0) > 1 && (
-        <div className="scope-bar">
-          <span className="muted">Statistics for</span>
-          <LibrarySwitch libraries={cfg.libraries ?? []} />
-          {loading && <Loader inline size={14} label="Counting…" />}
-        </div>
+      <div className="scope-bar">
+        {(cfg.libraries?.length ?? 0) > 1 && (
+          <>
+            <span className="muted">Statistics for</span>
+            <LibrarySwitch libraries={cfg.libraries ?? []} />
+          </>
+        )}
+        {loading && <Loader inline size={14} label="Counting…" />}
+        <span className="ov-refresh"><RefreshButton onRefresh={refresh} updatedAt={updatedAt ?? undefined} size="sm" /></span>
+      </div>
+      {idx?.job && (
+        <section className="card ov-index-job" aria-label="Indexing">
+          <IndexJobView job={idx.job} onStop={() => void controls.stop()} stopping={controls.busy === 'stop'} />
+        </section>
       )}
       <div className="ov-tiles">
         <div className="card ov-tile"><span className="stat-num">{stats?.files?.toLocaleString() ?? '…'}</span><span className="stat-label">files indexed</span></div>
         <div className="card ov-tile"><span className="stat-num">{stats?.dirs?.toLocaleString() ?? '…'}</span><span className="stat-label">directories</span></div>
         <div className="card ov-tile"><span className="stat-num">{stats?.totalBytes ? fmtBytes(stats.totalBytes) : '…'}</span><span className="stat-label">corpus size</span></div>
-        <div className="card ov-tile">
-          <span className="stat-num">{idx?.lastError ? 'attention' : 'healthy'}</span>
-          <span className="stat-label">index · sync {ago(idx?.lastSweepAt ?? null)}</span>
+        <div className="card ov-tile" title={ix.detail ?? undefined}>
+          <span className="stat-num ov-index-state">
+            <StatusDot variant={ix.tone} pulse={ix.pulse} size={9} />
+            {ix.running ? (ix.percent != null ? `${ix.percent}%` : 'indexing') : ix.tone === 'success' ? 'healthy' : ix.tone === 'muted' ? 'not built' : 'attention'}
+          </span>
+          <span className="stat-label">{ix.running ? 'indexing now' : `index · sync ${ago(idx?.lastSweepAt ?? null)}`}</span>
         </div>
         <div className="card ov-tile"><span className="stat-num">{tags.length}</span><span className="stat-label">labels in use</span></div>
       </div>
@@ -147,16 +182,17 @@ export function OverviewView({ onOpen }: { onOpen: (path: string) => void }) {
         </Table>
       )}
 
-      {idx?.lastError && (
-        <Callout tone="error">Last sync reported: {idx.lastError.slice(0, 300)}</Callout>
+      {idx?.lastError && !idx.running && (
+        <Callout tone="error">Last index job reported: {idx.lastError.slice(0, 300)}</Callout>
       )}
+      {idx?.incomplete && !idx.running && !idx.lastError && <Callout tone="warning">{ix.detail}</Callout>}
 
-      {/* A format with no extractor indexes as its filename, which is worth
-          saying out loud rather than leaving to be discovered. */}
-      {extractors.some(x => !x.available) && (
-        <Callout tone="info">
-          Not all document formats can be read on this host, so these index by filename only:{' '}
-          {extractors.filter(x => !x.available).map(x => `${x.covers} (needs ${x.name})`).join(', ')}.
+      {/* A format with no reader indexes as its filename, which is worth
+          saying out loud rather than leaving to be discovered. Optional
+          readers (pdftotext where downmark reads PDFs) are not listed. */}
+      {missing.length > 0 && (
+        <Callout tone="info" title="Some files index by name only">
+          {missing.map(m => <div key={m.formats}><strong>{m.formats}</strong>: {m.note}</div>)}
         </Callout>
       )}
 
@@ -229,6 +265,15 @@ export function OverviewView({ onOpen }: { onOpen: (path: string) => void }) {
           </div>
         </section>
       </div>
+
+      <section className="card ov-list ov-runs">
+        <div className="ov-runs-head">
+          <h3>Index runs</h3>
+          <IndexControls canDelete={false} />
+        </div>
+        <LastBuild status={idx} />
+        <IndexRuns runs={idx?.runs ?? []} />
+      </section>
 
       <div className="ov-grid ov-maps">
         <TopologyMap />

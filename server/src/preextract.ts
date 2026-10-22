@@ -24,12 +24,17 @@
  *
  * Runs as a child process (see runPreExtract) or as a CLI from reindex.sh:
  *   node server/dist/preextract.js --kb-root DIR --extract-cache DIR [--subdir REL] [--no-recurse]
+ *     [--jobs N] [--progress] [--no-ocr]
  * The wasm is single-threaded and blocks its thread per document, so the
- * server never converts on its own event loop.
+ * server never converts on its own event loop. The native binary runs as a
+ * process per document, so --jobs of them run side by side (the CPU count
+ * by default); with --progress, `@progress {...}` lines on stdout say how
+ * many of the documents found are done, ahead of the summary line.
  */
 import { fork } from 'node:child_process'
 import fs from 'node:fs'
 import fsp from 'node:fs/promises'
+import os from 'node:os'
 import path from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { createRequire } from 'node:module'
@@ -96,6 +101,12 @@ export interface PreExtractOptions {
   noRecurse?: boolean
   excludeDirs?: Set<string>
   log?: (msg: string) => void
+  /** Conversions side by side with the native binary (the wasm runs one). */
+  jobs?: number
+  /** Read scanned PDF pages with tesseract where it is installed (default). */
+  ocr?: boolean
+  /** Documents done of those found, as the pass goes. */
+  onProgress?: (done: number, total: number) => void
 }
 
 export interface PreExtractSummary {
@@ -159,7 +170,7 @@ export async function preExtract(opts: PreExtractOptions): Promise<PreExtractSum
   const native = downmarkNative()
   // "thin" also reads a scanned body under a typed header, the case a
   // textless policy misses; pages with a real text layer are left alone.
-  const ocr = native && tesseractAvailable()
+  const ocr = native && opts.ocr !== false && tesseractAvailable()
     ? { engine: 'tesseract' as const, policy: 'thin' as const, maxPages: OCR_MAX_PAGES, pageTimeoutMs: OCR_PAGE_TIMEOUT_MS, timeoutMs: OCR_TIMEOUT_MS }
     : undefined
   const handles = (name: string): boolean => {
@@ -176,6 +187,8 @@ export async function preExtract(opts: PreExtractOptions): Promise<PreExtractSum
     throw new Error('subdir escapes the knowledge base')
   }
 
+  // Every document first, so the count is known before the first conversion.
+  const found: { abs: string; rel: string; name: string }[] = []
   const walk = async (dir: string, rel: string): Promise<void> => {
     let entries
     try { entries = await fsp.readdir(dir, { withFileTypes: true }) } catch { return }
@@ -187,61 +200,89 @@ export async function preExtract(opts: PreExtractOptions): Promise<PreExtractSum
         if (!opts.noRecurse && !exclude.has(e.name) && !e.name.startsWith('.')) await walk(abs, childRel)
         continue
       }
-      if (!e.isFile() || !handles(e.name)) continue
-      summary.scanned++
-      let st: fs.Stats
-      try { st = await fsp.stat(abs) } catch { continue }
-      const cacheFile = path.join(opts.cacheRoot, childRel + '.txt')
-      try {
-        const cst = await fsp.stat(cacheFile)
-        // Current source, and written by this converter: nothing to redo.
-        // A version mismatch reconverts this one file, whatever the scope
-        // of the pass, which is what makes an upgrade reach a deployment
-        // that only ever indexes subtrees.
-        if (cst.mtimeMs >= st.mtimeMs && cst.size > 0 && (await entryVersion(cacheFile)) === ver) {
-          summary.reused++
-          continue
-        }
-      } catch { /* no entry yet */ }
-      if (st.size > MAX_INPUT_BYTES) { summary.failed++; log(`preextract: ${childRel}: ${st.size} bytes exceeds the converter's input limit`); continue }
-      try {
-        const data = await fsp.readFile(abs)
-        const isPdf = path.extname(e.name).toLowerCase() === PDF_SUFFIX
-        const { markdown, warnings } = await convert(data, isPdf && ocr ? { filename: e.name, ocr } : { filename: e.name })
-        if (!markdown.trim()) { summary.failed++; log(`preextract: ${childRel}: no text`); continue }
-        const text = `${provenanceLine(ver)}\n\n${markdown}`.slice(0, MAX_TEXT)
-        // A conversion can succeed and still lose content; say what, so a
-        // document that indexes short is explained in the log rather than
-        // discovered by a reader. The Markdown is still the best text we have.
-        if (warnings.length) {
-          summary.warned++
-          for (const w of warnings.slice(0, 5)) log(`preextract: ${childRel}: ${w.code}${w.location ? ` (${w.location})` : ''}: ${w.message}`)
-          if (warnings.length > 5) log(`preextract: ${childRel}: ${warnings.length - 5} more warnings`)
-        }
-        await fsp.mkdir(path.dirname(cacheFile), { recursive: true })
-        const tmp = `${cacheFile}.${process.pid}.tmp`
-        await fsp.writeFile(tmp, text)
-        await fsp.rename(tmp, cacheFile)
-        summary.converted++
-      } catch (err) {
-        summary.failed++
-        log(`preextract: ${childRel}: ${String((err as Error).message ?? err).slice(0, 200)}`)
-      }
+      if (e.isFile() && handles(e.name)) found.push({ abs, rel: childRel, name: e.name })
     }
   }
   await walk(start, sub)
+  summary.scanned = found.length
+  let done = 0
+  opts.onProgress?.(0, found.length)
+
+  const one = async ({ abs, rel: childRel, name }: { abs: string; rel: string; name: string }): Promise<void> => {
+    let st: fs.Stats
+    try { st = await fsp.stat(abs) } catch { return }
+    const cacheFile = path.join(opts.cacheRoot, childRel + '.txt')
+    try {
+      const cst = await fsp.stat(cacheFile)
+      // Current source, and written by this converter: nothing to redo.
+      // A version mismatch reconverts this one file, whatever the scope
+      // of the pass, which is what makes an upgrade reach a deployment
+      // that only ever indexes subtrees.
+      if (cst.mtimeMs >= st.mtimeMs && cst.size > 0 && (await entryVersion(cacheFile)) === ver) {
+        summary.reused++
+        return
+      }
+    } catch { /* no entry yet */ }
+    if (st.size > MAX_INPUT_BYTES) { summary.failed++; log(`preextract: ${childRel}: ${st.size} bytes exceeds the converter's input limit`); return }
+    try {
+      const data = await fsp.readFile(abs)
+      const isPdf = path.extname(name).toLowerCase() === PDF_SUFFIX
+      const { markdown, warnings } = await convert(data, isPdf && ocr ? { filename: name, ocr } : { filename: name })
+      if (!markdown.trim()) { summary.failed++; log(`preextract: ${childRel}: no text`); return }
+      const text = `${provenanceLine(ver)}\n\n${markdown}`.slice(0, MAX_TEXT)
+      // A conversion can succeed and still lose content; say what, so a
+      // document that indexes short is explained in the log rather than
+      // discovered by a reader. The Markdown is still the best text we have.
+      if (warnings.length) {
+        summary.warned++
+        for (const w of warnings.slice(0, 5)) log(`preextract: ${childRel}: ${w.code}${w.location ? ` (${w.location})` : ''}: ${w.message}`)
+        if (warnings.length > 5) log(`preextract: ${childRel}: ${warnings.length - 5} more warnings`)
+      }
+      await fsp.mkdir(path.dirname(cacheFile), { recursive: true })
+      const tmp = `${cacheFile}.${process.pid}.tmp`
+      await fsp.writeFile(tmp, text)
+      await fsp.rename(tmp, cacheFile)
+      summary.converted++
+    } catch (err) {
+      summary.failed++
+      log(`preextract: ${childRel}: ${String((err as Error).message ?? err).slice(0, 200)}`)
+    }
+  }
+  // The native binary is a process per document, so several run at once;
+  // the wasm blocks this thread for each, so one at a time.
+  const lanes = native ? Math.max(1, Math.min(opts.jobs ?? defaultJobs(), found.length || 1)) : 1
+  let next = 0
+  await Promise.all(Array.from({ length: lanes }, async () => {
+    while (next < found.length) {
+      const item = found[next++]
+      await one(item)
+      opts.onProgress?.(++done, found.length)
+    }
+  }))
   summary.ms = Date.now() - t0
   return summary
+}
+
+function defaultJobs(): number {
+  return Math.max(1, typeof os.availableParallelism === 'function' ? os.availableParallelism() : os.cpus().length)
+}
+
+/** The command that runs this module as a CLI: node with this process's
+ *  own loader flags (tsx in development), so it runs from source or dist. */
+export function preextractCommand(args: string[]): { cmd: string; args: string[] } {
+  return { cmd: process.execPath, args: [...process.execArgv, fileURLToPath(import.meta.url), ...args] }
 }
 
 /** Run preExtract in a child process so a long conversion never blocks the
  *  server. Resolves to the summary, or null when the child failed; callers
  *  continue either way because enrich.py covers the same files. */
-export function runPreExtract(opts: Omit<PreExtractOptions, 'log' | 'excludeDirs'>, log: (msg: string) => void = () => {}): Promise<PreExtractSummary | null> {
+export function runPreExtract(opts: Omit<PreExtractOptions, 'log' | 'excludeDirs' | 'onProgress'>, log: (msg: string) => void = () => {}): Promise<PreExtractSummary | null> {
   const script = fileURLToPath(import.meta.url)
   const args = ['--kb-root', opts.kbRoot, '--extract-cache', opts.cacheRoot]
   if (opts.subdir) args.push('--subdir', opts.subdir)
   if (opts.noRecurse) args.push('--no-recurse')
+  if (opts.jobs) args.push('--jobs', String(opts.jobs))
+  if (opts.ocr === false) args.push('--no-ocr')
   return new Promise(resolve => {
     // fork inherits execArgv, so the tsx loader used in development carries
     // over; in production the script is plain JS under dist/.
@@ -262,27 +303,38 @@ export function runPreExtract(opts: Omit<PreExtractOptions, 'log' | 'excludeDirs
   })
 }
 
-function parseArgs(argv: string[]): PreExtractOptions {
-  const opts: PreExtractOptions = { kbRoot: '', cacheRoot: '' }
+function parseArgs(argv: string[]): PreExtractOptions & { progress?: boolean } {
+  const opts: PreExtractOptions & { progress?: boolean } = { kbRoot: '', cacheRoot: '' }
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]
     if (a === '--kb-root') opts.kbRoot = argv[++i] ?? ''
     else if (a === '--extract-cache') opts.cacheRoot = argv[++i] ?? ''
     else if (a === '--subdir') opts.subdir = argv[++i] ?? ''
     else if (a === '--no-recurse') opts.noRecurse = true
+    else if (a === '--jobs') opts.jobs = Math.max(1, Number(argv[++i]) || 1)
+    else if (a === '--progress') opts.progress = true
+    else if (a === '--no-ocr') opts.ocr = false
     else throw new Error(`unknown argument: ${a}`)
   }
-  if (!opts.kbRoot || !opts.cacheRoot) throw new Error('usage: preextract --kb-root DIR --extract-cache DIR [--subdir REL] [--no-recurse]')
+  if (!opts.kbRoot || !opts.cacheRoot) throw new Error('usage: preextract --kb-root DIR --extract-cache DIR [--subdir REL] [--no-recurse] [--jobs N] [--progress] [--no-ocr]')
   return opts
 }
 
 const invokedDirectly = process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href
 if (invokedDirectly) {
-  let opts: PreExtractOptions
+  let opts: PreExtractOptions & { progress?: boolean }
   try { opts = parseArgs(process.argv.slice(2)) } catch (e) { console.error(String((e as Error).message)); process.exit(2) }
+  // At most a few progress lines a second, and always the last.
+  let last = 0
+  const onProgress = opts!.progress ? (done: number, total: number) => {
+    const now = Date.now()
+    if (done !== total && done !== 0 && now - last < 250) return
+    last = now
+    console.log(`@progress ${JSON.stringify({ phase: 'documents', done, total })}`)
+  } : undefined
   // Setting exitCode rather than calling process.exit: stdout to a pipe is
   // asynchronous, and exiting immediately after the write can cut it off.
-  preExtract({ ...opts!, log: m => console.error(m) })
+  preExtract({ ...opts!, log: m => console.error(m), onProgress })
     .then(s => { console.log(JSON.stringify(s)); process.exitCode = 0 })
     .catch(e => { console.error(`preextract: ${String((e as Error).message ?? e)}`); process.exitCode = 1 })
 }

@@ -140,6 +140,7 @@ export async function uploadBatched(
         const s = await api.indexJob(job.id)
         if (s.state === 'done') { p.indexMs = s.ms ?? Date.now() - t0; break }
         if (s.state === 'error') { p.indexError = s.error ?? 'indexing failed'; break }
+        if (s.state === 'cancelled') { p.indexError = 'indexing was stopped; the next sync picks these files up'; break }
         onProgress({ ...p })
       }
     } catch (e) {

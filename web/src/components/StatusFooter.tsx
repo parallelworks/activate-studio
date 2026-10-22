@@ -4,6 +4,8 @@ import {
 } from '@parallelworks/ui'
 import { api, IndexStatus } from '../api'
 import { onLibraryChange } from '../api'
+import { elapsed, fmtDuration, indexSummary, kickIndexStatus, useIndexStatus } from '../indexActivity'
+import { IndexJobView, IndexLogButton, jobOutcome } from './IndexActivity'
 import type { LibraryStats } from '../api'
 import { openAbout, openUpdates, openWhatsNew } from '../api'
 import { useUpdateFlow } from '../updateFlow'
@@ -45,17 +47,27 @@ function IndexPanel({ trigger, idx, gufi, stats, onSync, syncing }: {
   syncing: boolean
 }) {
   const gb = stats?.totalBytes ? `${(stats.totalBytes / 1e9).toFixed(2)} GB` : ''
+  const job = idx?.job ?? null
+  const summary = indexSummary(idx, stats?.files)
+  const [stopping, setStopping] = useState(false)
+  const stop = async () => {
+    setStopping(true)
+    try { await api.stopIndexing(); kickIndexStatus() } catch { /* the status says */ } finally { setStopping(false) }
+  }
+  const last = idx?.lastBuild?.kind === 'build' ? idx.lastBuild : null
   // A row marked in its last field is a library's, indented under the total.
   const rows: [string, string, Dot | null, boolean?][] = [
     ['GUFI engine', gufi === null ? 'checking…' : gufi ? 'available' : 'unavailable (search falls back to grep)', gufi === null ? 'off' : gufi ? 'ok' : 'warn'],
-    ['Indexed', stats?.files ? `${stats.files.toLocaleString()} files in ${stats.dirs?.toLocaleString()} directories, ${gb}${stats.libraries ? `, across ${stats.libraries.length} libraries` : ''}` : 'loading…', null],
+    ['Indexed', stats?.files ? `${stats.files.toLocaleString()} files in ${stats.dirs?.toLocaleString()} directories, ${gb}${stats.libraries ? `, across ${stats.libraries.length} libraries` : ''}` : idx?.indexed === false ? 'not indexed yet' : 'loading…', null],
     ...(stats?.libraries ?? []).map(l => [`${l.label}${l.site ? ` (on ${l.site})` : ''}`, l.available ? `${(l.files ?? 0).toLocaleString()} files in ${(l.dirs ?? 0).toLocaleString()} directories` : (l.error ?? 'not available'), l.available ? 'ok' : 'warn', true] as [string, string, Dot | null, boolean]),
-    ['Sync loop', idx ? (idx.running ? 'sweep running now' : `every ${idx.sweepIntervalSec}s, last ${ago(idx.lastSweepAt ?? null)}${idx.lastSweepMs != null ? ` (${idx.lastSweepMs} ms)` : ''}`) : 'loading…', idx?.running ? 'ok' : null],
-    ['Last result', idx?.lastError ? idx.lastError : idx?.lastSweepAt ? 'clean' : 'no sweep yet this server start', idx?.lastError ? 'warn' : idx?.lastSweepAt ? 'ok' : 'off'],
+    ...(last ? [['Last build', `${jobOutcome(last)}${last.finishedAt ? ` ${ago(last.finishedAt)}` : ''}`, last.state === 'done' ? 'ok' : 'warn'] as [string, string, Dot | null]] : []),
+    ['Sync loop', idx ? (idx.sweepIntervalSec > 0 ? `every ${idx.sweepIntervalSec}s, last ${ago(idx.lastSweepAt ?? null)}${idx.lastSweepMs != null ? ` (${fmtDuration(idx.lastSweepMs)})` : ''}` : 'paused') : 'loading…', null],
+    ['Last result', summary.tone === 'warning' && summary.detail ? summary.detail : idx?.lastSweepAt || last ? 'clean' : 'no sync yet this server start', summary.tone === 'warning' ? 'warn' : idx?.lastSweepAt || last ? 'ok' : 'off'],
   ]
   const busy = syncing || !!idx?.running
   return (
     <FooterPanel trigger={trigger} title="Index health">
+      {job && <IndexJobView job={job} onStop={() => void stop()} stopping={stopping} />}
       <DescriptionList variant="divided" className="identity-list">
         {rows.map(([k, v, dot, sub]) => (
           <DescriptionListItem key={k} label={k} className={sub ? 'identity-sub' : undefined}>
@@ -65,14 +77,15 @@ function IndexPanel({ trigger, idx, gufi, stats, onSync, syncing }: {
       </DescriptionList>
       {(idx?.lastChanges?.length ?? 0) > 0 && (
         <>
-          <div className="scope-menu-head">Last sweep re-indexed</div>
+          <div className="scope-menu-head">Last sync re-indexed</div>
           <pre className="identity-claims">{idx!.lastChanges.slice(0, 10).join('\n')}</pre>
         </>
       )}
       <div className="scope-menu-foot">
         <span className="muted identity-src">GET /api/index/status</span>
         <span className="identity-actions">
-          <Button variant="secondary" size="sm" onClick={onSync} loading={busy}>{busy ? 'syncing…' : 'Sync now'}</Button>
+          {!job && <IndexLogButton variant="secondary" />}
+          <Button variant="secondary" size="sm" onClick={onSync} loading={busy} disabled={busy}>{busy ? (job ? 'indexing…' : 'syncing…') : 'Sync now'}</Button>
           <CloseButton />
         </span>
       </div>
@@ -222,7 +235,8 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
   // With AI features off there is no model line.
   const cfg = useAppConfig()
   const [stats, setStats] = useState<{ files?: number; dirs?: number; totalBytes?: number; libraries?: LibraryStats[] } | null>(null)
-  const [idx, setIdx] = useState<IndexStatus | null>(null)
+  // The same index status the rest of the app shows (indexActivity.ts).
+  const idx = useIndexStatus()
   const [syncing, setSyncing] = useState(false)
   const [who, setWho] = useState<WhoAmI | null>(null)
   const [gufi, setGufi] = useState<boolean | null>(null)
@@ -238,7 +252,6 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
   // health and counts without asking the server again.
   const refresh = () => Promise.allSettled([
     api.stats().then(s => { setStats(s as typeof stats); share({ stats: s }) }),
-    api.indexStatus().then(setIdx),
     fetch('/api/whoami').then(r => r.json()).then((w: WhoAmI) => { setWho(w); share({ authEnabled: !!w.authEnabled }) }),
     api.health().then(h => setGufi(h.gufi)).catch(() => setGufi(null)),
     fetch('/api/ai/health').then(r => r.json()).then((h: AiHealth) => { setAi(h); share({ ai: h }) }).catch(() => { setAi(null); share({ ai: null }) }),
@@ -283,17 +296,20 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
 
   const sync = async () => {
     setSyncing(true)
+    kickIndexStatus()
     await syncIndex()
     refresh()
+    kickIndexStatus()
     setSyncing(false)
   }
 
   const busy = syncing || !!idx?.running
+  const summary = indexSummary(idx, stats?.files)
   if (collapsed) {
     return (
       <div className="sidenav-footer">
-        <div className="status-line" title={stats?.files ? `${stats.files.toLocaleString()} files indexed, sync ${ago(idx?.lastSweepAt ?? null)}` : 'index loading'}>
-          <StatusDot variant={idx?.lastError ? 'warning' : 'success'} size={7} />
+        <div className="status-line" title={`${summary.text}${summary.detail ? `: ${summary.detail}` : ''}, sync ${ago(idx?.lastSweepAt ?? null)}`}>
+          <StatusDot variant={summary.tone} pulse={summary.pulse} size={7} />
         </div>
       </div>
     )
@@ -363,17 +379,19 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
           onSync={() => { void sync() }}
           syncing={syncing}
           trigger={
-            <button className="identity-btn">
-              <StatusDot variant={idx?.lastError ? 'warning' : 'success'} size={7} />
-              {stats?.files ? `${stats.files.toLocaleString()} files indexed` : 'index loading'}
+            <button className="identity-btn" title={summary.detail ?? undefined}>
+              <StatusDot variant={summary.tone} pulse={summary.pulse} size={7} />
+              {summary.text}
             </button>
           }
         />
       </div>
       <div className="status-line muted2">
-        sync {ago(idx?.lastSweepAt ?? null)}
-        <Button variant="ghost" size="xs" className="footer-sync" onClick={sync} loading={busy}>
-          {busy ? 'syncing…' : 'sync now'}
+        {idx?.job
+          ? <>for {fmtDuration(elapsed(idx.job))}</>
+          : <>sync {ago(idx?.lastSweepAt ?? null)}</>}
+        <Button variant="ghost" size="xs" className="footer-sync" onClick={sync} loading={syncing} disabled={busy}>
+          {idx?.job ? 'indexing…' : busy ? 'syncing…' : 'sync now'}
         </Button>
       </div>
     </div>

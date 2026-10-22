@@ -5,6 +5,7 @@ import { api, currentLibrary, type IndexStatus, type PublicLibrary, type UserLib
 import type { AppConfig } from '../config'
 import { setPanelOpen, usePanel } from '../panelState'
 import { modelLabel, syncIndex, useShared, type AiHealth, type KbStats } from '../statusShare'
+import { indexSummary, kickIndexStatus, useIndexStatus } from '../indexActivity'
 import { AI_LABEL } from './StatusFooter'
 import { openInSideView } from './RunPane'
 import { openSessionWindow, type SessionInfo } from './SessionView'
@@ -158,9 +159,9 @@ export function librariesSummary(lines: LibLine[], idx: IndexStatus | null): Sum
   const building = lines.filter(l => l.pulse).length
   if (failed) return { text: `${failed} failed`, tone: 'warning' }
   if (unavailable) return { text: `${unavailable} unavailable`, tone: 'warning' }
+  if (idx?.running) return { text: indexSummary(idx).text.replace(/^Indexing/, 'indexing'), tone: 'info', pulse: true }
   if (idx?.lastError) return { text: 'sync failed', tone: 'warning' }
   if (building) return { text: `${building} building`, tone: 'info', pulse: true }
-  if (idx?.running) return { text: 'syncing', tone: 'info', pulse: true }
   if (idx?.lastSweepAt) return { text: `synced ${ago(idx.lastSweepAt)}`, tone: null }
   return { text: plural(lines.length, 'library', 'libraries'), tone: null }
 }
@@ -241,7 +242,6 @@ function useStatusData(agents: boolean, runs: boolean): [StatusData, (p: Partial
     let live = true
     const put = (p: Partial<StatusData>) => { if (live) patch(p) }
     const fast = () => {
-      api.indexStatus().then(idx => put({ idx })).catch(() => {})
       if (agents) {
         getJson<{ tasks: TaskRow[] }>('/api/tasks').then(d => put({ tasks: d.tasks ?? [] })).catch(() => {})
         if (!fleetRefused) {
@@ -375,15 +375,16 @@ function PanelCards({ view, cfg }: { view: string; cfg: AppConfig }) {
   const shown = (id: string) => !cfg.sections || cfg.sections.includes(id)
   const agentsOn = shown('agents')
   const runsOn = !!cfg.platform && shown('workflows')
-  const [data, patch] = useStatusData(agentsOn, runsOn)
+  const [data] = useStatusData(agentsOn, runsOn)
   const shared = useShared()
   // On the Library page, what is selected in its tree (LibraryDetails.tsx).
   const details = useEntryDetails(view === 'library')
   const [syncing, setSyncing] = useState(false)
   const sync = async () => {
     setSyncing(true)
+    kickIndexStatus()
     await syncIndex()
-    try { patch({ idx: await api.indexStatus() }) } catch { /* next poll */ }
+    kickIndexStatus()
     setSyncing(false)
   }
 
@@ -401,7 +402,9 @@ function PanelCards({ view, cfg }: { view: string; cfg: AppConfig }) {
   const libs = libraryLines(cfg.libraries ?? [], data.userLibs, shared.stats)
   const model = shared.model ?? rememberedModel()
   const conns = connectionLines({ platform: !!cfg.platform, authEnabled: shared.authEnabled, ai: shared.ai, mcp: data.mcp, libs: cfg.libraries ?? [], userLibs: data.userLibs })
-  const idx = data.idx
+  // The index status the footer and the pages show, read once for all.
+  const idx = useIndexStatus()
+  const ix = indexSummary(idx)
 
   return (
     <div className="status-panel-cards">
@@ -461,7 +464,7 @@ function PanelCards({ view, cfg }: { view: string; cfg: AppConfig }) {
             <StatusDot size={7} className="status-row-dot"
               variant={idx?.lastError ? 'warning' : idx?.running || syncing ? 'info' : idx?.lastSweepAt ? 'success' : 'muted'} pulse={!!idx?.running || syncing} />
             <span className="status-row-name" title={idx?.lastError ?? undefined}>
-              {idx?.running || syncing ? 'Syncing now' : idx?.lastError ? `Sync failed: ${idx.lastError}` : idx?.lastSweepAt ? `Synced ${ago(idx.lastSweepAt)}` : 'Not synced yet'}
+              {idx?.running ? ix.text : syncing ? 'Syncing now' : idx?.lastError ? `Sync failed: ${idx.lastError}` : idx?.lastSweepAt ? `Synced ${ago(idx.lastSweepAt)}` : 'Not synced yet'}
             </span>
             <Button variant="ghost" size="xs" onClick={() => void sync()} disabled={syncing || !!idx?.running}>Sync now</Button>
           </div>

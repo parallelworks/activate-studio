@@ -6,9 +6,9 @@ import os from 'node:os'
 import path from 'node:path'
 import type { FastifyInstance } from 'fastify'
 import { authEnabled } from './auth.js'
-import { EXCLUDE_DIRS, GUFI_BIN, GUFI_INDEX, HOST, INDEX_BASE, KB_ROOT, PORT } from './config.js'
-import { corpusStats, invalidateDbList } from './gufi.js'
-import { getIndexJob, incrementalIndexDir, indexRootDb, saveSweepState, startIndexJob, sweepSnapshot, type IndexJob, type IndexProgress } from './indexing.js'
+import { GUFI_BIN, GUFI_INDEX, HOST, INDEX_BASE, INDEX_DIR, KB_ROOT, PORT } from './config.js'
+import { corpusStats } from './gufi.js'
+import { currentBuild, earlierIndexOf, startBuild } from './indexing.js'
 import { KbError } from './kb.js'
 import { listLibraries, publicLibrary } from './libraries.js'
 import { canRestart, launcherConfigFile, readLauncherSettings, requestRestart, saveLauncherSetting } from './lifecycle.js'
@@ -25,10 +25,6 @@ import { effectiveSettings, loadSettings, updateSettings } from './settings.js'
  */
 
 const EMBED_MODEL = path.join(INDEX_BASE, 'models', 'minilm384.gguf')
-// The folder the caches under INDEX_BASE were built from.
-const ROOT_MARK = path.join(INDEX_BASE, 'indexed-root')
-
-let setupJobId: number | null = null
 
 function requireSingleUser(): void {
   if (authEnabled()) throw new KbError(403, 'setup is for a single-user install; this Studio signs users in')
@@ -60,41 +56,8 @@ function gufiFound(): boolean {
   return fs.existsSync(path.join(GUFI_BIN, 'gufi_dir2index')) && fs.existsSync(path.join(GUFI_BIN, 'gufi_query'))
 }
 
-function runningJob(): IndexJob | null {
-  const job = setupJobId === null ? null : getIndexJob(setupJobId)
-  return job && (job.state === 'queued' || job.state === 'running') ? job : null
-}
-
-/** Directories directly under the primary folder that indexing covers. */
-function topLevelDirs(): string[] {
-  let entries: fs.Dirent[] = []
-  try { entries = fs.readdirSync(KB_ROOT, { withFileTypes: true }) } catch { return [] }
-  return entries
-    .filter(e => e.isDirectory() && !e.name.startsWith('.') && !EXCLUDE_DIRS.has(e.name))
-    .map(e => e.name)
-    .sort()
-}
-
-/**
- * Caches under INDEX_BASE are keyed by the path inside the folder, so after
- * a switch to another folder an entry could stand in for a same-named file
- * there. A build for a different folder than last time starts them over.
- */
-async function forgetOtherFolder(): Promise<void> {
-  let was = ''
-  try { was = (await fsp.readFile(ROOT_MARK, 'utf8')).trim() } catch { /* first build */ }
-  if (was && was !== KB_ROOT) {
-    for (const d of ['extract', 'pdf-preview', 'model-cache']) {
-      await fsp.rm(path.join(INDEX_BASE, d), { recursive: true, force: true })
-    }
-    await fsp.rm(path.join(INDEX_BASE, 'gufi', path.basename(was)), { recursive: true, force: true })
-    await fsp.rm(GUFI_INDEX, { recursive: true, force: true })
-  }
-  await fsp.mkdir(INDEX_BASE, { recursive: true })
-  await fsp.writeFile(ROOT_MARK, `${KB_ROOT}\n`)
-}
-
-const message = (e: unknown) => String((e as Error)?.message ?? e).slice(0, 300)
+/** The whole-folder build, while it is queued or running (indexing.ts). */
+const runningJob = currentBuild
 
 /** Whether a port is free where the Studio listens: nothing answers on it,
  *  and it can be bound. Both, since on macOS a program listening on the
@@ -187,46 +150,6 @@ async function dropUnusedIcons(): Promise<void> {
 const variantOf = (q: unknown): 'iconUrl' | 'iconUrlDark' =>
   String((q as { variant?: string } | null)?.variant ?? '') === 'dark' ? 'iconUrlDark' : 'iconUrl'
 
-/** The whole primary folder: its own files, then each top-level directory,
- *  through the same passes (and lock) as any other indexing. */
-async function buildWholeFolder(job: IndexJob): Promise<{ ms: number }> {
-  const t0 = Date.now()
-  await forgetOtherFolder()
-  // Taken first, so a change made during the build is still new to the sweep.
-  const snapshot = await sweepSnapshot()
-  const dirs = topLevelDirs()
-  const progress: IndexProgress = { phase: 'files', done: 0, total: dirs.length + 1, current: null, failed: [] }
-  job.progress = progress
-  try { await indexRootDb() } catch (e) {
-    progress.failed.push(`(files at the top): ${message(e)}`)
-    delete snapshot['.']
-  }
-  progress.done = 1
-  progress.phase = 'directories'
-  for (const d of dirs) {
-    progress.current = d
-    try { await incrementalIndexDir(d) } catch (e) {
-      progress.failed.push(`${d}: ${message(e)}`)
-      for (const k of Object.keys(snapshot)) if (k === d || k.startsWith(`${d}/`)) delete snapshot[k]
-    }
-    progress.done++
-  }
-  progress.phase = 'finishing'
-  progress.current = null
-  // Index trees for directories that are no longer there.
-  const keep = new Set(dirs)
-  let entries: fs.Dirent[] = []
-  try { entries = await fsp.readdir(GUFI_INDEX, { withFileTypes: true }) } catch { /* nothing built */ }
-  for (const e of entries) {
-    if (e.isDirectory() && !keep.has(e.name)) await fsp.rm(path.join(GUFI_INDEX, e.name), { recursive: true, force: true })
-  }
-  invalidateDbList()
-  await saveSweepState(snapshot)
-  progress.phase = 'done'
-  if (progress.failed.length === progress.total) throw new Error(`nothing could be indexed: ${progress.failed[0]}`)
-  return { ms: Date.now() - t0 }
-}
-
 export async function setupRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/setup/status', async req => {
     // A hosted Studio never runs setup, and its paths stay on the server.
@@ -256,6 +179,9 @@ export async function setupRoutes(app: FastifyInstance): Promise<void> {
         writable: writable(KB_ROOT),
         indexed,
         ...(files !== undefined ? { files } : {}),
+        // An index of this folder from before another folder was chosen:
+        // building updates it rather than starting from nothing.
+        earlierIndex: indexed ? null : earlierIndexOf(KB_ROOT),
       },
       gufi: { found, bin: GUFI_BIN, semantic: found && model && fs.existsSync(path.join(GUFI_BIN, 'gufi_sqlite3')) },
       embedModel: { path: EMBED_MODEL, found: model },
@@ -300,9 +226,10 @@ export async function setupRoutes(app: FastifyInstance): Promise<void> {
     if (!isDir(abs)) throw new KbError(400, `not a folder: ${abs}`)
     if (!writable(abs)) throw new KbError(400, `${abs} is not writable`)
     const real = realOr(abs)
-    const index = realOr(INDEX_BASE)
-    if (within(real, index) || within(index, real)) {
-      throw new KbError(400, `${abs} holds the Studio's own index (${INDEX_BASE}); choose a folder that does not contain it`)
+    for (const index of new Set([realOr(INDEX_BASE), realOr(INDEX_DIR)])) {
+      if (within(real, index) || within(index, real)) {
+        throw new KbError(400, `${abs} holds the Studio's own index (${index}); choose a folder that does not contain it`)
+      }
     }
     if (real === realOr(KB_ROOT)) return { saved: true, restarting: false, note: 'This folder is already in use.' }
     if (runningJob()) throw new KbError(409, 'an index build is running; wait for it to finish')
@@ -311,9 +238,12 @@ export async function setupRoutes(app: FastifyInstance): Promise<void> {
     }
     saveLauncherSetting('KB_ROOT', abs)
     const restarting = requestRestart()
+    // Indexed before: the index is kept, and the next build updates it.
+    const earlier = earlierIndexOf(abs)
+    const known = earlier ? { earlierIndex: earlier } : {}
     return restarting
-      ? { saved: true, restarting: true }
-      : { saved: true, restarting: false, note: 'Saved. Restart the Studio to open this folder.' }
+      ? { saved: true, restarting: true, ...known }
+      : { saved: true, restarting: false, note: 'Saved. Restart the Studio to open this folder.', ...known }
   })
 
   // PORT is read once at startup too, so a new port is saved for the
@@ -339,17 +269,16 @@ export async function setupRoutes(app: FastifyInstance): Promise<void> {
       : { saved: true, restarting: false, port, note: 'Saved. Restart the Studio to use this port.' }
   })
 
-  // One job over the whole primary folder; its progress is read through
-  // GET /api/index/job/:id like any other index job.
+  // One job over the whole primary folder, in the background; its progress
+  // is read through GET /api/index/status, or GET /api/index/job/:id like
+  // any other index job. A second request while it runs gets the same job.
   app.post('/api/setup/index', async () => {
     requireSingleUser()
     const running = runningJob()
     if (running) return running
     if (!gufiFound()) throw new KbError(409, `GUFI is not installed: no gufi_dir2index in ${GUFI_BIN}`)
     if (!isDir(KB_ROOT)) throw new KbError(409, `the folder ${KB_ROOT} does not exist`)
-    const job = startIndexJob('', buildWholeFolder)
-    setupJobId = job.id
-    return job
+    return startBuild()
   })
 
   // The Studio's icon, uploaded from this computer: for the light theme, or

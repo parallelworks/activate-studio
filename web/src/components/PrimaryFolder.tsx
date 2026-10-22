@@ -1,7 +1,9 @@
 import { type CSSProperties, useEffect, useRef, useState } from 'react'
 import { Button, Callout, type CalloutTone, EmptyState, Input, Loader, ProgressBar } from '@parallelworks/ui'
-import type { PublicLibrary } from '../api'
+import type { IndexJob as ApiIndexJob, PublicLibrary } from '../api'
 import { chooseFolderNatively, hasNativeFolderChooser } from '../nativeShell'
+import { kickIndexStatus } from '../indexActivity'
+import { IndexJobView, jobOutcome } from './IndexActivity'
 
 /**
  * The primary folder on a single-user install, shared by the setup wizard
@@ -10,13 +12,9 @@ import { chooseFolderNatively, hasNativeFolderChooser } from '../nativeShell'
  * whole index with its progress (/api/setup/*).
  */
 
-export interface IndexJob {
-  id: number
-  state: 'queued' | 'running' | 'done' | 'error'
-  ms: number | null
-  error: string | null
-  progress?: { phase: string; done: number; total: number; current: string | null; failed: string[] }
-}
+/** An index job as /api/index/job/:id and /api/setup/index return it:
+ *  its phases with their counts, and how it ended. */
+export type IndexJob = ApiIndexJob
 
 export interface SetupStatus {
   firstRun: boolean
@@ -26,7 +24,7 @@ export interface SetupStatus {
   /** The port the Studio listens on, and one saved for its next start. */
   port?: number
   portNext?: number | null
-  primary?: { path: string; exists: boolean; writable: boolean; indexed: boolean; files?: number }
+  primary?: { path: string; exists: boolean; writable: boolean; indexed: boolean; files?: number; earlierIndex?: { builtAt: string | null } | null }
   gufi?: { found: boolean; bin: string; semantic: boolean }
   embedModel?: { path: string; found: boolean }
   /** The Studio's own icons, as the browser loads them (BrandIcons). */
@@ -286,7 +284,10 @@ export function useIndexBuild({ pollMs = 1000, onDone }: { pollMs?: number; onDo
   const start = async () => {
     setError('')
     try {
-      void follow(await post<IndexJob>('/api/setup/index'))
+      const job = await post<IndexJob>('/api/setup/index')
+      // The footer and the other views follow the same job.
+      kickIndexStatus()
+      void follow(job)
     } catch (e) {
       setError(errText(e))
     }
@@ -297,27 +298,32 @@ export function useIndexBuild({ pollMs = 1000, onDone }: { pollMs?: number; onDo
   return { job, error, building, start, follow, reset }
 }
 
-/** A build's progress while it runs, then how it ended. */
+/** A build's progress while it runs, phase by phase, then how it ended. A
+ *  job without phases (from an older server) shows its one count. */
 export function IndexBuildProgress({ job, error }: { job: IndexJob | null; error: string }) {
-  const progress = job?.progress
   const building = !!job && (job.state === 'queued' || job.state === 'running')
+  const phased = !!job?.phases?.length
+  const progress = job?.progress
+  const failed = progress?.failed ?? []
   const detail = !progress ? 'Starting'
     : progress.phase === 'files' ? 'Files at the top of the folder'
     : progress.phase === 'directories' ? `${progress.current ?? ''} (${progress.done} of ${progress.total})`
     : 'Finishing'
   return (
     <>
-      {building && (
-        <ProgressBar label="Building the index" value={progress ? progress.done : null} max={progress?.total || 1} detail={detail} />
-      )}
+      {building && (phased
+        ? <IndexJobView job={job} />
+        : <ProgressBar label="Building the index" value={progress ? progress.done : null} max={progress?.total || 1} detail={detail} />)}
       {job?.state === 'done' && (
-        <Callout tone="success">Index built{job.ms !== null ? ` in ${Math.max(1, Math.round(job.ms / 1000))} s` : ''}.</Callout>
+        <Callout tone="success">{phased ? jobOutcome(job) : `Index built${job.ms !== null ? ` in ${Math.max(1, Math.round(job.ms / 1000))} s` : ''}.`}</Callout>
       )}
-      {job?.state === 'done' && !!progress?.failed.length && (
-        <Callout tone="warning" title="Some folders could not be indexed">
-          {progress.failed.map(f => <div key={f}>{f}</div>)}
+      {job?.state === 'done' && (failed.length > 0 || (job.warningCount ?? 0) > 0) && (
+        <Callout tone="warning" title={failed.length ? 'Some folders could not be indexed' : 'Some files could not be read'}>
+          {failed.map(f => <div key={f}>{f}</div>)}
+          {(job.warningCount ?? 0) > 0 && <div>{job.warningCount!.toLocaleString()} files could not be read; the index log names them.</div>}
         </Callout>
       )}
+      {job?.state === 'cancelled' && <Callout tone="info">{jobOutcome(job)}</Callout>}
       {job?.state === 'error' && <Callout tone="error" title="The index build failed">{job.error}</Callout>}
       {error && <Callout tone="error">{error}</Callout>}
     </>

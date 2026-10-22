@@ -199,13 +199,63 @@ export interface SearchHit {
 /** One library's line in statistics over all libraries. */
 export interface LibraryStats { id: string; label: string; site: string | null; writable: boolean; available: boolean; files?: number; dirs?: number; totalBytes?: number; error?: string }
 
+/** The index's status, one answer for every view that shows indexing
+ *  (GET /api/index/status; server/src/indexing.ts). */
 export interface IndexStatus {
+  /** An index job is running or waiting. */
   running: boolean
   lastSweepAt: string | null
   lastSweepMs: number | null
   lastChanges: string[]
   lastError: string | null
   sweepIntervalSec: number
+  job?: IndexJob | null
+  queued?: { id: number; kind: IndexJob['kind']; label: string }[]
+  last?: IndexJob | null
+  lastBuild?: IndexJob | null
+  runs?: IndexJob[]
+  indexed?: boolean
+  incomplete?: boolean
+  threads?: number
+  folder?: string
+  indexDir?: string
+  log?: { path: string; bytes: number; reveal: boolean }
+}
+
+export interface IndexPhase {
+  id: 'names' | 'documents' | 'text' | 'meaning'
+  label: string
+  state: 'pending' | 'running' | 'done' | 'skipped' | 'failed'
+  done: number
+  total: number
+  unit: string
+  step: string | null
+  ms: number | null
+  note: string | null
+}
+
+/** A format and what reads it on this host (GET /api/index/extractors). */
+export interface FormatReadiness { formats: string; readers: string[]; ok: boolean; note: string }
+export interface ExtractorInfo { name: string; available: boolean; covers: string; note: string; optional: boolean }
+export interface ReadersReport { extractors: ExtractorInfo[]; formats: FormatReadiness[]; missing: FormatReadiness[] }
+
+export interface IndexSettings {
+  threads: number | null
+  documents: boolean
+  pdfReader: 'auto' | 'pdftotext' | 'pypdf'
+  ocr: boolean
+  imageDescriptions: boolean
+  legacyOffice: boolean
+  embeddings: boolean
+}
+export interface IndexSettingsInfo {
+  settings: IndexSettings
+  defaults: IndexSettings
+  cpus: number
+  threads: number
+  readers: ReadersReport
+  ai: { enabled: boolean; visionModel: string }
+  location: { current: string; default: string; folder: string; canChange: boolean; saved: string }
 }
 
 async function getJson<T>(url: string): Promise<T> {
@@ -331,7 +381,30 @@ export const api = {
     postJson<{ moved: { from: string; to: string }[]; skipped: { path: string; reason: string }[]; indexMs: number }>(
       '/api/kb/move', { paths, dest }),
 
-  extractors: () => getJson<{ extractors: { name: string; available: boolean; covers: string }[] }>('/api/index/extractors'),
+  extractors: (fresh = false) => getJson<ReadersReport>(`/api/index/extractors${fresh ? '?fresh=1' : ''}`),
+  buildIndex: () => postJson<IndexJob>('/api/index/build', {}),
+  stopIndexing: () => postJson<{ stopped: number }>('/api/index/cancel', {}),
+  cancelIndexJob: (id: number) => postJson<IndexJob>(`/api/index/job/${id}/cancel`, {}),
+  deleteIndex: async () => {
+    const res = await fetch('/api/index?confirm=1', { method: 'DELETE' })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error((data as { error?: string }).error ?? `${res.status}`)
+    return data as IndexJob
+  },
+  indexLog: async (lines = 400) => {
+    const res = await fetch(`/api/index/log?lines=${lines}`)
+    if (!res.ok) throw new Error(`/api/index/log: ${res.status}`)
+    return res.text()
+  },
+  revealIndexLog: () => postJson<{ opened: string }>('/api/index/log/reveal', {}),
+  indexSettings: () => getJson<IndexSettingsInfo>('/api/index/settings'),
+  saveIndexSettings: async (patch: Partial<IndexSettings>) => {
+    const res = await fetch('/api/index/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error((data as { error?: string }).error ?? `${res.status}`)
+    return data as { settings: IndexSettings; threads: number; readers: ReadersReport }
+  },
+  moveIndex: (path: string) => postJson<{ moved: boolean; restarting: boolean; note?: string; job?: IndexJob }>('/api/index/location', { path }),
 
   startIndexJob: (dir: string) => postJson<IndexJob>('/api/index/job', { path: dir }),
   indexJob: (id: number) => getJson<IndexJob>(`/api/index/job/${id}`),
@@ -512,10 +585,21 @@ export interface Job {
 
 export interface IndexJob {
   id: number
+  kind?: 'build' | 'folder' | 'sweep' | 'delete' | 'move'
   dir: string
-  state: 'queued' | 'running' | 'done' | 'error'
+  label?: string
+  state: 'queued' | 'running' | 'done' | 'error' | 'cancelled'
+  startedAt?: string
+  runningAt?: string | null
+  finishedAt?: string | null
   ms: number | null
   error: string | null
+  threads?: number
+  phases?: IndexPhase[]
+  searchableAt?: string | null
+  warnings?: string[]
+  warningCount?: number
+  progress?: { phase: string; done: number; total: number; current: string | null; failed: string[] }
 }
 
 // ---- the model list ----
