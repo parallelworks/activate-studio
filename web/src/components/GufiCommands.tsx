@@ -10,7 +10,8 @@ export interface GufiCommand {
   ms?: number
 }
 
-function where(c: GufiCommand): string {
+/** Where a command runs, as the lines above it say. */
+export function where(c: GufiCommand): string {
   if (c.engine === 'gufi_vt') return 'gufi_vt over the libraries, on the Studio host'
   return c.site ? `on ${c.site}, after pw ssh ${c.site}` : 'on the Studio host'
 }

@@ -5,7 +5,7 @@ import {
 import { api, IndexStatus } from '../api'
 import { onLibraryChange } from '../api'
 import type { LibraryStats } from '../api'
-import { openUpdates, openWhatsNew } from '../api'
+import { openAbout, openUpdates, openWhatsNew } from '../api'
 import { useUpdateFlow } from '../updateFlow'
 import { share, syncIndex, type AiHealth } from '../statusShare'
 import { useAppConfig } from '../config'
@@ -163,6 +163,7 @@ function BuildPanel({ trigger, build }: { trigger: ReactElement; build: Build })
         <span className="muted identity-src">GET /api/version</span>
         <span className="identity-actions">
           <PopoverClose render={<Button variant="secondary" size="sm" />} onClick={openWhatsNew}>What's new</PopoverClose>
+          <PopoverClose render={<Button variant="secondary" size="sm" />} onClick={openAbout}>About</PopoverClose>
           <CloseButton />
         </span>
       </div>

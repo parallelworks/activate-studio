@@ -7,7 +7,8 @@
 // Dock icon, the window remembered between launches. Links that leave the
 // Studio open in the default browser, file pickers and downloads behave as
 // in any Mac app, and quitting leaves the server running for the next open
-// (Stop Background Server in the app menu stops it).
+// (Stop Background Server in the app menu stops it). The title bar takes the
+// color the page names for it, as an installed web app's does.
 //
 // Built with: swiftc -O -target arm64-apple-macos13 StudioShell.swift
 // (deploy/mac/build_app.sh does this when it runs on a Mac).
@@ -27,12 +28,48 @@ if CommandLine.arguments.count > 1, passThrough.contains(CommandLine.arguments[1
   do { try p.run(); p.waitUntilExit(); exit(p.terminationStatus) } catch { exit(1) }
 }
 
+/// The standard window ground, for the views the shell draws itself: the
+/// window's own background color is the title bar's (see paintBar).
+final class GroundView: NSView {
+  override func draw(_ dirtyRect: NSRect) {
+    NSColor.windowBackgroundColor.setFill()
+    dirtyRect.fill()
+  }
+}
+
+/// "#rrggbb" for a color, in sRGB.
+func hexString(_ color: NSColor) -> String? {
+  guard let c = color.usingColorSpace(.sRGB) else { return nil }
+  let byte = { (v: CGFloat) -> Int in Int((max(0, min(1, v)) * 255).rounded()) }
+  let s = String((byte(c.redComponent) << 16) | (byte(c.greenComponent) << 8) | byte(c.blueComponent), radix: 16)
+  return "#" + String(repeating: "0", count: 6 - s.count) + s
+}
+
+func colorFromHex(_ hex: String?) -> NSColor? {
+  guard let hex, hex.count == 7, hex.hasPrefix("#"), let n = Int(hex.dropFirst(), radix: 16) else { return nil }
+  return NSColor(srgbRed: CGFloat((n >> 16) & 255) / 255, green: CGFloat((n >> 8) & 255) / 255,
+                 blue: CGFloat(n & 255) / 255, alpha: 1)
+}
+
+/// True when white text reads better on the color than black, by the WCAG
+/// contrast ratio: the rule the page uses for the classification banner's
+/// text (bannerInk in web/src/components/ClassificationBanner.tsx).
+func wantsLightInk(_ color: NSColor) -> Bool {
+  guard let c = color.usingColorSpace(.sRGB) else { return false }
+  func linear(_ v: CGFloat) -> CGFloat { v <= 0.03928 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4) }
+  let l = 0.2126 * linear(c.redComponent) + 0.7152 * linear(c.greenComponent) + 0.0722 * linear(c.blueComponent)
+  return 1.05 / (l + 0.05) >= (l + 0.05) / 0.05
+}
+
 final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate {
   var window: NSWindow!
   var webView: WKWebView!
   var studio: URL?
   var popups: [NSWindow] = []
   var downloads: [ObjectIdentifier: URL] = [:]
+  var barWatches: [NSKeyValueObservation] = []
+  /// The bar's last color, kept between launches so the window opens with it.
+  let barColorKey = "TitleBarColor"
   let message = NSTextField(wrappingLabelWithString: "Starting ACTIVATE Studio…")
   let spinner = NSProgressIndicator()
   let buttons = NSStackView()
@@ -58,6 +95,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     window.title = "ACTIVATE Studio"
     window.minSize = NSSize(width: 720, height: 480)
     window.contentView = startingView()
+    paintBar(window, colorFromHex(UserDefaults.standard.string(forKey: barColorKey)))
+    followBarColor(webView, in: window)
     if !window.setFrameUsingName("ACTIVATE Studio") { window.center() }
     window.setFrameAutosaveName("ACTIVATE Studio")
     window.makeKeyAndOrderFront(nil)
@@ -136,10 +175,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     NSWorkspace.shared.open(logs)
   }
 
+  // MARK: the title bar
+
+  /// The bar takes the color the page names in its theme-color meta tag,
+  /// which is the color an installed web app's title bar takes: the
+  /// classification banner's when one is shown, otherwise the page's ground
+  /// in its current theme. The page changes the tag when its theme, the
+  /// banner, or the system's appearance changes, and WebKit reports each
+  /// change. A page without the tag leaves the bar as it was.
+  func followBarColor(_ view: WKWebView, in window: NSWindow) {
+    barWatches.append(view.observe(\.themeColor, options: [.new]) { [weak self, weak window] view, _ in
+      guard let window else { return }
+      DispatchQueue.main.async { self?.barColorChanged(view, window) }
+    })
+  }
+
+  func barColorChanged(_ view: WKWebView, _ window: NSWindow) {
+    guard let color = view.themeColor else { return }
+    paintBar(window, color)
+    if window === self.window, let hex = hexString(color) {
+      UserDefaults.standard.set(hex, forKey: barColorKey)
+    }
+  }
+
+  /// A transparent title bar shows the window's background color, so the
+  /// bar is painted by giving the window that color. The title and the
+  /// window controls take the light or dark appearance that reads on it;
+  /// it is set on the title bar alone, since the page follows the window's
+  /// appearance for its own light and dark. Nil restores the standard bar.
+  func paintBar(_ window: NSWindow, _ color: NSColor?) {
+    window.titlebarAppearsTransparent = color != nil
+    window.titlebarSeparatorStyle = color == nil ? .automatic : .none
+    window.backgroundColor = color ?? .windowBackgroundColor
+    let titlebar = window.standardWindowButton(.closeButton)?.superview
+    if let color {
+      titlebar?.appearance = NSAppearance(named: wantsLightInk(color) ? .darkAqua : .aqua)
+    } else {
+      titlebar?.appearance = nil
+    }
+  }
+
   // MARK: the waiting and failure views
 
   func startingView() -> NSView {
-    let view = NSView()
+    let view = GroundView()
     spinner.style = .spinning
     spinner.controlSize = .regular
     message.alignment = .center
@@ -229,6 +308,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     w.contentView = child
     w.title = "ACTIVATE Studio"
     w.isReleasedWhenClosed = false
+    // The main window's bar until the popped-out page names its own.
+    paintBar(w, window.titlebarAppearsTransparent ? window.backgroundColor : nil)
+    followBarColor(child, in: w)
     _ = w.cascadeTopLeft(from: window.frame.origin)
     w.makeKeyAndOrderFront(nil)
     popups.append(w)
@@ -321,6 +403,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
   @objc func zoomOut(_ sender: Any?) { webView.pageZoom = max(webView.pageZoom - 0.1, 0.5) }
   @objc func actualSize(_ sender: Any?) { webView.pageZoom = 1 }
 
+  /// The standard About window (the icon, name, version, and the copyright
+  /// from Info.plist), with who builds the app as its credits.
+  @objc func showAbout(_ sender: Any?) {
+    let credits = NSMutableAttributedString(string: "Built and maintained by Parallel Works", attributes: [
+      .font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize),
+      .foregroundColor: NSColor.secondaryLabelColor,
+    ])
+    let name = (credits.string as NSString).range(of: "Parallel Works")
+    credits.addAttribute(.link, value: URL(string: "https://parallelworks.com")!, range: name)
+    let centered = NSMutableParagraphStyle()
+    centered.alignment = .center
+    credits.addAttribute(.paragraphStyle, value: centered, range: NSRange(location: 0, length: credits.length))
+    NSApp.orderFrontStandardAboutPanel(options: [.credits: credits])
+  }
+
   func buildMenu() {
     let main = NSMenu()
     func submenu(_ title: String, _ items: [NSMenuItem]) {
@@ -338,7 +435,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
       return i
     }
     submenu("ACTIVATE Studio", [
-      item("About ACTIVATE Studio", #selector(NSApplication.orderFrontStandardAboutPanel(_:))),
+      item("About ACTIVATE Studio", #selector(showAbout(_:)), target: self),
       .separator(),
       item("Stop Background Server", #selector(stopServer(_:)), target: self),
       .separator(),

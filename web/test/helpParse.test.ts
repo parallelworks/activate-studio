@@ -5,8 +5,8 @@ import { parseHelp } from '../src/views/HelpView'
 
 describe('the user guide rail', () => {
   it('groups pages under # headings and keeps the intro, ### included, as the Overview', () => {
-    const { intro, sections } = parseHelp('Intro line.\n\n### Start here\n\n1. Ask.\n\n# Basics\n\n## Chat\n\nAsk things.\n\n## Search\n\nFind things.\n\n# More\n\n## The index\n\nGUFI.\n')
-    expect(intro).toBe('Intro line.\n\n### Start here\n\n1. Ask.')
+    const { intro, sections } = parseHelp('Intro line.\n\n### Quick start\n\n1. Ask.\n\n# Basics\n\n## Chat\n\nAsk things.\n\n## Search\n\nFind things.\n\n# More\n\n## The index\n\nGUFI.\n')
+    expect(intro).toBe('Intro line.\n\n### Quick start\n\n1. Ask.')
     expect(sections.map(s => [s.group, s.title, s.body])).toEqual([
       ['Basics', 'Chat', 'Ask things.'],
       ['Basics', 'Search', 'Find things.'],
@@ -23,7 +23,7 @@ describe('the user guide rail', () => {
   it('puts every page of the shipped guide in a group', () => {
     const md = readFileSync(path.resolve(process.cwd(), '../docs/HELP.md'), 'utf8')
     const { intro, sections } = parseHelp(md)
-    expect(intro).toMatch(/### Start here/)
+    expect(intro).toMatch(/### Quick start/)
     expect(sections.length).toBeGreaterThan(8)
     expect(sections.every(s => s.group)).toBe(true)
   })

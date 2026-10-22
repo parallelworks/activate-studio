@@ -433,6 +433,22 @@ export function onWhatsNew(fn: () => void): () => void {
   return () => window.removeEventListener(WHATS_NEW, fn)
 }
 
+/** Where About lives: a page of Help. */
+export const ABOUT_HASH = '#view=help:about'
+const ABOUT = 'ade:about'
+
+/** Opens Help at About. */
+export function openAbout(): void {
+  location.hash = ABOUT_HASH
+  window.dispatchEvent(new Event(ABOUT))
+}
+
+/** Calls `fn` when About is asked for. */
+export function onAbout(fn: () => void): () => void {
+  window.addEventListener(ABOUT, fn)
+  return () => window.removeEventListener(ABOUT, fn)
+}
+
 export interface UploadResult { saved: string[]; indexMs?: number; indexed?: boolean; indexError?: string; deferred?: boolean }
 export interface Job {
   id: number

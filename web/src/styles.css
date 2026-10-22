@@ -666,6 +666,13 @@ textarea.field { line-height: 1.5; }
   /* Was a hardcoded white, which left the label unreadable in dark mode. */
   border-radius: 999px; overflow: hidden; background: var(--pw-panel);
 }
+/* A saved query's SQL, from the code button on its chip. */
+.saved-sql { width: min(640px, calc(100vw - 32px)); max-height: min(70vh, 640px); overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+.saved-sql-note { margin: 0; font-size: 13px; color: var(--theme-muted-text-color, var(--pw-muted)); }
+.saved-sql-label { margin-bottom: 4px; font-size: 12px; color: var(--theme-muted-text-color, var(--pw-muted)); }
+.saved-sql-label code { font-size: 12px; color: var(--pw-text); }
+/* SQL wraps between words, where the block's own wrap breaks anywhere. */
+.saved-sql pre { margin: 0; padding: 8px 2.75rem 8px 10px; font-size: 0.76rem; white-space: pre-wrap; word-break: normal; overflow-wrap: anywhere; }
 .query-actions { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
 .query-error { margin-top: 12px; }
 .query-results { overflow: hidden; }
@@ -963,7 +970,7 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .scope-item:hover { background: var(--pw-hover-row, #f8fafc); }
 .scope-tag { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .scope-n { color: var(--pw-muted); font-size: 12px; }
-.scope-menu-foot { display: flex; justify-content: space-between; align-items: center; }
+.scope-menu-foot { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 6px; }
 
 /* Streaming thinking peek: a little more room than the package's 5rem so
    whole sentences fit, and calmer type for the reasoning text. */
@@ -982,7 +989,8 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .identity-list [data-value] { white-space: pre-line; }
 .identity-sub dt { padding-left: 12px; }
 .identity-dot { margin-right: 6px; vertical-align: middle; }
-.identity-actions { display: flex; gap: 6px; }
+/* On a line of their own, at the right, when the source does not leave room. */
+.identity-actions { display: flex; gap: 6px; margin-left: auto; }
 .identity-claims {
   margin: 0; padding: 8px; font-size: 11px; line-height: 1.5;
   background: var(--pw-bg); border: 1px solid var(--pw-border); border-radius: 6px;
@@ -990,7 +998,7 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 }
 .identity-note { margin: 0; font-size: 12px; line-height: 1.55; color: var(--pw-muted); }
 .identity-note code { font-size: 11px; }
-.identity-src { font-size: 11px; }
+.identity-src { font-size: 11px; white-space: nowrap; }
 
 /* Stats view: clickable rows and label pills jump to a prefilled query */
 .ov-click { cursor: pointer; }
@@ -1323,14 +1331,14 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 
 .chat-filter { position: absolute; left: 12px; bottom: 10px; z-index: 4; height: auto; }
 
-/* The deployment's mark above the empty chat's greeting. Drawn as a
-   pseudo-element on the package's own h1, so it sits immediately above
-   "what's on your mind" wherever the package centers that, and moves with
-   it; a wrapper-level image was pinned to the canvas top and looked
-   unrelated to the content below it. */
+/* The deployment's mark above the empty chat's greeting, or the Studio's
+   own without one. Drawn as a pseudo-element on the package's own h1, so it
+   sits immediately above "what's on your mind" wherever the package
+   centers that, and moves with it; a wrapper-level image was pinned to the
+   canvas top and looked unrelated to the content below it. */
 .empty-with-brand { height: 100%; min-height: 0; }
 .empty-with-brand > * { height: 100%; }
-.empty-with-brand.has-icon h1::before {
+.empty-with-brand h1::before {
   content: '';
   display: block;
   width: 96px; height: 96px;
@@ -1729,6 +1737,10 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
   .help-nav::-webkit-scrollbar { display: none; }
   .help-nav-head { display: none; }
   .help-nav button { white-space: nowrap; flex: 0 0 auto; }
+  /* A group's pages follow its name along the strip, rather than hanging
+     below it and making the strip as tall as the list. */
+  .help-nav-group { flex-direction: row; align-items: center; flex: 0 0 auto; margin-top: 0; }
+  .help-nav-group-pages { flex-direction: row; margin-left: 2px; padding-left: 6px; }
   .help-content, .settings-content { padding: 14px 14px 32px; min-height: 0; }
   .settings-view { padding: 8px; }
   /* Every view scrolls inside itself now that the page cannot: a view
@@ -2189,3 +2201,12 @@ button.status-row:hover { background: var(--pw-hover-row); }
 .whats-new .changes-version-head { font-size: 15px; margin-bottom: 4px; }
 .whats-new .changes-entry-title { font-size: 14px; padding: 4px 0; }
 .whats-new .query-actions { margin-top: 18px; }
+
+/* Help, About: the Studio's mark and name, who builds it, and the details
+   below. Its rail button sits at the foot of the rail. */
+.help-nav .help-nav-about { margin-top: auto; }
+.about { max-width: 640px; }
+.about-head { display: flex; align-items: center; gap: 14px; margin: 4px 0 18px; }
+.about-head img { flex-shrink: 0; }
+.about-name { font-size: 16px; font-weight: 600; color: var(--pw-text); }
+.about-maker { margin-top: 2px; font-size: 13px; color: var(--theme-muted-text-color, var(--pw-muted)); }

@@ -71,7 +71,7 @@ While open and the tab is visible, the panel reads `GET /api/tasks`, `/api/fleet
 - **Canned** queries: largest, newest, oldest, recently changed, totals by extension, and biggest folders.
 - **Builder**: filters (labels included), grouping, sorting, and a folder to search under, with no SQL. **Reset** clears the form and the results.
 - **SQL**: any read-only SELECT over the index tables.
-- **Saved queries** rerun in one click; a new deployment comes with a few examples.
+- **Saved queries** rerun in one click; a new deployment comes with a few examples. The code button beside one shows the SQL of each `gufi_query` stage it compiles to (`-I` and `-K` create a table for each thread and one for the result, `-E` runs in every directory, `-J` adds each thread's rows to the result, `-G` orders and limits it; raw SQL is `-E` alone) and the command that runs it, each with a copy button. It reads `POST /api/query/sql`, which takes the body `POST /api/query` takes and answers `stages` (`flag`, `sql`) and `commands`, one per library in scope as a run would record them, without running anything.
 - Result rows with a path can be ticked and labeled, as search results can.
 
 ## Labels
@@ -115,6 +115,7 @@ How the macOS app checks, verifies, installs and rolls back is in [`MACOS.md`](M
 - The update notice shows in `app` and `clone` modes while `available` is true. **Later** stores the version in this browser (`ade-update-later` in local storage); a newer `latest` shows the notice again. During an install it follows the same flow as Settings, one poll for the page, and reloads once `/api/version` reports the new version.
 - The notice after an update compares the running version with the last one this browser saw (`ade-seen-version`). A first visit records it and shows nothing; a newer version shows the entries from `GET /api/changelog?after=<last seen>` once, and records the new one. Hosted deployments do not show it.
 - What's new is a page of Help (`#view=help:whats-new`), also opened from the footer's version panel and Settings, Updates. It shows the first ten versions, and **Show older versions** adds twenty at a time.
+- About is a page of Help too (`#view=help:about`), at the foot of its list and opened from the footer's version panel: the version and commit from `GET /api/version`, the license, the source repository, GUFI, and that ACTIVATE Studio is built and maintained by Parallel Works. It names ACTIVATE Studio whatever the deployment is called.
 - `CHANGELOG.md` ships in the macOS app (`Contents/Resources/app`, checked by `deploy/mac/check_app.sh`), the workflow bundle (`deploy/make_bundle.sh`), and the container image (`deploy/app.def`, whose smoke test asks `/api/changelog` for it).
 
 ## AI features
