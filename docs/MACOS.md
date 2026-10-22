@@ -51,7 +51,7 @@ opened, which restarts a server still on the old port. The server takes the PATH
 found by the app too. A LaunchAgent keeps it running and starts it
 at login; it restarts on its own when a setting needs a restart, and after
 a crash. The app carries Node, GUFI, Python for the indexer, and the
-embedding model, so nothing else needs installing. No Parallel Works
+embedding models, so nothing else needs installing. No Parallel Works
 account is needed; where the `pw` CLI is installed and signed in, the
 platform features work too.
 
@@ -66,7 +66,8 @@ platform features work too.
 
 *What it reads:* PDFs and Word, PowerPoint and Excel files are read out
 of the box: downmark, which comes with the app, converts them, and the
-app's Python carries pypdf for a PDF downmark cannot read, so poppler is
+app's Python carries pypdf for a PDF downmark cannot read, and
+onnxruntime, tokenizers and numpy for the ONNX embedding model, so poppler is
 not needed. Older formats (`.ppt`, `.xls`, OpenDocument) are read through
 LibreOffice when it is installed in Applications, which also renders
 previews of Office documents; the app does not include it. Text in images

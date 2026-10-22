@@ -220,7 +220,7 @@ exit status, error, and logs. It runs `gufi_dir2index -x` into
 is there, the Studio copies `enrich.py` into the state folder and runs
 it, keeping extracted text in `<index folder>/.extract`, and where a GUFI
 with the embedding extension and `~/.activate-studio/models/minilm384.gguf`
-are there too, `embed.py`. It then counts the index and writes
+are there too, `embed.py`, which uses that GGUF model through sqlite-lembed (the ONNX backend runs only on this computer). It then counts the index and writes
 `.studio-index.json`, with `fullText` true only when that system's
 `gufi_query` can read the text tables. The Studio follows the build as a
 background job (`GET /api/jobs/<id>`), reading its state every few

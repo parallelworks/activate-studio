@@ -123,8 +123,9 @@ jobs:
       # so allow only what a build needs: GitHub (checkout, SingularityCE,
       # GUFI), the Ubuntu mirrors (with the ones apt falls back to when
       # the Azure mirror is down) and Debian's, Docker Hub for the base
-      # images, npm, and Hugging Face for the model. Anything else is
-      # blocked and shows in the job's StepSecurity report.
+      # images, npm, Hugging Face for the models, and PyPI's file host for
+      # the ONNX embedding packages. Anything else is blocked and shows in
+      # the job's StepSecurity report.
       - uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: block
@@ -150,6 +151,7 @@ jobs:
             registry.npmjs.org:443
             huggingface.co:443
             *.hf.co:443
+            files.pythonhosted.org:443
 
       # app.def copies the whole checkout, .git included, into the build
       # stage, so keep the token out of .git/config.

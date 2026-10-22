@@ -47,9 +47,11 @@ PY
 for f in \
   "MacOS/ACTIVATE Studio" Resources/launcher.sh Resources/studio-run.sh Resources/update-signing.pub \
   Resources/node/bin/node Resources/python/bin/python3 \
-  Resources/models/minilm384.gguf Resources/app/build-info.json Resources/app/package.json \
+  Resources/models/minilm384.gguf Resources/models/minilm-l6/model.onnx Resources/models/minilm-l6/tokenizer.json \
+  Resources/app/build-info.json Resources/app/package.json \
   Resources/app/server/dist/main.js Resources/app/server/node_modules/fastify/package.json \
   Resources/app/web/dist/index.html Resources/app/indexer/enrich.py Resources/app/indexer/embed.py \
+  Resources/app/indexer/embed_onnx.py Resources/app/indexer/embed_query.py \
   Resources/app/indexer/reindex.sh Resources/app/docs/HELP.md Resources/app/CHANGELOG.md Resources/app/deploy/gufi-index.yaml \
   Resources/gufi/bin/gufi_query Resources/gufi/bin/gufi_dir2index Resources/gufi/bin/gufi_sqlite3 \
   Resources/gufi/lib/gufi_vt.dylib Resources/gufi/lib/vec0.dylib Resources/gufi/lib/lembed0.dylib \
@@ -87,6 +89,8 @@ if command -v codesign >/dev/null 2>&1; then
   fi
 fi
 check "the model is the full file (over 10 MB)" test "$(( $(wc -c <"$R/models/minilm384.gguf") ))" -gt 10000000
+check "the ONNX model is the pinned file" sh -c "python3 -c 'import hashlib, json, sys; d = json.load(open(sys.argv[1])); sys.exit(0 if hashlib.sha256(open(sys.argv[2], \"rb\").read()).hexdigest() == d[\"model\"][\"files\"][\"model.onnx\"][\"sha256\"] else 1)' '$R/app/indexer/embed_deps.json' '$R/models/minilm-l6/model.onnx'"
+check "onnxruntime, tokenizers and numpy are in the app's Python" sh -c "ls -d '$R'/python/lib/python3.*/site-packages/onnxruntime/__init__.py '$R'/python/lib/python3.*/site-packages/tokenizers/__init__.py '$R'/python/lib/python3.*/site-packages/numpy/__init__.py"
 check "pypdf is in the app's Python, for PDFs downmark cannot read" sh -c "ls -d '$R'/python/lib/python3.*/site-packages/pypdf/__init__.py '$R'/python/lib/python3.*/site-packages/pypdf-*.dist-info/licenses"
 check "the document converter's macOS arm64 binary is there" \
   sh -c "find '$R/app/server/node_modules' -path '*downmark-darwin-arm64/bin/downmark' -type f | grep -q ."
@@ -174,6 +178,7 @@ if [ "$RUN" = 1 ]; then
     echo "Running"
     check "node runs" clean "$R/node/bin/node" -e 'process.exit(process.versions.node.startsWith("26.") ? 0 : 1)'
     check "python runs, with sqlite3 and pypdf" clean "$R/python/bin/python3" -c 'import sqlite3, json, zipfile, urllib.request, pypdf'
+    check "and with onnxruntime, tokenizers and numpy" clean "$R/python/bin/python3" -c 'import onnxruntime, tokenizers, numpy'
     # The window, started only far enough to hand --help to the launcher.
     check "the app's executable starts" sh -c "env -i HOME='$T/home' PATH=/usr/bin:/bin '$C/MacOS/ACTIVATE Studio' --help | grep -q -- --uninstall"
     if command -v codesign >/dev/null 2>&1; then
@@ -197,8 +202,10 @@ if [ "$RUN" = 1 ]; then
     fi
     check "the indexer extracts text" clean "$R/python/bin/python3" "$R/app/indexer/enrich.py" \
       --kb-root "$T/corpus" --index "$T/idx/corpus" --extract-cache "$T/extract"
-    check "the indexer embeds through gufi_sqlite3" clean "$R/python/bin/python3" "$R/app/indexer/embed.py" \
-      --index "$T/idx/corpus" --model "$R/models/minilm384.gguf" --gufi-sqlite3 "$G/bin/gufi_sqlite3"
+    check "the indexer embeds with the ONNX model" clean /bin/sh -c "'$R/python/bin/python3' '$R/app/indexer/embed.py' --index '$T/idx/corpus' --model '$R/models/minilm384.gguf' --gufi-sqlite3 '$G/bin/gufi_sqlite3' | grep -q 'model: minilm-l6-mean-int8 (onnx)'"
+    check "and names it in each folder's index" clean "$R/python/bin/python3" -c "import sqlite3, sys; sys.exit(0 if sqlite3.connect('$T/idx/corpus/db.db').execute('SELECT model FROM gvecmodel').fetchone()[0] == 'minilm-l6-mean-int8' else 1)"
+    check "the older model still embeds through gufi_sqlite3" clean /bin/sh -c "'$R/python/bin/python3' '$R/app/indexer/embed.py' --index '$T/idx/corpus' --backend lembed --model '$R/models/minilm384.gguf' --gufi-sqlite3 '$G/bin/gufi_sqlite3' | grep -q 'model: minilm384 (lembed)'"
+    check "the query embedder answers with 384 values" clean /bin/sh -c "printf '%s\n' '{\"id\": 1, \"texts\": [\"lemon dessert\"]}' | '$R/python/bin/python3' '$R/app/indexer/embed_query.py' --onnx '$R/models/minilm-l6' | '$R/python/bin/python3' -c 'import base64, json, sys; l = [json.loads(x) for x in sys.stdin]; sys.exit(0 if l[0][\"ready\"] and len(base64.b64decode(l[1][\"vectors\"][0])) == 1536 else 1)'"
     # A PDF out of the box: downmark's binary first, the bundled pypdf for one
     # it leaves (no poppler on a Mac).
     if [ -f "$HERE/../../testdata/corpus/docs/report.pdf" ]; then
@@ -223,6 +230,7 @@ if [ "$RUN" = 1 ]; then
     if [ "$up" = 1 ]; then ok "the server answers on 127.0.0.1:$PORT_FREE"; else bad "the server did not start:"; tail -n 30 "$T/data/logs/studio.log" | sed 's/^/        /'; fi
     check "it reports this build" grep -q "$(sed -n 's/.*"builtAt": *"\([^"]*\)".*/\1/p' "$R/app/build-info.json")" "$T/version.json"
     check "the model is linked into its index" test -e "$T/data/index/models/minilm384.gguf"
+    check "and the ONNX model too" test -e "$T/data/index/models/minilm-l6/model.onnx"
     # A full rebuild runs indexer/reindex.sh (bash, then Python) with the
     # GUFI the server found; search then reads it through gufi_query.
     check "the server starts a full index" curl -fsS -m 10 -X POST -H 'content-type: application/json' -d '{}' \
@@ -233,6 +241,15 @@ if [ "$RUN" = 1 ]; then
       sleep 1
     done
     if [ "$found" = 1 ]; then ok "and search finds a file by its text"; else bad "search found nothing after the index:"; tail -n 30 "$T/data/logs/studio.log" | sed 's/^/        /'; fi
+    # By meaning: no word in common, so only the vectors can find it, with
+    # the query embedded by the worker the server starts.
+    meaning=0
+    for _ in $(seq 1 60); do
+      if curl -fsS -m 30 "http://127.0.0.1:$PORT_FREE/api/search?q=which%20dessert%20uses%20citrus%20fruit" 2>/dev/null |
+        python3 -c 'import json, sys; d = json.load(sys.stdin); h = d.get("results") or d.get("hits") or []; sys.exit(0 if any(x.get("name") == "cake.txt" and x.get("mode") == "vector" for x in h) else 1)'; then meaning=1; break; fi
+      sleep 1
+    done
+    if [ "$meaning" = 1 ]; then ok "and search by meaning finds it with the ONNX model"; else bad "search by meaning did not find it:"; tail -n 30 "$T/data/logs/studio.log" | sed 's/^/        /'; fi
     kill -TERM "$loop" 2>/dev/null || true
     # The loop waits for the server's own graceful stop, which launchd
     # allows 30 seconds (ExitTimeOut).

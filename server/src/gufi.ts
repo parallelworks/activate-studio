@@ -4,6 +4,7 @@ import path from 'node:path'
 import { GUFI_BIN, GUFI_INDEX, INDEX_BASE, gufiAvailable, gufiEnv } from './config.js'
 import { REMOTE_PREFIX, remoteIndexRoot, remoteQuery, remoteTarget } from './userLibraries.js'
 import { noteGufi } from './gufiTrace.js'
+import { ONNX_MODEL_ID, embedQueries, onnxModelPresent } from './embedWorker.js'
 
 const DELIM = '\x1e' // record separator; never appears in KB text
 
@@ -275,7 +276,8 @@ const EMBED_MODEL = path.join(INDEX_BASE, 'models', 'minilm384.gguf')
 
 // Cached per index root: a second library walks its own tree.
 const dbListCache = new Map<string, { dbs: string[]; at: number }>()
-const vecDbCache = new Map<string, { dbs: string[]; at: number }>()
+interface VectorDb { db: string; model: string }
+const vecDbCache = new Map<string, { dbs: VectorDb[]; at: number }>()
 export function invalidateDbList(): void { dbListCache.clear(); vecDbCache.clear() }
 function listIndexDbs(indexRoot: string = GUFI_INDEX): string[] {
   const hit = dbListCache.get(indexRoot)
@@ -293,8 +295,11 @@ function listIndexDbs(indexRoot: string = GUFI_INDEX): string[] {
 }
 
 export function vectorsAvailable(): boolean {
-  return fs.existsSync(EMBED_MODEL) && gufiAvailable()
+  return (fs.existsSync(EMBED_MODEL) || onnxModelPresent()) && gufiAvailable()
 }
+
+/** The model a directory's vectors come from when its db names none. */
+const LEGACY_MODEL = 'minilm384'
 
 /**
  * Semantic nearest-neighbor search over the per-directory vec0 tables.
@@ -309,46 +314,98 @@ export function vectorsAvailable(): boolean {
  * semantic search for the entire corpus. Reading sqlite_master is always
  * valid, so this pass is safe to run over everything.
  */
-async function listVectorDbs(indexRoot: string = GUFI_INDEX): Promise<string[]> {
+function sqliteScript(lines: string[]): Promise<string> {
+  return new Promise(resolve => {
+    const child = execFile(path.join(GUFI_BIN, 'gufi_sqlite3'), [], { timeout: 60_000, maxBuffer: 32 * 1024 * 1024, env: gufiEnv() },
+      (_err, so) => resolve(so ?? ''))
+    child.stdin?.write(lines.join('\n'))
+    child.stdin?.end()
+  })
+}
+
+/** Each db with a vector table, and the model its vectors come from (its
+ *  gvecmodel table, written by embed.py; minilm384 where there is none). A
+ *  table is read only once sqlite_master shows it is there, since a missing
+ *  one would stop the whole script. */
+async function listVectorDbs(indexRoot: string = GUFI_INDEX): Promise<VectorDb[]> {
   const hit = vecDbCache.get(indexRoot)
   if (hit && Date.now() - hit.at < 60_000) return hit.dbs
   const all = listIndexDbs(indexRoot)
   if (!all.length) return []
-  const script = all.flatMap(db => [
+  const names = await sqliteScript(all.flatMap(db => [
     `ATTACH ${q(db)} AS c;`,
-    `SELECT 'HASVEC' || ${q(DELIM)} || ${q(db)} FROM c.sqlite_master WHERE type IN ('table','view') AND name = 'gvec';`,
+    `SELECT 'HASVEC' || ${q(DELIM)} || ${q(db)} || ${q(DELIM)} || name FROM c.sqlite_master WHERE type IN ('table','view') AND name IN ('gvec', 'gvecmodel');`,
     'DETACH c;',
-  ])
-  const { stdout } = await new Promise<{ stdout: string }>(resolve => {
-    const child = execFile(path.join(GUFI_BIN, 'gufi_sqlite3'), [], { timeout: 60_000, maxBuffer: 32 * 1024 * 1024, env: gufiEnv() },
-      (_err, so) => resolve({ stdout: so ?? '' }))
-    child.stdin?.write(script.join('\n'))
-    child.stdin?.end()
-  })
-  const dbs = stdout.split('\n')
-    .filter(l => l.startsWith('HASVEC'))
-    .map(l => l.split(DELIM)[1])
-    .filter(Boolean)
+  ]))
+  const found = new Map<string, Set<string>>()
+  for (const l of names.split('\n')) {
+    const [tag, db, name] = l.split(DELIM)
+    if (tag !== 'HASVEC' || !db || !name) continue
+    found.set(db, (found.get(db) ?? new Set()).add(name))
+  }
+  const withModel = [...found].filter(([, n]) => n.has('gvec') && n.has('gvecmodel')).map(([db]) => db)
+  const models = new Map<string, string>()
+  if (withModel.length) {
+    const out = await sqliteScript(withModel.flatMap(db => [
+      `ATTACH ${q(db)} AS c;`,
+      `SELECT 'VMODEL' || ${q(DELIM)} || ${q(db)} || ${q(DELIM)} || model FROM c.gvecmodel LIMIT 1;`,
+      'DETACH c;',
+    ]))
+    for (const l of out.split('\n')) {
+      const [tag, db, model] = l.split(DELIM)
+      if (tag === 'VMODEL' && db && model) models.set(db, model.trim())
+    }
+  }
+  const dbs = [...found].filter(([, n]) => n.has('gvec')).map(([db]) => ({ db, model: models.get(db) ?? LEGACY_MODEL }))
   vecDbCache.set(indexRoot, { dbs, at: Date.now() })
   return dbs
+}
+
+/** The models an index's vectors come from, with how many directories each. */
+export async function vectorModels(indexRoot: string = GUFI_INDEX): Promise<Record<string, number>> {
+  if (indexRoot.startsWith(REMOTE_PREFIX) || !gufiAvailable()) return {}
+  const counts: Record<string, number> = {}
+  for (const v of await listVectorDbs(indexRoot)) counts[v.model] = (counts[v.model] ?? 0) + 1
+  return counts
 }
 
 export async function searchVector(queryText: string, limit = 10, indexRoot: string = GUFI_INDEX): Promise<SearchHit[]> {
   if (!vectorsAvailable()) return []
   const idx = path.resolve(indexRoot)
-  const script: string[] = [
-    `INSERT INTO temp.lembed_models(name, model) SELECT 'minilm384', lembed_model_from_file(${q(EMBED_MODEL)});`,
-    `CREATE TABLE temp.qv AS SELECT lembed('minilm384', ${q(queryText.slice(0, 500))}) AS qe;`,
-  ]
   const vecDbs = await listVectorDbs(indexRoot)
   if (!vecDbs.length) return []
-  for (const db of vecDbs) {
+  // The query is embedded once per model the index holds: the GGUF one by
+  // sqlite-lembed in the script, the ONNX one by the query worker, whose
+  // vector goes in as a blob. Directories whose model is unavailable here
+  // are left out rather than searched with the wrong vector.
+  const script: string[] = []
+  const tableFor = new Map<string, string>()
+  if (vecDbs.some(v => v.model === LEGACY_MODEL) && fs.existsSync(EMBED_MODEL)) {
+    script.push(
+      `INSERT INTO temp.lembed_models(name, model) SELECT 'minilm384', lembed_model_from_file(${q(EMBED_MODEL)});`,
+      `CREATE TABLE temp.qv AS SELECT lembed('minilm384', ${q(queryText.slice(0, 500))}) AS qe;`,
+    )
+    tableFor.set(LEGACY_MODEL, 'temp.qv')
+  }
+  if (vecDbs.some(v => v.model === ONNX_MODEL_ID)) {
+    const vec = await embedQueries([queryText.slice(0, 500)]).then(v => v[0], e => {
+      console.warn(`search by meaning: ${(e as Error).message}`)
+      return null
+    })
+    if (vec && vec.length === 384 * 4) {
+      script.push(`CREATE TABLE temp.qo AS SELECT X'${vec.toString('hex')}' AS qe;`)
+      tableFor.set(ONNX_MODEL_ID, 'temp.qo')
+    }
+  }
+  const searched = vecDbs.filter(v => tableFor.has(v.model))
+  if (!searched.length) return []
+  for (const { db, model } of searched) {
     const relDir = path.relative(idx, path.dirname(db))
     script.push(`ATTACH ${q(db)} AS d;`)
     script.push(
       `SELECT 'VROW' || ${q(DELIM)} || ${q(relDir)} || ${q(DELIM)} || g.fname || ${q(DELIM)} || k.distance || ${q(DELIM)} || ` +
       `replace(replace(substr(g.ctext, 1, 200), char(10), ' '), char(13), ' ') ` +
-      `FROM (SELECT cid, distance FROM d.gvec WHERE fp384 MATCH (SELECT qe FROM temp.qv) ORDER BY distance ASC LIMIT 3) k ` +
+      `FROM (SELECT cid, distance FROM d.gvec WHERE fp384 MATCH (SELECT qe FROM ${tableFor.get(model)}) ORDER BY distance ASC LIMIT 3) k ` +
       `JOIN d.gchunks g ON g.cid = k.cid;`,
     )
     script.push('DETACH d;')

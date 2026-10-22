@@ -121,10 +121,14 @@ while [ "$stopping" = 0 ]; do
     export HOST=127.0.0.1 STUDIO_CONFIG_FILE="$CONFIG" STUDIO_RESTARTABLE=1 \
       STUDIO_APP_BUNDLE="$APP" STUDIO_DATA_DIR="$DATA" PYTHONDONTWRITEBYTECODE=1
     export PATH="$RES/node/bin:${LOGIN_PATH:+$LOGIN_PATH:}${PATH:-/usr/bin:/bin:/usr/sbin:/sbin}:/usr/local/bin:/opt/homebrew/bin:$HOME/.local/bin"
-    # The embedding model ships with the app; the index refers to it.
+    # The embedding models ship with the app; the index refers to them.
     model="$INDEX_BASE/models/minilm384.gguf"
     if [ -L "$model" ] || [ ! -e "$model" ]; then
       mkdir -p "$INDEX_BASE/models" && ln -sfn "$RES/models/minilm384.gguf" "$model"
+    fi
+    onnx="$INDEX_BASE/models/minilm-l6"
+    if [ -d "$RES/models/minilm-l6" ] && { [ -L "$onnx" ] || [ ! -e "$onnx" ]; }; then
+      ln -sfn "$RES/models/minilm-l6" "$onnx"
     fi
     echo "$(stamp) starting on http://127.0.0.1:$PORT/ with $KB_ROOT"
     exec "$RES/node/bin/node" "$RES/app/server/dist/main.js"

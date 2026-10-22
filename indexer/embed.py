@@ -5,14 +5,27 @@ Chunk (plain sqlite3): cut each file's extracted text (from the fts5 `words`
 table written by enrich.py) into a `gchunks` table, each chunk with the hash
 of the text that is embedded.
 
-Embed (gufi_sqlite3, which carries sqlite-lembed and sqlite-vec): only the
-chunks whose hash is not in the embedding cache are embedded, in batches, by
---jobs gufi_sqlite3 processes side by side, each on one thread (several
-single-threaded processes get through more chunks per core than fewer
-multi-threaded ones). A batch that crashes the tokenizer is split until the
-chunk responsible is found, retried shorter, and skipped if it still fails.
+Embed: only the chunks whose hash is not in the embedding cache are
+embedded. Two backends give the same 384 dimensions:
 
-Write: each directory's `gvec` vec0 table is filled from the cache.
+  onnx    all-MiniLM-L6-v2, int8, mean pooling, through ONNX Runtime
+          (embed_onnx.py; model id minilm-l6-mean-int8). Used whenever its
+          packages import and --onnx names a folder with the model. The
+          --jobs threads are shared by a few processes, each embedding
+          batches with several ONNX Runtime threads.
+  lembed  the GGUF model through sqlite-lembed in gufi_sqlite3 (model id
+          minilm384), the fallback, as on a remote host without the ONNX
+          packages. It takes the first token's state rather than the mean,
+          which the model was not trained for, and costs more than twice
+          the CPU per chunk. A batch that crashes its tokenizer is split
+          until the chunk responsible is found, retried shorter, and
+          skipped if it still fails.
+
+Write: each directory's `gvec` vec0 table is filled from the cache, and its
+`gvecmodel` table names the model the vectors came from, which a query has
+to embed with too; a directory without one holds minilm384 vectors. A run
+over one folder of an index whose vectors are from another model widens to
+the whole index, so an index never mixes the two.
 
 The cache (--cache, an SQLite file keyed by the hash) is what makes a
 rebuild, or a folder pointed at again, cheap: unchanged text is never
@@ -29,6 +42,7 @@ level of search by meaning, with --max-chunks 4. With --progress,
 import argparse
 import hashlib
 import json
+import multiprocessing
 import os
 import shutil
 import sqlite3
@@ -37,7 +51,8 @@ import sys
 import tempfile
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
+from concurrent.futures.process import BrokenProcessPool
 from pathlib import Path
 
 CHUNK_CHARS = 1000
@@ -59,6 +74,10 @@ DOCUMENT_SUFFIXES = (
     '.md', '.markdown', '.txt', '.rst', '.tex', '.org', '.adoc',
     '.png', '.jpg', '.jpeg', '.gif', '.webp', '.tif', '.tiff',
 )
+# The model this run embeds with: MODEL_NAME, or the ONNX backend's id.
+MODEL_ID = MODEL_NAME
+# Rows per task handed to an ONNX worker process.
+ONNX_TASK = 256
 
 
 def prose_like(c: str) -> bool:
@@ -88,7 +107,7 @@ def chunk(text: str, cap: int = MAX_CHUNKS_PER_FILE) -> list[str]:
 
 def chunk_hash(text: str) -> str:
     """The cache key: the model and the text that is actually embedded."""
-    return hashlib.sha1(f'{MODEL_NAME}\0{text[:EMBED_CAPS[0]]}'.encode('utf-8', 'replace')).hexdigest()
+    return hashlib.sha1(f'{MODEL_ID}\0{text[:EMBED_CAPS[0]]}'.encode('utf-8', 'replace')).hexdigest()
 
 
 def sql_str(s: str) -> str:
@@ -135,10 +154,89 @@ def open_cache(path: Path) -> sqlite3.Connection:
     return db
 
 
+# ---- the ONNX backend's worker processes ----
+
+_embedder = None
+
+
+def _onnx_init(model_dir: str, threads: int) -> None:
+    global _embedder
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import embed_onnx
+    _embedder = embed_onnx.Embedder(model_dir, threads)
+
+
+def _onnx_task(pending_db: str, lo: int, hi: int) -> list:
+    db = sqlite3.connect(pending_db, timeout=60)
+    try:
+        rows = db.execute('SELECT h, t FROM pending WHERE rowid BETWEEN ? AND ?', (lo, hi)).fetchall()
+    finally:
+        db.close()
+    blobs = _embedder.embed([t for _, t in rows])
+    return [(h, b) for (h, _), b in zip(rows, blobs)]
+
+
+def onnx_layout(jobs: int) -> tuple:
+    """Processes and threads each for a --jobs thread budget: a few
+    processes of several threads, which embed as fast as one process per
+    thread and keep fewer copies of the model in memory."""
+    procs = max(1, min(8, jobs // 4))
+    return procs, max(1, jobs // procs)
+
+
+def choose_backend(args) -> tuple:
+    """(backend, model id, ONNX model folder or None, why the ONNX backend
+    is not used, or None)."""
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    onnx_dir = args.onnx or (str(Path(args.model).parent / 'minilm-l6') if args.model else '')
+    if args.backend != 'lembed':
+        try:
+            import embed_onnx
+            why = embed_onnx.unavailable(onnx_dir)
+            if why is None:
+                return 'onnx', embed_onnx.MODEL_ID, onnx_dir, None
+        except Exception as exc:  # an old Python, or a broken install
+            why = str(exc)
+        if args.backend == 'onnx':
+            raise SystemExit(f'the ONNX backend cannot run: {why}')
+        return 'lembed', MODEL_NAME, None, why
+    return 'lembed', MODEL_NAME, None, None
+
+
+def tree_models(index_root: Path) -> dict:
+    """How many directories under an index hold vectors of each model."""
+    counts: dict = {}
+    for dirpath, dirnames, filenames in os.walk(index_root):
+        dirnames.sort()
+        if 'db.db' not in filenames:
+            continue
+        try:
+            db = sqlite3.connect((Path(dirpath).resolve() / 'db.db').as_uri() + '?mode=ro', uri=True, timeout=30)
+        except sqlite3.Error:
+            continue
+        try:
+            names = {n for (n,) in db.execute("SELECT name FROM sqlite_master WHERE name IN ('gvec', 'gvecmodel')")}
+            if 'gvec' in names:
+                model = MODEL_NAME
+                if 'gvecmodel' in names:
+                    row = db.execute('SELECT model FROM gvecmodel LIMIT 1').fetchone()
+                    model = row[0] if row and row[0] else MODEL_NAME
+                counts[model] = counts.get(model, 0) + 1
+        except sqlite3.Error:
+            pass
+        finally:
+            db.close()
+    return counts
+
+
 def main() -> int:
+    global MODEL_ID
     ap = argparse.ArgumentParser()
     ap.add_argument('--index', required=True, help='GUFI index tree top')
-    ap.add_argument('--model', required=True, help='GGUF embedding model path')
+    ap.add_argument('--model', default='', help='GGUF embedding model path, for the lembed backend')
+    ap.add_argument('--onnx', default='', help='folder with model.onnx and tokenizer.json (default: minilm-l6 beside --model)')
+    ap.add_argument('--backend', choices=('auto', 'onnx', 'lembed'), default='auto',
+                    help='auto: ONNX when its packages and model are here, else lembed')
     ap.add_argument('--gufi-sqlite3',
                     default=os.path.join(os.environ.get('GUFI_BIN', '/opt/gufi/bin'), 'gufi_sqlite3'),
                     help='gufi_sqlite3 binary; defaults under $GUFI_BIN')
@@ -155,6 +253,18 @@ def main() -> int:
     jobs = args.jobs if args.jobs > 0 else default_jobs()
     args.max_chunks = max(1, args.max_chunks)
     index_root = Path(args.index)
+    backend, MODEL_ID, onnx_dir, why = choose_backend(args)
+    args.backend, args.onnx = backend, onnx_dir
+    if backend == 'lembed' and not args.model:
+        raise SystemExit(f'no embedding model: --model names none, and the ONNX backend cannot run ({why})')
+    print(f'model: {MODEL_ID} ({backend}{", " + why if why and backend == "lembed" else ""})', flush=True)
+    if args.subdir or args.no_recurse:
+        # One folder of an index whose vectors come from another model would
+        # leave the index answering in two models: do all of it now.
+        others = {m: n for m, n in tree_models(index_root).items() if m != MODEL_ID}
+        if others:
+            print(f'the index holds vectors of {", ".join(sorted(others))}: embedding all of it with {MODEL_ID}', flush=True)
+            args.subdir, args.no_recurse = '', False
     walk_root = index_root / args.subdir if args.subdir else index_root
     progress = Progress(args.progress)
     dbs = []
@@ -253,7 +363,28 @@ def run(args, jobs: int, dbs: list, scratch: Path, progress: Progress) -> int:
     # range, writing to its own output file so the processes never wait on
     # one another's locks.
     errors: list = []
-    if n_pending:
+    if n_pending and args.backend == 'onnx':
+        progress.start('embed', n_pending + len(with_chunks))
+        procs, threads = onnx_layout(jobs)
+        # Each process's tokenizer and numpy would otherwise start a thread
+        # per core of their own, on top of ONNX Runtime's.
+        os.environ.update(TOKENIZERS_PARALLELISM='false', OMP_NUM_THREADS='1', OPENBLAS_NUM_THREADS='1')
+        cache = open_cache(cache_path)
+        try:
+            with ProcessPoolExecutor(procs, mp_context=multiprocessing.get_context('spawn'),
+                                     initializer=_onnx_init, initargs=(args.onnx, threads)) as pool:
+                tasks = [pool.submit(_onnx_task, str(scratch / 'pending.db'), lo, min(lo + ONNX_TASK - 1, n_pending))
+                         for lo in range(1, n_pending + 1, ONNX_TASK)]
+                for task in as_completed(tasks):
+                    rows = task.result()
+                    cache.executemany('INSERT OR REPLACE INTO emb (h, v) VALUES (?, ?)', rows)
+                    cache.commit()
+                    progress.add(len(rows))
+        except BrokenProcessPool as exc:
+            raise SystemExit(f'the ONNX embedding processes stopped: {exc}')
+        finally:
+            cache.close()
+    elif n_pending:
         progress.start('embed', n_pending + len(with_chunks))
         slots = list(range(jobs))
         slot_lock = threading.Lock()
@@ -313,24 +444,31 @@ def run(args, jobs: int, dbs: list, scratch: Path, progress: Progress) -> int:
     cache_db = sql_str(str(cache_path))
     groups = [with_chunks[i:i + 25] for i in range(0, len(with_chunks), 25)]
 
+    def dir_lines(dbfile: Path) -> list:
+        return [
+            f'ATTACH {sql_str(str(dbfile))} AS d;',
+            'PRAGMA d.synchronous=OFF;',
+            'BEGIN;',
+            'DROP TABLE IF EXISTS d.gvec;',
+            'CREATE VIRTUAL TABLE d.gvec USING vec0(cid INTEGER PRIMARY KEY, fp384 float[384]);',
+            'INSERT INTO d.gvec(cid, fp384) SELECT g.cid, e.v FROM d.gchunks g JOIN c.emb e ON e.h = g.h;',
+            # The model a query has to embed with to search these vectors.
+            'DROP TABLE IF EXISTS d.gvecmodel;',
+            'CREATE TABLE d.gvecmodel (model TEXT);',
+            f'INSERT INTO d.gvecmodel VALUES ({sql_str(MODEL_ID)});',
+            'COMMIT;',
+            'DETACH d;',
+        ]
+
     def write_group(group: list) -> None:
         lines = [f'ATTACH {cache_db} AS c;']
         for dbfile in group:
-            lines += [
-                f'ATTACH {sql_str(str(dbfile))} AS d;',
-                'PRAGMA d.synchronous=OFF;',
-                'BEGIN;',
-                'DROP TABLE IF EXISTS d.gvec;',
-                'CREATE VIRTUAL TABLE d.gvec USING vec0(cid INTEGER PRIMARY KEY, fp384 float[384]);',
-                'INSERT INTO d.gvec(cid, fp384) SELECT g.cid, e.v FROM d.gchunks g JOIN c.emb e ON e.h = g.h;',
-                'COMMIT;',
-                'DETACH d;',
-            ]
+            lines += dir_lines(dbfile)
         ok, err = sqlite3_run('\n'.join(lines))
         if not ok:
             # One directory at a time, to name the one that failed.
             for dbfile in group:
-                one = '\n'.join([lines[0]] + lines[1 + 8 * group.index(dbfile):1 + 8 * (group.index(dbfile) + 1)])
+                one = '\n'.join([lines[0]] + dir_lines(dbfile))
                 ok1, err1 = sqlite3_run(one)
                 if not ok1:
                     errors.append(f'{dbfile}: {err1}')
@@ -353,7 +491,7 @@ def run(args, jobs: int, dbs: list, scratch: Path, progress: Progress) -> int:
     progress.emit(True)
     for err in errors[:10]:
         print('embed error:', err, file=sys.stderr)
-    print(f'embedded: {n_pending} new chunks, {len(with_chunks)} directory tables written, {len(errors)} errors', flush=True)
+    print(f'embedded: {n_pending} new chunks with {MODEL_ID}, {len(with_chunks)} directory tables written, {len(errors)} errors', flush=True)
     # A chunk the tokenizer cannot take is skipped, not a failed pass: the
     # rest of the directory is searchable by meaning, and all of it by text.
     return 0

@@ -75,3 +75,16 @@ if [ ! -f "$MODEL_DIR/minilm384.gguf" ]; then
   curl -sL -o "$MODEL_DIR/minilm384.gguf" \
     'https://huggingface.co/asg017/sqlite-lembed-model-examples/resolve/main/all-MiniLM-L6-v2/all-MiniLM-L6-v2.e4ce9877.q8_0.gguf'
 fi
+# The ONNX embedding backend, faster and better at search by meaning: the
+# int8 model beside the GGUF one, and onnxruntime, tokenizers and numpy for
+# the Python the Studio runs the indexer with, in indexer/.deps. Without
+# them (no network, or a Python with no pinned wheels) the GGUF model is used.
+PY="${PYTHON_BIN:-}"
+if [ -z "$PY" ]; then
+  for cand in python3.13 python3.12 python3.11 python3.10 python3; do
+    if command -v "$cand" >/dev/null 2>&1; then PY="$cand"; break; fi
+  done
+fi
+"$PY" "$PROJECT_ROOT/indexer/fetch_embed.py" --deps "$PROJECT_ROOT/indexer/.deps" --model "$MODEL_DIR/minilm-l6" \
+  --cache "$PROJECT_ROOT/deploy/.cache/embed" ||
+  echo "The ONNX embedding backend was not installed; search by meaning uses the GGUF model."
