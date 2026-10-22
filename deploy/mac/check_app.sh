@@ -202,9 +202,11 @@ if [ "$RUN" = 1 ]; then
     fi
     check "the indexer extracts text" clean "$R/python/bin/python3" "$R/app/indexer/enrich.py" \
       --kb-root "$T/corpus" --index "$T/idx/corpus" --extract-cache "$T/extract"
-    check "the indexer embeds with the ONNX model" clean /bin/sh -c "'$R/python/bin/python3' '$R/app/indexer/embed.py' --index '$T/idx/corpus' --model '$R/models/minilm384.gguf' --gufi-sqlite3 '$G/bin/gufi_sqlite3' | grep -q 'model: minilm-l6-mean-int8 (onnx)'"
+    # The output goes to a file first: grep -q on the pipe would stop
+    # embed.py at its first line, before it writes anything.
+    check "the indexer embeds with the ONNX model" clean /bin/sh -c "'$R/python/bin/python3' '$R/app/indexer/embed.py' --index '$T/idx/corpus' --model '$R/models/minilm384.gguf' --gufi-sqlite3 '$G/bin/gufi_sqlite3' >'$T/embed-onnx.out' && grep -q 'model: minilm-l6-mean-int8 (onnx)' '$T/embed-onnx.out' && grep -q '0 errors' '$T/embed-onnx.out'"
     check "and names it in each folder's index" clean "$R/python/bin/python3" -c "import sqlite3, sys; sys.exit(0 if sqlite3.connect('$T/idx/corpus/db.db').execute('SELECT model FROM gvecmodel').fetchone()[0] == 'minilm-l6-mean-int8' else 1)"
-    check "the older model still embeds through gufi_sqlite3" clean /bin/sh -c "'$R/python/bin/python3' '$R/app/indexer/embed.py' --index '$T/idx/corpus' --backend lembed --model '$R/models/minilm384.gguf' --gufi-sqlite3 '$G/bin/gufi_sqlite3' | grep -q 'model: minilm384 (lembed)'"
+    check "the older model still embeds through gufi_sqlite3" clean /bin/sh -c "'$R/python/bin/python3' '$R/app/indexer/embed.py' --index '$T/idx/corpus' --backend lembed --model '$R/models/minilm384.gguf' --gufi-sqlite3 '$G/bin/gufi_sqlite3' >'$T/embed-lembed.out' && grep -q 'model: minilm384 (lembed)' '$T/embed-lembed.out' && grep -q '0 errors' '$T/embed-lembed.out'"
     check "the query embedder answers with 384 values" clean /bin/sh -c "printf '%s\n' '{\"id\": 1, \"texts\": [\"lemon dessert\"]}' | '$R/python/bin/python3' '$R/app/indexer/embed_query.py' --onnx '$R/models/minilm-l6' | '$R/python/bin/python3' -c 'import base64, json, sys; l = [json.loads(x) for x in sys.stdin]; sys.exit(0 if l[0][\"ready\"] and len(base64.b64decode(l[1][\"vectors\"][0])) == 1536 else 1)'"
     # A PDF out of the box: downmark's binary first, the bundled pypdf for one
     # it leaves (no poppler on a Mac).
