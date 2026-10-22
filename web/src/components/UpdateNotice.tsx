@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Button, Callout, CopyCodeBlock } from '@parallelworks/ui'
+import { Button, Callout, CopyCodeBlock, Modal } from '@parallelworks/ui'
 import { openUpdates } from '../api'
 import { bare, setUpdateFlowOptions, underWay, updateActions, useUpdateFlow } from '../updateFlow'
 import { ReleaseList } from './ChangeList'
@@ -13,14 +13,15 @@ function readLater(): string | null {
 }
 
 /**
- * The notice at the top of every page while a newer version is available,
- * in the macOS app and a clone (a hosted deployment is updated by its
- * operator and never shows it). It lists what every newer version brings,
- * newest first, each change opening to its description, and offers Update
- * now (the app, when it can install), the commands for a clone, and Later,
- * which hides it until a version newer than that one appears. While an
- * install runs it shows the progress instead; the footer's "update
- * available" and Settings, Updates stay either way.
+ * A one-line notice at the top of every page while a newer version is
+ * available, in the macOS app and a clone (a hosted deployment is updated by
+ * its operator and never shows it). It stays one line so the page under it,
+ * the chat above all, keeps its room: What's new opens a dialog with the
+ * changes in every newer version, newest first, and for a clone the commands
+ * that update it. Update now installs (the app, when it can), and Later hides
+ * the notice until a version newer than that one appears. While an install
+ * runs the line shows its progress; the footer's "update available" and
+ * Settings, Updates stay either way.
  */
 export function UpdateNotice({ pollMs, giveUpMs, reload }: {
   /** For tests: the update flow's timings and reload. */
@@ -31,6 +32,7 @@ export function UpdateNotice({ pollMs, giveUpMs, reload }: {
   setUpdateFlowOptions({ pollMs, giveUpMs, reload })
   const flow = useUpdateFlow()
   const [later, setLater] = useState<string | null>(readLater)
+  const [details, setDetails] = useState(false)
 
   // Later in another tab of the same Studio applies here too.
   useEffect(() => {
@@ -48,24 +50,61 @@ export function UpdateNotice({ pollMs, giveUpMs, reload }: {
   const deferIt = () => {
     try { localStorage.setItem(LATER_KEY, latest.version) } catch { /* hidden for this page only */ }
     setLater(latest.version)
+    setDetails(false)
   }
   const releases = status.releases ?? []
+  const changes = releases.reduce((n, r) => n + r.entries.length, 0)
   const failed = (status.state === 'error' && status.error) || flow.error
+  const canInstall = status.mode === 'app' && status.canInstall
+  const install = () => { setDetails(false); void updateActions.install() }
+
+  if (installing) {
+    return (
+      <Callout variant="bar" tone="info" live className="update-notice" testId="update-notice">
+        <div className="update-notice-row">
+          <span className="update-notice-text"><b>Updating to version {latest.version}</b></span>
+          <div className="update-notice-progress"><UpdateProgress flow={flow} barClassName="update-notice-bar" /></div>
+        </div>
+      </Callout>
+    )
+  }
 
   return (
-    <Callout variant="bar" tone="info" live className="update-notice" testId="update-notice"
-      title={installing ? `Updating to version ${latest.version}` : `Version ${latest.version} is available`}>
-      {!installing && <p className="update-notice-sub">You have version {status.current.version}.</p>}
-      {!installing && releases.length > 0 && (
-        <div className="update-notice-list">
-          <ReleaseList releases={releases} headingLevel={3} />
+    <>
+      <Callout variant="bar" tone="info" live className="update-notice" testId="update-notice">
+        <div className="update-notice-row">
+          <span className="update-notice-text">
+            <b>Version {latest.version} is available</b>
+            <span className="update-notice-sub"> · you have {status.current.version}</span>
+          </span>
+          <div className="update-notice-actions">
+            <Button variant="ghost" size="sm" onClick={() => setDetails(true)}>
+              What's new{changes ? ` (${changes})` : ''}
+            </Button>
+            {canInstall && (
+              <Button variant="primary" size="sm" loading={flow.busy === 'install'} disabled={!!flow.busy} onClick={install}>
+                Update now
+              </Button>
+            )}
+            <Button variant="secondary" size="sm" onClick={deferIt}>Later</Button>
+          </div>
         </div>
-      )}
-      {installing ? (
-        <div className="update-notice-progress"><UpdateProgress flow={flow} barClassName="update-notice-bar" /></div>
-      ) : (
-        <>
-          {failed && <p className="update-notice-error" role="alert">{failed}</p>}
+        {failed && <p className="update-notice-error" role="alert">{failed}</p>}
+      </Callout>
+      {details && (
+        <Modal open onClose={() => setDetails(false)} size="lg" className="update-details"
+          title={`Version ${latest.version}`}
+          description={`You have version ${status.current.version}. These are the changes since.`}
+          footer={
+            <>
+              <Button variant="ghost" onClick={() => { setDetails(false); openUpdates() }}>Update settings</Button>
+              <Button variant="secondary" onClick={deferIt}>Later</Button>
+              {canInstall && <Button variant="primary" disabled={!!flow.busy} onClick={install}>Update now</Button>}
+            </>
+          }>
+          {releases.length > 0
+            ? <div className="update-details-list"><ReleaseList releases={releases} headingLevel={3} /></div>
+            : <p className="muted">This release has no notes.</p>}
           {status.mode === 'clone' && status.command && (
             <div className="update-notice-command">
               <p>To update, run these in the Studio's folder, then stop it and start it again with <code>pnpm start</code>:</p>
@@ -73,21 +112,11 @@ export function UpdateNotice({ pollMs, giveUpMs, reload }: {
             </div>
           )}
           {!status.canInstall && !status.command && status.reason && <p className="update-notice-reason">{status.reason}</p>}
-          <div className="update-notice-actions">
-            {status.mode === 'app' && status.canInstall && (
-              <Button variant="primary" size="sm" loading={flow.busy === 'install'} disabled={!!flow.busy}
-                onClick={() => void updateActions.install()}>
-                Update now
-              </Button>
-            )}
-            <Button variant="secondary" size="sm" onClick={deferIt}>Later</Button>
-            <Button variant="ghost" size="sm" onClick={openUpdates}>Settings</Button>
-            {latest.url && !status.canInstall && !status.command && (
-              <a className="update-notice-link" href={latest.url} target="_blank" rel="noopener noreferrer">Release page</a>
-            )}
-          </div>
-        </>
+          {latest.url && !status.canInstall && !status.command && (
+            <p><a className="update-notice-link" href={latest.url} target="_blank" rel="noopener noreferrer">Release page</a></p>
+          )}
+        </Modal>
       )}
-    </Callout>
+    </>
   )
 }

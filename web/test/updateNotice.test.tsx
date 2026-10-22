@@ -101,12 +101,19 @@ beforeEach(() => { localStorage.clear(); history.replaceState(null, '', location
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); localStorage.clear() })
 
 describe('the update notice', () => {
-  it('in the app: the version, every newer version\'s changes newest first, each opening to its description, Update now and Later', async () => {
+  it('in the app: one line with the version, Update now and Later; What\'s new opens every newer version\'s changes, newest first, each opening to its description', async () => {
     stubServer(server())
     render(<UpdateNotice />)
     expect(await screen.findByText('Version v1.142 is available')).toBeInTheDocument()
-    const box = notice()!
-    expect(within(box).getByText('You have version v1.140.')).toBeInTheDocument()
+    const line = notice()!
+    expect(line.textContent).toContain('you have v1.140')
+    // One line: the changes are not in the notice.
+    expect(within(line).queryByRole('heading')).toBeNull()
+    expect(within(line).getByRole('button', { name: 'Update now' })).toBeEnabled()
+    expect(within(line).getByRole('button', { name: 'Later' })).toBeInTheDocument()
+    fireEvent.click(within(line).getByRole('button', { name: "What's new (3)" }))
+    const box = await screen.findByRole('dialog')
+    expect(within(box).getByText('You have version v1.140. These are the changes since.')).toBeInTheDocument()
     const versions = within(box).getAllByRole('heading', { level: 3 }).map(h => h.textContent)
     expect(versions).toEqual([expect.stringMatching(/^v1\.142/), expect.stringMatching(/^v1\.141/)])
     expect(within(box).getAllByRole('button', { name: /^(Icons|Search|Settings):/ }).map(b => b.textContent)).toEqual([
@@ -127,18 +134,23 @@ describe('the update notice', () => {
   it('in a clone: the commands that update it, no Update now', async () => {
     stubServer(server({ updates: status({ mode: 'clone', canInstall: false, reason: 'This Studio runs from a clone of the repository.', command: 'git pull\npnpm install\npnpm build' }) }))
     render(<UpdateNotice />)
-    const box = await screen.findByTestId('update-notice')
+    const line = await screen.findByTestId('update-notice')
+    expect(within(line).queryByRole('button', { name: 'Update now' })).toBeNull()
+    expect(within(line).getByRole('button', { name: 'Later' })).toBeInTheDocument()
+    expect(line.textContent).not.toContain('git pull')
+    fireEvent.click(within(line).getByRole('button', { name: /^What's new/ }))
+    const box = await screen.findByRole('dialog')
     expect(box.textContent).toContain('git pull\npnpm install\npnpm build')
     expect(within(box).getByText('pnpm start')).toBeInTheDocument()
     expect(within(box).queryByRole('button', { name: 'Update now' })).toBeNull()
-    expect(within(box).getByRole('button', { name: 'Later' })).toBeInTheDocument()
   })
 
   it('an app that cannot install says why, with the release page', async () => {
     const reason = 'The folder holding the app is not writable, so the app cannot replace itself.'
     stubServer(server({ updates: status({ mode: 'clone', canInstall: false, reason, command: null }) }))
     render(<UpdateNotice />)
-    const box = await screen.findByTestId('update-notice')
+    fireEvent.click(within(await screen.findByTestId('update-notice')).getByRole('button', { name: /^What's new/ }))
+    const box = await screen.findByRole('dialog')
     expect(within(box).getByText(reason)).toBeInTheDocument()
     expect(within(box).queryByText(/git pull/)).toBeNull()
     expect(within(box).getByRole('link', { name: 'Release page' })).toHaveAttribute('href', 'https://example.org/releases/v1.142')
@@ -183,7 +195,8 @@ describe('the update notice', () => {
     })
     render(<UpdateNotice />)
     expect(await screen.findByText('Version v1.143 is available')).toBeInTheDocument()
-    expect(within(notice()!).getByRole('button', { name: 'Chat: a newer change' })).toBeInTheDocument()
+    fireEvent.click(within(notice()!).getByRole('button', { name: "What's new (4)" }))
+    expect(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Chat: a newer change' })).toBeInTheDocument()
   })
 
   it('Update now shows the install\'s progress in place of the buttons, then the restart, then reloads', async () => {
@@ -286,10 +299,9 @@ describe('after an update', () => {
     const second = render(<UpdatedNotice />)
     const box = await screen.findByTestId('updated-notice')
     expect(within(box).getByText('Updated to v1.142')).toBeInTheDocument()
-    expect(within(box).getAllByRole('listitem').map(li => li.textContent)).toEqual([
-      'Icons: a drawn icon for the app', 'Search: faster on large libraries', 'Settings: a sidebar switch',
-    ])
-    expect(within(box).queryByText('Chat: retry a reply')).toBeNull()
+    // One line: how many changes came since v1.140, listed on What's new.
+    expect(box.textContent).toContain('3 changes since you last opened it')
+    expect(within(box).queryByRole('listitem')).toBeNull()
     expect(s.calls.find(c => c.url.startsWith('/api/changelog'))?.url).toBe('/api/changelog?after=v1.140')
     expect(localStorage.getItem(SEEN_KEY)).toBe('v1.142')
     fireEvent.click(within(box).getByRole('button', { name: "What's new" }))

@@ -58,9 +58,10 @@ removes the background server and the app, and keeps the index, logs and
 settings unless `--purge` is added. Neither touches the documents.
 
 *Updates:* the app checks this repository's releases a minute after it
-starts and every six hours after that. A notice at the top of every page,
-and Settings, General, show the newest release with the changes in every
-version newer than the one running, and Update now; Later hides the notice
+starts and every six hours after that. A one-line notice at the top of
+every page, and Settings, General, show the newest release, with the changes
+in every version newer than the one running (the notice's What's new), and
+Update now; Later hides the notice
 until a newer version is out. It takes the newest release that carries
 the signed app. Not every release does: the macOS build runs only for the
 releases it is asked for, so the app skips the others and the notice lists
