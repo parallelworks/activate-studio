@@ -1,6 +1,7 @@
 import { type CSSProperties, useEffect, useRef, useState } from 'react'
 import { Button, Callout, type CalloutTone, EmptyState, Input, Loader, ProgressBar } from '@parallelworks/ui'
 import type { PublicLibrary } from '../api'
+import { chooseFolderNatively, hasNativeFolderChooser } from '../nativeShell'
 
 /**
  * The primary folder on a single-user install, shared by the setup wizard
@@ -22,6 +23,9 @@ export interface SetupStatus {
   standalone: boolean
   canRestart: boolean
   launcher?: boolean
+  /** The port the Studio listens on, and one saved for its next start. */
+  port?: number
+  portNext?: number | null
   primary?: { path: string; exists: boolean; writable: boolean; indexed: boolean; files?: number }
   gufi?: { found: boolean; bin: string; semantic: boolean }
   embedModel?: { path: string; found: boolean }
@@ -145,7 +149,9 @@ export function FolderBrowser({ start, pickLabel = 'Use this folder', onPick }: 
 }
 
 /**
- * Browse the folders on this computer and make one the primary. Where the
+ * Pick a folder on this computer and make it the primary: with the system
+ * folder chooser in the macOS app's window, and by browsing the folders in
+ * the page everywhere else (or if the chooser cannot open). Where the
  * launcher can restart the Studio it does, and this waits for it to come
  * back; elsewhere the server says what to set instead.
  */
@@ -168,11 +174,27 @@ export function FolderPicker({ current, start, disabled = false, pollMs = 1000, 
   const [note, setNote] = useState<{ tone: CalloutTone; text: string } | null>(null)
   const [restart, setRestart] = useState<'idle' | 'waiting' | 'back' | 'timeout'>('idle')
   const [changedTo, setChangedTo] = useState('')
+  const [native, setNative] = useState(hasNativeFolderChooser)
   const alive = useAlive()
 
-  const choose = async () => {
-    if (!listing) return
-    const chosen = listing.path
+  const chooseNatively = async () => {
+    setNote(null)
+    let picked: string | null
+    try {
+      // Opened beside the folder in use, so its neighbors show.
+      const from = current ? current.replace(/\/+[^/]+\/*$/, '') || '/' : start
+      picked = await chooseFolderNatively({ start: from, message: 'Choose the folder for the Studio to index.', prompt: 'Use This Folder' })
+    } catch {
+      // The window could not open it; browse in the page instead.
+      setNative(false)
+      return
+    }
+    if (!alive.current || !picked) return
+    if (picked === current) { setNote({ tone: 'info', text: 'This folder is already in use.' }); return }
+    await choose(picked)
+  }
+
+  const choose = async (chosen: string) => {
     setBusy(true)
     setNote(null)
     try {
@@ -207,13 +229,22 @@ export function FolderPicker({ current, start, disabled = false, pollMs = 1000, 
       {restart === 'timeout' && <Callout tone="error">The Studio did not come back after the restart. Open it again from the app.</Callout>}
       {restart === 'waiting' ? (
         <Loader inline size={16} label="Restarting the Studio with the new folder…" />
+      ) : native ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={row}>
+            <Button variant="secondary" icon={FOLDER_ICON} loading={busy} disabled={disabled} onClick={() => void chooseNatively()}>
+              Choose another folder…
+            </Button>
+          </div>
+          {note && <Callout tone={note.tone} live>{note.text}</Callout>}
+        </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <FolderList f={f} />
           <div style={row}>
             <Button variant="primary" loading={busy}
               disabled={!listing || !listing.writable || listing.path === current || disabled}
-              onClick={() => void choose()}>
+              onClick={() => listing && void choose(listing.path)}>
               Use this folder
             </Button>
             {listing && !listing.writable && <span className="muted">This folder is not writable.</span>}

@@ -12,7 +12,9 @@ import { DetailsBody, detailsSummary, useEntryDetails } from './LibraryDetails'
 
 /**
  * The status panel at the right of every page: what is running, the
- * libraries and the index, the model, and the connections, each a card
+ * libraries and the index, the model (while AI features are on), and the
+ * connections (the platform, attached MCP servers, and machines that hold
+ * remote libraries, when there are any), each a card
  * whose header line says the one thing worth knowing and opens to the
  * detail. It reads only what is cheap: local routes every 10 seconds while
  * it is open and the tab is visible, the platform's session list once a
@@ -169,7 +171,16 @@ export function modelSummary(ai: AiHealth | null, model: string | null): Summary
   return { text: AI_LABEL[ai.status], tone: ai.status === 'unconfigured' || ai.status === 'off' ? 'muted' : 'warning' }
 }
 
-export interface ConnLine { key: string; name: string; meta: string; tone: BadgeVariant; title?: string; onClick?: () => void }
+/** What a connection is: the ACTIVATE platform, an attached MCP server, or
+ *  a machine that holds remote libraries. */
+export type ConnKind = 'platform' | 'mcp' | 'site'
+export interface ConnLine { key: string; kind: ConnKind; name: string; meta: string; tone: BadgeVariant; title?: string; onClick?: () => void }
+
+export const CONN_GROUPS: { kind: ConnKind; label: string }[] = [
+  { kind: 'platform', label: 'ACTIVATE platform' },
+  { kind: 'mcp', label: 'Attached MCP servers' },
+  { kind: 'site', label: 'Machines with remote libraries' },
+]
 
 export function connectionLines(o: {
   platform: boolean; authEnabled: boolean | null; ai: AiHealth | null; mcp: McpRow[] | null
@@ -178,17 +189,18 @@ export function connectionLines(o: {
   const rows: ConnLine[] = []
   if (o.platform) {
     rows.push(o.ai?.platformAccess === false
-      ? { key: 'platform', name: 'Platform', meta: 'your key does not reach it', tone: 'warning', onClick: () => go('#view=settings:access') }
-      : { key: 'platform', name: 'Platform', meta: 'connected', tone: 'success' })
+      ? { key: 'platform', kind: 'platform', name: 'Platform', meta: 'your key does not reach it', tone: 'warning', onClick: () => go('#view=settings:access') }
+      : { key: 'platform', kind: 'platform', name: 'Platform', meta: 'connected', tone: 'success' })
   } else if (o.authEnabled) {
-    rows.push({ key: 'platform', name: 'Platform', meta: 'needs your key', tone: 'warning', onClick: () => go('#view=settings:access') })
+    rows.push({ key: 'platform', kind: 'platform', name: 'Platform', meta: 'needs your key', tone: 'warning', onClick: () => go('#view=settings:access') })
   }
   for (const m of o.mcp ?? []) {
+    const key = `mcp:${m.name}`
     rows.push(m.error
-      ? { key: `mcp:${m.name}`, name: m.name, meta: 'not answering', tone: 'warning', title: m.error }
+      ? { key, kind: 'mcp', name: m.name, meta: 'not answering', tone: 'warning', title: m.error }
       : m.checkedAt === null
-        ? { key: `mcp:${m.name}`, name: m.name, meta: 'not checked yet', tone: 'muted' }
-        : { key: `mcp:${m.name}`, name: m.name, meta: `connected, ${plural(m.tools, 'tool')}`, tone: 'success' })
+        ? { key, kind: 'mcp', name: m.name, meta: 'not checked yet', tone: 'muted' }
+        : { key, kind: 'mcp', name: m.name, meta: `connected, ${plural(m.tools, 'tool')}`, tone: 'success' })
   }
   // The clusters the viewer's libraries live on, as their libraries last
   // found them; the panel does not reach out to check.
@@ -200,7 +212,7 @@ export function connectionLines(o: {
     const states = [...byId.values()]
     const failed = states.includes('failed')
     rows.push({
-      key: `site:${site}`, name: site,
+      key: `site:${site}`, kind: 'site', name: site,
       meta: failed ? 'a library build failed' : plural(states.length, 'library', 'libraries'),
       tone: failed ? 'warning' : 'success',
     })
@@ -456,7 +468,7 @@ function PanelCards({ view, cfg }: { view: string; cfg: AppConfig }) {
           <button type="button" className="status-link" onClick={() => go('#view=settings:libraries')}>Library settings</button>
         </Card>
       )}
-      {(shared.ai || model) && (
+      {cfg.aiEnabled !== false && (shared.ai || model) && (
         <Card id="model" title="Model" summary={modelSummary(shared.ai, model)}>
           {model && <Row tone={shared.ai?.status === 'ok' ? 'success' : 'muted'} name={model} meta={shared.modelProvider ?? 'selected'} title={model} />}
           {shared.ai && (
@@ -473,7 +485,18 @@ function PanelCards({ view, cfg }: { view: string; cfg: AppConfig }) {
       )}
       {conns.length > 0 && (
         <Card id="connections" title="Connections" summary={connectionsSummary(conns)}>
-          {conns.map(c => <Row key={c.key} tone={c.tone} name={c.name} meta={c.meta} title={c.title} onClick={c.onClick} />)}
+          <p className="status-card-note">What this Studio connects to beyond its own folder and index.</p>
+          {CONN_GROUPS.map(g => {
+            const rows = conns.filter(c => c.kind === g.kind)
+            return rows.length > 0 && (
+              <Group key={g.kind} label={g.label}>
+                {rows.map(c => <Row key={c.key} tone={c.tone} name={c.name} meta={c.meta} title={c.title} onClick={c.onClick} />)}
+              </Group>
+            )
+          })}
+          {conns.some(c => c.kind === 'mcp') && (
+            <button type="button" className="status-link" onClick={() => go('#view=settings:rag')}>MCP server settings</button>
+          )}
         </Card>
       )}
     </div>

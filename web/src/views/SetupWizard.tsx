@@ -1,29 +1,35 @@
 import { type CSSProperties, useEffect, useRef, useState } from 'react'
-import { Button, Callout, EmptyState, Field, Input, Loader, SegmentedControl, Select, Switch } from '@parallelworks/ui'
+import {
+  type BadgeVariant, Button, Callout, EmptyState, ExternalLink, Field, Input, Loader, SegmentedControl, Select, StatusDot, Switch,
+} from '@parallelworks/ui'
+import { ACCENTS } from '../accents'
 import { api } from '../api'
 import { AccentSwatches } from '../components/AccentSwatches'
 import { BrandIcons } from '../components/BrandIcons'
 import { KINDS } from '../components/LibrariesSection'
 import { LocalLibraryForm } from '../components/LocalLibraryForm'
-import { FolderPicker, IndexBuildProgress, json, post, errText, useIndexBuild, type SetupStatus } from '../components/PrimaryFolder'
+import { FolderPicker, IndexBuildProgress, json, post, errText, useIndexBuild, type IndexJob, type SetupStatus } from '../components/PrimaryFolder'
 import { SshLibraryForm } from '../components/SshLibraryForm'
 import {
   AI_SECTIONS, SECTION_SWITCHES, reloadAppConfig, saveAiEnabled, saveSections, saveSettings, sectionAllowed, sectionsSetting, useAppConfig,
 } from '../config'
+import { type ThemeChoice, currentThemeChoice, setThemeChoice } from '../theme'
 
 /**
- * First-run setup for a single-user install: the Studio's name, icon and
- * accent, AI features and the model endpoint, which pages the sidebar
- * shows, the folder to index, and other libraries. Shown over the app on a
- * first run, and from Settings, General afterwards; everything here is in
- * Settings too. The folder step is the same picker and index build as
- * Settings, Libraries (PrimaryFolder).
+ * First-run setup for a single-user install: the Studio's name and icon,
+ * its theme and accent, AI features and the model endpoint, which pages the
+ * sidebar shows, the folder to index, and other libraries. Shown over the
+ * app on a first run, and from Settings, General afterwards; everything
+ * here is in Settings too. Each step can be skipped, and Finish later
+ * closes setup at any step. The folder step is the same picker and index
+ * build as Settings, Libraries (PrimaryFolder); the build runs on the
+ * server, so no step waits for it.
  */
 
 export type { IndexJob, SetupStatus } from '../components/PrimaryFolder'
 
-const STEPS = ['Welcome', 'Your Studio', 'AI features', 'Sidebar', 'Your folder', 'Other libraries', 'Done']
-const STEP = { welcome: 0, studio: 1, ai: 2, sidebar: 3, folder: 4, libraries: 5, done: 6 }
+const STEPS = ['Welcome', 'Your Studio', 'Appearance', 'AI features', 'Sidebar', 'Your folder', 'Other libraries', 'Done']
+const STEP = { welcome: 0, studio: 1, appearance: 2, ai: 3, sidebar: 4, folder: 5, libraries: 6, done: 7 }
 
 /** Switches for the sidebar's pages, saved as the sections setting. With
  *  AI features off, Chat and Agents stay off. */
@@ -91,11 +97,13 @@ export function keyTestProblem(t: KeyTest, baseUrl: string): string | null {
 
 /** AI features on or off, and the OpenAI-compatible endpoint the Studio's
  *  model calls go to (the personal model key routes, with its base URL). */
-function AiStep({ enabled, sections, me, onSaved }: {
+function AiStep({ enabled, sections, me, onSaved, onOpenAccess }: {
   enabled: boolean
   sections: string[] | undefined
   me: KeyStatus | null
   onSaved: (saved: { host: string; model: string; status: KeyStatus }) => void
+  /** Closes setup and opens Settings, Model access. */
+  onOpenAccess: () => void
 }) {
   const [baseUrl, setBaseUrl] = useState(me?.baseUrl ?? '')
   useEffect(() => { if (me?.baseUrl) setBaseUrl(b => b || me.baseUrl || '') }, [me?.baseUrl])
@@ -143,8 +151,14 @@ function AiStep({ enabled, sections, me, onSaved }: {
     } catch (e) { setError(errText(e)) } finally { setBusy(null) }
   }
 
+  const access = (
+    <a href="#view=settings:access" onClick={e => { e.preventDefault(); onOpenAccess() }}>Settings, Model access</a>
+  )
   return (
     <>
+      <p style={{ margin: 0 }}>
+        This step is optional. Skip it to set up a model later in {access}; search, the library and query work without one.
+      </p>
       <label className="key-persist" style={{ margin: 0, color: 'var(--pw-text)' }}>
         <Switch checked={enabled} disabled={busy === 'switch'} onCheckedChange={v => void toggle(v)} aria-label="AI features" onLabel="On" offLabel="Off" />
         <span>Chat, Agents, and other features that call a model</span>
@@ -152,6 +166,7 @@ function AiStep({ enabled, sections, me, onSaved }: {
       {!enabled && (
         <p className="muted" style={{ margin: 0 }}>
           Off: Chat and Agents leave the sidebar and nothing is sent to a model. Search, the library, query and statistics work as before.
+          AI features can be turned back on at any time in Settings, General, AI features.
         </p>
       )}
       {enabled && (
@@ -159,6 +174,10 @@ function AiStep({ enabled, sections, me, onSaved }: {
           <p className="muted" style={{ margin: 0 }}>
             An OpenAI-compatible endpoint: a provider, a gateway, or a model server such as vLLM or Ollama. The key is stored
             on this computer, encrypted.
+          </p>
+          <p className="muted" style={{ margin: 0 }}>
+            An ACTIVATE account works too: set it up in {access}, or enter it here with the base
+            URL <code>https://&lt;platform host&gt;/api/openai/v1</code> and an API key from the account.
           </p>
           {me && me.mode !== 'none' && me.baseUrl && !saved && (
             <Callout tone="success">
@@ -209,6 +228,38 @@ const label: CSSProperties = { margin: '0 0 6px', fontSize: 13, fontWeight: 500 
 type OtherKind = 'local' | 'ssh' | 'pw'
 const KIND_TAB: Record<OtherKind, string> = { local: 'On this machine', ssh: 'Over ssh', pw: 'On a cluster' }
 
+export const THEME_OPTIONS: { value: ThemeChoice; label: string }[] = [
+  { value: 'light', label: 'Light' },
+  { value: 'dark', label: 'Dark' },
+  { value: 'system', label: 'System' },
+]
+
+/** The open-source workflow engine, for workflow YAML files of one's own. */
+export const MERIDIAN_URL = 'https://github.com/parallelworks/meridian'
+
+/** A theme chosen in setup or Settings: painted in this window at once,
+ *  and saved as the Studio's default so a new window opens in it. System
+ *  saves light, the default that follows the device's dark setting. */
+export function saveThemeChoice(choice: ThemeChoice): Promise<void> {
+  setThemeChoice(choice)
+  return saveSettings({ theme: choice === 'dark' ? 'dark' : 'light' })
+}
+
+/** The setup index build in one line, for the steps after the folder. */
+export function buildSummary(job: IndexJob | null, error: string): { text: string; tone: BadgeVariant; pulse: boolean } | null {
+  if (error) return { text: error, tone: 'error', pulse: false }
+  if (!job) return null
+  const p = job.progress
+  if (job.state === 'queued' || job.state === 'running') {
+    const where = !p ? '' : p.phase === 'directories' ? `: ${p.current ?? ''} (${p.done} of ${p.total})` : p.phase === 'files' ? ': files at the top of the folder' : ': finishing'
+    return { text: `Building the index in the background${where}`, tone: 'info', pulse: true }
+  }
+  if (job.state === 'error') return { text: `The index build failed: ${job.error ?? 'unknown error'}`, tone: 'error', pulse: false }
+  return p?.failed.length
+    ? { text: `Index built; ${p.failed.length} folder${p.failed.length === 1 ? '' : 's'} could not be indexed`, tone: 'warning', pulse: false }
+    : { text: 'Index built', tone: 'success', pulse: false }
+}
+
 export function SetupWizard({ onClose, pollMs = 1000 }: {
   /** `folderChanged` says the Studio restarted on another folder. */
   onClose: (folderChanged: boolean) => void
@@ -225,6 +276,7 @@ export function SetupWizard({ onClose, pollMs = 1000 }: {
   const [finishing, setFinishing] = useState(false)
   const [name, setName] = useState<string | null>(null)
   const [accent, setAccent] = useState<string | null>(null)
+  const [theme, setTheme] = useState<ThemeChoice | null>(null)
   const [me, setMe] = useState<KeyStatus | null>(null)
   const [aiSaved, setAiSaved] = useState<{ host: string; model: string } | null>(null)
   const [kind, setKind] = useState<OtherKind>('local')
@@ -250,6 +302,8 @@ export function SetupWizard({ onClose, pollMs = 1000 }: {
     }
   }
 
+  // The build runs on the server, so moving on (or closing setup) never
+  // waits for it; this only follows it while setup is open.
   const index = useIndexBuild({ pollMs, onDone: async () => { await loadStatus(); reloadAppConfig() } })
 
   useEffect(() => {
@@ -262,12 +316,17 @@ export function SetupWizard({ onClose, pollMs = 1000 }: {
     api.userLibraries().then(r => { if (alive.current) setPwOffered(!!r.pw) }).catch(() => {})
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-  // The name and accent start from the configuration once it has loaded.
+  // The name, theme and accent show what is in effect, so setup run again
+  // starts from the current values: the configuration is read afresh as
+  // the wizard opens, and each follows it until it is changed here.
+  const touched = useRef(new Set<'name' | 'accent' | 'theme'>())
+  useEffect(() => { reloadAppConfig() }, [])
   useEffect(() => {
     if (!cfg.loaded) return
-    setName(n => n ?? cfg.appName)
-    setAccent(a => a ?? cfg.accent)
-  }, [cfg.loaded, cfg.appName, cfg.accent])
+    if (!touched.current.has('name')) setName(cfg.appName)
+    if (!touched.current.has('accent')) setAccent(cfg.accent)
+    if (!touched.current.has('theme')) setTheme(currentThemeChoice(cfg.theme))
+  }, [cfg.loaded, cfg.appName, cfg.accent, cfg.theme])
 
   const save = (patch: Record<string, unknown>) => {
     setStepError('')
@@ -280,9 +339,16 @@ export function SetupWizard({ onClose, pollMs = 1000 }: {
   // A custom color reports every step of a drag; the last one is saved.
   const accentTimer = useRef<number | undefined>(undefined)
   const pickAccent = (a: string) => {
+    touched.current.add('accent')
     setAccent(a)
     window.clearTimeout(accentTimer.current)
     accentTimer.current = window.setTimeout(() => void save({ accent: a }), a.startsWith('custom:') ? 400 : 0)
+  }
+  const pickTheme = (t: ThemeChoice) => {
+    touched.current.add('theme')
+    setTheme(t)
+    setStepError('')
+    saveThemeChoice(t).catch(e => { if (alive.current) setStepError(errText(e)) })
   }
 
   const folderChangedTo = async () => {
@@ -305,6 +371,10 @@ export function SetupWizard({ onClose, pollMs = 1000 }: {
     window.dispatchEvent(new Event('ade:setup-closed'))
     onClose(folderChanged)
   }
+  const openAccess = async () => {
+    await finish()
+    location.hash = '#view=settings:access'
+  }
 
   const changeSections = (next: string[]) => {
     setStepError('')
@@ -326,12 +396,21 @@ export function SetupWizard({ onClose, pollMs = 1000 }: {
   const kinds: OtherKind[] = ['local', 'ssh', ...(pwOffered ? ['pw' as const] : [])]
 
   const indexState = !primary ? '' : !primary.exists ? 'This folder does not exist yet.'
+    : building ? 'The index is building in the background.'
     : primary.indexed ? (primary.files !== undefined ? `Indexed: ${primary.files.toLocaleString()} files.` : 'Indexed.')
     : 'Not indexed yet.'
   const endpoint = aiSaved ?? (me && me.mode !== 'none' && me.baseUrl ? { host: hostOf(me.baseUrl), model: '' } : null)
   const aiSummary = !aiOn ? 'off'
     : endpoint ? `on, through ${endpoint.host}${endpoint.model ? `, default model ${endpoint.model}` : ''}`
-    : 'on, no endpoint set yet (Settings, Model access)'
+    : 'on, no model set up yet'
+  const accentName = (a: string) => (a.startsWith('custom:') ? `custom (${a.slice(7)})` : ACCENTS[a]?.label ?? a)
+  const build = buildSummary(index.job, index.error)
+  // A folder just chosen and not indexed: offer the build at once.
+  const offerBuild = folderChanged && !!primary?.exists && !primary.indexed && !index.job && !restarting
+  // Steps with something to set up that has not been, where moving on skips it.
+  const skippable = (step === STEP.ai && aiOn && !endpoint)
+    || (step === STEP.folder && !primary?.indexed && !index.job)
+    || (step === STEP.libraries && !others.length)
 
   const last = STEPS.length - 1
   return (
@@ -352,8 +431,10 @@ export function SetupWizard({ onClose, pollMs = 1000 }: {
               GUFI indexes on other machines and clusters.
             </p>
             <p className="muted" style={{ margin: 0 }}>
-              The next steps set its name and icon, AI features, the sidebar, the folder, and other libraries. Each step can be
-              skipped, and everything here can be changed later in Settings.
+              The next steps set its name and icon, its theme and color, AI features, the sidebar, the folder, and other
+              libraries. Each step shows what is set now and changes nothing until you change it; any step can be skipped,
+              and Finish later closes setup. Everything here is also in Settings, and Run setup again, in Settings, General,
+              comes back here.
             </p>
           </>
         )}
@@ -362,21 +443,29 @@ export function SetupWizard({ onClose, pollMs = 1000 }: {
           <>
             <Input label="Name" value={name ?? ''} maxLength={60} placeholder="Studio"
               description="Shown at the top of the sidebar and in the browser tab."
-              onChange={e => setName(e.target.value)} onBlur={saveName}
+              onChange={e => { touched.current.add('name'); setName(e.target.value) }} onBlur={saveName}
               onKeyDown={e => { if (e.key === 'Enter') saveName() }} />
             <div>
               <p style={label}>Icon</p>
               <BrandIcons value={status?.branding} />
             </div>
-            <div>
-              <p style={label}>Accent color</p>
+          </>
+        )}
+
+        {step === STEP.appearance && (
+          <>
+            <Field group label="Theme" description="System follows this computer's light or dark setting. The sidebar's theme button switches it later.">
+              <SegmentedControl options={THEME_OPTIONS} value={theme ?? currentThemeChoice(cfg.theme)} onValueChange={pickTheme} />
+            </Field>
+            <Field group label="Accent color">
               <AccentSwatches value={accent ?? cfg.accent} onChange={pickAccent} />
-            </div>
+            </Field>
+            <p className="muted" style={{ margin: 0 }}>Both apply as you pick them. Settings, General, Appearance has these and the surface tone.</p>
           </>
         )}
 
         {step === STEP.ai && (
-          <AiStep enabled={aiOn} sections={cfg.sections} me={me}
+          <AiStep enabled={aiOn} sections={cfg.sections} me={me} onOpenAccess={() => void openAccess()}
             onSaved={s => { setAiSaved({ host: s.host, model: s.model }); setMe(s.status) }} />
         )}
 
@@ -384,6 +473,10 @@ export function SetupWizard({ onClose, pollMs = 1000 }: {
           <>
             <p className="muted" style={{ margin: 0 }}>Pages to show in the sidebar. Settings and Help always show.</p>
             <SidebarSwitches value={cfg.sections} platform={!!cfg.platform} aiEnabled={aiOn} onChange={changeSections} />
+            <p className="muted" style={{ margin: 0 }}>
+              Workflows lists the workflows of an ACTIVATE platform, so it needs a platform login. To run workflow YAML files
+              of your own, see <ExternalLink href={MERIDIAN_URL}>Meridian</ExternalLink>, the open-source workflow engine.
+            </p>
           </>
         )}
 
@@ -406,13 +499,24 @@ export function SetupWizard({ onClose, pollMs = 1000 }: {
                 {status.gufi && !status.gufi.found && (
                   <Callout tone="warning">GUFI was not found in {status.gufi.bin}, so the index cannot be built.</Callout>
                 )}
-                <div style={row}>
-                  <Button variant="secondary" loading={building} disabled={building || !status.gufi?.found || !primary?.exists}
-                    onClick={() => void index.start()}>
-                    {primary?.indexed ? 'Rebuild the index' : 'Build the index'}
-                  </Button>
-                </div>
+                {offerBuild && status.gufi?.found ? (
+                  <Callout tone="info" title="Build the index for this folder now?"
+                    action={<Button variant="primary" size="sm" onClick={() => void index.start()}>Build the index</Button>}>
+                    It builds in the background, so setup can go on while it runs.
+                  </Callout>
+                ) : (
+                  <div style={row}>
+                    <Button variant="secondary" loading={building} disabled={building || !status.gufi?.found || !primary?.exists}
+                      onClick={() => void index.start()}>
+                      {primary?.indexed ? 'Rebuild the index' : 'Build the index'}
+                    </Button>
+                  </div>
+                )}
                 <IndexBuildProgress job={index.job} error={index.error} />
+                <p className="muted" style={{ margin: 0 }}>
+                  A large folder can take a long time to index. The build runs in the background: go on to the next step, or
+                  finish setup, while it runs. Indexes can be added or changed at any time in Settings, Libraries.
+                </p>
               </div>
             )}
           </>
@@ -434,28 +538,44 @@ export function SetupWizard({ onClose, pollMs = 1000 }: {
                 <p style={{ margin: '0 0 4px' }}>Added:</p>
                 <ul style={{ margin: 0, paddingLeft: 20 }}>{others.map(l => <li key={l.id}>{l.label}</li>)}</ul>
               </div>
-            ) : <EmptyState variant="bare" title="No other libraries yet" description="They can also be added later in Settings, Libraries." />}
+            ) : <EmptyState variant="bare" title="No other libraries yet" description="They can be added at any time in Settings, Libraries." />}
           </>
         )}
 
         {step === STEP.done && (
-          <ul style={{ margin: 0, paddingLeft: 20, display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <li>Name: {cfg.appName}</li>
-            <li>AI features: {aiSummary}</li>
-            <li>Sidebar: {shownLabels.length ? shownLabels.join(', ') : 'Settings and Help only'}</li>
-            <li>Folder: {primary ? `${primary.path}. ${indexState}` : 'unknown'}</li>
-            <li>Other libraries: {others.length ? others.map(l => l.label).join(', ') : 'none'}</li>
-          </ul>
+          <>
+            <ul style={{ margin: 0, paddingLeft: 20, display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <li>Name: {cfg.appName}</li>
+              <li>Theme: {THEME_OPTIONS.find(o => o.value === (theme ?? currentThemeChoice(cfg.theme)))?.label}, accent {accentName(accent ?? cfg.accent)}</li>
+              <li>AI features: {aiSummary}</li>
+              <li>Sidebar: {shownLabels.length ? shownLabels.join(', ') : 'Settings and Help only'}</li>
+              <li>Folder: {primary ? `${primary.path}. ${indexState}` : 'unknown'}</li>
+              <li>Other libraries: {others.length ? others.map(l => l.label).join(', ') : 'none'}</li>
+            </ul>
+            {aiOn && !endpoint && (
+              <p className="muted" style={{ margin: 0 }}>
+                Chat needs a model: set one up in <a href="#view=settings:access" onClick={e => { e.preventDefault(); void openAccess() }}>Settings, Model access</a>.
+              </p>
+            )}
+          </>
         )}
 
         {stepError && <Callout tone="error" live>{stepError}</Callout>}
 
+        {build && step !== STEP.folder && (
+          <p className="setup-build muted" role="status">
+            <StatusDot variant={build.tone} pulse={build.pulse} size={7} />
+            <span>{build.text}</span>
+          </p>
+        )}
+
         <div style={{ ...row, justifyContent: 'space-between', marginTop: 8 }}>
           {step < last
-            ? <Button variant="ghost" disabled={finishing || restarting} onClick={() => void finish()}>Skip setup</Button>
+            ? <Button variant="ghost" disabled={finishing || restarting} onClick={() => void finish()}>Finish later</Button>
             : <span />}
-          <div style={row}>
+          <div style={{ ...row, marginLeft: 'auto' }}>
             {step > 0 && <Button variant="secondary" disabled={restarting} onClick={() => go(step - 1)}>Back</Button>}
+            {skippable && <Button variant="ghost" disabled={restarting} onClick={() => go(step + 1)}>Skip this step</Button>}
             {step < last
               ? <Button variant="primary" disabled={restarting} onClick={() => go(step + 1)}>Next</Button>
               : <Button variant="primary" loading={finishing} onClick={() => void finish()}>Finish</Button>}

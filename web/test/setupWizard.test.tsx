@@ -1,7 +1,8 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SECTION_SWITCHES, sectionAllowed, sectionsSetting, shownView } from '../src/config'
-import { SetupWizard, SidebarSwitches, keyTestProblem } from '../src/views/SetupWizard'
+import { onThemeChoice } from '../src/theme'
+import { SetupWizard, SidebarSwitches, buildSummary, keyTestProblem } from '../src/views/SetupWizard'
 
 // The ssh and cluster forms have their own tests; here each adds a library
 // the way it reports one.
@@ -82,6 +83,19 @@ describe('sidebar sections', () => {
   })
 })
 
+describe('the index build in one line', () => {
+  it('says how far a build has got, and how it ended', () => {
+    const job = (over: Record<string, unknown>) => ({ id: 1, state: 'running', ms: null, error: null, ...over }) as Parameters<typeof buildSummary>[0]
+    expect(buildSummary(null, '')).toBeNull()
+    expect(buildSummary(job({ progress: { phase: 'directories', done: 2, total: 9, current: 'papers', failed: [] } }), '')?.text)
+      .toBe('Building the index in the background: papers (2 of 9)')
+    expect(buildSummary(job({ state: 'done', progress: { phase: 'done', done: 9, total: 9, current: null, failed: ['a: x', 'b: y'] } }), ''))
+      .toMatchObject({ text: 'Index built; 2 folders could not be indexed', tone: 'warning' })
+    expect(buildSummary(job({ state: 'error', error: 'disk full' }), '')).toMatchObject({ text: 'The index build failed: disk full', tone: 'error' })
+    expect(buildSummary(null, 'The index build was interrupted. Start it again.')?.tone).toBe('error')
+  })
+})
+
 describe('what a key test says', () => {
   const t = (over: Record<string, unknown>) => ({ ok: false, status: 'unreachable', models: 0, gatewayHost: 'models.example', message: null, ...over })
   it('names the failure plainly', () => {
@@ -99,6 +113,9 @@ describe('what a key test says', () => {
 interface Server {
   appName: string
   accent: string
+  theme: 'light' | 'dark'
+  key: Record<string, unknown>
+  others: { id: string; label: string }[]
   aiEnabled: boolean
   primary: string
   indexed: boolean
@@ -113,7 +130,7 @@ interface Server {
 }
 
 const server = (over: Partial<Server> = {}): Server => ({
-  appName: 'Studio', accent: 'navy', aiEnabled: true, primary: '/home/u/Notes', indexed: false, startedAt: 'first start',
+  appName: 'Studio', accent: 'navy', theme: 'light', key: { mode: 'none' }, others: [], aiEnabled: true, primary: '/home/u/Notes', indexed: false, startedAt: 'first start',
   restartOnSave: true, jobDone: false, sections: [], branding: { light: null, dark: null }, pw: true, settings: {}, calls: [], ...over,
 })
 
@@ -132,7 +149,7 @@ function stubServer(s: Server) {
     const body = init?.body instanceof FormData ? init.body : init?.body ? JSON.parse(String(init.body)) : undefined
     s.calls.push({ method, url, body })
     if (url === '/api/config') {
-      return reply({ appName: s.appName, accent: s.accent, aiEnabled: s.aiEnabled, platform: false, sections: s.sections.length ? s.sections : undefined, user: { id: 'u', username: 'u' } })
+      return reply({ appName: s.appName, accent: s.accent, theme: s.theme, aiEnabled: s.aiEnabled, platform: false, sections: s.sections.length ? s.sections : undefined, user: { id: 'u', username: 'u' } })
     }
     if (url === '/api/settings' && method === 'PUT') {
       const b = body as Record<string, unknown>
@@ -150,7 +167,10 @@ function stubServer(s: Server) {
         gufi: { found: true, bin: '/opt/gufi/bin', semantic: false },
         embedModel: { path: '/x/minilm384.gguf', found: false },
         branding: s.branding,
-        libraries: [{ id: 'kb', label: 'Notes', primary: true, writable: true, pinned: true, source: true, caps: { index: s.indexed, fullText: false, vectors: false } }],
+        libraries: [
+          { id: 'kb', label: 'Notes', primary: true, writable: true, pinned: true, source: true, caps: { index: s.indexed, fullText: false, vectors: false } },
+          ...s.others.map(o => ({ ...o, primary: false, writable: false, pinned: false, source: false, caps: { index: true, fullText: false, vectors: false } })),
+        ],
         job: null,
       })
     }
@@ -164,7 +184,7 @@ function stubServer(s: Server) {
       const p = new URL(url, 'http://x').searchParams.get('path') ?? ''
       return LISTINGS[p] ? reply(LISTINGS[p]) : reply({ error: `no such folder: ${p}` }, 404)
     }
-    if (url === '/api/me/model-key' && method === 'GET') return reply({ authEnabled: false, verified: true, single: true, mode: 'none' })
+    if (url === '/api/me/model-key' && method === 'GET') return reply({ authEnabled: false, verified: true, single: true, ...s.key })
     if (url === '/api/me/model-key/test') {
       const { key } = body as { key: string }
       if (key === 'bad') return reply({ ok: false, status: 'auth', models: 0, gatewayHost: 'models.example', message: 'models.example rejected this credential (401).' })
@@ -216,17 +236,18 @@ function open(s: Server, onClose = vi.fn()) {
 describe('the setup wizard', () => {
   afterEach(() => { vi.unstubAllGlobals(); localStorage.clear() })
 
-  it('walks every step: name, icon, accent, an AI endpoint, sidebar, a new folder, other libraries, done', async () => {
+  it('walks every step: name, icon, theme, accent, an AI endpoint, sidebar, a new folder, other libraries, done', async () => {
     const s = server()
     const onClose = open(s)
 
     heading('Welcome')
-    expect(screen.getByText('Step 1 of 7')).toBeInTheDocument()
+    expect(screen.getByText('Step 1 of 8')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Back' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Finish later' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Skip setup' })).toBeNull()
     next()
 
-    // Your Studio: the name saves as it is left, the icon uploads, the
-    // accent saves as it is picked.
+    // Your Studio: the name saves as it is left, and the icon uploads.
     heading('Your Studio')
     const name = screen.getByRole('textbox', { name: 'Name' })
     await waitFor(() => expect(name).toHaveValue('Studio'))
@@ -248,12 +269,34 @@ describe('the setup wizard', () => {
     expect(s.calls.some(c => c.url === '/api/setup/icon?variant=dark')).toBe(false)
     fireEvent.click(screen.getByRole('button', { name: 'Remove the light mode icon' }))
     await waitFor(() => expect(sent(s, 'DELETE', '/api/setup/icon?variant=light')).toHaveLength(1))
+    next()
+
+    // Appearance: the theme paints this window at once and is saved as the
+    // default; the accent saves as it is picked.
+    heading('Appearance')
+    const painted: string[] = []
+    const off = onThemeChoice(c => painted.push(c))
+    expect(screen.getByRole('button', { name: 'System' })).toHaveAttribute('aria-pressed', 'true')
+    fireEvent.click(screen.getByRole('button', { name: 'Dark' }))
+    await waitFor(() => expect(s.settings.theme).toBe('dark'))
+    expect(localStorage.getItem('ade-theme')).toBe('dark')
+    fireEvent.click(screen.getByRole('button', { name: 'System' }))
+    // System leaves this browser without a choice, and the default light,
+    // which follows the device's dark setting.
+    await waitFor(() => expect(s.settings.theme).toBe('light'))
+    expect(localStorage.getItem('ade-theme')).toBeNull()
+    expect(painted).toEqual(['dark', 'system'])
+    off()
     fireEvent.click(screen.getByRole('button', { name: 'Teal' }))
     await waitFor(() => expect(s.settings.accent).toBe('teal'))
     next()
 
-    // AI features: a refused key, then one that lists models, saved with a default.
+    // AI features: optional, so it can be skipped until a model is saved;
+    // a refused key, then one that lists models, saved with a default.
     heading('AI features')
+    expect(screen.getByText(/^This step is optional\. Skip it to set up a model later in/)).toBeInTheDocument()
+    expect(screen.getByText(/An ACTIVATE account works too/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Skip this step' })).toBeInTheDocument()
     expect(screen.getByRole('switch', { name: 'AI features' })).toHaveAttribute('aria-checked', 'true')
     fireEvent.change(screen.getByLabelText('Base URL'), { target: { value: 'https://models.example/v1' } })
     fireEvent.change(screen.getByLabelText('API key'), { target: { value: 'bad' } })
@@ -270,9 +313,11 @@ describe('the setup wizard', () => {
     expect(sent(s, 'POST', '/api/me/model-key')).toEqual([{ key: 'sk-good', baseUrl: 'https://models.example/v1', persist: true }])
     expect(s.settings.ragDefaultModel).toBe('small-model')
     expect(localStorage.getItem('aiChat.model')).toBe('"small-model"')
+    expect(screen.queryByRole('button', { name: 'Skip this step' })).toBeNull()
     next()
 
     heading('Sidebar')
+    expect(screen.getByRole('link', { name: /Meridian/ })).toHaveAttribute('href', 'https://github.com/parallelworks/meridian')
     expect(screen.getByRole('switch', { name: 'Chat' })).not.toHaveAttribute('data-disabled')
     fireEvent.click(screen.getByRole('switch', { name: 'History' }))
     await waitFor(() => expect(s.sections).toEqual(['chat', 'library', 'search', 'query', 'overview', 'workflows', 'agents', 'settings', 'help']))
@@ -287,19 +332,26 @@ describe('the setup wizard', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Up' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Research' }))
     await waitFor(() => expect(screen.getByRole('textbox', { name: 'Folder' })).toHaveValue('/home/u/Research'))
+    expect(screen.getByText(/Indexes can be added or changed at any time in Settings, Libraries\./)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Use this folder' }))
     expect(await screen.findByText('The Studio restarted and now uses /home/u/Research.')).toBeInTheDocument()
     expect(s.calls.find(c => c.url === '/api/setup/primary-folder')?.body).toEqual({ path: '/home/u/Research' })
+    // A folder just chosen offers its index build.
+    expect(await screen.findByText('Build the index for this folder now?')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Build the index' }))
     expect(await screen.findByText('papers (1 of 3)')).toBeInTheDocument()
     expect(screen.getByRole('progressbar')).toBeInTheDocument()
-    s.jobDone = true
-    expect(await screen.findByText('Index built in 3 s.')).toBeInTheDocument()
-    expect(await screen.findByText('Indexed: 12 files.')).toBeInTheDocument()
+    expect(screen.getByText('The index is building in the background.')).toBeInTheDocument()
+    // Nothing waits for the build: Next is there while it runs, and the
+    // next steps say how it is going.
+    expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled()
     next()
 
     // Other libraries: one on this machine picked by browsing, and one on a cluster.
     heading('Other libraries')
+    expect(await screen.findByText('Building the index in the background: papers (1 of 3)')).toBeInTheDocument()
+    s.jobDone = true
+    expect(await screen.findByText('Index built')).toBeInTheDocument()
     expect(screen.getByText('No other libraries yet')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Browse for the index…' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Research' }))
@@ -318,6 +370,7 @@ describe('the setup wizard', () => {
 
     heading('Done')
     expect(await screen.findByText('Name: Lab Studio')).toBeInTheDocument()
+    expect(screen.getByText('Theme: System, accent Teal')).toBeInTheDocument()
     expect(screen.getByText('AI features: on, through models.example, default model small-model')).toBeInTheDocument()
     expect(screen.getByText('Folder: /home/u/Research. Indexed: 12 files.')).toBeInTheDocument()
     expect(screen.getByText('Other libraries: Research, Cluster index')).toBeInTheDocument()
@@ -327,9 +380,10 @@ describe('the setup wizard', () => {
     expect(s.calls.some(c => c.url === '/api/setup/complete' && c.method === 'POST')).toBe(true)
   })
 
-  it('with AI features off, Chat and Agents leave the sidebar; Back returns to the step', async () => {
+  it('with AI features off, Chat and Agents leave the sidebar, and it says they can come back; Back returns to the step', async () => {
     const s = server({ indexed: true, pw: false })
     open(s)
+    next()
     next()
     next()
     heading('AI features')
@@ -337,8 +391,10 @@ describe('the setup wizard', () => {
     fireEvent.click(screen.getByRole('switch', { name: 'AI features' }))
     await waitFor(() => expect(s.aiEnabled).toBe(false))
     expect(sent(s, 'PUT', '/api/settings').at(-1)).toEqual({ aiEnabled: false, sections: ['library', 'search', 'query', 'overview', 'history', 'workflows', 'settings', 'help'] })
-    expect(await screen.findByText(/^Off: Chat and Agents leave the sidebar/)).toBeInTheDocument()
+    expect(await screen.findByText(/^Off: Chat and Agents leave the sidebar/)).toHaveTextContent('can be turned back on at any time in Settings, General, AI features')
     expect(screen.queryByLabelText('Base URL')).toBeNull()
+    // Off is a choice made, so there is nothing to skip.
+    expect(screen.queryByRole('button', { name: 'Skip this step' })).toBeNull()
     next()
 
     heading('Sidebar')
@@ -365,6 +421,7 @@ describe('the setup wizard', () => {
     open(s)
     next()
     next()
+    next()
     heading('AI features')
     fireEvent.change(await screen.findByLabelText('Base URL'), { target: { value: 'http://127.0.0.1:11434/v1' } })
     expect(screen.getByLabelText('API key')).toHaveAttribute('placeholder', 'empty if the endpoint needs none')
@@ -376,10 +433,10 @@ describe('the setup wizard', () => {
     expect(sent(s, 'POST', '/api/me/model-key')).toEqual([{ key: 'none', baseUrl: 'http://127.0.0.1:11434/v1', persist: true }])
   })
 
-  it('without a launcher says how to change the folder, and Skip setup records it as done', async () => {
+  it('without a launcher says how to change the folder, and Finish later records setup as done', async () => {
     const s = server({ indexed: true, restartOnSave: false })
     const onClose = open(s)
-    for (let i = 0; i < 4; i++) next()
+    for (let i = 0; i < 5; i++) next()
     heading('Your folder')
     expect(await screen.findByText('Indexed: 12 files.')).toBeInTheDocument()
     expect(await screen.findByRole('button', { name: 'Rebuild the index' })).toBeInTheDocument()
@@ -388,8 +445,121 @@ describe('the setup wizard', () => {
     await waitFor(() => expect(screen.getByRole('textbox', { name: 'Folder' })).toHaveValue('/home/u/Research'))
     fireEvent.click(screen.getByRole('button', { name: 'Use this folder' }))
     expect(await screen.findByText("Set KB_ROOT=/home/u/Research in the Studio's environment and restart it.")).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Skip setup' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Finish later' }))
     await waitFor(() => expect(onClose).toHaveBeenCalledWith(false))
     expect(s.calls.some(c => c.url === '/api/setup/complete')).toBe(true)
+  })
+
+  it('run again, shows what is set now on every step and changes nothing until something is changed', async () => {
+    const s = server({
+      appName: 'Lab Studio', accent: 'teal', theme: 'dark', indexed: true, sections: ['chat', 'library', 'search', 'settings', 'help'],
+      branding: { light: '/api/brand-icon?v=1', dark: null }, key: { mode: 'stored', last4: 'abcd', baseUrl: 'https://models.example/v1' },
+      others: [{ id: 'lab', label: 'Lab index' }],
+    })
+    const onClose = open(s)
+    const writes = () => s.calls.filter(c => c.method !== 'GET')
+    next()
+    heading('Your Studio')
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Name' })).toHaveValue('Lab Studio'))
+    expect(document.querySelector('.brand-icon-preview.light img')).toHaveAttribute('src', '/api/brand-icon?v=1')
+    next()
+    heading('Appearance')
+    // A dark default with no choice in this browser is Dark, whatever the device says.
+    expect(screen.getByRole('button', { name: 'Dark' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'Teal' })).toHaveAttribute('aria-pressed', 'true')
+    next()
+    heading('AI features')
+    expect(await screen.findByText('In use: the key ending abcd for models.example. Enter a key below to replace it.')).toBeInTheDocument()
+    expect(screen.getByLabelText('Base URL')).toHaveValue('https://models.example/v1')
+    expect(screen.queryByRole('button', { name: 'Skip this step' })).toBeNull()
+    next()
+    heading('Sidebar')
+    expect(screen.getByRole('switch', { name: 'Chat' })).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByRole('switch', { name: 'Query' })).toHaveAttribute('aria-checked', 'false')
+    next()
+    heading('Your folder')
+    expect(await screen.findByText('Indexed: 12 files.')).toBeInTheDocument()
+    expect(screen.getByText('/home/u/Notes')).toBeInTheDocument()
+    next()
+    heading('Other libraries')
+    expect(screen.getByText('Lab index')).toBeInTheDocument()
+    next()
+    heading('Done')
+    expect(screen.getByText('Name: Lab Studio')).toBeInTheDocument()
+    expect(screen.getByText('Theme: Dark, accent Teal')).toBeInTheDocument()
+    expect(screen.getByText('AI features: on, through models.example')).toBeInTheDocument()
+    expect(screen.getByText('Sidebar: Chat, Library, Search')).toBeInTheDocument()
+    expect(screen.getByText('Other libraries: Lab index')).toBeInTheDocument()
+    // Walking through saved nothing; Finish only records setup as done.
+    expect(writes()).toEqual([])
+    expect(localStorage.getItem('ade-theme')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Finish' }))
+    await waitFor(() => expect(onClose).toHaveBeenCalledWith(false))
+    expect(writes().map(c => `${c.method} ${c.url}`)).toEqual(['POST /api/setup/complete'])
+  })
+
+  it('left partway, keeps what was saved before leaving', async () => {
+    const s = server()
+    const onClose = open(s)
+    next()
+    const name = screen.getByRole('textbox', { name: 'Name' })
+    await waitFor(() => expect(name).toHaveValue('Studio'))
+    fireEvent.change(name, { target: { value: 'Field Notes' } })
+    next()
+    await waitFor(() => expect(s.settings.appName).toBe('Field Notes'))
+    fireEvent.click(screen.getByRole('button', { name: 'Forest' }))
+    await waitFor(() => expect(s.settings.accent).toBe('forest'))
+    fireEvent.click(screen.getByRole('button', { name: 'Finish later' }))
+    await waitFor(() => expect(onClose).toHaveBeenCalledWith(false))
+    expect(s.settings).toEqual({ appName: 'Field Notes', accent: 'forest' })
+    expect(s.calls.some(c => c.url === '/api/setup/complete')).toBe(true)
+  })
+
+  it('Skip this step moves on and saves nothing; the Model access link closes setup and opens it', async () => {
+    const s = server()
+    const onClose = open(s)
+    next()
+    next()
+    next()
+    heading('AI features')
+    fireEvent.click(screen.getByRole('button', { name: 'Skip this step' }))
+    heading('Sidebar')
+    expect(sent(s, 'POST', '/api/me/model-key')).toEqual([])
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }))
+    heading('AI features')
+    fireEvent.click(screen.getAllByRole('link', { name: 'Settings, Model access' })[0])
+    await waitFor(() => expect(onClose).toHaveBeenCalledWith(false))
+    expect(s.calls.some(c => c.url === '/api/setup/complete')).toBe(true)
+    expect(location.hash).toBe('#view=settings:access')
+    history.replaceState(null, '', location.pathname)
+  })
+
+  it('in the macOS app, chooses the folder with the system chooser, and falls back to the page if it cannot open', async () => {
+    const asked: unknown[] = []
+    let answer: () => Promise<unknown> = async () => '/home/u/Research'
+    vi.stubGlobal('webkit', { messageHandlers: { studioShell: { postMessage: (m: unknown) => { asked.push(m); return answer() } } } })
+    const s = server()
+    open(s)
+    for (let i = 0; i < 5; i++) next()
+    heading('Your folder')
+    expect(await screen.findByText('/home/u/Notes')).toBeInTheDocument()
+    // No folder list in the page: the system chooser, opened beside the folder in use.
+    expect(screen.queryByRole('button', { name: 'Up' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Choose another folder…' }))
+    expect(await screen.findByText('The Studio restarted and now uses /home/u/Research.')).toBeInTheDocument()
+    expect(asked[0]).toMatchObject({ action: 'chooseFolder', start: '/home/u', prompt: 'Use This Folder' })
+    expect(s.calls.find(c => c.url === '/api/setup/primary-folder')?.body).toEqual({ path: '/home/u/Research' })
+
+    // Cancelled: nothing changes.
+    answer = async () => null
+    fireEvent.click(screen.getByRole('button', { name: 'Choose another folder…' }))
+    await waitFor(() => expect(asked).toHaveLength(2))
+    expect(s.calls.filter(c => c.url === '/api/setup/primary-folder')).toHaveLength(1)
+
+    // The window cannot open it: the folders show in the page instead.
+    answer = async () => { throw new Error('not available here') }
+    fireEvent.click(screen.getByRole('button', { name: 'Choose another folder…' }))
+    expect(await screen.findByRole('button', { name: 'Use this folder' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Choose another folder…' })).toBeNull()
   })
 })

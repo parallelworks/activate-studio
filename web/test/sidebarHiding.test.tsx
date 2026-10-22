@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from '../src/App'
 
@@ -77,10 +77,17 @@ describe('sidebar switches', () => {
     window.dispatchEvent(new Event('ade:config-changed'))
   })
 
-  it('opens the setup wizard over the app on a first run', async () => {
+  it('opens the setup wizard over the app on a first run; Finish later records it as done, and it opens again on request', async () => {
     firstRun = true
     render(<App />)
     expect(await screen.findByRole('dialog', { name: 'Welcome' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Finish later' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    const calls = (fetch as unknown as { mock: { calls: [string, RequestInit?][] } }).mock.calls
+    expect(calls.some(([url, init]) => url === '/api/setup/complete' && init?.method === 'POST')).toBe(true)
     firstRun = false
+    // Run setup again (Settings, Help, the macOS menu) opens it the same way.
+    act(() => { window.dispatchEvent(new Event('ade:setup-open')) })
+    expect(await screen.findByRole('dialog', { name: 'Welcome' })).toBeInTheDocument()
   })
 })

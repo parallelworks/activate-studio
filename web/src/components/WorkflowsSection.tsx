@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Button, Callout, Checkbox, IconButton, Input, Loader, SearchInput, Table, toast } from '@parallelworks/ui'
+import { Button, Callout, Checkbox, ExternalLink, IconButton, Input, Loader, SearchInput, Table, toast } from '@parallelworks/ui'
 import { ArrowDownIcon, ArrowUpIcon } from '@parallelworks/ui/icons'
 
 /**
@@ -93,6 +93,10 @@ export function WorkflowsSection() {
         account. Pick them from the account this Studio is deployed under, from the marketplace, or from a GitHub
         repository. A viewer who lacks an account workflow can add a copy from its tile; marketplace and GitHub
         workflows need no copy.
+      </p>
+      <p className="muted view-sub">
+        Workflows are YAML files. To write and run workflow YAML files of your own, see{' '}
+        <ExternalLink href="https://github.com/parallelworks/meridian">Meridian</ExternalLink>, the open-source workflow engine.
       </p>
 
       <div className="tool-group">Offered here ({picked.length})</div>

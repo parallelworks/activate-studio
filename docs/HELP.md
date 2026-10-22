@@ -11,6 +11,8 @@ Files stay where they are. {appName} keeps its index in a folder of its own, rea
 3. **Ask.** Open **Chat** and ask in plain language. The answer links the files it used.
 4. **Query.** Open **Query** and pick a canned query, or build one, to list files by size, age, type, or label.
 
+On a computer of its own, setup can be run again at any time, starting from what is set now: **Run setup again** in Settings, General, or **Run Setup…** in the macOS app's menu.
+
 # Basics
 
 ## Chat
@@ -106,21 +108,26 @@ The address bar follows what you are looking at, so back and forward work and a 
 - **Install app**, in the navigation, installs {appName} as a desktop app in its own window. If a classification banner is shown, the chevron in Chrome's title bar moves the banner into the title bar. The loading screen draws the banner as it was last shown, so the title bar has no gap while the app starts.
 - The bottom of the navigation shows who you are signed in as, whether the models are reachable, and the state of the index; click any of them for details.
 - **About**, at the foot of Help's list and in the version's panel at the bottom of the navigation, shows the version and license. ACTIVATE Studio is built and maintained by Parallel Works.
-- The **status panel** at the right shows what is running (agent tasks, standing agents, workflow runs, open sessions), your libraries and the last index sync, the model in use, and connections that need attention. The panel button at the top right of each page opens and closes it, and {appName} remembers. Click a card's header for its detail; click a run or session to open it beside the chat or on the Workflows page. While a run or session is open beside the chat, the panel steps aside. Phones do not show it.
+- The **status panel** at the right shows what is running (agent tasks, standing agents, workflow runs, open sessions), your libraries and the last index sync, the model in use (while AI features are on), and **Connections**, when there are any: the ACTIVATE platform, attached MCP servers, and the machines that hold remote libraries, each with its state. The panel button at the top right of each page opens and closes it, and {appName} remembers. Click a card's header for its detail; click a run or session to open it beside the chat or on the Workflows page. While a run or session is open beside the chat, the panel steps aside. Phones do not show it.
 
 ## Setup and the sidebar
 
-On a computer of its own, with nobody signing in, {appName} opens with a short setup, one step at a time, and any step can be skipped:
+On a computer of its own, with nobody signing in, {appName} opens with a short setup, one step at a time. **Skip this step** moves past a step without changing it, and **Finish later** closes setup at any step; everything in it is also in Settings.
 
-- **Your Studio**: the name, an icon for light mode and an optional one for dark mode (PNG, JPEG, SVG or WebP, up to 1 MB; the browser tab uses it too), and the accent color.
-- **AI features**: on, with the OpenAI-compatible endpoint, its key (empty for a model server that takes none) and the default model; **Test** lists the models the endpoint offers or says what failed. Off, Chat and Agents leave the sidebar, the footer drops its model line, and nothing is sent to a model; search, the library, query and statistics work as before.
-- **Sidebar**: which pages it shows.
-- **Your folder**: the folder to index. Choosing another folder restarts {appName} on it when it runs as the macOS app; elsewhere, set `KB_ROOT` and restart. **Build the index** indexes the whole folder and shows its progress.
+- **Your Studio**: the name, an icon for light mode and an optional one for dark mode (PNG, JPEG, SVG or WebP, up to 1 MB; the browser tab uses it too).
+- **Appearance**: Light, Dark or System (which follows the computer's own setting), and the accent color. Both apply as you pick them.
+- **AI features**: optional. On, with the OpenAI-compatible endpoint, its key (empty for a model server that takes none) and the default model; **Test** lists the models the endpoint offers or says what failed. An ACTIVATE account works too, set up in Settings, Model access. Off, Chat and Agents leave the sidebar, the footer drops its model line, and nothing is sent to a model; search, the library, query and statistics work as before. AI features can be turned back on at any time in Settings, General, AI features.
+- **Sidebar**: which pages it shows. Workflows needs an ACTIVATE platform login; for workflow YAML files of your own, see [Meridian](https://github.com/parallelworks/meridian), the open-source workflow engine.
+- **Your folder**: the folder to index. In the macOS app, **Choose another folder…** opens the Mac's folder chooser; elsewhere the folders show in the page. Choosing another folder restarts {appName} on it in the macOS app, then offers to build its index; elsewhere, set `KB_ROOT` and restart. **Build the index** runs in the background: go on with setup, or finish it, while it runs, and the steps after show how far it has got. Indexes can be added or changed at any time in Settings, Libraries.
 - **Other libraries**: GUFI indexes that already exist, on this computer (typed or picked from its folders), on another machine over ssh, or, when the pw CLI here is signed in, on one of your running clusters through ACTIVATE.
 
-Settings, General, **Run setup again** opens the setup later. Everything in it is also in Settings: the name, icon, accent and AI features in General, the endpoint in Model access, and libraries in Libraries.
+**Run setup again**, in Settings, General, and **Run Setup…** in the macOS app's menu open the setup later. Each step shows what is set now and changes nothing until you change it; leaving partway keeps what was already saved.
+
+Settings, General has a tab for each part: **Appearance** (theme, accent, surface tone), **Branding** (name, icon, classification banner), **Sidebar**, **AI features** (the switch, the mission and context the assistant works from, the suggested questions under an empty chat, and image captioning), **Indexing** (search across libraries, background sync, history snapshots), **Updates**, and **Server** (the port). Settings, Model access has the model endpoint, and Settings, Libraries the folder and other libraries.
 
 Settings, General, **Sidebar** has a switch for each page. A page switched off leaves the navigation, and a link to it opens the first page still shown. Settings and Help always show, and the switches apply to everyone using this {appName}.
+
+On a computer of its own, the suggested questions and the mission start out written for one person's own files; change them under Settings, General, AI features.
 
 ## Model access
 

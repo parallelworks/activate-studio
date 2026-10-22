@@ -8,7 +8,9 @@
 // Studio open in the default browser, file pickers and downloads behave as
 // in any Mac app, and quitting leaves the server running for the next open
 // (Stop Background Server in the app menu stops it). The title bar takes the
-// color the page names for it, as an installed web app's does.
+// color the page names for it, as an installed web app's does. The Studio's
+// page can ask the window, through window.webkit.messageHandlers.studioShell,
+// for the system folder chooser and to follow the Studio to another port.
 //
 // Built with: swiftc -O -target arm64-apple-macos13 StudioShell.swift
 // (deploy/mac/build_app.sh does this when it runs on a Mac).
@@ -61,7 +63,8 @@ func wantsLightInk(_ color: NSColor) -> Bool {
   return 1.05 / (l + 0.05) >= (l + 0.05) / 0.05
 }
 
-final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate,
+  WKScriptMessageHandlerWithReply {
   var window: NSWindow!
   var webView: WKWebView!
   var studio: URL?
@@ -80,6 +83,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     // Local storage (the remembered page, drafts) lasts between launches.
     config.websiteDataStore = .default()
     config.applicationNameForUserAgent = "ACTIVATEStudioMac"
+    // The page's requests of the window; popups share the configuration.
+    config.userContentController.addScriptMessageHandler(self, contentWorld: .page, name: "studioShell")
     webView = WKWebView(frame: .zero, configuration: config)
     webView.navigationDelegate = self
     webView.uiDelegate = self
@@ -168,6 +173,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
   }
 
   @objc func retry(_ sender: Any?) { startServer() }
+
+  /// The setup wizard, through the page's address for it (#view=settings:setup).
+  @objc func runSetup(_ sender: Any?) {
+    guard studio != nil, window.contentView === webView else { return }
+    window.makeKeyAndOrderFront(nil)
+    webView.evaluateJavaScript("location.hash = '#view=settings:setup'", completionHandler: nil)
+  }
 
   @objc func openLogs(_ sender: Any?) {
     let logs = FileManager.default.homeDirectoryForCurrentUser
@@ -285,9 +297,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
 
   func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
     // The server went away (stopped, or restarting after setup chose a
-    // folder): wait for it and load again.
-    if (error as NSError).code == NSURLErrorCannotConnectToHost, let studio {
-      DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { webView.load(URLRequest(url: studio)) }
+    // folder or a port): wait for it and load the same page again.
+    let nsError = error as NSError
+    if nsError.code == NSURLErrorCannotConnectToHost, let studio {
+      let failed = nsError.userInfo[NSURLErrorFailingURLErrorKey] as? URL
+      let again = failed.flatMap { isStudio($0) ? $0 : nil } ?? studio
+      DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { webView.load(URLRequest(url: again)) }
     }
   }
 
@@ -321,6 +336,61 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     if let w = popups.first(where: { $0.contentView === webView }) {
       w.close()
       popups.removeAll { $0 === w }
+    }
+  }
+
+  // MARK: the page's requests
+
+  /// Answers window.webkit.messageHandlers.studioShell.postMessage, as a
+  /// promise in the page. Only the Studio's own top-level page is answered,
+  /// never a page shown in a frame inside it.
+  func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage,
+                             replyHandler: @escaping (Any?, String?) -> Void) {
+    guard message.frameInfo.isMainFrame, let page = message.frameInfo.request.url, isStudio(page),
+          let body = message.body as? [String: Any], let action = body["action"] as? String else {
+      replyHandler(nil, "not available here")
+      return
+    }
+    switch action {
+    case "chooseFolder":
+      chooseFolder(start: body["start"] as? String, message: body["message"] as? String,
+                   prompt: body["prompt"] as? String, in: message.webView, reply: replyHandler)
+    case "studioMoved":
+      // The server saved another port and is restarting on it: follow it,
+      // to the page the request names. The load retries until it answers.
+      guard let port = (body["port"] as? NSNumber)?.intValue, (1024...65535).contains(port), let studio,
+            var parts = URLComponents(url: studio, resolvingAgainstBaseURL: false) else {
+        replyHandler(nil, "not a port")
+        return
+      }
+      parts.port = port
+      if let hash = body["hash"] as? String, hash.hasPrefix("#") { parts.fragment = String(hash.dropFirst()) }
+      guard let next = parts.url else { replyHandler(nil, "not a port"); return }
+      parts.fragment = nil
+      self.studio = parts.url
+      replyHandler(true, nil)
+      DispatchQueue.main.asyncAfter(deadline: .now() + 1) { self.webView.load(URLRequest(url: next)) }
+    default:
+      replyHandler(nil, "unknown request \(action)")
+    }
+  }
+
+  /// The system folder chooser, as a sheet on the page's window; replies
+  /// with the folder's path, or nothing when the person cancels.
+  func chooseFolder(start: String?, message: String?, prompt: String?, in view: WKWebView?,
+                    reply: @escaping (Any?, String?) -> Void) {
+    let panel = NSOpenPanel()
+    panel.canChooseDirectories = true
+    panel.canChooseFiles = false
+    panel.canCreateDirectories = true
+    panel.allowsMultipleSelection = false
+    panel.message = message ?? "Choose a folder."
+    panel.prompt = prompt ?? "Choose"
+    if let start, !start.isEmpty {
+      panel.directoryURL = URL(fileURLWithPath: (start as NSString).expandingTildeInPath, isDirectory: true)
+    }
+    panel.beginSheetModal(for: view?.window ?? window) { result in
+      reply(result == .OK ? panel.url?.path : nil, nil)
     }
   }
 
@@ -437,6 +507,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     submenu("ACTIVATE Studio", [
       item("About ACTIVATE Studio", #selector(showAbout(_:)), target: self),
       .separator(),
+      item("Run Setup…", #selector(runSetup(_:)), target: self),
       item("Stop Background Server", #selector(stopServer(_:)), target: self),
       .separator(),
       item("Hide ACTIVATE Studio", #selector(NSApplication.hide(_:)), "h"),

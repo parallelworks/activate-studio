@@ -1,19 +1,22 @@
 import { LibrariesSection } from '../components/LibrariesSection'
 import { ModelAccessSection } from '../components/ModelAccessSection'
 import { WorkflowsSection } from '../components/WorkflowsSection'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   ActionMenu, Autocomplete, Button, Callout, type CalloutTone, Checkbox, CopyButton, CopyCodeBlock,
   DescriptionList, DescriptionListItem, DisclosurePanel, EmptyState, Field, Input, Loader, NumberInput,
-  RefreshButton, Select, type SelectItem, StatusDot, Switch, Table, Textarea, cx, fieldBox,
+  RefreshButton, SegmentedControl, Select, type SelectItem, StatusDot, Switch, Table, TabPanel, Tabs, Textarea, cx, fieldBox,
 } from '@parallelworks/ui'
 import { ChevronDownIcon } from '@parallelworks/ui/icons'
 import { SURFACES, applySurface } from '../accents'
 import { AccentSwatches } from '../components/AccentSwatches'
 import { BrandIcons, type Branding } from '../components/BrandIcons'
+import { ServerSection } from '../components/ServerSection'
 import { UpdatesSection } from '../components/UpdatesSection'
-import { saveAiEnabled, saveSections, useAppConfig } from '../config'
-import { SidebarSwitches } from './SetupWizard'
+import { reloadAppConfig, saveAiEnabled, saveSections, saveSettings, useAppConfig } from '../config'
+import { type ThemeChoice, currentThemeChoice, setThemeChoice } from '../theme'
+import { useUpdateFlow } from '../updateFlow'
+import { SidebarSwitches, THEME_OPTIONS, saveThemeChoice } from './SetupWizard'
 import { bannerInk } from '../components/ClassificationBanner'
 
 interface Effective {
@@ -89,8 +92,8 @@ const BANNER_PRESETS: { label: string; text: string; color: string }[] = [
 ]
 
 const THEMES: SelectItem<Effective['theme']>[] = [
-  { value: 'light', label: 'light' },
-  { value: 'dark', label: 'dark' },
+  { value: 'light', label: 'Light, or dark where the device prefers it' },
+  { value: 'dark', label: 'Dark' },
 ]
 
 const SEARCH_ENGINES: SelectItem<Effective['searchEngine']>[] = [
@@ -105,6 +108,28 @@ const AGENT_EXECUTION: SelectItem<Effective['agentExecution']>[] = [
 ]
 
 type SectionId = 'general' | 'access' | 'tools' | 'rag' | 'previews' | 'ext' | 'libraries' | 'workflows'
+
+/** The tabs of Settings, General, in order. Each has an address of its own
+ *  (#view=settings:<tab>); #view=settings:general opens the first. */
+export const GENERAL_TABS = [
+  { value: 'appearance', label: 'Appearance' },
+  { value: 'branding', label: 'Branding' },
+  { value: 'sidebar', label: 'Sidebar' },
+  { value: 'ai', label: 'AI features' },
+  { value: 'indexing', label: 'Indexing' },
+  { value: 'updates', label: 'Updates' },
+  { value: 'server', label: 'Server' },
+] as const
+export type GeneralTab = typeof GENERAL_TABS[number]['value']
+
+/** The section and General tab an address names: a section's own id, a
+ *  General tab's id, or anything else for General's first tab. */
+export function settingsTarget(id: string | null | undefined): { section: SectionId; tab: GeneralTab } {
+  const tab = GENERAL_TABS.find(t => t.value === id)
+  if (tab) return { section: 'general', tab: tab.value }
+  const sections: SectionId[] = ['general', 'access', 'tools', 'rag', 'previews', 'ext', 'libraries', 'workflows']
+  return { section: sections.includes(id as SectionId) ? id as SectionId : 'general', tab: 'appearance' }
+}
 
 /**
  * The settings rail, in order. Model access appears where the deployment
@@ -169,14 +194,31 @@ export function SettingsView() {
   const [setupAvailable, setSetupAvailable] = useState(false)
   const [branding, setBranding] = useState<Branding | null>(null)
   const [sectionsNote, setSectionsNote] = useState('')
-  const [section, setSection] = useState<SectionId>(() => {
-    const m = location.hash.match(/^#view=settings:([a-z-]+)/)
-    return (m?.[1] as SectionId) || 'general'
-  })
+  const [target, setTarget] = useState(() => settingsTarget(location.hash.match(/^#view=settings:([a-z-]+)/)?.[1]))
+  const { section, tab } = target
+  const setSection = (id: string) => setTarget(settingsTarget(id))
 
-  const goSection = (id: SectionId) => {
+  const goSection = (id: SectionId | GeneralTab) => {
     setSection(id)
     history.replaceState(null, '', `${location.pathname}${location.search}#view=settings:${id}`)
+  }
+  const updatesFlow = useUpdateFlow()
+  const tabs = GENERAL_TABS.filter(t => t.value !== 'updates' || !updatesFlow.none)
+  const [theme, setTheme] = useState<ThemeChoice | null>(null)
+  // #view=settings:setup (the macOS app's Run Setup…, or any link) opens the
+  // setup wizard over General, where setup runs.
+  const [setupAsked, setSetupAsked] = useState(() => /^#view=settings:setup$/.test(location.hash))
+  const [setupKnown, setSetupKnown] = useState(false)
+  const [appearanceNote, setAppearanceNote] = useState('')
+  const accentTimer = useRef<number | undefined>(undefined)
+  /** Appearance saves as it changes, like the setup wizard. */
+  const saveLook = (patch: Partial<Pick<Effective, 'theme' | 'accent' | 'surface'>>, delay = 0) => {
+    setForm(f => f && { ...f, ...patch })
+    setAppearanceNote('')
+    window.clearTimeout(accentTimer.current)
+    accentTimer.current = window.setTimeout(() => {
+      saveSettings(patch).catch(e => setAppearanceNote(String((e as Error).message ?? e)))
+    }, delay)
   }
   const [ragEp, setRagEp] = useState<{ state: string; name: string | null; url: string | null; detail: string | null } | null>(null)
   const [ragCalls, setRagCalls] = useState<RagCall[]>([])
@@ -193,10 +235,12 @@ export function SettingsView() {
   // form starts again from what is saved, so Save settings cannot put back
   // what the wizard changed.
   const loadForm = () => {
+    setTheme(null)
     fetch('/api/settings').then(r => r.json())
       .then(d => { setForm(d.effective); setDeploymentCred(d.deploymentCredential ?? null) })
       .catch(() => setNote('Could not load settings.'))
-    fetch('/api/setup/status').then(r => r.json()).then(d => { setSetupAvailable(!!d?.standalone); setBranding(d?.branding ?? null) }).catch(() => {})
+    fetch('/api/setup/status').then(r => r.json()).then(d => { setSetupAvailable(!!d?.standalone); setBranding(d?.branding ?? null) })
+      .catch(() => {}).finally(() => setSetupKnown(true))
     fetch('/api/me/model-key').then(r => r.json()).then(setMe).catch(() => {})
     refreshModels()
   }
@@ -229,12 +273,20 @@ export function SettingsView() {
     refreshRagCalls()
     const onSection = (e: Event) => {
       const d = (e as CustomEvent).detail as { view?: string; section?: string }
-      if (d?.view === 'settings' && d.section) setSection(d.section as SectionId)
+      if (d?.view === 'settings' && d.section) setSection(d.section)
+      if (d?.view === 'settings' && d.section === 'setup') setSetupAsked(true)
     }
     window.addEventListener('ade-view-section', onSection)
     return () => window.removeEventListener('ade-view-section', onSection)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  useEffect(() => {
+    if (!setupAsked || !setupKnown) return
+    setSetupAsked(false)
+    history.replaceState(null, '', `${location.pathname}${location.search}#view=settings:general`)
+    if (setupAvailable) window.dispatchEvent(new Event('ade:setup-open'))
+  }, [setupAsked, setupKnown, setupAvailable])
 
   const save = async (reload = true) => {
     if (!form) return
@@ -254,6 +306,7 @@ export function SettingsView() {
       } else {
         setNote('Saved.')
         setBusy(false)
+        reloadAppConfig()
       }
     } catch (e) {
       setNote(String((e as Error).message ?? e))
@@ -318,178 +371,223 @@ export function SettingsView() {
 
           {section === 'general' && (
             <>
-              <h1>General</h1>
-              <p className="muted view-sub">
-                {setupAvailable
-                  ? 'Saved settings apply immediately and live beside the index. Icons and AI features save as you change them; the rest with Save settings.'
-                  : "Saved settings apply immediately and override the deployment's environment defaults; they live beside the index, not in the repository. Model credentials stay in the environment (see docs/CUSTOMIZATION.md)."}
-              </p>
-              <div className="settings-grid">
-                <Input label="Product name" value={form.appName} onChange={e => setForm({ ...form, appName: e.target.value })} />
-                <Field label="Default theme">
-                  <Select items={THEMES} value={form.theme} onValueChange={v => v && setForm({ ...form, theme: v })} />
-                </Field>
-                <Field group label="Accent color">
-                  <AccentSwatches value={form.accent} onChange={v => setForm({ ...form, accent: v })} />
-                </Field>
-                <Field label="Surface tone">
-                  <Select items={surfaces} value={form.surface}
-                    onValueChange={v => { if (v) { setForm({ ...form, surface: v }); applySurface(v) } }} />
-                </Field>
-                {setupAvailable ? (
-                  <Field group label="Icon">
-                    <BrandIcons value={branding} onChange={b => {
-                      setBranding(b)
-                      setForm(f => f && { ...f, iconUrl: b.iconUrl ?? '', iconUrlDark: b.iconUrlDark ?? '' })
-                    }} />
-                  </Field>
-                ) : (
-                  <>
-                    <Input label="Brand icon (URL, or a path on the server)" value={form.iconUrl} placeholder="https://example.org/logo.png"
-                      onChange={e => setForm({ ...form, iconUrl: e.target.value })} />
-                    <Input label="Brand icon for dark mode (optional)" value={form.iconUrlDark} placeholder="leave empty to use the same image"
-                      onChange={e => setForm({ ...form, iconUrlDark: e.target.value })} />
-                  </>
+              <div className="settings-head">
+                <h1>General</h1>
+                {setupAvailable && (
+                  <Button variant="secondary" size="sm" title="The name and icon, appearance, AI features, the sidebar, the folder to index, and other libraries, a step at a time"
+                    onClick={() => window.dispatchEvent(new Event('ade:setup-open'))}>Run setup again</Button>
                 )}
-                <div className="banner-field">
-                  <Field label="Classification banner (empty for none)">
-                    <div className="banner-row">
-                      <ActionMenu label="Marking" align="start"
-                        triggerClassName={cx(fieldBox(), 'banner-preset')}
-                        items={BANNER_PRESETS.map(p => ({
-                          label: p.label,
-                          onClick: () => setForm({ ...form, bannerText: p.text, bannerColor: p.color }),
-                        }))}>
-                        Marking… <ChevronDownIcon aria-hidden="true" />
-                      </ActionMenu>
-                      <Input className="banner-text" value={form.bannerText ?? ''}
-                        placeholder="Text across the top, or pick a marking"
-                        onChange={e => setForm({ ...form, bannerText: e.target.value })} />
-                      {/* Every library control in one field takes the field's
-                          id, so the color, a second box, is a plain input in
-                          the library's field look. */}
-                      <input className={cx(fieldBox(), 'banner-hex')} aria-label="Banner color" value={form.bannerColor ?? ''} placeholder="#24612e"
-                        onChange={e => setForm({ ...form, bannerColor: e.target.value })} />
-                    </div>
-                    {(form.bannerText ?? '').trim() && (
-                      <div className="cls-banner banner-preview"
-                        style={{ background: form.bannerColor, color: bannerInk(form.bannerColor) }}>
-                        {form.bannerText}
-                      </div>
-                    )}
-                  </Field>
-                  <label className="key-persist">
-                    <Checkbox checked={!!form.bannerWhenEmbedded}
-                      onCheckedChange={v => setForm({ ...form, bannerWhenEmbedded: v })} />
-                    <span>Show it inside the platform frame too, which already draws its own</span>
-                  </label>
-                </div>
-                <Field label="Search across libraries"
-                  description="Both return the same matches. gufi_vt answers its libraries one after another; Query uses it either way.">
-                  <Select items={SEARCH_ENGINES} value={form.searchEngine ?? 'parallel'} onValueChange={v => v && setForm({ ...form, searchEngine: v })} />
-                </Field>
-                <Field label="Background sync interval (seconds, 0 pauses)">
-                  <NumberInput min={0} max={86400} value={form.sweepIntervalSec}
-                    onValueChange={v => setForm({ ...form, sweepIntervalSec: v ?? 0 })} />
-                </Field>
-                <Field label="Corpus history snapshot (seconds between points)"
-                  description={<>
-                    86400 is one point a day, summarizing everything that changed since the previous point. 0 captures
-                    every index pass, which is a churn log on a busy corpus. Days with no change are recorded as a
-                    check either way.
-                  </>}>
-                  <NumberInput min={0} max={2592000} step={3600} value={form.historyIntervalSec}
-                    onValueChange={v => setForm({ ...form, historyIntervalSec: v ?? 0 })} />
-                </Field>
-                <Field label="Vision model for image captioning"
-                  description={form.visionModel && deploymentCred === false ? <>
-                    Captioning runs during background indexing, when no user is present, so it uses
-                    the deployment credential or the host's pw CLI login rather than a personal key.
-                    This deployment has neither, so images will be indexed by OCR and filename only.
-                  </> : undefined}>
-                  <ModelInput
-                    value={form.visionModel}
-                    models={pickableModels}
-                    emptyLabel="disabled (no image captioning)"
-                    onChange={v => setForm({ ...form, visionModel: v })}
-                  />
-                </Field>
               </div>
-              <div className="settings-field">
-                <p style={{ margin: '0 0 2px', fontSize: 13, fontWeight: 500 }}>AI features</p>
+              {!setupAvailable && (
                 <p className="muted view-sub">
-                  Off takes Chat and Agents out of the sidebar and sends nothing to a model; search, the library, query and
-                  statistics work as before. Saved as you switch.
-                  {me?.single && ' The model endpoint is under Model access.'}
+                  Saved settings override the deployment's environment defaults and live beside the index, not in the
+                  repository. Model credentials stay in the environment (see docs/CUSTOMIZATION.md).
                 </p>
-                <div className="access-switch">
-                  <Switch checked={form.aiEnabled !== false} aria-label="AI features" onLabel="On" offLabel="Off"
-                    onCheckedChange={v => {
-                      setSectionsNote('')
-                      saveAiEnabled(v, form.sections)
-                        .then(sections => setForm(f => f && { ...f, aiEnabled: v, sections }))
-                        .catch(e => setSectionsNote(String((e as Error).message ?? e)))
+              )}
+              <Tabs label="General settings" items={[...tabs]} value={tab} onValueChange={v => goSection(v)} className="settings-tabs">
+                <TabPanel value="appearance">
+                  <p className="muted view-sub">Saved as you change them.</p>
+                  <Field group label={setupAvailable ? 'Theme' : 'Theme in this browser'}
+                    description={setupAvailable
+                      ? "System follows this computer's light or dark setting. The sidebar's theme button switches it too."
+                      : "System follows the device's light or dark setting, unless the default below is Dark. Each browser keeps its own choice; the sidebar's theme button switches it too."}>
+                    <SegmentedControl options={THEME_OPTIONS} value={theme ?? currentThemeChoice(form.theme)} onValueChange={t => {
+                      setTheme(t)
+                      if (setupAvailable) {
+                        setForm(f => f && { ...f, theme: t === 'dark' ? 'dark' : 'light' })
+                        saveThemeChoice(t).catch(e => setAppearanceNote(String((e as Error).message ?? e)))
+                      } else setThemeChoice(t)
                     }} />
-                  <span>Chat, Agents, and other features that call a model</span>
-                </div>
-              </div>
-              <div className="settings-field">
-                <p style={{ margin: '0 0 2px', fontSize: 13, fontWeight: 500 }}>Sidebar</p>
-                <p className="muted view-sub">Pages the sidebar shows; Settings and Help always show. Saved as you switch.</p>
-                <SidebarSwitches value={form.sections} platform={!!cfg.platform} aiEnabled={form.aiEnabled !== false} onChange={next => {
-                  setForm({ ...form, sections: next })
-                  setSectionsNote('')
-                  saveSections(next).catch(e => setSectionsNote(String((e as Error).message ?? e)))
-                }} />
-                {sectionsNote && <Callout tone="error" live>{sectionsNote}</Callout>}
-              </div>
-              {setupAvailable && (
-                <div className="settings-field query-actions">
-                  <Button variant="secondary" onClick={() => window.dispatchEvent(new Event('ade:setup-open'))}>Run setup again</Button>
-                  <span className="muted">The name and icon, AI features, the sidebar, the folder to index, and other libraries, a step at a time.</span>
-                </div>
-              )}
-              {me?.authEnabled && (
-                <label className="key-persist">
-                  <Checkbox checked={form.requirePersonalKey}
-                    onCheckedChange={v => setForm({ ...form, requirePersonalKey: v })} />
-                  Require each user to add their own model credential (chat and models refuse the deployment credential, though a key another user has shared here is accepted; browsing, search, and adding material stay open to everyone)
-                </label>
-              )}
-              {me?.authEnabled && (
-                <label className="key-persist">
-                  <Checkbox checked={form.allowKeySharing}
-                    onCheckedChange={v => setForm({ ...form, allowKeySharing: v })} />
-                  Let a user share their own model credential with everyone here, standing in for the deployment credential (useful where the deployment has none; the sharer's quota covers the group)
-                </label>
-              )}
-              {me?.authEnabled && (
-                <label className="key-persist">
-                  <Checkbox checked={form.chatSharedHistory}
-                    onCheckedChange={v => setForm({ ...form, chatSharedHistory: v })} />
-                  Allow users to see each other's chat sessions in the chat interface (the rail still defaults each user to their own, with a toggle to show all; off removes that option entirely; exported transcripts remain in the knowledge base tree either way)
-                </label>
-              )}
-              <Field className="settings-field" label="Mission and context"
-                description="The assistant treats this as authoritative about the deployment's purpose, and it never invents expansions for acronyms the mission and corpus leave undefined.">
-                <Textarea
-                  className="prompts-box"
-                  rows={4}
-                  value={form.kbMission ?? ''}
-                  placeholder="What this Studio is for: the program or project it serves, what the corpus holds, terms the assistant should know. Injected into the assistant's system prompt."
-                  onChange={e => setForm({ ...form, kbMission: e.target.value })}
-                />
-              </Field>
-              <Field className="settings-field" label="Chat starter prompts (one per line)">
-                <Textarea
-                  className="prompts-box"
-                  rows={10}
-                  value={form.suggestedPrompts.join('\n')}
-                  onChange={e => setForm({ ...form, suggestedPrompts: e.target.value.split('\n') })}
-                />
-              </Field>
-              {saveRow()}
-              <UpdatesSection onPolicySaved={updates => setForm(f => f && ({ ...f, updates } as Effective))} />
+                  </Field>
+                  <div className="settings-grid">
+                    {!setupAvailable && (
+                      <Field label="Default theme for new visitors">
+                        <Select items={THEMES} value={form.theme} onValueChange={v => v && saveLook({ theme: v })} />
+                      </Field>
+                    )}
+                    <Field label="Surface tone">
+                      <Select items={surfaces} value={form.surface}
+                        onValueChange={v => { if (v) { applySurface(v); saveLook({ surface: v }) } }} />
+                    </Field>
+                  </div>
+                  <Field group label="Accent color">
+                    <AccentSwatches value={form.accent} onChange={v => saveLook({ accent: v }, v.startsWith('custom:') ? 400 : 0)} />
+                  </Field>
+                  {appearanceNote && <Callout tone="error" live>{appearanceNote}</Callout>}
+                </TabPanel>
+
+                <TabPanel value="branding">
+                  <div className="settings-grid">
+                    <Input label="Product name" value={form.appName} onChange={e => setForm({ ...form, appName: e.target.value })} />
+                    {setupAvailable ? (
+                      <Field group label="Icon" description="Saved as it is chosen.">
+                        <BrandIcons value={branding} onChange={b => {
+                          setBranding(b)
+                          setForm(f => f && { ...f, iconUrl: b.iconUrl ?? '', iconUrlDark: b.iconUrlDark ?? '' })
+                        }} />
+                      </Field>
+                    ) : (
+                      <>
+                        <Input label="Brand icon (URL, or a path on the server)" value={form.iconUrl} placeholder="https://example.org/logo.png"
+                          onChange={e => setForm({ ...form, iconUrl: e.target.value })} />
+                        <Input label="Brand icon for dark mode (optional)" value={form.iconUrlDark} placeholder="leave empty to use the same image"
+                          onChange={e => setForm({ ...form, iconUrlDark: e.target.value })} />
+                      </>
+                    )}
+                    <div className="banner-field">
+                      <Field label="Classification banner (empty for none)">
+                        <div className="banner-row">
+                          <ActionMenu label="Marking" align="start"
+                            triggerClassName={cx(fieldBox(), 'banner-preset')}
+                            items={BANNER_PRESETS.map(p => ({
+                              label: p.label,
+                              onClick: () => setForm({ ...form, bannerText: p.text, bannerColor: p.color }),
+                            }))}>
+                            Marking… <ChevronDownIcon aria-hidden="true" />
+                          </ActionMenu>
+                          <Input className="banner-text" value={form.bannerText ?? ''}
+                            placeholder="Text across the top, or pick a marking"
+                            onChange={e => setForm({ ...form, bannerText: e.target.value })} />
+                          {/* Every library control in one field takes the field's
+                              id, so the color, a second box, is a plain input in
+                              the library's field look. */}
+                          <input className={cx(fieldBox(), 'banner-hex')} aria-label="Banner color" value={form.bannerColor ?? ''} placeholder="#24612e"
+                            onChange={e => setForm({ ...form, bannerColor: e.target.value })} />
+                        </div>
+                        {(form.bannerText ?? '').trim() && (
+                          <div className="cls-banner banner-preview"
+                            style={{ background: form.bannerColor, color: bannerInk(form.bannerColor) }}>
+                            {form.bannerText}
+                          </div>
+                        )}
+                      </Field>
+                      <label className="key-persist">
+                        <Checkbox checked={!!form.bannerWhenEmbedded}
+                          onCheckedChange={v => setForm({ ...form, bannerWhenEmbedded: v })} />
+                        <span>Show it inside the platform frame too, which already draws its own</span>
+                      </label>
+                    </div>
+                  </div>
+                  {saveRow()}
+                </TabPanel>
+
+                <TabPanel value="sidebar">
+                  <p className="muted view-sub">Pages the sidebar shows; Settings and Help always show. Saved as you switch.</p>
+                  <SidebarSwitches value={form.sections} platform={!!cfg.platform} aiEnabled={form.aiEnabled !== false} onChange={next => {
+                    setForm({ ...form, sections: next })
+                    setSectionsNote('')
+                    saveSections(next).catch(e => setSectionsNote(String((e as Error).message ?? e)))
+                  }} />
+                  {sectionsNote && <Callout tone="error" live>{sectionsNote}</Callout>}
+                </TabPanel>
+
+                <TabPanel value="ai">
+                  <p className="muted view-sub">
+                    Off takes Chat and Agents out of the sidebar and sends nothing to a model; search, the library, query and
+                    statistics work as before. They can be switched back on here at any time. Saved as you switch.
+                    {(me?.single || me?.authEnabled) && <> The model endpoint is under <a href="#view=settings:access">Model access</a>.</>}
+                  </p>
+                  <div className="access-switch">
+                    <Switch checked={form.aiEnabled !== false} aria-label="AI features" onLabel="On" offLabel="Off"
+                      onCheckedChange={v => {
+                        setSectionsNote('')
+                        saveAiEnabled(v, form.sections)
+                          .then(sections => setForm(f => f && { ...f, aiEnabled: v, sections }))
+                          .catch(e => setSectionsNote(String((e as Error).message ?? e)))
+                      }} />
+                    <span>Chat, Agents, and other features that call a model</span>
+                  </div>
+                  {sectionsNote && <Callout tone="error" live>{sectionsNote}</Callout>}
+                  {me?.authEnabled && (
+                    <label className="key-persist">
+                      <Checkbox checked={form.requirePersonalKey}
+                        onCheckedChange={v => setForm({ ...form, requirePersonalKey: v })} />
+                      Require each user to add their own model credential (chat and models refuse the deployment credential, though a key another user has shared here is accepted; browsing, search, and adding material stay open to everyone)
+                    </label>
+                  )}
+                  {me?.authEnabled && (
+                    <label className="key-persist">
+                      <Checkbox checked={form.allowKeySharing}
+                        onCheckedChange={v => setForm({ ...form, allowKeySharing: v })} />
+                      Let a user share their own model credential with everyone here, standing in for the deployment credential (useful where the deployment has none; the sharer's quota covers the group)
+                    </label>
+                  )}
+                  {me?.authEnabled && (
+                    <label className="key-persist">
+                      <Checkbox checked={form.chatSharedHistory}
+                        onCheckedChange={v => setForm({ ...form, chatSharedHistory: v })} />
+                      Allow users to see each other's chat sessions in the chat interface (the rail still defaults each user to their own, with a toggle to show all; off removes that option entirely; exported transcripts remain in the knowledge base tree either way)
+                    </label>
+                  )}
+                  <Field className="settings-field" label="Mission and context"
+                    description="The assistant treats this as authoritative about what this Studio is for, and it never invents expansions for acronyms the mission and corpus leave undefined.">
+                    <Textarea
+                      className="prompts-box"
+                      rows={4}
+                      value={form.kbMission ?? ''}
+                      placeholder="What this Studio is for: the program or project it serves, what the corpus holds, terms the assistant should know. Injected into the assistant's system prompt."
+                      onChange={e => setForm({ ...form, kbMission: e.target.value })}
+                    />
+                  </Field>
+                  <Field className="settings-field" label="Suggested questions (one per line)"
+                    description="Shown under an empty chat, to click and ask.">
+                    <Textarea
+                      className="prompts-box"
+                      rows={6}
+                      value={form.suggestedPrompts.join('\n')}
+                      onChange={e => setForm({ ...form, suggestedPrompts: e.target.value.split('\n') })}
+                    />
+                  </Field>
+                  <div className="settings-grid settings-field">
+                    <Field label="Vision model for image captioning"
+                      description={form.visionModel && deploymentCred === false ? <>
+                        Captioning runs during background indexing, when no user is present, so it uses
+                        the deployment credential or the host's pw CLI login rather than a personal key.
+                        This deployment has neither, so images will be indexed by OCR and filename only.
+                      </> : 'Captions images as they are indexed, so they can be found by what they show.'}>
+                      <ModelInput
+                        value={form.visionModel}
+                        models={pickableModels}
+                        emptyLabel="disabled (no image captioning)"
+                        onChange={v => setForm({ ...form, visionModel: v })}
+                      />
+                    </Field>
+                  </div>
+                  {saveRow(false)}
+                </TabPanel>
+
+                <TabPanel value="indexing">
+                  <div className="settings-grid">
+                    <Field label="Search across libraries"
+                      description="Both return the same matches. gufi_vt answers its libraries one after another; Query uses it either way.">
+                      <Select items={SEARCH_ENGINES} value={form.searchEngine ?? 'parallel'} onValueChange={v => v && setForm({ ...form, searchEngine: v })} />
+                    </Field>
+                    <Field label="Background sync interval (seconds, 0 pauses)">
+                      <NumberInput min={0} max={86400} value={form.sweepIntervalSec}
+                        onValueChange={v => setForm({ ...form, sweepIntervalSec: v ?? 0 })} />
+                    </Field>
+                    <Field label="Corpus history snapshot (seconds between points)"
+                      description={<>
+                        86400 is one point a day, summarizing everything that changed since the previous point. 0 captures
+                        every index pass, which is a churn log on a busy corpus. Days with no change are recorded as a
+                        check either way.
+                      </>}>
+                      <NumberInput min={0} max={2592000} step={3600} value={form.historyIntervalSec}
+                        onValueChange={v => setForm({ ...form, historyIntervalSec: v ?? 0 })} />
+                    </Field>
+                  </div>
+                  <p className="muted view-sub">Libraries and their indexes are under <a href="#view=settings:libraries">Libraries</a>.</p>
+                  {saveRow(false)}
+                </TabPanel>
+
+                <TabPanel value="updates">
+                  <UpdatesSection onPolicySaved={updates => setForm(f => f && ({ ...f, updates } as Effective))} />
+                </TabPanel>
+
+                <TabPanel value="server">
+                  <ServerSection />
+                </TabPanel>
+              </Tabs>
             </>
           )}
 
@@ -830,18 +928,22 @@ export function SettingsView() {
               </p>
               <div className="access-switch">
                 <Switch checked={form.voiceEnabled} onCheckedChange={v => setForm({ ...form, voiceEnabled: v })} onLabel="On" offLabel="Off" aria-label="Voice conversations" />
-                <span>Voice conversations: talk with the assistant back and forth, through an Unmute deployment</span>
+                <span>Voice conversations: talk with the assistant out loud, through a speech service you deploy</span>
               </div>
-              <p className="muted view-sub">
-                Unmute (Kyutai, MIT) wraps a text model with streaming speech recognition, semantic turn-taking, and speech
-                synthesis. Only the speech services need a GPU; the model that does the talking is a configuration value.
-                Deploy it with the <code>unmute</code> workflow pointed at this Studio and the <code>studio-voice</code> model,
-                which is the assistant with its tools and knowledge base answering in spoken sentences, with any API model
-                behind it (<code>studio-voice/&lt;gateway-model-id&gt;</code>). Then put the deployment's session URL here;
-                a Voice button appears above the chat. The deployment has to be reachable from the browser you use, so a
-                closed network needs its own Unmute rather than one running elsewhere.
-              </p>
-              <Input label="Unmute session URL" value={form.voiceUrl} placeholder="https://unmute.example" onChange={e => setForm({ ...form, voiceUrl: e.target.value })} />
+              {form.voiceEnabled && (
+                <>
+                  <p className="muted view-sub">
+                    Voice runs on an Unmute deployment (Kyutai, MIT), which adds speech recognition, turn-taking and speech
+                    synthesis around a text model; only the speech services need a GPU. Deploy it with
+                    the <code>unmute</code> workflow pointed at this Studio and the <code>studio-voice</code> model, which is
+                    the assistant with its tools and knowledge base answering in spoken sentences
+                    (<code>studio-voice/&lt;gateway-model-id&gt;</code> picks the model behind it). Then put the deployment's
+                    session URL here, and a Voice button appears above the chat. The browser you use has to reach the
+                    deployment, so a closed network needs its own.
+                  </p>
+                  <Input label="Unmute session URL" value={form.voiceUrl} placeholder="https://unmute.example" onChange={e => setForm({ ...form, voiceUrl: e.target.value })} />
+                </>
+              )}
               {saveRow()}
             </>
           )}

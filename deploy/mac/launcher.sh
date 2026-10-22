@@ -150,15 +150,22 @@ start() {
     printf '%s\n' "$want" >"$AGENT"
   fi
   launchctl enable "$SERVICE" 2>/dev/null || true
-  if ! loaded && ! launchctl bootstrap "$DOMAIN" "$AGENT"; then
-    say "ACTIVATE Studio could not start its background server (launchctl bootstrap failed)."
-    exit 1
+  local was_running=1
+  if ! loaded; then
+    was_running=0
+    if ! launchctl bootstrap "$DOMAIN" "$AGENT"; then
+      say "ACTIVATE Studio could not start its background server (launchctl bootstrap failed)."
+      exit 1
+    fi
   fi
 
   local port
   port="$(setting PORT)"
   port="${port:-4180}"
   if ! version_of "$port" >/dev/null; then
+    # A server already running that does not answer on this port started
+    # before studio.env named it; a restart reads the settings again.
+    [ "$was_running" = 1 ] && launchctl kickstart -k "$SERVICE" 2>/dev/null || true
     printing || osascript -e 'display notification "Starting..." with title "ACTIVATE Studio"' >/dev/null 2>&1 || true
     wait_ready "$port"
   fi
