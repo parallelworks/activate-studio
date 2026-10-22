@@ -2,7 +2,15 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
-## v1.152 (2026-10-22)
+## v1.153 (2026-10-22)
+
+### Icons: the Studio mark on a midnight gradient (#531)
+
+The Studio's icon keeps its mark (three text lines and a sparkle) on a darker, deeper gradient: navy to blue on a diagonal, a soft highlight at the top left, a thin light edge, slightly lighter bars, and a cyan sparkle. It replaces the flat light blue everywhere the icon appears: `web/icons/icon.svg` (the web icon, served as `favicon.svg`, and the empty chat's mark), `web/icons/icon-maskable.svg` (installed web apps and the Apple touch icon), and `deploy/mac/AppIcon.svg` (the macOS app on Apple's grid, and the disk image's volume icon). The PNGs are rendered from those sources at the sizes each file names.
+
+Verified: the full suite; the icons checked at 1024, 512, 192, 180, 32 and 16 px on light and dark grounds and in a Dock-like strip; the Mac build on this pull request.
+
+## v1.152 (2026-10-21)
 
 ### Setup: appearance step, optional AI, background index build; Settings tabs and port (#524)
 
@@ -30,6 +38,10 @@ Setup and Settings changes from review of the macOS app.
 Tests: wizard steps, skip and finish-later, non-blocking index build, native chooser and fallback, re-entry without writes, the `#view=settings:setup` route, tab addresses with old links, appearance saves, voice details, port save/restart/follow in the server and page, launcher port restart, personal defaults, status panel cards. Docs: HELP, REFERENCE, MACOS, CUSTOMIZATION.
 
 Note: the Meridian repository is private at the moment, so the links return 404 for other people until it is public.
+
+### Change log through v1.152 (#529)
+
+Regenerated with `node scripts/release-notes.mjs --changelog --next v1.152` before tagging v1.152.
 
 ## v1.151 (2026-10-21)
 
