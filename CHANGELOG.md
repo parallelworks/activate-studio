@@ -2,6 +2,35 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.154 (2026-10-22)
+
+### Indexing: phased parallel jobs, one status everywhere, stop, delete, log, and PDFs out of the box on the Mac (#530)
+
+Indexing as jobs with phases, run side by side, with one status for every view.
+
+**What changes**
+
+- Every change to the main folder's index (a whole-folder build, one folder after an upload, the background sync) is a job in one queue, with four phases that each count their own work: names (gufi_dir2index), documents (downmark), text (enrich.py) and meaning (embed.py). Each phase runs its work side by side on the thread count in Settings, General, Indexing (one per core by default).
+- A first build puts the names in place as soon as they are read, so search by name works within a second; text and embeddings follow. A rebuild works on a copy and swaps it in at the end.
+- Text is cached by file date and embeddings by the hash of the text embedded, so updating an index, or pointing at a folder indexed before (its index is put aside, not deleted, when the folder changes), redoes only what changed.
+- `GET /api/index/status` is the one answer the footer's index line, the status panel, Settings, Libraries and Stats read; Stats follows a running build and has a refresh button and the record of index runs with each phase's time.
+- Stop a running job (its programs too), delete the index after an inline confirmation (never the files), view the index log from the footer's index panel, Libraries and Stats.
+- Settings, General, Indexing: threads, which readers run, OCR, image descriptions by the vision model chosen under AI features, embeddings, and where the index is kept.
+- The macOS app's Python carries pypdf (1.8 MB), so PDFs downmark's binary cannot read are still read without poppler; an installed LibreOffice.app reads .ppt, .xls and OpenDocument files and renders Office previews. The readiness note lists formats nothing reads, not readers another one covers.
+
+**Measured** on a generated corpus of 17,000 files (6.5 GB: PDFs, Office files, text, photos, diagrams, 1,300 folders) on a shared 20-core Linux host:
+
+| | before | after, 8 threads | after, 16 threads | update, nothing changed |
+|---|---|---|---|---|
+| names | 0.1 s | 0.08 s | 0.05 s | 0.08 s |
+| documents | 361 s | 29 s | 21 s | 0.3 s |
+| text | 1,739 s | 163 s | 114 s | 3.3 s |
+| meaning | 1,405 s | 920 s | 771 s | 7.1 s |
+| total | 3,505 s | 1,112 s | 906 s | 11.4 s |
+| searchable by name | at the end | 0.25 s | 0.25 s | |
+
+This draft is open for the mac-app workflow; build_app.sh and check_app.sh --run --launch pass on macOS 15, including a PDF read by downmark's binary and by the bundled pypdf, and a full index built through the server.
+
 ## v1.153 (2026-10-22)
 
 ### Icons: the Studio mark on a midnight gradient (#531)
@@ -9,6 +38,10 @@ Every version, newest first. Each entry is the description of the pull request t
 The Studio's icon keeps its mark (three text lines and a sparkle) on a darker, deeper gradient: navy to blue on a diagonal, a soft highlight at the top left, a thin light edge, slightly lighter bars, and a cyan sparkle. It replaces the flat light blue everywhere the icon appears: `web/icons/icon.svg` (the web icon, served as `favicon.svg`, and the empty chat's mark), `web/icons/icon-maskable.svg` (installed web apps and the Apple touch icon), and `deploy/mac/AppIcon.svg` (the macOS app on Apple's grid, and the disk image's volume icon). The PNGs are rendered from those sources at the sizes each file names.
 
 Verified: the full suite; the icons checked at 1024, 512, 192, 180, 32 and 16 px on light and dark grounds and in a Dock-like strip; the Mac build on this pull request.
+
+### Change log through v1.153 (#532)
+
+Regenerated with `node scripts/release-notes.mjs --changelog --next v1.153` before tagging v1.153.
 
 ## v1.152 (2026-10-21)
 
