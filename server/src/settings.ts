@@ -4,6 +4,7 @@ import fsp from 'node:fs/promises'
 import path from 'node:path'
 import type { FastifyInstance } from 'fastify'
 import { INDEX_BASE, KB_ROOT } from './config.js'
+import { authEnabled } from './auth.js'
 import { KbError } from './kb.js'
 import { gatewayConfigured } from './chat/gateway.js'
 import { cachedRemoteStatus, invalidateRemote, remoteStatus } from './mcpClient.js'
@@ -105,8 +106,30 @@ export function loadSettings(): StudioSettings {
   return cache!
 }
 
+/** A Studio on one person's own computer: nobody signs in, and the platform
+ *  did not deploy it. Its default prompts and mission are about that
+ *  person's own files rather than a shared deployment. */
+export function personalInstall(): boolean {
+  return !authEnabled() && !process.env.PW_PLATFORM_HOST
+}
+
+export const PERSONAL_PROMPTS = [
+  'What is in my folder, and how is it organized?',
+  'Which files changed most recently, and what changed in them?',
+  'Summarize the documents in a folder I name.',
+  'Find my notes and documents about a topic I name.',
+  'Which PDFs do I have, and what is each one about?',
+]
+
+export const PERSONAL_MISSION = [
+  "This Studio indexes one person's own files on their computer: notes, documents, papers, spreadsheets, code and other files in the indexed folder.",
+  'The person asking owns these files.',
+  'Answer from the files, cite the ones used, and say when the files do not cover a question.',
+  'Most questions are about finding a file, summarizing or comparing documents, or what changed recently.',
+].join(' ')
+
 function envPrompts(): string[] {
-  const fallback = [
+  const fallback = personalInstall() ? PERSONAL_PROMPTS : [
     'What tools can you use and what can I ask you to do?',
     'What is in this knowledge base?',
     'Which workflows are available to run?',
@@ -173,7 +196,7 @@ export function effectiveSettings(): Required<StudioSettings> {
     // embedded session, so by default the app draws its own only when it is
     // open on its own (a new tab or window), never twice.
     bannerText: s.bannerText ?? process.env.BANNER_TEXT ?? '',
-    kbMission: s.kbMission ?? process.env.KB_MISSION ?? '',
+    kbMission: s.kbMission ?? process.env.KB_MISSION ?? (personalInstall() ? PERSONAL_MISSION : ''),
     bannerColor: s.bannerColor ?? process.env.BANNER_COLOR ?? '#24612e',
     bannerWhenEmbedded: s.bannerWhenEmbedded ?? process.env.BANNER_WHEN_EMBEDDED === '1',
     // Whether a user may promote their own key to stand in for the

@@ -426,10 +426,10 @@ export const updatesApi = {
 const UPDATES_FOCUS = 'ade:updates-focus'
 let updatesFocusPending = false
 
-/** Opens Settings, General at the Updates section. */
+/** Opens Settings, General at its Updates tab. */
 export function openUpdates(): void {
   updatesFocusPending = true
-  location.hash = '#view=settings:general'
+  location.hash = '#view=settings:updates'
   // Already on that page, the hash does not change; the section scrolls itself.
   window.dispatchEvent(new Event(UPDATES_FOCUS))
 }

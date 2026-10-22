@@ -1,6 +1,7 @@
 // First-run setup on a single-user install: the status the wizard reads,
-// the folder browser, saving a new primary folder through the launcher,
-// a whole-folder index build through GUFI, and the record that setup is done.
+// the folder browser, saving a new primary folder or port through the
+// launcher, a whole-folder index build through GUFI, and the record that
+// setup is done.
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
@@ -16,7 +17,7 @@ process.env.KB_ROOT = KB
 process.env.INDEX_BASE = IX
 const GUFI = process.env.GUFI_BIN || '/opt/gufi/bin'
 process.env.GUFI_BIN = GUFI
-for (const k of ['AUTH_JWKS_URL', 'STUDIO_CONFIG_FILE', 'STUDIO_RESTARTABLE', 'PW_PLATFORM_HOST']) delete process.env[k]
+for (const k of ['AUTH_JWKS_URL', 'STUDIO_CONFIG_FILE', 'STUDIO_RESTARTABLE', 'PW_PLATFORM_HOST', 'PORT', 'HOST']) delete process.env[k]
 
 fs.mkdirSync(path.join(HOME, 'beta'))
 fs.mkdirSync(path.join(HOME, 'Alpha'))
@@ -112,6 +113,63 @@ test('primary folder: validated, and saved only where a launcher can carry it', 
   assert.equal(code, L.RESTART_EXIT_CODE)
   delete process.env.STUDIO_CONFIG_FILE
   delete process.env.STUDIO_RESTARTABLE
+})
+
+test('port: validated, saved for the launcher, refused when taken, and applied by a restart', async () => {
+  const net = await import('node:net')
+  const listen = port => new Promise((resolve, reject) => {
+    const srv = net.createServer().once('error', reject)
+    srv.listen({ port, host: '127.0.0.1' }, () => resolve(srv))
+  })
+  // A port nothing listens on, and one something does.
+  const probe = await listen(0)
+  const free = probe.address().port
+  await new Promise(r => probe.close(r))
+  const taken = await listen(0)
+  const busy = taken.address().port
+
+  const status = (await j('GET', '/api/setup/status')).body
+  assert.equal(status.port, 4080)
+  assert.equal(status.portNext, null)
+  for (const port of [undefined, 'x', 80, 70000, 4180.5]) {
+    assert.equal((await j('POST', '/api/setup/port', { port })).status, 400, String(port))
+  }
+  assert.match((await j('POST', '/api/setup/port', { port: 4080 })).body.note, /already uses/)
+  // Without a launcher the variable to set, for the Studio and its MCP endpoint alike.
+  const none = await j('POST', '/api/setup/port', { port: free })
+  assert.deepEqual([none.body.saved, none.body.restarting], [false, false])
+  assert.match(none.body.note, new RegExp(`PORT=${free}`))
+
+  const conf = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'setup-port-')), 'studio.env')
+  process.env.STUDIO_CONFIG_FILE = conf
+  try {
+    const inUse = await j('POST', '/api/setup/port', { port: busy })
+    assert.equal(inUse.status, 409)
+    assert.match(inUse.body.error, new RegExp(`port ${busy} is in use`))
+    assert.equal(L.readLauncherSettings().PORT, undefined)
+    const saved = await j('POST', '/api/setup/port', { port: free })
+    assert.deepEqual([saved.body.saved, saved.body.restarting], [true, false])
+    assert.match(saved.body.note, /Restart/)
+    assert.equal(L.readLauncherSettings().PORT, String(free))
+    assert.equal((await j('GET', '/api/setup/status')).body.portNext, free)
+    // Choosing the port in use again takes the saved one back.
+    await j('POST', '/api/setup/port', { port: 4080 })
+    assert.equal(L.readLauncherSettings().PORT, '4080')
+    assert.equal((await j('GET', '/api/setup/status')).body.portNext, null)
+
+    process.env.STUDIO_RESTARTABLE = '1'
+    let code = null
+    L.setStopper(c => { code = c })
+    const restart = await j('POST', '/api/setup/port', { port: free })
+    assert.deepEqual(restart.body, { saved: true, restarting: true, port: free })
+    assert.equal(L.readLauncherSettings().PORT, String(free))
+    await new Promise(r => setTimeout(r, 400))
+    assert.equal(code, L.RESTART_EXIT_CODE)
+  } finally {
+    delete process.env.STUDIO_CONFIG_FILE
+    delete process.env.STUDIO_RESTARTABLE
+    await new Promise(r => taken.close(r))
+  }
 })
 
 const noGufi = !fs.existsSync(path.join(GUFI, 'gufi_dir2index')) && `no GUFI at ${GUFI}`

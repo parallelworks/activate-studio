@@ -273,7 +273,7 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
   }, [])
 
   // A newer release the Studio can tell about. The version line says so and
-  // opens Settings, General at the Updates section. The page's update flow
+  // opens Settings, General at the Updates tab. The page's update flow
   // reads the server's answer now and then (the server checks every few
   // hours) and at once after a check from Settings; a hosted deployment has
   // no updates.
@@ -348,7 +348,7 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
             }
           />
           {update && (
-            <Button variant="ghost" size="xs" className="footer-sync" title={`Version ${update} is available. Opens Settings, General, Updates.`}
+            <Button variant="ghost" size="xs" className="footer-sync" title={`Version ${update} is available. Opens Settings, Updates.`}
               onClick={openUpdates}>
               update available
             </Button>

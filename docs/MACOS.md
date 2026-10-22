@@ -29,15 +29,24 @@ takes: the classification banner's when one is set, otherwise the page's
 ground in its light or dark theme, following changes while the app is
 open; the title and window controls switch to light or dark to read on
 it. The app menu's About ACTIVATE Studio shows the version and that the
-app is built and maintained by Parallel Works. macOS reports a new
-background item, and may ask once whether the Studio
+app is built and maintained by Parallel Works.
+The app menu's Run Setup… opens the setup again, and in setup the folder
+step uses the Mac's own folder chooser. macOS reports a new background
+item, and may ask once whether the Studio
 can use the Documents folder. An app built on Linux has no native window
 (it is compiled on a Mac): it opens the Studio in an app window in Google
 Chrome or Microsoft Edge, or a tab in the default browser, where Safari's
 File, Add to Dock makes it an app.
 
 *What runs:* the server listens on 127.0.0.1, port 4180, so nothing
-outside the Mac can reach it. A LaunchAgent keeps it running and starts it
+outside the Mac can reach it. Its MCP endpoint is on the same port
+(`http://127.0.0.1:4180/api/mcp`). Settings, General, Server changes the
+port: the new one is saved to `studio.env`, the server restarts on it, and
+the window follows. MCP clients set up with the old address need the new
+one, and what the window remembers for itself (the theme chosen there,
+open panels) starts over, since a new port is a new address. A `PORT`
+written into `studio.env` by hand takes effect the next time the app is
+opened, which restarts a server still on the old port. A LaunchAgent keeps it running and starts it
 at login; it restarts on its own when a setting needs a restart, and after
 a crash. The app carries Node, GUFI, Python for the indexer, and the
 embedding model, so nothing else needs installing. No Parallel Works
@@ -65,9 +74,9 @@ settings unless `--purge` is added. Neither touches the documents.
 
 *Updates:* the app checks this repository's releases a minute after it
 starts and every six hours after that. A one-line notice at the top of
-every page, and Settings, General, show the newest release, with the changes
-in every version newer than the one running (the notice's What's new), and
-Update now; Later hides the notice
+every page, and Settings, General, Updates, show the newest release, with
+the changes in every version newer than the one running (the notice's
+What's new), and Update now; Later hides the notice
 until a newer version is out. It takes the newest release that carries
 the signed app. Not every release does: the macOS build runs only for the
 releases it is asked for, so the app skips the others and the notice lists
@@ -91,7 +100,7 @@ installing them. A clone of the repository is told the newest version and
 the command that updates it; a Studio that signs users in, or that the
 platform deploys, does not check.
 
-*Rolling back:* while the previous copy is there, Settings, General offers
+*Rolling back:* while the previous copy is there, Settings, General, Updates offers
 Roll back, which puts it back and restarts. The same happens without
 asking when a new version stops three times within two minutes of being
 installed; Settings then says so, and that version is not installed

@@ -228,13 +228,13 @@ describe('the Updates section', () => {
 describe('the footer version line', () => {
   afterEach(() => { vi.unstubAllGlobals(); history.replaceState(null, '', location.pathname) })
 
-  it('says an update is available only when one is, and opens Settings, General', async () => {
+  it('says an update is available only when one is, and opens Settings, Updates', async () => {
     stubServer(server())
     const { unmount } = render(<StatusFooter />)
     const link = await screen.findByRole('button', { name: 'update available' })
     expect(screen.getByText('v1.140')).toBeInTheDocument()
     fireEvent.click(link)
-    expect(location.hash).toBe('#view=settings:general')
+    expect(location.hash).toBe('#view=settings:updates')
     unmount()
     vi.unstubAllGlobals()
 

@@ -188,6 +188,48 @@ esac`)
   assert.ok(fs.existsSync(path.join(moved, 'ACTIVATE Studio.app')))
 })
 
+test('opening the app restarts a running server that does not answer on the port studio.env names', () => {
+  const root = path.join(tmp, 'port')
+  const { launcher } = bundle(root, '#!/bin/sh\n')
+  const home = path.join(root, 'home')
+  const bin = path.join(root, 'bin')
+  const state = path.join(root, 'state')
+  const data = path.join(home, 'Library', 'Application Support', 'ACTIVATE Studio')
+  fs.mkdirSync(state, { recursive: true })
+  // The server serves the port studio.env named when it last started; a
+  // kickstart starts it again on the one named now.
+  const serve = `( . "${data}/studio.env"; echo "\${PORT:-4180}" >"${state}/serving" )`
+  const log = (name, extra = '') => write(path.join(bin, name), `#!/bin/bash\necho "${name} $*" >>"${state}/calls"\n${extra}`, 0o755)
+  log('launchctl', `case "$1" in
+  print) [ -f "${state}/loaded" ] ;;
+  bootstrap) touch "${state}/loaded"; ${serve} ;;
+  kickstart) ${serve} ;;
+esac`)
+  log('curl', `port=$(printf '%s' "$*" | sed -n 's/.*127\\.0\\.0\\.1:\\([0-9]*\\).*/\\1/p')
+[ -f "${state}/loaded" ] && [ "$port" = "$(cat "${state}/serving")" ] || exit 7
+echo '{"version":"v1","builtAt":"B1"}'`)
+  log('open')
+  log('osascript')
+  write(path.join(home, 'Applications', 'Google Chrome.app', 'Contents', 'Info.plist'), '')
+  const env = { HOME: home, PATH: `${bin}:/usr/bin:/bin` }
+  const run = () => spawnSync(launcher, [], { env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+  const calls = () => fs.readFileSync(path.join(state, 'calls'), 'utf8')
+
+  let r = run()
+  assert.equal(r.status, 0, r.stderr)
+  assert.equal(fs.readFileSync(path.join(state, 'serving'), 'utf8').trim(), '4180')
+  assert.doesNotMatch(calls(), /kickstart/)
+
+  // studio.env names another port while the server runs on the old one.
+  fs.writeFileSync(path.join(state, 'calls'), '')
+  fs.writeFileSync(path.join(data, 'studio.env'), "PORT='4555'\n")
+  r = run()
+  assert.equal(r.status, 0, r.stderr)
+  assert.match(calls(), /launchctl kickstart -k gui\/\d+\/com\.parallelworks\.activate-studio/)
+  assert.match(calls(), /--app=http:\/\/127\.0\.0\.1:4555\//)
+  assert.equal(fs.readFileSync(path.join(state, 'serving'), 'utf8').trim(), '4555')
+})
+
 test('install.sh verifies the archive and puts the app in place, replacing an older one', () => {
   const root = path.join(tmp, 'install')
   const src = path.join(root, 'src')

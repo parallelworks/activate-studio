@@ -1,25 +1,27 @@
 import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import fsp from 'node:fs/promises'
+import net from 'node:net'
 import os from 'node:os'
 import path from 'node:path'
 import type { FastifyInstance } from 'fastify'
 import { authEnabled } from './auth.js'
-import { EXCLUDE_DIRS, GUFI_BIN, GUFI_INDEX, INDEX_BASE, KB_ROOT } from './config.js'
+import { EXCLUDE_DIRS, GUFI_BIN, GUFI_INDEX, HOST, INDEX_BASE, KB_ROOT, PORT } from './config.js'
 import { corpusStats, invalidateDbList } from './gufi.js'
 import { getIndexJob, incrementalIndexDir, indexRootDb, saveSweepState, startIndexJob, sweepSnapshot, type IndexJob, type IndexProgress } from './indexing.js'
 import { KbError } from './kb.js'
 import { listLibraries, publicLibrary } from './libraries.js'
-import { canRestart, launcherConfigFile, requestRestart, saveLauncherSetting } from './lifecycle.js'
+import { canRestart, launcherConfigFile, readLauncherSettings, requestRestart, saveLauncherSetting } from './lifecycle.js'
 import { brandUrl } from './routes.js'
 import { effectiveSettings, loadSettings, updateSettings } from './settings.js'
 
 /**
  * First-run setup for a single-user install (the macOS app): the Studio's
  * icon, which folder is the primary library, a build of its whole index,
- * and a record that setup is done. Everything but the status refuses where users sign in; a
- * hosted Studio is configured by its deployment, and listing the server's
- * folders is for the person whose computer it is.
+ * the port it listens on, and a record that setup is done. Everything but
+ * the status refuses where users sign in; a hosted Studio is configured by
+ * its deployment, and listing the server's folders is for the person whose
+ * computer it is.
  */
 
 const EMBED_MODEL = path.join(INDEX_BASE, 'models', 'minilm384.gguf')
@@ -93,6 +95,21 @@ async function forgetOtherFolder(): Promise<void> {
 }
 
 const message = (e: unknown) => String((e as Error)?.message ?? e).slice(0, 300)
+
+/** Whether a port is free where the Studio listens. */
+export function portFree(port: number, host = HOST): Promise<boolean> {
+  return new Promise(resolve => {
+    const probe = net.createServer()
+    probe.once('error', () => resolve(false))
+    probe.listen({ port, host, exclusive: true }, () => probe.close(() => resolve(true)))
+  })
+}
+
+/** The port saved for the next start, when it is not the one in use. */
+function nextPort(): number | null {
+  const saved = Number(readLauncherSettings().PORT)
+  return Number.isInteger(saved) && saved > 0 && saved !== PORT ? saved : null
+}
 
 // ---- the Studio's icon ----
 
@@ -221,6 +238,9 @@ export async function setupRoutes(app: FastifyInstance): Promise<void> {
       standalone: true,
       canRestart: canRestart() && !!launcherConfigFile(),
       launcher: !!launcherConfigFile(),
+      // The port the Studio listens on; its MCP endpoint is on the same one.
+      port: PORT,
+      portNext: nextPort(),
       primary: {
         path: KB_ROOT,
         exists: isDir(KB_ROOT),
@@ -285,6 +305,29 @@ export async function setupRoutes(app: FastifyInstance): Promise<void> {
     return restarting
       ? { saved: true, restarting: true }
       : { saved: true, restarting: false, note: 'Saved. Restart the Studio to open this folder.' }
+  })
+
+  // PORT is read once at startup too, so a new port is saved for the
+  // launcher and takes a restart, which serves the Studio and its MCP
+  // endpoint (/api/mcp) at the new address.
+  app.post('/api/setup/port', async req => {
+    requireSingleUser()
+    const port = Number((req.body as { port?: unknown } | null)?.port)
+    if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new KbError(400, 'the port must be a whole number from 1024 to 65535')
+    if (port === PORT) {
+      if (launcherConfigFile() && nextPort() !== null) saveLauncherSetting('PORT', String(PORT))
+      return { saved: true, restarting: false, port, note: 'The Studio already uses this port.' }
+    }
+    if (!launcherConfigFile()) {
+      return { saved: false, restarting: false, port, note: `Set PORT=${port} in the Studio's environment and restart it.` }
+    }
+    if (runningJob()) throw new KbError(409, 'an index build is running; wait for it to finish')
+    if (!(await portFree(port))) throw new KbError(409, `port ${port} is in use by another program`)
+    saveLauncherSetting('PORT', String(port))
+    const restarting = requestRestart()
+    return restarting
+      ? { saved: true, restarting: true, port }
+      : { saved: true, restarting: false, port, note: 'Saved. Restart the Studio to use this port.' }
   })
 
   // One job over the whole primary folder; its progress is read through

@@ -119,6 +119,35 @@ describe('the cards', () => {
     expect(screen.queryByText('stopped')).toBeNull()
   })
 
+  it('leave out the Model card while AI features are off', async () => {
+    openPanel()
+    render(<StatusPanel view="search" cfg={cfg({ aiEnabled: false })} />)
+    await waitFor(() => expect(head('Libraries')).toBeInTheDocument())
+    expect(screen.queryByRole('button', { name: /^Model/ })).toBeNull()
+    expect(head('Connections')).toBeInTheDocument()
+  })
+
+  it('say what Connections lists, grouped as the platform, MCP servers, and machines with remote libraries', async () => {
+    openPanel()
+    const remote = { ...lib, id: 'lab', label: 'Lab index', primary: false, site: 'cluster-a' }
+    render(<StatusPanel view="search" cfg={cfg({ libraries: [lib, remote] })} />)
+    await waitFor(() => expect(head('Connections')).toHaveTextContent('1 needs attention'))
+    fireEvent.click(head('Connections'))
+    const card = document.querySelector('[data-card=connections]') as HTMLElement
+    expect(card).toHaveTextContent('What this Studio connects to beyond its own folder and index.')
+    const groups = [...card.querySelectorAll('.status-group')].map(g => [
+      g.querySelector('.status-group-label')?.textContent,
+      [...g.querySelectorAll('.status-row-name')].map(n => n.textContent),
+    ])
+    expect(groups).toEqual([
+      ['ACTIVATE platform', ['Platform']],
+      ['Attached MCP servers', ['crm']],
+      ['Machines with remote libraries', ['cluster-a']],
+    ])
+    fireEvent.click(screen.getByRole('button', { name: 'MCP server settings' }))
+    expect(location.hash).toBe('#view=settings:rag')
+  })
+
   it('summarize from the data alone', () => {
     expect(activitySummary({ tasks: [], fleet: [], runs: [], sessions: [] }).text).toBe('idle')
     expect(activitySummary({ tasks: null, fleet: null, runs: null, sessions: [{} as never, {} as never] }).text).toBe('2 sessions')
@@ -126,7 +155,7 @@ describe('the cards', () => {
     expect(lines.map(l => [l.label, l.kind, l.state])).toEqual([['Knowledge base', 'knowledge base', 'indexed'], ['Mine', 'on cluster-a', 'failed']])
     expect(librariesSummary(lines, null).text).toBe('1 failed')
     const conns = connectionLines({ platform: false, authEnabled: true, ai: null, mcp: [{ name: 'crm', tools: 4, error: null, checkedAt: ago(1) }], libs: [lib], userLibs: null })
-    expect(conns.map(c => `${c.name}: ${c.meta}`)).toEqual(['Platform: needs your key', 'crm: connected, 4 tools'])
+    expect(conns.map(c => `${c.kind} ${c.name}: ${c.meta}`)).toEqual(['platform Platform: needs your key', 'mcp crm: connected, 4 tools'])
     expect(connectionsSummary(conns).text).toBe('1 needs attention')
     const ai = { ok: false, models: 0, gatewayHost: '', message: null, lastCallFailure: null, checkedAt: ago(1) }
     expect(modelSummary({ ...ai, status: 'off' }, null)).toEqual({ text: 'AI features off', tone: 'muted' })

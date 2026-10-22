@@ -24,6 +24,7 @@ import { UpdatedNotice } from './components/UpdatedNotice'
 import { ClassificationBanner, bannerInk, bannerShownColor } from './components/ClassificationBanner'
 import { sectionAllowed, shownView, useAppConfig } from './config'
 import { applyAccent, applySurface } from './accents'
+import { onThemeChoice } from './theme'
 import { FullViewHost, RunPane } from './components/RunPane'
 import { PanelToggle, StatusPanel } from './components/StatusPanel'
 import { setPanelView } from './panelState'
@@ -190,6 +191,8 @@ export default function App() {
     const t = localStorage.getItem('ade-theme')
     return t === 'dark' || t === 'light' ? t : null
   })
+  // A choice made in setup or Settings, Appearance paints at once.
+  useEffect(() => onThemeChoice(c => setTheme(c === 'system' ? null : c)), [])
 
   // The device's own preference, live: a phone flipping to dark at sunset
   // carries the app with it unless the user has chosen explicitly. A
@@ -560,13 +563,13 @@ export default function App() {
           )}
           <button
             className="sidenav-item"
-            title={(theme ?? cfg.theme) === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+            title={effectiveTheme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
             onClick={toggleTheme}
           >
-            {(theme ?? cfg.theme) === 'dark'
+            {effectiveTheme === 'dark'
               ? <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.4"><circle cx="8" cy="8" r="3.2"/><path d="M8 1.2v1.8M8 13v1.8M1.2 8H3M13 8h1.8M3.2 3.2l1.3 1.3M11.5 11.5l1.3 1.3M12.8 3.2l-1.3 1.3M4.5 11.5l-1.3 1.3"/></svg>
               : <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M13.5 9.5A6 6 0 0 1 6.5 2.5a6 6 0 1 0 7 7z"/></svg>}
-            <span>{(theme ?? cfg.theme) === 'dark' ? 'Light mode' : 'Dark mode'}</span>
+            <span>{effectiveTheme === 'dark' ? 'Light mode' : 'Dark mode'}</span>
           </button>
         </div>
         <StatusFooter collapsed={navCollapsed} />

@@ -1465,6 +1465,18 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .settings-content .view-sub, .settings-content .key-trust,
 .settings-content .prompts-box, .settings-content .key-row { max-width: var(--settings-measure); }
 .settings-content h1 { margin-bottom: 10px; }
+/* General: its title with Run setup again, then a tab per topic. */
+.settings-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; max-width: var(--settings-measure); }
+.settings-head h1 { margin: 0; }
+.settings-tabs { max-width: var(--settings-measure); margin: 12px 0 16px; }
+/* The tabs wrap onto another line where the page is narrow, rather than
+   scroll out of sight, so the current one is underlined where it sits in
+   place of the sliding indicator, which follows a single row. */
+.settings-tabs [role=tablist] { flex-wrap: wrap; overflow: visible; }
+.settings-tabs [role=tablist] > :not([role=tab]) { display: none; }
+.settings-tabs [role=tab][data-active] { box-shadow: inset 0 -2px 0 var(--theme-link); }
+.settings-content [role=tabpanel] > :first-child { margin-top: 0; }
+.port-input { width: 9rem; }
 .prompts-box { min-height: 200px; resize: vertical; }
 
 /* Model access and endpoint registration banners (Callouts) and model chips */
@@ -1808,6 +1820,7 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .setup-progress { display: flex; gap: 4px; margin: 6px 0 2px; }
 .setup-progress span { flex: 1; height: 3px; border-radius: 2px; background: var(--pw-border); }
 .setup-progress span.on { background: var(--pw-navy); }
+.setup-build { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 13px; }
 .lib-add-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 /* On a phone each library is a block: name and paths, then its state, what
    it searches (named, since the headers are gone), and its actions. */
@@ -2137,6 +2150,7 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .status-card-inner { padding: 0 8px 10px; }
 .status-group + .status-group { margin-top: 6px; }
 .status-group-label { padding: 2px 6px; font-size: 11px; font-weight: 500; color: var(--pw-muted); }
+.status-card-note { margin: 0 0 4px; padding: 0 6px; font-size: 12px; line-height: 16px; color: var(--pw-muted); }
 .status-row {
   display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; padding: 5px 6px;
   border: 0; border-radius: 6px; background: none; color: var(--pw-text); font: inherit; font-size: 13px; line-height: 18px; text-align: left;
