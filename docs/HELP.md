@@ -2,7 +2,7 @@
 
 Files collect in many folders, drives, and systems. Finding one means remembering where it was saved, and answering a question from a set of documents means opening them one at a time.
 
-{appName} indexes your folders with GUFI. **Search** finds files by name, by the words inside them (PDFs, office documents, and text in images included), and by meaning. **Query** answers questions about the files themselves, such as the largest, the newest, or the totals by type. **Chat** answers questions from the files and links each source it used.
+{appName} indexes your folders with GUFI. **Search** finds files by name, by the words inside them (PDFs and office documents, and text in images where OCR is available), and by meaning. **Query** answers questions about the files themselves, such as the largest, the newest, or the totals by type. **Chat** answers questions from the files and links each source it used.
 
 Files stay where they are. {appName} keeps its index in a folder of its own, reads each file in place, and follows the file system's permissions. Indexing, search, and query run where {appName} runs and need no network connection; Chat sends text only to the model endpoint you configure, which can be on the same computer. The same index works for a folder on a laptop and for a cluster's file systems.
 
