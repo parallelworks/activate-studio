@@ -1,7 +1,7 @@
 import { execFile, spawn, type ChildProcess } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
-import { GATEWAY_BASE, GATEWAY_FROM_ENV, INDEX_BASE, PW_CLI, gatewayFor, pwCredentialsFile, setGatewayBase } from './config.js'
+import { GATEWAY_BASE, GATEWAY_FROM_ENV, INDEX_BASE, PW_CLI, findPwCli, gatewayFor, pwCredentialsFile, setGatewayBase, type PwCliSource } from './config.js'
 import { cliNetworkFailure, networkFailure, unreachableMessage } from './net.js'
 
 /**
@@ -230,13 +230,14 @@ export function renewContext(name: string, timeoutMs = 20_000): Promise<string |
         resolve(token)
         return
       }
+      if ((err as NodeJS.ErrnoException | null)?.code === 'ENOENT') findPwCli()
       const said = String(stderr || (err as Error | null)?.message || 'no token printed').replace(/\x1b\[[0-9;]*m/g, '').trim()
       const offline = (err as NodeJS.ErrnoException | null)?.code !== 'ENOENT' && cliNetworkFailure(said)
       renewErrors.set(name, {
         at: Date.now(),
         offline,
         message: (err as NodeJS.ErrnoException | null)?.code === 'ENOENT'
-          ? 'The pw CLI is not installed here, so this sign-in cannot be renewed.'
+          ? 'The Studio cannot find the pw CLI, so this sign-in cannot be renewed. Choose where it is under pw CLI below.'
           : offline
             ? unreachableMessage(readStore()?.identities?.[name]?.server ?? '', null)
             : said.split('\n').filter(Boolean).slice(-1)[0]?.slice(0, 300) ?? 'the CLI could not renew this sign-in',
@@ -283,16 +284,27 @@ export async function ensureFreshAccess(timeoutMs = 15_000): Promise<void> {
 
 /* ---- the CLI itself ---- */
 
-let cliInfoCache: { at: number; v: { available: boolean; version: string | null } } | null = null
+export interface CliInfo {
+  available: boolean
+  version: string | null
+  /** Where the Studio found it, and how: PW_CLI, the location chosen in
+   *  Model access, PATH, or a folder it is commonly installed in. */
+  path: string | null
+  source: PwCliSource
+}
 
-/** Whether the pw CLI runs here, and its version. */
-export function cliInfo(): Promise<{ available: boolean; version: string | null }> {
-  if (cliInfoCache && Date.now() - cliInfoCache.at < 5 * 60_000) return Promise.resolve(cliInfoCache.v)
+let cliInfoCache: { at: number; v: CliInfo } | null = null
+
+/** Whether the pw CLI runs here, where it is, and its version; `fresh`
+ *  looks again at once rather than within five minutes. */
+export function cliInfo(fresh = false): Promise<CliInfo> {
+  if (!fresh && cliInfoCache && Date.now() - cliInfoCache.at < 5 * 60_000) return Promise.resolve(cliInfoCache.v)
+  const where = findPwCli()
   return new Promise(resolve => {
     execFile(PW_CLI, ['--version'], { timeout: 8_000, env: tokenEnv() }, (err, stdout) => {
       const missing = (err as NodeJS.ErrnoException | null)?.code === 'ENOENT'
       const version = /v?\d+\.\d+\.\d+/.exec(String(stdout ?? ''))?.[0] ?? null
-      const v = { available: !missing && (!err || !!version), version }
+      const v = { available: !missing && (!err || !!version), version, path: missing ? null : where.path, source: missing ? 'none' as const : where.source }
       cliInfoCache = { at: Date.now(), v }
       resolve(v)
     })

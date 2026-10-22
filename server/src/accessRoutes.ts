@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import { authEnabled } from './auth.js'
-import { GATEWAY_BASE, GATEWAY_FROM_ENV, PW_API_KEY } from './config.js'
+import { GATEWAY_BASE, GATEWAY_FROM_ENV, PW_API_KEY, choosePwCli, chosenPwCli, pwCliCommonDirs } from './config.js'
 import { clearUserKey, getSharedKeyStatus, getUserKeyStatus, personalKeysDisabled, resolveSharedKey, resolveUserCred, SINGLE_OWNER } from './credentials.js'
 import { gatewayKey, invalidateProviderProbes, sidecarConfigured } from './chat/gateway.js'
 import {
@@ -126,7 +126,8 @@ export async function accessRoutes(app: FastifyInstance): Promise<void> {
     const single = !authEnabled()
     await ensureFreshAccess(5_000)
     const sources = accessSources(req.user?.id)
-    const info = single ? await cliInfo() : { available: false, version: null }
+    const fresh = String((req.query as { fresh?: string } | undefined)?.fresh ?? '') === '1'
+    const info = single ? await cliInfo(fresh) : null
     return {
       single,
       authEnabled: authEnabled(),
@@ -137,7 +138,8 @@ export async function accessRoutes(app: FastifyInstance): Promise<void> {
       platformOrigin: (() => { try { return new URL(GATEWAY_BASE).origin } catch { return null } })(),
       cli: single
         ? {
-            available: info.available, version: info.version,
+            available: info!.available, version: info!.version, path: info!.path, source: info!.source,
+            chosenPath: chosenPwCli(), commonDirs: pwCliCommonDirs(),
             contexts: listCliContexts(),
             chosen: chosenContext(),
             active: activeContextName(),
@@ -148,6 +150,22 @@ export async function accessRoutes(app: FastifyInstance): Promise<void> {
         : null,
       login: single ? loginState() : null,
     }
+  })
+
+  // Where the pw CLI is, when the Studio does not find it by itself: a full
+  // path to the program, or null to forget the choice and look as before.
+  // Only on a Studio with sign-in off, since the server runs what it names.
+  app.put('/api/access/cli/path', async req => {
+    requireSingle()
+    const raw = ((req.body ?? {}) as { path?: unknown }).path
+    const p = raw === null || raw === undefined || String(raw).trim() === '' ? null : String(raw).trim()
+    try { choosePwCli(p) } catch (e) { throw new KbError(400, String((e as Error).message)) }
+    const info = await cliInfo(true)
+    if (p && (!info.available || !info.version)) {
+      choosePwCli(null)
+      throw new KbError(400, `${p} did not answer --version as the pw CLI does, so it was not kept.`)
+    }
+    return { cli: info }
   })
 
   // Which context the Studio uses: a name, or null to follow the CLI's own

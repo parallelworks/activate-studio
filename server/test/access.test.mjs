@@ -248,3 +248,50 @@ test('the device prompt is read from the CLI output whatever surrounds it', () =
   assert.equal(access.normalizeHost('HTTPS://Platform.Example.com/x'), 'platform.example.com')
   assert.equal(access.normalizeHost('a b'), null)
 })
+
+test('the Studio says where it runs the pw CLI from, and takes a location chosen in Model access', async () => {
+  let s = await get('/api/access')
+  assert.deepEqual([s.cli.path, s.cli.source], [CLI, 'env'])
+  assert.ok(s.cli.commonDirs.includes('/usr/local/bin'))
+
+  // Without PW_CLI, PATH comes first; a pw on it is found and run.
+  const bin = path.join(tmp, 'bin')
+  fs.mkdirSync(bin, { recursive: true })
+  fs.copyFileSync(CLI, path.join(bin, 'pw'))
+  fs.chmodSync(path.join(bin, 'pw'), 0o755)
+  const savedPath = process.env.PATH
+  delete process.env.PW_CLI
+  process.env.PATH = `${bin}${path.delimiter}${savedPath}`
+  try {
+    s = await get('/api/access?fresh=1')
+    assert.deepEqual([s.cli.path, s.cli.source, s.cli.available], [path.join(bin, 'pw'), 'path', true])
+    assert.equal(config.PW_CLI, path.join(bin, 'pw'), 'every caller runs the one found')
+
+    // A location chosen here wins over PATH, and is kept beside the index.
+    let r = await send('PUT', '/api/access/cli/path', { path: CLI })
+    assert.equal(r.status, 200, JSON.stringify(r.body))
+    assert.deepEqual([r.body.cli.path, r.body.cli.source, r.body.cli.version], [CLI, 'chosen', 'v7.1.0'])
+    assert.equal(config.PW_CLI, CLI)
+    assert.equal(JSON.parse(fs.readFileSync(path.join(process.env.INDEX_BASE, 'pw-cli.json'), 'utf8')).path, CLI)
+
+    // Refused: a relative path, nothing there, a program that is not the CLI. The choice stays as it was.
+    assert.equal((await send('PUT', '/api/access/cli/path', { path: 'bin/pw' })).status, 400)
+    assert.equal((await send('PUT', '/api/access/cli/path', { path: path.join(tmp, 'nothing') })).status, 400)
+    const other = path.join(tmp, 'not-pw')
+    fs.writeFileSync(other, '#!/bin/sh\necho hello\n', { mode: 0o755 })
+    r = await send('PUT', '/api/access/cli/path', { path: other })
+    assert.equal(r.status, 400)
+    assert.match(r.body.error, /not kept/)
+    s = await get('/api/access?fresh=1')
+    assert.notEqual(s.cli.path, other)
+
+    // Forgetting the choice looks for it by itself again.
+    r = await send('PUT', '/api/access/cli/path', { path: null })
+    assert.deepEqual([r.body.cli.path, r.body.cli.source], [path.join(bin, 'pw'), 'path'])
+    assert.equal(fs.existsSync(path.join(process.env.INDEX_BASE, 'pw-cli.json')), false)
+  } finally {
+    process.env.PATH = savedPath
+    process.env.PW_CLI = CLI
+    config.findPwCli()
+  }
+})

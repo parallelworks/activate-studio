@@ -207,10 +207,70 @@ export const MAX_TOOL_ITERATIONS = 24
 /**
  * Where the pw CLI lives. A container deployment has one only if the
  * binary was bound in, and it is bound at an absolute path rather than
- * placed on PATH, so every caller has to be told where to look. Bare "pw"
- * remains the default for a deployment running directly on a host.
+ * placed on PATH, so every caller has to be told where to look (PW_CLI).
+ * A Studio started outside a terminal, as the macOS app's background server
+ * is, has a short PATH, so a CLI installed where only the person's shell
+ * looks would not be found: after PW_CLI come the location chosen under
+ * Settings, Model access, then PATH, then the folders the CLI is commonly
+ * installed in. A live binding, found again by findPwCli, so installing the
+ * CLI or choosing its location needs no restart. Bare "pw" when there is
+ * none, which fails with ENOENT as it always has.
  */
-export const PW_CLI = process.env.PW_CLI || 'pw'
+export let PW_CLI = 'pw'
+export type PwCliSource = 'env' | 'chosen' | 'path' | 'common' | 'none'
+export let PW_CLI_SOURCE: PwCliSource = 'none'
+
+/** Where a location chosen in Model access is kept. */
+export const PW_CLI_CHOICE_FILE = path.join(INDEX_BASE, 'pw-cli.json')
+
+/** Folders the pw CLI is commonly installed in, looked in after PATH. */
+export function pwCliCommonDirs(): string[] {
+  const home = os.homedir()
+  return [path.join(home, '.local', 'bin'), path.join(home, 'bin'), path.join(home, 'pw'), '/opt/homebrew/bin', '/usr/local/bin', '/usr/bin']
+}
+
+function runnableFile(f: string): boolean {
+  try { fs.accessSync(f, fs.constants.X_OK); return fs.statSync(f).isFile() } catch { return false }
+}
+
+/** The location chosen in Model access, or null. */
+export function chosenPwCli(): string | null {
+  try {
+    const p = (JSON.parse(fs.readFileSync(PW_CLI_CHOICE_FILE, 'utf8')) as { path?: unknown }).path
+    return typeof p === 'string' && p ? p : null
+  } catch { return null }
+}
+
+/** Look for the pw CLI again and point PW_CLI at it. */
+export function findPwCli(): { path: string | null; source: PwCliSource } {
+  const found = (p: string, source: PwCliSource) => { PW_CLI = p; PW_CLI_SOURCE = source; return { path: p, source } }
+  const env = process.env.PW_CLI
+  if (env && env.includes('/')) {
+    if (runnableFile(env)) return found(env, 'env')
+  } else if (env) {
+    for (const d of (process.env.PATH ?? '').split(path.delimiter)) if (d && runnableFile(path.join(d, env))) return found(path.join(d, env), 'env')
+  }
+  const chosen = chosenPwCli()
+  if (chosen && runnableFile(chosen)) return found(chosen, 'chosen')
+  for (const d of (process.env.PATH ?? '').split(path.delimiter)) if (d && runnableFile(path.join(d, 'pw'))) return found(path.join(d, 'pw'), 'path')
+  for (const d of pwCliCommonDirs()) if (runnableFile(path.join(d, 'pw'))) return found(path.join(d, 'pw'), 'common')
+  PW_CLI = env || 'pw'
+  PW_CLI_SOURCE = 'none'
+  return { path: null, source: 'none' }
+}
+findPwCli()
+
+/** Keep a location for the pw CLI, or forget it (null); returns what is found then. */
+export function choosePwCli(p: string | null): { path: string | null; source: PwCliSource } {
+  if (p === null) fs.rmSync(PW_CLI_CHOICE_FILE, { force: true })
+  else {
+    if (!path.isAbsolute(p)) throw new Error('The location has to be a full path, such as /Users/me/bin/pw.')
+    if (!runnableFile(p)) throw new Error(`There is no program at ${p}, or it cannot be run.`)
+    fs.mkdirSync(path.dirname(PW_CLI_CHOICE_FILE), { recursive: true })
+    fs.writeFileSync(PW_CLI_CHOICE_FILE, JSON.stringify({ path: p }))
+  }
+  return findPwCli()
+}
 
 /**
  * A model served beside this deployment, on the same node: an OpenAI-
@@ -242,8 +302,8 @@ export function isMissingCli(err: unknown): boolean {
 }
 
 export const NO_CLI_MESSAGE =
-  'The pw CLI is not available to this deployment, so platform actions (workflows, clusters, status) cannot run from here. '
-  + 'Bind the CLI and its credentials into the container, or set PW_CLI to its path.'
+  'The Studio cannot find the pw CLI, so platform actions (workflows, clusters, status) cannot run from here. '
+  + 'Install it, or choose where it is under Settings, Model access, pw CLI; in a container, bind the CLI and its credentials in, or set PW_CLI to its path.'
 
 export function gufiAvailable(): boolean {
   try {

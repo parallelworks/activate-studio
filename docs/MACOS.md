@@ -46,7 +46,9 @@ the window follows. MCP clients set up with the old address need the new
 one, and what the window remembers for itself (the theme chosen there,
 open panels) starts over, since a new port is a new address. A `PORT`
 written into `studio.env` by hand takes effect the next time the app is
-opened, which restarts a server still on the old port. A LaunchAgent keeps it running and starts it
+opened, which restarts a server still on the old port. The server takes the PATH your login shell sets
+(`$SHELL -ilc`, given five seconds), so programs you run by name in Terminal, the pw CLI among them, are
+found by the app too. A LaunchAgent keeps it running and starts it
 at login; it restarts on its own when a setting needs a restart, and after
 a crash. The app carries Node, GUFI, Python for the indexer, and the
 embedding model, so nothing else needs installing. No Parallel Works

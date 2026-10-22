@@ -397,7 +397,7 @@ both with `{label?, cluster, indexRoot, gufiBin?, sourceRoot?}`. The
 cluster name starts with a letter or digit, so `pw ssh` cannot read it as
 an option, and the paths follow the ssh rules (absolute, or under `~`).
 Without a key to act with they answer 409. `GET /api/user-libraries`
-carries `pw`: whether the pw CLI is found (`PW_CLI`, or `pw` on the PATH)
+carries `pw`: whether the pw CLI is found (as `PUT /api/access/cli/path` in REFERENCE.md describes)
 and there is a key, and `workflow`: whether the index workflow is
 offered. List entries carry `transport: "pw"` and `existing: true`,
 which a connected library over ssh carries too; a library built on a

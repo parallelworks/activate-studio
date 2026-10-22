@@ -35,6 +35,26 @@ trap 'stopping=1; [ -n "$pid" ] && kill -TERM "$pid" 2>/dev/null' TERM INT HUP
 
 stamp() { date '+%Y-%m-%d %H:%M:%S'; }
 
+# The PATH the person's login shell sets, so programs they run by name in
+# Terminal (the pw CLI above all) are found by the server too: launchd
+# starts it with a short PATH. Interactive as well as login, since many set
+# PATH in .zshrc; given five seconds, since a shell's startup files can wait
+# on input or the network; empty when the shell does not answer.
+login_path() {
+  local sh out n=0 pid
+  sh="${SHELL:-}"
+  [ -x "$sh" ] || sh="$(dscl . -read "/Users/$(id -un)" UserShell 2>/dev/null | awk '{print $2}')"
+  [ -x "$sh" ] || return 0
+  out="$(mktemp "${TMPDIR:-/tmp}/studio-path.XXXXXX")" || return 0
+  "$sh" -ilc 'printf "\n__STUDIO_PATH__=%s\n" "$PATH"' </dev/null >"$out" 2>/dev/null &
+  pid=$!
+  while kill -0 "$pid" 2>/dev/null && [ "$n" -lt 50 ]; do sleep 0.1; n=$((n + 1)); done
+  kill "$pid" 2>/dev/null
+  sed -n 's/^__STUDIO_PATH__=//p' "$out" | tail -n 1
+  rm -f "$out"
+}
+LOGIN_PATH="$(login_path)"
+
 # One string from pending.json.
 field() { sed -n "s/.*\"$1\": *\"\([^\"]*\)\".*/\1/p" "$PENDING" 2>/dev/null | head -n 1; }
 
@@ -100,7 +120,7 @@ while [ "$stopping" = 0 ]; do
     # signature's seal.
     export HOST=127.0.0.1 STUDIO_CONFIG_FILE="$CONFIG" STUDIO_RESTARTABLE=1 \
       STUDIO_APP_BUNDLE="$APP" STUDIO_DATA_DIR="$DATA" PYTHONDONTWRITEBYTECODE=1
-    export PATH="$RES/node/bin:${PATH:-/usr/bin:/bin:/usr/sbin:/sbin}:/usr/local/bin:/opt/homebrew/bin:$HOME/.local/bin"
+    export PATH="$RES/node/bin:${LOGIN_PATH:+$LOGIN_PATH:}${PATH:-/usr/bin:/bin:/usr/sbin:/sbin}:/usr/local/bin:/opt/homebrew/bin:$HOME/.local/bin"
     # The embedding model ships with the app; the index refers to it.
     model="$INDEX_BASE/models/minilm384.gguf"
     if [ -L "$model" ] || [ ! -e "$model" ]; then
