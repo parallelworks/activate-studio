@@ -70,14 +70,6 @@ export function useIndexStatus(): IndexStatus | null {
   return useSyncExternalStore(subscribe, () => state)
 }
 
-/** Tests start from nothing, and may set what the server said. */
-export function setIndexStatusForTests(s: IndexStatus | null): void {
-  state = s
-  seen = { running: !!s?.running, searchable: s?.job?.searchableAt ?? null }
-  loop++
-  notify()
-}
-
 // ---- what to say about it ----
 
 export type Tone = 'info' | 'success' | 'warning' | 'error' | 'muted'

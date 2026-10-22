@@ -87,7 +87,6 @@ function probe() {
 export function forgetExtractors(): void { found.clear() }
 
 export function sofficeFound(): string | null { return probe().soffice }
-export function tesseractFound(): boolean { return !!probe().tesseract }
 
 const LEGACY = '.ppt, .xls, .odt, .odp, .ods'
 

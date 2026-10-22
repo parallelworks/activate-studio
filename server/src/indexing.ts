@@ -289,13 +289,6 @@ export function cancelAllIndexJobs(): number {
   return n
 }
 
-/** Waits until no job runs, up to `ms`. */
-async function idle(ms: number): Promise<boolean> {
-  const until = Date.now() + ms
-  while ((current || queue.length) && Date.now() < until) await new Promise(r => setTimeout(r, 100))
-  return !current && !queue.length
-}
-
 // ---- the record of runs, kept across restarts ----
 
 interface RunsFile { lastBuild: (IndexJob & { root?: string }) | null; runs: (IndexJob & { root?: string })[] }
@@ -847,9 +840,6 @@ export function startDelete(): IndexJob {
   }).pub
 }
 
-/** Waits for the queue to empty, for a caller about to change where the index lives. */
-export async function waitIdle(ms = 30_000): Promise<boolean> { return idle(ms) }
-
 /** Runs a job that is not an index pass (moving the index), in turn with the rest. */
 export function startOtherJob(kind: 'move', label: string, work: (log: (m: string) => void) => Promise<void>): IndexJob {
   return enqueue(kind, '', label, ctx => work(ctx.log)).pub
@@ -1071,10 +1061,4 @@ export function startSweepTimer(log: (msg: string) => void): void {
     .then(() => {
       setTimeout(() => { void tick() }, Math.max(status.sweepIntervalSec, 60) * 1000).unref()
     })
-}
-
-/** Tests: forget jobs and the in-memory status. */
-export function resetIndexingForTests(): void {
-  jobs.clear(); queue.length = 0; current = null; lastFinished = null
-  Object.assign(status, { lastSweepAt: null, lastSweepMs: null, lastChanges: [], lastError: null })
 }

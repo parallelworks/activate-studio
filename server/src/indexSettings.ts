@@ -89,6 +89,3 @@ export async function saveIndexSettings(library: string, body: Partial<Record<ke
   cache = all
   return indexSettings(library)
 }
-
-/** Tests start from the file again. */
-export function resetIndexSettingsForTests(): void { cache = null }

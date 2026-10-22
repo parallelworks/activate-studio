@@ -22,7 +22,8 @@
  * chat model, full-text snippets, and the viewer: headings, tables and slide
  * boundaries survive, and the viewer renders them.
  *
- * Runs as a child process (see runPreExtract) or as a CLI from reindex.sh:
+ * Runs as a child process of an index job (preextractCommand, indexing.ts)
+ * or as a CLI from reindex.sh:
  *   node server/dist/preextract.js --kb-root DIR --extract-cache DIR [--subdir REL] [--no-recurse]
  *     [--jobs N] [--progress] [--no-ocr]
  * The wasm is single-threaded and blocks its thread per document, so the
@@ -31,7 +32,6 @@
  * by default); with --progress, `@progress {...}` lines on stdout say how
  * many of the documents found are done, ahead of the summary line.
  */
-import { fork } from 'node:child_process'
 import fs from 'node:fs'
 import fsp from 'node:fs/promises'
 import os from 'node:os'
@@ -271,36 +271,6 @@ function defaultJobs(): number {
  *  own loader flags (tsx in development), so it runs from source or dist. */
 export function preextractCommand(args: string[]): { cmd: string; args: string[] } {
   return { cmd: process.execPath, args: [...process.execArgv, fileURLToPath(import.meta.url), ...args] }
-}
-
-/** Run preExtract in a child process so a long conversion never blocks the
- *  server. Resolves to the summary, or null when the child failed; callers
- *  continue either way because enrich.py covers the same files. */
-export function runPreExtract(opts: Omit<PreExtractOptions, 'log' | 'excludeDirs' | 'onProgress'>, log: (msg: string) => void = () => {}): Promise<PreExtractSummary | null> {
-  const script = fileURLToPath(import.meta.url)
-  const args = ['--kb-root', opts.kbRoot, '--extract-cache', opts.cacheRoot]
-  if (opts.subdir) args.push('--subdir', opts.subdir)
-  if (opts.noRecurse) args.push('--no-recurse')
-  if (opts.jobs) args.push('--jobs', String(opts.jobs))
-  if (opts.ocr === false) args.push('--no-ocr')
-  return new Promise(resolve => {
-    // fork inherits execArgv, so the tsx loader used in development carries
-    // over; in production the script is plain JS under dist/.
-    const child = fork(script, args, { stdio: ['ignore', 'pipe', 'pipe', 'ipc'], timeout: 30 * 60_000 })
-    let out = ''
-    let err = ''
-    child.stdout?.on('data', d => { out += d })
-    child.stderr?.on('data', d => { err += d })
-    child.on('error', e => { log(`preextract: ${e.message}`); resolve(null) })
-    // 'close' rather than 'exit': with piped stdio, 'exit' can arrive before
-    // the pipes have drained, which silently truncated the warnings the
-    // child had just written and left the summary unparseable.
-    child.on('close', code => {
-      for (const line of err.split('\n')) if (line.trim()) log(line.trim())
-      if (code !== 0) { log(`preextract: exited ${code}`); resolve(null); return }
-      try { resolve(JSON.parse(out.trim().split('\n').pop() ?? '')) } catch { resolve(null) }
-    })
-  })
 }
 
 function parseArgs(argv: string[]): PreExtractOptions & { progress?: boolean } {
