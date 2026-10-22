@@ -54,6 +54,8 @@ interface Row {
 }
 
 const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString() : '')
+/** Why a library the deployment set has no Remove, and where it is removed. */
+const PINNED_NOTE = 'Named in the server\'s STUDIO_LIBRARIES setting; remove it there and restart the Studio.'
 const counts = (dirs: number | null, files: number | null) =>
   dirs != null ? `${dirs.toLocaleString()} folders, ${(files ?? 0).toLocaleString()} files` : null
 
@@ -186,6 +188,9 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
       }
       const gufi = standalone?.gufi
       if (gufi && !gufi.found) notes.push(`GUFI was not found in ${gufi.bin}, so the index cannot be built.`)
+      // A Studio that signs people in is shared: its deployment builds this
+      // index, and removing it here would take search away from everyone.
+      if (!standalone) notes.push('On a Studio that signs people in, the deployment builds and deletes this index.')
       rows.push({
         key: l.id, name: l.label, kind: 'Main folder, read and write',
         where: (
@@ -256,8 +261,8 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
         </DescriptionList>
       ),
       state: l.caps.index
-        ? { tone: 'success', text: 'Ready', notes: [] }
-        : { tone: 'error', text: 'Index not found', notes: ['There is no db.db at the index directory.'] },
+        ? { tone: 'success', text: 'Ready', notes: l.pinned ? [PINNED_NOTE] : [] }
+        : { tone: 'error', text: 'Index not found', notes: ['There is no db.db at the index directory.', ...(l.pinned ? [PINNED_NOTE] : [])] },
       fullText: l.caps.fullText, meaning: l.caps.vectors,
       actions: !l.pinned && (
         <Button variant="secondary" size="sm" aria-label={`Remove ${l.label}`} disabled={busy !== null}

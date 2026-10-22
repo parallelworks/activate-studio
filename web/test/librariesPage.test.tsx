@@ -253,6 +253,7 @@ describe('Settings, Libraries', () => {
     expect(within(pinned).getByText('GUFI index on this machine, read only, set by the deployment')).toBeInTheDocument()
     expect(within(pinned).getByText('Index not found')).toBeInTheDocument()
     expect(within(pinned).queryByRole('button', { name: /Remove/ })).toBeNull()
+    expect(within(pinned).getByText(/Named in the server's STUDIO_LIBRARIES setting; remove it there/)).toBeInTheDocument()
 
     const ssh = rowOf('index on box')
     expect(within(ssh).getByText('GUFI index over ssh, read only')).toBeInTheDocument()
