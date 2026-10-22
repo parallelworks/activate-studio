@@ -1869,8 +1869,7 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
    it searches (named, since the headers are gone), and its actions. */
 @media (max-width: 640px) {
   .libraries-table thead { display: none; }
-  /* The table's cells have a fixed row height, which a block cannot keep. */
-  .libraries-table, .libraries-table tbody, .libraries-table tr, .libraries-table td { display: block; width: auto; height: auto; }
+  .libraries-table, .libraries-table tbody, .libraries-table tr, .libraries-table td { display: block; width: auto; }
   .libraries-table td:first-child { width: auto; padding-right: 0.75rem; }
   .libraries-table td { border-bottom: 0; height: auto; }
   .libraries-table tr { border-bottom: 1px solid var(--pw-border); padding-bottom: 6px; }
