@@ -18,7 +18,7 @@ pnpm install && pnpm build
 indexer/setup_gufi.sh                      # once: builds the GUFI index engine
 export KB_ROOT=/path/to/your/folder
 export OPENAI_BASE_URL=https://api.openai.com/v1 OPENAI_API_KEY=<your key>
-indexer/reindex.sh                         # indexes the folder
+indexer/reindex.sh                         # indexes the folder (or later: Settings, Libraries, Build index)
 pnpm start                                 # then open http://localhost:4080
 ```
 

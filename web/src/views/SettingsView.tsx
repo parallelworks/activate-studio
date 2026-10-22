@@ -1,5 +1,6 @@
 import { LibrariesSection } from '../components/LibrariesSection'
 import { ModelAccessSection } from '../components/ModelAccessSection'
+import { IndexingSection } from '../components/IndexingSection'
 import { WorkflowsSection } from '../components/WorkflowsSection'
 import { useEffect, useRef, useState } from 'react'
 import {
@@ -578,6 +579,9 @@ export function SettingsView() {
                   </div>
                   <p className="muted view-sub">Libraries and their indexes are under <a href="#view=settings:libraries">Libraries</a>.</p>
                   {saveRow(false)}
+                  {/* How the main folder's index is built: threads, readers,
+                      embeddings, where it is kept (IndexingSection). */}
+                  <IndexingSection visionModel={form.visionModel} deploymentCred={deploymentCred} />
                 </TabPanel>
 
                 <TabPanel value="updates">

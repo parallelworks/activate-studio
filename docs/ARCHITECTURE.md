@@ -108,7 +108,7 @@ Indexing ran inside the upload request until recently, holding it open for the w
 
 Material can be reorganised in place: `POST /api/kb/move`, `/api/kb/copy` and `/api/kb/rename` move, duplicate and rename files and directories, refusing a move into a directory's own subtree and reporting refusals per path rather than failing the batch. Derived artefacts (extracted text, rendered PDF pages, parsed 3D models) are keyed by path, so a move or rename carries them; a copy leaves them to be rebuilt. Both ends are re-indexed before the response, and labels follow because they belong to the inode. A bulk move runs as a watchable job (`server/src/jobs.ts`) rather than one long request.
 
-Incremental indexing (`server/src/indexing.ts`) runs `gufi_dir2index` on the touched subtree into a staging directory, swaps it into the live index, then runs `enrich.py --subdir` and `embed.py --subdir` on that subtree. All index mutations serialize through one lock.
+Incremental indexing (`server/src/indexing.ts`) runs `gufi_dir2index` on the touched subtree into a staging directory, then the document, text and embedding phases on that copy, from the caches where nothing changed, and swaps it into the live index when done. Every index change, from a whole-folder build to one folder after an upload and the sweep, is a job in one queue, run one at a time, with phases that report their own counts; see [REFERENCE.md](REFERENCE.md#indexing).
 
 Files also arrive by scp, generators, and git. A background sweep (default every 300 seconds) walks the corpus and computes, per directory, the newest mtime among the directory and its direct files; newer directories are re-indexed and disappeared ones removed. On first startup with no state file the sweep primes rather than rebuilding an index that already exists. A file whose content changes without an mtime update is missed until a full rebuild.
 
@@ -134,12 +134,12 @@ The corpus and the index live on shared storage; everything derived (node_module
 
 ## 12. Runbook
 
-- Full rebuild: `indexer/reindex.sh` (index plus enrichment plus embeddings). `SKIP_EMBED=1` to skip vectors.
+- Full rebuild: Settings, Libraries, Update index, or `POST /api/index/build` (the server's job, with phases, stop and a log; see [REFERENCE.md](REFERENCE.md#indexing)); before the server starts, `indexer/reindex.sh` runs the same phases (`INDEX_THREADS` for the threads, `SKIP_EMBED=1` to skip vectors).
 - Extraction is covered end to end by `pnpm test`, which runs the real pipeline over `testdata/corpus` and asserts on the text that reaches the fts5 tables; see `testdata/README.md`.
 - GUFI toolchain: `indexer/setup_gufi.sh` builds from source and fetches the embedding model.
 - Serve as a platform session: `deploy/run_endpoint.sh` wraps `pw endpoints run`.
 - Web rebuilds do not need a server restart (static assets are served per request). Server code changes need a restart of the endpoint process, which owns the session: killing the node process alone deletes the session.
-- Health: `GET /healthz`, `GET /api/index/status` (sweep timing, last changes, last error), `GET /api/index/extractors` (what this host can read).
+- Health: `GET /healthz`, `GET /api/index/status` (the running job and its phases, recent jobs with their times, sweep timing, last error), `GET /api/index/log` (the index log), `GET /api/index/extractors` (what this host can read).
 - Known failure modes: lembed segfaults on token-dense chunks are handled by the 800/400 caps; a directory that still fails is logged and remains covered by full-text search. Endpoint tunnels can report offline while the local process lives; restart the endpoint process.
 
 ## 13. File map
@@ -150,7 +150,9 @@ server/src/
   config.ts        paths, exclusions, limits, tool-iteration budget
   kb.ts            safe path resolution, tree listing, file preview, cache paths
   gufi.ts          gufi_query/gufi_sqlite3 wrappers, three query paths, blending
-  indexing.ts      incremental subtree indexing, sweep, lock, status, extractor report
+  indexing.ts      index jobs (build, folder, sweep, delete) and their phases, status, folder reconcile
+  indexRoutes.ts   /api/index/* routes; indexLog.ts the index log; indexSettings.ts threads and readers
+  extractors.ts    which readers this host has, per file type
   jobs.ts          background jobs with progress (moves, indexing passes)
   move.ts          move, copy, rename plus their bookkeeping
   uploads.ts       multipart and URL ingestion

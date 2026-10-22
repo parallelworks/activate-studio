@@ -11,7 +11,8 @@ import { KbError, extractPath, listDir, moveCacheEntry, readFileContent, resolve
 import { CONVERTIBLE, mimeFor, officeToPdf, OfficePreviewUnavailable, pdfPageCount, pdfPagePng, pdfPreviewPaths, previewPdfFor, removePdfPreview } from './preview.js'
 import { blendHits, corpusStats, searchFts, searchNames, searchVector, wantsSemantic } from './gufi.js'
 import { invalidateContext } from './chat/context.js'
-import { extractorReport, getIndexJob, incrementalIndexDir, indexRootDb, indexStatus, reindexForFile, startIndexJob, sweep } from './indexing.js'
+import { incrementalIndexDir, indexRootDb, reindexForFile } from './indexing.js'
+import { indexRoutes } from './indexRoutes.js'
 import { copyPaths, movePaths, reindexRoots, renamePath } from './move.js'
 import { suggestLabels } from './labeling.js'
 import { resolveUserCred } from './credentials.js'
@@ -675,55 +676,13 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
     return { hits: hits.flatMap(h => (h.library.id === PRIMARY_ID ? (keep.has(h.path) ? [{ ...keep.get(h.path)!, library: h.library }] : []) : filter?.length ? [] : [h])), gufi: commands }
   })
 
-  app.get('/api/index/status', async () => indexStatus())
-
-  // What this host can extract text from, so a format that indexes by
-  // filename alone is visible rather than a silent gap.
-  app.get('/api/index/extractors', async () => ({ extractors: extractorReport() }))
-
-  app.post('/api/index/dir', async req => {
-    requireWritable(libOf(req))
-    const { path: rel = '' } = req.body as { path?: string }
-    if (!rel) return { error: 'path required' }
-    const { ms } = await incrementalIndexDir(rel)
-    return { indexed: rel, ms }
-  })
-
-  // Start an indexing pass and watch it, so a bulk upload can show the
-  // phase it is in rather than holding a request open.
-  app.post('/api/index/job', async req => {
-    requireWritable(libOf(req))
-    const { path: rel = '' } = req.body as { path?: string }
-    return startIndexJob(String(rel).replace(/^\/+|\/+$/g, ''))
-  })
+  // Status, jobs, the log, readers and settings of the index (indexRoutes.ts).
+  await indexRoutes(app)
 
   app.get('/api/jobs/:id', async (req, reply) => {
     const job = getJob(Number((req.params as { id: string }).id))
     if (!job) return reply.status(404).send({ error: 'no such job' })
     return job
-  })
-
-  app.get('/api/index/job/:id', async (req, reply) => {
-    const job = getIndexJob(Number((req.params as { id: string }).id))
-    if (!job) return reply.status(404).send({ error: 'no such job' })
-    return job
-  })
-
-  app.post('/api/index/sweep', async req => {
-    requireWritable(libOf(req))
-    const changed = await sweep(m => app.log.info(m))
-    return { changed }
-  })
-
-  app.post('/api/reindex', async (req, reply) => {
-    requireWritable(libOf(req))
-    const script = path.join(PROJECT_ROOT, 'indexer', 'reindex.sh')
-    // The script reads GUFI_BIN, which names the GUFI this server found.
-    execFile('bash', [script], { timeout: 15 * 60_000, env: indexerEnv() }, err => {
-      if (err) app.log.error({ err }, 'reindex failed')
-      else invalidateContext()
-    })
-    return reply.send({ started: true })
   })
 
   /**

@@ -12,7 +12,7 @@ Every deployment-specific choice lives in environment variables, conventionally 
 
 ## Chat
 
-The assistant talks to any OpenAI-compatible endpoint: set `OPENAI_BASE_URL` and `OPENAI_API_KEY`. On the ACTIVATE platform with an authenticated pw CLI, leave both unset and the platform gateway is used with no configuration. `SUGGESTED_PROMPTS` (a JSON array) fills the suggested questions on the empty chat; write prompts that fit your corpus. `KB_MISSION` is the mission and context the assistant treats as authoritative. A single-user install (sign-in off, not deployed by the platform) has defaults for both written for one person's own files. `ADE_VISION_MODEL` names a vision-capable model and turns on image captioning during indexing, which makes images findable by what they depict.
+The assistant talks to any OpenAI-compatible endpoint: set `OPENAI_BASE_URL` and `OPENAI_API_KEY`. On the ACTIVATE platform with an authenticated pw CLI, leave both unset and the platform gateway is used with no configuration. `SUGGESTED_PROMPTS` (a JSON array) fills the suggested questions on the empty chat; write prompts that fit your corpus. `KB_MISSION` is the mission and context the assistant treats as authoritative. A single-user install (sign-in off, not deployed by the platform) has defaults for both written for one person's own files. `ADE_VISION_MODEL` names a vision-capable model and turns on image captioning during indexing, which makes images findable by what they depict; Settings, General sets it too (AI features), and its Indexing tab holds the other choices of what indexing reads and how many threads it uses.
 
 The chat greeting uses `APP_USER_NAME` in standalone mode. Behind the platform, a verified JWT identity takes precedence (below).
 

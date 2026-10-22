@@ -32,6 +32,18 @@ const BUILT_REMOTE = {
   ...SSH, id: 'u-box-data', label: 'data on box', existing: false, built: true, indexDir: '/home/me/.activate-studio/indexes/data-1a2b3c4d', sourceDir: '/home/me/data',
   indexRoot: null, state: 'building', directories: null, files: null, builtAt: null, progress: { phase: 'Extracting text', done: 0, total: 0, current: null },
 }
+/** A build job as /api/index/status carries it, in its text phase. */
+const phases = (state: 'running' | 'done') => [
+  { id: 'names', label: 'Names and folders', state: 'done', done: 3, total: 3, unit: 'folders', step: null, ms: 40, note: null },
+  { id: 'documents', label: 'Documents (PDF, Word, PowerPoint, Excel)', state: 'done', done: 2, total: 2, unit: 'documents', step: null, ms: 900, note: '2 converted' },
+  { id: 'text', label: 'Text, images and full-text search', state, done: state === 'done' ? 9 : 4, total: 9, unit: 'items', step: 'extract', ms: state === 'done' ? 1200 : null, note: null },
+  { id: 'meaning', label: 'Search by meaning', state: state === 'done' ? 'done' : 'pending', done: state === 'done' ? 30 : 0, total: state === 'done' ? 30 : 0, unit: 'passages', step: null, ms: state === 'done' ? 400 : null, note: null },
+]
+const buildJob = (state: 'running' | 'done' | 'cancelled') => ({
+  id: 7, kind: 'build', dir: '', label: 'Updating the index', state, startedAt: '2026-10-01T00:00:00Z', runningAt: '2026-10-01T00:00:00Z',
+  finishedAt: state === 'running' ? null : '2026-10-01T00:00:03Z', ms: state === 'running' ? null : 2540, error: null, threads: 8,
+  phases: phases(state === 'done' ? 'done' : 'running'), searchableAt: null, warnings: [], warningCount: 0,
+})
 
 interface Server {
   platform: boolean
@@ -46,13 +58,16 @@ interface Server {
   indexed: boolean
   startedAt: string
   jobDone: boolean
+  /** A whole-folder build the index status reports: none, running, stopped or done. */
+  build: 'none' | 'running' | 'cancelled' | 'done'
+  deleted?: boolean
   fail?: Record<string, string>
   calls: { method: string; url: string; body: unknown }[]
 }
 
 const server = (over: Partial<Server> = {}): Server => ({
   platform: false, standalone: true, ssh: true, libs: [PRIMARY, SITE], user: [], primary: '/home/u/Notes', indexed: true,
-  startedAt: 'first start', jobDone: false, calls: [], ...over,
+  startedAt: 'first start', jobDone: false, build: 'none', calls: [], ...over,
 })
 
 function stubServer(s: Server) {
@@ -138,6 +153,19 @@ function stubServer(s: Server) {
       s.indexed = false
       return reply({ saved: true, restarting: true })
     }
+    if (path === '/api/index/status') {
+      const job = s.build === 'running' ? buildJob('running') : null
+      const last = s.build === 'done' || s.build === 'cancelled' ? buildJob(s.build) : null
+      return reply({
+        running: !!job, job, queued: [], last, lastBuild: last, runs: last ? [last] : [], indexed: s.indexed && !s.deleted,
+        incomplete: s.build === 'cancelled', threads: 8, lastSweepAt: null, lastSweepMs: null, lastChanges: [], lastError: null, sweepIntervalSec: 300,
+        log: { path: '/data/logs/indexing.log', bytes: 10, reveal: false },
+      })
+    }
+    if (path === '/api/index/build') { s.build = 'running'; return reply(buildJob('running')) }
+    if (path === '/api/index/cancel') { s.build = 'cancelled'; return reply({ stopped: 1 }) }
+    if (path === '/api/index' && method === 'DELETE') { s.deleted = true; s.indexed = false; return reply({ id: 8, kind: 'delete', state: 'queued' }) }
+    if (path === '/api/index/log') return new Response('2026-10-01 00:00:00 [7 build] Updating the index: started on 8 threads\n', { status: 200 })
     if (path === '/api/setup/index') return reply({ id: 7, state: 'running', ms: null, error: null, progress: { phase: 'files', done: 0, total: 3, current: null, failed: [] } })
     if (path === '/api/index/job/7') {
       if (!s.jobDone) return reply({ id: 7, state: 'running', ms: null, error: null, progress: { phase: 'directories', done: 1, total: 3, current: 'papers', failed: [] } })
@@ -153,11 +181,14 @@ function stubServer(s: Server) {
 async function renderPage(s: Server) {
   stubServer(s)
   vi.resetModules()
+  ;(await import('../src/indexActivity')).setIndexPollingForTests(10, 10)
   const { LibrariesSection } = await import('../src/components/LibrariesSection')
   return render(<LibrariesSection pollMs={5} />)
 }
 
 const rowOf = (name: string) => screen.getByText(name, { selector: '.lib-name' }).closest('tr') as HTMLElement
+/** The line under a library's row: a build's progress, the index's other controls. */
+const detailOf = (name: string) => rowOf(name).nextElementSibling as HTMLElement
 const posted = (s: Server, url: string) => s.calls.filter(c => c.method === 'POST' && c.url.split('?')[0] === url)
 
 describe('what Add a library offers', () => {
@@ -194,7 +225,9 @@ describe('Settings, Libraries', () => {
     expect(await within(main).findByText('12 files')).toBeInTheDocument()
     expect(within(main).getByText('Indexed')).toBeInTheDocument()
     expect(within(main).getByRole('button', { name: 'Change folder' })).toBeInTheDocument()
-    expect(within(main).getByRole('button', { name: 'Rebuild index' })).toBeEnabled()
+    expect(await within(main).findByRole('button', { name: 'Update index' })).toBeEnabled()
+    expect(within(detailOf('Notes')).getByRole('button', { name: 'Delete index' })).toBeInTheDocument()
+    expect(within(detailOf('Notes')).getByRole('button', { name: 'View log' })).toBeInTheDocument()
     expect(within(main).getAllByText('Yes')).toHaveLength(2)
 
     const site = rowOf('Site index')
@@ -369,16 +402,59 @@ describe('Settings, Libraries', () => {
     expect(within(main).getByRole('button', { name: 'Build index' })).toBeInTheDocument()
   })
 
-  it('rebuilds the main folder\'s index with its progress', async () => {
+  it('updates the main folder\'s index, showing each phase with its count, then how long it took', async () => {
     const s = server()
     await renderPage(s)
-    fireEvent.click(await screen.findByRole('button', { name: 'Rebuild index' }))
-    expect(await screen.findByText('papers (1 of 3)')).toBeInTheDocument()
-    expect(screen.getByRole('progressbar')).toBeInTheDocument()
+    fireEvent.click(await screen.findByRole('button', { name: 'Update index' }))
+    expect(await screen.findByText('4 of 9 items')).toBeInTheDocument()
+    expect(screen.getByText('3 of 3 folders')).toBeInTheDocument()
+    expect(screen.getByText('2 of 2 documents · 2 converted')).toBeInTheDocument()
+    expect(screen.getAllByRole('progressbar').length).toBeGreaterThan(0)
     expect(within(rowOf('Notes')).getByText('Indexing')).toBeInTheDocument()
-    s.jobDone = true
-    expect(await screen.findByText('Index built in 3 s.')).toBeInTheDocument()
+    expect(posted(s, '/api/index/build')).toHaveLength(1)
+    s.build = 'done'
+    expect(await screen.findByText(/Updated the index in 2\.5 s \(names 40 ms, documents 900 ms, text 1\.2 s, meaning 400 ms\), on 8 threads\./)).toBeInTheDocument()
     await waitFor(() => expect(within(rowOf('Notes')).getByText('Indexed')).toBeInTheDocument())
+  })
+
+  it('stops a running build, and says the index is incomplete', async () => {
+    const s = server({ build: 'running' })
+    await renderPage(s)
+    expect(await within(await waitFor(() => rowOf('Notes'))).findByText('Indexing')).toBeInTheDocument()
+    // The row's own Stop, and the one beside the progress, both stop it.
+    fireEvent.click(within(rowOf('Notes')).getByRole('button', { name: 'Stop indexing' }))
+    await waitFor(() => expect(posted(s, '/api/index/cancel')).toHaveLength(1))
+    expect(await within(rowOf('Notes')).findByText('Incomplete')).toBeInTheDocument()
+    expect(screen.getByText(/stopped after 2\.5 s/)).toBeInTheDocument()
+    expect(within(rowOf('Notes')).getByRole('button', { name: 'Update index' })).toBeInTheDocument()
+  })
+
+  it('deletes the index only after an inline confirmation, and never the files', async () => {
+    const s = server()
+    await renderPage(s)
+    await waitFor(() => rowOf('Notes'))
+    fireEvent.click(await within(detailOf('Notes')).findByRole('button', { name: 'Delete index' }))
+    const confirm = within(detailOf('Notes')).getByRole('group', { name: 'Delete the index' })
+    expect(confirm.textContent).toMatch(/The files in the folder are not touched/)
+    // Keeping it sends nothing.
+    fireEvent.click(within(confirm).getByRole('button', { name: 'Keep it' }))
+    expect(s.calls.some(c => c.method === 'DELETE')).toBe(false)
+    fireEvent.click(within(detailOf('Notes')).getByRole('button', { name: 'Delete index' }))
+    fireEvent.click(within(detailOf('Notes')).getByRole('button', { name: 'Delete the index' }))
+    await waitFor(() => expect(s.calls.filter(c => c.method === 'DELETE').map(c => c.url)).toEqual(['/api/index?confirm=1']))
+    expect(await within(rowOf('Notes')).findByText('Not indexed yet')).toBeInTheDocument()
+    expect(within(rowOf('Notes')).getByRole('button', { name: 'Build index' })).toBeInTheDocument()
+  })
+
+  it('shows the index log from the main folder\'s row', async () => {
+    const s = server()
+    await renderPage(s)
+    await waitFor(() => rowOf('Notes'))
+    fireEvent.click(await within(detailOf('Notes')).findByRole('button', { name: 'View log' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Index log' })
+    expect(await within(dialog).findByText(/Updating the index: started on 8 threads/)).toBeInTheDocument()
+    expect(within(dialog).getByText('/data/logs/indexing.log')).toBeInTheDocument()
+    expect(within(dialog).getByRole('link', { name: 'Open the full log' })).toHaveAttribute('href', '/api/index/log?full=1')
   })
 
   it('where users sign in, the main folder is listed without folder actions', async () => {
@@ -388,6 +464,9 @@ describe('Settings, Libraries', () => {
     expect(within(main).getByText('Indexed')).toBeInTheDocument()
     expect(within(main).queryByRole('button', { name: 'Change folder' })).toBeNull()
     expect(within(main).queryByRole('button', { name: /index/ })).toBeNull()
+    // The log is there to read on any Studio, under the row.
+    expect(await within(detailOf('Notes')).findByRole('button', { name: 'View log' })).toBeInTheDocument()
+    expect(within(detailOf('Notes')).queryByRole('button', { name: 'Delete index' })).toBeNull()
     expect(s.calls.some(c => c.url.startsWith('/api/setup/browse'))).toBe(false)
   })
 })

@@ -15,13 +15,26 @@ the cache entries this script reuses. The readers below are the fallback:
 the standard-library OOXML pass for Office files, pdftotext for PDFs on a
 host without the binary. A cached PDF whose text is thin for its page count
 is still OCR'd here, since downmark reads only pages with no text at all.
-Image OCR and captions live here alone.
+Image OCR and captions live here alone, and so do the formats downmark does
+not read (.ppt, .xls, OpenDocument), through an installed LibreOffice.
+
+The pass runs in two steps. Files that need extracting (no cache entry, or
+one older than the file) are read in a pool of worker processes, --jobs of
+them, and their text lands in the extract cache. Then each directory's
+words table is written, from the text files themselves and from the cache,
+in a pool of threads. With --progress, `@progress {...}` lines on stdout
+say how far it has got, for the server's progress bar.
 """
 import argparse
+import json
 import os
+import shutil
 import sqlite3
 import subprocess
 import sys
+import tempfile
+import threading
+import time
 from pathlib import Path
 
 EXCLUDE_DIRS = {
@@ -32,12 +45,19 @@ TEXT_SUFFIXES = {
     '.md', '.txt', '.py', '.sh', '.yaml', '.yml', '.json', '.csv', '.tsv', '.xml',
     '.html', '.css', '.js', '.ts', '.tsx', '.svg', '.toml', '.cfg', '.ini', '.def', '.mjs', '.sql',
 }
-# .doc has no reader here; it indexes only through the pre-extracted cache.
+# .doc is read through the pre-extracted cache, or LibreOffice when there is one.
 EXTRACT_SUFFIXES = {'.pdf', '.docx', '.pptx', '.xlsx', '.doc'}
+# Read only through LibreOffice, which converts them to the OOXML format
+# whose reader is below (.doc only when downmark could not convert it).
+LEGACY_SUFFIXES = {'.ppt': 'pptx', '.odp': 'pptx', '.xls': 'xlsx', '.ods': 'xlsx',
+                   '.odt': 'docx', '.doc': 'docx'}
 IMAGE_SUFFIXES = {'.png', '.jpg', '.jpeg', '.gif', '.webp'}
 MAX_TEXT = 500_000
 MAX_CAPTION_BYTES = 8 * 1024 * 1024
 MIN_IMAGE_BYTES = 8 * 1024  # skip icons and tiny assets
+
+# What the worker processes may use, set by main() and passed to each.
+OPTIONS = {'ocr': True, 'pdf_reader': 'auto', 'soffice': ''}
 
 
 def _ooxml_text(path: Path, members: str, break_tags: tuple) -> str:
@@ -84,6 +104,12 @@ def _pdf_page_count(path: Path) -> int:
                 return int(line.split(':', 1)[1].strip())
     except Exception:
         pass
+    # No poppler (the macOS app has none): pypdf counts the pages instead.
+    try:
+        from pypdf import PdfReader  # type: ignore
+        return max(1, len(PdfReader(str(path)).pages))
+    except Exception:
+        pass
     return 1
 
 
@@ -94,9 +120,7 @@ def _pdf_ocr(path: Path, pages: int) -> str:
     returns a page number and nothing else. Rendering to PNG and running
     tesseract is slow, so it only happens when the text layer is thin.
     """
-    import shutil
-    import tempfile
-    if not (shutil.which('pdftoppm') and shutil.which('tesseract')):
+    if not OPTIONS['ocr'] or not (shutil.which('pdftoppm') and shutil.which('tesseract')):
         return ''
     limit = min(pages, 30)
     parts = []
@@ -153,24 +177,56 @@ def ocr_if_thin(path: Path, text: str) -> str:
 
 
 def extract_pdf(path: Path) -> str:
+    """A PDF's text layer: pdftotext where poppler is installed, then pypdf
+    (bundled with the macOS app), as --pdf-reader allows."""
     text = ''
-    try:
-        # -layout keeps columns and table cells apart; without it, rows run
-        # together into one line and read badly in a snippet.
-        out = subprocess.run(['pdftotext', '-layout', '-q', str(path), '-'],
-                             capture_output=True, text=True, timeout=180)
-        if out.returncode == 0:
-            text = out.stdout or ''
-    except FileNotFoundError:
-        pass
-    if not text.strip():
+    reader = OPTIONS['pdf_reader']
+    if reader in ('auto', 'pdftotext'):
+        try:
+            # -layout keeps columns and table cells apart; without it, rows run
+            # together into one line and read badly in a snippet.
+            out = subprocess.run(['pdftotext', '-layout', '-q', str(path), '-'],
+                                 capture_output=True, text=True, timeout=180)
+            if out.returncode == 0:
+                text = out.stdout or ''
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            pass
+    if not text.strip() and reader in ('auto', 'pypdf'):
         try:
             from pypdf import PdfReader  # type: ignore
-            reader = PdfReader(str(path))
-            text = '\n'.join((page.extract_text() or '') for page in reader.pages)
+            pdf = PdfReader(str(path))
+            parts = []
+            for page in pdf.pages:
+                parts.append(page.extract_text() or '')
+                if sum(len(p) for p in parts) > MAX_TEXT:
+                    break
+            text = '\n'.join(parts)
         except Exception:
             text = ''
     return ocr_if_thin(path, text)
+
+
+def extract_legacy(path: Path) -> str:
+    """A format downmark does not read, through LibreOffice: converted to its
+    OOXML counterpart in a scratch directory, then read like one. Each worker
+    process keeps its own LibreOffice profile, so conversions run side by
+    side instead of fighting over one."""
+    soffice = OPTIONS['soffice']
+    target = LEGACY_SUFFIXES.get(path.suffix.lower())
+    if not soffice or not target:
+        return ''
+    profile = Path(tempfile.gettempdir()) / f'studio-soffice-{os.getpid()}'
+    with tempfile.TemporaryDirectory() as out:
+        try:
+            subprocess.run([soffice, f'-env:UserInstallation={profile.as_uri()}', '--headless',
+                            '--convert-to', target, '--outdir', out, str(path)],
+                           capture_output=True, timeout=180)
+        except Exception:
+            return ''
+        made = Path(out) / (path.stem + '.' + target)
+        if not made.exists():
+            return ''
+        return {'docx': extract_docx, 'pptx': extract_pptx, 'xlsx': extract_xlsx}[target](made)
 
 
 def extract_pptx(path: Path) -> str:
@@ -263,14 +319,15 @@ def extract_image_status(path: Path) -> tuple[str, bool]:
     caption = caption_image(path)
     if caption:
         parts.append(f'Image description:\n{caption}')
-    try:
-        ocr = subprocess.run(['tesseract', str(path), 'stdout', '--psm', '3'],
-                             capture_output=True, text=True, timeout=120)
-        ocr_text = (ocr.stdout or '').strip()
-        if len(ocr_text) > 20:
-            parts.append(f'Text found in image (OCR):\n{ocr_text}')
-    except Exception:
-        pass
+    if OPTIONS['ocr']:
+        try:
+            ocr = subprocess.run(['tesseract', str(path), 'stdout', '--psm', '3'],
+                                 capture_output=True, text=True, timeout=120)
+            ocr_text = (ocr.stdout or '').strip()
+            if len(ocr_text) > 20:
+                parts.append(f'Text found in image (OCR):\n{ocr_text}')
+        except Exception:
+            pass
     return '\n\n'.join(parts), caption is not None
 
 
@@ -298,6 +355,8 @@ def extract(path: Path) -> str | None:
             return extract_pptx(path)[:MAX_TEXT]
         if suffix == '.xlsx':
             return extract_xlsx(path)[:MAX_TEXT]
+        if suffix in LEGACY_SUFFIXES:
+            return extract_legacy(path)[:MAX_TEXT]
         if suffix in IMAGE_SUFFIXES:
             return extract_image(path)[:MAX_TEXT]
     except Exception as exc:
@@ -310,6 +369,104 @@ def ensure_words_table(db: sqlite3.Connection) -> None:
     db.execute("CREATE VIRTUAL TABLE words USING fts5(tinode UNINDEXED, fname UNINDEXED, wordf)")
 
 
+def write_cache(cache_file: Path, text: str) -> bool:
+    """Write a cache entry whole or not at all (a temporary file renamed into
+    place), so a pass stopped part way never leaves half an entry that a
+    later pass would take as current. A cache that cannot be written (read
+    only or full shared storage) must not abort the pass: the text is still
+    indexed, and the next pass retries the write."""
+    try:
+        cache_file.parent.mkdir(parents=True, exist_ok=True)
+        tmp = cache_file.with_name(f'{cache_file.name}.{os.getpid()}.tmp')
+        tmp.write_text(text)
+        os.replace(tmp, cache_file)
+        return True
+    except OSError as exc:
+        print(f'  cache write failed {cache_file}: {exc}', file=sys.stderr)
+        return False
+
+
+def extract_task(task: tuple) -> tuple:
+    """One file's extraction, in a worker process. Writes the cache entry
+    and returns (key, text) with text only when it could not be cached and
+    is still worth indexing in this pass, else (key, None)."""
+    key, fpath, cache_file, suffix, kind = task
+    fpath, cache_file = Path(fpath), Path(cache_file)
+    if kind == 'recheck':
+        # downmark's thin policy OCRs scans itself; a thin cache entry
+        # without its marker means the host had no tesseract when it was
+        # written, so retry here and keep the result.
+        try:
+            text = cache_file.read_text(errors='replace')[:MAX_TEXT]
+            thick = ocr_if_thin(fpath, text)[:MAX_TEXT]
+            if thick != text:
+                write_cache(cache_file, thick)
+        except Exception as exc:
+            print(f'  extract failed {fpath}: {exc}', file=sys.stderr)
+        return key, None
+    complete = True
+    if suffix in IMAGE_SUFFIXES:
+        try:
+            text, complete = extract_image_status(fpath)
+            text = text[:MAX_TEXT]
+        except Exception as exc:
+            print(f'  extract failed {fpath}: {exc}', file=sys.stderr)
+            text, complete = None, False
+    else:
+        text = extract(fpath)
+    # Images cache even when empty: captioning and OCR are expensive and a
+    # picture with no text is a real answer, unless the caption request
+    # failed, which the next pass retries. Documents do not cache empty: an
+    # empty result usually means the extractor was missing, and caching it
+    # hid the file from every later pass, including the one after the
+    # library was installed.
+    if complete and ((text and text.strip()) or suffix in IMAGE_SUFFIXES):
+        if write_cache(cache_file, text or ''):
+            return key, None
+    return key, (text if text and text.strip() else None)
+
+
+def worker_init(options: dict) -> None:
+    OPTIONS.update(options)
+    # Many tesseract processes side by side each run best on one thread;
+    # left alone, each starts one per core and they trip over each other.
+    os.environ['OMP_THREAD_LIMIT'] = '1'
+
+
+class Progress:
+    """`@progress` lines for the server, at most a few a second."""
+
+    def __init__(self, on: bool, phase: str):
+        self.on, self.phase, self.last = on, phase, 0.0
+        self.lock = threading.Lock()
+        self.done, self.total, self.step = 0, 0, ''
+
+    def emit(self, force: bool = False) -> None:
+        if not self.on:
+            return
+        now = time.monotonic()
+        if force or now - self.last >= 0.25:
+            self.last = now
+            print('@progress ' + json.dumps({'phase': self.phase, 'step': self.step, 'done': self.done, 'total': self.total}), flush=True)
+
+    def start(self, step: str, total: int) -> None:
+        with self.lock:
+            self.step, self.total = step, total
+            self.emit(True)
+
+    def add(self, n: int = 1) -> None:
+        with self.lock:
+            self.done += n
+            self.emit()
+
+
+def default_jobs() -> int:
+    try:
+        return max(1, len(os.sched_getaffinity(0)))
+    except AttributeError:
+        return max(1, os.cpu_count() or 1)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument('--kb-root', required=True)
@@ -317,16 +474,39 @@ def main() -> int:
     ap.add_argument('--extract-cache', required=True)
     ap.add_argument('--subdir', default='', help='restrict to this KB-relative subtree (incremental indexing)')
     ap.add_argument('--no-recurse', action='store_true', help='process only the subdir itself, not its children')
+    ap.add_argument('--jobs', type=int, default=0, help='worker processes for extraction (default: the CPU count)')
+    ap.add_argument('--progress', action='store_true', help='print @progress lines on stdout')
+    ap.add_argument('--no-ocr', action='store_true', help='do not run tesseract on images or scanned PDFs')
+    ap.add_argument('--pdf-reader', choices=('auto', 'pdftotext', 'pypdf'), default='auto',
+                    help='how PDFs downmark did not convert are read')
+    ap.add_argument('--soffice', default='', help='LibreOffice soffice, for .ppt, .xls, .doc and OpenDocument files')
+    ap.add_argument('--no-documents', action='store_true', help='index PDFs and Office documents by name only')
     args = ap.parse_args()
+
+    jobs = args.jobs if args.jobs > 0 else default_jobs()
+    options = {
+        'ocr': not args.no_ocr and shutil.which('tesseract') is not None,
+        'pdf_reader': args.pdf_reader,
+        'soffice': args.soffice if args.soffice and os.path.exists(args.soffice) else '',
+    }
+    OPTIONS.update(options)
+    # An image yields text only through OCR or a caption; with neither,
+    # reading it costs a process and gives nothing.
+    images_useful = options['ocr'] or bool(vision_model() and gateway_key())
+    legacy = set(LEGACY_SUFFIXES) if options['soffice'] and not args.no_documents else set()
+    documents = set() if args.no_documents else EXTRACT_SUFFIXES
 
     kb_root = Path(args.kb_root)
     index_root = Path(args.index)
     cache_root = Path(args.extract_cache)
     walk_root = index_root / args.subdir if args.subdir else index_root
+    progress = Progress(args.progress, 'text')
 
-    n_files = n_dirs = n_extracted = 0
-    # Walk the index tree, not the source tree: every db.db the index holds
-    # must carry the words table (empty or not) so MATCH queries never error.
+    # Plan: every directory db, its files, and what each needs. Walk the
+    # index tree, not the source tree: every db.db the index holds must carry
+    # the words table (empty or not) so MATCH queries never error.
+    dirs = []    # (dbfile, [(name, suffix, ino, source)]) with source 'text', 'cache' or a task key
+    tasks = []
     for dirpath, dirnames, _filenames in os.walk(walk_root):
         if args.no_recurse:
             dirnames[:] = []
@@ -336,83 +516,141 @@ def main() -> int:
             continue
         rel_dir = Path(dirpath).relative_to(index_root)
         src_dir = kb_root / rel_dir
-        n_dirs += 1
-        db = sqlite3.connect(str(dbfile))
+        files = []
+        if src_dir.is_dir() and not any(part in EXCLUDE_DIRS for part in rel_dir.parts):
+            try:
+                entries = sorted(os.scandir(src_dir), key=lambda e: e.name)
+            except OSError:
+                entries = []
+            for e in entries:
+                try:
+                    if not e.is_file():
+                        continue
+                    st = e.stat()
+                except OSError:
+                    continue
+                suffix = os.path.splitext(e.name)[1].lower()
+                image = suffix in IMAGE_SUFFIXES
+                # An image's text already read is kept even when nothing here
+                # would read it again (OCR turned off since, say).
+                cacheable = suffix in documents or suffix in legacy or image
+                if suffix not in TEXT_SUFFIXES and not cacheable:
+                    continue
+                if suffix in TEXT_SUFFIXES:
+                    files.append((e.name, suffix, st.st_ino, 'text'))
+                    continue
+                # Expensive extractions (PDF, office, OCR, captions) are
+                # cached by mtime; a reindex pass reuses them untouched.
+                cache_file = cache_root / rel_dir / (e.name + '.txt')
+                fresh = False
+                try:
+                    fresh = cache_file.stat().st_mtime >= st.st_mtime
+                except OSError:
+                    pass
+                key = len(tasks)
+                if fresh and image and vision_model():
+                    # A cached result is reused unless it is empty while a
+                    # vision model is configured (image_cache_usable).
+                    try:
+                        fresh = cache_file.stat().st_size > 0
+                    except OSError:
+                        fresh = False
+                if fresh:
+                    files.append((e.name, suffix, st.st_ino, 'cache'))
+                    # An entry of more bytes than a UTF-8 text of the OCR
+                    # ceiling can take is never thin; only shorter ones are
+                    # read again to see.
+                    if suffix == '.pdf' and options['ocr'] and cache_file.stat().st_size < OCR_TEXT_CEILING * 4:
+                        tasks.append((key, str(src_dir / e.name), str(cache_file), suffix, 'recheck'))
+                    continue
+                if image and not images_useful:
+                    continue
+                tasks.append((key, str(src_dir / e.name), str(cache_file), suffix, 'extract'))
+                files.append((e.name, suffix, st.st_ino, key))
+        dirs.append((dbfile, rel_dir, files))
+
+    progress.start('extract', len(tasks) + len(dirs))
+    texts: dict = {}
+    n_extracted = 0
+    if tasks:
+        # Few files are not worth starting processes for.
+        if jobs == 1 or len(tasks) < 4:
+            for t in tasks:
+                key, text = extract_task(t)
+                if text is not None:
+                    texts[key] = text
+                n_extracted += t[4] == 'extract'
+                progress.add()
+        else:
+            from concurrent.futures import ProcessPoolExecutor, as_completed
+            with ProcessPoolExecutor(max_workers=min(jobs, len(tasks)), initializer=worker_init, initargs=(options,)) as pool:
+                futures = [pool.submit(extract_task, t) for t in tasks]
+                for fut in as_completed(futures):
+                    try:
+                        key, text = fut.result()
+                        if text is not None:
+                            texts[key] = text
+                    except Exception as exc:
+                        print(f'  extract failed: {exc}', file=sys.stderr)
+                    progress.add()
+            n_extracted = sum(1 for t in tasks if t[4] == 'extract')
+
+    counts = {'files': 0}
+    count_lock = threading.Lock()
+
+    def write_dir(item) -> None:
+        dbfile, rel_dir, files = item
+        rows = []
+        for name, suffix, ino, source in files:
+            text = None
+            try:
+                if source == 'text':
+                    with open(kb_root / rel_dir / name, 'r', errors='replace') as fh:
+                        text = fh.read(MAX_TEXT)
+                elif isinstance(source, int) and source in texts:
+                    text = texts[source]
+                else:
+                    cache_file = cache_root / rel_dir / (name + '.txt')
+                    if cache_file.exists():
+                        text = cache_file.read_text(errors='replace')[:MAX_TEXT]
+                        if suffix in IMAGE_SUFFIXES and not image_cache_usable(text):
+                            text = None
+            except OSError:
+                text = None
+            if not text or not text.strip():
+                continue
+            # Inodes go in as text. Some parallel filesystems issue numbers
+            # past SQLite's signed 64-bit range, which raised OverflowError and
+            # failed the whole indexing pass; every consumer joins on
+            # CAST(tinode AS TEXT) anyway.
+            rows.append((str(ino), name, text))
+        db = sqlite3.connect(str(dbfile), timeout=60)
         try:
+            # The index is rebuilt from the files at will, so a crash of the
+            # machine mid-write costs a rebuild, not data; waiting for the
+            # disk on every directory's commit made this pass take minutes.
+            db.execute('PRAGMA synchronous=OFF')
             ensure_words_table(db)
-            rows = []
-            if src_dir.is_dir() and not any(part in EXCLUDE_DIRS for part in rel_dir.parts):
-                for fpath in sorted(src_dir.iterdir()):
-                    if not fpath.is_file():
-                        continue
-                    suffix = fpath.suffix.lower()
-                    cacheable = suffix in EXTRACT_SUFFIXES or suffix in IMAGE_SUFFIXES
-                    if suffix not in TEXT_SUFFIXES and not cacheable:
-                        continue
-                    # Expensive extractions (PDF, office, OCR, captions) are
-                    # cached by mtime; a reindex pass reuses them untouched.
-                    cache_file = cache_root / rel_dir / (fpath.name + '.txt')
-                    cached = None
-                    if cacheable and cache_file.exists() and cache_file.stat().st_mtime >= fpath.stat().st_mtime:
-                        cached = cache_file.read_text(errors='replace')[:MAX_TEXT]
-                        if suffix in IMAGE_SUFFIXES and not image_cache_usable(cached):
-                            cached = None
-                    if cached is not None:
-                        text = cached
-                        if suffix == '.pdf':
-                            # downmark's thin policy OCRs scans itself; a
-                            # thin cache entry without its marker means the
-                            # host had no tesseract when it was written, so
-                            # retry here and keep the result.
-                            thick = ocr_if_thin(fpath, text)[:MAX_TEXT]
-                            if thick != text:
-                                text = thick
-                                # A cache that cannot be written (read-only
-                                # or full shared storage) must not abort the
-                                # pass: the text is still indexed, and the
-                                # next pass retries the write.
-                                try:
-                                    cache_file.write_text(text)
-                                except OSError as exc:
-                                    print(f'  cache write failed {cache_file}: {exc}', file=sys.stderr)
-                    else:
-                        complete = True
-                        if suffix in IMAGE_SUFFIXES:
-                            try:
-                                text, complete = extract_image_status(fpath)
-                                text = text[:MAX_TEXT]
-                            except Exception as exc:
-                                print(f'  extract failed {fpath}: {exc}', file=sys.stderr)
-                                text, complete = None, False
-                        else:
-                            text = extract(fpath)
-                        # Images cache even when empty: captioning and OCR are
-                        # expensive and a picture with no text is a real
-                        # answer, unless the caption request failed, which
-                        # the next pass retries. Documents do not cache empty:
-                        # an empty result usually means the extractor was
-                        # missing, and caching it hid the file from every
-                        # later pass, including the one after the library was
-                        # installed.
-                        if cacheable and complete and ((text and text.strip()) or suffix in IMAGE_SUFFIXES):
-                            cache_file.parent.mkdir(parents=True, exist_ok=True)
-                            cache_file.write_text(text or '')
-                            n_extracted += 1
-                    if not text or not text.strip():
-                        continue
-                    # Inodes go in as text. Some parallel filesystems
-                    # issue numbers past SQLite's signed 64-bit range,
-                    # which raised OverflowError
-                    # and failed the whole indexing pass; every consumer joins
-                    # on CAST(tinode AS TEXT) anyway.
-                    rows.append((str(fpath.stat().st_ino), fpath.name, text))
-                    n_files += 1
             db.executemany('INSERT INTO words (tinode, fname, wordf) VALUES (?, ?, ?)', rows)
             db.commit()
         finally:
             db.close()
+        with count_lock:
+            counts['files'] += len(rows)
+        progress.add()
 
-    print(f'enriched {n_dirs} directories: {n_files} files indexed, {n_extracted} extract-cache entries')
+    progress.step = 'write'
+    if jobs == 1 or len(dirs) < 8:
+        for d in dirs:
+            write_dir(d)
+    else:
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=min(jobs, 8)) as pool:
+            for _ in pool.map(write_dir, dirs):
+                pass
+    progress.emit(True)
+
+    print(f'enriched {len(dirs)} directories: {counts["files"]} files indexed, {n_extracted} extract-cache entries')
     return 0
 
 

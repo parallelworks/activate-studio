@@ -17,9 +17,16 @@ export const KB_ROOT = process.env.KB_ROOT ?? ((): string => {
   return path.join(PROJECT_ROOT, 'knowledge-base')
 })()
 export const INDEX_BASE = process.env.INDEX_BASE ?? path.join(PROJECT_ROOT, 'index')
-// gufi_dir2index mirrors the source tree under INDEX_BASE/gufi/<basename of KB_ROOT>
-export const GUFI_INDEX = path.join(INDEX_BASE, 'gufi', path.basename(KB_ROOT))
-export const EXTRACT_CACHE = path.join(INDEX_BASE, 'extract')
+/** Where the index and its caches are kept: STUDIO_INDEX_DIR (Settings,
+ *  Indexing sets it on the macOS app), else INDEX_BASE. Settings,
+ *  conversations and the rest of the Studio's own state stay in INDEX_BASE. */
+export const INDEX_DIR = process.env.STUDIO_INDEX_DIR || INDEX_BASE
+// gufi_dir2index mirrors the source tree under INDEX_DIR/gufi/<basename of KB_ROOT>
+export const GUFI_INDEX = path.join(INDEX_DIR, 'gufi', path.basename(KB_ROOT))
+export const EXTRACT_CACHE = path.join(INDEX_DIR, 'extract')
+/** Embeddings by the hash of the text embedded, so unchanged text is never
+ *  embedded twice (indexer/embed.py). */
+export const EMBED_CACHE = path.join(INDEX_DIR, 'embed-cache.db')
 /** Where findGufiBin looks besides the environment, for tests to replace. */
 export interface GufiSearch {
   projectRoot: string
@@ -190,7 +197,7 @@ export const TEXT_SUFFIXES = new Set([
   '.html', '.css', '.js', '.ts', '.tsx', '.svg', '.toml', '.cfg', '.ini', '.def', '.mjs', '.sql',
   '.log', '.conf', '.env', '.service',
 ])
-export const EXTRACTED_SUFFIXES = new Set(['.pdf', '.docx', '.pptx', '.xlsx', '.doc'])
+export const EXTRACTED_SUFFIXES = new Set(['.pdf', '.docx', '.pptx', '.xlsx', '.doc', '.ppt', '.xls', '.odt', '.odp', '.ods'])
 export const IMAGE_SUFFIXES = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp'])
 export const MODEL_SUFFIXES = new Set(['.stl', '.step', '.stp'])
 

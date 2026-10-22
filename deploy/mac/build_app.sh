@@ -5,7 +5,7 @@
 # and web app with production node_modules, GUFI (from GUFI's own macOS
 # package, or built for an older macOS by deploy/mac/build_gufi.sh; either
 # way loading its libraries from inside the app), a standalone Python for
-# the indexer, and the embedding model. It builds on macOS or Linux; the
+# the indexer (with pypdf), and the embedding model. It builds on macOS or Linux; the
 # .dmg is made only on macOS, where hdiutil exists.
 #
 # Usage: deploy/mac/build_app.sh
@@ -52,6 +52,11 @@ PCRE2_VERSION=10.49
 PCRE2_SHA256=0ec47d18c50f5770db2b3f07b5b85644284cc6ee8e07e23b11d2727e95932b77
 MODEL_COMMIT=7a7bac37782986fe1d4f213de771a8a3d9170b35    # as deploy/app.def
 MODEL_SHA256=71f1d177171468fb5f186c07019e303015aea17af275a67767760bba7be8d2e6
+# The PDF reader for files downmark cannot read (indexer/enrich.py), pure
+# Python, so it needs no build for macOS and nothing to relink or sign.
+PYPDF_VERSION=6.21.2
+PYPDF_URL=https://files.pythonhosted.org/packages/1b/4d/c9d2d67f204eff463237a1a8f5e25a6923b7b1043982b91fcaf104c8ef60/pypdf-6.21.2-py3-none-any.whl
+PYPDF_SHA256=1d44d1a3a200f25062adff0085b02040e4646431ac2ccac22e42679e91466084
 
 for tool in python3 curl tar git pnpm; do
   command -v "$tool" >/dev/null 2>&1 || { echo "build_app: $tool is required" >&2; exit 1; }
@@ -148,11 +153,19 @@ PY_FILE="cpython-$PY_VERSION+$PY_TAG-aarch64-apple-darwin-install_only_stripped.
 fetch "https://github.com/astral-sh/python-build-standalone/releases/download/$PY_TAG/${PY_FILE/+/%2B}" \
   "$CACHE_DIR/$PY_FILE" "$PY_SHA256"
 tar -xzf "$CACHE_DIR/$PY_FILE" -C "$RES"
-# The indexer uses the standard library only: no Tk, IDLE, pip or headers.
+# The indexer uses the standard library and pypdf: no Tk, IDLE, pip or headers.
 (cd "$RES/python" && rm -rf include share lib/itcl* lib/tcl* lib/tk* lib/thread* lib/libtcl* \
   lib/python3.*/idlelib lib/python3.*/tkinter lib/python3.*/turtledemo lib/python3.*/ensurepip \
   lib/python3.*/lib2to3 lib/python3.*/site-packages/pip* lib/python3.*/lib-dynload/_tkinter* \
   bin/idle3* bin/pip* bin/2to3* bin/pydoc3* bin/python3*-config)
+echo "pypdf $PYPDF_VERSION into the app's Python..."
+fetch "$PYPDF_URL" "$CACHE_DIR/pypdf-$PYPDF_VERSION-py3-none-any.whl" "$PYPDF_SHA256"
+# A wheel is a zip laid out as site-packages wants it; its license is in
+# the .dist-info it carries.
+python3 - "$CACHE_DIR/pypdf-$PYPDF_VERSION-py3-none-any.whl" "$RES"/python/lib/python3.*/site-packages <<'PY'
+import sys, zipfile
+zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])
+PY
 
 G="$RES/gufi"
 if [ -n "${GUFI_TARBALL:-}" ]; then

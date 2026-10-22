@@ -6,7 +6,9 @@ import { AddIcon, CloseIcon } from '@parallelworks/ui/icons'
 import { api, type BuildProgress, type SettingsLibrary, type UserLibrary } from '../api'
 import { reloadAppConfig, useAppConfig } from '../config'
 import { AddLibrary } from './AddLibrary'
-import { FolderPicker, IndexBuildProgress, errText, json, useIndexBuild, type SetupStatus } from './PrimaryFolder'
+import { FolderPicker, errText, json, type SetupStatus } from './PrimaryFolder'
+import { IndexControls, IndexJobView, LastBuild } from './IndexActivity'
+import { useIndexStatus } from '../indexActivity'
 
 /** A user library as listed, with how it is reached. */
 type UserLib = UserLibrary
@@ -103,13 +105,21 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
     if (s?.standalone && s.primary?.indexed) void json<SetupStatus>('/api/setup/status?files=1').then(setStatus).catch(() => {})
     return s
   }
-  const build = useIndexBuild({ pollMs, onDone: async () => { await Promise.all([loadLibs(), loadStatus()]); reloadAppConfig() } })
+  // The main folder's indexing, as every other view shows it.
+  const ix = useIndexStatus()
+  const indexing = !!ix?.running
+  const wasIndexing = useRef(false)
+  useEffect(() => {
+    // A job just ended: the counts and what the index supports changed.
+    if (wasIndexing.current && !indexing) { void Promise.all([loadLibs(), loadStatus()]).then(() => reloadAppConfig()) }
+    wasIndexing.current = indexing
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [indexing])
 
   useEffect(() => {
     void loadLibs()
     void loadUser()
-    // A build started elsewhere, such as in the setup wizard.
-    void loadStatus().then(s => { if (s?.job) void build.follow(s.job) })
+    void loadStatus()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   // Follow running builds: every few seconds for those the Studio runs
@@ -159,13 +169,18 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
     if (l.primary) {
       const p = standalone?.primary
       const notes: ReactNode[] = []
+      const job = ix?.job ?? null
+      const indexed = ix?.indexed ?? (p ? p.indexed : l.caps.index)
       let state: Row['state']
-      if (build.building) state = { tone: 'info', text: 'Indexing', pulse: true, notes }
+      if (job) state = { tone: 'info', text: job.kind === 'delete' ? 'Deleting' : job.kind === 'move' ? 'Moving' : job.kind === 'build' ? 'Indexing' : 'Syncing', pulse: true, notes }
       else if (p && !p.exists) state = { tone: 'error', text: 'Folder not found', notes }
-      else if (p ? p.indexed : l.caps.index) {
-        state = { tone: 'success', text: 'Indexed', notes }
+      else if (indexed) {
+        state = ix?.incomplete ? { tone: 'warning', text: 'Incomplete', notes } : { tone: 'success', text: 'Indexed', notes }
         if (p?.files !== undefined) notes.push(`${p.files.toLocaleString()} files`)
-      } else state = { tone: 'warning', text: 'Not indexed yet', notes }
+      } else {
+        state = { tone: 'warning', text: 'Not indexed yet', notes }
+        if (p?.earlierIndex) notes.push(`An index of this folder from ${p.earlierIndex.builtAt ? new Date(p.earlierIndex.builtAt).toLocaleDateString() : 'before'} is kept; building updates it.`)
+      }
       const gufi = standalone?.gufi
       if (gufi && !gufi.found) notes.push(`GUFI was not found in ${gufi.bin}, so the index cannot be built.`)
       rows.push({
@@ -177,16 +192,21 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
           </DescriptionList>
         ),
         state, fullText: l.caps.fullText, meaning: l.caps.vectors,
-        actions: standalone && (
+        actions: (
           <>
-            <Button variant="secondary" size="sm" disabled={build.building} onClick={() => setChanging(true)}>Change folder</Button>
-            <Button variant="secondary" size="sm" loading={build.building} disabled={build.building || !gufi?.found || !p?.exists}
-              onClick={() => void build.start()}>
-              {p?.indexed ? 'Rebuild index' : 'Build index'}
-            </Button>
+            {standalone && <Button variant="secondary" size="sm" disabled={indexing} onClick={() => setChanging(true)}>Change folder</Button>}
+            {/* A hosted Studio's deployment builds its index; this page shows it and its log. */}
+            <IndexControls part="primary" canDelete={!!standalone} canBuild={!!standalone && !!gufi?.found && !!p?.exists} folder={l.sourceRoot} />
           </>
         ),
-        detail: (build.job || build.error) ? <div className="lib-build"><IndexBuildProgress job={build.job} error={build.error} /></div> : undefined,
+        // Under the row: the build as it runs, or how the last one went, and
+        // the index's other controls, the delete's confirmation among them.
+        detail: (
+          <div className="lib-build">
+            {job ? <IndexJobView job={job} /> : <LastBuild status={ix} />}
+            <IndexControls part="secondary" canDelete={!!standalone} folder={l.sourceRoot} />
+          </div>
+        ),
       })
       continue
     }
@@ -423,9 +443,8 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
           footer={<Button variant="secondary" disabled={restarting} onClick={() => setChanging(false)}>Close</Button>}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <FolderPicker current={primaryPath} start={standalone.primary?.exists && primaryPath ? primaryPath : '~'}
-              disabled={build.building} pollMs={pollMs} onRestarting={setRestarting}
+              disabled={indexing} pollMs={pollMs} onRestarting={setRestarting}
               onChanged={async () => {
-                build.reset()
                 const [s] = await Promise.all([loadStatus(), loadLibs(), loadUser()])
                 reloadAppConfig()
                 return s?.primary?.path
