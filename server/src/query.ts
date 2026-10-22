@@ -8,9 +8,10 @@ import { GUFI_BIN, GUFI_INDEX, INDEX_BASE, gufiAvailable, gufiEnv } from './conf
 import { KbError } from './kb.js'
 import { tagMaps } from './tags.js'
 import { scopeLibraries } from './libraryScope.js'
-import { REMOTE_PREFIX, remoteIndexRoot, remoteQuery } from './userLibraries.js'
+import { REMOTE_PREFIX, remoteIndexRoot, remoteQuery, remoteTarget } from './userLibraries.js'
 import { effectiveSettings } from './settings.js'
-import { type GufiCommand, noteGufi, traced } from './gufiTrace.js'
+import { type GufiCommand, noteGufi, shellQuote, traced } from './gufiTrace.js'
+import { siteName } from './remoteExec.js'
 import { type Plan, type VtOrder, gufiVtAvailable, runAcross, vtEligible } from './gufiVt.js'
 
 const DELIM = '\x1e'
@@ -39,13 +40,15 @@ const rootCtx = new AsyncLocalStorage<string>()
 const indexRoot = (): string => rootCtx.getStore() ?? GUFI_INDEX
 export function onIndex<T>(root: string, fn: () => Promise<T>): Promise<T> { return rootCtx.run(root, fn) }
 
+/** A cluster's share of threads: at most 4. */
+const capThreads = (args: string[]): string[] => args.map((a, i) => (args[i - 1] === '-n' ? String(Math.min(Number(a) || 4, 4)) : a))
+
 /** gufi_query over the index in scope, below `subtree`; a user's library on
  *  a cluster runs there (userLibraries.ts), with at most 4 threads. */
 async function run(args: string[], subtree?: string, timeoutMs = 60_000): Promise<{ stdout: string; stderr: string }> {
   const root = indexRoot()
   if (root.startsWith(REMOTE_PREFIX)) {
-    const capped = args.map((a, i) => (args[i - 1] === '-n' ? String(Math.min(Number(a) || 4, 4)) : a))
-    return { stdout: await remoteQuery(root, capped, cleanSubtree(subtree)), stderr: '' }
+    return { stdout: await remoteQuery(root, capThreads(args), cleanSubtree(subtree)), stderr: '' }
   }
   const argv = [path.join(GUFI_BIN, 'gufi_query'), ...args, scopePath(subtree)]
   const t0 = Date.now()
@@ -115,15 +118,19 @@ function aggPlan(opts: {
   }
 }
 
+/** gufi_query's arguments for a plan, ahead of the index path: raw SQL is
+ *  the -E stage alone; the rest are staged aggregates. */
+function planArgs(plan: Plan): string[] {
+  const s = plan.stages
+  if (plan.raw) return ['-n', '8', '-d', DELIM, '-E', s.E]
+  return ['-n', '8', '-d', DELIM, '-a', '1', '-I', s.I!, '-K', s.K!, '-E', s.E, '-J', s.J!, '-G', s.G!]
+}
+
 /** Runs a plan on the index in scope. */
 async function runPlan(plan: Plan): Promise<QueryResult> {
   if (plan.raw) return rawRun(plan)
   const t0 = Date.now()
-  const s = plan.stages
-  const { stdout } = await run([
-    '-n', '8', '-d', DELIM, '-a', '1',
-    '-I', s.I!, '-K', s.K!, '-E', s.E, '-J', s.J!, '-G', s.G!,
-  ], plan.subtree)
+  const { stdout } = await run(planArgs(plan), plan.subtree)
   const rows = parse(stdout, plan.columns)
   return {
     columns: plan.columns,
@@ -352,7 +359,7 @@ function rawPlan(sql: string, subtree?: string): Plan {
 
 async function rawRun(plan: Plan): Promise<QueryResult> {
   const t0 = Date.now()
-  const { stdout, stderr } = await run(['-n', '8', '-d', DELIM, '-E', plan.stages.E], plan.subtree)
+  const { stdout, stderr } = await run(planArgs(plan), plan.subtree)
   const lines = stdout.split('\n').filter(Boolean).map(l => l.split(DELIM).map(stripIndexPrefix))
   if (lines.length === 0 && /Error/i.test(stderr)) {
     const first = stderr.split('\n').find(l => /Error/i.test(l)) ?? 'query failed'
@@ -391,6 +398,51 @@ async function planFor(body: QueryRequest): Promise<Plan> {
 }
 
 const execQuery = async (body: QueryRequest): Promise<QueryResult> => runPlan(await planFor(body))
+
+/** What a query runs, without running it. */
+export interface QuerySql {
+  /** gufi_query's SQL stages in the order it runs them: -I and -K create a
+   *  table for each thread and the result's, -E runs in every directory,
+   *  -J merges each thread's rows, -G orders the result. Raw SQL is -E
+   *  alone. Across several libraries, the first library's. */
+  stages: { flag: '-I' | '-K' | '-E' | '-J' | '-G'; sql: string }[]
+  /** The gufi_query command for each library in scope, as a shell takes it
+   *  and as a run of the query records it; a library on a cluster's runs
+   *  there. Across several libraries the Studio merges their rows. */
+  commands: GufiCommand[]
+}
+
+/** The command run() runs for a plan on the index in scope. */
+function planCommand(plan: Plan): GufiCommand {
+  const root = indexRoot()
+  if (root.startsWith(REMOTE_PREFIX)) {
+    const t = remoteTarget(root)
+    if (!t) throw new KbError(404, 'library not found')
+    const sub = cleanSubtree(plan.subtree)
+    const argv = [`${t.gufiBin}/gufi_query`, ...capThreads(planArgs(plan)), sub ? path.posix.join(t.indexRoot, sub) : t.indexRoot]
+    return { engine: 'gufi_query', site: siteName(t.site), command: argv.map(shellQuote).join(' ') }
+  }
+  const argv = [path.join(GUFI_BIN, 'gufi_query'), ...planArgs(plan), scopePath(plan.subtree)]
+  return { engine: 'gufi_query', command: argv.map(shellQuote).join(' ') }
+}
+
+/** The SQL a query runs and its commands, for any form the query takes
+ *  (canned, builder, raw SQL), on the library named or every library the
+ *  viewer can read. Nothing runs, so it answers without GUFI installed. */
+export async function querySql(body: QueryRequest, viewerId: string | null): Promise<QuerySql> {
+  const libs = scopeLibraries(body.library, viewerId, effectiveSettings().kbLabel)
+  const plans = await Promise.all(libs.map(lib => onIndex(lib.indexRoot, async () => {
+    const plan = await planFor(body)
+    return { plan, command: planCommand(plan) }
+  })))
+  if (!plans.length) throw new KbError(404, 'no library to query')
+  const s = plans[0].plan.stages
+  const order = plans[0].plan.raw ? (['E'] as const) : (['I', 'K', 'E', 'J', 'G'] as const)
+  return {
+    stages: order.flatMap(k => (s[k] ? [{ flag: `-${k}` as const, sql: s[k]! }] : [])),
+    commands: plans.map(p => p.command),
+  }
+}
 
 /**
  * A query on the named library, or on every library the viewer can read.
@@ -508,6 +560,10 @@ export async function queryRoutes(app: FastifyInstance): Promise<void> {
     const { result, commands } = await traced(() => queryScope((req.body ?? {}) as QueryRequest, req.user?.id ?? null))
     return { ...result, gufi: commands }
   })
+
+  // A query's SQL and commands without running it: the Query page shows a
+  // saved query's this way.
+  app.post('/api/query/sql', async req => querySql((req.body ?? {}) as QueryRequest, req.user?.id ?? null))
 
   app.get('/api/query/saved', async () => loadSaved())
 

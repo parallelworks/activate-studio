@@ -10,6 +10,7 @@ import { ALL_LIBRARIES, LibrarySwitch } from '../components/LibrarySwitch'
 import { useAppConfig } from '../config'
 import { currentLibrary } from '../api'
 import { GufiCommands, type GufiCommand } from '../components/GufiCommands'
+import { SavedQuerySql } from '../components/SavedQuerySql'
 
 interface QueryResult {
   columns: string[]
@@ -370,6 +371,7 @@ export function QueryView({ onOpen }: { onOpen: (path: string) => void }) {
             {saved.slice(0, 8).map(s => (
               <span key={s.id} className="saved-chip">
                 <Button variant="ghost" size="xs" onClick={() => loadSavedQuery(s)}>{s.name}</Button>
+                <SavedQuerySql name={s.name} payload={s.payload} />
                 <IconButton size="xs" icon={<CloseIcon />} label="Delete saved query" onClick={() => deleteSaved(s.id)} />
               </span>
             ))}
