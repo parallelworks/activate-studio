@@ -390,7 +390,7 @@ export function SettingsView() {
                   <Field group label={setupAvailable ? 'Theme' : 'Theme in this browser'}
                     description={setupAvailable
                       ? "System follows this computer's light or dark setting. The sidebar's theme button switches it too."
-                      : "System follows the device's light or dark setting. Each browser keeps its own choice; the sidebar's theme button switches it too."}>
+                      : "System follows the device's light or dark setting, unless the default below is Dark. Each browser keeps its own choice; the sidebar's theme button switches it too."}>
                     <SegmentedControl options={THEME_OPTIONS} value={theme ?? currentThemeChoice(form.theme)} onValueChange={t => {
                       setTheme(t)
                       if (setupAvailable) {
