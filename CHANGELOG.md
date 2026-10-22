@@ -2,7 +2,27 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
-## v1.150 (2026-10-22)
+## v1.151 (2026-10-22)
+
+### Libraries: build or connect, here or on a remote system, and a details card (#527)
+
+Adding a library offered several unrelated forms, building an index meant submitting a workflow to a cluster, and an existing index on another machine could only be connected, not built.
+
+**One Add a library flow.** Where (this computer, or a remote system), then How (build an index of a folder, or connect an existing index); for a remote system, Connect with ssh (`user@host:port`) or pw ssh, with a dropdown of the systems the pw CLI reaches. A connection test checks each step before anything is added.
+- Building on this computer (sign-in off) runs the main folder's passes (gufi_dir2index, text extraction, embeddings when the model is installed) as an index job with progress; the index goes in a folder you choose or the Studio's data folder, and the sync re-indexes changed folders. These libraries are read only for now: uploads, renames, deletes, labels and the caches assume the main folder, and making them per library belongs with the indexing changes in progress.
+- Building on a remote system first checks that gufi_dir2index and gufi_query are there and says plainly when GUFI is missing; the build runs there detached, survives a restart of the Studio, and extracts text when Python 3.10 or later is present.
+- Missing folders are listed by the test and made only after a confirm; the server refuses without it.
+- Built libraries show their phase and progress in the list, with Rebuild and Remove.
+
+**Platform workflow builds** are offered only on a hosted Studio (sign-in on, or `PW_PLATFORM_HOST`); a standalone install sees remote systems only.
+
+**Details.** On the Library page, the status panel's first card describes the folder or file last clicked, or the library: size, file and folder counts, latest change, largest types, labels on it and inside it, and the library and index it comes from, from the GUFI index.
+
+Also: at phone width the libraries table's rows no longer overlap.
+
+Verified: the full suite after rebasing on main; 27 new tests (both add flows against ssh and pw stand-ins, create-if-missing with and without the confirm, the remote build job, the details route and card); screenshots of each step and the details card in light, dark and at 400 px, against a server whose ssh and pw stand-ins run real builds with GUFI and Python.
+
+## v1.150 (2026-10-21)
 
 ### Update notice: one line, with the changes in a dialog, so the chat keeps its room (#521)
 
@@ -43,6 +63,10 @@ Model access did not say where models and platform access came from. With the pw
 **Offline.** No network reads as one plain sentence with short timeouts: the model list and health say offline (a local model server keeps working), the Workflows page checks the platform answers before running `pw`, MCP listing is limited to 5 seconds a step, and the update check says it will try again later.
 
 Verified: 450 server and 159 web tests, including blocked-network tests (ENOTFOUND, ECONNRESET, timeouts) and the context and sign-in flows against stand-ins; the context listing and switching against a real pw CLI; screenshots of each state in light, dark and at 400 px. Together with #521 and #522 merged locally, the full suite passes (454 server, 167 web).
+
+### Change log through v1.150 (#526)
+
+Regenerated with `node scripts/release-notes.mjs --changelog --next v1.150` before tagging v1.150.
 
 ## v1.149 (2026-10-21)
 
