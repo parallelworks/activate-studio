@@ -2,6 +2,56 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.155 (2026-10-22)
+
+### fix(libraries): a built library follows the indexing settings and keeps an embedding cache (#534)
+
+A library built of a folder on this computer ignored Settings, General, Indexing. It ran gufi_dir2index on a fixed 8 threads, and enrich.py and embed.py with their own defaults. So the thread count, the PDF reader, OCR, document text, LibreOffice, image descriptions and the embeddings switch reached only the main folder, and every embedding pass started cold.
+
+- `enrichSteps` builds the extract and embed steps from the indexing settings, as the main folder's phases do. It skips documents and embeddings when they are switched off.
+- The GUFI runs take the thread count (the single-level run caps at 4).
+- `embed.py` keeps a cache at `INDEX_BASE/libraries/<id>/embed-cache.db`, pruned on a whole build, so a rebuild or a sync embeds only new passages.
+- downmark's OCR runs one thread per document, as in the documents phase.
+- HELP and REFERENCE say that built libraries follow the settings.
+
+Tests: a unit test of the steps under settings on and off. The server suite passes (480/480, GUFI installed, nothing skipped). A build with the real embedding model wrote `gvec` tables in each folder and filled the library's cache.
+
+### feat(libraries): choose SSH or ACTIVATE for a remote library, with a list of systems (#536)
+
+Until now, Add a library offered pw ssh for a remote system only when the Studio found the pw CLI and had a sign-in to act with. On a computer where the Studio did not find the pw CLI, or the CLI was not signed in, only ssh showed and nothing said why.
+
+- On a Studio with sign-in off, **Connect with** always shows **SSH** and **ACTIVATE (pw ssh)**. The setup wizard's tab follows the same rule.
+- When pw ssh cannot be used yet, the form says why and has an **Open Model access** button. The reasons are that the Studio does not find the pw CLI (the message names where it looked), or that the CLI is not signed in.
+- The system comes from the new `GET /api/user-libraries/pw/systems`, which runs `pw clusters ls -o json` with the same key pw ssh uses. Running systems come first, stopped ones are marked off, and a display name is shown over the name pw ssh takes. **Another system…** lets you type a name.
+- When the list cannot be had, the form shows the error and takes a typed name.
+- `GET /api/user-libraries` adds `pwOffered` and `pwWhy`. On a hosted Studio, pw ssh still shows only when it can be used.
+
+The form no longer uses `/api/agent-sites` (active clusters only) for this list. The workflow form still does.
+
+Tests: new `server/test/pwSystems.test.mjs` covers the cases with no CLI, with no sign-in, the order and key of the list, and a refused list. New web tests cover the reason with Model access, a stopped system and a typed name, a failed list, and the choice on the libraries page. Server suite 483/483, web suite 204/204, web build clean.
+
+Not verified against a live platform: the status values other than `active` and `off`. Any other status is shown as it comes and counts as not running.
+
+### fix(access): find the pw CLI the macOS app's server misses, and say which credential each part uses (#537)
+
+The macOS app's server is started by launchd with a short PATH. A pw CLI installed where only the person's shell looks was not found, which caused four visible problems:
+
+- The Workflows page failed with `spawn pw ENOENT`.
+- The pw ssh choice for libraries stayed hidden, since it is offered only when the CLI is found.
+- pw CLI sign-ins could not be renewed (`pw auth token --print`), so a device sign-in read inactive until the CLI in a terminal renewed the credentials file.
+- After an update, models were unavailable until that happened.
+
+Changes:
+
+- `findPwCli` (config.ts) looks for the CLI in this order: `PW_CLI`, a location chosen in Model access (`INDEX_BASE/pw-cli.json`), `pw` on PATH, then `~/.local/bin`, `~/bin`, `~/pw`, `/opt/homebrew/bin`, `/usr/local/bin` and `/usr/bin`. `PW_CLI` becomes a live binding, so every caller runs the program found. It is looked for again when Model access loads (`?fresh=1` on Re-check), when a renewal or a Workflows call finds the program gone, and in `pwCliFound`.
+- `deploy/mac/studio-run.sh` puts the login shell's PATH (`$SHELL -ilc`, five seconds at most) ahead of the defaults.
+- `PUT /api/access/cli/path` takes a full path, or null to forget it. It refuses a program that does not answer `--version` as the CLI does. Sign-in off only.
+- Model access gains a "What each part uses" table: models, the Workflows page and platform tools, libraries on ACTIVATE systems, and subscriptions. Each row names its credential, with a "pw CLI not found" badge where the CLI is needed and missing. The pw CLI tab shows where the CLI runs from, or, when it is not found, where the Studio looked and an input for its location.
+- The Workflows page and renewal errors say the CLI cannot be found and how to fix it, rather than `spawn pw ENOENT`.
+- HELP, REFERENCE, LIBRARIES and MACOS docs are updated.
+
+Tests: the server suite passes (480/480); the new test covers the lookup order, choosing, refusing and forgetting a location. The web suite passes (202/202), with tests for the table and the location input. Not verifiable here: the login-shell PATH on a real Mac. The function was exercised with bash on Linux.
+
 ## v1.154 (2026-10-22)
 
 ### Indexing: phased parallel jobs, one status everywhere, stop, delete, log, and PDFs out of the box on the Mac (#530)
@@ -30,6 +80,10 @@ Indexing as jobs with phases, run side by side, with one status for every view.
 | searchable by name | at the end | 0.25 s | 0.25 s | |
 
 This draft is open for the mac-app workflow; build_app.sh and check_app.sh --run --launch pass on macOS 15, including a PDF read by downmark's binary and by the bundled pypdf, and a full index built through the server.
+
+### Change log through v1.154 (#533)
+
+Regenerated with `node scripts/release-notes.mjs --changelog --next v1.154` before tagging v1.154.
 
 ## v1.153 (2026-10-22)
 
