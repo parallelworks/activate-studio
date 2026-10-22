@@ -2,6 +2,58 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.156 (2026-10-22)
+
+### Updates: the app reopens after an update that changed its window, and shows the new icon (#535)
+
+The in-app update swaps the whole app bundle and restarts the server. The window that is open still runs the old copy's executable until the app opens again, so a new title bar color or Dock icon did not appear after updating. The only hint was a line in Settings, Updates.
+
+- **Window.** `StudioShell.swift` answers a new `relaunch` request from the Studio's own page. It replies true and starts `/bin/sh`, which waits for this process to exit (30 seconds at most) and then runs `open` on the bundle path the app was launched from. Then the app quits, so only one Dock icon remains.
+- **Page.** If an install or rollback was started on the page, it stores the target version in session storage before reloading. The page that loads on that version sends `relaunch` right away and does not record the version as seen, so the reopened window shows **Updated to**. After an automatic install while idle, the post-update notice (still one line) and Settings, Updates offer **Reopen now**. In a browser, or in a window from before this change (which rejects the unknown request), the line says to quit and reopen instead.
+- **Icon.** After a swap or rollback, the updater touches the bundle and runs `lsregister -f` on it, so Finder and the Dock show the new copy's icon. This is best effort and only runs on macOS; `STUDIO_LSREGISTER` names a stand-in for tests.
+- **Docs.** HELP, MACOS and REFERENCE are updated.
+
+Tests: the server suite passes (479/479). The updater test checks that LaunchServices is called on the new copy. The web suite passes (203/203), with new tests for: the reopen marker set by Update now; the automatic reopen leaving the version unrecorded; Reopen now falling back to words when the window cannot reopen; and Settings, Updates sending the request.
+
+Needs a Mac to verify: the Swift change compiles in the macOS CI job, but whether the relaunch helper survives the app quitting and reopens the window, and whether `lsregister` refreshes the Dock icon, can only be checked on a Mac. The first update after this ships still runs the old window, which does not know `relaunch`, so that one update ends with the words; updates after it reopen on their own.
+
+### feat(search): search by meaning is a level per library, and the Search page says how search works (#540)
+
+Search by meaning was one switch for the main folder, on by default, and libraries the Studio built followed it. It is the slowest part of indexing, and many folders (code, data, simulation output) gain little from it.
+
+**Levels.** Each library the Studio builds has its own level, kept with its index settings (`meaning` in `INDEX_BASE/indexing.json`) and applied at its next build or sync:
+
+- Off: names and words only.
+- Documents: the first four passages of PDF, Office, text, Markdown and image files. This is `embed.py --documents-only --max-chunks 4`.
+- Full: up to twelve passages of every file with text, as before.
+
+The main folder starts at Documents and other libraries at Off. The earlier `embeddings` true or false is still read: false becomes Off, true the library's usual level.
+
+On the 6.5 GB benchmark corpus (17,000 files, 15,272 with text), Full embeds 144,736 passages and Documents 41,737, which is 3.5 times fewer.
+
+**Where it is set:**
+
+- Settings, Libraries: a selector in the Meaning column, for the main folder and libraries built here or on a remote system. `PUT /api/libraries/:id/meaning` stores it; an index the Studio only reads answers 409 and uses the vectors it has.
+- Settings, Indexing, for the main folder.
+- The setup folder step.
+- `meaning` on a local or remote build request.
+
+Remote builds pass the level to embed.py there, and Off skips embedding.
+
+**Search:**
+
+- It looks in a library by meaning only where its level is not Off. A read-only index is searched by meaning when it has vectors. The RAG proxy follows the main folder's level.
+- The Search page says in one line what a search matches (names and words always, and meaning in the libraries where it is on). **How search works** explains each kind, with each library's level and a link to Settings, Libraries.
+- Result badges read name, words and meaning.
+
+**Also:**
+
+- The Libraries page says where a library the deployment set is removed (its `STUDIO_LIBRARIES` setting), and that a Studio with sign-in builds and deletes its own main index.
+- An explicit `PW_CLI` path is taken as it is, found or not, rather than falling through to another pw.
+- The pw-not-found reason points at the location setting in Model access.
+
+**Tests:** server 488/488 (new: per-library levels, the route, the legacy switch, embed.py's selection run in Python); web 211/211 (the Search page line and help, the Libraries selector, the setup control). HELP, REFERENCE and LIBRARIES are updated.
+
 ## v1.155 (2026-10-22)
 
 ### fix(libraries): a built library follows the indexing settings and keeps an embedding cache (#534)
@@ -51,6 +103,10 @@ Changes:
 - HELP, REFERENCE, LIBRARIES and MACOS docs are updated.
 
 Tests: the server suite passes (480/480); the new test covers the lookup order, choosing, refusing and forgetting a location. The web suite passes (202/202), with tests for the table and the location input. Not verifiable here: the login-shell PATH on a real Mac. The function was exercised with bash on Linux.
+
+### Change log through v1.155 (#538)
+
+Regenerated with `node scripts/release-notes.mjs --changelog --next v1.155` before tagging v1.155.
 
 ## v1.154 (2026-10-22)
 
