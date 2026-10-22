@@ -10,9 +10,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 /** Categorical colors derived from the deployment's accent: analogous
  *  hues around it with alternating lightness, so the maps read as part of
  *  the theme instead of a foreign rainbow. */
-function hexToHsl(hex: string): { h: number; s: number; l: number } {
-  const m = hex.replace('#', '')
-  const r = parseInt(m.slice(0, 2), 16) / 255, g = parseInt(m.slice(2, 4), 16) / 255, b = parseInt(m.slice(4, 6), 16) / 255
+function rgbToHsl(r: number, g: number, b: number): { h: number; s: number; l: number } {
+  r /= 255; g /= 255; b /= 255
   const max = Math.max(r, g, b), min = Math.min(r, g, b)
   const l = (max + min) / 2
   if (max === min) return { h: 215, s: 60, l: l * 100 }
@@ -25,13 +24,31 @@ function hexToHsl(hex: string): { h: number; s: number; l: number } {
   return { h: h * 60, s: sat * 100, l: l * 100 }
 }
 
-function accentPalette(): string[] {
-  let accent = '#2563eb'
+/** The accent as the browser resolves it, [r, g, b]. The theme defines it
+ *  as light-dark(...) or another color form, so the variable's text is not
+ *  parsed; a probe element's computed color is. */
+function resolvedAccent(): [number, number, number] {
   try {
-    const css = getComputedStyle(document.documentElement)
-    accent = (css.getPropertyValue('--theme-accent') || css.getPropertyValue('--pw-link') || accent).trim() || accent
+    const probe = document.createElement('span')
+    probe.style.color = 'var(--theme-accent, var(--pw-link, #2563eb))'
+    document.body.appendChild(probe)
+    const color = getComputedStyle(probe).color
+    probe.remove()
+    const n = color.match(/[\d.]+/g)?.map(Number) ?? []
+    // rgb(r, g, b) is 0-255; color(srgb r g b) is 0-1.
+    if (n.length >= 3) return color.startsWith('color(') ? [n[0] * 255, n[1] * 255, n[2] * 255] : [n[0], n[1], n[2]]
   } catch { /* server-side or headless */ }
-  const { h, s } = hexToHsl(accent.startsWith('#') ? accent : '#2563eb')
+  return [37, 99, 235]
+}
+
+let cached: { key: string; colors: string[] } | null = null
+/** The categorical colors for the current accent, recomputed when the theme
+ *  (light or dark, or the accent) changes. */
+function accentPalette(): string[] {
+  const [r, g, b] = resolvedAccent()
+  const key = `${Math.round(r)},${Math.round(g)},${Math.round(b)}`
+  if (cached?.key === key) return cached.colors
+  const { h, s } = rgbToHsl(r, g, b)
   const sat = Math.min(68, Math.max(42, s))
   const out: string[] = []
   for (let i = 0; i < 14; i++) {
@@ -39,9 +56,21 @@ function accentPalette(): string[] {
     const light = i % 2 ? 62 : 44
     out.push(`hsl(${Math.round(hue)} ${Math.round(sat)}% ${light}%)`)
   }
+  cached = { key, colors: out }
   return out
 }
-const PALETTE = accentPalette()
+
+/** Dark or white text for a palette color shown at a CSS brightness, by the
+ *  higher contrast. */
+export function inkOn(hsl: string, brightness = 1): string {
+  const [h, s, l] = (hsl.match(/[\d.]+/g) ?? []).map(Number)
+  const a = (s / 100) * Math.min(l / 100, 1 - l / 100)
+  const f = (k: number) => l / 100 - a * Math.max(-1, Math.min((k + h / 30) % 12 - 3, 9 - ((k + h / 30) % 12), 1))
+  const lin = (c: number) => { c = Math.min(1, c * brightness); return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4 }
+  const lum = 0.2126 * lin(f(0)) + 0.7152 * lin(f(8)) + 0.0722 * lin(f(4))
+  const onWhite = 1.05 / (lum + 0.05), onDark = (lum + 0.05) / 0.0592
+  return onDark > onWhite ? '#0f172a' : '#fff'
+}
 
 interface DirRow { dir: string; files: number; bytes: number }
 
@@ -121,6 +150,7 @@ function fmtB(n: number): string {
 }
 
 export function TopologyMap() {
+  const PALETTE = accentPalette()
   const [dirs, setDirs] = useState<DirRow[] | null>(null)
   const [focus, setFocus] = useState('')
   useEffect(() => {
@@ -159,6 +189,7 @@ export function TopologyMap() {
               width: `${(r.w / W) * 100}%`, height: `${(r.h / H) * 100}%`,
               background: topColor(r.node.path),
               filter: `brightness(${1.18 - (i % 4) * 0.11})`,
+              color: inkOn(topColor(r.node.path), 1.18 - (i % 4) * 0.11),
             }}
             onClick={() => { if (r.node.children.size) setFocus(r.node.path) }}
           >
@@ -202,6 +233,7 @@ function hull(pts: { x: number; y: number }[]): { x: number; y: number }[] {
 }
 
 export function SemanticMap({ onOpen }: { onOpen: (path: string) => void }) {
+  const PALETTE = accentPalette()
   const [files, setFiles] = useState<MapFile[] | null>(null)
   const [labels, setLabels] = useState<string[]>([])
   const [hover, setHover] = useState<MapFile | null>(null)
