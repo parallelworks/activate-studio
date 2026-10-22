@@ -2,7 +2,36 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
-## v1.151 (2026-10-22)
+## v1.152 (2026-10-22)
+
+### Setup: appearance step, optional AI, background index build; Settings tabs and port (#524)
+
+Setup and Settings changes from review of the macOS app.
+
+**Setup wizard**
+- New Appearance step: Light, Dark or System, and the accent, applied as they are picked. The choice is kept in this window and saved as the default theme (System saves `light`, which follows the device's dark setting).
+- The AI step says it is optional and can be set up later in Settings, Model access, mentions an ACTIVATE account (there, or as a base URL with an API key here), and when switched off says AI features can be turned back on later.
+- The footer's Skip setup is now Finish later (closes setup and records it as done). Skip this step appears on the AI, folder and other-libraries steps while nothing is set there.
+- Folder step: in the macOS app's window, Choose another folder… opens the Mac's folder chooser (new `studioShell` message handler); elsewhere the in-page folder list stays. After a folder change it offers the index build. The build never holds a step: Next is available at once and later steps show its state in one line. The step says indexes can be added or changed later in Settings, Libraries.
+- The sidebar step points to Meridian for workflow YAML files of one's own.
+- Re-entry: every step starts from the values in effect and saves only what is changed; `#view=settings:setup` opens the wizard, used by a new Run Setup… item in the macOS app menu. Help mentions both ways back in.
+
+**Settings, General** is split into tabs (Appearance, Branding, Sidebar, AI features, Indexing, Updates, Server), each with its own address. `#view=settings:general` opens Appearance; the update notice and footer link now open `#view=settings:updates`. The tab row wraps on narrow pages instead of scrolling tabs out of sight. Run setup again sits beside the General heading on every tab.
+- Server: the port the Studio and its MCP endpoint (`/api/mcp`) share. MCP has no port of its own. In the macOS app, `POST /api/setup/port` saves `PORT` for the launcher and restarts; the window follows the Studio to the new address. Elsewhere it names the `PORT` variable to set.
+- Feature previews: voice says what it does and shows its setup only when switched on (still off by default).
+- Workflows settings link to Meridian.
+
+**Defaults**: on a single-user install (sign-in off, not deployed by the platform), the suggested questions (five) and the mission default to ones written for one person's own files. `SUGGESTED_PROMPTS`, `KB_MISSION` and saved settings still take precedence.
+
+**Status panel**: the Model card is hidden while AI features are off. Connections says what it lists and groups rows as the ACTIVATE platform, attached MCP servers, and machines with remote libraries. It is still hidden when there is nothing to list.
+
+**macOS app** (needs the Mac CI build): the `studioShell` handler (folder chooser, follow to a new port), the Run Setup… menu item, and the launcher now restarts a running server that does not answer on the port `studio.env` names.
+
+Tests: wizard steps, skip and finish-later, non-blocking index build, native chooser and fallback, re-entry without writes, the `#view=settings:setup` route, tab addresses with old links, appearance saves, voice details, port save/restart/follow in the server and page, launcher port restart, personal defaults, status panel cards. Docs: HELP, REFERENCE, MACOS, CUSTOMIZATION.
+
+Note: the Meridian repository is private at the moment, so the links return 404 for other people until it is public.
+
+## v1.151 (2026-10-21)
 
 ### Libraries: build or connect, here or on a remote system, and a details card (#527)
 
@@ -21,6 +50,10 @@ Adding a library offered several unrelated forms, building an index meant submit
 Also: at phone width the libraries table's rows no longer overlap.
 
 Verified: the full suite after rebasing on main; 27 new tests (both add flows against ssh and pw stand-ins, create-if-missing with and without the confirm, the remote build job, the details route and card); screenshots of each step and the details card in light, dark and at 400 px, against a server whose ssh and pw stand-ins run real builds with GUFI and Python.
+
+### Change log through v1.151 (#528)
+
+Regenerated with `node scripts/release-notes.mjs --changelog --next v1.151` before tagging v1.151.
 
 ## v1.150 (2026-10-21)
 
