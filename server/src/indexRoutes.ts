@@ -47,7 +47,14 @@ const within = (parent: string, child: string) => child === parent || child.star
 const real = (p: string) => { try { return fs.realpathSync(p) } catch { return path.resolve(p) } }
 
 export async function indexRoutes(app: FastifyInstance): Promise<void> {
-  const primary = (req: { user?: { id?: string } }) => getLibrary(null, effectiveSettings().kbLabel, req.user?.id ?? null)
+  // The library a request names (?library= or its body's), the main folder
+  // without one; only the main folder's index is built here, so every index
+  // action refuses a read-only library.
+  const primary = (req: { user?: { id?: string }; query?: unknown; body?: unknown }) => {
+    const q = (req.query ?? {}) as { library?: string }
+    const b = (req.body ?? {}) as { library?: string }
+    return getLibrary(q.library ?? b.library, effectiveSettings().kbLabel, req.user?.id ?? null)
+  }
 
   app.get('/api/index/status', async () => ({ ...indexStatus(), log: { ...indexLogInfo(), reveal: process.platform === 'darwin' && !authEnabled() } }))
 
