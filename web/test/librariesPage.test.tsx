@@ -306,7 +306,7 @@ describe('Settings, Libraries', () => {
   })
 
   it('offers pw ssh beside ssh on a computer of its own, and says why it cannot be used yet', async () => {
-    const why = 'The Studio does not find the pw CLI on this computer (it looks for pw on its PATH). Install it, or see Settings, Model access for the pw CLI the Studio uses.'
+    const why = 'The Studio does not find the pw CLI on this computer. Install it, or choose where it is under Settings, Model access, pw CLI.'
     const s = server({ platform: true, ssh: true, canBuild: true, pw: false, pwOffered: true, pwWhy: why })
     await renderPage(s)
     await waitFor(() => rowOf('Notes'))

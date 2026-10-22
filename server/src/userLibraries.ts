@@ -779,8 +779,8 @@ export function pwUnavailable(viewerId: string | null | undefined): string | nul
   const owner = ownerOf(viewerId)
   if (!owner) return 'Sign in to add your own libraries.'
   if (!pwCliFound()) {
-    return `The Studio does not find the pw CLI on this computer (it looks for ${PW_CLI}${PW_CLI.includes('/') ? '' : ' on its PATH'}). `
-      + 'Install it, or see Settings, Model access for the pw CLI the Studio uses.'
+    const set = process.env.PW_CLI?.includes('/') ? ` PW_CLI names ${process.env.PW_CLI}, which is not there.` : ''
+    return `The Studio does not find the pw CLI on this computer.${set} Install it, or choose where it is under Settings, Model access, pw CLI.`
   }
   if (!keyOf(owner)) {
     return owner === 'single'
