@@ -129,6 +129,8 @@ function release(tag, { manifest = {}, signWith = privateKey, archiveVersion = t
 const setReleases = list => { releases = list; etag = `"r${++seq}"` }
 
 write(path.join(BIN, 'launchctl'), `#!/bin/sh\necho "launchctl $*" >>"${CALLS}"\n`, 0o755)
+write(path.join(BIN, 'lsregister'), `#!/bin/sh\necho "lsregister $*" >>"${CALLS}"\n`, 0o755)
+process.env.STUDIO_LSREGISTER = path.join(BIN, 'lsregister')
 process.env.KB_ROOT = fs.mkdtempSync(path.join(tmp, 'kb-'))
 process.env.INDEX_BASE = path.join(DATA, 'index')
 process.env.STUDIO_DATA_DIR = DATA
@@ -267,6 +269,7 @@ test('a newer signed release installs: swapped in, the previous copy kept, the m
   assert.equal(pending.from, 'v1.139')
   assert.equal(pending.to, 'v1.140')
   assert.ok(await until(() => calls().includes(kickstart)), calls())
+  assert.ok(await until(() => calls().includes(`lsregister -f ${APP}`)), 'LaunchServices looks at the new copy, for its icon')
   assert.deepEqual(fs.readdirSync(APPS).sort(), ['.ACTIVATE Studio.app.previous', 'ACTIVATE Studio.app'])
   assert.deepEqual(fs.readdirSync(UPD).sort(), ['pending.json', 'reopen', 'state.json'])
   // A second request while restarting changes nothing.

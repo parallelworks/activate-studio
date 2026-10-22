@@ -10,7 +10,8 @@
 // (Stop Background Server in the app menu stops it). The title bar takes the
 // color the page names for it, as an installed web app's does. The Studio's
 // page can ask the window, through window.webkit.messageHandlers.studioShell,
-// for the system folder chooser and to follow the Studio to another port.
+// for the system folder chooser, to follow the Studio to another port, and to
+// quit and open again after an update replaced the app around it.
 //
 // Built with: swiftc -O -target arm64-apple-macos13 StudioShell.swift
 // (deploy/mac/build_app.sh does this when it runs on a Mac).
@@ -370,9 +371,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
       self.studio = parts.url
       replyHandler(true, nil)
       DispatchQueue.main.asyncAfter(deadline: .now() + 1) { self.webView.load(URLRequest(url: next)) }
+    case "relaunch":
+      // An update put a new copy of the app where this one was launched
+      // from; this window is still the old copy's until it opens again.
+      if relaunch() { replyHandler(true, nil) } else { replyHandler(nil, "could not reopen") }
     default:
       replyHandler(nil, "unknown request \(action)")
     }
+  }
+
+  /// Quits, and opens the app again once this process is gone, so one Dock
+  /// icon remains: a small shell waits for this process to exit (30 seconds
+  /// at most), then opens the bundle at the path this one was launched
+  /// from. False when that shell could not start, and nothing quits.
+  func relaunch() -> Bool {
+    let p = Process()
+    p.executableURL = URL(fileURLWithPath: "/bin/sh")
+    p.arguments = [
+      "-c", "i=0; while /bin/kill -0 \"$1\" 2>/dev/null && [ $i -lt 150 ]; do sleep 0.2; i=$((i+1)); done; exec /usr/bin/open \"$0\"",
+      Bundle.main.bundlePath, String(ProcessInfo.processInfo.processIdentifier),
+    ]
+    do { try p.run() } catch { return false }
+    // After the reply reaches the page.
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { NSApp.terminate(nil) }
+    return true
   }
 
   /// The system folder chooser, as a sheet on the page's window; replies

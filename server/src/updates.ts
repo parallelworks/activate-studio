@@ -35,6 +35,8 @@ const APP_NAME = 'ACTIVATE Studio.app'
 const BUNDLE_ID = 'com.parallelworks.activate-studio'
 const LABEL = 'com.parallelworks.activate-studio'
 const REQUEST_TIMEOUT_MS = 15_000
+/** LaunchServices' own tool, which looks at an app bundle again. */
+const LSREGISTER = '/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister'
 /** How a clone of the repository updates itself, before a restart. */
 const CLONE_COMMAND = 'git pull\npnpm install\npnpm build'
 
@@ -585,6 +587,20 @@ function restart(): void {
   } catch { fallBack() }
 }
 
+/** Finder and the Dock keep showing the icon of the copy they saw first,
+ *  since the new one sits at the same path: the bundle is touched and
+ *  LaunchServices told to look at it again, so the new icon shows once the
+ *  app is reopened. Best effort, and macOS only (STUDIO_LSREGISTER, for
+ *  tests, names another tool). */
+function refreshIcon(bundle: string): void {
+  const tool = process.env.STUDIO_LSREGISTER ?? (process.platform === 'darwin' ? LSREGISTER : '')
+  if (!tool) return
+  const now = new Date()
+  fsp.utimes(bundle, now, now).catch(() => {}).finally(() => {
+    execFile(tool, ['-f', bundle], { timeout: 30_000 }, err => { if (err) log(`update: LaunchServices did not take the new icon: ${plain(err)}`) })
+  })
+}
+
 async function swapIn(p: Prepared): Promise<void> {
   const app = appBundle()!
   const next = beside('new')
@@ -596,6 +612,7 @@ async function swapIn(p: Prepared): Promise<void> {
     await fsp.rename(prev, app).catch(() => {})
     throw e
   }
+  refreshIcon(app)
   await writeJson(inUpdates('pending.json'), { from: p.from, to: p.version, at: new Date().toISOString() })
   await fsp.rm(inUpdates('rolled-back.json'), { force: true })
   if (p.shellChanged) await fsp.writeFile(inUpdates('reopen'), `${p.version}\n`)
@@ -725,6 +742,7 @@ async function rollBack(): Promise<void> {
     throw e
   }
   await fsp.rm(failed, { recursive: true, force: true })
+  refreshIcon(app)
   await writeJson(inUpdates('rolled-back.json'), { from, to, at: new Date().toISOString(), reason: 'rolled back from Settings', noted: true })
   await fsp.rm(inUpdates('pending.json'), { force: true })
   if (shellChanged) await fsp.writeFile(inUpdates('reopen'), `${to}\n`)

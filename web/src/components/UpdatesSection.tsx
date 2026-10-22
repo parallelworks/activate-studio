@@ -7,6 +7,7 @@ import {
 import { onUpdatesFocus, openWhatsNew, updatesApi, type UpdatePolicy } from '../api'
 import { reloadPage, setUpdateFlowOptions, underWay as isUnderWay, updateActions, useUpdateFlow, type UpdateFlow } from '../updateFlow'
 import { ReleaseList } from './ChangeList'
+import { ReopenApp } from './ReopenApp'
 
 export { bare } from '../updateFlow'
 
@@ -109,7 +110,7 @@ export function UpdatesSection({ onPolicySaved, pollMs, giveUpMs, reload }: {
       </div>
 
       {status.reopen && (
-        <Callout tone="info">The update also changed the app's window. Quit and reopen ACTIVATE Studio to finish.</Callout>
+        <Callout tone="info" action={<ReopenApp />}>The update also changed the app's window, which updates when the app reopens.</Callout>
       )}
 
       {latest && status.available ? (

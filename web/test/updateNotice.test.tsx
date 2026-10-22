@@ -97,8 +97,16 @@ const server = (over: Partial<Server> = {}): Server => ({ updates: status(), cod
 const notice = () => screen.queryByTestId('update-notice')
 const settle = () => act(async () => { await new Promise(r => setTimeout(r, 20)) })
 
-beforeEach(() => { localStorage.clear(); history.replaceState(null, '', location.pathname) })
-afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); localStorage.clear() })
+beforeEach(() => { localStorage.clear(); sessionStorage.clear(); history.replaceState(null, '', location.pathname) })
+afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); localStorage.clear(); sessionStorage.clear(); delete (window as { webkit?: unknown }).webkit })
+
+/** The macOS app's window, answering the page's requests with `answer`. */
+function appWindow(answer: (message: { action: string }) => Promise<unknown>) {
+  const postMessage = vi.fn(answer)
+  Object.assign(window, { webkit: { messageHandlers: { studioShell: { postMessage } } } })
+  return postMessage
+}
+const REOPEN_KEY = 'ade-reopen-after-update'
 
 describe('the update notice', () => {
   it('in the app: one line with the version, Update now and Later; What\'s new opens every newer version\'s changes, newest first, each opening to its description', async () => {
@@ -222,6 +230,8 @@ describe('the update notice', () => {
     s.version = 'v1.142'
     await waitFor(() => expect(reload).toHaveBeenCalledTimes(1))
     expect(s.calls.filter(c => c.url === '/api/updates/install').length).toBe(1)
+    // Started here, so the page that loads may reopen the app's window.
+    expect(sessionStorage.getItem(REOPEN_KEY)).toBe('v1.142')
   })
 
   it('an install started from Settings, or a deferred version being installed, shows its progress too', async () => {
@@ -345,5 +355,46 @@ describe('Settings, Updates', () => {
     expect(await screen.findByText('Version v1.142 is available')).toBeInTheDocument()
     expect(screen.getAllByRole('heading', { level: 3 }).map(h => h.textContent?.slice(0, 6))).toEqual(['v1.142', 'v1.141'])
     expect(screen.getByRole('button', { name: 'Search: faster on large libraries' })).toBeInTheDocument()
+  })
+})
+
+describe('after an update that changed the app\'s window', () => {
+  const updated = () => status({ current: { version: 'v1.142', builtAt: null }, available: false, latest: null, releases: [], reopen: true })
+
+  it('after an install the person started, the app reopens on its own, and the reopened window announces the version', async () => {
+    localStorage.setItem(SEEN_KEY, 'v1.140')
+    sessionStorage.setItem(REOPEN_KEY, 'v1.142')
+    stubServer(server({ updates: updated() }))
+    const post = appWindow(async () => true)
+    render(<UpdatedNotice />)
+    await waitFor(() => expect(post).toHaveBeenCalledWith({ action: 'relaunch' }))
+    await settle()
+    expect(screen.queryByTestId('updated-notice')).toBeNull()
+    expect(localStorage.getItem(SEEN_KEY)).toBe('v1.140')
+    expect(sessionStorage.getItem(REOPEN_KEY)).toBeNull()
+  })
+
+  it('otherwise the line offers Reopen now, and a window that cannot reopen gets the words', async () => {
+    localStorage.setItem(SEEN_KEY, 'v1.140')
+    stubServer(server({ updates: updated() }))
+    // A window from before the app could reopen itself.
+    const post = appWindow(async () => { throw new Error('unknown request relaunch') })
+    render(<UpdatedNotice />)
+    const box = await screen.findByTestId('updated-notice')
+    expect(post).not.toHaveBeenCalled()
+    expect(box.textContent).toContain("the app's window updates when the app reopens")
+    fireEvent.click(within(box).getByRole('button', { name: 'Reopen now' }))
+    expect(await within(box).findByText('Quit and reopen ACTIVATE Studio to finish.')).toBeInTheDocument()
+    expect(post).toHaveBeenCalledWith({ action: 'relaunch' })
+    expect(localStorage.getItem(SEEN_KEY)).toBe('v1.142')
+  })
+
+  it('Settings, Updates asks the window to reopen', async () => {
+    stubServer(server({ updates: updated() }))
+    const post = appWindow(async () => true)
+    render(<UpdatesSection />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Reopen now' }))
+    await waitFor(() => expect(post).toHaveBeenCalledWith({ action: 'relaunch' }))
+    expect(screen.queryByText('Quit and reopen ACTIVATE Studio to finish.')).toBeNull()
   })
 })

@@ -1,9 +1,10 @@
 /**
  * What the macOS app's own window offers the page, through the
  * `studioShell` message handler its web view installs
- * (deploy/mac/shell/StudioShell.swift): the system folder chooser, and
- * following the Studio to another port. Elsewhere (a browser, or the app
- * opened in Chrome) there is no handler, and the page uses its own ways.
+ * (deploy/mac/shell/StudioShell.swift): the system folder chooser,
+ * following the Studio to another port, and quitting to open again after an
+ * update. Elsewhere (a browser, or the app opened in Chrome) there is no
+ * handler, and the page uses its own ways.
  */
 
 interface ShellHandler { postMessage(message: unknown): Promise<unknown> }
@@ -37,5 +38,22 @@ export async function followStudioToPort(port: number, hash = ''): Promise<boole
   try {
     await h.postMessage({ action: 'studioMoved', port, hash })
     return true
+  } catch { return false }
+}
+
+/** True in the macOS app's own window. */
+export function inAppWindow(): boolean {
+  return !!handler()
+}
+
+/** Asks the app's window to quit and open again, which runs the copy of the
+ *  app an update put in place. False outside the app's window, and in a
+ *  window from before the app could do this, which has to be reopened by
+ *  hand. */
+export async function reopenApp(): Promise<boolean> {
+  const h = handler()
+  if (!h) return false
+  try {
+    return (await h.postMessage({ action: 'relaunch' })) === true
   } catch { return false }
 }
