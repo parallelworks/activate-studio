@@ -55,8 +55,9 @@ exit 0`
 /** The build itself, written to the state folder and run detached.
  *  $1 state folder, $2 GUFI bin, $3 source, $4 index folder, $5 threads,
  *  $6 python (or empty), $7 embedding model (or empty), $8 1 to make the
- *  source folder when it is missing. */
-export const BUILD_RUN = `s=$1 bin=$2 src=$3 idx=$4 threads=$5 py=$6 model=$7 create=$8
+ *  source folder when it is missing, $9 embed.py's options for the level of
+ *  search by meaning (meaningArgs; words with no spaces or quotes). */
+export const BUILD_RUN = `s=$1 bin=$2 src=$3 idx=$4 threads=$5 py=$6 model=$7 create=$8 meaning=\${9:-}
 echo $$ > "$s/pid"
 phase() { printf '%s\\n' "$1" > "$s/phase"; }
 fail() { printf '%s\\n' "$1" > "$s/error"; exit 1; }
@@ -88,7 +89,8 @@ if [ -n "$py" ] && [ -f "$s/enrich.py" ]; then
   if "$py" "$s/enrich.py" --kb-root "$src" --index "$tree" --extract-cache "$idx/.extract" > "$s/enrich.log" 2>&1; then fulltext=true; fi
   if [ "$fulltext" = true ] && [ -n "$model" ] && [ -x "$bin/gufi_sqlite3" ] && [ -f "$s/embed.py" ]; then
     phase embed
-    "$py" "$s/embed.py" --index "$tree" --model "$model" --gufi-sqlite3 "$bin/gufi_sqlite3" > "$s/embed.log" 2>&1 && vectors=true
+    # shellcheck disable=SC2086
+    "$py" "$s/embed.py" --index "$tree" --model "$model" --gufi-sqlite3 "$bin/gufi_sqlite3" $meaning > "$s/embed.log" 2>&1 && vectors=true
   fi
   # The Studio searches the text with gufi_query, whose SQLite must read it.
   if [ "$fulltext" = true ]; then "$bin/gufi_query" -n 1 --max-level 0 -E 'SELECT count(*) FROM words;' "$tree" >/dev/null 2>&1 || fulltext=false; fi

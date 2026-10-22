@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Button, EmptyState, SearchInput, StatusBadge, ToggleGroup, type BadgeVariant } from '@parallelworks/ui'
-import { api, SearchHit } from '../api'
+import { api, type PublicLibrary, SearchHit } from '../api'
 import { TagMenu } from '../components/TagMenu'
 import { RowCheck } from '../components/Explorer'
 import { ALL_LIBRARIES, LibrarySwitch } from '../components/LibrarySwitch'
@@ -9,11 +9,11 @@ import { useAppConfig } from '../config'
 import { GufiCommands, type GufiCommand } from '../components/GufiCommands'
 
 const MODE_LABEL: Record<SearchHit['mode'], string> = {
-  fts: 'full text',
-  vector: 'semantic',
-  name: 'filename',
+  fts: 'words',
+  vector: 'meaning',
+  name: 'name',
 }
-// The badge tones have no purple; semantic matches keep theirs from .pill-vector.
+// The badge tones have no purple; matches by meaning keep theirs from .pill-vector.
 const MODE_TONE: Record<SearchHit['mode'], BadgeVariant> = {
   fts: 'info',
   vector: 'default',
@@ -107,6 +107,7 @@ export function SearchView({ onOpen }: { onOpen: (path: string, q?: string) => v
             />
           </div>
         )}
+        <SearchHelp libraries={cfg.libraries ?? []} />
         {note && <p className="muted">{note}</p>}
         {hits && <GufiCommands commands={gufi} />}
       </div>
@@ -164,3 +165,55 @@ export function SearchView({ onOpen }: { onOpen: (path: string, q?: string) => v
     </div>
   )
 }
+
+/** Whether search looks in a library by meaning: its level, for one the
+ *  Studio builds, or the vectors it has, for one it only reads. */
+const meaningOn = (l: PublicLibrary) => (l.meaning === undefined || l.meaning === null ? l.caps.vectors : l.meaning !== 'off')
+
+/**
+ * What a search here matches: names and the words in files always, and
+ * meaning in the libraries that have it, said in one line under the box,
+ * with how each kind works a click away. Search by meaning is a choice per
+ * library, so the line names where it is on.
+ */
+export function SearchHelp({ libraries }: { libraries: PublicLibrary[] }) {
+  const [open, setOpen] = useState(false)
+  const [scope, setScope] = useState(currentLibrary())
+  useEffect(() => onLibraryChange(setScope), [])
+  const inScope = scope === ALL_LIBRARIES || libraries.length <= 1 ? libraries : libraries.filter(l => l.id === scope)
+  const on = inScope.filter(meaningOn)
+  const names = (ls: PublicLibrary[]) => ls.map(l => l.label).join(', ')
+  const summary = !inScope.length || !on.length
+    ? 'Matches file names and the words inside files. Search by meaning is off here, so use words the files contain.'
+    : on.length === inScope.length
+      ? 'Matches file names, the words inside files, and their meaning: a plain question also finds passages that say it in other words.'
+      : `Matches file names and the words inside files, and also meaning in ${names(on)}.`
+  return (
+    <div className="search-help">
+      <p className="muted search-help-line">
+        {summary}{' '}
+        <Button variant="ghost" size="sm" aria-expanded={open} onClick={() => setOpen(o => !o)}>{open ? 'Hide' : 'How search works'}</Button>
+      </p>
+      {open && (
+        <div className="search-help-detail muted">
+          <p><i>By name:</i> any part of a file or folder name.</p>
+          <p>
+            <i>By words:</i> whole words in the text of documents, notes and code. <code>"exact phrase"</code>, <code>OR</code>,{' '}
+            <code>-exclude</code> and <code>prefix*</code> narrow it.
+          </p>
+          <p>
+            <i>By meaning:</i> passages that say the same thing in other words, so a question such as "why did the blades
+            crack" finds a report on fatigue failure that never uses those words. It runs for a few plain words; quotes,
+            operators, one short word, or a code such as ABC-12 match words only. Each library has its own setting, under{' '}
+            <a href="#view=settings:libraries">Settings, Libraries</a>: Off, Documents (documents and images), or Full (every
+            file with text). Here it is {inScope.map((l, i) => (
+              <span key={l.id}>{i ? ', ' : ''}{l.label}: {meaningOn(l) ? (l.meaning === 'full' ? 'full' : l.meaning === 'documents' ? 'documents' : 'its own vectors') : 'off'}</span>
+            ))}.
+          </p>
+          <p>Each result says how it matched: name, words, or meaning.</p>
+        </div>
+      )}
+    </div>
+  )
+}
+

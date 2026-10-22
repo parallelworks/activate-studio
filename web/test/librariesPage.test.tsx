@@ -85,6 +85,11 @@ function stubServer(s: Server) {
     if (path === '/api/config') {
       return reply({ appName: 'Studio', platform: s.platform, user: { id: 'u', username: 'u' }, libraries: s.libs.map(l => ({ ...l, indexRoot: undefined, sourceRoot: undefined })) })
     }
+    const level = /^\/api\/libraries\/([^/]+)\/meaning$/.exec(path)
+    if (level && method === 'PUT') {
+      s.libs = s.libs.map(l => (l.id === level[1] ? { ...l, meaning: (body as { level: string }).level } : l))
+      return reply({ id: level[1], meaning: (body as { level: string }).level })
+    }
     if (path === '/api/libraries' && method === 'GET') return reply({ canBuild: !!s.canBuild, libraries: s.libs.map(l => (l.primary ? { ...l, sourceRoot: s.primary, label: s.primary.split('/').pop() } : l)) })
     if (path === '/api/libraries/build/check') {
       const b = body as { sourceRoot: string; indexRoot?: string }
@@ -234,7 +239,8 @@ describe('Settings, Libraries', () => {
     expect(await within(main).findByRole('button', { name: 'Update index' })).toBeEnabled()
     expect(within(detailOf('Notes')).getByRole('button', { name: 'Delete index' })).toBeInTheDocument()
     expect(within(detailOf('Notes')).getByRole('button', { name: 'View log' })).toBeInTheDocument()
-    expect(within(main).getAllByText('Yes')).toHaveLength(2)
+    expect(within(main).getAllByText('Yes')).toHaveLength(1)
+    expect(within(main).getByRole('combobox', { name: 'Search by meaning in Notes' })).toHaveTextContent('Documents')
 
     const site = rowOf('Site index')
     expect(within(site).getByText('GUFI index on this machine, read only')).toBeInTheDocument()
@@ -367,6 +373,22 @@ describe('Settings, Libraries', () => {
     expect(within(row).getByText('6 folders, 40 files')).toBeInTheDocument()
     fireEvent.click(within(row).getByRole('button', { name: 'Rebuild' }))
     await waitFor(() => expect(posted(s, '/api/libraries/papers/rebuild')).toHaveLength(1))
+  })
+
+  it('sets search by meaning per library the Studio builds; an index it only reads shows what it has', async () => {
+    const s = server({ libs: [PRIMARY, { ...BUILT_HERE, meaning: 'off', build: { ...BUILT_HERE.build, state: 'ready', files: 40, dirs: 6, builtAt: '2026-10-20T00:00:00Z', progress: null } }, SITE] })
+    await renderPage(s)
+    const row = await waitFor(() => rowOf('Papers'))
+    const select = within(row).getByRole('combobox', { name: 'Search by meaning in Papers' })
+    expect(select).toHaveTextContent('Off')
+    fireEvent.click(select)
+    const full = (await screen.findAllByRole('option')).find(o => o.textContent === 'Full')!
+    fireEvent.pointerDown(full)
+    fireEvent.click(full)
+    await waitFor(() => expect(s.calls.find(c => c.method === 'PUT' && c.url === '/api/libraries/papers/meaning')?.body).toEqual({ level: 'full' }))
+    await waitFor(() => expect(within(rowOf('Papers')).getByRole('combobox', { name: 'Search by meaning in Papers' })).toHaveTextContent('Full'))
+    expect(within(rowOf('Site index')).queryByRole('combobox')).toBeNull()
+    expect(screen.getByText(/Meaning is search by meaning/)).toBeInTheDocument()
   })
 
   it('a hosted Studio with a platform builds on a cluster through the workflow', async () => {

@@ -19,6 +19,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { execFile } from 'node:child_process'
 import { GUFI_BIN, GUFI_INDEX, INDEX_BASE, KB_ROOT, gufiAvailable, gufiEnv } from './config.js'
+import { forgetIndexSettings, indexSettings, type MeaningLevel } from './indexSettings.js'
 import { KbError } from './kb.js'
 import { loadUserLibraries, ownerOf, remoteRootOf } from './userLibraries.js'
 
@@ -41,6 +42,10 @@ export interface Library {
   cacheRoot?: string | null
   /** For a library the Studio built of a folder on this computer. */
   build?: LocalBuild | null
+  /** How much of it search by meaning covers, for a library the Studio
+   *  builds (the main folder, and one built here or on a remote system);
+   *  null for an index it only reads, whose vectors are used as they are. */
+  meaning?: MeaningLevel | null
   /** Only the primary may add files, index, and enrich. */
   writable: boolean
   primary: boolean
@@ -88,6 +93,9 @@ export interface PublicLibrary {
   caps: LibraryCaps
   /** The cluster a user's own library lives on. */
   site?: string | null
+  /** Its level of search by meaning, for a library the Studio builds; null
+   *  for an index it only reads (see caps.vectors for that one). */
+  meaning: MeaningLevel | null
 }
 
 /** Where a library the Studio built keeps its own files: the extraction
@@ -195,6 +203,7 @@ function primaryLibrary(label: string): Library {
     primary: true,
     pinned: true,
     caps: probeCache.get(path.resolve(GUFI_INDEX))?.caps ?? { index: gufiAvailable(), fullText: gufiAvailable(), vectors: false },
+    meaning: indexSettings(PRIMARY_ID).meaning,
   }
 }
 
@@ -211,6 +220,7 @@ function fromDef(d: LibraryDef, pinned: boolean): Library {
     primary: false,
     pinned,
     caps: probeCache.get(abs)?.caps ?? { index: fs.existsSync(path.join(abs, 'db.db')), fullText: false, vectors: false },
+    meaning: d.build ? indexSettings(d.id).meaning : null,
   }
 }
 
@@ -224,6 +234,7 @@ function userLibrariesOf(viewerId: string | null | undefined): Library[] {
   return loadUserLibraries(owner).filter(d => d.indexRoot && d.gufiBin).map(d => ({
     id: d.id, label: d.label, indexRoot: remoteRootOf(owner, d.id), sourceRoot: null,
     writable: false, primary: false, pinned: false, caps: { index: true, fullText: !!d.fullText, vectors: !!d.vectors }, site: d.site,
+    meaning: d.build ? indexSettings(d.id).meaning : null,
   }))
 }
 
@@ -339,10 +350,11 @@ export function removeLibrary(id: string): void {
   // when it is in the Studio's own folder; an index in a folder that was
   // chosen for it stays where it is.
   if (def?.build) fs.rmSync(builtLibraryDir(id), { recursive: true, force: true })
+  void forgetIndexSettings(id)
 }
 
 export function publicLibrary(l: Library): PublicLibrary {
-  return { id: l.id, label: l.label, primary: l.primary, writable: l.writable, pinned: l.pinned, source: !!l.sourceRoot || !!l.site, caps: l.caps, site: l.site ?? null }
+  return { id: l.id, label: l.label, primary: l.primary, writable: l.writable, pinned: l.pinned, source: !!l.sourceRoot || !!l.site, caps: l.caps, site: l.site ?? null, meaning: l.meaning ?? null }
 }
 
 /** What Settings shows of a build: its state and, while it runs, how far it

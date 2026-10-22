@@ -13,7 +13,7 @@ import { preextractCommand, downmarkNative } from './preextract.js'
 import { invalidateContext } from './chat/context.js'
 import { effectiveSettings } from './settings.js'
 import { indexLog } from './indexLog.js'
-import { indexSettings, threadsFor, type IndexSettings } from './indexSettings.js'
+import { indexSettings, meaningArgs, threadsFor, type IndexSettings } from './indexSettings.js'
 import { sofficeFound } from './extractors.js'
 
 /**
@@ -559,12 +559,13 @@ async function textPhase(ctx: JobCtx, o: { kbRoot: string; index: string; cache:
 /** Meaning: embed.py over an index tree, with the embedding cache. */
 async function meaningPhase(ctx: JobCtx, o: { index: string; noRecurse?: boolean; prune?: boolean }): Promise<void> {
   const ph = phase(ctx, 'meaning')
-  if (!ctx.settings.embeddings) { ph.skip('turned off in Settings, General, Indexing'); return }
+  const level = meaningArgs(ctx.settings.meaning)
+  if (!level) { ph.skip('search by meaning is off for this folder (Settings, General, Indexing)'); return }
   if (!fs.existsSync(EMBED_MODEL)) { ph.skip('no embedding model'); return }
   if (!fs.existsSync(path.join(GUFI_BIN, 'gufi_sqlite3'))) { ph.skip('no gufi_sqlite3'); return }
   ph.start()
   const args = [path.join(PROJECT_ROOT, 'indexer', 'embed.py'), '--index', o.index, '--model', EMBED_MODEL,
-    '--gufi-sqlite3', path.join(GUFI_BIN, 'gufi_sqlite3'), '--jobs', String(ctx.threads), '--cache', EMBED_CACHE, '--progress']
+    '--gufi-sqlite3', path.join(GUFI_BIN, 'gufi_sqlite3'), '--jobs', String(ctx.threads), '--cache', EMBED_CACHE, '--progress', ...level]
   if (o.noRecurse) args.push('--no-recurse')
   if (o.prune) args.push('--prune')
   const out = await runTool(ctx, ph, PYTHON_BIN, args, indexerEnv({ STUDIO_TMP: INDEX_DIR }))

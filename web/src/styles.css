@@ -777,6 +777,10 @@ textarea.field { line-height: 1.5; }
 }
 .search-label-filter { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; align-items: center; }
 .search-label-filter .lbl { font-size: 11px; color: var(--pw-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+.search-help { margin-top: 8px; }
+.search-help-line { margin: 0; font-size: 13px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.search-help-detail { margin-top: 6px; font-size: 13px; max-width: 72ch; }
+.search-help-detail p { margin: 0 0 6px; }
 
 /* The rail is narrow, so the count sits on its own line and the actions
    wrap under it as equal, compact buttons; before this the labels broke
@@ -1798,6 +1802,8 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 /* ---- Settings > Libraries ---- */
 .libraries-table .lib-name { font-weight: 600; color: var(--pw-text); }
 .libraries-table .lib-id { font-size: 12px; color: var(--pw-muted); margin-top: 2px; }
+.libraries-table .meaning-select { min-width: 8.5rem; }
+.lib-meaning-note { font-size: 12px; margin: 8px 0 0; max-width: var(--settings-measure); }
 /* Where a library points: its GUFI index and, when the files are here, the
    source tree. Long paths wrap anywhere rather than widen the table. */
 .libraries-table td:first-child { width: 45%; padding-right: 1.5rem; }
@@ -1845,6 +1851,8 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .ix-phase-bar { padding-left: 15px; }
 .ix-note { margin: 0; font-size: 12px; color: var(--pw-muted); }
 .ix-note.ix-warn { color: var(--pw-text); }
+.ix-meaning { margin-top: 10px; }
+.meaning-level { max-width: var(--settings-measure); }
 .ix-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .libraries-table .lib-actions .ix-actions { display: inline-flex; vertical-align: middle; flex-wrap: nowrap; }
 .ix-confirm { display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
