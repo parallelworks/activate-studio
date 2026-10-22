@@ -691,7 +691,12 @@ async function probeBuild(h: ProbeHost, spec: BuildSpec): Promise<BuildProbe> {
     steps.push(other
       ? { name: 'index', ok: false, detail: `${indexDir} holds the index of ${other}. Choose another index folder.` }
       : { name: 'index', ok: true, detail: `${indexDir} holds an index the Studio built; the new one replaces it when complete.` })
-  } else if (kv.index === 'create') { create.push(indexDir); steps.push({ name: 'index', ok: true, detail: `${indexDir} does not exist yet; it is created when the build starts.` }) }
+  } else if (kv.index === 'create') {
+    // A folder the user named is made only once they confirm; the default
+    // is the Studio's own, under ~/.activate-studio.
+    if (spec.indexRoot) create.push(indexDir)
+    steps.push({ name: 'index', ok: true, detail: spec.indexRoot ? `${indexDir} does not exist yet; it is created when the build starts.` : `The index is written in ${indexDir}.` })
+  }
   else steps.push({ name: 'index', ok: false, detail:
     kv.index === 'foreign' ? `${indexDir} already holds files the Studio did not write. Choose an empty or new folder for the index.`
     : kv.index === 'readonly' ? `${indexDir} is not writable by the login on ${dest}.`
@@ -927,7 +932,7 @@ export async function addBuild(viewerId: string | null | undefined, transport: T
     id: newBuildId(id), indexDir: p.indexDir!, sourceRoot: p.sourceRoot!, gufiBin: p.gufiBin!, python: p.python ?? null, model: p.model ?? null,
     startedAt: new Date().toISOString(), progress: { phase: PHASE_LABEL.prepare, done: 0, total: 0, current: null },
   }
-  await startRemote(r.host.site, r.host.key, build, !!p.create?.length)
+  await startRemote(r.host.site, r.host.key, build, !!p.create?.includes(build.sourceRoot))
   const def: UserLibraryDef = {
     id, label, transport, existing: false, site: r.conn.site, destination: r.conn.destination, port: r.conn.port, os: p.os || null, gufiVersion: p.gufiVersion ?? null,
     resource: transport === 'ssh' ? r.host.site : r.conn.site, sourceDir: build.sourceRoot, sourceRoot: null, indexRoot: null, gufiBin: null,

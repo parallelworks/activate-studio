@@ -4,7 +4,9 @@
  * The knowledge base the server builds and owns is the first library,
  * writable, and everything that exists today keeps working against it
  * without naming it. Any other library is read only: a root-built site
- * index, or an index someone handed over, reached through a local tree.
+ * index, an index someone handed over, reached through a local tree, or an
+ * index the Studio builds of a folder here and keeps in step with it
+ * (`build`, libraryBuild.ts).
  * Each carries what it supports, which the Studio learns by probing the
  * tree once when the library is added; nothing is asked of GUFI and
  * nothing is written into the index.

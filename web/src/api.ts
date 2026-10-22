@@ -13,7 +13,17 @@ export interface PublicLibrary {
   site?: string | null
 }
 /** Settings' listing adds where each library points. */
-export interface SettingsLibrary extends PublicLibrary { indexRoot: string; sourceRoot: string | null }
+export interface SettingsLibrary extends PublicLibrary {
+  indexRoot: string
+  sourceRoot: string | null
+  /** A library the Studio builds of a folder on this computer. */
+  build?: {
+    indexDir: string; managed: boolean; state: 'building' | 'ready' | 'updating' | 'failed'
+    error: string | null; builtAt: string | null; files: number | null; dirs: number | null; progress: BuildProgress | null
+  }
+}
+/** How far a build has got: a phase, and folders indexed so far. */
+export interface BuildProgress { phase: string; done: number; total: number; current: string | null }
 /** A user's own library on one of their clusters, or on another machine over ssh. */
 export interface UserLibrary {
   id: string; label: string; site: string; sourceDir: string; sourceRoot: string | null; indexRoot: string | null
@@ -26,6 +36,31 @@ export interface UserLibrary {
   run: { slug: string; mode: 'build' | 'update'; startedAt: string } | null
   error: string | null; builtAt: string | null; directories: number | null; files: number | null
   scheduler: { partition?: string; account?: string } | null
+  /** Whether the index carries the Studio's text and vector tables. */
+  fullText?: boolean
+  vectors?: boolean
+  /** Built by the Studio on the remote system over the session; where the
+   *  index is written, and how far a build has got. */
+  built?: boolean
+  indexDir?: string | null
+  progress?: BuildProgress | null
+}
+
+/** What the Library view's side panel shows for a folder or file, from its index. */
+export interface EntryDetails {
+  path: string
+  name: string
+  type: 'dir' | 'file'
+  library: { id: string; label: string; kind: string; site: string | null; writable: boolean }
+  index: string | null
+  fullText: boolean
+  size: number
+  files: number
+  dirs: number
+  mtime: number
+  types: { ext: string; count: number; bytes: number }[]
+  labels: { own: string[]; inherited: string[]; within: { label: string; count: number }[] }
+  ms: number
 }
 
 // ---- which library requests address ----
@@ -300,9 +335,19 @@ export const api = {
 
   startIndexJob: (dir: string) => postJson<IndexJob>('/api/index/job', { path: dir }),
   indexJob: (id: number) => getJson<IndexJob>(`/api/index/job/${id}`),
-  libraries: () => getJson<{ libraries: SettingsLibrary[] }>('/api/libraries'),
-  /** `ssh`: indexes over ssh are offered; `pw`: indexes on a cluster over pw ssh are. */
-  userLibraries: () => getJson<{ libraries: UserLibrary[]; available: boolean; ssh?: boolean; pw?: boolean }>('/api/user-libraries'),
+  /** `canBuild`: libraries can be built from folders on this computer. */
+  libraries: () => getJson<{ libraries: SettingsLibrary[]; canBuild?: boolean }>('/api/libraries'),
+  /** `ssh`: libraries over ssh are offered; `pw`: over pw ssh; `workflow`:
+   *  building on a cluster through the platform's index workflow. */
+  userLibraries: () => getJson<{ libraries: UserLibrary[]; available: boolean; ssh?: boolean; pw?: boolean; workflow?: boolean }>('/api/user-libraries'),
+  rebuildLibrary: (id: string) => postJson<{ library: SettingsLibrary }>(`/api/libraries/${encodeURIComponent(id)}/rebuild`, {}),
+  /** A folder or file of the current library, described from its index. */
+  details: async (path: string): Promise<EntryDetails> => {
+    const res = await fetch(withLibrary(`/api/kb/details?path=${encodeURIComponent(path)}`))
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error((data as { error?: string }).error ?? `details: ${res.status}`)
+    return data as EntryDetails
+  },
   addUserLibrary: (body: { site: string; sourceDir: string; label?: string; scheduler?: { partition: string; account?: string } | null }) =>
     postJson<UserLibrary>('/api/user-libraries', body),
   refreshUserLibrary: (id: string) => postJson<UserLibrary>(`/api/user-libraries/${encodeURIComponent(id)}/refresh`, {}),

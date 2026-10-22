@@ -54,8 +54,8 @@ exit 0`
 
 /** The build itself, written to the state folder and run detached.
  *  $1 state folder, $2 GUFI bin, $3 source, $4 index folder, $5 threads,
- *  $6 python (or empty), $7 embedding model (or empty), $8 1 to create
- *  missing folders. */
+ *  $6 python (or empty), $7 embedding model (or empty), $8 1 to make the
+ *  source folder when it is missing. */
 export const BUILD_RUN = `s=$1 bin=$2 src=$3 idx=$4 threads=$5 py=$6 model=$7 create=$8
 echo $$ > "$s/pid"
 phase() { printf '%s\\n' "$1" > "$s/phase"; }
@@ -70,10 +70,8 @@ if [ ! -d "$src" ]; then
 fi
 src=$(cd "$src" && pwd -P) || fail "$src cannot be read."
 [ "$src" != / ] || fail "Indexing / is not supported; choose a folder."
-if [ ! -d "$idx" ]; then
-  [ "$create" = 1 ] || fail "$idx is not a folder."
-  mkdir -p "$idx" || fail "$idx could not be created."
-fi
+# The index folder is written to either way; the check said it can be made.
+mkdir -p "$idx" || fail "$idx could not be created."
 idx=$(cd "$idx" && pwd -P)
 base=\${src##*/}; tree="$idx/$base"; stage="$idx/.build"
 rm -rf "$stage"

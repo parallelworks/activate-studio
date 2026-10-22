@@ -97,7 +97,8 @@ test('the check reaches the system, finds GUFI, and lists the folders it would m
   const home = homes['me@linux-box']
   assert.equal(r.sourceRoot, `${home}/inbox`)
   assert.match(r.indexDir, new RegExp(`^${home}/\\.activate-studio/indexes/inbox-[0-9a-f]{8}$`))
-  assert.deepEqual(r.create, [`${home}/inbox`, r.indexDir])
+  // The source folder is made once confirmed; the default index folder is the Studio's own.
+  assert.deepEqual(r.create, [`${home}/inbox`])
   assert.match(r.steps[4].detail, /Text is extracted there with Python 3\.\d+/)
   assert.equal(fs.existsSync(`${home}/inbox`), false, 'a check makes nothing')
   // The session is the user's own ssh, on the port written after the host.
@@ -120,10 +121,11 @@ test('the check says plainly when GUFI is not there, and refuses unusable folder
 
 let boxId
 test('a build over ssh runs there detached, is followed, and makes a searchable library', { skip }, async () => {
-  const refused = await post('/api/user-libraries/ssh/build', { ...box, sourceRoot: '~/project' })
+  const refused = await post('/api/user-libraries/ssh/build', { ...box, sourceRoot: '~/project', indexRoot: '~/indexes/project' })
   assert.equal(refused.status, 409)
-  assert.match(refused.body.error, /do not exist yet: .*\.activate-studio\/indexes\/project-[0-9a-f]{8}\. Confirm to create them/)
-  const r = await post('/api/user-libraries/ssh/build', { ...box, sourceRoot: '~/project', label: 'Project', create: true })
+  assert.match(refused.body.error, /do not exist yet: .*\/indexes\/project\. Confirm to create them/)
+  // Without an index folder, the Studio's own under ~/.activate-studio: nothing to confirm.
+  const r = await post('/api/user-libraries/ssh/build', { ...box, sourceRoot: '~/project', label: 'Project' })
   assert.equal(r.status, 200, JSON.stringify(r.body))
   assert.equal(r.body.state, 'building')
   assert.equal(r.body.built, true)
@@ -159,7 +161,7 @@ test('the details panel describes a folder on the remote system from its index',
   assert.equal(r.statusCode, 200, JSON.stringify(d))
   assert.equal(d.type, 'dir')
   assert.equal(d.files, 2)
-  assert.equal(d.dirs, 2)
+  assert.equal(d.dirs, 1)
   assert.equal(d.size, 2048 + 10)
   assert.equal(d.types[0].ext, 'dat')
   assert.equal(d.library.kind, 'Built on me@linux-box over ssh')

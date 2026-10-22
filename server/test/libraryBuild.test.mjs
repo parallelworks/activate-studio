@@ -136,7 +136,7 @@ test('the details panel describes a folder and a file from the index', { skip },
   const d = (await call('GET', `/api/kb/details?path=data&library=${papersId}`)).body
   assert.equal(d.type, 'dir')
   assert.equal(d.files, 2)
-  assert.equal(d.dirs, 1)
+  assert.equal(d.dirs, 0, 'folders inside, not the folder itself')
   assert.equal(d.size, 4096 + 8)
   assert.deepEqual(d.types.map(t => t.ext), ['bin', 'csv'], 'largest first')
   assert.ok(d.mtime > 0)
@@ -145,6 +145,7 @@ test('the details panel describes a folder and a file from the index', { skip },
   assert.equal(d.index, path.join(dir, 'indexes', 'papers', 'papers'))
   const top = (await call('GET', `/api/kb/details?path=&library=${papersId}`)).body
   assert.equal(top.files, 3)
+  assert.equal(top.dirs, 1)
   assert.equal(top.name, 'Papers')
   const f = (await call('GET', `/api/kb/details?path=data/runs.csv&library=${papersId}`)).body
   assert.equal(f.type, 'file')

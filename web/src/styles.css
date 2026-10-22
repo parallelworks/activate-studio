@@ -1795,8 +1795,14 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .libraries-table tr.lib-has-detail > td { border-bottom: 0; }
 .libraries-table tr.lib-detail > td { padding-top: 0; width: auto; }
 .libraries-table .lib-build { display: flex; flex-direction: column; gap: 8px; max-width: 40rem; }
-.lib-kinds { width: min(26rem, calc(100vw - 2rem)); display: flex; flex-direction: column; gap: 6px; }
+/* Add a library: where and how, then the form for that pair. */
 .lib-add-form { margin-top: 12px; }
+.lib-add-flow { display: flex; flex-direction: column; gap: 12px; margin-top: 8px; }
+.lib-add-choices { display: flex; flex-wrap: wrap; gap: 12px 24px; }
+.lib-add-choices > * { min-width: 0; max-width: 100%; }
+.lib-add-about { margin: 0; max-width: var(--settings-measure); }
+.lib-create-list { margin: 0; padding-left: 18px; }
+.lib-create-list code { word-break: break-all; }
 .local-library-browse { margin-bottom: 14px; max-width: var(--settings-measure); }
 /* The setup wizard's steps, done and to come. */
 .setup-progress { display: flex; gap: 4px; margin: 6px 0 2px; }
@@ -1809,7 +1815,7 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
   .libraries-table thead { display: none; }
   .libraries-table, .libraries-table tbody, .libraries-table tr, .libraries-table td { display: block; width: auto; }
   .libraries-table td:first-child { width: auto; padding-right: 0.75rem; }
-  .libraries-table td { border-bottom: 0; }
+  .libraries-table td { border-bottom: 0; height: auto; }
   .libraries-table tr { border-bottom: 1px solid var(--pw-border); padding-bottom: 6px; }
   .libraries-table tr.lib-has-detail { border-bottom: 0; }
   .libraries-table td.lib-cap { display: inline-block; }
@@ -2149,6 +2155,29 @@ button.status-row:hover { background: var(--pw-hover-row); }
   font: inherit; font-size: 12px; color: var(--pw-link); text-align: left; cursor: pointer;
 }
 .status-link:hover, .status-more:hover { text-decoration: underline; }
+/* The Library page's Details card: the folder or file selected in the
+   tree, from its index. */
+.details { display: flex; flex-direction: column; gap: 12px; padding: 0 6px 2px; font-size: 13px; transition: opacity 0.15s ease; }
+.details-stale { opacity: 0.6; }
+.details-head { display: flex; flex-direction: column; min-width: 0; }
+.details-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.details-path { font-size: 12px; color: var(--pw-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.details-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; margin: 0; }
+.details-stats > div { min-width: 0; }
+.details-stats dt { font-size: 11px; color: var(--pw-muted); }
+.details-stats dd { margin: 0; font-size: 14px; font-weight: 500; font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.details-section { display: flex; flex-direction: column; gap: 6px; }
+.details-label { font-size: 11px; font-weight: 500; color: var(--pw-muted); }
+.details-type { display: inline-flex; gap: 6px; align-items: baseline; }
+.details-type-count, .details-muted { color: var(--pw-muted); font-size: 12px; }
+.details-inherited { color: var(--pw-muted); }
+.details-index { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.details-index { align-items: flex-start; }
+.details-index code { min-width: 0; font-size: 12px; overflow-wrap: anywhere; }
+/* The type bars line up whatever their sizes read. */
+.details-track { flex: none; width: calc(100% - 72px); }
+.details-note { margin: 0; padding: 0 6px 4px; font-size: 13px; color: var(--pw-muted); }
+.details-loading { padding: 2px 6px 6px; }
 /* Its toggle: at the end of a page header, beside the chat's own controls,
    and over the top right of the pages that draw their own tops. */
 .page-head-toggle { margin-left: auto; }

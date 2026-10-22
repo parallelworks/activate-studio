@@ -28,7 +28,7 @@ Without `KB_ROOT`, it opens a small sample folder. Any OpenAI-compatible endpoin
 
 - **Chat** answers from your files and links each source.
 - **Search** finds exact words, related meaning, and file names in one box.
-- **Library** browses and views documents, images, PDFs, office files, and 3D models.
+- **Library** browses and views documents, images, PDFs, office files, and 3D models, and describes the folder you select: its size, contents, and labels.
 - **Query** answers structured questions about the files, such as the largest or newest, or runs read-only SQL.
 - **Workflows**, on ACTIVATE, runs chosen platform workflows from their own forms, and opens the sessions they start.
 - **Agents** take the parts of a larger request in parallel; you can watch them, approve what they ask to do, and steer them.
@@ -44,7 +44,7 @@ The in-app Help is the user guide: [`docs/HELP.md`](docs/HELP.md), with the deta
 | [`docs/REFERENCE.md`](docs/REFERENCE.md) | the details behind the user guide, part by part |
 | [`docs/DEPLOY.md`](docs/DEPLOY.md) | running it on ACTIVATE, in a container, or as a plain server, and connecting models |
 | [`docs/CUSTOMIZATION.md`](docs/CUSTOMIZATION.md) | settings, branding, identity, and the assistant's tools |
-| [`docs/LIBRARIES.md`](docs/LIBRARIES.md) | several indexes at once, building an index on a cluster, and which parts of the app appear |
+| [`docs/LIBRARIES.md`](docs/LIBRARIES.md) | several indexes at once, building an index of a folder here or on a remote system over ssh or pw ssh, the Library's Details card, and which parts of the app appear |
 | [`docs/WORKFLOWS.md`](docs/WORKFLOWS.md) | the Workflows tab |
 | [`docs/AGENTS.md`](docs/AGENTS.md) | delegated agents |
 | [`docs/MULTI-USER.md`](docs/MULTI-USER.md) | several people on one deployment |

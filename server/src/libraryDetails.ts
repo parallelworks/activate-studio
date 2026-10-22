@@ -32,6 +32,7 @@ export interface Details {
   index: string | null
   fullText: boolean
   size: number
+  /** Below a folder, at any depth; the folder itself is not counted. */
   files: number
   dirs: number
   /** Seconds. For a folder, the latest change of anything below it. */
@@ -104,7 +105,7 @@ export async function describe(lib: Library, sub: string, viewerId: string | nul
       ;({ own, inherited } = await effectiveTags(sub))
       within = await labelsBelow(sub)
     }
-    value = { ...base, type: 'dir', size: st.bytes, files: st.files, dirs: st.dirs, mtime: st.mtime, types: st.byExt.slice(0, 5), labels: { own, inherited, within }, ms: 0 }
+    value = { ...base, type: 'dir', size: st.bytes, files: st.files, dirs: Math.max(0, st.dirs - 1), mtime: st.mtime, types: st.byExt.slice(0, 5), labels: { own, inherited, within }, ms: 0 }
   } else {
     const e = entry !== undefined ? entry : await entryStats(lib.indexRoot, dir, name, TAG_XATTR).catch(() => null)
     let size = e?.size ?? 0, mtime = e?.mtime ?? 0

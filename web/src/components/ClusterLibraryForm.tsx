@@ -8,7 +8,7 @@ import { api, type UserLibrary } from '../api'
  * /api/user-libraries). Offered only where the Studio reaches a platform.
  * The library is ready, for this user alone, when the run finishes.
  */
-export function ClusterLibraryForm({ onStarted }: { onStarted?: (lib: UserLibrary) => void }) {
+export function ClusterLibraryForm({ onStarted, compact = false }: { onStarted?: (lib: UserLibrary) => void; compact?: boolean }) {
   const [sites, setSites] = useState<string[] | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -37,9 +37,11 @@ export function ClusterLibraryForm({ onStarted }: { onStarted?: (lib: UserLibrar
 
   return (
     <div className="cluster-library-form">
-      <p className="muted view-sub">
-        A directory on one of your clusters, indexed there with your own key and searched there as you. Only you see it.
-      </p>
+      {!compact && (
+        <p className="muted view-sub">
+          A directory on one of your clusters, indexed there with your own key and searched there as you. Only you see it.
+        </p>
+      )}
       <div className="settings-grid">
         <Field label="Cluster">
           <Select items={(sites ?? []).map(s => ({ value: s, label: s }))} value={form.site || null}
