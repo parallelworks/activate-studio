@@ -6,10 +6,10 @@ import { INDEX_BASE } from './config.js'
 import { KbError } from './kb.js'
 
 /**
- * How a library's index is built, per library (only the main folder is
- * built here today; the rest are read where they are): how many threads,
- * which readers run, and whether embeddings are made. Kept in
- * INDEX_BASE/indexing.json and applied at the next build.
+ * How a library's index is built: how many threads, which readers run, and
+ * whether embeddings are made. Kept per library in INDEX_BASE/indexing.json
+ * and applied at the next build. Settings, General, Indexing edits the main
+ * folder's, and libraries built of a folder on this computer follow those.
  */
 
 export interface IndexSettings {
