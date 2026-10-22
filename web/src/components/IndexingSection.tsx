@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import {
-  Autocomplete, Button, Callout, Field, Loader, Modal, NumberInput, Select, type SelectItem, Switch, Table,
+  Button, Callout, Field, Loader, Modal, NumberInput, Select, type SelectItem, Switch, Table,
 } from '@parallelworks/ui'
 import { api, type IndexSettings, type IndexSettingsInfo } from '../api'
 import { useIndexStatus } from '../indexActivity'
@@ -8,12 +8,13 @@ import { IndexControls, IndexJobView, LastBuild, useIndexControls } from './Inde
 import { FolderBrowser, errText, waitForRestart } from './PrimaryFolder'
 
 /**
- * Settings, Indexing: how the main folder's index is built. The threads
- * every phase uses, which readers run (documents, the PDF fallback,
- * LibreOffice for older Office files, OCR, image descriptions when AI
- * features are on), whether embeddings are made, and where the index is
- * kept. Each setting saves as it changes and applies to the next build or
- * sync. The vision model lives here, and in the General form it shares.
+ * Settings, General, Indexing (below the sync settings): how the main
+ * folder's index is built. The threads every phase uses, which readers run
+ * (documents, the PDF fallback, LibreOffice for older Office files, OCR,
+ * image descriptions when AI features are on), whether embeddings are made,
+ * and where the index is kept. Each setting saves as it changes and applies
+ * to the next build or sync. The vision model is chosen under AI features;
+ * this says which one describes images.
  */
 
 const PDF_READERS: SelectItem<IndexSettings['pdfReader']>[] = [
@@ -22,28 +23,27 @@ const PDF_READERS: SelectItem<IndexSettings['pdfReader']>[] = [
   { value: 'pypdf', label: 'pypdf only' },
 ]
 
-export function IndexingSection({ models = [], visionModel = '', deploymentCred = null, onVisionModelSaved }: {
-  /** Model ids to suggest for image descriptions. */
-  models?: string[]
+export function IndexingSection({ visionModel = '', deploymentCred = null }: {
+  /** The vision model chosen under AI features, as the General form has it. */
+  visionModel?: string
   /** Whether the deployment has a credential of its own for background calls. */
   deploymentCred?: boolean | null
-  /** The vision model in the General form, kept in step with this one. */
-  visionModel?: string
-  onVisionModelSaved?: (v: string) => void
 }) {
   const [info, setInfo] = useState<IndexSettingsInfo | null>(null)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState<string | null>(null)
   const [threads, setThreads] = useState<number | null>(null)
-  const [vision, setVision] = useState(visionModel)
   const [moving, setMoving] = useState(false)
   const [moveNote, setMoveNote] = useState('')
   const [restarting, setRestarting] = useState(false)
   const status = useIndexStatus()
   const controls = useIndexControls()
 
-  const load = () => api.indexSettings().then(i => { setInfo(i); setThreads(i.settings.threads); setVision(i.ai.visionModel); setError('') })
-    .catch(e => setError(errText(e)))
+  const load = () => api.indexSettings().then(i => {
+    // A server without these routes (an older one) answers something else.
+    if (!i?.settings || !i.readers || !i.location) throw new Error('This server does not offer indexing settings.')
+    setInfo(i); setThreads(i.settings.threads); setError('')
+  }).catch(e => setError(errText(e)))
   useEffect(() => { void load() }, [])
 
   const save = async (patch: Partial<IndexSettings>, key: string) => {
@@ -53,15 +53,6 @@ export function IndexingSection({ models = [], visionModel = '', deploymentCred 
     try {
       const r = await api.saveIndexSettings(patch)
       setInfo({ ...info, settings: r.settings, threads: r.threads, readers: r.readers })
-    } catch (e) { setError(errText(e)) } finally { setSaving(null) }
-  }
-  const saveVision = async () => {
-    setSaving('vision')
-    try {
-      const res = await fetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ visionModel: vision }) })
-      if (!res.ok) throw new Error(((await res.json().catch(() => ({}))) as { error?: string }).error ?? `${res.status}`)
-      onVisionModelSaved?.(vision)
-      await load()
     } catch (e) { setError(errText(e)) } finally { setSaving(null) }
   }
   const move = async (path: string) => {
@@ -86,11 +77,12 @@ export function IndexingSection({ models = [], visionModel = '', deploymentCred 
   if (!info) {
     return (
       <>
-        <h1>Indexing</h1>
+        <h2 className="ix-h2">How the index is built</h2>
         {error ? <Callout tone="error">{error}</Callout> : <Loader inline size={16} label="Loading…" />}
       </>
     )
   }
+  const vision = visionModel || info.ai?.visionModel || ''
   const s = info.settings
   const reader = (name: string) => info.readers.extractors.find(x => x.name === name)
   const soffice = reader('LibreOffice')
@@ -99,10 +91,10 @@ export function IndexingSection({ models = [], visionModel = '', deploymentCred 
 
   return (
     <>
-      <h1>Indexing</h1>
+      <h2 className="ix-h2">How the index is built</h2>
       <p className="muted view-sub">
-        How the main folder&apos;s index is built. Each setting saves as you change it and applies to the next build or
-        sync; Update index applies it now.
+        The main folder&apos;s index. Each setting here saves as you change it and applies to the next build or sync;
+        Update index applies it now.
       </p>
       {error && <Callout tone="error">{error}</Callout>}
 
@@ -153,7 +145,7 @@ export function IndexingSection({ models = [], visionModel = '', deploymentCred 
             <span className="muted">{tesseract?.note}</span>
           </span>
         </label>
-        {info.ai.enabled && (
+        {info.ai?.enabled && (
           <>
             <label className="ix-switch">
               <Switch checked={s.imageDescriptions} disabled={saving !== null} onCheckedChange={v => void save({ imageDescriptions: v }, 'imageDescriptions')} />
@@ -162,19 +154,11 @@ export function IndexingSection({ models = [], visionModel = '', deploymentCred 
                 <span className="muted">Each image is sent to the model below, once; the description is searchable.</span>
               </span>
             </label>
-            <Field label="Vision model for image descriptions and OCR"
-              description={vision && deploymentCred === false ? <>
-                Descriptions are made during background indexing, when no user is present, so they use the deployment
-                credential or the host&apos;s pw CLI login rather than a personal key. This deployment has neither, so
-                images are read by OCR and name only.
-              </> : undefined}>
-              <div className="ix-inline">
-                <Autocomplete items={models} value={vision} placeholder="none (images are read by OCR only)"
-                  onValueChange={v => setVision(v.trim())} />
-                <Button variant="secondary" loading={saving === 'vision'} disabled={vision === info.ai.visionModel}
-                  onClick={() => void saveVision()}>Save</Button>
-              </div>
-            </Field>
+            <p className="ix-note ix-indent">
+              {vision ? <>Images are described by <code>{vision}</code>, chosen under <a href="#view=settings:ai">AI features</a>.</>
+                : <>No vision model is chosen; choose one under <a href="#view=settings:ai">AI features</a>.</>}
+              {vision && deploymentCred === false && ' Descriptions are made during background indexing, with no user present, so they need the deployment credential or the pw CLI login on this computer; there is neither, so images are read by OCR and name only.'}
+            </p>
           </>
         )}
         <label className="ix-switch">

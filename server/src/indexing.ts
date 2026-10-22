@@ -29,7 +29,7 @@ import { sofficeFound } from './extractors.js'
  *   meaning    embed.py: embeddings for search by meaning
  *
  * Every phase runs its work side by side on the library's thread count
- * (Settings, Indexing). A first build puts the names in place as soon as
+ * (Settings, General, Indexing). A first build puts the names in place as soon as
  * they are read, so search by name works while the text and the
  * embeddings follow; a rebuild works on a copy and swaps it in at the end,
  * so search keeps answering from the old index meanwhile. Text and
@@ -224,9 +224,12 @@ const fmtMs = (ms: number) => ms < 1000 ? `${ms} ms` : ms < 120_000 ? `${(ms / 1
 function phase(ctx: JobCtx, id: PhaseId) {
   const p = ctx.job.phases.find(x => x.id === id)!
   let t0 = 0
+  // The summary pages written before phases read: `directories` with what
+  // is being worked on and its count, as the folder-by-folder build had.
   const sync = () => {
     if (ctx.job.progress) {
-      ctx.job.progress.phase = id
+      ctx.job.progress.phase = 'directories'
+      ctx.job.progress.current = p.label
       ctx.job.progress.done = p.done
       ctx.job.progress.total = p.total
     }
@@ -508,7 +511,7 @@ async function namesPhase(ctx: JobCtx, src: string, staging: string, maxLevel0 =
 /** Documents: downmark into the extract cache. */
 async function documentsPhase(ctx: JobCtx, scope: { subdir?: string; noRecurse?: boolean }): Promise<void> {
   const ph = phase(ctx, 'documents')
-  if (!ctx.settings.documents) { ph.skip('turned off in Settings, Indexing'); return }
+  if (!ctx.settings.documents) { ph.skip('turned off in Settings, General, Indexing'); return }
   ph.start()
   const args = ['--kb-root', KB_ROOT, '--extract-cache', EXTRACT_CACHE, '--jobs', String(ctx.threads), '--progress']
   if (scope.subdir) args.push('--subdir', scope.subdir)
@@ -556,7 +559,7 @@ async function textPhase(ctx: JobCtx, o: { kbRoot: string; index: string; cache:
 /** Meaning: embed.py over an index tree, with the embedding cache. */
 async function meaningPhase(ctx: JobCtx, o: { index: string; noRecurse?: boolean; prune?: boolean }): Promise<void> {
   const ph = phase(ctx, 'meaning')
-  if (!ctx.settings.embeddings) { ph.skip('turned off in Settings, Indexing'); return }
+  if (!ctx.settings.embeddings) { ph.skip('turned off in Settings, General, Indexing'); return }
   if (!fs.existsSync(EMBED_MODEL)) { ph.skip('no embedding model'); return }
   if (!fs.existsSync(path.join(GUFI_BIN, 'gufi_sqlite3'))) { ph.skip('no gufi_sqlite3'); return }
   ph.start()

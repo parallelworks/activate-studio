@@ -1864,6 +1864,7 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .ix-switch > span:last-child { display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
 .ix-switch-label { color: var(--pw-text); font-weight: 500; }
 .ix-path code { font-size: 12px; word-break: break-all; }
+.ix-indent { margin-left: 54px; }
 .ix-formats, .ix-runs { margin-top: 4px; }
 /* On a phone each library is a block: name and paths, then its state, what
    it searches (named, since the headers are gone), and its actions. */

@@ -129,7 +129,7 @@ export function extractorReport(opts: ReaderOptions): { extractors: ExtractorRep
   ]
   const formats: FormatReadiness[] = []
   if (!opts.documents) {
-    formats.push({ formats: '.pdf, .docx, .pptx, .xlsx, .doc', readers: [], ok: false, note: 'Document text is turned off under Settings, Indexing; these index by name only.' })
+    formats.push({ formats: '.pdf, .docx, .pptx, .xlsx, .doc', readers: [], ok: false, note: 'Document text is turned off under Settings, General, Indexing; these index by name only.' })
   } else {
     formats.push({ formats: '.docx, .pptx, .xlsx', readers: ['downmark'], ok: true, note: 'Read by downmark, with a standard-library reader for any it cannot.' })
     const doc = ['downmark', ...(opts.legacyOffice && p.soffice ? ['LibreOffice'] : [])]

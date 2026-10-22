@@ -58,7 +58,7 @@ platform features work too.
 | | |
 |---|---|
 | Documents | `~/Documents/ACTIVATE Studio`, until another folder is chosen |
-| Index and logs | `~/Library/Application Support/ACTIVATE Studio/index` and `logs`; Settings, Indexing can keep the index elsewhere, such as on another disk |
+| Index and logs | `~/Library/Application Support/ACTIVATE Studio/index` and `logs`; Settings, General, Indexing can keep the index elsewhere, such as on another disk |
 | Index log | `~/Library/Application Support/ACTIVATE Studio/logs/indexing.log`, also shown by View log at the bottom of the navigation and in Settings, Libraries |
 | Settings | `~/Library/Application Support/ACTIVATE Studio/studio.env`: `KEY='value'` lines read before each start, such as `PORT='4180'` or a model endpoint (`OPENAI_BASE_URL`, `OPENAI_API_KEY`) |
 
@@ -70,14 +70,15 @@ LibreOffice when it is installed in Applications, which also renders
 previews of Office documents; the app does not include it. Text in images
 and scanned pages is read by tesseract when it is installed
 (`brew install tesseract`), and images are described by a vision model when
-AI features are on and one is chosen under Settings, Indexing. Settings,
-Indexing lists what this Mac reads and what is found by name only.
+AI features are on and one is chosen under Settings, General, AI features.
+Settings, General, Indexing lists what this Mac reads and what is found by
+name only.
 
 *Indexing:* the first build makes every file searchable by name within
 seconds, then reads documents, images and text, then makes the embeddings
 for search by meaning, each phase with its own count at the bottom of the
 navigation, in Settings, Libraries and on Stats. Each phase uses one thread
-per processor core unless Settings, Indexing says otherwise. A build can be
+per processor core unless Settings, General, Indexing says otherwise. A build can be
 stopped and resumed with Update index; the cached text and embeddings are
 kept, so it continues rather than starting over, and so does choosing a
 folder that was indexed before.

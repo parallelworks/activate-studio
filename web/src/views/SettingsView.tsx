@@ -581,7 +581,7 @@ export function SettingsView() {
                   {saveRow(false)}
                   {/* How the main folder's index is built: threads, readers,
                       embeddings, where it is kept (IndexingSection). */}
-                  <IndexingSection />
+                  <IndexingSection visionModel={form.visionModel} deploymentCred={deploymentCred} />
                 </TabPanel>
 
                 <TabPanel value="updates">
