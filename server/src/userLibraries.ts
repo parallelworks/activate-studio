@@ -773,11 +773,62 @@ function pwKey(viewerId: string | null | undefined): { owner: string; key: strin
   return { owner, key }
 }
 
+/** Why a viewer cannot use pw ssh, in plain words, or null when they can:
+ *  the Studio does not find the pw CLI, or there is no platform sign-in to
+ *  act with. Settings, Libraries shows it beside the choice. */
+export function pwUnavailable(viewerId: string | null | undefined): string | null {
+  const owner = ownerOf(viewerId)
+  if (!owner) return 'Sign in to add your own libraries.'
+  if (!pwCliFound()) {
+    return `The Studio does not find the pw CLI on this computer (it looks for ${PW_CLI}${PW_CLI.includes('/') ? '' : ' on its PATH'}). `
+      + 'Install it, or see Settings, Model access for the pw CLI the Studio uses.'
+  }
+  if (!keyOf(owner)) {
+    return owner === 'single'
+      ? 'The pw CLI on this computer is not signed in to a platform. Sign it in under Settings, Model access.'
+      : 'Systems on the platform are reached with your own platform key: add your ACTIVATE API key under Settings, Model access.'
+  }
+  return null
+}
+
 /** Whether a viewer can connect an index on a cluster: the pw CLI is here
  *  and there is a key to act with. */
 export function pwAllowed(viewerId: string | null | undefined): boolean {
-  const owner = ownerOf(viewerId)
-  return !!owner && !!keyOf(owner) && pwCliFound()
+  return pwUnavailable(viewerId) === null
+}
+
+/** Whether pw ssh is offered as a choice at all: wherever it can be used,
+ *  and on a one-person Studio always, with the reason when it cannot. */
+export function pwOffered(viewerId: string | null | undefined): boolean {
+  return pwAllowed(viewerId) || sshAllowed(viewerId)
+}
+
+export interface PwSystem {
+  /** As pw ssh names it. */
+  name: string
+  /** The platform's display name, when it has one. */
+  label: string
+  /** The platform's status: active when running, off when stopped. */
+  status: string
+  running: boolean
+  type: string | null
+}
+
+/** The viewer's systems on the platform, with their own key, running ones
+ *  first. Names pw ssh cannot take are left out. */
+export async function listPwSystems(viewerId: string | null | undefined): Promise<PwSystem[]> {
+  const { key } = pwKey(viewerId)
+  const parsed = firstJson<unknown>(await pw(['clusters', 'ls', '-o', 'json'], key, 60_000))
+  const rows = (Array.isArray(parsed) ? parsed : (parsed as { clusters?: unknown[] } | null)?.clusters ?? []) as
+    { name?: unknown; displayName?: unknown; status?: unknown; type?: unknown }[]
+  const out: PwSystem[] = []
+  for (const r of rows) {
+    const name = String(r?.name ?? '')
+    if (!CLUSTER.test(name)) continue
+    const status = String(r?.status ?? '').toLowerCase() || 'unknown'
+    out.push({ name, label: String(r?.displayName || name), status, running: status === 'active', type: r?.type ? String(r.type) : null })
+  }
+  return out.sort((a, b) => Number(b.running) - Number(a.running) || a.label.localeCompare(b.label))
 }
 
 /** Adds an existing GUFI index on a cluster over pw ssh, after the
@@ -1063,8 +1114,19 @@ export async function userLibraryRoutes(app: FastifyInstance): Promise<void> {
   const viewer = (req: { user?: { id?: string } }) => req.user?.id ?? null
   app.get('/api/user-libraries', async req => ({
     libraries: (await listUserLibraries(viewer(req))).map(d => publicUserLibrary(d)), available: !!ownerOf(viewer(req)), ssh: sshAllowed(viewer(req)), pw: pwAllowed(viewer(req)),
-    workflow: workflowOffered(),
+    pwOffered: pwOffered(viewer(req)), pwWhy: pwUnavailable(viewer(req)), workflow: workflowOffered(),
   }))
+  // The systems pw ssh can reach, for the choice in the form; why it cannot
+  // be used, or why the list could not be had, rather than an error.
+  app.get('/api/user-libraries/pw/systems', async req => {
+    const why = pwUnavailable(viewer(req))
+    if (why) return { usable: false, why, systems: [], error: null }
+    try {
+      return { usable: true, why: null, systems: await listPwSystems(viewer(req)), error: null }
+    } catch (e) {
+      return { usable: true, why: null, systems: [], error: String((e as Error).message ?? e) }
+    }
+  })
   app.post('/api/user-libraries', async req => publicUserLibrary(await addFromCluster(viewer(req), (req.body ?? {}) as AddFromCluster)))
   app.post('/api/user-libraries/ssh/test', async req => {
     if (!sshAllowed(viewer(req))) throw new KbError(403, SSH_SINGLE_USER)

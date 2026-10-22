@@ -9,7 +9,7 @@ import { SshLibraryForm } from './SshLibraryForm'
  * Add a library, as two choices: where the folder or index is (this
  * computer, or a remote system) and how (build an index of a folder, or
  * connect a GUFI index that exists). A remote system is reached over ssh
- * or over pw ssh. Building through the platform's index workflow is a
+ * or over pw ssh, a choice shown side by side. Building through the platform's index workflow is a
  * third way only on a Studio the platform hosts (`workflow`); a Studio on
  * someone's own computer builds on a remote system over the session.
  */
@@ -23,7 +23,8 @@ export interface AddOptions {
   buildHere: boolean
   /** Remote systems over ssh (sign-in off). */
   ssh: boolean
-  /** Over pw ssh: the pw CLI is here, signed in. */
+  /** Over pw ssh: offered here, though the form may say it cannot be used
+   *  yet (no pw CLI found, or not signed in). */
   pw: boolean
   /** The platform's index workflow: a hosted Studio that reaches a platform. */
   workflow: boolean
@@ -43,7 +44,7 @@ export function addChoices(o: AddOptions) {
 
 const WHERE_LABEL: Record<Where, string> = { here: 'This computer', remote: 'A remote system' }
 const HOW_LABEL: Record<How, string> = { build: 'Build an index of a folder', connect: 'Connect an existing index' }
-const VIA_LABEL: Record<Via, string> = { ssh: 'ssh', pw: 'pw ssh', workflow: 'Platform workflow' }
+const VIA_LABEL: Record<Via, string> = { ssh: 'SSH', pw: 'ACTIVATE (pw ssh)', workflow: 'Platform workflow' }
 
 function describe(where: Where, how: How, via: Via | undefined): string {
   if (where === 'here') {
