@@ -6,8 +6,10 @@ import path from 'node:path'
 import type { FastifyInstance } from 'fastify'
 import { authEnabled } from './auth.js'
 import { EXCLUDE_DIRS, GUFI_BIN, INDEX_BASE, KB_ROOT, PROJECT_ROOT, PYTHON_BIN, gufiEnv, indexerEnv } from './config.js'
+import { sofficeFound } from './extractors.js'
 import { invalidateDbList, treeStats } from './gufi.js'
 import { getIndexJob, startIndexJob, type IndexJob } from './indexing.js'
+import { indexSettings, threadsFor, type IndexSettings } from './indexSettings.js'
 import { KbError } from './kb.js'
 import {
   addBuiltLibrary, addedDef, builtLibraryDir, checkNewId, forgetProbe, getLibrary, libraryIdFor, listLibraries, setBuildProgressSource,
@@ -175,10 +177,12 @@ setBuildProgressSource(id => {
 })
 
 function run(cmd: string, args: string[], timeoutMs = 2 * 60 * 60_000): Promise<string> {
+  // With AI features off, or descriptions off, images are indexed by OCR and name only.
   const eff = effectiveSettings()
-  const vm = eff.aiEnabled ? eff.visionModel : ''
+  const vm = eff.aiEnabled && indexSettings().imageDescriptions ? eff.visionModel : ''
   const extra: Record<string, string> = vm ? { ADE_VISION_MODEL: vm } : {}
   const env = path.resolve(path.dirname(cmd)) === path.resolve(GUFI_BIN) ? gufiEnv(extra) : indexerEnv(extra)
+  if (!vm) delete env.ADE_VISION_MODEL
   return new Promise((resolve, reject) => {
     execFile(cmd, args, { timeout: timeoutMs, maxBuffer: 32 * 1024 * 1024, env }, (err, so, se) => {
       if (err) return reject(new Error(`${path.basename(cmd)}: ${String(se || err.message).trim().split('\n').slice(-3).join(' ').slice(0, 300)}`))
@@ -243,19 +247,49 @@ async function saveState(id: string, state: Record<string, number>): Promise<voi
 
 type Progress = (phase: string, done?: number, current?: string | null) => void
 
-/** Extraction and embeddings over one part of a library: a subtree, the
- *  top folder's own files (noRecurse), or everything. */
-async function enrich(def: LibraryDef, scope: { subdir?: string; noRecurse?: boolean }, progress: Progress): Promise<void> {
+type Scope = { subdir?: string; noRecurse?: boolean }
+
+/**
+ * The steps that extract and embed one part of a library (a subtree, the
+ * top folder's own files, or everything), under the indexing settings the
+ * main folder uses (Settings, General, Indexing): its thread count, which
+ * readers run, and whether embeddings are made. Embeddings keep a cache of
+ * their own in the library's folder, so a rebuild or a sync embeds only
+ * passages it has not seen. Exported for tests.
+ */
+export function enrichSteps(def: LibraryDef, scope: Scope, s: IndexSettings = indexSettings(), threads = threadsFor()): {
+  documents: Parameters<typeof runPreExtract>[0] | null
+  text: string[]
+  meaning: string[] | null
+} {
   const b = def.build!
-  const src = def.sourceRoot!
-  progress('Extracting text')
-  await runPreExtract({ kbRoot: src, cacheRoot: b.cacheRoot, ...scope }, m => console.warn(m))
   const extra = [...(scope.subdir ? ['--subdir', scope.subdir] : []), ...(scope.noRecurse ? ['--no-recurse'] : [])]
-  await run(PYTHON_BIN, [path.join(PROJECT_ROOT, 'indexer', 'enrich.py'), '--kb-root', src, '--index', def.indexRoot, '--extract-cache', b.cacheRoot, ...extra])
-  if (fs.existsSync(EMBED_MODEL)) {
+  const text = [path.join(PROJECT_ROOT, 'indexer', 'enrich.py'), '--kb-root', def.sourceRoot!, '--index', def.indexRoot,
+    '--extract-cache', b.cacheRoot, '--jobs', String(threads), '--pdf-reader', s.pdfReader, ...extra]
+  if (!s.ocr) text.push('--no-ocr')
+  if (!s.documents) text.push('--no-documents')
+  const soffice = s.legacyOffice ? sofficeFound() : null
+  if (soffice) text.push('--soffice', soffice)
+  const meaning = s.embeddings && fs.existsSync(EMBED_MODEL)
+    ? [path.join(PROJECT_ROOT, 'indexer', 'embed.py'), '--index', def.indexRoot, '--model', EMBED_MODEL,
+        '--gufi-sqlite3', path.join(GUFI_BIN, 'gufi_sqlite3'), '--jobs', String(threads),
+        '--cache', path.join(builtLibraryDir(def.id), 'embed-cache.db'), ...extra, ...(scope.subdir || scope.noRecurse ? [] : ['--prune'])]
+    : null
+  return {
+    documents: s.documents ? { kbRoot: def.sourceRoot!, cacheRoot: b.cacheRoot, ...scope, jobs: threads, ocr: s.ocr } : null,
+    text,
+    meaning,
+  }
+}
+
+async function enrich(def: LibraryDef, scope: Scope, progress: Progress): Promise<void> {
+  const steps = enrichSteps(def, scope)
+  progress('Extracting text')
+  if (steps.documents) await runPreExtract(steps.documents, m => console.warn(m))
+  await run(PYTHON_BIN, steps.text)
+  if (steps.meaning) {
     progress('Embedding text')
-    await run(PYTHON_BIN, [path.join(PROJECT_ROOT, 'indexer', 'embed.py'), '--index', def.indexRoot, '--model', EMBED_MODEL,
-      '--gufi-sqlite3', path.join(GUFI_BIN, 'gufi_sqlite3'), ...extra])
+    await run(PYTHON_BIN, steps.meaning)
   }
 }
 
@@ -293,7 +327,7 @@ async function fullBuild(id: string, job: IndexJob): Promise<{ ms: number }> {
     await fsp.rm(stage, { recursive: true, force: true })
     const counter = setInterval(() => { const n = countDbs(stage); progress('Indexing folders', n, `${n.toLocaleString('en-US')} folders`) }, 1000)
     try {
-      await run(path.join(GUFI_BIN, 'gufi_dir2index'), ['-x', '-n', '8', '--skip-file', skipFile(id), src, stage])
+      await run(path.join(GUFI_BIN, 'gufi_dir2index'), ['-x', '-n', String(threadsFor()), '--skip-file', skipFile(id), src, stage])
     } finally { clearInterval(counter) }
     const built = path.join(stage, path.basename(src))
     if (!fs.existsSync(path.join(built, 'db.db'))) throw new Error(`gufi_dir2index wrote no index at ${built}`)
@@ -323,7 +357,7 @@ async function indexSubtree(def: LibraryDef, rel: string): Promise<void> {
   const stage = path.join(b.indexDir, `.inc-${Date.now()}-${Math.floor(Math.random() * 1e6)}`)
   await fsp.mkdir(stage, { recursive: true })
   try {
-    await run(path.join(GUFI_BIN, 'gufi_dir2index'), ['-x', '-n', '8', '--skip-file', skipFile(def.id), src, stage])
+    await run(path.join(GUFI_BIN, 'gufi_dir2index'), ['-x', '-n', String(threadsFor()), '--skip-file', skipFile(def.id), src, stage])
     const target = path.join(def.indexRoot, rel)
     await fsp.mkdir(path.dirname(target), { recursive: true })
     await fsp.rm(target, { recursive: true, force: true })
@@ -340,7 +374,7 @@ async function indexTop(def: LibraryDef): Promise<void> {
   const stage = path.join(b.indexDir, `.inc-top-${Date.now()}`)
   await fsp.mkdir(stage, { recursive: true })
   try {
-    await run(path.join(GUFI_BIN, 'gufi_dir2index'), ['-x', '-n', '4', '--max-level', '0', '--skip-file', skipFile(def.id), def.sourceRoot!, stage])
+    await run(path.join(GUFI_BIN, 'gufi_dir2index'), ['-x', '-n', String(Math.min(4, threadsFor())), '--max-level', '0', '--skip-file', skipFile(def.id), def.sourceRoot!, stage])
     await fsp.rename(path.join(stage, path.basename(def.sourceRoot!), 'db.db'), path.join(def.indexRoot, 'db.db'))
   } finally {
     await fsp.rm(stage, { recursive: true, force: true })

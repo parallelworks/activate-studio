@@ -287,7 +287,8 @@ export function runPreExtract(opts: Omit<PreExtractOptions, 'log' | 'excludeDirs
   return new Promise(resolve => {
     // fork inherits execArgv, so the tsx loader used in development carries
     // over; in production the script is plain JS under dist/.
-    const child = fork(script, args, { stdio: ['ignore', 'pipe', 'pipe', 'ipc'], timeout: 30 * 60_000 })
+    // OCR inside downmark runs tesseract; many side by side each do best on one thread.
+    const child = fork(script, args, { stdio: ['ignore', 'pipe', 'pipe', 'ipc'], timeout: 30 * 60_000, env: { ...process.env, OMP_THREAD_LIMIT: '1' } })
     let out = ''
     let err = ''
     child.stdout?.on('data', d => { out += d })

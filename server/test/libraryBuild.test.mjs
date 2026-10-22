@@ -41,6 +41,7 @@ const B = await import('../dist/libraryBuild.js')
 const D = await import('../dist/libraryDetails.js')
 const L = await import('../dist/libraries.js')
 const G = await import('../dist/gufi.js')
+const S = await import('../dist/indexSettings.js')
 const app = Fastify()
 app.setErrorHandler(sanitizedErrorHandler(app))
 await app.register(kbRoutes)
@@ -62,6 +63,35 @@ const waitReady = async id => {
 
 test('the listing says libraries can be built here, with sign-in off', async () => {
   assert.equal((await call('GET', '/api/libraries')).body.canBuild, true)
+})
+
+test('a library is extracted and embedded under the indexing settings, with an embedding cache of its own', () => {
+  const def = { id: 'notes', sourceRoot: '/src/notes', indexRoot: '/ix/notes', build: { cacheRoot: '/ix/extract', indexDir: '/ix' } }
+  const model = path.join(dir, 'ix', 'models', 'minilm384.gguf')
+  write(model, '')
+  try {
+    const on = { ...S.INDEX_SETTINGS_DEFAULTS, pdfReader: 'pypdf' }
+    let s = B.enrichSteps(def, {}, on, 3)
+    assert.deepEqual(s.documents, { kbRoot: '/src/notes', cacheRoot: '/ix/extract', jobs: 3, ocr: true })
+    const arg = (argv, k) => argv[argv.indexOf(k) + 1]
+    assert.equal(arg(s.text, '--jobs'), '3')
+    assert.equal(arg(s.text, '--pdf-reader'), 'pypdf')
+    assert.ok(!s.text.includes('--no-ocr') && !s.text.includes('--no-documents'))
+    assert.equal(arg(s.meaning, '--jobs'), '3')
+    assert.equal(arg(s.meaning, '--cache'), path.join(L.builtLibraryDir('notes'), 'embed-cache.db'))
+    assert.ok(s.meaning.includes('--prune'), 'a whole build drops cache entries the index no longer uses')
+    s = B.enrichSteps(def, { subdir: 'a/b' }, on, 3)
+    assert.equal(arg(s.meaning, '--subdir'), 'a/b')
+    assert.ok(!s.meaning.includes('--prune'), 'one folder never prunes the cache')
+
+    const off = { ...on, ocr: false, documents: false, embeddings: false, legacyOffice: false }
+    s = B.enrichSteps(def, { noRecurse: true }, off, 1)
+    assert.equal(s.documents, null, 'documents read by name only')
+    assert.ok(s.text.includes('--no-ocr') && s.text.includes('--no-documents') && s.text.includes('--no-recurse'))
+    assert.ok(!s.text.includes('--soffice'))
+    assert.equal(s.meaning, null, 'embeddings off')
+  } finally { fs.rmSync(model) }
+  assert.equal(B.enrichSteps(def, {}).meaning, null, 'no embedding model, no embeddings')
 })
 
 test('the check lists the folders it would make, and refuses unusable ones', { skip }, async () => {
