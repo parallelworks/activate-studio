@@ -25,6 +25,10 @@ export interface SettingsLibrary extends PublicLibrary {
 /** How far a build has got: a phase, and folders indexed so far. */
 export interface BuildProgress { phase: string; done: number; total: number; current: string | null }
 /** A user's own library on one of their clusters, or on another machine over ssh. */
+/** A system on the platform, as pw ssh names it. */
+export interface PwSystem { name: string; label: string; status: string; running: boolean; type: string | null }
+export interface PwSystems { usable: boolean; why: string | null; systems: PwSystem[]; error: string | null }
+
 export interface UserLibrary {
   id: string; label: string; site: string; sourceDir: string; sourceRoot: string | null; indexRoot: string | null
   transport?: 'pw' | 'ssh'
@@ -411,9 +415,11 @@ export const api = {
   indexJob: (id: number) => getJson<IndexJob>(`/api/index/job/${id}`),
   /** `canBuild`: libraries can be built from folders on this computer. */
   libraries: () => getJson<{ libraries: SettingsLibrary[]; canBuild?: boolean }>('/api/libraries'),
-  /** `ssh`: libraries over ssh are offered; `pw`: over pw ssh; `workflow`:
-   *  building on a cluster through the platform's index workflow. */
-  userLibraries: () => getJson<{ libraries: UserLibrary[]; available: boolean; ssh?: boolean; pw?: boolean; workflow?: boolean }>('/api/user-libraries'),
+  /** `ssh`: libraries over ssh are offered; `pw`: over pw ssh, usable now;
+   *  `pwOffered`: pw ssh is shown as a choice, with `pwWhy` saying why it
+   *  cannot be used yet; `workflow`: building on a cluster through the
+   *  platform's index workflow. */
+  userLibraries: () => getJson<{ libraries: UserLibrary[]; available: boolean; ssh?: boolean; pw?: boolean; pwOffered?: boolean; pwWhy?: string | null; workflow?: boolean }>('/api/user-libraries'),
   rebuildLibrary: (id: string) => postJson<{ library: SettingsLibrary }>(`/api/libraries/${encodeURIComponent(id)}/rebuild`, {}),
   /** A folder or file of the current library, described from its index. */
   details: async (path: string): Promise<EntryDetails> => {
@@ -430,6 +436,9 @@ export const api = {
     if (!r.ok) throw new Error(((await r.json().catch(() => ({}))) as { error?: string }).error ?? `${r.status}`)
   },
   agentSites: () => getJson<{ sites: { name: string; kind: 'local' | 'cluster'; type?: string }[] }>('/api/agent-sites'),
+  /** The systems pw ssh reaches, running first; or why it cannot be used,
+   *  or why the list could not be had. */
+  pwSystems: () => getJson<PwSystems>('/api/user-libraries/pw/systems'),
   addLibrary: (def: { id: string; label?: string; indexRoot: string; sourceRoot?: string }) =>
     postJson<{ library: SettingsLibrary }>('/api/libraries', def),
   removeLibrary: async (id: string) => {

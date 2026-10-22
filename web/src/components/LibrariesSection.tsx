@@ -12,7 +12,7 @@ import { useIndexStatus } from '../indexActivity'
 
 /** A user library as listed, with how it is reached. */
 type UserLib = UserLibrary
-interface UserList { libraries: UserLib[]; available: boolean; ssh: boolean; pw: boolean; workflow: boolean }
+interface UserList { libraries: UserLib[]; available: boolean; ssh: boolean; pw: boolean; pwOffered: boolean; workflow: boolean }
 
 /** The kinds of library, in the words the setup wizard's Other libraries
  *  step uses for the forms it shares with this page. */
@@ -69,7 +69,7 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
   const cfg = useAppConfig()
   const [libs, setLibs] = useState<SettingsLibrary[] | null>(null)
   const [loadError, setLoadError] = useState('')
-  const [user, setUser] = useState<UserList>({ libraries: [], available: false, ssh: false, pw: false, workflow: false })
+  const [user, setUser] = useState<UserList>({ libraries: [], available: false, ssh: false, pw: false, pwOffered: false, workflow: false })
   const [canBuild, setCanBuild] = useState(false)
   const [status, setStatus] = useState<SetupStatus | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
@@ -91,7 +91,7 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
   const loadUser = () => api.userLibraries().then(r => {
     const list = r as Partial<UserList>
     const libraries = list.libraries ?? []
-    setUser({ libraries, available: !!list.available, ssh: !!list.ssh, pw: !!list.pw, workflow: !!list.workflow })
+    setUser({ libraries, available: !!list.available, ssh: !!list.ssh, pw: !!list.pw, pwOffered: !!(list.pwOffered ?? list.pw), workflow: !!list.workflow })
     // A library that just finished building joins the switcher.
     const now = new Set(libraries.filter(l => l.state === 'ready').map(l => l.id))
     if ([...now].some(id => !ready.current.has(id)) && ready.current.size + now.size > 0) reloadAppConfig()
@@ -378,7 +378,8 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
 
   const primary = libs?.find(l => l.primary)
   const primaryPath = standalone?.primary?.path ?? primary?.sourceRoot ?? null
-  const options = { buildHere: canBuild, ssh: user.ssh, pw: user.pw, workflow: user.workflow && !!cfg.platform && user.available }
+  // pw ssh is a choice wherever it is offered; the form says why when it cannot be used yet.
+  const options = { buildHere: canBuild, ssh: user.ssh, pw: user.pwOffered, workflow: user.workflow && !!cfg.platform && user.available }
 
   return (
     <>

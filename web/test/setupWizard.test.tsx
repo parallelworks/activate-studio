@@ -361,10 +361,10 @@ describe('the setup wizard', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Add library' }))
     expect(await screen.findByText('Research')).toBeInTheDocument()
     expect(sent(s, 'POST', '/api/libraries')).toEqual([{ id: '', indexRoot: '/home/u/Research' }])
-    fireEvent.click(await screen.findByRole('button', { name: 'On a cluster' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'On ACTIVATE (pw ssh)' }))
     fireEvent.click(screen.getByRole('button', { name: 'Add test index over pw' }))
     expect(screen.getByText('Cluster index')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Over ssh' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Over SSH' }))
     expect(screen.getByRole('button', { name: 'Add test index over ssh' })).toBeInTheDocument()
     next()
 
@@ -408,8 +408,8 @@ describe('the setup wizard', () => {
 
     // Without a signed-in pw CLI there is no cluster choice.
     heading('Other libraries')
-    expect(screen.getByRole('button', { name: 'Over ssh' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'On a cluster' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Over SSH' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'On ACTIVATE (pw ssh)' })).toBeNull()
     next()
     heading('Done')
     expect(screen.getByText('AI features: off')).toBeInTheDocument()

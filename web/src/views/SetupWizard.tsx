@@ -226,7 +226,7 @@ const row: CSSProperties = { display: 'flex', flexWrap: 'wrap', alignItems: 'cen
 const label: CSSProperties = { margin: '0 0 6px', fontSize: 13, fontWeight: 500 }
 
 type OtherKind = 'local' | 'ssh' | 'pw'
-const KIND_TAB: Record<OtherKind, string> = { local: 'On this machine', ssh: 'Over ssh', pw: 'On a cluster' }
+const KIND_TAB: Record<OtherKind, string> = { local: 'On this machine', ssh: 'Over SSH', pw: 'On ACTIVATE (pw ssh)' }
 
 export const THEME_OPTIONS: { value: ThemeChoice; label: string }[] = [
   { value: 'light', label: 'Light' },
@@ -312,8 +312,8 @@ export function SetupWizard({ onClose, pollMs = 1000 }: {
       if (s?.job) void index.follow(s.job)
     })
     json<KeyStatus>('/api/me/model-key').then(k => { if (alive.current) setMe(k) }).catch(() => {})
-    // Whether an index on a cluster can be connected: the pw CLI is here and signed in.
-    api.userLibraries().then(r => { if (alive.current) setPwOffered(!!r.pw) }).catch(() => {})
+    // Whether an index on a cluster is offered; the form says why when pw ssh cannot be used yet.
+    api.userLibraries().then(r => { if (alive.current) setPwOffered(!!(r.pwOffered ?? r.pw)) }).catch(() => {})
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   // The name, theme and accent show what is in effect, so setup run again
@@ -532,7 +532,7 @@ export function SetupWizard({ onClose, pollMs = 1000 }: {
             <p className="muted" style={{ margin: 0 }}>{KINDS[kind].description}</p>
             {kind === 'local' && <LocalLibraryForm browse compact onAdded={lib => libraryAdded({ id: lib.id, label: lib.label })} />}
             {kind === 'ssh' && <SshLibraryForm compact onAdded={libraryAdded} />}
-            {kind === 'pw' && <SshLibraryForm compact transport="pw" onAdded={libraryAdded} />}
+            {kind === 'pw' && <SshLibraryForm compact transport="pw" onAdded={libraryAdded} onOpenAccess={() => void openAccess()} />}
             {others.length ? (
               <div>
                 <p style={{ margin: '0 0 4px' }}>Added:</p>

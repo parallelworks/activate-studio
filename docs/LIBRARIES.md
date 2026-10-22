@@ -78,12 +78,15 @@ search by meaning, and its actions:
 **Add a library** (`web/src/components/AddLibrary.tsx`) asks two things.
 *Where:* this computer, or a remote system. *How:* build an index of a
 folder, or connect a GUFI index that already exists. A remote system is
-reached with **Connect with** ssh or pw ssh, and on a Studio the platform
-hosts the platform's index workflow is a third way to build. Only what
-this install supports is offered: building here and anything over ssh
-where sign-in is off (`canBuild` in `GET /api/libraries`, `ssh` in
-`GET /api/user-libraries`); pw ssh where the pw CLI is on this machine
-with a key to act with (`pw`); the workflow where the platform hosts the
+reached with **Connect with** SSH or ACTIVATE (pw ssh), and on a Studio
+the platform hosts the platform's index workflow is a third way to build.
+Only what this install supports is offered: building here and anything
+over ssh where sign-in is off (`canBuild` in `GET /api/libraries`, `ssh`
+in `GET /api/user-libraries`); pw ssh where the pw CLI is on this machine
+with a key to act with (`pw`), and on a Studio with sign-in off always
+(`pwOffered`), where the form says why it cannot be used yet (`pwWhy`:
+the Studio does not find the pw CLI, or the CLI is not signed in) with a
+way to Settings, Model access; the workflow where the platform hosts the
 Studio, which is sign-in on or `PW_PLATFORM_HOST` set (`workflow`), and
 the client config's `platform`. A choice with one option is not shown. A
 Studio on someone's own computer therefore never shows workflow or
@@ -183,7 +186,7 @@ the index on the remote system itself, over the same session the Studio
 uses to read it: plain ssh (`user@host` or `user@host:port`, with your
 keys, agent, and `~/.ssh/config`, on a Studio with sign-in off) or
 `pw ssh` to one of the systems the signed-in pw CLI reaches, picked from
-a list (`GET /api/agent-sites`). No workflow and no scheduler are
+a list (`GET /api/user-libraries/pw/systems`, below). No workflow and no scheduler are
 involved (`server/src/remoteBuild.ts`).
 
 **Test connection** (`POST /api/user-libraries/ssh/build/test`, or
@@ -376,8 +379,14 @@ An existing GUFI index on one of the user's running clusters is connected
 the same way, with `pw ssh <cluster>` in place of ssh: Settings,
 Libraries, **Add a library**, "A remote system", "Connect an existing
 index", **Connect with** pw ssh, or the setup wizard's Other libraries
-step. The system is picked from the list the signed-in pw CLI gives
-(`GET /api/agent-sites`, the list the cluster form uses). `pw ssh` acts with the owner's platform key; with
+step. The system is picked from the user's systems on the platform
+(`GET /api/user-libraries/pw/systems`, which runs `pw clusters ls` with
+the same key): running ones first, one that is off marked so (it has to
+be started on ACTIVATE before it can be reached), the display name over
+the name `pw ssh` takes, and "Another system…" to type a name. The route
+answers `{ usable, why, systems, error }`: `why` when pw ssh cannot be
+used yet, and `error` when the list could not be had, in which case the
+form shows it and takes a typed name. `pw ssh` acts with the owner's platform key; with
 sign-in off that is the deployment credential, which on a computer of its
 own is the pw CLI's sign-in there. Nothing is built or written on the cluster: the
 library is ready once its connection test passes, and it is read only.

@@ -50,6 +50,9 @@ interface Server {
   standalone: boolean
   ssh: boolean
   pw?: boolean
+  /** pw ssh shown though it cannot be used, and why. */
+  pwOffered?: boolean
+  pwWhy?: string
   workflow?: boolean
   canBuild?: boolean
   libs: Record<string, unknown>[]
@@ -120,7 +123,10 @@ function stubServer(s: Server) {
       s.libs = s.libs.filter(l => l.id !== decodeURIComponent(path.slice('/api/libraries/'.length)))
       return reply({ ok: true })
     }
-    if (path === '/api/user-libraries' && method === 'GET') return reply({ libraries: s.user, available: true, ssh: s.ssh, pw: !!s.pw, workflow: !!s.workflow })
+    if (path === '/api/user-libraries' && method === 'GET') return reply({ libraries: s.user, available: true, ssh: s.ssh, pw: !!s.pw, pwOffered: s.pwOffered ?? !!s.pw, pwWhy: s.pwWhy ?? null, workflow: !!s.workflow })
+    if (path === '/api/user-libraries/pw/systems') {
+      return reply({ usable: !!s.pw, why: s.pwWhy ?? null, systems: s.pw ? [{ name: 'c1', label: 'c1', status: 'active', running: true, type: null }] : [], error: null })
+    }
     if (path === '/api/user-libraries' && method === 'POST') {
       const lib = { ...CLUSTER, id: 'u-c2', site: (body as { site: string }).site }
       s.user = [...s.user, lib]
@@ -290,6 +296,21 @@ describe('Settings, Libraries', () => {
     expect(posted(s, '/api/user-libraries/ssh')[0].body).toEqual({ destination: 'me@lab', indexRoot: '/data/index', gufiBin: '/usr/local/bin' })
     // The form closes once the library is added.
     expect(screen.queryByLabelText('Host')).toBeNull()
+  })
+
+  it('offers pw ssh beside ssh on a computer of its own, and says why it cannot be used yet', async () => {
+    const why = 'The Studio does not find the pw CLI on this computer (it looks for pw on its PATH). Install it, or see Settings, Model access for the pw CLI the Studio uses.'
+    const s = server({ platform: true, ssh: true, canBuild: true, pw: false, pwOffered: true, pwWhy: why })
+    await renderPage(s)
+    await waitFor(() => rowOf('Notes'))
+    fireEvent.click(screen.getByRole('button', { name: 'Add a library' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'A remote system' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Connect an existing index' }))
+    expect(screen.getByRole('button', { name: 'SSH' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'ACTIVATE (pw ssh)' }))
+    expect(await screen.findByText(why)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Open Model access' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Test connection' })).toBeNull()
   })
 
   it('builds a folder on this computer: check, confirm the folders it makes, then progress in the list', async () => {

@@ -1,14 +1,16 @@
 import { useEffect, useState } from 'react'
 import { Button, Callout, Field, Input, Select } from '@parallelworks/ui'
-import { api } from '../api'
+import { api, type PwSystems } from '../api'
 import { CreateConfirm, postJson, StepList, type CheckStep } from './LibraryFormParts'
 
 /**
  * A library on a remote system: one reached with the user's own ssh (keys,
  * agent and ~/.ssh/config, the host written user@host or user@host:port),
  * or with `transport="pw"` one of the systems the signed-in pw CLI reaches,
- * picked from a list, over pw ssh. Used by Settings, Libraries and by the
- * setup wizard.
+ * over pw ssh: picked from the person's systems on the platform, running
+ * ones first, or typed when the list cannot be had. Where pw ssh cannot be
+ * used yet (no pw CLI found, no sign-in), the form says why instead. Used
+ * by Settings, Libraries and by the setup wizard.
  *
  * By default (`mode` connect) the GUFI index is there already: the
  * connection test runs first and reports each step (the connection, GUFI,
@@ -27,11 +29,16 @@ interface TestResult { ok: boolean; steps: CheckStep[]; gufiBin?: string; gufiVe
 
 const EMPTY = { label: '', destination: '', cluster: '', indexRoot: '', sourceRoot: '', gufiBin: '' }
 
-export function SshLibraryForm({ onAdded, compact = false, transport = 'ssh', mode = 'connect' }: {
+/** The list's choice for a system typed by name. */
+const ANOTHER = '\u0000another'
+
+export function SshLibraryForm({ onAdded, compact = false, transport = 'ssh', mode = 'connect', onOpenAccess }: {
   onAdded?: (lib: SshLibraryAdded) => void
   compact?: boolean
   transport?: 'ssh' | 'pw'
   mode?: 'connect' | 'build'
+  /** Opens Settings, Model access; by default, by its address. */
+  onOpenAccess?: () => void
 }) {
   const pw = transport === 'pw'
   const build = mode === 'build'
@@ -42,16 +49,21 @@ export function SshLibraryForm({ onAdded, compact = false, transport = 'ssh', mo
   const [busy, setBusy] = useState<'test' | 'add' | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [confirming, setConfirming] = useState(false)
-  // Over pw ssh: the systems the pw CLI reaches, as the cluster form lists them.
-  const [clusters, setClusters] = useState<string[] | null>(null)
+  // Over pw ssh: the person's systems on the platform, running first, the
+  // first running one chosen; or why pw ssh cannot be used here.
+  const [systems, setSystems] = useState<PwSystems | null>(null)
+  const [typing, setTyping] = useState(false)
   useEffect(() => {
     if (!pw) return
-    api.agentSites().then(r => {
-      const names = r.sites.filter(s => s.kind === 'cluster').map(s => s.name)
-      setClusters(names)
-      setForm(f => (f.cluster || !names.length ? f : { ...f, cluster: names[0] }))
-    }).catch(() => setClusters([]))
+    api.pwSystems().then(r => {
+      setSystems(r)
+      const first = r.systems.find(x => x.running)
+      setForm(f => (f.cluster || !first ? f : { ...f, cluster: first.name }))
+    }).catch(e => setSystems({ usable: true, why: null, systems: [], error: String((e as Error).message ?? e) }))
   }, [pw])
+  // Without a list, the system is typed by name.
+  const listed = !!systems?.systems.length
+  const typed = pw && systems !== null && (typing || !listed)
 
   const paths = build
     ? { sourceRoot: form.sourceRoot.trim(), indexRoot: form.indexRoot.trim() || undefined, gufiBin: form.gufiBin.trim() || undefined }
@@ -88,6 +100,16 @@ export function SshLibraryForm({ onAdded, compact = false, transport = 'ssh', mo
 
   const help = (text: string) => (compact ? undefined : text)
   const where = pw ? 'system' : 'machine'
+  if (pw && systems && !systems.usable) {
+    return (
+      <div className="ssh-library-form">
+        <Callout tone="warning" title="pw ssh cannot be used yet"
+          action={<Button variant="secondary" size="sm" onClick={() => (onOpenAccess ? onOpenAccess() : void (location.hash = '#view=settings:access'))}>Open Model access</Button>}>
+          {systems.why}
+        </Callout>
+      </div>
+    )
+  }
   return (
     <div className="ssh-library-form">
       {!compact && (
@@ -101,13 +123,31 @@ export function SshLibraryForm({ onAdded, compact = false, transport = 'ssh', mo
               : 'An existing GUFI index on another machine, read over ssh with your own keys. The Studio cannot answer a password prompt, so key access is needed. Read only: nothing is written there.')}
         </p>
       )}
+      {pw && systems?.error && (
+        <Callout tone="warning">Your systems could not be listed: {systems.error} Type the name of a running system instead.</Callout>
+      )}
       <div className="settings-grid">
         {pw ? (
-          <Field label="System" description={help('One of the systems the pw CLI on this computer can reach.')}>
-            <Select items={(clusters ?? []).map(c => ({ value: c, label: c }))} value={form.cluster || null}
-              placeholder={clusters === null ? 'Loading…' : 'No running systems'} disabled={!clusters?.length}
-              onValueChange={v => v && set({ cluster: v })} />
-          </Field>
+          <>
+            {(systems === null || listed) && (
+              <Field label="System" description={help('Your systems on the platform, running ones first. One that is off has to be started on ACTIVATE before it can be reached.')}>
+                <Select value={typing ? ANOTHER : form.cluster || null} placeholder={systems === null ? 'Loading…' : 'Choose a system'} disabled={systems === null}
+                  items={[
+                    ...(systems?.systems ?? []).map(x => ({ value: x.name, label: x.label, description: x.label !== x.name ? x.name : undefined, hint: x.running ? 'running' : x.status })),
+                    { value: ANOTHER, label: 'Another system…', description: 'Type its name' },
+                  ]}
+                  onValueChange={v => {
+                    if (!v) return
+                    setTyping(v === ANOTHER)
+                    set({ cluster: v === ANOTHER ? '' : v })
+                  }} />
+              </Field>
+            )}
+            {typed && (
+              <Input label={listed ? 'System name' : 'System'} placeholder="my-cluster" mono autoComplete="off" spellCheck={false} value={form.cluster}
+                description={help('The name of a running system, as pw ssh takes it.')} onChange={e => set({ cluster: e.target.value.trim() })} />
+            )}
+          </>
         ) : (
           <Input label="Host" placeholder="user@host or user@host:port" autoComplete="off" spellCheck={false} value={form.destination}
             description={help('As you would type it after ssh, with :port for a port other than 22; your ~/.ssh/config applies.')} onChange={e => set({ destination: e.target.value })} />
