@@ -1,47 +1,38 @@
-import fs from 'node:fs'
-import os from 'node:os'
-import path from 'node:path'
 import { GATEWAY_BASE, PW_API_KEY, SIDECAR_BASE, SIDECAR_KEY } from '../config.js'
 import { resolveSharedKey } from '../credentials.js'
+import { cliCredential } from '../access.js'
+import { isLoopbackHost, networkFailure, unreachableMessage } from '../net.js'
 
 /**
  * Gateway credential: PW_API_KEY env when set, otherwise the pw CLI's own
- * credential for the gateway host from ~/.config/pw/credentials (the CLI
- * refreshes it; we re-read when the file changes). Never sent to the browser.
+ * credential for the gateway host, from the context chosen in Model access
+ * or the CLI's current one (access.ts; a sign-in the CLI renews is asked of
+ * the CLI). Never sent to the browser.
  */
-let credCache: { key: string; mtimeMs: number } | null = null
-
-function credentialFromCliStore(): string {
-  const file = path.join(os.homedir(), '.config', 'pw', 'credentials')
-  try {
-    const st = fs.statSync(file)
-    if (credCache && credCache.mtimeMs === st.mtimeMs) return credCache.key
-    const data = JSON.parse(fs.readFileSync(file, 'utf8'))
-    const host = new URL(GATEWAY_BASE).host
-    let key = ''
-    // The active context (PW_CONTEXT, then currentIdentity) wins when it is
-    // for this host; several identities can share a server, and the current
-    // one is the credential the CLI itself would use.
-    const current = data.identities?.[process.env.PW_CONTEXT || data.currentIdentity]
-    if (current?.server === host) {
-      key = current.token || current.apikey || ''
-    } else {
-      for (const ident of Object.values<any>(data.identities ?? {})) {
-        if (ident?.server === host) { key = ident.token || ident.apikey || ''; break }
-      }
-    }
-    credCache = { key, mtimeMs: st.mtimeMs }
-    return key
-  } catch {
-    return ''
-  }
-}
-
 export function gatewayKey(): string {
   // A key a user has promoted for everyone stands in for the deployment
   // credential, and wins over the ambient one: it was chosen deliberately,
   // in the app, by someone who wanted the group to use it.
-  return resolveSharedKey() || PW_API_KEY || credentialFromCliStore()
+  return resolveSharedKey() || PW_API_KEY || cliCredential()
+}
+
+const hostOf = (url: string) => { try { return new URL(url).host } catch { return url } }
+
+/** A fetch whose network failure reads as a sentence about the host. Other
+ *  failures (a stop the person asked for, an AbortError) pass through. */
+async function reach(url: string, init: RequestInit): Promise<Response> {
+  try {
+    return await fetch(url, init)
+  } catch (e) {
+    const f = networkFailure(e)
+    if (!f) throw e
+    throw new GatewayUnreachable(unreachableMessage(hostOf(url), f))
+  }
+}
+
+/** The gateway or provider could not be reached at all. */
+export class GatewayUnreachable extends Error {
+  constructor(message: string) { super(message); this.name = 'GatewayUnreachable' }
 }
 
 export interface WireToolCall {
@@ -163,17 +154,36 @@ function gatewayError(status: number, bodyText: string, ctx: string): Error {
   return err
 }
 
+/**
+ * Where a base URL lists its models. GitHub Models serves its catalog apart
+ * from its inference endpoint, as a plain array.
+ */
+export function modelsUrl(base: string): string {
+  try {
+    const u = new URL(base)
+    if (u.host === 'models.github.ai') return `${u.origin}/catalog/models`
+  } catch { /* not a URL: used as given */ }
+  return `${base}/models`
+}
+
+/** A listing as { data: [...] }, whichever shape the server answered with. */
+function asListing(body: unknown): { data?: unknown[]; models?: unknown[] } {
+  return Array.isArray(body) ? { data: body } : (body as { data?: unknown[]; models?: unknown[] }) ?? {}
+}
+
 export async function listModels(key?: string | null, baseUrl?: string | null): Promise<unknown> {
-  const res = await fetch(`${baseUrl || GATEWAY_BASE}/models`, {
+  const res = await reach(modelsUrl(baseUrl || GATEWAY_BASE), {
     headers: { Authorization: `Bearer ${key || gatewayKey()}` },
+    signal: AbortSignal.timeout(10_000),
   })
   if (!res.ok) throw gatewayError(res.status, await res.text(), '/models')
-  return res.json()
+  return asListing(await res.json())
 }
 
 export interface AiHealth {
   ok: boolean
-  status: 'ok' | 'auth' | 'unreachable' | 'unconfigured'
+  /** offline: the host could not be reached at all, as with no network. */
+  status: 'ok' | 'auth' | 'unreachable' | 'offline' | 'unconfigured'
   models: number
   gatewayHost: string
   message: string | null
@@ -335,7 +345,7 @@ export async function aiHealth(key?: string | null, baseUrl?: string | null, opt
     return { ...base, ok: false, status: 'unconfigured', message: 'No gateway credential configured (PW_API_KEY or pw CLI login).' }
   }
   try {
-    const res = await fetch(`${baseUrl || GATEWAY_BASE}/models`, {
+    const res = await fetch(modelsUrl(apiBase), {
       headers: { Authorization: `Bearer ${key || gatewayKey()}` },
       signal: AbortSignal.timeout(8000),
     })
@@ -358,11 +368,15 @@ export async function aiHealth(key?: string | null, baseUrl?: string | null, opt
         unlockUrl,
       }
     }
-    const data = JSON.parse(text) as { data?: unknown[]; models?: unknown[] }
+    const data = asListing(JSON.parse(text))
     const list = Array.isArray(data.data) ? data.data : Array.isArray(data.models) ? data.models : []
     const ids = opts.ids ? list.map(m => String((m as { id?: unknown })?.id ?? '')).filter(Boolean).slice(0, 500) : undefined
     return { ...base, ok: true, status: 'ok', models: list.length, message: null, ...(ids ? { ids } : {}) }
   } catch (e) {
+    const f = networkFailure(e)
+    // A server on this computer that does not answer is not running; the
+    // network has nothing to do with it.
+    if (f) return { ...base, ok: false, status: isLoopbackHost(gatewayHost) ? 'unreachable' : 'offline', message: unreachableMessage(gatewayHost, f) }
     return { ...base, ok: false, status: 'unreachable', message: String((e as Error).message ?? e).slice(0, 200) }
   }
 }
@@ -390,7 +404,7 @@ export async function streamTurn(
   }
   if (allocation) headers['X-Allocation'] = allocation
   const streaming = body.stream !== false
-  const res = await fetch(`${baseUrl || GATEWAY_BASE}/chat/completions`, {
+  const res = await reach(`${baseUrl || GATEWAY_BASE}/chat/completions`, {
     method: 'POST',
     headers,
     body: JSON.stringify({ ...body, stream: streaming }),

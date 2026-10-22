@@ -1,4 +1,5 @@
 import { LibrariesSection } from '../components/LibrariesSection'
+import { ModelAccessSection } from '../components/ModelAccessSection'
 import { WorkflowsSection } from '../components/WorkflowsSection'
 import { useEffect, useState } from 'react'
 import {
@@ -163,27 +164,11 @@ export function SettingsView() {
   const [me, setMe] = useState<{ authEnabled?: boolean; single?: boolean; verified: boolean; mode: 'stored' | 'session' | 'none'; last4?: string; addedAt?: string; sessionExpiresAt?: string; kind?: string; credExpiresAt?: string | null; credExpired?: boolean; baseUrl?: string | null; gatewayHost?: string
     shared?: { active: boolean; last4?: string; sharedBy?: string; sharedAt?: string; credExpired?: boolean; mine?: boolean }
     sharingAllowed?: boolean } | null>(null)
-  const [keyInput, setKeyInput] = useState('')
   // Setup runs only on a single-user install (sign-in off), which also
   // uploads its icons rather than naming them.
   const [setupAvailable, setSetupAvailable] = useState(false)
   const [branding, setBranding] = useState<Branding | null>(null)
   const [sectionsNote, setSectionsNote] = useState('')
-  const [providerMode, setProviderMode] = useState<'platform' | 'activate' | 'custom'>('platform')
-  const [providerHost, setProviderHost] = useState('')
-  const [baseUrlInput, setBaseUrlInput] = useState('')
-
-  const effectiveBaseUrl = () => {
-    if (providerMode === 'platform') return ''
-    if (providerMode === 'activate') {
-      const host = providerHost.trim().replace(/^https?:\/\//, '').replace(/\/.*$/, '')
-      return host ? `https://${host}/api/openai/v1` : ''
-    }
-    return baseUrlInput.trim()
-  }
-  const [persistKey, setPersistKey] = useState(true)
-  const [keyBusy, setKeyBusy] = useState(false)
-  const [keyNote, setKeyNote] = useState('')
   const [section, setSection] = useState<SectionId>(() => {
     const m = location.hash.match(/^#view=settings:([a-z-]+)/)
     return (m?.[1] as SectionId) || 'general'
@@ -212,16 +197,20 @@ export function SettingsView() {
       .then(d => { setForm(d.effective); setDeploymentCred(d.deploymentCredential ?? null) })
       .catch(() => setNote('Could not load settings.'))
     fetch('/api/setup/status').then(r => r.json()).then(d => { setSetupAvailable(!!d?.standalone); setBranding(d?.branding ?? null) }).catch(() => {})
-    fetch('/api/me/model-key').then(r => r.json()).then(d => {
-      setMe(d)
-      // A single-user install connects an endpoint of its own.
-      if (d?.single) { setProviderMode('custom'); setBaseUrlInput(d.baseUrl ?? '') }
-      if (d?.verified && d.mode !== 'none') refreshAccess()
-    }).catch(() => {})
+    fetch('/api/me/model-key').then(r => r.json()).then(setMe).catch(() => {})
+    refreshModels()
+  }
+  // The model ids the pickers below suggest; read again when model access
+  // changes, which Model access announces.
+  const refreshModels = () => {
     fetch('/api/chat/models?config=1').then(r => r.json())
       .then(d => setModels((d.models ?? []).map((m: { id: string }) => m.id)))
       .catch(() => {})
   }
+  useEffect(() => {
+    window.addEventListener('ade:model-access-changed', refreshModels)
+    return () => window.removeEventListener('ade:model-access-changed', refreshModels)
+  }, [])
   useEffect(() => {
     window.addEventListener('ade:setup-closed', loadForm)
     return () => window.removeEventListener('ade:setup-closed', loadForm)
@@ -246,61 +235,6 @@ export function SettingsView() {
     return () => window.removeEventListener('ade-view-section', onSection)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-
-  const keyAction = async (action: 'set' | 'clear' | 'share' | 'unshare', body?: unknown) => {
-    setKeyBusy(true)
-    setKeyNote('')
-    try {
-      const res = await fetch(action === 'set' ? '/api/me/model-key' : `/api/me/model-key/${action}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: body === undefined ? '{}' : JSON.stringify(body),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error ?? `${res.status}`)
-      setMe(data)
-      if (data.mode && data.mode !== 'none') refreshAccess()
-      else setAccessHealth(null)
-      // The chat caches its model list (and the credential-required notice)
-      // from before the key changed; tell it to start over.
-      window.dispatchEvent(new CustomEvent('ade:model-access-changed'))
-      return true
-    } catch (e) {
-      setKeyNote(String((e as Error).message ?? e))
-      return false
-    } finally {
-      setKeyBusy(false)
-    }
-  }
-
-  const [accessHealth, setAccessHealth] = useState<{ status: string; models: number; gatewayHost?: string; message?: string | null; platformAccess?: boolean | null; unlockUrl?: string | null } | null>(null)
-
-  const refreshAccess = () => {
-    fetch('/api/me/model-key/test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
-      .then(r => r.json()).then(h => setAccessHealth(h.error ? null : h)).catch(() => setAccessHealth(null))
-    fetch('/api/chat/models?config=1').then(r => r.json())
-      .then(d => setModels((d.models ?? []).map((m: { id: string }) => m.id)))
-      .catch(() => {})
-  }
-
-  const testKey = async (candidate?: string) => {
-    setKeyBusy(true)
-    setKeyNote('')
-    try {
-      const res = await fetch('/api/me/model-key/test', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(candidate ? { key: candidate, baseUrl: effectiveBaseUrl() || undefined } : {}),
-      })
-      const h = await res.json()
-      if (!res.ok) throw new Error(h.error ?? `${res.status}`)
-      setKeyNote(h.status === 'ok' ? `Key works: ${h.models} models available.` : `Key check failed (${h.status}): ${h.message ?? ''}`)
-    } catch (e) {
-      setKeyNote(String((e as Error).message ?? e))
-    } finally {
-      setKeyBusy(false)
-    }
-  }
 
   const save = async (reload = true) => {
     if (!form) return
@@ -347,18 +281,8 @@ export function SettingsView() {
     </div>
   )
 
-  // The access banner's tone follows the credential's state: none loaded
-  // (a warning where the deployment requires one), working, or failing.
-  const accessTone: CalloutTone = !me || me.mode === 'none'
-    ? (form.requirePersonalKey ? 'warning' : 'default')
-    : accessHealth?.status === 'ok' ? 'success' : accessHealth ? 'error' : 'default'
   const ragEpTone: CalloutTone = ragEp?.state === 'running' ? 'success' : ragEp?.state === 'error' ? 'error' : 'default'
   const surfaces: SelectItem<string>[] = Object.entries(SURFACES).map(([k, v]) => ({ value: k, label: v.label }))
-  const providers: SelectItem<typeof providerMode>[] = [
-    { value: 'platform', label: me?.gatewayHost ? `This deployment's gateway (${me.gatewayHost})` : "This deployment's gateway (default)" },
-    { value: 'activate', label: 'Another ACTIVATE platform…' },
-    { value: 'custom', label: 'OpenAI-compatible endpoint…' },
-  ]
 
   return (
     <div className="settings-view">
@@ -569,160 +493,7 @@ export function SettingsView() {
             </>
           )}
 
-          {section === 'access' && (
-            <>
-              <h1>Model access</h1>
-              {!me?.verified ? (
-                <p className="muted view-sub">
-                  Personal model keys attach to your platform-verified identity, which this connection does not carry. Open the app through the platform session to add one; until then, requests use the deployment's credential.
-                </p>
-              ) : (
-                <>
-                  <Callout className="rag-banner" tone={accessTone}
-                    title={<>
-                      {me.mode === 'none' && (me.single
-                        ? 'No model endpoint set'
-                        : form.requirePersonalKey
-                          ? 'Not connected; this deployment requires your own model credential'
-                          : 'No personal key loaded; requests use the deployment credential')}
-                      {me.mode !== 'none' && accessHealth?.status === 'ok' && `Connected with your ${me.kind === 'token' ? 'token' : 'key'} ending ${me.last4}`}
-                      {me.mode !== 'none' && accessHealth && accessHealth.status !== 'ok' && (
-                        accessHealth.status === 'auth'
-                          ? (me.credExpired
-                            ? `Your token ending ${me.last4} expired ${new Date(me.credExpiresAt!).toLocaleString()}`
-                            : `${accessHealth.gatewayHost ?? 'The platform'} rejected your ${me.kind === 'token' ? 'token' : 'key'} ending ${me.last4}`)
-                          : `Could not reach ${accessHealth.gatewayHost ?? 'the platform'} with your ${me.kind === 'token' ? 'token' : 'key'} ending ${me.last4} (${accessHealth.status})`
-                      )}
-                      {me.mode !== 'none' && !accessHealth && `Your ${me.kind === 'token' ? 'token' : 'key'} ending ${me.last4} is loaded`}
-                    </>}
-                    action={me.mode !== 'none' ? <Button variant="secondary" size="sm" onClick={refreshAccess}>Re-check</Button> : undefined}>
-                    {me.mode !== 'none' && accessHealth?.unlockUrl && (
-                      <p className="identity-note">
-                        The provider reports this key is locked, which it does on a schedule. <a href={accessHealth.unlockUrl} target="_blank" rel="noopener noreferrer">Unlock
-                        your key</a>, then Re-check.
-                      </p>
-                    )}
-                    {me.mode !== 'none' && accessHealth?.status === 'ok' && accessHealth.platformAccess === false && (
-                      <p className="identity-note">
-                        This credential reaches models only. Workflow tools, run monitoring, and the DAG viewer
-                        use the platform API, which needs a platform token or a platform API key; an AI gateway
-                        API key or a provider key does not grant that access. Both work for chat, so this only
-                        matters if you use the workflow features.
-                      </p>
-                    )}
-                    {me.mode !== 'none' && accessHealth?.status === 'ok' && (
-                      <div className="rag-banner-models">
-                        {models.length || accessHealth.models} models available to you{accessHealth.gatewayHost ? ` via ${accessHealth.gatewayHost}` : ''}{models.length ? ':' : '.'}
-                        {models.length > 0 && (
-                          <div className="rag-chip-row">
-                            {models.slice(0, 12).map(m => <code key={m}>{m}</code>)}
-                            {models.length > 12 && <span className="muted">and {models.length - 12} more</span>}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                    {me.mode !== 'none' && accessHealth && accessHealth.status !== 'ok' && accessHealth.message && (
-                      <p className="muted key-note">{accessHealth.message}</p>
-                    )}
-                    {me.mode !== 'none' && (
-                      <p className="muted key-note">
-                        {me.mode === 'stored' && `Added ${me.addedAt?.slice(0, 10)}, ${me.single ? 'stored on this computer' : 'remembered in this browser'}.`}
-                        {me.mode === 'session' && `Held in memory (until ${me.sessionExpiresAt ? new Date(me.sessionExpiresAt).toLocaleTimeString() : 'soon'}; a remembered key renews this from the browser cookie automatically).`}
-                        {me.credExpiresAt && !me.credExpired && ` The ${me.kind === 'token' ? 'token itself expires' : 'credential expires'} ${new Date(me.credExpiresAt).toLocaleString()}.`}
-                        {me.baseUrl && ` Provider: ${me.baseUrl}.`}
-                        {me.credExpired && ' This token has expired.'}
-                        {accessHealth?.status === 'auth' && !me.single && ' Platform tokens last 24 hours from login. Paste a fresh token below, or an API key from your ACTIVATE account (Account, API keys), which does not expire.'}
-                      </p>
-                    )}
-                  </Callout>
-                  {me.mode === 'none' && (
-                    <p className="muted view-sub">
-                      {me.single
-                        ? "An OpenAI-compatible endpoint (a provider, a gateway, or a model server such as vLLM or Ollama) and its key. Without one, model calls go to the platform this computer's pw CLI is signed in to, if any."
-                        : form.requirePersonalKey
-                        ? 'Add your own credential below to use chat and models on this deployment. A platform token or platform API key covers everything, chat plus workflow tools and the DAG viewer; an AI gateway API key or a provider key covers chat only. Browsing, search, and adding material work without one.'
-                        : 'Add your own credential to call the gateway (and platform tools) as yourself. A platform token or platform API key covers everything; an AI gateway API key or a provider key covers chat only.'}
-                    </p>
-                  )}
-                  <div className="key-row">
-                    {/* The box brings a show-typed-text button, so it sits in
-                        a wrapper that takes the row's spare width. */}
-                    <div className="grow">
-                      <Input
-                        type="password"
-                        aria-label="Model credential"
-                        value={keyInput}
-                        placeholder={me.single ? "The endpoint's API key" : 'Paste a platform token or API key (full access), or an AI gateway / provider key (chat only)'}
-                        autoComplete="off"
-                        onChange={e => setKeyInput(e.target.value)}
-                      />
-                    </div>
-                    <Button variant="primary" disabled={keyBusy || !keyInput.trim()}
-                      onClick={async () => { if (await keyAction('set', { key: keyInput.trim(), persist: persistKey, baseUrl: effectiveBaseUrl() })) { setKeyInput(''); void testKey() } }}>
-                      Save and test
-                    </Button>
-                    <Button variant="secondary" disabled={keyBusy || (!keyInput.trim() && me.mode === 'none')}
-                      onClick={() => void testKey(keyInput.trim() || undefined)}>Test</Button>
-                    {me.mode !== 'none' && (
-                      <Button variant="danger" disabled={keyBusy} onClick={() => void keyAction('clear')}>Remove</Button>
-                    )}
-                  </div>
-                  <div className="key-row provider-row">
-                    <Field layout="inline" compact label="Credential provider" className="provider-field">
-                      <Select className="provider-select" items={providers} value={providerMode} onValueChange={v => v && setProviderMode(v)} />
-                    </Field>
-                    {providerMode === 'activate' && (
-                      <Input className="grow" aria-label="Platform host" value={providerHost} autoComplete="off"
-                        placeholder="platform host, e.g. activate.parallel.works"
-                        onChange={e => setProviderHost(e.target.value)} />
-                    )}
-                    {providerMode === 'custom' && (
-                      <Input className="grow" aria-label="Base URL" value={baseUrlInput} autoComplete="off"
-                        placeholder="base URL, e.g. https://host/v1"
-                        onChange={e => setBaseUrlInput(e.target.value)} />
-                    )}
-                  </div>
-                  {!me.single && (
-                    <label className="key-persist">
-                      <Checkbox checked={persistKey} onCheckedChange={setPersistKey} />
-                      Remember in this browser (a sealed Secure cookie; the server holds it in memory only); unchecked keeps it for about 12 hours
-                    </label>
-                  )}
-                  {me.shared?.active ? (
-                    <Callout className="rag-banner shared-key" tone={me.shared.credExpired ? 'warning' : 'success'}
-                      title={<>
-                        Key ending {me.shared.last4} is shared with everyone on this deployment
-                        {me.shared.sharedBy ? `, by ${me.shared.mine ? 'you' : me.shared.sharedBy}` : ''}
-                        {me.shared.sharedAt ? ` on ${me.shared.sharedAt.slice(0, 10)}` : ''}
-                        {me.shared.credExpired ? '; it has expired and is no longer used' : ''}
-                      </>}
-                      action={<Button variant="danger" size="sm" disabled={keyBusy}
-                        onClick={() => void keyAction('unshare')}>Stop sharing</Button>}>
-                      <p className="muted key-note">
-                        Anyone here without a key of their own calls the gateway with this one, so its owner's
-                        quota and usage cover the deployment. Their own keys still take precedence. Anyone can
-                        stop the sharing, since the person who started it may not be around when it needs to end.
-                      </p>
-                    </Callout>
-                  ) : me.sharingAllowed && (
-                    <div className="key-row share-row">
-                      <Button variant="secondary" disabled={keyBusy || me.mode === 'none'}
-                        onClick={() => void keyAction('share')}>Share this key with everyone</Button>
-                      <span className="muted key-note">
-                        {me.mode === 'none'
-                          ? 'Add your own key above first; you can then share it with everyone here.'
-                          : 'Lets users here who have no key of their own work with yours, which spends your quota and runs as you. You can stop it at any time.'}
-                      </span>
-                    </div>
-                  )}
-                  <p className="muted key-trust">
-                    {me.single ? 'The key is stored on this computer, encrypted, beside the index. ' : ''}A key added here is available to this server and its operator; encryption at rest protects the stored file, not the running process. Use a key you can revoke. If your provider locks keys on a schedule, Test tells you the key’s current state. With a custom provider, chat and models use that provider while platform tools (clusters, workflows) fall back to the deployment credential; a non-platform key is never passed to platform commands.
-                  </p>
-                  {keyNote && <p className="muted key-note">{keyNote}</p>}
-                </>
-              )}
-            </>
-          )}
+          {section === 'access' && <ModelAccessSection requirePersonalKey={form.requirePersonalKey} />}
 
           {section === 'tools' && (
             <>

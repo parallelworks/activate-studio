@@ -34,6 +34,7 @@ import { indexJobsRunning, indexStatus, startSweepTimer } from './indexing.js'
 import { seedKnowledgeBase } from './seed.js'
 import { probeAll } from './libraries.js'
 import { workflowsTabRoutes } from './workflowsTab.js'
+import { accessRoutes } from './accessRoutes.js'
 import { sessionRoutes } from './sessions.js'
 import { agentSiteRoutes } from './agentSites.js'
 import { userLibraryRoutes } from './userLibraries.js'
@@ -87,6 +88,7 @@ if (fs.existsSync(webDist)) {
 app.setErrorHandler(sanitizedErrorHandler(app))
 await app.register(kbRoutes)
 await app.register(workflowsTabRoutes)
+await app.register(accessRoutes)
 await app.register(sessionRoutes)
 await app.register(runPaneRoutes)
 await app.register(agentSiteRoutes)

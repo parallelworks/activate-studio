@@ -117,6 +117,21 @@ Settings, General, **Run setup again** opens the setup later. Everything in it i
 
 Settings, General, **Sidebar** has a switch for each page. A page switched off leaves the navigation, and a link to it opens the first page still shown. Settings and Help always show, and the switches apply to everyone using this {appName}.
 
+## Model access
+
+Settings, **Model access** shows where {appName} gets its models, and the credential the Workflows page and the assistant's platform tools use. The banner at the top names each, with the models available or what failed; **Re-check** asks again.
+
+- **pw CLI**: the platforms the pw CLI on this computer is signed in to, one row per context. **Use** picks one; with **Follow the pw CLI's current context** ticked, {appName} uses whichever `pw context use` last chose. **Sign in** signs the CLI in to another platform: it shows a code, you approve it in a browser on any device, and {appName} uses the new sign-in.
+- **API key**: an ACTIVATE platform token or API key, which covers models and the platform, or an AI gateway key, which covers models only.
+- **Endpoint**: any OpenAI-compatible endpoint, such as Ollama, LM Studio or vLLM on this computer, the OpenAI API, or GitHub Models with a token that has the Models permission. An endpoint covers models only; platform tools keep using the pw CLI.
+- **Subscriptions through ACTIVATE** connects a ChatGPT plan, with a code you enter at OpenAI, or GitHub Copilot, once your GitHub account is linked in ACTIVATE. The platform keeps the connection, and its models appear with the others.
+
+On a shared deployment the same page holds your own key or endpoint; without one, requests use the deployment's credential.
+
+## Working offline
+
+With no network, {appName} keeps working from its libraries: browsing, search, query, statistics and adding material. Chat keeps working with a model server on this computer, set under Model access, Endpoint. Anything that needs the network says so in one line instead of waiting: the model banner and the footer show **offline**, the Workflows page says the platform cannot be reached, and the update check shows **Offline** and tries again later.
+
 ## Using it from other tools
 
 Other tools can use this knowledge base. pw code and other MCP clients can search it directly, and any OpenAI-compatible client can use it as a model that answers from it. Settings, "External access" has the addresses and the exact commands.

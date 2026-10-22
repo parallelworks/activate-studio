@@ -101,7 +101,9 @@ export function UpdatesSection({ onPolicySaved, pollMs, giveUpMs, reload }: {
           {checking ? 'Checking…' : 'Check now'}
         </Button>
         <span className="muted">
-          {status.checkedAt ? `Last checked ${formatDateTime(status.checkedAt, 'short')}` : 'Not checked yet'}
+          {status.offline
+            ? 'Offline; the Studio checks again later'
+            : status.checkedAt ? `Last checked ${formatDateTime(status.checkedAt, 'short')}` : 'Not checked yet'}
         </span>
         <Button variant="ghost" size="sm" onClick={openWhatsNew}>What's new</Button>
       </div>
@@ -130,7 +132,7 @@ export function UpdatesSection({ onPolicySaved, pollMs, giveUpMs, reload }: {
             </div>
           ) : null}
         </Callout>
-      ) : status.checkedAt && status.state !== 'error' ? (
+      ) : status.checkedAt && status.state !== 'error' && !status.offline ? (
         <p className="muted key-note">This is the latest version{policy.channel === 'prerelease' ? ', pre-releases included' : ''}.</p>
       ) : null}
 

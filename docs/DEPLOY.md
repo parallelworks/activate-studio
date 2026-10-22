@@ -42,5 +42,5 @@ The README's quick start is the whole procedure. Values that differ per deployme
 The chat works with any OpenAI-compatible endpoint that serves `/models` and streaming `/chat/completions`, with tool calling for the assistant's tools.
 
 - **Anywhere:** set `OPENAI_BASE_URL` to the endpoint's `/v1` address and `OPENAI_API_KEY` to its key. OpenAI, vLLM, the llama.cpp server, and Ollama all work.
-- **On ACTIVATE:** with a signed-in pw CLI on the host, nothing needs setting; the Studio uses the CLI's credential for the platform's AI gateway, and every model the account can reach appears in the model list. Otherwise set `PW_API_KEY`. `PW_ALLOCATION` turns on organization-provided models.
+- **On ACTIVATE:** with a signed-in pw CLI on the host, nothing needs setting; the Studio uses the CLI's credential for the platform's AI gateway, and every model the account can reach appears in the model list. Otherwise set `PW_API_KEY`. The CLI's current context is used (`PW_CONTEXT` names another); on a single-user install, Settings, Model access lists the contexts, picks one, and signs the CLI in to another platform with its device code. `PW_ALLOCATION` turns on organization-provided models.
 - **Image descriptions:** `ADE_VISION_MODEL` names a vision model, which makes images findable by what they show.

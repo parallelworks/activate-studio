@@ -152,9 +152,13 @@ test('an expired platform credential is reported as such, not as an internal err
   const e = platformError(new Error("2026-10-02T14:33:54Z [ERROR] Authentication has expired. Please authenticate again using 'pw auth'."))
   assert.equal(e.status ?? e.statusCode, 401)
   assert.match(e.message, /credential has expired/)
-  const other = platformError(new Error('2026-10-02T14:33:54Z [ERROR] connection reset by peer\nmore'))
+  const other = platformError(new Error('2026-10-02T14:33:54Z [ERROR] invalid workflow name\nmore'))
   assert.equal(other.status ?? other.statusCode, 502)
-  assert.equal(other.message, 'The platform did not answer: connection reset by peer')
+  assert.equal(other.message, 'The platform did not answer: invalid workflow name')
+  // A dropped connection is the network, said as such (net.ts).
+  const offline = platformError(new Error('2026-10-02T14:33:54Z [ERROR] connection reset by peer\nmore'))
+  assert.equal(offline.status ?? offline.statusCode, 503)
+  assert.match(offline.message, /^Could not reach platform\.test\. This computer may be offline/)
 })
 
 test('with the deployment credential expired, the catalog lists the viewer\'s own account', async () => {

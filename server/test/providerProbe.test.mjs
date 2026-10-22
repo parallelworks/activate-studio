@@ -122,3 +122,14 @@ test('the reason survives a body truncated mid-message', async () => {
   const cut = '{"error":{"message":"received error while streaming: {\\"message\\": \\"Requested model is not available and no compliant same-model variant was found.\\", \\"type\\": \\"invalid_reque'
   assert.equal(providerReason(cut), 'Requested model is not available and no compliant same-model variant was found.')
 })
+
+test('GitHub Models lists its catalog apart from its inference endpoint, as a plain array', async () => {
+  const { modelsUrl } = await import('../dist/chat/gateway.js')
+  assert.equal(modelsUrl('https://models.github.ai/inference'), 'https://models.github.ai/catalog/models')
+  assert.equal(modelsUrl('http://127.0.0.1:11434/v1'), 'http://127.0.0.1:11434/v1/models')
+  reset()
+  responses.push({ status: 200, text: '[{"id":"openai/gpt-4.1","name":"GPT-4.1"},{"id":"meta/llama-3.3-70b-instruct"}]' })
+  const h = await aiHealth('ghp_token', 'https://models.github.ai/inference', { ids: true })
+  assert.equal(calls[0].url, 'https://models.github.ai/catalog/models')
+  assert.deepEqual([h.status, h.models, h.ids], ['ok', 2, ['openai/gpt-4.1', 'meta/llama-3.3-70b-instruct']])
+})

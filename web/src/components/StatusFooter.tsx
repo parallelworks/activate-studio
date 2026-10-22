@@ -93,6 +93,7 @@ export const AI_LABEL: Record<AiHealth['status'], string> = {
   ok: 'models ready',
   auth: 'model key rejected',
   unreachable: 'models unreachable',
+  offline: 'offline',
   unconfigured: 'models not configured',
   'key-required': 'add your model key',
   off: 'AI features off',
@@ -248,7 +249,9 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
     const now = () => { void refresh() }
     const off = onLibraryChange(now)
     window.addEventListener('ade-kb-changed', now)
-    return () => { clearInterval(t); off(); window.removeEventListener('ade-kb-changed', now) }
+    // A change in Settings, Model access changes the model line.
+    window.addEventListener('ade:model-access-changed', now)
+    return () => { clearInterval(t); off(); window.removeEventListener('ade-kb-changed', now); window.removeEventListener('ade:model-access-changed', now) }
   }, [])
   // Polled: a change means a new version was rolled out under this page.
   // The page keeps working against the new server, but its own code is
