@@ -96,8 +96,17 @@ async function forgetOtherFolder(): Promise<void> {
 
 const message = (e: unknown) => String((e as Error)?.message ?? e).slice(0, 300)
 
-/** Whether a port is free where the Studio listens. */
-export function portFree(port: number, host = HOST): Promise<boolean> {
+/** Whether a port is free where the Studio listens: nothing answers on it,
+ *  and it can be bound. Both, since on macOS a program listening on the
+ *  port at another address does not stop the bind. */
+export async function portFree(port: number, host = HOST): Promise<boolean> {
+  const answers = await new Promise<boolean>(resolve => {
+    const sock = net.connect({ port, host: host === '0.0.0.0' || host === '::' ? '127.0.0.1' : host })
+    sock.setTimeout(1000, () => { sock.destroy(); resolve(true) })
+    sock.once('connect', () => { sock.destroy(); resolve(true) })
+    sock.once('error', () => resolve(false))
+  })
+  if (answers) return false
   return new Promise(resolve => {
     const probe = net.createServer()
     probe.once('error', () => resolve(false))

@@ -117,9 +117,9 @@ test('primary folder: validated, and saved only where a launcher can carry it', 
 
 test('port: validated, saved for the launcher, refused when taken, and applied by a restart', async () => {
   const net = await import('node:net')
-  const listen = port => new Promise((resolve, reject) => {
+  const listen = (port, host = '127.0.0.1') => new Promise((resolve, reject) => {
     const srv = net.createServer().once('error', reject)
-    srv.listen({ port, host: '127.0.0.1' }, () => resolve(srv))
+    srv.listen({ port, host }, () => resolve(srv))
   })
   // A port nothing listens on, and one something does.
   const probe = await listen(0)
@@ -127,6 +127,14 @@ test('port: validated, saved for the launcher, refused when taken, and applied b
   await new Promise(r => probe.close(r))
   const taken = await listen(0)
   const busy = taken.address().port
+  // A program on every address holds the port at 127.0.0.1 too, which a
+  // bind alone does not show on macOS.
+  const { portFree } = await import('../dist/setup.js')
+  const wide = await listen(0, '0.0.0.0')
+  assert.equal(await portFree(wide.address().port, '127.0.0.1'), false)
+  assert.equal(await portFree(busy, '0.0.0.0'), false)
+  assert.equal(await portFree(free, '127.0.0.1'), true)
+  await new Promise(r => wide.close(r))
 
   const status = (await j('GET', '/api/setup/status')).body
   assert.equal(status.port, 4080)
