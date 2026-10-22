@@ -235,10 +235,10 @@ export async function queryPerDir(sql: string, opts: { threads?: number; subdir?
 
 /** A query in GUFI's aggregate form (-I, -K, -E, -J, -G stages): the merge
  *  happens where the index is, and only the final rows come back. */
-async function queryAggregate(stages: string[], opts: { indexRoot?: string } = {}): Promise<string[][]> {
+async function queryAggregate(stages: string[], opts: { indexRoot?: string; subdir?: string } = {}): Promise<string[][]> {
   const root = opts.indexRoot ?? GUFI_INDEX
-  if (root.startsWith(REMOTE_PREFIX)) return parseRows(await remoteQuery(root, ['-n', '4', '-d', DELIM, '-a', '1', ...stages]), 1)
-  const { stdout } = await run('gufi_query', ['-n', '8', '-d', DELIM, '-a', '1', ...stages, root])
+  if (root.startsWith(REMOTE_PREFIX)) return parseRows(await remoteQuery(root, ['-n', '4', '-d', DELIM, '-a', '1', ...stages], opts.subdir), 1)
+  const { stdout } = await run('gufi_query', ['-n', '8', '-d', DELIM, '-a', '1', ...stages, opts.subdir ? path.join(root, opts.subdir) : root])
   return parseRows(stdout, 1)
 }
 
@@ -442,4 +442,73 @@ async function countCorpus(indexRoot?: string): Promise<CorpusStats> {
   }
   byExt.sort((a, b) => b.count - a.count)
   return { available: true, files, dirs, totalBytes, byExt: byExt.slice(0, 25) }
+}
+
+export interface TreeStats {
+  files: number
+  dirs: number
+  bytes: number
+  /** The latest modification of anything below, in seconds. */
+  mtime: number
+  /** By extension, largest first. */
+  byExt: { ext: string; count: number; bytes: number }[]
+  /** Labels applied below (the Studio's xattr), with how many entries carry each. */
+  labels: { label: string; count: number }[]
+}
+
+/**
+ * One folder of a library, described from its index: files, folders, size,
+ * the latest change, the extensions taking the most space, and the labels
+ * applied below it. Aggregated where the index is, in two passes so an
+ * index without xattr tables still answers the first; `subdir` is a path
+ * inside the index, checked by the caller.
+ */
+export async function treeStats(indexRoot: string, subdir: string, tagXattr = 'user.studio.tags'): Promise<TreeStats> {
+  const ext = `lower(CASE WHEN name LIKE '%.%' THEN replace(name, rtrim(name, replace(name, '.', '')), '') ELSE '' END)`
+  const opts = { indexRoot, subdir: subdir || undefined }
+  const [rows, tagRows] = await Promise.all([
+    queryAggregate([
+      '-I', 'CREATE TABLE t (k TEXT, n INT64, b INT64);',
+      '-K', 'CREATE TABLE agg (k TEXT, n INT64, b INT64);',
+      '-E', `INSERT INTO t SELECT ${ext}, count(*), sum(size) FROM vrpentries GROUP BY 1; ` +
+        `INSERT INTO t SELECT char(1)||'summary', sum(totfiles), sum(totsize) FROM vrsummary; ` +
+        `INSERT INTO t SELECT char(1)||'dirs', count(*), 0 FROM vrsummary; ` +
+        `INSERT INTO t SELECT char(1)||'mtime', max(max(maxmtime), max(mtime)), 0 FROM vrsummary;`,
+      '-J', 'INSERT INTO agg SELECT * FROM t;',
+      '-G', `SELECT k, CASE WHEN k = char(1)||'mtime' THEN max(n) ELSE sum(n) END, sum(b) FROM agg GROUP BY k;`,
+    ], opts),
+    queryAggregate([
+      '-I', 'CREATE TABLE t (k TEXT, n INT64);',
+      '-K', 'CREATE TABLE agg (k TEXT, n INT64);',
+      '-E', `INSERT INTO t SELECT CAST(x.value AS TEXT), count(*) FROM vrpentries v JOIN xattrs_pwd x ON v.inode = x.inode WHERE CAST(x.name AS TEXT) = ${q(tagXattr)} GROUP BY 1; ` +
+        `INSERT INTO t SELECT CAST(x.value AS TEXT), count(*) FROM vrsummary s JOIN xattrs_pwd x ON s.inode = x.inode WHERE CAST(x.name AS TEXT) = ${q(tagXattr)} GROUP BY 1;`,
+      '-J', 'INSERT INTO agg SELECT * FROM t;',
+      '-G', 'SELECT k, sum(n) FROM agg GROUP BY k;',
+    ], opts).catch(() => [] as string[][]),
+  ])
+  let files = 0, bytes = 0, dirs = 0, mtime = 0
+  const byExt: TreeStats['byExt'] = []
+  for (const [k, n, b] of rows) {
+    if (k === '\x01summary') { files = Number(n) || 0; bytes = Number(b) || 0 }
+    else if (k === '\x01dirs') dirs = Number(n) || 0
+    else if (k === '\x01mtime') mtime = Number(n) || 0
+    else byExt.push({ ext: k || '(none)', count: Number(n) || 0, bytes: Number(b) || 0 })
+  }
+  byExt.sort((a, b) => b.bytes - a.bytes || b.count - a.count)
+  const labels = new Map<string, number>()
+  for (const [v, n] of tagRows) for (const t of String(v ?? '').split(',').map(x => x.trim()).filter(Boolean)) labels.set(t, (labels.get(t) ?? 0) + (Number(n) || 0))
+  return { files, dirs, bytes, mtime, byExt: byExt.slice(0, 8), labels: [...labels].map(([label, count]) => ({ label, count })).sort((a, b) => b.count - a.count).slice(0, 12) }
+}
+
+/** One file's entry in its folder's index: size, modified time, and its
+ *  labels (the Studio's xattr), or null when the index has no such entry. */
+export async function entryStats(indexRoot: string, dir: string, name: string, tagXattr = 'user.studio.tags'): Promise<{ size: number; mtime: number; labels: string[] } | null> {
+  const sql = `SELECT v.size, v.mtime, (SELECT CAST(x.value AS TEXT) FROM xattrs_pwd x WHERE x.inode = v.inode AND CAST(x.name AS TEXT) = ${q(tagXattr)}) FROM vrpentries v WHERE v.name = ${q(name)} LIMIT 1;`
+  const args = ['-n', '1', '-d', DELIM, '--min-level', '0', '--max-level', '0', '-E', sql]
+  const out = indexRoot.startsWith(REMOTE_PREFIX)
+    ? await remoteQuery(indexRoot, args, dir || undefined)
+    : (await run('gufi_query', [...args, dir ? path.join(indexRoot, dir) : indexRoot])).stdout
+  const row = parseRows(out, 2)[0]
+  if (!row) return null
+  return { size: Number(row[0]) || 0, mtime: Number(row[1]) || 0, labels: String(row[2] ?? '').split(',').map(t => t.trim()).filter(Boolean) }
 }

@@ -29,6 +29,7 @@ import { effectiveSettings } from './settings.js'
 import { curatedNames, platformAvailable } from './workflowsTab.js'
 import { authEnabled, authHeaderName } from './auth.js'
 import { remoteDownload, remoteFile, remoteTree } from './userLibraries.js'
+import { localBuildOffered } from './libraryBuild.js'
 import { traced } from './gufiTrace.js'
 
 /** A brand image may be given as a URL instead of a path on the resource,
@@ -376,11 +377,11 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
       const { lib, sub } = splitAll(req, rel)
       if (lib.site) return { ...(await remoteFile(lib.indexRoot, sub)), path: rel }
       if (!lib.sourceRoot) throw new KbError(409, `${lib.label} has no files on this host; it can be searched and described but not opened`)
-      return { ...(await readFileContent(sub, lib.sourceRoot)), path: rel }
+      return { ...(await readFileContent(sub, lib.sourceRoot, lib.cacheRoot ?? undefined)), path: rel }
     }
     const lib = libOf(req)
     if (lib.site) return remoteFile(lib.indexRoot, rel)
-    return readFileContent(rel, sourceOf(req))
+    return readFileContent(rel, sourceOf(req), lib.cacheRoot ?? undefined)
   })
 
   app.get('/api/kb/download', async (req, reply) => {
@@ -868,7 +869,8 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
   })
 
   // ---- libraries: what is mounted, and adding or removing one ----
-  app.get('/api/libraries', async () => ({ libraries: (await probeAll(effectiveSettings().kbLabel)).map(settingsLibrary) }))
+  // `canBuild`: libraries can be built from folders on this computer (libraryBuild.ts).
+  app.get('/api/libraries', async () => ({ libraries: (await probeAll(effectiveSettings().kbLabel)).map(settingsLibrary), canBuild: localBuildOffered() }))
   app.post('/api/libraries', async req => {
     const b = req.body as { id?: string; label?: string; indexRoot?: string; sourceRoot?: string | null }
     const lib = await addLibrary({ id: String(b.id ?? '').trim().toLowerCase(), label: b.label, indexRoot: String(b.indexRoot ?? ''), sourceRoot: b.sourceRoot || null })
