@@ -286,11 +286,15 @@ PY
 then ICON=AppIcon; fi
 [ -n "$ICON" ] || echo "  no app icon could be made; the app uses the generic icon"
 
+# The copyright line the About window and Finder's Get Info show, as the
+# NOTICE file states it.
+COPYRIGHT="$(sed -n 's/^\(Copyright .*\)$/\1/p' "$PROJECT_ROOT/NOTICE" | head -n 1)"
+
 NEEDS="$(python3 "$HERE/macho_check.py" --print-minos "$RES/node/bin/node" "$RES"/python/bin/python3.* \
   "$RES"/python/lib/*.dylib "$RES"/python/lib/python3.*/lib-dynload/*.so "$G"/bin/* "$G"/lib/*.dylib)"
 MIN_MACOS="${MIN_MACOS:-$NEEDS}"
 APP_NAME="$APP_NAME" BUNDLE_ID="$BUNDLE_ID" SHORT_VERSION="$SHORT_VERSION" BUNDLE_VERSION="$BUNDLE_VERSION" \
-  MIN_MACOS="$MIN_MACOS" BUILD="$VERSION ($COMMIT, $BUILT_AT)" ICON="$ICON" \
+  MIN_MACOS="$MIN_MACOS" BUILD="$VERSION ($COMMIT, $BUILT_AT)" ICON="$ICON" COPYRIGHT="$COPYRIGHT" \
   python3 - "$APP/Contents/Info.plist" <<'PY'
 import os, plistlib, sys
 e = os.environ
@@ -315,6 +319,8 @@ info = {
 }
 if e['ICON']:
     info['CFBundleIconFile'] = e['ICON']
+if e['COPYRIGHT']:
+    info['NSHumanReadableCopyright'] = e['COPYRIGHT']
 with open(sys.argv[1], 'wb') as fh:
     plistlib.dump(info, fh)
 PY

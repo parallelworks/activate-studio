@@ -33,7 +33,7 @@ bad() { echo "  FAIL  $1"; failures=$((failures + 1)); }
 check() { local what="$1"; shift; if "$@" >/dev/null 2>&1; then ok "$what"; else bad "$what"; fi; }
 
 echo "Bundle"
-check "Info.plist parses, names the bundle and its executable" python3 - "$C/Info.plist" <<'PY'
+check "Info.plist parses, names the bundle, its executable and its copyright" python3 - "$C/Info.plist" <<'PY'
 import os, plistlib, sys
 info = plistlib.load(open(sys.argv[1], 'rb'))
 assert info['CFBundleIdentifier'] == 'com.parallelworks.activate-studio'
@@ -42,6 +42,7 @@ exe = os.path.join(os.path.dirname(sys.argv[1]), 'MacOS', info['CFBundleExecutab
 assert os.access(exe, os.X_OK), exe
 for k in ('CFBundleShortVersionString', 'CFBundleVersion', 'LSMinimumSystemVersion'):
     assert info[k], k
+assert 'Parallel Works' in info['NSHumanReadableCopyright'], 'NSHumanReadableCopyright'
 PY
 for f in \
   "MacOS/ACTIVATE Studio" Resources/launcher.sh Resources/studio-run.sh Resources/update-signing.pub \

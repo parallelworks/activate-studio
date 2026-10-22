@@ -24,7 +24,13 @@ shows the Studio in its own window, with its own Dock icon and menus; no
 browser is involved. Links to other sites open in the default browser,
 downloads go to Downloads, and quitting leaves the server running so the
 next open is immediate (the app menu's Stop Background Server stops it).
-macOS reports a new background item, and may ask once whether the Studio
+The window's title bar takes the color an installed web app's title bar
+takes: the classification banner's when one is set, otherwise the page's
+ground in its light or dark theme, following changes while the app is
+open; the title and window controls switch to light or dark to read on
+it. The app menu's About ACTIVATE Studio shows the version and that the
+app is built and maintained by Parallel Works. macOS reports a new
+background item, and may ask once whether the Studio
 can use the Documents folder. An app built on Linux has no native window
 (it is compiled on a Mac): it opens the Studio in an app window in Google
 Chrome or Microsoft Edge, or a tab in the default browser, where Safari's
