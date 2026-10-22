@@ -1,0 +1,178 @@
+{
+ "packages": {
+  "onnxruntime": "1.31.0",
+  "tokenizers": "0.23.3",
+  "numpy": "2.4.4"
+ },
+ "wheels": {
+  "linux-x86_64-cp311": {
+   "onnxruntime": {
+    "url": "https://files.pythonhosted.org/packages/a6/72/6c57163b63b5343853d7f0619c4f424a6e53ee762d7263667ff004bfede1/onnxruntime-1.31.0-cp311-cp311-manylinux_2_28_x86_64.whl",
+    "sha256": "d4092b78fc5bab77ce6522393098cdb2535423045ecdcff15cc0d022162d6b66",
+    "size": 23753636
+   },
+   "tokenizers": {
+    "url": "https://files.pythonhosted.org/packages/3a/40/6706b82693715581457c6d5423eaa7faae576bb0526c5738a57085eb4449/tokenizers-0.23.3-cp310-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+    "sha256": "376851d22bcf9d650a5c3090bb83e6cf9e895fbf0595369fa4cd43c1f69b5f87",
+    "size": 3396193
+   },
+   "numpy": {
+    "url": "https://files.pythonhosted.org/packages/cf/c5/9fcb7e0e69cef59cf10c746b84f7d58b08bc66a6b7d459783c5a4f6101a6/numpy-2.4.4-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+    "sha256": "df3775294accfdd75f32c74ae39fcba920c9a378a2fc18a12b6820aa8c1fb502",
+    "size": 16925137
+   }
+  },
+  "linux-x86_64-cp312": {
+   "onnxruntime": {
+    "url": "https://files.pythonhosted.org/packages/6c/44/1e9e762b95b7da0a8424913a1ed7c38cdaf88624a3c41ddba24ebac88bc9/onnxruntime-1.31.0-cp312-cp312-manylinux_2_28_x86_64.whl",
+    "sha256": "5e129d6c56abd53e659cb70f00a108d6824086470ff99c2e47a82e5786563db3",
+    "size": 23760984
+   },
+   "tokenizers": {
+    "url": "https://files.pythonhosted.org/packages/3a/40/6706b82693715581457c6d5423eaa7faae576bb0526c5738a57085eb4449/tokenizers-0.23.3-cp310-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+    "sha256": "376851d22bcf9d650a5c3090bb83e6cf9e895fbf0595369fa4cd43c1f69b5f87",
+    "size": 3396193
+   },
+   "numpy": {
+    "url": "https://files.pythonhosted.org/packages/0a/0d/0e3ecece05b7a7e87ab9fb587855548da437a061326fff64a223b6dcb78a/numpy-2.4.4-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+    "sha256": "81f4a14bee47aec54f883e0cad2d73986640c1590eb9bfaaba7ad17394481e6e",
+    "size": 16645480
+   }
+  },
+  "linux-x86_64-cp313": {
+   "onnxruntime": {
+    "url": "https://files.pythonhosted.org/packages/0d/ac/67ebbaab4b3083f2a6b27ee6c4aa400c7f8d6c72b5499aac7e4cd6ba74f5/onnxruntime-1.31.0-cp313-cp313-manylinux_2_28_x86_64.whl",
+    "sha256": "37fd78cee5160c7a43a1730ccb3682ffd880af9c9e80385d625c0c2f8b125809",
+    "size": 23760708
+   },
+   "tokenizers": {
+    "url": "https://files.pythonhosted.org/packages/3a/40/6706b82693715581457c6d5423eaa7faae576bb0526c5738a57085eb4449/tokenizers-0.23.3-cp310-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+    "sha256": "376851d22bcf9d650a5c3090bb83e6cf9e895fbf0595369fa4cd43c1f69b5f87",
+    "size": 3396193
+   },
+   "numpy": {
+    "url": "https://files.pythonhosted.org/packages/d1/73/a9d864e42a01896bb5974475438f16086be9ba1f0d19d0bb7a07427c4a8b/numpy-2.4.4-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+    "sha256": "c901b15172510173f5cb310eae652908340f8dede90fff9e3bf6c0d8dfd92f83",
+    "size": 16632682
+   }
+  },
+  "linux-aarch64-cp311": {
+   "onnxruntime": {
+    "url": "https://files.pythonhosted.org/packages/44/86/e57025ab9c1eb83b6e686c92507fa6b7156d9d375e197a6c3a2afc05a1e2/onnxruntime-1.31.0-cp311-cp311-manylinux_2_28_aarch64.whl",
+    "sha256": "37c7dfe398550afdf9670a29315dbb88e49d8afc473ffaf1f410376efbb9c80a",
+    "size": 21413529
+   },
+   "tokenizers": {
+    "url": "https://files.pythonhosted.org/packages/15/fc/ae987741829b1cd547668c4c94be732ae3eefd1d74344e64c3d2ca714acd/tokenizers-0.23.3-cp310-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+    "sha256": "ec82e80e65a862275b97c3d90b7a523df8d9519ee48aeb4e9625b2cc909274e0",
+    "size": 3519944
+   },
+   "numpy": {
+    "url": "https://files.pythonhosted.org/packages/68/62/63417c13aa35d57bee1337c67446761dc25ea6543130cf868eace6e8157b/numpy-2.4.4-cp311-cp311-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
+    "sha256": "8a87ec22c87be071b6bdbd27920b129b94f2fc964358ce38f3822635a3e2e03d",
+    "size": 15973376
+   }
+  },
+  "linux-aarch64-cp312": {
+   "onnxruntime": {
+    "url": "https://files.pythonhosted.org/packages/53/1a/561b43ca1536d9e81d1785bb8a1a260a9e314ef6d04976ba0411c652bda1/onnxruntime-1.31.0-cp312-cp312-manylinux_2_28_aarch64.whl",
+    "sha256": "35758d7606d578ec5b9d65f6e8a1f488013194c3f6097038a3223cb26d35ef9a",
+    "size": 21420804
+   },
+   "tokenizers": {
+    "url": "https://files.pythonhosted.org/packages/15/fc/ae987741829b1cd547668c4c94be732ae3eefd1d74344e64c3d2ca714acd/tokenizers-0.23.3-cp310-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+    "sha256": "ec82e80e65a862275b97c3d90b7a523df8d9519ee48aeb4e9625b2cc909274e0",
+    "size": 3519944
+   },
+   "numpy": {
+    "url": "https://files.pythonhosted.org/packages/7f/37/eed308a8f56cba4d1fdf467a4fc67ef4ff4bf1c888f5fc980481890104b1/numpy-2.4.4-cp312-cp312-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
+    "sha256": "f9e75681b59ddaa5e659898085ae0eaea229d054f2ac0c7e563a62205a700121",
+    "size": 15670666
+   }
+  },
+  "linux-aarch64-cp313": {
+   "onnxruntime": {
+    "url": "https://files.pythonhosted.org/packages/8a/d0/3677fe93ec0fa3c637744aa4c3ae6ef89a93ee229cd3c5157820f267c7bd/onnxruntime-1.31.0-cp313-cp313-manylinux_2_28_aarch64.whl",
+    "sha256": "ad663106f6eeff3d454f24a786450459d07f30e74863851104fc1b8b3f368127",
+    "size": 21420629
+   },
+   "tokenizers": {
+    "url": "https://files.pythonhosted.org/packages/15/fc/ae987741829b1cd547668c4c94be732ae3eefd1d74344e64c3d2ca714acd/tokenizers-0.23.3-cp310-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+    "sha256": "ec82e80e65a862275b97c3d90b7a523df8d9519ee48aeb4e9625b2cc909274e0",
+    "size": 3519944
+   },
+   "numpy": {
+    "url": "https://files.pythonhosted.org/packages/7d/90/8d23e3b0dafd024bf31bdec225b3bb5c2dbfa6912f8a53b8659f21216cbf/numpy-2.4.4-cp313-cp313-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
+    "sha256": "45dbed2ab436a9e826e302fcdcbe9133f9b0006e5af7168afb8963a6520da103",
+    "size": 15668806
+   }
+  },
+  "macos-arm64-cp311": {
+   "onnxruntime": {
+    "url": "https://files.pythonhosted.org/packages/a7/e7/61b2768393646bd12e31eeb71958193f4e02c98c4980cf9289d19bbb4a8f/onnxruntime-1.31.0-cp311-cp311-macosx_14_0_arm64.whl",
+    "sha256": "cbf1a7f6470ddfe9dbc781966af8ce4a10e1858d75a93f93cc6b9367c9587870",
+    "size": 20871717
+   },
+   "tokenizers": {
+    "url": "https://files.pythonhosted.org/packages/b2/72/01e49f032bb346e5aaf06c10c74fe8aeec847173adbadd66eb7c53054bf2/tokenizers-0.23.3-cp310-abi3-macosx_11_0_arm64.whl",
+    "sha256": "68649e97d5b43c44c031d8d848874a6eecae8f8fe40ea989aa777a5a83aca716",
+    "size": 3101381
+   },
+   "numpy": {
+    "url": "https://files.pythonhosted.org/packages/8a/dc/df98c095978fa6ee7b9a9387d1d58cbb3d232d0e69ad169a4ce784bde4fd/numpy-2.4.4-cp311-cp311-macosx_14_0_arm64.whl",
+    "sha256": "86b6f55f5a352b48d7fbfd2dbc3d5b780b2d79f4d3c121f33eb6efb22e9a2015",
+    "size": 5476566
+   }
+  },
+  "macos-arm64-cp312": {
+   "onnxruntime": {
+    "url": "https://files.pythonhosted.org/packages/b3/bd/2ac094311163b803e3626c3937461d6900934bd56cca7601f6150ff860c3/onnxruntime-1.31.0-cp312-cp312-macosx_14_0_arm64.whl",
+    "sha256": "aaab9b3af536b06ca27ab5e35e3d429c97457ce76cf298af103f687e8b9975c0",
+    "size": 20882054
+   },
+   "tokenizers": {
+    "url": "https://files.pythonhosted.org/packages/b2/72/01e49f032bb346e5aaf06c10c74fe8aeec847173adbadd66eb7c53054bf2/tokenizers-0.23.3-cp310-abi3-macosx_11_0_arm64.whl",
+    "sha256": "68649e97d5b43c44c031d8d848874a6eecae8f8fe40ea989aa777a5a83aca716",
+    "size": 3101381
+   },
+   "numpy": {
+    "url": "https://files.pythonhosted.org/packages/9b/fd/e5ecca1e78c05106d98028114f5c00d3eddb41207686b2b7de3e477b0e22/numpy-2.4.4-cp312-cp312-macosx_14_0_arm64.whl",
+    "sha256": "8b3b60bb7cba2c8c81837661c488637eee696f59a877788a396d33150c35d842",
+    "size": 5204782
+   }
+  },
+  "macos-arm64-cp313": {
+   "onnxruntime": {
+    "url": "https://files.pythonhosted.org/packages/e0/2b/117f94d73a3bac4276c285c47e384e1b3ea67b191aa4c7592df9d3f4a136/onnxruntime-1.31.0-cp313-cp313-macosx_14_0_arm64.whl",
+    "sha256": "0ba02a44acb6203040354d9a1f160e3f37a43feac7bb05caa3e0ea545efed505",
+    "size": 20881803
+   },
+   "tokenizers": {
+    "url": "https://files.pythonhosted.org/packages/b2/72/01e49f032bb346e5aaf06c10c74fe8aeec847173adbadd66eb7c53054bf2/tokenizers-0.23.3-cp310-abi3-macosx_11_0_arm64.whl",
+    "sha256": "68649e97d5b43c44c031d8d848874a6eecae8f8fe40ea989aa777a5a83aca716",
+    "size": 3101381
+   },
+   "numpy": {
+    "url": "https://files.pythonhosted.org/packages/e5/87/499737bfba066b4a3bebff24a8f1c5b2dee410b209bc6668c9be692580f0/numpy-2.4.4-cp313-cp313-macosx_14_0_arm64.whl",
+    "sha256": "4a19d9dba1a76618dd86b164d608566f393f8ec6ac7c44f0cc879011c45e65af",
+    "size": 5199661
+   }
+  }
+ },
+ "model": {
+  "id": "minilm-l6-mean-int8",
+  "source": "Xenova/all-MiniLM-L6-v2 (sentence-transformers/all-MiniLM-L6-v2, int8 ONNX), Apache-2.0",
+  "files": {
+   "model.onnx": {
+    "url": "https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/751bff37182d3f1213fa05d7196b954e230abad9/onnx/model_quantized.onnx",
+    "sha256": "afdb6f1a0e45b715d0bb9b11772f032c399babd23bfc31fed1c170afc848bdb1",
+    "size": 22972370
+   },
+   "tokenizer.json": {
+    "url": "https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/751bff37182d3f1213fa05d7196b954e230abad9/tokenizer.json",
+    "sha256": "da0e79933b9ed51798a3ae27893d3c5fa4a201126cef75586296df9b4d2c62a0",
+    "size": 711661
+   }
+  }
+ }
+}

@@ -55,7 +55,8 @@ The in-app Help is the user guide: [`docs/HELP.md`](docs/HELP.md), with the deta
 ## Built on
 
 - [GUFI](https://github.com/mar-file-system/GUFI) (Los Alamos National Laboratory): the metadata, full-text, and vector index.
-- [sqlite-vec](https://github.com/asg017/sqlite-vec) and [sqlite-lembed](https://github.com/asg017/sqlite-lembed): vector storage and embedding with a local model.
+- [sqlite-vec](https://github.com/asg017/sqlite-vec) and [sqlite-lembed](https://github.com/asg017/sqlite-lembed): vector storage, and embedding with a local model where ONNX Runtime is not installed.
+- [ONNX Runtime](https://onnxruntime.ai/), [tokenizers](https://github.com/huggingface/tokenizers) and [all-MiniLM-L6-v2](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2): embeddings for search by meaning.
 - [@parallelworks/ui](https://www.npmjs.com/package/@parallelworks/ui): the chat interface, the platform's workflow forms and run graph, the log viewer and code editor, and the controls throughout (buttons, fields, menus, dialogs, tabs, tables).
 - [Streamdown](https://github.com/vercel/streamdown), [three.js](https://threejs.org/), [occt-import-js](https://github.com/kovacsv/occt-import-js), [Tesseract](https://github.com/tesseract-ocr/tesseract), [Fastify](https://fastify.dev/), [React](https://react.dev/), and [Vite](https://vite.dev/).
 

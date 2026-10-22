@@ -47,14 +47,14 @@ The same per-directory dbs carry the embedding store; there is no external vecto
 
 Phase A (plain sqlite3): chunk each file's `wordf` into a `gchunks` table (cid, tinode, fname, seq, ctext). Chunks are 1,000 characters with 120 overlap, at most 12 per file. Chunks that are less than 60 percent letters and spaces are dropped, and markup-heavy formats (svg, xml, html, css, json, csv) are excluded from embedding entirely; they remain in full-text search.
 
-Phase B (gufi_sqlite3, which compiles in sqlite-lembed and sqlite-vec): for each db, load the GGUF embedding model once, then
+Phase B: the chunks the embedding cache lacks are embedded, and each db's vector table is written from the cache:
 
 ```
 CREATE VIRTUAL TABLE gvec USING vec0(cid INTEGER PRIMARY KEY, fp384 float[384]);
-INSERT INTO gvec SELECT cid, lembed('minilm384', substr(ctext, 1, 800)) FROM gchunks;
+CREATE TABLE gvecmodel (model TEXT);   -- the model the vectors come from
 ```
 
-The model is all-MiniLM-L6-v2 quantized to Q8 (25 MB, 384 dimensions). Two constraints are encoded here. First, sqlite-lembed does not truncate input, and token-dense text (source code, markup) can exceed the model's context and segfault the process; 800 characters is safe for prose and nearly all code, and a 400-character retry covers the remainder. Second, each directory db is embedded in its own gufi_sqlite3 process, so one bad row cannot abort the rest of the pass.
+The model is all-MiniLM-L6-v2 (384 dimensions), through one of two backends. The default is ONNX Runtime with the model quantized to int8 (23 MB) and mean pooling over the tokens, the pooling the model was trained with (`indexer/embed_onnx.py`, model id `minilm-l6-mean-int8`). It needs onnxruntime, tokenizers and numpy, which the macOS app and the container carry and `indexer/fetch_embed.py` installs for a clone. Where they are missing, as on a remote host, the older backend runs: sqlite-lembed inside gufi_sqlite3 with a Q8 GGUF of the same model (25 MB, model id `minilm384`), which takes the first token's state rather than the mean and costs more than twice the CPU per chunk. sqlite-lembed does not truncate input, and token-dense text can exceed the model's context and segfault the process; 800 characters is safe for prose and nearly all code, and a 400-character retry covers the remainder. Each db's `gvecmodel` names its model (a db without one holds `minilm384` vectors), and a pass over one folder of an index on the other model embeds the whole index, so an index never mixes the two.
 
 ## 4. Query paths
 
@@ -62,7 +62,7 @@ Three retrieval modes run against the index, all in `server/src/gufi.ts`:
 
 - Full text: `gufi_query -E` runs a per-directory SQL statement joining `vrpentries` to `words` with an fts5 `MATCH`. The query expression drops stopwords, quotes each remaining term, and joins with AND. `snippet()` produces the highlighted excerpt, with newlines flattened because the transport is delimiter-parsed lines.
 - Filename: the same fan-out with a `LIKE` on entry names.
-- Semantic: one `gufi_sqlite3` process loads the embedding model, embeds the query once into a temp table, then ATTACHes each directory db in turn and takes its top chunks by vector distance, joined to `gchunks` for the excerpt. A directory whose db has no `gvec` table is skipped by reading `sqlite_master` first, because one such directory used to abort the whole vector pass and silently reduce search to full text.
+- Semantic: the query is embedded once per model the index holds: by the ONNX model in a Python worker the server keeps running (`indexer/embed_query.py`, started at the first search, stopped after ten idle minutes), or by sqlite-lembed for `minilm384` vectors. One `gufi_sqlite3` process then ATTACHes each directory db in turn and takes its top chunks by vector distance, joined to `gchunks` for the excerpt. A directory whose db has no `gvec` table is skipped by reading `sqlite_master` first, because one such directory used to abort the whole vector pass and silently reduce search to full text.
 
 `blendHits()` merges the three modes without letting one starve the others: full-text hits lead, a share of the result budget is reserved for semantic hits, filename matches fill gaps, and duplicates collapse by path. Every result set is annotated with labels (section 5), and a label filter can be applied to any of them.
 
@@ -136,7 +136,7 @@ The corpus and the index live on shared storage; everything derived (node_module
 
 - Full rebuild: Settings, Libraries, Update index, or `POST /api/index/build` (the server's job, with phases, stop and a log; see [REFERENCE.md](REFERENCE.md#indexing)); before the server starts, `indexer/reindex.sh` runs the same phases (`INDEX_THREADS` for the threads, `SKIP_EMBED=1` to skip vectors).
 - Extraction is covered end to end by `pnpm test`, which runs the real pipeline over `testdata/corpus` and asserts on the text that reaches the fts5 tables; see `testdata/README.md`.
-- GUFI toolchain: `indexer/setup_gufi.sh` builds from source and fetches the embedding model.
+- GUFI toolchain: `indexer/setup_gufi.sh` builds from source and fetches the embedding models and the ONNX packages (`indexer/fetch_embed.py`).
 - Serve as a platform session: `deploy/run_endpoint.sh` wraps `pw endpoints run`.
 - Web rebuilds do not need a server restart (static assets are served per request). Server code changes need a restart of the endpoint process, which owns the session: killing the node process alone deletes the session.
 - Health: `GET /healthz`, `GET /api/index/status` (the running job and its phases, recent jobs with their times, sweep timing, last error), `GET /api/index/log` (the index log), `GET /api/index/extractors` (what this host can read).

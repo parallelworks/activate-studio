@@ -45,6 +45,10 @@ echo "Build stamp: $VERSION ($COMMIT)"
 mkdir -p "$STAGE/app/web"
 cp -r "$PROJECT_ROOT/web/dist" "$STAGE/app/web/dist"
 cp -r "$PROJECT_ROOT/indexer" "$STAGE/app/indexer"
+# Packages fetched for this machine's Python (indexer/.deps) may not suit the
+# resource's; the workflow fetches its own there.
+rm -rf "$STAGE/app/indexer/.deps"
+find "$STAGE/app/indexer" -name __pycache__ -type d -prune -exec rm -rf {} +
 cp -r "$PROJECT_ROOT/docs" "$STAGE/app/docs"
 # What's new reads it.
 cp "$PROJECT_ROOT/CHANGELOG.md" "$STAGE/app/CHANGELOG.md"
@@ -59,6 +63,10 @@ if [ -f "$PROJECT_ROOT/index/models/minilm384.gguf" ]; then
 else
   echo "  (model not present locally; vector search disabled unless added)"
 fi
+# The ONNX model works with any Python; its packages are fetched on the
+# resource, for the Python there (deploy/workflow.yaml).
+python3 "$PROJECT_ROOT/indexer/fetch_embed.py" --model "$STAGE/app/index/models/minilm-l6" --cache "$CACHE/embed" >/dev/null ||
+  echo "  (the ONNX embedding model could not be fetched; search by meaning uses the GGUF model)"
 
 echo "Fetching Node runtime ${NODE_VERSION}..."
 if [ ! -f "$CACHE/${NODE_DIST}.tar.xz" ]; then

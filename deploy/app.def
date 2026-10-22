@@ -53,7 +53,7 @@ Stage: build
     apt-get update
     apt-get install -y --no-install-recommends \
         cmake make gcc g++ pkg-config zlib1g-dev libsqlite3-dev git curl ca-certificates \
-        bsdextrautils attr diffutils patch gawk patchelf
+        bsdextrautils attr diffutils patch gawk patchelf python3
     # npm, not corepack: corepack's loader crashes on some pnpm/Node
     # pairings and leaves broken shims behind.
     npm install -g pnpm@11.22.0    # package.json's packageManager
@@ -83,6 +83,19 @@ Stage: build
     curl -fsSL -o /opt/app/index/models/minilm384.gguf \
         "https://huggingface.co/asg017/sqlite-lembed-model-examples/resolve/${MODEL_COMMIT}/all-MiniLM-L6-v2/all-MiniLM-L6-v2.e4ce9877.q8_0.gguf"
     echo "${MODEL_SHA256}  /opt/app/index/models/minilm384.gguf" | sha256sum -c -
+    # The ONNX embedding backend (indexer/embed_onnx.py): onnxruntime,
+    # tokenizers and numpy for the final stage's Python (bookworm's 3.11)
+    # in /app/indexer/.deps, and the int8 all-MiniLM-L6-v2 model, as pinned
+    # in indexer/embed_deps.json with their SHA-256. A clone's own .deps,
+    # copied in with the source, is for another platform.
+    rm -rf /opt/app/indexer/.deps
+    case "$(uname -m)" in
+        x86_64|amd64) EMBED_ARCH=x86_64 ;;
+        aarch64|arm64) EMBED_ARCH=aarch64 ;;
+        *) EMBED_ARCH="$(uname -m)" ;;
+    esac
+    python3 /opt/src/indexer/fetch_embed.py --platform "linux-${EMBED_ARCH}-cp311" \
+        --deps /opt/app/indexer/.deps --model /opt/app/index/models/minilm-l6
     # A shallow clone cannot check out an arbitrary commit, so fetch just
     # that one.
     git init -q /opt/gufi-src
@@ -211,6 +224,9 @@ Stage: final
     # resolve would otherwise ship unnoticed.
     test -x /opt/gufi/bin/gufi_dir2index
     test -x /opt/gufi/bin/gufi_query
+    # The ONNX embedding backend loads and embeds with this image's Python;
+    # without it search by meaning falls back to the slower GGUF model.
+    PYTHONDONTWRITEBYTECODE=1 python3 -c "import sys; sys.path.insert(0, '/app/indexer'); import embed_onnx; why = embed_onnx.unavailable('/app/index/models/minilm-l6'); assert why is None, why; assert len(embed_onnx.Embedder('/app/index/models/minilm-l6').embed(['hello'])[0]) == 1536"
     for f in /opt/gufi/bin/* /opt/gufi/lib/*.so*; do
         [ -f "$f" ] || continue
         if ldd "$f" 2>/dev/null | grep "not found"; then
@@ -226,6 +242,11 @@ set -e
 mkdir -p "$INDEX_BASE/models"
 [ -f "$INDEX_BASE/models/minilm384.gguf" ] || \
     cp /app/index/models/minilm384.gguf "$INDEX_BASE/models/" 2>/dev/null || true
+# The ONNX model is linked rather than copied, so a new image's model is
+# the one used.
+if [ -d /app/index/models/minilm-l6 ] && { [ -L "$INDEX_BASE/models/minilm-l6" ] || [ ! -e "$INDEX_BASE/models/minilm-l6" ]; }; then
+    ln -sfn /app/index/models/minilm-l6 "$INDEX_BASE/models/minilm-l6"
+fi
 # INDEX_ON_START=1 builds or refreshes the index before serving.
 case "${INDEX_ON_START:-0}" in 1|true|TRUE|yes|on) index_on_start=1 ;; *) index_on_start=0 ;; esac
 if [ "$index_on_start" = "1" ] && [ -x "$GUFI_BIN/gufi_dir2index" ]; then

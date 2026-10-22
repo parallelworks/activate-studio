@@ -5,7 +5,8 @@
 # and web app with production node_modules, GUFI (from GUFI's own macOS
 # package, or built for an older macOS by deploy/mac/build_gufi.sh; either
 # way loading its libraries from inside the app), a standalone Python for
-# the indexer (with pypdf), and the embedding model. It builds on macOS or Linux; the
+# the indexer (with pypdf, and onnxruntime, tokenizers and numpy for the ONNX
+# embedding model), and the embedding models. It builds on macOS or Linux; the
 # .dmg is made only on macOS, where hdiutil exists.
 #
 # Usage: deploy/mac/build_app.sh
@@ -130,6 +131,9 @@ cp -R "$PROJECT_ROOT/extensions-starter" "$RES/app/extensions-starter"
 cp "$PROJECT_ROOT/deploy/gufi-index.yaml" "$RES/app/deploy/"
 cp "$PROJECT_ROOT/package.json" "$RES/app/package.json"
 find "$RES/app/indexer" -name __pycache__ -type d -prune -exec rm -rf {} +
+# A clone's own ONNX packages (fetch_embed.py --deps) are for its platform,
+# not the app's, which carries its own in its Python.
+rm -rf "$RES/app/indexer/.deps"
 BUILT_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 printf '{\n "version": "%s",\n "commit": "%s",\n "builtAt": "%s"\n}\n' \
   "$VERSION" "$COMMIT" "$BUILT_AT" >"$RES/app/build-info.json"
@@ -166,6 +170,14 @@ python3 - "$CACHE_DIR/pypdf-$PYPDF_VERSION-py3-none-any.whl" "$RES"/python/lib/p
 import sys, zipfile
 zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])
 PY
+# The ONNX embedding backend (indexer/embed_onnx.py): its packages, as the
+# macOS arm64 wheels for this Python pinned in indexer/embed_deps.json, and
+# the int8 all-MiniLM-L6-v2 model beside the GGUF one. Each is checked
+# against its SHA-256.
+PY_CP="cp$(echo "$PY_VERSION" | cut -d. -f1,2 | tr -d .)"
+echo "onnxruntime, tokenizers and numpy ($PY_CP) and the ONNX embedding model..."
+python3 "$PROJECT_ROOT/indexer/fetch_embed.py" --platform "macos-arm64-$PY_CP" --cache "$CACHE_DIR/embed" \
+  --deps "$(echo "$RES"/python/lib/python3.*/site-packages)" --model "$RES/models/minilm-l6"
 
 G="$RES/gufi"
 if [ -n "${GUFI_TARBALL:-}" ]; then
@@ -304,7 +316,8 @@ then ICON=AppIcon; fi
 COPYRIGHT="$(sed -n 's/^\(Copyright .*\)$/\1/p' "$PROJECT_ROOT/NOTICE" | head -n 1)"
 
 NEEDS="$(python3 "$HERE/macho_check.py" --print-minos "$RES/node/bin/node" "$RES"/python/bin/python3.* \
-  "$RES"/python/lib/*.dylib "$RES"/python/lib/python3.*/lib-dynload/*.so "$G"/bin/* "$G"/lib/*.dylib)"
+  "$RES"/python/lib/*.dylib "$RES"/python/lib/python3.*/lib-dynload/*.so \
+  $(find "$RES"/python/lib/python3.*/site-packages -name '*.so' -o -name '*.dylib') "$G"/bin/* "$G"/lib/*.dylib)"
 MIN_MACOS="${MIN_MACOS:-$NEEDS}"
 APP_NAME="$APP_NAME" BUNDLE_ID="$BUNDLE_ID" SHORT_VERSION="$SHORT_VERSION" BUNDLE_VERSION="$BUNDLE_VERSION" \
   MIN_MACOS="$MIN_MACOS" BUILD="$VERSION ($COMMIT, $BUILT_AT)" ICON="$ICON" COPYRIGHT="$COPYRIGHT" \

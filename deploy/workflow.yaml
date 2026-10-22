@@ -854,6 +854,23 @@ jobs:
             mkdir -p "$INDEX_BASE/models"
             cp app/index/models/minilm384.gguf "$INDEX_BASE/models/"
           fi
+          # The ONNX embedding backend (indexer/fetch_embed.py, pinned in
+          # embed_deps.json): its packages for the Python the Studio runs
+          # here, and the model when the app tree lacks it, with downloads
+          # kept in cache/. Without them the GGUF model is used.
+          if [ ! -f app/index/models/minilm-l6/model.onnx ] || [ ! -d app/indexer/.deps ]; then
+            PY=""
+            for cand in python3.13 python3.12 python3.11 python3.10 python3; do
+              if command -v "$cand" >/dev/null 2>&1; then PY="$cand"; break; fi
+            done
+            mkdir -p cache
+            [ -n "$PY" ] && "$PY" app/indexer/fetch_embed.py --deps app/indexer/.deps --model app/index/models/minilm-l6 --cache cache/embed >/dev/null 2>&1 \
+              || echo "NOTE: the ONNX embedding backend is not installed here; search by meaning uses the GGUF model."
+          fi
+          if [ "$INDEX_BASE" != "$PWD/app/index" ] && [ -d app/index/models/minilm-l6 ] && [ ! -e "$INDEX_BASE/models/minilm-l6" ]; then
+            mkdir -p "$INDEX_BASE/models"
+            ln -s "$PWD/app/index/models/minilm-l6" "$INDEX_BASE/models/minilm-l6"
+          fi
           bash app/indexer/reindex.sh || echo "WARNING: index build failed; the app still serves the filesystem."
   run_app:
     if: ${{ inputs.resource_and_execution.scheduler != true }}

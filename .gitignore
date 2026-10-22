@@ -20,3 +20,6 @@ build-info.json
 
 # Python wheels and other downloads never belong in the repository.
 *.whl
+
+# The ONNX embedding packages indexer/fetch_embed.py --deps puts here for a clone.
+indexer/.deps/
