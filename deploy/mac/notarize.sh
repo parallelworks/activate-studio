@@ -91,8 +91,19 @@ staple "$APP"
 
 echo "Checking..."
 failures=0
+# stapler validate fetches the ticket from Apple again to compare, and a
+# dropped connection fails it ("The network connection was lost", error
+# 68), so it is tried a few times too.
+validate() {
+  local n
+  for n in 1 2 3 4 5; do
+    if out="$(xcrun stapler validate "$1" 2>&1)"; then return 0; fi
+    sleep "$((n * 10))"
+  done
+  return 1
+}
 for f in "$DMG" "$APP"; do
-  if out="$(xcrun stapler validate "$f" 2>&1)"; then
+  if validate "$f"; then
     echo "  ok    the ticket is stapled to $(basename "$f")"
   else
     echo "  FAIL  stapler validate $(basename "$f"):"; printf '%s\n' "$out" | sed 's/^/        /'
