@@ -9,7 +9,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@parallelworks/ui": "^0.84.2",
+    "@parallelworks/ui": "^0.89.0",
     "@parallelworks/workflow-parser": "^0.8.0",
     "monaco-editor": "^0.57.0",
     "react": "^19.2.8",
