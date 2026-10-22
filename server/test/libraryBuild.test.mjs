@@ -80,16 +80,22 @@ test('a library is extracted and embedded under the indexing settings, with an e
     assert.equal(arg(s.meaning, '--jobs'), '3')
     assert.equal(arg(s.meaning, '--cache'), path.join(L.builtLibraryDir('notes'), 'embed-cache.db'))
     assert.ok(s.meaning.includes('--prune'), 'a whole build drops cache entries the index no longer uses')
+    assert.equal(arg(s.meaning, '--max-chunks'), '4', 'Documents: the first passages of each file')
+    assert.ok(s.meaning.includes('--documents-only'))
+    s = B.enrichSteps(def, {}, { ...on, meaning: 'full' }, 3)
+    assert.ok(!s.meaning.includes('--max-chunks') && !s.meaning.includes('--documents-only'), 'Full: every file with text')
     s = B.enrichSteps(def, { subdir: 'a/b' }, on, 3)
     assert.equal(arg(s.meaning, '--subdir'), 'a/b')
     assert.ok(!s.meaning.includes('--prune'), 'one folder never prunes the cache')
 
-    const off = { ...on, ocr: false, documents: false, embeddings: false, legacyOffice: false }
+    const off = { ...on, ocr: false, documents: false, meaning: 'off', legacyOffice: false }
     s = B.enrichSteps(def, { noRecurse: true }, off, 1)
     assert.equal(s.documents, null, 'documents read by name only')
     assert.ok(s.text.includes('--no-ocr') && s.text.includes('--no-documents') && s.text.includes('--no-recurse'))
     assert.ok(!s.text.includes('--soffice'))
-    assert.equal(s.meaning, null, 'embeddings off')
+    assert.equal(s.meaning, null, 'search by meaning off')
+    assert.equal(B.enrichSteps(def, {}).meaning, null, 'a built library starts with search by meaning off')
+    assert.equal(S.indexSettings('notes').meaning, 'off')
   } finally { fs.rmSync(model) }
   assert.equal(B.enrichSteps(def, {}).meaning, null, 'no embedding model, no embeddings')
 })
@@ -215,6 +221,31 @@ test('the sync indexes a folder that changed, and drops one that is gone', { ski
   changed = await B.syncLibrary(papersId)
   assert.ok(changed.includes('extra (removed)'), JSON.stringify(changed))
   assert.equal(fs.existsSync(path.join(lib.indexRoot, 'extra')), false)
+})
+
+test('search by meaning is a level per library the Studio builds, set in Settings, Libraries', { skip }, async () => {
+  const lib = id => call('GET', '/api/libraries').then(r => r.body.libraries.find(l => l.id === id))
+  assert.equal((await lib('kb')).meaning, 'documents', 'the main folder starts at Documents')
+  assert.equal((await lib(papersId)).meaning, 'off', 'another library starts off')
+  let r = await call('PUT', `/api/libraries/${papersId}/meaning`, { level: 'full' })
+  assert.equal(r.status, 200, JSON.stringify(r.body))
+  assert.equal(r.body.meaning, 'full')
+  assert.equal((await lib(papersId)).meaning, 'full')
+  assert.equal((await call('PUT', `/api/libraries/${papersId}/meaning`, { level: 'most' })).status, 400)
+  assert.equal((await call('PUT', '/api/libraries/nothing-here/meaning', { level: 'off' })).status, 404)
+  // An index the Studio only reads keeps the vectors it has; there is nothing to set.
+  r = await call('POST', '/api/libraries', { id: 'kb-copy', indexRoot: path.join(dir, 'ix', 'gufi', 'kb') })
+  assert.equal(r.status, 200, JSON.stringify(r.body))
+  assert.equal(r.body.library.meaning, null)
+  assert.equal((await call('PUT', '/api/libraries/kb-copy/meaning', { level: 'full' })).status, 409)
+  assert.equal((await call('DELETE', '/api/libraries/kb-copy')).status, 200)
+  // Search looks by meaning only where it is on.
+  const { meaningSearched } = await import('../dist/libraryScope.js')
+  const papers = L.listLibraries('kb').find(l => l.id === papersId)
+  assert.equal(meaningSearched({ ...papers, caps: { ...papers.caps, vectors: true } }), true)
+  assert.equal(meaningSearched({ ...papers, meaning: 'off', caps: { ...papers.caps, vectors: true } }), false, 'vectors left from before are not searched')
+  assert.equal(meaningSearched({ ...papers, meaning: null, caps: { ...papers.caps, vectors: true } }), true, 'a read-only index with vectors')
+  await call('PUT', `/api/libraries/${papersId}/meaning`, { level: 'off' })
 })
 
 test('a rebuild runs again and keeps the index searchable', { skip }, async () => {

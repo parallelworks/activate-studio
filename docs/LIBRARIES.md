@@ -62,8 +62,12 @@ Settings, Libraries is one list of every library the Studio searches, and
 one **Add a library** control. Each row gives the library's name, its kind
 in plain words with what the Studio may do with it (read and write, or
 read only), where it is (the index directory, and the files when the
-Studio can open them), its state, whether it supports full-text search and
-search by meaning, and its actions:
+Studio can open them), its state, whether it supports full-text search,
+search by meaning, and its actions. For a library the Studio builds (the
+main folder, and one built here or on a remote system) the Meaning column is
+its level, Off, Documents or Full, changed in place (`PUT
+/api/libraries/:id/meaning`); a built library starts at Off. For an index the
+Studio only reads, it says whether the index has vectors:
 
 | Kind | Where it comes from | Actions |
 |---|---|---|

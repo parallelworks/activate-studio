@@ -210,9 +210,9 @@ export const MAX_TOOL_ITERATIONS = 24
  * placed on PATH, so every caller has to be told where to look (PW_CLI).
  * A Studio started outside a terminal, as the macOS app's background server
  * is, has a short PATH, so a CLI installed where only the person's shell
- * looks would not be found: after PW_CLI come the location chosen under
- * Settings, Model access, then PATH, then the folders the CLI is commonly
- * installed in. A live binding, found again by findPwCli, so installing the
+ * looks would not be found: after PW_CLI (a path there is taken as it is,
+ * found or not) come the location chosen under Settings, Model access, then
+ * PATH, then the folders the CLI is commonly installed in. A live binding, found again by findPwCli, so installing the
  * CLI or choosing its location needs no restart. Bare "pw" when there is
  * none, which fails with ENOENT as it always has.
  */
@@ -246,7 +246,11 @@ export function findPwCli(): { path: string | null; source: PwCliSource } {
   const found = (p: string, source: PwCliSource) => { PW_CLI = p; PW_CLI_SOURCE = source; return { path: p, source } }
   const env = process.env.PW_CLI
   if (env && env.includes('/')) {
+    // A path the deployment set is the CLI it means, found or not.
     if (runnableFile(env)) return found(env, 'env')
+    PW_CLI = env
+    PW_CLI_SOURCE = 'none'
+    return { path: null, source: 'none' }
   } else if (env) {
     for (const d of (process.env.PATH ?? '').split(path.delimiter)) if (d && runnableFile(path.join(d, env))) return found(path.join(d, env), 'env')
   }

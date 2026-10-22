@@ -9,7 +9,7 @@ import { EXCLUDE_DIRS, GUFI_BIN, INDEX_BASE, KB_ROOT, PROJECT_ROOT, PYTHON_BIN, 
 import { sofficeFound } from './extractors.js'
 import { invalidateDbList, treeStats } from './gufi.js'
 import { getIndexJob, startIndexJob, type IndexJob } from './indexing.js'
-import { indexSettings, threadsFor, type IndexSettings } from './indexSettings.js'
+import { builtLibrarySettings, indexSettings, isMeaningLevel, meaningArgs, saveIndexSettings, threadsFor, type IndexSettings } from './indexSettings.js'
 import { KbError } from './kb.js'
 import {
   addBuiltLibrary, addedDef, builtLibraryDir, checkNewId, forgetProbe, getLibrary, libraryIdFor, listLibraries, setBuildProgressSource,
@@ -87,7 +87,7 @@ export interface LocalCheck {
   id: string
 }
 
-export interface BuildInput { sourceRoot?: unknown; indexRoot?: unknown; label?: unknown; id?: unknown; create?: unknown }
+export interface BuildInput { sourceRoot?: unknown; indexRoot?: unknown; label?: unknown; id?: unknown; create?: unknown; meaning?: unknown }
 
 /**
  * The check before a build, step by step: GUFI is here; the source folder
@@ -252,12 +252,13 @@ type Scope = { subdir?: string; noRecurse?: boolean }
 /**
  * The steps that extract and embed one part of a library (a subtree, the
  * top folder's own files, or everything), under the indexing settings the
- * main folder uses (Settings, General, Indexing): its thread count, which
- * readers run, and whether embeddings are made. Embeddings keep a cache of
- * their own in the library's folder, so a rebuild or a sync embeds only
- * passages it has not seen. Exported for tests.
+ * main folder uses (Settings, General, Indexing): its thread count and which
+ * readers run; and the library's own level of search by meaning, off unless
+ * it was turned on. Embeddings keep a cache of their own in the library's
+ * folder, so a rebuild or a sync embeds only passages it has not seen.
+ * Exported for tests.
  */
-export function enrichSteps(def: LibraryDef, scope: Scope, s: IndexSettings = indexSettings(), threads = threadsFor()): {
+export function enrichSteps(def: LibraryDef, scope: Scope, s: IndexSettings = builtLibrarySettings(def.id), threads = threadsFor()): {
   documents: Parameters<typeof runPreExtract>[0] | null
   text: string[]
   meaning: string[] | null
@@ -270,10 +271,11 @@ export function enrichSteps(def: LibraryDef, scope: Scope, s: IndexSettings = in
   if (!s.documents) text.push('--no-documents')
   const soffice = s.legacyOffice ? sofficeFound() : null
   if (soffice) text.push('--soffice', soffice)
-  const meaning = s.embeddings && fs.existsSync(EMBED_MODEL)
+  const level = meaningArgs(s.meaning)
+  const meaning = level && fs.existsSync(EMBED_MODEL)
     ? [path.join(PROJECT_ROOT, 'indexer', 'embed.py'), '--index', def.indexRoot, '--model', EMBED_MODEL,
         '--gufi-sqlite3', path.join(GUFI_BIN, 'gufi_sqlite3'), '--jobs', String(threads),
-        '--cache', path.join(builtLibraryDir(def.id), 'embed-cache.db'), ...extra, ...(scope.subdir || scope.noRecurse ? [] : ['--prune'])]
+        '--cache', path.join(builtLibraryDir(def.id), 'embed-cache.db'), ...extra, ...(scope.subdir || scope.noRecurse ? [] : ['--prune']), ...level]
     : null
   return {
     documents: s.documents ? { kbRoot: def.sourceRoot!, cacheRoot: b.cacheRoot, ...scope, jobs: threads, ocr: s.ocr } : null,
@@ -436,6 +438,7 @@ export async function addLocalBuild(a: BuildInput): Promise<{ id: string; job: I
   if (!c.ok) throw new KbError(400, `The check did not pass. ${c.steps.find(s => !s.ok)?.detail ?? ''}`.trim())
   if (c.create.length && a.create !== true) throw new KbError(409, `These folders do not exist yet: ${c.create.join(', ')}. Confirm to create them.`)
   checkNewId(c.id)
+  if (a.meaning !== undefined && !isMeaningLevel(a.meaning)) throw new KbError(400, 'meaning: off, documents or full')
   for (const dir of c.create) await fsp.mkdir(dir, { recursive: true })
   const src = realOr(c.sourceRoot)
   const label = String(a.label ?? '').trim() || path.basename(src)
@@ -443,6 +446,7 @@ export async function addLocalBuild(a: BuildInput): Promise<{ id: string; job: I
     id: c.id, label, indexRoot: path.join(c.indexDir, path.basename(src)), sourceRoot: src,
     build: { indexDir: c.indexDir, cacheRoot: path.join(builtLibraryDir(c.id), 'extract'), managed: c.managed, state: 'building', error: null, builtAt: null, files: null, dirs: null },
   })
+  if (a.meaning !== undefined) await saveIndexSettings(c.id, { meaning: a.meaning })
   return { id: c.id, job: startBuild(c.id) }
 }
 

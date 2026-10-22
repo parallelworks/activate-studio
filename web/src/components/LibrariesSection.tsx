@@ -3,7 +3,8 @@ import {
   Button, Callout, DescriptionList, DescriptionListItem, IconButton, Loader, Modal, ProgressBar, StatusBadge, Table, toast,
 } from '@parallelworks/ui'
 import { AddIcon, CloseIcon } from '@parallelworks/ui/icons'
-import { api, type BuildProgress, type SettingsLibrary, type UserLibrary } from '../api'
+import { api, type BuildProgress, type MeaningLevel, type SettingsLibrary, type UserLibrary } from '../api'
+import { MeaningLevelSelect, meaningPhrase } from './MeaningLevel'
 import { reloadAppConfig, useAppConfig } from '../config'
 import { AddLibrary } from './AddLibrary'
 import { FolderPicker, errText, json, type SetupStatus } from './PrimaryFolder'
@@ -45,12 +46,16 @@ interface Row {
   state: { tone: Tone; text: string; pulse?: boolean; notes: ReactNode[] }
   fullText: boolean
   meaning: boolean
+  /** For a library the Studio builds: its level of search by meaning, which can be changed here. */
+  level?: { value: MeaningLevel; reload: () => Promise<unknown> }
   actions: ReactNode
   /** A line under the row across the whole table, such as a build's progress. */
   detail?: ReactNode
 }
 
 const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString() : '')
+/** Why a library the deployment set has no Remove, and where it is removed. */
+const PINNED_NOTE = 'Named in the server\'s STUDIO_LIBRARIES setting; remove it there and restart the Studio.'
 const counts = (dirs: number | null, files: number | null) =>
   dirs != null ? `${dirs.toLocaleString()} folders, ${(files ?? 0).toLocaleString()} files` : null
 
@@ -183,6 +188,9 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
       }
       const gufi = standalone?.gufi
       if (gufi && !gufi.found) notes.push(`GUFI was not found in ${gufi.bin}, so the index cannot be built.`)
+      // A Studio that signs people in is shared: its deployment builds this
+      // index, and removing it here would take search away from everyone.
+      if (!standalone) notes.push('On a Studio that signs people in, the deployment builds and deletes this index.')
       rows.push({
         key: l.id, name: l.label, kind: 'Main folder, read and write',
         where: (
@@ -192,6 +200,7 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
           </DescriptionList>
         ),
         state, fullText: l.caps.fullText, meaning: l.caps.vectors,
+        level: { value: l.meaning ?? 'documents', reload: loadLibs },
         actions: (
           <>
             {standalone && <Button variant="secondary" size="sm" disabled={indexing} onClick={() => setChanging(true)}>Change folder</Button>}
@@ -227,6 +236,7 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
           : b.error ? { tone: 'warning', text: 'Ready; the last pass failed', notes }
           : { tone: 'success', text: 'Ready', notes },
         fullText: l.caps.fullText, meaning: l.caps.vectors,
+        level: { value: l.meaning ?? 'off', reload: loadLibs },
         actions: (
           <>
             <Button variant="secondary" size="sm" loading={busy === l.id} disabled={busy !== null || isBuilding(b.state)}
@@ -251,8 +261,8 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
         </DescriptionList>
       ),
       state: l.caps.index
-        ? { tone: 'success', text: 'Ready', notes: [] }
-        : { tone: 'error', text: 'Index not found', notes: ['There is no db.db at the index directory.'] },
+        ? { tone: 'success', text: 'Ready', notes: l.pinned ? [PINNED_NOTE] : [] }
+        : { tone: 'error', text: 'Index not found', notes: ['There is no db.db at the index directory.', ...(l.pinned ? [PINNED_NOTE] : [])] },
       fullText: l.caps.fullText, meaning: l.caps.vectors,
       actions: !l.pinned && (
         <Button variant="secondary" size="sm" aria-label={`Remove ${l.label}`} disabled={busy !== null}
@@ -285,6 +295,7 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
           : l.error ? { tone: 'warning', text: 'Ready; the last build failed', notes }
           : { tone: 'success', text: 'Ready', notes },
         fullText: !!l.fullText, meaning: !!l.vectors,
+        level: { value: l.meaning ?? 'off', reload: loadUser },
         actions: (
           <>
             <Button variant="secondary" size="sm" loading={busy === l.id} disabled={busy !== null || isBuilding(l.state)}
@@ -408,13 +419,27 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
                   {r.state.notes.map((n, i) => <div key={i} className="lib-id">{n}</div>)}
                 </Table.Item>
                 <Table.Item className="lib-cap" data-label="Full text"><Mark on={r.fullText} /></Table.Item>
-                <Table.Item className="lib-cap" data-label="Meaning"><Mark on={r.meaning} /></Table.Item>
+                <Table.Item className="lib-cap" data-label="Meaning">
+                  {r.level
+                    ? <MeaningLevelSelect library={r.name} value={r.level.value} disabled={busy !== null}
+                        onChange={v => { const lv = r.level!; void act(r.key, async () => { await api.setLibraryMeaning(r.key, v); await lv.reload(); reloadAppConfig() },
+                          `Search by meaning in ${r.name}: ${meaningPhrase(v)}. It applies at the next build or sync; Rebuild applies it now.`) }} />
+                    : <Mark on={r.meaning} />}
+                </Table.Item>
                 <Table.Item className="lib-actions">{r.actions}</Table.Item>
               </tr>
               {r.detail && <tr className="lib-detail"><Table.Item colSpan={5} wrap>{r.detail}</Table.Item></tr>}
             </Fragment>
           ))}
         </Table>
+      )}
+      {libs && (
+        <p className="muted lib-meaning-note">
+          Meaning is search by meaning: passages that say the same thing in other words. For a library {cfg.appName} builds it
+          is a choice: Off (names and words only, fastest), Documents (documents and images), or Full (every file with text,
+          about three times the indexing time of Documents). A change applies at the next build or sync. An index connected as
+          it is uses the vectors it has.
+        </p>
       )}
 
       {!adding && (

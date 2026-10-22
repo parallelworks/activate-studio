@@ -26,6 +26,13 @@ export interface ScopedHit extends SearchHit { library: { id: string; label: str
  * The hits are blended across libraries as within one, each tagged with
  * its library, so the same path in two libraries stays two hits.
  */
+/** Whether a search looks in a library by meaning: one the Studio builds
+ *  when its level is not off, and an index it only reads when it has vectors. */
+export function meaningSearched(l: Library): boolean {
+  if (l.meaning === undefined || l.meaning === null) return l.caps.vectors
+  return l.meaning !== 'off' && (l.caps.vectors || l.primary)
+}
+
 export async function searchScope(libs: Library[], q: string, limit: number, opts: { semantic: boolean; nameLimit?: number }): Promise<ScopedHit[]> {
   const SEP = '\u0001'
   const tag = (l: Library) => (hits: SearchHit[]) => hits.map(h => ({ ...h, path: `${l.id}${SEP}${h.path}` }))
@@ -66,7 +73,7 @@ export async function searchScope(libs: Library[], q: string, limit: number, opt
     const [fts, names, vec] = await Promise.all([
       (l.caps.fullText || l.primary) && !viaVt.fts.has(l.id) ? searchFts(q, limit, l.indexRoot).then(t, () => []) : Promise.resolve([]),
       !viaVt.names.has(l.id) ? searchNames(q, nameLimit, l.indexRoot).then(t, () => []) : Promise.resolve([]),
-      opts.semantic && (l.caps.vectors || l.primary) ? searchVector(q, Math.min(limit, 10), l.indexRoot).then(t, () => []) : Promise.resolve([]),
+      opts.semantic && meaningSearched(l) ? searchVector(q, Math.min(limit, 10), l.indexRoot).then(t, () => []) : Promise.resolve([]),
     ])
     return { fts, names, vec }
   }))

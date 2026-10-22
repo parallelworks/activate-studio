@@ -188,12 +188,18 @@ test('deleting the index needs confirming, and leaves the folder\'s files alone'
 test('settings: threads checked, the readers this host has, and where the index is kept', async () => {
   assert.equal((await j('PUT', '/api/index/settings', { threads: 0.5 })).status, 400)
   assert.equal((await j('PUT', '/api/index/settings', { ocr: 'yes' })).status, 400)
-  const put = await j('PUT', '/api/index/settings', { threads: 3, embeddings: false })
+  assert.equal((await j('PUT', '/api/index/settings', { meaning: 'some' })).status, 400)
+  assert.equal((await j('GET', '/api/index/settings')).body.settings.meaning, 'documents', 'the main folder starts at Documents')
+  const put = await j('PUT', '/api/index/settings', { threads: 3, meaning: 'off' })
   assert.equal(put.status, 200)
   assert.equal(put.body.threads, 3)
-  assert.equal(put.body.settings.embeddings, false)
+  assert.equal(put.body.settings.meaning, 'off')
+  // The earlier on/off switch still reads: on is the folder's usual level.
+  assert.equal((await j('PUT', '/api/index/settings', { embeddings: true })).body.settings.meaning, 'documents')
+  assert.equal((await j('PUT', '/api/index/settings', { embeddings: false })).body.settings.meaning, 'off')
   const got = (await j('GET', '/api/index/settings')).body
   assert.equal(got.settings.threads, 3)
+  assert.equal(got.settings.embeddings, undefined)
   assert.ok(got.cpus >= 1)
   assert.equal(got.location.current, IX)
   assert.equal(got.location.canChange, false, 'only where a launcher can restart the Studio')
@@ -204,7 +210,7 @@ test('settings: threads checked, the readers this host has, and where the index 
   if (pdf.readers.includes('downmark')) assert.equal(got.readers.extractors.find(x => x.name === 'pdftotext').optional, true)
   assert.ok(got.readers.missing.every(m => !m.ok))
   // Back to one per core for the tests after this.
-  await j('PUT', '/api/index/settings', { threads: null, embeddings: true })
+  await j('PUT', '/api/index/settings', { threads: null, meaning: 'documents' })
   assert.equal((await j('GET', '/api/index/settings')).body.settings.threads, null)
 })
 

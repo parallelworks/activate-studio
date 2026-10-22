@@ -6,12 +6,13 @@ import { api, type IndexSettings, type IndexSettingsInfo } from '../api'
 import { useIndexStatus } from '../indexActivity'
 import { IndexControls, IndexJobView, LastBuild, useIndexControls } from './IndexActivity'
 import { FolderBrowser, errText, waitForRestart } from './PrimaryFolder'
+import { MeaningLevelControl } from './MeaningLevel'
 
 /**
  * Settings, General, Indexing (below the sync settings): how the main
  * folder's index is built. The threads every phase uses, which readers run
  * (documents, the PDF fallback, LibreOffice for older Office files, OCR,
- * image descriptions when AI features are on), whether embeddings are made,
+ * image descriptions when AI features are on), the main folder's level of search by meaning,
  * and where the index is kept. Each setting saves as it changes and applies
  * to the next build or sync. The vision model is chosen under AI features;
  * this says which one describes images.
@@ -161,13 +162,14 @@ export function IndexingSection({ visionModel = '', deploymentCred = null }: {
             </p>
           </>
         )}
-        <label className="ix-switch">
-          <Switch checked={s.embeddings} disabled={saving !== null} onCheckedChange={v => void save({ embeddings: v }, 'embeddings')} />
-          <span>
-            <span className="ix-switch-label">Search by meaning (embeddings)</span>
-            <span className="muted">Made after the text, as the last phase; search by name and text work before it ends.</span>
-          </span>
-        </label>
+        <div className="ix-meaning">
+          <MeaningLevelControl label="Search by meaning in the main folder" value={s.meaning} disabled={saving !== null}
+            onChange={v => void save({ meaning: v }, 'meaning')} />
+          <p className="ix-note">
+            Made after the text, as the last phase; search by name and words works before it ends. Each other library has its
+            own level, under <a href="#view=settings:libraries">Settings, Libraries</a>.
+          </p>
+        </div>
       </div>
 
       <h2 className="ix-h2">What this computer can read</h2>

@@ -8,6 +8,7 @@ import { resolveUserKey } from './credentials.js'
 import { executeTool, unattendedToolSpecs } from './chat/tools.js'
 import { systemPrompt } from './chat/context.js'
 import { effectiveSettings } from './settings.js'
+import { indexSettings } from './indexSettings.js'
 
 /**
  * OpenAI-compatible surface at /v1 exposing the knowledge base to any
@@ -114,7 +115,7 @@ async function buildContext(query: string, topK: number, tags?: string[]): Promi
   let [fts, names, vec] = await Promise.all([
     searchFts(termQuery, topK),
     searchNames(termQuery, Math.min(topK, 5)),
-    searchVector(q, Math.min(topK, 8)).catch(() => []),
+    indexSettings('kb').meaning !== 'off' ? searchVector(q, Math.min(topK, 8)).catch(() => []) : Promise.resolve([]),
   ])
   // An over-specified AND query finds nothing; retry on the strongest terms.
   if (!fts.length && terms.length > 3) {

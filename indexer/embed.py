@@ -18,8 +18,12 @@ The cache (--cache, an SQLite file keyed by the hash) is what makes a
 rebuild, or a folder pointed at again, cheap: unchanged text is never
 embedded twice. Without --cache, a scratch cache serves this run only.
 
-Chunks are capped per file; full-text search covers the tail. The 384-dim
-model is sentence-oriented, so chunks are short. With --progress,
+Chunks are capped per file (--max-chunks, 12 by default); full-text search
+covers the tail. The 384-dim model is sentence-oriented, so chunks are
+short. --documents-only embeds documents and images (PDF, Office, text,
+Markdown, and the descriptions and OCR text of images) and leaves code,
+data and the rest to name and full-text search: the Studio's "Documents"
+level of search by meaning, with --max-chunks 4. With --progress,
 `@progress {...}` lines on stdout say how far it has got.
 """
 import argparse
@@ -48,6 +52,13 @@ BATCH = 64
 # segfaults the lembed tokenizer and carries little semantic signal anyway.
 NO_EMBED_SUFFIXES = ('.svg', '.xml', '.html', '.css', '.json', '.csv', '.tsv')
 MODEL_NAME = 'minilm384'
+# What --documents-only embeds: prose documents, and images, whose text is
+# a description or OCR. Spreadsheets, code and data stay in full-text search.
+DOCUMENT_SUFFIXES = (
+    '.pdf', '.doc', '.docx', '.odt', '.rtf', '.ppt', '.pptx', '.odp',
+    '.md', '.markdown', '.txt', '.rst', '.tex', '.org', '.adoc',
+    '.png', '.jpg', '.jpeg', '.gif', '.webp', '.tif', '.tiff',
+)
 
 
 def prose_like(c: str) -> bool:
@@ -55,10 +66,19 @@ def prose_like(c: str) -> bool:
     return letters / max(len(c), 1) > 0.6
 
 
-def chunk(text: str) -> list[str]:
+def embeds_file(fname: str, documents_only: bool) -> bool:
+    """Whether a file's text is embedded: never markup, and with
+    --documents-only, only documents and images."""
+    low = fname.lower()
+    if low.endswith(NO_EMBED_SUFFIXES):
+        return False
+    return not documents_only or low.endswith(DOCUMENT_SUFFIXES)
+
+
+def chunk(text: str, cap: int = MAX_CHUNKS_PER_FILE) -> list[str]:
     out = []
     i = 0
-    while i < len(text) and len(out) < MAX_CHUNKS_PER_FILE:
+    while i < len(text) and len(out) < cap:
         c = text[i:i + CHUNK_CHARS]
         if prose_like(c):
             out.append(c)
@@ -127,10 +147,13 @@ def main() -> int:
     ap.add_argument('--jobs', type=int, default=0, help='embedding processes side by side (default: the CPU count)')
     ap.add_argument('--cache', default='', help='embedding cache (SQLite), reused across runs')
     ap.add_argument('--prune', action='store_true', help='drop cache entries this index no longer uses (whole-index runs only)')
+    ap.add_argument('--max-chunks', type=int, default=MAX_CHUNKS_PER_FILE, help=f'passages embedded per file, from its start (default {MAX_CHUNKS_PER_FILE})')
+    ap.add_argument('--documents-only', action='store_true', help='embed documents and images only; code and data stay in full-text search')
     ap.add_argument('--progress', action='store_true', help='print @progress lines on stdout')
     args = ap.parse_args()
 
     jobs = args.jobs if args.jobs > 0 else default_jobs()
+    args.max_chunks = max(1, args.max_chunks)
     index_root = Path(args.index)
     walk_root = index_root / args.subdir if args.subdir else index_root
     progress = Progress(args.progress)
@@ -180,9 +203,9 @@ def run(args, jobs: int, dbs: list, scratch: Path, progress: Progress) -> int:
                 rows = []
             ins = []
             for tinode, fname, wordf in rows:
-                if fname.lower().endswith(NO_EMBED_SUFFIXES):
+                if not embeds_file(fname, args.documents_only):
                     continue
-                for seq, c in enumerate(chunk(wordf or '')):
+                for seq, c in enumerate(chunk(wordf or '', args.max_chunks)):
                     if c.strip():
                         ins.append((str(tinode), fname, seq, c, chunk_hash(c)))
             db.executemany('INSERT INTO gchunks (tinode, fname, seq, ctext, h) VALUES (?, ?, ?, ?, ?)', ins)
