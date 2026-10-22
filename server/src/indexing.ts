@@ -708,7 +708,7 @@ function startOwnJob(rel: string, work: (job: IndexJob) => Promise<{ ms: number 
 
 // ---- the whole folder ----
 
-const stashDir = (root: string) => path.join(STASH, createHash('sha1').update(root).digest('hex').slice(0, 16))
+const stashDir = (root: string) => path.join(STASH, createHash('sha1').update(path.resolve(root)).digest('hex').slice(0, 16))
 
 async function move(from: string, to: string): Promise<boolean> {
   try { await fsp.access(from) } catch { return false }
@@ -746,9 +746,19 @@ export function reconcileFolder(log: (m: string) => void = indexLog): Promise<vo
   return reconciling
 }
 
+/** The same folder, however the path was written (a trailing slash, a link). */
+function sameFolder(a: string, b: string): boolean {
+  if (path.resolve(a) === path.resolve(b)) return true
+  try { return fs.realpathSync(a) === fs.realpathSync(b) } catch { return false }
+}
+
 async function reconcileOnce(log: (m: string) => void): Promise<void> {
   const was = readMark()
-  if (was === KB_ROOT) return
+  if (was && sameFolder(was, KB_ROOT)) {
+    // Recorded as written here, so a later comparison is exact.
+    if (was !== KB_ROOT) await fsp.writeFile(ROOT_MARK, `${KB_ROOT}\n`)
+    return
+  }
   if (was) {
     const to = stashDir(was)
     await fsp.mkdir(to, { recursive: true })
@@ -770,7 +780,7 @@ async function reconcileOnce(log: (m: string) => void): Promise<void> {
   // A tree left for this folder's name by something else is not this folder's.
   if (was) await fsp.rm(GUFI_INDEX, { recursive: true, force: true })
   const mine = stashDir(KB_ROOT)
-  if (fs.existsSync(path.join(mine, 'root'))) {
+  if (fs.existsSync(path.join(mine, 'root')) && !fs.existsSync(path.join(GUFI_INDEX, 'db.db'))) {
     await move(path.join(mine, 'gufi'), GUFI_INDEX)
     await move(path.join(mine, 'extract'), EXTRACT_CACHE)
     await move(path.join(mine, 'embed-cache.db'), EMBED_CACHE)

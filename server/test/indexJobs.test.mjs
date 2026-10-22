@@ -246,4 +246,9 @@ test('a folder pointed at again updates its earlier index instead of building fr
   assert.equal(fs.statSync(cached).mtimeMs, before, 'the cached text was reused, not written again')
   assert.ok(back.earlier, 'and B\'s index is kept in turn')
   assert.equal(back.status.indexed, true)
+
+  // The same folder written another way is the same folder: nothing is set aside.
+  const slash = await build(`${A}/`)
+  assert.equal(slash.job.label, 'Updating the index')
+  assert.match(docsOf(slash.job), /^0 converted, 2 unchanged/)
 })
