@@ -137,9 +137,10 @@ export function ChatView() {
   }, [])
   const [showAttachments, setShowAttachments] = useState(false)
   const [showManage, setShowManage] = useState(false)
-  // On a phone the conversations list is the package's drawer. The
-  // bottom-bar Chat item toggles it; the package closes it on a pick, a tap
-  // outside or Escape.
+  // In a narrow window (a phone, or a desktop window under the phone
+  // breakpoint) the conversations list is the package's drawer, opened by
+  // the package's own button above the thread, and by the bottom-bar Chat
+  // item; the package closes it on a pick, a tap outside or Escape.
   const phone = usePhoneLayout()
   const [railOpen, setRailOpen] = useState(false)
   useEffect(() => {
@@ -461,7 +462,6 @@ export function ChatView() {
           <ModelShare />
           <ChatLayout
             sidebarMode={phone ? 'drawer' : 'inline'}
-            drawerToggle={false}
             sidebarTop={({ collapsed }) => (
               <ManageChatsRailItem
                 active={showManage}
