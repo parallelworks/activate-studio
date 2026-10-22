@@ -8,10 +8,11 @@ export const SEEN_KEY = 'ade-seen-version'
 
 /**
  * Once, the first time the Studio opens on a newer version than this browser
- * last saw (in the macOS app and a clone): "Updated to vX" with the titles
- * of the changes since, from the change log the build carries, so it works
- * offline. A first visit only records the version. A hosted deployment does
- * not show it; What's new is in Help and the footer there.
+ * last saw (in the macOS app and a clone): one line, "Updated to vX", with
+ * how many changes came since, from the change log the build carries, so it
+ * works offline, and What's new, which lists them. A first visit only records
+ * the version. A hosted deployment does not show it; What's new is in Help
+ * and the footer there.
  */
 export function UpdatedNotice() {
   const flow = useUpdateFlow()
@@ -34,23 +35,17 @@ export function UpdatedNotice() {
   }, [flow.none, current, mode])
 
   if (!shown) return null
-  const { versions } = shown
-  const many = versions.length > 1
+  const changes = shown.versions.reduce((n, v) => n + v.entries.length, 0)
   return (
-    <Callout variant="bar" tone="success" live className="update-notice" testId="updated-notice"
-      title={`Updated to ${shown.version}`} onDismiss={() => setShown(null)}>
-      {versions.length > 0 && (
-        <div className="update-notice-list updated-list">
-          {versions.map(v => (
-            <div key={v.version} className="updated-version">
-              {many && <div className="changes-version-name">{v.version}</div>}
-              <ul>{v.entries.map((e, i) => <li key={`${e.pr ?? 'n'}-${i}`}>{e.title}</li>)}</ul>
-            </div>
-          ))}
+    <Callout variant="bar" tone="success" live className="update-notice" testId="updated-notice" onDismiss={() => setShown(null)}>
+      <div className="update-notice-row">
+        <span className="update-notice-text">
+          <b>Updated to {shown.version}</b>
+          {changes > 0 && <span className="update-notice-sub"> · {changes} change{changes === 1 ? '' : 's'} since you last opened it</span>}
+        </span>
+        <div className="update-notice-actions">
+          <Button variant="secondary" size="sm" onClick={() => { setShown(null); openWhatsNew() }}>What's new</Button>
         </div>
-      )}
-      <div className="update-notice-actions">
-        <Button variant="secondary" size="sm" onClick={() => { setShown(null); openWhatsNew() }}>What's new</Button>
       </div>
     </Callout>
   )

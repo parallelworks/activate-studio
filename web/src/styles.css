@@ -2165,27 +2165,22 @@ button.status-row:hover { background: var(--pw-hover-row); }
 .changes-none { margin: 0; font-size: 13px; }
 .changes-scroll { max-height: 260px; overflow-y: auto; margin-top: 8px; padding-right: 8px; }
 
-/* The notices above every page: an update to install, and once after one. */
+/* The notices above every page: an update to install, and once after one.
+   One line each, so the page under them keeps its room; the changes open in
+   a dialog or on What's new. */
 .update-notice { flex-shrink: 0; }
 .update-notice p { margin: 0; }
-.update-notice .update-notice-sub { margin-top: 2px; color: var(--pw-muted); }
-/* The callout colors its text by tone; the changes read as body text, in a
-   scrolling area ruled above and below so a cut-off line reads as more. */
-.update-notice .update-notice-list { color: var(--pw-text); }
-.update-notice-list {
-  max-height: min(16rem, 34vh); overflow-y: auto; margin-top: 8px; padding: 6px 8px 6px 0;
-  border-block: 1px solid color-mix(in srgb, currentColor 14%, transparent);
-}
-.update-notice-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
+.update-notice-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
+.update-notice-text { min-width: 0; }
+.update-notice .update-notice-sub { color: var(--pw-muted); font-weight: 400; }
+.update-notice-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-left: auto; }
 .update-notice-link { font-size: 13px; }
-.update-notice .update-notice-error { margin-top: 8px; color: var(--theme-error-text); }
-.update-notice .update-notice-reason { margin-top: 8px; color: var(--pw-muted); }
-.update-notice-command { margin-top: 8px; }
-.update-notice .update-notice-command p { margin-bottom: 6px; color: var(--pw-text); }
-.update-notice-progress { margin-top: 6px; max-width: 34rem; }
-.updated-list ul { margin: 2px 0 0; padding-left: 18px; list-style: disc; }
-.updated-list .changes-version-name { font-weight: 600; }
-.updated-version + .updated-version { margin-top: 6px; }
+.update-notice .update-notice-error { margin-top: 6px; color: var(--theme-error-text); }
+.update-notice-progress { flex: 1 1 16rem; max-width: 34rem; }
+.update-details-list { max-height: min(28rem, 60vh); overflow-y: auto; padding-right: 6px; }
+.update-details .update-notice-command { margin-top: 12px; }
+.update-details .update-notice-command p { margin: 0 0 6px; }
+.update-details .update-notice-reason { margin-top: 12px; color: var(--pw-muted); }
 
 /* Help, What's new */
 .whats-new { max-width: 780px; }
