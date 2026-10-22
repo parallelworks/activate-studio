@@ -3,7 +3,7 @@ import { execFile } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import type { FastifyInstance } from 'fastify'
-import { GATEWAY_BASE, INDEX_BASE, PROJECT_ROOT, PW_CLI, TEXT_SUFFIXES } from './config.js'
+import { GATEWAY_BASE, INDEX_BASE, PROJECT_ROOT, PW_CLI, TEXT_SUFFIXES, findPwCli } from './config.js'
 import { authEnabled } from './auth.js'
 import { gatewayKey } from './chat/gateway.js'
 import { resolveUserCred } from './credentials.js'
@@ -753,11 +753,9 @@ export function probePw(spec: PwSpec, key: string): Promise<SshProbe> {
   return probeIndex({ site: spec.cluster, key, name: spec.cluster, reached: spec.cluster, advice: m => pwAdvice(m, spec.cluster) }, spec)
 }
 
-/** Whether the pw CLI is on this machine, at PW_CLI or on the PATH. */
+/** Whether the Studio finds the pw CLI on this machine (findPwCli). */
 export function pwCliFound(): boolean {
-  const runnable = (f: string) => { try { fs.accessSync(f, fs.constants.X_OK); return fs.statSync(f).isFile() } catch { return false } }
-  if (PW_CLI.includes('/')) return runnable(PW_CLI)
-  return (process.env.PATH ?? '').split(path.delimiter).some(d => !!d && runnable(path.join(d, PW_CLI)))
+  return findPwCli().path !== null
 }
 
 /** The key a viewer's pw ssh acts with, or why there is none. */

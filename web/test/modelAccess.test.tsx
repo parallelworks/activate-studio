@@ -17,7 +17,7 @@ function accessOf(over: Partial<AccessStatus> = {}): AccessStatus {
     single: true, authEnabled: false,
     models: cli, platform: cli, deployment: cli,
     gatewayHost: 'platform-a.example.com', platformOrigin: 'https://platform-a.example.com',
-    cli: { available: true, version: 'v7.1.0', contexts: [...contexts], chosen: null, active: 'work', used: 'work', gatewayFromEnv: false, envKey: false },
+    cli: { available: true, version: 'v7.1.0', path: '/usr/local/bin/pw', source: 'path', chosenPath: null, commonDirs: ['/home/me/.local/bin', '/usr/local/bin'], contexts: [...contexts], chosen: null, active: 'work', used: 'work', gatewayFromEnv: false, envKey: false },
     login: null,
     ...over,
   }
@@ -37,7 +37,7 @@ function stub(s: Srv) {
     const method = init?.method ?? 'GET'
     const body = init?.body ? JSON.parse(String(init.body)) : undefined
     s.calls.push({ method, url, body })
-    if (url === '/api/access') return reply(s.access)
+    if (/^\/api\/access(\?|$)/.test(url)) return reply(s.access)
     if (url === '/api/me/model-key') return reply({ authEnabled: false, single: true, verified: true, mode: s.access.models.source === 'endpoint' ? 'stored' : 'none', baseUrl: s.access.models.baseUrl ?? null })
     if (url.startsWith('/api/ai/health')) return reply(s.health)
     if (url.startsWith('/api/chat/models')) return reply({ models: s.models.map(id => ({ id })) })
@@ -45,6 +45,11 @@ function stub(s: Srv) {
       const name = (body as { context: string | null }).context
       s.access = accessOf({ cli: { ...accessOf().cli!, chosen: name, active: name ?? 'work', used: name ?? 'work' }, models: { source: 'cli', host: 'platform-b.example.com', context: name }, platform: { source: 'cli', host: 'platform-b.example.com', context: name } })
       return reply({ ok: true })
+    }
+    if (url === '/api/access/cli/path' && method === 'PUT') {
+      const p = (body as { path: string | null }).path
+      s.access = accessOf({ cli: { ...accessOf().cli!, path: p, source: p ? 'chosen' : 'path', chosenPath: p } })
+      return reply({ cli: s.access.cli })
     }
     if (url === '/api/access/cli/login' && method === 'POST') {
       s.login = { host: 'platform-c.example.com', state: 'waiting', url: 'https://platform-c.example.com/device', code: 'ABCD-EFGH', context: null, message: null }
@@ -71,9 +76,9 @@ describe('Model access', () => {
     const changed = vi.fn()
     window.addEventListener('ade:model-access-changed', changed)
     render(<ModelAccessSection />)
-    expect(await screen.findByText('Models and platform tools: pw CLI context work (platform-a.example.com)')).toBeInTheDocument()
+    expect(await screen.findByText('Models: pw CLI context work (platform-a.example.com)')).toBeInTheDocument()
     expect(screen.getByText('me:openai/gpt-5')).toBeInTheDocument()
-    const table = screen.getAllByRole('table')[0]
+    const table = document.querySelector('table.cli-contexts') as HTMLElement
     const work = within(table).getByText('work').closest('tr')!
     expect(within(work).getByText('In use')).toBeInTheDocument()
     expect(within(work).getByText('CLI current')).toBeInTheDocument()
@@ -82,7 +87,7 @@ describe('Model access', () => {
     fireEvent.click(within(lab).getByRole('button', { name: 'Use' }))
     await waitFor(() => expect(s.calls.some(c => c.url === '/api/access/source' && c.method === 'PUT')).toBe(true))
     expect(s.calls.find(c => c.url === '/api/access/source')!.body).toEqual({ context: 'lab', clearKey: false })
-    expect(await screen.findByText('Models and platform tools: pw CLI context lab (platform-b.example.com)')).toBeInTheDocument()
+    expect(await screen.findByText('Models: pw CLI context lab (platform-b.example.com)')).toBeInTheDocument()
     expect(changed).toHaveBeenCalled()
     window.removeEventListener('ade:model-access-changed', changed)
   })
@@ -92,7 +97,9 @@ describe('Model access', () => {
     stub(srv({ access: accessOf({ models: endpoint }) }))
     render(<ModelAccessSection />)
     expect(await screen.findByText('Models: the endpoint http://127.0.0.1:11434/v1')).toBeInTheDocument()
-    expect(screen.getByText(/Platform tools \(Workflows, clusters, runs\): pw CLI context work/)).toBeInTheDocument()
+    const uses = within(document.querySelector('table.access-uses-table') as HTMLElement)
+    expect(uses.getByText('Models in chat and for the assistant').closest('tr')).toHaveTextContent('the endpoint http://127.0.0.1:11434/v1')
+    expect(uses.getByText('Workflows page and the assistant\'s platform tools').closest('tr')).toHaveTextContent('pw CLI context work (platform-a.example.com)')
     expect(screen.getByLabelText('Base URL')).toHaveValue('http://127.0.0.1:11434/v1')
     expect(screen.getByRole('button', { name: 'Remove' })).toBeInTheDocument()
   })
@@ -129,6 +136,33 @@ describe('Model access', () => {
 describe('Model access on a deployment that signs people in', () => {
   afterEach(() => { vi.unstubAllGlobals() })
 
+  it('says which credential each part uses, and where the pw CLI runs from', async () => {
+    stub(srv())
+    render(<ModelAccessSection />)
+    await screen.findByText('Models: pw CLI context work (platform-a.example.com)')
+    for (const part of ['Models in chat and for the assistant', 'Workflows page and the assistant\'s platform tools', 'Libraries on ACTIVATE systems (pw ssh)', 'ChatGPT and Copilot subscriptions']) {
+      expect(screen.getByText(part).closest('tr')).toHaveTextContent('pw CLI context work (platform-a.example.com)')
+    }
+    expect(screen.queryByText('pw CLI not found')).toBeNull()
+    expect(screen.getByText('/usr/local/bin/pw').closest('p')).toHaveTextContent('pw v7.1.0 at /usr/local/bin/pw, found on the PATH.')
+  })
+
+  it('says when the Studio cannot find the pw CLI, and takes its location', async () => {
+    const s = srv({ access: accessOf({ cli: { ...accessOf().cli!, available: false, version: null, path: null, source: 'none' } }) })
+    stub(s)
+    render(<ModelAccessSection />)
+    expect(await screen.findByText('The Studio cannot find the pw CLI')).toBeInTheDocument()
+    expect(screen.getAllByText('pw CLI not found')).toHaveLength(2)
+    expect(screen.getByText('/home/me/.local/bin')).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Where the pw CLI is'), { target: { value: '/opt/tools/pw' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Use this location' }))
+    await waitFor(() => expect(s.calls.some(c => c.url === '/api/access/cli/path' && c.method === 'PUT' && (c.body as { path: string }).path === '/opt/tools/pw')).toBe(true))
+    expect(await screen.findByText('The Studio now runs the pw CLI at /opt/tools/pw.')).toBeInTheDocument()
+    expect(await screen.findByText('/opt/tools/pw')).toBeInTheDocument()
+    expect(screen.getByText('/opt/tools/pw').closest('p')).toHaveTextContent('chosen here')
+    expect(s.calls.some(c => c.url === '/api/access?fresh=1')).toBe(true)
+  })
+
   it('names the deployment credential by its host only, and offers no pw CLI controls', async () => {
     const dep = { source: 'cli' as const, host: 'platform-a.example.com', context: null }
     const s = srv({ access: accessOf({ single: false, authEnabled: true, models: dep, platform: dep, deployment: dep, cli: null }) })
@@ -139,7 +173,7 @@ describe('Model access on a deployment that signs people in', () => {
       ? reply({ authEnabled: true, verified: true, mode: 'none', sharingAllowed: false, shared: { active: false } })
       : base(input, init)))
     render(<ModelAccessSection />)
-    expect(await screen.findByText('Models and platform tools: the pw CLI sign-in on the server (platform-a.example.com)')).toBeInTheDocument()
+    expect(await screen.findByText('Models: the pw CLI sign-in on the server (platform-a.example.com)')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Deployment' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'pw CLI' })).toBeNull()
     expect(screen.getByText(/Without a key of your own, requests use the pw CLI sign-in on the server/)).toBeInTheDocument()

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { type ReactNode, useEffect, useRef, useState } from 'react'
 import {
   Button, Callout, type CalloutTone, Checkbox, CopyButton, ExternalLink, Field, Input, Loader, SegmentedControl, Select,
   type SelectItem, StatusBadge, Table,
@@ -19,6 +19,7 @@ import './ModelAccessSection.css'
  */
 
 type Source = 'endpoint' | 'key' | 'shared' | 'env' | 'cli' | 'sidecar' | 'none'
+type CliSource = 'env' | 'chosen' | 'path' | 'common' | 'none'
 interface SourceInfo { source: Source; host: string | null; context: string | null; baseUrl?: string | null; last4?: string | null; kind?: string | null }
 interface CliContext { name: string; server: string; organization: string | null; kind: 'sign-in' | 'api-key' | 'token' | null; expiresAt: string | null; expired: boolean; current: boolean; renewError: string | null }
 interface LoginState { host: string; state: 'starting' | 'waiting' | 'done' | 'failed' | 'canceled'; url: string | null; code: string | null; context: string | null; message: string | null }
@@ -31,7 +32,12 @@ export interface AccessStatus {
   deployment: SourceInfo
   gatewayHost: string | null
   platformOrigin: string | null
-  cli: { available: boolean; version: string | null; contexts: CliContext[]; chosen: string | null; active: string | null; used: string | null; gatewayFromEnv: boolean; envKey: boolean } | null
+  cli: {
+    available: boolean; version: string | null
+    /** Where the Studio found the CLI, and how. */
+    path: string | null; source: CliSource; chosenPath: string | null; commonDirs: string[]
+    contexts: CliContext[]; chosen: string | null; active: string | null; used: string | null; gatewayFromEnv: boolean; envKey: boolean
+  } | null
   login: LoginState | null
 }
 interface KeyStatus {
@@ -100,8 +106,6 @@ export function describeSource(s: SourceInfo, single: boolean): string {
   }
 }
 
-const sameSource = (a: SourceInfo, b: SourceInfo) => a.source === b.source && a.context === b.context && a.host === b.host && (a.baseUrl ?? null) === (b.baseUrl ?? null)
-
 const KIND_LABEL: Record<string, string> = { 'sign-in': 'Sign-in', 'api-key': 'API key', token: 'Platform token' }
 
 export function ModelAccessSection({ requirePersonalKey = false }: { requirePersonalKey?: boolean }) {
@@ -130,7 +134,7 @@ export function ModelAccessSection({ requirePersonalKey = false }: { requirePers
   const load = async (fresh = false) => {
     setChecking(true)
     try {
-      const [a, k] = await Promise.all([api<AccessStatus>('/api/access'), api<KeyStatus>('/api/me/model-key')])
+      const [a, k] = await Promise.all([api<AccessStatus>(`/api/access${fresh ? '?fresh=1' : ''}`), api<KeyStatus>('/api/me/model-key')])
       setAccess(a)
       setMe(k)
       setLoadError('')
@@ -222,6 +226,10 @@ export function ModelAccessSection({ requirePersonalKey = false }: { requirePers
     }
   }
   const cancelLogin = () => api<{ login: LoginState | null }>('/api/access/cli/login/cancel', { body: {} }).then(r => setLogin(r.login)).catch(() => {})
+  const chooseCliPath = (p: string | null) => run(
+    () => api('/api/access/cli/path', { method: 'PUT', body: { path: p } }),
+    p ? `The Studio now runs the pw CLI at ${p}.` : 'The Studio looks for the pw CLI by itself again.',
+  )
 
   if (loadError && !access) return (
     <>
@@ -249,13 +257,11 @@ export function ModelAccessSection({ requirePersonalKey = false }: { requirePers
   const stored = me.mode !== 'none'
   const offline = health?.status === 'offline'
   const keyRequired = health?.status === 'key-required'
-  const together = sameSource(access.models, access.platform)
   const modelsLine = describeSource(access.models, single)
-  const platformLine = describeSource(access.platform, single)
   const title = access.models.source === 'none' && access.platform.source === 'none'
     ? 'No model access yet'
     : keyRequired ? 'This deployment requires your own model credential'
-    : together ? `Models and platform tools: ${modelsLine}` : `Models: ${modelsLine}`
+    : `Models: ${modelsLine}`
   const tone: CalloutTone = access.models.source === 'none' || keyRequired
     ? (requirePersonalKey || single ? 'warning' : 'default')
     : !health ? 'default'
@@ -290,13 +296,6 @@ export function ModelAccessSection({ requirePersonalKey = false }: { requirePers
 
       <Callout className="rag-banner" tone={tone} title={title}
         action={<Button variant="secondary" size="sm" loading={checking} onClick={() => void load(true)}>Re-check</Button>}>
-        {!together && (
-          <p className="identity-note">
-            Platform tools (Workflows, clusters, runs): {access.platform.source === 'none'
-              ? 'none. An endpoint covers models only; sign the pw CLI in to a platform, or add a platform key, for these.'
-              : platformLine}
-          </p>
-        )}
         {health?.status === 'ok' && (
           <div className="rag-banner-models">
             {modelCount} model{modelCount === 1 ? '' : 's'} available{models && models.length ? ':' : '.'}
@@ -332,13 +331,16 @@ export function ModelAccessSection({ requirePersonalKey = false }: { requirePers
         )}
       </Callout>
 
+      <UsesTable access={access} />
+
       <Field group label="Where access comes from" className="access-source">
         <SegmentedControl options={tabs} value={tab ?? tabs[0].value} onValueChange={v => { setTab(v); setNote(null) }} />
       </Field>
 
       {tab === 'cli' && access.cli && (
         <CliPanel access={access} busy={busy} login={login} loginHost={loginHost} setLoginHost={setLoginHost}
-          onUse={pickContext} onStartLogin={() => void startLogin()} onCancelLogin={() => void cancelLogin()} onDismissLogin={() => setLogin(null)} />
+          onUse={pickContext} onStartLogin={() => void startLogin()} onCancelLogin={() => void cancelLogin()} onDismissLogin={() => setLogin(null)}
+          onChoosePath={p => void chooseCliPath(p)} />
       )}
 
       {tab === 'deployment' && (
@@ -455,7 +457,7 @@ export function ModelAccessSection({ requirePersonalKey = false }: { requirePers
   )
 }
 
-function CliPanel({ access, busy, login, loginHost, setLoginHost, onUse, onStartLogin, onCancelLogin, onDismissLogin }: {
+function CliPanel({ access, busy, login, loginHost, setLoginHost, onUse, onStartLogin, onCancelLogin, onDismissLogin, onChoosePath }: {
   access: AccessStatus
   busy: boolean
   login: LoginState | null
@@ -465,6 +467,7 @@ function CliPanel({ access, busy, login, loginHost, setLoginHost, onUse, onStart
   onStartLogin: () => void
   onCancelLogin: () => void
   onDismissLogin: () => void
+  onChoosePath: (path: string | null) => void
 }) {
   const cli = access.cli!
   const overridden = access.models.source === 'key' || access.models.source === 'endpoint'
@@ -472,17 +475,16 @@ function CliPanel({ access, busy, login, loginHost, setLoginHost, onUse, onStart
   const waiting = login?.state === 'waiting' || login?.state === 'starting'
   if (!cli.available && !cli.contexts.length) return (
     <div className="access-panel">
-      <Callout tone="default" title="The pw CLI is not installed on this computer">
-        Install it and sign in, or sign in here once it is installed; until then, use an API key or an endpoint.
-      </Callout>
+      <CliLocation cli={cli} busy={busy} onChoose={onChoosePath} />
     </div>
   )
   return (
     <div className="access-panel">
       <p className="muted view-sub">
         The platforms the pw CLI on this computer is signed in to. The one in use covers models and the platform: the
-        Workflows page, clusters, and runs.{cli.version ? ` pw ${cli.version}.` : ''}
+        Workflows page, clusters, and runs.
       </p>
+      <CliLocation cli={cli} busy={busy} onChoose={onChoosePath} />
       {overridden && (
         <p className="identity-note access-override">
           Your {access.models.source === 'endpoint' ? 'endpoint' : 'key'} is used for models now. Use on a context removes it.
@@ -549,6 +551,72 @@ function CliPanel({ access, busy, login, loginHost, setLoginHost, onUse, onStart
       {login && login.state === 'done' && <Callout className="rag-banner" tone="success" live onDismiss={onDismissLogin}>{login.message}</Callout>}
       {login && login.state === 'failed' && <Callout className="rag-banner" tone="error" live onDismiss={onDismissLogin}>{login.message}</Callout>}
     </div>
+  )
+}
+
+const CLI_SOURCE: Record<CliSource, string> = {
+  env: 'set by PW_CLI', chosen: 'chosen here', path: 'found on the PATH', common: 'found where it is usually installed', none: '',
+}
+
+/** Where the Studio runs the pw CLI from, or, when it cannot find it, a
+ *  place to say where it is. The macOS app's server does not start from a
+ *  terminal, so a CLI installed in a folder only the person's shell knows
+ *  about can be missed. */
+function CliLocation({ cli, busy, onChoose }: { cli: NonNullable<AccessStatus['cli']>; busy: boolean; onChoose: (path: string | null) => void }) {
+  const [input, setInput] = useState(cli.chosenPath ?? '')
+  if (cli.available && cli.path) return (
+    <p className="muted key-note cli-location">
+      pw{cli.version ? ` ${cli.version}` : ''} at <code>{cli.path}</code>, {CLI_SOURCE[cli.source]}.
+      {cli.source === 'chosen' && <> <Button variant="ghost" size="sm" disabled={busy} onClick={() => onChoose(null)}>Look for it by itself</Button></>}
+    </p>
+  )
+  return (
+    <Callout tone="warning" className="rag-banner cli-location" title="The Studio cannot find the pw CLI">
+      <p className="identity-note">
+        It looked on the PATH and in {cli.commonDirs.map((d, i) => <span key={d}>{i ? ', ' : ''}<code>{d}</code></span>)}.
+        Without it the Studio cannot renew pw CLI sign-ins, show the Workflows page, or reach ACTIVATE systems over
+        pw ssh. If it is installed, enter where it is; <code>command -v pw</code> in Terminal prints it.
+      </p>
+      <div className="key-row">
+        <div className="grow">
+          <Input aria-label="Where the pw CLI is" value={input} autoComplete="off" placeholder="/Users/me/bin/pw"
+            onChange={e => setInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && input.trim()) onChoose(input.trim()) }} />
+        </div>
+        <Button variant="primary" disabled={busy || !input.trim()} onClick={() => onChoose(input.trim())}>Use this location</Button>
+      </div>
+    </Callout>
+  )
+}
+
+/** Which credential each part of the Studio uses, in one place: models
+ *  and the platform can come from different sources, and the platform's
+ *  parts run the pw CLI, which has to be found on this computer. */
+function UsesTable({ access }: { access: AccessStatus }) {
+  const single = access.single
+  const platform = access.platform.source === 'none'
+    ? 'none: an endpoint covers models only; sign the pw CLI in, or add a platform key'
+    : describeSource(access.platform, single)
+  const cliMissing = single && !!access.cli && !access.cli.available
+  const needsCli = cliMissing ? <StatusBadge variant="warning" size="sm" className="ctx-badge">pw CLI not found</StatusBadge> : null
+  const rows: { part: string; uses: string; extra?: ReactNode }[] = [
+    { part: 'Models in chat and for the assistant', uses: describeSource(access.models, single) },
+    { part: 'Workflows page and the assistant\'s platform tools', uses: platform, extra: needsCli },
+    { part: 'Libraries on ACTIVATE systems (pw ssh)', uses: platform, extra: needsCli },
+    { part: 'ChatGPT and Copilot subscriptions', uses: platform },
+  ]
+  return (
+    <Field group label="What each part uses" className="access-uses">
+      <Table density="compact" className="access-uses-table" wrapperClassName="access-uses-wrap">
+        <Table.Header>Part</Table.Header>
+        <Table.Header>Credential</Table.Header>
+        {rows.map(r => (
+          <tr key={r.part}>
+            <Table.Item wrap>{r.part}</Table.Item>
+            <Table.Item wrap>{r.uses}{r.extra}</Table.Item>
+          </tr>
+        ))}
+      </Table>
+    </Field>
   )
 }
 

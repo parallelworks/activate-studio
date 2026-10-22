@@ -9,6 +9,12 @@
 .model-access .cli-contexts tr.in-use td { background: var(--pw-active-pill); }
 .model-access .ctx-badge { margin-left: 6px; }
 .model-access .ctx-error { font-size: 12px; margin-top: 2px; }
+.model-access .access-uses { margin: 12px 0 4px; max-width: var(--settings-measure); }
+.model-access .access-uses-wrap { overflow-x: auto; }
+.model-access .access-uses-table td { vertical-align: top; }
+.model-access .access-uses-table td:first-child { width: 45%; }
+.model-access .cli-location { margin: 4px 0 8px; }
+.model-access .cli-location code { overflow-wrap: anywhere; }
 .model-access .device-code-row { display: flex; align-items: center; gap: 8px; margin: 8px 0 2px; }
 .model-access .device-code-value {
   font-size: 22px; letter-spacing: 0.12em; font-weight: 600; padding: 4px 10px;

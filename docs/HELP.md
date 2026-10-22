@@ -131,7 +131,7 @@ On a computer of its own, the suggested questions and the mission start out writ
 
 ## Model access
 
-Settings, **Model access** shows where {appName} gets its models, and the credential the Workflows page and the assistant's platform tools use. The banner at the top names each, with the models available or what failed; **Re-check** asks again.
+Settings, **Model access** shows where {appName} gets its models, with the models available or what failed; **Re-check** asks again. **What each part uses** lists the credential behind models, the Workflows page and the assistant's platform tools, libraries on ACTIVATE systems, and ChatGPT and Copilot subscriptions. All but models also run the pw CLI. When {appName} cannot find the CLI, the pw CLI tab says so and takes its location (`command -v pw` in Terminal prints it).
 
 - **pw CLI**: the platforms the pw CLI on this computer is signed in to, one row per context. **Use** picks one; with **Follow the pw CLI's current context** ticked, {appName} uses whichever `pw context use` last chose. **Sign in** signs the CLI in to another platform: it shows a code, you approve it in a browser on any device, and {appName} uses the new sign-in.
 - **API key**: an ACTIVATE platform token or API key, which covers models and the platform, or an AI gateway key, which covers models only.

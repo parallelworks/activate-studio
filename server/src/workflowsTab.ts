@@ -19,7 +19,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { parse as parseYaml, stringify as dumpYaml } from 'yaml'
 import { convertToDynamicForm, prepareSubmittableValues, workflowHasUserInputs } from '@parallelworks/workflow-parser'
-import { GATEWAY_BASE, PW_CLI } from './config.js'
+import { GATEWAY_BASE, NO_CLI_MESSAGE, PW_CLI, findPwCli, isMissingCli } from './config.js'
 import { gatewayKey } from './chat/gateway.js'
 import { resolveUserCred } from './credentials.js'
 import { effectiveSettings } from './settings.js'
@@ -52,9 +52,16 @@ export function platformAvailable(userId: string | undefined): boolean {
 type Cli = (args: string[], key: string | null, timeoutMs?: number) => Promise<string>
 let cli: Cli = (args, key, timeoutMs = 60_000) => new Promise((resolve, reject) => {
   const env = key ? { ...process.env, PW_API_KEY: key } : process.env
-  execFile(PW_CLI, args, { timeout: timeoutMs, maxBuffer: 32 * 1024 * 1024, env }, (err, stdout, stderr) =>
-    err ? reject(new Error((stderr || err.message).trim())) : resolve(stdout))
+  const run = (retry: boolean) => execFile(PW_CLI, args, { timeout: timeoutMs, maxBuffer: 32 * 1024 * 1024, env }, (err, stdout, stderr) => {
+    // Not found where it was: look again (it may have been installed or
+    // chosen since), and say so in plain words when it is still missing.
+    if (err && isMissingCli(err)) return retry && findPwCli().path ? run(false) : reject(new MissingCli())
+    if (err) return reject(new Error((stderr || err.message).trim()))
+    resolve(stdout)
+  })
+  run(true)
 })
+class MissingCli extends Error { constructor() { super(NO_CLI_MESSAGE) } }
 /** Tests replace the CLI. */
 export function setWorkflowsCli(fn: Cli): void { cli = fn }
 
@@ -64,6 +71,7 @@ export function setWorkflowsCli(fn: Cli): void { cli = fn }
  * error", even when the cause was an expired credential they could fix.
  */
 export function platformError(e: unknown): KbError {
+  if (e instanceof MissingCli) return new KbError(503, NO_CLI_MESSAGE)
   const text = String((e as Error)?.message ?? e).replace(/\x1b\[[0-9;]*m/g, '').replace(/^\S+Z \[(ERROR|WARN)\] /gm, '').trim()
   if (/authentication has expired|please authenticate|401|unauthorized/i.test(text)) {
     return new KbError(401, 'The platform credential has expired. Add your own platform API key under Settings, Model access, or renew the deployment credential.')
