@@ -62,7 +62,8 @@ const OCR_PAGE_TIMEOUT_MS = 120_000
 const OCR_TIMEOUT_MS = 300_000
 
 let tesseractKnown: boolean | null = null
-function tesseractAvailable(): boolean {
+/** Whether tesseract runs here (looked for once). */
+export function tesseractAvailable(): boolean {
   if (tesseractKnown === null) {
     try { tesseractKnown = spawnSync('tesseract', ['--version'], { stdio: 'ignore', timeout: 10_000 }).status === 0 }
     catch { tesseractKnown = false }
@@ -95,6 +96,10 @@ const MAX_INPUT_BYTES = 64 * 1024 * 1024
 export const PROVENANCE_PREFIX = '<!-- extracted by downmark '
 const PROVENANCE_END = ' -->'
 const provenanceLine = (ver: string) => `${PROVENANCE_PREFIX}${ver}${PROVENANCE_END}`
+/** Follows the version on a PDF converted with no OCR (the index depth
+ *  stopped before it, or tesseract was not found), so a pass with OCR
+ *  converts it again: a scanned page's text would be missing otherwise. */
+const NO_OCR = ' (no OCR)'
 
 export interface PreExtractOptions {
   kbRoot: string
@@ -222,7 +227,8 @@ export async function preExtract(opts: PreExtractOptions): Promise<PreExtractSum
       // A version mismatch reconverts this one file, whatever the scope
       // of the pass, which is what makes an upgrade reach a deployment
       // that only ever indexes subtrees.
-      if (cst.mtimeMs >= st.mtimeMs && cst.size > 0 && (await entryVersion(cacheFile)) === ver) {
+      const was = cst.mtimeMs >= st.mtimeMs && cst.size > 0 ? await entryVersion(cacheFile) : ''
+      if (was === ver || (was === `${ver}${NO_OCR}` && !ocr)) {
         summary.reused++
         return
       }
@@ -233,7 +239,7 @@ export async function preExtract(opts: PreExtractOptions): Promise<PreExtractSum
       const isPdf = path.extname(name).toLowerCase() === PDF_SUFFIX
       const { markdown, warnings } = await convert(data, isPdf && ocr ? { filename: name, ocr } : { filename: name })
       if (!markdown.trim()) { summary.failed++; log(`preextract: ${childRel}: no text`); return }
-      const text = `${provenanceLine(ver)}\n\n${markdown}`.slice(0, MAX_TEXT)
+      const text = `${provenanceLine(isPdf && !ocr ? `${ver}${NO_OCR}` : ver)}\n\n${markdown}`.slice(0, MAX_TEXT)
       // A conversion can succeed and still lose content; say what, so a
       // document that indexes short is explained in the log rather than
       // discovered by a reader. The Markdown is still the best text we have.

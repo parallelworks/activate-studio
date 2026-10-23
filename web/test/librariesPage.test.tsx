@@ -401,6 +401,7 @@ describe('Settings, Libraries', () => {
   it('sets the depth per library the Studio builds; an index it only reads shows what it has', async () => {
     const s = server({ libs: [PRIMARY, { ...BUILT_HERE, depth: 'ocr', build: { ...BUILT_HERE.build, state: 'ready', files: 40, dirs: 6, builtAt: '2026-10-20T00:00:00Z', progress: null } }, SITE] })
     await renderPage(s)
+    const success = vi.spyOn((await import('@parallelworks/ui')).toast, 'success')
     const row = await waitFor(() => rowOf('Papers'))
     const select = within(row).getByRole('combobox', { name: 'Index depth of Papers' })
     expect(select).toHaveTextContent('Text + OCR')
@@ -412,6 +413,9 @@ describe('Settings, Libraries', () => {
     fireEvent.click(all)
     await waitFor(() => expect(s.calls.find(c => c.method === 'PUT' && c.url === '/api/libraries/papers/depth')?.body).toEqual({ depth: 'meaning-full' }))
     await waitFor(() => expect(within(rowOf('Papers')).getByRole('combobox', { name: 'Index depth of Papers' })).toHaveTextContent('Meaning on all files'))
+    // Built here, the sync applies it: no rebuild is asked for.
+    await waitFor(() => expect(success).toHaveBeenCalledWith('Papers: Meaning on all files. It is applied in the background now.'))
+    expect(posted(s, '/api/libraries/papers/rebuild')).toHaveLength(0)
     expect(within(rowOf('Site index')).queryByRole('combobox')).toBeNull()
     expect(within(rowOf('Site index')).getByText('as built')).toBeInTheDocument()
     expect(screen.getByText(/Depth is how far an index goes/)).toBeInTheDocument()

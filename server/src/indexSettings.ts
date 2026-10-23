@@ -8,7 +8,8 @@ import { KbError } from './kb.js'
 /**
  * How a library's index is built: how many threads, which readers run, and
  * how deep it goes. Kept per library in INDEX_BASE/indexing.json and
- * applied at the next build. Settings, General, Indexing edits the main
+ * applied at the next build; a new depth or speed also at the next sync
+ * (depthState.ts). Settings, General, Indexing edits the main
  * folder's; libraries built of a folder on this computer follow those,
  * except for the depth, which each library sets for itself (Settings,
  * Libraries).
@@ -34,8 +35,8 @@ export interface IndexSettings {
   meaning: MeaningLevel
   /** How much of each passage is embedded: standard, its first 256 tokens,
    *  or faster, its first 128, for well under half the time and slightly
-   *  lower ranking. A change embeds an index again, once, at its next build
-   *  or sync (the two are different models to the index). Set for the main
+   *  lower ranking. A change embeds an index again, once, at its next sync
+   *  (the two are different models to the index; depthState.ts). Set for the main
    *  folder and followed by the libraries built of folders here. */
   meaningSpeed: MeaningSpeed
 }

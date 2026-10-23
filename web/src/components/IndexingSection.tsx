@@ -11,7 +11,7 @@ import { IndexDepthControl } from './IndexDepth'
 const MEANING_SPEED_OPTIONS = [{ value: 'standard', label: 'Standard' }, { value: 'faster', label: 'Faster' }]
 const MEANING_SPEED_HELP: Record<IndexSettings['meaningSpeed'], string> = {
   standard: 'Embeds the first 256 tokens of each passage, about 800 characters. The best ranking.',
-  faster: 'Embeds the first 128 tokens of each passage, in well under half the time, with slightly lower ranking. Changing it embeds each index again, once, at its next build or sync. Libraries built here follow it too.',
+  faster: 'Embeds the first 128 tokens of each passage, in well under half the time, with slightly lower ranking. Changing it embeds each index again, once, in the background. Libraries built here follow it too.',
 }
 
 /**
@@ -20,8 +20,9 @@ const MEANING_SPEED_HELP: Record<IndexSettings['meaningSpeed'], string> = {
  * depth (names, text, OCR, meaning on documents or on all files), how
  * documents are read (the PDF fallback, LibreOffice for older Office
  * files, image descriptions when AI features are on), the speed of search
- * by meaning, and where the index is kept. Each setting saves as it changes and applies
- * to the next build or sync. The vision model is chosen under AI features;
+ * by meaning, and where the index is kept. Each setting saves as it changes; a new depth
+ * or speed is applied by the sync, over the files already indexed (indexing.ts), and the
+ * readers apply to files read from then on. The vision model is chosen under AI features;
  * this says which one describes images.
  */
 
@@ -101,8 +102,8 @@ export function IndexingSection({ visionModel = '', deploymentCred = null }: {
     <>
       <h2 className="ix-h2">How the index is built</h2>
       <p className="muted view-sub">
-        The main folder&apos;s index. Each setting here saves as you change it and applies to the next build or sync;
-        Update index applies it now.
+        The main folder&apos;s index. Each setting here saves as you change it. The readers apply to files read from
+        then on; Update index reads everything again.
       </p>
       {error && <Callout tone="error">{error}</Callout>}
 
@@ -131,8 +132,9 @@ export function IndexingSection({ visionModel = '', deploymentCred = null }: {
           <IndexDepthControl label="Index depth of the main folder" value={s.depth} ocr={tesseract?.available ?? null}
             disabled={saving !== null && saving !== 'depth'} onChange={v => void save({ depth: v }, 'depth')} />
           <p className="ix-note">
-            Search by name works as soon as the names are in; text and meaning follow. Each other library has its own depth,
-            under <a href="#view=settings:libraries">Settings, Libraries</a>.
+            A new depth is applied in the background at once, to the files already indexed (with the background sync paused,
+            at Sync now). Search by name works as soon as the names are in; text and meaning follow. Each other library has
+            its own depth, under <a href="#view=settings:libraries">Settings, Libraries</a>.
           </p>
         </div>
         <Field label="PDFs downmark cannot read"
