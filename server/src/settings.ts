@@ -119,7 +119,40 @@ export const PERSONAL_PROMPTS = [
   'Summarize the documents in a folder I name.',
   'Find my notes and documents about a topic I name.',
   'Which PDFs do I have, and what is each one about?',
+  'Which are my largest files and folders?',
+  'Compare two documents I name and list how they differ.',
+  'Which spreadsheets do I have, and what does each one track?',
+  'List my presentations and the topic of each.',
+  'What have I written about a project I name, and when?',
 ]
+
+/** A deployment's default prompts, which an earlier version also saved on a
+ *  computer of its own; saved there unchanged, they count as unset. */
+const DEPLOYMENT_PROMPTS = [
+  'What tools can you use and what can I ask you to do?',
+  'What is in this knowledge base?',
+  'Which workflows are available to run?',
+]
+
+/** The pages a computer of its own shows until setup is finished: all but
+ *  Workflows, which needs an ACTIVATE platform and is turned on where wanted.
+ *  Settings and Help are always shown. */
+export const PERSONAL_SECTIONS = ['chat', 'library', 'search', 'query', 'overview', 'history', 'agents', 'settings', 'help']
+
+const sameList = (a: string[], b: string[]) => a.length === b.length && a.every((x, i) => x === b[i])
+
+/** The saved prompts, or the defaults where none are saved, an empty list
+ *  is saved, or a computer of its own kept a deployment's defaults. */
+function promptsOf(saved: string[] | undefined): string[] {
+  if (!saved?.length || (personalInstall() && sameList(saved, DEPLOYMENT_PROMPTS))) return envPrompts()
+  return saved
+}
+
+/** The default mission: KB_MISSION, else, on a computer of its own, one
+ *  written for its owner's files. */
+function defaultMission(): string {
+  return process.env.KB_MISSION ?? (personalInstall() ? PERSONAL_MISSION : '')
+}
 
 export const PERSONAL_MISSION = [
   "This Studio indexes one person's own files on their computer: notes, documents, papers, spreadsheets, code and other files in the indexed folder.",
@@ -129,15 +162,18 @@ export const PERSONAL_MISSION = [
 ].join(' ')
 
 function envPrompts(): string[] {
-  const fallback = personalInstall() ? PERSONAL_PROMPTS : [
-    'What tools can you use and what can I ask you to do?',
-    'What is in this knowledge base?',
-    'Which workflows are available to run?',
-  ]
+  const fallback = personalInstall() ? PERSONAL_PROMPTS : DEPLOYMENT_PROMPTS
   try {
     const fromEnv = JSON.parse(process.env.SUGGESTED_PROMPTS ?? '[]')
     return Array.isArray(fromEnv) && fromEnv.length ? fromEnv : fallback
   } catch { return fallback }
+}
+
+/** A computer of its own whose setup is not finished: AI features start off
+ *  and Workflows hidden there. Finishing setup saves whatever is still unset,
+ *  so an install that finished setup before these defaults keeps its own. */
+function freshPersonal(s: StudioSettings): boolean {
+  return personalInstall() && !s.setupDone
 }
 
 /** Effective values: saved settings override environment defaults. */
@@ -146,7 +182,8 @@ export function effectiveSettings(): Required<StudioSettings> {
   return {
     appName: s.appName ?? process.env.APP_NAME ?? 'Studio',
     kbLabel: s.kbLabel ?? process.env.KB_LABEL ?? path.basename(KB_ROOT),
-    sections: s.sections ?? (process.env.STUDIO_SECTIONS ? process.env.STUDIO_SECTIONS.split(',').map(x => x.trim()).filter(Boolean) : []),
+    sections: s.sections ?? (process.env.STUDIO_SECTIONS ? process.env.STUDIO_SECTIONS.split(',').map(x => x.trim()).filter(Boolean)
+      : freshPersonal(s) ? PERSONAL_SECTIONS : []),
     workflowCollection: s.workflowCollection ?? (process.env.STUDIO_WORKFLOWS ? process.env.STUDIO_WORKFLOWS.split(',').map(x => x.trim()).filter(Boolean) : []),
     theme: s.theme ?? (process.env.THEME === 'dark' ? 'dark' : 'light'),
     accent: s.accent ?? process.env.APP_ACCENT ?? 'navy',
@@ -155,7 +192,7 @@ export function effectiveSettings(): Required<StudioSettings> {
     iconUrlDark: s.iconUrlDark ?? process.env.APP_ICON_DARK ?? '',
     sweepIntervalSec: s.sweepIntervalSec ?? Number(process.env.SWEEP_INTERVAL_SEC ?? 300),
     searchEngine: s.searchEngine ?? (process.env.STUDIO_SEARCH_ENGINE === 'gufi_vt' ? 'gufi_vt' : 'parallel'),
-    suggestedPrompts: s.suggestedPrompts ?? envPrompts(),
+    suggestedPrompts: promptsOf(s.suggestedPrompts),
     visionModel: s.visionModel ?? process.env.ADE_VISION_MODEL ?? '',
     disabledTools: s.disabledTools ?? [],
     mcpEnabled: s.mcpEnabled ?? process.env.MCP_ENABLED !== '0',
@@ -180,7 +217,10 @@ export function effectiveSettings(): Required<StudioSettings> {
     voiceEnabled: s.voiceEnabled ?? process.env.VOICE_ENABLED === '1',
     voiceUrl: s.voiceUrl ?? process.env.VOICE_URL ?? '',
     setupDone: s.setupDone ?? false,
-    aiEnabled: s.aiEnabled ?? process.env.AI_ENABLED !== '0',
+    // Off on a new computer of its own until it is turned on (setup's AI
+    // step, or Settings); on elsewhere, and where setup finished before this
+    // default, unless AI_ENABLED=0.
+    aiEnabled: s.aiEnabled ?? (freshPersonal(s) ? process.env.AI_ENABLED === '1' : process.env.AI_ENABLED !== '0'),
     updates: asPolicy(s.updates),
     customTools: s.customTools ?? [],
     ragDefaultModel: s.ragDefaultModel ?? process.env.RAG_DEFAULT_MODEL ?? '',
@@ -196,7 +236,8 @@ export function effectiveSettings(): Required<StudioSettings> {
     // embedded session, so by default the app draws its own only when it is
     // open on its own (a new tab or window), never twice.
     bannerText: s.bannerText ?? process.env.BANNER_TEXT ?? '',
-    kbMission: s.kbMission ?? process.env.KB_MISSION ?? (personalInstall() ? PERSONAL_MISSION : ''),
+    // A blank mission saved by the AI features page is no mission chosen.
+    kbMission: s.kbMission?.trim() ? s.kbMission : defaultMission(),
     bannerColor: s.bannerColor ?? process.env.BANNER_COLOR ?? '#24612e',
     bannerWhenEmbedded: s.bannerWhenEmbedded ?? process.env.BANNER_WHEN_EMBEDDED === '1',
     // Whether a user may promote their own key to stand in for the
@@ -294,7 +335,10 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
     }
     if (body.suggestedPrompts !== undefined) {
       if (!Array.isArray(body.suggestedPrompts)) throw new KbError(400, 'suggestedPrompts must be an array')
-      next.suggestedPrompts = body.suggestedPrompts.map(p => String(p).slice(0, 300)).filter(Boolean).slice(0, 12)
+      const list = body.suggestedPrompts.map(p => String(p).slice(0, 300)).filter(Boolean).slice(0, 12)
+      // The defaults, saved as they are, stay defaults, so a later version's
+      // list reaches them.
+      next.suggestedPrompts = list.length && !sameList(list, envPrompts()) ? list : undefined
     }
     if (body.visionModel !== undefined) next.visionModel = String(body.visionModel).slice(0, 120) || undefined
     if (body.mcpEnabled !== undefined) next.mcpEnabled = !!body.mcpEnabled
@@ -376,7 +420,11 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
     if (body.ragEndpointAutoStart !== undefined) next.ragEndpointAutoStart = Boolean(body.ragEndpointAutoStart)
     if (body.requirePersonalKey !== undefined) next.requirePersonalKey = Boolean(body.requirePersonalKey)
     if (body.bannerText !== undefined) next.bannerText = String(body.bannerText).slice(0, 200)
-    if (body.kbMission !== undefined) next.kbMission = String(body.kbMission).slice(0, 4000)
+    if (body.kbMission !== undefined) {
+      // Blank, or the default as it is, keeps the default (and a later one).
+      const m = String(body.kbMission).slice(0, 4000)
+      next.kbMission = m.trim() && m.trim() !== defaultMission().trim() ? m : undefined
+    }
     if (body.bannerColor !== undefined) {
       const c = String(body.bannerColor).trim()
       if (c && !/^#[0-9a-fA-F]{6}$/.test(c)) throw new KbError(400, 'banner color must be a #rrggbb value')

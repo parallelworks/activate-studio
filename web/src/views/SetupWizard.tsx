@@ -478,8 +478,9 @@ export function SetupWizard({ onClose, pollMs = 1000 }: {
             <p className="muted" style={{ margin: 0 }}>Pages to show in the sidebar. Settings and Help always show.</p>
             <SidebarSwitches value={cfg.sections} platform={!!cfg.platform} aiEnabled={aiOn} onChange={changeSections} />
             <p className="muted" style={{ margin: 0 }}>
-              Workflows lists the workflows of an ACTIVATE platform, so it needs a platform login. To run workflow YAML files
-              of your own, see <ExternalLink href={MERIDIAN_URL}>Meridian</ExternalLink>, the open-source workflow engine.
+              Workflows runs ACTIVATE workflows, so it needs an ACTIVATE credential (Settings, Model access). For workflow
+              YAML files of your own, without ACTIVATE, use <ExternalLink href={MERIDIAN_URL}>Meridian</ExternalLink>, the
+              open-source workflow engine.
             </p>
           </>
         )}

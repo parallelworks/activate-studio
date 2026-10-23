@@ -324,9 +324,18 @@ export async function setupRoutes(app: FastifyInstance): Promise<void> {
     return brandingState()
   })
 
+  // Finishing setup, or Finish later, keeps what it showed: AI features and
+  // the pages shown, saved where they were still the defaults (off, and
+  // Workflows hidden, on a new computer of its own), so they stay that way.
   app.post('/api/setup/complete', async () => {
     requireSingleUser()
-    await updateSettings({ setupDone: true })
+    const saved = loadSettings()
+    const eff = effectiveSettings()
+    await updateSettings({
+      setupDone: true,
+      ...(saved.aiEnabled === undefined ? { aiEnabled: eff.aiEnabled } : {}),
+      ...(saved.sections === undefined && eff.sections.length ? { sections: eff.sections } : {}),
+    })
     return { setupDone: true }
   })
 }
