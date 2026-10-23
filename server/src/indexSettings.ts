@@ -29,7 +29,15 @@ export interface IndexSettings {
   legacyOffice: boolean
   /** Search by meaning: which passages get embeddings (see MeaningLevel). */
   meaning: MeaningLevel
+  /** How much of each passage is embedded: standard, its first 256 tokens,
+   *  or faster, its first 128, for well under half the time and slightly
+   *  lower ranking. A change embeds an index again, once, at its next build
+   *  or sync (the two are different models to the index). Set for the main
+   *  folder and followed by the libraries built of folders here. */
+  meaningSpeed: MeaningSpeed
 }
+
+export type MeaningSpeed = 'standard' | 'faster'
 
 /**
  * How much of a library search by meaning covers. Off: none; search finds
@@ -50,13 +58,15 @@ export function defaultMeaning(library: string): MeaningLevel {
   return library === 'kb' ? 'documents' : 'off'
 }
 
-/** What embed.py is told for a level; null when nothing is embedded. */
-export function meaningArgs(level: MeaningLevel): string[] | null {
-  return level === 'off' ? null : level === 'documents' ? ['--max-chunks', '4', '--documents-only'] : []
+/** What embed.py is told for a level and a speed; null when nothing is embedded. */
+export function meaningArgs(level: MeaningLevel, speed: MeaningSpeed = 'standard'): string[] | null {
+  if (level === 'off') return null
+  return [...(level === 'documents' ? ['--max-chunks', '4', '--documents-only'] : []), ...(speed === 'faster' ? ['--max-tokens', '128'] : [])]
 }
 
 export const INDEX_SETTINGS_DEFAULTS: IndexSettings = {
   threads: null, documents: true, pdfReader: 'auto', ocr: true, imageDescriptions: true, legacyOffice: true, meaning: 'documents',
+  meaningSpeed: 'standard',
 }
 
 /** As saved: an earlier version kept an on/off `embeddings` instead of a level. */
@@ -88,8 +98,8 @@ export function indexSettings(library = 'kb'): IndexSettings {
 }
 
 /** The settings a library built of a folder on this computer is indexed
- *  with: the main folder's threads and readers (Settings, General,
- *  Indexing), and its own level of search by meaning. */
+ *  with: the main folder's threads, readers and speed of search by meaning
+ *  (Settings, General, Indexing), and its own level of search by meaning. */
 export function builtLibrarySettings(library: string): IndexSettings {
   return { ...indexSettings('kb'), meaning: indexSettings(library).meaning }
 }
@@ -140,6 +150,10 @@ export async function saveIndexSettings(library: string, body: Partial<Record<ke
   if (body.pdfReader !== undefined) {
     if (!['auto', 'pdftotext', 'pypdf'].includes(String(body.pdfReader))) throw new KbError(400, 'pdfReader: auto, pdftotext or pypdf')
     next.pdfReader = body.pdfReader as IndexSettings['pdfReader']
+  }
+  if (body.meaningSpeed !== undefined) {
+    if (body.meaningSpeed !== 'standard' && body.meaningSpeed !== 'faster') throw new KbError(400, 'meaningSpeed: standard or faster')
+    next.meaningSpeed = body.meaningSpeed
   }
   const all = { libraries: { ...load().libraries, [library]: next } }
   await fsp.mkdir(path.dirname(FILE), { recursive: true })

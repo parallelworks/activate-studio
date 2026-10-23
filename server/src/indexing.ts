@@ -559,7 +559,7 @@ async function textPhase(ctx: JobCtx, o: { kbRoot: string; index: string; cache:
 /** Meaning: embed.py over an index tree, with the embedding cache. */
 async function meaningPhase(ctx: JobCtx, o: { index: string; noRecurse?: boolean; prune?: boolean }): Promise<void> {
   const ph = phase(ctx, 'meaning')
-  const level = meaningArgs(ctx.settings.meaning)
+  const level = meaningArgs(ctx.settings.meaning, ctx.settings.meaningSpeed)
   if (!level) { ph.skip('search by meaning is off for this folder (Settings, General, Indexing)'); return }
   if (!fs.existsSync(EMBED_MODEL)) { ph.skip('no embedding model'); return }
   if (!fs.existsSync(path.join(GUFI_BIN, 'gufi_sqlite3'))) { ph.skip('no gufi_sqlite3'); return }

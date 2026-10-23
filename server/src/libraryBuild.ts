@@ -271,7 +271,7 @@ export function enrichSteps(def: LibraryDef, scope: Scope, s: IndexSettings = bu
   if (!s.documents) text.push('--no-documents')
   const soffice = s.legacyOffice ? sofficeFound() : null
   if (soffice) text.push('--soffice', soffice)
-  const level = meaningArgs(s.meaning)
+  const level = meaningArgs(s.meaning, s.meaningSpeed)
   const meaning = level && fs.existsSync(EMBED_MODEL)
     ? [path.join(PROJECT_ROOT, 'indexer', 'embed.py'), '--index', def.indexRoot, '--model', EMBED_MODEL,
         '--gufi-sqlite3', path.join(GUFI_BIN, 'gufi_sqlite3'), '--jobs', String(threads),

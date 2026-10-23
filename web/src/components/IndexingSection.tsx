@@ -1,12 +1,18 @@
 import { useEffect, useState } from 'react'
 import {
-  Button, Callout, Field, Loader, Modal, NumberInput, Select, type SelectItem, Switch, Table,
+  Button, Callout, Field, Loader, Modal, NumberInput, SegmentedControl, Select, type SelectItem, Switch, Table,
 } from '@parallelworks/ui'
 import { api, type IndexSettings, type IndexSettingsInfo } from '../api'
 import { useIndexStatus } from '../indexActivity'
 import { IndexControls, IndexJobView, LastBuild, useIndexControls } from './IndexActivity'
 import { FolderBrowser, errText, waitForRestart } from './PrimaryFolder'
 import { MeaningLevelControl } from './MeaningLevel'
+
+const MEANING_SPEED_OPTIONS = [{ value: 'standard', label: 'Standard' }, { value: 'faster', label: 'Faster' }]
+const MEANING_SPEED_HELP: Record<IndexSettings['meaningSpeed'], string> = {
+  standard: 'Embeds the first 256 tokens of each passage, about 800 characters. The best ranking.',
+  faster: 'Embeds the first 128 tokens of each passage, in well under half the time, with slightly lower ranking. Changing it embeds each index again, once, at its next build or sync. Libraries built here follow it too.',
+}
 
 /**
  * Settings, General, Indexing (below the sync settings): how the main
@@ -169,6 +175,11 @@ export function IndexingSection({ visionModel = '', deploymentCred = null }: {
             Made after the text, as the last phase; search by name and words works before it ends. Each other library has its
             own level, under <a href="#view=settings:libraries">Settings, Libraries</a>.
           </p>
+          <Field group label="Speed of search by meaning" className="meaning-level"
+            description={MEANING_SPEED_HELP[s.meaningSpeed]}>
+            <SegmentedControl options={MEANING_SPEED_OPTIONS} value={s.meaningSpeed} disabled={saving !== null || s.meaning === 'off'}
+              onValueChange={v => { if (v) void save({ meaningSpeed: v as IndexSettings['meaningSpeed'] }, 'meaningSpeed') }} />
+          </Field>
         </div>
       </div>
 

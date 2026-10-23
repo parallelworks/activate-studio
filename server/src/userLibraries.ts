@@ -945,7 +945,7 @@ const ABS_ANY = /^\/[^\0-\x1f\x7f]*$/
 /** Writes the build to the remote system and starts it there, with the
  *  library's level of search by meaning (off: no embeddings are made). */
 async function startRemote(site: string, key: string, b: RemoteBuild, create: boolean, meaning: MeaningLevel): Promise<void> {
-  const level = meaningArgs(meaning)
+  const level = meaningArgs(meaning, indexSettings('kb').meaningSpeed)
   const enrich = b.python ? indexerScript('enrich.py') : ''
   const embed = b.python && b.model && level ? indexerScript('embed.py') : ''
   const r = await remoteRun(site, key, ['bash', '-c', BUILD_START, '_', b.id, BUILD_RUN, enrich, embed,
