@@ -169,7 +169,9 @@ The library is kept in step with its folder on the sweep interval
 last pass are indexed again, the topmost of each changed branch, with
 extraction and embeddings for those alone, and the index of a folder that
 is gone is removed. Files added to the folder by any means are picked up
-this way. A build that a restart interrupted runs again at startup.
+this way. The pass reads the time of every folder and file on a worker
+thread (`server/src/dirScan.ts`), so the server goes on answering while
+it runs. A build that a restart interrupted runs again at startup.
 **Rebuild** (`POST /api/libraries/<id>/rebuild`) indexes the whole folder
 again. **Remove** forgets the library and removes
 `INDEX_BASE/libraries/<id>`; an index folder that was chosen for it stays
@@ -251,9 +253,19 @@ wherever it is, on this computer or over the session:
 | a file's `size`, `mtime`, and labels | its entry in its folder's index, or the file itself before it is indexed |
 | `library`, `index` | the library and, on a single-user Studio or for the viewer's own remote libraries, where its index is |
 
-Answers are kept 20 seconds on the server and 30 in the page, and are
-dropped when the library changes. With All libraries the path starts with
-the library's id, and nothing is asked until something is clicked.
+A library on another system is not counted as a whole when it is
+selected, since on a large index that walk takes minutes on the remote
+system: the card has `counted: false`, the files and folders from its
+connection test or build, and a **Count size and types** button, which
+asks again with `count=1`. Its folders are counted when clicked.
+
+Counts are kept until the index changes: for a library on another system,
+until its recorded index time does, or an hour; for one here, until an
+index job ends, or ten minutes. Two requests for the same counts while
+they run share one query. The whole answer is also kept 20 seconds on the
+server and 30 in the page, and is dropped when the library changes. With All
+libraries the path starts with the library's id, and nothing is asked
+until something is clicked.
 
 ## Indexes on a cluster
 
@@ -313,12 +325,22 @@ Full-text and semantic search need enrichment, which these libraries do not
 have yet. **Refresh** reruns the workflow in update mode; **Remove** drops
 the library from the Studio and leaves the index on the cluster.
 
-The commands run over one long-lived `pw ssh` session per user and cluster
-(`server/src/remoteExec.ts`): each request is the command's argv with every
-argument base64-encoded, run on the cluster without a shell, so SQL and
-paths never meet shell quoting. The first request pays for the ssh setup,
-about 5 seconds; later ones take about 0.3 seconds. The session closes
-after 10 idle minutes.
+The commands run over long-lived `pw ssh` sessions, up to three per user
+and cluster (`server/src/remoteExec.ts`; `STUDIO_REMOTE_SESSIONS`, 1 to
+8): a request takes an idle session, else opens another, else waits on
+the least busy one, so a long count does not hold up a search. Each
+request is the command's argv with every argument base64-encoded, run on
+the cluster without a shell, so SQL and paths never meet shell quoting.
+The first request pays for the ssh setup, about 5 seconds; later ones
+take about 0.3 seconds. A session closes after 10 idle minutes.
+
+A `gufi_query` on a remote system, and a build there, runs with that
+system's processor count, up to 16 threads: `nproc`, which counts only
+the processors the login may use, else `getconf _NPROCESSORS_ONLN`, else
+`sysctl -n hw.ncpu`, asked once per session host and 4 when none answers.
+`STUDIO_REMOTE_THREADS` (1 to 256; in the macOS app, a line in
+`studio.env`) sets one count for every remote system, for a login node
+whose policy allows fewer.
 
 To the rest of the Studio a user library's index root is an opaque
 reference (`remote:<owner>:<id>`); `server/src/gufi.ts` sends any query on
@@ -334,11 +356,17 @@ Studio's host reaches with plain ssh: Settings, Libraries, **Add a
 library**, "A remote system", "Connect an existing index", **Connect
 with** ssh, or the setup wizard. The host is written `user@host`, an
 alias from `~/.ssh/config`, or either with `:port`. The Studio runs
-`ssh -T -o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=30 [-p port] <destination>`
+`ssh -T -o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=30 -o ControlMaster=auto -o ControlPath="<INDEX_BASE>/ssh/<hash>" -o ControlPersist=600 [-p port] <destination>`
 with the keys, agent, and `~/.ssh/config` of the account it runs as, and
-keeps one session per destination, as it does per cluster. Nothing is
-built or written on that machine: the library is ready once its
-connection test passes, and it is read only.
+keeps up to three sessions per destination, as it does per cluster. The
+sessions to one host share a single ssh connection through a socket in
+`INDEX_BASE/ssh` (mode 700), which stays open ten minutes after the last
+session closes, so a new session does not log in again; `~/.ssh/config`
+is not changed. Sharing is left out where the socket path would be longer
+than 86 bytes (ssh adds 17 characters when it binds it, and macOS allows
+104) and with `STUDIO_SSH_SHARE=0`. Nothing is built or written on that
+machine: the library is ready once its connection test passes, and it is
+read only.
 
 The remote machine needs:
 
@@ -364,8 +392,9 @@ machine.
 The connection test reports four steps, each with what to change when it
 fails: ssh reaches the host; `gufi_query` is found and runs, with its
 version; the index directory has a `db.db`, counted with one aggregate
-`gufi_query`; the source directory is readable. Adding runs the test again
-on the server. **Check** reruns it and updates the counts and the index
+`gufi_query`; the source directory is readable. Adding takes the result
+of a test of the same index that passed in the last two minutes, and runs
+the test again otherwise. **Check** reruns it and updates the counts and the index
 time (the modified time of the index's `db.db`), which is also when
 Statistics counts the library again.
 
@@ -432,7 +461,12 @@ storage, so a reload keeps it and a new tab starts from the default. Every route
   `<library id>/<path>`, and files open and download from their library;
 - search, which runs in each library what that library supports (full
   text and semantic where its index has them, names always) and blends the
-  hits, each tagged with its library;
+  hits, each tagged with its library. Each library has 20 seconds to
+  answer (`STUDIO_SEARCH_DEADLINE_MS`); one that has not is left out of
+  the results and named in the answer's `slow`, and the Search page and
+  the chat's `search_kb` say so. A library searched on its own is waited
+  for. With `gufi_vt` as the engine, its one statement waits for every
+  library;
 - the Query page, where the rows gain a leading library column. For the
   canned queries and the builder, whose order the Studio knows, the rows
   are the overall top rows and grouped totals (by extension) are added up;
@@ -452,7 +486,8 @@ libraries keeps knowledge-base hits.
 
 A library on a cluster takes seconds to count, so Stats clears its figures
 and shows a loader while a library loads, and the server keeps a cluster
-library's counts until the library is next built.
+library's counts until the library is next built, and a library here
+until an index job ends.
 
 The chat has its own library control, beside Persona, and the assistant's
 tools take a `library` argument: `search_kb` and `query_corpus` accept
@@ -486,7 +521,11 @@ merges the rows. The response says which engine answered.
 
 Search, the Query page, and the chat's `search_kb` and `query_corpus`
 tool blocks show the GUFI commands behind their results, as a shell takes
-them. A command on this host is shown as run. A cluster's command is shown
+them. Name and full-text search run as one aggregate `gufi_query` (`-a 1` with
+`-I`, `-E`, `-J`, `-K` and `-G`): each thread keeps rows until it has the
+number asked for, and the merge returns that many, so a common word in a
+large index sends back the rows shown and not every folder's matches.
+A command on this host is shown as run. A cluster's command is shown
 under the cluster's name, to run there after `pw ssh <cluster>`. A gufi_vt
 statement is shown as a here-document with gufi_vt's usual remote form,
 `remote_cmd='pw', remote_arg='ssh', remote_arg='<cluster>'`, with the

@@ -71,6 +71,9 @@ export interface EntryDetails {
   mtime: number
   types: { ext: string; count: number; bytes: number }[]
   labels: { own: string[]; inherited: string[]; within: { label: string; count: number }[] }
+  /** False for a remote library's whole index before it is counted: files
+   *  and dirs are from its connection test, size and types unknown. */
+  counted?: boolean
   ms: number
 }
 
@@ -317,7 +320,7 @@ export const api = {
     return data as { deleted: string }
   },
   stats: () => getJson<{ available: boolean; files?: number; dirs?: number; totalBytes?: number; libraries?: LibraryStats[] }>(`/api/kb/stats`),
-  search: (q: string, tags?: string[], limit = 50) => getJson<{ hits: SearchHit[]; error?: string; gufi?: GufiCommand[] }>(`/api/search?q=${encodeURIComponent(q)}&limit=${limit}${tags?.length ? `&tags=${encodeURIComponent(tags.join(','))}` : ''}`),
+  search: (q: string, tags?: string[], limit = 50) => getJson<{ hits: SearchHit[]; error?: string; gufi?: GufiCommand[]; slow?: string[] }>(`/api/search?q=${encodeURIComponent(q)}&limit=${limit}${tags?.length ? `&tags=${encodeURIComponent(tags.join(','))}` : ''}`),
   health: () => getJson<{ ok: boolean; gufi: boolean }>(`/healthz`),
   mkdir: async (path: string) => {
     const r = await postJson<{ created: string }>(`/api/kb/mkdir`, { path })
@@ -441,8 +444,8 @@ export const api = {
   userLibraries: () => getJson<{ libraries: UserLibrary[]; available: boolean; ssh?: boolean; pw?: boolean; pwOffered?: boolean; pwWhy?: string | null; workflow?: boolean }>('/api/user-libraries'),
   rebuildLibrary: (id: string) => postJson<{ library: SettingsLibrary }>(`/api/libraries/${encodeURIComponent(id)}/rebuild`, {}),
   /** A folder or file of the current library, described from its index. */
-  details: async (path: string): Promise<EntryDetails> => {
-    const res = await fetch(withLibrary(`/api/kb/details?path=${encodeURIComponent(path)}`))
+  details: async (path: string, count = false): Promise<EntryDetails> => {
+    const res = await fetch(withLibrary(`/api/kb/details?path=${encodeURIComponent(path)}${count ? '&count=1' : ''}`))
     const data = await res.json().catch(() => ({}))
     if (!res.ok) throw new Error((data as { error?: string }).error ?? `details: ${res.status}`)
     return data as EntryDetails

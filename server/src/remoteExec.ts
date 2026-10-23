@@ -1,5 +1,8 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
-import { GATEWAY_BASE, PW_CLI } from './config.js'
+import crypto from 'node:crypto'
+import fs from 'node:fs'
+import path from 'node:path'
+import { GATEWAY_BASE, INDEX_BASE, PW_CLI } from './config.js'
 import { KbError } from './kb.js'
 
 /**
@@ -19,10 +22,16 @@ import { KbError } from './kb.js'
  * unescaped SQL when gufi_vt was spiked). The loop decodes the arguments
  * into an array and runs it without a shell, then answers with one line:
  * the exit status and the base64 of stdout and of stderr's tail. One
- * request runs at a time per session; the queue is in this process.
+ * request runs at a time per session, so a host gets a few sessions
+ * (POOL_MAX): a search's name, text and meaning queries, or a details
+ * card's two counts, run side by side, and on a large index take about as
+ * long as the slowest of them. Over plain ssh the sessions share one
+ * connection (ControlMaster), so only the first pays for the login.
  */
 
 const IDLE_MS = 10 * 60_000
+/** Sessions to one host at most; STUDIO_REMOTE_SESSIONS changes it. */
+const POOL_MAX = Math.min(Math.max(Number(process.env.STUDIO_REMOTE_SESSIONS) || 3, 1), 8)
 const STDERR_TAIL = 4000
 
 // Read a line of space-separated arguments, each "x" then its base64 (the
@@ -90,12 +99,30 @@ export function shellFor(site: string): string[] {
 }
 
 /** ssh's arguments for a command on a host: no prompts (keys and the agent
- *  only), a bounded connect, and keepalives so a dropped link ends the
- *  session rather than hanging it. */
+ *  only), a bounded connect, keepalives so a dropped link ends the session
+ *  rather than hanging it, and a shared connection (controlArgs). */
 export function sshArgv(site: string, command: string): string[] {
   const h = parseSshSite(site)
   if (!h) throw new KbError(400, `${site} is not an ssh site`)
-  return ['-T', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15', '-o', 'ServerAliveInterval=30', ...(h.port != null ? ['-p', String(h.port)] : []), h.destination, command]
+  return ['-T', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15', '-o', 'ServerAliveInterval=30', ...controlArgs(h),
+    ...(h.port != null ? ['-p', String(h.port)] : []), h.destination, command]
+}
+
+/** ssh's connection sharing for a host: the first session to it logs in and
+ *  keeps the connection for ten minutes after the last one closes, and the
+ *  others ride on it. The socket is in the Studio's own data folder; the
+ *  person's ~/.ssh/config is left as it is. The path is quoted, since the
+ *  macOS data folder has spaces in it and ssh refuses an unquoted one. None
+ *  where the socket path is too long (ssh binds it with 17 more characters,
+ *  and macOS allows 104 bytes), where it has a quote or a % in it, or with
+ *  STUDIO_SSH_SHARE=0. */
+export function controlArgs(h: SshHost): string[] {
+  if (process.env.STUDIO_SSH_SHARE === '0') return []
+  const dir = path.join(INDEX_BASE, 'ssh')
+  const sock = path.join(dir, crypto.createHash('sha1').update(`${h.destination}:${h.port ?? ''}`).digest('hex').slice(0, 12))
+  if (Buffer.byteLength(sock) > 86 || /["%]/.test(sock)) return []
+  try { fs.mkdirSync(dir, { recursive: true, mode: 0o700 }) } catch { return [] }
+  return ['-o', 'ControlMaster=auto', '-o', `ControlPath="${sock}"`, '-o', 'ControlPersist=600']
 }
 
 type Spawn = (site: string, key: string, command: string) => ChildProcessWithoutNullStreams
@@ -122,7 +149,14 @@ export function bootstrapCommand(site: string): string {
 
 interface Pending { resolve: (r: RemoteResult) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> }
 interface Channel { child: ChildProcessWithoutNullStreams; queue: Pending[]; buf: string; last: number; stderr: string; dead: boolean; chain: Promise<unknown> }
-const channels = new Map<string, Channel>()
+/** The sessions to each host, by the key they act with and the site. */
+const channels = new Map<string, Channel[]>()
+
+function drop(id: string, ch: Channel): void {
+  const pool = (channels.get(id) ?? []).filter(c => c !== ch)
+  if (pool.length) channels.set(id, pool)
+  else channels.delete(id)
+}
 
 function open(id: string, site: string, key: string): Channel {
   const child = spawnSsh(site, key, bootstrapCommand(site))
@@ -130,7 +164,7 @@ function open(id: string, site: string, key: string): Channel {
   const fail = (why: string) => {
     if (ch.dead) return
     ch.dead = true
-    channels.delete(id)
+    drop(id, ch)
     const said = ch.stderr.trim().split('\n').filter(Boolean).pop()
     for (const p of ch.queue.splice(0)) { clearTimeout(p.timer); p.reject(new KbError(502, `${siteName(site)}: ${said || why}`)) }
   }
@@ -167,9 +201,7 @@ function open(id: string, site: string, key: string): Channel {
 export function remoteRun(site: string, key: string, argv: string[], timeoutMs = 120_000): Promise<RemoteResult> {
   if (!argv.length) return Promise.reject(new KbError(400, 'no command'))
   const id = `${key.slice(-16)}|${site}`
-  let ch = channels.get(id)
-  if (!ch || ch.dead) { ch = open(id, site, key); channels.set(id, ch) }
-  const c = ch
+  const c = pick(id, site, key)
   c.last = Date.now()
   return new Promise<RemoteResult>((resolve, reject) => {
     const timer = setTimeout(() => {
@@ -185,10 +217,61 @@ export function remoteRun(site: string, key: string, argv: string[], timeoutMs =
   })
 }
 
+/** A session for the next request: an idle one, else a new one while the
+ *  host has fewer than POOL_MAX, else the one with the shortest queue. */
+function pick(id: string, site: string, key: string): Channel {
+  const pool = (channels.get(id) ?? []).filter(c => !c.dead)
+  const idle = pool.find(c => !c.queue.length)
+  if (idle) return idle
+  if (pool.length < POOL_MAX) {
+    const ch = open(id, site, key)
+    channels.set(id, [...pool, ch])
+    return ch
+  }
+  return pool.reduce((a, b) => (b.queue.length < a.queue.length ? b : a))
+}
+
 const sweeper = setInterval(() => {
-  for (const [id, c] of channels) if (Date.now() - c.last > IDLE_MS && !c.queue.length) { c.child.kill(); channels.delete(id) }
+  for (const [id, pool] of channels) {
+    for (const c of pool) if (Date.now() - c.last > IDLE_MS && !c.queue.length) { c.child.kill(); drop(id, c) }
+  }
 }, 60_000)
 sweeper.unref?.()
 
 /** Tests and shutdown. */
-export function closeRemoteChannels(): void { for (const c of channels.values()) c.child.kill(); channels.clear() }
+export function closeRemoteChannels(): void {
+  for (const pool of channels.values()) for (const c of pool) c.child.kill()
+  channels.clear()
+  cpus.clear()
+}
+
+/** A host's processor count, asked once per site and key: nproc, which
+ *  counts only the processors this login may use (and honours
+ *  OMP_NUM_THREADS), else getconf, else sysctl on macOS. 4 when it cannot
+ *  be read, asked again next time. */
+const cpus = new Map<string, Promise<number>>()
+export function remoteCpus(site: string, key: string): Promise<number> {
+  const id = `${key.slice(-16)}|${site}`
+  let p = cpus.get(id)
+  if (!p) {
+    p = remoteRun(site, key, ['sh', '-c', 'nproc 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null'], 30_000)
+      .then(r => parseInt(r.stdout.trim().split('\n')[0], 10), () => NaN)
+      .then(n => {
+        if (Number.isFinite(n) && n > 0) return n
+        cpus.delete(id)
+        return 4
+      })
+    cpus.set(id, p)
+  }
+  return p
+}
+
+/** The threads a gufi_query on a host runs with: STUDIO_REMOTE_THREADS
+ *  when set, else the host's processor count up to 16, so a large index
+ *  is walked by as many threads as the host has without taking over a
+ *  shared login node. */
+export async function remoteThreads(site: string, key: string): Promise<number> {
+  const set = Number(process.env.STUDIO_REMOTE_THREADS)
+  if (Number.isInteger(set) && set >= 1) return Math.min(set, 256)
+  return Math.min(await remoteCpus(site, key), 16)
+}

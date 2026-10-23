@@ -54,6 +54,16 @@ const dyldLog = path.join(dir, 'dyld.log')
 exe(path.join(dir, 'mac-bin', 'uname'), '#!/bin/sh\necho Darwin\n')
 exe(path.join(macGufi, 'bin', 'gufi_query'), `#!/bin/sh\nprintf '%s\\n' "\${DYLD_LIBRARY_PATH:-none}" >> ${dyldLog}\nexec ${gufiBin}/gufi_query "$@"\n`)
 
+// A host with three processors whose gufi_query notes its arguments and,
+// while slow.on exists, answers two seconds late; one with 64 processors;
+// and one where no processor count can be read, which notes each try.
+const slowGufi = path.join(dir, 'slow-gufi')
+const slowLog = path.join(dir, 'slow.log'), slowOn = path.join(dir, 'slow.on'), cpuLog = path.join(dir, 'cpu.log')
+exe(path.join(slowGufi, 'bin', 'gufi_query'), `#!/bin/sh\nprintf '%s\\n' "$*" >> ${slowLog}\n[ -f ${slowOn} ] && sleep 2\nexec ${gufiBin}/gufi_query "$@"\n`)
+exe(path.join(dir, 'cpus-3', 'nproc'), '#!/bin/sh\necho 3\n')
+exe(path.join(dir, 'cpus-64', 'nproc'), '#!/bin/sh\necho 64\n')
+for (const tool of ['nproc', 'getconf', 'sysctl']) exe(path.join(dir, 'cpus-none', tool), `#!/bin/sh\necho ${tool} >> ${cpuLog}\nexit 1\n`)
+
 const systemPath = '/usr/bin:/bin'
 const failing = {
   'me@nokey': 'me@nokey: Permission denied (publickey,password).',
@@ -68,7 +78,9 @@ R.setRemoteSpawn((site, key, command) => {
   sessions.push({ site, key, argv })
   const dest = R.parseSshSite(site).destination
   if (failing[dest]) return spawn('/bin/sh', ['-c', `echo "${failing[dest]}" >&2; exit 255`], { stdio: ['pipe', 'pipe', 'pipe'] })
-  const PATH = dest === 'me@mac-box' ? `${path.join(dir, 'mac-bin')}:${path.join(macGufi, 'bin')}:${systemPath}` : systemPath
+  const first = { 'me@mac-box': [path.join(dir, 'mac-bin'), path.join(macGufi, 'bin')], 'me@slow-box': [path.join(dir, 'cpus-3')],
+    'me@many-box': [path.join(dir, 'cpus-64')], 'me@none-box': [path.join(dir, 'cpus-none')] }[dest] ?? []
+  const PATH = [...first, systemPath].join(':')
   return spawn('/bin/sh', ['-c', argv[argv.length - 1]], { stdio: ['pipe', 'pipe', 'pipe'], env: { HOME: home, PATH } })
 })
 const U = await import('../dist/userLibraries.js')
@@ -76,6 +88,7 @@ const L = await import('../dist/libraries.js')
 const G = await import('../dist/gufi.js')
 const V = await import('../dist/gufiVt.js')
 const Q = await import('../dist/query.js')
+const S = await import('../dist/libraryScope.js')
 const { default: Fastify } = await import('fastify')
 const app = Fastify()
 app.setErrorHandler((err, _req, reply) => reply.status(err.status ?? 500).send({ error: err.message }))
@@ -102,7 +115,12 @@ test('the connection test passes step by step, finding GUFI and counting the ind
   const mine = sessions.filter(s => s.site === 'ssh://me@linux-box:2222')
   assert.equal(mine.length, 1)
   assert.equal(mine[0].key, '')
-  assert.deepEqual(mine[0].argv.slice(0, 10), ['-T', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15', '-o', 'ServerAliveInterval=30', '-p', '2222', 'me@linux-box'])
+  const argv = mine[0].argv
+  assert.deepEqual(argv.slice(0, 7), ['-T', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15', '-o', 'ServerAliveInterval=30'])
+  // The connection is shared through a socket in the Studio's data folder.
+  assert.deepEqual([argv[8], argv[12]], ['ControlMaster=auto', 'ControlPersist=600'])
+  assert.ok(argv[10].startsWith(`ControlPath="${path.join(dir, 'ix', 'ssh')}/`), argv[10])
+  assert.deepEqual(argv.slice(13, 16), ['-p', '2222', 'me@linux-box'])
 })
 
 test('each failing step says what to change', { skip }, async () => {
@@ -198,6 +216,48 @@ test('on a macOS host the test finds GUFI on the PATH and every GUFI command get
   assert.deepEqual((await U.remoteTree(mac.indexRoot, '')).map(e => e.name), ['data', 'readme.txt'])
   assert.deepEqual(await G.searchNames('notes', 5, mac.indexRoot).then(h => h.map(x => x.path)), ['data/notes.md'])
   assert.ok(lines().length >= 3 && lines().every(l => l === path.join(macGufi, 'lib')), lines().join(' '))
+})
+
+test('a remote gufi_query runs with the host\'s processors up to 16, or STUDIO_REMOTE_THREADS', { skip }, async () => {
+  const threads = dest => R.remoteThreads(R.sshSite(dest, null), '')
+  assert.equal(await threads('me@slow-box'), 3)
+  assert.equal(await threads('me@many-box'), 16)
+  assert.equal(await threads('me@none-box'), 4)
+  assert.equal(await threads('me@none-box'), 4)
+  assert.deepEqual(fs.readFileSync(cpuLog, 'utf8').trim().split('\n'), ['nproc', 'getconf', 'sysctl', 'nproc', 'getconf', 'sysctl'],
+    'a count that could not be read is asked again')
+  process.env.STUDIO_REMOTE_THREADS = '6'
+  try { assert.equal(await threads('me@many-box'), 6) } finally { delete process.env.STUDIO_REMOTE_THREADS }
+})
+
+test('adding takes the test that just passed, and a search across libraries leaves out one that is late', { skip }, async () => {
+  const spec = { destination: 'me@slow-box', label: 'Slow index', indexRoot: index, gufiBin: path.join(slowGufi, 'bin') }
+  const counts = () => fs.readFileSync(slowLog, 'utf8').split('\n').filter(l => l.includes('vrsummary'))
+  assert.equal((await probe(spec)).ok, true)
+  assert.equal(counts().length, 1)
+  assert.match(counts()[0], /^-n 3 /, 'the count runs with the host\'s three processors')
+  const added = await post('/api/user-libraries/ssh', spec)
+  assert.equal(added.status, 200, JSON.stringify(added.body))
+  assert.equal(counts().length, 1, 'the add did not count the index again')
+
+  const libs = L.listLibraries('kb', null)
+  const slow = libs.find(l => l.id === added.body.id)
+  fs.writeFileSync(slowOn, '')
+  try {
+    const late = []
+    const hits = await S.searchScope([lib, slow], 'notes', 10, { semantic: false, deadlineMs: 500, slow: late })
+    assert.deepEqual(late, ['Slow index'])
+    assert.deepEqual(hits.map(h => [h.library.id, h.path]), [[lib.id, 'data/notes.md']])
+    // Searched alone, it is waited for.
+    const alone = await S.searchScope([slow], 'notes', 10, { semantic: false, deadlineMs: 500, slow: late })
+    assert.deepEqual(alone.map(h => h.path), ['data/notes.md'])
+    assert.deepEqual(late, ['Slow index'])
+  } finally { fs.rmSync(slowOn, { force: true }) }
+  assert.ok(fs.readFileSync(slowLog, 'utf8').split('\n').filter(l => l.includes('notes')).every(l => /(^| )-n 3 /.test(l)))
+
+  // Refresh tests again.
+  assert.equal((await post(`/api/user-libraries/${slow.id}/refresh`, {})).status, 200)
+  assert.equal(counts().length, 2)
 })
 
 test('refresh checks again, sign-in keeps ssh out, and removing forgets the library', { skip }, async () => {

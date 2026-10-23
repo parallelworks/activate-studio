@@ -1,5 +1,5 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
-import { CopyButton, Loader, Meter, RelativeTime, TagList, formatBytes } from '@parallelworks/ui'
+import { Button, CopyButton, Loader, Meter, RelativeTime, TagList, formatBytes } from '@parallelworks/ui'
 import { api, currentLibrary, onLibraryChange, type EntryDetails } from '../api'
 
 /**
@@ -38,7 +38,11 @@ if (typeof window !== 'undefined') {
   window.addEventListener('ade-tags-changed', forget)
 }
 
-export interface DetailsState { selection: Selection | null; details: EntryDetails | null; loading: boolean; error: string; pick: boolean }
+export interface DetailsState {
+  selection: Selection | null; details: EntryDetails | null; loading: boolean; error: string; pick: boolean
+  /** Counts a remote library's whole index, which is not counted until asked. */
+  count?: () => void
+}
 
 /** The details of what is selected, fetched a moment after the selection
  *  settles so a quick run of clicks asks once; nothing is asked while
@@ -64,21 +68,30 @@ export function useEntryDetails(active = true): DetailsState {
     }, 120)
     return () => { live = false; window.clearTimeout(t) }
   }, [key, path])
-  return { selection: sel, details: state.key === key ? state.details : null, loading: state.loading, error: state.error, pick: path === null }
+  const countWhole = () => {
+    if (path === null) return
+    setState(s => ({ ...s, loading: true, error: '' }))
+    api.details(path, true)
+      .then(d => { kept.set(key, { at: Date.now(), value: d }); setState(s => (s.key === key ? { key, details: d, error: '', loading: false } : s)) })
+      .catch(e => setState(s => (s.key === key ? { ...s, error: String((e as Error).message ?? e), loading: false } : s)))
+  }
+  return { selection: sel, details: state.key === key ? state.details : null, loading: state.loading, error: state.error, pick: path === null, count: countWhole }
 }
+
+const count = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString()} ${n === 1 ? one : many}`
 
 /** The card's header line: what is selected, and how big it is. */
 export function detailsSummary(s: DetailsState): string {
   if (s.pick) return 'nothing selected'
   if (!s.details) return s.loading ? 'reading…' : s.error ? 'not available' : ''
   const d = s.details
-  return `${d.name} · ${formatBytes(d.size)}`
+  return d.counted === false ? `${d.name} · ${count(d.files, 'file')}` : `${d.name} · ${formatBytes(d.size)}`
 }
 
-const count = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString()} ${n === 1 ? one : many}`
 
 export function DetailsBody({ state }: { state: DetailsState }) {
   const { details: d, loading, error, pick } = state
+  if (d?.counted === false) return <Uncounted state={state} d={d} />
   if (pick) return <p className="details-note">Select a folder or file in the tree to see its size, contents, and labels.</p>
   if (!d) {
     if (error) return <p className="details-note">{error}</p>
@@ -130,6 +143,35 @@ export function DetailsBody({ state }: { state: DetailsState }) {
           </div>
         )}
         {!d.fullText && <div className="details-muted">Names and metadata only: this index has no text.</div>}
+      </div>
+    </div>
+  )
+}
+
+/** A remote library's whole index before it is counted: the counts from
+ *  its connection test, and a button that counts it. */
+function Uncounted({ state, d }: { state: DetailsState; d: EntryDetails }) {
+  return (
+    <div className="details" aria-busy={state.loading}>
+      <div className="details-head"><span className="details-name">{d.name}</span></div>
+      <dl className="details-stats">
+        <div><dt>Files</dt><dd>{d.files.toLocaleString()}</dd></div>
+        <div><dt>Folders</dt><dd>{d.dirs.toLocaleString()}</dd></div>
+      </dl>
+      <p className="details-note">
+        As of its connection test. Size and types need a pass over the whole index on {d.library.site}, which can take minutes on a large one.
+      </p>
+      {state.error && <p className="details-note">{state.error}</p>}
+      <Button size="sm" loading={state.loading} onClick={() => state.count?.()}>{state.loading ? 'Counting…' : 'Count size and types'}</Button>
+      <div className="details-section details-source">
+        <div className="details-label">Library</div>
+        <div>{d.library.label} <span className="details-muted">· {d.library.kind}, read only</span></div>
+        {d.index && (
+          <div className="details-index">
+            <code title={d.index}>{d.index}</code>
+            <CopyButton text={d.index} label="index path" size="xs" />
+          </div>
+        )}
       </div>
     </div>
   )

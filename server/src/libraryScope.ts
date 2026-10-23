@@ -33,7 +33,13 @@ export function meaningSearched(l: Library): boolean {
   return l.meaning !== 'off' && (l.caps.vectors || l.primary)
 }
 
-export async function searchScope(libs: Library[], q: string, limit: number, opts: { semantic: boolean; nameLimit?: number }): Promise<ScopedHit[]> {
+/** How long a search across several libraries waits for each; one that has
+ *  not answered by then is left out and named (opts.slow), so a slow remote
+ *  index never holds up the others. STUDIO_SEARCH_DEADLINE_MS changes it. */
+export const SEARCH_DEADLINE_MS = Number(process.env.STUDIO_SEARCH_DEADLINE_MS) || 20_000
+
+export async function searchScope(libs: Library[], q: string, limit: number,
+  opts: { semantic: boolean; nameLimit?: number; deadlineMs?: number; slow?: string[] }): Promise<ScopedHit[]> {
   const SEP = '\u0001'
   const tag = (l: Library) => (hits: SearchHit[]) => hits.map(h => ({ ...h, path: `${l.id}${SEP}${h.path}` }))
   const nameLimit = opts.nameLimit ?? Math.min(Math.max(10, Math.floor(limit / 5)), 50)
@@ -68,14 +74,23 @@ export async function searchScope(libs: Library[], q: string, limit: number, opt
       nSql ? across('names', nSql, libs, nameLimit, nameHit) : Promise.resolve(),
     ])
   }
+  // One library alone is waited for; among several, each gets the deadline.
+  const deadline = libs.length > 1 ? (opts.deadlineMs ?? SEARCH_DEADLINE_MS) : 0
   const per = await Promise.all(libs.map(async l => {
     const t = tag(l)
-    const [fts, names, vec] = await Promise.all([
+    const all = Promise.all([
       (l.caps.fullText || l.primary) && !viaVt.fts.has(l.id) ? searchFts(q, limit, l.indexRoot).then(t, () => []) : Promise.resolve([]),
       !viaVt.names.has(l.id) ? searchNames(q, nameLimit, l.indexRoot).then(t, () => []) : Promise.resolve([]),
       opts.semantic && meaningSearched(l) ? searchVector(q, Math.min(limit, 10), l.indexRoot).then(t, () => []) : Promise.resolve([]),
-    ])
-    return { fts, names, vec }
+    ]).then(([fts, names, vec]) => ({ fts, names, vec }))
+    if (!deadline) return all
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const late = new Promise<null>(resolve => { timer = setTimeout(() => resolve(null), deadline) })
+    const first = await Promise.race([all, late])
+    clearTimeout(timer)
+    if (first) return first
+    opts.slow?.push(l.label)
+    return { fts: [] as SearchHit[], names: [] as SearchHit[], vec: [] as SearchHit[] }
   }))
   per.push({ fts: vtHits.fts, names: vtHits.names, vec: [] })
   const blended = blendHits(per.flatMap(p => p.fts), per.flatMap(p => p.names), per.flatMap(p => p.vec), limit)
