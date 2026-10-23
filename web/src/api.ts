@@ -14,9 +14,16 @@ export interface PublicLibrary {
   /** Its level of search by meaning, for a library the Studio builds; null
    *  for an index it only reads, which uses the vectors it has (caps.vectors). */
   meaning?: MeaningLevel | null
+  /** How deep it is indexed, for a library the Studio builds; null for an
+   *  index it only reads, which stays as it was built. */
+  depth?: IndexDepth | null
 }
-/** How much of a library search by meaning covers. */
+/** How much of a library search by meaning covers; follows the depth. */
 export type MeaningLevel = 'off' | 'documents' | 'full'
+/** How deep a library is indexed, each stop adding to the one before:
+ *  names; the words inside files; text in images and scans (OCR); search by
+ *  meaning over documents; and over every file with text. */
+export type IndexDepth = 'names' | 'text' | 'ocr' | 'meaning-documents' | 'meaning-full'
 /** Settings' listing adds where each library points. */
 export interface SettingsLibrary extends PublicLibrary {
   indexRoot: string
@@ -50,6 +57,8 @@ export interface UserLibrary {
   vectors?: boolean
   /** Its level of search by meaning, for one the Studio builds; null otherwise. */
   meaning?: MeaningLevel | null
+  /** How deep it is indexed, for one the Studio builds; null otherwise. */
+  depth?: IndexDepth | null
   /** Built by the Studio on the remote system over the session; where the
    *  index is written, and how far a build has got. */
   built?: boolean
@@ -259,6 +268,8 @@ export interface ReadersReport { extractors: ExtractorInfo[]; formats: FormatRea
 
 export interface IndexSettings {
   threads: number | null
+  /** How deep the main folder is indexed; documents, ocr and meaning follow it. */
+  depth: IndexDepth
   documents: boolean
   pdfReader: 'auto' | 'pdftotext' | 'pypdf'
   ocr: boolean
@@ -419,12 +430,13 @@ export const api = {
   },
   revealIndexLog: () => postJson<{ opened: string }>('/api/index/log/reveal', {}),
   indexSettings: () => getJson<IndexSettingsInfo>('/api/index/settings'),
-  setLibraryMeaning: async (id: string, level: MeaningLevel) => {
-    const res = await fetch(`/api/libraries/${encodeURIComponent(id)}/meaning`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ level }) })
+  setLibraryDepth: async (id: string, depth: IndexDepth) => {
+    const res = await fetch(`/api/libraries/${encodeURIComponent(id)}/depth`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ depth }) })
     const data = await res.json().catch(() => ({}))
     if (!res.ok) throw new Error((data as { error?: string }).error ?? `${res.status}`)
-    return data as { id: string; meaning: MeaningLevel }
+    return data as { id: string; depth: IndexDepth; meaning: MeaningLevel }
   },
+
   saveIndexSettings: async (patch: Partial<IndexSettings>) => {
     const res = await fetch('/api/index/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) })
     const data = await res.json().catch(() => ({}))

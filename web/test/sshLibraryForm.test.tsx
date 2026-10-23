@@ -213,6 +213,9 @@ describe('building an index on a remote system', () => {
     await waitFor(() => expect(screen.getByRole('combobox')).toHaveTextContent('cluster-b'))
     fill('Source folder', '~/runs')
     fill('Index folder', '~/indexes/runs')
+    // How deep the index goes there: Meaning on documents, from Text + OCR.
+    expect(screen.getByRole('button', { name: 'Text + OCR' })).toHaveAttribute('aria-pressed', 'true')
+    fireEvent.click(screen.getByRole('button', { name: 'Meaning on documents' }))
     fireEvent.click(button('Test connection'))
     await screen.findByText('Connected to cluster-b, a Linux host.')
     expect(screen.getByText('Text extraction')).toBeInTheDocument()
@@ -225,7 +228,7 @@ describe('building an index on a remote system', () => {
     expect(dialog).toHaveTextContent('on cluster-b')
     fireEvent.click(screen.getByRole('button', { name: 'Create it and build' }))
     await waitFor(() => expect(onAdded).toHaveBeenCalledWith({ id: 'u-cluster-b-runs', label: 'runs' }))
-    expect(calls.find(c => c.url === '/api/user-libraries/pw/build')?.body).toEqual({ cluster: 'cluster-b', sourceRoot: '~/runs', indexRoot: '~/indexes/runs', gufiBin: '/home/me/gufi/bin', create: true })
+    expect(calls.find(c => c.url === '/api/user-libraries/pw/build')?.body).toEqual({ cluster: 'cluster-b', sourceRoot: '~/runs', indexRoot: '~/indexes/runs', gufiBin: '/home/me/gufi/bin', depth: 'meaning-documents', create: true })
   })
 
   it('a host written with its port is sent as written; the server splits it', async () => {

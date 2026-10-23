@@ -9,7 +9,7 @@ import { EXCLUDE_DIRS, GUFI_BIN, INDEX_BASE, KB_ROOT, PROJECT_ROOT, PYTHON_BIN, 
 import { sofficeFound } from './extractors.js'
 import { invalidateDbList, treeStats } from './gufi.js'
 import { getIndexJob, startIndexJob, type IndexJob } from './indexing.js'
-import { builtLibrarySettings, indexSettings, isMeaningLevel, meaningArgs, saveIndexSettings, threadsFor, type IndexSettings } from './indexSettings.js'
+import { builtLibrarySettings, indexSettings, isIndexDepth, isMeaningLevel, meaningArgs, saveIndexSettings, textArgs, threadsFor, type IndexDepth, type IndexSettings } from './indexSettings.js'
 import { KbError } from './kb.js'
 import {
   addBuiltLibrary, addedDef, builtLibraryDir, checkNewId, forgetProbe, getLibrary, libraryIdFor, listLibraries, setBuildProgressSource,
@@ -88,7 +88,7 @@ export interface LocalCheck {
   id: string
 }
 
-export interface BuildInput { sourceRoot?: unknown; indexRoot?: unknown; label?: unknown; id?: unknown; create?: unknown; meaning?: unknown }
+export interface BuildInput { sourceRoot?: unknown; indexRoot?: unknown; label?: unknown; id?: unknown; create?: unknown; meaning?: unknown; depth?: unknown }
 
 /**
  * The check before a build, step by step: GUFI is here; the source folder
@@ -96,6 +96,13 @@ export interface BuildInput { sourceRoot?: unknown; indexRoot?: unknown; label?:
  * Studio wrote for this folder, outside it and outside the Studio's own
  * index; and what extraction covers.
  */
+/** What a build at a depth reads, for the check. */
+function extractDetail(depth: IndexDepth): string {
+  if (depth === 'names') return 'Names, sizes and dates only: nothing is read from inside the files.'
+  const meaning = depth.startsWith('meaning-') && fs.existsSync(EMBED_MODEL)
+  return `Text is extracted from documents${depth === 'text' ? '' : ' and images'}, so search covers what the files say${meaning ? ', and by meaning' : ''}.`
+}
+
 export function checkLocalBuild(a: BuildInput): LocalCheck {
   if (!localBuildOffered()) throw new KbError(403, SINGLE_USER)
   const typed = String(a.sourceRoot ?? '').trim()
@@ -152,7 +159,7 @@ export function checkLocalBuild(a: BuildInput): LocalCheck {
     else { create.push(indexDir); steps.push({ name: 'index', ok: true, detail: `${indexDir} does not exist yet; it is created when the build starts.` }) }
   }
 
-  steps.push({ name: 'extract', ok: true, detail: `Text is extracted from documents and images, so search covers what the files say${fs.existsSync(EMBED_MODEL) ? ', and by meaning' : ''}.` })
+  steps.push({ name: 'extract', ok: true, detail: extractDetail(isIndexDepth(a.depth) ? a.depth : indexSettings(id).depth) })
   return { ok: steps.every(s => s.ok), steps, create, sourceRoot: source, indexDir, managed, id }
 }
 
@@ -177,10 +184,12 @@ setBuildProgressSource(id => {
   return p ? { phase: p.phase, done: p.done, total: p.total, current: p.current } : null
 })
 
-function run(cmd: string, args: string[], timeoutMs = 2 * 60 * 60_000): Promise<string> {
-  // With AI features off, or descriptions off, images are indexed by OCR and name only.
+function run(cmd: string, args: string[], timeoutMs = 2 * 60 * 60_000, images = false): Promise<string> {
+  // Images are described only where the depth reads them (Text + OCR and
+  // up); with AI features off, or descriptions off, they are indexed by OCR
+  // and name only.
   const eff = effectiveSettings()
-  const vm = eff.aiEnabled && indexSettings().imageDescriptions ? eff.visionModel : ''
+  const vm = images && eff.aiEnabled && indexSettings().imageDescriptions ? eff.visionModel : ''
   const extra: Record<string, string> = vm ? { ADE_VISION_MODEL: vm } : {}
   const env = path.resolve(path.dirname(cmd)) === path.resolve(GUFI_BIN) ? gufiEnv(extra) : indexerEnv(extra)
   if (!vm) delete env.ADE_VISION_MODEL
@@ -238,23 +247,24 @@ type Scope = { subdir?: string; noRecurse?: boolean }
 /**
  * The steps that extract and embed one part of a library (a subtree, the
  * top folder's own files, or everything), under the indexing settings the
- * main folder uses (Settings, General, Indexing): its thread count and which
- * readers run; and the library's own level of search by meaning, off unless
- * it was turned on. Embeddings keep a cache of their own in the library's
- * folder, so a rebuild or a sync embeds only passages it has not seen.
- * Exported for tests.
+ * main folder uses (Settings, General, Indexing): its thread count and how
+ * documents are read; and the library's own depth, which says whether text
+ * is read at all, whether OCR runs, and how much search by meaning covers.
+ * Embeddings keep a cache of their own in the library's folder, so a
+ * rebuild or a sync embeds only passages it has not seen. Exported for
+ * tests.
  */
 export function enrichSteps(def: LibraryDef, scope: Scope, s: IndexSettings = builtLibrarySettings(def.id), threads = threadsFor()): {
   documents: Parameters<typeof runPreExtract>[0] | null
-  text: string[]
+  text: string[] | null
   meaning: string[] | null
 } {
   const b = def.build!
   const extra = [...(scope.subdir ? ['--subdir', scope.subdir] : []), ...(scope.noRecurse ? ['--no-recurse'] : [])]
+  const depth = textArgs(s.depth)
+  if (!depth) return { documents: null, text: null, meaning: null }
   const text = [path.join(PROJECT_ROOT, 'indexer', 'enrich.py'), '--kb-root', def.sourceRoot!, '--index', def.indexRoot,
-    '--extract-cache', b.cacheRoot, '--jobs', String(threads), '--pdf-reader', s.pdfReader, ...extra]
-  if (!s.ocr) text.push('--no-ocr')
-  if (!s.documents) text.push('--no-documents')
+    '--extract-cache', b.cacheRoot, '--jobs', String(threads), '--pdf-reader', s.pdfReader, ...extra, ...depth]
   const soffice = s.legacyOffice ? sofficeFound() : null
   if (soffice) text.push('--soffice', soffice)
   const level = meaningArgs(s.meaning, s.meaningSpeed)
@@ -264,7 +274,7 @@ export function enrichSteps(def: LibraryDef, scope: Scope, s: IndexSettings = bu
         '--cache', path.join(builtLibraryDir(def.id), 'embed-cache.db'), ...extra, ...(scope.subdir || scope.noRecurse ? [] : ['--prune']), ...level]
     : null
   return {
-    documents: s.documents ? { kbRoot: def.sourceRoot!, cacheRoot: b.cacheRoot, ...scope, jobs: threads, ocr: s.ocr } : null,
+    documents: { kbRoot: def.sourceRoot!, cacheRoot: b.cacheRoot, ...scope, jobs: threads, ocr: s.ocr },
     text,
     meaning,
   }
@@ -272,9 +282,10 @@ export function enrichSteps(def: LibraryDef, scope: Scope, s: IndexSettings = bu
 
 async function enrich(def: LibraryDef, scope: Scope, progress: Progress): Promise<void> {
   const steps = enrichSteps(def, scope)
+  if (!steps.text) return
   progress('Extracting text')
   if (steps.documents) await runPreExtract(steps.documents, m => console.warn(m))
-  await run(PYTHON_BIN, steps.text)
+  await run(PYTHON_BIN, steps.text, undefined, builtLibrarySettings(def.id).ocr)
   if (steps.meaning) {
     progress('Embedding text')
     await run(PYTHON_BIN, steps.meaning)
@@ -425,6 +436,7 @@ export async function addLocalBuild(a: BuildInput): Promise<{ id: string; job: I
   if (c.create.length && a.create !== true) throw new KbError(409, `These folders do not exist yet: ${c.create.join(', ')}. Confirm to create them.`)
   checkNewId(c.id)
   if (a.meaning !== undefined && !isMeaningLevel(a.meaning)) throw new KbError(400, 'meaning: off, documents or full')
+  if (a.depth !== undefined && !isIndexDepth(a.depth)) throw new KbError(400, 'depth: names, text, ocr, meaning-documents or meaning-full')
   for (const dir of c.create) await fsp.mkdir(dir, { recursive: true })
   const src = realOr(c.sourceRoot)
   const label = String(a.label ?? '').trim() || path.basename(src)
@@ -432,7 +444,7 @@ export async function addLocalBuild(a: BuildInput): Promise<{ id: string; job: I
     id: c.id, label, indexRoot: path.join(c.indexDir, path.basename(src)), sourceRoot: src,
     build: { indexDir: c.indexDir, cacheRoot: path.join(builtLibraryDir(c.id), 'extract'), managed: c.managed, state: 'building', error: null, builtAt: null, files: null, dirs: null },
   })
-  if (a.meaning !== undefined) await saveIndexSettings(c.id, { meaning: a.meaning })
+  if (a.depth !== undefined || a.meaning !== undefined) await saveIndexSettings(c.id, a.depth !== undefined ? { depth: a.depth } : { meaning: a.meaning })
   return { id: c.id, job: startBuild(c.id) }
 }
 

@@ -65,7 +65,7 @@ test('the listing says libraries can be built here, with sign-in off', async () 
   assert.equal((await call('GET', '/api/libraries')).body.canBuild, true)
 })
 
-test('a library is extracted and embedded under the indexing settings, with an embedding cache of its own', () => {
+test('a library is extracted and embedded under the indexing settings and its depth, with an embedding cache of its own', () => {
   const def = { id: 'notes', sourceRoot: '/src/notes', indexRoot: '/ix/notes', build: { cacheRoot: '/ix/extract', indexDir: '/ix' } }
   const model = path.join(dir, 'ix', 'models', 'minilm384.gguf')
   write(model, '')
@@ -93,14 +93,16 @@ test('a library is extracted and embedded under the indexing settings, with an e
     assert.equal(arg(s.meaning, '--subdir'), 'a/b')
     assert.ok(!s.meaning.includes('--prune'), 'one folder never prunes the cache')
 
-    const off = { ...on, ocr: false, documents: false, meaning: 'off', legacyOffice: false }
-    s = B.enrichSteps(def, { noRecurse: true }, off, 1)
-    assert.equal(s.documents, null, 'documents read by name only')
-    assert.ok(s.text.includes('--no-ocr') && s.text.includes('--no-documents') && s.text.includes('--no-recurse'))
+    const text = { ...on, ...S.depthParts('text'), legacyOffice: false }
+    s = B.enrichSteps(def, { noRecurse: true }, text, 1)
+    assert.deepEqual(s.documents, { kbRoot: '/src/notes', cacheRoot: '/ix/extract', noRecurse: true, jobs: 1, ocr: false }, 'Text: documents read, no OCR')
+    assert.ok(s.text.includes('--no-ocr') && s.text.includes('--no-recurse'))
     assert.ok(!s.text.includes('--soffice'))
     assert.equal(s.meaning, null, 'search by meaning off')
-    assert.equal(B.enrichSteps(def, {}).meaning, null, 'a built library starts with search by meaning off')
-    assert.equal(S.indexSettings('notes').meaning, 'off')
+    assert.deepEqual(B.enrichSteps(def, {}, { ...on, ...S.depthParts('names') }, 1), { documents: null, text: null, meaning: null }, 'Names: nothing read from inside files')
+    assert.equal(B.enrichSteps(def, {}).meaning, null, 'a built library starts at Text + OCR, without search by meaning')
+    assert.ok(!B.enrichSteps(def, {}).text.includes('--no-ocr'))
+    assert.deepEqual([S.indexSettings('notes').depth, S.indexSettings('notes').meaning], ['ocr', 'off'])
   } finally { fs.rmSync(model) }
   assert.equal(B.enrichSteps(def, {}).meaning, null, 'no embedding model, no embeddings')
 })
@@ -228,20 +230,21 @@ test('the sync indexes a folder that changed, and drops one that is gone', { ski
   assert.equal(fs.existsSync(path.join(lib.indexRoot, 'extra')), false)
 })
 
-test('search by meaning is a level per library the Studio builds, set in Settings, Libraries', { skip }, async () => {
+test('the depth is set per library the Studio builds, in Settings, Libraries', { skip }, async () => {
   const lib = id => call('GET', '/api/libraries').then(r => r.body.libraries.find(l => l.id === id))
-  assert.equal((await lib('kb')).meaning, 'documents', 'the main folder starts at Documents')
-  assert.equal((await lib(papersId)).meaning, 'off', 'another library starts off')
-  let r = await call('PUT', `/api/libraries/${papersId}/meaning`, { level: 'full' })
+  assert.deepEqual([(await lib('kb')).depth, (await lib('kb')).meaning], ['meaning-documents', 'documents'], 'the main folder starts at Meaning on documents')
+  assert.deepEqual([(await lib(papersId)).depth, (await lib(papersId)).meaning], ['ocr', 'off'], 'another library starts at Text + OCR')
+  let r = await call('PUT', `/api/libraries/${papersId}/depth`, { depth: 'meaning-full' })
   assert.equal(r.status, 200, JSON.stringify(r.body))
-  assert.equal(r.body.meaning, 'full')
+  assert.deepEqual([r.body.depth, r.body.meaning], ['meaning-full', 'full'])
   assert.equal((await lib(papersId)).meaning, 'full')
-  assert.equal((await call('PUT', `/api/libraries/${papersId}/meaning`, { level: 'most' })).status, 400)
-  assert.equal((await call('PUT', '/api/libraries/nothing-here/meaning', { level: 'off' })).status, 404)
-  // An index the Studio only reads keeps the vectors it has; there is nothing to set.
+  assert.equal((await call('PUT', `/api/libraries/${papersId}/depth`, { depth: 'deepest' })).status, 400)
+  assert.equal((await call('PUT', '/api/libraries/nothing-here/depth', { depth: 'names' })).status, 404)
+  // An index the Studio only reads stays as it was built; there is nothing to set.
   r = await call('POST', '/api/libraries', { id: 'kb-copy', indexRoot: path.join(dir, 'ix', 'gufi', 'kb') })
   assert.equal(r.status, 200, JSON.stringify(r.body))
-  assert.equal(r.body.library.meaning, null)
+  assert.deepEqual([r.body.library.meaning, r.body.library.depth], [null, null])
+  assert.equal((await call('PUT', '/api/libraries/kb-copy/depth', { depth: 'names' })).status, 409)
   assert.equal((await call('PUT', '/api/libraries/kb-copy/meaning', { level: 'full' })).status, 409)
   assert.equal((await call('DELETE', '/api/libraries/kb-copy')).status, 200)
   // Search looks by meaning only where it is on.
@@ -250,7 +253,18 @@ test('search by meaning is a level per library the Studio builds, set in Setting
   assert.equal(meaningSearched({ ...papers, caps: { ...papers.caps, vectors: true } }), true)
   assert.equal(meaningSearched({ ...papers, meaning: 'off', caps: { ...papers.caps, vectors: true } }), false, 'vectors left from before are not searched')
   assert.equal(meaningSearched({ ...papers, meaning: null, caps: { ...papers.caps, vectors: true } }), true, 'a read-only index with vectors')
-  await call('PUT', `/api/libraries/${papersId}/meaning`, { level: 'off' })
+  // An earlier client's level of search by meaning moves the depth to the nearest stop.
+  const back = await call('PUT', `/api/libraries/${papersId}/meaning`, { level: 'off' })
+  assert.deepEqual([back.body.depth, back.body.meaning], ['ocr', 'off'])
+  assert.equal((await call('PUT', `/api/libraries/${papersId}/meaning`, { level: 'most' })).status, 400)
+  // At Names, a rebuild leaves no words to search; back at Text + OCR it reads them again.
+  await call('PUT', `/api/libraries/${papersId}/depth`, { depth: 'names' })
+  await call('POST', `/api/libraries/${papersId}/rebuild`, {})
+  await waitReady(papersId)
+  const indexRoot = L.getLibrary(papersId).indexRoot
+  assert.deepEqual((await G.searchNames('runs', 5, indexRoot)).map(h => h.path), ['data/runs.csv'])
+  assert.deepEqual(await G.searchFts('turbine', 5, indexRoot).catch(() => []), [])
+  await call('PUT', `/api/libraries/${papersId}/depth`, { depth: 'ocr' })
 })
 
 test('a rebuild runs again and keeps the index searchable', { skip }, async () => {

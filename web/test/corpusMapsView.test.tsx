@@ -150,7 +150,7 @@ describe('the semantic map', () => {
   it('says why there is no map', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => reply({ available: false, reason: 'off', building: false })))
     render(<SemanticMap onOpen={() => {}} />)
-    expect(await screen.findByText(/Search by meaning is off for the main folder, so there is no map/)).toBeInTheDocument()
+    expect(await screen.findByText(/index depth stops before search by meaning, so there is no map/)).toBeInTheDocument()
     expect(document.querySelector('canvas')).toBeNull()
   })
 })

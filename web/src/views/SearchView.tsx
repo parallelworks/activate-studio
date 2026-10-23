@@ -182,7 +182,9 @@ export function SearchHelp({ libraries }: { libraries: PublicLibrary[] }) {
   const inScope = librariesInScope(libraries, scope)
   const on = inScope.filter(meaningOn)
   const names = (ls: PublicLibrary[]) => ls.map(l => l.label).join(', ')
-  const summary = !inScope.length || !on.length
+  const summary = inScope.length && searchReach(libraries, scope) === 'names'
+    ? 'Matches file and folder names: nothing inside the files is indexed here.'
+    : !inScope.length || !on.length
     ? 'Matches file names and the words inside files. Search by meaning is off here, so use words the files contain.'
     : on.length === inScope.length
       ? 'Matches file names, the words inside files, and their meaning: a plain question also finds passages that say it in other words.'
@@ -203,10 +205,10 @@ export function SearchHelp({ libraries }: { libraries: PublicLibrary[] }) {
           <p>
             <i>By meaning:</i> passages that say the same thing in other words, so a question such as "why did the blades
             crack" finds a report on fatigue failure that never uses those words. It runs for a few plain words; quotes,
-            operators, one short word, or a code such as ABC-12 match words only. Each library has its own setting, under{' '}
-            <a href="#view=settings:libraries">Settings, Libraries</a>: Off, Documents (documents and images), or Full (every
-            file with text). Here it is {inScope.map((l, i) => (
-              <span key={l.id}>{i ? ', ' : ''}{l.label}: {meaningOn(l) ? (l.meaning === 'full' ? 'full' : l.meaning === 'documents' ? 'documents' : 'its own vectors') : 'off'}</span>
+            operators, one short word, or a code such as ABC-12 match words only. Each library&apos;s depth sets it, under{' '}
+            <a href="#view=settings:libraries">Settings, Libraries</a>: Meaning on documents covers documents and images,
+            Meaning on all files every file with text, and the stops before them leave it off. Here it is {inScope.map((l, i) => (
+              <span key={l.id}>{i ? ', ' : ''}{l.label}: {meaningOn(l) ? (l.meaning === 'full' ? 'all files' : l.meaning === 'documents' ? 'documents' : 'its own vectors') : 'off'}</span>
             ))}.
           </p>
           <p>Each result says how it matched: name, words, or meaning.</p>

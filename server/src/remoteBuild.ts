@@ -56,8 +56,9 @@ exit 0`
  *  $1 state folder, $2 GUFI bin, $3 source, $4 index folder, $5 threads,
  *  $6 python (or empty), $7 embedding model (or empty), $8 1 to make the
  *  source folder when it is missing, $9 embed.py's options for the level of
- *  search by meaning (meaningArgs; words with no spaces or quotes). */
-export const BUILD_RUN = `s=$1 bin=$2 src=$3 idx=$4 threads=$5 py=$6 model=$7 create=$8 meaning=\${9:-}
+ *  search by meaning (meaningArgs), $10 enrich.py's for the depth
+ *  (textArgs); both words with no spaces or quotes. */
+export const BUILD_RUN = `s=$1 bin=$2 src=$3 idx=$4 threads=$5 py=$6 model=$7 create=$8 meaning=\${9:-} text=\${10:-}
 echo $$ > "$s/pid"
 phase() { printf '%s\\n' "$1" > "$s/phase"; }
 fail() { printf '%s\\n' "$1" > "$s/error"; exit 1; }
@@ -86,7 +87,8 @@ rm -rf "$stage" "$idx/.old"
 fulltext=false vectors=false
 if [ -n "$py" ] && [ -f "$s/enrich.py" ]; then
   phase extract
-  if "$py" "$s/enrich.py" --kb-root "$src" --index "$tree" --extract-cache "$idx/.extract" > "$s/enrich.log" 2>&1; then fulltext=true; fi
+  # shellcheck disable=SC2086
+  if "$py" "$s/enrich.py" --kb-root "$src" --index "$tree" --extract-cache "$idx/.extract" $text > "$s/enrich.log" 2>&1; then fulltext=true; fi
   if [ "$fulltext" = true ] && [ -n "$model" ] && [ -x "$bin/gufi_sqlite3" ] && [ -f "$s/embed.py" ]; then
     phase embed
     # shellcheck disable=SC2086

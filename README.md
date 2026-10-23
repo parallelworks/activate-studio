@@ -34,17 +34,19 @@ Without `KB_ROOT`, it opens a small sample folder. Any OpenAI-compatible endpoin
 - **Agents** take the parts of a larger request in parallel; you can watch them, approve what they ask to do, and steer them.
 - **Other tools**, such as pw code, can search the same knowledge base over MCP or an OpenAI-compatible endpoint.
 
-### Search by meaning
+### Index depth
 
-Search by meaning is the slowest part of indexing, and many folders (code, data, simulation output) gain little from it, so each library chooses how much it covers, in Settings, Libraries:
+Each library the Studio builds has an index depth, set on a scale in Settings, Libraries, in setup, and when the library is added. Each stop adds to the one before and takes longer to index:
 
-| Level | What is embedded |
+| Depth | What the index holds |
 |---|---|
-| Off | Nothing; search matches names and words. |
-| Documents | The first four passages of each PDF, Office, text, Markdown and image file. The main folder's default. |
-| Full | Up to twelve passages of every file with text. |
+| Names | Names, sizes, dates and owners of every file and folder. |
+| Text | The words inside files: text, code, PDFs and Office documents. |
+| Text + OCR | Text in images and scanned PDF pages, read by tesseract. Libraries other than the main folder start here. |
+| Meaning on documents | Search by meaning over the first four passages of each PDF, Office, text, Markdown and image file. The main folder's default. |
+| Meaning on all files | Search by meaning over up to twelve passages of every file with text. |
 
-Libraries other than the main folder start at Off. Settings, Indexing also sets the speed: **Standard** embeds the first 256 tokens of each passage, and **Faster** the first 128, in well under half the time with slightly lower ranking. Embeddings come from all-MiniLM-L6-v2 through ONNX Runtime (int8), which the macOS app and the container carry; a clone gets it from `indexer/setup_gufi.sh`, or `python3 indexer/fetch_embed.py --deps indexer/.deps --model index/models/minilm-l6`.
+Many folders (code, data, simulation output) need no more than Text. Settings, Indexing also sets the speed of search by meaning: **Standard** embeds the first 256 tokens of each passage, and **Faster** the first 128, in well under half the time with slightly lower ranking. Embeddings come from all-MiniLM-L6-v2 through ONNX Runtime (int8), which the macOS app and the container carry; a clone gets it from `indexer/setup_gufi.sh`, or `python3 indexer/fetch_embed.py --deps indexer/.deps --model index/models/minilm-l6`. An index connected as it is stays as it was built.
 
 The in-app Help is the user guide: [`docs/HELP.md`](docs/HELP.md), with the details in [`docs/REFERENCE.md`](docs/REFERENCE.md). Its What's new page shows [`CHANGELOG.md`](CHANGELOG.md).
 

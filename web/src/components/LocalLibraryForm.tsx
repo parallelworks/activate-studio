@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Button, Callout, Input } from '@parallelworks/ui'
-import { api, type SettingsLibrary } from '../api'
+import { api, type IndexDepth, type SettingsLibrary } from '../api'
+import { DEFAULT_LIBRARY_DEPTH, IndexDepthControl, useOcrHere } from './IndexDepth'
 import { CreateConfirm, postJson, StepList, type CheckStep } from './LibraryFormParts'
 import { FolderBrowser } from './PrimaryFolder'
 
@@ -18,7 +19,8 @@ interface BuildCheck { ok: boolean; steps: CheckStep[]; create: string[] }
  * with (POST /api/libraries/build): Check reports GUFI and the folders,
  * including any that do not exist yet, and Build the index asks before
  * making those. The index folder is optional; without it the Studio keeps
- * the index in its own data folder.
+ * the index in its own data folder. The index depth (IndexDepth) shows
+ * under the folder, Text + OCR to begin with.
  *
  * With `browse` (a single-user install) either folder can be picked from
  * the folders on this computer; `compact` leaves out the introduction, for
@@ -40,6 +42,8 @@ export function LocalLibraryForm({ onAdded, browse = false, compact = false, mod
   const [checked, setChecked] = useState('')
   const [confirming, setConfirming] = useState(false)
   const [more, setMore] = useState(false)
+  const [depth, setDepth] = useState<IndexDepth>(DEFAULT_LIBRARY_DEPTH)
+  const ocr = useOcrHere(build)
   const set = (patch: Partial<typeof EMPTY>) => { setForm(f => ({ ...f, ...patch })); setError(null) }
   const indexName = form.indexRoot.trim().replace(/\/+$/, '').split('/').pop() || ''
   const sourceName = form.sourceRoot.trim().replace(/\/+$/, '').split('/').pop() || ''
@@ -62,7 +66,7 @@ export function LocalLibraryForm({ onAdded, browse = false, compact = false, mod
   const runCheck = async () => {
     setBusy('check'); setError(null); setCheck(null)
     try {
-      const r = await postJson<BuildCheck>('/api/libraries/build/check', fields)
+      const r = await postJson<BuildCheck>('/api/libraries/build/check', { ...fields, depth })
       setCheck(r)
       setChecked(JSON.stringify(fields))
     } catch (e) { setError(String((e as Error).message ?? e)) } finally { setBusy(null) }
@@ -71,7 +75,7 @@ export function LocalLibraryForm({ onAdded, browse = false, compact = false, mod
   const startBuild = async () => {
     setBusy('add'); setError(null)
     try {
-      const r = await postJson<{ library: SettingsLibrary }>('/api/libraries/build', { ...fields, create: !!check?.create.length })
+      const r = await postJson<{ library: SettingsLibrary }>('/api/libraries/build', { ...fields, depth, create: !!check?.create.length })
       setForm(EMPTY); setCheck(null); setChecked('')
       onAdded?.(r.library)
     } catch (e) { setError(String((e as Error).message ?? e)) } finally { setBusy(null) }
@@ -102,6 +106,7 @@ export function LocalLibraryForm({ onAdded, browse = false, compact = false, mod
         )}
         {build ? browseButton('sourceRoot', 'folder') : browseButton('indexRoot', 'index')}
       </div>
+      {build && <IndexDepthControl value={depth} onChange={setDepth} disabled={busy !== null} ocr={ocr} />}
       <Button variant="ghost" size="sm" className="local-library-more" aria-expanded={more} onClick={() => setMore(m => !m)}>
         {more ? 'Fewer options' : 'More options'}
       </Button>

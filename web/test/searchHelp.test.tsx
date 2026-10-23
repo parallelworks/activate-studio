@@ -36,26 +36,66 @@ describe('the Search page says what search matches', () => {
   })
 })
 
-describe('the main folder\'s level, in setup', () => {
-  it('shows the level in force and saves another, with what it does', async () => {
+describe('the main folder\'s depth, in setup', () => {
+  const stub = async (extractors: { name: string; available: boolean }[] = []) => {
     const { vi } = await import('vitest')
-    const { MainFolderMeaning } = await import('../src/components/MeaningLevel')
-    const { waitFor } = await import('@testing-library/react')
     const calls: { method: string; body: unknown }[] = []
     vi.stubGlobal('fetch', vi.fn(async (input: string, init?: RequestInit) => {
       calls.push({ method: init?.method ?? 'GET', body: init?.body ? JSON.parse(String(init.body)) : undefined })
-      const settings = { threads: null, documents: true, pdfReader: 'auto', ocr: true, imageDescriptions: true, legacyOffice: true, meaning: 'documents' }
+      const settings = { threads: null, depth: 'meaning-documents', documents: true, pdfReader: 'auto', ocr: true, imageDescriptions: true, legacyOffice: true, meaning: 'documents' }
       return new Response(JSON.stringify(String(input) === '/api/index/settings' && init?.method === 'PUT'
         ? { settings: { ...settings, ...(JSON.parse(String(init.body))) }, threads: 4, readers: {} }
-        : { settings, defaults: settings, single: true, cpus: 4, threads: 4 }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+        : { settings, defaults: settings, single: true, cpus: 4, threads: 4, readers: { extractors, formats: [], missing: [] } }), { status: 200, headers: { 'Content-Type': 'application/json' } })
     }))
+    return { calls, restore: () => vi.unstubAllGlobals() }
+  }
+
+  it('names every stop, shows the one in force, and saves another with what it adds', async () => {
+    const { MainFolderDepth } = await import('../src/components/IndexDepth')
+    const { waitFor } = await import('@testing-library/react')
+    const { calls, restore } = await stub()
     try {
-      render(<MainFolderMeaning />)
-      expect(await screen.findByText(/in documents and images: PDF, Office, text, Markdown/)).toBeInTheDocument()
-      fireEvent.click(screen.getByRole('button', { name: 'Off' }))
-      await waitFor(() => expect(calls.some(c => c.method === 'PUT' && (c.body as { meaning: string }).meaning === 'off')).toBe(true))
-      expect(screen.getByText(/Nothing more is computed, so indexing is fastest/)).toBeInTheDocument()
-    } finally { vi.unstubAllGlobals() }
+      render(<MainFolderDepth />)
+      expect(await screen.findByText(/Adds search by meaning: a plain question also finds passages/)).toBeInTheDocument()
+      const stops = ['Names', 'Text', 'Text + OCR', 'Meaning on documents', 'Meaning on all files']
+      for (const name of stops) expect(screen.getByRole('button', { name })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Meaning on documents' })).toHaveAttribute('aria-pressed', 'true')
+      expect(screen.getByRole('slider')).toHaveAttribute('aria-valuenow', '3')
+      fireEvent.click(screen.getByRole('button', { name: 'Names' }))
+      await waitFor(() => expect(calls.some(c => c.method === 'PUT' && (c.body as { depth: string }).depth === 'names')).toBe(true))
+      expect(screen.getByText(/nothing is read from inside the files/)).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Names' })).toHaveAttribute('aria-pressed', 'true')
+    } finally { restore() }
+  })
+
+  it('says where tesseract is missing, at the stops that read images', async () => {
+    const { MainFolderDepth } = await import('../src/components/IndexDepth')
+    const { restore } = await stub([{ name: 'tesseract', available: false }])
+    try {
+      render(<MainFolderDepth />)
+      expect(await screen.findByText(/tesseract is not installed here, so images and scans are found by name until it is/)).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: 'Text' }))
+      expect(screen.queryByText(/tesseract is not installed here/)).toBeNull()
+    } finally { restore() }
+  })
+})
+
+describe('the depth scale', () => {
+  it('moving across stops saves once, where it settles', async () => {
+    const { vi } = await import('vitest')
+    const { IndexDepthControl } = await import('../src/components/IndexDepth')
+    vi.useFakeTimers()
+    try {
+      const picked: string[] = []
+      render(<IndexDepthControl value="names" onChange={d => picked.push(d)} />)
+      const slider = screen.getByRole('slider', { name: 'Index depth: Names' })
+      fireEvent.keyDown(slider, { key: 'ArrowRight' })
+      fireEvent.keyDown(slider, { key: 'ArrowRight' })
+      expect(screen.getByText(/Adds text in images and scanned PDF pages/)).toBeInTheDocument()
+      expect(picked).toEqual([])
+      act(() => { vi.advanceTimersByTime(400) })
+      expect(picked).toEqual(['ocr'])
+    } finally { vi.useRealTimers() }
   })
 })
 

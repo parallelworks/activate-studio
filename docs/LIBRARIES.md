@@ -62,12 +62,13 @@ Settings, Libraries is one list of every library the Studio searches, and
 one **Add a library** control. Each row gives the library's name, its kind
 in plain words with what the Studio may do with it (read and write, or
 read only), where it is (the index directory, and the files when the
-Studio can open them), its state, whether it supports full-text search,
-search by meaning, and its actions. For a library the Studio builds (the
-main folder, and one built here or on a remote system) the Meaning column is
-its level, Off, Documents or Full, changed in place (`PUT
-/api/libraries/:id/meaning`); a built library starts at Off. For an index the
-Studio only reads, it says whether the index has vectors:
+Studio can open them), its state, its depth, and its actions. For a library
+the Studio builds (the main folder, and one built here or on a remote
+system) the Depth column is its index depth, Names, Text, Text + OCR,
+Meaning on documents or Meaning on all files, changed in place (`PUT
+/api/libraries/:id/depth`); a built library starts at Text + OCR. For an
+index the Studio only reads, it says what the index has, as built: names,
+text, or text and meaning:
 
 | Kind | Where it comes from | Actions |
 |---|---|---|
@@ -140,8 +141,10 @@ an index of a folder" indexes a folder here as the main folder is
 indexed (`server/src/libraryBuild.ts`): `gufi_dir2index -x`, then text
 extraction (`preextract` and `indexer/enrich.py`), then embeddings
 (`indexer/embed.py`) where the model is installed, so full-text and
-semantic search work there. It takes a source folder, an index folder
-(optional), a label, and an identifier.
+semantic search work there, as far as its index depth says (`depth`,
+below the folder on the form: Text + OCR to begin with; at Names only
+`gufi_dir2index` runs). It takes a source folder, an index folder
+(optional), a label, an identifier, and the depth.
 
 **Check** (`POST /api/libraries/build/check`) reports four steps: GUFI
 is in `GUFI_BIN`; the source folder is readable, or does not exist yet
@@ -209,7 +212,7 @@ cannot. Without an index folder the index goes in
 does, and that folder needs no confirmation. Paths are absolute or start
 with `~`, which is resolved there. **Build the index**
 (`POST /api/user-libraries/ssh/build` or `.../pw/build`, with
-`{label?, destination | cluster, sourceRoot, indexRoot?, gufiBin?, create?}`)
+`{label?, destination | cluster, sourceRoot, indexRoot?, gufiBin?, depth?, create?}`)
 asks before making a folder the user named, and the server tests again
 first.
 
@@ -219,8 +222,9 @@ goes on when the session or the Studio stops. Its state is a folder there,
 `~/.activate-studio/builds/<build id>`: the script, its phase, process id,
 exit status, error, and logs. It runs `gufi_dir2index -x` into
 `<index folder>/.build` and swaps the tree in when complete; where Python
-is there, the Studio copies `enrich.py` into the state folder and runs
-it, keeping extracted text in `<index folder>/.extract`, and where a GUFI
+is there and the depth reads text, the Studio copies `enrich.py` into the
+state folder and runs it (with `--no-ocr` at Text), keeping extracted
+text in `<index folder>/.extract`, and at the meaning stops, where a GUFI
 with the embedding extension and `~/.activate-studio/models/minilm384.gguf`
 are there too, `embed.py`, which uses that GGUF model through sqlite-lembed (the ONNX backend runs only on this computer). It then counts the index and writes
 `.studio-index.json`, with `fullText` true only when that system's

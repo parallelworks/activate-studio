@@ -221,3 +221,16 @@ test('over pw ssh: a system from the dropdown, built with the platform key', { s
   assert.equal(again.status, 409)
   assert.equal((await post('/api/user-libraries/pw/build/test', { cluster: '-oProxyCommand=x', sourceRoot: '~/w' })).status, 400)
 })
+
+test('a build at the Names depth reads nothing from inside the files there', { skip }, async () => {
+  const r = await post('/api/user-libraries/ssh/build', { ...box, sourceRoot: '~/project', indexRoot: '~/names-only', label: 'Names only', depth: 'names', create: true })
+  assert.equal(r.status, 200, JSON.stringify(r.body))
+  assert.equal(r.body.depth, 'names')
+  const l = await waitFor(r.body.id)
+  assert.equal(l.state, 'ready', l.error ?? '')
+  assert.equal(l.files, 4, 'the project, with the file the rebuild test added')
+  assert.equal(l.fullText, false, 'no text tables')
+  const state = fs.readdirSync(path.join(homes['me@linux-box'], '.activate-studio', 'builds')).find(b => b.startsWith(r.body.id))
+  assert.equal(fs.existsSync(path.join(homes['me@linux-box'], '.activate-studio', 'builds', state, 'enrich.py')), false, 'enrich.py is not sent')
+  assert.equal((await post('/api/user-libraries/ssh/build', { ...box, sourceRoot: '~/project', indexRoot: '~/other', depth: 'deepest', create: true })).status, 400)
+})

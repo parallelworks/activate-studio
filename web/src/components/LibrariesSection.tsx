@@ -3,8 +3,8 @@ import {
   Button, Callout, DescriptionList, DescriptionListItem, IconButton, Loader, Modal, ProgressBar, StatusBadge, Table, toast, useConfirm,
 } from '@parallelworks/ui'
 import { AddIcon, CloseIcon } from '@parallelworks/ui/icons'
-import { api, type BuildProgress, type MeaningLevel, type SettingsLibrary, type UserLibrary } from '../api'
-import { MeaningLevelSelect, meaningPhrase } from './MeaningLevel'
+import { api, type BuildProgress, type IndexDepth, type SettingsLibrary, type UserLibrary } from '../api'
+import { DEFAULT_LIBRARY_DEPTH, IndexDepthSelect, depthLabel } from './IndexDepth'
 import { reloadAppConfig, useAppConfig } from '../config'
 import { AddLibrary } from './AddLibrary'
 import { FolderPicker, errText, json, type SetupStatus } from './PrimaryFolder'
@@ -44,10 +44,11 @@ interface Row {
   kind: string
   where: ReactNode
   state: { tone: Tone; text: string; pulse?: boolean; notes: ReactNode[] }
+  /** What the index has: its full-text tables, and vectors for search by meaning. */
   fullText: boolean
   meaning: boolean
-  /** For a library the Studio builds: its level of search by meaning, which can be changed here. */
-  level?: { value: MeaningLevel; reload: () => Promise<unknown> }
+  /** For a library the Studio builds: its depth, which can be changed here. */
+  depth?: { value: IndexDepth; reload: () => Promise<unknown> }
   actions: ReactNode
   /** A line under the row across the whole table, such as a build's progress. */
   detail?: ReactNode
@@ -207,7 +208,7 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
           </DescriptionList>
         ),
         state, fullText: l.caps.fullText, meaning: l.caps.vectors,
-        level: { value: l.meaning ?? 'documents', reload: loadLibs },
+        depth: { value: l.depth ?? 'meaning-documents', reload: loadLibs },
         actions: (
           <>
             {standalone && <Button variant="secondary" size="sm" disabled={indexing} onClick={() => setChanging(true)}>Change folder</Button>}
@@ -243,7 +244,7 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
           : b.error ? { tone: 'warning', text: 'Ready; the last pass failed', notes }
           : { tone: 'success', text: 'Ready', notes },
         fullText: l.caps.fullText, meaning: l.caps.vectors,
-        level: { value: l.meaning ?? 'off', reload: loadLibs },
+        depth: { value: l.depth ?? DEFAULT_LIBRARY_DEPTH, reload: loadLibs },
         actions: (
           <>
             <Button variant="secondary" size="sm" loading={busy === l.id} disabled={busy !== null || isBuilding(b.state)}
@@ -308,7 +309,7 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
           : l.error ? { tone: 'warning', text: 'Ready; the last build failed', notes }
           : { tone: 'success', text: 'Ready', notes },
         fullText: !!l.fullText, meaning: !!l.vectors,
-        level: { value: l.meaning ?? 'off', reload: loadUser },
+        depth: { value: l.depth ?? DEFAULT_LIBRARY_DEPTH, reload: loadUser },
         actions: (
           <>
             <Button variant="secondary" size="sm" loading={busy === l.id} disabled={busy !== null || isBuilding(l.state)}
@@ -417,8 +418,7 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
         <Table density="compact" className="libraries-table" wrapperClassName="rag-calls-wrap libraries-wrap">
           <Table.Header>Library</Table.Header>
           <Table.Header>State</Table.Header>
-          <Table.Header>Full text</Table.Header>
-          <Table.Header>Meaning</Table.Header>
+          <Table.Header>Depth</Table.Header>
           <Table.Header />
           {rows.map(r => (
             <Fragment key={r.key}>
@@ -432,27 +432,26 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
                   <StatusBadge variant={r.state.tone} pulse={r.state.pulse} dot={!r.state.pulse} size="sm">{r.state.text}</StatusBadge>
                   {r.state.notes.map((n, i) => <div key={i} className="lib-id">{n}</div>)}
                 </Table.Item>
-                <Table.Item className="lib-cap" data-label="Full text"><Mark on={r.fullText} /></Table.Item>
-                <Table.Item className="lib-cap" data-label="Meaning">
-                  {r.level
-                    ? <MeaningLevelSelect library={r.name} value={r.level.value} disabled={busy !== null}
-                        onChange={v => { const lv = r.level!; void act(r.key, async () => { await api.setLibraryMeaning(r.key, v); await lv.reload(); reloadAppConfig() },
-                          `Search by meaning in ${r.name}: ${meaningPhrase(v)}. It applies at the next build or sync; Rebuild applies it now.`) }} />
-                    : <Mark on={r.meaning} />}
+                <Table.Item className="lib-cap" data-label="Depth">
+                  {r.depth
+                    ? <IndexDepthSelect library={r.name} value={r.depth.value} disabled={busy !== null}
+                        onChange={v => { const d = r.depth!; void act(r.key, async () => { await api.setLibraryDepth(r.key, v); await d.reload(); reloadAppConfig() },
+                          `${r.name}: ${depthLabel(v)}. It applies at the next build or sync.`) }} />
+                    : <AsBuilt fullText={r.fullText} meaning={r.meaning} />}
                 </Table.Item>
                 <Table.Item className="lib-actions">{r.actions}</Table.Item>
               </tr>
-              {r.detail && <tr className="lib-detail"><Table.Item colSpan={5} wrap>{r.detail}</Table.Item></tr>}
+              {r.detail && <tr className="lib-detail"><Table.Item colSpan={4} wrap>{r.detail}</Table.Item></tr>}
             </Fragment>
           ))}
         </Table>
       )}
       {libs && (
-        <p className="muted lib-meaning-note">
-          Meaning is search by meaning: passages that say the same thing in other words. For a library {cfg.appName} builds it
-          is a choice: Off (names and words only, fastest), Documents (documents and images), or Full (every file with text,
-          about three times the indexing time of Documents). A change applies at the next build or sync. An index connected as
-          it is uses the vectors it has.
+        <p className="muted lib-depth-note">
+          Depth is how far an index goes, each stop adding to the one before: Names; Text, the words inside files; Text + OCR,
+          text in images and scanned pages; Meaning on documents, search by meaning over documents and images; and Meaning on
+          all files, about three times the indexing time of Meaning on documents. For a library {cfg.appName} builds it is a
+          choice, applied at the next build or sync. An index connected as it is stays as it was built.
         </p>
       )}
 
@@ -509,7 +508,12 @@ function PathText({ path }: { path: string }) {
   )
 }
 
-/** Yes or no for a capability, as a word a screen reader says and a color the eye finds. */
-function Mark({ on }: { on: boolean }) {
-  return <span className={on ? 'lib-yes' : 'lib-no'}>{on ? 'Yes' : 'No'}</span>
+/** What an index connected as it is has, in the depth's words. */
+function AsBuilt({ fullText, meaning }: { fullText: boolean; meaning: boolean }) {
+  return (
+    <>
+      <span className="lib-yes">{meaning ? 'Text and meaning' : fullText ? 'Text' : 'Names'}</span>
+      <div className="lib-id">as built</div>
+    </>
+  )
 }

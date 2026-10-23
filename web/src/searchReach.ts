@@ -12,14 +12,14 @@ export function librariesInScope(libraries: PublicLibrary[], scope: string): Pub
 }
 
 /** What a search in the scope can match: meaning where any library in it
- *  has search by meaning, else the words in files where any has full text,
- *  else names only. */
+ *  has search by meaning, else the words in files where any has full text
+ *  (the main folder does unless its depth is Names), else names only. */
 export type SearchReach = 'meaning' | 'words' | 'names'
 export function searchReach(libraries: PublicLibrary[], scope: string): SearchReach {
   const libs = librariesInScope(libraries, scope)
   if (!libs.length) return 'words'
   if (libs.some(meaningOn)) return 'meaning'
-  if (libs.some(l => l.caps.fullText || l.primary)) return 'words'
+  if (libs.some(l => l.caps.fullText || (l.primary && l.depth !== 'names'))) return 'words'
   return 'names'
 }
 

@@ -190,14 +190,26 @@ test('settings: threads checked, the readers this host has, and where the index 
   assert.equal((await j('PUT', '/api/index/settings', { ocr: 'yes' })).status, 400)
   assert.equal((await j('PUT', '/api/index/settings', { meaning: 'some' })).status, 400)
   assert.equal((await j('PUT', '/api/index/settings', { meaningSpeed: 'fastest' })).status, 400)
+  assert.equal((await j('PUT', '/api/index/settings', { depth: 'deepest' })).status, 400)
   assert.equal((await j('GET', '/api/index/settings')).body.settings.meaningSpeed, 'standard')
   assert.equal((await j('PUT', '/api/index/settings', { meaningSpeed: 'faster' })).body.settings.meaningSpeed, 'faster')
   await j('PUT', '/api/index/settings', { meaningSpeed: 'standard' })
-  assert.equal((await j('GET', '/api/index/settings')).body.settings.meaning, 'documents', 'the main folder starts at Documents')
+  const first = (await j('GET', '/api/index/settings')).body.settings
+  assert.deepEqual([first.depth, first.meaning, first.ocr], ['meaning-documents', 'documents', true], 'the main folder starts at Meaning on documents')
+  // Each stop adds to the one before; documents, ocr and meaning follow it.
+  const stops = { names: [false, false, 'off'], text: [true, false, 'off'], ocr: [true, true, 'off'], 'meaning-documents': [true, true, 'documents'], 'meaning-full': [true, true, 'full'] }
+  for (const [depth, parts] of Object.entries(stops)) {
+    const r = (await j('PUT', '/api/index/settings', { depth })).body.settings
+    assert.deepEqual([r.depth, r.documents, r.ocr, r.meaning], [depth, ...parts])
+  }
+  // What an earlier client sends moves the depth to the nearest stop.
   const put = await j('PUT', '/api/index/settings', { threads: 3, meaning: 'off' })
   assert.equal(put.status, 200)
   assert.equal(put.body.threads, 3)
-  assert.equal(put.body.settings.meaning, 'off')
+  assert.deepEqual([put.body.settings.meaning, put.body.settings.depth], ['off', 'ocr'], 'the stop below search by meaning')
+  assert.equal((await j('PUT', '/api/index/settings', { ocr: false })).body.settings.depth, 'text')
+  assert.equal((await j('PUT', '/api/index/settings', { documents: false })).body.settings.depth, 'names')
+  assert.equal((await j('PUT', '/api/index/settings', { ocr: true })).body.settings.depth, 'ocr')
   // The earlier on/off switch still reads: on is the folder's usual level.
   assert.equal((await j('PUT', '/api/index/settings', { embeddings: true })).body.settings.meaning, 'documents')
   assert.equal((await j('PUT', '/api/index/settings', { embeddings: false })).body.settings.meaning, 'off')
@@ -214,8 +226,25 @@ test('settings: threads checked, the readers this host has, and where the index 
   if (pdf.readers.includes('downmark')) assert.equal(got.readers.extractors.find(x => x.name === 'pdftotext').optional, true)
   assert.ok(got.readers.missing.every(m => !m.ok))
   // Back to one per core for the tests after this.
-  await j('PUT', '/api/index/settings', { threads: null, meaning: 'documents' })
+  await j('PUT', '/api/index/settings', { threads: null, depth: 'meaning-documents' })
   assert.equal((await j('GET', '/api/index/settings')).body.settings.threads, null)
+})
+
+test('at the Names depth a build reads names only: no documents, text or meaning', { timeout: 120_000 }, async () => {
+  await j('PUT', '/api/index/settings', { depth: 'names' })
+  try {
+    const job = await finished((await j('POST', '/api/index/build')).body.id)
+    assert.equal(job.state, 'done', job.error ?? '')
+    const phase = id => job.phases.find(p => p.id === id)
+    assert.equal(phase('names').state, 'done')
+    for (const id of ['documents', 'text']) assert.deepEqual([phase(id).state, phase(id).note], ['skipped', 'the index depth is names'])
+    assert.equal(phase('meaning').state, 'skipped')
+    if (REAL) {
+      const hits = (await j('GET', '/api/search?q=quokkafish')).body.hits
+      assert.deepEqual(hits, [], 'no words are indexed, and no name says quokkafish')
+      assert.ok((await j('GET', '/api/search?q=note')).body.hits.some(h => h.path === 'beta/inner/note.md'))
+    }
+  } finally { await j('PUT', '/api/index/settings', { depth: 'meaning-documents' }) }
 })
 
 test('a folder pointed at again updates its earlier index instead of building from nothing', { timeout: 180_000 }, async () => {
