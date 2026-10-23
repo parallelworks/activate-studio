@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
-# Make the disk image for "ACTIVATE Studio.app": the app beside a link to
-# /Applications to drag it to, on a volume named after the app that shows
-# the app's icon, compressed (UDZO). Needs macOS (hdiutil). build_app.sh
+# Make the disk image for "ACTIVATE Studio.app": the app beside a short note
+# on installing it, on a volume named after the app that shows the app's
+# icon, compressed (UDZO). There is no link to /Applications to drag it to:
+# the app is per user (its data, server and LaunchAgent are the user's), and
+# double-clicking it on the image installs it in ~/Applications, which needs
+# no administrator rights and where it updates itself (launcher.sh
+# --install). Needs macOS (hdiutil). build_app.sh
 # makes one of the ad hoc signed app; the release's signing job makes one
 # of the app it signed, and notarize.sh signs and notarizes it.
 #
@@ -47,7 +51,17 @@ ICNS=
 rm -f "$OUT"
 mkdir -p "$WORK/dmg"
 ditto "$APP" "$WORK/dmg/$NAME.app"
-ln -s /Applications "$WORK/dmg/Applications"
+cat >"$WORK/dmg/Installing $NAME.txt" <<NOTE
+Installing $NAME
+
+Double-click $NAME and choose Install. macOS may first ask whether to open an app downloaded from the internet; choose Open.
+
+Install copies it to the Applications folder in your home folder and opens it from there. No administrator rights are needed, and it updates itself there. Spotlight finds it there, and you can keep it in the Dock.
+
+Eject this disk image afterwards.
+
+An administrator who prefers /Applications can drag the app there instead. That copy updates itself only for users who can write to /Applications.
+NOTE
 if [ -n "$ICNS" ]; then
   # The volume's own icon, which Finder shows in the window's title bar
   # and the sidebar: .VolumeIcon.icns at its root, used once the root has

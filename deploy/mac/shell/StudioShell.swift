@@ -12,7 +12,10 @@
 // color the page names for it, as an installed web app's does. The Studio's
 // page can ask the window, through window.webkit.messageHandlers.studioShell,
 // for the system folder chooser, to follow the Studio to another port, and to
-// quit and open again after an update replaced the app around it.
+// quit and open again after an update replaced the app around it. Opened
+// from its disk image (or from where it was downloaded), it first offers to
+// install itself in ~/Applications, through `launcher.sh --install`, and
+// opens that copy.
 //
 // Built with: swiftc -O -target arm64-apple-macos13 StudioShell.swift
 // (deploy/mac/build_app.sh does this when it runs on a Mac).
@@ -22,9 +25,9 @@ import WebKit
 
 let launcher = Bundle.main.resourceURL!.appendingPathComponent("launcher.sh")
 
-// `ACTIVATE Studio --stop`, `--uninstall` and `--help` from a terminal go to
-// the launcher, with no window.
-let passThrough: Set<String> = ["--stop", "--uninstall", "--help", "-h"]
+// `ACTIVATE Studio --install`, `--stop`, `--uninstall` and `--help` from a
+// terminal go to the launcher, with no window.
+let passThrough: Set<String> = ["--install", "--stop", "--uninstall", "--help", "-h"]
 if CommandLine.arguments.count > 1, passThrough.contains(CommandLine.arguments[1]) {
   let p = Process()
   p.executableURL = URL(fileURLWithPath: "/bin/bash")
@@ -111,7 +114,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     window.setFrameAutosaveName("ACTIVATE Studio")
     window.makeKeyAndOrderFront(nil)
     NSApp.activate(ignoringOtherApps: true)
-    startServer()
+    if notInstalled { offerInstall() } else { startServer() }
   }
 
   func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
@@ -177,7 +180,92 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     NSApp.terminate(nil)
   }
 
-  @objc func retry(_ sender: Any?) { startServer() }
+  @objc func retry(_ sender: Any?) { if notInstalled { offerInstall() } else { startServer() } }
+
+  // MARK: installing
+
+  /// Run from the disk image, or from the read-only copy macOS makes of an
+  /// app opened where it was downloaded (App Translocation): not installed.
+  var notInstalled: Bool {
+    let path = Bundle.main.bundlePath
+    return path.hasPrefix("/Volumes/") || path.contains("/AppTranslocation/")
+  }
+
+  func version(of app: URL) -> String? {
+    guard let info = NSDictionary(contentsOf: app.appendingPathComponent("Contents/Info.plist")) else { return nil }
+    return info["CFBundleShortVersionString"] as? String
+  }
+
+  /// Offers to install this copy in the Applications folder in the home
+  /// folder (no administrator rights needed; the app updates itself there),
+  /// asking first when a copy is there already, then opens the installed
+  /// copy and quits. Cancel quits.
+  func offerInstall() {
+    let dir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications")
+    let dest = dir.appendingPathComponent(Bundle.main.bundleURL.lastPathComponent)
+    showStarting("ACTIVATE Studio is not installed yet.")
+    spinner.stopAnimation(nil)
+    spinner.isHidden = true
+    let ask = NSAlert()
+    ask.messageText = "Install ACTIVATE Studio?"
+    ask.informativeText = "It runs from its disk image or the folder it was downloaded to. Install puts it in the "
+      + "Applications folder in your home folder (\(dir.path)), with no administrator rights needed, and opens it "
+      + "from there. It updates itself there."
+    ask.addButton(withTitle: "Install")
+    ask.addButton(withTitle: "Cancel")
+    guard ask.runModal() == .alertFirstButtonReturn else { NSApp.terminate(nil); return }
+    if FileManager.default.fileExists(atPath: dest.path) {
+      let replace = NSAlert()
+      replace.messageText = "Replace the copy in \(dir.path)?"
+      let there = version(of: dest).map { " (version \($0))" } ?? ""
+      let mine = version(of: Bundle.main.bundleURL).map { "version \($0)" } ?? "this copy"
+      replace.informativeText = "ACTIVATE Studio is already installed there\(there). Replace it with \(mine)? Your index, "
+        + "settings and libraries stay as they are, in ~/Library/Application Support/ACTIVATE Studio."
+      replace.addButton(withTitle: "Replace")
+      replace.addButton(withTitle: "Cancel")
+      guard replace.runModal() == .alertFirstButtonReturn else { NSApp.terminate(nil); return }
+    }
+    showStarting("Installing ACTIVATE Studio in \(dir.path)…")
+    DispatchQueue.global(qos: .userInitiated).async {
+      let p = Process()
+      p.executableURL = URL(fileURLWithPath: "/bin/bash")
+      p.arguments = [launcher.path, "--install", dir.path]
+      let out = Pipe()
+      p.standardOutput = out
+      p.standardError = out
+      var text = ""
+      var status: Int32 = -1
+      do {
+        try p.run()
+        text = String(data: out.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        p.waitUntilExit()
+        status = p.terminationStatus
+      } catch {
+        text = "The launcher could not run: \(error.localizedDescription)"
+      }
+      let output = text, exitStatus = status
+      DispatchQueue.main.async {
+        guard exitStatus == 0 else {
+          let tail = output.split(separator: "\n").suffix(6).joined(separator: "\n")
+          self.showFailure(tail.isEmpty ? "ACTIVATE Studio could not be installed." : tail)
+          return
+        }
+        // A new instance: this one, from the disk image, has the same bundle
+        // identifier and quits once the installed copy is opening.
+        let config = NSWorkspace.OpenConfiguration()
+        config.createsNewApplicationInstance = true
+        NSWorkspace.shared.openApplication(at: dest, configuration: config) { _, error in
+          DispatchQueue.main.async {
+            if let error {
+              self.showFailure("Installed in \(dest.path), but it did not open: \(error.localizedDescription)")
+            } else {
+              NSApp.terminate(nil)
+            }
+          }
+        }
+      }
+    }
+  }
 
   /// The setup wizard, through the page's address for it (#view=settings:setup).
   @objc func runSetup(_ sender: Any?) {

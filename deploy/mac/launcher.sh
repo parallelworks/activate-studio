@@ -2,6 +2,9 @@
 # ACTIVATE Studio for macOS (Contents/MacOS/ACTIVATE Studio in the app).
 #
 #   ACTIVATE Studio                       start the server if needed and open the Studio
+#   ACTIVATE Studio --install [DIR]       install this copy in DIR (~/Applications by
+#                                         default, created if missing), replacing a copy
+#                                         there; for a copy opened from the disk image
 #   ACTIVATE Studio --stop                stop the server until the app is next opened
 #   ACTIVATE Studio --uninstall [--purge] remove the background server and the app;
 #                                         --purge also removes the index (wherever it is kept),
@@ -12,6 +15,13 @@
 #                                         "kind<TAB>path" line each; removes nothing
 #
 # Your documents folder is never removed.
+#
+# Opened from its disk image (or from where it was downloaded, which macOS
+# runs from a read-only copy), the app is not installed yet: its window
+# offers to install it in ~/Applications, which needs no administrator
+# rights and where it updates itself, and opens that copy. Run without the
+# window, this script offers the same with a macOS dialog, or in a terminal
+# says to use --install.
 #
 # The server runs as a LaunchAgent (com.parallelworks.activate-studio), on
 # 127.0.0.1 only, from studio-run.sh in this app. Where no LaunchAgent can be
@@ -240,13 +250,120 @@ open_window() {
   open "$url"
 }
 
+# Whether the background server runs from the copy of the app at $1: the
+# run loop the app started itself, or the LaunchAgent naming that copy.
+running_from() {
+  local run="$1/Contents/Resources/studio-run.sh"
+  if detached_pid >/dev/null; then
+    case "$DETACHED_CMD" in *"$run $DATA") return 0 ;; esac
+  fi
+  [ -f "$AGENT" ] && grep -qF "<string>$(xml "$run")</string>" "$AGENT" && loaded
+}
+
+# Installs this copy of the app in a folder: copied beside its place there
+# under a temporary name, then moved into place, so a copy already there is
+# replaced whole or not at all. A server running from that copy is stopped
+# first; opening the new copy starts it again (start(), below). INSTALLED
+# names the installed copy; on failure the reason is on stderr.
+INSTALLED=
+install_into() {
+  local dir="$1" name dest tmp old err copied=1
+  name="$(basename "$APP")"
+  if ! mkdir -p "$dir" 2>/dev/null || ! dir="$(cd "$dir" 2>/dev/null && pwd -P)"; then
+    echo "Could not create the folder $1." >&2
+    return 1
+  fi
+  dest="$dir/$name"
+  if [ "$dest" = "$APP" ]; then
+    INSTALLED="$dest"
+    echo "This copy of ACTIVATE Studio is the one in $dir already."
+    return 0
+  fi
+  case "$dir/" in "$APP"/*) echo "ACTIVATE Studio cannot be installed inside itself ($dir)." >&2; return 1 ;; esac
+  if [ ! -w "$dir" ]; then
+    echo "$dir is not writable for you. The Applications folder in your home folder (~/Applications) is." >&2
+    return 1
+  fi
+  tmp="$dir/.$name.install"
+  old="$dir/.$name.replaced"
+  rm -rf "$tmp" "$old"
+  # ditto on a Mac keeps the bundle as signed; cp where there is none (tests).
+  if command -v ditto >/dev/null 2>&1; then
+    err="$(ditto "$APP" "$tmp" 2>&1)" || copied=0
+  else
+    err="$(cp -pPR "$APP" "$tmp" 2>&1)" || copied=0
+  fi
+  if [ "$copied" = 0 ] || [ ! -x "$tmp/Contents/MacOS/$(basename "$name" .app)" ]; then
+    rm -rf "$tmp"
+    err="${err##*$'\n'}"
+    echo "Copying ACTIVATE Studio to $dir failed: ${err:-the copy is incomplete}." >&2
+    return 1
+  fi
+  # A download carries the quarantine mark, and macOS opens a marked app that
+  # Finder did not move from a read-only copy elsewhere (App Translocation),
+  # where it could not update itself. The mark is removed from this copy
+  # only: it is the same notarized bundle Gatekeeper assessed when the copy
+  # being installed from opened, and the updater and install.sh put their
+  # copies in place without it too.
+  if command -v xattr >/dev/null 2>&1; then xattr -dr com.apple.quarantine "$tmp" 2>/dev/null || true; fi
+  if [ -e "$dest" ]; then
+    if running_from "$dest"; then stop; fi
+    if ! mv "$dest" "$old" 2>/dev/null; then
+      rm -rf "$tmp"
+      echo "Could not replace $dest: it could not be moved aside." >&2
+      return 1
+    fi
+  fi
+  if ! mv "$tmp" "$dest" 2>/dev/null; then
+    if [ -e "$old" ]; then mv "$old" "$dest" 2>/dev/null || true; fi
+    rm -rf "$tmp"
+    echo "Could not move the new copy into $dest." >&2
+    return 1
+  fi
+  rm -rf "$old"
+  INSTALLED="$dest"
+  echo "Installed ACTIVATE Studio in $dest."
+}
+
+# The copy macOS runs from a disk image, or from a read-only copy of where it
+# was downloaded (App Translocation): not installed yet.
+not_installed() {
+  case "$APP" in */AppTranslocation/*|/Volumes/*) return 0 ;; esac
+  return 1
+}
+
+# Opened before it is installed. The app's window asks itself and runs
+# --install; without the window, a macOS dialog offers the same, and in a
+# terminal the way to install is printed.
+offer_install() {
+  local dir="$HOME/Applications" dest answer
+  dest="$dir/$(basename "$APP")"
+  if printing; then
+    echo "ACTIVATE Studio is not installed yet: it runs from its disk image or the folder it was downloaded to. Install it in ~/Applications (no administrator rights needed) with:" >&2
+    echo "  \"$CONTENTS/MacOS/$(basename "$APP" .app)\" --install" >&2
+    echo "or double-click it in Finder and choose Install." >&2
+    exit 1
+  fi
+  answer="$(osascript -e 'on run argv' -e 'display dialog (item 1 of argv) with title "ACTIVATE Studio" buttons {"Cancel", "Install"} default button "Install" cancel button "Cancel"' -e 'end run' \
+    "ACTIVATE Studio is not installed yet: it runs from its disk image or the folder it was downloaded to. Install puts it in the Applications folder in your home folder ($dir), with no administrator rights needed, and opens it from there. It updates itself there." 2>/dev/null || true)"
+  case "$answer" in *Install*) ;; *) exit 0 ;; esac
+  if [ -e "$dest" ]; then
+    answer="$(osascript -e 'on run argv' -e 'display dialog (item 1 of argv) with title "ACTIVATE Studio" buttons {"Cancel", "Replace"} default button "Replace" cancel button "Cancel"' -e 'end run' \
+      "ACTIVATE Studio is already in $dir. Replace that copy with this one? Your index, settings and libraries stay as they are, in ~/Library/Application Support/ACTIVATE Studio." 2>/dev/null || true)"
+    case "$answer" in *Replace*) ;; *) exit 0 ;; esac
+  fi
+  local out
+  if ! out="$(install_into "$dir" 2>&1)"; then
+    say "${out##*$'\n'}"
+    exit 1
+  fi
+  open -n "$dest"
+  exit 0
+}
+
 MODE=agent
 start() {
-  case "$APP" in
-    */AppTranslocation/*|/Volumes/*)
-      say "Move ACTIVATE Studio to an Applications folder, then open it from there. Applications in your home folder (~/Applications) works without admin rights."
-      exit 1 ;;
-  esac
+  if not_installed; then offer_install; fi
   if ! mkdir -p "$DATA/index" "$DATA/logs" 2>/dev/null; then
     say "ACTIVATE Studio could not create its data folder, $DATA."
     exit 1
@@ -334,7 +451,7 @@ plan() {
     printf 'app	%s
 ' "$APP"
     # The copies updates keep beside it (.<name>.previous and others).
-    for side in previous new unpack failed; do
+    for side in previous new unpack failed install replaced; do
       d="$(dirname "$APP")/.$(basename "$APP").$side"
       [ -e "$d" ] && printf 'update-copy	%s
 ' "$d"
@@ -444,8 +561,9 @@ uninstall() {
 }
 
 case "${1:-}" in
+  --install) install_into "${2:-$HOME/Applications}" ;;
   --stop) stop; echo "ACTIVATE Studio is stopped; opening the app starts it again." ;;
   --uninstall) shift; uninstall "$@" ;;
-  --help|-h) sed -n '2,20p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' ;;
+  --help|-h) awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "${BASH_SOURCE[0]}" ;;
   *) start ;;    # Finder may pass -psn_... on older systems
 esac
