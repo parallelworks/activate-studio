@@ -2,6 +2,59 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.165 (2026-10-23)
+
+### feat(stats): a fast semantic map with clusters, drill-down and 3D; both maps zoom, pan and go full screen (#561)
+
+The semantic map on the Stats page did not scale, and both maps were fixed-size and static. This PR rebuilds the map's computation and makes both maps zoom, pan, go full screen, and (for the semantic map) turn in 3D.
+
+**Why**
+
+`server/src/topology.ts` dumped every passage vector as JSON text (about 4 KB a passage) through `gufi_sqlite3`, averaged and projected them in the server, and cached the result keyed on the newest db's time. So any index change recomputed it on the next page load. On a Full index of the 17,000-file test corpus (144,736 passages, 14,472 files with embeddings), the dump passed V8's maximum string length. The server threw `RangeError: Invalid string length` inside a child-process callback, an uncaught exception that ends the server, at 674 MB resident.
+
+**What changes**
+
+- `indexer/semantic_map.py` (numpy, from the ONNX packages):
+  - It reads each folder's vectors straight from sqlite-vec's tables, without the extension: `gvec_rowids` gives a passage's chunk and offset, `gvec_vector_chunks00` holds the float32 vectors, and `gvec_chunks` has the validity bits. I checked these values against `vec_to_json`.
+  - It averages them per file into a scratch file, so memory stays bounded.
+  - It fits a PCA on at most 20,000 files and projects every file to 3 components for the map and 16 for k-means (4 to 14 clusters, largest first, named for their folders as before).
+  - It writes `INDEX_DIR/semantic-map/overview.json` (each cluster's label, count and x/y/z centroid; a sample of at most 3,000 files with at least 25 per cluster) and `cluster-<c>.json` (each cluster's full list, shuffled). The result is written to a scratch folder and swapped in whole.
+  - It exits 3 without numpy. The server then draws a smaller map itself from at most 4,000 files and marks it `fallback`.
+- `server/src/semanticMap.ts`:
+  - `GET /api/kb/semantic-map` reads the overview, and `GET /api/kb/semantic-map/cluster/:c?offset=&limit=` pages a cluster (2,000 by default, at most 5,000). Neither ever computes.
+  - Rebuilds run in the background, 5 s after a build's meaning phase embeds anything or prunes, and at most every 10 minutes after a sync's. They are coalesced, and a rebuild requested while one runs runs once more afterwards. A missing map is made once on first read.
+  - It reports `reason: off` when search by meaning is off for the main folder.
+  - The map folder is deleted with the index, put aside on a folder change, and moved with the index.
+- `web/src/components/CorpusMaps.tsx`:
+  - **Semantic map, overview and drill-down.** Clusters are drawn as regions sized by file count over the sample, with names in screen space kept inside the canvas. A legend gives short names and counts. Clicking a cluster or its chip opens all of its files, loaded a page at a time; zooming the overview loads more files for the clusters in view (capped). Back returns to the overview. The status line reads, for example, "2,999 of 14,472 files shown; click a cluster for all of its files."
+  - **3D.** A 2D/3D toggle, using a canvas projection of my own with no new dependency.
+    - Drag orbits; shift-drag or right-drag pans; wheel or pinch zooms; arrows turn.
+    - Points are shaded by depth and sorted far to near. Labels sit at the projected centroids.
+    - An optional slow turn is off by default and hidden under prefers-reduced-motion.
+    - Hover and click work on the projected points.
+  - **Topology.** The treemap moves to a canvas with one nested layout four levels deep. Zooming draws the deeper levels where their parent has room, with names kept on screen. Clicking a directory still opens it on its own, and the view resets on a new directory.
+  - **Both maps.** Wheel or pinch zooms about the pointer, drag pans, and double-click zooms in. The keys are +, -, the arrows and 0. A toolbar has Zoom in, Zoom out, Reset view and Full screen. Full screen is a full-window overlay (the UI package's Modal stops at 672 px); Escape or Close leaves it.
+- CI installs the pinned embedding packages (`fetch_embed.py --deps`), so the map's Python step runs in the tests. That needs `files.pythonhosted.org:443` on the Linux job's egress allowlist. The macOS runner's Python 3.14 has no pinned wheels, so there the step is optional and the map's build tests skip. `check_app.sh` builds a map from the app's own Python and numpy, and in this PR's macOS app build it reports "ok, the semantic map is made from those vectors with the app's numpy".
+
+**Measured** on the Full index of the 17,000-file test corpus (1,300 folders, 144,736 passages, 14,472 files with embeddings), on a shared 20-core Linux host:
+
+| | before | after |
+|---|---|---|
+| computing the map | crashed after 4.6 s (`RangeError`), 674 MB resident | 2.5 s (1.8 s reading vectors), 299 MB peak, once, in the background |
+| overview response | would have carried every file | 504 KB (116 KB gzipped), 12 ms |
+| a cluster page (2,000 files) | none | 290 KB, 5 ms |
+
+In headless Chromium:
+- **3D frame rate:** turning held 60 fps with 7,678 points (the sample plus pages loaded by an earlier zoom) and in a 1,794-file cluster. 3D caps a cluster at 6,000 points.
+- **1300 px wide, then 740 px wide:** overview; keyboard zoom (+ +, then 0) with the extra files loading (2,999 to 6,256); drill-down via the legend and Back; 3D with orbit drag; full screen and Escape; treemap zoom to 9.5× showing nested levels.
+- **Screenshots:** I checked them for label clipping and overlap. Two fixes came out of that: names kept inside the canvas, and parent names kept in their header strip.
+
+**Tests**
+- Server: `semanticMap.test.mjs` covers the Python step on a fixture index in sqlite-vec's layout, including a passage in an invalid slot; the read-only routes and paging; coalesced rebuilds; one build for a missing map; and `off`. Suite: 498 pass, 4 skip (ONNX model tests).
+- Web: `corpusMapsView.test.tsx` covers zoom about the pointer, clamping, the 3D projection (known coordinates at known rotations), nearest-point hover with the front point winning, overview, drill-down and Back, keyboard zoom and reset, the 2D/3D toggle, hover and click-to-open, full screen and Escape, the "off" message, and the treemap's zoom, drill and full screen. Suite: 227 pass.
+
+**Not verified here:** the Mac app build runs the new `check_app.sh` step in CI. WebKit rendering and trackpad pinch can only be checked on a Mac.
+
 ## v1.164 (2026-10-23)
 
 ### fix: Delete index and Remove ask in a dialog, red where they delete; Search says what it can match (#556)
@@ -100,6 +153,10 @@ Two gaps were found and closed along the way: `.odt` headers and footers (from `
 - Server: 502 passed, 4 skipped (the ONNX tests that need model files). Web: 219 passed.
 
 **Docs:** HELP, REFERENCE, MACOS and NOTICE are updated, and `indexer/requirements.txt`.
+
+### Change log through v1.164 (#564)
+
+Regenerated with `node scripts/release-notes.mjs --changelog --next v1.164` before tagging v1.164.
 
 ## v1.163 (2026-10-23)
 
