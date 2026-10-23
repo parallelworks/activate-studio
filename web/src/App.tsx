@@ -1,5 +1,5 @@
 import { ReactElement, Suspense, lazy, useEffect, useRef, useState } from 'react'
-import { IconButton, LetterBadge, SearchInput } from '@parallelworks/ui'
+import { IconButton, SearchInput } from '@parallelworks/ui'
 import { buildOpenHash, parseOpenHash } from './nav'
 import { currentLibrary, setLibrary, settleLibraries } from './api'
 import { rememberHash } from './lastLocation'
@@ -28,6 +28,7 @@ import { onThemeChoice } from './theme'
 import { FullViewHost, RunPane } from './components/RunPane'
 import { PanelToggle, StatusPanel } from './components/StatusPanel'
 import { setPanelView } from './panelState'
+import { DEFAULT_MARK } from './components/EmptyChatBrand'
 
 type ViewId = 'chat' | 'library' | 'search' | 'query' | 'overview' | 'history' | 'agents' | 'workflows' | 'settings' | 'help'
 export type Display = { kind: 'file'; target: string; q?: string; lib?: string } | { kind: 'workflow_dag'; target: string }
@@ -444,9 +445,9 @@ export default function App() {
                 so a returning visitor never sees the generic name swap to the
                 deployment's. A first-ever visit has nothing to remember, and
                 shows the slot empty rather than the wrong name. */}
-            {brandIcon
-              ? <img className="brand-icon" src={brandIcon} alt="" />
-              : <LetterBadge className="brand-badge" text={(cfg.appName[0] ?? 'S').toUpperCase()} />}
+            {/* With no icon uploaded, the Studio's own mark, as the app and
+                the empty chat show it. */}
+            <img className="brand-icon" src={brandIcon ?? DEFAULT_MARK} alt="" />
             {(cfg.loaded || cfg.brandRemembered) && <span className="brand-text"><b>{cfg.appName}</b></span>}
           </div>
           <IconButton

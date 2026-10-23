@@ -345,10 +345,6 @@ main.content { min-height: 0; min-width: 0; background: var(--pw-content-bg); }
 }
 .sidenav-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; padding: 0 4px; }
 .sidenav-brand { display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 26px; }
-.brand-badge {
-  width: 24px; height: 24px; border-radius: 6px; border-color: var(--theme-accent);
-  background: var(--theme-accent); color: var(--theme-accent-text); font-weight: 800; font-size: 13px;
-}
 .brand-icon { width: 26px; height: 26px; flex-shrink: 0; object-fit: contain; }
 .brand-text { font-size: 14px; color: var(--pw-muted); white-space: nowrap; overflow: hidden; }
 .brand-text b { color: var(--pw-text); font-weight: 600; margin-right: 3px; }
