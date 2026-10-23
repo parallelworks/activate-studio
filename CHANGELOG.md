@@ -2,7 +2,37 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
-## v1.159 (2026-10-23)
+## v1.160 (2026-10-23)
+
+### fix(deploy): the ONNX backend is set up on every launch, from wheels the bundle carries (#549)
+
+A workflow deployment launched with indexing on launch turned off kept the older GGUF model for search by meaning. Two gaps caused this:
+
+- The ONNX packages were fetched only inside the index step, which exits early when `run_index` is false.
+- A system without outbound network could not download them at all.
+
+A relocated index also got the ONNX model only in that step.
+
+**Changes** (`deploy/workflow.yaml` and `deploy/workflow-cfd-studio.yaml`):
+
+- A new `pull_software` step, **Search by meaning packages and models**, runs on every launch. It is skipped in cleanup and container mode.
+  - It places `minilm384.gguf` and a link to `minilm-l6` under a relocated `INDEX_BASE/models`.
+  - It installs the packages for the Python the server will run: the newest python3.x from 3.10 up, the same choice `server/src/config.ts` makes.
+  - It installs only what is missing, and its log names the backend in use.
+- The index step no longer does any of this.
+- `deploy/make_bundle.sh` fills `app/indexer/wheels` with the pinned Linux x86_64 wheels for Python 3.11 to 3.13, checked against their SHA-256. That adds 120 MB to the bundle. `fetch_embed.py` installs from that cache with no network; a Python with no bundled wheels downloads its own.
+- `docs/DEPLOY.md` describes this.
+
+**Checked:**
+
+- With the network blocked, `fetch_embed.py` installed onnxruntime, tokenizers and numpy from the bundled cache, and they import.
+- The step, run twice against a copy of the app tree with a relocated index:
+  - The first run installs from the wheels, copies the GGUF model, links `minilm-l6`, and reports "the ONNX backend, for Python 3.12.3".
+  - The second run finds everything in place and skips the install.
+- Both workflow files parse.
+- Server suite: 493 pass and 4 skip, the ONNX tests that need the model files.
+
+## v1.159 (2026-10-22)
 
 ### feat(index): a Faster speed for search by meaning, and the README on its levels (#546)
 
@@ -68,6 +98,10 @@ The documents folder is never removed. Without `--purge`, behavior is unchanged.
 - Server suite: 493 passed, 4 skipped (the ONNX model tests, which need the models). Web suite: 215/215.
 
 **Mac only:** the Swift compiles only in the macOS CI job. The dialog itself, and whether WebKit or preferences rewrite anything on quit, can only be checked on a Mac.
+
+### Change log through v1.159 (#548)
+
+Regenerated with `node scripts/release-notes.mjs --changelog --next v1.159` before tagging v1.159.
 
 ## v1.158 (2026-10-22)
 
