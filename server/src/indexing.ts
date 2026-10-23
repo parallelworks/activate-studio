@@ -413,8 +413,7 @@ function runTool(ctx: JobCtx, ph: ReturnType<typeof phase> | null, cmd: string, 
         } catch { /* a malformed line is dropped */ }
         return
       }
-      // gufi_dir2index notes that the staging directory made for it exists.
-      if (!line.trim() || /Already exists!$/.test(line)) return
+      if (!line.trim() || ALREADY_EXISTS.test(line)) return
       out.push(line)
       // What a program reports on success is worth keeping for a build; a
       // folder's routine pass would fill the log with it.
@@ -423,7 +422,7 @@ function runTool(ctx: JobCtx, ph: ReturnType<typeof phase> | null, cmd: string, 
     createInterface({ input: child.stderr! }).on('line', line => {
       last = Date.now()
       const t = line.trim()
-      if (!t) return
+      if (!t || ALREADY_EXISTS.test(t)) return
       ctx.log(`${name}: ${t.slice(0, 500)}`)
       errTail.push(t)
       if (errTail.length > 20) errTail.shift()
@@ -483,12 +482,21 @@ async function countDbs(root: string): Promise<number> {
   return n
 }
 
-/** Names: gufi_dir2index into `staging`; returns the tree it wrote. */
+/** gufi_dir2index notes, on either stream, that the staging folder made
+ *  for it exists: expected, and not worth a line in the log. */
+const ALREADY_EXISTS = /Already exists!\s*$/
+
+/** Names: gufi_dir2index into `staging`; returns the tree it wrote. The
+ *  staging folder is emptied first: its name comes from the job number,
+ *  which starts again at 1 when the Studio does, so a build that stopped
+ *  partway leaves one a later build would otherwise write over, keeping
+ *  folders deleted since. */
 async function namesPhase(ctx: JobCtx, src: string, staging: string, maxLevel0 = false): Promise<string> {
   const ph = phase(ctx, 'names')
   ph.start()
   const total = await countDirs(src, maxLevel0 ? 0 : null)
   ph.progress(0, total)
+  await fsp.rm(staging, { recursive: true, force: true })
   await fsp.mkdir(staging, { recursive: true })
   const built = path.join(staging, path.basename(src))
   // gufi_dir2index says nothing until it is done; the databases it has

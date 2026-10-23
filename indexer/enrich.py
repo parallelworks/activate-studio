@@ -181,15 +181,19 @@ def extract_pdf(path: Path) -> str:
     (bundled with the macOS app), as --pdf-reader allows."""
     text = ''
     reader = OPTIONS['pdf_reader']
-    if reader in ('auto', 'pdftotext'):
+    # Only a pdftotext that can run: a PATH entry that cannot be searched, or
+    # a copy without execute permission, is no reader at all, and pypdf
+    # takes the file rather than the file failing.
+    pdftotext = shutil.which('pdftotext') if reader in ('auto', 'pdftotext') else None
+    if pdftotext:
         try:
             # -layout keeps columns and table cells apart; without it, rows run
             # together into one line and read badly in a snippet.
-            out = subprocess.run(['pdftotext', '-layout', '-q', str(path), '-'],
+            out = subprocess.run([pdftotext, '-layout', '-q', str(path), '-'],
                                  capture_output=True, text=True, timeout=180)
             if out.returncode == 0:
                 text = out.stdout or ''
-        except (FileNotFoundError, subprocess.TimeoutExpired):
+        except (OSError, subprocess.TimeoutExpired):
             pass
     if not text.strip() and reader in ('auto', 'pypdf'):
         try:
@@ -342,8 +346,16 @@ def image_cache_usable(text: str) -> bool:
     return bool(text.strip()) or not vision_model()
 
 
+def office_lock_file(name: str) -> bool:
+    """An Office (~$name) or LibreOffice (.~lock.name#) lock file: a few
+    bytes saying who has the document open, never a document itself."""
+    return name.startswith('~$') or name.startswith('.~lock.')
+
+
 def extract(path: Path) -> str | None:
     suffix = path.suffix.lower()
+    if office_lock_file(path.name):
+        return None
     try:
         if suffix in TEXT_SUFFIXES:
             return path.read_text(errors='replace')[:MAX_TEXT]

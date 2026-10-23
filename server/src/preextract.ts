@@ -174,6 +174,8 @@ export async function preExtract(opts: PreExtractOptions): Promise<PreExtractSum
     ? { engine: 'tesseract' as const, policy: 'thin' as const, maxPages: OCR_MAX_PAGES, pageTimeoutMs: OCR_PAGE_TIMEOUT_MS, timeoutMs: OCR_TIMEOUT_MS }
     : undefined
   const handles = (name: string): boolean => {
+    // An Office (~$name) or LibreOffice (.~lock.name#) lock file is not a document.
+    if (name.startsWith('~$') || name.startsWith('.~lock.')) return false
     const ext = path.extname(name).toLowerCase()
     return OFFICE_MARKDOWN_SUFFIXES.has(ext) || (native && ext === PDF_SUFFIX)
   }
