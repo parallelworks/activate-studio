@@ -2,6 +2,73 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.159 (2026-10-23)
+
+### feat(index): a Faster speed for search by meaning, and the README on its levels (#546)
+
+Settings, Indexing gains **Speed of search by meaning**:
+
+| Speed | Embeds per passage | Time per passage, one core | Ranking (MRR, 82 doc queries) |
+|---|---|---|---|
+| Standard (default) | the first 256 tokens | 26.6 ms | 0.540 |
+| Faster | the first 128 tokens (`embed.py --max-tokens 128`) | 11.5 ms | 0.521 |
+
+The model before v1.158 scored 0.491 on the same queries.
+
+Which libraries follow the setting:
+
+- The main folder sets it.
+- Libraries built of folders here follow it, as they follow the threads and readers.
+- Remote builds pass it too.
+
+The setting is disabled while the main folder's level is Off. A change embeds each index again, once, at its next build or sync, since the two speeds are different models to an index (`minilm-l6-mean-int8` and `-t128`). Queries need nothing new: the query worker already serves both.
+
+The README gains a short section on search by meaning: the three levels, the two speeds, and how a clone fetches the ONNX backend. HELP and REFERENCE are updated.
+
+**Tests**
+
+- Server: 492 pass and 4 skip, the ONNX tests that need the model files. The new tests cover the setting's validation and default and the arguments embed.py gets.
+- Web: 214 pass.
+
+### feat(mac): Uninstall ACTIVATE Studio… in the app menu, listing everything it removes (#547)
+
+Before this, the app could be removed only from Terminal (`--uninstall [--purge]`). `--purge` also missed three things: an index moved elsewhere with Settings, Indexing; the indexes of libraries built into folders chosen for them; and the window's own data.
+
+**App menu:** a new item, **Uninstall ACTIVATE Studio…**, opens a dialog on the window.
+
+- The dialog lists what is removed and what is kept. **Also remove indexes, settings and logs** is ticked by default, and the list follows the checkbox.
+- **Uninstall** is styled as destructive. Return cancels.
+- Once confirmed, the window stops saving its frame and restorable state. With the data chosen, it clears its web data. It then runs the launcher, shows the launcher's output and quits.
+
+**Launcher plan:** `launcher.sh --uninstall --dry-run [--purge]` prints the plan without removing anything, one `kind<TAB>path` line each:
+
+- `server`, `app`, `update-copy`
+- with `--purge`: `data`, `index`, `library-index`, `window-data`
+- `keep-data` and `keep-documents` for what stays
+
+The dialog reads this plan, and the removal follows the same plan, so the two never differ.
+
+**`--purge` now also removes:**
+
+- **A moved index (`STUDIO_INDEX_DIR`).** Only the Studio's entries (`gufi`, `extract`, `embed-cache.db*`, `folders`, `indexed-root`, build leftovers), and the folder only when it is left empty. The folder must hold the Studio's index.
+- **Libraries built into chosen folders** (from `INDEX_BASE/libraries.json`). Only folders holding the `.studio-index.json` manifest; there, the tree it names, the manifest and staging folders are removed, and the folder only when it is left empty.
+- **The window's data** under `~/Library`: `WebKit`, `Caches`, `HTTPStorages`, `Saved Application State` and `Preferences` for the bundle id.
+
+The documents folder is never removed. Without `--purge`, behavior is unchanged.
+
+**Settings, Server:** in the macOS app (`/api/setup/status` now carries `macApp`, the bundle path), a line says to use the menu item and gives the Terminal command.
+
+**Docs:** README, MACOS (the full list) and HELP.
+
+**Tests:**
+
+- `macApp.test.mjs` runs the dry run (with and without `--purge`) and the real removal against a fake home. The setup includes a moved index beside a file of the person's, a chosen library folder with a manifest and a file of the person's, one without a manifest, and window data. It asserts the exact lines, that only the Studio's entries go, and that the documents stay.
+- `setup.test.mjs` covers `macApp`, and `settingsGeneral.test.tsx` covers the Settings line.
+- `check_app.sh --launch` runs the dry run in the built app with its own Python.
+- Server suite: 493 passed, 4 skipped (the ONNX model tests, which need the models). Web suite: 215/215.
+
+**Mac only:** the Swift compiles only in the macOS CI job. The dialog itself, and whether WebKit or preferences rewrite anything on quit, can only be checked on a Mac.
+
 ## v1.158 (2026-10-22)
 
 ### feat(index): embed with ONNX Runtime and the int8 MiniLM model, with mean pooling (#539)
@@ -67,6 +134,10 @@ int8 ranks no worse than fp32 (MRR 0.540 against 0.517). This is a small evaluat
 Rebased on v1.156: #540's `--max-chunks` and `--documents-only` work with the ONNX backend, and the cache is shared between them. With the models present, the server suite passes 496 of 496, including 8 of 8 in the new file. The web suite passes 214 of 214. Without the models, as in CI, the 4 ONNX tests in the new file skip. `macApp.test.mjs` checks the new link.
 
 The mac-app workflow runs on this PR because `deploy/mac/**` changed. On the head before the rebase, its build passed every app check on a macOS 15 runner, including the ONNX embed with its marker and a search by meaning through the app's own server. The copy signed with a throwaway identity under the hardened runtime ran too. The container image built with the packages and its embed check passed. Notarization of the new binaries is left to the next release's sign job. Remote libraries keep the GGUF path, since their builds copy only `enrich.py` and `embed.py`.
+
+### Change log through v1.158 (#544)
+
+Regenerated with `node scripts/release-notes.mjs --changelog --next v1.158` before tagging v1.158.
 
 ## v1.157 (2026-10-22)
 
