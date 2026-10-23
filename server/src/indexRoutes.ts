@@ -198,7 +198,7 @@ export async function indexRoutes(app: FastifyInstance): Promise<void> {
     if (indexJobsRunning()) throw new KbError(409, 'Indexing is running; stop it or wait for it to finish, then move the index.')
     const from = INDEX_DIR
     const job = startOtherJob('move', `Moving the index to ${target}`, async log => {
-      for (const name of ['gufi', 'extract', 'embed-cache.db', 'folders', 'indexed-root']) {
+      for (const name of ['gufi', 'extract', 'embed-cache.db', 'folders', 'indexed-root', 'semantic-map']) {
         const src = path.join(from, name)
         if (!fs.existsSync(src)) continue
         const dst = path.join(target, name)

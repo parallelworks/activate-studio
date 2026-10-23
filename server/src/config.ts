@@ -27,6 +27,8 @@ export const EXTRACT_CACHE = path.join(INDEX_DIR, 'extract')
 /** Embeddings by the hash of the text embedded, so unchanged text is never
  *  embedded twice (indexer/embed.py). */
 export const EMBED_CACHE = path.join(INDEX_DIR, 'embed-cache.db')
+/** The semantic map of the main folder, made from its embeddings (semanticMap.ts). */
+export const SEMANTIC_MAP_DIR = path.join(INDEX_DIR, 'semantic-map')
 /** Where findGufiBin looks besides the environment, for tests to replace. */
 export interface GufiSearch {
   projectRoot: string

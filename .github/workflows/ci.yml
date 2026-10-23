@@ -66,10 +66,11 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends tesseract-ocr poppler-utils
-      # The .xls and .ppt readers, pinned with their SHA-256, where enrich.py
-      # finds them (indexer/.deps); their tests fail rather than skip without.
-      - name: install the document readers
-        run: python3 indexer/fetch_embed.py --deps indexer/.deps --readers-only
+      # The pinned packages beside the indexer, as a clone gets them: the .xls
+      # and .ppt readers, whose tests fail rather than skip without them, and
+      # numpy and the rest, so the semantic map's own build runs in the tests.
+      - name: install the document readers and embedding packages
+        run: python3 indexer/fetch_embed.py --deps indexer/.deps
 
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
@@ -104,6 +105,8 @@ jobs:
         run: brew install tesseract poppler
       - name: install the document readers
         run: python3 indexer/fetch_embed.py --deps indexer/.deps --readers-only
+      - name: install the embedding packages
+        run: python3 indexer/fetch_embed.py --deps indexer/.deps
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - run: pnpm test

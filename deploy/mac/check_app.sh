@@ -51,7 +51,7 @@ for f in \
   Resources/app/build-info.json Resources/app/package.json \
   Resources/app/server/dist/main.js Resources/app/server/node_modules/fastify/package.json \
   Resources/app/web/dist/index.html Resources/app/indexer/enrich.py Resources/app/indexer/embed.py \
-  Resources/app/indexer/embed_onnx.py Resources/app/indexer/embed_query.py \
+  Resources/app/indexer/embed_onnx.py Resources/app/indexer/embed_query.py Resources/app/indexer/semantic_map.py \
   Resources/app/indexer/reindex.sh Resources/app/docs/HELP.md Resources/app/CHANGELOG.md Resources/app/deploy/gufi-index.yaml \
   Resources/gufi/bin/gufi_query Resources/gufi/bin/gufi_dir2index Resources/gufi/bin/gufi_sqlite3 \
   Resources/gufi/lib/gufi_vt.dylib Resources/gufi/lib/vec0.dylib Resources/gufi/lib/lembed0.dylib \
@@ -207,6 +207,7 @@ if [ "$RUN" = 1 ]; then
     # embed.py at its first line, before it writes anything.
     check "the indexer embeds with the ONNX model" clean /bin/sh -c "'$R/python/bin/python3' '$R/app/indexer/embed.py' --index '$T/idx/corpus' --model '$R/models/minilm384.gguf' --gufi-sqlite3 '$G/bin/gufi_sqlite3' >'$T/embed-onnx.out' && grep -q 'model: minilm-l6-mean-int8 (onnx)' '$T/embed-onnx.out' && grep -q '0 errors' '$T/embed-onnx.out'"
     check "and names it in each folder's index" clean "$R/python/bin/python3" -c "import sqlite3, sys; sys.exit(0 if sqlite3.connect('$T/idx/corpus/db.db').execute('SELECT model FROM gvecmodel').fetchone()[0] == 'minilm-l6-mean-int8' else 1)"
+    check "the semantic map is made from those vectors with the app's numpy" clean /bin/sh -c "'$R/python/bin/python3' '$R/app/indexer/semantic_map.py' --index '$T/idx/corpus' --out '$T/semantic-map' >'$T/map.out' && '$R/python/bin/python3' -c 'import json, sys; d = json.loads(open(sys.argv[1]).read().strip().splitlines()[-1]); sys.exit(0 if \"available\" in d else 1)' '$T/map.out'"
     check "the older model still embeds through gufi_sqlite3" clean /bin/sh -c "'$R/python/bin/python3' '$R/app/indexer/embed.py' --index '$T/idx/corpus' --backend lembed --model '$R/models/minilm384.gguf' --gufi-sqlite3 '$G/bin/gufi_sqlite3' >'$T/embed-lembed.out' && grep -q 'model: minilm384 (lembed)' '$T/embed-lembed.out' && grep -q '0 errors' '$T/embed-lembed.out'"
     check "the query embedder answers with 384 values" clean /bin/sh -c "printf '%s\n' '{\"id\": 1, \"texts\": [\"lemon dessert\"]}' | '$R/python/bin/python3' '$R/app/indexer/embed_query.py' --onnx '$R/models/minilm-l6' | '$R/python/bin/python3' -c 'import base64, json, sys; l = [json.loads(x) for x in sys.stdin]; sys.exit(0 if l[0][\"ready\"] and len(base64.b64decode(l[1][\"vectors\"][0])) == 1536 else 1)'"
     # A PDF out of the box: downmark's binary first, the bundled pypdf for one
