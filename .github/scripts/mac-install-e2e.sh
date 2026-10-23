@@ -156,7 +156,9 @@ shot image-window
 ui_state "image open"
 
 # 3. The app on the image, opened through LaunchServices.
-open "$VOL/$APP_NAME.app"
+# open waits while macOS asks about an app from the internet, so it runs
+# in the background and the prompt is answered below.
+open "$VOL/$APP_NAME.app" &
 log "opened the app on the image"
 installed_at=
 prompt_seen=
@@ -220,7 +222,7 @@ if [ -n "$REPLACE" ]; then
   before="$(stat -f '%m' "$DEST")"
   osascript -e "tell application \"$APP_NAME\" to quit" >/dev/null 2>&1 || true
   sleep 3
-  open -n "$VOL/$APP_NAME.app"
+  open -n "$VOL/$APP_NAME.app" &
   log "opened the app on the image again"
   replace_seen=
   for _ in $(seq 1 45); do
