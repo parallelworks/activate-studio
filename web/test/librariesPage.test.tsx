@@ -286,7 +286,9 @@ describe('Settings, Libraries', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Add a library' }))
     expect(await screen.findByRole('button', { name: 'This computer' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Build an index of a folder' })).toBeInTheDocument()
-    expect(screen.getByLabelText('Source folder')).toBeInTheDocument()
+    expect(screen.getByLabelText('Folder to index')).toBeInTheDocument()
+    // The optional fields wait under More options.
+    expect(screen.queryByLabelText('Identifier')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'A remote system' }))
     // No workflow or scheduler on a computer of its own, even with a platform.
     expect(screen.queryByRole('button', { name: 'Platform workflow' })).toBeNull()
@@ -327,7 +329,7 @@ describe('Settings, Libraries', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Add a library' }))
     // Only this computer here: no Where choice, and build comes first.
     expect(screen.queryByRole('button', { name: 'A remote system' })).toBeNull()
-    fireEvent.change(await screen.findByLabelText('Source folder'), { target: { value: '~/papers' } })
+    fireEvent.change(await screen.findByLabelText('Folder to index'), { target: { value: '~/papers' } })
     expect(screen.getByRole('button', { name: 'Build the index' })).toBeDisabled()
     fireEvent.click(screen.getByRole('button', { name: 'Check' }))
     expect(await screen.findByText('~/papers does not exist yet; it is created, empty, when the build starts.')).toBeInTheDocument()
@@ -421,6 +423,7 @@ describe('Settings, Libraries', () => {
 
     s.fail = {}
     fireEvent.change(screen.getByLabelText('Index directory'), { target: { value: '/data/lab' } })
+    fireEvent.click(screen.getByRole('button', { name: 'More options' }))
     fireEvent.change(screen.getByLabelText('Label'), { target: { value: 'Lab' } })
     fireEvent.click(screen.getByRole('button', { name: 'Add library' }))
     expect(await screen.findByText('Lab', { selector: '.lib-name' })).toBeInTheDocument()
