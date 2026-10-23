@@ -2,6 +2,24 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.162 (2026-10-23)
+
+### fix(index): an unrunnable pdftotext falls back to pypdf, lock files are skipped, staging starts empty (#553)
+
+Three problems from a Full build's log on a Mac:
+
+- **`extract failed …: [Errno 13] Permission denied: 'pdftotext'`.** With no poppler installed, a PATH entry the server cannot search makes Python's lookup fail with EACCES. `extract_pdf` caught only FileNotFoundError, so the PDF failed instead of falling back to pypdf. pdftotext is now resolved with `shutil.which`, and any OSError leaves the file to pypdf. To reproduce, put an unrunnable `pdftotext` alone on PATH: v1.161 raises the PermissionError; this branch returns the text through pypdf.
+- **`~$RevisedBOM_pcbway.xlsx: … zip: not a valid zip file`.** That is Office's lock file, a few bytes naming who has the document open. Office (`~$`) and LibreOffice (`.~lock.`) lock files are now skipped by the converter (preextract.ts) and the text pass (enrich.py). They stay searchable by name.
+- **`gufi.staging-1 Already exists!`.** The staging folder is named after the job number, which starts again at 1 with the Studio. A build that stopped partway left one that the next build wrote over, keeping folders deleted since. It is emptied before gufi_dir2index runs. The tool's note that the folder exists is kept out of the log on stderr too, where it actually arrives.
+
+**Tests:** `server/test/indexerReaders.test.mjs` covers the lock-file check, a lock file extracting to nothing, and an unrunnable pdftotext as the only one on PATH. Server suite: 496 pass, 4 skip (ONNX model tests).
+
+### fix(brand): the sidebar shows the Studio's own mark when no icon is uploaded (#554)
+
+With no icon uploaded, the top of the sidebar showed a letter badge built from the Studio's name, such as "M" for a Studio named after its owner. The macOS app icon and the empty chat show the Studio mark (`/favicon.svg`, the same artwork as the app icon). The sidebar now shows that mark too. An uploaded icon, light or dark, still takes its place. The letter badge and its styles are removed.
+
+A web test checks the default mark in the rendered sidebar. Web suite: 216 pass.
+
 ## v1.161 (2026-10-23)
 
 ### fix(search): a file found several ways is labelled by the most exact one (#550)
@@ -19,6 +37,10 @@ On the test corpus after the fix:
 - `why did the rotor parts break`: `reports/blade-inspection-2026.md` [meaning]
 
 A new unit test covers the labels and the order. The server suite passes: 494, with 4 skipped (ONNX model tests).
+
+### Change log through v1.161 (#552)
+
+Regenerated with `node scripts/release-notes.mjs --changelog --next v1.161` before tagging v1.161.
 
 ## v1.160 (2026-10-23)
 
