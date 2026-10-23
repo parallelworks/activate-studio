@@ -2,6 +2,68 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.166 (2026-10-23)
+
+### perf(libraries): faster search, counts and sync on large indexes (#563)
+
+Search, the Details card, Stats, connecting a library and the folder sync were measured against large GUFI indexes, and the slow paths were changed. Search results are the same before and after; the one change in behavior is that a search across several libraries leaves out a library that has not answered in 20 seconds and names it.
+
+## How it was measured
+
+Two synthetic GUFI indexes were reached over ssh to localhost with a dedicated key: A, 449,064 folders and 1.5 million files (names only), and B, 300,000 files with full-text tables. The main folder was a local index. The host has 20 cores. Times are milliseconds through the Studio's API. Cold is the first request after a server start, with the OS file cache left warm; warm is the same request again. Before is main at 5335103.
+
+| Path | Before, cold | After, cold | Before, warm | After, warm |
+|---|---:|---:|---:|---:|
+| Name search, A, common word (10 hits) | 46,567 | 14,482 | 45,533 | 9,036 |
+| Name search, A, no match | 45,504 | 12,485 | 44,826 | 8,998 |
+| Word search, B | 12,041 | 3,273 | 5,459 | 2,066 |
+| Search across all libraries, common word | 59,102 | 14,547 | 50,464 | 11,897 |
+| Search across all libraries, two words | 57,356 | 14,542 | 50,779 | 11,874 |
+| Name search, local main folder | 2,238 | 2,377 | 2,239 | 2,157 |
+| Library tree, top of A (1,968 entries) | 816 | 226 | 259 | 211 |
+| Library tree, a deep folder of A | 119 | 43 | 78 | 27 |
+| Details card, A selected | 100,573 | 16 | 101,222 | 6 |
+| Details card, A, Count size and types | | 21,470 | | 6 |
+| Details card, B selected | 19,923 | 5 | 14,160 | 6 |
+| Details card, B, Count size and types | | 4,450 | | 6 |
+| Details card, a folder of A | 391 | 70 | 164 | 64 |
+| Stats, A | 51,321 | 10,890 | 1 | 1 |
+| Stats, all libraries | 13,434 | 2,822 | 969 | 1 |
+| Index status | 2 | 2 | 1 | 1 |
+| Connect A: test, then add | 23,106 | 4,675 | | |
+| Folder sync pass over the tree of A | 21,536 to 24,257 | 5,682 | | |
+| A further ssh session to the same host | 293 | 6 | | |
+
+The sync pass before ran on the server's thread, one await per folder and file; after, it runs on a worker thread, and the server's thread was never held more than 50 ms during it. The name search for a common word on A used to bring back 61,944 rows (13 MB) over ssh to keep 10; it now brings back the 10 (1.9 KB).
+
+## What was slow
+
+A remote `gufi_query` always ran with 4 threads; at 16 the same name search on A takes 14 s against 47 to 57 s at 4. Name and full-text search sent every folder's matches back and cut them to the limit in the server. Each remote host had one session, so a search's name, text and meaning queries and the card's two counts ran one after another. The Details card counted the whole index each time a library was selected, about 100 s for A, and kept the answer 20 seconds. Stats for A took 51 s cold. Connecting a library ran the connection test's count twice, once for Test and again for Add. The sync walked the folder with one await per entry, 22 to 24 s per pass for this tree. Listing a folder and the index status were already quick.
+
+## What changed
+
+- `remoteExec.ts`: a remote `gufi_query`, and a remote build, runs with the host's processor count up to 16 (`nproc`, else `getconf`, else `sysctl`; 4 when none answers, asked again later). `STUDIO_REMOTE_THREADS` sets one count for every host. Up to three sessions per host (`STUDIO_REMOTE_SESSIONS`, 1 to 8): a request takes an idle session, else opens one, else waits on the least busy.
+- Plain ssh sessions share one connection: `ControlMaster=auto`, `ControlPersist=600`, and a socket named with 12 hex characters of the destination and port, quoted in the option since a folder may have spaces in it. The socket's folder is the first of `$XDG_RUNTIME_DIR/activate-studio` (where set), `/tmp/activate-studio-<uid>`, and `INDEX_BASE/ssh` that is short enough and the user's alone: it is made with mode 700 when missing and checked with `lstat` before each session as a directory, not a link, owned by the user, with mode 700, so a folder another user made first in `/tmp`, or a link put in its place, is passed over. ssh binds the socket at its path plus 17 characters and macOS allows 104 bytes, so the path stays within 86; the `/tmp` folder fits every macOS user name, where the data folder under `~/Library/Application Support` did not fit names over about 12 characters. With no usable folder, or `STUDIO_SSH_SHARE=0`, each session logs in on its own. `~/.ssh/config` is not changed.
+- `gufi.ts`: name and full-text search run as one aggregate `gufi_query` that keeps only the rows asked for, in each thread and in the merge. Local `gufi_query` runs use one thread per core up to 16 (8 before). Folder and library counts are kept until the index changes: an index job ending here, or a remote library's recorded index time; ten minutes here and an hour for a remote library at most. Two requests for the same counts share one query.
+- `libraryScope.ts`: a search across several libraries gives each 20 seconds (`STUDIO_SEARCH_DEADLINE_MS`). A late library is left out and named in `slow`; the Search page and the chat's `search_kb` say so. One library searched alone is waited for. The `gufi_vt` engine is unchanged.
+- The Details card does not count a remote library's whole index when it is selected. It shows the files and folders from the connection test and a **Count size and types** button (`count=1`). Folders are counted when clicked, as before.
+- Adding a library takes the result of a connection test of the same index that passed in the last two minutes. Test and Check always run afresh.
+- `dirScan.ts`: the sync walks the folder with synchronous calls on a worker thread, for the main folder and for libraries built from a folder here.
+
+Remote libraries stay read only, and nothing is written on the remote host apart from what a build already wrote.
+
+## Tests
+
+New `server/test/largeIndexes.test.mjs`: with a data folder over 90 bytes, the socket goes in the runtime folder, and the options read back through `ssh -G` with a space in the folder; without a runtime folder, or with a link in its place, it goes in `/tmp/activate-studio-<uid>`, made with mode 700; a folder that is a link, has mode 755, belongs to another uid, or is too long is passed over in order down to the data folder, and none at all turns sharing off; a dead master's socket (its process killed) is removed by the next ssh, which goes on to connect; the sync walk against a tree with known times, dot names and an excluded folder; a name search over 120 matches in 40 folders returning the limit, with the limit in the command; counts made once, shared while running, and made again after an index change. `sshLibraries.test.mjs`: thread counts from a host's `nproc` (3, and 64 capped at 16), 4 when nothing answers and asked again, and `STUDIO_REMOTE_THREADS`; adding after a test does not count the index again and Check does; a search across two libraries with one whose `gufi_query` answers 2 s late and a 500 ms deadline returns the other's hits and names the late one, and searching the late one alone waits for it. `remoteBuild.test.mjs`: the uncounted and counted Details answers for a remote library. Web: the Search page's note for a late library, and the card's counts and Count button.
+
+Server suite: 522 tests, 516 pass, 6 skipped (the four embedding-model tests as before, and the two semantic map tests from #561, which need numpy here and run in CI). Web suite: 237 pass. Both run after rebasing on main at 1c0e448, with #555, #556 and #561; the one conflict, the imports in `indexing.ts`, keeps both. The ssh tests use a runtime folder of their own under `/tmp` and remove it.
+
+Checked by hand against sshd on localhost: a session made the master in `/tmp/activate-studio-<uid>`; after `kill -9` of the master its socket stayed (`Control socket connect: Connection refused`), and the next ssh logged in (316 ms), removed the socket and became the new master; a session after that took 21 ms through it.
+
+## Not checked here
+
+The tests reach a host over ssh to localhost. Not checked against a remote cluster: the time an ssh login takes over a wide-area network and how much sharing saves there; `pw ssh` sessions with three per cluster; ControlMaster behavior after a network change or a sleeping laptop (a dead master is found by the keepalives within about 90 s); the processor count `nproc` reports on a login node with a cgroup or CPU quota policy, where `STUDIO_REMOTE_THREADS` is the fallback; how 16 threads affect other users of a shared login node; and indexes with rolled-up directories.
+
 ## v1.165 (2026-10-23)
 
 ### feat(stats): a fast semantic map with clusters, drill-down and 3D; both maps zoom, pan and go full screen (#561)
@@ -54,6 +116,10 @@ In headless Chromium:
 - Web: `corpusMapsView.test.tsx` covers zoom about the pointer, clamping, the 3D projection (known coordinates at known rotations), nearest-point hover with the front point winning, overview, drill-down and Back, keyboard zoom and reset, the 2D/3D toggle, hover and click-to-open, full screen and Escape, the "off" message, and the treemap's zoom, drill and full screen. Suite: 227 pass.
 
 **Not verified here:** the Mac app build runs the new `check_app.sh` step in CI. WebKit rendering and trackpad pinch can only be checked on a Mac.
+
+### Change log through v1.165 (#565)
+
+Regenerated with `node scripts/release-notes.mjs --changelog --next v1.165` before tagging v1.165.
 
 ## v1.164 (2026-10-23)
 
