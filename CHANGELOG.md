@@ -2,6 +2,24 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.161 (2026-10-23)
+
+### fix(search): a file found several ways is labelled by the most exact one (#550)
+
+Found while testing search end to end. On a 337-file test corpus, the query `sourdough` (a word only in the file's name, `sourdough-notes.md`) ranked that file first, but labelled it `meaning`.
+
+The cause: blending keeps the first entry for each file, and matches by meaning come before name matches. So a file whose name matched was shown as a match by meaning whenever its text was also close. That contradicts the Search page, which says each result shows how it matched.
+
+The fix: a file keeps its place in the results and is labelled by the most exact way it was found. Words come first, then name, then meaning.
+
+On the test corpus after the fix:
+- `sourdough`: `reports/sourdough-notes.md` [name]
+- `blade-inspection`: `reports/blade-inspection-2026.md` [name]
+- `zephyrine`: `reports/quarterly-budget-zephyrine.txt` [words]
+- `why did the rotor parts break`: `reports/blade-inspection-2026.md` [meaning]
+
+A new unit test covers the labels and the order. The server suite passes: 494, with 4 skipped (ONNX model tests).
+
 ## v1.160 (2026-10-23)
 
 ### fix(deploy): the ONNX backend is set up on every launch, from wheels the bundle carries (#549)
@@ -31,6 +49,10 @@ A relocated index also got the ONNX model only in that step.
   - The second run finds everything in place and skips the install.
 - Both workflow files parse.
 - Server suite: 493 pass and 4 skip, the ONNX tests that need the model files.
+
+### Change log through v1.160 (#551)
+
+Regenerated with `node scripts/release-notes.mjs --changelog --next v1.160` before tagging v1.160.
 
 ## v1.159 (2026-10-22)
 
