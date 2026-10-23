@@ -66,11 +66,12 @@ platform features work too.
 
 *What it reads:* PDFs and Word, PowerPoint and Excel files are read out
 of the box: downmark, which comes with the app, converts them, and the
-app's Python carries pypdf for a PDF downmark cannot read, and
-onnxruntime, tokenizers and numpy for the ONNX embedding model, so poppler is
-not needed. Older formats (`.ppt`, `.xls`, OpenDocument) are read through
-LibreOffice when it is installed in Applications, which also renders
-previews of Office documents; the app does not include it. Text in images
+app's Python carries pypdf for a PDF downmark cannot read, xlrd and olefile
+for `.xls` and `.ppt` files, and onnxruntime, tokenizers and numpy for the
+ONNX embedding model, so poppler is not needed. OpenDocument files are read
+with the standard library. LibreOffice, when it is installed in
+Applications, renders previews of Office documents and reads any file the
+built-in readers cannot; the app does not include it. Text in images
 and scanned pages is read by tesseract when it is installed
 (`brew install tesseract`), and images are described by a vision model when
 AI features are on and one is chosen under Settings, General, AI features.

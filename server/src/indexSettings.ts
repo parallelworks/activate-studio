@@ -25,7 +25,8 @@ export interface IndexSettings {
   ocr: boolean
   /** Describe images with the vision model, when AI features are on. */
   imageDescriptions: boolean
-  /** .ppt, .xls and OpenDocument files through an installed LibreOffice. */
+  /** An installed LibreOffice, for Office files the built-in readers cannot
+   *  read (and a .doc downmark cannot); previews use it either way. */
   legacyOffice: boolean
   /** Search by meaning: which passages get embeddings (see MeaningLevel). */
   meaning: MeaningLevel

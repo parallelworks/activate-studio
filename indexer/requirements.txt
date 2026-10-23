@@ -8,3 +8,10 @@
 #
 #     pip install -r indexer/requirements.txt
 pypdf
+#
+# xlrd and olefile read .xls and .ppt files (OpenDocument needs nothing).
+# They come with the macOS app and the container; a clone gets them, pinned,
+# with `python3 indexer/fetch_embed.py --deps indexer/.deps --readers-only`
+# (indexer/setup_gufi.sh does this with the rest).
+xlrd==2.0.2
+olefile==0.47

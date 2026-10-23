@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
-"""Fetch what the ONNX embedding backend needs, pinned in embed_deps.json.
+"""Fetch what the ONNX embedding backend and the document readers need,
+pinned in embed_deps.json.
 
   --deps DIR    onnxruntime, tokenizers and numpy wheels for one platform,
+                and xlrd and olefile (pure Python, for .xls and .ppt files),
                 unpacked into DIR (a site-packages, or indexer/.deps, which
-                embed_onnx.py adds to sys.path itself)
+                embed_onnx.py and enrich.py add to sys.path themselves);
+                with --readers-only, xlrd and olefile alone
   --model DIR   the int8 all-MiniLM-L6-v2 ONNX model and its tokenizer, as
                 DIR/model.onnx and DIR/tokenizer.json
 
@@ -103,6 +106,18 @@ def install_deps(target: Path, plat: str, cache: Path) -> None:
             shutil.rmtree(p, ignore_errors=True)
 
 
+def install_readers(target: Path, cache: Path) -> None:
+    """xlrd and olefile: pure-Python wheels, the same on every platform."""
+    target.mkdir(parents=True, exist_ok=True)
+    for pkg, w in PINS['readers'].items():
+        whl = fetch(w['url'], w['sha256'], cache)
+        with zipfile.ZipFile(whl) as z:
+            for top in {n.split('/', 1)[0] for n in z.namelist()}:
+                shutil.rmtree(target / top, ignore_errors=True)
+            z.extractall(target)
+        print(f'{pkg} {w["version"]} into {target}')
+
+
 def install_model(target: Path, cache: Path) -> None:
     target.mkdir(parents=True, exist_ok=True)
     for name, f in PINS['model']['files'].items():
@@ -120,12 +135,15 @@ def main() -> int:
     ap.add_argument('--model', help='put model.onnx and tokenizer.json in this directory')
     ap.add_argument('--platform', default='', help=f'wheels for this platform (default {this_platform()})')
     ap.add_argument('--cache', default='', help='keep downloads here (default: a folder in the temp directory)')
+    ap.add_argument('--readers-only', action='store_true', help='with --deps, only xlrd and olefile')
     args = ap.parse_args()
     if not args.deps and not args.model:
         ap.error('give --deps, --model, or both')
     cache = Path(args.cache) if args.cache else Path(tempfile.gettempdir()) / 'studio-embed-cache'
     if args.deps:
-        install_deps(Path(args.deps), args.platform or this_platform(), cache)
+        install_readers(Path(args.deps), cache)
+        if not args.readers_only:
+            install_deps(Path(args.deps), args.platform or this_platform(), cache)
     if args.model:
         install_model(Path(args.model), cache)
     return 0

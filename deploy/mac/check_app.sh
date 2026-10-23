@@ -178,6 +178,7 @@ if [ "$RUN" = 1 ]; then
     echo "Running"
     check "node runs" clean "$R/node/bin/node" -e 'process.exit(process.versions.node.startsWith("26.") ? 0 : 1)'
     check "python runs, with sqlite3 and pypdf" clean "$R/python/bin/python3" -c 'import sqlite3, json, zipfile, urllib.request, pypdf'
+    check "the .xls and .ppt readers (xlrd, olefile) import in the app's Python" clean "$R/python/bin/python3" -B -c 'import xlrd, olefile'
     check "and with onnxruntime, tokenizers and numpy" clean "$R/python/bin/python3" -c 'import onnxruntime, tokenizers, numpy'
     # The window, started only far enough to hand --help to the launcher.
     check "the app's executable starts" sh -c "env -i HOME='$T/home' PATH=/usr/bin:/bin '$C/MacOS/ACTIVATE Studio' --help | grep -q -- --uninstall"

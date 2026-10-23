@@ -248,7 +248,11 @@ export interface IndexPhase {
 /** A format and what reads it on this host (GET /api/index/extractors). */
 export interface FormatReadiness { formats: string; readers: string[]; ok: boolean; note: string }
 export interface ExtractorInfo { name: string; available: boolean; covers: string; note: string; optional: boolean }
-export interface ReadersReport { extractors: ExtractorInfo[]; formats: FormatReadiness[]; missing: FormatReadiness[] }
+/** A tool this machine lacks: what it would add, and the install command here
+ *  (or, without one, where to start). The Studio shows these and runs none. */
+export interface InstallItem { name: string; adds: string; command: string | null; link: string | null }
+export interface InstallInfo { platform: string; brew: string | null; apt: boolean; items: InstallItem[] }
+export interface ReadersReport { extractors: ExtractorInfo[]; formats: FormatReadiness[]; missing: FormatReadiness[]; install?: InstallInfo }
 
 export interface IndexSettings {
   threads: number | null
