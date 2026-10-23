@@ -352,7 +352,11 @@ describe('the setup wizard', () => {
     expect(await screen.findByText('Building the index in the background: papers (1 of 3)')).toBeInTheDocument()
     s.jobDone = true
     expect(await screen.findByText('Index built')).toBeInTheDocument()
-    expect(screen.getByText('No other libraries yet')).toBeInTheDocument()
+    // It leads with one field: another folder here to index. The rest is a click away.
+    expect(screen.getByLabelText('Folder to index')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Identifier')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Over SSH' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Other kinds: an existing GUFI index, or one on another machine' }))
     fireEvent.click(screen.getByRole('button', { name: 'Browse for the index…' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Research' }, { timeout: 4000 }))
     await waitFor(() => expect(screen.getByRole('textbox', { name: 'Folder' })).toHaveValue('/home/u/Research'))
@@ -408,6 +412,7 @@ describe('the setup wizard', () => {
 
     // Without a signed-in pw CLI there is no cluster choice.
     heading('Other libraries')
+    fireEvent.click(screen.getByRole('button', { name: 'Other kinds: an existing GUFI index, or one on another machine' }))
     expect(screen.getByRole('button', { name: 'Over SSH' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'On ACTIVATE (pw ssh)' })).toBeNull()
     next()

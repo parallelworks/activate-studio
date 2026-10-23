@@ -22,7 +22,8 @@ interface BuildCheck { ok: boolean; steps: CheckStep[]; create: string[] }
  *
  * With `browse` (a single-user install) either folder can be picked from
  * the folders on this computer; `compact` leaves out the introduction, for
- * a page that gives its own.
+ * a page that gives its own. Only the folder that has to be given shows at
+ * first; the optional ones are under More options.
  */
 export function LocalLibraryForm({ onAdded, browse = false, compact = false, mode = 'connect' }: {
   onAdded?: (lib: SettingsLibrary) => void
@@ -38,6 +39,7 @@ export function LocalLibraryForm({ onAdded, browse = false, compact = false, mod
   const [check, setCheck] = useState<BuildCheck | null>(null)
   const [checked, setChecked] = useState('')
   const [confirming, setConfirming] = useState(false)
+  const [more, setMore] = useState(false)
   const set = (patch: Partial<typeof EMPTY>) => { setForm(f => ({ ...f, ...patch })); setError(null) }
   const indexName = form.indexRoot.trim().replace(/\/+$/, '').split('/').pop() || ''
   const sourceName = form.sourceRoot.trim().replace(/\/+$/, '').split('/').pop() || ''
@@ -90,40 +92,41 @@ export function LocalLibraryForm({ onAdded, browse = false, compact = false, mod
             : 'An index already built on this machine with GUFI. Read only: the Studio searches it and never writes to it.'}
         </p>
       )}
-      <div className="settings-grid">
+      <div className="local-library-main">
         {build ? (
-          <>
-            <div>
-              <Input label="Source folder" mono placeholder="~/Documents/papers" spellCheck={false} value={form.sourceRoot}
-                description="The folder to index. Created, empty, if it does not exist." onChange={e => set({ sourceRoot: e.target.value })} />
-              {browseButton('sourceRoot', 'folder')}
-            </div>
+          <Input label="Folder to index" mono placeholder="~/Documents/papers" spellCheck={false} value={form.sourceRoot}
+            description="The folder to index. Created, empty, if it does not exist." onChange={e => set({ sourceRoot: e.target.value })} />
+        ) : (
+          <Input label="Index directory" mono placeholder="/path/to/index" spellCheck={false} value={form.indexRoot}
+            description="The top of the GUFI index: the directory with db.db." onChange={e => set({ indexRoot: e.target.value })} />
+        )}
+        {build ? browseButton('sourceRoot', 'folder') : browseButton('indexRoot', 'index')}
+      </div>
+      <Button variant="ghost" size="sm" className="local-library-more" aria-expanded={more} onClick={() => setMore(m => !m)}>
+        {more ? 'Fewer options' : 'More options'}
+      </Button>
+      {more && (
+        <div className="settings-grid">
+          {build ? (
             <div>
               <Input label="Index folder" hint="optional" mono placeholder="in the Studio's own data folder" spellCheck={false} value={form.indexRoot}
                 description="Where the index is written: an empty or new folder, outside the source folder." onChange={e => set({ indexRoot: e.target.value })} />
               {browseButton('indexRoot', 'index folder')}
             </div>
-          </>
-        ) : (
-          <>
-            <div>
-              <Input label="Index directory" mono placeholder="/path/to/index" spellCheck={false} value={form.indexRoot}
-                description="The top of the GUFI index: the directory with db.db." onChange={e => set({ indexRoot: e.target.value })} />
-              {browseButton('indexRoot', 'index')}
-            </div>
+          ) : (
             <div>
               <Input label="Source directory" hint="optional" mono placeholder="/path/to/files" spellCheck={false} value={form.sourceRoot}
                 description="The indexed files, to open them. Without it, names and metadata only." onChange={e => set({ sourceRoot: e.target.value })} />
               {browseButton('sourceRoot', 'files')}
             </div>
-          </>
-        )}
-        <Input label="Label" hint="optional" placeholder={(build ? sourceName : indexName) || 'Shown in the Library switcher'} value={form.label}
-          onChange={e => set({ label: e.target.value })} />
-        <Input label="Identifier" hint="optional" placeholder="made from the label" spellCheck={false} value={form.id}
-          description="Lowercase letters, digits, dashes. Names the library's folder under All libraries."
-          onChange={e => set({ id: e.target.value })} />
-      </div>
+          )}
+          <Input label="Label" hint="optional" placeholder={(build ? sourceName : indexName) || 'Shown in the Library switcher'} value={form.label}
+            onChange={e => set({ label: e.target.value })} />
+          <Input label="Identifier" hint="optional" placeholder="made from the label" spellCheck={false} value={form.id}
+            description="Lowercase letters, digits, dashes. Names the library's folder under All libraries."
+            onChange={e => set({ id: e.target.value })} />
+        </div>
+      )}
       {browsing && (
         <div className="local-library-browse">
           <FolderBrowser key={browsing} start={form[browsing].trim() || '~'}

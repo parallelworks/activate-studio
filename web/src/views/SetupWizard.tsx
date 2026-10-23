@@ -281,6 +281,9 @@ export function SetupWizard({ onClose, pollMs = 1000 }: {
   const [me, setMe] = useState<KeyStatus | null>(null)
   const [aiSaved, setAiSaved] = useState<{ host: string; model: string } | null>(null)
   const [kind, setKind] = useState<OtherKind>('local')
+  // The libraries step leads with the common case, another folder here; the
+  // other kinds (an existing index, ssh, ACTIVATE) are a click away.
+  const [otherKinds, setOtherKinds] = useState(false)
   const [pwOffered, setPwOffered] = useState(false)
   const alive = useRef(true)
   useEffect(() => {
@@ -526,21 +529,35 @@ export function SetupWizard({ onClose, pollMs = 1000 }: {
 
         {step === STEP.libraries && (
           <>
-            <p className="muted" style={{ margin: 0 }}>
-              GUFI indexes that already exist, searched beside your folder. Other libraries are read only.
+            <p style={{ margin: 0 }}>
+              Optional: another folder on this computer to search beside your main one. It is indexed here, in the background,
+              and the Studio only reads it. Libraries can be added or removed at any time in Settings, Libraries.
             </p>
-            <SegmentedControl label="Where the index is" value={kind} onValueChange={setKind}
-              options={kinds.map(k => ({ value: k, label: KIND_TAB[k] }))} />
-            <p className="muted" style={{ margin: 0 }}>{KINDS[kind].description}</p>
-            {kind === 'local' && <LocalLibraryForm browse compact onAdded={lib => libraryAdded({ id: lib.id, label: lib.label })} />}
-            {kind === 'ssh' && <SshLibraryForm compact onAdded={libraryAdded} />}
-            {kind === 'pw' && <SshLibraryForm compact transport="pw" onAdded={libraryAdded} onOpenAccess={() => void openAccess()} />}
-            {others.length ? (
+            {!otherKinds ? (
+              status?.gufi?.found === false
+                ? <Callout tone="warning">GUFI was not found in {status.gufi.bin}, so another folder cannot be indexed here.</Callout>
+                : <LocalLibraryForm mode="build" browse compact onAdded={lib => libraryAdded({ id: lib.id, label: lib.label })} />
+            ) : (
+              <>
+                <SegmentedControl label="Where the index is" value={kind} onValueChange={setKind}
+                  options={kinds.map(k => ({ value: k, label: KIND_TAB[k] }))} />
+                <p className="muted" style={{ margin: 0 }}>{KINDS[kind].description}</p>
+                {kind === 'local' && <LocalLibraryForm browse compact onAdded={lib => libraryAdded({ id: lib.id, label: lib.label })} />}
+                {kind === 'ssh' && <SshLibraryForm compact onAdded={libraryAdded} />}
+                {kind === 'pw' && <SshLibraryForm compact transport="pw" onAdded={libraryAdded} onOpenAccess={() => void openAccess()} />}
+              </>
+            )}
+            <div>
+              <Button variant="ghost" size="sm" aria-expanded={otherKinds} onClick={() => setOtherKinds(o => !o)}>
+                {otherKinds ? 'Back to a folder on this computer' : 'Other kinds: an existing GUFI index, or one on another machine'}
+              </Button>
+            </div>
+            {others.length > 0 && (
               <div>
                 <p style={{ margin: '0 0 4px' }}>Added:</p>
                 <ul style={{ margin: 0, paddingLeft: 20 }}>{others.map(l => <li key={l.id}>{l.label}</li>)}</ul>
               </div>
-            ) : <EmptyState variant="bare" title="No other libraries yet" description="They can be added at any time in Settings, Libraries." />}
+            )}
           </>
         )}
 
