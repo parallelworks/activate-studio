@@ -5,7 +5,7 @@ import os from 'node:os'
 import path from 'node:path'
 process.env.KB_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'kb-'))
 process.env.INDEX_BASE = fs.mkdtempSync(path.join(os.tmpdir(), 'ix-'))
-const { parseSearchQuery, ftsExprFor, nameClause, nameWhere, wantsSemantic } = await import('../dist/gufi.js')
+const { parseSearchQuery, ftsExprFor, nameClause, nameWhere, wantsSemantic, blendHits } = await import('../dist/gufi.js')
 const fts = s => ftsExprFor(parseSearchQuery(s))
 
 test('bare words are whole words that must all be present', () => {
@@ -42,3 +42,15 @@ test('semantic hits join a question or topic, not an identifier or an operator q
   assert.equal(wantsSemantic('TIN OR EIN'), false)
   assert.equal(wantsSemantic('federation'), true)
 })
+
+test('a file found several ways keeps its place and says the most exact way: words, then name, then meaning', () => {
+  const hit = (path, mode) => ({ path, mode, snippet: '' })
+  const vec = [hit('notes/sourdough.md', 'vector'), hit('a.md', 'vector'), hit('both.md', 'vector')]
+  const names = [hit('notes/sourdough.md', 'name'), hit('both.md', 'name')]
+  const fts = [hit('both.md', 'fts'), hit('words.md', 'fts')]
+  const out = blendHits(fts, names, vec, 10)
+  assert.deepEqual(out.map(h => [h.path, h.mode]), [
+    ['both.md', 'fts'], ['words.md', 'fts'], ['notes/sourdough.md', 'name'], ['a.md', 'vector'],
+  ])
+})
+
