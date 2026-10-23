@@ -2,6 +2,43 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.168 (2026-10-23)
+
+### The minimum macOS covers the Python packages' native libraries (#570)
+
+`build_app.sh` listed the site-packages `.so` and `.dylib` files with an unquoted `$(find ...)`. The app's path (`ACTIVATE Studio.app`) has a space in it, so every path was split into pieces that `macho_check.py --print-minos` skipped as missing. None of the native libraries in onnxruntime, numpy and tokenizers counted toward `LSMinimumSystemVersion`.
+
+Changes:
+
+- `build_app.sh` reads the list NUL-separated into an array and logs how many files it found.
+- `check_app.sh` adds the same files to its Mach-O check (arm64, signature, minimum macOS, library resolution), which left them out before.
+- `macho_check.py --print-minos` writes a line to stderr for a path that does not exist, so a repeat of this shows in the build log.
+
+Checked on Linux against the pinned macOS wheels for cp312, unpacked under a path with a space: the old expression produced 66 fragments and 0 files, the new one 22 files. `--print-minos` gives 14.0, and the full check at `--max-minos 14.0` reports no problems, so the app's minimum stays macOS 14.0. The PR's mac-app build job runs both scripts on macOS.
+
+### Updates: the app checks by the clock, hourly, and when its window opens (#571)
+
+The macOS app scheduled its next update check with a single six-hour timer. Node's timers on macOS stop while the Mac sleeps, so on a laptop that sleeps the wait stretched well past six hours, and a new release was not offered until **Check now** was pressed.
+
+Changes in `server/src/updates.ts`:
+
+- A check is due when an hour has passed by the clock since the last one started or succeeded, or 30 minutes while a new release waits for its macOS build or the release server is unreachable, as before.
+- The first check still runs a minute after start. After that the server looks every five minutes whether a check is due.
+- `GET /api/updates`, which the window reads when it opens and then periodically, starts a due check in the background and answers `state: "checking"`. The window opening after a sleep therefore checks at once.
+- A failed check counts as an attempt, so a refusal such as GitHub's hourly limit waits out the interval instead of being retried at every poll.
+
+The interval goes from six hours to one. That is one unauthenticated request an hour per app, usually answered 304 against the stored ETag.
+
+Tests:
+
+- New: a clock jump with no timer running (as across a sleep) makes the next poll check.
+- New: the window's status request starts a due check once.
+- New: a failed check is not retried at every poll.
+- The two existing schedule tests set a short poll interval.
+- Server suite: 503 passed, 7 skipped. Web suite: 239 passed.
+
+Docs: HELP, MACOS, REFERENCE and the Settings, Updates description.
+
 ## v1.167 (2026-10-23)
 
 ### Index depth: one scale per library, from names to meaning on all files (#568)
@@ -50,6 +87,10 @@ The readers report (`server/src/extractors.ts`) shows the app's tesseract as bun
 Checked on Linux with the same CMake steps (macOS flags and checks left out): every sample format reads, and downmark's scanned-PDF path works with the built tesseract and `TESSDATA_PREFIX`. The macOS build, signing and run checks are this PR's `mac-app` job.
 
 Also fixed: `indexer/semantic_map.py` failed with a shape error for a library of 3 to 15 embedded files, since n files span at most n of the 16 directions it projects onto. The app check found it once its sample folder held four files with vectors; `semanticMap.test.mjs` now covers a five-file library.
+
+### Change log through v1.167 (#569)
+
+Regenerated with `node scripts/release-notes.mjs --changelog --next v1.167` before tagging v1.167.
 
 ## v1.166 (2026-10-23)
 
