@@ -6,6 +6,7 @@ import { RowCheck } from '../components/Explorer'
 import { ALL_LIBRARIES, LibrarySwitch } from '../components/LibrarySwitch'
 import { currentLibrary, onLibraryChange } from '../api'
 import { useAppConfig } from '../config'
+import { SEARCH_PLACEHOLDER, librariesInScope, meaningOn, searchReach, useSearchScope } from '../searchReach'
 import { GufiCommands, type GufiCommand } from '../components/GufiCommands'
 
 const MODE_LABEL: Record<SearchHit['mode'], string> = {
@@ -79,6 +80,7 @@ export function SearchView({ onOpen }: { onOpen: (path: string, q?: string) => v
   const allSelected = hits !== null && hits.length > 0 && sel.size === hits.length
 
   const cfg = useAppConfig()
+  const scope = useSearchScope()
   // A new library means new results: run the search again there.
   useEffect(() => onLibraryChange(() => { if (q.trim()) void run(lastLimit) }), [q, lastLimit])
   return (
@@ -91,7 +93,7 @@ export function SearchView({ onOpen }: { onOpen: (path: string, q?: string) => v
             value={q}
             onValueChange={setQ}
             onKeyDown={e => e.key === 'Enter' && run()}
-            placeholder={'Whole words; "exact phrase", OR, -exclude, prefix*'}
+            placeholder={SEARCH_PLACEHOLDER[searchReach(cfg.libraries ?? [], scope)]}
             autoFocus
           />
           <Button variant="primary" loading={busy} onClick={() => run()}>{busy ? 'Searching…' : 'Search'}</Button>
@@ -166,10 +168,6 @@ export function SearchView({ onOpen }: { onOpen: (path: string, q?: string) => v
   )
 }
 
-/** Whether search looks in a library by meaning: its level, for one the
- *  Studio builds, or the vectors it has, for one it only reads. */
-const meaningOn = (l: PublicLibrary) => (l.meaning === undefined || l.meaning === null ? l.caps.vectors : l.meaning !== 'off')
-
 /**
  * What a search here matches: names and the words in files always, and
  * meaning in the libraries that have it, said in one line under the box,
@@ -178,9 +176,8 @@ const meaningOn = (l: PublicLibrary) => (l.meaning === undefined || l.meaning ==
  */
 export function SearchHelp({ libraries }: { libraries: PublicLibrary[] }) {
   const [open, setOpen] = useState(false)
-  const [scope, setScope] = useState(currentLibrary())
-  useEffect(() => onLibraryChange(setScope), [])
-  const inScope = scope === ALL_LIBRARIES || libraries.length <= 1 ? libraries : libraries.filter(l => l.id === scope)
+  const scope = useSearchScope()
+  const inScope = librariesInScope(libraries, scope)
   const on = inScope.filter(meaningOn)
   const names = (ls: PublicLibrary[]) => ls.map(l => l.label).join(', ')
   const summary = !inScope.length || !on.length
