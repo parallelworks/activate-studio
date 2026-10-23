@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import {
-  Button, Callout, Field, Loader, Modal, NumberInput, SegmentedControl, Select, type SelectItem, Switch, Table,
+  Button, Callout, CopyButton, ExternalLink, Field, Loader, Modal, NumberInput, SegmentedControl, Select, type SelectItem, Switch, Table,
 } from '@parallelworks/ui'
-import { api, type IndexSettings, type IndexSettingsInfo } from '../api'
+import { api, type IndexSettings, type IndexSettingsInfo, type InstallItem, type ReadersReport } from '../api'
 import { useIndexStatus } from '../indexActivity'
 import { IndexControls, IndexJobView, LastBuild, useIndexControls } from './IndexActivity'
 import { FolderBrowser, errText, waitForRestart } from './PrimaryFolder'
@@ -141,7 +141,7 @@ export function IndexingSection({ visionModel = '', deploymentCred = null }: {
         <label className="ix-switch">
           <Switch checked={s.legacyOffice} disabled={!s.documents || saving !== null} onCheckedChange={v => void save({ legacyOffice: v }, 'legacyOffice')} />
           <span>
-            <span className="ix-switch-label">Older Office files (.ppt, .xls) and OpenDocument, through LibreOffice</span>
+            <span className="ix-switch-label">LibreOffice, for previews and for Office files the built-in readers cannot read</span>
             <span className="muted">{soffice?.note}</span>
           </span>
         </label>
@@ -196,6 +196,8 @@ export function IndexingSection({ visionModel = '', deploymentCred = null }: {
           </tr>
         ))}
       </Table>
+      <ReaderInstalls readers={info.readers} single={info.single} running={running}
+        onReaders={r => setInfo(i => (i ? { ...i, readers: r } : i))} onBuild={() => void controls.build()} />
 
       <h2 className="ix-h2">Where the index is kept</h2>
       <div className="settings-field">
@@ -232,3 +234,69 @@ export function IndexingSection({ visionModel = '', deploymentCred = null }: {
     </>
   )
 }
+
+/**
+ * Under the readers table: one line per tool this machine lacks, with what
+ * it adds and the command that installs it here, to copy and run in a
+ * terminal (the Studio never installs anything itself). Check again reads
+ * the report afresh; a tool found since is used from the next index update,
+ * which can be started at once.
+ */
+export function ReaderInstalls({ readers, single, running, onReaders, onBuild }: {
+  readers: ReadersReport
+  single: boolean
+  running: boolean
+  onReaders: (r: ReadersReport) => void
+  onBuild: () => void
+}) {
+  const [checking, setChecking] = useState(false)
+  const [found, setFound] = useState<string[]>([])
+  const [error, setError] = useState('')
+  const items = readers.install?.items ?? []
+  const check = async () => {
+    setChecking(true)
+    setError('')
+    try {
+      const before = new Set(items.map(i => i.name))
+      const next = await api.extractors(true)
+      const still = new Set((next.install?.items ?? []).map(i => i.name))
+      setFound([...before].filter(n => !still.has(n)))
+      onReaders(next)
+    } catch (e) { setError(errText(e)) } finally { setChecking(false) }
+  }
+  return (
+    <div className="ix-installs">
+      {items.map(item => <InstallLine key={item.name} item={item} />)}
+      {found.length > 0 && (
+        <Callout tone="success" className="ix-found"
+          action={single && !running ? <Button variant="primary" size="sm" onClick={onBuild}>Update the index now</Button> : undefined}>
+          Found {found.join(' and ')}. The next index update uses {found.length > 1 ? 'them' : 'it'}.
+        </Callout>
+      )}
+      {error && <p className="ix-note ix-warn" role="alert">{error}</p>}
+      <div className="ix-actions">
+        <Button variant="secondary" size="sm" loading={checking} onClick={() => void check()}>Check again</Button>
+        {items.length > 0 && <span className="muted ix-note">After installing, Check again.</span>}
+      </div>
+    </div>
+  )
+}
+
+function InstallLine({ item }: { item: InstallItem }) {
+  return (
+    <div className="ix-install">
+      <span>{item.adds}</span>
+      {item.command ? (
+        <span className="ix-install-cmd">
+          <code>{item.command}</code>
+          <CopyButton text={item.command} label={`the ${item.name} install command`} />
+        </span>
+      ) : item.link ? (
+        <span className="muted">Install <ExternalLink href={item.link}>Homebrew</ExternalLink> first, then install {item.name} with it.</span>
+      ) : (
+        <span className="muted">Install {item.name} with this computer&apos;s package manager.</span>
+      )}
+    </div>
+  )
+}
+

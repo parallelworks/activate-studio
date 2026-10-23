@@ -85,8 +85,9 @@ Stage: build
     echo "${MODEL_SHA256}  /opt/app/index/models/minilm384.gguf" | sha256sum -c -
     # The ONNX embedding backend (indexer/embed_onnx.py): onnxruntime,
     # tokenizers and numpy for the final stage's Python (bookworm's 3.11)
-    # in /app/indexer/.deps, and the int8 all-MiniLM-L6-v2 model, as pinned
-    # in indexer/embed_deps.json with their SHA-256. A clone's own .deps,
+    # in /app/indexer/.deps, with xlrd and olefile for .xls and .ppt files,
+    # and the int8 all-MiniLM-L6-v2 model, as pinned in
+    # indexer/embed_deps.json with their SHA-256. A clone's own .deps,
     # copied in with the source, is for another platform.
     rm -rf /opt/app/indexer/.deps
     case "$(uname -m)" in

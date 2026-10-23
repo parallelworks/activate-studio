@@ -159,6 +159,22 @@
    }
   }
  },
+ "readers": {
+  "xlrd": {
+   "version": "2.0.2",
+   "license": "BSD-3-Clause",
+   "url": "https://files.pythonhosted.org/packages/1a/62/c8d562e7766786ba6587d09c5a8ba9f718ed3fa8af7f4553e8f91c36f302/xlrd-2.0.2-py2.py3-none-any.whl",
+   "sha256": "ea762c3d29f4cca48d82df517b6d89fbce4db3107f9d78713e48cd321d5c9aa9",
+   "size": 96555
+  },
+  "olefile": {
+   "version": "0.47",
+   "license": "BSD-2-Clause",
+   "url": "https://files.pythonhosted.org/packages/17/d3/b64c356a907242d719fc668b71befd73324e47ab46c8ebbbede252c154b2/olefile-0.47-py2.py3-none-any.whl",
+   "sha256": "543c7da2a7adadf21214938bb79c83ea12b473a4b6ee4ad4bf854e7715e13d1f",
+   "size": 114565
+  }
+ },
  "model": {
   "id": "minilm-l6-mean-int8",
   "source": "Xenova/all-MiniLM-L6-v2 (sentence-transformers/all-MiniLM-L6-v2, int8 ONNX), Apache-2.0",

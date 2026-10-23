@@ -12,3 +12,8 @@ indexer/fetch_embed.py installs for a clone:
   NumPy, BSD 3-Clause License
 Each package's license is in its .dist-info folder; the model's is stated
 at https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2.
+
+For .xls and .ppt files, the same places carry:
+  xlrd, BSD 3-Clause License
+  olefile, BSD 2-Clause License
+Their licenses are in their .dist-info folders.

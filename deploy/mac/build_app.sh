@@ -5,8 +5,8 @@
 # and web app with production node_modules, GUFI (from GUFI's own macOS
 # package, or built for an older macOS by deploy/mac/build_gufi.sh; either
 # way loading its libraries from inside the app), a standalone Python for
-# the indexer (with pypdf, and onnxruntime, tokenizers and numpy for the ONNX
-# embedding model), and the embedding models. It builds on macOS or Linux; the
+# the indexer (with pypdf, xlrd and olefile for documents, and onnxruntime,
+# tokenizers and numpy for the ONNX embedding model), and the embedding models. It builds on macOS or Linux; the
 # .dmg is made only on macOS, where hdiutil exists.
 #
 # Usage: deploy/mac/build_app.sh
@@ -172,10 +172,11 @@ zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])
 PY
 # The ONNX embedding backend (indexer/embed_onnx.py): its packages, as the
 # macOS arm64 wheels for this Python pinned in indexer/embed_deps.json, and
-# the int8 all-MiniLM-L6-v2 model beside the GGUF one. Each is checked
-# against its SHA-256.
+# the int8 all-MiniLM-L6-v2 model beside the GGUF one; with them xlrd and
+# olefile, which read .xls and .ppt files. Each is checked against its
+# SHA-256.
 PY_CP="cp$(echo "$PY_VERSION" | cut -d. -f1,2 | tr -d .)"
-echo "onnxruntime, tokenizers and numpy ($PY_CP) and the ONNX embedding model..."
+echo "onnxruntime, tokenizers and numpy ($PY_CP), xlrd and olefile, and the ONNX embedding model..."
 python3 "$PROJECT_ROOT/indexer/fetch_embed.py" --platform "macos-arm64-$PY_CP" --cache "$CACHE_DIR/embed" \
   --deps "$(echo "$RES"/python/lib/python3.*/site-packages)" --model "$RES/models/minilm-l6"
 

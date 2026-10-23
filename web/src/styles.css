@@ -1847,6 +1847,11 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .ix-phase-bar { padding-left: 15px; }
 .ix-note { margin: 0; font-size: 12px; color: var(--pw-muted); }
 .ix-note.ix-warn { color: var(--pw-text); }
+.ix-installs { margin: 8px 0 4px; display: flex; flex-direction: column; gap: 6px; max-width: var(--settings-measure); }
+.ix-install { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: 13px; }
+.ix-install-cmd { display: inline-flex; align-items: center; gap: 4px; }
+.ix-install-cmd code { overflow-wrap: anywhere; }
+.ix-found { margin-top: 4px; }
 .ix-meaning { margin-top: 10px; }
 .meaning-level { max-width: var(--settings-measure); }
 .ix-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }

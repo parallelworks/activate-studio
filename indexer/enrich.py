@@ -16,7 +16,10 @@ the standard-library OOXML pass for Office files, pdftotext for PDFs on a
 host without the binary. A cached PDF whose text is thin for its page count
 is still OCR'd here, since downmark reads only pages with no text at all.
 Image OCR and captions live here alone, and so do the formats downmark does
-not read (.ppt, .xls, OpenDocument), through an installed LibreOffice.
+not read: OpenDocument (.odt, .ods, .odp, .odg) through the standard
+library, .xls through xlrd and .ppt through olefile (small pure-Python
+packages that come with the Studio, in indexer/.deps for a clone), with an
+installed LibreOffice for any file those cannot read.
 
 The pass runs in two steps. Files that need extracting (no cache entry, or
 one older than the file) are read in a pool of worker processes, --jobs of
@@ -47,10 +50,19 @@ TEXT_SUFFIXES = {
 }
 # .doc is read through the pre-extracted cache, or LibreOffice when there is one.
 EXTRACT_SUFFIXES = {'.pdf', '.docx', '.pptx', '.xlsx', '.doc'}
-# Read only through LibreOffice, which converts them to the OOXML format
-# whose reader is below (.doc only when downmark could not convert it).
+# Read through LibreOffice, which converts them to the OOXML format whose
+# reader is below: .doc when downmark could not convert it, and the formats
+# with a reader of their own (NATIVE_SUFFIXES) when that reader gets nothing.
 LEGACY_SUFFIXES = {'.ppt': 'pptx', '.odp': 'pptx', '.xls': 'xlsx', '.ods': 'xlsx',
                    '.odt': 'docx', '.doc': 'docx'}
+# Read here with nothing installed: OpenDocument with the standard library,
+# .xls with xlrd and .ppt with olefile.
+NATIVE_SUFFIXES = {'.odt', '.ods', '.odp', '.odg', '.xls', '.ppt'}
+# A clone's pure-Python readers (fetch_embed.py --deps indexer/.deps); the
+# macOS app and the container put them on the Python's own path.
+DEPS = Path(__file__).resolve().parent / '.deps'
+if DEPS.is_dir() and str(DEPS) not in sys.path:
+    sys.path.append(str(DEPS))
 IMAGE_SUFFIXES = {'.png', '.jpg', '.jpeg', '.gif', '.webp'}
 MAX_TEXT = 500_000
 MAX_CAPTION_BYTES = 8 * 1024 * 1024
@@ -233,6 +245,257 @@ def extract_legacy(path: Path) -> str:
         return {'docx': extract_docx, 'pptx': extract_pptx, 'xlsx': extract_xlsx}[target](made)
 
 
+ODF_NS = {
+    'office': 'urn:oasis:names:tc:opendocument:xmlns:office:1.0',
+    'text': 'urn:oasis:names:tc:opendocument:xmlns:text:1.0',
+    'table': 'urn:oasis:names:tc:opendocument:xmlns:table:1.0',
+    'draw': 'urn:oasis:names:tc:opendocument:xmlns:drawing:1.0',
+    'presentation': 'urn:oasis:names:tc:opendocument:xmlns:presentation:1.0',
+    'style': 'urn:oasis:names:tc:opendocument:xmlns:style:1.0',
+}
+
+
+def _odf(tag: str) -> str:
+    ns, name = tag.split(':')
+    return f'{{{ODF_NS[ns]}}}{name}'
+
+
+def extract_odf(path: Path) -> str:
+    """Text out of an OpenDocument file (.odt, .ods, .odp, .odg) with the
+    standard library: its content.xml, in document order. Paragraphs and
+    headings one to a line, list items as their paragraphs, table rows as
+    tab-separated cells, each spreadsheet under its sheet name, and each
+    slide under its number with its speaker notes; a text document's page
+    headers and footers (styles.xml) come first. Comments are left out, as
+    they are for Word documents. A file that is not a readable package
+    gives ''."""
+    import xml.etree.ElementTree as ET
+    import zipfile
+    try:
+        with zipfile.ZipFile(path) as z:
+            root = ET.fromstring(z.read('content.xml'))
+            try:
+                styles = ET.fromstring(z.read('styles.xml'))
+            except Exception:
+                styles = None
+    except Exception:
+        return ''
+    P, H = _odf('text:p'), _odf('text:h')
+    SPACE, TAB, BREAK = _odf('text:s'), _odf('text:tab'), _odf('text:line-break')
+    NOTE = _odf('office:annotation')
+    TABLE, ROW = _odf('table:table'), _odf('table:table-row')
+    CELLS = (_odf('table:table-cell'), _odf('table:covered-table-cell'))
+    PAGE, NOTES = _odf('draw:page'), _odf('presentation:notes')
+    spreadsheet = root.find(f'.//{_odf("office:spreadsheet")}') is not None
+    out: list = []
+    size = [0]
+    slides = [0]
+
+    def inline(el) -> str:
+        parts = [el.text or '']
+        for child in el:
+            if child.tag == SPACE:
+                parts.append(' ' * int(child.get(_odf('text:c'), '1') or 1))
+            elif child.tag == TAB:
+                parts.append('\t')
+            elif child.tag == BREAK:
+                parts.append('\n')
+            elif child.tag != NOTE:
+                parts.append(inline(child))
+            parts.append(child.tail or '')
+        return ''.join(parts)
+
+    def emit(line: str) -> None:
+        line = line.strip()
+        # LibreOffice's stand-ins for fields on slides and notes pages.
+        if line in ('<number>', '<date/time>', '<header>', '<footer>'):
+            return
+        if line and size[0] < MAX_TEXT:
+            out.append(line)
+            size[0] += len(line) + 1
+
+    def cell_text(cell) -> str:
+        return ' '.join(t for t in (inline(p).strip() for p in cell.iter() if p.tag in (P, H)) if t)
+
+    def walk(el) -> None:
+        for child in el:
+            if size[0] >= MAX_TEXT:
+                return
+            tag = child.tag
+            if tag in (P, H):
+                emit(inline(child))
+            elif tag == NOTE:
+                continue
+            elif tag == TABLE:
+                if spreadsheet and child.get(_odf('table:name')):
+                    emit(f'Sheet: {child.get(_odf("table:name"))}')
+                walk(child)
+            elif tag == ROW:
+                cells = [cell_text(c) for c in child if c.tag in CELLS]
+                while cells and not cells[-1]:
+                    cells.pop()
+                emit('\t'.join(cells))
+            elif tag == PAGE:
+                slides[0] += 1
+                at = len(out)
+                emit(f'Slide {slides[0]}')
+                walk(child)
+                # A slide's own name, unless it is the default (page1) or
+                # repeats the slide's first line, its title.
+                name = child.get(_odf('draw:name'), '')
+                if name and not name.startswith('page') and (len(out) <= at + 1 or out[at + 1] != name):
+                    out[at] = f'Slide {slides[0]}: {name}'
+            elif tag == NOTES:
+                before = len(out)
+                walk(child)
+                if len(out) > before:
+                    out.insert(before, 'Notes:')
+            else:
+                walk(child)
+
+    if styles is not None and root.find(f'.//{_odf("office:text")}') is not None:
+        for page in styles.iter(_odf('style:master-page')):
+            for part in page:
+                if part.tag.split('}')[1] in ('header', 'footer', 'header-left', 'footer-left', 'header-first', 'footer-first'):
+                    walk(part)
+    walk(root)
+    return '\n'.join(out)
+
+
+def extract_xls(path: Path) -> str:
+    """An Excel 97-2003 workbook through xlrd: each sheet under its name, its
+    rows as tab-separated cells, numbers as Excel shows them and dates as
+    dates. '' without xlrd, or for a file it cannot read."""
+    try:
+        import xlrd  # type: ignore
+    except ImportError:
+        return ''
+    out: list = []
+    size = 0
+    # xlrd writes its warnings to stdout, where the progress lines go, and
+    # reads sheets as asked for them, so it keeps its log open throughout.
+    quiet = open(os.devnull, 'w')
+    try:
+        book = xlrd.open_workbook(str(path), on_demand=True, logfile=quiet, verbosity=0)
+        for sheet in book.sheets():
+            out.append(f'Sheet: {sheet.name}')
+            for r in range(sheet.nrows):
+                cells = []
+                for c in sheet.row(r):
+                    if c.ctype in (xlrd.XL_CELL_EMPTY, xlrd.XL_CELL_BLANK, xlrd.XL_CELL_ERROR):
+                        cells.append('')
+                    elif c.ctype == xlrd.XL_CELL_NUMBER:
+                        # As Excel and LibreOffice show it: 15 significant digits.
+                        v = c.value
+                        cells.append(str(int(v)) if float(v).is_integer() else '%.15g' % v)
+                    elif c.ctype == xlrd.XL_CELL_DATE:
+                        try:
+                            d = xlrd.xldate_as_datetime(c.value, book.datemode)
+                            cells.append(d.date().isoformat() if d.time().isoformat() == '00:00:00' else d.isoformat(sep=' '))
+                        except Exception:
+                            cells.append(str(c.value))
+                    elif c.ctype == xlrd.XL_CELL_BOOLEAN:
+                        cells.append('TRUE' if c.value else 'FALSE')
+                    else:
+                        cells.append(str(c.value).strip())
+                while cells and not cells[-1]:
+                    cells.pop()
+                if cells:
+                    line = '\t'.join(cells)
+                    out.append(line)
+                    size += len(line) + 1
+                    if size >= MAX_TEXT:
+                        return '\n'.join(out)
+            book.unload_sheet(sheet.name)
+    except Exception:
+        return '\n'.join(out) if size else ''
+    finally:
+        quiet.close()
+    return '\n'.join(out)
+
+
+# PowerPoint 97-2003 records ([MS-PPT]): containers have version 0xF; text
+# is in TextCharsAtom (UTF-16) and TextBytesAtom (8-bit) records. Masters
+# and handouts hold placeholder prompts, not content, and are skipped.
+_PPT_TEXT_CHARS, _PPT_TEXT_BYTES = 0x0FA0, 0x0FA8
+_PPT_SKIP = {0x03F8, 0x0FC9}           # MainMaster, Handout
+_PPT_SLIDE, _PPT_NOTES = 0x03EE, 0x03F0
+_PPT_LIST_WITH_TEXT = 0x0FF0           # instance 0 slides, 1 masters, 2 notes
+
+
+def extract_ppt(path: Path) -> str:
+    """A PowerPoint 97-2003 file through olefile: the text of its slides and
+    speaker notes, read from the records of its "PowerPoint Document"
+    stream. Masters are left out. '' without olefile, or for a file it
+    cannot read (an encrypted one, say)."""
+    try:
+        import olefile  # type: ignore
+    except ImportError:
+        return ''
+    import logging
+    import struct
+    logging.getLogger('olefile').setLevel(logging.ERROR)
+    try:
+        with olefile.OleFileIO(str(path)) as ole:
+            if not ole.exists('PowerPoint Document'):
+                return ''
+            data = ole.openstream('PowerPoint Document').read()
+    except Exception:
+        return ''
+    out: list = []
+    seen: set = set()
+    size = [0]
+
+    def text_of(rtype: int, body: bytes) -> str:
+        raw = body.decode('utf-16-le', errors='replace') if rtype == _PPT_TEXT_CHARS else body.decode('latin-1', errors='replace')
+        return raw.replace('\r', '\n').replace('\x0b', '\n').strip()
+
+    def walk(start: int, end: int, depth: int) -> None:
+        pos = start
+        while pos + 8 <= end and size[0] < MAX_TEXT:
+            ver_inst, rtype, rlen = struct.unpack_from('<HHI', data, pos)
+            body_start, body_end = pos + 8, min(pos + 8 + rlen, end)
+            ver, inst = ver_inst & 0x0F, ver_inst >> 4
+            if ver == 0x0F:
+                skip = rtype in _PPT_SKIP or (rtype == _PPT_LIST_WITH_TEXT and inst == 1)
+                if not skip and depth < 32:
+                    walk(body_start, body_end, depth + 1)
+            elif rtype in (_PPT_TEXT_CHARS, _PPT_TEXT_BYTES):
+                text = text_of(rtype, data[body_start:body_end])
+                # The slide list and a slide's own shapes can hold the same
+                # text; each paragraph is kept once, in the order first met.
+                # A lone '*' is the stand-in for a date, footer or number field.
+                if text and text != '*' and text not in seen:
+                    seen.add(text)
+                    out.append(text)
+                    size[0] += len(text) + 1
+            if rlen <= 0 and ver != 0x0F:
+                pos = body_start
+            else:
+                pos = body_start + rlen
+
+    try:
+        walk(0, len(data), 0)
+    except Exception:
+        pass
+    return '\n'.join(out)
+
+
+def native_reader_available(suffix: str) -> bool:
+    """Whether this host reads a NATIVE_SUFFIXES format without LibreOffice."""
+    if suffix == '.xls':
+        module = 'xlrd'
+    elif suffix == '.ppt':
+        module = 'olefile'
+    else:
+        return suffix in NATIVE_SUFFIXES
+    import importlib.util
+    try:
+        return importlib.util.find_spec(module) is not None
+    except Exception:
+        return False
+
+
 def extract_pptx(path: Path) -> str:
     return _ooxml_text(path, r'ppt/slides/slide\d+\.xml', ('</a:p>', '</a:t>'))
 
@@ -367,6 +630,12 @@ def extract(path: Path) -> str | None:
             return extract_pptx(path)[:MAX_TEXT]
         if suffix == '.xlsx':
             return extract_xlsx(path)[:MAX_TEXT]
+        if suffix in NATIVE_SUFFIXES:
+            reader = extract_xls if suffix == '.xls' else extract_ppt if suffix == '.ppt' else extract_odf
+            text = reader(path)
+            # LibreOffice, where installed and allowed, for a file the reader
+            # here could not read (or for want of xlrd or olefile).
+            return (text or extract_legacy(path))[:MAX_TEXT]
         if suffix in LEGACY_SUFFIXES:
             return extract_legacy(path)[:MAX_TEXT]
         if suffix in IMAGE_SUFFIXES:
@@ -506,6 +775,7 @@ def main() -> int:
     # reading it costs a process and gives nothing.
     images_useful = options['ocr'] or bool(vision_model() and gateway_key())
     legacy = set(LEGACY_SUFFIXES) if options['soffice'] and not args.no_documents else set()
+    native = set() if args.no_documents else {s for s in NATIVE_SUFFIXES if native_reader_available(s)}
     documents = set() if args.no_documents else EXTRACT_SUFFIXES
 
     kb_root = Path(args.kb_root)
@@ -545,7 +815,7 @@ def main() -> int:
                 image = suffix in IMAGE_SUFFIXES
                 # An image's text already read is kept even when nothing here
                 # would read it again (OCR turned off since, say).
-                cacheable = suffix in documents or suffix in legacy or image
+                cacheable = suffix in documents or suffix in legacy or suffix in native or image
                 if suffix not in TEXT_SUFFIXES and not cacheable:
                     continue
                 if suffix in TEXT_SUFFIXES:
