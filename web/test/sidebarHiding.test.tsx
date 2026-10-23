@@ -58,6 +58,14 @@ describe('sidebar switches', () => {
     await waitFor(() => expect(location.hash).toBe('#view=library'))
   })
 
+  it('shows the Studio\'s own mark at the top when no icon is uploaded', async () => {
+    const { container } = render(<App />)
+    await waitFor(() => expect(container.querySelector('.sidenav-brand .brand-text')).not.toBeNull())
+    const icon = container.querySelector('.sidenav-brand img.brand-icon') as HTMLImageElement
+    expect(icon.getAttribute('src')).toBe('/favicon.svg')
+    expect(container.querySelector('.sidenav-brand .brand-badge')).toBeNull()
+  })
+
   it('with AI features off, leaves out Chat and Agents even when every page is on', async () => {
     aiEnabled = false
     sections = undefined
