@@ -364,9 +364,16 @@ then ICON=AppIcon; fi
 # NOTICE file states it.
 COPYRIGHT="$(sed -n 's/^\(Copyright .*\)$/\1/p' "$PROJECT_ROOT/NOTICE" | head -n 1)"
 
+# The packages' native libraries, read NUL-separated: the app's path has a
+# space in it, and an unquoted list would split each path into pieces that
+# macho_check.py then skips as missing.
+SITE_NATIVE=()
+while IFS= read -r -d '' f; do SITE_NATIVE+=("$f"); done < <(
+  find "$RES"/python/lib/python3.*/site-packages -type f \( -name '*.so' -o -name '*.dylib' \) -print0)
+echo "  minimum macOS: ${#SITE_NATIVE[@]} native libraries in the Python packages"
 NEEDS="$(python3 "$HERE/macho_check.py" --print-minos "$RES/node/bin/node" "$RES"/python/bin/python3.* \
   "$RES"/python/lib/*.dylib "$RES"/python/lib/python3.*/lib-dynload/*.so \
-  $(find "$RES"/python/lib/python3.*/site-packages -name '*.so' -o -name '*.dylib') "$G"/bin/* "$G"/lib/*.dylib \
+  ${SITE_NATIVE[@]+"${SITE_NATIVE[@]}"} "$G"/bin/* "$G"/lib/*.dylib \
   "$O"/bin/* "$O"/lib/*.dylib)"
 MIN_MACOS="${MIN_MACOS:-$NEEDS}"
 APP_NAME="$APP_NAME" BUNDLE_ID="$BUNDLE_ID" SHORT_VERSION="$SHORT_VERSION" BUNDLE_VERSION="$BUNDLE_VERSION" \
