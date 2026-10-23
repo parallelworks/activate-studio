@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import fsp from 'node:fs/promises'
 import path from 'node:path'
 import type { FastifyInstance } from 'fastify'
-import { GUFI_BIN, GUFI_INDEX, INDEX_BASE, PROJECT_ROOT, PYTHON_BIN, SEMANTIC_MAP_DIR, gufiAvailable, gufiEnv, indexerEnv } from './config.js'
+import { GUFI_BIN, GUFI_INDEX, INDEX_BASE, PROJECT_ROOT, PYTHON_BIN, SEMANTIC_MAP_DIR, gufiEnv, indexerEnv } from './config.js'
 import { indexSettings } from './indexSettings.js'
 import { KbError } from './kb.js'
 
@@ -84,8 +84,8 @@ export function semanticMapOverview(): SemanticMapOverview {
     return { ...hit.data, building: state.running }
   }
   // None yet, say after an update from a version that made it on request:
-  // made once, in the background.
-  if (!state.firstTried && !state.running && gufiAvailable()) {
+  // made once, in the background, when there is an index to make it from.
+  if (!state.firstTried && !state.running && fs.existsSync(path.join(GUFI_INDEX, 'db.db'))) {
     state.firstTried = true
     scheduleSemanticMapRebuild(0)
   }

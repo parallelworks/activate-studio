@@ -18,7 +18,7 @@ fs.mkdirSync(process.env.KB_ROOT, { recursive: true })
 const INDEX = path.join(process.env.INDEX_BASE, 'gufi', 'kb')
 const python = process.env.PYTHON_BIN || 'python3'
 const hasNumpy = (() => {
-  try { execFileSync(python, ['-c', `import sys; sys.path.insert(0, ${JSON.stringify(path.join(root, 'indexer', '.deps'))}); import numpy`]); return true } catch { return false }
+  try { execFileSync(python, ['-c', `import sys; sys.path.insert(0, ${JSON.stringify(path.join(root, 'indexer', '.deps'))}); import numpy`], { stdio: 'ignore' }); return true } catch { return false }
 })()
 
 // Three folders, each about one topic: its files' vectors point one way,
