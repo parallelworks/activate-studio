@@ -151,7 +151,7 @@ export function UpdatesSection({ onPolicySaved, pollMs, giveUpMs, reload }: {
       )}
 
       <Field className="settings-field" controlFirst label="Check for updates automatically"
-        description="A minute after the Studio starts, then every six hours.">
+        description="A minute after the Studio starts, then every hour, and when the window opens after a longer gap.">
         <Switch checked={policy.check} disabled={policyBusy}
           onCheckedChange={v => void savePolicy({ ...policy, check: v })} />
       </Field>

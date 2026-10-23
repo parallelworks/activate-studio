@@ -407,7 +407,7 @@ test('after an update the server clears the mark once up, and reports a rollback
 })
 
 test('the app takes the newest release that carries the signed app, and checks again soon while a newer one waits for it', async () => {
-  await fresh('v1.139', { timings: { firstCheckMs: 20, soonMs: 150, intervalMs: 3_600_000 } })
+  await fresh('v1.139', { timings: { firstCheckMs: 20, soonMs: 150, intervalMs: 3_600_000, pollMs: 20 } })
   // v1.141 was just published; its macOS build has not attached the app yet.
   setReleases([{ ...release('v1.141'), assets: [], published_at: new Date().toISOString() }, release('v1.140')])
   const before = apiRequests.length
@@ -424,7 +424,7 @@ test('the app takes the newest release that carries the signed app, and checks a
 })
 
 test('a release the macOS build was not asked for, published hours ago, does not bring the next check forward', async () => {
-  await fresh('v1.139', { timings: { firstCheckMs: 20, soonMs: 50, intervalMs: 3_600_000 } })
+  await fresh('v1.139', { timings: { firstCheckMs: 20, soonMs: 50, intervalMs: 3_600_000, pollMs: 20 } })
   setReleases([{ ...release('v1.141'), assets: [], published_at: new Date(Date.now() - 3 * 3600_000).toISOString() }, release('v1.140')])
   const before = apiRequests.length
   U.startUpdates(() => {})
@@ -432,6 +432,51 @@ test('a release the macOS build was not asked for, published hours ago, does not
   assert.equal((await j('GET', '/api/updates')).body.latest.version, 'v1.140')
   await sleep(300)
   assert.equal(apiRequests.length, before + 1, 'no sooner check')
+  U.resetUpdatesForTests()
+})
+
+test('a check is due by the clock: time the Mac slept counts, though its timers stopped', async () => {
+  await fresh('v1.139', { timings: { firstCheckMs: 20, intervalMs: 3_600_000, pollMs: 20 } })
+  setReleases([release('v1.140')])
+  const before = apiRequests.length
+  U.startUpdates(() => {})
+  assert.ok(await until(() => apiRequests.length > before), 'the first check')
+  await sleep(150)
+  assert.equal(apiRequests.length, before + 1, 'not due again within the hour')
+  // Two hours pass on the clock while no timer runs, as across a sleep.
+  const realNow = Date.now
+  Date.now = () => realNow() + 2 * 3_600_000
+  try {
+    assert.ok(await until(() => apiRequests.length > before + 1), 'the next poll finds the check due')
+  } finally {
+    Date.now = realNow
+    U.resetUpdatesForTests()
+  }
+})
+
+test('the window asking for the status starts a check that is due, once', async () => {
+  await fresh('v1.139', { timings: { firstCheckMs: 3_600_000, pollMs: 3_600_000 } })
+  setReleases([release('v1.140')])
+  const before = apiRequests.length
+  U.startUpdates(() => {})
+  const s = (await j('GET', '/api/updates')).body
+  assert.equal(s.state, 'checking', 'never checked, so due as the window opens')
+  assert.ok(await until(async () => (await j('GET', '/api/updates')).body.latest?.version === 'v1.140'), 'the check finds the release')
+  await j('GET', '/api/updates')
+  assert.equal(apiRequests.length, before + 1, 'not checked again while it is not due')
+  U.resetUpdatesForTests()
+})
+
+test('a failed check waits out the interval instead of retrying at every poll', async () => {
+  await fresh('v1.139', { timings: { firstCheckMs: 20, intervalMs: 3_600_000, pollMs: 20 } })
+  apiStatus = 500
+  const before = apiRequests.length
+  U.startUpdates(() => {})
+  assert.ok(await until(() => apiRequests.length > before), 'the first check')
+  await sleep(200)
+  assert.equal(apiRequests.length, before + 1, 'one attempt')
+  assert.equal((await j('GET', '/api/updates')).body.state, 'error')
+  apiStatus = 200
   U.resetUpdatesForTests()
 })
 
