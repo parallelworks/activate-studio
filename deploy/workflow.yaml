@@ -761,6 +761,56 @@ jobs:
           printf '#!/bin/bash\nexec "%s" "$@"\n' "$SOFFICE" > soffice-wrapper.sh
           chmod +x soffice-wrapper.sh
           echo "Office rendering via staged runtime: $SOFFICE"
+      - name: Search by meaning packages and models
+        run: |
+          # On every launch, whether or not the index is built on launch: the
+          # server embeds as it syncs, and answers searches by meaning, with
+          # what is in place here. Without the ONNX packages it uses the GGUF
+          # model through sqlite-lembed, slower and with lower ranking.
+          if [ "${{ inputs.session_settings.session_method }}" = "cleanup" ]; then exit 0; fi
+          if [ "${{ inputs.app_settings.source }}" = "container" ]; then
+            echo "Container mode; the image carries the embedding backend."
+            exit 0
+          fi
+          cd ${{ inputs.app_settings.workdir }}
+          INDEX_BASE="${{ inputs.kb_settings.index_base }}"
+          [ -n "$INDEX_BASE" ] || INDEX_BASE="$PWD/app/index"
+          # The models ship inside the app tree; a relocated index needs them
+          # at $INDEX_BASE/models, where the server and the indexer look.
+          if [ "$INDEX_BASE" != "$PWD/app/index" ]; then
+            mkdir -p "$INDEX_BASE/models"
+            if [ ! -f "$INDEX_BASE/models/minilm384.gguf" ] && [ -f app/index/models/minilm384.gguf ]; then
+              cp app/index/models/minilm384.gguf "$INDEX_BASE/models/"
+            fi
+          fi
+          # The packages for the Python the server will run (the same choice
+          # server/src/config.ts makes: the newest python3.x that is 3.10 or
+          # later), from the wheels the bundle carries, so no network is
+          # needed; a Python the bundle has no wheels for downloads its own.
+          PY=""
+          for cand in python3.13 python3.12 python3.11 python3.10 python3; do
+            if command -v "$cand" >/dev/null 2>&1 && "$cand" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)' 2>/dev/null; then
+              PY="$cand"; break
+            fi
+          done
+          if [ -z "$PY" ]; then
+            echo "NOTE: no Python 3.10 or later here; search by meaning uses the GGUF model."
+            exit 0
+          fi
+          # Only what is missing: the model ships in the app tree, and packages
+          # already unpacked for this Python are kept.
+          WANT=""
+          [ -f app/index/models/minilm-l6/model.onnx ] || WANT="--model app/index/models/minilm-l6"
+          "$PY" -c 'import sys; sys.path.insert(0, "app/indexer/.deps"); import onnxruntime, tokenizers, numpy' 2>/dev/null \
+            || WANT="$WANT --deps app/indexer/.deps"
+          if [ -z "$WANT" ] || "$PY" app/indexer/fetch_embed.py $WANT --cache app/indexer/wheels; then
+            echo "Search by meaning: the ONNX backend, for $($PY --version 2>&1)."
+          else
+            echo "NOTE: the ONNX embedding backend is not installed here; search by meaning uses the GGUF model."
+          fi
+          if [ "$INDEX_BASE" != "$PWD/app/index" ] && [ -d app/index/models/minilm-l6 ] && [ ! -e "$INDEX_BASE/models/minilm-l6" ]; then
+            ln -s "$PWD/app/index/models/minilm-l6" "$INDEX_BASE/models/minilm-l6"
+          fi
 
   build_gufi:
     if: ${{ inputs.resource_and_execution.scheduler != true }}
@@ -848,29 +898,8 @@ jobs:
           export INDEX_BASE="${{ inputs.kb_settings.index_base }}"
           [ -n "$INDEX_BASE" ] || INDEX_BASE="$PWD/app/index"
           export INDEX_BASE
-          # The embedding model ships inside the app tree; a relocated index
-          # needs it at $INDEX_BASE/models.
-          if [ "$INDEX_BASE" != "$PWD/app/index" ] && [ ! -f "$INDEX_BASE/models/minilm384.gguf" ] && [ -f app/index/models/minilm384.gguf ]; then
-            mkdir -p "$INDEX_BASE/models"
-            cp app/index/models/minilm384.gguf "$INDEX_BASE/models/"
-          fi
-          # The ONNX embedding backend (indexer/fetch_embed.py, pinned in
-          # embed_deps.json): its packages for the Python the Studio runs
-          # here, and the model when the app tree lacks it, with downloads
-          # kept in cache/. Without them the GGUF model is used.
-          if [ ! -f app/index/models/minilm-l6/model.onnx ] || [ ! -d app/indexer/.deps ]; then
-            PY=""
-            for cand in python3.13 python3.12 python3.11 python3.10 python3; do
-              if command -v "$cand" >/dev/null 2>&1; then PY="$cand"; break; fi
-            done
-            mkdir -p cache
-            [ -n "$PY" ] && "$PY" app/indexer/fetch_embed.py --deps app/indexer/.deps --model app/index/models/minilm-l6 --cache cache/embed >/dev/null 2>&1 \
-              || echo "NOTE: the ONNX embedding backend is not installed here; search by meaning uses the GGUF model."
-          fi
-          if [ "$INDEX_BASE" != "$PWD/app/index" ] && [ -d app/index/models/minilm-l6 ] && [ ! -e "$INDEX_BASE/models/minilm-l6" ]; then
-            mkdir -p "$INDEX_BASE/models"
-            ln -s "$PWD/app/index/models/minilm-l6" "$INDEX_BASE/models/minilm-l6"
-          fi
+          # The embedding models and the ONNX packages are put in place by
+          # pull_software, on every launch.
           bash app/indexer/reindex.sh || echo "WARNING: index build failed; the app still serves the filesystem."
   run_app:
     if: ${{ inputs.resource_and_execution.scheduler != true }}

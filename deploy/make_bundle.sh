@@ -67,6 +67,15 @@ fi
 # resource, for the Python there (deploy/workflow.yaml).
 python3 "$PROJECT_ROOT/indexer/fetch_embed.py" --model "$STAGE/app/index/models/minilm-l6" --cache "$CACHE/embed" >/dev/null ||
   echo "  (the ONNX embedding model could not be fetched; search by meaning uses the GGUF model)"
+# Its packages for each Linux x86_64 Python the pins cover, as the wheels
+# themselves (checked against their SHA-256 here and again there), so a
+# resource without access to the package index still gets the backend: the
+# workflow unpacks the ones for its Python from app/indexer/wheels.
+for tag in $(PINS="$PROJECT_ROOT/indexer/embed_deps.json" python3 -c "import json, os; print(' '.join(p for p in json.load(open(os.environ['PINS']))['wheels'] if p.startswith('linux-x86_64-')))"); do
+  python3 "$PROJECT_ROOT/indexer/fetch_embed.py" --deps "$CACHE/embed-unpack-$tag" --platform "$tag" --cache "$STAGE/app/indexer/wheels" >/dev/null ||
+    echo "  (the ONNX packages for $tag could not be fetched; that Python downloads its own, or uses the GGUF model)"
+  rm -rf "$CACHE/embed-unpack-$tag"
+done
 
 echo "Fetching Node runtime ${NODE_VERSION}..."
 if [ ! -f "$CACHE/${NODE_DIST}.tar.xz" ]; then
