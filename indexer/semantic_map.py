@@ -202,8 +202,9 @@ def build(index: Path, out: Path, sample: int, fit: int) -> dict:
         Xf = np.asarray(X[fit_rows], dtype=np.float64)
         mean = Xf.mean(0)
         _, _, vt = np.linalg.svd(Xf - mean, full_matrices=False)
+        # Fewer files than GROUP_DIMS span fewer directions; keep those.
         comps = vt[:GROUP_DIMS].T
-        proj = np.empty((n, GROUP_DIMS), dtype=np.float32)
+        proj = np.empty((n, comps.shape[1]), dtype=np.float32)
         for s in range(0, n, 20_000):
             proj[s:s + 20_000] = (np.asarray(X[s:s + 20_000], dtype=np.float64) - mean) @ comps
         del X

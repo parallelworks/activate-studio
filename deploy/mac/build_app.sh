@@ -4,10 +4,12 @@
 # The app carries everything it runs: Node for macOS arm64, the built server
 # and web app with production node_modules, GUFI (from GUFI's own macOS
 # package, or built for an older macOS by deploy/mac/build_gufi.sh; either
-# way loading its libraries from inside the app), a standalone Python for
-# the indexer (with pypdf, xlrd and olefile for documents, and onnxruntime,
-# tokenizers and numpy for the ONNX embedding model), and the embedding models. It builds on macOS or Linux; the
-# .dmg is made only on macOS, where hdiutil exists.
+# way loading its libraries from inside the app), tesseract for OCR (built
+# by deploy/mac/build_ocr.sh), a standalone Python for the indexer (with
+# pypdf, xlrd and olefile for documents, and onnxruntime, tokenizers and
+# numpy for the ONNX embedding model), and the embedding models. It builds
+# on macOS or Linux; the .dmg is made only on macOS, where hdiutil exists,
+# and OCR is built only on a Mac (or given as OCR_TARBALL).
 #
 # Usage: deploy/mac/build_app.sh
 #   OUT_DIR     where the outputs go (default deploy/mac/out)
@@ -15,6 +17,9 @@
 #   GUFI_TARBALL  a gufi-macos-arm64.tar.gz from build_gufi.sh, used instead
 #               of GUFI's package when set
 #   GUFI_PKG    a GUFI macOS .pkg on disk to use instead of the pinned download
+#   OCR_TARBALL an ocr-macos-arm64.tar.gz from build_ocr.sh; without it, a
+#               Mac runs build_ocr.sh (its archive is kept in CACHE_DIR for
+#               the next build), and elsewhere the app has no OCR
 #   SKIP_BUILD  1 to use the existing server/dist and web/dist
 #   MIN_MACOS   LSMinimumSystemVersion; by default the newest macOS that any
 #               bundled binary declares it needs
@@ -261,6 +266,49 @@ if command -v codesign >/dev/null 2>&1; then
   done
 fi
 
+# OCR: tesseract and leptonica with the English model, loading their
+# library from the tree and signed ad hoc, as build_ocr.sh made and checked
+# them on the Mac it ran on.
+O="$RES/ocr"
+if [ -z "${OCR_TARBALL:-}" ] && [ "$(uname -s)" = Darwin ] && [ "$(uname -m)" = arm64 ]; then
+  # Built once per version of build_ocr.sh and deployment target, and kept
+  # in the cache for the builds after.
+  OCR_CACHE="$CACHE_DIR/ocr-$(sha256_of "$HERE/build_ocr.sh" | cut -c1-16)-${MACOSX_DEPLOYMENT_TARGET:-14.0}"
+  if [ ! -f "$OCR_CACHE/ocr-macos-arm64.tar.gz" ]; then
+    echo "OCR: building tesseract (deploy/mac/build_ocr.sh)..."
+    OUT_DIR="$OCR_CACHE" CACHE_DIR="$CACHE_DIR" "$HERE/build_ocr.sh"
+  fi
+  OCR_TARBALL="$OCR_CACHE/ocr-macos-arm64.tar.gz"
+fi
+if [ -n "${OCR_TARBALL:-}" ]; then
+  echo "OCR from $OCR_TARBALL (deploy/mac/build_ocr.sh)..."
+  [ -f "$OCR_TARBALL" ] || { echo "build_app: OCR_TARBALL $OCR_TARBALL does not exist" >&2; exit 1; }
+  OCR_SUM="$(sha256_of "$OCR_TARBALL")"
+  if [ -f "$OCR_TARBALL.sha256" ] && [ "$(awk '{print $1; exit}' "$OCR_TARBALL.sha256")" != "$OCR_SUM" ]; then
+    echo "build_app: $OCR_TARBALL has SHA-256 $OCR_SUM, not the one its .sha256 names" >&2
+    exit 1
+  fi
+  mkdir -p "$WORK/ocr-tarball"
+  tar -xzf "$OCR_TARBALL" -C "$WORK/ocr-tarball"
+  for f in manifest.json bin/tesseract lib/libleptonica.6.dylib share/tessdata/eng.traineddata \
+    share/tessdata/configs/tsv licenses/tesseract-LICENSE.txt; do
+    [ -e "$WORK/ocr-tarball/ocr/$f" ] || {
+      echo "build_app: $OCR_TARBALL has no ocr/$f; it is not an archive from build_ocr.sh" >&2; exit 1; }
+  done
+  mv "$WORK/ocr-tarball/ocr" "$O"
+  python3 - "$O/manifest.json" "$OCR_SUM" <<'PY'
+import json, sys
+m = json.load(open(sys.argv[1]))
+print(f"  tesseract {m['tesseract']} with leptonica {m['components']['leptonica']} for macOS "
+      f"{m['deploymentTarget']}, built {m['builtAt']}; SHA-256 {sys.argv[2]}")
+PY
+  if command -v codesign >/dev/null 2>&1; then
+    for f in "$O"/bin/* "$O"/lib/*.dylib; do codesign --verify "$f"; done
+  fi
+else
+  echo "OCR: tesseract is built on a Mac (build_ocr.sh); without OCR_TARBALL this app has none"
+fi
+
 echo "Embedding model..."
 if [ -f "$PROJECT_ROOT/index/models/minilm384.gguf" ]; then
   cp "$PROJECT_ROOT/index/models/minilm384.gguf" "$RES/models/minilm384.gguf"
@@ -318,7 +366,8 @@ COPYRIGHT="$(sed -n 's/^\(Copyright .*\)$/\1/p' "$PROJECT_ROOT/NOTICE" | head -n
 
 NEEDS="$(python3 "$HERE/macho_check.py" --print-minos "$RES/node/bin/node" "$RES"/python/bin/python3.* \
   "$RES"/python/lib/*.dylib "$RES"/python/lib/python3.*/lib-dynload/*.so \
-  $(find "$RES"/python/lib/python3.*/site-packages -name '*.so' -o -name '*.dylib') "$G"/bin/* "$G"/lib/*.dylib)"
+  $(find "$RES"/python/lib/python3.*/site-packages -name '*.so' -o -name '*.dylib') "$G"/bin/* "$G"/lib/*.dylib \
+  "$O"/bin/* "$O"/lib/*.dylib)"
 MIN_MACOS="${MIN_MACOS:-$NEEDS}"
 APP_NAME="$APP_NAME" BUNDLE_ID="$BUNDLE_ID" SHORT_VERSION="$SHORT_VERSION" BUNDLE_VERSION="$BUNDLE_VERSION" \
   MIN_MACOS="$MIN_MACOS" BUILD="$VERSION ($COMMIT, $BUILT_AT)" ICON="$ICON" COPYRIGHT="$COPYRIGHT" \

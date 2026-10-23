@@ -9,11 +9,12 @@ import { downmarkNative } from './preextract.js'
  * Which readers this host has for each kind of file, so a format that
  * would index by its name alone is said out loud rather than discovered.
  * The macOS app carries downmark (documents, PDFs), pypdf (the PDF
- * fallback), and xlrd and olefile (.xls and .ppt); OpenDocument is read
- * with the standard library. LibreOffice (previews, and any file those
- * cannot read), poppler and tesseract are used where installed, not
- * bundled: for each one missing, the report says what it adds and how to
- * install it on this machine.
+ * fallback), xlrd and olefile (.xls and .ppt), and tesseract (OCR, which
+ * downmark also runs on scanned PDF pages); OpenDocument is read with the
+ * standard library. LibreOffice (previews, and any file those cannot
+ * read), poppler, and tesseract outside the app are used where installed,
+ * not bundled: for each one missing, the report says what it adds and how
+ * to install it on this machine.
  */
 
 export interface ExtractorReport {
@@ -119,6 +120,12 @@ function probe() {
   }
 }
 
+/** The macOS app's own tesseract (deploy/mac/build_ocr.sh), beside the app's
+ *  code in Contents/Resources: studio-run.sh puts it first on the PATH. */
+export function bundledTesseract(bin: string | null, root = PROJECT_ROOT): boolean {
+  return !!bin && path.resolve(bin).startsWith(path.resolve(root, '..', 'ocr', 'bin') + path.sep)
+}
+
 /** Look again, as after installing LibreOffice or tesseract. */
 export function forgetExtractors(): void { found.clear() }
 
@@ -137,7 +144,7 @@ function installCommand(tool: 'tesseract' | 'poppler' | 'libreoffice', brew: str
 
 /** What installing each missing tool would add, and the command for it here.
  *  Shown, never run: the Studio does not install software. */
-export function installInfo(have: { tesseract: boolean; poppler: boolean; soffice: boolean; xlrd: boolean; olefile: boolean },
+export function installInfo(have: { tesseract: boolean; poppler: boolean; soffice: boolean; xlrd: boolean; olefile: boolean; scanOcr?: boolean },
   brew: string | null, apt: boolean, platform = process.platform): InstallInfo {
   const item = (name: string, adds: string, tool: 'tesseract' | 'poppler' | 'libreoffice'): InstallItem => {
     const command = installCommand(tool, brew, apt, platform)
@@ -145,7 +152,12 @@ export function installInfo(have: { tesseract: boolean; poppler: boolean; soffic
   }
   const items: InstallItem[] = []
   if (!have.tesseract) items.push(item('tesseract', 'OCR reads scanned PDFs and text in images.', 'tesseract'))
-  if (!have.poppler) items.push(item('poppler', 'Poppler reads PDFs the bundled readers cannot, and lets OCR read scanned PDF pages.', 'poppler'))
+  // downmark with tesseract reads scanned pages already; poppler then adds
+  // only the PDFs downmark cannot read.
+  if (!have.poppler) {
+    items.push(item('poppler', have.scanOcr ? 'Poppler reads PDFs the bundled readers cannot.'
+      : 'Poppler reads PDFs the bundled readers cannot, and lets OCR read scanned PDF pages.', 'poppler'))
+  }
   if (!have.soffice) items.push(item('LibreOffice', 'LibreOffice renders previews of Office files.', 'libreoffice'))
   if (!have.xlrd || !have.olefile) {
     items.push({
@@ -206,7 +218,8 @@ export function extractorReport(opts: ReaderOptions): { extractors: ExtractorRep
     {
       name: 'tesseract', available: !!p.tesseract, optional: false,
       covers: 'text inside images and scanned PDF pages (OCR)',
-      note: p.tesseract ? `Found at ${p.tesseract}.` : 'Not installed. Install tesseract (for example with Homebrew) to read text in images and scans.',
+      note: bundledTesseract(p.tesseract) ? 'Bundled, with its English model. Reads text in images, and scanned PDF pages with downmark.'
+        : p.tesseract ? `Found at ${p.tesseract}.` : 'Not installed. Install tesseract (for example with Homebrew) to read text in images and scans.',
     },
   ]
   const formats: FormatReadiness[] = []
@@ -216,9 +229,10 @@ export function extractorReport(opts: ReaderOptions): { extractors: ExtractorRep
     formats.push({ formats: '.docx, .pptx, .xlsx', readers: ['downmark'], ok: true, note: 'Read by downmark, with a standard-library reader for any it cannot.' })
     const doc = ['downmark', ...(opts.legacyOffice && p.soffice ? ['LibreOffice'] : [])]
     formats.push({ formats: '.doc', readers: doc, ok: true, note: `Read by ${doc.join(', then ')}.` })
+    const scans = opts.ocr && p.native && p.tesseract ? ' Scanned pages are read by tesseract.' : ''
     formats.push({
       formats: '.pdf', readers: pdfVia, ok: pdfVia.length > 0,
-      note: pdfVia.length ? `Read by ${pdfVia.join(', then ')}.` : 'No PDF reader on this host; PDFs index by name only. Install poppler (pdftotext) or pypdf.',
+      note: pdfVia.length ? `Read by ${pdfVia.join(', then ')}.${scans}` : 'No PDF reader on this host; PDFs index by name only. Install poppler (pdftotext) or pypdf.',
     })
     // LibreOffice, where installed and allowed, reads what these cannot.
     const lo = opts.legacyOffice && p.soffice ? ['LibreOffice'] : []
@@ -240,7 +254,7 @@ export function extractorReport(opts: ReaderOptions): { extractors: ExtractorRep
       : !opts.ocr ? 'The index depth stops before Text + OCR, so images index by name only.'
         : 'Images index by name only: tesseract is not installed, and no vision model describes them.',
   })
-  const install = installInfo({ tesseract: !!p.tesseract, poppler: !!p.pdftotext && !!p.pdftoppm, soffice: !!p.soffice, xlrd: py.xlrd, olefile: py.olefile },
-    p.brew, p.apt)
+  const install = installInfo({ tesseract: !!p.tesseract, poppler: !!p.pdftotext && !!p.pdftoppm, soffice: !!p.soffice, xlrd: py.xlrd, olefile: py.olefile,
+    scanOcr: p.native && !!p.tesseract }, p.brew, p.apt)
   return { extractors, formats, missing: formats.filter(f => !f.ok), install }
 }

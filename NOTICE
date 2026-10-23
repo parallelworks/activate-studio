@@ -17,3 +17,15 @@ For .xls and .ppt files, the same places carry:
   xlrd, BSD 3-Clause License
   olefile, BSD 2-Clause License
 Their licenses are in their .dist-info folders.
+
+For OCR, the macOS app carries tesseract and the libraries it uses, built
+from their sources by deploy/mac/build_ocr.sh:
+  Tesseract OCR, Apache License 2.0
+  the English model from tessdata_fast, Apache License 2.0
+  Leptonica, BSD 2-Clause License
+  libpng, PNG Reference Library License version 2
+  libjpeg-turbo, IJG License and BSD 3-Clause License
+  LibTIFF, LibTIFF License
+  libwebp, BSD 3-Clause License, with Google's patent grant
+  GIFLIB, MIT License
+Their license texts are in Contents/Resources/ocr/licenses in the app.

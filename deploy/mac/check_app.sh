@@ -8,8 +8,9 @@
 #
 # On a Mac, --run also runs what was bundled: Node, Python, the app's
 # executable, and GUFI indexing and querying a small folder, embedding with
-# the model, the indexer scripts, and the server itself from the app's own
-# run loop on a spare port, all with no DYLD_* variables set. --launch then
+# the model, tesseract reading text in pictures and a scanned PDF, the
+# indexer scripts, and the server itself from the app's own run loop on a
+# spare port, all with no DYLD_* variables set. --launch then
 # exercises the launcher and its LaunchAgent with a temporary home
 # directory. On a Mac older than the app's LSMinimumSystemVersion they are
 # skipped. Signed by sign_app.sh, all of it runs under the hardened runtime.
@@ -27,6 +28,7 @@ done
 C="$APP/Contents"
 R="$C/Resources"
 G="$R/gufi"
+O="$R/ocr"
 failures=0
 ok() { echo "  ok    $1"; }
 bad() { echo "  FAIL  $1"; failures=$((failures + 1)); }
@@ -58,6 +60,17 @@ for f in \
   Resources/gufi/lib/libomp.dylib Resources/gufi/lib/libpcre2-8.0.dylib Resources/gufi/licenses/GUFI-LICENSE.txt; do
   check "$f" test -s "$C/$f"
 done
+if [ -d "$O" ]; then
+  for f in Resources/ocr/bin/tesseract Resources/ocr/lib/libleptonica.6.dylib \
+    Resources/ocr/share/tessdata/eng.traineddata Resources/ocr/share/tessdata/configs/tsv \
+    Resources/ocr/licenses/tesseract-LICENSE.txt Resources/ocr/licenses/leptonica-LICENSE.txt; do
+    check "$f" test -s "$C/$f"
+  done
+elif [ "$(uname -s)" = Darwin ]; then
+  bad "no OCR in the app (Resources/ocr), which build_app.sh adds on a Mac"
+else
+  echo "  note  no OCR in the app (Resources/ocr): built off a Mac without OCR_TARBALL"
+fi
 check "update-signing.pub is an Ed25519 public key" python3 - "$R/update-signing.pub" <<'PY'
 import base64, sys
 pem = open(sys.argv[1]).read().strip().splitlines()
@@ -115,7 +128,8 @@ if command -v file >/dev/null 2>&1; then
   check "node is a Mach-O arm64 executable" sh -c "file -b '$R/node/bin/node' | grep -q 'Mach-O 64-bit.*arm64'"
 fi
 MIN="$(python3 -c 'import plistlib,sys; print(plistlib.load(open(sys.argv[1],"rb"))["LSMinimumSystemVersion"])' "$C/Info.plist")"
-NATIVE=("$R/node/bin/node" "$R"/python/bin/python3.* "$R"/python/lib/*.dylib "$R"/python/lib/python3.*/lib-dynload/*.so "$G"/bin/* "$G"/lib/*.dylib)
+NATIVE=("$R/node/bin/node" "$R"/python/bin/python3.* "$R"/python/lib/*.dylib "$R"/python/lib/python3.*/lib-dynload/*.so "$G"/bin/* "$G"/lib/*.dylib
+  "$O"/bin/* "$O"/lib/*.dylib)
 if out="$(python3 "$HERE/macho_check.py" --max-minos "$MIN" "${NATIVE[@]}" 2>&1)"; then
   ok "arm64, signed, runs on macOS $MIN, libraries resolve without DYLD_LIBRARY_PATH"
 else
@@ -155,7 +169,8 @@ fi
 
 echo "Size"
 echo "  $(du -sh "$APP" | cut -f1)  total"
-for d in node python gufi app/server/node_modules app/web models; do
+for d in node python gufi ocr app/server/node_modules app/web models; do
+  [ -e "$R/$d" ] || continue
   echo "  $(du -sh "$R/$d" | cut -f1)  $d"
 done
 
@@ -174,6 +189,16 @@ if [ "$RUN" = 1 ]; then
     mkdir -p "$T/home" "$T/corpus/notes"
     printf 'the index is a tree of per-directory databases\n' >"$T/corpus/notes/design.md"
     printf 'a recipe for lemon cake\n' >"$T/corpus/cake.txt"
+    # A picture with text and a scanned PDF (one page that is only an
+    # image), for OCR with the app's tesseract, found as studio-run.sh
+    # finds it: first on the PATH, with TESSDATA_PREFIX naming its data.
+    OCR_RUN=0
+    OCR_ENV=(PATH="$O/bin:/usr/bin:/bin:/usr/sbin:/sbin" TESSDATA_PREFIX="$O/share/tessdata")
+    if [ -d "$O" ] && [ -f "$HERE/testdata/ocr-sample.png" ]; then
+      OCR_RUN=1
+      mkdir -p "$T/corpus/scans"
+      cp "$HERE/testdata/ocr-sample.png" "$HERE/testdata/ocr-sample.pdf" "$T/corpus/scans/"
+    fi
 
     echo "Running"
     check "node runs" clean "$R/node/bin/node" -e 'process.exit(process.versions.node.startsWith("26.") ? 0 : 1)'
@@ -201,8 +226,11 @@ if [ "$RUN" = 1 ]; then
     else
       ok "gufi_sqlite3 loads only the app's libraries and the system's"
     fi
-    check "the indexer extracts text" clean "$R/python/bin/python3" "$R/app/indexer/enrich.py" \
+    check "the indexer extracts text" clean env "${OCR_ENV[@]}" "$R/python/bin/python3" "$R/app/indexer/enrich.py" \
       --kb-root "$T/corpus" --index "$T/idx/corpus" --extract-cache "$T/extract"
+    if [ "$OCR_RUN" = 1 ]; then
+      check "and reads the text in a picture with the app's tesseract" grep -qi heliotrope "$T/extract/scans/ocr-sample.png.txt"
+    fi
     # The output goes to a file first: grep -q on the pipe would stop
     # embed.py at its first line, before it writes anything.
     check "the indexer embeds with the ONNX model" clean /bin/sh -c "'$R/python/bin/python3' '$R/app/indexer/embed.py' --index '$T/idx/corpus' --model '$R/models/minilm384.gguf' --gufi-sqlite3 '$G/bin/gufi_sqlite3' >'$T/embed-onnx.out' && grep -q 'model: minilm-l6-mean-int8 (onnx)' '$T/embed-onnx.out' && grep -q '0 errors' '$T/embed-onnx.out'"
@@ -216,6 +244,29 @@ if [ "$RUN" = 1 ]; then
       mkdir -p "$T/pdfs/docs" && cp "$HERE/../../testdata/corpus/docs/report.pdf" "$T/pdfs/docs/"
       check "downmark's binary reads a PDF" clean /bin/sh -c 'b="$(find "$1" -path "*downmark-darwin-arm64/bin/downmark" -type f | head -1)"; "$b" "$2" | grep -q BOUNDARY-LAYER-4417' sh "$R/app/server/node_modules" "$T/pdfs/docs/report.pdf"
       check "the bundled pypdf reads it too" clean "$R/python/bin/python3" -c "import sys; from pypdf import PdfReader; sys.exit(0 if 'BOUNDARY-LAYER-4417' in ''.join(p.extract_text() or '' for p in PdfReader('$T/pdfs/docs/report.pdf').pages) else 1)"
+    fi
+    # OCR: the app's tesseract on each image format leptonica reads, then on
+    # a scanned PDF, whose page downmark hands it as a PNG (no poppler).
+    if [ "$OCR_RUN" = 1 ]; then
+      check "tesseract runs, with the English model" clean env "${OCR_ENV[@]}" /bin/sh -c 'tesseract --list-langs 2>&1 | grep -qx eng'
+      for img in "$HERE"/testdata/ocr-sample.png "$HERE"/testdata/ocr-sample.jpg "$HERE"/testdata/ocr-sample.tif \
+        "$HERE"/testdata/ocr-sample.webp "$HERE"/testdata/ocr-sample.gif; do
+        check "tesseract reads the text in $(basename "$img")" \
+          clean env "${OCR_ENV[@]}" /bin/sh -c 'tesseract "$1" stdout 2>/dev/null | grep -qi heliotrope' sh "$img"
+      done
+      loaded="$(DYLD_PRINT_LIBRARIES=1 "$O/bin/tesseract" --version 2>&1 >/dev/null |
+        sed -n 's/^dyld\[[0-9]*\]: \(<[^>]*> \)\{0,1\}\(\/.*\)/\2/p' || true)"
+      outside="$(printf '%s\n' "$loaded" | grep -v -e "^$O/" -e '^/usr/lib/' -e '^/System/' | grep . || true)"
+      if [ -z "$loaded" ]; then
+        bad "dyld listed no libraries for tesseract"
+      elif [ -n "$outside" ]; then
+        bad "tesseract loads libraries from outside the app:"; printf '%s\n' "$outside" | sed 's/^/        /'
+      else
+        ok "tesseract loads only the app's library and the system's"
+      fi
+      check "downmark reads a scanned PDF through the app's tesseract" clean env "${OCR_ENV[@]}" /bin/sh -c \
+        'b="$(find "$1" -path "*downmark-darwin-arm64/bin/downmark" -type f | head -1)"; "$b" -ocr tesseract -ocr-policy thin "$2" | grep -qi heliotrope' \
+        sh "$R/app/server/node_modules" "$HERE/testdata/ocr-sample.pdf"
     fi
 
     # The server from the app's own run loop, as the LaunchAgent runs it.
@@ -254,6 +305,20 @@ if [ "$RUN" = 1 ]; then
       sleep 1
     done
     if [ "$meaning" = 1 ]; then ok "and search by meaning finds it with the ONNX model"; else bad "search by meaning did not find it:"; tail -n 30 "$T/data/logs/studio.log" | sed 's/^/        /'; fi
+    # OCR from the run loop's PATH and TESSDATA_PREFIX: the readers report
+    # names the app's tesseract, and search finds the picture and the
+    # scanned PDF by words only OCR could read.
+    if [ "$OCR_RUN" = 1 ]; then
+      check "the server reports the app's tesseract" sh -c "curl -fsS -m 30 'http://127.0.0.1:$PORT_FREE/api/index/extractors' |
+        python3 -c 'import json, sys; t = [e for e in json.load(sys.stdin)[\"extractors\"] if e[\"name\"] == \"tesseract\"]; sys.exit(0 if t and t[0][\"available\"] and t[0][\"note\"].startswith(\"Bundled\") else 1)'"
+      ocr_found=0
+      for _ in $(seq 1 120); do
+        if curl -fsS -m 10 "http://127.0.0.1:$PORT_FREE/api/search?q=heliotrope" 2>/dev/null |
+          python3 -c 'import json, sys; d = json.load(sys.stdin); n = {x.get("name") for x in d.get("results") or d.get("hits") or []}; sys.exit(0 if {"ocr-sample.png", "ocr-sample.pdf"} <= n else 1)'; then ocr_found=1; break; fi
+        sleep 1
+      done
+      if [ "$ocr_found" = 1 ]; then ok "and search finds a picture and a scanned PDF by the text OCR read"; else bad "search did not find both OCR samples:"; tail -n 30 "$T/data/logs/studio.log" | sed 's/^/        /'; fi
+    fi
     kill -TERM "$loop" 2>/dev/null || true
     # The loop waits for the server's own graceful stop, which launchd
     # allows 30 seconds (ExitTimeOut).

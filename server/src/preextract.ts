@@ -12,7 +12,9 @@
  *
  * PDFs go the same way where the native binary is installed: text pages
  * extract directly and scanned pages are read through tesseract when the
- * host has it, with downmark marking the pages OCR filled in. On a host
+ * host has it (the macOS app carries one), with downmark marking the pages
+ * OCR filled in. downmark decodes each such page's image itself and hands
+ * it to tesseract as a PNG on stdin, so this needs no poppler. On a host
  * running the wasm (no platform package) PDFs are left to enrich.py, whose
  * pdftotext + OCR path remains the fallback either way; enrich.py also
  * re-checks a cached PDF whose text is thin for its page count, which
