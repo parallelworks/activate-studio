@@ -112,6 +112,10 @@ test('a damaged or mislabeled file reads as nothing, and the dispatcher does not
   for (const ext of ['.xls', '.ppt', '.odt', '.ods', '.odp']) fs.copyFileSync(junk, junk + ext)
   const out = py(`print(json.dumps([enrich.extract(Path(${JSON.stringify(junk)} + e)) for e in ('.xls', '.ppt', '.odt', '.ods', '.odp')]))`)
   assert.deepEqual(out, ['', '', '', '', ''])
+  // An Office lock file beside a document is never read, whichever reader its suffix names.
+  for (const name of ['~$budget.xls', '~$plan.ppt', '.~lock.report.odt#']) fs.copyFileSync(path.join(fixtures, 'budget.xls'), path.join(tmp, name))
+  const locks = py(`print(json.dumps([enrich.extract(Path(${JSON.stringify(tmp)}) / n) for n in ('~$budget.xls', '~$plan.ppt', '.~lock.report.odt#')]))`)
+  assert.deepEqual(locks, [null, null, null])
 })
 
 test('the readiness report: these formats are read without LibreOffice, and each missing tool has its command here', async () => {
