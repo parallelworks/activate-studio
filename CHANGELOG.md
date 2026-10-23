@@ -2,6 +2,68 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.169 (2026-10-23)
+
+### A change of index depth applies at the next sync (#573)
+
+Sync now, and the background sync, re-index only folders whose files changed since the last pass. A change of index depth touches no file, so a library raised to Text + OCR or to a meaning stop stayed at its old depth until **Update index**.
+
+**What changes**
+
+- The depth an index was last built or synced at is recorded:
+  - `INDEX_BASE/index-depth.json` for the main folder, put aside and brought back with its sync state when the folder changes, and deleted with the index;
+  - `INDEX_BASE/libraries/<id>/depth-state.json` for a library built on this computer.
+  - The record holds `depth`, `ocr` (the depth reads images and tesseract was found) and `meaningSpeed`.
+  - A build writes it.
+- Each sync (`POST /api/index/sweep`, which Sync now calls, and the background one) compares the record with the settings. A higher depth runs only what it adds, over the whole index in place, using the caches:
+
+  | Change | What runs |
+  |---|---|
+  | From Names to Text or higher | documents and text phases |
+  | OCR newly possible (Text to Text + OCR, or tesseract installed since) | documents and text phases: images are read, and PDFs converted without OCR are converted again |
+  | Search by meaning newly on, wider (documents to all files), at another speed, or after new text | meaning phase, then the semantic map soon after |
+  | Lower depth | nothing; it is recorded |
+
+  - The names are not read again.
+  - The job is a `sweep` labelled `Applying the new index depth: ...`.
+  - The record is written only on success, so a failed or stopped run is tried again at the next sync.
+- An index with no record (built before this) counts as built at its settings now, so upgrading re-indexes nothing.
+- Lowering the depth keeps what was read before. Search by meaning stops at the new depth. Words read by OCR stay searchable until their folder is indexed again; nothing is deleted.
+- Saving a depth asks for that sync two seconds later:
+  - `PUT /api/libraries/:id/depth`, `/meaning`, and `PUT /api/index/settings` with a depth field or `meaningSpeed`.
+  - It runs after any running job, and once for several saves in a row (a slider dragged across stops).
+  - Not when the background sync is paused (interval 0); Sync now applies it then.
+  - `meaningSpeed` also asks each library built here, since they follow it.
+- **PDF cache entries.** downmark reused a PDF's cache entry by date alone, so one converted without OCR (a typed header over a scanned body, say) was never read again with OCR. An entry converted without OCR now carries ` (no OCR)` after the version on its provenance line, and a pass with OCR converts it again. Entries from before carry no mark and are reused as they are.
+- **Remote builds** (ssh, pw ssh) have no incremental sync; their Rebuild always runs whole on the remote system. Starting one on every depth change was not cheap, so a remote library still takes a new depth at its next Rebuild. The Libraries page and REFERENCE say so.
+- **UI copy.**
+  - Settings, Indexing: a new depth is applied in the background at once, to the files already indexed, or at Sync now while the sync is paused. Update index reads everything again.
+  - The Libraries Depth change says "It is applied in the background now", or "It applies at the next Rebuild" for a remote library.
+  - The note under the table says the same.
+
+**Tests**
+
+- `server/test/depthSync.test.mjs` (new), with real GUFI, tesseract and the native downmark here, so the search checks ran:
+  - a build records its depth;
+  - an index with no record runs nothing;
+  - Text to Text + OCR through Sync now runs documents and text only (`enrich.py`, no `embed.py`, names skipped), after which the picture and the scanned body of a PDF are found by their text;
+  - lowering runs nothing;
+  - a failed run keeps the old record and the next sync retries;
+  - raising to a meaning stop runs the meaning phase alone;
+  - the PDF cache mark is written, reused without OCR, and converted again with it;
+  - saving the depth three times in a row starts one apply job;
+  - the same for a built library through `syncLibrary` and through the route.
+- `web/test/librariesPage.test.tsx`: changing a built library's depth says it is applied now and asks for no rebuild.
+- Server suite with the extraction tests: 532 passed, 7 skipped. Web suite: 239 passed.
+- End to end on a test server with a temp folder:
+  - built at Text; the picture and the scanned PDF were not found;
+  - saved Text + OCR through the settings route, with no Sync now and no Update index;
+  - 2 s later the record read `ocr` and the last job was `Applying the new index depth: OCR`: names skipped, documents 1 converted, text 3 files, meaning skipped;
+  - both were then found;
+  - lowering to Text started no job.
+
+Docs: HELP (Search: when a depth change applies) and REFERENCE (the record, the sync, the routes).
+
 ## v1.168 (2026-10-23)
 
 ### The minimum macOS covers the Python packages' native libraries (#570)
@@ -38,6 +100,10 @@ Tests:
 - Server suite: 503 passed, 7 skipped. Web suite: 239 passed.
 
 Docs: HELP, MACOS, REFERENCE and the Settings, Updates description.
+
+### Change log through v1.168 (#572)
+
+Regenerated with `node scripts/release-notes.mjs --changelog --next v1.168` before tagging v1.168.
 
 ## v1.167 (2026-10-23)
 
