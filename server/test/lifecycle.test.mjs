@@ -33,3 +33,17 @@ test('a restart is offered only by a launcher', () => {
   assert.equal(L.requestRestart(), true)
   return new Promise(r => setTimeout(() => { assert.equal(code, L.RESTART_EXIT_CODE); r() }, 400))
 })
+
+test('a server the macOS app started itself asks its run loop to hand over to the updated app (exit 76)', async () => {
+  process.env.STUDIO_RESTARTABLE = '1'
+  delete process.env.STUDIO_SUPERVISOR
+  assert.equal(L.runsWithoutAgent(), false)
+  process.env.STUDIO_SUPERVISOR = 'detached'
+  assert.equal(L.runsWithoutAgent(), true)
+  let code = null
+  L.setStopper(c => { code = c })
+  assert.equal(L.requestRestart(L.RELAUNCH_EXIT_CODE), true)
+  await new Promise(r => setTimeout(r, 400))
+  assert.equal(code, 76)
+  delete process.env.STUDIO_SUPERVISOR
+})

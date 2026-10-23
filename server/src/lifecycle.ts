@@ -10,6 +10,16 @@ import path from 'node:path'
 
 /** Exit status that asks the launcher to start the server again. */
 export const RESTART_EXIT_CODE = 75
+/** Exit status that asks a run loop the macOS app started itself to run the
+ *  app's own run loop again, from the copy an update put in place
+ *  (deploy/mac/studio-run.sh). */
+export const RELAUNCH_EXIT_CODE = 76
+
+/** The macOS app started the server's run loop itself, without a
+ *  LaunchAgent, as where ~/Library/LaunchAgents is read-only. */
+export function runsWithoutAgent(): boolean {
+  return process.env.STUDIO_SUPERVISOR === 'detached'
+}
 
 export function canRestart(): boolean {
   return process.env.STUDIO_RESTARTABLE === '1'
@@ -19,11 +29,12 @@ let stopper: ((code: number) => void) | null = null
 /** main.ts hands over its graceful stop, so a restart drains like a rollout. */
 export function setStopper(fn: (code: number) => void): void { stopper = fn }
 
-/** Restart soon, after the current response has gone out. */
-export function requestRestart(): boolean {
+/** Restart soon, after the current response has gone out; `code` is
+ *  RELAUNCH_EXIT_CODE after an update replaced the macOS app. */
+export function requestRestart(code = RESTART_EXIT_CODE): boolean {
   if (!canRestart() || !stopper) return false
   const stop = stopper
-  setTimeout(() => stop(RESTART_EXIT_CODE), 300).unref?.()
+  setTimeout(() => stop(code), 300).unref?.()
   return true
 }
 

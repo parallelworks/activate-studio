@@ -12,7 +12,8 @@
 # indexer scripts, and the server itself from the app's own run loop on a
 # spare port, all with no DYLD_* variables set. --launch then
 # exercises the launcher and its LaunchAgent with a temporary home
-# directory. On a Mac older than the app's LSMinimumSystemVersion they are
+# directory, and the launcher without one, as on a managed Mac where
+# ~/Library/LaunchAgents is read-only. On a Mac older than the app's LSMinimumSystemVersion they are
 # skipped. Signed by sign_app.sh, all of it runs under the hardened runtime.
 #
 # Usage: deploy/mac/check_app.sh "path/to/ACTIVATE Studio.app" [--run] [--launch]
@@ -365,6 +366,46 @@ if [ "$RUN" = 1 ]; then
       check "the uninstall plan lists the app, the data and a library index" sh -c "printf '%s\n' \"\$1\" | grep -q '^app	' && printf '%s\n' \"\$1\" | grep -q '^data	' && printf '%s\n' \"\$1\" | grep -q '^library-index	$LIBIDX\$'" _ "$PLAN"
       check "and keeps the documents" sh -c "printf '%s\n' \"\$1\" | grep -q '^keep-documents	$T/corpus\$'" _ "$PLAN"
       check "a dry run removes nothing" test -f "$LIBIDX/.studio-index.json"
+
+      # A managed Mac where ~/Library/LaunchAgents is read-only: the app
+      # starts the server itself (a run loop in a session of its own, named
+      # in server.pid), with no administrator rights.
+      echo "Launcher, with ~/Library/LaunchAgents read-only"
+      H2="$T/home-locked"
+      D2="$H2/Library/Application Support/ACTIVATE Studio"
+      PORT2="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')"
+      PORT3="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')"
+      mkdir -p "$H2/Library/LaunchAgents" "$D2"
+      chmod 555 "$H2/Library/LaunchAgents"
+      printf "PORT='%s'\nKB_ROOT='%s'\n" "$PORT2" "$T/corpus" >"$D2/studio.env"
+      locked() { env HOME="$H2" STUDIO_NO_BROWSER=1 "$L" "$@"; }
+      loop_pid() { head -n 1 "$D2/server.pid" 2>/dev/null || true; }
+      check "opening the app starts the server without a LaunchAgent" locked
+      check "no LaunchAgent was written" test ! -e "$H2/Library/LaunchAgents/$LABEL.plist"
+      P2="$(loop_pid)"
+      check "the server answers after the launcher has exited" curl -fsS -m 5 "http://127.0.0.1:$PORT2/api/version"
+      own_group() { [ -n "$P2" ] && [ "$(ps -o pgid= -p "$P2" | tr -d ' ')" = "$P2" ]; }
+      check "its run loop has a process group of its own" own_group
+      same_loop() { locked >/dev/null && [ "$(loop_pid)" = "$P2" ]; }
+      check "opening it again uses the same server" same_loop
+      # The server's own restart (here for a new port, as Settings, Server
+      # does) comes back from the same run loop.
+      restarted() {
+        curl -fsS -m 10 -X POST -H 'content-type: application/json' -d "{\"port\": $PORT3}" \
+          "http://127.0.0.1:$PORT2/api/setup/port" | grep -q '"restarting":true' || return 1
+        for _ in $(seq 1 90); do curl -fsS -m 2 "http://127.0.0.1:$PORT3/api/version" >/dev/null 2>&1 && break; sleep 1; done
+        curl -fsS -m 2 "http://127.0.0.1:$PORT3/api/version" >/dev/null && [ "$(loop_pid)" = "$P2" ] && kill -0 "$P2"
+      }
+      check "a restart the server asks for brings it back, from the same run loop" restarted
+      check "--stop stops it" locked --stop
+      check "and the server is gone" sh -c "! curl -fsS -m 2 http://127.0.0.1:$PORT3/api/version"
+      check "and its run loop" sh -c "! kill -0 '$P2' 2>/dev/null"
+      check "opening the app again starts it again" locked
+      PLAN2="$(locked --uninstall --dry-run 2>&1 || true)"
+      check "the uninstall plan lists that server" sh -c 'printf "%s\n" "$1" | grep -qxF "server	$2/server.pid"' _ "$PLAN2" "$D2"
+      check "and no LaunchAgent" sh -c '! printf "%s\n" "$1" | grep -q LaunchAgents' _ "$PLAN2"
+      locked --stop >/dev/null 2>&1 || true
+      chmod 755 "$H2/Library/LaunchAgents"
     fi
 
     # Nothing written into the app while it ran: a file added or changed

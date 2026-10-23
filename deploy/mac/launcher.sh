@@ -14,10 +14,14 @@
 # Your documents folder is never removed.
 #
 # The server runs as a LaunchAgent (com.parallelworks.activate-studio), on
-# 127.0.0.1 only, from studio-run.sh in this app. Its data lives in
-# ~/Library/Application Support/ACTIVATE Studio: index/, logs/, updates/,
-# and studio.env, the settings read before each start (PORT=4180 by default).
-# STUDIO_NO_BROWSER=1 skips opening a window.
+# 127.0.0.1 only, from studio-run.sh in this app. Where no LaunchAgent can be
+# installed or loaded, as on a managed Mac where ~/Library/LaunchAgents is
+# read-only, the app starts studio-run.sh itself, in a session of its own,
+# and records it in server.pid; that server starts when the app is opened,
+# not at login. No administrator rights are needed either way. Its data
+# lives in ~/Library/Application Support/ACTIVATE Studio: index/, logs/,
+# updates/, and studio.env, the settings read before each start (PORT=4180
+# by default). STUDIO_NO_BROWSER=1 skips opening a window.
 set -euo pipefail
 
 CONTENTS="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
@@ -26,6 +30,7 @@ RES="$CONTENTS/Resources"
 LABEL=com.parallelworks.activate-studio
 DATA="$HOME/Library/Application Support/ACTIVATE Studio"
 CONFIG="$DATA/studio.env"
+PIDFILE="$DATA/server.pid"
 AGENT="$HOME/Library/LaunchAgents/$LABEL.plist"
 DOMAIN="gui/$(id -u)"
 SERVICE="$DOMAIN/$LABEL"
@@ -53,6 +58,56 @@ version_of() { curl -fsS -m 2 "http://127.0.0.1:$1/api/version" 2>/dev/null; }
 built_at() { sed -n 's/.*"builtAt": *"\([^"]*\)".*/\1/p' | head -n 1; }
 
 loaded() { launchctl print "$SERVICE" >/dev/null 2>&1; }
+
+stamp() { date '+%Y-%m-%d %H:%M:%S'; }
+
+# The run loop the app started itself (start_detached), while it runs: its
+# PID, checked against its command line so that a stale or reused number is
+# never signalled. DETACHED_CMD keeps the command line, when called directly.
+DETACHED_CMD=
+detached_pid() {
+  local p
+  DETACHED_CMD=
+  p="$(head -n 1 "$PIDFILE" 2>/dev/null || true)"
+  case "$p" in ''|*[!0-9]*) return 1 ;; esac
+  DETACHED_CMD="$(ps -ww -o command= -p "$p" 2>/dev/null || true)"
+  case "$DETACHED_CMD" in *"/studio-run.sh $DATA") printf '%s\n' "$p" ;; *) DETACHED_CMD=; return 1 ;; esac
+}
+
+# Starts studio-run.sh as the LaunchAgent runs it, as a process of this
+# person's own, where no agent can be installed or loaded. The app's Python
+# gives it a session of its own (setsid), so it outlives this script and the
+# app's window, and it ignores hangups. Its output goes where the agent's
+# goes. STUDIO_SUPERVISOR=detached tells the server that an update restarts
+# it through the run loop (studio-run.sh, exit 76) rather than launchd.
+start_detached() {
+  local py="$RES/python/bin/python3" log="$DATA/logs/agent.log" p
+  if [ -x "$py" ]; then
+    STUDIO_APP_BUNDLE="$APP" STUDIO_SUPERVISOR=detached nohup "$py" -B -c 'import os, signal, sys
+os.setsid()
+signal.signal(signal.SIGHUP, signal.SIG_IGN)
+os.execv("/bin/bash", ["/bin/bash"] + sys.argv[1:])' "$RES/studio-run.sh" "$DATA" </dev/null >>"$log" 2>&1 &
+  else
+    STUDIO_APP_BUNDLE="$APP" STUDIO_SUPERVISOR=detached nohup /bin/bash "$RES/studio-run.sh" "$DATA" </dev/null >>"$log" 2>&1 &
+  fi
+  p=$!
+  disown "$p" 2>/dev/null || true
+  printf '%s\n' "$p" >"$PIDFILE"
+  echo "$(stamp) the app started the server itself, without a LaunchAgent (process $p)" >>"$log"
+}
+
+# Stops that run loop: TERM, which it passes to the server and waits out (as
+# launchd allows 30 seconds), then KILL to its process group, the one setsid
+# gave it, if it is still the same process.
+stop_detached() {
+  local p n=0
+  if p="$(detached_pid)"; then
+    kill -TERM "$p" 2>/dev/null || true
+    while [ "$n" -lt 70 ] && detached_pid >/dev/null; do sleep 0.5; n=$((n + 1)); done
+    if p="$(detached_pid)"; then kill -KILL -- "-$p" 2>/dev/null || kill -KILL "$p" 2>/dev/null || true; fi
+  fi
+  rm -f "$PIDFILE"
+}
 
 xml() { local s="${1//&/&amp;}"; s="${s//</&lt;}"; printf '%s' "${s//>/&gt;}"; }
 
@@ -100,6 +155,53 @@ stop() {
   launchctl bootout "$SERVICE" 2>/dev/null || true
   # Disabled, so it does not start again at login until the app is opened.
   launchctl disable "$SERVICE" 2>/dev/null || true
+  stop_detached
+}
+
+# Installs and loads the LaunchAgent for this copy of the app: rewritten when
+# the app moved, loaded when it is not running. Fails, with AGENT_WHY saying
+# what failed, where the agent cannot be written or loaded; WAS_RUNNING says
+# whether it was running already.
+AGENT_WHY=
+WAS_RUNNING=1
+agent_start() {
+  local want dir
+  dir="$(dirname "$AGENT")"
+  want="$(agent_plist)"
+  if [ ! -f "$AGENT" ] || [ "$(cat "$AGENT" 2>/dev/null)" != "$want" ]; then
+    # Checked before a running agent is stopped to be rewritten.
+    if ! mkdir -p "$dir" 2>/dev/null || [ ! -w "$dir" ] || { [ -e "$AGENT" ] && [ ! -w "$AGENT" ]; }; then
+      AGENT_WHY="$dir is not writable"
+      return 1
+    fi
+    if loaded; then
+      launchctl bootout "$SERVICE" 2>/dev/null || true
+      for _ in 1 2 3 4 5 6 7 8 9 10; do loaded || break; sleep 0.5; done
+    fi
+    if ! { printf '%s\n' "$want" >"$AGENT"; } 2>/dev/null; then
+      AGENT_WHY="$AGENT could not be written"
+      return 1
+    fi
+  fi
+  launchctl enable "$SERVICE" 2>/dev/null || true
+  WAS_RUNNING=1
+  if ! loaded; then
+    WAS_RUNNING=0
+    if ! launchctl bootstrap "$DOMAIN" "$AGENT" 2>>"$DATA/logs/agent.log" && ! loaded; then
+      AGENT_WHY="launchctl bootstrap did not load $AGENT"
+      return 1
+    fi
+  fi
+}
+
+# Starts the server again, the way it runs.
+restart_server() {
+  if [ "$MODE" = agent ]; then
+    launchctl kickstart -k "$SERVICE" 2>/dev/null || true
+  else
+    stop_detached
+    start_detached
+  fi
 }
 
 wait_ready() {
@@ -107,8 +209,13 @@ wait_ready() {
   until version_of "$1" >/dev/null; do
     n=$((n + 1))
     if [ "$n" -gt 120 ]; then
-      say "ACTIVATE Studio did not start. Its log is $DATA/logs/studio.log."
-      if printing; then tail -n 20 "$DATA/logs/studio.log" >&2 || true; else open "$DATA/logs" || true; fi
+      say "ACTIVATE Studio did not start. Its logs are in $DATA/logs (studio.log, and agent.log for the background server)."
+      if printing; then
+        tail -n 20 "$DATA/logs/studio.log" >&2 || true
+        [ "$MODE" = detached ] && { tail -n 5 "$DATA/logs/agent.log" >&2 || true; }
+      else
+        open "$DATA/logs" || true
+      fi
       exit 1
     fi
     sleep 1
@@ -133,37 +240,36 @@ open_window() {
   open "$url"
 }
 
+MODE=agent
 start() {
   case "$APP" in
     */AppTranslocation/*|/Volumes/*)
-      say "Move ACTIVATE Studio to your Applications folder, then open it from there."
+      say "Move ACTIVATE Studio to an Applications folder, then open it from there. Applications in your home folder (~/Applications) works without admin rights."
       exit 1 ;;
   esac
-  mkdir -p "$DATA/index" "$DATA/logs" "$(dirname "$AGENT")"
+  if ! mkdir -p "$DATA/index" "$DATA/logs" 2>/dev/null; then
+    say "ACTIVATE Studio could not create its data folder, $DATA."
+    exit 1
+  fi
   [ -f "$CONFIG" ] || printf "PORT='4180'\n" >"$CONFIG"
   # This is the app's current executable, so an update that asked for the
   # app to be reopened has had it.
   rm -f "$DATA/updates/reopen"
 
-  # The agent names this copy of the app: rewrite it when the app moved,
-  # and load it when it is not running.
-  local want
-  want="$(agent_plist)"
-  if [ ! -f "$AGENT" ] || [ "$(cat "$AGENT")" != "$want" ]; then
-    if loaded; then
-      launchctl bootout "$SERVICE" 2>/dev/null || true
-      for _ in 1 2 3 4 5 6 7 8 9 10; do loaded || break; sleep 0.5; done
-    fi
-    printf '%s\n' "$want" >"$AGENT"
-  fi
-  launchctl enable "$SERVICE" 2>/dev/null || true
-  local was_running=1
-  if ! loaded; then
-    was_running=0
-    if ! launchctl bootstrap "$DOMAIN" "$AGENT"; then
-      say "ACTIVATE Studio could not start its background server (launchctl bootstrap failed)."
-      exit 1
-    fi
+  # A server the app started itself at an earlier opening is used as it is
+  # (restarted from this copy when another copy started it). Otherwise the
+  # LaunchAgent, and where none can be installed or loaded, a server the
+  # app starts itself.
+  if detached_pid >/dev/null; then
+    MODE=detached WAS_RUNNING=1
+    case "$DETACHED_CMD" in
+      *"$RES/studio-run.sh $DATA") ;;
+      *) restart_server; WAS_RUNNING=0 ;;
+    esac
+  elif ! agent_start; then
+    MODE=detached WAS_RUNNING=0
+    echo "$(stamp) no LaunchAgent ($AGENT_WHY); the app starts the server itself, when it is opened" >>"$DATA/logs/agent.log"
+    start_detached
   fi
 
   local port
@@ -172,7 +278,7 @@ start() {
   if ! version_of "$port" >/dev/null; then
     # A server already running that does not answer on this port started
     # before studio.env named it; a restart reads the settings again.
-    [ "$was_running" = 1 ] && launchctl kickstart -k "$SERVICE" 2>/dev/null || true
+    [ "$WAS_RUNNING" = 1 ] && restart_server
     printing || osascript -e 'display notification "Starting..." with title "ACTIVATE Studio"' >/dev/null 2>&1 || true
     wait_ready "$port"
   fi
@@ -182,7 +288,7 @@ start() {
   mine="$(built_at <"$RES/app/build-info.json" 2>/dev/null || true)"
   running="$(version_of "$port" | built_at || true)"
   if [ -n "$mine" ] && [ -n "$running" ] && [ "$running" != "$mine" ]; then
-    launchctl kickstart -k "$SERVICE" 2>/dev/null || true
+    restart_server
     sleep 2
     wait_ready "$port"
   fi
@@ -218,8 +324,12 @@ studio_index() { [ -d "$1/gufi" ] || [ -e "$1/indexed-root" ]; }
 plan() {
   local purge="$1" kb base moved side d f libs
   kb="$(setting KB_ROOT)"
-  printf 'server	%s
-' "$AGENT"
+  # The background server: the LaunchAgent where one is installed, and the
+  # run loop the app started itself where none could be.
+  if [ -e "$AGENT" ] || loaded; then printf 'server	%s
+' "$AGENT"; fi
+  if detached_pid >/dev/null; then printf 'server	%s
+' "$PIDFILE"; fi
   if [ -f "$CONTENTS/Info.plist" ] && grep -q "<string>$LABEL</string>" "$CONTENTS/Info.plist"; then
     printf 'app	%s
 ' "$APP"
@@ -309,8 +419,12 @@ uninstall() {
     return
   fi
   stop
-  rm -f "$AGENT"
-  launchctl enable "$SERVICE" 2>/dev/null || true
+  if [ -e "$AGENT" ] && ! rm -f "$AGENT" 2>/dev/null; then
+    # Left disabled by stop, so it does not start.
+    echo "Could not remove $AGENT (its folder is read-only); it is disabled and does not start."
+  else
+    launchctl enable "$SERVICE" 2>/dev/null || true
+  fi
   while IFS=$'\t' read -r kind path; do
     [ -n "$path" ] || continue
     case "$kind" in

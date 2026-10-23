@@ -9,7 +9,7 @@ import { authEnabled } from './auth.js'
 import { parseNotes, readChangelog, type ChangeEntry, type ChangeVersion } from './changelog.js'
 import { INDEX_BASE } from './config.js'
 import { KbError } from './kb.js'
-import { requestRestart } from './lifecycle.js'
+import { RELAUNCH_EXIT_CODE, requestRestart, runsWithoutAgent } from './lifecycle.js'
 import { effectiveSettings, type UpdatePolicy } from './settings.js'
 import { networkFailure } from './net.js'
 import { buildInfo } from './version.js'
@@ -577,9 +577,19 @@ async function prepare(rel: Release): Promise<Prepared> {
 // ---- install ----
 
 /** The LaunchAgent restarted, so its run loop starts from the app now in
- *  place; detached, since the restart stops this process and its group. */
+ *  place; detached, since the restart stops this process and its group.
+ *  Where the app started the run loop itself (no LaunchAgent), the server
+ *  exits with RELAUNCH_EXIT_CODE and the run loop hands over to the new
+ *  copy's own. */
 function restart(): void {
   st.state = 'restarting'
+  if (runsWithoutAgent()) {
+    if (!requestRestart(RELAUNCH_EXIT_CODE)) {
+      st.state = 'error'
+      st.error = 'The new version is in place, but the Studio could not restart itself. Quit and reopen the app.'
+    }
+    return
+  }
   let fellBack = false
   const fallBack = () => {
     if (fellBack) return
