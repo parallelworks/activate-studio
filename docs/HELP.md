@@ -73,6 +73,8 @@ Structured questions about the files themselves (largest, newest, totals by type
 
 The knowledge base at a glance: size, file types, labels, and recent changes. Click any figure to see the files behind it. While the index is being built the page follows it, phase by phase; **Refresh** reads everything again, and **Index runs** lists recent builds and syncs with how long each phase took.
 
+**Corpus topology** shows the folders by size, and zooming in shows the folders inside them. The **semantic map** places files by what they say, in clusters, with a sample of up to 3,000 files; click a cluster for all of its files. Both zoom (wheel, pinch, + and -), move (drag or the arrow keys) and open full screen, and the semantic map turns in **3D**. The map is remade in the background after the index's search by meaning changes.
+
 # Run work
 
 ## Workflows

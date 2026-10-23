@@ -1534,13 +1534,29 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
   background: #fff;
 }
 
-.treemap { border-radius: 8px; overflow: hidden; }
-.treemap-cell { cursor: pointer; border: 1px solid rgba(255,255,255,0.55); overflow: hidden; transition: filter .12s; }
-.treemap-cell:hover { filter: brightness(1.15); }
-.treemap-label { font-size: 0.72rem; color: inherit; padding: 3px 5px; display: inline-block; line-height: 1.25; }
+.treemap-canvas { border-radius: 8px; }
 .crumb-row { margin: 4px 0 8px; }
 .crumb { background: none; border: none; color: var(--pw-link, #2563eb); cursor: pointer; padding: 0 2px; font: inherit; }
 .semantic-map { border: 1px solid var(--pw-border, #ddd); border-radius: 8px; background: var(--pw-panel, #fafafa); }
+.semantic-map:focus-visible, .treemap-canvas:focus-visible { outline: 2px solid var(--theme-accent, #2563eb); outline-offset: 2px; }
+.map-canvas { position: relative; }
+.map-canvas.fill { flex: 1; min-height: 0; }
+.map-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; margin: 0 0 8px; }
+.map-status { margin: 0 0 6px; font-size: 0.82rem; }
+.legend-chip.on { font-weight: 600; text-decoration: underline; }
+.map-cluster-chip { max-width: 22rem; text-align: left; }
+.map-cluster-chip .legend-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+/* A map filling the window: its bar on top, the canvas taking the rest. */
+.map-full {
+  position: fixed; inset: 0; z-index: 1000; display: flex; flex-direction: column; gap: 6px;
+  padding: calc(12px + env(safe-area-inset-top, 0px)) 16px calc(12px + env(safe-area-inset-bottom, 0px));
+  background: var(--theme-panel-bg, var(--pw-panel, #fff)); outline: none;
+}
+.map-full-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.map-full-head h2 { margin: 0; font-size: 1.05rem; }
+.map-full-head .map-bar { margin: 0; }
+.map-full-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.map-full-body .map-legend { flex-shrink: 0; max-height: 25vh; overflow: auto; }
 .map-tip { position: absolute; left: 8px; bottom: 8px; background: rgba(15,23,42,0.9); color: #fff; padding: 3px 8px; border-radius: 6px; font-size: 0.78rem; pointer-events: none; max-width: 90%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .map-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 10px 2px 0; }

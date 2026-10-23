@@ -5,7 +5,7 @@ import fsp from 'node:fs/promises'
 import path from 'node:path'
 import { createInterface } from 'node:readline'
 import {
-  EMBED_CACHE, EXCLUDE_DIRS, EXTRACT_CACHE, GUFI_BIN, GUFI_INDEX, INDEX_BASE, INDEX_DIR, KB_ROOT, PROJECT_ROOT, PYTHON_BIN,
+  EMBED_CACHE, EXCLUDE_DIRS, EXTRACT_CACHE, GUFI_BIN, GUFI_INDEX, INDEX_BASE, INDEX_DIR, KB_ROOT, PROJECT_ROOT, PYTHON_BIN, SEMANTIC_MAP_DIR,
   gufiEnv, indexerEnv,
 } from './config.js'
 import { invalidateDbList } from './gufi.js'
@@ -15,6 +15,7 @@ import { effectiveSettings } from './settings.js'
 import { indexLog } from './indexLog.js'
 import { indexSettings, meaningArgs, threadsFor, type IndexSettings } from './indexSettings.js'
 import { sofficeFound } from './extractors.js'
+import { scheduleSemanticMapRebuild } from './semanticMap.js'
 
 /**
  * Building the index, and every later change to it, as jobs that run one at
@@ -579,6 +580,9 @@ async function meaningPhase(ctx: JobCtx, o: { index: string; noRecurse?: boolean
   const out = await runTool(ctx, ph, PYTHON_BIN, args, indexerEnv({ STUDIO_TMP: INDEX_DIR }))
   const m = /chunked: (\d+) chunks .*?, (\d+) to embed/.exec(out.join('\n'))
   ph.finish(m ? `${Number(m[1]).toLocaleString('en-US')} passages, ${Number(m[2]).toLocaleString('en-US')} new` : undefined)
+  // The semantic map follows the embeddings, in the background: soon after
+  // a build, and no more than every ten minutes or so after a sync.
+  if (o.prune || (m && Number(m[2]) > 0)) scheduleSemanticMapRebuild(ctx.job.kind === 'build' ? 5_000 : 10 * 60_000)
 }
 
 /** Put a built tree at `dest`, the old one out of the way first. */
@@ -784,6 +788,7 @@ async function reconcileOnce(log: (m: string) => void): Promise<void> {
     if (moved.some(Boolean)) log(`folder: put the index of ${was} aside in ${to}`)
     // Previews are cheap to make again, and keyed the same way.
     for (const d of ['pdf-preview', 'pdf-pages', 'model-cache']) await fsp.rm(path.join(INDEX_BASE, d), { recursive: true, force: true })
+    await fsp.rm(SEMANTIC_MAP_DIR, { recursive: true, force: true })
     // Keep the few most recent.
     const kept = (await fsp.readdir(STASH).catch(() => [] as string[])).map(n => path.join(STASH, n))
     const dated = await Promise.all(kept.map(async d => ({ d, t: (await fsp.stat(d).catch(() => null))?.mtimeMs ?? 0 })))
@@ -871,7 +876,7 @@ export function currentBuild(): IndexJob | null {
 export function startDelete(): IndexJob {
   cancelAllIndexJobs()
   return enqueue('delete', '', 'Deleting the index', async ctx => {
-    for (const p of [GUFI_INDEX, EXTRACT_CACHE, EMBED_CACHE, SWEEP_STATE, ROOT_MARK,
+    for (const p of [GUFI_INDEX, EXTRACT_CACHE, EMBED_CACHE, SWEEP_STATE, ROOT_MARK, SEMANTIC_MAP_DIR,
       path.join(INDEX_BASE, 'pdf-preview'), path.join(INDEX_BASE, 'pdf-pages'), path.join(INDEX_BASE, 'model-cache')]) {
       await fsp.rm(p, { recursive: true, force: true })
     }

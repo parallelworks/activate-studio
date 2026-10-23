@@ -26,7 +26,8 @@ jobs:
       # Dependency installs run package scripts, so allow only GitHub,
       # nodejs.org (setup-node's fallback), npm, the Ubuntu mirrors
       # (including the ones apt falls back to when the Azure mirror is
-      # down), and PyPI's file host for the pinned, hash-checked readers.
+      # down), and PyPI's file host for the pinned, hash-checked readers and
+      # embedding packages.
       - uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: block
@@ -38,6 +39,7 @@ jobs:
             results-receiver.actions.githubusercontent.com:443
             nodejs.org:443
             registry.npmjs.org:443
+            files.pythonhosted.org:443
             azure.archive.ubuntu.com:80
             archive.ubuntu.com:80
             archive.ubuntu.com:443
@@ -46,7 +48,6 @@ jobs:
             esm.ubuntu.com:443
             motd.ubuntu.com:443
             packages.microsoft.com:443
-            files.pythonhosted.org:443
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -66,10 +67,11 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends tesseract-ocr poppler-utils
-      # The .xls and .ppt readers, pinned with their SHA-256, where enrich.py
-      # finds them (indexer/.deps); their tests fail rather than skip without.
-      - name: install the document readers
-        run: python3 indexer/fetch_embed.py --deps indexer/.deps --readers-only
+      # The pinned packages beside the indexer, as a clone gets them: the .xls
+      # and .ppt readers, whose tests fail rather than skip without them, and
+      # numpy and the rest, so the semantic map's own build runs in the tests.
+      - name: install the document readers and embedding packages
+        run: python3 indexer/fetch_embed.py --deps indexer/.deps
 
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
@@ -104,6 +106,10 @@ jobs:
         run: brew install tesseract poppler
       - name: install the document readers
         run: python3 indexer/fetch_embed.py --deps indexer/.deps --readers-only
+      # The runner's python3 can be newer than the pinned wheels; the map's
+      # own build is then left to the Linux job, and its tests here skip.
+      - name: install the embedding packages
+        run: python3 indexer/fetch_embed.py --deps indexer/.deps || echo "no pinned wheels for this Python; the semantic map's build tests skip"
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - run: pnpm test
