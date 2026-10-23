@@ -215,14 +215,20 @@ export function wantsSemantic(raw: string): boolean {
   return words.length > 0
 }
 
-/** Blend full-text, filename, and vector hits without letting one starve the rest. */
+/** Blend full-text, filename, and vector hits without letting one starve
+ *  the rest. A file found more than one way keeps its place and is labelled
+ *  by the most exact of them: its words, then its name, then meaning, so a
+ *  name that matches is never shown as a match by meaning. */
 export function blendHits(fts: SearchHit[], names: SearchHit[], vec: SearchHit[], limit: number): SearchHit[] {
   const vecTop = vec.slice(0, Math.min(6, Math.max(2, Math.floor(limit / 3))))
   const ftsTop = fts.slice(0, Math.max(4, limit - vecTop.length))
+  const exact = new Map<string, SearchHit['mode']>()
+  for (const h of [...vec, ...names, ...fts]) exact.set(h.path, h.mode)
   const seen = new Set<string>()
   return [...ftsTop, ...vecTop, ...names, ...fts, ...vec]
     .filter(h => !seen.has(h.path) && seen.add(h.path))
     .slice(0, limit)
+    .map(h => (exact.get(h.path) === h.mode ? h : { ...h, mode: exact.get(h.path)! }))
 }
 
 export async function queryPerDir(sql: string, opts: { threads?: number; subdir?: string; indexRoot?: string } = {}): Promise<string[][]> {
