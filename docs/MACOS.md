@@ -86,16 +86,41 @@ stopped and resumed with Update index; the cached text and embeddings are
 kept, so it continues rather than starting over, and so does choosing a
 folder that was indexed before.
 
-*Stop or uninstall:*
+*Stop or uninstall:* Stop Background Server, in the app menu, stops the
+server until the app is next opened. Uninstall ACTIVATE Studio…, in the same
+menu, lists everything it removes and keeps, with "Also remove indexes,
+settings and logs" ticked by default, and removes it once confirmed; then
+the app quits. The same from Terminal:
 
 ```
 "$HOME/Applications/ACTIVATE Studio.app/Contents/MacOS/ACTIVATE Studio" --stop
-"$HOME/Applications/ACTIVATE Studio.app/Contents/MacOS/ACTIVATE Studio" --uninstall
+"$HOME/Applications/ACTIVATE Studio.app/Contents/MacOS/ACTIVATE Studio" --uninstall [--purge]
+"$HOME/Applications/ACTIVATE Studio.app/Contents/MacOS/ACTIVATE Studio" --uninstall --dry-run [--purge]
 ```
 
-`--stop` stops the server until the app is next opened. `--uninstall`
-removes the background server and the app, and keeps the index, logs and
-settings unless `--purge` is added. Neither touches the documents.
+`--uninstall` removes the background server (its LaunchAgent), the app and
+the copies of it kept for updates. `--purge` also removes:
+
+- `~/Library/Application Support/ACTIVATE Studio`: the index, settings,
+  logs, conversations, and the libraries built in the Studio's own folder;
+- the index moved elsewhere with Settings, Indexing (`STUDIO_INDEX_DIR`):
+  only what the Studio wrote there (`gufi`, `extract`, `embed-cache.db`,
+  `folders`, `indexed-root` and build leftovers), and the folder itself only
+  when nothing else is in it;
+- the index of each library built from a folder on this computer into a
+  folder chosen for it: the index and its `.studio-index.json` manifest,
+  and the folder only when nothing else is in it (a folder without the
+  manifest is left alone);
+- the window's own data: `~/Library/WebKit`, `~/Library/Caches`,
+  `~/Library/HTTPStorages`, `~/Library/Saved Application State` and
+  `~/Library/Preferences` entries for `com.parallelworks.activate-studio`.
+
+`--dry-run` removes nothing and prints the plan, one `kind<TAB>path` line
+each: `server`, `app`, `update-copy`, `data`, `index`, `library-index`,
+`window-data`, and `keep-data` and `keep-documents` for what stays. The
+Uninstall dialog shows this list, so it and the removal always agree. The
+documents folder is never removed, and neither are indexes on other
+machines.
 
 *Updates:* the app checks this repository's releases a minute after it
 starts and every six hours after that. A one-line notice at the top of

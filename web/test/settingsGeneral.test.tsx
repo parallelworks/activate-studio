@@ -206,6 +206,20 @@ describe('Settings, General, Server', () => {
     expect(screen.getByText('Restarting the Studio on port 4190…')).toBeInTheDocument()
   })
 
+  it('in the macOS app, says how the app is uninstalled, from its menu or Terminal; elsewhere says nothing', async () => {
+    stub({ setup: { firstRun: false, standalone: true, canRestart: true, launcher: true, port: 4180, portNext: null, macApp: '/Applications/ACTIVATE Studio.app' } })
+    const { unmount } = render(<ServerSection pollMs={5} />)
+    expect(await screen.findByText(/use Uninstall ACTIVATE Studio… in the app menu/)).toBeInTheDocument()
+    expect(screen.getByText(/your documents are never removed/)).toBeInTheDocument()
+    expect(screen.getByText('"/Applications/ACTIVATE Studio.app/Contents/MacOS/ACTIVATE Studio" --uninstall --purge')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Uninstall/ })).toBeNull()
+    unmount()
+    stub()
+    render(<ServerSection pollMs={5} />)
+    expect(await screen.findByText(/now 4180/)).toBeInTheDocument()
+    expect(screen.queryByText(/Uninstall ACTIVATE Studio/)).toBeNull()
+  })
+
   it('in a browser, moves to the new address once it answers', async () => {
     const s = stub()
     const went: string[] = []

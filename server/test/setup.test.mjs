@@ -17,7 +17,7 @@ process.env.KB_ROOT = KB
 process.env.INDEX_BASE = IX
 const GUFI = process.env.GUFI_BIN || '/opt/gufi/bin'
 process.env.GUFI_BIN = GUFI
-for (const k of ['AUTH_JWKS_URL', 'STUDIO_CONFIG_FILE', 'STUDIO_RESTARTABLE', 'PW_PLATFORM_HOST', 'PORT', 'HOST']) delete process.env[k]
+for (const k of ['AUTH_JWKS_URL', 'STUDIO_CONFIG_FILE', 'STUDIO_RESTARTABLE', 'STUDIO_APP_BUNDLE', 'PW_PLATFORM_HOST', 'PORT', 'HOST']) delete process.env[k]
 
 fs.mkdirSync(path.join(HOME, 'beta'))
 fs.mkdirSync(path.join(HOME, 'Alpha'))
@@ -106,6 +106,11 @@ test('primary folder: validated, and saved only where a launcher can carry it', 
   let code = null
   L.setStopper(c => { code = c })
   assert.equal((await j('GET', '/api/setup/status')).body.canRestart, true)
+  // The macOS app names its bundle, for Settings, Server's uninstall line.
+  assert.equal((await j('GET', '/api/setup/status')).body.macApp, null)
+  process.env.STUDIO_APP_BUNDLE = '/Applications/ACTIVATE Studio.app'
+  assert.equal((await j('GET', '/api/setup/status')).body.macApp, '/Applications/ACTIVATE Studio.app')
+  delete process.env.STUDIO_APP_BUNDLE
   const restart = await j('POST', '/api/setup/primary-folder', { path: OTHER })
   assert.deepEqual(restart.body, { saved: true, restarting: true })
   assert.equal(L.readLauncherSettings().KB_ROOT, OTHER)

@@ -7,7 +7,8 @@
 // Dock icon, the window remembered between launches. Links that leave the
 // Studio open in the default browser, file pickers and downloads behave as
 // in any Mac app, and quitting leaves the server running for the next open
-// (Stop Background Server in the app menu stops it). The title bar takes the
+// (Stop Background Server in the app menu stops it; Uninstall ACTIVATE
+// Studio… removes the app, and with it, if chosen, its indexes and data). The title bar takes the
 // color the page names for it, as an installed web app's does. The Studio's
 // page can ask the window, through window.webkit.messageHandlers.studioShell,
 // for the system folder chooser, to follow the Studio to another port, and to
@@ -74,6 +75,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
   var barWatches: [NSKeyValueObservation] = []
   /// The bar's last color, kept between launches so the window opens with it.
   let barColorKey = "TitleBarColor"
+  /// The Uninstall dialog's list, and the two plans it switches between.
+  var uninstallList: NSTextView?
+  var uninstallPlans: (all: [PlanItem], app: [PlanItem]) = ([], [])
   let message = NSTextField(wrappingLabelWithString: "Starting ACTIVATE Studio…")
   let spinner = NSProgressIndicator()
   let buttons = NSStackView()
@@ -186,6 +190,157 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     let logs = FileManager.default.homeDirectoryForCurrentUser
       .appendingPathComponent("Library/Application Support/ACTIVATE Studio/logs")
     NSWorkspace.shared.open(logs)
+  }
+
+  // MARK: uninstalling
+
+  /// One line of the launcher's uninstall plan: what kind of thing, and where.
+  struct PlanItem { let kind: String; let path: String }
+
+  /// What `launcher.sh --uninstall` removes and keeps, from its own dry run,
+  /// so the dialog lists exactly what the removal does.
+  func uninstallPlan(purge: Bool) -> [PlanItem] {
+    let p = Process()
+    p.executableURL = URL(fileURLWithPath: "/bin/bash")
+    p.arguments = [launcher.path, "--uninstall", "--dry-run"] + (purge ? ["--purge"] : [])
+    var env = ProcessInfo.processInfo.environment
+    env["STUDIO_NO_BROWSER"] = "1"
+    p.environment = env
+    let out = Pipe()
+    p.standardOutput = out
+    p.standardError = FileHandle.nullDevice
+    do { try p.run() } catch { return [] }
+    let data = out.fileHandleForReading.readDataToEndOfFile()
+    p.waitUntilExit()
+    return String(decoding: data, as: UTF8.self).split(separator: "\n").compactMap { line in
+      let parts = line.split(separator: "\t", maxSplits: 1)
+      return parts.count == 2 ? PlanItem(kind: String(parts[0]), path: String(parts[1])) : nil
+    }
+  }
+
+  static let planLabels: [String: String] = [
+    "server": "The background server",
+    "app": "The app",
+    "update-copy": "A copy of the app kept for updates",
+    "data": "Indexes, settings and logs",
+    "index": "The index kept here (only what ACTIVATE Studio wrote)",
+    "library-index": "The index of a library built here",
+    "window-data": "The window's own data",
+    "keep-data": "Indexes, settings and logs",
+    "keep-documents": "Your documents",
+  ]
+
+  /// A plan in words: what is removed, then what is kept.
+  func describe(_ plan: [PlanItem]) -> String {
+    let home = NSHomeDirectory()
+    func short(_ p: String) -> String { p.hasPrefix(home + "/") ? "~" + p.dropFirst(home.count) : p }
+    func line(_ i: PlanItem) -> String { "• \(Self.planLabels[i.kind] ?? i.kind): \(short(i.path))" }
+    let removed = plan.filter { !$0.kind.hasPrefix("keep-") }.map(line)
+    let kept = plan.filter { $0.kind.hasPrefix("keep-") }.map(line)
+    return "Removes:\n" + removed.joined(separator: "\n") + (kept.isEmpty ? "" : "\n\nKeeps:\n" + kept.joined(separator: "\n"))
+  }
+
+  @objc func uninstallScopeChanged(_ sender: NSButton) {
+    uninstallList?.string = describe(sender.state == .on ? uninstallPlans.all : uninstallPlans.app)
+  }
+
+  /// Uninstall ACTIVATE Studio…: the removal, listed in full and confirmed
+  /// first, then the result, then the app quits.
+  @objc func uninstall(_ sender: Any?) {
+    uninstallPlans = (uninstallPlan(purge: true), uninstallPlan(purge: false))
+    guard !uninstallPlans.app.isEmpty else {
+      let a = NSAlert()
+      a.messageText = "The uninstall could not be prepared"
+      a.informativeText = "The app's launcher did not answer. In Terminal: \"\(launcher.path)\" --uninstall --purge"
+      a.runModal()
+      return
+    }
+    let alert = NSAlert()
+    alert.alertStyle = .warning
+    alert.messageText = "Uninstall ACTIVATE Studio?"
+    alert.informativeText = "This removes the app and its background server. Your documents are never removed."
+    let check = NSButton(checkboxWithTitle: "Also remove indexes, settings and logs", target: self,
+                         action: #selector(uninstallScopeChanged(_:)))
+    check.state = .on
+    let scroll = NSTextView.scrollableTextView()
+    scroll.frame = NSRect(x: 0, y: 0, width: 460, height: 170)
+    scroll.hasVerticalScroller = true
+    scroll.borderType = .bezelBorder
+    let list = scroll.documentView as! NSTextView
+    list.isEditable = false
+    list.isSelectable = true
+    list.font = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
+    list.textContainerInset = NSSize(width: 4, height: 4)
+    list.string = describe(uninstallPlans.all)
+    uninstallList = list
+    let stack = NSStackView(views: [check, scroll])
+    stack.orientation = .vertical
+    stack.alignment = .leading
+    stack.spacing = 8
+    stack.frame = NSRect(x: 0, y: 0, width: 460, height: 200)
+    scroll.translatesAutoresizingMaskIntoConstraints = false
+    scroll.widthAnchor.constraint(equalToConstant: 460).isActive = true
+    scroll.heightAnchor.constraint(equalToConstant: 170).isActive = true
+    alert.accessoryView = stack
+    let go = alert.addButton(withTitle: "Uninstall")
+    if #available(macOS 11.0, *) { go.hasDestructiveAction = true }
+    // Return cancels; removing takes a click on Uninstall.
+    go.keyEquivalent = ""
+    alert.addButton(withTitle: "Cancel").keyEquivalent = "\r"
+    let confirmed = { (response: NSApplication.ModalResponse) in
+      self.uninstallList = nil
+      if response == .alertFirstButtonReturn { self.runUninstall(purge: check.state == .on) }
+    }
+    if let window, window.isVisible { alert.beginSheetModal(for: window, completionHandler: confirmed) }
+    else { confirmed(alert.runModal()) }
+  }
+
+  /// Runs the launcher's uninstall, shows what it did, and quits. The window
+  /// first stops keeping its frame and state, and with the data chosen its
+  /// web data is cleared, so nothing it writes on the way out comes back.
+  func runUninstall(purge: Bool) {
+    window.isRestorable = false
+    window.setFrameAutosaveName("")
+    webView.stopLoading()
+    let run = {
+      DispatchQueue.global(qos: .userInitiated).async {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/bin/bash")
+        p.arguments = [launcher.path, "--uninstall"] + (purge ? ["--purge"] : [])
+        var env = ProcessInfo.processInfo.environment
+        env["STUDIO_NO_BROWSER"] = "1"
+        p.environment = env
+        let out = Pipe()
+        p.standardOutput = out
+        p.standardError = out
+        var text = ""
+        var ok = false
+        do {
+          try p.run()
+          text = String(decoding: out.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+          p.waitUntilExit()
+          ok = p.terminationStatus == 0
+        } catch {
+          text = "The launcher could not run: \(error.localizedDescription)"
+        }
+        let output = text, done = ok
+        DispatchQueue.main.async {
+          if purge, let id = Bundle.main.bundleIdentifier { UserDefaults.standard.removePersistentDomain(forName: id) }
+          let a = NSAlert()
+          a.messageText = done ? "ACTIVATE Studio is uninstalled" : "The uninstall did not finish"
+          a.informativeText = output.split(separator: "\n").suffix(12).joined(separator: "\n")
+          a.addButton(withTitle: "Quit")
+          a.runModal()
+          NSApp.terminate(nil)
+        }
+      }
+    }
+    if purge {
+      WKWebsiteDataStore.default().removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(),
+                                              modifiedSince: .distantPast, completionHandler: run)
+    } else {
+      run()
+    }
   }
 
   // MARK: the title bar
@@ -531,6 +686,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
       .separator(),
       item("Run Setup…", #selector(runSetup(_:)), target: self),
       item("Stop Background Server", #selector(stopServer(_:)), target: self),
+      item("Uninstall ACTIVATE Studio…", #selector(uninstall(_:)), target: self),
       .separator(),
       item("Hide ACTIVATE Studio", #selector(NSApplication.hide(_:)), "h"),
       item("Hide Others", #selector(NSApplication.hideOtherApplications(_:)), "h", modifiers: [.command, .option]),

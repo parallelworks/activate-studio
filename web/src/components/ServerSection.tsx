@@ -7,7 +7,8 @@ import { errText, json, post, type SetupStatus } from './PrimaryFolder'
  * Settings, General, Server: the port the Studio listens on, which its MCP
  * endpoint (/api/mcp) shares. The macOS app saves a new port for its
  * launcher and restarts on it, and its window follows; elsewhere the port
- * is the PORT environment variable, read at startup.
+ * is the PORT environment variable, read at startup. In the macOS app it
+ * also says how the app is uninstalled; the page itself never removes it.
  */
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
@@ -120,6 +121,23 @@ export function ServerSection({ pollMs = 1000, navigate = (url: string) => { loc
         <code>{mcp}</code><CopyButton text={mcp} label="MCP address" /> Settings, External access has the commands that
         connect a client to it.
       </p>
+      {status?.macApp && <Uninstall app={status.macApp} />}
     </div>
+  )
+}
+
+/** Where the macOS app is uninstalled: its own menu, or the same from Terminal. */
+function Uninstall({ app }: { app: string }) {
+  const command = `"${app}/Contents/MacOS/ACTIVATE Studio" --uninstall --purge`
+  return (
+    <>
+      <p className="field-label">Uninstall</p>
+      <p className="muted view-sub">
+        To remove the app and its data, use Uninstall ACTIVATE Studio… in the app menu. It lists what it removes and asks
+        first; your documents are never removed. The same from Terminal (without <code>--purge</code> the indexes,
+        settings and logs stay):
+      </p>
+      <p className="muted view-sub"><code>{command}</code><CopyButton text={command} label="uninstall command" /></p>
+    </>
   )
 }

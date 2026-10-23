@@ -21,6 +21,8 @@ export interface SetupStatus {
   standalone: boolean
   canRestart: boolean
   launcher?: boolean
+  /** The macOS app's bundle, when the Studio runs as that app. */
+  macApp?: string | null
   /** The port the Studio listens on, and one saved for its next start. */
   port?: number
   portNext?: number | null
