@@ -273,8 +273,12 @@ describe('Settings, Libraries', () => {
     // Check reruns the ssh connection test.
     fireEvent.click(within(ssh).getByRole('button', { name: 'Check' }))
     await waitFor(() => expect(posted(s, `/api/user-libraries/${SSH.id}/refresh`)).toHaveLength(1))
-    // Remove takes an added library out; a pinned one has no Remove.
+    // Remove asks first and says the index stays; then it takes the library out. A pinned one has no Remove.
     fireEvent.click(within(site).getByRole('button', { name: 'Remove Site index' }))
+    const ask = await screen.findByRole('dialog', { name: 'Remove Site index?' })
+    expect(ask.textContent).toMatch(/The index stays where it is, in \/data\/site-index/)
+    expect(s.calls.some(c => c.method === 'DELETE')).toBe(false)
+    fireEvent.click(within(ask).getByRole('button', { name: 'Remove' }))
     await waitFor(() => expect(screen.queryByText('Site index', { selector: '.lib-name' })).toBeNull())
     expect(s.calls.some(c => c.method === 'DELETE' && c.url === '/api/libraries/site')).toBe(true)
   })
@@ -366,6 +370,20 @@ describe('Settings, Libraries', () => {
     expect(within(row).getByText('Index built on me@box over ssh, read only')).toBeInTheDocument()
     expect(within(row).getByTitle('me@box:/home/me/data')).toBeInTheDocument()
     expect(screen.getByRole('progressbar', { name: /Extracting text/ })).toBeInTheDocument()
+  })
+
+  it('removing a built library whose index the Studio keeps is red and asks as an alert', async () => {
+    const s = server({ libs: [PRIMARY, { ...BUILT_HERE, build: { ...BUILT_HERE.build, managed: true, state: 'ready', files: 40, dirs: 6, builtAt: '2026-10-20T00:00:00Z', progress: null } }] })
+    await renderPage(s)
+    const row = await waitFor(() => rowOf('Papers'))
+    const remove = within(row).getByRole('button', { name: 'Remove Papers' })
+    expect(remove.className).toMatch(/theme-error/)
+    fireEvent.click(remove)
+    const ask = await screen.findByRole('alertdialog', { name: 'Remove Papers?' })
+    expect(ask.textContent).toMatch(/Its index, which .* keeps in a folder of its own, is deleted\. The files in \/home\/u\/papers are not touched/)
+    fireEvent.click(within(ask).getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
+    expect(s.calls.some(c => c.method === 'DELETE')).toBe(false)
   })
 
   it('a built library rebuilds from its row', async () => {
@@ -476,19 +494,24 @@ describe('Settings, Libraries', () => {
     expect(within(rowOf('Notes')).getByRole('button', { name: 'Update index' })).toBeInTheDocument()
   })
 
-  it('deletes the index only after an inline confirmation, and never the files', async () => {
+  it('deletes the index only after a confirmation dialog, from a red button, and never the files', async () => {
     const s = server()
     await renderPage(s)
     await waitFor(() => rowOf('Notes'))
-    fireEvent.click(await within(detailOf('Notes')).findByRole('button', { name: 'Delete index' }))
-    const confirm = within(detailOf('Notes')).getByRole('group', { name: 'Delete the index' })
-    expect(confirm.textContent).toMatch(/The files in the folder are not touched/)
+    const del = await within(detailOf('Notes')).findByRole('button', { name: 'Delete index' })
+    expect(del.className).toMatch(/theme-error/)
+    fireEvent.click(del)
+    let dialog = await screen.findByRole('alertdialog', { name: 'Delete the index?' })
+    expect(dialog.textContent).toMatch(/The files in the folder are not touched/)
     // Keeping it sends nothing.
-    fireEvent.click(within(confirm).getByRole('button', { name: 'Keep it' }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Keep it' }))
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
     expect(s.calls.some(c => c.method === 'DELETE')).toBe(false)
     fireEvent.click(within(detailOf('Notes')).getByRole('button', { name: 'Delete index' }))
-    fireEvent.click(within(detailOf('Notes')).getByRole('button', { name: 'Delete the index' }))
+    dialog = await screen.findByRole('alertdialog', { name: 'Delete the index?' })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete index' }))
     await waitFor(() => expect(s.calls.filter(c => c.method === 'DELETE').map(c => c.url)).toEqual(['/api/index?confirm=1']))
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
     expect(await within(rowOf('Notes')).findByText('Not indexed yet')).toBeInTheDocument()
     expect(within(rowOf('Notes')).getByRole('button', { name: 'Build index' })).toBeInTheDocument()
   })
