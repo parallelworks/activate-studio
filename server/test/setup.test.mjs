@@ -249,9 +249,54 @@ test('the setup index covers the whole folder and makes it searchable', { skip: 
   assert.ok(nested.body.hits.some(h => h.path === 'docs/sub/beta.txt'), JSON.stringify(nested.body))
 })
 
-test('complete records setupDone, and the next status is not a first run', async () => {
-  const r = await j('POST', '/api/setup/complete')
-  assert.deepEqual(r.body, { setupDone: true })
-  assert.equal(JSON.parse(fs.readFileSync(path.join(IX, 'settings.json'), 'utf8')).setupDone, true)
-  assert.equal((await j('GET', '/api/setup/status')).body.firstRun, false)
+test('a new computer of its own starts with AI off, Workflows hidden, its own mission and ten questions', async () => {
+  const { effectiveSettings, updateSettings, settingsRoutes, PERSONAL_PROMPTS, PERSONAL_MISSION, PERSONAL_SECTIONS } = await import('../dist/settings.js')
+  const { default: Fastify } = await import('fastify')
+  const sapp = Fastify()
+  await sapp.register(settingsRoutes)
+  await sapp.ready()
+  const put = async body => { const r = await sapp.inject({ method: 'PUT', url: '/api/settings', payload: body }); return { status: r.statusCode, body: r.json() } }
+  const saved = process.env.AI_ENABLED
+  delete process.env.AI_ENABLED
+  try {
+    let e = effectiveSettings()
+    assert.equal(e.aiEnabled, false)
+    assert.deepEqual(e.sections, PERSONAL_SECTIONS)
+    assert.ok(!e.sections.includes('workflows'))
+    assert.equal(PERSONAL_PROMPTS.length, 10)
+    assert.deepEqual(e.suggestedPrompts, PERSONAL_PROMPTS)
+    assert.equal(e.kbMission, PERSONAL_MISSION)
+    // Saved by an earlier version: a blank mission and a deployment's three questions are no choice.
+    await updateSettings({ kbMission: '  ', suggestedPrompts: ['What tools can you use and what can I ask you to do?', 'What is in this knowledge base?', 'Which workflows are available to run?'] })
+    e = effectiveSettings()
+    assert.equal(e.kbMission, PERSONAL_MISSION)
+    assert.deepEqual(e.suggestedPrompts, PERSONAL_PROMPTS)
+    // Saving the defaults as they are keeps them defaults; a real choice is kept.
+    let r = await put({ suggestedPrompts: PERSONAL_PROMPTS, kbMission: PERSONAL_MISSION })
+    assert.equal(r.status, 200, JSON.stringify(r.body))
+    let file = JSON.parse(fs.readFileSync(path.join(IX, 'settings.json'), 'utf8'))
+    assert.equal(file.suggestedPrompts, undefined)
+    assert.equal(file.kbMission, undefined)
+    r = await put({ suggestedPrompts: ['Only this one'], kbMission: 'My lab notes.' })
+    file = JSON.parse(fs.readFileSync(path.join(IX, 'settings.json'), 'utf8'))
+    assert.deepEqual(file.suggestedPrompts, ['Only this one'])
+    assert.equal(file.kbMission, 'My lab notes.')
+    await updateSettings({ suggestedPrompts: undefined, kbMission: undefined })
+    await sapp.close()
+  } finally { if (saved !== undefined) process.env.AI_ENABLED = saved }
+})
+
+test('complete records setupDone, keeps what setup showed, and the next status is not a first run', async () => {
+  const saved = process.env.AI_ENABLED
+  delete process.env.AI_ENABLED
+  try {
+    const r = await j('POST', '/api/setup/complete')
+    assert.deepEqual(r.body, { setupDone: true })
+    const file = JSON.parse(fs.readFileSync(path.join(IX, 'settings.json'), 'utf8'))
+    assert.equal(file.setupDone, true)
+    // Still the defaults when setup ended, so saved as they were shown.
+    assert.equal(file.aiEnabled, false)
+    assert.ok(Array.isArray(file.sections) && !file.sections.includes('workflows'))
+    assert.equal((await j('GET', '/api/setup/status')).body.firstRun, false)
+  } finally { if (saved !== undefined) process.env.AI_ENABLED = saved }
 })

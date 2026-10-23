@@ -88,15 +88,17 @@ export function WorkflowsSection() {
   return (
     <>
       <h1>Workflows</h1>
+      <p className="muted view-sub">Workflows are YAML files, run one of two ways.</p>
       <p className="muted view-sub">
-        The workflows this Studio offers as tiles on its Workflows tab, each run from its own form under the viewer's
-        account. Pick them from the account this Studio is deployed under, from the marketplace, or from a GitHub
-        repository. A viewer who lacks an account workflow can add a copy from its tile; marketplace and GitHub
-        workflows need no copy.
+        <i>ACTIVATE workflows:</i> with an ACTIVATE credential (a pw CLI sign-in or an API key, under{' '}
+        <a href="#view=settings:access">Model access</a>), the Workflows page offers the workflows picked below as tiles,
+        each run from its own form under the viewer's account. Pick them from the account this Studio runs under, the
+        marketplace, or a GitHub repository; a viewer who lacks an account workflow can add a copy from its tile.
       </p>
       <p className="muted view-sub">
-        Workflows are YAML files. To write and run workflow YAML files of your own, see{' '}
-        <ExternalLink href="https://github.com/parallelworks/meridian">Meridian</ExternalLink>, the open-source workflow engine.
+        <i>Your own workflow files:</i> without ACTIVATE, write and run workflow YAML files with{' '}
+        <ExternalLink href="https://github.com/parallelworks/meridian">Meridian</ExternalLink>, the open-source workflow
+        engine, on your own computers.
       </p>
 
       <div className="tool-group">Offered here ({picked.length})</div>

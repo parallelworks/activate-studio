@@ -17,7 +17,9 @@ process.env.INDEX_BASE = IX
 // No deployment credential, and no pw CLI sign-in read from this host.
 process.env.HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-home-'))
 process.env.PW_GATEWAY_URL = 'https://gw.test/api/openai/v1'
-for (const k of ['AUTH_JWKS_URL', 'PW_API_KEY', 'OPENAI_API_KEY', 'AI_ENABLED', 'DISABLE_PERSONAL_KEYS']) delete process.env[k]
+for (const k of ['AUTH_JWKS_URL', 'PW_API_KEY', 'OPENAI_API_KEY', 'DISABLE_PERSONAL_KEYS']) delete process.env[k]
+// As a Studio whose AI features were turned on (a new one starts with them off).
+process.env.AI_ENABLED = '1'
 
 // The endpoint: /v1 lists two models for the right key, /empty/v1 none,
 // /html answers a web page; chat completions stream one line.
@@ -143,15 +145,20 @@ test('with AI features off nothing is sent to a model, and search and the librar
   assert.equal((await j('GET', '/api/config')).body.aiEnabled, true)
 })
 
-test('AI_ENABLED=0 sets the default; a saved setting wins over it', async () => {
+test('AI_ENABLED sets the default; a saved setting wins; a new computer of its own starts with it off', async () => {
+  const setupDone = effectiveSettings().setupDone
   await updateSettings({ aiEnabled: undefined })
   process.env.AI_ENABLED = '0'
   assert.equal(effectiveSettings().aiEnabled, false)
   await updateSettings({ aiEnabled: true })
   assert.equal(effectiveSettings().aiEnabled, true)
   delete process.env.AI_ENABLED
-  await updateSettings({ aiEnabled: undefined })
-  assert.equal(effectiveSettings().aiEnabled, true)
+  await updateSettings({ aiEnabled: undefined, setupDone: false })
+  assert.equal(effectiveSettings().aiEnabled, false, 'off until setup or Settings turns it on')
+  await updateSettings({ setupDone: true })
+  assert.equal(effectiveSettings().aiEnabled, true, 'an install that finished setup before this default keeps AI on')
+  process.env.AI_ENABLED = '1'
+  await updateSettings({ setupDone })
 })
 
 test('the one user can remove the key', async () => {

@@ -12,3 +12,7 @@ globalThis.fetch = async (input, init) => {
   if (host && !loopback.has(host)) throw new TypeError(`network call blocked in tests: ${host}`)
   return passthrough(input, init)
 }
+
+// A new Studio on a computer of its own starts with AI features off until
+// setup turns them on; tests that use a model act as one that did.
+process.env.AI_ENABLED ??= '1'
