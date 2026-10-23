@@ -21,10 +21,10 @@ const hasNumpy = (() => {
   try { execFileSync(python, ['-c', `import sys; sys.path.insert(0, ${JSON.stringify(path.join(root, 'indexer', '.deps'))}); import numpy`], { stdio: 'ignore' }); return true } catch { return false }
 })()
 
-// Three folders, each about one topic: its files' vectors point one way,
-// with noise. One passage sits in a slot marked invalid, as a deleted row
-// is, and must not count.
-execFileSync(python, ['-c', `
+// Folders each about one topic: its files' vectors point one way, with
+// noise. One passage sits in a slot marked invalid, as a deleted row is,
+// and must not count.
+const writeIndex = (root, topics, files) => execFileSync(python, ['-c', `
 import os, random, sqlite3, struct
 random.seed(1)
 D = 384
@@ -32,8 +32,8 @@ def unit(axis):
     v = [random.gauss(0, 0.05) for _ in range(D)]
     v[axis] += 1.0
     return v
-topics = {'turbines': 3, 'bread': 100, 'tax': 200}
-root = ${JSON.stringify(INDEX)}
+topics = ${JSON.stringify(topics)}
+root = ${JSON.stringify(root)}
 for folder, axis in [('', None)] + list(topics.items()):
     d = os.path.join(root, folder) if folder else root
     os.makedirs(d, exist_ok=True)
@@ -49,7 +49,7 @@ for folder, axis in [('', None)] + list(topics.items()):
     c.execute("INSERT INTO gvecmodel VALUES ('minilm-l6-mean-int8')")
     vecs, valid = [], bytearray(128)
     cid = 0
-    for f in range(20):
+    for f in range(${files}):
         for seq in range(2):
             cid += 1
             c.execute('INSERT INTO gchunks VALUES (?, ?, ?, ?, ?, ?)', (cid, '1', f'{folder}-{f}.md', seq, 'text', f'h{cid}'))
@@ -66,6 +66,7 @@ for folder, axis in [('', None)] + list(topics.items()):
     c.execute('INSERT INTO gvec_vector_chunks00 VALUES (1, ?)', (blob,))
     c.commit()
 `])
+writeIndex(INDEX, { turbines: 3, bread: 100, tax: 200 }, 20)
 
 const config = await import('../dist/config.js')
 const M = await import('../dist/semanticMap.js')
@@ -102,6 +103,17 @@ test('the map is made from the stored vectors: every file with embeddings, in cl
   const sampled = new Set(overview.points.map(p => p.c))
   assert.equal(sampled.size, overview.clusters.length)
   assert.ok(overview.points.length <= 100)
+})
+
+test('a library of a few files maps too: fewer files than the dimensions clusters are found in', { skip: !hasNumpy && 'numpy is not installed' }, () => {
+  const small = path.join(tmp, 'small')
+  writeIndex(small, { notes: 7 }, 5)
+  const out = path.join(tmp, 'small-map')
+  const summary = JSON.parse(execFileSync(python, [path.join(root, 'indexer', 'semantic_map.py'), '--index', small, '--out', out], { encoding: 'utf8' }).trim())
+  assert.deepEqual([summary.available, summary.files], [true, 5])
+  const overview = JSON.parse(fs.readFileSync(path.join(out, 'overview.json'), 'utf8'))
+  assert.equal(overview.clusters.reduce((n, c) => n + c.count, 0), 5)
+  assert.equal(overview.points.length, 5)
 })
 
 test('the routes read the map and never make one while it is there', { skip: !hasNumpy && 'numpy is not installed' }, async () => {
