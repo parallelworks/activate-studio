@@ -99,3 +99,26 @@ describe('the Details card', () => {
     expect(detailsAsked()).toEqual([])
   })
 })
+
+describe('a remote library\'s whole index', () => {
+  it('shows the connection test\'s counts and is counted only when asked', async () => {
+    const remote = { ...lib, id: 'u-box', label: 'Box', primary: false, writable: false, pinned: false }
+    const site = { library: { id: 'u-box', label: 'Box', kind: 'GUFI index on me@box over ssh', site: 'me@box', writable: false }, index: 'me@box:/idx/proj', fullText: false, ms: 3 }
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      asked.push(url)
+      const counted = url.includes('count=1')
+      return new Response(JSON.stringify(counted
+        ? { ...site, path: '', name: 'Box', type: 'dir', size: 9_000_000, files: 1_500_000, dirs: 449_063, mtime: Math.floor(Date.now() / 1000) - 60, types: [{ ext: 'dat', count: 10, bytes: 9_000_000 }], labels: { own: [], inherited: [], within: [] }, counted: true }
+        : { ...site, path: '', name: 'Box', type: 'dir', size: 0, files: 1_500_000, dirs: 449_063, mtime: 0, types: [], labels: { own: [], inherited: [], within: [] }, counted: false }), { status: 200 })
+    }))
+    setLibrary('u-box')
+    render(<StatusPanel view="library" cfg={{ ...cfg, libraries: [lib, remote] }} />)
+    expect(await within(card()).findByText('Box · 1,500,000 files')).toBeInTheDocument()
+    expect(within(card()).getByText(/As of its connection test\. Size and types need a pass over the whole index on me@box/)).toBeInTheDocument()
+    expect(detailsAsked()).toEqual(['/api/kb/details?path=&library=u-box'])
+    act(() => { within(card()).getByRole('button', { name: 'Count size and types' }).click() })
+    expect(await within(card()).findByText(`Box · ${formatBytes(9_000_000)}`)).toBeInTheDocument()
+    expect(within(card()).getByText('Largest types')).toBeInTheDocument()
+    expect(detailsAsked()).toEqual(['/api/kb/details?path=&library=u-box', '/api/kb/details?path=&count=1&library=u-box'])
+  })
+})

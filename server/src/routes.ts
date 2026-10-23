@@ -667,14 +667,16 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
     const viewer = (req as { user?: { id?: string } }).user?.id ?? null
     const libs = String(library ?? '').toLowerCase() === ALL ? scopeLibraries(ALL, viewer, effectiveSettings().kbLabel) : [libOf(req)]
     if (!gufiAvailable() && libs.every(l => !l.site)) return { hits: [], error: 'index not built yet' }
-    const { result: hits, commands } = await traced(() => searchScope(libs, q, n, { semantic: wantsSemantic(q) }))
+    const slow: string[] = []
+    const { result: hits, commands } = await traced(() => searchScope(libs, q, n, { semantic: wantsSemantic(q), slow }))
     // Labels belong to the knowledge base; other libraries' hits carry none,
     // so a label filter keeps knowledge-base hits only.
     const { tags } = req.query as { tags?: string }
     const filter = tags ? tags.split(',').filter(Boolean) : undefined
     const annotated = await annotateHits(hits.filter(h => h.library.id === PRIMARY_ID), filter)
     const keep = new Map(annotated.map(h => [h.path, h]))
-    return { hits: hits.flatMap(h => (h.library.id === PRIMARY_ID ? (keep.has(h.path) ? [{ ...keep.get(h.path)!, library: h.library }] : []) : filter?.length ? [] : [h])), gufi: commands }
+    // slow: libraries that had not answered within the deadline, left out.
+    return { hits: hits.flatMap(h => (h.library.id === PRIMARY_ID ? (keep.has(h.path) ? [{ ...keep.get(h.path)!, library: h.library }] : []) : filter?.length ? [] : [h])), gufi: commands, ...(slow.length ? { slow } : {}) }
   })
 
   // Status, jobs, the log, readers and settings of the index (indexRoutes.ts).

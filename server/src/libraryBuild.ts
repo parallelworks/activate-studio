@@ -17,6 +17,7 @@ import {
 } from './libraries.js'
 import { runPreExtract } from './preextract.js'
 import { effectiveSettings } from './settings.js'
+import { scanLatest } from './dirScan.js'
 
 /**
  * Libraries the Studio builds of a folder on this computer, beside the
@@ -218,22 +219,7 @@ function countDbs(root: string, cap = 200_000): number {
  *  keyed by its path in the source, '' for the top; as the main folder's
  *  sweep records them. */
 async function scanDirs(root: string): Promise<Record<string, number>> {
-  const out: Record<string, number> = {}
-  const walk = async (abs: string, rel: string) => {
-    let entries: fs.Dirent[]
-    try { entries = await fsp.readdir(abs, { withFileTypes: true }) } catch { return }
-    let latest = 0
-    try { latest = (await fsp.stat(abs)).mtimeMs } catch { /* gone */ }
-    for (const e of entries) {
-      if (e.name.startsWith('.')) continue
-      const child = path.join(abs, e.name)
-      if (e.isDirectory()) { if (!EXCLUDE_DIRS.has(e.name)) await walk(child, rel ? `${rel}/${e.name}` : e.name) }
-      else { try { latest = Math.max(latest, (await fsp.stat(child)).mtimeMs) } catch { /* gone */ } }
-    }
-    out[rel] = Math.floor(latest)
-  }
-  await walk(root, '')
-  return out
+  return Object.fromEntries(await scanLatest(root, EXCLUDE_DIRS))
 }
 
 const stateFile = (id: string) => path.join(builtLibraryDir(id), 'sync-state.json')

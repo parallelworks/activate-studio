@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process'
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { GUFI_BIN, GUFI_INDEX, INDEX_BASE, gufiAvailable, gufiEnv } from './config.js'
 import { REMOTE_PREFIX, remoteIndexRoot, remoteQuery, remoteTarget } from './userLibraries.js'
@@ -231,12 +232,16 @@ export function blendHits(fts: SearchHit[], names: SearchHit[], vec: SearchHit[]
     .map(h => (exact.get(h.path) === h.mode ? h : { ...h, mode: exact.get(h.path)! }))
 }
 
+/** The threads a gufi_query here runs with: one per processor core, up to
+ *  16. A remote one gets its host's (remoteQuery). */
+const LOCAL_THREADS = Math.min(Math.max(os.availableParallelism?.() ?? os.cpus().length, 1), 16)
+
 export async function queryPerDir(sql: string, opts: { threads?: number; subdir?: string; indexRoot?: string } = {}): Promise<string[][]> {
   const root = opts.indexRoot ?? GUFI_INDEX
   // A user's library on a cluster: the same query, run there as that user.
-  if (root.startsWith(REMOTE_PREFIX)) return parseRows(await remoteQuery(root, ['-n', String(Math.min(opts.threads ?? 4, 4)), '-d', DELIM, '-E', sql], opts.subdir), 1)
+  if (root.startsWith(REMOTE_PREFIX)) return parseRows(await remoteQuery(root, ['-n', String(opts.threads ?? LOCAL_THREADS), '-d', DELIM, '-E', sql], opts.subdir), 1)
   const target = opts.subdir ? path.join(root, opts.subdir) : root
-  const { stdout } = await run('gufi_query', ['-n', String(opts.threads ?? 8), '-d', DELIM, '-E', sql, target])
+  const { stdout } = await run('gufi_query', ['-n', String(opts.threads ?? LOCAL_THREADS), '-d', DELIM, '-E', sql, target])
   return parseRows(stdout, 1)
 }
 
@@ -244,16 +249,35 @@ export async function queryPerDir(sql: string, opts: { threads?: number; subdir?
  *  happens where the index is, and only the final rows come back. */
 async function queryAggregate(stages: string[], opts: { indexRoot?: string; subdir?: string } = {}): Promise<string[][]> {
   const root = opts.indexRoot ?? GUFI_INDEX
-  if (root.startsWith(REMOTE_PREFIX)) return parseRows(await remoteQuery(root, ['-n', '4', '-d', DELIM, '-a', '1', ...stages], opts.subdir), 1)
-  const { stdout } = await run('gufi_query', ['-n', '8', '-d', DELIM, '-a', '1', ...stages, opts.subdir ? path.join(root, opts.subdir) : root])
+  if (root.startsWith(REMOTE_PREFIX)) return parseRows(await remoteQuery(root, ['-n', String(LOCAL_THREADS), '-d', DELIM, '-a', '1', ...stages], opts.subdir), 1)
+  const { stdout } = await run('gufi_query', ['-n', String(LOCAL_THREADS), '-d', DELIM, '-a', '1', ...stages, opts.subdir ? path.join(root, opts.subdir) : root])
   return parseRows(stdout, 1)
+}
+
+/**
+ * A per-directory SELECT with at most `limit` rows back however many
+ * directories match: each directory's rows go into its thread's table only
+ * while that holds fewer than `limit`, and the merge returns the first
+ * `limit`. A common word in a tree of a few hundred thousand directories
+ * otherwise sent back every directory's matches (13 MB for one name search
+ * measured here) to keep 10 of them, over ssh for a remote library.
+ */
+async function queryTop(select: string, columns: string, limit: number, opts: { indexRoot?: string; subdir?: string }): Promise<string[][]> {
+  const body = select.trim().replace(/;$/, '')
+  return queryAggregate([
+    '-I', `CREATE TABLE t (${columns});`,
+    '-K', `CREATE TABLE agg (${columns});`,
+    '-E', `INSERT INTO t SELECT * FROM (${body}) WHERE (SELECT count(*) FROM t) < ${limit};`,
+    '-J', 'INSERT INTO agg SELECT * FROM t;',
+    '-G', `SELECT * FROM agg LIMIT ${limit};`,
+  ], opts)
 }
 
 /** Full-text search over enriched fts5 `words` tables, joined to entries by inode. */
 export async function searchFts(queryText: string, limit = 20, indexRoot?: string): Promise<SearchHit[]> {
   const expr = ftsExpr(queryText)
   if (!expr) return []
-  const rows = await queryPerDir(ftsSql(expr, limit), { indexRoot })
+  const rows = await queryTop(ftsSql(expr, limit), 'p TEXT, n TEXT, s INT64, m INT64, x TEXT', limit * 3, { indexRoot })
   return rows.slice(0, limit * 3).map(r => ftsHit(r, toKbRel(r[0], indexRoot)))
 }
 
@@ -261,7 +285,7 @@ export async function searchFts(queryText: string, limit = 20, indexRoot?: strin
 export async function searchNames(queryText: string, limit = 20, indexRoot?: string): Promise<SearchHit[]> {
   const sql = namesSql(queryText, limit)
   if (!sql) return []
-  const rows = await queryPerDir(sql, { indexRoot })
+  const rows = await queryTop(sql, 'p TEXT, n TEXT, s INT64, m INT64', limit, { indexRoot })
   return rows.slice(0, limit).map(r => nameHit(r, toKbRel(r[0], indexRoot)))
 }
 
@@ -284,7 +308,37 @@ const EMBED_MODEL = path.join(INDEX_BASE, 'models', 'minilm384.gguf')
 const dbListCache = new Map<string, { dbs: string[]; at: number }>()
 interface VectorDb { db: string; model: string }
 const vecDbCache = new Map<string, { dbs: VectorDb[]; at: number }>()
-export function invalidateDbList(): void { dbListCache.clear(); vecDbCache.clear() }
+export function invalidateDbList(): void { dbListCache.clear(); vecDbCache.clear(); countCache.clear() }
+
+/**
+ * Counts over a whole library or a folder of it (the details card, Stats),
+ * kept until the index changes: a library on another system until its
+ * recorded index time does, or an hour; one here until an index job ends
+ * (invalidateDbList), or ten minutes. On a large index each count is a walk
+ * of the tree (20 s for a million and a half files over ssh with 16
+ * threads, as measured), so a card opened twice should not walk it twice.
+ * Requests for the same count while it runs share it.
+ */
+const countCache = new Map<string, { stamp: string; at: number; value: Promise<unknown> }>()
+const COUNT_MS = 10 * 60_000, REMOTE_COUNT_MS = 60 * 60_000
+function keptCount(key: string, indexRoot: string | undefined): { id: string; stamp: string; value: Promise<unknown> | null } {
+  const root = indexRoot ?? GUFI_INDEX
+  const remote = root.startsWith(REMOTE_PREFIX)
+  const stamp = remote ? (remoteTarget(root)?.builtAt ?? '') : ''
+  const id = `${root}\0${key}`
+  const hit = countCache.get(id)
+  const fresh = hit && hit.stamp === stamp && Date.now() - hit.at < (remote && stamp ? REMOTE_COUNT_MS : COUNT_MS)
+  return { id, stamp, value: fresh ? hit.value : null }
+}
+function cachedCount<T>(key: string, indexRoot: string | undefined, compute: () => Promise<T>): Promise<T> {
+  const k = keptCount(key, indexRoot)
+  if (k.value) return k.value as Promise<T>
+  const value = compute()
+  countCache.set(k.id, { stamp: k.stamp, at: Date.now(), value })
+  if (countCache.size > 500) countCache.delete(countCache.keys().next().value!)
+  value.catch(() => { if (countCache.get(k.id)?.value === value) countCache.delete(k.id) })
+  return value
+}
 function listIndexDbs(indexRoot: string = GUFI_INDEX): string[] {
   const hit = dbListCache.get(indexRoot)
   if (hit && Date.now() - hit.at < 60_000) return hit.dbs
@@ -475,7 +529,7 @@ export async function corpusStats(indexRoot?: string): Promise<CorpusStats> {
     return stats
   }
   if (!gufiAvailable()) return { available: false }
-  return countCorpus(indexRoot)
+  return cachedCount('corpus', indexRoot, () => countCorpus(indexRoot))
 }
 
 /**
@@ -528,7 +582,16 @@ export interface TreeStats {
  * index without xattr tables still answers the first; `subdir` is a path
  * inside the index, checked by the caller.
  */
-export async function treeStats(indexRoot: string, subdir: string, tagXattr = 'user.studio.tags'): Promise<TreeStats> {
+export function treeStats(indexRoot: string, subdir: string, tagXattr = 'user.studio.tags'): Promise<TreeStats> {
+  return cachedCount(`tree\0${subdir}\0${tagXattr}`, indexRoot, () => treeStatsNow(indexRoot, subdir, tagXattr))
+}
+
+/** treeStats when it has been made or is being made, else null. */
+export function treeStatsKept(indexRoot: string, subdir: string, tagXattr = 'user.studio.tags'): Promise<TreeStats> | null {
+  return keptCount(`tree\0${subdir}\0${tagXattr}`, indexRoot).value as Promise<TreeStats> | null
+}
+
+async function treeStatsNow(indexRoot: string, subdir: string, tagXattr: string): Promise<TreeStats> {
   const ext = `lower(CASE WHEN name LIKE '%.%' THEN replace(name, rtrim(name, replace(name, '.', '')), '') ELSE '' END)`
   const opts = { indexRoot, subdir: subdir || undefined }
   const [rows, tagRows] = await Promise.all([

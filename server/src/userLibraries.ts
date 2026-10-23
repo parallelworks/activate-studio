@@ -8,7 +8,7 @@ import { authEnabled } from './auth.js'
 import { gatewayKey } from './chat/gateway.js'
 import { resolveUserCred } from './credentials.js'
 import { classify, KbError, type FileContent, type KbEntry } from './kb.js'
-import { remoteRun, siteName, SSH_DESTINATION, sshSite, type RemoteResult } from './remoteExec.js'
+import { remoteRun, remoteThreads, siteName, SSH_DESTINATION, sshSite, type RemoteResult } from './remoteExec.js'
 import { noteGufi } from './gufiTrace.js'
 import { getJob, startJob, type Job } from './jobs.js'
 import { forgetIndexSettings, indexSettings, meaningArgs, saveIndexSettings, type MeaningLevel } from './indexSettings.js'
@@ -178,10 +178,14 @@ export function remoteTarget(root: string | undefined | null): { site: string; k
   return { site: d.site, key, gufiBin: d.gufiBin, indexRoot: d.indexRoot, sourceRoot: d.sourceRoot, builtAt: d.builtAt, dyldLib }
 }
 
-/** Runs gufi_query on the library's cluster, as gufi.ts would locally. */
+/** Runs gufi_query on the library's cluster, as gufi.ts would locally,
+ *  with as many threads as that host should give it (remoteThreads), in
+ *  place of whatever -n the caller asked for. */
 export async function remoteQuery(root: string, args: string[], subdir?: string): Promise<string> {
   const t = remoteTarget(root)!
   const target = subdir ? path.posix.join(t.indexRoot, cleanRel(subdir)) : t.indexRoot
+  const n = args.indexOf('-n')
+  if (n >= 0 && n + 1 < args.length) args = [...args.slice(0, n + 1), String(await remoteThreads(t.site, t.key)), ...args.slice(n + 2)]
   const t0 = Date.now()
   const r = await remoteRun(t.site, t.key, [`${t.gufiBin}/gufi_query`, ...args, target])
   noteGufi([`${t.gufiBin}/gufi_query`, ...args, target], { site: siteName(t.site), ms: Date.now() - t0 })
@@ -564,13 +568,30 @@ async function gufiStep(h: ProbeHost, run: Run, steps: SshStep[], at: { given: s
   return { bin, version, ran: v.code === 0 }
 }
 
+/** Passing tests, kept two minutes for adding the library: the add runs
+ *  the test again right after the page ran it, and on a large index the
+ *  count in it reads every directory's summary. The test itself and
+ *  Refresh always run afresh. */
+const passedProbes = new Map<string, { at: number; probe: SshProbe }>()
+const PASSED_PROBE_MS = 2 * 60_000
+
 /**
  * The connection test, step by step: ssh (or pw ssh) reaches the host;
  * gufi_query is there and runs; the index directory is a GUFI index,
  * counted with one aggregate gufi_query; the source directory, when given,
  * is readable. Each step says what it found or what to change.
  */
-async function probeIndex(h: ProbeHost, spec: { indexRoot: string; gufiBin: string | null; sourceRoot: string | null }): Promise<SshProbe> {
+async function probeIndex(h: ProbeHost, spec: { indexRoot: string; gufiBin: string | null; sourceRoot: string | null }, reuse = false): Promise<SshProbe> {
+  const id = JSON.stringify([h.site, h.key.slice(-16), spec.indexRoot, spec.gufiBin, spec.sourceRoot])
+  const hit = passedProbes.get(id)
+  if (reuse && hit && Date.now() - hit.at < PASSED_PROBE_MS) return hit.probe
+  const probe = await probeIndexNow(h, spec)
+  if (probe.ok) passedProbes.set(id, { at: Date.now(), probe })
+  else passedProbes.delete(id)
+  return probe
+}
+
+async function probeIndexNow(h: ProbeHost, spec: { indexRoot: string; gufiBin: string | null; sourceRoot: string | null }): Promise<SshProbe> {
   const dest = h.name
   const steps: SshStep[] = []
   const done = (extra: Partial<SshProbe> = {}): SshProbe => ({ ok: steps.every(s => s.ok), steps, ...extra })
@@ -590,7 +611,7 @@ async function probeIndex(h: ProbeHost, spec: { indexRoot: string; gufiBin: stri
     builtAt = mtime > 0 ? new Date(mtime * 1000).toISOString() : null
     if (!version) steps.push({ name: 'index', ok: true, detail: `${indexRoot} has a db.db; its directories are counted once gufi_query runs.` })
     else {
-      const c = await run([`${bin}/gufi_query`, '-n', '4', '-d', '|', '-a', '1',
+      const c = await run([`${bin}/gufi_query`, '-n', String(await remoteThreads(h.site, h.key)), '-d', '|', '-a', '1',
         '-I', 'CREATE TABLE t (d INT64, f INT64);', '-K', 'CREATE TABLE agg (d INT64, f INT64);',
         '-E', 'INSERT INTO t SELECT count(*), sum(totfiles) FROM vrsummary;', '-J', 'INSERT INTO agg SELECT * FROM t;',
         '-G', 'SELECT sum(d), sum(f) FROM agg;', indexRoot], 60_000)
@@ -713,13 +734,14 @@ async function probeBuild(h: ProbeHost, spec: BuildSpec): Promise<BuildProbe> {
   return done({ os: c.os, gufiBin: g.bin, gufiVersion: g.version || undefined, sourceRoot: source, indexDir, create, python, model })
 }
 
-/** The connection test over plain ssh. */
-export function probeSsh(spec: SshSpec): Promise<SshProbe> {
+/** The connection test over plain ssh; `reuse` takes a test that passed
+ *  in the last two minutes. */
+export function probeSsh(spec: SshSpec, reuse = false): Promise<SshProbe> {
   return probeIndex({
     site: sshSite(spec.destination, spec.port), key: '', name: spec.destination,
     reached: `${spec.destination}${spec.port ? ` on port ${spec.port}` : ''}`,
     advice: m => sshAdvice(m, spec),
-  }, spec)
+  }, spec, reuse)
 }
 
 // ---- existing indexes on a cluster, over pw ssh ----
@@ -750,8 +772,8 @@ function pwAdvice(message: string, cluster: string): string {
 }
 
 /** The connection test over pw ssh, with the owner's platform key. */
-export function probePw(spec: PwSpec, key: string): Promise<SshProbe> {
-  return probeIndex({ site: spec.cluster, key, name: spec.cluster, reached: spec.cluster, advice: m => pwAdvice(m, spec.cluster) }, spec)
+export function probePw(spec: PwSpec, key: string, reuse = false): Promise<SshProbe> {
+  return probeIndex({ site: spec.cluster, key, name: spec.cluster, reached: spec.cluster, advice: m => pwAdvice(m, spec.cluster) }, spec, reuse)
 }
 
 /** Whether the Studio finds the pw CLI on this machine (findPwCli). */
@@ -835,7 +857,7 @@ export async function listPwSystems(viewerId: string | null | undefined): Promis
 export async function addFromPw(viewerId: string | null | undefined, a: PwLibraryInput): Promise<UserLibraryDef> {
   const { owner, key } = pwKey(viewerId)
   const spec = pwSpec(a)
-  const p = await probePw(spec, key)
+  const p = await probePw(spec, key, true)
   if (!p.ok) throw new KbError(400, `The connection test did not pass. ${p.steps.find(s => !s.ok)?.detail ?? ''}`.trim())
   const indexRoot = p.indexRoot!
   const defs = loadUserLibraries(owner)
@@ -861,7 +883,7 @@ export async function addFromSsh(viewerId: string | null | undefined, a: SshLibr
   if (!sshAllowed(viewerId)) throw new KbError(403, SSH_SINGLE_USER)
   const owner = ownerOf(viewerId)!
   const spec = sshSpec(a)
-  const p = await probeSsh(spec)
+  const p = await probeSsh(spec, true)
   if (!p.ok) throw new KbError(400, `The connection test did not pass. ${p.steps.find(s => !s.ok)?.detail ?? ''}`.trim())
   const indexRoot = p.indexRoot!
   const defs = loadUserLibraries(owner)
@@ -949,7 +971,7 @@ async function startRemote(site: string, key: string, b: RemoteBuild, create: bo
   const enrich = b.python ? indexerScript('enrich.py') : ''
   const embed = b.python && b.model && level ? indexerScript('embed.py') : ''
   const r = await remoteRun(site, key, ['bash', '-c', BUILD_START, '_', b.id, BUILD_RUN, enrich, embed,
-    b.gufiBin, b.sourceRoot, b.indexDir, '4', b.python ?? '', b.model ?? '', create ? '1' : '0', (level ?? []).join(' ')], 60_000)
+    b.gufiBin, b.sourceRoot, b.indexDir, String(await remoteThreads(site, key)), b.python ?? '', b.model ?? '', create ? '1' : '0', (level ?? []).join(' ')], 60_000)
   if (r.code !== 0 || !/started/.test(r.stdout)) throw new KbError(502, `The build could not be started on ${siteName(site)}: ${lastLine(r.stderr) || `exit ${r.code}`}`)
 }
 

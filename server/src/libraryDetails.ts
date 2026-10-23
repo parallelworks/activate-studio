@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import type { FastifyInstance } from 'fastify'
 import { authEnabled } from './auth.js'
-import { entryStats, treeStats } from './gufi.js'
+import { entryStats, treeStats, treeStatsKept } from './gufi.js'
 import { KbError, resolveKb } from './kb.js'
 import { getLibrary, PRIMARY_ID, type Library } from './libraries.js'
 import { ALL, scopeLibraries } from './libraryScope.js'
@@ -39,6 +39,10 @@ export interface Details {
   mtime: number
   types: { ext: string; count: number; bytes: number }[]
   labels: { own: string[]; inherited: string[]; within: { label: string; count: number }[] }
+  /** False for a remote library's whole index not counted yet: files and
+   *  dirs are the connection test's, and size, mtime and types are not
+   *  known until a request with count. */
+  counted: boolean
   ms: number
 }
 
@@ -73,10 +77,17 @@ function indexOf(lib: Library): string | null {
   return authEnabled() ? null : lib.indexRoot
 }
 
-export async function describe(lib: Library, sub: string, viewerId: string | null): Promise<Details> {
+/** A remote library's counts from its connection test or build. */
+function recorded(lib: Library, viewerId: string | null): { files: number; dirs: number } {
+  const owner = ownerOf(viewerId)
+  const d = owner ? loadUserLibraries(owner).find(x => x.id === lib.id) : null
+  return { files: d?.files ?? 0, dirs: Math.max(0, (d?.directories ?? 1) - 1) }
+}
+
+export async function describe(lib: Library, sub: string, viewerId: string | null, count = false): Promise<Details> {
   const key = `${viewerId ?? ''}|${lib.id}|${sub}`
   const hit = cache.get(key)
-  if (hit && Date.now() - hit.at < TTL_MS) return hit.value
+  if (hit && Date.now() - hit.at < TTL_MS && (!count || hit.value.counted)) return hit.value
   const t0 = Date.now()
   const name = sub ? path.posix.basename(sub) : lib.label
   const base = {
@@ -98,14 +109,20 @@ export async function describe(lib: Library, sub: string, viewerId: string | nul
     if (isDir && !fs.existsSync(path.join(lib.indexRoot, sub, 'db.db'))) throw new KbError(404, `${name} is not in the index yet`)
   }
   let value: Details
-  if (isDir) {
-    const st = await treeStats(lib.indexRoot, sub, TAG_XATTR)
+  // A remote library's whole index is counted when asked (count), or when
+  // it has been already: on a large index that walk takes minutes on the
+  // remote system, so selecting the library does not start it.
+  const kept = isDir && lib.site && !sub && !count ? treeStatsKept(lib.indexRoot, sub, TAG_XATTR) : undefined
+  if (kept === null) {
+    value = { ...base, type: 'dir', size: 0, ...recorded(lib, viewerId), mtime: 0, types: [], labels: { own: [], inherited: [], within: [] }, counted: false, ms: 0 }
+  } else if (isDir) {
+    const st = await (kept ?? treeStats(lib.indexRoot, sub, TAG_XATTR))
     let own: string[] = [], inherited: string[] = [], within = st.labels
     if (lib.primary) {
       ;({ own, inherited } = await effectiveTags(sub))
       within = await labelsBelow(sub)
     }
-    value = { ...base, type: 'dir', size: st.bytes, files: st.files, dirs: Math.max(0, st.dirs - 1), mtime: st.mtime, types: st.byExt.slice(0, 5), labels: { own, inherited, within }, ms: 0 }
+    value = { ...base, type: 'dir', size: st.bytes, files: st.files, dirs: Math.max(0, st.dirs - 1), mtime: st.mtime, types: st.byExt.slice(0, 5), labels: { own, inherited, within }, counted: true, ms: 0 }
   } else {
     const e = entry !== undefined ? entry : await entryStats(lib.indexRoot, dir, name, TAG_XATTR).catch(() => null)
     let size = e?.size ?? 0, mtime = e?.mtime ?? 0
@@ -115,7 +132,7 @@ export async function describe(lib: Library, sub: string, viewerId: string | nul
     } else if (!e) throw new KbError(404, `${name} is not in the index`)
     const tags = lib.primary ? await effectiveTags(sub) : { own: e?.labels ?? [], inherited: [] }
     const ext = name.includes('.') ? name.slice(name.lastIndexOf('.') + 1).toLowerCase() : ''
-    value = { ...base, type: 'file', size, files: 1, dirs: 0, mtime, types: [{ ext: ext || '(none)', count: 1, bytes: size }], labels: { ...tags, within: [] }, ms: 0 }
+    value = { ...base, type: 'file', size, files: 1, dirs: 0, mtime, types: [{ ext: ext || '(none)', count: 1, bytes: size }], labels: { ...tags, within: [] }, counted: true, ms: 0 }
   }
   value.ms = Date.now() - t0
   cache.set(key, { at: Date.now(), value })
@@ -139,9 +156,10 @@ async function labelsBelow(sub: string): Promise<{ label: string; count: number 
 
 export async function libraryDetailsRoutes(app: FastifyInstance): Promise<void> {
   // ?path=<path>&library=<id>; with library=all the path starts with the
-  // library's id, as in the combined tree.
+  // library's id, as in the combined tree. count=1 counts a remote
+  // library's whole index (describe).
   app.get('/api/kb/details', async req => {
-    const q = (req.query ?? {}) as { path?: string; library?: string }
+    const q = (req.query ?? {}) as { path?: string; library?: string; count?: string }
     const viewer = (req as { user?: { id?: string } }).user?.id ?? null
     const label = effectiveSettings().kbLabel
     let lib: Library, sub: string
@@ -156,6 +174,6 @@ export async function libraryDetailsRoutes(app: FastifyInstance): Promise<void> 
       sub = cleanRel(q.path ?? '')
     }
     if (!lib.caps.index && !lib.site) throw new KbError(409, `${lib.label} has no index yet`)
-    return describe(lib, sub, viewer)
+    return describe(lib, sub, viewer, q.count === '1')
   })
 }

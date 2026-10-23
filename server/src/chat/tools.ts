@@ -1397,14 +1397,16 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
         const { scopeLibraries, searchScope } = await import('../libraryScope.js')
         const libs = scopeLibraries(scopeParam(args.library), toolContext.getStore()?.userId ?? null)
         if (gufiAvailable() || libs.some(l => l.site)) {
-          const scoped = await searchScope(libs, query, limit + 5, { semantic: true, nameLimit: 5 })
+          const slow: string[] = []
+          const scoped = await searchScope(libs, query, limit + 5, { semantic: true, nameLimit: 5, slow })
+          const lateNote = slow.length ? `\n${slow.join(', ')} did not answer in time and ${slow.length === 1 ? 'is' : 'are'} left out; search ${slow.length === 1 ? 'it' : 'one'} on its own to wait for it.` : ''
           if (libs.length > 1 || libs[0].id !== 'kb') {
             const other = scoped.filter(h => h.library.id !== 'kb' || libs.length === 1)
             const own = libs.length > 1 ? await annotateHits(scoped.filter(h => h.library.id === 'kb'), args.tags ? String(args.tags).split(',').filter(Boolean) : undefined) : []
             const hits = [...own.map(h => ({ ...h, library: { id: 'kb', label: '' } })), ...other].slice(0, limit)
-            const result = hits.length
+            const result = (hits.length
               ? hits.map(h => `[library ${h.library.id}] ${h.path}\n  ${h.snippet || '(filename match)'}`).join('\n') + '\nRead a hit with read_kb_file and its library id.'
-              : 'No matches.'
+              : 'No matches.') + lateNote
             return { result, summary: `${hits.length} hits in ${libs.length} librar${libs.length === 1 ? 'y' : 'ies'}` }
           }
           const fts = scoped.filter(h => h.mode === 'fts'), names = scoped.filter(h => h.mode === 'name'), vec = scoped.filter(h => h.mode === 'vector')

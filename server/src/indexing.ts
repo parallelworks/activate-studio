@@ -16,6 +16,7 @@ import { indexLog } from './indexLog.js'
 import { indexSettings, meaningArgs, threadsFor, type IndexSettings } from './indexSettings.js'
 import { sofficeFound } from './extractors.js'
 import { scheduleSemanticMapRebuild } from './semanticMap.js'
+import { scanLatest } from './dirScan.js'
 
 /**
  * Building the index, and every later change to it, as jobs that run one at
@@ -933,23 +934,7 @@ interface DirScan { latest: number }
 /** Latest mtime a directory presents: itself plus its direct files. */
 async function scanKbDirs(): Promise<Map<string, DirScan>> {
   const out = new Map<string, DirScan>()
-  const walk = async (abs: string, rel: string) => {
-    let entries
-    try { entries = await fsp.readdir(abs, { withFileTypes: true }) } catch { return }
-    let latest = 0
-    try { latest = (await fsp.stat(abs)).mtimeMs } catch { /* ignore */ }
-    for (const e of entries) {
-      if (e.name.startsWith('.')) continue
-      const child = path.join(abs, e.name)
-      if (e.isDirectory()) {
-        if (!EXCLUDE_DIRS.has(e.name)) await walk(child, rel ? `${rel}/${e.name}` : e.name)
-      } else {
-        try { latest = Math.max(latest, (await fsp.stat(child)).mtimeMs) } catch { /* ignore */ }
-      }
-    }
-    out.set(rel, { latest: Math.floor(latest) })
-  }
-  await walk(KB_ROOT, '')
+  for (const [rel, latest] of await scanLatest(KB_ROOT, EXCLUDE_DIRS)) out.set(rel, { latest })
   return out
 }
 

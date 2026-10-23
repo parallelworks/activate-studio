@@ -49,6 +49,8 @@ export function SearchView({ onOpen }: { onOpen: (path: string, q?: string) => v
       setGufi(r.gufi)
       setLastLimit(limit)
       if (r.error) setNote(r.error)
+      // Among several libraries, one that had not answered in time is left out.
+      else if (r.slow?.length) setNote(`Still waiting for ${r.slow.join(', ')}, so ${r.slow.length === 1 ? 'it is' : 'they are'} left out of these results. Choose ${r.slow.length === 1 ? 'it' : 'one'} alone in Searching to wait for it.`)
     } catch (e) {
       setNote(String(e))
     } finally {

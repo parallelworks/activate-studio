@@ -20,6 +20,10 @@ const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rbuild-'))
 process.env.GUFI_BIN = gufiBin
 process.env.KB_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'rbuild-kb-'))
 process.env.INDEX_BASE = fs.mkdtempSync(path.join(os.tmpdir(), 'rbuild-ix-'))
+// ssh's sockets (socketDir in remoteExec.ts) go in a folder of this test's
+// own, not the user's runtime folder.
+process.env.XDG_RUNTIME_DIR = fs.mkdtempSync('/tmp/sshrun-')
+test.after(() => fs.rmSync(process.env.XDG_RUNTIME_DIR, { recursive: true, force: true }))
 process.env.PW_GATEWAY_URL = 'https://platform.test/api/openai/v1'
 // Stands in for this computer's pw sign-in.
 process.env.PW_API_KEY = 'cli-key'
@@ -169,6 +173,17 @@ test('the details panel describes a folder on the remote system from its index',
   const f = (await app.inject({ method: 'GET', url: `/api/kb/details?path=runs/case-1/out.dat&library=${boxId}` })).json()
   assert.equal(f.type, 'file')
   assert.equal(f.size, 2048)
+
+  // The whole index is counted when asked; until then the build's counts.
+  const def = (await app.inject({ method: 'GET', url: '/api/user-libraries' })).json().libraries.find(l => l.id === boxId)
+  const top = (await app.inject({ method: 'GET', url: `/api/kb/details?path=&library=${boxId}` })).json()
+  assert.deepEqual([top.counted, top.files, top.dirs, top.size, top.types], [false, def.files, def.directories - 1, 0, []])
+  const counted = (await app.inject({ method: 'GET', url: `/api/kb/details?path=&library=${boxId}&count=1` })).json()
+  assert.equal(counted.counted, true)
+  assert.ok(counted.size >= 2048 + 10)
+  assert.equal(counted.types[0].ext, 'dat')
+  const again = (await app.inject({ method: 'GET', url: `/api/kb/details?path=&library=${boxId}` })).json()
+  assert.deepEqual(again, counted, 'once counted, it is kept')
 })
 
 test('a rebuild replaces the index when complete; one that fails keeps the old index', { skip }, async () => {
