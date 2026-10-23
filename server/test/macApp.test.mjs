@@ -499,3 +499,160 @@ exit 76
     loop.kill('SIGKILL')
   }
 })
+
+/** A copy of the app not installed yet (as macOS runs one opened from its
+ *  disk image or where it was downloaded: a path with /AppTranslocation/ in
+ *  it), a home, and stand-ins that record their calls; osascript answers
+ *  the install and replace dialogs with $INSTALL and $REPLACE. */
+function notInstalled(name) {
+  const root = path.join(tmp, name)
+  const state = path.join(root, 'state')
+  fs.mkdirSync(state, { recursive: true })
+  const src = bundle(path.join(root, 'private', 'var', 'AppTranslocation', 'X1', 'd'), '#!/bin/sh\n')
+  const home = path.join(root, 'home')
+  const bin = path.join(root, 'bin')
+  const log = (n, extra = '') => write(path.join(bin, n), `#!/bin/bash\necho "${n} $*" >>"${state}/calls"\n${extra}`, 0o755)
+  log('launchctl', 'case "$1" in print) exit 1 ;; esac')
+  log('curl', 'exit 7')
+  log('open')
+  log('osascript', `case "$*" in
+  *'"Replace"'*) a="\${REPLACE:-Replace}" ;;
+  *'"Install"'*) a="\${INSTALL:-Install}" ;;
+  *) exit 0 ;;
+esac
+[ "$a" = Cancel ] && exit 1
+echo "button returned:$a"`)
+  const dest = path.join(home, 'Applications', 'ACTIVATE Studio.app')
+  const env = { HOME: home, PATH: `${bin}:/usr/bin:/bin` }
+  const run = (args = [], extra = {}) => spawnSync(src.launcher, args, { env: { ...env, ...extra }, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+  const calls = () => { try { return fs.readFileSync(path.join(state, 'calls'), 'utf8') } catch { return '' } }
+  const reset = () => fs.rmSync(path.join(state, 'calls'), { force: true })
+  return { root, src, home, dest, run, calls, reset }
+}
+
+const staged = dir => fs.readdirSync(dir).filter(f => f.startsWith('.ACTIVATE Studio.app.'))
+
+test('--install puts the app in ~/Applications, replaces a copy there whole, and refuses a folder the person cannot write', () => {
+  const m = notInstalled('install')
+  let r = m.run(['--install'])
+  assert.equal(r.status, 0, r.stderr)
+  assert.match(r.stdout, /Installed ACTIVATE Studio in .*\/home\/Applications\/ACTIVATE Studio\.app\./)
+  assert.equal(fs.readFileSync(path.join(m.dest, 'Contents', 'MacOS', 'ACTIVATE Studio'), 'utf8'), fs.readFileSync(path.join(MAC, 'launcher.sh'), 'utf8'))
+  assert.ok(fs.statSync(path.join(m.dest, 'Contents', 'Resources', 'studio-run.sh')).mode & 0o111, 'modes are kept')
+
+  // Again, over the copy there: replaced whole, with nothing staged left.
+  write(path.join(m.dest, 'Contents', 'old-copy'), 'x')
+  r = m.run(['--install'])
+  assert.equal(r.status, 0, r.stderr)
+  assert.ok(!fs.existsSync(path.join(m.dest, 'Contents', 'old-copy')), 'the old copy is gone')
+  assert.ok(fs.existsSync(path.join(m.dest, 'Contents', 'Resources', 'studio-run.sh')))
+  assert.deepEqual(staged(path.join(m.home, 'Applications')), [])
+
+  // Into another folder, named; and the installed copy installing itself
+  // where it is changes nothing.
+  r = m.run(['--install', path.join(m.root, 'Elsewhere')])
+  assert.equal(r.status, 0, r.stderr)
+  assert.ok(fs.existsSync(path.join(m.root, 'Elsewhere', 'ACTIVATE Studio.app', 'Contents', 'MacOS', 'ACTIVATE Studio')))
+  r = spawnSync(path.join(m.dest, 'Contents', 'MacOS', 'ACTIVATE Studio'), ['--install'], { env: { HOME: m.home, PATH: `${path.join(m.root, 'bin')}:/usr/bin:/bin` }, encoding: 'utf8' })
+  assert.equal(r.status, 0, r.stderr)
+  assert.match(r.stdout, /is the one in .* already/)
+  assert.ok(fs.existsSync(m.dest))
+
+  // A folder not writable for the person: refused, in plain words.
+  if (!asRoot) {
+    const locked = path.join(m.root, 'Locked')
+    fs.mkdirSync(locked)
+    fs.chmodSync(locked, 0o555)
+    try {
+      r = m.run(['--install', locked])
+      assert.notEqual(r.status, 0)
+      assert.match(r.stderr, /Locked is not writable for you\. The Applications folder in your home folder \(~\/Applications\) is\./)
+      assert.deepEqual(fs.readdirSync(locked), [])
+    } finally {
+      fs.chmodSync(locked, 0o755)
+    }
+  }
+  // A copy that fails part way (here a file it cannot read): said in plain
+  // words, with nothing left in the folder.
+  if (!asRoot) {
+    const unreadable = path.join(m.src.res, 'secret')
+    write(unreadable, 'x', 0o000)
+    try {
+      const into = path.join(m.root, 'Partial')
+      r = m.run(['--install', into])
+      assert.notEqual(r.status, 0)
+      assert.match(r.stderr, /^Copying ACTIVATE Studio to .*\/Partial failed: .+\.$/m)
+      assert.deepEqual(fs.readdirSync(into), [])
+    } finally {
+      fs.rmSync(unreadable, { force: true })
+    }
+  }
+  // The uninstall plan of an installed copy lists an install's staging
+  // copies left behind (by a stop part way).
+  write(path.join(m.home, 'Applications', '.ACTIVATE Studio.app.install', 'x'), 'x')
+  write(path.join(m.dest, 'Contents', 'Info.plist'), '<plist><dict><key>CFBundleIdentifier</key><string>com.parallelworks.activate-studio</string></dict></plist>\n')
+  r = spawnSync(path.join(m.dest, 'Contents', 'MacOS', 'ACTIVATE Studio'), ['--uninstall', '--dry-run'], { env: { HOME: m.home, PATH: `${path.join(m.root, 'bin')}:/usr/bin:/bin` }, encoding: 'utf8' })
+  assert.match(r.stdout, /^update-copy\t.*\/\.ACTIVATE Studio\.app\.install$/m)
+})
+
+test('opened before it is installed: a terminal is told how to install it, and the dialog installs it in ~/Applications and opens that copy', () => {
+  const m = notInstalled('offer')
+  // In a terminal (or the app's window, which asks itself): told, nothing started.
+  let r = m.run([], { STUDIO_NO_BROWSER: '1' })
+  assert.equal(r.status, 1)
+  assert.match(r.stderr, /not installed yet/)
+  assert.match(r.stderr, /"[^"]*\/AppTranslocation\/X1\/d\/ACTIVATE Studio\.app\/Contents\/MacOS\/ACTIVATE Studio" --install/)
+  assert.doesNotMatch(m.calls(), /launchctl|osascript/)
+  assert.ok(!fs.existsSync(m.dest))
+
+  // Opened from Finder without the window: Cancel installs nothing.
+  r = m.run([], { INSTALL: 'Cancel' })
+  assert.equal(r.status, 0, r.stderr)
+  assert.ok(!fs.existsSync(m.dest))
+  assert.doesNotMatch(m.calls(), /launchctl (bootstrap|enable)/, 'the copy not installed starts no server')
+
+  // Install: copied to ~/Applications, and that copy opened as a new instance.
+  m.reset()
+  r = m.run()
+  assert.equal(r.status, 0, r.stderr)
+  assert.ok(fs.existsSync(path.join(m.dest, 'Contents', 'MacOS', 'ACTIVATE Studio')))
+  assert.match(m.calls(), new RegExp(`open -n ${m.dest.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\n`))
+  assert.doesNotMatch(m.calls(), /launchctl (bootstrap|enable)/)
+
+  // A copy already there: asked first; Cancel keeps it, Replace replaces it.
+  write(path.join(m.dest, 'Contents', 'old-copy'), 'x')
+  m.reset()
+  r = m.run([], { REPLACE: 'Cancel' })
+  assert.equal(r.status, 0, r.stderr)
+  assert.match(m.calls(), /"Replace"/)
+  assert.ok(fs.existsSync(path.join(m.dest, 'Contents', 'old-copy')), 'kept')
+  assert.doesNotMatch(m.calls(), /open -n/)
+  m.reset()
+  r = m.run()
+  assert.equal(r.status, 0, r.stderr)
+  assert.ok(!fs.existsSync(path.join(m.dest, 'Contents', 'old-copy')), 'replaced')
+  assert.match(m.calls(), /open -n /)
+})
+
+test('installing over the copy the server runs from stops that server first', async () => {
+  const m = noAgentMac('install-over-running', { bootstrap: 'refused' })
+  let pid = null
+  try {
+    let r = m.run()
+    assert.equal(r.status, 0, r.stderr + r.stdout)
+    pid = m.pidOf()
+    assert.ok(pid && m.alive(pid))
+    // A newer copy, not installed yet, installed where the running one is.
+    const src = bundle(path.join(m.root, 'AppTranslocation', 'X2', 'd'), '#!/bin/bash\necho new\n')
+    r = spawnSync(src.launcher, ['--install', m.root], { env: { HOME: m.home, PATH: `${path.join(m.root, 'bin')}:/usr/bin:/bin`, STATE: m.state }, encoding: 'utf8', timeout: 60_000 })
+    assert.equal(r.status, 0, r.stderr)
+    assert.ok(await waitFor(() => !m.alive(pid)), 'its run loop stopped')
+    assert.ok(!fs.existsSync(path.join(m.state, 'serving')), 'and the server got the TERM')
+    assert.ok(!fs.existsSync(path.join(m.data, 'server.pid')))
+    assert.equal(fs.readFileSync(path.join(m.res, 'node', 'bin', 'node'), 'utf8'), '#!/bin/bash\necho new\n', 'the new copy is in place')
+    assert.deepEqual(staged(m.root), [])
+  } finally {
+    m.run('--stop')
+    if (pid) try { process.kill(-pid, 'SIGKILL') } catch { /* gone */ }
+  }
+})

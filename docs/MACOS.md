@@ -16,11 +16,27 @@ This puts `ACTIVATE Studio.app` in `~/Applications`, without
 administrator rights, and opens it. The alternative is the disk image,
 `activate-studio-macos-arm64.dmg` on the
 [macOS release](https://github.com/parallelworks/activate-studio/releases/tag/macos)
-page, which always holds the newest app: open it and drag the app to
-Applications. Without administrator rights, use Applications in your home
-folder (`~/Applications`; create it in Finder if it is not there). A copy
-there updates itself; a copy an administrator put in `/Applications` may
-not be writable for updates.
+page, which always holds the newest app. Open it and double-click
+ACTIVATE Studio, then choose Install: the app copies itself to
+Applications in your home folder (`~/Applications`, created if missing)
+and opens from there, with no administrator rights needed, and it updates
+itself there. If a copy is there already, it asks before replacing it;
+the index, settings and libraries are kept. The disk image holds the app
+and a short note on installing it, with no link to `/Applications`: the
+app is per user, since its data, server and LaunchAgent are the person's
+own.
+
+An administrator who prefers `/Applications` can drag the app there
+instead. That copy updates itself only for users who can write to
+`/Applications`.
+
+From a terminal, `--install` does the same install without asking, into
+`~/Applications` or a folder named after it, replacing a copy there, and
+does not open the app:
+
+```
+"/Volumes/ACTIVATE Studio/ACTIVATE Studio.app/Contents/MacOS/ACTIVATE Studio" --install [FOLDER]
+```
 
 *First open:* the app starts the Studio's server in the background and
 shows the Studio in its own window, with its own Dock icon and menus; no
@@ -207,7 +223,7 @@ offers no Open Anyway; clearing the flag in Terminal opens those, and
 works for any release:
 
 ```
-xattr -dr com.apple.quarantine "/Applications/ACTIVATE Studio.app"
+xattr -dr com.apple.quarantine "$HOME/Applications/ACTIVATE Studio.app"
 ```
 
 *Requirements:* a Mac with Apple silicon, and the macOS release the app

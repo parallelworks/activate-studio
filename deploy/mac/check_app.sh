@@ -16,15 +16,26 @@
 # ~/Library/LaunchAgents is read-only. On a Mac older than the app's LSMinimumSystemVersion they are
 # skipped. Signed by sign_app.sh, all of it runs under the hardened runtime.
 #
-# Usage: deploy/mac/check_app.sh "path/to/ACTIVATE Studio.app" [--run] [--launch]
+# --dmg FILE checks the disk image made of the app (make_dmg.sh): the app
+# and the install note, and no link to /Applications. With --launch it also
+# installs from the mounted image with launcher.sh --install, as the app's
+# window does when opened there, and runs the installed copy.
+#
+# Usage: deploy/mac/check_app.sh "path/to/ACTIVATE Studio.app" [--run] [--launch] [--dmg FILE]
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-APP="$(cd "${1:?usage: check_app.sh APP [--run] [--launch]}" && pwd -P)"
+APP="$(cd "${1:?usage: check_app.sh APP [--run] [--launch] [--dmg FILE]}" && pwd -P)"
 shift
-RUN=0 LAUNCH=0
-for a in "$@"; do
-  case "$a" in --run) RUN=1 ;; --launch) RUN=1; LAUNCH=1 ;; *) echo "unknown option $a" >&2; exit 2 ;; esac
+RUN=0 LAUNCH=0 DMG=
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --run) RUN=1 ;;
+    --launch) RUN=1; LAUNCH=1 ;;
+    --dmg) DMG="$(cd "$(dirname "${2:?--dmg needs a file}")" && pwd -P)/$(basename "$2")"; shift ;;
+    *) echo "unknown option $1" >&2; exit 2 ;;
+  esac
+  shift
 done
 C="$APP/Contents"
 R="$C/Resources"
@@ -406,6 +417,68 @@ if [ "$RUN" = 1 ]; then
       check "and no LaunchAgent" sh -c '! printf "%s\n" "$1" | grep -q LaunchAgents' _ "$PLAN2"
       locked --stop >/dev/null 2>&1 || true
       chmod 755 "$H2/Library/LaunchAgents"
+    fi
+
+    # The disk image: the app and the install note, no /Applications link;
+    # mounted where macOS mounts a downloaded image (/Volumes), so the app on
+    # it is the copy the window offers to install.
+    if [ -n "$DMG" ]; then
+      echo "Disk image"
+      M=
+      if [ ! -f "$DMG" ]; then
+        bad "no disk image at $DMG"
+      elif plist="$(hdiutil attach -nobrowse -readonly -noautoopen -plist "$DMG" 2>/dev/null)"; then
+        M="$(printf '%s' "$plist" | python3 -c 'import plistlib, sys; print(next(e["mount-point"] for e in plistlib.loads(sys.stdin.buffer.read())["system-entities"] if e.get("mount-point")))' 2>/dev/null || true)"
+      fi
+      if [ -z "$M" ]; then
+        [ -f "$DMG" ] && bad "the disk image did not mount"
+      else
+        NAME="$(basename "$APP" .app)"
+        IMG_APP="$M/$NAME.app"
+        check "it holds the app" test -f "$IMG_APP/Contents/Info.plist"
+        check "and the install note" grep -q "choose Install" "$M/Installing $NAME.txt"
+        check "and no link to /Applications" sh -c '! [ -e "$1/Applications" ] && ! [ -L "$1/Applications" ]' _ "$M"
+        check "it is mounted under /Volumes, where the app offers to install itself" sh -c 'case "$1" in /Volumes/*) exit 0 ;; esac; exit 1' _ "$M"
+        if [ "$LAUNCH" = 1 ]; then
+          # A home of its own, as a person who has never installed the app.
+          H3="$T/home-install"
+          D3="$H3/Library/Application Support/ACTIVATE Studio"
+          COPY="$H3/Applications/$NAME.app"
+          PORT4="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')"
+          mkdir -p "$D3"
+          printf "PORT='%s'\nKB_ROOT='%s'\n" "$PORT4" "$T/corpus" >"$D3/studio.env"
+          fresh() { env HOME="$H3" PATH=/usr/bin:/bin:/usr/sbin:/sbin "$@"; }
+          check "opened from the image in a terminal, it says to install it and starts nothing" \
+            sh -c '! env HOME="$1" PATH=/usr/bin:/bin:/usr/sbin:/sbin STUDIO_NO_BROWSER=1 "$2" 2>"$3" && grep -q -- --install "$3" && ! curl -fsS -m 2 "http://127.0.0.1:$4/api/version"' \
+            _ "$H3" "$IMG_APP/Contents/Resources/launcher.sh" "$T/not-installed.txt" "$PORT4"
+          check "--install puts it in ~/Applications, which it creates" fresh "$IMG_APP/Contents/Resources/launcher.sh" --install
+          check "the installed copy's signature verifies (codesign --verify --deep --strict)" codesign --verify --deep --strict "$COPY"
+          check "and it carries no quarantine mark" sh -c '! xattr -lr "$1" 2>/dev/null | grep -q com.apple.quarantine' _ "$COPY"
+          check "the installed copy starts the server" fresh env STUDIO_NO_BROWSER=1 "$COPY/Contents/Resources/launcher.sh"
+          check "and it answers" curl -fsS -m 5 "http://127.0.0.1:$PORT4/api/version"
+          # Installing again over the running copy: its server is stopped,
+          # the copy replaced whole (a file added to the old one is gone),
+          # and the new copy starts it again.
+          touch "$COPY/Contents/old-copy-marker"
+          check "--install again replaces the installed copy" fresh "$IMG_APP/Contents/Resources/launcher.sh" --install
+          check "and stopped the server running from it" sh -c 'for _ in $(seq 1 30); do curl -fsS -m 2 "http://127.0.0.1:$1/api/version" >/dev/null 2>&1 || exit 0; sleep 1; done; exit 1' _ "$PORT4"
+          check "with the old copy gone, and no staging copies left" sh -c '! [ -e "$1/Contents/old-copy-marker" ] && ! ls -a "$2" | grep -q "^\.$3\.app\."' _ "$COPY" "$H3/Applications" "$NAME"
+          check "the replaced copy's signature verifies" codesign --verify --deep --strict "$COPY"
+          check "opening it starts the server again" fresh env STUDIO_NO_BROWSER=1 "$COPY/Contents/Resources/launcher.sh"
+          check "--stop stops it" fresh "$COPY/Contents/Resources/launcher.sh" --stop
+          launchctl enable "gui/$(id -u)/com.parallelworks.activate-studio" 2>/dev/null || true
+          # A copy macOS marked as downloaded (quarantined): the installed
+          # copy has the mark removed, so macOS does not translocate it.
+          QSRC="$T/quarantined/$NAME.app"
+          mkdir -p "$T/quarantined"
+          ditto "$IMG_APP" "$QSRC"
+          xattr -w com.apple.quarantine "0083;$(printf '%x' "$(date +%s)");check_app;" "$QSRC"
+          xattr -w com.apple.quarantine "0083;$(printf '%x' "$(date +%s)");check_app;" "$QSRC/Contents/MacOS/$NAME"
+          check "a quarantined copy installs without the mark" sh -c 'env HOME="$1" PATH=/usr/bin:/bin:/usr/sbin:/sbin "$2" --install "$3" >/dev/null && ! xattr -lr "$3/$4.app" 2>/dev/null | grep -q com.apple.quarantine && codesign --verify --deep --strict "$3/$4.app"' \
+            _ "$H3" "$QSRC/Contents/Resources/launcher.sh" "$T/elsewhere" "$NAME"
+        fi
+        hdiutil detach "$M" >/dev/null 2>&1 || hdiutil detach -force "$M" >/dev/null 2>&1 || true
+      fi
     fi
 
     # Nothing written into the app while it ran: a file added or changed
