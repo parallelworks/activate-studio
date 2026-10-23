@@ -36,6 +36,8 @@ on:
       - .github/workflows/mac-install-e2e.yml
       - .github/scripts/mac-install-e2e.sh
       - .github/scripts/mac-update-e2e.sh
+      - .github/scripts/mac-usecase-e2e.sh
+      - .github/scripts/mac-usecase-e2e.mjs
 
 permissions: {}
 
@@ -114,5 +116,37 @@ jobs:
         with:
           name: mac-update-e2e-${{ matrix.pass }}
           path: ${{ runner.temp }}/e2e/${{ matrix.pass }}
+          retention-days: 14
+          if-no-files-found: warn
+
+  # A new user's first session through the Studio's pages (Playwright and
+  # Chromium on the runner): setup with a main folder, an existing index
+  # connected read only over ssh to this machine, search, Query across both
+  # libraries, and Settings, Updates. See .github/scripts/mac-usecase-e2e.sh.
+  usecase:
+    if: ${{ !inputs.readonly_agents }}
+    runs-on: macos-15
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+
+      - name: setup, an ssh library, search and query
+        env:
+          DMG_URL: ${{ inputs.dmg_url || 'https://github.com/parallelworks/activate-studio/releases/download/macos/activate-studio-macos-arm64.dmg' }}
+        run: bash .github/scripts/mac-usecase-e2e.sh "$DMG_URL" "$RUNNER_TEMP/e2e/usecase"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ always() }}
+        with:
+          name: mac-usecase-e2e
+          path: ${{ runner.temp }}/e2e/usecase
           retention-days: 14
           if-no-files-found: warn
