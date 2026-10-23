@@ -23,6 +23,10 @@ process.env.HOST = '127.0.0.1'
 process.env.GUFI_BIN = gufiBin
 process.env.KB_ROOT = path.join(dir, 'kb')
 process.env.INDEX_BASE = path.join(dir, 'ix')
+// ssh's sockets (socketDir in remoteExec.ts) go in a folder of this test's
+// own, not the user's runtime folder.
+process.env.XDG_RUNTIME_DIR = fs.mkdtempSync('/tmp/sshrun-')
+test.after(() => fs.rmSync(process.env.XDG_RUNTIME_DIR, { recursive: true, force: true }))
 process.env.PW_GATEWAY_URL = 'https://platform.test/api/openai/v1'
 process.env.PW_API_KEY = 'deployment-key'
 

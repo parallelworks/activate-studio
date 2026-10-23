@@ -1,5 +1,5 @@
 // What keeps a large index quick: ssh's shared connection with a socket in
-// the Studio's data folder (and none where ssh could not use one), the
+// a folder of the user's own (and none where no folder will do), the
 // folder sweep's walk, a search that brings back only the rows it keeps,
 // and counts that are made once per index. The GUFI parts need GUFI
 // (GUFI_BIN, else /opt/gufi/bin) and skip without it.
@@ -8,7 +8,8 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { execFileSync } from 'node:child_process'
+import net from 'node:net'
+import { execFileSync, spawnSync } from 'node:child_process'
 
 const realGufi = process.env.GUFI_BIN || '/opt/gufi/bin'
 const haveGufi = fs.existsSync(path.join(realGufi, 'gufi_query')) && fs.existsSync(path.join(realGufi, 'gufi_dir2index'))
@@ -31,24 +32,40 @@ fs.mkdirSync(process.env.KB_ROOT)
 // The socket tests want a short path; the temporary folder on macOS is long.
 const short = fs.mkdtempSync('/tmp/studio-')
 test.after(() => { fs.rmSync(short, { recursive: true, force: true }); fs.rmSync(dir, { recursive: true, force: true }) })
+const folder = (name, mode = 0o700) => { const d = path.join(short, name); fs.mkdirSync(d, { recursive: true }); fs.chmodSync(d, mode); return d }
 
 const dist = f => new URL(`../dist/${f}`, import.meta.url).href
 
-/** controlArgs as a Studio with this data folder would give them. */
-const controlArgs = (indexBase, env = {}) => JSON.parse(execFileSync(process.execPath, ['--input-type=module', '-e',
-  `const R = await import(${JSON.stringify(dist('remoteExec.js'))}); process.stdout.write(JSON.stringify(R.controlArgs({ destination: 'me@host', port: 2222 })))`],
-{ env: { ...process.env, INDEX_BASE: indexBase, ...env } }).toString())
+/** controlArgs as a Studio with this data folder and environment would
+ *  give them; an empty value leaves the variable out. */
+const controlArgs = (indexBase, env = {}) => {
+  const all = { ...process.env, INDEX_BASE: indexBase, ...env }
+  for (const k of Object.keys(all)) if (all[k] === '') delete all[k]
+  return JSON.parse(execFileSync(process.execPath, ['--input-type=module', '-e',
+    `const R = await import(${JSON.stringify(dist('remoteExec.js'))}); process.stdout.write(JSON.stringify(R.controlArgs({ destination: 'me@host', port: 2222 })))`],
+  { env: all }).toString())
+}
+const socketOf = args => args[3].slice('ControlPath="'.length, -1)
+// A data folder too long for a socket, as under a long macOS user name:
+// /Users/<name>/Library/Application Support/ACTIVATE Studio/index.
+const longBase = path.join(short, 'Users', 'firstname.lastname.example', 'Library', 'Application Support', 'ACTIVATE Studio', 'index')
+const uid = process.getuid()
+// The tests may make /tmp/activate-studio-<uid>, as the Studio would; one
+// that was not there before is removed after, when empty.
+const tmpSockets = `/tmp/activate-studio-${uid}`
+if (!fs.existsSync(tmpSockets)) test.after(() => { try { fs.rmdirSync(tmpSockets) } catch { /* in use */ } })
 
 const haveSsh = (() => { try { execFileSync('ssh', ['-V'], { stdio: 'ignore' }); return true } catch { return false } })()
 
-test('ssh shares one connection per host through a socket in the data folder, quoted for a folder with spaces', { skip: !haveSsh && 'no ssh' }, () => {
-  const base = path.join(short, 'App Data')
-  const args = controlArgs(base)
-  const sock = args[3].slice('ControlPath="'.length, -1)
+test('the socket goes in the runtime folder, quoted for a folder with spaces, however long the data folder', { skip: !haveSsh && 'no ssh' }, () => {
+  assert.ok(Buffer.byteLength(path.join(longBase, 'ssh', 'x'.repeat(12))) > 90)
+  const run = folder('run time')
+  const args = controlArgs(longBase, { XDG_RUNTIME_DIR: run })
+  const sock = socketOf(args)
   assert.deepEqual(args, ['-o', 'ControlMaster=auto', '-o', `ControlPath="${sock}"`, '-o', 'ControlPersist=600'])
-  assert.equal(path.dirname(sock), path.join(base, 'ssh'))
+  assert.equal(path.dirname(sock), path.join(run, 'activate-studio'))
   assert.match(path.basename(sock), /^[0-9a-f]{12}$/)
-  assert.equal(fs.statSync(path.dirname(sock)).mode & 0o777, 0o700, 'the socket folder is the user\'s alone')
+  assert.equal(fs.lstatSync(path.dirname(sock)).mode & 0o777, 0o700, 'the socket folder is the user\'s alone')
   // ssh reads the options as given: -G prints its configuration and stops.
   const conf = execFileSync('ssh', ['-G', ...args, '-p', '2222', 'me@host'], { stdio: ['ignore', 'pipe', 'ignore'] }).toString()
   assert.match(conf, /^controlmaster auto$/m)
@@ -56,12 +73,50 @@ test('ssh shares one connection per host through a socket in the data folder, qu
   assert.match(conf, /^controlpersist 600$/m)
 })
 
-test('no shared connection where ssh could not bind the socket, or when it is turned off', () => {
-  // ssh binds the socket at its path plus 17 characters; macOS allows 104 bytes.
-  assert.deepEqual(controlArgs(path.join(short, 'x'.repeat(60))), [])
-  assert.deepEqual(controlArgs(path.join(short, '100%')), [])
-  assert.deepEqual(controlArgs(path.join(short, 'ix'), { STUDIO_SSH_SHARE: '0' }), [])
-  assert.equal(controlArgs(path.join(short, 'ix')).length, 6)
+test('without a runtime folder, or with a link in its place, the socket goes in /tmp/activate-studio-<uid>', () => {
+  const tmp = tmpSockets
+  assert.equal(path.dirname(socketOf(controlArgs(longBase, { XDG_RUNTIME_DIR: '' }))), tmp)
+  const run = folder('linked')
+  fs.symlinkSync(folder('elsewhere'), path.join(run, 'activate-studio'))
+  assert.equal(path.dirname(socketOf(controlArgs(longBase, { XDG_RUNTIME_DIR: run }))), tmp)
+  const s = fs.lstatSync(tmp)
+  assert.deepEqual([s.isDirectory(), s.uid, s.mode & 0o777], [true, uid, 0o700])
+  assert.deepEqual(controlArgs(longBase, { STUDIO_SSH_SHARE: '0' }), [])
+})
+
+test('a socket folder that is a link, open to others, someone else\'s, or too long is passed over', async () => {
+  const R = await import(dist('remoteExec.js'))
+  const good = folder('good')
+  const link = path.join(short, 'link')
+  fs.symlinkSync(good, link)
+  const open = folder('open', 0o755)
+  const long = path.join(short, 'x'.repeat(80))
+  assert.equal(R.socketDir([link], uid), null, 'a link, even to a good folder')
+  assert.equal(R.socketDir([open], uid), null, 'mode 755')
+  assert.equal(fs.statSync(open).mode & 0o777, 0o755, 'left as it was')
+  assert.equal(R.socketDir([good], uid + 1), null, 'owned by another user')
+  assert.equal(R.socketDir(['/tmp'], uid), null, 'a shared folder')
+  assert.equal(R.socketDir([long], uid), null, 'too long for a socket')
+  assert.equal(fs.existsSync(long), false, 'and not made')
+  // In order, down to the data folder, which is made when missing.
+  const data = path.join(short, 'data', 'ssh')
+  assert.equal(R.socketDir([link, open, long, data], uid), data)
+  assert.equal(fs.statSync(data).mode & 0o777, 0o700)
+  assert.equal(R.socketDir([link, open, long], uid), null)
+})
+
+test('a socket left by a master that died is cleared by the next ssh, which connects on its own', { skip: !haveSsh && 'no ssh' }, async () => {
+  const args = controlArgs(longBase, { XDG_RUNTIME_DIR: folder('stale') })
+  const sock = socketOf(args)
+  // A master killed outright leaves its socket with nothing listening.
+  spawnSync(process.execPath, ['-e', `require('net').createServer().listen(${JSON.stringify(sock)}, () => process.kill(process.pid, 'SIGKILL'))`])
+  assert.ok(fs.lstatSync(sock).isSocket())
+  const port = await new Promise(resolve => { const s = net.createServer().listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => resolve(p)) }) })
+  const r = spawnSync('ssh', ['-F', '/dev/null', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=5', ...args, '-p', String(port), 'me@127.0.0.1', 'true'], { encoding: 'utf8' })
+  assert.equal(r.status, 255)
+  assert.match(r.stderr, /Connection refused/)
+  assert.doesNotMatch(r.stderr, /control ?socket|controlpath/i)
+  assert.equal(fs.existsSync(sock), false)
 })
 
 test('the sweep finds each folder\'s latest change, passing over dot names and excluded folders', async () => {

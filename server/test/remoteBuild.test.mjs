@@ -20,6 +20,10 @@ const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rbuild-'))
 process.env.GUFI_BIN = gufiBin
 process.env.KB_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'rbuild-kb-'))
 process.env.INDEX_BASE = fs.mkdtempSync(path.join(os.tmpdir(), 'rbuild-ix-'))
+// ssh's sockets (socketDir in remoteExec.ts) go in a folder of this test's
+// own, not the user's runtime folder.
+process.env.XDG_RUNTIME_DIR = fs.mkdtempSync('/tmp/sshrun-')
+test.after(() => fs.rmSync(process.env.XDG_RUNTIME_DIR, { recursive: true, force: true }))
 process.env.PW_GATEWAY_URL = 'https://platform.test/api/openai/v1'
 // Stands in for this computer's pw sign-in.
 process.env.PW_API_KEY = 'cli-key'

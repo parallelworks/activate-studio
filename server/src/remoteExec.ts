@@ -110,19 +110,52 @@ export function sshArgv(site: string, command: string): string[] {
 
 /** ssh's connection sharing for a host: the first session to it logs in and
  *  keeps the connection for ten minutes after the last one closes, and the
- *  others ride on it. The socket is in the Studio's own data folder; the
- *  person's ~/.ssh/config is left as it is. The path is quoted, since the
- *  macOS data folder has spaces in it and ssh refuses an unquoted one. None
- *  where the socket path is too long (ssh binds it with 17 more characters,
- *  and macOS allows 104 bytes), where it has a quote or a % in it, or with
- *  STUDIO_SSH_SHARE=0. */
+ *  others ride on it. The socket is in a folder of the user's own
+ *  (socketDir); the person's ~/.ssh/config is left as it is. The path is
+ *  quoted, since a folder may have spaces in it and ssh refuses an unquoted
+ *  one. None where no folder will do, or with STUDIO_SSH_SHARE=0. */
 export function controlArgs(h: SshHost): string[] {
   if (process.env.STUDIO_SSH_SHARE === '0') return []
-  const dir = path.join(INDEX_BASE, 'ssh')
-  const sock = path.join(dir, crypto.createHash('sha1').update(`${h.destination}:${h.port ?? ''}`).digest('hex').slice(0, 12))
-  if (Buffer.byteLength(sock) > 86 || /["%]/.test(sock)) return []
-  try { fs.mkdirSync(dir, { recursive: true, mode: 0o700 }) } catch { return [] }
+  const dir = socketDir()
+  if (!dir) return []
+  const sock = path.join(dir, crypto.createHash('sha1').update(`${h.destination}:${h.port ?? ''}`).digest('hex').slice(0, SOCKET_NAME))
   return ['-o', 'ControlMaster=auto', '-o', `ControlPath="${sock}"`, '-o', 'ControlPersist=600']
+}
+
+/** A socket's name: 12 hex characters of the destination (user and host)
+ *  and port. ssh binds the socket at its path plus 17 characters, and
+ *  macOS allows 104 bytes, so the whole path stays within 86. */
+const SOCKET_NAME = 12
+const SOCKET_PATH_MAX = 86
+
+/** Where ssh's sockets may go, in order: $XDG_RUNTIME_DIR/activate-studio
+ *  where that is set, /tmp/activate-studio-<uid>, and the data folder's
+ *  ssh folder, which on macOS can be too long for a socket. */
+export function socketDirs(): string[] {
+  const xdg = process.env.XDG_RUNTIME_DIR
+  return [
+    ...(xdg && path.isAbsolute(xdg) && fs.existsSync(xdg) ? [path.join(xdg, 'activate-studio')] : []),
+    `/tmp/activate-studio-${process.getuid?.() ?? 'x'}`,
+    path.join(INDEX_BASE, 'ssh'),
+  ]
+}
+
+/** The first of `dirs` that a socket fits in and that is the user's alone:
+ *  made with mode 700 when missing, then checked with lstat each time, as
+ *  a directory (not a link) owned by `uid` with mode 700. In /tmp another
+ *  user could have made the folder first, or put a link there; such a
+ *  folder is passed over. Null when none will do. */
+export function socketDir(dirs = socketDirs(), uid = process.getuid?.()): string | null {
+  if (uid === undefined) return null
+  for (const dir of dirs) {
+    if (Buffer.byteLength(dir) + 1 + SOCKET_NAME > SOCKET_PATH_MAX || /["%]/.test(dir)) continue
+    try { fs.mkdirSync(dir, { recursive: true, mode: 0o700 }) } catch { /* checked below */ }
+    try {
+      const s = fs.lstatSync(dir)
+      if (s.isDirectory() && s.uid === uid && (s.mode & 0o777) === 0o700) return dir
+    } catch { /* not there */ }
+  }
+  return null
 }
 
 type Spawn = (site: string, key: string, command: string) => ChildProcessWithoutNullStreams

@@ -13,6 +13,10 @@ import path from 'node:path'
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sshx-'))
 process.env.KB_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'sshx-kb-'))
 process.env.INDEX_BASE = fs.mkdtempSync(path.join(os.tmpdir(), 'sshx-ix-'))
+// ssh's sockets (socketDir in remoteExec.ts) go in a folder of this test's
+// own, not the user's runtime folder.
+process.env.XDG_RUNTIME_DIR = fs.mkdtempSync('/tmp/sshrun-')
+test.after(() => fs.rmSync(process.env.XDG_RUNTIME_DIR, { recursive: true, force: true }))
 
 const exe = (f, body) => { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, body, { mode: 0o755 }) }
 const realBase64 = ['/usr/bin/base64', '/bin/base64'].find(f => fs.existsSync(f))

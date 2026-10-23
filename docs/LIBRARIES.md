@@ -356,17 +356,28 @@ Studio's host reaches with plain ssh: Settings, Libraries, **Add a
 library**, "A remote system", "Connect an existing index", **Connect
 with** ssh, or the setup wizard. The host is written `user@host`, an
 alias from `~/.ssh/config`, or either with `:port`. The Studio runs
-`ssh -T -o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=30 -o ControlMaster=auto -o ControlPath="<INDEX_BASE>/ssh/<hash>" -o ControlPersist=600 [-p port] <destination>`
+`ssh -T -o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=30 -o ControlMaster=auto -o ControlPath="<folder>/<hash>" -o ControlPersist=600 [-p port] <destination>`
 with the keys, agent, and `~/.ssh/config` of the account it runs as, and
 keeps up to three sessions per destination, as it does per cluster. The
-sessions to one host share a single ssh connection through a socket in
-`INDEX_BASE/ssh` (mode 700), which stays open ten minutes after the last
-session closes, so a new session does not log in again; `~/.ssh/config`
-is not changed. Sharing is left out where the socket path would be longer
-than 86 bytes (ssh adds 17 characters when it binds it, and macOS allows
-104) and with `STUDIO_SSH_SHARE=0`. Nothing is built or written on that
-machine: the library is ready once its connection test passes, and it is
-read only.
+sessions to one host share a single ssh connection through a socket,
+which stays open ten minutes after the last session closes, so a new
+session does not log in again; `~/.ssh/config` is not changed. The
+socket's name is 12 hex characters of the destination and port, and its
+folder is the first of these that will do:
+`$XDG_RUNTIME_DIR/activate-studio` where that variable is set,
+`/tmp/activate-studio-<uid>`, and `INDEX_BASE/ssh`. A folder is made with
+mode 700 when missing and checked with `lstat` before each session: it has
+to be a directory, not a link, owned by the user, with mode 700, so one
+that another user made first in `/tmp` is passed over. It also has to be
+short enough for the socket: ssh binds the socket at its path plus 17
+characters and macOS allows 104 bytes, so the whole path stays within 86.
+The `/tmp` folder fits every user name; the macOS data folder under
+`~/Library/Application Support` is too long for names over about 12
+characters. With no folder that will do, or with
+`STUDIO_SSH_SHARE=0`, each session logs in on its own. A socket left by a
+master that was killed is removed by the next ssh, which then logs in and
+becomes the master. Nothing is built or written on that machine: the
+library is ready once its connection test passes, and it is read only.
 
 The remote machine needs:
 

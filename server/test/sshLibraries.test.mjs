@@ -25,6 +25,10 @@ process.env.HOST = '127.0.0.1'
 process.env.GUFI_BIN = gufiBin
 process.env.KB_ROOT = path.join(dir, 'kb')
 process.env.INDEX_BASE = path.join(dir, 'ix')
+// ssh's sockets (socketDir in remoteExec.ts) go in a folder of this test's
+// own, not the user's runtime folder.
+process.env.XDG_RUNTIME_DIR = fs.mkdtempSync('/tmp/sshrun-')
+test.after(() => fs.rmSync(process.env.XDG_RUNTIME_DIR, { recursive: true, force: true }))
 
 const write = (f, body) => { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, body) }
 const exe = (f, body) => { write(f, body); fs.chmodSync(f, 0o755) }
@@ -117,9 +121,9 @@ test('the connection test passes step by step, finding GUFI and counting the ind
   assert.equal(mine[0].key, '')
   const argv = mine[0].argv
   assert.deepEqual(argv.slice(0, 7), ['-T', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15', '-o', 'ServerAliveInterval=30'])
-  // The connection is shared through a socket in the Studio's data folder.
+  // The connection is shared through a socket in a folder of the user's own.
   assert.deepEqual([argv[8], argv[12]], ['ControlMaster=auto', 'ControlPersist=600'])
-  assert.ok(argv[10].startsWith(`ControlPath="${path.join(dir, 'ix', 'ssh')}/`), argv[10])
+  assert.ok(argv[10].startsWith(`ControlPath="${R.socketDir()}/`), argv[10])
   assert.deepEqual(argv.slice(13, 16), ['-p', '2222', 'me@linux-box'])
 })
 
