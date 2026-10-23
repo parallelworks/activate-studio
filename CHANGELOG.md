@@ -2,6 +2,62 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.171 (2026-10-23)
+
+### The macOS app installs itself in ~/Applications from its disk image (#577)
+
+The disk image held the app beside a link to `/Applications`, which needs administrator rights on many Macs. The app is per user (its data, server and LaunchAgent are the person's own), so it now installs in `~/Applications` by default.
+
+**Disk image** (`make_dmg.sh`): the app and a short note, `Installing ACTIVATE Studio.txt`, with no `/Applications` link. The note:
+
+> Double-click ACTIVATE Studio and choose Install. macOS may first ask whether to open an app downloaded from the internet; choose Open.
+>
+> Install copies it to the Applications folder in your home folder and opens it from there. No administrator rights are needed, and it updates itself there. Spotlight finds it there, and you can keep it in the Dock.
+>
+> Eject this disk image afterwards.
+>
+> An administrator who prefers /Applications can drag the app there instead. That copy updates itself only for users who can write to /Applications.
+
+**Opened from the image** (a path under `/Volumes`, or `/AppTranslocation/`, which is how macOS runs an app opened from a downloaded image or folder):
+
+- The window (`StudioShell.swift`) shows a dialog with **Install** and **Cancel**. Install puts the app in `~/Applications`, created if missing. If a copy is there already, a second dialog asks **Replace** or **Cancel** and names both versions. The window then runs `launcher.sh --install`, opens the installed copy as a new instance, and quits. Cancel quits. A failure shows the launcher's message, and Try Again offers the install again.
+- Without the window (the script build opened from Finder), the launcher offers the same two dialogs through `osascript`.
+- In a terminal, the launcher prints how to install and starts nothing.
+
+**`launcher.sh --install [DIR]`** (also through the app's executable, for scripts and CI) installs into `~/Applications` or `DIR`, without asking and without opening the app.
+
+- It copies with `ditto` into `.ACTIVATE Studio.app.install` beside the target, then moves it into place, so a copy there is replaced whole or not at all.
+- A server running from the copy being replaced is stopped first, whether a LaunchAgent or the app's own run loop. Opening the new copy starts it again.
+- A folder that is not writable, and a copy that fails part way, are reported in plain words, with nothing left behind.
+- The uninstall plan lists the staging copies if any are left.
+
+**Quarantine**: the quarantine attribute is removed from the installed copy only (`xattr -dr com.apple.quarantine`), so macOS does not translocate it, which would leave it unable to update itself. It is the same notarized bundle Gatekeeper assessed when the copy on the image opened. The updater and `install.sh` already install without the mark.
+
+**Checks:**
+
+- `check_app.sh --dmg FILE` mounts the image where macOS mounts a download (`/Volumes`) and checks the app, the note, and that there is no link.
+- With `--launch` it also checks:
+  - run from the image in a terminal, the app says to install and starts nothing;
+  - `--install` creates `~/Applications` and installs there;
+  - the copy's signature verifies (`codesign --verify --deep --strict`) and it carries no quarantine mark;
+  - the installed copy starts the server;
+  - `--install` again stops that server and replaces the copy whole, and the replacement verifies and starts again;
+  - a quarantined source installs without the mark.
+- The build job passes its image, the hardened job its throwaway-signed one, and the sign job the notarized, stapled one (only where the tag's `check_app.sh` takes `--dmg`).
+- `server/test/macApp.test.mjs` has three new tests:
+  - `--install`: the default folder, a named folder, replacing whole, the same copy, an unwritable folder, a failed copy, and the uninstall plan;
+  - the not-installed path in a terminal and through the dialogs (Cancel, Install, Replace and its Cancel);
+  - installing over the copy the server runs from.
+- Server suite: 519 passed, 7 skipped. Web suite: 239 passed.
+
+**Docs:** README, HELP and MACOS describe the double-click install, the note for administrators, and `--install`.
+
+Only a Mac with a browser download can show these, which CI does not exercise:
+
+- how the dialogs look;
+- macOS's prompt about an app from the internet, which comes before the app's own dialog;
+- that the copy opened after the install is not translocated.
+
 ## v1.170 (2026-10-23)
 
 ### The macOS app runs without a LaunchAgent where it cannot install one (#575)
@@ -64,6 +120,10 @@ The port and folder restarts (exit 75) are unchanged.
 
 - That its MDM does not also stop a user's background process from outliving the app. Some sites restrict login items, but not processes.
 - That quitting the native window leaves the server running there.
+
+### Change log through v1.170 (#576)
+
+Regenerated with `node scripts/release-notes.mjs --changelog --next v1.170` before tagging v1.170.
 
 ## v1.169 (2026-10-23)
 
