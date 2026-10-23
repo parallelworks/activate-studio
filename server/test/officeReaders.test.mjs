@@ -144,4 +144,17 @@ test('the readiness report: these formats are read without LibreOffice, and each
   assert.deepEqual(cmds(installInfo({ tesseract: true, poppler: true, soffice: true, xlrd: false, olefile: true }, null, false, 'linux')),
     [['xlrd and olefile', 'python3 indexer/fetch_embed.py --deps indexer/.deps --readers-only', null]])
   assert.match(installInfo(none, null, true, 'linux').items[0].adds, /OCR reads scanned PDFs and text in images/)
+  // With downmark and tesseract reading scans, poppler adds only the PDFs downmark cannot read.
+  const poppler = have => installInfo(have, null, true, 'linux').items.find(x => x.name === 'poppler').adds
+  assert.match(poppler({ ...none, tesseract: true }), /lets OCR read scanned PDF pages/)
+  assert.equal(poppler({ ...none, tesseract: true, scanOcr: true }), 'Poppler reads PDFs the bundled readers cannot.')
+})
+
+test('the macOS app\'s own tesseract, beside its code in Contents/Resources, is reported as bundled', async () => {
+  const { bundledTesseract } = await import('../dist/extractors.js')
+  const res = '/Applications/ACTIVATE Studio.app/Contents/Resources'
+  assert.equal(bundledTesseract(`${res}/ocr/bin/tesseract`, `${res}/app`), true)
+  assert.equal(bundledTesseract('/opt/homebrew/bin/tesseract', `${res}/app`), false)
+  assert.equal(bundledTesseract(`${res}/ocr/bin-other/tesseract`, `${res}/app`), false)
+  assert.equal(bundledTesseract(null, `${res}/app`), false)
 })

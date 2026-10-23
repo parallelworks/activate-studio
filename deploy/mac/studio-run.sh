@@ -120,7 +120,10 @@ while [ "$stopping" = 0 ]; do
     # signature's seal.
     export HOST=127.0.0.1 STUDIO_CONFIG_FILE="$CONFIG" STUDIO_RESTARTABLE=1 \
       STUDIO_APP_BUNDLE="$APP" STUDIO_DATA_DIR="$DATA" PYTHONDONTWRITEBYTECODE=1
-    export PATH="$RES/node/bin:${LOGIN_PATH:+$LOGIN_PATH:}${PATH:-/usr/bin:/bin:/usr/sbin:/sbin}:/usr/local/bin:/opt/homebrew/bin:$HOME/.local/bin"
+    # The app's tesseract comes ahead of any other, with its English model
+    # and configs, unless studio.env names another TESSDATA_PREFIX.
+    export PATH="$RES/node/bin:$RES/ocr/bin:${LOGIN_PATH:+$LOGIN_PATH:}${PATH:-/usr/bin:/bin:/usr/sbin:/sbin}:/usr/local/bin:/opt/homebrew/bin:$HOME/.local/bin"
+    export TESSDATA_PREFIX="${TESSDATA_PREFIX:-$RES/ocr/share/tessdata}"
     # The embedding models ship with the app; the index refers to them.
     model="$INDEX_BASE/models/minilm384.gguf"
     if [ -L "$model" ] || [ ! -e "$model" ]; then

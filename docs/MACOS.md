@@ -50,8 +50,8 @@ opened, which restarts a server still on the old port. The server takes the PATH
 (`$SHELL -ilc`, given five seconds), so programs you run by name in Terminal, the pw CLI among them, are
 found by the app too. A LaunchAgent keeps it running and starts it
 at login; it restarts on its own when a setting needs a restart, and after
-a crash. The app carries Node, GUFI, Python for the indexer, and the
-embedding models, so nothing else needs installing. No Parallel Works
+a crash. The app carries Node, GUFI, Python for the indexer, tesseract
+for OCR, and the embedding models, so nothing else needs installing. No Parallel Works
 account is needed; where the `pw` CLI is installed and signed in, the
 platform features work too.
 
@@ -72,9 +72,11 @@ ONNX embedding model, so poppler is not needed. OpenDocument files are read
 with the standard library. LibreOffice, when it is installed in
 Applications, renders previews of Office documents and reads any file the
 built-in readers cannot; the app does not include it. Text in images
-and scanned pages is read by tesseract when it is installed
-(`brew install tesseract`), and images are described by a vision model when
-AI features are on and one is chosen under Settings, General, AI features.
+and on scanned PDF pages is read by tesseract, which comes with the app
+with its English model (see [OCR in the app](#ocr-in-the-app)); downmark
+hands it each scanned page, so this needs no poppler either. Images are
+also described by a vision model when AI features are on and one is
+chosen under Settings, General, AI features.
 Settings, General, Indexing lists what this Mac reads and what is found by
 name only.
 
@@ -203,7 +205,10 @@ built by `deploy/mac/build_gufi.sh`, macOS 27 with GUFI's own package (see
 
 *Building the app:* `deploy/mac/build_app.sh`, on macOS or Linux, writes
 the app, `activate-studio-macos-arm64.tar.gz` with its `.sha256`,
-`install.sh`, and on a Mac the disk image to `deploy/mac/out`. It checks
+`install.sh`, and on a Mac the disk image to `deploy/mac/out`. On a Mac
+it also builds tesseract with `deploy/mac/build_ocr.sh`, once per version
+of that script; elsewhere, `OCR_TARBALL` gives it that archive, and without
+one the app has no OCR. It checks
 the app with `deploy/mac/check_app.sh`, which on a Mac also runs it with
 `--run`. `install.sh` installs from a local archive too:
 `bash install.sh path/to/activate-studio-macos-arm64.tar.gz`. The app's
@@ -303,7 +308,8 @@ What you get in each state:
 
 *Document extraction:* Word, PowerPoint, Excel and PDF files extract to
 Markdown through a bundled converter, so they need nothing extra.
-`brew install tesseract poppler` adds OCR for scanned pages, and
+`brew install tesseract` adds OCR for text in images and on scanned PDF
+pages, `brew install poppler` reads the PDFs the converter cannot, and
 `brew install --cask libreoffice` gives visual previews of Office files.
 
 ### 4. Point it at a model
@@ -363,3 +369,36 @@ GUFI's package is built without a deployment target, so its binaries need
 the macOS release that built them. [`GUFI-MACOS.md`](GUFI-MACOS.md) covers
 the published archive, how to build and check it, and how a new one is
 published.
+
+## OCR in the app
+
+The app carries tesseract in `Contents/Resources/ocr`, built from source
+by `deploy/mac/build_ocr.sh` for macOS 14 and later:
+
+| Path | What it is |
+|---|---|
+| `bin/tesseract` | tesseract 5.5.3, without its training tools or legacy engine; it loads `lib/` through its run path, `@executable_path/../lib` |
+| `lib/libleptonica.6.dylib` | leptonica 1.87.0, which reads PNG, JPEG, TIFF, WebP and GIF through libpng, libjpeg-turbo, libtiff, libwebp and giflib, built from their sources and linked into it; zlib is the system's |
+| `share/tessdata` | `eng.traineddata` from tessdata_fast 4.1.0, and tesseract's configs |
+| `licenses`, `README.txt`, `manifest.json` | the licenses, and what was built from which sources |
+
+The run loop (`studio-run.sh`) puts `bin` first on the server's PATH and
+sets `TESSDATA_PREFIX` to `share/tessdata`, unless `studio.env` sets
+another. The indexer runs it on pictures (`.png`, `.jpg`, `.jpeg`, `.gif`,
+`.webp`), and downmark on the pages of a scanned PDF, up to 30 pages per
+document, whose images it decodes itself, so poppler is not needed. A PDF
+downmark cannot read at all is read by pypdf without OCR. English is the
+only language.
+
+`deploy/mac/build_ocr.sh` downloads each source pinned by version and
+SHA-256, builds it with Apple's compilers for `MACOSX_DEPLOYMENT_TARGET`
+(14.0 by default), and stops when anything it links comes from Homebrew or
+`/usr/local`, or targets a newer macOS. It checks that every file loads only
+the tree's library and the system's, signs them ad hoc, and reads the text
+in a sample of each image format (`deploy/mac/testdata`) before it packs
+`ocr-macos-arm64.tar.gz` with its `.sha256` and manifest. The macOS app
+workflow builds it on each run and hands it to `build_app.sh` as
+`OCR_TARBALL`. `check_app.sh --run` then reads each sample with the app's
+tesseract, reads the scanned sample PDF through downmark, and has the
+server's own index find the picture and the PDF by words only OCR could
+read.

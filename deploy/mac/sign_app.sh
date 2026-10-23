@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Sign "ACTIVATE Studio.app" with a certificate, for notarization. Each
 # Mach-O file in the bundle (Node, Python and its libraries, GUFI's tools
-# and libraries, the document converter, and any other file that is one)
+# and libraries, tesseract and leptonica, the document converter, and any
+# other file that is one)
 # is signed first, deepest first, then the bundle itself, which signs its
 # executable and seals every other file. Everything is signed with the
 # hardened runtime, a secure timestamp, and the entitlements it needs,
@@ -14,10 +15,10 @@
 #               records from the microphone, which Info.plist's
 #               NSMicrophoneUsageDescription explains: device.audio-input.
 #
-# Python, GUFI and the converter need none. Library validation, which the
-# hardened runtime turns on, lets a program load only the system's
-# libraries and those signed by its own team, and every file here is
-# signed by the same one.
+# Python, GUFI, tesseract and the converter need none. Library validation,
+# which the hardened runtime turns on, lets a program load only the
+# system's libraries and those signed by its own team, and every file here
+# is signed by the same one.
 #
 # build_app.sh signs the bundle ad hoc; this replaces that signature.
 # Links that lead nowhere are removed first, as there. At the end every
