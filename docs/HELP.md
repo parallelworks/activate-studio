@@ -13,6 +13,8 @@ Files stay where they are. {appName} keeps its index in a folder of its own, rea
 
 On a computer of its own, setup can be run again at any time, starting from what is set now: **Run setup again** in Settings, General, or **Run Setup…** in the macOS app's menu.
 
+The macOS app needs no administrator rights. Keep it in Applications in your home folder (`~/Applications`), where it also updates itself. On a Mac that does not allow the app's background item (a LaunchAgent), the app starts its server itself when it opens, instead of at login.
+
 # Basics
 
 ## Chat

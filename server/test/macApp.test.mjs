@@ -349,3 +349,153 @@ test('uninstall lists what it removes and keeps, then removes exactly that; the 
   assert.ok(fs.existsSync(path.join(bare, 'tree', 'db.db')))
   assert.equal(fs.readFileSync(path.join(docs, 'keep.md'), 'utf8'), 'mine\n')
 })
+
+/** A Mac where no LaunchAgent can be used: the launcher with the real run
+ *  loop, the app's Python (the host's, through a stand-in), and stand-ins for
+ *  launchctl and curl. The server stand-in serves until TERM. */
+function noAgentMac(name, { bootstrap = 'ok' } = {}) {
+  const root = path.join(tmp, name)
+  const state = path.join(root, 'state')
+  fs.mkdirSync(state, { recursive: true })
+  const { res, launcher } = bundle(root, `#!/bin/bash
+echo "$STUDIO_SUPERVISOR" >"$STATE/supervisor"
+n=$(( $(cat "$STATE/starts" 2>/dev/null || echo 0) + 1 )); echo $n >"$STATE/starts"
+touch "$STATE/serving"
+trap 'rm -f "$STATE/serving"; exit 0' TERM
+while :; do sleep 0.1; done
+`)
+  write(path.join(res, 'python', 'bin', 'python3'), '#!/bin/sh\nexec python3 "$@"\n', 0o755)
+  const home = path.join(root, 'home')
+  const bin = path.join(root, 'bin')
+  write(path.join(bin, 'launchctl'), `#!/bin/bash
+echo "launchctl $*" >>"${state}/calls"
+case "$1" in print) exit 1 ;; bootstrap) [ "${bootstrap}" = ok ] && touch "${state}/loaded"; [ "${bootstrap}" = ok ] ;; esac
+`, 0o755)
+  write(path.join(bin, 'curl'), `#!/bin/bash\n[ -f "${state}/serving" ] || exit 7\necho '{"version":"v1","builtAt":"B1"}'\n`, 0o755)
+  write(path.join(bin, 'osascript'), '#!/bin/sh\n', 0o755)
+  const data = path.join(home, 'Library', 'Application Support', 'ACTIVATE Studio')
+  const env = { HOME: home, PATH: `${bin}:/usr/bin:/bin`, STATE: state, STUDIO_NO_BROWSER: '1' }
+  // A timeout, so a server left holding the launcher's output (which the
+  // app's window reads to its end) fails the test instead of hanging it.
+  const run = (...args) => spawnSync(launcher, args, { env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 60_000 })
+  const pidOf = () => { try { return Number(fs.readFileSync(path.join(data, 'server.pid'), 'utf8').trim()) } catch { return null } }
+  const alive = pid => { try { process.kill(pid, 0); return true } catch { return false } }
+  const ps = (pid, field) => spawnSync('ps', ['-ww', '-o', `${field}=`, '-p', String(pid)], { encoding: 'utf8' }).stdout.trim()
+  return { root, res, state, home, data, run, pidOf, alive, ps, calls: () => { try { return fs.readFileSync(path.join(state, 'calls'), 'utf8') } catch { return '' } } }
+}
+
+const asRoot = process.getuid?.() === 0
+
+test('with ~/Library/LaunchAgents read-only, the app starts the server itself, keeps it, reuses it, stops and lists it', { skip: asRoot && 'root can write a read-only folder' }, async () => {
+  const m = noAgentMac('no-agent')
+  const agents = path.join(m.home, 'Library', 'LaunchAgents')
+  fs.mkdirSync(agents, { recursive: true })
+  fs.chmodSync(agents, 0o555)
+  let pid = null
+  try {
+    let r = m.run()
+    assert.equal(r.status, 0, r.stderr + r.stdout)
+    assert.match(r.stdout, /ACTIVATE Studio is running at http:\/\/127\.0\.0\.1:4180\//)
+    assert.ok(!fs.existsSync(path.join(agents, 'com.parallelworks.activate-studio.plist')))
+    assert.doesNotMatch(m.calls(), /bootstrap/, 'no agent was written, so none is loaded')
+    pid = m.pidOf()
+    assert.ok(pid && m.alive(pid), 'the run loop outlives the launcher')
+    assert.match(m.ps(pid, 'command'), new RegExp(`studio-run\\.sh ${m.data.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`))
+    assert.equal(m.ps(pid, 'pgid'), String(pid), 'in a process group of its own')
+    assert.equal(fs.readFileSync(path.join(m.state, 'supervisor'), 'utf8').trim(), 'detached')
+    assert.match(fs.readFileSync(path.join(m.data, 'logs', 'agent.log'), 'utf8'), /no LaunchAgent \(.*LaunchAgents is not writable\)/)
+
+    // Opened again: the same server is used.
+    r = m.run()
+    assert.equal(r.status, 0, r.stderr)
+    assert.equal(m.pidOf(), pid)
+    assert.equal(fs.readFileSync(path.join(m.state, 'starts'), 'utf8').trim(), '1')
+
+    // The uninstall plan names it, and no agent.
+    r = m.run('--uninstall', '--dry-run')
+    assert.equal(r.status, 0, r.stderr)
+    assert.match(r.stdout, new RegExp(`^server\\t${path.join(m.data, 'server.pid').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'm'))
+    assert.doesNotMatch(r.stdout, /LaunchAgents/)
+
+    // --stop stops the run loop and the server.
+    r = m.run('--stop')
+    assert.equal(r.status, 0, r.stderr)
+    assert.ok(await waitFor(() => !m.alive(pid)), 'the run loop stops')
+    assert.ok(!fs.existsSync(path.join(m.state, 'serving')), 'the server got the TERM')
+    assert.ok(!fs.existsSync(path.join(m.data, 'server.pid')))
+
+    // A stale PID file naming another process is not trusted.
+    fs.writeFileSync(path.join(m.data, 'server.pid'), `${process.pid}\n`)
+    r = m.run()
+    assert.equal(r.status, 0, r.stderr)
+    assert.ok(m.alive(process.pid), 'the process the stale file named is untouched')
+    pid = m.pidOf()
+    assert.notEqual(pid, process.pid)
+    assert.equal(fs.readFileSync(path.join(m.state, 'starts'), 'utf8').trim(), '2')
+  } finally {
+    m.run('--stop')
+    if (pid) try { process.kill(-pid, 'SIGKILL') } catch { /* gone */ }
+    fs.chmodSync(agents, 0o755)
+  }
+})
+
+test('when launchctl refuses the agent, the app starts the server itself', async () => {
+  const m = noAgentMac('refused', { bootstrap: 'refused' })
+  let pid = null
+  try {
+    const r = m.run()
+    assert.equal(r.status, 0, r.stderr + r.stdout)
+    assert.match(m.calls(), /launchctl bootstrap/)
+    pid = m.pidOf()
+    assert.ok(pid && m.alive(pid))
+    assert.match(fs.readFileSync(path.join(m.data, 'logs', 'agent.log'), 'utf8'), /no LaunchAgent \(launchctl bootstrap did not load/)
+    // Its uninstall plan lists both: the agent file written, and the server.
+    const plan = m.run('--uninstall', '--dry-run').stdout
+    assert.match(plan, /^server\t.*LaunchAgents\/com\.parallelworks\.activate-studio\.plist$/m)
+    assert.match(plan, /^server\t.*server\.pid$/m)
+  } finally {
+    m.run('--stop')
+    if (pid) try { process.kill(-pid, 'SIGKILL') } catch { /* gone */ }
+  }
+})
+
+test('exit 76 hands the process over to the run loop of the copy an update put in place', async () => {
+  const root = path.join(tmp, 'relaunch')
+  const state = path.join(root, 'state')
+  fs.mkdirSync(state, { recursive: true })
+  const app = path.join(root, 'ACTIVATE Studio.app')
+  // The new copy, staged beside: its run loop says it started, then runs
+  // the real one; its server serves until TERM.
+  const staged = path.join(root, 'staged')
+  const next = bundle(staged, `#!/bin/bash
+echo "new server $PPID" >>"$STATE/log"
+trap 'exit 0' TERM
+while :; do sleep 0.1; done
+`)
+  fs.writeFileSync(path.join(next.res, 'studio-run.sh'), fs.readFileSync(path.join(MAC, 'studio-run.sh'), 'utf8')
+    .replace('#!/bin/bash\n', () => '#!/bin/bash\necho "new run loop $$" >>"$STATE/log"\n'))
+  // The running copy's server swaps the new copy in, as the updater does,
+  // and asks its run loop to hand over.
+  const { res } = bundle(root, `#!/bin/bash
+echo "old server $PPID" >>"$STATE/log"
+mv "${app}" "${path.join(root, '.ACTIVATE Studio.app.previous')}"
+mv "${path.join(staged, 'ACTIVATE Studio.app')}" "${app}"
+exit 76
+`)
+  const home = path.join(root, 'home')
+  const data = path.join(home, 'Library', 'Application Support', 'ACTIVATE Studio')
+  const loop = spawn('bash', [path.join(res, 'studio-run.sh'), data], {
+    env: { HOME: home, PATH: '/usr/bin:/bin', STATE: state, STUDIO_APP_BUNDLE: app, STUDIO_SUPERVISOR: 'detached' }, stdio: 'ignore',
+  })
+  try {
+    const lines = () => { try { return fs.readFileSync(path.join(state, 'log'), 'utf8').trim().split('\n') } catch { return [] } }
+    assert.ok(await waitFor(() => lines().length >= 3), lines().join('\n'))
+    const p = String(loop.pid)
+    assert.deepEqual(lines(), [`old server ${p}`, `new run loop ${p}`, `new server ${p}`], 'one process throughout')
+    assert.match(fs.readFileSync(path.join(data, 'logs', 'studio.log'), 'utf8'), /the app was updated; its own run loop takes over/)
+    loop.kill('SIGTERM')
+    assert.ok(await waitFor(() => loop.exitCode !== null), 'the new loop stops on TERM')
+  } finally {
+    loop.kill('SIGKILL')
+  }
+})

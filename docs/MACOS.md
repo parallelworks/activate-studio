@@ -17,7 +17,10 @@ administrator rights, and opens it. The alternative is the disk image,
 `activate-studio-macos-arm64.dmg` on the
 [macOS release](https://github.com/parallelworks/activate-studio/releases/tag/macos)
 page, which always holds the newest app: open it and drag the app to
-Applications.
+Applications. Without administrator rights, use Applications in your home
+folder (`~/Applications`; create it in Finder if it is not there). A copy
+there updates itself; a copy an administrator put in `/Applications` may
+not be writable for updates.
 
 *First open:* the app starts the Studio's server in the background and
 shows the Studio in its own window, with its own Dock icon and menus; no
@@ -50,7 +53,13 @@ opened, which restarts a server still on the old port. The server takes the PATH
 (`$SHELL -ilc`, given five seconds), so programs you run by name in Terminal, the pw CLI among them, are
 found by the app too. A LaunchAgent keeps it running and starts it
 at login; it restarts on its own when a setting needs a restart, and after
-a crash. The app carries Node, GUFI, Python for the indexer, tesseract
+a crash. On a managed Mac where `~/Library/LaunchAgents` is read-only, or
+where launchctl refuses the agent, the app starts the server itself, as a
+process of your own in a session of its own, and records it in
+`server.pid` in the data folder; `logs/agent.log` says which way it
+started. That server keeps running when the window closes and restarts the
+same way, with one difference: it starts when the app is opened, not at
+login. Neither way needs administrator rights. The app carries Node, GUFI, Python for the indexer, tesseract
 for OCR, and the embedding models, so nothing else needs installing. No Parallel Works
 account is needed; where the `pw` CLI is installed and signed in, the
 platform features work too.
@@ -101,8 +110,9 @@ the app quits. The same from Terminal:
 "$HOME/Applications/ACTIVATE Studio.app/Contents/MacOS/ACTIVATE Studio" --uninstall --dry-run [--purge]
 ```
 
-`--uninstall` removes the background server (its LaunchAgent), the app and
-the copies of it kept for updates. `--purge` also removes:
+`--uninstall` removes the background server (its LaunchAgent, or the server
+the app started itself), the app and the copies of it kept for updates. An
+agent file in a read-only `~/Library/LaunchAgents` stays, disabled. `--purge` also removes:
 
 - `~/Library/Application Support/ACTIVATE Studio`: the index, settings,
   logs, conversations, and the libraries built in the Studio's own folder;

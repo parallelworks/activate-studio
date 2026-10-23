@@ -6,7 +6,7 @@ A web workspace over a folder of documents. It indexes the folder, including the
 
 ## Quick start
 
-**On a Mac (Apple silicon, macOS 14 or later):** `curl -fsSL https://github.com/parallelworks/activate-studio/releases/download/macos/install.sh | bash` installs the ACTIVATE Studio app, which runs the Studio on your own folder with nothing else to install. To remove it, choose **Uninstall ACTIVATE Studio…** in the app menu: it lists what it removes (the app, and by default its indexes, settings and logs) and never your documents. See [`docs/MACOS.md`](docs/MACOS.md).
+**On a Mac (Apple silicon, macOS 14 or later):** `curl -fsSL https://github.com/parallelworks/activate-studio/releases/download/macos/install.sh | bash` installs the ACTIVATE Studio app in `~/Applications`, which runs the Studio on your own folder with nothing else to install and no administrator rights, including on a managed Mac that does not allow LaunchAgents. To remove it, choose **Uninstall ACTIVATE Studio…** in the app menu: it lists what it removes (the app, and by default its indexes, settings and logs) and never your documents. See [`docs/MACOS.md`](docs/MACOS.md).
 
 **On ACTIVATE:** run the workflow in [`deploy/workflow.yaml`](deploy/workflow.yaml) on a connected resource and set its "Knowledge Base Directory" to your folder. It builds the index and opens the Studio as a session. The platform's models work with no setup.
 

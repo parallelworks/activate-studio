@@ -287,6 +287,31 @@ test('a newer signed release installs: swapped in, the previous copy kept, the m
   assert.equal(versionIn(PREVIOUS), 'v1.140')
 })
 
+test('where the app started its run loop itself (no LaunchAgent), the installed update restarts through the run loop, not launchd', async () => {
+  const L = await import('../dist/lifecycle.js')
+  await fresh()
+  setReleases([release('v1.140')])
+  process.env.STUDIO_RESTARTABLE = '1'
+  process.env.STUDIO_SUPERVISOR = 'detached'
+  let code = null
+  L.setStopper(c => { code = c })
+  try {
+    await j('POST', '/api/updates/install')
+    const s = await settled()
+    assert.equal(s.state, 'restarting', s.error)
+    assert.equal(versionIn(APP), 'v1.140')
+    assert.ok(fs.existsSync(path.join(UPD, 'pending.json')), 'the mark the new run loop watches')
+    assert.ok(await until(() => code !== null), 'the server stops')
+    assert.equal(code, L.RELAUNCH_EXIT_CODE)
+    await sleep(200)
+    assert.ok(!calls().includes('kickstart'), calls())
+  } finally {
+    delete process.env.STUDIO_RESTARTABLE
+    delete process.env.STUDIO_SUPERVISOR
+    L.setStopper(() => {})
+  }
+})
+
 test('a release that fails any check is refused, cleaned up, and the app left alone', async () => {
   const cases = [
     ['a bad signature', { signWith: stranger }, /signature does not verify/],

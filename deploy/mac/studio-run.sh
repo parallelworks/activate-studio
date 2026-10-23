@@ -1,9 +1,13 @@
 #!/bin/bash
 # The Studio's server, kept running by the LaunchAgent the app installs
-# (Contents/Resources/studio-run.sh in the app). Settings are read from
-# studio.env before every start. The server starts again at once when it
-# asks for a restart (exit 75) and after a short pause when it stops for
-# any other reason; a TERM from launchd stops it and this loop.
+# (Contents/Resources/studio-run.sh in the app), or, where no LaunchAgent can
+# be installed, started by the app itself (launcher.sh, with
+# STUDIO_SUPERVISOR=detached). Settings are read from studio.env before
+# every start. The server starts again at once when it asks for a restart
+# (exit 75) and after a short pause when it stops for any other reason; a
+# TERM stops it and this loop. Exit 76, which a server the app started
+# itself uses after an update replaced the app, runs the new copy's own run
+# loop in place of this one.
 #
 # After an update (DATA/updates/pending.json, written by the server when it
 # swaps a new copy of the app in), a server that stops three times within
@@ -21,6 +25,7 @@ CONFIG="$DATA/studio.env"
 LOG="$DATA/logs/studio.log"
 DEFAULT_KB="$HOME/Documents/ACTIVATE Studio"
 RESTART=75
+RELAUNCH=76
 # The app this script is in; the agent names it, and an agent written
 # before it did leaves it to be worked out here.
 APP="${STUDIO_APP_BUNDLE:-$(cd "$RES/../.." && pwd -P)}"
@@ -144,6 +149,13 @@ while [ "$stopping" = 0 ]; do
   while kill -0 "$pid" 2>/dev/null; do wait "$pid"; code=$?; done
   pid=
   [ "$stopping" = 1 ] && break
+  if [ "$code" = "$RELAUNCH" ] && [ -f "$APP/Contents/Resources/studio-run.sh" ]; then
+    # An update put a new copy of the app in place: its run loop takes over
+    # this process (so the PID the app recorded stays right), reading its
+    # own script rather than this one, and watches the update's mark.
+    echo "$(stamp) the app was updated; its own run loop takes over" >>"$LOG"
+    exec /bin/bash "$APP/Contents/Resources/studio-run.sh" "$DATA"
+  fi
   if [ -f "$PENDING" ]; then
     now=$(date +%s)
     if [ $(( now - started )) -gt 60 ]; then
