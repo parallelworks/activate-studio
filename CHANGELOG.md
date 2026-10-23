@@ -2,6 +2,69 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.170 (2026-10-23)
+
+### The macOS app runs without a LaunchAgent where it cannot install one (#575)
+
+On a managed Mac where `~/Library/LaunchAgents` is read-only, opening the app showed only an error. The launcher's write of the agent's plist failed with "Permission denied", and it stopped there. Users on such Macs often have no administrator rights at all, and none should be needed.
+
+**What changes**
+
+Where the LaunchAgent cannot be used, the launcher now starts the run loop (`studio-run.sh`) itself. That covers three cases: the folder or the plist is not writable, the write fails, or `launchctl bootstrap` does not load the agent.
+
+- It is started through the app's Python with `setsid` and hangups ignored. That gives it a session and process group of its own, so it outlives the launcher, the window and the app's process group. Its stdin, stdout and stderr are redirected to `logs/agent.log`, so the app's window, which reads the launcher's output to its end, is not held open.
+- Its PID goes in `server.pid` in the data folder. Before the PID is ever signalled or reused, it is checked against the process's command line (`studio-run.sh <data folder>`).
+- The next opening reuses it. A server started from another copy of the app is restarted from this copy. Every `launchctl kickstart -k` in `start()` is now `restart_server`, which restarts whichever way the server runs.
+- `STUDIO_SUPERVISOR=detached` tells the server how it was started.
+- It starts when the app is opened, not at login. The docs say so.
+- Where the LaunchAgent works, behavior is unchanged: the same calls in the same order, which the existing tests check.
+
+**Updates**
+
+In this mode, `restart()` in `updates.ts` asks for exit status 76 instead of a `launchctl kickstart`. On 76, the run loop `exec`s the new copy's own `studio-run.sh`. That means:
+
+- the new script runs, and bash never reads the old file that was replaced;
+- the PID in `server.pid` stays the same;
+- `pending.json` is left for the new loop, so the rollback after three stops within two minutes still works.
+
+The port and folder restarts (exit 75) are unchanged.
+
+**Stop and uninstall**
+
+- `--stop` stops the server through `server.pid`: TERM, which the loop passes to the server, then KILL to its process group after 35 seconds.
+- The uninstall plan lists the agent only when there is one, and lists `server.pid` when the app started the server itself.
+- An agent file in a read-only folder is reported and left disabled, and the uninstall no longer fails on it.
+
+**Messages and docs**
+
+- An app opened from the disk image is told to move to an Applications folder, and that Applications in the home folder works without admin rights.
+- A failed start names both logs.
+- MACOS.md, HELP.md and the README say to use `~/Applications` without admin rights, and that a copy there updates itself. MACOS.md describes the fallback.
+
+**Tests**
+
+- `check_app.sh --launch` (the build, hardened and sign jobs) runs the launcher again under a home folder whose `Library/LaunchAgents` is `chmod 555`. It checks that:
+  - the server starts without a plist and answers after the launcher has exited;
+  - its run loop has its own process group;
+  - a second opening reuses it;
+  - a restart the server asks for (a new port, as Settings, Server does) comes back from the same run loop;
+  - `--stop` stops the server and the loop;
+  - the uninstall dry run lists it and no agent.
+- `server/test/macApp.test.mjs`, on any host:
+  - the read-only folder;
+  - a refused `launchctl bootstrap`;
+  - a stale `server.pid` naming another process, which is left untouched;
+  - the exit 76 handover to the new copy's run loop in one process;
+  - the launcher returning without holding its output open.
+- `updates.test.mjs`: an update installed in this mode restarts with 76 and no kickstart, and keeps `pending.json`.
+- `lifecycle.test.mjs`: the new exit code.
+- Server suite: 516 passed, 7 skipped. Web suite: 239 passed.
+
+**Only a real managed Mac can confirm**
+
+- That its MDM does not also stop a user's background process from outliving the app. Some sites restrict login items, but not processes.
+- That quitting the native window leaves the server running there.
+
 ## v1.169 (2026-10-23)
 
 ### A change of index depth applies at the next sync (#573)
@@ -63,6 +126,10 @@ Sync now, and the background sync, re-index only folders whose files changed sin
   - lowering to Text started no job.
 
 Docs: HELP (Search: when a depth change applies) and REFERENCE (the record, the sync, the routes).
+
+### Change log through v1.169 (#574)
+
+Regenerated with `node scripts/release-notes.mjs --changelog --next v1.169` before tagging v1.169.
 
 ## v1.168 (2026-10-23)
 
