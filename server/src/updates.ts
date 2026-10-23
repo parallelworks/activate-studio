@@ -99,7 +99,10 @@ interface Prepared { version: string; from: string; shellChanged: boolean }
 /** A check the update failed, as opposed to a network or disk failure. */
 class Refused extends Error {}
 
-const TIMINGS = { firstCheckMs: 60_000, intervalMs: 6 * 3600_000, soonMs: 30 * 60_000, idleMs: 10 * 60_000, idlePollMs: 30_000, healthyMs: 60_000 }
+/** intervalMs and soonMs are measured by the clock between checks; pollMs
+ *  is how often the server looks whether one is due. A Mac's timers stop
+ *  while it sleeps, so a check is never left to a single long timer. */
+const TIMINGS = { firstCheckMs: 60_000, intervalMs: 3600_000, soonMs: 30 * 60_000, pollMs: 5 * 60_000, idleMs: 10 * 60_000, idlePollMs: 30_000, healthyMs: 60_000 }
 const timings = { ...TIMINGS }
 const st: { state: UpdateState; error: string | null; progress: UpdateStatus['progress']; offline: boolean } = { state: 'idle', error: null, progress: null, offline: false }
 let saved: Saved | null = null
@@ -115,6 +118,13 @@ let versionOverride: string | null = null
 let busyCheck: () => boolean = () => false
 let log: (msg: string) => void = () => {}
 let checkTimer: NodeJS.Timeout | null = null
+/** When the last check started, by the clock; a failed check counts, so a
+ *  refusal is not retried at every poll. */
+let lastAttemptAt = 0
+/** startUpdates has run: the window asking for the status may start a due check. */
+let scheduled = false
+/** Bumped by a reset, so a first check still under way does not start the poll after it. */
+let scheduleGen = 0
 let idleTimer: NodeJS.Timeout | null = null
 let healthyTimer: NodeJS.Timeout | null = null
 
@@ -655,6 +665,7 @@ function startInstall(rel: Release): void {
 
 async function check(): Promise<void> {
   if (op) return op
+  lastAttemptAt = Date.now()
   st.state = 'checking'
   op = (async () => {
     try {
@@ -757,8 +768,25 @@ async function rollBack(): Promise<void> {
 /** main.ts says what keeps the Studio busy, which an auto install waits out. */
 export function setUpdateBusyCheck(fn: () => boolean): void { busyCheck = fn }
 
-/** Checks a minute after start and every six hours after, while the policy
- *  allows; in the app, also the cleanup and bookkeeping after an update. */
+/** The time from one check to the next: shorter while a new release waits
+ *  for its macOS build, or while the release server cannot be reached. */
+function waitAfterCheck(): number {
+  const policy = effectiveSettings().updates
+  return (updateMode() === 'app' && appPending(policy.channel)) || st.offline ? timings.soonMs : timings.intervalMs
+}
+
+/** Whether a check is due by the clock: that long since the last one
+ *  started or succeeded, whichever is later, time asleep included. */
+function checkDue(now = Date.now()): boolean {
+  if (!effectiveSettings().updates.check || updateMode() === 'hosted' || op || inProgress()) return false
+  const at = Date.parse(loadSaved().checkedAt ?? '')
+  return now - Math.max(Number.isFinite(at) ? at : 0, lastAttemptAt) >= waitAfterCheck()
+}
+
+/** Checks a minute after start, then whenever an hour has passed by the
+ *  clock (looked at every five minutes, and when the window asks for the
+ *  status), while the policy allows; in the app, also the cleanup and
+ *  bookkeeping after an update. */
 export function startUpdates(logger: (msg: string) => void): void {
   log = logger
   const mode = updateMode()
@@ -781,17 +809,18 @@ export function startUpdates(logger: (msg: string) => void): void {
       healthyTimer.unref?.()
     }
   }
-  const schedule = (ms: number) => {
-    checkTimer = setTimeout(() => {
-      void (async () => {
-        const policy = effectiveSettings().updates
-        if (policy.check && updateMode() !== 'hosted') await check()
-        schedule(policy.check && ((updateMode() === 'app' && appPending(policy.channel)) || st.offline) ? timings.soonMs : timings.intervalMs)
-      })()
-    }, ms)
-    checkTimer.unref?.()
-  }
-  schedule(timings.firstCheckMs)
+  scheduled = true
+  const gen = scheduleGen
+  checkTimer = setTimeout(() => {
+    void (async () => {
+      // The first check, unless the window already started one.
+      if (effectiveSettings().updates.check && updateMode() !== 'hosted' && (!lastAttemptAt || checkDue())) await check()
+      if (gen !== scheduleGen) return
+      checkTimer = setInterval(() => { if (checkDue()) void check() }, timings.pollMs)
+      checkTimer.unref?.()
+    })()
+  }, timings.firstCheckMs)
+  checkTimer.unref?.()
 }
 
 /** For tests: forget everything, and optionally change timings or the version that counts as running. */
@@ -799,6 +828,9 @@ export function resetUpdatesForTests(opts: Partial<typeof timings> & { version?:
   for (const t of [checkTimer, healthyTimer]) if (t) clearTimeout(t)
   stopIdleWait()
   checkTimer = healthyTimer = null
+  scheduleGen++
+  scheduled = false
+  lastAttemptAt = 0
   const { version, ...rest } = opts
   Object.assign(timings, TIMINGS, rest)
   versionOverride = version ?? null
@@ -824,6 +856,9 @@ export async function updateRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/api/updates', async () => {
     refuseHosted()
+    // The window opening after the Mac slept past a check starts it here,
+    // without waiting for the next poll; the answer says it is checking.
+    if (scheduled && checkDue()) void check()
     return updateStatus()
   })
 

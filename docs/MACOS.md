@@ -126,7 +126,9 @@ documents folder is never removed, and neither are indexes on other
 machines.
 
 *Updates:* the app checks this repository's releases a minute after it
-starts and every six hours after that. A one-line notice at the top of
+starts, then once an hour has passed by the clock, which counts time the
+Mac was asleep; the server looks every five minutes, and when the window
+asks for the status. A one-line notice at the top of
 every page, and Settings, General, Updates, show the newest release, with
 the changes in every version newer than the one running (the notice's
 What's new), and Update now; Later hides the notice
