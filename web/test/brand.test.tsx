@@ -80,3 +80,24 @@ describe('About', () => {
     await waitFor(() => expect(location.hash).toBe('#view=help:about'))
   })
 })
+
+describe('the Studio mark in the accent', () => {
+  it('is the app icon for the default accent, and the same drawing in the colors of any other', async () => {
+    const { studioMark, DEFAULT_MARK: mark } = await import('../src/studioMark')
+    const { markColors } = await import('../src/accents')
+    expect(studioMark(undefined)).toBe(mark)
+    expect(studioMark('navy')).toBe(mark)
+    expect(studioMark('nonsense')).toBe(mark)
+    const teal = studioMark('teal')
+    expect(teal.startsWith('data:image/svg+xml')).toBe(true)
+    const svg = decodeURIComponent(teal.split(',')[1])
+    const c = markColors('teal')!
+    for (const color of [c.top, c.bottom, c.sparkTop, c.sparkBottom]) expect(svg).toContain(color)
+    expect(svg).toContain('M366 86')
+    expect(studioMark('teal')).toBe(teal)
+    expect(studioMark('custom:#a83279')).not.toBe(teal)
+    expect(emptyChatIcon({ iconUrl: null, iconUrlDark: null, accent: 'teal' }, false)).toBe(teal)
+    expect(emptyChatIcon({ iconUrl: '/api/brand-icon?v=1', iconUrlDark: null, accent: 'teal' }, false)).toBe('/api/brand-icon?v=1')
+  })
+})
+
