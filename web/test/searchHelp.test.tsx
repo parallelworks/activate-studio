@@ -58,3 +58,19 @@ describe('the main folder\'s level, in setup', () => {
     } finally { vi.unstubAllGlobals() }
   })
 })
+
+describe('what the search box and the page say a search can match', () => {
+  it('meaning where a library in scope has it, else words, else names', async () => {
+    const { searchReach, SEARCH_PLACEHOLDER, SEARCH_NOTE } = await import('../src/searchReach')
+    const words = (id: string, label: string, fullText = true): PublicLibrary => ({ ...lib(id, label, null), caps: { index: true, fullText, vectors: false } })
+    const kb = lib('kb', 'Notes', 'documents')
+    expect(searchReach([kb], 'kb')).toBe('meaning')
+    expect(searchReach([lib('kb', 'Notes', 'off')], 'kb')).toBe('words')
+    expect(searchReach([kb, words('site', 'Site'), words('names', 'Names only', false)], 'names')).toBe('names')
+    expect(searchReach([kb, words('site', 'Site')], 'site')).toBe('words')
+    expect(searchReach([kb, words('site', 'Site')], 'all')).toBe('meaning')
+    expect(SEARCH_PLACEHOLDER.meaning).toMatch(/^Ask in plain words/)
+    expect(SEARCH_PLACEHOLDER.names).toBe('Part of a file or folder name')
+    expect(SEARCH_NOTE.words).toBe('Names and words, including Office and PDF content')
+  })
+})

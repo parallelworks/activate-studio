@@ -29,6 +29,7 @@ import { FullViewHost, RunPane } from './components/RunPane'
 import { PanelToggle, StatusPanel } from './components/StatusPanel'
 import { setPanelView } from './panelState'
 import { studioMark } from './studioMark'
+import { SEARCH_NOTE, searchReach, useSearchScope } from './searchReach'
 
 type ViewId = 'chat' | 'library' | 'search' | 'query' | 'overview' | 'history' | 'agents' | 'workflows' | 'settings' | 'help'
 export type Display = { kind: 'file'; target: string; q?: string; lib?: string } | { kind: 'workflow_dag'; target: string }
@@ -41,7 +42,7 @@ const MOBILE_PRIMARY = new Set<string>(['chat', 'library', 'search', 'overview']
 // short note on what it covers. Chat, the library, settings, and help lay
 // out their own tops.
 const PAGE_NOTES: Partial<Record<ViewId, string>> = {
-  search: 'Full text and meaning, including Office and PDF content',
+  // Search's note says what the libraries searched can match (searchReach.ts).
   query: 'Sizes, ages, types, labels, and locations, from the index',
   overview: 'What the knowledge base holds and how the index is doing',
   agents: '',
@@ -222,6 +223,8 @@ export default function App() {
   useEffect(() => { localStorage.setItem('ade-nav-collapsed', navCollapsed ? '1' : '0') }, [navCollapsed])
   // The status panel steps aside for the side view of the page on screen.
   useEffect(() => { setPanelView(view) }, [view])
+  const searchScope = useSearchScope()
+  const pageNote = view === 'search' ? SEARCH_NOTE[searchReach(cfg.libraries ?? [], searchScope)] : PAGE_NOTES[view]
   useEffect(() => { if (cfg.loaded) document.title = cfg.appName }, [cfg])
   // The tab's library: its own choice, else All libraries where there are
   // several, once the configuration says which exist.
@@ -583,7 +586,7 @@ export default function App() {
         {view in PAGE_NOTES && (
           <header className="page-head">
             <h1>{NAV.find(n => n.id === view)?.label}</h1>
-            {PAGE_NOTES[view] && <span className="page-note" title={PAGE_NOTES[view]}>{PAGE_NOTES[view]}</span>}
+            {pageNote && <span className="page-note" title={pageNote}>{pageNote}</span>}
             <PanelToggle className="page-head-toggle" />
           </header>
         )}

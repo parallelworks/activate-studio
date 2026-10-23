@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { Button, Callout, CopyButton, Modal, ProgressBar, StatusDot, Table, toast, type BadgeVariant } from '@parallelworks/ui'
+import { Button, Callout, ConfirmModal, CopyButton, Modal, ProgressBar, StatusDot, Table, toast, type BadgeVariant } from '@parallelworks/ui'
 import { api, type IndexJob, type IndexPhase, type IndexStatus } from '../api'
 import { elapsed, fmtDuration, jobPercent, kickIndexStatus, phaseTimes, useIndexStatus } from '../indexActivity'
 
@@ -210,14 +210,16 @@ export function IndexRuns({ runs }: { runs: IndexJob[] }) {
 
 /**
  * The main folder's index controls: build or update it, stop a running
- * job, delete it (after an inline confirmation; the folder's files are
- * never touched), and the log. `canDelete` is for a single-user install.
+ * job, delete it (a red button, then a dialog that asks first; the
+ * folder's files are never touched), and the log. `canDelete` is for a
+ * single-user install.
  */
 export function useIndexControls() {
   const status = useIndexStatus()
   const [busy, setBusy] = useState<null | 'build' | 'stop' | 'delete'>(null)
   const [confirming, setConfirming] = useState(false)
   const [error, setError] = useState('')
+  const [deleteError, setDeleteError] = useState('')
   const act = async (which: 'build' | 'stop' | 'delete', fn: () => Promise<unknown>) => {
     setBusy(which)
     setError('')
@@ -227,7 +229,17 @@ export function useIndexControls() {
     status, busy, error, confirming, setConfirming,
     build: () => act('build', () => api.buildIndex()),
     stop: () => act('stop', () => api.stopIndexing()),
-    remove: () => act('delete', async () => { await api.deleteIndex(); setConfirming(false) }),
+    // The dialog closes once the index is gone; a failure shows in it, and
+    // it stays open for another try.
+    remove: async () => {
+      setBusy('delete')
+      setDeleteError('')
+      try { await api.deleteIndex(); kickIndexStatus(); setConfirming(false) }
+      catch (e) { setDeleteError(errText(e)) }
+      finally { setBusy(null) }
+    },
+    deleteError,
+    closeConfirm: () => { setConfirming(false); setDeleteError('') },
   }
 }
 
@@ -245,21 +257,6 @@ export function IndexControls({ canDelete, canBuild = true, folder, part = 'all'
   const indexed = !!s?.indexed
   const primary = part !== 'secondary'
   const secondary = part !== 'primary'
-  if (c.confirming && secondary) {
-    return (
-      <div className="ix-confirm" role="group" aria-label="Delete the index">
-        <p>
-          Delete the index{folder ? <> of <code>{folder}</code></> : null}? Search finds nothing until it is built again.
-          The files in the folder are not touched.
-        </p>
-        <div className="ix-actions">
-          <Button variant="danger" size="sm" loading={c.busy === 'delete'} onClick={() => void c.remove()}>Delete the index</Button>
-          <Button variant="secondary" size="sm" disabled={c.busy === 'delete'} onClick={() => c.setConfirming(false)}>Keep it</Button>
-        </div>
-        {c.error && <Callout tone="error">{c.error}</Callout>}
-      </div>
-    )
-  }
   return (
     <>
       <div className="ix-actions">
@@ -271,11 +268,22 @@ export function IndexControls({ canDelete, canBuild = true, folder, part = 'all'
           </Button>
         ))}
         {secondary && canDelete && indexed && !running && (
-          <Button variant="ghost" size="sm" onClick={() => c.setConfirming(true)}>Delete index</Button>
+          <Button variant="danger-outline" size="sm" onClick={() => c.setConfirming(true)}>Delete index</Button>
         )}
         {secondary && <IndexLogButton />}
       </div>
       {c.error && <Callout tone="error">{c.error}</Callout>}
+      {secondary && (
+        <ConfirmModal open={c.confirming} onClose={c.closeConfirm} destructive closeOnConfirm={false}
+          title="Delete the index?" confirmLabel="Delete index" cancelLabel="Keep it"
+          description={<>
+            Search, Query and Stats find nothing in {folder ? <code>{folder}</code> : 'the main folder'} until the index is built
+            again. The files in the folder are not touched.
+          </>}
+          pending={c.busy === 'delete'} error={c.deleteError || undefined}
+          onConfirm={() => c.remove()}
+        />
+      )}
     </>
   )
 }

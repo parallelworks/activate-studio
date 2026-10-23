@@ -1,6 +1,6 @@
 import { Fragment, type ReactNode, useEffect, useRef, useState } from 'react'
 import {
-  Button, Callout, DescriptionList, DescriptionListItem, IconButton, Loader, Modal, ProgressBar, StatusBadge, Table, toast,
+  Button, Callout, DescriptionList, DescriptionListItem, IconButton, Loader, Modal, ProgressBar, StatusBadge, Table, toast, useConfirm,
 } from '@parallelworks/ui'
 import { AddIcon, CloseIcon } from '@parallelworks/ui/icons'
 import { api, type BuildProgress, type MeaningLevel, type SettingsLibrary, type UserLibrary } from '../api'
@@ -144,6 +144,13 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [followHere, followRemote, followRuns])
 
+  // Removing asks first, and says what goes and what stays. It is red, and
+  // the dialog an alert, only where it deletes something: the index the
+  // Studio built in a folder of its own.
+  const { confirm, dialog } = useConfirm()
+  const askRemove = (label: string, what: ReactNode, deletes: boolean, run: () => Promise<unknown>) => void confirm({
+    title: `Remove ${label}?`, description: what, confirmLabel: 'Remove', destructive: deletes, onConfirm: run,
+  })
   const act = async (key: string, fn: () => Promise<unknown>, done?: string) => {
     setBusy(key)
     try { await fn(); if (done) toast.success(done) } catch (e) { toast.error(errText(e)) } finally { setBusy(null) }
@@ -241,9 +248,13 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
           <>
             <Button variant="secondary" size="sm" loading={busy === l.id} disabled={busy !== null || isBuilding(b.state)}
               onClick={() => void act(l.id, async () => { await api.rebuildLibrary(l.id); await loadLibs() }, `Rebuilding ${l.label}.`)}>Rebuild</Button>
-            <Button variant="secondary" size="sm" aria-label={`Remove ${l.label}`} disabled={busy !== null || isBuilding(b.state)}
-              onClick={() => void act(l.id, async () => { await api.removeLibrary(l.id); await loadLibs(); reloadAppConfig() },
-                b.managed ? `Removed ${l.label} and its index.` : `Removed ${l.label}. Its index stays in ${b.indexDir}.`)}>Remove</Button>
+            <Button variant={b.managed ? 'danger-outline' : 'secondary'} size="sm" aria-label={`Remove ${l.label}`} disabled={busy !== null || isBuilding(b.state)}
+              onClick={() => askRemove(l.label, b.managed
+                ? <>Its index, which {cfg.appName} keeps in a folder of its own, is deleted. The files in {l.sourceRoot ? <code>{l.sourceRoot}</code> : 'the folder'} are not touched.</>
+                : <>{cfg.appName} stops searching it. Its index stays in <code>{b.indexDir}</code>, and the files in {l.sourceRoot ? <code>{l.sourceRoot}</code> : 'the folder'} are not touched.</>,
+                b.managed,
+                () => act(l.id, async () => { await api.removeLibrary(l.id); await loadLibs(); reloadAppConfig() },
+                  b.managed ? `Removed ${l.label} and its index.` : `Removed ${l.label}. Its index stays in ${b.indexDir}.`))}>Remove</Button>
           </>
         ),
         detail: isBuilding(b.state) ? <BuildLine progress={b.progress} /> : undefined,
@@ -266,7 +277,8 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
       fullText: l.caps.fullText, meaning: l.caps.vectors,
       actions: !l.pinned && (
         <Button variant="secondary" size="sm" aria-label={`Remove ${l.label}`} disabled={busy !== null}
-          onClick={() => void act(l.id, async () => { await api.removeLibrary(l.id); await loadLibs(); reloadAppConfig() })}>Remove</Button>
+          onClick={() => askRemove(l.label, <>{cfg.appName} stops searching it. The index stays where it is, in <code>{l.indexRoot}</code>.</>, false,
+            () => act(l.id, async () => { await api.removeLibrary(l.id); await loadLibs(); reloadAppConfig() }))}>Remove</Button>
       ),
     })
   }
@@ -274,7 +286,8 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
     const caps = capsOf(l.id)
     const remove = (
       <Button variant="secondary" size="sm" aria-label={`Remove ${l.label}`} disabled={busy !== null}
-        onClick={() => void act(l.id, async () => { await api.removeUserLibrary(l.id); await loadUser(); reloadAppConfig() })}>Remove</Button>
+        onClick={() => askRemove(l.label, <>{cfg.appName} stops searching it. The index stays where it is, on {l.transport === 'ssh' ? (l.destination ?? l.site) : l.site}.</>, false,
+          () => act(l.id, async () => { await api.removeUserLibrary(l.id); await loadUser(); reloadAppConfig() }))}>Remove</Button>
     )
     const contents = counts(l.directories, l.files)
     if (l.built) {
@@ -394,6 +407,7 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
 
   return (
     <>
+      {dialog}
       <h1>Libraries</h1>
       <p className="muted view-sub">
         Every library searched here. The main folder is the only one written to; the others are indexes read where
