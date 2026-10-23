@@ -28,7 +28,7 @@ import { onThemeChoice } from './theme'
 import { FullViewHost, RunPane } from './components/RunPane'
 import { PanelToggle, StatusPanel } from './components/StatusPanel'
 import { setPanelView } from './panelState'
-import { DEFAULT_MARK } from './components/EmptyChatBrand'
+import { studioMark } from './studioMark'
 
 type ViewId = 'chat' | 'library' | 'search' | 'query' | 'overview' | 'history' | 'agents' | 'workflows' | 'settings' | 'help'
 export type Display = { kind: 'file'; target: string; q?: string; lib?: string } | { kind: 'workflow_dag'; target: string }
@@ -445,9 +445,9 @@ export default function App() {
                 so a returning visitor never sees the generic name swap to the
                 deployment's. A first-ever visit has nothing to remember, and
                 shows the slot empty rather than the wrong name. */}
-            {/* With no icon uploaded, the Studio's own mark, as the app and
-                the empty chat show it. */}
-            <img className="brand-icon" src={brandIcon ?? DEFAULT_MARK} alt="" />
+            {/* With no icon uploaded, the Studio's own mark in the accent: the
+                app icon itself for the default accent (studioMark.ts). */}
+            <img className="brand-icon" src={brandIcon ?? studioMark(cfg.accent)} alt="" />
             {(cfg.loaded || cfg.brandRemembered) && <span className="brand-text"><b>{cfg.appName}</b></span>}
           </div>
           <IconButton

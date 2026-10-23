@@ -43,6 +43,19 @@ function accentFor(name: string): Accent | null {
   return ACCENTS[name] ?? null
 }
 
+/** The colors of the Studio mark in an accent: the tile from a light to a
+ *  deep shade of the accent's light-theme ink, and the spark in its dark-
+ *  theme ink, lightened. Null for the default accent, whose mark is the app
+ *  icon itself (web/icons/icon.svg), and for a name that is not an accent. */
+export function markColors(name: string | null | undefined): { top: string; bottom: string; sparkTop: string; sparkBottom: string } | null {
+  if (!name || name === 'navy') return null
+  const a = accentFor(name)
+  if (!a) return null
+  const ink = a.light[0]
+  const glow = a.dark[0]
+  return { top: mix(ink, '#ffffff', 0.18), bottom: mix(ink, '#000000', 0.45), sparkTop: mix(glow, '#ffffff', 0.45), sparkBottom: glow }
+}
+
 /** Surface tones: the background each theme is derived from. 'cool' is the
  *  platform's own pair (its light ground and GitHub-like dark), and the
  *  stylesheet's fallback values are derived from it. */
