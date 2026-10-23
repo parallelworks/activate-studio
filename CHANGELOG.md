@@ -2,6 +2,55 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.167 (2026-10-23)
+
+### Index depth: one scale per library, from names to meaning on all files (#568)
+
+Each library the Studio builds gets an index depth, set on a slider with five stops, each adding to the one before:
+
+| Stop | What the index holds |
+|---|---|
+| Names | Names, sizes, dates and owners; nothing read from inside files. Only `gufi_dir2index` runs. |
+| Text | The words inside files: text, code, PDFs, Office documents. `enrich.py --no-ocr`, no image descriptions. |
+| Text + OCR | Text in images and scanned PDF pages (tesseract, where installed), and image descriptions when AI features make them. Default for libraries other than the main folder. |
+| Meaning on documents | Search by meaning over the first four passages of PDF, Office, text, Markdown and image files. Default for the main folder. |
+| Meaning on all files | Search by meaning over up to twelve passages of every file with text. |
+
+This replaces the main folder's "Text of PDFs and Office documents" and OCR switches and the per-library Off / Documents / Full level.
+
+Server
+- `depth` is kept per library in `indexing.json`; `documents`, `ocr` and `meaning` in the settings answer follow it.
+- `PUT /api/libraries/:id/depth {depth}`; `PUT /api/libraries/:id/meaning {level}` and the old `meaning`, `embeddings`, `documents`, `ocr` settings fields still work and move the depth to the nearest stop. Settings saved by an earlier version (a level per library, the main folder's reader switches) are read the same way, and choosing the main folder's depth leaves other libraries as they were.
+- Local and remote builds (ssh and pw ssh) take `depth`; a remote build at Names is sent no `enrich.py`, and at Text runs it with `--no-ocr` (a new `$10` to the run script).
+- Library listings carry `depth`; word search skips a main folder at Names.
+
+Web
+- `IndexDepthControl`: the `@parallelworks/ui` Slider, stop names under it in a five-column grid (long names wrap, not shortened), notches between the ends, the chosen stop's description below, and a note when tesseract is not installed here. Dragging or arrow keys save once the value settles; clicking a stop name saves at once.
+- Used in Settings > Indexing, setup's folder step, and the build forms for a folder here and on a remote system. Settings > Libraries has a Depth column with a select; an index connected as it is shows what it has, as built.
+- Search help and the semantic map's "off" note use the depth's words.
+
+Docs: README, HELP, REFERENCE and LIBRARIES.
+
+Tests: server suite (526, 520 pass and 6 skip), web suite (239 pass), including new `indexDepth.test.mjs`, a Names-depth build of the main folder, a Names-depth remote build over ssh, the depth route, and the slider settling before it saves. Checked by eye at 400, 740 and 1200 px, light and dark.
+
+Bundling tesseract into the macOS app is a separate change; this one only reads whether tesseract is present.
+
+### The macOS app carries tesseract for OCR (#567)
+
+The macOS app now reads text in pictures and on scanned PDF pages with nothing installed.
+
+`deploy/mac/build_ocr.sh` builds tesseract 5.5.3 and leptonica 1.87.0 from pinned sources (SHA-256 checked) for macOS 14 on Apple silicon. libpng 1.6.59, libjpeg-turbo 3.2.0, libtiff 4.7.2, libwebp 1.6.0 and giflib 6.1.3 are built as static libraries into leptonica; zlib is the system's. tesseract is built without training tools, the legacy engine, OpenMP, libarchive or libcurl. The English model is `eng.traineddata` from tessdata_fast 4.1.0. The tree in `Contents/Resources/ocr` is `bin/tesseract` (run path `@executable_path/../lib`), `lib/libleptonica.6.dylib` (install name `@rpath/libleptonica.6.dylib`), `share/tessdata` (the model and tesseract's configs, `tsv` among them, which downmark asks for), licenses, README and manifest. The build stops on any library from Homebrew or `/usr/local` or built for a newer macOS, checks the references with otool and `macho_check.py`, and reads a sample of each image format before packing.
+
+`studio-run.sh` puts `ocr/bin` first on the server's PATH and sets `TESSDATA_PREFIX` (unless `studio.env` sets another). `enrich.py` then OCRs `.png`, `.jpg`, `.jpeg`, `.gif` and `.webp`, and `preextract.ts` has downmark OCR scanned PDF pages: downmark decodes each page's image itself and runs `tesseract stdin stdout --dpi N tsv`, so poppler is not needed. A PDF downmark cannot parse at all still gets no OCR on the Mac (`enrich.py`'s own PDF OCR needs `pdftoppm`).
+
+`build_app.sh` takes `OCR_TARBALL`, or on a Mac runs `build_ocr.sh` and keeps the archive in its cache; the `mac-app` workflow builds it on each run. `check_app.sh` checks the files and Mach-O layout, and with `--run` lists the English model, reads each sample format, checks with dyld that tesseract loads only the app's library and the system's, reads the scanned sample PDF through downmark, and has the server (started from `studio-run.sh`) report the bundled tesseract and find the picture and the scanned PDF by a word only OCR could read. The hardened and sign jobs get the samples too, so the same checks run under the hardened runtime.
+
+The readers report (`server/src/extractors.ts`) shows the app's tesseract as bundled, notes that scanned PDF pages are OCR'd, and poppler's install entry then offers only the PDFs downmark cannot read. NOTICE lists the new components; `docs/MACOS.md` has an "OCR in the app" section.
+
+Checked on Linux with the same CMake steps (macOS flags and checks left out): every sample format reads, and downmark's scanned-PDF path works with the built tesseract and `TESSDATA_PREFIX`. The macOS build, signing and run checks are this PR's `mac-app` job.
+
+Also fixed: `indexer/semantic_map.py` failed with a shape error for a library of 3 to 15 embedded files, since n files span at most n of the 16 directions it projects onto. The app check found it once its sample folder held four files with vectors; `semanticMap.test.mjs` now covers a five-file library.
+
 ## v1.166 (2026-10-23)
 
 ### perf(libraries): faster search, counts and sync on large indexes (#563)
@@ -63,6 +112,10 @@ Checked by hand against sshd on localhost: a session made the master in `/tmp/ac
 ## Not checked here
 
 The tests reach a host over ssh to localhost. Not checked against a remote cluster: the time an ssh login takes over a wide-area network and how much sharing saves there; `pw ssh` sessions with three per cluster; ControlMaster behavior after a network change or a sleeping laptop (a dead master is found by the keepalives within about 90 s); the processor count `nproc` reports on a login node with a cgroup or CPU quota policy, where `STUDIO_REMOTE_THREADS` is the fallback; how 16 threads affect other users of a shared login node; and indexes with rolled-up directories.
+
+### Change log through v1.166 (#566)
+
+Regenerated with `node scripts/release-notes.mjs --changelog --next v1.166` before tagging v1.166.
 
 ## v1.165 (2026-10-23)
 
