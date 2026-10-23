@@ -258,6 +258,8 @@ export interface IndexSettings {
   imageDescriptions: boolean
   legacyOffice: boolean
   meaning: MeaningLevel
+  /** Standard embeds the first 256 tokens of each passage, faster the first 128. */
+  meaningSpeed: 'standard' | 'faster'
 }
 export interface IndexSettingsInfo {
   settings: IndexSettings
