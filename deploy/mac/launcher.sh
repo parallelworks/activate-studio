@@ -194,11 +194,12 @@ start() {
 INDEX_ENTRIES='gufi extract embed-cache.db embed-cache.db-wal embed-cache.db-shm folders indexed-root'
 
 # The Python the app carries, else one on the PATH: it reads the Studio's
-# JSON files.
+# JSON files. It writes no bytecode caches, which would land inside the app
+# and break its signature's seal.
 pyrun() {
   local p="$RES/python/bin/python3"
   [ -x "$p" ] || p="$(command -v python3 || true)"
-  [ -n "$p" ] && "$p" "$@"
+  [ -n "$p" ] && PYTHONDONTWRITEBYTECODE=1 "$p" -B "$@"
 }
 
 # Whether a path is inside another (or the same).
