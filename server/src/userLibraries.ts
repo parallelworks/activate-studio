@@ -11,7 +11,7 @@ import { classify, KbError, type FileContent, type KbEntry } from './kb.js'
 import { remoteRun, remoteThreads, siteName, SSH_DESTINATION, sshSite, type RemoteResult } from './remoteExec.js'
 import { noteGufi } from './gufiTrace.js'
 import { getJob, startJob, type Job } from './jobs.js'
-import { forgetIndexSettings, indexSettings, meaningArgs, saveIndexSettings, type MeaningLevel } from './indexSettings.js'
+import { depthParts, forgetIndexSettings, indexSettings, meaningArgs, saveIndexSettings, textArgs, type IndexDepth } from './indexSettings.js'
 import { BUILD_CHECK, BUILD_RUN, BUILD_START, BUILD_STATUS, indexerScript, keyValues, parseStatus, PHASE_LABEL } from './remoteBuild.js'
 
 /**
@@ -924,7 +924,7 @@ async function recheckExisting(viewerId: string | null | undefined, owner: strin
 
 // ---- building on the remote system, over ssh or pw ssh ----
 
-export interface BuildInput { label?: unknown; destination?: unknown; port?: unknown; cluster?: unknown; sourceRoot?: unknown; indexRoot?: unknown; gufiBin?: unknown; create?: unknown; meaning?: unknown }
+export interface BuildInput { label?: unknown; destination?: unknown; port?: unknown; cluster?: unknown; sourceRoot?: unknown; indexRoot?: unknown; gufiBin?: unknown; create?: unknown; meaning?: unknown; depth?: unknown }
 type Transport = 'ssh' | 'pw'
 
 /** The host a build request names, as the probe reaches it, and its folders. */
@@ -964,14 +964,18 @@ const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 const newBuildId = (id: string) => `${id}-${Date.now().toString(36)}`
 const ABS_ANY = /^\/[^\0-\x1f\x7f]*$/
 
-/** Writes the build to the remote system and starts it there, with the
- *  library's level of search by meaning (off: no embeddings are made). */
-async function startRemote(site: string, key: string, b: RemoteBuild, create: boolean, meaning: MeaningLevel): Promise<void> {
-  const level = meaningArgs(meaning, indexSettings('kb').meaningSpeed)
-  const enrich = b.python ? indexerScript('enrich.py') : ''
-  const embed = b.python && b.model && level ? indexerScript('embed.py') : ''
+/** Writes the build to the remote system and starts it there, at the
+ *  library's depth: names only reads no text there, text runs no OCR, and
+ *  search by meaning is made only at the meaning stops. */
+async function startRemote(site: string, key: string, b: RemoteBuild, create: boolean, depth: IndexDepth): Promise<void> {
+  const parts = depthParts(depth)
+  const level = meaningArgs(parts.meaning, indexSettings('kb').meaningSpeed)
+  const text = textArgs(depth)
+  const enrich = b.python && text ? indexerScript('enrich.py') : ''
+  const embed = enrich && b.model && level ? indexerScript('embed.py') : ''
   const r = await remoteRun(site, key, ['bash', '-c', BUILD_START, '_', b.id, BUILD_RUN, enrich, embed,
-    b.gufiBin, b.sourceRoot, b.indexDir, String(await remoteThreads(site, key)), b.python ?? '', b.model ?? '', create ? '1' : '0', (level ?? []).join(' ')], 60_000)
+    b.gufiBin, b.sourceRoot, b.indexDir, String(await remoteThreads(site, key)), b.python ?? '', b.model ?? '', create ? '1' : '0', (level ?? []).join(' '),
+    (text ?? []).join(' ')], 60_000)
   if (r.code !== 0 || !/started/.test(r.stdout)) throw new KbError(502, `The build could not be started on ${siteName(site)}: ${lastLine(r.stderr) || `exit ${r.code}`}`)
 }
 
@@ -1006,8 +1010,8 @@ export async function addBuild(viewerId: string | null | undefined, transport: T
     id: newBuildId(id), indexDir: p.indexDir!, sourceRoot: p.sourceRoot!, gufiBin: p.gufiBin!, python: p.python ?? null, model: p.model ?? null,
     startedAt: new Date().toISOString(), progress: { phase: PHASE_LABEL.prepare, done: 0, total: 0, current: null },
   }
-  if (a.meaning !== undefined) await saveIndexSettings(id, { meaning: a.meaning })
-  await startRemote(r.host.site, r.host.key, build, !!p.create?.includes(build.sourceRoot), indexSettings(id).meaning)
+  if (a.depth !== undefined || a.meaning !== undefined) await saveIndexSettings(id, a.depth !== undefined ? { depth: a.depth } : { meaning: a.meaning })
+  await startRemote(r.host.site, r.host.key, build, !!p.create?.includes(build.sourceRoot), indexSettings(id).depth)
   const def: UserLibraryDef = {
     id, label, transport, existing: false, site: r.conn.site, destination: r.conn.destination, port: r.conn.port, os: p.os || null, gufiVersion: p.gufiVersion ?? null,
     resource: transport === 'ssh' ? r.host.site : r.conn.site, sourceDir: build.sourceRoot, sourceRoot: null, indexRoot: null, gufiBin: null,
@@ -1024,7 +1028,7 @@ async function rebuildRemote(viewerId: string | null | undefined, owner: string,
   if (d.transport === 'ssh' && !sshAllowed(viewerId)) throw new KbError(403, SSH_SINGLE_USER)
   const { site, key } = sessionOf(owner, d)
   const build: RemoteBuild = { ...d.build!, id: newBuildId(d.id), startedAt: new Date().toISOString(), progress: { phase: PHASE_LABEL.prepare, done: 0, total: 0, current: null } }
-  await startRemote(site, key, build, false, indexSettings(d.id).meaning)
+  await startRemote(site, key, build, false, indexSettings(d.id).depth)
   const next = updateDef(owner, d.id, { state: d.indexRoot ? 'updating' : 'building', error: null, build })!
   follow(owner, d.id)
   return next
@@ -1118,7 +1122,7 @@ export function removeUserLibrary(viewerId: string | null | undefined, id: strin
 
 /** The shape Settings shows: no keys, and the remote paths, which are the user's own. */
 export function publicUserLibrary(d: UserLibraryDef & { job?: number }) {
-  return { id: d.id, label: d.label, transport: d.transport ?? 'pw', existing: !d.build && (d.transport === 'ssh' || !!d.existing), meaning: d.build ? indexSettings(d.id).meaning : null, site: d.site, destination: d.destination ?? null, port: d.port ?? null, gufiVersion: d.gufiVersion ?? null, sourceDir: d.sourceDir, sourceRoot: d.sourceRoot, indexRoot: d.indexRoot, state: d.state,
+  return { id: d.id, label: d.label, transport: d.transport ?? 'pw', existing: !d.build && (d.transport === 'ssh' || !!d.existing), meaning: d.build ? indexSettings(d.id).meaning : null, depth: d.build ? indexSettings(d.id).depth : null, site: d.site, destination: d.destination ?? null, port: d.port ?? null, gufiVersion: d.gufiVersion ?? null, sourceDir: d.sourceDir, sourceRoot: d.sourceRoot, indexRoot: d.indexRoot, state: d.state,
     run: d.run ? { slug: d.run.slug, mode: d.run.mode, startedAt: d.run.startedAt } : null, error: d.error, builtAt: d.builtAt,
     directories: d.directories, files: d.files, scheduler: d.scheduler, fullText: !!d.fullText, vectors: !!d.vectors,
     // Built here over the session: where the index is written, and how far a build has got.

@@ -6,7 +6,7 @@ import { api, type IndexSettings, type IndexSettingsInfo, type InstallItem, type
 import { useIndexStatus } from '../indexActivity'
 import { IndexControls, IndexJobView, LastBuild, useIndexControls } from './IndexActivity'
 import { FolderBrowser, errText, waitForRestart } from './PrimaryFolder'
-import { MeaningLevelControl } from './MeaningLevel'
+import { IndexDepthControl } from './IndexDepth'
 
 const MEANING_SPEED_OPTIONS = [{ value: 'standard', label: 'Standard' }, { value: 'faster', label: 'Faster' }]
 const MEANING_SPEED_HELP: Record<IndexSettings['meaningSpeed'], string> = {
@@ -16,10 +16,11 @@ const MEANING_SPEED_HELP: Record<IndexSettings['meaningSpeed'], string> = {
 
 /**
  * Settings, General, Indexing (below the sync settings): how the main
- * folder's index is built. The threads every phase uses, which readers run
- * (documents, the PDF fallback, LibreOffice for older Office files, OCR,
- * image descriptions when AI features are on), the main folder's level of search by meaning,
- * and where the index is kept. Each setting saves as it changes and applies
+ * folder's index is built. The threads every phase uses, the main folder's
+ * depth (names, text, OCR, meaning on documents or on all files), how
+ * documents are read (the PDF fallback, LibreOffice for older Office
+ * files, image descriptions when AI features are on), the speed of search
+ * by meaning, and where the index is kept. Each setting saves as it changes and applies
  * to the next build or sync. The vision model is chosen under AI features;
  * this says which one describes images.
  */
@@ -126,13 +127,14 @@ export function IndexingSection({ visionModel = '', deploymentCred = null }: {
 
       <h2 className="ix-h2">What is read from files</h2>
       <div className="ix-switches">
-        <label className="ix-switch">
-          <Switch checked={s.documents} disabled={saving !== null} onCheckedChange={v => void save({ documents: v }, 'documents')} />
-          <span>
-            <span className="ix-switch-label">Text of PDFs and Office documents</span>
-            <span className="muted">Converted by downmark, which comes with the Studio. Off, they are found by name only.</span>
-          </span>
-        </label>
+        <div>
+          <IndexDepthControl label="Index depth of the main folder" value={s.depth} ocr={tesseract?.available ?? null}
+            disabled={saving !== null && saving !== 'depth'} onChange={v => void save({ depth: v }, 'depth')} />
+          <p className="ix-note">
+            Search by name works as soon as the names are in; text and meaning follow. Each other library has its own depth,
+            under <a href="#view=settings:libraries">Settings, Libraries</a>.
+          </p>
+        </div>
         <Field label="PDFs downmark cannot read"
           description={['pdftotext', 'pypdf'].map(n => `${n}: ${reader(n)?.note.replace(/^./, c => c.toLowerCase()) ?? 'unknown'}`).join(' ')}>
           <Select items={PDF_READERS} value={s.pdfReader} disabled={!s.documents || saving !== null}
@@ -145,20 +147,13 @@ export function IndexingSection({ visionModel = '', deploymentCred = null }: {
             <span className="muted">{soffice?.note}</span>
           </span>
         </label>
-        <label className="ix-switch">
-          <Switch checked={s.ocr} disabled={saving !== null} onCheckedChange={v => void save({ ocr: v }, 'ocr')} />
-          <span>
-            <span className="ix-switch-label">Text in images and scanned pages (OCR)</span>
-            <span className="muted">{tesseract?.note}</span>
-          </span>
-        </label>
         {info.ai?.enabled && (
           <>
             <label className="ix-switch">
-              <Switch checked={s.imageDescriptions} disabled={saving !== null} onCheckedChange={v => void save({ imageDescriptions: v }, 'imageDescriptions')} />
+              <Switch checked={s.imageDescriptions} disabled={!s.ocr || saving !== null} onCheckedChange={v => void save({ imageDescriptions: v }, 'imageDescriptions')} />
               <span>
                 <span className="ix-switch-label">Describe images with a vision model</span>
-                <span className="muted">Each image is sent to the model below, once; the description is searchable.</span>
+                <span className="muted">At Text + OCR and deeper, each image is sent to the model below, once; the description is searchable.</span>
               </span>
             </label>
             <p className="ix-note ix-indent">
@@ -168,19 +163,11 @@ export function IndexingSection({ visionModel = '', deploymentCred = null }: {
             </p>
           </>
         )}
-        <div className="ix-meaning">
-          <MeaningLevelControl label="Search by meaning in the main folder" value={s.meaning} disabled={saving !== null}
-            onChange={v => void save({ meaning: v }, 'meaning')} />
-          <p className="ix-note">
-            Made after the text, as the last phase; search by name and words works before it ends. Each other library has its
-            own level, under <a href="#view=settings:libraries">Settings, Libraries</a>.
-          </p>
-          <Field group label="Speed of search by meaning" className="meaning-level"
-            description={MEANING_SPEED_HELP[s.meaningSpeed]}>
-            <SegmentedControl options={MEANING_SPEED_OPTIONS} value={s.meaningSpeed} disabled={saving !== null || s.meaning === 'off'}
-              onValueChange={v => { if (v) void save({ meaningSpeed: v as IndexSettings['meaningSpeed'] }, 'meaningSpeed') }} />
-          </Field>
-        </div>
+        <Field group label="Speed of search by meaning" className="meaning-level"
+          description={MEANING_SPEED_HELP[s.meaningSpeed]}>
+          <SegmentedControl options={MEANING_SPEED_OPTIONS} value={s.meaningSpeed} disabled={saving !== null || s.meaning === 'off'}
+            onValueChange={v => { if (v) void save({ meaningSpeed: v as IndexSettings['meaningSpeed'] }, 'meaningSpeed') }} />
+        </Field>
       </div>
 
       <h2 className="ix-h2">What this computer can read</h2>

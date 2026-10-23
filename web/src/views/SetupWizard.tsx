@@ -8,7 +8,7 @@ import { AccentSwatches } from '../components/AccentSwatches'
 import { BrandIcons } from '../components/BrandIcons'
 import { KINDS } from '../components/LibrariesSection'
 import { LocalLibraryForm } from '../components/LocalLibraryForm'
-import { MainFolderMeaning } from '../components/MeaningLevel'
+import { MainFolderDepth } from '../components/IndexDepth'
 import { FolderPicker, IndexBuildProgress, json, post, errText, useIndexBuild, type IndexJob, type SetupStatus } from '../components/PrimaryFolder'
 import { SshLibraryForm } from '../components/SshLibraryForm'
 import {
@@ -504,7 +504,7 @@ export function SetupWizard({ onClose, pollMs = 1000 }: {
                 {status.gufi && !status.gufi.found && (
                   <Callout tone="warning">GUFI was not found in {status.gufi.bin}, so the index cannot be built.</Callout>
                 )}
-                <MainFolderMeaning disabled={building} />
+                <MainFolderDepth disabled={building} />
                 {offerBuild && status.gufi?.found ? (
                   <Callout tone="info" title="Build the index for this folder now?"
                     action={<Button variant="primary" size="sm" onClick={() => void index.start()}>Build the index</Button>}>

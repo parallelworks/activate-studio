@@ -8,7 +8,7 @@ import fs, { createReadStream } from 'node:fs'
 import fsp from 'node:fs/promises'
 import { EXCLUDE_DIRS, GATEWAY_BASE, GUFI_INDEX, INDEX_BASE, KB_ROOT, PROJECT_ROOT, PW_CLI, gufiAvailable, indexerEnv } from './config.js'
 import { KbError, extractPath, listDir, moveCacheEntry, readFileContent, resolveKb } from './kb.js'
-import { indexSettings, isMeaningLevel, saveIndexSettings } from './indexSettings.js'
+import { indexSettings, isIndexDepth, isMeaningLevel, saveIndexSettings } from './indexSettings.js'
 import { CONVERTIBLE, mimeFor, officeToPdf, OfficePreviewUnavailable, pdfPageCount, pdfPagePng, pdfPreviewPaths, previewPdfFor, removePdfPreview } from './preview.js'
 import { blendHits, corpusStats, searchFts, searchNames, searchVector, wantsSemantic } from './gufi.js'
 import { invalidateContext } from './chat/context.js'
@@ -838,20 +838,35 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
     const lib = await addLibrary({ id: String(b.id ?? '').trim().toLowerCase(), label: b.label, indexRoot: String(b.indexRoot ?? ''), sourceRoot: b.sourceRoot || null })
     return { library: settingsLibrary(lib) }
   })
-  // How much of a library search by meaning covers (off, documents, full),
-  // for one the Studio builds; it applies at the library's next build or
-  // sync. An index the Studio only reads keeps whatever vectors it has.
-  app.put('/api/libraries/:id/meaning', async req => {
+  // How deep a library is indexed (names, text, ocr, meaning-documents,
+  // meaning-full), for one the Studio builds; it applies at the library's
+  // next build or sync. An index the Studio only reads stays as it was
+  // built. The meaning route is what an earlier client sends: a level of
+  // search by meaning, which moves the depth to the nearest stop.
+  const builtLibrary = (req: { params: unknown; user?: { id?: string } | null }) => {
     const id = String((req.params as { id: string }).id)
-    const level = ((req.body ?? {}) as { level?: unknown }).level
-    if (!isMeaningLevel(level)) throw new KbError(400, 'level: off, documents or full')
     const lib = listLibraries(effectiveSettings().kbLabel, req.user?.id ?? null).find(l => l.id === id)
     if (!lib) throw new KbError(404, 'There is no such library.')
-    if (lib.meaning === null || lib.meaning === undefined) {
-      throw new KbError(409, `${lib.label} is an index the Studio reads but does not build, so search by meaning uses the vectors it has, if any.`)
+    if (lib.depth === null || lib.depth === undefined) {
+      throw new KbError(409, `${lib.label} is an index the Studio reads but does not build, so it stays as it was built.`)
     }
+    return id
+  }
+  app.put('/api/libraries/:id/depth', async req => {
+    const depth = ((req.body ?? {}) as { depth?: unknown }).depth
+    if (!isIndexDepth(depth)) throw new KbError(400, 'depth: names, text, ocr, meaning-documents or meaning-full')
+    const id = builtLibrary(req)
+    await saveIndexSettings(id, { depth })
+    const s = indexSettings(id)
+    return { id, depth: s.depth, meaning: s.meaning }
+  })
+  app.put('/api/libraries/:id/meaning', async req => {
+    const level = ((req.body ?? {}) as { level?: unknown }).level
+    if (!isMeaningLevel(level)) throw new KbError(400, 'level: off, documents or full')
+    const id = builtLibrary(req)
     await saveIndexSettings(id, { meaning: level })
-    return { id, meaning: indexSettings(id).meaning }
+    const s = indexSettings(id)
+    return { id, meaning: s.meaning, depth: s.depth }
   })
   app.delete('/api/libraries/:id', async req => {
     removeLibrary(String((req.params as { id: string }).id))

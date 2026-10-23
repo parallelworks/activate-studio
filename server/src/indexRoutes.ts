@@ -32,7 +32,7 @@ function requireSingleUser(what: string): void {
 function readerOptions() {
   const s = indexSettings()
   const eff = effectiveSettings()
-  return { documents: s.documents, ocr: s.ocr, legacyOffice: s.legacyOffice, pdfReader: s.pdfReader, vision: eff.aiEnabled && s.imageDescriptions && !!eff.visionModel }
+  return { documents: s.documents, ocr: s.ocr, legacyOffice: s.legacyOffice, pdfReader: s.pdfReader, vision: eff.aiEnabled && s.ocr && s.imageDescriptions && !!eff.visionModel }
 }
 
 /** A path as typed: ~ is the home folder, and a relative path is taken from it. */

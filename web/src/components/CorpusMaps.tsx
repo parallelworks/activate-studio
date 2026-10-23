@@ -686,7 +686,7 @@ export function SemanticMap({ onOpen }: { onOpen: (path: string) => void }) {
   }
   const unavailable = !data.available && (
     <p className="muted">
-      {data.reason === 'off' ? <>Search by meaning is off for the main folder, so there is no map. Turn it on in <a href="#view=settings:libraries">Settings, Libraries</a>.</>
+      {data.reason === 'off' ? <>The main folder&apos;s index depth stops before search by meaning, so there is no map. Set it to Meaning on documents or Meaning on all files in <a href="#view=settings:libraries">Settings, Libraries</a>.</>
         : data.reason === 'failed' ? `The map could not be made: ${data.error ?? 'unknown error'}.`
           : data.building ? 'The map is being made from the main folder\'s embeddings.'
             : 'The map appears once the main folder has embeddings for search by meaning.'}

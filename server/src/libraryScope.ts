@@ -33,6 +33,12 @@ export function meaningSearched(l: Library): boolean {
   return l.meaning !== 'off' && (l.caps.vectors || l.primary)
 }
 
+/** Whether a search looks in a library's words: one whose index has its
+ *  full-text tables, and the main folder unless it is indexed by name only. */
+export function wordsSearched(l: Library): boolean {
+  return l.caps.fullText || (l.primary && l.depth !== 'names')
+}
+
 /** How long a search across several libraries waits for each; one that has
  *  not answered by then is left out and named (opts.slow), so a slow remote
  *  index never holds up the others. STUDIO_SEARCH_DEADLINE_MS changes it. */
@@ -43,7 +49,7 @@ export async function searchScope(libs: Library[], q: string, limit: number,
   const SEP = '\u0001'
   const tag = (l: Library) => (hits: SearchHit[]) => hits.map(h => ({ ...h, path: `${l.id}${SEP}${h.path}` }))
   const nameLimit = opts.nameLimit ?? Math.min(Math.max(10, Math.floor(limit / 5)), 50)
-  const ftsLibs = libs.filter(l => l.caps.fullText || l.primary)
+  const ftsLibs = libs.filter(wordsSearched)
   // With Settings, General, "Search across libraries" set to gufi_vt,
   // full-text and name matches run as one gufi_vt statement each
   // (gufiVt.ts), as Query does; a library gufi_vt could not answer, and a
@@ -79,7 +85,7 @@ export async function searchScope(libs: Library[], q: string, limit: number,
   const per = await Promise.all(libs.map(async l => {
     const t = tag(l)
     const all = Promise.all([
-      (l.caps.fullText || l.primary) && !viaVt.fts.has(l.id) ? searchFts(q, limit, l.indexRoot).then(t, () => []) : Promise.resolve([]),
+      wordsSearched(l) && !viaVt.fts.has(l.id) ? searchFts(q, limit, l.indexRoot).then(t, () => []) : Promise.resolve([]),
       !viaVt.names.has(l.id) ? searchNames(q, nameLimit, l.indexRoot).then(t, () => []) : Promise.resolve([]),
       opts.semantic && meaningSearched(l) ? searchVector(q, Math.min(limit, 10), l.indexRoot).then(t, () => []) : Promise.resolve([]),
     ]).then(([fts, names, vec]) => ({ fts, names, vec }))

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Button, Callout, Field, Input, Select } from '@parallelworks/ui'
-import { api, type PwSystems } from '../api'
+import { api, type IndexDepth, type PwSystems } from '../api'
+import { DEFAULT_LIBRARY_DEPTH, IndexDepthControl } from './IndexDepth'
 import { CreateConfirm, postJson, StepList, type CheckStep } from './LibraryFormParts'
 
 /**
@@ -20,8 +21,10 @@ import { CreateConfirm, postJson, StepList, type CheckStep } from './LibraryForm
  * With `mode` build, the Studio builds the index there: the test checks
  * the connection, that GUFI is installed, the source folder and the index
  * folder (made if missing, after asking), and whether text extraction can
- * run; Build the index starts gufi_dir2index there and the library shows
- * its progress in the list. The server tests again before either.
+ * run; Build the index starts gufi_dir2index there, at the index depth
+ * chosen (OCR where tesseract is installed there, search by meaning where
+ * the Studio's model is), and the library shows its progress in the list.
+ * The server tests again before either.
  */
 export interface SshLibraryAdded { id: string; label: string }
 
@@ -49,6 +52,7 @@ export function SshLibraryForm({ onAdded, compact = false, transport = 'ssh', mo
   const [busy, setBusy] = useState<'test' | 'add' | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [confirming, setConfirming] = useState(false)
+  const [depth, setDepth] = useState<IndexDepth>(DEFAULT_LIBRARY_DEPTH)
   // Over pw ssh: the person's systems on the platform, running first, the
   // first running one chosen; or why pw ssh cannot be used here.
   const [systems, setSystems] = useState<PwSystems | null>(null)
@@ -92,7 +96,7 @@ export function SshLibraryForm({ onAdded, compact = false, transport = 'ssh', mo
   const add = async () => {
     setBusy('add'); setError(null)
     try {
-      const lib = await postJson<SshLibraryAdded>(route, { ...conn, label: form.label.trim() || undefined, ...(build && result?.create?.length ? { create: true } : {}) })
+      const lib = await postJson<SshLibraryAdded>(route, { ...conn, label: form.label.trim() || undefined, ...(build ? { depth } : {}), ...(build && result?.create?.length ? { create: true } : {}) })
       setForm(f => ({ ...EMPTY, cluster: f.cluster })); setResult(null); setTested('')
       onAdded?.({ id: lib.id, label: lib.label })
     } catch (e) { setError(String((e as Error).message ?? e)) } finally { setBusy(null) }
@@ -172,6 +176,7 @@ export function SshLibraryForm({ onAdded, compact = false, transport = 'ssh', mo
         <Input label="Label" hint="optional" placeholder={required && host ? name : 'Shown in the Library switcher'} value={form.label}
           onChange={e => setForm(f => ({ ...f, label: e.target.value }))} />
       </div>
+      {build && <IndexDepthControl value={depth} onChange={setDepth} disabled={busy !== null} />}
       {result && <StepList steps={result.steps} label="Connection test" />}
       {error && <Callout tone="error" live>{error}</Callout>}
       <div className="query-actions">

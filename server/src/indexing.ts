@@ -13,7 +13,7 @@ import { preextractCommand, downmarkNative } from './preextract.js'
 import { invalidateContext } from './chat/context.js'
 import { effectiveSettings } from './settings.js'
 import { indexLog } from './indexLog.js'
-import { indexSettings, meaningArgs, threadsFor, type IndexSettings } from './indexSettings.js'
+import { indexSettings, meaningArgs, textArgs, threadsFor, type IndexSettings } from './indexSettings.js'
 import { sofficeFound } from './extractors.js'
 import { scheduleSemanticMapRebuild } from './semanticMap.js'
 import { scanLatest } from './dirScan.js'
@@ -521,7 +521,7 @@ async function namesPhase(ctx: JobCtx, src: string, staging: string, maxLevel0 =
 /** Documents: downmark into the extract cache. */
 async function documentsPhase(ctx: JobCtx, scope: { subdir?: string; noRecurse?: boolean }): Promise<void> {
   const ph = phase(ctx, 'documents')
-  if (!ctx.settings.documents) { ph.skip('turned off in Settings, General, Indexing'); return }
+  if (!ctx.settings.documents) { ph.skip('the index depth is names'); return }
   ph.start()
   const args = ['--kb-root', KB_ROOT, '--extract-cache', EXTRACT_CACHE, '--jobs', String(ctx.threads), '--progress']
   if (scope.subdir) args.push('--subdir', scope.subdir)
@@ -541,10 +541,11 @@ async function documentsPhase(ctx: JobCtx, scope: { subdir?: string; noRecurse?:
 }
 
 function textEnv(ctx: JobCtx): NodeJS.ProcessEnv {
-  // Settings can change the captioning model at runtime; with AI features
-  // off, or descriptions off, images are indexed by OCR and name only.
+  // Settings can change the captioning model at runtime. Images are
+  // described only where the depth reads them (Text + OCR and up); with AI
+  // features off, or descriptions off, they are indexed by OCR and name only.
   const eff = effectiveSettings()
-  const vm = eff.aiEnabled && ctx.settings.imageDescriptions ? eff.visionModel : ''
+  const vm = eff.aiEnabled && ctx.settings.ocr && ctx.settings.imageDescriptions ? eff.visionModel : ''
   const env = indexerEnv(vm ? { ADE_VISION_MODEL: vm } : {})
   if (!vm) delete env.ADE_VISION_MODEL
   return env
@@ -553,12 +554,12 @@ function textEnv(ctx: JobCtx): NodeJS.ProcessEnv {
 /** Text: enrich.py over an index tree that mirrors `kbRoot`. */
 async function textPhase(ctx: JobCtx, o: { kbRoot: string; index: string; cache: string; noRecurse?: boolean }): Promise<void> {
   const ph = phase(ctx, 'text')
+  const depth = textArgs(ctx.settings.depth)
+  if (!depth) { ph.skip('the index depth is names'); return }
   ph.start()
   const args = [path.join(PROJECT_ROOT, 'indexer', 'enrich.py'), '--kb-root', o.kbRoot, '--index', o.index,
-    '--extract-cache', o.cache, '--jobs', String(ctx.threads), '--progress', '--pdf-reader', ctx.settings.pdfReader]
+    '--extract-cache', o.cache, '--jobs', String(ctx.threads), '--progress', '--pdf-reader', ctx.settings.pdfReader, ...depth]
   if (o.noRecurse) args.push('--no-recurse')
-  if (!ctx.settings.ocr) args.push('--no-ocr')
-  if (!ctx.settings.documents) args.push('--no-documents')
   const soffice = ctx.settings.legacyOffice ? sofficeFound() : null
   if (soffice) args.push('--soffice', soffice)
   const out = await runTool(ctx, ph, PYTHON_BIN, args, textEnv(ctx))
@@ -570,7 +571,7 @@ async function textPhase(ctx: JobCtx, o: { kbRoot: string; index: string; cache:
 async function meaningPhase(ctx: JobCtx, o: { index: string; noRecurse?: boolean; prune?: boolean }): Promise<void> {
   const ph = phase(ctx, 'meaning')
   const level = meaningArgs(ctx.settings.meaning, ctx.settings.meaningSpeed)
-  if (!level) { ph.skip('search by meaning is off for this folder (Settings, General, Indexing)'); return }
+  if (!level) { ph.skip('the index depth stops before search by meaning'); return }
   if (!fs.existsSync(EMBED_MODEL)) { ph.skip('no embedding model'); return }
   if (!fs.existsSync(path.join(GUFI_BIN, 'gufi_sqlite3'))) { ph.skip('no gufi_sqlite3'); return }
   ph.start()

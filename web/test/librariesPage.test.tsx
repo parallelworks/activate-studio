@@ -85,10 +85,10 @@ function stubServer(s: Server) {
     if (path === '/api/config') {
       return reply({ appName: 'Studio', platform: s.platform, user: { id: 'u', username: 'u' }, libraries: s.libs.map(l => ({ ...l, indexRoot: undefined, sourceRoot: undefined })) })
     }
-    const level = /^\/api\/libraries\/([^/]+)\/meaning$/.exec(path)
-    if (level && method === 'PUT') {
-      s.libs = s.libs.map(l => (l.id === level[1] ? { ...l, meaning: (body as { level: string }).level } : l))
-      return reply({ id: level[1], meaning: (body as { level: string }).level })
+    const depth = /^\/api\/libraries\/([^/]+)\/depth$/.exec(path)
+    if (depth && method === 'PUT') {
+      s.libs = s.libs.map(l => (l.id === depth[1] ? { ...l, depth: (body as { depth: string }).depth } : l))
+      return reply({ id: depth[1], depth: (body as { depth: string }).depth })
     }
     if (path === '/api/libraries' && method === 'GET') return reply({ canBuild: !!s.canBuild, libraries: s.libs.map(l => (l.primary ? { ...l, sourceRoot: s.primary, label: s.primary.split('/').pop() } : l)) })
     if (path === '/api/libraries/build/check') {
@@ -239,15 +239,14 @@ describe('Settings, Libraries', () => {
     expect(await within(main).findByRole('button', { name: 'Update index' })).toBeEnabled()
     expect(within(detailOf('Notes')).getByRole('button', { name: 'Delete index' })).toBeInTheDocument()
     expect(within(detailOf('Notes')).getByRole('button', { name: 'View log' })).toBeInTheDocument()
-    expect(within(main).getAllByText('Yes')).toHaveLength(1)
-    expect(within(main).getByRole('combobox', { name: 'Search by meaning in Notes' })).toHaveTextContent('Documents')
+    expect(within(main).getByRole('combobox', { name: 'Index depth of Notes' })).toHaveTextContent('Meaning on documents')
 
     const site = rowOf('Site index')
     expect(within(site).getByText('GUFI index on this machine, read only')).toBeInTheDocument()
     expect(within(site).getByText('not on this machine: names and metadata only')).toBeInTheDocument()
     expect(within(site).getByText('Ready')).toBeInTheDocument()
-    expect(within(site).getByText('Yes')).toBeInTheDocument()
-    expect(within(site).getByText('No')).toBeInTheDocument()
+    expect(within(site).getByText('Text')).toBeInTheDocument()
+    expect(within(site).getByText('as built')).toBeInTheDocument()
 
     const pinned = rowOf('Scratch')
     expect(within(pinned).getByText('GUFI index on this machine, read only, set by the deployment')).toBeInTheDocument()
@@ -334,6 +333,9 @@ describe('Settings, Libraries', () => {
     // Only this computer here: no Where choice, and build comes first.
     expect(screen.queryByRole('button', { name: 'A remote system' })).toBeNull()
     fireEvent.change(await screen.findByLabelText('Folder to index'), { target: { value: '~/papers' } })
+    // The depth starts at Text + OCR; this folder is taken to Text.
+    expect(screen.getByRole('button', { name: 'Text + OCR' })).toHaveAttribute('aria-pressed', 'true')
+    fireEvent.click(screen.getByRole('button', { name: 'Text' }))
     expect(screen.getByRole('button', { name: 'Build the index' })).toBeDisabled()
     fireEvent.click(screen.getByRole('button', { name: 'Check' }))
     expect(await screen.findByText('~/papers does not exist yet; it is created, empty, when the build starts.')).toBeInTheDocument()
@@ -343,7 +345,7 @@ describe('Settings, Libraries', () => {
     expect(posted(s, '/api/libraries/build')).toHaveLength(0)
     fireEvent.click(within(dialog).getByRole('button', { name: 'Create it and build' }))
     await waitFor(() => expect(posted(s, '/api/libraries/build')).toHaveLength(1))
-    expect(posted(s, '/api/libraries/build')[0].body).toEqual({ sourceRoot: '~/papers', create: true })
+    expect(posted(s, '/api/libraries/build')[0].body).toEqual({ sourceRoot: '~/papers', depth: 'text', create: true })
     const row = await waitFor(() => rowOf('Papers'))
     expect(within(row).getByText('Index of a folder on this machine, kept in step with it, read only')).toBeInTheDocument()
     expect(within(row).getByText('Building')).toBeInTheDocument()
@@ -366,7 +368,7 @@ describe('Settings, Libraries', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Build the index' }))
     fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Create it and build' }))
     const row = await waitFor(() => rowOf('data on box'))
-    expect(posted(s, '/api/user-libraries/ssh/build')[0].body).toEqual({ destination: 'me@box:2222', sourceRoot: '~/data', gufiBin: '/opt/gufi/bin', create: true })
+    expect(posted(s, '/api/user-libraries/ssh/build')[0].body).toEqual({ destination: 'me@box:2222', sourceRoot: '~/data', gufiBin: '/opt/gufi/bin', depth: 'ocr', create: true })
     expect(within(row).getByText('Index built on me@box over ssh, read only')).toBeInTheDocument()
     expect(within(row).getByTitle('me@box:/home/me/data')).toBeInTheDocument()
     expect(screen.getByRole('progressbar', { name: /Extracting text/ })).toBeInTheDocument()
@@ -396,20 +398,23 @@ describe('Settings, Libraries', () => {
     await waitFor(() => expect(posted(s, '/api/libraries/papers/rebuild')).toHaveLength(1))
   })
 
-  it('sets search by meaning per library the Studio builds; an index it only reads shows what it has', async () => {
-    const s = server({ libs: [PRIMARY, { ...BUILT_HERE, meaning: 'off', build: { ...BUILT_HERE.build, state: 'ready', files: 40, dirs: 6, builtAt: '2026-10-20T00:00:00Z', progress: null } }, SITE] })
+  it('sets the depth per library the Studio builds; an index it only reads shows what it has', async () => {
+    const s = server({ libs: [PRIMARY, { ...BUILT_HERE, depth: 'ocr', build: { ...BUILT_HERE.build, state: 'ready', files: 40, dirs: 6, builtAt: '2026-10-20T00:00:00Z', progress: null } }, SITE] })
     await renderPage(s)
     const row = await waitFor(() => rowOf('Papers'))
-    const select = within(row).getByRole('combobox', { name: 'Search by meaning in Papers' })
-    expect(select).toHaveTextContent('Off')
+    const select = within(row).getByRole('combobox', { name: 'Index depth of Papers' })
+    expect(select).toHaveTextContent('Text + OCR')
     fireEvent.click(select)
-    const full = (await screen.findAllByRole('option')).find(o => o.textContent === 'Full')!
-    fireEvent.pointerDown(full)
-    fireEvent.click(full)
-    await waitFor(() => expect(s.calls.find(c => c.method === 'PUT' && c.url === '/api/libraries/papers/meaning')?.body).toEqual({ level: 'full' }))
-    await waitFor(() => expect(within(rowOf('Papers')).getByRole('combobox', { name: 'Search by meaning in Papers' })).toHaveTextContent('Full'))
+    const options = await screen.findAllByRole('option')
+    expect(options.map(o => o.textContent)).toEqual(['Names', 'Text', 'Text + OCR', 'Meaning on documents', 'Meaning on all files'])
+    const all = options.find(o => o.textContent === 'Meaning on all files')!
+    fireEvent.pointerDown(all)
+    fireEvent.click(all)
+    await waitFor(() => expect(s.calls.find(c => c.method === 'PUT' && c.url === '/api/libraries/papers/depth')?.body).toEqual({ depth: 'meaning-full' }))
+    await waitFor(() => expect(within(rowOf('Papers')).getByRole('combobox', { name: 'Index depth of Papers' })).toHaveTextContent('Meaning on all files'))
     expect(within(rowOf('Site index')).queryByRole('combobox')).toBeNull()
-    expect(screen.getByText(/Meaning is search by meaning/)).toBeInTheDocument()
+    expect(within(rowOf('Site index')).getByText('as built')).toBeInTheDocument()
+    expect(screen.getByText(/Depth is how far an index goes/)).toBeInTheDocument()
   })
 
   it('a hosted Studio with a platform builds on a cluster through the workflow', async () => {
