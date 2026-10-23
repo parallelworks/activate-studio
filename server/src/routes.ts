@@ -12,7 +12,7 @@ import { indexSettings, isIndexDepth, isMeaningLevel, saveIndexSettings } from '
 import { CONVERTIBLE, mimeFor, officeToPdf, OfficePreviewUnavailable, pdfPageCount, pdfPagePng, pdfPreviewPaths, previewPdfFor, removePdfPreview } from './preview.js'
 import { blendHits, corpusStats, searchFts, searchNames, searchVector, wantsSemantic } from './gufi.js'
 import { invalidateContext } from './chat/context.js'
-import { incrementalIndexDir, indexRootDb, reindexForFile } from './indexing.js'
+import { incrementalIndexDir, indexRootDb, reindexForFile, requestSweep } from './indexing.js'
 import { indexRoutes } from './indexRoutes.js'
 import { copyPaths, movePaths, reindexRoots, renamePath } from './move.js'
 import { suggestLabels } from './labeling.js'
@@ -31,7 +31,7 @@ import { effectiveSettings } from './settings.js'
 import { curatedNames, platformAvailable } from './workflowsTab.js'
 import { authEnabled, authHeaderName } from './auth.js'
 import { remoteDownload, remoteFile, remoteTree } from './userLibraries.js'
-import { localBuildOffered } from './libraryBuild.js'
+import { localBuildOffered, requestLibrarySync } from './libraryBuild.js'
 import { traced } from './gufiTrace.js'
 
 /** A brand image may be given as a URL instead of a path on the resource,
@@ -839,10 +839,12 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
     return { library: settingsLibrary(lib) }
   })
   // How deep a library is indexed (names, text, ocr, meaning-documents,
-  // meaning-full), for one the Studio builds; it applies at the library's
-  // next build or sync. An index the Studio only reads stays as it was
-  // built. The meaning route is what an earlier client sends: a level of
-  // search by meaning, which moves the depth to the nearest stop.
+  // meaning-full), for one the Studio builds. The main folder and a library
+  // built of a folder here apply it at their next sync, which a change asks
+  // for soon; a library built on a remote system, at its next Refresh. An
+  // index the Studio only reads stays as it was built. The meaning route is
+  // what an earlier client sends: a level of search by meaning, which moves
+  // the depth to the nearest stop.
   const builtLibrary = (req: { params: unknown; user?: { id?: string } | null }) => {
     const id = String((req.params as { id: string }).id)
     const lib = listLibraries(effectiveSettings().kbLabel, req.user?.id ?? null).find(l => l.id === id)
@@ -852,11 +854,13 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
     }
     return id
   }
+  const depthChanged = (id: string) => { if (id === 'kb') requestSweep(); else requestLibrarySync(id) }
   app.put('/api/libraries/:id/depth', async req => {
     const depth = ((req.body ?? {}) as { depth?: unknown }).depth
     if (!isIndexDepth(depth)) throw new KbError(400, 'depth: names, text, ocr, meaning-documents or meaning-full')
     const id = builtLibrary(req)
     await saveIndexSettings(id, { depth })
+    depthChanged(id)
     const s = indexSettings(id)
     return { id, depth: s.depth, meaning: s.meaning }
   })
@@ -865,6 +869,7 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
     if (!isMeaningLevel(level)) throw new KbError(400, 'level: off, documents or full')
     const id = builtLibrary(req)
     await saveIndexSettings(id, { meaning: level })
+    depthChanged(id)
     const s = indexSettings(id)
     return { id, meaning: s.meaning, depth: s.depth }
   })

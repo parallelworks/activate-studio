@@ -17,6 +17,7 @@ import { indexSettings, meaningArgs, textArgs, threadsFor, type IndexSettings } 
 import { sofficeFound } from './extractors.js'
 import { scheduleSemanticMapRebuild } from './semanticMap.js'
 import { scanLatest } from './dirScan.js'
+import { depthChange, depthRecordOf, readDepthRecord, writeDepthRecord, type DepthChange } from './depthState.js'
 
 /**
  * Building the index, and every later change to it, as jobs that run one at
@@ -45,6 +46,8 @@ import { scanLatest } from './dirScan.js'
 
 const SKIP_FILE = path.join(INDEX_BASE, 'skip-dirs.txt')
 const SWEEP_STATE = path.join(INDEX_BASE, 'sweep-state.json')
+// The depth the index was last built or synced at (depthState.ts).
+const DEPTH_STATE = path.join(INDEX_BASE, 'index-depth.json')
 const EMBED_MODEL = path.join(INDEX_BASE, 'models', 'minilm384.gguf')
 const RUNS_FILE = path.join(INDEX_BASE, 'index-runs.json')
 // The folder the index and caches under INDEX_DIR were built from.
@@ -216,6 +219,7 @@ function pump(): void {
       if (job.state === 'done') rec.resolve({ ms: job.ms })
       else rec.reject(job.state === 'cancelled' ? new IndexCancelled() : new Error(job.error ?? 'failed'))
       setImmediate(pump)
+      if (sweepWanted && !queue.length) setImmediate(runWantedSweep)
     }
   })()
 }
@@ -584,7 +588,7 @@ async function meaningPhase(ctx: JobCtx, o: { index: string; noRecurse?: boolean
   ph.finish(m ? `${Number(m[1]).toLocaleString('en-US')} passages, ${Number(m[2]).toLocaleString('en-US')} new` : undefined)
   // The semantic map follows the embeddings, in the background: soon after
   // a build, and no more than every ten minutes or so after a sync.
-  if (o.prune || (m && Number(m[2]) > 0)) scheduleSemanticMapRebuild(ctx.job.kind === 'build' ? 5_000 : 10 * 60_000)
+  if (o.prune || (m && Number(m[2]) > 0)) scheduleSemanticMapRebuild(ctx.job.kind === 'build' || o.prune ? 5_000 : 10 * 60_000)
 }
 
 /** Put a built tree at `dest`, the old one out of the way first. */
@@ -785,6 +789,7 @@ async function reconcileOnce(log: (m: string) => void): Promise<void> {
       await move(EXTRACT_CACHE, path.join(to, 'extract')),
       await move(EMBED_CACHE, path.join(to, 'embed-cache.db')),
       await move(SWEEP_STATE, path.join(to, 'sweep-state.json')),
+      await move(DEPTH_STATE, path.join(to, 'index-depth.json')),
     ]
     await fsp.writeFile(path.join(to, 'root'), `${was}\n`)
     if (moved.some(Boolean)) log(`folder: put the index of ${was} aside in ${to}`)
@@ -804,6 +809,7 @@ async function reconcileOnce(log: (m: string) => void): Promise<void> {
     await move(path.join(mine, 'extract'), EXTRACT_CACHE)
     await move(path.join(mine, 'embed-cache.db'), EMBED_CACHE)
     await move(path.join(mine, 'sweep-state.json'), SWEEP_STATE)
+    await move(path.join(mine, 'index-depth.json'), DEPTH_STATE)
     await fsp.rm(mine, { recursive: true, force: true })
     log(`folder: brought back the earlier index of ${KB_ROOT}; the next build updates it`)
   }
@@ -852,6 +858,7 @@ async function buildWholeFolder(ctx: JobCtx): Promise<void> {
     }
     await afterChange('')
     await saveSweepState(snapshot)
+    await writeDepthRecord(DEPTH_STATE, depthRecordOf(ctx.settings))
   } finally {
     await fsp.rm(staging, { recursive: true, force: true })
   }
@@ -878,7 +885,7 @@ export function currentBuild(): IndexJob | null {
 export function startDelete(): IndexJob {
   cancelAllIndexJobs()
   return enqueue('delete', '', 'Deleting the index', async ctx => {
-    for (const p of [GUFI_INDEX, EXTRACT_CACHE, EMBED_CACHE, SWEEP_STATE, ROOT_MARK, SEMANTIC_MAP_DIR,
+    for (const p of [GUFI_INDEX, EXTRACT_CACHE, EMBED_CACHE, SWEEP_STATE, DEPTH_STATE, ROOT_MARK, SEMANTIC_MAP_DIR,
       path.join(INDEX_BASE, 'pdf-preview'), path.join(INDEX_BASE, 'pdf-pages'), path.join(INDEX_BASE, 'model-cache')]) {
       await fsp.rm(p, { recursive: true, force: true })
     }
@@ -945,11 +952,95 @@ function loadSweepState(): Record<string, number> {
 
 let sweeping = false
 
+// ---- a change of depth ----
+
+/**
+ * The depth change the next sync applies, from the record of the depth the
+ * index was last built or synced at: null when there is nothing to run.
+ * With no index yet there is nothing to apply it to (the first build reads
+ * at the depth set). An index with no record, one from before the record
+ * was kept, counts as built at the depth set now. A depth that only went
+ * down runs nothing and is recorded here.
+ */
+async function pendingDepthChange(settings: IndexSettings): Promise<DepthChange | null> {
+  if (!fs.existsSync(path.join(GUFI_INDEX, 'db.db'))) return null
+  const now = depthRecordOf(settings)
+  const was = readDepthRecord(DEPTH_STATE)
+  const ch = was ? depthChange(was, now) : null
+  if (!was || (ch && !ch.text && !ch.meaning)) await writeDepthRecord(DEPTH_STATE, now)
+  return ch && (ch.text || ch.meaning) ? ch : null
+}
+
+/**
+ * Applies a change of depth over the whole folder, on the index in place:
+ * only the phases the new depth adds (depthChange), with the caches, so
+ * unchanged documents are not converted again and passages already
+ * embedded are not embedded again. The names are not read again. The
+ * record is written only when it succeeded, so a run that failed or was
+ * stopped is tried again at the next sync.
+ */
+async function applyDepthChange(ctx: JobCtx): Promise<DepthChange | null> {
+  const ch = await pendingDepthChange(ctx.settings)
+  if (!ch) return null
+  ctx.job.phases = newPhases()
+  ctx.job.label = `Applying the new index depth: ${ch.label}`
+  ctx.log(`depth: applying ${ctx.settings.depth} (${ch.label}) over the whole folder`)
+  phase(ctx, 'names').skip('unchanged')
+  if (ch.text) {
+    await documentsPhase(ctx, {})
+    await textPhase(ctx, { kbRoot: KB_ROOT, index: GUFI_INDEX, cache: EXTRACT_CACHE })
+  } else {
+    for (const id of ['documents', 'text'] as const) phase(ctx, id).skip('unchanged')
+  }
+  if (ch.meaning) await meaningPhase(ctx, { index: GUFI_INDEX, prune: true })
+  else phase(ctx, 'meaning').skip('unchanged')
+  if (ctx.signal.aborted) throw new IndexCancelled()
+  await afterChange('')
+  await writeDepthRecord(DEPTH_STATE, depthRecordOf(ctx.settings))
+  return ch
+}
+
+/** Records the depth of an index that has none yet, at the start: an index
+ *  from before the record was kept counts as built at its depth now. */
+async function primeDepthState(): Promise<void> {
+  if (!fs.existsSync(DEPTH_STATE)) await pendingDepthChange(indexSettings())
+}
+
+// ---- a sync soon, for a change of depth ----
+
+let sweepTimerOn = false
+let sweepLog: (msg: string) => void = indexLog
+let sweepWanted = false
+let kickTimer: NodeJS.Timeout | null = null
+
+/**
+ * Asks for a sync soon, as a change of depth does: after a short wait, so a
+ * slider dragged across several stops syncs once, and after the job that
+ * is running or waiting. Only where the background sync runs and is not
+ * paused (Settings, General; Sync now applies it either way).
+ */
+export function requestSweep(delayMs = 2000): void {
+  if (!sweepTimerOn || effectiveSettings().sweepIntervalSec <= 0) return
+  sweepWanted = true
+  if (kickTimer) clearTimeout(kickTimer)
+  kickTimer = setTimeout(runWantedSweep, delayMs)
+  kickTimer.unref?.()
+}
+
+function runWantedSweep(): void {
+  kickTimer = null
+  if (!sweepWanted || sweeping || current || queue.length) return
+  sweepWanted = false
+  void sweep(sweepLog)
+}
+
 /**
  * Find directories whose content is newer than the last sweep and re-index
  * just those subtrees, so files dropped into the KB by any means (scp,
- * generators, git) become searchable within one sweep interval. Skipped
- * while another index job is running or waiting; the next tick looks again.
+ * generators, git) become searchable within one sweep interval; and apply
+ * a change of depth since the last build or sync over the whole folder
+ * (applyDepthChange), which no file's date shows. Skipped while another
+ * index job is running or waiting; the next tick looks again.
  */
 export async function sweep(log: (msg: string) => void): Promise<string[]> {
   if (sweeping || current || queue.length) return []
@@ -971,7 +1062,9 @@ export async function sweep(log: (msg: string) => void): Promise<string[]> {
     // A parent re-index covers its whole subtree; keep only subtree roots.
     changed.sort()
     changed = changed.filter(rel => !changed.some(other => other !== rel && rel.startsWith(other + '/')))
-    if (!rootChanged && !changed.length && !removed.length) {
+    const depth = await pendingDepthChange(indexSettings())
+    const filesChanged = rootChanged || changed.length > 0 || removed.length > 0
+    if (!filesChanged && !depth) {
       status.lastChanges = []
       return []
     }
@@ -979,7 +1072,8 @@ export async function sweep(log: (msg: string) => void): Promise<string[]> {
     const failures: string[] = []
     const indexed: string[] = []
     let rootIndexed = false
-    const rec = enqueue('sweep', '', 'Syncing changes', async ctx => {
+    let depthApplied: string | null = null
+    const rec = enqueue('sweep', '', filesChanged ? 'Syncing changes' : `Applying the new index depth: ${depth!.label}`, async ctx => {
       // Removed directories: drop their index subtrees.
       for (const rel of removed) {
         await fsp.rm(path.join(GUFI_INDEX, rel), { recursive: true, force: true }).catch(() => {})
@@ -1025,10 +1119,13 @@ export async function sweep(log: (msg: string) => void): Promise<string[]> {
         }
         await fsp.writeFile(SWEEP_STATE, JSON.stringify(next))
       }
-      ctx.job.label = 'Syncing changes'
+      // After the folders that changed, so their state is kept even if this fails.
+      if (await applyDepthChange(ctx)) depthApplied = ctx.settings.depth
+      if (filesChanged) ctx.job.label = 'Syncing changes'
     })
     await rec.done.catch(() => {})
-    status.lastChanges = [...(rootIndexed ? ['(root files)'] : []), ...indexed, ...removed.map(r => `${r} (removed)`)]
+    status.lastChanges = [...(rootIndexed ? ['(root files)'] : []), ...indexed, ...removed.map(r => `${r} (removed)`),
+      ...(depthApplied && rec.pub.state === 'done' ? [`(index depth: ${depthApplied})`] : [])]
     status.lastError = failures.length ? failures.join('; ') : rec.pub.state === 'error' ? rec.pub.error : null
     return indexed
   } catch (err: any) {
@@ -1038,6 +1135,7 @@ export async function sweep(log: (msg: string) => void): Promise<string[]> {
     sweeping = false
     status.lastSweepAt = new Date().toISOString()
     status.lastSweepMs = Date.now() - t0
+    if (sweepWanted) setImmediate(runWantedSweep)
   }
 }
 
@@ -1067,6 +1165,8 @@ export async function saveSweepState(state: Record<string, number>): Promise<voi
 }
 
 export function startSweepTimer(log: (msg: string) => void): void {
+  sweepTimerOn = true
+  sweepLog = log
   // Self-rescheduling so a settings change to the interval applies at the
   // next cycle without a restart; 0 pauses sweeping but keeps checking.
   const tick = async (): Promise<void> => {
@@ -1090,6 +1190,7 @@ export function startSweepTimer(log: (msg: string) => void): void {
   // sweep compares anything with what was recorded.
   void reconcileFolder().catch(e => log(`index: ${String((e as Error).message ?? e)}`))
     .then(() => primeSweepState())
+    .then(() => primeDepthState())
     .then(() => {
       setTimeout(() => { void tick() }, Math.max(status.sweepIntervalSec, 60) * 1000).unref()
     })

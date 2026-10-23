@@ -18,6 +18,7 @@ import {
 import { runPreExtract } from './preextract.js'
 import { effectiveSettings } from './settings.js'
 import { scanLatest } from './dirScan.js'
+import { depthChange, depthRecordOf, readDepthRecord, writeDepthRecord, type DepthChange } from './depthState.js'
 
 /**
  * Libraries the Studio builds of a folder on this computer, beside the
@@ -242,6 +243,32 @@ async function saveState(id: string, state: Record<string, number>): Promise<voi
 
 type Progress = (phase: string, done?: number, current?: string | null) => void
 
+/** The depth the library was last built or synced at (depthState.ts). */
+const depthFile = (id: string) => path.join(builtLibraryDir(id), 'depth-state.json')
+
+/** The depth change the library's next sync applies, as for the main
+ *  folder (indexing.ts): null when there is nothing to run; a depth that
+ *  only went down, or a library with no record yet, is recorded here. */
+async function pendingDepthChange(id: string, s: IndexSettings): Promise<DepthChange | null> {
+  const now = depthRecordOf(s)
+  const was = readDepthRecord(depthFile(id))
+  const ch = was ? depthChange(was, now) : null
+  if (!was || (ch && !ch.text && !ch.meaning)) await writeDepthRecord(depthFile(id), now)
+  return ch && (ch.text || ch.meaning) ? ch : null
+}
+
+/** Applies a change of depth over the whole library, on its index in
+ *  place: only the steps the new depth adds, with the library's caches. */
+async function applyDepthChange(def: LibraryDef, ch: DepthChange, s: IndexSettings): Promise<void> {
+  const steps = enrichSteps(def, {}, s)
+  if (ch.text && steps.text) {
+    if (steps.documents) await runPreExtract(steps.documents, m => console.warn(m))
+    await run(PYTHON_BIN, steps.text, undefined, s.ocr)
+  }
+  if (ch.meaning && steps.meaning) await run(PYTHON_BIN, steps.meaning)
+  await writeDepthRecord(depthFile(def.id), depthRecordOf(s))
+}
+
 type Scope = { subdir?: string; noRecurse?: boolean }
 
 /**
@@ -280,12 +307,12 @@ export function enrichSteps(def: LibraryDef, scope: Scope, s: IndexSettings = bu
   }
 }
 
-async function enrich(def: LibraryDef, scope: Scope, progress: Progress): Promise<void> {
-  const steps = enrichSteps(def, scope)
+async function enrich(def: LibraryDef, scope: Scope, progress: Progress, s = builtLibrarySettings(def.id)): Promise<void> {
+  const steps = enrichSteps(def, scope, s)
   if (!steps.text) return
   progress('Extracting text')
   if (steps.documents) await runPreExtract(steps.documents, m => console.warn(m))
-  await run(PYTHON_BIN, steps.text, undefined, builtLibrarySettings(def.id).ocr)
+  await run(PYTHON_BIN, steps.text, undefined, s.ocr)
   if (steps.meaning) {
     progress('Embedding text')
     await run(PYTHON_BIN, steps.meaning)
@@ -314,6 +341,8 @@ async function fullBuild(id: string, job: IndexJob): Promise<{ ms: number }> {
   const b = def.build
   const src = def.sourceRoot, tree = def.indexRoot
   const progress: Progress = (phase, done = 0, current = null) => { job.progress = { phase, done, total: 0, current, failed: [] } }
+  // Read once, so the depth recorded is the one the build read at.
+  const s = builtLibrarySettings(id)
   updateBuild(id, { state: fs.existsSync(path.join(tree, 'db.db')) ? 'updating' : 'building', error: null })
   try {
     if (!isDir(src)) throw new Error(`${src} is not a folder any more`)
@@ -336,10 +365,11 @@ async function fullBuild(id: string, job: IndexJob): Promise<{ ms: number }> {
     await fsp.rename(built, tree)
     await fsp.rm(old, { recursive: true, force: true })
     await fsp.rm(stage, { recursive: true, force: true })
-    await enrich(def, {}, progress)
+    await enrich(def, {}, progress, s)
     progress('Counting')
     const counts = await settle(def)
     await saveState(id, snapshot)
+    await writeDepthRecord(depthFile(id), depthRecordOf(s))
     updateBuild(id, { state: 'ready', error: null, ...counts })
     return { ms: Date.now() - t0 }
   } catch (e) {
@@ -385,21 +415,25 @@ async function indexTop(def: LibraryDef): Promise<void> {
  * Brings a ready library's index up to its folder: folders whose content
  * changed since the last pass are indexed again (the topmost of each
  * changed branch), the top folder's own files when they changed, and the
- * index of a folder that is gone is removed. Returns what changed.
+ * index of a folder that is gone is removed; then a change of depth since
+ * the last build or sync is applied over the whole library. Returns what
+ * changed.
  */
 export async function syncLibrary(id: string): Promise<string[]> {
   return withLibraryLock(id, async () => {
     const def = addedDef(id)
     if (!def?.build || def.build.state !== 'ready' || !def.sourceRoot) return []
     if (!isDir(def.sourceRoot)) { updateBuild(id, { error: `${def.sourceRoot} is not a folder any more` }); return [] }
-    const before = loadState(id)
+    const s = builtLibrarySettings(id)
+    const depth = await pendingDepthChange(id, s)
     const scan = await scanDirs(def.sourceRoot)
-    if (!before) { await saveState(id, scan); return [] }
+    const before = loadState(id) ?? scan
+    if (!loadState(id)) await saveState(id, scan)
     const top = (before[''] ?? 0) < (scan[''] ?? 0)
     let changed = Object.keys(scan).filter(rel => rel && (before[rel] ?? 0) < scan[rel]).sort()
     changed = changed.filter(rel => !changed.some(o => o !== rel && rel.startsWith(`${o}/`)))
     const removed = Object.keys(before).filter(rel => rel && !(rel in scan) && !Object.keys(scan).some(s => rel.startsWith(`${s}/`) && changed.includes(s)))
-    if (!top && !changed.length && !removed.length) return []
+    if (!top && !changed.length && !removed.length && !depth) return []
     const done: string[] = []
     const failed: string[] = []
     const next = { ...scan }
@@ -413,8 +447,14 @@ export async function syncLibrary(id: string): Promise<string[]> {
     if (top) {
       try { await indexTop(def); done.push('(top folder)') } catch (e) { failed.push(`(top folder): ${(e as Error).message}`); if (before[''] !== undefined) next[''] = before['']; else delete next[''] }
     }
-    const counts = await settle(def)
     await saveState(id, next)
+    if (depth) {
+      // Shown as updating while it runs; a failure keeps the old record, so
+      // the next sync tries again.
+      updateBuild(id, { state: 'updating' })
+      try { await applyDepthChange(def, depth, s); done.push(`(index depth: ${s.depth})`) } catch (e) { failed.push(`index depth: ${(e as Error).message}`) } finally { updateBuild(id, { state: 'ready' }) }
+    }
+    const counts = await settle(def)
     updateBuild(id, { error: failed.length ? failed.join('; ').slice(0, 400) : null, ...counts })
     return done
   })
@@ -450,12 +490,39 @@ export async function addLocalBuild(a: BuildInput): Promise<{ id: string; job: I
 
 const builtIds = () => listLibraries().filter(l => l.build).map(l => l.id)
 
+let syncOn = false
+const kicks = new Map<string, NodeJS.Timeout>()
+
+/**
+ * Asks for a library's sync soon, as a change of its depth does: after a
+ * short wait, so a depth chosen in passing syncs once, and behind a build
+ * that is running (the library's lock). Only where the background sync runs
+ * and is not paused.
+ */
+export function requestLibrarySync(id: string, delayMs = 2000): void {
+  if (!syncOn || effectiveSettings().sweepIntervalSec <= 0 || !addedDef(id)?.build) return
+  const was = kicks.get(id)
+  if (was) clearTimeout(was)
+  const t = setTimeout(() => {
+    kicks.delete(id)
+    void syncLibrary(id).catch(e => console.warn(`library ${id}: sync failed: ${(e as Error).message}`))
+  }, delayMs)
+  t.unref?.()
+  kicks.set(id, t)
+}
+
+/** The same for every library the Studio builds, as a change they all follow does (the speed of search by meaning). */
+export function requestAllLibrarySyncs(): void {
+  for (const id of builtIds()) requestLibrarySync(id)
+}
+
 /**
  * Keeps built libraries in step with their folders on the sweep interval
  * (Settings, General; 0 pauses it), one library at a time, and finishes a
  * build a restart interrupted.
  */
 export function startLibrarySync(log: (msg: string) => void): void {
+  syncOn = true
   for (const id of builtIds()) {
     const s = addedDef(id)?.build?.state
     if (s === 'building' || s === 'updating') { log(`library ${id}: the build was interrupted; building it again`); startBuild(id) }

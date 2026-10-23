@@ -9,12 +9,13 @@ import { INDEX_BASE, INDEX_DIR, KB_ROOT } from './config.js'
 import { extractorReport, forgetExtractors } from './extractors.js'
 import {
   cancelAllIndexJobs, cancelIndexJob, getIndexJob, incrementalIndexDir, indexJobsRunning, indexStatus, startBuild, startDelete,
-  startIndexJob, startOtherJob, sweep,
+  requestSweep, startIndexJob, startOtherJob, sweep,
 } from './indexing.js'
 import { INDEX_LOG, indexLogInfo, tailIndexLog } from './indexLog.js'
 import { INDEX_SETTINGS_DEFAULTS, cpuCount, indexSettings, saveIndexSettings, threadsFor } from './indexSettings.js'
 import { KbError } from './kb.js'
 import { getLibrary, requireWritable } from './libraries.js'
+import { requestAllLibrarySyncs } from './libraryBuild.js'
 import { canRestart, launcherConfigFile, readLauncherSettings, requestRestart, saveLauncherSetting } from './lifecycle.js'
 import { effectiveSettings } from './settings.js'
 
@@ -177,6 +178,11 @@ export async function indexRoutes(app: FastifyInstance): Promise<void> {
     const body = (req.body ?? {}) as Record<string, unknown>
     const settings = await saveIndexSettings('kb', body)
     forgetExtractors()
+    // A change of depth, or of the speed of search by meaning, touches no
+    // file: the sync applies it, soon (indexing.ts). The libraries built
+    // here follow the main folder's speed.
+    if (['depth', 'documents', 'ocr', 'meaning', 'embeddings', 'meaningSpeed'].some(k => body[k] !== undefined)) requestSweep()
+    if (body.meaningSpeed !== undefined) requestAllLibrarySyncs()
     return { settings, threads: threadsFor(), readers: extractorReport(readerOptions()) }
   })
 

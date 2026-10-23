@@ -47,8 +47,10 @@ interface Row {
   /** What the index has: its full-text tables, and vectors for search by meaning. */
   fullText: boolean
   meaning: boolean
-  /** For a library the Studio builds: its depth, which can be changed here. */
-  depth?: { value: IndexDepth; reload: () => Promise<unknown> }
+  /** For a library the Studio builds: its depth, which can be changed here,
+   *  and when a change applies: at the sync, in the background, for one
+   *  built here; at the next Rebuild for one built on a remote system. */
+  depth?: { value: IndexDepth; reload: () => Promise<unknown>; applies: 'sync' | 'rebuild' }
   actions: ReactNode
   /** A line under the row across the whole table, such as a build's progress. */
   detail?: ReactNode
@@ -208,7 +210,7 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
           </DescriptionList>
         ),
         state, fullText: l.caps.fullText, meaning: l.caps.vectors,
-        depth: { value: l.depth ?? 'meaning-documents', reload: loadLibs },
+        depth: { value: l.depth ?? 'meaning-documents', reload: loadLibs, applies: 'sync' },
         actions: (
           <>
             {standalone && <Button variant="secondary" size="sm" disabled={indexing} onClick={() => setChanging(true)}>Change folder</Button>}
@@ -244,7 +246,7 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
           : b.error ? { tone: 'warning', text: 'Ready; the last pass failed', notes }
           : { tone: 'success', text: 'Ready', notes },
         fullText: l.caps.fullText, meaning: l.caps.vectors,
-        depth: { value: l.depth ?? DEFAULT_LIBRARY_DEPTH, reload: loadLibs },
+        depth: { value: l.depth ?? DEFAULT_LIBRARY_DEPTH, reload: loadLibs, applies: 'sync' },
         actions: (
           <>
             <Button variant="secondary" size="sm" loading={busy === l.id} disabled={busy !== null || isBuilding(b.state)}
@@ -309,7 +311,7 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
           : l.error ? { tone: 'warning', text: 'Ready; the last build failed', notes }
           : { tone: 'success', text: 'Ready', notes },
         fullText: !!l.fullText, meaning: !!l.vectors,
-        depth: { value: l.depth ?? DEFAULT_LIBRARY_DEPTH, reload: loadUser },
+        depth: { value: l.depth ?? DEFAULT_LIBRARY_DEPTH, reload: loadUser, applies: 'rebuild' },
         actions: (
           <>
             <Button variant="secondary" size="sm" loading={busy === l.id} disabled={busy !== null || isBuilding(l.state)}
@@ -436,7 +438,7 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
                   {r.depth
                     ? <IndexDepthSelect library={r.name} value={r.depth.value} disabled={busy !== null}
                         onChange={v => { const d = r.depth!; void act(r.key, async () => { await api.setLibraryDepth(r.key, v); await d.reload(); reloadAppConfig() },
-                          `${r.name}: ${depthLabel(v)}. It applies at the next build or sync.`) }} />
+                          `${r.name}: ${depthLabel(v)}. ${d.applies === 'sync' ? 'It is applied in the background now.' : 'It applies at the next Rebuild.'}`) }} />
                     : <AsBuilt fullText={r.fullText} meaning={r.meaning} />}
                 </Table.Item>
                 <Table.Item className="lib-actions">{r.actions}</Table.Item>
@@ -451,7 +453,8 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
           Depth is how far an index goes, each stop adding to the one before: Names; Text, the words inside files; Text + OCR,
           text in images and scanned pages; Meaning on documents, search by meaning over documents and images; and Meaning on
           all files, about three times the indexing time of Meaning on documents. For a library {cfg.appName} builds it is a
-          choice, applied at the next build or sync. An index connected as it is stays as it was built.
+          choice: one built here applies a new depth in the background at once, one built on a remote system at its next
+          Rebuild. An index connected as it is stays as it was built.
         </p>
       )}
 
