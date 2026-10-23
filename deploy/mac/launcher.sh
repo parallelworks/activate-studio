@@ -4,7 +4,14 @@
 #   ACTIVATE Studio                       start the server if needed and open the Studio
 #   ACTIVATE Studio --stop                stop the server until the app is next opened
 #   ACTIVATE Studio --uninstall [--purge] remove the background server and the app;
-#                                         --purge also removes the index, logs and settings
+#                                         --purge also removes the index (wherever it is kept),
+#                                         the indexes of libraries built here, logs, settings
+#                                         and the window's own data
+#   ACTIVATE Studio --uninstall --dry-run [--purge]
+#                                         list what would be removed and kept, one
+#                                         "kind<TAB>path" line each; removes nothing
+#
+# Your documents folder is never removed.
 #
 # The server runs as a LaunchAgent (com.parallelworks.activate-studio), on
 # 127.0.0.1 only, from studio-run.sh in this app. Its data lives in
@@ -182,31 +189,149 @@ start() {
   open_window "$port"
 }
 
+# What the Studio writes in its index folder (INDEX_DIR, server/src/config.ts
+# and indexing.ts); a folder the index was moved to keeps anything else.
+INDEX_ENTRIES='gufi extract embed-cache.db embed-cache.db-wal embed-cache.db-shm folders indexed-root'
+
+# The Python the app carries, else one on the PATH: it reads the Studio's
+# JSON files. It writes no bytecode caches, which would land inside the app
+# and break its signature's seal.
+pyrun() {
+  local p="$RES/python/bin/python3"
+  [ -x "$p" ] || p="$(command -v python3 || true)"
+  [ -n "$p" ] && PYTHONDONTWRITEBYTECODE=1 "$p" -B "$@"
+}
+
+# Whether a path is inside another (or the same).
+inside() { case "$1/" in "$2"/*) return 0 ;; esac; return 1; }
+
+# Whether a folder holds an index the Studio wrote there.
+studio_index() { [ -d "$1/gufi" ] || [ -e "$1/indexed-root" ]; }
+
+# What an uninstall removes and keeps, as "kind<TAB>path" lines. The app's
+# Uninstall dialog shows this list and the removal follows it, so the two
+# never differ. Kinds: server (the LaunchAgent), app, update-copy, data (the
+# Studio's data folder), index (an index moved elsewhere: only the Studio's
+# entries in it), library-index (the index of a library built here, in a
+# folder chosen for it: only the index and its manifest), window-data, and
+# keep-documents and keep-data for what stays.
+plan() {
+  local purge="$1" kb base moved side d f libs
+  kb="$(setting KB_ROOT)"
+  printf 'server	%s
+' "$AGENT"
+  if [ -f "$CONTENTS/Info.plist" ] && grep -q "<string>$LABEL</string>" "$CONTENTS/Info.plist"; then
+    printf 'app	%s
+' "$APP"
+    # The copies updates keep beside it (.<name>.previous and others).
+    for side in previous new unpack failed; do
+      d="$(dirname "$APP")/.$(basename "$APP").$side"
+      [ -e "$d" ] && printf 'update-copy	%s
+' "$d"
+    done
+  fi
+  if [ "$purge" = 1 ]; then
+    [ -d "$DATA" ] && printf 'data	%s
+' "$DATA"
+    base="$(setting INDEX_BASE)"
+    base="${base:-$DATA/index}"
+    # INDEX_BASE set by hand outside the data folder, when it is the Studio's.
+    if [ -d "$base" ] && ! inside "$base" "$DATA" && { [ -f "$base/libraries.json" ] || [ -f "$base/indexing.json" ] || studio_index "$base"; }; then
+      printf 'data	%s
+' "$base"
+    fi
+    moved="$(setting STUDIO_INDEX_DIR)"
+    if [ -n "$moved" ] && [ -d "$moved" ] && ! inside "$moved" "$DATA" && ! inside "$moved" "$base" && studio_index "$moved"; then
+      printf 'index	%s
+' "$moved"
+    fi
+    # Libraries built of folders here, with their index in a folder chosen
+    # for it: those holding the manifest the Studio writes beside the index.
+    libs="$(pyrun -c 'import json, sys
+try: defs = json.load(open(sys.argv[1]))
+except Exception: defs = []
+for d in defs if isinstance(defs, list) else []:
+    b = d.get("build") if isinstance(d, dict) else None
+    if isinstance(b, dict) and isinstance(b.get("indexDir"), str) and b["indexDir"].startswith("/"): print(b["indexDir"])' "$base/libraries.json" 2>/dev/null || true)"
+    while IFS= read -r d; do
+      [ -n "$d" ] && [ -f "$d/.studio-index.json" ] || continue
+      inside "$d" "$DATA" || inside "$d" "$base" || inside "$kb" "$d" || printf 'library-index	%s
+' "$d"
+    done <<<"$libs"
+    for f in "$HOME/Library/WebKit/$LABEL" "$HOME/Library/Caches/$LABEL" "$HOME/Library/HTTPStorages/$LABEL" \
+      "$HOME/Library/HTTPStorages/$LABEL.binarycookies" "$HOME/Library/Saved Application State/$LABEL.savedState" \
+      "$HOME/Library/Preferences/$LABEL.plist"; do
+      [ -e "$f" ] && printf 'window-data	%s
+' "$f"
+    done
+  else
+    [ -d "$DATA" ] && printf 'keep-data	%s
+' "$DATA"
+  fi
+  printf 'keep-documents	%s
+' "${kb:-$HOME/Documents/ACTIVATE Studio}"
+}
+
+# The index a library built here keeps in a folder chosen for it: the tree
+# its manifest names, the manifest, and the build's staging folders; the
+# folder itself only when nothing else is left in it.
+remove_library_index() {
+  local d="$1" tree s
+  tree="$(pyrun -c 'import json, sys; print(json.load(open(sys.argv[1])).get("index", ""))' "$d/.studio-index.json" 2>/dev/null || true)"
+  if [ -n "$tree" ] && inside "$tree" "$d" && [ "$tree" != "$d" ]; then rm -rf "$tree"; fi
+  for s in "$d"/.build "$d"/.old "$d"/.inc-*; do [ -e "$s" ] && rm -rf "$s"; done
+  rm -f "$d/.studio-index.json"
+  rmdir "$d" 2>/dev/null || true
+}
+
+# The Studio's entries in a folder the index was moved to; the folder only
+# when nothing else is left in it.
+remove_moved_index() {
+  local d="$1" e
+  for e in $INDEX_ENTRIES; do rm -rf "${d:?}/$e"; done
+  for e in "$d"/gufi.staging-* "$d"/inc-*; do [ -e "$e" ] && rm -rf "$e"; done
+  rmdir "$d" 2>/dev/null || true
+}
+
 uninstall() {
+  local purge=0 dry=0 a lines kind path
+  for a in "$@"; do
+    case "$a" in
+      --purge) purge=1 ;;
+      --dry-run) dry=1 ;;
+    esac
+  done
+  # Worked out before anything is removed: the data folder holds the list
+  # of libraries.
+  lines="$(plan "$purge")"
+  if [ "$dry" = 1 ]; then
+    printf '%s\n' "$lines"
+    return
+  fi
   stop
   rm -f "$AGENT"
   launchctl enable "$SERVICE" 2>/dev/null || true
-  local kb
-  kb="$(setting KB_ROOT)"
-  if [ "${1:-}" = --purge ]; then
-    rm -rf "$DATA"
-    echo "Removed the index, logs and settings ($DATA)."
-  else
-    echo "Kept the index, logs and settings in $DATA (--purge removes them)."
-  fi
-  echo "Your documents are untouched, in ${kb:-$HOME/Documents/ACTIVATE Studio}."
-  if [ -f "$CONTENTS/Info.plist" ] && grep -q "<string>$LABEL</string>" "$CONTENTS/Info.plist"; then
-    # With the copies updates keep beside it (.<name>.previous and others).
-    local side
-    for side in previous new unpack failed; do rm -rf "$(dirname "$APP")/.$(basename "$APP").$side"; done
-    rm -rf "$APP"
-    echo "Removed $APP."
-  fi
+  while IFS=$'\t' read -r kind path; do
+    [ -n "$path" ] || continue
+    case "$kind" in
+      data) rm -rf "$path"; echo "Removed the index, logs and settings ($path)." ;;
+      index) remove_moved_index "$path"; echo "Removed the index kept in $path." ;;
+      library-index) remove_library_index "$path"; echo "Removed the library index in $path." ;;
+      window-data) rm -rf "$path"; echo "Removed $path." ;;
+      update-copy) rm -rf "$path" ;;
+      keep-data) echo "Kept the index, logs and settings in $path (--purge removes them)." ;;
+      keep-documents) echo "Your documents are untouched, in $path." ;;
+    esac
+  done <<<"$lines"
+  # The app last, since this script is inside it.
+  while IFS=$'\t' read -r kind path; do
+    if [ "$kind" = app ]; then rm -rf "$path"; echo "Removed $path."; fi
+  done <<<"$lines"
 }
 
 case "${1:-}" in
   --stop) stop; echo "ACTIVATE Studio is stopped; opening the app starts it again." ;;
-  --uninstall) uninstall "${2:-}" ;;
-  --help|-h) sed -n '2,13p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' ;;
+  --uninstall) shift; uninstall "$@" ;;
+  --help|-h) sed -n '2,20p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' ;;
   *) start ;;    # Finder may pass -psn_... on older systems
 esac

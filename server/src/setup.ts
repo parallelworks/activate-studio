@@ -170,6 +170,8 @@ export async function setupRoutes(app: FastifyInstance): Promise<void> {
       standalone: true,
       canRestart: canRestart() && !!launcherConfigFile(),
       launcher: !!launcherConfigFile(),
+      // The macOS app, and where it is: Settings, Server says how to uninstall it.
+      macApp: process.env.STUDIO_APP_BUNDLE || null,
       // The port the Studio listens on; its MCP endpoint is on the same one.
       port: PORT,
       portNext: nextPort(),

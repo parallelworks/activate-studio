@@ -267,3 +267,85 @@ test('install.sh verifies the archive and puts the app in place, replacing an ol
 })
 
 test.after(() => fs.rmSync(tmp, { recursive: true, force: true }))
+
+test('uninstall lists what it removes and keeps, then removes exactly that; the documents folder stays', () => {
+  const root = path.join(tmp, 'uninstall')
+  const { launcher } = bundle(root, '#!/bin/sh\n')
+  const label = 'com.parallelworks.activate-studio'
+  const app = path.join(root, 'ACTIVATE Studio.app')
+  write(path.join(app, 'Contents', 'Info.plist'), `<plist><dict><key>CFBundleIdentifier</key><string>${label}</string></dict></plist>\n`)
+  write(path.join(root, '.ACTIVATE Studio.app.previous', 'Contents', 'Info.plist'), '')
+  const home = path.join(root, 'home')
+  const bin = path.join(root, 'bin')
+  write(path.join(bin, 'launchctl'), '#!/bin/sh\n', 0o755)
+  const data = path.join(home, 'Library', 'Application Support', 'ACTIVATE Studio')
+  const docs = path.join(home, 'Documents', 'Notes')
+  write(path.join(docs, 'keep.md'), 'mine\n')
+  // The index moved to a folder of its own, beside a file of the person's.
+  const moved = path.join(home, 'External', 'Studio index')
+  write(path.join(moved, 'gufi', 'Notes', 'db.db'), 'x')
+  write(path.join(moved, 'extract', 'a.txt'), 'x')
+  write(path.join(moved, 'embed-cache.db'), 'x')
+  write(path.join(moved, 'inc-3-77', 'db.db'), 'x')
+  write(path.join(moved, 'other.txt'), 'not the Studio\'s')
+  write(path.join(data, 'studio.env'), `PORT='4180'\nKB_ROOT='${docs}'\nSTUDIO_INDEX_DIR='${moved}'\n`)
+  // Built libraries: one with its index in a chosen folder (with the
+  // manifest), one whose folder has no manifest, one in the data folder.
+  const chosen = path.join(home, 'Indexes', 'papers')
+  write(path.join(chosen, 'papers', 'db.db'), 'x')
+  write(path.join(chosen, '.studio-index.json'), JSON.stringify({ version: 1, index: path.join(chosen, 'papers'), indexDir: chosen }))
+  write(path.join(chosen, 'mine.txt'), 'the person\'s')
+  const bare = path.join(home, 'Indexes', 'bare')
+  write(path.join(bare, 'tree', 'db.db'), 'x')
+  write(path.join(data, 'index', 'libraries.json'), JSON.stringify([
+    { id: 'papers', indexRoot: path.join(chosen, 'papers'), build: { indexDir: chosen, managed: false } },
+    { id: 'bare', indexRoot: path.join(bare, 'tree'), build: { indexDir: bare, managed: false } },
+    { id: 'own', indexRoot: path.join(data, 'index', 'libraries', 'own', 'index', 'x'), build: { indexDir: path.join(data, 'index', 'libraries', 'own', 'index'), managed: true } },
+    { id: 'site', indexRoot: '/data/site-index' },
+  ]))
+  write(path.join(data, 'index', 'libraries', 'own', 'index', '.studio-index.json'), '{}')
+  const webkit = path.join(home, 'Library', 'WebKit', label)
+  const prefs = path.join(home, 'Library', 'Preferences', `${label}.plist`)
+  write(path.join(webkit, 'WebsiteData', 'x'), 'x')
+  write(prefs, 'x')
+  const agent = path.join(home, 'Library', 'LaunchAgents', `${label}.plist`)
+  write(agent, 'x')
+
+  const env = { HOME: home, PATH: `${bin}:/usr/bin:/bin` }
+  const run = (...args) => spawnSync(launcher, ['--uninstall', ...args], { env, encoding: 'utf8' })
+  const lines = out => out.trim().split('\n').map(l => l.split('\t'))
+
+  // Without --purge: the server and the app, with the data and documents kept.
+  let r = run('--dry-run')
+  assert.equal(r.status, 0, r.stderr)
+  assert.deepEqual(lines(r.stdout), [
+    ['server', agent], ['app', app], ['update-copy', path.join(root, '.ACTIVATE Studio.app.previous')],
+    ['keep-data', data], ['keep-documents', docs],
+  ])
+  // With --purge: the data, the moved index, the chosen library index (not
+  // the one without a manifest, nor the one in the data folder), and the
+  // window's data; never the documents.
+  r = run('--dry-run', '--purge')
+  assert.equal(r.status, 0, r.stderr)
+  assert.deepEqual(lines(r.stdout), [
+    ['server', agent], ['app', app], ['update-copy', path.join(root, '.ACTIVATE Studio.app.previous')],
+    ['data', data], ['index', moved], ['library-index', chosen],
+    ['window-data', webkit], ['window-data', prefs],
+    ['keep-documents', docs],
+  ])
+  assert.ok(fs.existsSync(app) && fs.existsSync(data) && fs.existsSync(moved), 'a dry run removes nothing')
+
+  r = run('--purge')
+  assert.equal(r.status, 0, r.stderr)
+  assert.match(r.stdout, /Your documents are untouched/)
+  for (const gone of [agent, app, path.join(root, '.ACTIVATE Studio.app.previous'), data, webkit, prefs,
+    path.join(moved, 'gufi'), path.join(moved, 'extract'), path.join(moved, 'embed-cache.db'), path.join(moved, 'inc-3-77'),
+    path.join(chosen, 'papers'), path.join(chosen, '.studio-index.json')]) {
+    assert.ok(!fs.existsSync(gone), `${gone} is removed`)
+  }
+  // What the Studio did not write stays, and so do the documents.
+  assert.equal(fs.readFileSync(path.join(moved, 'other.txt'), 'utf8'), 'not the Studio\'s')
+  assert.equal(fs.readFileSync(path.join(chosen, 'mine.txt'), 'utf8'), 'the person\'s')
+  assert.ok(fs.existsSync(path.join(bare, 'tree', 'db.db')))
+  assert.equal(fs.readFileSync(path.join(docs, 'keep.md'), 'utf8'), 'mine\n')
+})

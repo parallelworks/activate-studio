@@ -282,6 +282,18 @@ if [ "$RUN" = 1 ]; then
       sleep 2
       check "and the server is gone" sh -c "! curl -fsS -m 2 http://127.0.0.1:$PORT_FREE/api/version"
       launchctl enable "gui/$(id -u)/$LABEL" 2>/dev/null || true
+      # The uninstall plan the app's Uninstall dialog shows, read with the
+      # app's own Python: a library index in a chosen folder is listed, the
+      # documents are kept, and a dry run removes nothing.
+      LIBIDX="$T/chosen-index"
+      mkdir -p "$LIBIDX/tree" "$H/Library/Application Support/ACTIVATE Studio/index"
+      printf '{"index":"%s"}\n' "$LIBIDX/tree" >"$LIBIDX/.studio-index.json"
+      printf '[{"id":"lib","indexRoot":"%s","build":{"indexDir":"%s","managed":false}}]\n' "$LIBIDX/tree" "$LIBIDX" \
+        >"$H/Library/Application Support/ACTIVATE Studio/index/libraries.json"
+      PLAN="$(env HOME="$H" "$L" --uninstall --dry-run --purge 2>&1 || true)"
+      check "the uninstall plan lists the app, the data and a library index" sh -c "printf '%s\n' \"\$1\" | grep -q '^app	' && printf '%s\n' \"\$1\" | grep -q '^data	' && printf '%s\n' \"\$1\" | grep -q '^library-index	$LIBIDX\$'" _ "$PLAN"
+      check "and keeps the documents" sh -c "printf '%s\n' \"\$1\" | grep -q '^keep-documents	$T/corpus\$'" _ "$PLAN"
+      check "a dry run removes nothing" test -f "$LIBIDX/.studio-index.json"
     fi
 
     # Nothing written into the app while it ran: a file added or changed
