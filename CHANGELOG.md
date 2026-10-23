@@ -2,6 +2,62 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.163 (2026-10-23)
+
+### feat(brand): with no icon uploaded, the Studio mark takes the accent (#559)
+
+Where no icon has been uploaded, the sidebar and the empty chat show the Studio mark. It now follows the accent chosen in Settings, Appearance.
+
+- **Default accent (Navy):** the mark is exactly the app icon (`/favicon.svg`), so it matches the macOS app's Dock icon.
+- **Any other accent, custom ones included:** the same drawing, with the tile running from a light to a deep shade of the accent's ink and the spark in the accent's lighter, dark-theme ink. `studioMark.ts` builds it as an SVG data URL, cached per accent. `accents.ts` provides the colors (`markColors`).
+- **Unchanged:** an uploaded icon still takes the mark's place. The macOS app icon and the browser tab's icon stay the app icon, since they cannot change at runtime.
+
+**Tests:**
+
+- The default accent gives the app icon.
+- Another accent gives the same drawing with its colors.
+- A custom accent differs from both.
+- An uploaded icon still wins.
+
+Web suite: 218 pass.
+
+### fix(setup): the libraries step asks for one folder; optional fields wait under More options (#558)
+
+The setup wizard's Other libraries step opened on three tabs (this machine, SSH, ACTIVATE) and four fields for connecting an existing GUFI index. That is rarely what someone setting up the Studio has. Feedback was that the step was overwhelming.
+
+The step now:
+
+- Leads with the common case: another folder on this computer, indexed here in the background. It shows one field, **Folder to index**, with Browse, then Check and Build the index.
+- Opens an existing GUFI index, an index over SSH, or one on ACTIVATE through one link: **Other kinds: an existing GUFI index, or one on another machine**. That link shows the previous tabs.
+- Says in one sentence that the step is optional and that libraries can be added any time in Settings, Libraries.
+
+The library form on this computer, in setup and in Settings, Add a library, now shows only the folder that has to be given. The index folder (build) or source directory (connect), the label and the identifier sit under **More options**, collapsed.
+
+Checked in headless Chromium (dark, 1100 px wide): the step is the sentence, one field, Browse, More options, the two buttons and the link. Web suite: setup and libraries tests updated and passing.
+
+### feat(setup): a new personal install starts with AI off, Workflows hidden, a mission and ten questions (#560)
+
+**Defaults for a new install on a computer of its own** (sign-in off, not deployed by the platform, setup not finished):
+
+- AI features start off.
+- The Workflows page starts hidden.
+- `/api/setup/complete` (Finish, or Finish later) saves `aiEnabled` and `sections` as setup showed them where they were still unset, so they stay that way.
+- An install that finished setup before this keeps its own settings.
+- Deployments that sign people in are unchanged.
+
+**The mission and questions** (feedback: a Mac install showed 3 questions and no mission):
+
+- A blank saved mission, or the three deployment questions an earlier version saved, no longer hide the personal defaults.
+- Saving the defaults as they are stores nothing, so later defaults reach them.
+- The personal list grows from 5 to 10 questions. The empty chat shows a random 4.
+
+**Workflows wording** (Settings, Workflows, and the setup sidebar step) names the two ways to run workflows:
+
+- ACTIVATE workflows, with an ACTIVATE credential.
+- Workflow YAML files of your own, without ACTIVATE, with Meridian, the open-source engine.
+
+**Tests:** the server suite's new tests cover the defaults, the old saved values, saving defaults unchanged, and what finishing setup saves. The tests that use a model run with `AI_ENABLED=1`, as a Studio whose AI features were turned on. Web suite: 216 pass. HELP is updated.
+
 ## v1.162 (2026-10-23)
 
 ### fix(index): an unrunnable pdftotext falls back to pypdf, lock files are skipped, staging starts empty (#553)
@@ -19,6 +75,10 @@ Three problems from a Full build's log on a Mac:
 With no icon uploaded, the top of the sidebar showed a letter badge built from the Studio's name, such as "M" for a Studio named after its owner. The macOS app icon and the empty chat show the Studio mark (`/favicon.svg`, the same artwork as the app icon). The sidebar now shows that mark too. An uploaded icon, light or dark, still takes its place. The letter badge and its styles are removed.
 
 A web test checks the default mark in the rendered sidebar. Web suite: 216 pass.
+
+### Change log through v1.162 (#557)
+
+Regenerated with `node scripts/release-notes.mjs --changelog --next v1.162` before tagging v1.162.
 
 ## v1.161 (2026-10-23)
 
