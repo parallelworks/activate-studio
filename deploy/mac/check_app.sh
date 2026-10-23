@@ -130,6 +130,10 @@ fi
 MIN="$(python3 -c 'import plistlib,sys; print(plistlib.load(open(sys.argv[1],"rb"))["LSMinimumSystemVersion"])' "$C/Info.plist")"
 NATIVE=("$R/node/bin/node" "$R"/python/bin/python3.* "$R"/python/lib/*.dylib "$R"/python/lib/python3.*/lib-dynload/*.so "$G"/bin/* "$G"/lib/*.dylib
   "$O"/bin/* "$O"/lib/*.dylib)
+# The Python packages' native libraries (onnxruntime, numpy and others), read
+# NUL-separated since the app's path has a space in it.
+while IFS= read -r -d '' f; do NATIVE+=("$f"); done < <(
+  find "$R"/python/lib/python3.*/site-packages -type f \( -name '*.so' -o -name '*.dylib' \) -print0)
 if out="$(python3 "$HERE/macho_check.py" --max-minos "$MIN" "${NATIVE[@]}" 2>&1)"; then
   ok "arm64, signed, runs on macOS $MIN, libraries resolve without DYLD_LIBRARY_PATH"
 else

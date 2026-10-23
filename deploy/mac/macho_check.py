@@ -181,6 +181,9 @@ def main():
         major, _, minor = args.max_minos.partition('.')
         floor = (int(major) << 16) | (int(minor or 0) << 8)
     if args.print_minos:
+        for f in args.files:
+            if not os.path.lexists(f):
+                print(f'macho_check: {f}: no such file; left out of the minimum macOS', file=sys.stderr)
         infos = [parse(f) for f in args.files if not os.path.islink(f) and os.path.isfile(f)]
         print(version(max([i.get('minos') or 0 for i in infos if i] or [0])))
         return
