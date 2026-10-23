@@ -2,6 +2,105 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.164 (2026-10-23)
+
+### fix: Delete index and Remove ask in a dialog, red where they delete; Search says what it can match (#556)
+
+**Delete index and Remove**
+
+- **Delete index** was a plain button that opened an inline question. It is now red (`danger-outline`) and asks in an alert dialog (the package's ConfirmModal, destructive).
+  - The dialog focuses Keep it, so a stray Enter deletes nothing.
+  - It says what stops working and that the folder's files are not touched.
+  - A failure shows in the dialog, which stays open for another try.
+- A library's **Remove** asked nothing, even where it deletes the index the Studio keeps in a folder of its own. It now asks first and says what goes and what stays:
+  - Removing a built library whose index sits in a chosen folder: the index stays in that folder.
+  - Removing a connected index, or a remote one: the index stays where it is.
+  - Only when the Studio's own index is deleted is the button red and the dialog an alert.
+
+**Search wording**
+
+The search box's hint listed only the search operators, and the page's note always promised meaning. Both now follow the libraries in scope, through `web/src/searchReach.ts`:
+
+| What the libraries in scope support | Search box hint | Page note |
+|---|---|---|
+| Search by meaning, in any of them | Ask in plain words, or "exact phrase", OR, -exclude, prefix* | Names, words and meaning |
+| Full text only | Whole words; "exact phrase", OR, -exclude, prefix* | Names and words |
+| Names only | Part of a file or folder name | File and folder names |
+
+**Tests:** web 217 pass, with new tests for the dialogs, the red buttons, and the hint and note in each case.
+
+### feat(index): read .ppt, .xls and OpenDocument without LibreOffice, and show how to install what is missing (#555)
+
+`.ppt`, `.xls`, `.odt`, `.odp` and `.ods` indexed by name only unless LibreOffice was installed, and the macOS app does not carry it (about 1 GB). This adds small readers instead, and makes the tools that remain optional easy to install.
+
+**Readers** (`indexer/enrich.py`; nothing to install beyond what ships):
+- OpenDocument (`.odt`, `.ods`, `.odp`, `.odg`), with the standard library. It reads paragraphs, headings, lists, tables as tab-separated rows, sheets under their names, slides with their speaker notes, and a text document's headers and footers. Comments are left out, as for Word documents.
+- `.xls` through xlrd 2.0.2 (BSD-3-Clause). It reads each sheet under its name, numbers as Excel shows them (15 significant digits) and dates as dates. Its warnings go to `/dev/null`, since stdout carries the progress lines.
+- `.ppt` through olefile 0.47 (BSD-2-Clause). It reads TextCharsAtom and TextBytesAtom records in the "PowerPoint Document" stream: slide text, text boxes, tables and speaker notes. Masters and handouts are skipped, and so are field stand-ins.
+- A file these cannot read goes to LibreOffice where it is installed and the setting allows. LibreOffice keeps rendering previews. The setting now reads "LibreOffice, for previews and for Office files the built-in readers cannot read".
+
+**Packaging:** xlrd and olefile are pinned with their SHA-256 in `indexer/embed_deps.json` (`readers`). `fetch_embed.py --deps` installs them wherever the ONNX packages go:
+- the macOS app's Python; `check_app.sh` checks that they import;
+- the container (`app.def`);
+- a clone (`setup_gufi.sh`);
+- the hosted bundle's wheel cache and the workflow's per-launch step, which now also checks `import xlrd, olefile`.
+
+`--readers-only` installs just those two; CI runs it, so their tests fail rather than skip. Size: 211 KB of wheels, 1.3 MB unpacked.
+
+**Installing what is still missing** (Settings, General, Indexing, under "What this computer can read"):
+- One line per missing tool, saying what it adds:
+  - tesseract: "OCR reads scanned PDFs and text in images"
+  - poppler: PDFs the bundled readers cannot read, and OCR of scanned pages
+  - LibreOffice: "renders previews of Office files"
+- The install command for this machine, with a copy button:
+  - `brew install tesseract`, `brew install poppler`, `brew install --cask libreoffice` when Homebrew is at `/opt/homebrew/bin/brew` or `/usr/local/bin/brew`;
+  - a link to brew.sh when it is not;
+  - `sudo apt-get install tesseract-ocr poppler-utils libreoffice` package by package on Debian or Ubuntu.
+- **Check again** re-reads `/api/index/extractors?fresh=1`. A tool found since is named, with "The next index update uses it" and **Update the index now**, the latter on a single-user Studio when nothing is running.
+- The Studio shows these commands and runs none of them. The report carries this as `install` (`platform`, `brew`, `apt`, `items`).
+
+**Comparison with LibreOffice** (24.2, on this host).
+
+Each file was converted by LibreOffice to the matching OOXML format, then read two ways:
+- with python-docx (paragraphs, tables, headers and footers), openpyxl (sheet names and computed cell values) and python-pptx (every shape, groups, tables and notes): what LibreOffice extracts;
+- with enrich.py's own OOXML regex reader: today's path.
+
+Recall is the share of that word set the new reader also gets.
+
+The files:
+- generated with python-docx, openpyxl and python-pptx, with headings, lists, a merged table cell, a header and footer, several sheets, dates, a formula, merged cells, speaker notes, a text box, a table and non-ASCII text, then converted by LibreOffice to each format;
+- 28 public test documents: Apache POI's `test-data` (Apache-2.0) for `.ppt` and `.xls`, and LibreOffice core's `qa` documents (MPL-2.0) for OpenDocument. These were downloaded for this comparison and are not committed.
+
+| Format | Files | Recall vs LibreOffice's content | Recall vs today's path | What it misses |
+|---|---|---|---|---|
+| .odt | 7 | 90/90 = 100% | 75/80 = 93.8% | nothing; the gap to today's path is that path gluing words across line breaks ("One" + break + "list" becomes `onelist`) |
+| .ods | 7 | 65/68 = 95.6% | 52/126 = 41.3% | a stale cached formula result in a test file (`=SUM(2;2)` stored as 5), which LibreOffice recalculates; a zero shown blank; a sheet name LibreOffice assigns to an unnamed sheet |
+| .xls | 9 | 359/359 = 100% without the fuzzed file; 359/407 = 88.2% with it | 338/584 = 57.9% | a fuzzer-minimized file, which LibreOffice reads as binary junk (`_x0001_...`) and xlrd refuses |
+| .odp | 6 | 47/48 = 97.9% | 36/39 = 92.3% | the word "number" from a slide-number field's `<number>` stand-in, dropped on purpose |
+| .ppt | 6 | 59/59 = 100% | 48/48 = 100% | nothing |
+
+The "today's path" column is low for spreadsheets because that path's regex reads shared-string index numbers, formula text and header codes (`&C`, `&P`, `&12`) as words.
+
+Beyond today's path, the readers also index speaker notes (`.ppt`, `.odp`) and `.odt` headers and footers.
+
+Two gaps were found and closed along the way: `.odt` headers and footers (from `styles.xml`), and numbers printed at full float precision rather than 15 significant digits.
+
+**Robustness:** 120 Apache POI `.ppt` and `.xls` files, including malformed, fuzzed, password-protected and empty ones:
+- nothing raised, and nothing was written to stdout;
+- the slowest took 0.02 s;
+- 51 of 60 `.ppt` and 58 of 60 `.xls` files gave text; the rest are protected, empty or fuzzed.
+
+**Tests:**
+- `server/test/officeReaders.test.mjs`:
+  - OpenDocument text, spreadsheet and presentation files built in the test;
+  - committed fixtures written with LibreOffice from text made for them: `testdata/office/budget.xls` (7.7 KB) and `harbor-survey.ppt.gz` (22.7 KB gzipped, 650 KB raw);
+  - damaged files through the dispatcher;
+  - the readiness report and the install commands for macOS with and without Homebrew, and Debian.
+- `web/test/readerInstalls.test.tsx`: the commands, the copy button, the Homebrew link, Check again, the found message, and Update the index now.
+- Server: 502 passed, 4 skipped (the ONNX tests that need model files). Web: 219 passed.
+
+**Docs:** HELP, REFERENCE, MACOS and NOTICE are updated, and `indexer/requirements.txt`.
+
 ## v1.163 (2026-10-23)
 
 ### feat(brand): with no icon uploaded, the Studio mark takes the accent (#559)
@@ -57,6 +156,10 @@ Checked in headless Chromium (dark, 1100 px wide): the step is the sentence, one
 - Workflow YAML files of your own, without ACTIVATE, with Meridian, the open-source engine.
 
 **Tests:** the server suite's new tests cover the defaults, the old saved values, saving defaults unchanged, and what finishing setup saves. The tests that use a model run with `AI_ENABLED=1`, as a Studio whose AI features were turned on. Web suite: 216 pass. HELP is updated.
+
+### Change log through v1.163 (#562)
+
+Regenerated with `node scripts/release-notes.mjs --changelog --next v1.163` before tagging v1.163.
 
 ## v1.162 (2026-10-23)
 
