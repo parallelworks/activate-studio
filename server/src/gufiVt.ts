@@ -88,10 +88,12 @@ export function gufiVtAvailable(): Promise<boolean> {
   if (forced !== null) return Promise.resolve(forced)
   available ??= new Promise(resolve => {
     const sqlite = path.join(GUFI_BIN, 'gufi_sqlite3')
-    if (!fs.existsSync(sqlite) || !vtPath(vtCommand.node) || !vtPath(vtCommand.wrapper)) return resolve(false)
+    // macOS has no /bin/true, only /usr/bin/true; most Linux systems have both.
+    const nothing = ['/usr/bin/true', '/bin/true'].find(p => fs.existsSync(p))
+    if (!fs.existsSync(sqlite) || !nothing || !vtPath(vtCommand.node) || !vtPath(vtCommand.wrapper)) return resolve(false)
     // A remote location whose command prints nothing and exits 0 answers
     // with no rows; a build without remote_cmd refuses the table.
-    const probe = "CREATE VIRTUAL TABLE temp.p USING gufi_vt(index='/', E=\"SELECT name FROM vrpentries;\", remote_cmd='/bin/true'); SELECT count(*) FROM temp.p;"
+    const probe = `CREATE VIRTUAL TABLE temp.p USING gufi_vt(index='/', E="SELECT name FROM vrpentries;", remote_cmd='${nothing}'); SELECT count(*) FROM temp.p;`
     execFile(sqlite, [':memory:', probe], { timeout: 15_000, env: gufiEnv() },
       (err, out) => resolve(!err && String(out).trim() === '0'))
   })

@@ -359,7 +359,7 @@ if [ "$RUN" = 1 ]; then
           clean env PATH="$G/bin:/usr/bin:/bin" "$G/bin/gufi_sqlite3" :memory: \
             "CREATE VIRTUAL TABLE temp.l USING gufi_vt(index='$T/idx/corpus', E=\"SELECT name FROM vrpentries;\"); SELECT count(*) FROM temp.l;"; echo "local location: exit $?"
           clean "$G/bin/gufi_sqlite3" :memory: \
-            "CREATE VIRTUAL TABLE temp.p USING gufi_vt(index='/', E=\"SELECT name FROM vrpentries;\", remote_cmd='/bin/true'); SELECT count(*) FROM temp.p;"; echo "remote probe: exit $?"
+            "CREATE VIRTUAL TABLE temp.p USING gufi_vt(index='/', E=\"SELECT name FROM vrpentries;\", remote_cmd='/usr/bin/true'); SELECT count(*) FROM temp.p;"; echo "remote probe: exit $?"
         } >"$T/vtdiag.txt" 2>&1 || true
         sed 's/^/        /' "$T/vtdiag.txt"
       fi
