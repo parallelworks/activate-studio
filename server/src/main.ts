@@ -1,3 +1,6 @@
+// First, so every request any module makes trusts the system's certificate
+// authorities and goes through the proxy, if there is one.
+import './netStart.js'
 import Fastify from 'fastify'
 import { fleetRoutes, startFleet } from './fleet.js'
 import { setStopper } from './lifecycle.js'

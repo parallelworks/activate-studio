@@ -102,6 +102,77 @@ esac
   }
 })
 
+// scutil --proxy as macOS prints it, for a stand-in scutil.
+const SCUTIL_PROXY = `<dictionary> {
+  ExceptionsList : <array> {
+    0 : *.local
+    1 : intranet.example.org
+  }
+  ExcludeSimpleHostnames : 1
+  HTTPEnable : 1
+  HTTPPort : 3128
+  HTTPProxy : proxy.example.org
+  HTTPSEnable : 1
+  HTTPSPort : 3129
+  HTTPSProxy : proxy.example.org
+  ProxyAutoConfigEnable : 1
+  ProxyAutoConfigURLString : http://wpad.example.org/wpad.dat
+}
+`
+function fakeScutil(dir, output) {
+  write(path.join(dir, 'scutil.out'), output)
+  write(path.join(dir, 'scutil'), `#!/bin/sh\n[ "$1" = --proxy ] && cat "${path.join(dir, 'scutil.out')}"\n`, 0o755)
+  return dir
+}
+
+test('the run loop gives the server the system\'s proxy unless studio.env names one, and logs a PAC file it does not follow', async () => {
+  const root = path.join(tmp, 'proxy')
+  const out = path.join(root, 'out')
+  fs.mkdirSync(out, { recursive: true })
+  const bin = fakeScutil(path.join(root, 'bin'), SCUTIL_PROXY)
+  const printed = spawnSync('bash', [path.join(MAC, 'studio-run.sh'), '--system-proxy'], { env: { PATH: `${bin}:/usr/bin:/bin` }, encoding: 'utf8' })
+  assert.equal(printed.stdout, [
+    'HTTPS_PROXY=http://proxy.example.org:3129',
+    'HTTP_PROXY=http://proxy.example.org:3128',
+    'NO_PROXY=localhost,127.0.0.1,::1,.local,intranet.example.org',
+    'PAC=http://wpad.example.org/wpad.dat', '',
+  ].join('\n'))
+  // No proxy turned on prints nothing; nor does a Mac without scutil.
+  fakeScutil(path.join(root, 'off'), '<dictionary> {\n  HTTPEnable : 0\n  HTTPSEnable : 0\n}\n')
+  assert.equal(spawnSync('bash', [path.join(MAC, 'studio-run.sh'), '--system-proxy'], { env: { PATH: `${path.join(root, 'off')}:/usr/bin:/bin` }, encoding: 'utf8' }).stdout, '')
+  assert.equal(spawnSync('bash', [path.join(MAC, 'studio-run.sh'), '--system-proxy'], { env: { PATH: '/usr/bin:/bin' }, encoding: 'utf8' }).stdout, '')
+
+  const run = async (name, settings) => {
+    const dir = path.join(root, name)
+    const { res } = bundle(dir, `#!/bin/bash
+env | sort >"$OUT/env.${name}"; trap 'exit 0' TERM; while :; do sleep 0.1; done
+`)
+    const data = path.join(dir, 'data')
+    if (settings) write(path.join(data, 'studio.env'), settings)
+    const loop = spawn('bash', [path.join(res, 'studio-run.sh'), data], {
+      env: { HOME: path.join(dir, 'home'), PATH: `${bin}:/usr/bin:/bin`, OUT: out }, stdio: 'ignore',
+    })
+    try {
+      const f = path.join(out, `env.${name}`)
+      assert.ok(await waitFor(() => fs.existsSync(f) && fs.readFileSync(f, 'utf8').includes('PATH=')), `the ${name} server started`)
+      return { env: envOf(f), log: fs.readFileSync(path.join(data, 'logs', 'studio.log'), 'utf8') }
+    } finally {
+      loop.kill('SIGTERM')
+      await waitFor(() => loop.exitCode !== null)
+    }
+  }
+  const system = await run('system')
+  assert.equal(system.env.HTTPS_PROXY, 'http://proxy.example.org:3129')
+  assert.equal(system.env.HTTP_PROXY, 'http://proxy.example.org:3128')
+  assert.equal(system.env.NO_PROXY, 'localhost,127.0.0.1,::1,.local,intranet.example.org')
+  assert.match(system.log, /the system's proxy is set by an automatic configuration file \(http:\/\/wpad\.example\.org\/wpad\.dat\), which the Studio does not follow/)
+  // studio.env's own proxy wins, and the system's NO_PROXY is not added.
+  const own = await run('own', "HTTPS_PROXY='http://chosen.example:8080'\n")
+  assert.equal(own.env.HTTPS_PROXY, 'http://chosen.example:8080')
+  assert.equal(own.env.HTTP_PROXY, undefined)
+  assert.equal(own.env.NO_PROXY, undefined)
+})
+
 test('opening the app installs and loads the agent, waits for the server, and opens an app window', () => {
   const root = path.join(tmp, 'open')
   const { res, launcher } = bundle(root, '#!/bin/sh\n')

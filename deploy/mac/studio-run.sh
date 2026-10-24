@@ -16,8 +16,44 @@
 # DATA/updates/rolled-back.json says so. A server that stays up a minute
 # clears the mark itself.
 #
+#
+# The server is given the system's proxy settings (System Settings, Network,
+# Proxies) as HTTPS_PROXY, HTTP_PROXY and NO_PROXY when studio.env sets no
+# proxy itself; launchd passes none, and Node follows only those variables.
+# A proxy set by an automatic configuration (PAC) file is not followed, and
+# the log says so.
+#
 # Usage: studio-run.sh DATA_DIR
+#        studio-run.sh --system-proxy   print those variables, one KEY=VALUE a line
 set -u
+
+# The system's proxy as KEY=VALUE lines, from `scutil --proxy`; PAC=<url>
+# when an automatic configuration file is set, for the log.
+system_proxy() {
+  command -v scutil >/dev/null 2>&1 || return 0
+  scutil --proxy 2>/dev/null | awk '
+    /ExceptionsList : <array>/ { inlist = 1; next }
+    inlist && /^[[:space:]]*}/ { inlist = 0; next }
+    inlist {
+      v = $0; sub(/^[[:space:]]*[0-9]+ : /, "", v); gsub(/[[:space:]]/, "", v)
+      sub(/^\*\./, ".", v)
+      if (v != "") ex = ex (ex == "" ? "" : ",") v
+      next
+    }
+    / : / { k = $1; v = $0; sub(/^[^:]*: /, "", v); gsub(/[[:space:]]/, "", v); s[k] = v }
+    END {
+      if (s["HTTPSEnable"] == "1" && s["HTTPSProxy"] != "") print "HTTPS_PROXY=http://" s["HTTPSProxy"] (s["HTTPSPort"] != "" ? ":" s["HTTPSPort"] : "")
+      if (s["HTTPEnable"] == "1" && s["HTTPProxy"] != "") print "HTTP_PROXY=http://" s["HTTPProxy"] (s["HTTPPort"] != "" ? ":" s["HTTPPort"] : "")
+      if ((s["HTTPSEnable"] == "1" && s["HTTPSProxy"] != "") || (s["HTTPEnable"] == "1" && s["HTTPProxy"] != ""))
+        print "NO_PROXY=localhost,127.0.0.1,::1" (ex != "" ? "," ex : "")
+      if (s["ProxyAutoConfigEnable"] == "1" && s["ProxyAutoConfigURLString"] != "") print "PAC=" s["ProxyAutoConfigURLString"]
+    }'
+}
+
+if [ "${1:-}" = --system-proxy ]; then
+  system_proxy
+  exit 0
+fi
 
 RES="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 DATA="${1:?usage: studio-run.sh DATA_DIR}"
@@ -108,6 +144,17 @@ while [ "$stopping" = 0 ]; do
       # shellcheck source=/dev/null
       . "$CONFIG"
       set +a
+    fi
+    # The system's proxy, read at each start since a laptop changes
+    # networks, unless studio.env names one.
+    if [ -z "${HTTPS_PROXY:-}${https_proxy:-}${HTTP_PROXY:-}${http_proxy:-}" ]; then
+      while IFS='=' read -r key value; do
+        case "$key" in
+          HTTPS_PROXY|HTTP_PROXY) export "$key=$value" ;;
+          NO_PROXY) [ -n "${NO_PROXY:-}${no_proxy:-}" ] || export "NO_PROXY=$value" ;;
+          PAC) echo "$(stamp) the system's proxy is set by an automatic configuration file ($value), which the Studio does not follow; set HTTPS_PROXY in studio.env if it cannot reach the internet" ;;
+        esac
+      done < <(system_proxy)
     fi
     if [ -n "${KB_ROOT:-}" ]; then
       # A folder the person chose holds their own material: no starter
