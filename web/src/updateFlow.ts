@@ -10,9 +10,15 @@ import { updatesApi, type UpdatePolicy, type UpdateState, type UpdatesStatus } f
  * An install ends with the server restarting on the new version. The page
  * then waits until /api/version reports that version and reloads, since its
  * own code is the old build. The status is read when the first reader
- * appears and every ten minutes after; with no readers left, everything is
- * forgotten.
+ * appears, every two minutes after, and again when the window is shown or
+ * focused, which also starts a check the server finds due (GET /api/updates
+ * does), so a version found while the Mac slept shows within seconds. A
+ * check under way is read again until it ends. With no readers left,
+ * everything is forgotten.
  */
+
+/** Sent by the macOS app's Check for Updates menu item: check now. */
+export const CHECK_EVENT = 'ade:check-updates'
 
 export interface Waiting {
   /** The version the page waits for; null takes any but `from`. */
@@ -61,7 +67,7 @@ export function isNewer(a: string, b: string): boolean {
 
 export const isVersion = (v: string) => parts(v) !== null
 
-const DEFAULTS = { pollMs: 1500, giveUpMs: 180_000, refreshMs: 10 * 60_000, reload: () => location.reload() }
+const DEFAULTS = { pollMs: 1500, giveUpMs: 180_000, refreshMs: 2 * 60_000, focusGapMs: 10_000, checkingMs: 2000, reload: () => location.reload() }
 const options = { ...DEFAULTS }
 
 /** Reloads the page, onto the version now running. */
@@ -85,6 +91,13 @@ let lastState: UpdateState = 'idle'
 let follow: { timer: number; from: string } | null = null
 let refresh: number | null = null
 let waitRun: object | null = null
+/** When the status was last asked for, so focus and visibility do not ask
+ *  again within focusGapMs. */
+let lastRead = 0
+/** A re-read pending while the server's check runs. */
+let checkingTimer: number | null = null
+let checkingReads = 0
+let detach: (() => void) | null = null
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 const errText = (e: unknown) => String((e as Error)?.message ?? e)
@@ -123,6 +136,12 @@ function waitFor(version: string | null, from: string): void {
 function apply(s: UpdatesStatus): void {
   lastState = s.state
   set({ status: s, readError: '' })
+  // A check the server is running (one this read started, say): read again
+  // shortly for its answer, a bounded number of times.
+  if (s.state === 'checking' && checkingTimer === null && checkingReads < 15) {
+    checkingReads++
+    checkingTimer = window.setTimeout(() => { checkingTimer = null; read(false) }, options.checkingMs)
+  } else if (s.state !== 'checking') checkingReads = 0
   // A restart quick enough to fall between two reads: the server already
   // runs the version being installed.
   if (target && s.state === 'idle' && bare(s.current.version) === bare(target)) { reloadOnNewVersion(); return }
@@ -173,6 +192,7 @@ function settle(): void {
 
 function read(first: boolean): void {
   const my = gen
+  lastRead = Date.now()
   updatesApi.status()
     .then(s => {
       if (my !== gen) return
@@ -182,19 +202,38 @@ function read(first: boolean): void {
     .catch(e => { if (my === gen && first) set({ readError: errText(e) }) })
 }
 
+const idle = () => !flow.none && !flow.busy && !follow && !flow.waiting
+
 function start(): void {
   read(true)
-  refresh = window.setInterval(() => {
-    if (!flow.none && !flow.busy && !follow && !flow.waiting) read(false)
-  }, options.refreshMs)
+  refresh = window.setInterval(() => { if (idle()) read(false) }, options.refreshMs)
+  // Shown again (unhidden, woken, switched back to): read now.
+  const onShow = () => {
+    if (document.visibilityState !== 'hidden' && idle() && Date.now() - lastRead >= options.focusGapMs) read(false)
+  }
+  const onCheck = () => { if (!flow.none && !flow.busy) void updateActions.check() }
+  document.addEventListener('visibilitychange', onShow)
+  window.addEventListener('focus', onShow)
+  window.addEventListener(CHECK_EVENT, onCheck)
+  detach = () => {
+    document.removeEventListener('visibilitychange', onShow)
+    window.removeEventListener('focus', onShow)
+    window.removeEventListener(CHECK_EVENT, onCheck)
+  }
 }
 
 function reset(): void {
   gen++
   if (follow) window.clearInterval(follow.timer)
   if (refresh !== null) window.clearInterval(refresh)
+  if (checkingTimer !== null) window.clearTimeout(checkingTimer)
+  detach?.()
+  detach = null
   follow = null
   refresh = null
+  checkingTimer = null
+  checkingReads = 0
+  lastRead = 0
   waitRun = null
   target = null
   asked = false

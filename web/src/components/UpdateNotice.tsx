@@ -5,11 +5,20 @@ import { bare, setUpdateFlowOptions, underWay, updateActions, useUpdateFlow } fr
 import { ReleaseList } from './ChangeList'
 import { UpdateProgress } from './UpdatesSection'
 
-/** The version Later was pressed for, in this browser. */
+/** The version Later was pressed for, in this browser, and until when. */
 const LATER_KEY = 'ade-update-later'
+/** How long Later hides the notice for that version. */
+export const LATER_MS = 24 * 3600_000
 
-function readLater(): string | null {
-  try { return localStorage.getItem(LATER_KEY) } catch { return null }
+interface Later { version: string; until: number }
+
+/** A Later still in force. A bare version, stored before Later expired,
+ *  hides nothing: it kept a version's notice away for good. */
+function readLater(raw: string | null = null): Later | null {
+  try {
+    const v = JSON.parse(raw ?? localStorage.getItem(LATER_KEY) ?? 'null') as Partial<Later> | null
+    return v && typeof v.version === 'string' && typeof v.until === 'number' && v.until > Date.now() ? { version: v.version, until: v.until } : null
+  } catch { return null }
 }
 
 /**
@@ -19,7 +28,7 @@ function readLater(): string | null {
  * the chat above all, keeps its room: What's new opens a dialog with the
  * changes in every newer version, newest first, and for a clone the commands
  * that update it. Update now installs (the app, when it can), and Later hides
- * the notice until a version newer than that one appears. While an install
+ * the notice for a day, or until a newer version appears. While an install
  * runs the line shows its progress; the footer's "update available" and
  * Settings, Updates stay either way.
  */
@@ -31,12 +40,12 @@ export function UpdateNotice({ pollMs, giveUpMs, reload }: {
 } = {}) {
   setUpdateFlowOptions({ pollMs, giveUpMs, reload })
   const flow = useUpdateFlow()
-  const [later, setLater] = useState<string | null>(readLater)
+  const [later, setLater] = useState<Later | null>(() => readLater())
   const [details, setDetails] = useState(false)
 
   // Later in another tab of the same Studio applies here too.
   useEffect(() => {
-    const onStorage = (e: StorageEvent) => { if (e.key === LATER_KEY) setLater(e.newValue) }
+    const onStorage = (e: StorageEvent) => { if (e.key === LATER_KEY) setLater(readLater(e.newValue ?? 'null')) }
     window.addEventListener('storage', onStorage)
     return () => window.removeEventListener('storage', onStorage)
   }, [])
@@ -45,11 +54,12 @@ export function UpdateNotice({ pollMs, giveUpMs, reload }: {
   if (flow.none || !status || status.mode === 'hosted' || !status.available || !status.latest) return null
   const latest = status.latest
   const installing = underWay(flow)
-  if (!installing && later && bare(later) === bare(latest.version)) return null
+  if (!installing && later && later.until > Date.now() && bare(later.version) === bare(latest.version)) return null
 
   const deferIt = () => {
-    try { localStorage.setItem(LATER_KEY, latest.version) } catch { /* hidden for this page only */ }
-    setLater(latest.version)
+    const v = { version: latest.version, until: Date.now() + LATER_MS }
+    try { localStorage.setItem(LATER_KEY, JSON.stringify(v)) } catch { /* hidden for this page only */ }
+    setLater(v)
     setDetails(false)
   }
   const releases = status.releases ?? []

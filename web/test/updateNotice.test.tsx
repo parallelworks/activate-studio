@@ -2,7 +2,8 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Changelog, UpdateRelease, UpdatesStatus } from '../src/api'
 import { StatusFooter } from '../src/components/StatusFooter'
-import { UpdateNotice } from '../src/components/UpdateNotice'
+import { LATER_MS, UpdateNotice } from '../src/components/UpdateNotice'
+import { CHECK_EVENT, setUpdateFlowOptions } from '../src/updateFlow'
 import { SEEN_KEY, UpdatedNotice } from '../src/components/UpdatedNotice'
 import { UpdatesSection } from '../src/components/UpdatesSection'
 import { WhatsNew } from '../src/components/WhatsNew'
@@ -180,16 +181,18 @@ describe('the update notice', () => {
     }
   })
 
-  it('Later hides it for that version, in this browser; a newer version shows it again', async () => {
+  it('Later hides it for that version for a day, in this browser; a newer version shows it again', async () => {
     const s = server()
     stubServer(s)
     const first = render(<UpdateNotice />)
     fireEvent.click(await screen.findByRole('button', { name: 'Later' }))
     expect(notice()).toBeNull()
-    expect(localStorage.getItem('ade-update-later')).toBe('v1.142')
+    const stored = JSON.parse(localStorage.getItem('ade-update-later')!)
+    expect(stored.version).toBe('v1.142')
+    expect(stored.until - Date.now()).toBeGreaterThan(LATER_MS - 60_000)
     first.unmount()
 
-    // Opened again: still hidden for v1.142.
+    // Opened again the same day: still hidden for v1.142.
     const again = render(<UpdateNotice />)
     await waitFor(() => expect(s.calls.filter(c => c.url === '/api/updates').length).toBe(2))
     await settle()
@@ -205,6 +208,51 @@ describe('the update notice', () => {
     expect(await screen.findByText('Version v1.143 is available')).toBeInTheDocument()
     fireEvent.click(within(notice()!).getByRole('button', { name: "What's new (4)" }))
     expect(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Chat: a newer change' })).toBeInTheDocument()
+  })
+
+  it('a Later from the day before, an older version, or an earlier Studio no longer hides it', async () => {
+    for (const later of [
+      JSON.stringify({ version: 'v1.142', until: Date.now() - 1000 }),
+      JSON.stringify({ version: 'v1.141', until: Date.now() + LATER_MS }),
+      // Stored by a Studio whose Later lasted until the next version.
+      'v1.142',
+    ]) {
+      localStorage.setItem('ade-update-later', later)
+      stubServer(server())
+      const { unmount } = render(<UpdateNotice />)
+      expect(await screen.findByText('Version v1.142 is available')).toBeInTheDocument()
+      unmount()
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('reads the status again when the window is shown or focused, and follows a check the server runs', async () => {
+    setUpdateFlowOptions({ focusGapMs: 0, checkingMs: 5 })
+    const s = server({ updates: status({ available: false, latest: null, releases: [] }) })
+    stubServer(s)
+    render(<UpdateNotice />)
+    await waitFor(() => expect(s.calls.filter(c => c.url === '/api/updates').length).toBe(1))
+    await settle()
+    expect(notice()).toBeNull()
+    // While the window was hidden, the server's check became due: the read on
+    // focus starts it, and the page reads again until it ends.
+    s.updates = status({ state: 'checking', available: false, latest: null, releases: [] })
+    act(() => { window.dispatchEvent(new Event('focus')) })
+    await waitFor(() => expect(s.calls.filter(c => c.url === '/api/updates').length).toBe(2))
+    s.updates = status()
+    expect(await screen.findByText('Version v1.142 is available')).toBeInTheDocument()
+    const reads = s.calls.filter(c => c.url === '/api/updates').length
+    act(() => { document.dispatchEvent(new Event('visibilitychange')) })
+    await waitFor(() => expect(s.calls.filter(c => c.url === '/api/updates').length).toBe(reads + 1))
+  })
+
+  it('the app menu\'s Check for Updates event runs a check', async () => {
+    const s = server()
+    stubServer(s)
+    render(<UpdateNotice />)
+    await screen.findByText('Version v1.142 is available')
+    act(() => { window.dispatchEvent(new Event(CHECK_EVENT)) })
+    await waitFor(() => expect(s.calls.some(c => c.url === '/api/updates/check' && c.method === 'POST')).toBe(true))
   })
 
   it('Update now shows the install\'s progress in place of the buttons, then the restart, then reloads', async () => {
@@ -235,7 +283,7 @@ describe('the update notice', () => {
   })
 
   it('an install started from Settings, or a deferred version being installed, shows its progress too', async () => {
-    localStorage.setItem('ade-update-later', 'v1.142')
+    localStorage.setItem('ade-update-later', JSON.stringify({ version: 'v1.142', until: Date.now() + LATER_MS }))
     const s = server({ updates: status({ state: 'verifying' }) })
     stubServer(s)
     const intervals = vi.spyOn(window, 'setInterval')

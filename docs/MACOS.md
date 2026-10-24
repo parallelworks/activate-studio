@@ -152,17 +152,21 @@ documents folder is never removed, and neither are indexes on other
 machines.
 
 *Updates:* the app checks this repository's releases a minute after it
-starts, then once an hour has passed by the clock, which counts time the
-Mac was asleep; the server looks every five minutes, and when the window
-asks for the status. A one-line notice at the top of
+starts, then once 15 minutes have passed by the clock, which counts time
+the Mac was asleep; the server looks every two minutes, and when the
+window asks for the status. A one-line notice at the top of
 every page, and Settings, General, Updates, show the newest release, with
 the changes in every version newer than the one running (the notice's
 What's new), and Update now; Later hides the notice
-until a newer version is out. It takes the newest release that carries
+for a day, or until a newer version is out. The page reads the status
+every two minutes and when its window is shown, so a version the server
+found appears within seconds of opening the window. Check for Updates in
+the app menu, Check now in the footer's Build panel and check for updates
+beside the footer's version all check at once. It takes the newest release that carries
 the signed app. Not every release does: the macOS build runs only for the
 releases it is asked for, so the app skips the others and the notice lists
 their changes with the next one it can install. While a release published
-in the last two hours has no app yet, it checks again after 30 minutes. The download
+in the last two hours has no app yet, it checks again after 5 minutes. The download
 goes to `~/Library/Application Support/ACTIVATE Studio/updates` and is
 installed only if the release's manifest is signed by the release key
 (the app carries its public half, `Contents/Resources/update-signing.pub`),

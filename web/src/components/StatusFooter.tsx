@@ -1,6 +1,6 @@
-import { useEffect, useState, type ReactElement, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactElement, type ReactNode } from 'react'
 import {
-  Button, DescriptionList, DescriptionListItem, Popover, PopoverClose, Skeleton, StatusDot, type BadgeVariant,
+  Button, CopyCodeBlock, DescriptionList, DescriptionListItem, Popover, PopoverClose, Skeleton, StatusDot, type BadgeVariant,
 } from '@parallelworks/ui'
 import { api, IndexStatus } from '../api'
 import { onLibraryChange } from '../api'
@@ -8,7 +8,8 @@ import { elapsed, fmtDuration, indexSummary, kickIndexStatus, useIndexStatus } f
 import { IndexJobView, IndexLogButton, IndexLogHost, jobOutcome } from './IndexActivity'
 import type { LibraryStats } from '../api'
 import { openAbout, openUpdates, openWhatsNew } from '../api'
-import { useUpdateFlow } from '../updateFlow'
+import { underWay, updateActions, useUpdateFlow, type UpdateFlow } from '../updateFlow'
+import { UpdateProgress } from './UpdatesSection'
 import { share, syncIndex, type AiHealth } from '../statusShare'
 import { useAppConfig } from '../config'
 
@@ -26,9 +27,12 @@ const DOT_TONE: Record<Dot, BadgeVariant> = { ok: 'success', warn: 'warning', of
 
 /** A footer line's details, opening upward from it. Focus moves to the panel
  *  itself, which never scrolls the page the way focusing a control in it can. */
-function FooterPanel({ trigger, title, children }: { trigger: ReactElement; title: ReactNode; children: ReactNode }) {
+function FooterPanel({ trigger, title, children, open, onOpenChange }: {
+  trigger: ReactElement; title: ReactNode; children: ReactNode; open?: boolean; onOpenChange?: (open: boolean) => void
+}) {
   return (
-    <Popover trigger={trigger} title={title} side="top" align="start" initialFocus="popup" className="identity-panel">
+    <Popover trigger={trigger} title={title} side="top" align="start" initialFocus="popup" className="identity-panel"
+      {...(open === undefined ? {} : { open, onOpenChange })}>
       {children}
     </Popover>
   )
@@ -157,24 +161,83 @@ const BUILD_SOURCE: Record<Build['source'], string> = {
   package: 'no tag or stamp found; package version only',
 }
 
-function BuildPanel({ trigger, build }: { trigger: ReactElement; build: Build }) {
+/** The Build panel's updates: up to date or a newer version, with Check now,
+ *  and Update now (the app) or the commands (a clone). Not for a hosted
+ *  deployment, which its operator updates. */
+function BuildUpdates({ flow }: { flow: UpdateFlow }) {
+  const { status } = flow
+  if (flow.none || !status) return null
+  const checking = flow.busy === 'check' || status.state === 'checking'
+  const installing = underWay(flow)
+  const latest = status.available ? status.latest : null
+  const error = flow.error || (status.state === 'error' ? status.error : null)
+  const check = (
+    <Button variant="secondary" size="sm" loading={checking} disabled={!!flow.busy || installing} onClick={() => void updateActions.check()}>
+      {checking ? 'Checking…' : 'Check now'}
+    </Button>
+  )
+  return (
+    <div className="build-updates" data-testid="build-updates">
+      {installing ? (
+        <UpdateProgress flow={flow} barClassName="build-updates-bar" />
+      ) : latest ? (
+        <>
+          <p className="build-updates-head"><b>Version {latest.version} is available</b></p>
+          <div className="build-updates-row">
+            {status.mode === 'app' && status.canInstall && (
+              <Button variant="primary" size="sm" disabled={!!flow.busy} loading={flow.busy === 'install'} onClick={() => void updateActions.install()}>Update now</Button>
+            )}
+            <PopoverClose render={<Button variant="secondary" size="sm" />} onClick={openUpdates}>Changes</PopoverClose>
+            {check}
+          </div>
+          {status.mode === 'clone' && status.command && (
+            <CopyCodeBlock className="mcp-snippet" text={status.command} label="update commands">{status.command}</CopyCodeBlock>
+          )}
+          {!status.canInstall && !status.command && status.reason && <p className="identity-note">{status.reason}</p>}
+        </>
+      ) : (
+        <>
+          <p className="build-updates-head">
+            {checking ? 'Checking for updates…' : status.offline ? 'Offline; checks again later' : error ? 'The last check failed' : 'Up to date'}
+          </p>
+          <div className="build-updates-row">
+            <span className="muted build-updates-when">{status.checkedAt ? `Checked ${ago(status.checkedAt)}` : 'Not checked yet'}</span>
+            {check}
+          </div>
+        </>
+      )}
+      {error && !installing && <p className="identity-note build-updates-error" role="alert">{error}</p>}
+    </div>
+  )
+}
+
+function BuildPanel({ trigger, build, flow, open, onOpenChange }: {
+  trigger: ReactElement; build: Build; flow: UpdateFlow; open?: boolean; onOpenChange?: (open: boolean) => void
+}) {
+  // A hosted deployment has no updates (flow.none); the app and a clone do,
+  // and their build comes with the app or the checkout, not a deployment.
+  const hosted = flow.none
+  const app = flow.status?.mode === 'app'
   const rows: [string, string][] = [
     ['Version', build.version],
     ['Commit', build.commit ?? 'unknown'],
     ['Built', build.builtAt ? new Date(build.builtAt).toLocaleString() : 'unknown'],
     ['Server started', new Date(build.startedAt).toLocaleString()],
-    ['Source', BUILD_SOURCE[build.source]],
+    ['Source', app && build.source === 'bundle' ? 'stamped when the app was built' : BUILD_SOURCE[build.source]],
   ]
   return (
-    <FooterPanel trigger={trigger} title="Build">
+    <FooterPanel trigger={trigger} title="Build" open={open} onOpenChange={onOpenChange}>
       <DetailRows rows={rows} />
-      <p className="identity-note">
-        Compare this against the release you deployed. A redeploy that did not take leaves
-        the old commit and build time here, which is otherwise indistinguishable from one
-        that worked.
-      </p>
+      <BuildUpdates flow={flow} />
+      {hosted && (
+        <p className="identity-note">
+          Compare this against the release you deployed. A redeploy that did not take leaves
+          the old commit and build time here, which is otherwise indistinguishable from one
+          that worked.
+        </p>
+      )}
       <div className="scope-menu-foot">
-        <span className="muted identity-src">GET /api/version</span>
+        {hosted ? <span className="muted identity-src">GET /api/version</span> : <span />}
         <span className="identity-actions">
           <PopoverClose render={<Button variant="secondary" size="sm" />} onClick={openWhatsNew}>What's new</PopoverClose>
           <PopoverClose render={<Button variant="secondary" size="sm" />} onClick={openAbout}>About</PopoverClose>
@@ -285,14 +348,27 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
     return () => { clearInterval(t); document.removeEventListener('visibilitychange', onVis) }
   }, [])
 
-  // A newer release the Studio can tell about. The version line says so and
-  // opens Settings, General at the Updates tab. The page's update flow
-  // reads the server's answer now and then (the server checks every few
-  // hours) and at once after a check from Settings; a hosted deployment has
-  // no updates.
+  // A newer release the Studio can tell about. The version line says so,
+  // and the Build panel it opens has Update now; with none known, the line
+  // offers a check. The page's update flow reads the server's answer every
+  // two minutes and when the window is shown (the server checks every 15
+  // minutes); a hosted deployment has no updates and shows neither.
   const flow = useUpdateFlow()
-  const update = !flow.none && flow.status?.mode !== 'hosted' && flow.status?.available && flow.status.latest
-    ? flow.status.latest.version : null
+  const updates = !flow.none && !!flow.status && flow.status.mode !== 'hosted'
+  const update = updates && flow.status?.available && flow.status.latest ? flow.status.latest.version : null
+  const [buildOpen, setBuildOpen] = useState(false)
+  // What a check from the line found, shown for a few seconds.
+  const [checked, setChecked] = useState<'up to date' | 'check failed' | null>(null)
+  const checkedTimer = useRef<number | null>(null)
+  useEffect(() => () => { if (checkedTimer.current !== null) window.clearTimeout(checkedTimer.current) }, [])
+  const checking = flow.busy === 'check' || flow.status?.state === 'checking'
+  const checkNow = async () => {
+    setChecked(null)
+    const ok = await updateActions.check()
+    if (checkedTimer.current !== null) window.clearTimeout(checkedTimer.current)
+    setChecked(ok ? 'up to date' : 'check failed')
+    checkedTimer.current = window.setTimeout(() => setChecked(null), ok ? 4000 : 8000)
+  }
 
   const sync = async () => {
     setSyncing(true)
@@ -308,6 +384,12 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
   if (collapsed) {
     return (
       <div className="sidenav-footer">
+        {update && (
+          <button className="status-line footer-rail-update" title={`Version ${update} is available. Opens Settings, Updates.`}
+            aria-label={`Version ${update} is available`} onClick={openUpdates}>
+            <StatusDot variant="info" size={7} />
+          </button>
+        )}
         <div className="status-line" title={`${summary.text}${summary.detail ? `: ${summary.detail}` : ''}, sync ${ago(idx?.lastSweepAt ?? null)}`}>
           <StatusDot variant={summary.tone} pulse={summary.pulse} size={7} />
         </div>
@@ -357,6 +439,9 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
         <div className="status-line" title="Click for build details">
           <BuildPanel
             build={build}
+            flow={flow}
+            open={buildOpen}
+            onOpenChange={setBuildOpen}
             trigger={
               <button className="identity-btn">
                 <StatusDot variant={build.version === 'dev' ? 'muted' : 'success'} size={7} />
@@ -364,12 +449,17 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
               </button>
             }
           />
-          {update && (
-            <Button variant="ghost" size="xs" className="footer-sync" title={`Version ${update} is available. Opens Settings, Updates.`}
-              onClick={openUpdates}>
+          {update ? (
+            <Button variant="ghost" size="xs" className="footer-sync footer-update" title={`Version ${update} is available. Opens the Build panel, with Update now.`}
+              onClick={() => setBuildOpen(true)}>
               update available
             </Button>
-          )}
+          ) : updates ? (
+            <Button variant="ghost" size="xs" className="footer-sync" title={checked === 'check failed' && flow.error ? flow.error : 'Check for a newer version now'}
+              loading={checking} disabled={checking || !!flow.busy} onClick={() => void checkNow()}>
+              {checking ? 'checking…' : checked ?? 'check for updates'}
+            </Button>
+          ) : null}
         </div>
       )}
       <div className="status-line" title="Click for index health details">

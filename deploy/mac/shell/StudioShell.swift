@@ -274,6 +274,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     webView.evaluateJavaScript("location.hash = '#view=settings:setup'", completionHandler: nil)
   }
 
+  /// Settings, Updates, with a check started there: the page's update flow
+  /// checks on this event (CHECK_EVENT in web/src/updateFlow.ts).
+  @objc func checkForUpdates(_ sender: Any?) {
+    guard studio != nil, window.contentView === webView else { return }
+    window.makeKeyAndOrderFront(nil)
+    webView.evaluateJavaScript(
+      "location.hash = '#view=settings:updates'; window.dispatchEvent(new Event('ade:check-updates'))",
+      completionHandler: nil)
+  }
+
   @objc func openLogs(_ sender: Any?) {
     let logs = FileManager.default.homeDirectoryForCurrentUser
       .appendingPathComponent("Library/Application Support/ACTIVATE Studio/logs")
@@ -771,6 +781,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     }
     submenu("ACTIVATE Studio", [
       item("About ACTIVATE Studio", #selector(showAbout(_:)), target: self),
+      item("Check for Updates…", #selector(checkForUpdates(_:)), target: self),
       .separator(),
       item("Run Setup…", #selector(runSetup(_:)), target: self),
       item("Stop Background Server", #selector(stopServer(_:)), target: self),

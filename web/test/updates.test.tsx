@@ -228,33 +228,85 @@ describe('the Updates section', () => {
 describe('the footer version line', () => {
   afterEach(() => { vi.unstubAllGlobals(); history.replaceState(null, '', location.pathname) })
 
-  it('says an update is available only when one is, and opens Settings, Updates', async () => {
-    stubServer(server())
-    const { unmount } = render(<StatusFooter />)
-    const link = await screen.findByRole('button', { name: 'update available' })
-    expect(screen.getByText('v1.140')).toBeInTheDocument()
-    fireEvent.click(link)
-    expect(location.hash).toBe('#view=settings:updates')
-    unmount()
-    vi.unstubAllGlobals()
+  const versionButton = () => screen.getByRole('button', { name: /v1\.140/ })
 
-    const none = server({ updates: status({ available: false }) })
-    stubServer(none)
+  it('with an update: "update available" opens the Build panel with the version and Update now', async () => {
+    const s = server()
+    stubServer(s)
     render(<StatusFooter />)
-    expect(await screen.findByText('v1.140')).toBeInTheDocument()
-    await waitFor(() => expect(none.calls.some(c => c.url === '/api/updates')).toBe(true))
-    await act(async () => {})
-    expect(screen.queryByRole('button', { name: 'update available' })).toBeNull()
+    fireEvent.click(await screen.findByRole('button', { name: 'update available' }))
+    const panel = await screen.findByTestId('build-updates')
+    expect(panel.textContent).toContain('Version v1.141 is available')
+    expect(screen.getByRole('button', { name: 'Update now' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Changes' })).toBeInTheDocument()
+    // The app's own wording, not a deployment's.
+    expect(screen.getByText('stamped when the app was built')).toBeInTheDocument()
+    expect(screen.queryByText(/Compare this against the release you deployed/)).toBeNull()
+    expect(screen.queryByText('GET /api/version')).toBeNull()
+    expect(location.hash).toBe('')
   })
 
-  it('shows nothing for a hosted deployment', async () => {
+  it('up to date: "check for updates" checks, says "up to date", and turns into "update available" when one is found', async () => {
+    const s = server({ updates: status({ available: false, latest: null }) })
+    stubServer(s)
+    render(<StatusFooter />)
+    const check = await screen.findByRole('button', { name: 'check for updates' })
+    fireEvent.click(check)
+    await waitFor(() => expect(s.calls.some(c => c.url === '/api/updates/check' && c.method === 'POST')).toBe(true))
+    expect(await screen.findByRole('button', { name: 'up to date' })).toBeInTheDocument()
+    // A later check finds one.
+    s.onPost = (url, srv) => { if (url === '/api/updates/check') srv.updates = status() }
+    fireEvent.click(screen.getByRole('button', { name: 'up to date' }))
+    expect(await screen.findByRole('button', { name: 'update available' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /check for updates|up to date/ })).toBeNull()
+  })
+
+  it('the Build panel when up to date: when it was checked, and Check now', async () => {
+    const s = server({ updates: status({ available: false, latest: null, checkedAt: new Date(Date.now() - 5 * 60_000).toISOString() }) })
+    stubServer(s)
+    render(<StatusFooter />)
+    await screen.findByRole('button', { name: 'check for updates' })
+    fireEvent.click(versionButton())
+    const panel = await screen.findByTestId('build-updates')
+    expect(panel.textContent).toContain('Up to date')
+    expect(panel.textContent).toContain('Checked 5m ago')
+    fireEvent.click(screen.getByRole('button', { name: 'Check now' }))
+    await waitFor(() => expect(s.calls.some(c => c.url === '/api/updates/check')).toBe(true))
+  })
+
+  it('the Build panel while a check runs, and after one failed', async () => {
+    const s = server({ updates: status({ available: false, latest: null, state: 'checking' }) })
+    stubServer(s)
+    render(<StatusFooter />)
+    await screen.findByText('v1.140')
+    await waitFor(() => expect(s.calls.some(c => c.url === '/api/updates')).toBe(true))
+    fireEvent.click(versionButton())
+    expect((await screen.findByTestId('build-updates')).textContent).toContain('Checking for updates…')
+    s.updates = status({ available: false, latest: null, state: 'error', error: 'The check for updates failed: GitHub answered HTTP 500.' })
+    // The flow reads again while the server's check runs.
+    await waitFor(() => expect(screen.getByTestId('build-updates').textContent).toContain('The last check failed'), { timeout: 4000 })
+    expect(screen.getByRole('alert').textContent).toContain('GitHub answered HTTP 500')
+  })
+
+  it('a hosted deployment: no update controls, and the deployment note stays', async () => {
     const hosted = server({ code: 403 })
     stubServer(hosted)
     render(<StatusFooter />)
     expect(await screen.findByText('v1.140')).toBeInTheDocument()
     await waitFor(() => expect(hosted.calls.some(c => c.url === '/api/updates')).toBe(true))
     await act(async () => {})
-    expect(screen.queryByRole('button', { name: 'update available' })).toBeNull()
+    expect(screen.queryByRole('button', { name: /update available|check for updates/ })).toBeNull()
+    fireEvent.click(versionButton())
+    expect(await screen.findByText(/Compare this against the release you deployed/)).toBeInTheDocument()
+    expect(screen.getByText('GET /api/version')).toBeInTheDocument()
+    expect(screen.queryByTestId('build-updates')).toBeNull()
+  })
+
+  it('on the collapsed rail, a dot says an update is available and opens Settings, Updates', async () => {
+    stubServer(server())
+    render(<StatusFooter collapsed />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Version v1.141 is available' }))
+    expect(location.hash).toBe('#view=settings:updates')
   })
 })
 

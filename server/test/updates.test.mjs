@@ -479,6 +479,26 @@ test('a check is due by the clock: time the Mac slept counts, though its timers 
   }
 })
 
+test('by default a check is due 15 minutes after the last one, not before', async () => {
+  // The default interval and poll; only the first check is brought forward.
+  await fresh('v1.139', { timings: { firstCheckMs: 20, pollMs: 20 } })
+  setReleases([release('v1.140')])
+  const before = apiRequests.length
+  U.startUpdates(() => {})
+  assert.ok(await until(() => apiRequests.length > before), 'the first check')
+  const realNow = Date.now
+  try {
+    Date.now = () => realNow() + 14 * 60_000
+    await sleep(150)
+    assert.equal(apiRequests.length, before + 1, 'not due after 14 minutes')
+    Date.now = () => realNow() + 16 * 60_000
+    assert.ok(await until(() => apiRequests.length > before + 1), 'due after 16 minutes')
+  } finally {
+    Date.now = realNow
+    U.resetUpdatesForTests()
+  }
+})
+
 test('the window asking for the status starts a check that is due, once', async () => {
   await fresh('v1.139', { timings: { firstCheckMs: 3_600_000, pollMs: 3_600_000 } })
   setReleases([release('v1.140')])
