@@ -12,7 +12,7 @@ import { getIndexJob, startIndexJob, type IndexJob } from './indexing.js'
 import { builtLibrarySettings, indexSettings, isIndexDepth, isMeaningLevel, meaningArgs, saveIndexSettings, textArgs, threadsFor, type IndexDepth, type IndexSettings } from './indexSettings.js'
 import { KbError } from './kb.js'
 import {
-  addBuiltLibrary, addedDef, builtLibraryDir, checkNewId, forgetProbe, getLibrary, libraryIdFor, listLibraries, setBuildProgressSource,
+  addBuiltLibrary, addedDef, builtLibraryDir, checkNewId, forgetProbe, getLibrary, libraryIdFor, listLibraries, probeLibrary, setBuildProgressSource,
   settingsLibrary, updateBuild, type LibraryDef,
 } from './libraries.js'
 import { runPreExtract } from './preextract.js'
@@ -321,7 +321,10 @@ async function enrich(def: LibraryDef, scope: Scope, progress: Progress, s = bui
 
 /** Counts, the manifest, and the caches that remember the old tree. */
 async function settle(def: LibraryDef): Promise<{ files: number; dirs: number; builtAt: string }> {
+  // Probed again, not only forgotten: until a probe, the library counts as
+  // having no words and no vectors, and search leaves them out.
   forgetProbe(def.indexRoot)
+  await probeLibrary(def.indexRoot).catch(() => {})
   invalidateDbList()
   const st = await treeStats(def.indexRoot, '').catch(() => null)
   const builtAt = new Date().toISOString()
@@ -333,7 +336,11 @@ async function settle(def: LibraryDef): Promise<{ files: number; dirs: number; b
 }
 
 /** The whole folder, written beside the index there and swapped in when
- *  complete, so search keeps answering while it runs. */
+ *  complete, so search keeps answering while it runs. Where the library
+ *  has an index already (a rebuild, or a build a restart interrupted), the
+ *  new one gets its text before the swap, so the library's words stay
+ *  searchable throughout; a first build is swapped in at once, so its
+ *  names answer while the text is read. */
 async function fullBuild(id: string, job: IndexJob): Promise<{ ms: number }> {
   const t0 = Date.now()
   const def = addedDef(id)
@@ -359,13 +366,15 @@ async function fullBuild(id: string, job: IndexJob): Promise<{ ms: number }> {
     } finally { clearInterval(counter) }
     const built = path.join(stage, path.basename(src))
     if (!fs.existsSync(path.join(built, 'db.db'))) throw new Error(`gufi_dir2index wrote no index at ${built}`)
+    const replacing = fs.existsSync(path.join(tree, 'db.db'))
+    if (replacing) await enrich({ ...def, indexRoot: built }, {}, progress, s)
     const old = path.join(b.indexDir, '.old')
     await fsp.rm(old, { recursive: true, force: true })
     if (fs.existsSync(tree)) await fsp.rename(tree, old)
     await fsp.rename(built, tree)
     await fsp.rm(old, { recursive: true, force: true })
     await fsp.rm(stage, { recursive: true, force: true })
-    await enrich(def, {}, progress, s)
+    if (!replacing) await enrich(def, {}, progress, s)
     progress('Counting')
     const counts = await settle(def)
     await saveState(id, snapshot)
