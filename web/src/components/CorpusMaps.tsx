@@ -190,19 +190,23 @@ export function nearestIndex(xs: ArrayLike<number>, ys: ArrayLike<number>, mx: n
 
 // ---- 3D ----
 
-/** An orbit camera about the origin: yaw turns about the vertical axis,
- *  pitch tilts toward the viewer, dist is the camera's distance in units of
- *  the map's own size, and pan moves the picture on screen. */
-export interface Camera { yaw: number; pitch: number; dist: number; panX: number; panY: number }
-export const CAMERA0: Camera = { yaw: 0.6, pitch: 0.35, dist: 2.6, panX: 0, panY: 0 }
+/** An orbit camera about a target point: yaw turns about the vertical axis,
+ *  pitch tilts toward the viewer, dist is the camera's distance from the
+ *  target in units of the map's own size (it sets how strong the perspective
+ *  is, and stays put), k magnifies the picture (1 to MAX_ZOOM, as in 2D),
+ *  and (tx, ty, tz) is the target, which sits at the centre of the view and
+ *  which the map turns about. Zooming moves the target toward the pointer,
+ *  so what is under the pointer stays there. */
+export interface Camera { yaw: number; pitch: number; dist: number; k: number; tx: number; ty: number; tz: number }
+export const CAMERA0: Camera = { yaw: 0.6, pitch: 0.35, dist: 2.6, k: 1, tx: 0, ty: 0, tz: 0 }
 
 /** Where a point (centred on the origin, about a unit across) lands on
- *  screen: rotated by yaw then pitch, then divided by its depth, so the
- *  centre plane keeps `scale` pixels per unit and nearer points grow.
- *  `f` is that growth (1 on the centre plane), `depth` the distance from
- *  the camera. */
+ *  screen: moved so the target is at the origin, rotated by yaw then pitch,
+ *  then divided by its depth, so the target's plane keeps `scale × k`
+ *  pixels per unit and nearer points grow. `f` is that growth (1 on the
+ *  target's plane), `depth` the distance from the camera. */
 export function project3d(p: readonly [number, number, number], cam: Camera, cx: number, cy: number, scale: number): { x: number; y: number; depth: number; f: number } {
-  const [x, y, z] = p
+  const x = p[0] - (cam.tx ?? 0), y = p[1] - (cam.ty ?? 0), z = p[2] - (cam.tz ?? 0)
   const cyaw = Math.cos(cam.yaw), syaw = Math.sin(cam.yaw)
   const x1 = x * cyaw + z * syaw
   const z1 = -x * syaw + z * cyaw
@@ -211,7 +215,44 @@ export function project3d(p: readonly [number, number, number], cam: Camera, cx:
   const z2 = y * sp + z1 * cp
   const depth = cam.dist + z2
   const f = cam.dist / Math.max(0.05, depth)
-  return { x: cx + cam.panX + x1 * f * scale, y: cy + cam.panY - y2 * f * scale, depth, f }
+  const s = scale * (cam.k ?? 1)
+  return { x: cx + x1 * f * s, y: cy - y2 * f * s, depth, f }
+}
+
+/** The map-space step that moves a point `a` to the right and `b` up on the
+ *  screen, in the target's plane (the inverse of the camera's rotation). */
+export function viewPlane(cam: Camera, a: number, b: number): [number, number, number] {
+  const cyaw = Math.cos(cam.yaw), syaw = Math.sin(cam.yaw)
+  const cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch)
+  const z1 = -b * sp
+  return [a * cyaw - z1 * syaw, b * cp, a * syaw + z1 * cyaw]
+}
+
+/** The target kept within the map, so zooming and moving never lose it. */
+const TARGET_REACH = 0.75
+const withTarget = (cam: Camera, t: [number, number, number]): Camera => {
+  const c = (v: number) => Math.max(-TARGET_REACH, Math.min(TARGET_REACH, v))
+  return { ...cam, tx: c(t[0]), ty: c(t[1]), tz: c(t[2]) }
+}
+
+/** Zoom by `factor` about the screen point (px, py): the picture grows and
+ *  the target moves toward the pointer, so a point in the target's plane
+ *  under the pointer stays under it. Back at k = 1 the map is centred again. */
+export function zoom3d(cam: Camera, px: number, py: number, factor: number, cx: number, cy: number, scale: number): Camera {
+  const k = Math.min(MAX_ZOOM, Math.max(1, cam.k * factor))
+  if (k === cam.k) return cam
+  if (k === 1) return { ...cam, k, tx: 0, ty: 0, tz: 0 }
+  const s = scale * cam.k
+  const t = 1 - cam.k / k
+  const [dx, dy, dz] = viewPlane(cam, ((px - cx) / s) * t, (-(py - cy) / s) * t)
+  return withTarget({ ...cam, k }, [cam.tx + dx, cam.ty + dy, cam.tz + dz])
+}
+
+/** Move the picture by (dx, dy) screen pixels: the target moves the other way. */
+export function pan3d(cam: Camera, dx: number, dy: number, scale: number): Camera {
+  const s = scale * cam.k
+  const [mx, my, mz] = viewPlane(cam, -dx / s, dy / s)
+  return withTarget(cam, [cam.tx + mx, cam.ty + my, cam.tz + mz])
 }
 
 const reducedMotion = () => { try { return matchMedia('(prefers-reduced-motion: reduce)').matches } catch { return false } }
@@ -262,6 +303,37 @@ function ZoomButtons({ onZoom, onReset }: { onZoom: (factor: number) => void; on
       <IconButton icon={<ZoomOutIcon />} label="Zoom out" size="sm" onClick={() => onZoom(1 / 1.6)} />
       <IconButton icon={<ResetIcon />} label="Reset view" size="sm" onClick={onReset} />
     </>
+  )
+}
+
+/** A legend entry: a color, a name and a figure; hovering it shows its part
+ *  of the map, clicking it does what clicking that part of the map does. */
+export interface LegendItem { key: string; name: ReactNode; color: string; note: string; title?: string; ariaLabel?: string; on?: boolean; onClick: () => void }
+
+/** Legend entries shown before "+ N more", largest first. */
+export const LEGEND_SHOWN = 8
+
+/** A map's legend: its largest LEGEND_SHOWN entries, and a button that
+ *  shows the rest in place (and "Show fewer" folds them again). */
+function Legend({ items, onHover, chipClass = '' }: { items: LegendItem[]; onHover: (key: string | null) => void; chipClass?: string }) {
+  const [open, setOpen] = useState(false)
+  const rest = items.length - LEGEND_SHOWN
+  const shown = open || rest <= 0 ? items : items.slice(0, LEGEND_SHOWN)
+  return (
+    <p className="map-legend" onMouseLeave={() => onHover(null)}>
+      {shown.map(it => (
+        <button key={it.key} className={`legend-chip${chipClass ? ` ${chipClass}` : ''}${it.on ? ' on' : ''}`} title={it.title} aria-label={it.ariaLabel}
+          onMouseEnter={() => onHover(it.key)} onFocus={() => onHover(it.key)} onBlur={() => onHover(null)} onClick={it.onClick}>
+          <span className="legend-dot" style={{ background: it.color }} />
+          <span className="legend-name">{it.name}</span> <span className="muted">{it.note}</span>
+        </button>
+      ))}
+      {rest > 0 && (
+        <button className="legend-more" aria-expanded={open} onClick={() => setOpen(o => !o)}>
+          {open ? 'Show fewer' : `+ ${rest} more`}
+        </button>
+      )}
+    </p>
   )
 }
 
@@ -416,6 +488,7 @@ export function TopologyMap() {
   const [dirs, setDirs] = useState<DirRow[] | null>(null)
   const [focus, setFocus] = useState('')
   const [full, setFull] = useState(false)
+  const [highlight, setHighlight] = useState<string | null>(null)
   useEffect(() => {
     fetch('/api/kb/topology').then(r => r.json())
       .then(d => { if (d.available) setDirs(d.dirs) })
@@ -434,7 +507,7 @@ export function TopologyMap() {
   const topDirs = [...tree.children.values()].sort((a, b) => b.bytes - a.bytes)
   const topColor = (p: string) => colorOf({ path: p } as TreeNode)
   const map = (height: number | 'fill') => (
-    <TopologyCanvas node={node} height={height} colorOf={colorOf} onDrill={setFocus} api={viewApi} />
+    <TopologyCanvas node={node} height={height} colorOf={colorOf} onDrill={setFocus} api={viewApi} highlight={highlight} />
   )
   const crumbs = (
     <p className="crumb-row">
@@ -445,14 +518,10 @@ export function TopologyMap() {
     </p>
   )
   const legend = (
-    <p className="map-legend">
-      {topDirs.map(d => (
-        <button key={d.path} className="legend-chip" onClick={() => setFocus(d.path)}>
-          <span className="legend-dot" style={{ background: topColor(d.path) }} />
-          {d.name} <span className="muted">{fmtB(d.bytes)}</span>
-        </button>
-      ))}
-    </p>
+    <Legend onHover={setHighlight} items={topDirs.map(d => ({
+      key: d.path, name: d.name, color: topColor(d.path), note: fmtB(d.bytes), title: `${d.path} · ${d.files.toLocaleString()} files`,
+      on: focus === d.path || focus.startsWith(`${d.path}/`), onClick: () => setFocus(d.path),
+    }))} />
   )
   const controls = <ZoomButtons onZoom={f => viewApi.current?.zoom(f)} onReset={() => viewApi.current?.reset()} />
   return (
@@ -471,12 +540,14 @@ export function TopologyMap() {
   )
 }
 
-function TopologyCanvas({ node, height, colorOf, onDrill, api }: {
+function TopologyCanvas({ node, height, colorOf, onDrill, api, highlight = null }: {
   node: TreeNode
   height: number | 'fill'
   colorOf: (n: TreeNode) => string
   onDrill: (path: string) => void
   api: React.RefObject<{ zoom: (f: number) => void; reset: () => void } | null>
+  /** A top-level directory hovered in the legend: the rest of the map dims. */
+  highlight?: string | null
 }) {
   const cv = useRef<HTMLCanvasElement>(null)
   const { w, h } = useCanvasSize(cv, height)
@@ -491,9 +562,12 @@ function TopologyCanvas({ node, height, colorOf, onDrill, api }: {
     const c = cv.current
     if (!c) return
     c.dataset.zoom = view.k.toFixed(2)
+    c.dataset.highlight = highlight ?? ''
     const g = context2d(c, w, h)
     if (!g) return
     const sx = (x: number) => x * view.k + view.tx, sy = (y: number) => y * view.k + view.ty
+    // A directory hovered in the legend stays bright; the others dim.
+    const dimmed = (cl: Cell) => !!highlight && cl.node.path.split('/')[0] !== highlight
     // A level below the first is drawn where its parent has room on screen.
     const roomy = (i: number) => {
       const p = cells[i].parent
@@ -510,12 +584,14 @@ function TopologyCanvas({ node, height, colorOf, onDrill, api }: {
       if (x > w || y > h || x + cw < 0 || y + ch < 0) { drawn[i] = cl.depth === 1 || drawn[cl.parent]; continue }
       drawn[i] = true
       order.push(i)
+      g.globalAlpha = dimmed(cl) ? 0.22 : 1
       g.fillStyle = cl.color
       g.fillRect(x, y, cw, ch)
       g.strokeStyle = 'rgba(255,255,255,0.55)'
       g.lineWidth = 1
       g.strokeRect(x + 0.5, y + 0.5, cw - 1, ch - 1)
     }
+    g.globalAlpha = 1
     shown.current = order
     const withKids = new Set(order.map(j => cells[j].parent))
     g.textBaseline = 'top'
@@ -529,7 +605,7 @@ function TopologyCanvas({ node, height, colorOf, onDrill, api }: {
       const head = hasKids ? Math.min(15, cl.h * 0.22) * view.k : ch
       const vx = Math.max(x, 0), vy = hasKids ? y : Math.max(y, 0)
       const vw = Math.min(x + cw, w) - vx, vh = Math.min(y + head, y + ch, h) - Math.max(vy, 0)
-      if (vw < 44 || vh < 13 || vy + 12 < 0) continue
+      if (vw < 44 || vh < 13 || vy + 12 < 0 || dimmed(cl)) continue
       g.save()
       g.beginPath()
       g.rect(vx, Math.max(vy, 0), vw, vh)
@@ -548,7 +624,7 @@ function TopologyCanvas({ node, height, colorOf, onDrill, api }: {
       g.lineWidth = 2
       g.strokeRect(sx(hover.x) + 1, sy(hover.y) + 1, hover.w * view.k - 2, hover.h * view.k - 2)
     }
-  }, [cells, view, w, h, hover])
+  }, [cells, view, w, h, hover, highlight]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const cellAt = (x: number, y: number): Cell | null => {
     let hit: Cell | null = null
@@ -589,8 +665,15 @@ function TopologyCanvas({ node, height, colorOf, onDrill, api }: {
 
 // ---- the semantic map ----
 
-export interface MapCluster { c: number; label: string; count: number; x: number; y: number; z: number }
+/** A cluster: `label` is its distinctive words, or its folders where its
+ *  files have no text; `folder` its folder name; `terms` the words in its
+ *  label. Maps made before names came from words have the label only. */
+export interface MapCluster { c: number; label: string; count: number; x: number; y: number; z: number; folder?: string; terms?: string[] }
 export interface MapPoint { p: string; x: number; y: number; z: number; c: number }
+/** Two clusters near each other by meaning; `sim` is the cosine of their mean vectors. */
+export interface MapLink { a: number; b: number; sim: number }
+/** A file near another by meaning, with its place on the map where it has one. */
+export interface MapNeighbor { p: string; sim: number; x?: number; y?: number; z?: number; c?: number }
 export interface MapOverview {
   available: boolean
   reason?: 'off' | 'none' | 'failed'
@@ -599,6 +682,7 @@ export interface MapOverview {
   files?: number
   shown?: number
   clusters?: MapCluster[]
+  links?: MapLink[]
   points?: MapPoint[]
   fallback?: boolean
 }
@@ -609,14 +693,83 @@ const DETAIL_PER_CLUSTER = 4000
 const DETAIL_TOTAL = 20000
 const CLUSTER_CAP_2D = 20000
 const CLUSTER_CAP_3D = 6000
+const DETAIL_PER_CLUSTER_3D = 2000
 const PAGE = 2000
 
-/** A cluster's name as drawn on the map: the last folder of at most two
- *  parts; the legend carries the whole name. */
-const shortLabel = (l: string) => {
-  const parts = l.split(' + ').map(part => part.split('/').filter(Boolean).slice(-1)[0] ?? part)
-  const head = parts.slice(0, 2).join(' + ') + (parts.length > 2 ? ' +…' : '')
-  return head.length > 30 ? head.slice(0, 29) + '…' : head
+/**
+ * The names drawn on the map and in the legend, by cluster. A cluster named
+ * for its words keeps them, cut at 30 characters. One named for its folders
+ * shows each folder's own name, with as many parents as it takes for two
+ * names not to read the same, within one cluster's name ("pw/docs +
+ * gs/docs", not "docs + docs") or across clusters.
+ */
+export function shortLabels(clusters: MapCluster[]): Map<number, string> {
+  const cut = (s: string) => (s.length > 30 ? `${s.slice(0, 29)}…` : s)
+  const out = new Map<number, string>()
+  for (const cl of clusters) if (cl.terms?.length) out.set(cl.c, cut(cl.label))
+  const byFolder = clusters.filter(cl => !cl.terms?.length)
+  const parts = new Map(byFolder.map(cl => [cl.c, cl.label.split(' + ').map(p => p.split('/').filter(Boolean))]))
+  const depth = new Map(byFolder.map(cl => [cl.c, parts.get(cl.c)!.map(() => 1)]))
+  const tails = (c: number) => parts.get(c)!.map((segs, i) => segs.slice(-depth.get(c)![i]).join('/'))
+  const show = (c: number) => {
+    const t = tails(c)
+    return t.slice(0, 2).join(' + ') + (t.length > 2 ? ' +…' : '')
+  }
+  const deeper = (c: number, which: number[]) => {
+    let moved = false
+    for (const i of which) if (depth.get(c)![i] < parts.get(c)![i].length) { depth.get(c)![i]++; moved = true }
+    return moved
+  }
+  for (let round = 0; round < 6; round++) {
+    let moved = false
+    for (const cl of byFolder) {
+      const t = tails(cl.c)
+      for (let i = 0; i < t.length; i++) for (let j = i + 1; j < t.length; j++) if (t[i] === t[j]) moved = deeper(cl.c, [i, j]) || moved
+    }
+    const named = new Map<string, number[]>()
+    for (const cl of byFolder) named.set(show(cl.c), [...(named.get(show(cl.c)) ?? []), cl.c])
+    const words = new Set(out.values())
+    for (const [name, cs] of named) {
+      if (cs.length < 2 && !words.has(name)) continue
+      for (const c of cs) moved = deeper(c, parts.get(c)!.map((_, i) => i)) || moved
+    }
+    if (!moved) break
+  }
+  for (const cl of byFolder) out.set(cl.c, cut(show(cl.c)))
+  return out
+}
+
+/** Whether the map draws its links, kept per viewer and per view (2D or
+ *  3D); on in 3D and off in 2D until changed. */
+const LINKS_KEY = 'studio.semanticMap.links'
+function linksPref(mode: '2d' | '3d'): boolean {
+  try {
+    const v = JSON.parse(localStorage.getItem(LINKS_KEY) ?? '{}') as Record<string, unknown>
+    if (typeof v[mode] === 'boolean') return v[mode] as boolean
+  } catch { /* nothing kept, or no storage */ }
+  return mode === '3d'
+}
+function keepLinksPref(mode: '2d' | '3d', on: boolean): void {
+  try {
+    let v: Record<string, unknown> = {}
+    try { v = JSON.parse(localStorage.getItem(LINKS_KEY) ?? '{}') as Record<string, unknown> } catch { /* replaced */ }
+    localStorage.setItem(LINKS_KEY, JSON.stringify({ ...v, [mode]: on }))
+  } catch { /* no storage: the choice lasts this page */ }
+}
+
+/** A file's nearest files by meaning, asked once per file per map. */
+const neighborCache = new Map<string, Promise<MapNeighbor[]>>()
+function nearestFiles(p: string): Promise<MapNeighbor[]> {
+  let hit = neighborCache.get(p)
+  if (!hit) {
+    hit = fetch(`/api/kb/semantic-map/neighbors?file=${encodeURIComponent(p)}&k=5`)
+      .then(r => (r.ok ? r.json() : {}))
+      .then((d: { neighbors?: MapNeighbor[] }) => d.neighbors ?? [])
+      .catch(() => [])
+    neighborCache.set(p, hit)
+    if (neighborCache.size > 200) neighborCache.delete(neighborCache.keys().next().value!)
+  }
+  return hit
 }
 
 export function SemanticMap({ onOpen }: { onOpen: (path: string) => void }) {
@@ -627,6 +780,8 @@ export function SemanticMap({ onOpen }: { onOpen: (path: string) => void }) {
   const [pages, setPages] = useState<Map<number, MapPoint[]>>(new Map())
   const [full, setFull] = useState(false)
   const [spin, setSpin] = useState(false)
+  const [links, setLinks] = useState(() => linksPref('2d'))
+  const [highlight, setHighlight] = useState<number | null>(null)
   const loading = useRef(new Set<number>())
   const viewApi = useRef<{ zoom: (f: number) => void; reset: () => void } | null>(null)
 
@@ -641,8 +796,9 @@ export function SemanticMap({ onOpen }: { onOpen: (path: string) => void }) {
     void load()
     return () => { alive = false; if (timer) clearTimeout(timer) }
   }, [])
-  // A new map starts over: no cluster open, nothing extra loaded.
-  useEffect(() => { setPages(new Map()); setFocus(null) }, [data])
+  // A new map starts over: no cluster open, nothing extra loaded, no answers kept.
+  useEffect(() => { setPages(new Map()); setFocus(null); neighborCache.clear() }, [data])
+  useEffect(() => { setLinks(linksPref(mode)) }, [mode])
 
   const loadMore = useCallback((c: number, cap: number) => {
     const cl = data?.clusters?.find(x => x.c === c)
@@ -671,17 +827,22 @@ export function SemanticMap({ onOpen }: { onOpen: (path: string) => void }) {
     // A cluster's loaded pages start with its sample, so they stand in for it.
     return [...sample.filter(p => !pages.has(p.c)), ...[...pages.values()].flat()]
   }, [data, pages, focus])
+  const labels = useMemo(() => shortLabels(data?.clusters ?? []), [data])
 
   if (!data) return null
   const clusters = data.clusters ?? []
   const open = focus === null ? null : clusters.find(c => c.c === focus) ?? null
   const extraLoaded = [...pages.values()].reduce((s, p) => s + p.length, 0)
-  // Zooming into the overview fetches more of the clusters in view; a cluster
-  // on its own fetches more as you zoom into it.
+  // Zooming into the overview fetches more of the clusters in view (fewer in
+  // 3D, so it turns smoothly); a cluster on its own fetches more as you zoom.
   const onDetail = (inView: number[], k: number) => {
-    if (mode === '3d' && focus === null) return
     if (focus !== null) { if (k >= 1.8 || mode === '3d') loadMore(focus, mode === '3d' ? CLUSTER_CAP_3D : CLUSTER_CAP_2D); return }
-    if (k < 2.2 || extraLoaded >= DETAIL_TOTAL) return
+    if (k < 2.2) return
+    if (mode === '3d') {
+      if (extraLoaded < CLUSTER_CAP_3D) for (const c of inView.slice(0, 2)) loadMore(c, DETAIL_PER_CLUSTER_3D)
+      return
+    }
+    if (extraLoaded >= DETAIL_TOTAL) return
     for (const c of inView.slice(0, 4)) loadMore(c, DETAIL_PER_CLUSTER)
   }
   const unavailable = !data.available && (
@@ -696,8 +857,8 @@ export function SemanticMap({ onOpen }: { onOpen: (path: string) => void }) {
     ? `${(pages.get(open.c)?.length ?? 0).toLocaleString()} of ${open.count.toLocaleString()} files in ${open.label}${(pages.get(open.c)?.length ?? 0) < open.count ? '; zoom in for more' : ''}.`
     : `${points.length.toLocaleString()} of ${(data.files ?? 0).toLocaleString()} files shown; click a cluster for all of its files.`
   const canvas = (height: number | 'fill') => (
-    <SemanticCanvas clusters={clusters} points={points} mode={mode} focus={open} height={height} palette={PALETTE} spin={spin}
-      onOpen={onOpen} onFocus={setFocus} onDetail={onDetail} api={viewApi} />
+    <SemanticCanvas clusters={clusters} links={data.links ?? []} points={points} mode={mode} focus={open} height={height} palette={PALETTE} spin={spin}
+      labels={labels} showLinks={links} highlight={highlight} onOpen={onOpen} onFocus={setFocus} onDetail={onDetail} api={viewApi} />
   )
   const controls = (
     <>
@@ -707,27 +868,28 @@ export function SemanticMap({ onOpen }: { onOpen: (path: string) => void }) {
       {mode === '3d' && !reducedMotion() && (
         <Button variant="ghost" size="sm" aria-pressed={spin} onClick={() => setSpin(s => !s)}>{spin ? 'Stop turning' : 'Turn slowly'}</Button>
       )}
+      <Button variant="ghost" size="sm" aria-pressed={links} onClick={() => { keepLinksPref(mode, !links); setLinks(!links) }}>
+        {links ? 'Hide links' : 'Show links'}
+      </Button>
       <ZoomButtons onZoom={f => viewApi.current?.zoom(f)} onReset={() => viewApi.current?.reset()} />
     </>
   )
   const legend = (
-    <p className="map-legend">
-      {clusters.map(cl => (
-        <button key={cl.c} className={`legend-chip map-cluster-chip${focus === cl.c ? ' on' : ''}`} title={cl.label}
-          aria-label={`${cl.label}, ${cl.count.toLocaleString()} files`} onClick={() => setFocus(focus === cl.c ? null : cl.c)}>
-          <span className="legend-dot" style={{ background: PALETTE[cl.c % PALETTE.length] }} />
-          <span className="legend-name">{shortLabel(cl.label)}</span> <span className="muted">{cl.count.toLocaleString()}</span>
-        </button>
-      ))}
-    </p>
+    <Legend chipClass="map-cluster-chip" onHover={k => setHighlight(k === null ? null : Number(k))} items={clusters.map(cl => ({
+      key: String(cl.c), name: labels.get(cl.c) ?? cl.label, color: PALETTE[cl.c % PALETTE.length], note: cl.count.toLocaleString(),
+      title: cl.folder && cl.folder !== cl.label ? `${cl.label} · ${cl.folder}` : cl.label,
+      ariaLabel: `${cl.label}, ${cl.count.toLocaleString()} files`, on: focus === cl.c,
+      onClick: () => setFocus(focus === cl.c ? null : cl.c),
+    }))} />
   )
   return (
     <section className="card ov-list">
       <h3>Semantic map</h3>
       <p className="muted">
         Files placed by what they say, from the embeddings search by meaning uses: files that read alike sit near each other
-        whatever folder they are in. Only distance means anything. Click a cluster for all of its files, hover for a file,
-        click to open it; zoom and drag to move, or turn it in 3D.
+        whatever folder they are in. Only distance means anything. Clusters are named for the words that set them apart, and
+        links join each to the two that read most alike; hovering a file draws lines to its five nearest. Click a cluster for
+        all of its files, click a file to open it; zoom and drag to move, or turn it in 3D.
       </p>
       {unavailable || (
         <>
@@ -742,14 +904,19 @@ export function SemanticMap({ onOpen }: { onOpen: (path: string) => void }) {
   )
 }
 
-function SemanticCanvas({ clusters, points, mode, focus, height, palette, spin, onOpen, onFocus, onDetail, api }: {
+function SemanticCanvas({ clusters, links, points, mode, focus, height, palette, spin, labels, showLinks, highlight, onOpen, onFocus, onDetail, api }: {
   clusters: MapCluster[]
+  links: MapLink[]
   points: MapPoint[]
   mode: '2d' | '3d'
   focus: MapCluster | null
   height: number | 'fill'
   palette: string[]
   spin: boolean
+  labels: Map<number, string>
+  showLinks: boolean
+  /** A cluster hovered in the legend: it stays bright and the rest dims. */
+  highlight: number | null
   onOpen: (path: string) => void
   onFocus: (c: number) => void
   onDetail: (inView: number[], k: number) => void
@@ -760,10 +927,12 @@ function SemanticCanvas({ clusters, points, mode, focus, height, palette, spin, 
   const [view, setView] = useState<View>(VIEW0)
   const [cam, setCam] = useState<Camera>(CAMERA0)
   const [hover, setHover] = useState<{ kind: 'point'; i: number } | { kind: 'cluster'; c: number } | null>(null)
+  const [near, setNear] = useState<{ p: string; list: MapNeighbor[] } | null>(null)
   const PAD = 26
   // Screen positions from the last draw, for hit testing.
   const screen = useRef<{ xs: Float32Array; ys: Float32Array; order: Int32Array; cx: Map<number, { x: number; y: number; r: number }> }>(
     { xs: new Float32Array(0), ys: new Float32Array(0), order: new Int32Array(0), cx: new Map() })
+  const pathIndex = useMemo(() => new Map(points.map((p, i) => [p.p, i])), [points])
 
   // A cluster on its own fills the view: the box of its points, with a margin.
   const frame = useMemo(() => {
@@ -797,32 +966,48 @@ function SemanticCanvas({ clusters, points, mode, focus, height, palette, spin, 
     d.sort((a, b) => a - b)
     return Math.max(0.05, d[Math.floor(d.length * 0.95)] ?? 0.5)
   }, [mode, frame, points.length > 0 ? points[0] : null]) // eslint-disable-line react-hooks/exhaustive-deps
+  // Pixels per map unit in 3D at k = 1.
+  const scale0 = (Math.min(w, h) * 0.42) / reach
+
+  // Hovering a file, with links on: its nearest files by meaning, once the
+  // pointer rests on it, from the map's own answers where it has them.
+  const hoveredPath = hover?.kind === 'point' ? points[hover.i]?.p ?? null : null
+  useEffect(() => {
+    if (!showLinks || !hoveredPath) { setNear(null); return }
+    let alive = true
+    const t = setTimeout(() => { void nearestFiles(hoveredPath).then(list => { if (alive) setNear({ p: hoveredPath, list }) }) }, 220)
+    return () => { alive = false; clearTimeout(t) }
+  }, [hoveredPath, showLinks])
 
   const draw = useCallback(() => {
     const c = cv.current
     if (!c) return
-    c.dataset.zoom = mode === '2d' ? view.k.toFixed(2) : (CAMERA0.dist / camRef.current.dist).toFixed(2)
+    const t0 = performance.now()
+    const camNow = camRef.current
+    c.dataset.zoom = (mode === '2d' ? view.k : camNow.k).toFixed(2)
     c.dataset.mode = mode
+    c.dataset.links = showLinks && !focus ? String(links.length) : '0'
+    c.dataset.highlight = highlight === null ? '' : String(highlight)
     const g = context2d(c, w, h)
     const n = points.length
     const xs = new Float32Array(n), ys = new Float32Array(n), depth = new Float32Array(n), grow = new Float32Array(n)
     const cx = new Map<number, { x: number; y: number; r: number }>()
     const maxCount = Math.max(1, ...clusters.map(cl => cl.count))
-    const camNow = camRef.current
-    const scale = (Math.min(w, h) * 0.42) / reach
+    const to2d = (x: number, y: number) => { const b = base2d(x, y); return { x: b.x * view.k + view.tx, y: b.y * view.k + view.ty } }
+    const to3d = (x: number, y: number, z: number) => project3d(centred(x, y, z), camNow, w / 2, h / 2, scale0)
     if (mode === '2d') {
-      for (let i = 0; i < n; i++) { const b = base2d(points[i].x, points[i].y); xs[i] = b.x * view.k + view.tx; ys[i] = b.y * view.k + view.ty }
+      for (let i = 0; i < n; i++) { const s = to2d(points[i].x, points[i].y); xs[i] = s.x; ys[i] = s.y }
       if (!focus) for (const cl of clusters) {
-        const b = base2d(cl.x, cl.y)
-        cx.set(cl.c, { x: b.x * view.k + view.tx, y: b.y * view.k + view.ty, r: Math.max(12, Math.sqrt(cl.count / maxCount) * Math.min(w, h) * 0.17) * Math.sqrt(view.k) })
+        const s = to2d(cl.x, cl.y)
+        cx.set(cl.c, { x: s.x, y: s.y, r: Math.max(12, Math.sqrt(cl.count / maxCount) * Math.min(w, h) * 0.17) * Math.sqrt(view.k) })
       }
     } else {
       for (let i = 0; i < n; i++) {
-        const q = project3d(centred(points[i].x, points[i].y, points[i].z), camNow, w / 2, h / 2, scale)
+        const q = to3d(points[i].x, points[i].y, points[i].z)
         xs[i] = q.x; ys[i] = q.y; depth[i] = q.depth; grow[i] = q.f
       }
       if (!focus) for (const cl of clusters) {
-        const q = project3d(centred(cl.x, cl.y, cl.z), camNow, w / 2, h / 2, scale)
+        const q = to3d(cl.x, cl.y, cl.z)
         cx.set(cl.c, { x: q.x, y: q.y, r: 22 })
       }
     }
@@ -832,6 +1017,9 @@ function SemanticCanvas({ clusters, points, mode, focus, height, palette, spin, 
     screen.current = { xs, ys, order, cx }
     if (!g) return
     const dark = isDarkTheme()
+    const ink = dark ? '#cbd5e1' : '#475569'
+    // The cluster in play: hovered on the map, or in the legend.
+    const active = hover?.kind === 'cluster' ? hover.c : highlight
     // Clusters as regions sized by their file counts, under the files.
     if (mode === '2d' && !focus) {
       for (const cl of clusters) {
@@ -839,10 +1027,31 @@ function SemanticCanvas({ clusters, points, mode, focus, height, palette, spin, 
         g.beginPath()
         g.arc(s.x, s.y, s.r, 0, Math.PI * 2)
         g.fillStyle = palette[cl.c % palette.length]
-        g.globalAlpha = hover?.kind === 'cluster' && hover.c === cl.c ? 0.2 : 0.09
+        g.globalAlpha = active === cl.c ? 0.2 : active !== null ? 0.04 : 0.09
         g.fill()
-        g.globalAlpha = 0.35
+        g.globalAlpha = active !== null && active !== cl.c ? 0.12 : 0.35
         g.strokeStyle = palette[cl.c % palette.length]
+        g.stroke()
+      }
+      g.globalAlpha = 1
+    }
+    // Links between clusters near each other by meaning: a light skeleton
+    // under the files, heavier for the nearer pairs; the cluster in play
+    // shows its own in its color.
+    if (showLinks && !focus && links.length) {
+      let lo = Infinity, hi = -Infinity
+      for (const l of links) { lo = Math.min(lo, l.sim); hi = Math.max(hi, l.sim) }
+      for (const l of links) {
+        const a = cx.get(l.a), b = cx.get(l.b)
+        if (!a || !b) continue
+        const s = hi > lo ? (l.sim - lo) / (hi - lo) : 1
+        const mine = active !== null && (l.a === active || l.b === active)
+        g.beginPath()
+        g.moveTo(a.x, a.y)
+        g.lineTo(b.x, b.y)
+        g.strokeStyle = mine ? palette[active! % palette.length] : ink
+        g.globalAlpha = mine ? 0.9 : active !== null ? 0.06 : 0.18 + 0.32 * s
+        g.lineWidth = mine ? 1.8 + 1.4 * s : 0.8 + 1.6 * s
         g.stroke()
       }
       g.globalAlpha = 1
@@ -851,6 +1060,8 @@ function SemanticCanvas({ clusters, points, mode, focus, height, palette, spin, 
     if (mode === '3d') for (let i = 0; i < n; i++) { fmin = Math.min(fmin, grow[i]); fmax = Math.max(fmax, grow[i]) }
     const hovered = hover?.kind === 'point' ? hover.i : -1
     const dotR = mode === '2d' ? Math.min(6, 3.2 + Math.log2(view.k) * 0.6) : 3
+    // Dots grow a little as the 3D view zooms in, up to twice their size.
+    const zoomGrow = mode === '3d' ? Math.min(2, 1 + Math.log2(camNow.k) * 0.25) : 1
     for (let j = 0; j < n; j++) {
       const i = order[j]
       const x = xs[i], y = ys[i]
@@ -858,9 +1069,10 @@ function SemanticCanvas({ clusters, points, mode, focus, height, palette, spin, 
       let r = dotR, a = hovered >= 0 && hovered !== i ? 0.45 : 0.9
       if (mode === '3d') {
         const t = fmax > fmin ? (grow[i] - fmin) / (fmax - fmin) : 1
-        r = 1.6 + 3.2 * t
+        r = (1.6 + 3.2 * t) * zoomGrow
         a = (0.3 + 0.65 * t) * (hovered >= 0 && hovered !== i ? 0.6 : 1)
       }
+      if (active !== null && points[i].c !== active && i !== hovered) a *= 0.2
       g.beginPath()
       g.arc(x, y, i === hovered ? r + 2.5 : r, 0, Math.PI * 2)
       g.fillStyle = palette[points[i].c % palette.length]
@@ -868,14 +1080,43 @@ function SemanticCanvas({ clusters, points, mode, focus, height, palette, spin, 
       g.fill()
     }
     g.globalAlpha = 1
+    // The hovered file's nearest files by meaning: a line to each, and a ring
+    // where the file is not among the dots loaded.
+    if (showLinks && hovered >= 0 && near && near.p === points[hovered]?.p) {
+      const from = { x: xs[hovered], y: ys[hovered] }
+      for (const nb of near.list) {
+        const at = pathIndex.get(nb.p)
+        let to: { x: number; y: number } | null = at !== undefined ? { x: xs[at], y: ys[at] } : null
+        const ring = at === undefined
+        if (!to && nb.x !== undefined && nb.y !== undefined && nb.z !== undefined) to = mode === '2d' ? to2d(nb.x, nb.y) : to3d(nb.x, nb.y, nb.z)
+        if (!to) continue
+        g.beginPath()
+        g.moveTo(from.x, from.y)
+        g.lineTo(to.x, to.y)
+        g.strokeStyle = palette[points[hovered].c % palette.length]
+        g.globalAlpha = 0.45 + 0.4 * Math.max(0, Math.min(1, nb.sim))
+        g.lineWidth = 1.4
+        g.stroke()
+        if (ring) {
+          g.beginPath()
+          g.arc(to.x, to.y, 5, 0, Math.PI * 2)
+          g.strokeStyle = palette[(nb.c ?? points[hovered].c) % palette.length]
+          g.globalAlpha = 0.9
+          g.lineWidth = 1.6
+          g.stroke()
+        }
+      }
+      g.globalAlpha = 1
+    }
     // Cluster names in screen space, largest first, none over another.
     if (!focus) {
       g.font = '600 12.5px system-ui, sans-serif'
       const drawn: { x0: number; y0: number; x1: number; y1: number }[] = []
       for (const cl of [...clusters].sort((a, b) => b.count - a.count)) {
         const s = cx.get(cl.c)
-        if (!s || !cl.label || s.x < 0 || s.y < 0 || s.x > w || s.y > h) continue
-        const text = shortLabel(cl.label)
+        const text = labels.get(cl.c) ?? cl.label
+        if (!s || !text || s.x < 0 || s.y < 0 || s.x > w || s.y > h) continue
+        if (active !== null && active !== cl.c) continue
         const wpx = g.measureText(text).width
         // Kept inside the canvas, so a cluster at the edge keeps its name.
         const x0 = Math.max(2, Math.min(w - wpx - 12, s.x - wpx / 2 - 5)), y0 = Math.max(2, Math.min(h - 19, s.y - 20))
@@ -888,7 +1129,8 @@ function SemanticCanvas({ clusters, points, mode, focus, height, palette, spin, 
         g.fillText(text, box.x0 + 5, box.y0 + 13)
       }
     }
-  }, [points, clusters, mode, focus, frame, view, w, h, hover, palette, reach]) // eslint-disable-line react-hooks/exhaustive-deps
+    c.dataset.drawMs = (performance.now() - t0).toFixed(2)
+  }, [points, clusters, links, mode, focus, frame, view, w, h, hover, palette, reach, showLinks, highlight, near, labels, pathIndex]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { draw() }, [draw, cam])
 
@@ -917,7 +1159,7 @@ function SemanticCanvas({ clusters, points, mode, focus, height, palette, spin, 
           const sa = screen.current.cx.get(a)!, sb = screen.current.cx.get(b)!
           return Math.hypot(sa.x - w / 2, sa.y - h / 2) - Math.hypot(sb.x - w / 2, sb.y - h / 2)
         })
-      onDetail(inView, mode === '2d' ? view.k : CAMERA0.dist / cam.dist)
+      onDetail(inView, mode === '2d' ? view.k : cam.k)
     }, 300)
     return () => clearTimeout(t)
   }, [view, cam, focus?.c, mode]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -936,13 +1178,13 @@ function SemanticCanvas({ clusters, points, mode, focus, height, palette, spin, 
   }
   const zoom = useCallback((f: number, px = w / 2, py = h / 2) => {
     if (mode === '2d') setView(v => zoomAround(v, px, py, f, w, h))
-    else setCam(cm => ({ ...cm, dist: Math.min(8, Math.max(1.05, cm.dist / f)) }))
-  }, [mode, w, h])
+    else setCam(cm => zoom3d(cm, px, py, f, w / 2, h / 2, scale0))
+  }, [mode, w, h, scale0])
   const reset = useCallback(() => { setView(VIEW0); setCam(CAMERA0) }, [])
   api.current = { zoom: f => zoom(f), reset }
   const pan = (dx: number, dy: number) => {
     if (mode === '2d') setView(v => clampView({ ...v, tx: v.tx + dx, ty: v.ty + dy }, w, h))
-    else setCam(cm => ({ ...cm, panX: cm.panX + dx, panY: cm.panY + dy }))
+    else setCam(cm => pan3d(cm, dx, dy, scale0))
   }
   useGestures(cv, {
     drag: (dx, dy, e) => {
@@ -968,15 +1210,18 @@ function SemanticCanvas({ clusters, points, mode, focus, height, palette, spin, 
       return viewKey(e, f => zoom(f), pan, reset)
     },
   })
+  const hoverCluster = hover?.kind === 'cluster' ? clusters.find(x => x.c === hover.c) : null
   const tip = hover?.kind === 'point' ? points[hover.i]?.p
-    : hover?.kind === 'cluster' ? (() => { const cl = clusters.find(x => x.c === hover.c); return cl ? `${cl.label} · ${cl.count.toLocaleString()} files · click for all of them` : null })()
+    : hoverCluster ? `${hoverCluster.label}${hoverCluster.folder && hoverCluster.folder !== hoverCluster.label ? ` (${hoverCluster.folder})` : ''} · ${hoverCluster.count.toLocaleString()} files · click for all of them`
       : null
+  const nearNote = showLinks && hover?.kind === 'point' && near?.p === points[hover.i]?.p && near.list.length
+    ? `lines to its ${near.list.length} nearest files by meaning` : null
   return (
     <div className={`map-canvas${height === 'fill' ? ' fill' : ''}`}>
       <canvas ref={cv} className="semantic-map" tabIndex={0}
         aria-label={`Semantic map, ${mode === '2d' ? '2D' : '3D'}: zoom with + and -, ${mode === '2d' ? 'move' : 'turn'} with the arrow keys, 0 resets`}
         style={{ width: '100%', height: height === 'fill' ? '100%' : height, display: 'block', cursor: hover ? 'pointer' : mode === '3d' ? 'grab' : 'default' }} />
-      {tip && <div className="map-tip">{tip}</div>}
+      {tip && <div className="map-tip">{tip}{nearNote && <span className="map-tip-note"> · {nearNote}</span>}</div>}
     </div>
   )
 }

@@ -10,10 +10,17 @@ mean vector per file, kept in a scratch file rather than in memory.
 
 Then: the mean of each file's passages; PCA (an SVD of at most --fit files,
 then every file projected) to three components for the map and sixteen for
-grouping; k-means into 4 to 14 clusters, each named for the folder most of
-its files live in. Writes, into --out:
+grouping; k-means into 4 to 14 clusters. Each cluster is named for the words
+that set it apart: the two or three terms of its members' passages (the text
+the vectors were made from) with the highest TF-IDF against the whole map,
+no two clusters named alike. A cluster without such terms is named for the
+folders most of its files live in, with the parent folder where two names
+would read the same. Each cluster is also linked to the two clusters nearest
+it in the full embedding space (the cosine of their mean vectors). Writes,
+into --out:
 
-  overview.json      every cluster (label, count, centroid) and a sample of
+  overview.json      every cluster (label, folder name, terms, count,
+                     centroid), the links between clusters, and a sample of
                      at most --sample files spread across the clusters
   cluster-<c>.json   every file of cluster c, in a random order, so its
                      first page is a fair sample of it
@@ -28,8 +35,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import random
+import re
 import shutil
 import sqlite3
 import sys
@@ -49,11 +58,44 @@ except ImportError:
 DIMS = 384
 GROUP_DIMS = 16
 VECTOR_BYTES = DIMS * 4
+# How many clusters each cluster is linked to, by the cosine of their means.
+LINKS_PER_CLUSTER = 2
+
+# Naming clusters by their words: each file's passages give at most
+# TEXT_CHARS characters and keep their FILE_TERMS commonest terms.
+TEXT_CHARS = 20_000
+FILE_TERMS = 30
+TERM = re.compile(r'[a-z][a-z0-9]{2,23}')
+STOPWORDS = frozenset('''
+a about above after again against all also am an and any are as at be because been before being below between both
+but by can cannot could did do does doing down during each else etc even ever every few for from further get gets got
+had has have having he her here hers him his how however if in into is it its itself just like made make makes many
+may me might more most much must my no nor not now of off on once one only or other our ours out over own per same
+see shall she should since so some such than that the their theirs them then there these they this those though
+through thus to too two under until up upon us use used uses using very via was way we well were what when where
+whether which while who whom whose why will with within without would yet you your yours three four five first
+second new old also within non way ways need needs based include includes including example examples following
+given within page pages figure fig table tables section chapter file files http https www com org net html htm pdf
+png jpg jpeg gif svg doc docx ppt pptx xls xlsx txt csv json xml yaml yml true false null none nan
+'''.split())
+
+
+def file_terms(text: str) -> list[list]:
+    """The FILE_TERMS commonest terms of a file's text, with their counts:
+    lower-case words of 3 to 24 letters and digits, starting with a letter,
+    no stop words, and no runs of digits (versions, ids and hashes)."""
+    counts: dict[str, int] = {}
+    for t in TERM.findall(text.lower()):
+        if t in STOPWORDS or sum(ch.isdigit() for ch in t) > 2:
+            continue
+        counts[t] = counts.get(t, 0) + 1
+    return [[t, n] for t, n in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[:FILE_TERMS]]
 
 
 def folder_vectors(db_path: str):
-    """(file name, mean vector, model) for each file with vectors in one
-    folder's db.db, read without the sqlite-vec extension."""
+    """(file name, mean vector, model, terms) for each file with vectors in
+    one folder's db.db, read without the sqlite-vec extension. The terms come
+    from the file's passages (gchunks), the text its vectors were made from."""
     try:
         c = sqlite3.connect(f'file:{db_path}?mode=ro', uri=True, timeout=30)
     except sqlite3.Error:
@@ -91,7 +133,18 @@ def folder_vectors(db_path: str):
             else:
                 sums[fname] = vec.astype(np.float64)
                 counts[fname] = 1
-        return [(f, (sums[f] / counts[f]).astype(np.float32), model) for f in sums], model
+        texts: dict[str, list[str]] = {}
+        sizes: dict[str, int] = {}
+        try:
+            for fname, ctext in c.execute('SELECT fname, ctext FROM gchunks ORDER BY fname, seq'):
+                if fname not in sums or not ctext or sizes.get(fname, 0) >= TEXT_CHARS:
+                    continue
+                part = ctext[:TEXT_CHARS - sizes.get(fname, 0)]
+                texts.setdefault(fname, []).append(part)
+                sizes[fname] = sizes.get(fname, 0) + len(part)
+        except sqlite3.Error:
+            texts = {}
+        return [(f, (sums[f] / counts[f]).astype(np.float32), model, file_terms(' '.join(texts.get(f, [])))) for f in sums], model
     except (sqlite3.Error, ValueError, IndexError):
         return [], None
     finally:
@@ -100,7 +153,9 @@ def folder_vectors(db_path: str):
 
 def label_clusters(paths: list[str], assign: np.ndarray, k: int) -> list[str]:
     """Each cluster named for the folder most of its files live in; clusters
-    that would share a name go a level deeper until they differ."""
+    that would share a name go a level deeper until they differ. A second
+    folder keeps its parent when its own name is the same as the first's
+    (pw/docs + gs_services/docs, not pw/docs + docs)."""
     def label_at(c: int, depth: int) -> str:
         tally: dict[str, int] = {}
         for i in np.flatnonzero(assign == c):
@@ -113,7 +168,9 @@ def label_clusters(paths: list[str], assign: np.ndarray, k: int) -> list[str]:
         total = sum(tally.values())
         if ranked[0][1] / total >= 0.6 or len(ranked) == 1:
             return ranked[0][0]
-        return f"{ranked[0][0]} + {ranked[1][0].split('/')[-1]}"
+        first, second = ranked[0][0], ranked[1][0].split('/')
+        tail = second[-1] if second[-1] != first.split('/')[-1] else '/'.join(second[-2:])
+        return f'{first} + {tail}'
 
     labels = [label_at(c, 0) for c in range(k)]
     for depth in range(1, 4):
@@ -128,6 +185,106 @@ def label_clusters(paths: list[str], assign: np.ndarray, k: int) -> list[str]:
         if not collided:
             break
     return labels
+
+
+def cluster_terms(terms_path: Path, assign: np.ndarray, k: int, df: dict[str, int], n_text: int, keep: int = 8) -> list[list[str]]:
+    """Each cluster's distinctive terms, best first: the share of its files
+    (those with text) that use a term, times the term's inverse document
+    frequency over every file of the map, so a word common to the whole map
+    scores near nothing. A term must appear in at least 5% of the cluster's
+    files with text (and in two, where the cluster has four or more)."""
+    cdf: list[dict[str, int]] = [{} for _ in range(k)]
+    with_text = [0] * k
+    with terms_path.open() as f:
+        for i, line in enumerate(f):
+            terms = json.loads(line)
+            if not terms:
+                continue
+            c = int(assign[i])
+            with_text[c] += 1
+            for t, _ in terms:
+                cdf[c][t] = cdf[c].get(t, 0) + 1
+    out: list[list[str]] = []
+    for c in range(k):
+        n_c = with_text[c]
+        if not n_c:
+            out.append([])
+            continue
+        support = max(2, math.ceil(0.05 * n_c)) if n_c >= 4 else 1
+        scored = []
+        for t, m in cdf[c].items():
+            if m < support:
+                continue
+            idf = math.log((n_text + 1) / (df.get(t, 0) + 1))
+            score = (m / n_c) * idf
+            if score > 0.05:
+                scored.append((score, t))
+        scored.sort(key=lambda st: (-st[0], st[1]))
+        out.append([t for _, t in scored[:keep]])
+    return out
+
+
+def name_clusters(candidates: list[list[str]], folders: list[str], max_chars: int = 26) -> tuple[list[str], list[list[str]]]:
+    """A name from each cluster's terms, largest cluster first: two terms, or
+    three where they fit in max_chars. A term another cluster's name already
+    uses goes behind the terms no name uses yet, and a name another cluster
+    has takes the next term instead of its last, so no two names read alike.
+    A cluster with fewer than two terms takes its folder name, which says
+    more than one word would."""
+    names: list[str] = []
+    chosen: list[list[str]] = []
+    used_terms: set[str] = set()
+    taken: set[str] = set()
+    for c, cands in enumerate(candidates):
+        if len(cands) < 2:
+            name = folders[c] or f'cluster {c + 1}'
+            n = 2
+            while name in taken:
+                name = f'{folders[c] or "cluster"} ({n})'
+                n += 1
+            names.append(name)
+            chosen.append([])
+            taken.add(name)
+            continue
+        ordered = [t for t in cands if t not in used_terms] + [t for t in cands if t in used_terms]
+        pick = ordered[:2]
+        if len(ordered) > 2 and len(', '.join(ordered[:3])) <= max_chars:
+            pick = ordered[:3]
+        name = ', '.join(pick)
+        spare = [t for t in ordered if t not in pick]
+        while name in taken and spare:
+            pick = pick[:-1] + [spare.pop(0)]
+            name = ', '.join(pick)
+        if name in taken:
+            name = f'{name} ({folders[c].split(" + ")[0].split("/")[-1] or c + 1})'
+        names.append(name)
+        chosen.append(pick)
+        taken.add(name)
+        used_terms.update(pick)
+    return names, chosen
+
+
+def cluster_links(means_path: Path, n: int, assign: np.ndarray, k: int, per: int = LINKS_PER_CLUSTER) -> list[dict]:
+    """Each cluster linked to the `per` clusters nearest it in the full
+    embedding space: the cosine of the clusters' mean vectors, read from the
+    scratch file of file means a block at a time. Pairs are listed once."""
+    if k < 2:
+        return []
+    sums = np.zeros((k, DIMS), dtype=np.float64)
+    X = np.memmap(means_path, dtype=np.float32, mode='r', shape=(n, DIMS))
+    for s in range(0, n, 20_000):
+        np.add.at(sums, assign[s:s + 20_000], np.asarray(X[s:s + 20_000], dtype=np.float64))
+    del X
+    norms = np.linalg.norm(sums, axis=1, keepdims=True)
+    cents = sums / np.where(norms > 0, norms, 1)
+    sim = cents @ cents.T
+    pairs: dict[tuple[int, int], float] = {}
+    for a in range(k):
+        others = [b for b in np.argsort(-sim[a], kind='stable') if b != a][:per]
+        for b in others:
+            key = (min(a, int(b)), max(a, int(b)))
+            pairs[key] = round(float(sim[a, b]), 4)
+    return [{'a': a, 'b': b, 'sim': s} for (a, b), s in sorted(pairs.items(), key=lambda kv: (-kv[1], kv[0]))]
 
 
 def kmeans(points: np.ndarray, k: int, rng: np.random.Generator, iters: int = 30) -> np.ndarray:
@@ -172,10 +329,15 @@ def build(index: Path, out: Path, sample: int, fit: int) -> dict:
     scratch = Path(tempfile.mkdtemp(prefix='semantic-map-', dir=str(out.parent)))
     try:
         means_path = scratch / 'means.f32'
+        # Each file's terms, one JSON line per file in the order of `paths`,
+        # and how many files use each term, for naming the clusters.
+        terms_path = scratch / 'terms.jsonl'
+        df: dict[str, int] = {}
+        n_text = 0
         paths: list[str] = []
         models: dict[str, int] = {}
         dbs = 0
-        with means_path.open('wb') as means:
+        with means_path.open('wb') as means, terms_path.open('w') as terms_out:
             for dirpath, dirnames, filenames in os.walk(index):
                 dirnames[:] = sorted(d for d in dirnames if not d.startswith('.'))
                 if 'db.db' not in filenames:
@@ -186,9 +348,18 @@ def build(index: Path, out: Path, sample: int, fit: int) -> dict:
                     continue
                 models[model] = models.get(model, 0) + len(rows)
                 rel = os.path.relpath(dirpath, index)
-                for fname, vec, m in rows:
+                for fname, vec, m, terms in rows:
                     paths.append(fname if rel == '.' else f'{rel}/{fname}')
                     means.write(vec.tobytes())
+                    terms_out.write(json.dumps(terms, separators=(',', ':')) + '\n')
+                    if terms:
+                        n_text += 1
+                        for t, _ in terms:
+                            df[t] = df.get(t, 0) + 1
+                # A term seen in one file only cannot name a cluster; on a very
+                # large map those are let go so the tally stays bounded.
+                if len(df) > 1_500_000:
+                    df = {t: v for t, v in df.items() if v > 1}
         read_ms = round((time.monotonic() - t0) * 1000)
         n = len(paths)
         if n < 3:
@@ -220,7 +391,9 @@ def build(index: Path, out: Path, sample: int, fit: int) -> dict:
         rank[order] = np.arange(k)
         assign = rank[assign]
         k = int((sizes > 0).sum())
-        labels = label_clusters(paths, assign, k)
+        folders = label_clusters(paths, assign, k)
+        labels, label_terms = name_clusters(cluster_terms(terms_path, assign, k, df, n_text), folders)
+        links = cluster_links(means_path, n, assign, k)
         fix = lambda v: round(float(v), 4)
         clusters, quota_total = [], 0
         members = [np.flatnonzero(assign == c) for c in range(k)]
@@ -235,7 +408,7 @@ def build(index: Path, out: Path, sample: int, fit: int) -> dict:
             m = members[c].copy()
             rng.shuffle(m)
             centre = coords[m].mean(0)
-            clusters.append({'c': c, 'label': labels[c], 'count': int(len(m)),
+            clusters.append({'c': c, 'label': labels[c], 'folder': folders[c], 'terms': label_terms[c], 'count': int(len(m)),
                              'x': fix(centre[0]), 'y': fix(centre[1]), 'z': fix(centre[2])})
             for i in m[:quotas[c]]:
                 points.append({'p': paths[i], 'x': fix(coords[i, 0]), 'y': fix(coords[i, 1]), 'z': fix(coords[i, 2]), 'c': c})
@@ -244,13 +417,14 @@ def build(index: Path, out: Path, sample: int, fit: int) -> dict:
                            'points': [{'p': paths[i], 'x': fix(coords[i, 0]), 'y': fix(coords[i, 1]), 'z': fix(coords[i, 2])} for i in m]},
                           f, separators=(',', ':'))
         overview = {
-            'version': 2, 'available': True, 'builtAt': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
-            'model': model, 'files': n, 'shown': len(points), 'clusters': clusters, 'points': points,
+            'version': 3, 'available': True, 'builtAt': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
+            'model': model, 'files': n, 'shown': len(points), 'clusters': clusters, 'links': links, 'points': points,
             'ms': round((time.monotonic() - t0) * 1000), 'readMs': read_ms, 'dbs': dbs,
         }
         with (scratch / 'overview.json').open('w') as f:
             json.dump(overview, f, separators=(',', ':'))
         means_path.unlink()
+        terms_path.unlink()
         # Swapped in whole: the old map stays readable until the new one is complete.
         old = out.with_name(out.name + '.old')
         shutil.rmtree(old, ignore_errors=True)

@@ -25,8 +25,16 @@ import { KbError } from './kb.js'
  * says so.
  */
 
-export interface MapCluster { c: number; label: string; count: number; x: number; y: number; z: number }
+/** A cluster: `label` is its distinctive words (or, without text, its
+ *  folders); `folder` its folder name, kept for hover; `terms` the words in
+ *  its label. Maps made before these were added have the label only. */
+export interface MapCluster { c: number; label: string; count: number; x: number; y: number; z: number; folder?: string; terms?: string[] }
 export interface MapPoint { p: string; x: number; y: number; z: number; c?: number }
+/** Two clusters near each other in the full embedding space: `sim` is the
+ *  cosine of their mean vectors. Each cluster has its two nearest. */
+export interface MapLink { a: number; b: number; sim: number }
+/** A file near another by meaning, with its place on the map where it has one. */
+export interface MapNeighbor { p: string; sim: number; x?: number; y?: number; z?: number; c?: number }
 export interface SemanticMapOverview {
   available: boolean
   /** Why there is no map: search by meaning is off for the main folder, the
@@ -41,6 +49,7 @@ export interface SemanticMapOverview {
   files?: number
   shown?: number
   clusters?: MapCluster[]
+  links?: MapLink[]
   points?: MapPoint[]
   /** Drawn by the server from a sample, without numpy. */
   fallback?: boolean
@@ -311,11 +320,156 @@ async function buildWithoutNumpy(): Promise<void> {
 /** The map earlier versions cached beside the index, made on request. */
 fs.rm(path.join(INDEX_BASE, 'semantic-map.json'), { force: true }, () => {})
 
+// ---- a file's nearest files by meaning ----
+
+/** The map's own time: answers made for one map are kept until the next. */
+const mapStamp = () => { try { return fs.statSync(OVERVIEW()).mtimeMs } catch { return 0 } }
+
+/** Each index db with vectors, and the model they come from, kept for five
+ *  minutes or until the map is made again. */
+let vectorDbCache: { stamp: number; at: number; dbs: Map<string, string> } | null = null
+async function vectorDbModels(): Promise<Map<string, string>> {
+  const stamp = mapStamp()
+  if (vectorDbCache && vectorDbCache.stamp === stamp && Date.now() - vectorDbCache.at < 5 * 60_000) return vectorDbCache.dbs
+  const esc = (s: string) => `'${s.replace(/'/g, "''")}'`
+  const all = listVectorDbs()
+  const found = new Map<string, Set<string>>()
+  for (let s = 0; s < all.length; s += 200) {
+    const out = await sqliteScript(all.slice(s, s + 200).flatMap(db => [`ATTACH ${esc(db)} AS c;`,
+      `SELECT 'HAS' || ${esc(SEP)} || ${esc(db)} || ${esc(SEP)} || name FROM c.sqlite_master WHERE name IN ('gvec', 'gvecmodel');`, 'DETACH c;']))
+    for (const l of out.split('\n')) {
+      const [tag, db, name] = l.split(SEP)
+      if (tag === 'HAS' && db && name) found.set(db, (found.get(db) ?? new Set()).add(name.trim()))
+    }
+  }
+  const dbs = new Map<string, string>()
+  const withModel = [...found].filter(([, n]) => n.has('gvec') && n.has('gvecmodel')).map(([db]) => db)
+  for (let s = 0; s < withModel.length; s += 200) {
+    const out = await sqliteScript(withModel.slice(s, s + 200).flatMap(db => [`ATTACH ${esc(db)} AS c;`,
+      `SELECT 'MODEL' || ${esc(SEP)} || ${esc(db)} || ${esc(SEP)} || model FROM c.gvecmodel LIMIT 1;`, 'DETACH c;']))
+    for (const l of out.split('\n')) {
+      const [tag, db, model] = l.split(SEP)
+      if (tag === 'MODEL' && db && model) dbs.set(db, model.trim())
+    }
+  }
+  // A directory embedded before models were recorded holds the first model's vectors.
+  for (const [db, names] of found) if (names.has('gvec') && !dbs.has(db)) dbs.set(db, 'minilm384')
+  vectorDbCache = { stamp, at: Date.now(), dbs }
+  return dbs
+}
+
+/** Where each file of the map sits, from the clusters' files, made once per
+ *  map; a map of more than PLACES_MAX files keeps none, and its neighbors
+ *  come without a place unless they are on screen already. */
+const PLACES_MAX = 300_000
+let placeCache: { stamp: number; places: Map<string, { x: number; y: number; z: number; c: number }> | null } | null = null
+function mapPlaces(): Map<string, { x: number; y: number; z: number; c: number }> | null {
+  const stamp = mapStamp()
+  if (placeCache?.stamp === stamp) return placeCache.places
+  const overview = readJson<SemanticMapOverview>(OVERVIEW(), overviewCache)?.data
+  let places: Map<string, { x: number; y: number; z: number; c: number }> | null = null
+  if (overview?.available && (overview.files ?? 0) <= PLACES_MAX) {
+    places = new Map()
+    for (const cl of overview.clusters ?? []) {
+      try {
+        const data = JSON.parse(fs.readFileSync(path.join(SEMANTIC_MAP_DIR, `cluster-${cl.c}.json`), 'utf8')) as { points: MapPoint[] }
+        for (const p of data.points) places.set(p.p, { x: p.x, y: p.y, z: p.z, c: cl.c })
+      } catch { /* a cluster file missing: its files have no place */ }
+    }
+  }
+  placeCache = { stamp, places }
+  return places
+}
+
+const neighborCache = new Map<string, Promise<{ file: string; neighbors: MapNeighbor[]; reason?: string }>>()
+
+/** Float32 little-endian bytes of a vector, as an SQL blob literal. */
+function vectorBlob(v: number[]): string {
+  const buf = Buffer.alloc(v.length * 4)
+  v.forEach((x, i) => buf.writeFloatLE(x, i * 4))
+  return `X'${buf.toString('hex')}'`
+}
+
+/**
+ * The `k` files nearest one file of the main folder by meaning: the mean of
+ * the file's own passage vectors is the query, and every directory whose
+ * vectors come from the same model answers with its nearest passages, as a
+ * search by meaning does. Similarity is the cosine of the vectors (they are
+ * unit length). An empty list, with a reason, where the folder or the file
+ * has no vectors. Answers are kept until the map is made again.
+ */
+export function semanticNeighbors(file: string, k = 5): Promise<{ file: string; neighbors: MapNeighbor[]; reason?: string }> {
+  const rel = path.posix.normalize(String(file ?? '').replace(/\\/g, '/')).replace(/^\.\//, '')
+  if (!rel || rel === '.' || rel.startsWith('/') || rel === '..' || rel.startsWith('../')) throw new KbError(400, 'file: a path in the main folder')
+  const n = Math.min(20, Math.max(1, Math.floor(k) || 5))
+  if (indexSettings('kb').meaning === 'off') return Promise.resolve({ file: rel, neighbors: [], reason: 'off' })
+  const key = `${mapStamp()}\0${rel}\0${n}`
+  const hit = neighborCache.get(key)
+  if (hit) return hit
+  const value = findNeighbors(rel, n)
+  neighborCache.set(key, value)
+  if (neighborCache.size > 300) neighborCache.delete(neighborCache.keys().next().value!)
+  value.catch(() => neighborCache.delete(key))
+  return value
+}
+
+async function findNeighbors(rel: string, k: number): Promise<{ file: string; neighbors: MapNeighbor[]; reason?: string }> {
+  const esc = (s: string) => `'${s.replace(/'/g, "''")}'`
+  const dir = path.posix.dirname(rel), name = path.posix.basename(rel)
+  const own = path.join(GUFI_INDEX, dir === '.' ? '' : dir, 'db.db')
+  const dbs = await vectorDbModels()
+  const model = dbs.get(own)
+  if (!model) return { file: rel, neighbors: [], reason: 'none' }
+  const out = await sqliteScript([`ATTACH ${esc(own)} AS s;`,
+    `SELECT 'Q' || ${esc(SEP)} || vec_to_json(v.fp384) FROM s.gvec v JOIN s.gchunks g ON g.cid = v.cid WHERE g.fname = ${esc(name)};`, 'DETACH s;'])
+  const vecs: number[][] = []
+  for (const l of out.split('\n')) {
+    if (!l.startsWith(`Q${SEP}`)) continue
+    try { const v = JSON.parse(l.slice(2)) as number[]; if (Array.isArray(v) && v.length) vecs.push(v) } catch { /* skipped */ }
+  }
+  if (!vecs.length) return { file: rel, neighbors: [], reason: 'none' }
+  const mean = vecs[0].map((_, i) => vecs.reduce((s, v) => s + v[i], 0) / vecs.length)
+  const norm = Math.hypot(...mean) || 1
+  const query = mean.map(x => x / norm)
+  const script = [`CREATE TABLE temp.q AS SELECT ${vectorBlob(query)} AS qe;`]
+  for (const [db, m] of dbs) {
+    if (m !== model) continue
+    const relDir = path.relative(GUFI_INDEX, path.dirname(db))
+    script.push(`ATTACH ${esc(db)} AS d;`,
+      `SELECT 'N' || ${esc(SEP)} || ${esc(relDir)} || ${esc(SEP)} || g.fname || ${esc(SEP)} || n.distance FROM ` +
+      `(SELECT cid, distance FROM d.gvec WHERE fp384 MATCH (SELECT qe FROM temp.q) ORDER BY distance ASC LIMIT ${k + 4}) n JOIN d.gchunks g ON g.cid = n.cid;`,
+      'DETACH d;')
+  }
+  const best = new Map<string, number>()
+  for (const l of (await sqliteScript(script)).split('\n')) {
+    const [tag, d, fname, dist] = l.split(SEP)
+    if (tag !== 'N' || !fname) continue
+    const p = d ? `${d}/${fname}` : fname
+    const v = Number(dist)
+    if (p === rel || !Number.isFinite(v)) continue
+    if (!best.has(p) || v < best.get(p)!) best.set(p, v)
+  }
+  const places = mapPlaces()
+  const neighbors = [...best].sort((a, b) => a[1] - b[1]).slice(0, k).map(([p, d]): MapNeighbor => {
+    const sim = Math.round(Math.max(-1, Math.min(1, 1 - (d * d) / 2)) * 1000) / 1000
+    return { p, sim, ...(places?.get(p) ?? {}) }
+  })
+  return { file: rel, neighbors }
+}
+
+/** For tests: forget the kept answers. */
+export function resetNeighborsForTests(): void { neighborCache.clear(); vectorDbCache = null; placeCache = null }
+
 export async function semanticMapRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/kb/semantic-map', async () => semanticMapOverview())
   app.get('/api/kb/semantic-map/cluster/:c', async req => {
     const { c } = req.params as { c: string }
     const { offset, limit } = req.query as { offset?: string; limit?: string }
     return semanticMapCluster(Number(c), Number(offset ?? 0), Number(limit ?? 2000))
+  })
+  // The files nearest one file by meaning, for the lines the map draws from it.
+  app.get('/api/kb/semantic-map/neighbors', async req => {
+    const { file, k } = req.query as { file?: string; k?: string }
+    return semanticNeighbors(file ?? '', Number(k ?? 5))
   })
 }
