@@ -335,6 +335,37 @@ if [ "$RUN" = 1 ]; then
       done
       if [ "$ocr_found" = 1 ]; then ok "and search finds a picture and a scanned PDF by the text OCR read"; else bad "search did not find both OCR samples:"; tail -n 30 "$T/data/logs/studio.log" | sed 's/^/        /'; fi
     fi
+    # A query across two libraries goes through gufi_vt, with node and the
+    # wrapper inside "ACTIVATE Studio.app" and a second index whose path has
+    # a space and a single quote, all quoted for gufi_vt.
+    second="$T/second idx's"
+    if clean /bin/sh -c "'$G/bin/gufi_dir2index' -x '$T/corpus' \"\$1\"" sh "$second" >/dev/null 2>&1 &&
+      curl -fsS -m 30 -X POST -H 'content-type: application/json' \
+        -d "$(python3 -c 'import json, sys; print(json.dumps({"id": "second", "label": "Second", "indexRoot": sys.argv[1]}))' "$second/corpus")" \
+        "http://127.0.0.1:$PORT_FREE/api/libraries" >/dev/null; then
+      curl -fsS -m 60 -X POST -H 'content-type: application/json' -d '{"library": "all", "canned": "largest", "n": 20}' \
+        "http://127.0.0.1:$PORT_FREE/api/query" >"$T/query.json" 2>"$T/query.err" || true
+      if python3 -c 'import json, sys; d = json.load(open(sys.argv[1])); libs = set(d.get("rowLibraries") or []); sys.exit(0 if d.get("engine") == "gufi_vt" and {"kb", "second"} <= libs and not d.get("failed") else 1)' "$T/query.json" 2>/dev/null; then
+        ok "a query across two libraries runs through gufi_vt"
+      else
+        bad "a query across two libraries did not run through gufi_vt:"
+        python3 -c 'import json, sys; d = json.load(open(sys.argv[1])); print("engine", d.get("engine"), "libraries", sorted(set(d.get("rowLibraries") or [])), "failed", d.get("failed"))' "$T/query.json" 2>&1 | sed 's/^/        /'
+        sed 's/^/        /' "$T/query.err" || true
+        { grep -i -E 'gufi_vt|fell back' "$T/data/logs/studio.log" || true; } | tail -n 5 | sed 's/^/        /'
+        # The server's own probe by hand, and the steps before it.
+        {
+          clean "$G/bin/gufi_sqlite3" :memory: 'SELECT 1;'; echo "select 1: exit $?"
+          clean "$G/bin/gufi_sqlite3" :memory: "SELECT group_concat(name) FROM pragma_module_list WHERE name LIKE 'gufi%';"; echo "gufi modules: exit $?"
+          clean env PATH="$G/bin:/usr/bin:/bin" "$G/bin/gufi_sqlite3" :memory: \
+            "CREATE VIRTUAL TABLE temp.l USING gufi_vt(index='$T/idx/corpus', E=\"SELECT name FROM vrpentries;\"); SELECT count(*) FROM temp.l;"; echo "local location: exit $?"
+          clean "$G/bin/gufi_sqlite3" :memory: \
+            "CREATE VIRTUAL TABLE temp.p USING gufi_vt(index='/', E=\"SELECT name FROM vrpentries;\", remote_cmd='/usr/bin/true'); SELECT count(*) FROM temp.p;"; echo "remote probe: exit $?"
+        } >"$T/vtdiag.txt" 2>&1 || true
+        sed 's/^/        /' "$T/vtdiag.txt"
+      fi
+    else
+      bad "could not add a second library to query across"
+    fi
     kill -TERM "$loop" 2>/dev/null || true
     # The loop waits for the server's own graceful stop, which launchd
     # allows 30 seconds (ExitTimeOut).

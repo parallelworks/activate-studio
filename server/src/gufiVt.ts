@@ -45,9 +45,34 @@ const THREADS = 4
 interface Location { site: string; key: string; gufiBin: string; index: string; label: string; error?: string; ran?: { argv: string[]; ms: number }; at: number }
 const tokens = new Map<string, Location>()
 
-/** Values gufi_vt wraps in single quotes (paths) and double quotes (SQL)
- *  cannot contain that quote. */
-const SAFE_PATH = /^\/[^'"\s\0]*$/
+/**
+ * A path as a gufi_vt argument, quoted, or null when it cannot be one.
+ * gufi_vt strips a value's outer quotes and does not undo doubled ones
+ * (set_refstr in gufi_vt.c), and runs gufi_query and remote_cmd with
+ * execvp, never through a shell (popen_argv.c). So spaces and other
+ * characters need no escaping: a path is single-quoted, or double-quoted
+ * when it holds a single quote. One that holds both quotes, starts or ends
+ * with one, or holds a NUL or a line break cannot be passed. The macOS
+ * app's own paths ("ACTIVATE Studio.app", "Application Support") have
+ * spaces in them.
+ */
+export function vtPath(p: string): string | null {
+  if (!p || /[\0\n\r]/.test(p) || /^['"]|['"]$/.test(p)) return null
+  if (!p.includes("'")) return `'${p}'`
+  if (!p.includes('"')) return `"${p}"`
+  return null
+}
+
+/** A remote location's index as gufi_vt also writes it, unquoted, at the
+ *  end of the one command line it hands remote_cmd; the wrapper splits that
+ *  line on spaces and checkRemoteArgs joins the index back. So it may have
+ *  single spaces, but no other whitespace, and no word of it may start with
+ *  a quote (the split would read a quoted word). */
+export const vtRemoteIndex = (p: string): boolean =>
+  vtPath(p) !== null && !/\s\s|[\t\v\f]|\s$/.test(p) && p.split(' ').every(w => w !== '' && !/^['"]/.test(w))
+
+/** SQL stages are double-quoted (gufi_vt's documented form), so they cannot
+ *  contain a double quote. */
 const fitsVt = (plan: Plan) => Object.values(plan.stages).every(s => !s || !s.includes('"'))
 
 /** Where the wrapper reaches this server. */
@@ -63,10 +88,12 @@ export function gufiVtAvailable(): Promise<boolean> {
   if (forced !== null) return Promise.resolve(forced)
   available ??= new Promise(resolve => {
     const sqlite = path.join(GUFI_BIN, 'gufi_sqlite3')
-    if (!fs.existsSync(sqlite) || !SAFE_PATH.test(process.execPath) || !SAFE_PATH.test(WRAPPER)) return resolve(false)
+    // macOS has no /bin/true, only /usr/bin/true; most Linux systems have both.
+    const nothing = ['/usr/bin/true', '/bin/true'].find(p => fs.existsSync(p))
+    if (!fs.existsSync(sqlite) || !nothing || !vtPath(vtCommand.node) || !vtPath(vtCommand.wrapper)) return resolve(false)
     // A remote location whose command prints nothing and exits 0 answers
     // with no rows; a build without remote_cmd refuses the table.
-    const probe = "CREATE VIRTUAL TABLE temp.p USING gufi_vt(index='/', E=\"SELECT name FROM vrpentries;\", remote_cmd='/bin/true'); SELECT count(*) FROM temp.p;"
+    const probe = `CREATE VIRTUAL TABLE temp.p USING gufi_vt(index='/', E="SELECT name FROM vrpentries;", remote_cmd='${nothing}'); SELECT count(*) FROM temp.p;`
     execFile(sqlite, [':memory:', probe], { timeout: 15_000, env: gufiEnv() },
       (err, out) => resolve(!err && String(out).trim() === '0'))
   })
@@ -76,10 +103,22 @@ export function gufiVtAvailable(): Promise<boolean> {
 /** Whether a library's plan can run as a gufi_vt location. */
 export function vtEligible(plan: Plan): boolean { return fitsVt(plan) }
 
+/** Whether a library's paths can be passed to gufi_vt; where one cannot,
+ *  Query merges the libraries itself instead of leaving that one out. */
+export function vtLocatable(lib: Library): boolean {
+  if (!lib.indexRoot.startsWith(REMOTE_PREFIX)) return vtPath(path.resolve(lib.indexRoot)) !== null
+  const t = remoteTarget(lib.indexRoot)
+  return !t || (vtRemoteIndex(t.indexRoot) && vtPath(t.gufiBin) !== null)
+}
+
 interface VtLocation { id: string; index: string; plan: Plan; remote?: { token: string; site: string; gufiBin: string } }
 
+/** The program gufi_vt runs for a remote location: this node and the
+ *  wrapper beside this module. */
+let vtCommand = { node: process.execPath, wrapper: WRAPPER }
+
 /** A remote location's command as the Studio runs it: the wrapper. */
-const viaStudio = (r: NonNullable<VtLocation['remote']>) => [process.execPath, WRAPPER, r.token]
+const viaStudio = (r: NonNullable<VtLocation['remote']>) => [vtCommand.node, vtCommand.wrapper, r.token]
 /** The same location as a person runs it from a terminal: gufi_vt's usual
  *  remote form, over ssh or pw ssh, with the host's GUFI on the PATH there. */
 export const viaShell = (r: NonNullable<VtLocation['remote']>) => [...shellFor(r.site), 'env', `PATH=${r.gufiBin}:$PATH`]
@@ -87,11 +126,16 @@ export const viaShell = (r: NonNullable<VtLocation['remote']>) => [...shellFor(r
 /** The script for a set of locations: one table each, then the union. */
 export function vtScript(locs: VtLocation[], order: VtOrder | null, remoteCmd = viaStudio): string {
   const val = (k: string, v?: string) => (v ? `, ${k}="${v}"` : '')
+  const q = (v: string) => {
+    const quoted = vtPath(v)
+    if (!quoted) throw new Error(`${v} cannot be passed to gufi_vt`)
+    return quoted
+  }
   const tables = locs.map((l, i) => {
     const s = l.plan.stages
     const [cmd, ...rargs] = l.remote ? remoteCmd(l.remote) : []
-    const remote = cmd ? `, remote_cmd='${cmd}'${rargs.map(a => `, remote_arg='${a}'`).join('')}` : ''
-    return `CREATE VIRTUAL TABLE temp.loc_${i} USING gufi_vt(index='${l.index}', threads=${THREADS}${val('I', s.I)}${val('E', s.E)}${val('K', s.K)}${val('J', s.J)}${val('G', s.G)}${remote});`
+    const remote = cmd ? `, remote_cmd=${q(cmd)}${rargs.map(a => `, remote_arg=${q(a)}`).join('')}` : ''
+    return `CREATE VIRTUAL TABLE temp.loc_${i} USING gufi_vt(index=${q(l.index)}, threads=${THREADS}${val('I', s.I)}${val('E', s.E)}${val('K', s.K)}${val('J', s.J)}${val('G', s.G)}${remote});`
   })
   const union = locs.map((l, i) => `SELECT '${l.id}', * FROM temp.loc_${i}`).join(' UNION ALL ')
   const tail = order ? ` ORDER BY ${order.col + 2} ${order.desc ? 'DESC' : 'ASC'} LIMIT ${order.limit}` : ''
@@ -114,7 +158,7 @@ export async function runAcross(items: { lib: Library; plan: Plan }[], order: Vt
         const t = remoteTarget(l.indexRoot)
         if (!t) throw new Error('its owner has no key to act with')
         const index = sub ? path.posix.join(t.indexRoot, sub) : t.indexRoot
-        if (!SAFE_PATH.test(index) || !SAFE_PATH.test(t.gufiBin)) throw new Error('its index path cannot be passed to gufi_vt')
+        if (!vtRemoteIndex(index) || !vtPath(t.gufiBin)) throw new Error('its index path cannot be passed to gufi_vt')
         const r = await remoteRun(t.site, t.key, ['bash', '-c', 'test -x "$1"/gufi_query || { echo "GUFI is not installed there" >&2; exit 3; }; test -d "$2" || { echo "the index is not there" >&2; exit 4; }', '_', t.gufiBin, index])
         if (r.code !== 0) throw new Error(r.stderr.trim().split('\n').pop() || `check failed (${r.code})`)
         const token = randomBytes(16).toString('hex')
@@ -124,7 +168,7 @@ export async function runAcross(items: { lib: Library; plan: Plan }[], order: Vt
         const root = path.resolve(l.indexRoot)
         const index = sub ? path.resolve(root, sub) : root
         if (index !== root && !index.startsWith(root + '/')) throw new Error('scope escapes the index')
-        if (!SAFE_PATH.test(index)) throw new Error('its index path cannot be passed to gufi_vt')
+        if (!vtPath(index)) throw new Error('its index path cannot be passed to gufi_vt')
         if (!fs.existsSync(path.join(index, 'db.db'))) throw new Error('index not built yet')
         locs.push({ id: l.id, label: l.label, index, root, plan })
       }
@@ -148,7 +192,9 @@ export async function runAcross(items: { lib: Library; plan: Plan }[], order: Vt
   } finally {
     // Shown as a person would run it: gufi_vt's own remote form for the
     // statement, then what each cluster ran.
-    noteGufi([sqlite, '-d', 'x', ':memory:'], { engine: 'gufi_vt', ms: Date.now() - t1, script: vtScript(locs, order, viaShell) })
+    let shown = script
+    try { shown = vtScript(locs, order, viaShell) } catch { /* a site word gufi_vt cannot quote: show what ran */ }
+    noteGufi([sqlite, '-d', 'x', ':memory:'], { engine: 'gufi_vt', ms: Date.now() - t1, script: shown })
     for (const l of locs) {
       if (!l.remote) continue
       const loc = tokens.get(l.remote.token)
@@ -167,17 +213,21 @@ export async function runAcross(items: { lib: Library; plan: Plan }[], order: Vt
 }
 
 /** The gufi_query arguments gufi_vt sends, and nothing else: the stage SQL,
- *  its fixed flags, at most THREADS threads, then the location's index. */
+ *  its fixed flags, at most THREADS threads, then the location's index.
+ *  gufi_vt writes the index unquoted, so an index with spaces arrives as
+ *  several words; they are joined back and must spell the token's index. */
 export function checkRemoteArgs(args: unknown, index: string): string[] | null {
-  if (!Array.isArray(args) || args.some(a => typeof a !== 'string') || args[0] !== 'gufi_query' || args[args.length - 1] !== index) return null
+  if (!Array.isArray(args) || args.some(a => typeof a !== 'string') || args[0] !== 'gufi_query') return null
   const a = args as string[]
-  for (let i = 1; i < a.length - 1; i++) {
+  let i = 1
+  for (; i < a.length; i++) {
     if (a[i] === '--print-tlv' || a[i] === '-x') continue
     if (a[i] === '--threads') { const n = Number(a[++i]); if (!(n >= 1 && n <= THREADS)) return null; continue }
-    if (/^-[IEKJG]$/.test(a[i]) && i + 1 < a.length - 1) { i++; continue }
-    return null
+    if (/^-[IEKJG]$/.test(a[i]) && i + 1 < a.length) { i++; continue }
+    break
   }
-  return a.slice(1)
+  if (i >= a.length || a.slice(i).join(' ') !== index) return null
+  return [...a.slice(1, i), index]
 }
 
 /** The wrapper's way in. The per-process secret admits it; the path is
@@ -210,3 +260,9 @@ export function addLocationForTests(token: string, loc: Omit<Location, 'at'>): v
 export function resetGufiVtForTests(): void { available = null; forced = null; tokens.clear() }
 /** Tests: turn gufi_vt off (or on) regardless of the probe; null restores it. */
 export function forceGufiVtForTests(v: boolean | null): void { forced = v }
+/** For tests: the node and wrapper paths gufi_vt runs for a remote location,
+ *  as the macOS app has them (with spaces); null restores this process's. */
+export function setVtCommandForTests(node: string | null, wrapper?: string): void {
+  vtCommand = node ? { node, wrapper: wrapper ?? WRAPPER } : { node: process.execPath, wrapper: WRAPPER }
+  available = null
+}
