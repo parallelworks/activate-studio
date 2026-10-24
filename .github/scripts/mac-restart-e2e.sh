@@ -6,8 +6,8 @@
 # A second library is built of a local folder of about 2,600 files (names,
 # a set of files of one size, pictures and scanned PDFs whose text only OCR
 # reads) at the Text + OCR depth, and waited for until its words are found.
-# Then more pictures are added and the library rebuilt, so OCR runs; while
-# it runs, the server is stopped as a shutdown stops it (TERM to the run
+# Then 600 large pictures are added and the library rebuilt, so OCR runs
+# for minutes; while it runs, the server is stopped as a shutdown stops it (TERM to the run
 # loop, and the window quit), and the app opened again. Right after it
 # answers, before anything asks for GET /api/libraries, the library is
 # searched by a word only OCR reads and by a name, and queried across all
@@ -130,26 +130,31 @@ check "after the build: words in search" '[ "$(cnt "d[\"searchWord\"][\"lib\"]")
 check "after the build: words in Query" '[ "$(cnt "d[\"query_words\"][\"lib\"]")" -gt 0 ]'
 WORDS_BEFORE="$(cnt 'd["query_words"]["lib"]')"
 
-# More pictures, so the rebuild has OCR to do, then the rebuild.
-for i in $(seq -w 301 700); do d="$SRC/scans-new/$(( 10#$i % 20 ))"; mkdir -p "$d"; cp "$REPO/deploy/mac/testdata/ocr-sample.png" "$d/scan-$i.png"; done
-log "added 400 pictures; the folder holds $(find "$SRC" -type f | wc -l | tr -d ' ') files"
+# Large pictures, so the rebuild's OCR takes minutes, then the rebuild.
+BIG="$HOME/studio-restart/big.png"
+sips --resampleWidth 3000 "$REPO/deploy/mac/testdata/ocr-sample.png" --out "$BIG" >/dev/null 2>&1 || cp "$REPO/deploy/mac/testdata/ocr-sample.png" "$BIG"
+log "large picture: $(sips -g pixelWidth -g pixelHeight "$BIG" 2>/dev/null | awk '/pixel/ {print $2}' | tr '\n' ' '); the app's tesseract reads: $(TESSDATA_PREFIX="$DEST/Contents/Resources/ocr/share/tessdata" "$DEST/Contents/Resources/ocr/bin/tesseract" "$BIG" stdout 2>/dev/null | grep -io heliotrope | head -1)"
+NEW=600
+for i in $(seq -w 1 $NEW); do d="$SRC/scans-new/$(( 10#$i % 30 ))"; mkdir -p "$d"; cp "$BIG" "$d/big-$i.png"; done
+log "added $NEW large pictures; the folder holds $(find "$SRC" -type f | wc -l | tr -d ' ') files"
 r="$(curl -fsS -X POST "$API/api/libraries/$LIB/rebuild")" || fatal "the rebuild could not be started"
 JOB="$(echo "$r" | json 'd["job"]["id"]')"
-log "rebuild job $JOB"
-ocr_running=
-for _ in $(seq 1 300); do
-  j="$(api "/api/index/job/$JOB" 2>/dev/null)" || { sleep 1; continue; }
-  t="$(echo "$j" | json '[p for p in d["phases"] if p["id"] == "text"][0]')"
-  if echo "$t" | grep -q "'state': 'running'" && [ "$(echo "$j" | json '[p["done"] for p in d["phases"] if p["id"] == "text"][0]')" -gt 0 ]; then ocr_running=1; break; fi
-  [ "$(echo "$j" | json 'd["state"]')" = done ] && break
+log "rebuild job $JOB; library state $(lib_state)"
+# Stopped about 30 s in, while the library's own state still says it is
+# building (its job reports no phases).
+building=
+for _ in $(seq 1 30); do
+  case "$(lib_state)" in building*|updating*) building=1 ;; *) building= ;; esac
+  [ "$(api "/api/index/job/$JOB" | json 'd["state"]')" = done ] && { building=; break; }
   sleep 1
 done
-log "rebuild before the stop: $(api "/api/index/job/$JOB" | json '[(p["id"], p["state"], p["done"], p["total"]) for p in d["phases"]]'), state $(lib_state)"
-[ -n "$ocr_running" ] || log "note: the text and OCR phase was not seen running before the stop"
+log "rebuild before the stop: job $(api "/api/index/job/$JOB" | json '{k: d.get(k) for k in ("state", "label", "progress")}'), library state $(lib_state)"
+[ -n "$building" ] || fatal "the rebuild was not running 30 s after it started (it finished too soon to be interrupted)"
 stage 2-during-rebuild
-check "during the rebuild: names in Query" '[ "$(cnt "d[\"query_name\"][\"lib\"]")" -eq 600 ]'
-check "during the rebuild: sizes in Query" '[ "$(cnt "d[\"query_size\"][\"lib\"]")" -eq 300 ]'
-check "during the rebuild: words in Query" '[ "$(cnt "d[\"query_words\"][\"lib\"]")" -gt 0 ]'
+log "library state after the counts: $(lib_state)"
+check "during the rebuild: names in Query (600)" '[ "$(cnt "d[\"query_name\"][\"lib\"]")" -eq 600 ]'
+check "during the rebuild: sizes in Query (300)" '[ "$(cnt "d[\"query_size\"][\"lib\"]")" -eq 300 ]'
+check "during the rebuild: words in Query (at least the $WORDS_BEFORE before)" '[ "$(cnt "d[\"query_words\"][\"lib\"]")" -ge "$WORDS_BEFORE" ]'
 
 # Stopped as a shutdown stops it: TERM to the run loop, and the window quit.
 RL="$(head -1 "$DATA/server.pid")"
@@ -157,8 +162,18 @@ WIN="$(pgrep -f "$DEST/Contents/MacOS/$APP_NAME" | head -1)"
 log "stopping: TERM to the run loop $RL, and the window $WIN"
 kill -TERM "$RL" 2>/dev/null
 [ -n "$WIN" ] && kill -TERM "$WIN" 2>/dev/null
-for _ in $(seq 1 60); do kill -0 "$RL" 2>/dev/null || break; sleep 1; done
-kill -0 "$RL" 2>/dev/null && fatal "the run loop did not stop within 60 s of TERM"
+t_stop=$(date +%s)
+for _ in $(seq 1 30); do kill -0 "$RL" 2>/dev/null || break; sleep 1; done
+if kill -0 "$RL" 2>/dev/null; then
+  # A shutdown does not wait longer: the rest of the process group is killed.
+  log "the run loop still runs 30 s after TERM; KILL to its process group, as a shutdown does"
+  kill -KILL -- "-$RL" 2>/dev/null || kill -KILL "$RL" 2>/dev/null
+  sleep 2
+else
+  log "the run loop stopped $(( $(date +%s) - t_stop )) s after TERM"
+fi
+left="$(pgrep -fl "$DEST/Contents/Resources" || true)"
+[ -n "$left" ] && log "still running after the stop: $left"
 api /api/version >/dev/null 2>&1 && fatal "the server still answers after the stop"
 log "stopped; library state $(lib_state)"
 cp "$DATA/logs/studio.log" "$OUT/studio-before-restart.log" 2>/dev/null
@@ -169,6 +184,7 @@ open "$DEST" &
 wait_server || fatal "the server did not answer after the app was opened again"
 log "server again: $(api /api/version); run loop $(head -1 "$DATA/server.pid"); library state $(lib_state)"
 stage 3-after-restart
+log "library state after the counts: $(lib_state)"
 check "after the restart: names in search" '[ "$(cnt "d[\"searchName\"][\"lib\"]")" -gt 0 ]'
 check "after the restart: names in Query (600)" '[ "$(cnt "d[\"query_name\"][\"lib\"]")" -eq 600 ]'
 check "after the restart: sizes in Query (300)" '[ "$(cnt "d[\"query_size\"][\"lib\"]")" -eq 300 ]'
@@ -177,9 +193,10 @@ check "after the restart: words in Query (at least the $WORDS_BEFORE before)" '[
 log "the index status after the restart: $(api /api/index/status | json '{"running": d.get("running"), "job": (d.get("job") or {}).get("label"), "queued": [q.get("label") for q in d.get("queued") or []]}')"
 
 # The interrupted rebuild finishes.
-for _ in $(seq 1 600); do
+for i in $(seq 1 800); do
   st="$(lib_state)"
   case "$st" in building*|updating*) ;; *) [ "$(api /api/index/status | json 'd.get("running")')" = False ] && break ;; esac
+  [ $((i % 20)) = 0 ] && log "rebuild still running: $st"
   sleep 3
 done
 log "after the rebuild: library state $(lib_state)"
@@ -188,7 +205,7 @@ check "after the rebuild: names in search" '[ "$(cnt "d[\"searchName\"][\"lib\"]
 check "after the rebuild: names in Query (600)" '[ "$(cnt "d[\"query_name\"][\"lib\"]")" -eq 600 ]'
 check "after the rebuild: sizes in Query (300)" '[ "$(cnt "d[\"query_size\"][\"lib\"]")" -eq 300 ]'
 check "after the rebuild: words in search" '[ "$(cnt "d[\"searchWord\"][\"lib\"]")" -gt 0 ]'
-check "after the rebuild: words in Query, the new pictures too (more than $WORDS_BEFORE)" '[ "$(cnt "d[\"query_words\"][\"lib\"]")" -gt "$WORDS_BEFORE" ]'
+check "after the rebuild: words in Query, the large pictures too ($WORDS_BEFORE + $NEW)" '[ "$(cnt "d[\"query_words\"][\"lib\"]")" -eq $(( WORDS_BEFORE + NEW )) ]'
 
 collect
 "$DEST/Contents/MacOS/$APP_NAME" --stop >>"$SUMMARY" 2>&1 || true
