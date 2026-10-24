@@ -187,3 +187,24 @@ test('the canned query for recent changes counts days back from now', { skip: !h
   const r = await post('/api/query', { canned: 'recent', n: 50, days: 7 })
   assert.deepEqual(paths(r).sort(), ['reports/deep/big.pdf', 'reports/q2.pdf'])
 })
+
+test('run on the added library: a label the Studio keeps for it holds under match any and all', { skip: !haveGufi }, async () => {
+  const LL = await import('../dist/libraryLabels.js')
+  const { getLibrary } = await import('../dist/libraries.js')
+  const other = getLibrary('other')
+  assert.equal(other.writable, false)
+  LL.setLibraryLabels(other, 'data/tiny.txt', ['keep'])
+  try {
+    const scope = { library: 'other' }
+    const filters = [{ field: 'label', op: 'eq', value: 'keep' }, { field: 'size', op: 'gt', value: '50 KB' }]
+    let r = await post('/api/query', { ...B(filters, { match: 'any' }), ...scope })
+    assert.equal(r.status, 200, JSON.stringify(r.body))
+    assert.deepEqual(paths(r).sort(), ['data/huge.bin', 'data/tiny.txt'])
+    r = await post('/api/query', { ...B(filters), ...scope })
+    assert.deepEqual(paths(r), [])
+    r = await post('/api/query', { ...B([filters[0]]), ...scope })
+    assert.deepEqual(paths(r), ['data/tiny.txt'])
+  } finally {
+    LL.setLibraryLabels(other, 'data/tiny.txt', [])
+  }
+})

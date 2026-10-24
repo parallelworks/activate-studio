@@ -1,11 +1,15 @@
-import { getLibrary, requireWritable } from './libraries.js'
+import { getLibrary, listLibraries, PRIMARY_ID, type Library } from './libraries.js'
 import { execFile } from 'node:child_process'
+import fs from 'node:fs'
 import path from 'node:path'
 import type { FastifyInstance } from 'fastify'
 import { EXCLUDE_DIRS, GUFI_BIN, GUFI_INDEX, KB_ROOT, gufiAvailable, gufiEnv, PYTHON_BIN } from './config.js'
 import { KbError, resolveKb } from './kb.js'
 import { reindexForDir, reindexForFile } from './indexing.js'
 import { identify, inodeOf, overlayAdopt, overlayByInode, overlayEmpty, overlayEntries, overlayFlush, overlayGet, overlayNotePath, overlayPrune, overlayRekey, overlaySet, sameObject } from './tagsOverlay.js'
+import { libraryEffectiveLabels, libraryLabelCounts, libraryLabelsOf, pruneLibraryLabels, setLibraryLabels } from './libraryLabels.js'
+import { ALL, scopeLibraries } from './libraryScope.js'
+import { effectiveSettings } from './settings.js'
 
 export const TAG_XATTR = 'user.studio.tags'
 const DELIM = '\x1e'
@@ -306,6 +310,50 @@ export async function recoverOverlayFromIndex(): Promise<number> {
   return adopted
 }
 
+type LabelRequest = { query?: unknown; body?: unknown; user?: { id?: string } | null }
+
+/** Where a library's labels are kept: on its files (the main library), or
+ *  by the Studio (every other library, whose files it does not write). */
+export const labelsStored = (lib: Library): 'files' | 'studio' => (lib.id === PRIMARY_ID ? 'files' : 'studio')
+
+/** The library a label request names and the path inside it. With
+ *  library=all the path starts with the library's id, as in the combined tree. */
+function libraryAndPath(req: LabelRequest, rel: string): { lib: Library; rel: string } {
+  const q = (req.query ?? {}) as { library?: string }
+  const b = (req.body ?? {}) as { library?: string }
+  const want = String(q.library ?? b.library ?? '').trim().toLowerCase()
+  const viewer = req.user?.id ?? null
+  const label = effectiveSettings().kbLabel
+  const cleaned = String(rel ?? '').replace(/^\/+|\/+$/g, '')
+  if (want === ALL) {
+    const [id, ...rest] = cleaned.split('/')
+    const lib = scopeLibraries(ALL, viewer, label).find(l => l.id === id)
+    if (!lib) throw new KbError(404, `no library named ${id}`)
+    return { lib, rel: rest.join('/') }
+  }
+  return { lib: getLibrary(want || undefined, label, viewer), rel: cleaned }
+}
+
+/** Apply or remove labels on paths of a library the Studio does not write:
+ *  kept by the Studio (libraryLabels.ts), nothing on the files changes. */
+function applyLibraryLabels(lib: Library, rels: string[], addRaw: string[], removeRaw: string[]): Record<string, string[]> {
+  const add = addRaw.map(normalizeTag).filter(Boolean)
+  const remove = removeRaw.map(normalizeTag).filter(Boolean)
+  if (!rels.length || (!add.length && !remove.length)) throw new KbError(400, 'paths and add or remove required')
+  const updated: Record<string, string[]> = {}
+  for (const rel of rels.slice(0, 1000)) {
+    for (const part of rel.split('/')) {
+      if (part === '..' || part.startsWith('.')) throw new KbError(400, `not taggable: ${rel}`)
+    }
+    // On this computer the path must exist; a remote library's paths come
+    // from its own index and are taken as given.
+    if (lib.sourceRoot && !lib.site && !fs.existsSync(path.join(lib.sourceRoot, rel))) throw new KbError(404, `no such file: ${rel}`)
+    const current = libraryLabelsOf(lib.id, rel)
+    updated[rel] = setLibraryLabels(lib, rel, [...current.filter(t => !remove.includes(t)), ...add])
+  }
+  return updated
+}
+
 export async function tagRoutes(app: FastifyInstance): Promise<void> {
   // An empty overlay beside an index that still carries labels is a lost
   // overlay, not a corpus without labels; recover once the index is up.
@@ -319,25 +367,52 @@ export async function tagRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/api/kb/tags/recover', async () => ({ adopted: await recoverOverlayFromIndex() }))
 
-  // Vocabulary with usage counts, from the index.
-  app.get('/api/tags', async () => {
+  // Vocabulary with usage counts: the main library's from its index, and
+  // the labels the Studio keeps for the other libraries.
+  app.get('/api/tags', async req => {
     const maps = await tagMaps()
     const counts = new Map<string, number>()
     for (const tags of [...maps.dirTags.values(), ...maps.fileTags.values()]) {
       for (const t of tags) counts.set(t, (counts.get(t) ?? 0) + 1)
     }
+    const others = listLibraries(effectiveSettings().kbLabel, (req as LabelRequest).user?.id ?? null).filter(l => l.id !== PRIMARY_ID)
+    for (const l of others) pruneLibraryLabels(l)
+    for (const [t, n] of libraryLabelCounts(others.map(l => l.id))) counts.set(t, (counts.get(t) ?? 0) + n)
     return { tags: [...counts.entries()].map(([tag, count]) => ({ tag, count })).sort((a, b) => b.count - a.count) }
   })
 
+  // A path's own labels and those it inherits from the folders above it,
+  // and where they are kept.
   app.get('/api/kb/tags', async req => {
-    const rel = String((req.query as { path?: string }).path ?? '').replace(/^\/+|\/+$/g, '')
-    return effectiveTags(rel)
+    const { lib, rel } = libraryAndPath(req as LabelRequest, String((req.query as { path?: string }).path ?? ''))
+    const labels = lib.id === PRIMARY_ID ? await effectiveTags(rel) : libraryEffectiveLabels(lib.id, rel)
+    return { ...labels, stored: labelsStored(lib) }
   })
 
   // Apply or remove tags on files and directories (multi-select friendly).
+  // The main library's go on the files; any other library's are kept by
+  // the Studio, read only or not. With library=all the paths may span
+  // libraries, each applied in its own.
   app.post('/api/kb/tags', async req => {
-    requireWritable(getLibrary(((req.query ?? {}) as { library?: string }).library ?? ((req.body ?? {}) as { library?: string }).library))
     const body = req.body as { paths?: string[]; add?: string[]; remove?: string[] }
-    return { updated: await applyTagsCore(body.paths ?? [], body.add ?? [], body.remove ?? []) }
+    const groups = new Map<string, { lib: Library; rels: string[]; asked: string[] }>()
+    for (const p of body.paths ?? []) {
+      const { lib, rel } = libraryAndPath(req as LabelRequest, p)
+      const g = groups.get(lib.id) ?? { lib, rels: [], asked: [] }
+      g.rels.push(rel)
+      g.asked.push(p)
+      groups.set(lib.id, g)
+    }
+    if (!groups.size) throw new KbError(400, 'paths and add or remove required')
+    const updated: Record<string, string[]> = {}
+    let stored: 'files' | 'studio' = 'files'
+    for (const { lib, rels, asked } of groups.values()) {
+      const got = lib.id === PRIMARY_ID
+        ? await applyTagsCore(rels, body.add ?? [], body.remove ?? [])
+        : applyLibraryLabels(lib, rels, body.add ?? [], body.remove ?? [])
+      if (lib.id !== PRIMARY_ID) stored = 'studio'
+      rels.forEach((rel, i) => { if (got[rel]) updated[asked[i]] = got[rel] })
+    }
+    return { updated, stored }
   })
 }

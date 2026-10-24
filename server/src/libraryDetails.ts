@@ -9,6 +9,7 @@ import { ALL, scopeLibraries } from './libraryScope.js'
 import { parseSshSite, siteName } from './remoteExec.js'
 import { effectiveSettings } from './settings.js'
 import { effectiveTags, tagMaps, TAG_XATTR } from './tags.js'
+import { libraryEffectiveLabels, libraryLabelsBelow } from './libraryLabels.js'
 import { loadUserLibraries, ownerOf, remoteTarget } from './userLibraries.js'
 
 /**
@@ -87,7 +88,7 @@ function recorded(lib: Library, viewerId: string | null): { files: number; dirs:
 export async function describe(lib: Library, sub: string, viewerId: string | null, count = false): Promise<Details> {
   const key = `${viewerId ?? ''}|${lib.id}|${sub}`
   const hit = cache.get(key)
-  if (hit && Date.now() - hit.at < TTL_MS && (!count || hit.value.counted)) return hit.value
+  if (hit && Date.now() - hit.at < TTL_MS && (!count || hit.value.counted)) return withKeptLabels(lib, sub, hit.value)
   const t0 = Date.now()
   const name = sub ? path.posix.basename(sub) : lib.label
   const base = {
@@ -137,7 +138,22 @@ export async function describe(lib: Library, sub: string, viewerId: string | nul
   value.ms = Date.now() - t0
   cache.set(key, { at: Date.now(), value })
   if (cache.size > 300) for (const k of cache.keys()) { cache.delete(k); if (cache.size <= 200) break }
-  return value
+  return withKeptLabels(lib, sub, value)
+}
+
+/** A library other than the main one: the labels in its index (cached
+ *  with the rest) and those the Studio keeps for it, read fresh so a label
+ *  just applied shows at once. */
+function withKeptLabels(lib: Library, sub: string, value: Details): Details {
+  if (lib.primary) return value
+  const { own, inherited } = libraryEffectiveLabels(lib.id, sub, value.labels.own)
+  let within = value.labels.within
+  if (value.type === 'dir') {
+    const counts = new Map(within.map(w => [w.label, w.count]))
+    for (const [label, n] of libraryLabelsBelow(lib.id, sub)) counts.set(label, (counts.get(label) ?? 0) + n)
+    within = [...counts].map(([label, count]) => ({ label, count })).sort((a, b) => b.count - a.count).slice(0, 12)
+  }
+  return { ...value, labels: { own, inherited: [...new Set([...value.labels.inherited, ...inherited])].filter(t => !own.includes(t)), within } }
 }
 
 /** The main folder's labels below a folder, with the label overlay, from
