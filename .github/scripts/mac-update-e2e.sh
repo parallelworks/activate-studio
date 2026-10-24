@@ -69,6 +69,40 @@ xattr -dr com.apple.quarantine "$DEST" 2>/dev/null || true
 FROM="$(bundle_version "$DEST")"
 log "installed $FROM in $DEST"
 
+# GitHub answers unauthenticated API requests from a runner's shared address
+# with HTTP 403 once its hourly limit is spent, which a person's own Mac,
+# checking once an hour, does not meet. With GH_TOKEN set, the Studio's
+# release check goes through a local proxy that adds the job's token
+# (STUDIO_UPDATE_URL, read from studio.env); the request is otherwise the
+# app's own, and the downloads go to GitHub directly.
+if [ -n "${GH_TOKEN:-}" ]; then
+  python3 - <<'PY' >"$OUT/api-proxy.log" 2>&1 &
+import http.server, os, urllib.request, urllib.error
+TOKEN = os.environ['GH_TOKEN']
+class H(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        req = urllib.request.Request('https://api.github.com' + self.path)
+        for k in ('Accept', 'User-Agent', 'X-GitHub-Api-Version', 'If-None-Match'):
+            if self.headers.get(k): req.add_header(k, self.headers[k])
+        req.add_header('Authorization', 'Bearer ' + TOKEN)
+        try:
+            r = urllib.request.urlopen(req, timeout=20); code, body, hdrs = r.status, r.read(), r.headers
+        except urllib.error.HTTPError as e:
+            code, body, hdrs = e.code, e.read(), e.headers
+        self.send_response(code)
+        for k in ('Content-Type', 'ETag'):
+            if hdrs.get(k): self.send_header(k, hdrs[k])
+        self.send_header('Content-Length', str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+http.server.ThreadingHTTPServer(('127.0.0.1', 4199), H).serve_forever()
+PY
+  mkdir -p "$DATA"
+  printf "PORT='4180'\nSTUDIO_UPDATE_URL='http://127.0.0.1:4199'\n" >"$DATA/studio.env"
+  sleep 1
+  log "the release check goes through a local proxy with the job's token (GitHub's unauthenticated limit on shared runners)"
+fi
+
 open "$DEST" &
 v=
 for _ in $(seq 1 120); do v="$(version)" && break; sleep 2; done

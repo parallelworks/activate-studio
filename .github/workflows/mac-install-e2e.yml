@@ -109,6 +109,9 @@ jobs:
         env:
           FROM_URL: ${{ inputs.from_dmg_url || 'https://github.com/parallelworks/activate-studio/releases/download/v1.170/activate-studio-macos-arm64.dmg' }}
           PASS: ${{ matrix.pass }}
+          # For the Studio's release check, through a local proxy: GitHub's
+          # unauthenticated API limit is often spent on shared runners.
+          GH_TOKEN: ${{ github.token }}
         run: |
           if [ "$PASS" = readonly-agents ]; then
             bash .github/scripts/mac-update-e2e.sh "$FROM_URL" "$RUNNER_TEMP/e2e/$PASS" readonly-agents
