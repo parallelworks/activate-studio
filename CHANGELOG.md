@@ -2,6 +2,210 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.173 (2026-10-24)
+
+### Chat: the My chats / All chats switch sits at the top of the conversation list (#586)
+
+With shared chat history on a multi-user deployment, the My chats / All chats switch was absolutely positioned at the chat area's bottom-left corner, which put it over the conversation sidebar's collapse button.
+
+It now renders in ChatLayout's sidebarTop slot, under Select chats and above the list it filters. It flows with the list in the inline column and in the phone drawer, so the phone-only overlay rules are gone, and it is left out on the collapsed rail.
+
+Checked in headless Chromium at 1300 px with multi-user mode on: the switch sits inside the sidebar, does not overlap the collapse control, and nothing covers the collapse button. Web suite passes.
+
+### Query across libraries uses gufi_vt in the macOS app (#587)
+
+In the macOS app, a query across libraries never used gufi_vt. `server/src/gufiVt.ts` refused any path with whitespace (`SAFE_PATH = /^\/[^'"\s\0]*$/`), and every path there has a space: node and the wrapper inside `ACTIVATE Studio.app`, the index under `Application Support/ACTIVATE Studio`. `gufiVtAvailable()` returned false, and `POST /api/query` always answered `engine: "merge"`. A macOS end-to-end run of v1.172 showed exactly that. The rows were the same, but the mechanism was not the one we describe.
+
+**How gufi_vt uses each value**, at the GUFI commit the app bundles (`1713537`):
+- `popen_argv.c` runs every command with `fork` and `execvp(argv[0], argv)`, never a shell.
+- A local location: `gufi_query` with each flag, stage SQL and index root as its own argv entry.
+- A remote location: `argv = [remote_cmd, remote_arg..., line]`, where `line` is the whole gufi_query command as one string. Stage SQL is double-quoted, and the index roots are appended unquoted (`"%s "`).
+- `set_refstr` in `gufi_vt.c` strips a value's leading and trailing quote characters and does not undo doubled ones. So `'it''s'` reaches gufi_query as `it''s`.
+
+Checked by hand with GUFI's `gufi_sqlite3`:
+- a double-quoted index with a space and a single quote works;
+- a single-quoted one with the quote doubled fails ("Could not stat directory .../it''s ...");
+- commas and parentheses in a path work;
+- `remote_cmd` and `remote_arg` with spaces reach the command as single arguments.
+
+**The change**
+- `vtPath()` quotes a path for gufi_vt instead of refusing it: single quotes, or double quotes when the path holds a single quote. It returns null for a path holding both quotes, one starting or ending with a quote (gufi_vt would strip it), and a NUL or line break. Spaces need no escaping, since nothing goes through a shell.
+- `vtScript` quotes `index`, `remote_cmd` and `remote_arg` with it. `gufiVtAvailable()` checks node and the wrapper with it.
+- A remote location's index reaches the wrapper unquoted at the end of gufi_vt's line, and the wrapper splits on spaces. `checkRemoteArgs` now joins the trailing words back and requires that they spell the token's index exactly. `vtRemoteIndex()` allows single spaces but no other whitespace, and no word starting with a quote.
+- `vtLocatable(lib)`: when a library's path cannot be given to gufi_vt, `queryScope` merges with that library included. Before, `runAcross` reported the library as failed and left it out. This is the one change in `query.ts`.
+- The command gufi_vt runs for a remote location is held in one place, with a test hook to point it at the app's layout.
+
+I chose quoting over symlinks into a private runtime folder. gufi_vt passes these values as argv, so exact quoting is enough and leaves the GUFI commands panel showing the real paths.
+
+**Tests**
+- New `server/test/gufiVtSpaces.test.mjs` builds the app's layout with real GUFI:
+  - `.../ACTIVATE Studio.app/Contents/Resources/{gufi/bin, node/bin/node, app/server/dist/gufiVtRemote.js}`, with `KB_ROOT` and `INDEX_BASE` under `Documents/ACTIVATE Studio` and `Application Support/ACTIVATE Studio`;
+  - a local library at `other idx/local it's`;
+  - a remote library (a local bash session) at `cluster idx/it's proj`.
+- It checks:
+  - `gufiVtAvailable()` is true;
+  - a query across the three answers `engine: "gufi_vt"` with the same rows as the merge;
+  - a fourth library whose path holds both quotes sends the query to the merge with its rows included;
+  - with gufi_vt forced off, the query still merges.
+- It also unit-tests the quoting rules and the remote index join.
+- Server suite: 573 passed, 7 skipped. Web suite: 253 passed.
+- `deploy/mac/check_app.sh`, in its server run from the app's `studio-run.sh`, indexes the corpus again into `second idx's` and adds it as a library. It then requires `POST /api/query` across all libraries to answer `engine: "gufi_vt"`, with rows from both and nothing failed.
+
+`docs/REFERENCE.md` says when Query uses gufi_vt and when it merges.
+
+**A second cause, found by the macOS build job.** Even with the paths fixed, the app's server still merged. `check_app.sh`'s diagnostics showed why:
+- the app's `gufi_sqlite3` has the gufi_vt modules, and a local location works;
+- the availability probe failed with `Failed to exec command: No such file or directory`.
+
+The probe's `remote_cmd` was `/bin/true`, and macOS has only `/usr/bin/true`. The probe now runs whichever of `/usr/bin/true` and `/bin/true` exists. With both fixes, the macOS build job's server run passes "a query across two libraries runs through gufi_vt".
+
+### No library drops out of search or Query silently (#588)
+
+A user reported that after their Mac restarted, a read-only library of about 12,000 files dropped out of their results until they chose its index depth again in Settings. #581 fixed the two causes. This makes the class of problem visible and harder to reach: nothing told them a library was left out.
+
+**Every response names what it left out.** `GET /api/search`, `POST /api/query` and the assistant's `search_kb` carry `omitted` when a library in scope was left out, or searched only in part: `{ id, label, reason, partial }`, one per library (`server/src/omissions.ts`). Reasons:
+- `being built; searchable once its first pass is done`
+- `its build failed: ...`
+- `index not found`
+- `words not searched yet: its text is being read`, and `words not searched: its index has no text yet`
+- `not searched by meaning: its index has no vectors yet`
+- `did not answer within 20 s`
+- `not reachable over ssh: ...`
+- `search failed: ...`
+- on macOS `macOS has not allowed ACTIVATE Studio to read <folder>; allow it in System Settings, Privacy & Security, Files and Folders (or Full Disk Access)`, elsewhere `permission denied reading <folder>`; `a folder could not be read (...)` for folders inside a library.
+
+Query adds `its index has no extracted text, so text conditions match nothing there` when it reads the `words` table. A library with nothing to answer from is not asked: across libraries it is in `omitted` (and Query's `failed`), and alone Query answers 409 `<label> cannot be queried: <reason>`. Search failures were swallowed before (`() => none`); they are now named.
+
+The Search and Query pages show one line above the results. Each name opens the library's row in Settings, Libraries and highlights it, whether that page is already open or not. Settings, Libraries shows a built library whose index is gone as "Index not found" instead of Ready.
+
+**What a library holds is kept, not forgotten.** Capabilities (`index`, `fullText`, `vectors`) are kept in `INDEX_BASE/library-caps.json`. `forgetProbe` is replaced by `staleProbe`, which marks them stale and probes again but never resets them to none. A probe that can open none of its sampled databases keeps the last known capabilities, marked stale with the error, and retries within 30 s. A restart reads them before any probe. Whether the index exists is looked at on every listing, so a removed index is named at once. Each library's state goes to the index log at start.
+
+**A stop resumes.** SIGTERM now ends the programs of index jobs and library builds (`stopLibraryJobs`, `cancelAllIndexJobs`), and an interrupted library build keeps `building` or `updating` for the next start. A change of depth cut off part way (`pending: "depth"`) is finished by a sync, not a rebuild. Library build programs now run in a process group of their own (spawn, since `execFile` drops `detached`), and a stop or time limit ends the group. Before, `enrich.py`'s worker processes outlived a stopped build, held its output open, and the build never finished.
+
+Measured on 3,000 files with 300 images to OCR, 20 cores:
+
+| Run | Time |
+|---|---|
+| Cold build | 5.4 s |
+| Stopped at | 2.7 s, 152 of 300 OCR results cached |
+| Resumed at the next start | 3.2 s, reading only the rest |
+| Warm rebuild | 0.8 s |
+
+**Folders the Studio may not read** (EPERM, which macOS answers until the app is allowed; or EACCES) are named by the folder scan, `gufi_dir2index` and `enrich.py`. They are recorded in `denied.json` per library and named in search and Query. `gufi_dir2index` exits 1 when it cannot open a folder, after writing the rest of the tree. Until now that failed the whole build; when every error is a permission error, the build now stands. A sync keeps an unreadable folder as last indexed instead of removing it.
+
+Tests:
+- `server/test/omissions.test.mjs` (14), with real GUFI:
+  - each reason;
+  - a library being built;
+  - capabilities across a stale probe, an unreadable index and a restart;
+  - a depth change not yet applied;
+  - the deadline;
+  - a vanished index;
+  - a locked folder (chmod 000 standing in for EPERM) in a sync and a rebuild;
+  - a stop that leaves nothing running and resumes;
+  - the start-up line.
+- Web: the line, its buttons, the Search and Query pages, the row focus, and "Index not found".
+- Server suite: 580 passed, 7 skipped. Testdata: 21 passed. Web suite: 262 passed.
+- Checked in headless Chromium at 1300 and 740 px on a test server with a missing index, a library without its text yet, and a locked folder.
+
+Only a real Mac can confirm:
+- that macOS answers EPERM for Files and Folders denials as Linux answers EACCES here;
+- which process macOS asks about. In the no-LaunchAgent mode the server is started by the app, so the request should come from the app. Under the LaunchAgent, launchd starts `/bin/bash studio-run.sh`, which runs node, so the request may name node instead of the app.
+
+### Updates: checked every 15 minutes, shown when the window opens, and checked from the footer and the app menu (#589)
+
+User feedback on the macOS app: with a new version published, the footer said "update available" but no notice appeared, and checking meant going to Settings, Updates.
+
+**Why the notice did not show.** With a faked status in a browser, the notice and the footer read the same state and both appear on every page, at 1300 and 740 px, and a Later stored for an older version does not hide it. The one thing that hides the notice while the footer still says "update available" is a Later for that same version, which lasted until a newer version came out. Later now lasts a day, and a Later stored by an earlier Studio (a bare version string) hides nothing.
+
+**Cadence.**
+- Server: a check a minute after start, then every 15 minutes by the clock (5 while a new release waits for its macOS build, or while offline), looked at every two minutes. That is at most four requests an hour to GitHub's unauthenticated API (60 an hour per address), most answered 304 against the stored ETag; a 403 or 429 already waits out the interval.
+- Page: reads the status every two minutes instead of ten, and when the window is shown or focused (at most every 10 s). A read that finds the server checking reads again until the check ends, so a version found while the Mac slept shows within seconds of opening the window.
+
+**Footer.** Beside the version:
+- nothing known: "check for updates", which checks now, shows "checking…", then "up to date" for a few seconds (or "check failed", with the error on hover);
+- a newer version: "update available", which now opens the Build panel instead of Settings;
+- on the collapsed rail, a dot marks a newer version and opens Settings, Updates;
+- a hosted deployment shows neither.
+
+**Build panel.** A new updates section: "Up to date" with when it was last checked and Check now; or "Version X is available" with Update now (the app), the update commands (a clone), Changes and Check now; "Checking for updates…" while a check runs; the error after a failed check; the install's progress during an update. The deployment note ("Compare this against the release you deployed…") and GET /api/version show only for a hosted deployment, and in the app the source reads "stamped when the app was built".
+
+**macOS app menu.** Check for Updates… under About opens Settings, Updates and starts a check (the page's update flow listens for an event the shell sends). A server test keeps the menu item and the event name in step.
+
+**Tests.**
+- Server: the default 15-minute cadence (not due at 14 minutes, due at 16, with the clock moved), and the menu wiring.
+- Web: Later lasting a day; an expired Later, a Later for an older version and a legacy Later not hiding the notice; the re-read on focus and visibility, following a check to its end; the check event; the footer's check control, up to date, and becoming "update available"; "update available" opening the Build panel; the panel's up to date, checking, failed and hosted states; the rail dot.
+- Server suite: 568 passed, 7 skipped. Web suite: 260 passed.
+- Checked in headless Chromium with faked statuses at 1300 px (available, up to date, checking, failed, hosted) and 740 px (through More).
+
+Docs: HELP.md (how updates appear and how to check), MACOS.md and REFERENCE.md (cadence), and the Settings, Updates description.
+
+### Semantic map: 3D zoom that magnifies, links between clusters and files, word names, compact legends (#590)
+
+**3D zoom.**
+- Cause: `project3d` computed `f = dist / (dist + z2)`, and zoom only changed `dist`, clamped to 1.05 to 8. Points on the centre plane (`z2 = 0`) kept `f = 1` at any distance, so zooming changed how strong the perspective was, not the size. `onDetail` got at most 2.6 / 1.05, so detail loading barely started.
+- Now the camera keeps its distance and magnifies: `k` runs from 1 to 40, as in 2D. Zooming moves the camera's target toward the pointer, so a point under the pointer stays put (`zoom3d`).
+- The map turns about that target, so it turns about what you zoomed into, and dragging with shift or the right button moves it (`pan3d`). Back at `k = 1` the map is centred again.
+- Wheel, pinch, + and -, the buttons and double-click all use it.
+- Zooming into the 3D overview loads more of the clusters in view, up to `CLUSTER_CAP_3D` (6,000) files.
+- Dots grow a little with zoom, up to twice their size.
+
+**Links.**
+- `semantic_map.py` links each cluster to the two clusters whose mean vectors, in the full 384 dimensions, have the highest cosine, each pair once. They go in `overview.json` as `links: [{a, b, sim}]`, overview version 3.
+- The map draws them as a light gray skeleton under the dots, heavier for nearer pairs. A hovered cluster, on the map or in the legend, shows its own links in its color and dims the rest.
+- A "Show links" / "Hide links" button is on by default in 3D and off in 2D, and is kept per viewer in localStorage.
+- Maps made before this have no links and draw without them.
+
+**Links from a file.**
+- Hovering a file, after 220 ms, draws lines to its five nearest files by meaning, with a ring where a neighbor is not among the dots loaded. Answers are cached per file and dropped when the map changes.
+- They come from a new route, `GET /api/kb/semantic-map/neighbors?file=<path>&k=5`:
+  - It averages the file's own passage vectors and normalizes them, and every directory whose vectors come from the same model (`gvecmodel`) answers through sqlite-vec, as a search by meaning does.
+  - It returns `p`, `sim` (the cosine, since the vectors are unit length) and the neighbor's place on the map.
+  - It returns an empty list with a reason where the file has no vectors, and a 400 for a path outside the main folder.
+  - Answers are kept until the map is made again.
+
+**Cluster names.**
+- Clusters are named by their distinctive terms: the best two terms, or three where they fit in 26 characters. They come from the files' passages (`gchunks.ctext`, the text the vectors were made from), scored by TF-IDF against the whole map.
+- Each term must appear in at least 5% of the cluster's files, and in two files where the cluster has four or more.
+- Names are unique across clusters: a term another name uses goes behind unused ones, and a taken name takes the next term.
+- A cluster with fewer than two such terms keeps a folder name. That name now keeps the parent where two folders share a name (`pw/docs + gs/docs`).
+- The map's labels also keep folder names apart. "docs + docs" came from the web cutting each part to its last folder.
+- The folder name stays available on hover, in the legend and the cluster tip.
+- Old maps keep their names.
+
+**Legends.** Both maps' legends show their eight largest entries, then "+ N more", which opens the rest in place and becomes "Show fewer". Hovering an entry highlights that directory or cluster on its map and dims the rest. Clicking it opens it, as clicking it on the map does.
+
+**Checked.**
+- **Corpus:** generated, 330 files on eight topics, built and embedded with the ONNX backend, then viewed in headless Chromium at 1300 px, 740 px and full screen.
+- **Names it produced:** "coral, current, estuary", "bake, bread, crust", "audit, bracket, credit". The two wind clusters, both under `energy/turbines`, are named "anemometer, blade, farm" and "rotor, gearbox, generator", and the two halves of split topics are the strongest links (0.98 and 0.99).
+- **Frame time, 6,000 points turning in 3D:**
+
+| Run | Frames | Draw, median | Draw, p95 |
+|---|---|---|---|
+| Links on | 60 fps | 2.9 ms | 4.4 ms |
+| Links off | 60 fps | 2.9 ms | 4.3 ms |
+| Zoomed 10x, links on | 60 fps | 4.3 ms | 5.8 ms |
+
+**Tests.**
+- **server `semanticMap.test.mjs`:**
+  - unique names and the folder fallback with numbers on the existing fixture;
+  - the links (pairs once, each cluster linked, nearest first, the strongest joining two halves of a topic);
+  - the TF-IDF terms (a word in every file names nothing, each cluster named by its own words);
+  - `name_clusters` uniqueness and the one-term fallback;
+  - the parent kept in folder names;
+  - the neighbors route against real `vec0` tables made with GUFI's sqlite3: nearest first, across folders, one model only, with places, cached, and the error cases.
+- **web `corpusMapsView.test.tsx`:**
+  - zoom math (the point under the pointer stays; a point on the same plane moves away by the zoom factor; 1 to 40; recentred at 1);
+  - pan;
+  - short labels;
+  - links on and off per view and kept;
+  - no links for an old map;
+  - lines and a ring from a hovered file;
+  - both legends folding, opening and highlighting.
+- Server suite: 571 passed, 4 skipped. Web suite: 261 passed.
+
+Docs: HELP.md (the maps) and REFERENCE.md (names, links, the neighbors route).
+
 ## v1.172 (2026-10-24)
 
 ### A built library stays searchable and queryable after a build, a restart, and a rebuild (#581)
@@ -155,6 +359,10 @@ With "All libraries" selected, deleting a file showed "Cannot open this file …
 - Checked in headless Chromium at 1300 and 740 px against a test server with a read-only library: the deck outline, the disabled Delete and its tooltip, the Labels panel note, and the context menu with Rename, Cut and Delete disabled and Labels enabled.
 
 Not changed: on a Mac without poppler, a PDF still shows its extracted text in Pages, as before.
+
+### Change log through v1.172 (#585)
+
+Regenerated with `node scripts/release-notes.mjs --changelog --next v1.172` before tagging v1.172.
 
 ## v1.171 (2026-10-23)
 
