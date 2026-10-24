@@ -122,7 +122,15 @@ fi
 
 # 2. The update, as Update now asks for it.
 s="$(curl -fsS -X POST "$API/api/updates/check")" || fail "the update check failed"
+# A check the window's own status request started answers "checking" here
+# without waiting; it is followed until it ends.
+for _ in $(seq 1 45); do
+  [ "$(echo "$s" | field 'd["state"]')" = checking ] || break
+  sleep 2
+  s="$(curl -fsS "$API/api/updates")" || fail "the update status could not be read"
+done
 echo "$s" >"$OUT/updates.txt"
+[ "$(echo "$s" | field 'd["state"]')" = error ] && log "check error: $(echo "$s" | field 'd["error"]')"
 LATEST="$(echo "$s" | field 'd["latest"]["version"] if d.get("latest") else ""')"
 log "check: mode $(echo "$s" | field 'd["mode"]'), latest $LATEST, available $(echo "$s" | field 'd["available"]'), canInstall $(echo "$s" | field 'd["canInstall"]'), reason $(echo "$s" | field 'd["reason"]')"
 [ "$(echo "$s" | field 'd["canInstall"]')" = True ] || fail "the update cannot be installed: $(echo "$s" | field 'd["reason"]')"
