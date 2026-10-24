@@ -39,9 +39,10 @@ Ask in plain language. The assistant searches the knowledge base, reads the file
 
 The folder tree beside a viewer. Markdown, code, images, PDFs, office documents, and STL and STEP models open in place.
 
-- **Right-click** a file or folder to label it, add a folder, or delete it.
+- **Right-click** a file or folder to label it, add a folder, or delete it. In a read-only library the actions that would change it are shown disabled, with the reason on hover; labels still apply.
 - **Find**, in the viewer's header, searches the open file.
 - **Indexed text** shows what search sees for a file, including text read from images.
+- A PDF opens on its **Pages**, and an Office file on its **Slides**, **Document** or **Sheets**. Where LibreOffice is not installed, as in the macOS app, a Word, PowerPoint or Excel file (or an OpenDocument one) shows the text and pictures read from it, slide by slide or sheet by sheet, without its layout; a 97-2003 file (.doc, .ppt, .xls) opens on its indexed text.
 - If several libraries are available, the picker at the top of the tree switches between them. **All libraries**, the default, shows them as one tree, a folder each; Search, Query, and Stats then cover all of them, and files can still be added and changed inside the knowledge base's folder. Each tab remembers its own choice.
 - With the status panel open, the **Details** card describes what you last clicked in the tree, or the library itself: its size, files and folders, the latest change, the file types taking the most space, its labels and those inside it, and which library and index it comes from. For a library on a remote system it shows the file and folder counts from its connection test; **Count size and types** reads the whole index there, which can take minutes on a large one.
 - Settings, Libraries lists every library {appName} searches, with where it is, its state, and what it can search. **Add a library** asks where (this computer, or a remote system reached over SSH or over ACTIVATE with pw ssh, where your systems on the platform are listed, running ones first) and how: build an index of a folder, or connect a GUFI index that already exists. A build checks GUFI and the folders first, asks before making a folder that does not exist, and shows its progress in the list. A folder on this computer is kept in step as it changes. On a computer of its own, the main folder's row changes the folder, builds or updates its index, stops a build, deletes the index (never the files), and shows the index log.
@@ -67,6 +68,8 @@ Drag files or folders onto the tree, or use **Add**, which also takes a web addr
 ## Labels
 
 Labels organize files without moving them. Label a folder and everything in it carries the label, including files added later. Apply labels from the tree, the viewer, search results, or by asking the assistant; filter by them in Search, Query, and the chat's Scope.
+
+In the knowledge base the labels are saved on the files. In any other library, including a read-only folder and an index on another machine, {appName} saves them itself, so the files are never changed; the Labels panel says so. They show in the tree, Details, Search and Query like any other, and are removed with the library.
 
 ## Query
 

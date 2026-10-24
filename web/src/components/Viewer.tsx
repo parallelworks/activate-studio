@@ -1,7 +1,7 @@
 import { ReactElement, Suspense, lazy, useEffect, useRef, useState } from 'react'
-import { Button, Callout, ConfirmModal, EmptyState, Loader, TabPanel, Tabs } from '@parallelworks/ui'
+import { Button, Callout, ConfirmModal, EmptyState, Loader, TabPanel, Tabs, Tooltip } from '@parallelworks/ui'
 import { Streamdown } from 'streamdown'
-import { api, withLibrary, FileContent } from '../api'
+import { api, withLibrary, FileContent, type OfficeBlock, type OfficeOutline } from '../api'
 import { forgetHash } from '../lastLocation'
 import { TagMenu } from './TagMenu'
 const ModelViewer = lazy(() => import('./ModelViewer').then(m => ({ default: m.ModelViewer })))
@@ -9,6 +9,10 @@ import { DataTree } from './DataTree'
 import { DagViewer } from './DagViewer'
 
 const OFFICE_SUFFIXES = ['.docx', '.pptx', '.xlsx', '.doc', '.ppt', '.xls', '.odt', '.odp', '.ods']
+/** Office files the server reads without LibreOffice (officePreview.ts). */
+const OUTLINE_SUFFIXES = ['.pptx', '.docx', '.xlsx', '.odp', '.odt', '.ods']
+const SLIDE_SUFFIXES = ['.pptx', '.ppt', '.odp']
+const SHEET_SUFFIXES = ['.xlsx', '.xls', '.ods']
 type Tab = 'preview' | 'indexed' | 'source' | 'workflow'
 
 const JSON_SUFFIXES = ['.json', '.jsonl', '.geojson', '.ipynb']
@@ -16,43 +20,76 @@ const YAML_SUFFIXES = ['.yaml', '.yml']
 
 const PDF_PAGE_CAP = 150
 
-/** PDFs and office docs preview as server-rendered page images; the
- *  browser's own PDF viewer is unavailable in the platform's sandboxed
- *  session iframe, so an <iframe src=...pdf> shows nothing there. */
-function PdfPages({ path, markdown }: { path: string; markdown: boolean }) {
+/** What an Office file's Preview tab is called: what it shows. */
+function officeLabel(suffix: string): string {
+  return SLIDE_SUFFIXES.includes(suffix) ? 'Slides' : SHEET_SUFFIXES.includes(suffix) ? 'Sheets' : 'Document'
+}
+
+/**
+ * PDFs and Office files preview as server-rendered page images; the
+ * browser's own PDF viewer is unavailable in the platform's sandboxed
+ * session iframe, so an <iframe src=...pdf> shows nothing there. Page images
+ * need LibreOffice (for Office files) and poppler; where they cannot be
+ * made, an Office file shows its outline read from the file, and a PDF its
+ * extracted text. A page image that fails to load is treated the same way,
+ * so the tab never shows broken images. `onUnavailable` says there is
+ * nothing to preview at all, and the viewer opens the indexed text instead.
+ */
+function PagedPreview({ path, office, markdown, onUnavailable }: {
+  path: string
+  office: boolean
+  markdown: boolean
+  onUnavailable: (why: string) => void
+}) {
   const [pages, setPages] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [stage, setStage] = useState<'pages' | 'outline' | 'text'>('pages')
   const [fallbackText, setFallbackText] = useState<string | null>(null)
+  const outline = OUTLINE_SUFFIXES.includes(suffixOf(path))
+  // Several page images can fail at once; the first one decides.
+  const failed = useRef(false)
 
   useEffect(() => {
+    failed.current = false
     setPages(null)
     setError(null)
+    setStage('pages')
     setFallbackText(null)
     fetch(withLibrary(`/api/kb/pdf-info?path=${encodeURIComponent(path)}`))
       .then(r => (r.ok ? r.json() : r.json().then((d: { error?: string }) => Promise.reject(new Error(d.error ?? `${r.status}`)))))
       .then(d => setPages(d.pages))
-      .catch(async e => {
-        setError(String((e as Error).message ?? e))
-        // A host without LibreOffice cannot render office pages, but the
-        // extracted text is already indexed; show that instead of a wall.
-        try {
-          const f = await fetch(withLibrary(`/api/kb/file?path=${encodeURIComponent(path)}`)).then(r => (r.ok ? r.json() : null))
-          if (f?.content?.trim()) setFallbackText(f.content)
-        } catch { /* no fallback available */ }
-      })
+      .catch(e => fail(String((e as Error).message ?? e)))
   }, [path])
 
-  if (error && fallbackText) {
+  // Page images cannot be had: the outline for an Office file the server
+  // reads, else the extracted text (a PDF), else nothing to preview.
+  const fail = (why: string) => {
+    if (failed.current) return
+    failed.current = true
+    setError(why)
+    if (office) {
+      if (outline) setStage('outline')
+      else onUnavailable(why)
+      return
+    }
+    setStage('text')
+    fetch(withLibrary(`/api/kb/file?path=${encodeURIComponent(path)}`)).then(r => (r.ok ? r.json() : null))
+      .then(f => { if (f?.content?.trim()) setFallbackText(f.content); else onUnavailable(why) })
+      .catch(() => onUnavailable(why))
+  }
+
+  if (stage === 'outline') return <OfficeOutlineView path={path} onFail={why => onUnavailable(why || error || '')} />
+  if (stage === 'text') {
+    if (fallbackText == null) return <div className="muted pad"><Loader inline size={16} label="Reading the text…" /></div>
     return (
       <div className="pad">
-        <p className="muted">Page rendering is unavailable here ({error}) so this is the document's extracted text.</p>
+        <p className="muted">Page images cannot be made here ({error}), so this is the document's extracted text.</p>
         {markdown
           ? <div className="md-body"><Streamdown>{fallbackText}</Streamdown></div>
           : <pre className="extracted-fallback">{fallbackText}</pre>}
       </div>
     )
   }
-  if (error) return <Callout tone="error" className="viewer-callout">Could not render this document: {error}</Callout>
   if (pages === null) return <div className="muted pad"><Loader inline size={16} label="Rendering preview…" /></div>
   const shown = Math.min(pages, PDF_PAGE_CAP)
   return (
@@ -61,14 +98,88 @@ function PdfPages({ path, markdown }: { path: string; markdown: boolean }) {
         <img
           key={i}
           className="pdf-page-img"
-          src={`/api/kb/pdf-page?path=${encodeURIComponent(path)}&page=${i + 1}`}
+          src={api.pdfPageUrl(path, i + 1)}
           alt={`page ${i + 1}`}
           loading="lazy"
+          onError={() => fail('a page could not be rendered')}
         />
       ))}
       {pages > shown && (
         <p className="muted pad">Showing the first {shown} of {pages} pages; use Download for the full document.</p>
       )}
+    </div>
+  )
+}
+
+function OfficeBlocks({ path, blocks }: { path: string; blocks: OfficeBlock[] }) {
+  return (
+    <>
+      {blocks.map((b, i) => {
+        if (b.t === 'h') {
+          const H = (`h${Math.min(6, b.level + 2)}`) as 'h3'
+          return <H key={i} className="office-h">{b.text}</H>
+        }
+        if (b.t === 'p') {
+          return (
+            <p key={i} className={b.list ? 'office-p office-li' : 'office-p'} style={b.level ? { marginLeft: `${b.level * 1.25}rem` } : undefined}>
+              {b.text}
+            </p>
+          )
+        }
+        if (b.t === 'table') return <OfficeTable key={i} rows={b.rows} />
+        return <img key={i} className="office-img" src={api.officeMediaUrl(path, b.media)} alt="" loading="lazy" onError={e => { e.currentTarget.hidden = true }} />
+      })}
+    </>
+  )
+}
+
+function OfficeTable({ rows }: { rows: string[][] }) {
+  if (!rows.length) return null
+  return (
+    <div className="office-table-wrap">
+      <table className="office-table">
+        <tbody>
+          {rows.map((r, i) => <tr key={i}>{r.map((c, j) => <td key={j}>{c}</td>)}</tr>)}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+/** An Office file's slides, paragraphs, tables and sheets, read from the
+ *  file itself where LibreOffice is not there to render its pages. */
+function OfficeOutlineView({ path, onFail }: { path: string; onFail: (why: string) => void }) {
+  const [outline, setOutline] = useState<OfficeOutline | null>(null)
+  useEffect(() => {
+    setOutline(null)
+    api.officePreview(path)
+      .then(o => {
+        const empty = o.kind === 'slides' ? !o.slides.length : o.kind === 'sheets' ? !o.sheets.length : !o.blocks.length
+        if (empty) onFail('')
+        else setOutline(o)
+      })
+      .catch(e => onFail(String((e as Error).message ?? e)))
+  }, [path])
+  if (!outline) return <div className="muted pad"><Loader inline size={16} label="Reading the file…" /></div>
+  return (
+    <div className="viewer-body office-outline">
+      <p className="muted office-note">The text and pictures in the file, without its layout. A rendering of its pages needs LibreOffice.</p>
+      {outline.kind === 'slides' && outline.slides.map(sl => (
+        <section key={sl.n} className="office-slide" aria-label={`Slide ${sl.n}`}>
+          <div className="office-slide-n">Slide {sl.n}</div>
+          {sl.title && <h3 className="office-slide-title">{sl.title}</h3>}
+          <OfficeBlocks path={path} blocks={sl.blocks} />
+        </section>
+      ))}
+      {outline.kind === 'document' && <OfficeBlocks path={path} blocks={outline.blocks} />}
+      {outline.kind === 'sheets' && outline.sheets.map(sh => (
+        <section key={sh.name} className="office-sheet">
+          <h3 className="office-h">{sh.name}</h3>
+          <OfficeTable rows={sh.rows} />
+          {sh.truncated && <p className="muted">The first 200 rows and 30 columns; use Download for the whole sheet.</p>}
+        </section>
+      ))}
+      {outline.truncated && <p className="muted">Part of the file is shown; use Download for all of it.</p>}
     </div>
   )
 }
@@ -106,15 +217,21 @@ export function findTerms(text: string): string[] {
     .filter(t => t.length >= 2 && !/^(AND|OR|NOT|NEAR)$/i.test(t))
 }
 
-export function Viewer({ path, find, onDeleted }: {
+export function Viewer({ path, find, onDeleted, readOnly }: {
   path: string | null
   /** Text to land on and highlight, typically the search query that led here. */
   find?: string
   onDeleted: (path: string) => void
+  /** Why the file cannot be deleted here, for a file in a read-only
+   *  library; Delete is then disabled and says so. */
+  readOnly?: string | null
 }) {
   const [file, setFile] = useState<FileContent | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [tab, setTab] = useState<Tab>('preview')
+  // Set when the file has no preview to show (no page images and nothing
+  // read from it): the Preview tab goes and the indexed text says why.
+  const [previewGone, setPreviewGone] = useState<string | null>(null)
   const [confirming, setConfirming] = useState(false)
   const [tags, setTags] = useState<{ own: string[]; inherited: string[] }>({ own: [], inherited: [] })
   // Find in this file. Matches are painted with the CSS Custom Highlight
@@ -186,6 +303,7 @@ export function Viewer({ path, find, onDeleted }: {
     setFile(null)
     setError(null)
     setConfirming(false)
+    setPreviewGone(null)
     if (!path) return
     api.file(path).then(f => {
       setFile(f)
@@ -262,6 +380,9 @@ export function Viewer({ path, find, onDeleted }: {
     ? <p className="muted pad">No text is stored in the index for this file{isImage ? ' yet; the next index pass adds OCR text and a description' : ''}.</p>
     : (
       <div className="viewer-body">
+        {previewGone !== null && isOffice && (
+          <p className="muted preview-gone-note">A preview of this file needs LibreOffice, so this is its indexed text.</p>
+        )}
         <Callout tone="warning" size="sm" className="index-note">This is the text representation stored in the search index, not the original file.</Callout>
         {isMarkdown || extractedMarkdown
           ? <div className="md-body"><Streamdown>{file.content}</Streamdown></div>
@@ -291,7 +412,7 @@ export function Viewer({ path, find, onDeleted }: {
   ) : isImage ? (
     <div className="viewer-body"><img src={api.rawUrl(path)} alt={path} style={{ maxWidth: '100%' }} /></div>
   ) : isPdf || isOffice ? (
-    <PdfPages path={path} markdown={extractedMarkdown} />
+    <PagedPreview path={path} office={isOffice} markdown={extractedMarkdown} onUnavailable={why => { setPreviewGone(why); setTab('indexed') }} />
   ) : isText ? (
     <div className="viewer-body">
       {isMarkdown
@@ -306,13 +427,13 @@ export function Viewer({ path, find, onDeleted }: {
   // A file's tabs are the representations it actually has: a rendered
   // preview where one exists, the bytes as written, and the text the
   // index holds for formats whose text is extracted rather than read.
-  const previewLabel = isStructured ? 'Tree' : isMarkdown ? 'Rendered' : isHtml ? 'Page' : 'Preview'
+  const previewLabel = isStructured ? 'Tree' : isMarkdown ? 'Rendered' : isHtml ? 'Page' : isPdf ? 'Pages' : isOffice ? officeLabel(suffix) : 'Preview'
   const views: { key: Tab; label: string; node: ReactElement }[] = []
   if (isWorkflowYaml) {
     // First, so a workflow file opens on its DAG rather than on the tree.
     views.push({ key: 'workflow', label: 'Workflow', node: <div className="workflow-tab-body"><DagViewer path={path} /></div> })
   }
-  const hasRendered = isStructured || isMarkdown || isHtml || isImage || isPdf || isOffice || isModel
+  const hasRendered = isStructured || isMarkdown || isHtml || isImage || ((isPdf || isOffice) && previewGone === null) || isModel
   if (hasRendered) views.push({ key: 'preview', label: previewLabel, node: previewView })
   if (isText) views.push({ key: 'source', label: hasRendered ? 'Source' : 'Text', node: sourceView })
   if (!isText && (isImage || isPdf || isOffice || isModel)) {
@@ -342,7 +463,13 @@ export function Viewer({ path, find, onDeleted }: {
             onApplied={() => window.dispatchEvent(new Event('ade-tags-changed'))}
           />
           <Button variant="primary" size="sm" href={api.downloadUrl(file.path)} reloadDocument>Download</Button>
-          <Button variant="outline" size="sm" onClick={() => setConfirming(true)}>Delete</Button>
+          {readOnly
+            ? (
+              <Tooltip content={readOnly}>
+                <Button variant="outline" size="sm" disabled focusableWhenDisabled aria-description={readOnly}>Delete</Button>
+              </Tooltip>
+            )
+            : <Button variant="outline" size="sm" onClick={() => setConfirming(true)}>Delete</Button>}
           <ConfirmModal
             open={confirming}
             onClose={() => setConfirming(false)}

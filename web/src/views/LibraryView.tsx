@@ -4,7 +4,7 @@ import { currentLibrary, onLibraryChange } from '../api'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Button, Callout, Checkbox, ConfirmModal, EmptyState, IconButton, Input, Modal, ProgressBar, RefreshButton,
-  toast, useContextMenu, type MenuEntry,
+  toast, Tooltip, useContextMenu, type MenuEntry,
 } from '@parallelworks/ui'
 import type { Display } from '../App'
 import { api } from '../api'
@@ -145,6 +145,15 @@ export function LibraryView({ display, onDisplay }: {
   const primaryId = cfg.libraries?.find(l => l.primary)?.id ?? 'kb'
   const writableAt = (p: string) => (inAll ? libraryWritable(cfg.libraries, p.replace(/^\/+/, '').split('/')[0]) : writable)
   const changeableAt = (p: string) => !!p && writableAt(p) && (!inAll || p.includes('/'))
+  // Why a path cannot be changed (its library is read only), shown on the
+  // actions that would change it; null when it can. Labels still apply.
+  const readOnlyAt = (p: string): string | null => {
+    if (writableAt(p)) return null
+    const id = inAll ? p.replace(/^\/+/, '').split('/')[0] : libId
+    return `${cfg.libraries?.find(l => l.id === id)?.label ?? 'This library'} is read only`
+  }
+  // A selection in a read-only library can be labeled but not moved or deleted.
+  const selLocked = selPaths.map(p => readOnlyAt(p)).find(Boolean) ?? null
   const uploadsDir = inAll ? `${primaryId}/uploads` : 'uploads'
 
   useEffect(() => { localStorage.setItem('ade-rail-width', String(railWidth)) }, [railWidth])
@@ -349,11 +358,13 @@ export function LibraryView({ display, onDisplay }: {
     const targets = () => (multiSel.has(path) ? [...multiSel] : [path])
     const items: MenuEntry[] = []
     if (!isDir) items.push({ label: 'Open', onClick: () => onDisplay({ kind: 'file', target: path }) })
-    if (writableAt(path) && isDir) {
-      items.push({ label: 'New folder', onClick: later(() => setNameDialog({ mode: 'mkdir', path, isDir, value: '', busy: false, error: '' })) })
+    const locked = readOnlyAt(path)
+    const libraryTop = inAll && !path.includes('/')
+    if (isDir) {
+      items.push({ label: 'New folder', disabled: !!locked, disabledReason: locked ?? undefined, onClick: later(() => setNameDialog({ mode: 'mkdir', path, isDir, value: '', busy: false, error: '' })) })
     }
-    if (changeableAt(path)) {
-      items.push({ label: 'Rename…', onClick: later(() => setNameDialog({ mode: 'rename', path, isDir, value: path.split('/').pop() ?? '', busy: false, error: '' })) })
+    if (path && !libraryTop) {
+      items.push({ label: 'Rename…', disabled: !!locked, disabledReason: locked ?? undefined, onClick: later(() => setNameDialog({ mode: 'rename', path, isDir, value: path.split('/').pop() ?? '', busy: false, error: '' })) })
     }
     // Both call a model, so they are offered only with AI features on.
     if (isDir && cfg.aiEnabled !== false) items.push({ label: 'Suggest labels…', onClick: () => void runSuggest(path) })
@@ -361,19 +372,19 @@ export function LibraryView({ display, onDisplay }: {
     if (path) {
       items.push(
         { label: 'Copy path', copy: { text: path, label: 'path' } },
-        { label: `Cut${group}`, onClick: () => setClipboard({ mode: 'cut', paths: targets() }) },
+        { label: `Cut${group}`, disabled: !!locked, disabledReason: locked ?? undefined, onClick: () => setClipboard({ mode: 'cut', paths: targets() }) },
         { label: `Copy${group}`, onClick: () => setClipboard({ mode: 'copy', paths: targets() }) },
       )
     }
     if (isDir && clipboard?.paths.length) {
       const n = clipboard.paths.length
-      items.push({ label: `Paste ${n} ${n === 1 ? 'item' : 'items'}`, onClick: () => void pasteInto(path) })
+      items.push({ label: `Paste ${n} ${n === 1 ? 'item' : 'items'}`, disabled: !!locked, disabledReason: locked ?? undefined, onClick: () => void pasteInto(path) })
     }
     if (path) {
       items.push({ label: 'Labels…', onClick: later(() => { setMultiSel(new Set([path])); setTagMenuOpen(true); setSelectMode(true) }) })
     }
-    if (path && !(inAll && !path.includes('/'))) {
-      items.push({ label: isDir ? 'Delete folder…' : 'Delete…', destructive: true, onClick: later(() => setDeleteTarget({ path, isDir, error: '' })) })
+    if (path && !libraryTop) {
+      items.push({ label: isDir ? 'Delete folder…' : 'Delete…', destructive: true, disabled: !!locked, disabledReason: locked ?? undefined, onClick: later(() => setDeleteTarget({ path, isDir, error: '' })) })
     }
     openMenu({ clientX: x, clientY: y }, items, {
       onClose: () => {
@@ -459,6 +470,7 @@ export function LibraryView({ display, onDisplay }: {
                   />
                   <RefreshButton iconOnly size="sm" onRefresh={() => setRefreshKey(k => k + 1)} />
                   <UploadMenu
+                    readOnly={inAll ? null : readOnlyAt('')}
                     targetDir={targetDir}
                     onTargetDir={setTargetDir}
                     onDone={paths => {
@@ -481,8 +493,19 @@ export function LibraryView({ display, onDisplay }: {
                     trigger={<Button variant="secondary" size="sm" disabled={!multiSel.size}>Labels…</Button>}
                     onApplied={() => window.dispatchEvent(new Event('ade-tags-changed'))}
                   />
-                  <Button variant="secondary" size="sm" disabled={!multiSel.size} onClick={e => void openMoveMenu(e.currentTarget)}>Move to…</Button>
-                  <Button variant="outline" size="sm" disabled={!multiSel.size} onClick={() => setConfirmDelete(true)}>Delete…</Button>
+                  {selLocked
+                    ? (
+                      <>
+                        <Tooltip content={selLocked}><Button variant="secondary" size="sm" disabled focusableWhenDisabled>Move to…</Button></Tooltip>
+                        <Tooltip content={selLocked}><Button variant="outline" size="sm" disabled focusableWhenDisabled>Delete…</Button></Tooltip>
+                      </>
+                    )
+                    : (
+                      <>
+                        <Button variant="secondary" size="sm" disabled={!multiSel.size} onClick={e => void openMoveMenu(e.currentTarget)}>Move to…</Button>
+                        <Button variant="outline" size="sm" disabled={!multiSel.size} onClick={() => setConfirmDelete(true)}>Delete…</Button>
+                      </>
+                    )}
                   <Button variant="ghost" size="sm" className="multi-clear" onClick={() => setMultiSel(new Set())}>clear</Button>
                   <ConfirmModal
                     open={confirmDelete}
@@ -612,6 +635,7 @@ export function LibraryView({ display, onDisplay }: {
               path={selectedFile}
               find={display?.kind === 'file' ? display.q : undefined}
               onDeleted={() => { onDisplay(null); setRefreshKey(k => k + 1) }}
+              readOnly={selectedFile ? readOnlyAt(selectedFile) : null}
             />
           )}
         </section>

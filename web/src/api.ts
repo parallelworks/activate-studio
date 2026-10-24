@@ -130,10 +130,11 @@ export function splitLibraryPath(p: string): { id: string; rel: string } | null 
   const parts = String(p ?? '').replace(/^\/+/, '').split('/')
   return parts[0] && parts[0] !== ALL ? { id: parts[0], rel: parts.slice(1).join('/') } : null
 }
-// Routes that take All mode's prefixed paths themselves. Every other route
-// addresses one library, so in All mode a request on a path goes to that
-// path's library, which is what keeps files viewable and the writable
-// library writable while All is selected.
+// Routes that take All mode's prefixed paths themselves, when read (GET).
+// Every other request addresses one library, so in All mode a request on a
+// path goes to that path's library, which is what keeps files viewable and
+// the writable library writable while All is selected. Deleting a file is
+// such a request, though its route reads the combined path for a GET.
 const ALL_AWARE = new Set(['/api/kb/tree', '/api/kb/file', '/api/kb/download', '/api/search', '/api/kb/stats'])
 // A path that names a library's top folder addresses nothing to change or
 // read inside it; a directory may (an upload or a paste into the library).
@@ -148,12 +149,13 @@ function prefixFor(p: string): (x: string) => string {
   return t ? (x: string) => (x ? `${t.id}/${x}` : t.id) : (x: string) => x
 }
 
-/** Append the current library to a URL that already has a query string, or none. */
-export function withLibrary(url: string): string {
+/** Append the current library to a URL that already has a query string, or
+ *  none. `method` is the request's: only a GET takes All mode's paths as they are. */
+export function withLibrary(url: string, method: string = 'GET'): string {
   if (current === PRIMARY) return url
   if (current === ALL) {
     const [route, query = ''] = url.split('?')
-    if (!ALL_AWARE.has(route)) {
+    if (!ALL_AWARE.has(route) || method !== 'GET') {
       const pairs = query.split('&').filter(Boolean).map(kv => { const i = kv.indexOf('='); return [kv.slice(0, i < 0 ? kv.length : i), i < 0 ? '' : kv.slice(i + 1)] })
       const at = pairs.findIndex(([k]) => k === 'path' || k === 'dir')
       const t = at >= 0 ? target(pairs[at][0], decodeURIComponent(pairs[at][1])) : null
@@ -185,6 +187,16 @@ function withLib<T extends object>(body: T): T & { library?: string } {
   }
   return { ...body, library: current }
 }
+
+export type OfficeBlock =
+  | { t: 'h'; level: number; text: string }
+  | { t: 'p'; text: string; level?: number; list?: boolean }
+  | { t: 'table'; rows: string[][] }
+  | { t: 'img'; media: string }
+export type OfficeOutline =
+  | { kind: 'slides'; slides: { n: number; title: string; blocks: OfficeBlock[] }[]; truncated: boolean }
+  | { kind: 'document'; blocks: OfficeBlock[]; truncated: boolean }
+  | { kind: 'sheets'; sheets: { name: string; rows: string[][]; truncated: boolean }[]; truncated: boolean }
 
 export interface KbEntry {
   name: string
@@ -319,13 +331,13 @@ export const api = {
     return { ...r, deleted: r.deleted.map(back), skipped: r.skipped.map(x => ({ ...x, path: back(x.path) })) }
   },
   deleteFile: async (path: string) => {
-    const res = await fetch(withLibrary(`/api/kb/file?path=${encodeURIComponent(path)}`), { method: 'DELETE' })
+    const res = await fetch(withLibrary(`/api/kb/file?path=${encodeURIComponent(path)}`, 'DELETE'), { method: 'DELETE' })
     const data = await res.json().catch(() => ({}))
     if (!res.ok) throw new Error((data as any).error ?? `delete: ${res.status}`)
     return data as { deleted: string; indexMs: number }
   },
   deleteDir: async (path: string) => {
-    const res = await fetch(withLibrary(`/api/kb/dir?path=${encodeURIComponent(path)}`), { method: 'DELETE' })
+    const res = await fetch(withLibrary(`/api/kb/dir?path=${encodeURIComponent(path)}`, 'DELETE'), { method: 'DELETE' })
     const data = await res.json().catch(() => ({}))
     if (!res.ok) throw new Error((data as any).error ?? `delete: ${res.status}`)
     return data as { deleted: string }
@@ -338,9 +350,16 @@ export const api = {
     return { ...r, created: prefixFor(path)(r.created) }
   },
   tagVocabulary: () => getJson<{ tags: { tag: string; count: number }[] }>(`/api/tags`),
-  tagsFor: (path: string) => getJson<{ own: string[]; inherited: string[] }>(`/api/kb/tags?path=${encodeURIComponent(path)}`),
+  /** `stored`: on the files (the main library), or kept by the Studio for a
+   *  library whose files it does not write. */
+  tagsFor: (path: string) => getJson<{ own: string[]; inherited: string[]; stored?: 'files' | 'studio' }>(`/api/kb/tags?path=${encodeURIComponent(path)}`),
   applyTags: (paths: string[], add: string[], remove: string[]) =>
-    postJson<{ updated: Record<string, string[]> }>(`/api/kb/tags`, { paths, add, remove }),
+    postJson<{ updated: Record<string, string[]>; stored?: 'files' | 'studio' }>(`/api/kb/tags`, { paths, add, remove }),
+  /** A Word, PowerPoint or Excel file's slides, paragraphs, tables and
+   *  sheets, read without LibreOffice. */
+  officePreview: (path: string) => getJson<OfficeOutline>(`/api/kb/office-preview?path=${encodeURIComponent(path)}`),
+  officeMediaUrl: (path: string, name: string) => withLibrary(`/api/kb/office-media?path=${encodeURIComponent(path)}&name=${encodeURIComponent(name)}`),
+  pdfPageUrl: (path: string, page: number) => withLibrary(`/api/kb/pdf-page?path=${encodeURIComponent(path)}&page=${page}`),
   indexStatus: () => getJson<IndexStatus>(`/api/index/status`),
   sweepNow: () => postJson<{ changed: string[] }>(`/api/index/sweep`, {}),
   uploadUrl: async (url: string, dir: string) => {

@@ -271,6 +271,9 @@ export async function probeAll(primaryLabel?: string): Promise<Library[]> {
 
 export function getLibrary(id: string | undefined | null, primaryLabel?: string, viewerId?: string | null): Library {
   const want = (id || PRIMARY_ID).trim()
+  // "all" names every library at once, which an action on files cannot
+  // take: say so, instead of looking for a library of that name.
+  if (want.toLowerCase() === 'all') throw new KbError(400, 'This action works in one library at a time, and the items are in more than one (All libraries is selected).')
   const lib = listLibraries(primaryLabel, viewerId).find(l => l.id === want)
   if (!lib) throw new KbError(404, `no library named ${want}`)
   return lib
@@ -346,6 +349,11 @@ export function updateBuild(id: string, patch: Partial<LocalBuild>): LibraryDef 
 /** Forget what a tree was found to support, after it was built again. */
 export function forgetProbe(indexRoot: string): void { probeCache.delete(path.resolve(indexRoot)) }
 
+/** Set by libraryLabels.ts, which imports this module: drops what it holds
+ *  in memory for a removed library. */
+let forgetLabelsHook: (id: string) => void = () => {}
+export function onLibraryRemoved(fn: (id: string) => void): void { forgetLabelsHook = fn }
+
 export function removeLibrary(id: string): void {
   const lib = getLibrary(id)
   if (lib.primary || lib.pinned) throw new KbError(403, `${lib.label} is set by the deployment and cannot be removed here`)
@@ -358,6 +366,10 @@ export function removeLibrary(id: string): void {
   // when it is in the Studio's own folder; an index in a folder that was
   // chosen for it stays where it is.
   if (def?.build) fs.rmSync(builtLibraryDir(id), { recursive: true, force: true })
+  // The labels the Studio kept for its files go with it.
+  fs.rmSync(path.join(builtLibraryDir(id), 'labels.json'), { force: true })
+  fs.rmSync(path.join(builtLibraryDir(id), 'labels.json.bak'), { force: true })
+  forgetLabelsHook(id)
   void forgetIndexSettings(id)
 }
 

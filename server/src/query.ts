@@ -7,6 +7,7 @@ import type { FastifyInstance } from 'fastify'
 import { GUFI_BIN, GUFI_INDEX, INDEX_BASE, gufiAvailable, gufiEnv } from './config.js'
 import { KbError } from './kb.js'
 import { tagMaps } from './tags.js'
+import { libraryLabelsForIndexRoot } from './libraryLabels.js'
 import { scopeLibraries } from './libraryScope.js'
 import { REMOTE_PREFIX, remoteIndexRoot, remoteQuery, remoteTarget } from './userLibraries.js'
 import { effectiveSettings } from './settings.js'
@@ -299,7 +300,12 @@ const DIR_FIELDS: Record<string, string> = {
   modified: 'mtime',
 }
 
-function filterSql(f: BuilderFilter, labeledDirs?: Map<string, string[]>, fields = FILE_FIELDS): string {
+/** Labels a label condition is compiled from: folders' (inherited below
+ *  them, as path prefixes) and, for a library the Studio does not write,
+ *  the ones it keeps for its paths (libraryLabels.ts). */
+interface LabelMaps { dirs?: Map<string, string[]>; files?: Map<string, string[]> }
+
+function filterSql(f: BuilderFilter, labels: LabelMaps = {}, fields = FILE_FIELDS): string {
   const field = fields[f.field]
   if (!field) throw new KbError(400, `unknown field: ${f.field}`)
   if (!FIELD_OPS[f.field].includes(f.op)) {
@@ -320,13 +326,20 @@ function filterSql(f: BuilderFilter, labeledDirs?: Map<string, string[]>, fields
     // stripped afterwards), so the prefix must carry the index root.
     const want = v.toLowerCase()
     const idxRoot = rootPath()
-    const dirs = [...(labeledDirs ?? new Map<string, string[]>())]
+    const dirs = [...(labels.dirs ?? new Map<string, string[]>())]
       .filter(([rel, tags]) => rel !== '' && tags.some(t =>
         f.op === 'eq' ? t.toLowerCase() === want : t.toLowerCase().includes(want)))
       .map(([rel]) => rel)
     const prefixes = dirs.map(rel =>
       `(${PATH_EXPR}) LIKE '${esc(`${idxRoot}/${rel}`).replace(/([%_])/g, '\\$1')}/%' ESCAPE '\\'`)
-    return `(${[own, ...prefixes].join(' OR ')})`
+    // Labels the Studio keeps for a library it does not write: the files'
+    // own paths, and a label on the library's top folder covers all of it.
+    const kept = [...(labels.files ?? new Map<string, string[]>())]
+      .filter(([, tags]) => tags.some(t => (f.op === 'eq' ? t.toLowerCase() === want : t.toLowerCase().includes(want))))
+      .map(([rel]) => rel)
+    if (kept.includes('')) return '(1=1)'
+    const files = kept.length ? [`(${PATH_EXPR}) IN (${kept.slice(0, 5000).map(rel => `'${esc(`${idxRoot}/${rel}`)}'`).join(', ')})`] : []
+    return `(${[own, ...prefixes, ...files].join(' OR ')})`
   }
   if (f.field === 'text') {
     const terms = v.split(/\s+/).map(t => t.replace(/["'*]/g, '')).filter(Boolean).slice(0, 8)
@@ -364,24 +377,30 @@ function filterSql(f: BuilderFilter, labeledDirs?: Map<string, string[]>, fields
 }
 
 /** The WHERE clause for a set of conditions: every one, or any one. */
-function whereSql(filters: BuilderFilter[], match: BuilderPayload['match'], labeledDirs?: Map<string, string[]>, fields = FILE_FIELDS): string {
+function whereSql(filters: BuilderFilter[], match: BuilderPayload['match'], labels: LabelMaps = {}, fields = FILE_FIELDS): string {
   if (!filters.length) return ''
-  const parts = filters.map(f => `(${filterSql(f, labeledDirs, fields)})`)
+  const parts = filters.map(f => `(${filterSql(f, labels, fields)})`)
   return 'WHERE ' + parts.join(match === 'any' ? ' OR ' : ' AND ')
 }
 
 async function builderPlan(p: BuilderPayload): Promise<Plan> {
   const limit = Math.min(Math.max(Number(p.limit) || 50, 1), MAX_ROWS)
   const filters = Array.isArray(p.filters) ? p.filters : []
-  const labeledDirs = filters.some(f => f.field === 'label')
-    ? (await tagMaps()).dirTags
-    : undefined
+  // The main library's folder labels come from its tag maps; another
+  // library's labels are the ones the Studio keeps for it, which serve as
+  // both folders' and files' (libraryLabels.ts).
+  const labelFilter = filters.some(f => f.field === 'label')
+  const onPrimary = path.resolve(indexRoot()) === path.resolve(GUFI_INDEX)
+  const kept = labelFilter && !onPrimary ? libraryLabelsForIndexRoot(indexRoot()) : null
+  const labels: LabelMaps = !labelFilter ? {}
+    : onPrimary ? { dirs: (await tagMaps()).dirTags }
+      : { dirs: kept?.dirTags ?? new Map<string, string[]>(), files: kept?.fileTags }
   const dir = p.dir === 'asc' ? 'ASC' : 'DESC'
   if (p.source === 'directories') {
     if (p.groupBy !== 'none' || filters.some(f => !(f.field in DIR_FIELDS))) {
       throw new KbError(400, 'directories take name, owner, size and modified conditions, without grouping')
     }
-    const dirWhere = whereSql(filters, p.match, undefined, DIR_FIELDS)
+    const dirWhere = whereSql(filters, p.match, {}, DIR_FIELDS)
     return aggPlan({
       schema: '(path TEXT, files INT64, bytes INT64)',
       perDir: `INSERT INTO t SELECT rpath(sname, sroll), totfiles, totsize FROM vrsummary ${dirWhere};`,
@@ -390,7 +409,7 @@ async function builderPlan(p: BuilderPayload): Promise<Plan> {
       subtree: p.subtree,
     })
   }
-  const where = whereSql(filters, p.match, labeledDirs)
+  const where = whereSql(filters, p.match, labels)
   const from = 'FROM vrpentries'
   const grouped = p.groupBy === 'extension' || p.groupBy === 'owner'
   if (grouped) {

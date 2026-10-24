@@ -1,9 +1,12 @@
 import { useId, useRef, useState } from 'react'
-import { Button, Input, Popover } from '@parallelworks/ui'
+import { Button, Input, Popover, Tooltip } from '@parallelworks/ui'
 import { api } from '../api'
 import { uploadBatched, UploadProgress } from '../upload'
 
-export function UploadMenu({ targetDir, onTargetDir, onDone, onProgress }: {
+export function UploadMenu({ targetDir, onTargetDir, onDone, onProgress, readOnly }: {
+  /** Why nothing can be added here (a read-only library): the button is
+   *  disabled and says so. */
+  readOnly?: string | null
   targetDir: string
   onTargetDir: (dir: string) => void
   onDone: (savedPaths: string[]) => void
@@ -59,6 +62,10 @@ export function UploadMenu({ targetDir, onTargetDir, onDone, onProgress }: {
     } finally {
       setBusy(false)
     }
+  }
+
+  if (readOnly) {
+    return <Tooltip content={readOnly}><Button variant="primary" size="sm" disabled focusableWhenDisabled>+ Add</Button></Tooltip>
   }
 
   return (

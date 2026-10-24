@@ -78,12 +78,18 @@ function TagPanel({ paths, headId, onApplied }: {
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  // Kept by the Studio rather than on the files: a library whose files it
+  // does not write, such as a read-only folder or an index on another machine.
+  const [keptByStudio, setKeptByStudio] = useState(false)
   const inputId = useId()
 
   useEffect(() => {
     api.tagVocabulary().then(v => setVocab(v.tags)).catch(() => {})
-    Promise.all(paths.slice(0, 30).map(p => api.tagsFor(p).catch(() => ({ own: [] as string[], inherited: [] as string[] }))))
-      .then(all => setCurrent([...new Set(all.flatMap(t => t.own))]))
+    Promise.all(paths.slice(0, 30).map(p => api.tagsFor(p).catch(() => ({ own: [] as string[], inherited: [] as string[], stored: undefined }))))
+      .then(all => {
+        setCurrent([...new Set(all.flatMap(t => t.own))])
+        setKeptByStudio(all.some(t => t.stored === 'studio'))
+      })
   }, [paths])
 
   const apply = async (add: string[], remove: string[]) => {
@@ -93,7 +99,7 @@ function TagPanel({ paths, headId, onApplied }: {
       const r = await api.applyTags(paths, add, remove)
       setCurrent(c => [...new Set([...c.filter(t => !remove.includes(t)), ...add])])
       onApplied(r.updated ?? {})
-      toast.success('Applied and re-indexed.')
+      toast.success(r.stored === 'studio' ? 'Labels saved.' : 'Applied and re-indexed.')
     } catch (e) {
       setError(String((e as Error).message ?? e))
     } finally {
@@ -113,6 +119,9 @@ function TagPanel({ paths, headId, onApplied }: {
         {busy && <Loader inline size={12} />}
         <PopoverClose render={<Button variant="secondary" size="sm" />}>Close</PopoverClose>
       </div>
+      {keptByStudio && (
+        <p className="muted tag-note">Saved in the Studio; the files are read only.</p>
+      )}
       {paths.length > 1000 && (
         <p className="muted tag-note">Labels apply to the first 1,000 selected items per action.</p>
       )}

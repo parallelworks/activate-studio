@@ -22,6 +22,8 @@ import { listModels } from './chat/gateway.js'
 import { getJob, startJob } from './jobs.js'
 import { buildInfo } from './version.js'
 import { annotateHits, readTagsBatch } from './tags.js'
+import { annotateLibraryHits, libraryLabelMaps } from './libraryLabels.js'
+import { officeMedia, officeOutline } from './officePreview.js'
 import { gatewayKey } from './chat/gateway.js'
 import { convertToDynamicForm, dumpYaml, getAllDeps, getStepLabel, workflowHasUserInputs } from '@parallelworks/workflow-parser'
 import { parse as parseYaml } from 'yaml'
@@ -348,6 +350,14 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
     return { lib, sub: rest.join('/') }
   }
 
+  // The labels the Studio keeps for a library other than the main one, on
+  // a listing of it (libraryLabels.ts).
+  const withKeptLabels = <E extends { path: string }>(id: string, entries: E[]): (E & { tags?: string[] })[] => {
+    const { fileTags } = libraryLabelMaps(id)
+    if (!fileTags.size) return entries
+    return entries.map(e => (fileTags.get(e.path)?.length ? { ...e, tags: fileTags.get(e.path) } : e))
+  }
+
   app.get('/api/kb/tree', async req => {
     const { path: rel = '' } = req.query as { path?: string }
     if (inAll(req)) {
@@ -356,11 +366,12 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
       }
       const { lib, sub } = splitAll(req, rel)
       const entries = lib.site ? await remoteTree(lib.indexRoot, sub) : lib.sourceRoot ? await listDir(sub, lib.sourceRoot) : []
-      return { path: rel, entries: entries.map(e => ({ ...e, path: `${lib.id}/${e.path}` })) }
+      const labeled = lib.primary ? entries : withKeptLabels(lib.id, entries)
+      return { path: rel, entries: labeled.map(e => ({ ...e, path: `${lib.id}/${e.path}` })) }
     }
     // A user's library on a cluster lists from its index there.
     const lib = libOf(req)
-    if (lib.site) return { path: rel, entries: await remoteTree(lib.indexRoot, rel) }
+    if (lib.site) return { path: rel, entries: withKeptLabels(lib.id, await remoteTree(lib.indexRoot, rel)) }
     const root = sourceOf(req)
     const entries = await listDir(rel, root)
     // Own labels straight from the filesystem xattrs (one getfattr per
@@ -369,6 +380,14 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
     for (const e of entries) {
       const t = tagged.get(resolveKb(e.path, root))
       if (t?.length) (e as typeof e & { tags?: string[] }).tags = t
+    }
+    if (!lib.primary) {
+      // Labels the files carry, and those the Studio keeps for them.
+      const { fileTags } = libraryLabelMaps(lib.id)
+      for (const e of entries as (typeof entries[number] & { tags?: string[] })[]) {
+        const kept = fileTags.get(e.path)
+        if (kept?.length) e.tags = [...new Set([...(e.tags ?? []), ...kept])]
+      }
     }
     return { path: rel, entries }
   })
@@ -617,8 +636,16 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
   })
 
   app.delete('/api/kb/file', async req => {
-    requireWritable(libOf(req))
-    const { path: rel = '' } = req.query as { path?: string }
+    let { path: rel = '' } = req.query as { path?: string }
+    // With All libraries selected an earlier client sent the combined
+    // tree's path (<library id>/<path>) with library=all; take it apart.
+    if (inAll(req)) {
+      const { lib, sub } = splitAll(req, rel)
+      requireWritable(lib)
+      rel = sub
+    } else {
+      requireWritable(libOf(req))
+    }
     if (!rel) throw new KbError(400, 'path required')
     for (const part of rel.split('/')) {
       if (EXCLUDE_DIRS.has(part) || part.startsWith('.')) throw new KbError(400, 'path not deletable')
@@ -669,14 +696,25 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
     if (!gufiAvailable() && libs.every(l => !l.site)) return { hits: [], error: 'index not built yet' }
     const slow: string[] = []
     const { result: hits, commands } = await traced(() => searchScope(libs, q, n, { semantic: wantsSemantic(q), slow }))
-    // Labels belong to the knowledge base; other libraries' hits carry none,
-    // so a label filter keeps knowledge-base hits only.
+    // The main library's labels are on its files and in its index; the
+    // other libraries' are kept by the Studio (libraryLabels.ts). A label
+    // filter applies to both.
     const { tags } = req.query as { tags?: string }
     const filter = tags ? tags.split(',').filter(Boolean) : undefined
     const annotated = await annotateHits(hits.filter(h => h.library.id === PRIMARY_ID), filter)
     const keep = new Map(annotated.map(h => [h.path, h]))
+    const others = annotateLibraryHits(hits.filter(h => h.library.id !== PRIMARY_ID), filter)
+    const keepOther = new Map(others.map(h => [`${h.library.id}\0${h.path}`, h]))
     // slow: libraries that had not answered within the deadline, left out.
-    return { hits: hits.flatMap(h => (h.library.id === PRIMARY_ID ? (keep.has(h.path) ? [{ ...keep.get(h.path)!, library: h.library }] : []) : filter?.length ? [] : [h])), gufi: commands, ...(slow.length ? { slow } : {}) }
+    return {
+      hits: hits.flatMap(h => {
+        if (h.library.id === PRIMARY_ID) return keep.has(h.path) ? [{ ...keep.get(h.path)!, library: h.library }] : []
+        const o = keepOther.get(`${h.library.id}\0${h.path}`)
+        return o ? [o] : []
+      }),
+      gufi: commands,
+      ...(slow.length ? { slow } : {}),
+    }
   })
 
   // Status, jobs, the log, readers and settings of the index (indexRoutes.ts).
@@ -813,10 +851,17 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
 
   // PDF preview as page images: the browser PDF plugin is unavailable in
   // the platform's sandboxed session iframe, so the client shows PNGs.
+  // The rendered pages of another library's file are cached under its id,
+  // so two libraries' files at the same path do not share them.
+  const previewKey = (req: { query?: unknown; body?: unknown }, rel: string) => {
+    const lib = libOf(req)
+    return lib.primary ? rel : path.join('.libraries', lib.id, rel)
+  }
+
   app.get('/api/kb/pdf-info', async req => {
     const { path: rel = '' } = req.query as { path?: string }
     const abs = resolveKb(rel, sourceOf(req))
-    const pdf = await previewPdfFor(abs, rel)
+    const pdf = await previewPdfFor(abs, previewKey(req, rel))
     return { pages: await pdfPageCount(pdf) }
   })
 
@@ -824,10 +869,28 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
     const { path: rel = '', page = '1' } = req.query as { path?: string; page?: string }
     const n = Math.max(1, Math.floor(Number(page) || 1))
     const abs = resolveKb(rel, sourceOf(req))
-    const png = await pdfPagePng(abs, rel, n)
+    const png = await pdfPagePng(abs, previewKey(req, rel), n)
     reply.header('Content-Type', 'image/png')
     reply.header('Cache-Control', 'public, max-age=300')
     return reply.send(createReadStream(png))
+  })
+
+  // Word, PowerPoint and Excel files and their OpenDocument counterparts,
+  // read without LibreOffice: each slide's, paragraph's, table's and
+  // sheet's text, and the pictures in them (officePreview.ts). The viewer
+  // shows this where the pages cannot be rendered as images.
+  app.get('/api/kb/office-preview', async req => {
+    const { path: rel = '' } = req.query as { path?: string }
+    return officeOutline(resolveKb(rel, sourceOf(req)))
+  })
+
+  app.get('/api/kb/office-media', async (req, reply) => {
+    const { path: rel = '', name = '' } = req.query as { path?: string; name?: string }
+    const media = officeMedia(resolveKb(rel, sourceOf(req)), name)
+    imageOnly(reply)
+    reply.header('Content-Type', media.type)
+    reply.header('Cache-Control', 'private, max-age=300')
+    return reply.send(media.body)
   })
 
   // ---- libraries: what is mounted, and adding or removing one ----
