@@ -68,6 +68,7 @@ if (haveGufi) {
   index(path.join(base, 'src', "it's proj"), path.join(base, 'cluster idx'))
   index(path.join(base, 'src', 'both'), path.join(base, `odd "x" it's`))
 }
+fs.mkdirSync(process.env.INDEX_BASE, { recursive: true })
 fs.writeFileSync(path.join(process.env.INDEX_BASE, 'libraries.json'), JSON.stringify([{ id: 'other', label: 'Other', indexRoot: localIdx }]))
 const owner = 'single'
 const userDir = path.join(process.env.INDEX_BASE, 'users', createHash('sha256').update(owner).digest('hex').slice(0, 16))
