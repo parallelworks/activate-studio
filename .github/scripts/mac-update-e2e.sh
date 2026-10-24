@@ -76,31 +76,28 @@ log "installed $FROM in $DEST"
 # (STUDIO_UPDATE_URL, read from studio.env); the request is otherwise the
 # app's own, and the downloads go to GitHub directly.
 if [ -n "${GH_TOKEN:-}" ]; then
-  python3 - <<'PY' >"$OUT/api-proxy.log" 2>&1 &
-import http.server, os, urllib.request, urllib.error
-TOKEN = os.environ['GH_TOKEN']
-class H(http.server.BaseHTTPRequestHandler):
-    def do_GET(self):
-        req = urllib.request.Request('https://api.github.com' + self.path)
-        for k in ('Accept', 'User-Agent', 'X-GitHub-Api-Version', 'If-None-Match'):
-            if self.headers.get(k): req.add_header(k, self.headers[k])
-        req.add_header('Authorization', 'Bearer ' + TOKEN)
-        try:
-            r = urllib.request.urlopen(req, timeout=20); code, body, hdrs = r.status, r.read(), r.headers
-        except urllib.error.HTTPError as e:
-            code, body, hdrs = e.code, e.read(), e.headers
-        self.send_response(code)
-        for k in ('Content-Type', 'ETag'):
-            if hdrs.get(k): self.send_header(k, hdrs[k])
-        self.send_header('Content-Length', str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
-http.server.ThreadingHTTPServer(('127.0.0.1', 4199), H).serve_forever()
-PY
+  # The app's own Node (signed, so the macOS firewall lets it listen).
+  "$DEST/Contents/Resources/node/bin/node" -e '
+const http = require("node:http")
+http.createServer(async (req, res) => {
+  const h = { Authorization: "Bearer " + process.env.GH_TOKEN }
+  for (const k of ["accept", "user-agent", "x-github-api-version", "if-none-match"]) if (req.headers[k]) h[k] = req.headers[k]
+  try {
+    const r = await fetch("https://api.github.com" + req.url, { headers: h })
+    const body = Buffer.from(await r.arrayBuffer())
+    const out = { "Content-Length": body.length }
+    for (const k of ["content-type", "etag"]) if (r.headers.get(k)) out[k] = r.headers.get(k)
+    res.writeHead(r.status, out); res.end(body)
+    console.log(new Date().toISOString(), req.url, r.status)
+  } catch (e) { res.writeHead(502); res.end(String(e)); console.log(new Date().toISOString(), req.url, "error", String(e)) }
+}).listen(4199, "127.0.0.1", () => console.log("listening on 127.0.0.1:4199"))
+' >"$OUT/api-proxy.log" 2>&1 &
+  for _ in $(seq 1 20); do curl -fsS --max-time 10 -o /dev/null "http://127.0.0.1:4199/repos/parallelworks/activate-studio/releases?per_page=1" && break; sleep 1; done
+  curl -fsS --max-time 10 -o /dev/null "http://127.0.0.1:4199/repos/parallelworks/activate-studio/releases?per_page=1" \
+    || fail "the local API proxy does not answer: $(tr '\n' ' ' <"$OUT/api-proxy.log")"
   mkdir -p "$DATA"
   printf "PORT='4180'\nSTUDIO_UPDATE_URL='http://127.0.0.1:4199'\n" >"$DATA/studio.env"
-  sleep 1
-  log "the release check goes through a local proxy with the job's token (GitHub's unauthenticated limit on shared runners)"
+  log "the release check goes through a local proxy with the job's token (GitHub's unauthenticated limit on shared runners); it answers"
 fi
 
 open "$DEST" &
