@@ -59,6 +59,7 @@ exit 0`
  *  search by meaning (meaningArgs), $10 enrich.py's for the depth
  *  (textArgs); both words with no spaces or quotes. */
 export const BUILD_RUN = `s=$1 bin=$2 src=$3 idx=$4 threads=$5 py=$6 model=$7 create=$8 meaning=\${9:-} text=\${10:-}
+uname -n > "$s/host" 2>/dev/null
 echo $$ > "$s/pid"
 phase() { printf '%s\\n' "$1" > "$s/phase"; }
 fail() { printf '%s\\n' "$1" > "$s/error"; exit 1; }
@@ -118,7 +119,7 @@ exit 0`
 export const BUILD_START = `s="$HOME/.activate-studio/builds/$1"
 mkdir -p "$s" || exit 3
 printf '%s\\n' "$2" > "$s/run.sh"
-rm -f "$s/enrich.py" "$s/embed.py" "$s/exit" "$s/error" "$s/phase" "$s/pid"
+rm -f "$s/enrich.py" "$s/embed.py" "$s/exit" "$s/error" "$s/phase" "$s/pid" "$s/host"
 [ -n "$3" ] && printf '%s\\n' "$3" > "$s/enrich.py"
 [ -n "$4" ] && printf '%s\\n' "$4" > "$s/embed.py"
 shift 4
@@ -129,9 +130,23 @@ else
 fi
 echo started`
 
-/** How far a build has got. $1 build id, $2 index folder. */
+/** How far a build has got. $1 build id, $2 index folder.
+ *
+ *  Whether the run is still alive is read before its exit file. The run
+ *  writes exit as it stops, so a run already stopped has written it, and
+ *  one that stops between the two reads counts as running now and as
+ *  finished at the next look. Read the other way round, a build that ended
+ *  between the reads was taken for one that stopped without finishing.
+ *  The process id means something only on the machine that started the
+ *  run: where a host name reaches several login nodes, another node's
+ *  session cannot tell, and the build counts as running until its exit
+ *  file says how it ended. */
 export const BUILD_STATUS = `s="$HOME/.activate-studio/builds/$1"
 [ -d "$s" ] || { echo state=missing; exit 0; }
+pid=$(cat "$s/pid" 2>/dev/null)
+host=$(cat "$s/host" 2>/dev/null)
+alive=1
+if [ -n "$pid" ] && { [ -z "$host" ] || [ "$host" = "$(uname -n)" ]; } && ! kill -0 "$pid" 2>/dev/null; then alive=0; fi
 echo "phase=$(cat "$s/phase" 2>/dev/null)"
 if [ -f "$s/exit" ]; then
   echo "exit=$(cat "$s/exit")"
@@ -139,8 +154,7 @@ if [ -f "$s/exit" ]; then
   if [ -f "$2/.studio-index.json" ]; then echo __MANIFEST__; cat "$2/.studio-index.json"; fi
   exit 0
 fi
-pid=$(cat "$s/pid" 2>/dev/null)
-if [ -n "$pid" ] && ! kill -0 "$pid" 2>/dev/null; then echo state=gone; echo "log=$(tail -n 3 "$s/log" 2>/dev/null | tr '\\n' ' ')"; exit 0; fi
+if [ "$alive" = 0 ]; then echo state=gone; echo "log=$(tail -n 3 "$s/log" 2>/dev/null | tr '\\n' ' ')"; exit 0; fi
 [ "$(cat "$s/phase" 2>/dev/null)" = index ] && echo "dirs=$(find "$2/.build" -name db.db 2>/dev/null | wc -l | tr -d ' ')"
 exit 0`
 
