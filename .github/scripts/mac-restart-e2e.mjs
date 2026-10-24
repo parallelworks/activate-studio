@@ -4,13 +4,13 @@
 // counts come first, so nothing here asks for GET /api/libraries (which
 // probes every library) before them; neither page asks for it either.
 //
-// Usage: node mac-restart-e2e.mjs STAGE OUT_DIR LIBRARY_ID
+// Usage: node mac-restart-e2e.mjs STAGE OUT_DIR LIBRARY_ID [counts-only]
 // Prints one JSON line with the counts, and appends it to OUT_DIR/counts.jsonl.
 import { chromium } from 'playwright'
 import fs from 'node:fs'
 import path from 'node:path'
 
-const [stage, out, lib] = process.argv.slice(2)
+const [stage, out, lib, only] = process.argv.slice(2)
 const BASE = 'http://127.0.0.1:4180'
 const WORD = 'heliotrope'       // only OCR reads it, in the pictures and scanned PDFs
 const NAME = 'ledger-0042'      // one file's name
@@ -46,7 +46,8 @@ const line = JSON.stringify(counts)
 console.log(line)
 fs.appendFileSync(path.join(out, 'counts.jsonl'), line + '\n')
 
-// The same, as the pages show them.
+// The same, as the pages show them (not while a stop is waiting on it).
+if (only === 'counts-only') process.exit(0)
 const browser = await chromium.launch()
 const page = await browser.newPage({ viewport: { width: 1300, height: 860 } })
 await page.addInitScript(() => { try { sessionStorage.setItem('ade-library', 'all') } catch { /* none */ } })

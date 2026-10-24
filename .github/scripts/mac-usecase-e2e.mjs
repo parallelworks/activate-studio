@@ -150,7 +150,7 @@ await step(`search: a word in the .docx (${WORDS.docx})`, () => search(WORDS.doc
 await step(`search: a word only OCR reads in the picture (${WORDS.ocr})`, () => search(WORDS.ocr, 'ocr-sample.png', 'ocr'))
 await step(`search: a file name in the SSH index (${WORDS.ssh})`, () => search(WORDS.ssh, WORDS.ssh, 'ssh-name'))
 
-await step('query: across both libraries (gufi_vt)', async () => {
+await step('query: across both libraries', async () => {
   await page.goto(`${BASE}/#view=query`)
   await sleep(1500)
   const sw = page.locator('.scope-bar').getByRole('combobox')
@@ -173,6 +173,11 @@ await step('query: across both libraries (gufi_vt)', async () => {
   const libsSeen = [...new Set(r.rowLibraries ?? [])]
   log(`api query across all: ${(r.rows ?? []).length} rows from ${libsSeen.join(', ')} (engine ${r.engine ?? '?'})${r.failed?.length ? `; failed: ${JSON.stringify(r.failed)}` : ''}${r.error || r.message ? `; error: ${r.error ?? r.message}` : ''}`)
   if (!body.includes(WORDS.ssh)) throw new Error('the Query across all libraries did not show the SSH library\'s file')
+  log(`query engine: ${r.engine ?? 'none reported'}`)
+  // The macOS app's paths have a space in them, which gufiVt.ts refuses, so
+  // Query across libraries falls back to the per-library merge there. Once
+  // that is fixed, make this an assertion: throw when r.engine !== 'gufi_vt'.
+  if (r.engine !== 'gufi_vt') log(`WARN: Query across all libraries ran on ${r.engine ?? 'an unreported engine'}, not gufi_vt`)
 })
 
 await step('settings: updates', async () => {

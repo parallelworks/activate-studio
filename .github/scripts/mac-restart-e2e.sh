@@ -6,7 +6,7 @@
 # A second library is built of a local folder of about 2,600 files (names,
 # a set of files of one size, pictures and scanned PDFs whose text only OCR
 # reads) at the Text + OCR depth, and waited for until its words are found.
-# Then 600 large pictures are added and the library rebuilt, so OCR runs
+# Then 1,200 large pictures are added and the library rebuilt, so OCR runs
 # for minutes; while it runs, the server is stopped as a shutdown stops it (TERM to the run
 # loop, and the window quit), and the app opened again. Right after it
 # answers, before anything asks for GET /api/libraries, the library is
@@ -59,8 +59,14 @@ PY
 wait_server() { for _ in $(seq 1 150); do api /api/version >/dev/null 2>&1 && return 0; sleep 2; done; return 1; }
 # One stage: counts, then screenshots, with the counts kept in $C.
 stage() {
-  C="$(cd "$P" && node mac-restart-e2e.mjs "$1" "$OUT" "$LIB" 2>>"$OUT/playwright.log" | tail -1)"
+  C="$(cd "$P" && node mac-restart-e2e.mjs "$1" "$OUT" "$LIB" ${2:-} 2>>"$OUT/playwright.log" | tail -1)"
   log "counts at $1: $C"
+  # gufiVt.ts refuses the app's paths, which have a space in them, so Query
+  # across libraries runs on the merge here. Once that is fixed, make this
+  # an assertion (check that each query_* engine is gufi_vt).
+  local e
+  e="$(echo "$C" | json '",".join(sorted({d[k]["engine"] or "none" for k in d if k.startswith("query_")}))' 2>/dev/null)"
+  [ "$e" = gufi_vt ] || log "WARN: Query across all libraries ran on $e, not gufi_vt"
 }
 cnt() { echo "$C" | json "$1"; }
 
@@ -134,23 +140,26 @@ WORDS_BEFORE="$(cnt 'd["query_words"]["lib"]')"
 BIG="$HOME/studio-restart/big.png"
 sips --resampleWidth 3000 "$REPO/deploy/mac/testdata/ocr-sample.png" --out "$BIG" >/dev/null 2>&1 || cp "$REPO/deploy/mac/testdata/ocr-sample.png" "$BIG"
 log "large picture: $(sips -g pixelWidth -g pixelHeight "$BIG" 2>/dev/null | awk '/pixel/ {print $2}' | tr '\n' ' '); the app's tesseract reads: $(TESSDATA_PREFIX="$DEST/Contents/Resources/ocr/share/tessdata" "$DEST/Contents/Resources/ocr/bin/tesseract" "$BIG" stdout 2>/dev/null | grep -io heliotrope | head -1)"
-NEW=600
+NEW=1200
 for i in $(seq -w 1 $NEW); do d="$SRC/scans-new/$(( 10#$i % 30 ))"; mkdir -p "$d"; cp "$BIG" "$d/big-$i.png"; done
 log "added $NEW large pictures; the folder holds $(find "$SRC" -type f | wc -l | tr -d ' ') files"
 r="$(curl -fsS -X POST "$API/api/libraries/$LIB/rebuild")" || fatal "the rebuild could not be started"
 JOB="$(echo "$r" | json 'd["job"]["id"]')"
 log "rebuild job $JOB; library state $(lib_state)"
-# Stopped about 30 s in, while the library's own state still says it is
-# building (its job reports no phases).
-building=
-for _ in $(seq 1 30); do
-  case "$(lib_state)" in building*|updating*) building=1 ;; *) building= ;; esac
-  [ "$(api "/api/index/job/$JOB" | json 'd["state"]')" = done ] && { building=; break; }
-  sleep 1
+# Stopped while OCR runs: once tesseract processes are seen, 2 s later.
+ocr_seen=
+for _ in $(seq 1 240); do
+  n="$(pgrep -x tesseract | wc -l | tr -d ' ')"
+  if [ "${n:-0}" -gt 0 ]; then ocr_seen="$n"; break; fi
+  [ "$(api "/api/index/job/$JOB" | json 'd["state"]')" = done ] && break
+  sleep 0.25
 done
-log "rebuild before the stop: job $(api "/api/index/job/$JOB" | json '{k: d.get(k) for k in ("state", "label", "progress")}'), library state $(lib_state)"
-[ -n "$building" ] || fatal "the rebuild was not running 30 s after it started (it finished too soon to be interrupted)"
-stage 2-during-rebuild
+[ -n "$ocr_seen" ] || fatal "no tesseract process was seen while the rebuild ran (it finished, or read no pictures)"
+log "OCR is running: $ocr_seen tesseract processes, $(( $(date +%s) - T0 )) s into the run"
+sleep 2
+log "rebuild before the stop: job $(api "/api/index/job/$JOB" | json '{k: d.get(k) for k in ("state", "label", "progress")}'), library state $(lib_state), tesseract processes $(pgrep -x tesseract | wc -l | tr -d ' ')"
+case "$(lib_state)" in building*|updating*) ;; *) fatal "the rebuild had finished before the stop" ;; esac
+stage 2-during-rebuild counts-only
 log "library state after the counts: $(lib_state)"
 check "during the rebuild: names in Query (600)" '[ "$(cnt "d[\"query_name\"][\"lib\"]")" -eq 600 ]'
 check "during the rebuild: sizes in Query (300)" '[ "$(cnt "d[\"query_size\"][\"lib\"]")" -eq 300 ]'
