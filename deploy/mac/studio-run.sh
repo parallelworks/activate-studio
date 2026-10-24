@@ -80,21 +80,27 @@ stamp() { date '+%Y-%m-%d %H:%M:%S'; }
 # Terminal (the pw CLI above all) are found by the server too: launchd
 # starts it with a short PATH. Interactive as well as login, since many set
 # PATH in .zshrc; given five seconds, since a shell's startup files can wait
-# on input or the network; empty when the shell does not answer.
-login_path() {
+# on input or the network; empty when the shell does not answer. The same
+# shell's KRB5CCNAME, when it sets one, comes along, so ssh to a host that
+# takes Kerberos tickets finds the cache the person's Terminal uses (without
+# it, macOS's default API: cache, which the session shares, is used).
+login_env() {
   local sh out n=0 pid
   sh="${SHELL:-}"
   [ -x "$sh" ] || sh="$(dscl . -read "/Users/$(id -un)" UserShell 2>/dev/null | awk '{print $2}')"
   [ -x "$sh" ] || return 0
   out="$(mktemp "${TMPDIR:-/tmp}/studio-path.XXXXXX")" || return 0
-  "$sh" -ilc 'printf "\n__STUDIO_PATH__=%s\n" "$PATH"' </dev/null >"$out" 2>/dev/null &
+  "$sh" -ilc 'printf "\n__STUDIO_PATH__=%s\n__STUDIO_KRB5CCNAME__=%s\n" "$PATH" "${KRB5CCNAME:-}"' </dev/null >"$out" 2>/dev/null &
   pid=$!
   while kill -0 "$pid" 2>/dev/null && [ "$n" -lt 50 ]; do sleep 0.1; n=$((n + 1)); done
   kill "$pid" 2>/dev/null
-  sed -n 's/^__STUDIO_PATH__=//p' "$out" | tail -n 1
+  grep -E '^__STUDIO_(PATH|KRB5CCNAME)__=' "$out" | tail -n 2
   rm -f "$out"
 }
-LOGIN_PATH="$(login_path)"
+LOGIN_ENV="$(login_env)"
+LOGIN_PATH="$(printf '%s\n' "$LOGIN_ENV" | sed -n 's/^__STUDIO_PATH__=//p' | tail -n 1)"
+LOGIN_KRB5CCNAME="$(printf '%s\n' "$LOGIN_ENV" | sed -n 's/^__STUDIO_KRB5CCNAME__=//p' | tail -n 1)"
+[ -n "${KRB5CCNAME:-}" ] || [ -z "$LOGIN_KRB5CCNAME" ] || export KRB5CCNAME="$LOGIN_KRB5CCNAME"
 
 # One string from pending.json.
 field() { sed -n "s/.*\"$1\": *\"\([^\"]*\)\".*/\1/p" "$PENDING" 2>/dev/null | head -n 1; }

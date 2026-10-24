@@ -392,11 +392,13 @@ The remote machine needs:
 - key access with no prompt (BatchMode refuses password and passphrase
   prompts, so load the key into your agent), and its host key in
   `known_hosts`: connect once from a terminal and accept it;
-- bash, and GUFI's `gufi_query`. The test looks on the PATH of a
+- GUFI's `gufi_query`, and for everything beyond the index a shell (bash).
+  The test looks on the PATH of a
   non-interactive login, then in `~/.activate-studio/gufi/*/bin` (where
   the index workflow installs GUFI, newest first), `/usr/local/bin`,
   `~/usr/local/bin`, and `/opt/gufi/bin`; anywhere else goes in the GUFI
-  bin directory field. On
+  bin directory field. A login that runs only `gufi_query` will do for a
+  connected index (below). On
   macOS, GUFI's tools are started with `DYLD_LIBRARY_PATH=<prefix>/lib`,
   `<prefix>` being the directory above the bin directory;
 - an index built there with `gufi_dir2index`. The index directory is the
@@ -424,6 +426,58 @@ sign-in on, the routes answer 403. Routes:
 both with `{label?, destination, port?, indexRoot, gufiBin?, sourceRoot?}`;
 listing, refresh, and removal use the routes above, and list entries
 carry `transport` (`pw` or `ssh`), `destination`, and `port`.
+
+### Hosts whose login runs only gufi_query
+
+Some sites give a login nothing but `gufi_query`: no bash, a restricted
+shell, or a forced command (`ForceCommand`, or `command=` in
+`authorized_keys`) that lets `gufi_query` through and refuses the rest. An
+existing index there can still be connected, browsed, searched, and
+queried. The connection test finds out: when the login refuses the
+session (any exit but ssh's own 255 over plain ssh, or a "not found",
+"restricted" or "not allowed" message over pw ssh), the host is marked to
+run only `gufi_query`, and every command after that is its own ssh call
+over the shared connection, written as one command line: the program
+name bare, so a forced command that checks for a leading `gufi_query`
+finds it, and each other argument as a POSIX shell word, in single quotes
+where it holds anything but plain characters. Only `gufi_query` and
+`gufi_sqlite3` are sent; anything else is refused in the Studio with a
+reason. The library keeps the finding (`shell: false`), so after a
+restart its first command is `gufi_query`, not another try at the shell.
+
+On such a host:
+
+- the test reports the ssh step as passed with the note "This host runs
+  only gufi_query: connect existing indexes read only; building an index
+  there is not available.", then `gufi_query --version`, then the index,
+  counted with `gufi_query`, whose message says what is wrong when it is
+  not an index (not a directory, no `db.db`, not readable);
+- `gufi_query` is run by name from the login's PATH, or from the GUFI bin
+  directory when one is given. A restricted shell refuses a command with
+  a `/` in it, so leave that field empty there;
+- paths are absolute: with no shell, `~` cannot be resolved there;
+- the tree, the Details card, statistics, search by name, search by words
+  where the index has full-text tables, Query through gufi_vt, and
+  **Check** all run `gufi_query` alone;
+- files cannot be opened or downloaded, since that reads them with a
+  shell; the source directory is left out, with a note;
+- building an index there is refused at the build check, with the same
+  note, since a build needs a shell, Python, and write access;
+- the processor count is not read; queries run with 4 threads, or
+  `STUDIO_REMOTE_THREADS`.
+
+ssh's own notices on stderr, such as OpenSSH's post-quantum key exchange
+warning or a host key being added, do not fail a step and are left out
+of the messages. Kerberos (GSSAPI) works as it does from a terminal: the
+Studio runs the system's ssh with the account's `~/.ssh/config`, and
+`BatchMode` does not turn GSSAPI off. On macOS the server, started by its
+LaunchAgent or by the app, is in the user's session and finds the
+default `API:` credential cache; a `KRB5CCNAME` that the login shell sets
+is passed on to it by the app's run loop.
+
+The connection test also looks for the Studio's full-text tables
+(`words`) in the index's top levels; where it finds them, search covers
+the words in its files, on any host.
 
 ## Libraries over pw ssh
 

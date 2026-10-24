@@ -6,8 +6,8 @@ import { fileURLToPath } from 'node:url'
 import type { FastifyInstance } from 'fastify'
 import { GUFI_BIN, HOST, PORT, gufiEnv } from './config.js'
 import type { Library } from './libraries.js'
-import { remoteRun, shellFor } from './remoteExec.js'
-import { REMOTE_PREFIX, remoteTarget } from './userLibraries.js'
+import { isDirect, remoteRun, shellFor } from './remoteExec.js'
+import { gufiTool, REMOTE_PREFIX, remoteTarget } from './userLibraries.js'
 import { noteGufi } from './gufiTrace.js'
 
 /**
@@ -108,7 +108,7 @@ export function vtEligible(plan: Plan): boolean { return fitsVt(plan) }
 export function vtLocatable(lib: Library): boolean {
   if (!lib.indexRoot.startsWith(REMOTE_PREFIX)) return vtPath(path.resolve(lib.indexRoot)) !== null
   const t = remoteTarget(lib.indexRoot)
-  return !t || (vtRemoteIndex(t.indexRoot) && vtPath(t.gufiBin) !== null)
+  return !t || (vtRemoteIndex(t.indexRoot) && (t.gufiBin === '' || vtPath(t.gufiBin) !== null))
 }
 
 interface VtLocation { id: string; index: string; plan: Plan; remote?: { token: string; site: string; gufiBin: string } }
@@ -120,8 +120,11 @@ let vtCommand = { node: process.execPath, wrapper: WRAPPER }
 /** A remote location's command as the Studio runs it: the wrapper. */
 const viaStudio = (r: NonNullable<VtLocation['remote']>) => [vtCommand.node, vtCommand.wrapper, r.token]
 /** The same location as a person runs it from a terminal: gufi_vt's usual
- *  remote form, over ssh or pw ssh, with the host's GUFI on the PATH there. */
-export const viaShell = (r: NonNullable<VtLocation['remote']>) => [...shellFor(r.site), 'env', `PATH=${r.gufiBin}:$PATH`]
+ *  remote form, over ssh or pw ssh, with the host's GUFI on the PATH there;
+ *  where the login runs only gufi_query (or GUFI is on its PATH), with
+ *  nothing before gufi_query, since such a login refuses env. */
+export const viaShell = (r: NonNullable<VtLocation['remote']>) =>
+  [...shellFor(r.site), ...(r.gufiBin && !isDirect(r.site) ? ['env', `PATH=${r.gufiBin}:$PATH`] : [])]
 
 /** The script for a set of locations: one table each, then the union. */
 export function vtScript(locs: VtLocation[], order: VtOrder | null, remoteCmd = viaStudio): string {
@@ -158,9 +161,12 @@ export async function runAcross(items: { lib: Library; plan: Plan }[], order: Vt
         const t = remoteTarget(l.indexRoot)
         if (!t) throw new Error('its owner has no key to act with')
         const index = sub ? path.posix.join(t.indexRoot, sub) : t.indexRoot
-        if (!vtRemoteIndex(index) || !vtPath(t.gufiBin)) throw new Error('its index path cannot be passed to gufi_vt')
-        const r = await remoteRun(t.site, t.key, ['bash', '-c', 'test -x "$1"/gufi_query || { echo "GUFI is not installed there" >&2; exit 3; }; test -d "$2" || { echo "the index is not there" >&2; exit 4; }', '_', t.gufiBin, index])
-        if (r.code !== 0) throw new Error(r.stderr.trim().split('\n').pop() || `check failed (${r.code})`)
+        if (!vtRemoteIndex(index) || (t.gufiBin !== '' && !vtPath(t.gufiBin))) throw new Error('its index path cannot be passed to gufi_vt')
+        // The index answers, checked with gufi_query alone (a host may run
+        // nothing else): its top directory's summary, one row. gufi_query
+        // exits 0 on a missing or unreadable index and says why on stderr.
+        const r = await remoteRun(t.site, t.key, [gufiTool(t.gufiBin), '-n', '1', '-d', '|', '--min-level', '0', '--max-level', '0', '-S', 'SELECT 1;', index], 60_000)
+        if (!r.stdout.trim()) throw new Error(r.stderr.trim().split('\n').filter(Boolean).pop() || `the index did not answer (exit ${r.code})`)
         const token = randomBytes(16).toString('hex')
         tokens.set(token, { site: t.site, key: t.key, gufiBin: t.gufiBin, index, label: l.label, at: Date.now() })
         locs.push({ id: l.id, label: l.label, index, root: t.indexRoot, plan, remote: { token, site: t.site, gufiBin: t.gufiBin } })
@@ -242,7 +248,7 @@ export async function gufiVtRoutes(app: FastifyInstance): Promise<void> {
     if (!loc || Date.now() - loc.at > TOKEN_TTL_MS) return reply.status(404).send('unknown location')
     const rest = checkRemoteArgs(args, loc.index)
     if (!rest) return reply.status(400).send('not a gufi_query on this location')
-    const argv = [`${loc.gufiBin}/gufi_query`, ...rest]
+    const argv = [gufiTool(loc.gufiBin), ...rest]
     const t0 = Date.now()
     const r = await remoteRun(loc.site, loc.key, argv, 300_000)
       .catch((e: Error) => ({ code: -1, raw: Buffer.alloc(0), stderr: e.message }))
