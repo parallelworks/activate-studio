@@ -352,8 +352,16 @@ if [ "$RUN" = 1 ]; then
         python3 -c 'import json, sys; d = json.load(open(sys.argv[1])); print("engine", d.get("engine"), "libraries", sorted(set(d.get("rowLibraries") or [])), "failed", d.get("failed"))' "$T/query.json" 2>&1 | sed 's/^/        /'
         sed 's/^/        /' "$T/query.err"
         grep -i -E 'gufi_vt|fell back' "$T/data/logs/studio.log" | tail -n 5 | sed 's/^/        /'
-        # The server's own probe, by hand: a gufi_vt table with a remote location.
-        clean /bin/sh -c "'$G/bin/gufi_sqlite3' :memory: \"CREATE VIRTUAL TABLE temp.p USING gufi_vt(index='/', E='SELECT name FROM vrpentries;', remote_cmd='/bin/true'); SELECT count(*) FROM temp.p;\"" 2>&1 | head -n 5 | sed 's/^/        probe: /'
+        # The server's own probe by hand, and the steps before it.
+        {
+          clean "$G/bin/gufi_sqlite3" :memory: 'SELECT 1;'; echo "select 1: exit $?"
+          clean "$G/bin/gufi_sqlite3" :memory: "SELECT group_concat(name) FROM pragma_module_list WHERE name LIKE 'gufi%';"; echo "gufi modules: exit $?"
+          clean env PATH="$G/bin:/usr/bin:/bin" "$G/bin/gufi_sqlite3" :memory: \
+            "CREATE VIRTUAL TABLE temp.l USING gufi_vt(index='$T/idx/corpus', E=\"SELECT name FROM vrpentries;\"); SELECT count(*) FROM temp.l;"; echo "local location: exit $?"
+          clean "$G/bin/gufi_sqlite3" :memory: \
+            "CREATE VIRTUAL TABLE temp.p USING gufi_vt(index='/', E=\"SELECT name FROM vrpentries;\", remote_cmd='/bin/true'); SELECT count(*) FROM temp.p;"; echo "remote probe: exit $?"
+        } >"$T/vtdiag.txt" 2>&1
+        sed 's/^/        /' "$T/vtdiag.txt"
       fi
     else
       bad "could not add a second library to query across"
