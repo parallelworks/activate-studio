@@ -83,11 +83,28 @@ const searched = async () => {
   assert.equal(r.status, 200, JSON.stringify(r.body))
   return r.body.hits.filter(h => h.library.id === 'shelf').length
 }
+// The Query page across every library, by size (canned), by name and by
+// words (the builder), as rows from the library: each must list it.
+const builder = filters => ({ builder: { source: 'files', filters, groupBy: 'none', sort: 'size', dir: 'desc', limit: 100 }, library: 'all' })
+const QUERIES = {
+  size: { canned: 'largest', n: 100, library: 'all' },
+  name: builder([{ field: 'name', op: 'contains', value: 'doc' }]),
+  words: builder([{ field: 'text', op: 'match', value: 'wombatword' }]),
+}
+const queriedBy = async () => {
+  const out = {}
+  for (const [k, body] of Object.entries(QUERIES)) {
+    const r = await j('POST', '/api/query', body)
+    assert.equal(r.status, 200, JSON.stringify(r.body))
+    out[k] = { rows: r.body.rowLibraries.filter(id => id === 'shelf').length, failed: (r.body.failed ?? []).map(f => f.library) }
+  }
+  return out
+}
+const ALL_ROWS = { size: { rows: 12, failed: [] }, name: { rows: 12, failed: [] }, words: { rows: 12, failed: [] } }
 const queried = async () => {
-  const r = await j('POST', '/api/query', { canned: 'largest', n: 100, library: 'all' })
-  assert.equal(r.status, 200, JSON.stringify(r.body))
-  assert.deepEqual(r.body.failed ?? [], [])
-  return r.body.rowLibraries.filter(id => id === 'shelf').length
+  const q = await queriedBy()
+  assert.deepEqual(q, ALL_ROWS)
+  return q.size.rows
 }
 // What the server does when it starts again: everything held in memory is
 // gone, and main.ts probes every library before it answers.
