@@ -293,11 +293,35 @@ if [ "$RUN" = 1 ]; then
     # start (netTrust.ts), does, and its update check below goes there.
     # Needs sudo without a password, as on a CI runner; skipped otherwise.
     TLS_RUN=0 TLS_SHA1= tls_pid=
+    # A keychain command run as root, given SECS seconds: one that waits for
+    # an authorization prompt no one can answer is killed instead of holding
+    # the job. Its status, or 124 when it was killed.
+    as_root_bounded() {
+      local secs="$1" p n=0; shift
+      # The command writes its own process id (the shell execs it), so a
+      # stop reaches it rather than only sudo.
+      rm -f "$T/tls/root.pid"
+      sudo -n /bin/sh -c 'echo $$ >"$1"; shift; exec "$@"' sh "$T/tls/root.pid" "$@" >"$T/tls/last.log" 2>&1 &
+      p=$!
+      while kill -0 "$p" 2>/dev/null; do
+        if [ "$n" -ge $((secs * 4)) ]; then
+          [ -s "$T/tls/root.pid" ] && sudo -n kill -KILL "$(cat "$T/tls/root.pid")" 2>/dev/null
+          wait "$p" 2>/dev/null
+          return 124
+        fi
+        sleep 0.25; n=$((n + 1))
+      done
+      wait "$p"
+    }
+    # Deleting the certificate from the System keychain takes the authority
+    # away; removing its trust setting (remove-trusted-cert -d) waits for an
+    # authorization prompt on a runner, and a setting for a certificate that
+    # is gone trusts nothing.
     tls_cleanup() {
       [ -n "$tls_pid" ] && kill "$tls_pid" 2>/dev/null
+      tls_pid=
       if [ -n "$TLS_SHA1" ]; then
-        sudo -n security remove-trusted-cert -d "$T/tls/ca.pem" >/dev/null 2>&1 || true
-        sudo -n security delete-certificate -Z "$TLS_SHA1" /Library/Keychains/System.keychain >/dev/null 2>&1 || true
+        as_root_bounded 30 security delete-certificate -Z "$TLS_SHA1" /Library/Keychains/System.keychain || true
         TLS_SHA1=
       fi
     }
@@ -321,14 +345,17 @@ if [ "$RUN" = 1 ]; then
         for _ in $(seq 1 20); do curl -ks -m 1 "https://127.0.0.1:$TLS_PORT/" >/dev/null 2>&1 && break; sleep 0.25; done
         FETCH="fetch('https://localhost:$TLS_PORT/').then(r => process.exit(r.ok ? 0 : 1), e => { console.error(e.cause?.code ?? e.message); process.exit(1) })"
         check "Node on its own does not trust a certificate from that authority" sh -c "! env -i HOME='$T/home' PATH=/usr/bin:/bin '$R/node/bin/node' -e \"\$1\"" _ "$FETCH"
-        if sudo -n security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain "$T/tls/ca.pem" >"$T/tls/add.log" 2>&1; then
-          TLS_SHA1="$(openssl x509 -noout -fingerprint -sha1 -in "$T/tls/ca.pem" | sed 's/.*=//; s/://g')"
+        TLS_SHA1="$(openssl x509 -noout -fingerprint -sha1 -in "$T/tls/ca.pem" | sed 's/.*=//; s/://g')"
+        if as_root_bounded 60 security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain "$T/tls/ca.pem"; then
           TLS_RUN=1
           check "once macOS trusts it, the app's Node with the system's certificates added does" \
             env -i HOME="$T/home" PATH=/usr/bin:/bin "$R/node/bin/node" --input-type=module -e \
             "import { trustSystemCertificates } from '$R/app/server/dist/netTrust.js'; trustSystemCertificates(); $FETCH"
         else
-          echo "  (security add-trusted-cert was refused here, so the check is skipped: $(tr '\n' ' ' <"$T/tls/add.log" | cut -c1-160))"
+          # Not added (refused, or held for a prompt and stopped): nothing to take out again.
+          echo "  (security add-trusted-cert did not add it here, so the check is skipped: $(tr '\n' ' ' <"$T/tls/last.log" | cut -c1-160))"
+          as_root_bounded 30 security delete-certificate -Z "$TLS_SHA1" /Library/Keychains/System.keychain || true
+          TLS_SHA1=
         fi
       else
         bad "openssl could not make a throwaway certificate authority"
