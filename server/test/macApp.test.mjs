@@ -656,3 +656,17 @@ test('installing over the copy the server runs from stops that server first', as
     if (pid) try { process.kill(-pid, 'SIGKILL') } catch { /* gone */ }
   }
 })
+
+test('the app menu\'s Check for Updates opens Settings, Updates and sends the event the page checks on', () => {
+  const shell = fs.readFileSync(path.join(REPO, 'deploy/mac/shell/StudioShell.swift'), 'utf8')
+  const flow = fs.readFileSync(path.join(REPO, 'web/src/updateFlow.ts'), 'utf8')
+  const event = /export const CHECK_EVENT = '([^']+)'/.exec(flow)?.[1]
+  assert.ok(event, 'updateFlow.ts names the event')
+  assert.match(shell, /item\("Check for Updates…", #selector\(checkForUpdates\(_:\)\), target: self\)/)
+  // Under About, in the app's own menu, as on other Mac apps.
+  assert.ok(shell.indexOf('Check for Updates…') > shell.indexOf('item("About ACTIVATE Studio"'))
+  assert.ok(shell.indexOf('Check for Updates…') < shell.indexOf('item("Run Setup…"'))
+  const body = /func checkForUpdates[\s\S]*?\n  }\n/.exec(shell)?.[0] ?? ''
+  assert.match(body, /#view=settings:updates/)
+  assert.ok(body.includes(`new Event('${event}')`), `the menu item sends ${event}`)
+})

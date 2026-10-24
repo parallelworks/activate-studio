@@ -1018,6 +1018,15 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .identity-note { margin: 0; font-size: 12px; line-height: 1.55; color: var(--pw-muted); }
 .identity-note code { font-size: 11px; }
 .identity-src { font-size: 11px; white-space: nowrap; }
+/* The Build panel's updates: up to date or a newer version, and Check now. */
+.build-updates { display: flex; flex-direction: column; gap: 6px; padding-top: 8px; border-top: 1px solid var(--pw-border); }
+.build-updates-head { margin: 0; font-size: 13px; }
+.build-updates-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.build-updates-when { font-size: 12px; margin-right: auto; }
+.build-updates-error { color: var(--theme-error-text); }
+.build-updates-bar { margin: 0; }
+/* The rail's mark for a newer version: a dot, which opens Settings, Updates. */
+.footer-rail-update { background: none; border: 0; cursor: pointer; }
 
 /* Stats view: clickable rows and label pills jump to a prefilled query */
 .ov-click { cursor: pointer; }

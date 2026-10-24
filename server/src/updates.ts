@@ -101,8 +101,10 @@ class Refused extends Error {}
 
 /** intervalMs and soonMs are measured by the clock between checks; pollMs
  *  is how often the server looks whether one is due. A Mac's timers stop
- *  while it sleeps, so a check is never left to a single long timer. */
-const TIMINGS = { firstCheckMs: 60_000, intervalMs: 3600_000, soonMs: 30 * 60_000, pollMs: 5 * 60_000, idleMs: 10 * 60_000, idlePollMs: 30_000, healthyMs: 60_000 }
+ *  while it sleeps, so a check is never left to a single long timer. Four
+ *  checks an hour at most, most answered 304 against the stored ETag, is
+ *  well inside GitHub's unauthenticated limit of 60 an hour per address. */
+const TIMINGS = { firstCheckMs: 60_000, intervalMs: 15 * 60_000, soonMs: 5 * 60_000, pollMs: 2 * 60_000, idleMs: 10 * 60_000, idlePollMs: 30_000, healthyMs: 60_000 }
 const timings = { ...TIMINGS }
 const st: { state: UpdateState; error: string | null; progress: UpdateStatus['progress']; offline: boolean } = { state: 'idle', error: null, progress: null, offline: false }
 let saved: Saved | null = null
@@ -793,8 +795,8 @@ function checkDue(now = Date.now()): boolean {
   return now - Math.max(Number.isFinite(at) ? at : 0, lastAttemptAt) >= waitAfterCheck()
 }
 
-/** Checks a minute after start, then whenever an hour has passed by the
- *  clock (looked at every five minutes, and when the window asks for the
+/** Checks a minute after start, then whenever 15 minutes have passed by
+ *  the clock (looked at every two minutes, and when the window asks for the
  *  status), while the policy allows; in the app, also the cleanup and
  *  bookkeeping after an update. */
 export function startUpdates(logger: (msg: string) => void): void {
