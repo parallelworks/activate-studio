@@ -190,6 +190,21 @@ installing them. A clone of the repository is told the newest version and
 the command that updates it; a Studio that signs users in, or that the
 platform deploys, does not check.
 
+*Networks that inspect HTTPS, and proxies:* the server trusts the
+certificate authorities macOS trusts (in Keychain Access, including one an
+administrator or the Mac's management installed) as well as Node's own
+list, so the update check, model providers and the platform work on a
+network that inspects HTTPS with its own authority. Without that authority
+installed, they report a certificate this computer does not trust, instead
+of being offline. The server uses the proxy in System Settings, Network,
+Proxies (the web and secure web proxies, and their exceptions), read each
+time it starts; a proxy set by an automatic configuration (PAC) file is not
+followed, and the log says so. To set a proxy for the Studio alone, put
+`HTTPS_PROXY='http://host:port'` (with `user:password@` before the host if
+the proxy asks for a sign-in) and, if needed, `NO_PROXY` in `studio.env`.
+`STUDIO_SYSTEM_CA=0` there leaves Node's own list alone, and
+`NODE_EXTRA_CA_CERTS` adds a file of authorities as it does for any Node.
+
 *Rolling back:* while the previous copy is there, Settings, General, Updates offers
 Roll back, which puts it back and restarts. The same happens without
 asking when a new version stops three times within two minutes of being

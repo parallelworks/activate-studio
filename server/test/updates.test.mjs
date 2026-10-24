@@ -11,6 +11,7 @@ import http from 'node:http'
 import os from 'node:os'
 import path from 'node:path'
 import { spawn, spawnSync } from 'node:child_process'
+import { haveOpenssl, httpsServer, makeCerts } from './tlsFixture.mjs'
 
 const REPO = path.resolve(import.meta.dirname, '..', '..')
 const MAC = path.join(REPO, 'deploy', 'mac')
@@ -510,6 +511,25 @@ test('the window asking for the status starts a check that is due, once', async 
   await j('GET', '/api/updates')
   assert.equal(apiRequests.length, before + 1, 'not checked again while it is not due')
   U.resetUpdatesForTests()
+})
+
+test('a release server whose certificate this computer does not trust is an error that says so, not being offline', { skip: !haveOpenssl && 'openssl not installed' }, async () => {
+  await fresh('v1.139')
+  // A network that inspects HTTPS with its own authority, as seen by Node's
+  // own certificate list: this test process never added the system's.
+  const site = await httpsServer(makeCerts(path.join(tmp, 'tls')), (req, res) => { res.setHeader('content-type', 'application/json'); res.end('[]') })
+  const was = process.env.STUDIO_UPDATE_URL
+  process.env.STUDIO_UPDATE_URL = `https://localhost:${site.port}`
+  try {
+    const r = (await j('POST', '/api/updates/check')).body
+    assert.equal(r.state, 'error')
+    assert.equal(r.offline, false, 'not taken for an offline computer, which would only retry')
+    assert.match(r.error, /^The check for updates failed\. The connection to localhost:\d+ used a certificate this computer does not trust \(unable to verify the first certificate\)\. If your network inspects HTTPS, its certificate authority has to be /)
+  } finally {
+    process.env.STUDIO_UPDATE_URL = was
+    await site.close()
+    U.resetUpdatesForTests()
+  }
 })
 
 test('a failed check waits out the interval instead of retrying at every poll', async () => {

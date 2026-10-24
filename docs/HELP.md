@@ -158,6 +158,10 @@ On a shared deployment the same page holds your own key or endpoint; without one
 
 With no network, {appName} keeps working from its libraries: browsing, search, query, statistics and adding material. Chat keeps working with a model server on this computer, set under Model access, Endpoint. Anything that needs the network says so in one line instead of waiting: the model banner and the footer show **offline**, the Workflows page says the platform cannot be reached, and the update check shows **Offline** and tries again later.
 
+## Networks that inspect HTTPS, and proxies
+
+{appName} trusts the certificate authorities this computer trusts as well as its own list, so a network that inspects HTTPS works once its authority is installed on the computer; on a Mac, in Keychain Access or by the Mac's management. Behind a proxy it uses `HTTPS_PROXY` and `NO_PROXY`, and the macOS app takes the proxy from System Settings when none is set, except one given by an automatic configuration (PAC) file. A certificate or proxy problem is said in one line, for example on Settings, Updates, instead of being shown as offline.
+
 ## Using it from other tools
 
 Other tools can use this knowledge base. pw code and other MCP clients can search it directly, and any OpenAI-compatible client can use it as a model that answers from it. Settings, "External access" has the addresses and the exact commands.

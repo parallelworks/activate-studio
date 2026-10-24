@@ -1,6 +1,6 @@
 import { effectiveSettings } from './settings.js'
 import type { ToolSpec } from './chat/tools.js'
-import { networkFailure, unreachableMessage } from './net.js'
+import { connectionProblem, networkFailure, unreachableMessage } from './net.js'
 
 /**
  * The other half of MCP: this Studio as a client of remote MCP servers.
@@ -104,10 +104,11 @@ async function listFor(s: RemoteMcpServer): Promise<Entry> {
   } catch (e) {
     // An unreachable or misconfigured server contributes no tools and
     // never breaks the assistant's own.
-    const f = networkFailure(e)
     let host = s.url
     try { host = new URL(s.url).host } catch { /* shown as written */ }
-    entry.error = f ? unreachableMessage(host, f).split('. ')[0] + '.' : String((e as Error).message ?? e).slice(0, 200)
+    const conn = connectionProblem(e, host)
+    const f = conn ? null : networkFailure(e)
+    entry.error = conn ?? (f ? unreachableMessage(host, f).split('. ')[0] + '.' : String((e as Error).message ?? e).slice(0, 200))
   }
   cache.set(s.name, entry)
   return entry

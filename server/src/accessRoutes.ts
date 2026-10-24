@@ -8,7 +8,7 @@ import {
   ensureFreshAccess, listCliContexts, loginState, startCliLogin,
 } from './access.js'
 import { KbError } from './kb.js'
-import { networkFailure, unreachableMessage } from './net.js'
+import { connectionProblem, networkFailure, unreachableMessage } from './net.js'
 
 /**
  * Model access, as one picture: where model calls and platform calls get
@@ -84,8 +84,10 @@ async function platformCall(key: string, method: 'GET' | 'POST', path: string, b
       signal: AbortSignal.timeout(15_000),
     })
   } catch (e) {
-    const f = networkFailure(e)
-    throw new KbError(503, f ? unreachableMessage(new URL(origin).host, f) : String((e as Error).message ?? e).slice(0, 200))
+    const host = new URL(origin).host
+    const conn = connectionProblem(e, host)
+    const f = conn ? null : networkFailure(e)
+    throw new KbError(503, conn ?? (f ? unreachableMessage(host, f) : String((e as Error).message ?? e).slice(0, 200)))
   }
   const text = await res.text()
   let data: unknown = text

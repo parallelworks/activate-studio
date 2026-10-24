@@ -285,10 +285,90 @@ if [ "$RUN" = 1 ]; then
         sh "$R/app/server/node_modules" "$HERE/testdata/ocr-sample.pdf"
     fi
 
+    # A network that inspects HTTPS with its own certificate authority: a
+    # throwaway authority trusted by macOS (in the System keychain, where an
+    # administrator or the Mac's management puts one) and a local HTTPS
+    # server with a certificate from it. Node on its own does not trust it;
+    # the app's server, which adds the system's trusted certificates at
+    # start (netTrust.ts), does, and its update check below goes there.
+    # Needs sudo without a password, as on a CI runner; skipped otherwise.
+    TLS_RUN=0 TLS_SHA1= tls_pid=
+    # A keychain command run as root, given SECS seconds: one that waits for
+    # an authorization prompt no one can answer is killed instead of holding
+    # the job. Its status, or 124 when it was killed.
+    as_root_bounded() {
+      local secs="$1" p n=0; shift
+      # The command writes its own process id (the shell execs it), so a
+      # stop reaches it rather than only sudo.
+      rm -f "$T/tls/root.pid"
+      sudo -n /bin/sh -c 'echo $$ >"$1"; shift; exec "$@"' sh "$T/tls/root.pid" "$@" >"$T/tls/last.log" 2>&1 &
+      p=$!
+      while kill -0 "$p" 2>/dev/null; do
+        if [ "$n" -ge $((secs * 4)) ]; then
+          [ -s "$T/tls/root.pid" ] && sudo -n kill -KILL "$(cat "$T/tls/root.pid")" 2>/dev/null
+          wait "$p" 2>/dev/null
+          return 124
+        fi
+        sleep 0.25; n=$((n + 1))
+      done
+      wait "$p"
+    }
+    # Deleting the certificate from the System keychain takes the authority
+    # away; removing its trust setting (remove-trusted-cert -d) waits for an
+    # authorization prompt on a runner, and a setting for a certificate that
+    # is gone trusts nothing.
+    tls_cleanup() {
+      [ -n "$tls_pid" ] && kill "$tls_pid" 2>/dev/null
+      tls_pid=
+      if [ -n "$TLS_SHA1" ]; then
+        as_root_bounded 30 security delete-certificate -Z "$TLS_SHA1" /Library/Keychains/System.keychain || true
+        TLS_SHA1=
+      fi
+    }
+    trap 'tls_cleanup; rm -rf "$T"' EXIT
+    echo "Outbound HTTPS through a certificate authority macOS trusts"
+    if ! sudo -n true 2>/dev/null; then
+      echo "  (sudo asks for a password here, so no authority can be added to the System keychain; skipped)"
+    else
+      mkdir -p "$T/tls"
+      printf '[req]\ndistinguished_name = dn\n[dn]\n[v3_ca]\nbasicConstraints = critical,CA:TRUE\nkeyUsage = critical,keyCertSign,cRLSign\nsubjectKeyIdentifier = hash\n' >"$T/tls/ca.cnf"
+      printf 'subjectAltName = DNS:localhost,IP:127.0.0.1\nbasicConstraints = CA:FALSE\nextendedKeyUsage = serverAuth\n' >"$T/tls/server.ext"
+      if (cd "$T/tls" &&
+        openssl req -x509 -newkey rsa:2048 -nodes -keyout ca.key -out ca.pem -days 2 -subj '/CN=Studio Check Authority' -config ca.cnf -extensions v3_ca &&
+        openssl req -newkey rsa:2048 -nodes -keyout server.key -out server.csr -subj /CN=localhost -config ca.cnf &&
+        openssl x509 -req -in server.csr -CA ca.pem -CAkey ca.key -CAcreateserial -out server.pem -days 2 -extfile server.ext) >/dev/null 2>&1; then
+        TLS_PORT="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')"
+        # Answers every request with an empty list of releases.
+        clean "$R/node/bin/node" -e "require('https').createServer({ key: require('fs').readFileSync(process.argv[1]), cert: require('fs').readFileSync(process.argv[2]) }, (q, r) => { r.setHeader('content-type', 'application/json'); r.end('[]') }).listen(Number(process.argv[3]), '127.0.0.1')" \
+          "$T/tls/server.key" "$T/tls/server.pem" "$TLS_PORT" &
+        tls_pid=$!
+        for _ in $(seq 1 20); do curl -ks -m 1 "https://127.0.0.1:$TLS_PORT/" >/dev/null 2>&1 && break; sleep 0.25; done
+        FETCH="fetch('https://localhost:$TLS_PORT/').then(r => process.exit(r.ok ? 0 : 1), e => { console.error(e.cause?.code ?? e.message); process.exit(1) })"
+        check "Node on its own does not trust a certificate from that authority" sh -c "! env -i HOME='$T/home' PATH=/usr/bin:/bin '$R/node/bin/node' -e \"\$1\"" _ "$FETCH"
+        TLS_SHA1="$(openssl x509 -noout -fingerprint -sha1 -in "$T/tls/ca.pem" | sed 's/.*=//; s/://g')"
+        if as_root_bounded 60 security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain "$T/tls/ca.pem"; then
+          TLS_RUN=1
+          check "once macOS trusts it, the app's Node with the system's certificates added does" \
+            env -i HOME="$T/home" PATH=/usr/bin:/bin "$R/node/bin/node" --input-type=module -e \
+            "import { trustSystemCertificates } from '$R/app/server/dist/netTrust.js'; trustSystemCertificates(); $FETCH"
+        else
+          # Not added (refused, or held for a prompt and stopped): nothing to take out again.
+          echo "  (security add-trusted-cert did not add it here, so the check is skipped: $(tr '\n' ' ' <"$T/tls/last.log" | cut -c1-160))"
+          as_root_bounded 30 security delete-certificate -Z "$TLS_SHA1" /Library/Keychains/System.keychain || true
+          TLS_SHA1=
+        fi
+      else
+        bad "openssl could not make a throwaway certificate authority"
+      fi
+    fi
+
     # The server from the app's own run loop, as the LaunchAgent runs it.
     PORT_FREE="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')"
     mkdir -p "$T/data"
     printf "PORT='%s'\nKB_ROOT='%s'\n" "$PORT_FREE" "$T/corpus" >"$T/data/studio.env"
+    # Its update check asks the HTTPS server above, behind the authority
+    # only macOS trusts.
+    [ "$TLS_RUN" = 1 ] && printf "STUDIO_UPDATE_URL='https://localhost:%s'\n" "$TLS_PORT" >>"$T/data/studio.env"
     # Started directly, not through clean(), so $! is the run loop itself
     # rather than a subshell that TERM would end without reaching it.
     env -i HOME="$T/home" PATH=/usr/bin:/bin:/usr/sbin:/sbin /bin/bash "$R/studio-run.sh" "$T/data" &
@@ -300,6 +380,17 @@ if [ "$RUN" = 1 ]; then
     done
     if [ "$up" = 1 ]; then ok "the server answers on 127.0.0.1:$PORT_FREE"; else bad "the server did not start:"; tail -n 30 "$T/data/logs/studio.log" | sed 's/^/        /'; fi
     check "it reports this build" grep -q "$(sed -n 's/.*"builtAt": *"\([^"]*\)".*/\1/p' "$R/app/build-info.json")" "$T/version.json"
+    check "its log says it trusts the system's certificates" grep -q "trusts the system's certificates" "$T/data/logs/studio.log"
+    if [ "$TLS_RUN" = 1 ]; then
+      curl -fsS -m 30 -X POST "http://127.0.0.1:$PORT_FREE/api/updates/check" >"$T/updcheck.json" 2>/dev/null || true
+      if python3 -c 'import json, sys; d = json.load(open(sys.argv[1])); sys.exit(0 if d.get("state") == "idle" and not d.get("error") and not d.get("offline") and d.get("checkedAt") else 1)' "$T/updcheck.json" 2>/dev/null; then
+        ok "and its update check reaches a server behind that authority"
+      else
+        bad "its update check did not reach the server behind that authority:"
+        sed 's/^/        /' "$T/updcheck.json" 2>/dev/null || true
+        grep -i -E "outbound|update check|certificate" "$T/data/logs/studio.log" | tail -n 5 | sed 's/^/        /'
+      fi
+    fi
     check "the model is linked into its index" test -e "$T/data/index/models/minilm384.gguf"
     check "and the ONNX model too" test -e "$T/data/index/models/minilm-l6/model.onnx"
     # A full rebuild runs indexer/reindex.sh (bash, then Python) with the
@@ -377,6 +468,12 @@ if [ "$RUN" = 1 ]; then
       bad "the run loop or server kept running after TERM"
       # So the launcher checks below do not reach a leftover server.
       for p in $(lsof -ti "tcp:$PORT_FREE" -sTCP:LISTEN 2>/dev/null) $loop; do kill -KILL "$p" 2>/dev/null || true; done
+    fi
+    # The throwaway authority leaves the System keychain as soon as it is done with.
+    if [ "$TLS_RUN" = 1 ]; then
+      tls_cleanup
+      check "the throwaway authority is out of the System keychain again" sh -c \
+        "! security find-certificate -c 'Studio Check Authority' /Library/Keychains/System.keychain"
     fi
 
     if [ "$LAUNCH" = 1 ]; then

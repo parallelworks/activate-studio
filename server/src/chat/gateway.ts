@@ -1,7 +1,7 @@
 import { GATEWAY_BASE, PW_API_KEY, SIDECAR_BASE, SIDECAR_KEY } from '../config.js'
 import { resolveSharedKey } from '../credentials.js'
 import { cliCredential } from '../access.js'
-import { isLoopbackHost, networkFailure, unreachableMessage } from '../net.js'
+import { connectionProblem, isLoopbackHost, networkFailure, unreachableMessage } from '../net.js'
 
 /**
  * Gateway credential: PW_API_KEY env when set, otherwise the pw CLI's own
@@ -24,6 +24,8 @@ async function reach(url: string, init: RequestInit): Promise<Response> {
   try {
     return await fetch(url, init)
   } catch (e) {
+    const conn = connectionProblem(e, hostOf(url))
+    if (conn) throw new GatewayUnreachable(conn)
     const f = networkFailure(e)
     if (!f) throw e
     throw new GatewayUnreachable(unreachableMessage(hostOf(url), f))
@@ -373,6 +375,9 @@ export async function aiHealth(key?: string | null, baseUrl?: string | null, opt
     const ids = opts.ids ? list.map(m => String((m as { id?: unknown })?.id ?? '')).filter(Boolean).slice(0, 500) : undefined
     return { ...base, ok: true, status: 'ok', models: list.length, message: null, ...(ids ? { ids } : {}) }
   } catch (e) {
+    // A certificate or proxy refusal is not being offline.
+    const conn = connectionProblem(e, gatewayHost)
+    if (conn) return { ...base, ok: false, status: 'unreachable', message: conn }
     const f = networkFailure(e)
     // A server on this computer that does not answer is not running; the
     // network has nothing to do with it.

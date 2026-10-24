@@ -11,7 +11,7 @@ import { INDEX_BASE } from './config.js'
 import { KbError } from './kb.js'
 import { RELAUNCH_EXIT_CODE, requestRestart, runsWithoutAgent } from './lifecycle.js'
 import { effectiveSettings, type UpdatePolicy } from './settings.js'
-import { networkFailure } from './net.js'
+import { connectionProblem, networkFailure } from './net.js'
 import { buildInfo } from './version.js'
 
 /**
@@ -245,6 +245,11 @@ function macosVersion(): string | null {
 // ---- GitHub ----
 
 const userAgent = () => `activate-studio/${running().version}`
+
+/** The host the check asks: GitHub's API, or STUDIO_UPDATE_URL's. */
+function releaseHost(): string {
+  try { return new URL(process.env.STUDIO_UPDATE_URL || 'https://api.github.com').host } catch { return 'api.github.com' }
+}
 
 function plain(e: unknown): string {
   const err = e as Error & { cause?: { code?: string; message?: string } }
@@ -644,9 +649,13 @@ function fail(e: unknown): void {
   st.state = 'error'
   st.progress = null
   installWanted = false
-  const f = e instanceof Refused ? null : networkFailure(e)
+  // A certificate or proxy refusal is said as such; the downloads come
+  // from github.com, which hands them on to its release storage.
+  const conn = e instanceof Refused ? null : connectionProblem(e, 'github.com')
+  const f = e instanceof Refused || conn ? null : networkFailure(e)
   st.error = e instanceof Refused ? e.message
-    : `The update failed: ${plain(e)}.${f ? ' The connection to the release server was lost; try again once this computer is online.' : ''}`
+    : conn ? `The update failed. ${conn}`
+      : `The update failed: ${plain(e)}.${f ? ' The connection to the release server was lost; try again once this computer is online.' : ''}`
 }
 
 async function install(rel: Release): Promise<void> {
@@ -686,7 +695,16 @@ async function check(): Promise<void> {
       st.error = null
       st.offline = false
     } catch (e) {
-      if (networkFailure(e)) {
+      // A certificate this computer does not trust, or a proxy that will
+      // not carry the request, is not being offline: it is said, and stays
+      // until the setting is fixed.
+      const conn = connectionProblem(e, releaseHost())
+      if (conn) {
+        st.state = 'error'
+        st.error = `The check for updates failed. ${conn}`
+        st.offline = false
+        log(`update check: ${conn}`)
+      } else if (networkFailure(e)) {
         // Offline is a state of the computer, not a fault of the check.
         st.state = 'idle'
         st.error = null

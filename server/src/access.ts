@@ -2,7 +2,7 @@ import { execFile, spawn, type ChildProcess } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { GATEWAY_BASE, GATEWAY_FROM_ENV, INDEX_BASE, PW_CLI, findPwCli, gatewayFor, pwCredentialsFile, setGatewayBase, type PwCliSource } from './config.js'
-import { cliNetworkFailure, networkFailure, unreachableMessage } from './net.js'
+import { cliNetworkFailure, connectionProblem, networkFailure, unreachableMessage } from './net.js'
 
 /**
  * The pw CLI as a source of model and platform access.
@@ -459,8 +459,9 @@ export function platformReachability(): Promise<{ ok: boolean; message: string |
       await fetch(origin, { method: 'HEAD', redirect: 'manual', signal: AbortSignal.timeout(4_000) })
       reach = { origin, at: Date.now(), ok: true, message: null }
     } catch (e) {
-      const f = networkFailure(e)
-      reach = { origin, at: Date.now(), ok: !f, message: f ? unreachableMessage(host, f) : null }
+      const conn = connectionProblem(e, host)
+      const f = conn ? null : networkFailure(e)
+      reach = { origin, at: Date.now(), ok: !conn && !f, message: conn ?? (f ? unreachableMessage(host, f) : null) }
     }
     return reach
   })().finally(() => { reaching = null })
