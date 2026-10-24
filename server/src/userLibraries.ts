@@ -211,6 +211,34 @@ export async function remoteQuery(root: string, args: string[], subdir?: string)
   return r.stdout
 }
 
+/** One gufi_query over several of a site's indexes in one remote command:
+ *  the index roots of libraries on the same host and account, stacked as
+ *  gufi_query's paths, so a search across them is one round trip. */
+export async function remoteQueryMany(roots: string[], args: string[]): Promise<string> {
+  const targets = roots.map(r => remoteTarget(r)!)
+  const t = targets[0]
+  if (targets.some(x => x.site !== t.site || x.key !== t.key || x.gufiBin !== t.gufiBin)) throw new KbError(400, 'indexes on different hosts cannot share a query')
+  const n = args.indexOf('-n')
+  if (n >= 0 && n + 1 < args.length) args = [...args.slice(0, n + 1), String(await remoteThreads(t.site, t.key)), ...args.slice(n + 2)]
+  const t0 = Date.now()
+  // As remoteQuery: gufi_query alone, which a host whose login shell
+  // runs nothing else accepts.
+  const cmd = [gufiTool(t.gufiBin), ...args, ...targets.map(x => x.indexRoot)]
+  const r = await remoteRun(t.site, t.key, cmd)
+  noteGufi(cmd, { site: siteName(t.site), ms: Date.now() - t0 })
+  // An option an older GUFI does not know prints the usage on stdout; the
+  // caller asks again without it.
+  if (r.code !== 0 && (!r.stdout || /unrecognized option|invalid option|unknown option/i.test(r.stderr))) throw new KbError(502, `gufi_query on ${siteName(t.site)} failed: ${r.stderr.trim().split('\n').pop() ?? r.code}`)
+  return r.stdout
+}
+
+/** The site a library on another system is reached through, and the
+ *  account and GUFI there: libraries that share it can share a query. */
+export function remoteHostKey(root: string): string | null {
+  const t = remoteTarget(root)
+  return t ? JSON.stringify([t.site, t.key, t.gufiBin]) : null
+}
+
 /** The remote index's own root, to strip from the paths gufi prints. */
 export function remoteIndexRoot(root: string): string { return remoteTarget(root)!.indexRoot }
 

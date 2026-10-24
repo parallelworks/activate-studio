@@ -1,8 +1,9 @@
 import { getLibrary, listLibraries, type Library } from './libraries.js'
-import { blendHits, ftsExprBare, ftsHit, ftsSql, nameHit, namesSql, searchVector, searchWordsAndNames, type SearchHit } from './gufi.js'
+import { EXTERNAL_DB_PATTERN, blendHits, ftsExprBare, ftsHit, ftsSql, fuseRows, nameHit, namesSql, queryVectors, searchVector, searchWordsAndNames, walkSearch, type HitMode, type SearchHit, type WalkLimits, type WalkRow } from './gufi.js'
 import { gufiVtAvailable, runAcross } from './gufiVt.js'
 import { effectiveSettings } from './settings.js'
 import { addOmission, failureReason, libraryGap, type Omission } from './omissions.js'
+import { REMOTE_PREFIX, remoteHostKey } from './userLibraries.js'
 
 /**
  * Which libraries a request means: one, by id (the knowledge base when
@@ -33,13 +34,6 @@ export function scopeWithOmitted(param: string | null | undefined, viewerId: str
 
 export interface ScopedHit extends SearchHit { library: { id: string; label: string } }
 
-/**
- * Search over one or several libraries. Each library runs what it
- * supports (full text and semantic where its index has them, names
- * always); one that fails adds nothing and the search goes on.
- * The hits are blended across libraries as within one, each tagged with
- * its library, so the same path in two libraries stays two hits.
- */
 /** Whether a search looks in a library by meaning: one the Studio builds
  *  when its level is not off, and an index it only reads when it has vectors. */
 export function meaningSearched(l: Library): boolean {
@@ -58,11 +52,120 @@ export function wordsSearched(l: Library): boolean {
  *  index never holds up the others. STUDIO_SEARCH_DEADLINE_MS changes it. */
 export const SEARCH_DEADLINE_MS = Number(process.env.STUDIO_SEARCH_DEADLINE_MS) || 20_000
 
-export async function searchScope(libs: Library[], q: string, limit: number,
-  opts: { semantic: boolean; nameLimit?: number; deadlineMs?: number; slow?: string[]; omitted?: Omission[] }): Promise<ScopedHit[]> {
-  // What each library's state leaves out, said before anything runs; one
-  // with nothing to answer from is not searched at all.
+/** Whether libraries on this machine share one walk. Several index paths in
+ *  one gufi_query measured no faster here than a gufi_query each running at
+ *  once, and a walk each keeps a library's own deadline, so they do not;
+ *  libraries on one remote host do, which saves a round trip each.
+ *  STUDIO_STACK_LOCAL=1 stacks them too. */
+export const STACK_LOCAL = process.env.STUDIO_STACK_LOCAL === '1'
+
+type ScopeOpts = { semantic: boolean; nameLimit?: number; deadlineMs?: number; slow?: string[]; omitted?: Omission[] }
+
+/**
+ * Search over one or several libraries, each in one walk of its index for
+ * every kind of match it supports: names and folder paths always, words
+ * where its index has text, meaning where it has vectors (walkSearch). The
+ * libraries of one remote host share one walk and one round trip. The kinds
+ * are fused across libraries with reciprocal rank fusion (fuseRows), each
+ * hit tagged with its library, so the same path in two libraries stays two
+ * hits. A library that fails, or does not answer in time, is named in
+ * opts.omitted and the search goes on. With Settings, General, "Search
+ * across libraries" set to gufi_vt, the earlier form runs (searchScopeVt).
+ */
+export async function searchScope(libs: Library[], q: string, limit: number, opts: ScopeOpts): Promise<ScopedHit[]> {
   const omitted = opts.omitted ?? []
+  libs = withoutGaps(libs, opts, omitted)
+  if (libs.length > 1 && effectiveSettings().searchEngine === 'gufi_vt' && await gufiVtAvailable()) return searchScopeVt(libs, q, limit, opts, omitted)
+  const SEP = '\u0001'
+  const nameLimit = opts.nameLimit ?? Math.min(Math.max(10, Math.floor(limit / 5)), 50)
+  const vecLimit = Math.min(limit, 10)
+  const caps: Partial<Record<HitMode, number>> = { name: nameLimit, path: nameLimit, fts: limit * 3, vector: vecLimit }
+  const failed = (l: Library, e: unknown, partial: boolean, what = '') => {
+    addOmission(omitted, { id: l.id, label: l.label, reason: `${what}${failureReason(l, e)}`, partial })
+  }
+  const wantVec = (l: Library) => opts.semantic && meaningSearched(l)
+  const external = EXTERNAL_DB_PATTERN || null
+  // The query is embedded for any search by meaning: external databases can
+  // carry vectors where the Studio's own tables have none.
+  const vectors = opts.semantic && (libs.some(wantVec) || external) ? await queryVectors(q) : []
+  const limitsFor = (words: boolean, vec: boolean): WalkLimits => ({
+    names: nameLimit, paths: nameLimit,
+    words: limit * 3, wordsPerDir: limit,
+    vectors: vectors.length ? vecLimit : 0, vectorsPerDir: 3,
+    studioText: words, studioVectors: vec, external,
+  })
+  // Libraries that share a walk: the same machine, and the same kinds, so
+  // one query fits them all. A remote host's are stacked; this machine's
+  // only with STACK_LOCAL.
+  const groups = new Map<string, Library[]>()
+  for (const l of libs) {
+    const words = wordsSearched(l), vec = wantVec(l) && vectors.length > 0
+    const remote = l.indexRoot.startsWith(REMOTE_PREFIX)
+    let host: string | null = null
+    try { host = remote ? remoteHostKey(l.indexRoot) : 'local' } catch { host = null }
+    const shared = remote ? host !== null : STACK_LOCAL
+    const key = shared ? `${host}\0${words}\0${vec}` : `one\0${l.id}`
+    groups.set(key, [...(groups.get(key) ?? []), l])
+  }
+  // One library alone is waited for; among several, each walk gets the deadline.
+  const deadline = libs.length > 1 ? (opts.deadlineMs ?? SEARCH_DEADLINE_MS) : 0
+  const late = (ls: Library[]) => {
+    for (const l of ls) {
+      opts.slow?.push(l.label)
+      addOmission(omitted, { id: l.id, label: l.label, reason: `did not answer within ${deadline >= 1000 ? `${Math.round(deadline / 1000)} s` : `${deadline} ms`}`, partial: false })
+    }
+  }
+  const results = await Promise.all([...groups.values()].map(async members => {
+    const words = wordsSearched(members[0]), vec = wantVec(members[0]) && vectors.length > 0
+    const byRoot = new Map<string, Library[]>()
+    for (const l of members) byRoot.set(l.indexRoot, [...(byRoot.get(l.indexRoot) ?? []), l])
+    const work = walkSearch(q, limitsFor(words, vec), [...byRoot.keys()], vec ? vectors : [])
+      .then(rows => rows.flatMap(r => (byRoot.get(r.root) ?? []).map(l => ({ ...r, path: `${l.id}${SEP}${r.path}` }))))
+      .catch(e => { for (const l of members) failed(l, e, false); return [] as WalkRow[] })
+    // Meaning for a library whose walk could not carry it: one embedded
+    // with another model (an index from before the ONNX model), or one
+    // read here without that model.
+    const extra = work.then(async rows => {
+      const out: WalkRow[] = []
+      for (const l of members) {
+        if (!wantVec(l) || l.indexRoot.startsWith(REMOTE_PREFIX)) continue
+        if (vec && rows.some(r => r.kind === 'vector' && r.path.startsWith(`${l.id}${SEP}`))) continue
+        const hits = await searchVector(q, vecLimit, l.indexRoot).catch(e => { failed(l, e, true, 'not searched by meaning: '); return [] as SearchHit[] })
+        for (const h of hits) out.push({ kind: 'vector', r: h.score, path: `${l.id}${SEP}${h.path}`, name: h.name, size: h.size, mtime: h.mtime, snippet: h.snippet, root: l.indexRoot })
+      }
+      return [...rows, ...out]
+    })
+    if (!deadline) return extra
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const timeout = new Promise<null>(resolve => { timer = setTimeout(() => resolve(null), deadline) })
+    const first = await Promise.race([extra, timeout])
+    clearTimeout(timer)
+    if (first) return first
+    late(members)
+    return [] as WalkRow[]
+  }))
+  const rows = results.flat()
+  // A library whose words or meaning came from external databases was
+  // searched there after all: the note that said it could not be goes.
+  const found = (kind: HitMode, id: string) => rows.some(r => r.kind === kind && r.path.startsWith(`${id}${SEP}`))
+  for (let i = omitted.length - 1; i >= 0; i--) {
+    const o = omitted[i]
+    if (!o.partial) continue
+    const left = o.reason.split('; ').filter(r => !((r.startsWith('words not searched') && found('fts', o.id)) || (r.startsWith('not searched by meaning') && found('vector', o.id))))
+    if (!left.length) omitted.splice(i, 1)
+    else omitted[i] = { ...o, reason: left.join('; ') }
+  }
+  const byId = new Map(libs.map(l => [l.id, l]))
+  return fuseRows(rows, caps, limit).map(h => {
+    const i = h.path.indexOf(SEP)
+    const l = byId.get(h.path.slice(0, i))!
+    return { ...h, path: h.path.slice(i + 1), library: { id: l.id, label: l.label } }
+  })
+}
+
+/** What each library's state leaves out, said before anything runs; one
+ *  with nothing to answer from is not searched at all. */
+function withoutGaps(libs: Library[], opts: ScopeOpts, omitted: Omission[]): Library[] {
   const gone = new Set<string>()
   for (const l of libs) {
     const gap = libraryGap(l, { words: true, meaning: opts.semantic })
@@ -70,7 +173,13 @@ export async function searchScope(libs: Library[], q: string, limit: number,
     addOmission(omitted, gap)
     if (!gap.partial) gone.add(l.id)
   }
-  if (gone.size) libs = libs.filter(l => !gone.has(l.id))
+  return gone.size ? libs.filter(l => !gone.has(l.id)) : libs
+}
+
+/** The search as it ran before the one walk, for the gufi_vt setting: full
+ *  text and names across libraries as one gufi_vt statement each, meaning
+ *  per library, blended by blendHits. */
+async function searchScopeVt(libs: Library[], q: string, limit: number, opts: ScopeOpts, omitted: Omission[]): Promise<ScopedHit[]> {
   const failed = (l: Library, e: unknown, partial: boolean, what = '') => {
     addOmission(omitted, { id: l.id, label: l.label, reason: `${what}${failureReason(l, e)}`, partial })
   }

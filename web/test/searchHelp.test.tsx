@@ -18,7 +18,8 @@ describe('the Search page says what search matches', () => {
     expect(screen.getByText(/passages that say the same thing in other words/)).toBeInTheDocument()
     expect(screen.getByText('Notes: documents')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Settings, Libraries' })).toHaveAttribute('href', '#view=settings:libraries')
-    expect(screen.getByText(/Each result says how it matched: name, words, or meaning/)).toBeInTheDocument()
+    expect(screen.getByText(/Each result says how it matched: name, folder, words, or meaning/)).toBeInTheDocument()
+    expect(screen.getByText(/a folder the file is in has the search in its name/)).toBeInTheDocument()
   })
 
   it('names and words only where it is off', () => {
@@ -112,5 +113,14 @@ describe('what the search box and the page say a search can match', () => {
     expect(SEARCH_PLACEHOLDER.meaning).toMatch(/^Ask in plain words/)
     expect(SEARCH_PLACEHOLDER.names).toBe('Part of a file or folder name')
     expect(SEARCH_NOTE.words).toBe('Names and words, including Office and PDF content')
+  })
+})
+
+describe('how a result was found', () => {
+  it('names every way, the most exact first, and a folder match has its own label', async () => {
+    const { foundBy } = await import('../src/views/SearchView')
+    expect(foundBy({ mode: 'fts', kinds: ['fts', 'name', 'vector'] })).toBe('Found by its words, its name and its meaning')
+    expect(foundBy({ mode: 'path', kinds: ['path'] })).toBe('Found by a folder it is in')
+    expect(foundBy({ mode: 'vector' })).toBe('Found by its meaning')
   })
 })
