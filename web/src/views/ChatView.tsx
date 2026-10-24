@@ -463,12 +463,26 @@ export function ChatView() {
           <ChatLayout
             sidebarMode={phone ? 'drawer' : 'inline'}
             sidebarTop={({ collapsed }) => (
-              <ManageChatsRailItem
-                active={showManage}
-                collapsed={collapsed}
-                // Like the package's own rows, a pick closes the phone drawer.
-                onSelect={() => { setShowManage(true); setShowAttachments(false); setRailOpen(false) }}
-              />
+              <>
+                <ManageChatsRailItem
+                  active={showManage}
+                  collapsed={collapsed}
+                  // Like the package's own rows, a pick closes the phone drawer.
+                  onSelect={() => { setShowManage(true); setShowAttachments(false); setRailOpen(false) }}
+                />
+                {/* Above the list it filters, so nothing covers the
+                    sidebar's collapse button at its foot; gone on the rail. */}
+                {multiUser && sharedHistory && !showAttachments && !collapsed && (
+                  <div className="chat-filter" title="Show every conversation on this deployment, or only yours">
+                    <SegmentedControl
+                      label="Conversations shown"
+                      value={chatFilter}
+                      onValueChange={changeChatFilter}
+                      options={[{ value: 'mine', label: 'My chats' }, { value: 'all', label: 'All chats' }]}
+                    />
+                  </div>
+                )}
+              </>
             )}
           >
             {showManage ? (
@@ -490,16 +504,6 @@ export function ChatView() {
           {!showAttachments && !showManage && <SlashPalette canvas={canvasRef} />}
           {!showAttachments && !showManage && <NextUp canvas={canvasRef} />}
           {voiceOpen && cfg.features?.voice?.url && <VoiceOverlay url={cfg.features.voice.url} onClose={() => setVoiceOpen(false)} />}
-          {multiUser && sharedHistory && !showAttachments && (
-            <div className="chat-filter" title="Show every conversation on this deployment, or only yours">
-              <SegmentedControl
-                label="Conversations shown"
-                value={chatFilter}
-                onValueChange={changeChatFilter}
-                options={[{ value: 'mine', label: 'My chats' }, { value: 'all', label: 'All chats' }]}
-              />
-            </div>
-          )}
           <div className="chat-controls" hidden={showManage}>
             {cfg.features?.voice?.enabled && (
               <button className="scope-btn voice-btn" title="Talk with the assistant (feature preview)" onClick={() => setVoiceOpen(true)}>
