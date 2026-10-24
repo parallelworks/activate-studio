@@ -350,8 +350,8 @@ if [ "$RUN" = 1 ]; then
       else
         bad "a query across two libraries did not run through gufi_vt:"
         python3 -c 'import json, sys; d = json.load(open(sys.argv[1])); print("engine", d.get("engine"), "libraries", sorted(set(d.get("rowLibraries") or [])), "failed", d.get("failed"))' "$T/query.json" 2>&1 | sed 's/^/        /'
-        sed 's/^/        /' "$T/query.err"
-        grep -i -E 'gufi_vt|fell back' "$T/data/logs/studio.log" | tail -n 5 | sed 's/^/        /'
+        sed 's/^/        /' "$T/query.err" || true
+        { grep -i -E 'gufi_vt|fell back' "$T/data/logs/studio.log" || true; } | tail -n 5 | sed 's/^/        /'
         # The server's own probe by hand, and the steps before it.
         {
           clean "$G/bin/gufi_sqlite3" :memory: 'SELECT 1;'; echo "select 1: exit $?"
@@ -360,7 +360,7 @@ if [ "$RUN" = 1 ]; then
             "CREATE VIRTUAL TABLE temp.l USING gufi_vt(index='$T/idx/corpus', E=\"SELECT name FROM vrpentries;\"); SELECT count(*) FROM temp.l;"; echo "local location: exit $?"
           clean "$G/bin/gufi_sqlite3" :memory: \
             "CREATE VIRTUAL TABLE temp.p USING gufi_vt(index='/', E=\"SELECT name FROM vrpentries;\", remote_cmd='/bin/true'); SELECT count(*) FROM temp.p;"; echo "remote probe: exit $?"
-        } >"$T/vtdiag.txt" 2>&1
+        } >"$T/vtdiag.txt" 2>&1 || true
         sed 's/^/        /' "$T/vtdiag.txt"
       fi
     else
