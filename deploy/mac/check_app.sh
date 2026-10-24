@@ -366,6 +366,66 @@ if [ "$RUN" = 1 ]; then
     else
       bad "could not add a second library to query across"
     fi
+    # An index on a host whose login runs only gufi_query: this Mac's own
+    # sshd, reached with a key whose authorized_keys line forces every
+    # command through a wrapper that runs gufi_query lines and refuses the
+    # rest, as a site's forced command or restricted shell does. Only on a
+    # CI runner (the line is added to the account's authorized_keys and
+    # removed after), and only where Remote Login answers.
+    if [ "${GITHUB_ACTIONS:-}" = true ] && nc -z -w 2 127.0.0.1 22 >/dev/null 2>&1; then
+      qkey="$T/home/.ssh/qonly"
+      mark="activate-studio-check-$$"
+      mkdir -p "$T/home/.ssh" "$HOME/.ssh" && chmod 700 "$T/home/.ssh" "$HOME/.ssh"
+      ssh-keygen -q -t ed25519 -N '' -C "$mark" -f "$qkey"
+      cat >"$T/qonly.sh" <<EOF
+#!/bin/sh
+printf '%s\n' "\$SSH_ORIGINAL_COMMAND" >>"$T/qonly.log"
+case "\$SSH_ORIGINAL_COMMAND" in
+  "gufi_query "*) PATH="$G/bin:/usr/bin:/bin"; export PATH; eval "\$SSH_ORIGINAL_COMMAND" ;;
+  *) echo "This account may run only gufi_query." >&2; exit 1 ;;
+esac
+EOF
+      chmod 755 "$T/qonly.sh"
+      printf 'command="%s",no-pty,no-port-forwarding,no-agent-forwarding,no-X11-forwarding %s\n' "$T/qonly.sh" "$(cat "$qkey.pub")" >>"$HOME/.ssh/authorized_keys"
+      chmod 600 "$HOME/.ssh/authorized_keys"
+      # ssh reads the account's own ~/.ssh/config (its home in the password
+      # database, not $HOME), so the alias goes there, between two marks.
+      touch "$HOME/.ssh/config" && chmod 600 "$HOME/.ssh/config"
+      printf '# %s\nHost qonly\n  HostName 127.0.0.1\n  User %s\n  IdentityFile %s\n  IdentitiesOnly yes\n  StrictHostKeyChecking accept-new\n  UserKnownHostsFile %s\n# end %s\n' \
+        "$mark" "$(id -un)" "$qkey" "$T/home/.ssh/known_hosts" "$mark" >>"$HOME/.ssh/config"
+      qbody="$(python3 -c 'import json, sys; print(json.dumps({"destination": "qonly", "indexRoot": sys.argv[1], "label": "Query only"}))' "$second/corpus")"
+      curl -fsS -m 120 -X POST -H 'content-type: application/json' -d "$qbody" \
+        "http://127.0.0.1:$PORT_FREE/api/user-libraries/ssh/test" >"$T/qtest.json" 2>"$T/qtest.err" || true
+      if python3 -c 'import json, sys; d = json.load(open(sys.argv[1])); sys.exit(0 if d.get("ok") and d.get("shell") is False and "runs only gufi_query" in d["steps"][0]["detail"] else 1)' "$T/qtest.json" 2>/dev/null; then
+        ok "the connection test passes on a host whose login runs only gufi_query"
+      else
+        bad "the connection test on a gufi_query-only host did not pass:"
+        sed 's/^/        /' "$T/qtest.json" "$T/qtest.err" 2>/dev/null || true
+      fi
+      if curl -fsS -m 120 -X POST -H 'content-type: application/json' -d "$qbody" \
+        "http://127.0.0.1:$PORT_FREE/api/user-libraries/ssh" >"$T/qadd.json" 2>"$T/qadd.err"; then
+        qid="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["id"])' "$T/qadd.json" 2>/dev/null || true)"
+        curl -fsS -m 120 -X POST -H 'content-type: application/json' -d '{"library": "all", "canned": "largest", "n": 50}' \
+          "http://127.0.0.1:$PORT_FREE/api/query" >"$T/qquery.json" 2>"$T/qquery.err" || true
+        if python3 -c 'import json, sys; d = json.load(open(sys.argv[1])); sys.exit(0 if d.get("engine") == "gufi_vt" and sys.argv[2] in set(d.get("rowLibraries") or []) and not d.get("failed") else 1)' "$T/qquery.json" "$qid" 2>/dev/null; then
+          ok "and Query reaches its index through gufi_vt with gufi_query alone"
+        else
+          bad "Query across libraries did not reach the gufi_query-only host:"
+          python3 -c 'import json, sys; d = json.load(open(sys.argv[1])); print("engine", d.get("engine"), "libraries", sorted(set(d.get("rowLibraries") or [])), "failed", d.get("failed"))' "$T/qquery.json" 2>&1 | sed 's/^/        /'
+        fi
+        check "nothing but gufi_query ran there once it was known" sh -c '! sed 1d "$1" | grep -v "^gufi_query "' sh "$T/qonly.log"
+      else
+        bad "could not add the index on the gufi_query-only host:"
+        sed 's/^/        /' "$T/qadd.err" 2>/dev/null || true
+      fi
+      # The key's line and the alias go, whatever happened above.
+      grep -v -F "$mark" "$HOME/.ssh/authorized_keys" >"$T/authorized_keys.kept" || true
+      cat "$T/authorized_keys.kept" >"$HOME/.ssh/authorized_keys"
+      awk -v m="# $mark" -v e="# end $mark" '$0 == m {skip = 1} !skip {print} $0 == e {skip = 0}' "$HOME/.ssh/config" >"$T/ssh_config.kept" || true
+      cat "$T/ssh_config.kept" >"$HOME/.ssh/config"
+    else
+      echo "  (no local ssh server, or not on a CI runner: the gufi_query-only host check is skipped)"
+    fi
     kill -TERM "$loop" 2>/dev/null || true
     # The loop waits for the server's own graceful stop, which launchd
     # allows 30 seconds (ExitTimeOut).

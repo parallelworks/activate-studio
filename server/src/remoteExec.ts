@@ -27,6 +27,15 @@ import { KbError } from './kb.js'
  * card's two counts, run side by side, and on a large index take about as
  * long as the slowest of them. Over plain ssh the sessions share one
  * connection (ControlMaster), so only the first pays for the login.
+ *
+ * Some hosts run nothing but gufi_query: no bash, a restricted shell, or
+ * a forced command that only lets gufi_query through. There the loop
+ * cannot start, so the site is marked direct (setDirect) and each command
+ * is its own ssh call instead, over the same shared connection, written
+ * as one command line with each argument quoted for a POSIX shell (sshd
+ * hands it to the login shell, or a forced command reads it from
+ * SSH_ORIGINAL_COMMAND). Only GUFI's query tools are sent to such a host;
+ * anything else is refused here with a reason (NO_SHELL).
  */
 
 const IDLE_MS = 10 * 60_000
@@ -180,8 +189,84 @@ export function bootstrapCommand(site: string): string {
   return `bash -c "$(echo ${b64} | base64 -d)"`
 }
 
-interface Pending { resolve: (r: RemoteResult) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> }
-interface Channel { child: ChildProcessWithoutNullStreams; queue: Pending[]; buf: string; last: number; stderr: string; dead: boolean; chain: Promise<unknown> }
+// ---- hosts that run only gufi_query ----
+
+/** Sites whose login runs nothing but gufi_query, learned when the loop
+ *  could not start there or from a library's last connection test. */
+const directSites = new Set<string>()
+export function setDirect(site: string, on: boolean): void { if (on) directSites.add(site); else directSites.delete(site) }
+export function isDirect(site: string): boolean { return directSites.has(site) }
+
+/** What may run on such a host: GUFI's query tools, by name or by path. */
+const QUERY_TOOL = /(?:^|\/)gufi_(?:query|sqlite3)$/
+
+/** Why a command other than gufi_query cannot run on such a host. */
+export function noShell(site: string): string {
+  return `${siteName(site)} runs only gufi_query for this login (no shell), so this cannot run there.`
+}
+
+/** One argument as a POSIX shell reads it back: plain words as they are
+ *  (so a forced command that checks for a leading "gufi_query " sees it),
+ *  anything else in single quotes, with a quote inside written '\''. */
+export function shellWord(a: string): string {
+  if (/^[A-Za-z0-9_@%+=:,./-]+$/.test(a)) return a
+  return `'${a.replace(/'/g, `'\\''`)}'`
+}
+
+/** The command line a direct call sends: each argument a shell word. */
+export function directCommand(argv: string[]): string { return argv.map(shellWord).join(' ') }
+
+/** ssh's own notices on stderr that are not errors: OpenSSH's warnings
+ *  (the post-quantum key exchange note starts "** "), a host key added to
+ *  known_hosts, and blank lines. */
+export function quietStderr(s: string): string {
+  return s.split('\n').filter(l => l.trim() && !/^\*\* /.test(l) && !/^Warning: Permanently added /.test(l)).join('\n')
+}
+
+/** Runs argv as one ssh (or pw ssh) call with no session loop: for a host
+ *  that runs only gufi_query, and for the first step of a connection test.
+ *  Rejects when ssh itself fails (exit 255 over plain ssh); a command that
+ *  ran and exited nonzero resolves with its code. */
+export function remoteRunOnce(site: string, key: string, argv: string[], timeoutMs = 120_000): Promise<RemoteResult> {
+  if (!argv.length) return Promise.reject(new KbError(400, 'no command'))
+  return new Promise<RemoteResult>((resolve, reject) => {
+    let child: ChildProcessWithoutNullStreams
+    try { child = spawnSsh(site, key, directCommand(argv)) } catch (e) { reject(new KbError(502, `${siteName(site)}: ${(e as Error).message}`)); return }
+    const out: Buffer[] = []
+    let err = '', settled = false
+    const settle = (fn: () => void) => { if (!settled) { settled = true; clearTimeout(timer); fn() } }
+    const timer = setTimeout(() => settle(() => {
+      child.kill()
+      reject(new KbError(504, `${siteName(site)}: the command did not finish in ${Math.round(timeoutMs / 1000)} s`))
+    }), timeoutMs)
+    child.stdin.on('error', () => {})
+    child.stdin.end()
+    child.stdout.on('data', d => out.push(Buffer.from(d)))
+    child.stderr.on('data', d => { err = (err + String(d)).slice(-STDERR_TAIL) })
+    child.on('error', e => settle(() => reject(new KbError(502, `${siteName(site)}: ${e.message}`))))
+    child.on('close', code => settle(() => {
+      const stderr = quietStderr(err)
+      if (code === 255 && site.startsWith(SSH_SCHEME)) {
+        reject(new KbError(502, `${siteName(site)}: ${stderr.trim().split('\n').pop() || 'the ssh connection failed'}`))
+        return
+      }
+      const raw = Buffer.concat(out)
+      resolve({ code: code ?? -1, stdout: raw.toString('utf8'), raw, stderr })
+    }))
+  })
+}
+
+/** Whether a session that ended before its loop answered was refused by
+ *  the host's login (no bash, a restricted shell, a forced command), as
+ *  opposed to ssh failing: over plain ssh the remote command ran and
+ *  exited (any status but ssh's 255); over pw ssh its message says so. */
+function refusedLoop(site: string, code: number | null, stderr: string): boolean {
+  if (site.startsWith(SSH_SCHEME)) return code !== null && code !== 255
+  return /bash[:,]? .*(?:not found|No such file)|command not found|restricted|not allowed|not permitted|only gufi_query/i.test(stderr)
+}
+
+interface Pending { resolve: (r: RemoteResult) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout>; argv: string[]; timeoutMs: number }
+interface Channel { child: ChildProcessWithoutNullStreams; queue: Pending[]; buf: string; last: number; stderr: string; dead: boolean; started: boolean; chain: Promise<unknown> }
 /** The sessions to each host, by the key they act with and the site. */
 const channels = new Map<string, Channel[]>()
 
@@ -193,13 +278,25 @@ function drop(id: string, ch: Channel): void {
 
 function open(id: string, site: string, key: string): Channel {
   const child = spawnSsh(site, key, bootstrapCommand(site))
-  const ch: Channel = { child, queue: [], buf: '', last: Date.now(), stderr: '', dead: false, chain: Promise.resolve() }
-  const fail = (why: string) => {
+  const ch: Channel = { child, queue: [], buf: '', last: Date.now(), stderr: '', dead: false, started: false, chain: Promise.resolve() }
+  const fail = (why: string, code: number | null = null) => {
     if (ch.dead) return
     ch.dead = true
     drop(id, ch)
-    const said = ch.stderr.trim().split('\n').filter(Boolean).pop()
-    for (const p of ch.queue.splice(0)) { clearTimeout(p.timer); p.reject(new KbError(502, `${siteName(site)}: ${said || why}`)) }
+    const said = quietStderr(ch.stderr).trim().split('\n').filter(Boolean).pop()
+    const waiting = ch.queue.splice(0)
+    // The login would not start the loop: the host runs only gufi_query.
+    // Its query commands go again as direct calls; anything else cannot run.
+    if (!ch.started && refusedLoop(site, code, ch.stderr)) {
+      setDirect(site, true)
+      for (const p of waiting) {
+        clearTimeout(p.timer)
+        if (QUERY_TOOL.test(p.argv[0])) remoteRunOnce(site, key, p.argv, p.timeoutMs).then(p.resolve, p.reject)
+        else p.reject(new KbError(409, noShell(site)))
+      }
+      return
+    }
+    for (const p of waiting) { clearTimeout(p.timer); p.reject(new KbError(502, `${siteName(site)}: ${said || why}`)) }
   }
   child.stdout.on('data', d => {
     ch.buf += String(d)
@@ -208,6 +305,7 @@ function open(id: string, site: string, key: string): Channel {
       const line = ch.buf.slice(0, nl).trim(); ch.buf = ch.buf.slice(nl + 1)
       const m = /^(\d+) o(\S*) e(\S*)$/.exec(line)
       if (!m) continue // a login banner or motd before the loop starts
+      ch.started = true
       const p = ch.queue.shift()
       if (!p) continue
       clearTimeout(p.timer)
@@ -223,16 +321,20 @@ function open(id: string, site: string, key: string): Channel {
   // The reason a session ended is the last thing it wrote to stderr, which
   // can arrive after the exit: fail when the streams close, or shortly
   // after the exit should something else hold them open.
-  child.on('close', code => fail(`the ssh session ended (${code})`))
-  child.on('exit', code => { setTimeout(() => fail(`the ssh session ended (${code})`), 1000).unref?.() })
+  child.on('close', code => fail(`the ssh session ended (${code})`, code))
+  child.on('exit', code => { setTimeout(() => fail(`the ssh session ended (${code})`, code), 1000).unref?.() })
   return ch
 }
 
 /** Runs argv on the site as the key's user (or, over plain ssh, as the
  *  ssh login); rejects only when the session itself fails, not when the
- *  command exits nonzero. */
+ *  command exits nonzero. On a host that runs only gufi_query, a query
+ *  tool runs as its own call and anything else is refused. */
 export function remoteRun(site: string, key: string, argv: string[], timeoutMs = 120_000): Promise<RemoteResult> {
   if (!argv.length) return Promise.reject(new KbError(400, 'no command'))
+  if (directSites.has(site)) {
+    return QUERY_TOOL.test(argv[0]) ? remoteRunOnce(site, key, argv, timeoutMs) : Promise.reject(new KbError(409, noShell(site)))
+  }
   const id = `${key.slice(-16)}|${site}`
   const c = pick(id, site, key)
   c.last = Date.now()
@@ -245,7 +347,7 @@ export function remoteRun(site: string, key: string, argv: string[], timeoutMs =
       reject(new KbError(504, `${siteName(site)}: the command did not finish in ${Math.round(timeoutMs / 1000)} s`))
       c.child.kill()
     }, timeoutMs)
-    c.queue.push({ resolve, reject, timer })
+    c.queue.push({ resolve, reject, timer, argv, timeoutMs })
     c.child.stdin.write(argv.map(a => 'x' + Buffer.from(a).toString('base64')).join(' ') + '\n')
   })
 }
@@ -276,14 +378,17 @@ export function closeRemoteChannels(): void {
   for (const pool of channels.values()) for (const c of pool) c.child.kill()
   channels.clear()
   cpus.clear()
+  directSites.clear()
 }
 
 /** A host's processor count, asked once per site and key: nproc, which
  *  counts only the processors this login may use (and honours
  *  OMP_NUM_THREADS), else getconf, else sysctl on macOS. 4 when it cannot
- *  be read, asked again next time. */
+ *  be read, asked again next time, and on a host that runs only gufi_query,
+ *  where none of them may run. */
 const cpus = new Map<string, Promise<number>>()
 export function remoteCpus(site: string, key: string): Promise<number> {
+  if (directSites.has(site)) return Promise.resolve(4)
   const id = `${key.slice(-16)}|${site}`
   let p = cpus.get(id)
   if (!p) {

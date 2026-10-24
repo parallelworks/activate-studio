@@ -11,7 +11,7 @@ import { libraryLabelsForIndexRoot } from './libraryLabels.js'
 import { scopeLibraries, scopeWithOmitted } from './libraryScope.js'
 import { addOmission, failureReason, libraryGap, type Omission } from './omissions.js'
 import type { Library } from './libraries.js'
-import { REMOTE_PREFIX, remoteIndexRoot, remoteQuery, remoteTarget } from './userLibraries.js'
+import { gufiTool, REMOTE_PREFIX, remoteIndexRoot, remoteQuery, remoteTarget } from './userLibraries.js'
 import { effectiveSettings } from './settings.js'
 import { type GufiCommand, noteGufi, shellQuote, traced } from './gufiTrace.js'
 import { siteName } from './remoteExec.js'
@@ -542,7 +542,7 @@ function planCommand(plan: Plan): GufiCommand {
     const t = remoteTarget(root)
     if (!t) throw new KbError(404, 'library not found')
     const sub = cleanSubtree(plan.subtree)
-    const argv = [`${t.gufiBin}/gufi_query`, ...capThreads(planArgs(plan)), sub ? path.posix.join(t.indexRoot, sub) : t.indexRoot]
+    const argv = [gufiTool(t.gufiBin), ...capThreads(planArgs(plan)), sub ? path.posix.join(t.indexRoot, sub) : t.indexRoot]
     return { engine: 'gufi_query', site: siteName(t.site), command: argv.map(shellQuote).join(' ') }
   }
   const argv = [path.join(GUFI_BIN, 'gufi_query'), ...planArgs(plan), scopePath(plan.subtree)]

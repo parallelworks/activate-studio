@@ -327,7 +327,8 @@ function userLibrariesOf(viewerId: string | null | undefined): Library[] {
   if (viewerId === undefined) return []
   const owner = ownerOf(viewerId)
   if (!owner) return []
-  return loadUserLibraries(owner).filter(d => d.indexRoot && d.gufiBin).map(d => ({
+  // gufiBin '' is gufi_query from the login's PATH, on a host whose login runs nothing else.
+  return loadUserLibraries(owner).filter(d => d.indexRoot && d.gufiBin != null).map(d => ({
     id: d.id, label: d.label, indexRoot: remoteRootOf(owner, d.id), sourceRoot: null,
     writable: false, primary: false, pinned: false, caps: { index: true, fullText: !!d.fullText, vectors: !!d.vectors }, site: d.site,
     meaning: d.build ? indexSettings(d.id).meaning : null,

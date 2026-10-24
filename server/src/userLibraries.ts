@@ -8,7 +8,7 @@ import { authEnabled } from './auth.js'
 import { gatewayKey } from './chat/gateway.js'
 import { resolveUserCred } from './credentials.js'
 import { classify, KbError, type FileContent, type KbEntry } from './kb.js'
-import { remoteRun, remoteThreads, siteName, SSH_DESTINATION, sshSite, type RemoteResult } from './remoteExec.js'
+import { isDirect, noShell, remoteRun, remoteRunOnce, remoteThreads, setDirect, siteName, SSH_DESTINATION, sshSite, type RemoteResult } from './remoteExec.js'
 import { noteGufi } from './gufiTrace.js'
 import { getJob, startJob, type Job } from './jobs.js'
 import { depthParts, forgetIndexSettings, indexSettings, meaningArgs, saveIndexSettings, textArgs, type IndexDepth } from './indexSettings.js'
@@ -69,7 +69,12 @@ export interface UserLibraryDef {
   sourceDir: string
   sourceRoot: string | null
   indexRoot: string | null
+  /** GUFI's tools there; '' for gufi_query on the login's PATH, on a host
+   *  whose login runs nothing else (see `shell`). */
   gufiBin: string | null
+  /** False when the last connection test found the login runs only
+   *  gufi_query (no shell): each query then goes as its own ssh call. */
+  shell?: boolean
   state: 'building' | 'ready' | 'updating' | 'failed'
   run: { slug: string; mode: 'build' | 'update'; startedAt: string; checkedAt?: string } | null
   error: string | null
@@ -159,6 +164,12 @@ export function sshAllowed(viewerId: string | null | undefined): boolean {
   return !authEnabled() && ownerOf(viewerId) === 'single'
 }
 
+/** A GUFI tool as a remote host runs it: in its bin directory, or by name
+ *  from the login's PATH when there is none (`gufiBin` ''). */
+export function gufiTool(bin: string | null | undefined, tool = 'gufi_query'): string {
+  return bin ? `${bin}/${tool}` : tool
+}
+
 /** What a remote root resolves to, or null for a local path. `dyldLib` is
  *  set for a macOS host: where its GUFI tools' libraries are. */
 export function remoteTarget(root: string | undefined | null): { site: string; key: string; gufiBin: string; indexRoot: string; sourceRoot: string | null; builtAt: string | null; dyldLib: string | null } | null {
@@ -167,15 +178,20 @@ export function remoteTarget(root: string | undefined | null): { site: string; k
   let owner = ''
   try { owner = fs.readFileSync(path.join(INDEX_BASE, 'users', hash, 'owner'), 'utf8') } catch { throw new KbError(404, 'no such library') }
   const d = loadUserLibraries(owner).find(x => x.id === id)
-  if (!d || !d.indexRoot || !d.gufiBin) throw new KbError(409, 'this library is not built yet')
-  const dyldLib = d.os === 'Darwin' ? `${path.posix.dirname(d.gufiBin)}/lib` : null
+  if (!d || !d.indexRoot || d.gufiBin == null) throw new KbError(409, 'this library is not built yet')
+  const dyldLib = d.os === 'Darwin' && d.gufiBin ? `${path.posix.dirname(d.gufiBin)}/lib` : null
+  let site = d.site, key = ''
   if (d.transport === 'ssh') {
     if (owner !== 'single' || authEnabled()) throw new KbError(403, SSH_SINGLE_USER)
-    return { site: sshSite(String(d.destination ?? ''), d.port ?? null), key: '', gufiBin: d.gufiBin, indexRoot: d.indexRoot, sourceRoot: d.sourceRoot, builtAt: d.builtAt, dyldLib }
+    site = sshSite(String(d.destination ?? ''), d.port ?? null)
+  } else {
+    key = keyOf(owner) ?? ''
+    if (!key) throw new KbError(409, 'This library is read with your own platform key: add your ACTIVATE API key under Settings, Model access.')
   }
-  const key = keyOf(owner)
-  if (!key) throw new KbError(409, 'This library is read with your own platform key: add your ACTIVATE API key under Settings, Model access.')
-  return { site: d.site, key, gufiBin: d.gufiBin, indexRoot: d.indexRoot, sourceRoot: d.sourceRoot, builtAt: d.builtAt, dyldLib }
+  // A host found to run only gufi_query is asked directly from the start,
+  // after a restart too, rather than first trying the session loop.
+  if (d.shell === false) setDirect(site, true)
+  return { site, key, gufiBin: d.gufiBin, indexRoot: d.indexRoot, sourceRoot: d.sourceRoot, builtAt: d.builtAt, dyldLib }
 }
 
 /** Runs gufi_query on the library's cluster, as gufi.ts would locally,
@@ -187,8 +203,9 @@ export async function remoteQuery(root: string, args: string[], subdir?: string)
   const n = args.indexOf('-n')
   if (n >= 0 && n + 1 < args.length) args = [...args.slice(0, n + 1), String(await remoteThreads(t.site, t.key)), ...args.slice(n + 2)]
   const t0 = Date.now()
-  const r = await remoteRun(t.site, t.key, [`${t.gufiBin}/gufi_query`, ...args, target])
-  noteGufi([`${t.gufiBin}/gufi_query`, ...args, target], { site: siteName(t.site), ms: Date.now() - t0 })
+  const q = gufiTool(t.gufiBin)
+  const r = await remoteRun(t.site, t.key, [q, ...args, target])
+  noteGufi([q, ...args, target], { site: siteName(t.site), ms: Date.now() - t0 })
   // Like the local runner: a nonzero exit with rows still means rows.
   if (r.code !== 0 && !r.stdout) throw new KbError(502, `gufi_query on ${siteName(t.site)} failed: ${r.stderr.trim().split('\n').pop() ?? r.code}`)
   return r.stdout
@@ -209,13 +226,16 @@ export async function remoteTree(root: string, rel: string): Promise<KbEntry[]> 
   const t = remoteTarget(root)!
   const sub = cleanRel(rel)
   const target = sub ? path.posix.join(t.indexRoot, sub) : t.indexRoot
-  // One round trip for both listings; the SQL is fixed text and the paths
-  // arrive as positional arguments, so nothing user-typed meets a shell.
-  // On macOS the library path is set inside the script: the system bash
-  // starts without any DYLD_* variable it was given.
-  const script = `[ -z "$4" ] || export DYLD_LIBRARY_PATH="$4"; "$1"/gufi_query -d "$3" -n 1 --min-level 0 --max-level 0 -E 'SELECT name, type, size, mtime FROM vrpentries;' "$2"; printf '\\n__DIRS__\\n'; "$1"/gufi_query -d "$3" -n 1 --min-level 1 --max-level 1 -S 'SELECT name, mtime FROM vrsummary;' "$2"`
-  const r = await remoteRun(t.site, t.key, ['bash', '-c', script, '_', t.gufiBin, target, '\x1e', t.dyldLib ?? ''])
-  const [filesPart, dirsPart = ''] = r.stdout.split('\n__DIRS__\n')
+  // The folder's files and its subfolders: two gufi_query calls, side by
+  // side, and nothing but gufi_query, so a host whose login runs only
+  // gufi_query lists too. The SQL is fixed text and the path an argument.
+  // (The session loop sets DYLD_LIBRARY_PATH for a macOS host's tools.)
+  const q = gufiTool(t.gufiBin)
+  const [filesRun, dirsRun] = await Promise.all([
+    remoteRun(t.site, t.key, [q, '-d', '\x1e', '-n', '1', '--min-level', '0', '--max-level', '0', '-E', 'SELECT name, type, size, mtime FROM vrpentries;', target]),
+    remoteRun(t.site, t.key, [q, '-d', '\x1e', '-n', '1', '--min-level', '1', '--max-level', '1', '-S', 'SELECT name, mtime FROM vrsummary;', target]),
+  ])
+  const filesPart = filesRun.stdout, dirsPart = dirsRun.stdout
   const rows = (s: string) => s.split('\n').filter(Boolean).map(l => l.split('\x1e'))
   const at = (name: string) => (sub ? `${sub}/${name}` : name)
   const dirs: KbEntry[] = rows(dirsPart).filter(x => x[0]).map(x => ({ name: x[0], path: at(x[0]), type: 'dir', size: 0, mtime: Number(x[1]) || 0, kind: 'dir' }))
@@ -230,8 +250,13 @@ const STAT = 'st() { if stat -c %s / >/dev/null 2>&1; then stat -c "$1" -- "$3";
 
 /** A file of a library on a cluster: text files are previewed, others say
  *  where they are. */
+/** Why a file cannot be opened from a host whose login runs only gufi_query. */
+const noFilesThere = (site: string) =>
+  `${siteName(site)} runs only gufi_query for this login, so its files cannot be opened from the Studio; open them on that host.`
+
 export async function remoteFile(root: string, rel: string): Promise<FileContent> {
   const t = remoteTarget(root)!
+  if (isDirect(t.site)) throw new KbError(409, noFilesThere(t.site))
   if (!t.sourceRoot) throw new KbError(409, 'the source directory of this library is not known')
   const sub = cleanRel(rel)
   const abs = path.posix.join(t.sourceRoot, sub)
@@ -255,6 +280,7 @@ export const DOWNLOAD_MAX = 50 * 1024 * 1024
 /** A file of a library on a cluster, whole, for download. */
 export async function remoteDownload(root: string, rel: string): Promise<{ name: string; body: Buffer }> {
   const t = remoteTarget(root)!
+  if (isDirect(t.site)) throw new KbError(409, noFilesThere(t.site))
   if (!t.sourceRoot) throw new KbError(409, 'the source directory of this library is not known')
   const sub = cleanRel(rel)
   const abs = path.posix.join(t.sourceRoot, sub)
@@ -434,9 +460,14 @@ export interface SshStep {
 export interface SshProbe {
   ok: boolean
   steps: SshStep[]
+  /** GUFI's bin directory there; '' for gufi_query on the login's PATH. */
   gufiBin?: string
   gufiVersion?: string
   directories?: number
+  /** False when the login runs only gufi_query (no shell). */
+  shell?: boolean
+  /** The index carries full-text (words) tables, found by hasWords. */
+  fullText?: boolean
   /** For adding the library: the host's `uname -s`, the paths with ~
    *  resolved, the file count, and when the index root was last written. */
   os?: string
@@ -493,7 +524,7 @@ function sshAdvice(message: string, spec: SshSpec): string {
   if (/Could not resolve hostname|not known|nodename nor servname/i.test(said)) return `The host name in ${dest} does not resolve. Check the spelling, or the Host entry in ~/.ssh/config.`
   if (/Connection refused/i.test(said)) return `Nothing accepted the connection on port ${spec.port ?? 22}. Check the port, and that the ssh server runs on ${dest}.`
   if (/timed out|No route to host|Network is unreachable|did not finish/i.test(said)) return `${dest} did not answer. Check the address, and that this machine can reach it (a VPN, for example).`
-  if (/bash: .*not found|bash: No such file/i.test(said)) return `bash is not installed on ${dest}; the Studio runs its commands there through bash.`
+  if (/bash: .*not found|bash: No such file/i.test(said)) return `bash is not installed on ${dest}, so the Studio can run only gufi_query there: connect an existing index read only.`
   return `The ssh connection failed: ${said}`
 }
 
@@ -523,12 +554,19 @@ type Run = (argv: string[], ms?: number) => Promise<RemoteResult>
 const runner = (h: ProbeHost): Run => (argv, ms = 60_000) =>
   remoteRun(h.site, h.key, argv, ms).catch((e: Error) => ({ code: -1, stdout: '', stderr: e.message, raw: Buffer.alloc(0) }))
 
-/** The first step: the session reaches the host. Its system, its home,
- *  and a function that resolves ~ there; null when it failed. */
+/** What the ssh step says on a host whose login runs only gufi_query. */
+export const ONLY_GUFI_QUERY = 'This host runs only gufi_query: connect existing indexes read only; building an index there is not available.'
+
+/** The first step of a build check: the session reaches the host. Its
+ *  system, its home, and a function that resolves ~ there; null when it
+ *  failed, or when the login runs only gufi_query, since a build needs a
+ *  shell there. */
 async function connectStep(h: ProbeHost, run: Run, steps: SshStep[]) {
+  // A test finds out afresh whether the login runs a shell.
+  setDirect(h.site, false)
   const hello = await run(['sh', '-c', 'uname -s; printf "%s\\n" "$HOME"'], 45_000)
   if (hello.code !== 0) {
-    steps.push({ name: 'ssh', ok: false, detail: h.advice(hello.stderr || `exit ${hello.code}`) })
+    steps.push({ name: 'ssh', ok: false, detail: isDirect(h.site) ? ONLY_GUFI_QUERY : h.advice(hello.stderr || `exit ${hello.code}`) })
     return null
   }
   const [os = '', home = ''] = hello.stdout.trim().split('\n')
@@ -591,38 +629,131 @@ async function probeIndex(h: ProbeHost, spec: { indexRoot: string; gufiBin: stri
   return probe
 }
 
+/** The index's directories and files in one aggregate gufi_query, and
+ *  why not when it could not read them. gufi_query exits 0 either way: a
+ *  directory that is missing, a file, or a folder without a db.db leaves
+ *  the sums empty and says why on stderr. */
+async function countIndex(h: ProbeHost, run: Run, bin: string, indexRoot: string) {
+  const c = await run([gufiTool(bin), '-n', String(await remoteThreads(h.site, h.key)), '-d', '|', '-a', '1',
+    '-I', 'CREATE TABLE t (d INT64, f INT64);', '-K', 'CREATE TABLE agg (d INT64, f INT64);',
+    '-E', 'INSERT INTO t SELECT count(*), sum(totfiles) FROM vrsummary;', '-J', 'INSERT INTO agg SELECT * FROM t;',
+    '-G', 'SELECT sum(d), sum(f) FROM agg;', indexRoot], 60_000)
+  const [d, f] = lastLine(c.stdout).split('|').map(s => (s.trim() ? Number(s) : NaN))
+  if (Number.isFinite(d)) return { directories: d, files: Number.isFinite(f) ? f : undefined, slow: false, error: '' }
+  return { directories: undefined, files: undefined, slow: /did not finish/.test(c.stderr), error: lastLine(c.stderr) || `exit ${c.code}` }
+}
+
+/** Whether an index carries the Studio's full-text tables (words): one
+ *  gufi_query over its top levels, where a directory without the table
+ *  only writes an error and one with it answers a row. */
+async function hasWords(h: ProbeHost, run: Run, bin: string, indexRoot: string): Promise<boolean> {
+  const r = await run([gufiTool(bin), '-n', String(await remoteThreads(h.site, h.key)), '-d', '|', '--max-level', '2',
+    '-E', 'SELECT 1 FROM words LIMIT 1;', indexRoot], 30_000)
+  return r.stdout.trim().length > 0
+}
+
+/**
+ * The connection test where the login runs only gufi_query: no shell, so
+ * no ~ to resolve, no search for GUFI, and no files to read; gufi_query
+ * alone reaches the index and counts it.
+ */
+async function probeQueryOnly(h: ProbeHost, spec: { indexRoot: string; gufiBin: string | null; sourceRoot: string | null }, steps: SshStep[],
+  first: RemoteResult, done: (extra?: Partial<SshProbe>) => SshProbe): Promise<SshProbe> {
+  const dest = h.name
+  const run = runner(h)
+  steps.push({ name: 'ssh', ok: true, warn: true, detail: `Connected to ${h.reached}. ${ONLY_GUFI_QUERY}` })
+  const tilde = (p: string | null) => !!p && /^~(?=\/|$)/.test(p)
+  if (tilde(spec.gufiBin)) {
+    steps.push({ name: 'gufi', ok: false, detail: `The login on ${dest} runs no shell, so ~ cannot be resolved there: give the GUFI bin directory as an absolute path, or leave it empty for gufi_query on the login's PATH.` })
+    return done({ shell: false })
+  }
+  const bin = spec.gufiBin ?? ''
+  if (first.code !== 0) {
+    steps.push({ name: 'gufi', ok: false, detail: bin
+      ? `gufi_query in ${bin} did not run on ${dest}: ${lastLine(first.stderr) || `exit ${first.code}`}. A restricted login may refuse a path; leave the GUFI bin directory empty to run gufi_query from the login's PATH.`
+      : `gufi_query did not run on ${dest}: ${lastLine(first.stderr) || `exit ${first.code}`}. The login runs nothing else, so the Studio cannot look for GUFI elsewhere; give the directory that holds gufi_query as the GUFI bin directory.` })
+    return done({ shell: false })
+  }
+  const version = lastLine(first.stdout).slice(0, 80)
+  steps.push({ name: 'gufi', ok: true, detail: `gufi_query ${version || '(no version)'} ${bin ? `in ${bin}` : "on the login's PATH"}.` })
+
+  if (tilde(spec.indexRoot)) {
+    steps.push({ name: 'index', ok: false, detail: `The login on ${dest} runs no shell, so ~ cannot be resolved there: give the index directory as an absolute path.` })
+    return done({ shell: false, gufiBin: bin, gufiVersion: version || undefined })
+  }
+  const indexRoot = spec.indexRoot
+  const n = await countIndex(h, run, bin, indexRoot)
+  let fullText: boolean | undefined
+  if (n.directories != null) {
+    fullText = await hasWords(h, run, bin, indexRoot)
+    steps.push({ name: 'index', ok: true, detail: `A GUFI index of ${n.directories.toLocaleString('en-US')} directories${n.files != null ? ` and ${n.files.toLocaleString('en-US')} files` : ''}${fullText ? ', with full-text tables, so search covers the words in its files' : ''}.` })
+  } else if (n.slow) {
+    steps.push({ name: 'index', ok: true, detail: `gufi_query reads ${indexRoot}; counting its directories took over a minute, so the count is left out.` })
+  } else {
+    steps.push({ name: 'index', ok: false, detail:
+      /Could not stat directory|No such file|is not a directory/i.test(n.error) ? `${indexRoot} is not a directory on ${dest}.`
+      : /Permission denied/i.test(n.error) ? `The login on ${dest} cannot read ${indexRoot}.`
+      : /Cannot attach database|unable to open database/i.test(n.error) ? `${indexRoot} has no db.db the login can read, so it is not the top of a GUFI index. Give the directory gufi_dir2index created, the one holding db.db.`
+      : `gufi_query could not read the index in ${indexRoot}: ${n.error}.` })
+  }
+  if (spec.sourceRoot) {
+    steps.push({ name: 'source', ok: true, warn: true, detail: `The login on ${dest} runs only gufi_query, so files cannot be opened from the Studio; browsing and search work from the index.` })
+  }
+  return done({ shell: false, gufiBin: bin, gufiVersion: version || undefined, directories: n.directories, files: n.files, fullText, indexRoot, sourceRoot: null, builtAt: null })
+}
+
 async function probeIndexNow(h: ProbeHost, spec: { indexRoot: string; gufiBin: string | null; sourceRoot: string | null }): Promise<SshProbe> {
   const dest = h.name
   const steps: SshStep[] = []
   const done = (extra: Partial<SshProbe> = {}): SshProbe => ({ ok: steps.every(s => s.ok), steps, ...extra })
   const run = runner(h)
 
-  const c = await connectStep(h, run, steps)
-  if (!c) return done()
-  const { os, home, mac, expand } = c
+  // The session first, which needs a shell there. A login that refuses it
+  // (no bash, a restricted shell, a forced command) is marked to run only
+  // gufi_query (remoteExec.ts), not failed: a connected index needs nothing
+  // else, so the test goes on with gufi_query --version as its own call,
+  // in the directory given, else from the login's PATH.
+  setDirect(h.site, false)
+  const hello = await run(['sh', '-c', 'uname -s; printf "%s\\n" "$HOME"'], 45_000)
+  if (hello.code !== 0 && isDirect(h.site)) {
+    const given = spec.gufiBin && spec.gufiBin.startsWith('/') ? spec.gufiBin : null
+    let first: RemoteResult
+    try {
+      first = await remoteRunOnce(h.site, h.key, [gufiTool(given), '--version'], 45_000)
+    } catch (e) {
+      steps.push({ name: 'ssh', ok: false, detail: h.advice((e as Error).message) })
+      return done()
+    }
+    return probeQueryOnly(h, spec, steps, first, done)
+  }
+  if (hello.code !== 0) {
+    steps.push({ name: 'ssh', ok: false, detail: h.advice(hello.stderr || `exit ${hello.code}`) })
+    return done()
+  }
+  const [os = '', home = ''] = hello.stdout.trim().split('\n')
+  const mac = os === 'Darwin'
+  steps.push({ name: 'ssh', ok: true, detail: `Connected to ${h.reached}, a ${mac ? 'macOS' : os || 'Unix'} host.` })
+  const expand = (p: string | null) => (p && /^~(?=\/|$)/.test(p) && home.startsWith('/') ? home.replace(/\/+$/, '') + p.slice(1) : p)
   const g = await gufiStep(h, run, steps, { given: expand(spec.gufiBin), home, mac })
   const bin = g.bin, version = g.version
 
   const indexRoot = expand(spec.indexRoot)!
   const at = await run(['sh', '-c', INDEX_CHECK, '_', indexRoot])
-  let directories: number | undefined, files: number | undefined, builtAt: string | null = null
+  let directories: number | undefined, files: number | undefined, builtAt: string | null = null, fullText: boolean | undefined
   if (at.code === 0) {
     const mtime = Number(lastLine(at.stdout))
     builtAt = mtime > 0 ? new Date(mtime * 1000).toISOString() : null
     if (!version) steps.push({ name: 'index', ok: true, detail: `${indexRoot} has a db.db; its directories are counted once gufi_query runs.` })
     else {
-      const c = await run([`${bin}/gufi_query`, '-n', String(await remoteThreads(h.site, h.key)), '-d', '|', '-a', '1',
-        '-I', 'CREATE TABLE t (d INT64, f INT64);', '-K', 'CREATE TABLE agg (d INT64, f INT64);',
-        '-E', 'INSERT INTO t SELECT count(*), sum(totfiles) FROM vrsummary;', '-J', 'INSERT INTO agg SELECT * FROM t;',
-        '-G', 'SELECT sum(d), sum(f) FROM agg;', indexRoot], 60_000)
-      const [d, f] = lastLine(c.stdout).split('|').map(Number)
-      if (c.stdout.trim() && Number.isFinite(d)) {
-        directories = d; files = Number.isFinite(f) ? f : undefined
-        steps.push({ name: 'index', ok: true, detail: `A GUFI index of ${d.toLocaleString('en-US')} directories${files != null ? ` and ${files.toLocaleString('en-US')} files` : ''}.` })
-      } else if (/did not finish/.test(c.stderr)) {
+      const n = await countIndex(h, run, bin, indexRoot)
+      if (n.directories != null) {
+        directories = n.directories; files = n.files
+        fullText = await hasWords(h, run, bin, indexRoot)
+        steps.push({ name: 'index', ok: true, detail: `A GUFI index of ${n.directories.toLocaleString('en-US')} directories${files != null ? ` and ${files.toLocaleString('en-US')} files` : ''}${fullText ? ', with full-text tables, so search covers the words in its files' : ''}.` })
+      } else if (n.slow) {
         steps.push({ name: 'index', ok: true, detail: `${indexRoot} has a db.db; counting its directories took over a minute, so the count is left out.` })
       } else {
-        steps.push({ name: 'index', ok: false, detail: `gufi_query could not read the index in ${indexRoot}: ${lastLine(c.stderr) || `exit ${c.code}`}.` })
+        steps.push({ name: 'index', ok: false, detail: `gufi_query could not read the index in ${indexRoot}: ${n.error}.` })
       }
     }
   } else {
@@ -642,7 +773,7 @@ async function probeIndexNow(h: ProbeHost, spec: { indexRoot: string; gufiBin: s
       : { name: 'source', ok: false, detail: s.code === 3 ? `${sourceRoot} is not a directory on ${dest}. Leave the source directory empty to browse and search names only.`
         : s.code === 4 ? `${sourceRoot} is there, but the ssh login cannot read it.` : `The source directory could not be checked: ${lastLine(s.stderr) || `exit ${s.code}`}.` })
   }
-  return done({ gufiBin: bin.startsWith('/') ? bin : undefined, gufiVersion: version || undefined, directories, files, os, indexRoot, sourceRoot, builtAt })
+  return done({ shell: true, gufiBin: bin.startsWith('/') ? bin : undefined, gufiVersion: version || undefined, directories, files, fullText, os, indexRoot, sourceRoot, builtAt })
 }
 
 // ---- building an index on the remote system ----
@@ -767,7 +898,7 @@ function pwAdvice(message: string, cluster: string): string {
   if (/authenticat|unauthori[sz]ed|\b401\b|expired|not logged in|sign in/i.test(said)) return 'The pw CLI was refused: its sign-in is missing or has expired. Run pw auth on the machine the Studio runs on, then test again.'
   if (/not found|no such|does not exist|not running|not active|unknown (?:resource|cluster)|could not find/i.test(said)) return `${cluster} is not one of your running clusters. Start it on ACTIVATE, or choose another.`
   if (/timed out|did not finish|No route to host|Network is unreachable/i.test(said)) return `${cluster} did not answer. Check that it is running.`
-  if (/bash: .*not found|bash: No such file/i.test(said)) return `bash is not installed on ${cluster}; the Studio runs its commands there through bash.`
+  if (/bash: .*not found|bash: No such file/i.test(said)) return `bash is not installed on ${cluster}, so the Studio can run only gufi_query there: connect an existing index read only.`
   return `pw ssh to ${cluster} failed: ${said}`
 }
 
@@ -870,7 +1001,7 @@ export async function addFromPw(viewerId: string | null | undefined, a: PwLibrar
   for (let i = 2; defs.some(d => d.id === id); i++) id = `${base}-${i}`
   const def: UserLibraryDef = {
     id, label, transport: 'pw', existing: true, site: spec.cluster, destination: null, port: null, os: p.os || null, gufiVersion: p.gufiVersion ?? null,
-    resource: spec.cluster, sourceDir: p.sourceRoot ?? '', sourceRoot: p.sourceRoot ?? null, indexRoot, gufiBin: p.gufiBin!,
+    resource: spec.cluster, sourceDir: p.sourceRoot ?? '', sourceRoot: p.sourceRoot ?? null, indexRoot, gufiBin: p.gufiBin ?? '', ...(p.shell === false ? { shell: false } : {}), ...(p.fullText ? { fullText: true } : {}),
     state: 'ready', run: null, error: null, builtAt: p.builtAt ?? new Date().toISOString(), directories: p.directories ?? null, files: p.files ?? null, scheduler: null,
   }
   saveUserLibraries(owner, [...defs, def])
@@ -897,7 +1028,7 @@ export async function addFromSsh(viewerId: string | null | undefined, a: SshLibr
   for (let i = 2; defs.some(d => d.id === id); i++) id = `${base}-${i}`
   const def: UserLibraryDef = {
     id, label, transport: 'ssh', site: spec.destination, destination: spec.destination, port: spec.port, os: p.os || null, gufiVersion: p.gufiVersion ?? null,
-    resource: sshSite(spec.destination, spec.port), sourceDir: p.sourceRoot ?? '', sourceRoot: p.sourceRoot ?? null, indexRoot, gufiBin: p.gufiBin!,
+    resource: sshSite(spec.destination, spec.port), sourceDir: p.sourceRoot ?? '', sourceRoot: p.sourceRoot ?? null, indexRoot, gufiBin: p.gufiBin ?? '', ...(p.shell === false ? { shell: false } : {}), ...(p.fullText ? { fullText: true } : {}),
     state: 'ready', run: null, error: null, builtAt: p.builtAt ?? new Date().toISOString(), directories: p.directories ?? null, files: p.files ?? null, scheduler: null,
   }
   saveUserLibraries(owner, [...defs, def])
@@ -919,6 +1050,8 @@ async function recheckExisting(viewerId: string | null | undefined, owner: strin
   return updateDef(owner, d.id, failed ? { error: failed.detail } : {
     error: null, os: p.os || d.os || null, gufiVersion: p.gufiVersion ?? d.gufiVersion ?? null,
     directories: p.directories ?? d.directories, files: p.files ?? d.files, builtAt: p.builtAt ?? d.builtAt,
+    // Whether the login runs a shell can change either way between tests.
+    shell: p.shell === false ? false : undefined, fullText: p.fullText ?? d.fullText,
   })!
 }
 
@@ -1160,14 +1293,14 @@ export async function userLibraryRoutes(app: FastifyInstance): Promise<void> {
   app.post('/api/user-libraries/ssh/test', async req => {
     if (!sshAllowed(viewer(req))) throw new KbError(403, SSH_SINGLE_USER)
     const p = await probeSsh(sshSpec((req.body ?? {}) as SshLibraryInput))
-    return { ok: p.ok, steps: p.steps, gufiBin: p.gufiBin, gufiVersion: p.gufiVersion, directories: p.directories }
+    return { ok: p.ok, steps: p.steps, gufiBin: p.gufiBin, gufiVersion: p.gufiVersion, directories: p.directories, shell: p.shell }
   })
   app.post('/api/user-libraries/ssh', async req => publicUserLibrary(await addFromSsh(viewer(req), (req.body ?? {}) as SshLibraryInput)))
   // The same test and library for an existing index on a cluster, over pw ssh.
   app.post('/api/user-libraries/pw/test', async req => {
     const { key } = pwKey(viewer(req))
     const p = await probePw(pwSpec((req.body ?? {}) as PwLibraryInput), key)
-    return { ok: p.ok, steps: p.steps, gufiBin: p.gufiBin, gufiVersion: p.gufiVersion, directories: p.directories }
+    return { ok: p.ok, steps: p.steps, gufiBin: p.gufiBin, gufiVersion: p.gufiVersion, directories: p.directories, shell: p.shell }
   })
   app.post('/api/user-libraries/pw', async req => publicUserLibrary(await addFromPw(viewer(req), (req.body ?? {}) as PwLibraryInput)))
   // Building an index on the remote system, over either session: the check, then the build.
