@@ -13,7 +13,7 @@ import { REMOTE_PREFIX, remoteIndexRoot, remoteQuery, remoteTarget } from './use
 import { effectiveSettings } from './settings.js'
 import { type GufiCommand, noteGufi, shellQuote, traced } from './gufiTrace.js'
 import { siteName } from './remoteExec.js'
-import { type Plan, type VtOrder, gufiVtAvailable, runAcross, vtEligible } from './gufiVt.js'
+import { type Plan, type VtOrder, gufiVtAvailable, runAcross, vtEligible, vtLocatable } from './gufiVt.js'
 
 const DELIM = '\x1e'
 const MAX_ROWS = 2000
@@ -586,7 +586,7 @@ export async function queryScope(body: QueryRequest, viewerId: string | null): P
   let tagged: { id: string; row: string[] }[] | null = null
   let failed: QueryResult['failed'] = []
   let engine: QueryResult['engine'] = 'merge'
-  if (plans.every(p => vtEligible(p.plan)) && await gufiVtAvailable()) {
+  if (plans.every(p => vtEligible(p.plan) && vtLocatable(p.lib)) && await gufiVtAvailable()) {
     // The outer ORDER BY is exact for numbers and timestamps; names, and
     // grouped totals, are ordered here.
     const pushed: VtOrder | null = order && order.groupBy === undefined && order.numeric ? { col: order.col, desc: order.desc, limit: order.limit } : null

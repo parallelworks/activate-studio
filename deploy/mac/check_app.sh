@@ -335,6 +335,20 @@ if [ "$RUN" = 1 ]; then
       done
       if [ "$ocr_found" = 1 ]; then ok "and search finds a picture and a scanned PDF by the text OCR read"; else bad "search did not find both OCR samples:"; tail -n 30 "$T/data/logs/studio.log" | sed 's/^/        /'; fi
     fi
+    # A query across two libraries goes through gufi_vt, with node and the
+    # wrapper inside "ACTIVATE Studio.app" and a second index whose path has
+    # a space and a single quote, all quoted for gufi_vt.
+    second="$T/second idx's"
+    if clean /bin/sh -c "'$G/bin/gufi_dir2index' -x '$T/corpus' \"\$1\"" sh "$second" >/dev/null 2>&1 &&
+      curl -fsS -m 30 -X POST -H 'content-type: application/json' \
+        -d "$(python3 -c 'import json, sys; print(json.dumps({"id": "second", "label": "Second", "indexRoot": sys.argv[1]}))' "$second/corpus")" \
+        "http://127.0.0.1:$PORT_FREE/api/libraries" >/dev/null; then
+      check "a query across two libraries runs through gufi_vt" sh -c "curl -fsS -m 60 -X POST -H 'content-type: application/json' \
+        -d '{\"library\": \"all\", \"canned\": \"largest\", \"n\": 20}' 'http://127.0.0.1:$PORT_FREE/api/query' |
+        python3 -c 'import json, sys; d = json.load(sys.stdin); libs = set(d.get(\"rowLibraries\") or []); print(\"engine\", d.get(\"engine\"), sorted(libs), d.get(\"failed\")); sys.exit(0 if d.get(\"engine\") == \"gufi_vt\" and {\"kb\", \"second\"} <= libs and not d.get(\"failed\") else 1)'"
+    else
+      bad "could not add a second library to query across"
+    fi
     kill -TERM "$loop" 2>/dev/null || true
     # The loop waits for the server's own graceful stop, which launchd
     # allows 30 seconds (ExitTimeOut).
