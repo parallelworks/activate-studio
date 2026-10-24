@@ -11,7 +11,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 
 const gufiBin = process.env.GUFI_BIN || '/opt/gufi/bin'
 const skip = !fs.existsSync(path.join(gufiBin, 'gufi_dir2index')) && 'GUFI not installed'
@@ -84,6 +84,47 @@ test('a build status reads as running, finished, gone, or missing', () => {
   assert.equal(RB.parseStatus('phase=prepare\nexit=1\nerror=/x is not a folder.\n').error, '/x is not a folder.')
   assert.match(RB.parseStatus('phase=index\nstate=gone\nlog=Killed\n').error, /stopped without finishing: Killed/)
   assert.equal(RB.parseStatus('state=missing\n').state, 'missing')
+})
+
+// The status script as a session runs it, on a state folder made here.
+// `prelude` is shell put before it, to place an event at a chosen moment.
+const statusOf = (home, id, indexDir, prelude = '') => RB.parseStatus(spawnSync('sh', ['-c', `${prelude}\n${RB.BUILD_STATUS}`, '_', id, indexDir],
+  { env: { HOME: home, PATH: '/usr/bin:/bin' }, encoding: 'utf8' }).stdout)
+const stateDir = (home, id, files) => {
+  const s = path.join(home, '.activate-studio', 'builds', id)
+  for (const [f, v] of Object.entries(files)) write(path.join(s, f), v)
+  return s
+}
+/** The process id of a process that has ended. */
+const deadPid = () => spawnSync('true').pid
+
+test('a build that ends just as its status is read is finished, not stopped', () => {
+  const home = fs.mkdtempSync(path.join(dir, 'status-'))
+  const idx = path.join(home, 'idx')
+  write(path.join(idx, '.studio-index.json'), JSON.stringify({ index: path.join(idx, 'p'), files: 1 }))
+  const s = stateDir(home, 'b1', { phase: 'count\n', pid: `${deadPid()}\n`, host: `${os.hostname()}\n` })
+  // The run writes its exit status and stops at the moment the script asks
+  // whether it is alive: the interleaving a fast build meets by chance.
+  const ends = `kill() { [ "$1" = -0 ] && printf '0\\n' > '${s}/exit'; command kill "$@"; }`
+  const st = statusOf(home, 'b1', idx, ends)
+  assert.equal(st.state, 'finished', JSON.stringify(st))
+  assert.equal(st.exit, 0)
+  assert.equal(st.manifest.files, 1)
+})
+
+test('a build stopped without its exit status is gone on its own machine, and running as seen from another', () => {
+  const home = fs.mkdtempSync(path.join(dir, 'status-'))
+  const idx = path.join(home, 'idx')
+  stateDir(home, 'b2', { phase: 'extract\n', pid: `${deadPid()}\n`, host: `${os.hostname()}\n`, log: 'Killed\n' })
+  const gone = statusOf(home, 'b2', idx)
+  assert.equal(gone.state, 'gone')
+  assert.match(gone.error, /stopped without finishing: Killed/)
+  // Another login node behind the same host name has no such process to ask.
+  stateDir(home, 'b3', { phase: 'extract\n', pid: `${deadPid()}\n`, host: 'another-login-node\n' })
+  assert.equal(statusOf(home, 'b3', idx).state, 'running')
+  // A build started before the host was recorded is judged by its process.
+  stateDir(home, 'b4', { phase: 'index\n', pid: `${deadPid()}\n` })
+  assert.equal(statusOf(home, 'b4', idx).state, 'gone')
 })
 
 test('the listing offers building over both sessions, and no workflow on a computer of its own', async () => {
