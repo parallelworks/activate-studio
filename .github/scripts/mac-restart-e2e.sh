@@ -62,12 +62,14 @@ wait_server() { for _ in $(seq 1 150); do api /api/version >/dev/null 2>&1 && re
 stage() {
   C="$(cd "$P" && node mac-restart-e2e.mjs "$1" "$OUT" "$LIB" ${2:-} 2>>"$OUT/playwright.log" | tail -1)"
   log "counts at $1: $C"
-  # gufiVt.ts refuses the app's paths, which have a space in them, so Query
-  # across libraries runs on the merge here. Once that is fixed, make this
-  # an assertion (check that each query_* engine is gufi_vt).
-  local e
-  e="$(echo "$C" | json '",".join(sorted({d[k]["engine"] or "none" for k in d if k.startswith("query_")}))' 2>/dev/null)"
-  [ "$e" = gufi_vt ] || log "WARN: Query across all libraries ran on $e, not gufi_vt"
+  log "omitted at $1: $(echo "$C" | json '{k: v["omitted"] for k, v in d.items() if isinstance(v, dict) and v.get("omitted")} or "none"')"
+  log "times at $1 (ms): $(echo "$C" | json '{k: v["ms"] for k, v in d.items() if isinstance(v, dict) and "ms" in v}')"
+  # Each request finds files in the library: it is in the results, or named
+  # in omitted (v1.173, #588); never left out silently.
+  check "at $1: the library is never left out without being named in omitted" '[ "$(cnt "len(d[\"silent\"])")" -eq 0 ]'
+  # Query across libraries runs on gufi_vt in the app (v1.173, #587).
+  check "at $1: Query across all libraries runs on gufi_vt" \
+    '[ "$(cnt "\",\".join(sorted({d[k][\"engine\"] or \"none\" for k in d if k.startswith(\"query_\")}))")" = gufi_vt ]'
 }
 cnt() { echo "$C" | json "$1"; }
 
@@ -219,8 +221,16 @@ if kill -0 "$RL" 2>/dev/null; then
 else
   log "the run loop stopped $(( $(date +%s) - t_stop )) s after TERM"
 fi
+# The stop ends the build's programs too (v1.173, #588); v1.172 left
+# enrich.py and its workers running.
+sleep 2
 left="$(pgrep -fl "$DEST/Contents/Resources" || true)"
 [ -n "$left" ] && log "still running after the stop: $left"
+check "the stop leaves none of the app's programs running" '[ -z "$left" ]'
+# The pictures read before the stop, with their cache files' times, to show
+# that the resumed build reads only the rest.
+find "$CACHE" -path '*scans-new*' -type f -exec stat -f '%m %N' {} + 2>/dev/null | sort -k2 >"$OUT/cache-at-stop.txt"
+log "pictures read before the stop: $(wc -l <"$OUT/cache-at-stop.txt" | tr -d ' ') of $NEW"
 api /api/version >/dev/null 2>&1 && fatal "the server still answers after the stop"
 log "stopped; library state $(lib_state)"
 cp "$DATA/logs/studio.log" "$OUT/studio-before-restart.log" 2>/dev/null
@@ -229,7 +239,10 @@ sleep 3
 # Opened again; the first requests are the counts.
 open "$DEST" &
 wait_server || fatal "the server did not answer after the app was opened again"
+T_BACK=$(date +%s)
 log "server again: $(api /api/version); run loop $(head -1 "$DATA/server.pid"); library state $(lib_state)"
+STATE_BACK="$(lib_state)"
+check "after the restart: the interrupted build is still marked updating" 'case "$STATE_BACK" in updating*) true ;; *) false ;; esac'
 stage 3-after-restart
 log "library state after the counts: $(lib_state)"
 check "after the restart: names in search" '[ "$(cnt "d[\"searchName\"][\"lib\"]")" -gt 0 ]'
@@ -242,11 +255,17 @@ log "the index status after the restart: $(api /api/index/status | json '{"runni
 # The interrupted rebuild finishes.
 for i in $(seq 1 800); do
   st="$(lib_state)"
-  case "$st" in building*|updating*) ;; *) [ "$(api /api/index/status | json 'd.get("running")')" = False ] && break ;; esac
-  [ $((i % 20)) = 0 ] && log "rebuild still running: $st"
+  case "$st" in building*|updating*) ;; *) break ;; esac
+  [ $((i % 20)) = 0 ] && log "rebuild still running: $st; $(find "$CACHE" -path '*scans-new*' -type f | wc -l | tr -d ' ') of $NEW pictures read"
   sleep 3
 done
-log "after the rebuild: library state $(lib_state)"
+log "after the rebuild: library state $(lib_state); it resumed and finished $(( $(date +%s) - T_BACK )) s after the server answered again"
+check "after the rebuild: the library is ready" 'case "$(lib_state)" in ready*) true ;; *) false ;; esac'
+# Resumed, not started over: the pictures read before the stop were not read again.
+find "$CACHE" -path '*scans-new*' -type f -exec stat -f '%m %N' {} + 2>/dev/null | sort -k2 >"$OUT/cache-after.txt"
+reread="$(join -1 2 -2 2 <(sort -k2 "$OUT/cache-at-stop.txt") <(sort -k2 "$OUT/cache-after.txt") | awk '$2 != $3' | wc -l | tr -d ' ')"
+log "pictures read before the stop and read again after it: $reread of $(wc -l <"$OUT/cache-at-stop.txt" | tr -d ' ')"
+check "after the rebuild: the build resumed from the extraction cache (nothing read before the stop was read again)" '[ "$reread" -eq 0 ]'
 stage 4-after-rebuild
 check "after the rebuild: names in search" '[ "$(cnt "d[\"searchName\"][\"lib\"]")" -gt 0 ]'
 check "after the rebuild: names in Query (600)" '[ "$(cnt "d[\"query_name\"][\"lib\"]")" -eq 600 ]'
