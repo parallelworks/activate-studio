@@ -1344,7 +1344,10 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .chat-canvas .theme-panel.border-r a,
 .chat-canvas aside li span, .chat-canvas aside button span, .chat-canvas aside a span { font-size: 13px; }
 
-.chat-filter { position: absolute; left: 12px; bottom: 10px; z-index: 4; height: auto; }
+/* My chats / All chats, at the top of the conversation list under Select
+   chats (ChatView's sidebarTop); in the list's flow, so it covers nothing. */
+.chat-filter { padding: 4px 2px 6px; }
+.chat-filter > * { width: 100%; }
 
 /* The deployment's mark above the empty chat's greeting, or the Studio's
    own without one. Drawn as a pseudo-element on the package's own h1, so it
@@ -1832,10 +1835,7 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 
   /* Chat. The conversations list is the package's drawer at this width
      (ChatView switches it at this breakpoint); the bottom-bar Chat item
-     opens it. The show-all filter rides on the open drawer, above the
-     package's drawer layer. */
-  .chat-canvas.rail-open .chat-filter { display: block; z-index: 31; }
-  .chat-filter { display: none; }
+     opens it, and the show-all filter comes with it, at its top. */
 }
 
 /* ---- library switcher: lives in the Library rail header ---- */
