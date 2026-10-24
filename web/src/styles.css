@@ -577,6 +577,10 @@ textarea.field { line-height: 1.5; }
   padding: 10px 16px; font-size: 12px; font-weight: 600; color: var(--pw-muted);
   border-bottom: 1px solid var(--pw-border); text-transform: uppercase; letter-spacing: 0.05em;
 }
+/* Libraries a search or a query left out, or searched in part (OmittedLine). */
+.omitted-line { margin: 0; padding: 8px 16px; font-size: 13px; color: var(--theme-warning-text); background: var(--theme-warning-muted); border-bottom: 1px solid var(--pw-border); overflow-wrap: anywhere; }
+.omitted-line .omitted-lib { all: unset; cursor: pointer; color: inherit; font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
+.omitted-line .omitted-lib:focus-visible { outline: 2px solid var(--theme-warning); outline-offset: 2px; border-radius: 2px; }
 .result-row { padding: 10px 16px; border-bottom: 1px solid var(--pw-border); cursor: pointer; }
 .result-row:last-child { border-bottom: none; }
 .result-row:hover { background: var(--theme-hover); }
@@ -1867,6 +1871,7 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 /* A row's progress, such as the main folder's index build, runs across the
    table under it, so the row above keeps no rule between them. */
 .libraries-table tr.lib-has-detail > td { border-bottom: 0; }
+.libraries-table tr.lib-focus > td { background: var(--theme-hover); transition: background 0.4s; }
 .libraries-table tr.lib-detail > td { padding-top: 0; width: auto; }
 .libraries-table .lib-build { display: flex; flex-direction: column; gap: 8px; max-width: 40rem; }
 /* Add a library: where and how, then the form for that pair. */

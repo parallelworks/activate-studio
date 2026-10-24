@@ -15,6 +15,15 @@ import { isMainThread, parentPort, Worker, workerData } from 'node:worker_thread
  * it holds nothing else up.
  */
 export function scanLatest(root: string, exclude: Iterable<string>): Promise<Map<string, number>> {
+  return scanLatestDetail(root, exclude).then(r => r.latest)
+}
+
+/** The same, with the folders that could not be listed for want of
+ *  permission (EPERM, which macOS answers where its privacy settings have
+ *  not let the app in, or EACCES), by their path below the root. Their
+ *  content is left out of the scan, as it is of the index. */
+export function scanLatestDetail(root: string, exclude: Iterable<string>): Promise<{ latest: Map<string, number>; denied: string[] }> {
+  const done = (r: Walked) => ({ latest: new Map(r.pairs), denied: r.denied })
   return new Promise(resolve => {
     let worker: Worker
     try {
@@ -24,19 +33,26 @@ export function scanLatest(root: string, exclude: Iterable<string>): Promise<Map
       worker = new Worker(new URL(import.meta.url), { workerData: { dirScan: true, root, exclude: [...exclude] }, execArgv })
     } catch {
       // No worker here (a test runner, say): the same walk, on this thread.
-      resolve(new Map(walk(root, new Set(exclude))))
+      resolve(done(walk(root, new Set(exclude))))
       return
     }
-    worker.once('message', (pairs: [string, number][]) => resolve(new Map(pairs)))
-    worker.once('error', () => resolve(new Map(walk(root, new Set(exclude)))))
+    worker.once('message', (r: Walked) => resolve(done(r)))
+    worker.once('error', () => resolve(done(walk(root, new Set(exclude)))))
   })
 }
 
-function walk(root: string, exclude: Set<string>): [string, number][] {
+interface Walked { pairs: [string, number][]; denied: string[] }
+
+function walk(root: string, exclude: Set<string>): Walked {
   const out: [string, number][] = []
+  const denied: string[] = []
   const visit = (abs: string, rel: string) => {
     let entries: fs.Dirent[]
-    try { entries = fs.readdirSync(abs, { withFileTypes: true }) } catch { return }
+    try { entries = fs.readdirSync(abs, { withFileTypes: true }) } catch (e) {
+      const code = (e as NodeJS.ErrnoException).code
+      if (code === 'EPERM' || code === 'EACCES') denied.push(rel)
+      return
+    }
     let latest = 0
     try { latest = fs.statSync(abs, { throwIfNoEntry: false })?.mtimeMs ?? 0 } catch { /* gone */ }
     const dirs: fs.Dirent[] = []
@@ -52,7 +68,7 @@ function walk(root: string, exclude: Set<string>): [string, number][] {
     for (const d of dirs) visit(path.join(abs, d.name), rel ? `${rel}/${d.name}` : d.name)
   }
   visit(root, '')
-  return out
+  return { pairs: out, denied }
 }
 
 if (!isMainThread && (workerData as { dirScan?: boolean } | null)?.dirScan) {

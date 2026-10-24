@@ -2,6 +2,7 @@ import { getLibrary, listLibraries, type Library } from './libraries.js'
 import { blendHits, ftsExprBare, ftsHit, ftsSql, nameHit, namesSql, searchVector, searchWordsAndNames, type SearchHit } from './gufi.js'
 import { gufiVtAvailable, runAcross } from './gufiVt.js'
 import { effectiveSettings } from './settings.js'
+import { addOmission, failureReason, libraryGap, type Omission } from './omissions.js'
 
 /**
  * Which libraries a request means: one, by id (the knowledge base when
@@ -13,8 +14,21 @@ import { effectiveSettings } from './settings.js'
 export const ALL = 'all'
 
 export function scopeLibraries(param: string | null | undefined, viewerId: string | null, primaryLabel?: string): Library[] {
-  if (String(param ?? '').trim().toLowerCase() === ALL) return listLibraries(primaryLabel, viewerId).filter(l => l.caps.index || l.primary)
-  return [getLibrary(param, primaryLabel, viewerId)]
+  return scopeWithOmitted(param, viewerId, primaryLabel).libs
+}
+
+/** The same, with the libraries "all" leaves out because they have no
+ *  index to answer from (one being built, one whose build failed, one whose
+ *  index is missing), each with its reason, so a request can say so. */
+export function scopeWithOmitted(param: string | null | undefined, viewerId: string | null, primaryLabel?: string): { libs: Library[]; omitted: Omission[] } {
+  if (String(param ?? '').trim().toLowerCase() !== ALL) return { libs: [getLibrary(param, primaryLabel, viewerId)], omitted: [] }
+  const libs: Library[] = []
+  const omitted: Omission[] = []
+  for (const l of listLibraries(primaryLabel, viewerId)) {
+    if (l.caps.index || l.primary) { libs.push(l); continue }
+    addOmission(omitted, libraryGap(l, { words: false, meaning: false }) ?? { id: l.id, label: l.label, reason: 'index not found', partial: false })
+  }
+  return { libs, omitted }
 }
 
 export interface ScopedHit extends SearchHit { library: { id: string; label: string } }
@@ -45,7 +59,21 @@ export function wordsSearched(l: Library): boolean {
 export const SEARCH_DEADLINE_MS = Number(process.env.STUDIO_SEARCH_DEADLINE_MS) || 20_000
 
 export async function searchScope(libs: Library[], q: string, limit: number,
-  opts: { semantic: boolean; nameLimit?: number; deadlineMs?: number; slow?: string[] }): Promise<ScopedHit[]> {
+  opts: { semantic: boolean; nameLimit?: number; deadlineMs?: number; slow?: string[]; omitted?: Omission[] }): Promise<ScopedHit[]> {
+  // What each library's state leaves out, said before anything runs; one
+  // with nothing to answer from is not searched at all.
+  const omitted = opts.omitted ?? []
+  const gone = new Set<string>()
+  for (const l of libs) {
+    const gap = libraryGap(l, { words: true, meaning: opts.semantic })
+    if (!gap) continue
+    addOmission(omitted, gap)
+    if (!gap.partial) gone.add(l.id)
+  }
+  if (gone.size) libs = libs.filter(l => !gone.has(l.id))
+  const failed = (l: Library, e: unknown, partial: boolean, what = '') => {
+    addOmission(omitted, { id: l.id, label: l.label, reason: `${what}${failureReason(l, e)}`, partial })
+  }
   const SEP = '\u0001'
   const tag = (l: Library) => (hits: SearchHit[]) => hits.map(h => ({ ...h, path: `${l.id}${SEP}${h.path}` }))
   const nameLimit = opts.nameLimit ?? Math.min(Math.max(10, Math.floor(limit / 5)), 50)
@@ -89,8 +117,8 @@ export async function searchScope(libs: Library[], q: string, limit: number,
     const namesLimit = !viaVt.names.has(l.id) ? nameLimit : 0
     const none = { fts: [] as SearchHit[], names: [] as SearchHit[] }
     const all = Promise.all([
-      ftsLimit || namesLimit ? searchWordsAndNames(q, { ftsLimit, nameLimit: namesLimit }, l.indexRoot).then(r => ({ fts: t(r.fts), names: t(r.names) }), () => none) : Promise.resolve(none),
-      opts.semantic && meaningSearched(l) ? searchVector(q, Math.min(limit, 10), l.indexRoot).then(t, () => []) : Promise.resolve([]),
+      ftsLimit || namesLimit ? searchWordsAndNames(q, { ftsLimit, nameLimit: namesLimit }, l.indexRoot).then(r => ({ fts: t(r.fts), names: t(r.names) }), e => { failed(l, e, false); return none }) : Promise.resolve(none),
+      opts.semantic && meaningSearched(l) ? searchVector(q, Math.min(limit, 10), l.indexRoot).then(t, e => { failed(l, e, true, 'not searched by meaning: '); return [] as SearchHit[] }) : Promise.resolve([]),
     ]).then(([wn, vec]) => ({ fts: wn.fts, names: wn.names, vec }))
     if (!deadline) return all
     let timer: ReturnType<typeof setTimeout> | undefined
@@ -99,6 +127,7 @@ export async function searchScope(libs: Library[], q: string, limit: number,
     clearTimeout(timer)
     if (first) return first
     opts.slow?.push(l.label)
+    addOmission(omitted, { id: l.id, label: l.label, reason: `did not answer within ${deadline >= 1000 ? `${Math.round(deadline / 1000)} s` : `${deadline} ms`}`, partial: false })
     return { fts: [] as SearchHit[], names: [] as SearchHit[], vec: [] as SearchHit[] }
   }))
   per.push({ fts: vtHits.fts, names: vtHits.names, vec: [] })

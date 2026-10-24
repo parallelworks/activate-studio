@@ -16,7 +16,8 @@ import { indexLog } from './indexLog.js'
 import { indexSettings, meaningArgs, textArgs, threadsFor, type IndexSettings } from './indexSettings.js'
 import { sofficeFound } from './extractors.js'
 import { scheduleSemanticMapRebuild } from './semanticMap.js'
-import { scanLatest } from './dirScan.js'
+import { scanLatestDetail } from './dirScan.js'
+import { deniedPaths, onlyDenied, recordDenied, setPrimaryIndexingSource } from './omissions.js'
 import { depthChange, depthRecordOf, readDepthRecord, writeDepthRecord, type DepthChange } from './depthState.js'
 
 /**
@@ -269,6 +270,9 @@ function phase(ctx: JobCtx, id: PhaseId) {
 
 export function getIndexJob(id: number): IndexJob | null { return jobs.get(id)?.pub ?? null }
 
+// Search and Query say the main folder is being built, not missing, while its first build runs.
+setPrimaryIndexingSource(() => current?.pub.kind === 'build')
+
 /** Whether any index job is queued or running (an update waits for none). */
 export function indexJobsRunning(): boolean { return !!current || queue.length > 0 }
 
@@ -388,13 +392,17 @@ const WATCHDOG_MS = 30 * 60_000
  * file that failed are counted as the job's warnings. The program runs in
  * a process group of its own, so stopping the job stops its workers too.
  */
-function runTool(ctx: JobCtx, ph: ReturnType<typeof phase> | null, cmd: string, args: string[], env: NodeJS.ProcessEnv): Promise<string[]> {
+function runTool(ctx: JobCtx, ph: ReturnType<typeof phase> | null, cmd: string, args: string[], env: NodeJS.ProcessEnv,
+  onDenied?: (paths: string[]) => void): Promise<string[]> {
   if (ctx.signal.aborted) return Promise.reject(new IndexCancelled())
   const name = path.basename(args.find(a => /\.(py|js|ts)$/.test(a)) ?? cmd)
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, args, { env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] })
     const out: string[] = []
     const errTail: string[] = []
+    // Permission errors, kept apart from the tail: a folder macOS will not
+    // let the Studio read fails gufi_dir2index after it wrote the rest.
+    const deniedLines: string[] = []
     let last = Date.now()
     const kill = (sig: NodeJS.Signals) => { try { if (child.pid) process.kill(-child.pid, sig) } catch { /* gone */ } }
     const onAbort = () => {
@@ -430,6 +438,7 @@ function runTool(ctx: JobCtx, ph: ReturnType<typeof phase> | null, cmd: string, 
       const t = line.trim()
       if (!t || ALREADY_EXISTS.test(t)) return
       ctx.log(`${name}: ${t.slice(0, 500)}`)
+      if (/Operation not permitted|Permission denied|EPERM|EACCES/i.test(t) && deniedLines.length < 500) deniedLines.push(t)
       errTail.push(t)
       if (errTail.length > 20) errTail.shift()
       if (/\bfailed\b|^preextract: .*: |embed error/.test(t)) {
@@ -446,6 +455,10 @@ function runTool(ctx: JobCtx, ph: ReturnType<typeof phase> | null, cmd: string, 
       clearInterval(watchdog)
       ctx.signal.removeEventListener('abort', onAbort)
       if (ctx.signal.aborted) return reject(new IndexCancelled())
+      if (code !== 0 && onDenied && deniedLines.length && onlyDenied(errTail.join('\n'))) {
+        onDenied(deniedPaths(deniedLines.join('\n')))
+        return resolve(out)
+      }
       if (code !== 0) return reject(new Error(`${name}: ${errTail.slice(-3).join(' ') || `exit ${code}`}`))
       resolve(out)
     })
@@ -516,7 +529,11 @@ async function namesPhase(ctx: JobCtx, src: string, staging: string, maxLevel0 =
   try {
     await runTool(ctx, null, path.join(GUFI_BIN, 'gufi_dir2index'),
       ['-x', '-n', String(ctx.threads), ...(maxLevel0 ? ['--max-level', '0'] : []), '--skip-file', ensureSkipFile(), src, staging],
-      gufiEnv())
+      gufiEnv(), paths => {
+        // The rest of the folder is indexed; these are named in search and Query.
+        ctx.log(`${paths.length} folder(s) could not be read and are left out: ${paths.slice(0, 5).join(', ')}`)
+        recordDenied('kb', paths)
+      })
   } finally { clearInterval(poll) }
   ph.finish()
   return built
@@ -608,8 +625,8 @@ async function afterChange(rel: string): Promise<void> {
   // put them back. Lazy import avoids a module cycle.
   const { reapplyTagOverlay } = await import('./tags.js')
   await reapplyTagOverlay(rel).catch(() => {})
-  const { forgetProbe } = await import('./libraries.js')
-  forgetProbe(GUFI_INDEX)
+  const { staleProbe } = await import('./libraries.js')
+  staleProbe(GUFI_INDEX)
 }
 
 // ---- one folder, and the files at the top ----
@@ -942,9 +959,18 @@ interface DirScan { latest: number }
 /** Latest mtime a directory presents: itself plus its direct files. */
 async function scanKbDirs(): Promise<Map<string, DirScan>> {
   const out = new Map<string, DirScan>()
-  for (const [rel, latest] of await scanLatest(KB_ROOT, EXCLUDE_DIRS)) out.set(rel, { latest })
+  const r = await scanLatestDetail(KB_ROOT, EXCLUDE_DIRS)
+  for (const [rel, latest] of r.latest) out.set(rel, { latest })
+  // Folders macOS (or a plain permission) keeps the Studio out of: said in
+  // search and Query (omissions.ts), and kept as last indexed by the sweep.
+  kbDenied = r.denied
+  recordDenied('kb', r.denied.map(rel => (rel ? path.join(KB_ROOT, rel) : KB_ROOT)))
   return out
 }
+
+/** The main folder's folders the last scan could not list, below KB_ROOT. */
+let kbDenied: string[] = []
+const underDenied = (rel: string) => kbDenied.some(d => !d || rel === d || rel.startsWith(`${d}/`))
 
 function loadSweepState(): Record<string, number> {
   try { return JSON.parse(fs.readFileSync(SWEEP_STATE, 'utf8')) } catch { return {} }
@@ -1058,7 +1084,8 @@ export async function sweep(log: (msg: string) => void): Promise<string[]> {
         else changed.push(rel)
       }
     }
-    const removed = Object.keys(state).filter(rel => rel && rel !== '.' && !scan.has(rel))
+    // A folder the Studio may not read now is not taken for removed.
+    const removed = Object.keys(state).filter(rel => rel && rel !== '.' && !scan.has(rel) && !underDenied(rel))
     // A parent re-index covers its whole subtree; keep only subtree roots.
     changed.sort()
     changed = changed.filter(rel => !changed.some(other => other !== rel && rel.startsWith(other + '/')))

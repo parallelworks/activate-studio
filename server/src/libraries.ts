@@ -79,6 +79,9 @@ export interface LocalBuild {
   /** The index folder is the Studio's own, removed with the library. */
   managed: boolean
   state: 'building' | 'ready' | 'updating' | 'failed'
+  /** What an 'updating' library is in the middle of: applying a new depth
+   *  (which a restart finishes with a sync), or a rebuild. */
+  pending?: 'depth' | null
   error: string | null
   builtAt: string | null
   files: number | null
@@ -112,7 +115,67 @@ const FILE = path.join(INDEX_BASE, 'libraries.json')
 const ID_RE = /^[a-z0-9][a-z0-9_-]{0,39}$/
 
 let added: LibraryDef[] | null = null
+/** When each tree was last probed, in this process: a probe younger than
+ *  PROBE_TTL_MS is not repeated. */
 let probeCache = new Map<string, { caps: LibraryCaps; at: number }>()
+const PROBE_TTL_MS = 300_000
+/** A probe that could read none of the tree's databases is tried again this soon. */
+const PROBE_RETRY_MS = 30_000
+
+/**
+ * What each tree was last found to support, kept on disk
+ * (INDEX_BASE/library-caps.json) so that neither a restart nor a rebuild
+ * resets a library to "no words, no vectors" until the next probe: a
+ * library's words were once left out of search after every build, until
+ * Settings happened to probe it again. A record marked stale is still used;
+ * it is probed again in the background.
+ */
+export interface KnownCaps { caps: LibraryCaps; probedAt: string; stale: boolean; error?: string }
+const CAPS_FILE = path.join(INDEX_BASE, 'library-caps.json')
+let known: Map<string, KnownCaps> | null = null
+const probing = new Map<string, Promise<LibraryCaps>>()
+
+function knownCapsMap(): Map<string, KnownCaps> {
+  if (known) return known
+  known = new Map()
+  try {
+    const raw = JSON.parse(fs.readFileSync(CAPS_FILE, 'utf8')) as Record<string, KnownCaps>
+    for (const [root, r] of Object.entries(raw)) {
+      if (r && r.caps && typeof r.caps.index === 'boolean') known.set(root, { caps: { index: !!r.caps.index, fullText: !!r.caps.fullText, vectors: !!r.caps.vectors }, probedAt: String(r.probedAt ?? ''), stale: !!r.stale, ...(r.error ? { error: String(r.error) } : {}) })
+    }
+  } catch { /* none yet */ }
+  return known
+}
+
+function saveKnownCaps(): void {
+  try {
+    fs.mkdirSync(path.dirname(CAPS_FILE), { recursive: true })
+    const tmp = `${CAPS_FILE}.${process.pid}.tmp`
+    fs.writeFileSync(tmp, JSON.stringify(Object.fromEntries(knownCapsMap()), null, 1))
+    fs.renameSync(tmp, CAPS_FILE)
+  } catch (e) { console.warn(`library capabilities not saved: ${(e as Error).message}`) }
+}
+
+/** What a tree was last found to support, and whether that is stale; null
+ *  when it was never probed. */
+export function knownCaps(indexRoot: string): KnownCaps | null {
+  return knownCapsMap().get(path.resolve(indexRoot)) ?? null
+}
+
+/** The capabilities a listing shows: this process's probe, else the record
+ *  on disk, else `fallback`. Where there is no fresh probe, one runs in the
+ *  background, so the next request has it. */
+function capsOf(abs: string, fallback: () => LibraryCaps): LibraryCaps {
+  // Whether the index is there is looked at every time (one stat); what it
+  // holds comes from the probe, or the record when there is no fresh one.
+  const index = fs.existsSync(path.join(abs, 'db.db'))
+  const fresh = probeCache.get(abs)
+  if (fresh && Date.now() - fresh.at < PROBE_TTL_MS) return { ...fresh.caps, index }
+  const k = knownCapsMap().get(abs)
+  if (gufiAvailable() && index) void probeLibrary(abs).catch(() => {})
+  const caps = k?.caps ?? fresh?.caps ?? fallback()
+  return { ...caps, index }
+}
 
 function loadAdded(): LibraryDef[] {
   if (added) return added
@@ -179,21 +242,46 @@ function sampleDbs(root: string, max = 12): string[] {
 export async function probeLibrary(indexRoot: string): Promise<LibraryCaps> {
   const abs = path.resolve(indexRoot)
   const cached = probeCache.get(abs)
-  if (cached && Date.now() - cached.at < 300_000) return cached.caps
+  if (cached && Date.now() - cached.at < PROBE_TTL_MS) return cached.caps
+  const inFlight = probing.get(abs)
+  if (inFlight) return inFlight
+  const p = probeNow(abs).finally(() => probing.delete(abs))
+  probing.set(abs, p)
+  return p
+}
+
+async function probeNow(abs: string): Promise<LibraryCaps> {
   const caps: LibraryCaps = { index: false, fullText: false, vectors: false }
+  let tried = 0, failed = 0, lastError = ''
   if (fs.existsSync(path.join(abs, 'db.db'))) {
     caps.index = true
     if (gufiAvailable()) {
       for (const db of sampleDbs(abs)) {
+        tried++
         try {
           const out = await sqlite(`ATTACH '${db.replace(/'/g, "''")}' AS d;\nSELECT name FROM d.sqlite_master WHERE name IN ('words','gvec');\n`)
           if (/\bwords\b/.test(out)) caps.fullText = true
           if (/\bgvec\b/.test(out)) caps.vectors = true
           if (caps.fullText && caps.vectors) break
-        } catch { /* an unreadable db says nothing */ }
+        } catch (e) { failed++; lastError = String((e as Error).message ?? e).split('\n')[0].slice(0, 200) }
       }
     }
   }
+  const map = knownCapsMap()
+  const was = map.get(abs)
+  if (tried > 0 && failed === tried) {
+    // Not one database could be read: say nothing new about the tree. The
+    // last known capabilities stay, marked stale, and the probe runs again
+    // soon (a busy disk, a database being swapped in).
+    const keep = was?.caps ?? caps
+    map.set(abs, { caps: keep, probedAt: was?.probedAt ?? '', stale: true, error: lastError })
+    saveKnownCaps()
+    probeCache.set(abs, { caps: keep, at: Date.now() - PROBE_TTL_MS + PROBE_RETRY_MS })
+    return keep
+  }
+  const changed = !was || was.stale || was.caps.index !== caps.index || was.caps.fullText !== caps.fullText || was.caps.vectors !== caps.vectors
+  map.set(abs, { caps, probedAt: new Date().toISOString(), stale: false })
+  if (changed) saveKnownCaps()
   probeCache.set(abs, { caps, at: Date.now() })
   return caps
 }
@@ -207,7 +295,8 @@ function primaryLibrary(label: string): Library {
     writable: true,
     primary: true,
     pinned: true,
-    caps: probeCache.get(path.resolve(GUFI_INDEX))?.caps ?? { index: gufiAvailable(), fullText: gufiAvailable(), vectors: false },
+    // The main folder counts as indexed where GUFI is set up for it, as it always has.
+    caps: (c => ({ ...c, index: c.index || gufiAvailable() }))(capsOf(path.resolve(GUFI_INDEX), () => ({ index: gufiAvailable(), fullText: gufiAvailable(), vectors: false }))),
     meaning: indexSettings(PRIMARY_ID).meaning,
     depth: indexSettings(PRIMARY_ID).depth,
   }
@@ -225,7 +314,7 @@ function fromDef(d: LibraryDef, pinned: boolean): Library {
     writable: false,
     primary: false,
     pinned,
-    caps: probeCache.get(abs)?.caps ?? { index: fs.existsSync(path.join(abs, 'db.db')), fullText: false, vectors: false },
+    caps: capsOf(abs, () => ({ index: fs.existsSync(path.join(abs, 'db.db')), fullText: false, vectors: false })),
     meaning: d.build ? indexSettings(d.id).meaning : null,
     depth: d.build ? indexSettings(d.id).depth : null,
   }
@@ -346,8 +435,17 @@ export function updateBuild(id: string, patch: Partial<LocalBuild>): LibraryDef 
   return d
 }
 
-/** Forget what a tree was found to support, after it was built again. */
-export function forgetProbe(indexRoot: string): void { probeCache.delete(path.resolve(indexRoot)) }
+/** After a tree was built or changed: what it was found to support is
+ *  stale, and is probed again (at once, in the background). Until then the
+ *  last known capabilities stand; they are never reset to "none", which
+ *  would leave the library's words and vectors out of search. */
+export function staleProbe(indexRoot: string): void {
+  const abs = path.resolve(indexRoot)
+  probeCache.delete(abs)
+  const k = knownCapsMap().get(abs)
+  if (k && !k.stale) { k.stale = true; saveKnownCaps() }
+  if (gufiAvailable()) void probeLibrary(abs).catch(() => {})
+}
 
 /** Set by libraryLabels.ts, which imports this module: drops what it holds
  *  in memory for a removed library. */
@@ -397,7 +495,12 @@ export function settingsLibrary(l: Library): PublicLibrary & { indexRoot: string
 }
 
 /** Tests replace the stored set and the probe memory between cases. */
-export function resetLibrariesForTests(): void {
+export function resetLibrariesForTests(opts: { keepKnownCaps?: boolean } = {}): void {
   added = null
   probeCache = new Map()
+  probing.clear()
+  // A restart: the record on disk is read again; without keepKnownCaps it
+  // is gone too, as for a new Studio.
+  known = null
+  if (!opts.keepKnownCaps) fs.rmSync(CAPS_FILE, { force: true })
 }

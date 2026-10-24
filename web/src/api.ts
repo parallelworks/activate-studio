@@ -1,4 +1,5 @@
 import type { GufiCommand } from './components/GufiCommands'
+import type { Omission } from './components/OmittedLine'
 
 /** A mounted library, as the server describes it. Paths stay on the server. */
 export interface PublicLibrary {
@@ -343,7 +344,7 @@ export const api = {
     return data as { deleted: string }
   },
   stats: () => getJson<{ available: boolean; files?: number; dirs?: number; totalBytes?: number; libraries?: LibraryStats[] }>(`/api/kb/stats`),
-  search: (q: string, tags?: string[], limit = 50) => getJson<{ hits: SearchHit[]; error?: string; gufi?: GufiCommand[]; slow?: string[] }>(`/api/search?q=${encodeURIComponent(q)}&limit=${limit}${tags?.length ? `&tags=${encodeURIComponent(tags.join(','))}` : ''}`),
+  search: (q: string, tags?: string[], limit = 50) => getJson<{ hits: SearchHit[]; error?: string; gufi?: GufiCommand[]; slow?: string[]; omitted?: Omission[] }>(`/api/search?q=${encodeURIComponent(q)}&limit=${limit}${tags?.length ? `&tags=${encodeURIComponent(tags.join(','))}` : ''}`),
   health: () => getJson<{ ok: boolean; gufi: boolean }>(`/healthz`),
   mkdir: async (path: string) => {
     const r = await postJson<{ created: string }>(`/api/kb/mkdir`, { path })

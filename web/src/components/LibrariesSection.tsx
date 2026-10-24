@@ -10,6 +10,7 @@ import { AddLibrary } from './AddLibrary'
 import { FolderPicker, errText, json, type SetupStatus } from './PrimaryFolder'
 import { IndexControls, IndexJobView, LastBuild } from './IndexActivity'
 import { useIndexStatus } from '../indexActivity'
+import { FOCUS_LIBRARY_EVENT, FOCUS_LIBRARY_KEY } from './OmittedLine'
 
 /** A user library as listed, with how it is reached. */
 type UserLib = UserLibrary
@@ -130,6 +131,28 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
     void loadStatus()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+  // A library named in a search's or a query's "left out" line: its row is
+  // brought into view and marked for a few seconds.
+  const [focused, setFocused] = useState<string | null>(null)
+  const loaded = !!libs
+  useEffect(() => {
+    if (!loaded) return
+    let timer = 0
+    const focus = (id: string | null) => {
+      try { sessionStorage.removeItem(FOCUS_LIBRARY_KEY) } catch { /* none */ }
+      if (!id) return
+      setFocused(id)
+      window.setTimeout(() => document.querySelector(`tr[data-library="${CSS.escape(id)}"]`)?.scrollIntoView({ block: 'center' }), 50)
+      window.clearTimeout(timer)
+      timer = window.setTimeout(() => setFocused(null), 4000)
+    }
+    let stored: string | null = null
+    try { stored = sessionStorage.getItem(FOCUS_LIBRARY_KEY) } catch { /* none */ }
+    focus(stored)
+    const on = (e: Event) => focus(String((e as CustomEvent).detail ?? '') || null)
+    window.addEventListener(FOCUS_LIBRARY_EVENT, on)
+    return () => { window.removeEventListener(FOCUS_LIBRARY_EVENT, on); window.clearTimeout(timer) }
+  }, [loaded])
   // Follow running builds: every few seconds for those the Studio runs
   // itself (here, or on a remote system over the session), every 15 s for
   // the platform's workflow runs.
@@ -243,6 +266,8 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
         state: b.state === 'building' ? { tone: 'info', text: 'Building', pulse: true, notes }
           : b.state === 'updating' ? { tone: 'info', text: 'Updating', pulse: true, notes }
           : b.state === 'failed' ? { tone: 'error', text: 'Failed', notes }
+          // Its index was removed outside the Studio: search names it as left out.
+          : !l.caps.index ? { tone: 'error', text: 'Index not found', notes: [...notes, 'Rebuild makes it again.'] }
           : b.error ? { tone: 'warning', text: 'Ready; the last pass failed', notes }
           : { tone: 'success', text: 'Ready', notes },
         fullText: l.caps.fullText, meaning: l.caps.vectors,
@@ -424,7 +449,7 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
           <Table.Header />
           {rows.map(r => (
             <Fragment key={r.key}>
-              <tr className={r.detail ? 'lib-has-detail' : undefined}>
+              <tr className={[r.detail ? 'lib-has-detail' : '', focused === r.key ? 'lib-focus' : ''].filter(Boolean).join(' ') || undefined} data-library={r.key}>
                 <Table.Item wrap>
                   <div className="lib-name">{r.name}</div>
                   <div className="lib-id">{r.kind}</div>

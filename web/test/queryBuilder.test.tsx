@@ -129,3 +129,27 @@ describe('the Query builder', () => {
     expect(screen.queryByRole('option', { name: 'Path' })).toBeNull()
   })
 })
+
+describe('a query that left a library out', () => {
+  it('names it, with the reason, above the rows it has', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: string) => {
+      const url = String(input)
+      if (url === '/api/query/saved') return json([])
+      if (url === '/api/query') {
+        return json({ ...ROWS, omitted: [
+          { id: 'shelf', label: 'Shelf', reason: 'being built; searchable once its first pass is done', partial: false },
+          { id: 'archive', label: 'Archive', reason: 'its index has no extracted text, so text conditions match nothing there', partial: true },
+        ], failed: [{ library: 'Shelf', error: 'being built; searchable once its first pass is done' }] })
+      }
+      if (url === '/api/config') return json({ appName: 'Studio', libraries: [] })
+      return json({})
+    }))
+    render(<QueryView onOpen={() => {}} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Run query' }))
+    const line = await screen.findByRole('status')
+    expect(line).toHaveTextContent('Left out: Shelf (being built; searchable once its first pass is done). Answered in part: Archive (its index has no extracted text, so text conditions match nothing there).')
+    expect(screen.getByText('reports/q1.pdf')).toBeInTheDocument()
+    // Said once, in the line, not again beside the row count.
+    expect(screen.queryByText(/not answered:/)).toBeNull()
+  })
+})

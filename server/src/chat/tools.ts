@@ -1394,12 +1394,17 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
       case 'search_kb': {
         const query = String(args.query ?? '').slice(0, 200)
         const limit = Math.min(Number(args.limit) || 10, 25)
-        const { scopeLibraries, searchScope } = await import('../libraryScope.js')
-        const libs = scopeLibraries(scopeParam(args.library), toolContext.getStore()?.userId ?? null)
+        const { scopeWithOmitted, searchScope } = await import('../libraryScope.js')
+        const { omissionsText } = await import('../omissions.js')
+        const inScope = scopeWithOmitted(scopeParam(args.library), toolContext.getStore()?.userId ?? null)
+        const libs = inScope.libs
         if (gufiAvailable() || libs.some(l => l.site)) {
           const slow: string[] = []
-          const scoped = await searchScope(libs, query, limit + 5, { semantic: true, nameLimit: 5, slow })
-          const lateNote = slow.length ? `\n${slow.join(', ')} did not answer in time and ${slow.length === 1 ? 'is' : 'are'} left out; search ${slow.length === 1 ? 'it' : 'one'} on its own to wait for it.` : ''
+          const omitted = inScope.omitted
+          const scoped = await searchScope(libs, query, limit + 5, { semantic: true, nameLimit: 5, slow, omitted })
+          // Every library left out, or searched in part, is named, so an
+          // answer never takes a missing library's silence for "no matches".
+          const lateNote = omitted.length ? `\n${omissionsText(omitted)}${slow.length ? ` Search ${slow.length === 1 ? 'one that did not answer in time' : 'one of those that did not answer in time'} on its own to wait for it.` : ''}` : ''
           if (libs.length > 1 || libs[0].id !== 'kb') {
             const other = scoped.filter(h => h.library.id !== 'kb' || libs.length === 1)
             const own = libs.length > 1 ? await annotateHits(scoped.filter(h => h.library.id === 'kb'), args.tags ? String(args.tags).split(',').filter(Boolean) : undefined) : []
@@ -1421,9 +1426,9 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
             filter = within?.length ? within : scope
           }
           const hits = await annotateHits(blendHits(fts, names, vec, limit + 5), filter)
-          const result = hits.length
+          const result = (hits.length
             ? hits.map(h => `${h.path}${h.tags?.length ? ` [labels: ${h.tags.join(', ')}]` : ''}\n  ${h.snippet || '(filename match)'}`).join('\n')
-            : 'No matches.'
+            : 'No matches.') + lateNote
           return { result, summary: `${hits.length} hits` }
         }
         const rels = await grepFallback(query, limit)

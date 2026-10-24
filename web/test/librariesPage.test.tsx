@@ -226,6 +226,37 @@ describe('what Add a library offers', () => {
 describe('Settings, Libraries', () => {
   afterEach(() => { vi.unstubAllGlobals() })
 
+  it('brings a library named in a search\'s left-out line into view and marks its row', async () => {
+    sessionStorage.setItem('studio.focusLibrary', 'site')
+    const scrolled = vi.fn()
+    Element.prototype.scrollIntoView = scrolled
+    await renderPage(server())
+    const site = await waitFor(() => rowOf('Site index'))
+    await waitFor(() => expect(site).toHaveClass('lib-focus'))
+    expect(site).toHaveAttribute('data-library', 'site')
+    await waitFor(() => expect(scrolled).toHaveBeenCalled())
+    expect(sessionStorage.getItem('studio.focusLibrary')).toBeNull()
+    expect(rowOf('Notes')).not.toHaveClass('lib-focus')
+  })
+
+  it('and when the page is open already, as after visiting Settings before the search', async () => {
+    Element.prototype.scrollIntoView = vi.fn()
+    await renderPage(server())
+    const notes = await waitFor(() => rowOf('Notes'))
+    expect(notes).not.toHaveClass('lib-focus')
+    const { openLibraryRow } = await import('../src/components/OmittedLine')
+    openLibraryRow('kb')
+    await waitFor(() => expect(rowOf('Notes')).toHaveClass('lib-focus'))
+  })
+
+  it('a library built here whose index is gone says so, not Ready', async () => {
+    const gone = { ...BUILT_HERE, id: 'gone', label: 'Gone', caps: { index: false, fullText: false, vectors: false }, build: { ...BUILT_HERE.build, state: 'ready', progress: null, builtAt: '2026-10-01T00:00:00Z' } }
+    await renderPage(server({ libs: [PRIMARY, gone] }))
+    const row = await waitFor(() => rowOf('Gone'))
+    expect(within(row).getByText('Index not found')).toBeInTheDocument()
+    expect(within(row).getByText('Rebuild makes it again.')).toBeInTheDocument()
+  })
+
   it('lists every library in one table: kind, where it is, state, what it searches, and its actions', async () => {
     const s = server({ platform: true, libs: [PRIMARY, SITE, PINNED], user: [SSH, CLUSTER] })
     await renderPage(s)
