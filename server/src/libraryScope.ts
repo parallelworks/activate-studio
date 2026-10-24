@@ -1,5 +1,5 @@
 import { getLibrary, listLibraries, type Library } from './libraries.js'
-import { blendHits, ftsExprBare, ftsHit, ftsSql, nameHit, namesSql, searchFts, searchNames, searchVector, type SearchHit } from './gufi.js'
+import { blendHits, ftsExprBare, ftsHit, ftsSql, nameHit, namesSql, searchVector, searchWordsAndNames, type SearchHit } from './gufi.js'
 import { gufiVtAvailable, runAcross } from './gufiVt.js'
 import { effectiveSettings } from './settings.js'
 
@@ -84,11 +84,14 @@ export async function searchScope(libs: Library[], q: string, limit: number,
   const deadline = libs.length > 1 ? (opts.deadlineMs ?? SEARCH_DEADLINE_MS) : 0
   const per = await Promise.all(libs.map(async l => {
     const t = tag(l)
+    // Words and names in one walk of the library's index (searchWordsAndNames).
+    const ftsLimit = wordsSearched(l) && !viaVt.fts.has(l.id) ? limit : 0
+    const namesLimit = !viaVt.names.has(l.id) ? nameLimit : 0
+    const none = { fts: [] as SearchHit[], names: [] as SearchHit[] }
     const all = Promise.all([
-      wordsSearched(l) && !viaVt.fts.has(l.id) ? searchFts(q, limit, l.indexRoot).then(t, () => []) : Promise.resolve([]),
-      !viaVt.names.has(l.id) ? searchNames(q, nameLimit, l.indexRoot).then(t, () => []) : Promise.resolve([]),
+      ftsLimit || namesLimit ? searchWordsAndNames(q, { ftsLimit, nameLimit: namesLimit }, l.indexRoot).then(r => ({ fts: t(r.fts), names: t(r.names) }), () => none) : Promise.resolve(none),
       opts.semantic && meaningSearched(l) ? searchVector(q, Math.min(limit, 10), l.indexRoot).then(t, () => []) : Promise.resolve([]),
-    ]).then(([fts, names, vec]) => ({ fts, names, vec }))
+    ]).then(([wn, vec]) => ({ fts: wn.fts, names: wn.names, vec }))
     if (!deadline) return all
     let timer: ReturnType<typeof setTimeout> | undefined
     const late = new Promise<null>(resolve => { timer = setTimeout(() => resolve(null), deadline) })
@@ -99,7 +102,11 @@ export async function searchScope(libs: Library[], q: string, limit: number,
     return { fts: [] as SearchHit[], names: [] as SearchHit[], vec: [] as SearchHit[] }
   }))
   per.push({ fts: vtHits.fts, names: vtHits.names, vec: [] })
-  const blended = blendHits(per.flatMap(p => p.fts), per.flatMap(p => p.names), per.flatMap(p => p.vec), limit)
+  // Across libraries, word matches go best bm25 first and name matches best
+  // nameRank first, as within one; a stable sort keeps each library's order
+  // among equals, and hits with no rank (gufi_vt's) after the ranked ones.
+  const ranked = (hits: SearchHit[]) => libs.length > 1 ? [...hits].sort((a, b) => (a.rank ?? Infinity) - (b.rank ?? Infinity) || 0) : hits
+  const blended = blendHits(ranked(per.flatMap(p => p.fts)), ranked(per.flatMap(p => p.names)), per.flatMap(p => p.vec), limit)
   const byId = new Map(libs.map(l => [l.id, l]))
   return blended.map(h => {
     const i = h.path.indexOf(SEP)

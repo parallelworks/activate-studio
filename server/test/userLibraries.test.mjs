@@ -16,7 +16,7 @@ process.env.PW_GATEWAY_URL = 'https://platform.test/api/openai/v1'
 process.env.PW_API_KEY = 'deployment-key'
 
 // The remote side: a home with a GUFI install whose gufi_query answers
-// the three shapes of query the Studio sends.
+// the shapes of query the Studio sends.
 const home = path.join(dir, 'home')
 const bin = path.join(home, '.activate-studio', 'gufi', 'abc123', 'bin')
 const index = path.join(home, '.activate-studio', 'indexes', 'proj-1', 'proj')
@@ -28,6 +28,7 @@ R=$(printf '\\036')
 case "$args" in
   *"--max-level 0"*) printf 'notes.txt%sf%s17%s1700000000\\n' "$R" "$R" "$R" ;;
   *"--max-level 1"*) printf 'runs%s1700000001\\n' "$R" ;;
+  *"INSERT INTO tn"*) printf 'n%s1%s%s/runs/case-a/input.yaml%sinput.yaml%s30%s1700000002%s\\n' "$R" "$R" "$last" "$R" "$R" "$R" "$R" ;;
   *) printf '%s/runs/case-a/input.yaml%sinput.yaml%s30%s1700000002\\n' "$last" "$R" "$R" "$R" ;;
 esac
 `, { mode: 0o755 })

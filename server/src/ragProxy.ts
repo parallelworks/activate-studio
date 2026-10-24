@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import { GATEWAY_BASE, MAX_TOOL_ITERATIONS, gufiAvailable } from './config.js'
-import { blendHits, searchFts, searchNames, searchVector } from './gufi.js'
+import { blendHits, searchFts, searchVector, searchWordsAndNames } from './gufi.js'
 import { annotateHits } from './tags.js'
 import { readFileContent } from './kb.js'
 import { gatewayKey, streamTurn, WireMessage } from './chat/gateway.js'
@@ -112,9 +112,8 @@ async function buildContext(query: string, topK: number, tags?: string[]): Promi
   const q = query.slice(0, 300)
   const terms = distill(q)
   const termQuery = terms.join(' ') || q.slice(0, 100)
-  let [fts, names, vec] = await Promise.all([
-    searchFts(termQuery, topK),
-    searchNames(termQuery, Math.min(topK, 5)),
+  let [{ fts, names }, vec] = await Promise.all([
+    searchWordsAndNames(termQuery, { ftsLimit: topK, nameLimit: Math.min(topK, 5) }),
     indexSettings('kb').meaning !== 'off' ? searchVector(q, Math.min(topK, 8)).catch(() => []) : Promise.resolve([]),
   ])
   // An over-specified AND query finds nothing; retry on the strongest terms.

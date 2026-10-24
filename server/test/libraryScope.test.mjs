@@ -38,7 +38,7 @@ case "$args" in
     else row "$last/large.dat" 80 "2026-01-03 00:00:00"; row "$last/small.dat" 10 "2026-01-04 00:00:00"; fi ;;
   *"GROUP BY ext"*)
     if [ "$lib" = a ]; then row pdf 2 300; row txt 1 10; else row pdf 1 100; fi ;;
-  *"LIKE"*) row "$last/notes/$lib-report.md" "$lib-report.md" 7 1700000000 ;;
+  *"INSERT INTO tn"*) row n 2 "$last/notes/$lib-report.md" "$lib-report.md" 7 1700000000 "" ;;
 esac
 `, { mode: 0o755 })
 
