@@ -2,6 +2,140 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.174 (2026-10-24)
+
+### A remote build that ends as its status is read counts as finished (#592)
+
+The remote build tests (server/test/remoteBuild.test.mjs) failed now and then, a different test each time. On this machine it was about 1 run in 20, and more on a loaded one. The cause is a race in the product, not the tests.
+
+**The race.** BUILD_STATUS checked for the run's exit file, then whether the run's process was alive. A build that ended between those two reads had no exit file at the first and no process at the second, so it was reported as "the build stopped without finishing". In the captured failure, the remote state folder showed phase `done` and exit `0` while the library was marked failed. A first build ended as failed. A rebuild kept the old index and showed the error, though the build had succeeded. The later tests in the file failed in turn, because they use the first build's library.
+
+**The fix.** BUILD_STATUS reads whether the run is alive before reading its exit file. The run writes its exit file as it stops, so a run found stopped has written it. A run that stops between the two reads counts as running and is read as finished at the next look.
+
+**A related case.** A process id means something only on the machine that started the run. Where one host name reaches several login nodes, a status read landing on another node took a running build for one that stopped. The run now writes `uname -n` to its state folder, and a status read from another machine waits for the exit file instead of judging by the process. Builds started before this keep being judged by their process.
+
+**Tests:**
+- A new test stands in for `kill` in the status script, so the run writes its exit file and stops exactly as its liveness is read. It fails on the old order (`gone`, "the build stopped without finishing") and passes now.
+- A second test covers the machine rule: gone on its own machine, running as seen from another, and an older build without a host file judged by its process.
+
+**Results:**
+- Before the fix: 1 failure in 20 runs of the file here.
+- After the fix: 0 in 30 runs, and 0 in 15 more with other test files loading the machine.
+- Server suite: 592 passed, 9 skipped. Web suite: 277 passed.
+
+### Outbound HTTPS trusts the system's certificate authorities and follows the proxy (#593)
+
+On a network that inspects TLS with its own certificate authority, every call the server made out failed with "unable to get local issuer certificate": Settings, Updates showed "The check for updates failed: unable to get local issuer certificate.", and the update download, model providers, the platform API and MCP servers failed the same way. Node trusts its bundled list of authorities, not the ones the computer trusts, even when macOS trusts the network's authority.
+
+**Trust.** The server's first import (`netStart.ts`, from `netTrust.ts`) adds the system's trusted certificates to Node's own with `tls.setDefaultCACertificates`.
+- This is the same set `node --use-system-ca` reads: the keychains' trusted roots on macOS, including an authority an administrator or the Mac's management installed, and the system bundle on Linux.
+- Certificates named by `NODE_EXTRA_CA_CERTS` are kept. `STUDIO_SYSTEM_CA=0` turns it off.
+- It runs at runtime rather than through a Node flag, so the macOS app, the container, the hosted bundle and a clone started with `pnpm start` all get it the same way. All of them start `dist/main.js`.
+
+**Proxy.** With `HTTPS_PROXY` or `HTTP_PROXY` set (either case), requests go through the proxy via `http.setGlobalProxyFromEnv`, which covers `fetch`.
+- `localhost`, `127.0.0.1` and `::1` are added to `NO_PROXY`.
+- Credentials in the proxy URL are sent as Basic auth.
+- The macOS run loop (`studio-run.sh`) exports the system proxy from `scutil --proxy` (web and secure web proxies, and the exceptions list) before each start when `studio.env` sets none.
+- A PAC file is not followed, and the log names it.
+- `studio-run.sh --system-proxy` prints what it would set.
+
+**Messages.** `net.ts` gains `trustFailure`, `proxyFailure` and `connectionProblem`. The update check, the update download, the model gateway and its health check, the platform routes and MCP servers use them before their offline handling.
+- An untrusted chain reads: "The connection to api.github.com used a certificate this computer does not trust (unable to get local issuer certificate). If your network inspects HTTPS, its certificate authority has to be trusted by macOS (in Keychain Access, or installed by the Mac's management); the Studio uses the system's trusted certificates." The wording differs for Linux and Windows.
+- An expired certificate, a certificate for another name, an unreachable proxy, and a proxy that refuses the tunnel (`Proxy response (407)`, which is named as a sign-in request) each get their own sentence.
+- None of them counts as offline. The update check reports `state: "error"`, not a quiet retry.
+- The server logs one line at start about what it trusts and which proxy it uses.
+
+**Tests**
+- `server/test/outbound.test.mjs` runs a local HTTPS server with a certificate from a throwaway authority, and a local CONNECT proxy. Each request runs in a child Node, starting from Node's own list:
+  - plain Node refuses the certificate, with the plain message;
+  - on Linux, adding the system store (`SSL_CERT_FILE`) makes it work, and `STUDIO_SYSTEM_CA=0` turns that off;
+  - `NODE_EXTRA_CA_CERTS` is kept;
+  - requests go through the proxy, localhost goes direct, and a given `NO_PROXY` is kept;
+  - a 407 proxy and an unreachable proxy get their messages;
+  - each certificate code maps to the right kind, and the `NO_PROXY` matching works.
+- `updates.test.mjs`: a release server behind an untrusted authority gives the error sentence with `offline: false`.
+- `macApp.test.mjs`: with a stand-in `scutil`, the run loop gives the server the system proxy, `studio.env`'s own proxy wins, and the PAC line is logged.
+- `deploy/mac/check_app.sh` (macOS, with passwordless sudo, as on the runner):
+  - adds a throwaway authority to the System keychain with `security add-trusted-cert -d`;
+  - shows the app's Node refusing a certificate from it on its own, and accepting it with the system's certificates added;
+  - points the run loop's server at a release server behind it through `STUDIO_UPDATE_URL`, and requires the update check to succeed;
+  - removes the authority again.
+  It skips with a note where sudo needs a password.
+
+Full suites: server 600 passed with 9 skipped; web 277 passed.
+
+Not covered: image descriptions, which `indexer/enrich.py` requests from the gateway with Python's `urllib` when AI features and a vision model are on. Python uses its own certificate list. `fetch_embed.py` downloads only at build time. Both are noted in REFERENCE.md.
+
+### Libraries over ssh work where the login runs only gufi_query (#594)
+
+A user connecting an existing GUFI index read only over ssh got "bash is not installed on user@host; the Studio runs its commands there through bash." The host's login runs nothing but `gufi_query`: some sites give no bash, a restricted shell, or a forced command. A connected index needs nothing else there, so this makes the Studio work with `gufi_query` alone.
+
+**How it works.** The session loop (`remoteExec.ts`) needs bash. When the login refuses it, the site is marked direct:
+- Refusal means any exit but ssh's own 255 over plain ssh, or a "not found", "restricted" or "not allowed" message over pw ssh.
+- Each command is then its own ssh call over the shared ControlMaster connection, written as one command line. The program name stays bare, so a forced command that checks for a leading `gufi_query` finds it, and each other argument is a POSIX shell word.
+- Only `gufi_query` and `gufi_sqlite3` are sent. Anything else is refused in the Studio with "<host> runs only gufi_query for this login (no shell), so this cannot run there."
+- The library is saved with `shell: false`, so after a restart its first command is `gufi_query`, not another try at the shell.
+
+**Remote commands for a connected library, and how each runs now:**
+
+| What | Before | Now |
+|---|---|---|
+| Connection test: reach the host | `sh -c 'uname -s; echo $HOME'` in the loop | the same where a shell runs; refused, the host is marked and the test continues |
+| Find and run GUFI | `sh -c` search, then `<bin>/gufi_query --version` | the same with a shell; otherwise `gufi_query --version` from the login PATH, or the bin directory given |
+| Index check | `sh -c` test -d, db.db, stat | the same with a shell; otherwise the aggregate `gufi_query` count, whose stderr says what is wrong |
+| Source directory check | `sh -c` test -d -r | the same with a shell; otherwise a note that files cannot be opened |
+| Tree | a bash script running `gufi_query` twice | two `gufi_query` calls side by side |
+| Details, statistics, search (names, and the one-walk words search) | `gufi_query` | unchanged |
+| Query through gufi_vt | a `bash -c` test -x/test -d pre-check, then the wrapper's `gufi_query` | a one-row `gufi_query` pre-check, then the wrapper's `gufi_query` |
+| Processor count | `sh -c nproc` | not read on such a host; 4 threads, or `STUDIO_REMOTE_THREADS` |
+| File preview and download | `bash -c` stat, head, cat | refused there with the reason |
+| Build check | `sh -c` | refused at its ssh step: "This host runs only gufi_query: connect existing indexes read only; building an index there is not available." |
+
+**Test connection on such a host:**
+- ssh passes with that note, as a warning.
+- Then "gufi_query <version> on the login's PATH" (or in the given directory).
+- Then the index count.
+- With no shell, `~` cannot be resolved there, so paths must be absolute, and the test says so.
+- A restricted shell refuses a path to a program, and the message says to leave the GUFI bin directory empty.
+- The test is ordered session first, then `gufi_query --version`. The opposite order would add a separate call to every host: about 5 s over pw ssh, and on macOS hosts a call without the GUFI library path.
+
+**ssh stderr notices** (the post-quantum key exchange warning, "Permanently added") are dropped from messages and never fail a step.
+
+**Words on connected indexes:** the test also looks for the Studio's `words` tables in the index's top levels. Where it finds them, the library is saved with `fullText`, so search covers the words in its files, with or without a shell.
+
+**Kerberos:**
+- The Studio runs the system ssh with the account's `~/.ssh/config`, and its options (`-T`, `BatchMode`, `ConnectTimeout`, `ServerAliveInterval`, ControlMaster) do not turn GSSAPI off. `BatchMode` only refuses prompts.
+- On macOS the server runs in the user's session, both under the LaunchAgent (gui domain) and when the app starts it, so it finds the default `API:` credential cache.
+- The run loop now also passes on a `KRB5CCNAME` that the login shell sets, captured with the login PATH it already reads, unless one is set already. That is the only `studio-run.sh` change.
+
+**Tests:**
+- New `server/test/restrictedRemote.test.mjs`. Its fake host's login logs each command, writes the post-quantum warning on stderr, and runs a command only when its first word is `gufi_query`, refusing paths as rbash does. It covers:
+  - the test's steps and messages;
+  - each failing step (a `~` path, a missing index, a folder without `db.db`, a refused bin path);
+  - adding the library;
+  - the tree, Details, statistics, search by name, and search by words with a `words` table;
+  - Query through gufi_vt across the main index and this host;
+  - refusing files;
+  - Check;
+  - a restart, after which nothing but `gufi_query` reaches the host;
+  - a refused build check;
+  - a host with a shell but no bash;
+  - a pw ssh cluster without bash;
+  - shell word quoting read back by /bin/sh.
+- Existing remote tests pass unchanged.
+- Server suite: 598 passed, 9 skipped. Web suite: 277 passed.
+
+**macOS check:**
+- `check_app.sh`, on CI runners with Remote Login, adds a localhost host. A test key's `authorized_keys` line forces a wrapper that runs only `gufi_query` lines.
+- Through the app's own server, it checks:
+  - the connection test answers `shell: false`;
+  - the library adds;
+  - Query across libraries reaches it through gufi_vt;
+  - nothing but `gufi_query` ran there after the first refused session.
+- The key line and the alias in the runner account's `~/.ssh/config` are removed afterwards. Elsewhere the check is skipped.
+
+Not covered: a macOS host whose GUFI tools need `DYLD_LIBRARY_PATH` and whose login runs only `gufi_query`. With no shell or env, the Studio cannot set the variable; GUFI built with rpaths runs.
+
 ## v1.173 (2026-10-24)
 
 ### Chat: the My chats / All chats switch sits at the top of the conversation list (#586)
@@ -205,6 +339,10 @@ Docs: HELP.md (how updates appear and how to check), MACOS.md and REFERENCE.md (
 - Server suite: 571 passed, 4 skipped. Web suite: 261 passed.
 
 Docs: HELP.md (the maps) and REFERENCE.md (names, links, the neighbors route).
+
+### Change log through v1.173 (#591)
+
+Regenerated with `node scripts/release-notes.mjs --changelog --next v1.173` before tagging v1.173.
 
 ## v1.172 (2026-10-24)
 
