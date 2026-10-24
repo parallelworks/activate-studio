@@ -636,8 +636,14 @@ textarea.field { line-height: 1.5; }
 .query-view { padding: 12px; overflow: auto; flex: 1; display: flex; flex-direction: column; gap: 12px; }
 .query-controls { padding: 20px 24px; }
 .query-tabs { margin-bottom: 12px; }
-.query-canned { max-width: 340px; }
-.query-row { display: flex; gap: 12px; margin-top: 12px; }
+.query-row { display: flex; gap: 12px; margin-top: 12px; flex-wrap: wrap; }
+/* The presets: one click fills the form below and runs it. */
+.query-presets { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.query-presets > .muted { margin-right: 2px; }
+/* "Match all/any of these conditions" above the condition rows. */
+.query-match { display: flex; align-items: center; gap: 8px; margin-top: 16px; }
+.query-pick-narrow { width: auto; min-width: 5.5rem; }
+.query-settings .query-pick { min-width: 8.5rem; }
 /* A Field fills its row; here each sizes to its control. */
 .query-cell { width: auto; }
 .query-num { width: 104px; }
@@ -646,7 +652,7 @@ textarea.field { line-height: 1.5; }
 .query-pick-wide { min-width: 13.5rem; }
 .query-row .grow { flex: 1; max-width: 420px; }
 .sql-box { font-size: 13px; }
-.filter-row { align-items: center; margin-top: 4px; }
+.filter-row { align-items: center; margin-top: 6px; flex-wrap: nowrap; }
 .filter-row .grow { flex: 1; }
 .add-filter { margin-top: 6px; align-self: flex-start; }
 .query-scope { margin-top: 12px; max-width: 420px; }
@@ -1794,6 +1800,10 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
   .library-rail { width: 100% !important; max-height: 40vh; }
   .library .divider { display: none; }
   .query-row .grow, .query-form select.field { max-width: 100%; }
+  /* A condition row: field and condition side by side, the value below. */
+  .filter-row { flex-wrap: wrap; }
+  .filter-row .query-pick, .filter-row .query-pick-wide { min-width: 0; flex: 1 1 40%; }
+  .filter-row .grow { flex: 1 1 calc(100% - 52px); }
 
   /* Chat. The conversations list is the package's drawer at this width
      (ChatView switches it at this breakpoint); the bottom-bar Chat item

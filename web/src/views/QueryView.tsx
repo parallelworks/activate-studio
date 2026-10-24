@@ -11,6 +11,10 @@ import { useAppConfig } from '../config'
 import { currentLibrary } from '../api'
 import { GufiCommands, type GufiCommand } from '../components/GufiCommands'
 import { SavedQuerySql } from '../components/SavedQuerySql'
+import {
+  BLANK, DIR_FIELDS, FIELDS, OPS, PLACEHOLDER, PRESETS, fromCanned, newFilter, payloadOf, toState, withField,
+  type BuilderState, type Filter,
+} from '../queryBuilder'
 
 interface QueryResult {
   columns: string[]
@@ -25,53 +29,28 @@ interface QueryResult {
   gufi?: GufiCommand[]
 }
 
-interface Filter { field: string; op: string; value: string }
 interface SavedQuery { id: string; name: string; payload: any; createdAt: string }
 
-type Mode = 'builder' | 'canned' | 'sql'
+type Mode = 'builder' | 'sql'
 const MODES: TabItem<Mode>[] = [
-  { value: 'canned', label: 'Canned queries' },
   { value: 'builder', label: 'Builder' },
   { value: 'sql', label: 'SQL' },
 ]
 
-const CANNED: SelectItem<string>[] = [
-  { value: 'largest', label: 'Largest files' },
-  { value: 'newest', label: 'Most recently modified' },
-  { value: 'oldest', label: 'Oldest files' },
-  { value: 'recent', label: 'Changed in the last N days' },
-  { value: 'by_extension', label: 'Totals by file extension' },
-  { value: 'big_directories', label: 'Biggest directories' },
+const MATCHES: SelectItem<'all' | 'any'>[] = [
+  { value: 'all', label: 'all' },
+  { value: 'any', label: 'any' },
 ]
-
-const FIELDS: SelectItem<string>[] = [
-  { value: 'name', label: 'File name' },
-  { value: 'path', label: 'Path' },
-  { value: 'extension', label: 'Extension' },
-  { value: 'size', label: 'Size (bytes)' },
-  { value: 'modified', label: 'Modified (YYYY-MM-DD)' },
-  { value: 'text', label: 'Text content' },
-  { value: 'label', label: 'Label' },
-]
-const OPS: Record<string, SelectItem<string>[]> = {
-  default: [
-    { value: 'contains', label: 'contains' },
-    { value: 'not_contains', label: 'does not contain' },
-    { value: 'eq', label: 'equals' },
-    { value: 'gt', label: 'greater than' },
-    { value: 'lt', label: 'less than' },
-  ],
-  text: [{ value: 'match', label: 'matches' }],
-}
 
 const SOURCES: SelectItem<'files' | 'directories'>[] = [
   { value: 'files', label: 'Files' },
   { value: 'directories', label: 'Directories' },
 ]
-const GROUPINGS: SelectItem<'none' | 'extension' | 'directory'>[] = [
+const GROUPINGS: SelectItem<BuilderState['groupBy']>[] = [
   { value: 'none', label: 'No grouping' },
   { value: 'extension', label: 'Extension' },
   { value: 'directory', label: 'Directory' },
+  { value: 'owner', label: 'Owner' },
 ]
 const FILE_SORTS: SelectItem<string>[] = [
   { value: 'size', label: 'size' },
@@ -97,20 +76,10 @@ function fmtBytes(v: string): string {
 }
 
 export function QueryView({ onOpen }: { onOpen: (path: string) => void }) {
-  const [mode, setMode] = useState<Mode>('canned')
-  // builder state
-  const [source, setSource] = useState<'files' | 'directories'>('files')
-  const [filters, setFilters] = useState<Filter[]>([{ field: 'name', op: 'contains', value: '' }])
-  const [groupBy, setGroupBy] = useState<'none' | 'extension' | 'directory'>('none')
-  const [sort, setSort] = useState('size')
-  const [dir, setDir] = useState<'asc' | 'desc'>('desc')
-  // An emptied number box is null; the server takes it as its default.
-  const [limit, setLimit] = useState<number | null>(50)
-  // canned state
-  const [canned, setCanned] = useState('largest')
-  const [n, setN] = useState<number | null>(25)
-  const [days, setDays] = useState<number | null>(7)
-  // shared
+  const [mode, setMode] = useState<Mode>('builder')
+  const [b, setB] = useState<BuilderState>(BLANK)
+  const set = (patch: Partial<BuilderState>) => setB(s => ({ ...s, ...patch }))
+  // the SQL mode's own scope; the builder's is in b
   const [subtree, setSubtree] = useState('')
   const [sql, setSql] = useState("SELECT rpath(sname, sroll)||'/'||vrpentries.name, size FROM vrpentries WHERE size > 1000000")
   const [result, setResult] = useState<QueryResult | null>(null)
@@ -135,13 +104,7 @@ export function QueryView({ onOpen }: { onOpen: (path: string) => void }) {
       const p = (e as CustomEvent).detail
       if (!p?.builder) return
       setMode('builder')
-      setSource(p.builder.source ?? 'files')
-      setFilters(p.builder.filters?.length ? p.builder.filters : [{ field: 'name', op: 'contains', value: '' }])
-      setGroupBy(p.builder.groupBy ?? 'none')
-      setSort(p.builder.sort ?? 'size')
-      setDir(p.builder.dir ?? 'desc')
-      setLimit(p.builder.limit ?? 50)
-      setSubtree(p.builder.subtree ?? '')
+      setB(toState(p.builder))
       void runQuery(p)
     }
     window.addEventListener('ade-run-query', onRun)
@@ -149,11 +112,7 @@ export function QueryView({ onOpen }: { onOpen: (path: string) => void }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const currentPayload = () => {
-    if (mode === 'builder') return { builder: { source, filters: filters.filter(f => f.value !== ''), groupBy, sort, dir, limit, subtree } }
-    if (mode === 'canned') return { canned, n, days, subtree }
-    return { sql, subtree }
-  }
+  const currentPayload = () => (mode === 'builder' ? payloadOf(b) : { sql, subtree })
 
   const runQuery = async (payload?: any) => {
     setBusy(true)
@@ -194,27 +153,20 @@ export function QueryView({ onOpen }: { onOpen: (path: string) => void }) {
 
   const loadSavedQuery = (s: SavedQuery) => {
     const p = s.payload
-    if (p.builder) {
+    // A query saved from the former canned list opens as the builder form
+    // that runs it.
+    const canned = p.canned ? fromCanned(p) : null
+    if (p.builder || canned) {
+      const next = canned ?? toState(p.builder)
       setMode('builder')
-      setSource(p.builder.source ?? 'files')
-      setFilters(p.builder.filters?.length ? p.builder.filters : [{ field: 'name', op: 'contains', value: '' }])
-      setGroupBy(p.builder.groupBy ?? 'none')
-      setSort(p.builder.sort ?? 'size')
-      setDir(p.builder.dir ?? 'desc')
-      setLimit(p.builder.limit ?? 50)
-      setSubtree(p.builder.subtree ?? '')
-    } else if (p.canned) {
-      setMode('canned')
-      setCanned(p.canned)
-      setN(p.n ?? 25)
-      setDays(p.days ?? 7)
-      setSubtree(p.subtree ?? '')
+      setB(next)
+      void runQuery(canned ? payloadOf(next) : p)
     } else if (p.sql) {
       setMode('sql')
       setSql(p.sql)
       setSubtree(p.subtree ?? '')
+      void runQuery(p)
     }
-    void runQuery(p)
   }
 
   const deleteSaved = async (id: string) => {
@@ -222,8 +174,12 @@ export function QueryView({ onOpen }: { onOpen: (path: string) => void }) {
     setSaved(s => s.filter(x => x.id !== id))
   }
 
-  const setFilter = (i: number, patch: Partial<Filter>) => {
-    setFilters(fs => fs.map((f, j) => (j === i ? { ...f, ...patch } : f)))
+  const setFilter = (i: number, next: Filter) => setB(s => ({ ...s, filters: s.filters.map((f, j) => (j === i ? next : f)) }))
+  const choosePreset = (state: Omit<BuilderState, 'subtree'>) => {
+    const next = { ...state, filters: state.filters.length ? state.filters : [newFilter()], subtree: b.subtree }
+    setMode('builder')
+    setB(next)
+    void runQuery(payloadOf(next))
   }
 
   // Across all libraries a row opens in the library it came from.
@@ -252,8 +208,9 @@ export function QueryView({ onOpen }: { onOpen: (path: string) => void }) {
 
   // A sort the current grouping does not offer shows as the first that it
   // does, which is the column the server sorts by in its place.
-  const sortItems = groupBy === 'none' && source === 'files' ? FILE_SORTS : GROUP_SORTS
-  const shownSort = sortItems.some(o => o.value === sort) ? sort : sortItems[0].value
+  const sortItems = b.groupBy === 'none' && b.source === 'files' ? FILE_SORTS : GROUP_SORTS
+  const shownSort = sortItems.some(o => o.value === b.sort) ? b.sort : sortItems[0].value
+  const fields = b.source === 'directories' ? FIELDS.filter(f => DIR_FIELDS.has(f.value)) : FIELDS
 
   const cfg = useAppConfig()
   return (
@@ -279,79 +236,73 @@ export function QueryView({ onOpen }: { onOpen: (path: string) => void }) {
         />
         {mode === 'builder' && (
           <div className="query-form">
-            <div className="query-row">
+            <div className="query-presets" role="group" aria-label="Start from">
+              <span className="muted">Start from</span>
+              {PRESETS.map(p => (
+                <Button key={p.id} size="sm" variant="outline" onClick={() => choosePreset(p.state)}>{p.label}</Button>
+              ))}
+            </div>
+            <div className="query-row query-settings">
               <Field label="Source" size="sm" className="query-cell">
-                <Select className="query-pick" items={SOURCES} value={source} onValueChange={v => { if (v) setSource(v) }} />
+                <Select className="query-pick" items={SOURCES} value={b.source} onValueChange={v => {
+                  if (v) set({ source: v, groupBy: 'none', filters: v === 'directories' ? b.filters.map(f => (DIR_FIELDS.has(f.field) ? f : newFilter())) : b.filters })
+                }} />
               </Field>
-              {source === 'files' && (
+              {b.source === 'files' && (
                 <Field label="Group by" size="sm" className="query-cell">
-                  <Select className="query-pick" items={GROUPINGS} value={groupBy} onValueChange={v => { if (v) setGroupBy(v) }} />
+                  <Select className="query-pick" items={GROUPINGS} value={b.groupBy} onValueChange={v => { if (v) set({ groupBy: v }) }} />
                 </Field>
               )}
               <Field label="Sort by" size="sm" className="query-cell">
-                <Select className="query-pick" items={sortItems} value={shownSort} onValueChange={v => { if (v) setSort(v) }} />
+                <Select className="query-pick" items={sortItems} value={shownSort} onValueChange={v => { if (v) set({ sort: v }) }} />
               </Field>
               <Field label="Order" size="sm" className="query-cell">
-                <Select className="query-pick" items={ORDERS} value={dir} onValueChange={v => { if (v) setDir(v) }} />
+                <Select className="query-pick" items={ORDERS} value={b.dir} onValueChange={v => { if (v) set({ dir: v }) }} />
               </Field>
               <Field label="Limit" size="sm" className="query-cell">
-                <NumberInput className="query-num" min={1} max={2000} value={limit} onValueChange={setLimit} />
+                <NumberInput className="query-num" min={1} max={2000} value={b.limit} onValueChange={limit => set({ limit })} />
               </Field>
             </div>
-            <label className="field-label">Filters (all must match)</label>
-            {filters.map((f, i) => (
+            <div className="query-match">
+              <span>Match</span>
+              <Select aria-label="Match" className="query-pick-narrow" items={MATCHES} value={b.match} onValueChange={v => { if (v) set({ match: v }) }} />
+              <span>of these conditions</span>
+            </div>
+            {b.filters.map((f, i) => (
               <div className="query-row filter-row" key={i}>
-                <Select aria-label="Field" className="query-pick query-pick-wide" items={FIELDS} value={f.field} onValueChange={field => {
-                  if (field) setFilter(i, { field, op: field === 'text' ? 'match' : 'contains' })
-                }} />
-                <Select aria-label="Condition" className="query-pick" items={f.field === 'text' ? OPS.text : OPS.default}
-                  value={f.op} onValueChange={op => { if (op) setFilter(i, { op }) }} />
-                <Input aria-label="Value" className="grow" value={f.value} onChange={e => setFilter(i, { value: e.target.value })}
-                  placeholder={f.field === 'modified' ? '2026-01-01' : 'value'} />
-                <IconButton variant="outline" size="md" icon={<CloseIcon />} label="Remove filter"
-                  onClick={() => setFilters(fs => fs.filter((_, j) => j !== i))} />
+                <Select aria-label="Field" className="query-pick query-pick-wide" items={fields} value={f.field}
+                  onValueChange={field => { if (field) setFilter(i, withField(f, field)) }} />
+                <Select aria-label="Condition" className="query-pick" items={OPS[f.field] ?? OPS.name}
+                  value={f.op} onValueChange={op => { if (op) setFilter(i, { ...f, op }) }} />
+                <Input aria-label="Value" className="grow" value={f.value} onChange={e => setFilter(i, { ...f, value: e.target.value })}
+                  onKeyDown={e => { if (e.key === 'Enter') void runQuery() }}
+                  placeholder={PLACEHOLDER[f.field] ?? 'value'} />
+                <IconButton variant="outline" size="md" icon={<CloseIcon />} label="Remove condition"
+                  onClick={() => set({ filters: b.filters.filter((_, j) => j !== i) })} />
               </div>
             ))}
-            <Button className="add-filter" onClick={() => setFilters(fs => [...fs, { field: 'name', op: 'contains', value: '' }])}>
-              + Add filter
+            <Button className="add-filter" onClick={() => set({ filters: [...b.filters, newFilter()] })}>
+              + Add condition
             </Button>
-          </div>
-        )}
-        {mode === 'canned' && (
-          <div className="query-form">
-            <Field label="Query" size="sm">
-              <Select className="query-canned" items={CANNED} value={canned} onValueChange={v => { if (v) setCanned(v) }} />
-            </Field>
-            <div className="query-row">
-              <Field label="Limit" size="sm" className="query-cell">
-                <NumberInput className="query-num" min={1} max={2000} value={n} onValueChange={setN} />
-              </Field>
-              {canned === 'recent' && (
-                <Field label="Days" size="sm" className="query-cell">
-                  <NumberInput className="query-num" min={1} value={days} onValueChange={setDays} />
-                </Field>
-              )}
-            </div>
           </div>
         )}
         {mode === 'sql' && (
           <div className="query-form">
-            <Field label="Per-directory SELECT over the GUFI tables (vrpentries, vrsummary, words, gchunks). Read-only." size="sm">
+            <Field label="Your own SELECT, run in every directory over the GUFI tables (vrpentries, vrsummary, words, gchunks). Read only." size="sm">
               <Textarea className="sql-box" mono value={sql} onChange={e => setSql(e.target.value)} rows={4} spellCheck={false} />
             </Field>
           </div>
         )}
         <Field label="Scope (subtree, empty for whole corpus)" size="sm" className="query-scope">
-          <Input value={subtree} onChange={e => setSubtree(e.target.value)} placeholder="e.g. proposals" />
+          <Input value={mode === 'builder' ? b.subtree : subtree}
+            onChange={e => (mode === 'builder' ? set({ subtree: e.target.value }) : setSubtree(e.target.value))} placeholder="e.g. proposals" />
         </Field>
         <div className="query-actions">
           <Button variant="primary" loading={busy} onClick={() => runQuery()}>{busy ? 'Running…' : 'Run query'}</Button>
           <Button
             onClick={() => {
               setResult(null); setError(null); setSel(new Set()); setTagMenuOpen(false)
-              setFilters([{ field: 'name', op: 'contains', value: '' }])
-              setGroupBy('none'); setSort('size'); setDir('desc'); setLimit(50)
-              setSubtree(''); setCanned('largest'); setN(25); setDays(7)
+              setB(BLANK); setSubtree('')
             }}
           >Reset</Button>
           {savingOpen ? (
@@ -364,7 +315,8 @@ export function QueryView({ onOpen }: { onOpen: (path: string) => void }) {
           ) : (
             <Button onClick={() => setSavingOpen(true)}>Save query</Button>
           )}
-          {result && <span className="muted">{result.rows.length} rows in {result.elapsedMs} ms{result.truncated ? ' (truncated)' : ''}{result.failed?.length ? `; not answered: ${result.failed.map(f => `${f.library} (${f.error})`).join(', ')}` : ''}</span>}
+          {mode === 'builder' && <SavedQuerySql name="this query" payload={currentPayload()} button="Show SQL" />}
+          {result && <span className="muted">{result.rows.length} {result.rows.length === 1 ? 'row' : 'rows'} in {result.elapsedMs} ms{result.truncated ? ' (truncated)' : ''}{result.failed?.length ? `; not answered: ${result.failed.map(f => `${f.library} (${f.error})`).join(', ')}` : ''}</span>}
         </div>
         {saved.length > 0 && savingOpen === false && (
           <div className="saved-list">

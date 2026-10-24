@@ -73,8 +73,14 @@ While open and the tab is visible, the panel reads `GET /api/tasks`, `/api/fleet
 
 ## Query
 
-- **Canned** queries: largest, newest, oldest, recently changed, totals by extension, and biggest folders.
-- **Builder**: filters (labels included), grouping, sorting, and a folder to search under, with no SQL. **Reset** clears the form and the results.
+- **Presets** fill the builder and run it: biggest files, oldest files, changed in the last 7 days, largest directories, and totals by extension and by owner. Each is the overall top N across directories and libraries: every directory keeps its own top N (`-E`), and `-G` orders the merged rows; across libraries the outer `ORDER BY` or the Studio's merge does the same. A query saved as one of the former canned queries (`canned` in its payload) opens as the builder form that runs it; `POST /api/query` still takes `canned`, which the chat tool uses.
+- **Builder**: condition rows, matched all (`AND`) or any (`OR`, `builder.match: "any"`), plus grouping (none, extension, directory, owner), sorting, a limit, and a folder to search under. **Reset** clears the form and the results; **Show SQL** shows what the form compiles to. Each field takes its own conditions, and the server refuses others with a 400 naming them:
+  - name, path, extension, owner: contains, does not contain, equals (name also greater and less than). Path is relative to the library: equality compares the whole path, contains looks only below the index's own folder. Owner is GUFI's `uidtouser(uid)` on the host that runs the query.
+  - size: equals, greater than, less than, in bytes or with a unit (`10 MB`, `1.5G`, `500k`; powers of 1024).
+  - modified: on, after, before (`eq`, `gt`, `lt`) a day (`2026-01-01`), a minute or second (`2026-01-01 09:30`), or a time ago (`7 days`, `12 hours`, `2 weeks`), in UTC as results show times. On is within that day or minute, after is at or after its end, before is before its start. The server works out the seconds: GUFI's own `strftime(format, seconds)` takes the place of SQLite's, so SQL cannot parse a date.
+  - text: matches the words, a subquery on the `words` table, so it can stand beside other conditions joined by OR. A directory with no `words` table answers nothing for a text condition, and under any, nothing for its other conditions either.
+  - label: equals or contains, directory labels included.
+  - Directories take name, owner, size (`totsize`) and modified conditions.
 - **SQL**: any read-only SELECT over the index tables.
 - **Saved queries** rerun in one click; a new deployment comes with a few examples. The code button beside one shows the SQL of each `gufi_query` stage it compiles to (`-I` and `-K` create a table for each thread and one for the result, `-E` runs in every directory, `-J` adds each thread's rows to the result, `-G` orders and limits it; raw SQL is `-E` alone) and the command that runs it, each with a copy button. It reads `POST /api/query/sql`, which takes the body `POST /api/query` takes and answers `stages` (`flag`, `sql`) and `commands`, one per library in scope as a run would record them, without running anything.
 - Result rows with a path can be ticked and labeled, as search results can.

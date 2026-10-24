@@ -142,6 +142,8 @@ async function runPlan(plan: Plan): Promise<QueryResult> {
 
 const PATH_EXPR = `rpath(sname, sroll)||'/'||vrpentries.name`
 
+const nowSeconds = () => Math.floor(Date.now() / 1000)
+
 const CANNED: Record<string, (p: { n: number; days: number; subtree?: string }) => Plan> = {
   largest: p => aggPlan({
     schema: '(path TEXT, size INT64, mtime INT64)',
@@ -164,9 +166,11 @@ const CANNED: Record<string, (p: { n: number; days: number; subtree?: string }) 
     columns: ['path', 'bytes', 'modified'],
     subtree: p.subtree,
   }),
+  // The cutoff is computed here: GUFI's own strftime(format, seconds) takes
+  // the place of SQLite's, so strftime('%s','now') would read 'now' as 0.
   recent: p => aggPlan({
     schema: '(path TEXT, size INT64, mtime INT64)',
-    perDir: `INSERT INTO t SELECT ${PATH_EXPR}, size, mtime FROM vrpentries WHERE mtime > strftime('%s','now') - ${p.days} * 86400 ORDER BY mtime DESC LIMIT ${p.n};`,
+    perDir: `INSERT INTO t SELECT ${PATH_EXPR}, size, mtime FROM vrpentries WHERE mtime > ${nowSeconds() - p.days * 86400} ORDER BY mtime DESC LIMIT ${p.n};`,
     final: `SELECT path, size, datetime(mtime, 'unixepoch') FROM agg ORDER BY mtime DESC LIMIT ${p.n};`,
     columns: ['path', 'bytes', 'modified'],
     subtree: p.subtree,
@@ -202,7 +206,9 @@ export interface BuilderFilter { field: string; op: string; value: string }
 export interface BuilderPayload {
   source: 'files' | 'directories'
   filters: BuilderFilter[]
-  groupBy: 'none' | 'extension' | 'directory'
+  /** Whether every condition must hold (all, the default) or any one. */
+  match?: 'all' | 'any'
+  groupBy: 'none' | 'extension' | 'directory' | 'owner'
   sort: string
   dir: 'asc' | 'desc'
   limit: number
@@ -212,20 +218,95 @@ export interface BuilderPayload {
 function esc(v: string): string { return v.replace(/'/g, "''") }
 
 const EXT_EXPR = `lower(CASE WHEN name LIKE '%.%' THEN replace(name, rtrim(name, replace(name, '.', '')), '') ELSE '(none)' END)`
+/** GUFI's own function: the user name for a uid on the host the index is
+ *  queried on, or the uid where it has none. */
+const OWNER_EXPR = 'uidtouser(uid)'
 
 const FILE_FIELDS: Record<string, string> = {
   name: 'vrpentries.name',
   path: PATH_EXPR,
   extension: EXT_EXPR,
+  owner: OWNER_EXPR,
   size: 'size',
   modified: 'mtime',
   text: 'text',
   label: 'label',
 }
 
-function filterSql(f: BuilderFilter, labeledDirs?: Map<string, string[]>): string {
-  const field = FILE_FIELDS[f.field]
+/** The operators each field takes. */
+const FIELD_OPS: Record<string, string[]> = {
+  name: ['contains', 'not_contains', 'eq', 'gt', 'lt'],
+  path: ['contains', 'not_contains', 'eq'],
+  extension: ['contains', 'not_contains', 'eq'],
+  owner: ['contains', 'not_contains', 'eq'],
+  size: ['eq', 'gt', 'lt'],
+  modified: ['eq', 'gt', 'lt'],
+  text: ['match'],
+  label: ['eq', 'contains'],
+}
+const OP_WORDS: Record<string, string> = { contains: 'contains', not_contains: 'does not contain', eq: 'equals', gt: 'greater than', lt: 'less than', match: 'matches' }
+
+const SIZE_UNITS: Record<string, number> = { '': 1, b: 1, k: 1024, kb: 1024, kib: 1024, m: 1024 ** 2, mb: 1024 ** 2, mib: 1024 ** 2, g: 1024 ** 3, gb: 1024 ** 3, gib: 1024 ** 3, t: 1024 ** 4, tb: 1024 ** 4, tib: 1024 ** 4 }
+
+/** A size in bytes: a number, or one with a unit (10 MB, 1.5G, 500k), in
+ *  powers of 1024. */
+export function parseSize(v: string): number {
+  const m = /^\s*(\d+(?:\.\d+)?)\s*([a-z]*)\s*$/i.exec(v)
+  const unit = m ? SIZE_UNITS[m[2].toLowerCase()] : undefined
+  if (!m || unit === undefined) throw new KbError(400, `size takes a number of bytes or a size such as 10 MB, not "${v}"`)
+  return Math.round(Number(m[1]) * unit)
+}
+
+/**
+ * The span of time a modified value names, in seconds since 1970 (UTC, as
+ * the results show times): a day (2026-01-01), a minute (2026-01-01 09:30),
+ * a second (2026-01-01 09:30:15), or a moment some time ago (7 days, 12
+ * hours, 2 weeks), whose span is that moment alone. On means within the
+ * span, after means at or after its end, before means before its start.
+ * Worked out here, not in SQL: GUFI's own strftime(format, seconds) takes
+ * the place of SQLite's, so strftime('%s', '2026-01-01') reads the date
+ * as the number 2026.
+ */
+export function parseWhen(v: string, now = nowSeconds()): { start: number; end: number } {
+  const s = v.trim()
+  const ago = /^(\d+)\s*(h|hours?|d|days?|w|weeks?)(\s+ago)?$/i.exec(s)
+  if (ago) {
+    const unit = ago[2][0].toLowerCase()
+    const t = now - Number(ago[1]) * (unit === 'h' ? 3600 : unit === 'd' ? 86400 : 7 * 86400)
+    return { start: t, end: t }
+  }
+  const m = /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?$/.exec(s)
+  if (m) {
+    const [y, mo, d, h, mi, se] = m.slice(1).map(x => (x === undefined ? undefined : Number(x)))
+    const start = Date.UTC(y!, mo! - 1, d!, h ?? 0, mi ?? 0, se ?? 0) / 1000
+    const back = new Date(start * 1000)
+    if (Number.isFinite(start) && back.getUTCFullYear() === y && back.getUTCMonth() === mo! - 1 && back.getUTCDate() === d) {
+      return { start, end: start + (se !== undefined ? 1 : mi !== undefined ? 60 : 86400) }
+    }
+  }
+  throw new KbError(400, `modified takes a date such as 2026-01-01, or a time ago such as 7 days, not "${v}"`)
+}
+
+/** Where the index in scope sits, as rpath() writes it in a directory's
+ *  WHERE clause: an absolute path, which output rows have stripped. */
+function rootPrefix(): string { return rootPath() + '/' }
+
+/** The same fields for directories, from GUFI's summary of each one. */
+const DIR_FIELDS: Record<string, string> = {
+  name: 'vrsummary.name',
+  owner: OWNER_EXPR,
+  size: 'totsize',
+  modified: 'mtime',
+}
+
+function filterSql(f: BuilderFilter, labeledDirs?: Map<string, string[]>, fields = FILE_FIELDS): string {
+  const field = fields[f.field]
   if (!field) throw new KbError(400, `unknown field: ${f.field}`)
+  if (!FIELD_OPS[f.field].includes(f.op)) {
+    const words = FIELD_OPS[f.field].map(o => OP_WORDS[o])
+    const list = words.length > 1 ? `${words.slice(0, -1).join(', ')} or ${words[words.length - 1]}` : words[0]
+    throw new KbError(400, `${f.field} takes ${list}; "${OP_WORDS[f.op] ?? f.op}" does not apply to it`)
+  }
   let v = String(f.value ?? '')
   if (f.field === 'extension') v = v.replace(/^\./, '').toLowerCase()
   if (f.field === 'label') {
@@ -248,59 +329,77 @@ function filterSql(f: BuilderFilter, labeledDirs?: Map<string, string[]>): strin
     return `(${[own, ...prefixes].join(' OR ')})`
   }
   if (f.field === 'text') {
-    if (f.op !== 'match') throw new KbError(400, 'text supports only match')
     const terms = v.split(/\s+/).map(t => t.replace(/["'*]/g, '')).filter(Boolean).slice(0, 8)
     if (!terms.length) throw new KbError(400, 'empty text match')
-    return `wordf MATCH '${esc(terms.map(t => `"${t}"`).join(' AND '))}'`
+    // A subquery, not a join, so a text condition can stand beside others
+    // joined by OR, and a file with several rows of text appears once.
+    return `vrpentries.inode IN (SELECT CAST(tinode AS TEXT) FROM words WHERE wordf MATCH '${esc(terms.map(t => `"${t}"`).join(' AND '))}')`
   }
-  const isNum = f.field === 'size' || f.field === 'modified'
-  const val = f.field === 'modified'
-    ? `strftime('%s', '${esc(v)}')`
-    : isNum ? String(Number(v) || 0) : `'${esc(v)}'`
+  if (f.field === 'size') {
+    const n = parseSize(v)
+    return `${field} ${f.op === 'eq' ? '=' : f.op === 'gt' ? '>' : '<'} ${n}`
+  }
+  if (f.field === 'modified') {
+    const { start, end } = parseWhen(v)
+    if (f.op === 'gt') return `${field} >= ${end}`
+    if (f.op === 'lt') return `${field} < ${start}`
+    return end > start ? `(${field} >= ${start} AND ${field} < ${end})` : `${field} = ${start}`
+  }
+  const like = (expr: string) => `${expr} LIKE '%${esc(v.replace(/[%_]/g, ''))}%'`
+  if (f.field === 'path') {
+    // rpath() is absolute where a directory runs the WHERE clause: compare
+    // equality to the whole path, and match within the part below the index.
+    const rel = `substr(${field}, ${[...rootPrefix()].length + 1})`
+    if (f.op === 'eq') return `${field} = '${esc(rootPrefix() + v.replace(/^\/+/, ''))}'`
+    return f.op === 'contains' ? like(rel) : `NOT ${like(rel)}`
+  }
   switch (f.op) {
-    case 'contains': return `${field} LIKE '%${esc(v.replace(/[%_]/g, ''))}%'`
-    case 'not_contains': return `${field} NOT LIKE '%${esc(v.replace(/[%_]/g, ''))}%'`
-    case 'eq': return `${field} = ${val}`
-    case 'gt': return `${field} > ${val}`
-    case 'lt': return `${field} < ${val}`
+    case 'contains': return like(field)
+    case 'not_contains': return `NOT ${like(field)}`
+    case 'eq': return `${field} = '${esc(v)}'`
+    case 'gt': return `${field} > '${esc(v)}'`
+    case 'lt': return `${field} < '${esc(v)}'`
     default: throw new KbError(400, `unknown operator: ${f.op}`)
   }
 }
 
+/** The WHERE clause for a set of conditions: every one, or any one. */
+function whereSql(filters: BuilderFilter[], match: BuilderPayload['match'], labeledDirs?: Map<string, string[]>, fields = FILE_FIELDS): string {
+  if (!filters.length) return ''
+  const parts = filters.map(f => `(${filterSql(f, labeledDirs, fields)})`)
+  return 'WHERE ' + parts.join(match === 'any' ? ' OR ' : ' AND ')
+}
+
 async function builderPlan(p: BuilderPayload): Promise<Plan> {
   const limit = Math.min(Math.max(Number(p.limit) || 50, 1), MAX_ROWS)
-  const usesText = p.filters.some(f => f.field === 'text')
-  const labeledDirs = p.filters.some(f => f.field === 'label')
+  const filters = Array.isArray(p.filters) ? p.filters : []
+  const labeledDirs = filters.some(f => f.field === 'label')
     ? (await tagMaps()).dirTags
     : undefined
-  const where = p.filters.length
-    ? 'WHERE ' + p.filters.map(f => filterSql(f, labeledDirs)).join(' AND ')
-    : ''
+  const dir = p.dir === 'asc' ? 'ASC' : 'DESC'
   if (p.source === 'directories') {
-    const allowed = new Set(['name', 'size', 'modified'])
-    if (p.groupBy !== 'none' || p.filters.some(f => !allowed.has(f.field))) {
-      throw new KbError(400, 'directory source supports name, size, and modified filters without grouping')
+    if (p.groupBy !== 'none' || filters.some(f => !(f.field in DIR_FIELDS))) {
+      throw new KbError(400, 'directories take name, owner, size and modified conditions, without grouping')
     }
-    const dirWhere = where
-      .replace(/vrpentries\.name/g, 'vrsummary.name')
-      .replace(/\bsize\b/g, 'totsize')
+    const dirWhere = whereSql(filters, p.match, undefined, DIR_FIELDS)
     return aggPlan({
       schema: '(path TEXT, files INT64, bytes INT64)',
       perDir: `INSERT INTO t SELECT rpath(sname, sroll), totfiles, totsize FROM vrsummary ${dirWhere};`,
-      final: `SELECT path, files, bytes FROM agg ORDER BY ${p.sort === 'files' ? 'files' : 'bytes'} ${p.dir === 'asc' ? 'ASC' : 'DESC'} LIMIT ${limit};`,
+      final: `SELECT path, files, bytes FROM agg ORDER BY ${p.sort === 'files' ? 'files' : 'bytes'} ${dir} LIMIT ${limit};`,
       columns: ['directory', 'files', 'bytes'],
       subtree: p.subtree,
     })
   }
-  const from = usesText
-    ? 'FROM vrpentries INNER JOIN words ON inode=CAST(tinode AS TEXT)'
-    : 'FROM vrpentries'
-  if (p.groupBy === 'extension') {
+  const where = whereSql(filters, p.match, labeledDirs)
+  const from = 'FROM vrpentries'
+  const grouped = p.groupBy === 'extension' || p.groupBy === 'owner'
+  if (grouped) {
+    const key = p.groupBy === 'owner' ? OWNER_EXPR : EXT_EXPR
     return aggPlan({
-      schema: '(ext TEXT, cnt INT64, bytes INT64)',
-      perDir: `INSERT INTO t SELECT ${EXT_EXPR}, count(*), sum(size) ${from} ${where} GROUP BY 1;`,
-      final: `SELECT ext, sum(cnt), sum(bytes) FROM agg GROUP BY ext ORDER BY ${p.sort === 'files' ? 'sum(cnt)' : 'sum(bytes)'} ${p.dir === 'asc' ? 'ASC' : 'DESC'} LIMIT ${limit};`,
-      columns: ['extension', 'files', 'bytes'],
+      schema: '(k TEXT, cnt INT64, bytes INT64)',
+      perDir: `INSERT INTO t SELECT ${key}, count(*), sum(size) ${from} ${where} GROUP BY 1;`,
+      final: `SELECT k, sum(cnt), sum(bytes) FROM agg GROUP BY k ORDER BY ${p.sort === 'files' ? 'sum(cnt)' : 'sum(bytes)'} ${dir} LIMIT ${limit};`,
+      columns: [p.groupBy === 'owner' ? 'owner' : 'extension', 'files', 'bytes'],
       subtree: p.subtree,
     })
   }
@@ -308,16 +407,18 @@ async function builderPlan(p: BuilderPayload): Promise<Plan> {
     return aggPlan({
       schema: '(path TEXT, cnt INT64, bytes INT64)',
       perDir: `INSERT INTO t SELECT rpath(sname, sroll), count(*), sum(size) ${from} ${where} GROUP BY 1;`,
-      final: `SELECT path, cnt, bytes FROM agg ORDER BY ${p.sort === 'files' ? 'cnt' : 'bytes'} ${p.dir === 'asc' ? 'ASC' : 'DESC'} LIMIT ${limit};`,
+      final: `SELECT path, cnt, bytes FROM agg ORDER BY ${p.sort === 'files' ? 'cnt' : 'bytes'} ${dir} LIMIT ${limit};`,
       columns: ['directory', 'files', 'bytes'],
       subtree: p.subtree,
     })
   }
+  // Each directory's own top rows, then the top rows of all of them: the
+  // overall top N, as -G orders the merged table.
   const sortCol = p.sort === 'name' ? 'path' : p.sort === 'modified' ? 'mtime' : 'size'
   return aggPlan({
     schema: '(path TEXT, size INT64, mtime INT64)',
-    perDir: `INSERT INTO t SELECT ${PATH_EXPR}, size, mtime ${from} ${where} ORDER BY ${sortCol} ${p.dir === 'asc' ? 'ASC' : 'DESC'} LIMIT ${limit};`,
-    final: `SELECT path, size, datetime(mtime, 'unixepoch') FROM agg ORDER BY ${sortCol === 'mtime' ? 'mtime' : sortCol} ${p.dir === 'asc' ? 'ASC' : 'DESC'} LIMIT ${limit};`,
+    perDir: `INSERT INTO t SELECT ${PATH_EXPR}, size, mtime ${from} ${where} ORDER BY ${sortCol === 'path' ? '1' : sortCol} ${dir} LIMIT ${limit};`,
+    final: `SELECT path, size, datetime(mtime, 'unixepoch') FROM agg ORDER BY ${sortCol} ${dir} LIMIT ${limit};`,
     columns: ['path', 'bytes', 'modified'],
     subtree: p.subtree,
   })
@@ -334,8 +435,6 @@ interface SavedQuery { id: string; name: string; payload: unknown; createdAt: st
 const STARTER_QUERIES: SavedQuery[] = [
   { id: 'starter-large', name: 'Files over 10 MB', createdAt: '', payload: { builder: { source: 'files', filters: [{ field: 'size', op: 'gt', value: '10485760' }], groupBy: 'none', sort: 'size', dir: 'desc', limit: 200, subtree: '' } } },
   { id: 'starter-pdfs', name: 'Largest PDFs', createdAt: '', payload: { builder: { source: 'files', filters: [{ field: 'extension', op: 'eq', value: 'pdf' }], groupBy: 'none', sort: 'size', dir: 'desc', limit: 100, subtree: '' } } },
-  { id: 'starter-recent', name: 'Changed in the last 7 days', createdAt: '', payload: { canned: 'recent', n: 200, days: 7, subtree: '' } },
-  { id: 'starter-dirs', name: 'Biggest directories', createdAt: '', payload: { canned: 'big_directories', n: 25, days: 7, subtree: '' } },
 ]
 
 function loadSaved(): SavedQuery[] {
@@ -548,7 +647,7 @@ function mergeOrder(body: QueryRequest): { col: number; numeric: boolean; desc: 
   const limit = Math.min(Math.max(Number(b.limit) || 50, 1), MAX_ROWS)
   const desc = b.dir !== 'asc'
   if (b.source === 'directories') return { col: b.sort === 'files' ? 1 : 2, numeric: true, desc, limit, sum: [] }
-  if (b.groupBy === 'extension') return { col: b.sort === 'files' ? 1 : 2, numeric: true, desc, limit, groupBy: 0, sum: [1, 2] }
+  if (b.groupBy === 'extension' || b.groupBy === 'owner') return { col: b.sort === 'files' ? 1 : 2, numeric: true, desc, limit, groupBy: 0, sum: [1, 2] }
   if (b.groupBy === 'directory') return { col: b.sort === 'files' ? 1 : 2, numeric: true, desc, limit, sum: [] }
   if (b.sort === 'name') return { col: 0, numeric: false, desc, limit, sum: [] }
   if (b.sort === 'modified') return { col: 2, numeric: false, desc, limit, sum: [] }

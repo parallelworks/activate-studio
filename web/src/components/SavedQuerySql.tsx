@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Callout, CopyCodeBlock, IconButton, Loader, Popover } from '@parallelworks/ui'
+import { Button, Callout, CopyCodeBlock, IconButton, Loader, Popover } from '@parallelworks/ui'
 import { CodeIcon } from '@parallelworks/ui/icons'
 import { currentLibrary } from '../api'
 import { where, type GufiCommand } from './GufiCommands'
@@ -25,7 +25,12 @@ const STAGE: Record<QuerySql['stages'][number]['flag'], string> = {
  * server when opened, for the library the page is on, so it is the SQL a
  * run would use, labels and scope included.
  */
-export function SavedQuerySql({ name, payload }: { name: string; payload: Record<string, unknown> }) {
+export function SavedQuerySql({ name, payload, button }: {
+  name: string
+  payload: Record<string, unknown>
+  /** A text button that opens it, in place of the code icon. */
+  button?: string
+}) {
   const [sql, setSql] = useState<QuerySql | null>(null)
   const [error, setError] = useState('')
   const load = async () => {
@@ -46,7 +51,9 @@ export function SavedQuerySql({ name, payload }: { name: string; payload: Record
   }
   return (
     <Popover
-      trigger={<IconButton size="xs" icon={<CodeIcon />} label={`SQL for ${name}`} />}
+      trigger={button
+        ? <Button size="md" aria-label={`SQL for ${name}`}><CodeIcon aria-hidden="true" /> {button}</Button>
+        : <IconButton size="xs" icon={<CodeIcon />} label={`SQL for ${name}`} />}
       title={`SQL for ${name}`}
       className="saved-sql"
       onOpenChange={open => { if (open) void load() }}
