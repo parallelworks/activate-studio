@@ -303,6 +303,27 @@ test('a folder the Studio may not read is reported, not counted as indexed, and 
   assert.equal(omissionOf(await search('platypusword'), 'perm'), undefined, 'readable again: nothing to say')
 })
 
+test('the main folder: an unreadable folder is named, kept as indexed by the sync, and a build stands without it', { skip: (!REAL && 'GUFI not installed') || (AS_ROOT && 'root reads everything'), timeout: 120_000 }, async () => {
+  write(KB, 'private/diary.md', 'a dingoword entry\n')
+  const sweep = async () => { await j('POST', '/api/index/sweep'); await until(async () => !(await j('GET', '/api/index/status')).body.running) }
+  await sweep()
+  const found = async () => (await search('dingoword')).hits.filter(h => h.library.id === 'kb').map(h => h.path)
+  assert.deepEqual(await found(), ['private/diary.md'])
+  fs.chmodSync(path.join(KB, 'private'), 0o000)
+  try {
+    write(KB, 'notes/later.md', 'a later note\n')
+    await sweep()
+    const s = await search('dingoword')
+    assert.equal(omissionOf(s, 'kb')?.reason, `a folder could not be read (${O.deniedReason(path.join(KB, 'private'))})`)
+    assert.deepEqual(await found(), ['private/diary.md'], 'kept as last indexed, not removed')
+    const b = await finished((await j('POST', '/api/index/build')).body.id)
+    assert.equal(b.state, 'done', `a build stands without the folder: ${b.error ?? ''}`)
+    assert.equal(omissionOf(await search('dingoword'), 'kb')?.partial, true)
+  } finally { fs.chmodSync(path.join(KB, 'private'), 0o755) }
+  await sweep()
+  assert.equal(omissionOf(await search('dingoword'), 'kb'), undefined, 'readable again')
+})
+
 test('a stop leaves a build to resume, and a cut-off change of depth is finished by a sync, not rebuilt', { skip: !REAL && 'GUFI not installed', timeout: 180_000 }, async () => {
   // A rebuild held in its text pass, then stopped as SIGTERM stops it.
   fs.writeFileSync(HOLD, '')
