@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process'
+import { spawn, type ChildProcess } from 'node:child_process'
 import fs from 'node:fs'
 import fsp from 'node:fs/promises'
 import os from 'node:os'
@@ -12,12 +12,13 @@ import { getIndexJob, startIndexJob, type IndexJob } from './indexing.js'
 import { builtLibrarySettings, indexSettings, isIndexDepth, isMeaningLevel, meaningArgs, saveIndexSettings, textArgs, threadsFor, type IndexDepth, type IndexSettings } from './indexSettings.js'
 import { KbError } from './kb.js'
 import {
-  addBuiltLibrary, addedDef, builtLibraryDir, checkNewId, forgetProbe, getLibrary, libraryIdFor, listLibraries, probeLibrary, setBuildProgressSource,
-  settingsLibrary, updateBuild, type LibraryDef,
+  addBuiltLibrary, addedDef, builtLibraryDir, checkNewId, getLibrary, libraryIdFor, listLibraries, probeLibrary, setBuildProgressSource,
+  settingsLibrary, staleProbe, updateBuild, type LibraryDef,
 } from './libraries.js'
 import { runPreExtract } from './preextract.js'
 import { effectiveSettings } from './settings.js'
-import { scanLatest } from './dirScan.js'
+import { scanLatestDetail } from './dirScan.js'
+import { deniedPaths, onlyDenied, recordDenied } from './omissions.js'
 import { depthChange, depthRecordOf, readDepthRecord, writeDepthRecord, type DepthChange } from './depthState.js'
 
 /**
@@ -185,7 +186,12 @@ setBuildProgressSource(id => {
   return p ? { phase: p.phase, done: p.done, total: p.total, current: p.current } : null
 })
 
-function run(cmd: string, args: string[], timeoutMs = 2 * 60 * 60_000, images = false): Promise<string> {
+/** Permission errors the programs of a build or sync printed, by library:
+ *  the folders and files they could not read (omissions.ts). */
+const denials = new Map<string, Set<string>>()
+const denied = (id: string) => { let d = denials.get(id); if (!d) denials.set(id, d = new Set()); return d }
+
+function run(cmd: string, args: string[], timeoutMs = 2 * 60 * 60_000, images = false, libraryId?: string, tolerateDenied = false): Promise<string> {
   // Images are described only where the depth reads them (Text + OCR and
   // up); with AI features off, or descriptions off, they are indexed by OCR
   // and name only.
@@ -195,11 +201,67 @@ function run(cmd: string, args: string[], timeoutMs = 2 * 60 * 60_000, images = 
   const env = path.resolve(path.dirname(cmd)) === path.resolve(GUFI_BIN) ? gufiEnv(extra) : indexerEnv(extra)
   if (!vm) delete env.ADE_VISION_MODEL
   return new Promise((resolve, reject) => {
-    execFile(cmd, args, { timeout: timeoutMs, maxBuffer: 32 * 1024 * 1024, env }, (err, so, se) => {
-      if (err) return reject(new Error(`${path.basename(cmd)}: ${String(se || err.message).trim().split('\n').slice(-3).join(' ').slice(0, 300)}`))
+    // A process group of its own, so a stop or the time limit ends the
+    // program and everything it started: enrich.py's worker processes, left
+    // behind, held its output open and the build never ended. (execFile
+    // drops the detached option, so this spawns.)
+    const child = spawn(cmd, args, { env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] })
+    const out: Buffer[] = [], err: Buffer[] = []
+    let size = 0
+    const take = (into: Buffer[]) => (b: Buffer) => { if (size < 32 * 1024 * 1024) { into.push(b); size += b.length } }
+    child.stdout!.on('data', take(out))
+    child.stderr!.on('data', take(err))
+    const limit = setTimeout(() => killGroup(child, 'SIGTERM'), timeoutMs)
+    limit.unref?.()
+    children.add(child)
+    const done = (e: Error | null, code: number | null, signal: NodeJS.Signals | null) => {
+      clearTimeout(limit)
+      children.delete(child)
+      const so = Buffer.concat(out).toString('utf8'), se = Buffer.concat(err).toString('utf8')
+      if (libraryId) for (const p of deniedPaths(se)) denied(libraryId).add(p)
+      const failed = e ?? (code !== 0 ? new Error(signal ? `stopped (${signal})` : `exit ${code}`) : null)
+      // A folder it may not read fails gufi_dir2index after it wrote the rest:
+      // the build stands, and the folder is named (omissions.ts).
+      if (failed && tolerateDenied && libraryId && !stopping && onlyDenied(se)) return resolve(so)
+      if (failed) return reject(new Error(`${path.basename(cmd)}: ${String(se || failed.message).trim().split('\n').slice(-3).join(' ').slice(0, 300)}`))
       resolve(so)
-    })
+    }
+    child.on('error', e => done(e, null, null))
+    child.on('close', (code, signal) => done(null, code, signal))
   })
+}
+
+/** Ends a program and every process it started (its process group), then
+ *  kills what is left five seconds later. */
+function killGroup(child: ChildProcess, sig: NodeJS.Signals): boolean {
+  const pid = child.pid
+  if (!pid) return false
+  const send = (s: NodeJS.Signals) => { try { process.kill(-pid, s) } catch { try { child.kill(s) } catch { /* gone */ } } }
+  send(sig)
+  setTimeout(() => { if (child.exitCode === null && child.signalCode === null) send('SIGKILL') }, 5000).unref?.()
+  return true
+}
+
+/** The programs library builds are running, so a stop can end them. */
+const children = new Set<ChildProcess>()
+/** Set once the server is stopping: a build cut off keeps its state, so the
+ *  next start takes it up again. */
+let stopping = false
+
+/**
+ * Ends the programs of every library build, as the server stops (SIGTERM,
+ * which a shutdown of the computer sends). Their state stays 'building' or
+ * 'updating', so the next start resumes them: a rebuild from the extraction
+ * cache, which keeps every file read so far, and a change of depth with a
+ * sync. Returns how many programs were stopped.
+ */
+export function stopLibraryJobs(): number {
+  stopping = true
+  for (const k of kicks.values()) clearTimeout(k)
+  kicks.clear()
+  let n = 0
+  for (const c of children) if (killGroup(c, 'SIGTERM')) n++
+  return n
 }
 
 function skipFile(id: string): string {
@@ -228,8 +290,25 @@ function countDbs(root: string, cap = 200_000): number {
 /** Each folder's latest change (the folder and the files directly in it),
  *  keyed by its path in the source, '' for the top; as the main folder's
  *  sweep records them. */
-async function scanDirs(root: string): Promise<Record<string, number>> {
-  return Object.fromEntries(await scanLatest(root, EXCLUDE_DIRS))
+async function scanDirs(root: string, libraryId?: string): Promise<Record<string, number>> {
+  return (await scanDirsDetail(root, libraryId)).latest
+}
+
+/** The same, with the folders that could not be listed for want of
+ *  permission, by their path below the root. */
+async function scanDirsDetail(root: string, libraryId?: string): Promise<{ latest: Record<string, number>; deniedRel: string[] }> {
+  const r = await scanLatestDetail(root, EXCLUDE_DIRS)
+  if (libraryId) for (const rel of r.denied) denied(libraryId).add(rel ? path.join(root, rel) : root)
+  return { latest: Object.fromEntries(r.latest), deniedRel: r.denied }
+}
+
+/** Records what this build or sync could not read, and starts the next
+ *  count afresh: nothing denied clears the record. */
+function settleDenied(id: string): void {
+  const d = [...(denials.get(id) ?? [])]
+  denials.delete(id)
+  const folders = d.filter(p => isDir(p))
+  recordDenied(id, folders, d.length - folders.length)
 }
 
 const stateFile = (id: string) => path.join(builtLibraryDir(id), 'sync-state.json')
@@ -263,9 +342,9 @@ async function applyDepthChange(def: LibraryDef, ch: DepthChange, s: IndexSettin
   const steps = enrichSteps(def, {}, s)
   if (ch.text && steps.text) {
     if (steps.documents) await runPreExtract(steps.documents, m => console.warn(m))
-    await run(PYTHON_BIN, steps.text, undefined, s.ocr)
+    await run(PYTHON_BIN, steps.text, undefined, s.ocr, def.id)
   }
-  if (ch.meaning && steps.meaning) await run(PYTHON_BIN, steps.meaning)
+  if (ch.meaning && steps.meaning) await run(PYTHON_BIN, steps.meaning, undefined, false, def.id)
   await writeDepthRecord(depthFile(def.id), depthRecordOf(s))
 }
 
@@ -312,18 +391,18 @@ async function enrich(def: LibraryDef, scope: Scope, progress: Progress, s = bui
   if (!steps.text) return
   progress('Extracting text')
   if (steps.documents) await runPreExtract(steps.documents, m => console.warn(m))
-  await run(PYTHON_BIN, steps.text, undefined, s.ocr)
+  await run(PYTHON_BIN, steps.text, undefined, s.ocr, def.id)
   if (steps.meaning) {
     progress('Embedding text')
-    await run(PYTHON_BIN, steps.meaning)
+    await run(PYTHON_BIN, steps.meaning, undefined, false, def.id)
   }
 }
 
 /** Counts, the manifest, and the caches that remember the old tree. */
 async function settle(def: LibraryDef): Promise<{ files: number; dirs: number; builtAt: string }> {
-  // Probed again, not only forgotten: until a probe, the library counts as
-  // having no words and no vectors, and search leaves them out.
-  forgetProbe(def.indexRoot)
+  // Probed again at once. Until it answers, the library keeps the
+  // capabilities last found (libraries.ts), never "none".
+  staleProbe(def.indexRoot)
   await probeLibrary(def.indexRoot).catch(() => {})
   invalidateDbList()
   const st = await treeStats(def.indexRoot, '').catch(() => null)
@@ -354,7 +433,7 @@ async function fullBuild(id: string, job: IndexJob): Promise<{ ms: number }> {
   try {
     if (!isDir(src)) throw new Error(`${src} is not a folder any more`)
     // Taken first, so a change made during the build is still new to the sync.
-    const snapshot = await scanDirs(src)
+    const snapshot = await scanDirs(src, id)
     progress('Indexing folders')
     await fsp.mkdir(b.indexDir, { recursive: true })
     await fsp.mkdir(b.cacheRoot, { recursive: true })
@@ -362,7 +441,7 @@ async function fullBuild(id: string, job: IndexJob): Promise<{ ms: number }> {
     await fsp.rm(stage, { recursive: true, force: true })
     const counter = setInterval(() => { const n = countDbs(stage); progress('Indexing folders', n, `${n.toLocaleString('en-US')} folders`) }, 1000)
     try {
-      await run(path.join(GUFI_BIN, 'gufi_dir2index'), ['-x', '-n', String(threadsFor()), '--skip-file', skipFile(id), src, stage])
+      await run(path.join(GUFI_BIN, 'gufi_dir2index'), ['-x', '-n', String(threadsFor()), '--skip-file', skipFile(id), src, stage], undefined, false, id, true)
     } finally { clearInterval(counter) }
     const built = path.join(stage, path.basename(src))
     if (!fs.existsSync(path.join(built, 'db.db'))) throw new Error(`gufi_dir2index wrote no index at ${built}`)
@@ -377,11 +456,14 @@ async function fullBuild(id: string, job: IndexJob): Promise<{ ms: number }> {
     if (!replacing) await enrich(def, {}, progress, s)
     progress('Counting')
     const counts = await settle(def)
+    settleDenied(id)
     await saveState(id, snapshot)
     await writeDepthRecord(depthFile(id), depthRecordOf(s))
     updateBuild(id, { state: 'ready', error: null, ...counts })
     return { ms: Date.now() - t0 }
   } catch (e) {
+    // Cut off by a stop: left 'building' or 'updating' for the next start.
+    if (stopping) throw e
     const message = String((e as Error).message ?? e).slice(0, 400)
     updateBuild(id, { state: fs.existsSync(path.join(tree, 'db.db')) ? 'ready' : 'failed', error: message })
     throw e
@@ -395,7 +477,7 @@ async function indexSubtree(def: LibraryDef, rel: string): Promise<void> {
   const stage = path.join(b.indexDir, `.inc-${Date.now()}-${Math.floor(Math.random() * 1e6)}`)
   await fsp.mkdir(stage, { recursive: true })
   try {
-    await run(path.join(GUFI_BIN, 'gufi_dir2index'), ['-x', '-n', String(threadsFor()), '--skip-file', skipFile(def.id), src, stage])
+    await run(path.join(GUFI_BIN, 'gufi_dir2index'), ['-x', '-n', String(threadsFor()), '--skip-file', skipFile(def.id), src, stage], undefined, false, def.id, true)
     const target = path.join(def.indexRoot, rel)
     await fsp.mkdir(path.dirname(target), { recursive: true })
     await fsp.rm(target, { recursive: true, force: true })
@@ -412,7 +494,7 @@ async function indexTop(def: LibraryDef): Promise<void> {
   const stage = path.join(b.indexDir, `.inc-top-${Date.now()}`)
   await fsp.mkdir(stage, { recursive: true })
   try {
-    await run(path.join(GUFI_BIN, 'gufi_dir2index'), ['-x', '-n', String(Math.min(4, threadsFor())), '--max-level', '0', '--skip-file', skipFile(def.id), def.sourceRoot!, stage])
+    await run(path.join(GUFI_BIN, 'gufi_dir2index'), ['-x', '-n', String(Math.min(4, threadsFor())), '--max-level', '0', '--skip-file', skipFile(def.id), def.sourceRoot!, stage], undefined, false, def.id, true)
     await fsp.rename(path.join(stage, path.basename(def.sourceRoot!), 'db.db'), path.join(def.indexRoot, 'db.db'))
   } finally {
     await fsp.rm(stage, { recursive: true, force: true })
@@ -435,14 +517,17 @@ export async function syncLibrary(id: string): Promise<string[]> {
     if (!isDir(def.sourceRoot)) { updateBuild(id, { error: `${def.sourceRoot} is not a folder any more` }); return [] }
     const s = builtLibrarySettings(id)
     const depth = await pendingDepthChange(id, s)
-    const scan = await scanDirs(def.sourceRoot)
+    const { latest: scan, deniedRel } = await scanDirsDetail(def.sourceRoot, id)
     const before = loadState(id) ?? scan
+    // A folder the Studio may not read now (macOS privacy settings, say) is
+    // kept as it was last indexed: not taken for removed, and not indexed again.
+    for (const rel of deniedRel) for (const k of Object.keys(before)) if (k === rel || !rel || k.startsWith(`${rel}/`)) scan[k] = before[k]
     if (!loadState(id)) await saveState(id, scan)
     const top = (before[''] ?? 0) < (scan[''] ?? 0)
     let changed = Object.keys(scan).filter(rel => rel && (before[rel] ?? 0) < scan[rel]).sort()
     changed = changed.filter(rel => !changed.some(o => o !== rel && rel.startsWith(`${o}/`)))
     const removed = Object.keys(before).filter(rel => rel && !(rel in scan) && !Object.keys(scan).some(s => rel.startsWith(`${s}/`) && changed.includes(s)))
-    if (!top && !changed.length && !removed.length && !depth) return []
+    if (!top && !changed.length && !removed.length && !depth) { settleDenied(id); return [] }
     const done: string[] = []
     const failed: string[] = []
     const next = { ...scan }
@@ -460,10 +545,15 @@ export async function syncLibrary(id: string): Promise<string[]> {
     if (depth) {
       // Shown as updating while it runs; a failure keeps the old record, so
       // the next sync tries again.
-      updateBuild(id, { state: 'updating' })
-      try { await applyDepthChange(def, depth, s); done.push(`(index depth: ${s.depth})`) } catch (e) { failed.push(`index depth: ${(e as Error).message}`) } finally { updateBuild(id, { state: 'ready' }) }
+      updateBuild(id, { state: 'updating', pending: 'depth' })
+      try { await applyDepthChange(def, depth, s); done.push(`(index depth: ${s.depth})`) } catch (e) { failed.push(`index depth: ${(e as Error).message}`) } finally {
+        // Cut off by a stop, it stays 'updating', and the next start finishes it with a sync.
+        if (!stopping) updateBuild(id, { state: 'ready', pending: null })
+      }
+      if (stopping) return done
     }
     const counts = await settle(def)
+    settleDenied(id)
     updateBuild(id, { error: failed.length ? failed.join('; ').slice(0, 400) : null, ...counts })
     return done
   })
@@ -532,9 +622,20 @@ export function requestAllLibrarySyncs(): void {
  */
 export function startLibrarySync(log: (msg: string) => void): void {
   syncOn = true
+  stopping = false
   for (const id of builtIds()) {
-    const s = addedDef(id)?.build?.state
-    if (s === 'building' || s === 'updating') { log(`library ${id}: the build was interrupted; building it again`); startBuild(id) }
+    const b = addedDef(id)?.build
+    const s = b?.state
+    if (s === 'updating' && b?.pending === 'depth' && fs.existsSync(path.join(addedDef(id)!.indexRoot, 'db.db'))) {
+      // A change of depth a stop cut off: its index is whole, and the depth
+      // record was not written, so a sync applies the change again.
+      updateBuild(id, { state: 'ready', pending: null })
+      log(`library ${id}: applying its index depth was interrupted; finishing it`)
+      void syncLibrary(id).catch(e => log(`library ${id}: sync failed: ${(e as Error).message}`))
+    } else if (s === 'building' || s === 'updating') {
+      log(`library ${id}: the build was interrupted; building it again from what was read so far`)
+      startBuild(id)
+    }
   }
   const tick = async (): Promise<void> => {
     const sec = effectiveSettings().sweepIntervalSec

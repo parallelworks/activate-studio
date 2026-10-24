@@ -1,6 +1,6 @@
 import crypto from 'node:crypto'
 import { getLibrary, requireWritable, listLibraries, publicLibrary, settingsLibrary, addLibrary, removeLibrary, probeAll, PRIMARY_ID } from './libraries.js'
-import { ALL, scopeLibraries, searchScope } from './libraryScope.js'
+import { ALL, scopeLibraries, scopeWithOmitted, searchScope } from './libraryScope.js'
 import type { FastifyInstance } from 'fastify'
 import { execFile } from 'node:child_process'
 import path from 'node:path'
@@ -692,10 +692,13 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
     if (!q.trim()) return { hits: [] }
     const n = Math.min(Number(limit) || 50, 1000)
     const viewer = (req as { user?: { id?: string } }).user?.id ?? null
-    const libs = String(library ?? '').toLowerCase() === ALL ? scopeLibraries(ALL, viewer, effectiveSettings().kbLabel) : [libOf(req)]
+    const scope = String(library ?? '').toLowerCase() === ALL ? scopeWithOmitted(ALL, viewer, effectiveSettings().kbLabel) : { libs: [libOf(req)], omitted: [] }
+    const libs = scope.libs
     if (!gufiAvailable() && libs.every(l => !l.site)) return { hits: [], error: 'index not built yet' }
     const slow: string[] = []
-    const { result: hits, commands } = await traced(() => searchScope(libs, q, n, { semantic: wantsSemantic(q), slow }))
+    // omitted: every library in scope left out, or searched in part, and why.
+    const omitted = scope.omitted
+    const { result: hits, commands } = await traced(() => searchScope(libs, q, n, { semantic: wantsSemantic(q), slow, omitted }))
     // The main library's labels are on its files and in its index; the
     // other libraries' are kept by the Studio (libraryLabels.ts). A label
     // filter applies to both.
@@ -714,6 +717,7 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
       }),
       gufi: commands,
       ...(slow.length ? { slow } : {}),
+      ...(omitted.length ? { omitted } : {}),
     }
   })
 

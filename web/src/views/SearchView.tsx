@@ -8,6 +8,7 @@ import { currentLibrary, onLibraryChange } from '../api'
 import { useAppConfig } from '../config'
 import { SEARCH_PLACEHOLDER, librariesInScope, meaningOn, searchReach, useSearchScope } from '../searchReach'
 import { GufiCommands, type GufiCommand } from '../components/GufiCommands'
+import { OmittedLine, type Omission } from '../components/OmittedLine'
 
 const MODE_LABEL: Record<SearchHit['mode'], string> = {
   fts: 'words',
@@ -25,6 +26,7 @@ export function SearchView({ onOpen }: { onOpen: (path: string, q?: string) => v
   const [q, setQ] = useState('')
   const [hits, setHits] = useState<SearchHit[] | null>(null)
   const [note, setNote] = useState<string | null>(null)
+  const [omitted, setOmitted] = useState<Omission[] | null>(null)
   const [busy, setBusy] = useState(false)
   const [vocab, setVocab] = useState<{ tag: string; count: number }[]>([])
   const [activeTags, setActiveTags] = useState<Set<string>>(new Set())
@@ -41,6 +43,7 @@ export function SearchView({ onOpen }: { onOpen: (path: string, q?: string) => v
     if (!query.trim()) return
     setBusy(true)
     setNote(null)
+    setOmitted(null)
     setSel(new Set())
     setTagMenuOpen(false)
     try {
@@ -48,9 +51,11 @@ export function SearchView({ onOpen }: { onOpen: (path: string, q?: string) => v
       setHits(r.hits)
       setGufi(r.gufi)
       setLastLimit(limit)
+      // Every library left out, or searched in part, with the reason; one
+      // that had not answered in time is among them.
+      setOmitted(r.omitted ?? null)
       if (r.error) setNote(r.error)
-      // Among several libraries, one that had not answered in time is left out.
-      else if (r.slow?.length) setNote(`Still waiting for ${r.slow.join(', ')}, so ${r.slow.length === 1 ? 'it is' : 'they are'} left out of these results. Choose ${r.slow.length === 1 ? 'it' : 'one'} alone in Searching to wait for it.`)
+      else if (r.slow?.length) setNote(`Choose ${r.slow.length === 1 ? 'a library that did not answer in time' : 'one of the libraries that did not answer in time'} alone in Searching to wait for it.`)
     } catch (e) {
       setNote(String(e))
     } finally {
@@ -130,6 +135,7 @@ export function SearchView({ onOpen }: { onOpen: (path: string, q?: string) => v
               </span>
             )}
           </div>
+          <OmittedLine omitted={omitted} />
           {hits.length === 0 && <EmptyState variant="bare" title="No matches." />}
           {hits.map(h => (
             <div key={`${h.library?.id ?? ''}/${h.path}`} className={`result-row ${sel.has(h.path) ? 'multi' : ''}`}

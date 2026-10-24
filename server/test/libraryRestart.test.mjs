@@ -109,7 +109,7 @@ const queried = async () => {
 // What the server does when it starts again: everything held in memory is
 // gone, and main.ts probes every library before it answers.
 const restart = async () => {
-  L.resetLibrariesForTests()
+  L.resetLibrariesForTests({ keepKnownCaps: true })
   G.invalidateDbList()
   await L.probeAll()
 }

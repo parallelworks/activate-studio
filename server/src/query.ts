@@ -8,7 +8,9 @@ import { GUFI_BIN, GUFI_INDEX, INDEX_BASE, gufiAvailable, gufiEnv } from './conf
 import { KbError } from './kb.js'
 import { tagMaps } from './tags.js'
 import { libraryLabelsForIndexRoot } from './libraryLabels.js'
-import { scopeLibraries } from './libraryScope.js'
+import { scopeLibraries, scopeWithOmitted } from './libraryScope.js'
+import { addOmission, failureReason, libraryGap, type Omission } from './omissions.js'
+import type { Library } from './libraries.js'
 import { REMOTE_PREFIX, remoteIndexRoot, remoteQuery, remoteTarget } from './userLibraries.js'
 import { effectiveSettings } from './settings.js'
 import { type GufiCommand, noteGufi, shellQuote, traced } from './gufiTrace.js'
@@ -27,6 +29,9 @@ export interface QueryResult {
   rowLibraries?: string[]
   /** Across several libraries: the ones that could not answer, and why. */
   failed?: { library: string; error: string }[]
+  /** Every library in scope the query left out, or answered only in part
+   *  (a text condition on a library with no text yet, say), and why. */
+  omitted?: Omission[]
   /** Across several libraries: one gufi_vt statement, or each library on
    *  its own with the rows merged by the Studio. */
   engine?: 'gufi_vt' | 'merge'
@@ -571,18 +576,54 @@ export async function querySql(body: QueryRequest, viewerId: string | null): Pro
  * own and the rows merge here. Either way a ranked query's answer is the
  * overall top rows, re-ranked here, and a grouped one is summed here.
  */
+/** Whether a query's plan reads the words table, so a library with no
+ *  extracted text answers its text conditions with nothing. */
+const readsWords = (plan: Plan) => Object.values(plan.stages).some(sql => !!sql && /\bwords\b|\bwordf\b/i.test(sql))
+
+/** What a library's state leaves out of a query that reads `words`. */
+function queryGap(l: Library, plan: Plan): Omission | null {
+  const gap = libraryGap(l, { words: false, meaning: false })
+  if (gap && !gap.partial) return gap
+  const out = gap ? { ...gap } : null
+  if (readsWords(plan) && !l.primary && !l.caps.fullText) {
+    const building = l.build?.state === 'building' || l.build?.state === 'updating'
+    const reason = building ? 'its text is being read, so text conditions match nothing there yet' : 'its index has no extracted text, so text conditions match nothing there'
+    if (out) { out.reason = `${out.reason}; ${reason}`; return out }
+    return { id: l.id, label: l.label, reason, partial: true }
+  }
+  return out
+}
+
 export async function queryScope(body: QueryRequest, viewerId: string | null): Promise<QueryResult> {
-  const libs = scopeLibraries(body.library, viewerId, effectiveSettings().kbLabel)
+  const scope = scopeWithOmitted(body.library, viewerId, effectiveSettings().kbLabel)
+  const libs = scope.libs
+  const omitted: Omission[] = [...scope.omitted]
   const local = (root: string) => !root.startsWith(REMOTE_PREFIX)
   if (libs.length === 1) {
     if (local(libs[0].indexRoot) && !gufiAvailable()) throw new KbError(503, 'index not built yet; run indexer/setup_gufi.sh and indexer/reindex.sh')
-    return onIndex(libs[0].indexRoot, () => execQuery(body))
+    const plan = await onIndex(libs[0].indexRoot, () => planFor(body))
+    const gap = queryGap(libs[0], plan)
+    if (gap && !gap.partial) throw new KbError(409, `${gap.label} cannot be queried: ${gap.reason}`)
+    if (gap) addOmission(omitted, gap)
+    const r = await onIndex(libs[0].indexRoot, () => runPlan(plan))
+    return omitted.length ? { ...r, omitted } : r
   }
   const t0 = Date.now()
   const order = mergeOrder(body)
   // Each library's plan is built against its own index: a label filter
   // carries that index's paths.
-  const plans = await Promise.all(libs.map(async lib => ({ lib, plan: await onIndex(lib.indexRoot, () => planFor(body)) })))
+  const planned = await Promise.all(libs.map(async lib => ({ lib, plan: await onIndex(lib.indexRoot, () => planFor(body)) })))
+  // A library with nothing to answer from is not asked; one answering only
+  // in part is asked, and named.
+  const plans = planned.filter(({ lib, plan }) => {
+    const gap = queryGap(lib, plan)
+    if (gap) addOmission(omitted, gap)
+    return !gap || gap.partial
+  })
+  if (!plans.length) {
+    return { columns: ['library', ...(planned[0]?.plan.columns ?? [])], rows: [], rowLibraries: [], elapsedMs: 0, truncated: false,
+      failed: omitted.filter(o => !o.partial).map(o => ({ library: o.label, error: o.reason })), engine: 'merge', omitted }
+  }
   let tagged: { id: string; row: string[] }[] | null = null
   let failed: QueryResult['failed'] = []
   let engine: QueryResult['engine'] = 'merge'
@@ -609,12 +650,20 @@ export async function queryScope(body: QueryRequest, viewerId: string | null): P
   const width = Math.max(1, ...tagged.map(t => t.row.length))
   const columns = ['library', ...(plans[0].plan.raw ? rawColumns(width) : plans[0].plan.columns)]
   const merged = mergeRows(tagged, order)
+  const byLabel = new Map(libs.map(l => [l.label, l]))
+  for (const f of failed ?? []) {
+    const l = byLabel.get(f.library)
+    if (l) addOmission(omitted, { id: l.id, label: l.label, reason: failureReason(l, new Error(f.error)), partial: false })
+  }
+  // A library not asked at all is among those that could not answer too.
+  for (const o of omitted) if (!o.partial && !failed?.some(f => f.library === o.label)) (failed ??= []).push({ library: o.label, error: o.reason })
   return {
     columns,
     rows: merged.slice(0, MAX_ROWS).map(t => [t.id === 'all' ? 'all' : label.get(t.id) ?? t.id, ...t.row]),
     rowLibraries: merged.slice(0, MAX_ROWS).map(t => t.id),
     elapsedMs: Date.now() - t0, truncated: merged.length > MAX_ROWS,
     failed, engine,
+    ...(omitted.length ? { omitted } : {}),
   }
 }
 

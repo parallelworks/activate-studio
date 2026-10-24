@@ -11,6 +11,7 @@ import { useAppConfig } from '../config'
 import { currentLibrary } from '../api'
 import { GufiCommands, type GufiCommand } from '../components/GufiCommands'
 import { SavedQuerySql } from '../components/SavedQuerySql'
+import { OmittedLine, type Omission } from '../components/OmittedLine'
 import {
   BLANK, DIR_FIELDS, FIELDS, OPS, PLACEHOLDER, PRESETS, fromCanned, newFilter, payloadOf, toState, withField,
   type BuilderState, type Filter,
@@ -25,6 +26,8 @@ interface QueryResult {
   rowLibraries?: string[]
   /** Across all libraries: those that could not answer. */
   failed?: { library: string; error: string }[]
+  /** Every library left out, or answered only in part, and why. */
+  omitted?: Omission[]
   /** The GUFI commands that produced the rows. */
   gufi?: GufiCommand[]
 }
@@ -316,7 +319,7 @@ export function QueryView({ onOpen }: { onOpen: (path: string) => void }) {
             <Button onClick={() => setSavingOpen(true)}>Save query</Button>
           )}
           {mode === 'builder' && <SavedQuerySql name="this query" payload={currentPayload()} button="Show SQL" />}
-          {result && <span className="muted">{result.rows.length} {result.rows.length === 1 ? 'row' : 'rows'} in {result.elapsedMs} ms{result.truncated ? ' (truncated)' : ''}{result.failed?.length ? `; not answered: ${result.failed.map(f => `${f.library} (${f.error})`).join(', ')}` : ''}</span>}
+          {result && <span className="muted">{result.rows.length} {result.rows.length === 1 ? 'row' : 'rows'} in {result.elapsedMs} ms{result.truncated ? ' (truncated)' : ''}{!result.omitted && result.failed?.length ? `; not answered: ${result.failed.map(f => `${f.library} (${f.error})`).join(', ')}` : ''}</span>}
         </div>
         {saved.length > 0 && savingOpen === false && (
           <div className="saved-list">
@@ -334,6 +337,7 @@ export function QueryView({ onOpen }: { onOpen: (path: string) => void }) {
       </div>
       {result && (
         <div className={`query-results card ${sel.size ? 'has-sel' : ''}`}>
+          <OmittedLine omitted={result.omitted} what="query" />
           {pathCol >= 0 && rowKeys.length > 0 && (
             <div className="results-head results-toolbar">
               <span>{result.columns[pathCol] === 'directory' ? 'Label directories' : 'Label files'} from these results</span>

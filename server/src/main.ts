@@ -30,15 +30,17 @@ import { taskRoutes } from './tasks.js'
 import { ragProxyRoutes } from './ragProxy.js'
 import { maybeAutoStart, ragEndpointRoutes } from './ragEndpoint.js'
 import { gatewayConfigured } from './chat/gateway.js'
-import { indexJobsRunning, indexStatus, startSweepTimer } from './indexing.js'
+import { cancelAllIndexJobs, indexJobsRunning, indexStatus, startSweepTimer } from './indexing.js'
 import { seedKnowledgeBase } from './seed.js'
 import { probeAll } from './libraries.js'
+import { libraryStateLine } from './omissions.js'
+import { indexLog } from './indexLog.js'
 import { workflowsTabRoutes } from './workflowsTab.js'
 import { accessRoutes } from './accessRoutes.js'
 import { sessionRoutes } from './sessions.js'
 import { agentSiteRoutes } from './agentSites.js'
 import { userLibraryRoutes } from './userLibraries.js'
-import { libraryBuildRoutes, startLibrarySync } from './libraryBuild.js'
+import { libraryBuildRoutes, startLibrarySync, stopLibraryJobs } from './libraryBuild.js'
 import { libraryDetailsRoutes } from './libraryDetails.js'
 import { workflowReadmeRoutes } from './workflowReadme.js'
 import { setUpdateBusyCheck, startUpdates, updateRoutes } from './updates.js'
@@ -122,7 +124,11 @@ await app.register(fleetRoutes)
 // A brand-new deployment opens on a corpus with some shape rather than an
 // empty tree; only ever runs when the knowledge base has nothing in it.
 await seedKnowledgeBase(msg => app.log.info(msg))
-for (const l of await probeAll()) app.log.info(`library ${l.id}: index=${l.caps.index} fullText=${l.caps.fullText} vectors=${l.caps.vectors} files=${l.sourceRoot ? 'yes' : 'no'}${l.writable ? ' writable' : ''}`)
+for (const l of await probeAll()) {
+  const line = libraryStateLine(l)
+  app.log.info(line)
+  indexLog(line)
+}
 startSweepTimer(msg => app.log.info(msg))
 startLibrarySync(msg => app.log.info(msg))
 // Deploy-time full reindexes rebuild the index without overlay labels
@@ -159,6 +165,10 @@ const stop = async (sig: string, code = 0) => {
   stopping = true
   const t0 = Date.now()
   app.log.info(`${sig}: draining ${streamsInFlight()} in-flight stream(s)`)
+  // Indexing stops cleanly: the programs end, what was read stays in the
+  // extraction cache, and an interrupted build is taken up at the next start.
+  const programs = stopLibraryJobs() + cancelAllIndexJobs()
+  if (programs) { app.log.info(`${sig}: stopped ${programs} indexing job(s)`); indexLog(`${sig}: indexing stopped; an interrupted build resumes at the next start`) }
   while (streamsInFlight() > 0 && Date.now() - t0 < 20_000) await new Promise(r => setTimeout(r, 250))
   await app.close().catch(() => {})
   process.exit(code)

@@ -802,6 +802,11 @@ def main() -> int:
         if src_dir.is_dir() and not any(part in EXCLUDE_DIRS for part in rel_dir.parts):
             try:
                 entries = sorted(os.scandir(src_dir), key=lambda e: e.name)
+            except PermissionError as exc:
+                # macOS answers EPERM where its privacy settings have not let
+                # the app in; the server reads this line and says so.
+                print(f'  cannot list {src_dir}: {exc}', file=sys.stderr)
+                entries = []
             except OSError:
                 entries = []
             for e in entries:
@@ -809,6 +814,9 @@ def main() -> int:
                     if not e.is_file():
                         continue
                     st = e.stat()
+                except PermissionError as exc:
+                    print(f'  cannot read {src_dir / e.name}: {exc}', file=sys.stderr)
+                    continue
                 except OSError:
                     continue
                 suffix = os.path.splitext(e.name)[1].lower()
