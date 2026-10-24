@@ -18,6 +18,9 @@ export interface SearchHit {
   score: number
   mode: 'fts' | 'name' | 'vector'
   tags?: string[]
+  /** Order within its kind, lower first: a word match's bm25, a name
+   *  match's 0 (the query is the name), 1 (the name starts with it) or 2. */
+  rank?: number
 }
 
 function run(bin: string, args: string[], timeoutMs = 60_000): Promise<{ stdout: string; stderr: string }> {
@@ -129,10 +132,6 @@ export function ftsExprFor(parsed: ParsedQuery): string {
   return parts.length > 1 ? parts.join(' OR ') : (parts[0] ?? '')
 }
 
-function ftsExpr(query: string): string {
-  return ftsExprFor(parseSearchQuery(query))
-}
-
 /**
  * The same expression with every term a bareword, for gufi_vt, which
  * carries a statement's SQL in double quotes and so cannot take fts5's
@@ -157,18 +156,38 @@ export function ftsExprBare(query: string): string | null {
   return parts.length ? (parts.length > 1 ? parts.join(' OR ') : parts[0]) : null
 }
 
-/** Full-text search's per-directory SQL, for an fts5 expression. */
+const FTS_COLUMNS = `rpath(sname, sroll)||'/'||vrpentries.name, vrpentries.name, size, mtime, ` +
+  `replace(replace(snippet(words, 2, '[', ']', ' … ', 12), char(10), ' '), char(13), ' ')`
+const FTS_FROM = (expr: string) => `FROM vrpentries INNER JOIN words ON inode=CAST(tinode AS TEXT) WHERE wordf MATCH ${q(expr)}`
+
+/** Full-text search's per-directory SQL, for an fts5 expression: the
+ *  directory's best matches by bm25. */
 export function ftsSql(expr: string, limit: number): string {
-  return `SELECT rpath(sname, sroll)||'/'||vrpentries.name, vrpentries.name, size, mtime, ` +
-    `replace(replace(snippet(words, 2, '[', ']', ' … ', 12), char(10), ' '), char(13), ' ') ` +
-    `FROM vrpentries INNER JOIN words ON inode=CAST(tinode AS TEXT) ` +
-    `WHERE wordf MATCH ${q(expr)} LIMIT ${limit};`
+  return `SELECT ${FTS_COLUMNS} ${FTS_FROM(expr)} ORDER BY bm25(words) LIMIT ${limit};`
 }
 
-/** Name search's per-directory SQL, or null when the query names nothing. */
+/** Name search's per-directory SQL, or null when the query names nothing:
+ *  the directory's best name matches by nameRank. */
 export function namesSql(queryText: string, limit: number): string | null {
-  const where = nameWhere(parseSearchQuery(queryText))
-  return where === '0' ? null : `SELECT rpath(sname, sroll)||'/'||name, name, size, mtime FROM vrpentries WHERE ${where} LIMIT ${limit};`
+  const parsed = parseSearchQuery(queryText)
+  const where = nameWhere(parsed)
+  return where === '0' ? null : `SELECT rpath(sname, sroll)||'/'||name, name, size, mtime FROM vrpentries WHERE ${where} ORDER BY ${nameRank(parsed)}, name LIMIT ${limit};`
+}
+
+/**
+ * How well a name matches, as SQL, lower first: 0 when the name is the
+ * query (its first group's words as typed, with or without an extension),
+ * 1 when it starts with the query's first word, 2 when it only contains a
+ * term. A name match has no frequency to rank by, so this and then the path
+ * order them.
+ */
+export function nameRank(parsed: ParsedQuery): string {
+  const first = parsed.groups.find(g => g.items.length)?.items ?? []
+  const clean = (t: string) => t.replace(/[%_]/g, '')
+  const whole = clean(first.map(i => i.text).join(' '))
+  const lead = clean(first[0]?.text ?? '')
+  if (!whole) return '2'
+  return `CASE WHEN name LIKE ${q(whole)} OR name LIKE ${q(whole + '.%')} THEN 0 WHEN name LIKE ${q(lead + '%')} THEN 1 ELSE 2 END`
 }
 
 /** A full-text row as a hit, its path already relative to the library. */
@@ -255,38 +274,73 @@ async function queryAggregate(stages: string[], opts: { indexRoot?: string; subd
 }
 
 /**
- * A per-directory SELECT with at most `limit` rows back however many
- * directories match: each directory's rows go into its thread's table only
- * while that holds fewer than `limit`, and the merge returns the first
- * `limit`. A common word in a tree of a few hundred thousand directories
- * otherwise sent back every directory's matches (13 MB for one name search
- * measured here) to keep 10 of them, over ssh for a remote library.
+ * Full-text and name matches of one library in one walk of its index: one
+ * gufi_query whose per-directory step runs both lookups while that
+ * directory's tables are open, where a separate query for each walked the
+ * tree twice (and over ssh, ran two remote commands).
+ *
+ * Each kind keeps its best rows: a word match by bm25 over the directory's
+ * fts5 `words` table, a name match by nameRank, then path. Each thread
+ * holds at most its best `limit` of a kind, trimmed after every directory,
+ * and the merge orders them, so the rows that come back are the best ranked
+ * of the whole tree, not the first found, and only those come back: a
+ * common word in a tree of a few hundred thousand directories otherwise
+ * sent every directory's matches (13 MB for one name search, as measured)
+ * to keep 10 of them, over ssh for a remote library. bm25 is computed
+ * within each directory's own table, so scores from two directories
+ * compare roughly.
+ *
+ * ftsLimit is per directory, and three times it overall, as before; 0 skips
+ * the words, as for an index without them, whose missing table would fail
+ * the step in every directory. nameLimit is per directory and overall.
  */
-async function queryTop(select: string, columns: string, limit: number, opts: { indexRoot?: string; subdir?: string }): Promise<string[][]> {
-  const body = select.trim().replace(/;$/, '')
-  return queryAggregate([
-    '-I', `CREATE TABLE t (${columns});`,
-    '-K', `CREATE TABLE agg (${columns});`,
-    '-E', `INSERT INTO t SELECT * FROM (${body}) WHERE (SELECT count(*) FROM t) < ${limit};`,
-    '-J', 'INSERT INTO agg SELECT * FROM t;',
-    '-G', `SELECT * FROM agg LIMIT ${limit};`,
-  ], opts)
+export async function searchWordsAndNames(queryText: string, opts: { ftsLimit: number; nameLimit: number }, indexRoot?: string): Promise<{ fts: SearchHit[]; names: SearchHit[] }> {
+  const parsed = parseSearchQuery(queryText)
+  const expr = opts.ftsLimit > 0 ? ftsExprFor(parsed) : ''
+  const where = opts.nameLimit > 0 ? nameWhere(parsed) : '0'
+  const words = !!expr, names = where !== '0'
+  if (!words && !names) return { fts: [], names: [] }
+  const ftsTotal = opts.ftsLimit * 3, nameTotal = opts.nameLimit
+  const ftsCols = 'r REAL, p TEXT, n TEXT, s INT64, m INT64, x TEXT', nameCols = 'r REAL, p TEXT, n TEXT, s INT64, m INT64'
+  // The best rows of a table, past which a thread's copy is trimmed.
+  const trim = (t: string, keep: number) => `DELETE FROM ${t} WHERE rowid IN (SELECT rowid FROM ${t} ORDER BY r, p LIMIT -1 OFFSET ${keep});`
+  const I: string[] = [], K: string[] = [], E: string[] = [], J: string[] = [], G: string[] = []
+  // Names first: a directory whose words step fails still adds its names.
+  if (names) {
+    I.push(`CREATE TABLE tn (${nameCols});`); K.push(`CREATE TABLE an (${nameCols});`)
+    E.push(`INSERT INTO tn SELECT ${nameRank(parsed)}, rpath(sname, sroll)||'/'||name, name, size, mtime FROM vrpentries WHERE ${where} ORDER BY 1, 2 LIMIT ${opts.nameLimit};`, trim('tn', nameTotal))
+    J.push('INSERT INTO an SELECT * FROM tn;')
+    G.push(`SELECT 'n', r, p, n, s, m, '' FROM (SELECT * FROM an ORDER BY r, p LIMIT ${nameTotal})`)
+  }
+  if (words) {
+    I.push(`CREATE TABLE tf (${ftsCols});`); K.push(`CREATE TABLE af (${ftsCols});`)
+    E.push(`INSERT INTO tf SELECT bm25(words), ${FTS_COLUMNS} ${FTS_FROM(expr)} ORDER BY 1, 2 LIMIT ${opts.ftsLimit};`, trim('tf', ftsTotal))
+    J.push('INSERT INTO af SELECT * FROM tf;')
+    G.push(`SELECT 'f', r, p, n, s, m, x FROM (SELECT * FROM af ORDER BY r, p LIMIT ${ftsTotal})`)
+  }
+  const rows = await queryAggregate(['-I', I.join(' '), '-K', K.join(' '), '-E', E.join(' '), '-J', J.join(' '), '-G', G.join(' UNION ALL ') + ';'], { indexRoot })
+  const fts: SearchHit[] = [], nm: SearchHit[] = []
+  for (const r of rows) {
+    if (r.length < 7) continue
+    const rank = Number(r[1])
+    const row = r.slice(2)
+    if (r[0] === 'f') fts.push({ ...ftsHit(row, toKbRel(row[0], indexRoot)), rank })
+    else if (r[0] === 'n') nm.push({ ...nameHit(row, toKbRel(row[0], indexRoot)), rank })
+  }
+  const byRank = (a: SearchHit, b: SearchHit) => (a.rank ?? 0) - (b.rank ?? 0) || (a.path < b.path ? -1 : a.path > b.path ? 1 : 0)
+  return { fts: fts.sort(byRank).slice(0, ftsTotal), names: nm.sort(byRank).slice(0, nameTotal) }
 }
 
-/** Full-text search over enriched fts5 `words` tables, joined to entries by inode. */
+/** Full-text search over enriched fts5 `words` tables, joined to entries by
+ *  inode: up to three times `limit` matches, best by bm25 first. */
 export async function searchFts(queryText: string, limit = 20, indexRoot?: string): Promise<SearchHit[]> {
-  const expr = ftsExpr(queryText)
-  if (!expr) return []
-  const rows = await queryTop(ftsSql(expr, limit), 'p TEXT, n TEXT, s INT64, m INT64, x TEXT', limit * 3, { indexRoot })
-  return rows.slice(0, limit * 3).map(r => ftsHit(r, toKbRel(r[0], indexRoot)))
+  return (await searchWordsAndNames(queryText, { ftsLimit: limit, nameLimit: 0 }, indexRoot)).fts
 }
 
-/** Filename substring search over entries metadata (no enrichment needed). */
+/** Filename substring search over entries metadata (no enrichment needed),
+ *  best match first (nameRank). */
 export async function searchNames(queryText: string, limit = 20, indexRoot?: string): Promise<SearchHit[]> {
-  const sql = namesSql(queryText, limit)
-  if (!sql) return []
-  const rows = await queryTop(sql, 'p TEXT, n TEXT, s INT64, m INT64', limit, { indexRoot })
-  return rows.slice(0, limit).map(r => nameHit(r, toKbRel(r[0], indexRoot)))
+  return (await searchWordsAndNames(queryText, { ftsLimit: 0, nameLimit: limit }, indexRoot)).names
 }
 
 /** gufi_query prints paths rooted at the index tree; strip the index prefix. */

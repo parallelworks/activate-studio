@@ -158,7 +158,8 @@ test('a name search over many folders brings back only the rows it keeps', { ski
   // The limit is applied where the index is: in each thread and in the merge.
   const last = fs.readFileSync(gufiLog, 'utf8').trim().split('\n').filter(l => l.includes('lonely')).pop()
   assert.match(last, / -a 1 /)
-  assert.match(last, /SELECT \* FROM agg LIMIT 7;/)
+  assert.match(last, /OFFSET 7\);/, 'each thread keeps its best 7')
+  assert.match(last, /FROM an ORDER BY r, p LIMIT 7\)/, 'the merge returns the best 7')
 })
 
 test('a folder\'s counts are made once until the index changes', { skip }, async () => {
