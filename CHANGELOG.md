@@ -2,6 +2,160 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.172 (2026-10-24)
+
+### A built library stays searchable and queryable after a build, a restart, and a rebuild (#581)
+
+A user reported that a read-only library built from a folder on their Mac, at Text + OCR, dropped out of their searches after the Mac restarted, and came back after they changed its depth in Settings. Two causes, both in `server/src/libraryBuild.ts`.
+
+**Capabilities forgotten after every build or sync.** `settle()`, which ends every build and every sync that changed something, called `forgetProbe()` on the library's index. Until the next probe, `fromDef` reports `fullText: false` and `vectors: false`, so `wordsSearched` and `meaningSearched` leave the library's words and vectors out of search. In practice the next probe came from `GET /api/libraries`, that is, from opening Settings, Libraries, which is why choosing the depth there brought the library back. The server probes every library at start, so a plain restart was fine; the loss followed the first build or sync after it. `settle()` now probes the index again right after forgetting it.
+
+**A rebuild swapped in an index with names only.** A build that a restart interrupted (state `building` or `updating`) runs again from `startLibrarySync` at start. `fullBuild` wrote the new tree beside the old one but swapped it in before reading the text, so the library's words were missing from search and from text queries until the text pass finished, which on a large folder with OCR takes a long time. Where the library already has an index, the new tree now gets its text in the staging folder before the swap. A first build is still swapped in at once, so its names answer while the text is read.
+
+**What each cause did to Query.** The Query page, across every library, takes its libraries (and its gufi_vt locations) from `scopeLibraries('all')`, which keeps a library whose `caps.index` is set: a probed value, else whether `db.db` exists at the index root. It never reads `fullText` or `vectors`, so the forgotten probe left Query whole: size, name and words queries all returned the library's rows. The rebuild was the one gap in Query: during it a words query returned no rows from the library and listed no failure, while size and name queries were unaffected. Measured on the code before this change, with the same test reporting each stage:
+
+| Stage | Search, words | Query, size | Query, name | Query, words |
+|---|---|---|---|---|
+| after the build | 0 of 12 | 12 | 12 | 12 |
+| after a restart | 12 | 12 | 12 | 12 |
+| while an interrupted build runs again | 0 | 12 | 12 | 0 |
+| after that rebuild | 0 | 12 | 12 | 12 |
+
+With this change every cell is 12, and the test asserts it.
+
+Remote libraries (ssh and pw ssh) are not affected: their definitions and capabilities are stored with them and read on each request, and gufi_vt's location tokens are made per query.
+
+Tests: `server/test/libraryRestart.test.mjs`, with GUFI's real tools:
+- a built library is searched by its words and queried right after its build (failed before: its words were left out);
+- after a restart (passed before too: the start-up probe);
+- while an interrupted build runs again, with the text pass held open (failed before: no word hits while it ran);
+- after that rebuild, with no visit to Settings;
+- an existing index connected as it is stays in search by name and in Query across a restart.
+
+Server suite: 521 passed, 7 skipped. Web suite: 239 passed. `docs/LIBRARIES.md` says what a rebuild keeps answering.
+
+### Search walks each library once and ranks text matches by bm25 (#582)
+
+From user feedback on search over large GUFI indexes.
+
+**One walk per library.** Name and full-text search of a library were two `gufi_query` walks of its index, and for a library on another system two remote commands. They now run as one aggregate `gufi_query` (`-a 1`). Its per-directory step (`-E`) looks up the names and then the words while that directory's database is open. Search by meaning still runs apart, through `gufi_sqlite3`. `searchWordsAndNames` in `server/src/gufi.ts` does both kinds; `searchFts` and `searchNames` are built on it, and the Search page, the assistant's search tool and the chat context all use it.
+
+**Best rows, not first found.** Each kind keeps its best rows where the index is:
+- Word matches are ranked by SQLite's `bm25` over the directory's fts5 `words` table. Each thread keeps its best rows after every directory (`DELETE ... OFFSET n`), and the merge returns the best of the whole tree. `bm25` is computed within each directory's table, so scores from two directories compare roughly.
+- Name matches are ranked by how closely they match: the query as the name (with or without an extension), then names starting with its first word, then names containing a term, then by path.
+- Across libraries each kind is merged in rank order. Hits carry `rank`, lower first within its kind.
+- The `gufi_vt` search path orders each directory's rows the same way.
+
+**Measured** on a synthetic index of 102,000 files in 3,032 directories, a quarter of them with words rows, local with a warm cache, median of seven:
+
+| Search | Before | After |
+|---|---|---|
+| One library, names and words | 145 to 153 ms | 115 to 117 ms |
+| One library, a word in most documents | 211 ms | 202 ms |
+| Two such libraries | 281 to 297 ms | 199 to 218 ms |
+
+For the very common word, ranking every match costs part of what the single walk saves. There was no ssh to localhost here to time a remote library; for one, the change halves the remote commands per search.
+
+**Several paths in one run.** `gufi_query` takes several index paths and walks them in parallel in one thread pool. Two paths in one run took 132 ms, two runs side by side 136 ms, and one path 75 ms. It is no faster, so each library keeps its own run, which also keeps its own deadline and `slow` report.
+
+**Parity.** With limits high enough that nothing is cut off, the new search returns the same files as the old queries. This was checked for ten queries on the synthetic index (up to 20,116 word matches and 5,403 name matches), and the new tests check it against the old SQL on a fixture.
+
+Tests (`server/test/searchRanking.test.mjs`, which needs GUFI and a Python with fts5):
+- one `gufi_query` per search;
+- a document mentioning the term twenty times ranks above thirty that mention it once, though the walk meets those first;
+- name order;
+- parity with the old queries;
+- an index without words tables still answers names, and a names-only search does not touch the words;
+- order across libraries.
+
+The fakes in three existing tests now answer the tagged rows. The ssh deadline test passes unchanged. Server suite: 525 passed, 7 skipped. Web suite: 239 passed.
+
+Docs: REFERENCE (how search runs, ranking, the measurements, several paths) and HELP (result order).
+
+### Query builder: conditions joined by all or any, presets, and dates that work (#583)
+
+The builder's "equals" on a path and on a modified date matched nothing, and every modified comparison was wrong:
+
+- A path in a directory's WHERE clause is absolute (rpath includes the index's own folder), so a relative path never equaled it, and "path contains" matched the index folder's own name.
+- GUFI registers its own `strftime(format, seconds)` in place of SQLite's, so `strftime('%s', '2026-01-01')` read the date as the number 2026 and `strftime('%s', 'now')` read now as 0. Modified before/after/equals gave wrong rows, and the canned "changed in the last N days" query returned every file.
+
+Server (`server/src/query.ts`):
+
+- Dates are worked out by the server: on, after and before a day (`2026-01-01`), a minute or second, or a time ago (`7 days`, `12 hours`, `2 weeks`), in UTC as results show times. The canned recent query computes its cutoff the same way.
+- Paths compare relative to the library: equality against the whole path, contains below the index's folder.
+- Sizes take units (`10 MB`, `1.5G`, `500k`).
+- Each field takes its own conditions; others answer 400 naming the ones it takes.
+- Owner is a field and a grouping (GUFI's `uidtouser`).
+- `builder.match: "any"` joins the rows with OR (default all, AND). A text condition is now a subquery on `words`, so it can stand in an OR.
+- Directory conditions use the summary's own columns instead of rewriting the WHERE text, which turned a value such as "size" into "totsize".
+- Sorting by name works in each directory's ORDER BY.
+
+Page (`web/src/views/QueryView.tsx`, `web/src/queryBuilder.ts`):
+
+- Opens on the builder. Presets under "Start from" fill the form and run it: biggest files, oldest files, changed in the last 7 days, largest directories, totals by extension, totals by owner. Each is the overall top N across directories and libraries (per-directory top N in `-E`, global order in `-G`, outer ORDER BY or merge across libraries).
+- "Match all/any of these conditions", rows with conditions worded for each field and a hint for the value, add and remove.
+- The Canned tab is gone. A query saved from it opens as the builder form that runs it; the API still takes `canned`.
+- Show SQL shows the SQL of the form on screen (the saved-query SQL popover).
+- New installs no longer seed the two starter queries that the presets repeat.
+
+Tests:
+
+- `server/test/queryBuilder.test.mjs`: the SQL for AND and OR, dates, sizes and quoting, the per-field refusals, and runs against two real GUFI indexes on one library and across both: path and day equality, before/after/time ago, any, the presets' global top N, owner totals, and the canned recent query. 18 tests.
+- `web/test/queryBuilder.test.tsx`: presets, rows, match, per-field conditions, a saved canned query opening as a builder form, Show SQL, directory fields. 7 tests.
+- Server suite: 537 passed, 7 skipped. Web suite: 246 passed.
+- Checked in headless Chromium at 1300 and 740 px on a test server with two libraries.
+
+Known limit, in REFERENCE: a directory with no `words` table answers nothing for a text condition, and under "any" nothing for its other conditions either, as the join did before.
+
+### Office previews without LibreOffice, labels on read-only libraries, and Delete under All libraries (#584)
+
+Three items from user feedback on the macOS app.
+
+## Office preview without LibreOffice
+
+The Preview tab of a .pptx showed a column of broken-image icons. With "All libraries" selected, or any library other than the main one, the viewer asked for page images at `/api/kb/pdf-page` without the library, so the server looked for the file in the main library and every image failed. `pdf-info` carried the library and succeeded, which is why the tab showed images at all.
+
+- Page images now carry the library, and another library's rendered pages are cached under its id. Before, two libraries' files at the same path could share a cache entry.
+- Where LibreOffice is not installed (the macOS app), a .pptx, .docx, .xlsx, .odp, .odt or .ods is read from its own XML by `server/src/officePreview.ts`. It uses a small zip reader on zlib and an XML tree, with no new dependency, inflating only the members it needs, under size caps.
+  - Slides: each slide's title and paragraphs by level, plus tables and pictures, in the deck's order.
+  - Documents: headings, paragraphs, list items, tables and pictures.
+  - Workbooks: each sheet's first 200 rows and 30 columns, with shared and inline strings.
+  - `GET /api/kb/office-preview?path=` returns the outline. `GET /api/kb/office-media?path=&name=` serves only PNG, JPEG, GIF, WebP and BMP media in the package.
+- The tab is named **Pages**, **Slides**, **Document** or **Sheets**. A file with nothing to preview (a 97-2003 .ppt, .doc or .xls without LibreOffice) loses the tab and opens on **Indexed text**, with one line saying a preview needs LibreOffice. A page image that fails to load switches to the outline (Office) or the extracted text (PDF), never to a broken image.
+
+## Labels on read-only libraries
+
+Labelling a file in a read-only library failed with "read only".
+
+- Labels on any library other than the main one are now kept by the Studio in `INDEX_BASE/libraries/<id>/labels.json`, keyed by the file's path in the library. The files are never written. An entry is that path's own label and is inherited below it, so a remote library never has to be asked whether a path is a folder.
+- Search hits, the tree, Details and the label vocabulary merge them in.
+- A Query label filter on that library compiles them into its SQL: files as `path IN (...)`, labeled folders as path prefixes. Before, Query applied the main library's folder labels to every library's index.
+- They are not written in GUFI's external database form, the way the main library's `words` table is. A read-only or remote index cannot be written, and an external database is found through the index's own directories.
+- A local library's labels are pruned when their files are gone, at most every ten minutes. Nothing is pruned when every labeled path is missing at once, as with an unmounted folder, and a backup is kept. A remote library's labels are not pruned. Removing a library removes its labels.
+- `GET /api/kb/tags` answers `stored: files | studio`. The Labels panel then says "Saved in the Studio; the files are read only."
+- With `library=all`, one `POST /api/kb/tags` may span libraries, each applied in its own.
+- The main library is unchanged: labels go on the files as xattrs, or into the existing overlay.
+- New folder, Rename, Cut, Paste, Delete, the selection's Move to and Delete, + Add, and the viewer's Delete are disabled on a read-only library, with the reason on hover. Labels stays enabled.
+
+## Delete under All libraries
+
+With "All libraries" selected, deleting a file showed "Cannot open this file … no library named all", and the file was not deleted. The client sends paths on `/api/kb/file` as-is because the GET handler takes the combined `<library>/<path>` form, but it applied that to the DELETE too, so the server's `getLibrary('all')` threw before anything was removed.
+
+- The client now addresses the file's own library for any non-GET request.
+- The server's DELETE also accepts the combined path with `library=all`.
+- Any action that names `all` where one library is needed answers 400: "This action works in one library at a time".
+- I checked the other actions under All libraries. Labels, Find, Download, Move and Rename already reached the right library; a move or rename spanning two libraries now gets the clear message.
+
+## Tests
+
+- New `server/test/readOnlyLabels.test.mjs` (12 tests): applying and reading labels with inheritance, unchanged files, an All-libraries request spanning two libraries, the tree, Details, the vocabulary, the search filter, Query SQL, a remote library, pruning and the unmounted case, Delete under All, and removal with the library.
+- New `server/test/officePreview.test.mjs` (7 tests), with fixtures made by Python's zipfile and deflated: pptx order, levels, groups, a table and pictures (EMF left out); docx; xlsx; odp and odt; media served only from the package; 97-2003 and non-zip files refused; `pdf-info` without LibreOffice.
+- New `web/test/viewerOffice.test.tsx` (7 tests): the Slides tab and outline, the fallback to Indexed text, page images carrying the library, Delete disabled with its reason, the Labels panel line, and the All-libraries delete URL.
+- Server suite: 538 passed, 7 skipped. testdata: 21 passed. Web: 246 passed.
+- Checked in headless Chromium at 1300 and 740 px against a test server with a read-only library: the deck outline, the disabled Delete and its tooltip, the Labels panel note, and the context menu with Rename, Cut and Delete disabled and Labels enabled.
+
+Not changed: on a Mac without poppler, a PDF still shows its extracted text in Pages, as before.
+
 ## v1.171 (2026-10-23)
 
 ### The macOS app installs itself in ~/Applications from its disk image (#577)
@@ -57,6 +211,10 @@ Only a Mac with a browser download can show these, which CI does not exercise:
 - how the dialogs look;
 - macOS's prompt about an app from the internet, which comes before the app's own dialog;
 - that the copy opened after the install is not translocated.
+
+### Change log through v1.171 (#578)
+
+Regenerated with `node scripts/release-notes.mjs --changelog --next v1.171` before tagging v1.171.
 
 ## v1.170 (2026-10-23)
 
