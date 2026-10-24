@@ -66,6 +66,16 @@ STUDIO_NO_BROWSER=1 bash "$DEST/Contents/Resources/launcher.sh" >>"$SUMMARY" 2>&
 curl -fsS http://127.0.0.1:4180/api/version >/dev/null || fail "the server does not answer"
 log "server: $(curl -fsS http://127.0.0.1:4180/api/version)"
 
+# Whether Query can use gufi_vt here: the app's gufi_sqlite3 with a remote
+# location (the server's own probe, gufiVt.ts), and the two paths the server
+# puts in gufi_vt's quotes, which its SAFE_PATH rule refuses with a space.
+SQLITE="$DEST/Contents/Resources/gufi/bin/gufi_sqlite3"
+probe="CREATE VIRTUAL TABLE temp.p USING gufi_vt(index='/', E=\"SELECT name FROM vrpentries;\", remote_cmd='/bin/true'); SELECT count(*) FROM temp.p;"
+log "gufi_vt with remote_cmd in the app's gufi_sqlite3: $("$SQLITE" :memory: "$probe" 2>&1 | tr '\n' ' ')"
+for p in "$DEST/Contents/Resources/node/bin/node" "$DEST/Contents/Resources/app/server/dist/gufiVtRemote.js"; do
+  if [[ "$p" =~ ^/[^\'\"[:space:]]*$ ]]; then log "path passes SAFE_PATH: $p"; else log "path fails SAFE_PATH (gufi_vt is turned off): $p"; fi
+done
+
 # Playwright, with its Chromium.
 P="$(mktemp -d)"
 (cd "$P" && npm init -y >/dev/null && npm install --no-audit --no-fund playwright@1.64.1 >/dev/null 2>&1 && npx playwright install chromium >/dev/null 2>&1) \
