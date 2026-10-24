@@ -92,6 +92,7 @@ http.createServer(async (req, res) => {
   } catch (e) { res.writeHead(502); res.end(String(e)); console.log(new Date().toISOString(), req.url, "error", String(e)) }
 }).listen(4199, "127.0.0.1", () => console.log("listening on 127.0.0.1:4199"))
 ' >"$OUT/api-proxy.log" 2>&1 &
+  PROXY=$!
   for _ in $(seq 1 20); do curl -fsS --max-time 10 -o /dev/null "http://127.0.0.1:4199/repos/parallelworks/activate-studio/releases?per_page=1" && break; sleep 1; done
   curl -fsS --max-time 10 -o /dev/null "http://127.0.0.1:4199/repos/parallelworks/activate-studio/releases?per_page=1" \
     || fail "the local API proxy does not answer: $(tr '\n' ' ' <"$OUT/api-proxy.log")"
@@ -171,7 +172,7 @@ if [ -n "$READONLY" ]; then
   cmd="$(ps -ww -o command= -p "$NEW_PID" 2>/dev/null)"
   log "server.pid $NEW_PID: $cmd"
   case "$cmd" in *"$DEST/Contents/Resources/studio-run.sh $DATA") ;; *) fail "server.pid does not name the updated copy's run loop" ;; esac
-  node_parent="$(pgrep -f "$DEST/Contents/Resources/node/bin/node" | head -1 | xargs -I{} ps -o ppid= -p {} | tr -d ' ')"
+  node_parent="$(pgrep -f "$DEST/Contents/Resources/app/server/dist/main.js" | head -1 | xargs -I{} ps -o ppid= -p {} | tr -d ' ')"
   log "the server's parent process: $node_parent"
   [ "$node_parent" = "$NEW_PID" ] || fail "the server is not a child of the run loop server.pid names"
 else
@@ -185,6 +186,9 @@ collect
 
 # 5. Uninstalled through the updated app, keeping the data: no server, run
 # loop or LaunchAgent is left, and the data folder stays.
+# The test's own API proxy runs on a copy of the app's Node; it is stopped
+# first so that it is not taken for one of the app's programs.
+[ -n "${PROXY:-}" ] && { kill "$PROXY" 2>/dev/null; wait "$PROXY" 2>/dev/null; }
 osascript -e "tell application \"$APP_NAME\" to quit" >/dev/null 2>&1 || true
 sleep 2
 "$DEST/Contents/MacOS/$APP_NAME" --uninstall --dry-run >"$OUT/uninstall-plan.txt" 2>&1
