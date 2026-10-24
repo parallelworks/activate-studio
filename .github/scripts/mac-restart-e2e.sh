@@ -6,7 +6,7 @@
 # A second library is built of a local folder of about 2,600 files (names,
 # a set of files of one size, pictures and scanned PDFs whose text only OCR
 # reads) at the Text + OCR depth, and waited for until its words are found.
-# Then 1,200 large pictures are added and the library rebuilt, so OCR runs
+# Then 1,200 pictures, each with its own dense text and noise, are added and
 # for minutes; while it runs, the server is stopped as a shutdown stops it (TERM to the run
 # loop, and the window quit), and the app opened again. Right after it
 # answers, before anything asks for GET /api/libraries, the library is
@@ -136,28 +136,58 @@ check "after the build: words in search" '[ "$(cnt "d[\"searchWord\"][\"lib\"]")
 check "after the build: words in Query" '[ "$(cnt "d[\"query_words\"][\"lib\"]")" -gt 0 ]'
 WORDS_BEFORE="$(cnt 'd["query_words"]["lib"]')"
 
-# Large pictures, so the rebuild's OCR takes minutes, then the rebuild.
-BIG="$HOME/studio-restart/big.png"
-sips --resampleWidth 3000 "$REPO/deploy/mac/testdata/ocr-sample.png" --out "$BIG" >/dev/null 2>&1 || cp "$REPO/deploy/mac/testdata/ocr-sample.png" "$BIG"
-log "large picture: $(sips -g pixelWidth -g pixelHeight "$BIG" 2>/dev/null | awk '/pixel/ {print $2}' | tr '\n' ' '); the app's tesseract reads: $(TESSDATA_PREFIX="$DEST/Contents/Resources/ocr/share/tessdata" "$DEST/Contents/Resources/ocr/bin/tesseract" "$BIG" stdout 2>/dev/null | grep -io heliotrope | head -1)"
+# Pictures each with its own dense text (one line has "heliotrope" and the
+# picture's number) and noise, so each needs an OCR pass of its own that
+# takes a while; then the rebuild.
 NEW=1200
-for i in $(seq -w 1 $NEW); do d="$SRC/scans-new/$(( 10#$i % 30 ))"; mkdir -p "$d"; cp "$BIG" "$d/big-$i.png"; done
-log "added $NEW large pictures; the folder holds $(find "$SRC" -type f | wc -l | tr -d ' ') files"
+python3 -m venv "$HOME/studio-restart/pv" >/dev/null 2>&1 && "$HOME/studio-restart/pv/bin/pip" -q install pillow >/dev/null 2>&1 \
+  || fatal "Pillow could not be installed to draw the pictures"
+"$HOME/studio-restart/pv/bin/python" - "$SRC/scans-new" "$NEW" <<'PY' || fatal "the pictures could not be drawn"
+import os, random, sys
+from PIL import Image, ImageDraw, ImageFont
+out, n = sys.argv[1], int(sys.argv[2])
+font = None
+for f in ('/System/Library/Fonts/Supplemental/Arial.ttf', '/System/Library/Fonts/Helvetica.ttc', '/Library/Fonts/Arial.ttf'):
+    if os.path.exists(f):
+        font = ImageFont.truetype(f, 34); break
+font = font or ImageFont.load_default()
+words = 'pump valve station pressure inspection reservoir turbine filter gauge sensor flow intake outlet basin channel'.split()
+for i in range(1, n + 1):
+    rnd = random.Random(i)
+    img = Image.new('L', (2200, 1500), 255)
+    d = ImageDraw.Draw(img)
+    for row in range(26):
+        line = ' '.join(rnd.choice(words) for _ in range(9)) + f' {rnd.randint(100, 999)}'
+        if row == 3:
+            line = f'Station Heliotrope plate {i:04d} passed every valve check'
+        d.text((60, 40 + row * 55), line, fill=0, font=font)
+    px = img.load()
+    for _ in range(9000):
+        px[rnd.randrange(2200), rnd.randrange(1500)] = rnd.randrange(80, 200)
+    sub = os.path.join(out, str(i % 30))
+    os.makedirs(sub, exist_ok=True)
+    img.save(os.path.join(sub, f'plate-{i:04d}.png'))
+PY
+ONE="$(find "$SRC/scans-new" -name 'plate-0001.png' | head -1)"
+log "drew $NEW pictures of 2200x1500 with different text and noise; the app's tesseract reads plate 1 in $( { /usr/bin/time -p env TESSDATA_PREFIX="$DEST/Contents/Resources/ocr/share/tessdata" "$DEST/Contents/Resources/ocr/bin/tesseract" "$ONE" stdout --psm 3 >"$OUT/plate-0001.txt" 2>/dev/null; } 2>&1 | awk '/^real/ {print $2}') s: $(grep -io 'heliotrope plate [0-9]*' "$OUT/plate-0001.txt" | head -1)"
+log "the folder holds $(find "$SRC" -type f | wc -l | tr -d ' ') files"
 r="$(curl -fsS -X POST "$API/api/libraries/$LIB/rebuild")" || fatal "the rebuild could not be started"
 JOB="$(echo "$r" | json 'd["job"]["id"]')"
 log "rebuild job $JOB; library state $(lib_state)"
-# Stopped while OCR runs: once tesseract processes are seen, 2 s later.
+# Stopped while OCR runs: the library's job reports no phases, only its
+# progress, so the stop waits for tesseract processes and some pictures
+# read (extraction cache entries for the new pictures), then comes at once.
+CACHE="$DATA/index/libraries/$LIB/extract"
 ocr_seen=
-for _ in $(seq 1 240); do
+for _ in $(seq 1 480); do
   n="$(pgrep -x tesseract | wc -l | tr -d ' ')"
-  if [ "${n:-0}" -gt 0 ]; then ocr_seen="$n"; break; fi
+  read_n="$(find "$CACHE" -path '*scans-new*' -type f 2>/dev/null | wc -l | tr -d ' ')"
+  if [ "${n:-0}" -gt 0 ] && [ "${read_n:-0}" -gt 0 ]; then ocr_seen="$n"; break; fi
   [ "$(api "/api/index/job/$JOB" | json 'd["state"]')" = done ] && break
   sleep 0.25
 done
-[ -n "$ocr_seen" ] || fatal "no tesseract process was seen while the rebuild ran (it finished, or read no pictures)"
-log "OCR is running: $ocr_seen tesseract processes, $(( $(date +%s) - T0 )) s into the run"
-sleep 2
-log "rebuild before the stop: job $(api "/api/index/job/$JOB" | json '{k: d.get(k) for k in ("state", "label", "progress")}'), library state $(lib_state), tesseract processes $(pgrep -x tesseract | wc -l | tr -d ' ')"
+[ -n "$ocr_seen" ] || fatal "no tesseract process with pictures read was seen while the rebuild ran (it finished, or read no pictures)"
+log "rebuild at the stop: $ocr_seen tesseract processes, $read_n of $NEW new pictures read; job $(api "/api/index/job/$JOB" | json '{k: d.get(k) for k in ("state", "label", "progress", "phases")}'), library state $(lib_state)"
 case "$(lib_state)" in building*|updating*) ;; *) fatal "the rebuild had finished before the stop" ;; esac
 stage 2-during-rebuild counts-only
 log "library state after the counts: $(lib_state)"
