@@ -9,7 +9,7 @@ Files stay where they are. {appName} keeps its index in a folder of its own, rea
 1. **Choose a folder.** On a computer of its own, setup asks which folder to index; Settings, Libraries changes it later.
 2. **Search.** Type a word or phrase in **Search**, then click a result to open the file at the match.
 3. **Ask.** Open **Chat** and ask in plain language. The answer links the files it used.
-4. **Query.** Open **Query** and pick a canned query, or build one, to list files by size, age, type, or label.
+4. **Query.** Open **Query** and pick a preset, or build one, to list files by size, age, type, owner, or label.
 
 On a computer of its own, setup can be run again at any time, starting from what is set now: **Run setup again** in Settings, General, or **Run Setup…** in the macOS app's menu.
 
@@ -70,7 +70,7 @@ Labels organize files without moving them. Label a folder and everything in it c
 
 ## Query
 
-Structured questions about the files themselves (largest, newest, totals by type) answered in milliseconds. Start from a canned query, use the builder, or write read-only SQL, and save the ones you reuse. **GUFI commands** under the form shows what ran, ready to copy, and the code button beside a saved query shows the SQL it runs and its command.
+Structured questions about the files themselves (largest, oldest, totals by type or owner) answered in milliseconds. Pick a preset under **Start from** and change it, add conditions (all must match, or any), or write read-only SQL, and save the ones you reuse. Sizes take units (`10 MB`), and dates take a day (`2026-01-01`) or a time ago (`7 days`). **GUFI commands** under the form shows what ran, ready to copy, and the code button beside a saved query, or **Show SQL** for the form on screen, shows the SQL it runs and its command.
 
 ## Stats
 

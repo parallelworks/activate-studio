@@ -50,7 +50,7 @@ test('a builder query: its five stages, with the filter, order and limit it was 
   assert.deepEqual(stages.map(s => s.flag), ['-I', '-K', '-E', '-J', '-G'])
   const sql = Object.fromEntries(stages.map(s => [s.flag, s.sql]))
   assert.equal(sql['-I'], 'CREATE TABLE t (path TEXT, size INT64, mtime INT64);')
-  assert.match(sql['-E'], /^INSERT INTO t SELECT rpath\(sname, sroll\)\|\|'\/'\|\|vrpentries\.name, size, mtime FROM vrpentries WHERE lower\(.*\) = 'pdf' ORDER BY size DESC LIMIT 100;$/)
+  assert.match(sql['-E'], /^INSERT INTO t SELECT rpath\(sname, sroll\)\|\|'\/'\|\|vrpentries\.name, size, mtime FROM vrpentries WHERE \(lower\(.*\) = 'pdf'\) ORDER BY size DESC LIMIT 100;$/)
   assert.equal(sql['-G'], "SELECT path, size, datetime(mtime, 'unixepoch') FROM agg ORDER BY size DESC LIMIT 100;")
   assert.equal(commands.length, 1)
   assert.equal(commands[0].site, undefined)
