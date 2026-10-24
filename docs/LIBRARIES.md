@@ -98,7 +98,11 @@ Studio on someone's own computer therefore never shows workflow or
 scheduler fields: it builds on a remote system over the session instead.
 A build shows its phase and the folders indexed so far under its row
 while it runs, and the library joins the Library switcher when it is
-ready. The ssh form (`SshLibraryForm`, `transport="pw"` for pw ssh, `mode`
+ready. A rebuild of a library on this machine that already has an index,
+including a build a restart interrupted (it runs again when the server
+starts), writes the new index beside the old one and reads its text there
+before swapping it in, so the library stays in search and Query, words
+included, until the new index is complete. The ssh form (`SshLibraryForm`, `transport="pw"` for pw ssh, `mode`
 connect or build) and the form for this machine (`LocalLibraryForm`,
 `mode` connect or build) are the ones the setup wizard uses; their
 default mode is connect.
