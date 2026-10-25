@@ -2,6 +2,98 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.175 (2026-10-25)
+
+### Search reads each index once for names, folders, words and meaning (#596)
+
+Search reads each library's index once for every kind of match: names, files below a matching folder, the Studio's words, the Studio's vectors, and external databases in the shared text and vector schema. The kinds are fused with reciprocal rank fusion. This follows the one-pass pattern GUFI's authors recommend: one `gufi_query` whose per-directory step adds every kind while the directory's tables are open, merged per thread and ranked once at the end.
+
+## What changed
+
+- `walkSearch` (server/src/gufi.ts): one aggregate `gufi_query` per library, or per remote host, with these stages:
+  - `-I`: a per-thread table, plus the query's embedding as a blob literal, one copy per thread. That works on every GUFI in use; `--global-db` would do the same on newer ones.
+  - `-E`: four statements at most, in a fixed order:
+    1. a trim that keeps each kind's best;
+    2. names and folder-path matches in one insert;
+    3. the Studio's words (fts5 `words`, by `bm25`);
+    4. the Studio's vectors (vec0 `gvec`, by distance), with the query vector picked by the directory's `gvecmodel`.
+
+    A directory without a `words` or vector table fails the step that needs it, and only the later steps are skipped there. No empty tables are written. gufi_query compiles every statement again in every directory, so there are few.
+  - `--no-print-sql-on-err`: each such failure prints one short line, and only the last 16 KB of error output is kept. A GUFI from before 2026 that does not know it, or `--external-copy`, is asked again without them.
+  - `-G`: ranks each kind, keeps each file once per kind and to the kind's limit, and fuses the kinds with RRF, k = 60.
+- `fuseRows`: the same fusion across libraries and walks. Ties go to the more exact kind (words, name, folder, meaning), then the path, so the order is deterministic. Hits carry `mode` (the most exact kind, now including `path`), `kinds` (every way the file was found) and `score`.
+- Folder-path matches: files below a folder whose path below the library root matches, with the same term rules as names. A file whose name matches counts as a name match only.
+- External databases in the shared schema, read with `--external-copy`. Each file in an index directory other than `db.db` whose name matches `STUDIO_EXTERNAL_DB_PATTERN` (default `\.db$`; empty turns it off) is attached, and two tables are read:
+  - `ext_bm25_by_file`: text by `bm25`.
+  - `ext_vectors_by_file`: for a `vector_model_name` whose query vector the Studio has (all-MiniLM-L6-v2, which the bundled ONNX model quantizes), by cosine distance put on vec0's scale.
+
+  Rows join the directory's entries on `binode` and `bmtime`, so a file changed since extraction is not matched. A library's "words not searched" note is withdrawn when its external databases answered.
+- Remote: libraries on one host and account share one `gufi_query` with their roots stacked, one round trip per host. Before, each library ran one remote command for names and words, and none for meaning. Rows go back to their library by the root they are under. A walk past its deadline names every library in it.
+- Local: libraries keep a walk each. Stacked local roots measured no faster; `STUDIO_STACK_LOCAL=1` turns stacking on.
+- Fallback for meaning: a library whose index has vectors but whose walk returns none (embedded with the earlier GGUF model) is searched by meaning the earlier way. The gufi_vt search setting keeps its earlier path.
+- The assistant's `search_kb` uses `searchScope`'s fused order directly.
+- The Search page labels a folder-path match "folder", and the label's tooltip names every way a hit was found.
+
+## Measurements
+
+On a synthetic index of 24,000 directories and 100,000 files, words in a quarter of the directories and vectors in a tenth, warm cache, median of five, on a shared host (load average 1 to 10):
+
+| Search | Before | After |
+|---|---|---|
+| Names, words and meaning | about 2.9 s (the name and word walk, 0.7 to 0.8 s, beside the meaning search, 2.9 s: a file walk for databases with vectors, then one attach each) | about 1.0 s in one walk |
+| Names, words and folder paths, no vectors | 0.7 s (names and words) | 0.85 s |
+| Same index rolled up (1 directory left to walk) | 3.0 s | 0.24 s, names and paths only (see below) |
+| Four libraries of 6,000 directories | 1.17 s | 0.83 to 0.85 s, the same stacked or one walk each |
+
+What each part adds to the walk: folder-path matching about 0.15 s, vectors about 0.1 s, the external database lookup about 0.05 s.
+
+Remote, by round trips: one per host per search, with meaning included where the remote index has vectors. Before, it was one per library, with no meaning.
+
+## Notes
+
+- A rolled-up index's walk does not visit directories rolled into their parents, so their own tables are not read there; names and paths are. The Studio does not roll up the indexes it builds.
+- Empty tables were measured and not written. An empty fts5 `words` table takes a 48 KB directory database to 68 KB, and empty vector tables take it to 108 KB. That is about 0.4 GB and 0.8 GB more on this test index.
+
+## Tests
+
+- `server/test/searchOnePass.test.mjs`, with real GUFI where installed:
+  - RRF order and ties;
+  - statement order;
+  - a tree with words in some directories only;
+  - folder-path matches below the root only;
+  - meaning in the same walk, and a model with no query vector failing alone;
+  - the shared external schema by text and by model, with a stale mtime not matched;
+  - several roots in one walk mapped back.
+- `server/test/searchStackedRemote.test.mjs`: two libraries on one host give one remote `gufi_query` with both roots, another host has its own, and a failing host names its library.
+- Updated fakes in `libraryScope.test.mjs`.
+- Web: the folder label and the tooltip.
+- Server suite: 619 passed, 9 skipped, including the restricted-host test (#594), whose search sends only gufi_query. Web suite: 278 passed.
+
+### Query: text conditions run through gufi_vt; an unbuilt main folder is "not indexed yet" (#597)
+
+Two Query issues found by the macOS end-to-end test on v1.174.
+
+**Text conditions fell back to the merge.** A Query across libraries with a "has the words" condition answered with `engine: "merge"`, while name and size conditions used gufi_vt. gufi_vt takes each SQL stage as a double-quoted value (`E="..."`) read verbatim, so `fitsVt` refused any stage holding a double quote, and a text condition always holds them: #583 writes its FTS5 phrase query as `wordf MATCH '"a" AND "b"'`.
+
+- `vtStage()` in `server/src/gufiVt.ts` writes each double quote inside a single-quoted string as `'||char(34)||'`, wrapping the literal in parentheses. The string's value is unchanged: FTS5 matches the computed phrase string the same as the literal (checked with gufi_sqlite3). A double quote outside a string (a quoted identifier, a comment) or an unterminated string still leaves the query to the merge.
+- `vtScript` passes every stage through it, so remote locations' command lines carry no inner double quotes either.
+- A Query across libraries answered by the merge now carries `mergeReason`: a double quote outside a string, a library path gufi_vt cannot be given, no gufi_vt with remote locations, or the gufi_vt statement's error.
+
+**An unbuilt main folder.** The main folder counted as indexed whenever its index folder existed (`gufiAvailable()`), including the empty folder that exists before the first build. Search then found no databases and named nothing, while Query ran gufi_query, failed, and listed it as "index not found".
+
+- The main folder now counts as indexed once its index has a `db.db` at the root, as `indexStatus().indexed` already does.
+- `libraryGap` says `not indexed yet` for the main folder before its first build, and keeps `index not found` for one built before whose index is gone (indexing.ts reports whether the last build of the main folder finished).
+- Search lists it in `omitted` and does not ask it; Query across libraries lists it the same way, and asked alone answers 409 `<label> cannot be queried: not indexed yet`.
+
+**Tests**
+- `gufiVtSpaces.test.mjs`: `vtStage` rewrites (phrase quotes, a doubled single quote, a quoted identifier, a comment, an unterminated string); with real GUFI, a words condition across a local library and one through the remote wrapper answers `engine: "gufi_vt"` with the rows the merge gives; the merge carries its reason.
+- `omissions.test.mjs`: with real GUFI, search and Query name a never-built main folder `not indexed yet` (its empty index folder present), and `index not found` once built and its `db.db` is moved away; nothing is named once it is back.
+- `querySql.test.mjs`: its stand-in main index gets a `db.db`, as a built index has.
+- `deploy/mac/check_app.sh`: after the existing gufi_vt check across two libraries, a Query with a words condition on the OCR sample word must answer `engine: "gufi_vt"` with the sample in its rows.
+- Server suite 614 passed, 9 skipped; web suite 277 passed.
+
+`docs/REFERENCE.md` describes both.
+
 ## v1.174 (2026-10-24)
 
 ### A remote build that ends as its status is read counts as finished (#592)
@@ -135,6 +227,10 @@ A user connecting an existing GUFI index read only over ssh got "bash is not ins
 - The key line and the alias in the runner account's `~/.ssh/config` are removed afterwards. Elsewhere the check is skipped.
 
 Not covered: a macOS host whose GUFI tools need `DYLD_LIBRARY_PATH` and whose login runs only `gufi_query`. With no shell or env, the Studio cannot set the variable; GUFI built with rpaths runs.
+
+### Change log through v1.174 (#595)
+
+Regenerated with `node scripts/release-notes.mjs --changelog --next v1.174` before tagging v1.174.
 
 ## v1.173 (2026-10-24)
 
