@@ -71,9 +71,46 @@ export function vtPath(p: string): string | null {
 export const vtRemoteIndex = (p: string): boolean =>
   vtPath(p) !== null && !/\s\s|[\t\v\f]|\s$/.test(p) && p.split(' ').every(w => w !== '' && !/^['"]/.test(w))
 
-/** SQL stages are double-quoted (gufi_vt's documented form), so they cannot
- *  contain a double quote. */
-const fitsVt = (plan: Plan) => Object.values(plan.stages).every(s => !s || !s.includes('"'))
+/** A SQL stage as gufi_vt can take it, or null. gufi_vt's stages are
+ *  double-quoted values (E="...") read verbatim, so the stage cannot hold a
+ *  double quote. Inside a single-quoted literal one is written as
+ *  '||char(34)||' instead, which gives the same string: an FTS5 phrase
+ *  query, MATCH '"a" AND "b"', becomes MATCH (''||char(34)||'a'||...).
+ *  A double quote anywhere else (a quoted identifier, a comment) cannot be
+ *  rewritten, and the stage stays with the per-library merge. */
+export function vtStage(sql: string): string | null {
+  let out = ''
+  for (let i = 0; i < sql.length; i++) {
+    const c = sql[i]
+    if (c === '"') return null
+    if (c === '-' && sql[i + 1] === '-') return sql.indexOf('"', i) < 0 ? out + sql.slice(i) : null
+    if (c === '/' && sql[i + 1] === '*') {
+      const end = sql.indexOf('*/', i + 2)
+      const comment = end < 0 ? sql.slice(i) : sql.slice(i, end + 2)
+      if (comment.includes('"')) return null
+      out += comment
+      i += comment.length - 1
+      continue
+    }
+    if (c !== "'") { out += c; continue }
+    // A single-quoted literal, '' being a quote inside it.
+    let j = i + 1
+    let body = ''
+    for (; j < sql.length; j++) {
+      if (sql[j] === "'") {
+        if (sql[j + 1] === "'") { body += "''"; j++; continue }
+        break
+      }
+      body += sql[j]
+    }
+    if (j >= sql.length) return null // unterminated: leave it to gufi_query's own error
+    out += body.includes('"') ? `('${body.split('"').join("'||char(34)||'")}')` : `'${body}'`
+    i = j
+  }
+  return out
+}
+
+const fitsVt = (plan: Plan) => Object.values(plan.stages).every(s => !s || vtStage(s) !== null)
 
 /** Where the wrapper reaches this server. */
 function selfUrl(): string {
@@ -128,7 +165,12 @@ export const viaShell = (r: NonNullable<VtLocation['remote']>) =>
 
 /** The script for a set of locations: one table each, then the union. */
 export function vtScript(locs: VtLocation[], order: VtOrder | null, remoteCmd = viaStudio): string {
-  const val = (k: string, v?: string) => (v ? `, ${k}="${v}"` : '')
+  const val = (k: string, v?: string) => {
+    if (!v) return ''
+    const stage = vtStage(v)
+    if (stage === null) throw new Error(`its ${k} stage has a double quote outside a string, which gufi_vt cannot take`)
+    return `, ${k}="${stage}"`
+  }
   const q = (v: string) => {
     const quoted = vtPath(v)
     if (!quoted) throw new Error(`${v} cannot be passed to gufi_vt`)

@@ -116,6 +116,10 @@ const building = (l: Library) => l.build?.state === 'building' || l.build?.state
 /** Whether the main folder's index is being built (indexing.ts says). */
 let primaryIndexing: () => boolean = () => false
 export function setPrimaryIndexingSource(fn: () => boolean): void { primaryIndexing = fn }
+/** Whether the main folder's index was ever built (indexing.ts says), so
+ *  one with no index is told apart from one whose index has gone. */
+let primaryBuilt: () => boolean = () => false
+export function setPrimaryBuiltSource(fn: () => boolean): void { primaryBuilt = fn }
 
 /**
  * What a library's state leaves out of a search or a query, before
@@ -132,6 +136,7 @@ export function libraryGap(l: Library, want: { words: boolean; meaning: boolean 
   if (!l.caps.index) {
     if (l.build?.state === 'building' || (l.primary && primaryIndexing())) return o('being built; searchable once its first pass is done', false)
     if (l.build?.state === 'failed') return o(`its build failed${l.build.error ? `: ${short(l.build.error)}` : ''}`, false)
+    if (l.primary && !primaryBuilt()) return o('not indexed yet', false)
     return o('index not found', false)
   }
   const reasons: string[] = []

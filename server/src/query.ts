@@ -35,6 +35,8 @@ export interface QueryResult {
   /** Across several libraries: one gufi_vt statement, or each library on
    *  its own with the rows merged by the Studio. */
   engine?: 'gufi_vt' | 'merge'
+  /** Across several libraries answered by the merge: why not gufi_vt. */
+  mergeReason?: string
   /** The GUFI commands that produced the rows, as a shell takes them. */
   gufi?: GufiCommand[]
 }
@@ -627,7 +629,11 @@ export async function queryScope(body: QueryRequest, viewerId: string | null): P
   let tagged: { id: string; row: string[] }[] | null = null
   let failed: QueryResult['failed'] = []
   let engine: QueryResult['engine'] = 'merge'
-  if (plans.every(p => vtEligible(p.plan) && vtLocatable(p.lib)) && await gufiVtAvailable()) {
+  let mergeReason: string | undefined
+  if (!plans.every(p => vtEligible(p.plan))) mergeReason = 'the query has a double quote outside a string, which gufi_vt cannot take'
+  else if (!plans.every(p => vtLocatable(p.lib))) mergeReason = "a library's path cannot be given to gufi_vt"
+  else if (!await gufiVtAvailable()) mergeReason = "this computer's GUFI has no gufi_vt with remote locations"
+  else {
     // The outer ORDER BY is exact for numbers and timestamps; names, and
     // grouped totals, are ordered here.
     const pushed: VtOrder | null = order && order.groupBy === undefined && order.numeric ? { col: order.col, desc: order.desc, limit: order.limit } : null
@@ -636,6 +642,7 @@ export async function queryScope(body: QueryRequest, viewerId: string | null): P
       tagged = r.rows; failed = r.failed; engine = 'gufi_vt'
     } catch (e) {
       vtFallbacks++
+      mergeReason = `gufi_vt failed: ${String((e as Error).message ?? e).slice(0, 200)}`
       console.warn(`gufi_vt query fell back to the per-library merge: ${(e as Error).message}`)
     }
   }
@@ -663,6 +670,7 @@ export async function queryScope(body: QueryRequest, viewerId: string | null): P
     rowLibraries: merged.slice(0, MAX_ROWS).map(t => t.id),
     elapsedMs: Date.now() - t0, truncated: merged.length > MAX_ROWS,
     failed, engine,
+    ...(engine === 'merge' && plans.length > 1 && mergeReason ? { mergeReason } : {}),
     ...(omitted.length ? { omitted } : {}),
   }
 }

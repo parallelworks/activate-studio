@@ -454,6 +454,20 @@ if [ "$RUN" = 1 ]; then
         } >"$T/vtdiag.txt" 2>&1 || true
         sed 's/^/        /' "$T/vtdiag.txt"
       fi
+      # The same with a words condition, whose FTS5 phrase quotes reach
+      # gufi_vt written as char(34): the OCR'd word in the main folder.
+      if [ "${ocr_found:-0}" = 1 ]; then
+        curl -fsS -m 60 -X POST -H 'content-type: application/json' \
+          -d '{"library": "all", "builder": {"source": "files", "filters": [{"field": "text", "op": "match", "value": "heliotrope"}], "groupBy": "none", "sort": "size", "dir": "desc", "limit": 20}}' \
+          "http://127.0.0.1:$PORT_FREE/api/query" >"$T/qwords.json" 2>"$T/qwords.err" || true
+        if python3 -c 'import json, sys; d = json.load(open(sys.argv[1])); found = any("ocr-sample" in str(r) for r in d.get("rows") or []); sys.exit(0 if d.get("engine") == "gufi_vt" and found and not d.get("failed") else 1)' "$T/qwords.json" 2>/dev/null; then
+          ok "and a query with a words condition runs through gufi_vt too"
+        else
+          bad "a query with a words condition did not run through gufi_vt:"
+          python3 -c 'import json, sys; d = json.load(open(sys.argv[1])); print("engine", d.get("engine"), "why", d.get("mergeReason"), "rows", len(d.get("rows") or []), "failed", d.get("failed"))' "$T/qwords.json" 2>&1 | sed 's/^/        /'
+          sed 's/^/        /' "$T/qwords.err" || true
+        fi
+      fi
     else
       bad "could not add a second library to query across"
     fi
