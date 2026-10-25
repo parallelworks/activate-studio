@@ -169,6 +169,12 @@ test('a main folder never indexed is named "not indexed yet" by search and Query
   const o = omissionOf(s, 'kb')
   assert.ok(o, `named in search: ${JSON.stringify(s.omitted)}`)
   assert.deepEqual([o.reason, o.partial], ['not indexed yet', false])
+  // The one walk is the default; the gufi_vt setting takes its own route,
+  // through the same check before anything runs.
+  process.env.STUDIO_SEARCH_ENGINE = 'gufi_vt'
+  try {
+    assert.equal(omissionOf(await search('quokkaword'), 'kb')?.reason, 'not indexed yet', 'with search on gufi_vt too')
+  } finally { delete process.env.STUDIO_SEARCH_ENGINE }
   const q = await j('POST', '/api/query', { library: 'all', canned: 'largest', n: 5 })
   assert.equal(q.status, 409, JSON.stringify(q.body))
   assert.match(JSON.stringify(q.body), /cannot be queried: not indexed yet/)
