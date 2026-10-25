@@ -1,13 +1,17 @@
-import { execFile } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { GUFI_BIN, GUFI_INDEX, INDEX_BASE, gufiAvailable, gufiEnv } from './config.js'
-import { REMOTE_PREFIX, remoteIndexRoot, remoteQuery, remoteTarget } from './userLibraries.js'
+import { REMOTE_PREFIX, remoteIndexRoot, remoteQuery, remoteQueryMany, remoteTarget } from './userLibraries.js'
 import { noteGufi } from './gufiTrace.js'
-import { embedQueries, isOnnxModel, onnxModelPresent } from './embedWorker.js'
+import { ONNX_MODEL_ID, embedQueries, isOnnxModel, onnxModelPresent } from './embedWorker.js'
 
 const DELIM = '\x1e' // record separator; never appears in KB text
+
+/** How a hit was found: its words (fts), its name, the path of a folder it
+ *  is in, or its meaning (vector). */
+export type HitMode = 'fts' | 'name' | 'path' | 'vector'
 
 export interface SearchHit {
   path: string
@@ -16,7 +20,11 @@ export interface SearchHit {
   mtime: number
   snippet: string
   score: number
-  mode: 'fts' | 'name' | 'vector'
+  /** The most exact way it was found: words, then name, then folder path,
+   *  then meaning. */
+  mode: HitMode
+  /** Every way it was found, most exact first (searchScope's fused hits). */
+  kinds?: HitMode[]
   tags?: string[]
   /** Order within its kind, lower first: a word match's bm25, a name
    *  match's 0 (the query is the name), 1 (the name starts with it) or 2. */
@@ -201,19 +209,29 @@ export const nameHit = (r: string[], rel: string): SearchHit => ({ path: rel, na
  * term is required to start a word: "tin" must not surface routine.md.
  */
 export function nameClause(term: string): string {
-  const t = term.replace(/[%_]/g, '')
-  if (!t) return '0'
-  if (t.length > 3) return `name LIKE ${q('%' + t + '%')}`
-  const starts = ['', ' ', '-', '_', '.', '(', '[', ',']
-  return '(' + starts.map(sep => `name LIKE ${q((sep ? '%' + sep : '') + t + '%')}`).join(' OR ') + ')'
+  return likeClause('name', term)
 }
 
-export function nameWhere(parsed: ParsedQuery): string {
+/** The same clause over any text column or expression; a folder path also
+ *  starts a word after a slash. */
+function likeClause(col: string, term: string): string {
+  const t = term.replace(/[%_]/g, '')
+  if (!t) return '0'
+  if (t.length > 3) return `${col} LIKE ${q('%' + t + '%')}`
+  const starts = ['', ' ', '-', '_', '.', '(', '[', ',', ...(col === 'name' ? [] : ['/'])]
+  return '(' + starts.map(sep => `${col} LIKE ${q((sep ? '%' + sep : '') + t + '%')}`).join(' OR ') + ')'
+}
+
+function whereOver(col: string, parsed: ParsedQuery): string {
   const groups = parsed.groups
-    .map(g => g.items.map(i => nameClause(i.text)).filter(c => c !== '0'))
+    .map(g => g.items.map(i => likeClause(col, i.text)).filter(c => c !== '0'))
     .filter(cs => cs.length)
     .map(cs => cs.length > 1 ? `(${cs.join(' AND ')})` : cs[0])
   return groups.length > 1 ? groups.join(' OR ') : (groups[0] ?? '0')
+}
+
+export function nameWhere(parsed: ParsedQuery): string {
+  return whereOver('name', parsed)
 }
 
 /**
@@ -341,6 +359,284 @@ export async function searchFts(queryText: string, limit = 20, indexRoot?: strin
  *  best match first (nameRank). */
 export async function searchNames(queryText: string, limit = 20, indexRoot?: string): Promise<SearchHit[]> {
   return (await searchWordsAndNames(queryText, { ftsLimit: 0, nameLimit: limit }, indexRoot)).names
+}
+
+// ---- one walk for names, folder paths, words and meaning ----
+
+/** What one walk looks for, and how many of each kind it keeps. 0 leaves a
+ *  kind out. Per directory, a kind keeps at most its own limit, words at
+ *  most `wordsPerDir` and meaning `vectorsPerDir`; overall, each its total.
+ *  `studioText` and `studioVectors` say whether the index carries the
+ *  Studio's own words and vector tables; `external`, a basename pattern for
+ *  external databases in the shared text and vector schema, which are read
+ *  wherever they are (null: not looked for). */
+export interface WalkLimits {
+  names: number; paths: number; words: number; wordsPerDir: number; vectors: number; vectorsPerDir: number
+  studioText: boolean; studioVectors: boolean; external: string | null
+}
+
+/** The basename pattern for external databases in the shared text and
+ *  vector schema (ext_bm25_by_file, ext_vectors_by_file): any file in an
+ *  index directory ending in .db, which gufi_query matches against every
+ *  file there but db.db. STUDIO_EXTERNAL_DB_PATTERN changes it; empty turns
+ *  it off. */
+export const EXTERNAL_DB_PATTERN = process.env.STUDIO_EXTERNAL_DB_PATTERN ?? '\\.db$'
+
+/** A query embedding for the vectors of the models a LIKE pattern names
+ *  (gvecmodel), as hex for a blob literal. */
+export interface QueryVector { pattern: string; hex: string }
+
+/** One row of a walk: its kind, its score within the kind (lower first:
+ *  nameRank, folder depth, bm25 or distance), and the file. */
+export interface WalkRow { kind: HitMode; r: number; path: string; name: string; size: number; mtime: number; snippet: string; root: string }
+
+const CODE_KIND: Record<string, HitMode> = { n: 'name', p: 'path', f: 'fts', v: 'vector' }
+/** Reciprocal rank fusion's constant: a hit's score is the sum over the
+ *  kinds that found it of 1 / (60 + its rank in that kind). */
+export const RRF_K = 60
+
+/** A directory's path below the root it was reached from, in SQL: rpath()
+ *  prints the index path given on the command line, so each root's own
+ *  length is cut off. */
+function relDirSql(roots: string[]): string {
+  const rp = 'rpath(sname, sroll)'
+  // SQLite's substr counts characters; so does a string's code points.
+  const len = (r: string) => [...r].length
+  if (roots.length === 1) return `substr(${rp}, ${len(roots[0]) + 2})`
+  return `CASE ${roots.map(r => `WHEN substr(${rp}, 1, ${len(r)}) = ${q(r)} THEN substr(${rp}, ${len(r) + 2})`).join(' ')} ELSE ${rp} END`
+}
+
+/**
+ * The one-pass pattern GUFI's authors recommend, for search: one gufi_query
+ * walk whose per-directory step (-E) adds every kind of match while that
+ * directory's tables are open, each into the same per-thread table (-I),
+ * trimmed to its best as it goes, merged per thread (-J), and ranked once
+ * at the end (-G), where reciprocal rank fusion combines the kinds into
+ * one order. A tree walked once for all of them is the win, and the larger
+ * the more directories it has.
+ *
+ * The statements run in a fixed order, names and folder paths first, then
+ * words, then meaning: in a directory without a words table (or vectors),
+ * the statement that needs it fails and those after it are skipped there,
+ * while the rows before it stand. That lets one query serve an index whose
+ * directories have text in some places and none in others, without writing
+ * empty tables into every directory (20 KB for an empty fts5 table and 40 KB
+ * for empty vector tables, per directory, as measured).
+ *
+ * The query's embedding goes in -I as a blob literal, one copy per thread,
+ * so this needs nothing beyond what every GUFI here has (--global-db would
+ * do the same on newer GUFI).
+ *
+ * External databases in the shared schema are read in the same walk, with
+ * --external-copy: in each directory, every file matching lim.external is
+ * attached and its best text (ext_bm25_by_file, by bm25) and, for a model
+ * whose query vector is here, its nearest chunks (ext_vectors_by_file, by
+ * cosine distance on the scale of vec0's distance for unit vectors) join
+ * the same table, matched to the directory's entries by inode and mtime, so
+ * a file changed since its text was extracted is not matched. That runs
+ * before -E, which trims what it added first.
+ *
+ * Null when the query names nothing.
+ */
+export function onePassStages(queryText: string, lim: WalkLimits, roots: string[], vectors: QueryVector[] = []): string[] | null {
+  const parsed = parseSearchQuery(queryText)
+  const nWhere = lim.names > 0 ? nameWhere(parsed) : '0'
+  const relDir = relDirSql(roots)
+  const pWhere = lim.paths > 0 ? whereOver(relDir, parsed) : '0'
+  const expr = lim.words > 0 ? ftsExprFor(parsed) : ''
+  const vecs = lim.vectors > 0 ? vectors : []
+  const studioWords = lim.studioText && !!expr
+  const studioVecs = lim.studioVectors && vecs.length > 0
+  const external = lim.external && (expr || vecs.length) ? lim.external : null
+  if (nWhere === '0' && pWhere === '0' && !studioWords && !studioVecs && !external) return null
+  const cols = 'k TEXT, r REAL, p TEXT, n TEXT, s INT64, m INT64, x TEXT'
+  const rp = `rpath(sname, sroll)||'/'||name`
+  // What a thread keeps of each kind; the final step keeps vectors' own limit.
+  const held = `CASE k WHEN 'n' THEN ${lim.names} WHEN 'p' THEN ${lim.paths} WHEN 'f' THEN ${lim.words} ELSE ${lim.vectors * 3} END`
+  // gufi_query compiles every statement again in every directory, which on a
+  // tree of many directories costs more than the rows do, so there are few:
+  // one trim, first, keeping each kind's best (it also bounds what an
+  // external database and the previous directory added, whichever of their
+  // steps failed), then one insert per kind of table read.
+  const E: string[] = [`DELETE FROM t WHERE rowid IN (SELECT rowid FROM (SELECT rowid, k, row_number() OVER (PARTITION BY k ORDER BY r, p) AS rn FROM t) WHERE rn > ${held});`]
+  const names = nWhere !== '0'
+    ? `SELECT * FROM (SELECT 'n', ${nameRank(parsed)}, ${rp}, name, size, mtime, '' FROM vrpentries WHERE ${nWhere} ORDER BY 2, 3 LIMIT ${lim.names})` : ''
+  // Files below a folder whose path matches; a name that matches is a name
+  // match already. Nearer the matching folder first.
+  const paths = pWhere !== '0'
+    ? `SELECT * FROM (SELECT 'p', length(${relDir}), ${rp}, name, size, mtime, '' FROM vrpentries WHERE (${pWhere})${nWhere !== '0' ? ` AND NOT (${nWhere})` : ''} ORDER BY 2, 3 LIMIT ${lim.paths})` : ''
+  if (names || paths) E.push(`INSERT INTO t ${[names, paths].filter(Boolean).join(' UNION ALL ')};`)
+  if (studioWords) {
+    E.push(`INSERT INTO t SELECT 'f', bm25(words), ${FTS_COLUMNS} ${FTS_FROM(expr)} ORDER BY 2, 3 LIMIT ${lim.wordsPerDir};`)
+  }
+  const ext: string[] = []
+  if (external && expr) {
+    ext.push(
+      `INSERT INTO t SELECT 'f', bm25(ext_bm25_by_file), rpath(e.sname, e.sroll)||'/'||e.name, e.name, e.size, e.mtime, ` +
+      `replace(replace(snippet(ext_bm25_by_file, -1, '[', ']', ' … ', 12), char(10), ' '), char(13), ' ') ` +
+      `FROM ext_bm25_by_file JOIN vrpentries e ON CAST(binode AS INT64) = e.inode AND CAST(bmtime AS INT64) = e.mtime ` +
+      `WHERE ext_bm25_by_file MATCH ${q(expr)} ORDER BY 2, 3 LIMIT ${lim.wordsPerDir};`)
+  }
+  if (external && vecs.length) {
+    ext.push(
+      `INSERT INTO t SELECT 'v', sqrt(2.0 * vec_distance_cosine(substr(x.embedding, 1, 1536), qv.qe)), rpath(e.sname, e.sroll)||'/'||e.name, e.name, e.size, e.mtime, ` +
+      `replace(replace(substr(x.chunk_content, 1, 200), char(10), ' '), char(13), ' ') ` +
+      `FROM ext_vectors_by_file x JOIN qv ON x.vector_model_name LIKE qv.pat ` +
+      `JOIN vrpentries e ON CAST(x.vinode AS INT64) = e.inode AND CAST(x.vmtime AS INT64) = e.mtime ` +
+      `WHERE length(x.embedding) >= 1536 ORDER BY 2, 3 LIMIT ${lim.vectorsPerDir};`)
+  }
+  if (studioVecs) {
+    // The directory's own model picks the query vector; a directory whose
+    // model has none here fails this step alone, as the last one.
+    E.push(
+      `INSERT INTO t SELECT 'v', k.distance, rpath(e.sname, e.sroll)||'/'||e.name, e.name, e.size, e.mtime, ` +
+      `replace(replace(substr(g.ctext, 1, 200), char(10), ' '), char(13), ' ') ` +
+      `FROM (SELECT cid, distance FROM gvec WHERE fp384 MATCH (SELECT qe FROM qv WHERE (SELECT model FROM gvecmodel LIMIT 1) LIKE pat LIMIT 1) ORDER BY distance LIMIT ${lim.vectorsPerDir}) k ` +
+      `JOIN gchunks g ON g.cid = k.cid JOIN vrpentries e ON e.inode = g.tinode;`,
+    )
+  }
+  const cap = `CASE k WHEN 'n' THEN ${lim.names} WHEN 'p' THEN ${lim.paths} WHEN 'f' THEN ${lim.words} ELSE ${lim.vectors} END`
+  const I = [`CREATE TABLE t (${cols});`]
+  if (vecs.length) I.push('CREATE TABLE qv (pat TEXT, qe BLOB);', `INSERT INTO qv VALUES ${vecs.map(v => `(${q(v.pattern)}, X'${v.hex}')`).join(', ')};`)
+  if (!E.length) E.push('SELECT 1 WHERE 0;')
+  return [
+    '-I', I.join(' '),
+    '-K', `CREATE TABLE agg (${cols});`,
+    ...(ext.length ? ['--external-copy', external!, ext.join(' ')] : []),
+    '-E', E.join(' '),
+    '-J', 'INSERT INTO agg SELECT * FROM t;',
+    // Each file once per kind (its best row: several chunks of one file can
+    // match by meaning), ranked within its kind, kept to the kind's limit,
+    // and fused: the order a search across these roots alone would show.
+    '-G', `WITH best AS (SELECT k, min(r) AS r, p, n, s, m, x FROM agg GROUP BY k, p), ` +
+      `ranked AS (SELECT *, row_number() OVER (PARTITION BY k ORDER BY r, p) AS rn FROM best), ` +
+      `kept AS (SELECT * FROM ranked WHERE rn <= ${cap}), ` +
+      `fused AS (SELECT p AS fp, sum(1.0 / (${RRF_K}.0 + rn)) AS score FROM kept GROUP BY p) ` +
+      `SELECT k, r, p, n, s, m, x FROM kept JOIN fused ON p = fp ORDER BY score DESC, p, k;`,
+  ]
+}
+
+/** The query embeddings a walk can use: the ONNX model's, for every
+ *  truncation of it, when the model is here. A directory embedded with
+ *  another model is left to searchVector. */
+export async function queryVectors(queryText: string): Promise<QueryVector[]> {
+  if (!onnxModelPresent()) return []
+  const vec = await embedQueries([queryText.slice(0, 500)]).then(v => v[0], e => {
+    console.warn(`search by meaning: ${(e as Error).message}`)
+    return null
+  })
+  if (!vec || vec.length !== 384 * 4) return []
+  const hex = vec.toString('hex')
+  // The ONNX model is all-MiniLM-L6-v2 with mean pooling, quantized, so its
+  // query vector also searches vectors an external database names by that
+  // model (by cosine distance, which does not depend on their scale).
+  return [{ pattern: ONNX_MODEL_ID, hex }, { pattern: `${ONNX_MODEL_ID}-t%`, hex }, { pattern: '%all-MiniLM-L6-v2', hex }]
+}
+
+/** gufi_query, keeping all of its output but only the end of its error
+ *  output: a walk prints a line for every directory where a step failed (a
+ *  directory without a words table, say), which on a large tree is more
+ *  than a buffer should hold. */
+function runQuery(args: string[], timeoutMs = 60_000): Promise<{ stdout: string; stderr: string }> {
+  const bin = path.join(GUFI_BIN, 'gufi_query')
+  const t0 = Date.now()
+  return new Promise((resolve, reject) => {
+    const child = spawn(bin, args, { env: gufiEnv(), stdio: ['ignore', 'pipe', 'pipe'] })
+    const out: Buffer[] = []
+    let err = ''
+    child.stdout.on('data', (d: Buffer) => out.push(d))
+    child.stderr.on('data', (d: Buffer) => { err = (err + d.toString()).slice(-16_384) })
+    const timer = setTimeout(() => child.kill('SIGKILL'), timeoutMs)
+    child.on('error', e => { clearTimeout(timer); reject(e) })
+    child.on('close', (code, signal) => {
+      clearTimeout(timer)
+      noteGufi([bin, ...args], { ms: Date.now() - t0 })
+      const stdout = Buffer.concat(out).toString()
+      // An unknown option prints the usage on stdout, so it is told by its error.
+      if ((code !== 0 || signal) && (!stdout || unknownOption(err))) return reject(new Error(`gufi_query failed: ${(err.trim().split('\n').pop() || signal || `exit ${code}`)}`))
+      resolve({ stdout, stderr: err })
+    })
+  })
+}
+
+/** Whether a failure is gufi_query not knowing an option: an older GUFI. */
+const unknownOption = (e: unknown) => /unrecognized option|invalid option|unknown option/i.test(String((e as Error)?.message ?? e))
+
+/**
+ * One walk over one or more index roots on one machine: local roots in one
+ * gufi_query, or the roots of one remote site in one remote command. The
+ * rows come back tagged with the root each path is under.
+ */
+export async function walkSearch(queryText: string, lim: WalkLimits, indexRoots: string[], vectors: QueryVector[] = []): Promise<WalkRow[]> {
+  if (!indexRoots.length) return []
+  const remote = indexRoots[0].startsWith(REMOTE_PREFIX)
+  const printed = remote ? indexRoots.map(r => remoteIndexRoot(r)) : indexRoots.map(r => path.resolve(r))
+  const stages = onePassStages(queryText, lim, printed, vectors)
+  if (!stages) return []
+  const exec = async (current: boolean) => {
+    // An older GUFI is asked again without what it may not know:
+    // --no-print-sql-on-err (which keeps a failed step's error to one short
+    // line) and --external-copy.
+    let s = stages
+    if (!current) {
+      const i = s.indexOf('--external-copy')
+      if (i >= 0) s = [...s.slice(0, i), ...s.slice(i + 3)]
+    }
+    const args = ['-n', String(LOCAL_THREADS), '-d', DELIM, '-a', '1', ...(current ? ['--no-print-sql-on-err'] : []), ...s]
+    return remote ? remoteQueryMany(indexRoots, args) : (await runQuery([...args, ...printed])).stdout
+  }
+  const stdout = await exec(true).catch(e => (unknownOption(e) ? exec(false) : Promise.reject(e)))
+  // Longest root first, so a root inside another claims its own paths.
+  const order = printed.map((p, i) => ({ p, root: indexRoots[i] })).sort((a, b) => b.p.length - a.p.length)
+  const rows: WalkRow[] = []
+  for (const r of parseRows(stdout, 7)) {
+    const kind = CODE_KIND[r[0]]
+    if (!kind) continue
+    const at = order.find(o => r[2] === o.p || r[2].startsWith(o.p + '/'))
+    if (!at) continue
+    rows.push({ kind, r: Number(r[1]), path: r[2] === at.p ? '' : r[2].slice(at.p.length + 1), name: r[3], size: Number(r[4]) || 0, mtime: Number(r[5]) || 0, snippet: r[6] ?? '', root: at.root })
+  }
+  return rows
+}
+
+const KIND_ORDER: HitMode[] = ['fts', 'name', 'path', 'vector']
+
+/**
+ * Reciprocal rank fusion over the rows of one or more walks, each row's
+ * path already unique per library: every kind is ranked on its own (by its
+ * score, then path, so the order is the same on every run), kept to its
+ * limit, and a file's score is the sum over the kinds that found it of
+ * 1 / (60 + its rank). Ties go to the more exact kind, then the path. A hit
+ * is labelled by the most exact way it was found, and carries all of them.
+ */
+export function fuseRows(rows: WalkRow[], caps: Partial<Record<HitMode, number>>, limit: number): SearchHit[] {
+  const best = new Map<string, WalkRow>()
+  for (const row of rows) {
+    const key = `${row.kind}\0${row.path}`
+    const was = best.get(key)
+    if (!was || row.r < was.r) best.set(key, row)
+  }
+  const byKind = new Map<HitMode, WalkRow[]>()
+  for (const row of best.values()) byKind.set(row.kind, [...(byKind.get(row.kind) ?? []), row])
+  const files = new Map<string, { score: number; kinds: HitMode[]; rows: Partial<Record<HitMode, WalkRow>> }>()
+  for (const kind of KIND_ORDER) {
+    const list = (byKind.get(kind) ?? []).sort((a, b) => a.r - b.r || (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
+    list.slice(0, caps[kind] ?? list.length).forEach((row, i) => {
+      const f = files.get(row.path) ?? { score: 0, kinds: [], rows: {} }
+      f.score += 1 / (RRF_K + i + 1)
+      f.kinds.push(kind)
+      f.rows[kind] = row
+      files.set(row.path, f)
+    })
+  }
+  const prio = (m: HitMode) => KIND_ORDER.indexOf(m)
+  return [...files].map(([p, f]) => {
+    const mode = f.kinds[0]
+    const main = f.rows[mode]!
+    const sized = KIND_ORDER.map(k => f.rows[k]).find(r => r && (r.size || r.mtime)) ?? main
+    const snippet = f.rows.fts?.snippet || f.rows.vector?.snippet || ''
+    return { path: p, name: main.name, size: sized.size, mtime: sized.mtime, snippet, score: f.score, mode, kinds: f.kinds, rank: main.r }
+  }).sort((a, b) => b.score - a.score || prio(a.mode) - prio(b.mode) || (a.path < b.path ? -1 : a.path > b.path ? 1 : 0)).slice(0, limit)
 }
 
 /** gufi_query prints paths rooted at the index tree; strip the index prefix. */

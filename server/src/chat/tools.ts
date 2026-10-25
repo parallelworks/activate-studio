@@ -6,7 +6,6 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { gufiAvailable, isMissingCli, KB_ROOT, MAX_PREVIEW_BYTES, NO_CLI_MESSAGE, PROJECT_ROOT, PW_CLI } from '../config.js'
 import { listDir, readFileContent, KbError } from '../kb.js'
-import { blendHits, searchFts, searchNames, searchVector } from '../gufi.js'
 import { getLibrary } from '../libraries.js'
 import { annotateHits } from '../tags.js'
 import { effectiveSettings } from '../settings.js'
@@ -1414,7 +1413,6 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
               : 'No matches.') + lateNote
             return { result, summary: `${hits.length} hits in ${libs.length} librar${libs.length === 1 ? 'y' : 'ies'}` }
           }
-          const fts = scoped.filter(h => h.mode === 'fts'), names = scoped.filter(h => h.mode === 'name'), vec = scoped.filter(h => h.mode === 'vector')
           // A conversation-level label scope is enforced here regardless of
           // what the model asked for; model-requested tags narrow further
           // only when they fall inside the scope.
@@ -1425,7 +1423,8 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
             const within = requested?.filter(t => scope.includes(t))
             filter = within?.length ? within : scope
           }
-          const hits = await annotateHits(blendHits(fts, names, vec, limit + 5), filter)
+          // searchScope's order already fuses every kind of match.
+          const hits = await annotateHits(scoped.slice(0, limit + 5), filter)
           const result = (hits.length
             ? hits.map(h => `${h.path}${h.tags?.length ? ` [labels: ${h.tags.join(', ')}]` : ''}\n  ${h.snippet || '(filename match)'}`).join('\n')
             : 'No matches.') + lateNote

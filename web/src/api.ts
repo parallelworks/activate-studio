@@ -226,7 +226,9 @@ export interface SearchHit {
   size: number
   mtime: number
   snippet: string
-  mode: 'fts' | 'name' | 'vector'
+  mode: 'fts' | 'name' | 'path' | 'vector'
+  /** Every way it was found, most exact first. */
+  kinds?: ('fts' | 'name' | 'path' | 'vector')[]
   tags?: string[]
   /** The library the hit is in, for a search over several. */
   library?: { id: string; label: string }

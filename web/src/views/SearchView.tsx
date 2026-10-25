@@ -14,12 +14,23 @@ const MODE_LABEL: Record<SearchHit['mode'], string> = {
   fts: 'words',
   vector: 'meaning',
   name: 'name',
+  path: 'folder',
 }
 // The badge tones have no purple; matches by meaning keep theirs from .pill-vector.
 const MODE_TONE: Record<SearchHit['mode'], BadgeVariant> = {
   fts: 'info',
   vector: 'default',
   name: 'muted',
+  path: 'muted',
+}
+
+/** Every way a hit was found, for its badge's tooltip: the badge names the
+ *  most exact one. */
+export function foundBy(h: Pick<SearchHit, 'mode' | 'kinds'>): string {
+  const what: Record<SearchHit['mode'], string> = { fts: 'its words', name: 'its name', path: 'a folder it is in', vector: 'its meaning' }
+  const kinds = h.kinds?.length ? h.kinds : [h.mode]
+  const parts = kinds.map(k => what[k])
+  return `Found by ${parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}` : parts[0]}`
 }
 
 export function SearchView({ onOpen }: { onOpen: (path: string, q?: string) => void }) {
@@ -148,7 +159,7 @@ export function SearchView({ onOpen }: { onOpen: (path: string, q?: string) => v
                     <span title="The library this match is in"><StatusBadge>{h.library.label}</StatusBadge></span>
                   )}
                   {(h.tags ?? []).map(t => <span key={t} className="tag-pill on small">{t}</span>)}
-                  <StatusBadge variant={MODE_TONE[h.mode]} className={h.mode === 'vector' ? 'pill-vector' : undefined}>{MODE_LABEL[h.mode]}</StatusBadge>
+                  <span title={foundBy(h)}><StatusBadge variant={MODE_TONE[h.mode]} className={h.mode === 'vector' ? 'pill-vector' : undefined}>{MODE_LABEL[h.mode]}</StatusBadge></span>
                 </span>
               </div>
               {h.snippet && <div className="result-snippet">{h.snippet}</div>}
@@ -203,7 +214,8 @@ export function SearchHelp({ libraries }: { libraries: PublicLibrary[] }) {
       </p>
       {open && (
         <div className="search-help-detail muted">
-          <p><i>By name:</i> any part of a file or folder name.</p>
+          <p><i>By name:</i> any part of a file&apos;s name.</p>
+          <p><i>By folder:</i> a folder the file is in has the search in its name.</p>
           <p>
             <i>By words:</i> whole words in the text of documents, notes and code. <code>"exact phrase"</code>, <code>OR</code>,{' '}
             <code>-exclude</code> and <code>prefix*</code> narrow it.
@@ -217,7 +229,10 @@ export function SearchHelp({ libraries }: { libraries: PublicLibrary[] }) {
               <span key={l.id}>{i ? ', ' : ''}{l.label}: {meaningOn(l) ? (l.meaning === 'full' ? 'all files' : l.meaning === 'documents' ? 'documents' : 'its own vectors') : 'off'}</span>
             ))}.
           </p>
-          <p>Each result says how it matched: name, words, or meaning.</p>
+          <p>
+            Each result says how it matched: name, folder, words, or meaning; hover it for every way it did. Files found more than one way
+            come first.
+          </p>
         </div>
       )}
     </div>
