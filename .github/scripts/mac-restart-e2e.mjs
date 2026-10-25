@@ -4,13 +4,13 @@
 // counts come first, so nothing here asks for GET /api/libraries (which
 // probes every library) before them; neither page asks for it either.
 //
-// Usage: node mac-restart-e2e.mjs STAGE OUT_DIR LIBRARY_ID [counts-only]
+// Usage: node mac-restart-e2e.mjs STAGE OUT_DIR LIBRARY_ID LIBRARIES_IN_SCOPE [counts-only]
 // Prints one JSON line with the counts, and appends it to OUT_DIR/counts.jsonl.
 import { chromium } from 'playwright'
 import fs from 'node:fs'
 import path from 'node:path'
 
-const [stage, out, lib, only] = process.argv.slice(2)
+const [stage, out, lib, inScope, only] = process.argv.slice(2)
 const BASE = 'http://127.0.0.1:4180'
 const WORD = 'heliotrope'       // only OCR reads it, in the pictures and scanned PDFs
 const NAME = 'ledger-0042'      // one file's name
@@ -46,6 +46,17 @@ const counts = { stage, at: new Date().toISOString() }
 counts.searchWord = searchCounts(...await timed(() => get(`/api/search?q=${WORD}&library=all&limit=1000`)))
 counts.searchName = searchCounts(...await timed(() => get(`/api/search?q=${NAME}&library=all&limit=100`)))
 for (const [k, q] of Object.entries(QUERIES)) counts[`query_${k}`] = queryCounts(...await timed(() => post('/api/query', q)))
+// How many libraries answered each Query (those in scope, less those
+// omitted whole), and the engines; gufi_vt is expected where two or more do.
+for (const k of Object.keys(QUERIES)) {
+  const q = counts[`query_${k}`]
+  q.answering = Number(inScope) - q.omitted.filter(o => !o.partial).length
+}
+// The main folder as each of Search and Query names it, when omitted.
+counts.kbOmitted = {
+  search: [...counts.searchWord.omitted, ...counts.searchName.omitted].find(o => o.id === 'kb') ?? null,
+  query: Object.keys(QUERIES).map(k => counts[`query_${k}`].omitted.find(o => o.id === 'kb')).find(Boolean) ?? null,
+}
 // Each of these finds files in the library, so it is in the results or in
 // omitted; silent lists the responses where it is in neither.
 counts.silent = Object.entries(counts).filter(([, v]) => v && typeof v === 'object' && 'lib' in v && v.lib === 0 && !v.omitted.some(o => o.id === lib)).map(([k]) => k)

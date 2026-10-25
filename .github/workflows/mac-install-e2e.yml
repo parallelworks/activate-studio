@@ -29,7 +29,7 @@ on:
         default: https://github.com/parallelworks/activate-studio/releases/download/v1.170/activate-studio-macos-arm64.dmg
       restart_dmg_url:
         description: The disk image the restart job installs
-        default: https://github.com/parallelworks/activate-studio/releases/download/v1.173/activate-studio-macos-arm64.dmg
+        default: https://github.com/parallelworks/activate-studio/releases/download/v1.174/activate-studio-macos-arm64.dmg
       readonly_agents:
         description: Run only the passes with ~/Library/LaunchAgents read-only
         type: boolean
@@ -179,7 +179,7 @@ jobs:
 
       - name: a built library across an interrupted rebuild and a restart
         env:
-          DMG_URL: ${{ inputs.restart_dmg_url || 'https://github.com/parallelworks/activate-studio/releases/download/v1.173/activate-studio-macos-arm64.dmg' }}
+          DMG_URL: ${{ inputs.restart_dmg_url || 'https://github.com/parallelworks/activate-studio/releases/download/v1.174/activate-studio-macos-arm64.dmg' }}
         run: bash .github/scripts/mac-restart-e2e.sh "$DMG_URL" "$RUNNER_TEMP/e2e/restart"
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

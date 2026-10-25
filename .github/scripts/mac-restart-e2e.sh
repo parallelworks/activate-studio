@@ -60,16 +60,19 @@ PY
 wait_server() { for _ in $(seq 1 150); do api /api/version >/dev/null 2>&1 && return 0; sleep 2; done; return 1; }
 # One stage: counts, then screenshots, with the counts kept in $C.
 stage() {
-  C="$(cd "$P" && node mac-restart-e2e.mjs "$1" "$OUT" "$LIB" ${2:-} 2>>"$OUT/playwright.log" | tail -1)"
+  C="$(cd "$P" && node mac-restart-e2e.mjs "$1" "$OUT" "$LIB" "$IN_SCOPE" ${2:-} 2>>"$OUT/playwright.log" | tail -1)"
   log "counts at $1: $C"
   log "omitted at $1: $(echo "$C" | json '{k: v["omitted"] for k, v in d.items() if isinstance(v, dict) and v.get("omitted")} or "none"')"
   log "times at $1 (ms): $(echo "$C" | json '{k: v["ms"] for k, v in d.items() if isinstance(v, dict) and "ms" in v}')"
   # Each request finds files in the library: it is in the results, or named
   # in omitted (v1.173, #588); never left out silently.
   check "at $1: the library is never left out without being named in omitted" '[ "$(cnt "len(d[\"silent\"])")" -eq 0 ]'
-  # Query across libraries runs on gufi_vt in the app (v1.173, #587).
-  check "at $1: Query across all libraries runs on gufi_vt" \
-    '[ "$(cnt "\",\".join(sorted({d[k][\"engine\"] or \"none\" for k in d if k.startswith(\"query_\")}))")" = gufi_vt ]'
+  log "Query engines at $1: $(echo "$C" | json '{k: (d[k]["engine"], str(d[k]["answering"]) + " answering") for k in d if k.startswith("query_")}')"
+  log "the main folder at $1: search names it $(cnt 'd["kbOmitted"]["search"]'), Query names it $(cnt 'd["kbOmitted"]["query"]')"
+  # Query across libraries runs on gufi_vt in the app (v1.173, #587), where
+  # two or more libraries answer; with one there is nothing to put across.
+  check "at $1: Query across all libraries runs on gufi_vt wherever two or more libraries answer" \
+    '[ "$(cnt "sum(1 for k in d if k.startswith(\"query_\") and d[k][\"answering\"] >= 2 and d[k][\"engine\"] != \"gufi_vt\")")" -eq 0 ]'
 }
 cnt() { echo "$C" | json "$1"; }
 
@@ -130,6 +133,19 @@ for _ in $(seq 1 60); do
   [ "${n:-0}" -gt 0 ] && break; sleep 3
 done
 log "searchable by words: $n hits for heliotrope from $LIB"
+IN_SCOPE=2    # the main folder and this library
+
+# The main folder has not been indexed yet: how Search and Query name it.
+stage 0-main-not-indexed counts-only
+
+# The main folder indexed too, so Query across libraries has two locations.
+r="$(curl -fsS -X POST "$API/api/index/build")" || fatal "the main folder's build could not be started"
+MJOB="$(echo "$r" | json 'd["id"]')"
+for _ in $(seq 1 150); do
+  [ "$(api "/api/index/job/$MJOB" | json 'd["state"]')" = done ] && break
+  sleep 2
+done
+log "the main folder: build job $MJOB $(api "/api/index/job/$MJOB" | json 'd["state"]'); $(api /api/index/status | json '{"running": d.get("running")}')"
 
 stage 1-after-build
 check "after the build: names in search" '[ "$(cnt "d[\"searchName\"][\"lib\"]")" -gt 0 ]'
@@ -229,8 +245,10 @@ left="$(pgrep -fl "$DEST/Contents/Resources" || true)"
 check "the stop leaves none of the app's programs running" '[ -z "$left" ]'
 # The pictures read before the stop, with their cache files' times, to show
 # that the resumed build reads only the rest.
-find "$CACHE" -path '*scans-new*' -type f -exec stat -f '%m %N' {} + 2>/dev/null | sort -k2 >"$OUT/cache-at-stop.txt"
-log "pictures read before the stop: $(wc -l <"$OUT/cache-at-stop.txt" | tr -d ' ') of $NEW"
+# One line per picture read: the cache file's modification time (ns), a tab, its path.
+cache_list() { find "$CACHE" -path '*scans-new*' -type f -print0 2>/dev/null | xargs -0 stat -f '%Fm%t%N' 2>/dev/null; }
+cache_list >"$OUT/cache-at-stop.txt"
+log "pictures read before the stop: $(wc -l <"$OUT/cache-at-stop.txt" | tr -d ' ') of $NEW (cache-at-stop.txt)"
 api /api/version >/dev/null 2>&1 && fatal "the server still answers after the stop"
 log "stopped; library state $(lib_state)"
 cp "$DATA/logs/studio.log" "$OUT/studio-before-restart.log" 2>/dev/null
@@ -262,9 +280,25 @@ done
 log "after the rebuild: library state $(lib_state); it resumed and finished $(( $(date +%s) - T_BACK )) s after the server answered again"
 check "after the rebuild: the library is ready" 'case "$(lib_state)" in ready*) true ;; *) false ;; esac'
 # Resumed, not started over: the pictures read before the stop were not read again.
-find "$CACHE" -path '*scans-new*' -type f -exec stat -f '%m %N' {} + 2>/dev/null | sort -k2 >"$OUT/cache-after.txt"
-reread="$(join -1 2 -2 2 <(sort -k2 "$OUT/cache-at-stop.txt") <(sort -k2 "$OUT/cache-after.txt") | awk '$2 != $3' | wc -l | tr -d ' ')"
-log "pictures read before the stop and read again after it: $reread of $(wc -l <"$OUT/cache-at-stop.txt" | tr -d ' ')"
+cache_list >"$OUT/cache-after.txt"
+# Compared by full path (the paths have spaces): a picture read before the
+# stop whose cache entry was written again after it was read again.
+reread="$(python3 - "$OUT/cache-at-stop.txt" "$OUT/cache-after.txt" "$OUT/reread.txt" <<'PY'
+import sys
+def load(f):
+    out = {}
+    for line in open(f):
+        t, _, p = line.rstrip('\n').partition('\t')
+        if p: out[p] = t
+    return out
+before, after = load(sys.argv[1]), load(sys.argv[2])
+again = sorted(p for p, t in before.items() if p in after and after[p] != t)
+gone = sorted(p for p in before if p not in after)
+open(sys.argv[3], 'w').write(''.join(f'again {p}\n' for p in again) + ''.join(f'gone {p}\n' for p in gone))
+print(len(again) + len(gone))
+PY
+)"
+log "pictures read before the stop: $(wc -l <"$OUT/cache-at-stop.txt" | tr -d ' '); after the resume $(wc -l <"$OUT/cache-after.txt" | tr -d ' ') of $NEW have entries; read again or dropped: $reread (listed in reread.txt)"
 check "after the rebuild: the build resumed from the extraction cache (nothing read before the stop was read again)" '[ "$reread" -eq 0 ]'
 stage 4-after-rebuild
 check "after the rebuild: names in search" '[ "$(cnt "d[\"searchName\"][\"lib\"]")" -gt 0 ]'
