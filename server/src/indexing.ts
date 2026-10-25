@@ -17,7 +17,7 @@ import { indexSettings, meaningArgs, textArgs, threadsFor, type IndexSettings } 
 import { sofficeFound } from './extractors.js'
 import { scheduleSemanticMapRebuild } from './semanticMap.js'
 import { scanLatestDetail } from './dirScan.js'
-import { deniedPaths, onlyDenied, recordDenied, setPrimaryIndexingSource } from './omissions.js'
+import { deniedPaths, onlyDenied, recordDenied, setPrimaryBuiltSource, setPrimaryIndexingSource } from './omissions.js'
 import { depthChange, depthRecordOf, readDepthRecord, writeDepthRecord, type DepthChange } from './depthState.js'
 
 /**
@@ -272,6 +272,10 @@ export function getIndexJob(id: number): IndexJob | null { return jobs.get(id)?.
 
 // Search and Query say the main folder is being built, not missing, while its first build runs.
 setPrimaryIndexingSource(() => current?.pub.kind === 'build')
+setPrimaryBuiltSource(() => {
+  const b = loadRuns().lastBuild
+  return !!b && (!b.root || b.root === KB_ROOT) && b.kind === 'build' && b.state === 'done'
+})
 
 /** Whether any index job is queued or running (an update waits for none). */
 export function indexJobsRunning(): boolean { return !!current || queue.length > 0 }

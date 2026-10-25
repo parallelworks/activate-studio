@@ -162,9 +162,34 @@ test('a failure while searching says why in plain words', () => {
 const SRC = tmp('omit-shelf-')
 for (let i = 0; i < 9; i++) write(SRC, `shelf${i % 3}/doc${i}.md`, `document ${i} about the wombatword survey\n`)
 
+test('a main folder never indexed is named "not indexed yet" by search and Query alike', { skip: !REAL && 'GUFI not installed' }, async () => {
+  // Its index folder can exist, empty, before the first build: that is not an index.
+  fs.mkdirSync(path.join(IX, 'gufi', path.basename(KB)), { recursive: true })
+  const s = await search('quokkaword')
+  const o = omissionOf(s, 'kb')
+  assert.ok(o, `named in search: ${JSON.stringify(s.omitted)}`)
+  assert.deepEqual([o.reason, o.partial], ['not indexed yet', false])
+  const q = await j('POST', '/api/query', { library: 'all', canned: 'largest', n: 5 })
+  assert.equal(q.status, 409, JSON.stringify(q.body))
+  assert.match(JSON.stringify(q.body), /cannot be queried: not indexed yet/)
+  assert.equal(L.getLibrary('kb').caps.index, false)
+})
+
 test('the main folder', { skip: !REAL && 'GUFI not installed', timeout: 120_000 }, async () => {
   const main = await finished((await j('POST', '/api/index/build')).body.id)
   assert.equal(main.state, 'done', main.error ?? '')
+})
+
+test('a main folder built once and then without its index is "index not found" in search and Query alike', { skip: !REAL && 'GUFI not installed' }, async () => {
+  const db = path.join(IX, 'gufi', path.basename(KB), 'db.db')
+  assert.ok(fs.existsSync(db), 'built')
+  fs.renameSync(db, `${db}.away`)
+  try {
+    assert.deepEqual(omissionOf(await search('quokkaword'), 'kb')?.reason, 'index not found')
+    const q = await j('POST', '/api/query', { library: 'all', canned: 'largest', n: 5 })
+    assert.match(JSON.stringify(q.body), /cannot be queried: index not found/)
+  } finally { fs.renameSync(`${db}.away`, db) }
+  assert.equal(omissionOf(await search('quokkaword'), 'kb'), undefined, 'named no more once it is back')
 })
 
 test('a library being built is named in search and Query as left out, and is not asked', { skip: !REAL && 'GUFI not installed', timeout: 120_000 }, async () => {

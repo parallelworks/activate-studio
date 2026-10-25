@@ -147,6 +147,52 @@ test('a query across libraries runs through gufi_vt with the app\'s paths, with 
   assert.deepEqual(merged.rows, vt.rows)
 })
 
+test('a stage is given to gufi_vt with each double quote inside a string written as char(34)', () => {
+  assert.equal(V.vtStage("SELECT name FROM vrpentries WHERE name = 'a';"), "SELECT name FROM vrpentries WHERE name = 'a';", 'no double quote: unchanged')
+  assert.equal(V.vtStage(`SELECT 1 FROM words WHERE wordf MATCH '"a" AND "b"';`),
+    `SELECT 1 FROM words WHERE wordf MATCH (''||char(34)||'a'||char(34)||' AND '||char(34)||'b'||char(34)||'');`)
+  assert.equal(V.vtStage(`SELECT 'it''s "x"';`), `SELECT ('it''s '||char(34)||'x'||char(34)||'');`, "a doubled single quote stays inside the string")
+  assert.ok(!V.vtStage(`SELECT 'q"' -- note`).includes('"'))
+  assert.equal(V.vtStage('SELECT "name" FROM entries;'), null, 'a quoted identifier cannot be rewritten')
+  assert.equal(V.vtStage(`SELECT 1 /* "x" */;`), null, 'nor a double quote in a comment')
+  assert.equal(V.vtStage("SELECT 'open;"), null, 'nor an unterminated string')
+  assert.equal(V.vtEligible({ stages: { E: `SELECT 1 WHERE x MATCH '"a"';` }, columns: [] }), true)
+  assert.equal(V.vtEligible({ stages: { E: 'SELECT "x";' }, columns: [] }), false)
+})
+
+test('a text condition across libraries runs through gufi_vt, with the rows the merge gives', { skip: !haveGufi && 'GUFI not installed' }, async () => {
+  // Words rows as enrich.py writes them: a words table in the directory's
+  // db.db, keyed by the file's inode as text.
+  const sqlite = path.join(gufiBin, 'gufi_sqlite3')
+  const addWords = (root, file, text) => {
+    const dbs = execFileSync('find', [root, '-name', 'db.db'], { encoding: 'utf8' }).split('\n').filter(Boolean)
+    for (const db of dbs) {
+      const ino = execFileSync(sqlite, [db, `SELECT inode FROM entries WHERE name = '${file}';`], { encoding: 'utf8' }).trim()
+      if (!ino) continue
+      execFileSync(sqlite, [db, `CREATE VIRTUAL TABLE IF NOT EXISTS words USING fts5(tinode UNINDEXED, fname UNINDEXED, wordf); INSERT INTO words VALUES ('${ino}', '${file}', '${text}');`])
+      return
+    }
+    throw new Error(`${file} is not in ${root}`)
+  }
+  addWords(localIdx, 'mid.dat', 'a quokka sat by the river')
+  addWords(remoteIdx, 'huge.bin', 'notes about the quokka census')
+  addWords(path.join(process.env.INDEX_BASE, 'gufi'), 'note.txt', 'nothing of interest here')
+  const L = await import('../dist/libraries.js')
+  L.resetLibrariesForTests()
+  const body = { library: 'all', builder: { source: 'files', filters: [{ field: 'text', op: 'match', value: 'quokka' }], groupBy: 'none', sort: 'size', dir: 'desc', limit: 50 } }
+  V.forceGufiVtForTests(null)
+  const vt = await Q.queryScope(body, null)
+  assert.equal(vt.engine, 'gufi_vt', `${vt.mergeReason ?? ''} ${JSON.stringify(vt.failed)}`)
+  assert.equal(vt.mergeReason, undefined)
+  assert.deepEqual(vt.rows.map(r => r[1]).sort(), ['huge.bin', 'mid.dat'])
+  V.forceGufiVtForTests(false)
+  const merged = await Q.queryScope(body, null)
+  V.forceGufiVtForTests(null)
+  assert.equal(merged.engine, 'merge')
+  assert.equal(merged.mergeReason, "this computer's GUFI has no gufi_vt with remote locations")
+  assert.deepEqual(merged.rows, vt.rows)
+})
+
 test('a library gufi_vt cannot be given sends the query to the merge, with every library in it', { skip: !haveGufi && 'GUFI not installed' }, async () => {
   const file = path.join(process.env.INDEX_BASE, 'libraries.json')
   const before = fs.readFileSync(file, 'utf8')
@@ -157,6 +203,7 @@ test('a library gufi_vt cannot be given sends the query to the merge, with every
   try {
     const r = await Q.queryScope({ canned: 'largest', n: 10, library: 'all' }, null)
     assert.equal(r.engine, 'merge')
+    assert.equal(r.mergeReason, "a library's path cannot be given to gufi_vt")
     assert.deepEqual(r.failed, [])
     assert.ok(r.rows.some(row => row[1] === 'odd.bin'), JSON.stringify(r.rows))
     assert.ok(r.rowLibraries.includes('odd'))

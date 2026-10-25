@@ -286,6 +286,10 @@ async function probeNow(abs: string): Promise<LibraryCaps> {
   return caps
 }
 
+/** Whether the main folder's index has been built: GUFI is set up and its
+ *  index has a db.db at the root. */
+const primaryIndexed = () => gufiAvailable() && fs.existsSync(path.join(GUFI_INDEX, 'db.db'))
+
 function primaryLibrary(label: string): Library {
   return {
     id: PRIMARY_ID,
@@ -295,8 +299,10 @@ function primaryLibrary(label: string): Library {
     writable: true,
     primary: true,
     pinned: true,
-    // The main folder counts as indexed where GUFI is set up for it, as it always has.
-    caps: (c => ({ ...c, index: c.index || gufiAvailable() }))(capsOf(path.resolve(GUFI_INDEX), () => ({ index: gufiAvailable(), fullText: gufiAvailable(), vectors: false }))),
+    // The main folder is indexed once its index has a db.db at its root
+    // (indexing.ts's indexStatus says the same); an empty index folder, made
+    // before the first build, is not, so search and Query name it alike.
+    caps: (c => (primaryIndexed() ? { ...c, index: true } : { index: false, fullText: false, vectors: false }))(capsOf(path.resolve(GUFI_INDEX), () => ({ index: primaryIndexed(), fullText: primaryIndexed(), vectors: false }))),
     meaning: indexSettings(PRIMARY_ID).meaning,
     depth: indexSettings(PRIMARY_ID).depth,
   }

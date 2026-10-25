@@ -21,6 +21,8 @@ process.env.PW_API_KEY = 'deployment-key'
 fs.mkdirSync(path.join(dir, 'kb'), { recursive: true })
 const index = path.join(dir, 'ix', 'gufi', 'kb')
 fs.mkdirSync(index, { recursive: true })
+// A built index has a db.db at its root; an empty folder is not indexed yet.
+fs.writeFileSync(path.join(index, 'db.db'), '')
 
 // The one user's library on a cluster.
 const userDir = path.join(dir, 'ix', 'users', createHash('sha256').update('single').digest('hex').slice(0, 16))
