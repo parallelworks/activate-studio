@@ -8,7 +8,7 @@ import { TagMenu } from '../components/TagMenu'
 import { RowCheck } from '../components/Explorer'
 import { ALL_LIBRARIES, LibrarySwitch } from '../components/LibrarySwitch'
 import { useAppConfig } from '../config'
-import { currentLibrary } from '../api'
+import { currentLibrary, warmRemoteHosts } from '../api'
 import { GufiCommands, type GufiCommand } from '../components/GufiCommands'
 import { SavedQuerySql } from '../components/SavedQuerySql'
 import { OmittedLine, type Omission } from '../components/OmittedLine'
@@ -79,6 +79,8 @@ function fmtBytes(v: string): string {
 }
 
 export function QueryView({ onOpen }: { onOpen: (path: string) => void }) {
+  // Libraries on other hosts: their ssh login happens now, not on the first query.
+  useEffect(() => { warmRemoteHosts() }, [])
   const [mode, setMode] = useState<Mode>('builder')
   const [b, setB] = useState<BuilderState>(BLANK)
   const set = (patch: Partial<BuilderState>) => setB(s => ({ ...s, ...patch }))

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Button, Callout, Field, Input, Select } from '@parallelworks/ui'
 import { api, type IndexDepth, type PwSystems } from '../api'
 import { DEFAULT_LIBRARY_DEPTH, IndexDepthControl } from './IndexDepth'
+import { sshOptionsProblem } from '../sshOptions'
 import { CreateConfirm, postJson, StepList, type CheckStep } from './LibraryFormParts'
 
 /**
@@ -30,7 +31,7 @@ export interface SshLibraryAdded { id: string; label: string }
 
 interface TestResult { ok: boolean; steps: CheckStep[]; gufiBin?: string; gufiVersion?: string; directories?: number; indexDir?: string; create?: string[] }
 
-const EMPTY = { label: '', destination: '', cluster: '', indexRoot: '', sourceRoot: '', gufiBin: '' }
+const EMPTY = { label: '', destination: '', sshOptions: '', cluster: '', indexRoot: '', sourceRoot: '', gufiBin: '' }
 
 /** The list's choice for a system typed by name. */
 const ANOTHER = '\u0000another'
@@ -72,7 +73,9 @@ export function SshLibraryForm({ onAdded, compact = false, transport = 'ssh', mo
   const paths = build
     ? { sourceRoot: form.sourceRoot.trim(), indexRoot: form.indexRoot.trim() || undefined, gufiBin: form.gufiBin.trim() || undefined }
     : { indexRoot: form.indexRoot.trim(), sourceRoot: form.sourceRoot.trim() || undefined, gufiBin: form.gufiBin.trim() || undefined }
-  const conn = pw ? { cluster: form.cluster, ...paths } : { destination: form.destination.trim(), ...paths }
+  const options = form.sshOptions.trim()
+  const optionsProblem = pw ? null : sshOptionsProblem(options)
+  const conn = pw ? { cluster: form.cluster, ...paths } : { destination: form.destination.trim(), ...(options ? { sshOptions: options } : {}), ...paths }
   const passed = !!result?.ok && tested === JSON.stringify(conn)
   const set = (patch: Partial<typeof EMPTY>) => { setForm(f => ({ ...f, ...patch })); setError(null) }
   const host = pw ? form.cluster : form.destination.trim().replace(/^.*@/, '').replace(/:\d+$/, '')
@@ -153,8 +156,13 @@ export function SshLibraryForm({ onAdded, compact = false, transport = 'ssh', mo
             )}
           </>
         ) : (
-          <Input label="Host" placeholder="user@host or user@host:port" autoComplete="off" spellCheck={false} value={form.destination}
-            description={help('As you would type it after ssh, with :port for a port other than 22; your ~/.ssh/config applies.')} onChange={e => set({ destination: e.target.value })} />
+          <>
+            <Input label="Host" placeholder="user@host or user@host:port" autoComplete="off" spellCheck={false} value={form.destination}
+              description={help('As you would type it after ssh, with :port for a port other than 22. A Host from your ~/.ssh/config works, including ProxyJump.')} onChange={e => set({ destination: e.target.value })} />
+            <Input label="SSH options" hint="optional" mono placeholder="-J user@jumphost -o ConnectTimeout=20" autoComplete="off" spellCheck={false} value={form.sshOptions}
+              error={optionsProblem ?? undefined}
+              description={help('For a jump host or other settings: -J, -p, -i, -l, -F, and -o Keyword=value. Used on every ssh to this host.')} onChange={e => set({ sshOptions: e.target.value })} />
+          </>
         )}
         {build ? (
           <>
@@ -180,7 +188,7 @@ export function SshLibraryForm({ onAdded, compact = false, transport = 'ssh', mo
       {result && <StepList steps={result.steps} label="Connection test" />}
       {error && <Callout tone="error" live>{error}</Callout>}
       <div className="query-actions">
-        <Button variant="secondary" loading={busy === 'test'} disabled={!(pw ? form.cluster : form.destination.trim()) || !required || busy !== null} onClick={() => void test()}>
+        <Button variant="secondary" loading={busy === 'test'} disabled={!(pw ? form.cluster : form.destination.trim()) || !required || !!optionsProblem || busy !== null} onClick={() => void test()}>
           Test connection
         </Button>
         <Button variant="primary" loading={busy === 'add'} disabled={!passed || busy !== null}

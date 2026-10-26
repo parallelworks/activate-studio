@@ -1,0 +1,317 @@
+// ssh options a library over ssh carries (a jump host, a port, an
+// identity, -o keywords from an allowlist), checked strictly and passed on
+// every ssh the library makes; the shared connection's lifetime and its
+// warming ahead of a search; and Query stacking libraries on one host into
+// one gufi_vt location, so the host gets one gufi_query for all of them.
+// The hosts are local, as in sshLibraries.test.mjs: the transport's spawn
+// seam runs each command in /bin/sh with that host's HOME and PATH. One
+// host's login runs only gufi_query, so each command there is its own call
+// and can be counted. The end-to-end tests need GUFI (GUFI_BIN, else
+// /opt/gufi/bin) and skip without it.
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import fs from 'node:fs'
+import net from 'node:net'
+import os from 'node:os'
+import path from 'node:path'
+import { execFileSync, spawn } from 'node:child_process'
+
+const gufiBin = process.env.GUFI_BIN || '/opt/gufi/bin'
+const haveGufi = fs.existsSync(path.join(gufiBin, 'gufi_query')) && fs.existsSync(path.join(gufiBin, 'gufi_dir2index'))
+const skip = !haveGufi && 'GUFI not installed'
+
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sshopt-'))
+const port = await new Promise(resolve => { const s = net.createServer().listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => resolve(p)) }) })
+process.env.PORT = String(port)
+process.env.HOST = '127.0.0.1'
+process.env.GUFI_BIN = gufiBin
+process.env.KB_ROOT = path.join(dir, 'kb')
+process.env.INDEX_BASE = path.join(dir, 'ix')
+process.env.XDG_RUNTIME_DIR = fs.mkdtempSync('/tmp/sshrun-')
+test.after(() => fs.rmSync(process.env.XDG_RUNTIME_DIR, { recursive: true, force: true }))
+
+const write = (f, body) => { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, body) }
+write(path.join(dir, 'kb', 'note.txt'), 'kb note\n')
+const home = path.join(dir, 'home')
+write(path.join(home, 'proj', 'data', 'huge.bin'), Buffer.alloc(5000, 98))
+write(path.join(home, 'proj', 'readme.txt'), 'hello\n')
+write(path.join(home, 'archive', 'old', 'tape.bin'), Buffer.alloc(9000, 99))
+write(path.join(home, 'archive', 'list.txt'), 'list\n')
+for (const d of ['idx', 'arch-idx']) fs.mkdirSync(path.join(home, d), { recursive: true })
+fs.mkdirSync(path.join(dir, 'ix', 'gufi'), { recursive: true })
+if (haveGufi) {
+  execFileSync(path.join(gufiBin, 'gufi_dir2index'), ['-x', path.join(home, 'proj'), path.join(home, 'idx')], { stdio: 'ignore' })
+  execFileSync(path.join(gufiBin, 'gufi_dir2index'), ['-x', path.join(home, 'archive'), path.join(home, 'arch-idx')], { stdio: 'ignore' })
+  execFileSync(path.join(gufiBin, 'gufi_dir2index'), ['-x', path.join(dir, 'kb'), path.join(dir, 'ix', 'gufi')], { stdio: 'ignore' })
+}
+
+const R = await import('../dist/remoteExec.js')
+// Every ssh the Studio starts, with its argv; and the commands that reached
+// a host, for counting.
+const sessions = []
+const ran = []
+R.setRemoteSpawn((site, key, command) => {
+  const argv = R.sshArgv(site, command)
+  sessions.push({ site, argv })
+  const dest = R.parseSshSite(site).destination
+  ran.push({ dest, command })
+  // A login that runs only gufi_query refuses anything else, as a forced
+  // command or a restricted shell would.
+  if (dest.includes('restricted') && !/^\S*gufi_query /.test(command)) {
+    return spawn('/bin/sh', ['-c', 'echo "only gufi_query is allowed" >&2; exit 1'], { stdio: ['pipe', 'pipe', 'pipe'] })
+  }
+  return spawn('/bin/sh', ['-c', command], { stdio: ['pipe', 'pipe', 'pipe'], env: { HOME: home, PATH: `${gufiBin}:/usr/bin:/bin` } })
+})
+// ssh on this computer: `ssh -G` says what the config would do, and the
+// shared connection's check and warming are noted.
+const local = []
+R.setSshLocal(async args => {
+  local.push(args)
+  if (args[0] === '-G') {
+    const dest = args[args.length - 1]
+    return { code: 0, stdout: `user me\nhostname ${dest}\n${dest.includes('viajump') ? 'proxyjump gw@bastion.example\n' : ''}`, stderr: '' }
+  }
+  if (args.includes('-O')) return { code: 255, stdout: '', stderr: 'Control socket connect: No such file or directory' }
+  return { code: 0, stdout: '', stderr: '' }
+})
+const U = await import('../dist/userLibraries.js')
+const V = await import('../dist/gufiVt.js')
+const Q = await import('../dist/query.js')
+const { default: Fastify } = await import('fastify')
+const app = Fastify()
+app.setErrorHandler((err, _req, reply) => reply.status(err.status ?? 500).send({ error: err.message }))
+await app.register(U.userLibraryRoutes)
+await app.register(V.gufiVtRoutes)
+await app.listen({ port, host: '127.0.0.1' })
+test.after(async () => { R.closeRemoteChannels(); R.setSshLocal(null); await app.close() })
+
+const call = async (method, url, body) => { const r = await app.inject({ method, url, payload: body }); return { status: r.statusCode, body: r.json() } }
+
+test('the allowed options parse to the argv ssh gets', () => {
+  assert.deepEqual(R.parseSshOptions(''), [])
+  assert.deepEqual(R.parseSshOptions('  -J me@jump.example -p 2222 -o ConnectTimeout=20 '),
+    ['-J', 'me@jump.example', '-p', '2222', '-o', 'ConnectTimeout=20'])
+  assert.deepEqual(R.parseSshOptions('-Jgw@a:2200,b.example -i ~/.ssh/id_lab -l me -F ~/.ssh/lab_config -4 -C'),
+    ['-J', 'gw@a:2200,b.example', '-i', '~/.ssh/id_lab', '-l', 'me', '-F', '~/.ssh/lab_config', '-4', '-C'])
+  assert.deepEqual(R.parseSshOptions('-o ProxyJump=gw@bastion -oUser=me -o StrictHostKeyChecking=accept-new -o GSSAPIAuthentication=yes'),
+    ['-o', 'ProxyJump=gw@bastion', '-o', 'User=me', '-o', 'StrictHostKeyChecking=accept-new', '-o', 'GSSAPIAuthentication=yes'])
+  assert.deepEqual(R.parseSshOptions('-o KexAlgorithms=sntrup761x25519-sha512@openssh.com,curve25519-sha256 -o UserKnownHostsFile=/tmp/kh'),
+    ['-o', 'KexAlgorithms=sntrup761x25519-sha512@openssh.com,curve25519-sha256', '-o', 'UserKnownHostsFile=/tmp/kh'])
+  assert.equal(R.jumpOf(R.parseSshOptions('-J gw@bastion')), 'gw@bastion')
+  assert.equal(R.jumpOf(R.parseSshOptions('-o proxyjump=gw@b2')), 'gw@b2')
+  assert.equal(R.jumpOf(R.parseSshOptions('-p 22')), null)
+})
+
+test('anything that runs a command, forwards, or reaches a shell is refused, with the reason', () => {
+  const refused = (text, re) => assert.throws(() => R.parseSshOptions(text), e => e.status === 400 && re.test(e.message), text)
+  refused('-o ProxyCommand=nc', /ProxyCommand runs a local command: use -J/)
+  refused('-o LocalCommand=id', /LocalCommand runs a local command/)
+  refused('-o PermitLocalCommand=yes', /runs a local command/)
+  refused('-o RemoteCommand=sh', /replaces the command/)
+  refused('-o KnownHostsCommand=x', /runs a local command/)
+  refused('-o BatchMode=no', /without prompts/)
+  refused('-o ControlPath=/tmp/x', /shares connections itself/)
+  refused('-o SendEnv=LANG', /SendEnv is not allowed here; a Host entry in ~\/.ssh\/config can set it/)
+  refused('-o LocalForward=8080', /not allowed here/)
+  refused('-o Include=/etc/x', /not allowed here/)
+  refused('-L 8080:localhost:80', /is not one of -J, -p, -i, -l, -F, -o/)
+  refused('-A', /is not one of/)
+  refused('-t', /is not one of/)
+  refused('me@box', /is not one of/)
+  refused('-o User', /write it as Keyword=value/)
+  refused('-J', /-J needs a value/)
+  refused('-p 70000', /a port from 1 to 65535/)
+  refused('-p 22 -p', /needs a value/)
+  // Injection attempts: no value may carry shell text or a second option.
+  refused('-J a;id', /-J a;id/)
+  refused('-J -oProxyCommand=id', /-J -oProxyCommand=id/)
+  refused('-i /tmp/$(id)', /an absolute path/)
+  refused('-i relative/key', /an absolute path/)
+  refused('-o HostName=a|b', /not a valid value for HostName/)
+  refused('-o Port=22x', /not a valid value/)
+  refused('-o User=me`id`', /no quotes or backslashes/)
+  refused('-o "User=me"', /no quotes or backslashes/)
+  refused('-o User=me\\x', /no quotes or backslashes/)
+  refused('-l me@x', /a login name/)
+  refused('x'.repeat(501), /at most 500 characters/)
+  // The same checks hold on argv already split, as a saved library has it.
+  assert.throws(() => R.checkSshOptions(['-o', 'ProxyCommand=nc %h %p']), /ProxyCommand/)
+  assert.throws(() => R.checkSshOptions(['-J', 'a b']), /-J a b/)
+})
+
+test('a site carries its options: read back, shown, a socket of their own, the port given once', () => {
+  const opts = R.parseSshOptions('-J gw@bastion -o ConnectTimeout=20')
+  const site = R.sshSite('me@box', 2222, opts)
+  assert.match(site, /^ssh:\/\/me@box:2222#[A-Za-z0-9_-]+$/)
+  assert.deepEqual(R.parseSshSite(site), { destination: 'me@box', port: 2222, options: opts })
+  assert.equal(R.siteName(site), 'me@box:2222', 'messages name the host, not the options')
+  assert.deepEqual(R.shellFor(site), ['ssh', '-J', 'gw@bastion', '-o', 'ConnectTimeout=20', '-p', '2222', 'me@box'])
+  // The library's options come right after -T, ahead of the defaults, so
+  // its ConnectTimeout is the one ssh uses (ssh keeps a keyword's first value).
+  const argv = R.sshArgv(site, 'CMD')
+  assert.deepEqual(argv.slice(0, 5), ['-T', '-J', 'gw@bastion', '-o', 'ConnectTimeout=20'])
+  assert.deepEqual(argv.slice(5, 7), ['-o', 'BatchMode=yes'])
+  assert.deepEqual(argv.slice(-4), ['-p', '2222', 'me@box', 'CMD'])
+  assert.notDeepEqual(R.controlArgs(R.parseSshSite(site)), R.controlArgs(R.parseSshSite(R.sshSite('me@box', 2222))), 'a socket per way of reaching the host')
+  assert.equal(R.sshSite('me@box'), 'ssh://me@box', 'no options, the site as before')
+  assert.throws(() => R.sshSite('me@box', 2222, ['-p', '2200']), /give the port once/)
+  assert.throws(() => R.sshSite('me@box', 2222, ['-o', 'Port=2200']), /give the port once/)
+  // A site whose options were tampered with is refused, not run.
+  const bad = `ssh://me@box#${Buffer.from(JSON.stringify(['-o', 'ProxyCommand=id'])).toString('base64url')}`
+  assert.throws(() => R.parseSshSite(bad), /ProxyCommand/)
+  assert.throws(() => R.parseSshSite('ssh://me@box#notbase64json'), /invalid ssh site/)
+})
+
+test('the shared connection stays ten minutes after its last session, or STUDIO_SSH_PERSIST seconds', () => {
+  const persist = () => R.controlArgs({ destination: 'me@box', port: null }).find(a => a.startsWith('ControlPersist='))
+  assert.equal(persist(), 'ControlPersist=600')
+  process.env.STUDIO_SSH_PERSIST = '1800'
+  assert.equal(persist(), 'ControlPersist=1800')
+  process.env.STUDIO_SSH_PERSIST = '0'
+  assert.equal(persist(), 'ControlPersist=no')
+  process.env.STUDIO_SSH_PERSIST = '999999'
+  assert.equal(persist(), 'ControlPersist=86400', 'at most a day')
+  process.env.STUDIO_SSH_PERSIST = 'soon'
+  assert.equal(persist(), 'ControlPersist=600')
+  delete process.env.STUDIO_SSH_PERSIST
+})
+
+let lib
+test('a library over ssh keeps its options and every ssh it makes carries them', { skip }, async () => {
+  const refused = await call('POST', '/api/user-libraries/ssh/test', { destination: 'me@linux-box', indexRoot: '~/idx/proj', sshOptions: '-o ProxyCommand=nc' })
+  assert.equal(refused.status, 400)
+  assert.match(refused.body.error, /ssh options: ProxyCommand is not allowed here/)
+
+  const body = { destination: 'me@linux-box', indexRoot: '~/idx/proj', sshOptions: '-J me@jump.example -o ConnectTimeout=20' }
+  const probe = await call('POST', '/api/user-libraries/ssh/test', body)
+  assert.equal(probe.body.ok, true, JSON.stringify(probe.body.steps))
+  assert.match(probe.body.steps[0].detail, /^Connected to me@linux-box through me@jump\.example, a /)
+
+  const added = await call('POST', '/api/user-libraries/ssh', { ...body, label: 'Project' })
+  assert.equal(added.status, 200, JSON.stringify(added.body))
+  lib = added.body
+  assert.deepEqual([lib.sshOptions, lib.jump], ['-J me@jump.example -o ConnectTimeout=20', 'me@jump.example'])
+  const listed = (await call('GET', '/api/user-libraries')).body.libraries.find(l => l.id === lib.id)
+  assert.equal(listed.sshOptions, '-J me@jump.example -o ConnectTimeout=20')
+
+  // A tree, a search and a query each go over ssh with the options first.
+  const L = await import('../dist/libraries.js')
+  const G = await import('../dist/gufi.js')
+  const root = L.listLibraries('kb', null).find(l => l.id === lib.id).indexRoot
+  R.closeRemoteChannels()
+  sessions.length = 0
+  await U.remoteTree(root, '')
+  await G.searchNames('huge', 5, root)
+  assert.ok(sessions.length >= 1)
+  for (const s of sessions) {
+    assert.equal(R.parseSshSite(s.site).destination, 'me@linux-box')
+    assert.deepEqual(s.argv.slice(0, 5), ['-T', '-J', 'me@jump.example', '-o', 'ConnectTimeout=20'], s.argv.join(' '))
+  }
+})
+
+test('options can be changed on a library, after a test with them passes', { skip }, async () => {
+  const bad = await call('PUT', `/api/user-libraries/${lib.id}/ssh-options`, { sshOptions: '-o LocalCommand=id' })
+  assert.equal(bad.status, 400)
+  assert.match(bad.body.error, /LocalCommand runs a local command/)
+  const twice = await call('PUT', `/api/user-libraries/${lib.id}/ssh-options`, { sshOptions: '-p 2222' })
+  assert.equal(twice.status, 200, 'no port on the library, so -p is fine')
+  assert.equal(twice.body.sshOptions, '-p 2222')
+  const cleared = await call('PUT', `/api/user-libraries/${lib.id}/ssh-options`, { sshOptions: '' })
+  assert.equal(cleared.status, 200)
+  assert.deepEqual([cleared.body.sshOptions, cleared.body.jump], [null, null])
+})
+
+test('the ssh step names a jump host from ~/.ssh/config, read with ssh -G', { skip }, async () => {
+  const r = await call('POST', '/api/user-libraries/ssh/test', { destination: 'me@viajump-box', indexRoot: '~/idx/proj' })
+  assert.equal(r.body.ok, true, JSON.stringify(r.body.steps))
+  assert.match(r.body.steps[0].detail, /^Connected to me@viajump-box through gw@bastion\.example, a /)
+  const g = local.filter(a => a[0] === '-G').pop()
+  assert.equal(g[g.length - 1], 'me@viajump-box')
+})
+
+test('warming opens each host\'s shared connection with its options, at most once a minute', async () => {
+  local.length = 0
+  const site = R.sshSite('me@warm-box', null, ['-J', 'gw@bastion'])
+  assert.equal(await R.warmSsh(site), 'opened')
+  const [check, open] = local
+  assert.ok(check.includes('-O') && check.includes('check'), check.join(' '))
+  assert.deepEqual(open.slice(0, 3), ['-T', '-J', 'gw@bastion'])
+  assert.ok(open.includes('-N') && open.includes('-f'), open.join(' '))
+  assert.ok(open.some(a => a.startsWith('ControlPath=')), 'the same socket later sessions use')
+  assert.equal(open[open.length - 1], 'me@warm-box')
+  assert.equal(await R.warmSsh(site), 'opened')
+  assert.equal(local.length, 2, 'not again within the minute')
+  // A cluster over pw ssh, or with sharing off, is not warmed this way.
+  assert.equal(await R.warmSsh('cluster-a'), 'off')
+  process.env.STUDIO_SSH_SHARE = '0'
+  assert.equal(await R.warmSsh(R.sshSite('me@other-box')), 'off')
+  delete process.env.STUDIO_SSH_SHARE
+})
+
+test('the warm route asks each of the viewer\'s hosts once', { skip }, async () => {
+  local.length = 0
+  const r = await call('POST', '/api/user-libraries/warm', {})
+  assert.equal(r.status, 200)
+  assert.equal(r.body.hosts, 1, 'the one library over ssh')
+  await new Promise(res => setTimeout(res, 50))
+  assert.ok(local.some(a => a.includes('-O')), 'its connection was checked')
+})
+
+test('Query stacks libraries on one host into one gufi_vt location: one command there, rows back to their library', { skip }, async t => {
+  V.resetGufiVtForTests()
+  if (!(await V.gufiVtAvailable())) return t.skip('this GUFI has no gufi_vt')
+  // Two indexes on a host whose login runs only gufi_query, so each
+  // command is its own call and can be counted.
+  const host = { destination: 'me@restricted-box', gufiBin }
+  for (const [label, indexRoot] of [['Home', path.join(home, 'idx', 'proj')], ['Archive', path.join(home, 'arch-idx', 'archive')]]) {
+    const r = await call('POST', '/api/user-libraries/ssh', { ...host, label, indexRoot })
+    assert.equal(r.status, 200, JSON.stringify(r.body))
+  }
+  const L = await import('../dist/libraries.js')
+  const ids = Object.fromEntries(L.listLibraries('kb', null).filter(l => l.site === 'me@restricted-box').map(l => [l.label, l.id]))
+  const count = () => ran.filter(r => r.dest === 'me@restricted-box' && /gufi_query /.test(r.command)).length
+  const query = async () => {
+    const before = count()
+    const t0 = Date.now()
+    const r = await Q.queryScope({ canned: 'largest', n: 10, library: 'all' }, null)
+    return { r, commands: count() - before, ms: Date.now() - t0 }
+  }
+  process.env.STUDIO_STACK_REMOTE = '0'
+  const apart = await query()
+  delete process.env.STUDIO_STACK_REMOTE
+  const stacked = await query()
+  for (const { r } of [apart, stacked]) {
+    assert.equal(r.engine, 'gufi_vt', JSON.stringify(r.failed ?? r))
+    const byLib = Object.fromEntries(r.rows.map((row, i) => [row[1], r.rowLibraries[i]]))
+    assert.equal(byLib['old/tape.bin'], ids.Archive, 'a row goes back to its own library')
+    assert.equal(byLib['data/huge.bin'], ids.Home)
+    assert.equal(r.rows.find(row => row[1] === 'old/tape.bin')[0], 'Archive')
+  }
+  assert.deepEqual(stacked.r.rows, apart.r.rows, 'the same answer')
+  assert.equal(apart.commands, 4, 'apart: a check and a gufi_query for each library')
+  assert.equal(stacked.commands, 2, 'stacked: one check and one gufi_query for both')
+  console.log(`  query over two libraries on one host: ${apart.commands} commands in ${apart.ms} ms apart, ${stacked.commands} in ${stacked.ms} ms stacked`)
+
+  // One of the two gone: it is reported, the other still answers.
+  fs.renameSync(path.join(home, 'arch-idx'), path.join(home, 'arch-idx.moved'))
+  try {
+    const r = await Q.queryScope({ canned: 'largest', n: 10, library: 'all' }, null)
+    assert.ok(r.rowLibraries.includes(ids.Home))
+    assert.ok(!r.rowLibraries.includes(ids.Archive))
+    assert.ok((r.failed ?? []).some(f => f.library === 'Archive'), JSON.stringify(r.failed))
+    assert.ok((r.omitted ?? []).some(o => o.id === ids.Archive), JSON.stringify(r.omitted))
+  } finally {
+    fs.renameSync(path.join(home, 'arch-idx.moved'), path.join(home, 'arch-idx'))
+  }
+})
+
+test('the wrapper accepts a stacked location\'s roots in order, and nothing else', () => {
+  const roots = ['/c/idx/proj', '/c/arch idx/archive']
+  const line = ['gufi_query', '--print-tlv', '-x', '--threads', '4', '-E', 'SELECT 1;', '/c/idx/proj', '/c/arch', 'idx/archive']
+  assert.deepEqual(V.checkRemoteArgs(line, roots), ['--print-tlv', '-x', '--threads', '4', '-E', 'SELECT 1;', '/c/idx/proj', '/c/arch idx/archive'])
+  assert.equal(V.checkRemoteArgs(line, [roots[1], roots[0]]), null, 'in order')
+  assert.equal(V.checkRemoteArgs([...line, '/etc'], roots), null)
+  const plan = { stages: { E: 'SELECT 1;' }, columns: ['x'] }
+  const s = V.vtScript([{ id: 'stack0', index: roots[0], indexes: roots, plan, remote: { token: 't', site: 'cluster-a', gufiBin: '' } }], null)
+  assert.match(s, /gufi_vt\(index='\/c\/idx\/proj', index='\/c\/arch idx\/archive', threads=4/)
+})

@@ -363,15 +363,24 @@ A library can also be an existing GUFI index on another machine that the
 Studio's host reaches with plain ssh: Settings, Libraries, **Add a
 library**, "A remote system", "Connect an existing index", **Connect
 with** ssh, or the setup wizard. The host is written `user@host`, an
-alias from `~/.ssh/config`, or either with `:port`. The Studio runs
-`ssh -T -o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=30 -o ControlMaster=auto -o ControlPath="<folder>/<hash>" -o ControlPersist=600 [-p port] <destination>`
-with the keys, agent, and `~/.ssh/config` of the account it runs as, and
-keeps up to three sessions per destination, as it does per cluster. The
-sessions to one host share a single ssh connection through a socket,
-which stays open ten minutes after the last session closes, so a new
-session does not log in again; `~/.ssh/config` is not changed. The
-socket's name is 12 hex characters of the destination and port, and its
-folder is the first of these that will do:
+alias from `~/.ssh/config`, or either with `:port`. A Host entry in
+`~/.ssh/config` applies as it does in a terminal, ProxyJump, ProxyCommand,
+Port, User and IdentityFile included, so a host behind a jump host or a
+firewall is reached by giving its alias. The Studio runs
+`ssh -T [options] -o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=30 -o ControlMaster=auto -o ControlPath="<folder>/<hash>" -o ControlPersist=600 [-p port] <destination>`
+with the keys, agent, Kerberos tickets and `~/.ssh/config` of the account
+it runs as, and keeps up to three sessions per destination, as it does
+per cluster. The sessions to one host share a single ssh connection
+through a socket, which stays open ten minutes after the last session
+closes (`STUDIO_SSH_PERSIST`, in seconds, up to a day; 0 closes it with the
+last session), so a new session does not log in again; `~/.ssh/config` is
+not changed. When Search or Query opens, the Studio opens that connection
+for each host of the viewer's libraries over ssh
+(`POST /api/user-libraries/warm`, at most once a minute per host), with
+`ssh -N -f`, which logs in and runs no command there, so the first search
+after a long gap does not wait for the login. The socket's name is 12 hex
+characters of the destination, port and options, and its folder is the
+first of these that will do:
 `$XDG_RUNTIME_DIR/activate-studio` where that variable is set,
 `/tmp/activate-studio-<uid>`, and `INDEX_BASE/ssh`. A folder is made with
 mode 700 when missing and checked with `lstat` before each session: it has
@@ -419,13 +428,56 @@ the test again otherwise. **Check** reruns it and updates the counts and the ind
 time (the modified time of the index's `db.db`), which is also when
 Statistics counts the library again.
 
+### SSH options
+
+A library over ssh may carry its own ssh options, in the form's **SSH
+options** field: for a jump host, a port, an identity, or a timeout that
+are not in `~/.ssh/config`. For example `-J me@bastion.example -o
+ConnectTimeout=20`. They go on every ssh the library makes: the connection
+test, its sessions, a host that runs only `gufi_query`, the gufi_vt wrapper
+and the warming above. They come first, so a library's value for a keyword
+wins over the Studio's defaults (ssh keeps the first value it is given).
+Allowed:
+
+| Option | Takes |
+|---|---|
+| `-J` | jump hosts, `[user@]host[:port]`, several separated by commas |
+| `-p` | a port, when the library has none of its own |
+| `-i`, `-F` | a path on this computer, absolute or under `~/` |
+| `-l` | a login name |
+| `-o Keyword=value` | reaching and authenticating to the host: `ProxyJump`, `HostName`, `Port`, `User`, `IdentityFile`, `IdentitiesOnly`, `CertificateFile`, `IdentityAgent`, `UserKnownHostsFile`, `StrictHostKeyChecking`, `HostKeyAlias`, `GSSAPIAuthentication`, `GSSAPIDelegateCredentials`, `PreferredAuthentications`, `PubkeyAuthentication`, the algorithm lists (`Ciphers`, `MACs`, `KexAlgorithms`, `HostKeyAlgorithms`, `PubkeyAcceptedAlgorithms`), timeouts and keepalives (`ConnectTimeout`, `ConnectionAttempts`, `ServerAliveInterval`, `ServerAliveCountMax`, `TCPKeepAlive`), and a few more (`AddressFamily`, `Compression`, `CheckHostIP`, `IPQoS`, `LogLevel`, `RekeyLimit`, `UpdateHostKeys`, `VerifyHostKeyDNS`, the `Canonical*` keywords) |
+| `-4`, `-6`, `-C` | nothing |
+
+Refused, with the reason: anything that runs a command on this computer
+(`ProxyCommand`, `LocalCommand`, `PermitLocalCommand`,
+`KnownHostsCommand`) or replaces the command run there (`RemoteCommand`),
+what the Studio sets itself (`BatchMode`, `ControlMaster`, `ControlPath`,
+`ControlPersist`), port, agent and X forwarding, sending the environment,
+and every other keyword. Values may not contain spaces, quotes or
+backslashes, and nothing reaches a shell: the options go to ssh as
+arguments. A setting the field refuses, a ProxyCommand say, goes in a Host
+entry in `~/.ssh/config`, whose alias is then given as the host. The
+options are checked again whenever a library is used, and a host gets a
+shared connection of its own for each set of options.
+
+The connection test names the jump host it went through, from the options
+or from `~/.ssh/config` (read with `ssh -G`, which connects nowhere):
+"Connected to me@lab-index through me@bastion.example, a Linux host."
+Settings, Libraries shows a library's options, and
+`PUT /api/user-libraries/:id/ssh-options` with `{sshOptions}` changes them
+for a connected index, after a connection test with the new ones passes.
+An index built over ssh keeps the options it was built with.
+
+### Routes
+
 The ssh identity is the server account's, so libraries over ssh are
 offered only on a Studio with sign-in off, which has one user; with
 sign-in on, the routes answer 403. Routes:
 `POST /api/user-libraries/ssh/test` and `POST /api/user-libraries/ssh`,
-both with `{label?, destination, port?, indexRoot, gufiBin?, sourceRoot?}`;
+both with `{label?, destination, port?, sshOptions?, indexRoot, gufiBin?, sourceRoot?}`;
 listing, refresh, and removal use the routes above, and list entries
-carry `transport` (`pw` or `ssh`), `destination`, and `port`.
+carry `transport` (`pw` or `ssh`), `destination`, `port`, `sshOptions`
+(as typed) and `jump`.
 
 ### Hosts whose login runs only gufi_query
 
@@ -582,9 +634,22 @@ side, and the user's key never appears in a process's arguments. The
 server accepts only gufi_query with the stages gufi_vt sends, on that
 location's own index, under a per-process secret and a per-query token.
 
+Libraries on one host, reached the same way (destination, port and ssh
+options, or cluster and key) and asked the same plan, share one location:
+gufi_vt takes `index=` once per root, and hands the remote command every
+root at the end of its line, so the host runs one gufi_query over all of
+them. Each row goes back to the library whose index root its path is
+under; grouped totals, which carry no path, are summed across libraries
+anyway. Raw SQL is not stacked, since its rows have no known shape.
+`STUDIO_STACK_REMOTE=0` gives each library its own location again. With two
+libraries on one host this halves the remote commands a query makes, from
+two checks and two gufi_query runs to one of each.
+
 gufi_vt fails the whole statement when one location exits nonzero with no
 rows, so each location is checked first (the index exists, and on a
-cluster GUFI is installed) and one that fails is left out and named.
+cluster GUFI is installed), with one gufi_query over all of a location's
+roots that answers a row per root; when a row is missing, each root is
+asked on its own, and one that fails is left out and named.
 gufi_vt runs the locations one after another. Without gufi_vt on the host,
 for a plan whose SQL contains a double quote (gufi_vt's own delimiter), or
 when the statement fails, each library answers on its own and the server

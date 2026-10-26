@@ -519,6 +519,39 @@ EOF
           python3 -c 'import json, sys; d = json.load(open(sys.argv[1])); print("engine", d.get("engine"), "libraries", sorted(set(d.get("rowLibraries") or [])), "failed", d.get("failed"))' "$T/qquery.json" 2>&1 | sed 's/^/        /'
         fi
         check "nothing but gufi_query ran there once it was known" sh -c '! sed 1d "$1" | grep -v "^gufi_query "' sh "$T/qonly.log"
+        # The library's own ssh options, changed after a test with them: a
+        # known_hosts file of its own, which ssh can only have used if the
+        # option reached it. Then a second index on the same host, reached
+        # the same way, so Query asks the host once for both: one check and
+        # one gufi_query in its log, not two of each.
+        kh="$T/home/.ssh/known_hosts_opts"
+        qopts="-o UserKnownHostsFile=$kh -o StrictHostKeyChecking=accept-new"
+        if curl -fsS -m 120 -X PUT -H 'content-type: application/json' -d "$(python3 -c 'import json, sys; print(json.dumps({"sshOptions": sys.argv[1]}))' "$qopts")" \
+            "http://127.0.0.1:$PORT_FREE/api/user-libraries/$qid/ssh-options" >"$T/qopts.json" 2>"$T/qopts.err" && [ -s "$kh" ]; then
+          ok "a library's -o options reach ssh (its own known_hosts file was written)"
+        else
+          bad "a library's ssh options were not used:"
+          sed 's/^/        /' "$T/qopts.json" "$T/qopts.err" 2>/dev/null || true
+        fi
+        q2body="$(python3 -c 'import json, sys; print(json.dumps({"destination": "qonly", "indexRoot": sys.argv[1], "label": "Query only 2", "sshOptions": sys.argv[2]}))' "$T/idx/corpus" "$qopts")"
+        if curl -fsS -m 120 -X POST -H 'content-type: application/json' -d "$q2body" \
+            "http://127.0.0.1:$PORT_FREE/api/user-libraries/ssh" >"$T/qadd2.json" 2>"$T/qadd2.err"; then
+          q2id="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["id"])' "$T/qadd2.json" 2>/dev/null || true)"
+          before=$(wc -l <"$T/qonly.log")
+          curl -fsS -m 120 -X POST -H 'content-type: application/json' -d '{"library": "all", "canned": "largest", "n": 50}' \
+            "http://127.0.0.1:$PORT_FREE/api/query" >"$T/qstack.json" 2>"$T/qstack.err" || true
+          ran=$(( $(wc -l <"$T/qonly.log") - before ))
+          if [ "$ran" = 2 ] && python3 -c 'import json, sys; d = json.load(open(sys.argv[1])); libs = set(d.get("rowLibraries") or []); sys.exit(0 if d.get("engine") == "gufi_vt" and {sys.argv[2], sys.argv[3]} <= libs and not d.get("failed") else 1)' "$T/qstack.json" "$qid" "$q2id" 2>/dev/null; then
+            ok "two libraries on one host: Query asks it once (a check and a gufi_query), rows back to each"
+          else
+            bad "two libraries on one host were not asked together ($ran commands there):"
+            python3 -c 'import json, sys; d = json.load(open(sys.argv[1])); print("engine", d.get("engine"), "libraries", sorted(set(d.get("rowLibraries") or [])), "failed", d.get("failed"))' "$T/qstack.json" 2>&1 | sed 's/^/        /'
+            tail -n 4 "$T/qonly.log" | cut -c1-200 | sed 's/^/        /'
+          fi
+        else
+          bad "could not add a second index on the gufi_query-only host:"
+          sed 's/^/        /' "$T/qadd2.err" 2>/dev/null || true
+        fi
       else
         bad "could not add the index on the gufi_query-only host:"
         sed 's/^/        /' "$T/qadd.err" 2>/dev/null || true

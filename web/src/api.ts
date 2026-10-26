@@ -49,6 +49,9 @@ export interface UserLibrary {
   existing?: boolean
   destination?: string | null
   port?: number | null
+  /** Over ssh: the options its ssh runs with, as typed, and the jump host they name. */
+  sshOptions?: string | null
+  jump?: string | null
   state: 'building' | 'ready' | 'updating' | 'failed'
   run: { slug: string; mode: 'build' | 'update'; startedAt: string } | null
   error: string | null; builtAt: string | null; directories: number | null; files: number | null
@@ -65,6 +68,16 @@ export interface UserLibrary {
   built?: boolean
   indexDir?: string | null
   progress?: BuildProgress | null
+}
+
+let warmedAt = 0
+/** Asks the server to open the ssh connections to the hosts of the viewer's
+ *  libraries, at most every two minutes, without waiting; Search and Query
+ *  call it as they open. Nothing is shown either way. */
+export function warmRemoteHosts(now = Date.now()): void {
+  if (now - warmedAt < 120_000) return
+  warmedAt = now
+  void api.warmUserLibraries().catch(() => {})
 }
 
 /** What the Library view's side panel shows for a folder or file, from its index. */
@@ -487,6 +500,9 @@ export const api = {
   addUserLibrary: (body: { site: string; sourceDir: string; label?: string; scheduler?: { partition: string; account?: string } | null }) =>
     postJson<UserLibrary>('/api/user-libraries', body),
   refreshUserLibrary: (id: string) => postJson<UserLibrary>(`/api/user-libraries/${encodeURIComponent(id)}/refresh`, {}),
+  /** Opens the ssh connections to the hosts of the viewer's libraries, so a
+   *  search or query that follows does not wait for the login. */
+  warmUserLibraries: () => postJson<{ hosts: number }>('/api/user-libraries/warm', {}),
   removeUserLibrary: async (id: string) => {
     const r = await fetch(`/api/user-libraries/${encodeURIComponent(id)}`, { method: 'DELETE' })
     if (!r.ok) throw new Error(((await r.json().catch(() => ({}))) as { error?: string }).error ?? `${r.status}`)
