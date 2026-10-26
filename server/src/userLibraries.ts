@@ -8,7 +8,7 @@ import { authEnabled } from './auth.js'
 import { gatewayKey } from './chat/gateway.js'
 import { resolveUserCred } from './credentials.js'
 import { classify, KbError, type FileContent, type KbEntry } from './kb.js'
-import { isDirect, noShell, remoteRun, remoteRunOnce, remoteThreads, setDirect, siteName, SSH_DESTINATION, sshSite, type RemoteResult } from './remoteExec.js'
+import { checkSshOptions, isDirect, jumpOf, noShell, parseSshOptions, remoteRun, remoteRunOnce, remoteThreads, setDirect, siteName, SSH_DESTINATION, sshOptionsText, sshRoute, sshSite, warmSsh, type RemoteResult } from './remoteExec.js'
 import { noteGufi } from './gufiTrace.js'
 import { getJob, startJob, type Job } from './jobs.js'
 import { depthParts, forgetIndexSettings, indexSettings, meaningArgs, saveIndexSettings, textArgs, type IndexDepth } from './indexSettings.js'
@@ -57,6 +57,9 @@ export interface UserLibraryDef {
   /** Over ssh: user@host or an ~/.ssh/config alias, and a port other than ssh's default. */
   destination?: string | null
   port?: number | null
+  /** Over ssh: options the library's ssh runs with (parseSshOptions), as
+   *  argv, e.g. ['-J', 'me@jump']; none for most hosts. */
+  sshOptions?: string[] | null
   /** An index that was there already (over ssh always): connected after a
    *  connection test rather than built by the index workflow. */
   existing?: boolean
@@ -183,7 +186,7 @@ export function remoteTarget(root: string | undefined | null): { site: string; k
   let site = d.site, key = ''
   if (d.transport === 'ssh') {
     if (owner !== 'single' || authEnabled()) throw new KbError(403, SSH_SINGLE_USER)
-    site = sshSite(String(d.destination ?? ''), d.port ?? null)
+    site = sshSite(String(d.destination ?? ''), d.port ?? null, d.sshOptions ?? [])
   } else {
     key = keyOf(owner) ?? ''
     if (!key) throw new KbError(409, 'This library is read with your own platform key: add your ACTIVATE API key under Settings, Model access.')
@@ -476,8 +479,8 @@ export async function refreshUserLibrary(viewerId: string | null | undefined, id
 
 // ---- libraries over plain ssh ----
 
-export interface SshLibraryInput { label?: unknown; destination?: unknown; port?: unknown; indexRoot?: unknown; gufiBin?: unknown; sourceRoot?: unknown }
-export interface SshSpec { destination: string; port: number | null; indexRoot: string; gufiBin: string | null; sourceRoot: string | null }
+export interface SshLibraryInput { label?: unknown; destination?: unknown; port?: unknown; sshOptions?: unknown; indexRoot?: unknown; gufiBin?: unknown; sourceRoot?: unknown }
+export interface SshSpec { destination: string; port: number | null; sshOptions: string[]; indexRoot: string; gufiBin: string | null; sourceRoot: string | null }
 export interface SshStep {
   name: 'ssh' | 'gufi' | 'index' | 'source' | 'extract'
   ok: boolean
@@ -519,7 +522,7 @@ function remotePath(v: unknown, what: string): string | null {
 /** The host a request names: user@host or an alias, with a port given
  *  apart or written after it (user@host:2222). Nothing here reaches a
  *  shell, but ssh would take a destination starting with "-" as an option. */
-function sshDest(a: { destination?: unknown; port?: unknown }): { destination: string; port: number | null } {
+function sshDest(a: { destination?: unknown; port?: unknown; sshOptions?: unknown }): { destination: string; port: number | null; sshOptions: string[] } {
   let destination = String(a.destination ?? '').trim()
   let given = a.port
   const m = /^(.+):(\d{1,5})$/.exec(destination)
@@ -529,15 +532,18 @@ function sshDest(a: { destination?: unknown; port?: unknown }): { destination: s
   }
   const port = given === '' || given == null ? null : Number(given)
   if (port != null && !(Number.isInteger(port) && port >= 1 && port <= 65535)) throw new KbError(400, 'port: a number from 1 to 65535')
-  return { destination, port }
+  // Typed in the form, a line of options; saved with a library, its argv.
+  const sshOptions = Array.isArray(a.sshOptions) ? checkSshOptions(a.sshOptions.map(String)) : parseSshOptions(a.sshOptions)
+  sshSite(destination, port, sshOptions) // the port given twice is refused here
+  return { destination, port, sshOptions }
 }
 
 /** A request's fields, checked. */
 export function sshSpec(a: SshLibraryInput): SshSpec {
-  const { destination, port } = sshDest(a)
+  const { destination, port, sshOptions } = sshDest(a)
   const indexRoot = remotePath(a.indexRoot, 'index directory')
   if (!indexRoot) throw new KbError(400, 'index directory: the top of the GUFI index on that host, the directory with its db.db')
-  return { destination, port, indexRoot, gufiBin: remotePath(a.gufiBin, 'GUFI bin directory'), sourceRoot: remotePath(a.sourceRoot, 'source directory') }
+  return { destination, port, sshOptions, indexRoot, gufiBin: remotePath(a.gufiBin, 'GUFI bin directory'), sourceRoot: remotePath(a.sourceRoot, 'source directory') }
 }
 
 const lastLine = (s: string) => s.trim().split('\n').filter(Boolean).pop() ?? ''
@@ -895,12 +901,18 @@ async function probeBuild(h: ProbeHost, spec: BuildSpec): Promise<BuildProbe> {
 
 /** The connection test over plain ssh; `reuse` takes a test that passed
  *  in the last two minutes. */
-export function probeSsh(spec: SshSpec, reuse = false): Promise<SshProbe> {
-  return probeIndex({
-    site: sshSite(spec.destination, spec.port), key: '', name: spec.destination,
-    reached: `${spec.destination}${spec.port ? ` on port ${spec.port}` : ''}`,
-    advice: m => sshAdvice(m, spec),
-  }, spec, reuse)
+export async function probeSsh(spec: SshSpec, reuse = false): Promise<SshProbe> {
+  const site = sshSite(spec.destination, spec.port, spec.sshOptions)
+  return probeIndex({ site, key: '', name: spec.destination, reached: await reachedOver(site, spec.destination, spec.port), advice: m => sshAdvice(m, spec) }, spec, reuse)
+}
+
+/** How the ssh step names the host once connected: with its port, and the
+ *  jump hosts ssh goes through, from the library's options or the user's
+ *  ~/.ssh/config (sshRoute). */
+async function reachedOver(site: string, destination: string, port: number | null): Promise<string> {
+  const route = await sshRoute(site).catch(() => ({ jump: null, proxyCommand: false }))
+  const via = route.jump ? ` through ${route.jump}` : route.proxyCommand ? ' through the ProxyCommand in your ~/.ssh/config' : ''
+  return `${destination}${port ? ` on port ${port}` : ''}${via}`
 }
 
 // ---- existing indexes on a cluster, over pw ssh ----
@@ -1055,8 +1067,8 @@ export async function addFromSsh(viewerId: string | null | undefined, a: SshLibr
   let id = base
   for (let i = 2; defs.some(d => d.id === id); i++) id = `${base}-${i}`
   const def: UserLibraryDef = {
-    id, label, transport: 'ssh', site: spec.destination, destination: spec.destination, port: spec.port, os: p.os || null, gufiVersion: p.gufiVersion ?? null,
-    resource: sshSite(spec.destination, spec.port), sourceDir: p.sourceRoot ?? '', sourceRoot: p.sourceRoot ?? null, indexRoot, gufiBin: p.gufiBin ?? '', ...(p.shell === false ? { shell: false } : {}), ...(p.fullText ? { fullText: true } : {}),
+    id, label, transport: 'ssh', site: spec.destination, destination: spec.destination, port: spec.port, ...(spec.sshOptions.length ? { sshOptions: spec.sshOptions } : {}),
+    os: p.os || null, gufiVersion: p.gufiVersion ?? null, resource: sshSite(spec.destination, spec.port, spec.sshOptions), sourceDir: p.sourceRoot ?? '', sourceRoot: p.sourceRoot ?? null, indexRoot, gufiBin: p.gufiBin ?? '', ...(p.shell === false ? { shell: false } : {}), ...(p.fullText ? { fullText: true } : {}),
     state: 'ready', run: null, error: null, builtAt: p.builtAt ?? new Date().toISOString(), directories: p.directories ?? null, files: p.files ?? null, scheduler: null,
   }
   saveUserLibraries(owner, [...defs, def])
@@ -1070,7 +1082,7 @@ async function recheckExisting(viewerId: string | null | undefined, owner: strin
   let p: SshProbe
   if (d.transport === 'ssh') {
     if (!sshAllowed(viewerId)) throw new KbError(403, SSH_SINGLE_USER)
-    p = await probeSsh(sshSpec({ destination: d.destination, port: d.port, indexRoot: d.indexRoot, gufiBin: d.gufiBin, sourceRoot: d.sourceRoot }))
+    p = await probeSsh(sshSpec({ destination: d.destination, port: d.port, sshOptions: d.sshOptions ?? [], indexRoot: d.indexRoot, gufiBin: d.gufiBin, sourceRoot: d.sourceRoot }))
   } else {
     p = await probePw(pwSpec({ cluster: d.site, indexRoot: d.indexRoot, gufiBin: d.gufiBin, sourceRoot: d.sourceRoot }), pwKey(viewerId).key)
   }
@@ -1085,26 +1097,27 @@ async function recheckExisting(viewerId: string | null | undefined, owner: strin
 
 // ---- building on the remote system, over ssh or pw ssh ----
 
-export interface BuildInput { label?: unknown; destination?: unknown; port?: unknown; cluster?: unknown; sourceRoot?: unknown; indexRoot?: unknown; gufiBin?: unknown; create?: unknown; meaning?: unknown; depth?: unknown }
+export interface BuildInput { label?: unknown; destination?: unknown; port?: unknown; sshOptions?: unknown; cluster?: unknown; sourceRoot?: unknown; indexRoot?: unknown; gufiBin?: unknown; create?: unknown; meaning?: unknown; depth?: unknown }
 type Transport = 'ssh' | 'pw'
 
 /** The host a build request names, as the probe reaches it, and its folders. */
 function buildRequest(viewerId: string | null | undefined, transport: Transport, a: BuildInput) {
-  let owner: string, host: ProbeHost, conn: { destination: string | null; port: number | null; site: string }
+  let owner: string, host: ProbeHost, conn: { destination: string | null; port: number | null; sshOptions: string[]; site: string }
   if (transport === 'ssh') {
     if (!sshAllowed(viewerId)) throw new KbError(403, SSH_SINGLE_USER)
     owner = ownerOf(viewerId)!
-    const { destination, port } = sshDest(a)
-    const spec = { destination, port, indexRoot: '', gufiBin: null, sourceRoot: null }
-    host = { site: sshSite(destination, port), key: '', name: destination, reached: `${destination}${port ? ` on port ${port}` : ''}`, advice: m => sshAdvice(m, spec) }
-    conn = { destination, port, site: destination }
+    const { destination, port, sshOptions } = sshDest(a)
+    const spec = { destination, port, sshOptions, indexRoot: '', gufiBin: null, sourceRoot: null }
+    const site = sshSite(destination, port, sshOptions)
+    host = { site, key: '', name: destination, reached: `${destination}${port ? ` on port ${port}` : ''}${jumpOf(sshOptions) ? ` through ${jumpOf(sshOptions)}` : ''}`, advice: m => sshAdvice(m, spec) }
+    conn = { destination, port, sshOptions, site: destination }
   } else {
     const k = pwKey(viewerId)
     owner = k.owner
     const cluster = String(a.cluster ?? '').trim()
     if (!CLUSTER.test(cluster)) throw new KbError(400, 'system: the name of one of your running clusters')
     host = { site: cluster, key: k.key, name: cluster, reached: cluster, advice: m => pwAdvice(m, cluster) }
-    conn = { destination: null, port: null, site: cluster }
+    conn = { destination: null, port: null, sshOptions: [], site: cluster }
   }
   const sourceRoot = remotePath(a.sourceRoot, 'source folder')
   if (!sourceRoot) throw new KbError(400, 'source folder: the folder to index on that system, absolute or under ~')
@@ -1144,7 +1157,7 @@ async function startRemote(site: string, key: string, b: RemoteBuild, create: bo
 function sessionOf(owner: string, d: UserLibraryDef): { site: string; key: string } {
   if (d.transport === 'ssh') {
     if (owner !== 'single' || authEnabled()) throw new KbError(403, SSH_SINGLE_USER)
-    return { site: sshSite(String(d.destination ?? ''), d.port ?? null), key: '' }
+    return { site: sshSite(String(d.destination ?? ''), d.port ?? null, d.sshOptions ?? []), key: '' }
   }
   const key = keyOf(owner)
   if (!key) throw new KbError(409, 'This library is reached with your own platform key: add your ACTIVATE API key under Settings, Model access.')
@@ -1174,7 +1187,8 @@ export async function addBuild(viewerId: string | null | undefined, transport: T
   if (a.depth !== undefined || a.meaning !== undefined) await saveIndexSettings(id, a.depth !== undefined ? { depth: a.depth } : { meaning: a.meaning })
   await startRemote(r.host.site, r.host.key, build, !!p.create?.includes(build.sourceRoot), indexSettings(id).depth)
   const def: UserLibraryDef = {
-    id, label, transport, existing: false, site: r.conn.site, destination: r.conn.destination, port: r.conn.port, os: p.os || null, gufiVersion: p.gufiVersion ?? null,
+    id, label, transport, existing: false, site: r.conn.site, destination: r.conn.destination, port: r.conn.port, ...(r.conn.sshOptions.length ? { sshOptions: r.conn.sshOptions } : {}),
+    os: p.os || null, gufiVersion: p.gufiVersion ?? null,
     resource: transport === 'ssh' ? r.host.site : r.conn.site, sourceDir: build.sourceRoot, sourceRoot: null, indexRoot: null, gufiBin: null,
     state: 'building', run: null, error: null, builtAt: null, directories: null, files: null, scheduler: null, build,
   }
@@ -1281,9 +1295,40 @@ export function removeUserLibrary(viewerId: string | null | undefined, id: strin
   void forgetIndexSettings(id)
 }
 
+/** Changes the ssh options of a library over ssh, after a connection test
+ *  with the new ones passes; the next command opens a new session with
+ *  them (the site, and so the shared connection, changes with them). */
+export async function setSshOptions(viewerId: string | null | undefined, id: string, text: unknown): Promise<UserLibraryDef> {
+  if (!sshAllowed(viewerId)) throw new KbError(403, SSH_SINGLE_USER)
+  const owner = ownerOf(viewerId)!
+  const d = loadUserLibraries(owner).find(x => x.id === id)
+  if (!d) throw new KbError(404, 'no such library')
+  if (d.transport !== 'ssh') throw new KbError(400, 'ssh options apply to a library over ssh')
+  if (d.build) throw new KbError(400, 'a library built over ssh keeps the options it was built with; remove it and build it again to change them')
+  const spec = sshSpec({ destination: d.destination, port: d.port, sshOptions: text, indexRoot: d.indexRoot, gufiBin: d.gufiBin, sourceRoot: d.sourceRoot })
+  const p = await probeSsh(spec)
+  if (!p.ok) throw new KbError(400, `The connection test with these options did not pass. ${p.steps.find(x => !x.ok)?.detail ?? ''}`.trim())
+  return updateDef(owner, id, { sshOptions: spec.sshOptions.length ? spec.sshOptions : null, resource: sshSite(spec.destination, spec.port, spec.sshOptions), shell: p.shell === false ? false : undefined, error: null })!
+}
+
+/** Opens the shared ssh connection to each host the viewer's libraries are
+ *  on, ahead of a search or query (warmSsh), without waiting for it. */
+export function warmUserLibraries(viewerId: string | null | undefined): number {
+  if (!sshAllowed(viewerId)) return 0
+  const owner = ownerOf(viewerId)
+  if (!owner) return 0
+  const sites = new Set<string>()
+  for (const d of loadUserLibraries(owner)) {
+    if (d.transport !== 'ssh' || !d.destination) continue
+    try { sites.add(sshSite(d.destination, d.port ?? null, d.sshOptions ?? [])) } catch { /* a broken entry is reported where it is used */ }
+  }
+  for (const site of sites) void warmSsh(site).catch(() => 'failed')
+  return sites.size
+}
+
 /** The shape Settings shows: no keys, and the remote paths, which are the user's own. */
 export function publicUserLibrary(d: UserLibraryDef & { job?: number }) {
-  return { id: d.id, label: d.label, transport: d.transport ?? 'pw', existing: !d.build && (d.transport === 'ssh' || !!d.existing), meaning: d.build ? indexSettings(d.id).meaning : null, depth: d.build ? indexSettings(d.id).depth : null, site: d.site, destination: d.destination ?? null, port: d.port ?? null, gufiVersion: d.gufiVersion ?? null, sourceDir: d.sourceDir, sourceRoot: d.sourceRoot, indexRoot: d.indexRoot, state: d.state,
+  return { id: d.id, label: d.label, transport: d.transport ?? 'pw', existing: !d.build && (d.transport === 'ssh' || !!d.existing), meaning: d.build ? indexSettings(d.id).meaning : null, depth: d.build ? indexSettings(d.id).depth : null, site: d.site, destination: d.destination ?? null, port: d.port ?? null, sshOptions: d.sshOptions?.length ? sshOptionsText(d.sshOptions) : null, jump: d.sshOptions?.length ? jumpOf(d.sshOptions) : null, gufiVersion: d.gufiVersion ?? null, sourceDir: d.sourceDir, sourceRoot: d.sourceRoot, indexRoot: d.indexRoot, state: d.state,
     run: d.run ? { slug: d.run.slug, mode: d.run.mode, startedAt: d.run.startedAt } : null, error: d.error, builtAt: d.builtAt,
     directories: d.directories, files: d.files, scheduler: d.scheduler, fullText: !!d.fullText, vectors: !!d.vectors,
     // Built here over the session: where the index is written, and how far a build has got.
@@ -1337,5 +1382,10 @@ export async function userLibraryRoutes(app: FastifyInstance): Promise<void> {
     app.post(`/api/user-libraries/${t}/build`, async req => publicUserLibrary(await addBuild(viewer(req), t, (req.body ?? {}) as BuildInput)))
   }
   app.post('/api/user-libraries/:id/refresh', async req => publicUserLibrary(await refreshUserLibrary(viewer(req), (req.params as { id: string }).id)))
+  app.put('/api/user-libraries/:id/ssh-options', async req =>
+    publicUserLibrary(await setSshOptions(viewer(req), (req.params as { id: string }).id, ((req.body ?? {}) as { sshOptions?: unknown }).sshOptions)))
+  // Search and Query call this as they open, so the first query after a
+  // long gap does not wait for the ssh login.
+  app.post('/api/user-libraries/warm', async req => ({ hosts: warmUserLibraries(viewer(req)) }))
   app.delete('/api/user-libraries/:id', async req => { removeUserLibrary(viewer(req), (req.params as { id: string }).id); return { ok: true } })
 }

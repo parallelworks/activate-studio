@@ -1,4 +1,4 @@
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { execFile, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -77,58 +77,261 @@ const SSH_SCHEME = 'ssh://'
  *  option, and nothing a shell would interpret. */
 export const SSH_DESTINATION = /^(?:[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}@)?[A-Za-z0-9_][A-Za-z0-9_.-]{0,252}$/
 
-export interface SshHost { destination: string; port: number | null }
+export interface SshHost { destination: string; port: number | null; /** ssh options from the library (parseSshOptions), as argv */ options: string[] }
 
-/** The site a host over plain ssh goes by: ssh://<destination>[:<port>]. */
-export function sshSite(destination: string, port?: number | null): string {
+// ---- ssh options a library carries ----
+
+/** ssh_config keywords a library's options may set with -o, lower case:
+ *  how to reach and authenticate to the host, and how long to wait. Not
+ *  allowed: anything that runs a local command (LocalCommand,
+ *  ProxyCommand, KnownHostsCommand), runs a remote one (RemoteCommand),
+ *  forwards ports, the agent or X, sends the environment, loads a
+ *  library (PKCS11Provider), or touches what the Studio manages itself
+ *  (BatchMode, Control*). A Host entry in ~/.ssh/config can still set any
+ *  of them, since that file is the user's own. */
+const SSH_OPTION_KEYS = new Map<string, 'jump' | 'host' | 'port' | 'login' | 'path' | 'word' | 'list' | 'number'>([
+  ['addressfamily', 'word'], ['canonicaldomains', 'list'], ['canonicalizefallbacklocal', 'word'], ['canonicalizehostname', 'word'],
+  ['canonicalizemaxdots', 'number'], ['certificatefile', 'path'], ['checkhostip', 'word'], ['ciphers', 'list'], ['compression', 'word'],
+  ['connectionattempts', 'number'], ['connecttimeout', 'number'], ['gssapiauthentication', 'word'], ['gssapidelegatecredentials', 'word'],
+  ['hostkeyalgorithms', 'list'], ['hostkeyalias', 'host'], ['hostname', 'host'], ['identitiesonly', 'word'], ['identityagent', 'path'],
+  ['identityfile', 'path'], ['ipqos', 'list'], ['kexalgorithms', 'list'], ['loglevel', 'word'], ['macs', 'list'], ['port', 'port'],
+  ['preferredauthentications', 'list'], ['proxyjump', 'jump'], ['pubkeyacceptedalgorithms', 'list'], ['pubkeyacceptedkeytypes', 'list'],
+  ['pubkeyauthentication', 'word'], ['rekeylimit', 'list'], ['serveralivecountmax', 'number'], ['serveraliveinterval', 'number'],
+  ['stricthostkeychecking', 'word'], ['tcpkeepalive', 'word'], ['updatehostkeys', 'word'], ['user', 'login'],
+  ['userknownhostsfile', 'path'], ['verifyhostkeydns', 'word'],
+])
+/** Why a keyword is refused, for the ones people most often reach for. */
+const SSH_OPTION_REFUSED: Record<string, string> = {
+  proxycommand: 'ProxyCommand runs a local command: use -J (ProxyJump), or put it in a Host entry in ~/.ssh/config and give that alias as the host',
+  localcommand: 'LocalCommand runs a local command', permitlocalcommand: 'PermitLocalCommand runs a local command',
+  knownhostscommand: 'KnownHostsCommand runs a local command', remotecommand: 'RemoteCommand replaces the command the Studio runs',
+  batchmode: 'the Studio always runs ssh without prompts (BatchMode=yes)',
+  controlmaster: 'the Studio shares connections itself', controlpath: 'the Studio shares connections itself', controlpersist: 'the Studio shares connections itself',
+}
+const MAX_OPTIONS_TEXT = 500
+const LOGIN = /^[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}$/
+const HOSTNAME = /^[A-Za-z0-9_][A-Za-z0-9_.-]{0,252}$/
+const LOCAL_PATH = /^(?:\/|~\/)[^\s'"`$\\;&|<>(){}*?!\0-\x1f\x7f]{0,1022}$/
+const isPort = (s: string) => /^\d{1,5}$/.test(s) && Number(s) >= 1 && Number(s) <= 65535
+/** One jump host: [user@]host[:port], as -J and ProxyJump take it. */
+const jumpHost = (s: string) => {
+  const m = /^(?:([^@]+)@)?([^:@]+)(?::(\d{1,5}))?$/.exec(s)
+  return !!m && (!m[1] || LOGIN.test(m[1])) && HOSTNAME.test(m[2]) && (!m[3] || isPort(m[3]))
+}
+const jumpList = (s: string) => s.split(',').every(jumpHost)
+
+function optionValue(kind: string, value: string): boolean {
+  switch (kind) {
+    case 'jump': return jumpList(value)
+    case 'host': return HOSTNAME.test(value)
+    case 'port': return isPort(value)
+    case 'login': return LOGIN.test(value)
+    case 'path': return LOCAL_PATH.test(value) || /^(?:none|SSH_AUTH_SOCK)$/.test(value)
+    case 'number': return /^\d{1,6}$/.test(value)
+    case 'word': return /^[A-Za-z0-9_-]{1,32}$/.test(value)
+    default: return /^[A-Za-z0-9_@.,:+^/=%-]{1,300}$/.test(value)
+  }
+}
+
+/** The options a library's ssh runs with, as argv, from what the person
+ *  typed: -J jump[,jump], -p port, -i identity, -l login, -F config,
+ *  -o Keyword=value (SSH_OPTION_KEYS), -4, -6 and -C. Split on spaces, so
+ *  no value may contain one (put such a setting in ~/.ssh/config). Nothing
+ *  here reaches a shell: the arguments go to ssh as they are. Throws a 400
+ *  that says what was refused. */
+export function parseSshOptions(text: unknown): string[] {
+  const s = String(text ?? '').trim()
+  if (!s) return []
+  if (s.length > MAX_OPTIONS_TEXT) throw new KbError(400, `ssh options: at most ${MAX_OPTIONS_TEXT} characters`)
+  if (/['"`\\]/.test(s)) throw new KbError(400, 'ssh options: no quotes or backslashes; a value with a space belongs in a Host entry in ~/.ssh/config')
+  return checkSshOptions(s.split(/\s+/))
+}
+
+/** The same check on options already split, as a site carries them. */
+export function checkSshOptions(words: string[]): string[] {
+  const out: string[] = []
+  const bad = (msg: string): never => { throw new KbError(400, `ssh options: ${msg}`) }
+  for (let i = 0; i < words.length; i++) {
+    const w = words[i]
+    if (w === '-4' || w === '-6' || w === '-C') { out.push(w); continue }
+    const m = /^-([JpilFo])(.*)$/.exec(w)
+    if (!m) bad(`${w} is not one of -J, -p, -i, -l, -F, -o, -4, -6 or -C`)
+    const flag = m![1]
+    const value = m![2] || words[++i]
+    if (value === undefined || value === '') bad(`-${flag} needs a value`)
+    if (flag === 'J' && !jumpList(value)) bad(`-J ${value}: give [user@]host[:port], several separated by commas`)
+    if (flag === 'p' && !isPort(value)) bad(`-p ${value}: a port from 1 to 65535`)
+    if ((flag === 'i' || flag === 'F') && !LOCAL_PATH.test(value)) bad(`-${flag} ${value}: an absolute path on this computer, or one under ~/`)
+    if (flag === 'l' && !LOGIN.test(value)) bad(`-l ${value}: a login name`)
+    if (flag === 'o') {
+      const kv = /^([A-Za-z0-9]+)=(.*)$/.exec(value)
+      if (!kv) bad(`-o ${value}: write it as Keyword=value`)
+      const key = kv![1].toLowerCase()
+      if (SSH_OPTION_REFUSED[key]) bad(`${kv![1]} is not allowed here: ${SSH_OPTION_REFUSED[key]}`)
+      const kind = SSH_OPTION_KEYS.get(key)
+      if (!kind) bad(`${kv![1]} is not allowed here; a Host entry in ~/.ssh/config can set it`)
+      if (!optionValue(kind!, kv![2])) bad(`-o ${value}: not a valid value for ${kv![1]}`)
+    }
+    out.push(`-${flag}`, value)
+  }
+  return out
+}
+
+/** The options as a person reads them back: argv joined with spaces. */
+export const sshOptionsText = (argv: string[]): string => argv.join(' ')
+
+/** The jump hosts the options name (-J or ProxyJump), or null. */
+export function jumpOf(options: string[]): string | null {
+  for (let i = 0; i < options.length; i++) {
+    if (options[i] === '-J') return options[i + 1]
+    if (options[i] === '-o' && /^proxyjump=/i.test(options[i + 1])) return options[i + 1].replace(/^[^=]*=/, '')
+  }
+  return null
+}
+
+const portIn = (options: string[]) =>
+  options.some((o, i) => o === '-p' || (options[i - 1] === '-o' && /^port=/i.test(o)))
+
+/** The site a host over plain ssh goes by: ssh://<destination>[:<port>],
+ *  with the library's ssh options after a #, base64url of their argv, so
+ *  everything keyed on a site (sessions, connection sharing, gufi_vt
+ *  locations, grouping by host) tells two ways of reaching a host apart. */
+export function sshSite(destination: string, port?: number | null, options: string[] = []): string {
   if (!SSH_DESTINATION.test(destination)) throw new KbError(400, 'invalid ssh destination')
   if (port != null && !(Number.isInteger(port) && port >= 1 && port <= 65535)) throw new KbError(400, 'invalid ssh port')
-  return `${SSH_SCHEME}${destination}${port != null ? `:${port}` : ''}`
+  const opts = checkSshOptions(options)
+  if (port != null && portIn(opts)) throw new KbError(400, 'ssh options: give the port once, in the port field or in the options')
+  const frag = opts.length ? `#${Buffer.from(JSON.stringify(opts)).toString('base64url')}` : ''
+  return `${SSH_SCHEME}${destination}${port != null ? `:${port}` : ''}${frag}`
 }
 
 /** The host a site names when it is one over plain ssh; null for a cluster. */
 export function parseSshSite(site: string): SshHost | null {
   if (!site.startsWith(SSH_SCHEME)) return null
-  const m = /^(.*?)(?::(\d{1,5}))?$/.exec(site.slice(SSH_SCHEME.length))!
+  const hash = site.indexOf('#')
+  const hostPart = site.slice(SSH_SCHEME.length, hash < 0 ? undefined : hash)
+  const m = /^(.*?)(?::(\d{1,5}))?$/.exec(hostPart)!
   const port = m[2] ? Number(m[2]) : null
   if (!SSH_DESTINATION.test(m[1]) || (port != null && !(port >= 1 && port <= 65535))) throw new KbError(400, 'invalid ssh site')
-  return { destination: m[1], port }
+  let options: string[] = []
+  if (hash >= 0) {
+    let parsed: unknown
+    try { parsed = JSON.parse(Buffer.from(site.slice(hash + 1), 'base64url').toString('utf8')) } catch { throw new KbError(400, 'invalid ssh site') }
+    if (!Array.isArray(parsed) || parsed.some(a => typeof a !== 'string')) throw new KbError(400, 'invalid ssh site')
+    options = checkSshOptions(parsed as string[])
+  }
+  return { destination: m[1], port, options }
 }
 
-/** How a site reads in a message: the destination for a host over ssh. */
+/** How a site reads in a message: the destination (and port) for a host
+ *  over ssh, without its options. */
 export function siteName(site: string): string {
-  return site.startsWith(SSH_SCHEME) ? site.slice(SSH_SCHEME.length) : site
+  if (!site.startsWith(SSH_SCHEME)) return site
+  const hash = site.indexOf('#')
+  return site.slice(SSH_SCHEME.length, hash < 0 ? undefined : hash)
 }
 
 /** How a person reaches a site from a terminal: ssh for a host over plain
  *  ssh, pw ssh for a cluster. For the GUFI commands panel. */
 export function shellFor(site: string): string[] {
   const h = parseSshSite(site)
-  return h ? ['ssh', ...(h.port != null ? ['-p', String(h.port)] : []), h.destination] : ['pw', 'ssh', site]
+  return h ? ['ssh', ...h.options, ...(h.port != null ? ['-p', String(h.port)] : []), h.destination] : ['pw', 'ssh', site]
 }
 
-/** ssh's arguments for a command on a host: no prompts (keys and the agent
- *  only), a bounded connect, keepalives so a dropped link ends the session
- *  rather than hanging it, and a shared connection (controlArgs). */
+/** ssh's arguments for a command on a host: the library's own options
+ *  first (ssh takes the first value it is given for a keyword, so a
+ *  library's ConnectTimeout, say, wins over the default here), then no
+ *  prompts (keys, the agent and Kerberos only), a bounded connect,
+ *  keepalives so a dropped link ends the session rather than hanging it,
+ *  and a shared connection (controlArgs). */
 export function sshArgv(site: string, command: string): string[] {
+  return [...sshBase(site), command]
+}
+
+/** sshArgv without the command: what every ssh to the site runs with. */
+function sshBase(site: string, extra: string[] = []): string[] {
   const h = parseSshSite(site)
   if (!h) throw new KbError(400, `${site} is not an ssh site`)
-  return ['-T', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15', '-o', 'ServerAliveInterval=30', ...controlArgs(h),
-    ...(h.port != null ? ['-p', String(h.port)] : []), h.destination, command]
+  return ['-T', ...h.options, '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15', '-o', 'ServerAliveInterval=30', ...controlArgs(h),
+    ...extra, ...(h.port != null ? ['-p', String(h.port)] : []), h.destination]
+}
+
+/** How long a shared connection stays open after its last session closes:
+ *  STUDIO_SSH_PERSIST seconds (default 600; 0 closes it with the last
+ *  session), at most a day. Searches and queries minutes apart then reuse
+ *  it rather than logging in again. */
+export function persistSeconds(): number {
+  const v = process.env.STUDIO_SSH_PERSIST
+  const n = v === undefined || v === '' ? 600 : Number(v)
+  return Number.isInteger(n) && n >= 0 ? Math.min(n, 86_400) : 600
 }
 
 /** ssh's connection sharing for a host: the first session to it logs in and
- *  keeps the connection for ten minutes after the last one closes, and the
- *  others ride on it. The socket is in a folder of the user's own
- *  (socketDir); the person's ~/.ssh/config is left as it is. The path is
- *  quoted, since a folder may have spaces in it and ssh refuses an unquoted
- *  one. None where no folder will do, or with STUDIO_SSH_SHARE=0. */
-export function controlArgs(h: SshHost): string[] {
+ *  keeps the connection for persistSeconds after the last one closes, and
+ *  the others ride on it. One socket per destination, port and options.
+ *  The socket is in a folder of the user's own (socketDir); the person's
+ *  ~/.ssh/config is left as it is. The path is quoted, since a folder may
+ *  have spaces in it and ssh refuses an unquoted one. None where no folder
+ *  will do, or with STUDIO_SSH_SHARE=0. */
+export function controlArgs(h: { destination: string; port: number | null; options?: string[] }): string[] {
   if (process.env.STUDIO_SSH_SHARE === '0') return []
   const dir = socketDir()
   if (!dir) return []
-  const sock = path.join(dir, crypto.createHash('sha1').update(`${h.destination}:${h.port ?? ''}`).digest('hex').slice(0, SOCKET_NAME))
-  return ['-o', 'ControlMaster=auto', '-o', `ControlPath="${sock}"`, '-o', 'ControlPersist=600']
+  const id = `${h.destination}:${h.port ?? ''}${h.options?.length ? `:${h.options.join('\0')}` : ''}`
+  const sock = path.join(dir, crypto.createHash('sha1').update(id).digest('hex').slice(0, SOCKET_NAME))
+  const persist = persistSeconds()
+  return ['-o', 'ControlMaster=auto', '-o', `ControlPath="${sock}"`, '-o', `ControlPersist=${persist > 0 ? persist : 'no'}`]
+}
+
+// ---- ssh on this computer: the effective config, and warming ----
+
+type SshLocal = (args: string[], timeoutMs: number) => Promise<{ code: number; stdout: string; stderr: string }>
+const runSshLocal: SshLocal = (args, timeoutMs) => new Promise(resolve => {
+  execFile('ssh', args, { timeout: timeoutMs }, (err, stdout, stderr) => {
+    const code = err ? (typeof (err as { code?: unknown }).code === 'number' ? (err as { code: number }).code : -1) : 0
+    resolve({ code, stdout: String(stdout), stderr: String(stderr) })
+  })
+})
+let sshLocal: SshLocal = runSshLocal
+/** Test seam: what runs in place of a local `ssh -G`, `ssh -O check` or
+ *  `ssh -N -f`; null restores ssh itself. */
+export function setSshLocal(fn: SshLocal | null): void { sshLocal = fn ?? runSshLocal; warming.clear() }
+
+/** The jump hosts and proxy command ssh would use for a site, from its
+ *  options and the user's ~/.ssh/config (`ssh -G`, which reads the config
+ *  and connects nowhere). Empty when ssh cannot say. */
+export async function sshRoute(site: string): Promise<{ jump: string | null; proxyCommand: boolean }> {
+  const h = parseSshSite(site)
+  if (!h) return { jump: null, proxyCommand: false }
+  const r = await sshLocal(['-G', ...h.options, ...(h.port != null ? ['-p', String(h.port)] : []), h.destination], 5000).catch(() => null)
+  const line = (k: string) => r?.stdout.split('\n').find(l => l.toLowerCase().startsWith(`${k} `))?.slice(k.length + 1).trim() ?? ''
+  const jump = line('proxyjump')
+  const proxy = line('proxycommand')
+  return { jump: jump && jump !== 'none' ? jump : jumpOf(h.options), proxyCommand: !!proxy && proxy !== 'none' }
+}
+
+const warming = new Map<string, { at: number; p: Promise<'open' | 'opened' | 'failed' | 'off'> }>()
+const WARM_EVERY_MS = 60_000
+
+/** Opens a site's shared connection ahead of a search or query: when no
+ *  master runs for it (`ssh -O check`), `ssh -N -f` logs in, goes to the
+ *  background and holds the connection for persistSeconds. It runs no
+ *  command on the host, so a host whose login runs only gufi_query is
+ *  warmed too. At most once a minute per site; never waited on by a
+ *  request. 'off' where connections are not shared. */
+export function warmSsh(site: string): Promise<'open' | 'opened' | 'failed' | 'off'> {
+  const h = parseSshSite(site)
+  if (!h || !controlArgs(h).length || persistSeconds() === 0) return Promise.resolve('off')
+  const seen = warming.get(site)
+  if (seen && Date.now() - seen.at < WARM_EVERY_MS) return seen.p
+  const p = (async () => {
+    const check = await sshLocal([...sshBase(site, ['-O', 'check'])], 5000).catch(() => ({ code: -1, stdout: '', stderr: '' }))
+    if (check.code === 0) return 'open' as const
+    const r = await sshLocal([...sshBase(site, ['-N', '-f'])], 30_000).catch(() => ({ code: -1, stdout: '', stderr: '' }))
+    return r.code === 0 ? 'opened' as const : 'failed' as const
+  })()
+  warming.set(site, { at: Date.now(), p })
+  return p
 }
 
 /** A socket's name: 12 hex characters of the destination (user and host)
@@ -379,6 +582,7 @@ export function closeRemoteChannels(): void {
   channels.clear()
   cpus.clear()
   directSites.clear()
+  warming.clear()
 }
 
 /** A host's processor count, asked once per site and key: nproc, which

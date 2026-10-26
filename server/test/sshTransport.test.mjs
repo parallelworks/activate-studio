@@ -61,8 +61,8 @@ test('ssh gets no prompts, a bounded connect, keepalives, the port, then the des
 
 test('a site names its transport and destination, and reads as the destination', () => {
   assert.equal(R.sshSite('me@box', 2222), 'ssh://me@box:2222')
-  assert.deepEqual(R.parseSshSite('ssh://me@box:2222'), { destination: 'me@box', port: 2222 })
-  assert.deepEqual(R.parseSshSite('ssh://lab-index'), { destination: 'lab-index', port: null })
+  assert.deepEqual(R.parseSshSite('ssh://me@box:2222'), { destination: 'me@box', port: 2222, options: [] })
+  assert.deepEqual(R.parseSshSite('ssh://lab-index'), { destination: 'lab-index', port: null, options: [] })
   assert.equal(R.parseSshSite('cluster-a'), null)
   assert.equal(R.siteName('ssh://me@box:2222'), 'me@box:2222')
   assert.equal(R.siteName('cluster-a'), 'cluster-a')
@@ -81,8 +81,8 @@ test('a destination is user@host or an alias, never an option or shell text', ()
 test('the library fields are checked: destination, port, and paths on the host', () => {
   const base = { destination: 'me@box', indexRoot: '/data/index/proj' }
   assert.deepEqual(U.sshSpec({ ...base, port: '2222', sourceRoot: '/data/proj/', gufiBin: '~/usr/local/bin' }),
-    { destination: 'me@box', port: 2222, indexRoot: '/data/index/proj', sourceRoot: '/data/proj', gufiBin: '~/usr/local/bin' })
-  assert.deepEqual(U.sshSpec({ ...base, port: '' }), { destination: 'me@box', port: null, indexRoot: '/data/index/proj', sourceRoot: null, gufiBin: null })
+    { destination: 'me@box', port: 2222, sshOptions: [], indexRoot: '/data/index/proj', sourceRoot: '/data/proj', gufiBin: '~/usr/local/bin' })
+  assert.deepEqual(U.sshSpec({ ...base, port: '' }), { destination: 'me@box', port: null, sshOptions: [], indexRoot: '/data/index/proj', sourceRoot: null, gufiBin: null })
   assert.equal(U.sshSpec({ ...base, indexRoot: '/Users/me/Library/Application Support/index' }).indexRoot, '/Users/me/Library/Application Support/index')
   assert.throws(() => U.sshSpec({ ...base, destination: '-oProxyCommand=x' }), /destination/)
   assert.throws(() => U.sshSpec({ ...base, port: '22x' }), /port/)

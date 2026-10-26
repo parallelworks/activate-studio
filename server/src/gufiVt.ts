@@ -42,7 +42,10 @@ const WRAPPER = fileURLToPath(new URL('./gufiVtRemote.js', import.meta.url))
 const SECRET = randomBytes(32).toString('hex')
 const TOKEN_TTL_MS = 10 * 60_000
 const THREADS = 4
-interface Location { site: string; key: string; gufiBin: string; index: string; label: string; error?: string; ran?: { argv: string[]; ms: number }; at: number }
+/** A remote location gufi_vt asks through the wrapper: the session, and
+ *  the index roots (one per library; several when libraries on one host
+ *  are stacked) it may run gufi_query on. */
+interface Location { site: string; key: string; gufiBin: string; index: string; indexes?: string[]; label: string; error?: string; ran?: { argv: string[]; ms: number }; at: number }
 const tokens = new Map<string, Location>()
 
 /**
@@ -148,7 +151,10 @@ export function vtLocatable(lib: Library): boolean {
   return !t || (vtRemoteIndex(t.indexRoot) && (t.gufiBin === '' || vtPath(t.gufiBin) !== null))
 }
 
-interface VtLocation { id: string; index: string; plan: Plan; remote?: { token: string; site: string; gufiBin: string } }
+/** One gufi_vt table: its index, or `indexes` when libraries on one host
+ *  share it (gufi_vt takes index= more than once, and hands a remote
+ *  command every root, in order, at the end of its line). */
+interface VtLocation { id: string; index: string; indexes?: string[]; plan: Plan; remote?: { token: string; site: string; gufiBin: string } }
 
 /** The program gufi_vt runs for a remote location: this node and the
  *  wrapper beside this module. */
@@ -180,7 +186,8 @@ export function vtScript(locs: VtLocation[], order: VtOrder | null, remoteCmd = 
     const s = l.plan.stages
     const [cmd, ...rargs] = l.remote ? remoteCmd(l.remote) : []
     const remote = cmd ? `, remote_cmd=${q(cmd)}${rargs.map(a => `, remote_arg=${q(a)}`).join('')}` : ''
-    return `CREATE VIRTUAL TABLE temp.loc_${i} USING gufi_vt(index=${q(l.index)}, threads=${THREADS}${val('I', s.I)}${val('E', s.E)}${val('K', s.K)}${val('J', s.J)}${val('G', s.G)}${remote});`
+    const index = (l.indexes ?? [l.index]).map(ix => `index=${q(ix)}`).join(', ')
+    return `CREATE VIRTUAL TABLE temp.loc_${i} USING gufi_vt(${index}, threads=${THREADS}${val('I', s.I)}${val('E', s.E)}${val('K', s.K)}${val('J', s.J)}${val('G', s.G)}${remote});`
   })
   const union = locs.map((l, i) => `SELECT '${l.id}', * FROM temp.loc_${i}`).join(' UNION ALL ')
   const tail = order ? ` ORDER BY ${order.col + 2} ${order.desc ? 'DESC' : 'ASC'} LIMIT ${order.limit}` : ''
@@ -194,7 +201,12 @@ export function vtScript(locs: VtLocation[], order: VtOrder | null, remoteCmd = 
 export async function runAcross(items: { lib: Library; plan: Plan }[], order: VtOrder | null): Promise<VtResult> {
   const t0 = Date.now()
   const failed: VtResult['failed'] = []
-  const locs: (VtLocation & { label: string; root: string })[] = []
+  type Member = { id: string; label: string; root: string; index: string }
+  const locs: (VtLocation & { label: string; members: Member[] })[] = []
+  // Libraries on another system, grouped: those on one host, reached the
+  // same way and asked the same plan, share a location, so the host gets
+  // one gufi_query (and one check) for all of them.
+  const groups = new Map<string, { site: string; key: string; gufiBin: string; plan: Plan; members: Member[] }>()
   await Promise.all(items.map(async ({ lib: l, plan }) => {
     const sub = (plan.subtree ?? '').replace(/^\/+|\/+$/g, '')
     try {
@@ -204,27 +216,36 @@ export async function runAcross(items: { lib: Library; plan: Plan }[], order: Vt
         if (!t) throw new Error('its owner has no key to act with')
         const index = sub ? path.posix.join(t.indexRoot, sub) : t.indexRoot
         if (!vtRemoteIndex(index) || (t.gufiBin !== '' && !vtPath(t.gufiBin))) throw new Error('its index path cannot be passed to gufi_vt')
-        // The index answers, checked with gufi_query alone (a host may run
-        // nothing else): its top directory's summary, one row. gufi_query
-        // exits 0 on a missing or unreadable index and says why on stderr.
-        const r = await remoteRun(t.site, t.key, [gufiTool(t.gufiBin), '-n', '1', '-d', '|', '--min-level', '0', '--max-level', '0', '-S', 'SELECT 1;', index], 60_000)
-        if (!r.stdout.trim()) throw new Error(r.stderr.trim().split('\n').filter(Boolean).pop() || `the index did not answer (exit ${r.code})`)
-        const token = randomBytes(16).toString('hex')
-        tokens.set(token, { site: t.site, key: t.key, gufiBin: t.gufiBin, index, label: l.label, at: Date.now() })
-        locs.push({ id: l.id, label: l.label, index, root: t.indexRoot, plan, remote: { token, site: t.site, gufiBin: t.gufiBin } })
+        // Raw SQL has no known shape to map rows back by, so it is not
+        // stacked; STUDIO_STACK_REMOTE=0 stacks nothing.
+        const k = plan.raw || process.env.STUDIO_STACK_REMOTE === '0' ? `lib:${l.id}` : JSON.stringify([t.site, t.key.slice(-16), t.gufiBin, plan.stages, plan.columns])
+        const g = groups.get(k) ?? { site: t.site, key: t.key, gufiBin: t.gufiBin, plan, members: [] }
+        g.members.push({ id: l.id, label: l.label, root: t.indexRoot, index })
+        groups.set(k, g)
       } else {
         const root = path.resolve(l.indexRoot)
         const index = sub ? path.resolve(root, sub) : root
         if (index !== root && !index.startsWith(root + '/')) throw new Error('scope escapes the index')
         if (!vtPath(index)) throw new Error('its index path cannot be passed to gufi_vt')
         if (!fs.existsSync(path.join(index, 'db.db'))) throw new Error('index not built yet')
-        locs.push({ id: l.id, label: l.label, index, root, plan })
+        locs.push({ id: l.id, label: l.label, index, plan, members: [{ id: l.id, label: l.label, root, index }] })
       }
     } catch (e) { failed.push({ library: l.label, error: String((e as Error).message ?? e).slice(0, 300) }) }
   }))
+  let stacks = 0
+  await Promise.all([...groups.values()].map(async g => {
+    const answering = await checkRemote(g, failed)
+    if (!answering.length) return
+    const token = randomBytes(16).toString('hex')
+    const indexes = answering.map(m => m.index)
+    const label = answering.map(m => m.label).join(', ')
+    tokens.set(token, { site: g.site, key: g.key, gufiBin: g.gufiBin, index: indexes[0], indexes, label, at: Date.now() })
+    const id = answering.length === 1 ? answering[0].id : `stack${stacks++}`
+    locs.push({ id, label, index: indexes[0], ...(indexes.length > 1 ? { indexes } : {}), plan: g.plan, members: answering, remote: { token, site: g.site, gufiBin: g.gufiBin } })
+  }))
   // The union follows the libraries' order, not the order the checks ended in.
   const at = (id: string) => items.findIndex(i => i.lib.id === id)
-  locs.sort((a, b) => at(a.id) - at(b.id))
+  locs.sort((a, b) => at(a.members[0].id) - at(b.members[0].id))
   if (!locs.length) return { rows: [], failed, elapsedMs: Date.now() - t0 }
   const script = vtScript(locs, order)
   const sqlite = path.join(GUFI_BIN, 'gufi_sqlite3')
@@ -247,24 +268,65 @@ export async function runAcross(items: { lib: Library; plan: Plan }[], order: Vt
       if (!l.remote) continue
       const loc = tokens.get(l.remote.token)
       if (loc?.ran) noteGufi(loc.ran.argv, { site: loc.site, ms: loc.ran.ms })
-      if (loc?.error) failed.push({ library: loc.label, error: loc.error })
+      if (loc?.error) for (const m of l.members) failed.push({ library: m.label, error: loc.error })
       tokens.delete(l.remote.token)
     }
   }
-  const roots = new Map(locs.map(l => [l.id, l.root + '/']))
+  const byId = new Map(locs.map(l => [l.id, l]))
   const rows = out.split('\n').filter(Boolean).map(line => {
     const cells = line.split('\x1e')
-    const id = cells[0], prefix = roots.get(id) ?? ''
-    return { id, row: cells.slice(1).map(c => (prefix && c.startsWith(prefix) ? c.slice(prefix.length) : c)) }
+    const loc = byId.get(cells[0])
+    const row = cells.slice(1)
+    if (!loc) return { id: cells[0], row }
+    // A row goes to the library whose root its path is under; a stacked
+    // location's grouped totals have no path, and are summed across
+    // libraries afterwards anyway (query.ts), so they go to its first.
+    const roots = [...loc.members].sort((a, b) => b.root.length - a.root.length)
+    const member = loc.members.length === 1 ? loc.members[0]
+      : roots.find(m => row.some(c => c === m.root || c.startsWith(m.root + '/'))) ?? loc.members[0]
+    const prefix = member.root + '/'
+    return { id: member.id, row: row.map(c => (c.startsWith(prefix) ? c.slice(prefix.length) : c)) }
   })
   return { rows, failed, elapsedMs: Date.now() - t0 }
 }
 
+/** The members of a remote group whose index answers, checked with
+ *  gufi_query alone (a host may run nothing else): each root's top
+ *  directory, one row each, in one remote command for the whole group.
+ *  gufi_query exits 0 on a missing or unreadable index and says why on
+ *  stderr; when fewer rows come back than roots were asked, each is asked
+ *  on its own to find which, and those are reported. */
+async function checkRemote<M extends { id: string; label: string; index: string }>(g: { site: string; key: string; gufiBin: string; members: M[] }, failed: VtResult['failed']): Promise<M[]> {
+  const ask = (indexes: string[]) => remoteRun(g.site, g.key, [gufiTool(g.gufiBin), '-n', '1', '-d', '|', '--min-level', '0', '--max-level', '0', '-S', 'SELECT 1;', ...indexes], 60_000)
+  const lines = (stdout: string) => stdout.split('\n').filter(l => l.trim()).length
+  const why = (r: { code: number; stderr: string }) => r.stderr.trim().split('\n').filter(Boolean).pop() || `the index did not answer (exit ${r.code})`
+  try {
+    if (g.members.length > 1) {
+      const r = await ask(g.members.map(m => m.index))
+      if (lines(r.stdout) >= g.members.length) return g.members
+    }
+    const each = await Promise.all(g.members.map(async m => {
+      try {
+        const r = await ask([m.index])
+        if (lines(r.stdout)) return m
+        failed.push({ library: m.label, error: why(r).slice(0, 300) })
+      } catch (e) { failed.push({ library: m.label, error: String((e as Error).message ?? e).slice(0, 300) }) }
+      return null
+    }))
+    return each.filter((m): m is NonNullable<typeof m> => !!m)
+  } catch (e) {
+    for (const m of g.members) failed.push({ library: m.label, error: String((e as Error).message ?? e).slice(0, 300) })
+    return []
+  }
+}
+
 /** The gufi_query arguments gufi_vt sends, and nothing else: the stage SQL,
- *  its fixed flags, at most THREADS threads, then the location's index.
- *  gufi_vt writes the index unquoted, so an index with spaces arrives as
- *  several words; they are joined back and must spell the token's index. */
-export function checkRemoteArgs(args: unknown, index: string): string[] | null {
+ *  its fixed flags, at most THREADS threads, then the location's index or
+ *  indexes. gufi_vt writes them unquoted, so an index with spaces arrives as
+ *  several words; they are joined back and must spell the token's indexes,
+ *  in order, which go to gufi_query as one argument each. */
+export function checkRemoteArgs(args: unknown, index: string | string[]): string[] | null {
+  const roots = Array.isArray(index) ? index : [index]
   if (!Array.isArray(args) || args.some(a => typeof a !== 'string') || args[0] !== 'gufi_query') return null
   const a = args as string[]
   let i = 1
@@ -274,8 +336,8 @@ export function checkRemoteArgs(args: unknown, index: string): string[] | null {
     if (/^-[IEKJG]$/.test(a[i]) && i + 1 < a.length) { i++; continue }
     break
   }
-  if (i >= a.length || a.slice(i).join(' ') !== index) return null
-  return [...a.slice(1, i), index]
+  if (i >= a.length || a.slice(i).join(' ') !== roots.join(' ')) return null
+  return [...a.slice(1, i), ...roots]
 }
 
 /** The wrapper's way in. The per-process secret admits it; the path is
@@ -288,7 +350,7 @@ export async function gufiVtRoutes(app: FastifyInstance): Promise<void> {
     const { token, args } = (req.body ?? {}) as { token?: string; args?: unknown }
     const loc = typeof token === 'string' ? tokens.get(token) : undefined
     if (!loc || Date.now() - loc.at > TOKEN_TTL_MS) return reply.status(404).send('unknown location')
-    const rest = checkRemoteArgs(args, loc.index)
+    const rest = checkRemoteArgs(args, loc.indexes ?? loc.index)
     if (!rest) return reply.status(400).send('not a gufi_query on this location')
     const argv = [gufiTool(loc.gufiBin), ...rest]
     const t0 = Date.now()

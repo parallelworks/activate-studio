@@ -328,6 +328,7 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
             <DescriptionListItem label="Folder" mono copy><PathText path={`${host}:${l.sourceRoot ?? l.sourceDir}`} /></DescriptionListItem>
             <DescriptionListItem label="Index" mono copy><PathText path={`${host}:${l.indexRoot ?? l.indexDir ?? ''}`} /></DescriptionListItem>
             {l.port ? <DescriptionListItem label="Port" mono>{String(l.port)}</DescriptionListItem> : null}
+            {l.sshOptions ? <DescriptionListItem label="SSH options" mono>{l.sshOptions}</DescriptionListItem> : null}
           </DescriptionList>
         ),
         state: l.state === 'building' ? { tone: 'info', text: 'Building', pulse: true, notes }
@@ -357,6 +358,7 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
           <DescriptionList className="lib-paths">
             <DescriptionListItem label="Index" mono copy>{`${dest}:${l.indexRoot ?? ''}`}</DescriptionListItem>
             {l.port ? <DescriptionListItem label="Port" mono>{String(l.port)}</DescriptionListItem> : null}
+            {l.sshOptions ? <DescriptionListItem label="SSH options" mono>{l.sshOptions}</DescriptionListItem> : null}
             {l.sourceRoot
               ? <DescriptionListItem label="Files" mono copy>{`${dest}:${l.sourceRoot}`}</DescriptionListItem>
               : <DescriptionListItem label="Files"><span className="muted">none: names and metadata only</span></DescriptionListItem>}

@@ -4,7 +4,7 @@ import { api, type PublicLibrary, SearchHit } from '../api'
 import { TagMenu } from '../components/TagMenu'
 import { RowCheck } from '../components/Explorer'
 import { ALL_LIBRARIES, LibrarySwitch } from '../components/LibrarySwitch'
-import { currentLibrary, onLibraryChange } from '../api'
+import { currentLibrary, onLibraryChange, warmRemoteHosts } from '../api'
 import { useAppConfig } from '../config'
 import { SEARCH_PLACEHOLDER, librariesInScope, meaningOn, searchReach, useSearchScope } from '../searchReach'
 import { GufiCommands, type GufiCommand } from '../components/GufiCommands'
@@ -34,6 +34,8 @@ export function foundBy(h: Pick<SearchHit, 'mode' | 'kinds'>): string {
 }
 
 export function SearchView({ onOpen }: { onOpen: (path: string, q?: string) => void }) {
+  // Libraries on other hosts: their ssh login happens now, not on the first search.
+  useEffect(() => { warmRemoteHosts() }, [])
   const [q, setQ] = useState('')
   const [hits, setHits] = useState<SearchHit[] | null>(null)
   const [note, setNote] = useState<string | null>(null)
