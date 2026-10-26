@@ -2,6 +2,136 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.176 (2026-10-26)
+
+### Libraries over ssh: options per library, warm connections, one gufi_query per host in Query (#600)
+
+Three changes for remote GUFI indexes over ssh, from a user who connects indexes behind firewalls and saw most of a Query's two seconds go to ssh setup.
+
+## SSH options per library
+
+The Over SSH form has a new **SSH options** field, for example `-J me@jumphost -o ConnectTimeout=20`. The Host field now says that a Host from `~/.ssh/config` works, ProxyJump included, since the Studio runs the system ssh with the account's config.
+
+- Allowed: `-J` (jump hosts `[user@]host[:port]`, comma separated), `-p`, `-i` and `-F` (a path on this computer, absolute or under `~/`), `-l`, `-o Keyword=value`, `-4`, `-6`, `-C`.
+- `-o` takes an allowlist of keywords about reaching and authenticating to the host: ProxyJump, HostName, Port, User, IdentityFile, IdentitiesOnly, CertificateFile, IdentityAgent, UserKnownHostsFile, StrictHostKeyChecking, HostKeyAlias, the GSSAPI keywords, PreferredAuthentications, PubkeyAuthentication, the algorithm lists, timeouts and keepalives, and a few more (full list in `docs/LIBRARIES.md`).
+- Refused, with the reason in a 400:
+  - anything that runs a command on this computer (ProxyCommand, LocalCommand, PermitLocalCommand, KnownHostsCommand) or replaces the remote command (RemoteCommand);
+  - what the Studio sets itself (BatchMode, ControlMaster, ControlPath, ControlPersist);
+  - forwarding, SendEnv and SetEnv, and any keyword not on the list.
+- No value may contain spaces, quotes or backslashes, and nothing reaches a shell: the options go to ssh as argv. A ProxyCommand belongs in a Host entry in `~/.ssh/config`, whose alias is then the host.
+- Kept with the library as argv and carried in its site (`ssh://dest[:port]#<base64url argv>`), so sessions, connection sharing, gufi_vt locations and grouping by host tell two ways of reaching a host apart. The site's options are checked again whenever it is used.
+- Passed first on every ssh the library makes (sessions, gufi_query-only direct calls, the gufi_vt wrapper, the connection test, warming), so a library's ConnectTimeout wins over the default.
+- The connection test names the jump host: from the options, or from `ssh -G`, which reads `~/.ssh/config` and connects nowhere. For example "Connected to me@lab through gw@bastion, a Linux host."
+- Settings, Libraries shows a library's options. `PUT /api/user-libraries/:id/ssh-options` changes them on a connected index after a connection test with them passes.
+- Kerberos is unchanged: BatchMode only refuses prompts, and nothing disables GSSAPI.
+
+## Warm connections
+
+- `ControlPersist` comes from `STUDIO_SSH_PERSIST` (seconds, default 600, at most a day; 0 closes the connection with its last session).
+- `POST /api/user-libraries/warm` opens each of the viewer's ssh hosts' shared connections with `ssh -N -f` when `ssh -O check` finds none, at most once a minute per host, without waiting. `ssh -N -f` runs no command on the host, so gufi_query-only hosts are warmed too.
+- Search and Query call the route as they open, at most every two minutes. Nothing changes in the UI.
+
+## One gufi_query per host in Query
+
+Remote libraries on one host, reached the same way (site and key) and asked the same plan, share one gufi_vt location with an `index=` per root. gufi_vt takes `index=` more than once and writes every root at the end of a remote location's command line, at the bundled commit and at 09109d1.
+- **Pre-check:** one `gufi_query -S` over all the roots, one row per root. When a row is missing, each root is asked alone and the failures are reported.
+- **The wrapper's check:** it accepts the location's roots in order and passes each as its own argument.
+- **Rows:** each goes back to the library whose root its path is under. Grouped totals carry no path, but they are summed across libraries afterwards anyway.
+- **Not stacked:** raw SQL, which has no known shape. `STUDIO_STACK_REMOTE=0` turns stacking off.
+- **Unchanged:** gufi_query-only hosts (the remote line still starts with gufi_query) and the char(34) quoting.
+
+## Measurements
+
+ssh to a private sshd on localhost with key login, so these show no network or Kerberos latency:
+
+| | Time |
+|---|---|
+| One ssh call, cold | 186 to 210 ms |
+| One ssh call over a live master | 8 to 18 ms |
+| Opening a master with `ssh -N -f` | 137 to 159 ms |
+
+Query across two libraries on one host, median of 7:
+
+| | Apart | Stacked |
+|---|---|---|
+| Cold | 526 ms | 430 ms |
+| Warm master | 336 ms | 248 ms |
+
+On a host whose login runs only gufi_query, so each command is counted, a Query over two libraries on one host sent 4 remote commands apart and 2 stacked, with the same rows.
+
+## Tests
+
+- New `server/test/sshOptions.test.mjs` (11 tests):
+  - option parsing: allowed forms, refused keywords with reasons, injection attempts, and a tampered site;
+  - the site round trip, shell form, sockets per option set, and the port given once;
+  - ControlPersist and STUDIO_SSH_PERSIST;
+  - options on every ssh a library makes (test, sessions, tree, search);
+  - changing options;
+  - the jump host from `ssh -G`;
+  - warming and the warm route;
+  - Query stacking with real GUFI: one check and one gufi_query for two libraries, rows back to each, a missing index reported;
+  - the wrapper's check of stacked roots.
+- `sshTransport.test.mjs` expects the new `options` and `sshOptions` fields.
+- New `web/test/sshOptions.test.tsx`: the form field, its inline validation, the request bodies, no field over pw ssh, and the warm throttle.
+- `deploy/mac/check_app.sh`, on the CI runner's localhost forced-command host:
+  - changes the library's options to a `UserKnownHostsFile` of its own and checks that file was written;
+  - adds a second index on the same host with the same options;
+  - requires one Query to add exactly two commands to the host's log, with rows from both libraries.
+- Server suite: 634 passed, 9 skipped. Web suite: 283 passed.
+
+Docs: `docs/LIBRARIES.md` (Host aliases and ProxyJump, SSH options, warming, Query stacking), `docs/HELP.md`, `docs/REFERENCE.md`.
+
+### Search and Query take any set of libraries, and search refines names apart from text (#601)
+
+Two changes from user feedback on searching several GUFI indexes at once.
+
+## Any set of libraries
+
+- Search and Query each have a library picker where any of the libraries can be ticked, with **All libraries** as a shortcut. The button reads All libraries, the one library's name, or "N libraries". At least one stays ticked, and ticking every one is All.
+- Each page keeps its own choice in localStorage (`ade-scope-search`, `ade-scope-query`), starting at All libraries. The Library page's tree and Stats keep their one-or-all switch, since the tree shows one library or all of them.
+- Server: `GET /api/search`, `POST /api/query` and `POST /api/query/sql` take `library` as one id, `all`, or several ids: a list in a body, a repeated query parameter, or ids with commas. Ids are taken once each, in order, `all` among them means all, and an unknown id is a 404. Among several, a library with nothing to answer from is named in `omitted`, as with all. Query over several runs on gufi_vt exactly as over all (tested with real GUFI: two of three libraries, engine `gufi_vt`, the same rows as all, filtered).
+- A result or row opens in its own library: in the combined tree when the Library page shows all, else by switching the Library page to it.
+
+## Refined search
+
+- **Refine** beside the search button splits the box into two fields:
+  - **Name or path**: words, which match any part of a name or a folder below the library's root, and patterns with `*` or `?` (`*.docx`, `reports/*.pdf`, where a slash matches the path), with OR between groups and -word or NOT word to exclude.
+  - **Text or meaning**: an fts5 MATCH expression for the words in files (`AND`, `OR`, `NOT`, `"phrase"`, `prefix*`, `NEAR`). The same words with the operators, quotes, brackets and column filters taken out are the phrase searched by meaning.
+- A switch, **Search text and meaning only in files whose name or path matches**, chooses between:
+  - off (the default): matches of either kind are listed, each to its own limit (names and folders as before, words `limit`, meaning 10), and the answer holds all of them, so many name matches never crowd out the text;
+  - on: only files matching both are listed, such as the .docx files that mention a budget.
+- Built into the one-pass walk (`onePassStages` in `server/src/gufi.ts`): with the switch on and both fields filled, no name rows are listed, and every statement that reads words (the Studio's `words`, `ext_bm25_by_file`) or vectors (`ext_vectors_by_file`, the Studio's `gvec`) carries the name and path filter in the same directory visit. vec0's nearest neighbours would be picked before the filter, so the Studio's vectors are scored as `vec_distance_l2` over the kept files' chunks. That is the distance vec0 reports for these unit vectors; a test checks the two give the same number. Meaning searched the earlier way, for an index from before the current model, is filtered by the same rules in `server/src/refine.ts`.
+- The text is checked before a search runs, since a malformed fts5 expression otherwise fails in every directory and the search finds nothing without saying why. The check uses fts5 in `node:sqlite` where this Node has it, plus a hand check of quotes, brackets and operators at the ends. A mistake answers 400 `The text search cannot be read (...)`, with how to quote a word with punctuation, and the page shows it.
+- The page puts the search in its address (`#view=search?q=`, or `?name=&text=&match=all`, with `in=` naming the libraries when not all) and runs it on arrival, so a refined search can be bookmarked or shared. App routing now accepts `?fields` after a view.
+- The assistant's `search_kb` takes `name`, `text` and `match` beside `query`, and `library` as ids with commas.
+- With no refine fields the single box is unchanged (a test compares its stages).
+
+## Tests
+
+- New `server/test/searchRefine.test.mjs`, with real GUFI and sqlite-vec:
+  - the name field's parsing and SQL, patterns escaped for LIKE;
+  - the meaning phrase;
+  - the text check and its messages;
+  - any and all on a real index, NOT and -word, a word matching a folder, all with no text;
+  - meaning filtered to the kept files' chunks, with the same distance as vec0;
+  - each kind keeping its own limit against 30 name matches;
+  - the single box unchanged;
+  - the fallback filter.
+- `libraryScope.test.mjs`: ids as a list and with commas, order, dedupe, all among them, 404; Query over two libraries; search over two through the route, repeated and comma forms, a refined search, and the 400.
+- `gufiVtSpaces.test.mjs`: Query over two of three libraries on gufi_vt.
+- New `web/test/libraryScope.test.tsx`:
+  - the scope store and settling;
+  - the picker's ticks, All, and last-one rule;
+  - Search sending the ticked libraries;
+  - the refine row and switch, and the address round trip;
+  - the 400 message;
+  - opening a match in its library;
+  - Query sending a list.
+- Server suite: 636 passed, 9 skipped. Web suite: 288 passed.
+- Checked in headless Chromium at 1300 and 740 px on a test server with three libraries built by gufi_dir2index: the picker, a two-library search with library badges, a refined search (`*.md` with `budget NOT draft`, both on) and the same search opened from its address, and the Query picker.
+
+Docs: HELP.md (the picker, Refine) and REFERENCE.md (scope parameters, the refined search's rules and limits).
+
 ## v1.175 (2026-10-25)
 
 ### Search reads each index once for names, folders, words and meaning (#596)
@@ -93,6 +223,10 @@ Two Query issues found by the macOS end-to-end test on v1.174.
 - Server suite 614 passed, 9 skipped; web suite 277 passed.
 
 `docs/REFERENCE.md` describes both.
+
+### Change log through v1.175 (#598)
+
+Regenerated with `node scripts/release-notes.mjs --changelog --next v1.175` before tagging v1.175.
 
 ## v1.174 (2026-10-24)
 
