@@ -1,14 +1,44 @@
-import { useEffect, useState } from 'react'
-import { Button, EmptyState, SearchInput, StatusBadge, ToggleGroup, type BadgeVariant } from '@parallelworks/ui'
+import { useEffect, useRef, useState } from 'react'
+import { Button, EmptyState, Field, Input, SearchInput, StatusBadge, Switch, ToggleGroup, type BadgeVariant } from '@parallelworks/ui'
 import { api, type PublicLibrary, SearchHit } from '../api'
 import { TagMenu } from '../components/TagMenu'
 import { RowCheck } from '../components/Explorer'
-import { ALL_LIBRARIES, LibrarySwitch } from '../components/LibrarySwitch'
-import { currentLibrary, onLibraryChange, warmRemoteHosts } from '../api'
+import { LibraryScope } from '../components/LibraryScope'
+import { warmRemoteHosts } from '../api'
 import { useAppConfig } from '../config'
 import { SEARCH_PLACEHOLDER, librariesInScope, meaningOn, searchReach, useSearchScope } from '../searchReach'
+import { openInLibrary, readScope, saveScope, scopeIsSeveral, scopeParam, useScope, type Scope } from '../scope'
 import { GufiCommands, type GufiCommand } from '../components/GufiCommands'
 import { OmittedLine, type Omission } from '../components/OmittedLine'
+
+/** A search as the address carries it, after #view=search?: the single
+ *  box's q, or a refined search's name, text and match, and the libraries
+ *  when not all of them (in=). */
+export interface SearchState { q: string; name: string; text: string; match: 'any' | 'all'; scope: Scope | null }
+
+export function searchFromHash(hash: string): SearchState | null {
+  const at = hash.indexOf('?')
+  if (!hash.startsWith('#view=search') || at < 0) return null
+  const p = new URLSearchParams(hash.slice(at + 1))
+  const ids = (p.get('in') ?? '').split(',').map(s => s.trim()).filter(Boolean)
+  const st: SearchState = {
+    q: p.get('q') ?? '', name: p.get('name') ?? '', text: p.get('text') ?? '',
+    match: p.get('match') === 'all' ? 'all' : 'any',
+    scope: ids.length ? ids : null,
+  }
+  return st.q || st.name || st.text ? st : null
+}
+
+export function searchHash(st: SearchState): string {
+  const p = new URLSearchParams()
+  if (st.name || st.text) {
+    if (st.name) p.set('name', st.name)
+    if (st.text) p.set('text', st.text)
+    if (st.match === 'all') p.set('match', 'all')
+  } else if (st.q) p.set('q', st.q)
+  if (st.scope && st.scope !== 'all') p.set('in', st.scope.join(','))
+  return `#view=search?${p}`
+}
 
 const MODE_LABEL: Record<SearchHit['mode'], string> = {
   fts: 'words',
@@ -36,7 +66,16 @@ export function foundBy(h: Pick<SearchHit, 'mode' | 'kinds'>): string {
 export function SearchView({ onOpen }: { onOpen: (path: string, q?: string) => void }) {
   // Libraries on other hosts: their ssh login happens now, not on the first search.
   useEffect(() => { warmRemoteHosts() }, [])
-  const [q, setQ] = useState('')
+  const cfg = useAppConfig()
+  const libraries = cfg.libraries ?? []
+  const [scope, setScope] = useScope('search', libraries)
+  const initial = useRef(searchFromHash(location.hash))
+  const [q, setQ] = useState(initial.current?.q ?? '')
+  // The refined form: names and paths in one field, text and meaning in the other.
+  const [refineOpen, setRefineOpen] = useState(!!(initial.current?.name || initial.current?.text))
+  const [name, setName] = useState(initial.current?.name ?? '')
+  const [text, setText] = useState(initial.current?.text ?? '')
+  const [match, setMatch] = useState<'any' | 'all'>(initial.current?.match ?? 'any')
   const [hits, setHits] = useState<SearchHit[] | null>(null)
   const [note, setNote] = useState<string | null>(null)
   const [omitted, setOmitted] = useState<Omission[] | null>(null)
@@ -52,15 +91,20 @@ export function SearchView({ onOpen }: { onOpen: (path: string, q?: string) => v
     api.tagVocabulary().then(v => setVocab(v.tags)).catch(() => {})
   }, [])
 
-  const run = async (limit = 50, query = q) => {
-    if (!query.trim()) return
+  const refined = refineOpen && !!(name.trim() || text.trim())
+  const run = async (limit = 50, query = q, over: Scope = scope) => {
+    if (refineOpen ? !(name.trim() || text.trim()) : !query.trim()) return
+    // The address carries the search, so it can be shared or kept.
+    history.replaceState(null, '', location.pathname + location.search + searchHash({ q: refineOpen ? '' : query, name: refineOpen ? name : '', text: refineOpen ? text : '', match, scope: over }))
     setBusy(true)
     setNote(null)
     setOmitted(null)
     setSel(new Set())
     setTagMenuOpen(false)
     try {
-      const r = await api.search(query, [...activeTags], limit)
+      const r = refineOpen
+        ? await api.search('', [...activeTags], limit, { library: scopeParam(over), name: name.trim(), text: text.trim(), match })
+        : await api.search(query, [...activeTags], limit, { library: scopeParam(over) })
       setHits(r.hits)
       setGufi(r.gufi)
       setLastLimit(limit)
@@ -70,7 +114,8 @@ export function SearchView({ onOpen }: { onOpen: (path: string, q?: string) => v
       if (r.error) setNote(r.error)
       else if (r.slow?.length) setNote(`Choose ${r.slow.length === 1 ? 'a library that did not answer in time' : 'one of the libraries that did not answer in time'} alone in Searching to wait for it.`)
     } catch (e) {
-      setNote(String(e))
+      setHits(null)
+      setNote(String((e as Error).message ?? e))
     } finally {
       setBusy(false)
     }
@@ -81,12 +126,24 @@ export function SearchView({ onOpen }: { onOpen: (path: string, q?: string) => v
     const on = (e: Event) => {
       const query = String((e as CustomEvent).detail?.q ?? '').trim()
       if (!query) return
+      setRefineOpen(false)
       setQ(query)
       void run(50, query)
     }
     window.addEventListener('ade:search', on)
     return () => window.removeEventListener('ade:search', on)
   })
+
+  // A search in the address runs on arrival, in the libraries it names.
+  useEffect(() => {
+    const st = initial.current
+    if (!st) return
+    if (st.scope) saveScope('search', st.scope)
+    // The libraries the address names, else this page's own choice: the
+    // configuration may not have arrived to settle it yet.
+    void run(50, st.q, st.scope ?? readScope('search'))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const toggleSel = (path: string) => {
     setSel(s => {
@@ -99,25 +156,60 @@ export function SearchView({ onOpen }: { onOpen: (path: string, q?: string) => v
 
   const allSelected = hits !== null && hits.length > 0 && sel.size === hits.length
 
-  const cfg = useAppConfig()
-  const scope = useSearchScope()
-  // A new library means new results: run the search again there.
-  useEffect(() => onLibraryChange(() => { if (q.trim()) void run(lastLimit) }), [q, lastLimit])
+  // Other libraries chosen mean other results: run the search again there.
+  const pick = (next: Scope) => {
+    setScope(next)
+    if (refined || (!refineOpen && q.trim())) void run(lastLimit, q, next)
+  }
+  const several = scopeIsSeveral(scope, libraries)
+  const enter = (e: { key: string }) => { if (e.key === 'Enter') void run() }
   return (
     <div className="search-view">
       <div className="search-hero card">
-        {(cfg.libraries?.length ?? 0) > 1 && <div className="scope-bar"><span className="muted">Searching</span><LibrarySwitch libraries={cfg.libraries ?? []} /></div>}
+        {libraries.length > 1 && <div className="scope-bar"><span className="muted">Searching</span><LibraryScope libraries={libraries} value={scope} onChange={pick} hint="Which libraries to search" /></div>}
         <div className="search-bar">
-          <SearchInput
-            className="search-box"
-            value={q}
-            onValueChange={setQ}
-            onKeyDown={e => e.key === 'Enter' && run()}
-            placeholder={SEARCH_PLACEHOLDER[searchReach(cfg.libraries ?? [], scope)]}
-            autoFocus
-          />
+          {!refineOpen && (
+            <SearchInput
+              className="search-box"
+              value={q}
+              onValueChange={setQ}
+              onKeyDown={enter}
+              placeholder={SEARCH_PLACEHOLDER[searchReach(libraries, scope)]}
+              autoFocus
+            />
+          )}
+          {refineOpen && <span className="search-refine-title">Refined search</span>}
           <Button variant="primary" loading={busy} onClick={() => run()}>{busy ? 'Searching…' : 'Search'}</Button>
+          <Button variant="ghost" size="sm" aria-expanded={refineOpen} onClick={() => setRefineOpen(o => !o)}
+            title={refineOpen ? 'Back to one search box' : 'Search names and paths apart from the text and meaning of files'}>
+            {refineOpen ? 'One box' : 'Refine'}
+          </Button>
         </div>
+        {refineOpen && (
+          <div className="search-refine">
+            <Input
+              label="Name or path"
+              size="sm"
+              value={name}
+              onChange={e => setName(e.target.value)}
+              onKeyDown={enter}
+              placeholder="Words or patterns, such as budget *.xlsx"
+              autoFocus
+            />
+            <Input
+              label="Text or meaning"
+              size="sm"
+              value={text}
+              onChange={e => setText(e.target.value)}
+              onKeyDown={enter}
+              placeholder={'Words, "exact phrase", AND, OR, NOT, prefix*'}
+            />
+            <Field label="Search text and meaning only in files whose name or path matches" controlFirst size="sm" className="search-refine-match"
+              description={match === 'all' ? 'Lists the files that match both.' : 'Shows matches of either kind, each to its own limit.'}>
+              <Switch checked={match === 'all'} onCheckedChange={v => setMatch(v ? 'all' : 'any')} aria-label="Only in files whose name or path matches" />
+            </Field>
+          </div>
+        )}
         {vocab.length > 0 && (
           <div className="search-label-filter">
             <span className="lbl">Labels</span>
@@ -129,7 +221,7 @@ export function SearchView({ onOpen }: { onOpen: (path: string, q?: string) => v
             />
           </div>
         )}
-        <SearchHelp libraries={cfg.libraries ?? []} />
+        <SearchHelp libraries={libraries} />
         {note && <p className="muted">{note}</p>}
         {hits && <GufiCommands commands={gufi} />}
       </div>
@@ -152,12 +244,12 @@ export function SearchView({ onOpen }: { onOpen: (path: string, q?: string) => v
           {hits.length === 0 && <EmptyState variant="bare" title="No matches." />}
           {hits.map(h => (
             <div key={`${h.library?.id ?? ''}/${h.path}`} className={`result-row ${sel.has(h.path) ? 'multi' : ''}`}
-              onClick={() => onOpen(currentLibrary() === ALL_LIBRARIES && h.library ? `${h.library.id}/${h.path}` : h.path, q)}>
+              onClick={() => openInLibrary(p => onOpen(p, refineOpen ? text || name : q), h.library?.id, h.path)}>
               <div className="result-top">
                 <RowCheck checked={sel.has(h.path)} onToggle={() => toggleSel(h.path)} />
                 <span className="result-path">{h.path}</span>
                 <span className="result-pills">
-                  {currentLibrary() === ALL_LIBRARIES && h.library && (
+                  {several && h.library && (
                     <span title="The library this match is in"><StatusBadge>{h.library.label}</StatusBadge></span>
                   )}
                   {(h.tags ?? []).map(t => <span key={t} className="tag-pill on small">{t}</span>)}
@@ -234,6 +326,12 @@ export function SearchHelp({ libraries }: { libraries: PublicLibrary[] }) {
           <p>
             Each result says how it matched: name, folder, words, or meaning; hover it for every way it did. Files found more than one way
             come first.
+          </p>
+          <p>
+            <i>Refine:</i> searches names and paths apart from the text. Name or path takes words, which match any part of a name or a
+            folder, and patterns such as <code>*.docx</code>. Text or meaning takes the words in files, with <code>AND</code>,{' '}
+            <code>OR</code>, <code>NOT</code>, <code>"phrases"</code> and <code>prefix*</code>, and is searched by meaning without them.
+            With its switch on, words and meaning are looked for only in the files whose name or path matches.
           </p>
         </div>
       )}

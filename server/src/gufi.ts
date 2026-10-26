@@ -397,13 +397,89 @@ export const RRF_K = 60
 
 /** A directory's path below the root it was reached from, in SQL: rpath()
  *  prints the index path given on the command line, so each root's own
- *  length is cut off. */
-function relDirSql(roots: string[]): string {
-  const rp = 'rpath(sname, sroll)'
+ *  length is cut off. `rp` is rpath over the entries' table alias. */
+function relDirSql(roots: string[], rp = 'rpath(sname, sroll)'): string {
   // SQLite's substr counts characters; so does a string's code points.
   const len = (r: string) => [...r].length
   if (roots.length === 1) return `substr(${rp}, ${len(roots[0]) + 2})`
   return `CASE ${roots.map(r => `WHEN substr(${rp}, 1, ${len(r)}) = ${q(r)} THEN substr(${rp}, ${len(r) + 2})`).join(' ')} ELSE ${rp} END`
+}
+
+/**
+ * A refined search: what to look for in names and folder paths, and what to
+ * look for in the files' text and meaning, kept apart because each takes a
+ * different kind of input. `name` takes words (any part of a name or a
+ * folder) and patterns (*.docx, report-??.pdf, reports/*.pdf), OR between
+ * alternatives, and -word or NOT word to exclude. `text` is an fts5 MATCH
+ * expression for the words in files (AND, OR, NOT, "phrases", prefix*,
+ * NEAR), and, with its operators taken out, the phrase searched by meaning.
+ * With `match` 'any', matches of either kind are listed, each kind to its
+ * own limit; with 'all', words and meaning are looked for only in the
+ * files whose name or path matches, as the one pass's own step: the name
+ * and path filter applies inside the same directory visit.
+ */
+export interface RefineSpec { name: string; text: string; match: 'any' | 'all' }
+
+type NameTok = { kind: 'glob' | 'word'; text: string; neg: boolean }
+
+/** The name field as OR-separated groups of tokens; within a group every
+ *  token must match, and a negated one must not. */
+export function parseNameFilter(raw: string): NameTok[][] {
+  const groups: NameTok[][] = [[]]
+  let neg = false
+  const re = /(-)?"([^"]*)"|(\S+)/g
+  let m: RegExpExecArray | null
+  while ((m = re.exec(raw.trim()))) {
+    if (m[2] !== undefined) {
+      if (m[2].trim()) groups[groups.length - 1].push({ kind: 'word', text: m[2].trim(), neg: neg || !!m[1] })
+      neg = false
+      continue
+    }
+    let t = m[3]
+    if (t === 'OR') { groups.push([]); neg = false; continue }
+    if (t === 'AND') continue
+    if (t === 'NOT') { neg = true; continue }
+    const n = neg || (t.startsWith('-') && t.length > 1)
+    if (t.startsWith('-') && t.length > 1) t = t.slice(1)
+    neg = false
+    groups[groups.length - 1].push({ kind: /[*?]/.test(t) ? 'glob' : 'word', text: t, neg: n })
+  }
+  return groups.filter(g => g.length)
+}
+
+/** A glob (* any run, ? one character) as a LIKE pattern, escaped with \. */
+function globLike(glob: string): string {
+  return glob.replace(/[\\%_]/g, c => `\\${c}`).replace(/\*/g, '%').replace(/\?/g, '_')
+}
+
+/**
+ * The name field as SQL over one table alias's entries: `pre` is '' or
+ * 'e.'. Words match the name only ('name'), or the name or a folder on the
+ * path ('either'); a pattern matches the name, or the path below the root
+ * when it has a slash. As a list ('list'), a group with nothing to look for
+ * lists nothing; as a filter ('filter'), it keeps everything its negations
+ * leave. '0' when nothing can match.
+ */
+export function nameFilterSql(groups: NameTok[][], roots: string[], pre: string, words: 'name' | 'either', use: 'list' | 'filter'): string {
+  const name = `${pre}name`
+  const rel = relDirSql(roots, `rpath(${pre}sname, ${pre}sroll)`)
+  const one = (t: NameTok): string => {
+    if (t.kind === 'glob') {
+      const col = t.text.includes('/') ? `ltrim(${rel}||'/'||${name}, '/')` : name
+      return `${col} LIKE ${q(globLike(t.text))} ESCAPE '\\'`
+    }
+    const n = likeClause(name, t.text)
+    return words === 'name' ? n : `(${n} OR ${likeClause(rel, t.text)})`
+  }
+  const sql = groups.flatMap(g => {
+    const pos = g.filter(t => !t.neg).map(one).filter(c => c !== '0')
+    const negs = g.filter(t => t.neg).map(one).filter(c => c !== '0')
+    if (!pos.length && use === 'list') return []
+    if (!pos.length && !negs.length) return []
+    const parts = [...(pos.length ? pos : ['1']), ...negs.map(c => `NOT ${c}`)]
+    return [parts.length > 1 ? `(${parts.join(' AND ')})` : parts[0]]
+  })
+  return sql.length > 1 ? sql.join(' OR ') : (sql[0] ?? '0')
 }
 
 /**
@@ -436,14 +512,41 @@ function relDirSql(roots: string[]): string {
  * a file changed since its text was extracted is not matched. That runs
  * before -E, which trims what it added first.
  *
+ * A refined search (RefineSpec) takes its names and paths from its name
+ * field and its words from its text, as given; with match 'all' and both
+ * filled in, no name or path rows are listed, and every statement that
+ * reads words or vectors carries the name and path filter, so those are
+ * looked for only in the files it keeps. The Studio's vectors are then
+ * scored by distance over the kept files' chunks rather than taken from
+ * vec0's nearest neighbours, which would come before the filter.
+ *
  * Null when the query names nothing.
  */
-export function onePassStages(queryText: string, lim: WalkLimits, roots: string[], vectors: QueryVector[] = []): string[] | null {
+export function onePassStages(queryText: string, lim: WalkLimits, roots: string[], vectors: QueryVector[] = [], refine: RefineSpec | null = null): string[] | null {
   const parsed = parseSearchQuery(queryText)
-  const nWhere = lim.names > 0 ? nameWhere(parsed) : '0'
   const relDir = relDirSql(roots)
-  const pWhere = lim.paths > 0 ? whereOver(relDir, parsed) : '0'
-  const expr = lim.words > 0 ? ftsExprFor(parsed) : ''
+  let nWhere: string, pWhere: string, expr: string, rank: string
+  let filter: ((pre: string) => string) | null = null
+  if (refine) {
+    const groups = parseNameFilter(refine.name)
+    const text = refine.text.trim()
+    const both = refine.match === 'all' && groups.length > 0 && !!text
+    nWhere = both || lim.names <= 0 ? '0' : nameFilterSql(groups, roots, '', 'name', 'list')
+    pWhere = both || lim.paths <= 0 ? '0' : nameFilterSql(groups, roots, '', 'either', 'list')
+    expr = lim.words > 0 ? text : ''
+    const words = groups[0]?.filter(t => t.kind === 'word' && !t.neg).map(t => t.text).join(' ') ?? ''
+    rank = nameRank(parseSearchQuery(words))
+    if (both) {
+      const f = (pre: string) => nameFilterSql(groups, roots, pre, 'either', 'filter')
+      if (f('') !== '0') filter = f
+    }
+  } else {
+    nWhere = lim.names > 0 ? nameWhere(parsed) : '0'
+    pWhere = lim.paths > 0 ? whereOver(relDir, parsed) : '0'
+    expr = lim.words > 0 ? ftsExprFor(parsed) : ''
+    rank = nameRank(parsed)
+  }
+  const and = (pre: string) => (filter ? ` AND (${filter(pre)})` : '')
   const vecs = lim.vectors > 0 ? vectors : []
   const studioWords = lim.studioText && !!expr
   const studioVecs = lim.studioVectors && vecs.length > 0
@@ -460,14 +563,14 @@ export function onePassStages(queryText: string, lim: WalkLimits, roots: string[
   // steps failed), then one insert per kind of table read.
   const E: string[] = [`DELETE FROM t WHERE rowid IN (SELECT rowid FROM (SELECT rowid, k, row_number() OVER (PARTITION BY k ORDER BY r, p) AS rn FROM t) WHERE rn > ${held});`]
   const names = nWhere !== '0'
-    ? `SELECT * FROM (SELECT 'n', ${nameRank(parsed)}, ${rp}, name, size, mtime, '' FROM vrpentries WHERE ${nWhere} ORDER BY 2, 3 LIMIT ${lim.names})` : ''
+    ? `SELECT * FROM (SELECT 'n', ${rank}, ${rp}, name, size, mtime, '' FROM vrpentries WHERE ${nWhere} ORDER BY 2, 3 LIMIT ${lim.names})` : ''
   // Files below a folder whose path matches; a name that matches is a name
   // match already. Nearer the matching folder first.
   const paths = pWhere !== '0'
     ? `SELECT * FROM (SELECT 'p', length(${relDir}), ${rp}, name, size, mtime, '' FROM vrpentries WHERE (${pWhere})${nWhere !== '0' ? ` AND NOT (${nWhere})` : ''} ORDER BY 2, 3 LIMIT ${lim.paths})` : ''
   if (names || paths) E.push(`INSERT INTO t ${[names, paths].filter(Boolean).join(' UNION ALL ')};`)
   if (studioWords) {
-    E.push(`INSERT INTO t SELECT 'f', bm25(words), ${FTS_COLUMNS} ${FTS_FROM(expr)} ORDER BY 2, 3 LIMIT ${lim.wordsPerDir};`)
+    E.push(`INSERT INTO t SELECT 'f', bm25(words), ${FTS_COLUMNS} ${FTS_FROM(expr)}${and('')} ORDER BY 2, 3 LIMIT ${lim.wordsPerDir};`)
   }
   const ext: string[] = []
   if (external && expr) {
@@ -475,7 +578,7 @@ export function onePassStages(queryText: string, lim: WalkLimits, roots: string[
       `INSERT INTO t SELECT 'f', bm25(ext_bm25_by_file), rpath(e.sname, e.sroll)||'/'||e.name, e.name, e.size, e.mtime, ` +
       `replace(replace(snippet(ext_bm25_by_file, -1, '[', ']', ' … ', 12), char(10), ' '), char(13), ' ') ` +
       `FROM ext_bm25_by_file JOIN vrpentries e ON CAST(binode AS INT64) = e.inode AND CAST(bmtime AS INT64) = e.mtime ` +
-      `WHERE ext_bm25_by_file MATCH ${q(expr)} ORDER BY 2, 3 LIMIT ${lim.wordsPerDir};`)
+      `WHERE ext_bm25_by_file MATCH ${q(expr)}${and('e.')} ORDER BY 2, 3 LIMIT ${lim.wordsPerDir};`)
   }
   if (external && vecs.length) {
     ext.push(
@@ -483,16 +586,22 @@ export function onePassStages(queryText: string, lim: WalkLimits, roots: string[
       `replace(replace(substr(x.chunk_content, 1, 200), char(10), ' '), char(13), ' ') ` +
       `FROM ext_vectors_by_file x JOIN qv ON x.vector_model_name LIKE qv.pat ` +
       `JOIN vrpentries e ON CAST(x.vinode AS INT64) = e.inode AND CAST(x.vmtime AS INT64) = e.mtime ` +
-      `WHERE length(x.embedding) >= 1536 ORDER BY 2, 3 LIMIT ${lim.vectorsPerDir};`)
+      `WHERE length(x.embedding) >= 1536${and('e.')} ORDER BY 2, 3 LIMIT ${lim.vectorsPerDir};`)
   }
   if (studioVecs) {
     // The directory's own model picks the query vector; a directory whose
     // model has none here fails this step alone, as the last one.
-    E.push(
-      `INSERT INTO t SELECT 'v', k.distance, rpath(e.sname, e.sroll)||'/'||e.name, e.name, e.size, e.mtime, ` +
-      `replace(replace(substr(g.ctext, 1, 200), char(10), ' '), char(13), ' ') ` +
-      `FROM (SELECT cid, distance FROM gvec WHERE fp384 MATCH (SELECT qe FROM qv WHERE (SELECT model FROM gvecmodel LIMIT 1) LIKE pat LIMIT 1) ORDER BY distance LIMIT ${lim.vectorsPerDir}) k ` +
-      `JOIN gchunks g ON g.cid = k.cid JOIN vrpentries e ON e.inode = g.tinode;`,
+    const qe = '(SELECT qe FROM qv WHERE (SELECT model FROM gvecmodel LIMIT 1) LIKE pat LIMIT 1)'
+    E.push(filter
+      // Only the kept files' chunks, each scored: vec0's own distance (L2,
+      // on these unit vectors) so the two forms rank alike.
+      ? `INSERT INTO t SELECT * FROM (SELECT 'v', vec_distance_l2(v.fp384, ${qe}) AS d, rpath(e.sname, e.sroll)||'/'||e.name, e.name, e.size, e.mtime, ` +
+        `replace(replace(substr(g.ctext, 1, 200), char(10), ' '), char(13), ' ') ` +
+        `FROM vrpentries e JOIN gchunks g ON g.tinode = e.inode JOIN gvec v ON v.cid = g.cid WHERE ${filter('e.')}) WHERE d IS NOT NULL ORDER BY 2, 3 LIMIT ${lim.vectorsPerDir};`
+      : `INSERT INTO t SELECT 'v', k.distance, rpath(e.sname, e.sroll)||'/'||e.name, e.name, e.size, e.mtime, ` +
+        `replace(replace(substr(g.ctext, 1, 200), char(10), ' '), char(13), ' ') ` +
+        `FROM (SELECT cid, distance FROM gvec WHERE fp384 MATCH ${qe} ORDER BY distance LIMIT ${lim.vectorsPerDir}) k ` +
+        `JOIN gchunks g ON g.cid = k.cid JOIN vrpentries e ON e.inode = g.tinode;`,
     )
   }
   const cap = `CASE k WHEN 'n' THEN ${lim.names} WHEN 'p' THEN ${lim.paths} WHEN 'f' THEN ${lim.words} ELSE ${lim.vectors} END`
@@ -567,11 +676,11 @@ const unknownOption = (e: unknown) => /unrecognized option|invalid option|unknow
  * gufi_query, or the roots of one remote site in one remote command. The
  * rows come back tagged with the root each path is under.
  */
-export async function walkSearch(queryText: string, lim: WalkLimits, indexRoots: string[], vectors: QueryVector[] = []): Promise<WalkRow[]> {
+export async function walkSearch(queryText: string, lim: WalkLimits, indexRoots: string[], vectors: QueryVector[] = [], refine: RefineSpec | null = null): Promise<WalkRow[]> {
   if (!indexRoots.length) return []
   const remote = indexRoots[0].startsWith(REMOTE_PREFIX)
   const printed = remote ? indexRoots.map(r => remoteIndexRoot(r)) : indexRoots.map(r => path.resolve(r))
-  const stages = onePassStages(queryText, lim, printed, vectors)
+  const stages = onePassStages(queryText, lim, printed, vectors, refine)
   if (!stages) return []
   const exec = async (current: boolean) => {
     // An older GUFI is asked again without what it may not know:

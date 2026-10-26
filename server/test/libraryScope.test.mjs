@@ -101,3 +101,44 @@ test('the combined tree has a folder per library, and each opens its own tree', 
   assert.equal((await app.inject({ url: '/api/kb/tree?library=all&path=nope' })).statusCode, 404)
   assert.equal(L.listLibraries('kb').length, 1, 'the deployment listing is unchanged')
 })
+
+test('several libraries by id: a list or ids with commas, each once, in order; "all" among them means all; an unknown id is a 404', () => {
+  assert.deepEqual(S.scopeLibraries('u-a,u-b', null, 'kb').map(l => l.id), ['u-a', 'u-b'])
+  assert.deepEqual(S.scopeLibraries(['u-b', 'u-a', 'u-b'], null, 'kb').map(l => l.id), ['u-b', 'u-a'])
+  assert.deepEqual(S.scopeLibraries('kb, u-b', null, 'kb').map(l => l.id), ['kb', 'u-b'])
+  assert.deepEqual(S.scopeLibraries(['u-a', 'all'], null, 'kb').map(l => l.id), ['kb', 'u-a', 'u-b'])
+  assert.deepEqual(S.scopeLibraries(['u-b'], null, 'kb').map(l => l.id), ['u-b'], 'a list of one is that one')
+  assert.throws(() => S.scopeLibraries('u-a,u-nope', null, 'kb'), e => e.status === 404)
+  assert.equal(S.severalLibraries('u-a,u-b'), true)
+  assert.equal(S.severalLibraries(['u-a']), false)
+  assert.equal(S.severalLibraries('all'), true)
+  assert.equal(S.severalLibraries(undefined), false)
+})
+
+test('a query over some libraries answers from those alone, re-ranked across them', async () => {
+  const r = await Q.queryScope({ canned: 'largest', n: 3, library: ['u-a', 'u-b'] }, null)
+  assert.deepEqual(r.columns, ['library', 'path', 'bytes', 'modified'])
+  assert.deepEqual(r.rows.map(x => [x[0], x[1]]), [['Library A', 'big.bin'], ['Library B', 'large.dat'], ['Library A', 'mid.bin']])
+  assert.deepEqual(r.failed, [], 'the knowledge base was not chosen, so it is not reported')
+  const one = await Q.queryScope({ canned: 'largest', n: 5, library: 'u-b,' }, null)
+  assert.deepEqual(one.columns, ['path', 'bytes', 'modified'], 'one library chosen answers alone')
+})
+
+test('search over some libraries: ids repeated or with commas, each hit tagged; a refined search too', async () => {
+  const { default: Fastify } = await import('fastify')
+  const { kbRoutes } = await import('../dist/routes.js')
+  const app = Fastify(); await app.register(kbRoutes); await app.ready()
+  for (const qs of ['library=u-a&library=u-b', 'library=u-a%2Cu-b']) {
+    const r = (await app.inject({ url: `/api/search?q=report&${qs}` })).json()
+    assert.deepEqual(r.hits.map(h => [h.library.id, h.path]).sort(), [['u-a', 'notes/a-report.md'], ['u-b', 'notes/b-report.md']], qs)
+  }
+  const only = (await app.inject({ url: '/api/search?q=report&library=u-b' })).json()
+  assert.deepEqual(only.hits.map(h => h.library.id), ['u-b'])
+  const refined = (await app.inject({ url: '/api/search?name=report&library=u-a,u-b&match=all' })).json()
+  assert.deepEqual(refined.hits.map(h => h.library.id).sort(), ['u-a', 'u-b'])
+  const bad = await app.inject({ url: '/api/search?text=a%20AND%20(b&library=u-a' })
+  assert.equal(bad.statusCode, 400)
+  // The app's error handler sends { error }; a bare Fastify, { message }.
+  assert.match(`${bad.json().message ?? ''} ${bad.json().error ?? ''}`, /cannot be read/)
+  assert.equal((await app.inject({ url: '/api/search?q=report&library=u-a,u-nope' })).statusCode, 404)
+})

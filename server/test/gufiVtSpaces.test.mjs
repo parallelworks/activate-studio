@@ -147,6 +147,16 @@ test('a query across libraries runs through gufi_vt with the app\'s paths, with 
   assert.deepEqual(merged.rows, vt.rows)
 })
 
+test('a query over some libraries runs through gufi_vt as across all, with only their rows', { skip: !haveGufi && 'GUFI not installed' }, async () => {
+  V.forceGufiVtForTests(null)
+  const all = await Q.queryScope({ canned: 'largest', n: 10, library: 'all' }, null)
+  const some = await Q.queryScope({ canned: 'largest', n: 10, library: ['other', 'u-proj'] }, null)
+  assert.equal(some.engine, 'gufi_vt', `${some.mergeReason ?? ''} ${JSON.stringify(some.failed)}`)
+  assert.deepEqual([...new Set(some.rowLibraries)].sort(), ['other', 'u-proj'])
+  const keep = new Set(['other', 'u-proj'])
+  assert.deepEqual(some.rows, all.rows.filter((_, i) => keep.has(all.rowLibraries[i])))
+})
+
 test('a stage is given to gufi_vt with each double quote inside a string written as char(34)', () => {
   assert.equal(V.vtStage("SELECT name FROM vrpentries WHERE name = 'a';"), "SELECT name FROM vrpentries WHERE name = 'a';", 'no double quote: unchanged')
   assert.equal(V.vtStage(`SELECT 1 FROM words WHERE wordf MATCH '"a" AND "b"';`),
