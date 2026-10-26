@@ -504,8 +504,9 @@ const rawColumns = (width: number) => Array.from({ length: width }, (_, i) => `c
 export interface QueryRequest {
   canned?: string; sql?: string; builder?: BuilderPayload
   n?: number; days?: number; subtree?: string
-  /** A library id, or "all" for every library the viewer can read. */
-  library?: string
+  /** A library id, several (a list, or ids with commas), or "all" for
+   *  every library the viewer can read. */
+  library?: string | string[]
 }
 
 /** One query's plan for the index in scope, whichever form it takes. */

@@ -166,6 +166,8 @@ function prefixFor(p: string): (x: string) => string {
 /** Append the current library to a URL that already has a query string, or
  *  none. `method` is the request's: only a GET takes All mode's paths as they are. */
 export function withLibrary(url: string, method: string = 'GET'): string {
+  // A request that names its own libraries (Search's and Query's scope) keeps them.
+  if (/[?&]library=/.test(url)) return url
   if (current === PRIMARY) return url
   if (current === ALL) {
     const [route, query = ''] = url.split('?')
@@ -232,6 +234,9 @@ export interface FileContent {
   source: 'raw' | 'extracted' | 'none'
   format?: 'markdown' | 'text'
 }
+
+/** A search's scope and refined fields (refine.ts on the server). */
+export interface SearchOpts { library?: string; name?: string; text?: string; match?: 'any' | 'all' }
 
 export interface SearchHit {
   path: string
@@ -320,7 +325,12 @@ export interface IndexSettingsInfo {
 
 async function getJson<T>(url: string): Promise<T> {
   const res = await fetch(withLibrary(url))
-  if (!res.ok) throw new Error(`${url}: ${res.status}`)
+  if (!res.ok) {
+    // The server's own sentence where it gave one, such as why a search's
+    // text cannot be read.
+    const body = await res.json().catch(() => null) as { error?: string } | null
+    throw new Error(body?.error ?? `${url}: ${res.status}`)
+  }
   return res.json() as Promise<T>
 }
 
@@ -359,7 +369,18 @@ export const api = {
     return data as { deleted: string }
   },
   stats: () => getJson<{ available: boolean; files?: number; dirs?: number; totalBytes?: number; libraries?: LibraryStats[] }>(`/api/kb/stats`),
-  search: (q: string, tags?: string[], limit = 50) => getJson<{ hits: SearchHit[]; error?: string; gufi?: GufiCommand[]; slow?: string[]; omitted?: Omission[] }>(`/api/search?q=${encodeURIComponent(q)}&limit=${limit}${tags?.length ? `&tags=${encodeURIComponent(tags.join(','))}` : ''}`),
+  /** The single search box's `q`, or a refined search's name, text and
+   *  match; `library` is the page's scope ("all", an id, or ids with commas). */
+  search: (q: string, tags?: string[], limit = 50, opts: SearchOpts = {}) => {
+    const params = new URLSearchParams({ limit: String(limit) })
+    if (q) params.set('q', q)
+    if (opts.name) params.set('name', opts.name)
+    if (opts.text) params.set('text', opts.text)
+    if (opts.match && (opts.name || opts.text)) params.set('match', opts.match)
+    if (tags?.length) params.set('tags', tags.join(','))
+    if (opts.library) params.set('library', opts.library)
+    return getJson<{ hits: SearchHit[]; error?: string; gufi?: GufiCommand[]; slow?: string[]; omitted?: Omission[] }>(`/api/search?${params}`)
+  },
   health: () => getJson<{ ok: boolean; gufi: boolean }>(`/healthz`),
   mkdir: async (path: string) => {
     const r = await postJson<{ created: string }>(`/api/kb/mkdir`, { path })

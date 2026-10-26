@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   ActionMenu, Button, buttonClasses, Callout, Field, IconButton, Input, NumberInput, Select, Table, Tabs, Textarea,
   type SelectItem, type TabItem,
@@ -6,9 +6,10 @@ import {
 import { ChevronDownIcon, CloseIcon } from '@parallelworks/ui/icons'
 import { TagMenu } from '../components/TagMenu'
 import { RowCheck } from '../components/Explorer'
-import { ALL_LIBRARIES, LibrarySwitch } from '../components/LibrarySwitch'
+import { LibraryScope } from '../components/LibraryScope'
 import { useAppConfig } from '../config'
-import { currentLibrary, warmRemoteHosts } from '../api'
+import { warmRemoteHosts } from '../api'
+import { openInLibrary, scopeBody, useScope, type Scope } from '../scope'
 import { GufiCommands, type GufiCommand } from '../components/GufiCommands'
 import { SavedQuerySql } from '../components/SavedQuerySql'
 import { OmittedLine, type Omission } from '../components/OmittedLine'
@@ -81,6 +82,14 @@ function fmtBytes(v: string): string {
 export function QueryView({ onOpen }: { onOpen: (path: string) => void }) {
   // Libraries on other hosts: their ssh login happens now, not on the first query.
   useEffect(() => { warmRemoteHosts() }, [])
+  const cfg = useAppConfig()
+  const libraries = cfg.libraries ?? []
+  const [scope, setScope] = useScope('query', libraries)
+  // Read when a query runs, which can be from an event handler set up once.
+  const scopeRef = useRef<Scope>(scope)
+  scopeRef.current = scope
+  const countRef = useRef(libraries.length)
+  countRef.current = libraries.length
   const [mode, setMode] = useState<Mode>('builder')
   const [b, setB] = useState<BuilderState>(BLANK)
   const set = (patch: Partial<BuilderState>) => setB(s => ({ ...s, ...patch }))
@@ -119,14 +128,15 @@ export function QueryView({ onOpen }: { onOpen: (path: string) => void }) {
 
   const currentPayload = () => (mode === 'builder' ? payloadOf(b) : { sql, subtree })
 
-  const runQuery = async (payload?: any) => {
+  const runQuery = async (payload?: any, over: Scope = scopeRef.current) => {
     setBusy(true)
     setError(null)
     try {
       const res = await fetch('/api/query', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...(payload ?? currentPayload()), ...(currentLibrary() !== 'kb' ? { library: currentLibrary() } : {}) }),
+        // The libraries ticked above: all, one, or several (sent as a list).
+        body: JSON.stringify({ ...(payload ?? currentPayload()), ...scopeBody(over, countRef.current) }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.message ?? data.error ?? `${res.status}`)
@@ -187,12 +197,12 @@ export function QueryView({ onOpen }: { onOpen: (path: string) => void }) {
     void runQuery(payloadOf(next))
   }
 
-  // Across all libraries a row opens in the library it came from.
+  // A row opens in the library it came from.
   const maybeOpen = (cell: string, row?: number) => {
     if (!(cell.includes('/') || /\.\w{1,5}$/.test(cell))) return
     const lib = row != null ? result?.rowLibraries?.[row] : undefined
-    if (currentLibrary() === ALL_LIBRARIES) { if (lib && lib !== 'all') onOpen(`${lib}/${cell}`) }
-    else onOpen(cell)
+    if (lib === 'all') return
+    openInLibrary(onOpen, lib ?? (scope !== 'all' && scope.length === 1 ? scope[0] : undefined), cell)
   }
 
   // Labeling is offered only when the result set has an explicit path or
@@ -217,11 +227,16 @@ export function QueryView({ onOpen }: { onOpen: (path: string) => void }) {
   const shownSort = sortItems.some(o => o.value === b.sort) ? b.sort : sortItems[0].value
   const fields = b.source === 'directories' ? FIELDS.filter(f => DIR_FIELDS.has(f.value)) : FIELDS
 
-  const cfg = useAppConfig()
+  // Other libraries chosen mean other rows: run the query again there.
+  const pick = (next: Scope) => {
+    setScope(next)
+    scopeRef.current = next
+    if (result) void runQuery(undefined, next)
+  }
   return (
     <div className="query-view">
       <div className="query-controls card">
-        {(cfg.libraries?.length ?? 0) > 1 && <div className="scope-bar"><span className="muted">Querying</span><LibrarySwitch libraries={cfg.libraries ?? []} /></div>}
+        {libraries.length > 1 && <div className="scope-bar"><span className="muted">Querying</span><LibraryScope libraries={libraries} value={scope} onChange={pick} hint="Which libraries to query" /></div>}
         <Tabs
           label="Query mode"
           items={MODES}

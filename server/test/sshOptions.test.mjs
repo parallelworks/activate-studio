@@ -37,11 +37,13 @@ write(path.join(home, 'proj', 'data', 'huge.bin'), Buffer.alloc(5000, 98))
 write(path.join(home, 'proj', 'readme.txt'), 'hello\n')
 write(path.join(home, 'archive', 'old', 'tape.bin'), Buffer.alloc(9000, 99))
 write(path.join(home, 'archive', 'list.txt'), 'list\n')
-for (const d of ['idx', 'arch-idx']) fs.mkdirSync(path.join(home, d), { recursive: true })
+write(path.join(home, 'scratch', 'tmp', 'spill.bin'), Buffer.alloc(7000, 97))
+for (const d of ['idx', 'arch-idx', 'scr-idx']) fs.mkdirSync(path.join(home, d), { recursive: true })
 fs.mkdirSync(path.join(dir, 'ix', 'gufi'), { recursive: true })
 if (haveGufi) {
   execFileSync(path.join(gufiBin, 'gufi_dir2index'), ['-x', path.join(home, 'proj'), path.join(home, 'idx')], { stdio: 'ignore' })
   execFileSync(path.join(gufiBin, 'gufi_dir2index'), ['-x', path.join(home, 'archive'), path.join(home, 'arch-idx')], { stdio: 'ignore' })
+  execFileSync(path.join(gufiBin, 'gufi_dir2index'), ['-x', path.join(home, 'scratch'), path.join(home, 'scr-idx')], { stdio: 'ignore' })
   execFileSync(path.join(gufiBin, 'gufi_dir2index'), ['-x', path.join(dir, 'kb'), path.join(dir, 'ix', 'gufi')], { stdio: 'ignore' })
 }
 
@@ -303,6 +305,49 @@ test('Query stacks libraries on one host into one gufi_vt location: one command 
   } finally {
     fs.renameSync(path.join(home, 'arch-idx.moved'), path.join(home, 'arch-idx'))
   }
+})
+
+test('two of three libraries on one host, chosen alone: still one location, and the third not asked', { skip }, async t => {
+  V.resetGufiVtForTests()
+  if (!(await V.gufiVtAvailable())) return t.skip('this GUFI has no gufi_vt')
+  const host = { destination: 'me@restricted-box', gufiBin }
+  const r0 = await call('POST', '/api/user-libraries/ssh', { ...host, label: 'Scratch', indexRoot: path.join(home, 'scr-idx', 'scratch') })
+  assert.equal(r0.status, 200, JSON.stringify(r0.body))
+  const L = await import('../dist/libraries.js')
+  const ids = Object.fromEntries(L.listLibraries('kb', null).filter(l => l.site === 'me@restricted-box').map(l => [l.label, l.id]))
+  assert.deepEqual(Object.keys(ids).sort(), ['Archive', 'Home', 'Scratch'])
+  const queries = () => ran.filter(r => r.dest === 'me@restricted-box' && /gufi_query /.test(r.command))
+  const before = queries().length
+  const r = await Q.queryScope({ canned: 'largest', n: 10, library: [ids.Home, ids.Archive] }, null)
+  const mine = queries().slice(before)
+  assert.equal(r.engine, 'gufi_vt', JSON.stringify(r.failed ?? r))
+  assert.deepEqual([...new Set(r.rowLibraries)].sort(), [ids.Archive, ids.Home].sort())
+  assert.equal(mine.length, 2, 'one check and one gufi_query for the two chosen')
+  const last = mine[mine.length - 1].command
+  assert.ok(last.includes('arch-idx/archive') && last.includes('idx/proj'), last)
+  assert.ok(!last.includes('scr-idx'), 'the library not chosen is not in the stacked location')
+  // The Search page's refined search over the same two: one walk on the
+  // host, the name filter in it, the third library not asked.
+  const S = await import('../dist/libraryScope.js')
+  const libs = S.scopeLibraries([ids.Home, ids.Archive], null, 'kb')
+  const b2 = queries().length
+  const hits = await S.searchScope(libs, '', 20, { semantic: false, refine: { name: '*.bin', text: '', match: 'all' } })
+  const walks = queries().slice(b2)
+  assert.deepEqual(hits.map(h => [h.library.id, h.path]).sort(), [[ids.Archive, 'old/tape.bin'], [ids.Home, 'data/huge.bin']].sort())
+  assert.equal(walks.length, 1, 'one walk on the host for both')
+  // Over ssh the line is quoted for the remote shell, so match the filter, not its quoting.
+  assert.ok(/name LIKE .{0,6}%\.bin.{0,6} ESCAPE/.test(walks[0].command), `the name filter went with it: ${walks[0].command.slice(0, 400)}`)
+  assert.ok(!walks[0].command.includes('scr-idx'))
+  // And with text and the name filter both given, the words statement
+  // carries the filter in the same remote walk: these connected indexes
+  // have no words table of their own, so it is the one that reads an
+  // external database in the shared schema.
+  const b3 = queries().length
+  await S.searchScope(libs, '', 20, { semantic: false, refine: { name: '*.bin', text: 'hello', match: 'all' } })
+  const walk = queries().slice(b3)
+  assert.equal(walk.length, 1)
+  assert.match(walk[0].command, /ext_bm25_by_file MATCH .{0,6}hello.{0,6} AND \(e\.name LIKE .{0,6}%\.bin.{0,6} ESCAPE/)
+  assert.ok(!/SELECT .{0,6}n.{0,6}, /.test(walk[0].command.split(' -E ')[1] ?? ''), 'no name rows when both fields must match')
 })
 
 test('the wrapper accepts a stacked location\'s roots in order, and nothing else', () => {

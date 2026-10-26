@@ -89,16 +89,19 @@ export const TOOL_SPECS: ToolSpec[] = [
     function: {
       name: 'search_kb',
       description:
-        'Full-text and semantic search over the connected knowledge base. Returns matching file paths with snippets. Use this before answering questions about the knowledge base content.',
+        'Full-text and semantic search over the connected knowledge base. Returns matching file paths with snippets. Use this before answering questions about the knowledge base content. Use query for a plain search, or name and text for a refined one: name for file and folder names (words, or patterns such as *.docx), text for the words in files and their meaning, with match "all" to look for the text only in files whose name or path matches.',
       parameters: {
         type: 'object',
         properties: {
-          query: { type: 'string', description: 'Search terms (plain words, no operators)' },
+          query: { type: 'string', description: 'Search terms (plain words, no operators); leave empty when name or text is given' },
+          name: { type: 'string', description: 'Refined search: words or patterns for file and folder names, such as "budget *.xlsx"' },
+          text: { type: 'string', description: 'Refined search: the words in files, in fts5 syntax (AND, OR, NOT, "phrase", prefix*); also searched by meaning without its operators' },
+          match: { type: 'string', enum: ['any', 'all'], description: 'Refined search: "any" lists matches of either kind (default); "all" looks for text only in files whose name or path matches' },
           limit: { type: 'number', description: 'Max results, default 10' },
           tags: { type: 'string', description: 'Comma-separated label filter: only return material carrying at least one of these labels (e.g. "validated" or "research,theoretical")' },
-          library: { type: 'string', description: 'Which library to search: an id from list_libraries, or "all" for every library; default the one selected in this conversation' },
+          library: { type: 'string', description: 'Which library to search: an id from list_libraries, several ids separated by commas, or "all" for every library; default the one selected in this conversation' },
         },
-        required: ['query'],
+        required: [],
       },
     },
   },
@@ -1395,12 +1398,18 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
         const limit = Math.min(Number(args.limit) || 10, 25)
         const { scopeWithOmitted, searchScope } = await import('../libraryScope.js')
         const { omissionsText } = await import('../omissions.js')
+        const { refineOf, validateText } = await import('../refine.js')
+        const refine = refineOf({ name: args.name, text: args.text, match: args.match })
+        if (!query.trim() && !refine) return { result: 'Give query, or name or text.', summary: 'nothing to search for' }
+        if (refine) {
+          try { await validateText(refine.text) } catch (e) { return { result: String((e as Error).message ?? e), summary: 'text not readable' } }
+        }
         const inScope = scopeWithOmitted(scopeParam(args.library), toolContext.getStore()?.userId ?? null)
         const libs = inScope.libs
         if (gufiAvailable() || libs.some(l => l.site)) {
           const slow: string[] = []
           const omitted = inScope.omitted
-          const scoped = await searchScope(libs, query, limit + 5, { semantic: true, nameLimit: 5, slow, omitted })
+          const scoped = await searchScope(libs, refine ? '' : query, limit + 5, { semantic: refine ? !!refine.text : true, nameLimit: 5, slow, omitted, refine })
           // Every library left out, or searched in part, is named, so an
           // answer never takes a missing library's silence for "no matches".
           const lateNote = omitted.length ? `\n${omissionsText(omitted)}${slow.length ? ` Search ${slow.length === 1 ? 'one that did not answer in time' : 'one of those that did not answer in time'} on its own to wait for it.` : ''}` : ''
@@ -1430,7 +1439,7 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
             : 'No matches.') + lateNote
           return { result, summary: `${hits.length} hits` }
         }
-        const rels = await grepFallback(query, limit)
+        const rels = await grepFallback(refine ? (refine.text || refine.name) : query, limit)
         return { result: rels.length ? rels.join('\n') : 'No matches.', summary: `${rels.length} hits (grep fallback)` }
       }
       case 'read_kb_file': {

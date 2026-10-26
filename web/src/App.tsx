@@ -306,7 +306,8 @@ export default function App() {
         setView('library')
         return
       }
-      const vm = location.hash.match(/^#view=([a-z]+)(?::([a-z0-9-]+))?$/)
+      // A view may carry its own fields after a ?, as Search does its query.
+      const vm = location.hash.match(/^#view=([a-z]+)(?::([a-z0-9-]+))?(?:\?.*)?$/)
       const v = vm?.[1]
       if (v && NAV.some(n => n.id === v)) {
         // #view=library is a request for the library itself. Leaving the
@@ -335,7 +336,7 @@ export default function App() {
       // A chat reply can hand the user a view link ("watch the agents
       // here"); routed in this tab, since a new tab of the whole app is
       // never what such a link means.
-      const vm = href.match(/#view=[a-z]+(?::[a-z0-9-]+)?$/)
+      const vm = href.match(/#view=[a-z]+(?::[a-z0-9-]+)?(?:\?[^#]*)?$/)
       if (vm) {
         e.preventDefault()
         e.stopPropagation()
@@ -364,8 +365,8 @@ export default function App() {
       ? buildOpenHash(display)
       : view !== 'chat' ? `#view=${view}` : ''
     if ((location.hash || '') === hash) return
-    // Views may own a :section suffix on their hash; leave it theirs.
-    if (hash && location.hash.startsWith(`${hash}:`)) return
+    // Views may own a :section suffix or ?fields on their hash; leave them theirs.
+    if (hash && (location.hash.startsWith(`${hash}:`) || location.hash.startsWith(`${hash}?`))) return
     // The chat view keeps its open conversation in the hash; do not clear it.
     if (!hash && location.hash.startsWith('#chat=')) return
     history.pushState(null, '', location.pathname + location.search + hash)

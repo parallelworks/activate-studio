@@ -1,5 +1,6 @@
 import { getLibrary, listLibraries, type Library } from './libraries.js'
-import { EXTERNAL_DB_PATTERN, blendHits, ftsExprBare, ftsHit, ftsSql, fuseRows, nameHit, namesSql, queryVectors, searchVector, searchWordsAndNames, walkSearch, type HitMode, type SearchHit, type WalkLimits, type WalkRow } from './gufi.js'
+import { EXTERNAL_DB_PATTERN, blendHits, ftsExprBare, ftsHit, ftsSql, fuseRows, nameHit, namesSql, queryVectors, searchVector, searchWordsAndNames, walkSearch, type HitMode, type RefineSpec, type SearchHit, type WalkLimits, type WalkRow } from './gufi.js'
+import { meaningPhrase, namePathMatches } from './refine.js'
 import { gufiVtAvailable, runAcross } from './gufiVt.js'
 import { effectiveSettings } from './settings.js'
 import { addOmission, failureReason, libraryGap, type Omission } from './omissions.js'
@@ -7,25 +8,50 @@ import { REMOTE_PREFIX, remoteHostKey } from './userLibraries.js'
 
 /**
  * Which libraries a request means: one, by id (the knowledge base when
- * unnamed), or "all", every library the viewer can read: the knowledge
- * base, the deployment's read-only libraries, and the viewer's own
- * libraries on their clusters. Search and the Query page take either; the
- * assistant's tools too.
+ * unnamed), several, by ids (a list, or one string with commas), or "all",
+ * every library the viewer can read: the knowledge base, the deployment's
+ * read-only libraries, and the viewer's own libraries on their clusters.
+ * Search and the Query page take any of these; the assistant's tools too.
  */
 export const ALL = 'all'
 
-export function scopeLibraries(param: string | null | undefined, viewerId: string | null, primaryLabel?: string): Library[] {
+/** A scope as a request sends it: null for none (the knowledge base),
+ *  'all', or the ids named, each once, in order. */
+export type ScopeParam = string | string[] | null | undefined
+export function scopeIds(param: ScopeParam): 'all' | string[] | null {
+  const parts = (Array.isArray(param) ? param : [param ?? ''])
+    .flatMap(p => String(p ?? '').split(','))
+    .map(s => s.trim())
+    .filter(Boolean)
+  if (!parts.length) return null
+  if (parts.some(p => p.toLowerCase() === ALL)) return ALL
+  return [...new Set(parts)]
+}
+
+/** Whether a scope means more than one library. */
+export function severalLibraries(param: ScopeParam): boolean {
+  const ids = scopeIds(param)
+  return ids === ALL || (Array.isArray(ids) && ids.length > 1)
+}
+
+export function scopeLibraries(param: ScopeParam, viewerId: string | null, primaryLabel?: string): Library[] {
   return scopeWithOmitted(param, viewerId, primaryLabel).libs
 }
 
-/** The same, with the libraries "all" leaves out because they have no
- *  index to answer from (one being built, one whose build failed, one whose
- *  index is missing), each with its reason, so a request can say so. */
-export function scopeWithOmitted(param: string | null | undefined, viewerId: string | null, primaryLabel?: string): { libs: Library[]; omitted: Omission[] } {
-  if (String(param ?? '').trim().toLowerCase() !== ALL) return { libs: [getLibrary(param, primaryLabel, viewerId)], omitted: [] }
+/** The same, with the libraries left out because they have no index to
+ *  answer from (one being built, one whose build failed, one whose index is
+ *  missing), each with its reason, so a request can say so. One library
+ *  named alone is asked anyway and answers for itself; among several, or
+ *  all, such a library is named instead. An id that names no library is a
+ *  404, as it is alone. */
+export function scopeWithOmitted(param: ScopeParam, viewerId: string | null, primaryLabel?: string): { libs: Library[]; omitted: Omission[] } {
+  const ids = scopeIds(param)
+  if (ids === null) return { libs: [getLibrary(undefined, primaryLabel, viewerId)], omitted: [] }
+  if (ids !== ALL && ids.length === 1) return { libs: [getLibrary(ids[0], primaryLabel, viewerId)], omitted: [] }
+  const named = ids === ALL ? listLibraries(primaryLabel, viewerId) : ids.map(id => getLibrary(id, primaryLabel, viewerId))
   const libs: Library[] = []
   const omitted: Omission[] = []
-  for (const l of listLibraries(primaryLabel, viewerId)) {
+  for (const l of named) {
     if (l.caps.index || l.primary) { libs.push(l); continue }
     addOmission(omitted, libraryGap(l, { words: false, meaning: false }) ?? { id: l.id, label: l.label, reason: 'index not found', partial: false })
   }
@@ -59,7 +85,7 @@ export const SEARCH_DEADLINE_MS = Number(process.env.STUDIO_SEARCH_DEADLINE_MS) 
  *  STUDIO_STACK_LOCAL=1 stacks them too. */
 export const STACK_LOCAL = process.env.STUDIO_STACK_LOCAL === '1'
 
-type ScopeOpts = { semantic: boolean; nameLimit?: number; deadlineMs?: number; slow?: string[]; omitted?: Omission[] }
+type ScopeOpts = { semantic: boolean; nameLimit?: number; deadlineMs?: number; slow?: string[]; omitted?: Omission[]; refine?: RefineSpec | null }
 
 /**
  * Search over one or several libraries, each in one walk of its index for
@@ -71,15 +97,29 @@ type ScopeOpts = { semantic: boolean; nameLimit?: number; deadlineMs?: number; s
  * hits. A library that fails, or does not answer in time, is named in
  * opts.omitted and the search goes on. With Settings, General, "Search
  * across libraries" set to gufi_vt, the earlier form runs (searchScopeVt).
+ *
+ * A refined search (opts.refine) runs in the same walks, always: its name
+ * field gives the name and folder matches, its text the words, and the
+ * text without its syntax the meaning. Each kind keeps its own limit and
+ * the answer holds them all, so many name matches never crowd out the
+ * words or meaning: `limit` is the words' limit there.
  */
 export async function searchScope(libs: Library[], q: string, limit: number, opts: ScopeOpts): Promise<ScopedHit[]> {
   const omitted = opts.omitted ?? []
+  const refine = opts.refine ?? null
   libs = withoutGaps(libs, opts, omitted)
-  if (libs.length > 1 && effectiveSettings().searchEngine === 'gufi_vt' && await gufiVtAvailable()) return searchScopeVt(libs, q, limit, opts, omitted)
+  if (!refine && libs.length > 1 && effectiveSettings().searchEngine === 'gufi_vt' && await gufiVtAvailable()) return searchScopeVt(libs, q, limit, opts, omitted)
   const SEP = '\u0001'
   const nameLimit = opts.nameLimit ?? Math.min(Math.max(10, Math.floor(limit / 5)), 50)
   const vecLimit = Math.min(limit, 10)
   const caps: Partial<Record<HitMode, number>> = { name: nameLimit, path: nameLimit, fts: limit * 3, vector: vecLimit }
+  // A refined search lists every kind to its own limit, words to `limit`.
+  if (refine) caps.fts = limit
+  const total = refine ? nameLimit * 2 + limit + vecLimit : limit
+  // With match 'all', meaning a walk could not carry is kept to the files
+  // the name field matches here, as the walk keeps its own.
+  const keep = (rel: string) => !refine || refine.match !== 'all' || !refine.text || !refine.name || namePathMatches(refine.name, rel)
+  const phrase = refine ? meaningPhrase(refine.text) : q
   const failed = (l: Library, e: unknown, partial: boolean, what = '') => {
     addOmission(omitted, { id: l.id, label: l.label, reason: `${what}${failureReason(l, e)}`, partial })
   }
@@ -87,7 +127,7 @@ export async function searchScope(libs: Library[], q: string, limit: number, opt
   const external = EXTERNAL_DB_PATTERN || null
   // The query is embedded for any search by meaning: external databases can
   // carry vectors where the Studio's own tables have none.
-  const vectors = opts.semantic && (libs.some(wantVec) || external) ? await queryVectors(q) : []
+  const vectors = opts.semantic && phrase && (libs.some(wantVec) || external) ? await queryVectors(phrase) : []
   const limitsFor = (words: boolean, vec: boolean): WalkLimits => ({
     names: nameLimit, paths: nameLimit,
     words: limit * 3, wordsPerDir: limit,
@@ -119,7 +159,7 @@ export async function searchScope(libs: Library[], q: string, limit: number, opt
     const words = wordsSearched(members[0]), vec = wantVec(members[0]) && vectors.length > 0
     const byRoot = new Map<string, Library[]>()
     for (const l of members) byRoot.set(l.indexRoot, [...(byRoot.get(l.indexRoot) ?? []), l])
-    const work = walkSearch(q, limitsFor(words, vec), [...byRoot.keys()], vec ? vectors : [])
+    const work = walkSearch(q, limitsFor(words, vec), [...byRoot.keys()], vec ? vectors : [], refine)
       .then(rows => rows.flatMap(r => (byRoot.get(r.root) ?? []).map(l => ({ ...r, path: `${l.id}${SEP}${r.path}` }))))
       .catch(e => { for (const l of members) failed(l, e, false); return [] as WalkRow[] })
     // Meaning for a library whose walk could not carry it: one embedded
@@ -130,8 +170,8 @@ export async function searchScope(libs: Library[], q: string, limit: number, opt
       for (const l of members) {
         if (!wantVec(l) || l.indexRoot.startsWith(REMOTE_PREFIX)) continue
         if (vec && rows.some(r => r.kind === 'vector' && r.path.startsWith(`${l.id}${SEP}`))) continue
-        const hits = await searchVector(q, vecLimit, l.indexRoot).catch(e => { failed(l, e, true, 'not searched by meaning: '); return [] as SearchHit[] })
-        for (const h of hits) out.push({ kind: 'vector', r: h.score, path: `${l.id}${SEP}${h.path}`, name: h.name, size: h.size, mtime: h.mtime, snippet: h.snippet, root: l.indexRoot })
+        const hits = await searchVector(phrase, vecLimit, l.indexRoot).catch(e => { failed(l, e, true, 'not searched by meaning: '); return [] as SearchHit[] })
+        for (const h of hits.filter(h => keep(h.path))) out.push({ kind: 'vector', r: h.score, path: `${l.id}${SEP}${h.path}`, name: h.name, size: h.size, mtime: h.mtime, snippet: h.snippet, root: l.indexRoot })
       }
       return [...rows, ...out]
     })
@@ -156,7 +196,7 @@ export async function searchScope(libs: Library[], q: string, limit: number, opt
     else omitted[i] = { ...o, reason: left.join('; ') }
   }
   const byId = new Map(libs.map(l => [l.id, l]))
-  return fuseRows(rows, caps, limit).map(h => {
+  return fuseRows(rows, caps, total).map(h => {
     const i = h.path.indexOf(SEP)
     const l = byId.get(h.path.slice(0, i))!
     return { ...h, path: h.path.slice(i + 1), library: { id: l.id, label: l.label } }
@@ -168,7 +208,8 @@ export async function searchScope(libs: Library[], q: string, limit: number, opt
 function withoutGaps(libs: Library[], opts: ScopeOpts, omitted: Omission[]): Library[] {
   const gone = new Set<string>()
   for (const l of libs) {
-    const gap = libraryGap(l, { words: true, meaning: opts.semantic })
+    // A refined search with nothing in its text field reads no words.
+    const gap = libraryGap(l, { words: !opts.refine || !!opts.refine.text, meaning: opts.semantic })
     if (!gap) continue
     addOmission(omitted, gap)
     if (!gap.partial) gone.add(l.id)

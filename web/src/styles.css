@@ -2167,6 +2167,17 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 
 /* The library a page searches, queries, or counts, above its controls. */
 .scope-bar { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; font-size: 13px; }
+/* Search's and Query's library picker: a tick for each library, All
+   libraries first. The list scrolls past a dozen or so. */
+.library-scope-list { display: flex; flex-direction: column; gap: 2px; min-width: 15rem; max-width: 24rem; max-height: 50vh; overflow-y: auto; }
+.library-scope-row { display: flex; align-items: center; gap: 8px; padding: 4px 2px; cursor: pointer; font-size: 13px; min-width: 0; }
+.library-scope-all { border-bottom: 1px solid var(--theme-border); padding-bottom: 6px; margin-bottom: 2px; }
+/* Search's refined form: names and paths beside text and meaning, the
+   switch under both; one column on a narrow screen. */
+.search-refine { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; margin-top: 10px; max-width: 720px; }
+.search-refine-match { grid-column: 1 / -1; }
+.search-refine-title { flex: 1; align-self: center; font-size: 13px; color: var(--pw-muted); }
+@media (max-width: 760px) { .search-refine { grid-template-columns: 1fr; } }
 
 /* The run the assistant launched, beside the conversation: its form as
    submitted, the platform's graph of it, and the session it opened. */

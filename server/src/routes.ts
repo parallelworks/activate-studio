@@ -1,6 +1,7 @@
 import crypto from 'node:crypto'
 import { getLibrary, requireWritable, listLibraries, publicLibrary, settingsLibrary, addLibrary, removeLibrary, probeAll, PRIMARY_ID } from './libraries.js'
 import { ALL, scopeLibraries, scopeWithOmitted, searchScope } from './libraryScope.js'
+import { meaningPhrase, refineOf, validateText } from './refine.js'
 import type { FastifyInstance } from 'fastify'
 import { execFile } from 'node:child_process'
 import path from 'node:path'
@@ -685,20 +686,25 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
     }
   })
 
-  // Search one library, or with library=all every library the viewer can
-  // read; each hit says which library it is in.
+  // Search one library, several (library=a,b or library repeated), or with
+  // library=all every library the viewer can read; each hit says which
+  // library it is in. q is the single search box; name, text and match a
+  // refined search (refine.ts), which takes their place when given.
   app.get('/api/search', async req => {
-    const { q = '', limit = '50', library } = req.query as { q?: string; limit?: string; library?: string }
-    if (!q.trim()) return { hits: [] }
+    const { q = '', limit = '50', library, name, text, match } = req.query as { q?: string; limit?: string; library?: string | string[]; name?: string; text?: string; match?: string }
+    const refine = refineOf({ name, text, match })
+    if (!q.trim() && !refine) return { hits: [] }
+    if (refine) await validateText(refine.text)
     const n = Math.min(Number(limit) || 50, 1000)
     const viewer = (req as { user?: { id?: string } }).user?.id ?? null
-    const scope = String(library ?? '').toLowerCase() === ALL ? scopeWithOmitted(ALL, viewer, effectiveSettings().kbLabel) : { libs: [libOf(req)], omitted: [] }
+    const scope = scopeWithOmitted(library, viewer, effectiveSettings().kbLabel)
     const libs = scope.libs
     if (!gufiAvailable() && libs.every(l => !l.site)) return { hits: [], error: 'index not built yet' }
     const slow: string[] = []
     // omitted: every library in scope left out, or searched in part, and why.
     const omitted = scope.omitted
-    const { result: hits, commands } = await traced(() => searchScope(libs, q, n, { semantic: wantsSemantic(q), slow, omitted }))
+    const semantic = refine ? !!refine.text && wantsSemantic(meaningPhrase(refine.text)) : wantsSemantic(q)
+    const { result: hits, commands } = await traced(() => searchScope(libs, refine ? '' : q, n, { semantic, slow, omitted, refine }))
     // The main library's labels are on its files and in its index; the
     // other libraries' are kept by the Studio (libraryLabels.ts). A label
     // filter applies to both.

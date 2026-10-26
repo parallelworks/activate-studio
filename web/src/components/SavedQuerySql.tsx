@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { Button, Callout, CopyCodeBlock, IconButton, Loader, Popover } from '@parallelworks/ui'
 import { CodeIcon } from '@parallelworks/ui/icons'
-import { currentLibrary } from '../api'
+import { readScope, scopeBody } from '../scope'
+import { useAppConfig } from '../config'
 import { where, type GufiCommand } from './GufiCommands'
 
 /** What a query runs, from POST /api/query/sql (server/src/query.ts). */
@@ -31,16 +32,19 @@ export function SavedQuerySql({ name, payload, button }: {
   /** A text button that opens it, in place of the code icon. */
   button?: string
 }) {
+  const cfg = useAppConfig()
   const [sql, setSql] = useState<QuerySql | null>(null)
   const [error, setError] = useState('')
   const load = async () => {
     setError('')
     try {
-      const lib = currentLibrary()
+      // The libraries the Query page has ticked, as a run would use.
+      const lib = readScope('query')
+      const count = cfg.libraries?.length ?? 0
       const res = await fetch('/api/query/sql', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...payload, ...(lib !== 'kb' ? { library: lib } : {}) }),
+        body: JSON.stringify({ ...payload, ...scopeBody(lib, count) }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.message ?? data.error ?? `${res.status}`)
