@@ -55,8 +55,11 @@ export type MeaningSpeed = 'standard' | 'faster'
  *
  * Each stop costs more indexing time than the one before; search by meaning
  * is the slowest phase by far, and many libraries (code, data, simulation
- * output) gain little from it. The main folder starts at meaning-documents,
- * the libraries built here at ocr.
+ * output) gain little from it. The main folder and a library newly built on
+ * this computer start at meaning-documents (NEW_LIBRARY_DEPTH), which covers
+ * documents only. A library built on another system starts at ocr: search
+ * does not read vectors made there yet. A library added before a depth was
+ * stored at creation keeps what it had: ocr.
  */
 export type IndexDepth = 'names' | 'text' | 'ocr' | 'meaning-documents' | 'meaning-full'
 export const INDEX_DEPTHS: readonly IndexDepth[] = ['names', 'text', 'ocr', 'meaning-documents', 'meaning-full']
@@ -103,6 +106,14 @@ export function textArgs(depth: IndexDepth): string[] | null {
   if (depth === 'names') return null
   return depth === 'text' ? ['--no-ocr'] : []
 }
+
+/** The depth a library newly built on this computer is given when none is
+ *  chosen, stored with it at creation. */
+export const NEW_LIBRARY_DEPTH: IndexDepth = 'meaning-documents'
+/** The same for a library built on another system. Vectors made there are
+ *  not read by search (the walk matches the ONNX model only, and the remote
+ *  build embeds with the GGUF one), so meaning would only add build time. */
+export const NEW_REMOTE_LIBRARY_DEPTH: IndexDepth = 'ocr'
 
 export const INDEX_SETTINGS_DEFAULTS: IndexSettings = {
   threads: null, ...depthParts('meaning-documents'), pdfReader: 'auto', imageDescriptions: true, legacyOffice: true, meaningSpeed: 'standard',

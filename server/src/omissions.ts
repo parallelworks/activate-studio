@@ -150,7 +150,10 @@ export function libraryGap(l: Library, want: { words: boolean; meaning: boolean 
     reasons.push(building(l) ? 'words not searched yet: its text is being read' : 'words not searched: its index has no text yet')
   }
   if (want.meaning && !l.primary && l.meaning && l.meaning !== 'off' && !l.caps.vectors && (building(l) || lacks(l, 'vectors'))) {
-    reasons.push(building(l) ? 'not searched by meaning yet: its text is being read' : 'not searched by meaning: its index has no vectors yet')
+    // While a build runs: its text first, then meaning, which comes last.
+    reasons.push(!building(l) ? 'not searched by meaning: its index has no vectors yet'
+      : l.caps.fullText ? 'not searched by meaning yet: meaning is still being computed'
+      : 'not searched by meaning yet: its text is being read')
   }
   return reasons.length ? o(reasons.join('; '), true) : null
 }

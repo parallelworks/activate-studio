@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Button, Callout, Input } from '@parallelworks/ui'
 import { api, type IndexDepth, type SettingsLibrary } from '../api'
-import { DEFAULT_LIBRARY_DEPTH, IndexDepthControl, useOcrHere } from './IndexDepth'
+import { DEFAULT_LIBRARY_DEPTH, IndexDepthControl, meaningLastNote, useOcrHere } from './IndexDepth'
 import { CreateConfirm, postJson, StepList, type CheckStep } from './LibraryFormParts'
 import { FolderBrowser } from './PrimaryFolder'
 
@@ -106,7 +106,7 @@ export function LocalLibraryForm({ onAdded, browse = false, compact = false, mod
         )}
         {build ? browseButton('sourceRoot', 'folder') : browseButton('indexRoot', 'index')}
       </div>
-      {build && <IndexDepthControl value={depth} onChange={setDepth} disabled={busy !== null} ocr={ocr} />}
+      {build && <IndexDepthControl value={depth} onChange={setDepth} disabled={busy !== null} ocr={ocr} note={meaningLastNote} />}
       <Button variant="ghost" size="sm" className="local-library-more" aria-expanded={more} onClick={() => setMore(m => !m)}>
         {more ? 'Fewer options' : 'More options'}
       </Button>

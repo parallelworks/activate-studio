@@ -42,8 +42,8 @@ Each library the Studio builds has an index depth, set on a scale in Settings, L
 |---|---|
 | Names | Names, sizes, dates and owners of every file and folder. |
 | Text | The words inside files: text, code, PDFs and Office documents. |
-| Text + OCR | Text in images and scanned PDF pages, read by tesseract. Libraries other than the main folder start here. |
-| Meaning on documents | Search by meaning over the first four passages of each PDF, Office, text, Markdown and image file. The main folder's default. |
+| Text + OCR | Text in images and scanned PDF pages, read by tesseract. Libraries built on a remote system start here. |
+| Meaning on documents | Search by meaning over the first four passages of each PDF, Office, text, Markdown and image file. The default for the main folder and libraries built on this computer, computed last, after names and text are searchable. |
 | Meaning on all files | Search by meaning over up to twelve passages of every file with text. |
 
 Many folders (code, data, simulation output) need no more than Text. Settings, Indexing also sets the speed of search by meaning: **Standard** embeds the first 256 tokens of each passage, and **Faster** the first 128, in well under half the time with slightly lower ranking. Embeddings come from all-MiniLM-L6-v2 through ONNX Runtime (int8), which the macOS app and the container carry; a clone gets it from `indexer/setup_gufi.sh`, or `python3 indexer/fetch_embed.py --deps indexer/.deps --model index/models/minilm-l6`. An index connected as it is stays as it was built.

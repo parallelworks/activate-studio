@@ -63,8 +63,10 @@ export function AddLibrary({ options, browse = false, onAdded, onStarted }: {
   options: AddOptions
   /** Folders on this computer can be picked from a list (a single-user install). */
   browse?: boolean
-  /** A library was added, or its build started. */
-  onAdded: (lib: { id: string; label: string }, started: boolean) => void
+  /** A library was added, or its build started (`started`); `here` is a
+   *  build on this computer, searchable by name while its text and meaning
+   *  are read. */
+  onAdded: (lib: { id: string; label: string }, started: boolean, here?: boolean) => void
   /** A build through the platform's index workflow started. */
   onStarted?: (lib: UserLibrary) => void
 }) {
@@ -100,7 +102,7 @@ export function AddLibrary({ options, browse = false, onAdded, onStarted }: {
       </div>
       <p className="muted lib-add-about">{describe(where, hows.includes(how) ? how : hows[0], v)}</p>
       {where === 'here' && (how === 'build' && hows.includes('build')
-        ? <LocalLibraryForm key="here-build" mode="build" compact browse={browse} onAdded={lib => onAdded(lib, true)} />
+        ? <LocalLibraryForm key="here-build" mode="build" compact browse={browse} onAdded={lib => onAdded(lib, true, true)} />
         : <LocalLibraryForm key="here-connect" compact browse={browse} onAdded={lib => onAdded(lib, false)} />)}
       {where === 'remote' && v === 'workflow' && <ClusterLibraryForm compact onStarted={lib => onStarted?.(lib)} />}
       {where === 'remote' && (v === 'ssh' || v === 'pw') && (

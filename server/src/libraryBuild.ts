@@ -9,7 +9,7 @@ import { EXCLUDE_DIRS, GUFI_BIN, INDEX_BASE, KB_ROOT, PROJECT_ROOT, PYTHON_BIN, 
 import { sofficeFound } from './extractors.js'
 import { invalidateDbList, treeStats } from './gufi.js'
 import { getIndexJob, startIndexJob, type IndexJob } from './indexing.js'
-import { builtLibrarySettings, indexSettings, isIndexDepth, isMeaningLevel, meaningArgs, saveIndexSettings, textArgs, threadsFor, type IndexDepth, type IndexSettings } from './indexSettings.js'
+import { builtLibrarySettings, indexSettings, isIndexDepth, isMeaningLevel, meaningArgs, NEW_LIBRARY_DEPTH, saveIndexSettings, textArgs, threadsFor, type IndexDepth, type IndexSettings } from './indexSettings.js'
 import { KbError } from './kb.js'
 import {
   addBuiltLibrary, addedDef, builtLibraryDir, checkNewId, getLibrary, libraryIdFor, listLibraries, probeLibrary, setBuildProgressSource,
@@ -163,7 +163,9 @@ export function checkLocalBuild(a: BuildInput): LocalCheck {
     else { create.push(indexDir); steps.push({ name: 'index', ok: true, detail: `${indexDir} does not exist yet; it is created when the build starts.` }) }
   }
 
-  steps.push({ name: 'extract', ok: true, detail: extractDetail(isIndexDepth(a.depth) ? a.depth : indexSettings(id).depth) })
+  // A library not added yet is checked at the depth it would be given.
+  const depth = isIndexDepth(a.depth) ? a.depth : addedDef(id) ? indexSettings(id).depth : NEW_LIBRARY_DEPTH
+  steps.push({ name: 'extract', ok: true, detail: extractDetail(depth) })
   return { ok: steps.every(s => s.ok), steps, create, sourceRoot: source, indexDir, managed, id }
 }
 
@@ -395,14 +397,18 @@ export function enrichSteps(def: LibraryDef, scope: Scope, s: IndexSettings = bu
   }
 }
 
-async function enrich(def: LibraryDef, scope: Scope, progress: Progress, s = builtLibrarySettings(def.id)): Promise<void> {
+/** `live` is a first build, on the index search already reads. */
+async function enrich(def: LibraryDef, scope: Scope, progress: Progress, s = builtLibrarySettings(def.id), live = false): Promise<void> {
   const steps = enrichSteps(def, scope, s)
   if (!steps.text) return
   progress('Extracting text')
   if (steps.documents) await runPreExtract(steps.documents, m => console.warn(m))
   await run(PYTHON_BIN, steps.text, undefined, s.ocr, def.id)
   if (steps.meaning) {
-    progress('Embedding text')
+    // Search by meaning comes last. Its words are found now, so search
+    // reads them while it runs and says meaning is still being computed.
+    if (live) { staleProbe(def.indexRoot); await probeLibrary(def.indexRoot).catch(() => {}) }
+    progress('Computing search by meaning')
     await run(PYTHON_BIN, steps.meaning, undefined, false, def.id)
   }
 }
@@ -462,7 +468,7 @@ async function fullBuild(id: string, job: IndexJob): Promise<{ ms: number }> {
     await fsp.rename(built, tree)
     await fsp.rm(old, { recursive: true, force: true })
     await fsp.rm(stage, { recursive: true, force: true })
-    if (!replacing) await enrich(def, {}, progress, s)
+    if (!replacing) await enrich(def, {}, progress, s, true)
     // Its words were written without the converter's provenance line.
     await markTextClean(tree)
     progress('Counting')
@@ -605,7 +611,9 @@ export async function addLocalBuild(a: BuildInput): Promise<{ id: string; job: I
     id: c.id, label, indexRoot: path.join(c.indexDir, path.basename(src)), sourceRoot: src,
     build: { indexDir: c.indexDir, cacheRoot: path.join(builtLibraryDir(c.id), 'extract'), managed: c.managed, state: 'building', error: null, builtAt: null, files: null, dirs: null },
   })
-  if (a.depth !== undefined || a.meaning !== undefined) await saveIndexSettings(c.id, a.depth !== undefined ? { depth: a.depth } : { meaning: a.meaning })
+  // The depth is stored with the library, the default included, so a later
+  // change of the default leaves it as it was built.
+  await saveIndexSettings(c.id, a.depth !== undefined ? { depth: a.depth } : a.meaning !== undefined ? { meaning: a.meaning } : { depth: NEW_LIBRARY_DEPTH })
   return { id: c.id, job: startBuild(c.id) }
 }
 

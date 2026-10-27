@@ -4,7 +4,7 @@ import {
 } from '@parallelworks/ui'
 import { AddIcon, CloseIcon } from '@parallelworks/ui/icons'
 import { api, type BuildProgress, type IndexDepth, type SettingsLibrary, type UserLibrary } from '../api'
-import { DEFAULT_LIBRARY_DEPTH, IndexDepthSelect, depthLabel } from './IndexDepth'
+import { IndexDepthSelect, UNSTORED_LIBRARY_DEPTH, depthLabel } from './IndexDepth'
 import { reloadAppConfig, useAppConfig } from '../config'
 import { AddLibrary } from './AddLibrary'
 import { FolderPicker, errText, json, type SetupStatus } from './PrimaryFolder'
@@ -271,7 +271,7 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
           : b.error ? { tone: 'warning', text: 'Ready; the last pass failed', notes }
           : { tone: 'success', text: 'Ready', notes },
         fullText: l.caps.fullText, meaning: l.caps.vectors,
-        depth: { value: l.depth ?? DEFAULT_LIBRARY_DEPTH, reload: loadLibs, applies: 'sync' },
+        depth: { value: l.depth ?? UNSTORED_LIBRARY_DEPTH, reload: loadLibs, applies: 'sync' },
         actions: (
           <>
             <Button variant="secondary" size="sm" loading={busy === l.id} disabled={busy !== null || isBuilding(b.state)}
@@ -337,7 +337,7 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
           : l.error ? { tone: 'warning', text: 'Ready; the last build failed', notes }
           : { tone: 'success', text: 'Ready', notes },
         fullText: !!l.fullText, meaning: !!l.vectors,
-        depth: { value: l.depth ?? DEFAULT_LIBRARY_DEPTH, reload: loadUser, applies: 'rebuild' },
+        depth: { value: l.depth ?? UNSTORED_LIBRARY_DEPTH, reload: loadUser, applies: 'rebuild' },
         actions: (
           <>
             <Button variant="secondary" size="sm" loading={busy === l.id} disabled={busy !== null || isBuilding(l.state)}
@@ -498,9 +498,9 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
             <IconButton icon={<CloseIcon />} label="Close" size="sm" onClick={() => setAdding(false)} />
           </div>
           <AddLibrary options={options} browse={!!standalone}
-            onAdded={(lib, started) => added(started
-              ? `Building ${lib.label}. Its progress shows in the list; it is searchable once the build is done.`
-              : `Added ${lib.label}. It is in the Library switcher.`)}
+            onAdded={(lib, started, here) => added(!started ? `Added ${lib.label}. It is in the Library switcher.`
+              : here ? `Building ${lib.label}. Its progress shows in the list. It is searchable by name once its folders are indexed; text and meaning, where its depth has them, follow in that order.`
+              : `Building ${lib.label}. Its progress shows in the list; it is searchable once the build is done.`)}
             onStarted={() => added('Building the index on the cluster. It appears in the Library switcher when it is ready.')} />
         </section>
       )}

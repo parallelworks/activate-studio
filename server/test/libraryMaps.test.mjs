@@ -145,7 +145,7 @@ test('a library the Studio builds gets a map of its own after its meaning phase,
 })
 
 test('a library at a depth without meaning has no map and says so; a new depth with meaning makes one', { skip }, async () => {
-  const r = await call('POST', '/api/libraries/build', { sourceRoot: desk, label: 'Desktop', create: true })
+  const r = await call('POST', '/api/libraries/build', { sourceRoot: desk, label: 'Desktop', create: true, depth: 'ocr' })
   assert.equal(r.status, 200, JSON.stringify(r.body))
   deskId = r.body.library.id
   await waitReady(deskId)

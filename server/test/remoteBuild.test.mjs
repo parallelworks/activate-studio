@@ -263,6 +263,26 @@ test('over pw ssh: a system from the dropdown, built with the platform key', { s
   assert.equal((await post('/api/user-libraries/pw/build/test', { cluster: '-oProxyCommand=x', sourceRoot: '~/w' })).status, 400)
 })
 
+test('a build there starts at Text + OCR, also where the Studio\'s embedding model is there', { skip }, async () => {
+  // Search does not read vectors made on another system yet, so a Meaning
+  // stop is only made there when chosen.
+  const model = path.join(homes['cluster-a'], '.activate-studio', 'models', 'minilm384.gguf')
+  write(model, '')
+  try {
+    const t = (await post('/api/user-libraries/pw/build/test', { cluster: 'cluster-a', sourceRoot: '~/work', indexRoot: '~/indexes/plain' })).body
+    assert.match(t.steps.find(s => s.name === 'extract').detail, /embeddings are made with the model/)
+    const r = await post('/api/user-libraries/pw/build', { cluster: 'cluster-a', sourceRoot: '~/work', indexRoot: '~/indexes/plain', create: true })
+    assert.equal(r.status, 200, JSON.stringify(r.body))
+    assert.equal(r.body.depth, 'ocr')
+    const stored = JSON.parse(fs.readFileSync(path.join(process.env.INDEX_BASE, 'indexing.json'), 'utf8')).libraries[r.body.id]
+    assert.equal(stored.depth, 'ocr', 'stored with it, so a later default leaves it as built')
+    const l = await waitFor(r.body.id)
+    assert.equal(l.state, 'ready', l.error ?? '')
+    const state = fs.readdirSync(path.join(homes['cluster-a'], '.activate-studio', 'builds')).find(b => b.startsWith(r.body.id))
+    assert.equal(fs.existsSync(path.join(homes['cluster-a'], '.activate-studio', 'builds', state, 'embed.py')), false, 'embed.py is not sent')
+  } finally { fs.rmSync(model) }
+})
+
 test('a build at the Names depth reads nothing from inside the files there', { skip }, async () => {
   const r = await post('/api/user-libraries/ssh/build', { ...box, sourceRoot: '~/project', indexRoot: '~/names-only', label: 'Names only', depth: 'names', create: true })
   assert.equal(r.status, 200, JSON.stringify(r.body))
