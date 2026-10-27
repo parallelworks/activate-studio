@@ -2,6 +2,90 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.179 (2026-10-27)
+
+### Maps for any library: a semantic map and a corpus topology per library (#607)
+
+The corpus topology and the semantic map on the Stats page were drawn from the main folder only. A Studio whose main folder holds a few files and whose large libraries are elsewhere showed a nearly empty map. Each map now shows one library, picked beside its title.
+
+**Picker**
+
+- `LibraryScope` gains a one-library form (`single`): the same button, with a radio list that closes on a pick. It shows only when there is more than one library.
+- Each map keeps its own choice in this browser (`web/src/mapLibrary.ts`, `ade-map-library-topology` and `ade-map-library-semantic`). A library that is gone falls back to the default.
+- Defaults: the topology starts on the main folder. The semantic map starts on the library whose map has the most files (`GET /api/semantic-maps`), else a library with vectors, else the main folder.
+- With one library the page is unchanged, and it still uses `/api/kb/topology` and `/api/kb/semantic-map`.
+
+**Semantic map per library** (`server/src/semanticMap.ts`)
+
+- Each library on this computer with vectors has its own map state and map folder. The main folder's map stays in `INDEX_DIR/semantic-map`. Another library's goes in `INDEX_BASE/libraries/<id>/semantic-map`, and `removeLibrary` deletes it through a new `onLibraryRemoved` hook in `libraries.ts`.
+- A library built here is mapped 5 s after its build when its depth includes meaning, 5 s after a sync that applied a new depth with meaning, and 10 minutes after other syncs. Rebuilds are coalesced per library, as before.
+- Routes, keyed by the viewer as other library routes are:
+  - `GET /api/libraries/:id/semantic-map`, `.../cluster/:c` and `.../neighbors`. These return 404 for an unknown library.
+  - `GET /api/semantic-maps` for the picker.
+  - The `/api/kb/semantic-map` routes are kept.
+- The overview carries `library` (`kind`: main, built, connected or remote; `depth`; `vectors`). The reasons for no map are:
+  - `off`: a depth without search by meaning. The page says "Desktop has no search by meaning. Set its depth to Meaning on documents to draw it here; that reads its documents once, in the background." For the main folder or a library built here, a **Set to Meaning on documents** button calls `PUT /api/libraries/:id/depth`. The page then follows the build.
+  - `connected`: an index connected as it is, with no vectors the Studio reads. The page says "This index was built elsewhere and has no meaning vectors the Studio can read."
+  - `remote`: a library on another system, which keeps its vectors there.
+  - `none` and `failed`, as before. While a map is being built the page says so and polls every 8 s, or every 30 s while it waits for embeddings.
+- Not covered: a connected index whose vectors are only in another schema's tables (`ext_vectors_by_file`). The map reads the Studio's own `gvec` tables. Such an index reports `connected`, including when a build attempt found nothing it could read.
+- The 3D view, links, legends, cluster names and nearest-file lines from #590 work per library. Neighbor lookups and their caches are per library, and opening a file from another library's map opens it in that library.
+
+**Topology per library** (`server/src/topology.ts`)
+
+- One aggregate `gufi_query` per folder asked for: `-I`/`-K` create the tables, `-E` reads `vrsummary`, `-J` and `-G` sum.
+  - The path below the folder is taken by string length from `rpath(sname, sroll)`. `level()` reports a rolled-in directory at its parent's level, so it is not used.
+  - A recursive CTE cuts the path to six parts, so each directory's totals go to its ancestor six levels down. A folder at that depth holds everything below it.
+  - The answer is cut a level shallower while it has more than 20,000 rows.
+- The query runs where the index is: here, or over ssh through the existing remote transport as `gufi_query` alone, so a host that runs nothing else answers it.
+- Answers are kept 2 minutes for a library here and 10 for a remote one. `refresh=1` asks again.
+- `GET /api/libraries/:id/topology?dir=&refresh=1` is added, and `/api/kb/topology` keeps working.
+- The treemap asks again below a folder as you open one near the last level fetched. It merges the rows and shows the library's name as the first crumb.
+
+**Measured**
+
+- A 22,001-file index (2,448 folders) on the test's fake host, whose login runs only `gufi_query`, answers the topology in 91 ms. That is one command; the cached read sends none, and a refresh sends one.
+- In a local demo, a 14,599-file library at Names depth answered in 26 ms (582 rows).
+- In the demo:
+  - The 219-file library built at Meaning on documents got its map after its build.
+  - A names-only library set to Meaning on documents from the map's button drew its map 16 s after the click.
+
+**Tests**
+
+- Server, `test/libraryMaps.test.mjs` (real GUFI, map builder stubbed, ssh through the spawn seam):
+  - a built library's map is made after its build with meaning, into its own folder, and is read at its address;
+  - a depth without meaning gives `off`, and a new depth with meaning makes the map;
+  - the picker listing;
+  - a connected index without vectors gives `connected` and refuses a depth;
+  - nearest files come from the library's own index (sqlite-vec);
+  - removal deletes the map;
+  - topology of the main folder and of a built library;
+  - the 22,001-file remote topology: totals, the six-level cut, the cache and refresh, and drill-in;
+  - a remote library's semantic map and neighbors give `remote`.
+- Web:
+  - the default library;
+  - switching and remembering a library;
+  - each empty state, and the depth button's request;
+  - opening a file in its library;
+  - the topology picker with drill-in.
+  - The old empty-state test expects the new wording.
+- `check_app.sh`: on the macOS runner's gufi_query-only ssh host, reads that library's topology and checks that nothing but `gufi_query` ran there.
+- Full suites pass locally: server 672 tests (663 pass, 9 skipped), testdata 21, web 299.
+
+Docs: the Stats paragraph in `docs/HELP.md`, and the semantic map and new endpoints in `docs/REFERENCE.md`.
+
+
+**Follow-up commits: three fixes found while testing this**
+
+- *What a library holds, counted.* Words and vector tables were looked for in a sample of twelve directory databases. A library whose vectors sit in a few folders past the sample was recorded with none, so Search skipped it by meaning and said its index had no vectors. In the demo, a 219-file library with vectors in 184 of its 1,300 directories lost every meaning result. What the sample misses is now counted over the whole tree in the background: one aggregate `gufi_query` over each directory's `tree.sqlite_master`, which takes about 50 ms for 1,300 directories. The count runs after every build or sync and at most hourly otherwise, is recorded as `exactAt`, and is discarded and redone if the tree changed during the count.
+  - The rule (`lacks`): Search, the left-out notes, Query's note, the semantic map and the assistant's library list treat a local library as missing words or vectors only once that count found none. Until then Search looks there.
+  - Libraries on other systems are unchanged.
+  - Tests: vectors in one directory and words in another, both past the sample; an index with none; a stale mark; a change during a count.
+- *Cluster names from whole words.* `embed.py` cuts passages every 880 characters wherever that falls, so names included fragments such as "eef" and "onar". Where passages overlap, the characters around the cut now say whether a word was split; otherwise the cut word is dropped. A test runs `embed.py`'s own chunker over 400 texts, including texts with skipped passages, and finds no fragments; a map built from those passages names only whole words.
+- *Treemap cells fill their parent.* Each squarified row took its share of the full byte total out of the remaining rectangle instead of the whole rectangle. Every row after the first came out too small, and one dominant folder left most of the rectangle empty. Area is now bytes at one scale, and the last row and last cell take what is left. Layout tests cover skewed sizes (90%, 99.9%, 97%, a 200-folder power law) in three rectangle shapes. They check that cells stay inside the parent, each cell's area matches its byte share, no two cells overlap, and the areas add up to the parent's. The old layout fails these tests.
+
+Suites after these commits: server 676 (672 pass, 4 skipped, with numpy here), testdata 21, web 318.
+
 ## v1.178 (2026-10-27)
 
 ### A connection per set of ssh options, and the Mac app check on server changes (#605)
@@ -27,6 +111,10 @@ The v1.177 Mac app build failed in `deploy/mac/check_app.sh` with "a library's s
 - Both tests fail on main and pass with this change. The test that checks a jump host gets its own socket now also checks that an options-only library gets its own.
 
 Server suite on Node 26: 665 tests, 656 pass, 9 skipped, 0 fail.
+
+### Change log through v1.178 (#606)
+
+Regenerated with `node scripts/release-notes.mjs --changelog --next v1.178` before tagging v1.178.
 
 ## v1.177 (2026-10-27)
 
