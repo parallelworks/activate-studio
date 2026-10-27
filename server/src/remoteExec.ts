@@ -252,7 +252,7 @@ export function sshArgv(site: string, command: string): string[] {
 function sshBase(site: string, extra: string[] = []): string[] {
   const h = parseSshSite(site)
   if (!h) throw new KbError(400, `${site} is not an ssh site`)
-  return ['-T', ...h.options, '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15', '-o', 'ServerAliveInterval=30', ...controlArgs(h),
+  return ['-T', ...h.options, '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15', '-o', 'ServerAliveInterval=30', '-o', 'Compression=yes', ...controlArgs(h),
     ...extra, ...(h.port != null ? ['-p', String(h.port)] : []), h.destination]
 }
 
@@ -564,7 +564,11 @@ function open(id: string, site: string, key: string): Channel {
     for (const p of waiting) { clearTimeout(p.timer); p.reject(new KbError(502, `${siteName(site)}: ${said || why}`)) }
   }
   child.stdout.on('data', d => {
-    ch.buf += String(d)
+    const s = String(d)
+    ch.buf += s
+    // A large answer is one line arriving in many pieces: look for its end
+    // only in a piece that has one.
+    if (!s.includes('\n')) return
     let nl: number
     while ((nl = ch.buf.indexOf('\n')) >= 0) {
       const line = ch.buf.slice(0, nl).trim(); ch.buf = ch.buf.slice(nl + 1)

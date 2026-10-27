@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { currentLibrary, setLibrary, type PublicLibrary } from '../src/api'
 import {
-  CAMERA0, clampView, defaultMapLibrary, nearestIndex, pan3d, project3d, SemanticMap, shortLabels, squarify, TopologyMap, VIEW0, viewPlane, zoom3d, zoomAround,
+  ago, CAMERA0, clampView, defaultMapLibrary, nearestIndex, remoteProgress, pan3d, project3d, SemanticMap, shortLabels, squarify, TopologyMap, VIEW0, viewPlane, zoom3d, zoomAround,
   type Camera, type MapCluster, type MapOverview, type TreeNode,
 } from '../src/components/CorpusMaps'
 import { resetMapLibrariesForTests } from '../src/mapLibrary'
@@ -504,7 +504,7 @@ describe('maps of each library', () => {
       '/api/libraries/papers/semantic-map': { ...OVERVIEW, files: 12_000, library: { id: 'papers', label: 'Papers', kind: 'built', depth: 'meaning-documents', vectors: true } },
       '/api/libraries/desk/semantic-map': { available: false, reason: 'off', building: false, library: { id: 'desk', label: 'Desktop', kind: 'built', depth: 'ocr', vectors: false } },
       '/api/libraries/lab/semantic-map': { available: false, reason: 'connected', library: { id: 'lab', label: 'Lab index', kind: 'connected', depth: null, vectors: false } },
-      '/api/libraries/far/semantic-map': { available: false, reason: 'remote', library: { id: 'far', label: 'Scratch', kind: 'remote', depth: null, vectors: false } },
+      '/api/libraries/far/semantic-map': { available: false, reason: 'remote-none', library: { id: 'far', label: 'Scratch', kind: 'remote', depth: null, vectors: false, host: 'cluster-a' } },
     }
     vi.stubGlobal('fetch', vi.fn(async (input: string, init?: RequestInit) => {
       const url = String(input)
@@ -557,7 +557,12 @@ describe('maps of each library', () => {
     expect(await screen.findByText('This index was built elsewhere and has no meaning vectors the Studio can read.')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Set to Meaning on documents' })).toBeNull()
     await pick('Scratch (on cluster-a)')
-    expect(await screen.findByText('Scratch is on another system, which keeps its vectors, so there is no map of it here.')).toBeInTheDocument()
+    expect(await screen.findByText('Scratch has no meaning vectors on cluster-a, so there is no map of it.')).toBeInTheDocument()
+    // One the Studio built there says its build made none.
+    overviews['/api/libraries/far/semantic-map'] = { ...overviews['/api/libraries/far/semantic-map'], library: { id: 'far', label: 'Scratch', kind: 'remote', depth: 'meaning-documents', vectors: false, host: 'cluster-a' } }
+    await pick('Lab index (read only)')
+    await pick('Scratch (on cluster-a)')
+    expect(await screen.findByText('Scratch has no meaning vectors on cluster-a, so there is no map of it. Its last build there made none.')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Set to Meaning on documents' })).toBeNull()
   })
 
@@ -590,5 +595,104 @@ describe('maps of each library', () => {
     expect(localStorage.getItem('ade-map-library-topology')).toBe('far')
     await pick('Lab index (read only)')
     expect(await screen.findByText('Lab index has no index yet, so there is nothing to draw.')).toBeInTheDocument()
+  })
+})
+
+describe('the map of a library on another system', () => {
+  const FAR = { id: 'far', label: 'Scratch', kind: 'remote' as const, depth: null, vectors: true, host: 'cluster-a' }
+  let calls: { url: string; method: string }[]
+  let overview: MapOverview
+  let afterRefresh: MapOverview
+  beforeEach(() => {
+    calls = []
+    resetMapLibrariesForTests()
+    resetScopesForTests()
+    act(() => setLibrary('kb'))
+    localStorage.setItem('ade-map-library-semantic', 'far')
+    HTMLCanvasElement.prototype.getContext = (() => null) as never
+    vi.stubGlobal('matchMedia', (q: string) => ({ matches: false, media: q, addEventListener() {}, removeEventListener() {} }))
+    vi.stubGlobal('fetch', vi.fn(async (input: string, init?: RequestInit) => {
+      const url = String(input)
+      const method = init?.method ?? 'GET'
+      calls.push({ url, method })
+      if (url === '/api/semantic-maps') return reply({ maps: [{ id: 'far', available: true, files: 5 }] })
+      if (url === '/api/libraries/far/semantic-map/refresh' && method === 'POST') {
+        const now = afterRefresh
+        afterRefresh = { ...overview, building: false }
+        overview = now
+        return reply(now)
+      }
+      if (url === '/api/libraries/far/semantic-map') return reply(overview)
+      if (url === '/api/libraries/far/depth' && method === 'PUT') return reply({ id: 'far', depth: 'meaning-documents', meaning: 'documents' })
+      return reply({}, 404)
+    }))
+  })
+  afterEach(() => { vi.unstubAllGlobals(); localStorage.clear() })
+
+  it('says the map is a sample of the files there and when it was fetched, and fetches it again on Refresh', async () => {
+    const fetchedAt = new Date(Date.now() - 5 * 60_000).toISOString()
+    overview = { ...OVERVIEW, builtAt: 'one', files: 5, of: 60, model: 'minilm384', library: FAR,
+      remote: { host: 'cluster-a', fetchedAt, checkedAt: fetchedAt, models: [{ model: 'minilm384', files: 60 }, { model: 'minilm-l6-mean-int8', files: 3 }] } }
+    afterRefresh = { ...overview, building: true, progress: { phase: 'fetching', files: 5, of: 60 } }
+    render(<SemanticMap onOpen={() => {}} libraries={LIBS} />)
+    expect(await screen.findByText('A sample of 5 of 60 files with vectors on cluster-a, made with minilm384, fetched 5 minutes ago. 3 files made with another model are left out.')).toBeInTheDocument()
+    expect(screen.getByText('4 of 5 files shown; click a cluster for all of its files.')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+    expect(await screen.findByText(/Fetching the vectors of a sample of 5 of 60 files from cluster-a\./)).toBeInTheDocument()
+    expect(screen.getByText('Refreshing…')).toBeInTheDocument()
+    expect(calls).toContainEqual({ url: '/api/libraries/far/semantic-map/refresh', method: 'POST' })
+    // The map stays on screen while the new one is made.
+    expect(document.querySelector('canvas.semantic-map')).not.toBeNull()
+  })
+
+  it('says when every file there is mapped, and why the last refresh failed', async () => {
+    overview = { ...OVERVIEW, builtAt: 'one', files: 9, of: 9, library: FAR, error: 'cluster-a: Connection closed', remote: { host: 'cluster-a', fetchedAt: null, checkedAt: null } }
+    render(<SemanticMap onOpen={() => {}} libraries={LIBS} />)
+    expect(await screen.findByText('All 9 files with vectors on cluster-a. The last refresh failed: cluster-a: Connection closed.')).toBeInTheDocument()
+  })
+
+  it('says when there are too few files there for a map', async () => {
+    overview = { available: false, reason: 'remote-none', building: false, of: 2, library: FAR }
+    render(<SemanticMap onOpen={() => {}} libraries={LIBS} />)
+    expect(await screen.findByText('Scratch has only 2 files with meaning vectors on cluster-a, too few for a map.')).toBeInTheDocument()
+  })
+
+  it('shows how far a first map has got', async () => {
+    overview = { available: false, reason: 'none', building: true, progress: { phase: 'counting' }, library: FAR }
+    render(<SemanticMap onOpen={() => {}} libraries={LIBS} />)
+    expect(await screen.findByText('Counting the files with meaning vectors on cluster-a.')).toBeInTheDocument()
+    expect(document.querySelector('canvas')).toBeNull()
+  })
+
+  it('says why the vectors could not be fetched, and tries again', async () => {
+    overview = { available: false, reason: 'failed', building: false, error: 'cluster-a: Connection closed', library: FAR }
+    afterRefresh = { available: false, reason: 'none', building: true, progress: { phase: 'counting' }, library: FAR }
+    render(<SemanticMap onOpen={() => {}} libraries={LIBS} />)
+    expect(await screen.findByText('The vectors could not be fetched from cluster-a: cluster-a: Connection closed.')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
+    expect(await screen.findByText('Counting the files with meaning vectors on cluster-a.')).toBeInTheDocument()
+    expect(calls).toContainEqual({ url: '/api/libraries/far/semantic-map/refresh', method: 'POST' })
+    expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull()
+  })
+
+  it('offers the depth of a library the Studio builds there, which applies at its next Rebuild', async () => {
+    overview = { available: false, reason: 'off', building: false, library: { ...FAR, depth: 'ocr', vectors: false } }
+    render(<SemanticMap onOpen={() => {}} libraries={LIBS} />)
+    expect(await screen.findByText('Scratch has no search by meaning. Set its depth to Meaning on documents to draw it here; it applies at its next Rebuild.')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Set to Meaning on documents' }))
+    expect(await screen.findByText('Scratch reads its documents for search by meaning at its next Rebuild, in Libraries; the map appears after that.')).toBeInTheDocument()
+    expect(calls).toContainEqual({ url: '/api/libraries/far/depth', method: 'PUT' })
+  })
+
+  it('words the time since a fetch and each step of one', () => {
+    const now = Date.parse('2026-10-27T12:00:00Z')
+    expect(ago('2026-10-27T11:59:40Z', now)).toBe('just now')
+    expect(ago('2026-10-27T11:59:00Z', now)).toBe('1 minute ago')
+    expect(ago('2026-10-27T09:00:00Z', now)).toBe('3 hours ago')
+    expect(ago('2026-10-24T12:00:00Z', now)).toBe('3 days ago')
+    expect(ago(null, now)).toBe('')
+    expect(remoteProgress({ phase: 'fetching', files: 900, of: 900 }, 'cluster-a')).toBe('Fetching the vectors of 900 files from cluster-a.')
+    expect(remoteProgress({ phase: 'drawing', files: 50_000 }, 'cluster-a')).toBe('Drawing the map from 50,000 files.')
+    expect(remoteProgress(null, '')).toBe('Making the map from the vectors on its system.')
   })
 })

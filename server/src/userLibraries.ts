@@ -160,6 +160,26 @@ function updateDef(owner: string, id: string, patch: Partial<UserLibraryDef>): U
 
 export const remoteRootOf = (owner: string, id: string) => `${REMOTE_PREFIX}${ownerHash(owner)}:${id}`
 
+/** Where the Studio keeps what it makes here of a library on another
+ *  system (its semantic map, and the vectors fetched for it): in its
+ *  owner's folder, so two people's libraries of the same name stay apart. */
+export function remoteMapHome(root: string): string {
+  const [hash, id] = root.slice(REMOTE_PREFIX.length).split(':')
+  if (!root.startsWith(REMOTE_PREFIX) || !/^[0-9a-f]{16}$/.test(hash ?? '') || !ID_RE.test(id ?? '')) throw new KbError(400, 'not a library on another system')
+  return path.join(INDEX_BASE, 'users', hash, 'maps', id)
+}
+
+/** Set by modules that keep something per library on another system
+ *  (semanticMap.ts): told, by its root, when one is removed, and when a
+ *  build there finished with a new index. */
+const removedHooks = new Set<(root: string) => void>()
+const builtHooks = new Set<(root: string) => void>()
+export function onUserLibraryRemoved(fn: (root: string) => void): void { removedHooks.add(fn) }
+export function onRemoteIndexBuilt(fn: (root: string) => void): void { builtHooks.add(fn) }
+const tell = (hooks: Set<(root: string) => void>, root: string) => {
+  for (const fn of hooks) { try { fn(root) } catch (e) { console.warn(`${root}: ${(e as Error).message}`) } }
+}
+
 const SSH_SINGLE_USER = 'Libraries over ssh use the ssh keys of the account the Studio runs as, so they are offered only on a Studio with sign-in off.'
 /** Whether a viewer may use libraries over ssh: only the one user of a
  *  Studio with sign-in off. */
@@ -1122,12 +1142,15 @@ async function recheckExisting(viewerId: string | null | undefined, owner: strin
     p = await probePw(pwSpec({ cluster: d.site, indexRoot: d.indexRoot, gufiBin: d.gufiBin, sourceRoot: d.sourceRoot }), pwKey(viewerId).key)
   }
   const failed = p.steps.find(s => !s.ok)
-  return updateDef(owner, d.id, failed ? { error: failed.detail } : {
+  const next = updateDef(owner, d.id, failed ? { error: failed.detail } : {
     error: null, os: p.os || d.os || null, gufiVersion: p.gufiVersion ?? d.gufiVersion ?? null,
     directories: p.directories ?? d.directories, files: p.files ?? d.files, builtAt: p.builtAt ?? d.builtAt,
     // Whether the login runs a shell can change either way between tests.
     shell: p.shell === false ? false : undefined, fullText: p.fullText ?? d.fullText,
   })!
+  // The index there was made again since the last test.
+  if (!failed && p.builtAt && p.builtAt !== d.builtAt) tell(builtHooks, remoteRootOf(owner, d.id))
+  return next
 }
 
 // ---- building on the remote system, over ssh or pw ssh ----
@@ -1266,6 +1289,7 @@ function finishBuild(owner: string, d: UserLibraryDef, st: ReturnType<typeof par
     directories: Number(m.directories) || 0, files: Number(m.files) || 0, fullText: m.fullText === true, vectors: m.vectors === true,
     build: { ...b, progress: null },
   })
+  tell(builtHooks, remoteRootOf(owner, d.id))
   return true
 }
 
@@ -1331,6 +1355,9 @@ export function removeUserLibrary(viewerId: string | null | undefined, id: strin
   if (!defs.some(d => d.id === id)) throw new KbError(404, 'no such library')
   saveUserLibraries(owner, defs.filter(d => d.id !== id))
   void forgetIndexSettings(id)
+  const root = remoteRootOf(owner, id)
+  fs.rmSync(remoteMapHome(root), { recursive: true, force: true })
+  tell(removedHooks, root)
 }
 
 /** Changes the ssh options of a library over ssh, after a connection test

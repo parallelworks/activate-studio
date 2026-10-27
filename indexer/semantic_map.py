@@ -6,7 +6,9 @@ Reads each folder's passage vectors straight from sqlite-vec's storage in
 its db.db (gvec_rowids says which chunk and offset hold a passage,
 gvec_vector_chunks00 holds the float32 vectors, gvec_chunks marks the
 valid slots), so nothing is dumped as text and memory stays bounded: one
-mean vector per file, kept in a scratch file rather than in memory.
+mean vector per file, kept in a scratch file rather than in memory. For an
+index on another system, --vectors reads the file means the server fetched
+from it instead (server/src/remoteMap.ts): one JSON line per file.
 
 Then: the mean of each file's passages; PCA (an SVD of at most --fit files,
 then every file projected) to three components for the map and sixteen for
@@ -355,9 +357,50 @@ def unit(values: np.ndarray) -> np.ndarray:
     return np.clip((values - lo) / span, 0, 1)
 
 
-def build(index: Path, out: Path, sample: int, fit: int) -> dict:
+def index_files(index: Path, seen: dict):
+    """(path, mean vector, model, terms) of each file with vectors in an
+    index tree, folder by folder; counts the folders' db.db in seen['dbs']."""
+    for dirpath, dirnames, filenames in os.walk(index):
+        dirnames[:] = sorted(d for d in dirnames if not d.startswith('.'))
+        if 'db.db' not in filenames:
+            continue
+        seen['dbs'] += 1
+        rows, _ = folder_vectors(os.path.join(dirpath, 'db.db'))
+        rel = os.path.relpath(dirpath, index)
+        for fname, vec, m, terms in rows:
+            yield (fname if rel == '.' else f'{rel}/{fname}'), vec, m, terms
+
+
+def fetched_files(vectors: Path, model: str):
+    """(path, mean vector, model, terms) of each file fetched from an index
+    on another system: a JSON line each with its path (p), the length of its
+    mean vector (r), the mean normalized and quantized to int8 by
+    sqlite-vec's 'unit' scale, as hex (v), and, for some, the start of its
+    text (t). sqlite-vec truncates (x + 1) * 127.5 - 128, so each value is
+    read back at the middle of its step."""
+    with vectors.open() as f:
+        for line in f:
+            try:
+                row = json.loads(line)
+                q = np.frombuffer(bytes.fromhex(row['v']), dtype=np.int8).astype(np.float64)
+            except (ValueError, KeyError, TypeError):
+                continue
+            if len(q) != DIMS:
+                continue
+            x = (q + np.sign(q) * 0.5 + 128) / 127.5 - 1
+            norm = float(np.linalg.norm(x))
+            scale = float(row.get('r') or 1.0) / norm if norm > 0 else 0.0
+            text = row.get('t') or ''
+            yield row['p'], (x * scale).astype(np.float32), model, file_terms(whole_words([text])) if text else []
+
+
+def build(files, out: Path, sample: int, fit: int, of: int | None = None) -> dict:
+    """The map of `files` (index_files or fetched_files) into `out`. `of` is
+    how many files with vectors there are where a sample of them was fetched."""
     t0 = time.monotonic()
     rng = np.random.default_rng(0)
+    seen = {'dbs': 0}
+    rows = files(seen)
     scratch = Path(tempfile.mkdtemp(prefix='semantic-map-', dir=str(out.parent)))
     try:
         means_path = scratch / 'means.f32'
@@ -368,30 +411,21 @@ def build(index: Path, out: Path, sample: int, fit: int) -> dict:
         n_text = 0
         paths: list[str] = []
         models: dict[str, int] = {}
-        dbs = 0
         with means_path.open('wb') as means, terms_path.open('w') as terms_out:
-            for dirpath, dirnames, filenames in os.walk(index):
-                dirnames[:] = sorted(d for d in dirnames if not d.startswith('.'))
-                if 'db.db' not in filenames:
-                    continue
-                dbs += 1
-                rows, model = folder_vectors(os.path.join(dirpath, 'db.db'))
-                if not rows:
-                    continue
-                models[model] = models.get(model, 0) + len(rows)
-                rel = os.path.relpath(dirpath, index)
-                for fname, vec, m, terms in rows:
-                    paths.append(fname if rel == '.' else f'{rel}/{fname}')
-                    means.write(vec.tobytes())
-                    terms_out.write(json.dumps(terms, separators=(',', ':')) + '\n')
-                    if terms:
-                        n_text += 1
-                        for t, _ in terms:
-                            df[t] = df.get(t, 0) + 1
+            for path, vec, m, terms in rows:
+                models[m] = models.get(m, 0) + 1
+                paths.append(path)
+                means.write(vec.tobytes())
+                terms_out.write(json.dumps(terms, separators=(',', ':')) + '\n')
+                if terms:
+                    n_text += 1
+                    for t, _ in terms:
+                        df[t] = df.get(t, 0) + 1
                 # A term seen in one file only cannot name a cluster; on a very
                 # large map those are let go so the tally stays bounded.
                 if len(df) > 1_500_000:
                     df = {t: v for t, v in df.items() if v > 1}
+        dbs = seen['dbs']
         read_ms = round((time.monotonic() - t0) * 1000)
         n = len(paths)
         if n < 3:
@@ -453,6 +487,8 @@ def build(index: Path, out: Path, sample: int, fit: int) -> dict:
             'model': model, 'files': n, 'shown': len(points), 'clusters': clusters, 'links': links, 'points': points,
             'ms': round((time.monotonic() - t0) * 1000), 'readMs': read_ms, 'dbs': dbs,
         }
+        if of is not None:
+            overview['of'] = max(of, n)
         with (scratch / 'overview.json').open('w') as f:
             json.dump(overview, f, separators=(',', ':'))
         means_path.unlink()
@@ -464,7 +500,7 @@ def build(index: Path, out: Path, sample: int, fit: int) -> dict:
             out.rename(old)
         scratch.rename(out)
         shutil.rmtree(old, ignore_errors=True)
-        return {k2: overview[k2] for k2 in ('available', 'files', 'shown', 'ms', 'readMs', 'dbs', 'model')} | {'clusters': k}
+        return {k2: overview[k2] for k2 in ('available', 'files', 'shown', 'ms', 'readMs', 'dbs', 'model', 'of') if k2 in overview} | {'clusters': k}
     except BaseException:
         shutil.rmtree(scratch, ignore_errors=True)
         raise
@@ -472,14 +508,22 @@ def build(index: Path, out: Path, sample: int, fit: int) -> dict:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
-    ap.add_argument('--index', required=True, help='the GUFI index tree')
+    src = ap.add_mutually_exclusive_group(required=True)
+    src.add_argument('--index', help='the GUFI index tree')
+    src.add_argument('--vectors', help='file means fetched from an index on another system, one JSON line each')
+    ap.add_argument('--model', default='minilm384', help='with --vectors: the model they come from')
+    ap.add_argument('--of', type=int, help='with --vectors: the files with vectors there, of which these are a sample')
     ap.add_argument('--out', required=True, help='the map folder to write (replaced whole)')
     ap.add_argument('--sample', type=int, default=3000, help='files in the overview (default 3000)')
     ap.add_argument('--fit', type=int, default=20000, help='files the projection is fitted on (default 20000)')
     args = ap.parse_args()
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
-    print(json.dumps(build(Path(args.index), out, max(100, args.sample), max(1000, args.fit))))
+    if args.vectors:
+        files = lambda seen: fetched_files(Path(args.vectors), args.model)
+    else:
+        files = lambda seen: index_files(Path(args.index), seen)
+    print(json.dumps(build(files, out, max(100, args.sample), max(1000, args.fit), args.of)))
     return 0
 
 

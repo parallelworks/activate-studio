@@ -28,7 +28,7 @@ const macBin = path.join(dir, 'mac-bin')
 exe(path.join(dir, 'bin', 'ssh'), `#!/bin/sh
 printf '%s\\n' "$@" > ${sshLog}
 for last; do :; done
-for dest; do case "$dest" in -*|BatchMode=*|ConnectTimeout=*|ServerAliveInterval=*|Control*=*|[0-9]*) ;; *) break ;; esac; done
+for dest; do case "$dest" in -*|BatchMode=*|ConnectTimeout=*|ServerAliveInterval=*|Compression=*|Control*=*|[0-9]*) ;; *) break ;; esac; done
 case "$dest" in *mac*) PATH=${macBin}:$PATH; export PATH ;; esac
 exec /bin/sh -c "$last"
 `)
@@ -53,9 +53,9 @@ const share = (destination, port = null) => R.controlArgs({ destination, port })
 
 test('ssh gets no prompts, a bounded connect, keepalives, the port, then the destination and command', () => {
   assert.deepEqual(R.sshArgv(R.sshSite('me@box.example', 2222), 'CMD'),
-    ['-T', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15', '-o', 'ServerAliveInterval=30', ...share('me@box.example', 2222), '-p', '2222', 'me@box.example', 'CMD'])
+    ['-T', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15', '-o', 'ServerAliveInterval=30', '-o', 'Compression=yes', ...share('me@box.example', 2222), '-p', '2222', 'me@box.example', 'CMD'])
   assert.deepEqual(R.sshArgv(R.sshSite('lab-index'), 'CMD'),
-    ['-T', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15', '-o', 'ServerAliveInterval=30', ...share('lab-index'), 'lab-index', 'CMD'])
+    ['-T', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15', '-o', 'ServerAliveInterval=30', '-o', 'Compression=yes', ...share('lab-index'), 'lab-index', 'CMD'])
   // The socket is named by ssh's %C where the folder leaves room, which ssh
   // works out from the host, port and user it connects to: the same
   // arguments, and a socket per host and port once ssh expands them.
@@ -110,9 +110,9 @@ test('the loop starts through the login shell and runs argv as given', async () 
   assert.equal(r.stdout, "it's $HOME|")
   const argv = fs.readFileSync(sshLog, 'utf8').trimEnd().split('\n')
   const n = share('me@linux-box', 2222).length
-  assert.deepEqual(argv.slice(0, 9 + n), ['-T', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15', '-o', 'ServerAliveInterval=30', ...share('me@linux-box', 2222), '-p', '2222'])
-  assert.equal(argv[9 + n], 'me@linux-box')
-  assert.match(argv[10 + n], /^bash -c "\$\(echo [A-Za-z0-9+/=]+ \| base64 -D 2>\/dev\/null \|\| echo [A-Za-z0-9+/=]+ \| base64 -d\)"$/)
+  assert.deepEqual(argv.slice(0, 11 + n), ['-T', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15', '-o', 'ServerAliveInterval=30', '-o', 'Compression=yes', ...share('me@linux-box', 2222), '-p', '2222'])
+  assert.equal(argv[11 + n], 'me@linux-box')
+  assert.match(argv[12 + n], /^bash -c "\$\(echo [A-Za-z0-9+/=]+ \| base64 -D 2>\/dev\/null \|\| echo [A-Za-z0-9+/=]+ \| base64 -d\)"$/)
   // A large output comes back whole: base64 wraps lines on Linux.
   const big = await R.remoteRun(site, '', ['head', '-c', '100000', '/dev/zero'])
   assert.equal(big.raw.length, 100000)
