@@ -201,5 +201,5 @@ export function indexerScript(name: 'enrich.py' | 'embed.py'): string {
 
 /** What a phase reads as, for the progress line. */
 export const PHASE_LABEL: Record<string, string> = {
-  prepare: 'Preparing', index: 'Indexing folders', extract: 'Extracting text', embed: 'Embedding text', count: 'Counting', done: 'Done',
+  prepare: 'Preparing', index: 'Indexing folders', extract: 'Extracting text', embed: 'Computing search by meaning', count: 'Counting', done: 'Done',
 }

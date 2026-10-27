@@ -125,6 +125,22 @@ test('each state that keeps a library out of search, or searches it in part, has
   assert.equal(O.libraryGap(lib({ depth: 'names', caps: { index: true, fullText: false, vectors: false }, build: build() }), want), null, 'names only: words are not expected')
 })
 
+test('during a build, meaning is named as still being computed once its words are read, not as missing vectors', () => {
+  const want = { words: true, meaning: true }
+  const at = (caps, state = 'building') => O.libraryGap(lib({ depth: 'meaning-documents', meaning: 'documents', caps: { index: true, vectors: false, ...caps }, build: build({ state }) }), want)
+  // Names first: words and meaning both wait for the text.
+  assert.deepEqual(at({ fullText: false }), { id: 'x', label: 'Shelf', partial: true,
+    reason: 'words not searched yet: its text is being read; not searched by meaning yet: its text is being read' })
+  // Words read: search covers them, and meaning is what comes last.
+  for (const state of ['building', 'updating']) {
+    const g = at({ fullText: true }, state)
+    assert.deepEqual([g.reason, g.partial], ['not searched by meaning yet: meaning is still being computed', true], state)
+    assert.doesNotMatch(g.reason, /no vectors/)
+  }
+  // Done, with vectors: nothing left out.
+  assert.equal(at({ fullText: true, vectors: true }, 'ready'), null)
+})
+
 test('a folder macOS will not let the Studio read is named with where to allow it', { skip: AS_ROOT && 'root reads everything' }, () => {
   assert.equal(O.deniedReason('/Users/x/Desktop/Shelf', 'darwin'),
     'macOS has not allowed ACTIVATE Studio to read /Users/x/Desktop/Shelf; allow it in System Settings, Privacy & Security, Files and Folders (or Full Disk Access)')

@@ -1933,6 +1933,7 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
    sits over the middle of its name, which wraps within its fifth of the
    width rather than being shortened. */
 .depth-control { max-width: var(--settings-measure); }
+.depth-note { display: block; margin-top: 4px; }
 .depth-scale { position: relative; display: flex; flex-direction: column; gap: 2px; }
 .depth-slider { box-sizing: border-box; padding-inline: 10%; }
 /* Notches on the track (8px down, 4px tall, as the slider draws it) at the

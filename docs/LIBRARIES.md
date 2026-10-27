@@ -66,9 +66,13 @@ Studio can open them), its state, its depth, and its actions. For a library
 the Studio builds (the main folder, and one built here or on a remote
 system) the Depth column is its index depth, Names, Text, Text + OCR,
 Meaning on documents or Meaning on all files, changed in place (`PUT
-/api/libraries/:id/depth`); a built library starts at Text + OCR. For an
-index the Studio only reads, it says what the index has, as built: names,
-text, or text and meaning:
+/api/libraries/:id/depth`). A library built here starts at Meaning on
+documents and one built on a remote system at Text + OCR (both below).
+The depth is stored with the library when it is added, so a later change
+of the default leaves it as it was built, and a library added by an
+earlier version, with no depth stored, keeps what it had: Text + OCR, or
+what its settings said. For an index the Studio only reads, it says what
+the index has, as built: names, text, or text and meaning:
 
 | Kind | Where it comes from | Actions |
 |---|---|---|
@@ -146,9 +150,23 @@ indexed (`server/src/libraryBuild.ts`): `gufi_dir2index -x`, then text
 extraction (`preextract` and `indexer/enrich.py`), then embeddings
 (`indexer/embed.py`) where the model is installed, so full-text and
 semantic search work there, as far as its index depth says (`depth`,
-below the folder on the form: Text + OCR to begin with; at Names only
-`gufi_dir2index` runs). It takes a source folder, an index folder
-(optional), a label, an identifier, and the depth.
+below the folder on the form: Meaning on documents when none is chosen;
+at Names only `gufi_dir2index` runs). It
+takes a source folder, an index folder (optional), a label, an
+identifier, and the depth.
+
+The phases run in order: the folders, then the text, then search by
+meaning, shown on the row as **Computing search by meaning**. A first
+build swaps its tree in as soon as the folders are indexed, so search
+finds the library's names while the rest runs. Once the text is read the
+library is probed again, so search reads its words while meaning is
+computed, and a search by meaning names it with `not searched by meaning
+yet: meaning is still being computed`. Its semantic map is made once it
+is embedded. At a Meaning stop the form notes that search by meaning is
+the slowest phase and that a folder of more than about 500,000 files
+indexes faster at Text + OCR. Nothing counts the files before a build
+(counting them takes a walk of the whole tree), so the note does not
+depend on the folder's size and the default does not change with it.
 
 **Check** (`POST /api/libraries/build/check`) reports four steps: GUFI
 is in `GUFI_BIN`; the source folder is readable, or does not exist yet
@@ -218,7 +236,14 @@ with `~`, which is resolved there. **Build the index**
 (`POST /api/user-libraries/ssh/build` or `.../pw/build`, with
 `{label?, destination | cluster, sourceRoot, indexRoot?, gufiBin?, depth?, create?}`)
 asks before making a folder the user named, and the server tests again
-first.
+first. The depth starts at Text + OCR when none is chosen, stored with
+the library. The build there embeds with the GGUF model through
+sqlite-lembed (`minilm384`), and search reads a remote index's vectors
+only in its walk, which embeds the query with the ONNX model, so those
+vectors are not searched and a Meaning stop would add build time there
+for no results. A Meaning stop can still be chosen, as the form says;
+the vectors are made where `~/.activate-studio/models/minilm384.gguf` is
+on that system.
 
 The build runs on the remote system as a process of its own, detached
 from the session (`setsid` where there is one, `nohup` always), so it

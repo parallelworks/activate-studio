@@ -11,7 +11,7 @@ import { classify, KbError, type FileContent, type KbEntry } from './kb.js'
 import { checkSshOptions, isDirect, jumpOf, noShell, parseSshOptions, reachedHost, reachedKnown, remoteRun, remoteRunOnce, remoteThreads, setDirect, siteName, SSH_DESTINATION, sshOptionsText, sshRoute, sshSite, warmSsh, type RemoteResult } from './remoteExec.js'
 import { noteGufi } from './gufiTrace.js'
 import { getJob, startJob, type Job } from './jobs.js'
-import { depthParts, forgetIndexSettings, indexSettings, meaningArgs, saveIndexSettings, textArgs, type IndexDepth } from './indexSettings.js'
+import { depthParts, forgetIndexSettings, indexSettings, meaningArgs, NEW_REMOTE_LIBRARY_DEPTH, saveIndexSettings, textArgs, type IndexDepth } from './indexSettings.js'
 import { BUILD_CHECK, BUILD_RUN, BUILD_START, BUILD_STATUS, indexerScript, keyValues, parseStatus, PHASE_LABEL } from './remoteBuild.js'
 
 /**
@@ -1219,7 +1219,10 @@ export async function addBuild(viewerId: string | null | undefined, transport: T
     id: newBuildId(id), indexDir: p.indexDir!, sourceRoot: p.sourceRoot!, gufiBin: p.gufiBin!, python: p.python ?? null, model: p.model ?? null,
     startedAt: new Date().toISOString(), progress: { phase: PHASE_LABEL.prepare, done: 0, total: 0, current: null },
   }
-  if (a.depth !== undefined || a.meaning !== undefined) await saveIndexSettings(id, a.depth !== undefined ? { depth: a.depth } : { meaning: a.meaning })
+  // The depth is stored with the library, the default included. That is
+  // Text + OCR (NEW_REMOTE_LIBRARY_DEPTH): search does not read vectors
+  // made on another system yet.
+  await saveIndexSettings(id, a.depth !== undefined ? { depth: a.depth } : a.meaning !== undefined ? { meaning: a.meaning } : { depth: NEW_REMOTE_LIBRARY_DEPTH })
   await startRemote(r.host.site, r.host.key, build, !!p.create?.includes(build.sourceRoot), indexSettings(id).depth)
   const def: UserLibraryDef = {
     id, label, transport, existing: false, site: r.conn.site, destination: r.conn.destination, port: r.conn.port, ...(r.conn.sshOptions.length ? { sshOptions: r.conn.sshOptions } : {}),

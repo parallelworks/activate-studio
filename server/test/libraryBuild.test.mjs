@@ -233,7 +233,7 @@ test('the sync indexes a folder that changed, and drops one that is gone', { ski
 test('the depth is set per library the Studio builds, in Settings, Libraries', { skip }, async () => {
   const lib = id => call('GET', '/api/libraries').then(r => r.body.libraries.find(l => l.id === id))
   assert.deepEqual([(await lib('kb')).depth, (await lib('kb')).meaning], ['meaning-documents', 'documents'], 'the main folder starts at Meaning on documents')
-  assert.deepEqual([(await lib(papersId)).depth, (await lib(papersId)).meaning], ['ocr', 'off'], 'another library starts at Text + OCR')
+  assert.deepEqual([(await lib(papersId)).depth, (await lib(papersId)).meaning], ['meaning-documents', 'documents'], 'a library built here starts there too')
   let r = await call('PUT', `/api/libraries/${papersId}/depth`, { depth: 'meaning-full' })
   assert.equal(r.status, 200, JSON.stringify(r.body))
   assert.deepEqual([r.body.depth, r.body.meaning], ['meaning-full', 'full'])

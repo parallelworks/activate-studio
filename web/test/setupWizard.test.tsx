@@ -354,6 +354,9 @@ describe('the setup wizard', () => {
     expect(await screen.findByText('Index built')).toBeInTheDocument()
     // It leads with one field: another folder here to index. The rest is a click away.
     expect(screen.getByLabelText('Folder to index')).toBeInTheDocument()
+    // Built here, it starts at Meaning on documents, computed last.
+    expect(screen.getByRole('button', { name: 'Meaning on documents' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByText(/^Search by meaning is the slowest part of indexing, so it runs last/)).toBeInTheDocument()
     expect(screen.queryByLabelText('Identifier')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Over SSH' })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Other kinds: an existing GUFI index, or one on another machine' }))

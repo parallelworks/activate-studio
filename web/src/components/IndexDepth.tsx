@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Field, Select, Slider, type SelectItem } from '@parallelworks/ui'
 import { api, type IndexDepth } from '../api'
 
@@ -8,8 +8,9 @@ import { api, type IndexDepth } from '../api'
  * images and scanned pages; Meaning on documents; and Meaning on all files.
  * Each stop takes longer to index than the one before, search by meaning
  * most of all, and many folders (code, data, simulation output) need no
- * more than Text, so each library chooses: the main folder starts at
- * Meaning on documents, the others at Text + OCR.
+ * more than Text, so each library chooses. The main folder and a library
+ * built on this computer start at Meaning on documents, which covers
+ * documents only; one built on another system starts at Text + OCR.
  */
 
 export interface DepthStop { value: IndexDepth; label: string; help: string }
@@ -27,8 +28,24 @@ export const DEPTHS: DepthStop[] = [
     help: 'Search by meaning covers up to twelve passages of every file with text, code and data included. Indexing takes about three times as long as Meaning on documents.' },
 ]
 
-/** The stop a library the Studio builds starts at, other than the main folder. */
-export const DEFAULT_LIBRARY_DEPTH: IndexDepth = 'ocr'
+/** The stop a library built on this computer starts at. */
+export const DEFAULT_LIBRARY_DEPTH: IndexDepth = 'meaning-documents'
+/** The stop a library built on another system starts at: search does not
+ *  read vectors made there yet (REMOTE_MEANING). */
+export const DEFAULT_REMOTE_LIBRARY_DEPTH: IndexDepth = 'ocr'
+/** What the server reads for a library added before a depth was stored at
+ *  creation, for a list that has no depth for it. */
+export const UNSTORED_LIBRARY_DEPTH: IndexDepth = 'ocr'
+
+/** Under a Meaning stop in the form that builds a library here: what it
+ *  costs, the order the phases run in, and the faster choice for a very
+ *  large folder. Nothing counts the files first, so this is a note, not a
+ *  change of the default. */
+export const MEANING_LAST = 'Search by meaning is the slowest part of indexing, so it runs last, in the background: names are searchable first, then words. For a folder of more than about 500,000 files, Text + OCR is faster; meaning can be added later in Settings, Libraries.'
+export const meaningLastNote = (depth: IndexDepth) => (depth.startsWith('meaning') ? MEANING_LAST : null)
+/** Under the depth in the form that builds a library on another system:
+ *  why it starts at Text + OCR, and how to have meaning made anyway. */
+export const REMOTE_MEANING = 'Starts at Text + OCR: the Studio does not search by meaning in indexes on other systems yet. To make the vectors there anyway, choose a Meaning stop; the build makes them only where the Studio\'s embedding model is in ~/.activate-studio/models on that system.'
 
 const stopOf = (depth: IndexDepth) => Math.max(0, DEPTHS.findIndex(d => d.value === depth))
 export const depthLabel = (depth: IndexDepth) => DEPTHS[stopOf(depth)].label
@@ -43,12 +60,14 @@ const readsImages = (depth: IndexDepth) => stopOf(depth) >= stopOf('ocr')
  * passed on, so going across several stops saves once; a click on a stop's
  * name saves at once. `ocr` false says tesseract is not installed here.
  */
-export function IndexDepthControl({ value, onChange, disabled, label = 'Index depth', ocr = null }: {
+export function IndexDepthControl({ value, onChange, disabled, label = 'Index depth', ocr = null, note }: {
   value: IndexDepth
   onChange: (depth: IndexDepth) => void
   disabled?: boolean
   label?: string
   ocr?: boolean | null
+  /** A line under the help of the stop shown, such as why a form starts where it does. */
+  note?: (depth: IndexDepth) => ReactNode
 }) {
   const [shown, setShown] = useState(value)
   const latest = useRef(value)
@@ -64,9 +83,10 @@ export function IndexDepthControl({ value, onChange, disabled, label = 'Index de
   }
   const stop = DEPTHS[stopOf(shown)]
   const noOcr = ocr === false && readsImages(shown)
+  const extra = note?.(shown)
   return (
     <Field group label={label} className="depth-control"
-      description={<>{stop.help}{noOcr && ' tesseract is not installed here, so images and scans are found by name until it is.'}</>}>
+      description={<>{stop.help}{noOcr && ' tesseract is not installed here, so images and scans are found by name until it is.'}{extra && <span className="depth-note">{extra}</span>}</>}>
       <div className="depth-scale">
         <Slider className="depth-slider" min={0} max={DEPTHS.length - 1} step={1} value={stopOf(shown)} disabled={disabled}
           aria-label={`${label}: ${stop.label}`}

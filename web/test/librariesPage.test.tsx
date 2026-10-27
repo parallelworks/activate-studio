@@ -372,14 +372,20 @@ describe('Settings, Libraries', () => {
   it('builds a folder on this computer: check, confirm the folders it makes, then progress in the list', async () => {
     const s = server({ ssh: false, canBuild: true })
     await renderPage(s)
+    const success = vi.spyOn((await import('@parallelworks/ui')).toast, 'success')
     await waitFor(() => rowOf('Notes'))
     fireEvent.click(screen.getByRole('button', { name: 'Add a library' }))
     // Only this computer here: no Where choice, and build comes first.
     expect(screen.queryByRole('button', { name: 'A remote system' })).toBeNull()
     fireEvent.change(await screen.findByLabelText('Folder to index'), { target: { value: '~/papers' } })
-    // The depth starts at Text + OCR; this folder is taken to Text.
-    expect(screen.getByRole('button', { name: 'Text + OCR' })).toHaveAttribute('aria-pressed', 'true')
+    // The depth starts at Meaning on documents, with what it costs, the
+    // order the phases run in, and the faster stop for a very large folder.
+    expect(screen.getByRole('button', { name: 'Meaning on documents' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByText(/^Search by meaning is the slowest part of indexing, so it runs last, in the background: names are searchable first, then words\./)).toBeInTheDocument()
+    expect(screen.getByText(/For a folder of more than about 500,000 files, Text \+ OCR is faster; meaning can be added later in Settings, Libraries\.$/)).toBeInTheDocument()
+    // This folder is taken to Text, where the note does not apply.
     fireEvent.click(screen.getByRole('button', { name: 'Text' }))
+    expect(screen.queryByText(/slowest part of indexing/)).toBeNull()
     expect(screen.getByRole('button', { name: 'Build the index' })).toBeDisabled()
     fireEvent.click(screen.getByRole('button', { name: 'Check' }))
     expect(await screen.findByText('~/papers does not exist yet; it is created, empty, when the build starts.')).toBeInTheDocument()
@@ -390,6 +396,7 @@ describe('Settings, Libraries', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: 'Create it and build' }))
     await waitFor(() => expect(posted(s, '/api/libraries/build')).toHaveLength(1))
     expect(posted(s, '/api/libraries/build')[0].body).toEqual({ sourceRoot: '~/papers', depth: 'text', create: true })
+    await waitFor(() => expect(success).toHaveBeenCalledWith(expect.stringMatching(/searchable by name once its folders are indexed; text and meaning, where its depth has them, follow in that order\.$/)))
     const row = await waitFor(() => rowOf('Papers'))
     expect(within(row).getByText('Index of a folder on this machine, kept in step with it, read only')).toBeInTheDocument()
     expect(within(row).getByText('Building')).toBeInTheDocument()
@@ -406,6 +413,9 @@ describe('Settings, Libraries', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'A remote system' }))
     fireEvent.change(await screen.findByLabelText('Host'), { target: { value: 'me@box:2222' } })
     fireEvent.change(screen.getByLabelText('Source folder'), { target: { value: '~/data' } })
+    // Built there, the depth starts at Text + OCR, and the form says why.
+    expect(screen.getByRole('button', { name: 'Text + OCR' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByText(/^Starts at Text \+ OCR: the Studio does not search by meaning in indexes on other systems yet\./)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Test connection' }))
     expect(await screen.findByText(/no Python 3\.10 or later/i)).toBeInTheDocument()
     expect(posted(s, '/api/user-libraries/ssh/build/test')[0].body).toEqual({ destination: 'me@box:2222', sourceRoot: '~/data' })
