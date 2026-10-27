@@ -81,6 +81,18 @@ MODEL_ID = MODEL_NAME
 ONNX_TASK = 256
 
 
+# A words row written before enrich.py dropped the converter's provenance
+# line may still start with it; passages are cut from the text without it.
+PROVENANCE_PREFIX = '<!-- extracted by downmark '
+
+
+def index_text(text: str) -> str:
+    if text.startswith(PROVENANCE_PREFIX):
+        nl = text.find('\n')
+        return '' if nl < 0 else text[nl + 1:].lstrip('\n')
+    return text
+
+
 def prose_like(c: str) -> bool:
     letters = sum(ch.isalpha() or ch.isspace() for ch in c)
     return letters / max(len(c), 1) > 0.6
@@ -318,7 +330,7 @@ def run(args, jobs: int, dbs: list, scratch: Path, progress: Progress) -> int:
             for tinode, fname, wordf in rows:
                 if not embeds_file(fname, args.documents_only):
                     continue
-                for seq, c in enumerate(chunk(wordf or '', args.max_chunks)):
+                for seq, c in enumerate(chunk(index_text(wordf or ''), args.max_chunks)):
                     if c.strip():
                         ins.append((str(tinode), fname, seq, c, chunk_hash(c)))
             db.executemany('INSERT INTO gchunks (tinode, fname, seq, ctext, h) VALUES (?, ?, ?, ?, ?)', ins)

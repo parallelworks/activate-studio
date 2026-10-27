@@ -7,7 +7,7 @@ import type { FastifyInstance } from 'fastify'
 import { GUFI_BIN, HOST, PORT, gufiEnv } from './config.js'
 import type { Library } from './libraries.js'
 import { isDirect, remoteRun, shellFor } from './remoteExec.js'
-import { gufiTool, REMOTE_PREFIX, remoteTarget } from './userLibraries.js'
+import { gufiTool, REMOTE_PREFIX, remoteHostKey, remoteTarget } from './userLibraries.js'
 import { noteGufi } from './gufiTrace.js'
 
 /**
@@ -218,7 +218,11 @@ export async function runAcross(items: { lib: Library; plan: Plan }[], order: Vt
         if (!vtRemoteIndex(index) || (t.gufiBin !== '' && !vtPath(t.gufiBin))) throw new Error('its index path cannot be passed to gufi_vt')
         // Raw SQL has no known shape to map rows back by, so it is not
         // stacked; STUDIO_STACK_REMOTE=0 stacks nothing.
-        const k = plan.raw || process.env.STUDIO_STACK_REMOTE === '0' ? `lib:${l.id}` : JSON.stringify([t.site, t.key.slice(-16), t.gufiBin, plan.stages, plan.columns])
+        // Grouped by the host reached (remoteHostKey: user, host name, port
+        // and route as ssh resolves them), so two libraries that name one
+        // account differently share a location.
+        const host = plan.raw || process.env.STUDIO_STACK_REMOTE === '0' ? null : await remoteHostKey(l.indexRoot).catch(() => null)
+        const k = host === null ? `lib:${l.id}` : JSON.stringify([host, plan.stages, plan.columns])
         const g = groups.get(k) ?? { site: t.site, key: t.key, gufiBin: t.gufiBin, plan, members: [] }
         g.members.push({ id: l.id, label: l.label, root: t.indexRoot, index })
         groups.set(k, g)

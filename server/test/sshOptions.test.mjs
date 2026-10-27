@@ -70,8 +70,12 @@ const local = []
 R.setSshLocal(async args => {
   local.push(args)
   if (args[0] === '-G') {
+    // As ssh prints it: the user from the destination, else from the
+    // config ('me' here), and the host name without the user.
     const dest = args[args.length - 1]
-    return { code: 0, stdout: `user me\nhostname ${dest}\n${dest.includes('viajump') ? 'proxyjump gw@bastion.example\n' : ''}`, stderr: '' }
+    const at = dest.indexOf('@')
+    const user = at >= 0 ? dest.slice(0, at) : 'me', host = at >= 0 ? dest.slice(at + 1) : dest
+    return { code: 0, stdout: `user ${user}\nhostname ${host}\nport 22\n${dest.includes('viajump') ? 'proxyjump gw@bastion.example\n' : ''}`, stderr: '' }
   }
   if (args.includes('-O')) return { code: 255, stdout: '', stderr: 'Control socket connect: No such file or directory' }
   return { code: 0, stdout: '', stderr: '' }
@@ -141,7 +145,7 @@ test('anything that runs a command, forwards, or reaches a shell is refused, wit
   assert.throws(() => R.checkSshOptions(['-J', 'a b']), /-J a b/)
 })
 
-test('a site carries its options: read back, shown, a socket of their own, the port given once', () => {
+test('a site carries its options: read back, shown, a socket per place reached, the port given once', () => {
   const opts = R.parseSshOptions('-J gw@bastion -o ConnectTimeout=20')
   const site = R.sshSite('me@box', 2222, opts)
   assert.match(site, /^ssh:\/\/me@box:2222#[A-Za-z0-9_-]+$/)
@@ -154,7 +158,17 @@ test('a site carries its options: read back, shown, a socket of their own, the p
   assert.deepEqual(argv.slice(0, 5), ['-T', '-J', 'gw@bastion', '-o', 'ConnectTimeout=20'])
   assert.deepEqual(argv.slice(5, 7), ['-o', 'BatchMode=yes'])
   assert.deepEqual(argv.slice(-4), ['-p', '2222', 'me@box', 'CMD'])
-  assert.notDeepEqual(R.controlArgs(R.parseSshSite(site)), R.controlArgs(R.parseSshSite(R.sshSite('me@box', 2222))), 'a socket per way of reaching the host')
+  // The socket is named by ssh's %C: a hash of where the connection lands
+  // (user, host name, port, jump host), which ssh works out itself. So a
+  // jump host gets a socket of its own, while a timeout does not.
+  const sockOf = argv => execFileSync('ssh', ['-G', ...argv], { stdio: ['ignore', 'pipe', 'ignore'] }).toString().split('\n').find(l => l.startsWith('controlpath '))
+  const withJump = R.sshArgv(site, 'CMD').slice(1, -1)
+  const plain = R.sshArgv(R.sshSite('me@box', 2222), 'CMD').slice(1, -1)
+  const timeoutOnly = R.sshArgv(R.sshSite('me@box', 2222, R.parseSshOptions('-o ConnectTimeout=20')), 'CMD').slice(1, -1)
+  if (R.controlArgs(R.parseSshSite(site)).some(a => a.endsWith('/%C"'))) {
+    assert.notEqual(sockOf(withJump), sockOf(plain), 'a jump host is another way of reaching the host')
+    assert.equal(sockOf(timeoutOnly), sockOf(plain), 'a timeout is the same connection')
+  }
   assert.equal(R.sshSite('me@box'), 'ssh://me@box', 'no options, the site as before')
   assert.throws(() => R.sshSite('me@box', 2222, ['-p', '2200']), /give the port once/)
   assert.throws(() => R.sshSite('me@box', 2222, ['-o', 'Port=2200']), /give the port once/)
@@ -348,6 +362,50 @@ test('two of three libraries on one host, chosen alone: still one location, and 
   assert.equal(walk.length, 1)
   assert.match(walk[0].command, /ext_bm25_by_file MATCH .{0,6}hello.{0,6} AND \(e\.name LIKE .{0,6}%\.bin.{0,6} ESCAPE/)
   assert.ok(!/SELECT .{0,6}n.{0,6}, /.test(walk[0].command.split(' -E ')[1] ?? ''), 'no name rows when both fields must match')
+})
+
+test('a library that names the user and one that takes it from ssh config are one host: one location, one walk, one socket', { skip }, async t => {
+  V.resetGufiVtForTests()
+  if (!(await V.gufiVtAvailable())) return t.skip('this GUFI has no gufi_vt')
+  // The same account: the user typed in one, taken from ~/.ssh/config
+  // (ssh -G) in the other.
+  // Indexes of their own: a folder can be one library only.
+  for (const [src, to] of [['proj', 't-idx'], ['scratch', 'c-idx']]) {
+    fs.mkdirSync(path.join(home, to), { recursive: true })
+    execFileSync(path.join(gufiBin, 'gufi_dir2index'), ['-x', path.join(home, src), path.join(home, to)], { stdio: 'ignore' })
+  }
+  for (const [label, destination, indexRoot] of [['Typed', 'me@restricted-box', path.join(home, 't-idx', 'proj')], ['Config', 'restricted-box', path.join(home, 'c-idx', 'scratch')]]) {
+    const r = await call('POST', '/api/user-libraries/ssh', { destination, gufiBin, label, indexRoot })
+    assert.equal(r.status, 200, JSON.stringify(r.body))
+  }
+  const L = await import('../dist/libraries.js')
+  const all = L.listLibraries('kb', null)
+  const ids = Object.fromEntries(all.filter(l => ['Typed', 'Config'].includes(l.label)).map(l => [l.label, l.id]))
+  assert.deepEqual(all.filter(l => ['Typed', 'Config'].includes(l.label)).map(l => l.site), ['me@restricted-box', 'me@restricted-box'], 'both shown as the account reached')
+  const pub = (await call('GET', '/api/user-libraries')).body.libraries.find(l => l.label === 'Config')
+  assert.equal(pub.reached, 'me@restricted-box')
+  const queries = () => ran.filter(r => r.dest.endsWith('restricted-box') && /gufi_query /.test(r.command))
+
+  let before = queries().length
+  const r = await Q.queryScope({ canned: 'largest', n: 10, library: [ids.Typed, ids.Config] }, null)
+  const mine = queries().slice(before)
+  assert.equal(r.engine, 'gufi_vt', JSON.stringify(r.failed ?? r))
+  assert.deepEqual([...new Set(r.rowLibraries)].sort(), [ids.Config, ids.Typed].sort())
+  assert.equal(mine.length, 2, 'one check and one gufi_query for both')
+  assert.ok(mine[1].command.includes('t-idx/proj') && mine[1].command.includes('c-idx/scratch'), mine[1].command)
+
+  const S = await import('../dist/libraryScope.js')
+  before = queries().length
+  const hits = await S.searchScope(S.scopeLibraries([ids.Typed, ids.Config], null, 'kb'), '', 20, { semantic: false, refine: { name: '*.bin', text: '', match: 'all' } })
+  assert.deepEqual(hits.map(h => [h.library.id, h.path]).sort(), [[ids.Config, 'tmp/spill.bin'], [ids.Typed, 'data/huge.bin']].sort())
+  assert.equal(queries().length - before, 1, 'one walk on the host for both')
+
+  // One shared connection: ssh names the socket by %C, which it works out
+  // from where the connection lands, the same for both.
+  const sock = site => R.sshArgv(site, 'x').find(a => a.startsWith('ControlPath='))
+  const typed = sock(R.sshSite('me@restricted-box')), config = sock(R.sshSite('restricted-box'))
+  assert.equal(typed, config)
+  assert.match(typed, /\/%C"$/)
 })
 
 test('the wrapper accepts a stacked location\'s roots in order, and nothing else', () => {

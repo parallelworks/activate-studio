@@ -227,7 +227,7 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
       rows.push({
         key: l.id, name: l.label, kind: 'Main folder, read and write',
         where: (
-          <DescriptionList className="lib-paths">
+          <DescriptionList className="lib-paths" stacked>
             <DescriptionListItem label="Folder" mono={!!l.sourceRoot} copy={!!l.sourceRoot}>{l.sourceRoot ? <PathText path={l.sourceRoot} /> : null}</DescriptionListItem>
             <DescriptionListItem label="Index" mono copy><PathText path={l.indexRoot} /></DescriptionListItem>
           </DescriptionList>
@@ -258,7 +258,7 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
       rows.push({
         key: l.id, name: l.label, kind: 'Index of a folder on this machine, kept in step with it, read only',
         where: (
-          <DescriptionList className="lib-paths">
+          <DescriptionList className="lib-paths" stacked>
             <DescriptionListItem label="Folder" mono copy>{l.sourceRoot ? <PathText path={l.sourceRoot} /> : null}</DescriptionListItem>
             <DescriptionListItem label="Index" mono copy><PathText path={l.indexRoot} /></DescriptionListItem>
           </DescriptionList>
@@ -292,11 +292,11 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
     rows.push({
       key: l.id, name: l.label, kind: `GUFI index on this machine, read only${l.pinned ? ', set by the deployment' : ''}`,
       where: (
-        <DescriptionList className="lib-paths">
+        <DescriptionList className="lib-paths" stacked>
           <DescriptionListItem label="Index" mono copy><PathText path={l.indexRoot} /></DescriptionListItem>
-          <DescriptionListItem label="Files" mono={!!l.sourceRoot} copy={!!l.sourceRoot}>
-            {l.sourceRoot ? <PathText path={l.sourceRoot} /> : <span className="muted">not on this machine: names and metadata only</span>}
-          </DescriptionListItem>
+          {l.sourceRoot
+            ? <DescriptionListItem label="Files" mono copy><PathText path={l.sourceRoot} /></DescriptionListItem>
+            : <DescriptionListItem label="Holds">{holds(l.caps.fullText, l.caps.vectors)}</DescriptionListItem>}
         </DescriptionList>
       ),
       state: l.caps.index
@@ -314,19 +314,19 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
     const caps = capsOf(l.id)
     const remove = (
       <Button variant="secondary" size="sm" aria-label={`Remove ${l.label}`} disabled={busy !== null}
-        onClick={() => askRemove(l.label, <>{cfg.appName} stops searching it. The index stays where it is, on {l.transport === 'ssh' ? (l.destination ?? l.site) : l.site}.</>, false,
+        onClick={() => askRemove(l.label, <>{cfg.appName} stops searching it. The index stays where it is, on {l.transport === 'ssh' ? (l.reached ?? l.destination ?? l.site) : l.site}.</>, false,
           () => act(l.id, async () => { await api.removeUserLibrary(l.id); await loadUser(); reloadAppConfig() }))}>Remove</Button>
     )
     const contents = counts(l.directories, l.files)
     if (l.built) {
-      const host = l.transport === 'ssh' ? (l.destination ?? l.site) : l.site
+      const host = l.transport === 'ssh' ? (l.reached ?? l.destination ?? l.site) : l.site
       const notes: ReactNode[] = [contents, l.builtAt && `indexed ${when(l.builtAt)}`, l.error].filter(Boolean)
       rows.push({
         key: l.id, name: l.label, kind: `Index built on ${host} over ${l.transport === 'ssh' ? 'ssh' : 'pw ssh'}, read only`,
         where: (
-          <DescriptionList className="lib-paths">
-            <DescriptionListItem label="Folder" mono copy><PathText path={`${host}:${l.sourceRoot ?? l.sourceDir}`} /></DescriptionListItem>
-            <DescriptionListItem label="Index" mono copy><PathText path={`${host}:${l.indexRoot ?? l.indexDir ?? ''}`} /></DescriptionListItem>
+          <DescriptionList className="lib-paths" stacked>
+            <DescriptionListItem label="Folder" mono copy><HostPath host={host} path={l.sourceRoot ?? l.sourceDir} /></DescriptionListItem>
+            <DescriptionListItem label="Index" mono copy><HostPath host={host} path={l.indexRoot ?? l.indexDir ?? ''} /></DescriptionListItem>
             {l.port ? <DescriptionListItem label="Port" mono>{String(l.port)}</DescriptionListItem> : null}
             {l.sshOptions ? <DescriptionListItem label="SSH options" mono>{l.sshOptions}</DescriptionListItem> : null}
           </DescriptionList>
@@ -350,18 +350,18 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
       continue
     }
     if (l.transport === 'ssh') {
-      const dest = l.destination ?? l.site
+      const dest = l.reached ?? l.destination ?? l.site
       const notes: ReactNode[] = [contents, l.builtAt && `index written ${when(l.builtAt)}`, l.error].filter(Boolean)
       rows.push({
         key: l.id, name: l.label, kind: 'GUFI index over ssh, read only',
         where: (
-          <DescriptionList className="lib-paths">
-            <DescriptionListItem label="Index" mono copy>{`${dest}:${l.indexRoot ?? ''}`}</DescriptionListItem>
+          <DescriptionList className="lib-paths" stacked>
+            <DescriptionListItem label="Index" mono copy><HostPath host={dest} path={l.indexRoot ?? ''} /></DescriptionListItem>
             {l.port ? <DescriptionListItem label="Port" mono>{String(l.port)}</DescriptionListItem> : null}
             {l.sshOptions ? <DescriptionListItem label="SSH options" mono>{l.sshOptions}</DescriptionListItem> : null}
             {l.sourceRoot
-              ? <DescriptionListItem label="Files" mono copy>{`${dest}:${l.sourceRoot}`}</DescriptionListItem>
-              : <DescriptionListItem label="Files"><span className="muted">none: names and metadata only</span></DescriptionListItem>}
+              ? <DescriptionListItem label="Files" mono copy><HostPath host={dest} path={l.sourceRoot} /></DescriptionListItem>
+              : <DescriptionListItem label="Holds">{holds(!!caps?.fullText, !!caps?.vectors)}</DescriptionListItem>}
           </DescriptionList>
         ),
         state: l.error ? { tone: 'warning', text: 'Check failed', notes } : { tone: 'success', text: 'Ready', notes },
@@ -381,11 +381,11 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
       rows.push({
         key: l.id, name: l.label, kind: 'GUFI index on a cluster over pw ssh, read only',
         where: (
-          <DescriptionList className="lib-paths">
-            <DescriptionListItem label="Index" mono copy>{`${l.site}:${l.indexRoot ?? ''}`}</DescriptionListItem>
+          <DescriptionList className="lib-paths" stacked>
+            <DescriptionListItem label="Index" mono copy><HostPath host={l.site} path={l.indexRoot ?? ''} /></DescriptionListItem>
             {l.sourceRoot
-              ? <DescriptionListItem label="Files" mono copy>{`${l.site}:${l.sourceRoot}`}</DescriptionListItem>
-              : <DescriptionListItem label="Files"><span className="muted">none: names and metadata only</span></DescriptionListItem>}
+              ? <DescriptionListItem label="Files" mono copy><HostPath host={l.site} path={l.sourceRoot} /></DescriptionListItem>
+              : <DescriptionListItem label="Holds">{holds(!!caps?.fullText, !!caps?.vectors)}</DescriptionListItem>}
           </DescriptionList>
         ),
         state: l.error ? { tone: 'warning', text: 'Check failed', notes } : { tone: 'success', text: 'Ready', notes },
@@ -407,11 +407,11 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
     rows.push({
       key: l.id, name: l.label, kind: 'Index built on a cluster, read only, yours alone',
       where: (
-        <DescriptionList className="lib-paths">
+        <DescriptionList className="lib-paths" stacked>
           <DescriptionListItem label="Index" mono={!!l.indexRoot} copy={!!l.indexRoot}>
-            {l.indexRoot ? `${l.site}:${l.indexRoot}` : <span className="muted">being built</span>}
+            {l.indexRoot ? <HostPath host={l.site} path={l.indexRoot} /> : <span className="muted">being built</span>}
           </DescriptionListItem>
-          <DescriptionListItem label="Files" mono copy>{`${l.site}:${l.sourceRoot ?? l.sourceDir}`}</DescriptionListItem>
+          <DescriptionListItem label="Files" mono copy><HostPath host={l.site} path={l.sourceRoot ?? l.sourceDir} /></DescriptionListItem>
         </DescriptionList>
       ),
       state: l.state === 'building' ? { tone: 'info', text: 'Building', pulse: true, notes }
@@ -522,6 +522,25 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
         </Modal>
       )}
     </>
+  )
+}
+
+/** What an index with no files reachable from here can be searched by. */
+function holds(fullText: boolean, vectors: boolean): string {
+  return vectors ? 'Names, metadata, text and meaning' : fullText ? 'Names, metadata and text' : 'Names and metadata'
+}
+
+/** host:path for an index on another system: the host wraps after its dots
+ *  and the path after its slashes, never inside a name, so a long host or
+ *  path does not squeeze to a few characters a line. */
+function HostPath({ host, path }: { host: string; path: string }) {
+  const parts = host.split('.')
+  return (
+    <code title={`${host}:${path}`}>
+      {parts.map((p, i) => <Fragment key={i}>{i > 0 && <>.<wbr /></>}<span className="lib-seg">{p}</span></Fragment>)}
+      :<wbr />
+      {path.split('/').map((seg, i) => <Fragment key={`p${i}`}>{i > 0 && <>/<wbr /></>}<span className="lib-seg">{seg}</span></Fragment>)}
+    </code>
   )
 }
 

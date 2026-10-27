@@ -21,7 +21,7 @@ import { execFile } from 'node:child_process'
 import { GUFI_BIN, GUFI_INDEX, INDEX_BASE, KB_ROOT, gufiAvailable, gufiEnv } from './config.js'
 import { forgetIndexSettings, indexSettings, type IndexDepth, type MeaningLevel } from './indexSettings.js'
 import { KbError } from './kb.js'
-import { loadUserLibraries, ownerOf, remoteRootOf } from './userLibraries.js'
+import { learnReached, loadUserLibraries, ownerOf, reachedLabel, remoteRootOf } from './userLibraries.js'
 
 export interface LibraryCaps {
   /** A GUFI tree: a db.db at the root. */
@@ -333,10 +333,13 @@ function userLibrariesOf(viewerId: string | null | undefined): Library[] {
   if (viewerId === undefined) return []
   const owner = ownerOf(viewerId)
   if (!owner) return []
+  const defs = loadUserLibraries(owner)
+  // Where each ssh library lands, for the next listing to name (never waited on).
+  learnReached(defs)
   // gufiBin '' is gufi_query from the login's PATH, on a host whose login runs nothing else.
-  return loadUserLibraries(owner).filter(d => d.indexRoot && d.gufiBin != null).map(d => ({
+  return defs.filter(d => d.indexRoot && d.gufiBin != null).map(d => ({
     id: d.id, label: d.label, indexRoot: remoteRootOf(owner, d.id), sourceRoot: null,
-    writable: false, primary: false, pinned: false, caps: { index: true, fullText: !!d.fullText, vectors: !!d.vectors }, site: d.site,
+    writable: false, primary: false, pinned: false, caps: { index: true, fullText: !!d.fullText, vectors: !!d.vectors }, site: reachedLabel(d) ?? d.site,
     meaning: d.build ? indexSettings(d.id).meaning : null,
     depth: d.build ? indexSettings(d.id).depth : null,
   }))

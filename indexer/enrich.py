@@ -645,6 +645,20 @@ def extract(path: Path) -> str | None:
     return None
 
 
+# The first line of a cache entry the server's converter wrote names the
+# converter (preextract.ts), for the cache's own use: not the document's text.
+PROVENANCE_PREFIX = '<!-- extracted by downmark '
+
+
+def index_text(text: str) -> str:
+    """A cache entry's text as it is indexed: without the provenance line,
+    so it is neither searched nor shown in a snippet."""
+    if text.startswith(PROVENANCE_PREFIX):
+        nl = text.find('\n')
+        return '' if nl < 0 else text[nl + 1:].lstrip('\n')
+    return text
+
+
 def ensure_words_table(db: sqlite3.Connection) -> None:
     db.execute('DROP TABLE IF EXISTS words')
     db.execute("CREATE VIRTUAL TABLE words USING fts5(tinode UNINDEXED, fname UNINDEXED, wordf)")
@@ -898,13 +912,15 @@ def main() -> int:
                     with open(kb_root / rel_dir / name, 'r', errors='replace') as fh:
                         text = fh.read(MAX_TEXT)
                 elif isinstance(source, int) and source in texts:
-                    text = texts[source]
+                    text = index_text(texts[source])
                 else:
                     cache_file = cache_root / rel_dir / (name + '.txt')
                     if cache_file.exists():
                         text = cache_file.read_text(errors='replace')[:MAX_TEXT]
                         if suffix in IMAGE_SUFFIXES and not image_cache_usable(text):
                             text = None
+                        else:
+                            text = index_text(text)
             except OSError:
                 text = None
             if not text or not text.strip():

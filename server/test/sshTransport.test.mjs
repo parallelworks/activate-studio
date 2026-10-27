@@ -6,6 +6,7 @@
 // macOS: uname says Darwin and base64 decodes with -D only.
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -55,7 +56,15 @@ test('ssh gets no prompts, a bounded connect, keepalives, the port, then the des
     ['-T', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15', '-o', 'ServerAliveInterval=30', ...share('me@box.example', 2222), '-p', '2222', 'me@box.example', 'CMD'])
   assert.deepEqual(R.sshArgv(R.sshSite('lab-index'), 'CMD'),
     ['-T', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15', '-o', 'ServerAliveInterval=30', ...share('lab-index'), 'lab-index', 'CMD'])
-  assert.notDeepEqual(share('me@box.example', 2222), share('me@box.example'), 'a socket per host and port')
+  // The socket is named by ssh's %C where the folder leaves room, which ssh
+  // works out from the host, port and user it connects to: the same
+  // arguments, and a socket per host and port once ssh expands them.
+  const realSsh = ['/usr/bin/ssh', '/bin/ssh'].find(f => fs.existsSync(f))
+  if (share('me@box.example')[3].endsWith('/%C"') && realSsh) {
+    const sock = port => execFileSync(realSsh, ['-G', ...share('me@box.example', port), ...(port ? ['-p', String(port)] : []), 'me@box.example'], { stdio: ['ignore', 'pipe', 'ignore'] })
+      .toString().split('\n').find(l => l.startsWith('controlpath '))
+    assert.notEqual(sock(2222), sock(null), 'a socket per host and port')
+  } else assert.notDeepEqual(share('me@box.example', 2222), share('me@box.example'), 'a socket per host and port')
   assert.throws(() => R.sshArgv('cluster-a', 'CMD'), /not an ssh site/)
 })
 

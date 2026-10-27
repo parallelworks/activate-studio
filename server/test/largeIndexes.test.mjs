@@ -46,6 +46,9 @@ const controlArgs = (indexBase, env = {}) => {
   { env: all }).toString())
 }
 const socketOf = args => args[3].slice('ControlPath="'.length, -1)
+/** The socket ssh would use with these arguments, with %C expanded. */
+const socketFor = (args, dest, port) => execFileSync('ssh', ['-G', ...args, '-p', String(port), dest], { stdio: ['ignore', 'pipe', 'ignore'] })
+  .toString().split('\n').find(l => l.startsWith('controlpath ')).slice('controlpath '.length)
 // A data folder too long for a socket, as under a long macOS user name:
 // /Users/<name>/Library/Application Support/ACTIVATE Studio/index.
 const longBase = path.join(short, 'Users', 'firstname.lastname.example', 'Library', 'Application Support', 'ACTIVATE Studio', 'index')
@@ -64,12 +67,16 @@ test('the socket goes in the runtime folder, quoted for a folder with spaces, ho
   const sock = socketOf(args)
   assert.deepEqual(args, ['-o', 'ControlMaster=auto', '-o', `ControlPath="${sock}"`, '-o', 'ControlPersist=600'])
   assert.equal(path.dirname(sock), path.join(run, 'activate-studio'))
-  assert.match(path.basename(sock), /^[0-9a-f]{12}$/)
+  // ssh's %C (where the connection lands, worked out by ssh) where the
+  // folder leaves room for it; a 12-character name otherwise.
+  assert.match(path.basename(sock), /^(?:%C|[0-9a-f]{12})$/)
   assert.equal(fs.lstatSync(path.dirname(sock)).mode & 0o777, 0o700, 'the socket folder is the user\'s alone')
   // ssh reads the options as given: -G prints its configuration and stops.
   const conf = execFileSync('ssh', ['-G', ...args, '-p', '2222', 'me@host'], { stdio: ['ignore', 'pipe', 'ignore'] }).toString()
   assert.match(conf, /^controlmaster auto$/m)
-  assert.ok(conf.split('\n').includes(`controlpath ${sock}`), conf.split('\n').filter(l => l.startsWith('control')).join('\n'))
+  const expanded = path.basename(sock) === '%C' ? new RegExp(`^controlpath ${path.dirname(sock).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/[0-9a-f]{40}$`, 'm') : null
+  if (expanded) assert.match(conf, expanded)
+  else assert.ok(conf.split('\n').includes(`controlpath ${sock}`), conf.split('\n').filter(l => l.startsWith('control')).join('\n'))
   assert.match(conf, /^controlpersist 600$/m)
 })
 
@@ -107,11 +114,12 @@ test('a socket folder that is a link, open to others, someone else\'s, or too lo
 
 test('a socket left by a master that died is cleared by the next ssh, which connects on its own', { skip: !haveSsh && 'no ssh' }, async () => {
   const args = controlArgs(longBase, { XDG_RUNTIME_DIR: folder('stale') })
-  const sock = socketOf(args)
+  const port = await new Promise(resolve => { const s = net.createServer().listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => resolve(p)) }) })
+  // The socket as ssh names it for this destination (%C expanded).
+  const sock = socketFor(args, 'me@127.0.0.1', port)
   // A master killed outright leaves its socket with nothing listening.
   spawnSync(process.execPath, ['-e', `require('net').createServer().listen(${JSON.stringify(sock)}, () => process.kill(process.pid, 'SIGKILL'))`])
   assert.ok(fs.lstatSync(sock).isSocket())
-  const port = await new Promise(resolve => { const s = net.createServer().listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => resolve(p)) }) })
   const r = spawnSync('ssh', ['-F', '/dev/null', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=5', ...args, '-p', String(port), 'me@127.0.0.1', 'true'], { encoding: 'utf8' })
   assert.equal(r.status, 255)
   assert.match(r.stderr, /Connection refused/)

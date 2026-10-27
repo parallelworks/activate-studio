@@ -274,7 +274,9 @@ describe('Settings, Libraries', () => {
 
     const site = rowOf('Site index')
     expect(within(site).getByText('GUFI index on this machine, read only')).toBeInTheDocument()
-    expect(within(site).getByText('not on this machine: names and metadata only')).toBeInTheDocument()
+    // No files here: the row says what the index can be searched by, from what it holds.
+    expect(within(site).getByText('Holds')).toBeInTheDocument()
+    expect(within(site).getByText('Names, metadata and text')).toBeInTheDocument()
     expect(within(site).getByText('Ready')).toBeInTheDocument()
     expect(within(site).getByText('Text')).toBeInTheDocument()
     expect(within(site).getByText('as built')).toBeInTheDocument()
@@ -287,9 +289,9 @@ describe('Settings, Libraries', () => {
 
     const ssh = rowOf('index on box')
     expect(within(ssh).getByText('GUFI index over ssh, read only')).toBeInTheDocument()
-    expect(within(ssh).getByText('me@box:/data/index')).toBeInTheDocument()
+    expect(within(ssh).getByTitle('me@box:/data/index')).toHaveTextContent('me@box:/data/index')
     expect(within(ssh).getByText('2222')).toBeInTheDocument()
-    expect(within(ssh).getByText('none: names and metadata only')).toBeInTheDocument()
+    expect(within(ssh).getByText('Names and metadata')).toBeInTheDocument()
     expect(within(ssh).getByText('12 folders, 40 files')).toBeInTheDocument()
     expect(within(ssh).getByRole('button', { name: 'Check' })).toBeInTheDocument()
 
@@ -311,6 +313,17 @@ describe('Settings, Libraries', () => {
     fireEvent.click(within(ask).getByRole('button', { name: 'Remove' }))
     await waitFor(() => expect(screen.queryByText('Site index', { selector: '.lib-name' })).toBeNull())
     expect(s.calls.some(c => c.method === 'DELETE' && c.url === '/api/libraries/site')).toBe(true)
+  })
+
+  it('an ssh library shows the account ssh reaches, and a long host and path wrap only at dots and slashes', async () => {
+    const lib = { ...SSH, id: 'u-alias', label: 'alias index', site: 'box', destination: 'box', port: null, reached: 'me@a-long-host-name.example.org', indexRoot: '/data/groups/me/projects/archive' }
+    await renderPage(server({ user: [lib] }))
+    const row = await waitFor(() => rowOf('alias index'))
+    const value = within(row).getByTitle('me@a-long-host-name.example.org:/data/groups/me/projects/archive')
+    expect(value).toHaveTextContent('me@a-long-host-name.example.org:/data/groups/me/projects/archive')
+    // A break point after each dot of the host, after the colon, and after each slash of the path.
+    expect(value.querySelectorAll('wbr')).toHaveLength(2 + 1 + 5)
+    expect([...value.querySelectorAll('.lib-seg')].map(s => s.textContent)).toEqual(['me@a-long-host-name', 'example', 'org', '', 'data', 'groups', 'me', 'projects', 'archive'])
   })
 
   it('a standalone install chooses where and how, and connects an index over ssh', async () => {

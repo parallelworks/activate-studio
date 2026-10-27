@@ -5,6 +5,7 @@ import path from 'node:path'
 import { GUFI_BIN, GUFI_INDEX, INDEX_BASE, gufiAvailable, gufiEnv } from './config.js'
 import { REMOTE_PREFIX, remoteIndexRoot, remoteQuery, remoteQueryMany, remoteTarget } from './userLibraries.js'
 import { noteGufi } from './gufiTrace.js'
+import { withoutProvenance } from './textCleanup.js'
 import { ONNX_MODEL_ID, embedQueries, isOnnxModel, onnxModelPresent } from './embedWorker.js'
 
 const DELIM = '\x1e' // record separator; never appears in KB text
@@ -199,7 +200,7 @@ export function nameRank(parsed: ParsedQuery): string {
 }
 
 /** A full-text row as a hit, its path already relative to the library. */
-export const ftsHit = (r: string[], rel: string): SearchHit => ({ path: rel, name: r[1], size: Number(r[2]) || 0, mtime: Number(r[3]) || 0, snippet: r[4] ?? '', score: 1, mode: 'fts' })
+export const ftsHit = (r: string[], rel: string): SearchHit => ({ path: rel, name: r[1], size: Number(r[2]) || 0, mtime: Number(r[3]) || 0, snippet: withoutProvenance(r[4] ?? ''), score: 1, mode: 'fts' })
 /** A name row as a hit, its path already relative to the library. */
 export const nameHit = (r: string[], rel: string): SearchHit => ({ path: rel, name: r[1], size: Number(r[2]) || 0, mtime: Number(r[3]) || 0, snippet: '', score: 0.5, mode: 'name' })
 
@@ -703,7 +704,7 @@ export async function walkSearch(queryText: string, lim: WalkLimits, indexRoots:
     if (!kind) continue
     const at = order.find(o => r[2] === o.p || r[2].startsWith(o.p + '/'))
     if (!at) continue
-    rows.push({ kind, r: Number(r[1]), path: r[2] === at.p ? '' : r[2].slice(at.p.length + 1), name: r[3], size: Number(r[4]) || 0, mtime: Number(r[5]) || 0, snippet: r[6] ?? '', root: at.root })
+    rows.push({ kind, r: Number(r[1]), path: r[2] === at.p ? '' : r[2].slice(at.p.length + 1), name: r[3], size: Number(r[4]) || 0, mtime: Number(r[5]) || 0, snippet: withoutProvenance(r[6] ?? ''), root: at.root })
   }
   return rows
 }
@@ -949,7 +950,7 @@ export async function searchVector(queryText: string, limit = 10, indexRoot: str
       name: fname,
       size: 0,
       mtime: 0,
-      snippet: parts.slice(4).join(' '),
+      snippet: withoutProvenance(parts.slice(4).join(' ')),
       score: Number.isFinite(dist) ? dist : 999,
       mode: 'vector',
     })
