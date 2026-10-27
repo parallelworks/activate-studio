@@ -2,6 +2,31 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.181 (2026-10-27)
+
+### feat: export query and search results as CSV (#613)
+
+Query and Search results get **Export CSV** and **Copy**.
+
+- **Export CSV** saves the rows as a CSV file (RFC 4180, values exactly as the query returned them, sizes in bytes). Query exports its columns as shown, with the library column when several libraries were queried. Search exports one row per result in the order listed: library (when several), path, name, how it was found, size, modified time in UTC, labels and snippet.
+- **Copy** puts the same rows on the clipboard as tab-separated text, which a spreadsheet pastes into columns.
+- The file is a browser download; in the macOS app's window it goes to Downloads and is shown in the Finder (the existing WKDownload handling).
+- Exports take the rows returned: Query up to its limit (2,000 at most), Search what is listed (up to 1,000 with Load more). The guide says so and points to the GUFI commands for more.
+- The results toolbar wraps at narrow widths.
+
+Tests: web/test/tableExport.test.tsx (CSV quoting, TSV, file names, the search table, and the Search page's Export CSV producing the file). Checked in Chromium against a running Studio: both downloads arrive with the expected names and contents, and the toolbars at 1280 and 400 px.
+
+### fix: search and query other libraries before the main folder is indexed (#614)
+
+Before the main folder's first build its index directory can be absent. Search (`/api/search`), Query, the assistant's search tool and the capability probes of other libraries all called `gufiAvailable()`, which also requires the main folder's index, so every library on this computer answered "index not built yet" until the main folder was built. Libraries on other hosts were unaffected.
+
+- `config.ts`: `gufiInstalled()` (gufi_query is here) and `gufiIndexAvailable(root)` (that and the given index); `gufiAvailable()` keeps its meaning for the main folder.
+- Search, Query (one library or several), the assistant's search and the library probes now need GUFI and the library's own index. The main folder's own state is reported as before through the omissions ("not indexed yet"), and a single-library Query of it still returns 409 with that reason.
+- `vectorModels` and `corpusStats` check the index they were asked about.
+- Only GUFI missing on this computer stops a local search, with "GUFI is not installed here".
+
+Test: omissions.test.mjs gains a case with the main index directory removed, where search and Query of another library return its rows and name the main folder. It failed before the fix ("index not built yet", 0 hits). The existing "never indexed" case created an empty main index folder first, which is why it passed. Full server suite: 706 tests, 0 failed.
+
 ## v1.180 (2026-10-27)
 
 ### Default new libraries built here to Meaning on documents (#609)
@@ -159,6 +184,10 @@ Measured over ssh to localhost, on 20,000 files with 50,000 passages:
 - **Web:** the one status line with the sample, model, time and Refresh; refresh progress; failure with Try again; no vectors and too few; the depth offer for a remote library the Studio builds.
 - **macOS** (`check_app.sh`): builds an index with vectors through the app's own enrich and embed, adds it on the `gufi_query`-only host, then checks the map, the neighbors, and that only `gufi_query` ran on that host.
 - Docs: HELP.md, REFERENCE.md, LIBRARIES.md, README.md.
+
+### Change log through v1.180 (#612)
+
+Regenerated with `node scripts/release-notes.mjs --changelog --next v1.180` before tagging v1.180.
 
 ## v1.179 (2026-10-27)
 
