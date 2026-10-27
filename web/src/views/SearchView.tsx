@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Button, EmptyState, Field, Input, SearchInput, StatusBadge, Switch, ToggleGroup, type BadgeVariant } from '@parallelworks/ui'
+import { Button, CopyButton, EmptyState, Field, Input, SearchInput, StatusBadge, Switch, ToggleGroup, type BadgeVariant } from '@parallelworks/ui'
 import { api, type PublicLibrary, SearchHit } from '../api'
 import { TagMenu } from '../components/TagMenu'
 import { RowCheck } from '../components/Explorer'
@@ -10,6 +10,7 @@ import { SEARCH_PLACEHOLDER, librariesInScope, meaningOn, searchReach, useSearch
 import { openInLibrary, readScope, saveScope, scopeIsSeveral, scopeParam, useScope, type Scope } from '../scope'
 import { GufiCommands, type GufiCommand } from '../components/GufiCommands'
 import { OmittedLine, type Omission } from '../components/OmittedLine'
+import { exportName, saveText, toCsv, toTsv } from '../tableExport'
 
 /** A search as the address carries it, after #view=search?: the single
  *  box's q, or a refined search's name, text and match, and the libraries
@@ -61,6 +62,23 @@ export function foundBy(h: Pick<SearchHit, 'mode' | 'kinds'>): string {
   const kinds = h.kinds?.length ? h.kinds : [h.mode]
   const parts = kinds.map(k => what[k])
   return `Found by ${parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}` : parts[0]}`
+}
+
+/** Search results as a table for export: one row per result, in the order
+ *  shown, with how it was found, its size in bytes and its modified time in
+ *  UTC. The library comes first when several were searched. */
+export function hitTable(hits: SearchHit[], several: boolean): { columns: string[]; rows: string[][] } {
+  const columns = [...(several ? ['library'] : []), 'path', 'name', 'found by', 'size', 'modified', 'labels', 'snippet']
+  const rows = hits.map(h => [
+    ...(several ? [h.library?.label ?? ''] : []),
+    h.path, h.name,
+    (h.kinds?.length ? h.kinds : [h.mode]).map(k => MODE_LABEL[k]).join(' '),
+    String(h.size ?? ''),
+    h.mtime ? new Date(h.mtime * 1000).toISOString().replace('.000Z', 'Z') : '',
+    (h.tags ?? []).join(' '),
+    h.snippet ?? '',
+  ])
+  return { columns, rows }
 }
 
 export function SearchView({ onOpen }: { onOpen: (path: string, q?: string) => void }) {
@@ -236,6 +254,12 @@ export function SearchView({ onOpen }: { onOpen: (path: string, q?: string) => v
                 </Button>
                 <Button size="sm" disabled={!sel.size} onClick={() => setTagMenuOpen(o => !o)}>
                   Labels…{sel.size ? ` (${sel.size})` : ''}
+                </Button>
+                <CopyButton size="sm" variant="outline" showLabel label="results" text={() => { const t = hitTable(hits, several); return toTsv(t.columns, t.rows) }}
+                  title="Copy the results as tab-separated text, which a spreadsheet pastes into columns" />
+                <Button size="sm" variant="outline" title="Save the results as a CSV file"
+                  onClick={() => { const t = hitTable(hits, several); saveText(exportName('search', refineOpen ? `${name} ${text}` : q), toCsv(t.columns, t.rows)) }}>
+                  Export CSV
                 </Button>
               </span>
             )}

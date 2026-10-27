@@ -63,6 +63,7 @@ When a search leaves a library out, or searches it only in part, a line above th
 - Results found more than one way come first, then the best of each kind: a file that uses the words more, in less text; the exact name, then names that start with the search; the passage nearest in meaning. Each library's index is read once per search for all of them.
 - Label chips under the box narrow the results.
 - Tick results to label them together.
+- **Export CSV** saves the results listed (with **Load more** for up to 1,000) as a CSV file: library, path, name, how each was found, size in bytes, modified time in UTC, labels and the snippet. **Copy** puts the same rows on the clipboard as tab-separated text, which a spreadsheet pastes into columns. In the macOS app the file goes to Downloads.
 - **GUFI commands**, under the results, shows the commands that found them, ready to copy and run in a terminal.
 
 ## Adding material
@@ -80,6 +81,8 @@ In the knowledge base the labels are saved on the files. In any other library, i
 ## Query
 
 Structured questions about the files themselves (largest, oldest, totals by type or owner) answered in milliseconds, in the libraries ticked under **Querying**. Pick a preset under **Start from** and change it, add conditions (all must match, or any), or write read-only SQL, and save the ones you reuse. Sizes take units (`10 MB`), and dates take a day (`2026-01-01`) or a time ago (`7 days`). **GUFI commands** under the form shows what ran, ready to copy, and the code button beside a saved query, or **Show SQL** for the form on screen, shows the SQL it runs and its command.
+
+**Export CSV** above the rows saves them as a CSV file, sizes in bytes, and **Copy** puts them on the clipboard for a spreadsheet. Both take the rows the query returned, up to its limit (2,000 at most); for more, narrow the query or run the command under **GUFI commands** in a terminal.
 
 ## Stats
 
