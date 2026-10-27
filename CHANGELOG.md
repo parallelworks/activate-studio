@@ -2,6 +2,46 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.177 (2026-10-27)
+
+### Converter line out of indexed text, same-host libraries by where ssh lands, Libraries table that fits (#603)
+
+Three fixes from a GUFI user's screenshots of the macOS app at v1.175.
+
+## Converter line in the indexed text
+
+Each cache entry the document converter writes starts with `<!-- extracted by downmark 0.10.0 -->`. `enrich.py` copied the whole entry into the `words` table, so the line was the start of every converted document's text: "downmark" and "extracted" matched every converted document, snippets began with it, and `embed.py` cut it into the first passage.
+
+- `enrich.py` and `embed.py` drop the line (`index_text`) before writing words or cutting passages. The cache entry keeps it, since the converter uses it to decide when to reconvert.
+- Search snippets drop it at read time (`withoutProvenance` in `server/src/textCleanup.ts`), which also covers indexes built on other systems until their next Rebuild.
+- An existing local index is cleaned in place at its next sync, once: one `UPDATE` per directory database removes the line from the start of each `words` row, nothing is extracted again, and a `.studio-text-clean` file in the index root records that it is done. A build writes the file too. The sync's job reads "Tidying the indexed text" when that is all it does. Vectors already embedded from a passage that held the line are kept.
+
+## Libraries on one host that are written differently
+
+Two libraries on the same account were walked separately when one was given as `user@host` and the other as a Host alias whose User comes from `~/.ssh/config`, because grouping compared the destination as typed.
+
+- `reachedHost` runs `ssh -G` with the library's options and port (it reads the config and connects nowhere) and keeps the user, host name, port, jump hosts and proxy command for ten minutes. Libraries with the same answer are one host for the search walk and for the `gufi_vt` location in Query.
+- The shared connection's `ControlPath` now ends in ssh's `%C`, which ssh computes from the same host, port, user and jump, so those libraries also share one socket. Where the socket folder is too long for the 40 characters `%C` expands to, the 12-character name is used as before.
+- Library lists and `GET /api/user-libraries` carry `reached` (`user@host`), and Settings shows it before each index path, so both libraries read the same.
+
+## Settings, Libraries table
+
+At 1300 and 1440 px with the settings menu and the status panel open, the table had about 460 px. Path values were about 60 px wide and 260 to 334 px tall, and the table was 605 px wide inside a 460 px wrapper, so it ran under the status panel.
+
+- The block layout is chosen by the table's own width (a container query at 720 px) instead of the window width, so it applies with the side panels open as well as on a phone.
+- Labels sit above their values (`DescriptionList stacked`), so a path gets the full cell width.
+- host:path values wrap only after a dot in the host, the colon, or a slash in the path.
+- An index with no files reachable from here showed "Files: none: names and metadata only", even when it held text. That row is now "Holds" with what the index can be searched by: names and metadata, plus text, plus meaning.
+
+After the change: 434 px values and no overflow at 1300 and 1440 px, 686 px at 740 px, and the table layout with columns at wider windows. Checked in headless Chromium with a remote library with a long host and path and a read-only local index.
+
+## Tests
+
+- `server/test/textCleanup.test.mjs`: "downmark" matches nothing after a build, snippets start with the document's text, an index from before is cleaned at its next sync without reconverting and only once, and the cleanup skips directories without a words table.
+- `server/test/sshOptions.test.mjs`: with a stand-in `ssh -G`, a library typed as `me@host` and one typed as an alias are shown as the same account, make one `gufi_vt` location and one search walk, and get the same `ControlPath`.
+- `server/test/largeIndexes.test.mjs` and `server/test/sshTransport.test.mjs` check the socket that ssh expands from `%C`.
+- `web/test/librariesPage.test.tsx`: the Holds wording, `reached` shown in place of the destination, and the break points in a long host and path.
+
 ## v1.176 (2026-10-26)
 
 ### Libraries over ssh: options per library, warm connections, one gufi_query per host in Query (#600)
@@ -131,6 +171,10 @@ Two changes from user feedback on searching several GUFI indexes at once.
 - Checked in headless Chromium at 1300 and 740 px on a test server with three libraries built by gufi_dir2index: the picker, a two-library search with library badges, a refined search (`*.md` with `budget NOT draft`, both on) and the same search opened from its address, and the Query picker.
 
 Docs: HELP.md (the picker, Refine) and REFERENCE.md (scope parameters, the refined search's rules and limits).
+
+### Change log through v1.176 (#602)
+
+Regenerated with `node scripts/release-notes.mjs --changelog --next v1.176` before tagging v1.176.
 
 ## v1.175 (2026-10-25)
 
