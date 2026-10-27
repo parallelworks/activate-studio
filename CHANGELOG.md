@@ -2,6 +2,32 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.178 (2026-10-27)
+
+### A connection per set of ssh options, and the Mac app check on server changes (#605)
+
+The v1.177 Mac app build failed in `deploy/mac/check_app.sh` with "a library's ssh options were not used" (run 40455265494). Nothing was published.
+
+## Cause
+
+#603 named the shared ssh socket by ssh's `%C` alone. `%C` is a hash of the local host, remote host, port, user and jump host, and does not cover a library's other options. In the check, the gufi_query-only library is first added without options, and Query opens a connection to it. Its options are then changed to `-o UserKnownHostsFile=... -o StrictHostKeyChecking=accept-new`. The connection test with the new options rode on the open connection, so ssh never logged in with them and the library's own known_hosts file was not written. #600 had kept one socket per set of options for this reason.
+
+## Fix
+
+- The socket name is `%C-<8 hex>` when the library has ssh options, the hash taken over its options with each `-o` keyword in lower case (`optionsTag` in `server/src/remoteExec.ts`). With no options it stays `%C`, so a library given as an alias and one given as `user@host` still share one connection. The 12-character fallback for a long socket folder is unchanged.
+- Grouping for stacked search and Query uses the same rule: the effective destination from `ssh -G` (user, host name, port, jump hosts, proxy command) plus the options hash. A stacked location runs one ssh with the first member's options, so its members must have the same options.
+- The mac-app workflow now also runs on pull requests that change `server/src/**` or `indexer/**`. Before, it ran only for `deploy/mac/**`, which is why #603 did not run `check_app.sh`. `check_app.sh` does not exercise the web client, so `web/src` is not added. The release input stays on `workflow_dispatch` only.
+
+## Tests
+
+`server/test/sshOptions.test.mjs`:
+
+- Two libraries on one host, one with `-o` options and one without, get two sockets: `%C` and `%C-<hash>`. As `ssh -G -F /dev/null` expands them, the sockets differ. An alias and `user@host` with no options expand to the same socket, and the same holds when both have the same options. A keyword in another case gives the same socket.
+- End to end with GUFI: two libraries on one host, one with `-o UserKnownHostsFile=... -o StrictHostKeyChecking=accept-new` and one without. Query runs them as two locations, and every ssh for the library with options carries them while the other's carry none. They also have different ControlPaths. Search makes two walks, one with the options.
+- Both tests fail on main and pass with this change. The test that checks a jump host gets its own socket now also checks that an options-only library gets its own.
+
+Server suite on Node 26: 665 tests, 656 pass, 9 skipped, 0 fail.
+
 ## v1.177 (2026-10-27)
 
 ### Converter line out of indexed text, same-host libraries by where ssh lands, Libraries table that fits (#603)
@@ -41,6 +67,10 @@ After the change: 434 px values and no overflow at 1300 and 1440 px, 686 px at 7
 - `server/test/sshOptions.test.mjs`: with a stand-in `ssh -G`, a library typed as `me@host` and one typed as an alias are shown as the same account, make one `gufi_vt` location and one search walk, and get the same `ControlPath`.
 - `server/test/largeIndexes.test.mjs` and `server/test/sshTransport.test.mjs` check the socket that ssh expands from `%C`.
 - `web/test/librariesPage.test.tsx`: the Holds wording, `reached` shown in place of the destination, and the break points in a long host and path.
+
+### Change log through v1.177 (#604)
+
+Regenerated with `node scripts/release-notes.mjs --changelog --next v1.177` before tagging v1.177.
 
 ## v1.176 (2026-10-26)
 
