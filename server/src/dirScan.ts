@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { isMainThread, parentPort, Worker, workerData } from 'node:worker_threads'
+import { lockedEntry, type Locked } from './indexModes.js'
 
 /**
  * Each folder's latest change under a root: the folder's own time and the
@@ -21,31 +22,36 @@ export function scanLatest(root: string, exclude: Iterable<string>): Promise<Map
 /** The same, with the folders that could not be listed for want of
  *  permission (EPERM, which macOS answers where its privacy settings have
  *  not let the app in, or EACCES), by their path below the root. Their
- *  content is left out of the scan, as it is of the index. */
-export function scanLatestDetail(root: string, exclude: Iterable<string>): Promise<{ latest: Map<string, number>; denied: string[] }> {
-  const done = (r: Walked) => ({ latest: new Map(r.pairs), denied: r.denied })
+ *  content is left out of the scan, as it is of the index. `locked` are the
+ *  folders whose owner may not write them, which gufi_dir2index needs help
+ *  with (indexModes.ts); `skip` adds names it passes over that the scan
+ *  does not name in `exclude`. */
+export function scanLatestDetail(root: string, exclude: Iterable<string>, skip: Iterable<string> = []): Promise<{ latest: Map<string, number>; denied: string[]; locked: Locked[] }> {
+  const done = (r: Walked) => ({ latest: new Map(r.pairs), denied: r.denied, locked: r.locked })
   return new Promise(resolve => {
     let worker: Worker
     try {
       // The process's own flags, less those a worker refuses (--input-type,
       // --eval) or should not repeat (--test); a loader such as tsx stays.
       const execArgv = process.execArgv.filter(a => !/^--(input-type|eval|print|test)\b/.test(a))
-      worker = new Worker(new URL(import.meta.url), { workerData: { dirScan: true, root, exclude: [...exclude] }, execArgv })
+      worker = new Worker(new URL(import.meta.url), { workerData: { dirScan: true, root, exclude: [...exclude], skip: [...skip] }, execArgv })
     } catch {
       // No worker here (a test runner, say): the same walk, on this thread.
-      resolve(done(walk(root, new Set(exclude))))
+      resolve(done(walk(root, new Set(exclude), new Set(skip))))
       return
     }
     worker.once('message', (r: Walked) => resolve(done(r)))
-    worker.once('error', () => resolve(done(walk(root, new Set(exclude)))))
+    worker.once('error', () => resolve(done(walk(root, new Set(exclude), new Set(skip)))))
   })
 }
 
-interface Walked { pairs: [string, number][]; denied: string[] }
+interface Walked { pairs: [string, number][]; denied: string[]; locked: Locked[] }
 
-function walk(root: string, exclude: Set<string>): Walked {
+function walk(root: string, exclude: Set<string>, skip: Set<string>): Walked {
   const out: [string, number][] = []
   const denied: string[] = []
+  const locked: Locked[] = []
+  const passOver = new Set([...exclude, ...skip])
   const visit = (abs: string, rel: string) => {
     let entries: fs.Dirent[]
     try { entries = fs.readdirSync(abs, { withFileTypes: true }) } catch (e) {
@@ -54,7 +60,12 @@ function walk(root: string, exclude: Set<string>): Walked {
       return
     }
     let latest = 0
-    try { latest = fs.statSync(abs, { throwIfNoEntry: false })?.mtimeMs ?? 0 } catch { /* gone */ }
+    try {
+      const st = fs.statSync(abs, { throwIfNoEntry: false })
+      latest = st?.mtimeMs ?? 0
+      const l = st && lockedEntry(abs, rel, st.mode, entries, passOver)
+      if (l) locked.push(l)
+    } catch { /* gone */ }
     const dirs: fs.Dirent[] = []
     for (const e of entries) {
       if (e.name.startsWith('.')) continue
@@ -68,10 +79,10 @@ function walk(root: string, exclude: Set<string>): Walked {
     for (const d of dirs) visit(path.join(abs, d.name), rel ? `${rel}/${d.name}` : d.name)
   }
   visit(root, '')
-  return { pairs: out, denied }
+  return { pairs: out, denied, locked }
 }
 
 if (!isMainThread && (workerData as { dirScan?: boolean } | null)?.dirScan) {
-  const { root, exclude } = workerData as { root: string; exclude: string[] }
-  parentPort!.postMessage(walk(root, new Set(exclude)))
+  const { root, exclude, skip } = workerData as { root: string; exclude: string[]; skip: string[] }
+  parentPort!.postMessage(walk(root, new Set(exclude), new Set(skip)))
 }

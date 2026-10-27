@@ -77,14 +77,36 @@ src=$(cd "$src" && pwd -P) || fail "$src cannot be read."
 mkdir -p "$idx" || fail "$idx could not be created."
 idx=$(cd "$idx" && pwd -P)
 base=\${src##*/}; tree="$idx/$base"; stage="$idx/.build"
-rm -rf "$stage"
+# rm -rf, opening the folders first where one keeps it out: an index of a
+# folder its owner may not write has index folders of that mode.
+rmtree() { [ -e "$1" ] || return 0; rm -rf "$1" 2>/dev/null && return 0; chmod u+rwx "$(dirname "$1")" 2>/dev/null; chmod -R u+rwx "$1" 2>/dev/null; rm -rf "$1"; }
+rmtree "$stage"
 phase index
-"$bin/gufi_dir2index" -n "$threads" -x "$src" "$stage" > "$s/dir2index.log" 2>&1 || fail "gufi_dir2index failed: $(tail -n 3 "$s/dir2index.log" | tr '\\n' ' ')"
+dir2index() { "$bin/gufi_dir2index" -n "$threads" -x "$src" "$stage" > "$s/dir2index.log" 2>&1 || fail "gufi_dir2index failed: $(tail -n 3 "$s/dir2index.log" | tr '\\n' ' ')"; }
+dir2index
+# gufi_dir2index gives each index folder the mode of its source folder
+# before the folders inside it make theirs, so for a user other than root
+# a source folder its owner may not write (0555, say) has what is inside it
+# left out, with a "mkdir ... failure" line for each. Those index folders
+# are made first and the build is run again; what the index records about
+# the source is unchanged.
+if grep -q '^mkdir .*/db\\.db failure: ' "$s/dir2index.log"; then
+  rmtree "$stage"
+  find "$src" -type d ! -perm -700 -print0 2>/dev/null | while IFS= read -r -d '' d; do
+    find "$d" -mindepth 1 -maxdepth 1 -type d -print0 2>/dev/null | while IFS= read -r -d '' c; do
+      if [ -r "$c" ] && [ -x "$c" ]; then mkdir -p "$stage/$base\${c#"$src"}"; fi
+    done
+  done
+  dir2index
+fi
 [ -d "$stage/$base" ] || fail "gufi_dir2index wrote no tree at $stage/$base."
-rm -rf "$idx/.old"
+# The index folders opened for this user, so the text pass can write in them
+# and the tree can be moved; their group and other bits stay the source's.
+[ "$(id -u)" = 0 ] || find "$stage/$base" -type d ! -perm -700 -exec chmod u+rwx {} + 2>/dev/null
+rmtree "$idx/.old"
 if [ -d "$tree" ]; then mv "$tree" "$idx/.old"; fi
 mv "$stage/$base" "$tree" || fail "The new index could not be moved into place."
-rm -rf "$stage" "$idx/.old"
+rmtree "$stage"; rmtree "$idx/.old"
 fulltext=false vectors=false
 if [ -n "$py" ] && [ -f "$s/enrich.py" ]; then
   phase extract

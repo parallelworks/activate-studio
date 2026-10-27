@@ -295,3 +295,39 @@ test('a build at the Names depth reads nothing from inside the files there', { s
   assert.equal(fs.existsSync(path.join(homes['me@linux-box'], '.activate-studio', 'builds', state, 'enrich.py')), false, 'enrich.py is not sent')
   assert.equal((await post('/api/user-libraries/ssh/build', { ...box, sourceRoot: '~/project', indexRoot: '~/other', depth: 'deepest', create: true })).status, 400)
 })
+
+test('a read-only folder there (0555 folders, 0444 files) is indexed whole, and rebuilt', { skip: skip || (process.getuid?.() === 0 && 'root writes in any folder') }, async () => {
+  // gufi_dir2index gives an index folder its source folder's mode before
+  // the folders inside it make theirs; the build there makes those first
+  // and runs it again (indexModes.ts says why).
+  const archive = path.join(homes['me@linux-box'], 'archive')
+  write(path.join(archive, 'top.md'), 'the top file about wombatword\n')
+  write(path.join(archive, 'reports', 'deep', 'inner', 'q2.md'), 'second quarter numbatword\n')
+  write(path.join(archive, 'scans', 'page.md'), 'a scanned page\n')
+  const readOnly = d => {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) { const p = path.join(d, e.name); if (e.isDirectory()) readOnly(p); else fs.chmodSync(p, 0o444) }
+    fs.chmodSync(d, 0o555)
+  }
+  readOnly(archive)
+  test.after(() => spawnSync('chmod', ['-R', 'u+rwx', archive]))
+  const r = await post('/api/user-libraries/ssh/build', { ...box, sourceRoot: '~/archive', indexRoot: '~/ro-index', label: 'Archive', depth: 'text', create: true })
+  assert.equal(r.status, 200, JSON.stringify(r.body))
+  let l = await waitFor(r.body.id)
+  assert.equal(l.state, 'ready', l.error ?? '')
+  assert.deepEqual([l.directories, l.files, l.fullText], [5, 3, true])
+  const lib = L.listLibraries('kb', null).find(x => x.id === r.body.id)
+  assert.deepEqual((await G.searchNames('q2', 5, lib.indexRoot)).map(h => h.path), ['reports/deep/inner/q2.md'])
+  assert.deepEqual((await G.searchFts('numbatword', 5, lib.indexRoot)).map(h => h.path), ['reports/deep/inner/q2.md'])
+  // Its index folders keep the source's group and other bits and are the build's to write.
+  assert.equal(fs.statSync(path.join(l.indexRoot, 'reports', 'deep')).mode & 0o777, 0o755)
+  // GUFI's record of the source keeps its modes.
+  const modes = spawnSync(path.join(gufiBin, 'gufi_query'), ['-d', '|', '-E', 'SELECT mode FROM vrsummary;', l.indexRoot], { encoding: 'utf8' }).stdout.trim().split('\n')
+  assert.equal(modes.length, 5)
+  for (const m of modes) assert.equal(Number(m) & 0o7777, 0o555)
+  // A rebuild moves the old tree aside and removes it.
+  await post(`/api/user-libraries/${r.body.id}/refresh`, {})
+  l = await waitFor(r.body.id)
+  assert.equal(l.state, 'ready', l.error ?? '')
+  assert.equal(l.directories, 5)
+  assert.equal(fs.existsSync(path.join(homes['me@linux-box'], 'ro-index', '.old')), false)
+})
