@@ -4,8 +4,13 @@
 // searching it, the details panel, a rebuild, and a rebuild that fails.
 // The remote systems are stand-ins: each ssh or pw ssh session runs in a
 // local bash whose HOME is that system's, so the build really runs, with
-// this machine's GUFI and Python. Nothing reaches a platform or a host.
-// Skips without GUFI.
+// this machine's GUFI and Python. Nothing reaches a platform or a host, and
+// downloads fail, here and there, as on a network with no way out. Skips
+// without GUFI. Search by meaning there with the Studio's ONNX model runs
+// where STUDIO_TEST_ONNX_DIR names a folder with model.onnx and
+// tokenizer.json and STUDIO_TEST_WHEELS one that fetch_embed.py --download
+// filled for this Python; the GGUF fallback where STUDIO_TEST_GGUF names
+// that model.
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
@@ -28,6 +33,10 @@ process.env.PW_GATEWAY_URL = 'https://platform.test/api/openai/v1'
 // Stands in for this computer's pw sign-in.
 process.env.PW_API_KEY = 'cli-key'
 delete process.env.AUTH_JWKS_URL
+// No downloads: fetch_embed.py, here and on the stand-in systems, finds no way out.
+const NO_NETWORK = { https_proxy: 'http://127.0.0.1:9', HTTPS_PROXY: 'http://127.0.0.1:9', http_proxy: 'http://127.0.0.1:9', HTTP_PROXY: 'http://127.0.0.1:9' }
+Object.assign(process.env, NO_NETWORK)
+delete process.env.no_proxy; delete process.env.NO_PROXY
 const write = (f, body) => { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, body) }
 const exe = (f, body) => { write(f, body); fs.chmodSync(f, 0o755) }
 exe(path.join(dir, 'pw'), '#!/bin/sh\nexit 0\n')
@@ -49,7 +58,7 @@ R.setRemoteSpawn((site, key, command) => {
   const name = R.parseSshSite(site)?.destination ?? site
   sessions.push({ site, key })
   if (!homes[name]) return spawn('/bin/sh', ['-c', 'echo "ssh: Could not resolve hostname" >&2; exit 255'], { stdio: ['pipe', 'pipe', 'pipe'] })
-  return spawn('bash', ['-c', command], { stdio: ['pipe', 'pipe', 'pipe'], env: { HOME: homes[name], PATH: '/usr/bin:/bin' } })
+  return spawn('bash', ['-c', command], { stdio: ['pipe', 'pipe', 'pipe'], env: { HOME: homes[name], PATH: '/usr/bin:/bin', ...NO_NETWORK } })
 })
 const U = await import('../dist/userLibraries.js')
 const L = await import('../dist/libraries.js')
@@ -263,24 +272,30 @@ test('over pw ssh: a system from the dropdown, built with the platform key', { s
   assert.equal((await post('/api/user-libraries/pw/build/test', { cluster: '-oProxyCommand=x', sourceRoot: '~/w' })).status, 400)
 })
 
-test('a build there starts at Text + OCR, also where the Studio\'s embedding model is there', { skip }, async () => {
-  // Search does not read vectors made on another system yet, so a Meaning
-  // stop is only made there when chosen.
-  const model = path.join(homes['cluster-a'], '.activate-studio', 'models', 'minilm384.gguf')
-  write(model, '')
-  try {
-    const t = (await post('/api/user-libraries/pw/build/test', { cluster: 'cluster-a', sourceRoot: '~/work', indexRoot: '~/indexes/plain' })).body
-    assert.match(t.steps.find(s => s.name === 'extract').detail, /embeddings are made with the model/)
-    const r = await post('/api/user-libraries/pw/build', { cluster: 'cluster-a', sourceRoot: '~/work', indexRoot: '~/indexes/plain', create: true })
-    assert.equal(r.status, 200, JSON.stringify(r.body))
-    assert.equal(r.body.depth, 'ocr')
-    const stored = JSON.parse(fs.readFileSync(path.join(process.env.INDEX_BASE, 'indexing.json'), 'utf8')).libraries[r.body.id]
-    assert.equal(stored.depth, 'ocr', 'stored with it, so a later default leaves it as built')
-    const l = await waitFor(r.body.id)
-    assert.equal(l.state, 'ready', l.error ?? '')
-    const state = fs.readdirSync(path.join(homes['cluster-a'], '.activate-studio', 'builds')).find(b => b.startsWith(r.body.id))
-    assert.equal(fs.existsSync(path.join(homes['cluster-a'], '.activate-studio', 'builds', state, 'embed.py')), false, 'embed.py is not sent')
-  } finally { fs.rmSync(model) }
+test('a build there starts at Meaning on documents, and the check says what the first one sends', { skip }, async () => {
+  const t = (await post('/api/user-libraries/pw/build/test', { cluster: 'cluster-a', sourceRoot: '~/work', indexRoot: '~/indexes/plain' })).body
+  const plat = spawnSync('python3', ['-c', 'import sys; print("cp%d%d" % sys.version_info[:2])'], { encoding: 'utf8' }).stdout.trim()
+  const pinned = Object.keys(JSON.parse(fs.readFileSync(new URL('../../indexer/embed_deps.json', import.meta.url), 'utf8')).wheels).some(k => k.endsWith(plat))
+  assert.match(t.steps.find(s => s.name === 'extract').detail, pinned
+    ? /At a Meaning depth, embeddings are made with the Studio's model: the first build sends it with its packages for this Python \(about \d+ MB, once\)/
+    : /There are no packages of the Studio's embedding model for/)
+  const r = await post('/api/user-libraries/pw/build', { cluster: 'cluster-a', sourceRoot: '~/work', indexRoot: '~/indexes/plain', create: true })
+  assert.equal(r.status, 200, JSON.stringify(r.body))
+  assert.equal(r.body.depth, 'meaning-documents')
+  const stored = JSON.parse(fs.readFileSync(path.join(process.env.INDEX_BASE, 'indexing.json'), 'utf8')).libraries[r.body.id]
+  assert.equal(stored.depth, 'meaning-documents', 'stored with it, so a later default leaves it as built')
+  const l = await waitFor(r.body.id)
+  assert.equal(l.state, 'ready', l.error ?? '')
+  // Nothing could be sent or downloaded, and there is no GGUF model there: no vectors, and the build stands.
+  assert.equal(l.vectors, false)
+  // At Text + OCR, nothing for search by meaning is sent.
+  const o = await post('/api/user-libraries/pw/build', { cluster: 'cluster-a', sourceRoot: '~/work', indexRoot: '~/indexes/ocr', depth: 'ocr', create: true })
+  assert.equal(o.status, 200, JSON.stringify(o.body))
+  assert.equal((await waitFor(o.body.id)).state, 'ready')
+  const state = fs.readdirSync(path.join(homes['cluster-a'], '.activate-studio', 'builds')).find(b => b.startsWith(o.body.id))
+  for (const f of ['embed.py', 'embed_onnx.py', 'fetch_embed.py']) {
+    assert.equal(fs.existsSync(path.join(homes['cluster-a'], '.activate-studio', 'builds', state, f)), false, `${f} is not sent`)
+  }
 })
 
 test('a build at the Names depth reads nothing from inside the files there', { skip }, async () => {
@@ -330,4 +345,98 @@ test('a read-only folder there (0555 folders, 0444 files) is indexed whole, and 
   assert.equal(l.state, 'ready', l.error ?? '')
   assert.equal(l.directories, 5)
   assert.equal(fs.existsSync(path.join(homes['me@linux-box'], 'ro-index', '.old')), false)
+})
+
+// Search by meaning on another system, with the Studio's ONNX model: sent
+// there by the first build, installed once with no network, found by the
+// one-pass walk; and the GGUF model's vectors made where it could not be,
+// embedded again with it at the next build.
+const onnxDir = process.env.STUDIO_TEST_ONNX_DIR || ''
+const wheelsDir = process.env.STUDIO_TEST_WHEELS || ''
+const ggufFile = process.env.STUDIO_TEST_GGUF || ''
+const skipOnnx = skip || (!onnxDir && 'STUDIO_TEST_ONNX_DIR is not set') || (!wheelsDir && 'STUDIO_TEST_WHEELS is not set')
+const papers = path.join(homes['me@linux-box'], 'papers')
+const embedRoot = path.join(homes['me@linux-box'], '.activate-studio', 'embed')
+const vectorModels = root => [...new Set(spawnSync(path.join(gufiBin, 'gufi_query'), ['-d', '|', '-E', 'SELECT model FROM gvecmodel;', root], { encoding: 'utf8' }).stdout.trim().split('\n').filter(Boolean))]
+let papersId = null
+const RE = await import('../dist/remoteEmbed.js')
+const S = await import('../dist/libraryScope.js')
+// The query worker the walk's search by meaning starts would keep the test running.
+test.after(async () => (await import('../dist/embedWorker.js')).stopQueryWorker())
+/** The folder and the Studio's own model, as the app keeps it, from here on. */
+const withModel = () => {
+  const link = path.join(process.env.INDEX_BASE, 'models', 'minilm-l6')
+  if (fs.existsSync(link)) return
+  write(path.join(papers, 'turbine.md'), '# Blade cooling\nThe turbine blades are cooled by air bled from the compressor, which keeps the metal below its melting point.\n')
+  write(path.join(papers, 'notes', 'garden.md'), '# Tomatoes\nWater the tomato plants in the morning and stake them once they are a foot tall.\n')
+  fs.mkdirSync(path.dirname(link), { recursive: true })
+  fs.symlinkSync(path.resolve(onnxDir), link)
+}
+
+test('without the packages, here or there, a build there embeds with the GGUF model where that is there', { skip: skipOnnx || (!ggufFile && 'STUDIO_TEST_GGUF is not set') }, async () => {
+  const gguf = path.join(homes['me@linux-box'], '.activate-studio', 'models', 'minilm384.gguf')
+  fs.mkdirSync(path.dirname(gguf), { recursive: true })
+  fs.copyFileSync(ggufFile, gguf)
+  withModel()
+  try {
+    const before = RE.embedFilesSent()
+    const r = await post('/api/user-libraries/ssh/build', { ...box, sourceRoot: '~/papers', indexRoot: '~/papers-index', label: 'Papers', create: true })
+    assert.equal(r.status, 200, JSON.stringify(r.body))
+    papersId = r.body.id
+    const l = await waitFor(papersId)
+    assert.equal(l.state, 'ready', l.error ?? '')
+    assert.equal(l.vectors, true)
+    assert.deepEqual(vectorModels(l.indexRoot), ['minilm384'])
+    // The model's own files went, from the Studio's folder; the wheels could be had nowhere.
+    assert.equal(RE.embedFilesSent() - before, 2)
+    assert.equal(fs.readdirSync(embedRoot).some(n => !n.includes('.')), false, 'nothing installed')
+  } finally { fs.rmSync(gguf) }
+})
+
+test('the first build there sends the Studio\'s model and packages, installs them once with no network, and the one-pass walk finds its vectors', { skip: skipOnnx, timeout: 300_000 }, async () => {
+  withModel()
+  // The wheels, as a bundle or a download here keeps them; until now the
+  // downloads here found no way out.
+  fs.rmSync(path.join(process.env.INDEX_BASE, 'embed-wheels'), { recursive: true, force: true })
+  fs.symlinkSync(path.resolve(wheelsDir), path.join(process.env.INDEX_BASE, 'embed-wheels'))
+  const before = RE.embedFilesSent()
+  let id = papersId
+  if (id) {
+    const r = await post(`/api/user-libraries/${id}/refresh`, {})
+    assert.equal(r.status, 200, JSON.stringify(r.body))
+  } else {
+    const r = await post('/api/user-libraries/ssh/build', { ...box, sourceRoot: '~/papers', indexRoot: '~/papers-index', label: 'Papers', create: true })
+    assert.equal(r.status, 200, JSON.stringify(r.body))
+    id = papersId = r.body.id
+  }
+  const l = await waitFor(id)
+  assert.equal(l.state, 'ready', l.error ?? '')
+  assert.equal(l.vectors, true)
+  // GGUF vectors from before are embedded again, all of them with the ONNX model.
+  assert.deepEqual(vectorModels(l.indexRoot), ['minilm-l6-mean-int8'])
+  // Sent what was not there yet: three wheels, and the model's files unless the GGUF test sent them.
+  const sent = RE.embedFilesSent() - before
+  assert.ok(sent === 3 || sent === 5, `${sent} files sent`)
+  const versions = fs.readdirSync(embedRoot)
+  const v = versions.find(n => !n.includes('.'))
+  assert.ok(v && fs.existsSync(path.join(embedRoot, v, 'ok')), versions.join(' '))
+  assert.deepEqual(versions.filter(n => n !== v), [], 'the sent files and the marker are gone once installed')
+  assert.ok(fs.existsSync(path.join(embedRoot, v, 'deps', 'onnxruntime')))
+  assert.ok(fs.existsSync(path.join(embedRoot, v, 'model', 'model.onnx')))
+
+  // The one-pass walk over the remote index: a question in other words
+  // finds the passage by meaning.
+  const lib = L.listLibraries('kb', null).find(x => x.id === id)
+  const hits = await S.searchScope([lib], 'how is the engine kept from overheating', 10, { semantic: true })
+  const hit = hits.find(h => h.path === 'turbine.md')
+  assert.ok(hit, JSON.stringify(hits))
+  assert.ok((hit.kinds ?? [hit.mode]).includes('vector'), JSON.stringify(hit))
+
+  // The next build sends nothing and uses what is installed.
+  const again = RE.embedFilesSent()
+  await post(`/api/user-libraries/${id}/refresh`, {})
+  const l2 = await waitFor(id)
+  assert.equal(l2.state, 'ready', l2.error ?? '')
+  assert.equal(RE.embedFilesSent(), again)
+  assert.deepEqual(vectorModels(l2.indexRoot), ['minilm-l6-mean-int8'])
 })

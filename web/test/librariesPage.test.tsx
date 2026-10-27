@@ -413,16 +413,17 @@ describe('Settings, Libraries', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'A remote system' }))
     fireEvent.change(await screen.findByLabelText('Host'), { target: { value: 'me@box:2222' } })
     fireEvent.change(screen.getByLabelText('Source folder'), { target: { value: '~/data' } })
-    // Built there, the depth starts at Text + OCR, and the form says why.
-    expect(screen.getByRole('button', { name: 'Text + OCR' })).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByText(/^Starts at Text \+ OCR: the Studio does not search by meaning in indexes on other systems yet\./)).toBeInTheDocument()
+    // Built there, the depth starts at Meaning on documents, made with the
+    // Studio's model, and the form says what the first build sends.
+    expect(screen.getByRole('button', { name: 'Meaning on documents' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByText(/^Search by meaning there uses the Studio's embedding model\./)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Test connection' }))
     expect(await screen.findByText(/no Python 3\.10 or later/i)).toBeInTheDocument()
     expect(posted(s, '/api/user-libraries/ssh/build/test')[0].body).toEqual({ destination: 'me@box:2222', sourceRoot: '~/data' })
     fireEvent.click(screen.getByRole('button', { name: 'Build the index' }))
     fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Create it and build' }))
     const row = await waitFor(() => rowOf('data on box'))
-    expect(posted(s, '/api/user-libraries/ssh/build')[0].body).toEqual({ destination: 'me@box:2222', sourceRoot: '~/data', gufiBin: '/opt/gufi/bin', depth: 'ocr', create: true })
+    expect(posted(s, '/api/user-libraries/ssh/build')[0].body).toEqual({ destination: 'me@box:2222', sourceRoot: '~/data', gufiBin: '/opt/gufi/bin', depth: 'meaning-documents', create: true })
     expect(within(row).getByText('Index built on me@box over ssh, read only')).toBeInTheDocument()
     expect(within(row).getByTitle('me@box:/home/me/data')).toBeInTheDocument()
     expect(screen.getByRole('progressbar', { name: /Extracting text/ })).toBeInTheDocument()

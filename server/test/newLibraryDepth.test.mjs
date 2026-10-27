@@ -1,6 +1,6 @@
 // The depth a new library starts at. A library built of a folder on this
 // computer, read only or not, starts at Meaning on documents, stored with it
-// when it is added; one built on another system starts at Text + OCR
+// when it is added, and so does one built on another system
 // (remoteBuild.test.mjs). A library added before the depth was stored at
 // creation keeps what it had after an update: Text + OCR, or what its
 // settings said. The build and the check run GUFI for real and skip without
@@ -58,9 +58,9 @@ const waitReady = async id => {
 }
 const stored = () => JSON.parse(fs.readFileSync(path.join(dir, 'ix', 'indexing.json'), 'utf8')).libraries
 
-test('the defaults: Meaning on documents for a library built here, Text + OCR for one built on another system', () => {
+test('the defaults: Meaning on documents for a library built here or on another system', () => {
   assert.equal(S.NEW_LIBRARY_DEPTH, 'meaning-documents')
-  assert.equal(S.NEW_REMOTE_LIBRARY_DEPTH, 'ocr')
+  assert.equal(S.NEW_REMOTE_LIBRARY_DEPTH, 'meaning-documents')
   assert.equal(S.indexSettings('kb').depth, 'meaning-documents', 'the main folder, as before')
 })
 

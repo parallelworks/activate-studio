@@ -12,7 +12,8 @@ import { checkSshOptions, isDirect, jumpOf, noShell, parseSshOptions, reachedHos
 import { noteGufi } from './gufiTrace.js'
 import { getJob, startJob, type Job } from './jobs.js'
 import { depthParts, forgetIndexSettings, indexSettings, meaningArgs, NEW_REMOTE_LIBRARY_DEPTH, saveIndexSettings, textArgs, type IndexDepth } from './indexSettings.js'
-import { BUILD_CHECK, BUILD_RUN, BUILD_START, BUILD_STATUS, indexerScript, keyValues, parseStatus, PHASE_LABEL } from './remoteBuild.js'
+import { BUILD_CHECK, BUILD_RUN, BUILD_START, BUILD_STATUS, EMBED_PROBE, indexerScript, keyValues, parseStatus, PHASE_LABEL } from './remoteBuild.js'
+import { embedMegabytes, embedVersion, sendEmbed } from './remoteEmbed.js'
 
 /**
  * Libraries a user adds from one of their clusters. The index workflow
@@ -854,6 +855,8 @@ export interface BuildProbe extends SshProbe {
   create?: string[]
   python?: string | null
   model?: string | null
+  /** The Python's platform as fetch_embed.py names it (linux-x86_64-cp312). */
+  platform?: string | null
 }
 
 const inside = (child: string, parent: string) => child === parent || child.startsWith(parent.replace(/\/+$/, '') + '/')
@@ -926,10 +929,22 @@ async function probeBuild(h: ProbeHost, spec: BuildSpec): Promise<BuildProbe> {
 
   const python = kv.python && kv.python.startsWith('/') ? kv.python : null
   const model = python && kv.model && kv.model.startsWith('/') ? kv.model : null
+  const platform = python && kv.platform ? kv.platform : null
   steps.push(python
-    ? { name: 'extract', ok: true, detail: `Text is extracted there with Python ${kv.python_version || '3'}, so search covers what the files say${model ? ', and embeddings are made with the model in ~/.activate-studio/models' : ''}.` }
+    ? { name: 'extract', ok: true, detail: `Text is extracted there with Python ${kv.python_version || '3'}, so search covers what the files say. ${meaningThere(platform, kv.embeds ?? '', model)}` }
     : { name: 'extract', ok: true, warn: true, detail: `No Python 3.10 or later with SQLite's full-text module on ${dest}, so the index has names and metadata only.` })
-  return done({ os: c.os, gufiBin: g.bin, gufiVersion: g.version || undefined, sourceRoot: source, indexDir, create, python, model })
+  return done({ os: c.os, gufiBin: g.bin, gufiVersion: g.version || undefined, sourceRoot: source, indexDir, create, python, model, platform })
+}
+
+/** How search by meaning is made there, for the check: with the Studio's
+ *  ONNX model, kept there or sent with the first build; else with the GGUF
+ *  model, which search does not read; else not at all. */
+function meaningThere(platform: string | null, embeds: string, gguf: string | null): string {
+  const v = platform ? embedVersion(platform) : null
+  if (v && embeds.split(/\s+/).includes(v)) return 'At a Meaning depth, embeddings are made with the Studio\'s model, which is there in ~/.activate-studio/embed.'
+  if (v) return `At a Meaning depth, embeddings are made with the Studio's model: the first build sends it with its packages for this Python (about ${embedMegabytes(platform!)} MB, once) to ~/.activate-studio/embed.`
+  const why = `There are no packages of the Studio's embedding model for ${platform ?? 'this Python'} (Python 3.11 to 3.13 on Linux x86_64 or aarch64, or macOS arm64)`
+  return gguf ? `${why}, so at a Meaning depth embeddings are made with the GGUF model in ~/.activate-studio/models, which search does not read.` : `${why}, so no embeddings are made there.`
 }
 
 /** The connection test over plain ssh; `reuse` takes a test that passed
@@ -1175,17 +1190,30 @@ const ABS_ANY = /^\/[^\0-\x1f\x7f]*$/
 
 /** Writes the build to the remote system and starts it there, at the
  *  library's depth: names only reads no text there, text runs no OCR, and
- *  search by meaning is made only at the meaning stops. */
+ *  search by meaning is made only at the meaning stops, with the Studio's
+ *  ONNX model where there are packages of it for the Python there: those
+ *  it does not have yet are sent while the build runs (remoteEmbed.ts). */
 async function startRemote(site: string, key: string, b: RemoteBuild, create: boolean, depth: IndexDepth): Promise<void> {
   const parts = depthParts(depth)
   const level = meaningArgs(parts.meaning, indexSettings('kb').meaningSpeed)
   const text = textArgs(depth)
   const enrich = b.python && text ? indexerScript('enrich.py') : ''
-  const embed = enrich && b.model && level ? indexerScript('embed.py') : ''
+  // The Python's platform is read again at each build: the check of a
+  // library built by an earlier version did not record it.
+  let platform = '', version = '', send = false
+  if (enrich && level) {
+    const kv = keyValues((await remoteRun(site, key, ['sh', '-c', EMBED_PROBE, '_', b.python!], 60_000).catch(() => null))?.stdout ?? '')
+    const v = kv.platform ? embedVersion(kv.platform) : null
+    if (v) { platform = kv.platform; version = v; send = !(kv.embeds ?? '').split(/\s+/).includes(v) }
+  }
+  const embed = enrich && level && (b.model || version) ? indexerScript('embed.py') : ''
+  const onnx = embed && version
   const r = await remoteRun(site, key, ['bash', '-c', BUILD_START, '_', b.id, BUILD_RUN, enrich, embed,
+    onnx ? indexerScript('embed_onnx.py') : '', onnx ? indexerScript('fetch_embed.py') : '', onnx ? indexerScript('embed_deps.json') : '', onnx && send ? version : '',
     b.gufiBin, b.sourceRoot, b.indexDir, String(await remoteThreads(site, key)), b.python ?? '', b.model ?? '', create ? '1' : '0', (level ?? []).join(' '),
-    (text ?? []).join(' ')], 60_000)
+    (text ?? []).join(' '), onnx ? version : '', onnx ? platform : ''], 60_000)
   if (r.code !== 0 || !/started/.test(r.stdout)) throw new KbError(502, `The build could not be started on ${siteName(site)}: ${lastLine(r.stderr) || `exit ${r.code}`}`)
+  if (onnx && send) void sendEmbed(site, key, platform, version)
 }
 
 /** The session a library's commands go over, and the key they act with. */
@@ -1219,9 +1247,8 @@ export async function addBuild(viewerId: string | null | undefined, transport: T
     id: newBuildId(id), indexDir: p.indexDir!, sourceRoot: p.sourceRoot!, gufiBin: p.gufiBin!, python: p.python ?? null, model: p.model ?? null,
     startedAt: new Date().toISOString(), progress: { phase: PHASE_LABEL.prepare, done: 0, total: 0, current: null },
   }
-  // The depth is stored with the library, the default included. That is
-  // Text + OCR (NEW_REMOTE_LIBRARY_DEPTH): search does not read vectors
-  // made on another system yet.
+  // The depth is stored with the library, the default included
+  // (NEW_REMOTE_LIBRARY_DEPTH), so a later default leaves it as built.
   await saveIndexSettings(id, a.depth !== undefined ? { depth: a.depth } : a.meaning !== undefined ? { meaning: a.meaning } : { depth: NEW_REMOTE_LIBRARY_DEPTH })
   await startRemote(r.host.site, r.host.key, build, !!p.create?.includes(build.sourceRoot), indexSettings(id).depth)
   const def: UserLibraryDef = {

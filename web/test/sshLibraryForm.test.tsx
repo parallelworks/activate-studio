@@ -213,10 +213,12 @@ describe('building an index on a remote system', () => {
     await waitFor(() => expect(screen.getByRole('combobox')).toHaveTextContent('cluster-b'))
     fill('Source folder', '~/runs')
     fill('Index folder', '~/indexes/runs')
-    // How deep the index goes there: Text + OCR, as search does not read
-    // vectors made on another system yet; the note says how to choose meaning.
-    expect(screen.getByRole('button', { name: 'Text + OCR' })).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByText(/To make the vectors there anyway, choose a Meaning stop; the build makes them only where the Studio's embedding model is in ~\/\.activate-studio\/models on that system\.$/)).toBeInTheDocument()
+    // How deep the index goes there: Meaning on documents, made with the
+    // Studio's model, which the first build sends; the note says so.
+    expect(screen.getByRole('button', { name: 'Meaning on documents' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByText(/^Search by meaning there uses the Studio's embedding model\. The first build on a system sends the model and its packages/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Text + OCR' }))
+    expect(screen.queryByText(/^Search by meaning there uses/)).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Meaning on documents' }))
     fireEvent.click(button('Test connection'))
     await screen.findByText('Connected to cluster-b, a Linux host.')
