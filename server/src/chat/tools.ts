@@ -4,7 +4,7 @@ import { withWorkspace } from '../workspace.js'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import fs from 'node:fs/promises'
 import path from 'node:path'
-import { gufiAvailable, isMissingCli, KB_ROOT, MAX_PREVIEW_BYTES, NO_CLI_MESSAGE, PROJECT_ROOT, PW_CLI } from '../config.js'
+import { gufiInstalled, isMissingCli, KB_ROOT, MAX_PREVIEW_BYTES, NO_CLI_MESSAGE, PROJECT_ROOT, PW_CLI } from '../config.js'
 import { listDir, readFileContent, KbError } from '../kb.js'
 import { getLibrary } from '../libraries.js'
 import { annotateHits } from '../tags.js'
@@ -1406,7 +1406,7 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
         }
         const inScope = scopeWithOmitted(scopeParam(args.library), toolContext.getStore()?.userId ?? null)
         const libs = inScope.libs
-        if (gufiAvailable() || libs.some(l => l.site)) {
+        if (gufiInstalled() || libs.some(l => l.site)) {
           const slow: string[] = []
           const omitted = inScope.omitted
           const scoped = await searchScope(libs, refine ? '' : query, limit + 5, { semantic: refine ? !!refine.text : true, nameLimit: 5, slow, omitted, refine })

@@ -311,9 +311,22 @@ export const NO_CLI_MESSAGE =
   'The Studio cannot find the pw CLI, so platform actions (workflows, clusters, status) cannot run from here. '
   + 'Install it, or choose where it is under Settings, Model access, pw CLI; in a container, bind the CLI and its credentials in, or set PW_CLI to its path.'
 
+/** Whether GUFI is here and the main folder has an index. */
 export function gufiAvailable(): boolean {
+  return gufiIndexAvailable(GUFI_INDEX)
+}
+
+/** Whether GUFI is here and an index on this computer is there: what any
+ *  library's own index needs, the main folder's or not. */
+export function gufiIndexAvailable(indexRoot: string): boolean {
+  return gufiInstalled() && fs.existsSync(indexRoot)
+}
+
+/** Whether gufi_query is here at all. A library other than the main folder
+ *  needs this and its own index, never the main folder's. */
+export function gufiInstalled(): boolean {
   try {
-    return fs.existsSync(path.join(GUFI_BIN, 'gufi_query')) && fs.existsSync(GUFI_INDEX)
+    return fs.existsSync(path.join(GUFI_BIN, 'gufi_query'))
   } catch {
     return false
   }

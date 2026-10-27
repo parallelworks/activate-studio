@@ -7,7 +7,7 @@ import { execFile } from 'node:child_process'
 import path from 'node:path'
 import fs, { createReadStream } from 'node:fs'
 import fsp from 'node:fs/promises'
-import { EXCLUDE_DIRS, GATEWAY_BASE, GUFI_INDEX, INDEX_BASE, KB_ROOT, PROJECT_ROOT, PW_CLI, gufiAvailable, indexerEnv } from './config.js'
+import { EXCLUDE_DIRS, GATEWAY_BASE, GUFI_INDEX, INDEX_BASE, KB_ROOT, PROJECT_ROOT, PW_CLI, gufiAvailable, gufiInstalled, indexerEnv } from './config.js'
 import { KbError, extractPath, listDir, moveCacheEntry, readFileContent, resolveKb } from './kb.js'
 import { indexSettings, isIndexDepth, isMeaningLevel, saveIndexSettings } from './indexSettings.js'
 import { CONVERTIBLE, mimeFor, officeToPdf, OfficePreviewUnavailable, pdfPageCount, pdfPagePng, pdfPreviewPaths, previewPdfFor, removePdfPreview } from './preview.js'
@@ -699,7 +699,9 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
     const viewer = (req as { user?: { id?: string } }).user?.id ?? null
     const scope = scopeWithOmitted(library, viewer, effectiveSettings().kbLabel)
     const libs = scope.libs
-    if (!gufiAvailable() && libs.every(l => !l.site)) return { hits: [], error: 'index not built yet' }
+    // Each library's own state (the main folder not indexed yet, say) is
+    // named in omitted; only GUFI missing here stops a search of this computer.
+    if (!gufiInstalled() && libs.every(l => !l.site)) return { hits: [], error: 'GUFI is not installed here' }
     const slow: string[] = []
     // omitted: every library in scope left out, or searched in part, and why.
     const omitted = scope.omitted
