@@ -2,6 +2,164 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.180 (2026-10-27)
+
+### Default new libraries built here to Meaning on documents (#609)
+
+A library built of a folder on this computer started at Text + OCR, so it had no search by meaning and no semantic map until its depth was raised by hand. It now starts at Meaning on documents, as the main folder does. A library built on a remote system stays at Text + OCR, for the reason below.
+
+**Defaults** (`server/src/indexSettings.ts`, `web/src/components/IndexDepth.tsx`)
+
+- `NEW_LIBRARY_DEPTH` is `meaning-documents`, for a library built here when no depth is chosen: `POST /api/libraries/build` without `depth`, the Add a library form, and the setup wizard's other-libraries step. The build check (`POST /api/libraries/build/check`) describes extraction at that depth for a library not added yet.
+- `NEW_REMOTE_LIBRARY_DEPTH` is `ocr`, for `POST /api/user-libraries/ssh/build` and `.../pw/build` without `depth`.
+- The web form defaults follow: `DEFAULT_LIBRARY_DEPTH` is `meaning-documents`, and `DEFAULT_REMOTE_LIBRARY_DEPTH` is `ocr` for the remote build form.
+- Connected indexes are unchanged.
+
+**Upgrade**
+
+- The depth is now stored with the library when it is added, the default included. A later change of the default leaves an existing library as it was built.
+- A library added by an earlier version has no depth stored. It still reads as before: Text + OCR, or what its saved level of search by meaning said.
+- Reading the list writes nothing to `indexing.json`.
+- The Libraries list's fallback for a library without a depth is `UNSTORED_LIBRARY_DEPTH`, `ocr`, to match the server.
+
+**Remote builds stay at Text + OCR**
+
+- The build on another system runs `embed.py` there with only that script copied. Without the ONNX packages it uses the GGUF model through sqlite-lembed, and its vectors are `minilm384`. That model is used only where `~/.activate-studio/models/minilm384.gguf` exists there; the Studio does not copy the model.
+- Search reads a remote index's vectors only in its walk. The walk embeds the query with the ONNX model (`queryVectors` in `gufi.ts`), so it does not match `minilm384` vectors. The `searchVector` fallback skips remote roots (`libraryScope.ts`). The semantic map returns `reason: 'remote'`.
+- So a Meaning stop on a remote build adds embedding time there, and search does not use the result.
+- The form says why it starts at Text + OCR and how to have the vectors made anyway: choose a Meaning stop, and they are made where the model is on that system.
+
+**Meaning comes last, and the UI says so**
+
+- The phases run in order: folders, text, then meaning. A first build swaps its tree in once the folders are indexed, as before.
+- The meaning phase now shows on the row as **Computing search by meaning**. It was "Embedding text", locally and on remote builds.
+- On a first build at a Meaning stop, the library is probed again once its text is read. Search then reads its words while meaning is computed.
+- Omissions (`server/src/omissions.ts`) during a build at a Meaning depth:
+  - before the text is read: `not searched by meaning yet: its text is being read`
+  - after it: `not searched by meaning yet: meaning is still being computed`
+  - `not searched by meaning: its index has no vectors yet` is kept for a library that is not building.
+- After a local build starts, the toast says the library is searchable by name once its folders are indexed. Text and meaning, where its depth has them, follow in that order.
+- At a Meaning stop, the local form adds a note: search by meaning is the slowest part of indexing and runs last, in the background. For a folder of more than about 500,000 files, Text + OCR is faster, and meaning can be added later in Settings, Libraries.
+- Nothing counts files before a build, so the note is static and the default does not change with folder size.
+
+**Semantic map**
+
+- A library built at the new default is scheduled for its map 5 s after the build, through the existing `remapAfterMeaning` (#607).
+
+**Tests**
+
+- `server/test/newLibraryDepth.test.mjs`:
+  - the two defaults;
+  - three libraries seeded as an earlier version left them (no settings, a meaning level, a depth), which keep `ocr`, `meaning-documents` and `text`, with `indexing.json` unchanged;
+  - the check's extract line at the default;
+  - a build with no depth stored as `meaning-documents`, with a map scheduled;
+  - a folder of read-only files at the same default;
+  - a chosen depth kept.
+- `remoteBuild.test.mjs`: a pw ssh build with the model present on the remote still starts at `ocr`, stored, and `embed.py` is not sent.
+- `omissions.test.mjs`: the wording during a build, before and after the text, for building and updating.
+- `libraryBuild.test.mjs` and `libraryMaps.test.mjs`: updated for the new default; the map test asks for `ocr` where it needs a library without meaning.
+- Web:
+  - the local form starts at Meaning on documents, and the note shows there and goes at Text;
+  - the toast after a local build;
+  - the remote form starts at Text + OCR with its note;
+  - the wizard's other-libraries step starts at Meaning on documents.
+
+**Docs**: HELP.md (the defaults, the order, the large-folder note), LIBRARIES.md (defaults, upgrade, the phase order and omission, the remote rule with the reason), REFERENCE.md (the omission reasons), README (the depth table).
+
+**Not changed**
+
+- A source folder whose top directory has no write permission for its owner (mode 0555) fails to build here: `gufi_dir2index -x` copies that mode to the index's top directory, and moving the tree into place then fails with EACCES.
+- This happens at any depth and is the same on main.
+- It is not addressed here.
+
+### Read-only source folders, and remote builds with the ONNX model (#611)
+
+Two fixes to library builds.
+
+**A source folder its owner may not write.** gufi_dir2index gives each index folder its source folder's mode as it finishes that folder, before the folders inside it make theirs. Run by a user other than root, a source folder of mode 0555 (a read-only share, a snapshot, a tree unpacked read only) got an index folder the build could not write in. Every folder inside it was left out, with a `mkdir <index folder>/db.db failure: 13 Permission denied` line and an exit status of 0, and the build then failed moving the tree into place (`EACCES` on the rename of `.build/<name>`). The main folder failed the same way. A sync, the text pass and a change of depth could not write into such an index either.
+
+The folder scan that the build and the sync already take (`dirScan.ts`, or the names count for the main folder) now also lists the folders that lack owner read, write or search. Before gufi_dir2index runs, the index folders inside those are made, since it accepts a folder that already exists. After it, those index folders get `u+rwx`, parents first, and keep their group and other bits (`server/src/indexModes.ts`). GUFI's record of the source is unchanged: `vrsummary` and `vrpentries` keep 0555 and 0444.
+
+Index trees are now removed with a removal that opens folders when a removal is refused, so a tree an earlier version left with 0555 folders can be removed, rebuilt or deleted with the library. A sync opens such a tree and indexes the folders inside a locked folder that it left out. A `mkdir ... failure` line that remains names the folder as left out, by its source path, instead of being dropped. On a remote system, the build runs gufi_dir2index again after making those index folders when its log has such lines, then opens the index folders with `find` before moving the tree.
+
+**Remote builds embed with the Studio's ONNX model.** The one-pass walk matches only ONNX vectors (`gvecmodel` `minilm-l6-mean-int8`). Remote builds embedded with the GGUF model or not at all, so their vectors were never searched. The build check now reads the platform of the Python there as `fetch_embed.py` names it, and which versions are installed in `~/.activate-studio/embed/<platform>-<digest of the pins>`. A build that needs a version that is not there starts at once, and the Studio sends the missing files while it runs:
+
+- the wheels from the bundle's `indexer/wheels`, or from the Studio's own `INDEX_BASE/embed-wheels`, filled by `fetch_embed.py --download --platform` where this computer reaches the package index;
+- `model.onnx` and `tokenizer.json` from its own model folder.
+
+Each file is checked against `embed_deps.json`. A marker there holds the build's meaning phase until the sending ends. The build installs with `fetch_embed.py --deps --no-readers --model`, with no network when every file arrived, or downloads the rest where that system can. It checks the imports and moves the install into place. Later builds send nothing. Where no wheels are pinned for that Python (3.10, say) or they do not import, the build uses the GGUF model as before. Each build makes the index anew, so earlier GGUF vectors are made again with the ONNX model. New remote libraries now start at Meaning on documents, and the form note says what the first build sends.
+
+Tests:
+- `server/test/readOnlySource.test.mjs`: a library and the main folder whose top folder and folders inside are 0555, with files 0444, run as a non-root user. Covers the build, GUFI's record of the modes, a change of depth, a sync after a change (a subfolder, the top folder's files, and a removed folder), an index left by the earlier version, and deleting the library. Before the fix, 7 of these 8 tests fail with the errors above.
+- `remoteBuild.test.mjs`:
+  - a read-only tree built over ssh and rebuilt;
+  - the new default depth and the check message;
+  - the GGUF fallback with no network anywhere;
+  - the first ONNX build, which sends 3 wheels and 2 model files, installs once with downloads blocked on both sides, and leaves no sent files or marker; the one-pass walk then finds the passage by meaning;
+  - a second build that sends nothing.
+
+  The ONNX tests run where `STUDIO_TEST_ONNX_DIR` and `STUDIO_TEST_WHEELS` are set, and the fallback test where `STUDIO_TEST_GGUF` is set.
+
+### Semantic maps of libraries on another system (#610)
+
+A library on another system now has a semantic map. The Studio fetches a sample of its vectors over the library's own connection and draws the map here, in place of the "is on another system, which keeps its vectors" note.
+
+## Fetch
+
+`server/src/remoteMap.ts` runs two aggregate `gufi_query` walks and nothing else, so a host whose login runs only `gufi_query` answers them.
+
+1. The count walk returns, per model, the files with vectors, their passages and a digest of passage ids and hashes. It reads `gchunks` joined to `gvec_rowids`, and `ext_vectors_by_file` for all-MiniLM-L6-v2 through `--external-copy`. A few rows come back.
+2. The fetch walk covers the model most files use. Each file comes back as one row:
+   - its path;
+   - the mean of its passage vectors, folded in SQL with `vec_add` in passage order and normalized, then quantized with `vec_quantize_int8(..., 'unit')` to 768 hex characters;
+   - that mean's length, so the mean the local map uses can be rebuilt (cosine with the true mean above 0.998);
+   - the first 1,000 characters of the first passage, for about 10,000 files.
+
+The fold carries each file's passage count, so the last sum is selected without a join. The first version joined, and SQLite reran the fold for every file: 7.4 s became 0.22 s on 20,000 files.
+
+Measured over ssh to localhost, on 20,000 files with 50,000 passages:
+
+| Step | Result |
+|---|---|
+| Count | about 60 ms |
+| Fetch | 0.8 s for 27 MB of rows |
+| Fetch, wire size (loopback) | 34 MB as base64 in the session loop; 24 MB compressed, 37 MB uncompressed |
+| Map | 1.9 s |
+
+## Changes
+
+- **ssh compression:** ssh connections now pass `-o Compression=yes`. A library's own `-o Compression=no` comes first and wins.
+- **Session loop:** it now looks for the end of a large answer only in the pieces that contain one.
+- **Sample:** above `STUDIO_REMOTE_MAP_FILES` files (default 50,000), the sample is the files whose inodes hash lowest. The walk selects slightly more than the cap with a hash threshold, and the Studio trims the result to the cap. The same files come back each time. The map's status line gives the display cap and the fetch sample together, for example "3,000 of 20,000 files shown (a sample of 5,000 fetched from host, made with minilm-l6-mean-int8, just now); click a cluster for all of its files.", with Refresh beside it.
+- **Build:** `semantic_map.py --vectors <file> --model <m> --of <M>` builds the map from the fetched file and adds `of` to the overview. Without numpy, the server builds its smaller fallback map from the same file. The map and `vectors.jsonl` are kept in the owner's folder (`INDEX_BASE/users/<hash>/maps/<id>`) and removed with the library.
+- **Names:** clusters are named by TF-IDF over the fetched text. A cluster without text falls back to its folder names, with parents, as before.
+- **Neighbors:** the file's fetched vector is the query. One `gufi_query` walk runs vec0's nearest-neighbor search (or cosine distance for the external schema) in each directory, for the same model, and keeps each thread's best results. Answers are cached until the map is rebuilt.
+- **Refresh:** the map is checked when someone views it and the last check is over an hour old. It is also checked after a remote build finishes, and when a connection test finds the index rebuilt. A check runs only the count walk. The Studio fetches again only when the counts or the digest changed. **Refresh** on the map (`POST /api/libraries/:id/semantic-map/refresh`) always fetches again.
+- **States:**
+  - progress while counting, fetching and drawing;
+  - a failed fetch keeps the old map and shows the error, or with no map shows **Try again**;
+  - `remote-none` for no vectors, or too few for a map;
+  - the model the vectors come from, and how many files were left out because another model embedded them;
+  - for a remote library the Studio builds, a depth control that applies at the next Rebuild.
+- **Picker:** remote libraries with a map are listed in `/api/semantic-maps`, which never starts a fetch.
+
+## Tests
+
+- **Server** (`libraryMaps.test.mjs`): a fake ssh host whose login runs only `gufi_query`, on real GUFI indexes with sqlite-vec. Covered:
+  - the first map is built from one count and one fetch;
+  - other models are filtered out;
+  - the rebuilt mean and its length;
+  - storage in the owner's folder and removal with the library;
+  - neighbors searched on the remote host and then cached;
+  - the 5-file cap selects the same lowest-hash files twice;
+  - the hourly check fetches only after a change on the remote host;
+  - failure keeps the old map, a first map that fails can be retried;
+  - no vectors, and too few.
+- **Server** (`semanticMap.test.mjs`): `--vectors` reads int8 rows and names clusters from their text; the no-numpy fallback works from fetched vectors.
+- **Web:** the one status line with the sample, model, time and Refresh; refresh progress; failure with Try again; no vectors and too few; the depth offer for a remote library the Studio builds.
+- **macOS** (`check_app.sh`): builds an index with vectors through the app's own enrich and embed, adds it on the `gufi_query`-only host, then checks the map, the neighbors, and that only `gufi_query` ran on that host.
+- Docs: HELP.md, REFERENCE.md, LIBRARIES.md, README.md.
+
 ## v1.179 (2026-10-27)
 
 ### Maps for any library: a semantic map and a corpus topology per library (#607)
@@ -85,6 +243,10 @@ Docs: the Stats paragraph in `docs/HELP.md`, and the semantic map and new endpoi
 - *Treemap cells fill their parent.* Each squarified row took its share of the full byte total out of the remaining rectangle instead of the whole rectangle. Every row after the first came out too small, and one dominant folder left most of the rectangle empty. Area is now bytes at one scale, and the last row and last cell take what is left. Layout tests cover skewed sizes (90%, 99.9%, 97%, a 200-folder power law) in three rectangle shapes. They check that cells stay inside the parent, each cell's area matches its byte share, no two cells overlap, and the areas add up to the parent's. The old layout fails these tests.
 
 Suites after these commits: server 676 (672 pass, 4 skipped, with numpy here), testdata 21, web 318.
+
+### Change log through v1.179 (#608)
+
+Regenerated with `node scripts/release-notes.mjs --changelog --next v1.179` before tagging v1.179.
 
 ## v1.178 (2026-10-27)
 
