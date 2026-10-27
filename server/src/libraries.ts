@@ -457,10 +457,11 @@ export function staleProbe(indexRoot: string): void {
   if (gufiAvailable()) void probeLibrary(abs).catch(() => {})
 }
 
-/** Set by libraryLabels.ts, which imports this module: drops what it holds
- *  in memory for a removed library. */
-let forgetLabelsHook: (id: string) => void = () => {}
-export function onLibraryRemoved(fn: (id: string) => void): void { forgetLabelsHook = fn }
+/** Set by the modules that keep something of their own per library and
+ *  import this one (libraryLabels.ts, semanticMap.ts): each drops what it
+ *  holds for a removed library. */
+const removedHooks = new Set<(id: string) => void>()
+export function onLibraryRemoved(fn: (id: string) => void): void { removedHooks.add(fn) }
 
 export function removeLibrary(id: string): void {
   const lib = getLibrary(id)
@@ -477,7 +478,9 @@ export function removeLibrary(id: string): void {
   // The labels the Studio kept for its files go with it.
   fs.rmSync(path.join(builtLibraryDir(id), 'labels.json'), { force: true })
   fs.rmSync(path.join(builtLibraryDir(id), 'labels.json.bak'), { force: true })
-  forgetLabelsHook(id)
+  for (const fn of removedHooks) {
+    try { fn(id) } catch (e) { console.warn(`removing ${id}: ${(e as Error).message}`) }
+  }
   void forgetIndexSettings(id)
 }
 

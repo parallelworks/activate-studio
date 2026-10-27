@@ -518,6 +518,14 @@ EOF
           bad "Query across libraries did not reach the gufi_query-only host:"
           python3 -c 'import json, sys; d = json.load(open(sys.argv[1])); print("engine", d.get("engine"), "libraries", sorted(set(d.get("rowLibraries") or [])), "failed", d.get("failed"))' "$T/qquery.json" 2>&1 | sed 's/^/        /'
         fi
+        # Its corpus topology for the Stats page: one aggregate gufi_query there.
+        curl -fsS -m 120 "http://127.0.0.1:$PORT_FREE/api/libraries/$qid/topology" >"$T/qtopo.json" 2>"$T/qtopo.err" || true
+        if python3 -c 'import json, sys; d = json.load(open(sys.argv[1])); sys.exit(0 if d.get("available") and sum(r["files"] for r in d.get("dirs") or []) > 0 else 1)' "$T/qtopo.json" 2>/dev/null; then
+          ok "and its corpus topology is read there with gufi_query alone ($(python3 -c 'import json, sys; print(json.load(open(sys.argv[1])).get("ms"))' "$T/qtopo.json") ms)"
+        else
+          bad "the corpus topology of the gufi_query-only host could not be read:"
+          sed 's/^/        /' "$T/qtopo.json" "$T/qtopo.err" 2>/dev/null || true
+        fi
         check "nothing but gufi_query ran there once it was known" sh -c '! sed 1d "$1" | grep -v "^gufi_query "' sh "$T/qonly.log"
         # The library's own ssh options, changed after a test with them: a
         # known_hosts file of its own, which ssh can only have used if the

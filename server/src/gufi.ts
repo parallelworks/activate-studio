@@ -285,7 +285,7 @@ export async function queryPerDir(sql: string, opts: { threads?: number; subdir?
 
 /** A query in GUFI's aggregate form (-I, -K, -E, -J, -G stages): the merge
  *  happens where the index is, and only the final rows come back. */
-async function queryAggregate(stages: string[], opts: { indexRoot?: string; subdir?: string } = {}): Promise<string[][]> {
+export async function queryAggregate(stages: string[], opts: { indexRoot?: string; subdir?: string } = {}): Promise<string[][]> {
   const root = opts.indexRoot ?? GUFI_INDEX
   if (root.startsWith(REMOTE_PREFIX)) return parseRows(await remoteQuery(root, ['-n', String(LOCAL_THREADS), '-d', DELIM, '-a', '1', ...stages], opts.subdir), 1)
   const { stdout } = await run('gufi_query', ['-n', String(LOCAL_THREADS), '-d', DELIM, '-a', '1', ...stages, opts.subdir ? path.join(root, opts.subdir) : root])

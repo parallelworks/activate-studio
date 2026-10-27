@@ -1,14 +1,20 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Button, IconButton, SegmentedControl } from '@parallelworks/ui'
+import { Button, IconButton, Loader, SegmentedControl } from '@parallelworks/ui'
 import { CloseIcon, ExpandIcon, ResetIcon, ZoomInIcon, ZoomOutIcon } from '@parallelworks/ui/icons'
+import { api, type PublicLibrary } from '../api'
+import { useMapLibrary } from '../mapLibrary'
+import { openInLibrary } from '../scope'
+import { LibraryScope } from './LibraryScope'
 
 /**
  * Two views of the corpus from the index, on canvases that zoom, pan and
  * open full window: a squarified treemap of the directory topology (area is
  * bytes; zooming in shows the levels below), and the semantic map (files
  * placed by their embeddings, in clusters; a cluster opens to all of its
- * files, and the map turns in 3D).
+ * files, and the map turns in 3D). Each shows one library, picked on the
+ * map, and remembers the choice: the topology the main folder until
+ * changed, the semantic map the largest library that has one.
  */
 
 /** Categorical colors derived from the deployment's accent: analogous
@@ -85,7 +91,8 @@ function buildTree(dirs: DirRow[]): TreeNode {
   for (const d of dirs) {
     let node = root
     let acc = ''
-    for (const part of d.dir.split('/')) {
+    // '' is the top folder's own files.
+    for (const part of d.dir.split('/').filter(Boolean)) {
       acc = acc ? `${acc}/${part}` : part
       if (!node.children.has(part)) node.children.set(part, { name: part, path: acc, bytes: 0, files: 0, children: new Map() })
       node = node.children.get(part)!
@@ -483,17 +490,69 @@ function layoutCells(node: TreeNode, w: number, h: number, maxDepth: number, col
   return out
 }
 
-export function TopologyMap() {
+/** A library's map data comes from the main folder's own address for the
+ *  main folder, as before libraries had maps, else the library's. */
+const mainOrLibrary = (id: string, kind: 'topology' | 'semantic-map') =>
+  id === 'kb' ? `/api/kb/${kind}` : `/api/libraries/${encodeURIComponent(id)}/${kind}`
+
+/** The deepest folder fetched that holds `dir`: the topology of a folder
+ *  reaches a fixed number of levels below it, and is asked for again below
+ *  a folder near that depth as you open it. */
+function reachOf(reach: Map<string, number>, dir: string): { root: string; levels: number } | null {
+  let best: { root: string; levels: number } | null = null
+  for (const [root, levels] of reach) {
+    if (root && dir !== root && !dir.startsWith(`${root}/`)) continue
+    if (!best || root.length > best.root.length) best = { root, levels }
+  }
+  return best
+}
+const depthOf = (p: string) => p.split('/').filter(Boolean).length
+
+export function TopologyMap({ libraries = [] }: { libraries?: PublicLibrary[] }) {
   const PALETTE = accentPalette()
+  const [libId, setLib] = useMapLibrary('topology', libraries, 'kb')
+  const lib = libraries.length > 1 ? libId ?? 'kb' : 'kb'
+  const label = libraries.find(l => l.id === lib)?.label ?? 'the main folder'
   const [dirs, setDirs] = useState<DirRow[] | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [empty, setEmpty] = useState(false)
+  const reach = useRef(new Map<string, number>())
   const [focus, setFocus] = useState('')
   const [full, setFull] = useState(false)
   const [highlight, setHighlight] = useState<string | null>(null)
+  const gen = useRef(0)
+  const load = useCallback((dir: string) => {
+    const my = gen.current
+    if (reach.current.has(dir)) return
+    reach.current.set(dir, 0)
+    setLoading(true)
+    fetch(`${mainOrLibrary(lib, 'topology')}${dir ? `?dir=${encodeURIComponent(dir)}` : ''}`)
+      .then(async r => { const d = await r.json(); if (!r.ok) throw new Error(d?.error ?? `HTTP ${r.status}`); return d })
+      .then((d: { available: boolean; dirs?: DirRow[]; levels?: number }) => {
+        if (my !== gen.current) return
+        if (!d.available) { if (!dir) setEmpty(true); return }
+        reach.current.set(dir, d.levels ?? 99)
+        // A folder asked for again replaces its own row, which held the
+        // totals of everything below it, with the rows below it.
+        setDirs(prev => dir ? [...(prev ?? []).filter(r => r.dir !== dir), ...(d.dirs ?? [])] : (d.dirs ?? []))
+      })
+      .catch(e => { if (my === gen.current) { reach.current.delete(dir); if (!dir) setError(String((e as Error).message ?? e)) } })
+      .finally(() => { if (my === gen.current) setLoading(false) })
+  }, [lib])
+  // Another library starts over.
   useEffect(() => {
-    fetch('/api/kb/topology').then(r => r.json())
-      .then(d => { if (d.available) setDirs(d.dirs) })
-      .catch(() => { /* stays empty */ })
-  }, [])
+    gen.current++
+    reach.current = new Map()
+    setDirs(null); setEmpty(false); setError(null); setFocus('')
+    load('')
+  }, [lib]) // eslint-disable-line react-hooks/exhaustive-deps
+  // Opening a folder near the last level fetched asks for the levels below it.
+  useEffect(() => {
+    if (!focus) return
+    const r = reachOf(reach.current, focus)
+    if (r && r.levels && depthOf(focus) - depthOf(r.root) >= r.levels - 2) load(focus)
+  }, [focus, load])
   const tree = useMemo(() => (dirs ? buildTree(dirs) : null), [dirs])
   const viewApi = useRef<{ zoom: (f: number) => void; reset: () => void } | null>(null)
   const paletteKey = PALETTE.join()
@@ -501,7 +560,30 @@ export function TopologyMap() {
     const topKeys = tree ? [...tree.children.keys()] : []
     return PALETTE[Math.max(0, topKeys.indexOf(n.path.split('/')[0])) % PALETTE.length]
   }, [tree, paletteKey]) // eslint-disable-line react-hooks/exhaustive-deps
-  if (!tree) return null
+  const picker = libraries.length > 1 && (
+    <LibraryScope single libraries={libraries} value={[lib]} onChange={s => { if (s !== 'all' && s[0]) setLib(s[0]) }} hint="Corpus topology of" />
+  )
+  const head = (
+    <div className="map-head">
+      <h3>Corpus topology</h3>
+      {picker}
+      {loading && <Loader inline size={14} label="Reading the folders…" />}
+    </div>
+  )
+  if (!tree || (!tree.children.size && !tree.bytes)) {
+    if (!picker) return null
+    return (
+      <section className="card ov-list">
+        {head}
+        <p className="muted">
+          {error ? `The folders of ${label} could not be read: ${error}.`
+            : empty ? `${label} has no index yet, so there is nothing to draw.`
+              : loading ? `Reading the folders of ${label} from its index.`
+                : `${label} has no files in its index.`}
+        </p>
+      </section>
+    )
+  }
   let node = tree
   if (focus) for (const part of focus.split('/')) { const c = node.children.get(part); if (!c) break; node = c }
   const topDirs = [...tree.children.values()].sort((a, b) => b.bytes - a.bytes)
@@ -511,7 +593,7 @@ export function TopologyMap() {
   )
   const crumbs = (
     <p className="crumb-row">
-      <button className="crumb" onClick={() => setFocus('')}>corpus</button>
+      <button className="crumb" onClick={() => setFocus('')}>{libraries.length > 1 ? label : 'corpus'}</button>
       {focus.split('/').filter(Boolean).map((part, i, arr) => (
         <button key={i} className="crumb" onClick={() => setFocus(arr.slice(0, i + 1).join('/'))}>/{part}</button>
       ))}
@@ -526,7 +608,7 @@ export function TopologyMap() {
   const controls = <ZoomButtons onZoom={f => viewApi.current?.zoom(f)} onReset={() => viewApi.current?.reset()} />
   return (
     <section className="card ov-list">
-      <h3>Corpus topology</h3>
+      {head}
       <p className="muted">
         Area is bytes on disk, one hue per top-level directory. Zoom (wheel, pinch or +) to see the levels below; drag to
         move. Click a directory to open it on its own; the crumbs back out.
@@ -674,9 +756,12 @@ export interface MapPoint { p: string; x: number; y: number; z: number; c: numbe
 export interface MapLink { a: number; b: number; sim: number }
 /** A file near another by meaning, with its place on the map where it has one. */
 export interface MapNeighbor { p: string; sim: number; x?: number; y?: number; z?: number; c?: number }
+/** The library a map is of, as the server describes it. */
+export interface MapLibrary { id: string; label: string; kind: 'main' | 'built' | 'connected' | 'remote'; depth: string | null; vectors: boolean }
 export interface MapOverview {
   available: boolean
-  reason?: 'off' | 'none' | 'failed'
+  reason?: 'off' | 'none' | 'failed' | 'connected' | 'remote'
+  library?: MapLibrary
   building?: boolean
   error?: string | null
   files?: number
@@ -757,24 +842,50 @@ function keepLinksPref(mode: '2d' | '3d', on: boolean): void {
   } catch { /* no storage: the choice lasts this page */ }
 }
 
-/** A file's nearest files by meaning, asked once per file per map. */
+/** A file's nearest files by meaning, asked once per file per map. `base`
+ *  is the map's address, which names its library. */
 const neighborCache = new Map<string, Promise<MapNeighbor[]>>()
-function nearestFiles(p: string): Promise<MapNeighbor[]> {
-  let hit = neighborCache.get(p)
+function nearestFiles(base: string, p: string): Promise<MapNeighbor[]> {
+  const key = `${base}\0${p}`
+  let hit = neighborCache.get(key)
   if (!hit) {
-    hit = fetch(`/api/kb/semantic-map/neighbors?file=${encodeURIComponent(p)}&k=5`)
+    hit = fetch(`${base}/neighbors?file=${encodeURIComponent(p)}&k=5`)
       .then(r => (r.ok ? r.json() : {}))
       .then((d: { neighbors?: MapNeighbor[] }) => d.neighbors ?? [])
       .catch(() => [])
-    neighborCache.set(p, hit)
+    neighborCache.set(key, hit)
     if (neighborCache.size > 200) neighborCache.delete(neighborCache.keys().next().value!)
   }
   return hit
 }
 
-export function SemanticMap({ onOpen }: { onOpen: (path: string) => void }) {
+/** The library the semantic map starts on, without a choice kept: the one
+ *  whose map has the most files, else one with vectors, else the main folder. */
+export function defaultMapLibrary(maps: { id: string; available: boolean; files: number }[], libraries: Pick<PublicLibrary, 'id' | 'caps'>[]): string {
+  const ids = new Set(libraries.map(l => l.id))
+  const best = maps.filter(m => m.available && ids.has(m.id)).sort((a, b) => b.files - a.files)[0]
+  return best?.id ?? libraries.find(l => l.caps?.vectors)?.id ?? 'kb'
+}
+
+export function SemanticMap({ onOpen, libraries = [] }: { onOpen: (path: string) => void; libraries?: PublicLibrary[] }) {
   const PALETTE = accentPalette()
+  const several = libraries.length > 1
+  // Without a choice kept, the largest map: asked for once.
+  const [fallback, setFallback] = useState<string | null>(several ? null : 'kb')
+  useEffect(() => {
+    if (!several) return
+    let alive = true
+    fetch('/api/semantic-maps').then(r => r.json())
+      .then((d: { maps?: { id: string; available: boolean; files: number }[] }) => { if (alive) setFallback(defaultMapLibrary(d.maps ?? [], libraries)) })
+      .catch(() => { if (alive) setFallback('kb') })
+    return () => { alive = false }
+  }, [several]) // eslint-disable-line react-hooks/exhaustive-deps
+  const [chosen, setLib] = useMapLibrary('semantic', libraries, fallback)
+  const lib = several ? chosen : 'kb'
+  const base = lib ? mainOrLibrary(lib, 'semantic-map') : null
   const [data, setData] = useState<MapOverview | null>(null)
+  const [depthAsked, setDepthAsked] = useState(false)
+  const [depthError, setDepthError] = useState('')
   const [mode, setMode] = useState<'2d' | '3d'>('2d')
   const [focus, setFocus] = useState<number | null>(null)
   const [pages, setPages] = useState<Map<number, MapPoint[]>>(new Map())
@@ -786,16 +897,20 @@ export function SemanticMap({ onOpen }: { onOpen: (path: string) => void }) {
   const viewApi = useRef<{ zoom: (f: number) => void; reset: () => void } | null>(null)
 
   useEffect(() => {
+    if (!base) return
     let alive = true, timer: ReturnType<typeof setTimeout> | undefined
-    const load = () => fetch('/api/kb/semantic-map').then(r => r.json()).then((d: MapOverview) => {
+    setData(null)
+    const load = () => fetch(base).then(r => r.json()).then((d: MapOverview) => {
       if (!alive) return
       setData(d)
-      // A map being made shows when it is ready.
-      if (!d.available && d.building) timer = setTimeout(load, 8000)
+      // A map being made, or one waiting for its embeddings, shows when ready.
+      if (!d.available && (d.building || d.reason === 'none')) timer = setTimeout(load, d.building ? 8000 : 30_000)
     }).catch(() => { /* stays empty */ })
     void load()
     return () => { alive = false; if (timer) clearTimeout(timer) }
-  }, [])
+  }, [base, depthAsked])
+  // Another library starts with no depth asked for.
+  useEffect(() => { setDepthAsked(false); setDepthError('') }, [lib])
   // A new map starts over: no cluster open, nothing extra loaded, no answers kept.
   useEffect(() => { setPages(new Map()); setFocus(null); neighborCache.clear() }, [data])
   useEffect(() => { setLinks(linksPref(mode)) }, [mode])
@@ -805,7 +920,7 @@ export function SemanticMap({ onOpen }: { onOpen: (path: string) => void }) {
     const have = pages.get(c)?.length ?? 0
     if (!cl || have >= Math.min(cl.count, cap) || loading.current.has(c)) return
     loading.current.add(c)
-    fetch(`/api/kb/semantic-map/cluster/${c}?offset=${have}&limit=${PAGE}`).then(r => r.json())
+    fetch(`${base}/cluster/${c}?offset=${have}&limit=${PAGE}`).then(r => r.json())
       .then((r: { points?: Omit<MapPoint, 'c'>[] }) => {
         setPages(m => {
           const next = new Map(m)
@@ -815,7 +930,7 @@ export function SemanticMap({ onOpen }: { onOpen: (path: string) => void }) {
       })
       .catch(() => { /* the sample stays */ })
       .finally(() => { loading.current.delete(c) })
-  }, [data, pages])
+  }, [data, pages, base])
 
   // A cluster opened on its own: its files, a page at a time.
   useEffect(() => { if (focus !== null) loadMore(focus, PAGE) }, [focus]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -829,7 +944,17 @@ export function SemanticMap({ onOpen }: { onOpen: (path: string) => void }) {
   }, [data, pages, focus])
   const labels = useMemo(() => shortLabels(data?.clusters ?? []), [data])
 
-  if (!data) return null
+  const picker = several && lib && (
+    <LibraryScope single libraries={libraries} value={[lib]} onChange={sc => { if (sc !== 'all' && sc[0]) setLib(sc[0]) }} hint="Semantic map of" />
+  )
+  const head = (
+    <div className="map-head">
+      <h3>Semantic map</h3>
+      {picker}
+      {(!data || data.building) && several && <Loader inline size={14} label={data?.building ? 'Making the map…' : 'Loading…'} />}
+    </div>
+  )
+  if (!data) return several && lib ? <section className="card ov-list">{head}</section> : null
   const clusters = data.clusters ?? []
   const open = focus === null ? null : clusters.find(c => c.c === focus) ?? null
   const extraLoaded = [...pages.values()].reduce((s, p) => s + p.length, 0)
@@ -845,20 +970,39 @@ export function SemanticMap({ onOpen }: { onOpen: (path: string) => void }) {
     if (extraLoaded >= DETAIL_TOTAL) return
     for (const c of inView.slice(0, 4)) loadMore(c, DETAIL_PER_CLUSTER)
   }
+  const label = libraries.find(l => l.id === lib)?.label ?? data.library?.label ?? 'the main folder'
+  const Label = several ? label : 'The main folder'
+  const owner = several ? label : 'the main folder'
+  const canSetDepth = data.library?.kind === 'main' || data.library?.kind === 'built' || (!data.library && lib === 'kb')
+  const setDepth = () => {
+    if (!lib) return
+    setDepthError('')
+    api.setLibraryDepth(lib, 'meaning-documents').then(() => setDepthAsked(true)).catch(e => setDepthError(String((e as Error).message ?? e)))
+  }
   const unavailable = !data.available && (
-    <p className="muted">
-      {data.reason === 'off' ? <>The main folder&apos;s index depth stops before search by meaning, so there is no map. Set it to Meaning on documents or Meaning on all files in <a href="#view=settings:libraries">Settings, Libraries</a>.</>
-        : data.reason === 'failed' ? `The map could not be made: ${data.error ?? 'unknown error'}.`
-          : data.building ? 'The map is being made from the main folder\'s embeddings.'
-            : 'The map appears once the main folder has embeddings for search by meaning.'}
-    </p>
+    <div className="map-empty">
+      <p className="muted">
+        {data.reason === 'remote' ? `${label} is on another system, which keeps its vectors, so there is no map of it here.`
+          : data.reason === 'connected' ? 'This index was built elsewhere and has no meaning vectors the Studio can read.'
+            : data.reason === 'off' ? `${Label} has no search by meaning. Set its depth to Meaning on documents to draw it here; that reads its documents once, in the background.`
+              : data.reason === 'failed' ? `The map could not be made: ${data.error ?? 'unknown error'}.`
+                : data.building ? `The map is being made from the embeddings of ${owner}.`
+                  : depthAsked ? `Reading the documents of ${owner} for search by meaning; the map appears when that is done.`
+                    : `The map appears once ${owner} has embeddings for search by meaning.`}
+      </p>
+      {data.reason === 'off' && canSetDepth && (
+        <Button variant="secondary" size="sm" onClick={setDepth}>Set to Meaning on documents</Button>
+      )}
+      {depthError && <p className="muted" role="alert">{depthError}</p>}
+    </div>
   )
   const status = open
     ? `${(pages.get(open.c)?.length ?? 0).toLocaleString()} of ${open.count.toLocaleString()} files in ${open.label}${(pages.get(open.c)?.length ?? 0) < open.count ? '; zoom in for more' : ''}.`
     : `${points.length.toLocaleString()} of ${(data.files ?? 0).toLocaleString()} files shown; click a cluster for all of its files.`
   const canvas = (height: number | 'fill') => (
     <SemanticCanvas clusters={clusters} links={data.links ?? []} points={points} mode={mode} focus={open} height={height} palette={PALETTE} spin={spin}
-      labels={labels} showLinks={links} highlight={highlight} onOpen={onOpen} onFocus={setFocus} onDetail={onDetail} api={viewApi} />
+      labels={labels} showLinks={links} highlight={highlight} onOpen={several && lib ? (p => openInLibrary(onOpen, lib, p)) : onOpen}
+      onFocus={setFocus} onDetail={onDetail} api={viewApi} mapBase={base ?? '/api/kb/semantic-map'} />
   )
   const controls = (
     <>
@@ -884,7 +1028,7 @@ export function SemanticMap({ onOpen }: { onOpen: (path: string) => void }) {
   )
   return (
     <section className="card ov-list">
-      <h3>Semantic map</h3>
+      {head}
       <p className="muted">
         Files placed by what they say, from the embeddings search by meaning uses: files that read alike sit near each other
         whatever folder they are in. Only distance means anything. Clusters are named for the words that set them apart, and
@@ -904,7 +1048,9 @@ export function SemanticMap({ onOpen }: { onOpen: (path: string) => void }) {
   )
 }
 
-function SemanticCanvas({ clusters, links, points, mode, focus, height, palette, spin, labels, showLinks, highlight, onOpen, onFocus, onDetail, api }: {
+function SemanticCanvas({ clusters, links, points, mode, focus, height, palette, spin, labels, showLinks, highlight, onOpen, onFocus, onDetail, api, mapBase }: {
+  /** The map's address, for its files' nearest files. */
+  mapBase: string
   clusters: MapCluster[]
   links: MapLink[]
   points: MapPoint[]
@@ -975,9 +1121,9 @@ function SemanticCanvas({ clusters, links, points, mode, focus, height, palette,
   useEffect(() => {
     if (!showLinks || !hoveredPath) { setNear(null); return }
     let alive = true
-    const t = setTimeout(() => { void nearestFiles(hoveredPath).then(list => { if (alive) setNear({ p: hoveredPath, list }) }) }, 220)
+    const t = setTimeout(() => { void nearestFiles(mapBase, hoveredPath).then(list => { if (alive) setNear({ p: hoveredPath, list }) }) }, 220)
     return () => { alive = false; clearTimeout(t) }
-  }, [hoveredPath, showLinks])
+  }, [hoveredPath, showLinks, mapBase])
 
   const draw = useCallback(() => {
     const c = cv.current

@@ -1,9 +1,22 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { currentLibrary, setLibrary, type PublicLibrary } from '../src/api'
 import {
-  CAMERA0, clampView, nearestIndex, pan3d, project3d, SemanticMap, shortLabels, TopologyMap, VIEW0, viewPlane, zoom3d, zoomAround,
+  CAMERA0, clampView, defaultMapLibrary, nearestIndex, pan3d, project3d, SemanticMap, shortLabels, TopologyMap, VIEW0, viewPlane, zoom3d, zoomAround,
   type Camera, type MapCluster, type MapOverview,
 } from '../src/components/CorpusMaps'
+import { resetMapLibrariesForTests } from '../src/mapLibrary'
+import { resetScopesForTests } from '../src/scope'
+
+// A radio forwards its press to its hidden input as a PointerEvent, which
+// jsdom does not have.
+if (!('PointerEvent' in window)) {
+  class PointerEventShim extends MouseEvent {
+    pointerType: string
+    constructor(type: string, init: PointerEventInit = {}) { super(type, init); this.pointerType = init.pointerType ?? '' }
+  }
+  Object.assign(window, { PointerEvent: PointerEventShim })
+}
 
 const reply = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 
@@ -187,7 +200,8 @@ describe('the semantic map', () => {
   it('says why there is no map', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => reply({ available: false, reason: 'off', building: false })))
     render(<SemanticMap onOpen={() => {}} />)
-    expect(await screen.findByText(/index depth stops before search by meaning, so there is no map/)).toBeInTheDocument()
+    expect(await screen.findByText('The main folder has no search by meaning. Set its depth to Meaning on documents to draw it here; that reads its documents once, in the background.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Set to Meaning on documents' })).toBeInTheDocument()
     expect(document.querySelector('canvas')).toBeNull()
   })
 })
@@ -392,4 +406,139 @@ describe('legends', () => {
 it('starts 3D from a camera a little turned and tilted', () => {
   expect(CAMERA0.yaw).toBeGreaterThan(0)
   expect(CAMERA0.pitch).toBeGreaterThan(0)
+})
+
+const lib = (id: string, label: string, extra: Partial<PublicLibrary> = {}): PublicLibrary => ({
+  id, label, primary: id === 'kb', writable: id === 'kb', pinned: id === 'kb', source: true,
+  caps: { index: true, fullText: true, vectors: false }, meaning: 'off', depth: 'ocr', ...extra,
+})
+const LIBS = [
+  lib('kb', 'Notes', { caps: { index: true, fullText: true, vectors: true }, meaning: 'documents', depth: 'meaning-documents' }),
+  lib('papers', 'Papers', { caps: { index: true, fullText: true, vectors: true }, meaning: 'documents', depth: 'meaning-documents' }),
+  lib('desk', 'Desktop'),
+  lib('lab', 'Lab index', { meaning: null, depth: null }),
+  lib('far', 'Scratch', { site: 'cluster-a', meaning: null, depth: null }),
+]
+const pick = async (name: string) => {
+  fireEvent.click(screen.getByRole('button', { name: /^Library: / }))
+  const group = await screen.findByRole('radiogroup', { name: 'Library to show' })
+  fireEvent.click(within(group).getByRole('radio', { name }))
+}
+
+describe('the library a map starts on', () => {
+  it('is the largest map, else a library with vectors, else the main folder', () => {
+    const maps = [
+      { id: 'kb', available: true, files: 5 },
+      { id: 'papers', available: true, files: 12_000 },
+      { id: 'desk', available: false, files: 0 },
+    ]
+    expect(defaultMapLibrary(maps, LIBS)).toBe('papers')
+    expect(defaultMapLibrary(maps, LIBS.filter(l => l.id !== 'papers')), 'a library gone is not picked').toBe('kb')
+    expect(defaultMapLibrary([], [LIBS[2], LIBS[1]])).toBe('papers')
+    expect(defaultMapLibrary([], [LIBS[2]])).toBe('kb')
+  })
+})
+
+describe('maps of each library', () => {
+  let calls: { url: string; method: string; body?: string }[]
+  let overviews: Record<string, MapOverview>
+  beforeEach(() => {
+    calls = []
+    resetMapLibrariesForTests()
+    resetScopesForTests()
+    act(() => setLibrary('kb'))
+    HTMLCanvasElement.prototype.getContext = (() => null) as never
+    vi.stubGlobal('matchMedia', (q: string) => ({ matches: false, media: q, addEventListener() {}, removeEventListener() {} }))
+    overviews = {
+      '/api/kb/semantic-map': OVERVIEW,
+      '/api/libraries/papers/semantic-map': { ...OVERVIEW, files: 12_000, library: { id: 'papers', label: 'Papers', kind: 'built', depth: 'meaning-documents', vectors: true } },
+      '/api/libraries/desk/semantic-map': { available: false, reason: 'off', building: false, library: { id: 'desk', label: 'Desktop', kind: 'built', depth: 'ocr', vectors: false } },
+      '/api/libraries/lab/semantic-map': { available: false, reason: 'connected', library: { id: 'lab', label: 'Lab index', kind: 'connected', depth: null, vectors: false } },
+      '/api/libraries/far/semantic-map': { available: false, reason: 'remote', library: { id: 'far', label: 'Scratch', kind: 'remote', depth: null, vectors: false } },
+    }
+    vi.stubGlobal('fetch', vi.fn(async (input: string, init?: RequestInit) => {
+      const url = String(input)
+      calls.push({ url, method: init?.method ?? 'GET', body: init?.body as string | undefined })
+      if (url === '/api/semantic-maps') {
+        return reply({ maps: [{ id: 'kb', available: true, files: 9 }, { id: 'papers', available: true, files: 12_000 }, { id: 'desk', available: false, files: 0 }] })
+      }
+      if (url in overviews) return reply(overviews[url])
+      if (url === '/api/libraries/desk/depth' && init?.method === 'PUT') {
+        overviews['/api/libraries/desk/semantic-map'] = { available: false, reason: 'none', building: false }
+        return reply({ id: 'desk', depth: 'meaning-documents', meaning: 'documents' })
+      }
+      const topo = /^\/api\/(?:kb|libraries\/(\w+))\/topology(?:\?dir=(.*))?$/.exec(url)
+      if (topo) {
+        const name = topo[1] ?? 'kb'
+        const dir = topo[2] ? decodeURIComponent(topo[2]) : ''
+        if (name === 'lab') return reply({ available: false, reason: 'none' })
+        if (!dir) return reply({ available: true, levels: 2, root: '', dirs: [{ dir: `${name}-top`, files: 2, bytes: 2000 }, { dir: `${name}-top/deep`, files: 9, bytes: 90000 }] })
+        return reply({ available: true, levels: 2, root: dir, dirs: [{ dir: `${dir}/below`, files: 9, bytes: 90000 }] })
+      }
+      return reply({}, 404)
+    }))
+  })
+  afterEach(() => { vi.unstubAllGlobals() })
+
+  it('the semantic map starts on the largest map, switches library, and keeps the choice', async () => {
+    const { unmount } = render(<SemanticMap onOpen={() => {}} libraries={LIBS} />)
+    expect(await screen.findByText('4 of 12,000 files shown; click a cluster for all of its files.')).toBeInTheDocument()
+    expect(calls.map(c => c.url)).toContain('/api/libraries/papers/semantic-map')
+    expect(screen.getByRole('button', { name: 'Library: Papers' })).toBeInTheDocument()
+    await pick('Notes')
+    expect(await screen.findByText('4 of 9 files shown; click a cluster for all of its files.')).toBeInTheDocument()
+    // A cluster of the main folder is asked for at the main folder's address.
+    fireEvent.click(screen.getByRole('button', { name: 'reports/turbines, 5 files' }))
+    await waitFor(() => expect(calls.map(c => c.url)).toContain('/api/kb/semantic-map/cluster/0?offset=0&limit=2000'))
+    unmount()
+    render(<SemanticMap onOpen={() => {}} libraries={LIBS} />)
+    expect(await screen.findByText('4 of 9 files shown; click a cluster for all of its files.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Library: Notes' })).toBeInTheDocument()
+  })
+
+  it('says why a library has no map, and sets the depth of one the Studio builds', async () => {
+    localStorage.setItem('ade-map-library-semantic', 'desk')
+    render(<SemanticMap onOpen={() => {}} libraries={LIBS} />)
+    expect(await screen.findByText('Desktop has no search by meaning. Set its depth to Meaning on documents to draw it here; that reads its documents once, in the background.')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Set to Meaning on documents' }))
+    expect(await screen.findByText('Reading the documents of Desktop for search by meaning; the map appears when that is done.')).toBeInTheDocument()
+    expect(calls.find(c => c.method === 'PUT')).toEqual({ url: '/api/libraries/desk/depth', method: 'PUT', body: JSON.stringify({ depth: 'meaning-documents' }) })
+    await pick('Lab index (read only)')
+    expect(await screen.findByText('This index was built elsewhere and has no meaning vectors the Studio can read.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Set to Meaning on documents' })).toBeNull()
+    await pick('Scratch (on cluster-a)')
+    expect(await screen.findByText('Scratch is on another system, which keeps its vectors, so there is no map of it here.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Set to Meaning on documents' })).toBeNull()
+  })
+
+  it('opens a file of another library in that library', async () => {
+    const opened: string[] = []
+    render(<SemanticMap onOpen={p => opened.push(p)} libraries={LIBS} />)
+    await screen.findByText(/of 12,000 files shown/)
+    const canvas = document.querySelector('canvas.semantic-map') as HTMLCanvasElement
+    const pointer = (type: string, x: number, y: number) => act(() => {
+      canvas.dispatchEvent(new MouseEvent(type, { clientX: 26 + x * (600 - 52), clientY: 26 + (1 - y) * (360 - 52), button: 0, bubbles: true }))
+    })
+    pointer('pointermove', 0.8, 0.7)
+    await screen.findByText('kitchen/bread/sourdough.md')
+    pointer('pointerdown', 0.8, 0.7)
+    pointer('pointerup', 0.8, 0.7)
+    expect(opened).toEqual(['kitchen/bread/sourdough.md'])
+    expect(currentLibrary()).toBe('papers')
+  })
+
+  it('the topology starts on the main folder, switches library, reads below its last level, and says when there is no index', async () => {
+    render(<TopologyMap libraries={LIBS} />)
+    expect(await screen.findByRole('button', { name: /kb-top/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Library: Notes' })).toBeInTheDocument()
+    await pick('Scratch (on cluster-a)')
+    const chip = await screen.findByRole('button', { name: /far-top/ })
+    expect(calls.map(c => c.url)).toContain('/api/libraries/far/topology')
+    // Opening a folder at the last level fetched asks for the levels below it.
+    fireEvent.click(chip)
+    await waitFor(() => expect(calls.map(c => c.url)).toContain('/api/libraries/far/topology?dir=far-top'))
+    expect(localStorage.getItem('ade-map-library-topology')).toBe('far')
+    await pick('Lab index (read only)')
+    expect(await screen.findByText('Lab index has no index yet, so there is nothing to draw.')).toBeInTheDocument()
+  })
 })

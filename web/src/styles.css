@@ -1583,6 +1583,12 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 
 .treemap-canvas { border-radius: 8px; }
 .crumb-row { margin: 4px 0 8px; }
+/* A map's title with its library picker beside it. */
+.map-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.map-head h3 { margin-right: 2px; }
+.map-head .library-scope { max-width: 260px; }
+.map-empty { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin-top: 10px; }
+.map-empty .muted { margin: 0; }
 .crumb { background: none; border: none; color: var(--pw-link, #2563eb); cursor: pointer; padding: 0 2px; font: inherit; }
 .semantic-map { border: 1px solid var(--pw-border, #ddd); border-radius: 8px; background: var(--pw-panel, #fafafa); }
 .semantic-map:focus-visible, .treemap-canvas:focus-visible { outline: 2px solid var(--theme-accent, #2563eb); outline-offset: 2px; }
