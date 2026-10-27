@@ -280,8 +280,8 @@ export function OverviewView({ onOpen }: { onOpen: (path: string) => void }) {
       </section>
 
       <div className="ov-grid ov-maps">
-        <TopologyMap />
-        <SemanticMap onOpen={onOpen} />
+        <TopologyMap libraries={cfg.libraries ?? []} />
+        <SemanticMap onOpen={onOpen} libraries={cfg.libraries ?? []} />
       </div>
     </div>
   )

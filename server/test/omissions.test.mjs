@@ -102,6 +102,11 @@ const build = over => ({ indexDir: '/nowhere', cacheRoot: '/nowhere/c', managed:
 
 test('each state that keeps a library out of search, or searches it in part, has its reason', () => {
   const want = { words: true, meaning: true }
+  // Words and vectors are missing only once the whole tree was counted;
+  // before, search looks there and names nothing.
+  L.setKnownCapsForTests('/nowhere/x', { index: true, fullText: false, vectors: false }, false)
+  assert.equal(O.libraryGap(lib({ depth: 'meaning-documents', meaning: 'documents', caps: { index: true, fullText: false, vectors: false }, build: build() }), want), null)
+  L.setKnownCapsForTests('/nowhere/x', { index: true, fullText: false, vectors: false })
   assert.deepEqual(O.libraryGap(lib({ caps: { index: false, fullText: false, vectors: false }, build: build({ state: 'building' }) }), want),
     { id: 'x', label: 'Shelf', reason: 'being built; searchable once its first pass is done', partial: false })
   assert.match(O.libraryGap(lib({ caps: { index: false, fullText: false, vectors: false }, build: build({ state: 'failed', error: 'gufi_dir2index: no space left on device' }) }), want).reason,

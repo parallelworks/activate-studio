@@ -238,6 +238,72 @@ test('the routes read the map and never make one while it is there', { skip: !ha
   assert.equal((await get('/api/kb/semantic-map/cluster/x')).status, 400)
 })
 
+test('cluster names are whole words: passages cut inside a word give no fragments', { skip: !hasNumpy && 'numpy is not installed' }, () => {
+  // embed.py's own passages of texts made of these words, with a stretch of
+  // figures that is not embedded, so some passages have no neighbor to say
+  // where their cut fell.
+  const vocab = 'reef sonar plankton estuary current coral kelp ocean tide salinity anemometer turbine nacelle gearbox rotor blade sourdough starter flour oven proofing gluten'.split(' ')
+  const left = py(`
+import random
+sys.path.insert(0, ${JSON.stringify(path.join(root, 'indexer'))})
+import embed
+random.seed(4)
+vocab = ${JSON.stringify(vocab)}
+bad, cut = set(), set()
+for n in range(400):
+    words = [random.choice(vocab) for _ in range(random.randint(20, 2500))]
+    if n % 3 == 0:
+        words[len(words) // 2:len(words) // 2] = ['4096 0x1f 77 3.14 === 12 34'] * 30
+    parts = embed.chunk(' '.join(words), 12)
+    cut |= {w for w in ' '.join(parts).split() if w.isalpha() and w not in vocab}
+    bad |= {w for w in sm.whole_words(parts).split() if w.isalpha() and w not in vocab}
+print(json.dumps([sorted(bad), len(cut)]))`)
+  assert.deepEqual(left[0], [], `fragments: ${left[0]}`)
+  assert.ok(left[1] > 20, 'the passages as cut do split words')
+
+  // A map whose passages are embed.py's: no cluster is named for a fragment.
+  const idx = path.join(tmp, 'cut')
+  execFileSync(python, ['-c', `
+import os, random, sqlite3, struct, sys
+sys.path.insert(0, ${JSON.stringify(path.join(root, 'indexer'))})
+import embed
+random.seed(5)
+D = 384
+topics = {'sea': 'reef sonar plankton estuary current coral kelp ocean', 'wind': 'turbine nacelle gearbox rotor blade anemometer', 'bread': 'sourdough starter flour oven proofing gluten'}
+root = ${JSON.stringify(idx)}
+for i, (folder, text) in enumerate(topics.items()):
+    d = os.path.join(root, folder)
+    os.makedirs(d, exist_ok=True)
+    c = sqlite3.connect(os.path.join(d, 'db.db'))
+    c.execute('CREATE TABLE gchunks (cid INTEGER PRIMARY KEY, tinode TEXT, fname TEXT, seq INTEGER, ctext TEXT, h TEXT)')
+    c.execute('CREATE TABLE gvec_rowids (rowid INTEGER PRIMARY KEY AUTOINCREMENT, id, chunk_id INTEGER, chunk_offset INTEGER)')
+    c.execute('CREATE TABLE gvec_chunks (chunk_id INTEGER PRIMARY KEY AUTOINCREMENT, size INTEGER NOT NULL, validity BLOB NOT NULL, rowids BLOB NOT NULL)')
+    c.execute('CREATE TABLE gvec_vector_chunks00 (rowid PRIMARY KEY, vectors BLOB NOT NULL)')
+    vecs, valid, cid = [], bytearray(128), 0
+    for f in range(10):
+        words = text.split()
+        for seq, part in enumerate(embed.chunk(' '.join(random.choice(words) for _ in range(1200)), 4)):
+            cid += 1
+            c.execute('INSERT INTO gchunks VALUES (?, ?, ?, ?, ?, ?)', (cid, '1', f'n{f}.md', seq, part, f'h{cid}'))
+            c.execute('INSERT INTO gvec_rowids (rowid, chunk_id, chunk_offset) VALUES (?, 1, ?)', (cid, cid - 1))
+            v = [random.gauss(0, 0.05) for _ in range(D)]; v[i * 40] += 1.0
+            vecs.append(v)
+            valid[(cid - 1) >> 3] |= 1 << ((cid - 1) & 7)
+    blob = b''.join(struct.pack('<384f', *v) for v in vecs) + bytes(4 * D * (1024 - len(vecs)))
+    c.execute('INSERT INTO gvec_chunks VALUES (1, 1024, ?, ?)', (bytes(valid), b''))
+    c.execute('INSERT INTO gvec_vector_chunks00 VALUES (1, ?)', (blob,))
+    c.commit()
+`])
+  const out = path.join(tmp, 'cut-map')
+  execFileSync(python, [path.join(root, 'indexer', 'semantic_map.py'), '--index', idx, '--out', out])
+  const overview = JSON.parse(fs.readFileSync(path.join(out, 'overview.json'), 'utf8'))
+  assert.ok(overview.clusters.length >= 3)
+  for (const c of overview.clusters) {
+    assert.ok(c.terms.length >= 2, c.label)
+    for (const t of c.terms) assert.ok(vocab.includes(t), `${c.label}: ${t} is not a whole word`)
+  }
+})
+
 // The nearest files by meaning, from real sqlite-vec tables made with GUFI's
 // own sqlite3, which carries the extension.
 const sqlite3Bin = path.join(config.GUFI_BIN, 'gufi_sqlite3')

@@ -65,6 +65,10 @@ LINKS_PER_CLUSTER = 2
 # TEXT_CHARS characters and keep their FILE_TERMS commonest terms.
 TEXT_CHARS = 20_000
 FILE_TERMS = 30
+# embed.py's passages: CHUNK_CHARS characters, one every CHUNK_STEP, cut
+# wherever that falls.
+CHUNK_CHARS = 1000
+CHUNK_STEP = 880
 TERM = re.compile(r'[a-z][a-z0-9]{2,23}')
 STOPWORDS = frozenset('''
 a about above after again against all also am an and any are as at be because been before being below between both
@@ -90,6 +94,33 @@ def file_terms(text: str) -> list[list]:
             continue
         counts[t] = counts.get(t, 0) + 1
     return [[t, n] for t, n in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[:FILE_TERMS]]
+
+
+def whole_words(parts: list[str]) -> str:
+    """A file's passages, in order, as one text without the words their cuts
+    split. A passage after the first can start inside a word (the "eef" of
+    "reef") and a full-length one can end inside one. Where the passages on
+    either side overlap it, as consecutive passages do, the characters around
+    the cut say whether it split a word, which is then whole in the neighbor;
+    otherwise a word at the cut is taken off."""
+    over = CHUNK_CHARS - CHUNK_STEP
+    out = []
+    for k, t in enumerate(parts):
+        start, end = 0, len(t)
+        prev = parts[k - 1] if k else None
+        nxt = parts[k + 1] if k + 1 < len(parts) else None
+        if k and t[:1].isalnum():
+            joined = prev is not None and len(prev) == CHUNK_CHARS and prev[CHUNK_STEP:] == t[:over]
+            if not joined or prev[CHUNK_STEP - 1].isalnum():
+                while start < end and t[start].isalnum():
+                    start += 1
+        if len(t) >= CHUNK_CHARS and t[-1:].isalnum():
+            joined = nxt is not None and t[CHUNK_STEP:] == nxt[:over]
+            if not joined or (len(nxt) > over and nxt[over].isalnum()):
+                while end > start and t[end - 1].isalnum():
+                    end -= 1
+        out.append(t[start:end])
+    return ' '.join(out)
 
 
 def folder_vectors(db_path: str):
@@ -133,18 +164,19 @@ def folder_vectors(db_path: str):
             else:
                 sums[fname] = vec.astype(np.float64)
                 counts[fname] = 1
+        # Whole passages, about TEXT_CHARS characters of them, so the words
+        # at their cuts can be told apart (whole_words).
         texts: dict[str, list[str]] = {}
         sizes: dict[str, int] = {}
         try:
             for fname, ctext in c.execute('SELECT fname, ctext FROM gchunks ORDER BY fname, seq'):
                 if fname not in sums or not ctext or sizes.get(fname, 0) >= TEXT_CHARS:
                     continue
-                part = ctext[:TEXT_CHARS - sizes.get(fname, 0)]
-                texts.setdefault(fname, []).append(part)
-                sizes[fname] = sizes.get(fname, 0) + len(part)
+                texts.setdefault(fname, []).append(ctext)
+                sizes[fname] = sizes.get(fname, 0) + len(ctext)
         except sqlite3.Error:
             texts = {}
-        return [(f, (sums[f] / counts[f]).astype(np.float32), model, file_terms(' '.join(texts.get(f, [])))) for f in sums], model
+        return [(f, (sums[f] / counts[f]).astype(np.float32), model, file_terms(whole_words(texts.get(f, [])))) for f in sums], model
     except (sqlite3.Error, ValueError, IndexError):
         return [], None
     finally:

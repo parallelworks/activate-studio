@@ -20,6 +20,7 @@ import { effectiveSettings } from './settings.js'
 import { scanLatestDetail } from './dirScan.js'
 import { deniedPaths, onlyDenied, recordDenied } from './omissions.js'
 import { depthChange, depthRecordOf, readDepthRecord, writeDepthRecord, type DepthChange } from './depthState.js'
+import { scheduleSemanticMapRebuild } from './semanticMap.js'
 import { cleanIndexedText, markTextClean, textCleanNeeded } from './textCleanup.js'
 
 /**
@@ -351,6 +352,13 @@ async function applyDepthChange(def: LibraryDef, ch: DepthChange, s: IndexSettin
 
 type Scope = { subdir?: string; noRecurse?: boolean }
 
+/** A library whose depth reaches search by meaning gets its semantic map
+ *  made again once its embeddings changed: soon after a build or a new
+ *  depth, later after a sync, so a run of syncs makes one map. */
+function remapAfterMeaning(id: string, s: IndexSettings, delayMs: number): void {
+  if (s.meaning !== 'off') scheduleSemanticMapRebuild(delayMs, id)
+}
+
 /**
  * The steps that extract and embed one part of a library (a subtree, the
  * top folder's own files, or everything), under the indexing settings the
@@ -463,6 +471,7 @@ async function fullBuild(id: string, job: IndexJob): Promise<{ ms: number }> {
     await saveState(id, snapshot)
     await writeDepthRecord(depthFile(id), depthRecordOf(s))
     updateBuild(id, { state: 'ready', error: null, ...counts })
+    remapAfterMeaning(id, s, 5_000)
     return { ms: Date.now() - t0 }
   } catch (e) {
     // Cut off by a stop: left 'building' or 'updating' for the next start.
@@ -566,6 +575,8 @@ export async function syncLibrary(id: string): Promise<string[]> {
     const counts = await settle(def)
     settleDenied(id)
     updateBuild(id, { error: failed.length ? failed.join('; ').slice(0, 400) : null, ...counts })
+    // A new depth that adds meaning maps soon; a sync's changes, later.
+    if (done.length) remapAfterMeaning(id, s, depth?.meaning ? 5_000 : 10 * 60_000)
     return done
   })
 }

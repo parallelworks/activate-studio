@@ -2043,8 +2043,10 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
       }
       case 'list_libraries': {
         const { listLibraries } = await import('../libraries.js')
+        const { meaningSearched, wordsSearched } = await import('../libraryScope.js')
         const libs = listLibraries(undefined, toolContext.getStore()?.userId ?? null)
-        const result = libs.map(l => `${l.id}: ${l.label}${l.primary ? ' (the knowledge base, read and write)' : l.site ? ` (your library on ${l.site}, read only)` : ' (read only)'}; search: names${l.caps.fullText || l.primary ? ', full text' : ''}${l.caps.vectors || l.primary ? ', semantic' : ''}`).join('\n')
+        // What a search there reads, as searchScope decides it.
+        const result = libs.map(l => `${l.id}: ${l.label}${l.primary ? ' (the knowledge base, read and write)' : l.site ? ` (your library on ${l.site}, read only)` : ' (read only)'}; search: names${wordsSearched(l) ? ', full text' : ''}${meaningSearched(l) ? ', semantic' : ''}`).join('\n')
         return { result: result || 'No libraries.', summary: `${libs.length} librar${libs.length === 1 ? 'y' : 'ies'}` }
       }
       case 'query_corpus': {
