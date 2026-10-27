@@ -158,16 +158,18 @@ test('a site carries its options: read back, shown, a socket per place reached, 
   assert.deepEqual(argv.slice(0, 5), ['-T', '-J', 'gw@bastion', '-o', 'ConnectTimeout=20'])
   assert.deepEqual(argv.slice(5, 7), ['-o', 'BatchMode=yes'])
   assert.deepEqual(argv.slice(-4), ['-p', '2222', 'me@box', 'CMD'])
-  // The socket is named by ssh's %C: a hash of where the connection lands
-  // (user, host name, port, jump host), which ssh works out itself. So a
-  // jump host gets a socket of its own, while a timeout does not.
+  // The socket is named by ssh's %C, a hash of where the connection lands
+  // (user, host name, port, jump host), which ssh works out itself, and a
+  // hash of the library's options when it has any: options apply when ssh
+  // logs in, so a set of options gets a connection of its own.
   const sockOf = argv => execFileSync('ssh', ['-G', ...argv], { stdio: ['ignore', 'pipe', 'ignore'] }).toString().split('\n').find(l => l.startsWith('controlpath '))
   const withJump = R.sshArgv(site, 'CMD').slice(1, -1)
   const plain = R.sshArgv(R.sshSite('me@box', 2222), 'CMD').slice(1, -1)
   const timeoutOnly = R.sshArgv(R.sshSite('me@box', 2222, R.parseSshOptions('-o ConnectTimeout=20')), 'CMD').slice(1, -1)
-  if (R.controlArgs(R.parseSshSite(site)).some(a => a.endsWith('/%C"'))) {
+  if (R.controlArgs(R.parseSshSite(site)).some(a => a.includes('/%C'))) {
     assert.notEqual(sockOf(withJump), sockOf(plain), 'a jump host is another way of reaching the host')
-    assert.equal(sockOf(timeoutOnly), sockOf(plain), 'a timeout is the same connection')
+    assert.notEqual(sockOf(timeoutOnly), sockOf(plain), 'options of its own, a connection of its own')
+    assert.notEqual(sockOf(timeoutOnly), sockOf(withJump))
   }
   assert.equal(R.sshSite('me@box'), 'ssh://me@box', 'no options, the site as before')
   assert.throws(() => R.sshSite('me@box', 2222, ['-p', '2200']), /give the port once/)
@@ -176,6 +178,26 @@ test('a site carries its options: read back, shown, a socket per place reached, 
   const bad = `ssh://me@box#${Buffer.from(JSON.stringify(['-o', 'ProxyCommand=id'])).toString('base64url')}`
   assert.throws(() => R.parseSshSite(bad), /ProxyCommand/)
   assert.throws(() => R.parseSshSite('ssh://me@box#notbase64json'), /invalid ssh site/)
+})
+
+test('a socket per account reached and set of options: the same options share one, other options get their own', () => {
+  const sock = site => R.sshArgv(site, 'x').find(a => a.startsWith('ControlPath='))
+  const kh = ['-o', 'UserKnownHostsFile=/tmp/kh']
+  assert.notEqual(sock(R.sshSite('me@box', null, kh)), sock(R.sshSite('me@box')), 'options of its own, a connection of its own')
+  assert.equal(sock(R.sshSite('me@box', null, ['-o', 'userknownhostsfile=/tmp/kh'])), sock(R.sshSite('me@box', null, kh)), 'a keyword in any case is the same option')
+  assert.notEqual(sock(R.sshSite('me@box', null, ['-o', 'UserKnownHostsFile=/tmp/kh2'])), sock(R.sshSite('me@box', null, kh)))
+  assert.equal(sock(R.sshSite('box')), sock(R.sshSite('me@box')), 'no options: the name is ssh\'s alone')
+  if (!sock(R.sshSite('me@box', null, kh)).includes('%C')) return
+  assert.match(sock(R.sshSite('me@box')), /\/%C"$/)
+  assert.match(sock(R.sshSite('me@box', null, kh)), /\/%C-[0-9a-f]{8}"$/)
+  // As ssh expands them, with no ~/.ssh/config: an alias and user@host
+  // with no options are one socket, and the same with options another.
+  const me = os.userInfo().username
+  const expand = site => execFileSync('ssh', ['-G', '-F', '/dev/null', ...R.sshArgv(site, 'x').slice(1, -1)], { stdio: ['ignore', 'pipe', 'ignore'] })
+    .toString().split('\n').find(l => l.startsWith('controlpath '))
+  assert.equal(expand(R.sshSite('127.0.0.1')), expand(R.sshSite(`${me}@127.0.0.1`)))
+  assert.notEqual(expand(R.sshSite(`${me}@127.0.0.1`, null, kh)), expand(R.sshSite(`${me}@127.0.0.1`)))
+  assert.equal(expand(R.sshSite('127.0.0.1', null, kh)), expand(R.sshSite(`${me}@127.0.0.1`, null, kh)))
 })
 
 test('the shared connection stays ten minutes after its last session, or STUDIO_SSH_PERSIST seconds', () => {
@@ -406,6 +428,46 @@ test('a library that names the user and one that takes it from ssh config are on
   const typed = sock(R.sshSite('me@restricted-box')), config = sock(R.sshSite('restricted-box'))
   assert.equal(typed, config)
   assert.match(typed, /\/%C"$/)
+})
+
+test('libraries on one host with different ssh options are a connection and a walk each, and each one\'s options reach ssh', { skip }, async t => {
+  V.resetGufiVtForTests()
+  if (!(await V.gufiVtAvailable())) return t.skip('this GUFI has no gufi_vt')
+  for (const [src, to] of [['proj', 'p-idx'], ['archive', 'o-idx']]) {
+    fs.mkdirSync(path.join(home, to), { recursive: true })
+    execFileSync(path.join(gufiBin, 'gufi_dir2index'), ['-x', path.join(home, src), path.join(home, to)], { stdio: 'ignore' })
+  }
+  const kh = path.join(dir, 'known_hosts_opts')
+  const opts = `-o UserKnownHostsFile=${kh} -o StrictHostKeyChecking=accept-new`
+  for (const [label, sshOptions, indexRoot] of [['Plain', '', path.join(home, 'p-idx', 'proj')], ['Options', opts, path.join(home, 'o-idx', 'archive')]]) {
+    const r = await call('POST', '/api/user-libraries/ssh', { destination: 'me@restricted-two', gufiBin, label, indexRoot, ...(sshOptions ? { sshOptions } : {}) })
+    assert.equal(r.status, 200, JSON.stringify(r.body))
+  }
+  const L = await import('../dist/libraries.js')
+  const ids = Object.fromEntries(L.listLibraries('kb', null).filter(l => ['Plain', 'Options'].includes(l.label)).map(l => [l.label, l.id]))
+  // The gufi_query runs on that host, each with the ssh argv it went by.
+  const runs = from => sessions.slice(from).filter(x => R.parseSshSite(x.site).destination === 'me@restricted-two' && /gufi_query /.test(x.argv[x.argv.length - 1]))
+  const carries = x => x.argv.includes(`UserKnownHostsFile=${kh}`)
+
+  let mark = sessions.length
+  const r = await Q.queryScope({ canned: 'largest', n: 10, library: [ids.Plain, ids.Options] }, null)
+  assert.equal(r.engine, 'gufi_vt', JSON.stringify(r.failed ?? r))
+  assert.deepEqual([...new Set(r.rowLibraries)].sort(), [ids.Options, ids.Plain].sort())
+  let mine = runs(mark)
+  assert.ok(mine.every(x => !(x.argv.at(-1).includes('p-idx/proj') && x.argv.at(-1).includes('o-idx/archive'))), 'not stacked into one location')
+  const queried = mine.filter(x => /o-idx\/archive/.test(x.argv.at(-1)))
+  assert.ok(queried.length > 0 && queried.every(carries), 'the options reach every ssh for the library that has them')
+  assert.ok(mine.filter(x => /p-idx\/proj/.test(x.argv.at(-1))).every(x => !carries(x)), 'and no other')
+  const path0 = x => x.argv.find(a => a.startsWith('ControlPath='))
+  assert.notEqual(path0(queried[0]), path0(mine.find(x => /p-idx\/proj/.test(x.argv.at(-1)))), 'a connection each')
+
+  const S = await import('../dist/libraryScope.js')
+  mark = sessions.length
+  const hits = await S.searchScope(S.scopeLibraries([ids.Plain, ids.Options], null, 'kb'), '', 20, { semantic: false, refine: { name: '*.bin', text: '', match: 'all' } })
+  assert.deepEqual(hits.map(h => [h.library.id, h.path]).sort(), [[ids.Options, 'old/tape.bin'], [ids.Plain, 'data/huge.bin']].sort())
+  mine = runs(mark)
+  assert.equal(mine.length, 2, 'a walk each')
+  assert.deepEqual(mine.map(carries).sort(), [false, true])
 })
 
 test('the wrapper accepts a stacked location\'s roots in order, and nothing else', () => {

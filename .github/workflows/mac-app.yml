@@ -32,10 +32,15 @@ on:
       gufi_run:
         description: A gufi-macos run id whose GUFI archive to use
         default: ""
-  # A change to the app or its build is built and checked on a Mac.
+  # A change to the app or its build is built and checked on a Mac, and so
+  # is a change to the server or the indexer, which check_app.sh runs from
+  # the app (indexing, search, Query, libraries over ssh). The web client is
+  # only bundled, not exercised there, so it is left to CI.
   pull_request:
     paths:
       - deploy/mac/**
+      - server/src/**
+      - indexer/**
       - .github/workflows/mac-app.yml
 
 permissions: {}

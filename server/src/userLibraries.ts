@@ -236,9 +236,11 @@ export async function remoteQueryMany(roots: string[], args: string[]): Promise<
 }
 
 /** The host a site lands on as ssh resolves it (reachedHost: user, host
- *  name, port and route, from the options and ~/.ssh/config), so a library
- *  that names the user and one that takes it from the config are one host;
- *  the site itself where that is not known (yet), or for a cluster. */
+ *  name, port and route, from the options and ~/.ssh/config, and the
+ *  options themselves), so a library that names the user and one that
+ *  takes it from the config are one host when their options match; the
+ *  site itself, which carries its options, where that is not known (yet),
+ *  or for a cluster. */
 function hostOf(site: string): string {
   return reachedKnown(site)?.key ?? site
 }
