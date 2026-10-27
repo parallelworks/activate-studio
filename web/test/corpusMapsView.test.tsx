@@ -2,8 +2,8 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { currentLibrary, setLibrary, type PublicLibrary } from '../src/api'
 import {
-  CAMERA0, clampView, defaultMapLibrary, nearestIndex, pan3d, project3d, SemanticMap, shortLabels, TopologyMap, VIEW0, viewPlane, zoom3d, zoomAround,
-  type Camera, type MapCluster, type MapOverview,
+  CAMERA0, clampView, defaultMapLibrary, nearestIndex, pan3d, project3d, SemanticMap, shortLabels, squarify, TopologyMap, VIEW0, viewPlane, zoom3d, zoomAround,
+  type Camera, type MapCluster, type MapOverview, type TreeNode,
 } from '../src/components/CorpusMaps'
 import { resetMapLibrariesForTests } from '../src/mapLibrary'
 import { resetScopesForTests } from '../src/scope'
@@ -203,6 +203,56 @@ describe('the semantic map', () => {
     expect(await screen.findByText('The main folder has no search by meaning. Set its depth to Meaning on documents to draw it here; that reads its documents once, in the background.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Set to Meaning on documents' })).toBeInTheDocument()
     expect(document.querySelector('canvas')).toBeNull()
+  })
+})
+
+describe('the treemap layout', () => {
+  const nodes = (sizes: number[]): TreeNode[] => sizes.map((bytes, i) => ({ name: `d${i}`, path: `d${i}`, bytes, files: 1, children: new Map() }))
+  // A power law: a few large folders and many small ones.
+  const skewed = Array.from({ length: 200 }, (_, i) => Math.round(1e9 / (i + 1) ** 1.6))
+  const cases: [string, number[]][] = [
+    ['one folder at 90%', [90, 5, 3, 1, 1]],
+    ['one folder at 99.9%', [999, 0.5, 0.5]],
+    ['two folders, one at 97%', [97, 3]],
+    ['one folder', [42]],
+    ['fifty alike', Array(50).fill(7)],
+    ['two hundred on a power law', skewed],
+  ]
+  for (const [name, sizes] of cases) {
+    for (const [x, y, w, h] of [[0, 0, 600, 360], [10, 20, 300, 500], [0, 0, 1000, 40]]) {
+      it(`fills its parent exactly: ${name}, ${w} x ${h}`, () => {
+        const rects = squarify(nodes(sizes), x, y, w, h)
+        const total = sizes.reduce((a, b) => a + b, 0)
+        expect(rects).toHaveLength(sizes.length)
+        const eps = 1e-6 * w * h
+        // Inside the parent, each cell's area its share of the bytes.
+        for (const r of rects) {
+          expect(r.w).toBeGreaterThan(0)
+          expect(r.h).toBeGreaterThan(0)
+          expect(r.x).toBeGreaterThanOrEqual(x - 1e-6)
+          expect(r.y).toBeGreaterThanOrEqual(y - 1e-6)
+          expect(r.x + r.w).toBeLessThanOrEqual(x + w + 1e-6)
+          expect(r.y + r.h).toBeLessThanOrEqual(y + h + 1e-6)
+          expect(Math.abs(r.w * r.h - (r.node.bytes / total) * w * h)).toBeLessThan(eps + 1e-9 * w * h * rects.length)
+        }
+        // The areas add up to the parent's and no two cells overlap, so
+        // nothing of the parent is left empty.
+        expect(Math.abs(rects.reduce((a, r) => a + r.w * r.h, 0) - w * h)).toBeLessThan(eps)
+        for (let i = 0; i < rects.length; i++) {
+          for (let j = i + 1; j < rects.length; j++) {
+            const a = rects[i], b = rects[j]
+            const ox = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x)
+            const oy = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y)
+            expect(ox > 1e-6 && oy > 1e-6 ? ox * oy : 0).toBe(0)
+          }
+        }
+      })
+    }
+  }
+
+  it('keeps cells near square where it can', () => {
+    const rects = squarify(nodes(Array(16).fill(1)), 0, 0, 400, 400)
+    for (const r of rects) expect(Math.max(r.w / r.h, r.h / r.w)).toBeLessThan(1.6)
   })
 })
 

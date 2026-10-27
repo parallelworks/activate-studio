@@ -84,7 +84,7 @@ export function inkOn(hsl: string, brightness = 1): string {
 
 interface DirRow { dir: string; files: number; bytes: number }
 
-interface TreeNode { name: string; path: string; bytes: number; files: number; children: Map<string, TreeNode> }
+export interface TreeNode { name: string; path: string; bytes: number; files: number; children: Map<string, TreeNode> }
 
 function buildTree(dirs: DirRow[]): TreeNode {
   const root: TreeNode = { name: '', path: '', bytes: 0, files: 0, children: new Map() }
@@ -110,46 +110,53 @@ function buildTree(dirs: DirRow[]): TreeNode {
   return root
 }
 
-interface Rect { x: number; y: number; w: number; h: number; node: TreeNode }
+export interface Rect { x: number; y: number; w: number; h: number; node: TreeNode }
 
-/** Squarified layout: rows of children packed to keep aspect ratios sane. */
-function squarify(children: TreeNode[], x: number, y: number, w: number, h: number): Rect[] {
+/**
+ * Squarified layout (Bruls, Huizing and van Wijk): rows of children, the
+ * largest first, each row added to while that keeps its cells nearer
+ * square, laid along the shorter side of what is left. Area is bytes at one
+ * scale for the whole rectangle, so the cells fill it exactly. (The area
+ * was once taken as a share of the whole total from what was left, which
+ * left most of the rectangle empty when one child was most of it.)
+ */
+export function squarify(children: TreeNode[], x: number, y: number, w: number, h: number): Rect[] {
   const items = children.filter(c => c.bytes > 0).sort((a, b) => b.bytes - a.bytes)
-  const total = items.reduce((s, c) => s + c.bytes, 0) || 1
+  const total = items.reduce((s, c) => s + c.bytes, 0)
   const rects: Rect[] = []
+  if (!total || w <= 0 || h <= 0) return rects
+  const scale = (w * h) / total
+  // The worst aspect ratio of a row of `sum` bytes whose largest and
+  // smallest cells are `max` and `min`, along a side of `side`.
+  const worst = (sum: number, max: number, min: number, side: number) => {
+    const area = sum * scale, s2 = side * side
+    return Math.max((s2 * max * scale) / (area * area), (area * area) / (s2 * min * scale))
+  }
   let i = 0
   while (i < items.length) {
     const horizontal = w >= h
     const side = horizontal ? h : w
-    let row: TreeNode[] = []
-    let rowSum = 0
-    let bestWorst = Infinity
-    for (let j = i; j < items.length; j++) {
-      const trySum = rowSum + items[j].bytes
-      const rowArea = (trySum / total) * w * h
-      const thickness = rowArea / side || 1
-      let worst = 0
-      for (const r of [...row, items[j]]) {
-        const len = (r.bytes / trySum) * side || 1
-        worst = Math.max(worst, Math.max(thickness / len, len / thickness))
-      }
-      if (worst > bestWorst && row.length) break
-      row = [...row, items[j]]
-      rowSum = trySum
-      bestWorst = worst
+    let j = i, sum = 0
+    // The row grows while its worst cell gets no worse.
+    while (j < items.length) {
+      const next = sum + items[j].bytes
+      if (j > i && worst(next, items[i].bytes, items[j].bytes, side) > worst(sum, items[i].bytes, items[j - 1].bytes, side)) break
+      sum = next
+      j++
     }
-    const rowArea = (rowSum / total) * w * h
-    const thickness = Math.min(rowArea / side || 1, horizontal ? w : h)
+    const row = items.slice(i, j)
+    // The last row takes what is left, so rounding leaves no sliver.
+    const thickness = j === items.length ? (horizontal ? w : h) : Math.min((sum * scale) / side, horizontal ? w : h)
     let off = 0
-    for (const r of row) {
-      const len = (r.bytes / rowSum) * side || 1
+    row.forEach((r, k) => {
+      const len = k === row.length - 1 ? side - off : (r.bytes / sum) * side
       rects.push(horizontal
         ? { x, y: y + off, w: thickness, h: len, node: r }
         : { x: x + off, y, w: len, h: thickness, node: r })
       off += len
-    }
+    })
     if (horizontal) { x += thickness; w -= thickness } else { y += thickness; h -= thickness }
-    i += row.length
+    i = j
   }
   return rects
 }
