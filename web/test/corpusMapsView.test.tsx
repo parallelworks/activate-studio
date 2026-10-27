@@ -635,8 +635,9 @@ describe('the map of a library on another system', () => {
       remote: { host: 'cluster-a', fetchedAt, checkedAt: fetchedAt, models: [{ model: 'minilm384', files: 60 }, { model: 'minilm-l6-mean-int8', files: 3 }] } }
     afterRefresh = { ...overview, building: true, progress: { phase: 'fetching', files: 5, of: 60 } }
     render(<SemanticMap onOpen={() => {}} libraries={LIBS} />)
-    expect(await screen.findByText('A sample of 5 of 60 files with vectors on cluster-a, made with minilm384, fetched 5 minutes ago. 3 files made with another model are left out.')).toBeInTheDocument()
-    expect(screen.getByText('4 of 5 files shown; click a cluster for all of its files.')).toBeInTheDocument()
+    // One line: the files shown of all those there, and the sample fetched.
+    expect(await screen.findByText('4 of 60 files shown (a sample of 5 fetched from cluster-a, made with minilm384, 5 minutes ago); click a cluster for all of its files. 3 files made with another model are left out.')).toBeInTheDocument()
+    expect(document.querySelectorAll('.map-status')).toHaveLength(1)
     fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
     expect(await screen.findByText(/Fetching the vectors of a sample of 5 of 60 files from cluster-a\./)).toBeInTheDocument()
     expect(screen.getByText('Refreshing…')).toBeInTheDocument()
@@ -648,7 +649,8 @@ describe('the map of a library on another system', () => {
   it('says when every file there is mapped, and why the last refresh failed', async () => {
     overview = { ...OVERVIEW, builtAt: 'one', files: 9, of: 9, library: FAR, error: 'cluster-a: Connection closed', remote: { host: 'cluster-a', fetchedAt: null, checkedAt: null } }
     render(<SemanticMap onOpen={() => {}} libraries={LIBS} />)
-    expect(await screen.findByText('All 9 files with vectors on cluster-a. The last refresh failed: cluster-a: Connection closed.')).toBeInTheDocument()
+    expect(await screen.findByText('4 of 9 files shown (all fetched from cluster-a); click a cluster for all of its files. The last refresh failed: cluster-a: Connection closed.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Refresh' })).toBeInTheDocument()
   })
 
   it('says when there are too few files there for a map', async () => {

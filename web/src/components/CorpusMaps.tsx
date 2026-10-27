@@ -1071,9 +1071,20 @@ export function SemanticMap({ onOpen, libraries = [] }: { onOpen: (path: string)
       {depthError && <p className="muted" role="alert">{depthError}</p>}
     </div>
   )
+  // A library on another system: the files shown are of all those with
+  // vectors there, and the sample fetched is said with them.
+  const sampled = remote && (data.of ?? 0) > (data.files ?? 0)
+  const fetched = remote
+    ? ` (${sampled ? `a sample of ${(data.files ?? 0).toLocaleString()}` : 'all'} fetched from ${host || 'its system'}` +
+      `${data.model ? `, made with ${data.model}` : ''}${data.remote?.fetchedAt ? `, ${ago(data.remote.fetchedAt)}` : ''})`
+    : ''
   const status = open
     ? `${(pages.get(open.c)?.length ?? 0).toLocaleString()} of ${open.count.toLocaleString()} files in ${open.label}${(pages.get(open.c)?.length ?? 0) < open.count ? '; zoom in for more' : ''}.`
-    : `${points.length.toLocaleString()} of ${(data.files ?? 0).toLocaleString()} files shown; click a cluster for all of its files.`
+    : `${points.length.toLocaleString()} of ${((sampled ? data.of : data.files) ?? 0).toLocaleString()} files shown${fetched}; click a cluster for all of its files.`
+  const remoteNotes = remote
+    ? `${otherModels ? ` ${otherModels.toLocaleString()} file${otherModels === 1 ? '' : 's'} made with another model ${otherModels === 1 ? 'is' : 'are'} left out.` : ''}` +
+      `${live.building ? ` ${remoteProgress(live.progress, host)}` : live.error ? ` The last refresh failed: ${live.error}.` : ''}`
+    : ''
   const canvas = (height: number | 'fill') => (
     <SemanticCanvas clusters={clusters} links={data.links ?? []} points={points} mode={mode} focus={open} height={height} palette={PALETTE} spin={spin}
       labels={labels} showLinks={links} highlight={highlight} onOpen={several && lib ? (p => openInLibrary(onOpen, lib, p)) : onOpen}
@@ -1112,23 +1123,14 @@ export function SemanticMap({ onOpen, libraries = [] }: { onOpen: (path: string)
       </p>
       {unavailable || (
         <>
-          <p className="map-status muted">{status}{data.fallback ? ' This map was drawn from a sample, since numpy is not installed here.' : ''}</p>
-          {remote && (
+          {remote ? (
             <div className="map-remote">
-              <p className="muted">
-                {(data.of ?? 0) > (data.files ?? 0)
-                  ? `A sample of ${(data.files ?? 0).toLocaleString()} of ${(data.of ?? 0).toLocaleString()} files with vectors on ${host}`
-                  : `All ${(data.files ?? 0).toLocaleString()} files with vectors on ${host}`}
-                {data.model ? `, made with ${data.model}` : ''}
-                {data.remote?.fetchedAt ? `, fetched ${ago(data.remote.fetchedAt)}.` : '.'}
-                {otherModels ? ` ${otherModels.toLocaleString()} file${otherModels === 1 ? '' : 's'} made with another model ${otherModels === 1 ? 'is' : 'are'} left out.` : ''}
-                {live.building ? ` ${remoteProgress(live.progress, host)}` : live.error ? ` The last refresh failed: ${live.error}.` : ''}
-              </p>
+              <p className="map-status muted">{status}{remoteNotes}{data.fallback ? ' This map was drawn from a sample, since numpy is not installed here.' : ''}</p>
               {live.building
                 ? <Loader inline size={14} label="Refreshing…" />
                 : <Button variant="ghost" size="sm" onClick={refresh}>Refresh</Button>}
             </div>
-          )}
+          ) : <p className="map-status muted">{status}{data.fallback ? ' This map was drawn from a sample, since numpy is not installed here.' : ''}</p>}
           <MapFrame title="Semantic map" full={full} onFull={setFull} controls={controls}>
             {full ? <><p className="map-status muted">{status}</p>{canvas('fill')}{legend}</> : canvas(360)}
           </MapFrame>
