@@ -219,8 +219,10 @@ export async function runAcross(items: { lib: Library; plan: Plan }[], order: Vt
         // Raw SQL has no known shape to map rows back by, so it is not
         // stacked; STUDIO_STACK_REMOTE=0 stacks nothing.
         // Grouped by the host reached (remoteHostKey: user, host name, port
-        // and route as ssh resolves them), so two libraries that name one
-        // account differently share a location.
+        // and route as ssh resolves them, and the library's own ssh
+        // options), so two libraries that name one account differently
+        // share a location, and the location's ssh runs with options that
+        // are every member's.
         const host = plan.raw || process.env.STUDIO_STACK_REMOTE === '0' ? null : await remoteHostKey(l.indexRoot).catch(() => null)
         const k = host === null ? `lib:${l.id}` : JSON.stringify([host, plan.stages, plan.columns])
         const g = groups.get(k) ?? { site: t.site, key: t.key, gufiBin: t.gufiBin, plan, members: [] }

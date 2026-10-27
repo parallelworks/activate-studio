@@ -266,24 +266,41 @@ export function persistSeconds(): number {
   return Number.isInteger(n) && n >= 0 ? Math.min(n, 86_400) : 600
 }
 
+/** A library's own ssh options as a short hash, '' when it has none. Each
+ *  -o keyword is put in lower case first, as ssh reads it. Sockets and
+ *  host groups are per set of options: most options (UserKnownHostsFile,
+ *  -i, -F, StrictHostKeyChecking) apply only when ssh logs in, so a
+ *  library whose sessions rode on a connection another library opened
+ *  would never have its options used. */
+export function optionsTag(options: string[] | undefined): string {
+  if (!options?.length) return ''
+  const norm = options.map((o, i) => (options[i - 1] === '-o' ? o.replace(/^[^=]*/, k => k.toLowerCase()) : o))
+  return crypto.createHash('sha1').update(norm.join('\0')).digest('hex').slice(0, OPTIONS_TAG)
+}
+
 /** ssh's connection sharing for a host: the first session to it logs in and
  *  keeps the connection for persistSeconds after the last one closes, and
  *  the others ride on it. The socket is named by ssh's own %C, a hash of
  *  where the connection lands once ssh has read the options and the
- *  user's ~/.ssh/config (user, host name, port and jump host), so two
- *  libraries reaching the same account share it whether or not one named
- *  the user. Where the folder is too long for that name, one socket per
- *  destination, port and options as given. The socket is in a folder of
- *  the user's own (socketDir); the person's ~/.ssh/config is left as it
- *  is. The path is quoted, since a folder may have spaces in it and ssh
- *  refuses an unquoted one. None where no folder will do, or with
- *  STUDIO_SSH_SHARE=0. */
+ *  user's ~/.ssh/config (user, host name, port and jump host), followed by
+ *  optionsTag when the library has options of its own. So two libraries
+ *  reaching the same account with the same options share it whether or
+ *  not one named the user, and different options get a connection each.
+ *  Where the folder is too long for that name, one socket per destination,
+ *  port and options as given. The socket is in a folder of the user's own
+ *  (socketDir); the person's ~/.ssh/config is left as it is. The path is
+ *  quoted, since a folder may have spaces in it and ssh refuses an
+ *  unquoted one. None where no folder will do, or with STUDIO_SSH_SHARE=0. */
 export function controlArgs(h: { destination: string; port: number | null; options?: string[] }): string[] {
   if (process.env.STUDIO_SSH_SHARE === '0') return []
   const dir = socketDir()
   if (!dir) return []
   const id = `${h.destination}:${h.port ?? ''}${h.options?.length ? `:${h.options.join('\0')}` : ''}`
-  const name = Buffer.byteLength(dir) + 1 + PERCENT_C <= SOCKET_PATH_MAX ? '%C' : crypto.createHash('sha1').update(id).digest('hex').slice(0, SOCKET_NAME)
+  const tag = optionsTag(h.options)
+  const percent = tag ? `%C-${tag}` : '%C'
+  const name = Buffer.byteLength(dir) + 1 + PERCENT_C + (tag ? 1 + OPTIONS_TAG : 0) <= SOCKET_PATH_MAX
+    ? percent
+    : crypto.createHash('sha1').update(id).digest('hex').slice(0, SOCKET_NAME)
   const sock = path.join(dir, name)
   const persist = persistSeconds()
   return ['-o', 'ControlMaster=auto', '-o', `ControlPath="${sock}"`, '-o', `ControlPersist=${persist > 0 ? persist : 'no'}`]
@@ -319,8 +336,9 @@ export async function sshRoute(site: string): Promise<{ jump: string | null; pro
 /** Where a site's connection lands once ssh has read its options and the
  *  user's ~/.ssh/config: `label` as a person reads it (user@host, shown
  *  before an index path, so the port stays in its own field), and `key`,
- *  with the port and the route (jump hosts, a proxy command), which says
- *  two sites are one account on one host. */
+ *  with the port, the route (jump hosts, a proxy command) and the
+ *  library's options (optionsTag), which says two sites are one account on
+ *  one host reached the same way, and so can share a connection. */
 export interface Reached { label: string; key: string }
 const reached = new Map<string, { at: number; v: Reached | null }>()
 const REACHED_MS = 10 * 60_000
@@ -341,7 +359,7 @@ export async function reachedHost(site: string): Promise<Reached | null> {
   const user = lines.get('user'), host = lines.get('hostname'), port = lines.get('port') || '22'
   const none = (v: string | undefined) => !v || v === 'none' ? '' : v
   const v: Reached | null = user && host
-    ? { label: `${user}@${host}`, key: `${user}@${host}:${port}|${none(lines.get('proxyjump'))}|${none(lines.get('proxycommand'))}` }
+    ? { label: `${user}@${host}`, key: `${user}@${host}:${port}|${none(lines.get('proxyjump'))}|${none(lines.get('proxycommand'))}|${optionsTag(h.options)}` }
     : null
   reached.set(site, { at: Date.now(), v })
   return v
@@ -381,6 +399,8 @@ const SOCKET_NAME = 12
 const SOCKET_PATH_MAX = 86
 /** The length ssh's %C expands to (40 hex characters). */
 const PERCENT_C = 40
+/** Characters of optionsTag after %C in a socket name. */
+const OPTIONS_TAG = 8
 
 /** Where ssh's sockets may go, in order: $XDG_RUNTIME_DIR/activate-studio
  *  where that is set, /tmp/activate-studio-<uid>, and the data folder's

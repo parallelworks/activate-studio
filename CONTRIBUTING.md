@@ -73,7 +73,7 @@ node scripts/release-notes.mjs --changelog --next v1.60    # with the untagged c
 
 To cut a release: merge; regenerate the change log with `--next vX.Y` and merge it in a pull request titled "Change log through vX.Y"; tag that commit `vX.Y` and push the tag; publish with `gh release create vX.Y --title vX.Y --notes "$(node scripts/release-notes.mjs vX.Y)"`. The change log comes before the tag so the version's own build carries its notes, which the app shows after an update and under What's new.
 
-The macOS app is built only for the releases that should reach Mac users, since releases are frequent: `gh workflow run mac-app.yml -f release=vX.Y` (or the Actions tab) builds that tag on a Mac, signs its update manifest, attaches the app to the release, and puts the same files in the `macos` release, the fixed address the installer and the docs use. Installed apps update to the newest release that has the app, and their update notice lists the changes of the releases in between.
+The macOS app is built only for the releases that should reach Mac users, since releases are frequent: `gh workflow run mac-app.yml -f release=vX.Y` (or the Actions tab) builds that tag on a Mac, signs its update manifest, attaches the app to the release, and puts the same files in the `macos` release, the fixed address the installer and the docs use. Installed apps update to the newest release that has the app, and their update notice lists the changes of the releases in between. A pull request that changes `deploy/mac`, `server/src` or `indexer` also runs the workflow, without a release: it builds the app and runs `deploy/mac/check_app.sh` on a Mac, so a server change that breaks the app shows up before a release does.
 
 ### Signing and notarizing the macOS app
 
