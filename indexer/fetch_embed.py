@@ -9,6 +9,10 @@ pinned in embed_deps.json.
                 with --readers-only, xlrd and olefile alone
   --model DIR   the int8 all-MiniLM-L6-v2 ONNX model and its tokenizer, as
                 DIR/model.onnx and DIR/tokenizer.json
+  --download    the wheels for --platform and the model files into --cache
+                alone, installing nothing: what the Studio sends to another
+                system for a build there, which runs this script with that
+                cache, --no-readers and no network
 
 Every download is checked against its SHA-256, and kept in --cache so a
 second run needs no network. --platform names the wheels to take (for
@@ -118,6 +122,18 @@ def install_readers(target: Path, cache: Path) -> None:
         print(f'{pkg} {w["version"]} into {target}')
 
 
+def download(plat: str, cache: Path) -> None:
+    """The wheels for a platform and the model files, into the cache only."""
+    wheels = PINS['wheels'].get(plat)
+    if not wheels:
+        raise SystemExit(f'no pinned wheels for {plat}')
+    for w in wheels.values():
+        fetch(w['url'], w['sha256'], cache)
+    for f in PINS['model']['files'].values():
+        fetch(f['url'], f['sha256'], cache)
+    print(f'the packages for {plat} and {PINS["model"]["id"]} in {cache}')
+
+
 def install_model(target: Path, cache: Path) -> None:
     target.mkdir(parents=True, exist_ok=True)
     for name, f in PINS['model']['files'].items():
@@ -136,12 +152,17 @@ def main() -> int:
     ap.add_argument('--platform', default='', help=f'wheels for this platform (default {this_platform()})')
     ap.add_argument('--cache', default='', help='keep downloads here (default: a folder in the temp directory)')
     ap.add_argument('--readers-only', action='store_true', help='with --deps, only xlrd and olefile')
+    ap.add_argument('--no-readers', action='store_true', help='with --deps, leave out xlrd and olefile')
+    ap.add_argument('--download', action='store_true', help='only download the wheels for --platform and the model into --cache')
     args = ap.parse_args()
-    if not args.deps and not args.model:
-        ap.error('give --deps, --model, or both')
+    if not args.deps and not args.model and not args.download:
+        ap.error('give --deps, --model, or both, or --download')
     cache = Path(args.cache) if args.cache else Path(tempfile.gettempdir()) / 'studio-embed-cache'
+    if args.download:
+        download(args.platform or this_platform(), cache)
     if args.deps:
-        install_readers(Path(args.deps), cache)
+        if not args.no_readers:
+            install_readers(Path(args.deps), cache)
         if not args.readers_only:
             install_deps(Path(args.deps), args.platform or this_platform(), cache)
     if args.model:

@@ -17,7 +17,8 @@ import { indexSettings, meaningArgs, textArgs, threadsFor, type IndexSettings } 
 import { sofficeFound } from './extractors.js'
 import { scheduleSemanticMapRebuild } from './semanticMap.js'
 import { scanLatestDetail } from './dirScan.js'
-import { deniedPaths, onlyDenied, recordDenied, setPrimaryBuiltSource, setPrimaryIndexingSource } from './omissions.js'
+import { lockedEntry, lockingUser, openDir, openIndex, prepareIndex, rmTree, sourceOf, unmadeIndexDirs, type Locked } from './indexModes.js'
+import { deniedPaths, onlyDenied, readDenied, recordDenied, setPrimaryBuiltSource, setPrimaryIndexingSource } from './omissions.js'
 import { depthChange, depthRecordOf, readDepthRecord, writeDepthRecord, type DepthChange } from './depthState.js'
 import { cleanIndexedText, markTextClean, textCleanNeeded } from './textCleanup.js'
 
@@ -398,7 +399,7 @@ const WATCHDOG_MS = 30 * 60_000
  * a process group of its own, so stopping the job stops its workers too.
  */
 function runTool(ctx: JobCtx, ph: ReturnType<typeof phase> | null, cmd: string, args: string[], env: NodeJS.ProcessEnv,
-  onDenied?: (paths: string[]) => void): Promise<string[]> {
+  onDenied?: (paths: string[]) => void, onErrLine?: (line: string) => void): Promise<string[]> {
   if (ctx.signal.aborted) return Promise.reject(new IndexCancelled())
   const name = path.basename(args.find(a => /\.(py|js|ts)$/.test(a)) ?? cmd)
   return new Promise((resolve, reject) => {
@@ -442,6 +443,7 @@ function runTool(ctx: JobCtx, ph: ReturnType<typeof phase> | null, cmd: string, 
       last = Date.now()
       const t = line.trim()
       if (!t || ALREADY_EXISTS.test(t)) return
+      onErrLine?.(t)
       ctx.log(`${name}: ${t.slice(0, 500)}`)
       if (/Operation not permitted|Permission denied|EPERM|EACCES/i.test(t) && deniedLines.length < 500) deniedLines.push(t)
       errTail.push(t)
@@ -478,19 +480,30 @@ function ensureSkipFile(): string {
   return SKIP_FILE
 }
 
-/** Folders under a directory that indexing enters, for the names count. */
-async function countDirs(root: string, maxLevel: number | null): Promise<number> {
+/** Folders under a directory that indexing enters, for the names count,
+ *  and those whose owner may not write them, which gufi_dir2index needs
+ *  help with (indexModes.ts). */
+async function surveyDirs(root: string, maxLevel: number | null): Promise<{ count: number; locked: Locked[] }> {
   let n = 0
-  const walk = async (dir: string, level: number): Promise<void> => {
+  const locked: Locked[] = []
+  const skip = new Set([...EXCLUDE_DIRS, '.claude', '.github'])
+  // Root writes in an index folder whatever its mode.
+  const modes = lockingUser()
+  const walk = async (dir: string, rel: string, level: number): Promise<void> => {
     n++
-    if (maxLevel !== null && level >= maxLevel) return
-    let entries: fs.Dirent[]
-    try { entries = await fsp.readdir(dir, { withFileTypes: true }) } catch { return }
-    await Promise.all(entries.filter(e => e.isDirectory() && !EXCLUDE_DIRS.has(e.name) && e.name !== '.claude' && e.name !== '.github')
-      .map(e => walk(path.join(dir, e.name), level + 1)))
+    const deeper = maxLevel === null || level < maxLevel
+    let entries: fs.Dirent[] = []
+    if (deeper) { try { entries = await fsp.readdir(dir, { withFileTypes: true }) } catch { return } }
+    if (modes) {
+      const st = await fsp.stat(dir).catch(() => null)
+      const l = st && lockedEntry(dir, rel, st.mode, entries, skip)
+      if (l) locked.push(l)
+    }
+    await Promise.all(entries.filter(e => e.isDirectory() && !skip.has(e.name))
+      .map(e => walk(path.join(dir, e.name), rel ? `${rel}/${e.name}` : e.name, level + 1)))
   }
-  await walk(root, 0)
-  return n
+  await walk(root, '', 0)
+  return { count: n, locked }
 }
 
 /** db.db files written so far under a tree, for the names count. */
@@ -518,11 +531,15 @@ const ALREADY_EXISTS = /Already exists!\s*$/
 async function namesPhase(ctx: JobCtx, src: string, staging: string, maxLevel0 = false): Promise<string> {
   const ph = phase(ctx, 'names')
   ph.start()
-  const total = await countDirs(src, maxLevel0 ? 0 : null)
+  const { count: total, locked } = await surveyDirs(src, maxLevel0 ? 0 : null)
   ph.progress(0, total)
-  await fsp.rm(staging, { recursive: true, force: true })
+  await rmTree(staging)
   await fsp.mkdir(staging, { recursive: true })
   const built = path.join(staging, path.basename(src))
+  // A read-only folder's index folders: those inside it made now, and it
+  // opened once written, so nothing in it is left out (indexModes.ts).
+  await prepareIndex(built, locked)
+  const unmade: string[] = []
   // gufi_dir2index says nothing until it is done; the databases it has
   // written so far are the count.
   let counting = false
@@ -538,8 +555,13 @@ async function namesPhase(ctx: JobCtx, src: string, staging: string, maxLevel0 =
         // The rest of the folder is indexed; these are named in search and Query.
         ctx.log(`${paths.length} folder(s) could not be read and are left out: ${paths.slice(0, 5).join(', ')}`)
         recordDenied('kb', paths)
-      })
+      }, line => { for (const d of unmadeIndexDirs(line)) { const p = sourceOf(d, built, src); if (p) unmade.push(p) } })
   } finally { clearInterval(poll) }
+  openIndex(built, locked)
+  if (unmade.length) {
+    ctx.log(`${unmade.length} folder(s) could not be indexed and are left out: ${unmade.slice(0, 5).join(', ')}`)
+    recordDenied('kb', [...(readDenied('kb')?.folders ?? []), ...unmade])
+  }
   ph.finish()
   return built
 }
@@ -618,9 +640,11 @@ async function swapIn(built: string, dest: string): Promise<void> {
   await fsp.mkdir(path.dirname(dest), { recursive: true })
   const old = `${dest}.old-${process.pid}-${Date.now()}`
   let moved = false
+  // Moving a folder to another changes its '..', which takes leave to write it.
+  openDir(dest)
   try { await fsp.rename(dest, old); moved = true } catch { /* nothing there */ }
   await fsp.rename(built, dest)
-  if (moved) await fsp.rm(old, { recursive: true, force: true })
+  if (moved) await rmTree(old)
 }
 
 async function afterChange(rel: string): Promise<void> {
@@ -653,7 +677,7 @@ async function indexSubtree(ctx: JobCtx, cleaned: string): Promise<void> {
     ctx.job.searchableAt = new Date().toISOString()
     await afterChange(cleaned)
   } finally {
-    await fsp.rm(staging, { recursive: true, force: true })
+    await rmTree(staging)
   }
 }
 
@@ -673,7 +697,7 @@ async function indexRootFiles(ctx: JobCtx): Promise<void> {
     // entries; a full re-apply is idempotent and cheap.
     await afterChange('')
   } finally {
-    await fsp.rm(staging, { recursive: true, force: true })
+    await rmTree(staging)
   }
 }
 
@@ -757,13 +781,14 @@ const stashDir = (root: string) => path.join(STASH, createHash('sha1').update(pa
 async function move(from: string, to: string): Promise<boolean> {
   try { await fsp.access(from) } catch { return false }
   await fsp.mkdir(path.dirname(to), { recursive: true })
-  await fsp.rm(to, { recursive: true, force: true })
+  await rmTree(to)
+  openDir(from)
   try {
     await fsp.rename(from, to)
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code !== 'EXDEV') throw e
     await fsp.cp(from, to, { recursive: true })
-    await fsp.rm(from, { recursive: true, force: true })
+    await rmTree(from)
   }
   return true
 }
@@ -821,10 +846,10 @@ async function reconcileOnce(log: (m: string) => void): Promise<void> {
     // Keep the few most recent.
     const kept = (await fsp.readdir(STASH).catch(() => [] as string[])).map(n => path.join(STASH, n))
     const dated = await Promise.all(kept.map(async d => ({ d, t: (await fsp.stat(d).catch(() => null))?.mtimeMs ?? 0 })))
-    for (const { d } of dated.sort((a, b) => b.t - a.t).slice(STASH_KEEP)) await fsp.rm(d, { recursive: true, force: true })
+    for (const { d } of dated.sort((a, b) => b.t - a.t).slice(STASH_KEEP)) await rmTree(d)
   }
   // A tree left for this folder's name by something else is not this folder's.
-  if (was) await fsp.rm(GUFI_INDEX, { recursive: true, force: true })
+  if (was) await rmTree(GUFI_INDEX)
   const mine = stashDir(KB_ROOT)
   if (fs.existsSync(path.join(mine, 'root')) && !fs.existsSync(path.join(GUFI_INDEX, 'db.db'))) {
     await move(path.join(mine, 'gufi'), GUFI_INDEX)
@@ -832,7 +857,7 @@ async function reconcileOnce(log: (m: string) => void): Promise<void> {
     await move(path.join(mine, 'embed-cache.db'), EMBED_CACHE)
     await move(path.join(mine, 'sweep-state.json'), SWEEP_STATE)
     await move(path.join(mine, 'index-depth.json'), DEPTH_STATE)
-    await fsp.rm(mine, { recursive: true, force: true })
+    await rmTree(mine)
     log(`folder: brought back the earlier index of ${KB_ROOT}; the next build updates it`)
   }
   await fsp.mkdir(INDEX_DIR, { recursive: true })
@@ -884,7 +909,7 @@ async function buildWholeFolder(ctx: JobCtx): Promise<void> {
     await saveSweepState(snapshot)
     await writeDepthRecord(DEPTH_STATE, depthRecordOf(ctx.settings))
   } finally {
-    await fsp.rm(staging, { recursive: true, force: true })
+    await rmTree(staging)
   }
 }
 
@@ -911,7 +936,7 @@ export function startDelete(): IndexJob {
   return enqueue('delete', '', 'Deleting the index', async ctx => {
     for (const p of [GUFI_INDEX, EXTRACT_CACHE, EMBED_CACHE, SWEEP_STATE, DEPTH_STATE, ROOT_MARK, SEMANTIC_MAP_DIR,
       path.join(INDEX_BASE, 'pdf-preview'), path.join(INDEX_BASE, 'pdf-pages'), path.join(INDEX_BASE, 'model-cache')]) {
-      await fsp.rm(p, { recursive: true, force: true })
+      await rmTree(p)
     }
     ctx.log(`deleted the index of ${KB_ROOT} (the folder's files are untouched)`)
     status.lastChanges = []
@@ -1113,7 +1138,7 @@ export async function sweep(log: (msg: string) => void): Promise<string[]> {
     const rec = enqueue('sweep', '', filesChanged ? 'Syncing changes' : depth ? `Applying the new index depth: ${depth.label}` : 'Tidying the indexed text', async ctx => {
       // Removed directories: drop their index subtrees.
       for (const rel of removed) {
-        await fsp.rm(path.join(GUFI_INDEX, rel), { recursive: true, force: true }).catch(() => {})
+        await rmTree(path.join(GUFI_INDEX, rel)).catch(() => {})
       }
       // Stale extraction caches for files deleted outside the UI: prune them
       // so a later same-named file cannot reuse another file's text.

@@ -85,11 +85,13 @@ export function recordDenied(id: string, folders: string[], files = 0): void {
 }
 
 /** Absolute paths named in permission errors a tool printed (gufi_dir2index,
- *  the text pass), one per line. */
+ *  the text pass), one per line. gufi_dir2index's "mkdir <index folder>/db.db
+ *  failure" names a folder of the index, not of the source: the build maps
+ *  those itself (indexModes.ts). */
 export function deniedPaths(stderr: string): string[] {
   const out: string[] = []
   for (const line of String(stderr ?? '').split('\n')) {
-    if (!/Operation not permitted|Permission denied|EPERM|EACCES/i.test(line)) continue
+    if (!/Operation not permitted|Permission denied|EPERM|EACCES/i.test(line) || /^mkdir \/.*\/db\.db failure:/.test(line)) continue
     const m = line.match(/["'`]?(\/[^"'`\n]*?)["'`]?(?::\s|\s\(|$)/)
     if (m) out.push(m[1].replace(/\/+$/, ''))
   }

@@ -18,6 +18,7 @@ import {
 import { runPreExtract } from './preextract.js'
 import { effectiveSettings } from './settings.js'
 import { scanLatestDetail } from './dirScan.js'
+import { lockedUnder, openDir, openIndex, prepareIndex, rmTree, sourceOf, unmadeIndexDirs, type Locked } from './indexModes.js'
 import { deniedPaths, onlyDenied, recordDenied } from './omissions.js'
 import { depthChange, depthRecordOf, readDepthRecord, writeDepthRecord, type DepthChange } from './depthState.js'
 import { scheduleSemanticMapRebuild } from './semanticMap.js'
@@ -195,7 +196,8 @@ setBuildProgressSource(id => {
 const denials = new Map<string, Set<string>>()
 const denied = (id: string) => { let d = denials.get(id); if (!d) denials.set(id, d = new Set()); return d }
 
-function run(cmd: string, args: string[], timeoutMs = 2 * 60 * 60_000, images = false, libraryId?: string, tolerateDenied = false): Promise<string> {
+function run(cmd: string, args: string[], timeoutMs = 2 * 60 * 60_000, images = false, libraryId?: string, tolerateDenied = false,
+  onStderr?: (stderr: string) => void): Promise<string> {
   // Images are described only where the depth reads them (Text + OCR and
   // up); with AI features off, or descriptions off, they are indexed by OCR
   // and name only.
@@ -223,6 +225,7 @@ function run(cmd: string, args: string[], timeoutMs = 2 * 60 * 60_000, images = 
       children.delete(child)
       const so = Buffer.concat(out).toString('utf8'), se = Buffer.concat(err).toString('utf8')
       if (libraryId) for (const p of deniedPaths(se)) denied(libraryId).add(p)
+      onStderr?.(se)
       const failed = e ?? (code !== 0 ? new Error(signal ? `stopped (${signal})` : `exit ${code}`) : null)
       // A folder it may not read fails gufi_dir2index after it wrote the rest:
       // the build stands, and the folder is named (omissions.ts).
@@ -268,11 +271,29 @@ export function stopLibraryJobs(): number {
   return n
 }
 
+/** Folders gufi_dir2index passes over besides EXCLUDE_DIRS. */
+const SKIP_ALSO = ['.claude', '.github']
+
 function skipFile(id: string): string {
   const f = path.join(builtLibraryDir(id), 'skip-dirs.txt')
   fs.mkdirSync(path.dirname(f), { recursive: true })
-  fs.writeFileSync(f, [...EXCLUDE_DIRS, '.claude', '.github'].join('\n') + '\n')
+  fs.writeFileSync(f, [...EXCLUDE_DIRS, ...SKIP_ALSO].join('\n') + '\n')
   return f
+}
+
+/**
+ * gufi_dir2index of `src` into `stage`; returns the tree it wrote. The
+ * index folders inside the `locked` source folders are made first and
+ * opened after (indexModes.ts), so a read-only source is indexed whole; a
+ * folder it still could not make an index folder for is named as left out.
+ */
+async function dir2index(id: string, src: string, stage: string, locked: Locked[], extra: string[] = [], threads = threadsFor()): Promise<string> {
+  const built = path.join(stage, path.basename(src))
+  await prepareIndex(built, locked)
+  await run(path.join(GUFI_BIN, 'gufi_dir2index'), ['-x', '-n', String(threads), ...extra, '--skip-file', skipFile(id), src, stage], undefined, false, id, true,
+    se => { for (const d of unmadeIndexDirs(se)) { const p = sourceOf(d, built, src); if (p) denied(id).add(p) } })
+  openIndex(built, locked)
+  return built
 }
 
 /** db.db files under a tree, counted for progress, a few thousand at most per look. */
@@ -292,18 +313,14 @@ function countDbs(root: string, cap = 200_000): number {
 }
 
 /** Each folder's latest change (the folder and the files directly in it),
- *  keyed by its path in the source, '' for the top; as the main folder's
- *  sweep records them. */
-async function scanDirs(root: string, libraryId?: string): Promise<Record<string, number>> {
-  return (await scanDirsDetail(root, libraryId)).latest
-}
-
-/** The same, with the folders that could not be listed for want of
- *  permission, by their path below the root. */
-async function scanDirsDetail(root: string, libraryId?: string): Promise<{ latest: Record<string, number>; deniedRel: string[] }> {
-  const r = await scanLatestDetail(root, EXCLUDE_DIRS)
+ *  keyed by its path in the source, '' for the top, as the main folder's
+ *  sweep records them; the folders that could not be listed for want of
+ *  permission, by their path below the root; and the folders whose owner
+ *  may not write them (indexModes.ts). */
+async function scanDirsDetail(root: string, libraryId?: string): Promise<{ latest: Record<string, number>; deniedRel: string[]; locked: Locked[] }> {
+  const r = await scanLatestDetail(root, EXCLUDE_DIRS, SKIP_ALSO)
   if (libraryId) for (const rel of r.denied) denied(libraryId).add(rel ? path.join(root, rel) : root)
-  return { latest: Object.fromEntries(r.latest), deniedRel: r.denied }
+  return { latest: Object.fromEntries(r.latest), deniedRel: r.denied, locked: r.locked }
 }
 
 /** Records what this build or sync could not read, and starts the next
@@ -448,26 +465,27 @@ async function fullBuild(id: string, job: IndexJob): Promise<{ ms: number }> {
   try {
     if (!isDir(src)) throw new Error(`${src} is not a folder any more`)
     // Taken first, so a change made during the build is still new to the sync.
-    const snapshot = await scanDirs(src, id)
+    const { latest: snapshot, locked } = await scanDirsDetail(src, id)
     progress('Indexing folders')
     await fsp.mkdir(b.indexDir, { recursive: true })
     await fsp.mkdir(b.cacheRoot, { recursive: true })
     const stage = path.join(b.indexDir, '.build')
-    await fsp.rm(stage, { recursive: true, force: true })
+    await rmTree(stage)
     const counter = setInterval(() => { const n = countDbs(stage); progress('Indexing folders', n, `${n.toLocaleString('en-US')} folders`) }, 1000)
+    let built: string
     try {
-      await run(path.join(GUFI_BIN, 'gufi_dir2index'), ['-x', '-n', String(threadsFor()), '--skip-file', skipFile(id), src, stage], undefined, false, id, true)
+      built = await dir2index(id, src, stage, locked)
     } finally { clearInterval(counter) }
-    const built = path.join(stage, path.basename(src))
     if (!fs.existsSync(path.join(built, 'db.db'))) throw new Error(`gufi_dir2index wrote no index at ${built}`)
     const replacing = fs.existsSync(path.join(tree, 'db.db'))
     if (replacing) await enrich({ ...def, indexRoot: built }, {}, progress, s)
     const old = path.join(b.indexDir, '.old')
-    await fsp.rm(old, { recursive: true, force: true })
-    if (fs.existsSync(tree)) await fsp.rename(tree, old)
+    await rmTree(old)
+    // Moving a folder to another changes its '..', which takes leave to write it.
+    if (fs.existsSync(tree)) { openDir(tree); await fsp.rename(tree, old) }
     await fsp.rename(built, tree)
-    await fsp.rm(old, { recursive: true, force: true })
-    await fsp.rm(stage, { recursive: true, force: true })
+    await rmTree(old)
+    await rmTree(stage)
     if (!replacing) await enrich(def, {}, progress, s, true)
     // Its words were written without the converter's provenance line.
     await markTextClean(tree)
@@ -488,34 +506,37 @@ async function fullBuild(id: string, job: IndexJob): Promise<{ ms: number }> {
   }
 }
 
-/** One subtree of a library indexed again into a staging folder and swapped in. */
-async function indexSubtree(def: LibraryDef, rel: string): Promise<void> {
+/** One subtree of a library indexed again into a staging folder and
+ *  swapped in. `locked` are the library's (scanDirsDetail). */
+async function indexSubtree(def: LibraryDef, rel: string, locked: Locked[]): Promise<void> {
   const b = def.build!
   const src = path.join(def.sourceRoot!, rel)
   const stage = path.join(b.indexDir, `.inc-${Date.now()}-${Math.floor(Math.random() * 1e6)}`)
   await fsp.mkdir(stage, { recursive: true })
   try {
-    await run(path.join(GUFI_BIN, 'gufi_dir2index'), ['-x', '-n', String(threadsFor()), '--skip-file', skipFile(def.id), src, stage], undefined, false, def.id, true)
+    const built = await dir2index(def.id, src, stage, lockedUnder(locked, rel))
     const target = path.join(def.indexRoot, rel)
     await fsp.mkdir(path.dirname(target), { recursive: true })
-    await fsp.rm(target, { recursive: true, force: true })
-    await fsp.rename(path.join(stage, path.basename(src)), target)
+    await rmTree(target)
+    await fsp.rename(built, target)
   } finally {
-    await fsp.rm(stage, { recursive: true, force: true })
+    await rmTree(stage)
   }
   await enrich(def, { subdir: rel }, () => {})
 }
 
 /** The top folder's own files: its db.db alone. */
-async function indexTop(def: LibraryDef): Promise<void> {
+async function indexTop(def: LibraryDef, locked: Locked[]): Promise<void> {
   const b = def.build!
   const stage = path.join(b.indexDir, `.inc-top-${Date.now()}`)
   await fsp.mkdir(stage, { recursive: true })
   try {
-    await run(path.join(GUFI_BIN, 'gufi_dir2index'), ['-x', '-n', String(Math.min(4, threadsFor())), '--max-level', '0', '--skip-file', skipFile(def.id), def.sourceRoot!, stage], undefined, false, def.id, true)
-    await fsp.rename(path.join(stage, path.basename(def.sourceRoot!), 'db.db'), path.join(def.indexRoot, 'db.db'))
+    // The top alone: nothing inside it is indexed, so only it is opened.
+    const top = locked.filter(l => l.rel === '').map(l => ({ ...l, dirs: [] }))
+    const built = await dir2index(def.id, def.sourceRoot!, stage, top, ['--max-level', '0'], Math.min(4, threadsFor()))
+    await fsp.rename(path.join(built, 'db.db'), path.join(def.indexRoot, 'db.db'))
   } finally {
-    await fsp.rm(stage, { recursive: true, force: true })
+    await rmTree(stage)
   }
   await enrich(def, { noRecurse: true }, () => {})
 }
@@ -537,29 +558,41 @@ export async function syncLibrary(id: string): Promise<string[]> {
     const depth = await pendingDepthChange(id, s)
     // An index from before enrich.py dropped the provenance line: cleaned in place once.
     const tidy = textCleanNeeded(def.indexRoot)
-    const { latest: scan, deniedRel } = await scanDirsDetail(def.sourceRoot, id)
+    const { latest: scan, deniedRel, locked } = await scanDirsDetail(def.sourceRoot, id)
+    // An index an earlier version built of a read-only folder has index
+    // folders this process may not write in: opened, so a sync, the text
+    // pass and a change of depth can write there (indexModes.ts).
+    openIndex(def.indexRoot, locked)
     const before = loadState(id) ?? scan
     // A folder the Studio may not read now (macOS privacy settings, say) is
     // kept as it was last indexed: not taken for removed, and not indexed again.
     for (const rel of deniedRel) for (const k of Object.keys(before)) if (k === rel || !rel || k.startsWith(`${rel}/`)) scan[k] = before[k]
     if (!loadState(id)) await saveState(id, scan)
     const top = (before[''] ?? 0) < (scan[''] ?? 0)
-    let changed = Object.keys(scan).filter(rel => rel && (before[rel] ?? 0) < scan[rel]).sort()
+    let changed = Object.keys(scan).filter(rel => rel && (before[rel] ?? 0) < scan[rel])
+    // Folders inside a read-only one that such a build left out: indexed now.
+    for (const l of locked) {
+      for (const d of l.dirs) {
+        const rel = l.rel ? `${l.rel}/${d}` : d
+        if (rel in scan && !fs.existsSync(path.join(def.indexRoot, rel, 'db.db'))) changed.push(rel)
+      }
+    }
+    changed = [...new Set(changed)].sort()
     changed = changed.filter(rel => !changed.some(o => o !== rel && rel.startsWith(`${o}/`)))
     const removed = Object.keys(before).filter(rel => rel && !(rel in scan) && !Object.keys(scan).some(s => rel.startsWith(`${s}/`) && changed.includes(s)))
     if (!top && !changed.length && !removed.length && !depth && !tidy) { settleDenied(id); return [] }
     const done: string[] = []
     const failed: string[] = []
     const next = { ...scan }
-    for (const rel of removed) { await fsp.rm(path.join(def.indexRoot, rel), { recursive: true, force: true }).catch(() => {}); done.push(`${rel} (removed)`) }
+    for (const rel of removed) { await rmTree(path.join(def.indexRoot, rel)).catch(() => {}); done.push(`${rel} (removed)`) }
     for (const rel of changed) {
-      try { await indexSubtree(def, rel); done.push(rel) } catch (e) {
+      try { await indexSubtree(def, rel, locked); done.push(rel) } catch (e) {
         failed.push(`${rel}: ${(e as Error).message}`)
         for (const k of Object.keys(next)) if (k === rel || k.startsWith(`${rel}/`)) { if (before[k] !== undefined) next[k] = before[k]; else delete next[k] }
       }
     }
     if (top) {
-      try { await indexTop(def); done.push('(top folder)') } catch (e) { failed.push(`(top folder): ${(e as Error).message}`); if (before[''] !== undefined) next[''] = before['']; else delete next[''] }
+      try { await indexTop(def, locked); done.push('(top folder)') } catch (e) { failed.push(`(top folder): ${(e as Error).message}`); if (before[''] !== undefined) next[''] = before['']; else delete next[''] }
     }
     await saveState(id, next)
     if (depth) {

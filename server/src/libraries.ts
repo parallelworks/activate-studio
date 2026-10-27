@@ -23,6 +23,7 @@ import { GUFI_BIN, GUFI_INDEX, INDEX_BASE, KB_ROOT, gufiAvailable, gufiEnv } fro
 import { forgetIndexSettings, indexSettings, type IndexDepth, type MeaningLevel } from './indexSettings.js'
 import { KbError } from './kb.js'
 import { REMOTE_PREFIX, learnReached, loadUserLibraries, ownerOf, reachedLabel, remoteRootOf } from './userLibraries.js'
+import { rmTreeSync } from './indexModes.js'
 
 export interface LibraryCaps {
   /** A GUFI tree: a db.db at the root. */
@@ -582,7 +583,7 @@ export function removeLibrary(id: string): void {
   // A built library's extraction cache is the Studio's, and so is its index
   // when it is in the Studio's own folder; an index in a folder that was
   // chosen for it stays where it is.
-  if (def?.build) fs.rmSync(builtLibraryDir(id), { recursive: true, force: true })
+  if (def?.build) rmTreeSync(builtLibraryDir(id))
   // The labels the Studio kept for its files go with it.
   fs.rmSync(path.join(builtLibraryDir(id), 'labels.json'), { force: true })
   fs.rmSync(path.join(builtLibraryDir(id), 'labels.json.bak'), { force: true })

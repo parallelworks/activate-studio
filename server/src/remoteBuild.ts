@@ -18,13 +18,27 @@ import { PROJECT_ROOT } from './config.js'
  * swaps it in when complete, and leaves .studio-index.json in the index
  * folder with what it built. Where the system has Python 3.10 or later
  * with SQLite's full-text module, the Studio's enrich.py is copied there
- * and run, so the index carries the files' text; where a GUFI with the
- * embedding extension and the Studio's model are there too, embed.py runs
- * as well.
+ * and run, so the index carries the files' text; at a depth with search by
+ * meaning, embed.py runs as well, with the Studio's ONNX embedding model
+ * and its packages for that Python, kept in ~/.activate-studio/embed and
+ * sent from here the first time (remoteEmbed.ts), or else with the GGUF
+ * model where it is in ~/.activate-studio/models.
  *
  * Every value reaches the scripts as a positional argument, never as text
  * inside them.
  */
+
+/** The platform of the Python in $py as fetch_embed.py names the wheels
+ *  for it (linux-x86_64-cp312, macos-arm64-cp313), and the versions of the
+ *  Studio's embedding model and packages installed for the login
+ *  (remoteEmbed.ts), as platform= and embeds= lines. */
+const EMBED_LINES = `echo "platform=$("$py" -c 'import platform, sys; m = platform.machine().lower(); a = {"amd64": "x86_64", "arm64": "aarch64"}.get(m, m); s = "macos" if sys.platform == "darwin" else "linux" if sys.platform.startswith("linux") else sys.platform; print("%s-%s-cp%d%d" % (s, "arm64" if s == "macos" and a == "aarch64" else a, sys.version_info[0], sys.version_info[1]))' 2>/dev/null)"
+echo "embeds=$(cd "$HOME/.activate-studio/embed" 2>/dev/null && for d in */ok; do [ -f "$d" ] && printf '%s ' "\${d%/ok}"; done)"`
+
+/** The same for the Python a build runs with, $1, as the build starts. */
+export const EMBED_PROBE = `py=$1
+${EMBED_LINES}
+exit 0`
 
 /** Checks the source and index folders, and what the build can run there.
  *  $1 is the source folder, $2 the index folder, both absolute. Prints
@@ -46,7 +60,10 @@ else a=$(near "$2"); if [ -d "$a" ] && [ -w "$a" ]; then echo index=create; else
 for p in python3.13 python3.12 python3.11 python3.10 python3; do
   c=$(command -v "$p" 2>/dev/null) || continue
   if "$c" -c 'import sqlite3, sys; sqlite3.connect(":memory:").execute("CREATE VIRTUAL TABLE t USING fts5(x)"); sys.exit(0 if sys.version_info >= (3, 10) else 1)' 2>/dev/null; then
-    echo "python=$c"; echo "python_version=$("$c" -c 'import sys; print("%d.%d" % sys.version_info[:2])')"; break
+    echo "python=$c"; echo "python_version=$("$c" -c 'import sys; print("%d.%d" % sys.version_info[:2])')"
+    py=$c
+${EMBED_LINES}
+    break
   fi
 done
 m="$HOME/.activate-studio/models/minilm384.gguf"; [ -f "$m" ] && echo "model=$m"
@@ -54,11 +71,13 @@ exit 0`
 
 /** The build itself, written to the state folder and run detached.
  *  $1 state folder, $2 GUFI bin, $3 source, $4 index folder, $5 threads,
- *  $6 python (or empty), $7 embedding model (or empty), $8 1 to make the
- *  source folder when it is missing, $9 embed.py's options for the level of
- *  search by meaning (meaningArgs), $10 enrich.py's for the depth
- *  (textArgs); both words with no spaces or quotes. */
-export const BUILD_RUN = `s=$1 bin=$2 src=$3 idx=$4 threads=$5 py=$6 model=$7 create=$8 meaning=\${9:-} text=\${10:-}
+ *  $6 python (or empty), $7 the GGUF embedding model (or empty), $8 1 to
+ *  make the source folder when it is missing, $9 embed.py's options for the
+ *  level of search by meaning (meaningArgs), $10 enrich.py's for the depth
+ *  (textArgs), both words with no spaces or quotes; $11 the version of the
+ *  Studio's ONNX model and packages to embed with (remoteEmbed.ts) and $12
+ *  the Python's platform, or empty. */
+export const BUILD_RUN = `s=$1 bin=$2 src=$3 idx=$4 threads=$5 py=$6 model=$7 create=$8 meaning=\${9:-} text=\${10:-} onnx=\${11:-} platform=\${12:-}
 uname -n > "$s/host" 2>/dev/null
 echo $$ > "$s/pid"
 phase() { printf '%s\\n' "$1" > "$s/phase"; }
@@ -77,23 +96,74 @@ src=$(cd "$src" && pwd -P) || fail "$src cannot be read."
 mkdir -p "$idx" || fail "$idx could not be created."
 idx=$(cd "$idx" && pwd -P)
 base=\${src##*/}; tree="$idx/$base"; stage="$idx/.build"
-rm -rf "$stage"
+# rm -rf, opening the folders first where one keeps it out: an index of a
+# folder its owner may not write has index folders of that mode.
+rmtree() { [ -e "$1" ] || return 0; rm -rf "$1" 2>/dev/null && return 0; chmod u+rwx "$(dirname "$1")" 2>/dev/null; chmod -R u+rwx "$1" 2>/dev/null; rm -rf "$1"; }
+rmtree "$stage"
 phase index
-"$bin/gufi_dir2index" -n "$threads" -x "$src" "$stage" > "$s/dir2index.log" 2>&1 || fail "gufi_dir2index failed: $(tail -n 3 "$s/dir2index.log" | tr '\\n' ' ')"
+dir2index() { "$bin/gufi_dir2index" -n "$threads" -x "$src" "$stage" > "$s/dir2index.log" 2>&1 || fail "gufi_dir2index failed: $(tail -n 3 "$s/dir2index.log" | tr '\\n' ' ')"; }
+dir2index
+# gufi_dir2index gives each index folder the mode of its source folder
+# before the folders inside it make theirs, so for a user other than root
+# a source folder its owner may not write (0555, say) has what is inside it
+# left out, with a "mkdir ... failure" line for each. Those index folders
+# are made first and the build is run again; what the index records about
+# the source is unchanged.
+if grep -q '^mkdir .*/db\\.db failure: ' "$s/dir2index.log"; then
+  rmtree "$stage"
+  find "$src" -type d ! -perm -700 -print0 2>/dev/null | while IFS= read -r -d '' d; do
+    find "$d" -mindepth 1 -maxdepth 1 -type d -print0 2>/dev/null | while IFS= read -r -d '' c; do
+      if [ -r "$c" ] && [ -x "$c" ]; then mkdir -p "$stage/$base\${c#"$src"}"; fi
+    done
+  done
+  dir2index
+fi
 [ -d "$stage/$base" ] || fail "gufi_dir2index wrote no tree at $stage/$base."
-rm -rf "$idx/.old"
+# The index folders opened for this user, so the text pass can write in them
+# and the tree can be moved; their group and other bits stay the source's.
+[ "$(id -u)" = 0 ] || find "$stage/$base" -type d ! -perm -700 -exec chmod u+rwx {} + 2>/dev/null
+rmtree "$idx/.old"
 if [ -d "$tree" ]; then mv "$tree" "$idx/.old"; fi
 mv "$stage/$base" "$tree" || fail "The new index could not be moved into place."
-rm -rf "$stage" "$idx/.old"
+rmtree "$stage"; rmtree "$idx/.old"
+# The Studio's ONNX embedding model and its packages for this Python, kept
+# in ~/.activate-studio/embed/<version> and installed once: from what the
+# Studio sends while the build runs (it keeps <version>.sending touched as
+# it goes, and removes it when done), by fetch_embed.py with no network, or
+# downloaded here for what it could not send, where this system reaches the
+# network. Several builds may install at once; the first to finish keeps
+# its copy.
+e="$HOME/.activate-studio/embed/$onnx"
+onnxready() {
+  [ -f "$e/ok" ] && return 0
+  while [ -f "$e.sending" ] && [ -n "$(find "$e.sending" -mmin -10 2>/dev/null)" ]; do sleep 2; done
+  t="$e.tmp-$$"; rmtree "$t"
+  if "$py" "$s/fetch_embed.py" --deps "$t/deps" --no-readers --model "$t/model" --platform "$platform" --cache "$e.files" > "$s/onnx.log" 2>&1 &&
+    PYTHONPATH="$t/deps" "$py" -c 'import numpy, onnxruntime, tokenizers' >> "$s/onnx.log" 2>&1; then
+    : > "$t/ok"
+    [ -e "$e" ] || mv "$t" "$e"
+    [ -f "$e/ok" ] && rmtree "$e.files"
+  fi
+  rmtree "$t"
+  [ -f "$e/ok" ]
+}
 fulltext=false vectors=false
 if [ -n "$py" ] && [ -f "$s/enrich.py" ]; then
   phase extract
   # shellcheck disable=SC2086
   if "$py" "$s/enrich.py" --kb-root "$src" --index "$tree" --extract-cache "$idx/.extract" $text > "$s/enrich.log" 2>&1; then fulltext=true; fi
-  if [ "$fulltext" = true ] && [ -n "$model" ] && [ -x "$bin/gufi_sqlite3" ] && [ -f "$s/embed.py" ]; then
+  if [ "$fulltext" = true ] && [ -x "$bin/gufi_sqlite3" ] && [ -f "$s/embed.py" ]; then
     phase embed
-    # shellcheck disable=SC2086
-    "$py" "$s/embed.py" --index "$tree" --model "$model" --gufi-sqlite3 "$bin/gufi_sqlite3" $meaning > "$s/embed.log" 2>&1 && vectors=true
+    onnxdir=
+    if [ -n "$onnx" ] && [ -f "$s/fetch_embed.py" ] && onnxready; then
+      onnxdir=$e
+      export PYTHONPATH="$e/deps\${PYTHONPATH:+:$PYTHONPATH}"
+    fi
+    if [ -n "$onnxdir" ] || [ -n "$model" ]; then
+      # embed.py takes the ONNX model when it loads, else the GGUF one.
+      # shellcheck disable=SC2086
+      "$py" "$s/embed.py" --index "$tree" \${model:+--model "$model"} \${onnxdir:+--onnx "$onnxdir/model"} --gufi-sqlite3 "$bin/gufi_sqlite3" $meaning > "$s/embed.log" 2>&1 && vectors=true
+    fi
   fi
   # The Studio searches the text with gufi_query, whose SQLite must read it.
   if [ "$fulltext" = true ]; then "$bin/gufi_query" -n 1 --max-level 0 -E 'SELECT count(*) FROM words;' "$tree" >/dev/null 2>&1 || fulltext=false; fi
@@ -114,15 +184,22 @@ phase done
 exit 0`
 
 /** Writes the build's files to its state folder and starts it detached.
- *  $1 build id, $2 the run script, $3 enrich.py, $4 embed.py (either may
- *  be empty), then BUILD_RUN's arguments from its second. */
+ *  $1 build id, $2 the run script, $3 enrich.py, $4 embed.py, $5
+ *  embed_onnx.py, $6 fetch_embed.py, $7 embed_deps.json (any may be
+ *  empty), $8 the version of the embedding model the Studio sends while the
+ *  build runs, marked as being sent before the build starts (or empty),
+ *  then BUILD_RUN's arguments from its second. */
 export const BUILD_START = `s="$HOME/.activate-studio/builds/$1"
 mkdir -p "$s" || exit 3
 printf '%s\\n' "$2" > "$s/run.sh"
-rm -f "$s/enrich.py" "$s/embed.py" "$s/exit" "$s/error" "$s/phase" "$s/pid" "$s/host"
+rm -f "$s/enrich.py" "$s/embed.py" "$s/embed_onnx.py" "$s/fetch_embed.py" "$s/embed_deps.json" "$s/exit" "$s/error" "$s/phase" "$s/pid" "$s/host"
 [ -n "$3" ] && printf '%s\\n' "$3" > "$s/enrich.py"
 [ -n "$4" ] && printf '%s\\n' "$4" > "$s/embed.py"
-shift 4
+[ -n "$5" ] && printf '%s\\n' "$5" > "$s/embed_onnx.py"
+[ -n "$6" ] && printf '%s\\n' "$6" > "$s/fetch_embed.py"
+[ -n "$7" ] && printf '%s\\n' "$7" > "$s/embed_deps.json"
+if [ -n "$8" ]; then mkdir -p "$HOME/.activate-studio/embed" && touch "$HOME/.activate-studio/embed/$8.sending"; fi
+shift 8
 if command -v setsid >/dev/null 2>&1; then
   setsid nohup bash "$s/run.sh" "$s" "$@" </dev/null >"$s/log" 2>&1 &
 else
@@ -195,7 +272,7 @@ export function parseStatus(text: string): BuildStatus {
 }
 
 /** The Studio's indexer scripts, copied to the remote system for a build. */
-export function indexerScript(name: 'enrich.py' | 'embed.py'): string {
+export function indexerScript(name: 'enrich.py' | 'embed.py' | 'embed_onnx.py' | 'fetch_embed.py' | 'embed_deps.json'): string {
   return fs.readFileSync(path.join(PROJECT_ROOT, 'indexer', name), 'utf8')
 }
 

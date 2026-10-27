@@ -66,8 +66,8 @@ Studio can open them), its state, its depth, and its actions. For a library
 the Studio builds (the main folder, and one built here or on a remote
 system) the Depth column is its index depth, Names, Text, Text + OCR,
 Meaning on documents or Meaning on all files, changed in place (`PUT
-/api/libraries/:id/depth`). A library built here starts at Meaning on
-documents and one built on a remote system at Text + OCR (both below).
+/api/libraries/:id/depth`). A library built here or on a remote system
+starts at Meaning on documents (both below).
 The depth is stored with the library when it is added, so a later change
 of the default leaves it as it was built, and a library added by an
 earlier version, with no depth stored, keeps what it had: Text + OCR, or
@@ -202,6 +202,27 @@ again. **Remove** forgets the library and removes
 `INDEX_BASE/libraries/<id>`; an index folder that was chosen for it stays
 where it is, and the source folder is never touched.
 
+A source folder its owner may not write, such as a read-only share, a
+snapshot, or a tree unpacked with folders of mode 0555 and files of 0444,
+is indexed whole, here, for the main folder, and on a remote system.
+`gufi_dir2index` gives each index folder the mode of its source folder as
+it finishes that folder, before the folders inside it make theirs, so for
+a user other than root the index folder of a 0555 folder could not be
+written in: every folder inside it was left out (with a `mkdir ... failure`
+line and an exit status of 0), and the build then failed moving the tree
+into place. The folder scan the build and the sync already take lists the
+folders whose owner may not write them; before `gufi_dir2index` runs the
+index folders inside those are made, and after it those index folders get
+read, write and search permission for their owner, with the source's group
+and other bits kept (`server/src/indexModes.ts`). What GUFI records about
+the source, the modes included, is unchanged. The sync, the text pass, a
+change of depth, and removing the library then write in the index as for
+any other. A tree an earlier version built of such a folder, with
+folders left out and index folders of mode 0555, is opened and filled in
+by the next sync, and removed whole by a rebuild or **Remove**. A folder
+`gufi_dir2index` still could not make an index folder for is named as left
+out, by its path in the source.
+
 These libraries are read only in the Studio for now: no uploads, new
 folders, renames, deletes, or labels from the Studio. Writing to them
 would need the write routes, the extraction and preview caches, the label
@@ -236,14 +257,58 @@ with `~`, which is resolved there. **Build the index**
 (`POST /api/user-libraries/ssh/build` or `.../pw/build`, with
 `{label?, destination | cluster, sourceRoot, indexRoot?, gufiBin?, depth?, create?}`)
 asks before making a folder the user named, and the server tests again
-first. The depth starts at Text + OCR when none is chosen, stored with
-the library. The build there embeds with the GGUF model through
-sqlite-lembed (`minilm384`), and search reads a remote index's vectors
-only in its walk, which embeds the query with the ONNX model, so those
-vectors are not searched and a Meaning stop would add build time there
-for no results. A Meaning stop can still be chosen, as the form says;
-the vectors are made where `~/.activate-studio/models/minilm384.gguf` is
-on that system.
+first. The depth starts at Meaning on documents when none is chosen,
+stored with the library.
+
+Search reads a remote index's vectors in its one-pass walk, which embeds
+the query with the Studio's ONNX model and matches the directories whose
+`gvecmodel` names that model, so the build there embeds with the same
+model (`server/src/remoteEmbed.ts`). It needs onnxruntime, tokenizers and
+numpy for the Python the build runs, and `model.onnx` and
+`tokenizer.json`, as pinned in `indexer/embed_deps.json`: wheels are
+pinned for CPython 3.11 to 3.13 on Linux x86_64 and aarch64 (manylinux
+2.28, so glibc 2.28 or later) and macOS arm64. The connection test reads
+the Python's platform as `fetch_embed.py` names it
+(`linux-x86_64-cp312`) and says whether the model is there already,
+will be sent with the first build (with its size, about 70 MB), or
+cannot be used, and then what is used instead.
+
+They are kept there in `~/.activate-studio/embed/<platform>-<digest of
+the pins>`, installed once per version: `deps/` (the unpacked wheels),
+`model/`, and `ok` once the packages import. As a build starts, the
+Studio asks which versions are installed. When this one is not, the build
+starts at once and the Studio sends what is missing while it runs, each
+file over its own ssh or pw ssh call into
+`~/.activate-studio/embed/<version>.files`, named as `fetch_embed.py`'s
+cache names them; it marks `<version>.sending` before the build starts,
+touches it as it goes, and removes it when done, and the build waits for
+the mark to go (or to stand untouched for ten minutes) before its meaning
+phase. The build then runs `fetch_embed.py --deps --no-readers --model
+--cache <version>.files` there, which checks every file against its
+SHA-256 and needs no network when all were sent, checks that the
+packages import, and moves the install into place; the sent files are
+then removed. Several builds may install at once; the first to finish
+keeps its copy. Later builds send nothing.
+
+The Studio takes the wheels from the bundle's `app/indexer/wheels` (the
+platform bundle carries those for Linux x86_64) or its own
+`INDEX_BASE/embed-wheels`, and the model from its own
+`INDEX_BASE/models/minilm-l6`, each checked against its pin. What it does
+not have it downloads into `INDEX_BASE/embed-wheels` with
+`fetch_embed.py --download --platform <platform>`, where this computer
+reaches the package index. With neither, `fetch_embed.py` on the remote
+system downloads what was not sent, where that system reaches the
+network. For a Studio and a remote system that are both without network,
+fill `INDEX_BASE/embed-wheels` on another computer with
+`python3 indexer/fetch_embed.py --download --platform <platform> --cache <folder>`
+and copy the folder there.
+
+Where the packages cannot be had or do not import there, the build uses
+the GGUF model through sqlite-lembed (`minilm384`) where
+`~/.activate-studio/models/minilm384.gguf` is on that system, whose
+vectors the walk does not match, and otherwise makes none. Each build
+makes the index anew, so vectors made with the GGUF model by an earlier
+build are made again with the ONNX model at the next build that has it.
 
 The build runs on the remote system as a process of its own, detached
 from the session (`setsid` where there is one, `nohup` always), so it
@@ -254,8 +319,9 @@ exit status, error, and logs. It runs `gufi_dir2index -x` into
 is there and the depth reads text, the Studio copies `enrich.py` into the
 state folder and runs it (with `--no-ocr` at Text), keeping extracted
 text in `<index folder>/.extract`, and at the meaning stops, where a GUFI
-with the embedding extension and `~/.activate-studio/models/minilm384.gguf`
-are there too, `embed.py`, which uses that GGUF model through sqlite-lembed (the ONNX backend runs only on this computer). It then counts the index and writes
+with the embedding extension is there too, `embed.py`, with the Studio's
+ONNX model and `embed_onnx.py` beside it, or the GGUF model (above). It
+then counts the index and writes
 `.studio-index.json`, with `fullText` true only when that system's
 `gufi_query` can read the text tables. The Studio follows the build as a
 background job (`GET /api/jobs/<id>`), reading its state every few
@@ -265,8 +331,13 @@ update does not wait for it. When it ends the library is ready with its
 counts, or says why not; a rebuild that fails leaves the index it had.
 **Rebuild** runs the build again beside the current index. **Remove**
 forgets the library and leaves the index there. Search on these
-libraries covers names, metadata, and, with extraction, full text;
-results by meaning are not read from a remote index yet.
+libraries covers names, metadata, and, with extraction, full text, and
+meaning where the build embedded with the ONNX model. A source folder
+whose owner may not write it is indexed whole there too: when the log of
+`gufi_dir2index` has `mkdir ... failure` lines, the build makes the index
+folders inside each such folder and runs it again, and before moving the
+tree into place gives the index folders read, write and search for their
+owner (above).
 
 ## The Details card
 

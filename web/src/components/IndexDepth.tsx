@@ -9,8 +9,8 @@ import { api, type IndexDepth } from '../api'
  * Each stop takes longer to index than the one before, search by meaning
  * most of all, and many folders (code, data, simulation output) need no
  * more than Text, so each library chooses. The main folder and a library
- * built on this computer start at Meaning on documents, which covers
- * documents only; one built on another system starts at Text + OCR.
+ * the Studio builds, here or on another system, start at Meaning on
+ * documents, which covers documents only.
  */
 
 export interface DepthStop { value: IndexDepth; label: string; help: string }
@@ -30,9 +30,8 @@ export const DEPTHS: DepthStop[] = [
 
 /** The stop a library built on this computer starts at. */
 export const DEFAULT_LIBRARY_DEPTH: IndexDepth = 'meaning-documents'
-/** The stop a library built on another system starts at: search does not
- *  read vectors made there yet (REMOTE_MEANING). */
-export const DEFAULT_REMOTE_LIBRARY_DEPTH: IndexDepth = 'ocr'
+/** The stop a library built on another system starts at (REMOTE_MEANING). */
+export const DEFAULT_REMOTE_LIBRARY_DEPTH: IndexDepth = 'meaning-documents'
 /** What the server reads for a library added before a depth was stored at
  *  creation, for a list that has no depth for it. */
 export const UNSTORED_LIBRARY_DEPTH: IndexDepth = 'ocr'
@@ -43,9 +42,10 @@ export const UNSTORED_LIBRARY_DEPTH: IndexDepth = 'ocr'
  *  change of the default. */
 export const MEANING_LAST = 'Search by meaning is the slowest part of indexing, so it runs last, in the background: names are searchable first, then words. For a folder of more than about 500,000 files, Text + OCR is faster; meaning can be added later in Settings, Libraries.'
 export const meaningLastNote = (depth: IndexDepth) => (depth.startsWith('meaning') ? MEANING_LAST : null)
-/** Under the depth in the form that builds a library on another system:
- *  why it starts at Text + OCR, and how to have meaning made anyway. */
-export const REMOTE_MEANING = 'Starts at Text + OCR: the Studio does not search by meaning in indexes on other systems yet. To make the vectors there anyway, choose a Meaning stop; the build makes them only where the Studio\'s embedding model is in ~/.activate-studio/models on that system.'
+/** Under a Meaning stop in the form that builds a library on another
+ *  system: what the first build sends there, and the order the phases run in. */
+export const REMOTE_MEANING = 'Search by meaning there uses the Studio\'s embedding model. The first build on a system sends the model and its packages for the Python there (about 70 MB, kept in ~/.activate-studio/embed), and the connection test says whether it can. It runs last: names and words are searchable first.'
+export const remoteMeaningNote = (depth: IndexDepth) => (depth.startsWith('meaning') ? REMOTE_MEANING : null)
 
 const stopOf = (depth: IndexDepth) => Math.max(0, DEPTHS.findIndex(d => d.value === depth))
 export const depthLabel = (depth: IndexDepth) => DEPTHS[stopOf(depth)].label

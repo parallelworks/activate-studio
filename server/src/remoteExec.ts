@@ -489,10 +489,11 @@ export function quietStderr(s: string): string {
 }
 
 /** Runs argv as one ssh (or pw ssh) call with no session loop: for a host
- *  that runs only gufi_query, and for the first step of a connection test.
- *  Rejects when ssh itself fails (exit 255 over plain ssh); a command that
- *  ran and exited nonzero resolves with its code. */
-export function remoteRunOnce(site: string, key: string, argv: string[], timeoutMs = 120_000): Promise<RemoteResult> {
+ *  that runs only gufi_query, for the first step of a connection test, and
+ *  for sending a file, which `inputFile` gives the command on its standard
+ *  input. Rejects when ssh itself fails (exit 255 over plain ssh); a
+ *  command that ran and exited nonzero resolves with its code. */
+export function remoteRunOnce(site: string, key: string, argv: string[], timeoutMs = 120_000, inputFile?: string): Promise<RemoteResult> {
   if (!argv.length) return Promise.reject(new KbError(400, 'no command'))
   return new Promise<RemoteResult>((resolve, reject) => {
     let child: ChildProcessWithoutNullStreams
@@ -505,7 +506,12 @@ export function remoteRunOnce(site: string, key: string, argv: string[], timeout
       reject(new KbError(504, `${siteName(site)}: the command did not finish in ${Math.round(timeoutMs / 1000)} s`))
     }), timeoutMs)
     child.stdin.on('error', () => {})
-    child.stdin.end()
+    if (inputFile) {
+      // A file the command reads on its standard input, streamed as it is read.
+      const input = fs.createReadStream(inputFile)
+      input.on('error', e => settle(() => { child.kill(); reject(new KbError(500, `${inputFile}: ${e.message}`)) }))
+      input.pipe(child.stdin)
+    } else child.stdin.end()
     child.stdout.on('data', d => out.push(Buffer.from(d)))
     child.stderr.on('data', d => { err = (err + String(d)).slice(-STDERR_TAIL) })
     child.on('error', e => settle(() => reject(new KbError(502, `${siteName(site)}: ${e.message}`))))

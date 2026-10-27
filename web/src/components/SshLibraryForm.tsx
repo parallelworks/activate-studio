@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Button, Callout, Field, Input, Select } from '@parallelworks/ui'
 import { api, type IndexDepth, type PwSystems } from '../api'
-import { DEFAULT_REMOTE_LIBRARY_DEPTH, IndexDepthControl, REMOTE_MEANING } from './IndexDepth'
+import { DEFAULT_REMOTE_LIBRARY_DEPTH, IndexDepthControl, remoteMeaningNote } from './IndexDepth'
 import { sshOptionsProblem } from '../sshOptions'
 import { CreateConfirm, postJson, StepList, type CheckStep } from './LibraryFormParts'
 
@@ -24,9 +24,9 @@ import { CreateConfirm, postJson, StepList, type CheckStep } from './LibraryForm
  * folder (made if missing, after asking), and whether text extraction can
  * run; Build the index starts gufi_dir2index there, at the index depth
  * chosen (OCR where tesseract is installed there, search by meaning where
- * the Studio's model is), and the library shows its progress in the list.
- * The depth starts at Text + OCR, as search does not read vectors made on
- * another system yet; the form says so.
+ * the Studio's model can run), and the library shows its progress in the
+ * list. The depth starts at Meaning on documents; the form says what the
+ * first build sends there for it.
  * The server tests again before either.
  */
 export interface SshLibraryAdded { id: string; label: string }
@@ -186,7 +186,7 @@ export function SshLibraryForm({ onAdded, compact = false, transport = 'ssh', mo
         <Input label="Label" hint="optional" placeholder={required && host ? name : 'Shown in the Library switcher'} value={form.label}
           onChange={e => setForm(f => ({ ...f, label: e.target.value }))} />
       </div>
-      {build && <IndexDepthControl value={depth} onChange={setDepth} disabled={busy !== null} note={() => REMOTE_MEANING} />}
+      {build && <IndexDepthControl value={depth} onChange={setDepth} disabled={busy !== null} note={remoteMeaningNote} />}
       {result && <StepList steps={result.steps} label="Connection test" />}
       {error && <Callout tone="error" live>{error}</Callout>}
       <div className="query-actions">
