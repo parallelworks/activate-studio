@@ -2,7 +2,7 @@ import { execFile, spawn } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { GUFI_BIN, GUFI_INDEX, INDEX_BASE, gufiAvailable, gufiEnv } from './config.js'
+import { GUFI_BIN, GUFI_INDEX, INDEX_BASE, gufiAvailable, gufiEnv, gufiIndexAvailable } from './config.js'
 import { REMOTE_PREFIX, remoteIndexRoot, remoteQuery, remoteQueryMany, remoteTarget } from './userLibraries.js'
 import { noteGufi } from './gufiTrace.js'
 import { withoutProvenance } from './textCleanup.js'
@@ -883,7 +883,7 @@ async function listVectorDbs(indexRoot: string = GUFI_INDEX): Promise<VectorDb[]
 
 /** The models an index's vectors come from, with how many directories each. */
 export async function vectorModels(indexRoot: string = GUFI_INDEX): Promise<Record<string, number>> {
-  if (indexRoot.startsWith(REMOTE_PREFIX) || !gufiAvailable()) return {}
+  if (indexRoot.startsWith(REMOTE_PREFIX) || !gufiIndexAvailable(indexRoot)) return {}
   const counts: Record<string, number> = {}
   for (const v of await listVectorDbs(indexRoot)) counts[v.model] = (counts[v.model] ?? 0) + 1
   return counts
@@ -988,7 +988,7 @@ export async function corpusStats(indexRoot?: string): Promise<CorpusStats> {
     if (builtAt) { remoteStats.set(indexRoot, { builtAt, stats }); keepRemoteStats() }
     return stats
   }
-  if (!gufiAvailable()) return { available: false }
+  if (!gufiIndexAvailable(indexRoot ?? GUFI_INDEX)) return { available: false }
   return cachedCount('corpus', indexRoot, () => countCorpus(indexRoot))
 }
 

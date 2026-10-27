@@ -261,6 +261,27 @@ test('what a library holds survives a build, a stale probe and a restart, with n
   assert.equal(s.omitted, undefined)
 })
 
+test('with no main index at all, the other libraries are still searched and queried, and the main folder is named', { skip: !REAL && 'GUFI not installed', timeout: 60_000 }, async () => {
+  // Before the main folder's first build its index folder may not exist;
+  // that must not stop a library with an index of its own.
+  const main = path.join(IX, 'gufi', path.basename(KB))
+  fs.renameSync(main, `${main}.away`)
+  try {
+    const all = await search('wombatword')
+    assert.equal(all.hits.filter(h => h.library.id === 'shelf').length, 9, JSON.stringify(all))
+    assert.equal(all.error, undefined)
+    assert.ok(omissionOf(all, 'kb'), `the main folder is named: ${JSON.stringify(all.omitted)}`)
+    const one = await j('GET', '/api/search?q=wombatword&library=shelf')
+    assert.equal(one.body.hits.length, 9, JSON.stringify(one.body))
+    const q = await j('POST', '/api/query', { library: 'shelf', canned: 'largest', n: 20 })
+    assert.equal(q.status, 200, JSON.stringify(q.body))
+    assert.equal(q.body.rows.length, 9)
+    const qa = await query({ canned: 'largest', n: 20 })
+    assert.equal(qa.rows.filter((_, i) => qa.rowLibraries[i] === 'shelf').length, 9, JSON.stringify(qa))
+    assert.ok(omissionOf(qa, 'kb'), `the main folder is named: ${JSON.stringify(qa.omitted)}`)
+  } finally { fs.renameSync(`${main}.away`, main) }
+})
+
 test('a probe that cannot read the index keeps what was known, marked stale', { skip: (!REAL && 'GUFI not installed') || (AS_ROOT && 'root reads everything'), timeout: 60_000 }, async () => {
   const root = L.addedDef('shelf').indexRoot
   const dbs = []

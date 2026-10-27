@@ -19,7 +19,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { execFile } from 'node:child_process'
 import os from 'node:os'
-import { GUFI_BIN, GUFI_INDEX, INDEX_BASE, KB_ROOT, gufiAvailable, gufiEnv } from './config.js'
+import { GUFI_BIN, GUFI_INDEX, INDEX_BASE, KB_ROOT, gufiAvailable, gufiEnv, gufiInstalled } from './config.js'
 import { forgetIndexSettings, indexSettings, type IndexDepth, type MeaningLevel } from './indexSettings.js'
 import { KbError } from './kb.js'
 import { REMOTE_PREFIX, learnReached, loadUserLibraries, ownerOf, reachedLabel, remoteRootOf } from './userLibraries.js'
@@ -203,7 +203,7 @@ function capsOf(abs: string, fallback: () => LibraryCaps): LibraryCaps {
   const fresh = probeCache.get(abs)
   if (fresh && Date.now() - fresh.at < PROBE_TTL_MS) return { ...fresh.caps, index }
   const k = knownCapsMap().get(abs)
-  if (gufiAvailable() && index) void probeLibrary(abs).catch(() => {})
+  if (gufiInstalled() && index) void probeLibrary(abs).catch(() => {})
   const caps = k?.caps ?? fresh?.caps ?? fallback()
   return { ...caps, index }
 }
@@ -319,7 +319,7 @@ async function probeNow(abs: string): Promise<LibraryCaps> {
   const was = knownCapsMap().get(abs)
   if (fs.existsSync(path.join(abs, 'db.db'))) {
     caps.index = true
-    if (gufiAvailable()) {
+    if (gufiInstalled()) {
       for (const db of sampleDbs(abs)) {
         tried++
         try {
@@ -563,7 +563,7 @@ export function staleProbe(indexRoot: string): void {
   generation.set(abs, (generation.get(abs) ?? 0) + 1)
   const k = knownCapsMap().get(abs)
   if (k && !k.stale) { k.stale = true; saveKnownCaps() }
-  if (gufiAvailable()) void probeLibrary(abs).catch(() => {})
+  if (gufiInstalled()) void probeLibrary(abs).catch(() => {})
 }
 
 /** Set by the modules that keep something of their own per library and

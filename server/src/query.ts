@@ -4,7 +4,7 @@ import fs from 'node:fs'
 import fsp from 'node:fs/promises'
 import path from 'node:path'
 import type { FastifyInstance } from 'fastify'
-import { GUFI_BIN, GUFI_INDEX, INDEX_BASE, gufiAvailable, gufiEnv } from './config.js'
+import { GUFI_BIN, GUFI_INDEX, INDEX_BASE, gufiEnv, gufiIndexAvailable, gufiInstalled } from './config.js'
 import { KbError } from './kb.js'
 import { tagMaps } from './tags.js'
 import { libraryLabelsForIndexRoot } from './libraryLabels.js'
@@ -603,7 +603,8 @@ export async function queryScope(body: QueryRequest, viewerId: string | null): P
   const omitted: Omission[] = [...scope.omitted]
   const local = (root: string) => !root.startsWith(REMOTE_PREFIX)
   if (libs.length === 1) {
-    if (local(libs[0].indexRoot) && !gufiAvailable()) throw new KbError(503, 'index not built yet; run indexer/setup_gufi.sh and indexer/reindex.sh')
+    // The library's own index is checked with the rest of its state below.
+    if (local(libs[0].indexRoot) && !gufiInstalled()) throw new KbError(503, 'GUFI is not installed here')
     const plan = await onIndex(libs[0].indexRoot, () => planFor(body))
     const gap = queryGap(libs[0], plan)
     if (gap && !gap.partial) throw new KbError(409, `${gap.label} cannot be queried: ${gap.reason}`)
@@ -649,7 +650,7 @@ export async function queryScope(body: QueryRequest, viewerId: string | null): P
   }
   if (!tagged) {
     const parts = await Promise.all(plans.map(({ lib, plan }) =>
-      (local(lib.indexRoot) && !gufiAvailable() ? Promise.reject(new Error('index not built yet')) : onIndex(lib.indexRoot, () => runPlan(plan)))
+      (local(lib.indexRoot) && !gufiIndexAvailable(lib.indexRoot) ? Promise.reject(new Error('index not built yet')) : onIndex(lib.indexRoot, () => runPlan(plan)))
         .then(r => ({ lib, r }), (e: Error) => ({ lib, err: String(e.message ?? e).slice(0, 300) }))))
     tagged = parts.flatMap(p => ('r' in p ? p.r.rows.map(row => ({ id: p.lib.id, row })) : []))
     failed = parts.flatMap(p => ('err' in p ? [{ library: p.lib.label, error: p.err }] : []))
