@@ -120,11 +120,11 @@ test('the connection test passes step by step, finding GUFI and counting the ind
   assert.equal(mine.length, 1)
   assert.equal(mine[0].key, '')
   const argv = mine[0].argv
-  assert.deepEqual(argv.slice(0, 7), ['-T', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15', '-o', 'ServerAliveInterval=30'])
+  assert.deepEqual(argv.slice(0, 9), ['-T', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15', '-o', 'ServerAliveInterval=30', '-o', 'Compression=yes'])
   // The connection is shared through a socket in a folder of the user's own.
-  assert.deepEqual([argv[8], argv[12]], ['ControlMaster=auto', 'ControlPersist=600'])
-  assert.ok(argv[10].startsWith(`ControlPath="${R.socketDir()}/`), argv[10])
-  assert.deepEqual(argv.slice(13, 16), ['-p', '2222', 'me@linux-box'])
+  assert.deepEqual([argv[10], argv[14]], ['ControlMaster=auto', 'ControlPersist=600'])
+  assert.ok(argv[12].startsWith(`ControlPath="${R.socketDir()}/`), argv[12])
+  assert.deepEqual(argv.slice(15, 18), ['-p', '2222', 'me@linux-box'])
 })
 
 test('each failing step says what to change', { skip }, async () => {

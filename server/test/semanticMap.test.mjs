@@ -397,3 +397,62 @@ test('with search by meaning off for the main folder there is no map, and it say
   assert.deepEqual([r.body.available, r.body.reason], [false, 'off'])
   await saveIndexSettings('kb', { meaning: 'documents' })
 })
+
+// Vectors fetched from an index on another system (remoteMap.ts): a JSON
+// line per file with the mean of its passages normalized and quantized to
+// int8 by sqlite-vec's 'unit' scale (truncating (x + 1) * 127.5 - 128),
+// that mean's length, and, for some, the start of its text.
+const quantized = v => {
+  const n = Math.hypot(...v)
+  return Buffer.from(v.map(x => Math.trunc((x / n + 1) * 127.5 - 128) & 0xff)).toString('hex').toUpperCase()
+}
+const fetchedFile = (file, topics, perTopic) => {
+  let seed = 7
+  const rand = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647 - 0.5 }
+  const lines = []
+  for (const [i, [folder, words]] of topics.entries()) for (let f = 0; f < perTopic; f++) {
+    const v = Array.from({ length: 384 }, () => rand() * 0.1)
+    v[i * 40] += 1
+    lines.push(JSON.stringify({ p: `${folder}/n${f}.md`, r: 0.8, v: quantized(v), ...(f === 1 ? {} : { t: `${words} ${words}` }) }))
+  }
+  fs.writeFileSync(file, lines.join('\n') + '\n')
+}
+
+test('a map from fetched vectors: the int8 means put back, clusters named by their text, the sample\'s share of the files there', { skip: !hasNumpy && 'numpy is not installed' }, () => {
+  const vectors = path.join(tmp, 'fetched.jsonl')
+  fetchedFile(vectors, [['pw/docs', 'kubernetes helm ingress cluster'], ['wind', 'turbine blade rotor nacelle'], ['kitchen', 'sourdough starter flour oven']], 15)
+  const out = path.join(tmp, 'fetched-map')
+  const summary = JSON.parse(execFileSync(python, [path.join(root, 'indexer', 'semantic_map.py'), '--vectors', vectors, '--model', 'minilm-l6-mean-int8', '--of', '900', '--out', out], { encoding: 'utf8' }).trim())
+  assert.deepEqual([summary.available, summary.files, summary.of, summary.model], [true, 45, 900, 'minilm-l6-mean-int8'])
+  const overview = JSON.parse(fs.readFileSync(path.join(out, 'overview.json'), 'utf8'))
+  assert.deepEqual([overview.files, overview.of], [45, 900])
+  for (const c of overview.clusters) {
+    const members = JSON.parse(fs.readFileSync(path.join(out, `cluster-${c.c}.json`), 'utf8')).points
+    const folders = new Set(members.map(m => m.p.split('/').slice(0, -1).join('/')))
+    assert.equal(folders.size, 1, `cluster ${c.c} mixes ${[...folders]}`)
+    const words = { 'pw/docs': 'kubernetes helm ingress cluster', wind: 'turbine blade rotor nacelle', kitchen: 'sourdough starter flour oven' }[[...folders][0]]
+    assert.ok(c.terms.length >= 2 && c.terms.every(t => words.split(' ').includes(t)), `${c.label}: ${c.terms}`)
+  }
+  // The file means as the script reads them back: the quantized vector at
+  // the middle of each step, scaled to the length the row gives.
+  const back = py(`
+import numpy as np
+from pathlib import Path
+rows = list(sm.fetched_files(Path(${JSON.stringify(vectors)}), 'm'))
+print(json.dumps([len(rows), float(np.linalg.norm(rows[0][1])), rows[0][0], rows[0][3][:2], rows[1][3]]))`)
+  assert.equal(back[0], 45)
+  assert.ok(Math.abs(back[1] - 0.8) < 1e-5, `${back[1]}`)
+  assert.equal(back[2], 'pw/docs/n0.md')
+  assert.deepEqual(back[3], [['cluster', 2], ['helm', 2]])
+  assert.deepEqual(back[4], [], 'a file fetched without its text has no terms')
+})
+
+test('without numpy, the server draws a smaller map from the fetched vectors itself', async () => {
+  const vectors = path.join(tmp, 'fetched-small.jsonl')
+  fetchedFile(vectors, [['a', 'alpha'], ['b', 'beta']], 6)
+  const out = path.join(tmp, 'fetched-fallback')
+  await M.buildWithoutNumpyForTests({ id: 'u-far', key: 'remote:x:u-far', index: '', out, remote: { root: 'remote:x:u-far', home: tmp, vectors, model: 'minilm-l6-mean-int8', of: 40 } })
+  const overview = JSON.parse(fs.readFileSync(path.join(out, 'overview.json'), 'utf8'))
+  assert.deepEqual([overview.available, overview.fallback, overview.files, overview.of, overview.model], [true, true, 12, 40, 'minilm-l6-mean-int8'])
+  assert.deepEqual(new Set(overview.points.map(p => p.p.split('/')[0])), new Set(['a', 'b']))
+})

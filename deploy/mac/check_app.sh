@@ -564,6 +564,48 @@ EOF
         bad "could not add the index on the gufi_query-only host:"
         sed 's/^/        /' "$T/qadd.err" 2>/dev/null || true
       fi
+      # The semantic map of an index there with vectors: six notes on two
+      # topics, indexed, read and embedded with the app's own tools, then
+      # added as a library on the same host. Its map is made here from a
+      # sample of its vectors fetched with gufi_query alone, and a file's
+      # nearest files are searched for there.
+      mkdir -p "$T/mapsrc/wind" "$T/mapsrc/bread" "$T/mapidx"
+      for n in 1 2 3; do
+        printf 'turbine blade %s, the rotor and the gearbox of a wind turbine\n' "$n" >"$T/mapsrc/wind/turbine-$n.txt"
+        printf 'sourdough loaf %s, the starter, the flour and the oven\n' "$n" >"$T/mapsrc/bread/loaf-$n.txt"
+      done
+      if clean "$G/bin/gufi_dir2index" -x "$T/mapsrc" "$T/mapidx" >/dev/null 2>&1 &&
+        clean "$R/python/bin/python3" "$R/app/indexer/enrich.py" --kb-root "$T/mapsrc" --index "$T/mapidx/mapsrc" --extract-cache "$T/mapextract" >/dev/null 2>&1 &&
+        clean "$R/python/bin/python3" "$R/app/indexer/embed.py" --index "$T/mapidx/mapsrc" --model "$R/models/minilm384.gguf" --gufi-sqlite3 "$G/bin/gufi_sqlite3" >"$T/mapembed.out" 2>&1 &&
+        curl -fsS -m 120 -X POST -H 'content-type: application/json' \
+          -d "$(python3 -c 'import json, sys; print(json.dumps({"destination": "qonly", "indexRoot": sys.argv[1], "label": "Map far"}))' "$T/mapidx/mapsrc")" \
+          "http://127.0.0.1:$PORT_FREE/api/user-libraries/ssh" >"$T/qadd3.json" 2>"$T/qadd3.err"; then
+        q3id="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["id"])' "$T/qadd3.json" 2>/dev/null || true)"
+        before=$(wc -l <"$T/qonly.log")
+        for _ in $(seq 1 60); do
+          curl -fsS -m 30 "http://127.0.0.1:$PORT_FREE/api/libraries/$q3id/semantic-map" >"$T/qmap.json" 2>"$T/qmap.err" || true
+          python3 -c 'import json, sys; d = json.load(open(sys.argv[1])); sys.exit(0 if not d.get("building") and (d.get("available") or d.get("reason") in ("failed", "remote-none")) else 1)' "$T/qmap.json" 2>/dev/null && break
+          sleep 2
+        done
+        if python3 -c 'import json, sys; d = json.load(open(sys.argv[1])); sys.exit(0 if d.get("available") and d.get("files") == 6 and d.get("library", {}).get("kind") == "remote" and d.get("remote", {}).get("fetchedAt") else 1)' "$T/qmap.json" 2>/dev/null; then
+          ok "a library there with vectors gets a semantic map, made here from vectors fetched with gufi_query alone ($(python3 -c 'import json, sys; d = json.load(open(sys.argv[1])); print(d["files"], "files,", d.get("model"), ",", d["remote"].get("bytes"), "bytes in", d["remote"].get("fetchMs"), "ms")' "$T/qmap.json"))"
+        else
+          bad "no semantic map of the library on the gufi_query-only host:"
+          sed 's/^/        /' "$T/qmap.json" "$T/qmap.err" "$T/mapembed.out" 2>/dev/null | tail -n 12 || true
+        fi
+        first="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["points"][0]["p"])' "$T/qmap.json" 2>/dev/null || true)"
+        curl -fsS -m 60 "http://127.0.0.1:$PORT_FREE/api/libraries/$q3id/semantic-map/neighbors?file=$first&k=2" >"$T/qnear.json" 2>"$T/qnear.err" || true
+        if python3 -c 'import json, sys; d = json.load(open(sys.argv[1])); n = d.get("neighbors") or []; sys.exit(0 if len(n) == 2 and all(x["p"].split("/")[0] == sys.argv[2].split("/")[0] for x in n) else 1)' "$T/qnear.json" "$first" 2>/dev/null; then
+          ok "and a file's nearest files there are found by a search there"
+        else
+          bad "the nearest files of $first on the gufi_query-only host were not found:"
+          sed 's/^/        /' "$T/qnear.json" "$T/qnear.err" 2>/dev/null || true
+        fi
+        check "the count, the fetch and the search ran there as gufi_query and nothing else" sh -c '[ "$(sed "1,${2}d" "$1" | wc -l)" -ge 3 ] && ! sed "1,${2}d" "$1" | grep -v "^gufi_query "' sh "$T/qonly.log" "$before"
+      else
+        bad "could not make and add an index with vectors on the gufi_query-only host:"
+        sed 's/^/        /' "$T/mapembed.out" "$T/qadd3.err" 2>/dev/null | tail -n 8 || true
+      fi
       # The key's line and the alias go, whatever happened above.
       grep -v -F "$mark" "$HOME/.ssh/authorized_keys" >"$T/authorized_keys.kept" || true
       cat "$T/authorized_keys.kept" >"$HOME/.ssh/authorized_keys"

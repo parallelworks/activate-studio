@@ -1596,6 +1596,9 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .map-canvas.fill { flex: 1; min-height: 0; }
 .map-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; margin: 0 0 8px; }
 .map-status { margin: 0 0 6px; font-size: 0.82rem; }
+/* A remote library's map: its status, with where its sample came from, and its Refresh. */
+.map-remote { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin: 0 0 6px; }
+.map-remote .map-status { margin: 0; flex: 1 1 18rem; min-width: 0; }
 .legend-chip.on { font-weight: 600; text-decoration: underline; }
 .map-cluster-chip { max-width: 22rem; text-align: left; }
 .map-cluster-chip .legend-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }

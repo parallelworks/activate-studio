@@ -763,16 +763,27 @@ export interface MapPoint { p: string; x: number; y: number; z: number; c: numbe
 export interface MapLink { a: number; b: number; sim: number }
 /** A file near another by meaning, with its place on the map where it has one. */
 export interface MapNeighbor { p: string; sim: number; x?: number; y?: number; z?: number; c?: number }
-/** The library a map is of, as the server describes it. */
-export interface MapLibrary { id: string; label: string; kind: 'main' | 'built' | 'connected' | 'remote'; depth: string | null; vectors: boolean }
+/** The library a map is of, as the server describes it; `host` is the
+ *  system a library on another system is on. */
+export interface MapLibrary { id: string; label: string; kind: 'main' | 'built' | 'connected' | 'remote'; depth: string | null; vectors: boolean; host?: string }
+/** How far the map of a library on another system has got. */
+export interface MapProgress { phase: 'counting' | 'fetching' | 'drawing'; files?: number; of?: number }
+/** Where a remote library's map was fetched from, and when. */
+export interface RemoteMapInfo { host: string; fetchedAt: string | null; checkedAt: string | null; bytes?: number; fetchMs?: number; models?: { model: string; files: number }[] }
 export interface MapOverview {
   available: boolean
-  reason?: 'off' | 'none' | 'failed' | 'connected' | 'remote'
+  reason?: 'off' | 'none' | 'failed' | 'connected' | 'remote-none'
   library?: MapLibrary
   building?: boolean
+  progress?: MapProgress | null
   error?: string | null
+  builtAt?: string
+  model?: string
   files?: number
   shown?: number
+  /** Where `files` is a sample: how many files have vectors there. */
+  of?: number
+  remote?: RemoteMapInfo
   clusters?: MapCluster[]
   links?: MapLink[]
   points?: MapPoint[]
@@ -866,6 +877,36 @@ function nearestFiles(base: string, p: string): Promise<MapNeighbor[]> {
   return hit
 }
 
+/** How long ago a time was, in words. */
+export function ago(iso: string | null | undefined, now = Date.now()): string {
+  const t = iso ? Date.parse(iso) : NaN
+  if (!Number.isFinite(t)) return ''
+  const m = Math.round((now - t) / 60_000)
+  if (m < 1) return 'just now'
+  if (m < 90) return `${m} minute${m === 1 ? '' : 's'} ago`
+  const h = Math.round(m / 60)
+  if (h < 36) return `${h} hours ago`
+  return `${Math.round(h / 24)} days ago`
+}
+
+/** What the map of a library on another system is doing while there is none
+ *  to show, or while a new one is made. */
+export function remoteProgress(p: MapProgress | null | undefined, host: string): string {
+  const where = host || 'its system'
+  if (p?.phase === 'counting') return `Counting the files with meaning vectors on ${where}.`
+  if (p?.phase === 'fetching') {
+    const n = p.files ?? 0, of = p.of ?? n
+    return n < of ? `Fetching the vectors of a sample of ${n.toLocaleString()} of ${of.toLocaleString()} files from ${where}.`
+      : `Fetching the vectors of ${of.toLocaleString()} files from ${where}.`
+  }
+  if (p?.phase === 'drawing') return `Drawing the map from ${(p.files ?? 0).toLocaleString()} files.`
+  return `Making the map from the vectors on ${where}.`
+}
+
+/** The same map: a poll that finds it unchanged keeps the one on screen,
+ *  with its open cluster and what was loaded of it. */
+const sameMap = (a: MapOverview, b: MapOverview) => a.available && b.available && a.builtAt === b.builtAt && a.files === b.files
+
 /** The library the semantic map starts on, without a choice kept: the one
  *  whose map has the most files, else one with vectors, else the main folder. */
 export function defaultMapLibrary(maps: { id: string; available: boolean; files: number }[], libraries: Pick<PublicLibrary, 'id' | 'caps'>[]): string {
@@ -891,6 +932,9 @@ export function SemanticMap({ onOpen, libraries = [] }: { onOpen: (path: string)
   const lib = several ? chosen : 'kb'
   const base = lib ? mainOrLibrary(lib, 'semantic-map') : null
   const [data, setData] = useState<MapOverview | null>(null)
+  // What changes from one look to the next while a map stays the same.
+  const [live, setLive] = useState<{ building: boolean; progress: MapProgress | null; error: string | null }>({ building: false, progress: null, error: null })
+  const [tick, setTick] = useState(0)
   const [depthAsked, setDepthAsked] = useState(false)
   const [depthError, setDepthError] = useState('')
   const [mode, setMode] = useState<'2d' | '3d'>('2d')
@@ -903,19 +947,21 @@ export function SemanticMap({ onOpen, libraries = [] }: { onOpen: (path: string)
   const loading = useRef(new Set<number>())
   const viewApi = useRef<{ zoom: (f: number) => void; reset: () => void } | null>(null)
 
+  useEffect(() => { setData(null); setLive({ building: false, progress: null, error: null }) }, [base])
   useEffect(() => {
     if (!base) return
     let alive = true, timer: ReturnType<typeof setTimeout> | undefined
-    setData(null)
     const load = () => fetch(base).then(r => r.json()).then((d: MapOverview) => {
       if (!alive) return
-      setData(d)
-      // A map being made, or one waiting for its embeddings, shows when ready.
-      if (!d.available && (d.building || d.reason === 'none')) timer = setTimeout(load, d.building ? 8000 : 30_000)
+      setData(prev => (prev && sameMap(prev, d) ? prev : d))
+      setLive({ building: !!d.building, progress: d.progress ?? null, error: d.error ?? null })
+      // A map being made (a first one, or a new one over the one shown), or
+      // one waiting for its embeddings, shows when ready.
+      if (d.building || (!d.available && d.reason === 'none')) timer = setTimeout(load, d.building ? 5000 : 30_000)
     }).catch(() => { /* stays empty */ })
     void load()
     return () => { alive = false; if (timer) clearTimeout(timer) }
-  }, [base, depthAsked])
+  }, [base, depthAsked, tick])
   // Another library starts with no depth asked for.
   useEffect(() => { setDepthAsked(false); setDepthError('') }, [lib])
   // A new map starts over: no cluster open, nothing extra loaded, no answers kept.
@@ -958,7 +1004,7 @@ export function SemanticMap({ onOpen, libraries = [] }: { onOpen: (path: string)
     <div className="map-head">
       <h3>Semantic map</h3>
       {picker}
-      {(!data || data.building) && several && <Loader inline size={14} label={data?.building ? 'Making the map…' : 'Loading…'} />}
+      {(!data || (live.building && !(data.available && data.library?.kind === 'remote'))) && several && <Loader inline size={14} label={data && live.building ? 'Making the map…' : 'Loading…'} />}
     </div>
   )
   if (!data) return several && lib ? <section className="card ov-list">{head}</section> : null
@@ -980,32 +1026,65 @@ export function SemanticMap({ onOpen, libraries = [] }: { onOpen: (path: string)
   const label = libraries.find(l => l.id === lib)?.label ?? data.library?.label ?? 'the main folder'
   const Label = several ? label : 'The main folder'
   const owner = several ? label : 'the main folder'
-  const canSetDepth = data.library?.kind === 'main' || data.library?.kind === 'built' || (!data.library && lib === 'kb')
+  const remote = data.library?.kind === 'remote'
+  const host = data.library?.host ?? data.remote?.host ?? ''
+  // Files there whose vectors come from a model other than the map's.
+  const otherModels = (data.remote?.models ?? []).filter(m => m.model !== data.model).reduce((n, m) => n + m.files, 0)
+  // The Studio builds it: here (its depth applies at once) or on another
+  // system (at its next Rebuild).
+  const canSetDepth = data.library?.kind === 'main' || data.library?.kind === 'built' || (remote && !!data.library?.depth) || (!data.library && lib === 'kb')
   const setDepth = () => {
     if (!lib) return
     setDepthError('')
     api.setLibraryDepth(lib, 'meaning-documents').then(() => setDepthAsked(true)).catch(e => setDepthError(String((e as Error).message ?? e)))
   }
+  // Made again now; for a library on another system, its vectors fetched again.
+  const refresh = () => {
+    if (!base) return
+    setLive(l => ({ ...l, building: true, error: null }))
+    fetch(`${base}/refresh`, { method: 'POST' }).then(r => r.json())
+      .then((d: MapOverview & { error?: string }) => setLive({ building: !!d.building, progress: d.progress ?? null, error: d.error ?? null }))
+      .catch(e => setLive({ building: false, progress: null, error: String((e as Error).message ?? e) }))
+      .finally(() => setTick(t => t + 1))
+  }
   const unavailable = !data.available && (
     <div className="map-empty">
       <p className="muted">
-        {data.reason === 'remote' ? `${label} is on another system, which keeps its vectors, so there is no map of it here.`
+        {data.reason === 'remote-none' ? (data.of
+          ? `${label} has only ${data.of} file${data.of === 1 ? '' : 's'} with meaning vectors on ${host || 'its system'}, too few for a map.`
+          : `${label} has no meaning vectors on ${host || 'its system'}, so there is no map of it.${data.library?.depth ? ' Its last build there made none.' : ''}`)
           : data.reason === 'connected' ? 'This index was built elsewhere and has no meaning vectors the Studio can read.'
-            : data.reason === 'off' ? `${Label} has no search by meaning. Set its depth to Meaning on documents to draw it here; that reads its documents once, in the background.`
-              : data.reason === 'failed' ? `The map could not be made: ${data.error ?? 'unknown error'}.`
-                : data.building ? `The map is being made from the embeddings of ${owner}.`
-                  : depthAsked ? `Reading the documents of ${owner} for search by meaning; the map appears when that is done.`
-                    : `The map appears once ${owner} has embeddings for search by meaning.`}
+            : data.reason === 'off' && remote ? (depthAsked ? `${label} reads its documents for search by meaning at its next Rebuild, in Libraries; the map appears after that.`
+              : `${Label} has no search by meaning. Set its depth to Meaning on documents to draw it here; it applies at its next Rebuild.`)
+              : data.reason === 'off' ? `${Label} has no search by meaning. Set its depth to Meaning on documents to draw it here; that reads its documents once, in the background.`
+                : (live.building || data.building) && remote ? remoteProgress(live.progress ?? data.progress, host)
+                  : data.reason === 'failed' || live.error ? (remote ? `The vectors could not be fetched from ${host || 'its system'}: ${live.error ?? data.error ?? 'unknown error'}.`
+                    : `The map could not be made: ${live.error ?? data.error ?? 'unknown error'}.`)
+                    : data.building ? `The map is being made from the embeddings of ${owner}.`
+                      : depthAsked ? `Reading the documents of ${owner} for search by meaning; the map appears when that is done.`
+                        : `The map appears once ${owner} has embeddings for search by meaning.`}
       </p>
-      {data.reason === 'off' && canSetDepth && (
+      {data.reason === 'off' && canSetDepth && !depthAsked && (
         <Button variant="secondary" size="sm" onClick={setDepth}>Set to Meaning on documents</Button>
       )}
+      {(data.reason === 'failed' || live.error) && !live.building && <Button variant="secondary" size="sm" onClick={refresh}>Try again</Button>}
       {depthError && <p className="muted" role="alert">{depthError}</p>}
     </div>
   )
+  // A library on another system: the files shown are of all those with
+  // vectors there, and the sample fetched is said with them.
+  const sampled = remote && (data.of ?? 0) > (data.files ?? 0)
+  const fetched = remote
+    ? ` (${sampled ? `a sample of ${(data.files ?? 0).toLocaleString()}` : 'all'} fetched from ${host || 'its system'}` +
+      `${data.model ? `, made with ${data.model}` : ''}${data.remote?.fetchedAt ? `, ${ago(data.remote.fetchedAt)}` : ''})`
+    : ''
   const status = open
     ? `${(pages.get(open.c)?.length ?? 0).toLocaleString()} of ${open.count.toLocaleString()} files in ${open.label}${(pages.get(open.c)?.length ?? 0) < open.count ? '; zoom in for more' : ''}.`
-    : `${points.length.toLocaleString()} of ${(data.files ?? 0).toLocaleString()} files shown; click a cluster for all of its files.`
+    : `${points.length.toLocaleString()} of ${((sampled ? data.of : data.files) ?? 0).toLocaleString()} files shown${fetched}; click a cluster for all of its files.`
+  const remoteNotes = remote
+    ? `${otherModels ? ` ${otherModels.toLocaleString()} file${otherModels === 1 ? '' : 's'} made with another model ${otherModels === 1 ? 'is' : 'are'} left out.` : ''}` +
+      `${live.building ? ` ${remoteProgress(live.progress, host)}` : live.error ? ` The last refresh failed: ${live.error}.` : ''}`
+    : ''
   const canvas = (height: number | 'fill') => (
     <SemanticCanvas clusters={clusters} links={data.links ?? []} points={points} mode={mode} focus={open} height={height} palette={PALETTE} spin={spin}
       labels={labels} showLinks={links} highlight={highlight} onOpen={several && lib ? (p => openInLibrary(onOpen, lib, p)) : onOpen}
@@ -1044,7 +1123,14 @@ export function SemanticMap({ onOpen, libraries = [] }: { onOpen: (path: string)
       </p>
       {unavailable || (
         <>
-          <p className="map-status muted">{status}{data.fallback ? ' This map was drawn from a sample, since numpy is not installed here.' : ''}</p>
+          {remote ? (
+            <div className="map-remote">
+              <p className="map-status muted">{status}{remoteNotes}{data.fallback ? ' This map was drawn from a sample, since numpy is not installed here.' : ''}</p>
+              {live.building
+                ? <Loader inline size={14} label="Refreshing…" />
+                : <Button variant="ghost" size="sm" onClick={refresh}>Refresh</Button>}
+            </div>
+          ) : <p className="map-status muted">{status}{data.fallback ? ' This map was drawn from a sample, since numpy is not installed here.' : ''}</p>}
           <MapFrame title="Semantic map" full={full} onFull={setFull} controls={controls}>
             {full ? <><p className="map-status muted">{status}</p>{canvas('fill')}{legend}</> : canvas(360)}
           </MapFrame>

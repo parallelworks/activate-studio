@@ -56,8 +56,11 @@ if (haveGufi) {
 }
 
 // The fake login: runs gufi_query and nothing else, and logs each command.
+// With the mark file there, the connection drops on a walk that fetches
+// vectors, as ssh's does (exit 255).
 const log = path.join(dir, 'commands.log')
 const QUERY_ONLY = `printf '%s\\n' "$CMD" >> ${log}
+if [ -f ${path.join(dir, 'fail-vectors')} ]; then case "$CMD" in *vec_add*) echo "Connection closed by 127.0.0.1 port 22" >&2; exit 255 ;; esac; fi
 case "$CMD" in
   gufi_query|"gufi_query "*) eval "$CMD" ;;
   *) echo "This account may run only gufi_query." >&2; exit 1 ;;
@@ -286,10 +289,228 @@ test('the topology of a 22,000-file index on a host that runs only gufi_query: o
   assert.deepEqual(below.dirs.filter(d => d.files).map(d => [d.dir, d.files]), [['deep/1/2/3/4/5/6/7/8', 1]])
 })
 
-test('a library on another system has no semantic map here, and says why', { skip }, async () => {
-  const o = await get(`/api/libraries/${remoteId}/semantic-map`)
-  assert.deepEqual([o.body.available, o.body.reason, o.body.library.kind], [false, 'remote', 'remote'])
+// An index with vectors on the remote host: folders about two topics, the
+// files of one along one axis and of the other along another, with inodes
+// of their own (a sample is taken by inode), and a folder whose vectors come
+// from another model, which the map leaves out.
+const far = path.join(home, 'vidx', 'vsrc')
+const failMark = path.join(dir, 'fail-vectors')
+let farId, farHome
+const farFiles = []
+const unit384 = (axis, toward, lean) => {
+  const v = new Float32Array(384)
+  v[axis] = 1 - lean; v[toward] += lean
+  const n = Math.hypot(...v)
+  return v.map(x => x / n)
+}
+const hexOf = v => { const b = Buffer.alloc(1536); v.forEach((x, i) => b.writeFloatLE(x, i * 4)); return b.toString('hex') }
+const farFolder = (folder, model, files) => {
+  const sql = [
+    'CREATE TABLE IF NOT EXISTS gchunks (cid INTEGER PRIMARY KEY, tinode TEXT, fname TEXT, seq INTEGER, ctext TEXT, h TEXT);',
+    'CREATE VIRTUAL TABLE IF NOT EXISTS gvec USING vec0(cid INTEGER PRIMARY KEY, fp384 float[384]);',
+    'CREATE TABLE IF NOT EXISTS gvecmodel (model TEXT);',
+    'DELETE FROM gvecmodel;',
+    `INSERT INTO gvecmodel VALUES ('${model}');`,
+  ]
+  for (const f of files) {
+    // Two passages a file: the map takes their mean.
+    f.passages.forEach((v, seq) => sql.push(
+      `INSERT INTO gchunks (tinode, fname, seq, ctext, h) VALUES ('${f.inode}', '${f.name}', ${seq}, '${f.text}', 'h${f.inode}${seq}');`,
+      `INSERT INTO gvec (cid, fp384) VALUES ((SELECT max(cid) FROM gchunks), X'${hexOf(v)}');`))
+  }
+  execFileSync(sqlite3Bin, [path.join(far, folder, 'db.db')], { input: sql.join('\n') })
+}
+const farFile = (folder, i, axis, text) => {
+  const f = { p: `${folder}/${folder[0]}${i}.md`, name: `${folder[0]}${i}.md`, inode: 5000 + farFiles.length, text,
+    passages: [unit384(axis, axis + 1, 0.05 * (i % 5)), unit384(axis, axis + 2, 0.05 * (i % 3))] }
+  farFiles.push(f)
+  return f
+}
+const vecSkip = (skip || !hasVec) && 'needs GUFI\'s sqlite3 with sqlite-vec'
+if (haveGufi && hasVec) {
+  for (const folder of ['turbines', 'kitchen', 'other']) write(path.join(home, 'vsrc', folder, 'keep.txt'), 'x')
+  fs.mkdirSync(path.join(home, 'vidx'), { recursive: true })
+  execFileSync(path.join(gufiBin, 'gufi_dir2index'), ['-x', path.join(home, 'vsrc'), path.join(home, 'vidx')], { stdio: 'ignore' })
+  farFolder('turbines', 'minilm-l6-mean-int8', Array.from({ length: 30 }, (_, i) => farFile('turbines', i, 10, 'turbine blade rotor wind turbine blade')))
+  farFolder('kitchen', 'minilm-l6-mean-int8', Array.from({ length: 30 }, (_, i) => farFile('kitchen', i, 200, 'sourdough starter flour oven sourdough bread')))
+  farFolder('other', 'another-model', Array.from({ length: 4 }, (_, i) => farFile('other', i, 10, 'turbine elsewhere')))
+}
+const mapped = farFiles.filter(f => !f.p.startsWith('other/'))
+const fetched = () => fs.readFileSync(path.join(farHome, 'vectors.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l))
+const overviewOf = async id => (await get(`/api/libraries/${id}/semantic-map`)).body
+const settled = async id => until(async () => { const o = await overviewOf(id); return o.building ? null : o })
+
+test('a library on another system with vectors: a sample fetched with gufi_query alone, the map made here in its owner\'s folder', { skip: vecSkip, timeout: 120_000 }, async () => {
+  const added = await call('POST', '/api/user-libraries/ssh', { destination: 'me@query-only', label: 'Far', indexRoot: far })
+  assert.equal(added.status, 200, JSON.stringify(added.body))
+  farId = added.body.id
+  farHome = U.remoteMapHome(U.remoteRootOf('single', farId))
+  // The map is made by the script (or, without numpy, by the server).
+  M.setSemanticMapBuilderForTests(null, { delayScale: 0 })
+  fs.rmSync(log, { force: true })
+  const first = await overviewOf(farId)
+  assert.deepEqual([first.available, first.building, first.library.kind, first.library.host], [false, true, 'remote', 'me@query-only'])
+  const o = await until(async () => { const v = await overviewOf(farId); return v.available && !v.building ? v : null })
+  assert.deepEqual([o.files, o.of, o.model], [60, 60, 'minilm-l6-mean-int8'])
+  assert.equal(o.remote.host, 'me@query-only')
+  // The models its vectors there were made with: the map is of the one most files use.
+  assert.deepEqual(o.remote.models, [{ model: 'minilm-l6-mean-int8', files: 60 }, { model: 'another-model', files: 4 }])
+  assert.ok(o.remote.fetchedAt && o.remote.bytes > 60 * 768, JSON.stringify(o.remote))
+  assert.ok(o.clusters.length >= 2)
+  // One walk to count, one to fetch: gufi_query alone, on a host that runs nothing else.
+  const sent = commands()
+  assert.equal(sent.length, 2, sent.join('\n'))
+  assert.ok(sent.every(c => c.startsWith('gufi_query ')))
+  assert.match(sent[0], /gvec_rowids/)
+  assert.match(sent[1], /vec_add/)
+  // Kept in the owner's folder, not the shared one the library ids name.
+  assert.ok(farHome.startsWith(path.join(dir, 'ix', 'users')), farHome)
+  assert.ok(fs.existsSync(path.join(farHome, 'semantic-map', 'overview.json')))
+  assert.ok(!fs.existsSync(M.semanticMapDir(farId)))
+  // Each file once, below the library's top, as the mean of its passages:
+  // the other model's files are left out.
+  const rows = fetched()
+  assert.deepEqual(rows.map(r => r.p).sort(), mapped.map(f => f.p).sort())
+  assert.ok(rows.every(r => /^[0-9A-F]{768}$/.test(r.v) && r.t.startsWith(r.p.startsWith('turbines') ? 'turbine' : 'sourdough')))
+  const R2 = await import('../dist/remoteMap.js')
+  for (const r of rows.slice(0, 5)) {
+    const f = farFiles.find(x => x.p === r.p)
+    const mean = f.passages[0].map((x, i) => (x + f.passages[1][i]) / 2)
+    const got = R2.dequantize(r.v, r.r)
+    const dot = mean.reduce((s, x, i) => s + x * got[i], 0)
+    assert.ok(dot / Math.hypot(...mean) / Math.hypot(...got) > 0.995, `${r.p}: ${dot}`)
+    assert.ok(Math.abs(Math.hypot(...got) - Math.hypot(...mean)) < 1e-3, 'its length too')
+  }
+  // Its clusters at the library's address, and in the picker's list.
+  assert.ok((await get(`/api/libraries/${farId}/semantic-map/cluster/0?limit=100`)).body.points.length > 0)
+  const listed = (await get('/api/semantic-maps')).body.maps.find(m => m.id === farId)
+  assert.deepEqual([listed.available, listed.files], [true, 60])
+})
+
+test('a file\'s nearest files on another system come from a search there, by gufi_query, kept until the map is made again', { skip: vecSkip }, async () => {
+  fs.rmSync(log, { force: true })
+  const near = await get(`/api/libraries/${farId}/semantic-map/neighbors?file=turbines/t0.md&k=4`)
+  assert.equal(near.status, 200, JSON.stringify(near.body))
+  assert.equal(near.body.neighbors.length, 4)
+  assert.ok(near.body.neighbors.every(n => n.p.startsWith('turbines/') && n.p !== 'turbines/t0.md' && n.sim > 0.9), JSON.stringify(near.body.neighbors))
+  assert.ok(near.body.neighbors.every(n => typeof n.x === 'number'), 'with their places on the map')
+  const sent = commands()
+  assert.equal(sent.length, 1)
+  assert.match(sent[0], /^gufi_query .*MATCH/)
+  await get(`/api/libraries/${farId}/semantic-map/neighbors?file=turbines/t0.md&k=4`)
+  assert.equal(commands().length, 1, 'answered from what was kept')
+  const none = await get(`/api/libraries/${farId}/semantic-map/neighbors?file=no/such.md`)
+  assert.deepEqual([none.body.neighbors, none.body.reason], [[], 'none'])
+})
+
+test('past the cap, the sample is the files whose inodes hash lowest: the same files every time', { skip: vecSkip, timeout: 120_000 }, async () => {
+  process.env.STUDIO_REMOTE_MAP_FILES = '5'
+  try {
+    const R2 = await import('../dist/remoteMap.js')
+    const want = mapped.map(f => ({ p: f.p, h: R2.fileHash(f.inode) })).sort((a, b) => a.h - b.h).slice(0, 5).map(f => f.p).sort()
+    for (let round = 0; round < 2; round++) {
+      fs.rmSync(log, { force: true })
+      const r = await call('POST', `/api/libraries/${farId}/semantic-map/refresh`)
+      assert.equal(r.status, 200, JSON.stringify(r.body))
+      assert.equal(r.body.building, true)
+      const o = await settled(farId)
+      assert.deepEqual([o.files, o.of], [5, 60])
+      assert.deepEqual(fetched().map(x => x.p).sort(), want)
+      // The walk asks for a share of the files by hash, not all of them.
+      assert.match(commands()[1], /% 2147483648 < \d+/)
+      assert.equal(commands().length, 2)
+    }
+  } finally {
+    delete process.env.STUDIO_REMOTE_MAP_FILES
+  }
+})
+
+test('looked at, a map is checked at most hourly: fetched again only when its vectors changed there', { skip: vecSkip, timeout: 120_000 }, async () => {
+  // Each look is due for a check while remoteCheckMs is 0, so it is set
+  // back before the map is read again.
+  const look = async () => {
+    M.setSemanticMapBuilderForTests(null, { delayScale: 0, remoteCheckMs: 0 })
+    try { await overviewOf(farId) } finally { M.setSemanticMapBuilderForTests(null, { delayScale: 0 }) }
+  }
+  {
+    // Unchanged there: one count, nothing fetched.
+    fs.rmSync(log, { force: true })
+    await look()
+    await settled(farId)
+    assert.deepEqual(commands().map(c => /vec_add/.test(c)), [false])
+    // A file more there: the count differs, so the files are fetched again.
+    farFolder('kitchen', 'minilm-l6-mean-int8', [farFile('kitchen', 30, 200, 'sourdough rye')])
+    fs.rmSync(log, { force: true })
+    await look()
+  }
+  const o = await settled(farId)
+  assert.deepEqual([o.files, o.of], [61, 61])
+  assert.deepEqual(commands().map(c => /vec_add/.test(c)), [false, true])
+  // Not due: viewing it sends nothing.
+  fs.rmSync(log, { force: true })
+  await overviewOf(farId)
+  assert.equal(commands().length, 0)
+})
+
+test('vectors that could not be fetched: the map there stays, with the error; with none yet, a failed state to retry', { skip: vecSkip, timeout: 120_000 }, async () => {
+  fs.writeFileSync(failMark, '')
+  try {
+    await call('POST', `/api/libraries/${farId}/semantic-map/refresh`)
+    const o = await settled(farId)
+    assert.equal(o.available, true)
+    assert.match(o.error, /me@query-only: Connection closed/)
+    // Another library, of a copy of that index, with no map yet.
+    const copy = path.join(home, 'vidx2', 'vsrc')
+    fs.cpSync(far, copy, { recursive: true })
+    const added = await call('POST', '/api/user-libraries/ssh', { destination: 'me@query-only', label: 'Far again', indexRoot: copy })
+    assert.equal(added.status, 200, JSON.stringify(added.body))
+    const againId = added.body.id
+    await overviewOf(againId)
+    const failed = await settled(againId)
+    assert.deepEqual([failed.available, failed.reason], [false, 'failed'])
+    assert.match(failed.error, /Connection closed/)
+    fs.rmSync(failMark)
+    const retry = await call('POST', `/api/libraries/${againId}/semantic-map/refresh`)
+    assert.deepEqual([retry.body.building, retry.body.error ?? null], [true, null])
+    const ok = await settled(againId)
+    assert.equal(ok.available, true)
+    // Removed, its folder goes with it.
+    const home2 = U.remoteMapHome(U.remoteRootOf('single', againId))
+    assert.ok(fs.existsSync(home2))
+    assert.equal((await call('DELETE', `/api/user-libraries/${againId}`)).status, 200)
+    assert.equal(fs.existsSync(home2), false)
+  } finally {
+    fs.rmSync(failMark, { force: true })
+  }
+})
+
+test('a library on another system with no vectors says so, after one count there', { skip, timeout: 120_000 }, async () => {
+  fs.rmSync(log, { force: true })
+  await overviewOf(remoteId)
+  const o = await settled(remoteId)
+  assert.deepEqual([o.available, o.reason, o.library.kind], [false, 'remote-none', 'remote'])
+  assert.equal(commands().length, 1)
+  assert.match(commands()[0], /^gufi_query /)
   const near = await get(`/api/libraries/${remoteId}/semantic-map/neighbors?file=a0/x.txt`)
-  assert.deepEqual([near.body.neighbors, near.body.reason], [[], 'remote'])
-  assert.ok(!built.some(b => b.id === remoteId))
+  assert.deepEqual([near.body.neighbors, near.body.reason], [[], 'none'])
+})
+
+test('a library on another system with too few files with vectors for a map says how many', { skip: vecSkip, timeout: 120_000 }, async () => {
+  write(path.join(home, 'fsrc', 'x', 'keep.txt'), 'x')
+  fs.mkdirSync(path.join(home, 'fidx'), { recursive: true })
+  execFileSync(path.join(gufiBin, 'gufi_dir2index'), ['-x', path.join(home, 'fsrc'), path.join(home, 'fidx')], { stdio: 'ignore' })
+  const few = path.join(home, 'fidx', 'fsrc')
+  const sql = [
+    'CREATE TABLE gchunks (cid INTEGER PRIMARY KEY, tinode TEXT, fname TEXT, seq INTEGER, ctext TEXT, h TEXT);',
+    'CREATE VIRTUAL TABLE gvec USING vec0(cid INTEGER PRIMARY KEY, fp384 float[384]);',
+    'CREATE TABLE gvecmodel (model TEXT);', "INSERT INTO gvecmodel VALUES ('minilm384');",
+    `INSERT INTO gchunks VALUES (1, '7001', 'one.md', 0, 'one', 'h1'); INSERT INTO gvec (cid, fp384) VALUES (1, X'${hexOf(unit384(3, 4, 0.1))}');`,
+    `INSERT INTO gchunks VALUES (2, '7002', 'two.md', 0, 'two', 'h2'); INSERT INTO gvec (cid, fp384) VALUES (2, X'${hexOf(unit384(5, 6, 0.1))}');`,
+  ]
+  execFileSync(sqlite3Bin, [path.join(few, 'x', 'db.db')], { input: sql.join('\n') })
+  const added = await call('POST', '/api/user-libraries/ssh', { destination: 'me@query-only', label: 'Few', indexRoot: few })
+  assert.equal(added.status, 200, JSON.stringify(added.body))
+  await overviewOf(added.body.id)
+  const o = await settled(added.body.id)
+  assert.deepEqual([o.available, o.reason, o.of, o.remote.models], [false, 'remote-none', 2, [{ model: 'minilm384', files: 2 }]])
 })

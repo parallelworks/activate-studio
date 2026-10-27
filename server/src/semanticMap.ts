@@ -7,6 +7,9 @@ import { GUFI_BIN, GUFI_INDEX, INDEX_BASE, KB_ROOT, PROJECT_ROOT, PYTHON_BIN, SE
 import { indexSettings, type IndexDepth } from './indexSettings.js'
 import { KbError } from './kb.js'
 import { builtLibraryDir, getLibrary, lacks, listLibraries, onLibraryRemoved, PRIMARY_ID, type Library } from './libraries.js'
+import { countRemoteVectors, dequantize, fetchRemoteVectors, remoteMapFiles, remoteNeighbors, type VectorSource } from './remoteMap.js'
+import { siteName } from './remoteExec.js'
+import { onRemoteIndexBuilt, onUserLibraryRemoved, remoteMapHome, remoteTarget } from './userLibraries.js'
 
 /**
  * The semantic map of a library, on the Stats page: the files that have
@@ -14,7 +17,11 @@ import { builtLibraryDir, getLibrary, lacks, listLibraries, onLibraryRemoved, PR
  * computer with vectors has a map of its own: the main folder's in
  * SEMANTIC_MAP_DIR, another library's in its own folder under INDEX_BASE
  * (builtLibraryDir/semantic-map), removed with the library. A library on
- * another system keeps its vectors there and has no map here.
+ * another system keeps its vectors there: a sample of them is fetched with
+ * one gufi_query (remoteMap.ts) and its map is made here from those, in
+ * its owner's folder (remoteMapHome), and made again when a check finds
+ * its vectors changed there (at most hourly while it is looked at, and
+ * after a build there), or on request.
  *
  * It is built in the background, never while someone waits: by
  * indexer/semantic_map.py after a meaning phase that embedded something,
@@ -44,23 +51,41 @@ export interface MapNeighbor { p: string; sim: number; x?: number; y?: number; z
  *  and to offer the depth control: `kind` is main (the main folder), built
  *  (a folder on this computer the Studio indexes), connected (a GUFI index
  *  on this computer used as it is) or remote (an index on another system). */
-export interface MapLibrary { id: string; label: string; kind: 'main' | 'built' | 'connected' | 'remote'; depth: IndexDepth | null; vectors: boolean }
+export interface MapLibrary {
+  id: string; label: string; kind: 'main' | 'built' | 'connected' | 'remote'; depth: IndexDepth | null; vectors: boolean
+  /** For a library on another system: the system, as its connection names it. */
+  host?: string
+}
+/** How far the making of a remote library's map has got: counting its files
+ *  with vectors there, fetching a sample of them, or drawing the map. */
+export interface MapProgress { phase: 'counting' | 'fetching' | 'drawing'; files?: number; of?: number }
+/** A remote library's map: where it was fetched from, when, and how much;
+ *  `models`, the models its vectors there were made with (gvecmodel), most
+ *  files first: the map is of the first, and the files of any other are
+ *  left out of it. */
+export interface RemoteMapInfo { host: string; fetchedAt: string | null; checkedAt: string | null; bytes?: number; fetchMs?: number; models?: { model: string; files: number }[] }
 export interface SemanticMapOverview {
   available: boolean
   /** Why there is no map: its depth stops before search by meaning (off),
    *  the index has no embeddings yet (none), the last build of the map
-   *  failed, an index used as it is has no vectors the Studio can read
-   *  (connected), or the library is on another system (remote). */
-  reason?: 'off' | 'none' | 'failed' | 'connected' | 'remote'
+   *  failed (or, for a library on another system, its vectors could not be
+   *  fetched), an index used as it is has no vectors the Studio can read
+   *  (connected), or a library on another system has none there
+   *  (remote-none). */
+  reason?: 'off' | 'none' | 'failed' | 'connected' | 'remote-none'
   library?: MapLibrary
   /** A new map is being made; the one returned stays until it is ready. */
   building: boolean
+  progress?: MapProgress | null
   error?: string | null
   builtAt?: string
   model?: string
   /** Files with embeddings, and how many of them the overview carries. */
   files?: number
   shown?: number
+  /** Where `files` is a sample: how many files have embeddings there. */
+  of?: number
+  remote?: RemoteMapInfo
   clusters?: MapCluster[]
   links?: MapLink[]
   points?: MapPoint[]
@@ -74,13 +99,18 @@ const FALLBACK_FILES = 4000
 /** A cluster's points per request, at most. */
 export const CLUSTER_PAGE_MAX = 5000
 
-/** Where a library's map is made from and written to. */
-interface MapTarget { id: string; index: string; out: string }
+/** Where a library's map is made from and written to. `key` names it
+ *  among the maps kept: the library's id, or for a library on another
+ *  system its root, which names its owner too. `remote` is set for one on
+ *  another system, with, when it is built, the vectors fetched from it. */
+interface MapTarget {
+  id: string; key: string; index: string; out: string
+  remote?: { root: string; home: string; vectors?: string; model?: string; of?: number }
+}
 /** The folder a library's map is kept in. */
 export function semanticMapDir(id: string): string {
   return id === PRIMARY_ID ? SEMANTIC_MAP_DIR : path.join(builtLibraryDir(id), 'semantic-map')
 }
-const overviewFile = (id: string) => path.join(semanticMapDir(id), 'overview.json')
 
 interface MapState {
   running: boolean
@@ -96,13 +126,19 @@ interface MapState {
   empty: boolean
   overviewCache: { mtimeMs: number; data: SemanticMapOverview } | null
   clusterCache: Map<number, { mtimeMs: number; data: { c: number; label: string; count: number; points: MapPoint[] } }>
+  /** A library on another system: what its next refresh is for, whether
+   *  it fetches whatever the check finds, and how far it has got. */
+  target: MapTarget | null
+  force: boolean
+  progress: MapProgress | null
 }
 const states = new Map<string, MapState>()
-function stateOf(id: string): MapState {
-  let st = states.get(id)
+function stateOf(key: string): MapState {
+  let st = states.get(key)
   if (!st) {
-    st = { running: false, again: false, timer: null, dueAt: 0, firstTried: false, lastEnd: 0, error: null, empty: false, overviewCache: null, clusterCache: new Map() }
-    states.set(id, st)
+    st = { running: false, again: false, timer: null, dueAt: 0, firstTried: false, lastEnd: 0, error: null, empty: false, overviewCache: null, clusterCache: new Map(),
+      target: null, force: false, progress: null }
+    states.set(key, st)
   }
   return st
 }
@@ -115,23 +151,41 @@ onLibraryRemoved(id => {
   forgetNeighbors(id)
   fs.rmSync(semanticMapDir(id), { recursive: true, force: true })
 })
+/** One on another system: its folder goes with it (userLibraries.ts). */
+onUserLibraryRemoved(root => {
+  const st = states.get(root)
+  if (st?.timer) clearTimeout(st.timer)
+  states.delete(root)
+  forgetNeighbors(root)
+})
+/** A build there that finished: a check whether its vectors changed. */
+onRemoteIndexBuilt(root => {
+  const id = root.slice(root.lastIndexOf(':') + 1)
+  scheduleRemoteMap(remoteMapTarget(id, root), false, 5_000)
+})
+
+const remoteMapTarget = (id: string, root: string): MapTarget => {
+  const home = remoteMapHome(root)
+  return { id, key: root, index: root, out: path.join(home, 'semantic-map'), remote: { root, home } }
+}
 
 /** The library a map would be of, and what it can be made from. */
-function libraryOf(id: string, viewer: string | null | undefined): { lib: MapLibrary; target: MapTarget | null; meaningOff: boolean } {
+function libraryOf(id: string, viewer: string | null | undefined): { lib: MapLibrary; target: MapTarget; meaningOff: boolean } {
   if (id === PRIMARY_ID) {
     const meaningOff = indexSettings(PRIMARY_ID).meaning === 'off'
     return {
       lib: { id, label: path.basename(KB_ROOT) || 'main folder', kind: 'main', depth: indexSettings(PRIMARY_ID).depth, vectors: !meaningOff },
-      target: { id, index: GUFI_INDEX, out: SEMANTIC_MAP_DIR }, meaningOff,
+      target: { id, key: id, index: GUFI_INDEX, out: SEMANTIC_MAP_DIR }, meaningOff,
     }
   }
   const l: Library = getLibrary(id, undefined, viewer)
   const kind: MapLibrary['kind'] = l.site ? 'remote' : l.build ? 'built' : 'connected'
-  const meaningOff = kind === 'built' ? (l.meaning ?? 'off') === 'off' : false
+  // A library the Studio builds, here or on another system, has a depth.
+  const meaningOff = kind === 'built' || (kind === 'remote' && l.depth) ? (l.meaning ?? 'off') === 'off' : false
   return {
     // Vectors not found yet are looked for unless a count found none (lacks).
-    lib: { id, label: l.label, kind, depth: l.depth ?? null, vectors: !lacks(l, 'vectors') },
-    target: kind === 'remote' ? null : { id, index: l.indexRoot, out: semanticMapDir(id) },
+    lib: { id, label: l.label, kind, depth: l.depth ?? null, vectors: !lacks(l, 'vectors'), ...(l.site ? { host: siteName(l.site) } : {}) },
+    target: kind === 'remote' ? remoteMapTarget(id, l.indexRoot) : { id, key: id, index: l.indexRoot, out: semanticMapDir(id) },
     meaningOff,
   }
 }
@@ -144,12 +198,13 @@ function readJson<T>(file: string, cache: { mtimeMs: number; data: T } | null | 
 }
 
 /** The overview of a library's map (the main folder's by default), as the
- *  Stats page draws it first. */
-export function semanticMapOverview(id: string = PRIMARY_ID, viewer?: string | null): SemanticMapOverview {
+ *  Stats page draws it first. `kick` false (the picker's list) starts no
+ *  fetch from another system. */
+export function semanticMapOverview(id: string = PRIMARY_ID, viewer?: string | null, opts: { kick?: boolean } = {}): SemanticMapOverview {
   const { lib, target, meaningOff } = libraryOf(id, viewer)
-  const st = stateOf(id)
-  if (!target) return { available: false, reason: 'remote', building: false, library: lib }
+  const st = stateOf(target.key)
   if (meaningOff) return { available: false, reason: 'off', building: false, library: lib }
+  if (target.remote) return remoteOverview(lib, target, st, opts.kick !== false)
   const hit = readJson<SemanticMapOverview>(path.join(target.out, 'overview.json'), st.overviewCache)
   if (hit?.data.available) {
     st.overviewCache = hit
@@ -173,7 +228,7 @@ export function semanticMapOverview(id: string = PRIMARY_ID, viewer?: string | n
 export function semanticMapList(libraries: Library[], viewer?: string | null): { id: string; label: string; available: boolean; files: number; reason?: SemanticMapOverview['reason']; building: boolean }[] {
   return libraries.map(l => {
     try {
-      const o = semanticMapOverview(l.id, viewer)
+      const o = semanticMapOverview(l.id, viewer, { kick: false })
       return { id: l.id, label: l.label, available: o.available, files: o.files ?? 0, ...(o.reason ? { reason: o.reason } : {}), building: o.building }
     } catch {
       return { id: l.id, label: l.label, available: false, files: 0, reason: 'none' as const, building: false }
@@ -183,10 +238,11 @@ export function semanticMapList(libraries: Library[], viewer?: string | null): {
 
 /** One cluster's files, a page at a time, in the random order the map
  *  stored them, so any first page is a fair sample of the cluster. */
-export function semanticMapCluster(c: number, offset = 0, limit = 2000, id: string = PRIMARY_ID): { c: number; label: string; count: number; offset: number; points: MapPoint[] } {
+export function semanticMapCluster(c: number, offset = 0, limit = 2000, id: string = PRIMARY_ID, viewer?: string | null): { c: number; label: string; count: number; offset: number; points: MapPoint[] } {
   if (!Number.isInteger(c) || c < 0) throw new KbError(400, 'cluster: a number from 0')
-  const st = stateOf(id)
-  const hit = readJson(path.join(semanticMapDir(id), `cluster-${c}.json`), st.clusterCache.get(c))
+  const { target } = libraryOf(id, viewer)
+  const st = stateOf(target.key)
+  const hit = readJson(path.join(target.out, `cluster-${c}.json`), st.clusterCache.get(c))
   if (!hit) throw new KbError(404, 'There is no such cluster in the map.')
   st.clusterCache.delete(c)
   st.clusterCache.set(c, hit)
@@ -220,9 +276,14 @@ export function scheduleSemanticMapRebuild(delayMs: number, id: string = PRIMARY
 type Builder = (t: MapTarget) => Promise<void>
 let builder: Builder = buildWithPython
 let delayScale = 1
-export function setSemanticMapBuilderForTests(fn: Builder | null, opts: { delayScale?: number } = {}): void {
+/** How long a remote library's map goes before a check whether its vectors
+ *  changed there, while it is looked at. */
+const REMOTE_CHECK_MS = 60 * 60_000
+let remoteCheckMs = REMOTE_CHECK_MS
+export function setSemanticMapBuilderForTests(fn: Builder | null, opts: { delayScale?: number; remoteCheckMs?: number } = {}): void {
   builder = fn ?? buildWithPython
   delayScale = opts.delayScale ?? 1
+  remoteCheckMs = opts.remoteCheckMs ?? REMOTE_CHECK_MS
 }
 export function resetSemanticMapForTests(): void {
   for (const st of states.values()) if (st.timer) clearTimeout(st.timer)
@@ -233,10 +294,10 @@ export function resetSemanticMapForTests(): void {
 async function rebuild(id: string): Promise<void> {
   const st = stateOf(id)
   if (st.running) { st.again = true; return }
-  let target: MapTarget | null
+  let target: MapTarget
   try {
     const t = libraryOf(id, undefined)
-    if (t.meaningOff || !t.target) return
+    if (t.meaningOff || t.target.remote) return
     target = t.target
   } catch { return } // removed meanwhile
   st.running = true
@@ -255,8 +316,11 @@ async function rebuild(id: string): Promise<void> {
 }
 
 function buildWithPython(t: MapTarget): Promise<void> {
+  const from = t.remote?.vectors
+    ? ['--vectors', t.remote.vectors, '--model', t.remote.model ?? '', ...(t.remote.of ? ['--of', String(t.remote.of)] : [])]
+    : ['--index', t.index]
   return new Promise((resolve, reject) => {
-    execFile(PYTHON_BIN, [SCRIPT, '--index', t.index, '--out', t.out],
+    execFile(PYTHON_BIN, [SCRIPT, ...from, '--out', t.out],
       { timeout: 30 * 60_000, maxBuffer: 4 * 1024 * 1024, env: indexerEnv({ PYTHONDONTWRITEBYTECODE: '1' }) },
       (err, stdout, stderr) => {
         if (!err) {
@@ -267,6 +331,156 @@ function buildWithPython(t: MapTarget): Promise<void> {
         reject(new Error(String(stderr || err.message).trim().split('\n').slice(-3).join(' ')))
       })
   })
+}
+
+// ---- a library on another system: its vectors fetched, the map made here ----
+
+/** In a remote library's folder (remoteMapHome): the files fetched, a JSON
+ *  line each (remoteMap.ts's rows), and what the last fetch and check found. */
+const VECTORS_FILE = 'vectors.jsonl'
+const RECORD_FILE = 'state.json'
+interface RemoteRecord {
+  /** The counts the last check found (remoteMap.ts's ModelCount, per model):
+   *  the next check fetches again only when they differ. */
+  fingerprint?: string
+  models?: { model: string; files: number }[]
+  model?: string
+  source?: VectorSource
+  files?: number
+  of?: number
+  bytes?: number
+  fetchMs?: number
+  fetchedAt?: string
+  checkedAt?: number
+  /** The last check found no vectors there, or too few for a map (`of`). */
+  empty?: boolean
+}
+function readRecord(home: string): RemoteRecord {
+  try { return JSON.parse(fs.readFileSync(path.join(home, RECORD_FILE), 'utf8')) as RemoteRecord } catch { return {} }
+}
+function writeRecord(home: string, rec: RemoteRecord): void {
+  fs.mkdirSync(home, { recursive: true })
+  fs.writeFileSync(path.join(home, `${RECORD_FILE}.tmp`), JSON.stringify(rec))
+  fs.renameSync(path.join(home, `${RECORD_FILE}.tmp`), path.join(home, RECORD_FILE))
+}
+
+function remoteOverview(lib: MapLibrary, t: MapTarget, st: MapState, kick: boolean): SemanticMapOverview {
+  // Not built yet: its own build says how far it has got.
+  try { remoteTarget(t.remote!.root) } catch { return { available: false, reason: 'none', building: false, library: lib } }
+  const rec = readRecord(t.remote!.home)
+  const busy = st.running || !!st.timer
+  const remote: RemoteMapInfo = {
+    host: lib.host ?? '', fetchedAt: rec.fetchedAt ?? null, checkedAt: rec.checkedAt ? new Date(rec.checkedAt).toISOString() : null,
+    ...(rec.bytes !== undefined ? { bytes: rec.bytes, fetchMs: rec.fetchMs } : {}),
+    ...(rec.models ? { models: rec.models } : {}),
+  }
+  const due = Date.now() - (rec.checkedAt ?? 0) >= remoteCheckMs
+  const hit = readJson<SemanticMapOverview>(path.join(t.out, 'overview.json'), st.overviewCache)
+  if (hit?.data.available) {
+    st.overviewCache = hit
+    // Looked at: a check, at most hourly, whether its vectors changed there.
+    if (kick && due && !busy) scheduleRemoteMap(t, false)
+    return { ...hit.data, building: st.running || !!st.timer, progress: st.progress, error: st.error, library: lib, remote }
+  }
+  if (kick && !busy && (!st.firstTried || (rec.empty && due))) {
+    st.firstTried = true
+    scheduleRemoteMap(t, true)
+  }
+  const now = st.running || !!st.timer
+  const reason = now ? 'none' : st.error ? 'failed' : rec.empty ? 'remote-none' : 'none'
+  return { available: false, reason, building: now, progress: st.progress, error: st.error, library: lib, remote, ...(rec.empty && rec.of ? { of: rec.of } : {}) }
+}
+
+/** Asks for a remote library's map to be checked (and fetched and made
+ *  again if its vectors changed there), or with `force` fetched and made
+ *  again regardless, in `delayMs`. One runs at a time per library; one
+ *  asked for meanwhile runs after it. */
+function scheduleRemoteMap(t: MapTarget, force: boolean, delayMs = 0): void {
+  const st = stateOf(t.key)
+  st.target = t
+  st.force ||= force
+  if (st.running) { st.again = true; return }
+  if (st.timer) return
+  st.timer = setTimeout(() => { st.timer = null; void refreshRemote(t.key) }, delayMs * delayScale)
+  st.timer.unref?.()
+}
+
+async function refreshRemote(key: string): Promise<void> {
+  const st = stateOf(key)
+  const t = st.target
+  if (!t?.remote || st.running) return
+  const force = st.force
+  st.force = false
+  st.running = true
+  const { root, home } = t.remote
+  try {
+    st.progress = { phase: 'counting' }
+    const { models } = await countRemoteVectors(root)
+    const was = readRecord(home)
+    const checkedAt = Date.now()
+    const fingerprint = JSON.stringify(models)
+    const found = models.map(m => ({ model: m.model, files: m.files }))
+    const best = models[0]
+    if (!best) {
+      // No vectors there (any longer): no map.
+      await fsp.rm(t.out, { recursive: true, force: true })
+      await fsp.rm(path.join(home, VECTORS_FILE), { force: true })
+      writeRecord(home, { fingerprint, models: found, checkedAt, empty: true })
+      st.error = null
+      return
+    }
+    if (!force && was.fingerprint === fingerprint && fs.existsSync(path.join(t.out, 'overview.json'))) {
+      writeRecord(home, { ...was, models: found, checkedAt })
+      st.error = null
+      return
+    }
+    const cap = remoteMapFiles()
+    st.progress = { phase: 'fetching', files: Math.min(cap, best.files), of: best.files }
+    const got = await fetchRemoteVectors(root, best, cap)
+    fs.mkdirSync(home, { recursive: true })
+    const vectors = path.join(home, VECTORS_FILE)
+    await fsp.writeFile(`${vectors}.tmp`, got.files.map(f => JSON.stringify({ p: f.p, r: f.r, v: f.v, ...(f.t ? { t: f.t } : {}) })).join('\n') + '\n')
+    await fsp.rename(`${vectors}.tmp`, vectors)
+    st.progress = { phase: 'drawing', files: got.files.length, of: best.files }
+    await builder({ ...t, remote: { ...t.remote, vectors, model: best.model, of: best.files } })
+    if (!fs.existsSync(path.join(t.out, 'overview.json'))) {
+      // Too few files to place (fewer than three): none, with how many.
+      writeRecord(home, { fingerprint, models: found, model: best.model, of: best.files, checkedAt, empty: true })
+      st.error = null
+      return
+    }
+    writeRecord(home, {
+      fingerprint, models: found, model: best.model, source: best.source, files: got.files.length, of: best.files,
+      bytes: got.bytes, fetchMs: got.ms, fetchedAt: new Date().toISOString(), checkedAt,
+    })
+    console.log(`semantic map (${t.id}): ${got.files.length} of ${best.files} files fetched, ${got.bytes} bytes in ${got.ms} ms`)
+    st.error = null
+  } catch (e) {
+    st.error = String((e as Error).message ?? e).slice(0, 400)
+    console.warn(`semantic map (${t.id}): ${st.error}`)
+  } finally {
+    st.running = false
+    st.progress = null
+    st.lastEnd = Date.now()
+    if (st.again) { st.again = false; scheduleRemoteMap(t, false) }
+  }
+}
+
+/** A library's map made again now (the Refresh on the map, and its retry):
+ *  for one on another system, its vectors fetched again. */
+export function refreshSemanticMap(id: string, viewer?: string | null): SemanticMapOverview {
+  const { target, meaningOff } = libraryOf(id, viewer)
+  if (meaningOff) throw new KbError(409, 'This library has no search by meaning, so there is no map to make.')
+  const st = stateOf(target.key)
+  st.error = null
+  if (target.remote) {
+    remoteTarget(target.remote.root) // not built yet: 409
+    st.firstTried = true
+    scheduleRemoteMap(target, true)
+  } else {
+    scheduleSemanticMapRebuild(0, id)
+  }
+  return semanticMapOverview(id, viewer)
 }
 
 // ---- without numpy: a smaller map, drawn here ----
@@ -370,8 +584,21 @@ function kmeans(points: number[][], k: number): number[] {
   return assign
 }
 
+/** At most `cap` of the vectors fetched from a library on another system. */
+async function fetchedFileVectors(file: string, cap: number): Promise<Map<string, number[]>> {
+  const out = new Map<string, number[]>()
+  for (const line of (await fsp.readFile(file, 'utf8')).split('\n')) {
+    if (out.size >= cap) break
+    try {
+      const row = JSON.parse(line) as { p: string; r?: number; v: string }
+      out.set(row.p, [...dequantize(row.v, row.r || 1)])
+    } catch { /* a line cut short */ }
+  }
+  return out
+}
+
 async function buildWithoutNumpy(t: MapTarget): Promise<void> {
-  const vecs = await sampleFileVectors(t.index, FALLBACK_FILES)
+  const vecs = t.remote?.vectors ? await fetchedFileVectors(t.remote.vectors, FALLBACK_FILES) : await sampleFileVectors(t.index, FALLBACK_FILES)
   if (vecs.size < 3) return
   const rels = [...vecs.keys()]
   const proj = pca(rels.map(r => vecs.get(r)!), 3)
@@ -404,6 +631,7 @@ async function buildWithoutNumpy(t: MapTarget): Promise<void> {
   }
   const overview: Omit<SemanticMapOverview, 'building'> = {
     available: true, builtAt: new Date().toISOString(), files: rels.length, shown: rels.length, clusters, points, fallback: true,
+    ...(t.remote?.of ? { of: Math.max(t.remote.of, rels.length), model: t.remote.model } : {}),
   }
   await fsp.writeFile(path.join(tmp, 'overview.json'), JSON.stringify(overview))
   const old = `${t.out}.old`
@@ -420,7 +648,7 @@ fs.rm(path.join(INDEX_BASE, 'semantic-map.json'), { force: true }, () => {})
 // ---- a file's nearest files by meaning ----
 
 /** A map's own time: answers made for one map are kept until the next. */
-const mapStamp = (id: string) => { try { return fs.statSync(overviewFile(id)).mtimeMs } catch { return 0 } }
+const mapStamp = (out: string) => { try { return fs.statSync(path.join(out, 'overview.json')).mtimeMs } catch { return 0 } }
 
 /** What one library's lookups keep: each index db with vectors and the
  *  model they come from (for five minutes, or until the map is made again),
@@ -440,7 +668,7 @@ function forgetNeighbors(id: string): void { neighborCaches.delete(id) }
 
 async function vectorDbModels(id: string, root: string): Promise<Map<string, string>> {
   const cache = neighborCacheOf(id)
-  const stamp = mapStamp(id)
+  const stamp = mapStamp(semanticMapDir(id))
   if (cache.vectorDbs && cache.vectorDbs.stamp === stamp && Date.now() - cache.vectorDbs.at < 5 * 60_000) return cache.vectorDbs.dbs
   const esc = (s: string) => `'${s.replace(/'/g, "''")}'`
   const all = listVectorDbs(root)
@@ -473,17 +701,17 @@ async function vectorDbModels(id: string, root: string): Promise<Map<string, str
  *  once per map; a map of more than PLACES_MAX files keeps none, and its
  *  neighbors come without a place unless they are on screen already. */
 const PLACES_MAX = 300_000
-function mapPlaces(id: string): Map<string, { x: number; y: number; z: number; c: number }> | null {
-  const cache = neighborCacheOf(id)
-  const stamp = mapStamp(id)
+function mapPlaces(key: string, out: string): Map<string, { x: number; y: number; z: number; c: number }> | null {
+  const cache = neighborCacheOf(key)
+  const stamp = mapStamp(out)
   if (cache.places?.stamp === stamp) return cache.places.places
-  const overview = readJson<SemanticMapOverview>(overviewFile(id), stateOf(id).overviewCache)?.data
+  const overview = readJson<SemanticMapOverview>(path.join(out, 'overview.json'), stateOf(key).overviewCache)?.data
   let places: Map<string, { x: number; y: number; z: number; c: number }> | null = null
   if (overview?.available && (overview.files ?? 0) <= PLACES_MAX) {
     places = new Map()
     for (const cl of overview.clusters ?? []) {
       try {
-        const data = JSON.parse(fs.readFileSync(path.join(semanticMapDir(id), `cluster-${cl.c}.json`), 'utf8')) as { points: MapPoint[] }
+        const data = JSON.parse(fs.readFileSync(path.join(out, `cluster-${cl.c}.json`), 'utf8')) as { points: MapPoint[] }
         for (const p of data.points) places.set(p.p, { x: p.x, y: p.y, z: p.z, c: cl.c })
       } catch { /* a cluster file missing: its files have no place */ }
     }
@@ -504,22 +732,23 @@ function vectorBlob(v: number[]): string {
  * by meaning: the mean of the file's own passage vectors is the query, and
  * every directory of that library whose vectors come from the same model
  * answers with its nearest passages, as a search by meaning does.
- * Similarity is the cosine of the vectors (they are unit length). An empty
- * list, with a reason, where the folder or the file has no vectors, or the
- * library is on another system. Answers are kept until the map is made again.
+ * Similarity is the cosine of the vectors (they are unit length). For a
+ * library on another system the query is the file's vector as fetched for
+ * the map, and the search runs there, over its whole index, as one
+ * gufi_query. An empty list, with a reason, where the folder or the file
+ * has no vectors. Answers are kept until the map is made again.
  */
 export function semanticNeighbors(file: string, k = 5, id: string = PRIMARY_ID, viewer?: string | null): Promise<{ file: string; neighbors: MapNeighbor[]; reason?: string }> {
   const rel = path.posix.normalize(String(file ?? '').replace(/\\/g, '/')).replace(/^\.\//, '')
   if (!rel || rel === '.' || rel.startsWith('/') || rel === '..' || rel.startsWith('../')) throw new KbError(400, 'file: a path in the library')
   const n = Math.min(20, Math.max(1, Math.floor(k) || 5))
   const { target, meaningOff } = libraryOf(id, viewer)
-  if (!target) return Promise.resolve({ file: rel, neighbors: [], reason: 'remote' })
   if (meaningOff) return Promise.resolve({ file: rel, neighbors: [], reason: 'off' })
-  const cache = neighborCacheOf(id)
-  const key = `${mapStamp(id)}\0${rel}\0${n}`
+  const cache = neighborCacheOf(target.key)
+  const key = `${mapStamp(target.out)}\0${rel}\0${n}`
   const hit = cache.answers.get(key)
   if (hit) return hit
-  const value = findNeighbors(id, target.index, rel, n)
+  const value = target.remote ? findRemoteNeighbors(target, rel, n) : findNeighbors(id, target.index, rel, n)
   cache.answers.set(key, value)
   if (cache.answers.size > 300) cache.answers.delete(cache.answers.keys().next().value!)
   value.catch(() => cache.answers.delete(key))
@@ -562,8 +791,32 @@ async function findNeighbors(id: string, root: string, rel: string, k: number): 
     if (p === rel || !Number.isFinite(v)) continue
     if (!best.has(p) || v < best.get(p)!) best.set(p, v)
   }
-  const places = mapPlaces(id)
+  const places = mapPlaces(id, semanticMapDir(id))
   const neighbors = [...best].sort((a, b) => a[1] - b[1]).slice(0, k).map(([p, d]): MapNeighbor => {
+    const sim = Math.round(Math.max(-1, Math.min(1, 1 - (d * d) / 2)) * 1000) / 1000
+    return { p, sim, ...(places?.get(p) ?? {}) }
+  })
+  return { file: rel, neighbors }
+}
+
+/** A fetched file's row, found by its path at the start of its line. */
+async function fetchedRow(file: string, rel: string): Promise<{ v: string } | null> {
+  let text: string
+  try { text = await fsp.readFile(file, 'utf8') } catch { return null }
+  const head = `{"p":${JSON.stringify(rel)},`
+  const at = text.startsWith(head) ? 0 : text.indexOf(`\n${head}`) + 1
+  if (at === 0 && !text.startsWith(head)) return null
+  const end = text.indexOf('\n', at)
+  try { return JSON.parse(text.slice(at, end < 0 ? undefined : end)) as { v: string } } catch { return null }
+}
+
+async function findRemoteNeighbors(t: MapTarget, rel: string, k: number): Promise<{ file: string; neighbors: MapNeighbor[]; reason?: string }> {
+  const rec = readRecord(t.remote!.home)
+  const row = rec.model ? await fetchedRow(path.join(t.remote!.home, VECTORS_FILE), rel) : null
+  if (!rec.model || !row) return { file: rel, neighbors: [], reason: 'none' }
+  const found = await remoteNeighbors(t.remote!.root, { model: rec.model, source: rec.source ?? 'studio' }, dequantize(row.v), k)
+  const places = mapPlaces(t.key, t.out)
+  const neighbors = found.filter(n => n.p !== rel).slice(0, k).map(({ p, d }): MapNeighbor => {
     const sim = Math.round(Math.max(-1, Math.min(1, 1 - (d * d) / 2)) * 1000) / 1000
     return { p, sim, ...(places?.get(p) ?? {}) }
   })
@@ -601,12 +854,21 @@ export async function semanticMapRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/libraries/:id/semantic-map/cluster/:c', async req => {
     const { id, c } = req.params as { id: string; c: string }
     const { offset, limit } = req.query as { offset?: string; limit?: string }
-    getLibrary(id, undefined, viewerOf(req))
-    return semanticMapCluster(Number(c), Number(offset ?? 0), Number(limit ?? 2000), id)
+    return semanticMapCluster(Number(c), Number(offset ?? 0), Number(limit ?? 2000), id, viewerOf(req))
   })
   app.get('/api/libraries/:id/semantic-map/neighbors', async req => {
     const { id } = req.params as { id: string }
     const { file, k } = req.query as { file?: string; k?: string }
     return semanticNeighbors(file ?? '', Number(k ?? 5), id, viewerOf(req))
   })
+  // Made again now: for a library on another system, its vectors fetched
+  // again whether or not they changed there.
+  app.post('/api/libraries/:id/semantic-map/refresh', async req => {
+    const { id } = req.params as { id: string }
+    return refreshSemanticMap(id, viewerOf(req))
+  })
+  app.post('/api/kb/semantic-map/refresh', async req => refreshSemanticMap(PRIMARY_ID, viewerOf(req)))
 }
+
+/** For tests: the map drawn here, as without numpy. */
+export { buildWithoutNumpy as buildWithoutNumpyForTests }

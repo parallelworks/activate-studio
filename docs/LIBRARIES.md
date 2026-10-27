@@ -463,14 +463,16 @@ alias from `~/.ssh/config`, or either with `:port`. A Host entry in
 `~/.ssh/config` applies as it does in a terminal, ProxyJump, ProxyCommand,
 Port, User and IdentityFile included, so a host behind a jump host or a
 firewall is reached by giving its alias. The Studio runs
-`ssh -T [options] -o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=30 -o ControlMaster=auto -o ControlPath="<folder>/%C[-<options hash>]" -o ControlPersist=600 [-p port] <destination>`
+`ssh -T [options] -o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=30 -o Compression=yes -o ControlMaster=auto -o ControlPath="<folder>/%C[-<options hash>]" -o ControlPersist=600 [-p port] <destination>`
 with the keys, agent, Kerberos tickets and `~/.ssh/config` of the account
 it runs as, and keeps up to three sessions per destination, as it does
 per cluster. The sessions to one host share a single ssh connection
 through a socket, which stays open ten minutes after the last session
 closes (`STUDIO_SSH_PERSIST`, in seconds, up to a day; 0 closes it with the
 last session), so a new session does not log in again; `~/.ssh/config` is
-not changed. When Search or Query opens, the Studio opens that connection
+not changed. The connection is compressed (a semantic map's vectors come
+back as tens of megabytes); a library's own `-o Compression=no` comes
+first and turns it off. When Search or Query opens, the Studio opens that connection
 for each host of the viewer's libraries over ssh
 (`POST /api/user-libraries/warm`, at most once a minute per host), with
 `ssh -N -f`, which logs in and runs no command there, so the first search
