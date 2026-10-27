@@ -6,7 +6,7 @@ import type { FastifyInstance } from 'fastify'
 import { GUFI_BIN, GUFI_INDEX, INDEX_BASE, KB_ROOT, PROJECT_ROOT, PYTHON_BIN, SEMANTIC_MAP_DIR, gufiEnv, indexerEnv } from './config.js'
 import { indexSettings, type IndexDepth } from './indexSettings.js'
 import { KbError } from './kb.js'
-import { builtLibraryDir, getLibrary, listLibraries, onLibraryRemoved, PRIMARY_ID, type Library } from './libraries.js'
+import { builtLibraryDir, getLibrary, lacks, listLibraries, onLibraryRemoved, PRIMARY_ID, type Library } from './libraries.js'
 
 /**
  * The semantic map of a library, on the Stats page: the files that have
@@ -129,7 +129,8 @@ function libraryOf(id: string, viewer: string | null | undefined): { lib: MapLib
   const kind: MapLibrary['kind'] = l.site ? 'remote' : l.build ? 'built' : 'connected'
   const meaningOff = kind === 'built' ? (l.meaning ?? 'off') === 'off' : false
   return {
-    lib: { id, label: l.label, kind, depth: l.depth ?? null, vectors: !!l.caps.vectors },
+    // Vectors not found yet are looked for unless a count found none (lacks).
+    lib: { id, label: l.label, kind, depth: l.depth ?? null, vectors: !lacks(l, 'vectors') },
     target: kind === 'remote' ? null : { id, index: l.indexRoot, out: semanticMapDir(id) },
     meaningOff,
   }

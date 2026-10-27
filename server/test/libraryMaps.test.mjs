@@ -176,7 +176,8 @@ test('an index used as it is, with no vectors the Studio reads, says so and take
   execFileSync(path.join(gufiBin, 'gufi_dir2index'), ['-x', desk, path.dirname(plain)], { stdio: 'ignore' })
   fs.renameSync(path.join(path.dirname(plain), 'desk'), plain)
   assert.equal((await call('POST', '/api/libraries', { id: 'lab', label: 'Lab index', indexRoot: plain })).status, 200)
-  await L.probeLibrary(plain)
+  // Known to have none once the whole tree is counted.
+  await L.capsCountedForTests()
   const o = await get('/api/libraries/lab/semantic-map')
   assert.deepEqual([o.body.available, o.body.reason, o.body.library.kind, o.body.library.depth], [false, 'connected', 'connected', null])
   assert.ok(!built.some(b => b.id === 'lab'))
@@ -218,7 +219,7 @@ test('a file\'s nearest files by meaning come from its own library', { skip: (sk
   // The same file name in the main folder, along another axis: not asked.
   vecFolder(path.join(dir, 'ix', 'gufi', 'kb'), '', [['a.md', vecHex(300)], ['b.md', vecHex(300)]])
   assert.equal((await call('POST', '/api/libraries', { id: 'vecs', label: 'Vectors', indexRoot: vec })).status, 200)
-  await L.probeLibrary(vec)
+  await L.capsCountedForTests()
   const near = await get('/api/libraries/vecs/semantic-map/neighbors?file=a.md&k=2')
   assert.equal(near.status, 200)
   assert.deepEqual(near.body.neighbors.map(n => n.p), ['b.md', 'x/c.md'])

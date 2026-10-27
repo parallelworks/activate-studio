@@ -10,7 +10,7 @@ import { tagMaps } from './tags.js'
 import { libraryLabelsForIndexRoot } from './libraryLabels.js'
 import { scopeLibraries, scopeWithOmitted } from './libraryScope.js'
 import { addOmission, failureReason, libraryGap, type Omission } from './omissions.js'
-import type { Library } from './libraries.js'
+import { lacks, type Library } from './libraries.js'
 import { gufiTool, REMOTE_PREFIX, remoteIndexRoot, remoteQuery, remoteTarget } from './userLibraries.js'
 import { effectiveSettings } from './settings.js'
 import { type GufiCommand, noteGufi, shellQuote, traced } from './gufiTrace.js'
@@ -588,8 +588,8 @@ function queryGap(l: Library, plan: Plan): Omission | null {
   const gap = libraryGap(l, { words: false, meaning: false })
   if (gap && !gap.partial) return gap
   const out = gap ? { ...gap } : null
-  if (readsWords(plan) && !l.primary && !l.caps.fullText) {
-    const building = l.build?.state === 'building' || l.build?.state === 'updating'
+  const building = l.build?.state === 'building' || l.build?.state === 'updating'
+  if (readsWords(plan) && !l.primary && !l.caps.fullText && (building || lacks(l, 'fullText'))) {
     const reason = building ? 'its text is being read, so text conditions match nothing there yet' : 'its index has no extracted text, so text conditions match nothing there'
     if (out) { out.reason = `${out.reason}; ${reason}`; return out }
     return { id: l.id, label: l.label, reason, partial: true }

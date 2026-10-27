@@ -1,4 +1,4 @@
-import { getLibrary, listLibraries, type Library } from './libraries.js'
+import { getLibrary, lacks, listLibraries, type Library } from './libraries.js'
 import { EXTERNAL_DB_PATTERN, blendHits, ftsExprBare, ftsHit, ftsSql, fuseRows, nameHit, namesSql, queryVectors, searchVector, searchWordsAndNames, walkSearch, type HitMode, type RefineSpec, type SearchHit, type WalkLimits, type WalkRow } from './gufi.js'
 import { meaningPhrase, namePathMatches } from './refine.js'
 import { gufiVtAvailable, runAcross } from './gufiVt.js'
@@ -61,16 +61,24 @@ export function scopeWithOmitted(param: ScopeParam, viewerId: string | null, pri
 export interface ScopedHit extends SearchHit { library: { id: string; label: string } }
 
 /** Whether a search looks in a library by meaning: one the Studio builds
- *  when its level is not off, and an index it only reads when it has vectors. */
+ *  when its level is not off, and an index it only reads, unless it is
+ *  known to have no vectors (lacks): a probe that has not counted the whole
+ *  tree yet is not taken for an answer, so a library never loses its
+ *  meaning results to a sample that missed its vectors. */
 export function meaningSearched(l: Library): boolean {
-  if (l.meaning === undefined || l.meaning === null) return l.caps.vectors
-  return l.meaning !== 'off' && (l.caps.vectors || l.primary)
+  if (l.meaning === 'off') return false
+  if (l.primary && l.meaning) return true
+  return !lacks(l, 'vectors')
 }
 
-/** Whether a search looks in a library's words: one whose index has its
- *  full-text tables, and the main folder unless it is indexed by name only. */
+/** Whether a search looks in a library's words: the main folder unless it
+ *  is indexed by name only, a library the Studio builds past Names, and an
+ *  index it only reads, each unless known to have no words (lacks). */
 export function wordsSearched(l: Library): boolean {
-  return l.caps.fullText || (l.primary && l.depth !== 'names')
+  if (l.caps.fullText) return true
+  if (l.primary) return l.depth !== 'names'
+  if (l.depth === 'names') return l.caps.fullText
+  return !lacks(l, 'fullText')
 }
 
 /** How long a search across several libraries waits for each; one that has

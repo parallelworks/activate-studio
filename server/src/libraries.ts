@@ -18,10 +18,11 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { execFile } from 'node:child_process'
+import os from 'node:os'
 import { GUFI_BIN, GUFI_INDEX, INDEX_BASE, KB_ROOT, gufiAvailable, gufiEnv } from './config.js'
 import { forgetIndexSettings, indexSettings, type IndexDepth, type MeaningLevel } from './indexSettings.js'
 import { KbError } from './kb.js'
-import { learnReached, loadUserLibraries, ownerOf, reachedLabel, remoteRootOf } from './userLibraries.js'
+import { REMOTE_PREFIX, learnReached, loadUserLibraries, ownerOf, reachedLabel, remoteRootOf } from './userLibraries.js'
 
 export interface LibraryCaps {
   /** A GUFI tree: a db.db at the root. */
@@ -130,10 +131,19 @@ const PROBE_RETRY_MS = 30_000
  * Settings happened to probe it again. A record marked stale is still used;
  * it is probed again in the background.
  */
-export interface KnownCaps { caps: LibraryCaps; probedAt: string; stale: boolean; error?: string }
+export interface KnownCaps {
+  caps: LibraryCaps; probedAt: string; stale: boolean; error?: string
+  /** When the whole tree was last looked at for words and vectors, so a
+   *  false there is known rather than a sample's miss. */
+  exactAt?: string
+}
 const CAPS_FILE = path.join(INDEX_BASE, 'library-caps.json')
 let known: Map<string, KnownCaps> | null = null
 const probing = new Map<string, Promise<LibraryCaps>>()
+/** Each tree's changes, as staleProbe marks them: a count that began
+ *  before one is not taken, and the tree is counted again. */
+const generation = new Map<string, number>()
+const counting = new Set<string>()
 
 function knownCapsMap(): Map<string, KnownCaps> {
   if (known) return known
@@ -141,7 +151,12 @@ function knownCapsMap(): Map<string, KnownCaps> {
   try {
     const raw = JSON.parse(fs.readFileSync(CAPS_FILE, 'utf8')) as Record<string, KnownCaps>
     for (const [root, r] of Object.entries(raw)) {
-      if (r && r.caps && typeof r.caps.index === 'boolean') known.set(root, { caps: { index: !!r.caps.index, fullText: !!r.caps.fullText, vectors: !!r.caps.vectors }, probedAt: String(r.probedAt ?? ''), stale: !!r.stale, ...(r.error ? { error: String(r.error) } : {}) })
+      if (r && r.caps && typeof r.caps.index === 'boolean') {
+        known.set(root, {
+          caps: { index: !!r.caps.index, fullText: !!r.caps.fullText, vectors: !!r.caps.vectors }, probedAt: String(r.probedAt ?? ''), stale: !!r.stale,
+          ...(r.error ? { error: String(r.error) } : {}), ...(r.exactAt ? { exactAt: String(r.exactAt) } : {}),
+        })
+      }
     }
   } catch { /* none yet */ }
   return known
@@ -160,6 +175,21 @@ function saveKnownCaps(): void {
  *  when it was never probed. */
 export function knownCaps(indexRoot: string): KnownCaps | null {
   return knownCapsMap().get(path.resolve(indexRoot)) ?? null
+}
+
+/**
+ * Whether a library is known to hold no words (fullText) or no vectors:
+ * its capabilities say so and, for one on this computer, a look at the
+ * whole tree found none since it last changed. Until then (before its
+ * first probe, or while a build or sync has marked it stale) it is not
+ * known, and search looks there. A library on another system says what it
+ * holds when it is built or connected.
+ */
+export function lacks(l: Pick<Library, 'caps' | 'indexRoot'>, what: 'fullText' | 'vectors'): boolean {
+  if (l.caps[what]) return false
+  if (l.indexRoot.startsWith(REMOTE_PREFIX)) return true
+  const k = knownCapsMap().get(path.resolve(l.indexRoot))
+  return !!k && !!k.exactAt && !k.stale && !k.caps[what]
 }
 
 /** The capabilities a listing shows: this process's probe, else the record
@@ -233,11 +263,41 @@ function sampleDbs(root: string, max = 12): string[] {
   return out
 }
 
+/** How long a count over the whole tree stands, while nothing marks the
+ *  tree stale, before a probe whose sample missed something counts again. */
+const EXACT_TTL_MS = 60 * 60_000
+
+/** The directories whose database holds the Studio's words and vector
+ *  tables, over the whole tree, in one aggregate gufi_query (it attaches
+ *  each directory's database as `tree`): 50 ms for 1,300 directories.
+ *  Null where it could not run. */
+function countTables(abs: string): Promise<{ words: number; vectors: number } | null> {
+  const bin = path.join(GUFI_BIN, 'gufi_query')
+  if (!fs.existsSync(bin)) return Promise.resolve(null)
+  const has = (name: string) => `(SELECT count(*) FROM tree.sqlite_master WHERE name = '${name}')`
+  const threads = Math.min(Math.max(os.availableParallelism?.() ?? os.cpus().length, 1), 8)
+  const args = ['-n', String(threads), '-a', '1', '-d', '|',
+    '-I', 'CREATE TABLE t (w INT64, v INT64);',
+    '-K', 'CREATE TABLE agg (w INT64, v INT64);',
+    '-E', `INSERT INTO t SELECT ${has('words')}, ${has('gvec')};`,
+    '-J', 'INSERT INTO agg SELECT sum(w), sum(v) FROM t;',
+    '-G', 'SELECT sum(w), sum(v) FROM agg;', abs]
+  return new Promise(resolve => {
+    execFile(bin, args, { timeout: 10 * 60_000, maxBuffer: 1 << 20, env: gufiEnv() }, (_err, so) => {
+      const m = /^(\d+)\|(\d+)\s*$/m.exec(String(so ?? ''))
+      resolve(m ? { words: Number(m[1]), vectors: Number(m[2]) } : null)
+    })
+  })
+}
+
 /**
  * Learn what a tree supports. A GUFI index has a db.db at its root; the
- * Studio's own tables are looked for in a sample of directory databases,
- * which is enough to say whether search will answer without walking the
- * whole tree of a large index.
+ * Studio's own tables are looked for first in a sample of directory
+ * databases, which finds them at once where they are common. What the
+ * sample does not find is counted over the whole tree (countTables), in
+ * the background, since a library's vectors can be in a few folders only
+ * (where its documents are): after every build or sync, which marks the
+ * tree stale, and at most once an hour otherwise.
  */
 export async function probeLibrary(indexRoot: string): Promise<LibraryCaps> {
   const abs = path.resolve(indexRoot)
@@ -253,6 +313,9 @@ export async function probeLibrary(indexRoot: string): Promise<LibraryCaps> {
 async function probeNow(abs: string): Promise<LibraryCaps> {
   const caps: LibraryCaps = { index: false, fullText: false, vectors: false }
   let tried = 0, failed = 0, lastError = ''
+  let exactAt: string | undefined
+  let count = false
+  const was = knownCapsMap().get(abs)
   if (fs.existsSync(path.join(abs, 'db.db'))) {
     caps.index = true
     if (gufiAvailable()) {
@@ -265,10 +328,20 @@ async function probeNow(abs: string): Promise<LibraryCaps> {
           if (caps.fullText && caps.vectors) break
         } catch (e) { failed++; lastError = String((e as Error).message ?? e).split('\n')[0].slice(0, 200) }
       }
+      if (caps.fullText && caps.vectors) exactAt = new Date().toISOString()
+      else if (!(tried > 0 && failed === tried)) {
+        const recent = was?.exactAt && !was.stale && Date.now() - Date.parse(was.exactAt) < EXACT_TTL_MS
+        if (recent) {
+          caps.fullText ||= was.caps.fullText
+          caps.vectors ||= was.caps.vectors
+          exactAt = was.exactAt
+        } else {
+          count = true
+        }
+      }
     }
   }
   const map = knownCapsMap()
-  const was = map.get(abs)
   if (tried > 0 && failed === tried) {
     // Not one database could be read: say nothing new about the tree. The
     // last known capabilities stay, marked stale, and the probe runs again
@@ -279,11 +352,45 @@ async function probeNow(abs: string): Promise<LibraryCaps> {
     probeCache.set(abs, { caps: keep, at: Date.now() - PROBE_TTL_MS + PROBE_RETRY_MS })
     return keep
   }
-  const changed = !was || was.stale || was.caps.index !== caps.index || was.caps.fullText !== caps.fullText || was.caps.vectors !== caps.vectors
-  map.set(abs, { caps, probedAt: new Date().toISOString(), stale: false })
+  const changed = !was || was.stale || was.caps.index !== caps.index || was.caps.fullText !== caps.fullText || was.caps.vectors !== caps.vectors || was.exactAt !== exactAt
+  map.set(abs, { caps, probedAt: new Date().toISOString(), stale: false, ...(exactAt ? { exactAt } : {}) })
   if (changed) saveKnownCaps()
   probeCache.set(abs, { caps, at: Date.now() })
+  // Without exactAt the record says only what the sample found, and search
+  // looks for the rest (lacks) until the count says.
+  if (count) countInBackground(abs)
   return caps
+}
+
+/** Counts a tree's words and vector tables (countTables) without holding
+ *  up the probe that asked, which a listing or the start waits for. */
+function countInBackground(abs: string): void {
+  if (counting.has(abs)) return
+  counting.add(abs)
+  const gen = generation.get(abs) ?? 0
+  void countTables(abs).then(n => {
+    counting.delete(abs)
+    if ((generation.get(abs) ?? 0) !== gen) { countInBackground(abs); return }
+    const map = knownCapsMap()
+    const cur = map.get(abs)
+    if (!n || !cur || cur.stale) return
+    const caps = { ...cur.caps, fullText: cur.caps.fullText || n.words > 0, vectors: cur.caps.vectors || n.vectors > 0 }
+    map.set(abs, { ...cur, caps, exactAt: new Date().toISOString() })
+    saveKnownCaps()
+    const fresh = probeCache.get(abs)
+    if (fresh) probeCache.set(abs, { caps, at: fresh.at })
+  }, () => { counting.delete(abs) })
+}
+
+/** For tests: what a tree holds, as a probe left it, counted (exact) or not. */
+export function setKnownCapsForTests(indexRoot: string, caps: LibraryCaps, exact = true): void {
+  const at = new Date().toISOString()
+  knownCapsMap().set(path.resolve(indexRoot), { caps, probedAt: at, stale: false, ...(exact ? { exactAt: at } : {}) })
+}
+
+/** For tests: wait until no tree is being counted. */
+export async function capsCountedForTests(): Promise<void> {
+  while (counting.size) await new Promise(r => setTimeout(r, 20))
 }
 
 /** Whether the main folder's index has been built: GUFI is set up and its
@@ -452,6 +559,7 @@ export function updateBuild(id: string, patch: Partial<LocalBuild>): LibraryDef 
 export function staleProbe(indexRoot: string): void {
   const abs = path.resolve(indexRoot)
   probeCache.delete(abs)
+  generation.set(abs, (generation.get(abs) ?? 0) + 1)
   const k = knownCapsMap().get(abs)
   if (k && !k.stale) { k.stale = true; saveKnownCaps() }
   if (gufiAvailable()) void probeLibrary(abs).catch(() => {})

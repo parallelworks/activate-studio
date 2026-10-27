@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { INDEX_BASE } from './config.js'
-import { builtLibraryDir, knownCaps, PRIMARY_ID, type Library } from './libraries.js'
+import { builtLibraryDir, knownCaps, lacks, PRIMARY_ID, type Library } from './libraries.js'
 
 /**
  * Libraries a search or a query left out, or searched only in part, and
@@ -145,10 +145,11 @@ export function libraryGap(l: Library, want: { words: boolean; meaning: boolean 
     const n = denied.folders.length
     reasons.push(`${n === 1 ? 'a folder' : `${n} folders`} could not be read (${deniedReason(denied.folders[0])})`)
   }
-  if (want.words && expectsWords(l) && !l.caps.fullText) {
+  // Named only where search will not look, or looks while a build reads it.
+  if (want.words && expectsWords(l) && !l.caps.fullText && (building(l) || lacks(l, 'fullText'))) {
     reasons.push(building(l) ? 'words not searched yet: its text is being read' : 'words not searched: its index has no text yet')
   }
-  if (want.meaning && !l.primary && l.meaning && l.meaning !== 'off' && !l.caps.vectors) {
+  if (want.meaning && !l.primary && l.meaning && l.meaning !== 'off' && !l.caps.vectors && (building(l) || lacks(l, 'vectors'))) {
     reasons.push(building(l) ? 'not searched by meaning yet: its text is being read' : 'not searched by meaning: its index has no vectors yet')
   }
   return reasons.length ? o(reasons.join('; '), true) : null
