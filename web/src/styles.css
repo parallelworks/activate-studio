@@ -1880,7 +1880,7 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .libraries-table .lib-no { color: var(--pw-muted); }
 .libraries-table .lib-actions { text-align: right; width: 1%; white-space: nowrap; }
 .libraries-table .lib-actions > * + * { margin-left: 6px; }
-.libraries-wrap { margin-bottom: 18px; }
+.libraries-wrap { margin-bottom: 18px; container: libraries / inline-size; }
 /* A row's progress, such as the main folder's index build, runs across the
    table under it, so the row above keeps no rule between them. */
 .libraries-table tr.lib-has-detail > td { border-bottom: 0; }
@@ -1962,9 +1962,12 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .ix-path code { font-size: 12px; word-break: break-all; }
 .ix-indent { margin-left: 54px; }
 .ix-formats, .ix-runs { margin-top: 4px; }
-/* On a phone each library is a block: name and paths, then its state, what
-   it searches (named, since the headers are gone), and its actions. */
-@media (max-width: 640px) {
+/* Where the table has too little room for its columns (a phone, or a laptop
+   window with the settings menu and the status panel open), each library
+   is a block: name and paths, then its state, what it searches (named,
+   since the headers are gone), and its actions. Decided by the table's own
+   width, not the window's. */
+@container libraries (max-width: 720px) {
   .libraries-table thead { display: none; }
   .libraries-table, .libraries-table tbody, .libraries-table tr, .libraries-table td { display: block; width: auto; }
   .libraries-table td:first-child { width: auto; padding-right: 0.75rem; }

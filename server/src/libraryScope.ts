@@ -138,11 +138,14 @@ export async function searchScope(libs: Library[], q: string, limit: number, opt
   // one query fits them all. A remote host's are stacked; this machine's
   // only with STACK_LOCAL.
   const groups = new Map<string, Library[]>()
+  // The host each remote library reaches, as ssh resolves it, so two that
+  // name one account differently share a walk.
+  const hostKeys = new Map(await Promise.all(libs.filter(l => l.indexRoot.startsWith(REMOTE_PREFIX))
+    .map(async l => [l.id, await remoteHostKey(l.indexRoot).catch(() => null)] as const)))
   for (const l of libs) {
     const words = wordsSearched(l), vec = wantVec(l) && vectors.length > 0
     const remote = l.indexRoot.startsWith(REMOTE_PREFIX)
-    let host: string | null = null
-    try { host = remote ? remoteHostKey(l.indexRoot) : 'local' } catch { host = null }
+    const host: string | null = remote ? hostKeys.get(l.id) ?? null : 'local'
     const shared = remote ? host !== null : STACK_LOCAL
     const key = shared ? `${host}\0${words}\0${vec}` : `one\0${l.id}`
     groups.set(key, [...(groups.get(key) ?? []), l])

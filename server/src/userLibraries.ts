@@ -8,7 +8,7 @@ import { authEnabled } from './auth.js'
 import { gatewayKey } from './chat/gateway.js'
 import { resolveUserCred } from './credentials.js'
 import { classify, KbError, type FileContent, type KbEntry } from './kb.js'
-import { checkSshOptions, isDirect, jumpOf, noShell, parseSshOptions, remoteRun, remoteRunOnce, remoteThreads, setDirect, siteName, SSH_DESTINATION, sshOptionsText, sshRoute, sshSite, warmSsh, type RemoteResult } from './remoteExec.js'
+import { checkSshOptions, isDirect, jumpOf, noShell, parseSshOptions, reachedHost, reachedKnown, remoteRun, remoteRunOnce, remoteThreads, setDirect, siteName, SSH_DESTINATION, sshOptionsText, sshRoute, sshSite, warmSsh, type RemoteResult } from './remoteExec.js'
 import { noteGufi } from './gufiTrace.js'
 import { getJob, startJob, type Job } from './jobs.js'
 import { depthParts, forgetIndexSettings, indexSettings, meaningArgs, saveIndexSettings, textArgs, type IndexDepth } from './indexSettings.js'
@@ -220,7 +220,7 @@ export async function remoteQuery(root: string, args: string[], subdir?: string)
 export async function remoteQueryMany(roots: string[], args: string[]): Promise<string> {
   const targets = roots.map(r => remoteTarget(r)!)
   const t = targets[0]
-  if (targets.some(x => x.site !== t.site || x.key !== t.key || x.gufiBin !== t.gufiBin)) throw new KbError(400, 'indexes on different hosts cannot share a query')
+  if (targets.some(x => hostOf(x.site) !== hostOf(t.site) || x.key !== t.key || x.gufiBin !== t.gufiBin)) throw new KbError(400, 'indexes on different hosts cannot share a query')
   const n = args.indexOf('-n')
   if (n >= 0 && n + 1 < args.length) args = [...args.slice(0, n + 1), String(await remoteThreads(t.site, t.key)), ...args.slice(n + 2)]
   const t0 = Date.now()
@@ -235,11 +235,40 @@ export async function remoteQueryMany(roots: string[], args: string[]): Promise<
   return r.stdout
 }
 
-/** The site a library on another system is reached through, and the
- *  account and GUFI there: libraries that share it can share a query. */
-export function remoteHostKey(root: string): string | null {
+/** The host a site lands on as ssh resolves it (reachedHost: user, host
+ *  name, port and route, from the options and ~/.ssh/config), so a library
+ *  that names the user and one that takes it from the config are one host;
+ *  the site itself where that is not known (yet), or for a cluster. */
+function hostOf(site: string): string {
+  return reachedKnown(site)?.key ?? site
+}
+
+/** Where a library on another system is reached, and the account and GUFI
+ *  there: libraries that share it can share a query. Asks ssh where the
+ *  site lands first (cached), so the grouping is by the host reached. */
+export async function remoteHostKey(root: string): Promise<string | null> {
   const t = remoteTarget(root)
-  return t ? JSON.stringify([t.site, t.key, t.gufiBin]) : null
+  if (!t) return null
+  if (t.site.startsWith('ssh://')) await reachedHost(t.site).catch(() => null)
+  return JSON.stringify([hostOf(t.site), t.key, t.gufiBin])
+}
+
+/** The ssh site of a library over plain ssh; null for a cluster. */
+function sshSiteOf(d: UserLibraryDef): string | null {
+  if (d.transport !== 'ssh' || !d.destination) return null
+  try { return sshSite(d.destination, d.port ?? null, d.sshOptions ?? []) } catch { return null }
+}
+
+/** user@host as ssh reaches a library over plain ssh, once known; null otherwise. */
+export function reachedLabel(d: UserLibraryDef): string | null {
+  const site = sshSiteOf(d)
+  return site ? reachedKnown(site)?.label ?? null : null
+}
+
+/** Finds where each of a viewer's ssh libraries lands, so the next listing
+ *  names the account and host reached. Never waited on. */
+export function learnReached(defs: UserLibraryDef[]): void {
+  for (const d of defs) { const site = sshSiteOf(d); if (site) void reachedHost(site).catch(() => null) }
 }
 
 /** The remote index's own root, to strip from the paths gufi prints. */
@@ -421,7 +450,9 @@ export async function listUserLibraries(viewerId: string | null | undefined): Pr
   // A build on a remote system goes on without the Studio; one not being
   // followed (after a restart, say) is followed again.
   for (const d of loadUserLibraries(owner)) if (d.build && (d.state === 'building' || d.state === 'updating')) follow(owner, d.id)
-  return loadUserLibraries(owner)
+  const defs = loadUserLibraries(owner)
+  learnReached(defs)
+  return defs
 }
 
 export interface AddFromCluster { site: string; resource?: string; sourceDir?: string; label?: string; scheduler?: UserLibraryDef['scheduler'] }
@@ -910,6 +941,8 @@ export async function probeSsh(spec: SshSpec, reuse = false): Promise<SshProbe> 
  *  jump hosts ssh goes through, from the library's options or the user's
  *  ~/.ssh/config (sshRoute). */
 async function reachedOver(site: string, destination: string, port: number | null): Promise<string> {
+  // Where it lands as ssh resolves it, kept for grouping and for naming it in the lists.
+  await reachedHost(site).catch(() => null)
   const route = await sshRoute(site).catch(() => ({ jump: null, proxyCommand: false }))
   const via = route.jump ? ` through ${route.jump}` : route.proxyCommand ? ' through the ProxyCommand in your ~/.ssh/config' : ''
   return `${destination}${port ? ` on port ${port}` : ''}${via}`
@@ -1328,7 +1361,7 @@ export function warmUserLibraries(viewerId: string | null | undefined): number {
 
 /** The shape Settings shows: no keys, and the remote paths, which are the user's own. */
 export function publicUserLibrary(d: UserLibraryDef & { job?: number }) {
-  return { id: d.id, label: d.label, transport: d.transport ?? 'pw', existing: !d.build && (d.transport === 'ssh' || !!d.existing), meaning: d.build ? indexSettings(d.id).meaning : null, depth: d.build ? indexSettings(d.id).depth : null, site: d.site, destination: d.destination ?? null, port: d.port ?? null, sshOptions: d.sshOptions?.length ? sshOptionsText(d.sshOptions) : null, jump: d.sshOptions?.length ? jumpOf(d.sshOptions) : null, gufiVersion: d.gufiVersion ?? null, sourceDir: d.sourceDir, sourceRoot: d.sourceRoot, indexRoot: d.indexRoot, state: d.state,
+  return { id: d.id, label: d.label, transport: d.transport ?? 'pw', existing: !d.build && (d.transport === 'ssh' || !!d.existing), meaning: d.build ? indexSettings(d.id).meaning : null, depth: d.build ? indexSettings(d.id).depth : null, site: d.site, destination: d.destination ?? null, reached: reachedLabel(d), port: d.port ?? null, sshOptions: d.sshOptions?.length ? sshOptionsText(d.sshOptions) : null, jump: d.sshOptions?.length ? jumpOf(d.sshOptions) : null, gufiVersion: d.gufiVersion ?? null, sourceDir: d.sourceDir, sourceRoot: d.sourceRoot, indexRoot: d.indexRoot, state: d.state,
     run: d.run ? { slug: d.run.slug, mode: d.run.mode, startedAt: d.run.startedAt } : null, error: d.error, builtAt: d.builtAt,
     directories: d.directories, files: d.files, scheduler: d.scheduler, fullText: !!d.fullText, vectors: !!d.vectors,
     // Built here over the session: where the index is written, and how far a build has got.

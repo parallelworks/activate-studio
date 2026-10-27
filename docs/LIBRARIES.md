@@ -367,7 +367,7 @@ alias from `~/.ssh/config`, or either with `:port`. A Host entry in
 `~/.ssh/config` applies as it does in a terminal, ProxyJump, ProxyCommand,
 Port, User and IdentityFile included, so a host behind a jump host or a
 firewall is reached by giving its alias. The Studio runs
-`ssh -T [options] -o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=30 -o ControlMaster=auto -o ControlPath="<folder>/<hash>" -o ControlPersist=600 [-p port] <destination>`
+`ssh -T [options] -o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=30 -o ControlMaster=auto -o ControlPath="<folder>/%C" -o ControlPersist=600 [-p port] <destination>`
 with the keys, agent, Kerberos tickets and `~/.ssh/config` of the account
 it runs as, and keeps up to three sessions per destination, as it does
 per cluster. The sessions to one host share a single ssh connection
@@ -378,9 +378,13 @@ not changed. When Search or Query opens, the Studio opens that connection
 for each host of the viewer's libraries over ssh
 (`POST /api/user-libraries/warm`, at most once a minute per host), with
 `ssh -N -f`, which logs in and runs no command there, so the first search
-after a long gap does not wait for the login. The socket's name is 12 hex
-characters of the destination, port and options, and its folder is the
-first of these that will do:
+after a long gap does not wait for the login. The socket's name is ssh's
+`%C`, a hash of the host, port and user ssh connects to and its jump
+hosts, after `~/.ssh/config` and the options are applied, so a library
+given as `me@host` and one given as a Host alias that resolves to the same
+account share one connection. Where the folder is too long for the 40
+characters `%C` becomes, the name is 12 hex characters of the destination,
+port and options instead. The folder is the first of these that will do:
 `$XDG_RUNTIME_DIR/activate-studio` where that variable is set,
 `/tmp/activate-studio-<uid>`, and `INDEX_BASE/ssh`. A folder is made with
 mode 700 when missing and checked with `lstat` before each session: it has
@@ -634,8 +638,13 @@ side, and the user's key never appears in a process's arguments. The
 server accepts only gufi_query with the stages gufi_vt sends, on that
 location's own index, under a per-process secret and a per-query token.
 
-Libraries on one host, reached the same way (destination, port and ssh
-options, or cluster and key) and asked the same plan, share one location:
+Libraries on one host, reached the same way and asked the same plan,
+share one location. Over ssh, "the same way" is where ssh lands once
+`~/.ssh/config` and the library's options are applied, read with `ssh -G`
+(which connects nowhere) and kept ten minutes: the user, host name and
+port, the jump hosts and the proxy command. A library typed as `me@host`
+and one typed as a Host alias whose User is `me` are one host. Over pw
+ssh it is the cluster and key. Such libraries share one location:
 gufi_vt takes `index=` once per root, and hands the remote command every
 root at the end of its line, so the host runs one gufi_query over all of
 them. Each row goes back to the library whose index root its path is

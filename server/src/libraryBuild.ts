@@ -20,6 +20,7 @@ import { effectiveSettings } from './settings.js'
 import { scanLatestDetail } from './dirScan.js'
 import { deniedPaths, onlyDenied, recordDenied } from './omissions.js'
 import { depthChange, depthRecordOf, readDepthRecord, writeDepthRecord, type DepthChange } from './depthState.js'
+import { cleanIndexedText, markTextClean, textCleanNeeded } from './textCleanup.js'
 
 /**
  * Libraries the Studio builds of a folder on this computer, beside the
@@ -454,6 +455,8 @@ async function fullBuild(id: string, job: IndexJob): Promise<{ ms: number }> {
     await fsp.rm(old, { recursive: true, force: true })
     await fsp.rm(stage, { recursive: true, force: true })
     if (!replacing) await enrich(def, {}, progress, s)
+    // Its words were written without the converter's provenance line.
+    await markTextClean(tree)
     progress('Counting')
     const counts = await settle(def)
     settleDenied(id)
@@ -517,6 +520,8 @@ export async function syncLibrary(id: string): Promise<string[]> {
     if (!isDir(def.sourceRoot)) { updateBuild(id, { error: `${def.sourceRoot} is not a folder any more` }); return [] }
     const s = builtLibrarySettings(id)
     const depth = await pendingDepthChange(id, s)
+    // An index from before enrich.py dropped the provenance line: cleaned in place once.
+    const tidy = textCleanNeeded(def.indexRoot)
     const { latest: scan, deniedRel } = await scanDirsDetail(def.sourceRoot, id)
     const before = loadState(id) ?? scan
     // A folder the Studio may not read now (macOS privacy settings, say) is
@@ -527,7 +532,7 @@ export async function syncLibrary(id: string): Promise<string[]> {
     let changed = Object.keys(scan).filter(rel => rel && (before[rel] ?? 0) < scan[rel]).sort()
     changed = changed.filter(rel => !changed.some(o => o !== rel && rel.startsWith(`${o}/`)))
     const removed = Object.keys(before).filter(rel => rel && !(rel in scan) && !Object.keys(scan).some(s => rel.startsWith(`${s}/`) && changed.includes(s)))
-    if (!top && !changed.length && !removed.length && !depth) { settleDenied(id); return [] }
+    if (!top && !changed.length && !removed.length && !depth && !tidy) { settleDenied(id); return [] }
     const done: string[] = []
     const failed: string[] = []
     const next = { ...scan }
@@ -551,6 +556,12 @@ export async function syncLibrary(id: string): Promise<string[]> {
         if (!stopping) updateBuild(id, { state: 'ready', pending: null })
       }
       if (stopping) return done
+    }
+    if (tidy) {
+      try {
+        const r = await cleanIndexedText(def.indexRoot)
+        if (r) { await markTextClean(def.indexRoot); if (r.rows) done.push('(indexed text tidied)') }
+      } catch (e) { failed.push(`tidying the indexed text: ${(e as Error).message}`) }
     }
     const counts = await settle(def)
     settleDenied(id)

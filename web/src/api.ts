@@ -48,6 +48,8 @@ export interface UserLibrary {
   /** An index that was there already, connected rather than built. */
   existing?: boolean
   destination?: string | null
+  /** Over ssh: user@host as ssh reaches it (options and ~/.ssh/config applied), once known. */
+  reached?: string | null
   port?: number | null
   /** Over ssh: the options its ssh runs with, as typed, and the jump host they name. */
   sshOptions?: string | null

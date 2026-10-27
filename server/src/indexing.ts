@@ -19,6 +19,7 @@ import { scheduleSemanticMapRebuild } from './semanticMap.js'
 import { scanLatestDetail } from './dirScan.js'
 import { deniedPaths, onlyDenied, recordDenied, setPrimaryBuiltSource, setPrimaryIndexingSource } from './omissions.js'
 import { depthChange, depthRecordOf, readDepthRecord, writeDepthRecord, type DepthChange } from './depthState.js'
+import { cleanIndexedText, markTextClean, textCleanNeeded } from './textCleanup.js'
 
 /**
  * Building the index, and every later change to it, as jobs that run one at
@@ -870,6 +871,8 @@ async function buildWholeFolder(ctx: JobCtx): Promise<void> {
     }
     await documentsPhase(ctx, {})
     await textPhase(ctx, { kbRoot: KB_ROOT, index: target, cache: EXTRACT_CACHE })
+    // Its words were written without the converter's provenance line.
+    await markTextClean(target)
     if (!live) invalidateContext()
     await meaningPhase(ctx, { index: target, prune: true })
     if (ctx.signal.aborted) throw new IndexCancelled()
@@ -1095,7 +1098,10 @@ export async function sweep(log: (msg: string) => void): Promise<string[]> {
     changed = changed.filter(rel => !changed.some(other => other !== rel && rel.startsWith(other + '/')))
     const depth = await pendingDepthChange(indexSettings())
     const filesChanged = rootChanged || changed.length > 0 || removed.length > 0
-    if (!filesChanged && !depth) {
+    // An index from before enrich.py dropped the provenance line: cleaned
+    // in place once (textCleanup.ts).
+    const tidy = textCleanNeeded(GUFI_INDEX)
+    if (!filesChanged && !depth && !tidy) {
       status.lastChanges = []
       return []
     }
@@ -1104,7 +1110,7 @@ export async function sweep(log: (msg: string) => void): Promise<string[]> {
     const indexed: string[] = []
     let rootIndexed = false
     let depthApplied: string | null = null
-    const rec = enqueue('sweep', '', filesChanged ? 'Syncing changes' : `Applying the new index depth: ${depth!.label}`, async ctx => {
+    const rec = enqueue('sweep', '', filesChanged ? 'Syncing changes' : depth ? `Applying the new index depth: ${depth.label}` : 'Tidying the indexed text', async ctx => {
       // Removed directories: drop their index subtrees.
       for (const rel of removed) {
         await fsp.rm(path.join(GUFI_INDEX, rel), { recursive: true, force: true }).catch(() => {})
@@ -1152,6 +1158,14 @@ export async function sweep(log: (msg: string) => void): Promise<string[]> {
       }
       // After the folders that changed, so their state is kept even if this fails.
       if (await applyDepthChange(ctx)) depthApplied = ctx.settings.depth
+      if (tidy && textCleanNeeded(GUFI_INDEX)) {
+        ctx.job.label = 'Tidying the indexed text'
+        const r = await cleanIndexedText(GUFI_INDEX, ctx.signal)
+        if (r) {
+          await markTextClean(GUFI_INDEX)
+          log(`sweep: took the converter's provenance line out of ${r.rows.toLocaleString('en-US')} files' text in ${r.dbs.toLocaleString('en-US')} folders`)
+        }
+      }
       if (filesChanged) ctx.job.label = 'Syncing changes'
     })
     await rec.done.catch(() => {})

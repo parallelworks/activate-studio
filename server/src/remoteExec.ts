@@ -268,17 +268,23 @@ export function persistSeconds(): number {
 
 /** ssh's connection sharing for a host: the first session to it logs in and
  *  keeps the connection for persistSeconds after the last one closes, and
- *  the others ride on it. One socket per destination, port and options.
- *  The socket is in a folder of the user's own (socketDir); the person's
- *  ~/.ssh/config is left as it is. The path is quoted, since a folder may
- *  have spaces in it and ssh refuses an unquoted one. None where no folder
- *  will do, or with STUDIO_SSH_SHARE=0. */
+ *  the others ride on it. The socket is named by ssh's own %C, a hash of
+ *  where the connection lands once ssh has read the options and the
+ *  user's ~/.ssh/config (user, host name, port and jump host), so two
+ *  libraries reaching the same account share it whether or not one named
+ *  the user. Where the folder is too long for that name, one socket per
+ *  destination, port and options as given. The socket is in a folder of
+ *  the user's own (socketDir); the person's ~/.ssh/config is left as it
+ *  is. The path is quoted, since a folder may have spaces in it and ssh
+ *  refuses an unquoted one. None where no folder will do, or with
+ *  STUDIO_SSH_SHARE=0. */
 export function controlArgs(h: { destination: string; port: number | null; options?: string[] }): string[] {
   if (process.env.STUDIO_SSH_SHARE === '0') return []
   const dir = socketDir()
   if (!dir) return []
   const id = `${h.destination}:${h.port ?? ''}${h.options?.length ? `:${h.options.join('\0')}` : ''}`
-  const sock = path.join(dir, crypto.createHash('sha1').update(id).digest('hex').slice(0, SOCKET_NAME))
+  const name = Buffer.byteLength(dir) + 1 + PERCENT_C <= SOCKET_PATH_MAX ? '%C' : crypto.createHash('sha1').update(id).digest('hex').slice(0, SOCKET_NAME)
+  const sock = path.join(dir, name)
   const persist = persistSeconds()
   return ['-o', 'ControlMaster=auto', '-o', `ControlPath="${sock}"`, '-o', `ControlPersist=${persist > 0 ? persist : 'no'}`]
 }
@@ -295,7 +301,7 @@ const runSshLocal: SshLocal = (args, timeoutMs) => new Promise(resolve => {
 let sshLocal: SshLocal = runSshLocal
 /** Test seam: what runs in place of a local `ssh -G`, `ssh -O check` or
  *  `ssh -N -f`; null restores ssh itself. */
-export function setSshLocal(fn: SshLocal | null): void { sshLocal = fn ?? runSshLocal; warming.clear() }
+export function setSshLocal(fn: SshLocal | null): void { sshLocal = fn ?? runSshLocal; warming.clear(); reached.clear() }
 
 /** The jump hosts and proxy command ssh would use for a site, from its
  *  options and the user's ~/.ssh/config (`ssh -G`, which reads the config
@@ -309,6 +315,40 @@ export async function sshRoute(site: string): Promise<{ jump: string | null; pro
   const proxy = line('proxycommand')
   return { jump: jump && jump !== 'none' ? jump : jumpOf(h.options), proxyCommand: !!proxy && proxy !== 'none' }
 }
+
+/** Where a site's connection lands once ssh has read its options and the
+ *  user's ~/.ssh/config: `label` as a person reads it (user@host, shown
+ *  before an index path, so the port stays in its own field), and `key`,
+ *  with the port and the route (jump hosts, a proxy command), which says
+ *  two sites are one account on one host. */
+export interface Reached { label: string; key: string }
+const reached = new Map<string, { at: number; v: Reached | null }>()
+const REACHED_MS = 10 * 60_000
+
+/** Where a site lands (Reached), from `ssh -G`, which reads the config and
+ *  connects nowhere. Kept ten minutes; null when ssh cannot say. */
+export async function reachedHost(site: string): Promise<Reached | null> {
+  const h = parseSshSite(site)
+  if (!h) return null
+  const seen = reached.get(site)
+  if (seen && Date.now() - seen.at < REACHED_MS) return seen.v
+  const r = await sshLocal(['-G', ...h.options, ...(h.port != null ? ['-p', String(h.port)] : []), h.destination], 5000).catch(() => null)
+  const lines = new Map<string, string>()
+  for (const l of r?.code === 0 ? r.stdout.split('\n') : []) {
+    const i = l.indexOf(' ')
+    if (i > 0 && !lines.has(l.slice(0, i).toLowerCase())) lines.set(l.slice(0, i).toLowerCase(), l.slice(i + 1).trim())
+  }
+  const user = lines.get('user'), host = lines.get('hostname'), port = lines.get('port') || '22'
+  const none = (v: string | undefined) => !v || v === 'none' ? '' : v
+  const v: Reached | null = user && host
+    ? { label: `${user}@${host}`, key: `${user}@${host}:${port}|${none(lines.get('proxyjump'))}|${none(lines.get('proxycommand'))}` }
+    : null
+  reached.set(site, { at: Date.now(), v })
+  return v
+}
+
+/** reachedHost's last answer for a site, without asking ssh again. */
+export function reachedKnown(site: string): Reached | null { return reached.get(site)?.v ?? null }
 
 const warming = new Map<string, { at: number; p: Promise<'open' | 'opened' | 'failed' | 'off'> }>()
 const WARM_EVERY_MS = 60_000
@@ -339,6 +379,8 @@ export function warmSsh(site: string): Promise<'open' | 'opened' | 'failed' | 'o
  *  macOS allows 104 bytes, so the whole path stays within 86. */
 const SOCKET_NAME = 12
 const SOCKET_PATH_MAX = 86
+/** The length ssh's %C expands to (40 hex characters). */
+const PERCENT_C = 40
 
 /** Where ssh's sockets may go, in order: $XDG_RUNTIME_DIR/activate-studio
  *  where that is set, /tmp/activate-studio-<uid>, and the data folder's
