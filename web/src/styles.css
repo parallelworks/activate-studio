@@ -923,8 +923,9 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 [data-theme='dark'] .tool-spec { background: var(--pw-input-bg); }
 
 /* Multi-select labeling on search and query results */
-.results-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.results-actions { display: flex; gap: 8px; }
+.results-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
+.results-toolbar > :first-child { white-space: nowrap; }
+.results-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 .result-top { justify-content: flex-start; }
 .result-pills { margin-left: auto; }
 .result-row .row-check { opacity: 0; }

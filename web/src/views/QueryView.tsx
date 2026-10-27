@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import {
-  ActionMenu, Button, buttonClasses, Callout, Field, IconButton, Input, NumberInput, Select, Table, Tabs, Textarea,
+  ActionMenu, Button, buttonClasses, Callout, CopyButton, Field, IconButton, Input, NumberInput, Select, Table, Tabs, Textarea,
   type SelectItem, type TabItem,
 } from '@parallelworks/ui'
 import { ChevronDownIcon, CloseIcon } from '@parallelworks/ui/icons'
@@ -13,6 +13,7 @@ import { openInLibrary, scopeBody, useScope, type Scope } from '../scope'
 import { GufiCommands, type GufiCommand } from '../components/GufiCommands'
 import { SavedQuerySql } from '../components/SavedQuerySql'
 import { OmittedLine, type Omission } from '../components/OmittedLine'
+import { exportName, saveText, toCsv, toTsv } from '../tableExport'
 import {
   BLANK, DIR_FIELDS, FIELDS, OPS, PLACEHOLDER, PRESETS, fromCanned, newFilter, payloadOf, toState, withField,
   type BuilderState, type Filter,
@@ -211,6 +212,7 @@ export function QueryView({ onOpen }: { onOpen: (path: string) => void }) {
   const pathCol = result ? result.columns.findIndex(c => c === 'path' || c === 'directory') : -1
   const rowKeys = pathCol >= 0 && result ? [...new Set(result.rows.map(r => r[pathCol]).filter(Boolean))] : []
   const allSelected = rowKeys.length > 0 && sel.size === rowKeys.length
+  const labeling = pathCol >= 0 && rowKeys.length > 0
 
   const toggleSel = (key: string) => {
     setSel(s => {
@@ -355,15 +357,26 @@ export function QueryView({ onOpen }: { onOpen: (path: string) => void }) {
       {result && (
         <div className={`query-results card ${sel.size ? 'has-sel' : ''}`}>
           <OmittedLine omitted={result.omitted} what="query" />
-          {pathCol >= 0 && rowKeys.length > 0 && (
+          {result.rows.length > 0 && (
             <div className="results-head results-toolbar">
-              <span>{result.columns[pathCol] === 'directory' ? 'Label directories' : 'Label files'} from these results</span>
+              <span>{labeling ? `${result.columns[pathCol] === 'directory' ? 'Label directories' : 'Label files'} from these results` : ''}</span>
               <span className="results-actions">
-                <Button size="sm" onClick={() => setSel(allSelected ? new Set() : new Set(rowKeys))}>
-                  {allSelected ? 'Clear selection' : 'Select all'}
-                </Button>
-                <Button size="sm" disabled={!sel.size} onClick={() => setTagMenuOpen(o => !o)}>
-                  Labels…{sel.size ? ` (${sel.size})` : ''}
+                {labeling && (
+                  <>
+                    <Button size="sm" onClick={() => setSel(allSelected ? new Set() : new Set(rowKeys))}>
+                      {allSelected ? 'Clear selection' : 'Select all'}
+                    </Button>
+                    <Button size="sm" disabled={!sel.size} onClick={() => setTagMenuOpen(o => !o)}>
+                      Labels…{sel.size ? ` (${sel.size})` : ''}
+                    </Button>
+                  </>
+                )}
+                {/* The rows as returned, sizes in bytes, for a spreadsheet or a script. */}
+                <CopyButton size="sm" variant="outline" showLabel label="results" text={() => toTsv(result.columns, result.rows)}
+                  title="Copy the rows as tab-separated text, which a spreadsheet pastes into columns" />
+                <Button size="sm" variant="outline" onClick={() => saveText(exportName('query'), toCsv(result.columns, result.rows))}
+                  title={result.truncated ? `The first ${result.rows.length.toLocaleString()} rows, as shown; the query had more` : 'Save the rows as a CSV file'}>
+                  Export CSV
                 </Button>
               </span>
             </div>
