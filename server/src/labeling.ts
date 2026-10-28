@@ -3,6 +3,7 @@ import path from 'node:path'
 import { EXCLUDE_DIRS } from './config.js'
 import { extractPath, readFileContent, resolveKb } from './kb.js'
 import { streamTurn } from './chat/gateway.js'
+import type { EndpointOptions } from './credentials.js'
 import { effectiveTags, tagMaps } from './tags.js'
 
 /**
@@ -85,7 +86,7 @@ async function candidates(dir: string, limit: number, includeLabelled: boolean):
  * response"), so this goes through streamTurn, which is the call shape the
  * chat already works with, and collects the text.
  */
-async function complete(messages: unknown[], key: string | null, baseUrl: string | null, model: string): Promise<string> {
+async function complete(messages: unknown[], key: string | null, baseUrl: string | null, model: string, endpoint: EndpointOptions | null): Promise<string> {
   const turn = await streamTurn(
     { model, messages },
     null,
@@ -93,6 +94,7 @@ async function complete(messages: unknown[], key: string | null, baseUrl: string
     undefined,
     key,
     baseUrl,
+    endpoint,
   )
   return turn.content
 }
@@ -119,6 +121,7 @@ export async function suggestLabels(opts: {
   model: string
   key?: string | null
   baseUrl?: string | null
+  endpoint?: EndpointOptions | null
 }): Promise<LabelSuggestions> {
   const limit = Math.min(Math.max(opts.limit ?? 40, 1), 200)
   const files = await candidates(opts.dir ?? '', limit, !!opts.includeLabelled)
@@ -150,7 +153,7 @@ export async function suggestLabels(opts: {
 
     const reply = await complete(
       [{ role: 'system', content: system }, { role: 'user', content: user }],
-      opts.key ?? null, opts.baseUrl ?? null, opts.model,
+      opts.key ?? null, opts.baseUrl ?? null, opts.model, opts.endpoint ?? null,
     )
     let rows: unknown
     try { rows = parseJson(reply) } catch { continue }

@@ -520,7 +520,7 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
     if (!model) {
       // No default set: use the first model the caller's credential can
       // reach, so labelling works without configuring anything.
-      const wire = await listModels(cred?.key, cred?.baseUrl).catch(() => null) as { data?: { id: string }[]; models?: { id: string }[] } | null
+      const wire = await listModels(cred?.key, cred?.baseUrl, cred?.endpoint).catch(() => null) as { data?: { id: string }[]; models?: { id: string }[] } | null
       const first = (wire?.data ?? wire?.models ?? []).map(m => m?.id).filter(Boolean)[0]
       if (!first) throw new KbError(400, 'No model is available to this deployment for labelling. Add your model credential in Settings, Model access.')
       model = first
@@ -533,6 +533,7 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
         model,
         key: cred?.key ?? null,
         baseUrl: cred?.baseUrl ?? null,
+        endpoint: cred?.endpoint ?? null,
       })
     } catch (e) {
       const detail = String((e as Error).message ?? e)

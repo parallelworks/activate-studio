@@ -1,8 +1,9 @@
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 import {
-  Button, Callout, type CalloutTone, Checkbox, CopyButton, ExternalLink, Field, Input, Loader, SegmentedControl, Select,
-  type SelectItem, StatusBadge, Table,
+  Button, Callout, type CalloutTone, Checkbox, CopyButton, Disclosure, ExternalLink, Field, IconButton, Input, Loader, SegmentedControl, Select,
+  type SelectItem, StatusBadge, Table, Textarea,
 } from '@parallelworks/ui'
+import { CloseIcon } from '@parallelworks/ui/icons'
 import './ModelAccessSection.css'
 
 /**
@@ -16,6 +17,9 @@ import './ModelAccessSection.css'
  * one can be chosen, or the CLI signed in to another platform with its
  * device code. Platform subscriptions (a ChatGPT plan, GitHub Copilot) are
  * connected through ACTIVATE, which then serves their models with the rest.
+ * An endpoint can carry options for a portal that differs from the OpenAI
+ * shape (EndpointAdvanced), and Test also says whether its model calls
+ * tools, which chat needs to search the libraries.
  */
 
 type Source = 'endpoint' | 'key' | 'shared' | 'env' | 'cli' | 'sidecar' | 'none'
@@ -40,14 +44,23 @@ export interface AccessStatus {
   } | null
   login: LoginState | null
 }
+/** The header an endpoint takes its key in. */
+export type EndpointAuth = 'bearer' | 'api-key' | 'x-api-key' | 'none'
+/** A stored endpoint's options as the server reports them: header names,
+ *  never their values. */
+interface EndpointSummary { auth: EndpointAuth; headers: string[]; models: string[]; query: string }
 interface KeyStatus {
   authEnabled?: boolean; single?: boolean; verified: boolean; mode: 'stored' | 'session' | 'none'
   last4?: string; addedAt?: string; sessionExpiresAt?: string; kind?: string; credExpiresAt?: string | null; credExpired?: boolean
-  baseUrl?: string | null; gatewayHost?: string
+  baseUrl?: string | null; gatewayHost?: string; endpoint?: EndpointSummary | null
   shared?: { active: boolean; last4?: string; sharedBy?: string; sharedAt?: string; credExpired?: boolean; mine?: boolean }
   sharingAllowed?: boolean
 }
 interface Health { status: string; models: number; gatewayHost?: string; message?: string | null; platformAccess?: boolean | null; unlockUrl?: string | null }
+/** Whether chat can use tools with the model a test used. */
+export interface ToolCheck { model: string; result: 'calls' | 'no-call' | 'refused' | 'failed' | 'emulated'; message: string }
+export interface KeyTestResult extends Health { ids?: string[]; checked?: 'models' | 'completion'; notFound?: string; toolCheck?: ToolCheck }
+type Note = { tone: CalloutTone; text: string; detail?: string; action?: { label: string; run: () => void } }
 interface Device { url: string; code: string }
 interface Subscriptions {
   available: boolean; reason?: string
@@ -67,11 +80,67 @@ const PRESETS: { value: string; label: string; url: string }[] = [
   { value: 'vllm', label: 'vLLM on this computer', url: 'http://127.0.0.1:8000/v1' },
   { value: 'openai', label: 'OpenAI API (API key)', url: 'https://api.openai.com/v1' },
   { value: 'github', label: 'GitHub Models (token with models:read)', url: 'https://models.github.ai/inference' },
-  { value: 'other', label: 'Other OpenAI-compatible endpoint', url: '' },
+  { value: 'other', label: 'Other, such as a site AI portal', url: '' },
 ]
 /** A server on this computer takes no key; anything else needs one. */
 export const isLocalUrl = (url: string) => /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?(\/|$)/i.test(url.trim())
 const presetOf = (url: string | null | undefined) => PRESETS.find(p => p.url && p.url === String(url ?? '').replace(/\/+$/, ''))?.value ?? 'other'
+
+const AUTH_ITEMS: SelectItem<EndpointAuth>[] = [
+  { value: 'bearer', label: 'Authorization: Bearer <key>' },
+  { value: 'api-key', label: 'api-key: <key>' },
+  { value: 'x-api-key', label: 'x-api-key: <key>' },
+  { value: 'none', label: 'None: no key is sent' },
+]
+
+/** An endpoint's base URL from an address that names one of its paths, as
+ *  a portal's documentation often gives it (…/v1/chat/completions). */
+export function endpointBase(url: string): string {
+  return url.trim().replace(/\/+$/, '').replace(/\/(chat\/completions|completions|models|embeddings|responses)$/, '')
+}
+
+/**
+ * What was typed as the host on the ACTIVATE API key tab. A platform host
+ * becomes its model gateway, https://<host>/api/openai/v1 (http only when
+ * typed so). An address with
+ * any other path (…/v1, …/v1/chat/completions) is an API, so it is read as
+ * the base URL of an OpenAI-compatible endpoint instead: a site's AI portal
+ * entered on the wrong tab, which the platform path can only answer with 404.
+ */
+export function readPlatformHost(typed: string): { host: string; origin: string; platformUrl: string; endpointUrl: string | null } {
+  const t = typed.trim()
+  if (!t) return { host: '', origin: '', platformUrl: '', endpointUrl: null }
+  let u: URL
+  try { u = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(t) ? t : `https://${t}`) } catch {
+    const host = t.replace(/^[a-z]+:\/\//i, '').replace(/\/.*$/, '')
+    return { host, origin: `https://${host}`, platformUrl: `https://${host}/api/openai/v1`, endpointUrl: null }
+  }
+  const origin = `${u.protocol === 'http:' ? 'http:' : 'https:'}//${u.host}`
+  const path = u.pathname.replace(/\/+$/, '')
+  const api = !!path && !/^\/api\/openai(\/v1)?$/.test(path)
+  return { host: u.host, origin, platformUrl: `${origin}/api/openai/v1`, endpointUrl: api ? endpointBase(`${origin}${path}`) : null }
+}
+
+/** A key test's outcome as the note under the form: whether the endpoint
+ *  answered, and, when it did, whether chat can use tools with its model. */
+export function testNote(h: KeyTestResult, prefix = ''): Note {
+  if (h.status !== 'ok') return { tone: h.status === 'offline' ? 'warning' : 'error', text: `${prefix}${h.message ?? `The check failed (${h.status}).`}` }
+  const what = h.checked === 'completion'
+    ? `a chat completion with ${h.ids?.[0] ?? 'the first model'} answered`
+    : `${h.models} model${h.models === 1 ? '' : 's'} available`
+  const text = `${prefix}Connected: ${what}.`
+  if (!h.toolCheck) return { tone: 'success', text }
+  const r = h.toolCheck.result
+  return { tone: r === 'calls' ? 'success' : r === 'no-call' || r === 'refused' ? 'warning' : 'info', text, detail: h.toolCheck.message }
+}
+
+/** The chat's own remembered model, which a test checks tool calling with
+ *  when the endpoint lists it. */
+function chatModel(): string | undefined {
+  try { const v = JSON.parse(localStorage.getItem('aiChat.model') ?? 'null'); return typeof v === 'string' && v ? v : undefined } catch { return undefined }
+}
+
+interface HeaderRow { name: string; value: string; stored: boolean }
 
 async function api<T>(url: string, init?: { method?: string; body?: unknown }): Promise<T> {
   const res = await fetch(url, init ? {
@@ -118,7 +187,7 @@ export function ModelAccessSection({ requirePersonalKey = false }: { requirePers
   const [loadError, setLoadError] = useState('')
   const [tab, setTab] = useState<Tab | null>(null)
   const [busy, setBusy] = useState(false)
-  const [note, setNote] = useState<{ tone: CalloutTone; text: string } | null>(null)
+  const [note, setNote] = useState<Note | null>(null)
 
   // Key and endpoint forms.
   const [keyInput, setKeyInput] = useState('')
@@ -126,6 +195,21 @@ export function ModelAccessSection({ requirePersonalKey = false }: { requirePers
   const [persistKey, setPersistKey] = useState(true)
   const [preset, setPreset] = useState('ollama')
   const [baseUrl, setBaseUrl] = useState(PRESETS[0].url)
+  // The endpoint's Advanced options. Stored header values never come back
+  // from the server: a stored header shows its name, and an empty value
+  // keeps what is stored.
+  const [auth, setAuth] = useState<EndpointAuth>('bearer')
+  const [headerRows, setHeaderRows] = useState<HeaderRow[]>([])
+  const [modelNames, setModelNames] = useState('')
+  const [query, setQuery] = useState('')
+  const [advanced, setAdvanced] = useState(false)
+  const filled = useRef(false)
+  const fillEndpoint = (e: EndpointSummary | null | undefined) => {
+    setAuth(e?.auth ?? 'bearer')
+    setHeaderRows((e?.headers ?? []).map(name => ({ name, value: '', stored: true })))
+    setModelNames((e?.models ?? []).join('\n'))
+    setQuery(e?.query ?? '')
+  }
 
   // Signing the CLI in.
   const [loginHost, setLoginHost] = useState('')
@@ -140,7 +224,10 @@ export function ModelAccessSection({ requirePersonalKey = false }: { requirePers
       setLoadError('')
       setLogin(l => a.login ?? l)
       setTab(t => t ?? (a.models.source === 'endpoint' ? 'endpoint' : a.models.source === 'key' ? 'key' : a.single ? 'cli' : 'deployment'))
-      if (a.models.source === 'endpoint' && a.models.baseUrl) { setPreset(presetOf(a.models.baseUrl)); setBaseUrl(a.models.baseUrl) }
+      if (!filled.current && a.models.source === 'endpoint' && a.models.baseUrl) {
+        setPreset(presetOf(a.models.baseUrl)); setBaseUrl(a.models.baseUrl); fillEndpoint(k.endpoint)
+      }
+      filled.current = true
       setLoginHost(h => h || a.login?.host || (a.cli?.contexts.find(c => c.name === a.cli?.active)?.server ?? ''))
       const [h, m] = await Promise.all([
         api<Health>(`/api/ai/health${fresh ? '?fresh=1' : ''}`).catch(() => null),
@@ -194,19 +281,74 @@ export function ModelAccessSection({ requirePersonalKey = false }: { requirePers
         + (clearKey ? ` Your ${access?.models.source === 'endpoint' ? 'endpoint' : 'key'} was removed.` : ''),
     )
   }
-  const saveKey = (key: string, url: string) => run(
-    () => api('/api/me/model-key', { body: { key, persist: persistKey, baseUrl: url } }),
+  /** The Advanced options as the server takes them: a stored header left
+   *  empty is sent by name alone, which keeps its stored value. */
+  const endpointBody = () => ({
+    auth,
+    headers: headerRows.filter(h => h.name.trim() || h.value.trim()).map(h => ({ name: h.name.trim(), ...(h.value.trim() ? { value: h.value.trim() } : {}) })),
+    models: modelNames.split(/[\n,]/).map(m => m.trim()).filter(Boolean),
+    query: query.trim(),
+  })
+  const saveKey = (key: string, url: string, endpoint?: ReturnType<typeof endpointBody>) => run(
+    async () => {
+      const st = await api<KeyStatus>('/api/me/model-key', { body: { key, persist: persistKey, baseUrl: url, ...(endpoint ? { endpoint } : {}) } })
+      if (endpoint) fillEndpoint(st.endpoint)
+    },
     'Saved.',
   )
-  const removeKey = () => run(() => api('/api/me/model-key/clear', { body: {} }), 'Removed.')
-  const testCandidate = async (key: string, url: string) => {
+  const removeKey = () => run(async () => { await api('/api/me/model-key/clear', { body: {} }); fillEndpoint(null) }, 'Removed.')
+  const test = (body: Record<string, unknown>) =>
+    api<KeyTestResult>('/api/me/model-key/test', { body: { ...body, ...(chatModel() ? { model: chatModel() } : {}) } })
+  const testCandidate = async (key: string, url: string, endpoint?: ReturnType<typeof endpointBody>) => {
     setBusy(true)
     setNote(null)
     try {
-      const h = await api<Health & { ids?: string[] }>('/api/me/model-key/test', { body: { key, baseUrl: url || undefined } })
-      setNote(h.status === 'ok'
-        ? { tone: 'success', text: `It works: ${h.models} model${h.models === 1 ? '' : 's'} available.` }
-        : { tone: h.status === 'offline' ? 'warning' : 'error', text: h.message ?? `The check failed (${h.status}).` })
+      setNote(testNote(await test({ key, baseUrl: url || undefined, ...(endpoint ? { endpoint } : {}) })))
+    } catch (e) {
+      setNote({ tone: 'error', text: errText(e) })
+    } finally {
+      setBusy(false)
+    }
+  }
+  /** An endpoint address typed on the ACTIVATE API key tab, moved to the
+   *  OpenAI-compatible endpoint tab with the key that came with it. */
+  const moveToEndpoint = (url: string) => {
+    // A stored endpoint's options belong to its own address.
+    if (access?.models.source !== 'endpoint' || access.models.baseUrl !== url) fillEndpoint(null)
+    setBaseUrl(url)
+    setPreset(presetOf(url))
+    setKeyHost('')
+    setTab('endpoint')
+    setNote({ tone: 'info', text: `Moved to OpenAI-compatible endpoint, with ${url} as the base URL and the key you entered. Test it here, then Save and use.` })
+  }
+  /** Test on the ACTIVATE API key tab. An address with a path is tested as
+   *  the endpoint it is. A host whose platform path does not exist is asked
+   *  once more at /v1, so the note can say what the host is. */
+  const testKeyTab = async () => {
+    const typed = readPlatformHost(keyHost)
+    const key = keyInput.trim()
+    setBusy(true)
+    setNote(null)
+    try {
+      if (typed.endpointUrl) {
+        const url = typed.endpointUrl
+        const h = await test({ key, baseUrl: url })
+        setNote({ ...testNote(h, `Tested as an OpenAI-compatible endpoint at ${url}, since the address has a path. `), action: { label: 'Use as an endpoint', run: () => moveToEndpoint(url) } })
+        return
+      }
+      const h = await test({ key, baseUrl: typed.platformUrl || undefined })
+      if (!h.notFound || !typed.host) { setNote(testNote(h)); return }
+      const v1 = `${typed.origin}/v1`
+      const alt = await test({ key, baseUrl: v1, tools: false }).catch(() => null)
+      const answers = alt && (alt.status === 'ok' || alt.status === 'auth')
+      setNote({
+        tone: 'warning',
+        text: `${typed.host} is not an ACTIVATE platform, since ${h.notFound} does not exist (404).`,
+        detail: answers
+          ? `${v1} answers as an OpenAI-compatible endpoint${alt!.status === 'ok' ? ` with ${alt!.models} model${alt!.models === 1 ? '' : 's'}` : ', and refused this key'}. Use it under OpenAI-compatible endpoint.`
+          : 'A site AI portal or another OpenAI-compatible service goes under OpenAI-compatible endpoint, with its base URL.',
+        action: { label: answers ? 'Use as an endpoint' : 'Open OpenAI-compatible endpoint', run: () => moveToEndpoint(answers ? v1 : typed.origin) },
+      })
     } catch (e) {
       setNote({ tone: 'error', text: errText(e) })
     } finally {
@@ -270,22 +412,32 @@ export function ModelAccessSection({ requirePersonalKey = false }: { requirePers
     : 'error'
   const modelCount = models?.length ?? health?.models ?? 0
 
+  // Named for what each is, since "API key" and "Endpoint" alone did not
+  // say which kind of key or endpoint; short enough to fit a phone's width.
   const tabs: { value: Tab; label: string }[] = [
-    single ? { value: 'cli', label: 'pw CLI' } : { value: 'deployment', label: 'Deployment' },
-    { value: 'key', label: 'API key' },
-    { value: 'endpoint', label: 'Endpoint' },
+    single ? { value: 'cli', label: 'ACTIVATE (pw CLI)' } : { value: 'deployment', label: 'ACTIVATE (deployment)' },
+    { value: 'key', label: 'ACTIVATE API key' },
+    { value: 'endpoint', label: 'OpenAI-compatible endpoint' },
   ]
   const presets: SelectItem<string>[] = PRESETS.map(p => ({ value: p.value, label: p.label }))
   const local = isLocalUrl(baseUrl)
-  // Saving with no key stores the no-key marker, which is right for a server
-  // on this computer and wrong for anything else; and saving the stored
-  // endpoint again with no key would replace its key with that marker.
+  // With no key typed: the stored endpoint keeps its stored key, which lets
+  // its options change without the key; a server on this computer, or an
+  // endpoint whose key header is None, takes the no-key marker; anything
+  // else needs a key.
   const sameEndpoint = access.models.source === 'endpoint' && (access.models.baseUrl ?? '') === baseUrl.trim().replace(/\/+$/, '')
-  const canSaveEndpoint = !!baseUrl.trim() && (keyInput.trim() ? true : local && !sameEndpoint)
-  const keyHostUrl = (() => {
-    const h = keyHost.trim().replace(/^https?:\/\//, '').replace(/\/.*$/, '')
-    return h ? `https://${h}/api/openai/v1` : ''
-  })()
+  const endpointKey = keyInput.trim() || (sameEndpoint ? '' : local || auth === 'none' ? NO_KEY : null)
+  const canSaveEndpoint = !!baseUrl.trim() && endpointKey !== null
+  const typedHost = readPlatformHost(keyHost)
+  // What Advanced holds, on its folded line, so a stored endpoint's
+  // options show without opening it.
+  const namedHeaders = headerRows.filter(h => h.name.trim()).length
+  const advancedParts = [
+    auth !== 'bearer' ? (auth === 'none' ? 'no key header' : `key in ${auth}`) : '',
+    namedHeaders ? `${namedHeaders} header${namedHeaders === 1 ? '' : 's'}` : '',
+    modelNames.trim() ? 'model names' : '',
+    query.trim() ? 'query string' : '',
+  ].filter(Boolean)
 
   return (
     <div className="model-access">
@@ -309,7 +461,9 @@ export function ModelAccessSection({ requirePersonalKey = false }: { requirePers
         )}
         {access.models.source === 'none' ? (
           <p className="muted key-note">
-            {single ? 'Sign the pw CLI in to a platform below, paste an API key, or connect an endpoint such as a model server on this computer.' : 'Add an API key or an endpoint below.'}
+            {single
+              ? 'Sign the pw CLI in to an ACTIVATE platform below, paste an ACTIVATE API key, or connect an OpenAI-compatible endpoint, such as a site AI portal or a model server on this computer.'
+              : 'Add an ACTIVATE API key or an OpenAI-compatible endpoint below.'}
           </p>
         ) : health && health.status !== 'ok' && (health.message || modelsError) && (
           <p className="muted key-note">{health.message || modelsError}</p>
@@ -345,11 +499,12 @@ export function ModelAccessSection({ requirePersonalKey = false }: { requirePers
 
       {tab === 'deployment' && (
         <div className="access-panel">
+          <p className="access-lead">The ACTIVATE credential this deployment runs with, for anyone without a key of their own.</p>
           <p className="muted view-sub">
             {access.deployment.source === 'none'
               ? 'This deployment has no credential of its own, so each person adds a key or an endpoint.'
               : `Without a key of your own, requests use ${describeSource(access.deployment, false)}.`}
-            {requirePersonalKey && ' This deployment requires each person to add their own, under API key or Endpoint.'}
+            {requirePersonalKey && ' This deployment requires each person to add their own, under ACTIVATE API key or OpenAI-compatible endpoint.'}
           </p>
           {stored && (
             <div className="key-row">
@@ -361,9 +516,11 @@ export function ModelAccessSection({ requirePersonalKey = false }: { requirePers
 
       {tab === 'key' && (
         <div className="access-panel">
+          <p className="access-lead">A token or API key from an ACTIVATE account, for its models and its platform.</p>
           <p className="muted view-sub">
-            A platform token or platform API key (from your ACTIVATE account, Account, API keys) covers models and the
-            platform. An AI gateway key covers models only.{stored && access.models.source !== 'key' ? ' Saving one replaces your endpoint.' : ''}
+            A platform token or platform API key (Account, API keys) covers models and the platform; an AI gateway key covers
+            models only. The host is the platform's own, such as platform.example.com. A site AI portal or another API goes
+            under OpenAI-compatible endpoint.{stored && access.models.source !== 'key' ? ' Saving one replaces your endpoint.' : ''}
           </p>
           <div className="key-row">
             <div className="grow">
@@ -379,6 +536,15 @@ export function ModelAccessSection({ requirePersonalKey = false }: { requirePers
                 onChange={e => setKeyHost(e.target.value)} />
             </div>
           </div>
+          {typedHost.endpointUrl && (
+            <Callout tone="info" className="rag-banner key-as-endpoint" title="This is an endpoint address, not a platform host"
+              action={<Button variant="secondary" size="sm" onClick={() => moveToEndpoint(typedHost.endpointUrl!)}>Use as an endpoint</Button>}>
+              <p className="identity-note">
+                {keyHost.trim()} has a path, so it is the address of an API. A site AI portal or any other OpenAI-compatible
+                service goes under OpenAI-compatible endpoint, with <code>{typedHost.endpointUrl}</code> as its base URL.
+              </p>
+            </Callout>
+          )}
           {!single && (
             <label className="key-persist">
               <Checkbox checked={persistKey} onCheckedChange={setPersistKey} />
@@ -386,9 +552,9 @@ export function ModelAccessSection({ requirePersonalKey = false }: { requirePers
             </label>
           )}
           <div className="key-row access-actions">
-            <Button variant="primary" disabled={busy || !keyInput.trim()}
-              onClick={async () => { if (await saveKey(keyInput.trim(), keyHostUrl)) setKeyInput('') }}>Save and use</Button>
-            <Button variant="secondary" disabled={busy || !keyInput.trim()} onClick={() => void testCandidate(keyInput.trim(), keyHostUrl)}>Test</Button>
+            <Button variant="primary" disabled={busy || !keyInput.trim() || !!typedHost.endpointUrl}
+              onClick={async () => { if (await saveKey(keyInput.trim(), typedHost.platformUrl)) setKeyInput('') }}>Save and use</Button>
+            <Button variant="secondary" disabled={busy || !keyInput.trim()} onClick={() => void testKeyTab()}>Test</Button>
             {access.models.source === 'key' && <Button variant="danger" disabled={busy} onClick={() => void removeKey()}>Remove</Button>}
           </div>
           {me.mode !== 'none' && access.models.source === 'key' && (
@@ -404,9 +570,10 @@ export function ModelAccessSection({ requirePersonalKey = false }: { requirePers
 
       {tab === 'endpoint' && (
         <div className="access-panel">
+          <p className="access-lead">Any service that speaks the OpenAI API, such as a site AI portal, a provider, or a model server on this computer.</p>
           <p className="muted view-sub">
-            Any OpenAI-compatible endpoint: a provider, or a model server on this computer, which keeps working with no
-            network. It covers models only; platform tools keep using {single ? 'the pw CLI' : 'the deployment credential'}.
+            The base URL usually ends in /v1. An endpoint covers models only; platform tools keep using {single ? 'the pw CLI' : 'the deployment credential'}.
+            A model server on this computer keeps working with no network.
           </p>
           <div className="key-row">
             <Field layout="inline" compact label="Endpoint" className="provider-field">
@@ -423,14 +590,20 @@ export function ModelAccessSection({ requirePersonalKey = false }: { requirePers
           <div className="key-row">
             <div className="grow">
               <Input type="password" aria-label="Endpoint key" value={keyInput} autoComplete="off"
-                placeholder={local ? 'API key, if the server asks for one' : sameEndpoint ? 'A new API key, to replace the stored one' : 'API key'}
+                placeholder={auth === 'none' ? 'No key is sent (Advanced, Key header)' : sameEndpoint ? 'Stored; type a new key to replace it' : local ? 'API key, if the server asks for one' : 'API key'}
                 onChange={e => setKeyInput(e.target.value)} />
             </div>
           </div>
+          <Disclosure className="endpoint-advanced" summaryClassName="endpoint-advanced-summary" panelClassName="endpoint-advanced-panel"
+            open={advanced} onOpenChange={setAdvanced} keepMounted
+            summary={`Advanced${advancedParts.length ? `: ${advancedParts.join(', ')}` : ', for portals that differ'}`}>
+            <EndpointAdvanced auth={auth} setAuth={setAuth} rows={headerRows} setRows={setHeaderRows}
+              modelNames={modelNames} setModelNames={setModelNames} query={query} setQuery={setQuery} keepStored={sameEndpoint} />
+          </Disclosure>
           <div className="key-row access-actions">
             <Button variant="primary" disabled={busy || !canSaveEndpoint}
-              onClick={async () => { if (await saveKey(keyInput.trim() || NO_KEY, baseUrl.trim())) setKeyInput('') }}>Save and use</Button>
-            <Button variant="secondary" disabled={busy || !baseUrl.trim()} onClick={() => void testCandidate(keyInput.trim() || NO_KEY, baseUrl.trim())}>Test</Button>
+              onClick={async () => { if (await saveKey(endpointKey ?? '', baseUrl.trim(), endpointBody())) setKeyInput('') }}>Save and use</Button>
+            <Button variant="secondary" disabled={busy || !baseUrl.trim()} onClick={() => void testCandidate(endpointKey ?? NO_KEY, baseUrl.trim(), endpointBody())}>Test</Button>
             {access.models.source === 'endpoint' && <Button variant="danger" disabled={busy} onClick={() => void removeKey()}>Remove</Button>}
           </div>
           {preset === 'github' && (
@@ -441,7 +614,13 @@ export function ModelAccessSection({ requirePersonalKey = false }: { requirePers
         </div>
       )}
 
-      {note && <Callout className="rag-banner access-note" tone={note.tone} live onDismiss={() => setNote(null)}>{note.text}</Callout>}
+      {note && (
+        <Callout className="rag-banner access-note" tone={note.tone} live onDismiss={() => setNote(null)}
+          title={note.detail ? note.text : undefined}
+          action={note.action ? <Button variant="secondary" size="sm" onClick={note.action.run}>{note.action.label}</Button> : undefined}>
+          {note.detail ?? note.text}
+        </Callout>
+      )}
 
       {/* Offline, the banner already says the platform cannot be reached. */}
       {!offline && (single ? access.platform.source !== 'none' : access.platform.source === 'key') && (
@@ -450,7 +629,7 @@ export function ModelAccessSection({ requirePersonalKey = false }: { requirePers
 
       <p className="muted key-trust">
         {single
-          ? 'A key or endpoint added here is stored on this computer, encrypted, beside the index. The pw CLI keeps its own sign-ins; the Studio reads them and asks the CLI to renew them, and never sends them to the browser.'
+          ? 'A key or endpoint added here, with its header values, is stored on this computer, encrypted, beside the index, and header values are never shown again. The pw CLI keeps its own sign-ins; the Studio reads them and asks the CLI to renew them, and never sends them to the browser.'
           : 'A key added here is available to this server and its operator; encryption at rest protects the stored file, not the running process. Use a key you can revoke. A key bound to an endpoint is never passed to platform commands.'}
       </p>
     </div>
@@ -480,10 +659,8 @@ function CliPanel({ access, busy, login, loginHost, setLoginHost, onUse, onStart
   )
   return (
     <div className="access-panel">
-      <p className="muted view-sub">
-        The platforms the pw CLI on this computer is signed in to. The one in use covers models and the platform: the
-        Workflows page, clusters, and runs.
-      </p>
+      <p className="access-lead">The ACTIVATE platforms the pw CLI on this computer is signed in to, for their models and the platform.</p>
+      <p className="muted view-sub">The context in use covers models, the Workflows page, clusters, and runs.</p>
       <CliLocation cli={cli} busy={busy} onChoose={onChoosePath} />
       {overridden && (
         <p className="identity-note access-override">
@@ -550,6 +727,54 @@ function CliPanel({ access, busy, login, loginHost, setLoginHost, onUse, onStart
       {login && login.state === 'starting' && <p className="key-note"><Loader inline size={14} label="Starting the sign-in…" /></p>}
       {login && login.state === 'done' && <Callout className="rag-banner" tone="success" live onDismiss={onDismissLogin}>{login.message}</Callout>}
       {login && login.state === 'failed' && <Callout className="rag-banner" tone="error" live onDismiss={onDismissLogin}>{login.message}</Callout>}
+    </div>
+  )
+}
+
+/** An endpoint's options for portals that differ from the OpenAI shape:
+ *  the header the key goes in, headers of their own, model names for an
+ *  endpoint that lists none, and a query string for every request. */
+function EndpointAdvanced({ auth, setAuth, rows, setRows, modelNames, setModelNames, query, setQuery, keepStored }: {
+  auth: EndpointAuth
+  setAuth: (a: EndpointAuth) => void
+  rows: HeaderRow[]
+  setRows: (r: HeaderRow[]) => void
+  modelNames: string
+  setModelNames: (m: string) => void
+  query: string
+  setQuery: (q: string) => void
+  /** The stored endpoint is the one in the form, so an empty stored value keeps it. */
+  keepStored: boolean
+}) {
+  const set = (i: number, patch: Partial<HeaderRow>) => setRows(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)))
+  return (
+    <div className="endpoint-advanced-body">
+      <Field layout="inline" compact label="Key header" className="provider-field">
+        <Select className="provider-select" items={AUTH_ITEMS} value={auth} onValueChange={v => { if (v) setAuth(v) }} />
+      </Field>
+      <div className="advanced-label">Extra headers, sent with every request</div>
+      {rows.map((r, i) => (
+        <div className="key-row header-row" key={i}>
+          <div className="header-name">
+            <Input aria-label={`Header ${i + 1} name`} value={r.name} autoComplete="off" spellCheck={false}
+              placeholder="Name, such as X-Org" onChange={e => set(i, { name: e.target.value, stored: false })} />
+          </div>
+          <div className="grow">
+            <Input type="password" aria-label={`Header ${i + 1} value`} value={r.value} autoComplete="off"
+              placeholder={r.stored && keepStored ? 'Stored; type to replace' : 'Value'} onChange={e => set(i, { value: e.target.value })} />
+          </div>
+          <IconButton variant="outline" size="md" icon={<CloseIcon />} label={`Remove header ${r.name || i + 1}`}
+            onClick={() => setRows(rows.filter((_, j) => j !== i))} />
+        </div>
+      ))}
+      <Button variant="ghost" size="sm" onClick={() => setRows([...rows, { name: '', value: '', stored: false }])}>Add a header</Button>
+      <Textarea label="Model names" rows={3} value={modelNames} spellCheck={false} placeholder="One per line"
+        description="For an endpoint that does not list its models: these are offered instead, and Test tries a chat completion with the first."
+        onChange={e => setModelNames(e.target.value)} />
+      <Input label="Query string" value={query} autoComplete="off" spellCheck={false} placeholder="api-version=2024-10-21"
+        description="Added to every request. It is shown here, so put a secret in a header instead."
+        onChange={e => setQuery(e.target.value)} />
+      <p className="muted key-note">Header values are stored like the key, encrypted, and never shown again.</p>
     </div>
   )
 }

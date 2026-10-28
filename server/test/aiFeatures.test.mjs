@@ -73,13 +73,22 @@ test('the one user tests an endpoint: models listed, or what failed said plainly
   const ok = await j('POST', '/api/me/model-key/test', { key: 'sk-good', baseUrl: `${base}/v1` })
   assert.equal(ok.status, 200)
   assert.deepEqual([ok.body.status, ok.body.models, ok.body.ids, ok.body.gatewayHost], ['ok', 2, ['small-model', 'large-model'], `127.0.0.1:${endpoint.address().port}`])
+  // The endpoint answered, so one small request offering a tool asked the
+  // first model whether it calls tools. This stand-in only ever writes text.
+  assert.equal(completions.length, 1)
+  assert.equal(completions[0].body.model, 'small-model')
+  assert.equal(completions[0].body.tools[0].function.name, 'get_utc_time')
+  assert.deepEqual([ok.body.toolCheck.model, ok.body.toolCheck.result], ['small-model', 'no-call'])
+  assert.match(ok.body.toolCheck.message, /^small-model answered without calling the test tool, so chat cannot search the libraries with this model\./)
+  completions.length = 0
   const refused = await j('POST', '/api/me/model-key/test', { key: 'sk-bad', baseUrl: `${base}/v1` })
   assert.equal(refused.body.status, 'auth')
   const none = await j('POST', '/api/me/model-key/test', { key: 'sk-good', baseUrl: `${base}/empty/v1` })
   assert.deepEqual([none.body.status, none.body.models, none.body.ids], ['ok', 0, []])
   const noV1 = await j('POST', '/api/me/model-key/test', { key: 'sk-good', baseUrl: base })
   assert.equal(noV1.body.status, 'unreachable')
-  assert.match(noV1.body.message, /\/models does not exist \(404\)\. An OpenAI-compatible base URL usually ends in \/v1\./)
+  assert.equal(noV1.body.message, `${base}/models does not exist (404). An OpenAI-compatible base URL usually ends in a version, such as ${base}/v1.`)
+  assert.equal(noV1.body.notFound, `${base}/models`)
   const html = await j('POST', '/api/me/model-key/test', { key: 'sk-good', baseUrl: `${base}/html` })
   assert.equal(html.body.status, 'unreachable')
   assert.match(html.body.message, /JSON/)

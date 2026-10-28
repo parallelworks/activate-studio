@@ -71,7 +71,13 @@ export function SidebarSwitches({ value, platform, aiEnabled = true, onChange }:
 
 /** The model key as /api/me/model-key reports it. */
 interface KeyStatus { mode: 'stored' | 'session' | 'none'; last4?: string; baseUrl?: string | null; single?: boolean }
-interface KeyTest { ok: boolean; status: string; models: number; gatewayHost?: string; message?: string | null; ids?: string[] }
+interface KeyTest {
+  ok: boolean; status: string; models: number; gatewayHost?: string; message?: string | null; ids?: string[]
+  /** The URL that answered 404; the message then says what to do. */
+  notFound?: string
+  /** Whether chat can use tools with the model tested (ModelAccessSection). */
+  toolCheck?: { model: string; result: string; message: string }
+}
 
 const hostOf = (url: string | null | undefined) => { try { return new URL(String(url)).host } catch { return '' } }
 
@@ -84,6 +90,8 @@ const sameUrl = (a: string | null | undefined, b: string) => String(a ?? '').tri
 export function keyTestProblem(t: KeyTest, baseUrl: string): string | null {
   const host = t.gatewayHost || hostOf(baseUrl) || 'The endpoint'
   if (t.status === 'auth') return `Unauthorized: ${host} refused this key. Check the key, and that it is for this endpoint.`
+  // The message names the URL and what to do about it.
+  if (t.notFound && t.message) return t.message
   if (t.status !== 'ok') {
     const m = String(t.message ?? '')
     const why = /abort|timeout/i.test(m) ? 'did not answer within 8 seconds.'
@@ -131,7 +139,8 @@ function AiStep({ enabled, sections, me, onSaved, onOpenAccess }: {
   const runTest = async () => {
     setBusy('test'); setError(''); setSaved('')
     try {
-      const r = await post<KeyTest>('/api/me/model-key/test', { key: sent, baseUrl: baseUrl.trim() })
+      // Tool calling is checked with the model chosen here, once there is one.
+      const r = await post<KeyTest>('/api/me/model-key/test', { key: sent, baseUrl: baseUrl.trim(), ...(model ? { model } : {}) })
       setTest({ fields, result: r })
       setModel(m => (r.ids?.includes(m) ? m : r.ids?.[0] ?? ''))
     } catch (e) { setError(errText(e)) } finally { setBusy(null) }
@@ -173,12 +182,13 @@ function AiStep({ enabled, sections, me, onSaved, onOpenAccess }: {
       {enabled && (
         <>
           <p className="muted" style={{ margin: 0 }}>
-            An OpenAI-compatible endpoint: a provider, a gateway, or a model server such as vLLM or Ollama. The key is stored
-            on this computer, encrypted.
+            An OpenAI-compatible endpoint: a site AI portal, a provider, a gateway, or a model server such as vLLM or Ollama.
+            The key is stored on this computer, encrypted. A portal that wants other headers, or does not list its models, is
+            set up under OpenAI-compatible endpoint, Advanced, in {access}.
           </p>
           <p className="muted" style={{ margin: 0 }}>
-            An ACTIVATE account works too: set it up in {access}, or enter it here with the base
-            URL <code>https://&lt;platform host&gt;/api/openai/v1</code> and an API key from the account.
+            An ACTIVATE account works too: set it up in {access}, under ACTIVATE (pw CLI) or ACTIVATE API key, or enter it
+            here with the base URL <code>https://&lt;platform host&gt;/api/openai/v1</code> and an API key from the account.
           </p>
           {me && me.mode !== 'none' && me.baseUrl && !saved && (
             <Callout tone="success">
@@ -202,6 +212,11 @@ function AiStep({ enabled, sections, me, onSaved, onOpenAccess }: {
               <Callout tone="success" live title={`${result.models} model${result.models === 1 ? '' : 's'} offered by ${result.gatewayHost || hostOf(baseUrl)}`}>
                 {ids.slice(0, 8).join(', ')}{ids.length > 8 ? `, and ${ids.length - 8} more` : ''}
               </Callout>
+              {result.toolCheck && (
+                <Callout tone={result.toolCheck.result === 'calls' ? 'success' : result.toolCheck.result === 'no-call' || result.toolCheck.result === 'refused' ? 'warning' : 'info'}>
+                  {result.toolCheck.message}
+                </Callout>
+              )}
               <Field label="Default model">
                 <Select items={ids.map(id => ({ value: id, label: id }))} value={model || null} onValueChange={v => v && setModel(v)} />
               </Field>

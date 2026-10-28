@@ -25,3 +25,26 @@
   .model-access .key-row .grow { min-width: 0; flex-basis: 100%; }
   .model-access .provider-select { min-width: 0; }
 }
+/* Each source's one-line description, above its details. */
+.model-access .access-lead { margin: 0 0 4px; font-size: 13px; line-height: 1.5; }
+.model-access .key-as-endpoint { margin: 8px 0 0; }
+.model-access .key-as-endpoint code { overflow-wrap: anywhere; }
+.model-access .endpoint-advanced { margin: 10px 0 0; max-width: var(--settings-measure); }
+.model-access .endpoint-advanced-summary { color: var(--pw-muted); font-size: 13px; user-select: none; }
+.model-access .endpoint-advanced-body { display: flex; flex-direction: column; gap: 8px; padding: 8px 0 4px 2px; }
+.model-access .endpoint-advanced-body > .pw-button, .model-access .endpoint-advanced-body > button { align-self: flex-start; }
+.model-access .advanced-label { font-size: 13px; font-weight: 500; margin-top: 4px; }
+.model-access .header-row .header-name { flex: 0 1 200px; min-width: 140px; }
+.model-access .endpoint-advanced-body .key-note { margin: 0; }
+/* The sources' names are read whole: where the row is narrower than they
+   need (a phone, or the page beside the status panel), they stack. */
+.model-access .access-source { container-type: inline-size; }
+@container (max-width: 520px) {
+  .model-access .access-source [role='group'] { display: flex; flex-direction: column; align-items: stretch; }
+  .model-access .access-source [role='group'] > button { justify-content: flex-start; }
+}
+@media (max-width: 520px) {
+  /* A header's name on its own line, its value beside the remove button. */
+  .model-access .header-row .header-name { flex: 1 1 100%; }
+  .model-access .header-row .grow { flex: 1 1 calc(100% - 48px); }
+}
