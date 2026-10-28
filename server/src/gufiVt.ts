@@ -8,7 +8,7 @@ import { GUFI_BIN, HOST, PORT, gufiEnv } from './config.js'
 import type { Library } from './libraries.js'
 import { isDirect, remoteRun, shellFor } from './remoteExec.js'
 import { gufiTool, REMOTE_PREFIX, remoteHostKey, remoteTarget } from './userLibraries.js'
-import { noteGufi } from './gufiTrace.js'
+import { execRun, type GufiRun, noteGufi, remoteGufi } from './gufiTrace.js'
 
 /**
  * A query across several libraries as one gufi_vt statement, GUFI's own
@@ -45,7 +45,7 @@ const THREADS = 4
 /** A remote location gufi_vt asks through the wrapper: the session, and
  *  the index roots (one per library; several when libraries on one host
  *  are stacked) it may run gufi_query on. */
-interface Location { site: string; key: string; gufiBin: string; index: string; indexes?: string[]; label: string; error?: string; ran?: { argv: string[]; ms: number }; at: number }
+interface Location { site: string; key: string; gufiBin: string; index: string; indexes?: string[]; label: string; error?: string; ran?: GufiRun & { argv: string[] }; at: number }
 const tokens = new Map<string, Location>()
 
 /**
@@ -134,8 +134,11 @@ export function gufiVtAvailable(): Promise<boolean> {
     // A remote location whose command prints nothing and exits 0 answers
     // with no rows; a build without remote_cmd refuses the table.
     const probe = `CREATE VIRTUAL TABLE temp.p USING gufi_vt(index='/', E="SELECT name FROM vrpentries;", remote_cmd='${nothing}'); SELECT count(*) FROM temp.p;`
-    execFile(sqlite, [':memory:', probe], { timeout: 15_000, env: gufiEnv() },
-      (err, out) => resolve(!err && String(out).trim() === '0'))
+    const t0 = Date.now()
+    execFile(sqlite, [':memory:', probe], { timeout: 15_000, env: gufiEnv() }, (err, out, se) => {
+      noteGufi([sqlite, ':memory:', probe], { engine: 'gufi_sqlite3', show: false, ...execRun(err, se, t0) })
+      resolve(!err && String(out).trim() === '0')
+    })
   })
   return available
 }
@@ -257,23 +260,27 @@ export async function runAcross(items: { lib: Library; plan: Plan }[], order: Vt
   const sqlite = path.join(GUFI_BIN, 'gufi_sqlite3')
   const t1 = Date.now()
   let out: string
+  let ran: GufiRun = { t0: t1 }
   try {
     out = await new Promise<string>((resolve, reject) => {
       execFile(sqlite, ['-d', 'x', ':memory:', script], {
         timeout: 300_000, maxBuffer: 64 * 1024 * 1024,
         env: gufiEnv({ STUDIO_GUFI_VT_URL: selfUrl(), STUDIO_GUFI_VT_SECRET: SECRET }),
-      }, (err, so, se) => (err ? reject(new Error(String(se || err.message).trim().split('\n').slice(-2).join(' ').slice(0, 300))) : resolve(String(so))))
+      }, (err, so, se) => {
+        ran = execRun(err, se, t1)
+        return err ? reject(new Error(String(se || err.message).trim().split('\n').slice(-2).join(' ').slice(0, 300))) : resolve(String(so))
+      })
     })
   } finally {
     // Shown as a person would run it: gufi_vt's own remote form for the
     // statement, then what each cluster ran.
     let shown = script
     try { shown = vtScript(locs, order, viaShell) } catch { /* a site word gufi_vt cannot quote: show what ran */ }
-    noteGufi([sqlite, '-d', 'x', ':memory:'], { engine: 'gufi_vt', ms: Date.now() - t1, script: shown })
+    noteGufi([sqlite, '-d', 'x', ':memory:'], { engine: 'gufi_vt', script: shown, ...ran })
     for (const l of locs) {
       if (!l.remote) continue
       const loc = tokens.get(l.remote.token)
-      if (loc?.ran) noteGufi(loc.ran.argv, { site: loc.site, ms: loc.ran.ms })
+      if (loc?.ran) { const { argv, ...how } = loc.ran; noteGufi(argv, { site: loc.site, ...how }) }
       if (loc?.error) for (const m of l.members) failed.push({ library: m.label, error: loc.error })
       tokens.delete(l.remote.token)
     }
@@ -303,7 +310,8 @@ export async function runAcross(items: { lib: Library; plan: Plan }[], order: Vt
  *  stderr; when fewer rows come back than roots were asked, each is asked
  *  on its own to find which, and those are reported. */
 async function checkRemote<M extends { id: string; label: string; index: string }>(g: { site: string; key: string; gufiBin: string; members: M[] }, failed: VtResult['failed']): Promise<M[]> {
-  const ask = (indexes: string[]) => remoteRun(g.site, g.key, [gufiTool(g.gufiBin), '-n', '1', '-d', '|', '--min-level', '0', '--max-level', '0', '-S', 'SELECT 1;', ...indexes], 60_000)
+  // A check before the statement: logged, not shown.
+  const ask = (indexes: string[]) => remoteGufi(g.site, g.key, [gufiTool(g.gufiBin), '-n', '1', '-d', '|', '--min-level', '0', '--max-level', '0', '-S', 'SELECT 1;', ...indexes], { timeoutMs: 60_000, show: false })
   const lines = (stdout: string) => stdout.split('\n').filter(l => l.trim()).length
   const why = (r: { code: number; stderr: string }) => r.stderr.trim().split('\n').filter(Boolean).pop() || `the index did not answer (exit ${r.code})`
   try {
@@ -360,9 +368,13 @@ export async function gufiVtRoutes(app: FastifyInstance): Promise<void> {
     if (!rest) return reply.status(400).send('not a gufi_query on this location')
     const argv = [gufiTool(loc.gufiBin), ...rest]
     const t0 = Date.now()
+    // This request is gufi_vt's, outside the query's trace: how the command
+    // ended is kept on the location, and the query notes it.
     const r = await remoteRun(loc.site, loc.key, argv, 300_000)
-      .catch((e: Error) => ({ code: -1, raw: Buffer.alloc(0), stderr: e.message }))
-    loc.ran = { argv, ms: Date.now() - t0 }
+      .catch((e: Error) => ({ code: -1, raw: Buffer.alloc(0), stderr: e.message, failed: e.message }))
+    loc.ran = 'failed' in r
+      ? { argv, t0, ms: Date.now() - t0, error: r.failed }
+      : { argv, t0, ms: Date.now() - t0, code: r.code, stderr: r.stderr, cut: r.stderrCut }
     if (r.code !== 0 && !r.raw.length) loc.error = (r.stderr.trim().split('\n').pop() || `exit ${r.code}`).slice(0, 300)
     reply.header('Content-Type', 'application/octet-stream')
     if (r.stderr) reply.header('X-Stderr', Buffer.from(r.stderr.slice(-2000)).toString('base64'))

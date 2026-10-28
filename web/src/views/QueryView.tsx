@@ -99,6 +99,8 @@ export function QueryView({ onOpen }: { onOpen: (path: string) => void }) {
   const [sql, setSql] = useState("SELECT rpath(sname, sroll)||'/'||vrpentries.name, size FROM vrpentries WHERE size > 1000000")
   const [result, setResult] = useState<QueryResult | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // The commands a failed query ran, with their error output.
+  const [failedGufi, setFailedGufi] = useState<GufiCommand[] | undefined>(undefined)
   const [busy, setBusy] = useState(false)
   // saved
   const [saved, setSaved] = useState<SavedQuery[]>([])
@@ -132,6 +134,7 @@ export function QueryView({ onOpen }: { onOpen: (path: string) => void }) {
   const runQuery = async (payload?: any, over: Scope = scopeRef.current) => {
     setBusy(true)
     setError(null)
+    setFailedGufi(undefined)
     try {
       const res = await fetch('/api/query', {
         method: 'POST',
@@ -140,7 +143,10 @@ export function QueryView({ onOpen }: { onOpen: (path: string) => void }) {
         body: JSON.stringify({ ...(payload ?? currentPayload()), ...scopeBody(over, countRef.current) }),
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.message ?? data.error ?? `${res.status}`)
+      if (!res.ok) {
+        setFailedGufi(data.gufi)
+        throw new Error(data.message ?? data.error ?? `${res.status}`)
+      }
       setResult(data)
       setSel(new Set())
       setTagMenuOpen(false)
@@ -323,7 +329,7 @@ export function QueryView({ onOpen }: { onOpen: (path: string) => void }) {
           <Button variant="primary" loading={busy} onClick={() => runQuery()}>{busy ? 'Running…' : 'Run query'}</Button>
           <Button
             onClick={() => {
-              setResult(null); setError(null); setSel(new Set()); setTagMenuOpen(false)
+              setResult(null); setError(null); setFailedGufi(undefined); setSel(new Set()); setTagMenuOpen(false)
               setB(BLANK); setSubtree('')
             }}
           >Reset</Button>
@@ -352,7 +358,7 @@ export function QueryView({ onOpen }: { onOpen: (path: string) => void }) {
           </div>
         )}
         {error && <Callout tone="error" live className="query-error">{error}</Callout>}
-        <GufiCommands commands={result?.gufi} />
+        <GufiCommands commands={result?.gufi ?? failedGufi} />
       </div>
       {result && (
         <div className={`query-results card ${sel.size ? 'has-sel' : ''}`}>

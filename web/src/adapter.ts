@@ -1,6 +1,7 @@
 import type { ChatAdapter, ModelsList, StreamCompletion } from '@parallelworks/ui/ai'
 import { getChatLibrary, getLabelScope, getPersona } from './labelScope'
 import { fetchModels } from './api'
+import { rememberToolCommands } from './components/GufiCommands'
 
 async function listModels(): Promise<ModelsList> {
   // The shared request is typed loosely; the package's own types apply here.
@@ -83,6 +84,9 @@ const streamFromServer: StreamCompletion = async (req, handlers, signal) => {
           // Held for the user's approval; an approval event follows.
           handlers.onPart?.({ type: 'tool_wait', id: payload.id })
         } else {
+          // The GUFI commands the call ran, which the package's part does
+          // not carry; the tool's block reads them by the call's id.
+          if (payload.id && Array.isArray(payload.gufi)) rememberToolCommands(payload.id, payload.gufi)
           handlers.onPart?.({
             type: 'tool_end',
             id: payload.id ?? payload.name,

@@ -706,7 +706,7 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
     // omitted: every library in scope left out, or searched in part, and why.
     const omitted = scope.omitted
     const semantic = refine ? !!refine.text && wantsSemantic(meaningPhrase(refine.text)) : wantsSemantic(q)
-    const { result: hits, commands } = await traced(() => searchScope(libs, refine ? '' : q, n, { semantic, slow, omitted, refine }))
+    const { result: hits, commands } = await traced('search', () => searchScope(libs, refine ? '' : q, n, { semantic, slow, omitted, refine }))
     // The main library's labels are on its files and in its index; the
     // other libraries' are kept by the Studio (libraryLabels.ts). A label
     // filter applies to both.

@@ -34,6 +34,7 @@ Ask in plain language. The assistant searches the knowledge base, reads the file
 - Send a message while a reply is running to steer it: the reply takes it in at its next step and shows "You added" where it did. A message sent while the reply is writing its final answer goes out after it, as before.
 - A message whose reply was cut off, for example when the Studio restarted, says so and offers **Retry**, which sends it again.
 - While a reply streams, its thinking and tool calls stay folded to one line each; click one to open it.
+- When the assistant searches, queries, or lists a folder, **GUFI command** under that call shows the commands it ran, ready to copy, as Search does. Only you see them, and the model does not receive them.
 
 ## Library
 
@@ -64,7 +65,7 @@ When a search leaves a library out, or searches it only in part, a line above th
 - Label chips under the box narrow the results.
 - Tick results to label them together.
 - **Export CSV** saves the results listed (with **Load more** for up to 1,000) as a CSV file: library, path, name, how each was found, size in bytes, modified time in UTC, labels and the snippet. **Copy** puts the same rows on the clipboard as tab-separated text, which a spreadsheet pastes into columns. In the macOS app the file goes to Downloads.
-- **GUFI commands**, under the results, shows the commands that found them, ready to copy and run in a terminal.
+- **GUFI commands**, under the results, shows the commands that found them, ready to copy and run in a terminal, with where each ran, when, how long it took, and its exit status. **Error output** under a command shows what it wrote to stderr. Lines saying "no such table" for the text or vector tables are expected, from folders without text or vectors, and are counted apart from the rest.
 
 ## Adding material
 
@@ -80,7 +81,7 @@ In the knowledge base the labels are saved on the files. In any other library, i
 
 ## Query
 
-Structured questions about the files themselves (largest, oldest, totals by type or owner) answered in milliseconds, in the libraries ticked under **Querying**. Pick a preset under **Start from** and change it, add conditions (all must match, or any), or write read-only SQL, and save the ones you reuse. Sizes take units (`10 MB`), and dates take a day (`2026-01-01`) or a time ago (`7 days`). **GUFI commands** under the form shows what ran, ready to copy, and the code button beside a saved query, or **Show SQL** for the form on screen, shows the SQL it runs and its command.
+Structured questions about the files themselves (largest, oldest, totals by type or owner) answered in milliseconds, in the libraries ticked under **Querying**. Pick a preset under **Start from** and change it, add conditions (all must match, or any), or write read-only SQL, and save the ones you reuse. Sizes take units (`10 MB`), and dates take a day (`2026-01-01`) or a time ago (`7 days`). **GUFI commands** under the form shows what ran, ready to copy, with each command's error output, also when the query fails; the code button beside a saved query, or **Show SQL** for the form on screen, shows the SQL it runs and its command.
 
 **Export CSV** above the rows saves them as a CSV file, sizes in bytes, and **Copy** puts them on the clipboard for a spreadsheet. Both take the rows the query returned, up to its limit (2,000 at most); for more, narrow the query or run the command under **GUFI commands** in a terminal.
 
@@ -191,6 +192,6 @@ A build runs in four phases, each with its own count: **names** (every file and 
 
 On macOS, a folder in Desktop, Documents or Downloads, in iCloud Drive, or on a removable or network volume can be read only once macOS allows it, in System Settings, Privacy & Security, Files and Folders (or Full Disk Access). Until then {appName} indexes the rest, names the folders it could not read in search and Query, and keeps what it had indexed of them.
 
-Settings, General, **Indexing** sets how many threads each phase uses (one per processor core by default), the main folder's index depth, how documents are read (the PDF reader for files the converter cannot read, LibreOffice for previews and for Office files the built-in readers cannot read, and, from Text + OCR up, image descriptions by the vision model chosen under AI features), the speed of search by meaning (**Standard**, or **Faster**: the first 128 tokens of each passage rather than 256, in well under half the time, with slightly lower ranking), and where the index is kept. Libraries built of a folder on this computer follow the same threads and readers, and each has its own depth, in Settings, Libraries. It also lists which file types this computer can read and which index by name only: older Office files (`.ppt`, `.xls`) and OpenDocument are read with nothing to install, and for each tool still missing (OCR, poppler, LibreOffice) it says what the tool adds and gives the command that installs it here, with **Check again** and **Update the index now** once it is found.
+Settings, General, **Indexing** has **Log GUFI commands**, which writes every command {appName} runs to read an index to a log file, named there: when it ran, for what (search, query, the assistant, statistics), how long it took, how it ended, and the end of its error output. It also sets how many threads each phase uses (one per processor core by default), the main folder's index depth, how documents are read (the PDF reader for files the converter cannot read, LibreOffice for previews and for Office files the built-in readers cannot read, and, from Text + OCR up, image descriptions by the vision model chosen under AI features), the speed of search by meaning (**Standard**, or **Faster**: the first 128 tokens of each passage rather than 256, in well under half the time, with slightly lower ranking), and where the index is kept. Libraries built of a folder on this computer follow the same threads and readers, and each has its own depth, in Settings, Libraries. It also lists which file types this computer can read and which index by name only: older Office files (`.ppt`, `.xls`) and OpenDocument are read with nothing to install, and for each tool still missing (OCR, poppler, LibreOffice) it says what the tool adds and gives the command that installs it here, with **Check again** and **Update the index now** once it is found.
 
 Knowledge base for this deployment: **{kbLabel}**

@@ -48,7 +48,7 @@ function stub(over: Partial<Server> = {}): Server {
     const body = init?.body ? JSON.parse(String(init.body)) : undefined
     if (init?.mode === 'no-cors') { s.noCors.push(url); return new Response(null, { status: 200 }) }
     if (url === '/api/settings' && method === 'PUT') { s.puts.push(body); return reply({ effective: { ...EFFECTIVE, ...body } }) }
-    if (url === '/api/settings') return reply({ effective: EFFECTIVE, deploymentCredential: false })
+    if (url === '/api/settings') return reply({ effective: EFFECTIVE, deploymentCredential: false, gufiLogFile: { path: '/data/logs/gufi-commands.log', bytes: 2048 } })
     if (url.startsWith('/api/setup/status')) return reply(s.setup)
     if (url === '/api/setup/port') { s.posts.push({ url, body }); return reply(s.portReply) }
     if (url === '/api/me/model-key') return reply({ authEnabled: false, single: true, verified: true, mode: 'none' })
@@ -160,6 +160,19 @@ describe('Settings, General tabs', () => {
     // The app routes the address to the page, as App's hash handler does.
     act(() => { window.dispatchEvent(new CustomEvent('ade-view-section', { detail: { view: 'settings', section: 'updates' } })) })
     expect(await screen.findByRole('tab', { name: 'Updates' })).toHaveAttribute('aria-selected', 'true')
+  })
+
+  it('Indexing turns the GUFI command log on, and names the file it writes', async () => {
+    const s = stub()
+    at('#view=settings:indexing')
+    render(<SettingsView />)
+    const box = await screen.findByRole('checkbox', { name: /Log GUFI commands/ })
+    expect(screen.queryByText('/data/logs/gufi-commands.log')).toBeNull()
+    fireEvent.click(box)
+    expect(screen.getByText('/data/logs/gufi-commands.log')).toBeInTheDocument()
+    expect(screen.getByText(/One JSON object per line in/)).toHaveTextContent('(2 KB), one previous file kept past 10 MB.')
+    fireEvent.click(within(screen.getByRole('tabpanel')).getByRole('button', { name: 'Save settings' }))
+    await waitFor(() => expect(s.puts.at(-1)?.gufiLog).toBe(true))
   })
 
   it('Appearance saves as it changes: the theme for this window and as the default, the accent and surface', async () => {
