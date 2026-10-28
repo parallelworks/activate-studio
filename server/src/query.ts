@@ -13,8 +13,8 @@ import { addOmission, failureReason, libraryGap, type Omission } from './omissio
 import { lacks, type Library } from './libraries.js'
 import { gufiTool, REMOTE_PREFIX, remoteIndexRoot, remoteQuery, remoteTarget } from './userLibraries.js'
 import { effectiveSettings } from './settings.js'
-import { type GufiCommand, noteGufi, shellQuote, traced } from './gufiTrace.js'
-import { siteName } from './remoteExec.js'
+import { type GufiCommand, commandsOf, execRun, noteGufi, shellQuote, traced } from './gufiTrace.js'
+import { shellFor, siteName } from './remoteExec.js'
 import { type Plan, type VtOrder, gufiVtAvailable, runAcross, vtEligible, vtLocatable } from './gufiVt.js'
 
 const DELIM = '\x1e'
@@ -62,7 +62,7 @@ async function run(args: string[], subtree?: string, timeoutMs = 60_000): Promis
   const t0 = Date.now()
   return new Promise((resolve, reject) => {
     execFile(argv[0], argv.slice(1), { timeout: timeoutMs, maxBuffer: 64 * 1024 * 1024, env: gufiEnv() }, (err, so, se) => {
-      noteGufi(argv, { ms: Date.now() - t0 })
+      noteGufi(argv, execRun(err, se, t0))
       if (err && !so) reject(new Error(se?.slice(0, 500) || err.message))
       else resolve({ stdout: so, stderr: se ?? '' })
     })
@@ -546,7 +546,7 @@ function planCommand(plan: Plan): GufiCommand {
     if (!t) throw new KbError(404, 'library not found')
     const sub = cleanSubtree(plan.subtree)
     const argv = [gufiTool(t.gufiBin), ...capThreads(planArgs(plan)), sub ? path.posix.join(t.indexRoot, sub) : t.indexRoot]
-    return { engine: 'gufi_query', site: siteName(t.site), command: argv.map(shellQuote).join(' ') }
+    return { engine: 'gufi_query', site: siteName(t.site), shell: shellFor(t.site).join(' '), command: argv.map(shellQuote).join(' ') }
   }
   const argv = [path.join(GUFI_BIN, 'gufi_query'), ...planArgs(plan), scopePath(plan.subtree)]
   return { engine: 'gufi_query', command: argv.map(shellQuote).join(' ') }
@@ -733,9 +733,16 @@ function mergeOrder(body: QueryRequest): { col: number; numeric: boolean; desc: 
 }
 
 export async function queryRoutes(app: FastifyInstance): Promise<void> {
-  app.post('/api/query', async req => {
-    const { result, commands } = await traced(() => queryScope((req.body ?? {}) as QueryRequest, req.user?.id ?? null))
-    return { ...result, gufi: commands }
+  app.post('/api/query', async (req, reply) => {
+    try {
+      const { result, commands } = await traced('query', () => queryScope((req.body ?? {}) as QueryRequest, req.user?.id ?? null))
+      return { ...result, gufi: commands }
+    } catch (e) {
+      // A query that failed still shows the commands it ran, and why.
+      const gufi = commandsOf(e)
+      if (e instanceof KbError && gufi) return reply.status(e.status).send({ error: e.message, gufi })
+      throw e
+    }
   })
 
   // A query's SQL and commands without running it: the Query page shows a

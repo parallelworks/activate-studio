@@ -4,7 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { GUFI_BIN, GUFI_INDEX, INDEX_BASE, gufiAvailable, gufiEnv, gufiIndexAvailable } from './config.js'
 import { REMOTE_PREFIX, remoteIndexRoot, remoteQuery, remoteQueryMany, remoteTarget } from './userLibraries.js'
-import { noteGufi } from './gufiTrace.js'
+import { execRun, gufiSource, noteGufi } from './gufiTrace.js'
 import { withoutProvenance } from './textCleanup.js'
 import { ONNX_MODEL_ID, embedQueries, isOnnxModel, onnxModelPresent } from './embedWorker.js'
 
@@ -36,7 +36,7 @@ function run(bin: string, args: string[], timeoutMs = 60_000): Promise<{ stdout:
   const t0 = Date.now()
   return new Promise((resolve, reject) => {
     execFile(path.join(GUFI_BIN, bin), args, { timeout: timeoutMs, maxBuffer: 64 * 1024 * 1024, env: gufiEnv() }, (err, stdout, stderr) => {
-      if (bin === 'gufi_query') noteGufi([path.join(GUFI_BIN, bin), ...args], { ms: Date.now() - t0 })
+      if (bin === 'gufi_query') noteGufi([path.join(GUFI_BIN, bin), ...args], execRun(err, stderr, t0))
       // gufi_query exits nonzero when some per-dir SQL fails (e.g. a table absent
       // in an unenriched directory); rows already emitted are still valid.
       if (err && !stdout) return reject(new Error(`${bin} failed: ${stderr || err.message}`))
@@ -676,14 +676,14 @@ function runQuery(args: string[], timeoutMs = 60_000): Promise<{ stdout: string;
   return new Promise((resolve, reject) => {
     const child = spawn(bin, args, { env: gufiEnv(), stdio: ['ignore', 'pipe', 'pipe'] })
     const out: Buffer[] = []
-    let err = ''
+    let err = '', errBytes = 0
     child.stdout.on('data', (d: Buffer) => out.push(d))
-    child.stderr.on('data', (d: Buffer) => { err = (err + d.toString()).slice(-16_384) })
+    child.stderr.on('data', (d: Buffer) => { errBytes += d.length; err = (err + d.toString()).slice(-16_384) })
     const timer = setTimeout(() => child.kill('SIGKILL'), timeoutMs)
-    child.on('error', e => { clearTimeout(timer); reject(e) })
+    child.on('error', e => { clearTimeout(timer); noteGufi([bin, ...args], { t0, error: e.message }); reject(e) })
     child.on('close', (code, signal) => {
       clearTimeout(timer)
-      noteGufi([bin, ...args], { ms: Date.now() - t0 })
+      noteGufi([bin, ...args], { t0, code, signal, stderr: err, cut: errBytes > Buffer.byteLength(err) })
       const stdout = Buffer.concat(out).toString()
       // An unknown option prints the usage on stdout, so it is told by its error.
       if ((code !== 0 || signal) && (!stdout || unknownOption(err))) return reject(new Error(`gufi_query failed: ${(err.trim().split('\n').pop() || signal || `exit ${code}`)}`))
@@ -859,9 +859,15 @@ const LEGACY_MODEL = 'minilm384'
  * valid, so this pass is safe to run over everything.
  */
 function sqliteScript(lines: string[]): Promise<string> {
+  const bin = path.join(GUFI_BIN, 'gufi_sqlite3')
+  const t0 = Date.now()
   return new Promise(resolve => {
-    const child = execFile(path.join(GUFI_BIN, 'gufi_sqlite3'), [], { timeout: 60_000, maxBuffer: 32 * 1024 * 1024, env: gufiEnv() },
-      (_err, so) => resolve(so ?? ''))
+    const child = execFile(bin, [], { timeout: 60_000, maxBuffer: 32 * 1024 * 1024, env: gufiEnv() },
+      (err, so, se) => {
+        // A look at which databases have vectors: logged, not shown.
+        noteGufi([bin], { engine: 'gufi_sqlite3', script: lines.join('\n'), show: false, ...execRun(err, se, t0) })
+        resolve(so ?? '')
+      })
     child.stdin?.write(lines.join('\n'))
     child.stdin?.end()
   })
@@ -956,9 +962,14 @@ export async function searchVector(queryText: string, limit = 10, indexRoot: str
     )
     script.push('DETACH d;')
   }
+  const bin = path.join(GUFI_BIN, 'gufi_sqlite3')
+  const t0 = Date.now()
   const { stdout } = await new Promise<{ stdout: string }>((resolve, reject) => {
-    const child = execFile(path.join(GUFI_BIN, 'gufi_sqlite3'), [], { timeout: 60_000, maxBuffer: 32 * 1024 * 1024, env: gufiEnv() },
-      (err, so) => err && !so ? reject(new Error(`gufi_sqlite3: ${err.message}`)) : resolve({ stdout: so }))
+    const child = execFile(bin, [], { timeout: 60_000, maxBuffer: 32 * 1024 * 1024, env: gufiEnv() },
+      (err, so, se) => {
+        noteGufi([bin], { engine: 'gufi_sqlite3', script: script.join('\n'), show: false, ...execRun(err, se, t0) })
+        return err && !so ? reject(new Error(`gufi_sqlite3: ${err.message}`)) : resolve({ stdout: so })
+      })
     child.stdin?.write(script.join('\n'))
     child.stdin?.end()
   })
@@ -1008,12 +1019,12 @@ export async function corpusStats(indexRoot?: string): Promise<CorpusStats> {
     const builtAt = remoteTarget(indexRoot)?.builtAt ?? null
     const hit = remoteStats.get(indexRoot)
     if (builtAt && hit?.builtAt === builtAt) return hit.stats
-    const stats = await countCorpus(indexRoot)
+    const stats = await gufiSource('stats', () => countCorpus(indexRoot))
     if (builtAt) { remoteStats.set(indexRoot, { builtAt, stats }); keepRemoteStats() }
     return stats
   }
   if (!gufiIndexAvailable(indexRoot ?? GUFI_INDEX)) return { available: false }
-  return cachedCount('corpus', indexRoot, () => countCorpus(indexRoot))
+  return cachedCount('corpus', indexRoot, () => gufiSource('stats', () => countCorpus(indexRoot)))
 }
 
 /**
@@ -1067,7 +1078,7 @@ export interface TreeStats {
  * inside the index, checked by the caller.
  */
 export function treeStats(indexRoot: string, subdir: string, tagXattr = 'user.studio.tags'): Promise<TreeStats> {
-  return cachedCount(`tree\0${subdir}\0${tagXattr}`, indexRoot, () => treeStatsNow(indexRoot, subdir, tagXattr))
+  return cachedCount(`tree\0${subdir}\0${tagXattr}`, indexRoot, () => gufiSource('stats', () => treeStatsNow(indexRoot, subdir, tagXattr)))
 }
 
 /** treeStats when it has been made or is being made, else null. */
@@ -1117,9 +1128,9 @@ async function treeStatsNow(indexRoot: string, subdir: string, tagXattr: string)
 export async function entryStats(indexRoot: string, dir: string, name: string, tagXattr = 'user.studio.tags'): Promise<{ size: number; mtime: number; labels: string[] } | null> {
   const sql = `SELECT v.size, v.mtime, (SELECT CAST(x.value AS TEXT) FROM xattrs_pwd x WHERE x.inode = v.inode AND CAST(x.name AS TEXT) = ${q(tagXattr)}) FROM vrpentries v WHERE v.name = ${q(name)} LIMIT 1;`
   const args = ['-n', '1', '-d', DELIM, '--min-level', '0', '--max-level', '0', '-E', sql]
-  const out = indexRoot.startsWith(REMOTE_PREFIX)
-    ? await remoteQuery(indexRoot, args, dir || undefined)
-    : (await run('gufi_query', [...args, dir ? path.join(indexRoot, dir) : indexRoot])).stdout
+  const out = await gufiSource('stats', async () => indexRoot.startsWith(REMOTE_PREFIX)
+    ? remoteQuery(indexRoot, args, dir || undefined)
+    : (await run('gufi_query', [...args, dir ? path.join(indexRoot, dir) : indexRoot])).stdout)
   const row = parseRows(out, 2)[0]
   if (!row) return null
   return { size: Number(row[0]) || 0, mtime: Number(row[1]) || 0, labels: String(row[2] ?? '').split(',').map(t => t.trim()).filter(Boolean) }

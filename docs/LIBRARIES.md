@@ -771,18 +771,25 @@ merges the rows. The response says which engine answered.
 
 ## The GUFI commands
 
-Search, the Query page, and the chat's `search_kb` and `query_corpus`
-tool blocks show the GUFI commands behind their results, as a shell takes
-them. Name and full-text search run as one aggregate `gufi_query` (`-a 1` with
+Search, the Query page, and the chat's `search_kb`, `query_corpus` and
+`list_kb_dir` tool blocks show the GUFI commands behind their results, as
+a shell takes them, each with where it ran, when, how long it took, its
+exit status, and its error output. "no such table" lines for the text or
+vector tables, which a walk writes for each directory without them, are
+counted as expected and kept apart from the rest. Name and full-text search run as one aggregate `gufi_query` (`-a 1` with
 `-I`, `-E`, `-J`, `-K` and `-G`): each thread keeps rows until it has the
 number asked for, and the merge returns that many, so a common word in a
 large index sends back the rows shown and not every folder's matches.
 A command on this host is shown as run. A cluster's command is shown
-under the cluster's name, to run there after `pw ssh <cluster>`. A gufi_vt
+under the cluster's name, to run there after `pw ssh <cluster>`, and a
+host's over plain ssh after `ssh` with the library's options. A gufi_vt
 statement is shown as a here-document with gufi_vt's usual remote form,
 `remote_cmd='pw', remote_arg='ssh', remote_arg='<cluster>'`, with the
 cluster's GUFI added to the PATH there, so it runs from a terminal that
-has GUFI and the pw CLI. The chat model does not receive the commands.
+has GUFI and the pw CLI. The chat model does not receive the commands,
+and a conversation shows them only to the person whose request ran them.
+Settings, General, Indexing, "Log GUFI commands" also writes every
+command to a log file ([`REFERENCE.md`](REFERENCE.md), GUFI commands).
 
 ## Sections
 

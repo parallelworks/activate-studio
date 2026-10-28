@@ -3,6 +3,7 @@ import path from 'node:path'
 import type { FastifyInstance } from 'fastify'
 import { GUFI_BIN, GUFI_INDEX, gufiAvailable } from './config.js'
 import { queryAggregate } from './gufi.js'
+import { gufiSource } from './gufiTrace.js'
 import { KbError } from './kb.js'
 import { getLibrary, PRIMARY_ID, type Library } from './libraries.js'
 import { semanticMapRoutes } from './semanticMap.js'
@@ -98,7 +99,7 @@ export async function topology(lib: Library | null = null, dir = '', opts: { ref
   // The folder as gufi_query is given it, so its paths can be cut below it.
   const walked = remote ? (sub ? path.posix.join(remoteIndexRoot(root), sub) : remoteIndexRoot(root)) : (sub ? path.join(root, sub) : root)
   const t0 = Date.now()
-  const rows = await queryAggregate(topologyStages([...walked].length, TOPOLOGY_LEVELS), { indexRoot: root, subdir: sub || undefined })
+  const rows = await gufiSource('stats', () => queryAggregate(topologyStages([...walked].length, TOPOLOGY_LEVELS), { indexRoot: root, subdir: sub || undefined }))
   let dirs: TopologyRow[] = rows
     .map(r => ({ dir: r[0] ?? '', files: Number(r[1]) || 0, bytes: Number(r[2]) || 0 }))
     .filter(r => r.files > 0 || r.bytes > 0 || r.dir !== '')

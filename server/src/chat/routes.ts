@@ -1577,7 +1577,7 @@ ${ctx}` : ctx
             }
             held = { i, tool: name, args: prepared.args, canonical: prepared.canonical }
           }
-          const outcomes: { result: string; summary: string; failed?: boolean; shown?: string; files?: CitedFile[] }[] = new Array(calls.length)
+          const outcomes: { result: string; summary: string; failed?: boolean; gufi?: Awaited<ReturnType<typeof executeTool>>['gufi']; files?: CitedFile[] }[] = new Array(calls.length)
           const toolStart = Date.now()
           timing.toolCalls += calls.length
           let cursor = 0
@@ -1648,17 +1648,18 @@ ${ctx}` : ctx
           calls.forEach((tc, i) => {
             // The held call has no result yet; its row waits for the answer.
             if (held?.i === i) { iterParts[i].status = 'waiting'; return }
-            const { result, summary, failed, shown, files } = outcomes[i]
-            // The tool block shows the summary line, and when expanded what
-            // the tool ran; the model gets the result only.
-            const block = shown ? `${summary}\n\n${shown}` : summary
+            const { result, summary, failed, gufi, files } = outcomes[i]
+            // The tool block shows the summary line and the GUFI commands
+            // the tool ran, kept for the viewer who asked; the model gets
+            // the result only.
             iterParts[i].status = failed ? 'error' : 'ok'
-            iterParts[i].result = block
+            iterParts[i].result = summary
+            if (gufi?.length) Object.assign(iterParts[i], { gufi, gufiViewer: viewer?.id })
             if (files?.length) {
               iterParts[i].files = files
               for (const f of files) cited.known.set(f.path, f.library)
             }
-            sse(res, 'tool', { phase: 'result', id: iterParts[i].id, name: tc.function.name, summary: block, error: !!failed })
+            sse(res, 'tool', { phase: 'result', id: iterParts[i].id, name: tc.function.name, summary, error: !!failed, ...(gufi?.length ? { gufi } : {}) })
             messages.push({ role: 'tool', tool_call_id: tc.id ?? `${tc.function.name}-${iter}`, content: result })
           })
           if (held && viewer && body.conversationId) {

@@ -4,6 +4,7 @@ import zlib from 'node:zlib'
 import type { FastifyInstance } from 'fastify'
 import { GUFI_INDEX, INDEX_BASE, gufiAvailable } from './config.js'
 import { queryPerDir } from './gufi.js'
+import { gufiSource } from './gufiTrace.js'
 import { KbError } from './kb.js'
 import { effectiveSettings } from './settings.js'
 
@@ -94,8 +95,8 @@ function indexMtime(): number {
 
 export async function capture(): Promise<SnapshotMeta | null> {
   if (!gufiAvailable()) return null
-  const rows = await queryPerDir(
-    `SELECT rpath(sname, sroll, name), size, mtime, inode FROM vrpentries;`)
+  const rows = await gufiSource('history', () => queryPerDir(
+    `SELECT rpath(sname, sroll, name), size, mtime, inode FROM vrpentries;`))
   const entries: Entry[] = rows
     .map(r => ({
       path: kbRel(r[0] ?? ''),

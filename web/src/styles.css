@@ -667,6 +667,23 @@ textarea.field { line-height: 1.5; }
 .gufi-cmd { margin-top: 8px; }
 /* Long commands wrap rather than scroll; the right padding clears the copy button. */
 .gufi-cmd pre { margin: 4px 0 0; padding: 8px 2.75rem 8px 10px; font-size: 0.76rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+/* A command's error output, a click away under it. */
+.gufi-cmd-errors { margin-top: 4px; }
+.gufi-cmd-errors-summary { color: var(--pw-muted); font-size: inherit; user-select: none; }
+.gufi-cmd-errors-none { margin-top: 4px; }
+.gufi-cmd-errors-note { margin: 4px 0 0; }
+.gufi-cmd-errors-note code { font-size: 0.74rem; overflow-wrap: anywhere; }
+.gufi-cmd .gufi-stderr {
+  margin: 4px 0 0; padding: 8px 10px; border: 1px solid var(--pw-border); border-radius: 6px;
+  background: var(--pw-panel); color: var(--pw-text); max-height: 16rem; overflow: auto;
+}
+/* A GUFI tool's call in the chat (GufiToolCommands): its result summary,
+   then the commands toggle; the commands open on a line of their own. */
+.gufi-tool { display: flex; flex-wrap: wrap; align-items: flex-start; column-gap: 8px; min-width: 0; font-size: 13px; white-space: normal; }
+.gufi-tool-summary { min-width: 0; line-height: 24px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--theme-muted-text-color, var(--pw-muted)); }
+.gufi-tool .gufi-cmds { display: contents; }
+.gufi-tool .gufi-cmds-summary { flex: none; line-height: 24px; }
+.gufi-tool .gufi-cmds-panel { flex: 1 0 100%; min-width: 0; line-height: normal; }
 .saved-chip {
   display: inline-flex; align-items: center; border: 1px solid var(--pw-border-strong);
   /* Was a hardcoded white, which left the label unreadable in dark mode. */
@@ -2271,6 +2288,17 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 [data-testid="tool-call-part"]:has(> [data-testid="tool-decision"]) { flex-wrap: wrap; row-gap: 0; }
 [data-testid="tool-call-part"]:has(> [data-testid="tool-decision"]) > :first-child + div:not([data-testid="tool-decision"]) { flex: 1 1 0; }
 [data-testid="tool-call-part"] > [data-testid="tool-decision"] { flex: 1 0 100%; margin-top: 0; }
+/* A GUFI tool's summary sits on the row like any other call's (the name
+   gives way first), hidden while the row is open as the package's is, and
+   the commands toggle has a line of its own under the tool's name. */
+[data-testid="tool-call-part"]:has(> div > .gufi-tool) {
+  display: grid; grid-template-columns: minmax(0, max-content) minmax(0, max-content) minmax(0, 1fr); column-gap: 8px; row-gap: 0;
+}
+[data-testid="tool-call-part"] > :first-child + div:has(> .gufi-tool) { display: contents; }
+[data-testid="tool-call-part"] .gufi-tool { display: contents; }
+[data-testid="tool-call-part"]:has(> :first-child[data-open]) .gufi-tool-summary { display: none; }
+/* The commands take the row's width without widening its columns. */
+[data-testid="tool-call-part"] .gufi-tool .gufi-cmds { display: block; grid-column: 1 / -1; min-width: 0; margin: 0 0 0 20px; contain: inline-size; }
 /* The Workflows page with its side view: the page and the view side by
    side, stacked on a narrow screen, as the chat does. */
 .wf-with-side { flex: 1; min-height: 0; display: flex; gap: 12px; position: relative; }

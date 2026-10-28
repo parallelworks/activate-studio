@@ -68,7 +68,11 @@ const LOOP = [
   'done',
 ].join('\n')
 
-export interface RemoteResult { code: number; stdout: string; stderr: string; /** stdout as bytes, for binary output */ raw: Buffer }
+export interface RemoteResult {
+  code: number; stdout: string; stderr: string; /** stdout as bytes, for binary output */ raw: Buffer
+  /** stderr is only the end of what the command wrote (STDERR_TAIL). */
+  stderrCut?: boolean
+}
 
 // ---- plain ssh ----
 
@@ -499,7 +503,7 @@ export function remoteRunOnce(site: string, key: string, argv: string[], timeout
     let child: ChildProcessWithoutNullStreams
     try { child = spawnSsh(site, key, directCommand(argv)) } catch (e) { reject(new KbError(502, `${siteName(site)}: ${(e as Error).message}`)); return }
     const out: Buffer[] = []
-    let err = '', settled = false
+    let err = '', errBytes = 0, settled = false
     const settle = (fn: () => void) => { if (!settled) { settled = true; clearTimeout(timer); fn() } }
     const timer = setTimeout(() => settle(() => {
       child.kill()
@@ -513,7 +517,7 @@ export function remoteRunOnce(site: string, key: string, argv: string[], timeout
       input.pipe(child.stdin)
     } else child.stdin.end()
     child.stdout.on('data', d => out.push(Buffer.from(d)))
-    child.stderr.on('data', d => { err = (err + String(d)).slice(-STDERR_TAIL) })
+    child.stderr.on('data', d => { errBytes += Buffer.byteLength(d); err = (err + String(d)).slice(-STDERR_TAIL) })
     child.on('error', e => settle(() => reject(new KbError(502, `${siteName(site)}: ${e.message}`))))
     child.on('close', code => settle(() => {
       const stderr = quietStderr(err)
@@ -522,7 +526,7 @@ export function remoteRunOnce(site: string, key: string, argv: string[], timeout
         return
       }
       const raw = Buffer.concat(out)
-      resolve({ code: code ?? -1, stdout: raw.toString('utf8'), raw, stderr })
+      resolve({ code: code ?? -1, stdout: raw.toString('utf8'), raw, stderr, ...(errBytes > Buffer.byteLength(err) ? { stderrCut: true } : {}) })
     }))
   })
 }
@@ -585,7 +589,9 @@ function open(id: string, site: string, key: string): Channel {
       if (!p) continue
       clearTimeout(p.timer)
       const raw = Buffer.from(m[2], 'base64')
-      p.resolve({ code: Number(m[1]), stdout: raw.toString('utf8'), raw, stderr: Buffer.from(m[3] ?? '', 'base64').toString('utf8') })
+      // The loop sends stderr's last STDERR_TAIL bytes; that many is a tail.
+      const err = Buffer.from(m[3] ?? '', 'base64')
+      p.resolve({ code: Number(m[1]), stdout: raw.toString('utf8'), raw, stderr: err.toString('utf8'), ...(err.length >= STDERR_TAIL ? { stderrCut: true } : {}) })
     }
   })
   child.stderr.on('data', d => { ch.stderr = (ch.stderr + String(d)).slice(-2000) })

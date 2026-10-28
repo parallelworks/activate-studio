@@ -9,6 +9,7 @@ import { KbError } from './kb.js'
 import { builtLibraryDir, getLibrary, lacks, listLibraries, onLibraryRemoved, PRIMARY_ID, type Library } from './libraries.js'
 import { countRemoteVectors, dequantize, fetchRemoteVectors, remoteMapFiles, remoteNeighbors, type VectorSource } from './remoteMap.js'
 import { siteName } from './remoteExec.js'
+import { execRun, noteGufi } from './gufiTrace.js'
 import { onRemoteIndexBuilt, onUserLibraryRemoved, remoteMapHome, remoteTarget } from './userLibraries.js'
 
 /**
@@ -504,9 +505,13 @@ function listVectorDbs(root: string): string[] {
 }
 
 function sqliteScript(lines: string[]): Promise<string> {
+  const bin = path.join(GUFI_BIN, 'gufi_sqlite3')
+  const t0 = Date.now()
   return new Promise(resolve => {
-    const child = execFile(path.join(GUFI_BIN, 'gufi_sqlite3'), [], { timeout: 600_000, maxBuffer: 64 * 1024 * 1024, env: gufiEnv() },
-      (_err, so) => resolve(so ?? ''))
+    const child = execFile(bin, [], { timeout: 600_000, maxBuffer: 64 * 1024 * 1024, env: gufiEnv() }, (err, so, se) => {
+      noteGufi([bin], { engine: 'gufi_sqlite3', script: lines.join('\n'), show: false, source: 'map', ...execRun(err, se, t0) })
+      resolve(so ?? '')
+    })
     child.on('error', () => resolve(''))
     child.stdin?.write(lines.join('\n'))
     child.stdin?.end()

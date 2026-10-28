@@ -1,7 +1,7 @@
 import { EXTERNAL_DB_PATTERN } from './gufi.js'
-import { noteGufi } from './gufiTrace.js'
+import { remoteGufi } from './gufiTrace.js'
 import { KbError } from './kb.js'
-import { remoteRun, remoteThreads, siteName } from './remoteExec.js'
+import { remoteThreads, siteName } from './remoteExec.js'
 import { gufiTool, remoteTarget } from './userLibraries.js'
 
 /**
@@ -168,8 +168,7 @@ async function runRemote(root: string, stages: string[], timeoutMs: number): Pro
   const run = async (s: string[], quiet: boolean): Promise<Ran> => {
     const cmd = [gufiTool(t.gufiBin), '-n', String(threads), '-d', DELIM, '-a', '1', ...(quiet ? ['--no-print-sql-on-err'] : []), ...s, t.indexRoot]
     const t0 = Date.now()
-    const r = await remoteRun(t.site, t.key, cmd, timeoutMs)
-    noteGufi(cmd, { site: siteName(t.site), ms: Date.now() - t0 })
+    const r = await remoteGufi(t.site, t.key, cmd, { timeoutMs, source: 'map' })
     return { code: r.code, stdout: r.stdout, stderr: r.stderr, ms: Date.now() - t0, bytes: r.raw.length, site: siteName(t.site) }
   }
   const r = await run(stages, true)
