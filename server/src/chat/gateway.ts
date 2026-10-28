@@ -1,5 +1,6 @@
+import { createHash } from 'node:crypto'
 import { GATEWAY_BASE, PW_API_KEY, SIDECAR_BASE, SIDECAR_KEY } from '../config.js'
-import { resolveSharedKey } from '../credentials.js'
+import { resolveSharedKey, type EndpointOptions } from '../credentials.js'
 import { cliCredential } from '../access.js'
 import { connectionProblem, isLoopbackHost, networkFailure, unreachableMessage } from '../net.js'
 
@@ -17,6 +18,32 @@ export function gatewayKey(): string {
 }
 
 const hostOf = (url: string) => { try { return new URL(url).host } catch { return url } }
+
+/**
+ * The headers of a request to a model endpoint: its own extra headers, and
+ * the key in the header the endpoint takes it in (Authorization: Bearer
+ * unless the endpoint's options say otherwise). Every call to an endpoint
+ * goes through here and withQuery, so a portal's requirements apply to the
+ * listing, the health check, chat, label suggestions and the /v1 proxy
+ * alike. The result carries secrets: never log it.
+ */
+export function modelHeaders(key: string, endpoint?: EndpointOptions | null): Record<string, string> {
+  const h: Record<string, string> = {}
+  for (const x of endpoint?.headers ?? []) h[x.name] = x.value
+  switch (endpoint?.auth ?? 'bearer') {
+    case 'bearer': h.Authorization = `Bearer ${key}`; break
+    case 'api-key': h['api-key'] = key; break
+    case 'x-api-key': h['x-api-key'] = key; break
+    case 'none': break
+  }
+  return h
+}
+
+/** A request URL with the endpoint's query string (api-version=..., say). */
+export function withQuery(url: string, endpoint?: EndpointOptions | null): string {
+  const q = endpoint?.query
+  return q ? `${url}${url.includes('?') ? '&' : '?'}${q}` : url
+}
 
 /** A fetch whose network failure reads as a sentence about the host. Other
  *  failures (a stop the person asked for, an AbortError) pass through. */
@@ -173,13 +200,42 @@ function asListing(body: unknown): { data?: unknown[]; models?: unknown[] } {
   return Array.isArray(body) ? { data: body } : (body as { data?: unknown[]; models?: unknown[] }) ?? {}
 }
 
-export async function listModels(key?: string | null, baseUrl?: string | null): Promise<unknown> {
-  const res = await reach(modelsUrl(baseUrl || GATEWAY_BASE), {
-    headers: { Authorization: `Bearer ${key || gatewayKey()}` },
+/** Model names typed under Advanced, as a listing: the endpoint lists none. */
+function typedListing(models: string[]): { data: { id: string; object: string }[] } {
+  return { data: models.map(id => ({ id, object: 'model' })) }
+}
+
+export async function listModels(key?: string | null, baseUrl?: string | null, endpoint?: EndpointOptions | null): Promise<unknown> {
+  if (baseUrl && endpoint?.models?.length) return typedListing(endpoint.models)
+  const res = await reach(withQuery(modelsUrl(baseUrl || GATEWAY_BASE), baseUrl ? endpoint : null), {
+    headers: modelHeaders(key || gatewayKey(), baseUrl ? endpoint : null),
     signal: AbortSignal.timeout(10_000),
   })
   if (!res.ok) throw gatewayError(res.status, await res.text(), '/models')
   return asListing(await res.json())
+}
+
+/**
+ * What a 404 from an endpoint means, naming the URL that was tried. A base
+ * URL that already ends in a version (/v1) is not told to add one: the
+ * address is likely right and the endpoint lists no models, which typed
+ * model names answer. The ACTIVATE gateway path 404s on a host that is not
+ * an ACTIVATE platform, the usual sign that an endpoint was entered as a
+ * platform host.
+ */
+export function notFoundMessage(tried: string, base: string): string {
+  let path = ''
+  let origin = base
+  try { const u = new URL(base); path = u.pathname.replace(/\/+$/, ''); origin = u.origin } catch { /* named as given */ }
+  if (/\/api\/openai\/v1$/.test(path)) {
+    return `${tried} does not exist (404), so ${hostOf(base)} is not an ACTIVATE platform. For a site AI portal or another OpenAI-compatible service, use OpenAI-compatible endpoint with the service's base URL.`
+  }
+  const trimmed = path.replace(/\/(chat\/completions|completions|models|embeddings)$/, '')
+  if (trimmed !== path) return `${tried} does not exist (404). The base URL ends before /chat/completions: try ${origin}${trimmed}.`
+  if (/\/v\d+[a-z0-9]*$/i.test(path)) {
+    return `${tried} does not exist (404). If ${base} is the right address, the endpoint does not list its models: type their names under Advanced (Settings, Model access, OpenAI-compatible endpoint), and Test then tries a chat completion with the first.`
+  }
+  return `${tried} does not exist (404). An OpenAI-compatible base URL usually ends in a version, such as ${origin}${path}/v1.`
 }
 
 export interface AiHealth {
@@ -195,6 +251,11 @@ export interface AiHealth {
   unlockUrl?: string | null
   /** The model ids, when asked for (a key being tested). */
   ids?: string[]
+  /** How the endpoint was asked: its model list, or, with model names typed
+   *  for it, a chat completion with the first. */
+  checked?: 'models' | 'completion'
+  /** The URL that answered 404, when one did. */
+  notFound?: string
 }
 
 /** Live callability check: exercises the gateway with the current
@@ -220,7 +281,7 @@ const PROBE_PATTERN = new RegExp(process.env.STUDIO_PROBE_PROVIDERS || 'genai', 
 
 /** Cleared on an explicit re-check, so an unlock takes effect at once
  *  instead of after the cache ages out. */
-export function invalidateProviderProbes(): void { providerProbes.clear() }
+export function invalidateProviderProbes(): void { providerProbes.clear(); completionPings.clear() }
 
 export function probeableProvider(prefix: string): boolean { return PROBE_PATTERN.test(prefix) }
 
@@ -338,7 +399,37 @@ export async function probeProvider(prefix: string, sampleModelId: string, key?:
   return v
 }
 
-export async function aiHealth(key?: string | null, baseUrl?: string | null, opts: { ids?: boolean } = {}): Promise<AiHealth> {
+/**
+ * With model names typed for an endpoint, a chat completion with the first
+ * stands in for the model list as the health check. It costs a model call,
+ * so the answer is kept for a few minutes (the footer asks every minute)
+ * and dropped on an explicit re-check, like the provider probes.
+ */
+const completionPings = new Map<string, { at: number; status: number; text: string }>()
+
+async function pingCompletion(url: string, headers: Record<string, string>, model: string, cacheKey: string): Promise<{ status: number; text: string }> {
+  const hit = completionPings.get(cacheKey)
+  if (hit && Date.now() - hit.at < PROBE_TTL_MS) return hit
+  const ctl = new AbortController()
+  const timer = setTimeout(() => ctl.abort(), 8000)
+  try {
+    // Streamed and read to its first frame, uncapped, as probeProvider does.
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model, messages: [{ role: 'user', content: 'ping' }], stream: true }),
+      signal: ctl.signal,
+    })
+    const text = await firstFrame(res, ctl)
+    const v = { at: Date.now(), status: res.ok && /^\s*\{"error"/.test(text) ? 500 : res.status, text: text.slice(0, 4000) }
+    completionPings.set(cacheKey, v)
+    return v
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+export async function aiHealth(key?: string | null, baseUrl?: string | null, opts: { ids?: boolean; endpoint?: EndpointOptions | null } = {}): Promise<AiHealth> {
   const checkedAt = new Date().toISOString()
   const apiBase = baseUrl || GATEWAY_BASE
   const gatewayHost = (() => { try { return new URL(apiBase).host } catch { return apiBase } })()
@@ -346,34 +437,56 @@ export async function aiHealth(key?: string | null, baseUrl?: string | null, opt
   if (!key && !gatewayConfigured()) {
     return { ...base, ok: false, status: 'unconfigured', message: 'No gateway credential configured (PW_API_KEY or pw CLI login).' }
   }
+  // An endpoint's options apply only to an endpoint, never to the gateway.
+  const endpoint = baseUrl ? opts.endpoint ?? null : null
+  const typed = endpoint?.models ?? []
+  const headers = modelHeaders(key || gatewayKey(), endpoint)
+  const tried = withQuery(typed.length ? `${apiBase}/chat/completions` : modelsUrl(apiBase), endpoint)
   try {
-    const res = await fetch(modelsUrl(apiBase), {
-      headers: { Authorization: `Bearer ${key || gatewayKey()}` },
-      signal: AbortSignal.timeout(8000),
-    })
-    const text = await res.text()
-    if (!res.ok) {
-      const auth = res.status === 401 || res.status === 403
+    let status: number
+    let text: string
+    if (typed.length) {
+      // Keyed by a digest, so the cache holds no key or header value.
+      const cacheKey = createHash('sha256').update(JSON.stringify([apiBase, key ?? '', endpoint])).digest('hex')
+      const ping = await pingCompletion(tried, headers, typed[0], cacheKey)
+      status = ping.status
+      text = ping.text
+    } else {
+      const res = await fetch(tried, { headers, signal: AbortSignal.timeout(8000) })
+      status = res.status
+      text = await res.text()
+    }
+    const checked = typed.length ? 'completion' as const : 'models' as const
+    if (status < 200 || status >= 300) {
+      const auth = status === 401 || status === 403
       // Some providers lock keys on a schedule, and their 401 body carries
       // the unlock URL. That link is the remedy, so it is extracted before the
       // body is truncated for display and carried as its own field.
       const unlockUrl = /unlock_url[\\":\s]*(https?:\/\/[^"\\\s]+)/.exec(text)?.[1] ?? null
       return {
-        ...base, ok: false, status: auth ? 'auth' : 'unreachable',
+        ...base, ok: false, status: auth ? 'auth' : 'unreachable', checked,
         message: unlockUrl
           ? 'The provider locked this API key (it does so on a schedule); unlock it and re-check.'
           : auth
-            ? `${gatewayHost} rejected this credential (${res.status}). A platform token lasts 24 hours from login; an API key from Account, API keys does not expire.`
-            : res.status === 404
-              ? `${apiBase}/models does not exist (404). An OpenAI-compatible base URL usually ends in /v1.`
-              : `${res.status}: ${text.slice(0, 200)}`,
+            ? (baseUrl
+                ? `${gatewayHost} rejected this credential (${status}). Check the key, and under Advanced the header the endpoint expects it in.`
+                : `${gatewayHost} rejected this credential (${status}). A platform token lasts 24 hours from login; an API key from Account, API keys does not expire.`)
+            : status === 404 && !typed.length
+              ? notFoundMessage(tried, apiBase)
+              : typed.length
+                ? `A chat completion with ${typed[0]} at ${tried} failed (${status}): ${providerReason(text) || 'no reason given'}`
+                : `${status}: ${text.slice(0, 200)}`,
         unlockUrl,
+        ...(status === 404 ? { notFound: tried } : {}),
       }
+    }
+    if (typed.length) {
+      return { ...base, ok: true, status: 'ok', models: typed.length, message: null, checked, ...(opts.ids ? { ids: typed.slice(0, 500) } : {}) }
     }
     const data = asListing(JSON.parse(text))
     const list = Array.isArray(data.data) ? data.data : Array.isArray(data.models) ? data.models : []
     const ids = opts.ids ? list.map(m => String((m as { id?: unknown })?.id ?? '')).filter(Boolean).slice(0, 500) : undefined
-    return { ...base, ok: true, status: 'ok', models: list.length, message: null, ...(ids ? { ids } : {}) }
+    return { ...base, ok: true, status: 'ok', models: list.length, message: null, checked, ...(ids ? { ids } : {}) }
   } catch (e) {
     // A certificate or proxy refusal is not being offline.
     const conn = connectionProblem(e, gatewayHost)
@@ -383,6 +496,118 @@ export async function aiHealth(key?: string | null, baseUrl?: string | null, opt
     // network has nothing to do with it.
     if (f) return { ...base, ok: false, status: isLoopbackHost(gatewayHost) ? 'unreachable' : 'offline', message: unreachableMessage(gatewayHost, f) }
     return { ...base, ok: false, status: 'unreachable', message: String((e as Error).message ?? e).slice(0, 200) }
+  }
+}
+
+/** What one request offering a tool showed about a model. */
+export interface ToolProbe {
+  /** calls: it called the tool. no-call: it answered without calling it.
+   *  refused: the endpoint turned the request down because of the tool.
+   *  failed: the check itself did not complete. */
+  kind: 'calls' | 'no-call' | 'refused' | 'failed'
+  detail: string
+}
+
+const TOOL_CHECK_MS = 15_000
+const TIME_TOOL = {
+  type: 'function',
+  function: {
+    name: 'get_utc_time',
+    description: 'Returns the current date and time in UTC.',
+    parameters: { type: 'object', properties: {}, required: [] },
+  },
+}
+
+/**
+ * Whether a model calls tools. Chat searches the libraries through tool
+ * calls, and a model that cannot make them lists and answers like any
+ * other, so a check of the model list passes and chat then produces text
+ * with nothing behind it. This sends one chat completion offering a single
+ * trivial tool with a prompt that needs it, capped and with a short timeout;
+ * a stream is read only until it shows a tool call or ends. `stream` and
+ * `extra` follow what chat sends the same model, so the answer holds for it.
+ */
+export async function probeToolCalling(model: string, o: {
+  key?: string | null; baseUrl?: string | null; endpoint?: EndpointOptions | null
+  stream?: boolean; extra?: Record<string, unknown>
+} = {}): Promise<ToolProbe> {
+  const target = o.baseUrl ? o.endpoint ?? null : null
+  const url = withQuery(`${o.baseUrl || GATEWAY_BASE}/chat/completions`, target)
+  const headers = { ...modelHeaders(o.key || gatewayKey(), target), 'Content-Type': 'application/json' }
+  const stream = o.stream !== false
+  const send = async (cap: boolean): Promise<{ status: number; text: string; called: boolean; content: string; finish?: string }> => {
+    const ctl = new AbortController()
+    const timer = setTimeout(() => ctl.abort(), TOOL_CHECK_MS)
+    try {
+      const res = await fetch(url, {
+        method: 'POST', headers, signal: ctl.signal,
+        body: JSON.stringify({
+          model, stream, ...(cap ? { max_tokens: 256 } : {}), ...o.extra,
+          messages: [{ role: 'user', content: 'What time is it in UTC right now? Call the get_utc_time tool to find out.' }],
+          tools: [TIME_TOOL], tool_choice: 'auto',
+        }),
+      })
+      if (!res.ok || !res.body) return { status: res.status, text: (await res.text()).slice(0, 4000), called: false, content: '' }
+      if (!stream || !/event-stream/.test(res.headers.get('content-type') ?? 'text/event-stream')) {
+        const full = await res.json() as { error?: { message?: string }; choices?: { finish_reason?: string; message?: { content?: string | null; tool_calls?: unknown[] } }[] }
+        if (full.error) return { status: 500, text: JSON.stringify(full.error).slice(0, 4000), called: false, content: '' }
+        const msg = full.choices?.[0]?.message ?? {}
+        return { status: res.status, text: '', called: Array.isArray(msg.tool_calls) && msg.tool_calls.length > 0, content: String(msg.content ?? ''), finish: full.choices?.[0]?.finish_reason }
+      }
+      const reader = (res.body as ReadableStream<Uint8Array>).getReader()
+      const dec = new TextDecoder()
+      let buf = ''
+      let content = ''
+      try {
+        for (;;) {
+          const { value, done } = await reader.read()
+          if (done) break
+          buf += dec.decode(value, { stream: true })
+          let nl
+          while ((nl = buf.indexOf('\n')) >= 0) {
+            const line = buf.slice(0, nl).trim()
+            buf = buf.slice(nl + 1)
+            if (!line.startsWith('data:')) continue
+            const data = line.slice(5).trim()
+            if (data === '[DONE]') return { status: res.status, text: '', called: false, content }
+            let chunk: any
+            try { chunk = JSON.parse(data) } catch { continue }
+            if (chunk.error) return { status: 500, text: JSON.stringify(chunk.error).slice(0, 4000), called: false, content }
+            const choice = chunk.choices?.[0]
+            if ((choice?.delta?.tool_calls ?? []).some((t: any) => t?.function?.name)) return { status: res.status, text: '', called: true, content }
+            if (typeof choice?.delta?.content === 'string') content += choice.delta.content
+            if (choice?.finish_reason || content.length > 4000) return { status: res.status, text: '', called: false, content, finish: choice?.finish_reason }
+          }
+        }
+      } finally {
+        try { ctl.abort() } catch { /* already closed */ }
+        try { reader.releaseLock() } catch { /* already released */ }
+      }
+      return { status: res.status, text: '', called: false, content }
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+  try {
+    let r = await send(true)
+    // A provider that refuses any token cap: ask again without one.
+    if (r.status === 400 && rejectedParameter(r.text) && /max_tokens|max_output_tokens|max_completion_tokens/.test(r.text)) r = await send(false)
+    if (r.status >= 200 && r.status < 300) {
+      if (r.called) return { kind: 'calls', detail: '' }
+      // A model that reasons first can spend the cap before it acts; with no
+      // text either, that says nothing about tool calling.
+      if (r.finish === 'length' && !r.content.trim()) return { kind: 'failed', detail: 'the model used its whole allowance for the check before calling the tool or answering' }
+      // A server that does not parse tool calls for this model passes the
+      // model's attempt through as text.
+      return { kind: 'no-call', detail: /get_utc_time/.test(r.content) ? 'it wrote the call as text instead of making it' : '' }
+    }
+    const reason = providerReason(r.text) || `status ${r.status}`
+    if ((r.status === 400 || r.status === 422 || r.status === 500) && /tool|function/i.test(r.text)) return { kind: 'refused', detail: reason }
+    return { kind: 'failed', detail: `${r.status}: ${reason}` }
+  } catch (e) {
+    const name = (e as Error)?.name
+    if (name === 'AbortError' || name === 'TimeoutError') return { kind: 'failed', detail: `no answer within ${TOOL_CHECK_MS / 1000} seconds` }
+    return { kind: 'failed', detail: String((e as Error)?.message ?? e).slice(0, 200) }
   }
 }
 
@@ -402,14 +627,16 @@ export async function streamTurn(
   signal?: AbortSignal,
   key?: string | null,
   baseUrl?: string | null,
+  endpoint?: EndpointOptions | null,
 ): Promise<TurnResult> {
+  const target = baseUrl ? endpoint ?? null : null
   const headers: Record<string, string> = {
-    Authorization: `Bearer ${key || gatewayKey()}`,
+    ...modelHeaders(key || gatewayKey(), target),
     'Content-Type': 'application/json',
   }
   if (allocation) headers['X-Allocation'] = allocation
   const streaming = body.stream !== false
-  const res = await reach(`${baseUrl || GATEWAY_BASE}/chat/completions`, {
+  const res = await reach(withQuery(`${baseUrl || GATEWAY_BASE}/chat/completions`, target), {
     method: 'POST',
     headers,
     body: JSON.stringify({ ...body, stream: streaming }),

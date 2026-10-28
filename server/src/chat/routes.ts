@@ -10,7 +10,7 @@ import { credentialContextName, ensureFreshAccess } from '../access.js'
 import { answerHeld, changesAvailable, holdCall, newHold, viewerOf } from './approvals.js'
 import { approvalPart, asksFirst, insteadOf, isPlatformTool, platformTool, prepareArgs, viewerAccount, type CallArgs } from './platformTools.js'
 import { platformAvailable } from '../workflowsTab.js'
-import { aiHealth, gatewayConfigured, GatewayUnreachable, isSidecarModel, listModels, listSidecarModels, modelFailure, probeProvider, probeableProvider, extractUnlockUrl, invalidateProviderProbes, sidecarConfigured, sidecarTarget, StreamedTurnError, streamTurn, WireMessage, WireToolCall, type TokenUsage } from './gateway.js'
+import { aiHealth, gatewayConfigured, GatewayUnreachable, isSidecarModel, listModels, listSidecarModels, modelFailure, probeProvider, probeableProvider, probeToolCalling, extractUnlockUrl, invalidateProviderProbes, sidecarConfigured, sidecarTarget, StreamedTurnError, streamTurn, WireMessage, WireToolCall, type TokenUsage, type ToolProbe } from './gateway.js'
 import { MORE_TOOLS, PLATFORM_GROUPS, TOOL_CALLS, TOOL_GROUPS, TOOL_SPECS, activeToolSpecs, activeToolSpecsWithRemote, commandFor, customToolSpecs, executeTool, expandSlashCommand, initialToolGroups, needsPlatform, readerAllows, readerToolOptions, selectToolSpecs, skillToolSpec, toolGroupOf, toolOptionLabel } from './tools.js'
 import { systemPrompt } from './context.js'
 import { CitationStream, type CitationContext, type CitedFile } from './citations.js'
@@ -18,7 +18,7 @@ import { attachmentContext } from '../attachments.js'
 import { effectiveSettings } from '../settings.js'
 import { agentPrompt } from '../extensions.js'
 import { beginAnswer, recordAssistantTurn, recordUserTurn, StoredToolCallPart, takeSteers, toolsUsedIn } from '../conversations.js'
-import { clearSharedKey, clearUserKey, getSharedKeyStatus, getUserKeyStatus, KEY_COOKIE, KEY_COOKIE_P, personalKeysDisabled, resolveUserCred, resolveUserKey, sealKeyCookie, setUserKey, shareUserKey, SINGLE_OWNER } from '../credentials.js'
+import { clearSharedKey, clearUserKey, getSharedKeyStatus, getUserKeyStatus, KEY_COOKIE, KEY_COOKIE_P, normalizeBaseUrl, normalizeEndpointOptions, personalKeysDisabled, resolveUserCred, resolveUserKey, sealKeyCookie, setUserKey, shareUserKey, SINGLE_OWNER, type EndpointOptions, type UserCred } from '../credentials.js'
 import { authEnabled } from '../auth.js'
 
 interface StreamBody {
@@ -479,6 +479,62 @@ function templateKwargsFor(model: string): Record<string, unknown> {
   return {}
 }
 
+/** Whether chat passes a model its tools in the prompt (emulatedPrompt). */
+const emulatesTools = (model: string) => SYSTEM_IN_USER_MODELS.some(k => model.toLowerCase().includes(k))
+
+/** Ids that name something other than a chat model. */
+const NOT_CHAT = /embed|rerank|whisper|tts|speech|transcri|moderation|dall-e|image-|audio/i
+
+/** The model a key test checks tool calling with: the one asked for when it
+ *  is listed (the chat's own pick), else the deployment's default model,
+ *  else the first that looks like a chat model. */
+export function toolCheckModel(ids: string[], preferred?: string | null): string | null {
+  if (preferred && ids.includes(preferred)) return preferred
+  const usable = ids.filter(id => !NOT_CHAT.test(id) && !/studio-(agent|rag)/.test(id) && (!!process.env.PW_ALLOCATION || !id.startsWith('org:')))
+  const fallback = effectiveSettings().ragDefaultModel
+  if (fallback && usable.includes(fallback)) return fallback
+  return usable[0] ?? null
+}
+
+/** A tool check's outcome in words, for Settings. 'emulated' is a model
+ *  chat gives its tools in the prompt, where native calls do not matter. */
+export function toolCheckMessage(model: string, p: ToolProbe | 'emulated'): string {
+  if (p === 'emulated') {
+    return `Chat gives ${model} its tools in the prompt and searches the libraries for it before it answers, because the model is named in CHAT_SYSTEM_IN_USER, so its own tool calling was not checked.`
+  }
+  switch (p.kind) {
+    case 'calls': return `${model} calls tools, so chat can search the libraries with it.`
+    case 'no-call': return `${model} answered without calling the test tool${p.detail ? ` (${p.detail})` : ''}, so chat cannot search the libraries with this model. Choose a model that supports tool calling (function calling), or turn tool calling on where the model is served.`
+    case 'refused': return `The endpoint refused a request that offers ${model} a tool: ${p.detail}. Chat offers the model tools, so chat with it fails. Choose a model that supports tool calling, or turn tool calling on where the model is served.`
+    default: return `Tool calling with ${model} was not checked: ${p.detail}.`
+  }
+}
+
+export interface ToolCheck { model: string; result: ToolProbe['kind'] | 'emulated'; message: string }
+
+/**
+ * A passing key test, with whether chat can use tools with the model it
+ * would use. Information only: nothing is refused on it. The request is
+ * shaped as chat shapes one for that model (streaming or not, its template
+ * arguments), and a model chat drives through prompt-level emulation is
+ * reported as such rather than probed, since chat never asks it for native
+ * tool calls.
+ */
+async function withToolCheck<H extends { status: string; ids?: string[] }>(h: H, t: {
+  key: string | null; baseUrl: string | null; endpoint: EndpointOptions | null; model: string | null; tools: boolean
+}): Promise<H & { toolCheck?: ToolCheck }> {
+  if (h.status !== 'ok' || !t.tools || !h.ids?.length) return h
+  const model = toolCheckModel(h.ids, t.model)
+  if (!model) return h
+  if (emulatesTools(model)) return { ...h, toolCheck: { model, result: 'emulated', message: toolCheckMessage(model, 'emulated') } }
+  const p = await probeToolCalling(model, {
+    key: t.key, baseUrl: t.baseUrl, endpoint: t.endpoint,
+    stream: !NO_STREAM_MODELS.some(k => model.toLowerCase().includes(k)),
+    extra: templateKwargsFor(model),
+  })
+  return { ...h, toolCheck: { model, result: p.kind, message: toolCheckMessage(model, p) } }
+}
+
 export async function chatRoutes(app: FastifyInstance): Promise<void> {
   // The expensive part of a listing is the gateway catalog plus one probe
   // per provider family, and both were paid on every load: about a second
@@ -520,7 +576,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     const sidecar = await listSidecarModels()
     let wire: any = {}
     try {
-      if (gatewayConfigured() || cred) wire = await listModels(cred?.key, cred?.baseUrl)
+      if (gatewayConfigured() || cred) wire = await listModels(cred?.key, cred?.baseUrl, cred?.endpoint)
     } catch (e) {
       // A personal provider key that is locked fails right here, at the
       // provider's own /models. Say that, with the unlock link, instead
@@ -625,8 +681,10 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     // are budgeted so a slow provider cannot stall the listing; an
     // unanswered probe changes nothing this pass and the cache catches
     // the next one.
+    // Probes ask the platform gateway about its providers, so an endpoint of
+    // the person's own, which answered its own listing, is not probed.
     const prefixes = new Map<string, string>()
-    for (const m of models) {
+    for (const m of cred?.baseUrl ? [] : models) {
       const id = String(m.id)
       const slash = id.indexOf('/')
       if (slash > 0) {
@@ -729,7 +787,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     }
     if (String((req.query as { fresh?: string }).fresh ?? '') === '1') invalidateProviderProbes()
     await ensureFreshAccess(5_000)
-    const health = await aiHealth(cred?.key, cred?.baseUrl)
+    const health = await aiHealth(cred?.key, cred?.baseUrl, { endpoint: cred?.endpoint })
     // Whether the credential also reaches the platform API, which is what
     // the workflow tools and the DAG viewer use. Two different products
     // both sell "API keys": an AI gateway key answers the model routes and
@@ -819,13 +877,30 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     reply.header('set-cookie', keyCookieJar([]))
   }
 
+  // The endpoint options a request sends, against what is stored for the
+  // same endpoint: left out, the stored ones are kept; a header sent with no
+  // value keeps its stored value (normalizeEndpointOptions). A platform key
+  // has none.
+  const optionsFor = (body: { endpoint?: unknown }, baseUrl: string | null, stored: UserCred | null): EndpointOptions | null => {
+    if (!baseUrl) return null
+    const same = stored?.baseUrl === baseUrl
+    return body.endpoint === undefined
+      ? (same ? stored?.endpoint ?? null : null)
+      : normalizeEndpointOptions(body.endpoint, same ? stored?.endpoint : null)
+  }
+
   app.post('/api/me/model-key', async (req, reply) => {
     const owner = keyOwner(req)
     if (!owner) return reply.status(403).send({ error: 'Personal keys need a platform-verified identity; open the app through the platform.' })
-    const body = req.body as { key?: string; persist?: boolean; baseUrl?: string }
-    const key = String(body.key ?? '').trim()
+    const body = req.body as { key?: string; persist?: boolean; baseUrl?: string; endpoint?: unknown }
+    const baseUrl = normalizeBaseUrl(body.baseUrl)
+    const stored = resolveUserCred(owner)
+    // No key keeps the stored one, for the endpoint it was stored for only,
+    // so its options can change without typing the key again. A stored key
+    // is never sent to an address it was not entered for.
+    const key = String(body.key ?? '').trim() || (baseUrl && stored?.baseUrl === baseUrl ? stored.key : '')
     if (!key) return reply.status(400).send({ error: 'key required' })
-    try { setUserKey(owner, key, false, body.baseUrl) } catch (e) { return reply.status(400).send({ error: String((e as Error).message ?? e) }) }
+    try { setUserKey(owner, key, false, baseUrl, optionsFor(body, baseUrl, stored)) } catch (e) { return reply.status(400).send({ error: String((e as Error).message ?? e) }) }
     invalidateProviderProbes(); listings.clear()
     if (req.user) {
       if (body.persist !== false) setKeyCookies(reply, owner)
@@ -884,25 +959,33 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
   })
 
   // Test a candidate key (or the stored one) against the gateway without
-  // exposing anything about it beyond the health classification.
+  // exposing anything about it beyond the health classification. When the
+  // endpoint answers, one more small request says whether chat can use
+  // tools with the model it would use (withToolCheck).
   app.post('/api/me/model-key/test', async (req, reply) => {
     // A re-check is the user saying "I changed something, look again":
     // the provider probe cache must not outlive that.
     invalidateProviderProbes(); listings.clear()
     const owner = keyOwner(req)
     if (!owner) return reply.status(403).send({ error: 'not verified' })
-    const body = req.body as { key?: string; baseUrl?: string } | null
+    const body = req.body as { key?: string; baseUrl?: string; endpoint?: unknown; model?: string; tools?: boolean } | null
     const stored = resolveUserCred(owner)
-    const candidate = String(body?.key ?? '').trim() || stored?.key
-    const baseUrl = String(body?.baseUrl ?? '').trim() || stored?.baseUrl || null
+    const typed = String(body?.key ?? '').trim()
+    const baseUrl = normalizeBaseUrl(body?.baseUrl) || stored?.baseUrl || null
+    // The stored key is tested only against the address it was stored for.
+    const candidate = typed || (stored && (stored.baseUrl ?? null) === baseUrl ? stored.key : null)
+    const check = { model: typeof body?.model === 'string' ? body.model : null, tools: body?.tools !== false }
     if (!candidate) {
+      if (stored) return reply.status(400).send({ error: `enter the key for ${baseUrl}; the stored key is for ${stored.baseUrl ?? 'the platform'}` })
       // Nothing stored: test what requests use instead, the pw CLI's
       // credential or the deployment's.
-      if (!body?.key && !authEnabled()) { await ensureFreshAccess(); return aiHealth(null, null, { ids: true }) }
+      if (!body?.key && !authEnabled()) { await ensureFreshAccess(); return withToolCheck(await aiHealth(null, null, { ids: true }), { key: null, baseUrl: null, endpoint: null, ...check }) }
       return reply.status(400).send({ error: 'no key to test' })
     }
     if (baseUrl && !/^https?:\/\/[^/\s]+/i.test(baseUrl)) return reply.status(400).send({ error: 'the base URL must start with http:// or https://' })
-    return aiHealth(candidate, baseUrl, { ids: true })
+    let endpoint: EndpointOptions | null
+    try { endpoint = optionsFor(body ?? {}, baseUrl, stored) } catch (e) { return reply.status(400).send({ error: String((e as Error).message ?? e) }) }
+    return withToolCheck(await aiHealth(candidate, baseUrl, { ids: true, endpoint }), { key: candidate, baseUrl, endpoint, ...check })
   })
 
   // Tool catalog for the Settings page: built-ins plus custom, with state.
@@ -1067,6 +1150,7 @@ ${ctx}` : ctx
     const onSidecar = isSidecarModel(String((req.body as { model?: string })?.model ?? ''))
     const userKey = onSidecar ? sidecarTarget().key : (userCred?.key ?? null)
     const userBase = onSidecar ? sidecarTarget().baseUrl : (userCred?.baseUrl ?? null)
+    const userEndpoint = onSidecar ? null : (userCred?.endpoint ?? null)
     // pw CLI tools only accept a PW credential; a custom-provider key must
     // never leak into platform executions.
     const pwToolKey = userCred && !userCred.baseUrl ? userCred.key : null
@@ -1261,12 +1345,12 @@ ${ctx}` : ctx
           // error), so a retry after that failure goes out without the cap.
           if (dropTokenCap || noTokenCap.has(String(p.model ?? ''))) delete p.max_tokens
           try {
-            if (!emulating) return await streamTurn(p, allocation, callbacks, abort.signal, userKey, userBase)
+            if (!emulating) return await streamTurn(p, allocation, callbacks, abort.signal, userKey, userBase, userEndpoint)
             // Envelope replies must not reach the client as content: buffer,
             // parse, and either surface tool calls or flush the plain text.
             let buffered = ''
             const muted = { ...callbacks, onContent: (t: string) => { buffered += t } }
-            const t = await streamTurn(p, allocation, muted, abort.signal, userKey, userBase)
+            const t = await streamTurn(p, allocation, muted, abort.signal, userKey, userBase, userEndpoint)
             // Native tool calls on the emulated path are the backend's own
             // internal machinery leaking (Gemini Enterprise emits
             // transfer_to_agent handoffs); no tools were sent, so nothing

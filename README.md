@@ -22,7 +22,7 @@ indexer/reindex.sh                         # indexes the folder (or later: Setti
 pnpm start                                 # then open http://localhost:4080
 ```
 
-Without `KB_ROOT`, it opens a small sample folder. Any OpenAI-compatible endpoint works in place of OpenAI's. A clone on a Mac is covered in [`docs/MACOS.md`](docs/MACOS.md) too.
+Without `KB_ROOT`, it opens a small sample folder. Any OpenAI-compatible endpoint works in place of OpenAI's, including a site's AI portal; Settings, Model access takes the headers, model names and query string a portal may need, and its Test says whether the model calls tools, which chat needs to search your files. A clone on a Mac is covered in [`docs/MACOS.md`](docs/MACOS.md) too.
 
 ## What it does
 

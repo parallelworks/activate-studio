@@ -3,8 +3,8 @@ import { GATEWAY_BASE, MAX_TOOL_ITERATIONS, gufiAvailable } from './config.js'
 import { blendHits, searchFts, searchVector, searchWordsAndNames } from './gufi.js'
 import { annotateHits } from './tags.js'
 import { readFileContent } from './kb.js'
-import { gatewayKey, streamTurn, WireMessage } from './chat/gateway.js'
-import { resolveUserKey } from './credentials.js'
+import { gatewayKey, listModels, modelHeaders, streamTurn, withQuery, WireMessage } from './chat/gateway.js'
+import { resolveUserCred, type EndpointOptions } from './credentials.js'
 import { executeTool, unattendedToolSpecs } from './chat/tools.js'
 import { systemPrompt } from './chat/context.js'
 import { effectiveSettings } from './settings.js'
@@ -26,7 +26,9 @@ import { indexSettings } from './indexSettings.js'
  * behavior), so pointing an existing client here and keeping its model id
  * simply grounds it. Requests are made with the CALLER'S bearer key; the
  * proxy holds no credentials (a deployment can opt callers without keys
- * onto its own credential in Settings). Per-request headers: X-RAG-Top-K,
+ * onto its own credential in Settings). A signed-in caller without one uses
+ * their stored key, and a stored OpenAI-compatible endpoint receives their
+ * calls, with its headers and query. Per-request headers: X-RAG-Top-K,
  * X-RAG-Tags (label filter), X-RAG-Off: 1 (plain passthrough).
  */
 
@@ -45,15 +47,33 @@ function bearerOf(req: FastifyRequest): string | null {
   return null
 }
 
-function callerKey(req: FastifyRequest): { key: string; source: string } | null {
+/** Whose credential a call runs on, and where it goes: the gateway, or an
+ *  endpoint of the caller's own with its options. */
+interface CallerAuth { key: string; source: string; baseUrl: string | null; endpoint: EndpointOptions | null }
+
+function callerKey(req: FastifyRequest): CallerAuth | null {
   const bearer = bearerOf(req)
-  if (bearer) return { key: bearer, source: 'caller bearer' }
+  if (bearer) return { key: bearer, source: 'caller bearer', baseUrl: null, endpoint: null }
   // A session-proxied caller with a verified identity uses their stored
   // personal key, tying keyless in-platform access to their JWT identity.
-  const stored = resolveUserKey((req as FastifyRequest & { user?: { id: string } }).user?.id)
-  if (stored) return { key: stored, source: 'stored personal key (session identity)' }
-  if (effectiveSettings().ragAllowDeploymentKey && gatewayKey()) return { key: gatewayKey(), source: 'deployment (keyless fallback)' }
+  // A stored endpoint is where their calls go, with its headers and query;
+  // its key is never sent to the gateway.
+  const stored = resolveUserCred((req as FastifyRequest & { user?: { id: string } }).user?.id)
+  if (stored) {
+    return stored.baseUrl
+      ? { key: stored.key, source: 'stored endpoint (session identity)', baseUrl: stored.baseUrl, endpoint: stored.endpoint ?? null }
+      : { key: stored.key, source: 'stored personal key (session identity)', baseUrl: null, endpoint: null }
+  }
+  if (effectiveSettings().ragAllowDeploymentKey && gatewayKey()) return { key: gatewayKey(), source: 'deployment (keyless fallback)', baseUrl: null, endpoint: null }
   return null
+}
+
+/** The ids a caller's credential lists, or none when the listing fails. */
+async function modelIdsFor(auth: CallerAuth): Promise<string[]> {
+  try {
+    const data = await listModels(auth.key, auth.baseUrl, auth.endpoint) as { data?: { id: string }[]; models?: { id: string }[] }
+    return (data.data ?? data.models ?? []).map(m => m.id)
+  } catch { return [] }
 }
 
 /** The deployment's default underlying model may not be accessible to
@@ -62,17 +82,13 @@ function callerKey(req: FastifyRequest): { key: string; source: string } | null 
  *  can use it, else their first available model. Cached briefly per key. */
 const modelListCache = new Map<string, { ids: string[]; at: number }>()
 
-async function defaultModelFor(key: string): Promise<string> {
+async function defaultModelFor(auth: CallerAuth): Promise<string> {
   const preferred = effectiveSettings().ragDefaultModel
-  const cacheId = key.slice(-16)
+  const cacheId = `${auth.baseUrl ?? ''}|${auth.key.slice(-16)}`
   const cached = modelListCache.get(cacheId)
   let ids = cached && Date.now() - cached.at < 300_000 ? cached.ids : null
   if (!ids) {
-    try {
-      const res = await fetch(`${GATEWAY_BASE}/models`, { headers: { Authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(8000) })
-      const data = res.ok ? await res.json() as { data?: { id: string }[]; models?: { id: string }[] } : {}
-      ids = (data.data ?? data.models ?? []).map(m => m.id)
-    } catch { ids = [] }
+    ids = await modelIdsFor(auth)
     modelListCache.set(cacheId, { ids, at: Date.now() })
   }
   if (preferred && ids.includes(preferred)) return preferred
@@ -174,7 +190,7 @@ function chunkOf(id: string, model: string, delta: Record<string, unknown>, fini
 async function agenticCompletion(
   underlying: string,
   clientMessages: unknown[],
-  key: string,
+  auth: CallerAuth,
   onDelta: (text: string) => void,
   signal?: AbortSignal,
   voice = false,
@@ -196,7 +212,7 @@ async function agenticCompletion(
       // No person is present to approve a change here, so the tools that
       // change something are not offered (and would not run if called).
       { model: underlying, messages, tools: unattendedToolSpecs(), tool_choice: 'auto' },
-      null, cb, signal, key,
+      null, cb, signal, auth.key, auth.baseUrl, auth.endpoint,
     )
     if (turn.finishReason === 'tool_calls' && turn.toolCalls.length > 0) {
       messages.push({ role: 'assistant', content: turn.content || null, tool_calls: turn.toolCalls })
@@ -204,7 +220,8 @@ async function agenticCompletion(
         const cacheKey = `${tc.function.name}:${tc.function.arguments}`
         let result = toolCache.get(cacheKey)
         if (result === undefined) {
-          const out = await executeTool(tc.function.name, tc.function.arguments, { userKey: key })
+          // An endpoint's key is never a platform credential.
+          const out = await executeTool(tc.function.name, tc.function.arguments, { userKey: auth.baseUrl ? null : auth.key })
             .catch(e => ({ result: `tool failed: ${String((e as Error).message ?? e)}`, summary: 'failed' }))
           result = out.result
           toolCache.set(cacheKey, result)
@@ -216,7 +233,7 @@ async function agenticCompletion(
     return { content: finalContent, finish: turn.finishReason ?? 'stop' }
   }
   messages.push({ role: 'user', content: 'Tool budget exhausted; answer now from what you gathered.' })
-  const finalTurn = await streamTurn({ model: underlying, messages }, null, cb, signal, key)
+  const finalTurn = await streamTurn({ model: underlying, messages }, null, cb, signal, auth.key, auth.baseUrl, auth.endpoint)
   return { content: finalContent, finish: finalTurn.finishReason ?? 'stop' }
 }
 
@@ -266,7 +283,6 @@ export async function ragProxyRoutes(app: FastifyInstance): Promise<void> {
   app.get('/v1/models', async (req, reply) => {
     const auth = callerKey(req)
     if (!auth) return reply.status(401).send({ error: { message: 'bearer API key required' } })
-    const key = auth.key
     const created = Math.floor(Date.now() / 1000)
     const entry = (id: string) => ({ id, object: 'model', created, owned_by: 'studio' })
     const eff0 = effectiveSettings()
@@ -277,13 +293,8 @@ export async function ragProxyRoutes(app: FastifyInstance): Promise<void> {
       for (const id of ['studio-agent', 'studio-rag']) {
         if (!data.some(d => d.id === id)) data.push(entry(id))
       }
-      try {
-        const res = await fetch(`${GATEWAY_BASE}/models`, { headers: { Authorization: `Bearer ${key}` } })
-        if (res.ok) {
-          const wire = await res.json() as { data?: { id: string }[]; models?: { id: string }[] }
-          for (const m of wire.data ?? wire.models ?? []) data.push({ id: m.id, object: 'model', created, owned_by: 'gateway' })
-        }
-      } catch { /* studio entries still listed */ }
+      // A failed listing leaves the studio entries listed.
+      for (const id of await modelIdsFor(auth)) data.push({ id, object: 'model', created, owned_by: auth.baseUrl ? 'endpoint' : 'gateway' })
     }
     return { object: 'list', data }
   })
@@ -298,14 +309,13 @@ export async function ragProxyRoutes(app: FastifyInstance): Promise<void> {
       })
       return reply.status(401).send({ error: { message: 'bearer API key required' } })
     }
-    const key = auth.key
     const eff = effectiveSettings()
     const body = { ...(req.body as Record<string, unknown>) }
     const requested = String(body.model ?? 'studio-rag')
     const resolved = resolveModel(requested)
     let { mode, underlying } = resolved
     const bare = requested === 'studio-agent' || requested === 'studio-rag' || requested === 'studio-voice'
-    if (bare) underlying = await defaultModelFor(key)
+    if (bare) underlying = await defaultModelFor(auth)
     if (!underlying) {
       return reply.status(400).send({ error: { message: `No underlying model available to this key: pass ${requested}/<gateway-model-id> or set a default model on the Settings RAG endpoint section.` } })
     }
@@ -339,7 +349,7 @@ export async function ragProxyRoutes(app: FastifyInstance): Promise<void> {
           if (!reply.raw.writableEnded) reply.raw.write(chunkOf(id, requested, {}, null))
         }, 3_000)
         try {
-          const r = await agenticCompletion(underlying, messages, key, t => {
+          const r = await agenticCompletion(underlying, messages, auth, t => {
             reply.raw.write(chunkOf(id, requested, { content: t }, null))
           }, abort.signal, !!resolved.voice)
           reply.raw.write(chunkOf(id, requested, {}, r.finish))
@@ -364,7 +374,7 @@ export async function ragProxyRoutes(app: FastifyInstance): Promise<void> {
         return reply
       }
       try {
-        const r = await agenticCompletion(underlying, messages, key, () => {})
+        const r = await agenticCompletion(underlying, messages, auth, () => {})
         rec.status = 'ok'
         rec.durationMs = Date.now() - started
         return {
@@ -407,10 +417,10 @@ export async function ragProxyRoutes(app: FastifyInstance): Promise<void> {
         }
       }
     }
-    const headers: Record<string, string> = { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' }
+    const headers: Record<string, string> = { ...modelHeaders(auth.key, auth.endpoint), 'Content-Type': 'application/json' }
     const allocation = String(req.headers['x-allocation'] ?? '')
     if (allocation) headers['X-Allocation'] = allocation
-    const upstream = await fetch(`${GATEWAY_BASE}/chat/completions`, {
+    const upstream = await fetch(withQuery(`${auth.baseUrl || GATEWAY_BASE}/chat/completions`, auth.endpoint), {
       method: 'POST', headers, body: JSON.stringify({ ...body, model: underlying, messages }),
     })
     rec.status = upstream.ok ? 'ok' : 'error'
