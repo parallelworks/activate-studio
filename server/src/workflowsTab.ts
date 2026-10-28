@@ -31,6 +31,7 @@ import { withWorkspace } from './workspace.js'
 import { workflowRecord } from './platformRecords.js'
 import { ensureFreshAccess, platformReachability } from './access.js'
 import { cliNetworkFailure, unreachableMessage } from './net.js'
+import { platformGateway } from './sessions.js'
 
 /** The credential platform calls run under: the viewer's own platform key,
  *  else the deployment's. A provider key (one with a baseUrl) is chat-only.
@@ -44,9 +45,12 @@ export function platformKeyFor(userId: string | undefined): { key: string | null
   return { key: dep || null, own: false }
 }
 
-/** Whether this deployment can reach a platform at all, for the tab's visibility. */
+/** Whether this deployment can reach a platform at all, for the tab's
+ *  visibility and the chat's platform tools: a platform credential, and a
+ *  gateway that is a platform's (sessions.ts). A Studio on a computer of
+ *  its own with a model server beside it and no pw CLI sign-in has neither. */
 export function platformAvailable(userId: string | undefined): boolean {
-  return !!platformKeyFor(userId).key
+  return platformGateway() && !!platformKeyFor(userId).key
 }
 
 type Cli = (args: string[], key: string | null, timeoutMs?: number) => Promise<string>

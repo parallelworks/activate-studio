@@ -3,7 +3,7 @@ import fsp from 'node:fs/promises'
 import path from 'node:path'
 import { INDEX_BASE } from '../config.js'
 import { authEnabled } from '../auth.js'
-import { platformOrigin } from '../sessions.js'
+import { platformGateway } from '../sessions.js'
 import type { WireMessage } from './gateway.js'
 import { insteadOf, prepareArgs, runPlatformTool, toolHash, type CallArgs } from './platformTools.js'
 
@@ -126,7 +126,7 @@ export function changesAvailable(o: {
   owner?: string | null
   username?: string | null
 }): { ok: true } | { ok: false; why: string } {
-  if (!platformOrigin()) return { ok: false, why: 'no platform is configured' }
+  if (!platformGateway()) return { ok: false, why: 'no platform is connected' }
   if (!o.viewer) return { ok: false, why: 'nobody in this chat can approve a change' }
   if (!o.key) return { ok: false, why: authEnabled() ? 'changes run only with your own platform key, which you can add under Settings, Model access' : 'no platform credential is configured' }
   if (authEnabled() && o.owner && o.owner !== o.username) return { ok: false, why: 'this conversation belongs to someone else' }

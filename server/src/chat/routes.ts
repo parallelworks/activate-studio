@@ -9,10 +9,11 @@ import { gatewayKey, providerReason } from './gateway.js'
 import { credentialContextName, ensureFreshAccess } from '../access.js'
 import { answerHeld, changesAvailable, holdCall, newHold, viewerOf } from './approvals.js'
 import { approvalPart, asksFirst, insteadOf, isPlatformTool, platformTool, prepareArgs, viewerAccount, type CallArgs } from './platformTools.js'
-import { platformOrigin } from '../sessions.js'
+import { platformAvailable } from '../workflowsTab.js'
 import { aiHealth, gatewayConfigured, GatewayUnreachable, isSidecarModel, listModels, listSidecarModels, modelFailure, probeProvider, probeableProvider, extractUnlockUrl, invalidateProviderProbes, sidecarConfigured, sidecarTarget, StreamedTurnError, streamTurn, WireMessage, WireToolCall, type TokenUsage } from './gateway.js'
-import { MORE_TOOLS, TOOL_CALLS, TOOL_GROUPS, TOOL_SPECS, activeToolSpecs, activeToolSpecsWithRemote, commandFor, customToolSpecs, executeTool, expandSlashCommand, initialToolGroups, readerAllows, readerToolOptions, selectToolSpecs, skillToolSpec, toolGroupOf, toolOptionLabel } from './tools.js'
+import { MORE_TOOLS, PLATFORM_GROUPS, TOOL_CALLS, TOOL_GROUPS, TOOL_SPECS, activeToolSpecs, activeToolSpecsWithRemote, commandFor, customToolSpecs, executeTool, expandSlashCommand, initialToolGroups, needsPlatform, readerAllows, readerToolOptions, selectToolSpecs, skillToolSpec, toolGroupOf, toolOptionLabel } from './tools.js'
 import { systemPrompt } from './context.js'
+import { CitationStream, type CitationContext, type CitedFile } from './citations.js'
 import { attachmentContext } from '../attachments.js'
 import { effectiveSettings } from '../settings.js'
 import { agentPrompt } from '../extensions.js'
@@ -132,8 +133,9 @@ export function emulatedPrompt(
 
   // The closing block is the whole ask, and it is last on purpose.
   parts.push(hasResults
-    ? 'Answer the question from the lookup results above, in plain text, citing each file you used as '
-      + '[relative/path.md](#open=file:relative/path.md). If those results do not answer it, your entire reply must instead be '
+    ? 'Answer the question from the lookup results above, in plain text, citing each file you used as a link to its path '
+      + 'as the results give it, for example [reports/2024/site survey.pdf](#open=file:reports/2024/site%20survey.pdf). '
+      + 'If those results do not answer it, your entire reply must instead be '
       + `this one JSON object and nothing else, requesting one more lookup:\n${envelope}`
     : 'Your entire reply must be this one JSON object and nothing else, no prose, no markdown fence, no preamble:\n'
       + `${envelope}\n\nChoose the lookup that answers the question and output the JSON now.`)
@@ -925,7 +927,9 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     const cred = resolveUserCred(req.user?.id)
     const own = cred && !cred.baseUrl ? cred.key : null
     const ok = changesAvailable({ viewer: viewerOf(req), key: authEnabled() ? own : (own || gatewayKey() || null) }).ok
-    return { tools: ok ? options : options.filter(o => o.id !== 'changes') }
+    // Without a platform, no switch for the tools that need one.
+    const platform = platformAvailable(req.user?.id)
+    return { tools: options.filter(o => (o.id !== 'changes' || ok) && (platform || !PLATFORM_GROUPS.includes(o.id))) }
   })
 
   app.get('/api/chat/tools', async () => {
@@ -1078,8 +1082,14 @@ ${ctx}` : ctx
       owner: body.conversationId ? getConversation(body.conversationId)?.owner ?? null : null,
       username: req.user?.username ?? null,
     })
-    const platformReads = !!platformOrigin() && !!(pwToolKey || gatewayKey())
-    const offered = (name: string) => !isPlatformTool(name) || (asksFirst(name) ? changes.ok : platformReads)
+    // Whether a platform is reachable at all (workflowsTab.ts). Without one,
+    // nothing that needs it is offered: not the platform reads, not the pw
+    // CLI's workflow and cluster tools, not the agents. A small model handed
+    // those calls them anyway, on any question that mentions storage, and
+    // each failure costs a round.
+    const platform = platformAvailable(req.user?.id)
+    const offered = (name: string) => (platform || !needsPlatform(name))
+      && (!isPlatformTool(name) || (asksFirst(name) ? changes.ok : platform))
     const labelScope = Array.isArray(body.labelScope)
       ? body.labelScope.map(String).filter(Boolean).slice(0, 16)
       : []
@@ -1096,8 +1106,9 @@ ${ctx}` : ctx
     const readerTools = Array.isArray(body.tools) ? new Set(body.tools.map(String)) : null
     const activeGroups = initialToolGroups(recentUserText, toolsUsedIn(body.conversationId))
     if (readerTools) for (const g of [...activeGroups]) if (!readerTools.has(g)) activeGroups.delete(g)
+    if (!platform) for (const g of PLATFORM_GROUPS) activeGroups.delete(g)
     const messages: WireMessage[] = [
-      { role: 'system', content: `${await systemPrompt({ platform: activeGroups.has('workflows') || activeGroups.has('agents') })}\n\nToday's date is ${today}. Treat earlier dates as past; call out deadlines that have already passed.${scopeNote}${persona ? `\n\n--- DEPLOYMENT AGENT INSTRUCTIONS (extensions/agents/default.md) ---\n${persona}` : ''}` },
+      { role: 'system', content: `${await systemPrompt({ platform: activeGroups.has('workflows') || activeGroups.has('agents'), connected: platform })}\n\nToday's date is ${today}. Treat earlier dates as past; call out deadlines that have already passed.${scopeNote}${persona ? `\n\n--- DEPLOYMENT AGENT INSTRUCTIONS (extensions/agents/default.md) ---\n${persona}` : ''}` },
       ...history,
     ]
     // Everything after this is the reply's own: what a held call replays.
@@ -1125,25 +1136,40 @@ ${ctx}` : ctx
     const timing = { rounds: 0, toolCalls: 0, modelMs: 0, toolMs: 0, seedMs: 0, firstModelMs: 0, perRound: [] as string[] }
     const markThinking = () => { if (!reasoningStart) reasoningStart = Date.now() }
     const allocation = body.allocation ?? process.env.PW_ALLOCATION ?? null
+    // Citations are repaired as the text streams (citations.ts): against the
+    // files the tools returned in this conversation, earlier replies' and
+    // this one's as its calls return, and the library it searches.
+    const cited: CitationContext = { known: new Map(), library: String((body as { library?: string }).library ?? '') || null }
+    for (const m of (body.conversationId ? getConversation(body.conversationId)?.messages : null) ?? []) {
+      for (const p of m.parts ?? []) if (p.kind === 'tool_call') for (const f of p.files ?? []) cited.known.set(f.path, f.library)
+    }
+    const cites = new CitationStream(cited)
+    const emit = (t: string) => {
+      // A model that narrates before its tool calls speaks once per turn,
+      // and the turns' text arrives as one reply. Without a break the
+      // sentences run together and a heading or table that opens a turn
+      // lands mid-line, where markdown cannot render it.
+      if (turnBreak && t) {
+        turnBreak = false
+        const sep = turnSeparator(finalContent)
+        if (sep) { finalContent += sep; sse(res, 'content', { text: sep }) }
+      }
+      finalContent += t
+      sse(res, 'content', { text: t })
+    }
+    // What a model turn left held (a bracket at its very end), sent once it ends.
+    const flushCites = () => { const rest = cites.flush(); if (rest) emit(rest) }
     const callbacks = {
       onContent: (t: string) => {
         if (reasoningStart && !reasoningDuration) reasoningDuration = Date.now() - reasoningStart
-        // A model that narrates before its tool calls speaks once per turn,
-        // and the turns' text arrives as one reply. Without a break the
-        // sentences run together and a heading or table that opens a turn
-        // lands mid-line, where markdown cannot render it.
-        if (turnBreak && t) {
-          turnBreak = false
-          const sep = turnSeparator(finalContent)
-          if (sep) { finalContent += sep; sse(res, 'content', { text: sep }) }
-        }
-        finalContent += t
-        sse(res, 'content', { text: t })
+        const out = cites.push(t)
+        if (out) emit(out)
       },
       onReasoning: (t: string) => { markThinking(); modelReasoned = true; finalReasoning += t; sse(res, 'reasoning', { text: t }) },
     }
     let recorded = false
     const finish = (finishReason: string | null, id?: string) => {
+      flushCites()
       req.log.info({ model: body.model, ...timing, totalMs: Date.now() - requestStart, finishReason }, 'reply timing')
       const messageId = id ?? `srv-${Date.now()}`
       // A reply paused for the user's approval has not ended; it is not empty.
@@ -1299,6 +1325,7 @@ ${ctx}` : ctx
               req.log.warn({ attempt, wait, model: body.model }, 'provider rate limited; waiting before retrying')
               // Shown while the reply waits, and not kept with it.
               sse(res, 'reasoning', { text: `\n\u21B3 ${String(body.model ?? 'the model').split('/').pop()} is rate limited; retrying in ${wait / 1000} s\n` })
+              cites.drop()
               await new Promise(r => { const t = setTimeout(r, wait); abort.signal.addEventListener('abort', () => { clearTimeout(t); r(null) }, { once: true }) })
               continue
             }
@@ -1310,6 +1337,7 @@ ${ctx}` : ctx
               // which say nothing about whether the cap is supported.
               if (rejectedTokenCap) rememberNoTokenCap(String(body.model ?? ''))
               req.log.warn({ attempt, dropTokenCap, err: String(err?.message ?? err) }, 'serve failed generating; retrying turn')
+              cites.drop()
               continue
             }
             throw err
@@ -1357,7 +1385,7 @@ ${ctx}` : ctx
           answer: resume.allowed === true ? 'Allowed' : 'Declined',
         })
         messages.push(...rec.turn, { role: 'tool', tool_call_id: rec.toolCallId, content: answered.result })
-        for (const g of rec.groups) if (!readerTools || readerTools.has(g)) activeGroups.add(g)
+        for (const g of rec.groups) if ((!readerTools || readerTools.has(g)) && (platform || !PLATFORM_GROUPS.includes(g))) activeGroups.add(g)
         usedTools = true
       }
       // Single-turn backends rationalize textbook questions as answerable
@@ -1374,6 +1402,7 @@ ${ctx}` : ctx
             const callId = `seed-${Date.now()}`
             messages.push({ role: 'assistant', content: null, tool_calls: [{ index: 0, id: callId, type: 'function', function: { name: 'search_kb', arguments: JSON.stringify({ query: q.slice(0, 300) }) } }] } as WireMessage)
             messages.push({ role: 'tool', tool_call_id: callId, content: seeded.result } as WireMessage)
+            for (const f of seeded.files ?? []) cited.known.set(f.path, f.library)
             const line = `\n\u21B3 pre-searched the knowledge base\n`
             finalReasoning += line
             sse(res, 'tool', { phase: 'result', name: 'search_kb', summary: 'pre-searched the knowledge base', pretty: line })
@@ -1401,6 +1430,7 @@ ${ctx}` : ctx
         const turn = await turnWithRetry(
           { model: body.model, messages, tools: toolSpecs, tool_choice: 'auto', max_tokens: maxTokens, ...templateKwargsFor(String(body.model ?? '')) },
         )
+        flushCites()
         timing.rounds++
         timing.modelMs += Date.now() - modelStart
         if (!timing.firstModelMs) timing.firstModelMs = Date.now() - requestStart
@@ -1463,7 +1493,7 @@ ${ctx}` : ctx
             }
             held = { i, tool: name, args: prepared.args, canonical: prepared.canonical }
           }
-          const outcomes: { result: string; summary: string; failed?: boolean; shown?: string }[] = new Array(calls.length)
+          const outcomes: { result: string; summary: string; failed?: boolean; shown?: string; files?: CitedFile[] }[] = new Array(calls.length)
           const toolStart = Date.now()
           timing.toolCalls += calls.length
           let cursor = 0
@@ -1481,6 +1511,10 @@ ${ctx}` : ctx
                   outcomes[i] = { result: `The reader switched off the ${group} tools for this chat. Answer without them, or say what switching them on would let you do.`, summary: 'switched off by the reader', failed: true }
                   continue
                 }
+                if (def && !available.some(t => def.names.includes(t.function.name))) {
+                  outcomes[i] = { result: `The ${group} tools are not available in this Studio. Answer with the tools you have.`, summary: 'not available', failed: true }
+                  continue
+                }
                 if (def) activeGroups.add(group)
                 outcomes[i] = def
                   ? { result: `Added the ${group} tools: ${def.names.join(', ')}. Use them in your next step.`, summary: `added ${group} tools` }
@@ -1495,6 +1529,13 @@ ${ctx}` : ctx
                   result: `The reader switched off ${toolOptionLabel(tc.function.name)} for this chat, so ${tc.function.name} did not run. Answer without it, or say what switching it on would let you do.`,
                   summary: 'switched off by the reader', failed: true,
                 }
+                continue
+              }
+              // A tool this Studio does not offer (one that needs a platform
+              // where there is none, one turned off, or a name the model made
+              // up) does not run, and the model is told so in a line.
+              if (!available.some(t => t.function.name === tc.function.name)) {
+                outcomes[i] = { result: `${tc.function.name} is not available in this Studio, so it did not run. Answer with the tools you have.`, summary: 'not available', failed: true }
                 continue
               }
               // A tool from a group not sent this reply still runs, and its group joins.
@@ -1523,12 +1564,16 @@ ${ctx}` : ctx
           calls.forEach((tc, i) => {
             // The held call has no result yet; its row waits for the answer.
             if (held?.i === i) { iterParts[i].status = 'waiting'; return }
-            const { result, summary, failed, shown } = outcomes[i]
+            const { result, summary, failed, shown, files } = outcomes[i]
             // The tool block shows the summary line, and when expanded what
             // the tool ran; the model gets the result only.
             const block = shown ? `${summary}\n\n${shown}` : summary
             iterParts[i].status = failed ? 'error' : 'ok'
             iterParts[i].result = block
+            if (files?.length) {
+              iterParts[i].files = files
+              for (const f of files) cited.known.set(f.path, f.library)
+            }
             sse(res, 'tool', { phase: 'result', id: iterParts[i].id, name: tc.function.name, summary: block, error: !!failed })
             messages.push({ role: 'tool', tool_call_id: tc.id ?? `${tc.function.name}-${iter}`, content: result })
           })
@@ -1607,6 +1652,7 @@ ${ctx}` : ctx
         finalTurn = await turnWithRetry(
           { model: body.model, messages: finalMessages, max_tokens: finalMaxTokens, ...templateKwargsFor(String(body.model ?? '')) },
         )
+        flushCites()
         finalModel = finalTurn.model ?? finalModel
         if (finalTurn.usage) usageTotal = addUsage(usageTotal, finalTurn.usage)
         timing.rounds++
@@ -1655,6 +1701,7 @@ ${ctx}` : ctx
     }
     // An aborted or failed stream still keeps whatever was said, and the
     // tool calls it made, so a stopped turn's errors stay readable.
+    if (!recorded) finalContent += cites.flush()
     if (!recorded && (finalContent || finalParts.length)) {
       recordAssistantTurn(body.conversationId, {
         id: `srv-${Date.now()}`, role: 'assistant', content: finalContent,

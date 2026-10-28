@@ -322,3 +322,17 @@ test('the Settings catalog marks the tools that ask first and their alternative'
   assert.deepEqual(stop.instead, ['destroy_cluster'])
   assert.equal(tools.find(t => t.name === 'list_storage').asksFirst, undefined)
 })
+
+test('with a platform connected, a question about storage gets the platform tools and the platform section', async () => {
+  script = () => ({ text: `Here is the storage you can use.${filler}` })
+  try {
+    const c = await newConversation()
+    await ask('alex', c, 'Which storage and file systems can I use?')
+    const body = modelCalls.at(-1)
+    for (const n of ['list_storage', 'list_workflows', 'list_clusters', 'hpc_status']) assert.ok(toolNames(body).includes(n), n)
+    assert.match(body.messages[0].content, /Platform workflows registered in this account/)
+    assert.match(body.messages[0].content, /list_sessions or watch_run/)
+    const ids = (await app.inject({ method: 'GET', url: '/api/chat/tool-options', headers: headers('alex') })).json().tools.map(t => t.id)
+    for (const id of ['workflows', 'changes', 'agents']) assert.ok(ids.includes(id), id)
+  } finally { script = defaultScript }
+})

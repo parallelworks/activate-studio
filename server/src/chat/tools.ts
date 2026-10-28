@@ -5,8 +5,9 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { gufiInstalled, isMissingCli, KB_ROOT, MAX_PREVIEW_BYTES, NO_CLI_MESSAGE, PROJECT_ROOT, PW_CLI } from '../config.js'
-import { listDir, readFileContent, KbError } from '../kb.js'
-import { getLibrary } from '../libraries.js'
+import { classify, listDir, readFileContent, KbError } from '../kb.js'
+import { getLibrary, type Library } from '../libraries.js'
+import { indexedText } from '../gufi.js'
 import { annotateHits } from '../tags.js'
 import { effectiveSettings } from '../settings.js'
 import { composeWorkflows } from '../workflowCompose.js'
@@ -18,6 +19,7 @@ import { browseGithub, githubSummary } from '../githubWorkflows.js'
 import { gatewayKey } from './gateway.js'
 import { formatCommands, traced } from '../gufiTrace.js'
 import { ASKS_FIRST_TOOLS, asksFirst, platformToolSpecs, prepareArgs, runPlatformTool } from './platformTools.js'
+import type { CitedFile } from './citations.js'
 
 export interface ToolSpec {
   type: 'function'
@@ -32,7 +34,7 @@ export interface ToolSpec {
  *  catalog so "built-in" is not a black box. */
 export const TOOL_CALLS: Record<string, string> = {
   search_kb: 'gufi_query full-text (fts5 words), filename, and vector (sqlite-lembed gvec) searches over the index, blended and label-annotated; grep -ri over the knowledge base when no index exists',
-  read_kb_file: 'reads the file under the knowledge base root; office documents and PDFs return the extracted text cached beside the index',
+  read_kb_file: 'reads the file in its library; office documents, PDFs, and images return the text extracted for that library (its extraction cache, else the words in its index, on another system too)',
   list_kb_dir: 'directory listing under the knowledge base root',
   query_corpus: 'canned gufi_query aggregations over the per-directory index databases',
   get_labels: 'reads the user.studio.tags xattr maps cached from the filesystem',
@@ -110,7 +112,7 @@ export const TOOL_SPECS: ToolSpec[] = [
     function: {
       name: 'read_kb_file',
       description:
-        'Read files from the knowledge base by relative path (as returned by search_kb or list_kb_dir). Returns text content; DOCX/PDF return extracted text when available. To read several files, pass them together in paths in one call: each comes back under its own heading, the first part of each when there are many.',
+        'Read files from the knowledge base by relative path (as returned by search_kb or list_kb_dir). Returns text content; office documents, PDFs, and images return the text read out of them when the library has it. To read several files, pass them together in paths in one call: each comes back under its own heading, the first part of each when there are many.',
       parameters: {
         type: 'object',
         properties: {
@@ -871,9 +873,22 @@ export const TOOL_GROUPS: Record<string, { summary: string; names: string[]; cue
 }
 export const MORE_TOOLS = 'more_tools'
 
+/** The groups that work only with a platform: its workflows, sessions,
+ *  clusters and storage through the pw CLI and the platform API, changes to
+ *  them, and pw code agents, which run over it. A Studio that reaches no
+ *  platform offers none of them, so a small model is not handed tools that
+ *  can only fail. */
+export const PLATFORM_GROUPS = ['workflows', 'changes', 'agents']
+
 export function toolGroupOf(name: string): string | null {
   for (const [g, def] of Object.entries(TOOL_GROUPS)) if (def.names.includes(name)) return g
   return null
+}
+
+/** Whether a tool belongs to a group that needs a platform. */
+export function needsPlatform(name: string): boolean {
+  const g = toolGroupOf(name)
+  return !!g && PLATFORM_GROUPS.includes(g)
 }
 
 /** The groups a reply starts with: those its recent user text calls for, and those the conversation already used. */
@@ -1352,6 +1367,15 @@ export interface ToolOutcome {
   /** Shown under the summary in the chat's tool block and not sent to the
    *  model: the GUFI commands the tool ran, for a person to copy. */
   shown?: string
+  /** The files the result names, each with its library (null for the main
+   *  folder): what a citation in the reply may link to (citations.ts). */
+  files?: CitedFile[]
+}
+
+/** A tool's files for citations: library ids as links take them, the main
+ *  folder as null, and a bounded number. */
+function citedFiles(rows: { path: string; library?: string | null }[]): CitedFile[] {
+  return rows.slice(0, 60).map(r => ({ path: r.path, library: r.library && r.library !== 'kb' ? r.library : null }))
 }
 
 // Per-invocation context (caller's own platform key for pw CLI executions)
@@ -1388,6 +1412,49 @@ function scopeParam(name: unknown): string | null {
   return String(name ?? '').trim() || toolContext.getStore()?.library || null
 }
 
+/**
+ * A file's text for read_kb_file, as the library viewer shows it: a text
+ * file as it is, and a document or an image as the text read out of it,
+ * from the library's own extraction cache (the main folder's, or the one a
+ * library the Studio built keeps). The cache was once looked for in the
+ * main folder's place for every library, so a document in any other came
+ * back as "binary" and the model answered from search snippets alone.
+ * Where the cache has nothing, as for an index the Studio only reads, or a
+ * library on another system whose files it opens only as text, the text
+ * the index holds for the file is used. Without text, the reason, in a
+ * line the model can pass on.
+ */
+async function textForTool(lib: Library, rel: string): Promise<{ text: string; source: string; why?: undefined } | { text: null; why: string }> {
+  const parts = path.posix.normalize(rel).split('/').filter(p => p && p !== '.')
+  const fromIndex = async () => parts.length && !parts.includes('..') ? indexedText(lib.indexRoot, parts.slice(0, -1).join('/'), parts.at(-1)!) : null
+  let fc
+  try {
+    fc = lib.site
+      ? await (await import('../userLibraries.js')).remoteFile(lib.indexRoot, rel)
+      : await readFileContent(rel, lib.sourceRoot!, lib.cacheRoot ?? undefined)
+  } catch (e) {
+    // A host whose login runs only gufi_query opens no files, but its
+    // index still answers.
+    const kind = classify(parts.at(-1) ?? '', false)
+    const indexed = lib.site && (kind === 'extracted' || kind === 'image') ? await fromIndex() : null
+    if (indexed) return { text: indexed, source: 'index' }
+    throw e
+  }
+  if (fc.content != null) return { text: fc.content, source: fc.source }
+  if (fc.kind === 'extracted' || fc.kind === 'image') {
+    const indexed = await fromIndex()
+    if (indexed) return { text: indexed, source: 'index' }
+    const what = fc.kind === 'image' ? 'an image' : 'a document'
+    return {
+      text: null,
+      why: lib.site
+        ? `The text of ${rel} is not available: it is ${what} in ${lib.label} on ${lib.site}, where the Studio opens only plain text files, and the index there holds no text for it. Answer from the search snippets, and say that the file itself was not read.`
+        : `No text has been read out of ${rel} (${what}, ${fc.size} bytes): ${lib.label} has not extracted it${fc.kind === 'image' ? ' (no OCR text or description)' : ''}, or could not. Answer from the search snippets, and say that the file itself was not read.`,
+    }
+  }
+  return { text: null, why: `Binary file (${fc.kind}, ${fc.size} bytes); no text available.` }
+}
+
 async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScope?: string[]; userKey?: string | null; model?: string | null }): Promise<ToolOutcome> {
   let args: any = {}
   try { args = argsJson ? JSON.parse(argsJson) : {} } catch { /* tolerate bad JSON */ }
@@ -1420,7 +1487,7 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
             const result = (hits.length
               ? hits.map(h => `[library ${h.library.id}] ${h.path}\n  ${h.snippet || '(filename match)'}`).join('\n') + '\nRead a hit with read_kb_file and its library id.'
               : 'No matches.') + lateNote
-            return { result, summary: `${hits.length} hits in ${libs.length} librar${libs.length === 1 ? 'y' : 'ies'}` }
+            return { result, summary: `${hits.length} hits in ${libs.length} librar${libs.length === 1 ? 'y' : 'ies'}`, files: citedFiles(hits.map(h => ({ path: h.path, library: h.library.id }))) }
           }
           // A conversation-level label scope is enforced here regardless of
           // what the model asked for; model-requested tags narrow further
@@ -1437,10 +1504,10 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
           const result = (hits.length
             ? hits.map(h => `${h.path}${h.tags?.length ? ` [labels: ${h.tags.join(', ')}]` : ''}\n  ${h.snippet || '(filename match)'}`).join('\n')
             : 'No matches.') + lateNote
-          return { result, summary: `${hits.length} hits` }
+          return { result, summary: `${hits.length} hits`, files: citedFiles(hits.map(h => ({ path: h.path, library: libs[0].id }))) }
         }
         const rels = await grepFallback(refine ? (refine.text || refine.name) : query, limit)
-        return { result: rels.length ? rels.join('\n') : 'No matches.', summary: `${rels.length} hits (grep fallback)` }
+        return { result: rels.length ? rels.join('\n') : 'No matches.', summary: `${rels.length} hits (grep fallback)`, files: citedFiles(rels.map(r => ({ path: r }))) }
       }
       case 'read_kb_file': {
         // Several files in one call: a question about every proposal read
@@ -1452,38 +1519,39 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
           // Split a 30,000-character budget between the files, at least 1,200
           // each: every result rides along in each later round of the reply.
           const each = Math.max(1_200, Math.floor(30_000 / paths.length))
+          const read = new Set<string>()
           const parts = await Promise.all(paths.map(async rel => {
             try {
-              const fc = lib.site ? await (await import('../userLibraries.js')).remoteFile(lib.indexRoot, rel) : await readFileContent(rel, lib.sourceRoot!)
-              if (fc.content == null) return `### ${rel}\nBinary file (${fc.kind}, ${fc.size} bytes); no text available.`
-              const more = fc.content.length > each ? `\n[first ${each} of ${fc.content.length} characters; read it alone with path and offset for the rest]` : ''
-              return `### ${rel}\n${fc.content.slice(0, each)}${more}`
+              const t = await textForTool(lib, rel)
+              read.add(rel)
+              if (t.text == null) return `### ${rel}\n${t.why}`
+              const more = t.text.length > each ? `\n[first ${each} of ${t.text.length} characters; read it alone with path and offset for the rest]` : ''
+              return `### ${rel}\n${t.text.slice(0, each)}${more}`
             } catch (e) {
               return `### ${rel}\nnot read: ${String((e as Error).message ?? e).slice(0, 200)}`
             }
           }))
-          return { result: parts.join('\n\n'), summary: `${paths.length} files` }
+          return { result: parts.join('\n\n'), summary: `${paths.length} files`, files: citedFiles(paths.filter(p => read.has(p)).map(path => ({ path, library: lib.id }))) }
         }
         const rel = String(args.path ?? '')
         if (!rel) throw new Error('path or paths is required')
         const offset = Math.max(0, Number(args.offset) || 0)
         const lib = namedLibrary(args.library)
         if (!lib.site && !lib.sourceRoot) throw new Error(`${lib.label} has no files on this host; it can be searched but not read`)
-        const fc = lib.site ? await (await import('../userLibraries.js')).remoteFile(lib.indexRoot, rel) : await readFileContent(rel, lib.sourceRoot!)
-        if (fc.content == null) {
-          return { result: `Binary file (${fc.kind}, ${fc.size} bytes); no text available.`, summary: 'binary' }
-        }
-        const slice = fc.content.slice(offset, offset + TOOL_OUTPUT_CAP)
-        const more = fc.content.length > offset + TOOL_OUTPUT_CAP
+        const t = await textForTool(lib, rel)
+        const files = citedFiles([{ path: rel, library: lib.id }])
+        if (t.text == null) return { result: t.why, summary: 'no text', files }
+        const slice = t.text.slice(offset, offset + TOOL_OUTPUT_CAP)
+        const more = t.text.length > offset + TOOL_OUTPUT_CAP
           ? `\n[truncated; continue with offset=${offset + TOOL_OUTPUT_CAP}]` : ''
-        return { result: slice + more, summary: `${slice.length} chars (${fc.source})` }
+        return { result: slice + more, summary: `${slice.length} chars (${t.source})`, files }
       }
       case 'list_kb_dir': {
         const lib = namedLibrary(args.library)
         if (!lib.site && !lib.sourceRoot) throw new Error(`${lib.label} has no files on this host; it can be searched but not listed`)
         const entries = lib.site ? await (await import('../userLibraries.js')).remoteTree(lib.indexRoot, String(args.path ?? '')) : await listDir(String(args.path ?? ''), lib.sourceRoot!)
         const result = entries.map(e => `${e.type === 'dir' ? 'd' : '-'} ${e.path}${e.type === 'dir' ? '/' : ` (${e.size}b)`}`).join('\n')
-        return { result: result || '(empty)', summary: `${entries.length} entries` }
+        return { result: result || '(empty)', summary: `${entries.length} entries`, files: citedFiles(entries.filter(e => e.type === 'file').map(e => ({ path: e.path, library: lib.id }))) }
       }
       case 'compose_workflow': {
         const list = (args.workflows ?? []) as { uses: string; name?: string; id?: string; needs?: string[] }[]
