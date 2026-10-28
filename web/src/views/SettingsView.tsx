@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from 'react'
 import {
   ActionMenu, Autocomplete, Button, Callout, type CalloutTone, Checkbox, CopyButton, CopyCodeBlock,
   DescriptionList, DescriptionListItem, DisclosurePanel, EmptyState, Field, Input, Loader, NumberInput,
-  RefreshButton, SegmentedControl, Select, type SelectItem, StatusDot, Switch, Table, TabPanel, Tabs, Textarea, cx, fieldBox,
+  RefreshButton, SegmentedControl, Select, type SelectItem, StatusDot, Switch, Table, TabPanel, Tabs, Textarea, cx, fieldBox, formatBytes,
 } from '@parallelworks/ui'
 import { ChevronDownIcon } from '@parallelworks/ui/icons'
 import { SURFACES, applySurface } from '../accents'
@@ -30,6 +30,7 @@ interface Effective {
   iconUrlDark: string
   sweepIntervalSec: number
   searchEngine: 'parallel' | 'gufi_vt'
+  gufiLog: boolean
   historyIntervalSec: number
   suggestedPrompts: string[]
   visionModel: string
@@ -177,6 +178,8 @@ export function SettingsView() {
   const cfg = useAppConfig()
   const [form, setForm] = useState<Effective | null>(null)
   const [deploymentCred, setDeploymentCred] = useState<boolean | null>(null)
+  // Where the GUFI command log is written (server/src/gufiLog.ts).
+  const [gufiLogFile, setGufiLogFile] = useState<{ path: string; bytes: number } | null>(null)
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
   const [models, setModels] = useState<string[]>([])
@@ -238,7 +241,7 @@ export function SettingsView() {
   const loadForm = () => {
     setTheme(null)
     fetch('/api/settings').then(r => r.json())
-      .then(d => { setForm(d.effective); setDeploymentCred(d.deploymentCredential ?? null) })
+      .then(d => { setForm(d.effective); setDeploymentCred(d.deploymentCredential ?? null); setGufiLogFile(d.gufiLogFile ?? null) })
       .catch(() => setNote('Could not load settings.'))
     fetch('/api/setup/status').then(r => r.json()).then(d => { setSetupAvailable(!!d?.standalone); setBranding(d?.branding ?? null) })
       .catch(() => {}).finally(() => setSetupKnown(true))
@@ -577,6 +580,16 @@ export function SettingsView() {
                         onValueChange={v => setForm({ ...form, historyIntervalSec: v ?? 0 })} />
                     </Field>
                   </div>
+                  <label className="key-persist">
+                    <Checkbox checked={!!form.gufiLog} onCheckedChange={v => setForm({ ...form, gufiLog: v })} />
+                    Log GUFI commands: every command run to read an index, with when it ran, what asked for it, how long it took, how it ended, and the end of its error output
+                  </label>
+                  {form.gufiLog && gufiLogFile && (
+                    <p className="muted view-sub gufi-log-path">
+                      One JSON object per line in <code className="ix-log-path">{gufiLogFile.path}</code>
+                      {gufiLogFile.bytes > 0 ? ` (${formatBytes(gufiLogFile.bytes)})` : ''}, one previous file kept past 10 MB.
+                    </p>
+                  )}
                   <p className="muted view-sub">Libraries and their indexes are under <a href="#view=settings:libraries">Libraries</a>.</p>
                   {saveRow(false)}
                   {/* How the main folder's index is built: threads, readers,

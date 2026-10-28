@@ -95,14 +95,18 @@ test('the script has a table per location and the order outside the union', () =
   assert.equal(V.vtEligible({ stages: { E: 'SELECT "name" FROM vrpentries;' }, columns: [] }), false)
 })
 
-test('commands are shown as a shell takes them', () => {
+test('commands are shown as a shell takes them', async () => {
   assert.equal(T.shellQuote('-E'), '-E')
   assert.equal(T.shellQuote("SELECT 'a' FROM t;"), `'SELECT '\\''a'\\'' FROM t;'`)
   assert.equal(T.shellQuote('\x1e'), "$'\\x1e'")
-  const text = T.formatCommands([{ engine: 'gufi_query', site: 'cluster-a', command: 'gufi_query -E x /i' }])
-  assert.equal(text, '# on cluster-a (pw ssh cluster-a)\ngufi_query -E x /i')
-  const overSsh = T.formatCommands([{ engine: 'gufi_query', site: 'ssh://alex@hpc.example:2222', command: 'gufi_query -E x /i' }])
-  assert.equal(overSsh, '# on alex@hpc.example:2222 (ssh -p 2222 alex@hpc.example)\ngufi_query -E x /i')
+  const { commands } = await T.traced('query', async () => {
+    T.noteGufi(['gufi_query', '-E', "SELECT 'a' FROM t;", '/i'], { site: 'cluster-a', script: 'SELECT 1;' })
+    T.noteGufi(['gufi_query', '-E', 'x', '/i'], { site: 'ssh://alex@hpc.example:2222' })
+  })
+  assert.deepEqual(commands, [
+    { engine: 'gufi_query', site: 'cluster-a', shell: 'pw ssh cluster-a', command: "gufi_query -E 'SELECT '\\''a'\\'' FROM t;' /i <<'SQL'\nSELECT 1;\nSQL" },
+    { engine: 'gufi_query', site: 'alex@hpc.example:2222', shell: 'ssh -p 2222 alex@hpc.example', command: 'gufi_query -E x /i' },
+  ])
   assert.deepEqual(V.viaShell({ token: 't', site: 'ssh://hpc.example', gufiBin: '/g/bin' }), ['ssh', 'hpc.example', 'env', 'PATH=/g/bin:$PATH'])
 })
 
@@ -118,7 +122,7 @@ test('the way in refuses a wrong secret, an unknown token, and other commands', 
 test('all libraries as one gufi_vt statement, the same rows as the merge', { skip: !haveGufi && 'GUFI not installed' }, async () => {
   V.resetGufiVtForTests()
   assert.equal(await V.gufiVtAvailable(), true)
-  const { result: vt, commands } = await T.traced(() => Q.queryScope({ canned: 'largest', n: 3, library: 'all' }, null))
+  const { result: vt, commands } = await T.traced('query', () => Q.queryScope({ canned: 'largest', n: 3, library: 'all' }, null))
   assert.equal(vt.engine, 'gufi_vt')
   assert.deepEqual(vt.rows.map(r => [r[1], r[2]]), [['huge.bin', '5000'], ['a/big.bin', '3000'], ['runs/log.txt', '2500']])
   assert.deepEqual(vt.rowLibraries, ['u-proj', 'kb', 'u-proj'])
@@ -127,10 +131,17 @@ test('all libraries as one gufi_vt statement, the same rows as the merge', { ski
   // The recorded statement uses gufi_vt's own remote form, and the
   // cluster's own command is recorded under its site.
   const vtCmd = commands.find(c => c.engine === 'gufi_vt')
-  if (process.env.SHOW_GUFI) console.log(T.formatCommands(commands))
+  if (process.env.SHOW_GUFI) console.log(commands)
   assert.match(vtCmd.command, /^\S+gufi_sqlite3 -d x :memory: <<'SQL'\nCREATE VIRTUAL TABLE/)
   assert.ok(vtCmd.command.includes("remote_cmd='pw', remote_arg='ssh', remote_arg='cluster-a'"))
   assert.ok(commands.some(c => c.site === 'cluster-a' && /gufi_query --print-tlv -x --threads 4/.test(c.command)))
+  // Each says how it ended: the statement here, the location's gufi_query there.
+  assert.equal(vtCmd.exit, 0)
+  const there = commands.find(c => c.site === 'cluster-a')
+  assert.equal(there.exit, 0)
+  assert.equal(typeof there.stderr, 'string')
+  // The checks before the statement are not among them.
+  assert.ok(!commands.some(c => c.command.includes("-S 'SELECT 1;'")))
 
   V.forceGufiVtForTests(false)
   const merged = await Q.queryScope({ canned: 'largest', n: 3, library: 'all' }, null)
@@ -197,7 +208,7 @@ test('a search across libraries runs each library in parallel by default', { ski
   const S = await import('../dist/settings.js')
   assert.equal(S.effectiveSettings().searchEngine, 'parallel')
   const L = await import('../dist/libraryScope.js')
-  const { result, commands } = await T.traced(() => L.searchScope(L.scopeLibraries('all', null), 'tiny', 20, { semantic: false }))
+  const { result, commands } = await T.traced('search', () => L.searchScope(L.scopeLibraries('all', null), 'tiny', 20, { semantic: false }))
   assert.ok(!commands.some(c => c.engine === 'gufi_vt'), 'no gufi_vt statement')
   assert.ok(result.length > 0, 'found something')
 })
@@ -210,7 +221,7 @@ test('with the gufi_vt setting, a search across libraries runs its name matches 
     const libs = L.scopeLibraries('all', null)
     const pick = hits => hits.map(h => `${h.library.id}:${h.path}`).sort()
     for (const q of ['tiny', 'note', 'log']) {
-      const { result: vt, commands } = await T.traced(() => L.searchScope(libs, q, 20, { semantic: false }))
+      const { result: vt, commands } = await T.traced('search', () => L.searchScope(libs, q, 20, { semantic: false }))
       assert.ok(commands.some(c => c.engine === 'gufi_vt'), `${q}: ran as gufi_vt`)
       V.forceGufiVtForTests(false)
       const merged = await L.searchScope(libs, q, 20, { semantic: false })

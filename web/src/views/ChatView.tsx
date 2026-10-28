@@ -23,6 +23,7 @@ import { SideViewHost } from '../components/RunPane'
 import { PanelToggle } from '../components/StatusPanel'
 import { modelLabel, share } from '../statusShare'
 import { ToolApproval } from '../components/ToolApproval'
+import { GUFI_TOOL_RENDERERS } from '../components/GufiCommands'
 import { EmptyChatBrand } from '../components/EmptyChatBrand'
 
 const MODEL_STORAGE_KEY = 'studio.chat.lastModel'
@@ -422,7 +423,8 @@ export function ChatView() {
         // A call that changes something on the platform waits for the
         // user's answer; the Studio draws the package's approval block with
         // the alternative the server allows beside it.
-        slots: { partRenderers: { approval: ToolApproval } },
+        // The tools that run GUFI show the commands they ran under their row.
+        slots: { partRenderers: { approval: ToolApproval }, toolRenderers: GUFI_TOOL_RENDERERS },
         strings: {
           thinking: {
             thoughtFor: (duration: string) => `Worked for ${duration}`,

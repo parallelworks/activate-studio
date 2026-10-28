@@ -10,6 +10,7 @@ import { reindexForDir } from './indexing.js'
 import { effectiveSettings } from './settings.js'
 import { authEnabled } from './auth.js'
 import { heldCallsIn, viewerOf } from './chat/approvals.js'
+import type { GufiCommand } from './gufiTrace.js'
 
 /**
  * Server-side conversation store, one JSON file beside the index. Browser
@@ -89,6 +90,10 @@ export interface StoredToolCallPart {
   /** The files the call returned, which a later reply's citations may
    *  link to (chat/citations.ts). */
   files?: { path: string; library: string | null }[]
+  /** The GUFI commands the call ran, and the viewer whose request ran
+   *  them: only that viewer is shown them (withOwnCommands). */
+  gufi?: GufiCommand[]
+  gufiViewer?: string
 }
 
 /** A held call's approval request, in ai-chat's ApprovalPart shape; its id
@@ -314,6 +319,24 @@ export function withHolders(c: StoredConversation, viewerId: string | null): Sto
   }
 }
 
+/**
+ * The GUFI commands a call ran name paths and files in the libraries it
+ * read, so they are shown only to the viewer whose request ran them; anyone
+ * else who opens the conversation sees the calls without them. With sign-in
+ * off there is one viewer. Computed on read, never stored.
+ */
+export function withOwnCommands(c: StoredConversation, viewerId: string | null): StoredConversation {
+  const ran = (m: StoredMessage) => !!m.parts?.some(p => p.kind === 'tool_call' && p.gufi)
+  if (!c.messages.some(ran)) return c
+  const own = (p: StoredToolCallPart) => !authEnabled() || (!!p.gufiViewer && p.gufiViewer === viewerId)
+  return {
+    ...c,
+    messages: c.messages.map(m => !ran(m) ? m : {
+      ...m, parts: m.parts!.map(p => p.kind !== 'tool_call' || !p.gufi ? p : { ...p, gufi: own(p) ? p.gufi : undefined, gufiViewer: undefined }),
+    }),
+  }
+}
+
 /** The tools a conversation's recent replies used, so a follow-up keeps them. */
 export function toolsUsedIn(conversationId: string | undefined, lastMessages = 8): string[] {
   if (!conversationId) return []
@@ -357,7 +380,8 @@ export async function conversationRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/api/chat/conversations/:id', async req => {
     const c = findVisible((req.params as { id: string }).id, req.user?.username)
-    return { ...withHolders(withUnanswered(c), viewerOf(req)?.id ?? null), isOwner: true, canCollaborate: true }
+    const viewerId = viewerOf(req)?.id ?? null
+    return { ...withOwnCommands(withHolders(withUnanswered(c), viewerId), viewerId), isOwner: true, canCollaborate: true }
   })
 
   app.post('/api/chat/conversations', async req => {

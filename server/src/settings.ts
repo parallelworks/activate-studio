@@ -8,6 +8,7 @@ import { authEnabled } from './auth.js'
 import { KbError } from './kb.js'
 import { gatewayConfigured } from './chat/gateway.js'
 import { cachedRemoteStatus, invalidateRemote, remoteStatus } from './mcpClient.js'
+import { gufiLogInfo } from './gufiLog.js'
 
 /**
  * Runtime-editable settings, stored beside the index. Environment variables
@@ -52,6 +53,8 @@ export interface StudioSettings {
   /** How a search across libraries runs: each library in parallel, merged
    *  here (the default), or as one gufi_vt statement. */
   searchEngine?: 'parallel' | 'gufi_vt'
+  /** Append every GUFI command the Studio runs to a log (gufiLog.ts). */
+  gufiLog?: boolean
   suggestedPrompts?: string[]
   visionModel?: string
   disabledTools?: string[]
@@ -192,6 +195,7 @@ export function effectiveSettings(): Required<StudioSettings> {
     iconUrlDark: s.iconUrlDark ?? process.env.APP_ICON_DARK ?? '',
     sweepIntervalSec: s.sweepIntervalSec ?? Number(process.env.SWEEP_INTERVAL_SEC ?? 300),
     searchEngine: s.searchEngine ?? (process.env.STUDIO_SEARCH_ENGINE === 'gufi_vt' ? 'gufi_vt' : 'parallel'),
+    gufiLog: s.gufiLog ?? process.env.STUDIO_GUFI_LOG === '1',
     suggestedPrompts: promptsOf(s.suggestedPrompts),
     visionModel: s.visionModel ?? process.env.ADE_VISION_MODEL ?? '',
     disabledTools: s.disabledTools ?? [],
@@ -288,6 +292,8 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
     // pw CLI login. Report whether one exists rather than letting
     // captioning fail quietly on a bring-your-own-key deployment.
     deploymentCredential: gatewayConfigured(),
+    // Where the GUFI command log is written, for the page to name.
+    gufiLogFile: gufiLogInfo(),
   }))
 
   // Connection state for each attached MCP server, so the page can show
@@ -328,6 +334,7 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
       if (body.searchEngine !== 'parallel' && body.searchEngine !== 'gufi_vt') throw new KbError(400, 'search engine must be parallel or gufi_vt')
       next.searchEngine = body.searchEngine
     }
+    if (body.gufiLog !== undefined) next.gufiLog = Boolean(body.gufiLog)
     if (body.sweepIntervalSec !== undefined) {
       const n = Number(body.sweepIntervalSec)
       if (!Number.isFinite(n) || n < 0 || n > 86400) throw new KbError(400, 'sweep interval must be 0 to 86400 seconds')

@@ -11,10 +11,9 @@ import { INDEX_BASE } from './config.js'
  * beside the index otherwise. One previous file is kept.
  */
 
-export const INDEX_LOG = path.join(
-  process.env.STUDIO_DATA_DIR ? path.join(process.env.STUDIO_DATA_DIR, 'logs') : path.join(INDEX_BASE, 'logs'),
-  'indexing.log',
-)
+/** Where the Studio's logs go: the data folder's, else beside the index. */
+export const LOG_DIR = process.env.STUDIO_DATA_DIR ? path.join(process.env.STUDIO_DATA_DIR, 'logs') : path.join(INDEX_BASE, 'logs')
+export const INDEX_LOG = path.join(LOG_DIR, 'indexing.log')
 const MAX_BYTES = 10 * 1024 * 1024
 
 let size = -1

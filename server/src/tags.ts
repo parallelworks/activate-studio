@@ -10,6 +10,7 @@ import { identify, inodeOf, overlayAdopt, overlayByInode, overlayEmpty, overlayE
 import { libraryEffectiveLabels, libraryLabelCounts, libraryLabelsOf, pruneLibraryLabels, setLibraryLabels } from './libraryLabels.js'
 import { ALL, scopeLibraries } from './libraryScope.js'
 import { effectiveSettings } from './settings.js'
+import { execRun, noteGufi } from './gufiTrace.js'
 
 export const TAG_XATTR = 'user.studio.tags'
 const DELIM = '\x1e'
@@ -72,11 +73,15 @@ let cache: TagMaps | null = null
 export function invalidateTagMaps(): void { cache = null }
 
 function gufiRows(sql: string): Promise<string[][]> {
+  const argv = [path.join(GUFI_BIN, 'gufi_query'), '-n', '8', '-d', DELIM, '-E', sql, GUFI_INDEX]
+  const t0 = Date.now()
   return new Promise((resolve, reject) => {
-    execFile(path.join(GUFI_BIN, 'gufi_query'), ['-n', '8', '-d', DELIM, '-E', sql, GUFI_INDEX],
-      { timeout: 60_000, maxBuffer: 32 * 1024 * 1024, env: gufiEnv() },
-      (err, so) => (err && !so ? reject(new Error(err.message)) : resolve(
-        (so ?? '').split('\n').filter(Boolean).map(l => l.split(DELIM)))))
+    execFile(argv[0], argv.slice(1), { timeout: 60_000, maxBuffer: 32 * 1024 * 1024, env: gufiEnv() }, (err, so, se) => {
+      // The labels beside results and listings: logged, not shown.
+      noteGufi(argv, { show: false, source: 'labels', ...execRun(err, se, t0) })
+      return err && !so ? reject(new Error(err.message)) : resolve(
+        (so ?? '').split('\n').filter(Boolean).map(l => l.split(DELIM)))
+    })
   })
 }
 

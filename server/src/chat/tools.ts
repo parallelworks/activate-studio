@@ -17,7 +17,7 @@ import { parseWorkflowEntry, entryTitle } from '../workflowEntries.js'
 import { workflowDefinition } from '../workflowsTab.js'
 import { browseGithub, githubSummary } from '../githubWorkflows.js'
 import { gatewayKey } from './gateway.js'
-import { formatCommands, traced } from '../gufiTrace.js'
+import { type GufiCommand, traced } from '../gufiTrace.js'
 import { ASKS_FIRST_TOOLS, asksFirst, platformToolSpecs, prepareArgs, runPlatformTool } from './platformTools.js'
 import type { CitedFile } from './citations.js'
 
@@ -1364,9 +1364,9 @@ function grepFallback(query: string, limit: number): Promise<string[]> {
 export interface ToolOutcome {
   result: string
   summary: string
-  /** Shown under the summary in the chat's tool block and not sent to the
-   *  model: the GUFI commands the tool ran, for a person to copy. */
-  shown?: string
+  /** The GUFI commands the tool ran, for the chat's tool block to show
+   *  and a person to copy; never sent to the model. */
+  gufi?: GufiCommand[]
   /** The files the result names, each with its library (null for the main
    *  folder): what a citation in the reply may link to (citations.ts). */
   files?: CitedFile[]
@@ -1385,8 +1385,8 @@ const toolContext = new AsyncLocalStorage<{ userKey: string | null; conversation
 
 export async function executeTool(name: string, argsJson: string, ctx?: { labelScope?: string[]; userKey?: string | null; model?: string | null; library?: string | null; conversationId?: string | null; userId?: string | null }): Promise<ToolOutcome> {
   return toolContext.run({ userKey: ctx?.userKey ?? null, conversationId: ctx?.conversationId ?? null, userId: ctx?.userId ?? null, library: ctx?.library ?? null }, async () => {
-    const { result, commands } = await traced(() => executeToolImpl(name, argsJson, ctx))
-    return commands.length ? { ...result, shown: formatCommands(commands) } : result
+    const { result, commands } = await traced('tool', () => executeToolImpl(name, argsJson, ctx))
+    return commands.length ? { ...result, gufi: commands } : result
   })
 }
 

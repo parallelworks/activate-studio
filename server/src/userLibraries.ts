@@ -9,7 +9,7 @@ import { gatewayKey } from './chat/gateway.js'
 import { resolveUserCred } from './credentials.js'
 import { classify, KbError, type FileContent, type KbEntry } from './kb.js'
 import { checkSshOptions, isDirect, jumpOf, noShell, parseSshOptions, reachedHost, reachedKnown, remoteRun, remoteRunOnce, remoteThreads, setDirect, siteName, SSH_DESTINATION, sshOptionsText, sshRoute, sshSite, warmSsh, type RemoteResult } from './remoteExec.js'
-import { noteGufi } from './gufiTrace.js'
+import { remoteGufi } from './gufiTrace.js'
 import { getJob, startJob, type Job } from './jobs.js'
 import { depthParts, forgetIndexSettings, indexSettings, meaningArgs, NEW_REMOTE_LIBRARY_DEPTH, saveIndexSettings, textArgs, type IndexDepth } from './indexSettings.js'
 import { BUILD_CHECK, BUILD_RUN, BUILD_START, BUILD_STATUS, EMBED_PROBE, indexerScript, keyValues, parseStatus, PHASE_LABEL } from './remoteBuild.js'
@@ -226,10 +226,8 @@ export async function remoteQuery(root: string, args: string[], subdir?: string)
   const target = subdir ? path.posix.join(t.indexRoot, cleanRel(subdir)) : t.indexRoot
   const n = args.indexOf('-n')
   if (n >= 0 && n + 1 < args.length) args = [...args.slice(0, n + 1), String(await remoteThreads(t.site, t.key)), ...args.slice(n + 2)]
-  const t0 = Date.now()
   const q = gufiTool(t.gufiBin)
-  const r = await remoteRun(t.site, t.key, [q, ...args, target])
-  noteGufi([q, ...args, target], { site: siteName(t.site), ms: Date.now() - t0 })
+  const r = await remoteGufi(t.site, t.key, [q, ...args, target])
   // Like the local runner: a nonzero exit with rows still means rows.
   if (r.code !== 0 && !r.stdout) throw new KbError(502, `gufi_query on ${siteName(t.site)} failed: ${r.stderr.trim().split('\n').pop() ?? r.code}`)
   return r.stdout
@@ -244,12 +242,10 @@ export async function remoteQueryMany(roots: string[], args: string[]): Promise<
   if (targets.some(x => hostOf(x.site) !== hostOf(t.site) || x.key !== t.key || x.gufiBin !== t.gufiBin)) throw new KbError(400, 'indexes on different hosts cannot share a query')
   const n = args.indexOf('-n')
   if (n >= 0 && n + 1 < args.length) args = [...args.slice(0, n + 1), String(await remoteThreads(t.site, t.key)), ...args.slice(n + 2)]
-  const t0 = Date.now()
   // As remoteQuery: gufi_query alone, which a host whose login shell
   // runs nothing else accepts.
   const cmd = [gufiTool(t.gufiBin), ...args, ...targets.map(x => x.indexRoot)]
-  const r = await remoteRun(t.site, t.key, cmd)
-  noteGufi(cmd, { site: siteName(t.site), ms: Date.now() - t0 })
+  const r = await remoteGufi(t.site, t.key, cmd)
   // An option an older GUFI does not know prints the usage on stdout; the
   // caller asks again without it.
   if (r.code !== 0 && (!r.stdout || /unrecognized option|invalid option|unknown option/i.test(r.stderr))) throw new KbError(502, `gufi_query on ${siteName(t.site)} failed: ${r.stderr.trim().split('\n').pop() ?? r.code}`)
@@ -315,8 +311,8 @@ export async function remoteTree(root: string, rel: string): Promise<KbEntry[]> 
   // (The session loop sets DYLD_LIBRARY_PATH for a macOS host's tools.)
   const q = gufiTool(t.gufiBin)
   const [filesRun, dirsRun] = await Promise.all([
-    remoteRun(t.site, t.key, [q, '-d', '\x1e', '-n', '1', '--min-level', '0', '--max-level', '0', '-E', 'SELECT name, type, size, mtime FROM vrpentries;', target]),
-    remoteRun(t.site, t.key, [q, '-d', '\x1e', '-n', '1', '--min-level', '1', '--max-level', '1', '-S', 'SELECT name, mtime FROM vrsummary;', target]),
+    remoteGufi(t.site, t.key, [q, '-d', '\x1e', '-n', '1', '--min-level', '0', '--max-level', '0', '-E', 'SELECT name, type, size, mtime FROM vrpentries;', target], { source: 'library' }),
+    remoteGufi(t.site, t.key, [q, '-d', '\x1e', '-n', '1', '--min-level', '1', '--max-level', '1', '-S', 'SELECT name, mtime FROM vrsummary;', target], { source: 'library' }),
   ])
   const filesPart = filesRun.stdout, dirsPart = dirsRun.stdout
   const rows = (s: string) => s.split('\n').filter(Boolean).map(l => l.split('\x1e'))
@@ -639,8 +635,10 @@ interface ProbeHost {
 }
 
 type Run = (argv: string[], ms?: number) => Promise<RemoteResult>
+// A connection test's GUFI commands are logged (gufiLog.ts), its other steps not.
 const runner = (h: ProbeHost): Run => (argv, ms = 60_000) =>
-  remoteRun(h.site, h.key, argv, ms).catch((e: Error) => ({ code: -1, stdout: '', stderr: e.message, raw: Buffer.alloc(0) }))
+  (/(^|\/)gufi_\w+$/.test(argv[0]) ? remoteGufi(h.site, h.key, argv, { timeoutMs: ms, show: false, source: 'libraries' }) : remoteRun(h.site, h.key, argv, ms))
+    .catch((e: Error) => ({ code: -1, stdout: '', stderr: e.message, raw: Buffer.alloc(0) }))
 
 /** What the ssh step says on a host whose login runs only gufi_query. */
 export const ONLY_GUFI_QUERY = 'This host runs only gufi_query: connect existing indexes read only; building an index there is not available.'

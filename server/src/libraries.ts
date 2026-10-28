@@ -24,6 +24,7 @@ import { forgetIndexSettings, indexSettings, type IndexDepth, type MeaningLevel 
 import { KbError } from './kb.js'
 import { REMOTE_PREFIX, learnReached, loadUserLibraries, ownerOf, reachedLabel, remoteRootOf } from './userLibraries.js'
 import { rmTreeSync } from './indexModes.js'
+import { execRun, noteGufi } from './gufiTrace.js'
 
 export interface LibraryCaps {
   /** A GUFI tree: a db.db at the root. */
@@ -241,9 +242,13 @@ function pinnedDefs(): LibraryDef[] {
 }
 
 function sqlite(script: string, timeoutMs = 10_000): Promise<string> {
+  const bin = path.join(GUFI_BIN, 'gufi_sqlite3')
+  const t0 = Date.now()
   return new Promise((resolve, reject) => {
-    const child = execFile(path.join(GUFI_BIN, 'gufi_sqlite3'), [], { timeout: timeoutMs, maxBuffer: 1 << 20, env: gufiEnv() },
-      (err, so) => (err && !so ? reject(err) : resolve(so)))
+    const child = execFile(bin, [], { timeout: timeoutMs, maxBuffer: 1 << 20, env: gufiEnv() }, (err, so, se) => {
+      noteGufi([bin], { engine: 'gufi_sqlite3', script, show: false, source: 'libraries', ...execRun(err, se, t0) })
+      return err && !so ? reject(err) : resolve(so)
+    })
     child.stdin?.end(script)
   })
 }
@@ -283,8 +288,10 @@ function countTables(abs: string): Promise<{ words: number; vectors: number } | 
     '-E', `INSERT INTO t SELECT ${has('words')}, ${has('gvec')};`,
     '-J', 'INSERT INTO agg SELECT sum(w), sum(v) FROM t;',
     '-G', 'SELECT sum(w), sum(v) FROM agg;', abs]
+  const t0 = Date.now()
   return new Promise(resolve => {
-    execFile(bin, args, { timeout: 10 * 60_000, maxBuffer: 1 << 20, env: gufiEnv() }, (_err, so) => {
+    execFile(bin, args, { timeout: 10 * 60_000, maxBuffer: 1 << 20, env: gufiEnv() }, (err, so, se) => {
+      noteGufi([bin, ...args], { show: false, source: 'libraries', ...execRun(err, se, t0) })
       const m = /^(\d+)\|(\d+)\s*$/m.exec(String(so ?? ''))
       resolve(m ? { words: Number(m[1]), vectors: Number(m[2]) } : null)
     })
