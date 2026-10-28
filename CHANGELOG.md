@@ -2,6 +2,112 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.182 (2026-10-28)
+
+### fix(chat): fit a Studio with no platform and a small local model (#616)
+
+A Studio running on a computer of its own, with a small model served on that computer and no platform, ran into four problems. This change fixes each one.
+
+**No platform, no platform tools.** Small models called `list_clusters`, `hpc_status`, `pw_help`, `workflow_runs`, and `list_workflows` and got errors back, because the workflows group's cue matches words like "storage" and "file systems", and only the platform API tools were checked for credentials. The chat now uses `platformAvailable` (the same test the Workflows page uses). That test now also requires a gateway that belongs to a platform: the one the pw CLI context or the default names, or one named in the environment whose path is `/api/openai/v1`. `OPENAI_BASE_URL` pointing at a local model server, even with `OPENAI_API_KEY` set, does not count. Without a platform:
+- the workflows, changes, and agents tools are not offered, and `more_tools` and the Tools menu don't list those groups
+- the system prompt leaves out the platform section and its mentions of workflow DAGs, sessions, and delegation
+- the workflow catalog is not requested from the pw CLI
+- a call to a tool that was not offered does not run, and the model gets one line saying it is not available in this Studio
+
+With a platform connected, behavior is unchanged.
+
+**Citations.** The prompt's `[relative/path.md](#open=file:relative/path.md)` placeholder got copied into replies. The prompt now uses a concrete example and explains `&lib=<id>` for files in other libraries. Citations are also repaired on the server as the reply streams (`server/src/chat/citations.ts`). A bracket is held back only until it closes on its line, so what is stored matches what was shown. These forms become `[path](#open=file:path)`, with `%20` in the target only:
+- a path starting with `relative/path/`
+- a link whose target is a bare path that a tool returned
+- a bare `[path]` naming a file a tool returned in the conversation (tool-call parts now keep the files they returned)
+- percent-encoding in the link text
+
+A file from another library gets `&lib=<id>`, which the web app's `#open` parser already reads, so the link opens in the right library. The repair runs on the server and not in the web renderer because only the server knows which files the tools returned and which library each came from.
+
+**read_kb_file returned "binary".** Root cause: it called `readFileContent` without the library's `cacheRoot`, so it looked for every library's extracted text in the main folder's cache. It now uses the library's own cache, the same way the viewer does. If that cache has no text (an index the Studio only reads, or a library on another system), it falls back to the file's row in the `words` table of the library's index, read with `gufi_query` (on the remote host for a remote library). If neither has text, the model is told plainly, with the reason.
+
+**Snippets starting mid-word.** `embed.py` cuts passages at fixed 880-character steps, and search-by-meaning snippets were the first 200 characters of a passage. Snippets for later passages now start at the first space, and a snippet cut at full width ends on a whole word followed by `…`. The chunker is unchanged, because changing it would change every passage's cache key and force re-embedding.
+
+Tests: new `standaloneChat.test.mjs` drives the chat route in a standalone setup:
+- nothing platform-related is offered or run
+- the Tools menu has no platform switches
+- citations split across streamed pieces are repaired
+- read_kb_file returns a built library's document text, and the bare path it returned is linked into that library
+
+Other new or extended tests:
+- `citations.test.mjs`: each repair, what is left alone, and the same output for every split point of a stream
+- `toolApproval.test.mjs`: platform-connected case, with the tools and the platform section still offered
+- `sshLibraries.test.mjs`: document text from the remote index, and the no-text message
+- `searchOnePass.test.mjs`: a passage cut mid-word
+
+Docs: HELP.md (chat), REFERENCE.md (chat, search).
+
+Server: 721 tests, 708 pass, 13 skipped. Web: 330 pass.
+
+### feat(model-access): name the sources, take portal options for endpoints, and check tool calling (#617)
+
+A site with its own AI portal (an OpenAI-compatible proxy: Bearer virtual key, base `https://<host>/v1`) was entered on the API key tab, which is for ACTIVATE platform keys. That tab strips any path and asks `https://<host>/api/openai/v1/models`, so every attempt (host, host/v1, host/v1/chat/completions) failed with "…does not exist (404). An OpenAI-compatible base URL usually ends in /v1", including when the URL already ended in /v1. Separately, a model without tool calling passed Test, which only lists models, and then produced unusable chat.
+
+- The tabs are ACTIVATE (pw CLI), ACTIVATE API key and OpenAI-compatible endpoint; with sign-in on, ACTIVATE (deployment) replaces the first. Each panel opens with one line on what it is for. Where the row is narrower than the names (a phone, or the page beside the status panel) the choices stack instead of truncating (container query). The setup wizard's AI step uses the same names and mentions a site AI portal.
+- On the ACTIVATE API key tab, an address with a path other than `/api/openai/v1` is read as an endpoint: a callout says so, Save is held, and "Use as an endpoint" moves the address (trimmed to its base URL) and the key to the endpoint tab. Test on such an address tests it as an endpoint and says so. For a host only, a 404 on the platform path is followed by one test of `<host>/v1` (tools check off), and the note says whether that answers as an OpenAI-compatible endpoint, with the same one-click move. An explicitly typed `http://` is kept.
+- A 404 message (`notFoundMessage`) names the URL tried; on the ACTIVATE gateway path, says the host is not an ACTIVATE platform; on a base ending in `/chat/completions` or `/models`, gives the base without it; on a base already ending in a version, says the endpoint may not list its models and points to typed model names; otherwise suggests `<base>/v1`. The test answer carries `notFound` with the URL.
+- The endpoint tab has a collapsed Advanced part: key header (`Authorization: Bearer`, `api-key`, `x-api-key`, none), extra headers (name and value rows), model names typed by hand, and a query string. With model names set, nothing asks for `/models`: the names are the listing, and the health check is a streamed completion with the first name, cached five minutes and dropped on Re-check. Validation refuses reserved headers (Host, Content-Type and the like), a header that duplicates the key header, CR/LF in values, and malformed query strings.
+- Options are stored with the key and protected like it: in the vault, encrypted with the vault secret (`opts` beside `blob`) when sign-in is off; in memory and inside the sealed key cookie when sign-in is on. The browser only ever gets `{auth, headers: [names], models, query}`; header values are not returned or logged, and the completion cache is keyed by a digest. Saving or testing with an empty key keeps the stored key only for the address it was stored for; a header row sent without a value keeps its stored value; a test with no key against another address is refused and sends nothing there. Platform keys carry no options and endpoint keys are still never shared or given to platform tools.
+- `listModels`, `aiHealth`, `streamTurn` and the new `probeToolCalling` take them, so they cover the chat model listing (`/api/chat/models`, also used by Settings), `/api/ai/health`, the key test, chat turns (native and emulated paths), label suggestions (listing and completions), and the `/v1` proxy. The `/v1` proxy used `resolveUserKey` and always called the gateway, so a signed-in caller with a stored endpoint had that endpoint's key sent to the gateway; it now forwards to the endpoint (studio-rag passthrough, studio-agent turns, `/v1/models?all=1`, the default model) and gives no endpoint key to tools. Gateway provider probes no longer run against an endpoint's model ids. Image captioning during indexing uses the deployment gateway and is unchanged.
+- After a test answers ok, one completion offers a single `get_utc_time` tool with a prompt that needs it (`max_tokens` 256, retried without a cap if refused, 15 s limit), streamed or not and with template kwargs as chat would send for that model. The model is the chat's remembered pick when listed, else `ragDefaultModel`, else the first non-embedding model. Results: calls; answered without calling it (noting when it wrote the call as text); endpoint refused the tool (chat would fail every turn); not checked (timeout, or a reasoning model that spent the cap). Models named in `CHAT_SYSTEM_IN_USER` are reported as driven by the prompt-level emulation (`emulatedPrompt`, which also pre-runs a library search) instead of probed. Nothing is refused on the result. The page shows it under Test; the wizard shows it under the model list.
+- Docs: HELP Model access (tab names, Advanced, what Test reports), REFERENCE (test route fields, new Endpoint options section on storage, application, the typed-models health check and the tool check), DEPLOY (a site's AI portal), README (one line).
+
+Tests:
+- `server/test/endpointOptions.test.mjs` (new, against a loopback portal stand-in that wants `api-key`, an extra header and an `api-version` query): option validation and stored-value merge; header and query helpers; each 404 message; tool check model choice and wording; Test refused without options and passing with them; tool check calls / no-call / refused; save encrypts the options, the browser sees names only, and every request (listing, health, chat, `/v1` models, studio-rag, studio-agent) carries the key header, extra header and query and no Authorization; empty-key saves keep the key and header values for the same endpoint only; typed model names replace the listing and the cached completion health check; options survive the sealed cookie.
+- `server/test/aiFeatures.test.mjs`: the new 404 text and `notFound`, and the tool check request on Test.
+- `web/test/modelAccess.test.tsx`: tab names and lead lines; `readPlatformHost`, `endpointBase`, `testNote`; the endpoint-address callout and one-click move; the host-only 404 then `/v1` flow; stored headers shown by name with an empty value kept on save and test; key header None enabling save without a key.
+- `web/test/setupWizard.test.tsx`: the tool check line and the 404 message.
+- Server suite: 715 tests, 702 passed, 0 failed, 13 skipped. Web suite: 42 files, 337 tests passed.
+- Checked by hand against a built Studio and a local portal stand-in, at 1280 and 400 px: both API key tab cases, the move to the endpoint tab, a no-tools model warning, Advanced options tested and saved, and a chat turn through the saved endpoint making a tool call.
+
+### feat: GUFI commands in chat tool calls, with their error output, and a command log (#618)
+
+## What changed
+
+**GUFI commands in chat.** The chat's `search_kb`, `query_corpus` and `list_kb_dir` calls show the GUFI commands they ran under their row, in full, each with a copy button, using the same `GufiCommands` block as Search and Query. Before, the tool block's result text carried the commands as plain text, cut at 4,000 characters with `[truncated]`.
+
+- `executeTool` returns the commands as structured records (`gufi`) instead of formatted text. The chat route sends them on the tool's `result` event and keeps them on the stored call; the call's `result` is now the summary alone. The model's tool message is unchanged and never includes them.
+- `GET /api/chat/conversations/:id` returns a call's commands only to the viewer whose request ran them (`withOwnCommands`); anyone else who opens a shared conversation sees the call without them. With sign-in off there is one viewer.
+- The web registers a tool renderer for those three tools. The adapter keeps streamed commands by call id, since the package's part does not carry extra fields. The result summary stays on the call's row, and the commands toggle sits on its own line under the tool name. Those calls no longer fold into the "Ran N tools" line, because a call the host draws is kept out of it by the package.
+
+**Error output, exit status and time on Search and Query.** Every recorded command (`server/src/gufiTrace.ts`) now has `at`, `ms`, `exit` (or `failed`: the signal, or why it did not run), and its error output.
+
+- `stderr` keeps what the command wrote, as it came, without the expected lines, up to its last 8 KB. A "no such table" line for the text or vector tables (`words`, `gvec`, `gchunks`, `gvecmodel`, `gvec_rowids`, `ext_bm25_by_file`, `ext_vectors_by_file`) is counted in `expected`, with one kept as an example. The UI labels these as expected, from directories without text or vectors.
+- `stderrCut` is set when only the end was kept: a walk keeps 16 KB (`runQuery`, unchanged), and a remote command 4,000 bytes (`remoteExec.ts` now reports when its tail was cut). `stderr` is absent when it was not kept (for example, a command whose ssh session failed), and the UI says so.
+- Local `gufi_query` (execFile and spawn), remote commands over the session loop and direct ssh, `gufi_vt` statements, and each `gufi_vt` location are covered. A new `remoteGufi()` runs and notes remote commands, including ones whose session fails. The remote tree listing that `list_kb_dir` uses is now recorded too.
+- A remote command records `shell` (`pw ssh <cluster>`, or `ssh` with the library's options), so a command over plain ssh no longer says `pw ssh`.
+- `POST /api/query` that fails returns the commands it ran with its error, and the Query page shows them under the error.
+
+**Optional command log.** Settings, General, Indexing has "Log GUFI commands" (`gufiLog`; `STUDIO_GUFI_LOG=1` turns it on by default). When on, every GUFI command the Studio runs to read an index is appended to `gufi-commands.log` beside the index log (`STUDIO_DATA_DIR/logs`, else `INDEX_BASE/logs`). Each line is one JSON object: `time`, `source` (`search`, `query`, `tool`, `stats`, `library`, `labels`, `map`, `history`, `libraries`, `other`), `engine`, `site`, `ms`, `exit`, `failed`, the command (first 16 KB), and the end of its error output (2 KB, with the expected lines counted). One previous file is kept once it passes 10 MB. The settings page shows the path and size when the log is on. Checks around a command (a `gufi_vt` location's check, library table probes, the label lookups) are logged but not shown in the views. The indexing programs already write their output to the index log, so the GUFI command log does not repeat them. Commands and error output stay in this file and in the requesting viewer's views. They are not sent anywhere else.
+
+Docs: `docs/HELP.md` (chat, Search, Query, the index settings), `docs/REFERENCE.md` (a "GUFI commands" section), `docs/LIBRARIES.md` (The GUFI commands).
+
+## Why
+
+A user who deploys GUFI asked to see the full commands the assistant runs, to see each command's error output and exit status on Search and Query, and to keep a log of every command for debugging a deployment.
+
+## Tests
+
+- Server: new `test/gufiCommands.test.mjs` covers:
+  - splitting expected from other error output
+  - records with exit, signal and failure
+  - log-only notes and sources
+  - turning the log on and off
+  - the commands a failed request ran
+  - a remote command's cut stderr tail, through a local session loop
+  - a local `gufi_query` with expected lines (needs GUFI)
+  - a chat turn in which the tool's commands go to the requester, never to the model, and not to another viewer of the conversation (needs GUFI)
+
+  `test/gufiVt.test.mjs` is updated for the structured records and checks exit status for the `gufi_vt` statement and its location.
+- Web: new `test/gufiCommands.test.tsx` covers the meta line, the error output labels and panel, the adapter keeping streamed commands, and a stored conversation drawing the commands under a `search_kb` row. `test/settingsGeneral.test.tsx` covers the log switch.
+- Full suites: server 715 tests, 702 pass, 13 skipped (they need ONNX, GGUF or numpy, which this machine does not have), 0 fail. Web 336 pass across 43 files.
+- Checked by hand on a local Studio with a stand-in model, at 1280 px and 400 px: the chat tool rows (closed, commands open, error output open, after a reload), Search, Query (a successful query with expected lines, and a failed one), and the settings switch.
+
 ## v1.181 (2026-10-27)
 
 ### feat: export query and search results as CSV (#613)
@@ -26,6 +132,10 @@ Before the main folder's first build its index directory can be absent. Search (
 - Only GUFI missing on this computer stops a local search, with "GUFI is not installed here".
 
 Test: omissions.test.mjs gains a case with the main index directory removed, where search and Query of another library return its rows and name the main folder. It failed before the fix ("index not built yet", 0 hits). The existing "never indexed" case created an empty main index folder first, which is why it passed. Full server suite: 706 tests, 0 failed.
+
+### Change log through v1.181 (#615)
+
+Regenerated with `node scripts/release-notes.mjs --changelog --next v1.181` before tagging v1.181.
 
 ## v1.180 (2026-10-27)
 
