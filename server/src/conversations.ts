@@ -86,6 +86,9 @@ export interface StoredToolCallPart {
   status: 'ok' | 'error' | 'waiting'
   result?: string
   decision?: { status: 'approved' | 'denied'; by: 'user'; name?: string; at?: string; note?: string }
+  /** The files the call returned, which a later reply's citations may
+   *  link to (chat/citations.ts). */
+  files?: { path: string; library: string | null }[]
 }
 
 /** A held call's approval request, in ai-chat's ApprovalPart shape; its id

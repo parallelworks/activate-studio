@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify'
-import { GATEWAY_BASE } from './config.js'
+import { GATEWAY_BASE, GATEWAY_FROM_ENV } from './config.js'
 import { gatewayKey } from './chat/gateway.js'
 import { resolveUserCred } from './credentials.js'
 import { KbError } from './kb.js'
@@ -40,6 +40,19 @@ export interface SessionRow {
 /** The platform's origin, from the gateway address the Studio already uses. */
 export function platformOrigin(): string | null {
   try { return new URL(GATEWAY_BASE).origin } catch { return null }
+}
+
+/**
+ * Whether the gateway is a platform's, so that its origin answers the
+ * platform API. It is when the Studio chose it (the pw CLI's sign-in, or
+ * the default), and when the environment names one by the path a platform
+ * gateway has. OPENAI_BASE_URL or PW_GATEWAY_URL naming any other
+ * OpenAI-compatible endpoint, such as a model server on this computer,
+ * leads to that server alone, and the key beside it is that server's.
+ */
+export function platformGateway(): boolean {
+  if (!platformOrigin()) return false
+  return !GATEWAY_FROM_ENV || /\/api\/openai\/v1$/.test(GATEWAY_BASE)
 }
 
 /** One platform session record as the Studio shows it, or null when it has no name. */

@@ -169,6 +169,29 @@ const FTS_COLUMNS = `rpath(sname, sroll)||'/'||vrpentries.name, vrpentries.name,
   `replace(replace(snippet(words, 2, '[', ']', ' … ', 12), char(10), ' '), char(13), ' ')`
 const FTS_FROM = (expr: string) => `FROM vrpentries INNER JOIN words ON inode=CAST(tinode AS TEXT) WHERE wordf MATCH ${q(expr)}`
 
+/** How much of a passage a search by meaning shows. */
+const PASSAGE_CHARS = 200
+/**
+ * A passage's opening words for a hit, from the Studio's chunks table.
+ * embed.py cuts every passage after a file's first at a fixed offset in
+ * its text, so it nearly always starts inside a word, and the snippet read
+ * "ying information" where the text said "unifying information". A later
+ * passage's snippet starts at its first space instead; the end is trimmed
+ * to a word by passageSnippet.
+ */
+const CHUNK_SNIPPET = (() => {
+  const flat = `replace(replace(g.ctext, char(10), ' '), char(13), ' ')`
+  return `CASE WHEN g.seq > 0 AND instr(${flat}, ' ') > 0 THEN substr(${flat}, instr(${flat}, ' ') + 1, ${PASSAGE_CHARS}) ELSE substr(${flat}, 1, ${PASSAGE_CHARS}) END`
+})()
+
+/** A passage snippet cut at its full width ends inside a word too: it ends
+ *  at the last whole word instead, marked as continuing. */
+export function passageSnippet(s: string): string {
+  if ([...s].length < PASSAGE_CHARS) return s
+  const end = s.lastIndexOf(' ')
+  return end > PASSAGE_CHARS / 2 ? `${s.slice(0, end).trimEnd()} …` : s
+}
+
 /** Full-text search's per-directory SQL, for an fts5 expression: the
  *  directory's best matches by bm25. */
 export function ftsSql(expr: string, limit: number): string {
@@ -584,7 +607,7 @@ export function onePassStages(queryText: string, lim: WalkLimits, roots: string[
   if (external && vecs.length) {
     ext.push(
       `INSERT INTO t SELECT 'v', sqrt(2.0 * vec_distance_cosine(substr(x.embedding, 1, 1536), qv.qe)), rpath(e.sname, e.sroll)||'/'||e.name, e.name, e.size, e.mtime, ` +
-      `replace(replace(substr(x.chunk_content, 1, 200), char(10), ' '), char(13), ' ') ` +
+      `replace(replace(substr(x.chunk_content, 1, ${PASSAGE_CHARS}), char(10), ' '), char(13), ' ') ` +
       `FROM ext_vectors_by_file x JOIN qv ON x.vector_model_name LIKE qv.pat ` +
       `JOIN vrpentries e ON CAST(x.vinode AS INT64) = e.inode AND CAST(x.vmtime AS INT64) = e.mtime ` +
       `WHERE length(x.embedding) >= 1536${and('e.')} ORDER BY 2, 3 LIMIT ${lim.vectorsPerDir};`)
@@ -597,10 +620,10 @@ export function onePassStages(queryText: string, lim: WalkLimits, roots: string[
       // Only the kept files' chunks, each scored: vec0's own distance (L2,
       // on these unit vectors) so the two forms rank alike.
       ? `INSERT INTO t SELECT * FROM (SELECT 'v', vec_distance_l2(v.fp384, ${qe}) AS d, rpath(e.sname, e.sroll)||'/'||e.name, e.name, e.size, e.mtime, ` +
-        `replace(replace(substr(g.ctext, 1, 200), char(10), ' '), char(13), ' ') ` +
+        `${CHUNK_SNIPPET} ` +
         `FROM vrpentries e JOIN gchunks g ON g.tinode = e.inode JOIN gvec v ON v.cid = g.cid WHERE ${filter('e.')}) WHERE d IS NOT NULL ORDER BY 2, 3 LIMIT ${lim.vectorsPerDir};`
       : `INSERT INTO t SELECT 'v', k.distance, rpath(e.sname, e.sroll)||'/'||e.name, e.name, e.size, e.mtime, ` +
-        `replace(replace(substr(g.ctext, 1, 200), char(10), ' '), char(13), ' ') ` +
+        `${CHUNK_SNIPPET} ` +
         `FROM (SELECT cid, distance FROM gvec WHERE fp384 MATCH ${qe} ORDER BY distance LIMIT ${lim.vectorsPerDir}) k ` +
         `JOIN gchunks g ON g.cid = k.cid JOIN vrpentries e ON e.inode = g.tinode;`,
     )
@@ -704,7 +727,8 @@ export async function walkSearch(queryText: string, lim: WalkLimits, indexRoots:
     if (!kind) continue
     const at = order.find(o => r[2] === o.p || r[2].startsWith(o.p + '/'))
     if (!at) continue
-    rows.push({ kind, r: Number(r[1]), path: r[2] === at.p ? '' : r[2].slice(at.p.length + 1), name: r[3], size: Number(r[4]) || 0, mtime: Number(r[5]) || 0, snippet: withoutProvenance(r[6] ?? ''), root: at.root })
+    const snippet = withoutProvenance(kind === 'vector' ? passageSnippet(r[6] ?? '') : r[6] ?? '')
+    rows.push({ kind, r: Number(r[1]), path: r[2] === at.p ? '' : r[2].slice(at.p.length + 1), name: r[3], size: Number(r[4]) || 0, mtime: Number(r[5]) || 0, snippet, root: at.root })
   }
   return rows
 }
@@ -926,7 +950,7 @@ export async function searchVector(queryText: string, limit = 10, indexRoot: str
     script.push(`ATTACH ${q(db)} AS d;`)
     script.push(
       `SELECT 'VROW' || ${q(DELIM)} || ${q(relDir)} || ${q(DELIM)} || g.fname || ${q(DELIM)} || k.distance || ${q(DELIM)} || ` +
-      `replace(replace(substr(g.ctext, 1, 200), char(10), ' '), char(13), ' ') ` +
+      `${CHUNK_SNIPPET} ` +
       `FROM (SELECT cid, distance FROM d.gvec WHERE fp384 MATCH (SELECT qe FROM ${tableFor.get(model)}) ORDER BY distance ASC LIMIT 3) k ` +
       `JOIN d.gchunks g ON g.cid = k.cid;`,
     )
@@ -950,7 +974,7 @@ export async function searchVector(queryText: string, limit = 10, indexRoot: str
       name: fname,
       size: 0,
       mtime: 0,
-      snippet: withoutProvenance(parts.slice(4).join(' ')),
+      snippet: withoutProvenance(passageSnippet(parts.slice(4).join(' '))),
       score: Number.isFinite(dist) ? dist : 999,
       mode: 'vector',
     })
@@ -1099,4 +1123,23 @@ export async function entryStats(indexRoot: string, dir: string, name: string, t
   const row = parseRows(out, 2)[0]
   if (!row) return null
   return { size: Number(row[0]) || 0, mtime: Number(row[1]) || 0, labels: String(row[2] ?? '').split(',').map(t => t.trim()).filter(Boolean) }
+}
+
+/** The text a library's index holds for one file: what its build read out
+ *  of a document or an image (the Studio's words table in the file's
+ *  folder), without the converter's provenance line. Null when that folder
+ *  has no words, or none for this file. Reads an index on another system
+ *  there, so the text of a library whose files the Studio cannot convert
+ *  itself is still at hand. */
+export async function indexedText(indexRoot: string, dir: string, name: string): Promise<string | null> {
+  const args = ['-n', '1', '--min-level', '0', '--max-level', '0', '-E', `SELECT wordf FROM words WHERE fname = ${q(name)} LIMIT 1;`]
+  let out: string
+  try {
+    out = indexRoot.startsWith(REMOTE_PREFIX)
+      ? await remoteQuery(indexRoot, args, dir || undefined)
+      : (await run('gufi_query', [...args, dir ? path.join(indexRoot, dir) : indexRoot])).stdout
+  } catch { return null }
+  // One row of one column: the text, then the row's newline.
+  const text = withoutProvenance(out.replace(/\n$/, ''))
+  return text.trim() ? text : null
 }

@@ -192,6 +192,29 @@ test('added over ssh, the library is ready, read only, and answers the tree, sea
   await assert.rejects(U.remoteFile(lib.indexRoot, '../../etc/passwd'), /invalid path/)
 })
 
+test('read_kb_file gives a document\'s text from the index on that host, and says so plainly when there is none', { skip }, async () => {
+  // The files are on the host; their text is in the index's words, as a
+  // build there leaves it. The Studio opens only plain text files there.
+  write(path.join(home, 'proj', 'data', 'report.docx'), 'PK\x03\x04 not text')
+  write(path.join(home, 'proj', 'data', 'photo.png'), '\x89PNG not text')
+  execFileSync('python3', ['-c', `
+import sqlite3, sys
+db = sqlite3.connect(sys.argv[1])
+db.execute('CREATE VIRTUAL TABLE words USING fts5(tinode UNINDEXED, fname UNINDEXED, wordf)')
+db.execute("INSERT INTO words VALUES ('1', 'report.docx', ?)", ('<!-- extracted by downmark 0.10.0 -->\\n\\n# Report\\n\\nIt\\'s the quarterly report.\\n',))
+db.commit()
+`, path.join(index, 'data', 'db.db')])
+  const { executeTool } = await import('../dist/chat/tools.js')
+  const read = async p => executeTool('read_kb_file', JSON.stringify({ path: p, library: lib.id }), {})
+  const doc = await read('data/report.docx')
+  assert.equal(doc.result, "# Report\n\nIt's the quarterly report.\n")
+  assert.match(doc.summary, /chars \(index\)/)
+  const img = await read('data/photo.png')
+  assert.equal(img.result, 'The text of data/photo.png is not available: it is an image in Remote project on me@linux-box, where the Studio opens only plain text files, and the index there holds no text for it. Answer from the search snippets, and say that the file itself was not read.')
+  assert.equal(img.summary, 'no text')
+  assert.equal((await read('readme.txt')).result, 'hello from the remote\n', 'text files as before')
+})
+
 test('one gufi_vt statement over the knowledge base and the library over ssh', { skip }, async t => {
   V.resetGufiVtForTests()
   if (!(await V.gufiVtAvailable())) return t.skip('this GUFI has no gufi_vt')

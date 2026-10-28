@@ -202,6 +202,30 @@ test('meaning comes from the same walk, nearest first, each file once', { skip: 
   assert.equal(other.filter(r => r.kind === 'vector').length, 0)
 })
 
+test('a passage cut mid-word shows from its first whole word, and a full-width snippet ends on a whole word', { skip: skip || (!haveVec && 'no sqlite-vec in GUFI') }, async () => {
+  const root = library('passages', ['p/later.md', 'p/first.md'], {
+    text: { 'p/later.md': 'x', 'p/first.md': 'y' },
+    vectors: { 'p/later.md': unit(7), 'p/first.md': unit(7, 0.9) },
+  })
+  // As embed.py cuts them: a later passage starts where the offset fell,
+  // inside "unifying"; the first starts the text.
+  const long = 'information from all the places a file system keeps it, gathered into one index that answers questions about every file, its size, its owner, its age, and the words inside it, '.repeat(2)
+  execFileSync('python3', ['-c', `
+import sqlite3, sys
+db = sqlite3.connect(sys.argv[1])
+db.execute("UPDATE gchunks SET seq = 1, ctext = ? WHERE fname = 'later.md'", ('ying\\n' + sys.argv[2],))
+db.execute("UPDATE gchunks SET ctext = 'unifying a short first passage' WHERE fname = 'first.md'")
+db.commit()
+`, path.join(root, 'p', 'db.db'), long])
+  const rows = (await G.walkSearch('anything', LIMITS, [root], queryVec(7))).filter(r => r.kind === 'vector')
+  const later = rows.find(r => r.path === 'p/later.md').snippet
+  assert.ok(later.startsWith('information from all the places'), later)
+  assert.ok(later.endsWith(' …') && later.length <= 202, later)
+  assert.ok(long.startsWith(later.slice(0, -2)), 'cut after a whole word')
+  assert.equal(rows.find(r => r.path === 'p/first.md').snippet, 'unifying a short first passage', 'the first passage is shown from its start')
+  assert.equal(G.passageSnippet('short text'), 'short text')
+})
+
 test('external databases in the shared schema are searched by text and by a model we embed, matched by inode and mtime', { skip: skip || (!haveVec && 'no sqlite-vec in GUFI') }, async () => {
   const root = library('shared', ['d/theirs.md', 'd/stale.md', 'd/plain.md', 'e/vec.md', 'e/othermodel.md'], {
     external: {
