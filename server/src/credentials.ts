@@ -39,7 +39,89 @@ const VAULT_FILE = path.join(INDEX_BASE, 'user-credentials.json')
 const SECRET_FILE = path.join(INDEX_BASE, '.credentials-secret')
 const SESSION_TTL_MS = 12 * 3600 * 1000
 
-interface VaultEntry { blob: string; last4: string; addedAt: string; kind?: 'api-key' | 'token'; expiresAt?: string | null; baseUrl?: string | null; sharedBy?: string; sharedBySub?: string }
+/**
+ * What an OpenAI-compatible endpoint needs beyond its base URL and key, for
+ * portals that differ from the OpenAI shape: the header the key goes in,
+ * headers of their own, model names for an endpoint that lists none, and a
+ * query string every request carries. Kept with the key and protected the
+ * same way, since a header value can be a secret too: encrypted at rest,
+ * sealed in the cookie, and never sent to the browser or logged. The
+ * browser sees endpointSummary(), which names headers without values.
+ */
+export type EndpointAuth = 'bearer' | 'api-key' | 'x-api-key' | 'none'
+export interface EndpointOptions {
+  /** The header the key is sent in; Authorization: Bearer when absent. */
+  auth?: EndpointAuth
+  headers?: { name: string; value: string }[]
+  models?: string[]
+  /** Without the leading '?'. */
+  query?: string
+}
+export interface EndpointSummary { auth: EndpointAuth; headers: string[]; models: string[]; query: string }
+
+const AUTHS: EndpointAuth[] = ['bearer', 'api-key', 'x-api-key', 'none']
+/** The header each choice sends the key in. */
+const AUTH_HEADER: Record<EndpointAuth, string | null> = { bearer: 'authorization', 'api-key': 'api-key', 'x-api-key': 'x-api-key', none: null }
+/** Set by the Studio itself, or by the transport, on every request. */
+const RESERVED_HEADERS = new Set(['host', 'content-type', 'content-length', 'connection', 'transfer-encoding', 'accept-encoding', 'x-allocation'])
+const TOKEN = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/
+
+/** A base URL as it is stored and compared: trimmed, no trailing slash. */
+export const normalizeBaseUrl = (url: string | null | undefined): string | null =>
+  String(url ?? '').trim().replace(/\/+$/, '') || null
+
+/**
+ * The options as sent from the form, checked. A header sent with no value
+ * keeps the value stored under the same name, so a secret need not be typed
+ * again to change something else; with nothing stored it is an error. All
+ * defaults is null. Messages name the field, for a 400.
+ */
+export function normalizeEndpointOptions(raw: unknown, stored?: EndpointOptions | null): EndpointOptions | null {
+  if (raw === null || raw === undefined) return null
+  if (typeof raw !== 'object' || Array.isArray(raw)) throw new Error('endpoint options must be an object')
+  const r = raw as { auth?: unknown; headers?: unknown; models?: unknown; query?: unknown }
+  const auth = (r.auth === undefined || r.auth === null || r.auth === '' ? 'bearer' : String(r.auth)) as EndpointAuth
+  if (!AUTHS.includes(auth)) throw new Error(`unknown key header "${String(r.auth)}"`)
+
+  const headers: { name: string; value: string }[] = []
+  const rows = r.headers === undefined || r.headers === null ? [] : r.headers
+  if (!Array.isArray(rows)) throw new Error('headers must be a list')
+  if (rows.length > 20) throw new Error('at most 20 extra headers')
+  for (const row of rows) {
+    const name = String((row as { name?: unknown })?.name ?? '').trim()
+    const given = (row as { value?: unknown })?.value
+    let value = given === undefined || given === null ? '' : String(given).trim()
+    if (!name && !value) continue
+    if (!name || name.length > 100 || !TOKEN.test(name)) throw new Error(`"${name.slice(0, 100)}" is not a valid header name`)
+    const lower = name.toLowerCase()
+    if (RESERVED_HEADERS.has(lower)) throw new Error(`the Studio sets ${name} itself`)
+    if (AUTH_HEADER[auth] === lower) throw new Error(`the key is already sent as ${name}; choose None as the key header to set ${name} yourself`)
+    if (headers.some(h => h.name.toLowerCase() === lower)) throw new Error(`${name} is listed twice`)
+    if (!value) value = stored?.headers?.find(h => h.name.toLowerCase() === lower)?.value ?? ''
+    if (!value) throw new Error(`header ${name} needs a value`)
+    if (value.length > 4096 || /[\r\n\0]/.test(value)) throw new Error(`the value of ${name} is not a valid header value`)
+    headers.push({ name, value })
+  }
+
+  const list = r.models === undefined || r.models === null ? [] : Array.isArray(r.models) ? r.models : String(r.models).split(/[\n,]/)
+  const models = [...new Set(list.map(m => String(m ?? '').trim()).filter(Boolean))]
+  if (models.length > 100) throw new Error('at most 100 model names')
+  if (models.some(m => m.length > 200 || /\s/.test(m))) throw new Error('a model name is one word, at most 200 characters')
+
+  const query = String(r.query ?? '').trim().replace(/^\?+/, '')
+  if (query.length > 2000 || /[\s#]/.test(query)) throw new Error('the query string has spaces or a #, or is too long')
+
+  if (auth === 'bearer' && !headers.length && !models.length && !query) return null
+  return { ...(auth !== 'bearer' ? { auth } : {}), ...(headers.length ? { headers } : {}), ...(models.length ? { models } : {}), ...(query ? { query } : {}) }
+}
+
+/** What the browser may see of the options: header names, never values. */
+export function endpointSummary(o: EndpointOptions | null | undefined): EndpointSummary | null {
+  if (!o) return null
+  return { auth: o.auth ?? 'bearer', headers: (o.headers ?? []).map(h => h.name), models: o.models ?? [], query: o.query ?? '' }
+}
+
+interface VaultEntry { blob: string; last4: string; addedAt: string; kind?: 'api-key' | 'token'; expiresAt?: string | null; baseUrl?: string | null; sharedBy?: string; sharedBySub?: string; /** EndpointOptions, encrypted like the key. */ opts?: string }
 
 /** Reserved vault subject holding a key a user has promoted for everyone.
  *  A platform subject is a uuid, so it cannot collide, and setUserKey
@@ -105,7 +187,7 @@ function saveVault(v: Record<string, VaultEntry>): void {
   fs.writeFileSync(VAULT_FILE, JSON.stringify(v, null, 1), { mode: 0o600 })
 }
 
-const sessionKeys = new Map<string, { key: string; expiresAt: number; addedAt: string; last4: string; kind: 'api-key' | 'token'; credExpiresAt: string | null; baseUrl: string | null }>()
+const sessionKeys = new Map<string, { key: string; expiresAt: number; addedAt: string; last4: string; kind: 'api-key' | 'token'; credExpiresAt: string | null; baseUrl: string | null; endpoint: EndpointOptions | null }>()
 
 function liveSession(sub: string) {
   const s = sessionKeys.get(sub)
@@ -114,16 +196,25 @@ function liveSession(sub: string) {
   return s
 }
 
-export function setUserKey(sub: string, key: string, persist: boolean, baseUrl?: string | null): void {
+function openOptions(blob: string | undefined): EndpointOptions | null {
+  if (!blob) return null
+  const plain = decrypt(blob)
+  if (!plain) return null
+  try { return JSON.parse(plain) as EndpointOptions } catch { return null }
+}
+
+/** `endpoint` applies only with a base URL: a platform key has none. */
+export function setUserKey(sub: string, key: string, persist: boolean, baseUrl?: string | null, endpoint?: EndpointOptions | null): void {
   if (personalKeysDisabled()) throw new Error('personal keys are disabled on this deployment')
   if (sub === SHARED_SUB) throw new Error('reserved subject')
   const trimmed = key.trim()
   if (!trimmed || trimmed.length > 8192) throw new Error('invalid key')
-  let url: string | null = String(baseUrl ?? '').trim().replace(/\/$/, '') || null
+  const url = normalizeBaseUrl(baseUrl)
   if (url) {
     try { new URL(url) } catch { throw new Error('invalid provider base URL') }
     if (!/^https?:\/\//.test(url)) throw new Error('provider base URL must be http(s)')
   }
+  const opts = url ? normalizeEndpointOptions(endpoint ?? null) : null
   // Base64-padded tokens end in '=' and a suffix of 'NA==' identifies
   // nothing; the last characters before the padding do.
   const last4 = trimmed.replace(/=+$/, '').slice(-4)
@@ -131,7 +222,7 @@ export function setUserKey(sub: string, key: string, persist: boolean, baseUrl?:
   const { kind, expiresAt } = inspect(trimmed)
   if (onDisk(sub)) {
     const vault = loadVault()
-    vault[sub] = { blob: encrypt(trimmed), last4, addedAt, kind, expiresAt, baseUrl: url }
+    vault[sub] = { blob: encrypt(trimmed), last4, addedAt, kind, expiresAt, baseUrl: url, ...(opts ? { opts: encrypt(JSON.stringify(opts)) } : {}) }
     saveVault(vault)
     return
   }
@@ -140,7 +231,7 @@ export function setUserKey(sub: string, key: string, persist: boolean, baseUrl?:
   // file now holds nothing but the deployment shared key, and any personal
   // entry from before this change is scrubbed.
   void persist
-  sessionKeys.set(sub, { key: trimmed, expiresAt: Date.now() + SESSION_TTL_MS, addedAt, last4, kind, credExpiresAt: expiresAt, baseUrl: url })
+  sessionKeys.set(sub, { key: trimmed, expiresAt: Date.now() + SESSION_TTL_MS, addedAt, last4, kind, credExpiresAt: expiresAt, baseUrl: url, endpoint: opts })
   const vault = loadVault()
   if (vault[sub]) { delete vault[sub]; saveVault(vault) }
 }
@@ -242,6 +333,8 @@ export interface UserKeyStatus {
   credExpiresAt?: string | null
   credExpired?: boolean
   baseUrl?: string | null
+  /** An endpoint's options, header values left out. */
+  endpoint?: EndpointSummary | null
 }
 
 function expired(iso: string | null | undefined): boolean {
@@ -255,6 +348,7 @@ export function getUserKeyStatus(sub: string): UserKeyStatus {
     return {
       mode: 'stored', last4: e.last4, addedAt: e.addedAt, kind: e.kind ?? 'api-key',
       credExpiresAt: e.expiresAt ?? null, credExpired: expired(e.expiresAt), baseUrl: e.baseUrl ?? null,
+      endpoint: endpointSummary(openOptions(e.opts)),
     }
   }
   const s = liveSession(sub)
@@ -263,7 +357,7 @@ export function getUserKeyStatus(sub: string): UserKeyStatus {
       mode: 'session', last4: s.last4, addedAt: s.addedAt,
       sessionExpiresAt: new Date(s.expiresAt).toISOString(),
       kind: s.kind, credExpiresAt: s.credExpiresAt, credExpired: expired(s.credExpiresAt),
-      baseUrl: s.baseUrl,
+      baseUrl: s.baseUrl, endpoint: endpointSummary(s.endpoint),
     }
   }
   return { mode: 'none' }
@@ -271,8 +365,9 @@ export function getUserKeyStatus(sub: string): UserKeyStatus {
 
 /** The caller's own key when they have one; null means use the
  *  deployment credential (current shared-session default). With sign-in
- *  off, a request without a user is the one user's. */
-export interface UserCred { key: string; baseUrl: string | null }
+ *  off, a request without a user is the one user's. `endpoint` is present
+ *  only for an endpoint saved with options. */
+export interface UserCred { key: string; baseUrl: string | null; endpoint?: EndpointOptions }
 
 export function resolveUserCred(sub: string | null | undefined): UserCred | null {
   if (!sub && !authEnabled()) sub = SINGLE_OWNER
@@ -280,10 +375,11 @@ export function resolveUserCred(sub: string | null | undefined): UserCred | null
   if (onDisk(sub)) {
     const e = loadVault()[sub]
     const key = e && !expired(e.expiresAt) ? decrypt(e.blob) : null
-    return key ? { key, baseUrl: e.baseUrl ?? null } : null
+    const endpoint = key && e.baseUrl ? openOptions(e.opts) : null
+    return key ? { key, baseUrl: e.baseUrl ?? null, ...(endpoint ? { endpoint } : {}) } : null
   }
   const s = liveSession(sub)
-  if (s) return expired(s.credExpiresAt) ? null : { key: s.key, baseUrl: s.baseUrl }
+  if (s) return expired(s.credExpiresAt) ? null : { key: s.key, baseUrl: s.baseUrl, ...(s.endpoint ? { endpoint: s.endpoint } : {}) }
   return null
 }
 
@@ -312,7 +408,7 @@ export function sealKeyCookie(sub: string): string[] | null {
   // for the host no matter who is signed in, so without this the cookie is
   // a bearer token for whoever presents it: signing in as a second user in
   // the same browser handed them the first user's key.
-  const blob = encrypt(JSON.stringify({ s: sub, k: s.key, u: s.baseUrl ?? null }))
+  const blob = encrypt(JSON.stringify({ s: sub, k: s.key, u: s.baseUrl ?? null, ...(s.endpoint ? { o: s.endpoint } : {}) }))
   const chunks: string[] = []
   for (let i = 0; i < blob.length; i += COOKIE_CHUNK) chunks.push(blob.slice(i, i + COOKIE_CHUNK))
   return chunks
@@ -342,13 +438,13 @@ export function hydrateFromCookie(sub: string, cookieHeader: string | undefined)
     try {
       const opened = decrypt(blob)
       if (!opened) continue
-      const { s: owner, k, u } = JSON.parse(opened) as { s?: string; k?: string; u?: string | null }
+      const { s: owner, k, u, o } = JSON.parse(opened) as { s?: string; k?: string; u?: string | null; o?: EndpointOptions }
       // Only the subject the key was sealed for may open it. A cookie from
       // an older build carries no subject, so it cannot be attributed to
       // anyone and is refused rather than guessed at; that costs one
       // re-entry and closes the leak.
       if (owner !== sub) continue
-      if (typeof k === 'string' && k.trim()) { setUserKey(sub, k, false, u ?? null); return }
+      if (typeof k === 'string' && k.trim()) { setUserKey(sub, k, false, u ?? null, o ?? null); return }
     } catch { /* stale cookie sealed under a rotated secret: try the other */ }
   }
 }

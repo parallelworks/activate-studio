@@ -105,6 +105,9 @@ describe('what a key test says', () => {
     expect(keyTestProblem(t({ message: 'Unexpected token < in JSON at position 0' }), '')).toMatch(/not with a list of models.*\/v1/)
     expect(keyTestProblem(t({ message: 'https://models.example/models does not exist (404). An OpenAI-compatible base URL usually ends in /v1.' }), ''))
       .toMatch(/does not exist \(404\)/)
+    // A 404's message names the URL tried and what to do, and stands as it is.
+    const notFound = 'https://models.example/v1/models does not exist (404). If https://models.example/v1 is the right address, the endpoint does not list its models.'
+    expect(keyTestProblem(t({ message: notFound, notFound: 'https://models.example/v1/models' }), '')).toBe(notFound)
     expect(keyTestProblem(t({ ok: true, status: 'ok', models: 0 }), '')).toBe('No models: models.example answered but offers no models.')
     expect(keyTestProblem(t({ ok: true, status: 'ok', models: 3 }), '')).toBeNull()
   })
@@ -188,7 +191,10 @@ function stubServer(s: Server) {
     if (url === '/api/me/model-key/test') {
       const { key } = body as { key: string }
       if (key === 'bad') return reply({ ok: false, status: 'auth', models: 0, gatewayHost: 'models.example', message: 'models.example rejected this credential (401).' })
-      return reply({ ok: true, status: 'ok', models: 2, gatewayHost: 'models.example', message: null, ids: ['small-model', 'large-model'] })
+      return reply({
+        ok: true, status: 'ok', models: 2, gatewayHost: 'models.example', message: null, ids: ['small-model', 'large-model'],
+        toolCheck: { model: 'small-model', result: 'calls', message: 'small-model calls tools, so chat can search the libraries with it.' },
+      })
     }
     if (url === '/api/me/model-key' && method === 'POST') {
       const b = body as { baseUrl: string }
@@ -307,6 +313,7 @@ describe('the setup wizard', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Test' }))
     expect(await screen.findByText('2 models offered by models.example')).toBeInTheDocument()
     expect(screen.getByText('small-model, large-model')).toBeInTheDocument()
+    expect(screen.getByText('small-model calls tools, so chat can search the libraries with it.')).toBeInTheDocument()
     expect(sent(s, 'POST', '/api/me/model-key/test').at(-1)).toEqual({ key: 'sk-good', baseUrl: 'https://models.example/v1' })
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     expect(await screen.findByText('Saved. The Studio uses small-model through models.example.')).toBeInTheDocument()
