@@ -71,7 +71,7 @@ jobs:
     outputs:
       image: ${{ steps.files.outputs.image }}
     steps:
-      - uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+      - uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
         with:
           egress-policy: block
           allowed-endpoints: >
@@ -126,7 +126,7 @@ jobs:
       # images, npm, Hugging Face for the models, and PyPI's file host for
       # the ONNX embedding packages. Anything else is blocked and shows in
       # the job's StepSecurity report.
-      - uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+      - uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
         with:
           egress-policy: block
           allowed-endpoints: >
@@ -264,7 +264,7 @@ jobs:
       # Audit, not block, until a release run shows this job's full set
       # (Sigstore and the OIDC token service for the attestation among it).
       # It runs no build code.
-      - uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+      - uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
         with:
           egress-policy: audit
 
