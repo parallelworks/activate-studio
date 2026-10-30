@@ -29,6 +29,15 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# Whether a volume is mounted at a path, by its real path as mount(8) prints
+# it (/private/var/..., where mktemp gave /var/...).
+mounted() {
+  local p
+  p="$(cd "$1" 2>/dev/null && pwd -P)" || return 1
+  # All of mount's output is read, so pipefail never sees a SIGPIPE.
+  mount | grep -F " on $p (" >/dev/null
+}
+
 # hdiutil fails now and then on CI runners ("Resource busy", mostly on
 # detach while the system still holds the new volume): each call is tried
 # a few times, a detach is forced last, and the message shows if it gives up.
@@ -36,6 +45,10 @@ hdi() {
   local n out
   for n in 1 2 3 4 5; do
     if out="$(hdiutil "$@" 2>&1)"; then return 0; fi
+    # A detach can report failure and still go through, and the next try
+    # then finds nothing there ("No such file or directory"): it is done
+    # once nothing is mounted at the mount point.
+    if [ "$1" = detach ] && ! mounted "${@: -1}"; then return 0; fi
     sleep "$((n * 2))"
   done
   if [ "$1" = detach ] && out="$(hdiutil detach -force "${@: -1}" 2>&1)"; then return 0; fi
