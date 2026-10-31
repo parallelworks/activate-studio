@@ -1,0 +1,8 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "start-page",
+  "description": "The shell's own starting and error page (bundled, tauri://localhost or http://tauri.localhost): Try Again and Open Logs. The Studio's origin gets its own capability at run time, for the exact port the shell started the server on (see src/main.rs).",
+  "local": true,
+  "windows": ["main"],
+  "permissions": ["allow-retry", "allow-open-logs"]
+}

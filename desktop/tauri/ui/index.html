@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ACTIVATE Studio</title>
+<style>
+  html, body { height: 100%; margin: 0; }
+  body { display: flex; align-items: center; justify-content: center; font: 14px/1.5 system-ui, sans-serif; color: #334155; background: #f8fafc; }
+  main { max-width: 640px; padding: 24px; text-align: center; }
+  h1 { font-size: 18px; font-weight: 600; margin: 0 0 8px; }
+  pre { text-align: left; white-space: pre-wrap; font-size: 12px; background: #e2e8f0; padding: 12px; border-radius: 6px; max-height: 240px; overflow: auto; }
+  button { font: inherit; padding: 6px 14px; margin: 0 4px; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <h1 id="title">Starting ACTIVATE Studio...</h1>
+  <p id="detail"></p>
+  <pre id="log" hidden></pre>
+  <p id="buttons" hidden>
+    <button id="retry" type="button">Try Again</button>
+    <button id="logs" type="button">Open Logs</button>
+  </p>
+</main>
+<script>
+  // The shell navigates here with the state in the fragment: empty while the
+  // server starts, or JSON {title, detail, log} when it could not start or
+  // stopped.
+  const $ = id => document.getElementById(id)
+  const invoke = (cmd, args) => window.__TAURI_INTERNALS__.invoke(cmd, args)
+  function show() {
+    let s = null
+    try { s = location.hash.length > 1 ? JSON.parse(decodeURIComponent(location.hash.slice(1))) : null } catch { s = null }
+    $('title').textContent = s ? s.title : 'Starting ACTIVATE Studio...'
+    $('detail').textContent = s ? (s.detail || '') : ''
+    $('log').textContent = s ? (s.log || '') : ''
+    $('log').hidden = !(s && s.log)
+    $('buttons').hidden = !s
+  }
+  $('retry').onclick = () => {
+    history.replaceState(null, '', location.pathname)
+    show()
+    invoke('retry').catch(e => { $('detail').textContent = String(e) })
+  }
+  $('logs').onclick = () => invoke('open_logs').catch(e => { $('detail').textContent = String(e) })
+  addEventListener('hashchange', show)
+  show()
+</script>
+</body>
+</html>
