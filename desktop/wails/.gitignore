@@ -1,0 +1,3 @@
+# wails build output and the files it generates (icon, manifest, NSIS script)
+build/
+shell/wailsjs/

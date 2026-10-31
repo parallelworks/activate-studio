@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=ACTIVATE Studio
+Comment=Knowledge base visualization and chat
+Exec=/opt/activate-studio/activate-studio
+Icon=activate-studio
+Terminal=false
+Categories=Office;Development;
+StartupWMClass=activate-studio
