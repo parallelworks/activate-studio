@@ -142,7 +142,7 @@ test('the walk runs names and folder paths first, then words, then meaning, exte
   const x = s.indexOf('--external-copy')
   assert.ok(x >= 0 && x < s.indexOf('-E'))
   assert.equal(s[x + 1], '\\.db$')
-  assert.match(s[x + 2], /FROM ext_bm25_by_file JOIN vrpentries e ON CAST\(binode AS INT64\) = e\.inode AND CAST\(bmtime AS INT64\) = e\.mtime/)
+  assert.match(s[x + 2], /FROM extdb\.ext_bm25_by_file JOIN vrpentries e ON CAST\(binode AS INT64\) = e\.inode AND CAST\(bmtime AS INT64\) = e\.mtime/)
   assert.match(s[s.indexOf('-I') + 1], /INSERT INTO qv VALUES \('minilm-l6-mean-int8', X'/)
   assert.match(s[s.indexOf('-G') + 1], /sum\(1\.0 \/ \(60\.0 \+ rn\)\)/)
   // A names-only index: no words, no vectors, nothing external.
@@ -243,6 +243,23 @@ test('external databases in the shared schema are searched by text and by a mode
   // Without the pattern, none of it.
   const off = await G.walkSearch('quillwort', { ...lim, external: null }, [root], queryVec(9))
   assert.equal(off.filter(r => r.kind === 'fts' || r.kind === 'vector').length, 0)
+})
+
+test('the external copy reads the attached file, not a table of the same name in db.db', { skip }, async () => {
+  const root = library('collide', ['d/theirs.md'], { external: { 'd/theirs.md': { text: 'quillwort from the external file' } } })
+  // The same table in the directory's own db.db, with other text.
+  execFileSync('python3', ['-c', `
+import sqlite3, sys
+db = sqlite3.connect(sys.argv[1])
+inode, mtime = db.execute("SELECT inode, mtime FROM entries WHERE name = 'theirs.md'").fetchone()
+db.execute("CREATE VIRTUAL TABLE ext_bm25_by_file USING fts5(bfsid UNINDEXED, binode UNINDEXED, bmtime UNINDEXED, path_segments_json_file UNINDEXED, component_asset_id UNINDEXED, component_type UNINDEXED, path_segments_json_component UNINDEXED, chunk_sequence UNINDEXED, start_position UNINDEXED, end_position UNINDEXED, page_start UNINDEXED, page_end UNINDEXED, content)")
+db.execute('INSERT INTO ext_bm25_by_file VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)', ('fs', str(inode), str(mtime), '[]', 'a', 'body', '[]', 0, 0, 1, 1, 1, 'quillwort from db.db'))
+db.commit()
+`, path.join(root, 'd', 'db.db')])
+  const rows = await G.walkSearch('quillwort', { ...LIMITS, studioText: false, studioVectors: false, external: '\\.db$' }, [root])
+  const fts = rows.filter(r => r.kind === 'fts')
+  assert.equal(fts.length, 1)
+  assert.match(fts[0].snippet, /external file/)
 })
 
 test('several roots in one walk: each row goes back to its own root', { skip }, async () => {

@@ -534,7 +534,10 @@ export function nameFilterSql(groups: NameTok[][], roots: string[], pre: string,
  * cosine distance on the scale of vec0's distance for unit vectors) join
  * the same table, matched to the directory's entries by inode and mtime, so
  * a file changed since its text was extracted is not matched. That runs
- * before -E, which trims what it added first.
+ * before -E, which trims what it added first. The tables are named by
+ * GUFI's alias for the attached file, extdb: a directory's db.db (attached
+ * as tree) can hold tables of the same names, which an unqualified name
+ * would read first.
  *
  * A refined search (RefineSpec) takes its names and paths from its name
  * field and its words from its text, as given; with match 'all' and both
@@ -601,14 +604,14 @@ export function onePassStages(queryText: string, lim: WalkLimits, roots: string[
     ext.push(
       `INSERT INTO t SELECT 'f', bm25(ext_bm25_by_file), rpath(e.sname, e.sroll)||'/'||e.name, e.name, e.size, e.mtime, ` +
       `replace(replace(snippet(ext_bm25_by_file, -1, '[', ']', ' … ', 12), char(10), ' '), char(13), ' ') ` +
-      `FROM ext_bm25_by_file JOIN vrpentries e ON CAST(binode AS INT64) = e.inode AND CAST(bmtime AS INT64) = e.mtime ` +
+      `FROM extdb.ext_bm25_by_file JOIN vrpentries e ON CAST(binode AS INT64) = e.inode AND CAST(bmtime AS INT64) = e.mtime ` +
       `WHERE ext_bm25_by_file MATCH ${q(expr)}${and('e.')} ORDER BY 2, 3 LIMIT ${lim.wordsPerDir};`)
   }
   if (external && vecs.length) {
     ext.push(
       `INSERT INTO t SELECT 'v', sqrt(2.0 * vec_distance_cosine(substr(x.embedding, 1, 1536), qv.qe)), rpath(e.sname, e.sroll)||'/'||e.name, e.name, e.size, e.mtime, ` +
       `replace(replace(substr(x.chunk_content, 1, ${PASSAGE_CHARS}), char(10), ' '), char(13), ' ') ` +
-      `FROM ext_vectors_by_file x JOIN qv ON x.vector_model_name LIKE qv.pat ` +
+      `FROM extdb.ext_vectors_by_file x JOIN qv ON x.vector_model_name LIKE qv.pat ` +
       `JOIN vrpentries e ON CAST(x.vinode AS INT64) = e.inode AND CAST(x.vmtime AS INT64) = e.mtime ` +
       `WHERE length(x.embedding) >= 1536${and('e.')} ORDER BY 2, 3 LIMIT ${lim.vectorsPerDir};`)
   }
