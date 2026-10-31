@@ -122,6 +122,38 @@ fs.writeFileSync(out, JSON.stringify(r, null, 2))
 console.log(JSON.stringify(r))
 ' "$OUT/server-pids.jsonl" "$STUB" "$OUT/orphans.json"
 
+# What outlives the shell when it is ended from outside: TERM (handled:
+# the server's process group is stopped) and KILL (not catchable: only the
+# server hears of it, through PR_SET_PDEATHSIG).
+kill_test() {
+  local phase="$1" sig="$2" inst="$3" before spid exited
+  before=$(wc -l <"$OUT/server-pids.jsonl" 2>/dev/null || echo 0)
+  STUDIO_SMOKE_PHASE="$phase" "$BIN" >>"$OUT/shell-$phase.log" 2>&1 &
+  spid=$!
+  for _ in $(seq 1 120); do
+    [ -f "$OUT/results-$inst.json" ] && grep -q '"coldStartMs"' "$OUT/results-$inst.json" && break
+    sleep 0.5
+  done
+  sleep 2
+  kill -"$sig" "$spid"
+  exited=false
+  for _ in $(seq 1 40); do kill -0 "$spid" 2>/dev/null || { exited=true; break; }; sleep 0.5; done
+  wait "$spid" 2>/dev/null
+  sleep 2
+  node -e '
+const fs = require("fs")
+const [file, before, sig, exited, out] = process.argv.slice(1)
+const alive = p => { try { process.kill(p, 0); return true } catch { return false } }
+const rows = fs.readFileSync(file, "utf8").trim().split("\n").filter(Boolean).slice(Number(before)).map(l => JSON.parse(l))
+const r = { signal: sig, shellExited: exited === "true", servers: rows, alive: rows.flatMap(x => [x.server, x.child]).filter(alive) }
+fs.writeFileSync(out, JSON.stringify(r, null, 2))
+console.log(JSON.stringify(r))
+for (const p of r.alive) { try { process.kill(p, "SIGKILL") } catch {} }
+' "$OUT/server-pids.jsonl" "$before" "$sig" "$exited" "$OUT/kill-$phase.json"
+}
+kill_test T TERM 3
+kill_test K KILL 4
+
 cp "$TMP/data/logs/"*.log "$OUT/" 2>/dev/null
 ls -la "$HOME/Downloads" >"$OUT/downloads-dir.txt" 2>&1
 kill "$POLL" "$STUB" 2>/dev/null

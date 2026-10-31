@@ -13,8 +13,9 @@
 //!   STUDIO_SMOKE_REAL_DIALOG=1   also open the real dialog once (CI cancels it)
 //!   STUDIO_SMOKE_SHOTS=0         do not wait for screenshots
 //!   STUDIO_SMOKE_IDLE_SECS=N     idle time before the memory reading (10)
-//!   STUDIO_SMOKE_TIMEOUT_SECS=N  give up and exit 3 after N seconds (300)
-//!   STUDIO_SMOKE_PHASE=R         set by the shell itself for the relaunched copy
+//!   STUDIO_SMOKE_TIMEOUT_SECS=N  give up and exit 3 after N seconds (240)
+//!   STUDIO_SMOKE_PHASE=R|T|K     R: set by the shell for the relaunched copy;
+//!                                T, K: start and wait to be signalled or killed
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -65,9 +66,18 @@ impl Smoke {
         let var = |k: &str| std::env::var(k).ok().filter(|v| !v.is_empty());
         let out = PathBuf::from(var("STUDIO_SMOKE_OUT").unwrap_or_else(|| "smoke-out".into()));
         let _ = std::fs::create_dir_all(out.join("shots"));
-        let relaunched = var("STUDIO_SMOKE_PHASE").as_deref() == Some("R");
+        // R: the copy a relaunch starts. T and K: copies that only start and
+        // wait, for CI to end them with a signal (T: TERM, Linux) or a
+        // forced kill (K), to see what outlives the shell.
+        let phase = var("STUDIO_SMOKE_PHASE").unwrap_or_else(|| "A".into());
+        let instance = match phase.as_str() {
+            "R" => 2,
+            "T" => 3,
+            "K" => 4,
+            _ => 1,
+        };
         let s = Smoke {
-            instance: if relaunched { 2 } else { 1 },
+            instance,
             t0,
             preload: var("STUDIO_SMOKE_PRELOAD").map(PathBuf::from),
             test_folder: var("STUDIO_SMOKE_FOLDER"),
@@ -75,10 +85,10 @@ impl Smoke {
             real_dialog: var("STUDIO_SMOKE_REAL_DIALOG").as_deref() == Some("1"),
             shots: var("STUDIO_SMOKE_SHOTS").as_deref() != Some("0"),
             idle_secs: var("STUDIO_SMOKE_IDLE_SECS").and_then(|v| v.parse().ok()).unwrap_or(10),
-            timeout_secs: var("STUDIO_SMOKE_TIMEOUT_SECS").and_then(|v| v.parse().ok()).unwrap_or(300),
+            timeout_secs: var("STUDIO_SMOKE_TIMEOUT_SECS").and_then(|v| v.parse().ok()).unwrap_or(240),
             trigger: out.join("exit-trigger"),
             pids: out.join("server-pids.jsonl"),
-            phase: Mutex::new(if relaunched { "R".into() } else { "A".into() }),
+            phase: Mutex::new(phase),
             results: Mutex::new(Map::new()),
             lists: Mutex::new(BTreeMap::new()),
             servers: Mutex::new(Vec::new()),

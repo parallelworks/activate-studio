@@ -566,6 +566,46 @@ fn find_node() -> PathBuf {
     PathBuf::from(name)
 }
 
+/// TERM, INT and HUP end the app the orderly way (RunEvent::Exit stops
+/// the server and its process group); without this a TERM would end the
+/// shell at once, and only the server, through PR_SET_PDEATHSIG, would
+/// hear of it. A signal handler can only write to a pipe; a thread reads it.
+#[cfg(unix)]
+fn stop_on_signals(app: AppHandle) {
+    use std::io::Read;
+    use std::os::unix::io::FromRawFd;
+    use std::sync::atomic::AtomicI32;
+    static WRITE_FD: AtomicI32 = AtomicI32::new(-1);
+    extern "C" fn on_signal(_: libc::c_int) {
+        let fd = WRITE_FD.load(Ordering::Relaxed);
+        let b = 1u8;
+        unsafe {
+            libc::write(fd, &b as *const u8 as *const libc::c_void, 1);
+        }
+    }
+    let mut fds = [0 as libc::c_int; 2];
+    if unsafe { libc::pipe(fds.as_mut_ptr()) } != 0 {
+        return;
+    }
+    unsafe {
+        libc::fcntl(fds[0], libc::F_SETFD, libc::FD_CLOEXEC);
+        libc::fcntl(fds[1], libc::F_SETFD, libc::FD_CLOEXEC);
+    }
+    WRITE_FD.store(fds[1], Ordering::Relaxed);
+    for sig in [libc::SIGTERM, libc::SIGINT, libc::SIGHUP] {
+        unsafe {
+            libc::signal(sig, on_signal as extern "C" fn(libc::c_int) as libc::sighandler_t);
+        }
+    }
+    std::thread::spawn(move || {
+        let mut f = unsafe { std::fs::File::from_raw_fd(fds[0]) };
+        let mut b = [0u8; 1];
+        if f.read(&mut b).is_ok() {
+            app.exit(0);
+        }
+    });
+}
+
 fn main() {
     let t0 = Instant::now();
     let smoke_mode = smoke::Smoke::from_env(t0);
@@ -624,9 +664,22 @@ fn main() {
                 .on_download(move |_webview, event| {
                     match event {
                         DownloadEvent::Requested { url, destination } => {
-                            // wry has already chosen the Downloads folder and a
-                            // name that does not overwrite; it could be changed
-                            // here, or the download refused.
+                            // wry proposes the system's Downloads folder (or the
+                            // working directory when there is none) and a name
+                            // that does not overwrite. The hook may change the
+                            // path or refuse the download (return false); here it
+                            // is always the Downloads folder, as on macOS.
+                            let name = destination
+                                .file_name()
+                                .map(|n| n.to_string_lossy().into_owned())
+                                .unwrap_or_else(|| "download".into());
+                            let dir = server::downloads_dir(
+                                dl.app.path().download_dir().ok(),
+                                dl.app.path().home_dir().ok(),
+                            );
+                            if let Some(dir) = dir {
+                                *destination = server::unique_in(&dir, &name);
+                            }
                             dl.log(&format!("download of {url} to {}", destination.display()));
                             if let Some(s) = &dl.smoke {
                                 s.push(
@@ -650,6 +703,18 @@ fn main() {
                 builder = builder.initialization_script(SMOKE_JS);
             }
             let window = builder.build()?;
+            #[cfg(target_os = "linux")]
+            if shell.smoke.is_some() {
+                // The smoke test's window.open and target=_blank clicks come
+                // from script, not a person's click, which WebKitGTK blocks
+                // as popups before the new-window hook sees them.
+                let _ = window.with_webview(|wv| {
+                    use webkit2gtk::{SettingsExt, WebViewExt};
+                    if let Some(settings) = wv.inner().settings() {
+                        settings.set_javascript_can_open_windows_automatically(true);
+                    }
+                });
+            }
             *shell.local_url.lock().unwrap() = window.url().ok();
             let on_close = shell.clone();
             window.on_window_event(move |e| {
@@ -662,6 +727,8 @@ fn main() {
                 s.window_created();
                 s.start_watchdog(shell.clone());
             }
+            #[cfg(unix)]
+            stop_on_signals(handle.clone());
             let sup = shell.clone();
             std::thread::Builder::new().name("supervisor".into()).spawn(move || sup.supervise(rx))?;
             Ok(())

@@ -97,6 +97,29 @@ pub fn http_get(port: u16, path: &str, timeout: Duration) -> io::Result<(u16, St
 
 /// Polls GET /api/version until it answers 200 (returns the body), the
 /// server exits (`alive` returns false), or the time is up.
+/// The Downloads folder: the system's, else ~/Downloads (created). wry's
+/// own choice falls back to the working directory when the system names
+/// none, as on a CI runner.
+pub fn downloads_dir(system: Option<PathBuf>, home: Option<PathBuf>) -> Option<PathBuf> {
+    let dir = system.or_else(|| home.map(|h| h.join("Downloads")))?;
+    std::fs::create_dir_all(&dir).ok()?;
+    Some(dir)
+}
+
+/// `name` in `dir`, as "name (2).ext" and so on when it is taken.
+pub fn unique_in(dir: &Path, name: &str) -> PathBuf {
+    let p = Path::new(name);
+    let stem = p.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "download".into());
+    let ext = p.extension().map(|e| format!(".{}", e.to_string_lossy())).unwrap_or_default();
+    let mut out = dir.join(format!("{stem}{ext}"));
+    let mut n = 2;
+    while out.exists() {
+        out = dir.join(format!("{stem} ({n}){ext}"));
+        n += 1;
+    }
+    out
+}
+
 pub fn wait_for_version(port: u16, limit: Duration, mut alive: impl FnMut() -> bool) -> Result<String, String> {
     let start = Instant::now();
     loop {

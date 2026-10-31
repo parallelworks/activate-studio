@@ -43,7 +43,8 @@ for ($i = 0; $i -lt 360; $i++) {
 if (Test-Path $r2) {
   $pid2 = (Get-Content -Raw $r2 | ConvertFrom-Json).shellPid
   for ($i = 0; $i -lt 60; $i++) { if (-not (Get-Process -Id $pid2 -ErrorAction SilentlyContinue)) { break }; Start-Sleep -Milliseconds 500 }
-  if (Get-Process -Id $pid2 -ErrorAction SilentlyContinue) { "second copy $pid2 still running" } else { "second copy $pid2 exited" } | Tee-Object -Append (Join-Path $Out 'run.txt')
+  $msg = if (Get-Process -Id $pid2 -ErrorAction SilentlyContinue) { "second copy $pid2 still running" } else { "second copy $pid2 exited" }
+  $msg | Tee-Object -Append (Join-Path $Out 'run.txt')
 }
 Start-Sleep -Seconds 1
 
@@ -61,6 +62,23 @@ $nodes = @(Get-CimInstance Win32_Process -Filter "Name='node.exe'" | Where-Objec
 $browsers = @(Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match 'studio-smoke=' } | Select-Object ProcessId, Name, CommandLine)
 $browsers | ConvertTo-Json -Depth 3 | Set-Content (Join-Path $Out 'browser-opened.json')
 foreach ($b in $browsers) { Stop-Process -Id $b.ProcessId -Force -ErrorAction SilentlyContinue }
+
+# What outlives the shell when it is killed outright (TerminateProcess): the
+# Job Object's last handle closes with it, which ends every process in it.
+$before = @(Get-Content $pidsFile -ErrorAction SilentlyContinue).Count
+$env:STUDIO_SMOKE_PHASE = 'K'
+$k = Start-Process -FilePath $Bin -PassThru
+$r4 = Join-Path $Out 'results-4.json'
+for ($i = 0; $i -lt 120; $i++) { if ((Test-Path $r4) -and ((Get-Content -Raw $r4) -match '"coldStartMs"')) { break }; Start-Sleep -Milliseconds 500 }
+Start-Sleep -Seconds 2
+Stop-Process -Id $k.Id -Force
+Start-Sleep -Seconds 3
+$krows = @(Get-Content $pidsFile | Where-Object { $_ } | Select-Object -Skip $before | ForEach-Object { $_ | ConvertFrom-Json })
+$kalive = @()
+foreach ($r in $krows) { foreach ($x in @($r.server, $r.child)) { if (Get-Process -Id $x -ErrorAction SilentlyContinue) { $kalive += $x } } }
+[ordered]@{ signal = 'TerminateProcess (Stop-Process -Force)'; shellExited = $k.HasExited; servers = $krows; alive = $kalive } | ConvertTo-Json -Depth 4 | Tee-Object (Join-Path $Out 'kill-K.json')
+foreach ($x in $kalive) { Stop-Process -Id $x -Force -ErrorAction SilentlyContinue }
+Remove-Item Env:STUDIO_SMOKE_PHASE
 
 Copy-Item (Join-Path $tmp 'data\logs\*.log') $Out -ErrorAction SilentlyContinue
 Get-ChildItem (Join-Path $env:USERPROFILE 'Downloads') -ErrorAction SilentlyContinue | Out-String | Set-Content (Join-Path $Out 'downloads-dir.txt')

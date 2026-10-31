@@ -77,6 +77,7 @@ jobs:
 
       - name: runtime dependencies and package checks
         if: always()
+        continue-on-error: true
         run: |
           B=desktop/tauri/target/release
           {
@@ -97,15 +98,22 @@ jobs:
             ldd --version | head -n 1
             echo "## WebKitGTK packages (BaseOS, AppStream, EPEL)"
             dnf -q -y install epel-release >/dev/null 2>&1
-            dnf -q list --available "webkit2gtk*" "webkitgtk*" 2>&1 | grep -iE "webkit" | sort -u
-            echo "## the AppImage in Rocky 9"
-            cd /tmp && /shell.AppImage --appimage-extract >/dev/null 2>&1 && ls squashfs-root/usr/lib | head -n 40
-            ./squashfs-root/AppRun --help 2>&1 | head -n 5
-            ldd squashfs-root/usr/bin/activate-studio-shell 2>&1 | grep -E "not found|GLIBC" | head -n 20
+            dnf -q list --available "webkit2gtk*" "webkitgtk*" 2>&1 | grep -iE "^webkit" | sort -u
+            echo "## does the AppImage carry WebKitGTK?"
+            cd /tmp && /shell.AppImage --appimage-extract >/dev/null 2>&1
+            ls squashfs-root/usr/lib | grep -iE "webkit|javascriptcore|soup" || echo "(no WebKitGTK libraries inside)"
+            echo "## with GTK 3 installed, what the shell still cannot load"
+            dnf -q -y install gtk3 binutils >/dev/null 2>&1
+            LD_LIBRARY_PATH=/tmp/squashfs-root/usr/lib ldd squashfs-root/usr/bin/activate-studio-shell 2>&1 | grep -E "not found|GLIBC|version" | sort -u | head -n 20
+            echo "## highest glibc symbol version the shell and its bundled libraries need"
+            for f in squashfs-root/usr/bin/activate-studio-shell squashfs-root/usr/lib/*.so*; do objdump -T "$f" 2>/dev/null; done | grep -o "GLIBC_[0-9.]*" | sort -uV | tail -n 1
           ' 2>&1 | tee smoke-out/rocky9.txt
 
+      # A failed check marks this step, not the job, so the Rust cache
+      # (saved only after a successful job) is kept for the next run.
       - name: report
         if: always()
+        continue-on-error: true
         run: node desktop/tauri/ci/report.mjs desktop/tauri/target/release smoke-out
 
       - if: always()
@@ -172,8 +180,10 @@ jobs:
 
       - name: runtime dependencies and installer check
         if: always()
+        continue-on-error: true
         shell: pwsh
         run: |
+          New-Item -ItemType Directory -Force smoke-out | Out-Null
           $B = 'desktop\tauri\target\release'
           $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
           $dumpbin = Get-ChildItem "$vs\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe" | Select-Object -First 1
@@ -188,6 +198,7 @@ jobs:
 
       - name: report
         if: always()
+        continue-on-error: true
         shell: pwsh
         run: node desktop/tauri/ci/report.mjs desktop/tauri/target/release smoke-out
 

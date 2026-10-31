@@ -101,8 +101,8 @@
       const px = new Uint8Array(4)
       gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px)
       out[kind] = {
-        renderer: info ? gl.getParameter(info.UNMASKED_RENDERER_WGL) : gl.getParameter(gl.RENDERER),
-        vendor: info ? gl.getParameter(info.UNMASKED_VENDOR_WGL) : gl.getParameter(gl.VENDOR),
+        renderer: (info && gl.getParameter(info.UNMASKED_RENDERER_WGL)) || gl.getParameter(gl.RENDERER),
+        vendor: (info && gl.getParameter(info.UNMASKED_VENDOR_WGL)) || gl.getParameter(gl.VENDOR),
         version: gl.getParameter(gl.VERSION),
         drewGreen: px[1] === 255 && px[0] === 0,
       }
@@ -280,6 +280,7 @@
     else if (st.phase === 'C') await phaseC(st)
     else if (st.phase === 'D') await phaseD(st)
     else if (st.phase === 'R') await phaseR(st)
+    // T and K: drawn is all; CI ends the shell from outside.
   }
 
   main().catch(e => inv('record', { key: `fatal_${Date.now()}`, value: String((e && e.stack) || e) }).catch(() => {}))

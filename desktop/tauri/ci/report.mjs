@@ -6,6 +6,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 const [release, out] = process.argv.slice(2)
+fs.mkdirSync(out, { recursive: true })
 const read = f => { try { return JSON.parse(fs.readFileSync(path.join(out, f), 'utf8')) } catch { return null } }
 const mb = n => Math.round((n / 1048576) * 100) / 100
 
@@ -28,6 +29,8 @@ fs.writeFileSync(path.join(out, 'sizes.json'), JSON.stringify(sizes, null, 2))
 const r1 = read('results-1.json') || {}
 const r2 = read('results-2.json') || {}
 const orphans = read('orphans.json') || {}
+const killT = read('kill-T.json')
+const killK = read('kill-K.json')
 const ok = k => !!(r1[k] && r1[k].ok)
 const checks = {
   '1 start: server answered, Studio drawn': typeof r1.coldStartMs === 'number' && typeof r1.serverAnsweredMs === 'number',
@@ -35,6 +38,7 @@ const checks = {
   '2 other exit: error page, Try Again': ok('exit_other_retry'),
   '2 close: server stopped, then exit': !!(r2.stop && r2.stop.how === 'window-close'),
   '2 no orphan processes': orphans.ok === true,
+  ...(killT ? { '2 TERM to the shell: nothing left': killT.shellExited && killT.alive.length === 0 } : {}),
   '3 bridge: postMessage returns a Promise': ok('bridge'),
   '3 chooseFolder (test mode)': ok('chooseFolder_testMode'),
   '3 chooseFolder (real dialog, cancelled)': ok('chooseFolder_realDialog'),
@@ -46,6 +50,9 @@ const checks = {
   '5 outside links to the default browser': ok('external_links'),
 }
 const info = {
+  killTerm: killT,
+  killForced: killK,
+  bridgeHow: r1.bridge && r1.bridge.how,
   webgl: r1.webgl,
   streamPlainNosniff: r1.stream_fetch_plain_nosniff,
   streamPlain: r1.stream_fetch_plain,
