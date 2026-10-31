@@ -37,6 +37,7 @@ def main():
     ap.add_argument("--web-build-seconds", type=float)
     ap.add_argument("--deps")
     a = ap.parse_args()
+    os.makedirs(a.root, exist_ok=True)
 
     out = {
         "os": a.os,

@@ -57,6 +57,8 @@ jobs:
         run: |
           go install "github.com/wailsapp/wails/v2/cmd/wails@${WAILS_VERSION}"
           go mod download
+          # The Studio's own icon (wails makes the Windows .ico from it).
+          mkdir -p build && cp ../../deploy/mac/AppIcon-1024.png build/appicon.png
           s=$(date +%s%N)
           wails build -skipbindings -trimpath -ldflags "-s -w" -tags webkit2_41
           echo "SHELL_BUILD_SECONDS=$(( ($(date +%s%N) - s) / 1000000 ))e-3" >>"$GITHUB_ENV"
@@ -64,7 +66,7 @@ jobs:
 
       - name: package (.deb)
         working-directory: desktop/wails
-        run: packaging/linux/build-deb.sh build/bin/activate-studio build/appicon.png 0.0.1 build/pkg
+        run: packaging/linux/build-deb.sh build/bin/activate-studio ../../web/public/icon-512.png 0.0.1 build/pkg
 
       - name: runtime dependencies
         working-directory: desktop/wails
@@ -156,6 +158,8 @@ jobs:
         run: |
           go install "github.com/wailsapp/wails/v2/cmd/wails@$env:WAILS_VERSION"
           go mod download
+          New-Item -ItemType Directory -Force build | Out-Null
+          Copy-Item ..\..\deploy\mac\AppIcon-1024.png build\appicon.png
           $t = Measure-Command { wails build -skipbindings -trimpath -ldflags "-s -w" -nsis | Out-Host }
           if ($LASTEXITCODE -ne 0) { exit 1 }
           "SHELL_BUILD_SECONDS=$($t.TotalSeconds)" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
