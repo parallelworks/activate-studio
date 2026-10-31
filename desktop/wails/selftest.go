@@ -25,6 +25,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -147,6 +148,16 @@ func (t *SelfTest) startStreamServer() {
 	t.app.proxy.testPort = t.streamPort
 	t.app.proxy.mu.Unlock()
 	mux := http.NewServeMux()
+	// Where the page's probe and its errors are posted (text/plain, so no
+	// CORS preflight), from any origin, past the bridge.
+	mux.HandleFunc("/log", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		b, _ := io.ReadAll(io.LimitReader(r.Body, 64<<10))
+		t.logf("page: %s", strings.TrimSpace(string(b)))
+		t.mu.Lock()
+		t.notes["pageLog"] = append(t.notes["pageLog"], string(b))
+		t.mu.Unlock()
+	})
 	mux.HandleFunc("/stream", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.Header().Set("Cache-Control", "no-cache")
@@ -167,17 +178,60 @@ func (t *SelfTest) startStreamServer() {
 	go func() { _ = http.Serve(l, mux) }()
 }
 
+// probe posts what the page is doing to the stream server's /log, from
+// inside the page and without the bridge.
+func (t *SelfTest) probe(label string) {
+	js := fmt.Sprintf(`(function () {
+  try {
+    if (!window.__probeErrors) {
+      window.__probeErrors = [];
+      window.addEventListener('error', function (e) { window.__probeErrors.push(String(e.message) + ' @' + e.filename + ':' + e.lineno); });
+      window.addEventListener('unhandledrejection', function (e) { window.__probeErrors.push('rejection: ' + String(e.reason && (e.reason.stack || e.reason))); });
+    }
+    var root = document.getElementById('root');
+    var b = window.go && window.go.main && window.go.main.Bridge;
+    var s = {
+      label: %s, href: location.href, readyState: document.readyState, title: document.title,
+      hasWailsRuntime: !!(window.runtime), hasGo: !!window.go, bridgeMethods: b ? Object.keys(b) : null,
+      hasShim: !!window.__studioShell, shimHow: window.__studioShell && window.__studioShell.how,
+      hasTest: !!window.__studioShellTest, hasHandler: !!(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.studioShell),
+      chromeWebview: !!(window.chrome && window.chrome.webview),
+      rootChildren: root ? root.children.length : null, text: (document.body ? document.body.innerText : '').slice(0, 160),
+      errors: window.__probeErrors.slice(-8)
+    };
+    fetch('http://127.0.0.1:%d/log', { method: 'POST', body: JSON.stringify(s), mode: 'no-cors' });
+  } catch (e) {
+    try { fetch('http://127.0.0.1:%d/log', { method: 'POST', body: 'probe failed: ' + e, mode: 'no-cors' }); } catch (_) {}
+  }
+})()`, jsString(label), t.streamPort, t.streamPort)
+	t.app.execJS(js)
+}
+
 // start: the overall time limit.
 func (t *SelfTest) start() {
 	t.mark("startup")
+	// What the window shows, early on: a screenshot and a probe of the
+	// page, whatever else happens.
 	go func() {
-		time.Sleep(5 * time.Minute)
+		for i, at := range []time.Duration{5, 10, 20, 40} {
+			time.Sleep(at*time.Second - []time.Duration{0, 5, 10, 20}[i]*time.Second)
+			t.probe(fmt.Sprintf("t%d", at))
+			if at == 10 || at == 40 {
+				t.screenshot(fmt.Sprintf("t%02d", at))
+			}
+		}
+	}()
+	go func() {
+		time.Sleep(150 * time.Second)
 		t.mu.Lock()
 		done := t.finished || t.phase == "hold"
 		t.mu.Unlock()
 		if !done {
 			t.logf("time limit reached in phase %s", t.currentPhase())
 			t.set("timeout", true)
+			t.probe("timeout")
+			time.Sleep(1 * time.Second)
+			t.screenshot("timeout")
 			t.quit()
 		}
 	}()

@@ -130,6 +130,10 @@ func (a *App) startup(ctx context.Context) {
 // script-at-document-start hook, so the shim arrives after the page's own
 // scripts ran.
 func (a *App) domReady(ctx context.Context) {
+	if a.test != nil {
+		a.test.logf("dom ready (mode %s)", a.cfg.Mode)
+		a.test.probe("domready")
+	}
 	if a.cfg.Mode != ModeDirect {
 		return
 	}
