@@ -152,7 +152,7 @@ jobs:
           # GUFI source tree for systems that cannot reach GitHub. The install
           # is keyed by commit, or by a hash of the tarball's path.
           GUFI_SOURCE="$(value source)"
-          [ -n "$GUFI_SOURCE" ] || GUFI_SOURCE="https://github.com/mar-file-system/GUFI@fc33e4b3523601181ae61e10878e1ae42780291b"
+          [ -n "$GUFI_SOURCE" ] || GUFI_SOURCE="https://github.com/mar-file-system/GUFI@021a717a6089b9e28b068695dc7c7f3732fd1a56"
           case "$GUFI_SOURCE" in
             pw://*)
               GUFI_ID="tar-$(printf '%s' "$GUFI_SOURCE" | sha256sum | cut -c1-12)"
@@ -586,5 +586,5 @@ jobs:
           source:
             label: GUFI source
             type: string
-            default: https://github.com/mar-file-system/GUFI@fc33e4b3523601181ae61e10878e1ae42780291b
+            default: https://github.com/mar-file-system/GUFI@021a717a6089b9e28b068695dc7c7f3732fd1a56
             tooltip: A git URL with @<commit, tag, or branch>, or a pw:// path to a tarball of the GUFI source for clusters that cannot reach GitHub.

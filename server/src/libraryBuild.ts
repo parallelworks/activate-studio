@@ -7,7 +7,7 @@ import type { FastifyInstance } from 'fastify'
 import { authEnabled } from './auth.js'
 import { EXCLUDE_DIRS, GUFI_BIN, INDEX_BASE, KB_ROOT, PROJECT_ROOT, PYTHON_BIN, gufiEnv, indexerEnv } from './config.js'
 import { sofficeFound } from './extractors.js'
-import { invalidateDbList, treeStats } from './gufi.js'
+import { invalidateDbList, treeStats, verifyTree } from './gufi.js'
 import { getIndexJob, startIndexJob, type IndexJob } from './indexing.js'
 import { builtLibrarySettings, indexSettings, isIndexDepth, isMeaningLevel, meaningArgs, NEW_LIBRARY_DEPTH, saveIndexSettings, textArgs, threadsFor, type IndexDepth, type IndexSettings } from './indexSettings.js'
 import { KbError } from './kb.js'
@@ -18,7 +18,7 @@ import {
 import { runPreExtract } from './preextract.js'
 import { effectiveSettings } from './settings.js'
 import { scanLatestDetail } from './dirScan.js'
-import { lockedUnder, openDir, openIndex, prepareIndex, rmTree, sourceOf, unmadeIndexDirs, type Locked } from './indexModes.js'
+import { lockedUnder, openDir, openIndex, prepareIndex, recoverSwap, rmTree, sourceOf, unmadeIndexDirs, type Locked } from './indexModes.js'
 import { deniedPaths, onlyDenied, recordDenied } from './omissions.js'
 import { depthChange, depthRecordOf, readDepthRecord, writeDepthRecord, type DepthChange } from './depthState.js'
 import { scheduleSemanticMapRebuild } from './semanticMap.js'
@@ -461,6 +461,8 @@ async function fullBuild(id: string, job: IndexJob): Promise<{ ms: number }> {
   const progress: Progress = (phase, done = 0, current = null) => { job.progress = { phase, done, total: 0, current, failed: [] } }
   // Read once, so the depth recorded is the one the build read at.
   const s = builtLibrarySettings(id)
+  // A stop between the two renames of an earlier swap left the old index aside.
+  if (recoverSwap(tree, [path.join(b.indexDir, '.old')])) console.warn(`library ${id}: its index was put aside by a swap a stop cut off; restored it`)
   updateBuild(id, { state: fs.existsSync(path.join(tree, 'db.db')) ? 'updating' : 'building', error: null })
   try {
     if (!isDir(src)) throw new Error(`${src} is not a folder any more`)
@@ -477,6 +479,8 @@ async function fullBuild(id: string, job: IndexJob): Promise<{ ms: number }> {
       built = await dir2index(id, src, stage, locked)
     } finally { clearInterval(counter) }
     if (!fs.existsSync(path.join(built, 'db.db'))) throw new Error(`gufi_dir2index wrote no index at ${built}`)
+    // The new index answers a query before it takes the old one's place.
+    await verifyTree(built)
     const replacing = fs.existsSync(path.join(tree, 'db.db'))
     if (replacing) await enrich({ ...def, indexRoot: built }, {}, progress, s)
     const old = path.join(b.indexDir, '.old')
@@ -687,7 +691,10 @@ export function startLibrarySync(log: (msg: string) => void): void {
   syncOn = true
   stopping = false
   for (const id of builtIds()) {
-    const b = addedDef(id)?.build
+    const def = addedDef(id)
+    const b = def?.build
+    // A swap a stop cut off between its renames: the old index is put back before anything else.
+    if (b && def && recoverSwap(def.indexRoot, [path.join(b.indexDir, '.old')])) log(`library ${id}: restored its index from a swap a stop cut off`)
     const s = b?.state
     if (s === 'updating' && b?.pending === 'depth' && fs.existsSync(path.join(addedDef(id)!.indexRoot, 'db.db'))) {
       // A change of depth a stop cut off: its index is whole, and the depth

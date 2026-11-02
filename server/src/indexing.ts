@@ -8,7 +8,7 @@ import {
   EMBED_CACHE, EXCLUDE_DIRS, EXTRACT_CACHE, GUFI_BIN, GUFI_INDEX, INDEX_BASE, INDEX_DIR, KB_ROOT, PROJECT_ROOT, PYTHON_BIN, SEMANTIC_MAP_DIR,
   gufiEnv, indexerEnv,
 } from './config.js'
-import { invalidateDbList } from './gufi.js'
+import { invalidateDbList, verifyTree } from './gufi.js'
 import { preextractCommand, downmarkNative } from './preextract.js'
 import { invalidateContext } from './chat/context.js'
 import { effectiveSettings } from './settings.js'
@@ -17,7 +17,7 @@ import { indexSettings, meaningArgs, textArgs, threadsFor, type IndexSettings } 
 import { sofficeFound } from './extractors.js'
 import { scheduleSemanticMapRebuild } from './semanticMap.js'
 import { scanLatestDetail } from './dirScan.js'
-import { lockedEntry, lockingUser, openDir, openIndex, prepareIndex, rmTree, sourceOf, unmadeIndexDirs, type Locked } from './indexModes.js'
+import { lockedEntry, lockingUser, openDir, openIndex, prepareIndex, recoverSwap, rmTree, sourceOf, swapLeftovers, unmadeIndexDirs, type Locked } from './indexModes.js'
 import { deniedPaths, onlyDenied, readDenied, recordDenied, setPrimaryBuiltSource, setPrimaryIndexingSource } from './omissions.js'
 import { depthChange, depthRecordOf, readDepthRecord, writeDepthRecord, type DepthChange } from './depthState.js'
 import { cleanIndexedText, markTextClean, textCleanNeeded } from './textCleanup.js'
@@ -884,6 +884,8 @@ async function buildWholeFolder(ctx: JobCtx): Promise<void> {
   const staging = path.join(INDEX_DIR, `gufi.staging-${ctx.job.id}`)
   try {
     const built = await namesPhase(ctx, KB_ROOT, staging)
+    // The new index answers a query before it takes the old one's place.
+    await verifyTree(built)
     let target = built
     if (!live) {
       // Nothing to lose: names are searchable now, and the text and
@@ -1258,6 +1260,9 @@ export function startSweepTimer(log: (msg: string) => void): void {
   }
   // A folder switched while the server was down is reconciled before the
   // sweep compares anything with what was recorded.
+  // A swap a stop cut off between its two renames left the old index beside the path it is read at.
+  const back = recoverSwap(GUFI_INDEX, swapLeftovers(GUFI_INDEX))
+  if (back) log(`index: restored the index from ${path.basename(back)}, a swap that a stop cut off`)
   void reconcileFolder().catch(e => log(`index: ${String((e as Error).message ?? e)}`))
     .then(() => primeSweepState())
     .then(() => primeDepthState())

@@ -607,7 +607,10 @@ jobs:
             echo "Fetching GUFI source..."
             # GUFI's cmake runs git describe for its version string; a shallow
             # clone has no tags, so stamp one and keep .git in the tarball.
-            if git clone --depth 1 --recurse-submodules --shallow-submodules https://github.com/mar-file-system/GUFI gufi-clone; then
+            # The 0.8.0 release, not whatever main is: an index built by one GUFI
+            # is read by the others, and the Studio is tested against this one.
+            if git clone --depth 1 --branch 0.8.0 --recurse-submodules --shallow-submodules https://github.com/mar-file-system/GUFI gufi-clone \
+                && [ "$(git -C gufi-clone rev-parse HEAD)" = "021a717a6089b9e28b068695dc7c7f3732fd1a56" ]; then
               git -C gufi-clone -c user.name=deploy -c user.email=deploy@localhost tag -a deploy-snapshot -m "deploy snapshot" 2>/dev/null || true
               tar -czf gufi-src.tar.gz --transform 's|^gufi-clone|GUFI|' gufi-clone
             else

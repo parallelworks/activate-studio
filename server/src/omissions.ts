@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { INDEX_BASE } from './config.js'
 import { builtLibraryDir, knownCaps, lacks, PRIMARY_ID, type Library } from './libraries.js'
+import { formatFailure, formatGap } from './indexFormat.js'
 
 /**
  * Libraries a search or a query left out, or searched only in part, and
@@ -147,6 +148,9 @@ export function libraryGap(l: Library, want: { words: boolean; meaning: boolean 
     const n = denied.folders.length
     reasons.push(`${n === 1 ? 'a folder' : `${n} folders`} could not be read (${deniedReason(denied.folders[0])})`)
   }
+  // An index from before GUFI 0.8.0 with folders rolled up (indexFormat.ts).
+  const old = formatGap(l.format)
+  if (old) reasons.push(old)
   // Named only where search will not look, or looks while a build reads it.
   if (want.words && expectsWords(l) && !l.caps.fullText && (building(l) || lacks(l, 'fullText'))) {
     reasons.push(building(l) ? 'words not searched yet: its text is being read' : 'words not searched: its index has no text yet')
@@ -168,6 +172,8 @@ export function failureReason(l: Library, e: unknown): string {
     return `not reachable over ssh: ${m}`
   }
   if (/ENOENT|no such file|index not built|the index is not there/i.test(m)) return 'index not found'
+  const older = formatFailure(m, l.format)
+  if (older) return older
   return `search failed: ${m}`
 }
 
@@ -187,6 +193,7 @@ export function libraryStateLine(l: Library): string {
   const parts = [
     `index ${yes(l.caps.index)}`, `words ${yes(l.caps.fullText)}`, `vectors ${yes(l.caps.vectors)}`,
     ...(l.depth ? [`depth ${l.depth}`] : []),
+    ...(l.format && l.format.format !== 'current' ? [`written by a GUFI before 0.8.0${l.format.format === 'older' ? ' (0.7.0 or earlier' + (l.format.rolledUp ? ', rolled up' : '') + ')' : ''}`] : []),
     ...(l.build ? [`build ${l.build.state}${l.build.builtAt ? ` (built ${l.build.builtAt})` : ''}`] : []),
     ...(l.site ? [`on ${l.site}`] : []),
     ...(k?.stale ? [`capabilities stale${k.error ? ` (${k.error})` : ''}`] : []),

@@ -10,6 +10,7 @@ import { tagMaps } from './tags.js'
 import { libraryLabelsForIndexRoot } from './libraryLabels.js'
 import { scopeLibraries, scopeWithOmitted } from './libraryScope.js'
 import { addOmission, failureReason, libraryGap, type Omission } from './omissions.js'
+import { formatFailure } from './indexFormat.js'
 import { lacks, type Library } from './libraries.js'
 import { gufiTool, REMOTE_PREFIX, remoteIndexRoot, remoteQuery, remoteTarget } from './userLibraries.js'
 import { effectiveSettings } from './settings.js'
@@ -609,7 +610,11 @@ export async function queryScope(body: QueryRequest, viewerId: string | null): P
     const gap = queryGap(libs[0], plan)
     if (gap && !gap.partial) throw new KbError(409, `${gap.label} cannot be queried: ${gap.reason}`)
     if (gap) addOmission(omitted, gap)
-    const r = await onIndex(libs[0].indexRoot, () => runPlan(plan))
+    const r = await onIndex(libs[0].indexRoot, () => runPlan(plan)).catch(e => {
+      // A column that GUFI 0.8.0 added (dev), asked of an index from before it.
+      const hint = e instanceof KbError ? formatFailure(e.message, libs[0].format) : null
+      throw hint ? new KbError(e.status, `${libs[0].label}: ${hint}`) : e
+    })
     return omitted.length ? { ...r, omitted } : r
   }
   const t0 = Date.now()

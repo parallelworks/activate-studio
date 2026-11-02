@@ -8,12 +8,15 @@ both layouts with the standard library, so the build runs on Linux too.
 
 Usage:
   pkg_extract.py PKG --list
-  pkg_extract.py PKG DEST [--prefix usr/local] [--only bin lib etc]
+  pkg_extract.py PKG DEST [--prefix usr/local] [--only bin lib etc] [--drop-absolute-links]
 
 With --prefix, only entries under that directory of the Payload are
 written, with the prefix removed (./usr/local/bin/x becomes DEST/bin/x);
 --only further limits them to the named top-level directories under it.
-Modes and symbolic links are kept; nothing is written outside DEST.
+Modes and symbolic links are kept; nothing is written outside DEST. A link
+with an absolute target is refused, or with --drop-absolute-links left out:
+GUFI 0.8.0's package carries libvec0.dylib as a link into the runner it was
+built on, which points at nothing here.
 """
 import argparse
 import gzip
@@ -120,6 +123,7 @@ def main():
     ap.add_argument('--list', action='store_true', help='list the Payload entries and exit')
     ap.add_argument('--prefix', default='', help='Payload directory to extract, e.g. usr/local')
     ap.add_argument('--only', nargs='*', default=None, help='top-level directories under the prefix to keep')
+    ap.add_argument('--drop-absolute-links', action='store_true', help='leave out links with an absolute target instead of refusing')
     args = ap.parse_args()
     if not args.list and not args.dest:
         ap.error('DEST is required unless --list is given')
@@ -168,6 +172,8 @@ def main():
             written += 1
     # Links last, each checked to resolve inside DEST.
     for out, target in links:
+        if args.drop_absolute_links and os.path.isabs(target):
+            continue
         if os.path.isabs(target) or not inside(args.dest, os.path.join(os.path.dirname(out), target)):
             raise SystemExit(f'refusing a link that leaves {args.dest}: {out} -> {target}')
         os.symlink(target, out)

@@ -20,7 +20,7 @@
 #
 # Usage: deploy/mac/build_gufi.sh
 #   GUFI_REF     GUFI branch, tag or commit (default: the commit of GUFI's
-#                macos-pkg-test release, whose package build_app.sh uses)
+#                0.8.0 tag)
 #   GUFI_SRC     an existing GUFI checkout to build as it is, instead of
 #                cloning GUFI_REF
 #   MACOSX_DEPLOYMENT_TARGET  the oldest macOS the tree runs on (default 14.0)
@@ -41,7 +41,7 @@ CACHE_DIR="${CACHE_DIR:-$HERE/.cache}"
 ASSET=gufi-macos-arm64
 TARGET="${MACOSX_DEPLOYMENT_TARGET:-14.0}"
 GUFI_REPO=https://github.com/mar-file-system/GUFI
-GUFI_REF="${GUFI_REF:-1713537a4b8fbc188fa75f8e9845edcaf8bf69ba}"
+GUFI_REF="${GUFI_REF:-021a717a6089b9e28b068695dc7c7f3732fd1a56}"   # tag 0.8.0
 
 # Pinned sources, checked against their SHA-256 on every build. libomp is
 # the release build_app.sh takes as a Homebrew bottle, built here from
@@ -156,11 +156,12 @@ echo "PCRE2 $PCRE2_VERSION..."
 fetch "https://github.com/PCRE2Project/pcre2/releases/download/pcre2-$PCRE2_VERSION/pcre2-$PCRE2_VERSION.tar.bz2" \
   "$CACHE_DIR/pcre2-$PCRE2_VERSION.tar.bz2" "$PCRE2_SHA256"
 tar -xjf "$CACHE_DIR/pcre2-$PCRE2_VERSION.tar.bz2" -C "$WORK"
-# Shared only, so that every GUFI file links the one library the tree
-# carries; JIT on, as in the Homebrew build the package path uses.
+# Shared, which libsqlite3-pcre loads, and static (position independent), which
+# GUFI 0.8.0 links into its tools and into gufi_vt; JIT on, as in the Homebrew
+# build the package path uses.
 (
   cd "$WORK/pcre2-$PCRE2_VERSION"
-  run ./configure --prefix="$DEPS" --disable-static --enable-jit
+  run ./configure --prefix="$DEPS" --enable-shared --enable-static --with-pic --enable-jit
   run make -j "$JOBS"
   run make install
 )
@@ -228,6 +229,17 @@ rm -rf "$TREE/lib/pkgconfig" "$TREE/lib/cmake" "$TREE"/lib/libllama-common* "$TR
   "$TREE"/lib/*.a "$TREE"/lib/*.la
 for l in "$TREE"/lib/* "$TREE"/bin/*; do
   if [ -L "$l" ] && [ ! -e "$l" ]; then rm -f "$l"; fi
+done
+# GUFI 0.8.0 installs libvec0 and liblembed0 as links to the files of its
+# dependency build, by absolute path. In the tree they are links to the library
+# of the same name beside them, or are left out.
+for l in "$TREE"/lib/*; do
+  [ -L "$l" ] || continue
+  case "$(readlink "$l")" in
+    /*) own="$(basename "$(readlink "$l")")"
+        rm -f "$l"
+        if [ -f "$TREE/lib/$own" ]; then ln -s "$own" "$l"; fi ;;
+  esac
 done
 chmod 755 "$TREE"/lib/*.dylib
 MACHO=()

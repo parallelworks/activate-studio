@@ -430,6 +430,14 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
     })
   }
 
+  // An index from before GUFI 0.8.0 that reads wrongly says so, whatever kind of row it is.
+  const formatNotes = new Map<string, string>([...(libs ?? []).map(l => [l.id, l.formatNote] as const), ...user.libraries.map(l => [l.id, l.formatNote] as const)]
+    .filter((e): e is readonly [string, string] => !!e[1]))
+  for (const r of rows) {
+    const note = formatNotes.get(r.key)
+    if (note) r.state.notes.push(note)
+  }
+
   const primary = libs?.find(l => l.primary)
   const primaryPath = standalone?.primary?.path ?? primary?.sourceRoot ?? null
   // pw ssh is a choice wherever it is offered; the form says why when it cannot be used yet.
