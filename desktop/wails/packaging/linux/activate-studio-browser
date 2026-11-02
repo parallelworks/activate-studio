@@ -1,0 +1,162 @@
+#!/bin/bash
+# Starts the Studio's server on a free loopback port and opens it in a
+# Firefox window of its own. The server, and what it started, stop when that
+# Firefox exits, and when this script gets TERM, INT or HUP.
+#
+# Firefox runs with a profile of its own and --new-instance, so it is a
+# separate process from any Firefox the person already has open, and the
+# process ends when its last window closes. A server that exits with 75 or 76
+# (the Studio's restart codes) is started again on the same port, and the open
+# page is reloaded by the Studio itself. Any other exit is tried again twice,
+# then the script stops and says so in the log.
+#
+# Environment (all optional):
+#   STUDIO_APP_DIR         folder holding server/dist/main.js  (default /opt/activate-studio/app)
+#   STUDIO_NODE            node binary                         (default: node on PATH)
+#   STUDIO_FIREFOX         firefox binary                      (default: firefox on PATH)
+#   STUDIO_SHELL_DATA_DIR  data folder: studio.env, index, logs, the Firefox profile
+#   STUDIO_KB_ROOT         documents folder                    (default ~/Documents/ACTIVATE Studio)
+#   STUDIO_BROWSER_KIOSK=1 full screen with no browser controls
+set -u
+APP_DIR=${STUDIO_APP_DIR:-/opt/activate-studio/app}
+NODE=${STUDIO_NODE:-node}
+FIREFOX=${STUDIO_FIREFOX:-firefox}
+DATA=${STUDIO_SHELL_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/activate-studio}
+KB=${STUDIO_KB_ROOT:-$HOME/Documents/ACTIVATE Studio}
+PROFILE=$DATA/firefox-profile
+LOG=$DATA/logs/launcher.log
+mkdir -p "$DATA/logs" "$PROFILE"
+say() { printf '%s launcher: %s\n' "$(date +%Y-%m-%dT%H:%M:%S%z)" "$*" >>"$LOG"; }
+
+if [ ! -f "$APP_DIR/server/dist/main.js" ]; then
+  say "the Studio was not found: set STUDIO_APP_DIR to the folder holding server/dist/main.js"
+  echo "activate-studio-browser: the Studio was not found in $APP_DIR (set STUDIO_APP_DIR)" >&2
+  exit 2
+fi
+
+# A quiet profile: no first-run page, no default-browser question, no
+# welcome or update tabs, no telemetry prompt, no warning on closing.
+cat >"$PROFILE/user.js" <<'PREFS'
+user_pref("browser.shell.checkDefaultBrowser", false);
+user_pref("browser.aboutwelcome.enabled", false);
+user_pref("browser.startup.homepage_override.mstone", "ignore");
+user_pref("startup.homepage_welcome_url", "");
+user_pref("startup.homepage_welcome_url.additional", "");
+user_pref("browser.startup.page", 0);
+user_pref("browser.tabs.warnOnClose", false);
+user_pref("browser.warnOnQuit", false);
+user_pref("datareporting.policy.dataSubmissionPolicyBypassNotification", true);
+user_pref("datareporting.healthreport.uploadEnabled", false);
+user_pref("toolkit.telemetry.reportingpolicy.firstRun", false);
+user_pref("browser.newtabpage.enabled", false);
+user_pref("app.update.auto", false);
+user_pref("browser.disableResetPrompt", true);
+user_pref("browser.sessionstore.resume_from_crash", false);
+PREFS
+
+free_port() {
+  env -u NODE_OPTIONS "$NODE" -e "const s=require('net').createServer().listen(0,'127.0.0.1',()=>{console.log(s.address().port);s.close()})"
+}
+
+SERVER_PID=0
+PORT=0
+start_server() {
+  # The port studio.env names (Settings, Server saves one there), else the
+  # one used last, else a free one.
+  local want=""
+  if [ -f "$DATA/studio.env" ]; then
+    want=$(sed -n "s/^PORT='\\{0,1\\}\\([0-9]\\{4,5\\}\\)'\\{0,1\\}\$/\\1/p" "$DATA/studio.env" | head -n 1)
+  fi
+  if [ -n "$want" ]; then PORT=$want; elif [ "$PORT" = 0 ]; then PORT=$(free_port); fi
+  say "starting the server on 127.0.0.1:$PORT"
+  (
+    cd "$APP_DIR" || exit 1
+    # studio.env: KEY='value' lines the server writes (Settings, Server).
+    if [ -f "$DATA/studio.env" ]; then
+      set -a
+      # shellcheck disable=SC1091
+      . "$DATA/studio.env" 2>/dev/null
+      set +a
+    fi
+    export NODE_ENV=production HOST=127.0.0.1 PORT="$PORT" STUDIO_RESTARTABLE=1 \
+      STUDIO_CONFIG_FILE="$DATA/studio.env" STUDIO_DATA_DIR="$DATA" INDEX_BASE="$DATA/index"
+    : "${AI_ENABLED:=0}"; export AI_ENABLED
+    if [ -z "${KB_ROOT:-}" ]; then mkdir -p "$KB"; export KB_ROOT="$KB"; else export KB_STARTER_DIRS="${KB_STARTER_DIRS:-}"; fi
+    # Own session so the whole group can be ended; TERM if this script dies.
+    if command -v setpriv >/dev/null 2>&1; then
+      exec setsid setpriv --pdeathsig TERM "$NODE" server/dist/main.js
+    else
+      exec setsid "$NODE" server/dist/main.js
+    fi
+  ) >>"$DATA/logs/studio.log" 2>&1 &
+  SERVER_PID=$!
+}
+
+wait_ready() {
+  local i
+  for i in $(seq 1 180); do
+    kill -0 "$SERVER_PID" 2>/dev/null || return 1
+    if curl -fsS -o /dev/null --max-time 2 "http://127.0.0.1:$PORT/api/version" 2>/dev/null; then return 0; fi
+    sleep 0.5
+  done
+  return 1
+}
+
+stop_server() {
+  [ "$SERVER_PID" -gt 0 ] || return 0
+  say "stopping the server (group $SERVER_PID)"
+  kill -TERM -- "-$SERVER_PID" 2>/dev/null
+  local i
+  for i in $(seq 1 30); do kill -0 "$SERVER_PID" 2>/dev/null || break; sleep 0.2; done
+  kill -KILL -- "-$SERVER_PID" 2>/dev/null
+  wait "$SERVER_PID" 2>/dev/null
+  SERVER_PID=0
+}
+
+FF_PID=0
+cleanup() {
+  trap - TERM INT HUP EXIT
+  [ "$FF_PID" -gt 0 ] && kill -TERM "$FF_PID" 2>/dev/null
+  stop_server
+  say "done"
+}
+trap 'say "signal received"; cleanup; exit 0' TERM INT HUP
+trap cleanup EXIT
+
+start_server
+if ! wait_ready; then
+  say "the server did not answer on port $PORT; see studio.log"
+  echo "activate-studio-browser: the Studio's server did not start; see $DATA/logs/studio.log" >&2
+  exit 1
+fi
+say "the server answers on port $PORT"
+
+ff_args=(--new-instance --profile "$PROFILE")
+[ "${STUDIO_BROWSER_KIOSK:-0}" = 1 ] && ff_args+=(--kiosk)
+ff_args+=(--new-window "http://127.0.0.1:$PORT/")
+"$FIREFOX" "${ff_args[@]}" >>"$DATA/logs/firefox.log" 2>&1 &
+FF_PID=$!
+say "firefox started (pid $FF_PID)"
+
+fails=0
+while :; do
+  done_pid=0
+  wait -n -p done_pid "$SERVER_PID" "$FF_PID" 2>/dev/null
+  code=$?
+  if [ "$done_pid" = "$FF_PID" ] || ! kill -0 "$FF_PID" 2>/dev/null; then
+    say "firefox exited (status $code)"
+    FF_PID=0
+    break
+  fi
+  # The server exited while Firefox is still open.
+  say "the server exited with status $code"
+  SERVER_PID=0
+  case $code in
+    75|76) fails=0 ;;
+    *) fails=$((fails + 1)); if [ "$fails" -gt 2 ]; then say "the server keeps failing; giving up"; break; fi ;;
+  esac
+  start_server
+  if ! wait_ready; then say "the server did not come back on port $PORT"; break; fi
+  say "the server answers again on port $PORT"
+done
+exit 0

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=ACTIVATE Studio
+Comment=Knowledge base visualization and chat
+Exec=/usr/bin/activate-studio-browser
+Icon=activate-studio-browser
+Terminal=false
+Categories=Office;Development;
+StartupWMClass=Firefox
