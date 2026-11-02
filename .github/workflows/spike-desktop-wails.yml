@@ -256,7 +256,7 @@ jobs:
           dnf -y install dnf-plugins-core epel-release
           dnf config-manager --set-enabled crb
           dnf -y install git gcc gcc-c++ make pkgconf-pkg-config tar gzip xz which findutils procps-ng \
-            binutils file libatomic python3 rpm-build webkit2gtk3-devel gtk3-devel \
+            binutils file libatomic glibc-langpack-en python3 rpm-build webkit2gtk3-devel gtk3-devel \
             xorg-x11-server-Xvfb ImageMagick xdotool jq dbus-x11 dbus-daemon mesa-dri-drivers dejavu-sans-fonts
           dbus-uuidgen --ensure
       # Node, pnpm and Go from their own archives into /usr/local. The setup
@@ -289,6 +289,7 @@ jobs:
             echo "== is 4.1 available"; pkg-config --exists webkit2gtk-4.1 && echo yes || echo no
             echo "== repos"; dnf repolist
             echo "== webkit2gtk3 from"; dnf info --installed webkit2gtk3 | grep -E "^(Name|Version|Release|From repo|Repository)" || true
+            echo "== locale"; env | grep -E '^(LANG|LC_|LANGUAGE)' || echo "no LANG or LC_ variable set"; locale -a | head -n 5
             echo "== node"; node --version
             echo "== go"; go version
           } 2>&1 | tee "$RUNNER_TEMP/out/platform.txt"
@@ -359,8 +360,16 @@ jobs:
             tail -n 40 "$RUNNER_TEMP/out/$mode/selftest.log" || true
             echo "::endgroup::"
           done
+          # The same with a desktop locale (the container has none set).
+          for mode in localproxy direct; do
+            echo "::group::$mode, LANG=en_US.UTF-8"
+            LANG=en_US.UTF-8 ci/smoke-linux.sh build/bin/activate-studio "$mode" "$RUNNER_TEMP/out/$mode-en_US"
+            tail -n 40 "$RUNNER_TEMP/out/$mode-en_US/selftest.log" || true
+            echo "::endgroup::"
+          done
           if [ -f "$RUNNER_TEMP/out/localproxy/sandbox.txt" ]; then export WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1; fi
-          ci/hardkill-linux.sh build/bin/activate-studio "$RUNNER_TEMP/out/hardkill"
+          # No session bus in the container: without one the window never loads.
+          dbus-run-session -- ci/hardkill-linux.sh build/bin/activate-studio "$RUNNER_TEMP/out/hardkill"
 
       - name: collect
         if: always()

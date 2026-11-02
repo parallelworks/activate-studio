@@ -14,6 +14,45 @@
     return Promise.race([p, sleep(ms).then(function () { throw new Error(what + ' timed out after ' + ms + ' ms'); })]);
   };
 
+  // Script errors from the start of the load (the Studio's bundle is a
+  // module script that can fail before anything is drawn).
+  window.__probeErrors = window.__probeErrors || [];
+  window.addEventListener('error', function (e) { window.__probeErrors.push(String(e.message) + ' @' + e.filename + ':' + e.lineno); });
+  window.addEventListener('unhandledrejection', function (e) { window.__probeErrors.push('rejection: ' + String(e.reason && (e.reason.stack || e.reason))); });
+
+  // Whether the web view's Intl can make what the Studio's bundle makes at
+  // load time (new Intl.NumberFormat(undefined, ...)).
+  function intl() {
+    var out = {};
+    var cases = {
+      defaultLocale: [undefined, undefined],
+      defaultFraction: [undefined, { maximumFractionDigits: 2 }],
+      defaultCurrency: [undefined, { style: 'currency', currency: 'USD' }],
+      enUS: ['en-US', undefined],
+      enUSCompact: ['en-US', { notation: 'compact', maximumFractionDigits: 1 }],
+      enUSNumbering: ['en-US', { numberingSystem: 'latn' }],
+      percent: [undefined, { style: 'percent' }]
+    };
+    Object.keys(cases).forEach(function (k) {
+      try { out[k] = 'ok ' + new Intl.NumberFormat(cases[k][0], cases[k][1]).format(1234.5); } catch (e) { out[k] = 'error: ' + String(e); }
+    });
+    try { out.resolvedLocale = new Intl.DateTimeFormat().resolvedOptions().locale; } catch (e) { out.resolvedLocale = 'error: ' + String(e); }
+    out.navigatorLanguage = navigator.language;
+    out.navigatorLanguages = (navigator.languages || []).join(',');
+    return out;
+  }
+
+  // The Studio's own page replaces the #boot placeholder when its app
+  // mounts; a bundle that failed leaves it. Waits up to ms.
+  async function appMounted(ms) {
+    var t0 = performance.now();
+    while (performance.now() - t0 < ms) {
+      if (!document.getElementById('boot')) return { mounted: true, afterMs: Math.round(performance.now() - t0) };
+      await sleep(100);
+    }
+    return { mounted: false, afterMs: Math.round(performance.now() - t0) };
+  }
+
   // What web/src/nativeShell.ts does to find the handler.
   function handler() {
     var w = window;
@@ -122,6 +161,9 @@
 
   async function checks(cfg, drawnAt) {
     var out = { drawnAt: drawnAt };
+    out.intl = intl();
+    out.appMounted = await appMounted(15000);
+    out.pageErrors = (window.__probeErrors || []).slice(-8);
     // The bridge, as the web code finds it.
     var h = handler();
     out.bridge = {

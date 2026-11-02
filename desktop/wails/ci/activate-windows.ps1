@@ -28,8 +28,21 @@ public static class Act {
   public static string Title(IntPtr h) { var s = new StringBuilder(256); GetWindowText(h, s, 256); return s.ToString(); }
 }
 '@
+$out = Join-Path $env:STUDIO_SHELL_TEST_DIR 'dialog-activate.log'
+$shellPid = [int]$env:STUDIO_SHELL_PID
+$what = $env:STUDIO_SHELL_TEST_ACTIVATE; if (-not $what) { $what = 'all' }
 function Log($step, $extra) {
   $p = Get-Process -Id $shellPid -ErrorAction SilentlyContinue
+  $fg = [Act]::GetForegroundWindow()
+  $line = [ordered]@{
+    at = (Get-Date).ToString('HH:mm:ss.fff'); step = $step; shellAlive = [bool]$p
+    foreground = ('0x{0:X}' -f [int64]$fg); foregroundTitle = [Act]::Title($fg)
+    mainEnabled = $(if ($script:hwnd) { [Act]::IsWindowEnabled($script:hwnd) } else { $null })
+    extra = $extra
+  }
+  ($line | ConvertTo-Json -Compress) | Add-Content -Path $out
+}
+$p = Get-Process -Id $shellPid -ErrorAction SilentlyContinue
 if (-not $p -or $p.MainWindowHandle -eq 0) { Log 'no-window' $null; Write-Output 'no shell window found'; exit 1 }
 $script:hwnd = $p.MainWindowHandle
 Log "start $what" ('main window 0x{0:X} "{1}", popup 0x{2:X}' -f [int64]$hwnd, [Act]::Title($hwnd), [int64][Act]::GetLastActivePopup($hwnd))

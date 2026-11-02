@@ -551,7 +551,12 @@ func (t *SelfTest) summary() map[string]any {
 
 	drawn := num(get(r, "checks", "drawnAt"))
 	versionOK := num(get(r, "checks", "version", "status")) == 200
-	out["start"] = drawn > 0 && versionOK
+	// The page counts as started when the Studio's app replaced the
+	// loading placeholder, not only when the root has content (the
+	// placeholder is content).
+	mounted := get(r, "checks", "appMounted", "mounted") == true
+	out["start"] = drawn > 0 && versionOK && mounted
+	out["appMounted"] = mounted
 	if drawn > 0 && t.app.cfg.LaunchT0 > 0 {
 		out["coldStartMs"] = int64(drawn) - t.app.cfg.LaunchT0
 	}
