@@ -10,6 +10,87 @@
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta name="theme-color" content="#f3f4f6" />
     <title>Studio</title>
+    <script id="intl-guard">
+      // Some WebKitGTK builds ship a JavaScriptCore that cannot construct an
+      // Intl.NumberFormat (the WebKitGTK 4.0 packages in RHEL 9 and its
+      // rebuilds throw "failed to initialize NumberFormat" for every
+      // locale and option, and toLocaleString on a number then stalled the
+      // page in testing). The libraries the app uses build number formatters while the
+      // bundle loads, so without this the page never gets past the loading
+      // screen. If one cannot be built, number formatting falls back to
+      // plain English formatting; where it can, nothing here changes.
+      (function () {
+        try { new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(1234.5); return } catch (e) { /* replaced below */ }
+        function group(digits) { return digits.replace(/\B(?=(\d{3})+(?!\d))/g, ',') }
+        function fixed(x, min, max) {
+          var s = x.toFixed(max)
+          var dot = s.indexOf('.')
+          if (dot < 0) return s
+          var end = s.length
+          while (end - dot - 1 > min && s.charAt(end - 1) === '0') end--
+          if (end === dot + 1) end = dot
+          return s.slice(0, end)
+        }
+        function num(v, o) {
+          if (typeof v === 'bigint') v = Number(v)
+          v = Number(v)
+          if (v !== v) return 'NaN'
+          var neg = v < 0 || (v === 0 && 1 / v < 0)
+          var x = Math.abs(v)
+          if (x === Infinity) return (neg ? '-' : '') + '∞'
+          var style = o.style || 'decimal'
+          var suffix = ''
+          var min = o.minimumFractionDigits
+          var max = o.maximumFractionDigits
+          if (style === 'currency') {
+            if (min === undefined) min = max === undefined ? 2 : Math.min(2, max)
+            if (max === undefined) max = Math.max(2, min)
+          } else if (style === 'percent') {
+            x *= 100
+            if (min === undefined) min = 0
+            if (max === undefined) max = Math.max(0, min)
+          } else {
+            if (min === undefined) min = 0
+            if (max === undefined) max = Math.max(3, min)
+          }
+          if (o.notation === 'compact') {
+            var steps = [[1e12, 'T'], [1e9, 'B'], [1e6, 'M'], [1e3, 'K']]
+            for (var i = 0; i < steps.length; i++) if (x >= steps[i][0]) { x /= steps[i][0]; suffix = steps[i][1]; break }
+            if (o.maximumFractionDigits === undefined) { min = 0; max = x < 10 ? 1 : 0 }
+          }
+          var s = fixed(x, Math.min(min, max), max)
+          var parts = s.split('.')
+          if (o.minimumIntegerDigits) while (parts[0].length < o.minimumIntegerDigits) parts[0] = '0' + parts[0]
+          if (o.useGrouping !== false) parts[0] = group(parts[0])
+          s = parts.length > 1 ? parts[0] + '.' + parts[1] : parts[0]
+          s += suffix
+          if (style === 'percent') s += '%'
+          if (style === 'currency') s = (o.currency === 'USD' || o.currency === undefined ? '$' : String(o.currency).toUpperCase() + ' ') + s
+          if (style === 'unit' && o.unit) s += ' ' + o.unit
+          return (neg && /[1-9]/.test(s) ? '-' : '') + s
+        }
+        function Fallback(locales, options) {
+          if (!(this instanceof Fallback)) return new Fallback(locales, options)
+          this.o = options || {}
+          var f = this
+          this.format = function (v) { return num(v, f.o) }
+        }
+        Fallback.prototype.formatToParts = function (v) { return [{ type: 'literal', value: this.format(v) }] }
+        Fallback.prototype.resolvedOptions = function () {
+          var o = this.o
+          return { locale: 'en-US', numberingSystem: 'latn', style: o.style || 'decimal', minimumIntegerDigits: o.minimumIntegerDigits || 1,
+            minimumFractionDigits: o.minimumFractionDigits || 0, maximumFractionDigits: o.maximumFractionDigits === undefined ? 3 : o.maximumFractionDigits, useGrouping: o.useGrouping === false ? false : 'auto' }
+        }
+        Fallback.supportedLocalesOf = function () { return [] }
+        try { Object.defineProperty(Intl, 'NumberFormat', { value: Fallback, configurable: true, writable: true }) } catch (e) { Intl.NumberFormat = Fallback }
+        var toLocale = function (locales, options) { return num(this, options || {}) }
+        try { Object.defineProperty(Number.prototype, 'toLocaleString', { value: toLocale, configurable: true, writable: true }) } catch (e) { Number.prototype.toLocaleString = toLocale }
+        if (typeof BigInt !== 'undefined') {
+          try { Object.defineProperty(BigInt.prototype, 'toLocaleString', { value: toLocale, configurable: true, writable: true }) } catch (e) { BigInt.prototype.toLocaleString = toLocale }
+        }
+        window.__intlGuard = true
+      })()
+    </script>
     <script>
       // Paint in the right theme immediately. Everything below is a cache of
       // what the app applied last time; the app still fetches the real
