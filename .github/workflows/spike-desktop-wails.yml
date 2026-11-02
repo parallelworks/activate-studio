@@ -248,7 +248,7 @@ jobs:
           dnf -y install dnf-plugins-core epel-release
           dnf config-manager --set-enabled crb
           dnf -y install git gcc gcc-c++ make pkgconf-pkg-config tar gzip xz which findutils procps-ng \
-            binutils file python3 rpm-build webkit2gtk3-devel gtk3-devel \
+            binutils file libatomic python3 rpm-build webkit2gtk3-devel gtk3-devel \
             xorg-x11-server-Xvfb ImageMagick xdotool jq dbus-x11 dbus-daemon mesa-dri-drivers dejavu-sans-fonts
           dbus-uuidgen --ensure
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
