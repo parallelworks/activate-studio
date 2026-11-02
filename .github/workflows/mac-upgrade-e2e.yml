@@ -1,0 +1,72 @@
+# Updates an installed older release to a build with a new GUFI, on a macOS
+# runner, with real indexes in place: libraries of a small folder are built
+# by the older release (at each depth), the app is replaced by the build
+# under test, and every search, query, statistic and library state must
+# answer as it did, with no index touched by the update. Each library is
+# then rebuilt by the new GUFI and the answers are compared again. See
+# .github/scripts/mac-upgrade-e2e.sh.
+#
+# Run by hand with the id of a mac-app run whose artifact is the build to
+# update to (a pull request's run, say). It builds and publishes nothing.
+#
+# No job on a macOS runner uses harden-runner: there it can only audit
+# egress, not block it (see gufi-macos.yml).
+name: mac-upgrade-e2e
+
+on:
+  workflow_dispatch:
+    inputs:
+      app_run:
+        description: A mac-app run id whose app (activate-studio-macos-arm64) is the build to update to
+        required: true
+      from_dmg_url:
+        description: The older release's disk image to start from
+        default: https://github.com/parallelworks/activate-studio/releases/download/v1.183/activate-studio-macos-arm64.dmg
+
+permissions: {}
+
+concurrency:
+  group: mac-upgrade-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  upgrade:
+    runs-on: macos-15
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: the build to update to
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APP_RUN: ${{ inputs.app_run }}
+        run: |
+          set -euo pipefail
+          [[ "$APP_RUN" =~ ^[0-9]+$ ]] || { echo "app_run must be a run id"; exit 1; }
+          mkdir -p "$RUNNER_TEMP/to"
+          gh run download "$APP_RUN" -R "$GITHUB_REPOSITORY" -n activate-studio-macos-arm64 -D "$RUNNER_TEMP/to"
+          (cd "$RUNNER_TEMP/to" && shasum -a 256 -c activate-studio-macos-arm64.tar.gz.sha256)
+          mkdir -p "$RUNNER_TEMP/to/app"
+          tar -xzf "$RUNNER_TEMP/to/activate-studio-macos-arm64.tar.gz" -C "$RUNNER_TEMP/to/app"
+          ls "$RUNNER_TEMP/to/app"
+
+      - name: update and check
+        env:
+          FROM_DMG_URL: ${{ inputs.from_dmg_url }}
+        run: |
+          app="$(find "$RUNNER_TEMP/to/app" -maxdepth 2 -name 'ACTIVATE Studio.app' -print -quit)"
+          [ -n "$app" ] || { echo "no ACTIVATE Studio.app in the artifact"; exit 1; }
+          bash .github/scripts/mac-upgrade-e2e.sh "$FROM_DMG_URL" "$app" "$RUNNER_TEMP/e2e/upgrade"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: mac-upgrade-e2e
+          path: ${{ runner.temp }}/e2e/upgrade
+          retention-days: 14
+          if-no-files-found: warn

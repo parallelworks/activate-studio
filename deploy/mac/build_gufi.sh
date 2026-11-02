@@ -214,6 +214,24 @@ echo "  $GUFI_DESCRIBE ($GUFI_COMMIT)"
   # bundled dependencies' libraries, which a plain install leaves out. It
   # also installs an example config at the absolute /etc/GUFI, so the
   # install goes under a root of its own and only the prefix is used.
+  # GUFI 0.8.0's install copies its dependencies' licenses from <build>/licenses,
+  # which its contrib/CI/licenses.sh downloads (wget) from the projects' main
+  # branches. They are put there from the sources built here, the ones the
+  # tree's licenses/ comes from below.
+  mkdir -p "$BUILD/licenses"
+  B0="$BUILD/builds"
+  stock() {   # stock SOURCE NAME
+    [ -f "$1" ] || die "no license at $1 (has GUFI's dependency layout changed?)"
+    cp "$1" "$BUILD/licenses/$2"
+  }
+  stock "$WORK/pcre2-$PCRE2_VERSION/LICENCE.md" pcre2-LICENSE.md
+  stock "$B0/sqlite-vec-main/LICENSE-APACHE" sqlite-vec-LICENSE-APACHE
+  stock "$B0/sqlite-vec-main/LICENSE-MIT" sqlite-vec-LICENSE-MIT
+  stock "$B0/sqlite-lembed/vendor/llama.cpp/LICENSE" llama.cpp-LICENSE
+  stock "$WORK/$LLVM_SRC/openmp/LICENSE.TXT" openmp-LICENSE.TXT
+  stock "$B0/jemalloc-dev/COPYING" jemalloc-COPYING
+  printf '%s\n' "sqlite-lembed has no license file in its repository; its sqlite-dist.toml lists MIT OR Apache." \
+    "See the licenses of sqlite-vec, which are the same, from the same author." >"$BUILD/licenses/sqlite-lembed"
   run env DESTDIR="$WORK/root" cmake --install "$BUILD" --component Local --prefix "$STAGE"
 )
 
