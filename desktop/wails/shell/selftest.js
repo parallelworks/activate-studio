@@ -36,6 +36,10 @@
     Object.keys(cases).forEach(function (k) {
       try { out[k] = 'ok ' + new Intl.NumberFormat(cases[k][0], cases[k][1]).format(1234.5); } catch (e) { out[k] = 'error: ' + String(e); }
     });
+    try { out.toLocaleString = 'ok ' + (1234.5).toLocaleString(); } catch (e) { out.toLocaleString = 'error: ' + String(e); }
+    ['Collator', 'PluralRules', 'RelativeTimeFormat', 'ListFormat', 'DateTimeFormat', 'Segmenter'].forEach(function (k) {
+      try { new Intl[k]('en-US'); out[k] = 'ok'; } catch (e) { out[k] = 'error: ' + String(e); }
+    });
     try { out.resolvedLocale = new Intl.DateTimeFormat().resolvedOptions().locale; } catch (e) { out.resolvedLocale = 'error: ' + String(e); }
     out.navigatorLanguage = navigator.language;
     out.navigatorLanguages = (navigator.languages || []).join(',');
@@ -184,6 +188,7 @@
       } catch (e) { out.bridge.chooseFolderReal = 'error: ' + String(e); }
       // The bridge still answers after the dialog (and whatever was done to
       // the window while it was open).
+      out.bridge.focusAfterDialog = { hasFocus: document.hasFocus(), active: document.activeElement ? document.activeElement.tagName : null };
       try { await h.postMessage({ action: 'nonsense' }); out.bridge.afterDialog = 'resolved'; } catch (e) { out.bridge.afterDialog = String(e.message || e); }
     }
     out.version = await version();

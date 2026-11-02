@@ -22,6 +22,7 @@ rpm -q webkit2gtk3 gtk3 libsoup glibc >"$OUT/versions.txt" 2>&1
 cat "$OUT/versions.txt"
 
 # Test tools (these are not part of what the rpm requires).
+dnf -y install epel-release >"$OUT/dnf-epel.log" 2>&1
 dnf -y install xorg-x11-server-Xvfb ImageMagick nodejs dbus-daemon dejavu-sans-fonts procps-ng >"$OUT/dnf-tools.log" 2>&1
 dbus-uuidgen --ensure 2>/dev/null
 STUB=$(mktemp -d)

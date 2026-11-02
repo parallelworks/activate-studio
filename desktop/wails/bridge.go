@@ -61,7 +61,11 @@ func (b *Bridge) ChooseFolder(start, message, prompt string) (string, error) {
 	}
 	// Wails v2 has no field for the button's label (prompt); GTK and
 	// Windows show their own "Select Folder".
-	defer holdFocus(b.app.cfg.FocusGuard)()
+	defer holdFocus(b.app.cfg.FocusGuard, func(m string) {
+		if t := b.app.test; t != nil {
+			t.note("focusGuard", m)
+		}
+	})()
 	return wruntime.OpenDirectoryDialog(b.app.ctx, wruntime.OpenDialogOptions{
 		DefaultDirectory:     start,
 		Title:                title,

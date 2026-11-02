@@ -12,6 +12,7 @@ package main
 // focus back as it would have. Every other message goes to Wails' procedure.
 
 import (
+	"fmt"
 	"os"
 	"sync"
 	"sync/atomic"
@@ -42,12 +43,14 @@ var (
 	guardOrig    uintptr
 	guardHolding atomic.Int32
 	guardPending atomic.Bool
+	guardDropped atomic.Int32
 	guardProcPtr = windows.NewCallback(guardProc)
 )
 
 func guardProc(hwnd, msg, wparam, lparam uintptr) uintptr {
 	if msg == wmSetFocus && guardHolding.Load() > 0 {
 		guardPending.Store(true)
+		guardDropped.Add(1)
 		return 0
 	}
 	r, _, _ := procCallWindowProc.Call(guardOrig, hwnd, msg, wparam, lparam)
@@ -86,7 +89,7 @@ func findMainWindow() uintptr {
 // holdFocus is called before a dialog opens; the function it returns is
 // called after the dialog closed. It does nothing when the guard is off or
 // the window cannot be found.
-func holdFocus(enabled bool) (release func()) {
+func holdFocus(enabled bool, note func(string)) (release func()) {
 	if !enabled {
 		return func() {}
 	}
@@ -102,9 +105,13 @@ func holdFocus(enabled bool) (release func()) {
 		return func() {}
 	}
 	guardHolding.Add(1)
+	guardDropped.Store(0)
 	return func() {
+		replayed := false
 		if guardHolding.Add(-1) == 0 && guardPending.Swap(false) {
 			procSendMessageW.Call(guardHwnd, wmSetFocus, 0, 0)
+			replayed = true
 		}
+		note(fmt.Sprintf("dialog closed: WM_SETFOCUS dropped %d times, replayed %v", guardDropped.Load(), replayed))
 	}
 }
