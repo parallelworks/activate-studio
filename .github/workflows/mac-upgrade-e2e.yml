@@ -6,8 +6,10 @@
 # then rebuilt by the new GUFI and the answers are compared again. See
 # .github/scripts/mac-upgrade-e2e.sh.
 #
-# Run by hand with the id of a mac-app run whose artifact is the build to
-# update to (a pull request's run, say). It builds and publishes nothing.
+# The build to update to is the app a mac-app run made: the run named by the
+# app_run input, or, for a pull request, the mac-app run of the same commit
+# (waited for on a Linux runner, so no Mac sits idle). It builds and
+# publishes nothing.
 #
 # No job on a macOS runner uses harden-runner: there it can only audit
 # egress, not block it (see gufi-macos.yml).
@@ -17,11 +19,16 @@ on:
   workflow_dispatch:
     inputs:
       app_run:
-        description: A mac-app run id whose app (activate-studio-macos-arm64) is the build to update to
-        required: true
+        description: A mac-app run id whose app (activate-studio-macos-arm64) is the build to update to; blank for the one of this commit
+        default: ""
       from_dmg_url:
         description: The older release's disk image to start from
         default: https://github.com/parallelworks/activate-studio/releases/download/v1.183/activate-studio-macos-arm64.dmg
+  pull_request:
+    paths:
+      - .github/workflows/mac-upgrade-e2e.yml
+      - .github/scripts/mac-upgrade-e2e.sh
+      - .github/scripts/mac-upgrade-e2e.py
 
 permissions: {}
 
@@ -30,7 +37,43 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  find:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      actions: read
+    outputs:
+      run: ${{ steps.find.outputs.run }}
+    steps:
+      - name: the mac-app run to update to
+        id: find
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APP_RUN: ${{ inputs.app_run }}
+          SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          if [ -n "$APP_RUN" ]; then
+            [[ "$APP_RUN" =~ ^[0-9]+$ ]] || { echo "app_run must be a run id"; exit 1; }
+            echo "run=$APP_RUN" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Its mac-app run, started by the same push; up to 100 minutes.
+          for _ in $(seq 1 100); do
+            row="$(gh run list -R "$GITHUB_REPOSITORY" --workflow mac-app.yml --commit "$SHA" --json databaseId,status,conclusion \
+              --jq '[.[] | select(.status == "completed")] | first // empty | "\(.databaseId) \(.conclusion)"')"
+            if [ -n "$row" ]; then
+              id="${row% *}"; conclusion="${row#* }"
+              [ "$conclusion" = success ] || { echo "the mac-app run $id of $SHA ended $conclusion"; exit 1; }
+              echo "run=$id" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            sleep 60
+          done
+          echo "no completed mac-app run for $SHA"; exit 1
+
   upgrade:
+    needs: find
     runs-on: macos-15
     timeout-minutes: 45
     permissions:
@@ -44,10 +87,10 @@ jobs:
       - name: the build to update to
         env:
           GH_TOKEN: ${{ github.token }}
-          APP_RUN: ${{ inputs.app_run }}
+          APP_RUN: ${{ needs.find.outputs.run }}
         run: |
           set -euo pipefail
-          [[ "$APP_RUN" =~ ^[0-9]+$ ]] || { echo "app_run must be a run id"; exit 1; }
+          [[ "$APP_RUN" =~ ^[0-9]+$ ]] || { echo "no mac-app run to update to"; exit 1; }
           mkdir -p "$RUNNER_TEMP/to"
           gh run download "$APP_RUN" -R "$GITHUB_REPOSITORY" -n activate-studio-macos-arm64 -D "$RUNNER_TEMP/to"
           (cd "$RUNNER_TEMP/to" && shasum -a 256 -c activate-studio-macos-arm64.tar.gz.sha256)
@@ -57,7 +100,7 @@ jobs:
 
       - name: update and check
         env:
-          FROM_DMG_URL: ${{ inputs.from_dmg_url }}
+          FROM_DMG_URL: ${{ inputs.from_dmg_url || 'https://github.com/parallelworks/activate-studio/releases/download/v1.183/activate-studio-macos-arm64.dmg' }}
         run: |
           app="$(find "$RUNNER_TEMP/to/app" -maxdepth 2 -name 'ACTIVATE Studio.app' -print -quit)"
           [ -n "$app" ] || { echo "no ACTIVATE Studio.app in the artifact"; exit 1; }
