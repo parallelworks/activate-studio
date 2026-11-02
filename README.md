@@ -8,6 +8,8 @@ A web workspace over a folder of documents. It indexes the folder, including the
 
 **On a Mac (Apple silicon, macOS 14 or later):** `curl -fsSL https://github.com/parallelworks/activate-studio/releases/download/macos/install.sh | bash` installs the ACTIVATE Studio app in `~/Applications`, which runs the Studio on your own folder with nothing else to install and no administrator rights, including on a managed Mac that does not allow LaunchAgents. The disk image on the [macOS release](https://github.com/parallelworks/activate-studio/releases/tag/macos) page does the same: double-click the app in it and choose Install. To remove it, choose **Uninstall ACTIVATE Studio…** in the app menu: it lists what it removes (the app, and by default its indexes, settings and logs) and never your documents. See [`docs/MACOS.md`](docs/MACOS.md).
 
+**On Windows:** the Studio runs in WSL2 (Windows Subsystem for Linux) and opens in a Windows browser, or a browser can open a Studio that runs on a Linux machine. There is no native Windows build. See [`docs/WINDOWS.md`](docs/WINDOWS.md).
+
 **On ACTIVATE:** run the workflow in [`deploy/workflow.yaml`](deploy/workflow.yaml) on a connected resource and set its "Knowledge Base Directory" to your folder. It builds the index and opens the Studio as a session. The platform's models work with no setup.
 
 **On your own machine** (Linux or macOS, with git, Node 26 and pnpm; on Ubuntu or Debian `indexer/setup_gufi.sh` installs the build tools and libraries it needs with apt, so it asks for sudo unless run as root; on macOS it uses Homebrew):
@@ -65,6 +67,7 @@ The in-app Help is the user guide: [`docs/HELP.md`](docs/HELP.md), with the deta
 | [`docs/MULTI-USER.md`](docs/MULTI-USER.md) | several people on one deployment |
 | [`docs/MACOS.md`](docs/MACOS.md) | the macOS app, and running from a clone on macOS |
 | [`docs/GUFI-MACOS.md`](docs/GUFI-MACOS.md) | GUFI built for macOS 14 and later: the published archive, building and checking it |
+| [`docs/WINDOWS.md`](docs/WINDOWS.md) | running the Studio on Windows through WSL2, with your folders, shares and models |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | how the index, retrieval, and server work |
 
 ## Built on
