@@ -248,15 +248,17 @@ rm -rf "$TREE/lib/pkgconfig" "$TREE/lib/cmake" "$TREE"/lib/libllama-common* "$TR
 for l in "$TREE"/lib/* "$TREE"/bin/*; do
   if [ -L "$l" ] && [ ! -e "$l" ]; then rm -f "$l"; fi
 done
-# GUFI 0.8.0 installs libvec0 and liblembed0 as links to the files of its
-# dependency build, by absolute path. In the tree they are links to the library
-# of the same name beside them, or are left out.
+# GUFI 0.8.0 installs some libraries (libvec0, liblembed0, libsqlite3) as links
+# to the files of its dependency build, by absolute path. In the tree they are
+# links to the file itself, which is copied in when it is not there.
 for l in "$TREE"/lib/*; do
   [ -L "$l" ] || continue
   case "$(readlink "$l")" in
-    /*) own="$(basename "$(readlink "$l")")"
+    /*) real="$(python3 -c 'import os, sys; print(os.path.realpath(sys.argv[1]))' "$l")"
+        own="$(basename "$real")"
         rm -f "$l"
-        if [ -f "$TREE/lib/$own" ]; then ln -s "$own" "$l"; fi ;;
+        if [ -f "$real" ] && [ ! -e "$TREE/lib/$own" ]; then cp "$real" "$TREE/lib/$own"; fi
+        if [ -f "$TREE/lib/$own" ] && [ "$own" != "$(basename "$l")" ]; then ln -s "$own" "$l"; fi ;;
   esac
 done
 chmod 755 "$TREE"/lib/*.dylib

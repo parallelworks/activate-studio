@@ -9,6 +9,7 @@ import {
   gufiEnv, indexerEnv,
 } from './config.js'
 import { invalidateDbList, verifyTree } from './gufi.js'
+import { requireIndexWork } from './instanceLock.js'
 import { preextractCommand, downmarkNative } from './preextract.js'
 import { invalidateContext } from './chat/context.js'
 import { effectiveSettings } from './settings.js'
@@ -153,6 +154,7 @@ function newPhases(): IndexPhase[] {
 }
 
 function enqueue(kind: JobKind, dir: string, label: string, run: (ctx: JobCtx) => Promise<void>, key: string | null = null): JobRec {
+  requireIndexWork()
   if (key) {
     const same = queue.find(r => r.key === key)
     if (same) return same
@@ -759,6 +761,7 @@ export function startIndexJob(rel: string, work?: (job: IndexJob) => Promise<{ m
 }
 
 function startOwnJob(rel: string, work: (job: IndexJob) => Promise<{ ms: number }>): IndexJob {
+  requireIndexWork()
   const job: IndexJob = {
     id: ++jobSeq, kind: 'folder', dir: rel, label: `Indexing ${rel}`, state: 'running', startedAt: new Date().toISOString(),
     runningAt: new Date().toISOString(), finishedAt: null, ms: null, error: null, threads: threadsFor(), phases: [],

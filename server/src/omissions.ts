@@ -164,6 +164,18 @@ export function libraryGap(l: Library, want: { words: boolean; meaning: boolean 
   return reasons.length ? o(reasons.join('; '), true) : null
 }
 
+/** A build's failure, in plain words where the cause is the disk: its own
+ *  message is a program's last lines (a Python traceback, say). */
+export function plainBuildError(message: string): string {
+  if (/No space left on device|database or disk is full|ENOSPC|File too large|EFBIG|SIGXFSZ/i.test(message)) {
+    return 'The disk the index is written on is full, so the new index was not finished. The index in place is untouched; free some space and rebuild.'
+  }
+  if (/EACCES|EPERM|Permission denied|Operation not permitted|read-only file system|EROFS/i.test(message) && /mkdir|open|rename|write|\.build|index/i.test(message)) {
+    return `The index folder cannot be written (${short(message, 120)}), so nothing was changed. The index in place is untouched; make the folder writable and rebuild.`
+  }
+  return message
+}
+
 /** A plain reason for a library that failed while it was searched or queried. */
 export function failureReason(l: Library, e: unknown): string {
   const m = short(String((e as Error)?.message ?? e))

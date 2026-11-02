@@ -19,7 +19,7 @@ import { runPreExtract } from './preextract.js'
 import { effectiveSettings } from './settings.js'
 import { scanLatestDetail } from './dirScan.js'
 import { lockedUnder, openDir, openIndex, prepareIndex, recoverSwap, rmTree, sourceOf, unmadeIndexDirs, type Locked } from './indexModes.js'
-import { deniedPaths, onlyDenied, recordDenied } from './omissions.js'
+import { deniedPaths, onlyDenied, plainBuildError, recordDenied } from './omissions.js'
 import { depthChange, depthRecordOf, readDepthRecord, writeDepthRecord, type DepthChange } from './depthState.js'
 import { scheduleSemanticMapRebuild } from './semanticMap.js'
 import { cleanIndexedText, markTextClean, textCleanNeeded } from './textCleanup.js'
@@ -504,7 +504,7 @@ async function fullBuild(id: string, job: IndexJob): Promise<{ ms: number }> {
   } catch (e) {
     // Cut off by a stop: left 'building' or 'updating' for the next start.
     if (stopping) throw e
-    const message = String((e as Error).message ?? e).slice(0, 400)
+    const message = plainBuildError(String((e as Error).message ?? e)).slice(0, 400)
     updateBuild(id, { state: fs.existsSync(path.join(tree, 'db.db')) ? 'ready' : 'failed', error: message })
     throw e
   }

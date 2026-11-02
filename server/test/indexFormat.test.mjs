@@ -78,6 +78,15 @@ test('the start-up line names an index from before 0.8.0', () => {
   assert.match(O.libraryStateLine({ ...l, format: { format: 'older', rolledUp: true } }), /\(0\.7\.0 or earlier, rolled up\)/)
 })
 
+test('a build that fails on the disk says so in plain words, and keeps what it cannot explain', () => {
+  const full = O.plainBuildError('python3.12:   File "embed.py", line 324, in chunk_db db.execute(\'CREATE TABLE gchunks\') sqlite3.OperationalError: database or disk is full')
+  assert.match(full, /^The disk the index is written on is full, so the new index was not finished\. The index in place is untouched; free some space and rebuild\.$/)
+  assert.match(O.plainBuildError('gufi_dir2index: No space left on device'), /is full/)
+  assert.match(O.plainBuildError('stopped (SIGXFSZ)'), /is full/)
+  assert.match(O.plainBuildError("EACCES: permission denied, mkdir '/ix/libs/a/index/.build'"), /^The index folder cannot be written \(EACCES: permission denied, mkdir '\/ix\/libs\/a\/index\/\.build'\), so nothing was changed\. The index in place is untouched/)
+  assert.equal(O.plainBuildError('gufi_dir2index wrote no index at /x'), 'gufi_dir2index wrote no index at /x')
+})
+
 // ---- a swap a stop cut off ----
 
 test('a swap cut off between its renames is undone: the old tree comes back, and nothing is lost', () => {
