@@ -20,6 +20,7 @@ type serverProcess struct {
 func startServerProcess(cmd *exec.Cmd) (*serverProcess, error) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	setParentDeathSignal(cmd.SysProcAttr)
+	guardCommand(cmd)
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}

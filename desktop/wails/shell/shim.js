@@ -83,26 +83,21 @@
   };
 
   // Into window.webkit.messageHandlers. WebKitGTK has one already (Wails'
-  // "external" lives there): add to it, or, if it takes no new names,
-  // replace window.webkit with an object that keeps "external" reachable.
+  // "external" lives there). An expando on that WebKit-owned object did not
+  // last on WebKitGTK 4.1 (the property was gone a few seconds later), so
+  // window.webkit is replaced by an object of ours that keeps "external"
+  // reachable through a getter; only if window.webkit cannot be replaced is
+  // the expando used.
   var how;
-  var wk = window.webkit;
-  if (wk && wk.messageHandlers) {
-    try { wk.messageHandlers.studioShell = handler; } catch (e) { /* not extensible */ }
-    if (wk.messageHandlers.studioShell === handler) {
-      how = 'added';
-    } else {
-      var original = wk.messageHandlers;
-      var handlers = { studioShell: handler };
-      Object.defineProperty(handlers, 'external', { get: function () { return original.external; } });
-      try {
-        Object.defineProperty(window, 'webkit', { value: { messageHandlers: handlers }, configurable: true, writable: true });
-        how = 'replaced';
-      } catch (e) { how = 'failed: ' + e; }
-    }
-  } else {
-    Object.defineProperty(window, 'webkit', { value: { messageHandlers: { studioShell: handler } }, configurable: true, writable: true });
-    how = 'defined';
+  var original = window.webkit && window.webkit.messageHandlers;
+  var handlers = { studioShell: handler };
+  if (original) Object.defineProperty(handlers, 'external', { get: function () { return original.external; }, enumerable: true });
+  try {
+    Object.defineProperty(window, 'webkit', { value: { messageHandlers: handlers }, configurable: true, writable: true });
+    how = original ? 'replaced' : 'defined';
+  } catch (e) {
+    try { original.studioShell = handler; } catch (_) { /* not extensible */ }
+    how = original && original.studioShell === handler ? 'added' : 'failed: ' + e;
   }
 
   // Links that leave the Studio open in the default browser; the window

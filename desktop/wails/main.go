@@ -48,6 +48,10 @@ import (
 )
 
 func main() {
+	// Linux: the server's guard (pdeathsig_linux.go) is this executable.
+	if maybeRunGuard() {
+		return
+	}
 	t0 := time.Now()
 	cfg, err := loadConfig()
 	if err != nil {

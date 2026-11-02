@@ -72,7 +72,7 @@ jobs:
         working-directory: desktop/wails
         run: |
           ldd build/bin/activate-studio | tee "$RUNNER_TEMP/ldd.txt"
-          awk '/=>/ {print $3}' "$RUNNER_TEMP/ldd.txt" | xargs -r dpkg -S 2>/dev/null | cut -d: -f1 | sort -u >"$RUNNER_TEMP/deps.txt"
+          awk '/=>/ {print $3}' "$RUNNER_TEMP/ldd.txt" | xargs -r realpath | xargs -r dpkg -S 2>/dev/null | cut -d: -f1 | sort -u >"$RUNNER_TEMP/deps.txt"
           cat "$RUNNER_TEMP/deps.txt"
 
       - name: start Xvfb

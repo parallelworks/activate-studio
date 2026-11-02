@@ -247,8 +247,16 @@ func (a *App) studioOrigin() string {
 
 func (a *App) studioURL() string { return a.studioOrigin() + "/" }
 
+// showStudio opens the Studio at hash. When the window already shows that
+// page (assetserver and localproxy: the origin does not change when the
+// server moves) only the hash would change, so the page is reloaded.
 func (a *App) showStudio(hash string) {
-	a.execJS(fmt.Sprintf("location.replace(%s)", jsString(a.studioURL()+hash)))
+	a.execJS(fmt.Sprintf(`(function (u) {
+  var t = new URL(u);
+  var same = t.origin === location.origin && t.pathname === location.pathname && t.search === location.search;
+  location.replace(u);
+  if (same) location.reload();
+})(%s)`, jsString(a.studioURL()+hash)))
 }
 
 // reloadStudio loads the Studio page again, keeping its place (the hash),

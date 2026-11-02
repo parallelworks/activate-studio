@@ -37,7 +37,10 @@ if (Test-Path "$Out\pids.log") {
   foreach ($line in Get-Content "$Out\pids.log") {
     $r = $line | ConvertFrom-Json
     foreach ($id in @($r.server, $r.helper)) {
-      if (Get-Process -Id $id -ErrorAction SilentlyContinue) { $alive += $id }
+      # Windows reuses PIDs quickly: count it only if it is still a node
+      # process that started before the shell ended.
+      $proc = Get-Process -Id $id -ErrorAction SilentlyContinue
+      if ($proc -and $proc.ProcessName -eq 'node') { $alive += $id }
     }
   }
 }

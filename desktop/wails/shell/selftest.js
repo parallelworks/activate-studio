@@ -203,6 +203,7 @@
           data.version = await version();
           await shell.call('TestReport', [hello.phase, data]);
           // As web/src/nativeShell.ts reopenApp does.
+          log('handler before relaunch: ' + typeof handler() + ', how ' + shell.how);
           var ok = await handler().postMessage({ action: 'relaunch' });
           log('relaunch answered ' + JSON.stringify(ok));
           await shell.call('TestReport', ['relaunchAnswer', { answer: ok }]);
@@ -220,7 +221,7 @@
           data.version = await version();
       }
     } catch (e) {
-      data.error = String(e && e.stack || e);
+      data.error = String(e && e.message || e) + ' | ' + String(e && e.stack || '');
     }
     await shell.call('TestReport', [hello.phase, data]);
   }

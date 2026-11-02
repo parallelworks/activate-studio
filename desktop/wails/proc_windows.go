@@ -120,3 +120,6 @@ func (p *serverProcess) close() {
 		p.job = 0
 	}
 }
+
+// The Job Object does what the Linux guard does.
+func maybeRunGuard() bool { return false }
