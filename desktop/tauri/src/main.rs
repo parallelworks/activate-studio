@@ -715,7 +715,11 @@ fn main() {
                     }
                 });
             }
-            *shell.local_url.lock().unwrap() = window.url().ok();
+            // The start page's address. window.url() cannot be used here: on
+            // Windows it still reads about:blank until the first load commits,
+            // which made the error page a blank page without its buttons.
+            let local = if cfg!(windows) { "http://tauri.localhost/index.html" } else { "tauri://localhost/index.html" };
+            *shell.local_url.lock().unwrap() = Url::parse(local).ok();
             let on_close = shell.clone();
             window.on_window_event(move |e| {
                 if let WindowEvent::CloseRequested { api, .. } = e {

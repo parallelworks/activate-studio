@@ -176,23 +176,40 @@
     })
 
     await step('external_links', async () => {
+      // The ways the Studio's pages link outside: a plain anchor, anchors
+      // with target=_blank (with and without rel=noopener, as the Studio's
+      // own links have), and window.open. These are script-made clicks, so a
+      // popup blocker may treat them differently from a person's click.
       const before = location.href
-      const a = document.createElement('a')
-      a.href = 'https://example.com/?studio-smoke=link'
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
+      const variants = {}
+      const anchor = (name, attrs) => {
+        const a = document.createElement('a')
+        a.href = `https://example.com/?studio-smoke=${name}`
+        for (const [k, v] of Object.entries(attrs)) a.setAttribute(k, v)
+        document.body.appendChild(a)
+        a.click()
+        a.remove()
+      }
+      anchor('link', {})
       await sleep(800)
-      const b = document.createElement('a')
-      b.href = 'https://example.com/?studio-smoke=blank'
-      b.target = '_blank'
-      document.body.appendChild(b)
-      b.click()
-      b.remove()
+      anchor('blank', { target: '_blank' })
+      await sleep(800)
+      anchor('noopener', { target: '_blank', rel: 'noopener noreferrer' })
       await sleep(800)
       const w = window.open('https://example.com/?studio-smoke=open', '_blank')
-      const opened = await poll('opened', v => v.length >= 3, 8000)
-      return { ok: opened.length >= 3 && opened.every(o => o.ok) && location.href === before, stayed: location.href === before, windowOpenReturned: w === null ? null : typeof w, opened }
+      const w2 = window.open('https://example.com/?studio-smoke=openNoopener', '_blank', 'noopener')
+      const want = ['link', 'blank', 'noopener', 'open', 'openNoopener']
+      const opened = await poll('opened', v => v.length >= want.length, 6000)
+      for (const n of want) variants[n] = opened.some(o => o.ok && o.url.endsWith(`studio-smoke=${n}`))
+      // What the Studio uses: target=_blank with rel=noopener, and window.open.
+      const required = ['link', 'noopener', 'open']
+      return {
+        ok: required.every(n => variants[n]) && location.href === before,
+        variants,
+        stayed: location.href === before,
+        windowOpenReturned: [w, w2].map(x => (x === null ? null : typeof x)),
+        opened,
+      }
     })
 
     await step('webgl', async () => webgl())

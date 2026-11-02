@@ -15,6 +15,11 @@ function Shot([string]$path) {
 while ($true) {
   foreach ($req in Get-ChildItem -Path (Join-Path $Out 'shots') -Filter '*.req' -ErrorAction SilentlyContinue) {
     $name = [System.IO.Path]::GetFileNameWithoutExtension($req.Name)
+    if ($name -notlike 'dialog-*') {
+      # The default browser, opened by the outside-link checks, takes the focus.
+      $null = $shell.AppActivate('ACTIVATE Studio')
+      Start-Sleep -Milliseconds 400
+    }
     try { Shot (Join-Path $Out "shots\$name.png") } catch { Add-Content $log "shot $name failed: $_" }
     if ($name -like 'dialog-*') {
       $ok = $shell.AppActivate('Smoke test folder dialog')
