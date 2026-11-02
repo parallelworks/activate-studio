@@ -259,17 +259,24 @@ jobs:
             binutils file libatomic python3 rpm-build webkit2gtk3-devel gtk3-devel \
             xorg-x11-server-Xvfb ImageMagick xdotool jq dbus-x11 dbus-daemon mesa-dri-drivers dejavu-sans-fonts
           dbus-uuidgen --ensure
+      # Node, pnpm and Go from their own archives into /usr/local. The setup
+      # actions put their folders on PATH through the runner, and in this
+      # container the PATH that results has no /usr/bin (sed, dirname and
+      # sh were not found after them), so they are not used here.
+      - name: Node, pnpm and Go
+        run: |
+          curl -fsSL https://nodejs.org/dist/v26.13.0/node-v26.13.0-linux-x64.tar.xz | tar -xJ -C /usr/local --strip-components=1
+          node --version
+          npm install -g pnpm@11.22.0
+          pnpm --version
+          curl -fsSL https://go.dev/dl/go1.26.0.linux-amd64.tar.gz | tar -xz -C /usr/local
+          ln -sf /usr/local/go/bin/go /usr/local/go/bin/gofmt /usr/local/bin/
+          go version
+          echo "PATH=$PATH"
+          echo "GOTOOLCHAIN=local" >>"$GITHUB_ENV"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: 26
-      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: desktop/wails/go.mod
-          cache: false
 
       - name: platform facts
         run: |
