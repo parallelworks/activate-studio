@@ -83,21 +83,31 @@
   };
 
   // Into window.webkit.messageHandlers. WebKitGTK has one already (Wails'
-  // "external" lives there). An expando on that WebKit-owned object did not
-  // last on WebKitGTK 4.1 (the property was gone a few seconds later), so
-  // window.webkit is replaced by an object of ours that keeps "external"
-  // reachable through a getter; only if window.webkit cannot be replaced is
-  // the expando used.
+  // "external" lives there): add to it, or, if it takes no new names,
+  // replace window.webkit with an object that keeps "external" reachable.
+  // The handlers object must be kept referenced: on WebKitGTK 4.1 it is a
+  // wrapper that the page's JavaScript engine recreates after it has been
+  // collected, and a property added to a collected wrapper is gone (the
+  // handler was missing a few seconds after load until the shim held on to
+  // it). It is kept in window.__studioShell.handlers.
   var how;
-  var original = window.webkit && window.webkit.messageHandlers;
-  var handlers = { studioShell: handler };
-  if (original) Object.defineProperty(handlers, 'external', { get: function () { return original.external; }, enumerable: true });
-  try {
-    Object.defineProperty(window, 'webkit', { value: { messageHandlers: handlers }, configurable: true, writable: true });
-    how = original ? 'replaced' : 'defined';
-  } catch (e) {
-    try { original.studioShell = handler; } catch (_) { /* not extensible */ }
-    how = original && original.studioShell === handler ? 'added' : 'failed: ' + e;
+  var wk = window.webkit;
+  var kept = wk && wk.messageHandlers;
+  if (kept) {
+    try { kept.studioShell = handler; } catch (e) { /* not extensible */ }
+    if (kept.studioShell === handler) {
+      how = 'added';
+    } else {
+      var handlers = { studioShell: handler };
+      Object.defineProperty(handlers, 'external', { get: function () { return kept.external; } });
+      try {
+        Object.defineProperty(window, 'webkit', { value: { messageHandlers: handlers }, configurable: true, writable: true });
+        how = 'replaced';
+      } catch (e) { how = 'failed: ' + e; }
+    }
+  } else {
+    Object.defineProperty(window, 'webkit', { value: { messageHandlers: { studioShell: handler } }, configurable: true, writable: true });
+    how = 'defined';
   }
 
   // Links that leave the Studio open in the default browser; the window
@@ -148,6 +158,7 @@
     cfg: cfg,
     call: call,
     how: how,
+    handlers: kept,
     installedAt: installedAt,
     readyStateAtInstall: readyStateAtInstall,
     nativeOpen: nativeOpen,
