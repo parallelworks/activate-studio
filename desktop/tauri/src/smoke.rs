@@ -373,6 +373,9 @@ struct Proc {
     ppid: u32,
     name: String,
     rss: u64,
+    /// Start time, in a unit that only orders processes of one boot: a
+    /// parent's child never started before it (a reused PID shows as one).
+    created: u64,
 }
 
 #[cfg(target_os = "linux")]
@@ -393,7 +396,8 @@ fn processes() -> Vec<Proc> {
             .and_then(|v| v.parse::<u64>().ok())
             .unwrap_or(0)
             * 1024;
-        out.push(Proc { pid, ppid, name, rss });
+        let created = stat[close + 2..].split_whitespace().nth(19).and_then(|v| v.parse().ok()).unwrap_or(0);
+        out.push(Proc { pid, ppid, name, rss, created });
     }
     out
 }
@@ -405,7 +409,7 @@ fn processes() -> Vec<Proc> {
         .args([
             "-NoProfile",
             "-Command",
-            "Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,Name,WorkingSetSize | ConvertTo-Json -Compress",
+            "Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,Name,WorkingSetSize,@{n='Created';e={$_.CreationDate.ToFileTimeUtc()}} | ConvertTo-Json -Compress",
         ])
         .creation_flags(0x0800_0000) // CREATE_NO_WINDOW
         .output();
@@ -426,6 +430,7 @@ fn processes() -> Vec<Proc> {
                     ppid: num(p.get("ParentProcessId")) as u32,
                     name: p.get("Name").and_then(Value::as_str).unwrap_or("").to_string(),
                     rss: num(p.get("WorkingSetSize")),
+                    created: num(p.get("Created")),
                 })
                 .collect()
         })
@@ -448,8 +453,9 @@ fn memory(shell: &Shell) -> Value {
         let mut i = 0;
         while i < found.len() {
             let p = found[i];
+            let born = procs.iter().find(|x| x.pid == p).map(|x| x.created).unwrap_or(0);
             for q in &procs {
-                if q.ppid == p && q.pid != p && !found.contains(&q.pid) {
+                if q.ppid == p && q.pid != p && q.created >= born && !found.contains(&q.pid) {
                     found.push(q.pid);
                 }
             }
@@ -464,6 +470,10 @@ fn memory(shell: &Shell) -> Value {
             continue;
         }
         if let Some(p) = procs.iter().find(|p| p.pid == pid) {
+            // The process listing itself (Windows runs it through PowerShell).
+            if matches!(p.name.to_ascii_lowercase().as_str(), "powershell.exe" | "conhost.exe") {
+                continue;
+            }
             let e = engine.entry(p.name.clone()).or_default();
             e.0 += 1;
             e.1 += p.rss;
