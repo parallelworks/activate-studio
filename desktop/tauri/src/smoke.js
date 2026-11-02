@@ -201,8 +201,10 @@
       const want = ['link', 'blank', 'noopener', 'open', 'openNoopener']
       const opened = await poll('opened', v => v.length >= want.length, 6000)
       for (const n of want) variants[n] = opened.some(o => o.ok && o.url.endsWith(`studio-smoke=${n}`))
-      // What the Studio uses: target=_blank with rel=noopener, and window.open.
-      const required = ['link', 'noopener', 'open']
+      // Script-made clicks carry no user activation, so only the plain
+      // anchor and window.open are required here; the target=_blank forms
+      // are checked below with a real click made by CI.
+      const required = ['link', 'open']
       return {
         ok: required.every(n => variants[n]) && location.href === before,
         variants,
@@ -210,6 +212,28 @@
         windowOpenReturned: [w, w2].map(x => (x === null ? null : typeof x)),
         opened,
       }
+    })
+
+    // A person's click on a target=_blank link, as the Studio's own links
+    // are written. The page covers the window with the link and asks CI for
+    // a real mouse click (xdotool on Linux, SendInput on Windows) in the
+    // middle of the screen.
+    await step('external_links_click', async () => {
+      const results = {}
+      for (const [name, rel] of [['clickBlank', null], ['clickNoopener', 'noopener noreferrer']]) {
+        const a = document.createElement('a')
+        a.href = `https://example.com/?studio-smoke=${name}`
+        a.target = '_blank'
+        if (rel) a.rel = rel
+        a.style.cssText = 'position:fixed;inset:0;z-index:2147483647;background:rgba(255,255,0,.2)'
+        document.body.appendChild(a)
+        const r = await inv('checkpoint', { name: name.toLowerCase() })
+        await sleep(1500)
+        a.remove()
+        const opened = await inv('opened')
+        results[name] = { clicked: r.taken, reached: opened.some(o => o.ok && o.url.endsWith(`studio-smoke=${name}`)) }
+      }
+      return { ok: results.clickNoopener.reached, results }
     })
 
     await step('webgl', async () => webgl())

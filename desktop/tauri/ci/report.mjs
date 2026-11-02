@@ -47,7 +47,7 @@ const checks = {
   '4 fetch stream (text/event-stream) incremental': !!(r1.stream_fetch_eventstream && r1.stream_fetch_eventstream.incremental),
   '4 EventSource incremental': !!(r1.stream_eventsource && r1.stream_eventsource.incremental),
   '5 blob download saved': ok('download'),
-  '5 outside links to the default browser': ok('external_links'),
+  '5 outside links to the default browser': ok('external_links') && ok('external_links_click'),
 }
 const info = {
   killTerm: killT,

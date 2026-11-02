@@ -63,6 +63,15 @@ poll() {
         sleep 0.3
         xdotool key Escape 2>>"$OUT/poller.log"
       fi
+      case "$name" in
+        click*)
+          # A person's click in the middle of the window.
+          xdotool mousemove 640 400 2>>"$OUT/poller.log"
+          sleep 0.3
+          xdotool click 1 2>>"$OUT/poller.log"
+          echo "$(date +%T) clicked for $name" >>"$OUT/poller.log"
+          ;;
+      esac
       mv "$req" "$OUT/shots/$name.taken"
       touch "$OUT/shots/$name.done"
       echo "$(date +%T) took $name" >>"$OUT/poller.log"

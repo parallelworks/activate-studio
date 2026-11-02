@@ -3,6 +3,10 @@
 param([string]$Out)
 Add-Type -AssemblyName System.Windows.Forms, System.Drawing
 $shell = New-Object -ComObject WScript.Shell
+Add-Type -Namespace Native -Name Mouse -MemberDefinition @'
+[DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
+[DllImport("user32.dll")] public static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extra);
+'@
 $log = Join-Path $Out 'poller.log'
 function Shot([string]$path) {
   $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
@@ -21,6 +25,15 @@ while ($true) {
       Start-Sleep -Milliseconds 400
     }
     try { Shot (Join-Path $Out "shots\$name.png") } catch { Add-Content $log "shot $name failed: $_" }
+    if ($name -like 'click*') {
+      # A person's click in the middle of the screen (the window fills it).
+      $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+      [Native.Mouse]::SetCursorPos([int]($b.Width / 2), [int]($b.Height / 2)) | Out-Null
+      Start-Sleep -Milliseconds 300
+      [Native.Mouse]::mouse_event(0x0002, 0, 0, 0, [UIntPtr]::Zero)
+      [Native.Mouse]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero)
+      Add-Content $log "$(Get-Date -Format T) clicked for $name"
+    }
     if ($name -like 'dialog-*') {
       $ok = $shell.AppActivate('Smoke test folder dialog')
       Add-Content $log "$(Get-Date -Format T) AppActivate dialog: $ok"
