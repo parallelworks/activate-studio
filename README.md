@@ -10,7 +10,7 @@ A web workspace over a folder of documents. It indexes the folder, including the
 
 **On ACTIVATE:** run the workflow in [`deploy/workflow.yaml`](deploy/workflow.yaml) on a connected resource and set its "Knowledge Base Directory" to your folder. It builds the index and opens the Studio as a session. The platform's models work with no setup.
 
-**On your own machine** (Linux or macOS, with Node 26 and pnpm):
+**On your own machine** (Linux or macOS, with git, Node 26 and pnpm; on Ubuntu or Debian `indexer/setup_gufi.sh` installs the build tools and libraries it needs with apt, so it asks for sudo unless run as root; on macOS it uses Homebrew):
 
 ```
 git clone https://github.com/parallelworks/activate-studio && cd activate-studio
