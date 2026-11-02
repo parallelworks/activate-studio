@@ -13,8 +13,10 @@ on:
 permissions:
   contents: read
 
+# One group per commit, so a push does not cancel the previous commit's runs
+# (each push here tests something different).
 concurrency:
-  group: spike-desktop-wails-${{ github.ref }}
+  group: spike-desktop-wails-${{ github.sha }}
   cancel-in-progress: true
 
 env:
@@ -173,6 +175,26 @@ jobs:
             Set-Content "$env:RUNNER_TEMP\deps.txt"
           Get-Content "$env:RUNNER_TEMP\deps.txt"
 
+      # The window is activated (SetForegroundWindow) while the real folder
+      # dialog is open, with the shell's focus guard off: the v2.17.0 crash.
+      - name: dialog activation, guard off
+        working-directory: desktop/wails
+        env:
+          STUDIO_APP_DIR: ${{ github.workspace }}
+        run: |
+          New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\kb", "$env:RUNNER_TEMP\picked" | Out-Null
+          Copy-Item -Recurse "$env:GITHUB_WORKSPACE\testdata\corpus\*" "$env:RUNNER_TEMP\kb\"
+          $env:STUDIO_KB_ROOT = "$env:RUNNER_TEMP\kb"
+          $env:STUDIO_SHELL_TEST_FOLDER = "$env:RUNNER_TEMP\picked"
+          $bin = (Resolve-Path build\bin\activate-studio.exe).Path
+          foreach ($mode in 'assetserver', 'direct', 'localproxy') {
+            Write-Output "::group::repro $mode"
+            & ci\smoke-windows.ps1 -Bin $bin -Mode $mode -Out "$env:RUNNER_TEMP\out\repro-$mode" -FocusGuard off
+            Get-Content "$env:RUNNER_TEMP\out\repro-$mode\dialog-activate.log" -ErrorAction SilentlyContinue
+            Get-Content "$env:RUNNER_TEMP\out\repro-$mode\shell.log" -Tail 30 -ErrorAction SilentlyContinue
+            Write-Output '::endgroup::'
+          }
+
       - name: self test
         working-directory: desktop/wails
         env:
@@ -209,3 +231,252 @@ jobs:
           path: |
             ${{ runner.temp }}/out
             desktop/wails/build/bin
+
+  # Rocky Linux 9: the WebKitGTK 4.0 build (no webkit2_41 tag), the same
+  # self test, a screenshot, an rpm, and the facts about what it links to.
+  rocky9:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    container:
+      image: rockylinux/rockylinux:9
+      # Room for WebKitGTK's own sandbox (bubblewrap); the smoke script
+      # falls back to running without it and says so.
+      options: --security-opt seccomp=unconfined --security-opt apparmor=unconfined
+    steps:
+      - name: system packages
+        run: |
+          dnf -y install dnf-plugins-core epel-release
+          dnf config-manager --set-enabled crb
+          dnf -y install git gcc gcc-c++ make pkgconf-pkg-config tar gzip xz which findutils procps-ng \
+            binutils file python3 rpm-build webkit2gtk3-devel gtk3-devel \
+            xorg-x11-server-Xvfb ImageMagick xdotool jq dbus-x11 dbus-daemon mesa-dri-drivers dejavu-sans-fonts
+          dbus-uuidgen --ensure
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: desktop/wails/go.mod
+          cache: false
+
+      - name: platform facts
+        run: |
+          mkdir -p "$RUNNER_TEMP/out"
+          {
+            echo "== os-release"; cat /etc/os-release
+            echo "== glibc"; ldd --version | head -n 1; rpm -q glibc
+            echo "== packages"; rpm -q webkit2gtk3 webkit2gtk3-devel webkit2gtk3-jsc gtk3 gtk3-devel libsoup libsoup-devel gcc
+            echo "== pkg-config"; pkg-config --modversion webkit2gtk-4.0 gtk+-3.0 libsoup-2.4
+            echo "== is 4.1 available"; pkg-config --exists webkit2gtk-4.1 && echo yes || echo no
+            echo "== repos"; dnf repolist
+            echo "== webkit2gtk3 from"; dnf info --installed webkit2gtk3 | grep -E "^(Name|Version|Release|From repo|Repository)" || true
+            echo "== node"; node --version
+            echo "== go"; go version
+          } 2>&1 | tee "$RUNNER_TEMP/out/platform.txt"
+
+      - run: pnpm install --frozen-lockfile
+      - name: build the Studio
+        run: |
+          s=$(date +%s%N)
+          pnpm build
+          echo "STUDIO_BUILD_SECONDS=$(( ($(date +%s%N) - s) / 1000000 ))e-3" >>"$GITHUB_ENV"
+
+      - name: build the shell (WebKitGTK 4.0, no webkit2_41 tag)
+        working-directory: desktop/wails
+        run: |
+          go install "github.com/wailsapp/wails/v2/cmd/wails@${WAILS_VERSION}"
+          go mod download
+          mkdir -p build && cp ../../deploy/mac/AppIcon-1024.png build/appicon.png
+          s=$(date +%s%N)
+          "$(go env GOPATH)/bin/wails" build -skipbindings -trimpath -ldflags "-s -w"
+          echo "SHELL_BUILD_SECONDS=$(( ($(date +%s%N) - s) / 1000000 ))e-3" >>"$GITHUB_ENV"
+          ls -la build/bin
+
+      - name: what the binary links to
+        working-directory: desktop/wails
+        run: |
+          {
+            echo "== ldd"; ldd build/bin/activate-studio
+            echo "== webkit and soup libraries it names"; ldd build/bin/activate-studio | grep -E "webkit|javascriptcore|soup" || true
+            echo "== highest glibc symbol version needed"
+            objdump -T build/bin/activate-studio | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -n 3
+            echo "== file"; file build/bin/activate-studio || true
+            echo "== owning packages"
+            awk '/=>/ {print $3}' <(ldd build/bin/activate-studio) | xargs -r realpath | xargs -r rpm -qf | sort -u
+          } 2>&1 | tee "$RUNNER_TEMP/out/binary.txt"
+          ldd build/bin/activate-studio | awk '/=>/ {print $3}' | xargs -r realpath | xargs -r rpm -qf | sort -u >"$RUNNER_TEMP/deps.txt"
+
+      - name: package (.rpm)
+        working-directory: desktop/wails
+        run: |
+          top="$PWD/build/rpm"
+          mkdir -p "$top/SOURCES"
+          cp build/bin/activate-studio packaging/linux/activate-studio.desktop "$top/SOURCES/"
+          cp ../../web/public/icon-512.png "$top/SOURCES/activate-studio.png"
+          rpmbuild -bb --define "_topdir $top" --define "ver 0.0.1" packaging/linux/activate-studio.spec
+          find "$top/RPMS" -name '*.rpm' | tee "$RUNNER_TEMP/out/rpm-path.txt"
+          for f in $(find "$top/RPMS" -name '*.rpm'); do
+            ls -l "$f"; rpm -qpi "$f"; echo "== requires"; rpm -qpR "$f"; echo "== files"; rpm -qpl "$f"
+          done 2>&1 | tee "$RUNNER_TEMP/out/rpm-info.txt"
+          mkdir -p handoff && cp build/bin/activate-studio handoff/ && cp "$top"/RPMS/*/*.rpm handoff/
+
+      - name: start Xvfb
+        run: |
+          Xvfb :99 -screen 0 1600x1000x24 -nolisten tcp >"$RUNNER_TEMP/xvfb.log" 2>&1 &
+          echo "DISPLAY=:99" >>"$GITHUB_ENV"
+          sleep 2
+
+      - name: self test
+        working-directory: desktop/wails
+        env:
+          STUDIO_APP_DIR: ${{ github.workspace }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/kb" "$RUNNER_TEMP/picked"
+          cp -r "$GITHUB_WORKSPACE/testdata/corpus/." "$RUNNER_TEMP/kb/"
+          export STUDIO_KB_ROOT="$RUNNER_TEMP/kb" STUDIO_SHELL_TEST_FOLDER="$RUNNER_TEMP/picked"
+          for mode in localproxy direct assetserver; do
+            echo "::group::$mode"
+            ci/smoke-linux.sh build/bin/activate-studio "$mode" "$RUNNER_TEMP/out/$mode"
+            tail -n 40 "$RUNNER_TEMP/out/$mode/selftest.log" || true
+            echo "::endgroup::"
+          done
+          if [ -f "$RUNNER_TEMP/out/localproxy/sandbox.txt" ]; then export WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1; fi
+          ci/hardkill-linux.sh build/bin/activate-studio "$RUNNER_TEMP/out/hardkill"
+
+      - name: collect
+        if: always()
+        working-directory: desktop/wails
+        run: |
+          python3 ci/collect.py "$RUNNER_TEMP/out" --os rocky9 \
+            --binary build/bin/activate-studio \
+            --build-seconds "${SHELL_BUILD_SECONDS:-0}" --web-build-seconds "${STUDIO_BUILD_SECONDS:-0}" \
+            --deps "$RUNNER_TEMP/deps.txt"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: wails-rocky9
+          path: |
+            ${{ runner.temp }}/out
+            desktop/wails/build/bin
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: wails-rocky9-handoff
+          path: desktop/wails/handoff
+
+  # The rpm installed with dnf in a clean Rocky Linux 9 container, then the
+  # installed shell started against a stub server under Xvfb.
+  rocky9-rpm:
+    needs: rocky9
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: wails-rocky9-handoff
+          path: handoff
+      - name: install in a clean container
+        run: |
+          ls -l handoff
+          mkdir -p "$RUNNER_TEMP/out"
+          docker run --rm --security-opt seccomp=unconfined \
+            -v "$PWD/handoff:/pkg:ro" -v "$PWD/desktop/wails/ci:/ci:ro" -v "$RUNNER_TEMP/out:/out" \
+            rockylinux/rockylinux:9 bash /ci/rpm-install-check.sh /pkg /out
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: wails-rocky9-rpm
+          path: ${{ runner.temp }}/out
+
+  # The binary built on Rocky Linux 9 (glibc 2.34) on Ubuntu 22.04 and 24.04
+  # with WebKitGTK 4.0 installed, if the release has it.
+  rocky9-on-ubuntu:
+    needs: rocky9
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: wails-rocky9-handoff
+          path: handoff
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+
+      - name: WebKitGTK 4.0 on this release
+        run: |
+          chmod +x handoff/activate-studio
+          mkdir -p "$RUNNER_TEMP/out"
+          sudo apt-get update
+          {
+            echo "== release"; lsb_release -ds; ldd --version | head -n 1
+            echo "== apt-cache policy"; apt-cache policy libwebkit2gtk-4.0-37 libwebkit2gtk-4.1-0 libsoup2.4-1
+            echo "== install libwebkit2gtk-4.0-37"
+          } 2>&1 | tee "$RUNNER_TEMP/out/webkit4.txt"
+          if sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.0-37 libgtk-3-0 libsoup2.4-1 2>&1 | tee -a "$RUNNER_TEMP/out/webkit4.txt"; then
+            :
+          fi
+          {
+            echo "== installed"; dpkg -l | grep -E "libwebkit2gtk|libjavascriptcoregtk|libsoup" || true
+            echo "== ldd of the Rocky 9 binary"; ldd handoff/activate-studio
+          } 2>&1 | tee -a "$RUNNER_TEMP/out/webkit4.txt"
+          if ldd handoff/activate-studio | grep -q "not found"; then
+            echo "missing" >"$RUNNER_TEMP/out/libs-state.txt"
+          else
+            echo "resolved" >"$RUNNER_TEMP/out/libs-state.txt"
+          fi
+          cat "$RUNNER_TEMP/out/libs-state.txt"
+
+      - name: self test with the Rocky 9 binary
+        env:
+          STUDIO_APP_DIR: ${{ github.workspace }}
+        run: |
+          if [ "$(cat "$RUNNER_TEMP/out/libs-state.txt")" != resolved ]; then
+            echo "libraries missing: self test skipped"
+            exit 0
+          fi
+          sudo apt-get install -y --no-install-recommends xvfb imagemagick xdotool jq dbus-x11
+          Xvfb :99 -screen 0 1600x1000x24 -nolisten tcp >"$RUNNER_TEMP/xvfb.log" 2>&1 &
+          export DISPLAY=:99
+          sleep 2
+          mkdir -p "$RUNNER_TEMP/kb" "$RUNNER_TEMP/picked"
+          cp -r "$GITHUB_WORKSPACE/testdata/corpus/." "$RUNNER_TEMP/kb/"
+          export STUDIO_KB_ROOT="$RUNNER_TEMP/kb" STUDIO_SHELL_TEST_FOLDER="$RUNNER_TEMP/picked"
+          bin="$GITHUB_WORKSPACE/handoff/activate-studio"
+          cd desktop/wails
+          for mode in localproxy direct assetserver; do
+            echo "::group::$mode"
+            ci/smoke-linux.sh "$bin" "$mode" "$RUNNER_TEMP/out/$mode"
+            tail -n 40 "$RUNNER_TEMP/out/$mode/selftest.log" || true
+            echo "::endgroup::"
+          done
+          if [ -f "$RUNNER_TEMP/out/localproxy/sandbox.txt" ]; then export WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1; fi
+          ci/hardkill-linux.sh "$bin" "$RUNNER_TEMP/out/hardkill"
+
+      - name: collect
+        if: always()
+        working-directory: desktop/wails
+        run: |
+          python3 ci/collect.py "$RUNNER_TEMP/out" --os "${{ matrix.os }}" --binary "$GITHUB_WORKSPACE/handoff/activate-studio"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: wails-rocky9-on-${{ matrix.os }}
+          path: ${{ runner.temp }}/out
