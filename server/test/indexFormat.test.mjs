@@ -71,11 +71,12 @@ test('a query that asks an older index for a column GUFI 0.8.0 added says why in
   assert.equal(O.failureReason({ ...l, format: null }, new Error(dev)), `search failed: ${dev}`)
 })
 
-test('the start-up line names an index from before 0.8.0', () => {
+test('the start-up line names an index from before the rename, and says nothing of the others', () => {
   const l = { id: 'x', label: 'Shelf', indexRoot: '/nowhere/x', sourceRoot: null, writable: false, primary: false, pinned: false, caps: { index: true, fullText: false, vectors: false }, meaning: null, depth: null }
   assert.doesNotMatch(O.libraryStateLine({ ...l, format: { format: 'current' } }), /written by/)
-  assert.match(O.libraryStateLine({ ...l, format: { format: 'earlier' } }), /written by a GUFI before 0\.8\.0$/)
-  assert.match(O.libraryStateLine({ ...l, format: { format: 'older', rolledUp: true } }), /\(0\.7\.0 or earlier, rolled up\)/)
+  assert.doesNotMatch(O.libraryStateLine({ ...l, format: { format: 'earlier' } }), /written by/, 'it reads as it did')
+  assert.match(O.libraryStateLine({ ...l, format: { format: 'older' } }), /written by GUFI 0\.7\.0 or earlier$/)
+  assert.match(O.libraryStateLine({ ...l, format: { format: 'older', rolledUp: true } }), /written by GUFI 0\.7\.0 or earlier, rolled up; searched in part: /)
 })
 
 test('a build that fails on the disk says so in plain words, and keeps what it cannot explain', () => {

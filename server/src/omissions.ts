@@ -205,7 +205,7 @@ export function libraryStateLine(l: Library): string {
   const parts = [
     `index ${yes(l.caps.index)}`, `words ${yes(l.caps.fullText)}`, `vectors ${yes(l.caps.vectors)}`,
     ...(l.depth ? [`depth ${l.depth}`] : []),
-    ...(l.format && l.format.format !== 'current' ? [`written by a GUFI before 0.8.0${l.format.format === 'older' ? ' (0.7.0 or earlier' + (l.format.rolledUp ? ', rolled up' : '') + ')' : ''}`] : []),
+    ...(l.format?.format === 'older' ? [`written by GUFI 0.7.0 or earlier${l.format.rolledUp ? ', rolled up' : ''}`] : []),
     ...(l.build ? [`build ${l.build.state}${l.build.builtAt ? ` (built ${l.build.builtAt})` : ''}`] : []),
     ...(l.site ? [`on ${l.site}`] : []),
     ...(k?.stale ? [`capabilities stale${k.error ? ` (${k.error})` : ''}`] : []),
