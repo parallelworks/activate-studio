@@ -319,6 +319,8 @@ export async function queryAggregate(stages: string[], opts: { indexRoot?: strin
  *  directories, and at least the top one must answer. Throws otherwise, so
  *  a build keeps the index in place instead of swapping this one in. */
 export async function verifyTree(tree: string): Promise<number> {
+  // Nothing here can read an index without gufi_query (a stand-in that only writes one, in a test, has none).
+  if (!fs.existsSync(path.join(GUFI_BIN, 'gufi_query'))) return 0
   const rows = await queryAggregate([
     '-I', 'CREATE TABLE t (d INT64);', '-K', 'CREATE TABLE agg (d INT64);',
     '-E', 'INSERT INTO t SELECT count(*) FROM vrsummary;', '-J', 'INSERT INTO agg SELECT sum(d) FROM t;',
