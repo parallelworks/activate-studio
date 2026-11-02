@@ -41,20 +41,25 @@ var shimJS string
 var selftestJS string
 
 type Config struct {
-	Mode         string
-	AppDir       string // holds server/dist/main.js and web/dist
-	Node         string
-	DataDir      string
-	KBRoot       string
-	StartOrigin  string // Wails' asset origin on this platform
-	Test         bool
-	TestPlan     string // full, or hold (start, write pids.json, wait)
-	TestDir      string
-	TestFolder   string   // chooseFolder's answer in the self test
-	Screenshot   []string // the self test's screenshot command; the file name is appended
-	DialogClose  []string // closes the real folder dialog in the self test
-	TestOpenReal bool     // the self test opens outside links for real
-	LaunchT0     int64    // epoch ms the process was launched, for the cold start
+	Mode        string
+	AppDir      string // holds server/dist/main.js and web/dist
+	Node        string
+	DataDir     string
+	KBRoot      string
+	StartOrigin string // Wails' asset origin on this platform
+	Test        bool
+	TestPlan    string // full, or hold (start, write pids.json, wait)
+	TestDir     string
+	TestFolder  string   // chooseFolder's answer in the self test
+	Screenshot  []string // the self test's screenshot command; the file name is appended
+	DialogClose []string // closes the real folder dialog in the self test
+	// Activates the window while the real dialog is open (Windows check).
+	DialogActivate []string
+	// FocusGuard: hold the window's focus handling while a dialog is open
+	// (Windows; see focusguard_windows.go). On unless the self test turns it off.
+	FocusGuard   bool
+	TestOpenReal bool  // the self test opens outside links for real
+	LaunchT0     int64 // epoch ms the process was launched, for the cold start
 }
 
 type ShellState struct {

@@ -140,6 +140,9 @@
         var real = await withTimeout(h.postMessage({ action: 'chooseFolder', start: '~', message: 'Choose the folder for the Studio to index.', prompt: 'Use This Folder' }), 20000, 'real chooseFolder');
         out.bridge.chooseFolderReal = real === null ? 'null (dialog closed)' : real;
       } catch (e) { out.bridge.chooseFolderReal = 'error: ' + String(e); }
+      // The bridge still answers after the dialog (and whatever was done to
+      // the window while it was open).
+      try { await h.postMessage({ action: 'nonsense' }); out.bridge.afterDialog = 'resolved'; } catch (e) { out.bridge.afterDialog = String(e.message || e); }
     }
     out.version = await version();
     // Streaming: ten events 200 ms apart, through the same path as the

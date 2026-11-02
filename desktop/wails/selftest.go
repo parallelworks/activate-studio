@@ -377,6 +377,14 @@ func (t *SelfTest) closeDialogSoon() {
 		t.note("dialogClose", "no close command")
 		return
 	}
+	// Another program activating the window while the dialog is open (the
+	// Windows check): the shell must live through it.
+	if len(t.app.cfg.DialogActivate) > 0 {
+		out, err := exec.Command(t.app.cfg.DialogActivate[0], t.app.cfg.DialogActivate[1:]...).CombinedOutput()
+		t.note("dialogActivate", map[string]any{"err": fmt.Sprint(err), "out": strings.TrimSpace(string(out))})
+		time.Sleep(1 * time.Second)
+		t.screenshot("dialog-after-activate")
+	}
 	out, err := exec.Command(t.app.cfg.DialogClose[0], t.app.cfg.DialogClose[1:]...).CombinedOutput()
 	t.note("dialogClose", map[string]any{"err": fmt.Sprint(err), "out": strings.TrimSpace(string(out))})
 }
@@ -575,6 +583,13 @@ func (t *SelfTest) summary() map[string]any {
 		"relaunch":       get(r, "relaunchAnswer", "answer") == true,
 		"studioMoved":    get(r, "move", "studioMoved") == true,
 		"how":            get(r, "checks", "bridge", "how"),
+		// A bridge call after the real dialog closed (and after any
+		// window activation done while it was open) is answered.
+		"afterDialog": strings.Contains(fmt.Sprint(get(r, "checks", "bridge", "afterDialog")), "unknown request"),
+	}
+	out["dialogActivation"] = map[string]any{
+		"ran":        len(t.notes["dialogActivate"]) > 0,
+		"focusGuard": t.app.cfg.FocusGuard,
 	}
 
 	incremental := func(s any) any {

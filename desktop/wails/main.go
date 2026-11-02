@@ -148,6 +148,11 @@ func loadConfig() (Config, error) {
 	if s := os.Getenv("STUDIO_SHELL_TEST_DIALOG_CLOSE"); s != "" {
 		cfg.DialogClose = strings.Fields(s)
 	}
+	if s := os.Getenv("STUDIO_SHELL_TEST_DIALOG_ACTIVATE"); s != "" {
+		cfg.DialogActivate = strings.Fields(s)
+	}
+	// On, except that the self test can turn it off to show the failure it prevents.
+	cfg.FocusGuard = !(cfg.Test && os.Getenv("STUDIO_SHELL_FOCUS_GUARD") == "off")
 	cfg.TestOpenReal = os.Getenv("STUDIO_SHELL_TEST_OPEN_REAL") == "1"
 	if s := os.Getenv("STUDIO_SHELL_LAUNCH_T0"); s != "" {
 		cfg.LaunchT0, _ = strconv.ParseInt(s, 10, 64)
