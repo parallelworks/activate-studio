@@ -380,7 +380,9 @@ func (t *SelfTest) closeDialogSoon() {
 	// Another program activating the window while the dialog is open (the
 	// Windows check): the shell must live through it.
 	if len(t.app.cfg.DialogActivate) > 0 {
-		out, err := exec.Command(t.app.cfg.DialogActivate[0], t.app.cfg.DialogActivate[1:]...).CombinedOutput()
+		cmd := exec.Command(t.app.cfg.DialogActivate[0], t.app.cfg.DialogActivate[1:]...)
+		cmd.Env = append(os.Environ(), fmt.Sprintf("STUDIO_SHELL_PID=%d", os.Getpid()))
+		out, err := cmd.CombinedOutput()
 		t.note("dialogActivate", map[string]any{"err": fmt.Sprint(err), "out": strings.TrimSpace(string(out))})
 		time.Sleep(1 * time.Second)
 		t.screenshot("dialog-after-activate")

@@ -183,15 +183,23 @@ jobs:
           STUDIO_APP_DIR: ${{ github.workspace }}
         run: |
           New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\kb", "$env:RUNNER_TEMP\picked" | Out-Null
-          Copy-Item -Recurse "$env:GITHUB_WORKSPACE\testdata\corpus\*" "$env:RUNNER_TEMP\kb\"
+          Copy-Item -Recurse -Force "$env:GITHUB_WORKSPACE\testdata\corpus\*" "$env:RUNNER_TEMP\kb\"
           $env:STUDIO_KB_ROOT = "$env:RUNNER_TEMP\kb"
           $env:STUDIO_SHELL_TEST_FOLDER = "$env:RUNNER_TEMP\picked"
           $bin = (Resolve-Path build\bin\activate-studio.exe).Path
-          foreach ($mode in 'assetserver', 'direct', 'localproxy') {
-            Write-Output "::group::repro $mode"
-            & ci\smoke-windows.ps1 -Bin $bin -Mode $mode -Out "$env:RUNNER_TEMP\out\repro-$mode" -FocusGuard off
-            Get-Content "$env:RUNNER_TEMP\out\repro-$mode\dialog-activate.log" -ErrorAction SilentlyContinue
-            Get-Content "$env:RUNNER_TEMP\out\repro-$mode\shell.log" -Tail 30 -ErrorAction SilentlyContinue
+          # Each way of activating the window on its own, in one mode, then all of
+          # them in each mode. Each is a fresh shell with its own dialog.
+          $runs = @(
+            @{ mode = 'localproxy'; act = 'sfw' }, @{ mode = 'localproxy'; act = 'restore' },
+            @{ mode = 'localproxy'; act = 'alt-sfw' }, @{ mode = 'localproxy'; act = 'appactivate' },
+            @{ mode = 'localproxy'; act = 'synthetic' },
+            @{ mode = 'assetserver'; act = 'all' }, @{ mode = 'direct'; act = 'all' }, @{ mode = 'localproxy'; act = 'all' }
+          )
+          foreach ($r in $runs) {
+            $name = "repro-$($r.mode)-$($r.act)"
+            Write-Output "::group::$name"
+            & ci\smoke-windows.ps1 -Bin $bin -Mode $r.mode -Out "$env:RUNNER_TEMP\out\$name" -FocusGuard off -Activate $r.act
+            Get-Content "$env:RUNNER_TEMP\out\$name\dialog-activate.log" -ErrorAction SilentlyContinue
             Write-Output '::endgroup::'
           }
 
@@ -201,7 +209,7 @@ jobs:
           STUDIO_APP_DIR: ${{ github.workspace }}
         run: |
           New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\kb", "$env:RUNNER_TEMP\picked" | Out-Null
-          Copy-Item -Recurse "$env:GITHUB_WORKSPACE\testdata\corpus\*" "$env:RUNNER_TEMP\kb\"
+          Copy-Item -Recurse -Force "$env:GITHUB_WORKSPACE\testdata\corpus\*" "$env:RUNNER_TEMP\kb\"
           $env:STUDIO_KB_ROOT = "$env:RUNNER_TEMP\kb"
           $env:STUDIO_SHELL_TEST_FOLDER = "$env:RUNNER_TEMP\picked"
           $bin = (Resolve-Path build\bin\activate-studio.exe).Path

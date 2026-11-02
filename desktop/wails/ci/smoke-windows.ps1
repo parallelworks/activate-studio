@@ -1,6 +1,6 @@
 # One self-test run of the shell on Windows.
 #
-# Usage: smoke-windows.ps1 -Bin <exe> -Mode <mode> -Out <dir> [-OpenReal] [-FocusGuard off]
+# Usage: smoke-windows.ps1 -Bin <exe> -Mode <mode> -Out <dir> [-OpenReal] [-FocusGuard off] [-Activate sfw|restore|alt-sfw|appactivate|synthetic|all]
 # While the real folder dialog is open the self test activates the window
 # (activate-windows.ps1); -FocusGuard off turns the shell's guard against that off.
 # Env:   STUDIO_APP_DIR, STUDIO_KB_ROOT, STUDIO_SHELL_TEST_FOLDER (set by the workflow)
@@ -9,7 +9,8 @@ param(
   [Parameter(Mandatory = $true)][string]$Mode,
   [Parameter(Mandatory = $true)][string]$Out,
   [switch]$OpenReal,
-  [string]$FocusGuard = 'on'
+  [string]$FocusGuard = 'on',
+  [string]$Activate = 'all'
 )
 $ErrorActionPreference = 'Continue'
 $here = $PSScriptRoot
@@ -29,6 +30,7 @@ $env:STUDIO_SHELL_SCREENSHOT = "powershell -NoProfile -ExecutionPolicy Bypass -F
 $env:STUDIO_SHELL_TEST_DIALOG_CLOSE = "powershell -NoProfile -ExecutionPolicy Bypass -File $here\close-dialog-windows.ps1"
 $env:STUDIO_SHELL_TEST_DIALOG_ACTIVATE = "powershell -NoProfile -ExecutionPolicy Bypass -File $here\activate-windows.ps1"
 $env:STUDIO_SHELL_FOCUS_GUARD = $FocusGuard
+$env:STUDIO_SHELL_TEST_ACTIVATE = $Activate
 $env:STUDIO_SHELL_TEST_OPEN_REAL = $(if ($OpenReal) { '1' } else { '0' })
 $env:STUDIO_SHELL_LAUNCH_T0 = [string][DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
 $p = Start-Process -FilePath $Bin -PassThru -RedirectStandardError "$Out\shell.log" -RedirectStandardOutput "$Out\shell-out.log"
