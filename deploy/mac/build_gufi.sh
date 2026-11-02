@@ -280,6 +280,18 @@ if grep -E "built for newer '?macOS'? version" "$LOG" | sort -u | head -n 20 | g
   die "parts of the build target a newer macOS than $TARGET (above)"
 fi
 
+# A library that loads others through @rpath and was linked with no run path
+# (GUFI 0.8.0's sqlite3-pcre is one) is given the run path macho_relink.py
+# sets for the rest: the folder it is in, or lib/ from bin/. Signed again below.
+for f in "${MACHO[@]}"; do
+  if otool -L "$f" | tail -n +2 | grep -q '@rpath/' && ! otool -l "$f" | grep -q LC_RPATH; then
+    case "$f" in "$TREE"/bin/*) rp='@loader_path/../lib' ;; *) rp='@loader_path' ;; esac
+    echo "  adding the run path $rp to $(basename "$f"), which loads through @rpath and has none:"
+    otool -L "$f" | tail -n +2 | grep '@rpath/' | sed 's/^/    /'
+    install_name_tool -add_rpath "$rp" "$f" || die "install_name_tool could not add a run path to $f"
+  fi
+done
+
 echo "Relinking and signing..."
 CHANGED="$(python3 "$HERE/macho_relink.py" "$TREE" | wc -l)"
 echo "  relinked $((CHANGED)) files to load their libraries from the tree (macho_relink.py)"
