@@ -48,12 +48,12 @@ test('only an index GUFI 0.8.0 reads wrongly is named, in search, Query and Sett
     assert.equal(F.formatGap(f), null, JSON.stringify(f))
     assert.equal(F.formatNote(f), null, JSON.stringify(f))
   }
-  assert.match(F.formatGap(rolled), /^written by a GUFI before 0\.8\.0 and rolled up, so the folders it rolled up can list the wrong files; rebuild it with GUFI 0\.8\.0 or later$/)
+  assert.match(F.formatGap(rolled), /^written by a GUFI before 0\.8\.0 and rolled up, so the files of the folders it rolled up are listed more than once and counts and sizes over them are too high; rebuild it with GUFI 0\.8\.0 or later$/)
   assert.match(F.formatNote(rolled), /^Written by a GUFI before 0\.8\.0 and rolled up.*0\.8\.0 or later\.$/, 'the same words, as a sentence')
   const lib = over => ({ id: 'x', label: 'Shelf', indexRoot: '/nowhere/x', sourceRoot: null, writable: false, primary: false, pinned: false, caps: { index: true, fullText: false, vectors: false }, meaning: null, depth: null, ...over })
   const gap = O.libraryGap(lib({ format: rolled }), { words: true, meaning: true })
   assert.deepEqual([gap.id, gap.partial], ['x', true], 'searched in part, not left out')
-  assert.match(gap.reason, /rolled up, so the folders it rolled up can list the wrong files/)
+  assert.match(gap.reason, /rolled up, so the files of the folders it rolled up are listed more than once and counts and sizes over them are too high/)
   assert.equal(O.libraryGap(lib({ format: { format: 'earlier' } }), { words: true, meaning: true }), null, 'an index from before dev reads as it did')
   assert.equal(O.libraryGap(lib({ format: { format: 'older', rolledUp: false } }), { words: true, meaning: true }), null)
 })
@@ -175,7 +175,7 @@ test('a library\'s probe records the format, keeps it across a restart, and name
   const rolledLib = L.getLibrary('rolled'), plainLib = L.getLibrary('plain')
   assert.deepEqual(rolledLib.format, { format: 'older', rolledUp: true })
   assert.deepEqual(plainLib.format, { format: 'older', rolledUp: false })
-  assert.match(L.publicLibrary(rolledLib).formatNote, /rolled up, so the folders it rolled up can list the wrong files/)
+  assert.match(L.publicLibrary(rolledLib).formatNote, /rolled up, so the files of the folders it rolled up are listed more than once and counts and sizes over them are too high/)
   assert.equal(L.publicLibrary(plainLib).formatNote, null, 'an older index that reads as it did has nothing to say')
   // What was found is on disk: a restart knows it before any probe.
   L.resetLibrariesForTests({ keepKnownCaps: true })

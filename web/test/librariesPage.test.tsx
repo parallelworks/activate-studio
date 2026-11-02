@@ -258,7 +258,7 @@ describe('Settings, Libraries', () => {
   })
 
   it('an index GUFI 0.8.0 reads wrongly says why on its row, whatever kind of library it is, and no other row has a note', async () => {
-    const note = 'Written by a GUFI before 0.8.0 and rolled up, so the folders it rolled up can list the wrong files; rebuild it with GUFI 0.8.0 or later.'
+    const note = 'Written by a GUFI before 0.8.0 and rolled up, so the files of the folders it rolled up are listed more than once and counts and sizes over them are too high; rebuild it with GUFI 0.8.0 or later.'
     const rolled = { ...SITE, id: 'rolled', label: 'Rolled up', formatNote: note }
     const remote = { ...SSH, id: 'u-box-rolled', label: 'rolled on box', formatNote: note }
     await renderPage(server({ libs: [PRIMARY, rolled, SITE], user: [remote, { ...SSH, id: 'u-box-fine', label: 'fine on box', formatNote: null }] }))

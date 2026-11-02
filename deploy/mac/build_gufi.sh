@@ -245,21 +245,19 @@ cp -L "$DEPS/lib/libpcre2-8.0.dylib" "$TREE/lib/"
 # carry), build metadata, and links to files that are not installed.
 rm -rf "$TREE/lib/pkgconfig" "$TREE/lib/cmake" "$TREE"/lib/libllama-common* "$TREE"/lib/libpresidio_plugin* \
   "$TREE"/lib/*.a "$TREE"/lib/*.la
-for l in "$TREE"/lib/* "$TREE"/bin/*; do
-  if [ -L "$l" ] && [ ! -e "$l" ]; then rm -f "$l"; fi
-done
 # GUFI 0.8.0 installs some libraries (libvec0, liblembed0, libsqlite3) as links
-# to the files of its dependency build, by absolute path. In the tree they are
-# links to the file itself, which is copied in when it is not there.
+# to a file by absolute path, a path of its build that is not in the tree. In
+# the tree they are links to the file of that name beside them.
 for l in "$TREE"/lib/*; do
   [ -L "$l" ] || continue
   case "$(readlink "$l")" in
-    /*) real="$(python3 -c 'import os, sys; print(os.path.realpath(sys.argv[1]))' "$l")"
-        own="$(basename "$real")"
+    /*) own="$(basename "$(readlink "$l")")"
         rm -f "$l"
-        if [ -f "$real" ] && [ ! -e "$TREE/lib/$own" ]; then cp "$real" "$TREE/lib/$own"; fi
-        if [ -f "$TREE/lib/$own" ] && [ "$own" != "$(basename "$l")" ]; then ln -s "$own" "$l"; fi ;;
+        if [ "$own" != "$(basename "$l")" ] && [ -f "$TREE/lib/$own" ]; then ln -s "$own" "$l"; fi ;;
   esac
+done
+for l in "$TREE"/lib/* "$TREE"/bin/*; do
+  if [ -L "$l" ] && [ ! -e "$l" ]; then rm -f "$l"; fi
 done
 chmod 755 "$TREE"/lib/*.dylib
 MACHO=()

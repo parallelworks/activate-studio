@@ -9,7 +9,7 @@
  * the Studio runs gives the same rows on an index from before `dev`, so such
  * an index needs no migration and no rebuild. An index from before the
  * rename reads the same way except where a folder was rolled up: GUFI cannot
- * tell the folder is rolled up, and lists that folder's entries wrongly. That
+ * tell the folder is rolled up, and lists that folder's entries more than once. That
  * is the one case the Studio says out loud.
  */
 
@@ -46,7 +46,7 @@ export function formatNote(r: FormatRecord | null | undefined): string | null {
 /** Why a search or query covers an index only in part, or null when it covers all of it. */
 export function formatGap(r: FormatRecord | null | undefined): string | null {
   return r?.format === 'older' && r.rolledUp
-    ? 'written by a GUFI before 0.8.0 and rolled up, so the folders it rolled up can list the wrong files; rebuild it with GUFI 0.8.0 or later'
+    ? 'written by a GUFI before 0.8.0 and rolled up, so the files of the folders it rolled up are listed more than once and counts and sizes over them are too high; rebuild it with GUFI 0.8.0 or later'
     : null
 }
 
