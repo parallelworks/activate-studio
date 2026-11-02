@@ -402,6 +402,14 @@ func (t *SelfTest) checkDownloads() {
 		name := fmt.Sprintf("studio-shell-%s-%s-%d.csv", kind, t.app.cfg.Mode, os.Getpid())
 		p := filepath.Join(dir, name)
 		st, err := os.Stat(p)
+		if err != nil {
+			// WebKitGTK saves a native download in the home folder.
+			if home, herr := os.UserHomeDir(); herr == nil {
+				if st2, err2 := os.Stat(filepath.Join(home, name)); err2 == nil {
+					p, st, err = filepath.Join(home, name), st2, nil
+				}
+			}
+		}
 		entry := map[string]any{"path": p, "found": err == nil}
 		if err == nil {
 			entry["bytes"] = st.Size()
