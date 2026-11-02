@@ -2,6 +2,8 @@
 # One-time GUFI toolchain build. Installs to /opt/gufi.
 set -euo pipefail
 
+# Resolved before any cd, so running this by a relative path works.
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SRC="${GUFI_SRC:-$HOME/gufi-src}"
 PREFIX="${GUFI_PREFIX:-/opt/gufi}"
 # GUFI's AI dependencies (sqlite-vec and sqlite-lembed, which carries
@@ -40,7 +42,14 @@ case "$(uname -s)" in
     )
     ;;
   *)
-    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    # A root shell (a container) has no sudo and needs none.
+    SUDO=sudo
+    [ "$(id -u)" = 0 ] && SUDO=
+    $SUDO env DEBIAN_FRONTEND=noninteractive apt-get update
+    # build-essential, git, curl and python3 are used below. bsdextrautils
+    # provides column, which GUFI's cmake requires at configure time.
+    $SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y \
+      build-essential git curl ca-certificates python3 bsdextrautils \
       cmake libsqlite3-dev pkg-config zlib1g-dev libpcre2-dev libattr1-dev attr \
       autoconf automake libtool tesseract-ocr poppler-utils
     EXTRA_CMAKE=()
@@ -52,6 +61,14 @@ if [ ! -d "$SRC" ]; then
 fi
 cd "$SRC"
 git fetch --tags
+# spread_tree.c opens a new file with O_CREAT and no mode argument. Ubuntu's
+# default _FORTIFY_SOURCE turns that into a compile error (Debian's does not).
+# Give the call the mode it needs; a source that already has one is left alone.
+SPREAD=src/gufi_query/spread_tree.c
+if grep -q 'open(extdb_path, O_CREAT | O_WRONLY)' "$SPREAD" 2>/dev/null; then
+  sed -i.orig 's/open(extdb_path, O_CREAT | O_WRONLY)/open(extdb_path, O_CREAT | O_WRONLY, S_IRUSR | S_IWUSR)/' "$SPREAD"
+  rm -f "$SPREAD.orig"
+fi
 mkdir -p build && cd build
 cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$PREFIX" \
   -DDEP_AI="$([ "$AI" = "1" ] && echo On || echo Off)" \
@@ -64,7 +81,6 @@ if [ -w "$(dirname "$PREFIX")" ]; then make install; else sudo make install; fi
 echo "GUFI installed at $PREFIX"
 
 # Embedding model for the vector layer (384-dim all-MiniLM, per the GUFI master doc).
-PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MODEL_DIR="${INDEX_BASE:-$PROJECT_ROOT/index}/models"
 if [ "$AI" != "1" ]; then
   echo "Built without the AI dependencies: full-text and metadata search work, semantic search does not."

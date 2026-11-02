@@ -302,9 +302,16 @@ pnpm start                       # http://localhost:4080
 
 With no `KB_ROOT` set, the corpus is `knowledge-base/` beside the code
 and is created with a few starter folders on first start. Point it at
-your own material instead with `KB_ROOT=/path/to/corpus pnpm start`, and
-put anything you want to keep across restarts in a `.env` at the repo
-root.
+your own material instead with `KB_ROOT=/path/to/corpus pnpm start`.
+`pnpm start` reads settings from the environment only and does not load a
+`.env` file. To keep them across restarts, put `KEY='value'` lines in a
+file such as `.env` (copy `.env.example`) and load it in the shell before
+starting:
+
+```
+set -a; . ./.env; set +a
+pnpm start
+```
 
 At this point the file tree, the viewers, document previews, grep
 search, and the assistant all work. Indexed search and the query page
