@@ -34,7 +34,29 @@ case "$(uname -s)" in
     PATH="$(brew --prefix diffutils)/bin:$(brew --prefix flock)/bin:$PATH"
     export PATH
     export CC="$(brew --prefix llvm)/bin/clang"
-    export CXX="$(brew --prefix llvm)/bin/clang++"
+    # The llama.cpp that GUFI's sqlite-lembed vendors uses errno, EXIT_FAILURE
+    # and std::fill without including their headers, which libc++ in recent
+    # LLVM no longer pulls in through others. Its own build sets its own flags,
+    # so CXXFLAGS does not reach it; the C++ compiler itself is a wrapper that
+    # includes the common standard headers in every compile (as
+    # deploy/mac/build_gufi.sh does). It stays beside the build, which
+    # remembers it.
+    LLVM_CXX="$(brew --prefix llvm)/bin/clang++"
+    CXX_WRAP="$SRC.cxx"
+    mkdir -p "$CXX_WRAP"
+    INCLUDES=""
+    for h in cerrno cstdlib cstring cstdint climits cmath new algorithm functional memory string vector; do
+      INCLUDES="$INCLUDES -include $h"
+    done
+    cat >"$CXX_WRAP/clang++" <<WRAP
+#!/bin/sh
+case " \$* " in
+  *" -c "*) exec "$LLVM_CXX" $INCLUDES "\$@" ;;
+esac
+exec "$LLVM_CXX" "\$@"
+WRAP
+    chmod 755 "$CXX_WRAP/clang++"
+    export CXX="$CXX_WRAP/clang++"
     OMP_PREFIX="$(brew --prefix libomp)"
     EXTRA_CMAKE=(
       -DCMAKE_OSX_SYSROOT=macosx
