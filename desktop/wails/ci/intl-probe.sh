@@ -14,13 +14,18 @@ section "os-release"; cat /etc/os-release
 section "repos before"; dnf repolist 2>&1
 # EPEL where it can be had (not needed for webkit2gtk3, which is in AppStream).
 section "install webkit2gtk3"
-dnf -y install webkit2gtk3 webkit2gtk3-jsc python3 strace binutils file; echo "dnf exit $?"
+dnf -y install dnf-plugins-core >/dev/null 2>&1
+dnf config-manager --set-enabled crb 2>&1 | tail -n 1
+dnf -y install webkit2gtk3 webkit2gtk3-jsc webkit2gtk3-devel python3 strace binutils file; echo "dnf exit $?"
 section "install result"
 rpm -q webkit2gtk3 webkit2gtk3-jsc libicu glibc libsoup || true
 if ! rpm -q webkit2gtk3 >/dev/null 2>&1; then
   section "why not"
   dnf -y install webkit2gtk3 2>&1 | tail -n 5
   dnf provides webkit2gtk3 2>&1 | tail -n 5
+  section "webkit packages the enabled repos offer"
+  dnf list available '*webkit*' 2>&1 | tail -n 8
+  dnf -y install libicu 2>&1 | tail -n 1; rpm -q libicu
   echo "webkit2gtk3 could not be installed in this image" >"$OUT/NO_WEBKIT"
   exit 0
 fi
@@ -41,30 +46,37 @@ nm -D --undefined-only "$JSC" 2>/dev/null | grep -E "_6[0-9]$" | sed 's/^ *//' |
 nm -D --undefined-only /usr/lib64/libjavascriptcoregtk-4.0.so.18 | grep -oE " u[a-z0-9_]+_67$" | sort -u | wc -l
 nm -D --undefined-only /usr/lib64/libjavascriptcoregtk-4.0.so.18 | grep -E "unum|unumf|ulocdata|uldn|uplrules|ufmt|udat_" | sed 's/^ *//' | sort -u | head -n 60
 
+section "C++ ICU number classes JavaScriptCore imports"
+nm -D -C --undefined-only /usr/lib64/libjavascriptcoregtk-4.0.so.18 | grep -E "icu_67::number" | sed 's/^ *//' | sort -u | head -n 30
+nm -D -C --undefined-only /usr/lib64/libjavascriptcoregtk-4.0.so.18 | grep -c "icu_67" 
+
 section "ICU used directly (ctypes, no JavaScriptCore): unum_open and format"
 python3 - <<'PY'
 import ctypes
+from ctypes import c_int, c_void_p, c_char_p, c_double, byref, POINTER, c_int32
 i18n = ctypes.CDLL("libicui18n.so.67")
-uc = ctypes.CDLL("libicuuc.so.67")
-status = ctypes.c_int(0)
+i18n.unum_open_67.restype = c_void_p
+i18n.unum_open_67.argtypes = [c_int, c_void_p, c_int32, c_char_p, c_void_p, POINTER(c_int)]
+i18n.unum_formatDouble_67.restype = c_int32
+i18n.unum_formatDouble_67.argtypes = [c_void_p, c_double, ctypes.c_wchar_p, c_int32, c_void_p, POINTER(c_int)]
+status = c_int(0)
 for loc in (b"en_US", b"en", b"en_US_POSIX", b"root"):
     status.value = 0
-    f = i18n.unum_open_67(1, None, 0, loc, None, ctypes.byref(status))
+    f = i18n.unum_open_67(1, None, 0, loc, None, byref(status))
     ok = status.value
     out = ""
     if f and ok <= 0:
         buf = ctypes.create_unicode_buffer(64)
         status.value = 0
-        n = i18n.unum_formatDouble_67(ctypes.c_void_p(f), ctypes.c_double(1234.5), buf, 64, None, ctypes.byref(status))
+        n = i18n.unum_formatDouble_67(f, 1234.5, buf, 64, None, byref(status))
         out = buf.value
-    print(loc, "unum_open status", ok, "format status", status.value, repr(out))
-# the number-skeleton API (what newer JavaScriptCore uses)
+    print(loc, "unum_open status", ok, "format status", status.value, repr(out), flush=True)
 status.value = 0
-skel = "precision-integer".encode("utf-16-le")
 try:
     fn = i18n.unumf_openForSkeletonAndLocale_67
-    fn.restype = ctypes.c_void_p
-    h = fn(ctypes.c_char_p(skel), -1, b"en_US", ctypes.byref(status))
+    fn.restype = c_void_p
+    fn.argtypes = [ctypes.c_wchar_p, c_int32, c_char_p, POINTER(c_int)]
+    h = fn("precision-integer", -1, b"en_US", byref(status))
     print("unumf_openForSkeletonAndLocale status", status.value, bool(h))
 except Exception as e:
     print("unumf not available:", e)
