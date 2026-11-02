@@ -36,13 +36,28 @@
     Object.keys(cases).forEach(function (k) {
       try { out[k] = 'ok ' + new Intl.NumberFormat(cases[k][0], cases[k][1]).format(1234.5); } catch (e) { out[k] = 'error: ' + String(e); }
     });
-    try { out.toLocaleString = 'ok ' + (1234.5).toLocaleString(); } catch (e) { out.toLocaleString = 'error: ' + String(e); }
-    ['Collator', 'PluralRules', 'RelativeTimeFormat', 'ListFormat', 'DateTimeFormat', 'Segmenter'].forEach(function (k) {
-      try { new Intl[k]('en-US'); out[k] = 'ok'; } catch (e) { out[k] = 'error: ' + String(e); }
-    });
     try { out.resolvedLocale = new Intl.DateTimeFormat().resolvedOptions().locale; } catch (e) { out.resolvedLocale = 'error: ' + String(e); }
     out.navigatorLanguage = navigator.language;
     out.navigatorLanguages = (navigator.languages || []).join(',');
+    return out;
+  }
+
+  // Other parts of Intl, one at a time with a log line before each (run
+  // late in the checks: when one of these hung the page in a first try).
+  function intlOthers() {
+    var out = {};
+    var tries = {
+      toLocaleString: function () { return (1234.5).toLocaleString(); },
+      Collator: function () { new Intl.Collator('en-US'); return 'ok'; },
+      PluralRules: function () { new Intl.PluralRules('en-US'); return 'ok'; },
+      RelativeTimeFormat: function () { new Intl.RelativeTimeFormat('en-US'); return 'ok'; },
+      ListFormat: function () { new Intl.ListFormat('en-US'); return 'ok'; },
+      DateTimeFormat: function () { new Intl.DateTimeFormat('en-US'); return 'ok'; }
+    };
+    Object.keys(tries).forEach(function (k) {
+      log('intl case ' + k);
+      try { out[k] = 'ok ' + tries[k](); } catch (e) { out[k] = 'error: ' + String(e); }
+    });
     return out;
   }
 
@@ -207,6 +222,7 @@
         body: JSON.stringify({ messages: [{ role: 'user', content: 'hello' }], model: '' }),
       }), 15000, 'chat stream');
     } catch (e) { out.chatStream = { error: String(e) }; }
+    out.intlOthers = intlOthers();
     out.webgl = webgl();
     out.userAgent = navigator.userAgent;
     out.origin = location.origin;

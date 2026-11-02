@@ -50,8 +50,11 @@ run() {
   sleep 15
   DISPLAY=:99 import -window root "$OUT/installed-shell.png" 2>"$OUT/import.log"
   if kill -0 "$SPID" 2>/dev/null; then echo alive >"$OUT/shell-state.txt"; else echo "exited" >"$OUT/shell-state.txt"; fi
+  # End the shell itself with TERM (by PID, found by exact command name; the
+  # wrapper's PID is not the shell's), as a logout would.
+  for p in $(ps -eo pid=,comm= | awk '$2 == "activate-studio" {print $1}'); do kill -TERM "$p" 2>/dev/null; done
+  sleep 4
   kill "$SPID" 2>/dev/null
-  sleep 3
 }
 run
 if ! grep -q "GET / " "$OUT/stub-requests.log" 2>/dev/null && grep -q bwrap "$OUT/shell.log"; then

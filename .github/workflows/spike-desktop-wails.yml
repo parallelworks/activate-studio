@@ -295,6 +295,17 @@ jobs:
             nm -D --undefined-only /usr/lib64/libjavascriptcoregtk-4.0.so.18 | grep -oE '(u[a-z_]+)_[0-9]+$' | sed -E 's/.*_([0-9]+)$/\1/' | sort -un | tail -n 2
             echo "== unumf and unumrf symbols"
             nm -D --undefined-only /usr/lib64/libjavascriptcoregtk-4.0.so.18 | grep -E 'unumf|unumrf|unum_' | head -n 20
+            echo "== JavaScriptCore shell, if the packages carry one"
+            ls /usr/libexec/webkit2gtk-4.0/ 2>&1 | head -n 20
+            rpm -ql webkit2gtk3 webkit2gtk3-jsc webkit2gtk3-devel | grep -E '/jsc$|bin/jsc' || echo "no jsc binary in the packages"
+            for j in /usr/libexec/webkit2gtk-4.0/jsc /usr/bin/jsc; do
+              if [ -x "$j" ]; then
+                for lang in "" en_US.UTF-8; do
+                  echo "-- $j with LANG=$lang"
+                  LANG=$lang "$j" -e 'try { print("NumberFormat " + new Intl.NumberFormat("en-US").format(1234.5)) } catch (e) { print("NumberFormat error " + e) }; try { print("toLocaleString " + (1234.5).toLocaleString()) } catch (e) { print("toLocaleString error " + e) }; try { print("DateTimeFormat " + new Intl.DateTimeFormat("en-US").format(new Date(0))) } catch (e) { print("DateTimeFormat error " + e) }' 2>&1 | head -n 5
+                done
+              fi
+            done
             echo "== node"; node --version
             echo "== go"; go version
           } 2>&1 | tee "$RUNNER_TEMP/out/platform.txt"
