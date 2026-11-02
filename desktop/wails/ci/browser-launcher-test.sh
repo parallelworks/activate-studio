@@ -12,7 +12,9 @@ mkdir -p "$OUT"; OUT=$(cd "$OUT" && pwd)
 R="$OUT/results.txt"; : >"$R"
 res() { echo "$*" | tee -a "$R"; }
 
-# A preload the server reads, to make it exit with a chosen code on request.
+# A preload the server reads (passed as an argument to the server only: through
+# NODE_OPTIONS every node the server starts would run it, and the helper it
+# starts would start helpers of its own without end), to make it exit with a chosen code on request.
 cat >"$OUT/preload.mjs" <<'JS'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -34,7 +36,7 @@ start_launcher() {   # $1 = label; sets LPID DATA
   DATA=$(mktemp -d); rm -f "$OUT/pids.log" "$OUT/trigger"
   mkdir -p "$DATA/kb"
   env HOME="$DATA" STUDIO_SHELL_DATA_DIR="$DATA" STUDIO_KB_ROOT="$DATA/kb" TEST_DIR="$OUT" \
-    NODE_OPTIONS="--import file://$OUT/preload.mjs" MOZ_DISABLE_CONTENT_SANDBOX=1 MOZ_DISABLE_GMP_SANDBOX=1 \
+    STUDIO_NODE_ARGS="--import file://$OUT/preload.mjs" MOZ_DISABLE_CONTENT_SANDBOX=1 MOZ_DISABLE_GMP_SANDBOX=1 \
     "$LAUNCHER" >"$OUT/$1-launcher.out" 2>&1 &
   LPID=$!
 }

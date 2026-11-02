@@ -16,6 +16,7 @@
 #   STUDIO_FIREFOX         firefox binary                      (default: firefox on PATH)
 #   STUDIO_SHELL_DATA_DIR  data folder: studio.env, index, logs, the Firefox profile
 #   STUDIO_KB_ROOT         documents folder                    (default ~/Documents/ACTIVATE Studio)
+#   STUDIO_NODE_ARGS       extra node arguments for the server only (a preload for tests)
 #   STUDIO_BROWSER_KIOSK=1 full screen with no browser controls
 set -u
 APP_DIR=${STUDIO_APP_DIR:-/opt/activate-studio/app}
@@ -84,9 +85,9 @@ start_server() {
     if [ -z "${KB_ROOT:-}" ]; then mkdir -p "$KB"; export KB_ROOT="$KB"; else export KB_STARTER_DIRS="${KB_STARTER_DIRS:-}"; fi
     # Own session so the whole group can be ended; TERM if this script dies.
     if command -v setpriv >/dev/null 2>&1; then
-      exec setsid setpriv --pdeathsig TERM "$NODE" server/dist/main.js
+      exec setsid setpriv --pdeathsig TERM "$NODE" ${STUDIO_NODE_ARGS:-} server/dist/main.js
     else
-      exec setsid "$NODE" server/dist/main.js
+      exec setsid "$NODE" ${STUDIO_NODE_ARGS:-} server/dist/main.js
     fi
   ) >>"$DATA/logs/studio.log" 2>&1 &
   SERVER_PID=$!
