@@ -388,9 +388,6 @@ with open(sys.argv[1], 'w') as fh:
 PY
 
 echo "Checking the tree..."
-# What the tree's libraries are, and the run paths of the plugin that names libsqlite3 through @rpath (for the check below).
-ls -la "$TREE/lib" | grep -E "sqlite|vec0|lembed|pcre" | sed 's/^/  /'
-for f in "$TREE"/lib/libdsi_querying.dylib; do otool -l "$f" | grep -A2 LC_RPATH | sed 's/^/  rpath: /'; done
 "$HERE/check_gufi.sh" --static "$TREE"
 
 echo "Packing..."
