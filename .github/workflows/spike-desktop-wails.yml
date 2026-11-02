@@ -520,3 +520,35 @@ jobs:
         with:
           name: wails-rocky9-on-${{ matrix.os }}
           path: ${{ runner.temp }}/out
+
+  # Does the distro's JavaScriptCore build an Intl.NumberFormat? On Rocky 9
+  # it does not. The same probe on AlmaLinux 9 and Red Hat UBI 9.
+  el9-intl-probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: rocky9
+            image: rockylinux/rockylinux:9
+          - name: alma9
+            image: almalinux:9
+          - name: ubi9
+            image: registry.access.redhat.com/ubi9/ubi
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: probe
+        run: |
+          mkdir -p "$RUNNER_TEMP/out"
+          docker run --rm --security-opt seccomp=unconfined \
+            -v "$PWD/desktop/wails/ci:/ci:ro" -v "$RUNNER_TEMP/out:/out" \
+            "${{ matrix.image }}" bash /ci/intl-probe.sh /out
+          cat "$RUNNER_TEMP/out/probe.txt" | head -n 400
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: el9-probe-${{ matrix.name }}
+          path: ${{ runner.temp }}/out
