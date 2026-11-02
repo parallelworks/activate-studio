@@ -280,14 +280,21 @@ if grep -E "built for newer '?macOS'? version" "$LOG" | sort -u | head -n 20 | g
   die "parts of the build target a newer macOS than $TARGET (above)"
 fi
 
-# A library that loads others through @rpath and was linked with no run path
-# (GUFI 0.8.0's sqlite3-pcre is one) is given the run path macho_relink.py
-# sets for the rest: the folder it is in, or lib/ from bin/. Signed again below.
+# A file that loads libraries through @rpath is given the run path macho_relink.py
+# sets for the rest: the folder it is in, or lib/ from bin/. GUFI 0.8.0's
+# sqlite3-pcre has none, and its libdsi_querying has the run path "/lib", which
+# is too short a slot for @loader_path, so macho_relink.py cannot overwrite it.
+# Signed again below.
 for f in "${MACHO[@]}"; do
-  if otool -L "$f" | tail -n +2 | grep -q '@rpath/' && ! otool -l "$f" | grep -q LC_RPATH; then
-    case "$f" in "$TREE"/bin/*) rp='@loader_path/../lib' ;; *) rp='@loader_path' ;; esac
-    echo "  adding the run path $rp to $(basename "$f"), which loads through @rpath and has none:"
-    otool -L "$f" | tail -n +2 | grep '@rpath/' | sed 's/^/    /'
+  otool -L "$f" | tail -n +2 | grep -q '@rpath/' || continue
+  case "$f" in "$TREE"/bin/*) rp='@loader_path/../lib' ;; *) rp='@loader_path' ;; esac
+  first="$(otool -l "$f" | awk '/cmd LC_RPATH/ {r = 1} r && $1 == "path" {print $2; exit}')"
+  [ "$first" != "$rp" ] || continue
+  echo "  run path of $(basename "$f"): ${first:-none} -> $rp (it loads through @rpath):"
+  otool -L "$f" | tail -n +2 | grep '@rpath/' | sed 's/^/    /'
+  if [ -n "$first" ]; then
+    install_name_tool -rpath "$first" "$rp" "$f" || die "install_name_tool could not change the run path $first of $f"
+  else
     install_name_tool -add_rpath "$rp" "$f" || die "install_name_tool could not add a run path to $f"
   fi
 done
