@@ -50,6 +50,12 @@ section "C++ ICU number classes JavaScriptCore imports"
 nm -D -C --undefined-only /usr/lib64/libjavascriptcoregtk-4.0.so.18 | grep -E "icu_67::number" | sed 's/^ *//' | sort -u | head -n 30
 nm -D -C --undefined-only /usr/lib64/libjavascriptcoregtk-4.0.so.18 | grep -c "icu_67" 
 
+section "skeleton tokens and Intl code inside JavaScriptCore (strings in the library)"
+strings -a /usr/lib64/libjavascriptcoregtk-4.0.so.18 | grep -E "^(rounding-mode|trailing-zero-display|rounding-priority|precision-increment|sign-(auto|always|never|accounting|except-zero)|notation-)" | sort -u | head -n 40
+section "is a newer ICU offered by any enabled repo"
+dnf --enablerepo='*' provides 'libicui18n.so.69*' 'libicui18n.so.7*' 'libicu69*' 'libicu7*' 2>&1 | tail -n 4
+dnf repoquery --available 'libicu*' 'icu*' 2>&1 | head -n 12
+
 section "ICU used directly (ctypes, no JavaScriptCore)"
 python3 - <<'PY'
 import ctypes
