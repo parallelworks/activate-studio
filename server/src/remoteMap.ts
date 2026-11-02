@@ -72,7 +72,7 @@ export function countStages(external: string | null): string[] {
   ]
   if (external) {
     stages.push('--external-copy', external,
-      `INSERT INTO t SELECT 'e', x.vector_model_name, count(DISTINCT e.inode), count(*), total(length(x.chunk_content)) FROM ext_vectors_by_file x ${ENTRY} ` +
+      `INSERT INTO t SELECT 'e', x.vector_model_name, count(DISTINCT e.inode), count(*), total(length(x.chunk_content)) FROM extdb.ext_vectors_by_file x ${ENTRY} ` +
       `WHERE x.vector_model_name LIKE ${lit(EXT_MODELS)} AND length(x.embedding) >= 1536 GROUP BY x.vector_model_name;`)
   }
   stages.push(
@@ -110,7 +110,7 @@ export function fetchStages(m: Pick<ModelCount, 'model' | 'source'>, below: numb
     stages.push('--external-copy', external,
       'INSERT INTO t WITH RECURSIVE ch AS (SELECT e.inode AS i, ' +
       `row_number() OVER (PARTITION BY e.inode ORDER BY x.page_number) AS rn, count(*) OVER (PARTITION BY e.inode) AS c, substr(x.embedding, 1, 1536) AS e, ${hashSql('e.inode')} AS h, ` +
-      `rpath(e.sname, e.sroll)||'/'||e.name AS p, x.chunk_content AS x FROM ext_vectors_by_file x ${ENTRY} ` +
+      `rpath(e.sname, e.sroll)||'/'||e.name AS p, x.chunk_content AS x FROM extdb.ext_vectors_by_file x ${ENTRY} ` +
       `WHERE x.vector_model_name = ${lit(m.model)} AND length(x.embedding) >= 1536 AND ${hashSql('e.inode')} < ${below}), ${fold('i')}`,
       '-E', 'SELECT 1 WHERE 0;')
   } else {
@@ -139,7 +139,7 @@ export function neighborStages(m: Pick<ModelCount, 'model' | 'source'>, queryHex
     if (!external) throw new KbError(409, 'external databases are not read here (STUDIO_EXTERNAL_DB_PATTERN is empty)')
     stages.push('--external-copy', external,
       `INSERT INTO t SELECT rpath(e.sname, e.sroll)||'/'||e.name, sqrt(2.0 * vec_distance_cosine(substr(x.embedding, 1, 1536), (SELECT qe FROM q))) ` +
-      `FROM ext_vectors_by_file x ${ENTRY} WHERE x.vector_model_name = ${lit(m.model)} AND length(x.embedding) >= 1536 ORDER BY 2 LIMIT ${k + 4};`,
+      `FROM extdb.ext_vectors_by_file x ${ENTRY} WHERE x.vector_model_name = ${lit(m.model)} AND length(x.embedding) >= 1536 ORDER BY 2 LIMIT ${k + 4};`,
       '-E', trim)
   } else {
     stages.push('-E', `${trim} INSERT INTO t SELECT ${DIR}||'/'||g.fname, n.distance FROM ` +
