@@ -2,6 +2,96 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.183 (2026-11-02)
+
+### fix(mac): count a detach that already went through as done (#619)
+
+The v1.182 PR build of the macOS app failed in make_dmg.sh after every app check had passed: `hdiutil detach` reported a failure, its retry found nothing there ("hdiutil: detach failed - No such file or directory"), and the script gave up. A detach that reports failure now counts as done when nothing is mounted at the mount point any more, checked against mount(8) by the mount point's real path (mktemp gives /var/..., mount prints /private/var/...). The rest of the retry and the forced detach are unchanged.
+
+Checked: bash -n; the mac-app workflow runs on this PR and builds the disk image on a runner.
+
+### fix(search): read external tables from the attached file by its alias (#622)
+
+In gufi_query a directory's db.db is attached as `tree` and each file matched by `--external-copy` as `extdb` (a constant in GUFI). The Studio's external copy named `ext_bm25_by_file` and `ext_vectors_by_file` unqualified, and SQLite resolves an unqualified name to `tree` before `extdb`. A db.db holding tables of the same names (one proposed layout keeps group- and other-readable records there) was therefore read in place of the external file. The search walk (`gufi.ts`) and the remote semantic map (`remoteMap.ts`) now read `extdb.*`.
+
+Test: searchOnePass.test.mjs adds a directory whose db.db and external file both carry `ext_bm25_by_file` with different text; search returns the external file's text. It fails without the change (it returned the db.db row). Server suite: 740 tests, 0 failed, 13 skipped.
+
+### fix(setup): build GUFI on a clean Ubuntu and run setup_gufi.sh by relative path (#624)
+
+Fixes the three `indexer/setup_gufi.sh` failures and the `docs/MACOS.md` inaccuracy found by running the README's own-machine steps on a clean `ubuntu:24.04`.
+
+## Changes
+
+- Package list: the apt line now installs `build-essential`, `git`, `curl`, `ca-certificates`, `python3` and `bsdextrautils` (provides `column`, which GUFI's cmake requires at configure time), and runs `apt-get update` first, since a clean image has no package lists. When the script runs as root (a container) it does not call `sudo`.
+- `_FORTIFY_SOURCE`: GUFI's `src/gufi_query/spread_tree.c` calls `open(extdb_path, O_CREAT | O_WRONLY)` with no mode, which Ubuntu's default `_FORTIFY_SOURCE` rejects at compile time. After cloning GUFI, the script adds `S_IRUSR | S_IWUSR` to that call with `sed`. A source that already has a mode is left alone, so the step is a no-op once GUFI fixes the line. GUFI is not forked and no compiler flags change.
+- Relative path: `PROJECT_ROOT` is computed at the top of the script, before any `cd`, so `indexer/setup_gufi.sh` now reaches the embedding model and ONNX fetch.
+- `docs/MACOS.md`: `pnpm start` (`node server/dist/main.js`) and `server/src/config.ts` read `process.env` only and load no `.env` file. Only `deploy/run_endpoint.sh` sources `.env` (and the macOS app reads `studio.env`). The clone section now says so and shows `set -a; . ./.env; set +a` before `pnpm start`.
+- README: the own-machine prerequisites now name git and say what `setup_gufi.sh` installs with apt (sudo unless root) or Homebrew.
+
+## Upstream GUFI
+
+The line is unchanged on upstream main (checked at 021a717, 29 Oct 2026) and at the commit pinned in `deploy/app.def` (468e572, 1 Oct 2026), so there is no upstream fix to bump to. The pin is not changed. The container build is on Debian, where the line compiles, and `setup_gufi.sh` is not part of it (`app.def` does its own GUFI step), so it is unaffected. The same sed would apply to the pinned commit if that image moved to Ubuntu.
+
+## Verification
+
+From a fresh clone of this branch in a clean `ubuntu:24.04` container (non-root user with sudo, 8 cores and 8 GB), with only Node 26.10.0 (checksummed tarball, plus `libatomic1`, which Node needs on the minimal image), git and curl installed beforehand, and no workarounds:
+
+1. `npm install -g pnpm@11`, `pnpm install && pnpm build`.
+2. `indexer/setup_gufi.sh` by relative path: apt step, GUFI build with AI dependencies, install to `/opt/gufi`, then the GGUF model and the ONNX backend fetched (about 9 minutes). The patched line was present in `~/gufi-src`.
+3. `KB_ROOT=testdata/corpus indexer/reindex.sh`: 12 files indexed, 10 chunks embedded with `minilm-l6-mean-int8`.
+4. `pnpm start`, `GET /api/version` returned 200, and `/api/search?q=invoice` returned the OCR text of the scanned invoice.
+
+The container was removed afterwards. Not run here: the macOS path (the changes there are the relocated `PROJECT_ROOT` and the guarded sed, which uses `sed -i.orig` so it works with BSD and GNU sed) and the Debian container build.
+
+## For #623
+
+Once this merges, `docs/WINDOWS.md` can drop: the `CFLAGS=-U_FORTIFY_SOURCE` prefix on the `setup_gufi.sh` run and its explanation; the use of the full path in place of `indexer/setup_gufi.sh`; and, from the apt block, `build-essential`, `git`, `curl`, `ca-certificates`, `python3`, `bsdextrautils` and the other packages the script now installs (`cmake`, `pkg-config`, `attr`, `libattr1-dev`, `libsqlite3-dev`, `zlib1g-dev`, `libpcre2-dev`, `autoconf`, `automake`, `libtool`, `tesseract-ocr`, `poppler-utils`), leaving `git`, `curl` and `xz-utils` for the clone and the Node download. The paragraph explaining `bsdextrautils` can go with them, and the note that `pnpm start` does not read a `.env` stays accurate.
+
+### docs: add Windows setup through WSL2 (#623)
+
+Adds `docs/WINDOWS.md`, the steps for running the Studio on a Windows computer through WSL2 (or opening a Studio that runs on a Linux machine), and a Quick start line in the README plus a row in its documentation table.
+
+## Not tested on Windows
+
+The steps have not been run on a Windows machine. WSL behaviour described in the page (install command, `localhost` forwarding, `/mnt/c`, drvfs mounts, `.wslconfig`) comes from Microsoft's documentation, listed below, not from a run. Two points are not covered by those pages: that `mount -t drvfs ... -o ro` honours `ro` (the page states it without a caveat, so it needs a check on Windows), and what `setfattr` does on `/mnt/c` (the page tells the reader to check, and documents what the Studio does either way). The PowerShell one-liner that starts the server (`wsl -d Ubuntu-24.04 -e bash -c "exec ~/start-studio.sh"`) is also untested.
+
+## What was verified, and how
+
+The in-Ubuntu steps were run in a clean `ubuntu:24.04` Docker container (non-root user with sudo, limited to 8 cores and 8 GB to resemble a WSL2 default on a 16 GB computer), from a fresh clone of `origin/main` (2509396), by extracting the page's code blocks and running them unchanged:
+
+1. The apt line, the Node 26.10.0 tarball with its checksum, `npm install -g pnpm@11`.
+2. `git clone`, `pnpm install`, `pnpm build`, `CFLAGS=-U_FORTIFY_SOURCE ~/activate-studio/indexer/setup_gufi.sh` (542 s in total for steps 1 and 2, container peak memory 6.1 GB including page cache).
+3. `KB_ROOT=~/activate-studio/testdata/corpus indexer/reindex.sh` (12 files indexed, 10 chunks embedded, the scanned PDF was read by tesseract).
+4. The page's `start-studio.sh` and `studio.env`, then `curl http://127.0.0.1:4080/api/version` returned 200 with `v1.182`, and `/api/search?q=invoice` returned the OCR text of the scanned invoice.
+5. The update commands (`git pull`, `pnpm install`, `pnpm build`) and the removal commands.
+
+The sizing in the page comes from that run: clone 958 MB, GUFI source and build 1.1 GB, Node 252 MB, GUFI install 165 MB, server 0.17 GB RSS idle, and an index of 52 MB for a 7,500-file tree (about 7 KB per file for mostly non-text files).
+
+## Problems found in the scripts, worked around in the page
+
+A bare Ubuntu 24.04 fails `indexer/setup_gufi.sh` in three ways. The page works around each; the fixes belong in the script and README, and the page can then drop the workarounds.
+
+- The script's own apt list lacks a compiler, git, curl, python3 and `bsdextrautils` (`column`, which GUFI's cmake requires at configure time). The page installs them first.
+- GUFI's current `src/gufi_query/spread_tree.c` calls `open(path, O_CREAT | O_WRONLY)` without a mode, which Ubuntu's default `_FORTIFY_SOURCE` turns into a compile error. The commit pinned in `deploy/app.def` has the same line and builds there only because that image is Debian bookworm. The page sets `CFLAGS=-U_FORTIFY_SOURCE` for the first run.
+- The script changes directory before computing `PROJECT_ROOT`, so `indexer/setup_gufi.sh` with a relative path (as the README's quick start shows) stops after the GUFI install and before fetching the embedding model. The page uses the full path.
+
+Also seen while reading: `docs/MACOS.md` says to put settings in a `.env` at the repository root, but `pnpm start` does not read one (only `deploy/run_endpoint.sh` does), so the page uses a small script that sources `studio.env`.
+
+## Microsoft documentation used for WSL facts
+
+- https://learn.microsoft.com/en-us/windows/wsl/install (Windows 10 2004, build 19041, or Windows 11; administrator PowerShell and restart; `wsl --install -d <Distro>`)
+- https://learn.microsoft.com/en-us/windows/wsl/wsl-config (`.wslconfig` defaults: memory 50% of Windows memory, `localhostForwarding` true; `automount`, `/etc/fstab` processing; `networkingMode=mirrored`)
+- https://learn.microsoft.com/en-us/windows/wsl/networking (`localhost` from Windows to Linux, the Windows host address from Linux via `ip route show`, mirrored mode, LAN access)
+- https://learn.microsoft.com/en-us/windows/wsl/filesystems (keep Linux project files in the Linux file system, not `/mnt/c`)
+- https://learn.microsoft.com/en-us/windows/wsl/file-permissions (drvfs metadata and the NTFS extended attributes it uses for permissions; nothing about `user.` xattrs)
+- https://learn.microsoft.com/en-us/windows/wsl/basic-commands (`wsl --unregister` deletes all data, `wsl --shutdown`, `wsl --list --verbose`)
+- https://learn.microsoft.com/en-us/windows/wsl/faq (error 0x800704ec from group policy, `/mnt/<drive>`, VM shuts down when idle)
+- https://learn.microsoft.com/en-us/archive/blogs/wsl/file-system-improvements-to-the-windows-subsystem-for-linux (`sudo mount -t drvfs '\\server\share' /mnt/share`, no way to give a share credentials, network shares report 0777 and no symlinks)
+
+## Labels on `/mnt/c`
+
+The page describes the behaviour from the code: `server/src/tags.ts` writes `user.studio.tags` with `setfattr`, and when that fails the label goes to `tags-overlay.json` in the index folder, keyed by `st_dev.st_ino` with the birth time checked (`server/src/tagsOverlay.ts`). Other libraries always use the Studio's own label store (`docs/HELP.md`). Whether WSL2's `/mnt/c` accepts `user.` xattrs is not documented by Microsoft, so the page gives a one-line check instead of asserting it. How stable inode numbers are on drvfs across WSL restarts was not checked; if they change, overlay labels on `/mnt/c` files would be dropped as stale.
+
 ## v1.182 (2026-10-28)
 
 ### fix(chat): fit a Studio with no platform and a small local model (#616)
@@ -107,6 +197,10 @@ A user who deploys GUFI asked to see the full commands the assistant runs, to se
 - Web: new `test/gufiCommands.test.tsx` covers the meta line, the error output labels and panel, the adapter keeping streamed commands, and a stored conversation drawing the commands under a `search_kb` row. `test/settingsGeneral.test.tsx` covers the log switch.
 - Full suites: server 715 tests, 702 pass, 13 skipped (they need ONNX, GGUF or numpy, which this machine does not have), 0 fail. Web 336 pass across 43 files.
 - Checked by hand on a local Studio with a stand-in model, at 1280 px and 400 px: the chat tool rows (closed, commands open, error output open, after a reload), Search, Query (a successful query with expected lines, and a failed one), and the settings switch.
+
+### Change log through v1.182 (#620)
+
+Regenerated with `node scripts/release-notes.mjs --changelog --next v1.182` before tagging v1.182.
 
 ## v1.181 (2026-10-27)
 
