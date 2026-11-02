@@ -25,12 +25,13 @@ case "$(uname -s)" in
     # build only, which is why the caller's PATH is left alone.
     command -v brew >/dev/null 2>&1 || { echo "Homebrew is required: https://brew.sh"; exit 1; }
     brew install cmake pkgconf pcre2 sqlite autoconf automake libtool \
-      llvm libomp gettext coreutils findutils gnu-sed gpatch grep diffutils \
+      llvm libomp gettext coreutils findutils gnu-sed gpatch grep diffutils flock \
       tesseract poppler
     for tool in coreutils findutils gnu-sed grep; do
       PATH="$(brew --prefix "$tool")/libexec/gnubin:$PATH"
     done
-    PATH="$(brew --prefix diffutils)/bin:$PATH"
+    # GUFI 0.8.0's configure looks for flock, which Homebrew installs apart from util-linux.
+    PATH="$(brew --prefix diffutils)/bin:$(brew --prefix flock)/bin:$PATH"
     export PATH
     export CC="$(brew --prefix llvm)/bin/clang"
     export CXX="$(brew --prefix llvm)/bin/clang++"
