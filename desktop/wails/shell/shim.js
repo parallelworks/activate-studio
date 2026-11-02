@@ -5,7 +5,7 @@
 // Studio to the default browser and saves downloads in the Downloads
 // folder, which Wails v2's web views do not do on their own.
 //
-// The shell fills in __STUDIO_SHELL_CONFIG__: {mode, transport, token, test}.
+// The shell fills in the config placeholder: {mode, transport, token, test}.
 // transport is how calls reach the shell:
 //   wails  Wails' bindings, window.go.main.Bridge (the page is on Wails' origin)
 //   ipc    Wails' message channel spoken directly (the page is on
