@@ -1261,11 +1261,11 @@ export function startSweepTimer(log: (msg: string) => void): void {
     }
     setTimeout(() => { void tick() }, Math.max(sec, 60) * 1000).unref()
   }
-  // A folder switched while the server was down is reconciled before the
-  // sweep compares anything with what was recorded.
   // A swap a stop cut off between its two renames left the old index beside the path it is read at.
   const back = recoverSwap(GUFI_INDEX, swapLeftovers(GUFI_INDEX))
   if (back) log(`index: restored the index from ${path.basename(back)}, a swap that a stop cut off`)
+  // A folder switched while the server was down is reconciled before the
+  // sweep compares anything with what was recorded.
   void reconcileFolder().catch(e => log(`index: ${String((e as Error).message ?? e)}`))
     .then(() => primeSweepState())
     .then(() => primeDepthState())
