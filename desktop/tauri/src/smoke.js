@@ -141,6 +141,26 @@
       }
     })
 
+    // What the Studio's origin may not call: the shell's other commands and
+    // the plugins' commands must be refused by the capability.
+    await step('ipc_scope', async () => {
+      const attempts = {
+        'retry': ['retry', {}],
+        'open_logs': ['open_logs', {}],
+        'plugin:dialog|open': ['plugin:dialog|open', { options: { directory: true } }],
+        'plugin:opener|open_url': ['plugin:opener|open_url', { url: 'https://example.com/?studio-smoke=ipc' }],
+        'plugin:opener|open_path': ['plugin:opener|open_path', { path: '/' }],
+        'plugin:event|listen': ['plugin:event|listen', { event: 'x', target: { kind: 'Any' }, handler: 0 }],
+        'plugin:webview|webview_close': ['plugin:webview|webview_close', { label: 'main' }],
+        'plugin:window|close': ['plugin:window|close', { label: 'main' }],
+      }
+      const out = {}
+      for (const [k, [cmd, args]] of Object.entries(attempts)) {
+        try { await internals().invoke(cmd, args); out[k] = 'ALLOWED' } catch (e) { out[k] = `refused: ${msg(e).slice(0, 110)}` }
+      }
+      return { ok: Object.values(out).every(v => v.startsWith('refused')), attempts: out }
+    })
+
     await step('chooseFolder_testMode', async () => {
       const picked = await shell().postMessage({ action: 'chooseFolder', start: '~', message: 'Choose the folder for the Studio to index.', prompt: 'Use This Folder' })
       return { ok: picked === st.testFolder, picked, expected: st.testFolder }

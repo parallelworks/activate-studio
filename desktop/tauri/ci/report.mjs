@@ -40,6 +40,7 @@ const checks = {
   '2 no orphan processes': orphans.ok === true,
   ...(killT ? { '2 TERM to the shell: nothing left': killT.shellExited && killT.alive.length === 0 } : {}),
   '3 bridge: postMessage returns a Promise': ok('bridge'),
+  '3 IPC scope: other commands refused to the Studio origin': ok('ipc_scope'),
   '3 chooseFolder (test mode)': ok('chooseFolder_testMode'),
   '3 chooseFolder (real dialog, cancelled)': ok('chooseFolder_realDialog'),
   '3 studioMoved (port change)': ok('port_change') && ok('studio_moved'),
