@@ -278,6 +278,17 @@ jobs:
         with:
           persist-credentials: false
 
+      # The web guard (branch web-intl-guard): the page's own index.html with a
+      # script ahead of the bundle that replaces a NumberFormat that cannot be
+      # built. The rest of the Studio is this branch's.
+      - name: apply the web guard
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git fetch --depth 1 https://github.com/parallelworks/activate-studio.git web-intl-guard
+          git checkout FETCH_HEAD -- web/index.html
+          grep -c 'id="intl-guard"' web/index.html
+          git diff --stat HEAD -- web/index.html
+
       - name: platform facts
         run: |
           mkdir -p "$RUNNER_TEMP/out"
