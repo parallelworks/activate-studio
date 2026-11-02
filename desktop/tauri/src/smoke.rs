@@ -470,8 +470,9 @@ fn memory(shell: &Shell) -> Value {
             continue;
         }
         if let Some(p) = procs.iter().find(|p| p.pid == pid) {
-            // The process listing itself (Windows runs it through PowerShell).
-            if matches!(p.name.to_ascii_lowercase().as_str(), "powershell.exe" | "conhost.exe") {
+            // The process listing itself (Windows runs it through PowerShell), and
+            // the default browser the outside-link checks started.
+            if matches!(p.name.to_ascii_lowercase().as_str(), "powershell.exe" | "conhost.exe" | "msedge.exe") {
                 continue;
             }
             let e = engine.entry(p.name.clone()).or_default();

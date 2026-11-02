@@ -611,7 +611,13 @@ fn main() {
     let smoke_mode = smoke::Smoke::from_env(t0);
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_opener::init())
+        .plugin(
+            // The plugin's own script turns clicks on target=_blank links into
+            // plugin:opener|open_url calls, which the Studio's origin may not
+            // make (and the click is swallowed). With it off, the click reaches
+            // the new-window hook below, which opens the default browser.
+            tauri_plugin_opener::Builder::new().open_js_links_on_click(false).build(),
+        )
         .invoke_handler(tauri::generate_handler![studio_shell, retry, open_logs, smoke])
         .setup(move |app| {
             let handle = app.handle().clone();
