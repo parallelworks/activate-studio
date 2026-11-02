@@ -11,6 +11,8 @@ const runGuard = () => new Function(source)()
 const nativeNumberFormat = Intl.NumberFormat
 const nativeToLocale = Number.prototype.toLocaleString
 const nativeBigIntToLocale = BigInt.prototype.toLocaleString
+const nativePluralRules = Intl.PluralRules
+const nativeListFormat = (Intl as { ListFormat?: unknown }).ListFormat
 
 // An engine whose Intl.NumberFormat cannot be built, as in the WebKitGTK 4.0
 // that RHEL 9 and its rebuilds ship.
@@ -22,11 +24,20 @@ function breakNumberFormat() {
   Object.defineProperty(BigInt.prototype, 'toLocaleString', { value: toLocale, configurable: true, writable: true })
 }
 
+// The same engine's PluralRules, and no ListFormat at all.
+function breakPluralAndList() {
+  const broken = function () { throw new TypeError('failed to initialize PluralRules') }
+  Object.defineProperty(Intl, 'PluralRules', { value: broken, configurable: true, writable: true })
+  Object.defineProperty(Intl, 'ListFormat', { value: undefined, configurable: true, writable: true })
+}
+
 beforeEach(() => { delete (window as { __intlGuard?: boolean }).__intlGuard })
 afterEach(() => {
   Object.defineProperty(Intl, 'NumberFormat', { value: nativeNumberFormat, configurable: true, writable: true })
   Object.defineProperty(Number.prototype, 'toLocaleString', { value: nativeToLocale, configurable: true, writable: true })
   Object.defineProperty(BigInt.prototype, 'toLocaleString', { value: nativeBigIntToLocale, configurable: true, writable: true })
+  Object.defineProperty(Intl, 'PluralRules', { value: nativePluralRules, configurable: true, writable: true })
+  Object.defineProperty(Intl, 'ListFormat', { value: nativeListFormat, configurable: true, writable: true })
   vi.resetModules()
 })
 
@@ -62,6 +73,24 @@ describe('number formatting guard in index.html', () => {
     expect((Intl.NumberFormat as unknown as (l?: string) => Intl.NumberFormat)('en-US').format(1000)).toBe('1,000')
   })
 
+  it('stands in for PluralRules that throws and a missing ListFormat', () => {
+    breakPluralAndList()
+    runGuard()
+    const L = (Intl as unknown as { ListFormat: new (l?: string, o?: object) => { format(v: string[]): string } }).ListFormat
+    const plural = (o?: Intl.PluralRulesOptions) => new Intl.PluralRules('en', o)
+    expect(plural().select(1)).toBe('one')
+    expect(plural().select(2)).toBe('other')
+    expect(plural().select(0)).toBe('other')
+    expect(plural({ type: 'ordinal' }).select(21)).toBe('one')
+    expect(plural({ type: 'ordinal' }).select(22)).toBe('two')
+    expect(plural({ type: 'ordinal' }).select(23)).toBe('few')
+    expect(plural({ type: 'ordinal' }).select(11)).toBe('other')
+    expect(new L('en').format(['a'])).toBe('a')
+    expect(new L('en').format(['a', 'b'])).toBe('a and b')
+    expect(new L('en').format(['a', 'b', 'c'])).toBe('a, b, and c')
+    expect(new L('en', { type: 'disjunction' }).format(['a', 'b', 'c'])).toBe('a, b, or c')
+  })
+
   it('makes toLocaleString on numbers and bigints work', () => {
     breakNumberFormat()
     expect(() => (1234.5).toLocaleString()).toThrow()
@@ -73,6 +102,7 @@ describe('number formatting guard in index.html', () => {
 
   it('lets the UI library and the app load when Intl.NumberFormat throws', async () => {
     breakNumberFormat()
+    breakPluralAndList()
     runGuard()
     vi.resetModules()
     const ui = await import('@parallelworks/ui')
@@ -83,7 +113,8 @@ describe('number formatting guard in index.html', () => {
 
   it('shows the failure without the guard, so the test above means something', async () => {
     breakNumberFormat()
+    breakPluralAndList()
     vi.resetModules()
-    await expect(import('@parallelworks/ui').then(() => import('../src/App'))).rejects.toThrow('failed to initialize NumberFormat')
+    await expect(import('@parallelworks/ui').then(() => import('../src/App'))).rejects.toThrow('failed to initialize')
   })
 })
