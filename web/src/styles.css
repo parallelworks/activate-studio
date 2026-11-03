@@ -2446,3 +2446,5 @@ button.status-row:hover { background: var(--pw-hover-row); }
 .about-head img { flex-shrink: 0; }
 .about-name { font-size: 16px; font-weight: 600; color: var(--pw-text); }
 .about-maker { margin-top: 2px; font-size: 13px; color: var(--theme-muted-text-color, var(--pw-muted)); }
+.libraries-table .lib-readthrough { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.libraries-table .lib-readthrough code { word-break: break-all; }

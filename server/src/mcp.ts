@@ -27,7 +27,7 @@ import { board, taskByToken, type Task } from './tasks.js'
  * anywhere rather than by this deployment.
  */
 const EXPOSED = new Set([
-  'search_kb', 'read_kb_file', 'list_kb_dir', 'query_corpus', 'get_labels', 'studio_docs',
+  'search_kb', 'read_kb_file', 'read_original', 'list_kb_dir', 'query_corpus', 'get_labels', 'studio_docs',
 ])
 
 const PROTOCOL_VERSION = '2025-06-18'

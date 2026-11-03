@@ -37,7 +37,11 @@ read only, and the interface does not offer them.
 A library without a source root can be searched and described but not
 opened: the file routes answer 409, and the viewer says the file is not
 reachable from this host. That is the normal shape for an index of a
-filesystem the Studio's machine cannot see.
+filesystem the Studio's machine cannot see. The assistant can still read
+the text the index holds for its files (`read_kb_file`), and a library
+can name another host that has the files, which the viewer and the
+assistant's `read_original` then try (see "Reading originals through
+another host").
 
 ## Adding libraries
 
@@ -85,6 +89,10 @@ the index has, as built: names, text, or text and meaning:
 | GUFI index over ssh | `POST /api/user-libraries/ssh` | **Check**, **Remove** |
 | GUFI index on a remote system over pw ssh | `POST /api/user-libraries/pw` | **Check**, **Remove** |
 | Index built on a cluster by the platform's workflow | `POST /api/user-libraries` | **Refresh**, **Remove** |
+
+A row of a library whose files may be on another host also has **Originals via**,
+the host its originals are read through when its own location cannot give a
+file (see "Reading originals through another host").
 
 **Add a library** (`web/src/components/AddLibrary.tsx`) asks two things.
 *Where:* this computer, or a remote system. *How:* build an index of a
@@ -620,8 +628,11 @@ On such a host:
 - the tree, the Details card, statistics, search by name, search by words
   where the index has full-text tables, Query through gufi_vt, and
   **Check** all run `gufi_query` alone;
-- files cannot be opened or downloaded, since that reads them with a
-  shell; the source directory is left out, with a note;
+- files cannot be opened or downloaded from that host, since that reads
+  them with a shell; the source directory is left out, with a note. The
+  index still answers for the text of its files (`read_kb_file`), and the
+  library can name another host that has the files (see "Reading originals
+  through another host");
 - building an index there is refused at the build check, with the same
   note, since a build needs a shell, Python, and write access;
 - the processor count is not read; queries run with 4 threads, or
@@ -639,6 +650,89 @@ is passed on to it by the app's run loop.
 The connection test also looks for the Studio's full-text tables
 (`words`) in the index's top levels; where it finds them, search covers
 the words in its files, on any host.
+
+## Reading originals through another host
+
+The assistant has three ways to look at a file, and a library can say where
+the original file is when its own host does not have it.
+
+- `search_kb` searches the index.
+- `read_kb_file` returns the text the index holds for a file: the extracted
+  text of an office document or PDF, the OCR or description of an image,
+  and the contents of a plain text file. It works whenever the index can be
+  read, including when the original is out of reach, and each result opens
+  with a line naming its source (`[source: index; ...]`). The text of a
+  plain text file is in the index (the words table, at most the first
+  500,000 characters of the file, and only when the library was indexed
+  with text), so `read_kb_file` returns that, and says it can lag behind the
+  file until the next index update. For a plain text file the index has no
+  text for (a library indexed by names only, a file type the text pass does
+  not read, a file added since), the original is read instead, and the
+  source line says so. For a document or an image with no text in the index,
+  a library on this computer gives the text in its extraction cache; where
+  there is none, the result says plainly that no text was read.
+- `read_original` opens the original file: a plain text file as it is, and a
+  document or image as the extracted text the Studio keeps for it on this
+  computer (a read extracts nothing new). It tries the library's own
+  location first, which is the folder on this computer or, for a library
+  over ssh or pw ssh, its own host, and then the host the library names for
+  reading originals. The result names where the file was read. When no host
+  can give the file it names each host tried and what each said, for
+  example that a host runs only `gufi_query`, that the file is not there, or
+  that the connection was refused. `paths` (up to 25 files), `offset` and
+  `library` work as they do in `read_kb_file`.
+
+The case this is for is a site whose index lives where GUFI runs, on a host
+whose login runs only `gufi_query` (see "Hosts whose login runs only
+gufi_query"), while another host, such as a file transfer host, mounts the
+same file systems and gives a normal shell. On the library's row in
+Settings, Libraries, **Originals via**, **Set** names that host:
+
+- *Host*: `user@host`, or a Host alias from `~/.ssh/config`, with `:port`
+  for a port other than 22. It is held to what a destination of `ssh` can
+  be: letters, digits, dots, dashes and underscores, no leading `-`, no
+  spaces, quotes or shell characters.
+- *Folder on that host*: the library's folder there, an absolute path with
+  no `..`, when it differs from the library's own folder. Empty means the
+  same path as the library's own (its source directory, or for a library
+  here with a source root, that folder).
+- *SSH options*: as for a library over ssh (`-J`, `-i`, `-o Keyword=value`
+  and the others the ssh options allow).
+
+**Test connection** checks that ssh reaches the host, that its login gives a
+shell (a host that runs only `gufi_query` is refused, since it cannot open
+files), and that the folder is a directory the login can read. **Save** is
+available once a test has passed with the same fields; **Remove** clears the
+setting. The setting is kept with the library's other settings: in
+`libraries.json` for a library added in Settings, and with the library's
+entry for a user's library over ssh or pw ssh. A library named in
+`STUDIO_LIBRARIES` can carry `"readThrough": {"destination": "user@host",
+"root": "/path"}` in its entry; Settings shows it and does not change it.
+
+The viewer uses the same places in the same order for a file's text
+(`GET /api/kb/file`) and for **Download** (`GET /api/kb/download`). The
+original-file previews that read the file from this computer (images in the
+page, PDF pages, Office rendering) are not offered for a file that exists
+only on the other host.
+
+The host is reached the way libraries over ssh are: `ssh` as the account the
+Studio runs as, with its keys, agent and `~/.ssh/config`, no prompts, a
+connection shared between commands, and a limit on how long a read may wait.
+A file's path is never read by a shell on either side: it is sent as an
+argument of a small script, after the same checks every remote read makes (no
+`..`, and under the library's folder). File names with spaces, quotes,
+non-ASCII characters, and a leading `-` are read as they are. Because the
+host uses the ssh keys of the Studio's account, it is offered only on a
+Studio with sign-in off, as libraries over ssh are; with sign-in on the
+routes answer 403 and a saved host is not used.
+
+Routes: `PUT /api/libraries/<id>/read-through` with `{destination, port?,
+sshOptions?, root?}` (it runs the connection test and saves only when it
+passes; an empty `destination` clears the setting) and
+`POST /api/libraries/<id>/read-through/test` with the same body, which
+returns `{ok, steps}`. The main folder takes none, nor does an index built
+of a folder on this computer, whose files are here. `read_original` is also
+offered to MCP clients (`/api/mcp`), where it opens files the same way.
 
 ## Libraries over pw ssh
 
@@ -725,9 +819,9 @@ until an index job ends.
 
 The chat has its own library control, beside Persona, and the assistant's
 tools take a `library` argument: `search_kb` and `query_corpus` accept
-`all`, `read_kb_file` and `list_kb_dir` take one library's id, and
-`list_libraries` says which ids exist. A cluster library's files are read
-and listed on the cluster.
+`all`, `read_kb_file`, `read_original` and `list_kb_dir` take one library's
+id, and `list_libraries` says which ids exist. A cluster library's files
+are read and listed on the cluster.
 
 ## One query over several libraries
 

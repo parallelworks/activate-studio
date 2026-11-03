@@ -1155,21 +1155,38 @@ export async function entryStats(indexRoot: string, dir: string, name: string, t
   return { size: Number(row[0]) || 0, mtime: Number(row[1]) || 0, labels: String(row[2] ?? '').split(',').map(t => t.trim()).filter(Boolean) }
 }
 
+/** The most text the index keeps for one file: the Studio's text pass
+ *  (indexer/enrich.py, MAX_TEXT) stores at most this many characters of a
+ *  file's text. A row this long may be the start of a longer file. */
+export const INDEX_TEXT_CAP = 500_000
+
+/** What a library's index holds for one file: the text, or that it holds
+ *  none (the query ran and no row, or only a blank one, was there), or that
+ *  the index could not be read (GUFI is not installed here, the host did not
+ *  answer, the folder is not indexed). */
+export type IndexedText = { state: 'text'; text: string } | { state: 'none' } | { state: 'unreadable'; error: string }
+
 /** The text a library's index holds for one file: what its build read out
- *  of a document or an image (the Studio's words table in the file's
- *  folder), without the converter's provenance line. Null when that folder
- *  has no words, or none for this file. Reads an index on another system
- *  there, so the text of a library whose files the Studio cannot convert
- *  itself is still at hand. */
-export async function indexedText(indexRoot: string, dir: string, name: string): Promise<string | null> {
+ *  of a document or an image, or the contents of a plain text file (the
+ *  Studio's words table in the file's folder, one row per file, at most
+ *  INDEX_TEXT_CAP characters), without the converter's provenance line.
+ *  Reads an index on another system there, so the text of a library whose
+ *  files the Studio cannot open is still at hand. */
+export async function indexedTextState(indexRoot: string, dir: string, name: string): Promise<IndexedText> {
   const args = ['-n', '1', '--min-level', '0', '--max-level', '0', '-E', `SELECT wordf FROM words WHERE fname = ${q(name)} LIMIT 1;`]
   let out: string
   try {
     out = indexRoot.startsWith(REMOTE_PREFIX)
       ? await remoteQuery(indexRoot, args, dir || undefined)
       : (await run('gufi_query', [...args, dir ? path.join(indexRoot, dir) : indexRoot])).stdout
-  } catch { return null }
+  } catch (e) { return { state: 'unreadable', error: String((e as Error).message ?? e).split('\n')[0].slice(0, 200) } }
   // One row of one column: the text, then the row's newline.
   const text = withoutProvenance(out.replace(/\n$/, ''))
-  return text.trim() ? text : null
+  return text.trim() ? { state: 'text', text } : { state: 'none' }
+}
+
+/** indexedTextState's text, or null where the index has none or cannot be read. */
+export async function indexedText(indexRoot: string, dir: string, name: string): Promise<string | null> {
+  const r = await indexedTextState(indexRoot, dir, name)
+  return r.state === 'text' ? r.text : null
 }

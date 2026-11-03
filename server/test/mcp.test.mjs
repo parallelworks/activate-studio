@@ -32,6 +32,7 @@ test('tools/list exposes the read-only corpus set and nothing else', async () =>
   const names = r.result.tools.map(t => t.name)
   assert.ok(names.includes('search_kb'))
   assert.ok(names.includes('read_kb_file'))
+  assert.ok(names.includes('read_original'), 'the original file, for a client that needs more than the index holds')
   assert.ok(!names.includes('write_kb_file'), 'writes stay with the chat assistant')
   assert.ok(!names.includes('run_workflow'), 'platform actions stay with the chat assistant')
   assert.ok(r.result.tools.every(t => t.inputSchema && t.description))
@@ -41,6 +42,12 @@ test('tools/call runs a real tool over the corpus', async () => {
   const r = await rpc('tools/call', { name: 'list_kb_dir', arguments: { path: '' } })
   assert.equal(r.result.isError, false)
   assert.match(r.result.content[0].text, /note\.md/)
+})
+
+test('tools/call read_original opens the file itself', async () => {
+  const r = await rpc('tools/call', { name: 'read_original', arguments: { path: 'note.md' } })
+  assert.equal(r.result.isError, false)
+  assert.match(r.result.content[0].text, /^\[source: the original file on this computer\]\n/)
 })
 
 test('an unexposed tool is refused, an unknown method is an error', async () => {

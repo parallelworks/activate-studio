@@ -15,6 +15,7 @@ import { depthParts, forgetIndexSettings, indexSettings, meaningArgs, NEW_REMOTE
 import { SUMMARY_COLUMNS_SQL, formatNote, formatOfColumns, type FormatRecord } from './indexFormat.js'
 import { BUILD_CHECK, BUILD_RUN, BUILD_START, BUILD_STATUS, EMBED_PROBE, indexerScript, keyValues, parseStatus, PHASE_LABEL } from './remoteBuild.js'
 import { embedMegabytes, embedVersion, sendEmbed } from './remoteEmbed.js'
+import { publicReadThrough, type ReadThrough } from './originals.js'
 
 /**
  * Libraries a user adds from one of their clusters. The index workflow
@@ -94,6 +95,9 @@ export interface UserLibraryDef {
   indexFormat?: FormatRecord | null
   /** An index the Studio builds on the remote system over the session. */
   build?: RemoteBuild | null
+  /** Another host over ssh that has this library's files, tried for an
+   *  original after the library's own host (originals.ts). */
+  readThrough?: ReadThrough | null
 }
 
 /** A build the Studio runs on a remote system (remoteBuild.ts). */
@@ -338,16 +342,25 @@ const noFilesThere = (site: string) =>
 
 export async function remoteFile(root: string, rel: string): Promise<FileContent> {
   const t = remoteTarget(root)!
-  if (isDirect(t.site)) throw new KbError(409, noFilesThere(t.site))
-  if (!t.sourceRoot) throw new KbError(409, 'the source directory of this library is not known')
+  return readRemoteFile(t.site, t.key, t.sourceRoot, rel)
+}
+
+/** One file under `sourceRoot` on a host, as remoteFile reads it: its size
+ *  and time from the file itself, and its text when it is a text file. The
+ *  path is a plain argument of a bash script on the host (every argument
+ *  of a remote command is sent encoded, so no file name is ever read by a
+ *  shell), joined to the root after the checks in cleanRel. */
+export async function readRemoteFile(site: string, key: string, sourceRoot: string | null, rel: string, timeoutMs = 120_000): Promise<FileContent> {
+  if (isDirect(site)) throw new KbError(409, noFilesThere(site))
+  if (!sourceRoot) throw new KbError(409, 'the source directory of this library is not known')
   const sub = cleanRel(rel)
-  const abs = path.posix.join(t.sourceRoot, sub)
+  const abs = path.posix.join(sourceRoot, sub)
   const kind = classify(path.posix.basename(sub), false)
   const text = TEXT_SUFFIXES.has(path.posix.extname(sub).toLowerCase())
   // Size and modified time from the file itself, then the text when it is
   // text, in one round trip.
-  const r = await remoteRun(t.site, t.key, ['bash', '-c', `${STAT} "%s %Y" "%z %m" "$1" || exit 3; [ "$2" = 1 ] && head -c "$3" -- "$1"; exit 0`, '_', abs, text ? '1' : '0', String(PREVIEW_BYTES + 1)])
-  if (r.code !== 0) throw new KbError(404, `${siteName(t.site)}: ${r.stderr.trim().split('\n').pop() ?? 'cannot read the file'}`)
+  const r = await remoteRun(site, key, ['bash', '-c', `${STAT} "%s %Y" "%z %m" "$1" || exit 3; [ "$2" = 1 ] && head -c "$3" -- "$1"; exit 0`, '_', abs, text ? '1' : '0', String(PREVIEW_BYTES + 1)], timeoutMs)
+  if (r.code !== 0) throw new KbError(404, `${siteName(site)}: ${r.stderr.trim().split('\n').pop() ?? 'cannot read the file'}`)
   const nl = r.stdout.indexOf('\n')
   const [size, mtime] = r.stdout.slice(0, nl < 0 ? undefined : nl).split(' ').map(Number)
   const base = { path: sub, kind, size: size || 0, mtime: mtime || 0 }
@@ -362,13 +375,17 @@ export const DOWNLOAD_MAX = 50 * 1024 * 1024
 /** A file of a library on a cluster, whole, for download. */
 export async function remoteDownload(root: string, rel: string): Promise<{ name: string; body: Buffer }> {
   const t = remoteTarget(root)!
-  if (isDirect(t.site)) throw new KbError(409, noFilesThere(t.site))
-  if (!t.sourceRoot) throw new KbError(409, 'the source directory of this library is not known')
+  return downloadRemoteFile(t.site, t.key, t.sourceRoot, rel)
+}
+
+export async function downloadRemoteFile(site: string, key: string, sourceRoot: string | null, rel: string): Promise<{ name: string; body: Buffer }> {
+  if (isDirect(site)) throw new KbError(409, noFilesThere(site))
+  if (!sourceRoot) throw new KbError(409, 'the source directory of this library is not known')
   const sub = cleanRel(rel)
-  const abs = path.posix.join(t.sourceRoot, sub)
-  const r = await remoteRun(t.site, t.key, ['bash', '-c', `s=$(${STAT} %s %z "$1") || exit 3; [ "$s" -le "$2" ] || exit 4; cat -- "$1"`, '_', abs, String(DOWNLOAD_MAX)], 300_000)
-  if (r.code === 4) throw new KbError(413, `This file is over ${DOWNLOAD_MAX / 1024 / 1024} MB; copy it from ${siteName(t.site)} directly.`)
-  if (r.code !== 0) throw new KbError(404, `${siteName(t.site)}: ${r.stderr.trim().split('\n').pop() ?? 'cannot read the file'}`)
+  const abs = path.posix.join(sourceRoot, sub)
+  const r = await remoteRun(site, key, ['bash', '-c', `s=$(${STAT} %s %z "$1") || exit 3; [ "$s" -le "$2" ] || exit 4; cat -- "$1"`, '_', abs, String(DOWNLOAD_MAX)], 300_000)
+  if (r.code === 4) throw new KbError(413, `This file is over ${DOWNLOAD_MAX / 1024 / 1024} MB; copy it from ${siteName(site)} directly.`)
+  if (r.code !== 0) throw new KbError(404, `${siteName(site)}: ${r.stderr.trim().split('\n').pop() ?? 'cannot read the file'}`)
   return { name: path.posix.basename(sub), body: r.raw }
 }
 
@@ -577,7 +594,7 @@ function remotePath(v: unknown, what: string): string | null {
 /** The host a request names: user@host or an alias, with a port given
  *  apart or written after it (user@host:2222). Nothing here reaches a
  *  shell, but ssh would take a destination starting with "-" as an option. */
-function sshDest(a: { destination?: unknown; port?: unknown; sshOptions?: unknown }): { destination: string; port: number | null; sshOptions: string[] } {
+export function sshDest(a: { destination?: unknown; port?: unknown; sshOptions?: unknown }): { destination: string; port: number | null; sshOptions: string[] } {
   let destination = String(a.destination ?? '').trim()
   let given = a.port
   const m = /^(.+):(\d{1,5})$/.exec(destination)
@@ -604,7 +621,7 @@ export function sshSpec(a: SshLibraryInput): SshSpec {
 const lastLine = (s: string) => s.trim().split('\n').filter(Boolean).pop() ?? ''
 
 /** What a failed ssh session means, and what the user can do about it. */
-function sshAdvice(message: string, spec: SshSpec): string {
+export function sshAdvice(message: string, spec: { destination: string; port: number | null }): string {
   const dest = spec.destination
   const said = message.replace(`${siteName(sshSite(dest, spec.port))}: `, '')
   if (/ENOENT/.test(said)) return 'There is no ssh client on the machine the Studio runs on.'
@@ -630,7 +647,7 @@ const FIND_TOOLS = 'need=$1; shift; for d in "$@"; do ok=1; for t in $need; do {
 
 /** Where a connection test runs: the session's site and key, the host as
  *  messages name it, and what a failed session means there. */
-interface ProbeHost {
+export interface ProbeHost {
   site: string
   key: string
   name: string
@@ -639,9 +656,9 @@ interface ProbeHost {
   advice: (message: string) => string
 }
 
-type Run = (argv: string[], ms?: number) => Promise<RemoteResult>
+export type Run = (argv: string[], ms?: number) => Promise<RemoteResult>
 // A connection test's GUFI commands are logged (gufiLog.ts), its other steps not.
-const runner = (h: ProbeHost): Run => (argv, ms = 60_000) =>
+export const runner = (h: ProbeHost): Run => (argv, ms = 60_000) =>
   (/(^|\/)gufi_\w+$/.test(argv[0]) ? remoteGufi(h.site, h.key, argv, { timeoutMs: ms, show: false, source: 'libraries' }) : remoteRun(h.site, h.key, argv, ms))
     .catch((e: Error) => ({ code: -1, stdout: '', stderr: e.message, raw: Buffer.alloc(0) }))
 
@@ -652,7 +669,7 @@ export const ONLY_GUFI_QUERY = 'This host runs only gufi_query: connect existing
  *  system, its home, and a function that resolves ~ there; null when it
  *  failed, or when the login runs only gufi_query, since a build needs a
  *  shell there. */
-async function connectStep(h: ProbeHost, run: Run, steps: SshStep[]) {
+export async function connectStep(h: ProbeHost, run: Run, steps: SshStep[]) {
   // A test finds out afresh whether the login runs a shell.
   setDirect(h.site, false)
   const hello = await run(['sh', '-c', 'uname -s; printf "%s\\n" "$HOME"'], 45_000)
@@ -999,7 +1016,7 @@ export async function probeSsh(spec: SshSpec, reuse = false): Promise<SshProbe> 
 /** How the ssh step names the host once connected: with its port, and the
  *  jump hosts ssh goes through, from the library's options or the user's
  *  ~/.ssh/config (sshRoute). */
-async function reachedOver(site: string, destination: string, port: number | null): Promise<string> {
+export async function reachedOver(site: string, destination: string, port: number | null): Promise<string> {
   // Where it lands as ssh resolves it, kept for grouping and for naming it in the lists.
   await reachedHost(site).catch(() => null)
   const route = await sshRoute(site).catch(() => ({ jump: null, proxyCommand: false }))
@@ -1425,6 +1442,16 @@ export async function setSshOptions(viewerId: string | null | undefined, id: str
   return updateDef(owner, id, { sshOptions: spec.sshOptions.length ? spec.sshOptions : null, resource: sshSite(spec.destination, spec.port, spec.sshOptions), shell: p.shell === false ? false : undefined, error: null })!
 }
 
+/** Sets, or with null clears, the host a library's originals are also read
+ *  through (originals.ts has already checked it). False when the viewer has
+ *  no such library. */
+export function setUserReadThrough(viewerId: string | null | undefined, id: string, readThrough: ReadThrough | null): boolean {
+  const owner = ownerOf(viewerId)
+  if (!owner || !loadUserLibraries(owner).some(x => x.id === id)) return false
+  updateDef(owner, id, { readThrough })
+  return true
+}
+
 /** Opens the shared ssh connection to each host the viewer's libraries are
  *  on, ahead of a search or query (warmSsh), without waiting for it. */
 export function warmUserLibraries(viewerId: string | null | undefined): number {
@@ -1444,7 +1471,7 @@ export function warmUserLibraries(viewerId: string | null | undefined): number {
 export function publicUserLibrary(d: UserLibraryDef & { job?: number }) {
   return { id: d.id, label: d.label, transport: d.transport ?? 'pw', existing: !d.build && (d.transport === 'ssh' || !!d.existing), meaning: d.build ? indexSettings(d.id).meaning : null, depth: d.build ? indexSettings(d.id).depth : null, site: d.site, destination: d.destination ?? null, reached: reachedLabel(d), port: d.port ?? null, sshOptions: d.sshOptions?.length ? sshOptionsText(d.sshOptions) : null, jump: d.sshOptions?.length ? jumpOf(d.sshOptions) : null, gufiVersion: d.gufiVersion ?? null, sourceDir: d.sourceDir, sourceRoot: d.sourceRoot, indexRoot: d.indexRoot, state: d.state,
     run: d.run ? { slug: d.run.slug, mode: d.run.mode, startedAt: d.run.startedAt } : null, error: d.error, builtAt: d.builtAt,
-    directories: d.directories, files: d.files, scheduler: d.scheduler, fullText: !!d.fullText, vectors: !!d.vectors, formatNote: formatNote(d.indexFormat),
+    directories: d.directories, files: d.files, scheduler: d.scheduler, fullText: !!d.fullText, vectors: !!d.vectors, formatNote: formatNote(d.indexFormat), readThrough: publicReadThrough(d.readThrough),
     // Built here over the session: where the index is written, and how far a build has got.
     built: !!d.build, indexDir: d.build?.indexDir ?? null, progress: d.build?.progress ?? null, ...(d.job != null ? { job: d.job } : {}) }
 }

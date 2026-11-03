@@ -43,6 +43,7 @@ import { accessRoutes } from './accessRoutes.js'
 import { sessionRoutes } from './sessions.js'
 import { agentSiteRoutes } from './agentSites.js'
 import { userLibraryRoutes } from './userLibraries.js'
+import { originalsRoutes } from './originals.js'
 import { libraryBuildRoutes, startLibrarySync, stopLibraryJobs } from './libraryBuild.js'
 import { acquireIndexLock } from './instanceLock.js'
 import { libraryDetailsRoutes } from './libraryDetails.js'
@@ -101,6 +102,7 @@ await app.register(sessionRoutes)
 await app.register(runPaneRoutes)
 await app.register(agentSiteRoutes)
 await app.register(userLibraryRoutes)
+await app.register(originalsRoutes)
 await app.register(libraryBuildRoutes)
 await app.register(libraryDetailsRoutes)
 await app.register(workflowReadmeRoutes)
