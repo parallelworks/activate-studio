@@ -2,6 +2,87 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.184 (2026-11-03)
+
+### feat(gufi): move to GUFI 0.8.0 (#627)
+
+Moves the Studio to GUFI 0.8.0 (tag `0.8.0`, commit `021a717a`) without rebuilding or migrating any index. Not merged and not released: the macOS archive is not published and `GUFI_RELEASE` still names the old one (see Before a release).
+
+## What was measured
+
+GUFI 0.8.0 changed the schema twice: `rollupscore` became `canrollup` and `isrolledup` (June 2026, before this repository's first release, so no Studio build ever wrote `rollupscore`), and `entries`, `summary` and `pentries_rollup` gained a `dev` column (third position). A GUFI maintainer said old indexes do not work with the new code. Measured with 0.8.0 built in user space against indexes written by the commit the macOS app pinned (`1713537a`), by the 0.7.0 tag, and by 0.8.0, in both directions:
+
+- Every query the Studio runs gives the same rows on an old index with 0.8.0 tools, and on a 0.8.0 index with the old tools: the one-pass search walk, Query (builder, canned, SQL), statistics, `gufi_sqlite3`, `gufi_vt`, words, meaning, external `ext.db` tables, labels, history, the semantic map. 0.8.0's views name columns with `.*` and the Studio never reads `dev`.
+- What fails is raw SQL that names `dev` (`Error: no such column: dev: <index>/db.db: "..."` per folder, exit 0) and, in the old gufi_vt, a column list that names it (`Could not prepare '...' for getting column types`).
+- An index from the 0.7.0 tag reads the same, with `Could not get isrolledup: no such column: canrollup` per folder on stderr, except where GUFI rolled a folder up: 0.8.0 (and the old pin) then list its entries more than once (969 rows for 324 distinct files).
+- A tree of old and new directories (what a sync leaves) reads the same with either tool.
+
+So I did not write a migration (a rename plus three recreated tables in every directory's database, in indexes that may hold vec0 tables, undoable, and fixing nothing the Studio reads) and did not add a rebuild on first start (hours on a large library for no change in any answer).
+
+## What changes
+
+- Every place GUFI is fetched is pinned to the 0.8.0 commit: `indexer/setup_gufi.sh` (`GUFI_REF` overrides), `deploy/app.def`, `deploy/make_bundle.sh` (a cached copy of another GUFI is fetched again), both ACTIVATE workflows (the clone is checked against the commit), `deploy/gufi-index.yaml` (both defaults), the macOS build, and the macOS package fallback (its URL returned 404, and the 0.8.0 package installs under `/Applications` with a link into the build machine, so `pkg_extract.py` gained `--drop-absolute-links`).
+- Each library's format is read from its top summary table with the capability probe (`server/src/indexFormat.ts`), kept in `library-caps.json`, and for a library on another system taken from the `gufi_query` there at its connection test. Only the one case that reads wrongly is said out loud: an index from before the rename that has rolled-up folders is searched in part, named in the omissions line of Search and Query and in Settings, Libraries. A raw query naming `dev` on an older index gets one plain sentence.
+- A new index is read by GUFI before it is swapped in (where `gufi_query` is there; the stand-in that tests use has none), and a stop between the two renames of a swap no longer leaves a library with no tree: the old one is put back at the next start.
+- One Studio per index folder (`server/src/instanceLock.ts`). The second-launch test below found that a second Studio on the same data resumed the first one's interrupted build, cleared its staging folder, and left the first build `failed` with its tree moved aside. The second one now searches and queries, and answers index jobs with a 409 naming the first.
+- A build that fails on a full disk or an unwritable folder says so in plain words and that the index in place is untouched.
+- `indexer/setup_gufi.sh` on macOS (the from-source path for a clone): it already stopped at configure on origin/main, because CMake needs `flock` (run 41524269730 of `gufi-macos` with `check_setup_script`, old pin), and 0.8.0 asks for it too, so `flock` is installed and put on `PATH`. The next stop was llama.cpp (`errno` undeclared with the LLVM Homebrew installs now), so the C++ compiler is a wrapper that includes the headers the vendored code leaves out, as the app build does. With both, the script builds GUFI 0.8.0 on a macos-15 runner and indexes and queries; its last check, embedding with `gufi_sqlite3` and the model, segfaults (run 41535108165). See Open.
+- `docs/HELP.md`, `docs/REFERENCE.md` (GUFI versions, one Studio per index folder), `docs/LIBRARIES.md`, `docs/GUFI-MACOS.md`, `README.md`. CHANGELOG untouched.
+- Not done, noted in REFERENCE.md: `gufi_query --global-db` for the query embeddings of the search walk, and gufi_vt's `gufi_query=`.
+
+## Test matrix
+
+Linux host, GUFI 0.8.0 (`inst-new`), the pinned `1713537a` (`inst-old`) and the 0.7.0 tag (`inst-070`) built in user space; the Studio is this branch or origin/main. Each battery is 340 to 361 requests (19 searches by name, words, meaning, OCR, an external-table word; label filter; statistics; details; tree; six canned queries; eight builder forms; five SQL forms; the semantic map; labels; multi-library Query and search; history; the library listing), recorded before and after and compared section by section (rows as sets; ties among rows of equal size or time named). The fleet has the main folder at meaning-full and libraries at names, text, OCR, meaning-documents and meaning-full, one with a 0555 source, labels as xattrs and Studio-kept, `ext.db` tables, spaces, non-ASCII and a long path.
+
+| Scenario | Result |
+|---|---|
+| Branch and 0.8.0 on a fleet built by the old GUFI and Studio | 311 identical, 24 ties, 0 different (main-branch code on 0.8.0 tools: 312, 23, 0) |
+| Fleet built entirely by 0.8.0 against the old one | 296, 18, 0 |
+| Fleet built by the 0.7.0 tag, read by the branch and 0.8.0 | 222, 13, 0 |
+| History across the update | snapshots under both GUFIs: 324 files, nothing added, removed or modified |
+| A sync after the update (file added, changed, removed; trees become mixed: 64 old directories and 3 new in one library) | added and changed words found in every library that reads text; against the old Studio and GUFI on the same changes: 333, 23, 0 |
+| Connected indexes: rolled up by the old GUFI, by 0.8.0; written by 0.7.0, by the old GUFI, by 0.8.0 | identical in 48, 48, 46, 46, 45 sections. Rolled up by the 0.7.0 tag: both versions return the same wrong rows and only the branch says so (omissions line, Settings) |
+| 0.8.0 Studio against a remote host on the old GUFI and on 0.8.0 (a local sshd; the GUFI is the library's bin directory), each reading an old-built and a 0.8.0-built index, with Query across local and remote through gufi_vt | remote old against remote 0.8.0: 80, 8, 0; gufi_vt answered and no library failed |
+| Downgrade: old Studio and GUFI on a fleet built by 0.8.0; on a tree the new Studio synced | 318, 17, 0 and 334, 22, 0; nothing corrupted |
+| Rebuild held in its text pass, server killed, restarted, held again, released | the index in place answered by name, words and meaning at every step; the resumed build equals a sync's result |
+| A swap cut off after its first rename | `restored its index from a swap a stop cut off`, then rebuilt |
+| Index folder on a 303 MB tmpfs holding 300 MB (user namespace, real ENOSPC) | `The disk the index is written on is full, so the new index was not finished. The index in place is untouched; free some space and rebuild.` Library keeps answering; rebuild succeeds once space is freed |
+| Library index folder read-only | `The index folder cannot be written (EACCES: permission denied, mkdir '.../.build'), so nothing was changed...`; searches unchanged; rebuild works once writable |
+| Second Studio on the same data during a rebuild | before: the first build ended `failed`, library answering nothing. Now: the second searches, answers a rebuild with `409 Another Studio (process N, port 4821) is using this index folder...`; the first finishes `ready` |
+| A library mid-build under the old Studio and GUFI (3,000 files, meaning-full, killed in the meaning phase), new Studio on the same data | resumes; names and words answered during the resumed build; the result equals a clean 0.8.0 build (28 identical, 3 ties) |
+
+Performance, 3,000 files in 1,276 folders, same host, 15 requests each:
+
+| | old | 0.8.0 |
+|---|---|---|
+| build, names only (3 builds) | 0.51 s each | 0.51 s each |
+| build, text (3 builds) | 2.58, 2.51, 2.51 s | 2.59, 2.51, 2.51 s |
+| build, meaning of documents | 40.8 s | 42.8 s |
+| search by name, words, meaning (medians) | 58, 71, 143 ms | 60, 69, 146 ms |
+| Query, medians | 50 to 66 ms | 54 to 69 ms |
+| Query across three libraries (gufi_vt) | 324 ms | 335 ms |
+
+Suites: server 754 tests with the host's GUFI (748 pass, 6 skip), with none (610 pass, 144 skip, as CI runs them; CI's Linux and macOS test jobs pass) and with 0.8.0 (746 pass, 6 skip, 2 fail: `sshLibraries` and `restrictedRemote` look for GUFI at `/opt/gufi/bin`, and fail the same way on origin/main with a GUFI elsewhere); web 344 pass; `testdata` 21 pass. New tests: `indexFormat.test.mjs` (also run against the old GUFI and the 0.7.0-style schema it builds), `instanceLock.test.mjs`, a Settings row test.
+
+## macOS
+
+Run on this PR's head:
+
+- `gufi-macos` (run 41515509805): GUFI 0.8.0 built for macOS 14 on macos-15 by `deploy/mac/build_gufi.sh`, then checked by `check_gufi.sh` on clean macos-14 and macos-26 runners (indexing, querying, gufi_vt, embedding with the model, search). It did not build as the script stood: GUFI 0.8.0 needs a static PCRE2 (`libpcre2-8.a`, so PCRE2 is now built shared and static), installs its dependencies' licenses from a folder its own script fills by download (now filled from the sources built here), installs `libvec0`, `liblembed0` and `libsqlite3` as links by absolute path into its build, and its `libdsi_querying` plugin has the run path `/lib` and `sqlite3-pcre` has none, which `macho_relink.py` cannot widen (now set with `install_name_tool` before the relink and re-signed). The 0.8.0 archive's manifest: macOS 14.0 target, SQLite 3.53.4, sqlite-vec 0.1.10-alpha.4, sqlite-lembed 0.0.1-alpha.8, PCRE2 10.49, libomp 23.1.4.
+- `mac-app` (this PR's run, built with that archive through `GUFI_RUN`): the app builds with `GUFI 0.8.0 (021a717a6089) for macOS 14.0`, and `check_app.sh --run --launch --dmg` passes (351 checks, no failure), including the hardened-runtime copy: GUFI indexes a folder, `gufi_query` reads it, `gufi_sqlite3` embeds with the bundled model, the server runs from the app's run loop, and the launcher and LaunchAgent paths.
+- `mac-upgrade-e2e` (new, `.github/scripts/mac-upgrade-e2e.sh`; on a pull request it waits for the same commit's mac-app run on a Linux runner and then runs on macos-15): installs the published v1.183 app (its bundled GUFI is the `macos-pkg-test` build), builds libraries of a small folder at names, text and meaning-documents, records 57 answers, quits the app, replaces it with this PR's app (GUFI 0.8.0), opens it on the same data, and checks that no index file was touched, that all 57 answers are unchanged, then rebuilds each library with 0.8.0 and checks the answers again. Passed: every `db.db` before the update had no `dev` column, after the rebuild each has one, 0 of 57 answers differ at either step. The existing #579 harnesses cannot do this (they update to the newest published release, not to an unpublished build), so this is a separate script. Its log prints the app's short version twice (both builds report 1.183); the server lines above it show the two commits.
+
+
+## Open
+
+- The from-source macOS path (`indexer/setup_gufi.sh` with Homebrew's LLVM and libomp) builds, indexes and queries, and `gufi_sqlite3` segfaults at the first `lembed()` call in `gufi-macos`'s `check_setup_script` job. The app's own build (`build_gufi.sh`, its own libomp, relinked) passes the same check on macos-14 and macos-26. At the old pin the script cannot be compared: it stops at `flock`, and with that fixed `make install` stops writing `/etc/GUFI` (0.8.0 uses a relative config path on macOS), so this path did not work on origin/main either. I have not found the cause of the segfault; it needs a Mac to debug.
+- `gufi_query --global-db` for the search walk, and gufi_vt's `gufi_query=`, as follow-ups.
+- A raw query naming `dev` on a tree that is part old and part new (what a sync leaves) answers from the new directories only, with the errors on stderr; a rebuild makes the tree uniform.
+
+## Before a release
+
+Publish `gufi-macos-arm64` as the release `gufi-021a717-macos14` (push that tag), set `GUFI_RELEASE` in `mac-app.yml` to it and empty `GUFI_RUN` (a run's archive expires in 30 days). This PR points `GUFI_RUN` at the gufi-macos run that built 0.8.0 so its own mac-app run builds the app with it.
+
 ## v1.183 (2026-11-02)
 
 ### fix(mac): count a detach that already went through as done (#619)
@@ -91,6 +172,10 @@ Also seen while reading: `docs/MACOS.md` says to put settings in a `.env` at the
 ## Labels on `/mnt/c`
 
 The page describes the behaviour from the code: `server/src/tags.ts` writes `user.studio.tags` with `setfattr`, and when that fails the label goes to `tags-overlay.json` in the index folder, keyed by `st_dev.st_ino` with the birth time checked (`server/src/tagsOverlay.ts`). Other libraries always use the Studio's own label store (`docs/HELP.md`). Whether WSL2's `/mnt/c` accepts `user.` xattrs is not documented by Microsoft, so the page gives a one-line check instead of asserting it. How stable inode numbers are on drvfs across WSL restarts was not checked; if they change, overlay labels on `/mnt/c` files would be dropped as stale.
+
+### Change log through v1.183 (#625)
+
+Regenerated with `node scripts/release-notes.mjs --changelog --next v1.183` before tagging v1.183.
 
 ## v1.182 (2026-10-28)
 
