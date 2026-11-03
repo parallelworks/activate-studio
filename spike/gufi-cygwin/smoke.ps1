@@ -398,7 +398,7 @@ function Chain-Index([string]$name) {
   $lens = @(Lines $q.Out | ForEach-Object { [int]$_ })
   $err = (Lines $r.Err | Where-Object { $_ -match 'Cannot open' } | Select-Object -First 1)
   $tail = if ($err) { $err.Substring([math]::Max(0, $err.Length - 160)) } else { '' }
-  Say "- $name: exit $($r.Code); directories indexed $($lens.Count) of 81; longest indexed directory path $(if ($lens) { ($lens | Measure-Object -Maximum).Maximum } else { 0 }) characters (index form); first error ends: $tail"
+  Say "- ${name}: exit $($r.Code); directories indexed $($lens.Count) of 81; longest indexed directory path $(if ($lens) { ($lens | Measure-Object -Maximum).Maximum } else { 0 }) characters (index form); first error ends: $tail"
 }
 Chain-Index 'lp1'
 $fsKey = 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem'
