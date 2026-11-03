@@ -1,0 +1,215 @@
+# GUFI Cygwin build spike. Builds GUFI 0.8.0 under Cygwin on windows-latest,
+# runs its tests, and smoke-tests the result from PowerShell on a runner with no
+# Cygwin installed. Push-triggered on the spike branch only.
+#
+# Commit-message switches, to rerun part of it:
+#   [smoke-only RUNID]  skip the builds; smoke-test the payload artifact of run RUNID
+#   [recipe-only]       only the recipe build
+#   [no-recipe]         skip the recipe build
+#   [no-ctest]          skip the ctest job
+#   [cmake-src]         recipe build with CMake 4.2.1 built from source
+name: gufi-cygwin-spike
+
+on:
+  push:
+    branches: [spike/gufi-cygwin]
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  GUFI_REF: "0.8.0"
+  # Cygwin package names. FULL is the reference list plus cmake; MIN drops the
+  # Python 3.9 and sqlalchemy packages.
+  PKGS_FULL: attr autoconf cmake git gcc-g++ libattr1 libgomp1 libiconv-devel libintl-devel libpcre2-devel make patch pkg-config python3 python39 python39-pip python39-sqlalchemy zlib-devel
+  PKGS_MIN: attr autoconf cmake git gcc-g++ libattr1 libgomp1 libiconv-devel libintl-devel libpcre2-devel make patch pkg-config python3 zlib-devel
+
+jobs:
+  lint:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - run: git config --global core.autocrlf input
+        shell: pwsh
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: parse the PowerShell and shell scripts
+        shell: pwsh
+        run: |
+          $errs = $null; $tokens = $null
+          [void][System.Management.Automation.Language.Parser]::ParseFile("$PWD\spike\gufi-cygwin\smoke.ps1", [ref]$tokens, [ref]$errs)
+          if ($errs) { $errs | ForEach-Object { Write-Host "smoke.ps1:$($_.Extent.StartLineNumber): $($_.Message)" }; exit 1 }
+          Write-Host 'smoke.ps1 parses'
+          bash -n spike/gufi-cygwin/build.sh
+          bash -n spike/gufi-cygwin/payload.sh
+          python -c "import ast; ast.parse(open('spike/gufi-cygwin/gen_tree.py').read())"
+          Write-Host 'ok'
+
+  # 1. The reference recipe: stock Cygwin, its package list, Debug, its CMake flags.
+  recipe:
+    if: ${{ !contains(github.event.head_commit.message, '[smoke-only') && !contains(github.event.head_commit.message, '[no-recipe]') }}
+    runs-on: windows-latest
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix:
+        cmake: ${{ fromJSON(contains(github.event.head_commit.message, '[cmake-src]') && '["source"]' || '["cygwin"]') }}
+    name: recipe (cmake from ${{ matrix.cmake }})
+    defaults:
+      run:
+        shell: C:\cygwin\bin\bash.exe -o igncr -eo pipefail {0}
+    env:
+      CC: gcc
+      CXX: g++
+      CMAKE_FROM: ${{ matrix.cmake }}
+    steps:
+      - run: git config --global core.autocrlf input
+        shell: pwsh
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: cygwin/cygwin-install-action@5a1b0cd107181fa6bb6bf3f90d500f4fb3132f18 # v7.0.0
+        with:
+          packages: ${{ matrix.cmake == 'source' && 'attr autoconf curl git gcc-g++ libattr1 libgomp1 libiconv-devel libintl-devel libpcre2-devel make patch pkg-config python3 python39 python39-pip python39-sqlalchemy zlib-devel' || env.PKGS_FULL }}
+      - name: build GUFI as the recipe does
+        run: |
+          export PATH=/usr/bin:$(cygpath "$SYSTEMROOT")/system32
+          bash -o igncr spike/gufi-cygwin/build.sh recipe
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: recipe-${{ matrix.cmake }}
+          path: results
+          if-no-files-found: warn
+          retention-days: 30
+
+  # 2. Release build with the macOS payload's flags, installed, with its DLLs, as a zip.
+  release:
+    if: ${{ !contains(github.event.head_commit.message, '[smoke-only') && !contains(github.event.head_commit.message, '[recipe-only]') }}
+    runs-on: windows-latest
+    timeout-minutes: 240
+    defaults:
+      run:
+        shell: C:\cygwin\bin\bash.exe -o igncr -eo pipefail {0}
+    env:
+      CC: gcc
+      CXX: g++
+    steps:
+      - run: git config --global core.autocrlf input
+        shell: pwsh
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: cygwin/cygwin-install-action@5a1b0cd107181fa6bb6bf3f90d500f4fb3132f18 # v7.0.0
+        with:
+          packages: ${{ env.PKGS_MIN }}
+      - name: build, install and assemble the payload
+        run: |
+          export PATH=/usr/bin:$(cygpath "$SYSTEMROOT")/system32
+          bash -o igncr spike/gufi-cygwin/build.sh release
+      - name: zip the payload
+        if: success()
+        shell: pwsh
+        run: |
+          $zip = Join-Path $env:RUNNER_TEMP 'gufi-cygwin-x64.zip'
+          Compress-Archive -Path "$env:GITHUB_WORKSPACE\payload\gufi" -DestinationPath $zip -CompressionLevel Optimal
+          $mb = [math]::Round((Get-Item $zip).Length / 1MB, 1)
+          $un = [math]::Round((Get-ChildItem "$env:GITHUB_WORKSPACE\payload\gufi" -Recurse -File | Measure-Object Length -Sum).Sum / 1MB, 1)
+          "- zip: $mb MB (unpacked $un MB), $((Get-Item $zip).Length) bytes" | Tee-Object -FilePath "$env:GITHUB_WORKSPACE\results\payload.md" -Append | Add-Content $env:GITHUB_STEP_SUMMARY
+          "ZIP=$zip" | Add-Content $env:GITHUB_ENV
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: success()
+        with:
+          name: gufi-cygwin-x64
+          path: ${{ env.ZIP }}
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: release-results
+          path: results
+          if-no-files-found: warn
+          retention-days: 30
+
+  # 3. GUFI's own ctest suite on the release configuration, excluding what its Cygwin CI excludes (dsi).
+  ctest:
+    if: ${{ !contains(github.event.head_commit.message, '[smoke-only') && !contains(github.event.head_commit.message, '[recipe-only]') && !contains(github.event.head_commit.message, '[no-ctest]') }}
+    runs-on: windows-latest
+    timeout-minutes: 360
+    defaults:
+      run:
+        shell: C:\cygwin\bin\bash.exe -o igncr -eo pipefail {0}
+    env:
+      CC: gcc
+      CXX: g++
+    steps:
+      - run: git config --global core.autocrlf input
+        shell: pwsh
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: cygwin/cygwin-install-action@5a1b0cd107181fa6bb6bf3f90d500f4fb3132f18 # v7.0.0
+        with:
+          packages: ${{ env.PKGS_FULL }}
+      - name: build and run ctest
+        run: |
+          export PATH=/usr/bin:$(cygpath "$SYSTEMROOT")/system32
+          git config --global --add safe.directory '*'
+          bash -o igncr spike/gufi-cygwin/build.sh ctest
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: ctest-results
+          path: results
+          if-no-files-found: warn
+          retention-days: 30
+
+  # 4. Studio-shaped smoke tests, on a clean runner, from PowerShell.
+  smoke:
+    needs: [lint, release]
+    if: ${{ !cancelled() && !contains(github.event.head_commit.message, '[recipe-only]') && (needs.release.result == 'success' || needs.release.result == 'skipped') }}
+    runs-on: windows-latest
+    timeout-minutes: 120
+    steps:
+      - run: git config --global core.autocrlf input
+        shell: pwsh
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: which payload
+        id: src
+        shell: bash
+        env:
+          MSG: ${{ github.event.head_commit.message }}
+        run: |
+          if [[ "$MSG" =~ \[smoke-only\ ([0-9]+)\] ]]; then
+            echo "run_id=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+          else
+            echo "run_id=$GITHUB_RUN_ID" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: gufi-cygwin-x64
+          path: ${{ runner.temp }}/dl
+          run-id: ${{ steps.src.outputs.run_id }}
+          github-token: ${{ github.token }}
+      - name: unpack to C:\gufi
+        shell: pwsh
+        run: |
+          Expand-Archive -Path "$env:RUNNER_TEMP\dl\gufi-cygwin-x64.zip" -DestinationPath C:\unz
+          Move-Item C:\unz\gufi C:\gufi
+          Get-ChildItem C:\gufi
+      - name: smoke tests
+        shell: pwsh
+        run: ./spike/gufi-cygwin/smoke.ps1 -Payload C:\gufi -Out "$env:GITHUB_WORKSPACE\smoke-out" -Here "$PWD\spike\gufi-cygwin"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: smoke-results
+          path: smoke-out
+          if-no-files-found: warn
+          retention-days: 30
