@@ -1,8 +1,8 @@
 package main
 
 // The HTTP side of the shell. The window opens a reverse proxy the shell
-// serves on a 127.0.0.1 port of its own (the "localproxy" mode of the
-// spike, chosen for the app: streaming arrives as it is written on every
+// serves on a 127.0.0.1 port of its own (chosen over serving the page from
+// Wails' own asset origin: streaming arrives as it is written on every
 // platform, and the page's origin is a fixed, ordinary http origin that
 // alone may call the shell). One handler serves:
 //

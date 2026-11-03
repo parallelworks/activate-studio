@@ -18,8 +18,8 @@ package main
 //	               and the page tells the shell, which follows it
 //	afterMove      the window is on the Studio at the new port; the window closes
 //
-// Plan "hold" does the first phase, writes results.json and a "ready" file,
-// and waits, so CI can end the shell in other ways (TERM, a second launch,
+// Plan "hold" does the first phase, writes results.json and, if the Studio
+// drew, a "ready" file, and waits, so CI can end the shell in other ways (TERM, a second launch,
 // SIGKILL) and look for processes left behind.
 
 import (
@@ -159,7 +159,12 @@ func (t *SelfTest) advance(phase string) {
 		if t.app.cfg.TestPlan == "hold" {
 			t.setPhase("hold")
 			t.write()
-			_ = os.WriteFile(filepath.Join(t.dir, "ready"), []byte(fmt.Sprintf("%d\n", os.Getpid())), 0o644)
+			// Ready only when the Studio drew.
+			if get(t.results, "checks", "appMounted", "mounted") == true {
+				_ = os.WriteFile(filepath.Join(t.dir, "ready"), []byte(fmt.Sprintf("%d\n", os.Getpid())), 0o644)
+			} else {
+				t.logf("the Studio did not draw; not ready")
+			}
 			return
 		}
 		t.setPhase("relaunch")

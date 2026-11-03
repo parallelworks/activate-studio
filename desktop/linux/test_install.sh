@@ -241,8 +241,8 @@ if wait_for 300 test -s "$T/hold1/ready"; then
   ok "the first launch is up and has drawn"
   SHELLPID="$(head -n 1 "$T/hold1/ready")"
   shot window
-  note "the shell process is $(readlink "/proc/$SHELLPID/exe")"
-  check "the shell is the ${EXPECT_SHELL:-wk4x} binary of this install" sh -c "readlink /proc/$SHELLPID/exe | grep -q 'bin/activate-studio-${EXPECT_SHELL:-wk4}'"
+  note "the shell process is $(ps -o args= -p "$SHELLPID")"
+  check "the shell is the ${EXPECT_SHELL:-wk4x} binary of this install" sh -c "ps -o args= -p $SHELLPID | grep -q 'bin/activate-studio-${EXPECT_SHELL:-wk4}'"
   mkdir -p "$T/second" && chmod 777 "$T/second"
   as tester env DISPLAY=:99 NO_AT_BRIDGE=1 "${SANDBOX[@]}" STUDIO_SHELL_TEST=1 STUDIO_SHELL_TEST_DIR="$T/second" dbus-run-session -- "$BIN" >"$OUT/second-launch.log" 2>&1
   second=$?
