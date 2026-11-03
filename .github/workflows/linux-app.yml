@@ -146,7 +146,14 @@ jobs:
             extra_packages: ""
           - image: ubuntu:24.04
             extra_packages: ""
+          # Docker's official rockylinux:9 image is an old point release
+          # (9.3); the other two are current 9.x releases of the two
+          # rebuilds the Linux app targets.
           - image: rockylinux:9
+            extra_packages: ""
+          - image: rockylinux/rockylinux:9
+            extra_packages: ""
+          - image: almalinux:9
             extra_packages: ""
     runs-on: ubuntu-24.04
     timeout-minutes: 30
