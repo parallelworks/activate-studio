@@ -72,7 +72,7 @@ out = {
     'root': root, 'files': total_files, 'dirs_below_root': dirs, 'counts': counts,
     'seconds': round(time.time() - t0, 1),
     'long_files': long_files, 'unicode_files': unicode_files, 'space_files': spaces,
-    'regular_example': os.path.join(root, 'd03', 's04', 'file_0007.json'),
+    'regular_example': os.path.join(root, 'd03', 's04', 'file_0004.json'),
 }
 os.makedirs(os.path.dirname(manifest), exist_ok=True)
 with open(manifest, 'w', encoding='utf-8') as f:

@@ -3,7 +3,8 @@
 #
 #   build.sh recipe          Debug build with the flags of the reference recipe
 #   build.sh release         Release build as the macOS payload builds it, then install and payload.sh
-#   build.sh ctest           Release build on the full package list, then GUFI's ctest suite
+#   build.sh ctest           Release build on the full package list (Python 3.9, sqlalchemy), then GUFI's ctest suite
+#   build.sh ctestmin        the same on the minimal list (default Python 3.12, no sqlalchemy)
 #
 # CMAKE_FROM=source builds CMake 4.2.1 from source first (default: Cygwin's own package).
 # Run from Cygwin bash (bash -o igncr), from the repository checkout.
@@ -79,7 +80,7 @@ case "$MODE" in
     CONFIG=(-DDEP_INSTALL_PREFIX="$DEP" -DDEP_USE_JEMALLOC=Off -DDEP_AI=On -DCMAKE_BUILD_TYPE=Debug -DDEP_BUILD_THREADS=4
             -DCMAKE_C_FLAGS="-Wall -Wextra -Wpedantic" -DCMAKE_CXX_FLAGS="-Wall -Wextra -Wpedantic")
     ;;
-  release|ctest)
+  release|ctest|ctestmin)
     CONFIG=(-DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$HOME/gufi-install" -DDEP_INSTALL_PREFIX="$DEP"
             -DDEP_USE_JEMALLOC=Off -DDEP_AI=On -DDEP_BUILD_THREADS=$JOBS -DENABLE_SUDO_TESTS=Off)
     ;;
@@ -120,7 +121,7 @@ case "$MODE" in
     note "- cmake --install: $(( $(now) - s )) s"
     bash -o igncr "$HERE/payload.sh" "$HOME/gufi-install" "$DEP" "$WS/payload/gufi" "$RES"
     ;;
-  ctest)
+  ctest|ctestmin)
     export PATH="$PATH:$(deppath)"
     s=$(now)
     set +e

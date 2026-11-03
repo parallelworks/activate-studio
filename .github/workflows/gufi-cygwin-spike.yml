@@ -7,7 +7,8 @@
 #   [recipe-only]       only the recipe build
 #   [no-recipe]         skip the recipe build
 #   [no-ctest]          skip the ctest job
-#   [ctest-only]        only the ctest job
+#   [ctest-only]        only the ctest jobs
+#   [ctest-min]         also run the minimal-package ctest job (on by default without a switch)
 #   [cmake-src]         recipe build with CMake 4.2.1 built from source
 name: gufi-cygwin-spike
 
@@ -165,6 +166,39 @@ jobs:
         if: always()
         with:
           name: ctest-results
+          path: results
+          if-no-files-found: warn
+          retention-days: 30
+
+  # 3b. The same on the minimal package list: Cygwin's default Python 3.12, no sqlalchemy.
+  ctest-min:
+    if: ${{ contains(github.event.head_commit.message, '[ctest-min]') || (!contains(github.event.head_commit.message, '[smoke-only') && !contains(github.event.head_commit.message, '[recipe-only]') && !contains(github.event.head_commit.message, '[ctest-only]') && !contains(github.event.head_commit.message, '[no-ctest]')) }}
+    runs-on: windows-latest
+    timeout-minutes: 360
+    defaults:
+      run:
+        shell: C:\cygwin\bin\bash.exe -o igncr -eo pipefail {0}
+    env:
+      CC: gcc
+      CXX: g++
+    steps:
+      - run: git config --global core.autocrlf input
+        shell: pwsh
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: cygwin/cygwin-install-action@5a1b0cd107181fa6bb6bf3f90d500f4fb3132f18 # v7.0.0
+        with:
+          packages: ${{ env.PKGS_MIN }}
+      - name: build and run ctest
+        run: |
+          export PATH=/usr/bin:$(cygpath "$SYSTEMROOT")/system32
+          git config --global --add safe.directory '*'
+          bash -o igncr spike/gufi-cygwin/build.sh ctestmin
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: ctestmin-results
           path: results
           if-no-files-found: warn
           retention-days: 30

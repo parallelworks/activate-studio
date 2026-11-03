@@ -185,7 +185,9 @@ function Index-Run([string]$name, [string[]]$flags, [hashtable]$envh, [string]$s
   $dbs = (Get-ChildItem -LiteralPath $dst -Recurse -Filter db.db -File -Force | Measure-Object).Count
   $bytes = (Get-ChildItem -LiteralPath $dst -Recurse -File -Force | Measure-Object Length -Sum).Sum
   Say "- **$name** ``gufi_dir2index $($flags -join ' ') $src``: exit $($r.Code) in **$($r.Sec) s**; index has $dbs db.db files, $dirsMade directories, $([math]::Round($bytes/1MB,1)) MB"
-  if ($r.Err.Trim()) { Code $r.Err 8 }
+  if ($r.Err.Trim()) {
+    Code ((Lines $r.Err | ForEach-Object { if ($_.Length -gt 260) { $_.Substring(0, 60) + ' ... ' + $_.Substring($_.Length - 180) } else { $_ } }) -join "`n") 14 300
+  }
   [pscustomobject]@{ Name = $name; Run = $r; Dst = $dst; Dbs = $dbs }
 }
 $Src = Cyg $Tree
@@ -194,12 +196,14 @@ $ib = Index-Run 'b' @('-x', '-n', '4') $E1 $Src
 $ic = Index-Run 'c' @('-x', '-n', '4') $E2 $Src
 $id = Index-Run 'd' @('-n', '4') $E1 $Src
 $ie = Index-Run 'e' @('-x', '-n', '4') $E1 $Tree
+$if2 = Index-Run 'f' @('-x', '-n', '4') $E1 ($Tree -replace '\\', '/')
 $cores = [Environment]::ProcessorCount
 Rec 'gufi_dir2index 50k files, 1 thread, -x' $(if ($ia.Run.Code -eq 0) { 'PASS' } else { "exit $($ia.Run.Code)" }) "$($ia.Run.Sec) s"
 Rec "gufi_dir2index 50k files, 4 threads ($cores cores), -x" $(if ($ib.Run.Code -eq 0) { 'PASS' } else { "exit $($ib.Run.Code)" }) "$($ib.Run.Sec) s"
 Rec 'gufi_dir2index 4 threads, no -x' $(if ($id.Run.Code -eq 0) { 'PASS' } else { "exit $($id.Run.Code)" }) "$($id.Run.Sec) s"
 Rec 'gufi_dir2index with LANG=C.UTF-8' $(if ($ic.Run.Code -eq 0) { 'PASS' } else { "exit $($ic.Run.Code)" }) "$($ic.Run.Sec) s"
 Rec 'gufi_dir2index with a Windows-form source (C:\tree)' $(if ($ie.Run.Code -eq 0) { 'PASS' } else { "exit $($ie.Run.Code)" }) "$($ie.Run.Sec) s, $($ie.Dbs) db.db files"
+Rec 'gufi_dir2index with a C:/tree source' $(if ($if2.Dbs -gt 10) { 'PASS' } else { 'FAIL' }) "$($if2.Run.Sec) s, $($if2.Dbs) db.db files"
 Say "Baselines for the same tree: Get-ChildItem walk and Python os.walk are above. Expected entries: $ExpectedFiles files in $ExpectedDirs directories."
 
 # ---------------------------------------------------------------------------
@@ -261,13 +265,13 @@ $udirsC = (Get-ChildItem -LiteralPath (Join-Path (Join-Path $Idx 'c') 'tree\unic
 Say "Index folder names for the non-ASCII directories, PATH only: $udirs"
 Say "Index folder names for the non-ASCII directories, LANG=C.UTF-8: $udirsC"
 # path forms
-$r = Run-Native gufi_query @('-n', '1', '-d', '|', '-E', "SELECT path(), epath(), fpath(), rpath(sname, sroll), sname, sroll, name FROM vrpentries WHERE name = 'file_0007.json' LIMIT 1;", "$QB/d03/s04") $E1
+$r = Run-Native gufi_query @('-n', '1', '-d', '|', '-E', "SELECT path(), epath(), fpath(), rpath(sname, sroll), sname, sroll, name FROM vrpentries WHERE name = 'file_0004.json' LIMIT 1;", "$QB/d03/s04") $E1
 Say 'Path forms returned (path(), epath(), fpath(), rpath(sname,sroll), sname, sroll, name), index given as /cygdrive/c/...:'
 Code $r.Out 4
-$r = Run-Native gufi_query @('-n', '1', '-d', '|', '-E', "SELECT rpath(sname, sroll)||'/'||name FROM vrpentries WHERE name = 'file_0007.json' LIMIT 1;", (Join-Path (Join-Path $Idx 'b') 'tree\d03\s04')) $E1
+$r = Run-Native gufi_query @('-n', '1', '-d', '|', '-E', "SELECT rpath(sname, sroll)||'/'||name FROM vrpentries WHERE name = 'file_0004.json' LIMIT 1;", (Join-Path (Join-Path $Idx 'b') 'tree\d03\s04')) $E1
 Say 'The same with the index given as a Windows path (C:\idx\b\tree\d03\s04):'
 Code $r.Out 3
-$r = Run-Native gufi_query @('-n', '1', '-d', '|', '-E', "SELECT rpath(sname, sroll)||'/'||name FROM vrpentries WHERE name = 'file_0007.json' LIMIT 1;", ((Join-Path (Join-Path $Idx 'b') 'tree\d03\s04') -replace '\\', '/')) $E1
+$r = Run-Native gufi_query @('-n', '1', '-d', '|', '-E', "SELECT rpath(sname, sroll)||'/'||name FROM vrpentries WHERE name = 'file_0004.json' LIMIT 1;", ((Join-Path (Join-Path $Idx 'b') 'tree\d03\s04') -replace '\\', '/')) $E1
 Say 'The same with the index given as C:/idx/b/tree/d03/s04:'
 Code $r.Out 3
 # which source path is recorded for the entries of index e (Windows-form source)?
@@ -354,7 +358,7 @@ Rec 'vec0 nearest-neighbour over lembed vectors' $(if ($first -match '^1\b') { '
 Code ($r.Out + $r.Err) 6
 # vec functions inside gufi_query itself (what the one-pass search runs per directory)
 $r = Run-Native gufi_query @('-n', '1', '-d', '|', '-E', "SELECT vec_version(), vec_distance_cosine(vec_f32('[1,0,0]'), vec_f32('[0,1,0]')), vec_distance_L2(vec_f32('[1,0,0]'), vec_f32('[0,1,0]'));", "$QB/d03/s04") $E1
-Rec 'vec functions loaded inside gufi_query' $(if ($r.Out -match 'v0\.') { 'PASS' } else { 'FAIL' }) "$(Lines $r.Out | Select-Object -First 1); $($r.Err.Trim())"
+Rec 'vec functions loaded inside gufi_query' $(if ($r.Out -match '1\.0\|1\.41') { 'PASS' } else { 'FAIL' }) "$(Lines $r.Out | Select-Object -First 1); $($r.Err.Trim())"
 # gufi_vt starts gufi_query through /bin/sh
 $f = Sql-File 'vt.sql' @"
 CREATE VIRTUAL TABLE temp.v USING gufi_vt(index='$QB/d03/s04', threads=1, E="SELECT name FROM vrpentries;");
@@ -371,6 +375,41 @@ Rec 'gufi_vt with sh.exe copied into bin' $(if ($vt2 -eq '100') { 'PASS' } else 
 $r = Run-Native sh @('-c', 'pwd; ls / | head -20') $E1
 Say 'What the Cygwin root is when the DLLs are in <payload>\bin (sh.exe: pwd, ls /):'
 Code ($r.Out + $r.Err) 12
+
+
+# ---------------------------------------------------------------------------
+Head '8b. How deep a path GUFI indexes, and LongPathsEnabled'
+$chainPy = Join-Path $Work 'chain.py'
+Set-Content -Path $chainPy -Encoding ascii -Value @'
+import os, sys
+d = '\\\\?\\' + sys.argv[1]
+for i in range(int(sys.argv[2])):
+    d = os.path.join(d, ('c%02d_' % i) + 'y' * 21)
+    os.makedirs(d, exist_ok=True)
+    open(os.path.join(d, 'f.txt'), 'w').write('x')
+print(len(d) - 4)
+'@
+$lpLen = (& python $chainPy 'C:\lp' 80) -join ''
+Say "Chain tree C:\lp: 80 levels of 25-character names, deepest Windows path $lpLen characters"
+function Chain-Index([string]$name) {
+  $dst = Join-Path $Idx $name; New-Item -ItemType Directory -Force $dst | Out-Null
+  $r = Run-Native gufi_dir2index @('-x', '-n', '4', '/cygdrive/c/lp', (Cyg $dst)) $E1
+  $q = Run-Native gufi_query @('-n', '4', '-d', '|', '-S', 'SELECT length(rpath(sname, sroll)) FROM vrsummary;', (Cyg (Join-Path $dst 'lp'))) $E1
+  $lens = @(Lines $q.Out | ForEach-Object { [int]$_ })
+  $err = (Lines $r.Err | Where-Object { $_ -match 'Cannot open' } | Select-Object -First 1)
+  $tail = if ($err) { $err.Substring([math]::Max(0, $err.Length - 160)) } else { '' }
+  Say "- $name: exit $($r.Code); directories indexed $($lens.Count) of 81; longest indexed directory path $(if ($lens) { ($lens | Measure-Object -Maximum).Maximum } else { 0 }) characters (index form); first error ends: $tail"
+}
+Chain-Index 'lp1'
+$fsKey = 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem'
+Set-ItemProperty -Path $fsKey -Name LongPathsEnabled -Value 0
+Say "LongPathsEnabled now: $((Get-ItemProperty $fsKey).LongPathsEnabled)"
+Chain-Index 'lp0'
+$r = Run-Native gufi_query @('-n', '4', '-d', '|', '-E', 'SELECT count(*) FROM vrpentries;', $QB) $E1
+Rec 'index b still readable with LongPathsEnabled=0' $(if ((SumInts $r.Out) -eq 50146) { 'PASS' } else { 'CHECK' }) "$(SumInts $r.Out) entries"
+$r = Run-Native setfattr @('-n', 'user.studio.tags', '-v', 'lp', (Cyg $m.long_files[0].path)) $E2
+Rec 'setfattr on a 360-character path with LongPathsEnabled=0' $(if ($r.Code -eq 0) { 'PASS' } else { 'FAIL' }) "exit $($r.Code) $($r.Err.Trim())"
+Set-ItemProperty -Path $fsKey -Name LongPathsEnabled -Value 1
 
 # ---------------------------------------------------------------------------
 Head '9. Plain PowerShell invocation'
