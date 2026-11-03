@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=ACTIVATE Studio
+GenericName=Knowledge base search
+Comment=Search, query and chat over your documents
+Exec=@BIN@
+TryExec=@BIN@
+Icon=activate-studio
+Terminal=false
+Categories=Office;Utility;
+Keywords=search;documents;index;knowledge;
+StartupWMClass=activate-studio
+StartupNotify=false

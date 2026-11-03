@@ -106,12 +106,29 @@ for d, _dirs, files in os.walk(sys.argv[1]):
 PY
 )"
   if [ -z "$macho" ]; then ok "no macOS (Mach-O) binaries"; else bad "macOS binaries in the payload:"; printf '        %s\n' "$macho"; fi
-  if out="$("$PY" -I "$HERE/elf_check.py" --root "$APP" --max-glibc "$MAX_GLIBC" --max-glibcxx "$MAX_GLIBCXX" --max-cxxabi "$MAX_CXXABI" "$APP" 2>&1)"; then
+  if out="$("$PY" -I "$HERE/elf_check.py" --root "$APP" --skip bin/activate-studio-wk --max-glibc "$MAX_GLIBC" --max-glibcxx "$MAX_GLIBCXX" --max-cxxabi "$MAX_CXXABI" "$APP" 2>&1)"; then
     ok "x86-64, libraries beside the files that load them, no symbol newer than glibc $MAX_GLIBC, libstdc++ $MAX_GLIBCXX"
     printf '%s\n' "$out" | sed 's/^/        /'
   else
     bad "ELF check:"
     printf '%s\n' "$out" | sed 's/^/        /'
+  fi
+
+  # The window shells and installer (desktop/linux), when the tree has them:
+  # a shell links to the computer's own GTK and WebKitGTK, so only its CPU and
+  # the newest glibc it needs are checked (a 4.1 shell is built on Ubuntu
+  # 22.04, so glibc 2.35; the 4.0 shell on RHEL 9, glibc 2.34).
+  if [ -d "$APP/bin" ]; then
+    echo "Desktop"
+    for f in bin/activate-studio bin/activate-studio-wk41 bin/activate-studio-wk40 install.sh uninstall.sh \
+      share/applications/activate-studio.desktop share/icons/hicolor/48x48/apps/activate-studio.png \
+      share/icons/hicolor/512x512/apps/activate-studio.png; do
+      check "$f" test -s "$APP/$f"
+    done
+    for s in "$APP/bin/activate-studio" "$APP/install.sh" "$APP/uninstall.sh"; do check "bash -n $(basename "$s")" bash -n "$s"; done
+    check "the 4.1 shell is x86-64 and needs no glibc newer than 2.35" "$PY" -I "$HERE/elf_check.py" --root "$APP" --no-libs --max-glibc 2.35 "$APP/bin/activate-studio-wk41"
+    check "the 4.0 shell is x86-64 and needs no glibc newer than $MAX_GLIBC" "$PY" -I "$HERE/elf_check.py" --root "$APP" --no-libs --max-glibc "$MAX_GLIBC" "$APP/bin/activate-studio-wk40"
+    check "the menu entry takes its command from the installer (@BIN@)" grep -q '^Exec=@BIN@' "$APP/share/applications/activate-studio.desktop"
   fi
 
   echo "Size"

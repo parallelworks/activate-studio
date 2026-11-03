@@ -24,6 +24,10 @@
 #   LIBATOMIC     the libatomic.so.1 to bundle with Node (default: the one
 #                 gcc reports)
 #   SKIP_BUILD    1 to use the existing server/dist and web/dist
+#   SHELL_DIR     a folder with activate-studio-wk41 and activate-studio-wk40,
+#                 the window shells (desktop/linux/build_shell.sh); when set the
+#                 tree also gets bin/, install.sh, uninstall.sh, the menu entry
+#                 and icons (desktop/linux/add_desktop.sh)
 #
 # Outputs in OUT_DIR: activate-studio/ (the tree);
 # activate-studio-linux-x86_64.tar.gz with its .sha256 and
@@ -218,6 +222,10 @@ cp "$HERE/../mac/update-signing.pub" "$APP/update-signing.pub"
 # The icon a launcher entry or a package names, a 1024-pixel PNG.
 cp "$HERE/../mac/AppIcon-1024.png" "$APP/share/activate-studio.png"
 chmod 755 "$APP/studio-run.sh"
+if [ -n "${SHELL_DIR:-}" ]; then
+  echo "Window shells, launcher, installer..."
+  "$PROJECT_ROOT/desktop/linux/add_desktop.sh" "$APP" "$SHELL_DIR"
+fi
 
 # Links that lead nowhere, such as the one pnpm leaves in .pnpm/node_modules
 # for the workspace's own server package (it points at the source checkout
@@ -227,7 +235,7 @@ find "$APP" -type l | while IFS= read -r l; do [ -e "$l" ] || rm -f "$l"; done
 # The tree's own manifest: what it was built from, and what the checks above
 # found about the libraries it needs.
 echo "Manifest..."
-ELF_REPORT="$(python3 -I "$HERE/elf_check.py" --root "$APP" --max-glibc "$MAX_GLIBC" --max-glibcxx "$MAX_GLIBCXX" --max-cxxabi "$MAX_CXXABI" "$APP")"
+ELF_REPORT="$(python3 -I "$HERE/elf_check.py" --root "$APP" --skip bin/activate-studio-wk --max-glibc "$MAX_GLIBC" --max-glibcxx "$MAX_GLIBCXX" --max-cxxabi "$MAX_CXXABI" "$APP")"
 VERSION="$VERSION" COMMIT="$COMMIT" BUILT_AT="$BUILT_AT" NODE_VERSION="$NODE_VERSION" PY_VERSION="$PY_VERSION" PY_TAG="$PY_TAG" \
   GUFI_SUM="$GUFI_SUM" OCR_SUM="$OCR_SUM" ELF_REPORT="$ELF_REPORT" MAX_GLIBC="$MAX_GLIBC" ASSET="$ASSET" \
   python3 - "$APP" <<'PY'

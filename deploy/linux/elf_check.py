@@ -120,6 +120,10 @@ def main():
     ap.add_argument('--max-glibcxx', default='3.4.29')
     ap.add_argument('--max-cxxabi', default='1.3.13')
     ap.add_argument('--list', action='store_true', help='list the newest glibc version each file needs')
+    ap.add_argument('--skip', action='append', default=[], metavar='PREFIX',
+                    help='leave out files whose path under --root starts with PREFIX (the window shells, checked with --no-libs)')
+    ap.add_argument('--no-libs', action='store_true',
+                    help='do not check the needed libraries (a window shell links to the computer\'s GTK and WebKitGTK)')
     ap.add_argument('files', nargs='+')
     args = ap.parse_args()
     root = os.path.realpath(args.root)
@@ -132,6 +136,8 @@ def main():
     for p in elf_files([root]):
         tree_names.setdefault(os.path.basename(p), []).append(p)
     for p in elf_files(args.files):
+        if any(os.path.relpath(p, root).startswith(pre) for pre in args.skip):
+            continue
         try:
             e = Elf(p)
         except (ValueError, struct.error) as exc:
@@ -149,7 +155,7 @@ def main():
             dirs.append(os.path.normpath(d))
             if entry and not os.path.realpath(dirs[-1]).startswith(root + os.sep) and os.path.realpath(dirs[-1]) != root:
                 problems.append(f'{rel}: run path {entry} leaves the tree')
-        for n in e.needed:
+        for n in ([] if args.no_libs else e.needed):
             if '/' in n:
                 # A needed name with a path (libpython3.so's, $ORIGIN/../lib/...) is loaded from that path.
                 if os.path.exists(os.path.normpath(n.replace('${ORIGIN}', origin).replace('$ORIGIN', origin))):

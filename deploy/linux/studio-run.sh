@@ -15,11 +15,20 @@
 # server follows HTTPS_PROXY, HTTP_PROXY and NO_PROXY from the environment
 # or studio.env).
 #
-# Usage: studio-run.sh DATA_DIR
+# With --once the script starts the server one time and exits with its exit
+# status, for the desktop window (desktop/wails), which does the restarting
+# itself: it starts the server again after 75, and after 76 starts the
+# updated payload's copy of this script. STUDIO_RUN_PORT is the port to use
+# unless studio.env names one (4180 when neither is set). Without --once
+# the PORT default is 4180 as before.
+#
+# Usage: studio-run.sh [--once] DATA_DIR
 set -u
 
+ONCE=0
+if [ "${1:-}" = "--once" ]; then ONCE=1; shift; fi
 RES="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
-DATA="${1:?usage: studio-run.sh DATA_DIR}"
+DATA="${1:?usage: studio-run.sh [--once] DATA_DIR}"
 CONFIG="$DATA/studio.env"
 LOG="$DATA/logs/studio.log"
 DEFAULT_KB="${STUDIO_DEFAULT_KB:-$HOME/Documents/ACTIVATE Studio}"
@@ -67,7 +76,7 @@ while [ "$stopping" = 0 ]; do
   (
     unset KB_ROOT
     # Defaults that studio.env may change; everything it sets is exported.
-    export PORT=4180 INDEX_BASE="$DATA/index" PYTHON_BIN="$RES/python/bin/python3" \
+    export PORT="${STUDIO_RUN_PORT:-4180}" INDEX_BASE="$DATA/index" PYTHON_BIN="$RES/python/bin/python3" \
       STUDIO_GUFI_PREFIX="$RES/gufi" NODE_ENV=production
     if [ -f "$CONFIG" ]; then
       set -a
@@ -117,6 +126,7 @@ while [ "$stopping" = 0 ]; do
   while kill -0 "$pid" 2>/dev/null; do wait "$pid"; code=$?; done
   pid=
   [ "$stopping" = 1 ] && break
+  [ "$ONCE" = 1 ] && exit "$code"
   if [ "$code" = "$RELAUNCH" ] && [ -f "$RES/studio-run.sh" ]; then
     # An update replaced the payload: its own run loop takes over this
     # process, reading its own script rather than this one.

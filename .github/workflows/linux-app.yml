@@ -13,13 +13,22 @@
 # user: indexing, search, Query, search by meaning, OCR, document
 # conversion and the update check.
 #
-# Nothing here publishes: the archive is a workflow artifact for 30 days.
-# There is no release job and no update channel yet.
+# The window shell (desktop/wails, Wails v2) is built for both WebKitGTK
+# APIs, the 4.1 one on Ubuntu 22.04 (which runs on Ubuntu 24.04 too) and the
+# 4.0 one on Rocky Linux 9, and goes into the tree with the launcher and the
+# install scripts (desktop/linux). From that tree come the per-user archive
+# and the .deb (4.1 shell) and .rpm (4.0 shell), built with nfpm. Each
+# install type is then installed in a clean container of each target
+# distribution, started under Xvfb, checked (the Studio draws, a search finds
+# a document), quit, and uninstalled (desktop/linux/test_install.sh).
+#
+# Nothing here publishes: the archive and packages are workflow artifacts for
+# 30 days. There is no release job and no update channel yet.
 name: linux-app
 
 on:
   push:
-    branches: [linux-app]
+    branches: [linux-app, linux-desktop]
   workflow_dispatch:
 
 permissions: {}
@@ -69,10 +78,47 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  # The window shell for each WebKitGTK API, built (and unit tested) in a
+  # container of the oldest distribution that has the API, so that its glibc
+  # requirement is the lowest it can be.
+  shell:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: wk41
+            image: ubuntu:22.04
+          - variant: wk40
+            image: rockylinux:9
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: build ${{ matrix.variant }} in ${{ matrix.image }}
+        env:
+          VARIANT: ${{ matrix.variant }}
+          IMAGE: ${{ matrix.image }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/out" "$RUNNER_TEMP/cache"
+          docker run --rm -v "$GITHUB_WORKSPACE:/src:ro" -v "$RUNNER_TEMP/out:/out" -v "$RUNNER_TEMP/cache:/cache" \
+            -e SRC=/src -e OUT_DIR=/out -e CACHE_DIR=/cache -e VERSION="$GITHUB_SHA" "$IMAGE" bash "/src/desktop/linux/build_shell.sh" "$VARIANT"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: shell-${{ matrix.variant }}
+          path: ${{ runner.temp }}/out/activate-studio-${{ matrix.variant }}
+          if-no-files-found: error
+          retention-days: 30
+
   # The payload: the server and web app built here, the pinned Node and
-  # Python, and the two archives above, put together and checked.
+  # Python, the two archives above and the window shells, put together and
+  # checked.
   app:
-    needs: native
+    needs: [native, shell]
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
@@ -94,6 +140,11 @@ jobs:
           pattern: native-*
           path: ${{ runner.temp }}/native
           merge-multiple: true
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: shell-*
+          path: ${{ runner.temp }}/shells
+          merge-multiple: true
       - name: install and build
         run: |
           pnpm install --frozen-lockfile
@@ -106,7 +157,10 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update -qq
-          sudo apt-get install -y -qq --no-install-recommends patchelf libatomic1
+          sudo apt-get install -y -qq --no-install-recommends patchelf libatomic1 imagemagick shellcheck
+          shellcheck -x -s bash -S warning desktop/linux/*.sh desktop/linux/activate-studio
+          export SHELL_DIR="$RUNNER_TEMP/shells"
+          ls -l "$SHELL_DIR"
           (cd "$RUNNER_TEMP/native" && sha256sum -c gufi-linux-x86_64.tar.gz.sha256 ocr-linux-x86_64.tar.gz.sha256)
           start=$(date +%s)
           GUFI_TARBALL="$RUNNER_TEMP/native/gufi-linux-x86_64.tar.gz" OCR_TARBALL="$RUNNER_TEMP/native/ocr-linux-x86_64.tar.gz" \
@@ -194,4 +248,120 @@ jobs:
         with:
           name: test-log-${{ strategy.job-index }}
           path: ${{ runner.temp }}/test.log
+          retention-days: 30
+
+  # The .deb and the .rpm, from the archive above with nfpm (pinned, and
+  # checked against the published SHA-256).
+  packages:
+    needs: app
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      NFPM_VERSION: "2.46.0"
+      NFPM_SHA256: 43b4cb72cde2d6e61c02e5b330e3276882252bf67c057e089957f9dbd2c8de42
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: activate-studio-linux-x86_64
+          path: ${{ runner.temp }}/in
+      - name: build the packages
+        run: |
+          set -euo pipefail
+          (cd "$RUNNER_TEMP/in" && sha256sum -c activate-studio-linux-x86_64.tar.gz.sha256)
+          curl -fsSL -o "$RUNNER_TEMP/nfpm.tgz" "https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VERSION}/nfpm_${NFPM_VERSION}_Linux_x86_64.tar.gz"
+          echo "$NFPM_SHA256  $RUNNER_TEMP/nfpm.tgz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/nfpm.tgz" -C "$RUNNER_TEMP" nfpm
+          NFPM="$RUNNER_TEMP/nfpm" desktop/linux/build_packages.sh "$RUNNER_TEMP/in/activate-studio-linux-x86_64.tar.gz" "$RUNNER_TEMP/pkgs"
+          (cd "$RUNNER_TEMP/pkgs" && sha256sum ./* >SHA256SUMS && cat SHA256SUMS)
+          {
+            echo "### Packages"
+            echo '```'
+            ls -l "$RUNNER_TEMP/pkgs"
+            echo '```'
+          } >>"$GITHUB_STEP_SUMMARY"
+      - name: package metadata
+        run: |
+          set -euo pipefail
+          dpkg-deb -I "$RUNNER_TEMP"/pkgs/*.deb
+          dpkg-deb -c "$RUNNER_TEMP"/pkgs/*.deb | grep -E ' \./(usr|opt/activate-studio/(bin|PACKAGE))' | head -n 30
+          rpm_info() { docker run --rm -v "$RUNNER_TEMP/pkgs:/p:ro" rockylinux:9 bash -c 'rpm -qpi /p/*.rpm; rpm -qpR /p/*.rpm; rpm -qp --provides /p/*.rpm; rpm -qpl /p/*.rpm | grep -E "^/(usr|opt/activate-studio/(bin|PACKAGE))"'; }
+          rpm_info
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: packages
+          path: |
+            ${{ runner.temp }}/pkgs/*.deb
+            ${{ runner.temp }}/pkgs/*.rpm
+            ${{ runner.temp }}/pkgs/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 30
+
+  # Each install type in a clean container of each target distribution, run
+  # under Xvfb as a plain user (desktop/linux/test_install.sh). The tarball is
+  # installed without sudo, first without WebKitGTK (the browser fallback),
+  # then with the system's package for it; the packages with apt or dnf.
+  # WebKitGTK's sandbox needs unprivileged user namespaces, so the containers
+  # run without Docker's seccomp and AppArmor profiles.
+  install:
+    needs: [app, packages]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {image: "ubuntu:22.04", kind: tarball, webkit: libwebkit2gtk-4.1-0, shell: wk41}
+          - {image: "ubuntu:22.04", kind: tarball, webkit: libwebkit2gtk-4.0-37, shell: wk40}
+          - {image: "ubuntu:22.04", kind: deb, webkit: "", shell: wk41}
+          - {image: "ubuntu:24.04", kind: tarball, webkit: libwebkit2gtk-4.1-0, shell: wk41}
+          - {image: "ubuntu:24.04", kind: deb, webkit: "", shell: wk41}
+          - {image: "rockylinux/rockylinux:9", kind: tarball, webkit: webkit2gtk3, shell: wk40}
+          - {image: "rockylinux/rockylinux:9", kind: rpm, webkit: "", shell: wk40}
+          - {image: "almalinux:9", kind: tarball, webkit: webkit2gtk3, shell: wk40}
+          - {image: "almalinux:9", kind: rpm, webkit: "", shell: wk40}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: "{activate-studio-linux-x86_64,packages}"
+          path: ${{ runner.temp }}/in
+          merge-multiple: true
+      - name: ${{ matrix.kind }} on ${{ matrix.image }}
+        env:
+          IMAGE: ${{ matrix.image }}
+          KIND: ${{ matrix.kind }}
+          WEBKIT_PACKAGES: ${{ matrix.webkit }}
+          EXPECT_SHELL: ${{ matrix.shell }}
+        run: |
+          set -euo pipefail
+          (cd "$RUNNER_TEMP/in" && sha256sum -c activate-studio-linux-x86_64.tar.gz.sha256)
+          mkdir -p "$RUNNER_TEMP/out"
+          docker run --rm --init --security-opt seccomp=unconfined --security-opt apparmor=unconfined \
+            -v "$GITHUB_WORKSPACE:/src:ro" -v "$RUNNER_TEMP/in:/in:ro" -v "$RUNNER_TEMP/out:/out" \
+            -e WEBKIT_PACKAGES -e EXPECT_SHELL "$IMAGE" bash /src/desktop/linux/test_install.sh "$KIND" 2>&1 | tee "$RUNNER_TEMP/out/test.log"
+      - name: summary
+        if: always()
+        env:
+          TITLE: ${{ matrix.kind }} on ${{ matrix.image }}
+        run: |
+          {
+            echo "### $TITLE"
+            echo '```'
+            grep -E '^(Image:|  (ok|FAIL|note) |Result:)' "$RUNNER_TEMP/out/test.log" | cut -c1-220
+            echo '```'
+          } >>"$GITHUB_STEP_SUMMARY" || true
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: install-${{ strategy.job-index }}-${{ matrix.kind }}
+          path: ${{ runner.temp }}/out
           retention-days: 30
