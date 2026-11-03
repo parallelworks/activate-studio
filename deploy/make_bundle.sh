@@ -92,9 +92,13 @@ fi
 cp "$CACHE/${NODE_DIST}.tar.xz" "$STAGE/"
 
 echo "Fetching GUFI source..."
-if [ ! -d "$CACHE/GUFI" ]; then
-  git clone --depth 1 --recurse-submodules --shallow-submodules \
+# The 0.8.0 release, by its commit. A copy cached from another GUFI is fetched again.
+GUFI_COMMIT=021a717a6089b9e28b068695dc7c7f3732fd1a56
+if [ "$(git -C "$CACHE/GUFI" rev-parse HEAD 2>/dev/null)" != "$GUFI_COMMIT" ]; then
+  rm -rf "$CACHE/GUFI"
+  git clone --depth 1 --branch 0.8.0 --recurse-submodules --shallow-submodules \
     https://github.com/mar-file-system/GUFI "$CACHE/GUFI"
+  [ "$(git -C "$CACHE/GUFI" rev-parse HEAD)" = "$GUFI_COMMIT" ] || { echo "GUFI tag 0.8.0 is not commit $GUFI_COMMIT" >&2; exit 1; }
 fi
 tar -C "$CACHE" --exclude='GUFI/.git' -czf "$STAGE/gufi-src.tar.gz" GUFI
 

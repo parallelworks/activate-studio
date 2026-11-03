@@ -20,7 +20,7 @@
 #
 # Usage: deploy/mac/build_gufi.sh
 #   GUFI_REF     GUFI branch, tag or commit (default: the commit of GUFI's
-#                macos-pkg-test release, whose package build_app.sh uses)
+#                0.8.0 tag)
 #   GUFI_SRC     an existing GUFI checkout to build as it is, instead of
 #                cloning GUFI_REF
 #   MACOSX_DEPLOYMENT_TARGET  the oldest macOS the tree runs on (default 14.0)
@@ -41,7 +41,7 @@ CACHE_DIR="${CACHE_DIR:-$HERE/.cache}"
 ASSET=gufi-macos-arm64
 TARGET="${MACOSX_DEPLOYMENT_TARGET:-14.0}"
 GUFI_REPO=https://github.com/mar-file-system/GUFI
-GUFI_REF="${GUFI_REF:-1713537a4b8fbc188fa75f8e9845edcaf8bf69ba}"
+GUFI_REF="${GUFI_REF:-021a717a6089b9e28b068695dc7c7f3732fd1a56}"   # tag 0.8.0
 
 # Pinned sources, checked against their SHA-256 on every build. libomp is
 # the release build_app.sh takes as a Homebrew bottle, built here from
@@ -156,11 +156,12 @@ echo "PCRE2 $PCRE2_VERSION..."
 fetch "https://github.com/PCRE2Project/pcre2/releases/download/pcre2-$PCRE2_VERSION/pcre2-$PCRE2_VERSION.tar.bz2" \
   "$CACHE_DIR/pcre2-$PCRE2_VERSION.tar.bz2" "$PCRE2_SHA256"
 tar -xjf "$CACHE_DIR/pcre2-$PCRE2_VERSION.tar.bz2" -C "$WORK"
-# Shared only, so that every GUFI file links the one library the tree
-# carries; JIT on, as in the Homebrew build the package path uses.
+# Shared, which libsqlite3-pcre loads, and static (position independent), which
+# GUFI 0.8.0 links into its tools and into gufi_vt; JIT on, as in the Homebrew
+# build the package path uses.
 (
   cd "$WORK/pcre2-$PCRE2_VERSION"
-  run ./configure --prefix="$DEPS" --disable-static --enable-jit
+  run ./configure --prefix="$DEPS" --enable-shared --enable-static --with-pic --enable-jit
   run make -j "$JOBS"
   run make install
 )
@@ -213,6 +214,24 @@ echo "  $GUFI_DESCRIBE ($GUFI_COMMIT)"
   # bundled dependencies' libraries, which a plain install leaves out. It
   # also installs an example config at the absolute /etc/GUFI, so the
   # install goes under a root of its own and only the prefix is used.
+  # GUFI 0.8.0's install copies its dependencies' licenses from <build>/licenses,
+  # which its contrib/CI/licenses.sh downloads (wget) from the projects' main
+  # branches. They are put there from the sources built here, the ones the
+  # tree's licenses/ comes from below.
+  mkdir -p "$BUILD/licenses"
+  B0="$BUILD/builds"
+  stock() {   # stock SOURCE NAME
+    [ -f "$1" ] || die "no license at $1 (has GUFI's dependency layout changed?)"
+    cp "$1" "$BUILD/licenses/$2"
+  }
+  stock "$WORK/pcre2-$PCRE2_VERSION/LICENCE.md" pcre2-LICENSE.md
+  stock "$B0/sqlite-vec-main/LICENSE-APACHE" sqlite-vec-LICENSE-APACHE
+  stock "$B0/sqlite-vec-main/LICENSE-MIT" sqlite-vec-LICENSE-MIT
+  stock "$B0/sqlite-lembed/vendor/llama.cpp/LICENSE" llama.cpp-LICENSE
+  stock "$WORK/$LLVM_SRC/openmp/LICENSE.TXT" openmp-LICENSE.TXT
+  stock "$B0/jemalloc-dev/COPYING" jemalloc-COPYING
+  printf '%s\n' "sqlite-lembed has no license file in its repository; its sqlite-dist.toml lists MIT OR Apache." \
+    "See the licenses of sqlite-vec, which are the same, from the same author." >"$BUILD/licenses/sqlite-lembed"
   run env DESTDIR="$WORK/root" cmake --install "$BUILD" --component Local --prefix "$STAGE"
 )
 
@@ -226,6 +245,17 @@ cp -L "$DEPS/lib/libpcre2-8.0.dylib" "$TREE/lib/"
 # carry), build metadata, and links to files that are not installed.
 rm -rf "$TREE/lib/pkgconfig" "$TREE/lib/cmake" "$TREE"/lib/libllama-common* "$TREE"/lib/libpresidio_plugin* \
   "$TREE"/lib/*.a "$TREE"/lib/*.la
+# GUFI 0.8.0 installs some libraries (libvec0, liblembed0, libsqlite3) as links
+# to a file by absolute path, a path of its build that is not in the tree. In
+# the tree they are links to the file of that name beside them.
+for l in "$TREE"/lib/*; do
+  [ -L "$l" ] || continue
+  case "$(readlink "$l")" in
+    /*) own="$(basename "$(readlink "$l")")"
+        rm -f "$l"
+        if [ "$own" != "$(basename "$l")" ] && [ -f "$TREE/lib/$own" ]; then ln -s "$own" "$l"; fi ;;
+  esac
+done
 for l in "$TREE"/lib/* "$TREE"/bin/*; do
   if [ -L "$l" ] && [ ! -e "$l" ]; then rm -f "$l"; fi
 done
@@ -249,6 +279,25 @@ done
 if grep -E "built for newer '?macOS'? version" "$LOG" | sort -u | head -n 20 | grep .; then
   die "parts of the build target a newer macOS than $TARGET (above)"
 fi
+
+# A file that loads libraries through @rpath is given the run path macho_relink.py
+# sets for the rest: the folder it is in, or lib/ from bin/. GUFI 0.8.0's
+# sqlite3-pcre has none, and its libdsi_querying has the run path "/lib", which
+# is too short a slot for @loader_path, so macho_relink.py cannot overwrite it.
+# Signed again below.
+for f in "${MACHO[@]}"; do
+  otool -L "$f" | tail -n +2 | grep -q '@rpath/' || continue
+  case "$f" in "$TREE"/bin/*) rp='@loader_path/../lib' ;; *) rp='@loader_path' ;; esac
+  first="$(otool -l "$f" | awk '/cmd LC_RPATH/ {r = 1} r && $1 == "path" {print $2; exit}')"
+  [ "$first" != "$rp" ] || continue
+  echo "  run path of $(basename "$f"): ${first:-none} -> $rp (it loads through @rpath):"
+  otool -L "$f" | tail -n +2 | grep '@rpath/' | sed 's/^/    /'
+  if [ -n "$first" ]; then
+    install_name_tool -rpath "$first" "$rp" "$f" || die "install_name_tool could not change the run path $first of $f"
+  else
+    install_name_tool -add_rpath "$rp" "$f" || die "install_name_tool could not add a run path to $f"
+  fi
+done
 
 echo "Relinking and signing..."
 CHANGED="$(python3 "$HERE/macho_relink.py" "$TREE" | wc -l)"

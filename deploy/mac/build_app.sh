@@ -46,9 +46,9 @@ NODE_SHA256=751fdf7439f115d87ee2a8f3f18c065b6151852068e3e666ac60ac2996f75ac9
 PY_TAG=20261013          # python-build-standalone release
 PY_VERSION=3.12.15
 PY_SHA256=9866e11cf2ae9caa1e671383786f248859a52dd8bfb702fb4c0dc2c65f1d36de
-GUFI_PKG_URL=https://github.com/mar-file-system/GUFI/releases/download/macos-pkg-test/gufi-0.7.0.macOS.arm64.pkg
-GUFI_PKG_SHA256=deb8e254c774dcf3324211b1a368380f17fa23d059883af45004c06470ba4826
-GUFI_COMMIT=1713537a4b8fbc188fa75f8e9845edcaf8bf69ba    # that release's tag, for LICENSE.txt
+GUFI_PKG_URL=https://github.com/mar-file-system/GUFI/releases/download/0.8.0/gufi-0.8.0.macOS.arm64.pkg
+GUFI_PKG_SHA256=b45cdaf8d7839faf112196555ecfd59c383316985ed2d136563bb29d53bfd75e
+GUFI_COMMIT=021a717a6089b9e28b068695dc7c7f3732fd1a56    # that release's tag, for LICENSE.txt
 GUFI_LICENSE_SHA256=9e40647012a77d1fdcac90a9b7241843900cb589631b5c7f7cbad793a91828aa
 # GUFI's package links libomp and pcre2 from a Homebrew install it does not
 # carry; the app takes them from Homebrew's macOS 15 bottles.
@@ -219,7 +219,7 @@ else
     PKG="$CACHE_DIR/$(basename "$GUFI_PKG_URL")"
     fetch "$GUFI_PKG_URL" "$PKG" "$GUFI_PKG_SHA256"
   fi
-  python3 "$HERE/pkg_extract.py" "$PKG" "$G" --prefix usr/local --only bin lib
+  python3 "$HERE/pkg_extract.py" "$PKG" "$G" --prefix Applications --only bin lib --drop-absolute-links
   # Libraries nothing here loads, whose own dependencies (OpenSSL, cJSON) the
   # package does not carry; and links whose targets it does not ship.
   rm -rf "$G/lib/pkgconfig" "$G"/lib/libllama-common* "$G/lib/libpresidio_plugin.dylib"

@@ -25,6 +25,7 @@ import { KbError } from './kb.js'
 import { REMOTE_PREFIX, learnReached, loadUserLibraries, ownerOf, reachedLabel, remoteRootOf } from './userLibraries.js'
 import { rmTreeSync } from './indexModes.js'
 import { execRun, noteGufi } from './gufiTrace.js'
+import { formatNote, formatOfColumns, type FormatRecord } from './indexFormat.js'
 
 export interface LibraryCaps {
   /** A GUFI tree: a db.db at the root. */
@@ -60,6 +61,8 @@ export interface Library {
   caps: LibraryCaps
   /** A user's library on one of their clusters (userLibraries.ts). */
   site?: string | null
+  /** Which GUFI wrote the index (indexFormat.ts); unknown until it is probed. */
+  format?: FormatRecord | null
 }
 
 export interface LibraryDef {
@@ -107,6 +110,9 @@ export interface PublicLibrary {
   meaning: MeaningLevel | null
   /** How deep it is indexed, for a library the Studio builds; null otherwise. */
   depth: IndexDepth | null
+  /** What to tell the person about the GUFI that wrote the index, where it
+   *  matters (an index from before 0.8.0); null otherwise. */
+  formatNote: string | null
 }
 
 /** Where a library the Studio built keeps its own files: the extraction
@@ -135,6 +141,8 @@ const PROBE_RETRY_MS = 30_000
  */
 export interface KnownCaps {
   caps: LibraryCaps; probedAt: string; stale: boolean; error?: string
+  /** The GUFI that wrote the tree, from its top summary table (indexFormat.ts). */
+  format?: FormatRecord
   /** When the whole tree was last looked at for words and vectors, so a
    *  false there is known rather than a sample's miss. */
   exactAt?: string
@@ -157,6 +165,7 @@ function knownCapsMap(): Map<string, KnownCaps> {
         known.set(root, {
           caps: { index: !!r.caps.index, fullText: !!r.caps.fullText, vectors: !!r.caps.vectors }, probedAt: String(r.probedAt ?? ''), stale: !!r.stale,
           ...(r.error ? { error: String(r.error) } : {}), ...(r.exactAt ? { exactAt: String(r.exactAt) } : {}),
+          ...(r.format && ['current', 'earlier', 'older'].includes(r.format.format) ? { format: { format: r.format.format, ...(r.format.rolledUp != null ? { rolledUp: !!r.format.rolledUp } : {}) } } : {}),
         })
       }
     }
@@ -298,6 +307,39 @@ function countTables(abs: string): Promise<{ words: number; vectors: number } | 
   })
 }
 
+/** Whether any directory of a tree written before GUFI 0.8.0 was rolled up
+ *  (rollupscore above 0), in one aggregate gufi_query: GUFI 0.8.0 cannot
+ *  tell a rolled-up directory of such a tree, and lists its entries wrongly. */
+function countRolledUp(abs: string): Promise<boolean | null> {
+  const bin = path.join(GUFI_BIN, 'gufi_query')
+  if (!fs.existsSync(bin)) return Promise.resolve(null)
+  const threads = Math.min(Math.max(os.availableParallelism?.() ?? os.cpus().length, 1), 8)
+  const args = ['-n', String(threads), '-a', '1', '-d', '|',
+    '-I', 'CREATE TABLE t (n INT64);', '-K', 'CREATE TABLE agg (n INT64);',
+    '-E', 'INSERT INTO t SELECT count(*) FROM summary WHERE rollupscore > 0;',
+    '-J', 'INSERT INTO agg SELECT sum(n) FROM t;',
+    '-G', 'SELECT sum(n) FROM agg;', abs]
+  const t0 = Date.now()
+  return new Promise(resolve => {
+    execFile(bin, args, { timeout: 10 * 60_000, maxBuffer: 1 << 20, env: gufiEnv() }, (err, so, se) => {
+      noteGufi([bin, ...args], { show: false, source: 'libraries', ...execRun(err, se, t0) })
+      const m = /^(\d+)\s*$/m.exec(String(so ?? ''))
+      resolve(m ? Number(m[1]) > 0 : null)
+    })
+  })
+}
+
+/** Which GUFI wrote a tree: its top directory's summary columns (one
+ *  gufi_sqlite3 call), and for a tree from before 0.8.0 whether any folder
+ *  was rolled up. Null where the columns could not be read. */
+export async function detectFormat(abs: string): Promise<FormatRecord | null> {
+  const out = await sqlite(`ATTACH '${path.join(abs, 'db.db').replace(/'/g, "''")}' AS d;\nSELECT group_concat(name) FROM pragma_table_info('summary', 'd');\n`)
+  const format = formatOfColumns(out.trim().split('\n').pop() ?? '')
+  if (!format) return null
+  if (format !== 'older') return { format }
+  return { format, rolledUp: (await countRolledUp(abs)) ?? undefined }
+}
+
 /**
  * Learn what a tree supports. A GUFI index has a db.db at its root; the
  * Studio's own tables are looked for first in a sample of directory
@@ -349,19 +391,27 @@ async function probeNow(abs: string): Promise<LibraryCaps> {
       }
     }
   }
+  // Which GUFI wrote the tree. A tree that could not be read keeps the last
+  // answer; a stale probe does not clear it.
+  let format = was?.format
+  if (caps.index && gufiInstalled() && !(tried > 0 && failed === tried)) {
+    const found = await detectFormat(abs).catch(() => null)
+    if (found) format = found
+  }
   const map = knownCapsMap()
   if (tried > 0 && failed === tried) {
     // Not one database could be read: say nothing new about the tree. The
     // last known capabilities stay, marked stale, and the probe runs again
     // soon (a busy disk, a database being swapped in).
     const keep = was?.caps ?? caps
-    map.set(abs, { caps: keep, probedAt: was?.probedAt ?? '', stale: true, error: lastError })
+    map.set(abs, { caps: keep, probedAt: was?.probedAt ?? '', stale: true, error: lastError, ...(was?.format ? { format: was.format } : {}) })
     saveKnownCaps()
     probeCache.set(abs, { caps: keep, at: Date.now() - PROBE_TTL_MS + PROBE_RETRY_MS })
     return keep
   }
   const changed = !was || was.stale || was.caps.index !== caps.index || was.caps.fullText !== caps.fullText || was.caps.vectors !== caps.vectors || was.exactAt !== exactAt
-  map.set(abs, { caps, probedAt: new Date().toISOString(), stale: false, ...(exactAt ? { exactAt } : {}) })
+    || was.format?.format !== format?.format || was.format?.rolledUp !== format?.rolledUp
+  map.set(abs, { caps, probedAt: new Date().toISOString(), stale: false, ...(exactAt ? { exactAt } : {}), ...(format ? { format } : {}) })
   if (changed) saveKnownCaps()
   probeCache.set(abs, { caps, at: Date.now() })
   // Without exactAt the record says only what the sample found, and search
@@ -420,6 +470,7 @@ function primaryLibrary(label: string): Library {
     caps: (c => (primaryIndexed() ? { ...c, index: true } : { index: false, fullText: false, vectors: false }))(capsOf(path.resolve(GUFI_INDEX), () => ({ index: primaryIndexed(), fullText: primaryIndexed(), vectors: false }))),
     meaning: indexSettings(PRIMARY_ID).meaning,
     depth: indexSettings(PRIMARY_ID).depth,
+    format: knownCapsMap().get(path.resolve(GUFI_INDEX))?.format ?? null,
   }
 }
 
@@ -438,6 +489,7 @@ function fromDef(d: LibraryDef, pinned: boolean): Library {
     caps: capsOf(abs, () => ({ index: fs.existsSync(path.join(abs, 'db.db')), fullText: false, vectors: false })),
     meaning: d.build ? indexSettings(d.id).meaning : null,
     depth: d.build ? indexSettings(d.id).depth : null,
+    format: knownCapsMap().get(abs)?.format ?? null,
   }
 }
 
@@ -457,6 +509,7 @@ function userLibrariesOf(viewerId: string | null | undefined): Library[] {
     writable: false, primary: false, pinned: false, caps: { index: true, fullText: !!d.fullText, vectors: !!d.vectors }, site: reachedLabel(d) ?? d.site,
     meaning: d.build ? indexSettings(d.id).meaning : null,
     depth: d.build ? indexSettings(d.id).depth : null,
+    format: d.indexFormat ?? null,
   }))
 }
 
@@ -601,7 +654,7 @@ export function removeLibrary(id: string): void {
 }
 
 export function publicLibrary(l: Library): PublicLibrary {
-  return { id: l.id, label: l.label, primary: l.primary, writable: l.writable, pinned: l.pinned, source: !!l.sourceRoot || !!l.site, caps: l.caps, site: l.site ?? null, meaning: l.meaning ?? null, depth: l.depth ?? null }
+  return { id: l.id, label: l.label, primary: l.primary, writable: l.writable, pinned: l.pinned, source: !!l.sourceRoot || !!l.site, caps: l.caps, site: l.site ?? null, meaning: l.meaning ?? null, depth: l.depth ?? null, formatNote: formatNote(l.format) }
 }
 
 /** What Settings shows of a build: its state and, while it runs, how far it

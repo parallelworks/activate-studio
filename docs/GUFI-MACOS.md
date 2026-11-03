@@ -4,21 +4,21 @@ The macOS app carries [GUFI](https://github.com/mar-file-system/GUFI), built fro
 
 ## The published build
 
-The release [`gufi-1713537-macos14`](https://github.com/parallelworks/activate-studio/releases/tag/gufi-1713537-macos14) is a prerelease of this repository, separate from the app's releases. It holds `gufi-macos-arm64.tar.gz`, its `.sha256`, and `gufi-macos-arm64.manifest.json`, which records what was built:
+The release [`gufi-021a717-macos14`](https://github.com/parallelworks/activate-studio/releases/tag/gufi-021a717-macos14), the one the app uses, is a prerelease of this repository, separate from the app's releases, and holds GUFI 0.8.0 (commit `021a717a`, GUFI's `0.8.0` tag). The earlier `gufi-1713537-macos14` holds GUFI commit `1713537a` and is kept for older app builds. The table is the 0.8.0 build, as its manifest recorded it. The release holds `gufi-macos-arm64.tar.gz`, its `.sha256`, and `gufi-macos-arm64.manifest.json`, which records what was built:
 
 | | |
 |---|---|
-| GUFI | commit `1713537a` (GUFI's `macos-pkg-test` tag) |
+| GUFI | 0.8.0, commit `021a717a` (GUFI's `0.8.0` tag) |
 | Runs on | macOS 14.0 and later, Apple silicon |
 | Bundled by GUFI | SQLite 3.53.4, sqlite3-pcre, sqlite-vec 0.1.10-alpha.4, sqlite-lembed 0.0.1-alpha.8, llama.cpp, jemalloc |
-| Built here from release sources | LLVM OpenMP 23.1.4, PCRE2 10.49 |
+| Built here from release sources | LLVM OpenMP 23.1.4, PCRE2 10.49 (shared and static) |
 | Built with | Homebrew clang 23.1, macOS SDK 15.5, on macOS 15.7 |
 
 The archive unpacks to `gufi/` with `bin` (every GUFI tool), `lib` (`gufi_vt.dylib`, `vec0.dylib`, `lembed0.dylib`, the llama.cpp and ggml libraries, `libomp.dylib`, `libpcre2-8.0.dylib`), `licenses`, `README.txt` and `manifest.json`. The tools load their libraries from `lib` wherever the tree is, with no `DYLD_LIBRARY_PATH`.
 
 ```
-curl -fsSLO https://github.com/parallelworks/activate-studio/releases/download/gufi-1713537-macos14/gufi-macos-arm64.tar.gz
-curl -fsSLO https://github.com/parallelworks/activate-studio/releases/download/gufi-1713537-macos14/gufi-macos-arm64.tar.gz.sha256
+curl -fsSLO https://github.com/parallelworks/activate-studio/releases/download/gufi-021a717-macos14/gufi-macos-arm64.tar.gz
+curl -fsSLO https://github.com/parallelworks/activate-studio/releases/download/gufi-021a717-macos14/gufi-macos-arm64.tar.gz.sha256
 shasum -a 256 -c gufi-macos-arm64.tar.gz.sha256
 tar -xzf gufi-macos-arm64.tar.gz
 export PATH="$PWD/gufi/bin:$PATH"     # gufi_vt starts gufi_query by name
@@ -39,11 +39,11 @@ deploy/mac/build_gufi.sh
 deploy/mac/check_gufi.sh deploy/mac/out/gufi-macos-arm64.tar.gz
 ```
 
-The build takes about six minutes on a GitHub `macos-15` runner and writes the archive, its `.sha256` and the manifest to `deploy/mac/out`. It installs its build tools with Homebrew unless `SKIP_BREW=1`. Other settings:
+The build takes about eight minutes on a GitHub `macos-15` runner and writes the archive, its `.sha256` and the manifest to `deploy/mac/out`. It installs its build tools with Homebrew unless `SKIP_BREW=1`. Other settings:
 
 | Variable | Default | |
 |---|---|---|
-| `GUFI_REF` | `1713537a…` | GUFI branch, tag or commit to clone |
+| `GUFI_REF` | `021a717a…` | GUFI branch, tag or commit to clone |
 | `GUFI_SRC` | | an existing GUFI checkout, built as it is |
 | `MACOSX_DEPLOYMENT_TARGET` | `14.0` | the oldest macOS the tree runs on |
 | `OUT_DIR`, `CACHE_DIR` | `deploy/mac/out`, `deploy/mac/.cache` | outputs, and downloads kept between builds |
@@ -55,10 +55,10 @@ Homebrew must not have `jemalloc` installed: GUFI links one that pkg-config find
 
 1. *Build tools:* GUFI's `contrib/CI/macos.sh` list from Homebrew (CMake, pkgconf, LLVM, the autotools, gettext, and the GNU coreutils, findutils, sed, patch, grep, diffutils and flock, first on `PATH` for the build). Nothing the tree loads comes from Homebrew.
 2. *The deployment target* goes into the environment as `MACOSX_DEPLOYMENT_TARGET`, which clang and CMake both read, so it reaches the nested configure and CMake runs GUFI uses for its bundled dependencies. A flag given to GUFI's own CMake does not reach those.
-3. *LLVM OpenMP and PCRE2* are built from their release sources, pinned by SHA-256, for the same target: Homebrew's bottles of both need a newer macOS. PCRE2 is built shared with JIT, so every GUFI file links the one copy in the tree.
+3. *LLVM OpenMP and PCRE2* are built from their release sources, pinned by SHA-256, for the same target: Homebrew's bottles of both need a newer macOS. PCRE2 is built shared and static, with JIT: GUFI 0.8.0 links the static library into its tools and into `gufi_vt`, and the bundled `libsqlite3-pcre` loads the shared one, which the tree carries.
 4. *A compiler wrapper.* The llama.cpp that sqlite-lembed vendors uses `errno`, `EXIT_FAILURE`, `std::fill` and `std::hardware_destructive_interference_size` without including their headers, which libc++ in LLVM 23 no longer pulls in through others. GUFI's dependency build sets its own flags for that project, so `CXXFLAGS` does not reach it; the C++ compiler is a wrapper that includes the common standard headers in every compile.
-5. *GUFI* with `-DDEP_AI=On` and OpenMP pointed at the libomp from step 3, then `cmake --install --component Local` under a `DESTDIR`, since the install also writes an example config to `/etc/GUFI`.
-6. *The tree:* `bin` and `lib` from the install, plus libomp and PCRE2. `libllama-common` (which links OpenSSL and cJSON, not in the tree) and `libpresidio_plugin`, which nothing loads, are left out, with static libraries, build metadata and links to files that were not installed.
+5. *GUFI* with `-DDEP_AI=On` and OpenMP pointed at the libomp from step 3, then `cmake --install --component Local` under a `DESTDIR`, since the install also writes an example config to `/etc/GUFI`. GUFI 0.8.0's install takes its dependencies' licenses from `<build>/licenses`, which its own script downloads from the projects' main branches; they are put there from the sources built here instead.
+6. *The tree:* `bin` and `lib` from the install, plus libomp and PCRE2. `libllama-common` (which links OpenSSL and cJSON, not in the tree) and `libpresidio_plugin`, which nothing loads, are left out, with static libraries, build metadata and links to files that were not installed. GUFI 0.8.0 installs `libvec0`, `liblembed0` and `libsqlite3` as links by absolute path to files of its build; they become links to the file of that name beside them. A library that loads others through `@rpath` and has no run path, or the run path `/lib` (`sqlite3-pcre`, and the dsi querying plugin), is given `@loader_path` with `install_name_tool` before the relink, and signed again with the rest.
 7. *Checks on the build:* no file links a library from Homebrew or `/usr/local`, and the linker reported no object built for a newer macOS than the target.
 8. *Relinking* (`deploy/mac/macho_relink.py`): every library reference and rpath that names the build machine is rewritten relative to the file (`@loader_path`), so the tree runs from wherever it is unpacked. Each file is then signed ad hoc, since Apple silicon runs only signed code and the rewrite invalidates the old signature.
 9. *Licenses* for GUFI, sqlite-vec, sqlite-lembed (which states its license in `sqlite-dist.toml` rather than a file), llama.cpp, jemalloc, LLVM OpenMP and PCRE2 go into `licenses/`. SQLite and sqlite3-pcre are in the public domain.

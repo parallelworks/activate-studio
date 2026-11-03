@@ -12,6 +12,7 @@ import { checkSshOptions, isDirect, jumpOf, noShell, parseSshOptions, reachedHos
 import { remoteGufi } from './gufiTrace.js'
 import { getJob, startJob, type Job } from './jobs.js'
 import { depthParts, forgetIndexSettings, indexSettings, meaningArgs, NEW_REMOTE_LIBRARY_DEPTH, saveIndexSettings, textArgs, type IndexDepth } from './indexSettings.js'
+import { SUMMARY_COLUMNS_SQL, formatNote, formatOfColumns, type FormatRecord } from './indexFormat.js'
 import { BUILD_CHECK, BUILD_RUN, BUILD_START, BUILD_STATUS, EMBED_PROBE, indexerScript, keyValues, parseStatus, PHASE_LABEL } from './remoteBuild.js'
 import { embedMegabytes, embedVersion, sendEmbed } from './remoteEmbed.js'
 
@@ -89,6 +90,8 @@ export interface UserLibraryDef {
   /** Whether the index carries the Studio's full-text and vector tables. */
   fullText?: boolean
   vectors?: boolean
+  /** Which GUFI wrote the index, from the last connection test (indexFormat.ts). */
+  indexFormat?: FormatRecord | null
   /** An index the Studio builds on the remote system over the session. */
   build?: RemoteBuild | null
 }
@@ -549,6 +552,8 @@ export interface SshProbe {
   shell?: boolean
   /** The index carries full-text (words) tables, found by hasWords. */
   fullText?: boolean
+  /** Which GUFI wrote the index, found by remoteFormat. */
+  indexFormat?: FormatRecord
   /** For adding the library: the host's `uname -s`, the paths with ~
    *  resolved, the file count, and when the index root was last written. */
   os?: string
@@ -738,6 +743,22 @@ async function hasWords(h: ProbeHost, run: Run, bin: string, indexRoot: string):
   return r.stdout.trim().length > 0
 }
 
+/** Which GUFI wrote an index there (indexFormat.ts): the columns of the top
+ *  summary table, and for one from before 0.8.0 whether any folder was rolled
+ *  up. Undefined where gufi_query could not say. */
+async function remoteFormat(h: ProbeHost, run: Run, bin: string, indexRoot: string): Promise<FormatRecord | undefined> {
+  const r = await run([gufiTool(bin), '-n', '1', '-d', '|', '--min-level', '0', '--max-level', '0', '-E', SUMMARY_COLUMNS_SQL, indexRoot], 30_000)
+  const format = formatOfColumns(lastLine(r.stdout))
+  if (!format) return undefined
+  if (format !== 'older') return { format }
+  const c = await run([gufiTool(bin), '-n', String(await remoteThreads(h.site, h.key)), '-d', '|', '-a', '1',
+    '-I', 'CREATE TABLE t (n INT64);', '-K', 'CREATE TABLE agg (n INT64);',
+    '-E', 'INSERT INTO t SELECT count(*) FROM summary WHERE rollupscore > 0;', '-J', 'INSERT INTO agg SELECT sum(n) FROM t;',
+    '-G', 'SELECT sum(n) FROM agg;', indexRoot], 60_000)
+  const n = Number(lastLine(c.stdout).trim())
+  return Number.isFinite(n) && lastLine(c.stdout).trim() !== '' ? { format, rolledUp: n > 0 } : { format }
+}
+
 /**
  * The connection test where the login runs only gufi_query: no shell, so
  * no ~ to resolve, no search for GUFI, and no files to read; gufi_query
@@ -770,8 +791,10 @@ async function probeQueryOnly(h: ProbeHost, spec: { indexRoot: string; gufiBin: 
   const indexRoot = spec.indexRoot
   const n = await countIndex(h, run, bin, indexRoot)
   let fullText: boolean | undefined
+  let indexFormat: FormatRecord | undefined
   if (n.directories != null) {
     fullText = await hasWords(h, run, bin, indexRoot)
+    indexFormat = await remoteFormat(h, run, bin, indexRoot)
     steps.push({ name: 'index', ok: true, detail: `A GUFI index of ${n.directories.toLocaleString('en-US')} directories${n.files != null ? ` and ${n.files.toLocaleString('en-US')} files` : ''}${fullText ? ', with full-text tables, so search covers the words in its files' : ''}.` })
   } else if (n.slow) {
     steps.push({ name: 'index', ok: true, detail: `gufi_query reads ${indexRoot}; counting its directories took over a minute, so the count is left out.` })
@@ -785,7 +808,7 @@ async function probeQueryOnly(h: ProbeHost, spec: { indexRoot: string; gufiBin: 
   if (spec.sourceRoot) {
     steps.push({ name: 'source', ok: true, warn: true, detail: `The login on ${dest} runs only gufi_query, so files cannot be opened from the Studio; browsing and search work from the index.` })
   }
-  return done({ shell: false, gufiBin: bin, gufiVersion: version || undefined, directories: n.directories, files: n.files, fullText, indexRoot, sourceRoot: null, builtAt: null })
+  return done({ shell: false, gufiBin: bin, gufiVersion: version || undefined, directories: n.directories, files: n.files, fullText, indexFormat, indexRoot, sourceRoot: null, builtAt: null })
 }
 
 async function probeIndexNow(h: ProbeHost, spec: { indexRoot: string; gufiBin: string | null; sourceRoot: string | null }): Promise<SshProbe> {
@@ -825,7 +848,7 @@ async function probeIndexNow(h: ProbeHost, spec: { indexRoot: string; gufiBin: s
 
   const indexRoot = expand(spec.indexRoot)!
   const at = await run(['sh', '-c', INDEX_CHECK, '_', indexRoot])
-  let directories: number | undefined, files: number | undefined, builtAt: string | null = null, fullText: boolean | undefined
+  let directories: number | undefined, files: number | undefined, builtAt: string | null = null, fullText: boolean | undefined, indexFormat: FormatRecord | undefined
   if (at.code === 0) {
     const mtime = Number(lastLine(at.stdout))
     builtAt = mtime > 0 ? new Date(mtime * 1000).toISOString() : null
@@ -835,6 +858,7 @@ async function probeIndexNow(h: ProbeHost, spec: { indexRoot: string; gufiBin: s
       if (n.directories != null) {
         directories = n.directories; files = n.files
         fullText = await hasWords(h, run, bin, indexRoot)
+        indexFormat = await remoteFormat(h, run, bin, indexRoot)
         steps.push({ name: 'index', ok: true, detail: `A GUFI index of ${n.directories.toLocaleString('en-US')} directories${files != null ? ` and ${files.toLocaleString('en-US')} files` : ''}${fullText ? ', with full-text tables, so search covers the words in its files' : ''}.` })
       } else if (n.slow) {
         steps.push({ name: 'index', ok: true, detail: `${indexRoot} has a db.db; counting its directories took over a minute, so the count is left out.` })
@@ -859,7 +883,7 @@ async function probeIndexNow(h: ProbeHost, spec: { indexRoot: string; gufiBin: s
       : { name: 'source', ok: false, detail: s.code === 3 ? `${sourceRoot} is not a directory on ${dest}. Leave the source directory empty to browse and search names only.`
         : s.code === 4 ? `${sourceRoot} is there, but the ssh login cannot read it.` : `The source directory could not be checked: ${lastLine(s.stderr) || `exit ${s.code}`}.` })
   }
-  return done({ shell: true, gufiBin: bin.startsWith('/') ? bin : undefined, gufiVersion: version || undefined, directories, files, fullText, os, indexRoot, sourceRoot, builtAt })
+  return done({ shell: true, gufiBin: bin.startsWith('/') ? bin : undefined, gufiVersion: version || undefined, directories, files, fullText, indexFormat, os, indexRoot, sourceRoot, builtAt })
 }
 
 // ---- building an index on the remote system ----
@@ -1109,7 +1133,7 @@ export async function addFromPw(viewerId: string | null | undefined, a: PwLibrar
   for (let i = 2; defs.some(d => d.id === id); i++) id = `${base}-${i}`
   const def: UserLibraryDef = {
     id, label, transport: 'pw', existing: true, site: spec.cluster, destination: null, port: null, os: p.os || null, gufiVersion: p.gufiVersion ?? null,
-    resource: spec.cluster, sourceDir: p.sourceRoot ?? '', sourceRoot: p.sourceRoot ?? null, indexRoot, gufiBin: p.gufiBin ?? '', ...(p.shell === false ? { shell: false } : {}), ...(p.fullText ? { fullText: true } : {}),
+    resource: spec.cluster, sourceDir: p.sourceRoot ?? '', sourceRoot: p.sourceRoot ?? null, indexRoot, gufiBin: p.gufiBin ?? '', ...(p.shell === false ? { shell: false } : {}), ...(p.fullText ? { fullText: true } : {}), ...(p.indexFormat ? { indexFormat: p.indexFormat } : {}),
     state: 'ready', run: null, error: null, builtAt: p.builtAt ?? new Date().toISOString(), directories: p.directories ?? null, files: p.files ?? null, scheduler: null,
   }
   saveUserLibraries(owner, [...defs, def])
@@ -1136,7 +1160,7 @@ export async function addFromSsh(viewerId: string | null | undefined, a: SshLibr
   for (let i = 2; defs.some(d => d.id === id); i++) id = `${base}-${i}`
   const def: UserLibraryDef = {
     id, label, transport: 'ssh', site: spec.destination, destination: spec.destination, port: spec.port, ...(spec.sshOptions.length ? { sshOptions: spec.sshOptions } : {}),
-    os: p.os || null, gufiVersion: p.gufiVersion ?? null, resource: sshSite(spec.destination, spec.port, spec.sshOptions), sourceDir: p.sourceRoot ?? '', sourceRoot: p.sourceRoot ?? null, indexRoot, gufiBin: p.gufiBin ?? '', ...(p.shell === false ? { shell: false } : {}), ...(p.fullText ? { fullText: true } : {}),
+    os: p.os || null, gufiVersion: p.gufiVersion ?? null, resource: sshSite(spec.destination, spec.port, spec.sshOptions), sourceDir: p.sourceRoot ?? '', sourceRoot: p.sourceRoot ?? null, indexRoot, gufiBin: p.gufiBin ?? '', ...(p.shell === false ? { shell: false } : {}), ...(p.fullText ? { fullText: true } : {}), ...(p.indexFormat ? { indexFormat: p.indexFormat } : {}),
     state: 'ready', run: null, error: null, builtAt: p.builtAt ?? new Date().toISOString(), directories: p.directories ?? null, files: p.files ?? null, scheduler: null,
   }
   saveUserLibraries(owner, [...defs, def])
@@ -1159,7 +1183,7 @@ async function recheckExisting(viewerId: string | null | undefined, owner: strin
     error: null, os: p.os || d.os || null, gufiVersion: p.gufiVersion ?? d.gufiVersion ?? null,
     directories: p.directories ?? d.directories, files: p.files ?? d.files, builtAt: p.builtAt ?? d.builtAt,
     // Whether the login runs a shell can change either way between tests.
-    shell: p.shell === false ? false : undefined, fullText: p.fullText ?? d.fullText,
+    shell: p.shell === false ? false : undefined, fullText: p.fullText ?? d.fullText, indexFormat: p.indexFormat ?? d.indexFormat,
   })!
   // The index there was made again since the last test.
   if (!failed && p.builtAt && p.builtAt !== d.builtAt) tell(builtHooks, remoteRootOf(owner, d.id))
@@ -1420,7 +1444,7 @@ export function warmUserLibraries(viewerId: string | null | undefined): number {
 export function publicUserLibrary(d: UserLibraryDef & { job?: number }) {
   return { id: d.id, label: d.label, transport: d.transport ?? 'pw', existing: !d.build && (d.transport === 'ssh' || !!d.existing), meaning: d.build ? indexSettings(d.id).meaning : null, depth: d.build ? indexSettings(d.id).depth : null, site: d.site, destination: d.destination ?? null, reached: reachedLabel(d), port: d.port ?? null, sshOptions: d.sshOptions?.length ? sshOptionsText(d.sshOptions) : null, jump: d.sshOptions?.length ? jumpOf(d.sshOptions) : null, gufiVersion: d.gufiVersion ?? null, sourceDir: d.sourceDir, sourceRoot: d.sourceRoot, indexRoot: d.indexRoot, state: d.state,
     run: d.run ? { slug: d.run.slug, mode: d.run.mode, startedAt: d.run.startedAt } : null, error: d.error, builtAt: d.builtAt,
-    directories: d.directories, files: d.files, scheduler: d.scheduler, fullText: !!d.fullText, vectors: !!d.vectors,
+    directories: d.directories, files: d.files, scheduler: d.scheduler, fullText: !!d.fullText, vectors: !!d.vectors, formatNote: formatNote(d.indexFormat),
     // Built here over the session: where the index is written, and how far a build has got.
     built: !!d.build, indexDir: d.build?.indexDir ?? null, progress: d.build?.progress ?? null, ...(d.job != null ? { job: d.job } : {}) }
 }

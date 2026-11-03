@@ -44,6 +44,7 @@ import { sessionRoutes } from './sessions.js'
 import { agentSiteRoutes } from './agentSites.js'
 import { userLibraryRoutes } from './userLibraries.js'
 import { libraryBuildRoutes, startLibrarySync, stopLibraryJobs } from './libraryBuild.js'
+import { acquireIndexLock } from './instanceLock.js'
 import { libraryDetailsRoutes } from './libraryDetails.js'
 import { workflowReadmeRoutes } from './workflowReadme.js'
 import { setUpdateBusyCheck, startUpdates, updateRoutes } from './updates.js'
@@ -132,8 +133,11 @@ for (const l of await probeAll()) {
   app.log.info(line)
   indexLog(line)
 }
-startSweepTimer(msg => app.log.info(msg))
-startLibrarySync(msg => app.log.info(msg))
+// One Studio at a time indexes a folder: a second one on the same data searches and queries (instanceLock.ts).
+if (await acquireIndexLock(msg => app.log.warn(msg))) {
+  startSweepTimer(msg => app.log.info(msg))
+  startLibrarySync(msg => app.log.info(msg))
+}
 // Deploy-time full reindexes rebuild the index without overlay labels
 // (xattr-less filesystems); restore them once the server is up.
 void import('./extensions.js').then(m => m.labelPersonas())

@@ -8,7 +8,8 @@ import {
   EMBED_CACHE, EXCLUDE_DIRS, EXTRACT_CACHE, GUFI_BIN, GUFI_INDEX, INDEX_BASE, INDEX_DIR, KB_ROOT, PROJECT_ROOT, PYTHON_BIN, SEMANTIC_MAP_DIR,
   gufiEnv, indexerEnv,
 } from './config.js'
-import { invalidateDbList } from './gufi.js'
+import { invalidateDbList, verifyTree } from './gufi.js'
+import { requireIndexWork } from './instanceLock.js'
 import { preextractCommand, downmarkNative } from './preextract.js'
 import { invalidateContext } from './chat/context.js'
 import { effectiveSettings } from './settings.js'
@@ -17,7 +18,7 @@ import { indexSettings, meaningArgs, textArgs, threadsFor, type IndexSettings } 
 import { sofficeFound } from './extractors.js'
 import { scheduleSemanticMapRebuild } from './semanticMap.js'
 import { scanLatestDetail } from './dirScan.js'
-import { lockedEntry, lockingUser, openDir, openIndex, prepareIndex, rmTree, sourceOf, unmadeIndexDirs, type Locked } from './indexModes.js'
+import { lockedEntry, lockingUser, openDir, openIndex, prepareIndex, recoverSwap, rmTree, sourceOf, swapLeftovers, unmadeIndexDirs, type Locked } from './indexModes.js'
 import { deniedPaths, onlyDenied, readDenied, recordDenied, setPrimaryBuiltSource, setPrimaryIndexingSource } from './omissions.js'
 import { depthChange, depthRecordOf, readDepthRecord, writeDepthRecord, type DepthChange } from './depthState.js'
 import { cleanIndexedText, markTextClean, textCleanNeeded } from './textCleanup.js'
@@ -153,6 +154,7 @@ function newPhases(): IndexPhase[] {
 }
 
 function enqueue(kind: JobKind, dir: string, label: string, run: (ctx: JobCtx) => Promise<void>, key: string | null = null): JobRec {
+  requireIndexWork()
   if (key) {
     const same = queue.find(r => r.key === key)
     if (same) return same
@@ -759,6 +761,7 @@ export function startIndexJob(rel: string, work?: (job: IndexJob) => Promise<{ m
 }
 
 function startOwnJob(rel: string, work: (job: IndexJob) => Promise<{ ms: number }>): IndexJob {
+  requireIndexWork()
   const job: IndexJob = {
     id: ++jobSeq, kind: 'folder', dir: rel, label: `Indexing ${rel}`, state: 'running', startedAt: new Date().toISOString(),
     runningAt: new Date().toISOString(), finishedAt: null, ms: null, error: null, threads: threadsFor(), phases: [],
@@ -884,6 +887,8 @@ async function buildWholeFolder(ctx: JobCtx): Promise<void> {
   const staging = path.join(INDEX_DIR, `gufi.staging-${ctx.job.id}`)
   try {
     const built = await namesPhase(ctx, KB_ROOT, staging)
+    // The new index answers a query before it takes the old one's place.
+    await verifyTree(built)
     let target = built
     if (!live) {
       // Nothing to lose: names are searchable now, and the text and
@@ -1256,6 +1261,9 @@ export function startSweepTimer(log: (msg: string) => void): void {
     }
     setTimeout(() => { void tick() }, Math.max(sec, 60) * 1000).unref()
   }
+  // A swap a stop cut off between its two renames left the old index beside the path it is read at.
+  const back = recoverSwap(GUFI_INDEX, swapLeftovers(GUFI_INDEX))
+  if (back) log(`index: restored the index from ${path.basename(back)}, a swap that a stop cut off`)
   // A folder switched while the server was down is reconciled before the
   // sweep compares anything with what was recorded.
   void reconcileFolder().catch(e => log(`index: ${String((e as Error).message ?? e)}`))

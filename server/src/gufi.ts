@@ -315,6 +315,22 @@ export async function queryAggregate(stages: string[], opts: { indexRoot?: strin
   return parseRows(stdout, 1)
 }
 
+/** That GUFI reads a tree it just wrote: one aggregate query counts its
+ *  directories, and at least the top one must answer. Throws otherwise, so
+ *  a build keeps the index in place instead of swapping this one in. */
+export async function verifyTree(tree: string): Promise<number> {
+  // Nothing here can read an index without gufi_query (a stand-in that only writes one, in a test, has none).
+  if (!fs.existsSync(path.join(GUFI_BIN, 'gufi_query'))) return 0
+  const rows = await queryAggregate([
+    '-I', 'CREATE TABLE t (d INT64);', '-K', 'CREATE TABLE agg (d INT64);',
+    '-E', 'INSERT INTO t SELECT count(*) FROM vrsummary;', '-J', 'INSERT INTO agg SELECT sum(d) FROM t;',
+    '-G', 'SELECT sum(d) FROM agg;',
+  ], { indexRoot: tree })
+  const n = Number(rows[0]?.[0])
+  if (!Number.isFinite(n) || n < 1) throw new Error(`GUFI could not read the index it wrote at ${tree}`)
+  return n
+}
+
 /**
  * Full-text and name matches of one library in one walk of its index: one
  * gufi_query whose per-directory step runs both lookups while that

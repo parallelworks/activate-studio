@@ -22,6 +22,8 @@ found: whether it is a GUFI index, whether the Studio's full-text tables
 are present, whether vector tables are present, and whether the source is
 readable. Nothing is asked of GUFI and nothing is written into the index.
 
+The probe also reads the columns of the index's top summary table, which say which GUFI wrote it (`format` in `library-caps.json`; see GUFI versions in [`REFERENCE.md`](REFERENCE.md#indexing)). An index written by an earlier GUFI is read as it was, and nothing is said of it, with one exception: an index from before GUFI 0.8.0's `rollupscore` rename that was rolled up is searched in part, named so in the omissions line and in this page (`formatNote`), since 0.8.0 lists the files of a rolled-up folder more than once. A library on another system gets the same answer from the `gufi_query` there, at its connection test.
+
 ## What works on a read-only library
 
 Browsing, filename and metadata search, statistics, and opening files

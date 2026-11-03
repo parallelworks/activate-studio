@@ -46,10 +46,12 @@ on:
 permissions: {}
 
 env:
-  # A gufi-macos run whose archive the app uses, ahead of the release.
+  # A gufi-macos run whose archive the app uses, ahead of the release, to try
+  # a new GUFI build (a run's archive expires after 30 days). Empty for a
+  # release.
   GUFI_RUN: ""
   # The gufi-* release whose gufi-macos-arm64.tar.gz the app uses.
-  GUFI_RELEASE: gufi-1713537-macos14
+  GUFI_RELEASE: gufi-021a717-macos14
 
 concurrency:
   group: mac-app-${{ inputs.release || github.ref }}

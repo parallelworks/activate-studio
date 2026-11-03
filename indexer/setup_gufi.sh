@@ -12,6 +12,9 @@ PREFIX="${GUFI_PREFIX:-/opt/gufi}"
 # them; GUFI_AI=0 turns them off for a quick build that keeps full-text and
 # metadata search and loses only the semantic blend.
 AI="${GUFI_AI:-1}"
+# The GUFI release the Studio is tested with (tag 0.8.0): a commit, a tag or a
+# branch. A clone's checkout is moved to it, so an older build is replaced.
+GUFI_REF="${GUFI_REF:-021a717a6089b9e28b068695dc7c7f3732fd1a56}"
 JOBS="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)"
 
 case "$(uname -s)" in
@@ -22,15 +25,38 @@ case "$(uname -s)" in
     # build only, which is why the caller's PATH is left alone.
     command -v brew >/dev/null 2>&1 || { echo "Homebrew is required: https://brew.sh"; exit 1; }
     brew install cmake pkgconf pcre2 sqlite autoconf automake libtool \
-      llvm libomp gettext coreutils findutils gnu-sed gpatch grep diffutils \
+      llvm libomp gettext coreutils findutils gnu-sed gpatch grep diffutils flock \
       tesseract poppler
     for tool in coreutils findutils gnu-sed grep; do
       PATH="$(brew --prefix "$tool")/libexec/gnubin:$PATH"
     done
-    PATH="$(brew --prefix diffutils)/bin:$PATH"
+    # GUFI 0.8.0's configure looks for flock, which Homebrew installs apart from util-linux.
+    PATH="$(brew --prefix diffutils)/bin:$(brew --prefix flock)/bin:$PATH"
     export PATH
     export CC="$(brew --prefix llvm)/bin/clang"
-    export CXX="$(brew --prefix llvm)/bin/clang++"
+    # The llama.cpp that GUFI's sqlite-lembed vendors uses errno, EXIT_FAILURE
+    # and std::fill without including their headers, which libc++ in recent
+    # LLVM no longer pulls in through others. Its own build sets its own flags,
+    # so CXXFLAGS does not reach it; the C++ compiler itself is a wrapper that
+    # includes the common standard headers in every compile (as
+    # deploy/mac/build_gufi.sh does). It stays beside the build, which
+    # remembers it.
+    LLVM_CXX="$(brew --prefix llvm)/bin/clang++"
+    CXX_WRAP="$SRC.cxx"
+    mkdir -p "$CXX_WRAP"
+    INCLUDES=""
+    for h in cerrno cstdlib cstring cstdint climits cmath new algorithm functional memory string vector; do
+      INCLUDES="$INCLUDES -include $h"
+    done
+    cat >"$CXX_WRAP/clang++" <<WRAP
+#!/bin/sh
+case " \$* " in
+  *" -c "*) exec "$LLVM_CXX" $INCLUDES "\$@" ;;
+esac
+exec "$LLVM_CXX" "\$@"
+WRAP
+    chmod 755 "$CXX_WRAP/clang++"
+    export CXX="$CXX_WRAP/clang++"
     OMP_PREFIX="$(brew --prefix libomp)"
     EXTRA_CMAKE=(
       -DCMAKE_OSX_SYSROOT=macosx
@@ -61,6 +87,8 @@ if [ ! -d "$SRC" ]; then
 fi
 cd "$SRC"
 git fetch --tags
+git checkout --quiet --force "$GUFI_REF"
+echo "GUFI $(git describe --tags --always) ($(git rev-parse HEAD))"
 # spread_tree.c opens a new file with O_CREAT and no mode argument. Ubuntu's
 # default _FORTIFY_SOURCE turns that into a compile error (Debian's does not).
 # Give the call the mode it needs; a source that already has one is left alone.

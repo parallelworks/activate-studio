@@ -18,6 +18,9 @@ export interface PublicLibrary {
   /** How deep it is indexed, for a library the Studio builds; null for an
    *  index it only reads, which stays as it was built. */
   depth?: IndexDepth | null
+  /** Said of an index written by a GUFI before 0.8.0 that reads wrongly (it
+   *  was rolled up); null for any other, which reads as it always did. */
+  formatNote?: string | null
 }
 /** How much of a library search by meaning covers; follows the depth. */
 export type MeaningLevel = 'off' | 'documents' | 'full'
@@ -65,6 +68,8 @@ export interface UserLibrary {
   meaning?: MeaningLevel | null
   /** How deep it is indexed, for one the Studio builds; null otherwise. */
   depth?: IndexDepth | null
+  /** As PublicLibrary.formatNote, for the index on the cluster. */
+  formatNote?: string | null
   /** Built by the Studio on the remote system over the session; where the
    *  index is written, and how far a build has got. */
   built?: boolean

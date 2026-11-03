@@ -131,3 +131,30 @@ export function sourceOf(indexDir: string, built: string, src: string): string |
   if (indexDir === built) return src
   return indexDir.startsWith(`${built}/`) ? path.join(src, indexDir.slice(built.length + 1)) : null
 }
+
+/**
+ * A swap puts a new tree in place by moving the old one aside and the new
+ * one in, two renames. A stop between them leaves no tree at `dest` and the
+ * old one beside it, which a build that starts again would delete as stale.
+ * Puts the newest of `olds` that holds a db.db back at `dest`, and returns
+ * its path; null when `dest` is a tree already, or nothing is to restore.
+ */
+export function recoverSwap(dest: string, olds: string[]): string | null {
+  if (fs.existsSync(path.join(dest, 'db.db'))) return null
+  const found = olds.filter(o => fs.existsSync(path.join(o, 'db.db')))
+    .sort((a, b) => { try { return fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs } catch { return 0 } })[0]
+  if (!found) return null
+  // What is at dest has no db.db: a tree a stop cut off, never one that was searched.
+  if (fs.existsSync(dest)) rmTreeSync(dest)
+  fs.mkdirSync(path.dirname(dest), { recursive: true })
+  openDir(found)
+  fs.renameSync(found, dest)
+  return found
+}
+
+/** The folders beside `dest` an earlier swap of it moved the old tree to
+ *  (the main folder's, named `<dest>.old-<pid>-<time>`). */
+export function swapLeftovers(dest: string): string[] {
+  const dir = path.dirname(dest), prefix = `${path.basename(dest)}.old-`
+  try { return fs.readdirSync(dir).filter(n => n.startsWith(prefix)).map(n => path.join(dir, n)) } catch { return [] }
+}

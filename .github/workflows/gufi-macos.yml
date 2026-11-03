@@ -162,12 +162,12 @@ jobs:
           GUFI_SRC: ${{ github.workspace }}/gufi-src
           GUFI_PREFIX: ${{ github.workspace }}/gufi
           GUFI_AI: ${{ inputs.dep_ai && '1' || '0' }}
-          # Through env, not ${{ }} in the script: the ref is free text.
-          GUFI_REF: ${{ inputs.gufi_ref || 'main' }}
+          # Through env, not ${{ }} in the script: the ref is free text. Blank
+          # is the release setup_gufi.sh pins, which it checks out itself.
+          GUFI_REF: ${{ inputs.gufi_ref }}
         run: |
           set -x
           git clone https://github.com/mar-file-system/GUFI "$GUFI_SRC"
-          git -C "$GUFI_SRC" checkout "$GUFI_REF"
           indexer/setup_gufi.sh
 
       - name: what got built
