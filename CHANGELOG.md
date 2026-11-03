@@ -2,11 +2,48 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
-## v1.184 (2026-11-03)
+## v1.185 (2026-11-03)
+
+### feat(chat): read_original, and a host to read a library's originals through (#629)
+
+## What was missing
+
+The assistant had one tool, `read_kb_file`, that did two jobs. It opened the original file first (on this computer, or over ssh on the library's host) and used the text in the index only when that failed, and only for documents and images. On a site where the index lives on a host whose login runs only `gufi_query`, and another host (a file transfer host that mounts every file system) has the files, a plain text file could not be read at all, and there was no way to tell the Studio where the files are.
+
+## What changed
+
+Reading is split in three, and the tool descriptions and the system prompt say which to use:
+
+- `search_kb` searches, as before.
+- `read_kb_file` returns the text the index holds for a file and works whenever the index can be read, with the original out of reach. Each result opens with a line naming its source, for example `[source: index; it can lag behind the file]`. When the index holds no text it says so plainly.
+- `read_original` (new) opens the original file: at the library's own location first (this computer, or over ssh on the library's host), then on a host the library names for reading originals. It returns plain text as it is and the extracted text the Studio keeps for documents and images on this computer. When no host can give the file, the message names every host tried and what each said. It takes `path`, `paths` (up to 25), `offset` and `library`, as `read_kb_file` does, and is offered over MCP too.
+
+What `read_kb_file` returns for a plain text file: the index does hold it. The Studio's text pass (`indexer/enrich.py`) stores each text file's contents, up to 500,000 characters, in the `words` table, but only when the library was indexed with text, only for the file types that pass reads, and only as of the last index update. So `read_kb_file` returns the index's text for a plain text file when there is a row, labeled as from the index (and, when the row is at the 500,000 character limit, labeled as possibly cut). Where the index has no text for it, the original is read as before and the source line says so. Documents and images keep their order, except that the original is no longer needed: the index, then the library's extraction cache (a library here), then the original only to explain why there is no text.
+
+The host is a per-library setting, "Read originals through": Settings, Libraries, **Originals via**, **Set**. It takes `user@host` or a Host alias from `~/.ssh/config`, an optional folder (the library's root on that host when the path differs) and optional ssh options. **Test connection** checks ssh, that the login gives a shell, and that the folder is readable; **Save** needs a passing test. It is stored with the library's other settings (`libraries.json`, or the user's library entry for a library over ssh or pw ssh), and a library in `STUDIO_LIBRARIES` can carry it too. The viewer's file text and download use the same two places in the same order.
+
+Safety: the host is held to a destination ssh cannot read as an option (no leading `-`, no whitespace or shell characters), the options to what libraries over ssh already allow, and the folder to an absolute path with no `..`. A file's path is never read by a shell on either side: it goes to the host as an argument of a script, after the existing checks (no `..`, under the library's folder). It uses the same ssh machinery as the libraries over ssh (the account's keys and `~/.ssh/config`, no prompts, a shared connection, bounded waits), so it is offered only on a Studio with sign-in off, and a saved host is not used where sign-in is on. A host whose login runs only `gufi_query` is refused by the test and named in the error when a read reaches it.
+
+`read_kb_file` keeps its name and arguments, so existing conversations that call it work. Its results now begin with the source line.
+
+## Not included
+
+The previews that read a file from this computer (images in the page, PDF pages, Office rendering) are not offered for a file that exists only on the other host. The file text and Download are.
+
+## How it was checked
+
+- Server suite: 792 tests (baseline on `main`: 754), 772 pass, 0 fail, 20 skipped (13 skipped on `main`; the 7 added skips are the ssh end-to-end file, which needs `STUDIO_TEST_SSHD=1`).
+- `pnpm test` at the root: server and testdata 813 tests, 793 pass, 0 fail, 20 skipped; web 346 of 346 pass (43 files).
+- Web suite: 346 tests (baseline 344), all pass.
+- New `server/test/readOriginal.test.mjs` (30 tests, no GUFI or network needed: a stand-in `gufi_query`, and ssh hosts as local shells behind the transport's spawn seam, one of them restricted to `gufi_query`): `read_kb_file` from the index with the original missing, with no files here, with a long file, and with no index text; `read_original` here, on a library over ssh, on the fallback host, with both hosts failing (the message names both), and with a host that is down or runs only `gufi_query`; multi-path reads and offsets; file names with spaces, quotes, non-ASCII, a backslash, a leading `-` and `$(...)` or `;` syntax; path traversal on both tools and on both hosts; host, option and folder validation with injection strings; the connection test; saving, clearing and the viewer's file and download routes.
+- New `server/test/readOriginalSshd.test.mjs` (7 tests): two real `sshd` processes run by this user on high ports with no root, one with a `ForceCommand` that allows only `gufi_query` and no files, one with a shell and the files at another path. Run with `STUDIO_TEST_SSHD=1`; 7 of 7 pass. It checks that nothing but `gufi_query` ever ran on the restricted host.
+- `librariesPage.test.tsx` gained two tests: setting, testing, saving and removing the host, and the read-only view where sign-in is on. I also ran the built Studio on a second port and looked at the Libraries page.
+
+## v1.184 (2026-11-02)
 
 ### feat(gufi): move to GUFI 0.8.0 (#627)
 
-Moves the Studio to GUFI 0.8.0 (tag `0.8.0`, commit `021a717a`) without rebuilding or migrating any index. Not merged and not released: the macOS archive is not published and `GUFI_RELEASE` still names the old one (see Before a release).
+Moves the Studio to GUFI 0.8.0 (tag `0.8.0`, commit `021a717a`) without rebuilding or migrating any index.
 
 ## What was measured
 
@@ -82,6 +119,10 @@ Run on this PR's head:
 ## Before a release
 
 Publish `gufi-macos-arm64` as the release `gufi-021a717-macos14` (push that tag), set `GUFI_RELEASE` in `mac-app.yml` to it and empty `GUFI_RUN` (a run's archive expires in 30 days). This PR points `GUFI_RUN` at the gufi-macos run that built 0.8.0 so its own mac-app run builds the app with it.
+
+### Change log through v1.184 (#628)
+
+Regenerated with `node scripts/release-notes.mjs --changelog --next v1.184` before tagging v1.184.
 
 ## v1.183 (2026-11-02)
 
