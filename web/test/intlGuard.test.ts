@@ -1,43 +1,12 @@
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { breakIntl, breakNumberFormat, breakPluralAndList, nativeIntl, restoreIntl, runGuard } from './intlEngine'
 
-// The guard is the inline script in index.html, so what ships is what is
-// tested: it is pulled out of the page and run.
-const html = readFileSync(join(__dirname, '..', 'index.html'), 'utf8')
-const source = /<script id="intl-guard">([\s\S]*?)<\/script>/.exec(html)![1]
-const runGuard = () => new Function(source)()
-
-const nativeNumberFormat = Intl.NumberFormat
-const nativeToLocale = Number.prototype.toLocaleString
-const nativeBigIntToLocale = BigInt.prototype.toLocaleString
-const nativePluralRules = Intl.PluralRules
-const nativeListFormat = (Intl as { ListFormat?: unknown }).ListFormat
-
-// An engine whose Intl.NumberFormat cannot be built, as in the WebKitGTK 4.0
-// that RHEL 9 and its rebuilds ship.
-function breakNumberFormat() {
-  const broken = function () { throw new TypeError('failed to initialize NumberFormat') }
-  Object.defineProperty(Intl, 'NumberFormat', { value: broken, configurable: true, writable: true })
-  const toLocale = function () { throw new TypeError('failed to initialize NumberFormat') }
-  Object.defineProperty(Number.prototype, 'toLocaleString', { value: toLocale, configurable: true, writable: true })
-  Object.defineProperty(BigInt.prototype, 'toLocaleString', { value: toLocale, configurable: true, writable: true })
-}
-
-// The same engine's PluralRules, and no ListFormat at all.
-function breakPluralAndList() {
-  const broken = function () { throw new TypeError('failed to initialize PluralRules') }
-  Object.defineProperty(Intl, 'PluralRules', { value: broken, configurable: true, writable: true })
-  Object.defineProperty(Intl, 'ListFormat', { value: undefined, configurable: true, writable: true })
-}
+const nativeNumberFormat = nativeIntl.NumberFormat
+const nativeToLocale = nativeIntl.numberToLocale
 
 beforeEach(() => { delete (window as { __intlGuard?: boolean }).__intlGuard })
 afterEach(() => {
-  Object.defineProperty(Intl, 'NumberFormat', { value: nativeNumberFormat, configurable: true, writable: true })
-  Object.defineProperty(Number.prototype, 'toLocaleString', { value: nativeToLocale, configurable: true, writable: true })
-  Object.defineProperty(BigInt.prototype, 'toLocaleString', { value: nativeBigIntToLocale, configurable: true, writable: true })
-  Object.defineProperty(Intl, 'PluralRules', { value: nativePluralRules, configurable: true, writable: true })
-  Object.defineProperty(Intl, 'ListFormat', { value: nativeListFormat, configurable: true, writable: true })
+  restoreIntl()
   vi.resetModules()
 })
 
@@ -101,20 +70,57 @@ describe('number formatting guard in index.html', () => {
   })
 
   it('lets the UI library and the app load when Intl.NumberFormat throws', async () => {
-    breakNumberFormat()
-    breakPluralAndList()
+    breakIntl()
     runGuard()
     vi.resetModules()
     const ui = await import('@parallelworks/ui')
     expect(Object.keys(ui).length).toBeGreaterThan(0)
     const app = await import('../src/App')
     expect(app.default ?? app).toBeTruthy()
-  })
+  }, 60_000)
 
   it('shows the failure without the guard, so the test above means something', async () => {
-    breakNumberFormat()
-    breakPluralAndList()
+    breakIntl()
     vi.resetModules()
     await expect(import('@parallelworks/ui').then(() => import('../src/App'))).rejects.toThrow('failed to initialize')
+  }, 60_000)
+
+  // The regression check for the next library update or new module: every
+  // module of the app and every package it depends on, including the ones
+  // the page loads late (the Markdown renderer, the 3D viewer, the code
+  // editor), is loaded on the broken engine with the guard in place. One
+  // that builds an Intl formatter the guard does not replace, at load time,
+  // fails here instead of leaving a RHEL 9 desktop on the loading screen.
+  describe('on a broken engine with the guard', () => {
+    const appModules = import.meta.glob('../src/**/*.{ts,tsx}')
+    const entry = new Set(['../src/main.tsx'])
+
+    it('loads every module of the app', async () => {
+      breakIntl()
+      runGuard()
+      vi.resetModules()
+      const names = Object.keys(appModules).filter(n => !entry.has(n))
+      expect(names.length).toBeGreaterThan(50)
+      const failed: string[] = []
+      for (const n of names) {
+        try { await appModules[n]() } catch (e) { failed.push(`${n}: ${String((e as Error).message ?? e).slice(0, 200)}`) }
+      }
+      expect(failed).toEqual([])
+    }, 120_000)
+
+    it.each(['@parallelworks/ui', '@parallelworks/workflow-parser', 'streamdown', 'three', 'yaml', 'react-hook-form'])(
+      'loads %s', async pkg => {
+        breakIntl()
+        runGuard()
+        vi.resetModules()
+        await expect(import(/* @vite-ignore */ pkg)).resolves.toBeTruthy()
+      }, 60_000)
+
+    it('loads the code editor', async () => {
+      breakIntl()
+      runGuard()
+      vi.resetModules()
+      await expect(import('monaco-editor')).resolves.toBeTruthy()
+    }, 60_000)
   })
 })
