@@ -26,6 +26,7 @@ import { REMOTE_PREFIX, learnReached, loadUserLibraries, ownerOf, reachedLabel, 
 import { rmTreeSync } from './indexModes.js'
 import { execRun, noteGufi } from './gufiTrace.js'
 import { formatNote, formatOfColumns, type FormatRecord } from './indexFormat.js'
+import { publicReadThrough, storedReadThrough, type ReadThrough } from './originals.js'
 
 export interface LibraryCaps {
   /** A GUFI tree: a db.db at the root. */
@@ -63,6 +64,9 @@ export interface Library {
   site?: string | null
   /** Which GUFI wrote the index (indexFormat.ts); unknown until it is probed. */
   format?: FormatRecord | null
+  /** Another host over ssh that has this library's files, tried for an
+   *  original after the library's own location (originals.ts). */
+  readThrough?: ReadThrough | null
 }
 
 export interface LibraryDef {
@@ -73,6 +77,8 @@ export interface LibraryDef {
   /** Set for an index the Studio built of a folder on this computer
    *  (libraryBuild.ts), which it keeps in sync with the folder. */
   build?: LocalBuild
+  /** Another host that has the library's files (originals.ts). */
+  readThrough?: ReadThrough | null
 }
 
 /** An index the Studio builds of a folder on this computer. */
@@ -490,6 +496,7 @@ function fromDef(d: LibraryDef, pinned: boolean): Library {
     meaning: d.build ? indexSettings(d.id).meaning : null,
     depth: d.build ? indexSettings(d.id).depth : null,
     format: knownCapsMap().get(abs)?.format ?? null,
+    readThrough: storedReadThrough(d.readThrough, d.id),
   }
 }
 
@@ -510,6 +517,7 @@ function userLibrariesOf(viewerId: string | null | undefined): Library[] {
     meaning: d.build ? indexSettings(d.id).meaning : null,
     depth: d.build ? indexSettings(d.id).depth : null,
     format: d.indexFormat ?? null,
+    readThrough: storedReadThrough(d.readThrough, d.id),
   }))
 }
 
@@ -603,6 +611,18 @@ export function addedDef(id: string): LibraryDef | null {
   return loadAdded().find(d => d.id === id) ?? null
 }
 
+/** Sets, or with null clears, the host a library's originals are also read
+ *  through. False when no library added in Settings has this id. */
+export function setAddedReadThrough(id: string, readThrough: ReadThrough | null): boolean {
+  const defs = loadAdded()
+  const d = defs.find(x => x.id === id)
+  if (!d) return false
+  if (readThrough) d.readThrough = readThrough
+  else delete d.readThrough
+  saveAdded(defs)
+  return true
+}
+
 /** Records a built library's state. */
 export function updateBuild(id: string, patch: Partial<LocalBuild>): LibraryDef | null {
   const defs = loadAdded()
@@ -668,10 +688,10 @@ export function setBuildProgressSource(fn: (id: string) => BuildProgress | null)
  *  whoever manages the libraries can see what each one points at. Only the
  *  Settings routes send this; the client config every viewer loads keeps
  *  to publicLibrary, without paths. */
-export function settingsLibrary(l: Library): PublicLibrary & { indexRoot: string; sourceRoot: string | null; build?: PublicBuild } {
+export function settingsLibrary(l: Library): PublicLibrary & { indexRoot: string; sourceRoot: string | null; readThrough: ReturnType<typeof publicReadThrough>; build?: PublicBuild } {
   const b = l.build
   return {
-    ...publicLibrary(l), indexRoot: l.indexRoot, sourceRoot: l.sourceRoot,
+    ...publicLibrary(l), indexRoot: l.indexRoot, sourceRoot: l.sourceRoot, readThrough: publicReadThrough(l.readThrough),
     ...(b ? { build: { indexDir: b.indexDir, managed: b.managed, state: b.state, error: b.error, builtAt: b.builtAt, files: b.files, dirs: b.dirs, progress: progressOf(l.id) } } : {}),
   }
 }

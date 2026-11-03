@@ -30,12 +30,12 @@ Without `KB_ROOT`, it opens a small sample folder. Any OpenAI-compatible endpoin
 
 - **Chat** answers from your files and links each source.
 - **Search** finds file names, the words inside files, and, where it is on, meaning: passages that say the same thing in other words.
-- **Library** browses and views documents, images, PDFs, office files, and 3D models, and describes the folder you select: its size, contents, and labels.
+- **Library** browses and views documents, images, PDFs, office files, and 3D models, and describes the folder you select: its size, contents, and labels. A library can name a second host over ssh that has its files, for an index whose own host does not.
 - **Query** answers structured questions about the files, such as the largest or newest, or runs read-only SQL. Query and search results export to CSV.
 - **Stats** maps each library, here or on another system: its folders by size, and its files by what they say.
 - **Workflows**, on ACTIVATE, runs chosen platform workflows from their own forms, and opens the sessions they start.
 - **Agents** take the parts of a larger request in parallel; you can watch them, approve what they ask to do, and steer them.
-- **Other tools**, such as pw code, can search the same knowledge base over MCP or an OpenAI-compatible endpoint.
+- **Other tools**, such as pw code, can search and read the same knowledge base over MCP (search, the text the index holds, and the original files) or an OpenAI-compatible endpoint.
 
 ### Index depth
 

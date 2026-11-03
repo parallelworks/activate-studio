@@ -91,6 +91,20 @@ function stubServer(s: Server) {
       return reply({ id: depth[1], depth: (body as { depth: string }).depth })
     }
     if (path === '/api/libraries' && method === 'GET') return reply({ canBuild: !!s.canBuild, libraries: s.libs.map(l => (l.primary ? { ...l, sourceRoot: s.primary, label: s.primary.split('/').pop() } : l)) })
+    const through = /^\/api\/libraries\/([^/]+)\/read-through(\/test)?$/.exec(path)
+    if (through) {
+      const b = body as { destination: string; root?: string; sshOptions?: string }
+      if (through[2]) {
+        return b.destination === 'me@down'
+          ? reply({ ok: false, steps: [{ name: 'ssh', ok: false, detail: 'Nothing accepted the connection on port 22.' }] })
+          : reply({ ok: true, steps: [{ name: 'ssh', ok: true, detail: `Connected to ${b.destination}, a Linux host.` }, { name: 'source', ok: true, detail: `${b.root ?? '/data/site-files'} is readable on ${b.destination}.` }] })
+      }
+      const rt = b.destination ? { destination: b.destination, port: null, sshOptions: b.sshOptions ?? null, root: b.root ?? null } : null
+      const set = (l: Record<string, unknown>) => (l.id === through[1] ? { ...l, readThrough: rt } : l)
+      s.libs = s.libs.map(set)
+      s.user = s.user.map(set)
+      return reply({ readThrough: rt })
+    }
     if (path === '/api/libraries/build/check') {
       const b = body as { sourceRoot: string; indexRoot?: string }
       return reply({ ok: true, create: [b.sourceRoot, ...(b.indexRoot ? [b.indexRoot] : [])], steps: [
@@ -247,6 +261,58 @@ describe('Settings, Libraries', () => {
     const { openLibraryRow } = await import('../src/components/OmittedLine')
     openLibraryRow('kb')
     await waitFor(() => expect(rowOf('Notes')).toHaveClass('lib-focus'))
+  })
+
+  it('names another host for reading a library\'s originals, saves it only after its test, and can remove it', async () => {
+    const s = server({ libs: [PRIMARY, SITE], user: [SSH] })
+    await renderPage(s)
+    const row = await waitFor(() => rowOf('Site index'))
+    expect(within(row).getByText('Originals via')).toBeInTheDocument()
+    // The main folder's files are here: nothing to read through.
+    expect(within(rowOf('Notes')).queryByText('Originals via')).toBeNull()
+    fireEvent.click(within(row).getByRole('button', { name: /Set the host originals are read through for Site index/ }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByRole('button', { name: 'Save' })).toBeDisabled()
+    fireEvent.change(within(dialog).getByLabelText(/^Host/), { target: { value: 'me@down' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Test connection' }))
+    await within(dialog).findByText(/Nothing accepted the connection/)
+    expect(within(dialog).getByRole('button', { name: 'Save' })).toBeDisabled()
+    // A host that passes, with a folder, then a change after the test asks for another.
+    fireEvent.change(within(dialog).getByLabelText(/^Host/), { target: { value: 'me@xfer' } })
+    fireEvent.change(within(dialog).getByLabelText(/Folder on that host/), { target: { value: '/mnt/site' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Test connection' }))
+    await within(dialog).findByText(/\/mnt\/site is readable on me@xfer/)
+    fireEvent.change(within(dialog).getByLabelText(/Folder on that host/), { target: { value: '/mnt/other' } })
+    expect(within(dialog).getByRole('button', { name: 'Save' })).toBeDisabled()
+    expect(within(dialog).getByText('Fields changed: test again to save.')).toBeInTheDocument()
+    fireEvent.change(within(dialog).getByLabelText(/Folder on that host/), { target: { value: '/mnt/site' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Test connection' }))
+    await within(dialog).findByText(/is readable on me@xfer/)
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(within(rowOf('Site index')).getByText('me@xfer:/mnt/site')).toBeInTheDocument())
+    expect(s.calls.find(c => c.method === 'PUT' && c.url === '/api/libraries/site/read-through')?.body).toEqual({ destination: 'me@xfer', root: '/mnt/site' })
+    // A library over ssh keeps it with its own settings, and it can be removed.
+    const ssh = rowOf('index on box')
+    fireEvent.click(within(ssh).getByRole('button', { name: /Set the host originals are read through for index on box/ }))
+    const second = await screen.findByRole('dialog')
+    fireEvent.change(within(second).getByLabelText(/^Host/), { target: { value: 'me@xfer' } })
+    fireEvent.click(within(second).getByRole('button', { name: 'Test connection' }))
+    await within(second).findByText(/is readable on me@xfer/)
+    fireEvent.click(within(second).getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(within(rowOf('index on box')).getByText('me@xfer')).toBeInTheDocument())
+    fireEvent.click(within(rowOf('index on box')).getByRole('button', { name: /Change the host originals are read through for index on box/ }))
+    fireEvent.click(await within(await screen.findByRole('dialog')).findByRole('button', { name: 'Remove' }))
+    await waitFor(() => expect(within(rowOf('index on box')).queryByText('me@xfer')).toBeNull())
+    expect(s.calls.filter(c => c.method === 'PUT' && c.url === '/api/libraries/u-box-index/read-through').map(c => c.body)).toEqual([{ destination: 'me@xfer' }, { destination: '' }])
+  })
+
+  it('where the Studio signs people in, the host is shown when set and cannot be changed, and a deployment\'s pinned library takes none', async () => {
+    const set = { ...SITE, readThrough: { destination: 'me@xfer', port: null, sshOptions: null, root: '/mnt/site' } }
+    await renderPage(server({ ssh: false, libs: [PRIMARY, set, PINNED] }))
+    const row = await waitFor(() => rowOf('Site index'))
+    expect(within(row).getByText('me@xfer:/mnt/site')).toBeInTheDocument()
+    expect(within(row).queryByRole('button', { name: /originals are read through/ })).toBeNull()
+    expect(within(rowOf('Scratch')).queryByText('Originals via')).toBeNull()
   })
 
   it('a library built here whose index is gone says so, not Ready', async () => {

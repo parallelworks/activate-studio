@@ -44,9 +44,10 @@ test('read_kb_file reads several files in one call, each under its own heading',
   fs.writeFileSync(path.join(kb, 'a.md'), 'alpha body')
   fs.writeFileSync(path.join(kb, 'b.md'), 'bravo body')
   const out = await executeTool('read_kb_file', JSON.stringify({ paths: ['a.md', 'b.md', 'missing.md'] }), {})
-  assert.match(out.result, /### a\.md\nalpha body/)
-  assert.match(out.result, /### b\.md\nbravo body/)
-  assert.match(out.result, /### missing\.md\nnot read/)
+  // No index here, so the original is read, and each result says so.
+  assert.match(out.result, /### a\.md\n\[source: the original file on this computer\]\nalpha body/)
+  assert.match(out.result, /### b\.md\n\[source: the original file on this computer\]\nbravo body/)
+  assert.match(out.result, /### missing\.md\nnot read: There is no index to read, and the original could not be reached\. missing\.md could not be opened\. Tried only this computer: no such file\./)
   assert.equal(out.summary, '3 files')
 })
 

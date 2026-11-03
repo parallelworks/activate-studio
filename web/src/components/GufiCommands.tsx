@@ -120,7 +120,7 @@ export function rememberToolCommands(callId: string, commands: GufiCommand[]): v
 }
 
 /** The chat tools that run GUFI: their blocks show its commands. */
-export const GUFI_TOOLS = ['search_kb', 'query_corpus', 'list_kb_dir']
+export const GUFI_TOOLS = ['search_kb', 'query_corpus', 'list_kb_dir', 'read_kb_file']
 
 /**
  * Drawn under a GUFI tool's row in the chat: its result summary, which the

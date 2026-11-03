@@ -4,10 +4,12 @@ import { withWorkspace } from '../workspace.js'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import fs from 'node:fs/promises'
 import path from 'node:path'
-import { gufiInstalled, isMissingCli, KB_ROOT, MAX_PREVIEW_BYTES, NO_CLI_MESSAGE, PROJECT_ROOT, PW_CLI } from '../config.js'
-import { classify, listDir, readFileContent, KbError } from '../kb.js'
-import { getLibrary, type Library } from '../libraries.js'
-import { indexedText } from '../gufi.js'
+import { EXTRACT_CACHE, gufiInstalled, isMissingCli, KB_ROOT, MAX_PREVIEW_BYTES, NO_CLI_MESSAGE, PROJECT_ROOT, PW_CLI } from '../config.js'
+import { REMOTE_PREFIX } from '../userLibraries.js'
+import { cachedText, classify, listDir, readFileContent, KbError } from '../kb.js'
+import { getLibrary, lacks, type Library } from '../libraries.js'
+import { INDEX_TEXT_CAP, indexedTextState } from '../gufi.js'
+import { openOriginal, OriginalUnreachable } from '../originals.js'
 import { annotateHits } from '../tags.js'
 import { effectiveSettings } from '../settings.js'
 import { composeWorkflows } from '../workflowCompose.js'
@@ -34,7 +36,8 @@ export interface ToolSpec {
  *  catalog so "built-in" is not a black box. */
 export const TOOL_CALLS: Record<string, string> = {
   search_kb: 'gufi_query full-text (fts5 words), filename, and vector (sqlite-lembed gvec) searches over the index, blended and label-annotated; grep -ri over the knowledge base when no index exists',
-  read_kb_file: 'reads the file in its library; office documents, PDFs, and images return the text extracted for that library (its extraction cache, else the words in its index, on another system too)',
+  read_kb_file: 'reads the text the index holds for the file (gufi_query on its words table: extracted text, OCR, or a plain text file\'s contents, on another system too), else the library\'s extraction cache; a plain text file the index has no text for is read from the original',
+  read_original: 'opens the original file at its library\'s own location (this computer, or over ssh on the library\'s host), then on the host the library names for reading originals, over ssh as the user; plain text as it is, and the extraction cache\'s text for documents and images here',
   list_kb_dir: 'directory listing under the knowledge base root',
   query_corpus: 'canned gufi_query aggregations over the per-directory index databases',
   get_labels: 'reads the user.studio.tags xattr maps cached from the filesystem',
@@ -112,11 +115,28 @@ export const TOOL_SPECS: ToolSpec[] = [
     function: {
       name: 'read_kb_file',
       description:
-        'Read files from the knowledge base by relative path (as returned by search_kb or list_kb_dir). Returns text content; office documents, PDFs, and images return the text read out of them when the library has it. To read several files, pass them together in paths in one call: each comes back under its own heading, the first part of each when there are many.',
+        'Read the text the knowledge base holds for files, by relative path (as returned by search_kb or list_kb_dir): the text in the index, which is what search matched. That is the extracted text of an office document or PDF, the OCR or description of an image, and a plain text file\'s contents. It works when the original file cannot be reached. Each result says its source. It says plainly when the index holds no text for a file; for a plain text file the index has none for, the original is read. The index can lag behind a file changed since the library was last indexed, and holds at most the first 500,000 characters of a file: read_original opens the file itself. To read several files, pass them together in paths in one call: each comes back under its own heading, the first part of each when there are many. To show a file to the user, use show_in_viewer.',
       parameters: {
         type: 'object',
         properties: {
           path: { type: 'string', description: 'Path relative to the knowledge base root' },
+          paths: { type: 'array', items: { type: 'string' }, description: 'Several paths to read in one call, up to 25' },
+          offset: { type: 'number', description: 'Character offset to start from, default 0' },
+          library: { type: 'string', description: 'Which library: an id from list_libraries; default the one selected in this conversation' },
+        },
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'read_original',
+      description:
+        'Open the original file itself, by relative path (as returned by search_kb or list_kb_dir), not the index\'s copy of its text. Use it when read_kb_file says the index holds no text, when the file may have changed since it was indexed, when a file is longer than the index keeps, or when the exact bytes matter. It looks for the file at its library\'s own location first (this computer, or the library\'s host over ssh) and then on the other host the library names for reading originals, over ssh as the user; the result says where it read the file. Plain text files come back as text. A document or an image comes back as its extracted text where this Studio has it (use read_kb_file for the index\'s text of a document on another system). When no host has the file, it says which hosts were tried and why each failed. To read several files, pass them together in paths in one call; offset, and library are as in read_kb_file.',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: 'Path relative to the library\'s root' },
           paths: { type: 'array', items: { type: 'string' }, description: 'Several paths to read in one call, up to 25' },
           offset: { type: 'number', description: 'Character offset to start from, default 0' },
           library: { type: 'string', description: 'Which library: an id from list_libraries; default the one selected in this conversation' },
@@ -1412,47 +1432,163 @@ function scopeParam(name: unknown): string | null {
   return String(name ?? '').trim() || toolContext.getStore()?.library || null
 }
 
+/** What a read tool returns for one file: its text, with a line saying where
+ *  the text came from, or why there is none. */
+type ToolText = { text: string; source: string; label: string } | { text: null; why: string }
+
+/** The line that opens a file's text, so the model knows what it holds. */
+const labelOf = (what: string, note = '') => `[source: ${what}${note ? `; ${note}` : ''}]`
+
+const pathParts = (rel: string) => path.posix.normalize(rel).split('/').filter(p => p && p !== '.')
+
+/** What a file's kind is called in a sentence. */
+const kindName = (kind: string) => (kind === 'image' ? 'an image' : kind === 'extracted' ? 'a document' : kind === 'model' ? 'a 3D model' : 'a file')
+
 /**
- * A file's text for read_kb_file, as the library viewer shows it: a text
- * file as it is, and a document or an image as the text read out of it,
- * from the library's own extraction cache (the main folder's, or the one a
- * library the Studio built keeps). The cache was once looked for in the
- * main folder's place for every library, so a document in any other came
- * back as "binary" and the model answered from search snippets alone.
- * Where the cache has nothing, as for an index the Studio only reads, or a
- * library on another system whose files it opens only as text, the text
- * the index holds for the file is used. Without text, the reason, in a
- * line the model can pass on.
+ * A file's text for read_kb_file: the text the library's index holds for it
+ * (the Studio's words table: what a build read out of a document or an
+ * image, or the contents of a plain text file, up to INDEX_TEXT_CAP
+ * characters), which works when the original cannot be reached, whether the
+ * library is on this computer or on another system. Where the index has none, a
+ * document or an image in a library here gives the text in the library's
+ * extraction cache (its entry only; the file need not be there), and any
+ * other file is read from the original, where the Studio can: a plain text
+ * file the index was built without, or a log with no known suffix. The
+ * source is named in each result. Without text, the reason, in a line the
+ * model can pass on.
  */
-async function textForTool(lib: Library, rel: string): Promise<{ text: string; source: string; why?: undefined } | { text: null; why: string }> {
-  const parts = path.posix.normalize(rel).split('/').filter(p => p && p !== '.')
-  const fromIndex = async () => parts.length && !parts.includes('..') ? indexedText(lib.indexRoot, parts.slice(0, -1).join('/'), parts.at(-1)!) : null
-  let fc
+async function indexTextForTool(lib: Library, rel: string): Promise<ToolText> {
+  const parts = pathParts(rel)
+  if (!parts.length || parts.includes('..')) throw new KbError(400, 'invalid path')
+  const kind = classify(parts.at(-1)!, false)
+  // 1. The index. A library known to hold no words, or with no index, is not asked.
+  let unreadable = ''
+  const canAsk = lib.caps.index && (lib.indexRoot.startsWith(REMOTE_PREFIX) || gufiInstalled())
+  // A library here known to hold no words is not asked; one on another
+  // system is, since what it held when it was connected can have changed.
+  const knownNone = !lib.indexRoot.startsWith(REMOTE_PREFIX) && lacks(lib, 'fullText')
+  if (canAsk && !knownNone) {
+    const r = await indexedTextState(lib.indexRoot, parts.slice(0, -1).join('/'), parts.at(-1)!)
+    if (r.state === 'text') {
+      const cut = r.text.length >= INDEX_TEXT_CAP
+      return { text: r.text, source: 'index', label: labelOf('index', cut ? `the index keeps at most the first ${INDEX_TEXT_CAP.toLocaleString('en-US')} characters of a file` : 'it can lag behind the file') }
+    }
+    if (r.state === 'unreadable') unreadable = r.error
+  }
+  // 2. The extraction cache, for a document or an image in a library here.
+  if ((kind === 'extracted' || kind === 'image') && !lib.site) {
+    const c = await cachedText(rel, lib.cacheRoot ?? EXTRACT_CACHE)
+    if (c) return { text: c.content, source: 'extracted', label: labelOf('extracted text kept by the library') }
+  }
+  const noIndex = unreadable ? 'the index could not be read' : !canAsk ? 'there is no index to read' : knownNone ? 'the library was indexed without text' : 'the index holds no text for it'
+  if (kind === 'model') return { text: null, why: `${rel} is a 3D model: ${noIndex}, and it has no text. show_in_viewer opens it.` }
+  // 3. The original, for what the index holds no text of and the Studio can read as it is.
+  let o
   try {
-    fc = lib.site
-      ? await (await import('../userLibraries.js')).remoteFile(lib.indexRoot, rel)
-      : await readFileContent(rel, lib.sourceRoot!, lib.cacheRoot ?? undefined)
+    o = await openOriginal(lib, rel, { viewerId: toolContext.getStore()?.userId ?? null })
   } catch (e) {
-    // A host whose login runs only gufi_query opens no files, but its
-    // index still answers.
-    const kind = classify(parts.at(-1) ?? '', false)
-    const indexed = lib.site && (kind === 'extracted' || kind === 'image') ? await fromIndex() : null
-    if (indexed) return { text: indexed, source: 'index' }
+    if (e instanceof OriginalUnreachable) throw new KbError(e.status, `${noIndex.charAt(0).toUpperCase()}${noIndex.slice(1)}${unreadable ? ` (${unreadable})` : ''}, and the original could not be reached. ${e.message} Answer from the search snippets, and say that the file itself was not read.`)
     throw e
   }
-  if (fc.content != null) return { text: fc.content, source: fc.source }
-  if (fc.kind === 'extracted' || fc.kind === 'image') {
-    const indexed = await fromIndex()
-    if (indexed) return { text: indexed, source: 'index' }
-    const what = fc.kind === 'image' ? 'an image' : 'a document'
+  const fc = o.file
+  if (fc.content != null) {
+    return { text: fc.content, source: fc.source === 'extracted' ? 'extracted' : 'original', label: labelOf(fc.source === 'extracted' ? `extracted text of the original on ${o.where}` : `the original file on ${o.where}`, [canAsk ? noIndex : '', fc.truncated ? 'the first 512 KB of the file' : ''].filter(Boolean).join('; ')) }
+  }
+  if (kind === 'extracted' || kind === 'image') {
+    const what = kindName(kind)
     return {
       text: null,
-      why: lib.site
-        ? `The text of ${rel} is not available: it is ${what} in ${lib.label} on ${lib.site}, where the Studio opens only plain text files, and the index there holds no text for it. Answer from the search snippets, and say that the file itself was not read.`
-        : `No text has been read out of ${rel} (${what}, ${fc.size} bytes): ${lib.label} has not extracted it${fc.kind === 'image' ? ' (no OCR text or description)' : ''}, or could not. Answer from the search snippets, and say that the file itself was not read.`,
+      why: lib.site || o.via === 'read-through'
+        ? `The text of ${rel} is not available: it is ${what} in ${lib.label} on ${o.where}, where the Studio opens only plain text files, and the index holds no text for it. Answer from the search snippets, and say that the file itself was not read.`
+        : `No text has been read out of ${rel} (${what}, ${fc.size} bytes): ${lib.label} has not extracted it${kind === 'image' ? ' (no OCR text or description)' : ''}, or could not. Answer from the search snippets, and say that the file itself was not read.`,
     }
   }
   return { text: null, why: `Binary file (${fc.kind}, ${fc.size} bytes); no text available.` }
+}
+
+/**
+ * A file's text for read_original: the original, opened at the library's
+ * own location and then on the host named for reading originals
+ * (openOriginal). A text file as it is, and a document or an image as the
+ * text in the extraction cache of a library here, which is the only
+ * extraction a read does. Where no host has the file, the error names the
+ * hosts tried and what each said.
+ */
+async function originalTextForTool(lib: Library, rel: string): Promise<ToolText> {
+  const parts = pathParts(rel)
+  if (!parts.length || parts.includes('..')) throw new KbError(400, 'invalid path')
+  const kind = classify(parts.at(-1)!, false)
+  let o
+  try {
+    o = await openOriginal(lib, rel, { viewerId: toolContext.getStore()?.userId ?? null })
+  } catch (e) {
+    if (e instanceof OriginalUnreachable) throw new KbError(e.status, `${e.message} Answer from the search snippets or read_kb_file, and say that the file itself was not read.`)
+    throw e
+  }
+  const fc = o.file
+  const where = o.via === 'read-through' ? `${o.where}, after ${lib.site ?? 'this computer'} could not give it` : o.where
+  if (fc.content != null) {
+    return { text: fc.content, source: fc.source === 'extracted' ? 'extracted' : 'original', label: labelOf(fc.source === 'extracted' ? `extracted text of the original, found on ${where}` : `the original file on ${where}`, fc.truncated ? 'the first 512 KB of the file' : '') }
+  }
+  if (kind === 'extracted' || kind === 'image') {
+    const what = kindName(kind)
+    return {
+      text: null,
+      why: o.where === 'this computer'
+        ? `${rel} is there (${what}, ${fc.size} bytes on ${where}) but ${lib.label} has no extracted text for it, and reading a file does not extract it. read_kb_file returns the index's text for it, when it has any.`
+        : `${rel} is there (${what}, ${fc.size} bytes on ${where}), but the Studio opens only plain text files over ssh and does not extract documents or images from another host. read_kb_file returns the index's text for it, when it has any.`,
+    }
+  }
+  return { text: null, why: `${rel} is there on ${where} but is not text (${fc.kind}, ${fc.size} bytes); no text available.` }
+}
+
+/** A library with no files on this host can be searched, and read from its
+ *  index, but its originals can be opened only through the host named for them. */
+function noFilesHere(lib: Library, needsFiles: boolean): void {
+  if (needsFiles && !lib.site && !lib.sourceRoot && !lib.readThrough) {
+    throw new Error(`${lib.label} has no files on this host; it can be searched and read from its index (read_kb_file), but its originals cannot be opened. Settings, Libraries can name another host that has them.`)
+  }
+  if (!needsFiles && !lib.site && !lib.sourceRoot && !lib.caps.index) throw new Error(`${lib.label} has no files on this host and no index to read; it can be searched but not read`)
+}
+
+/** read_kb_file and read_original: one file with an offset, or up to 25 in
+ *  one call, each under its own heading with its share of the budget. */
+async function readTool(args: any, read: (lib: Library, rel: string) => Promise<ToolText>, needsFiles: boolean): Promise<ToolOutcome> {
+  // Several files in one call: a question about every proposal read
+  // them one call each, and each round trip to the model is seconds.
+  if (Array.isArray(args.paths) && args.paths.length) {
+    const paths = (args.paths as unknown[]).map(String).filter(Boolean).slice(0, 25)
+    const lib = namedLibrary(args.library)
+    noFilesHere(lib, needsFiles)
+    // Split a 30,000-character budget between the files, at least 1,200
+    // each: every result rides along in each later round of the reply.
+    const each = Math.max(1_200, Math.floor(30_000 / paths.length))
+    const read1 = new Set<string>()
+    const parts = await Promise.all(paths.map(async rel => {
+      try {
+        const t = await read(lib, rel)
+        read1.add(rel)
+        if (t.text == null) return `### ${rel}\n${t.why}`
+        const more = t.text.length > each ? `\n[first ${each} of ${t.text.length} characters; read it alone with path and offset for the rest]` : ''
+        return `### ${rel}\n${t.label}\n${t.text.slice(0, each)}${more}`
+      } catch (e) {
+        return `### ${rel}\nnot read: ${String((e as Error).message ?? e).slice(0, 600)}`
+      }
+    }))
+    return { result: parts.join('\n\n'), summary: `${paths.length} files`, files: citedFiles(paths.filter(p => read1.has(p)).map(path => ({ path, library: lib.id }))) }
+  }
+  const rel = String(args.path ?? '')
+  if (!rel) throw new Error('path or paths is required')
+  const offset = Math.max(0, Number(args.offset) || 0)
+  const lib = namedLibrary(args.library)
+  noFilesHere(lib, needsFiles)
+  const t = await read(lib, rel)
+  const files = citedFiles([{ path: rel, library: lib.id }])
+  if (t.text == null) return { result: t.why, summary: 'no text', files }
+  const slice = t.text.slice(offset, offset + TOOL_OUTPUT_CAP)
+  const more = t.text.length > offset + TOOL_OUTPUT_CAP
+    ? `\n[truncated; continue with offset=${offset + TOOL_OUTPUT_CAP}]` : ''
+  return { result: `${t.label}\n${slice}${more}`, summary: `${slice.length} chars (${t.source})`, files }
 }
 
 async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScope?: string[]; userKey?: string | null; model?: string | null }): Promise<ToolOutcome> {
@@ -1509,43 +1645,8 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
         const rels = await grepFallback(refine ? (refine.text || refine.name) : query, limit)
         return { result: rels.length ? rels.join('\n') : 'No matches.', summary: `${rels.length} hits (grep fallback)`, files: citedFiles(rels.map(r => ({ path: r }))) }
       }
-      case 'read_kb_file': {
-        // Several files in one call: a question about every proposal read
-        // them one call each, and each round trip to the model is seconds.
-        if (Array.isArray(args.paths) && args.paths.length) {
-          const paths = (args.paths as unknown[]).map(String).filter(Boolean).slice(0, 25)
-          const lib = namedLibrary(args.library)
-          if (!lib.site && !lib.sourceRoot) throw new Error(`${lib.label} has no files on this host; it can be searched but not read`)
-          // Split a 30,000-character budget between the files, at least 1,200
-          // each: every result rides along in each later round of the reply.
-          const each = Math.max(1_200, Math.floor(30_000 / paths.length))
-          const read = new Set<string>()
-          const parts = await Promise.all(paths.map(async rel => {
-            try {
-              const t = await textForTool(lib, rel)
-              read.add(rel)
-              if (t.text == null) return `### ${rel}\n${t.why}`
-              const more = t.text.length > each ? `\n[first ${each} of ${t.text.length} characters; read it alone with path and offset for the rest]` : ''
-              return `### ${rel}\n${t.text.slice(0, each)}${more}`
-            } catch (e) {
-              return `### ${rel}\nnot read: ${String((e as Error).message ?? e).slice(0, 200)}`
-            }
-          }))
-          return { result: parts.join('\n\n'), summary: `${paths.length} files`, files: citedFiles(paths.filter(p => read.has(p)).map(path => ({ path, library: lib.id }))) }
-        }
-        const rel = String(args.path ?? '')
-        if (!rel) throw new Error('path or paths is required')
-        const offset = Math.max(0, Number(args.offset) || 0)
-        const lib = namedLibrary(args.library)
-        if (!lib.site && !lib.sourceRoot) throw new Error(`${lib.label} has no files on this host; it can be searched but not read`)
-        const t = await textForTool(lib, rel)
-        const files = citedFiles([{ path: rel, library: lib.id }])
-        if (t.text == null) return { result: t.why, summary: 'no text', files }
-        const slice = t.text.slice(offset, offset + TOOL_OUTPUT_CAP)
-        const more = t.text.length > offset + TOOL_OUTPUT_CAP
-          ? `\n[truncated; continue with offset=${offset + TOOL_OUTPUT_CAP}]` : ''
-        return { result: slice + more, summary: `${slice.length} chars (${t.source})`, files }
-      }
+      case 'read_kb_file': return await readTool(args, indexTextForTool, false)
+      case 'read_original': return await readTool(args, originalTextForTool, true)
       case 'list_kb_dir': {
         const lib = namedLibrary(args.library)
         if (!lib.site && !lib.sourceRoot) throw new Error(`${lib.label} has no files on this host; it can be searched but not listed`)

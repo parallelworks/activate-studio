@@ -149,7 +149,7 @@ test('read_kb_file returns a built library\'s document text, and a bare [path] i
     : { calls: [['read_kb_file', { paths: ['reports/site survey.docx', 'reports/scan.pdf'] }]] }
   const r = await ask('When does the pump house flood?', { library: 'shelf' })
   const [result] = toolResults(modelCalls.at(-1))
-  assert.match(result, /### reports\/site survey\.docx\n# Site survey\n\nThe pump house floods in spring\./)
+  assert.match(result, /### reports\/site survey\.docx\n\[source: extracted text kept by the library\]\n# Site survey\n\nThe pump house floods in spring\./)
   assert.doesNotMatch(result, /Binary file|downmark/)
   assert.match(result, /### reports\/scan\.pdf\nNo text has been read out of reports\/scan\.pdf \(a document, \d+ bytes\): Shelf has not extracted it, or could not\./)
   assert.ok(r.content.startsWith('It floods in spring [reports/site survey.docx](#open=file:reports/site%20survey.docx&lib=shelf); see also [reports/scan.pdf](#open=file:reports/scan.pdf&lib=shelf).'), r.content)
@@ -160,7 +160,7 @@ test('read_kb_file returns a built library\'s document text, and a bare [path] i
 test('one path read alone comes back as text with its source, and an unknown bracket is left as written', async () => {
   const { executeTool } = await import('../dist/chat/tools.js')
   const out = await executeTool('read_kb_file', JSON.stringify({ path: 'reports/site survey.docx', library: 'shelf' }), {})
-  assert.equal(out.result, '# Site survey\n\nThe pump house floods in spring.\n')
+  assert.equal(out.result, '[source: extracted text kept by the library]\n# Site survey\n\nThe pump house floods in spring.\n')
   assert.match(out.summary, /chars \(extracted\)/)
   assert.deepEqual(out.files, [{ path: 'reports/site survey.docx', library: 'shelf' }])
   script = () => ({ text: `Items [1] and [x] stay, as does [notes/missing.md].${filler}` })

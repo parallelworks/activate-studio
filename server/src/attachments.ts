@@ -65,10 +65,10 @@ export async function attachmentContext(ids: string[]): Promise<string> {
     if (!fc) { blocks.push(`[Attachment not found: ${id}]`); continue }
     const head = `[Attached file: ${path.basename(rel)}; stored in the knowledge base at ${rel}]`
     if (fc.content?.trim()) {
-      const text = fc.content.length > CONTEXT_CAP ? fc.content.slice(0, CONTEXT_CAP) + '\n…(truncated; read_kb_file can fetch more)' : fc.content
+      const text = fc.content.length > CONTEXT_CAP ? fc.content.slice(0, CONTEXT_CAP) + '\n…(truncated; read_original can fetch more)' : fc.content
       blocks.push(`${head}\n${text}`)
     } else {
-      blocks.push(`${head}\n(No extracted text yet; use read_kb_file or search_kb on that path if needed.)`)
+      blocks.push(`${head}\n(No extracted text yet; use read_kb_file, read_original or search_kb on that path if needed.)`)
     }
   }
   return blocks.join('\n\n')

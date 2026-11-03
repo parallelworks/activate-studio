@@ -32,12 +32,18 @@ export type IndexDepth = 'names' | 'text' | 'ocr' | 'meaning-documents' | 'meani
 export interface SettingsLibrary extends PublicLibrary {
   indexRoot: string
   sourceRoot: string | null
+  /** Another host that has the library's files, where originals are also read. */
+  readThrough?: ReadThrough | null
   /** A library the Studio builds of a folder on this computer. */
   build?: {
     indexDir: string; managed: boolean; state: 'building' | 'ready' | 'updating' | 'failed'
     error: string | null; builtAt: string | null; files: number | null; dirs: number | null; progress: BuildProgress | null
   }
 }
+/** The host a library's originals are also read through, as Settings shows it. */
+export interface ReadThrough { destination: string; port: number | null; sshOptions: string | null; root: string | null }
+/** The fields of that host as typed. */
+export interface ReadThroughInput { destination: string; sshOptions?: string; root?: string }
 /** How far a build has got: a phase, and folders indexed so far. */
 export interface BuildProgress { phase: string; done: number; total: number; current: string | null }
 /** A user's own library on one of their clusters, or on another machine over ssh. */
@@ -57,6 +63,8 @@ export interface UserLibrary {
   /** Over ssh: the options its ssh runs with, as typed, and the jump host they name. */
   sshOptions?: string | null
   jump?: string | null
+  /** Another host that has the library's files, where originals are also read. */
+  readThrough?: ReadThrough | null
   state: 'building' | 'ready' | 'updating' | 'failed'
   run: { slug: string; mode: 'build' | 'update'; startedAt: string } | null
   error: string | null; builtAt: string | null; directories: number | null; files: number | null
@@ -539,6 +547,16 @@ export const api = {
   /** The systems pw ssh reaches, running first; or why it cannot be used,
    *  or why the list could not be had. */
   pwSystems: () => getJson<PwSystems>('/api/user-libraries/pw/systems'),
+  /** The connection test for the host a library's originals are also read through. */
+  testReadThrough: (id: string, body: ReadThroughInput) =>
+    postJson<{ ok: boolean; steps: { name: string; ok: boolean; detail: string; warn?: boolean }[] }>(`/api/libraries/${encodeURIComponent(id)}/read-through/test`, body),
+  /** Sets that host after its test passes, or clears it with no destination. */
+  setReadThrough: async (id: string, body: ReadThroughInput | { destination: '' }) => {
+    const res = await fetch(`/api/libraries/${encodeURIComponent(id)}/read-through`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error((data as { error?: string }).error ?? `${res.status}`)
+    return data as { readThrough: ReadThrough | null }
+  },
   addLibrary: (def: { id: string; label?: string; indexRoot: string; sourceRoot?: string }) =>
     postJson<{ library: SettingsLibrary }>('/api/libraries', def),
   removeLibrary: async (id: string) => {

@@ -113,6 +113,23 @@ export interface FileContent {
   format?: 'markdown' | 'text'
 }
 
+/** The text a library's extraction cache holds for a document or an image,
+ *  without its converter's provenance line, or null when there is none. It
+ *  reads the cache entry only, so it works when the original file is not
+ *  there. */
+export async function cachedText(rel: string, cacheRoot: string = EXTRACT_CACHE): Promise<{ content: string; truncated: boolean; format: 'markdown' | 'text' } | null> {
+  const file = resolveKb(rel + '.txt', cacheRoot) // refuses a path that leaves the cache
+  try {
+    const raw = await fs.readFile(file, 'utf8')
+    if (!raw.trim()) return null
+    // The provenance line is metadata, not content: it decides how the
+    // text is rendered and is then dropped from what the reader sees.
+    const isMarkdown = raw.startsWith(PROVENANCE_PREFIX)
+    const text = isMarkdown ? raw.slice(raw.indexOf('\n') + 1).replace(/^\n/, '') : raw
+    return { content: text.slice(0, MAX_PREVIEW_BYTES), truncated: text.length > MAX_PREVIEW_BYTES, format: isMarkdown ? 'markdown' : 'text' }
+  } catch { return null /* no cache entry */ }
+}
+
 /** `cacheRoot` is where the library keeps its extracted text, the main
  *  folder's cache unless a library the Studio built gives its own. */
 export async function readFileContent(rel: string, root: string = KB_ROOT, cacheRoot: string = EXTRACT_CACHE): Promise<FileContent> {
@@ -133,23 +150,8 @@ export async function readFileContent(rel: string, root: string = KB_ROOT, cache
   }
   if (kind === 'extracted' || kind === 'image') {
     // Extracted text for documents; OCR plus vision caption for images.
-    try {
-      const raw = await fs.readFile(path.join(cacheRoot, rel + '.txt'), 'utf8')
-      if (raw.trim()) {
-        // The provenance line is metadata, not content: it decides how the
-        // text is rendered and is then dropped from what the reader sees.
-        const isMarkdown = raw.startsWith(PROVENANCE_PREFIX)
-        const text = isMarkdown ? raw.slice(raw.indexOf('\n') + 1).replace(/^\n/, '') : raw
-        const truncated = text.length > MAX_PREVIEW_BYTES
-        return {
-          ...base,
-          truncated,
-          content: text.slice(0, MAX_PREVIEW_BYTES),
-          source: 'extracted',
-          format: isMarkdown ? 'markdown' : 'text',
-        }
-      }
-    } catch { /* no cache entry */ }
+    const cached = await cachedText(rel, cacheRoot)
+    if (cached) return { ...base, ...cached, source: 'extracted' }
     return { ...base, truncated: false, content: null, source: 'none' }
   }
   if (kind === 'binary') {

@@ -34,6 +34,7 @@ import { effectiveSettings } from './settings.js'
 import { curatedNames, platformAvailable } from './workflowsTab.js'
 import { authEnabled, authHeaderName } from './auth.js'
 import { remoteDownload, remoteFile, remoteTree } from './userLibraries.js'
+import { downloadOriginal, openOriginal } from './originals.js'
 import { localBuildOffered, requestLibrarySync } from './libraryBuild.js'
 import { traced } from './gufiTrace.js'
 
@@ -393,24 +394,32 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
     return { path: rel, entries }
   })
 
+  // A library's file for the viewer, from its own location and, when the
+  // library names another host for reading originals, from there when that
+  // cannot give it (originals.ts).
+  const throughHost = (lib: { readThrough?: unknown }) => !!lib.readThrough
   app.get('/api/kb/file', async req => {
     const { path: rel = '' } = req.query as { path?: string }
+    const viewerId = (req as { user?: { id?: string } }).user?.id ?? null
     if (inAll(req)) {
       const { lib, sub } = splitAll(req, rel)
+      if (throughHost(lib)) return { ...(await openOriginal(lib, sub, { viewerId })).file, path: rel }
       if (lib.site) return { ...(await remoteFile(lib.indexRoot, sub)), path: rel }
       if (!lib.sourceRoot) throw new KbError(409, `${lib.label} has no files on this host; it can be searched and described but not opened`)
       return { ...(await readFileContent(sub, lib.sourceRoot, lib.cacheRoot ?? undefined)), path: rel }
     }
     const lib = libOf(req)
+    if (throughHost(lib)) return openOriginal(lib, rel, { viewerId }).then(o => o.file)
     if (lib.site) return remoteFile(lib.indexRoot, rel)
     return readFileContent(rel, sourceOf(req), lib.cacheRoot ?? undefined)
   })
 
   app.get('/api/kb/download', async (req, reply) => {
     const { path: rel = '' } = req.query as { path?: string }
-    const remote = inAll(req) ? splitAll(req, rel) : (() => { const l = libOf(req); return l.site ? { lib: l, sub: rel } : null })()
-    if (remote?.lib.site) {
-      const f = await remoteDownload(remote.lib.indexRoot, remote.sub)
+    const viewerId = (req as { user?: { id?: string } }).user?.id ?? null
+    const remote = inAll(req) ? splitAll(req, rel) : (() => { const l = libOf(req); return l.site || throughHost(l) ? { lib: l, sub: rel } : null })()
+    if (remote && (remote.lib.site || throughHost(remote.lib))) {
+      const f = throughHost(remote.lib) ? await downloadOriginal(remote.lib, remote.sub, { viewerId }) : await remoteDownload(remote.lib.indexRoot, remote.sub)
       reply.header('Content-Type', mimeFor(f.name))
       reply.header('Content-Disposition', `attachment; filename="${f.name.replace(/"/g, '')}"`)
       return reply.send(f.body)

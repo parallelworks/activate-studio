@@ -3,7 +3,7 @@ import {
   Button, Callout, DescriptionList, DescriptionListItem, IconButton, Loader, Modal, ProgressBar, StatusBadge, Table, toast, useConfirm,
 } from '@parallelworks/ui'
 import { AddIcon, CloseIcon } from '@parallelworks/ui/icons'
-import { api, type BuildProgress, type IndexDepth, type SettingsLibrary, type UserLibrary } from '../api'
+import { api, type BuildProgress, type IndexDepth, type ReadThrough, type SettingsLibrary, type UserLibrary } from '../api'
 import { IndexDepthSelect, UNSTORED_LIBRARY_DEPTH, depthLabel } from './IndexDepth'
 import { reloadAppConfig, useAppConfig } from '../config'
 import { AddLibrary } from './AddLibrary'
@@ -11,6 +11,7 @@ import { FolderPicker, errText, json, type SetupStatus } from './PrimaryFolder'
 import { IndexControls, IndexJobView, LastBuild } from './IndexActivity'
 import { useIndexStatus } from '../indexActivity'
 import { FOCUS_LIBRARY_EVENT, FOCUS_LIBRARY_KEY } from './OmittedLine'
+import { ReadThroughControl } from './ReadThroughControl'
 
 /** A user library as listed, with how it is reached. */
 type UserLib = UserLibrary
@@ -189,6 +190,18 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
     reloadAppConfig()
   }
   const capsOf = (id: string) => cfg.libraries?.find(l => l.id === id)?.caps
+  // Another host that has a library's files, where its originals are also
+  // read (the assistant's read_original, and the viewer). Shown where it is
+  // set, and where it can be set: the ssh keys it uses are this account's,
+  // which only a Studio with sign-in off lends.
+  const throughRow = (id: string, label: string, current: ReadThrough | null | undefined, canEdit: boolean, reload: () => Promise<unknown>) =>
+    current || canEdit
+      ? (
+        <DescriptionListItem label="Originals via">
+          <ReadThroughControl id={id} label={label} current={current} canEdit={canEdit} onChanged={async () => { await reload() }} />
+        </DescriptionListItem>
+      )
+      : null
 
   if (loadError && !libs) {
     return (
@@ -297,6 +310,7 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
           {l.sourceRoot
             ? <DescriptionListItem label="Files" mono copy><PathText path={l.sourceRoot} /></DescriptionListItem>
             : <DescriptionListItem label="Holds">{holds(l.caps.fullText, l.caps.vectors)}</DescriptionListItem>}
+          {throughRow(l.id, l.label, l.readThrough, user.ssh && !l.pinned, loadLibs)}
         </DescriptionList>
       ),
       state: l.caps.index
@@ -329,6 +343,7 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
             <DescriptionListItem label="Index" mono copy><HostPath host={host} path={l.indexRoot ?? l.indexDir ?? ''} /></DescriptionListItem>
             {l.port ? <DescriptionListItem label="Port" mono>{String(l.port)}</DescriptionListItem> : null}
             {l.sshOptions ? <DescriptionListItem label="SSH options" mono>{l.sshOptions}</DescriptionListItem> : null}
+            {throughRow(l.id, l.label, l.readThrough, user.ssh, loadUser)}
           </DescriptionList>
         ),
         state: l.state === 'building' ? { tone: 'info', text: 'Building', pulse: true, notes }
@@ -362,6 +377,7 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
             {l.sourceRoot
               ? <DescriptionListItem label="Files" mono copy><HostPath host={dest} path={l.sourceRoot} /></DescriptionListItem>
               : <DescriptionListItem label="Holds">{holds(!!caps?.fullText, !!caps?.vectors)}</DescriptionListItem>}
+            {throughRow(l.id, l.label, l.readThrough, user.ssh, loadUser)}
           </DescriptionList>
         ),
         state: l.error ? { tone: 'warning', text: 'Check failed', notes } : { tone: 'success', text: 'Ready', notes },
@@ -386,6 +402,7 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
             {l.sourceRoot
               ? <DescriptionListItem label="Files" mono copy><HostPath host={l.site} path={l.sourceRoot} /></DescriptionListItem>
               : <DescriptionListItem label="Holds">{holds(!!caps?.fullText, !!caps?.vectors)}</DescriptionListItem>}
+            {throughRow(l.id, l.label, l.readThrough, user.ssh, loadUser)}
           </DescriptionList>
         ),
         state: l.error ? { tone: 'warning', text: 'Check failed', notes } : { tone: 'success', text: 'Ready', notes },
@@ -412,6 +429,7 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
             {l.indexRoot ? <HostPath host={l.site} path={l.indexRoot} /> : <span className="muted">being built</span>}
           </DescriptionListItem>
           <DescriptionListItem label="Files" mono copy><HostPath host={l.site} path={l.sourceRoot ?? l.sourceDir} /></DescriptionListItem>
+          {throughRow(l.id, l.label, l.readThrough, user.ssh, loadUser)}
         </DescriptionList>
       ),
       state: l.state === 'building' ? { tone: 'info', text: 'Building', pulse: true, notes }
