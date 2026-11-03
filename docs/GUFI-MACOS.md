@@ -4,7 +4,7 @@ The macOS app carries [GUFI](https://github.com/mar-file-system/GUFI), built fro
 
 ## The published build
 
-The release [`gufi-1713537-macos14`](https://github.com/parallelworks/activate-studio/releases/tag/gufi-1713537-macos14), the one published so far, is a prerelease of this repository, separate from the app's releases, and holds GUFI commit `1713537a`. The build this repository now makes is GUFI 0.8.0 (commit `021a717a`, GUFI's `0.8.0` tag), and its release is published under `gufi-021a717-macos14` before an app that carries it is released (see CI and publishing). The table is the 0.8.0 build, as its manifest recorded it. The release holds `gufi-macos-arm64.tar.gz`, its `.sha256`, and `gufi-macos-arm64.manifest.json`, which records what was built:
+The release [`gufi-021a717-macos14`](https://github.com/parallelworks/activate-studio/releases/tag/gufi-021a717-macos14), the one the app uses, is a prerelease of this repository, separate from the app's releases, and holds GUFI 0.8.0 (commit `021a717a`, GUFI's `0.8.0` tag). The earlier `gufi-1713537-macos14` holds GUFI commit `1713537a` and is kept for older app builds. The table is the 0.8.0 build, as its manifest recorded it. The release holds `gufi-macos-arm64.tar.gz`, its `.sha256`, and `gufi-macos-arm64.manifest.json`, which records what was built:
 
 | | |
 |---|---|
