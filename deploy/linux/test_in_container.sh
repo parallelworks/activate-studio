@@ -4,7 +4,8 @@
 # distribution, the way a person who unpacked it would run it: as a plain
 # user, in a path with a space in it, on the packages the image has plus
 # only the ones named in EXTRA_PACKAGES (installed first, and printed, so a
-# run records exactly what the payload needed beyond the base image).
+# run records exactly what the payload needed beyond the base image); then
+# the update path (test_update_e2e.sh).
 #
 # The workflow runs it with:
 #   docker run --rm -v "$PWD:/src:ro" -v "$IN:/in:ro" -e EXTRA_PACKAGES=... IMAGE bash /src/deploy/linux/test_in_container.sh
@@ -43,6 +44,15 @@ sed 's/^/  /' "$APP/manifest.json" | head -n 40
 
 status=0
 runuser -u tester -- env HOME=/home/tester bash /src/deploy/linux/check_app.sh "$APP" --run || status=$?
+
+# The update path end to end (a per-user install updating itself, a corrupt
+# download, a release that will not start, and the read-only /opt installs a
+# package leaves), against a local stand-in for the release server. Set
+# UPDATE_E2E=0 to skip it.
+if [ "${UPDATE_E2E:-1}" = 1 ]; then
+  echo
+  bash /src/deploy/linux/test_update_e2e.sh || status=$?
+fi
 
 echo
 echo "Dependencies"

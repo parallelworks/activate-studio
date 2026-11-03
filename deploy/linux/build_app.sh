@@ -211,9 +211,9 @@ fi
 
 echo "Run loop, update key, icon..."
 cp "$HERE/studio-run.sh" "$APP/studio-run.sh"
-# The public key updates are verified with (deploy/mac/sign_release.sh signs
-# them); the Linux update channel is not built yet, so nothing reads it, but
-# the tree carries it as the macOS app does.
+# The public key updates are verified with (deploy/linux/sign_release.sh signs
+# them with the macOS app's key); a per-user install's server reads it from
+# here before it installs an update.
 cp "$HERE/../mac/update-signing.pub" "$APP/update-signing.pub"
 # The icon a launcher entry or a package names, a 1024-pixel PNG.
 cp "$HERE/../mac/AppIcon-1024.png" "$APP/share/activate-studio.png"
@@ -274,8 +274,9 @@ tar --owner=0 --group=0 --numeric-owner --sort=name -czf "$ASSET.tar.gz" "$TOP"
 SUM="$(sha256_of "$ASSET.tar.gz")"
 echo "$SUM  $ASSET.tar.gz" >"$ASSET.tar.gz.sha256"
 # The archive's manifest, as the macOS release's: version, asset, checksum,
-# size, and the oldest system it runs on. Unsigned until the update channel
-# exists (deploy/mac/sign_release.sh signs the macOS one).
+# size, and the oldest system it runs on. Unsigned here: a release signs a
+# manifest of its own with deploy/linux/sign_release.sh, which the updater
+# verifies.
 ASSET_NAME="$ASSET.tar.gz" SUM="$SUM" SIZE="$(wc -c <"$ASSET.tar.gz" | tr -d ' ')" python3 - "$APP/manifest.json" "$ASSET.manifest.json" <<'PY'
 import json, os, sys
 m = json.load(open(sys.argv[1]))

@@ -161,6 +161,34 @@ describe('the Updates section', () => {
     expect(screen.queryByRole('switch', { name: 'Install updates automatically when idle' })).toBeNull()
   })
 
+  it('for a .deb install, says to update through apt, with the command, and offers no install', async () => {
+    const command = 'sudo apt update\nsudo apt install --only-upgrade activate-studio'
+    const note = 'This copy was installed from a .deb package, so it does not update itself. To update, run these in a terminal, then quit and reopen ACTIVATE Studio:'
+    stubServer(server({ updates: status({
+      mode: 'package', canInstall: false, command, commandNote: note,
+      package: { kind: 'deb', manager: 'apt', name: 'activate-studio' },
+      reason: 'This copy was installed from a .deb package, so it does not update itself. Update it with apt in a terminal, then quit and reopen ACTIVATE Studio.',
+    }) }))
+    const { container } = render(<UpdatesSection />)
+    expect(await screen.findByText(note)).toBeInTheDocument()
+    expect(container.textContent).toContain(command)
+    expect(container.textContent).not.toContain('pnpm')
+    expect(screen.getByText('Version v1.141 is available')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Update now' })).toBeNull()
+    expect(screen.queryByRole('switch', { name: 'Install updates automatically when idle' })).toBeNull()
+  })
+
+  it('for an .rpm install with nothing newer, says updates come through dnf', async () => {
+    const reason = 'This copy was installed from an .rpm package, so it does not update itself; updates come through dnf.'
+    stubServer(server({ updates: status({
+      mode: 'package', available: false, latest: null, canInstall: false, reason, command: null, commandNote: null,
+      package: { kind: 'rpm', manager: 'dnf', name: 'activate-studio' },
+    }) }))
+    render(<UpdatesSection />)
+    expect(await screen.findByText(reason)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Update now' })).toBeNull()
+  })
+
   it('renders nothing for a hosted deployment, refused or reported', async () => {
     const refused = server({ code: 403 })
     stubServer(refused)

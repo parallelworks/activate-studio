@@ -190,7 +190,7 @@ function BuildUpdates({ flow }: { flow: UpdateFlow }) {
             <PopoverClose render={<Button variant="secondary" size="sm" />} onClick={openUpdates}>Changes</PopoverClose>
             {check}
           </div>
-          {status.mode === 'clone' && status.command && (
+          {status.command && (
             <CopyCodeBlock className="mcp-snippet" text={status.command} label="update commands">{status.command}</CopyCodeBlock>
           )}
           {!status.canInstall && !status.command && status.reason && <p className="identity-note">{status.reason}</p>}

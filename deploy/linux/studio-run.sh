@@ -9,11 +9,16 @@
 # replaced the payload, runs the new copy's own run loop in place of this
 # one.
 #
-# What the macOS app's run loop does and this one does not, for now: roll
-# an update back when the new version keeps stopping (there is no update
-# channel for Linux yet), and read the desktop's proxy settings (the
-# server follows HTTPS_PROXY, HTTP_PROXY and NO_PROXY from the environment
-# or studio.env).
+# After an update (DATA/updates/pending.json, written by the server when it
+# swaps a new payload in; only a per-user install updates itself), a server
+# that stops three times within two minutes is taken as broken: the previous
+# payload, kept beside this one as .<name>.previous, is put back and started
+# instead, and DATA/updates/rolled-back.json says so. A server that stays up
+# a minute clears the mark itself.
+#
+# What the macOS app's run loop does and this one does not, for now: read
+# the desktop's proxy settings (the server follows HTTPS_PROXY, HTTP_PROXY
+# and NO_PROXY from the environment or studio.env).
 #
 # Usage: studio-run.sh DATA_DIR
 set -u
@@ -25,6 +30,8 @@ LOG="$DATA/logs/studio.log"
 DEFAULT_KB="${STUDIO_DEFAULT_KB:-$HOME/Documents/ACTIVATE Studio}"
 RESTART=75
 RELAUNCH=76
+PENDING="$DATA/updates/pending.json"
+PREVIOUS="$(dirname "$RES")/.$(basename "$RES").previous"
 
 mkdir -p "$DATA/index/models" "$DATA/logs"
 
@@ -60,7 +67,43 @@ LOGIN_PATH="$(printf '%s\n' "$LOGIN_ENV" | sed -n 's/^__STUDIO_PATH__=//p' | tai
 LOGIN_KRB5CCNAME="$(printf '%s\n' "$LOGIN_ENV" | sed -n 's/^__STUDIO_KRB5CCNAME__=//p' | tail -n 1)"
 [ -n "${KRB5CCNAME:-}" ] || [ -z "$LOGIN_KRB5CCNAME" ] || export KRB5CCNAME="$LOGIN_KRB5CCNAME"
 
+# One string from pending.json.
+field() { sed -n "s/.*\"$1\": *\"\([^\"]*\)\".*/\1/p" "$PENDING" 2>/dev/null | head -n 1; }
+
+# Put the previous payload back and run its own loop in place of this one.
+roll_back() {
+  local from to failed
+  from="$(field to)"
+  to="$(field from)"
+  if [ ! -d "$PREVIOUS" ]; then
+    echo "$(stamp) ${from:-the new version} keeps stopping, and there is no previous copy to go back to" >>"$LOG"
+    rm -f "$PENDING"
+    return
+  fi
+  failed="$(dirname "$RES")/.$(basename "$RES").failed"
+  # The payload has read-only directories (Python's), which rm cannot empty.
+  chmod -R u+w "$failed" 2>/dev/null
+  rm -rf "$failed"
+  if ! mv "$RES" "$failed"; then
+    echo "$(stamp) could not move $RES aside to roll back" >>"$LOG"
+    return
+  fi
+  if ! mv "$PREVIOUS" "$RES"; then
+    mv "$failed" "$RES"
+    echo "$(stamp) could not put $PREVIOUS back" >>"$LOG"
+    return
+  fi
+  printf '{\n "from": "%s",\n "to": "%s",\n "at": "%s",\n "reason": "it stopped %s times within two minutes of starting"\n}\n' \
+    "${from:-unknown}" "${to:-unknown}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" >"$DATA/updates/rolled-back.json"
+  rm -f "$PENDING"
+  chmod -R u+w "$failed" 2>/dev/null
+  rm -rf "$failed"
+  echo "$(stamp) ${from:-the new version} stopped $1 times within two minutes; ${to:-the previous version} is back" >>"$LOG"
+  exec /bin/bash "$RES/studio-run.sh" "$DATA"
+}
+
 backoff=2
+failures=
 while [ "$stopping" = 0 ]; do
   # One previous log is kept.
   if [ -f "$LOG" ] && [ $(( $(wc -c <"$LOG") )) -gt 10485760 ]; then mv -f "$LOG" "$LOG.1"; fi
@@ -89,7 +132,8 @@ while [ "$stopping" = 0 ]; do
     # the data is. Python writes no bytecode caches, which would land
     # inside the payload (read-only when a package installed it). The
     # payload's own path is not given as STUDIO_APP_BUNDLE, which is the
-    # macOS app's updater: see docs/LINUX-APP.md.
+    # macOS app's updater: the server finds the payload it runs from (see
+    # docs/LINUX-APP.md, Updates).
     export HOST=127.0.0.1 STUDIO_CONFIG_FILE="$CONFIG" STUDIO_RESTARTABLE=1 \
       STUDIO_DATA_DIR="$DATA" PYTHONDONTWRITEBYTECODE=1
     # The payload's Node and tesseract come ahead of any other, with its
@@ -122,6 +166,21 @@ while [ "$stopping" = 0 ]; do
     # process, reading its own script rather than this one.
     echo "$(stamp) the payload was updated; its own run loop takes over" >>"$LOG"
     exec /bin/bash "$RES/studio-run.sh" "$DATA"
+  fi
+  if [ -f "$PENDING" ]; then
+    now=$(date +%s)
+    if [ $(( now - started )) -gt 60 ]; then
+      rm -f "$PENDING"
+      failures=
+    elif [ "$code" != "$RESTART" ]; then
+      # Stops in the last two minutes, this one included.
+      recent='' n=0
+      for t in $failures $now; do
+        if [ $(( now - t )) -le 120 ]; then recent="$recent $t"; n=$((n + 1)); fi
+      done
+      failures="$recent"
+      [ "$n" -ge 3 ] && roll_back "$n"
+    fi
   fi
   if [ "$code" = "$RESTART" ]; then
     backoff=2

@@ -575,7 +575,9 @@ export interface ChangeEntry { title: string; pr: number | null; body: string }
 export interface UpdateRelease { version: string; publishedAt: string | null; url: string | null; entries: ChangeEntry[] }
 export type UpdateState = 'idle' | 'checking' | 'downloading' | 'verifying' | 'installing' | 'restarting' | 'error'
 export interface UpdatesStatus {
-  mode: 'app' | 'clone' | 'hosted'
+  /** app: this copy replaces itself; clone and package: it is updated
+   *  from outside (git, or a package manager); hosted: by its deployment. */
+  mode: 'app' | 'clone' | 'hosted' | 'package'
   current: { version: string; builtAt: string | null }
   policy: UpdatePolicy
   latest: { version: string; publishedAt: string | null; notes: string | null; url: string | null } | null
@@ -586,8 +588,14 @@ export interface UpdatesStatus {
   canInstall: boolean
   /** Why it cannot install, in plain words. */
   reason: string | null
-  /** The commands that update a clone of the repository. */
+  /** The commands that update a clone of the repository, or a packaged
+   *  install's package manager command. */
   command?: string | null
+  /** The sentence that introduces `command` for a packaged install; a clone
+   *  has its own wording. */
+  commandNote?: string | null
+  /** Set for an install that a package manager owns. */
+  package?: { kind: 'deb' | 'rpm' | 'other'; manager: 'apt' | 'dnf' | null; name: string } | null
   state: UpdateState
   progress: { bytes: number; total: number | null } | null
   error: string | null
