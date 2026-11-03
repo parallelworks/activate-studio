@@ -7,6 +7,7 @@
 #   [recipe-only]       only the recipe build
 #   [no-recipe]         skip the recipe build
 #   [no-ctest]          skip the ctest job
+#   [ctest-only]        only the ctest job
 #   [cmake-src]         recipe build with CMake 4.2.1 built from source
 name: gufi-cygwin-spike
 
@@ -49,7 +50,7 @@ jobs:
 
   # 1. The reference recipe: stock Cygwin, its package list, Debug, its CMake flags.
   recipe:
-    if: ${{ !contains(github.event.head_commit.message, '[smoke-only') && !contains(github.event.head_commit.message, '[no-recipe]') }}
+    if: ${{ !contains(github.event.head_commit.message, '[smoke-only') && !contains(github.event.head_commit.message, '[no-recipe]') && !contains(github.event.head_commit.message, '[ctest-only]') }}
     runs-on: windows-latest
     timeout-minutes: 240
     strategy:
@@ -87,7 +88,7 @@ jobs:
 
   # 2. Release build with the macOS payload's flags, installed, with its DLLs, as a zip.
   release:
-    if: ${{ !contains(github.event.head_commit.message, '[smoke-only') && !contains(github.event.head_commit.message, '[recipe-only]') }}
+    if: ${{ !contains(github.event.head_commit.message, '[smoke-only') && !contains(github.event.head_commit.message, '[recipe-only]') && !contains(github.event.head_commit.message, '[ctest-only]') }}
     runs-on: windows-latest
     timeout-minutes: 240
     defaults:
@@ -171,7 +172,7 @@ jobs:
   # 4. Studio-shaped smoke tests, on a clean runner, from PowerShell.
   smoke:
     needs: [lint, release]
-    if: ${{ !cancelled() && !contains(github.event.head_commit.message, '[recipe-only]') && (needs.release.result == 'success' || needs.release.result == 'skipped') }}
+    if: ${{ !cancelled() && !contains(github.event.head_commit.message, '[recipe-only]') && !contains(github.event.head_commit.message, '[ctest-only]') && (needs.release.result == 'success' || needs.release.result == 'skipped') }}
     runs-on: windows-latest
     timeout-minutes: 120
     steps:

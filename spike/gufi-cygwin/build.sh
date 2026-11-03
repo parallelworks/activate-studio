@@ -53,7 +53,13 @@ note "- GUFI $(git describe --tags --always) ($(git rev-parse HEAD)), clone and 
 # The reference recipe pins Python 3.9 (its sqlalchemy package is not found with
 # Cygwin's default 3.12); GUFI's own CI does the same. The release job leaves the default.
 case "$MODE" in recipe|ctest) ln -sf /usr/bin/python3.9 /usr/bin/python3 ;; esac
-if [ "$MODE" = ctest ]; then python3 -m pip install -r contrib/CI/requirements.txt 2>&1 | tail -3; fi
+if [ "$MODE" = ctest ]; then
+  # As GUFI's own Cygwin CI does. Not fatal here: the log shows why it fails if it does.
+  set +e
+  python3 -m pip install -r contrib/CI/requirements.txt >"$RES/pip-install.log" 2>&1
+  note "- pip install -r contrib/CI/requirements.txt: exit $? (log in pip-install.log)"
+  set -e
+fi
 note "- python3 -> $(readlink -f /usr/bin/python3) ($(python3 --version 2>&1)); sqlalchemy importable: $(python3 -c 'import sqlalchemy; print(sqlalchemy.__version__)' 2>&1 | tail -1)"
 mkdir build
 cd build
