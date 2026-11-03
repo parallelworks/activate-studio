@@ -51,6 +51,7 @@ type Supervisor struct {
 	DataDir   string // per-user data: studio.env, index, logs
 	KBRoot    string // the documents folder
 	Events    func(ServerEvent)
+	Pause     time.Duration // the wait before starting again after an update's stop (default 2 s; tests shorten it)
 
 	mu       sync.Mutex
 	child    *serverProcess
@@ -59,6 +60,7 @@ type Supervisor struct {
 	restart  string // a restart the shell asked for, and its reason
 	retry    chan string
 	starts   int
+	stops    []time.Time // stops of the server shortly after an update, for the rollback
 }
 
 // Port is the port the server was last started on.
@@ -72,6 +74,7 @@ func (s *Supervisor) Run() {
 	s.mu.Unlock()
 	reason := "launch"
 	for {
+		startedAt := time.Now()
 		code, err := s.runOnce(reason)
 		s.mu.Lock()
 		stopping := s.stopping
@@ -88,6 +91,16 @@ func (s *Supervisor) Run() {
 			reason = "exit-75"
 		case err == nil && code == exitRelaunch:
 			reason = "exit-76"
+		case s.RunScript != "" && err == nil && code != exitRestart && s.pendingUpdate():
+			// Just after an update (updates/pending.json, written by the
+			// server when it swaps the new payload in): as the run loop
+			// does, start it again quietly, and after three stops within
+			// two minutes put the previous payload back.
+			if s.afterUpdateStop(startedAt) {
+				reason = "rollback"
+			} else {
+				reason = "after-update"
+			}
 		default:
 			msg := fmt.Sprintf("The Studio's server stopped (exit status %d).", code)
 			if err != nil {
@@ -105,6 +118,47 @@ func (s *Supervisor) Run() {
 			reason = r
 		}
 	}
+}
+
+func (s *Supervisor) pendingFile() string { return filepath.Join(s.DataDir, "updates", "pending.json") }
+
+func (s *Supervisor) pendingUpdate() bool {
+	_, err := os.Stat(s.pendingFile())
+	return err == nil
+}
+
+// afterUpdateStop handles a stop of the server while an update is pending
+// (the rules of studio-run.sh's loop). It reports whether the previous
+// payload was put back.
+func (s *Supervisor) afterUpdateStop(started time.Time) (rolledBack bool) {
+	now := time.Now()
+	if now.Sub(started) > 60*time.Second {
+		// It stayed up a minute: the update is good.
+		_ = os.Remove(s.pendingFile())
+		s.stops = nil
+		return false
+	}
+	recent := []time.Time{now}
+	for _, t := range s.stops {
+		if now.Sub(t) <= 2*time.Minute {
+			recent = append(recent, t)
+		}
+	}
+	s.stops = recent
+	if len(recent) >= 3 {
+		s.stops = nil
+		_ = exec.Command("/bin/bash", s.RunScript, "--rollback", s.DataDir, strconv.Itoa(len(recent))).Run()
+		return true
+	}
+	time.Sleep(s.afterUpdatePause())
+	return false
+}
+
+func (s *Supervisor) afterUpdatePause() time.Duration {
+	if s.Pause != 0 {
+		return s.Pause
+	}
+	return 2 * time.Second
 }
 
 // Restart stops the running server and starts it again (the page's

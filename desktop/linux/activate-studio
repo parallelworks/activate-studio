@@ -210,14 +210,15 @@ version() {
 }
 
 uninstall() {
-  if [ -f "$TREE/PACKAGE-MANAGED" ]; then
-    say "ACTIVATE Studio was installed by your package manager ($(cat "$TREE/PACKAGE-MANAGED")). Remove it with:"
+  kind="$(cut -d' ' -f1 "$TREE/install-kind" 2>/dev/null || true)"
+  if [ "$kind" = deb ] || [ "$kind" = rpm ]; then
+    say "ACTIVATE Studio was installed by your package manager ($kind). Remove it with:"
     say "  sudo apt remove activate-studio     (Debian, Ubuntu)"
     say "  sudo dnf remove activate-studio     (RHEL, Rocky, Alma, Fedora)"
     say "Your index, settings and logs stay in $DATA until you delete that folder."
     exit 1
   fi
-  if [ -x "$TREE/uninstall.sh" ] && [ -f "$TREE/../install.json" ]; then
+  if [ -x "$TREE/uninstall.sh" ] && [ "$kind" = user ]; then
     exec "$TREE/uninstall.sh" "$@"
   fi
   say "This copy was not installed (it runs from where it was unpacked); delete its folder to remove it."

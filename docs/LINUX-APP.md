@@ -5,12 +5,12 @@ ACTIVATE Studio for Linux x86_64 is the macOS app's contents without Apple's par
 | | Per-user tarball | .deb and .rpm packages |
 |---|---|---|
 | Who installs | you, with no administrator rights | an administrator, with apt or dnf |
-| Where | `~/.local/share/activate-studio` | `/opt/activate-studio` |
+| Where | `~/.local/lib/activate-studio` | `/opt/activate-studio` |
 | Updates | the Studio updates itself (see "Updates") | apt or dnf only |
 | Several users | each installs their own copy | one copy, each user has their own server and index |
 | Remove | `activate-studio --uninstall` | apt or dnf |
 
-Both come from the same tree, so they behave the same. Your index, settings and logs are in your home folder either way (`~/.local/share/activate-studio-data`), so moving from one to the other keeps them.
+Both come from the same tree, so they behave the same, and the update contract below (`install-kind`, a stable payload path, the `shell` entry) is what tells them apart. Your index, settings and logs are in your home folder either way (`~/.local/share/activate-studio-data`), so moving from one to the other keeps them.
 
 ## Requirements
 
@@ -35,7 +35,7 @@ tar -xzf activate-studio-linux-x86_64.tar.gz
 activate-studio/install.sh
 ```
 
-The script copies the tree to `~/.local/share/activate-studio/<version>`, points `~/.local/share/activate-studio/current` at it, writes the command `~/.local/bin/activate-studio`, a menu entry and icons under `~/.local/share`, and tells you if WebKitGTK is missing. `--move` moves the unpacked folder instead of copying it. Running it again reinstalls the same version. Open ACTIVATE Studio from the applications menu, or run `activate-studio`.
+The script copies the tree to `~/.local/lib/activate-studio` (a real directory, the same path for every version), writes `install-kind` (`user`) in it, the command `~/.local/bin/activate-studio`, a menu entry and icons under `~/.local/share`, and tells you if WebKitGTK is missing. `--move` moves the unpacked folder instead of copying it. Running it again replaces the install with the one unpacked, and keeps your data. Open ACTIVATE Studio from the applications menu, or run `activate-studio`.
 
 For everyone on the computer:
 
@@ -64,32 +64,57 @@ Settings are read from `studio.env` in the data folder (`~/.local/share/activate
 
 ## Updates
 
-Packages are updated by apt or dnf only; the Studio's own update check reports that and does not offer to install. A per-user install updates itself from the `linux` release channel, which is not published yet; until it is, install a newer tarball over the old one with `install.sh`, which keeps your data. A new version is placed beside the old one and `current` moves to it, so the window and the browser mode both start the new version at their next restart.
+Two install layouts come from the one payload, and they update differently. The server tells them apart by the file `install-kind` in the payload's top directory (beside `studio-run.sh`), which the installer or the package writes.
+
+| `install-kind` | Written by | Where the payload is | Updates |
+|---|---|---|---|
+| `user` | the per-user installer | a directory the user can write, such as `~/.local/lib/activate-studio` | the Studio replaces itself from the project's releases |
+| `deb` | the .deb package | `/opt/activate-studio`, root-owned | never by itself: the Studio shows that a version is available and says to update with `apt` |
+| `rpm` | the .rpm package | `/opt/activate-studio`, root-owned | never by itself: the same, with `dnf` |
+
+The file holds one line: the kind, then optionally the package name when it is not `activate-studio` (`deb activate-studio`). The archive that updates download does not contain the file; an update writes `user` into the new payload before it is put in place, so a per-user install stays one. A package must write its kind and must not leave a payload that can replace itself: a `deb` or `rpm` copy never installs an update, whoever runs it and whatever it can write, because the package database would no longer match the files.
+
+With no `install-kind` file (a tarball unpacked by hand), the path decides. A payload whose directory the user can replace (the directory holding it is writable) is taken as a per-user install and updates itself. One the user cannot write to is taken as managed by someone else: if dpkg lists `studio-run.sh` under `activate-studio`, or `rpm -qf` names a package for it, the Studio treats it as that package; otherwise it says it cannot update itself here and suggests the releases page or a per-user install. An unreadable or unknown `install-kind` counts as no file.
+
+### What the installer and the packages must do
+
+- The payload's top directory has a stable path that holds no version, and it is a real directory, not a link: `studio-run.sh` finds its own place by the physical path, and an update replaces the directory at that path. A per-user install is `~/.local/lib/activate-studio` (the archive unpacks to `activate-studio/`, so `tar -xzf ... -C ~/.local/lib`). Launchers and `.desktop` files name `studio-run.sh` or a program in that directory by that path.
+- The directory holding the payload must be writable by the user, because an update unpacks `.activate-studio.new` beside it and keeps the old payload as `.activate-studio.previous` for a rollback. Nothing else in the tree is written by the Studio, so a package can install it read-only.
+- A window shell inside the payload is named in the payload's `manifest.json` as `"shell": "path/inside/the/payload"` (here `bin/activate-studio-wk41`; the manifest also lists `shells` by name). When an update changes that file, the Studio tells the person to reopen the window; the run loop alone is restarted by the update. A payload with no `shell` entry has no window to reopen.
+- A package that installs into `/opt/activate-studio` writes `install-kind` as `deb` or `rpm` and is named `activate-studio` (or writes the name after the kind). The commands the Studio shows are `sudo apt update` then `sudo apt install --only-upgrade activate-studio` for a `deb`, and `sudo dnf upgrade --refresh activate-studio` for an `rpm`.
+- `STUDIO_APP_BUNDLE` stays unset for Linux. The server finds the payload from its own place (`<payload>/app/server/dist`), or from `STUDIO_PAYLOAD_ROOT` where that is set.
+
+### What the window does about updates
+
+The window shell supervises the server itself, through `studio-run.sh --once`, and reads the same contract as the run loop: exit 75 (a setting changed) and exit 76 (an update replaced the payload) start the server again, from the install's own path, which now holds the new payload, and the page reloads. After an update (`updates/pending.json` exists) a server that stops three times within two minutes makes the shell run `studio-run.sh --rollback`, which puts `.activate-studio.previous` back as the run loop does, and the server starts again from it. When the page asks to reopen (Reopen now, after an update that changed the window's program), the shell compares its own program with the file of the same name in the install; if they differ it stops the server, starts the install's launcher, which waits for the old window to end, and quits; otherwise only the server restarts.
+
+### The linux channel
+
+The channel is built like the macOS one, so one release flow serves both. A release that gets a Linux build has three more assets: `activate-studio-linux-x86_64.tar.gz`, `activate-studio-linux-x86_64.manifest.json` and `activate-studio-linux-x86_64.manifest.json.sig`. The same files are in a fixed release tagged `linux`, a prerelease that is never latest and that the update check skips because its tag is not a version; it is the address an installer and the docs use. The `linux-app` workflow does this only when started by hand with the `release` input (a published tag such as `v1.150`), after it has built that tag and run it on all five distributions; a run on a push or without the input publishes nothing. It signs the manifest with `deploy/linux/sign_release.sh`, with the key the macOS app uses, whose public half is `update-signing.pub` in the payload.
+
+Releases are frequent and most do not get a Linux build. An install updates to the newest release on its channel (stable, or pre-release if chosen in Settings) that carries the three assets, and is told of no other. A package install is told of a version on the same rule, which is a statement that a Linux build exists, not that the package repository has it yet.
+
+### How a per-user install updates
+
+The check runs on the same schedule as the macOS app's. For a release with the assets the server:
+
+1. downloads the manifest and its signature and verifies the Ed25519 signature with `update-signing.pub` from its own payload; the manifest names the version, the asset, its SHA-256 and size, and `minGlibc`;
+2. checks that the manifest's version is the release's and newer than the running one, and that the C library on this computer is at least `minGlibc`;
+3. downloads the archive into the data directory's `updates` folder, stopping at the size the manifest gives and comparing the SHA-256 as it arrives;
+4. unpacks it into `.activate-studio.new` beside the payload, after checking that every entry is inside `activate-studio/`; checks that `studio-run.sh`, Node, the server, the update key and `manifest.json` are there and that the version inside is the manifest's;
+5. moves the running payload to `.activate-studio.previous` and the new one into its place (a failure of the second move puts the first back), writes `updates/pending.json`, and exits with status 76, on which `studio-run.sh` runs the new payload's own `studio-run.sh` in place of itself.
+
+A download that fails any check leaves the payload as it was and removes what it fetched; automatic installation does not try that version again until the Studio restarts, and **Update now** tries it again. After an update the run loop watches `pending.json`: three stops within two minutes put `.activate-studio.previous` back and say so in `updates/rolled-back.json`, which Settings shows once; a server that stays up for a minute clears the mark. Settings, Updates keeps **Roll back** while `.activate-studio.previous` exists. Automatic installation when idle works as on macOS.
+
+The swap is two renames in one directory, so the payload's path is missing for the moment between them; the running Studio is unaffected, since its files stay open in the moved tree. The Studio is the only writer.
+
+### What a package install shows
+
+A `deb` copy shows, under the **Version … is available** notice and in Settings, Updates: "This copy was installed from a .deb package, so it does not update itself" with `sudo apt update` and `sudo apt install --only-upgrade activate-studio` to copy, and says to quit and reopen ACTIVATE Studio afterward. An `rpm` copy says the same with `sudo dnf upgrade --refresh activate-studio`. There is no **Update now**, no automatic install and no rollback, and the install and rollback requests are refused with the same sentence.
 
 ## Uninstall
 
-Per user: `activate-studio --uninstall`. It lists what it removes (the program, the command, the menu entry and icons, the window's cache), keeps your index, settings and logs, and never touches your documents. `--purge` removes the index, settings and logs too, and `--dry-run` lists what would go and what stays, one `kind<TAB>path` line each. Packages: `sudo apt remove activate-studio` or `sudo dnf remove activate-studio`. Data in your home folder stays until you delete `~/.local/share/activate-studio-data`.
-
-## Install layout and markers
-
-For the updater (`server/src/updates.ts`) and the scripts, these are fixed. `studio-run.sh` and the server run from the tree whichever way it was installed; the tree is the folder that holds `studio-run.sh` and `manifest.json`, and is found from the server's own location (`<tree>/app/server/dist/main.js`).
-
-Per-user install, with `R` = `${XDG_DATA_HOME:-~/.local/share}/activate-studio`:
-
-| Path | Meaning |
-|---|---|
-| `R/install.json` | the marker: `{"layout": 1, "kind": "user", "installer": "install.sh", "current": "current", "version", "installedAt"}`. Present means the install is self-updating if `R` is writable. |
-| `R/<version>/` | a whole tree, as unpacked from the archive (its name is the manifest's `version`, made safe for a file name) |
-| `R/current` | a relative symlink to the running version's folder; replaced atomically (`mv -T`) |
-| `R/previous` | optional symlink an updater may keep to the version before, for rollback |
-| `~/.local/bin/activate-studio` | a script that sets `STUDIO_TREE=R/current` and runs `R/current/bin/activate-studio` |
-| `~/.local/share/applications/activate-studio.desktop`, `~/.local/share/icons/hicolor/*/apps/activate-studio.png` | menu entry and icons, written by `install.sh` |
-
-An update unpacks the new archive to `R/.<version>.new`, checks it, renames it to `R/<version>`, swaps `current`, and exits the server with status 76. Both the window shell and `studio-run.sh` start the server again through the path `R/current/studio-run.sh` (the shell keeps the logical path, from `STUDIO_TREE`), so the new copy runs. Old versions are the updater's to prune; `uninstall.sh` removes `R` whole.
-
-Package install: the tree is `/opt/activate-studio`, owned by root, and `/opt/activate-studio/PACKAGE-MANAGED` exists (its content is `deb` or `rpm`). That file means "updated by apt or dnf": the updater must report this and offer no install, whatever the permissions. A tree with neither `R/install.json` beside it nor `PACKAGE-MANAGED` in it is an archive unpacked and run in place; it has no update path.
-
-The window shell's contract with `studio-run.sh`: `studio-run.sh --once DATA_DIR` starts the server once and exits with its exit status; the shell reads 75 (a setting changed) and 76 (updated) as restart requests. `STUDIO_RUN_PORT` is the port to use unless `studio.env` names one.
+Per user: `activate-studio --uninstall`. It lists what it removes (the program and any copy an update left beside it, the command, the menu entry and icons, the window's cache), keeps your index, settings and logs, and never touches your documents. `--purge` removes the index, settings and logs too, and `--dry-run` lists what would go and what stays, one `kind<TAB>path` line each. Packages: `sudo apt remove activate-studio` or `sudo dnf remove activate-studio`. Data in your home folder stays until you delete `~/.local/share/activate-studio-data`.
 
 ## What is in the tree
 
@@ -99,6 +124,7 @@ activate-studio/
   bin/activate-studio-wk41      the window shell for WebKitGTK 4.1
   bin/activate-studio-wk40      the window shell for WebKitGTK 4.0
   install.sh, uninstall.sh      (not in packages)
+  install-kind                  written by install.sh or the package
   node/  python/  app/  gufi/  ocr/  models/
   share/                        icons, menu entry template
   studio-run.sh  manifest.json  update-signing.pub  LICENSE  NOTICE
@@ -116,6 +142,12 @@ activate-studio/
 | `manifest.json` | what it was built from and the system libraries it needs |
 
 The window shell is a small Go program (Wails v2, `desktop/wails`) that links to the computer's GTK and WebKitGTK. It starts the server through `studio-run.sh --once`, waits for `/api/version`, and shows the Studio through a reverse proxy it serves on 127.0.0.1, which gives the page the same bridge the macOS window gives (folder chooser, following the server to another port, relaunch after an update, downloads into `~/Downloads`, links that leave the Studio opening in the browser). It starts the server again after exit 75 or 76, shows an error with **Try Again** after any other exit, and ends the server and everything it started when the window closes, on TERM, and when the shell itself is killed (a guard process does that).
+
+## What was measured
+
+The archive is about 255 MiB (the tree 687 MB: Node 144 MB, Python 196 MB, GUFI 182 MB, tesseract 12 MB, the server's `node_modules` 69 MB, the web app 36 MB, the models 47 MB), against 503 MB for the macOS app, whose GUFI is 55 MB and Python 142 MB. In CI, GUFI builds in about 8 to 9 minutes, tesseract in 2 to 3, and the payload is assembled in under a minute after the web and server build. The newest symbol versions anywhere in the tree are glibc 2.34, libstdc++ 3.4.29 (GCC 11) and CXXABI 1.3.13, so it needs RHEL 9's or Ubuntu 22.04's C libraries or newer, and does not run on RHEL 8 or Ubuntu 20.04.
+
+The system libraries the tree needs are the C library (libc, libm, libdl, libpthread, librt, libutil, ld-linux), libstdc++, libgcc_s and zlib: packages `libc6`, `libstdc++6`, `libgcc-s1` and `zlib1g` on Ubuntu, `glibc`, `libstdc++`, `libgcc` and `zlib` on RHEL 9. Every desktop has them, and the clean images the tests start from needed no other package. Node's libatomic and GCC's libgomp, which a RHEL 9 install may lack, are in the tree.
 
 ## Known limits
 

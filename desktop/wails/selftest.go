@@ -162,6 +162,7 @@ func (t *SelfTest) advance(phase string) {
 			// Ready only when the Studio drew.
 			if get(t.results, "checks", "appMounted", "mounted") == true {
 				_ = os.WriteFile(filepath.Join(t.dir, "ready"), []byte(fmt.Sprintf("%d\n", os.Getpid())), 0o644)
+				go t.watchReopen()
 			} else {
 				t.logf("the Studio did not draw; not ready")
 			}
@@ -180,6 +181,22 @@ func (t *SelfTest) advance(phase string) {
 	case "afterMove":
 		t.setPhase("done")
 		t.quit()
+	}
+}
+
+// watchReopen (plan hold): a file named reopen in the test folder asks for
+// the relaunch the page asks for after an update that changed the window's
+// program.
+func (t *SelfTest) watchReopen() {
+	f := filepath.Join(t.dir, "reopen")
+	for {
+		if _, err := os.Stat(f); err == nil {
+			_ = os.Remove(f)
+			t.logf("relaunch asked for")
+			t.app.relaunch()
+			return
+		}
+		time.Sleep(200 * time.Millisecond)
 	}
 }
 

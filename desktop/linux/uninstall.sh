@@ -31,11 +31,12 @@ for a in "$@"; do
 done
 
 TREE="$STUDIO_UNINSTALL_TREE"
-ROOT="$(cd "$TREE/.." && pwd)"
-if [ ! -f "$ROOT/install.json" ]; then
-  echo "$TREE is not a per-user install (no install.json beside it); nothing removed." >&2
+if [ "$(cut -d' ' -f1 "$TREE/install-kind" 2>/dev/null || true)" != user ]; then
+  echo "$TREE is not a per-user install (its install-kind is not 'user'); nothing removed." >&2
   exit 1
 fi
+PARENT="$(dirname "$TREE")"
+NAME="$(basename "$TREE")"
 DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
 DATA="${STUDIO_DATA_DIR:-$DATA_HOME/activate-studio-data}"
 BIN="$HOME/.local/bin/activate-studio"
@@ -44,7 +45,12 @@ ICON_DIR="$DATA_HOME/icons/hicolor"
 
 remove=() keep=()
 add() { remove+=("$1	$2"); }
-[ -e "$ROOT" ] && add program "$ROOT"
+add program "$TREE"
+# What an update leaves beside the program: the copy it replaced, for a
+# rollback, and its working and failed copies.
+for suffix in previous new failed old; do
+  [ -e "$PARENT/.$NAME.$suffix" ] && add "previous copy" "$PARENT/.$NAME.$suffix"
+done
 [ -f "$BIN" ] && grep -q 'ACTIVATE Studio command' "$BIN" && add command "$BIN"
 [ -f "$ENTRY" ] && add "menu entry" "$ENTRY"
 while IFS= read -r f; do [ -n "$f" ] && add icon "$f"; done < <(find "$ICON_DIR" -path '*/apps/activate-studio.png' 2>/dev/null)
@@ -71,11 +77,14 @@ if [ "$DRY" = 1 ]; then
 fi
 
 # Stop what runs from it first.
-STUDIO_TREE="$ROOT/current" "$ROOT/current/bin/activate-studio" --stop >/dev/null 2>&1 || true
+STUDIO_TREE="$TREE" "$TREE/bin/activate-studio" --stop >/dev/null 2>&1 || true
 for l in "${remove[@]}"; do
   path="${l#*	}"
+  # The payload has read-only directories (Python's), which rm cannot empty.
+  chmod -R u+w -- "$path" 2>/dev/null || true
   rm -rf -- "$path"
 done
+rmdir "$PARENT" 2>/dev/null || true
 update-desktop-database "$DATA_HOME/applications" >/dev/null 2>&1 || true
 gtk-update-icon-cache -q -t -f "$ICON_DIR" >/dev/null 2>&1 || true
 echo "ACTIVATE Studio was removed."

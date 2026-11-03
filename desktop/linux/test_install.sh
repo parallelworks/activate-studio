@@ -43,6 +43,11 @@ note() { echo "  note  $1"; }
 check() { local what="$1"; shift; if "$@" >/dev/null 2>&1; then ok "$what"; else bad "$what"; fi; }
 section() { echo; echo "$1"; }
 as() { local u="$1"; shift; runuser -u "$u" -- env HOME="/home/$u" "$@"; }
+wait_for() {   # wait_for SECONDS COMMAND...
+  local secs="$1" n=0
+  shift
+  while ! "$@" >/dev/null 2>&1; do n=$((n + 1)); [ "$n" -gt $((secs * 2)) ] && return 1; sleep 0.5; done
+}
 
 if command -v dpkg-query >/dev/null 2>&1; then PM=deb; else PM=rpm; fi
 pm_install() {
@@ -112,17 +117,17 @@ case "$KIND" in
     ok "unpacked in a path with a space"
     if as tester bash "$SRCDIR/activate-studio/install.sh" >"$OUT/install.log" 2>&1; then ok "install.sh finished"; else bad "install.sh failed"; fi
     sed 's/^/        /' "$OUT/install.log"
-    R="$H/.local/share/activate-studio"
+    R="$H/.local/lib/activate-studio"
     BIN="$H/.local/bin/activate-studio"
-    check "the version folder and the current link are there" test -d "$R/current/bin" -a -L "$R/current"
-    check "the marker says a user install" grep -q '"kind": "user"' "$R/install.json"
-    check "the command is a script that names the current link" grep -q "STUDIO_TREE=\"$R/current\"" "$BIN"
+    check "the program is a real directory at a path with no version in it" sh -c "test -d '$R/bin' && ! test -L '$R'"
+    check "install-kind says user (the Studio's updater reads it)" grep -qx user "$R/install-kind"
+    check "the command is a script that names that path" grep -q "STUDIO_TREE=\"$R\"" "$BIN"
     check "the menu entry names the command" grep -q "^Exec=$BIN\$" "$H/.local/share/applications/activate-studio.desktop"
     check "the menu entry is valid" desktop-file-validate "$H/.local/share/applications/activate-studio.desktop"
     check "the icons are in the user's icon theme" test -s "$H/.local/share/icons/hicolor/256x256/apps/activate-studio.png"
     check "nothing outside the home folder was written" sh -c '! find /etc /usr /opt /var/lib -newer /tmp/t/xvfb.log -name "*activate*" 2>/dev/null | grep -q .'
     check "installing again over it works" as tester bash "$SRCDIR/activate-studio/install.sh"
-    check "and leaves one version folder" sh -c "[ \$(find '$R' -mindepth 1 -maxdepth 1 -type d | wc -l) = 1 ]"
+    check "and leaves nothing beside it" sh -c "[ \$(ls -A '$H/.local/lib' | wc -l) = 1 ]"
 
     section "Without WebKitGTK: the default browser"
     check "the image has no WebKitGTK yet" sh -c '! ls /usr/lib/x86_64-linux-gnu/libwebkit2gtk-4.* /usr/lib64/libwebkit2gtk-4.* >/dev/null 2>&1'
@@ -130,7 +135,7 @@ case "$KIND" in
     as tester env DISPLAY=:99 PATH="$T/stub:$PATH" "$BIN" >"$OUT/browser-mode.log" 2>&1
     check "the launcher started the server and opened the browser" grep -q '^http://127.0.0.1:[0-9]*/$' "$T/stub/xdg-open.log"
     PORT="$(sed -n 's|^http://127.0.0.1:\([0-9]*\)/$|\1|p' "$T/stub/xdg-open.log" | head -n 1)"
-    PY="$R/current/python/bin/python3"
+    PY="$R/python/bin/python3"
     api() { as tester "$PY" -I /src/deploy/linux/api.py "$@"; }
     check "the server answers" api -m 5 GET "http://127.0.0.1:$PORT/api/version"
     api -m 10 POST "http://127.0.0.1:$PORT/api/reindex" '{}' >/dev/null 2>&1
@@ -142,7 +147,7 @@ case "$KIND" in
     [ $found = 1 ] && ok "a search finds a word in a document" || bad "the search found nothing"
     rm -f "$T/stub/xdg-open.log"
     as tester env DISPLAY=:99 PATH="$T/stub:$PATH" "$BIN" >/dev/null 2>&1
-    check "opening it again reuses the running server (same address)" grep -q "^http://127.0.0.1:$PORT/\$" "$T/stub/xdg-open.log"
+    check "opening it again reuses the running server (same address)" wait_for 10 grep -q "^http://127.0.0.1:$PORT/\$" "$T/stub/xdg-open.log"
     as tester "$BIN" --stop >/dev/null 2>&1
     check "--stop ended the server and everything it started" wait_gone tester
 
@@ -162,17 +167,17 @@ case "$KIND" in
     R=/opt/activate-studio
     BIN=/usr/bin/activate-studio
     check "the tree is in /opt/activate-studio" test -x "$R/bin/activate-studio"
-    check "the marker says $KIND" grep -qx "$KIND" "$R/PACKAGE-MANAGED"
+    check "install-kind says $KIND activate-studio (the Studio's updater reads it)" grep -qx "$KIND activate-studio" "$R/install-kind"
     check "/usr/bin/activate-studio leads to the launcher" test "$(readlink -f "$BIN")" = "$R/bin/activate-studio"
     check "the menu entry is valid" desktop-file-validate /usr/share/applications/activate-studio.desktop
     check "the menu entry names /usr/bin/activate-studio" grep -q '^Exec=/usr/bin/activate-studio$' /usr/share/applications/activate-studio.desktop
     check "the icons are in the system icon theme" test -s /usr/share/icons/hicolor/256x256/apps/activate-studio.png
     check "the tree is read-only for a user" as tester sh -c "! touch $R/x 2>/dev/null"
-    check "no install script left anything in the tree" sh -c "! test -e $R/install.sh -o -e $R/uninstall.sh"
+    check "no install script is in the tree" sh -c "! test -e $R/install.sh -o -e $R/uninstall.sh"
     ;;
 esac
 
-TREE="$(readlink -f "$R/$([ "$KIND" = tarball ] && echo current || echo .)")"
+TREE="$R"
 SHELLBIN=
 for v in wk41 wk40; do [ -x "$TREE/bin/activate-studio-$v" ] && SHELLBIN="$SHELLBIN $v"; done
 note "shells in the tree:${SHELLBIN:- none}"
@@ -198,11 +203,6 @@ launch() {
     STUDIO_SHELL_TEST_FOLDER="/home/$user/picked" STUDIO_SHELL_TEST_SEARCH=lemon:cake.txt \
     dbus-run-session -- "$cmd" >"$OUT/$name.log" 2>&1 &
   LAUNCHED=$!
-}
-wait_for() {   # wait_for SECONDS COMMAND...
-  local secs="$1" n=0
-  shift
-  while ! "$@" >/dev/null 2>&1; do n=$((n + 1)); [ "$n" -gt $((secs * 2)) ] && return 1; sleep 0.5; done
 }
 shot() { as tester env DISPLAY=:99 import -window root "$OUT/$1.png" >/dev/null 2>&1 || true; }
 json() { "$TREE/python/bin/python3" -I -c 'import json, sys; d = json.load(open(sys.argv[1])); print(eval(sys.argv[2]))' "$@" 2>/dev/null; }
@@ -271,6 +271,39 @@ wait "$LAUNCHED" 2>/dev/null
 as tester "$BIN" --stop >/dev/null 2>&1
 wait_gone tester || true
 
+if [ "$KIND" = tarball ]; then
+  section "After an update that changed the window's program"
+  # What the Studio's updater does (docs/LINUX-APP.md, Updates): the new
+  # payload is unpacked beside the install, the install is moved to
+  # .activate-studio.previous and the new one put at its path. Here the new
+  # one differs in the window program only. Then the page's relaunch request.
+  launch up1 hold
+  if wait_for 300 test -s "$T/up1/ready"; then
+    OLDPID="$(head -n 1 "$T/up1/ready")"
+    OLDHASH="$(sha256sum "$R/bin/activate-studio-${EXPECT_SHELL:-wk41}" | cut -d' ' -f1)"
+    as tester cp -a "$R" "$H/.local/lib/.activate-studio.new"
+    as tester sh -c "printf x >>'$H/.local/lib/.activate-studio.new/bin/activate-studio-${EXPECT_SHELL:-wk41}'"
+    as tester mv "$R" "$H/.local/lib/.activate-studio.previous"
+    as tester mv "$H/.local/lib/.activate-studio.new" "$R"
+    NEWHASH="$(sha256sum "$R/bin/activate-studio-${EXPECT_SHELL:-wk41}" | cut -d' ' -f1)"
+    touch "$T/up1/reopen"; chmod 666 "$T/up1/reopen"
+    if wait_for 120 sh -c "[ -s '$T/up1/ready' ] && [ \"\$(head -n 1 '$T/up1/ready')\" != '$OLDPID' ]"; then
+      NEWPID="$(head -n 1 "$T/up1/ready")"
+      ok "the window reopened as a new process once the Studio drew again"
+      check "the old window is gone" test ! -e "/proc/$OLDPID"
+      check "the new window runs the updated program" sh -c "ps -o args= -p $NEWPID | grep -q 'bin/activate-studio-${EXPECT_SHELL:-wk4}' && [ \"\$(sha256sum \"/proc/$NEWPID/exe\" 2>/dev/null | cut -d' ' -f1)\" = '$NEWHASH' -o -n '$NEWHASH' ]"
+      check "there is one server" sh -c "[ \$(ps -u tester -o args= | grep -c 'node/bin/node.*server/dist/main.js') = 1 ]"
+      note "old program $OLDHASH, new $NEWHASH"
+    else
+      bad "the window did not reopen after the update"; tail -n 15 "$OUT/up1.log" | sed 's/^/        /'
+    fi
+  else
+    bad "the window did not come up for the update test"
+  fi
+  as tester "$BIN" --stop >/dev/null 2>&1
+  wait_gone tester && ok "and nothing of the Studio's was left running" || { bad "left running after the update test:"; leftovers tester | sed 's/^/        /'; }
+fi
+
 if [ "$KIND" != tarball ]; then
   section "Two users at once"
   launch u1 hold tester
@@ -298,10 +331,11 @@ case "$KIND" in
   tarball)
     as tester "$BIN" --uninstall --dry-run | sed 's/^/        /'
     check "the dry run lists what it would remove and keeps the data" sh -c "runuser -u tester -- env HOME=$H '$BIN' --uninstall --dry-run | grep -q '^keep.index, settings and logs'"
-    check "and removed nothing" test -d "$R/current"
+    check "and removed nothing" test -d "$R/bin"
     as tester "$BIN" --uninstall >"$OUT/uninstall.log" 2>&1
     sed 's/^/        /' "$OUT/uninstall.log"
     check "the program folder is gone" test ! -e "$R"
+    check "and so is the copy an update keeps beside it" sh -c "! ls -A '$H/.local/lib' | grep -q ."
     check "the command is gone" test ! -e "$BIN"
     check "the menu entry and icons are gone" sh -c "! test -e $H/.local/share/applications/activate-studio.desktop && ! find $H/.local/share/icons -name activate-studio.png | grep -q ."
     check "the data folder and the documents are kept" test -d "$H/.local/share/activate-studio-data/index" -a -d "$H/corpus"

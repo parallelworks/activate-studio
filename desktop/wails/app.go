@@ -63,6 +63,7 @@ type App struct {
 	bridge *Bridge
 	test   *SelfTest
 
+	inst      *instance
 	localPort int
 	local     *http.Server
 
@@ -191,6 +192,13 @@ func (a *App) relaunch() {
 	// After the reply has reached the page.
 	go func() {
 		time.Sleep(300 * time.Millisecond)
+		// An update that changed this window's own program: open the new one
+		// (reopen.go). Otherwise only the server starts again.
+		if a.shellChanged() && a.reopen(a.inst) {
+			a.sup.Stop()
+			wruntime.Quit(a.ctx)
+			return
+		}
 		a.sup.Restart("relaunch")
 	}()
 }

@@ -154,6 +154,24 @@ describe('the update notice', () => {
     expect(within(box).queryByRole('button', { name: 'Update now' })).toBeNull()
   })
 
+  it('for an .rpm install: the dnf command in the details, no Update now, no clone wording', async () => {
+    const note = 'This copy was installed from an .rpm package, so it does not update itself. To update, run this in a terminal, then quit and reopen ACTIVATE Studio:'
+    stubServer(server({ updates: status({
+      mode: 'package', canInstall: false, reason: 'This copy was installed from an .rpm package.',
+      command: 'sudo dnf upgrade --refresh activate-studio', commandNote: note,
+      package: { kind: 'rpm', manager: 'dnf', name: 'activate-studio' },
+    }) }))
+    render(<UpdateNotice />)
+    const line = await screen.findByTestId('update-notice')
+    expect(within(line).queryByRole('button', { name: 'Update now' })).toBeNull()
+    fireEvent.click(within(line).getByRole('button', { name: /^What's new/ }))
+    const box = await screen.findByRole('dialog')
+    expect(within(box).getByText(note)).toBeInTheDocument()
+    expect(box.textContent).toContain('sudo dnf upgrade --refresh activate-studio')
+    expect(box.textContent).not.toContain('pnpm')
+    expect(within(box).queryByRole('button', { name: 'Update now' })).toBeNull()
+  })
+
   it('an app that cannot install says why, with the release page', async () => {
     const reason = 'The folder holding the app is not writable, so the app cannot replace itself.'
     stubServer(server({ updates: status({ mode: 'clone', canInstall: false, reason, command: null }) }))

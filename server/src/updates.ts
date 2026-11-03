@@ -7,7 +7,7 @@ import { promisify } from 'node:util'
 import type { FastifyInstance } from 'fastify'
 import { authEnabled } from './auth.js'
 import { parseNotes, readChangelog, type ChangeEntry, type ChangeVersion } from './changelog.js'
-import { INDEX_BASE } from './config.js'
+import { INDEX_BASE, PROJECT_ROOT } from './config.js'
 import { KbError } from './kb.js'
 import { RELAUNCH_EXIT_CODE, requestRestart, runsWithoutAgent } from './lifecycle.js'
 import { effectiveSettings, type UpdatePolicy } from './settings.js'
@@ -25,13 +25,23 @@ import { buildInfo } from './version.js'
  * the previous copy back if the new one keeps stopping, and the server
  * clears the mark once it has been up for a minute. A clone is told the
  * version and how to update; a hosted Studio never checks.
+ *
+ * The Linux payload (docs/LINUX-APP.md) updates the same way where it is
+ * installed per user: the archive and manifest are the `linux` ones, the
+ * install is the payload's directory, swapped beside itself, and the run
+ * loop is restarted through exit 76. An install from a .deb or .rpm package
+ * (the install-kind file in the payload's top directory) never replaces
+ * itself: it is told the version and the package manager's command.
  */
 
 const REPO = 'parallelworks/activate-studio'
-const ASSET = 'activate-studio-macos-arm64.tar.gz'
-const MANIFEST = 'activate-studio-macos-arm64.manifest.json'
-const SIGNATURE = `${MANIFEST}.sig`
 const APP_NAME = 'ACTIVATE Studio.app'
+/** The directory the Linux archive unpacks to. */
+const LINUX_TOP = 'activate-studio'
+/** The file in the payload's top directory that says how it was installed. */
+export const INSTALL_KIND_FILE = 'install-kind'
+/** The package the .deb and .rpm are named, unless install-kind names another. */
+const DEFAULT_PACKAGE = 'activate-studio'
 const BUNDLE_ID = 'com.parallelworks.activate-studio'
 const LABEL = 'com.parallelworks.activate-studio'
 const REQUEST_TIMEOUT_MS = 15_000
@@ -42,7 +52,47 @@ const CLONE_COMMAND = 'git pull\npnpm install\npnpm build'
 
 const execFileP = promisify(execFile)
 
-export type UpdateMode = 'app' | 'clone' | 'hosted'
+/** What differs between the macOS app and the Linux payload: the release
+ *  assets, the folder the archive unpacks to, and where the app's own files
+ *  are in it. */
+interface Kit {
+  flavor: 'macos' | 'linux'
+  asset: string
+  manifest: string
+  signature: string
+  /** The one entry an archive holds. */
+  top: string
+  /** What the person calls it, in messages. */
+  label: string
+  /** The folder that holds studio-run.sh, app/ and the update key. */
+  resources: (root: string) => string
+}
+
+const MACOS_KIT: Kit = {
+  flavor: 'macos',
+  asset: 'activate-studio-macos-arm64.tar.gz',
+  manifest: 'activate-studio-macos-arm64.manifest.json',
+  signature: 'activate-studio-macos-arm64.manifest.json.sig',
+  top: APP_NAME,
+  label: 'macOS app',
+  resources: root => path.join(root, 'Contents', 'Resources'),
+}
+
+/** The architecture in the Linux asset names, or null for one that has no build. */
+function linuxArch(): string | null {
+  return process.arch === 'x64' ? 'x86_64' : process.arch === 'arm64' ? 'aarch64' : null
+}
+
+/** The Linux archive's name for this computer: activate-studio-linux-x86_64.tar.gz. */
+export function linuxAsset(): string { return `activate-studio-linux-${linuxArch() ?? process.arch}.tar.gz` }
+
+function linuxKit(): Kit {
+  const asset = linuxAsset()
+  const manifest = asset.replace(/\.tar\.gz$/, '.manifest.json')
+  return { flavor: 'linux', asset, manifest, signature: `${manifest}.sig`, top: LINUX_TOP, label: 'Linux app', resources: root => root }
+}
+
+export type UpdateMode = 'app' | 'clone' | 'hosted' | 'package'
 export type UpdateState = 'idle' | 'checking' | 'downloading' | 'verifying' | 'installing' | 'restarting' | 'error'
 
 export interface UpdateStatus {
@@ -57,8 +107,16 @@ export interface UpdateStatus {
   canInstall: boolean
   /** Why it cannot install, in plain words. */
   reason: string | null
-  /** The commands that update a clone of the repository; null otherwise. */
+  /** The commands that update a clone of the repository, or the package
+   *  manager's command for a packaged install once a newer version is
+   *  known; null otherwise. */
   command: string | null
+  /** The sentence that introduces `command`, for the modes that are shown
+   *  one other than a clone's. */
+  commandNote: string | null
+  /** For a Linux payload installed from a package: how it was installed and
+   *  who updates it. */
+  package: PackageInfo | null
   state: UpdateState
   progress: { bytes: number; total: number } | null
   error: string | null
@@ -81,6 +139,14 @@ export interface UpdateRelease {
   entries: ChangeEntry[]
 }
 
+export interface PackageInfo {
+  /** deb or rpm as the install-kind file says, or other where this copy
+   *  cannot replace itself and nothing says why. */
+  kind: 'deb' | 'rpm' | 'other'
+  manager: 'apt' | 'dnf' | null
+  name: string
+}
+
 interface Release {
   tag: string
   prerelease: boolean
@@ -92,7 +158,7 @@ interface Release {
 
 interface Saved { etag: string | null; releases: Release[]; checkedAt: string | null }
 
-interface Manifest { version: string; asset: string; sha256: string; size: number; minMacos?: string; builtAt?: string }
+interface Manifest { version: string; asset: string; sha256: string; size: number; minMacos?: string; minGlibc?: string; builtAt?: string }
 
 interface Prepared { version: string; from: string; shellChanged: boolean }
 
@@ -188,14 +254,113 @@ function bundleWritable(): boolean {
   } catch { return false }
 }
 
-export function updateMode(): UpdateMode {
-  if (hosted()) return 'hosted'
-  return bundleWritable() ? 'app' : 'clone'
+// ---- the Linux payload ----
+
+interface Payload {
+  /** The payload's top directory (the one with studio-run.sh in it). */
+  root: string
+  /** What the install-kind file says; null when it is missing or not understood. */
+  marker: 'user' | 'deb' | 'rpm' | null
+  /** The package name the file gives, or the default. */
+  packageName: string
+  /** The kind of install it is taken to be, by the file or else by who owns the path. */
+  kind: 'user' | 'deb' | 'rpm' | 'other'
+  /** This copy may replace itself. */
+  selfUpdates: boolean
 }
 
-/** `.ACTIVATE Studio.app.<suffix>` beside the app. */
+/** The top directory of the Linux payload this server runs from, or null.
+ *  The server is app/server/dist/main.js in it, so its project root is the
+ *  payload's app/; STUDIO_PAYLOAD_ROOT names another (tests, and a launcher
+ *  that wants to say). Linux only, unless that is given: the macOS app has
+ *  the same shape one level down. */
+function payloadRoot(): string | null {
+  let root = process.env.STUDIO_PAYLOAD_ROOT || ''
+  if (!root) {
+    if (process.platform !== 'linux' || path.basename(PROJECT_ROOT) !== 'app') return null
+    root = path.dirname(PROJECT_ROOT)
+  }
+  try { root = fs.realpathSync(root) } catch { return null }
+  return isFile(path.join(root, 'studio-run.sh')) && isFile(path.join(root, 'app', 'build-info.json')) ? root : null
+}
+
+/** What the install-kind file holds: the kind, and optionally the package
+ *  name, as `deb activate-studio`. Anything else is not understood. */
+function readMarker(root: string): { kind: 'user' | 'deb' | 'rpm'; name: string } | null {
+  let text = ''
+  try { text = fs.readFileSync(path.join(root, INSTALL_KIND_FILE), 'utf8') } catch { return null }
+  const [kind, name] = text.trim().split(/\s+/)
+  if (kind !== 'user' && kind !== 'deb' && kind !== 'rpm') return null
+  return { kind, name: name && /^[a-z0-9][a-z0-9+.-]{0,63}$/.test(name) ? name : DEFAULT_PACKAGE }
+}
+
+/** Whether this user can swap a directory for another where it stands: the
+ *  directory is a real directory, and the one holding it takes new entries. */
+function replaceable(root: string): boolean {
+  try {
+    fs.accessSync(path.dirname(root), fs.constants.W_OK | fs.constants.X_OK)
+    return fs.statSync(root).isDirectory()
+  } catch { return false }
+}
+
+const inferred = new Map<string, 'deb' | 'rpm' | null>()
+/** With no install-kind file, a copy this user cannot replace is looked up
+ *  in the package databases: dpkg's file list for the package, or the owner
+ *  rpm names for studio-run.sh. */
+function packageOwner(root: string): 'deb' | 'rpm' | null {
+  if (inferred.has(root)) return inferred.get(root)!
+  let kind: 'deb' | 'rpm' | null = null
+  try {
+    if (fs.readFileSync(`/var/lib/dpkg/info/${DEFAULT_PACKAGE}.list`, 'utf8').split('\n').some(l => l === path.join(root, 'studio-run.sh'))) kind = 'deb'
+  } catch { /* not dpkg, or not this package */ }
+  if (!kind) {
+    try {
+      execFileSync('rpm', ['-qf', path.join(root, 'studio-run.sh')], { stdio: 'ignore', timeout: 3000 })
+      kind = 'rpm'
+    } catch { /* not rpm, or not owned by a package */ }
+  }
+  inferred.set(root, kind)
+  return kind
+}
+
+/** How the Linux payload was installed, and so who updates it. A .deb or
+ *  .rpm (the install-kind file, which the package writes) never replaces
+ *  itself, even where the files are writable, as to a root user: the package
+ *  database would no longer match. A per-user install replaces itself where
+ *  it can write. A tree with no file is judged by the path: one this user
+ *  can replace is theirs; one that is not belongs to whoever installed it,
+ *  a package if a package database says so. */
+function payload(): Payload | null {
+  const root = payloadRoot()
+  if (!root) return null
+  const m = readMarker(root)
+  if (m && m.kind !== 'user') return { root, marker: m.kind, packageName: m.name, kind: m.kind, selfUpdates: false }
+  if (replaceable(root)) return { root, marker: m?.kind ?? null, packageName: m?.name ?? DEFAULT_PACKAGE, kind: 'user', selfUpdates: true }
+  return { root, marker: m?.kind ?? null, packageName: m?.name ?? DEFAULT_PACKAGE, kind: packageOwner(root) ?? 'other', selfUpdates: false }
+}
+
+export function updateMode(): UpdateMode {
+  if (hosted()) return 'hosted'
+  if (appBundle()) return bundleWritable() ? 'app' : 'clone'
+  const p = payload()
+  if (!p) return 'clone'
+  return p.selfUpdates ? 'app' : 'package'
+}
+
+/** The assets and layout of what this Studio installs. Null for a clone. */
+function kit(): Kit | null {
+  if (appBundle()) return MACOS_KIT
+  return payload() ? linuxKit() : null
+}
+
+/** The folder an update replaces: the app bundle, or the payload's top directory. */
+function installRoot(): string | null {
+  return appBundle() ?? payload()?.root ?? null
+}
+
+/** `.ACTIVATE Studio.app.<suffix>` beside the app, or `.activate-studio.<suffix>` beside the payload. */
 function beside(suffix: 'new' | 'previous' | 'unpack' | 'failed'): string {
-  const b = appBundle()!
+  const b = installRoot()!
   return path.join(path.dirname(b), `.${path.basename(b)}.${suffix}`)
 }
 
@@ -207,17 +372,18 @@ function updatesDir(): string {
 const inUpdates = (name: string) => path.join(updatesDir(), name)
 
 function publicKey(): crypto.KeyObject | null {
-  const b = appBundle()
-  if (!b) return null
+  const b = installRoot()
+  const k = kit()
+  if (!b || !k) return null
   try {
-    const key = crypto.createPublicKey(fs.readFileSync(path.join(b, 'Contents', 'Resources', 'update-signing.pub')))
+    const key = crypto.createPublicKey(fs.readFileSync(path.join(k.resources(b), 'update-signing.pub')))
     return key.asymmetricKeyType === 'ed25519' ? key : null
   } catch { return null }
 }
 
 function versionOf(bundle: string): string | null {
   try {
-    const v = JSON.parse(fs.readFileSync(path.join(bundle, 'Contents', 'Resources', 'app', 'build-info.json'), 'utf8')).version
+    const v = JSON.parse(fs.readFileSync(path.join(kit()!.resources(bundle), 'app', 'build-info.json'), 'utf8')).version
     return v ? String(v) : null
   } catch { return null }
 }
@@ -240,6 +406,16 @@ function macosVersion(): string | null {
     try { macos = execFileSync('sw_vers', ['-productVersion'], { encoding: 'utf8', timeout: 5000 }).trim() || null } catch { macos = null }
   }
   return macos
+}
+
+/** The C library the Linux payload runs on, as glibc reports it; null on a
+ *  system with another (musl) or when node does not say. */
+function glibcVersion(): string | null {
+  if (process.platform !== 'linux') return null
+  try {
+    const v = (process.report.getReport() as unknown as { header?: { glibcVersionRuntime?: string } }).header?.glibcVersionRuntime
+    return v ? String(v) : null
+  } catch { return null }
 }
 
 // ---- GitHub ----
@@ -307,13 +483,21 @@ async function fetchReleases(): Promise<void> {
   await writeJson(inUpdates('state.json'), saved)
 }
 
-/** Whether a release carries the signed macOS app the app installs from. */
-const hasApp = (r: Release) => !!(r.assets[ASSET] && r.assets[MANIFEST] && r.assets[SIGNATURE])
+/** Whether a release carries the signed app this Studio installs from: the
+ *  macOS app's archive, or the Linux payload's. */
+const hasApp = (r: Release) => {
+  const k = kit()
+  return !!k && !!(r.assets[k.asset] && r.assets[k.manifest] && r.assets[k.signature])
+}
+
+/** The modes that go by what the project has built: the app, and a package
+ *  install, which is told of a version only once a build of it exists. */
+const needsBuild = () => { const m = updateMode(); return m === 'app' || m === 'package' }
 
 /** The newest release the channel allows. For the app, the newest that
  *  carries the signed app: a release is published before its macOS build
  *  attaches the app, and one whose build failed never gets it. */
-function latestRelease(channel: UpdatePolicy['channel'], needsApp = updateMode() === 'app'): Release | null {
+function latestRelease(channel: UpdatePolicy['channel'], needsApp = needsBuild()): Release | null {
   let best: Release | null = null
   for (const r of loadSaved().releases) {
     if (r.prerelease && channel !== 'prerelease') continue
@@ -339,16 +523,51 @@ function appPending(channel: UpdatePolicy['channel'], now = Date.now()): boolean
 
 const inProgress = () => ['checking', 'downloading', 'verifying', 'installing', 'restarting'].includes(st.state)
 
+const MANAGERS = { deb: 'apt', rpm: 'dnf' } as const
+
+/** What the package manager is asked to do: apt refreshes its lists by hand
+ *  and upgrades one package without installing it where it is missing; dnf
+ *  refreshes its metadata when told to. */
+function packageCommand(info: PackageInfo): string | null {
+  if (info.kind === 'deb') return `sudo apt update\nsudo apt install --only-upgrade ${info.name}`
+  if (info.kind === 'rpm') return `sudo dnf upgrade --refresh ${info.name}`
+  return null
+}
+
+function packageInfo(): PackageInfo | null {
+  const p = payload()
+  if (!p || p.selfUpdates) return null
+  return { kind: p.kind === 'deb' || p.kind === 'rpm' ? p.kind : 'other', manager: p.kind === 'deb' || p.kind === 'rpm' ? MANAGERS[p.kind] : null, name: p.packageName }
+}
+
+/** What a package install, or a copy this user cannot write to, says. */
+function packageMessage(info: PackageInfo, available: boolean): string {
+  if (info.kind === 'other') {
+    const where = payload()?.root ?? 'its folder'
+    return `This copy is installed in ${where}, which you cannot write to, so it cannot update itself. Update it the way it was installed, or ask whoever manages this computer; or install ACTIVATE Studio in your home folder from the releases page, which then updates itself.`
+  }
+  const what = info.kind === 'deb' ? 'a .deb package' : 'an .rpm package'
+  const how = info.kind === 'deb' ? 'apt' : 'dnf'
+  return available
+    ? `This copy was installed from ${what}, so it does not update itself. Update it with ${how} in a terminal, then quit and reopen ACTIVATE Studio.`
+    : `This copy was installed from ${what}, so it does not update itself; updates come through ${how}.`
+}
+
 function refusal(mode: UpdateMode, rel: Release | null, available: boolean): string | null {
   if (mode === 'hosted') return 'This Studio is updated by its deployment.'
+  if (mode === 'package') {
+    const info = packageInfo()
+    return info ? packageMessage(info, available) : 'This copy is managed by a package manager.'
+  }
   if (mode === 'clone') {
     const b = appBundle()
     if (b) return `The folder holding the app (${path.dirname(b)}) is not writable, so the app cannot replace itself. Move the app to ~/Applications, or install the new version from the releases page.`
     return `This Studio runs from a clone of the repository and does not update itself. To update it: ${CLONE_COMMAND.split('\n').join(' && ')}, then start it again.`
   }
+  const k = kit()!
   if (!publicKey()) return 'This copy of the app carries no update signing key, so it cannot verify a download. Install the new version from the releases page.'
   if (!rel || !available) return null
-  if (!rel.assets[ASSET] || !rel.assets[MANIFEST] || !rel.assets[SIGNATURE]) return `The release ${rel.tag} has no signed macOS app.`
+  if (!rel.assets[k.asset] || !rel.assets[k.manifest] || !rel.assets[k.signature]) return `The release ${rel.tag} has no signed ${k.label}.`
   if (inProgress()) return `An update is already ${st.state}.`
   return null
 }
@@ -377,6 +596,8 @@ export function updateStatus(): UpdateStatus {
   const rel = mode === 'hosted' ? null : latestRelease(policy.channel)
   const available = !!rel && isNewer(rel.tag, cur.version)
   const reason = refusal(mode, rel, available)
+  const pkg = mode === 'package' ? packageInfo() : null
+  const pkgCommand = pkg && available ? packageCommand(pkg) : null
   return {
     mode,
     current: cur,
@@ -386,7 +607,9 @@ export function updateStatus(): UpdateStatus {
     available,
     canInstall: mode === 'app' && available && reason === null,
     reason,
-    command: mode === 'clone' && !appBundle() ? CLONE_COMMAND : null,
+    command: mode === 'clone' && !appBundle() ? CLONE_COMMAND : pkgCommand,
+    commandNote: pkgCommand && pkg ? `This copy was installed from ${pkg.kind === 'deb' ? 'a .deb package' : 'an .rpm package'}, so it does not update itself. To update, run ${pkg.kind === 'deb' ? 'these' : 'this'} in a terminal, then quit and reopen ACTIVATE Studio:` : null,
+    package: pkg,
     state: st.state,
     progress: st.progress,
     error: st.error ?? rollbackNote,
@@ -477,18 +700,26 @@ function parseManifest(bytes: Buffer, rel: Release, from: string): Manifest {
   let m: Partial<Manifest>
   try { m = JSON.parse(bytes.toString('utf8')) } catch { throw new Refused('The manifest is not valid JSON.') }
   if (!m || typeof m !== 'object') throw new Refused('The manifest is not a JSON object.')
-  if (m.asset !== ASSET) throw new Refused(`The manifest names the asset ${String(m.asset)}; this app installs ${ASSET}.`)
+  const k = kit()!
+  if (m.asset !== k.asset) throw new Refused(`The manifest names the asset ${String(m.asset)}; this app installs ${k.asset}.`)
   const version = String(m.version ?? '')
   if (!parseVersion(version)) throw new Refused(`The manifest's version ${version || '(none)'} is not a version.`)
   if (!isNewer(version, from)) throw new Refused(`The manifest's version ${version} is not newer than the running ${from}.`)
   if (!sameVersion(version, rel.tag)) throw new Refused(`The manifest is for ${version}, but the release is ${rel.tag}.`)
   if (typeof m.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(m.sha256)) throw new Refused('The manifest has no valid SHA-256.')
   if (!Number.isSafeInteger(m.size) || (m.size as number) <= 0) throw new Refused('The manifest has no valid size.')
-  const have = macosVersion()
-  if (m.minMacos && have && !dottedAtMost(String(m.minMacos), have)) {
-    throw new Refused(`${version} needs macOS ${m.minMacos}; this Mac has ${have}.`)
+  if (k.flavor === 'macos') {
+    const have = macosVersion()
+    if (m.minMacos && have && !dottedAtMost(String(m.minMacos), have)) {
+      throw new Refused(`${version} needs macOS ${m.minMacos}; this Mac has ${have}.`)
+    }
+  } else {
+    const have = glibcVersion()
+    if (m.minGlibc && have && !dottedAtMost(String(m.minGlibc), have)) {
+      throw new Refused(`${version} needs glibc ${m.minGlibc}; this computer has ${have}.`)
+    }
   }
-  return { version, asset: m.asset, sha256: m.sha256, size: m.size as number, minMacos: m.minMacos, builtAt: m.builtAt }
+  return { version, asset: m.asset, sha256: m.sha256, size: m.size as number, minMacos: m.minMacos, minGlibc: m.minGlibc, builtAt: m.builtAt }
 }
 
 function isFile(p: string): boolean {
@@ -503,8 +734,21 @@ function plistString(plist: string, key: string): string | null {
   return new RegExp(`<key>${key}</key>\\s*<string>([^<]*)</string>`).exec(plist)?.[1] ?? null
 }
 
+/** The unpacked Linux payload is this app, complete, and the version the
+ *  manifest says. */
+function checkPayload(dir: string, version: string): void {
+  if (!executable(path.join(dir, 'studio-run.sh'))) throw new Refused('The new app has no studio-run.sh.')
+  for (const f of ['node/bin/node', 'app/server/dist/main.js', 'update-signing.pub', 'manifest.json']) {
+    if (!isFile(path.join(dir, f))) throw new Refused(`The new app has no ${f}.`)
+  }
+  if (!executable(path.join(dir, 'node', 'bin', 'node'))) throw new Refused('The new app has no executable node.')
+  const built = versionOf(dir)
+  if (!built || !sameVersion(built, version)) throw new Refused(`The new app is ${built ?? 'of no known version'}, not ${version}.`)
+}
+
 /** The unpacked app is this app, complete, and the version the manifest says. */
 function checkBundle(dir: string, version: string): void {
+  if (kit()!.flavor === 'linux') return checkPayload(dir, version)
   let plist = ''
   try { plist = fs.readFileSync(path.join(dir, 'Contents', 'Info.plist'), 'utf8') } catch { throw new Refused('The new app has no Info.plist.') }
   const id = plistString(plist, 'CFBundleIdentifier')
@@ -518,7 +762,18 @@ function checkBundle(dir: string, version: string): void {
   if (!built || !sameVersion(built, version)) throw new Refused(`The new app is ${built ?? 'of no known version'}, not ${version}.`)
 }
 
+/** The window's program, so an update that changes it can ask for the
+ *  window to be reopened. For the Linux payload, manifest.json's `shell`
+ *  names it (a path inside the payload); a payload with none has no window
+ *  of its own to reopen. */
 function shellHash(bundle: string): string | null {
+  if (kit()!.flavor === 'linux') {
+    try {
+      const rel = String(readJson<{ shell?: unknown }>(path.join(bundle, 'manifest.json'))?.shell ?? '')
+      if (!rel || path.isAbsolute(rel) || rel.split('/').includes('..')) return null
+      return crypto.createHash('sha256').update(fs.readFileSync(path.join(bundle, rel))).digest('hex')
+    } catch { return null }
+  }
   try {
     const plist = fs.readFileSync(path.join(bundle, 'Contents', 'Info.plist'), 'utf8')
     const exe = plistString(plist, 'CFBundleExecutable') ?? ''
@@ -528,30 +783,56 @@ function shellHash(bundle: string): string | null {
 
 /** Every entry under the one app folder, none outside it. */
 async function unpack(archive: string): Promise<string> {
+  const top = kit()!.top
   const { stdout } = await execFileP('tar', ['-tzf', archive], { maxBuffer: 128 * 1024 * 1024 })
   for (const raw of stdout.split('\n')) {
     if (!raw) continue
     const e = raw.replace(/^\.\//, '')
-    if (e === APP_NAME || e === `${APP_NAME}/`) continue
-    if (!e.startsWith(`${APP_NAME}/`) || e.split('/').includes('..')) throw new Refused(`The archive holds ${raw}, outside ${APP_NAME}.`)
+    if (e === top || e === `${top}/`) continue
+    if (!e.startsWith(`${top}/`) || e.split('/').includes('..')) throw new Refused(`The archive holds ${raw}, outside ${top}.`)
   }
   const work = beside('unpack')
   const next = beside('new')
-  await fsp.rm(work, { recursive: true, force: true })
-  await fsp.rm(next, { recursive: true, force: true })
+  await rmTree(work)
+  await rmTree(next)
   await fsp.mkdir(work)
-  await execFileP('tar', ['-xzf', archive, '-C', work], { maxBuffer: 16 * 1024 * 1024 })
-  await fsp.rename(path.join(work, APP_NAME), next)
-  await fsp.rm(work, { recursive: true, force: true })
+  // Files belong to whoever unpacks them, whatever the archive records.
+  await execFileP('tar', ['-xzf', archive, ...(kit()!.flavor === 'linux' ? ['--no-same-owner'] : []), '-C', work], { maxBuffer: 16 * 1024 * 1024 })
+  await fsp.rename(path.join(work, top), next)
+  await rmTree(work)
   return next
+}
+
+/** The directories of a tree writable by their owner, as a tree unpacked from
+ *  an archive may not be (Python's standard library has read-only ones), so
+ *  that it can be deleted. Links are not followed. */
+async function makeWritable(dir: string): Promise<void> {
+  // The failed delete may still be removing parts of the tree in the background.
+  try { await fsp.chmod(dir, 0o700 | (await fsp.stat(dir)).mode) } catch { return }
+  let entries: fs.Dirent[] = []
+  try { entries = await fsp.readdir(dir, { withFileTypes: true }) } catch { return }
+  for (const e of entries) if (e.isDirectory()) await makeWritable(path.join(dir, e.name))
+}
+
+/** Delete a tree, read-only directories in it included. */
+async function rmTree(p: string): Promise<void> {
+  try {
+    await fsp.rm(p, { recursive: true, force: true })
+  } catch (e) {
+    const code = (e as NodeJS.ErrnoException).code
+    if (code !== 'EACCES' && code !== 'EPERM') throw e
+    await makeWritable(p)
+    await fsp.rm(p, { recursive: true, force: true })
+  }
 }
 
 /** Everything a failed or abandoned update leaves behind. */
 async function cleanUp(): Promise<void> {
-  if (appBundle()) {
-    for (const s of ['new', 'unpack', 'failed'] as const) await fsp.rm(beside(s), { recursive: true, force: true }).catch(() => {})
+  if (installRoot()) {
+    for (const s of ['new', 'unpack', 'failed'] as const) await rmTree(beside(s)).catch(() => {})
   }
-  for (const f of [ASSET, `${ASSET}.part`]) await fsp.rm(inUpdates(f), { force: true }).catch(() => {})
+  const k = kit()
+  if (k) for (const f of [k.asset, `${k.asset}.part`]) await fsp.rm(inUpdates(f), { force: true }).catch(() => {})
 }
 
 /** Download and verify the release, and unpack it beside the app as
@@ -560,8 +841,9 @@ async function prepare(rel: Release): Promise<Prepared> {
   const from = running().version
   const key = publicKey()
   if (!key) throw new Refused('This copy of the app carries no update signing key.')
-  const urls = { archive: rel.assets[ASSET]?.url, manifest: rel.assets[MANIFEST]?.url, sig: rel.assets[SIGNATURE]?.url }
-  if (!urls.archive || !urls.manifest || !urls.sig) throw new Refused(`The release ${rel.tag} has no signed macOS app.`)
+  const k = kit()!
+  const urls = { archive: rel.assets[k.asset]?.url, manifest: rel.assets[k.manifest]?.url, sig: rel.assets[k.signature]?.url }
+  if (!urls.archive || !urls.manifest || !urls.sig) throw new Refused(`The release ${rel.tag} has no signed ${k.label}.`)
   st.state = 'downloading'
   st.progress = null
   await fsp.mkdir(updatesDir(), { recursive: true })
@@ -571,17 +853,26 @@ async function prepare(rel: Release): Promise<Prepared> {
   try { good = sig.length === 64 && crypto.verify(null, bytes, key, sig) } catch { good = false }
   if (!good) throw new Refused('The manifest\'s signature does not verify with this app\'s key.')
   const man = parseManifest(bytes, rel, from)
-  const archive = inUpdates(ASSET)
+  const archive = inUpdates(k.asset)
   await fetchArchive(urls.archive, archive, man)
   st.state = 'verifying'
   st.progress = null
   const next = await unpack(archive)
   await fsp.rm(archive, { force: true })
   checkBundle(next, man.version)
-  return { version: man.version, from, shellChanged: shellHash(next) !== shellHash(appBundle()!) }
+  if (k.flavor === 'linux') await markUser(next)
+  return { version: man.version, from, shellChanged: shellHash(next) !== shellHash(installRoot()!) }
 }
 
 // ---- install ----
+
+/** The new payload says it was installed per user, as the one it replaces
+ *  does (the archive carries no install-kind file: that is for the
+ *  installer or the package to write). */
+async function markUser(dir: string): Promise<void> {
+  const name = readMarker(installRoot()!)?.name
+  await fsp.writeFile(path.join(dir, INSTALL_KIND_FILE), `user${name && name !== DEFAULT_PACKAGE ? ` ${name}` : ''}\n`)
+}
 
 /** The LaunchAgent restarted, so its run loop starts from the app now in
  *  place; detached, since the restart stops this process and its group.
@@ -590,7 +881,9 @@ async function prepare(rel: Release): Promise<Prepared> {
  *  copy's own. */
 function restart(): void {
   st.state = 'restarting'
-  if (runsWithoutAgent()) {
+  // The Linux payload has no agent: its run loop is the supervisor, and
+  // exit 76 makes it run the new copy's own.
+  if (kit()?.flavor === 'linux' || runsWithoutAgent()) {
     if (!requestRestart(RELAUNCH_EXIT_CODE)) {
       st.state = 'error'
       st.error = 'The new version is in place, but the Studio could not restart itself. Quit and reopen the app.'
@@ -620,6 +913,7 @@ function restart(): void {
  *  app is reopened. Best effort, and macOS only (STUDIO_LSREGISTER, for
  *  tests, names another tool). */
 function refreshIcon(bundle: string): void {
+  if (kit()?.flavor !== 'macos') return
   const tool = process.env.STUDIO_LSREGISTER ?? (process.platform === 'darwin' ? LSREGISTER : '')
   if (!tool) return
   const now = new Date()
@@ -629,11 +923,11 @@ function refreshIcon(bundle: string): void {
 }
 
 async function swapIn(p: Prepared): Promise<void> {
-  const app = appBundle()!
+  const app = installRoot()!
   const next = beside('new')
   const prev = beside('previous')
   st.state = 'installing'
-  await fsp.rm(prev, { recursive: true, force: true })
+  await rmTree(prev)
   await fsp.rename(app, prev)
   try { await fsp.rename(next, app) } catch (e) {
     await fsp.rename(prev, app).catch(() => {})
@@ -767,7 +1061,7 @@ function stopIdleWait(): void {
 }
 
 async function rollBack(): Promise<void> {
-  const app = appBundle()!
+  const app = installRoot()!
   const prev = beside('previous')
   const failed = beside('failed')
   const from = versionOf(app) ?? running().version
@@ -776,13 +1070,13 @@ async function rollBack(): Promise<void> {
   st.state = 'installing'
   st.error = null
   rollbackNote = null
-  await fsp.rm(failed, { recursive: true, force: true })
+  await rmTree(failed)
   await fsp.rename(app, failed)
   try { await fsp.rename(prev, app) } catch (e) {
     await fsp.rename(failed, app).catch(() => {})
     throw e
   }
-  await fsp.rm(failed, { recursive: true, force: true })
+  await rmTree(failed)
   refreshIcon(app)
   await writeJson(inUpdates('rolled-back.json'), { from, to, at: new Date().toISOString(), reason: 'rolled back from Settings', noted: true })
   await fsp.rm(inUpdates('pending.json'), { force: true })
@@ -802,7 +1096,7 @@ export function setUpdateBusyCheck(fn: () => boolean): void { busyCheck = fn }
  *  for its macOS build, or while the release server cannot be reached. */
 function waitAfterCheck(): number {
   const policy = effectiveSettings().updates
-  return (updateMode() === 'app' && appPending(policy.channel)) || st.offline ? timings.soonMs : timings.intervalMs
+  return (needsBuild() && appPending(policy.channel)) || st.offline ? timings.soonMs : timings.intervalMs
 }
 
 /** Whether a check is due by the clock: that long since the last one
@@ -881,7 +1175,7 @@ export async function updateRoutes(app: FastifyInstance): Promise<void> {
   const requireApp = () => {
     refuseHosted()
     const mode = updateMode()
-    if (mode !== 'app') throw new KbError(409, refusal(mode, null, false) ?? 'Only the macOS app installs updates.')
+    if (mode !== 'app') throw new KbError(409, refusal(mode, null, false) ?? 'Only an installed app updates itself.')
   }
 
   app.get('/api/updates', async () => {

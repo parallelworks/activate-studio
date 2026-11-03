@@ -5,12 +5,14 @@
 #   tar -xzf activate-studio-linux-x86_64.tar.gz
 #   activate-studio/install.sh
 #
-# The program goes to ~/.local/share/activate-studio/<version>, with a link
-# named current to it, a command at ~/.local/bin/activate-studio, and a menu
-# entry and icons under ~/.local/share. The Studio updates itself there (a
-# new version goes beside the old one and current moves to it). Your
-# documents, index and settings are not touched; they stay in
-# ~/.local/share/activate-studio-data and your documents folder.
+# The program goes to ~/.local/lib/activate-studio (a real directory, the
+# same path for every version: the Studio's updater replaces it in place and
+# keeps the old copy beside it as .activate-studio.previous), a command at
+# ~/.local/bin/activate-studio, and a menu entry and icons under
+# ~/.local/share. The file install-kind in that directory says "user", which
+# is what lets the Studio update itself there. Your documents, index and
+# settings are not touched; they stay in ~/.local/share/activate-studio-data
+# and your documents folder.
 #
 #   install.sh            copy this tree, and leave it where it is
 #   install.sh --move     move it instead of copying (no second copy on the disk)
@@ -20,7 +22,7 @@
 # Studio opens in the default browser. A system package manager installs that;
 # this script installs nothing outside your home folder.
 #
-# STUDIO_INSTALL_ROOT overrides the install folder (a test setting).
+# STUDIO_INSTALL_DIR overrides the install folder (a test setting).
 set -euo pipefail
 
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
@@ -38,55 +40,43 @@ if [ "$(id -u)" = 0 ]; then
   echo "This installs for one user, in their home folder. Run it as that user; a system-wide install is the .deb or .rpm package." >&2
   exit 1
 fi
-[ -f "$SRC/PACKAGE-MANAGED" ] && { echo "this tree belongs to a package; nothing to install" >&2; exit 1; }
+case "$(cut -d' ' -f1 "$SRC/install-kind" 2>/dev/null || true)" in deb|rpm) echo "this tree belongs to a package; nothing to install" >&2; exit 1 ;; esac
 
 VERSION="$(sed -n 's/^ *"version": *"\([^"]*\)".*/\1/p' "$SRC/manifest.json" | head -n 1)"
 [ -n "$VERSION" ] || { echo "no version in manifest.json" >&2; exit 1; }
-# A folder name: the version as the manifest has it, made safe.
-DIR="$(printf '%s' "$VERSION" | tr -c 'A-Za-z0-9._+~-' '_')"
 DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
-ROOT="${STUDIO_INSTALL_ROOT:-$DATA_HOME/activate-studio}"
+TREE="${STUDIO_INSTALL_DIR:-$HOME/.local/lib/activate-studio}"
+PARENT="$(dirname "$TREE")"
+NAME="$(basename "$TREE")"
 BIN_DIR="$HOME/.local/bin"
 APPS_DIR="$DATA_HOME/applications"
 ICON_DIR="$DATA_HOME/icons/hicolor"
+[ "$SRC" != "$TREE" ] || { echo "this is the installed copy already" >&2; exit 1; }
 
-mkdir -p "$ROOT" "$BIN_DIR" "$APPS_DIR"
-# Something running from the folder about to be replaced is stopped first.
-if [ -x "$ROOT/current/bin/activate-studio" ]; then "$ROOT/current/bin/activate-studio" --stop >/dev/null 2>&1 || true; fi
+mkdir -p "$PARENT" "$BIN_DIR" "$APPS_DIR"
+# Something running from the copy about to be replaced is stopped first.
+if [ -x "$TREE/bin/activate-studio" ]; then STUDIO_TREE="$TREE" "$TREE/bin/activate-studio" --stop >/dev/null 2>&1 || true; fi
 
-echo "Installing ACTIVATE Studio $VERSION in $ROOT/$DIR ..."
-NEW="$ROOT/.$DIR.new"
+echo "Installing ACTIVATE Studio $VERSION in $TREE ..."
+NEW="$PARENT/.$NAME.new"
+chmod -R u+w "$NEW" 2>/dev/null || true
 rm -rf "$NEW"
 if [ "$MOVE" = 1 ] && mv "$SRC" "$NEW" 2>/dev/null; then :; else cp -a "$SRC" "$NEW"; fi
-# Installing the same version again replaces it; the old copy is kept until
-# the link has moved.
+# The marker the Studio's updater reads (docs/LINUX-APP.md, Updates).
+printf 'user\n' >"$NEW/install-kind"
+# An earlier install is replaced; its copy is kept until the new one is in
+# place, then removed (an update, not this script, keeps a .previous).
 OLD=
-if [ -e "$ROOT/$DIR" ]; then OLD="$ROOT/.$DIR.old"; rm -rf "$OLD"; mv "$ROOT/$DIR" "$OLD"; fi
-mv "$NEW" "$ROOT/$DIR"
-ln -sfn "$DIR" "$ROOT/.current.new"
-mv -T "$ROOT/.current.new" "$ROOT/current"
-[ -z "$OLD" ] || rm -rf "$OLD"
+if [ -e "$TREE" ]; then OLD="$PARENT/.$NAME.old"; chmod -R u+w "$OLD" 2>/dev/null || true; rm -rf "$OLD"; mv "$TREE" "$OLD"; fi
+mv "$NEW" "$TREE"
+if [ -n "$OLD" ]; then chmod -R u+w "$OLD" 2>/dev/null || true; rm -rf "$OLD"; fi
 
-# The marker the updater and the launcher read (docs/LINUX-APP.md, "Install
-# layout").
-cat >"$ROOT/install.json.new" <<JSON
-{
- "layout": 1,
- "kind": "user",
- "installer": "install.sh",
- "current": "current",
- "version": "$VERSION",
- "installedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-}
-JSON
-mv -f "$ROOT/install.json.new" "$ROOT/install.json"
-
-# The command: a small script, so the tree it runs is named by the link and
-# an update is picked up without touching this file.
+# The command: a small script that names the install's path, which an update
+# keeps (it replaces the directory, not this file).
 cat >"$BIN_DIR/activate-studio" <<WRAPPER
 #!/bin/sh
 # ACTIVATE Studio command (written by install.sh; uninstall removes it).
-STUDIO_TREE="$ROOT/current"
+STUDIO_TREE="$TREE"
 export STUDIO_TREE
 exec "\$STUDIO_TREE/bin/activate-studio" "\$@"
 WRAPPER
@@ -95,11 +85,11 @@ chmod 755 "$BIN_DIR/activate-studio"
 # The menu entry and icons.
 exec_path="$BIN_DIR/activate-studio"
 case "$exec_path" in *" "*) exec_path="\"$exec_path\"" ;; esac
-sed "s|@BIN@|$exec_path|g" "$ROOT/current/share/applications/activate-studio.desktop" >"$APPS_DIR/activate-studio.desktop"
-if [ -d "$ROOT/current/share/icons/hicolor" ]; then
-  (cd "$ROOT/current/share/icons/hicolor" && find . -name activate-studio.png) | while IFS= read -r f; do
+sed "s|@BIN@|$exec_path|g" "$TREE/share/applications/activate-studio.desktop" >"$APPS_DIR/activate-studio.desktop"
+if [ -d "$TREE/share/icons/hicolor" ]; then
+  (cd "$TREE/share/icons/hicolor" && find . -name activate-studio.png) | while IFS= read -r f; do
     mkdir -p "$ICON_DIR/$(dirname "$f")"
-    cp "$ROOT/current/share/icons/hicolor/$f" "$ICON_DIR/$f"
+    cp "$TREE/share/icons/hicolor/$f" "$ICON_DIR/$f"
   done
 fi
 update-desktop-database "$APPS_DIR" >/dev/null 2>&1 || true

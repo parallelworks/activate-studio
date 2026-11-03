@@ -60,6 +60,11 @@ func main() {
 	if maybeRunGuard() {
 		return
 	}
+	// Started again by a window that is closing (reopen.go): let it end first.
+	if v := os.Getenv("STUDIO_WAIT_PID"); v != "" {
+		os.Unsetenv("STUDIO_WAIT_PID")
+		waitForPID(v)
+	}
 	if len(os.Args) > 1 && (os.Args[1] == "--version" || os.Args[1] == "-version") {
 		fmt.Println("ACTIVATE Studio shell", version, webkitAPI)
 		return
@@ -81,6 +86,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "ACTIVATE Studio is already running; its window was brought forward.")
 		return
 	}
+	app.inst = inst
 	defer inst.Release()
 
 	// Before Run: the window's allowed origins name this port.

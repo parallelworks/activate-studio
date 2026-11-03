@@ -167,7 +167,9 @@ if [ "$RUN" = 1 ]; then
   echo "  $(. /etc/os-release && echo "$PRETTY_NAME"), glibc $(ldd --version 2>&1 | awk 'NR == 1 {print $NF}'), $(id -un) (uid $(id -u))"
   # What the loader cannot find for any file in the tree: the packages the
   # base system lacks.
-  unresolved="$(find "$APP" -type f \( -name '*.so' -o -name '*.so.*' -o -path '*/bin/*' \) | while read -r f; do
+  # (Not the window shells, which need the desktop's GTK and WebKitGTK; the
+  # install tests cover them.)
+  unresolved="$(find "$APP" -type f \( -name '*.so' -o -name '*.so.*' -o -path '*/bin/*' \) -not -name 'activate-studio-wk4*' | while read -r f; do
     head -c 4 "$f" | grep -q ELF || continue
     ldd "$f" 2>/dev/null | grep 'not found' | sed "s|^|$(basename "$f"): |" || true
   done)"
@@ -333,18 +335,20 @@ PY
   else
     bad "could not add a second library"
   fi
-  # The update check. The updater is the macOS app's: it installs only into
-  # an app bundle (STUDIO_APP_BUNDLE, which studio-run.sh does not set), so
-  # here it checks and reports but does not install. It asks the stand-in
-  # release server above. What it reports is recorded, not changed.
+  # The update check. This payload is unpacked in a directory its user can
+  # write and has no install-kind file, so it is taken as a per-user install
+  # (mode app) that updates itself. The stand-in release server above offers
+  # one release with a macOS build only, which is not an update for this
+  # payload: the check reaches the server, reports nothing to install, and
+  # an install request is refused. test_update_e2e.sh installs an update.
   api -m 30 POST "http://127.0.0.1:$PORT/api/updates/check" >"$T/updcheck.json" 2>/dev/null || true
   if assert_json 'd.get("state") == "idle" and not d.get("error") and not d.get("offline") and d.get("checkedAt")' <"$T/updcheck.json" 2>/dev/null; then
     ok "the update check reaches the release server"
   else
     bad "the update check did not complete:"; sed 's/^/        /' "$T/updcheck.json" 2>/dev/null || true
   fi
-  check "it reports the newer release, which it cannot install here (mode clone, canInstall false)" \
-    assert_json 'd["mode"] == "clone" and d["available"] is True and d["latest"]["version"] == "v99.0" and d["canInstall"] is False and d["reason"]' <"$T/updcheck.json"
+  check "a release with only a macOS build is not an update (mode app, nothing available, canInstall false)" \
+    assert_json 'd["mode"] == "app" and d["available"] is False and d["latest"] is None and d["canInstall"] is False' <"$T/updcheck.json"
   echo "  note  update status: $("$PY" -I -c 'import json, sys; d = json.load(open(sys.argv[1])); print({k: d.get(k) for k in ("mode", "available", "canInstall", "reason", "state")})' "$T/updcheck.json" 2>/dev/null)"
   check "installing is refused (409), not attempted" sh -c "! '$PY' -I '$HERE/api.py' POST 'http://127.0.0.1:$PORT/api/updates/install' '{}' >/dev/null 2>&1"
   api -m 5 GET "http://127.0.0.1:$PORT/api/index/extractors" >/dev/null 2>&1 || true

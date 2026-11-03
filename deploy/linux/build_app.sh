@@ -215,9 +215,9 @@ fi
 
 echo "Run loop, update key, icon..."
 cp "$HERE/studio-run.sh" "$APP/studio-run.sh"
-# The public key updates are verified with (deploy/mac/sign_release.sh signs
-# them); the Linux update channel is not built yet, so nothing reads it, but
-# the tree carries it as the macOS app does.
+# The public key updates are verified with (deploy/linux/sign_release.sh signs
+# them with the macOS app's key); a per-user install's server reads it from
+# here before it installs an update.
 cp "$HERE/../mac/update-signing.pub" "$APP/update-signing.pub"
 # The icon a launcher entry or a package names, a 1024-pixel PNG.
 cp "$HERE/../mac/AppIcon-1024.png" "$APP/share/activate-studio.png"
@@ -267,6 +267,12 @@ manifest = {
     },
     'entry': 'studio-run.sh',
 }
+# The window program, when the tree has one: the Studio's updater compares
+# this file in the old and the new payload to tell the person to reopen the
+# window (the shells are built together, so either one changes with the other).
+if os.path.exists(os.path.join(root, 'bin', 'activate-studio-wk41')):
+    manifest['shell'] = 'bin/activate-studio-wk41'
+    manifest['shells'] = {'wk41': 'bin/activate-studio-wk41', 'wk40': 'bin/activate-studio-wk40'}
 with open(os.path.join(root, 'manifest.json'), 'w') as fh:
     json.dump(manifest, fh, indent=1)
     fh.write('\n')
@@ -282,8 +288,9 @@ tar --owner=0 --group=0 --numeric-owner --sort=name -czf "$ASSET.tar.gz" "$TOP"
 SUM="$(sha256_of "$ASSET.tar.gz")"
 echo "$SUM  $ASSET.tar.gz" >"$ASSET.tar.gz.sha256"
 # The archive's manifest, as the macOS release's: version, asset, checksum,
-# size, and the oldest system it runs on. Unsigned until the update channel
-# exists (deploy/mac/sign_release.sh signs the macOS one).
+# size, and the oldest system it runs on. Unsigned here: a release signs a
+# manifest of its own with deploy/linux/sign_release.sh, which the updater
+# verifies.
 ASSET_NAME="$ASSET.tar.gz" SUM="$SUM" SIZE="$(wc -c <"$ASSET.tar.gz" | tr -d ' ')" python3 - "$APP/manifest.json" "$ASSET.manifest.json" <<'PY'
 import json, os, sys
 m = json.load(open(sys.argv[1]))

@@ -2,8 +2,9 @@
 # Builds the .deb and the .rpm from the payload archive (the tarball
 # build_app.sh makes, window shells included) with nfpm. Both install the tree
 # at /opt/activate-studio, with /usr/bin/activate-studio linking to its
-# launcher, a menu entry and icons under /usr/share, and PACKAGE-MANAGED in
-# the tree, which tells the Studio's updater that apt or dnf updates it. No
+# launcher, a menu entry and icons under /usr/share, and install-kind in the
+# tree ("deb activate-studio" or "rpm activate-studio"), which tells the
+# Studio's updater that apt or dnf updates it. No
 # install scripts run: nothing is written into the tree after it is installed,
 # and nothing outside it but the link, the entry and the icons.
 #
@@ -51,8 +52,9 @@ build() {
   cp -al "$TREE" "$stage"
   rm -f "$stage/install.sh" "$stage/uninstall.sh" "$stage/bin/activate-studio-$drop"
   rm -rf "$stage/share/applications"
-  printf '%s\n' "$fmt" >"$stage/PACKAGE-MANAGED"
-  chmod 644 "$stage/PACKAGE-MANAGED"
+  # The marker the Studio's updater reads: this copy is the package's.
+  printf '%s activate-studio\n' "$fmt" >"$stage/install-kind"
+  chmod 644 "$stage/install-kind"
   mkdir -p "$WORK/share-$fmt"
   sed 's|@BIN@|/usr/bin/activate-studio|g' "$HERE/activate-studio.desktop" >"$WORK/share-$fmt/activate-studio.desktop"
 

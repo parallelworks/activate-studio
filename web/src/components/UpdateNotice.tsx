@@ -115,9 +115,11 @@ export function UpdateNotice({ pollMs, giveUpMs, reload }: {
           {releases.length > 0
             ? <div className="update-details-list"><ReleaseList releases={releases} headingLevel={3} /></div>
             : <p className="muted">This release has no notes.</p>}
-          {status.mode === 'clone' && status.command && (
+          {status.command && (
             <div className="update-notice-command">
-              <p>To update, run these in the Studio's folder, then stop it and start it again with <code>pnpm start</code>:</p>
+              {status.mode === 'package'
+                ? <p>{status.commandNote ?? 'To update, run this in a terminal, then quit and reopen ACTIVATE Studio:'}</p>
+                : <p>To update, run these in the Studio's folder, then stop it and start it again with <code>pnpm start</code>:</p>}
               <CopyCodeBlock className="mcp-snippet" text={status.command} label="update commands">{status.command}</CopyCodeBlock>
             </div>
           )}

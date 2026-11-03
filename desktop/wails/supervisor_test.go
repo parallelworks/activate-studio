@@ -75,12 +75,16 @@ func newHarness(t *testing.T) *harness {
 		t.Fatal(err)
 	}
 	// STUDIO_DATA_DIR is what studio-run.sh gives the server.
-	body := fmt.Sprintf("#!/bin/bash\n[ \"$1\" = --once ] || exit 64\nexec env STUDIO_FAKE_SERVER=1 STUDIO_DATA_DIR=\"$2\" %q\n", exe)
+	body := fmt.Sprintf(`#!/bin/bash
+if [ "$1" = --rollback ]; then echo "$3" >"$2/rolled-back"; rm -f "$2/updates/pending.json"; exit 0; fi
+[ "$1" = --once ] || exit 64
+exec env STUDIO_FAKE_SERVER=1 STUDIO_DATA_DIR="$2" %q
+`, exe)
 	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	h := &harness{t: t, data: data, events: make(chan ServerEvent, 64)}
-	h.sup = &Supervisor{RunScript: script, DataDir: data, Events: func(e ServerEvent) { h.events <- e }}
+	h.sup = &Supervisor{RunScript: script, DataDir: data, Pause: 100 * time.Millisecond, Events: func(e ServerEvent) { h.events <- e }}
 	go h.sup.Run()
 	t.Cleanup(h.sup.Stop)
 	return h
@@ -227,4 +231,37 @@ func TestReadSettingsUnquotes(t *testing.T) {
 	if m["A"] != "x'y" || m["B"] != "plain" {
 		t.Errorf("settings %v", m)
 	}
+}
+
+func TestRollsBackAfterThreeStopsAfterAnUpdate(t *testing.T) {
+	h := newHarness(t)
+	h.next("ready")
+	if err := os.MkdirAll(filepath.Join(h.data, "updates"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(h.data, "updates", "pending.json"), []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Two stops: started again quietly, no failure shown.
+	for i := 0; i < 2; i++ {
+		h.trigger(3)
+		if e := h.next("ready"); e.Reason != "after-update" {
+			t.Fatalf("stop %d: reason %q", i+1, e.Reason)
+		}
+	}
+	// The third: the run script's rollback runs, and the server starts again.
+	h.trigger(3)
+	if e := h.next("ready"); e.Reason != "rollback" {
+		t.Fatalf("third stop: reason %q", e.Reason)
+	}
+	if b, err := os.ReadFile(filepath.Join(h.data, "rolled-back")); err != nil || strings.TrimSpace(string(b)) != "3" {
+		t.Errorf("the rollback was not asked for with the count: %q, %v", b, err)
+	}
+}
+
+func TestNoRollbackWithoutAnUpdate(t *testing.T) {
+	h := newHarness(t)
+	h.next("ready")
+	h.trigger(3)
+	h.next("failed")
 }
