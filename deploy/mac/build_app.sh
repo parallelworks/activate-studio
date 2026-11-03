@@ -39,16 +39,17 @@ RES="$APP/Contents/Resources"
 ASSET=activate-studio-macos-arm64
 BUNDLE_ID=com.parallelworks.activate-studio
 
-# Pinned inputs. Every download is checked against its SHA-256 on each
-# build, so a corrupt or replaced cache entry is caught too.
-NODE_VERSION=v26.10.0    # as deploy/make_bundle.sh; package.json asks for Node 26
+# Pinned inputs shared with the other platforms (the versions of Node and
+# Python, the model, pypdf) are in deploy/common/pins.sh; every download is
+# checked against its SHA-256 on each build, so a corrupt or replaced cache
+# entry is caught too.
+NAME=build_app
+. "$HERE/../common/lib.sh"
+. "$HERE/../common/pins.sh"
 NODE_SHA256=751fdf7439f115d87ee2a8f3f18c065b6151852068e3e666ac60ac2996f75ac9
-PY_TAG=20261013          # python-build-standalone release
-PY_VERSION=3.12.15
 PY_SHA256=9866e11cf2ae9caa1e671383786f248859a52dd8bfb702fb4c0dc2c65f1d36de
 GUFI_PKG_URL=https://github.com/mar-file-system/GUFI/releases/download/0.8.0/gufi-0.8.0.macOS.arm64.pkg
 GUFI_PKG_SHA256=b45cdaf8d7839faf112196555ecfd59c383316985ed2d136563bb29d53bfd75e
-GUFI_COMMIT=021a717a6089b9e28b068695dc7c7f3732fd1a56    # that release's tag, for LICENSE.txt
 GUFI_LICENSE_SHA256=9e40647012a77d1fdcac90a9b7241843900cb589631b5c7f7cbad793a91828aa
 # GUFI's package links libomp and pcre2 from a Homebrew install it does not
 # carry; the app takes them from Homebrew's macOS 15 bottles.
@@ -56,38 +57,10 @@ LIBOMP_VERSION=23.1.4
 LIBOMP_SHA256=af8425bbe39630ec9b2022b67449ac737e0ed6d48e98a6309f841295d3c6f0f2
 PCRE2_VERSION=10.49
 PCRE2_SHA256=0ec47d18c50f5770db2b3f07b5b85644284cc6ee8e07e23b11d2727e95932b77
-MODEL_COMMIT=7a7bac37782986fe1d4f213de771a8a3d9170b35    # as deploy/app.def
-MODEL_SHA256=71f1d177171468fb5f186c07019e303015aea17af275a67767760bba7be8d2e6
-# The PDF reader for files downmark cannot read (indexer/enrich.py), pure
-# Python, so it needs no build for macOS and nothing to relink or sign.
-PYPDF_VERSION=6.21.2
-PYPDF_URL=https://files.pythonhosted.org/packages/1b/4d/c9d2d67f204eff463237a1a8f5e25a6923b7b1043982b91fcaf104c8ef60/pypdf-6.21.2-py3-none-any.whl
-PYPDF_SHA256=1d44d1a3a200f25062adff0085b02040e4646431ac2ccac22e42679e91466084
 
 for tool in python3 curl tar git pnpm; do
   command -v "$tool" >/dev/null 2>&1 || { echo "build_app: $tool is required" >&2; exit 1; }
 done
-
-sha256_of() {
-  if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1"; else shasum -a 256 "$1"; fi | awk '{print $1}'
-}
-
-# fetch URL FILE SHA256 [curl options]: download into the cache once.
-fetch() {
-  local url="$1" file="$2" sum="$3"
-  shift 3
-  if [ ! -f "$file" ] || [ "$(sha256_of "$file")" != "$sum" ]; then
-    echo "  fetching $url"
-    curl -fsSL "$@" -o "$file.part" "$url"
-    mv "$file.part" "$file"
-  fi
-  local got
-  got="$(sha256_of "$file")"
-  if [ "$got" != "$sum" ]; then
-    echo "build_app: $file has SHA-256 $got, expected $sum" >&2
-    exit 1
-  fi
-}
 
 mkdir -p "$OUT_DIR" "$CACHE_DIR"
 WORK="$(mktemp -d "$OUT_DIR/.work.XXXXXX")"

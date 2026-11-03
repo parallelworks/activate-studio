@@ -1,0 +1,190 @@
+# Build the Linux x86_64 payload of ACTIVATE Studio, the equivalent of the
+# macOS app's contents without a window or a package: a relocatable
+# directory tree (Node, Python with its packages, GUFI with its AI pieces
+# and the models, tesseract, the built server and web app, the document
+# converter's Linux binary) in activate-studio-linux-x86_64.tar.gz, with a
+# manifest and a SHA-256. See docs/LINUX-APP.md.
+#
+# GUFI and tesseract are built from source in a Rocky Linux 9 container
+# (glibc 2.34, the oldest target), so one payload runs on Ubuntu 22.04 and
+# later and on RHEL 9 and later; build_app.sh then checks that no file in
+# the tree needs a newer glibc. The archive is unpacked in clean Ubuntu
+# 22.04, Ubuntu 24.04 and Rocky Linux 9 containers and run there as a plain
+# user: indexing, search, Query, search by meaning, OCR, document
+# conversion and the update check.
+#
+# Nothing here publishes: the archive is a workflow artifact for 30 days.
+# There is no release job and no update channel yet.
+name: linux-app
+
+on:
+  push:
+    branches: [linux-app]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: linux-app-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Base images for the build and the tests. Tags, not digests: the point of
+  # the test jobs is to run on what a person has today.
+  BUILD_IMAGE: rockylinux:9
+
+jobs:
+  # GUFI (with sqlite-vec and sqlite-lembed) and tesseract, built in a
+  # Rocky 9 container. They do not depend on each other, so they build side
+  # by side.
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        component: [gufi, ocr]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: build ${{ matrix.component }} in Rocky Linux 9
+        env:
+          COMPONENT: ${{ matrix.component }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/out" "$RUNNER_TEMP/cache"
+          start=$(date +%s)
+          docker run --rm -v "$GITHUB_WORKSPACE:/src:ro" -v "$RUNNER_TEMP/out:/out" -v "$RUNNER_TEMP/cache:/cache" \
+            -e OUT_DIR=/out -e CACHE_DIR=/cache -e "JOBS=$(nproc)" "$BUILD_IMAGE" bash "/src/deploy/linux/build_$COMPONENT.sh"
+          echo "build_$COMPONENT took $(( $(date +%s) - start )) s" | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: native-${{ matrix.component }}
+          path: |
+            ${{ runner.temp }}/out/*.tar.gz
+            ${{ runner.temp }}/out/*.tar.gz.sha256
+          if-no-files-found: error
+          retention-days: 30
+
+  # The payload: the server and web app built here, the pinned Node and
+  # Python, and the two archives above, put together and checked.
+  app:
+    needs: native
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # git describe names the build.
+          fetch-depth: 0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26
+          # No cache: this job's output is what a release would ship.
+          package-manager-cache: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: native-*
+          path: ${{ runner.temp }}/native
+          merge-multiple: true
+      - name: install and build
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+      - name: build the payload
+        env:
+          OUT_DIR: ${{ runner.temp }}/out
+          CACHE_DIR: ${{ runner.temp }}/cache
+          SKIP_BUILD: "1"
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends patchelf libatomic1
+          (cd "$RUNNER_TEMP/native" && sha256sum -c gufi-linux-x86_64.tar.gz.sha256 ocr-linux-x86_64.tar.gz.sha256)
+          start=$(date +%s)
+          GUFI_TARBALL="$RUNNER_TEMP/native/gufi-linux-x86_64.tar.gz" OCR_TARBALL="$RUNNER_TEMP/native/ocr-linux-x86_64.tar.gz" \
+            deploy/linux/build_app.sh 2>&1 | tee "$RUNNER_TEMP/build_app.log"
+          {
+            echo "### Payload"
+            echo "build_app took $(( $(date +%s) - start )) s (the web and server build and the downloads included)"
+            echo '```'
+            ls -l "$OUT_DIR"/activate-studio-linux-x86_64.*
+            du -sh "$OUT_DIR/activate-studio"
+            echo '```'
+            sed -n '/^Size$/,/^$/p' "$RUNNER_TEMP/build_app.log" | head -n 12
+            echo '```'
+            cat "$OUT_DIR/activate-studio-linux-x86_64.manifest.json"
+            echo '```'
+          } >>"$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: activate-studio-linux-x86_64
+          path: |
+            ${{ runner.temp }}/out/activate-studio-linux-x86_64.tar.gz
+            ${{ runner.temp }}/out/activate-studio-linux-x86_64.tar.gz.sha256
+            ${{ runner.temp }}/out/activate-studio-linux-x86_64.manifest.json
+          if-no-files-found: error
+          retention-days: 30
+
+  # The payload unpacked in a clean container of each target distribution
+  # and run as a plain user, on the image's own packages plus only the ones
+  # in extra_packages (which the log records).
+  test:
+    needs: app
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: ubuntu:22.04
+            extra_packages: ""
+          - image: ubuntu:24.04
+            extra_packages: ""
+          - image: rockylinux:9
+            extra_packages: ""
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: activate-studio-linux-x86_64
+          path: ${{ runner.temp }}/in
+      - name: run it in ${{ matrix.image }}
+        env:
+          IMAGE: ${{ matrix.image }}
+          EXTRA_PACKAGES: ${{ matrix.extra_packages }}
+        run: |
+          set -euo pipefail
+          (cd "$RUNNER_TEMP/in" && sha256sum -c activate-studio-linux-x86_64.tar.gz.sha256)
+          docker run --rm -v "$GITHUB_WORKSPACE:/src:ro" -v "$RUNNER_TEMP/in:/in:ro" -e EXTRA_PACKAGES \
+            "$IMAGE" bash /src/deploy/linux/test_in_container.sh 2>&1 | tee "$RUNNER_TEMP/test.log"
+      - name: summary
+        if: always()
+        env:
+          IMAGE: ${{ matrix.image }}
+        run: |
+          {
+            echo "### $IMAGE"
+            echo '```'
+            sed -n '/^Image:/,/^Payload manifest/p' "$RUNNER_TEMP/test.log" | head -n 8
+            grep -E '^  (ok|FAIL|note) ' "$RUNNER_TEMP/test.log" | sed 's/^  //' | cut -c1-200
+            sed -n '/^Dependencies/,$p' "$RUNNER_TEMP/test.log"
+            echo '```'
+          } >>"$GITHUB_STEP_SUMMARY" || true
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: test-log-${{ strategy.job-index }}
+          path: ${{ runner.temp }}/test.log
+          retention-days: 30

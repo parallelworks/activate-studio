@@ -39,6 +39,7 @@ on:
   pull_request:
     paths:
       - deploy/mac/**
+      - deploy/common/**
       - server/src/**
       - indexer/**
       - .github/workflows/mac-app.yml

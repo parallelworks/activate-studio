@@ -13,6 +13,9 @@ deploy/.cache/
 # deploy/mac/build_app.sh: its outputs and its download cache.
 deploy/mac/out/
 deploy/mac/.cache/
+# deploy/linux/build_app.sh and its native builds: outputs and download cache.
+deploy/linux/out/
+deploy/linux/.cache/
 CLAUDE.md
 
 # Written by deploy/make_bundle.sh into the bundle, never into the repo.

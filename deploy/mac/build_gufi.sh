@@ -40,18 +40,18 @@ OUT_DIR="${OUT_DIR:-$HERE/out}"
 CACHE_DIR="${CACHE_DIR:-$HERE/.cache}"
 ASSET=gufi-macos-arm64
 TARGET="${MACOSX_DEPLOYMENT_TARGET:-14.0}"
-GUFI_REPO=https://github.com/mar-file-system/GUFI
-GUFI_REF="${GUFI_REF:-021a717a6089b9e28b068695dc7c7f3732fd1a56}"   # tag 0.8.0
+NAME=build_gufi
+. "$HERE/../common/lib.sh"
+. "$HERE/../common/pins.sh"
+GUFI_REF="${GUFI_REF:-$GUFI_COMMIT}"   # tag 0.8.0
 
 # Pinned sources, checked against their SHA-256 on every build. libomp is
 # the release build_app.sh takes as a Homebrew bottle, built here from
 # LLVM's source the way Homebrew's formula builds it.
 LIBOMP_VERSION=23.1.4
 LLVM_SRC_SHA256=819ecf7351f1a66f76b2d701d8942faaf5faeb324cb90c9d5b090de142434bb2
-PCRE2_VERSION=10.49
-PCRE2_SHA256=53c156e1ba416a20da8e65395daa132da0d80e76910424caca3fcdae7831d384
-
-die() { echo "build_gufi: $*" >&2; exit 1; }
+PCRE2_VERSION=$PCRE2_SRC_VERSION
+PCRE2_SHA256=$PCRE2_SRC_SHA256
 
 # Both can come from a workflow's free-text inputs: the target goes into
 # compiler flags and the ref to git, so each must be what it claims to be.
@@ -61,19 +61,6 @@ if [ "$(uname -s)" != Darwin ] || [ "$(uname -m)" != arm64 ]; then die "runs on 
 for tool in brew xcrun codesign otool git curl tar python3; do
   command -v "$tool" >/dev/null 2>&1 || die "$tool is required"
 done
-
-sha256_of() { shasum -a 256 "$1" | awk '{print $1}'; }
-
-# fetch URL FILE SHA256: download into the cache once.
-fetch() {
-  local url="$1" file="$2" sum="$3"
-  if [ ! -f "$file" ] || [ "$(sha256_of "$file")" != "$sum" ]; then
-    echo "  fetching $url"
-    curl -fsSL -o "$file.part" "$url"
-    mv "$file.part" "$file"
-  fi
-  [ "$(sha256_of "$file")" = "$sum" ] || die "$file has SHA-256 $(sha256_of "$file"), expected $sum"
-}
 
 mkdir -p "$OUT_DIR" "$CACHE_DIR"
 OUT_DIR="$(cd "$OUT_DIR" && pwd -P)"
