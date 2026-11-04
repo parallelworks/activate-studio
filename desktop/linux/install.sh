@@ -78,6 +78,21 @@ cat >"$BIN_DIR/activate-studio" <<WRAPPER
 # ACTIVATE Studio command (written by install.sh; uninstall removes it).
 STUDIO_TREE="$TREE"
 export STUDIO_TREE
+# An update that was cut off between its two directory moves leaves no
+# payload at its path; this is the one entry point outside it, so it asks the
+# recovery script of the staged or the previous copy beside it to finish the
+# update or put the previous payload back (docs/LINUX-APP.md, Updates).
+if [ ! -f "\$STUDIO_TREE/studio-run.sh" ]; then
+  beside="\$(dirname "\$STUDIO_TREE")/.\$(basename "\$STUDIO_TREE")"
+  for copy in "\$beside.new" "\$beside.previous"; do
+    if [ -f "\$copy/studio-recover.sh" ]; then
+      /bin/bash "\$copy/studio-recover.sh" "\$STUDIO_TREE" "\${STUDIO_DATA_DIR:-\${XDG_DATA_HOME:-\$HOME/.local/share}/activate-studio-data}" >/dev/null 2>&1
+      break
+    fi
+  done
+  # A payload that predates the script: put the previous one back.
+  [ -f "\$STUDIO_TREE/studio-run.sh" ] || [ ! -d "\$beside.previous" ] || mv "\$beside.previous" "\$STUDIO_TREE" 2>/dev/null
+fi
 exec "\$STUDIO_TREE/bin/activate-studio" "\$@"
 WRAPPER
 chmod 755 "$BIN_DIR/activate-studio"

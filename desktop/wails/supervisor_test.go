@@ -259,6 +259,93 @@ func TestRollsBackAfterThreeStopsAfterAnUpdate(t *testing.T) {
 	}
 }
 
+// A payload cut off between the two moves of an update is put back before the
+// server starts: the staged copy when the swap file vouches for a complete
+// one, the previous payload otherwise.
+func TestRecoversAPayloadCutOffBetweenTheMoves(t *testing.T) {
+	recoverSrc, err := os.ReadFile(filepath.Join("..", "..", "deploy", "linux", "studio-recover.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := fmt.Sprintf(`#!/bin/bash
+[ "$1" = --once ] || exit 64
+exec env STUDIO_FAKE_SERVER=1 STUDIO_DATA_DIR="$2" %q
+`, exe)
+	// A payload that studio-recover.sh counts as complete, at version v2.
+	payload := func(dir, version string) {
+		for f, mode := range map[string]os.FileMode{"studio-run.sh": 0o755, "studio-recover.sh": 0o755, "node/bin/node": 0o755, "app/server/dist/main.js": 0o644, "update-signing.pub": 0o644, "manifest.json": 0o644} {
+			body := []byte("x\n")
+			switch f {
+			case "studio-run.sh":
+				body = []byte(run)
+			case "studio-recover.sh":
+				body = recoverSrc
+			}
+			if err := os.MkdirAll(filepath.Dir(filepath.Join(dir, f)), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, f), body, mode); err != nil {
+				t.Fatal(err)
+			}
+		}
+		info := fmt.Sprintf(`{"version": "%s"}`, version)
+		if err := os.WriteFile(filepath.Join(dir, "app", "build-info.json"), []byte(info), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, c := range []struct {
+		name    string
+		swap    bool
+		partial bool
+		want    string
+	}{
+		{"the staged copy is complete", true, false, "v2"},
+		{"the staged copy is partial", true, true, "v1"},
+		{"there is no swap file", false, false, "v1"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			lib := t.TempDir()
+			data := t.TempDir()
+			payload(filepath.Join(lib, ".activate-studio.previous"), "v1")
+			payload(filepath.Join(lib, ".activate-studio.new"), "v2")
+			if c.partial {
+				_ = os.Remove(filepath.Join(lib, ".activate-studio.new", "node", "bin", "node"))
+			}
+			if c.swap {
+				if err := os.MkdirAll(filepath.Join(data, "updates"), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				swap := `{"from": "v1", "to": "v2", "at": "2026-11-04T00:00:00Z", "reopen": "no"}`
+				if err := os.WriteFile(filepath.Join(data, "updates", "swap.json"), []byte(swap), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			events := make(chan ServerEvent, 64)
+			t.Setenv("STUDIO_RECOVER_WAIT", "0")
+			sup := &Supervisor{RunScript: filepath.Join(lib, "activate-studio", "studio-run.sh"), DataDir: data, Pause: 100 * time.Millisecond, Events: func(e ServerEvent) { events <- e }}
+			go sup.Run()
+			t.Cleanup(sup.Stop)
+			deadline := time.After(20 * time.Second)
+			for ready := false; !ready; {
+				select {
+				case e := <-events:
+					ready = e.Kind == "ready"
+				case <-deadline:
+					t.Fatal("the server did not start from the recovered payload")
+				}
+			}
+			b, err := os.ReadFile(filepath.Join(lib, "activate-studio", "app", "build-info.json"))
+			if err != nil || !strings.Contains(string(b), c.want) {
+				t.Errorf("the payload is %q (%v), want %s", b, err, c.want)
+			}
+		})
+	}
+}
+
 func TestNoRollbackWithoutAnUpdate(t *testing.T) {
 	h := newHarness(t)
 	h.next("ready")

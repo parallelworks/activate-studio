@@ -74,6 +74,7 @@ func (s *Supervisor) Run() {
 	s.mu.Unlock()
 	reason := "launch"
 	for {
+		s.recoverTree()
 		startedAt := time.Now()
 		code, err := s.runOnce(reason)
 		s.mu.Lock()
@@ -116,6 +117,39 @@ func (s *Supervisor) Run() {
 				return
 			}
 			reason = r
+		}
+	}
+}
+
+// recoverTree finishes or undoes an update that was cut off between its two
+// directory moves, which leaves the payload at no path (studio-recover.sh,
+// in the payload: see docs/LINUX-APP.md, Updates). It runs before every
+// start of the server, and does nothing when the payload is there and the
+// server left no swap file. The script is run from the payload, or, when
+// that is gone, from the staged or the previous copy beside it.
+func (s *Supervisor) recoverTree() {
+	if s.RunScript == "" {
+		return
+	}
+	if _, err := os.Stat(s.RunScript); err == nil {
+		if _, err := os.Stat(filepath.Join(s.DataDir, "updates", "swap.json")); err != nil {
+			return
+		}
+	}
+	tree := filepath.Dir(s.RunScript)
+	beside := filepath.Join(filepath.Dir(tree), "."+filepath.Base(tree))
+	for _, dir := range []string{tree, beside + ".new", beside + ".previous"} {
+		script := filepath.Join(dir, "studio-recover.sh")
+		if _, err := os.Stat(script); err != nil {
+			continue
+		}
+		_ = exec.Command("/bin/bash", script, tree, s.DataDir).Run()
+		return
+	}
+	// A payload that predates the script: put the previous one back.
+	if _, err := os.Stat(s.RunScript); err != nil {
+		if _, err := os.Stat(beside + ".previous"); err == nil {
+			_ = os.Rename(beside+".previous", tree)
 		}
 	}
 }
