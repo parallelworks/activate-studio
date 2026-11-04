@@ -531,6 +531,14 @@ export function remoteRunOnce(site: string, key: string, argv: string[], timeout
   })
 }
 
+/** Starts argv as one ssh (or pw ssh) call and hands back the process, for
+ *  output too large to hold: its standard output is the command's, and the
+ *  caller reads it, waits for it and kills it. The arguments go as
+ *  remoteRunOnce sends them, each quoted for a POSIX shell. */
+export function remoteStream(site: string, key: string, argv: string[]): ChildProcessWithoutNullStreams {
+  return spawnSsh(site, key, directCommand(argv))
+}
+
 /** Whether a session that ended before its loop answered was refused by
  *  the host's login (no bash, a restricted shell, a forced command), as
  *  opposed to ssh failing: over plain ssh the remote command ran and

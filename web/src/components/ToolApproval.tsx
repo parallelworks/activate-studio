@@ -6,7 +6,14 @@ import { ApprovalBlock, type ApprovalPart, type PartRendererProps } from '@paral
  *  arguments. The server lists these on the approval it sends. */
 export interface ApprovalAlternative { tool: string; label: string; description?: string }
 
-type HeldApproval = ApprovalPart & { instead?: ApprovalAlternative[] }
+/** One line of a held transfer's plan. */
+export interface PlanRow { label: string; value: string }
+
+type HeldApproval = ApprovalPart & { instead?: ApprovalAlternative[]; plan?: PlanRow[] }
+
+/** Told on the window when a held transfer is allowed: the status panel
+ *  looks for the new job then, sooner than its usual read. */
+export const TRANSFER_ALLOWED = 'studio:transfer-allowed'
 
 /** Whether the ISO time has passed, turning true when it does. */
 function useExpired(at: string | undefined): boolean {
@@ -28,16 +35,26 @@ function useExpired(at: string | undefined): boolean {
  * asked to stop. The package's block has no control for that alternative,
  * though its answer carries one (`instead`). A call someone else asked for
  * names them and offers no buttons; the server refuses anyone else's answer
- * regardless.
+ * regardless. A held transfer also carries its plan, drawn above the block:
+ * what is copied, from where, to where, and by which mover.
  */
 export function ToolApproval({ part, onApprovalAnswer }: PartRendererProps) {
   const held = part as HeldApproval
   const expired = useExpired(part.kind === 'approval' ? held.expiresAt : undefined)
   if (part.kind !== 'approval') return null
-  const answer = held.waitingOn ? undefined : onApprovalAnswer
+  const given = held.waitingOn ? undefined : onApprovalAnswer
+  const answer: typeof given = given && held.plan ? (id, a) => {
+    given(id, a)
+    if ((a as { allowed?: boolean }).allowed) window.dispatchEvent(new Event(TRANSFER_ALLOWED))
+  } : given
   const alternatives = answer && !held.resolved && !expired && held.approvalKind === 'confirm' ? held.instead ?? [] : []
   return (
     <div className="tool-approval">
+      {held.plan && !held.resolved && (
+        <dl className="tool-approval-plan" aria-label="Transfer plan">
+          {held.plan.map(r => <div key={r.label}><dt>{r.label}</dt><dd>{r.value}</dd></div>)}
+        </dl>
+      )}
       <ApprovalBlock part={held} {...(answer ? { onApprovalAnswer: answer } : {})} />
       {alternatives.map(alt => (
         <div key={alt.tool} className="tool-approval-alt">

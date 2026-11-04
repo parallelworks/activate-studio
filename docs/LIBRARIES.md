@@ -90,6 +90,10 @@ the index has, as built: names, text, or text and meaning:
 | GUFI index on a remote system over pw ssh | `POST /api/user-libraries/pw` | **Check**, **Remove** |
 | Index built on a cluster by the platform's workflow | `POST /api/user-libraries` | **Refresh**, **Remove** |
 
+A row also shows **Copies from**: where the assistant's `transfer_files` reads the
+library's files, in the order tried (see docs/REFERENCE.md, "Copying files to this
+computer"). It is shown, not set, and **Originals via** feeds it.
+
 A row of a library whose files may be on another host also has **Originals via**,
 the host its originals are read through when its own location cannot give a
 file (see "Reading originals through another host").

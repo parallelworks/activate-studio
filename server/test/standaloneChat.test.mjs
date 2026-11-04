@@ -106,7 +106,7 @@ test('a question that mentions storage is offered the knowledge base tools only,
     assert.ok(!sent.includes(n), `${n} is not offered`)
   }
   const more = body.tools.find(t => t.function.name === 'more_tools')
-  if (more) assert.deepEqual(more.function.parameters.properties.group.enum, ['editing'], 'more_tools names no platform group')
+  if (more) assert.deepEqual(more.function.parameters.properties.group.enum, ['transfers', 'editing'], 'more_tools names no platform group')
   const system = body.messages[0].content
   assert.doesNotMatch(system, /Platform workflows registered|Platform tools are not listed|list_sessions|workflow DAG|When delegating/)
   assert.match(system, /search_kb/)

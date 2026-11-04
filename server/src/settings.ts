@@ -58,6 +58,8 @@ export interface StudioSettings {
   suggestedPrompts?: string[]
   visionModel?: string
   disabledTools?: string[]
+  /** Folders copies may go to, besides Downloads, Desktop and Documents (movers/destination.ts). */
+  transferFolders?: string[]
   customTools?: { name: string; description: string; command: string }[]
   ragDefaultModel?: string
   ragTopK?: number
@@ -199,6 +201,7 @@ export function effectiveSettings(): Required<StudioSettings> {
     suggestedPrompts: promptsOf(s.suggestedPrompts),
     visionModel: s.visionModel ?? process.env.ADE_VISION_MODEL ?? '',
     disabledTools: s.disabledTools ?? [],
+    transferFolders: s.transferFolders ?? [],
     mcpEnabled: s.mcpEnabled ?? process.env.MCP_ENABLED !== '0',
     ragProxyEnabled: s.ragProxyEnabled ?? process.env.RAG_PROXY_ENABLED !== '0',
     // One snapshot a day by default. Every index pass would make the
@@ -401,6 +404,13 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
       const n = Number(body.historyIntervalSec)
       if (!Number.isFinite(n) || n < 0 || n > 2592000) throw new KbError(400, 'history interval must be 0 to 2592000 seconds')
       next.historyIntervalSec = n
+    }
+    if (body.transferFolders !== undefined) {
+      if (!Array.isArray(body.transferFolders)) throw new KbError(400, 'transferFolders must be an array')
+      const list = body.transferFolders.map(f => String(f).trim()).filter(Boolean).slice(0, 20)
+      const bad = list.find(f => !/^(?:\/|~\/)/.test(f) || f.length > 1024 || /[\0-\x1f\x7f]/.test(f) || f.split('/').includes('..'))
+      if (bad !== undefined) throw new KbError(400, `transferFolders: ${bad} is not a full path, such as /data/copies or ~/copies, with no ".."`)
+      next.transferFolders = list.length ? list : undefined
     }
     if (body.disabledTools !== undefined) {
       if (!Array.isArray(body.disabledTools)) throw new KbError(400, 'disabledTools must be an array')

@@ -369,7 +369,8 @@ export async function readRemoteFile(site: string, key: string, sourceRoot: stri
   return { ...base, truncated: body.length > PREVIEW_BYTES, content: body.slice(0, PREVIEW_BYTES), source: 'raw' }
 }
 
-/** Largest file the Studio fetches from a cluster for download. */
+/** Largest file the viewer's Download fetches from a cluster, which holds it
+ *  in memory. The assistant's transfer_files has no such limit (movers/). */
 export const DOWNLOAD_MAX = 50 * 1024 * 1024
 
 /** A file of a library on a cluster, whole, for download. */
@@ -384,7 +385,7 @@ export async function downloadRemoteFile(site: string, key: string, sourceRoot: 
   const sub = cleanRel(rel)
   const abs = path.posix.join(sourceRoot, sub)
   const r = await remoteRun(site, key, ['bash', '-c', `s=$(${STAT} %s %z "$1") || exit 3; [ "$s" -le "$2" ] || exit 4; cat -- "$1"`, '_', abs, String(DOWNLOAD_MAX)], 300_000)
-  if (r.code === 4) throw new KbError(413, `This file is over ${DOWNLOAD_MAX / 1024 / 1024} MB; copy it from ${siteName(site)} directly.`)
+  if (r.code === 4) throw new KbError(413, `This file is over ${DOWNLOAD_MAX / 1024 / 1024} MB, the most a download here takes. Ask the assistant to copy it to this computer, or copy it from ${siteName(site)} directly.`)
   if (r.code !== 0) throw new KbError(404, `${siteName(site)}: ${r.stderr.trim().split('\n').pop() ?? 'cannot read the file'}`)
   return { name: path.posix.basename(sub), body: r.raw }
 }

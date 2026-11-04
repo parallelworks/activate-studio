@@ -31,6 +31,7 @@ Without `KB_ROOT`, it opens a small sample folder. Any OpenAI-compatible endpoin
 - **Chat** answers from your files and links each source.
 - **Search** finds file names, the words inside files, and, where it is on, meaning: passages that say the same thing in other words.
 - **Library** browses and views documents, images, PDFs, office files, and 3D models, and describes the folder you select: its size, contents, and labels. A library can name a second host over ssh that has its files, for an index whose own host does not.
+- **Copies** bring files from a library to this computer: the assistant shows a plan, you approve it, and the copy runs as a job in the status panel, checked before it appears. It copies only, and works over ssh with no size cap.
 - **Query** answers structured questions about the files, such as the largest or newest, or runs read-only SQL. Query and search results export to CSV.
 - **Stats** maps each library, here or on another system: its folders by size, and its files by what they say.
 - **Workflows**, on ACTIVATE, runs chosen platform workflows from their own forms, and opens the sessions they start.
