@@ -22,7 +22,11 @@ import { PROJECT_ROOT } from './config.js'
  * meaning, embed.py runs as well, with the Studio's ONNX embedding model
  * and its packages for that Python, kept in ~/.activate-studio/embed and
  * sent from here the first time (remoteEmbed.ts), or else with the GGUF
- * model where it is in ~/.activate-studio/models.
+ * model where it is in ~/.activate-studio/models. The text and the vectors
+ * are made in the new index, before it is swapped in, so the one there
+ * answers whole until then. A rebuild walks and indexes every folder again;
+ * what it reuses is the text read before (.extract in the index folder) and
+ * the passages embedded before (.embed-cache.db there).
  *
  * Every value reaches the scripts as a positional argument, never as text
  * inside them.
@@ -122,10 +126,7 @@ fi
 # The index folders opened for this user, so the text pass can write in them
 # and the tree can be moved; their group and other bits stay the source's.
 [ "$(id -u)" = 0 ] || find "$stage/$base" -type d ! -perm -700 -exec chmod u+rwx {} + 2>/dev/null
-rmtree "$idx/.old"
-if [ -d "$tree" ]; then mv "$tree" "$idx/.old"; fi
-mv "$stage/$base" "$tree" || fail "The new index could not be moved into place."
-rmtree "$stage"; rmtree "$idx/.old"
+new="$stage/$base"
 # The Studio's ONNX embedding model and its packages for this Python, kept
 # in ~/.activate-studio/embed/<version> and installed once: from what the
 # Studio sends while the build runs (it keeps <version>.sending touched as
@@ -151,7 +152,7 @@ fulltext=false vectors=false
 if [ -n "$py" ] && [ -f "$s/enrich.py" ]; then
   phase extract
   # shellcheck disable=SC2086
-  if "$py" "$s/enrich.py" --kb-root "$src" --index "$tree" --extract-cache "$idx/.extract" $text > "$s/enrich.log" 2>&1; then fulltext=true; fi
+  if "$py" "$s/enrich.py" --kb-root "$src" --index "$new" --extract-cache "$idx/.extract" $text > "$s/enrich.log" 2>&1; then fulltext=true; fi
   if [ "$fulltext" = true ] && [ -x "$bin/gufi_sqlite3" ] && [ -f "$s/embed.py" ]; then
     phase embed
     onnxdir=
@@ -162,12 +163,18 @@ if [ -n "$py" ] && [ -f "$s/enrich.py" ]; then
     if [ -n "$onnxdir" ] || [ -n "$model" ]; then
       # embed.py takes the ONNX model when it loads, else the GGUF one.
       # shellcheck disable=SC2086
-      "$py" "$s/embed.py" --index "$tree" \${model:+--model "$model"} \${onnxdir:+--onnx "$onnxdir/model"} --gufi-sqlite3 "$bin/gufi_sqlite3" $meaning > "$s/embed.log" 2>&1 && vectors=true
+      "$py" "$s/embed.py" --index "$new" \${model:+--model "$model"} \${onnxdir:+--onnx "$onnxdir/model"} --gufi-sqlite3 "$bin/gufi_sqlite3" --cache "$idx/.embed-cache.db" --prune $meaning > "$s/embed.log" 2>&1 && vectors=true
     fi
   fi
   # The Studio searches the text with gufi_query, whose SQLite must read it.
-  if [ "$fulltext" = true ]; then "$bin/gufi_query" -n 1 --max-level 0 -E 'SELECT count(*) FROM words;' "$tree" >/dev/null 2>&1 || fulltext=false; fi
+  if [ "$fulltext" = true ]; then "$bin/gufi_query" -n 1 --max-level 0 -E 'SELECT count(*) FROM words;' "$new" >/dev/null 2>&1 || fulltext=false; fi
 fi
+# The index answers whole until here: the new one, text and vectors in it,
+# takes its place in one move.
+rmtree "$idx/.old"
+if [ -d "$tree" ]; then mv "$tree" "$idx/.old"; fi
+mv "$new" "$tree" || fail "The new index could not be moved into place."
+rmtree "$stage"; rmtree "$idx/.old"
 phase count
 c=$("$bin/gufi_query" -n "$threads" -d '|' -a 1 -I 'CREATE TABLE t (d INT64, f INT64);' -K 'CREATE TABLE agg (d INT64, f INT64);' \\
   -E 'INSERT INTO t SELECT count(*), sum(totfiles) FROM vrsummary;' -J 'INSERT INTO agg SELECT * FROM t;' -G 'SELECT sum(d), sum(f) FROM agg;' "$tree" 2>/dev/null | tail -n 1)
