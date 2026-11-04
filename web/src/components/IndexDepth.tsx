@@ -49,6 +49,8 @@ export const remoteMeaningNote = (depth: IndexDepth) => (depth.startsWith('meani
 
 const stopOf = (depth: IndexDepth) => Math.max(0, DEPTHS.findIndex(d => d.value === depth))
 export const depthLabel = (depth: IndexDepth) => DEPTHS[stopOf(depth)].label
+/** Whether a depth goes further than another. */
+export const deeper = (depth: IndexDepth, than: IndexDepth) => stopOf(depth) > stopOf(than)
 
 /** Whether a depth reads images and scans, where tesseract is installed. */
 const readsImages = (depth: IndexDepth) => stopOf(depth) >= stopOf('ocr')

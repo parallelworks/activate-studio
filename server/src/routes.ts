@@ -926,7 +926,7 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
   // How deep a library is indexed (names, text, ocr, meaning-documents,
   // meaning-full), for one the Studio builds. The main folder and a library
   // built of a folder here apply it at their next sync, which a change asks
-  // for soon; a library built on a remote system, at its next Refresh. An
+  // for soon; a library built on a remote system, at its next Rebuild. An
   // index the Studio only reads stays as it was built. The meaning route is
   // what an earlier client sends: a level of search by meaning, which moves
   // the depth to the nearest stop.

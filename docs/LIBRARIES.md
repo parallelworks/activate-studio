@@ -73,7 +73,15 @@ the Studio builds (the main folder, and one built here or on a remote
 system) the Depth column is its index depth, Names, Text, Text + OCR,
 Meaning on documents or Meaning on all files, changed in place (`PUT
 /api/libraries/:id/depth`). A library built here or on a remote system
-starts at Meaning on documents (both below).
+starts at Meaning on documents (both below). A new depth on a library
+built on a remote system is stored and applies at its next build, so the
+row offers **Rebuild now** or **Later**, or, with a build running, says the
+change waits for the next one. The library records the depth of its last
+build that finished with what that depth makes (`builtDepth`), and until
+that matches its depth the state column says **Depth changed, Rebuild to
+apply**. A failed rebuild changes nothing there, nor does one that made no
+vectors at a Meaning depth; a library last built by an earlier version has
+no record and shows no note.
 The depth is stored with the library when it is added, so a later change
 of the default leaves it as it was built, and a library added by an
 earlier version, with no depth stored, keeps what it had: Text + OCR, or
@@ -325,13 +333,13 @@ from the session (`setsid` where there is one, `nohup` always), so it
 goes on when the session or the Studio stops. Its state is a folder there,
 `~/.activate-studio/builds/<build id>`: the script, its phase, process id,
 exit status, error, and logs. It runs `gufi_dir2index -x` into
-`<index folder>/.build` and swaps the tree in when complete; where Python
+`<index folder>/.build`; where Python
 is there and the depth reads text, the Studio copies `enrich.py` into the
 state folder and runs it (with `--no-ocr` at Text), keeping extracted
 text in `<index folder>/.extract`, and at the meaning stops, where a GUFI
 with the embedding extension is there too, `embed.py`, with the Studio's
 ONNX model and `embed_onnx.py` beside it, or the GGUF model (above). It
-then counts the index and writes
+then swaps the finished tree in, counts the index and writes
 `.studio-index.json`, with `fullText` true only when that system's
 `gufi_query` can read the text tables. The Studio follows the build as a
 background job (`GET /api/jobs/<id>`), reading its state every few
@@ -339,7 +347,13 @@ seconds over the session and keeping the phase and folder count on the
 library; after a restart the next listing follows it again, and an
 update does not wait for it. When it ends the library is ready with its
 counts, or says why not; a rebuild that fails leaves the index it had.
-**Rebuild** runs the build again beside the current index. **Remove**
+**Rebuild** runs the build again beside the current index, text and
+vectors included, and swaps the result in at the end, so the index folder
+holds two copies while it runs. It walks and indexes every folder again
+and writes the text tables again; what it reuses is the text in `.extract`
+(by modification time, so PDF, Office and OCR work is not repeated) and
+the passages in `.embed-cache.db`, so a rebuild embeds only what is new.
+There is no pass that adds meaning alone. **Remove**
 forgets the library and leaves the index there. Search on these
 libraries covers names, metadata, and, with extraction, full text, and
 meaning where the build embedded with the ONNX model. A source folder
