@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from 'react'
 import {
   ActionMenu, Autocomplete, Button, Callout, type CalloutTone, Checkbox, CopyButton, CopyCodeBlock,
   DescriptionList, DescriptionListItem, DisclosurePanel, EmptyState, Field, Input, Loader, NumberInput,
-  RefreshButton, SegmentedControl, Select, type SelectItem, StatusDot, Switch, Table, TabPanel, Tabs, Textarea, cx, fieldBox, formatBytes,
+  RefreshButton, SegmentedControl, Select, type SelectItem, StatusLabel, Switch, Table, TabPanel, Tabs, Textarea, cx, fieldBox, formatBytes,
 } from '@parallelworks/ui'
 import { ChevronDownIcon } from '@parallelworks/ui/icons'
 import { SURFACES, applySurface } from '../accents'
@@ -784,8 +784,8 @@ export function SettingsView() {
                     <Button variant="secondary" onClick={() => setForm({ ...form, mcpServers: form.mcpServers.filter((_, j) => j !== i) })}>Remove</Button>
                     <span className="mcp-server-state">
                       {st ? (st.error
-                        ? <><StatusDot variant="warning" /> {st.error}</>
-                        : <><StatusDot variant="success" /> {st.tools} tools</>)
+                        ? <StatusLabel variant="warning">{st.error}</StatusLabel>
+                        : <StatusLabel variant="success">{st.tools} tools</StatusLabel>)
                         : <span className="muted">save to connect</span>}
                     </span>
                   </div>

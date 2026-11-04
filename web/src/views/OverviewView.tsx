@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Callout, Loader, RefreshButton, StatusDot, Table } from '@parallelworks/ui'
+import { Callout, Loader, RefreshButton, StatTile, StatTileGroup, Table } from '@parallelworks/ui'
 import { api, type FormatReadiness } from '../api'
 import { indexSummary, phaseLine, useIndexStatus } from '../indexActivity'
 import { useShared } from '../statusShare'
@@ -154,19 +154,17 @@ export function OverviewView({ onOpen }: { onOpen: (path: string) => void }) {
           <IndexJobView job={idx.job} onStop={() => void controls.stop()} stopping={controls.busy === 'stop'} />
         </section>
       )}
-      <div className="ov-tiles">
-        <div className="card ov-tile"><span className="stat-num">{stats?.files?.toLocaleString() ?? '…'}</span><span className="stat-label">files indexed</span></div>
-        <div className="card ov-tile"><span className="stat-num">{stats?.dirs?.toLocaleString() ?? '…'}</span><span className="stat-label">directories</span></div>
-        <div className="card ov-tile"><span className="stat-num">{stats?.totalBytes ? fmtBytes(stats.totalBytes) : '…'}</span><span className="stat-label">corpus size</span></div>
-        <div className="card ov-tile" title={ix.detail ?? undefined}>
-          <span className="stat-num ov-index-state">
-            <StatusDot variant={ix.tone} pulse={ix.pulse} size={9} />
-            {ix.running ? (phaseLine(idx?.job) ?? 'indexing') : ix.tone === 'success' ? 'healthy' : ix.tone === 'muted' ? 'not built' : 'attention'}
-          </span>
-          <span className="stat-label">{ix.running ? 'indexing now' : `index · sync ${ago(idx?.lastSweepAt ?? null)}`}</span>
-        </div>
-        <div className="card ov-tile"><span className="stat-num">{tags.length}</span><span className="stat-label">labels in use</span></div>
-      </div>
+      <StatTileGroup>
+        <StatTile value={stats?.files ?? '…'} label="files indexed" />
+        <StatTile value={stats?.dirs ?? '…'} label="directories" />
+        <StatTile value={stats?.totalBytes ? fmtBytes(stats.totalBytes) : '…'} label="corpus size" />
+        <StatTile
+          value={<span title={ix.detail ?? undefined}>{ix.running ? (phaseLine(idx?.job) ?? 'indexing') : ix.tone === 'success' ? 'healthy' : ix.tone === 'muted' ? 'not built' : 'attention'}</span>}
+          label={ix.running ? 'indexing now' : `index · sync ${ago(idx?.lastSweepAt ?? null)}`}
+          lamp={ix.tone === 'muted' ? { off: true } : { variant: ix.tone, pulse: ix.pulse }}
+        />
+        <StatTile value={tags.length} label="labels in use" />
+      </StatTileGroup>
       {stats?.libraries && (
         <Table density="compact" wrapperClassName="ov-libraries">
           <Table.Header>Library</Table.Header>

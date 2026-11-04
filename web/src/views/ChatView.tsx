@@ -365,6 +365,7 @@ export function ChatView() {
           if (target.kind === 'conversation') { setActiveId(target.id); setShowAttachments(false); setShowManage(false) }
           else if (target.kind === 'newChat') startNewChat()
           else if (target.kind === 'attachments') { setShowAttachments(true); setShowManage(false) }
+          else if (target.kind === 'external' && target.href.startsWith('#')) location.hash = target.href
           else if (target.kind === 'external') window.open(target.href, '_blank', 'noopener')
         }}
       >{children}</a>
@@ -409,6 +410,8 @@ export function ChatView() {
       config={{
         suggestedPrompts: cfg.suggestedPrompts,
         LinkComponent,
+        // The model picker's Manage link and the no-model empty state's button.
+        extraLinks: { manageProviders: '#view=settings:access', addProvider: '#view=settings:access' },
         // Same-origin /?embed= image sources render as live viewers (DAGs,
         // 3D models) instead of broken images; the server emits them in
         // chat replies. Formerly a dist patch, now the supported hook.
@@ -438,6 +441,10 @@ export function ChatView() {
           emptyState: {
             noProvidersTitle: 'Model credential needed',
             noProvidersBody: 'Add your API key or platform token under Settings, Model access. Browsing, search, and adding material work without one.',
+            addProvider: 'Open Model access',
+          },
+          sidebar: {
+            manageProviders: 'Model access',
           },
           input: {
             placeholderNoProviders: 'Add your model credential to start chatting',

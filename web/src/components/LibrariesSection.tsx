@@ -1,6 +1,6 @@
 import { Fragment, type ReactNode, useEffect, useRef, useState } from 'react'
 import {
-  Button, Callout, DescriptionList, DescriptionListItem, IconButton, Loader, Modal, ProgressBar, StatusBadge, Table, toast, useConfirm,
+  Button, Callout, DescriptionList, DescriptionListItem, IconButton, Loader, Modal, ProgressBar, StatusLabel, Table, toast, useConfirm,
 } from '@parallelworks/ui'
 import { AddIcon, CloseIcon } from '@parallelworks/ui/icons'
 import { api, type BuildProgress, type IndexDepth, type ReadThrough, type SettingsLibrary, type UserLibrary } from '../api'
@@ -547,7 +547,7 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
                   {r.where}
                 </Table.Item>
                 <Table.Item wrap>
-                  <StatusBadge variant={r.state.tone} pulse={r.state.pulse} dot={!r.state.pulse} size="sm">{r.state.text}</StatusBadge>
+                  <StatusLabel variant={r.state.tone} pulse={r.state.pulse}>{r.state.text}</StatusLabel>
                   {r.state.notes.map((n, i) => <div key={i} className="lib-id">{n}</div>)}
                 </Table.Item>
                 <Table.Item className="lib-cap" data-label="Depth">

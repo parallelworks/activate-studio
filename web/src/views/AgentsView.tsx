@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react'
+import { statusLook } from '../statusLook'
 import {
   Button, buttonClasses, EmptyState, Field, Input, Pagination, ProgressBar, SearchInput, SegmentedControl,
-  StatusBadge, StatusDot, Tabs, Textarea, toast, type BadgeVariant,
+  StatusBadge, StatusDot, StatusLabel, Tabs, Textarea, toast,
 } from '@parallelworks/ui'
 import { LogViewer } from '@parallelworks/ui/logviewer'
 import { PersonaIcon } from '../components/PersonaIcon'
@@ -233,8 +234,6 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
   }
 
   const fmtTokens = (n: number) => n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n)
-  const STATE_TONE: Record<string, BadgeVariant> = { working: 'success', completed: 'muted', 'input-required': 'warning' }
-  const toneFor = (st: string) => STATE_TONE[st] ?? 'warning'
   const doneCount = (mi: TaskRow) => mi.agents - mi.running
   // Where the agents run. Shown once in the task header when they share a
   // machine, and on each row only when they are spread across machines.
@@ -247,7 +246,7 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
       <div className="card ov-head">
         <Tabs label="Agents" className="agents-tabs" value={page} onValueChange={setPage} items={[
           { value: 'fleet', label: 'Fleet' },
-          { value: 'tasks', label: 'Tasks', badge: taskRuns.some(t => t.state === 'working') ? <StatusDot variant="success" pulse /> : null },
+          { value: 'tasks', label: 'Tasks', badge: taskRuns.some(t => t.state === 'working') ? <StatusDot variant="info" pulse /> : null },
           { value: 'library', label: 'Personas and skills' },
         ]} />
       </div>
@@ -276,13 +275,13 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
                 <div key={mi.id} className={`task-card${openTask === mi.id ? ' selected' : ''}${mi.state === 'working' ? ' live' : ''}`}
                   onClick={() => setOpenTask(openTask === mi.id ? null : mi.id)}>
                   <div className="task-card-top">
-                    <StatusDot variant={toneFor(mi.state)} pulse={mi.state === 'working'} />
+                    <StatusDot {...statusLook(mi.state)} />
                     <span className="task-card-state">{mi.state === 'working' ? `${mi.running} agent${mi.running === 1 ? '' : 's'} working` : mi.state}</span>
                     {(mi as { execution?: string }).execution === 'campaign' && (
                       <StatusBadge>campaign · {((mi as { resource?: string }).resource ?? '').split('/').pop() || '?'}</StatusBadge>
                     )}
                     {mi.runtime === 'session' && <StatusBadge>pw code sessions</StatusBadge>}
-                    {!!mi.waiting && <StatusBadge variant="warning">{mi.waiting} waiting for approval</StatusBadge>}
+                    {!!mi.waiting && <StatusLabel variant="warning">{mi.waiting} waiting for approval</StatusLabel>}
                   </div>
                   <div className="task-card-objective">{mi.objective}</div>
                   <ProgressBar value={doneCount(mi)} max={Math.max(1, mi.agents)} tone="success" size="sm" aria-label="Agents done" />
@@ -299,7 +298,7 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
               <h3>Workflow runs launched from chat</h3>
               {runs.slice(0, 12).map(r => (
                 <div key={r.slug} className="run-row">
-                  <StatusDot variant={r.state === 'running' ? 'success' : r.state === 'completed' ? 'muted' : 'warning'} pulse={r.state === 'running'} />
+                  <StatusDot {...statusLook(r.state)} />
                   <span className="run-slug">{r.slug}</span>
                   <span className="muted run-meta">{r.workflow}{r.resource ? ` on ${r.resource.replace(/^pw:\/\/[^/]+\//, '')}` : ''} · {r.state}{r.endedAt ? '' : ' · since ' + new Date(r.launchedAt).toLocaleTimeString()}</span>
                   {r.conversationId && <a href={`#chat=${r.conversationId}`}>chat</a>}
@@ -310,7 +309,7 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
           {openTask && detail && (
             <div className="task-detail">
               <div className="task-detail-head">
-                <StatusDot variant={toneFor(detail.state)} pulse={detail.state === 'working'} />
+                <StatusDot {...statusLook(detail.state)} />
                 <span className="task-detail-title">
                   <span className="task-detail-objective">{detail.objective}</span>
                   {sharedHost && <span className="tree-host" title={`Every agent in this task runs on ${sharedHost}`}>on {hostLabel(sharedHost)}</span>}
@@ -343,7 +342,7 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
                         onClick={() => setOpenAgent(openAgent === a.name ? null : a.name)}
                         title="Show this agent's live output">
                         {a.depth > 0 && <span className="tree-elbow" style={{ left: `${a.depth * 20 - 8}px` }} />}
-                        <StatusDot variant={toneFor(a.state)} pulse={a.state === 'working'} />
+                        <StatusDot {...statusLook(a.state)} />
                         <span className="tree-name">{a.name}</span>
                         {a.host && !sharedHost && <span className="tree-host" title={`Runs on ${a.host}`}>{hostLabel(a.host)}</span>}
                         <span className="tree-note muted">{a.state === 'working' ? a.note : a.state}{a.usage?.total ? ` · ${fmtTokens(a.usage.total)} tok${a.usage.cost != null ? ` · $${a.usage.cost.toFixed(2)}` : ''}` : ''}</span>

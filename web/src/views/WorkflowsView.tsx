@@ -1,7 +1,7 @@
 import { Suspense, useEffect, useMemo, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import {
-  Button, Callout, Checkbox, Field, Loader, RunStatusIcon, Select, StatusBadge, StatusDot, Table, type RunStatus,
+  Button, Callout, Checkbox, Field, Loader, RunStatusLabel, Select, StatusBadge, StatusDot, Table,
 } from '@parallelworks/ui'
 import { DynamicForm, initializeValues } from '@parallelworks/ui/form'
 import { Streamdown } from 'streamdown'
@@ -44,13 +44,6 @@ function SourceLine({ source }: { source: WorkflowSource }) {
   )
 }
 interface RunRow { slug: string; workflow: string; launchedAt: string; state: string; endedAt: string | null }
-
-const RUN_STATUSES = new Set(['started', 'running', 'completed', 'error', 'failed', 'canceled', 'skipped', 'faulted', 'canceling', 'skipped-failed'])
-/** A run's state as the status icon knows it, or null for one it does not. */
-function runStatus(state: string): RunStatus | null {
-  const s = state === 'cancelled' ? 'canceled' : state
-  return RUN_STATUSES.has(s) ? (s as RunStatus) : null
-}
 
 async function json<T>(res: Response): Promise<T> {
   const d = await res.json().catch(() => ({}))
@@ -144,15 +137,13 @@ export function WorkflowsView() {
               <Table.Header>State</Table.Header>
               <Table.Header>Session</Table.Header>
               {runs.map(r => {
-                const status = runStatus(r.state)
                 return (
                   <tr key={r.slug}>
                     <Table.Item><Button variant="ghost" size="sm" title="Show the run's form, graph, and session in the side view" onClick={() => openInSideView({ run: r.slug })}><code>{r.slug}</code></Button></Table.Item>
                     <Table.Item>{tiles?.find(t => t.name === r.workflow)?.displayName ?? r.workflow}</Table.Item>
                     <Table.Item>{new Date(r.launchedAt).toLocaleString()}</Table.Item>
                     <Table.Item>
-                      {/* The word says the state; the icon only shows it. */}
-                      <span className="wf-run-state">{status && <span aria-hidden="true"><RunStatusIcon status={status} /></span>}{r.state}</span>
+                      <RunStatusLabel status={r.state === 'cancelled' ? 'canceled' : r.state} />
                     </Table.Item>
                     <Table.Item>{sessions.filter(x => sessionOfRun(x, r.slug)).map(x => (
                       <Button key={x.name} variant="ghost" size="sm" onClick={() => showSession(x)} title={x.ownHost ? 'Show it in the side view' : 'Open in a window of its own'}>{x.name}</Button>
