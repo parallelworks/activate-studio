@@ -613,6 +613,15 @@ describe('Settings, Libraries', () => {
       expect(within(rowOf('data on box')).queryByText(/^Depth changed/)).toBeNull()
     })
 
+    it('the row\'s own Rebuild answers the choice too', async () => {
+      const s = await open(OVER_SSH)
+      await pick('data on box', 'Meaning on documents')
+      await screen.findByRole('button', { name: 'Rebuild now' })
+      fireEvent.click(within(rowOf('data on box')).getByRole('button', { name: 'Rebuild' }))
+      await waitFor(() => expect(posted(s, `/api/user-libraries/${OVER_SSH.id}/refresh`)).toHaveLength(1))
+      await waitFor(() => expect(screen.queryByRole('button', { name: 'Rebuild now' })).toBeNull())
+    })
+
     it('after a failed rebuild the note stays', async () => {
       await open({ ...OVER_SSH, depth: 'meaning-full', error: 'gufi_dir2index failed' })
       const row = rowOf('data on box')

@@ -416,7 +416,7 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
         actions: (
           <>
             <Button variant="secondary" size="sm" loading={busy === l.id} disabled={busy !== null || isBuilding(l.state)}
-              onClick={() => void act(l.id, async () => { await api.refreshUserLibrary(l.id); await loadUser() }, `Rebuilding the index on ${host}.`)}>Rebuild</Button>
+              onClick={() => void act(l.id, async () => { await api.refreshUserLibrary(l.id); await loadUser(); setAsked(null) }, `Rebuilding the index on ${host}.`)}>Rebuild</Button>
             {remove}
           </>
         ),
