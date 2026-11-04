@@ -1,0 +1,191 @@
+# Installs the macOS app from a published disk image on a runner's desktop,
+# the way a person does, and keeps what each step showed: the image is
+# downloaded and marked as a browser marks a download, opened in Finder,
+# and the app on it opened; macOS's prompt for an app from the internet and
+# the app's Install dialog are clicked through System Events; the copy in
+# ~/Applications is checked, its server waited for and stopped. One pass
+# installs normally (and then checks the Replace dialog); the other first
+# makes ~/Library/LaunchAgents read-only, as on a managed Mac, so the app
+# must start its server without a LaunchAgent. The screenshots, a timed
+# summary, the windows and buttons seen, and the Studio's logs are kept as
+# an artifact, also when a step fails. See .github/scripts/mac-install-e2e.sh.
+#
+# It tests the image already published (the macos release by default), so
+# a pull request that changes only this test runs it against the current
+# release. It never builds or publishes anything.
+#
+# No job on a macOS runner uses harden-runner: there it can only audit
+# egress, not block it (see gufi-macos.yml).
+name: mac-install-e2e
+
+on:
+  workflow_dispatch:
+    inputs:
+      dmg_url:
+        description: The disk image to install from
+        default: https://github.com/parallelworks/activate-studio/releases/download/macos/activate-studio-macos-arm64.dmg
+      from_dmg_url:
+        description: The older release's disk image the update job starts from
+        default: https://github.com/parallelworks/activate-studio/releases/download/v1.170/activate-studio-macos-arm64.dmg
+      restart_dmg_url:
+        description: The disk image the restart job installs
+        default: https://github.com/parallelworks/activate-studio/releases/download/v1.174/activate-studio-macos-arm64.dmg
+      readonly_agents:
+        description: Run only the passes with ~/Library/LaunchAgents read-only
+        type: boolean
+        default: false
+  pull_request:
+    paths:
+      - .github/workflows/mac-install-e2e.yml
+      - .github/scripts/mac-install-e2e.sh
+      - .github/scripts/mac-update-e2e.sh
+      - .github/scripts/mac-usecase-e2e.sh
+      - .github/scripts/mac-usecase-e2e.mjs
+      - .github/scripts/mac-restart-e2e.sh
+      - .github/scripts/mac-restart-e2e.mjs
+
+permissions: {}
+
+concurrency:
+  group: mac-install-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  install:
+    runs-on: macos-15
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        pass: [normal, readonly-agents]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: ${{ !(inputs.readonly_agents && matrix.pass == 'normal') }}
+        with:
+          persist-credentials: false
+
+      - name: install from the disk image
+        if: ${{ !(inputs.readonly_agents && matrix.pass == 'normal') }}
+        env:
+          DMG_URL: ${{ inputs.dmg_url || 'https://github.com/parallelworks/activate-studio/releases/download/macos/activate-studio-macos-arm64.dmg' }}
+          PASS: ${{ matrix.pass }}
+        run: |
+          if [ "$PASS" = readonly-agents ]; then
+            bash .github/scripts/mac-install-e2e.sh "$DMG_URL" "$RUNNER_TEMP/e2e/$PASS" readonly-agents
+          else
+            bash .github/scripts/mac-install-e2e.sh "$DMG_URL" "$RUNNER_TEMP/e2e/$PASS" "" replace
+          fi
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ always() && !(inputs.readonly_agents && matrix.pass == 'normal') }}
+        with:
+          name: mac-install-e2e-${{ matrix.pass }}
+          path: ${{ runner.temp }}/e2e/${{ matrix.pass }}
+          retention-days: 14
+          if-no-files-found: warn
+
+  # An older release installed in ~/Applications updates itself to the
+  # newest, through the Studio's own update routes, then is uninstalled
+  # (keeping the data). See .github/scripts/mac-update-e2e.sh.
+  update:
+    runs-on: macos-15
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        pass: [normal, readonly-agents]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: ${{ !(inputs.readonly_agents && matrix.pass == 'normal') }}
+        with:
+          persist-credentials: false
+
+      - name: update from an older release, then uninstall
+        if: ${{ !(inputs.readonly_agents && matrix.pass == 'normal') }}
+        env:
+          FROM_URL: ${{ inputs.from_dmg_url || 'https://github.com/parallelworks/activate-studio/releases/download/v1.170/activate-studio-macos-arm64.dmg' }}
+          PASS: ${{ matrix.pass }}
+          # For the Studio's release check, through a local proxy: GitHub's
+          # unauthenticated API limit is often spent on shared runners.
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "$PASS" = readonly-agents ]; then
+            bash .github/scripts/mac-update-e2e.sh "$FROM_URL" "$RUNNER_TEMP/e2e/$PASS" readonly-agents
+          else
+            bash .github/scripts/mac-update-e2e.sh "$FROM_URL" "$RUNNER_TEMP/e2e/$PASS"
+          fi
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ always() && !(inputs.readonly_agents && matrix.pass == 'normal') }}
+        with:
+          name: mac-update-e2e-${{ matrix.pass }}
+          path: ${{ runner.temp }}/e2e/${{ matrix.pass }}
+          retention-days: 14
+          if-no-files-found: warn
+
+  # A new user's first session through the Studio's pages (Playwright and
+  # Chromium on the runner): setup with a main folder, an existing index
+  # connected read only over ssh to this machine, search, Query across both
+  # libraries, and Settings, Updates. See .github/scripts/mac-usecase-e2e.sh.
+  usecase:
+    if: ${{ !inputs.readonly_agents }}
+    runs-on: macos-15
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+
+      - name: setup, an ssh library, search and query
+        env:
+          DMG_URL: ${{ inputs.dmg_url || 'https://github.com/parallelworks/activate-studio/releases/download/macos/activate-studio-macos-arm64.dmg' }}
+        run: bash .github/scripts/mac-usecase-e2e.sh "$DMG_URL" "$RUNNER_TEMP/e2e/usecase"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ always() }}
+        with:
+          name: mac-usecase-e2e
+          path: ${{ runner.temp }}/e2e/usecase
+          retention-days: 14
+          if-no-files-found: warn
+
+  # A library built here, at Text + OCR, across a stop that interrupts its
+  # rebuild, with ~/Library/LaunchAgents read-only: its names, sizes and
+  # words are counted through Search and Query at each stage. See
+  # .github/scripts/mac-restart-e2e.sh.
+  restart:
+    runs-on: macos-15
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+
+      - name: a built library across an interrupted rebuild and a restart
+        env:
+          DMG_URL: ${{ inputs.restart_dmg_url || 'https://github.com/parallelworks/activate-studio/releases/download/v1.174/activate-studio-macos-arm64.dmg' }}
+        run: bash .github/scripts/mac-restart-e2e.sh "$DMG_URL" "$RUNNER_TEMP/e2e/restart"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ always() }}
+        with:
+          name: mac-restart-e2e
+          path: ${{ runner.temp }}/e2e/restart
+          retention-days: 14
+          if-no-files-found: warn
