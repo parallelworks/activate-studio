@@ -45,8 +45,11 @@ test('with no PDF reader, a pass says so in its report: the PDF counted, with no
   fs.copyFileSync(path.join(root, 'testdata', 'corpus', 'docs', 'report.pdf'), path.join(kb, 'report.pdf'))
   fs.writeFileSync(path.join(kb, 'note.md'), 'a note\n')
   execFileSync(python, ['-c', 'import sqlite3, sys; sqlite3.connect(sys.argv[1]).close()', path.join(index, 'db.db')])
-  // -S: no site-packages, so no pypdf; an empty PATH, so no poppler.
-  execFileSync(python, ['-S', path.join(indexer, 'enrich.py'), '--kb-root', kb, '--index', index, '--extract-cache', path.join(dir, 'x'), '--report', report, '--jobs', '1'],
+  // -S: no site-packages, so no pypdf; an empty PATH, so no poppler; and a
+  // copy of the script, away from the indexer/.deps a clone may have pypdf in.
+  const script = path.join(dir, 'enrich.py')
+  fs.copyFileSync(path.join(indexer, 'enrich.py'), script)
+  execFileSync(python, ['-S', script, '--kb-root', kb, '--index', index, '--extract-cache', path.join(dir, 'x'), '--report', report, '--jobs', '1'],
     { env: { PATH: fs.mkdtempSync(path.join(os.tmpdir(), 'emptybin-')) }, stdio: 'ignore' })
   const r = JSON.parse(fs.readFileSync(report, 'utf8'))
   assert.deepEqual(r.documents, { '.pdf': { files: 1, noText: 1 } })
