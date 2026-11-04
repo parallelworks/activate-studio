@@ -278,6 +278,62 @@ test('a path from a host is not believed: one outside what was asked stops the j
   } finally { R.closeRemoteChannels(); R.setRemoteSpawn(realSpawn) }
 })
 
+test('a disabled Downloads entry does not make the home folder a destination', () => {
+  const home = path.join(dir, 'xdg')
+  write(path.join(home, '.config', 'user-dirs.dirs'), 'XDG_DOWNLOAD_DIR="$HOME/"\n')
+  assert.equal(D.downloadsFolder(home), path.join(home, 'Downloads'))
+  write(path.join(home, '.config', 'user-dirs.dirs'), 'XDG_DOWNLOAD_DIR="$HOME/Incoming/"\n')
+  assert.equal(D.downloadsFolder(home), path.join(home, 'Incoming'))
+})
+
+test('a path inside another of the paths is refused', async () => {
+  await refused({ library: 'local', paths: ['tree', 'tree/sub'] }, /inside another/)
+})
+
+test('a folder with nothing to copy beside a file: the file lands and the job says so', async () => {
+  fs.mkdirSync(path.join(local, 'void'), { recursive: true })
+  write(path.join(local, 'beside.txt'), 'x')
+  const destination = path.join(downloads, 'beside')
+  fs.mkdirSync(destination)
+  const p = await plan({ library: 'local', paths: ['beside.txt', 'void'], destination })
+  const j = await J.settled(start(p), 20_000)
+  assert.equal(j.state, 'done', j.message)
+  assert.match(j.message, /1 path had no files/)
+  assert.deepEqual(fs.readdirSync(destination), ['beside.txt'])
+})
+
+test('a host cannot send more than a file was listed with', async () => {
+  const stage = fs.mkdtempSync(path.join(dir, 'over-'))
+  const route = { kind: 'local', root: local, name: 'this computer', via: 'library' }
+  write(path.join(local, 'grew.txt'), 'much longer than listed')
+  const f = { rel: 'grew.txt', out: 'grew.txt', size: 4, mtime: 0, mode: 0o644 }
+  const ref = await copyMover.start({ job: 'grew', source: route, items: ['grew.txt'], files: [f], dest: path.join(stage, 'data') })
+  let st
+  for (let i = 0; i < 200 && (st = await copyMover.status(ref)).state === 'running'; i++) await new Promise(r => setTimeout(r, 10))
+  assert.equal(st.state, 'failed')
+  assert.match(st.message, /sent more than/)
+})
+
+test('a folder that became a link since the listing is not read through', async () => {
+  const outside = path.join(dir, 'secret-place')
+  write(path.join(outside, 'x.txt'), 'secret')
+  for (const [root, route] of [
+    [local, { kind: 'local', root: local, name: 'this computer', via: 'library' }],
+    [hostRoot, { kind: 'ssh', site: 'ssh://files-host', key: '', root: hostRoot, name: 'files-host', via: 'library' }],
+  ]) {
+    fs.symlinkSync(outside, path.join(root, 'swapped'))
+    const stage = fs.mkdtempSync(path.join(dir, 'swap-'))
+    const f = { rel: 'swapped/x.txt', out: 'x.txt', size: 6, mtime: 0, mode: 0o644 }
+    const ref = await copyMover.start({ job: `swap-${route.kind}`, source: route, items: ['swapped'], files: [f], dest: path.join(stage, 'data') })
+    let st
+    for (let i = 0; i < 500 && (st = await copyMover.status(ref)).state === 'running'; i++) await new Promise(r => setTimeout(r, 10))
+    fs.unlinkSync(path.join(root, 'swapped'))
+    assert.equal(st.state, 'failed', route.kind)
+    assert.match(st.message, /no longer inside|not a plain file/, route.kind)
+    assert.ok(!fs.existsSync(path.join(stage, 'data', 'x.txt')))
+  }
+})
+
 test('a file that became a link since it was listed is not copied', async () => {
   const swap = path.join(hostRoot, 'swap.txt')
   write(swap, 'fine')
@@ -299,14 +355,14 @@ test('a file that changes size while copied fails the check', async () => {
   const destination = fresh()
   const p = await plan({ library: 'far', paths: ['one.txt'], destination })
   R.setRemoteSpawn((site, key, command) => {
-    if (/^sh -c/.test(command)) fs.writeFileSync(path.join(hostRoot, 'one.txt'), 'much longer now')
+    if (/^sh -c/.test(command)) fs.writeFileSync(path.join(hostRoot, 'one.txt'), 'x')
     return realSpawn(site, key, command)
   })
   try {
     const j = await J.settled(start(p), 60_000)
     assert.equal(j.state, 'failed')
     assert.match(j.message, /reported success, but the copy does not match/)
-    assert.match(j.message, /15 bytes, expected 3/)
+    assert.match(j.message, /1 bytes?, expected 3/)
     assert.deepEqual(fs.readdirSync(destination), [])
   } finally { R.setRemoteSpawn(realSpawn); fs.writeFileSync(path.join(hostRoot, 'one.txt'), 'one') }
 })

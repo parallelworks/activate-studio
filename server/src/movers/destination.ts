@@ -33,7 +33,9 @@ export function downloadsFolder(home = os.homedir()): string {
   try {
     const m = /^XDG_DOWNLOAD_DIR="(.+)"\s*$/m.exec(fs.readFileSync(path.join(home, '.config', 'user-dirs.dirs'), 'utf8'))
     const named = m?.[1].replace(/^\$HOME(?=\/|$)/, home)
-    if (named && path.isAbsolute(named) && named !== home) return path.normalize(named)
+    // A disabled entry reads "$HOME/": home is not a place for copies.
+    const folder = named && path.isAbsolute(named) ? path.resolve(named) : null
+    if (folder && folder !== path.resolve(home) && folder !== path.parse(folder).root) return folder
   } catch { /* the usual place */ }
   return path.join(home, 'Downloads')
 }
@@ -221,18 +223,29 @@ export function checkProblem(c: Check): string {
 
 /** Puts a checked copy in place, never over anything: a file by a hard
  *  link, which fails if the name is taken (or, on a volume with no hard
- *  links, a rename after looking); a folder by a rename after looking. */
+ *  links, a rename after looking); a folder by a rename after looking.
+ *  Nothing here removes what is at the destination, so a failure part way
+ *  says which names are already there. */
 export async function publish(stage: string, folder: string, names: string[]): Promise<void> {
   await assertNoneExist(folder, names)
-  for (const n of names) {
-    const from = path.join(stagedData(stage), n), to = path.join(folder, n)
-    if ((await fsp.lstat(from)).isDirectory()) { await fsp.rename(from, to); continue }
-    try { await fsp.link(from, to) } catch (e) {
-      const code = (e as NodeJS.ErrnoException).code
-      if (code === 'EEXIST') throw new KbError(409, `${shownFolder(to)} appeared while the copy ran, and a copy never replaces anything.`)
-      if (await fsp.lstat(to).then(() => true, () => false)) throw e
-      await fsp.rename(from, to)
+  const placed: string[] = []
+  try {
+    for (const n of names) {
+      const from = path.join(stagedData(stage), n), to = path.join(folder, n)
+      if ((await fsp.lstat(from)).isDirectory()) await fsp.rename(from, to)
+      else {
+        try { await fsp.link(from, to) } catch (e) {
+          const code = (e as NodeJS.ErrnoException).code
+          if (code === 'EEXIST') throw new KbError(409, `${shownFolder(to)} appeared while the copy ran, and a copy never replaces anything.`)
+          if (await fsp.lstat(to).then(() => true, () => false)) throw e
+          await fsp.rename(from, to)
+        }
+      }
+      placed.push(n)
     }
+  } catch (e) {
+    if (!placed.length) throw e
+    throw new KbError(409, `${(e as Error).message} These are complete and already in place: ${placed.slice(0, 5).join(', ')}${placed.length > 5 ? `, and ${placed.length - 5} more` : ''}.`)
   }
 }
 

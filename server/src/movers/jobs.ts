@@ -132,7 +132,10 @@ function end(j: TransferJob, state: Exclude<JobState, 'running'>, message: strin
 function tell(j: TransferJob): void {
   if (j.reported) return
   j.reported = true
-  appendConversationNote(j.conversationId, `Copy to ${shownText(j.destShown)}: ${j.state}. ${j.message ?? ''}`.trim())
+  // Stored as the assistant's words, so a failure's text, which can come from
+  // a host, stays in the panel.
+  const said = j.state === 'failed' ? 'The status panel has the reason.' : j.message ?? ''
+  appendConversationNote(j.conversationId, `Copy to ${shownText(j.destShown)}: ${j.state}. ${said}`.trim())
 }
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
@@ -164,11 +167,14 @@ async function follow(j: TransferJob, mover: Mover): Promise<MoverStatus> {
 
 async function run(j: TransferJob, route: SourceRoute, mover: Mover, items: string[], plan: TransferPlan): Promise<void> {
   try {
-    const names = topNames(items)
+    topNames(items)
     const listed = await listSource(route, items)
     if (cancels.has(j.id)) { end(j, 'cancelled', 'Cancelled before anything was copied.'); return }
     if (listed.unreadable.length) throw new KbError(403, `${listed.unreadable.length} ${listed.unreadable.length === 1 ? 'entry' : 'entries'} could not be read (${listed.unreadable.slice(0, 3).map(shownText).join(', ')}), so nothing was copied.`)
     if (!listed.files.length) throw new KbError(404, 'There are no files to copy there.')
+    // What landed decides the names: a folder with nothing to copy has none.
+    const names = [...new Set(listed.files.map(f => f.out.split('/')[0]))]
+    const empty = items.length - names.length
     j.files.total = listed.files.length
     j.bytes.total = listed.bytes
     j.skipped = { links: listed.links, hidden: listed.hidden }
@@ -183,8 +189,8 @@ async function run(j: TransferJob, route: SourceRoute, mover: Mover, items: stri
     await save(true)
     const st = await follow(j, mover)
     if (st.state === 'cancelled' || cancels.has(j.id)) { end(j, 'cancelled', 'Cancelled. Nothing was put in the destination.'); return }
-    if (st.state === 'lost') { end(j, 'interrupted', `${mover.label} lost track of this transfer${st.message ? `: ${st.message}` : ''}. Nothing was put in the destination.`); return }
-    if (st.state === 'failed') throw new KbError(502, st.message || `${mover.label} reported a failure.`)
+    if (st.state === 'lost') { end(j, 'interrupted', `${mover.label} lost track of this transfer${st.message ? `: ${shownText(st.message)}` : ''}. Nothing was put in the destination.`); return }
+    if (st.state === 'failed') throw new KbError(502, st.message ? shownText(st.message).slice(0, 500) : `${mover.label} reported a failure.`)
     // The mover says done. See for ourselves.
     j.phase = 'checking'
     await save(true)
@@ -198,6 +204,7 @@ async function run(j: TransferJob, route: SourceRoute, mover: Mover, items: stri
     const notes = [
       listed.links ? `${listed.links} ${listed.links === 1 ? 'link or special file' : 'links or special files'} not copied` : '',
       listed.hidden ? `${listed.hidden} hidden ${listed.hidden === 1 ? 'entry' : 'entries'} not copied` : '',
+      empty ? `${empty} ${empty === 1 ? 'path' : 'paths'} had no files to copy` : '',
       plan.files !== null && plan.files !== seen.files ? `the plan said ${plural(plan.files, 'file')}, and the source had ${seen.files.toLocaleString('en-US')}` : '',
     ].filter(Boolean)
     end(j, 'done', `Copied ${plural(seen.files, 'file')} (${size(seen.bytes)}) to ${shownText(shownFolder(dest.folder))}. The Studio checked the file count and sizes against the source.${notes.length ? ` Note: ${notes.join('; ')}.` : ''}`)
@@ -217,6 +224,8 @@ const libraryViewer = (viewer: string) => (authEnabled() ? viewer : null)
 
 export interface ApprovedTransfer {
   conversationId: string
+  /** The message that asked: a provider may repeat its tool call ids. */
+  messageId?: string
   toolCallId: string
   viewer: string
   args: string
@@ -233,7 +242,7 @@ export interface ApprovedTransfer {
 export function startApproved(rec: ApprovedTransfer): TransferJob {
   const plan = rec.plan
   if (!plan) throw new KbError(400, 'This call has no plan; nothing ran.')
-  const hold = `${rec.conversationId}\0${rec.toolCallId}`
+  const hold = `${rec.conversationId}\0${rec.messageId ?? ''}\0${rec.toolCallId}`
   if ([...load().values()].some(j => j.hold === hold)) throw new KbError(409, 'This approval already ran; nothing more ran.')
   const args = transferArgs(rec.args)
   if (canonicalTransfer(args) !== rec.args || args.paths.join('\0') !== plan.items.join('\0')) throw new KbError(400, 'The plan does not match the call that was held; nothing ran.')

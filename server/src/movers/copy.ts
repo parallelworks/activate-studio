@@ -47,9 +47,11 @@ const KEEP_MS = 5 * 60_000
 /** Login output ahead of the marker; past this, the marker is not coming. */
 const MAX_PREAMBLE = 1024 * 1024
 
-// Refuses anything that is no longer a plain file (a link put there since
-// the listing, say), then prints the marker and hands over to cat.
-const READ_SCRIPT = '[ -f "$1" ] && [ ! -L "$1" ] || { echo "not a plain file any more" >&2; exit 5; }; printf "%s\\n" "$2"; exec cat -- "$1"'
+// Refuses anything that is no longer a plain file inside the library's root
+// (a link put there since the listing, at the file or at a folder above it),
+// then prints the marker and hands over to cat. It works from the file's real
+// folder, so swapping that folder later changes nothing.
+const READ_SCRIPT = 'R=$(cd -P -- "$3" 2>/dev/null && pwd -P) && cd -P -- "${1%/*}" 2>/dev/null && P=$(pwd -P) && case "$P/" in "${R%/}"/*) :;; *) false;; esac && n=${1##*/} && [ -f "./$n" ] && [ ! -L "./$n" ] || { echo "not a plain file any more" >&2; exit 5; }; printf "%s\\n" "$2"; exec cat -- "./$n"'
 
 let free = STREAMS
 const waiting: (() => void)[] = []
@@ -82,10 +84,14 @@ async function writeOut(t: Running, src: Readable, tmp: string, f: ManifestFile,
   // wx: fails rather than opens anything already there, a link included.
   const fh = await fsp.open(tmp, 'wx', (f.mode & 0o777) | 0o600)
   let timer = setTimeout(stall, STALL_MS)
+  let got = 0
   const count = new Transform({
     transform(chunk: Buffer, _enc, done) {
       clearTimeout(timer)
       timer = setTimeout(stall, STALL_MS)
+      got += chunk.length
+      // The free space was checked for the listed size: a host may not send more.
+      if (got > f.size) { done(new Error(`${f.rel} sent more than the ${f.size} bytes it was listed with`)); return }
       t.status.bytes = (t.status.bytes ?? 0) + chunk.length
       done(null, chunk)
     },
@@ -101,7 +107,7 @@ async function writeOut(t: Running, src: Readable, tmp: string, f: ManifestFile,
 
 async function fromHost(t: Running, route: Extract<SourceRoute, { kind: 'ssh' }>, f: ManifestFile, tmp: string, marker: string): Promise<void> {
   const abs = path.posix.join(route.root, f.rel)
-  const child = remoteStream(route.site, route.key, ['sh', '-c', READ_SCRIPT, '_', abs, marker])
+  const child = remoteStream(route.site, route.key, ['sh', '-c', READ_SCRIPT, '_', abs, marker, route.root])
   const stop = () => child.kill()
   t.stops.add(stop)
   let err = ''
@@ -127,9 +133,17 @@ async function fromHost(t: Running, route: Extract<SourceRoute, { kind: 'ssh' }>
 
 async function fromHere(t: Running, root: string, f: ManifestFile, tmp: string): Promise<void> {
   // The listing's real root; O_NOFOLLOW so a link put there since is refused.
-  const fh = await fsp.open(path.join(await fsp.realpath(root), f.rel), FS.O_RDONLY | FS.O_NOFOLLOW)
+  // That covers the last name only, so the real path of what opened must
+  // still be inside the root: a folder above may have become a link.
+  const real = await fsp.realpath(root)
+  const abs = path.join(real, f.rel)
+  const fh = await fsp.open(abs, FS.O_RDONLY | FS.O_NOFOLLOW)
   try {
-    if (!(await fh.stat()).isFile()) throw new Error(`${f.rel} is no longer a plain file`)
+    const st = await fh.stat()
+    if (!st.isFile()) throw new Error(`${f.rel} is no longer a plain file`)
+    const now = await fsp.realpath(abs)
+    const there = await fsp.stat(now)
+    if (!now.startsWith(real.endsWith(path.sep) ? real : real + path.sep) || there.ino !== st.ino || there.dev !== st.dev) throw new Error(`${f.rel} is no longer inside the library`)
     const src = fh.createReadStream()
     const stop = () => src.destroy(new Error('cancelled'))
     t.stops.add(stop)

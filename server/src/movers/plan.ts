@@ -73,6 +73,8 @@ export function transferArgs(raw: unknown): TransferArgs {
   const paths = [...new Set(list.map(relCheck))]
   const hidden = paths.find(hiddenPath)
   if (hidden) throw new KbError(403, `${hidden} is a hidden path, which the Library does not show, so it is not copied.`)
+  const within = paths.find(p => paths.some(q => p.startsWith(`${q}/`)))
+  if (within) throw new KbError(400, `${within} is inside another of the paths; name only the folder.`)
   const library = typeof a.library === 'string' && a.library.trim() ? a.library.trim() : undefined
   if (a.destination !== undefined && a.destination !== null && typeof a.destination !== 'string') throw new KbError(400, 'The destination must be a folder path.')
   const dest = typeof a.destination === 'string' ? a.destination.trim() : ''

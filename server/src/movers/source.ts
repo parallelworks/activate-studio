@@ -244,6 +244,7 @@ async function listSsh(route: Extract<SourceRoute, { kind: 'ssh' }>, items: stri
       const item = itemOf(rel)
       if (!item) throw new KbError(502, `${route.name} listed a path that is not under what was asked for. Nothing was copied.`)
       if (!Number.isSafeInteger(size) || size < 0) { out.unreadable.push(rel); continue }
+      if (out.files.length >= MAX_FILES) throw overLimit()
       out.files.push({ rel, out: outOf(item, rel), size, mtime: mtime || 0, mode: (Number.parseInt(String(mode), 8) || 0o644) & 0o777 })
       out.bytes += size
       continue
