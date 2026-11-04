@@ -81,6 +81,7 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
   const [loadError, setLoadError] = useState('')
   const [user, setUser] = useState<UserList>({ libraries: [], available: false, ssh: false, pw: false, pwOffered: false, workflow: false })
   const [canBuild, setCanBuild] = useState(false)
+  const [copyRoutes, setCopyRoutes] = useState<Record<string, string | null>>({})
   const [status, setStatus] = useState<SetupStatus | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [adding, setAdding] = useState(false)
@@ -89,6 +90,7 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
   const ready = useRef(new Set<string>())
   const readyHere = useRef<Set<string> | null>(null)
 
+  useEffect(() => { api.copyRoutes().then(setCopyRoutes, () => {}) }, [])
   const loadLibs = () => api.libraries().then(r => {
     setLibs(r.libraries); setCanBuild(!!r.canBuild); setLoadError('')
     // A library built here that just finished joins the switcher.
@@ -190,18 +192,27 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
     reloadAppConfig()
   }
   const capsOf = (id: string) => cfg.libraries?.find(l => l.id === id)?.caps
+  // Where the assistant's copies read this library's files, in the order
+  // tried. Shown, not set: Originals via feeds it.
+  const copyRow = (id: string) => copyRoutes[id]
+    ? <DescriptionListItem label="Copies from">{copyRoutes[id]}</DescriptionListItem>
+    : null
   // Another host that has a library's files, where its originals are also
   // read (the assistant's read_original, and the viewer). Shown where it is
   // set, and where it can be set: the ssh keys it uses are this account's,
   // which only a Studio with sign-in off lends.
-  const throughRow = (id: string, label: string, current: ReadThrough | null | undefined, canEdit: boolean, reload: () => Promise<unknown>) =>
-    current || canEdit
-      ? (
-        <DescriptionListItem label="Originals via">
-          <ReadThroughControl id={id} label={label} current={current} canEdit={canEdit} onChanged={async () => { await reload() }} />
-        </DescriptionListItem>
-      )
-      : null
+  const throughRow = (id: string, label: string, current: ReadThrough | null | undefined, canEdit: boolean, reload: () => Promise<unknown>) => (
+    <>
+      {current || canEdit
+        ? (
+          <DescriptionListItem label="Originals via">
+            <ReadThroughControl id={id} label={label} current={current} canEdit={canEdit} onChanged={async () => { await reload(); api.copyRoutes().then(setCopyRoutes, () => {}) }} />
+          </DescriptionListItem>
+        )
+        : null}
+      {copyRow(id)}
+    </>
+  )
 
   if (loadError && !libs) {
     return (
@@ -243,6 +254,7 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
           <DescriptionList className="lib-paths" stacked>
             <DescriptionListItem label="Folder" mono={!!l.sourceRoot} copy={!!l.sourceRoot}>{l.sourceRoot ? <PathText path={l.sourceRoot} /> : null}</DescriptionListItem>
             <DescriptionListItem label="Index" mono copy><PathText path={l.indexRoot} /></DescriptionListItem>
+            {copyRow(l.id)}
           </DescriptionList>
         ),
         state, fullText: l.caps.fullText, meaning: l.caps.vectors,
@@ -274,6 +286,7 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
           <DescriptionList className="lib-paths" stacked>
             <DescriptionListItem label="Folder" mono copy>{l.sourceRoot ? <PathText path={l.sourceRoot} /> : null}</DescriptionListItem>
             <DescriptionListItem label="Index" mono copy><PathText path={l.indexRoot} /></DescriptionListItem>
+            {copyRow(l.id)}
           </DescriptionList>
         ),
         state: b.state === 'building' ? { tone: 'info', text: 'Building', pulse: true, notes }

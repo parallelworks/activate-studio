@@ -548,6 +548,12 @@ export const api = {
    *  or why the list could not be had. */
   pwSystems: () => getJson<PwSystems>('/api/user-libraries/pw/systems'),
   /** The connection test for the host a library's originals are also read through. */
+  /** Where copies read each library's files, by library id; null where they cannot. */
+  copyRoutes: async () => {
+    const res = await fetch('/api/libraries/copy-routes')
+    if (!res.ok) throw new Error(`copy routes: ${res.status}`)
+    return ((await res.json()) as { routes: Record<string, string | null> }).routes
+  },
   testReadThrough: (id: string, body: ReadThroughInput) =>
     postJson<{ ok: boolean; steps: { name: string; ok: boolean; detail: string; warn?: boolean }[] }>(`/api/libraries/${encodeURIComponent(id)}/read-through/test`, body),
   /** Sets that host after its test passes, or clears it with no destination. */

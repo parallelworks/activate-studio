@@ -21,6 +21,7 @@ import { browseGithub, githubSummary } from '../githubWorkflows.js'
 import { gatewayKey } from './gateway.js'
 import { type GufiCommand, traced } from '../gufiTrace.js'
 import { ASKS_FIRST_TOOLS, asksFirst, platformToolSpecs, prepareArgs, runPlatformTool } from './platformTools.js'
+import { TRANSFER_TOOL, TRANSFER_TOOL_SPEC, isTransferTool } from '../movers/plan.js'
 import type { CitedFile } from './citations.js'
 
 export interface ToolSpec {
@@ -37,6 +38,7 @@ export interface ToolSpec {
 export const TOOL_CALLS: Record<string, string> = {
   search_kb: 'gufi_query full-text (fts5 words), filename, and vector (sqlite-lembed gvec) searches over the index, blended and label-annotated; grep -ri over the knowledge base when no index exists',
   read_kb_file: 'reads the text the index holds for the file (gufi_query on its words table: extracted text, OCR, or a plain text file\'s contents, on another system too), else the library\'s extraction cache; a plain text file the index has no text for is read from the original',
+  transfer_files: 'plans a copy from the index, holds the call for the user\'s approval, then runs it as a job through a data mover (over ssh, or on this computer) and checks the destination',
   read_original: 'opens the original file at its library\'s own location (this computer, or over ssh on the library\'s host), then on the host the library names for reading originals, over ssh as the user; plain text as it is, and the extraction cache\'s text for documents and images here',
   list_kb_dir: 'directory listing under the knowledge base root',
   query_corpus: 'canned gufi_query aggregations over the per-directory index databases',
@@ -666,6 +668,7 @@ export const TOOL_SPECS: ToolSpec[] = [
   // names and descriptions (platformTools.ts); the ones that change
   // something run only after the user approves each call.
   ...platformToolSpecs(),
+  TRANSFER_TOOL_SPEC,
 ]
 
 const TOOL_OUTPUT_CAP = 24_000
@@ -853,7 +856,7 @@ export function activeToolSpecs(): ToolSpec[] {
  * that change something, since nobody could approve their calls.
  */
 export function unattendedToolSpecs(): ToolSpec[] {
-  return activeToolSpecs().filter(t => !asksFirst(t.function.name))
+  return activeToolSpecs().filter(t => !asksFirst(t.function.name) && !isTransferTool(t.function.name))
 }
 
 /**
@@ -879,6 +882,13 @@ export const TOOL_GROUPS: Record<string, { summary: string; names: string[]; cue
     summary: 'starting, resuming, stopping, and destroying cloud clusters and cancelling workflow runs; the user approves each call',
     names: [...ASKS_FIRST_TOOLS],
     cue: /\b(start|resume|restart|stop|shut ?down|destroy|tear ?down|cancel|abort|turn (on|off)|spin (up|down)|power (on|off|up|down))\b[^.?!\n]{0,60}\b(clusters?|controllers?|runs?|jobs?)\b|\b(clusters?|runs?)\b[^.?!\n]{0,40}\b(start|resume|stop|destroy|cancel)/i,
+  },
+  // Copying files to this computer. Each call waits for the user's approval
+  // too, but needs no platform, so it is a group and a switch of its own.
+  transfers: {
+    summary: 'copying files or folders from a library to a folder on this computer, by default Downloads; the user approves each call',
+    names: [TRANSFER_TOOL],
+    cue: /\b(download|transfer)\b|\b(copy|save|fetch|pull|bring|grab|get)\b[^.?!\n]{0,80}\b(downloads?|desktop|documents|folder|computer|laptop|workstation|machine|local(ly)?)\b/i,
   },
   agents: {
     summary: 'pw code agents on connected systems and delegated subtasks',
@@ -944,6 +954,7 @@ const TOOL_OPTION_TEXT: Record<string, { label: string; description: string }> =
   kb: { label: 'Knowledge base', description: 'Search, read and query the library' },
   workflows: { label: 'Platform workflows', description: 'Run and follow workflows and sessions' },
   changes: { label: 'Platform changes', description: 'Start, stop, and destroy clusters and cancel runs' },
+  transfers: { label: 'Copying files', description: 'Copy files from a library to this computer' },
   agents: { label: 'Agents', description: 'Start pw code agents and subtasks' },
   editing: { label: 'Editing the library', description: 'Write files and apply labels' },
   extensions: { label: 'Extensions', description: "This deployment's own tools and skills" },
@@ -962,7 +973,7 @@ export function toolOptionOf(name: string): string {
 export async function readerToolOptions(): Promise<{ id: string; label: string; description: string; asksFirst?: boolean }[]> {
   const ids = new Set((await activeToolSpecsWithRemote()).map(t => toolOptionOf(t.function.name)))
   // The chat package marks a switch whose calls wait for the reader's approval.
-  const fixed = Object.keys(TOOL_OPTION_TEXT).filter(id => ids.has(id)).map(id => ({ id, ...TOOL_OPTION_TEXT[id], ...(id === 'changes' ? { asksFirst: true } : {}) }))
+  const fixed = Object.keys(TOOL_OPTION_TEXT).filter(id => ids.has(id)).map(id => ({ id, ...TOOL_OPTION_TEXT[id], ...(id === 'changes' || id === 'transfers' ? { asksFirst: true } : {}) }))
   const servers = [...ids].filter(id => id.startsWith('mcp:')).sort().map(id => ({
     id, label: id.slice(4), description: 'Tools from an attached MCP server',
   }))
@@ -2551,6 +2562,8 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
       // call until the person who asked approves it and runs it from the
       // hold (approvals.ts); a call that reaches this point came from
       // somewhere no one can approve it, so it does not run.
+      case TRANSFER_TOOL:
+        return { result: `${name} copies files and runs only after the user approves the call in the Studio chat. Nothing ran.`, summary: 'needs the user\'s approval' }
       case 'start_cluster':
       case 'resume_cluster':
       case 'stop_cluster':

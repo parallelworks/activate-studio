@@ -35,6 +35,7 @@ interface Effective {
   suggestedPrompts: string[]
   visionModel: string
   disabledTools: string[]
+  transferFolders: string[]
   customTools: { name: string; description: string; command: string }[]
   ragDefaultModel: string
   ragTopK: number
@@ -542,6 +543,18 @@ export function SettingsView() {
                       onChange={e => setForm({ ...form, suggestedPrompts: e.target.value.split('\n') })}
                     />
                   </Field>
+                  {!me?.authEnabled && (
+                    <Field className="settings-field" label="Folders copies may go to (one per line)"
+                      description="The assistant can copy library files to your Downloads, Desktop and Documents folders. Add a full path here to allow another folder.">
+                      <Textarea
+                        className="prompts-box"
+                        rows={3}
+                        value={(form.transferFolders ?? []).join('\n')}
+                        placeholder="~/data/copies"
+                        onChange={e => setForm({ ...form, transferFolders: e.target.value.split('\n') })}
+                      />
+                    </Field>
+                  )}
                   <div className="settings-grid settings-field">
                     <Field label="Vision model for image captioning"
                       description={form.visionModel && deploymentCred === false ? <>

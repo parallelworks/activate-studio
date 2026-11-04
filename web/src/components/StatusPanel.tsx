@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { Button, DisclosurePanel, IconButton, StatusDot, type BadgeVariant } from '@parallelworks/ui'
+import { Button, DisclosurePanel, IconButton, ProgressBar, StatusDot, type BadgeVariant } from '@parallelworks/ui'
 import { ChevronRightIcon } from '@parallelworks/ui/icons'
 import { api, currentLibrary, type IndexStatus, type PublicLibrary, type UserLibrary } from '../api'
 import type { AppConfig } from '../config'
@@ -10,6 +10,7 @@ import { AI_LABEL } from './StatusFooter'
 import { openInSideView } from './RunPane'
 import { openSessionWindow, type SessionInfo } from './SessionView'
 import { DetailsBody, detailsSummary, useEntryDetails } from './LibraryDetails'
+import { TRANSFER_ALLOWED } from './ToolApproval'
 
 /**
  * The status panel at the right of every page: what is running, the
@@ -27,6 +28,13 @@ export interface TaskRow { id: string; objective: string; state: string; running
 export interface FleetAgent { id: string; name: string; state: string; currentTaskId?: string | null }
 export interface RunRow { slug: string; workflow: string; owner?: string | null; launchedAt: string; state: string; endedAt: string | null }
 export interface McpRow { name: string; tools: number; error: string | null; checkedAt?: string | null }
+/** A copy the viewer approved (GET /api/transfers). */
+export interface TransferRow {
+  id: string; title: string; state: 'running' | 'done' | 'failed' | 'cancelled' | 'interrupted'
+  phase: 'listing' | 'copying' | 'checking' | 'finishing' | null
+  files: { done: number; total: number | null }; bytes: { done: number; total: number | null }
+  message: string | null; startedAt: string; finishedAt: string | null
+}
 
 export interface StatusData {
   tasks: TaskRow[] | null
@@ -36,10 +44,13 @@ export interface StatusData {
   idx: IndexStatus | null
   userLibs: UserLibrary[] | null
   mcp: McpRow[] | null
+  transfers: TransferRow[] | null
 }
 
-const EMPTY: StatusData = { tasks: null, fleet: null, runs: null, sessions: null, idx: null, userLibs: null, mcp: null }
+const EMPTY: StatusData = { tasks: null, fleet: null, runs: null, sessions: null, idx: null, userLibs: null, mcp: null, transfers: null }
 const FAST_MS = 10_000
+/** How often a running copy's progress is read. */
+const TRANSFER_MS = 2_000
 const SLOW_MS = 60_000
 
 // Kept across a close and reopen, so the cards come back drawn and a
@@ -99,12 +110,12 @@ export function openSession(s: SessionInfo, view: string): void {
 
 export interface Summary { text: string; tone: BadgeVariant | null; pulse?: boolean }
 
-export function activitySummary(d: Pick<StatusData, 'tasks' | 'fleet' | 'runs' | 'sessions'>): Summary {
+export function activitySummary(d: Pick<StatusData, 'tasks' | 'fleet' | 'runs' | 'sessions'> & Partial<Pick<StatusData, 'transfers'>>): Summary {
   const tasks = (d.tasks ?? []).filter(t => LIVE_TASK.has(t.state))
   const fleet = d.fleet ?? []
   const waiting = tasks.filter(t => t.state === 'input-required').length + fleet.filter(a => a.state === 'input-required').length
   const running = tasks.filter(t => t.state !== 'input-required').length + fleet.filter(a => a.state === 'working').length
-    + (d.runs ?? []).filter(r => !runEnded(r)).length
+    + (d.runs ?? []).filter(r => !runEnded(r)).length + (d.transfers ?? []).filter(t => t.state === 'running').length
   const sessions = (d.sessions ?? []).length
   // Two parts at most, so the line stays one line: what needs the viewer,
   // then what runs, then the sessions open.
@@ -114,6 +125,33 @@ export function activitySummary(d: Pick<StatusData, 'tasks' | 'fleet' | 'runs' |
     sessions ? plural(sessions, 'session') : '',
   ].filter(Boolean).slice(0, 2)
   return { text: parts.join(' · ') || 'idle', tone: waiting ? 'warning' : running ? 'info' : null, pulse: !waiting && running > 0 }
+}
+
+const PHASE: Record<string, string> = { listing: 'listing the files', copying: 'copying', checking: 'checking the copy', finishing: 'putting it in place' }
+
+function bytesText(n: number): string {
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  let v = n, i = 0
+  while (v >= 1024 && i < units.length - 1) { v /= 1024; i++ }
+  return `${i === 0 || v >= 100 ? Math.round(v) : v.toFixed(1)} ${units[i]}`
+}
+
+/** A copy's row: its tone, what the line under its name says, and how far
+ *  it has got, a percentage of the bytes once the source has been counted. */
+export function transferLine(t: TransferRow): { tone: BadgeVariant; pulse: boolean; sub: string; meta: string; percent: number | null } {
+  if (t.state === 'running') {
+    const { done, total } = t.bytes
+    const percent = t.phase === 'copying' && total ? Math.min(100, Math.floor(done / total * 100)) : null
+    const sub = t.phase === 'copying'
+      ? `${t.files.done}${t.files.total === null ? '' : ` of ${t.files.total}`} ${(t.files.total ?? t.files.done) === 1 ? 'file' : 'files'}, ${bytesText(done)}${total === null ? '' : ` of ${bytesText(total)}`}`
+      : PHASE[t.phase ?? ''] ?? 'starting'
+    return { tone: 'info', pulse: true, sub, meta: percent === null ? '' : `${percent}%`, percent }
+  }
+  const when = ago(t.finishedAt ?? t.startedAt)
+  const message = t.message ?? ''
+  if (t.state === 'done') return { tone: 'success', pulse: false, sub: `${t.files.done} ${t.files.done === 1 ? 'file' : 'files'}, ${bytesText(t.bytes.done)}, checked`, meta: `done ${when}`, percent: null }
+  if (t.state === 'cancelled') return { tone: 'muted', pulse: false, sub: message, meta: `cancelled ${when}`, percent: null }
+  return { tone: t.state === 'failed' ? 'error' : 'warning', pulse: false, sub: message, meta: `${t.state} ${when}`, percent: null }
 }
 
 export interface LibLine { id: string; label: string; kind: string; state: string; tone: BadgeVariant; pulse: boolean; count: string | null; note: string | null }
@@ -235,6 +273,26 @@ async function getJson<T>(url: string): Promise<T> {
   return r.json() as Promise<T>
 }
 
+/** The viewer's copies: read with the other cards, and every couple of
+ *  seconds while one runs, so its progress moves. */
+function useTransfers(rows: TransferRow[] | null, put: (p: Partial<StatusData>) => void): void {
+  const live = !!rows?.some(t => t.state === 'running')
+  const read = () => { getJson<{ transfers: TransferRow[] }>('/api/transfers').then(d => put({ transfers: d.transfers ?? [] })).catch(() => {}) }
+  useEffect(() => {
+    const timers: number[] = []
+    const allowed = () => { for (const ms of [800, 2500]) timers.push(window.setTimeout(read, ms)) }
+    window.addEventListener(TRANSFER_ALLOWED, allowed)
+    return () => { window.removeEventListener(TRANSFER_ALLOWED, allowed); timers.forEach(window.clearTimeout) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  useEffect(() => {
+    if (!live) return
+    const t = window.setInterval(() => { if (document.visibilityState !== 'hidden') read() }, TRANSFER_MS)
+    return () => window.clearInterval(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [live])
+}
+
 function useStatusData(agents: boolean, runs: boolean): [StatusData, (p: Partial<StatusData>) => void] {
   const [data, setData] = useState<StatusData>(lastData)
   const patch = (p: Partial<StatusData>) => setData(d => (lastData = { ...d, ...p }))
@@ -250,6 +308,7 @@ function useStatusData(agents: boolean, runs: boolean): [StatusData, (p: Partial
         }
       }
       if (runs) getJson<{ runs: RunRow[] }>('/api/runs').then(d => put({ runs: d.runs ?? [] })).catch(() => {})
+      getJson<{ transfers: TransferRow[] }>('/api/transfers').then(d => put({ transfers: d.transfers ?? [] })).catch(() => {})
       const url = mcpChecked ? '/api/settings/mcp-servers?cached=1' : '/api/settings/mcp-servers'
       mcpChecked = true
       getJson<{ servers: McpRow[] }>(url).then(d => put({ mcp: d.servers ?? [] })).catch(() => {})
@@ -375,7 +434,8 @@ function PanelCards({ view, cfg }: { view: string; cfg: AppConfig }) {
   const shown = (id: string) => !cfg.sections || cfg.sections.includes(id)
   const agentsOn = shown('agents')
   const runsOn = !!cfg.platform && shown('workflows')
-  const [data] = useStatusData(agentsOn, runsOn)
+  const [data, patch] = useStatusData(agentsOn, runsOn)
+  useTransfers(data.transfers, patch)
   const shared = useShared()
   // On the Library page, what is selected in its tree (LibraryDetails.tsx).
   const details = useEntryDetails(view === 'library')
@@ -397,7 +457,16 @@ function PanelCards({ view, cfg }: { view: string; cfg: AppConfig }) {
   const running = myRuns.filter(r => !runEnded(r)).sort(byNewest)
   const runs = [...running.slice(0, 6), ...myRuns.filter(runEnded).sort(byNewest).slice(0, 3)]
   const sessions = runsOn ? data.sessions ?? [] : []
-  const hasActivity = tasks.length + fleet.length + runs.length + sessions.length > 0
+  // Those running, then the last few finished: a failure stays in sight
+  // after the reply that started it is gone.
+  const allTransfers = data.transfers ?? []
+  const transfers = [...allTransfers.filter(t => t.state === 'running'), ...allTransfers.filter(t => t.state !== 'running').slice(0, 3)]
+  const cancelTransfer = (id: string) => {
+    void fetch(`/api/transfers/${encodeURIComponent(id)}/cancel`, { method: 'POST' })
+      .then(() => getJson<{ transfers: TransferRow[] }>('/api/transfers'))
+      .then(d => patch({ transfers: d.transfers ?? [] })).catch(() => {})
+  }
+  const hasActivity = tasks.length + fleet.length + runs.length + sessions.length + transfers.length > 0
 
   const libs = libraryLines(cfg.libraries ?? [], data.userLibs, shared.stats)
   const model = shared.model ?? rememberedModel()
@@ -414,7 +483,21 @@ function PanelCards({ view, cfg }: { view: string; cfg: AppConfig }) {
         </Card>
       )}
       {hasActivity && (
-        <Card id="activity" title="Activity" summary={activitySummary({ tasks, fleet, runs: myRuns, sessions })}>
+        <Card id="activity" title="Activity" summary={activitySummary({ tasks, fleet, runs: myRuns, sessions, transfers })}>
+          {transfers.length > 0 && (
+            <Group label="Copies">
+              {transfers.map(t => {
+                const l = transferLine(t)
+                return (
+                  <div key={t.id} className="status-transfer">
+                    <Row tone={l.tone} pulse={l.pulse} name={t.title} sub={l.sub} meta={l.meta} title={t.message ?? t.title} />
+                    {l.percent !== null && <ProgressBar aria-label={`Copying ${t.title}`} size="sm" value={l.percent} max={100} showValue="none" />}
+                    {t.state === 'running' && <Button variant="ghost" size="xs" onClick={() => cancelTransfer(t.id)}>Cancel</Button>}
+                  </div>
+                )
+              })}
+            </Group>
+          )}
           {(tasks.length > 0 || fleet.length > 0) && (
             <Group label="Agents">
               {tasks.map(t => (

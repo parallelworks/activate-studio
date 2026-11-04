@@ -7,8 +7,10 @@ import { listRuns } from '../runs.js'
 import { GATEWAY_BASE, MAX_TOOL_ITERATIONS, PW_API_KEY, SIDECAR_ENDPOINT, INDEX_BASE } from '../config.js'
 import { gatewayKey, providerReason } from './gateway.js'
 import { credentialContextName, ensureFreshAccess } from '../access.js'
-import { answerHeld, changesAvailable, holdCall, newHold, viewerOf } from './approvals.js'
+import { TRANSFER_RUNNING, answerHeld, changesAvailable, holdCall, newHold, viewerOf, type HeldCall } from './approvals.js'
 import { approvalPart, asksFirst, insteadOf, isPlatformTool, platformTool, prepareArgs, viewerAccount, type CallArgs } from './platformTools.js'
+import { cancelJob, jobOf, jobsOf, publicJob, transfersNote } from '../movers/jobs.js'
+import { isTransferTool, planTransfer, transferApprovalPart, transfersAvailable, type TransferPlan } from '../movers/plan.js'
 import { platformAvailable } from '../workflowsTab.js'
 import { aiHealth, gatewayConfigured, GatewayUnreachable, isSidecarModel, listModels, listSidecarModels, modelFailure, probeProvider, probeableProvider, probeToolCalling, extractUnlockUrl, invalidateProviderProbes, sidecarConfigured, sidecarTarget, StreamedTurnError, streamTurn, WireMessage, WireToolCall, type TokenUsage, type ToolProbe } from './gateway.js'
 import { MORE_TOOLS, PLATFORM_GROUPS, TOOL_CALLS, TOOL_GROUPS, TOOL_SPECS, activeToolSpecs, activeToolSpecsWithRemote, commandFor, customToolSpecs, executeTool, expandSlashCommand, initialToolGroups, needsPlatform, readerAllows, readerToolOptions, selectToolSpecs, skillToolSpec, toolGroupOf, toolOptionLabel } from './tools.js'
@@ -1010,9 +1012,23 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     const cred = resolveUserCred(req.user?.id)
     const own = cred && !cred.baseUrl ? cred.key : null
     const ok = changesAvailable({ viewer: viewerOf(req), key: authEnabled() ? own : (own || gatewayKey() || null) }).ok
+    const copies = transfersAvailable({ viewer: viewerOf(req) }).ok
     // Without a platform, no switch for the tools that need one.
     const platform = platformAvailable(req.user?.id)
-    return { tools: options.filter(o => (o.id !== 'changes' || ok) && (platform || !PLATFORM_GROUPS.includes(o.id))) }
+    return { tools: options.filter(o => (o.id !== 'changes' || ok) && (o.id !== 'transfers' || copies) && (platform || !PLATFORM_GROUPS.includes(o.id))) }
+  })
+
+  // Copies the viewer started, for the status panel. There is no route that
+  // starts one: a transfer starts only from an approved held call.
+  app.get('/api/transfers', async req => {
+    const v = viewerOf(req)
+    return { transfers: v ? jobsOf(v.id).slice(0, 30).map(publicJob) : [] }
+  })
+  app.post('/api/transfers/:id/cancel', async (req, reply) => {
+    const v = viewerOf(req)
+    const j = v ? jobOf(v.id, String((req.params as { id: string }).id)) : null
+    if (!j) return reply.code(404).send({ error: 'no such transfer' })
+    return { cancelling: cancelJob(j) }
   })
 
   app.get('/api/chat/tools', async () => {
@@ -1025,7 +1041,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
           enabled: !disabled.has(t.function.name), parameters: t.function.parameters,
           implementation: 'built-in (server/src/chat/tools.ts)',
           calls: TOOL_CALLS[t.function.name],
-          ...(asksFirst(t.function.name) ? { asksFirst: true, instead: insteadOf(t.function.name) } : {}),
+          ...(asksFirst(t.function.name) || isTransferTool(t.function.name) ? { asksFirst: true, instead: insteadOf(t.function.name) } : {}),
         })),
         ...customToolSpecs().map(t => ({
           name: t.function.name, description: t.function.description, builtin: false,
@@ -1166,6 +1182,13 @@ ${ctx}` : ctx
       owner: body.conversationId ? getConversation(body.conversationId)?.owner ?? null : null,
       username: req.user?.username ?? null,
     })
+    // Copying files to this computer asks first as well, but on a Studio of
+    // its own it needs no platform and no platform key.
+    const copies = transfersAvailable({
+      viewer,
+      owner: body.conversationId ? getConversation(body.conversationId)?.owner ?? null : null,
+      username: req.user?.username ?? null,
+    })
     // Whether a platform is reachable at all (workflowsTab.ts). Without one,
     // nothing that needs it is offered: not the platform reads, not the pw
     // CLI's workflow and cluster tools, not the agents. A small model handed
@@ -1174,6 +1197,7 @@ ${ctx}` : ctx
     const platform = platformAvailable(req.user?.id)
     const offered = (name: string) => (platform || !needsPlatform(name))
       && (!isPlatformTool(name) || (asksFirst(name) ? changes.ok : platform))
+      && (!isTransferTool(name) || copies.ok)
     const labelScope = Array.isArray(body.labelScope)
       ? body.labelScope.map(String).filter(Boolean).slice(0, 16)
       : []
@@ -1192,7 +1216,7 @@ ${ctx}` : ctx
     if (readerTools) for (const g of [...activeGroups]) if (!readerTools.has(g)) activeGroups.delete(g)
     if (!platform) for (const g of PLATFORM_GROUPS) activeGroups.delete(g)
     const messages: WireMessage[] = [
-      { role: 'system', content: `${await systemPrompt({ platform: activeGroups.has('workflows') || activeGroups.has('agents'), connected: platform })}\n\nToday's date is ${today}. Treat earlier dates as past; call out deadlines that have already passed.${scopeNote}${persona ? `\n\n--- DEPLOYMENT AGENT INSTRUCTIONS (extensions/agents/default.md) ---\n${persona}` : ''}` },
+      { role: 'system', content: `${await systemPrompt({ platform: activeGroups.has('workflows') || activeGroups.has('agents'), connected: platform })}\n\nToday's date is ${today}. Treat earlier dates as past; call out deadlines that have already passed.${scopeNote}${viewer ? transfersNote(viewer.id, body.conversationId) : ''}${persona ? `\n\n--- DEPLOYMENT AGENT INSTRUCTIONS (extensions/agents/default.md) ---\n${persona}` : ''}` },
       ...history,
     ]
     // Everything after this is the reply's own: what a held call replays.
@@ -1438,6 +1462,14 @@ ${ctx}` : ctx
       // outcome goes into the message that asked, and the reply carries on
       // from where it paused.
       if (resume) {
+        const decided = (rec: HeldCall, name: string, status: 'ok' | 'error', result: string) => settleHeldPart(rec.conversationId, rec.messageId, rec.toolCallId, {
+          name, status, result,
+          decision: {
+            status: resume.allowed === true ? 'approved' : 'denied', by: 'user', name: viewer?.name, at: new Date().toISOString(),
+            ...(resume.feedback ? { note: String(resume.feedback).slice(0, 200) } : {}),
+          },
+          answer: resume.allowed === true ? 'Allowed' : 'Declined',
+        })
         const answered = await answerHeld({
           conversationId: String(body.conversationId ?? ''),
           messageId: String(resume.messageId ?? ''),
@@ -1446,7 +1478,7 @@ ${ctx}` : ctx
           ...(resume.tool ? { tool: String(resume.tool) } : {}),
           ...(resume.args !== undefined ? { args: String(resume.args) } : {}),
           ...(resume.feedback ? { feedback: String(resume.feedback).slice(0, 2000) } : {}),
-        }, viewer, changeKey, tool => activeToolSpecs().some(t => t.function.name === tool))
+        }, viewer, changeKey, tool => activeToolSpecs().some(t => t.function.name === tool), rec => decided(rec, rec.tool, 'ok', TRANSFER_RUNNING))
         if (!answered.ok) {
           req.log.warn({ toolCallId: resume.toolCallId, why: answered.why }, 'held call answer refused')
           sse(res, 'tool', { phase: 'result', id: String(resume.toolCallId), name: '', summary: `not run: ${answered.why}`, error: true })
@@ -1458,16 +1490,7 @@ ${ctx}` : ctx
         req.log.info({ tool: answered.tool, held: rec.tool, allowed: resume.allowed === true, failed: answered.failed }, 'held call answered')
         resumedFrom = rec.messageId
         sse(res, 'tool', { phase: 'result', id: rec.toolCallId, name: answered.tool, summary: answered.summary, error: answered.failed })
-        settleHeldPart(rec.conversationId, rec.messageId, rec.toolCallId, {
-          name: answered.tool,
-          status: answered.failed ? 'error' : 'ok',
-          result: answered.summary,
-          decision: {
-            status: resume.allowed === true ? 'approved' : 'denied', by: 'user', name: viewer?.name, at: new Date().toISOString(),
-            ...(resume.feedback ? { note: String(resume.feedback).slice(0, 200) } : {}),
-          },
-          answer: resume.allowed === true ? 'Allowed' : 'Declined',
-        })
+        decided(rec, answered.tool, answered.failed ? 'error' : 'ok', answered.summary)
         messages.push(...rec.turn, { role: 'tool', tool_call_id: rec.toolCallId, content: answered.result })
         for (const g of rec.groups) if ((!readerTools || readerTools.has(g)) && (platform || !PLATFORM_GROUPS.includes(g))) activeGroups.add(g)
         usedTools = true
@@ -1554,17 +1577,27 @@ ${ctx}` : ctx
           // approval rather than run (approvals.ts). One is held per round,
           // the first asked for; the round's other calls run, and the reply
           // pauses after them until the user answers.
-          let held: { i: number; tool: string; args: CallArgs; canonical: string } | null = null
+          let held: { i: number; tool: string; args: CallArgs; canonical: string; plan?: TransferPlan } | null = null
           const notRun = new Map<number, { result: string; summary: string; failed: true }>()
           for (let i = 0; i < calls.length; i++) {
             const name = calls[i].function.name
-            if (!asksFirst(name) || !readerAllows(name, readerTools)) continue
-            const why = !changes.ok ? `${name} is not available in this chat: ${changes.why}. Nothing ran.`
+            const copying = isTransferTool(name)
+            if ((!asksFirst(name) && !copying) || !readerAllows(name, readerTools)) continue
+            const gate = copying ? copies : changes
+            const why = !gate.ok ? `${name} is not available in this chat: ${gate.why}. Nothing ran.`
               : !available.some(t => t.function.name === name) ? `${name} is turned off for this deployment. Nothing ran.`
               : !body.conversationId ? `${name} needs a saved conversation to ask the user in. Nothing ran.`
               : held ? `Only one change waits for the user's approval at a time, so ${name} did not run. Call it again after the user answers ${held.tool}.`
               : null
             if (why) { notRun.set(i, { result: why, summary: 'not run', failed: true }); continue }
+            if (copying) {
+              // The arguments are untrusted and are checked here. What the
+              // approval shows is the plan made from them.
+              const planned = await planTransfer(calls[i].function.arguments, { viewerId: req.user?.id ?? null, library: String((body as { library?: string }).library ?? '') || null })
+              if ('problem' in planned) notRun.set(i, { result: planned.problem, summary: 'not run', failed: true })
+              else held = { i, tool: name, args: {}, canonical: planned.canonical, plan: planned.plan }
+              continue
+            }
             // A parameter the model may leave out (the cluster's owner) is the
             // viewer's own, read from their platform account.
             const needsAccount = !!platformTool(name)?.defaults?.length
@@ -1670,8 +1703,9 @@ ${ctx}` : ctx
             const rec = newHold({
               conversationId: body.conversationId, messageId, toolCallId: id, tool: held.tool, args: held.canonical,
               viewer: viewer.id, viewerName: viewer.name, turn: messages.slice(baseLen), groups: [...activeGroups],
+              ...(held.plan ? { plan: held.plan } : {}),
             })
-            const approval = approvalPart(held.tool, held.args, id, rec.expiresAt) as unknown as StoredApprovalPart
+            const approval = (held.plan ? transferApprovalPart(held.plan, id, rec.expiresAt) : approvalPart(held.tool, held.args, id, rec.expiresAt)) as unknown as StoredApprovalPart
             finalParts.push(approval)
             holdCall(rec)
             req.log.info({ tool: held.tool, conversation: body.conversationId }, 'tool call held for approval')

@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { ChatProvider, ChatThread, type ChatAdapter, type StreamRequest } from '@parallelworks/ui/ai'
-import { ToolApproval } from '../src/components/ToolApproval'
+import { TRANSFER_ALLOWED, ToolApproval } from '../src/components/ToolApproval'
 import { createStudioAdapter } from '../src/adapter'
 
 // A held stop_cluster call as the server stores and streams it.
@@ -23,6 +23,23 @@ const message = { id: 'srv-1', role: 'assistant', content: null, parentId: 'u1',
 afterEach(() => vi.restoreAllMocks())
 
 describe('the approval for a held call', () => {
+  it('draws a transfer\'s plan above the block, and only while it waits', () => {
+    const plan = [{ label: 'Files', value: '3 files' }, { label: 'To', value: '/home/me/Downloads on this computer (host)' }]
+    const held = { ...approval, toolName: 'transfer_files', header: 'Copy 3 files (12 MB) to ~/Downloads?', instead: undefined, plan }
+    const { rerender } = render(<ToolApproval part={held} message={message} onApprovalAnswer={vi.fn()} />)
+    expect(screen.getByLabelText('Transfer plan')).toHaveTextContent('3 files')
+    expect(screen.getByText('/home/me/Downloads on this computer (host)')).toBeInTheDocument()
+    const told = vi.fn()
+    window.addEventListener(TRANSFER_ALLOWED, told)
+    fireEvent.click(screen.getByRole('button', { name: /No, deny/ }))
+    expect(told).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: /Yes, allow/ }))
+    expect(told).toHaveBeenCalledOnce()
+    window.removeEventListener(TRANSFER_ALLOWED, told)
+    rerender(<ToolApproval part={{ ...held, resolved: true, answer: 'Allowed' }} message={message} />)
+    expect(screen.queryByLabelText('Transfer plan')).toBeNull()
+  })
+
   it('draws the package\'s block, with allow and deny for the call it shows, and the alternative under it', () => {
     const onAnswer = vi.fn()
     render(<ToolApproval part={approval} message={message} onApprovalAnswer={onAnswer} />)

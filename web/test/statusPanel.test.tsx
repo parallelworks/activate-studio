@@ -5,7 +5,8 @@ import { reloadPanelState, setPanelView, setSideShown } from '../src/panelState'
 import { share } from '../src/statusShare'
 import { PageSideViewHost } from '../src/components/RunPane'
 import {
-  PanelToggle, StatusPanel, activitySummary, connectionsSummary, connectionLines, librariesSummary, libraryLines, modelSummary, resetStatusPanelForTests,
+  PanelToggle, StatusPanel, activitySummary, connectionsSummary, connectionLines, librariesSummary, libraryLines, modelSummary, resetStatusPanelForTests, transferLine,
+  type TransferRow,
 } from '../src/components/StatusPanel'
 
 const lib = { id: 'kb', label: 'Knowledge base', primary: true, writable: true, pinned: true, source: true, caps: { index: true, fullText: true, vectors: false } }
@@ -178,6 +179,36 @@ describe('the cards', () => {
     expect(screen.queryByText('explorer')).toBeNull()
     expect(asked).not.toContain('/api/runs')
     expect(asked).not.toContain('/api/sessions')
+  })
+
+  it('show a copy with its progress and Cancel, and say a stopped one was not done', async () => {
+    const row = (over: Partial<TransferRow>): TransferRow => ({
+      id: 't1', title: 'survey to ~/Downloads', state: 'running', phase: 'copying',
+      files: { done: 2, total: 4 }, bytes: { done: 512, total: 1024 }, message: null, startedAt: ago(30), finishedAt: null, ...over,
+    })
+    expect(transferLine(row({})).percent).toBe(50)
+    expect(transferLine(row({ phase: 'listing' })).percent).toBeNull()
+    expect(transferLine(row({ bytes: { done: 512, total: null } })).percent).toBeNull()
+    expect(transferLine(row({ state: 'interrupted', phase: null, message: 'Stopped by a restart', finishedAt: ago(5) })))
+      .toMatchObject({ tone: 'warning', pulse: false, sub: 'Stopped by a restart', percent: null })
+    expect(transferLine(row({ state: 'failed', phase: null, finishedAt: ago(5) })).tone).toBe('error')
+    expect(transferLine(row({ state: 'done', phase: null, finishedAt: ago(5) })).tone).toBe('success')
+    expect(activitySummary({ tasks: [], fleet: [], runs: [], sessions: [], transfers: [row({})] }).text).not.toBe('idle')
+    expect(activitySummary({ tasks: [], fleet: [], runs: [], sessions: [], transfers: [row({ state: 'done' })] }).text).toBe('idle')
+
+    DATA['/api/transfers'] = { transfers: [row({}), row({ id: 't2', title: 'logs to ~/Desktop', state: 'interrupted', phase: null, message: 'Stopped by a restart', finishedAt: ago(5) })] }
+    try {
+      openPanel()
+      render(<StatusPanel view="search" cfg={cfg()} />)
+      await waitFor(() => expect(screen.getByText('survey to ~/Downloads')).toBeInTheDocument())
+      expect(screen.getByRole('progressbar', { name: 'Copying survey to ~/Downloads' })).toBeInTheDocument()
+      expect(screen.getByText('logs to ~/Desktop')).toBeInTheDocument()
+      // Only the running copy can be stopped.
+      const cancels = screen.getAllByRole('button', { name: 'Cancel' })
+      expect(cancels).toHaveLength(1)
+      fireEvent.click(cancels[0])
+      await waitFor(() => expect(asked).toContain('/api/transfers/t1/cancel'))
+    } finally { delete DATA['/api/transfers'] }
   })
 
   it('polls only while open, and reads attached servers without contacting them after the first check', async () => {

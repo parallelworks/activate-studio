@@ -4,6 +4,9 @@ import path from 'node:path'
 import { INDEX_BASE } from '../config.js'
 import { authEnabled } from '../auth.js'
 import { platformGateway } from '../sessions.js'
+import { KbError } from '../kb.js'
+import { jobReport, settled, startApproved } from '../movers/jobs.js'
+import { canonicalTransfer, isTransferTool, planSummary, transferArgs, transferToolHash, type TransferPlan } from '../movers/plan.js'
 import type { WireMessage } from './gateway.js'
 import { insteadOf, prepareArgs, runPlatformTool, toolHash, type CallArgs } from './platformTools.js'
 
@@ -19,6 +22,12 @@ import { insteadOf, prepareArgs, runPlatformTool, toolHash, type CallArgs } from
  * Records are kept beside the index so an answer given after a restart of
  * the Studio still finds its call, and they expire: an answer after
  * APPROVAL_TTL_MS is refused.
+ *
+ * Two kinds of tool are held: the platform tools (platformTools.ts), which
+ * need a platform and the viewer's key, and transfer_files (movers/plan.ts),
+ * which needs neither and carries the plan the person saw. The rules for
+ * holding and answering are the same, and which tools are offered is decided
+ * apart: changesAvailable for the first, transfersAvailable for the second.
  */
 
 export const APPROVAL_TTL_MS = Number(process.env.STUDIO_APPROVAL_TTL_MS) || 30 * 60_000
@@ -45,6 +54,8 @@ export interface HeldCall {
   turn: WireMessage[]
   /** The tool groups the reply had, so the resumed reply has them too. */
   groups: string[]
+  /** For a transfer: what the approval showed, which is what runs. */
+  plan?: TransferPlan
 }
 
 const FILE = path.join(INDEX_BASE, 'held-tool-calls.json')
@@ -133,11 +144,23 @@ export function changesAvailable(o: {
   return { ok: true }
 }
 
+/** Identifies a held tool's definition, whichever kind it is. */
+const heldHash = (name: string) => (isTransferTool(name) ? transferToolHash() : toolHash(name))
+
+/** A call's arguments as a hold records them; null when they are not valid. */
+function canonicalOf(tool: string, raw: unknown, user: string | null): string | null {
+  if (isTransferTool(tool)) {
+    try { return canonicalTransfer(transferArgs(raw)) } catch { return null }
+  }
+  const again = prepareArgs(tool, raw, user)
+  return 'canonical' in again ? again.canonical : null
+}
+
 /** The held record for a new hold. */
 export function newHold(o: Omit<HeldCall, 'hash' | 'instead' | 'heldAt' | 'expiresAt'>, now = Date.now()): HeldCall {
   return {
     ...o,
-    hash: toolHash(o.tool),
+    hash: heldHash(o.tool),
     instead: Object.fromEntries(insteadOf(o.tool).map(n => [n, toolHash(n)])),
     heldAt: new Date(now).toISOString(),
     expiresAt: new Date(now + APPROVAL_TTL_MS).toISOString(),
@@ -170,7 +193,7 @@ export function takeAnswer(a: Answer, viewer: Viewer | null, now = Date.now()): 
   if (!viewer || viewer.id !== rec.viewer) return { ok: false, why: `Only ${rec.viewerName}, who asked for this, can answer it; nothing ran.` }
   if (Date.parse(rec.expiresAt) <= now) { release(rec); return { ok: false, why: 'This request expired before it was answered; nothing ran. Ask again to run it.' } }
   if (a.messageId !== rec.messageId) return { ok: false, why: 'The answer does not belong to this request; nothing ran.' }
-  if (toolHash(rec.tool) !== rec.hash) { release(rec); return { ok: false, why: `The ${rec.tool} tool changed after this was asked; nothing ran. Ask again to run it.` } }
+  if (heldHash(rec.tool) !== rec.hash) { release(rec); return { ok: false, why: `The ${rec.tool} tool changed after this was asked; nothing ran. Ask again to run it.` } }
   if (a.args !== undefined) {
     let held: Record<string, unknown> = {}
     try { held = JSON.parse(rec.args) } catch { /* compared as empty */ }
@@ -178,8 +201,8 @@ export function takeAnswer(a: Answer, viewer: Viewer | null, now = Date.now()): 
     try { sent = typeof a.args === 'string' ? JSON.parse(a.args) : a.args } catch { /* refused below */ }
     // Defaults the client left out are the held call's, from the same viewer.
     const filled = sent && typeof sent === 'object' && !Array.isArray(sent) ? { ...held, ...(sent as Record<string, unknown>) } : sent
-    const again = prepareArgs(rec.tool, filled, typeof held.user === 'string' ? held.user : null)
-    if (!('canonical' in again) || again.canonical !== rec.args) return { ok: false, why: 'The approval was for other arguments than the call that was asked for; nothing ran.' }
+    const again = canonicalOf(rec.tool, filled, typeof held.user === 'string' ? held.user : null)
+    if (again !== rec.args) return { ok: false, why: 'The approval was for other arguments than the call that was asked for; nothing ran.' }
   }
   let tool = rec.tool
   if (a.allowed && a.tool && a.tool !== rec.tool) {
@@ -201,7 +224,7 @@ const DONE: Record<string, string> = {
  * record holds and the viewer's key. Returns the text for the model and the
  * summary for the call's row in the chat.
  */
-export async function answerHeld(a: Answer, viewer: Viewer | null, key: string | null, enabled: (tool: string) => boolean): Promise<
+export async function answerHeld(a: Answer, viewer: Viewer | null, key: string | null, enabled: (tool: string) => boolean, started?: (rec: HeldCall) => void): Promise<
   { ok: false; why: string } | { ok: true; rec: HeldCall; tool: string; result: string; summary: string; failed: boolean }
 > {
   // Checked before the record is taken, so the call stays held for an
@@ -209,7 +232,7 @@ export async function answerHeld(a: Answer, viewer: Viewer | null, key: string |
   const pending = heldCall(a.conversationId, a.toolCallId)
   if (a.allowed && pending && viewer?.id === pending.viewer) {
     const tool = a.tool && a.tool !== pending.tool ? a.tool : pending.tool
-    if (!key) return { ok: false, why: 'Running this needs your own platform key, which you can add under Settings, Model access; nothing ran.' }
+    if (!key && !isTransferTool(tool)) return { ok: false, why: 'Running this needs your own platform key, which you can add under Settings, Model access; nothing ran.' }
     if (!enabled(tool)) return { ok: false, why: `${tool} is turned off for this deployment; nothing ran.` }
   }
   const taken = takeAnswer(a, viewer)
@@ -219,6 +242,7 @@ export async function answerHeld(a: Answer, viewer: Viewer | null, key: string |
     const said = a.feedback?.trim() ? ` They said: ${a.feedback.trim()}` : ''
     return { ok: true, rec, tool: rec.tool, result: `The user declined this call, so it did not run. Do not call it again unless the user asks.${said}`, summary: 'declined', failed: false }
   }
+  if (isTransferTool(tool)) return { ok: true, rec, tool, ...await runTransfer(rec, started) }
   let args: CallArgs = {}
   try { args = JSON.parse(rec.args) as CallArgs } catch { /* refused by the platform as incomplete */ }
   const out = await runPlatformTool(tool, args, key!)
@@ -229,4 +253,24 @@ export async function answerHeld(a: Answer, viewer: Viewer | null, key: string |
     ? `failed: ${out.result.slice(0, 160)}`
     : `${DONE[tool] ?? 'ran'}${target ? ` ${target}` : ''}${swapped ? ` (in place of ${rec.tool})` : ''}`
   return { ok: true, rec, tool, result, summary, failed: out.failed }
+}
+
+export const TRANSFER_RUNNING = 'copying, see the status panel'
+
+/** Starts an approved transfer and waits a moment for it, so a small copy is
+ *  reported in this reply. `started` runs before that wait, so a reload or a
+ *  restart during it finds the approval answered. A refusal here means
+ *  nothing ran. */
+async function runTransfer(rec: HeldCall, started?: (rec: HeldCall) => void): Promise<{ result: string; summary: string; failed: boolean }> {
+  try {
+    const running = startApproved(rec)
+    started?.(rec)
+    const job = await settled(running)
+    if (job.state === 'running') return { result: jobReport(job), summary: TRANSFER_RUNNING, failed: false }
+    const failed = job.state !== 'done'
+    return { result: jobReport(job), summary: failed ? `${job.state}: ${(job.message ?? '').slice(0, 160)}` : `copied ${planSummary({ items: [], files: job.files.done, bytes: job.bytes.done })}`, failed }
+  } catch (e) {
+    const why = e instanceof KbError ? e.message : `The copy could not start: ${String((e as Error).message ?? e).slice(0, 200)}`
+    return { result: why, summary: `not run: ${why.slice(0, 160)}`, failed: true }
+  }
 }

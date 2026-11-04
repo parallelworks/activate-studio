@@ -4,6 +4,7 @@ import './netStart.js'
 import Fastify from 'fastify'
 import { fleetRoutes, startFleet } from './fleet.js'
 import { setStopper } from './lifecycle.js'
+import { recoverTransfers } from './movers/jobs.js'
 import { setRunsLog, watchRegisteredRuns } from './runs.js'
 import { streamsInFlight } from './chat/routes.js'
 import fastifyStatic from '@fastify/static'
@@ -148,6 +149,9 @@ void import('./extensions.js').then(m => m.labelPersonas())
 void import('./tags.js').then(m => m.reapplyTagOverlay())
   .then(n => { if (n) app.log.info(`tag overlay: re-applied ${n} labeled paths`) })
   .catch(() => {})
+
+// A copy that was running when the last process stopped is interrupted.
+recoverTransfers()
 
 await app.listen({ host: HOST, port: PORT })
 

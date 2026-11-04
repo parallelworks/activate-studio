@@ -34,6 +34,7 @@ import { effectiveSettings } from './settings.js'
 import { curatedNames, platformAvailable } from './workflowsTab.js'
 import { authEnabled, authHeaderName } from './auth.js'
 import { remoteDownload, remoteFile, remoteTree } from './userLibraries.js'
+import { routeSummary } from './movers/source.js'
 import { downloadOriginal, openOriginal } from './originals.js'
 import { localBuildOffered, requestLibrarySync } from './libraryBuild.js'
 import { traced } from './gufiTrace.js'
@@ -918,6 +919,11 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
   // ---- libraries: what is mounted, and adding or removing one ----
   // `canBuild`: libraries can be built from folders on this computer (libraryBuild.ts).
   app.get('/api/libraries', async () => ({ libraries: (await probeAll(effectiveSettings().kbLabel)).map(settingsLibrary), canBuild: localBuildOffered() }))
+  // How each library the viewer sees is copied from, for Settings, Libraries.
+  app.get('/api/libraries/copy-routes', async req => {
+    const viewerId = (req as { user?: { id?: string } }).user?.id ?? null
+    return { routes: Object.fromEntries(listLibraries(undefined, viewerId).map(l => [l.id, routeSummary(l, viewerId)])) }
+  })
   app.post('/api/libraries', async req => {
     const b = req.body as { id?: string; label?: string; indexRoot?: string; sourceRoot?: string | null }
     const lib = await addLibrary({ id: String(b.id ?? '').trim().toLowerCase(), label: b.label, indexRoot: String(b.indexRoot ?? ''), sourceRoot: b.sourceRoot || null })

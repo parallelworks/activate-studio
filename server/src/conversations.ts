@@ -113,6 +113,8 @@ export interface StoredApprovalPart {
   resolved?: boolean
   answer?: string
   instead?: { tool: string; label: string; description?: string }[]
+  /** A transfer's plan, row by row. */
+  plan?: { label: string; value: string }[]
 }
 
 export type StoredPart = StoredToolCallPart | StoredApprovalPart
