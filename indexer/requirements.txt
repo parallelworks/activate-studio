@@ -3,8 +3,9 @@
 # PowerPoint, Excel and PDF files convert through @giraffesyo/downmark,
 # which ships with the server, and PDFs fall back to poppler's pdftotext.
 #
-# pypdf is read by enrich.py only where it is already importable, as a last
-# resort for a host that has neither the downmark binary nor poppler:
+# pypdf reads PDFs where there is neither the downmark binary nor poppler. A
+# build on a remote system gets it from the Studio (embed_deps.json, readers);
+# elsewhere enrich.py reads it where it is already importable:
 #
 #     pip install -r indexer/requirements.txt
 pypdf

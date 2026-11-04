@@ -96,6 +96,40 @@ test('a build status reads as running, finished, gone, or missing', () => {
   assert.equal(RB.parseStatus('state=missing\n').state, 'missing')
 })
 
+test('what a build could not read reads as a line for the row, with the count and the reason', () => {
+  const text = (documents, pdfReader, ocr = false) => ({ documents, pdfReader, ocr, textFiles: 1 })
+  const gaps = m => RB.buildGaps({ depth: 'ocr', ...m })
+  assert.deepEqual(gaps({ text: text({ '.pdf': { files: 312, noText: 312 } }, '') }), ['312 PDFs have no text: this system has no PDF reader'])
+  assert.deepEqual(gaps({ text: text({ '.pdf': { files: 2, noText: 1 } }, 'pypdf') }), ['1 PDF has no text: pypdf found none, as with scanned pages, and this system has no tesseract'])
+  assert.deepEqual(gaps({ depth: 'text', text: text({ '.pdf': { files: 2, noText: 2 } }, 'pdftotext') }), ['2 PDFs have no text: pdftotext found none, as with scanned pages, and this depth runs no OCR'])
+  assert.deepEqual(gaps({ text: text({ '.pdf': { files: 1, noText: 1 } }, 'pdftotext', true) }), ['1 PDF has no text: pdftotext and OCR found none, as with a damaged or protected file'])
+  assert.deepEqual(gaps({ text: text({ '.xls': { files: 4, noText: 3 }, '.pdf': { files: 9, noText: 0 } }, 'pypdf') }), ['3 .xls files have no text'])
+  assert.deepEqual(gaps({ textWhy: 'the text pass stopped: boom' }), ['No text in this index: the text pass stopped: boom'])
+  // An earlier version's manifest says nothing of this.
+  assert.deepEqual(RB.buildGaps({ index: '/i', files: 3, fullText: true, vectors: true }), [])
+})
+
+test('vectors are what the index holds: a pass that wrote none is not reported as vectors', () => {
+  const m = { depth: 'meaning-full', vectors: true, vectorRows: 0, pdfWords: 2, pdfVectors: 0, embed: { chunks: 9, errors: 3, firstError: 'no such module: vec0' } }
+  assert.equal(RB.vectorsMade(m), false)
+  assert.deepEqual(RB.buildGaps(m), ['No search by meaning: no vectors were written: no such module: vec0'])
+  assert.equal(RB.vectorsMade({ ...m, vectorRows: 9 }), true)
+  // Nothing to embed is not a failure.
+  assert.equal(RB.vectorsMade({ vectors: true, vectorRows: 0, embed: { chunks: 0 } }), true)
+  assert.deepEqual(RB.buildGaps({ depth: 'meaning-documents', vectors: true, vectorRows: 40, pdfWords: 3, pdfVectors: 2, embed: { chunks: 40, errors: 0 } }),
+    ['1 PDF has text but no vectors: too little of it reads as prose'])
+  assert.deepEqual(RB.buildGaps({ depth: 'meaning-full', vectors: false, vectorsWhy: 'there is no embedding model for this Python' }), ['No search by meaning: there is no embedding model for this Python'])
+  // Below a Meaning depth, no vectors is what was asked for.
+  assert.deepEqual(RB.buildGaps({ depth: 'text', vectors: false }), [])
+})
+
+test('the document readers are pinned, with what pypdf needs on Python 3.10, and the same for every platform', async () => {
+  const RE = await import('../dist/remoteEmbed.js')
+  const names = RE.readerFiles().map(f => f.name)
+  for (const n of ['pypdf-', 'typing_extensions-', 'xlrd-', 'olefile-']) assert.ok(names.some(x => x.includes(n)), n)
+  assert.match(RE.readersVersion(), /^[0-9a-f]{12}$/)
+})
+
 // The status script as a session runs it, on a state folder made here.
 // `prelude` is shell put before it, to place an event at a chosen moment.
 const statusOf = (home, id, indexDir, prelude = '') => RB.parseStatus(spawnSync('sh', ['-c', `${prelude}\n${RB.BUILD_STATUS}`, '_', id, indexDir],
@@ -395,9 +429,11 @@ test('a build there starts at Meaning on documents, and the check says what the 
   assert.equal(o.status, 200, JSON.stringify(o.body))
   assert.equal((await waitFor(o.body.id)).state, 'ready')
   const state = fs.readdirSync(path.join(homes['cluster-a'], '.activate-studio', 'builds')).find(b => b.startsWith(o.body.id))
-  for (const f of ['embed.py', 'embed_onnx.py', 'fetch_embed.py']) {
+  for (const f of ['embed.py', 'embed_onnx.py']) {
     assert.equal(fs.existsSync(path.join(homes['cluster-a'], '.activate-studio', 'builds', state, f)), false, `${f} is not sent`)
   }
+  // fetch_embed.py goes at every depth with text: it installs the document readers.
+  assert.equal(fs.existsSync(path.join(homes['cluster-a'], '.activate-studio', 'builds', state, 'fetch_embed.py')), true)
 })
 
 test('a build at the Names depth reads nothing from inside the files there', { skip }, async () => {
@@ -410,6 +446,7 @@ test('a build at the Names depth reads nothing from inside the files there', { s
   assert.equal(l.fullText, false, 'no text tables')
   const state = fs.readdirSync(path.join(homes['me@linux-box'], '.activate-studio', 'builds')).find(b => b.startsWith(r.body.id))
   assert.equal(fs.existsSync(path.join(homes['me@linux-box'], '.activate-studio', 'builds', state, 'enrich.py')), false, 'enrich.py is not sent')
+  assert.equal(fs.existsSync(path.join(homes['me@linux-box'], '.activate-studio', 'builds', state, 'fetch_embed.py')), false, 'fetch_embed.py is not sent')
   assert.equal((await post('/api/user-libraries/ssh/build', { ...box, sourceRoot: '~/project', indexRoot: '~/other', depth: 'deepest', create: true })).status, 400)
 })
 

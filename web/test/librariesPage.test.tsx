@@ -324,6 +324,18 @@ describe('Settings, Libraries', () => {
     expect(within(row).getByText('Rebuild makes it again.')).toBeInTheDocument()
   })
 
+  it('a remote build that could not read some files says how many and why on its row, and one that read everything says Ready', async () => {
+    const line = '312 PDFs have no text: this system has no PDF reader'
+    const done = { ...BUILT_REMOTE, indexRoot: '/home/me/.activate-studio/indexes/data-1a2b3c4d/data', state: 'ready', directories: 4, files: 400, builtAt: '2026-10-01T00:00:00Z', progress: null, error: null }
+    await renderPage(server({ libs: [PRIMARY], user: [{ ...done, gaps: [line] }, { ...done, id: 'u-box-whole', label: 'whole on box', gaps: [] }] }))
+    const row = await waitFor(() => rowOf('data on box'))
+    expect(within(row).getByText('Ready; some files were not read')).toBeInTheDocument()
+    expect(within(row).getByText(line)).toBeInTheDocument()
+    const whole = await waitFor(() => rowOf('whole on box'))
+    expect(within(whole).getByText('Ready')).toBeInTheDocument()
+    expect(screen.getAllByText(line)).toHaveLength(1)
+  })
+
   it('an index GUFI 0.8.0 reads wrongly says why on its row, whatever kind of library it is, and no other row has a note', async () => {
     const note = 'Written by a GUFI before 0.8.0 and rolled up, so the files of the folders it rolled up are listed more than once and counts and sizes over them are too high; rebuild it with GUFI 0.8.0 or later.'
     const rolled = { ...SITE, id: 'rolled', label: 'Rolled up', formatNote: note }

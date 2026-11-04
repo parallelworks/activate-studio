@@ -321,6 +321,36 @@ fill `INDEX_BASE/embed-wheels` on another computer with
 `python3 indexer/fetch_embed.py --download --platform <platform> --cache <folder>`
 and copy the folder there.
 
+The document readers (pypdf, with typing_extensions for Python 3.10, xlrd
+and olefile) are pinned in the same file under `readers`, and are pure
+Python, so one set serves every platform and every Python the build
+accepts. At every depth with text they go the same way to
+`~/.activate-studio/readers/<digest of the pins>`, before the text pass,
+which waits for them; a host with no poppler reads its PDFs with that
+pypdf, with no network there. `fetch_embed.py --download-readers --cache
+<folder>` fetches them for a Studio without network; the platform bundle
+and the macOS app carry them in `app/indexer/wheels`.
+
+The build records in `.studio-index.json` what it could not read:
+`pdfWords`, `pdfVectors` and `vectorRows`, counted from the finished index
+with `gufi_query`; `text` and `embed`, the reports of `enrich.py` and
+`embed.py` (files and files with no text per document type, the PDF
+reader used, passages, errors); `textWhy` and `vectorsWhy`, why a pass did
+not run or stopped; and `depth`. The library's row shows these as a count
+and a reason. A library whose vector tables hold nothing, though passages
+were cut, counts as having no vectors. A Rebuild reads what the system can
+run again, so a Python installed since the library was added is used. It
+walks every folder again and reuses `.extract`, so only documents without
+text are read again; a document that gave no text is never cached.
+
+To see which case a library is in, on the system that holds it:
+
+```
+python3 --version; command -v pdftotext
+cat <index folder>/.studio-index.json
+ls ~/.activate-studio/builds/ ~/.activate-studio/readers/
+```
+
 Where the packages cannot be had or do not import there, the build uses
 the GGUF model through sqlite-lembed (`minilm384`) where
 `~/.activate-studio/models/minilm384.gguf` is on that system, whose

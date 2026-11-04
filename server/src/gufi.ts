@@ -239,8 +239,10 @@ export function nameClause(term: string): string {
 /** The same clause over any text column or expression; a folder path also
  *  starts a word after a slash. */
 function likeClause(col: string, term: string): string {
-  const t = term.replace(/[%_]/g, '')
-  if (!t) return '0'
+  const t = term.replace(/%/g, '')
+  if (!t.replace(/_/g, '')) return '0'
+  // An underscore is part of many file names: NIST_SP811 matches itself.
+  if (t.includes('_')) return `${col} LIKE ${q('%' + t.replace(/\\/g, '\\\\').replace(/_/g, '\\_') + '%')} ESCAPE '\\'`
   if (t.length > 3) return `${col} LIKE ${q('%' + t + '%')}`
   const starts = ['', ' ', '-', '_', '.', '(', '[', ',', ...(col === 'name' ? [] : ['/'])]
   return '(' + starts.map(sep => `${col} LIKE ${q((sep ? '%' + sep : '') + t + '%')}`).join(' OR ') + ')'
