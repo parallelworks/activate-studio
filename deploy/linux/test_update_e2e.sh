@@ -16,6 +16,10 @@
 #    and the server keeps running.
 # 4. A release that verifies but whose server will not start is installed,
 #    and the run loop puts the previous payload back after three stops.
+# 4b. A server killed (SIGKILL) between the two directory moves of an update,
+#    once with the new payload complete and once with it partial: the run loop
+#    finishes the swap in the first case and puts the previous payload back in
+#    the second.
 # 5. The same payload installed read-only under /opt, as a package leaves it
 #    (install-kind deb, rpm, and none), is told the version and the package
 #    command, refuses to install, and changes nothing in the tree.
@@ -75,6 +79,7 @@ if [ -n "${OVERLAY_SRC:-}" ]; then
   rm -rf "$APP/app/server/dist"
   cp -R "$OVERLAY_SRC/server/dist" "$APP/app/server/dist"
   cp "$OVERLAY_SRC/deploy/linux/studio-run.sh" "$APP/studio-run.sh"
+  cp "$OVERLAY_SRC/deploy/linux/studio-recover.sh" "$APP/studio-recover.sh"
   chown -R tester "$APP"
 fi
 "$NODE" "$MJS" keygen "$T/keys"
@@ -215,7 +220,45 @@ grep -q 'v98.4 stopped 3 times within two minutes; v98.2 is back' "$DATA/logs/st
 [ ! -e "$DATA/updates/pending.json" ] && ok "the update mark is cleared" || bad "pending.json is still there"
 [ "$(ls -A "$USERLIB" | tr '\n' ' ')" = "activate-studio " ] && ok "the failed payload is gone and no copy is left" || bad "left in $USERLIB: $(ls -A "$USERLIB" | tr '\n' ' ')"
 kill -0 "$LOOP" 2>/dev/null && ok "the same run loop process, through both hand overs" || bad "the run loop process ended"
+# ---- 4b. a server killed between the two moves of an update ----
+
+echo "A server killed between the two moves of an update"
+LIBNAME=activate-studio
+BESIDE="$USERLIB/.$LIBNAME"
+# What the server has done when it is killed after the first move: the swap file written, the
+# running payload set aside as .previous, the new one staged as .new. The kill is real.
+# cut_off TAG [partial]
+cut_off() {
+  local tag="$1" how="${2:-}" pid
+  as_tester sh -c "chmod -R u+w '$BESIDE.previous' '$BESIDE.new' 2>/dev/null; rm -rf '$BESIDE.previous' '$BESIDE.new'"
+  as_tester cp -a "$APP" "$BESIDE.new"
+  "$NODE" "$MJS" stamp "$BESIDE.new" "$tag" "$T/keys/update.pub"
+  [ "$how" = partial ] && rm -f "$BESIDE.new/node/bin/node"
+  chown -R tester "$BESIDE.new"
+  as_tester mkdir -p "$DATA/updates"
+  printf '{\n "from": "%s",\n "to": "%s",\n "at": "2026-11-04T00:00:00Z",\n "reopen": "no"\n}\n' "$CUR" "$tag" | as_tester tee "$DATA/updates/swap.json" >/dev/null
+  pid="$(server_pid "$LOOP")"
+  as_tester mv "$APP" "$BESIDE.previous"
+  kill -KILL "$pid"
+}
+CUR=v98.2
+cut_off v98.5
+if wait_version "$PORT" v98.5 90; then ok "the run loop finished the swap: the server answers as v98.5"; else bad "no v98.5 after the kill:"; log_tail "$DATA"; fi
+kill -0 "$LOOP" 2>/dev/null && ok "the same run loop process is the supervisor" || bad "the run loop process ended"
+[ ! -e "$DATA/updates/swap.json" ] && ok "the swap file is gone" || bad "swap.json is still there"
+[ "$(field 'd["to"]' <"$DATA/updates/pending.json" 2>/dev/null)" = v98.5 ] && ok "the update is recorded as pending, so a new version that keeps stopping is rolled back" || bad "no pending mark for v98.5"
+[ "$("$PY" -B -I -c 'import json, sys; print(json.load(open(sys.argv[1]))["version"])' "$BESIDE.previous/app/build-info.json")" = v98.2 ] && ok "the previous payload is v98.2" || bad "the previous payload is not v98.2"
+[ "$(stat -c %U "$APP/studio-run.sh")" = tester ] && ok "the payload belongs to the user" || bad "the payload's owner is $(stat -c %U "$APP/studio-run.sh")"
+rm -f "$DATA/updates/pending.json"
+CUR=v98.5
+cut_off v98.6 partial
+if wait_version "$PORT" v98.5 90; then ok "with the new payload partial, the previous one came back: v98.5 answers"; else bad "no v98.5 after the partial kill:"; log_tail "$DATA"; fi
+kill -0 "$LOOP" 2>/dev/null && ok "the same run loop process, again" || bad "the run loop process ended"
+[ "$("$PY" -B -I -c 'import json, sys; d = json.load(open(sys.argv[1])); print(d["from"], d["to"])' "$DATA/updates/rolled-back.json" 2>/dev/null)" = "v98.6 v98.5" ] && ok "rolled-back.json says the update to v98.6 was interrupted" || bad "rolled-back.json is wrong"
+[ ! -e "$DATA/updates/pending.json" ] && [ ! -e "$DATA/updates/swap.json" ] && ok "no pending mark and no swap file" || bad "pending.json or swap.json is left"
+
 stop_loop "$LOOP"
+as_tester sh -c "chmod -R u+w '$BESIDE.previous' '$BESIDE.new' 2>/dev/null; rm -rf '$BESIDE.previous' '$BESIDE.new'"
 rm -rf "$USERLIB/activate-studio"
 
 # ---- 5. installs a package manager owns ----
@@ -231,6 +274,7 @@ if [ -n "${OVERLAY_SRC:-}" ]; then
   rm -rf "$OPT/app/server/dist"
   cp -R "$OVERLAY_SRC/server/dist" "$OPT/app/server/dist"
   cp "$OVERLAY_SRC/deploy/linux/studio-run.sh" "$OPT/studio-run.sh"
+  cp "$OVERLAY_SRC/deploy/linux/studio-recover.sh" "$OPT/studio-recover.sh"
 fi
 "$NODE" "$MJS" stamp "$OPT" v98.1 "$T/keys/update.pub"
 chmod -R go-w,a+rX "$OPT"

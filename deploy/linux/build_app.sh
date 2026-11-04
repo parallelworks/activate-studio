@@ -211,13 +211,16 @@ fi
 
 echo "Run loop, update key, icon..."
 cp "$HERE/studio-run.sh" "$APP/studio-run.sh"
+# Finishes or undoes an update that was cut off between its two moves; the
+# run loop reads it in, and a launcher can run it from a leftover copy.
+cp "$HERE/studio-recover.sh" "$APP/studio-recover.sh"
 # The public key updates are verified with (deploy/linux/sign_release.sh signs
 # them with the macOS app's key); a per-user install's server reads it from
 # here before it installs an update.
 cp "$HERE/../mac/update-signing.pub" "$APP/update-signing.pub"
 # The icon a launcher entry or a package names, a 1024-pixel PNG.
 cp "$HERE/../mac/AppIcon-1024.png" "$APP/share/activate-studio.png"
-chmod 755 "$APP/studio-run.sh"
+chmod 755 "$APP/studio-run.sh" "$APP/studio-recover.sh"
 
 # Links that lead nowhere, such as the one pnpm leaves in .pnpm/node_modules
 # for the workspace's own server package (it points at the source checkout

@@ -16,6 +16,13 @@
 # instead, and DATA/updates/rolled-back.json says so. A server that stays up
 # a minute clears the mark itself.
 #
+# An update replaces the payload's directory in two moves, so a process cut
+# off between them leaves no payload at its path. Before each start, and
+# when the server stops, this loop looks for that (studio-recover.sh, read in
+# at the start so that it is still here when the directory is not): it puts
+# the previous payload back, or finishes the swap when the new one is
+# complete, and then runs whichever copy is now at its path.
+#
 # What the macOS app's run loop does and this one does not, for now: read
 # the desktop's proxy settings (the server follows HTTPS_PROXY, HTTP_PROXY
 # and NO_PROXY from the environment or studio.env).
@@ -70,6 +77,23 @@ LOGIN_KRB5CCNAME="$(printf '%s\n' "$LOGIN_ENV" | sed -n 's/^__STUDIO_KRB5CCNAME_
 # One string from pending.json.
 field() { sed -n "s/.*\"$1\": *\"\([^\"]*\)\".*/\1/p" "$PENDING" 2>/dev/null | head -n 1; }
 
+# The recovery function, read in while the payload is here.
+# shellcheck source=studio-recover.sh
+[ -f "$RES/studio-recover.sh" ] && . "$RES/studio-recover.sh"
+
+# Finish or undo a cut-off update (see the top). Cheap when nothing is wrong:
+# two tests. Runs the loop of the payload it put back or completed in place
+# of this one.
+recover() {
+  type studio_recover >/dev/null 2>&1 || return 0
+  [ -f "$RES/studio-run.sh" ] && [ ! -f "$DATA/updates/swap.json" ] && return 0
+  studio_recover "$RES" "$DATA" >/dev/null 2>&1
+  if [ $? = 10 ] && [ -f "$RES/studio-run.sh" ]; then
+    exec /bin/bash "$RES/studio-run.sh" "$DATA"
+  fi
+  return 0
+}
+
 # Put the previous payload back and run its own loop in place of this one.
 roll_back() {
   local from to failed
@@ -105,6 +129,7 @@ roll_back() {
 backoff=2
 failures=
 while [ "$stopping" = 0 ]; do
+  recover
   # One previous log is kept.
   if [ -f "$LOG" ] && [ $(( $(wc -c <"$LOG") )) -gt 10485760 ]; then mv -f "$LOG" "$LOG.1"; fi
   (

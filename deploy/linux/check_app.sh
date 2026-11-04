@@ -50,7 +50,7 @@ check() { local what="$1"; shift; if "$@" >/dev/null 2>&1; then ok "$what"; else
 
 if [ "$STATIC" = 1 ]; then
   echo "Layout"
-  for f in studio-run.sh update-signing.pub manifest.json LICENSE NOTICE share/activate-studio.png \
+  for f in studio-run.sh studio-recover.sh update-signing.pub manifest.json LICENSE NOTICE share/activate-studio.png \
     node/bin/node node/lib/libatomic.so.1 node/LICENSE python/bin/python3 \
     models/minilm384.gguf models/minilm-l6/model.onnx models/minilm-l6/tokenizer.json \
     app/build-info.json app/package.json app/server/dist/main.js app/server/node_modules/fastify/package.json \
@@ -81,7 +81,7 @@ PY
   check "and no other platform's" sh -c "! find '$APP/app/server/node_modules' \\( -name 'downmark-darwin-*' -o -name 'downmark-win32-*' -o -name 'downmark-linux-arm64' \\) | grep -q ."
 
   echo "Scripts"
-  for s in "$APP/studio-run.sh" "$HERE/build_app.sh" "$HERE/build_gufi.sh" "$HERE/build_ocr.sh" "$HERE/check_app.sh"; do
+  for s in "$APP/studio-run.sh" "$APP/studio-recover.sh" "$HERE/build_app.sh" "$HERE/build_gufi.sh" "$HERE/build_ocr.sh" "$HERE/check_app.sh"; do
     check "bash -n $(basename "$s")" bash -n "$s"
     if command -v shellcheck >/dev/null 2>&1; then
       check "shellcheck $(basename "$s")" shellcheck -x -s bash -S warning "$s"
