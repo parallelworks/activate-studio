@@ -698,6 +698,9 @@ textarea.field { line-height: 1.5; }
 .query-actions { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
 .query-error { margin-top: 12px; }
 .query-results { overflow: hidden; }
+/* Where the controls fill the pane, the results keep their height and the
+   pane scrolls; they used to shrink to nothing. */
+@media (max-width: 760px), (max-height: 620px) { .query-results { flex: none; } }
 .table-scroll { overflow: auto; max-height: calc(100vh - 320px); }
 .table-scroll td.cell-path { font-family: ui-monospace, monospace; font-size: 12px; color: var(--pw-text); cursor: pointer; }
 .table-scroll td.cell-path:hover { color: var(--pw-link); }

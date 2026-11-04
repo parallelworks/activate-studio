@@ -155,9 +155,9 @@ export function OverviewView({ onOpen }: { onOpen: (path: string) => void }) {
         </section>
       )}
       <StatTileGroup>
-        <StatTile value={stats?.files ?? '…'} label="files indexed" />
-        <StatTile value={stats?.dirs ?? '…'} label="directories" />
-        <StatTile value={stats?.totalBytes ? fmtBytes(stats.totalBytes) : '…'} label="corpus size" />
+        <StatTile value={stats?.files ?? 0} loading={!stats} label="files indexed" />
+        <StatTile value={stats?.dirs ?? 0} loading={!stats} label="directories" />
+        <StatTile value={stats?.totalBytes ? fmtBytes(stats.totalBytes) : 0} loading={!stats} label="corpus size" />
         <StatTile
           value={<span title={ix.detail ?? undefined}>{ix.running ? (phaseLine(idx?.job) ?? 'indexing') : ix.tone === 'success' ? 'healthy' : ix.tone === 'muted' ? 'not built' : 'attention'}</span>}
           label={ix.running ? 'indexing now' : `index · sync ${ago(idx?.lastSweepAt ?? null)}`}
