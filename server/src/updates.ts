@@ -928,15 +928,31 @@ async function swapIn(p: Prepared): Promise<void> {
   const prev = beside('previous')
   st.state = 'installing'
   await rmTree(prev)
-  await fsp.rename(app, prev)
+  // The payload is at no path for the time between the two moves. A process
+  // cut off there leaves it that way, so the Linux swap is written down
+  // first: the run loop, and the launcher, read this file at start and
+  // finish the swap or undo it (deploy/linux/studio-recover.sh).
+  const linux = kit()?.flavor === 'linux'
+  const journal = inUpdates('swap.json')
+  if (linux) {
+    await writeJson(journal, { from: p.from, to: p.version, at: new Date().toISOString(), reopen: p.shellChanged ? 'yes' : 'no' })
+  }
+  try {
+    await fsp.rename(app, prev)
+  } catch (e) {
+    await fsp.rm(journal, { force: true })
+    throw e
+  }
   try { await fsp.rename(next, app) } catch (e) {
     await fsp.rename(prev, app).catch(() => {})
+    await fsp.rm(journal, { force: true })
     throw e
   }
   refreshIcon(app)
   await writeJson(inUpdates('pending.json'), { from: p.from, to: p.version, at: new Date().toISOString() })
   await fsp.rm(inUpdates('rolled-back.json'), { force: true })
   if (p.shellChanged) await fsp.writeFile(inUpdates('reopen'), `${p.version}\n`)
+  await fsp.rm(journal, { force: true })
 }
 
 function fail(e: unknown): void {

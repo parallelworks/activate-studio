@@ -108,6 +108,7 @@ L.setStopper(code => { stops.push(code) })
 /** A payload tree: what the installer checks, with the real run loop. */
 function payloadTree(dir, version, { key = PUB, kind, shell, manifest = {}, noRun = false, node = '#!/bin/sh\n', locked = false } = {}) {
   if (!noRun) write(path.join(dir, 'studio-run.sh'), fs.readFileSync(path.join(LINUX, 'studio-run.sh')), 0o755)
+  write(path.join(dir, 'studio-recover.sh'), fs.readFileSync(path.join(LINUX, 'studio-recover.sh')), 0o755)
   write(path.join(dir, 'node', 'bin', 'node'), node, 0o755)
   write(path.join(dir, 'app', 'server', 'dist', 'main.js'), '// server\n')
   write(path.join(dir, 'app', 'build-info.json'), `{\n "version": "${version}",\n "builtAt": "2026-10-01T00:00:00Z"\n}\n`)
@@ -591,6 +592,254 @@ test('exit 76 hands the run loop over to the payload now at its path', async () 
     assert.ok(await until(() => loop.exitCode !== null))
   } finally {
     loop.kill('SIGKILL')
+  }
+})
+
+// ---- an update cut off between its two moves ----
+
+const NEW = path.join(LIB, '.activate-studio.new')
+const FAILED = path.join(LIB, '.activate-studio.failed')
+const SWAP = path.join(UPD, 'swap.json')
+const PENDING = path.join(UPD, 'pending.json')
+const ROLLED_BACK = path.join(UPD, 'rolled-back.json')
+const stuck = () => new Promise(() => {})
+const json = file => JSON.parse(fs.readFileSync(file, 'utf8'))
+
+/** Run the install through the real server and stop it dead at the move
+ *  `hang` picks (the promise never settles, as if the process were killed
+ *  there), leaving the files exactly as that step left them. */
+async function killedAt(hang) {
+  await fresh()
+  setReleases([release('v1.140')])
+  await j('POST', '/api/updates/check')
+  const real = fsp.rename
+  let hit = false
+  fsp.rename = (from, to) => {
+    if (hang(String(from), String(to))) { hit = true; return stuck() }
+    return real(from, to)
+  }
+  try {
+    await j('POST', '/api/updates/install')
+    assert.ok(await until(() => hit), 'the install reached the step')
+    await sleep(100)
+  } finally {
+    fsp.rename = real
+  }
+}
+
+/** The launcher's way in: the recovery script of whichever copy is left, run on the payload's path. */
+function recoverFrom(dir, { wait = '0' } = {}) {
+  const r = spawnSync('bash', [path.join(dir, 'studio-recover.sh'), ROOT, DATA], { encoding: 'utf8', env: { PATH: '/usr/bin:/bin', STUDIO_RECOVER_WAIT: wait } })
+  return { status: r.status, out: String(r.stdout) + String(r.stderr) }
+}
+const log = () => { try { return fs.readFileSync(path.join(DATA, 'logs', 'studio.log'), 'utf8') } catch { return '' } }
+
+test('killed after the first move (the payload is at no path): the new payload, complete, is moved into place and recorded as pending', async () => {
+  await killedAt((from, to) => to === ROOT && from.endsWith('.activate-studio.new'))
+  assert.ok(!fs.existsSync(ROOT), 'the payload is gone from its path')
+  assert.equal(versionIn(PREVIOUS), 'v1.139')
+  assert.equal(versionIn(NEW), 'v1.140')
+  assert.equal(json(SWAP).to, 'v1.140')
+  const r = recoverFrom(NEW)
+  assert.equal(r.status, 10, r.out)
+  assert.equal(versionIn(ROOT), 'v1.140')
+  assert.equal(versionIn(PREVIOUS), 'v1.139', 'the old payload stays available to roll back to')
+  assert.ok(!fs.existsSync(NEW) && !fs.existsSync(SWAP))
+  const p = json(PENDING)
+  assert.equal(p.from, 'v1.139')
+  assert.equal(p.to, 'v1.140')
+  assert.match(log(), /the update to v1\.140 was cut off between its two moves/)
+  assert.equal(recoverFrom(ROOT).status, 0, 'nothing more to do')
+})
+
+test('killed after the first move, with the new payload partial: the previous payload is put back', async () => {
+  await killedAt((from, to) => to === ROOT && from.endsWith('.activate-studio.new'))
+  // The server only swaps what it has checked, but a half-copied tree must not be promoted whatever put it there.
+  fs.rmSync(path.join(NEW, 'node', 'bin', 'node'))
+  const r = recoverFrom(PREVIOUS)
+  assert.equal(r.status, 10, r.out)
+  assert.equal(versionIn(ROOT), 'v1.139')
+  assert.ok(!fs.existsSync(PREVIOUS) && !fs.existsSync(SWAP))
+  assert.ok(!fs.existsSync(PENDING), 'no mark for an update that did not happen')
+  const back = json(ROLLED_BACK)
+  assert.equal(back.from, 'v1.140')
+  assert.equal(back.to, 'v1.139')
+  assert.match(back.reason, /interrupted/)
+  assert.match(log(), /v1\.139 is back/)
+})
+
+test('killed after the first move, with the new payload the wrong version or cut short in a file: the previous payload is put back', async () => {
+  for (const damage of [
+    () => fs.writeFileSync(path.join(NEW, 'app', 'build-info.json'), '{ "version": "v1.150" }\n'),
+    () => fs.writeFileSync(path.join(NEW, 'app', 'build-info.json'), '{ "versi'),
+    () => fs.rmSync(path.join(NEW, 'manifest.json')),
+    () => fs.rmSync(path.join(NEW, 'app', 'server', 'dist', 'main.js')),
+    () => fs.rmSync(path.join(NEW, 'update-signing.pub')),
+    () => fs.chmodSync(path.join(NEW, 'studio-run.sh'), 0o644),
+  ]) {
+    await killedAt((from, to) => to === ROOT && from.endsWith('.activate-studio.new'))
+    damage()
+    assert.equal(recoverFrom(NEW).status, 10)
+    assert.equal(versionIn(ROOT), 'v1.139', String(damage))
+  }
+})
+
+test('killed after the first move, with no swap file (a server that predates it): the previous payload is put back, a staged copy is never promoted', async () => {
+  await killedAt((from, to) => to === ROOT && from.endsWith('.activate-studio.new'))
+  fs.rmSync(SWAP)
+  assert.equal(recoverFrom(NEW).status, 10)
+  assert.equal(versionIn(ROOT), 'v1.139')
+  assert.ok(!fs.existsSync(PENDING))
+})
+
+test('killed after the second move, before the update is recorded: the swap file is turned into the pending mark', async () => {
+  await killedAt((from, to) => to === PENDING)
+  assert.equal(versionIn(ROOT), 'v1.140')
+  assert.equal(versionIn(PREVIOUS), 'v1.139')
+  assert.ok(!fs.existsSync(PENDING))
+  assert.ok(fs.existsSync(SWAP))
+  const r = recoverFrom(ROOT)
+  assert.equal(r.status, 0, r.out)
+  assert.equal(versionIn(ROOT), 'v1.140')
+  assert.ok(!fs.existsSync(SWAP))
+  const p = json(PENDING)
+  assert.equal(p.from, 'v1.139')
+  assert.equal(p.to, 'v1.140')
+  assert.match(log(), /cut off before it was recorded/)
+})
+
+test('killed before the first move: the swap file is removed and the payload is left alone', async () => {
+  await killedAt((from, to) => to === PREVIOUS && from === ROOT)
+  assert.equal(versionIn(ROOT), 'v1.139')
+  assert.ok(fs.existsSync(SWAP))
+  const before = snapshot(ROOT)
+  const r = recoverFrom(ROOT)
+  assert.equal(r.status, 0, r.out)
+  assert.ok(!fs.existsSync(SWAP))
+  assert.ok(!fs.existsSync(PENDING))
+  assert.deepEqual(snapshot(ROOT), before)
+})
+
+test('an update that reports a changed window program is recovered with the reopen request', async () => {
+  await fresh('v1.139', { tree: { shell: '#!/bin/sh\necho one\n' } })
+  setReleases([release('v1.140', { app: { shell: '#!/bin/sh\necho two\n' } })])
+  await j('POST', '/api/updates/check')
+  const real = fsp.rename
+  let hit = false
+  fsp.rename = (from, to) => (String(to) === ROOT && String(from).endsWith('.activate-studio.new') ? ((hit = true), stuck()) : real(from, to))
+  try {
+    await j('POST', '/api/updates/install')
+    assert.ok(await until(() => hit))
+  } finally { fsp.rename = real }
+  assert.equal(recoverFrom(NEW).status, 10)
+  assert.equal(fs.readFileSync(path.join(UPD, 'reopen'), 'utf8'), 'v1.140\n')
+})
+
+test('a rollback or a loop rollback cut off between its moves: the previous payload is put back', async () => {
+  await fresh('v1.140')
+  payloadTree(PREVIOUS, 'v1.139')
+  // The first move of a rollback: the running payload is set aside as .failed.
+  fs.renameSync(ROOT, FAILED)
+  assert.ok(!fs.existsSync(ROOT))
+  assert.equal(recoverFrom(PREVIOUS).status, 10)
+  assert.equal(versionIn(ROOT), 'v1.139')
+  assert.equal(json(ROLLED_BACK).from, 'v1.140', 'the failed copy is named')
+})
+
+test('a payload that is there, with no swap file, is left alone; a tree that is gone with nothing beside it is reported', async () => {
+  await fresh()
+  const before = snapshot(ROOT)
+  assert.equal(recoverFrom(ROOT).status, 0)
+  assert.deepEqual(snapshot(ROOT), before)
+  const lone = spawnSync('bash', [path.join(ROOT, 'studio-recover.sh'), path.join(tmp, 'nowhere', 'activate-studio'), DATA], { encoding: 'utf8', env: { PATH: '/usr/bin:/bin', STUDIO_RECOVER_WAIT: '0' } })
+  assert.equal(lone.status, 1)
+  assert.match(String(lone.stdout), /nothing to restore it from/)
+})
+
+/** A run loop at ROOT whose server, started once, does what a killed update leaves: the payload
+ *  moved aside, the new one staged, the swap file written, the server dead (status 137). */
+function interruptedLoop(name, { shape, newNode = '#!/bin/bash\necho new >>"$OUT/starts"\ntrap \'exit 0\' TERM\nwhile :; do sleep 0.1; done\n' }) {
+  const root = path.join(tmp, name)
+  const out = path.join(root, 'out')
+  const payload = path.join(root, 'lib', 'activate-studio')
+  const data = path.join(root, 'data')
+  fs.mkdirSync(out, { recursive: true })
+  const lib = path.join(root, 'lib')
+  const stage = path.join(root, 'stage')
+  payloadTree(stage, 'v1.140', { node: newNode })
+  // What the old server does on its first start, and not on a later one, then dies.
+  const killer = `#!/bin/bash
+echo old >>"$OUT/starts"
+if [ ! -f "$OUT/done" ]; then
+  : >"$OUT/done"
+  mkdir -p "${data}/updates"
+  printf '{\\n "from": "v1.139",\\n "to": "v1.140",\\n "at": "2026-11-04T00:00:00Z",\\n "reopen": "no"\\n}\\n' >"${data}/updates/swap.json"
+  mv "${stage}" "${lib}/.activate-studio.new"
+  ${shape}
+  exit 137
+fi
+trap 'exit 0' TERM
+while :; do sleep 0.1; done
+`
+  payloadTree(payload, 'v1.139', { node: killer })
+  const loop = spawn('bash', [path.join(payload, 'studio-run.sh'), data], { env: { HOME: root, PATH: '/usr/bin:/bin', OUT: out, STUDIO_RECOVER_WAIT: '0' }, stdio: 'ignore' })
+  const starts = () => { try { return fs.readFileSync(path.join(out, 'starts'), 'utf8').trim().split('\n') } catch { return [] } }
+  return { root, lib, payload, data, loop, starts }
+}
+
+test('the run loop finishes a swap its server was killed in the middle of, and runs the new payload\'s own loop', async () => {
+  const c = interruptedLoop('loop-finish', { shape: `mv "${path.join(tmp, 'loop-finish', 'lib', 'activate-studio')}" "${path.join(tmp, 'loop-finish', 'lib', '.activate-studio.previous')}"` })
+  try {
+    assert.ok(await until(() => c.starts().includes('new'), 30_000), `starts: ${c.starts()}`)
+    assert.deepEqual(c.starts(), ['old', 'new'])
+    assert.equal(c.loop.exitCode, null, 'the same process, still the supervisor')
+    assert.equal(versionIn(c.payload), 'v1.140')
+    assert.equal(versionIn(path.join(c.lib, '.activate-studio.previous')), 'v1.139')
+    assert.deepEqual(listing(c.lib), ['.activate-studio.previous', 'activate-studio'])
+    const p = json(path.join(c.data, 'updates', 'pending.json'))
+    assert.equal(p.to, 'v1.140')
+    assert.ok(!fs.existsSync(path.join(c.data, 'updates', 'swap.json')))
+    c.loop.kill('SIGTERM')
+    assert.ok(await until(() => c.loop.exitCode !== null))
+  } finally {
+    c.loop.kill('SIGKILL')
+  }
+})
+
+test('the run loop puts the previous payload back when the staged one is not complete', async () => {
+  const lib = path.join(tmp, 'loop-partial', 'lib')
+  const c = interruptedLoop('loop-partial', { shape: `mv "${lib}/activate-studio" "${lib}/.activate-studio.previous"; rm -f "${lib}/.activate-studio.new/node/bin/node"` })
+  try {
+    assert.ok(await until(() => c.starts().length >= 2, 30_000), `starts: ${c.starts()}`)
+    assert.deepEqual(c.starts(), ['old', 'old'])
+    assert.equal(versionIn(c.payload), 'v1.139')
+    assert.equal(json(path.join(c.data, 'updates', 'rolled-back.json')).to, 'v1.139')
+    assert.ok(!fs.existsSync(path.join(c.data, 'updates', 'pending.json')))
+    c.loop.kill('SIGTERM')
+    assert.ok(await until(() => c.loop.exitCode !== null))
+  } finally {
+    c.loop.kill('SIGKILL')
+  }
+})
+
+test('the three-stop rollback still applies to an update the run loop finished itself', async () => {
+  // The finished swap is recorded as pending, so a new version that keeps stopping is rolled back as after any update.
+  const lib = path.join(tmp, 'loop-then-rollback', 'lib')
+  const c = interruptedLoop('loop-then-rollback', {
+    shape: `mv "${lib}/activate-studio" "${lib}/.activate-studio.previous"`,
+    newNode: '#!/bin/bash\necho new >>"$OUT/starts"\nexit 1\n',
+  })
+  try {
+    // The previous payload is the old tree, whose server stays up on its second start.
+    assert.ok(await until(() => c.starts().length >= 5, 60_000), `starts: ${c.starts()}`)
+    assert.deepEqual(c.starts(), ['old', 'new', 'new', 'new', 'old'])
+    assert.equal(versionIn(c.payload), 'v1.139')
+    assert.equal(json(path.join(c.data, 'updates', 'rolled-back.json')).from, 'v1.140')
+    assert.ok(!fs.existsSync(path.join(c.data, 'updates', 'pending.json')))
+    c.loop.kill('SIGTERM')
+    assert.ok(await until(() => c.loop.exitCode !== null))
+  } finally {
+    c.loop.kill('SIGKILL')
   }
 })
 

@@ -106,7 +106,15 @@ The check runs on the same schedule as the macOS app's. For a release with the a
 
 A download that fails any check leaves the payload as it was and removes what it fetched; automatic installation does not try that version again until the Studio restarts, and **Update now** tries it again. After an update the run loop watches `pending.json`: three stops within two minutes put `.activate-studio.previous` back and say so in `updates/rolled-back.json`, which Settings shows once; a server that stays up for a minute clears the mark. Settings, Updates keeps **Roll back** while `.activate-studio.previous` exists. Automatic installation when idle works as on macOS.
 
-The swap is two renames in one directory, so the payload's path is missing for the moment between them; the running Studio is unaffected, since its files stay open in the moved tree. The Studio is the only writer.
+The swap is two renames in one directory, so the payload's path is missing for the moment between them; the running Studio is unaffected, since its files stay open in the moved tree. A process that dies in that moment (a kill, the computer losing power) would leave only `.activate-studio.previous` and the staged `.activate-studio.new`, so the swap is recoverable. Before the first rename the server writes `updates/swap.json` (the versions, and whether the window program changed), and removes it after `pending.json` is written. `studio-recover.sh`, in the payload's top directory, reads it:
+
+- With the payload missing, the swap file naming a version, and `.activate-studio.new` complete (`studio-run.sh` and Node executable, the server, `update-signing.pub` and `manifest.json` present, and `app/build-info.json` at the version the swap file names), it moves `.new` into place and writes `pending.json`, so the three-stop rollback applies as after any update.
+- With the payload missing and any other state (no swap file, a partial or wrong-version `.new`, a cut-off rollback, which takes two renames too), it moves `.activate-studio.previous` back and writes `rolled-back.json` saying the update was interrupted. A staged `.new` that no swap file vouches for is never promoted. The server removes the leftovers at its next start.
+- With the payload there and a swap file left over, it removes the file, writing `pending.json` first when the payload is the version the file names.
+
+`studio-run.sh` reads the script in at its start and runs it before every start of the server, so a run loop whose server died in the gap recovers and then runs the copy now at its path (its own loop, when the swap was finished). A launcher that finds `studio-run.sh` missing runs `studio-recover.sh TREE DATA_DIR` from whichever of `.activate-studio.new` or `.activate-studio.previous` holds a copy; the script uses its arguments, not its own location. The update that moves a payload without this check to one with it is done by the old server, which writes no swap file; a cut-off there is repaired by putting `.previous` back, and the update is offered again.
+
+An atomic exchange (`renameat2` with `RENAME_EXCHANGE`) or a symlink flip would remove the gap, and neither was used. Node has no binding for the exchange, so it would need a helper process, and not every filesystem a home directory is on (NFS among them) supports it, so the two-rename path and its recovery would still be needed. A symlink flip needs a versioned directory behind a link, which this layout rules out above (a stable real directory), and converting an existing install to it has the same gap once. The Studio is the only writer.
 
 ### What a package install shows
 
@@ -127,7 +135,7 @@ activate-studio/
   install-kind                  written by install.sh or the package
   node/  python/  app/  gufi/  ocr/  models/
   share/                        icons, menu entry template
-  studio-run.sh  manifest.json  update-signing.pub  LICENSE  NOTICE
+  studio-run.sh  studio-recover.sh  manifest.json  update-signing.pub  LICENSE  NOTICE
 ```
 
 | Path | Contents |
@@ -139,6 +147,7 @@ activate-studio/
 | `ocr/` | tesseract and leptonica with the English model |
 | `models/` | the GGUF and ONNX embedding models |
 | `studio-run.sh` | the run loop: starts the server with the payload's own programs, restarts it on exit 75 |
+| `studio-recover.sh` | finishes or undoes an update cut off between its two moves (see Updates) |
 | `manifest.json` | what it was built from and the system libraries it needs |
 
 The window shell is a small Go program (Wails v2, `desktop/wails`) that links to the computer's GTK and WebKitGTK. It starts the server through `studio-run.sh --once`, waits for `/api/version`, and shows the Studio through a reverse proxy it serves on 127.0.0.1, which gives the page the same bridge the macOS window gives (folder chooser, following the server to another port, relaunch after an update, downloads into `~/Downloads`, links that leave the Studio opening in the browser). It starts the server again after exit 75 or 76, shows an error with **Try Again** after any other exit, and ends the server and everything it started when the window closes, on TERM, and when the shell itself is killed (a guard process does that).
