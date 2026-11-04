@@ -10,6 +10,144 @@
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta name="theme-color" content="#f3f4f6" />
     <title>Studio</title>
+    <script id="intl-guard">
+      // Some WebKitGTK builds ship a JavaScriptCore that cannot construct
+      // parts of Intl. The WebKitGTK 4.0 packages in RHEL 9 and its rebuilds
+      // run on ICU 67, which rejects number-format settings the engine asks
+      // for: every new Intl.NumberFormat and Intl.PluralRules throws "failed
+      // to initialize", toLocaleString on a number crashed the engine in
+      // testing, and Intl.ListFormat does not exist. The libraries the app
+      // uses build these while the bundle loads, so without this the page
+      // never gets past the loading screen. Each one that cannot be built is
+      // replaced by plain English formatting; each one that can is left alone.
+      (function () {
+        function works(name, locale, options) {
+          try { if (typeof Intl[name] !== 'function') return false; new Intl[name](locale, options); return true } catch (e) { return false }
+        }
+        function put(target, name, value) {
+          try { Object.defineProperty(target, name, { value: value, configurable: true, writable: true }) } catch (e) { target[name] = value }
+        }
+        var needNumber = !works('NumberFormat', undefined, { maximumFractionDigits: 2 })
+        var needPlural = !works('PluralRules', 'en')
+        var needList = !works('ListFormat', 'en')
+        if (!needNumber && !needPlural && !needList) return
+
+        if (needNumber) {
+          var group = function (digits) { return digits.replace(/\B(?=(\d{3})+(?!\d))/g, ',') }
+          var fixed = function (x, min, max) {
+            var s = x.toFixed(max)
+            var dot = s.indexOf('.')
+            if (dot < 0) return s
+            var end = s.length
+            while (end - dot - 1 > min && s.charAt(end - 1) === '0') end--
+            if (end === dot + 1) end = dot
+            return s.slice(0, end)
+          }
+          var num = function (v, o) {
+            if (typeof v === 'bigint') v = Number(v)
+            v = Number(v)
+            if (v !== v) return 'NaN'
+            var neg = v < 0 || (v === 0 && 1 / v < 0)
+            var x = Math.abs(v)
+            if (x === Infinity) return (neg ? '-' : '') + '∞'
+            var style = o.style || 'decimal'
+            var suffix = ''
+            var min = o.minimumFractionDigits
+            var max = o.maximumFractionDigits
+            if (style === 'currency') {
+              if (min === undefined) min = max === undefined ? 2 : Math.min(2, max)
+              if (max === undefined) max = Math.max(2, min)
+            } else if (style === 'percent') {
+              x *= 100
+              if (min === undefined) min = 0
+              if (max === undefined) max = Math.max(0, min)
+            } else {
+              if (min === undefined) min = 0
+              if (max === undefined) max = Math.max(3, min)
+            }
+            if (o.notation === 'compact') {
+              var steps = [[1e12, 'T'], [1e9, 'B'], [1e6, 'M'], [1e3, 'K']]
+              for (var i = 0; i < steps.length; i++) if (x >= steps[i][0]) { x /= steps[i][0]; suffix = steps[i][1]; break }
+              if (o.maximumFractionDigits === undefined) { min = 0; max = x < 10 ? 1 : 0 }
+            }
+            var s = fixed(x, Math.min(min, max), max)
+            var parts = s.split('.')
+            if (o.minimumIntegerDigits) while (parts[0].length < o.minimumIntegerDigits) parts[0] = '0' + parts[0]
+            if (o.useGrouping !== false) parts[0] = group(parts[0])
+            s = (parts.length > 1 ? parts[0] + '.' + parts[1] : parts[0]) + suffix
+            if (style === 'percent') s += '%'
+            if (style === 'currency') s = (o.currency === 'USD' || o.currency === undefined ? '$' : String(o.currency).toUpperCase() + ' ') + s
+            if (style === 'unit' && o.unit) s += ' ' + o.unit
+            return (neg && /[1-9]/.test(s) ? '-' : '') + s
+          }
+          var NumberFallback = function (locales, options) {
+            if (!(this instanceof NumberFallback)) return new NumberFallback(locales, options)
+            var o = options || {}
+            this.o = o
+            this.format = function (v) { return num(v, o) }
+          }
+          NumberFallback.prototype.formatToParts = function (v) { return [{ type: 'literal', value: this.format(v) }] }
+          NumberFallback.prototype.resolvedOptions = function () {
+            var o = this.o
+            return { locale: 'en-US', numberingSystem: 'latn', style: o.style || 'decimal', minimumIntegerDigits: o.minimumIntegerDigits || 1,
+              minimumFractionDigits: o.minimumFractionDigits || 0, maximumFractionDigits: o.maximumFractionDigits === undefined ? 3 : o.maximumFractionDigits,
+              useGrouping: o.useGrouping === false ? false : 'auto' }
+          }
+          NumberFallback.supportedLocalesOf = function () { return [] }
+          put(Intl, 'NumberFormat', NumberFallback)
+          var toLocale = function (locales, options) { return num(this, options || {}) }
+          put(Number.prototype, 'toLocaleString', toLocale)
+          if (typeof BigInt !== 'undefined') put(BigInt.prototype, 'toLocaleString', toLocale)
+        }
+
+        if (needPlural) {
+          var PluralFallback = function (locales, options) {
+            if (!(this instanceof PluralFallback)) return new PluralFallback(locales, options)
+            this.type = (options && options.type) || 'cardinal'
+          }
+          PluralFallback.prototype.select = function (v) {
+            v = Math.abs(Number(v))
+            if (this.type === 'ordinal') {
+              var m10 = v % 10
+              var m100 = v % 100
+              if (m10 === 1 && m100 !== 11) return 'one'
+              if (m10 === 2 && m100 !== 12) return 'two'
+              if (m10 === 3 && m100 !== 13) return 'few'
+              return 'other'
+            }
+            return v === 1 ? 'one' : 'other'
+          }
+          PluralFallback.prototype.resolvedOptions = function () {
+            return { locale: 'en-US', type: this.type, minimumIntegerDigits: 1, minimumFractionDigits: 0, maximumFractionDigits: 3,
+              pluralCategories: this.type === 'ordinal' ? ['few', 'one', 'two', 'other'] : ['one', 'other'] }
+          }
+          PluralFallback.supportedLocalesOf = function () { return [] }
+          put(Intl, 'PluralRules', PluralFallback)
+        }
+
+        if (needList) {
+          var ListFallback = function (locales, options) {
+            if (!(this instanceof ListFallback)) return new ListFallback(locales, options)
+            this.o = options || {}
+          }
+          ListFallback.prototype.format = function (list) {
+            var a = Array.prototype.slice.call(list === undefined ? [] : Array.from(list), 0).map(String)
+            var type = this.o.type || 'conjunction'
+            var style = this.o.style || 'long'
+            if (a.length < 2) return a.join('')
+            if (type === 'unit') return a.join(style === 'narrow' ? ' ' : ', ')
+            var word = type === 'disjunction' ? 'or' : (style === 'long' ? 'and' : style === 'short' ? '&' : '')
+            if (a.length === 2) return word ? a[0] + ' ' + word + ' ' + a[1] : a.join(', ')
+            return a.slice(0, -1).join(', ') + (word ? ', ' + word + ' ' : ', ') + a[a.length - 1]
+          }
+          ListFallback.prototype.formatToParts = function (list) { return [{ type: 'literal', value: this.format(list) }] }
+          ListFallback.prototype.resolvedOptions = function () { return { locale: 'en-US', type: this.o.type || 'conjunction', style: this.o.style || 'long' } }
+          ListFallback.supportedLocalesOf = function () { return [] }
+          put(Intl, 'ListFormat', ListFallback)
+        }
+        window.__intlGuard = true
+      })()
+    </script>
     <script>
       // Paint in the right theme immediately. Everything below is a cache of
       // what the app applied last time; the app still fetches the real
