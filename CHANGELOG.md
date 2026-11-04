@@ -2,6 +2,34 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.186 (2026-11-04)
+
+### fix(web): fall back to plain number formatting when Intl cannot build it (#626)
+
+The WebKitGTK 4.0 packages in RHEL 9 and its rebuilds (Rocky Linux 9.8 and AlmaLinux 9 with webkit2gtk3 2.54.x, Red Hat UBI 9's webkit2gtk3-jsc, all on ICU 67) cannot build an `Intl.NumberFormat` or an `Intl.PluralRules`: every construction throws "failed to initialize", `toLocaleString` on a number aborts the engine, and `Intl.ListFormat` does not exist. The UI library builds these while the bundle loads, so the page stays on its loading screen.
+
+An inline script in `web/index.html`, ahead of the bundle, checks that each of the three can be built. For each one that cannot, it installs a plain English stand-in: `Intl.NumberFormat` (decimal, percent, currency, compact, fraction and grouping options) with `Number` and `BigInt` `toLocaleString`, `Intl.PluralRules` (cardinal and ordinal English rules) and `Intl.ListFormat`. Where the three work, nothing is replaced. Date formatting, collation, relative time and display names work on these engines and are not touched.
+
+## Regression protection
+
+`web/test/intlGuard.test.ts` runs the shipped script (taken out of `index.html`) against an engine whose `Intl.NumberFormat`, `Intl.PluralRules` and `toLocaleString` throw and whose `Intl.ListFormat` is missing, and checks the formatted values. It also loads every module under `web/src` and the packages the page loads late (`@parallelworks/ui`, the workflow parser, `streamdown`, `three`, `yaml`, `react-hook-form`, `monaco-editor`) on that engine with the guard in place, and shows that the app fails to load on it without the guard.
+
+`pnpm test` in `web/` now runs the whole suite twice. The second pass (`web/vitest.rhel9.config.ts`) applies the same broken Intl and then the guard before every test file, as the page does, so every view the tests render is rendered on that engine. A module that builds an Intl formatter at load time which the guard does not replace, or a view that formats a number through something the stand-in lacks, fails there and passes in the first pass. Two mutations were tried to confirm it fails: removing the PluralRules stand-in from the guard fails 3 tests, and a module-scope `new Intl.NumberFormat('en-US').formatRange(1, 5)` fails the module-load test. The second pass adds about 12 s to the suite and needs no container, display or WebKit.
+
+A Rocky 9 job in CI was considered and not added: it needs GUFI built in the job to have a populated index (minutes), plus a display server and WebKitGTK, and it only sees the views it is told to open. The simulated engine reproduces what was measured on the real one (the three failing classes, and nothing else failing).
+
+## Checked on RHEL 9 engines
+
+Every main view was opened in a WebKitGTK 4.0 window (webkit2gtk3 2.54.2 on Rocky Linux 9.8, 2.54.1 on AlmaLinux 9.8, ICU 67.1) under Xvfb against a seeded Studio (a few hundred files, a built index with embeddings, 1,345 files in all so counts have thousands separators). In both, all 22 steps passed with no page errors, no web process crash and no unformatted numbers (`NaN`, `undefined`, `[object`, mis-grouped digits):
+
+Setup wizard (all eight steps), Chat (a streamed reply with a table, list and code block, and a reply after a search tool call, against a stand-in model endpoint), Search with results, Query (a preset run, 50 rows), Stats (counts, sizes and bars; topology map; semantic map in 2D and in 3D, which is drawn on a 2D canvas, and turned), Settings (General, Libraries, Assistant tools, Feature previews, Extensions, External access), Library, the file viewer on Markdown, CSV, PDF, Word and an image, the 3D model viewer (the only WebGL view; it drew an STL with WebGL 2 on software rendering), History, Agents and Help.
+
+Without the guard, the same window stays on the loading screen (the app never mounts), and a `toLocaleString` call from a script then crashes the web process.
+
+Limits: the window is a plain WebKitGTK 4.0 web view, not the Wails shell (the shell's self test drew the first screen earlier); WebGL ran on software rendering; only English formatting was checked; stock RHEL 9 itself was not run (UBI 9 carries the same build); RHEL 8 was not tested.
+
+`tsc --noEmit` passes, and the web suite passes in both passes (44 files, 360 tests, then 43 files, 346 tests). The long-running import tests now have a 60 s timeout: at the 5 s default the app load test timed out once under the parallel run.
+
 ## v1.185 (2026-11-03)
 
 ### feat(chat): read_original, and a host to read a library's originals through (#629)
@@ -38,6 +66,10 @@ The previews that read a file from this computer (images in the page, PDF pages,
 - New `server/test/readOriginal.test.mjs` (30 tests, no GUFI or network needed: a stand-in `gufi_query`, and ssh hosts as local shells behind the transport's spawn seam, one of them restricted to `gufi_query`): `read_kb_file` from the index with the original missing, with no files here, with a long file, and with no index text; `read_original` here, on a library over ssh, on the fallback host, with both hosts failing (the message names both), and with a host that is down or runs only `gufi_query`; multi-path reads and offsets; file names with spaces, quotes, non-ASCII, a backslash, a leading `-` and `$(...)` or `;` syntax; path traversal on both tools and on both hosts; host, option and folder validation with injection strings; the connection test; saving, clearing and the viewer's file and download routes.
 - New `server/test/readOriginalSshd.test.mjs` (7 tests): two real `sshd` processes run by this user on high ports with no root, one with a `ForceCommand` that allows only `gufi_query` and no files, one with a shell and the files at another path. Run with `STUDIO_TEST_SSHD=1`; 7 of 7 pass. It checks that nothing but `gufi_query` ever ran on the restricted host.
 - `librariesPage.test.tsx` gained two tests: setting, testing, saving and removing the host, and the read-only view where sign-in is on. I also ran the built Studio on a second port and looked at the Libraries page.
+
+### Change log through v1.185 (#630)
+
+Regenerated with `node scripts/release-notes.mjs --changelog --next v1.185` before tagging v1.185.
 
 ## v1.184 (2026-11-02)
 

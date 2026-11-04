@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -p tsconfig.json --noEmit && vite build",
-    "test": "vitest run"
+    "test": "vitest run && vitest run --config vitest.rhel9.config.ts"
   },
   "dependencies": {
     "@parallelworks/ui": "^0.89.0",
