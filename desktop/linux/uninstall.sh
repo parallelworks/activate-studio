@@ -56,15 +56,14 @@ done
 while IFS= read -r f; do [ -n "$f" ] && add icon "$f"; done < <(find "$ICON_DIR" -path '*/apps/activate-studio.png' 2>/dev/null)
 # The window's web view keeps a cache and its storage (what the page saved
 # in the browser's storage: theme, recent searches) in folders named for the
-# shell program, activate-studio-wk41 or activate-studio-wk40. The cache goes
-# with the program, the storage with --purge.
-for d in "$HOME/.cache"/activate-studio-wk4[01] "$DATA/webview"; do
+# program the shell gives itself (titlebar_linux.go), the same for both
+# shells. The cache goes with the program, the storage with --purge.
+for d in "$HOME/.cache/activate-studio" "$DATA/webview"; do
   [ -d "$d" ] && add "window cache" "$d"
 done
-for d in "$DATA_HOME"/activate-studio-wk4[01]; do
-  [ -d "$d" ] || continue
-  if [ "$PURGE" = 1 ]; then add "window storage" "$d"; else keep+=("window storage	$d"); fi
-done
+if [ -d "$DATA_HOME/activate-studio" ]; then
+  if [ "$PURGE" = 1 ]; then add "window storage" "$DATA_HOME/activate-studio"; else keep+=("window storage	$DATA_HOME/activate-studio"); fi
+fi
 if [ -d "$DATA" ]; then
   if [ "$PURGE" = 1 ]; then add "index, settings and logs" "$DATA"; else keep+=("index, settings and logs	$DATA"); fi
 fi

@@ -50,6 +50,7 @@ static gboolean bar_attach(GSignalInvocationHint *hint, guint n, const GValue *p
 static void bar_watch(const char *title) {
   // The shell's file is named for the WebKit it links, and GTK takes the
   // window's class from it; desktop files and taskbars match the app's name.
+  // WebKit names its cache and storage folders from this too (uninstall.sh).
   g_set_prgname("activate-studio");
   gdk_set_program_class("activate-studio");
   g_type_class_ref(GTK_TYPE_WIDGET);

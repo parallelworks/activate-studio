@@ -353,7 +353,7 @@ case "$KIND" in
 esac
 find "$H" "/home/tester2" 2>/dev/null | sort >"$T/home-after.txt"
 # What is new in the home folders: the user's data and the usual desktop caches.
-new="$(comm -13 "$T/home-before.txt" "$T/home-after.txt" | grep -vE '/\.local/share/activate-studio-(data|wk4[01])|/Documents(/|$)|/\.cache(/|$)|/\.config(/|$)|/\.local/share/(recently-used|applications|icons|mime)|/\.local/bin$|/\.local/share/applications$|/\.local/share/icons|/\.local(/share)?$|/Downloads' || true)"
+new="$(comm -13 "$T/home-before.txt" "$T/home-after.txt" | grep -vE '/\.local/share/activate-studio(-data)?(/|$)|/Documents(/|$)|/\.cache(/|$)|/\.config(/|$)|/\.local/share/(recently-used|applications|icons|mime)|/\.local/bin$|/\.local/share/applications$|/\.local/share/icons|/\.local(/share)?$|/Downloads' || true)"
 if [ -z "$new" ]; then ok "nothing is left in the home folders but the user's data and the desktop's caches"; else bad "left behind:"; echo "$new" | sed 's/^/        /'; fi
 note "caches and settings the window made: $(comm -13 "$T/home-before.txt" "$T/home-after.txt" | grep -E '/\.cache|/\.config|/\.local/share/(applications|icons|mime)' | sed 's|/home/tester2\?/||' | awk -F/ '{print $1"/"$2}' | sort -u | tr '\n' ' ')"
 note "in .local/share: $(ls -A "$H/.local/share" 2>/dev/null | tr '\n' ' ')"
