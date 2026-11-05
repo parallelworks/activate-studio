@@ -390,7 +390,7 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
     const contents = counts(l.directories, l.files)
     if (l.built) {
       const host = l.transport === 'ssh' ? (l.reached ?? l.destination ?? l.site) : l.site
-      const notes: ReactNode[] = [contents, l.builtAt && `indexed ${when(l.builtAt)}`, l.error, depthNote(l)].filter(Boolean)
+      const notes: ReactNode[] = [contents, l.builtAt && `indexed ${when(l.builtAt)}`, l.error, depthNote(l), ...(l.gaps ?? [])].filter(Boolean)
       const choice = asked?.id === l.id && (
         <DepthRebuild l={l} host={host} from={asked.from} busy={busy === l.id} onClose={() => setAsked(null)}
           onRebuild={() => void act(l.id, async () => { await api.refreshUserLibrary(l.id); await loadUser(); setAsked(null) }, `Rebuilding the index on ${host}.`)} />
@@ -410,6 +410,7 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
           : l.state === 'updating' ? { tone: 'info', text: 'Updating', pulse: true, notes }
           : l.state === 'failed' ? { tone: 'error', text: 'Failed', notes }
           : l.error ? { tone: 'warning', text: 'Ready; the last build failed', notes }
+          : l.gaps?.length ? { tone: 'warning', text: 'Ready; some files were not read', notes }
           : { tone: 'success', text: 'Ready', notes },
         fullText: !!l.fullText, meaning: !!l.vectors,
         depth: { value: l.depth ?? UNSTORED_LIBRARY_DEPTH, reload: loadUser, applies: 'rebuild', built: l.builtDepth, building: isBuilding(l.state) },

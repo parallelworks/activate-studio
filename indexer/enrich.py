@@ -67,6 +67,9 @@ IMAGE_SUFFIXES = {'.png', '.jpg', '.jpeg', '.gif', '.webp'}
 MAX_TEXT = 500_000
 MAX_CAPTION_BYTES = 8 * 1024 * 1024
 MIN_IMAGE_BYTES = 8 * 1024  # skip icons and tiny assets
+# How long pypdf reads one PDF, as pdftotext's timeout below: it is pure
+# Python, and a very long file keeps the text of the pages read by then.
+PYPDF_SECONDS = 180
 
 # What the worker processes may use, set by main() and passed to each.
 OPTIONS = {'ocr': True, 'pdf_reader': 'auto', 'soffice': ''}
@@ -212,14 +215,29 @@ def extract_pdf(path: Path) -> str:
             from pypdf import PdfReader  # type: ignore
             pdf = PdfReader(str(path))
             parts = []
+            stop = time.monotonic() + PYPDF_SECONDS
             for page in pdf.pages:
                 parts.append(page.extract_text() or '')
-                if sum(len(p) for p in parts) > MAX_TEXT:
+                if sum(len(p) for p in parts) > MAX_TEXT or time.monotonic() > stop:
                     break
             text = '\n'.join(parts)
         except Exception:
             text = ''
     return ocr_if_thin(path, text)
+
+
+def pdf_reader_here(reader: str) -> str:
+    """What reads PDFs in this pass, as --pdf-reader allows: pdftotext, pypdf,
+    or '' for nothing, in which case every PDF comes out with no text."""
+    if reader in ('auto', 'pdftotext') and shutil.which('pdftotext'):
+        return 'pdftotext'
+    if reader in ('auto', 'pypdf'):
+        try:
+            import pypdf  # type: ignore  # noqa: F401
+            return 'pypdf'
+        except Exception:
+            pass
+    return ''
 
 
 def extract_legacy(path: Path) -> str:
@@ -776,6 +794,7 @@ def main() -> int:
                     help='how PDFs downmark did not convert are read')
     ap.add_argument('--soffice', default='', help='LibreOffice soffice, for .ppt, .xls, .doc and OpenDocument files')
     ap.add_argument('--no-documents', action='store_true', help='index PDFs and Office documents by name only')
+    ap.add_argument('--report', default='', help='write what was read to this JSON file: per document type, the files and those with no text')
     args = ap.parse_args()
 
     jobs = args.jobs if args.jobs > 0 else default_jobs()
@@ -900,11 +919,14 @@ def main() -> int:
             n_extracted = sum(1 for t in tasks if t[4] == 'extract')
 
     counts = {'files': 0}
+    # Per document type, the files seen and those that came out with no text.
+    documents_seen: dict = {}
     count_lock = threading.Lock()
 
     def write_dir(item) -> None:
         dbfile, rel_dir, files = item
         rows = []
+        seen: dict = {}
         for name, suffix, ino, source in files:
             text = None
             try:
@@ -923,7 +945,13 @@ def main() -> int:
                             text = index_text(text)
             except OSError:
                 text = None
+            document = suffix not in TEXT_SUFFIXES and suffix not in IMAGE_SUFFIXES
+            if document:
+                n = seen.setdefault(suffix, [0, 0])
+                n[0] += 1
             if not text or not text.strip():
+                if document:
+                    n[1] += 1
                 continue
             # Inodes go in as text. Some parallel filesystems issue numbers
             # past SQLite's signed 64-bit range, which raised OverflowError and
@@ -943,6 +971,10 @@ def main() -> int:
             db.close()
         with count_lock:
             counts['files'] += len(rows)
+            for suffix, (total, empty) in seen.items():
+                n = documents_seen.setdefault(suffix, {'files': 0, 'noText': 0})
+                n['files'] += total
+                n['noText'] += empty
         progress.add()
 
     progress.step = 'write'
@@ -956,6 +988,9 @@ def main() -> int:
                 pass
     progress.emit(True)
 
+    if args.report:
+        report = {'documents': documents_seen, 'pdfReader': pdf_reader_here(args.pdf_reader), 'ocr': options['ocr'], 'textFiles': counts['files']}
+        Path(args.report).write_text(json.dumps(report))
     print(f'enriched {len(dirs)} directories: {counts["files"]} files indexed, {n_extracted} extract-cache entries')
     return 0
 

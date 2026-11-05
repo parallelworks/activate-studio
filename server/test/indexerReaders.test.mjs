@@ -37,3 +37,24 @@ test('a pdftotext on the PATH that cannot run leaves the PDF to pypdf', { skip: 
     { PATH: bin })
   assert.ok(text.trim().length > 20, `pypdf read the text: ${JSON.stringify(text.slice(0, 80))}`)
 })
+
+test('with no PDF reader, a pass says so in its report: the PDF counted, with no text, and no reader named', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'noreader-'))
+  const kb = path.join(dir, 'kb'), index = path.join(dir, 'index'), report = path.join(dir, 'report.json')
+  fs.mkdirSync(kb); fs.mkdirSync(index)
+  fs.copyFileSync(path.join(root, 'testdata', 'corpus', 'docs', 'report.pdf'), path.join(kb, 'report.pdf'))
+  fs.writeFileSync(path.join(kb, 'note.md'), 'a note\n')
+  execFileSync(python, ['-c', 'import sqlite3, sys; sqlite3.connect(sys.argv[1]).close()', path.join(index, 'db.db')])
+  // -S: no site-packages, so no pypdf; an empty PATH, so no poppler; and a
+  // copy of the script, away from the indexer/.deps a clone may have pypdf in.
+  const script = path.join(dir, 'enrich.py')
+  fs.copyFileSync(path.join(indexer, 'enrich.py'), script)
+  execFileSync(python, ['-S', script, '--kb-root', kb, '--index', index, '--extract-cache', path.join(dir, 'x'), '--report', report, '--jobs', '1'],
+    { env: { PATH: fs.mkdtempSync(path.join(os.tmpdir(), 'emptybin-')) }, stdio: 'ignore' })
+  const r = JSON.parse(fs.readFileSync(report, 'utf8'))
+  assert.deepEqual(r.documents, { '.pdf': { files: 1, noText: 1 } })
+  assert.equal(r.pdfReader, '')
+  assert.equal(r.textFiles, 1)
+  // Not cached empty, so a later pass with a reader finds it.
+  assert.equal(fs.existsSync(path.join(dir, 'x', 'report.pdf.txt')), false)
+})

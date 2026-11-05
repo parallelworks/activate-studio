@@ -13,8 +13,8 @@ import { remoteGufi } from './gufiTrace.js'
 import { getJob, startJob, type Job } from './jobs.js'
 import { depthParts, forgetIndexSettings, indexSettings, meaningArgs, NEW_REMOTE_LIBRARY_DEPTH, saveIndexSettings, textArgs, type IndexDepth } from './indexSettings.js'
 import { SUMMARY_COLUMNS_SQL, formatNote, formatOfColumns, type FormatRecord } from './indexFormat.js'
-import { BUILD_CHECK, BUILD_RUN, BUILD_START, BUILD_STATUS, EMBED_PROBE, indexerScript, keyValues, parseStatus, PHASE_LABEL } from './remoteBuild.js'
-import { embedMegabytes, embedVersion, sendEmbed } from './remoteEmbed.js'
+import { BUILD_CHECK, BUILD_RUN, BUILD_START, BUILD_STATUS, buildGaps, EMBED_PROBE, indexerScript, keyValues, parseStatus, PHASE_LABEL, vectorsMade } from './remoteBuild.js'
+import { embedMegabytes, embedVersion, readersVersion, sendEmbed, sendReaders } from './remoteEmbed.js'
 import { publicReadThrough, type ReadThrough } from './originals.js'
 
 /**
@@ -98,6 +98,8 @@ export interface UserLibraryDef {
   /** The depth of the last build that finished with what that depth makes;
    *  none for a library last built by an earlier version. */
   builtDepth?: IndexDepth | null
+  /** What its last finished build could not read or embed, in words. */
+  gaps?: string[]
   /** Another host over ssh that has this library's files, tried for an
    *  original after the library's own host (originals.ts). */
   readThrough?: ReadThrough | null
@@ -1269,20 +1271,24 @@ async function startRemote(site: string, key: string, b: RemoteBuild & { depth: 
   const enrich = b.python && text ? indexerScript('enrich.py') : ''
   // The Python's platform is read again at each build: the check of a
   // library built by an earlier version did not record it.
-  let platform = '', version = '', send = false
-  if (enrich && level) {
+  let platform = '', version = '', send = false, sendText = false
+  const readers = enrich ? readersVersion() : ''
+  if (enrich) {
     const kv = keyValues((await remoteRun(site, key, ['sh', '-c', EMBED_PROBE, '_', b.python!], 60_000).catch(() => null))?.stdout ?? '')
-    const v = kv.platform ? embedVersion(kv.platform) : null
+    sendText = !(kv.readers ?? '').split(/\s+/).includes(readers)
+    const v = level && kv.platform ? embedVersion(kv.platform) : null
     if (v) { platform = kv.platform; version = v; send = !(kv.embeds ?? '').split(/\s+/).includes(v) }
   }
   const embed = enrich && level && (b.model || version) ? indexerScript('embed.py') : ''
   const onnx = embed && version
   const r = await remoteRun(site, key, ['bash', '-c', BUILD_START, '_', b.id, BUILD_RUN, enrich, embed,
-    onnx ? indexerScript('embed_onnx.py') : '', onnx ? indexerScript('fetch_embed.py') : '', onnx ? indexerScript('embed_deps.json') : '', onnx && send ? version : '',
+    onnx ? indexerScript('embed_onnx.py') : '', enrich ? indexerScript('fetch_embed.py') : '', enrich ? indexerScript('embed_deps.json') : '', onnx && send ? version : '', sendText ? readers : '',
     b.gufiBin, b.sourceRoot, b.indexDir, String(await remoteThreads(site, key)), b.python ?? '', b.model ?? '', create ? '1' : '0', (level ?? []).join(' '),
-    (text ?? []).join(' '), onnx ? version : '', onnx ? platform : ''], 60_000)
+    (text ?? []).join(' '), onnx ? version : '', onnx ? platform : '', readers, depth], 60_000)
   if (r.code !== 0 || !/started/.test(r.stdout)) throw new KbError(502, `The build could not be started on ${siteName(site)}: ${lastLine(r.stderr) || `exit ${r.code}`}`)
-  if (onnx && send) void sendEmbed(site, key, platform, version)
+  // The readers first: the text pass waits for them.
+  if (sendText) void sendReaders(site, key, readers).then(() => (onnx && send ? sendEmbed(site, key, platform, version) : undefined))
+  else if (onnx && send) void sendEmbed(site, key, platform, version)
 }
 
 /** The session a library's commands go over, and the key they act with. */
@@ -1336,7 +1342,12 @@ async function rebuildRemote(viewerId: string | null | undefined, owner: string,
   if (d.state === 'building' || d.state === 'updating') return d
   if (d.transport === 'ssh' && !sshAllowed(viewerId)) throw new KbError(403, SSH_SINGLE_USER)
   const { site, key } = sessionOf(owner, d)
-  const build = { ...d.build!, id: newBuildId(d.id), startedAt: new Date().toISOString(), depth: indexSettings(d.id).depth, progress: { phase: PHASE_LABEL.prepare, done: 0, total: 0, current: null } }
+  // What the system can run is read again: a Python installed since the
+  // library was added is what a rebuild is often for.
+  const check = await remoteRun(site, key, ['sh', '-c', BUILD_CHECK, '_', d.build!.sourceRoot, d.build!.indexDir], 60_000).catch(() => null)
+  const kv = check?.code === 0 ? keyValues(check.stdout) : null
+  const found = kv ? { python: kv.python?.startsWith('/') ? kv.python : null, model: kv.python?.startsWith('/') && kv.model?.startsWith('/') ? kv.model : null } : {}
+  const build = { ...d.build!, ...found, id: newBuildId(d.id), startedAt: new Date().toISOString(), depth: indexSettings(d.id).depth, progress: { phase: PHASE_LABEL.prepare, done: 0, total: 0, current: null } }
   await startRemote(site, key, build, false)
   const next = updateDef(owner, d.id, { state: d.indexRoot ? 'updating' : 'building', error: null, build })!
   follow(owner, d.id)
@@ -1347,7 +1358,7 @@ async function rebuildRemote(viewerId: string | null | undefined, owner: string,
  *  without text or vectors where the system there cannot make them. */
 function madeDepth(depth: IndexDepth, m: Record<string, unknown>): boolean {
   const parts = depthParts(depth)
-  return (!parts.documents || m.fullText === true) && (parts.meaning === 'off' || m.vectors === true)
+  return (!parts.documents || m.fullText === true) && (parts.meaning === 'off' || vectorsMade(m))
 }
 
 /** What a finished build left: the library is ready on its new index, or
@@ -1367,7 +1378,7 @@ function finishBuild(owner: string, d: UserLibraryDef, st: ReturnType<typeof par
   updateDef(owner, d.id, {
     state: 'ready', error: null, indexRoot: m.index, sourceRoot: source, sourceDir: source, gufiBin,
     builtAt: typeof m.builtAt === 'string' ? m.builtAt : new Date().toISOString(),
-    directories: Number(m.directories) || 0, files: Number(m.files) || 0, fullText: m.fullText === true, vectors: m.vectors === true,
+    directories: Number(m.directories) || 0, files: Number(m.files) || 0, fullText: m.fullText === true, vectors: vectorsMade(m), gaps: buildGaps(m),
     build: { ...b, progress: null }, ...(b.depth && madeDepth(b.depth, m) ? { builtDepth: b.depth } : {}),
   })
   tell(builtHooks, remoteRootOf(owner, d.id))
@@ -1490,7 +1501,7 @@ export function publicUserLibrary(d: UserLibraryDef & { job?: number }) {
     // Built here over the session: where the index is written, how far a
     // build has got, the depth the index was last built at, and the depth of
     // the build running now.
-    built: !!d.build, indexDir: d.build?.indexDir ?? null, progress: d.build?.progress ?? null, builtDepth: d.builtDepth ?? null,
+    built: !!d.build, indexDir: d.build?.indexDir ?? null, progress: d.build?.progress ?? null, builtDepth: d.builtDepth ?? null, gaps: d.gaps ?? [],
     buildingDepth: (d.state === 'building' || d.state === 'updating') ? d.build?.depth ?? null : null, ...(d.job != null ? { job: d.job } : {}) }
 }
 

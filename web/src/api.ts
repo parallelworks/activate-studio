@@ -87,6 +87,8 @@ export interface UserLibrary {
    *  and the depth of the build running now. */
   builtDepth?: IndexDepth | null
   buildingDepth?: IndexDepth | null
+  /** What its last finished build could not read or embed, in words. */
+  gaps?: string[]
 }
 
 let warmedAt = 0

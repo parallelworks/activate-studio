@@ -263,6 +263,7 @@ def main() -> int:
     ap.add_argument('--max-chunks', type=int, default=MAX_CHUNKS_PER_FILE, help=f'passages embedded per file, from its start (default {MAX_CHUNKS_PER_FILE})')
     ap.add_argument('--documents-only', action='store_true', help='embed documents and images only; code and data stay in full-text search')
     ap.add_argument('--progress', action='store_true', help='print @progress lines on stdout')
+    ap.add_argument('--report', default='', help='write what was embedded to this JSON file: chunks, and the errors that left vectors out')
     args = ap.parse_args()
 
     jobs = args.jobs if args.jobs > 0 else default_jobs()
@@ -507,6 +508,8 @@ def run(args, jobs: int, dbs: list, scratch: Path, progress: Progress) -> int:
     for err in errors[:10]:
         print('embed error:', err, file=sys.stderr)
     print(f'embedded: {n_pending} new chunks with {MODEL_ID}, {len(with_chunks)} directory tables written, {len(errors)} errors', flush=True)
+    if args.report:
+        Path(args.report).write_text(json.dumps({'model': MODEL_ID, 'chunks': n_chunks, 'errors': len(errors), 'firstError': errors[0][:300] if errors else ''}))
     # A chunk the tokenizer cannot take is skipped, not a failed pass: the
     # rest of the directory is searchable by meaning, and all of it by text.
     return 0
