@@ -416,7 +416,6 @@ export function QueryView({ onOpen }: { onOpen: (path: string) => void }) {
         <TagMenu
           paths={[...sel]}
           onClose={() => setTagMenuOpen(false)}
-          onApplied={() => {}}
         />
       )}
     </div>
