@@ -48,6 +48,10 @@ static gboolean bar_attach(GSignalInvocationHint *hint, guint n, const GValue *p
 }
 
 static void bar_watch(const char *title) {
+  // The shell's file is named for the WebKit it links, and GTK takes the
+  // window's class from it; desktop files and taskbars match the app's name.
+  g_set_prgname("activate-studio");
+  gdk_set_program_class("activate-studio");
   g_type_class_ref(GTK_TYPE_WIDGET);
   g_signal_add_emission_hook(g_signal_lookup("show", GTK_TYPE_WIDGET), 0, bar_attach, g_strdup(title), g_free);
 }

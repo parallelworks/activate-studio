@@ -26,6 +26,12 @@ For the Studio's own window, WebKitGTK and GTK 3:
 
 The `.deb` and `.rpm` declare these as dependencies. For the tarball, they are installed by the system's package manager (the install script installs nothing outside your home folder). Without WebKitGTK, or without a desktop session, the Studio runs in the background and opens in the default browser instead; everything works there except the system folder chooser and the window's own handling of downloads.
 
+## Dropping files and folders
+
+WebKitGTK gives a page nothing of a drop from a file manager, and its file chooser cannot pick a folder, so the window handles both: it takes the drop, or opens the system folder chooser for **Choose a folder**, walks what it got, and gives the page each file's place and size under a random id. When the page's turn to send comes, the window streams those files from disk to the ordinary upload, so a large folder does not pass through the web view's memory. The page never names a path, and an id works for one send. Names that start with a dot are left out, and links are not followed. An empty folder in a drop is not created. Drops are taken on the Library page.
+
+The window's context menu offers copy and paste over text and fields. Elsewhere it is off, as Back and Reload mean nothing in an app window.
+
 ## The window's title bar
 
 The window draws its own title bar (a GTK header bar), which takes the color the page names in its `theme-color` tag, as the macOS window's does: the classification banner's when one is shown, so the bar and the banner read as one strip, otherwise the page's ground in its light or dark theme, following changes while the window is open. The title and the window controls switch to light or dark to read on it. A bar the window manager draws cannot take the page's color, and `GTK_CSD=1` is not used for this because GTK ignores it where no compositor runs, as in many remote desktop sessions. The last color is kept in `run/bar-color` in the data folder, so the next launch opens with it. Dialogs such as the folder chooser keep the desktop's theme.

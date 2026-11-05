@@ -68,6 +68,16 @@ func (b *Bridge) ChooseFolder(start, message, prompt string) (string, error) {
 	})
 }
 
+// ChooseUpload asks for a folder and lists the files under it, with an id
+// for the page to have each sent by. Nothing when the person cancels.
+func (b *Bridge) ChooseUpload(message string) ([]DroppedFile, error) {
+	folder, err := b.ChooseFolder("~", message, "")
+	if err != nil || folder == "" {
+		return nil, err
+	}
+	return b.app.proxy.dropped.list([]string{folder})
+}
+
 // StudioMoved: the server saved another port and is restarting on it.
 // The window follows to that port, opening hash there, once it answers.
 func (b *Bridge) StudioMoved(port int, hash string) (bool, error) {

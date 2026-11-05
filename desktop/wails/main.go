@@ -117,10 +117,15 @@ func main() {
 		// here; the shell holds this port from before the window exists
 		// until it exits.
 		BindingsAllowedOrigins: fmt.Sprintf("http://127.0.0.1:%d", app.localPort),
-		// Copy, paste and Inspect in the page's context menu.
+		// Copy and paste in the page's context menu, where shim.js leaves it
+		// (over text and fields).
 		EnableDefaultContextMenu: true,
-		LogLevel:                 logger.INFO,
-		LogLevelProduction:       logger.WARNING,
+		// WebKitGTK gives the page nothing of a drop from a file manager, so
+		// the shell takes the drop too (droppedfiles.go). The web view keeps
+		// its own, for the page's drag highlights.
+		DragAndDrop:        &options.DragAndDrop{EnableFileDrop: runtime.GOOS == "linux"},
+		LogLevel:           logger.INFO,
+		LogLevelProduction: logger.WARNING,
 		Linux: &linux.Options{
 			ProgramName:      "activate-studio",
 			WebviewGpuPolicy: linux.WebviewGpuPolicyOnDemand,

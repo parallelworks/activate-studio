@@ -49,6 +49,8 @@
         case 'chooseFolder':
           return call('ChooseFolder', [msg.start || '', msg.message || '', msg.prompt || ''])
             .then(function (p) { return p ? p : null; });
+        case 'chooseUpload':
+          return call('ChooseUpload', [msg.message || '']);
         case 'studioMoved':
           return call('StudioMoved', [Number(msg.port), String(msg.hash || '')]);
         case 'relaunch':
@@ -106,6 +108,14 @@
     }
     return call('SaveURL', [u.pathname + u.search, name]);
   }
+  // The web view's own menu carries Back and Reload, which mean nothing in an
+  // app window. It stays where it has a use: copy and paste in text.
+  window.addEventListener('contextmenu', function (e) {
+    var t = e.target;
+    var editable = t && t.closest && t.closest('input, textarea, [contenteditable]:not([contenteditable="false"])');
+    var selected = String(window.getSelection && window.getSelection() || '').length > 0;
+    if (!editable && !selected) e.preventDefault();
+  });
   window.addEventListener('click', function (e) {
     if (e.defaultPrevented || e.button !== 0) return;
     var a = e.target && e.target.closest ? e.target.closest('a[href]') : null;
@@ -159,5 +169,12 @@
     readyStateAtInstall: readyStateAtInstall,
     nativeOpen: nativeOpen,
     setDownloads: function (mode) { downloads = mode; },
+    fileDrop: function (x, y, files) {
+      // The page saw the drag arrive but not this drop, so its highlights
+      // would stay on.
+      var over = document.elementFromPoint(x, y);
+      if (over) over.dispatchEvent(new DragEvent('dragleave', { bubbles: true }));
+      window.dispatchEvent(new CustomEvent('studio-shell-drop', { detail: { x: x, y: y, files: files } }));
+    },
   };
 })();

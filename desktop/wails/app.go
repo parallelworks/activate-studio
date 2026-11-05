@@ -99,6 +99,7 @@ func NewApp(cfg Config) *App {
 // startup runs once the window exists (Wails OnStartup).
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+	wruntime.OnFileDrop(ctx, a.onFileDrop)
 	// TERM, INT or HUP (a logout, kill, Ctrl-C) stop the server first.
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)

@@ -41,6 +41,8 @@ type Proxy struct {
 	localHost string
 
 	studio *httputil.ReverseProxy
+
+	dropped droppedFiles
 }
 
 func NewProxy(app *App) *Proxy {
@@ -107,6 +109,8 @@ func (p *Proxy) serve(w http.ResponseWriter, r *http.Request, proxyStudio bool) 
 	switch {
 	case path == "/__shell/" || path == "/__shell/index.html":
 		p.serveStart(w)
+	case path == droppedSend && proxyStudio && ready:
+		p.sendDropped(w, r)
 	case strings.HasPrefix(path, "/__shell/"):
 		http.NotFound(w, r)
 	case !proxyStudio:
