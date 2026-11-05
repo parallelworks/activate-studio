@@ -677,13 +677,12 @@ textarea.field { line-height: 1.5; }
   margin: 4px 0 0; padding: 8px 10px; border: 1px solid var(--pw-border); border-radius: 6px;
   background: var(--pw-panel); color: var(--pw-text); max-height: 16rem; overflow: auto;
 }
-/* A GUFI tool's call in the chat (GufiToolCommands): its result summary,
-   then the commands toggle; the commands open on a line of their own. */
-.gufi-tool { display: flex; flex-wrap: wrap; align-items: flex-start; column-gap: 8px; min-width: 0; font-size: 13px; white-space: normal; }
-.gufi-tool-summary { min-width: 0; line-height: 24px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--theme-muted-text-color, var(--pw-muted)); }
-.gufi-tool .gufi-cmds { display: contents; }
-.gufi-tool .gufi-cmds-summary { flex: none; line-height: 24px; }
-.gufi-tool .gufi-cmds-panel { flex: 1 0 100%; min-width: 0; line-height: normal; }
+/* A GUFI tool's call in the chat (GufiToolCommands), in its row's panel:
+   its result summary, then the commands toggle. */
+.gufi-tool { min-width: 0; font-size: 13px; white-space: normal; }
+.gufi-tool-summary { display: block; line-height: 24px; color: var(--theme-muted-text-color, var(--pw-muted)); }
+.gufi-tool .gufi-cmds { margin-top: 0; }
+.gufi-cmds-note { margin: 6px 0 0; font-size: 0.76rem; }
 .saved-chip {
   display: inline-flex; align-items: center; border: 1px solid var(--pw-border-strong);
   /* Was a hardcoded white, which left the label unreadable in dark mode. */
@@ -1627,9 +1626,12 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
   background: var(--theme-panel-bg, var(--pw-panel, #fff)); outline: none;
 }
 .map-full-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.map-full-title { display: flex; align-items: center; gap: 10px; min-width: 0; flex-wrap: wrap; }
+.map-full-title .library-scope { max-width: 260px; }
 .map-full-head h2 { margin: 0; font-size: 1.05rem; }
 .map-full-head .map-bar { margin: 0; }
 .map-full-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.map-full-body .map-empty { margin: 0; padding: 24px 0; }
 .map-full-body .map-legend { flex-shrink: 0; max-height: 25vh; overflow: auto; }
 .map-tip { position: absolute; left: 8px; bottom: 8px; background: rgba(15,23,42,0.9); color: #fff; padding: 3px 8px; border-radius: 6px; font-size: 0.78rem; pointer-events: none; max-width: 90%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
@@ -2275,6 +2277,14 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
    package's markup (its test ids), so a markup change only loses the
    effect. */
 .chat-reasoning-tail { display: none; }
+/* The thread holds its own absolutely placed children (the screen reader
+   labels): unpositioned, it let them out, and each box around it then had
+   the whole conversation's height to scroll. The composer sits inside the
+   thread, so the thread does not bounce at its ends either: macOS's elastic
+   scrolling would carry the composer with it. The drawer layout's box only
+   hides its overflow, which a script can still scroll. */
+.chat-canvas .chat-thread { position: relative; overscroll-behavior: none; }
+.chat-canvas .overflow-hidden:has(.chat-thread) { overflow: clip; }
 [data-testid="tool-call-part"] { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
 [data-testid="tool-call-part"] > :first-child { flex: 0 1 auto; min-width: 0; }
 [data-testid="tool-call-part"] > :only-child { flex: 1 1 auto; }
@@ -2288,17 +2298,6 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 [data-testid="tool-call-part"]:has(> [data-testid="tool-decision"]) { flex-wrap: wrap; row-gap: 0; }
 [data-testid="tool-call-part"]:has(> [data-testid="tool-decision"]) > :first-child + div:not([data-testid="tool-decision"]) { flex: 1 1 0; }
 [data-testid="tool-call-part"] > [data-testid="tool-decision"] { flex: 1 0 100%; margin-top: 0; }
-/* A GUFI tool's summary sits on the row like any other call's (the name
-   gives way first), hidden while the row is open as the package's is, and
-   the commands toggle has a line of its own under the tool's name. */
-[data-testid="tool-call-part"]:has(> div > .gufi-tool) {
-  display: grid; grid-template-columns: minmax(0, max-content) minmax(0, max-content) minmax(0, 1fr); column-gap: 8px; row-gap: 0;
-}
-[data-testid="tool-call-part"] > :first-child + div:has(> .gufi-tool) { display: contents; }
-[data-testid="tool-call-part"] .gufi-tool { display: contents; }
-[data-testid="tool-call-part"]:has(> :first-child[data-open]) .gufi-tool-summary { display: none; }
-/* The commands take the row's width without widening its columns. */
-[data-testid="tool-call-part"] .gufi-tool .gufi-cmds { display: block; grid-column: 1 / -1; min-width: 0; margin: 0 0 0 20px; contain: inline-size; }
 /* The Workflows page with its side view: the page and the view side by
    side, stacked on a narrow screen, as the chat does. */
 .wf-with-side { flex: 1; min-height: 0; display: flex; gap: 12px; position: relative; }

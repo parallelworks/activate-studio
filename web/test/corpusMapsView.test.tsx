@@ -598,6 +598,111 @@ describe('maps of each library', () => {
   })
 })
 
+describe('a map filling the window', () => {
+  const dialog = (name: string) => screen.findByRole('dialog', { name })
+  let calls: string[]
+  let hold: (() => void) | null
+  beforeEach(() => {
+    calls = []
+    hold = null
+    resetMapLibrariesForTests()
+    resetScopesForTests()
+    act(() => setLibrary('kb'))
+    HTMLCanvasElement.prototype.getContext = (() => null) as never
+    vi.stubGlobal('matchMedia', (q: string) => ({ matches: false, media: q, addEventListener() {}, removeEventListener() {} }))
+    const far = { id: 'far', label: 'Scratch', kind: 'remote', depth: null, vectors: true, host: 'cluster-a' }
+    const overviews: Record<string, MapOverview> = {
+      '/api/kb/semantic-map': OVERVIEW,
+      '/api/libraries/papers/semantic-map': { ...OVERVIEW, files: 12_000 },
+      '/api/libraries/desk/semantic-map': { available: false, reason: 'off', building: false, library: { id: 'desk', label: 'Desktop', kind: 'built', depth: 'ocr', vectors: false } },
+      '/api/libraries/far/semantic-map': { ...OVERVIEW, builtAt: 'one', files: 5, of: 60, library: far as MapOverview['library'], remote: { host: 'cluster-a', fetchedAt: null, checkedAt: null } },
+    }
+    vi.stubGlobal('fetch', vi.fn(async (input: string) => {
+      const url = String(input)
+      calls.push(url)
+      if (url === '/api/semantic-maps') return reply({ maps: [{ id: 'kb', available: true, files: 9 }] })
+      if (url.includes('/papers/')) await new Promise<void>(r => { hold = r })
+      if (url in overviews) return reply(overviews[url])
+      const topo = /^\/api\/(?:kb|libraries\/(\w+))\/topology/.exec(url)
+      if (topo) return topo[1] === 'lab' ? reply({ available: false, reason: 'none' }) : reply({ available: true, levels: 9, dirs: [{ dir: `${topo[1] ?? 'kb'}-top`, files: 2, bytes: 2000 }] })
+      return reply({}, 404)
+    }))
+  })
+  afterEach(() => { vi.unstubAllGlobals(); localStorage.clear() })
+
+  const choose = async (panel: HTMLElement, name: string) => {
+    fireEvent.click(within(panel).getByRole('button', { name: /^Library: / }))
+    const group = await screen.findByRole('radiogroup', { name: 'Library to show' })
+    fireEvent.click(within(group).getByRole('radio', { name }))
+  }
+
+  it('the semantic map switches library in place, through one still loading, one with no map and a remote one', async () => {
+    render(<SemanticMap onOpen={() => {}} libraries={LIBS} />)
+    await screen.findByText('4 of 9 files shown; click a cluster for all of its files.')
+    fireEvent.click(screen.getByRole('button', { name: 'Full screen' }))
+    const panel = await dialog('Semantic map')
+    // One picker, the one in the window's header.
+    expect(screen.getAllByRole('button', { name: /^Library: / })).toHaveLength(1)
+    expect(panel.querySelector('.map-full-head')).toContainElement(within(panel).getByRole('button', { name: 'Library: Notes' }))
+
+    await choose(panel, 'Papers (read only)')
+    expect(await within(panel).findByText('Loading the map.')).toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: 'Semantic map' }), 'the same window, not one made again').toBe(panel)
+    await waitFor(() => expect(hold).not.toBeNull())
+    await act(async () => { hold!() })
+    expect(await within(panel).findByText(/of 12,000 files shown/)).toBeInTheDocument()
+    expect(panel.querySelector('canvas.semantic-map')).not.toBeNull()
+    expect(localStorage.getItem('ade-map-library-semantic')).toBe('papers')
+
+    await choose(panel, 'Desktop (read only)')
+    expect(await within(panel).findByText(/Desktop has no search by meaning/)).toBeInTheDocument()
+    expect(within(panel).getByRole('button', { name: 'Set to Meaning on documents' })).toBeInTheDocument()
+    expect(within(panel).queryByRole('button', { name: 'Zoom in' }), 'no map, so nothing to zoom').toBeNull()
+    expect(screen.getByRole('dialog', { name: 'Semantic map' })).toBe(panel)
+
+    await choose(panel, 'Scratch (on cluster-a)')
+    expect(await within(panel).findByText(/fetched from cluster-a/)).toBeInTheDocument()
+    expect(within(panel).getByRole('button', { name: 'Refresh' })).toBeInTheDocument()
+    expect(calls).toContain('/api/libraries/far/semantic-map')
+    expect(screen.getByRole('dialog', { name: 'Semantic map' })).toBe(panel)
+
+    // Closed, the page shows the library chosen.
+    fireEvent.click(within(panel).getByRole('button', { name: 'Close full screen' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(screen.getByRole('button', { name: 'Library: Scratch' })).toBeInTheDocument()
+  })
+
+  it('the topology switches library in place, also to one with no index, and keeps the choice', async () => {
+    render(<TopologyMap libraries={LIBS} />)
+    await screen.findByRole('button', { name: /kb-top/ })
+    fireEvent.click(screen.getByRole('button', { name: 'Full screen' }))
+    const panel = await dialog('Corpus topology')
+    expect(screen.getAllByRole('button', { name: /^Library: / })).toHaveLength(1)
+    await choose(panel, 'Scratch (on cluster-a)')
+    expect(await within(panel).findByRole('button', { name: /far-top/ })).toBeInTheDocument()
+    expect(panel.querySelector('canvas.treemap-canvas')).not.toBeNull()
+    expect(screen.getByRole('dialog', { name: 'Corpus topology' })).toBe(panel)
+    expect(localStorage.getItem('ade-map-library-topology')).toBe('far')
+    await choose(panel, 'Lab index (read only)')
+    expect(await within(panel).findByText('Lab index has no index yet, so there is nothing to draw.')).toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: 'Corpus topology' })).toBe(panel)
+    await choose(panel, 'Notes')
+    expect(await within(panel).findByRole('button', { name: /kb-top/ })).toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: 'Corpus topology' })).toBe(panel)
+  })
+
+  it('Escape closes the open library list first, then the map', async () => {
+    render(<TopologyMap libraries={LIBS} />)
+    await screen.findByRole('button', { name: /kb-top/ })
+    fireEvent.click(screen.getByRole('button', { name: 'Full screen' }))
+    const panel = await dialog('Corpus topology')
+    fireEvent.click(within(panel).getByRole('button', { name: /^Library: / }))
+    await screen.findByRole('radiogroup', { name: 'Library to show' })
+    act(() => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })) })
+    expect(screen.getByRole('dialog', { name: 'Corpus topology' })).toBe(panel)
+  })
+})
+
 describe('the map of a library on another system', () => {
   const FAR = { id: 'far', label: 'Scratch', kind: 'remote' as const, depth: null, vectors: true, host: 'cluster-a' }
   let calls: { url: string; method: string }[]
