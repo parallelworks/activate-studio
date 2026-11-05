@@ -101,7 +101,7 @@ jobs:
               case "$f" in
                 deploy/app.def|.github/workflows/container.yaml|\
                 indexer/*|server/*|web/*|docs/*|extensions-starter/*|\
-                package.json|pnpm-lock.yaml|pnpm-workspace.yaml)
+                package.json|pnpm-lock.yaml|pnpm-workspace.yaml|patches/*)
                   echo "image input changed: $f"; image=true; break ;;
               esac
             done <<< "$files"
