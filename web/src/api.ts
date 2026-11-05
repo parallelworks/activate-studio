@@ -83,6 +83,12 @@ export interface UserLibrary {
   built?: boolean
   indexDir?: string | null
   progress?: BuildProgress | null
+  /** The depth its index was last built at, once a build has recorded one,
+   *  and the depth of the build running now. */
+  builtDepth?: IndexDepth | null
+  buildingDepth?: IndexDepth | null
+  /** What its last finished build could not read or embed, in words. */
+  gaps?: string[]
 }
 
 let warmedAt = 0

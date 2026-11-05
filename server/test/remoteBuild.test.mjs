@@ -17,6 +17,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { spawn, spawnSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 
 const gufiBin = process.env.GUFI_BIN || '/opt/gufi/bin'
 const skip = !fs.existsSync(path.join(gufiBin, 'gufi_dir2index')) && 'GUFI not installed'
@@ -93,6 +94,40 @@ test('a build status reads as running, finished, gone, or missing', () => {
   assert.equal(RB.parseStatus('phase=prepare\nexit=1\nerror=/x is not a folder.\n').error, '/x is not a folder.')
   assert.match(RB.parseStatus('phase=index\nstate=gone\nlog=Killed\n').error, /stopped without finishing: Killed/)
   assert.equal(RB.parseStatus('state=missing\n').state, 'missing')
+})
+
+test('what a build could not read reads as a line for the row, with the count and the reason', () => {
+  const text = (documents, pdfReader, ocr = false) => ({ documents, pdfReader, ocr, textFiles: 1 })
+  const gaps = m => RB.buildGaps({ depth: 'ocr', ...m })
+  assert.deepEqual(gaps({ text: text({ '.pdf': { files: 312, noText: 312 } }, '') }), ['312 PDFs have no text: this system has no PDF reader'])
+  assert.deepEqual(gaps({ text: text({ '.pdf': { files: 2, noText: 1 } }, 'pypdf') }), ['1 PDF has no text: pypdf found none, as with scanned pages, and this system has no tesseract'])
+  assert.deepEqual(gaps({ depth: 'text', text: text({ '.pdf': { files: 2, noText: 2 } }, 'pdftotext') }), ['2 PDFs have no text: pdftotext found none, as with scanned pages, and this depth runs no OCR'])
+  assert.deepEqual(gaps({ text: text({ '.pdf': { files: 1, noText: 1 } }, 'pdftotext', true) }), ['1 PDF has no text: pdftotext and OCR found none, as with a damaged or protected file'])
+  assert.deepEqual(gaps({ text: text({ '.xls': { files: 4, noText: 3 }, '.pdf': { files: 9, noText: 0 } }, 'pypdf') }), ['3 .xls files have no text'])
+  assert.deepEqual(gaps({ textWhy: 'the text pass stopped: boom' }), ['No text in this index: the text pass stopped: boom'])
+  // An earlier version's manifest says nothing of this.
+  assert.deepEqual(RB.buildGaps({ index: '/i', files: 3, fullText: true, vectors: true }), [])
+})
+
+test('vectors are what the index holds: a pass that wrote none is not reported as vectors', () => {
+  const m = { depth: 'meaning-full', vectors: true, vectorRows: 0, pdfWords: 2, pdfVectors: 0, embed: { chunks: 9, errors: 3, firstError: 'no such module: vec0' } }
+  assert.equal(RB.vectorsMade(m), false)
+  assert.deepEqual(RB.buildGaps(m), ['No search by meaning: no vectors were written: no such module: vec0'])
+  assert.equal(RB.vectorsMade({ ...m, vectorRows: 9 }), true)
+  // Nothing to embed is not a failure.
+  assert.equal(RB.vectorsMade({ vectors: true, vectorRows: 0, embed: { chunks: 0 } }), true)
+  assert.deepEqual(RB.buildGaps({ depth: 'meaning-documents', vectors: true, vectorRows: 40, pdfWords: 3, pdfVectors: 2, embed: { chunks: 40, errors: 0 } }),
+    ['1 PDF has text but no vectors: too little of it reads as prose'])
+  assert.deepEqual(RB.buildGaps({ depth: 'meaning-full', vectors: false, vectorsWhy: 'there is no embedding model for this Python' }), ['No search by meaning: there is no embedding model for this Python'])
+  // Below a Meaning depth, no vectors is what was asked for.
+  assert.deepEqual(RB.buildGaps({ depth: 'text', vectors: false }), [])
+})
+
+test('the document readers are pinned, with what pypdf needs on Python 3.10, and the same for every platform', async () => {
+  const RE = await import('../dist/remoteEmbed.js')
+  const names = RE.readerFiles().map(f => f.name)
+  for (const n of ['pypdf-', 'typing_extensions-', 'xlrd-', 'olefile-']) assert.ok(names.some(x => x.includes(n)), n)
+  assert.match(RE.readersVersion(), /^[0-9a-f]{12}$/)
 })
 
 // The status script as a session runs it, on a state folder made here.
@@ -253,6 +288,107 @@ test('a rebuild replaces the index when complete; one that fails keeps the old i
   fs.renameSync(`${project}-moved`, project)
 })
 
+test('a library records the depth of its last build that finished, and only that', { skip }, async () => {
+  const I = await import('../dist/indexSettings.js')
+  const lib = async id => (await listing()).libraries.find(x => x.id === id)
+  const folder = path.join(homes['me@linux-box'], 'depthlib')
+  write(path.join(folder, 'a.md'), '# A\nSome text.\n')
+  const r = await post('/api/user-libraries/ssh/build', { ...box, sourceRoot: '~/depthlib', indexRoot: '~/depth-index', depth: 'text', create: true })
+  assert.equal(r.status, 200, JSON.stringify(r.body))
+  const id = r.body.id
+  assert.equal(r.body.builtDepth, null, 'nothing is recorded until the build finishes')
+  assert.equal(r.body.buildingDepth, 'text')
+  let l = await waitFor(id)
+  assert.equal(l.state, 'ready', l.error ?? '')
+  assert.equal(l.builtDepth, 'text')
+  assert.equal(l.buildingDepth, null)
+
+  // A change is stored; the record stays until a build at it finishes.
+  await I.saveIndexSettings(id, { depth: 'ocr' })
+  l = await lib(id)
+  assert.equal(l.depth, 'ocr')
+  assert.equal(l.builtDepth, 'text')
+
+  // A change while a build runs waits for the next one: the record is of the build.
+  const again = await post(`/api/user-libraries/${id}/refresh`, {})
+  assert.equal(again.body.buildingDepth, 'ocr')
+  await I.saveIndexSettings(id, { depth: 'names' })
+  l = await waitFor(id)
+  assert.equal(l.state, 'ready', l.error ?? '')
+  assert.equal(l.depth, 'names')
+  assert.equal(l.builtDepth, 'ocr')
+
+  // A rebuild that fails leaves the record.
+  await I.saveIndexSettings(id, { depth: 'text' })
+  fs.renameSync(folder, `${folder}-moved`)
+  await post(`/api/user-libraries/${id}/refresh`, {})
+  l = await waitFor(id, ['ready'])
+  assert.match(l.error, /depthlib is not a folder\./)
+  assert.equal(l.builtDepth, 'ocr')
+  fs.renameSync(`${folder}-moved`, folder)
+
+  // So does one that finished without what its depth makes: no embedding
+  // model could be had here, so it made no vectors.
+  await I.saveIndexSettings(id, { depth: 'meaning-documents' })
+  await post(`/api/user-libraries/${id}/refresh`, {})
+  l = await waitFor(id, ['ready'])
+  assert.equal(l.error, null)
+  assert.equal(l.vectors, false)
+  assert.equal(l.builtDepth, 'ocr')
+
+  // A library last built by an earlier version has no record, and gets one
+  // from its next build.
+  const file = path.join(process.env.INDEX_BASE, 'users', createHash('sha256').update('single').digest('hex').slice(0, 16), 'libraries.json')
+  const defs = JSON.parse(fs.readFileSync(file, 'utf8'))
+  const def = defs.find(d => d.id === id)
+  delete def.builtDepth; delete def.build.depth
+  fs.writeFileSync(file, JSON.stringify(defs))
+  l = await lib(id)
+  assert.equal(l.builtDepth, null)
+  await I.saveIndexSettings(id, { depth: 'text' })
+  await post(`/api/user-libraries/${id}/refresh`, {})
+  l = await waitFor(id, ['ready'])
+  assert.equal(l.builtDepth, 'text')
+  await post(`/api/user-libraries/${id}/refresh`, {})
+  assert.equal((await waitFor(id, ['ready'])).builtDepth, 'text')
+  await app.inject({ method: 'DELETE', url: `/api/user-libraries/${id}` })
+})
+
+test('text and vectors are made in the new index, so the one there answers whole until it is swapped in', { skip }, () => {
+  const at = fs.mkdtempSync(path.join(dir, 'swap-'))
+  const src = path.join(at, 'src'), idx = path.join(at, 'index'), state = path.join(at, 'state')
+  write(path.join(src, 'a.md'), '# A\n')
+  fs.mkdirSync(state)
+  const old = path.join(idx, 'src', 'db.db')
+  write(old, 'the index being searched')
+  write(path.join(state, 'enrich.py'), ''); write(path.join(state, 'embed.py'), '')
+  // A stand-in for the Python: records what it was told, and whether the
+  // index being searched was still there. $HALT stops the build as a kill would.
+  const log = path.join(at, 'python.log')
+  exe(path.join(at, 'python'), `#!/bin/sh\necho "$* old=$(cat '${old}' 2>/dev/null)" >> '${log}'\n[ -z "$HALT" ] || kill -9 $PPID\nexit 0\n`)
+  const run = env => spawnSync('bash', ['-c', RB.BUILD_RUN, '_', state, gufiBin, src, idx, '1', path.join(at, 'python'), path.join(at, 'model.gguf'), '0', '', ''],
+    { env: { ...process.env, ...env }, encoding: 'utf8' })
+
+  // Stopped while the text is read, the index there is as it was.
+  run({ HALT: '1' })
+  assert.equal(fs.readFileSync(old, 'utf8'), 'the index being searched')
+  fs.rmSync(log)
+
+  const done = run({})
+  assert.equal(done.status, 0, done.stderr)
+  const [enrich, embed] = fs.readFileSync(log, 'utf8').trim().split('\n')
+  const stage = path.join(idx, '.build', 'src')
+  assert.ok(enrich.includes(`--index ${stage} --extract-cache ${path.join(idx, '.extract')}`), enrich)
+  assert.match(enrich, /old=the index being searched$/)
+  assert.ok(embed.includes(`--index ${stage}`), embed)
+  assert.ok(embed.includes(`--cache ${path.join(idx, '.embed-cache.db')} --prune`), embed)
+  assert.match(embed, /old=the index being searched$/)
+  // Swapped in at the end: the new tree in place, nothing beside it.
+  assert.notEqual(fs.readFileSync(old).subarray(0, 15).toString(), 'the index being')
+  assert.equal(fs.existsSync(path.join(idx, '.build')), false)
+  assert.equal(fs.existsSync(path.join(idx, '.old')), false)
+})
+
 test('over pw ssh: a system from the dropdown, built with the platform key', { skip }, async () => {
   const t = (await post('/api/user-libraries/pw/build/test', { cluster: 'cluster-a', sourceRoot: '~/work', indexRoot: '~/indexes/work' })).body
   assert.equal(t.ok, true, JSON.stringify(t.steps))
@@ -293,9 +429,11 @@ test('a build there starts at Meaning on documents, and the check says what the 
   assert.equal(o.status, 200, JSON.stringify(o.body))
   assert.equal((await waitFor(o.body.id)).state, 'ready')
   const state = fs.readdirSync(path.join(homes['cluster-a'], '.activate-studio', 'builds')).find(b => b.startsWith(o.body.id))
-  for (const f of ['embed.py', 'embed_onnx.py', 'fetch_embed.py']) {
+  for (const f of ['embed.py', 'embed_onnx.py']) {
     assert.equal(fs.existsSync(path.join(homes['cluster-a'], '.activate-studio', 'builds', state, f)), false, `${f} is not sent`)
   }
+  // fetch_embed.py goes at every depth with text: it installs the document readers.
+  assert.equal(fs.existsSync(path.join(homes['cluster-a'], '.activate-studio', 'builds', state, 'fetch_embed.py')), true)
 })
 
 test('a build at the Names depth reads nothing from inside the files there', { skip }, async () => {
@@ -308,6 +446,7 @@ test('a build at the Names depth reads nothing from inside the files there', { s
   assert.equal(l.fullText, false, 'no text tables')
   const state = fs.readdirSync(path.join(homes['me@linux-box'], '.activate-studio', 'builds')).find(b => b.startsWith(r.body.id))
   assert.equal(fs.existsSync(path.join(homes['me@linux-box'], '.activate-studio', 'builds', state, 'enrich.py')), false, 'enrich.py is not sent')
+  assert.equal(fs.existsSync(path.join(homes['me@linux-box'], '.activate-studio', 'builds', state, 'fetch_embed.py')), false, 'fetch_embed.py is not sent')
   assert.equal((await post('/api/user-libraries/ssh/build', { ...box, sourceRoot: '~/project', indexRoot: '~/other', depth: 'deepest', create: true })).status, 400)
 })
 
@@ -439,4 +578,8 @@ test('the first build there sends the Studio\'s model and packages, installs the
   assert.equal(l2.state, 'ready', l2.error ?? '')
   assert.equal(RE.embedFilesSent(), again)
   assert.deepEqual(vectorModels(l2.indexRoot), ['minilm-l6-mean-int8'])
+  // Nothing changed, so every passage comes from the embedding cache.
+  const builds = path.join(homes['me@linux-box'], '.activate-studio', 'builds')
+  const last = fs.readdirSync(builds).filter(b => b.startsWith(id)).sort().pop()
+  assert.match(fs.readFileSync(path.join(builds, last, 'embed.log'), 'utf8'), /chunked: \d+ chunks across \d+ dbs, 0 to embed/)
 })

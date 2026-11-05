@@ -27,12 +27,17 @@ import { remoteRun, remoteRunOnce, siteName } from './remoteExec.js'
  * Studio's own. A file that cannot be had here, fetch_embed.py there
  * downloads where that system reaches the network. Without them the build
  * embeds with the GGUF model where that is there (remoteBuild.ts).
+ *
+ * The document readers go the same way, at every depth with text, to
+ * ~/.activate-studio/readers/<version> (sendReaders): pure-Python wheels, the
+ * same for every platform and Python, so a system with no poppler still
+ * reads its PDFs, with no network there.
  */
 
 export const PINS_FILE = path.join(PROJECT_ROOT, 'indexer', 'embed_deps.json')
 
 interface Pin { url: string; sha256: string; size: number }
-interface Pins { wheels: Record<string, Record<string, Pin>>; model: { id: string; files: Record<string, Pin> } }
+interface Pins { wheels: Record<string, Record<string, Pin>>; model: { id: string; files: Record<string, Pin> }; readers: Record<string, Pin> }
 let pinned: Pins | null = null
 const pins = (): Pins => (pinned ??= JSON.parse(fs.readFileSync(PINS_FILE, 'utf8')) as Pins)
 
@@ -65,6 +70,16 @@ export function embedVersion(platform: string): string | null {
   const wheels = PLATFORM.test(platform) ? pins().wheels[platform] : undefined
   if (!wheels) return null
   return `${platform}-${createHash('sha256').update(JSON.stringify({ wheels, model: pins().model })).digest('hex').slice(0, 12)}`
+}
+
+/** The document readers' wheels. */
+export function readerFiles(): EmbedFile[] {
+  return Object.values(pins().readers).map(p => ({ name: cacheName(p), sha256: p.sha256, size: p.size }))
+}
+
+/** The folder name of the document readers there: a digest of their pins. */
+export function readersVersion(): string {
+  return createHash('sha256').update(JSON.stringify(pins().readers)).digest('hex').slice(0, 12)
 }
 
 /** Megabytes a first build sends to a system of this platform. */
@@ -102,10 +117,10 @@ export async function findLocal(files: EmbedFile[]): Promise<(string | null)[]> 
 }
 
 /** What is missing here downloaded into the Studio's own folder by
- *  fetch_embed.py --download; why not, or null. */
-function download(platform: string): Promise<string | null> {
+ *  fetch_embed.py, as `what` asks; why not, or null. */
+function download(what: string[]): Promise<string | null> {
   return new Promise(resolve => {
-    const child = spawn(PYTHON_BIN, [path.join(PROJECT_ROOT, 'indexer', 'fetch_embed.py'), '--download', '--platform', platform,
+    const child = spawn(PYTHON_BIN, [path.join(PROJECT_ROOT, 'indexer', 'fetch_embed.py'), ...what,
       '--cache', path.join(INDEX_BASE, 'embed-wheels')], { stdio: ['ignore', 'ignore', 'pipe'] })
     let err = ''
     const timer = setTimeout(() => child.kill(), 15 * 60_000)
@@ -115,16 +130,17 @@ function download(platform: string): Promise<string | null> {
   })
 }
 
-/** The files there for a version, by name and size. $1 the version. */
-const LIST = `d="$HOME/.activate-studio/embed/$1.files"; [ -d "$d" ] || exit 0
+/** The files there for a version, by name and size. $1 the folder under
+ *  ~/.activate-studio (embed or readers) and the version. */
+const LIST = `d="$HOME/.activate-studio/$1.files"; [ -d "$d" ] || exit 0
 for f in "$d"/*; do [ -f "$f" ] && printf '%s %s\\n' "$(wc -c < "$f" | tr -d ' ')" "\${f##*/}"; done; exit 0`
 /** One file from standard input, written whole or not at all, and the
- *  marker touched. $1 the version, $2 the file's name. */
-const PUT = `d="$HOME/.activate-studio/embed/$1.files"; mkdir -p "$d" && cat > "$d/.$2.part" && mv -f "$d/.$2.part" "$d/$2" && touch "$HOME/.activate-studio/embed/$1.sending"`
-const TOUCH = 'touch "$HOME/.activate-studio/embed/$1.sending"'
-const DONE = 'rm -f "$HOME/.activate-studio/embed/$1.sending"'
+ *  marker touched. $1 as for LIST, $2 the file's name. */
+const PUT = `d="$HOME/.activate-studio/$1.files"; mkdir -p "$d" && cat > "$d/.$2.part" && mv -f "$d/.$2.part" "$d/$2" && touch "$HOME/.activate-studio/$1.sending"`
+const TOUCH = 'touch "$HOME/.activate-studio/$1.sending"'
+const DONE = 'rm -f "$HOME/.activate-studio/$1.sending"'
 
-/** Files sent, for tests. */
+/** Embedding files sent, for tests. */
 let sentCount = 0
 export const embedFilesSent = () => sentCount
 
@@ -141,26 +157,35 @@ const sending = new Map<string, Promise<void>>()
  */
 export function sendEmbed(site: string, key: string, platform: string, version: string, log: (m: string) => void = m => console.warn(m)): Promise<void> {
   const k = `${key.slice(-16)}|${site}|${version}`
-  const run = (sending.get(k) ?? Promise.resolve()).catch(() => {}).then(() => send(site, key, platform, version, log))
+  const files = embedFiles(platform)
+  if (!files) return Promise.resolve()
+  return queued(k, () => send(site, key, `embed/${version}`, files, ['--download', '--platform', platform], `the ONNX packages for ${platform}`, log))
+}
+
+/** The same for the document readers, which the text pass waits for. */
+export function sendReaders(site: string, key: string, version: string, log: (m: string) => void = m => console.warn(m)): Promise<void> {
+  return queued(`${key.slice(-16)}|${site}|readers/${version}`, () => send(site, key, `readers/${version}`, readerFiles(), ['--download-readers'], 'the document readers', log))
+}
+
+function queued(k: string, job: () => Promise<void>): Promise<void> {
+  const run = (sending.get(k) ?? Promise.resolve()).catch(() => {}).then(job)
   const held = run.finally(() => { if (sending.get(k) === held) sending.delete(k) })
   sending.set(k, held)
   return held
 }
 
-async function send(site: string, key: string, platform: string, version: string, log: (m: string) => void): Promise<void> {
-  const files = embedFiles(platform)
-  if (!files) return
-  const beat = setInterval(() => { void remoteRun(site, key, ['sh', '-c', TOUCH, '_', version], 30_000).catch(() => {}) }, 60_000)
+async function send(site: string, key: string, folder: string, files: EmbedFile[], fetchArgs: string[], what: string, log: (m: string) => void): Promise<void> {
+  const beat = setInterval(() => { void remoteRun(site, key, ['sh', '-c', TOUCH, '_', folder], 30_000).catch(() => {}) }, 60_000)
   beat.unref?.()
   try {
     let local = await findLocal(files)
     if (local.some(p => !p)) {
-      const why = await download(platform)
-      if (why) log(`search by meaning on ${siteName(site)}: the ONNX packages for ${platform} could not be downloaded here (${why}); the build there downloads them itself where it can`)
+      const why = await download(fetchArgs)
+      if (why) log(`a build on ${siteName(site)}: ${what} could not be downloaded here (${why}); the build there downloads them itself where it can`)
       local = await findLocal(files)
     }
     const there = new Map<string, number>()
-    const listed = await remoteRun(site, key, ['sh', '-c', LIST, '_', version], 60_000)
+    const listed = await remoteRun(site, key, ['sh', '-c', LIST, '_', folder], 60_000)
     for (const line of listed.stdout.split('\n')) {
       const m = /^(\d+) (.+)$/.exec(line.trim())
       if (m) there.set(m[2], Number(m[1]))
@@ -168,14 +193,14 @@ async function send(site: string, key: string, platform: string, version: string
     for (const [i, f] of files.entries()) {
       const p = local[i]
       if (!p || there.get(f.name) === f.size) continue
-      const r = await remoteRunOnce(site, key, ['sh', '-c', PUT, '_', version, f.name], 30 * 60_000, p)
+      const r = await remoteRunOnce(site, key, ['sh', '-c', PUT, '_', folder, f.name], 30 * 60_000, p)
       if (r.code !== 0) throw new Error(`${f.name} could not be written there: ${r.stderr.trim().split('\n').pop() || `exit ${r.code}`}`)
-      sentCount++
+      if (folder.startsWith('embed/')) sentCount++
     }
   } catch (e) {
-    log(`search by meaning on ${siteName(site)}: sending the embedding model failed: ${(e as Error).message}`)
+    log(`a build on ${siteName(site)}: sending ${what} failed: ${(e as Error).message}`)
   } finally {
     clearInterval(beat)
-    await remoteRun(site, key, ['sh', '-c', DONE, '_', version], 30_000).catch(() => {})
+    await remoteRun(site, key, ['sh', '-c', DONE, '_', folder], 30_000).catch(() => {})
   }
 }

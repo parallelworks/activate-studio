@@ -273,12 +273,16 @@ const reducedMotion = () => { try { return matchMedia('(prefers-reduced-motion: 
 
 // ---- the frame both maps sit in ----
 
-/** A map's canvas, inline or filling the window, with its controls. */
-function MapFrame({ title, full, onFull, controls, children }: {
+/** A map's canvas, inline or filling the window, with its controls. Filling
+ *  the window it covers the map's title, so it carries the library picker and
+ *  the busy mark itself, and stays open while another library loads. */
+function MapFrame({ title, full, onFull, controls, picker, busy, children }: {
   title: string
   full: boolean
   onFull: (full: boolean) => void
   controls: ReactNode
+  picker?: ReactNode
+  busy?: ReactNode
   children: ReactNode
 }) {
   const panel = useRef<HTMLDivElement>(null)
@@ -286,7 +290,12 @@ function MapFrame({ title, full, onFull, controls, children }: {
     if (!full) return
     const before = document.activeElement as HTMLElement | null
     panel.current?.focus()
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); onFull(false) } }
+    // Escape with the library list open closes the list, not the map.
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || document.querySelector('.library-scope-panel')) return
+      e.preventDefault()
+      onFull(false)
+    }
     window.addEventListener('keydown', onKey)
     const overflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
@@ -303,7 +312,7 @@ function MapFrame({ title, full, onFull, controls, children }: {
   if (!full) return <>{bar}{children}</>
   return createPortal(
     <div className="map-full" role="dialog" aria-modal="true" aria-label={title} tabIndex={-1} ref={panel}>
-      <div className="map-full-head"><h2>{title}</h2>{bar}</div>
+      <div className="map-full-head"><div className="map-full-title"><h2>{title}</h2>{picker}{busy}</div>{bar}</div>
       <div className="map-full-body">{children}</div>
     </div>,
     document.body,
@@ -570,24 +579,30 @@ export function TopologyMap({ libraries = [] }: { libraries?: PublicLibrary[] })
   const picker = libraries.length > 1 && (
     <LibraryScope single libraries={libraries} value={[lib]} onChange={s => { if (s !== 'all' && s[0]) setLib(s[0]) }} hint="Corpus topology of" />
   )
+  const busy = loading && <Loader inline size={14} label="Reading the folders…" />
   const head = (
     <div className="map-head">
       <h3>Corpus topology</h3>
-      {picker}
-      {loading && <Loader inline size={14} label="Reading the folders…" />}
+      {!full && picker}
+      {!full && busy}
     </div>
   )
   if (!tree || (!tree.children.size && !tree.bytes)) {
     if (!picker) return null
+    const note = (
+      <p className="muted">
+        {error ? `The folders of ${label} could not be read: ${error}.`
+          : empty ? `${label} has no index yet, so there is nothing to draw.`
+            : loading ? `Reading the folders of ${label} from its index.`
+              : `${label} has no files in its index.`}
+      </p>
+    )
     return (
       <section className="card ov-list">
         {head}
-        <p className="muted">
-          {error ? `The folders of ${label} could not be read: ${error}.`
-            : empty ? `${label} has no index yet, so there is nothing to draw.`
-              : loading ? `Reading the folders of ${label} from its index.`
-                : `${label} has no files in its index.`}
-        </p>
+        {full
+          ? <MapFrame key="frame" title="Corpus topology" full onFull={setFull} controls={null} picker={picker} busy={busy}><div className="map-empty">{note}</div></MapFrame>
+          : note}
       </section>
     )
   }
@@ -621,7 +636,7 @@ export function TopologyMap({ libraries = [] }: { libraries?: PublicLibrary[] })
         move. Click a directory to open it on its own; the crumbs back out.
       </p>
       {crumbs}
-      <MapFrame title="Corpus topology" full={full} onFull={setFull} controls={controls}>
+      <MapFrame key="frame" title="Corpus topology" full={full} onFull={setFull} controls={controls} picker={picker} busy={busy}>
         {full ? <>{crumbs}{map('fill')}{legend}</> : map(320)}
       </MapFrame>
       {!full && legend}
@@ -1000,14 +1015,23 @@ export function SemanticMap({ onOpen, libraries = [] }: { onOpen: (path: string)
   const picker = several && lib && (
     <LibraryScope single libraries={libraries} value={[lib]} onChange={sc => { if (sc !== 'all' && sc[0]) setLib(sc[0]) }} hint="Semantic map of" />
   )
+  const busy = (!data || (live.building && !(data.available && data.library?.kind === 'remote'))) && several && <Loader inline size={14} label={data && live.building ? 'Making the map…' : 'Loading…'} />
   const head = (
     <div className="map-head">
       <h3>Semantic map</h3>
-      {picker}
-      {(!data || (live.building && !(data.available && data.library?.kind === 'remote'))) && several && <Loader inline size={14} label={data && live.building ? 'Making the map…' : 'Loading…'} />}
+      {!full && picker}
+      {!full && busy}
     </div>
   )
-  if (!data) return several && lib ? <section className="card ov-list">{head}</section> : null
+  if (!data) {
+    if (!several || !lib) return null
+    return (
+      <section className="card ov-list">
+        {head}
+        {full && <MapFrame key="frame" title="Semantic map" full onFull={setFull} controls={null} picker={picker} busy={busy}><div className="map-empty"><p className="muted">Loading the map.</p></div></MapFrame>}
+      </section>
+    )
+  }
   const clusters = data.clusters ?? []
   const open = focus === null ? null : clusters.find(c => c.c === focus) ?? null
   const extraLoaded = [...pages.values()].reduce((s, p) => s + p.length, 0)
@@ -1112,6 +1136,14 @@ export function SemanticMap({ onOpen, libraries = [] }: { onOpen: (path: string)
       onClick: () => setFocus(focus === cl.c ? null : cl.c),
     }))} />
   )
+  const statusLine = remote ? (
+    <div className="map-remote">
+      <p className="map-status muted">{status}{remoteNotes}{data.fallback ? ' This map was drawn from a sample, since numpy is not installed here.' : ''}</p>
+      {live.building
+        ? <Loader inline size={14} label="Refreshing…" />
+        : <Button variant="ghost" size="sm" onClick={refresh}>Refresh</Button>}
+    </div>
+  ) : <p className="map-status muted">{status}{data.fallback ? ' This map was drawn from a sample, since numpy is not installed here.' : ''}</p>
   return (
     <section className="card ov-list">
       {head}
@@ -1121,22 +1153,13 @@ export function SemanticMap({ onOpen, libraries = [] }: { onOpen: (path: string)
         links join each to the two that read most alike; hovering a file draws lines to its five nearest. Click a cluster for
         all of its files, click a file to open it; zoom and drag to move, or turn it in 3D.
       </p>
-      {unavailable || (
-        <>
-          {remote ? (
-            <div className="map-remote">
-              <p className="map-status muted">{status}{remoteNotes}{data.fallback ? ' This map was drawn from a sample, since numpy is not installed here.' : ''}</p>
-              {live.building
-                ? <Loader inline size={14} label="Refreshing…" />
-                : <Button variant="ghost" size="sm" onClick={refresh}>Refresh</Button>}
-            </div>
-          ) : <p className="map-status muted">{status}{data.fallback ? ' This map was drawn from a sample, since numpy is not installed here.' : ''}</p>}
-          <MapFrame title="Semantic map" full={full} onFull={setFull} controls={controls}>
-            {full ? <><p className="map-status muted">{status}</p>{canvas('fill')}{legend}</> : canvas(360)}
-          </MapFrame>
-          {!full && legend}
-        </>
+      {!full && (unavailable || statusLine)}
+      {(full || !unavailable) && (
+        <MapFrame key="frame" title="Semantic map" full={full} onFull={setFull} controls={unavailable ? null : controls} picker={picker} busy={busy}>
+          {unavailable || (full ? <>{statusLine}{canvas('fill')}{legend}</> : canvas(360))}
+        </MapFrame>
       )}
+      {!full && !unavailable && legend}
     </section>
   )
 }

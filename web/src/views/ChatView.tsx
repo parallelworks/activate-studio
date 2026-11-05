@@ -23,7 +23,7 @@ import { SideViewHost } from '../components/RunPane'
 import { PanelToggle } from '../components/StatusPanel'
 import { modelLabel, share } from '../statusShare'
 import { ToolApproval } from '../components/ToolApproval'
-import { GUFI_TOOL_RENDERERS } from '../components/GufiCommands'
+import { GUFI_TOOL_RENDERERS, gufiToolPresentation } from '../components/GufiCommands'
 import { EmptyChatBrand } from '../components/EmptyChatBrand'
 
 const MODEL_STORAGE_KEY = 'studio.chat.lastModel'
@@ -365,6 +365,7 @@ export function ChatView() {
           if (target.kind === 'conversation') { setActiveId(target.id); setShowAttachments(false); setShowManage(false) }
           else if (target.kind === 'newChat') startNewChat()
           else if (target.kind === 'attachments') { setShowAttachments(true); setShowManage(false) }
+          else if (target.kind === 'external' && target.href.startsWith('#')) location.hash = target.href
           else if (target.kind === 'external') window.open(target.href, '_blank', 'noopener')
         }}
       >{children}</a>
@@ -409,6 +410,8 @@ export function ChatView() {
       config={{
         suggestedPrompts: cfg.suggestedPrompts,
         LinkComponent,
+        // The model picker's Manage link and the no-model empty state's button.
+        extraLinks: { manageProviders: '#view=settings:access', addProvider: '#view=settings:access' },
         // Same-origin /?embed= image sources render as live viewers (DAGs,
         // 3D models) instead of broken images; the server emits them in
         // chat replies. Formerly a dist patch, now the supported hook.
@@ -423,8 +426,9 @@ export function ChatView() {
         // A call that changes something on the platform waits for the
         // user's answer; the Studio draws the package's approval block with
         // the alternative the server allows beside it.
-        // The tools that run GUFI show the commands they ran under their row.
-        slots: { partRenderers: { approval: ToolApproval }, toolRenderers: GUFI_TOOL_RENDERERS },
+        // The tools that run GUFI show the commands they ran in their row,
+        // and fold with the other finished calls.
+        slots: { partRenderers: { approval: ToolApproval }, toolRenderers: GUFI_TOOL_RENDERERS, toolPresentation: gufiToolPresentation },
         strings: {
           thinking: {
             thoughtFor: (duration: string) => `Worked for ${duration}`,
@@ -437,6 +441,10 @@ export function ChatView() {
           emptyState: {
             noProvidersTitle: 'Model credential needed',
             noProvidersBody: 'Add your API key or platform token under Settings, Model access. Browsing, search, and adding material work without one.',
+            addProvider: 'Open Model access',
+          },
+          sidebar: {
+            manageProviders: 'Model access',
           },
           input: {
             placeholderNoProviders: 'Add your model credential to start chatting',

@@ -14,7 +14,7 @@ import { StatusBadge, type BadgeVariant } from '@parallelworks/ui'
  */
 interface Item { name: string; kind: 'command' | 'skill' | 'agent' | 'tool'; description: string }
 
-const KIND_TONE: Record<Item['kind'], BadgeVariant> = { command: 'muted', tool: 'muted', skill: 'success', agent: 'info' }
+const KIND_TONE: Record<Item['kind'], BadgeVariant> = { command: 'muted', tool: 'muted', skill: 'accent', agent: 'info' }
 
 const META: Item[] = [
   { name: 'help', kind: 'command', description: 'List every slash command, skill, agent, and tool' },

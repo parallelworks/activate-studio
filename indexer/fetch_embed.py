@@ -3,16 +3,22 @@
 pinned in embed_deps.json.
 
   --deps DIR    onnxruntime, tokenizers and numpy wheels for one platform,
-                and xlrd and olefile (pure Python, for .xls and .ppt files),
-                unpacked into DIR (a site-packages, or indexer/.deps, which
-                embed_onnx.py and enrich.py add to sys.path themselves);
-                with --readers-only, xlrd and olefile alone
+                and the document readers (pure Python: pypdf for PDFs, with
+                typing_extensions for Python 3.10, xlrd for .xls and olefile
+                for .ppt), unpacked into DIR (a site-packages, or
+                indexer/.deps, which embed_onnx.py and enrich.py add to
+                sys.path themselves); with --readers-only, the readers alone
   --model DIR   the int8 all-MiniLM-L6-v2 ONNX model and its tokenizer, as
                 DIR/model.onnx and DIR/tokenizer.json
   --download    the wheels for --platform and the model files into --cache
                 alone, installing nothing: what the Studio sends to another
                 system for a build there, which runs this script with that
                 cache, --no-readers and no network
+  --download-readers
+                the document readers' wheels into --cache alone: what the
+                Studio sends to another system before its text pass, which
+                runs this script with that cache, --readers-only and no
+                network
 
 Every download is checked against its SHA-256, and kept in --cache so a
 second run needs no network. --platform names the wheels to take (for
@@ -111,7 +117,7 @@ def install_deps(target: Path, plat: str, cache: Path) -> None:
 
 
 def install_readers(target: Path, cache: Path) -> None:
-    """xlrd and olefile: pure-Python wheels, the same on every platform."""
+    """The document readers: pure-Python wheels, the same on every platform."""
     target.mkdir(parents=True, exist_ok=True)
     for pkg, w in PINS['readers'].items():
         whl = fetch(w['url'], w['sha256'], cache)
@@ -134,6 +140,13 @@ def download(plat: str, cache: Path) -> None:
     print(f'the packages for {plat} and {PINS["model"]["id"]} in {cache}')
 
 
+def download_readers(cache: Path) -> None:
+    """The document readers' wheels, into the cache only."""
+    for w in PINS['readers'].values():
+        fetch(w['url'], w['sha256'], cache)
+    print(f'the document readers in {cache}')
+
+
 def install_model(target: Path, cache: Path) -> None:
     target.mkdir(parents=True, exist_ok=True)
     for name, f in PINS['model']['files'].items():
@@ -151,15 +164,18 @@ def main() -> int:
     ap.add_argument('--model', help='put model.onnx and tokenizer.json in this directory')
     ap.add_argument('--platform', default='', help=f'wheels for this platform (default {this_platform()})')
     ap.add_argument('--cache', default='', help='keep downloads here (default: a folder in the temp directory)')
-    ap.add_argument('--readers-only', action='store_true', help='with --deps, only xlrd and olefile')
-    ap.add_argument('--no-readers', action='store_true', help='with --deps, leave out xlrd and olefile')
+    ap.add_argument('--readers-only', action='store_true', help='with --deps, only the document readers')
+    ap.add_argument('--no-readers', action='store_true', help='with --deps, leave out the document readers')
     ap.add_argument('--download', action='store_true', help='only download the wheels for --platform and the model into --cache')
+    ap.add_argument('--download-readers', action='store_true', help='only download the document readers into --cache')
     args = ap.parse_args()
-    if not args.deps and not args.model and not args.download:
-        ap.error('give --deps, --model, or both, or --download')
+    if not args.deps and not args.model and not args.download and not args.download_readers:
+        ap.error('give --deps, --model, or both, or --download or --download-readers')
     cache = Path(args.cache) if args.cache else Path(tempfile.gettempdir()) / 'studio-embed-cache'
     if args.download:
         download(args.platform or this_platform(), cache)
+    if args.download_readers:
+        download_readers(cache)
     if args.deps:
         if not args.no_readers:
             install_readers(Path(args.deps), cache)

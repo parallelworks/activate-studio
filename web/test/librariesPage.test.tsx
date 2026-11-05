@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { addChoices } from '../src/components/AddLibrary'
 
@@ -88,6 +88,7 @@ function stubServer(s: Server) {
     const depth = /^\/api\/libraries\/([^/]+)\/depth$/.exec(path)
     if (depth && method === 'PUT') {
       s.libs = s.libs.map(l => (l.id === depth[1] ? { ...l, depth: (body as { depth: string }).depth } : l))
+      s.user = s.user.map(l => (l.id === depth[1] ? { ...l, depth: (body as { depth: string }).depth } : l))
       return reply({ id: depth[1], depth: (body as { depth: string }).depth })
     }
     if (path === '/api/libraries' && method === 'GET') return reply({ canBuild: !!s.canBuild, libraries: s.libs.map(l => (l.primary ? { ...l, sourceRoot: s.primary, label: s.primary.split('/').pop() } : l)) })
@@ -323,6 +324,18 @@ describe('Settings, Libraries', () => {
     expect(within(row).getByText('Rebuild makes it again.')).toBeInTheDocument()
   })
 
+  it('a remote build that could not read some files says how many and why on its row, and one that read everything says Ready', async () => {
+    const line = '312 PDFs have no text: this system has no PDF reader'
+    const done = { ...BUILT_REMOTE, indexRoot: '/home/me/.activate-studio/indexes/data-1a2b3c4d/data', state: 'ready', directories: 4, files: 400, builtAt: '2026-10-01T00:00:00Z', progress: null, error: null }
+    await renderPage(server({ libs: [PRIMARY], user: [{ ...done, gaps: [line] }, { ...done, id: 'u-box-whole', label: 'whole on box', gaps: [] }] }))
+    const row = await waitFor(() => rowOf('data on box'))
+    expect(within(row).getByText('Ready; some files were not read')).toBeInTheDocument()
+    expect(within(row).getByText(line)).toBeInTheDocument()
+    const whole = await waitFor(() => rowOf('whole on box'))
+    expect(within(whole).getByText('Ready')).toBeInTheDocument()
+    expect(screen.getAllByText(line)).toHaveLength(1)
+  })
+
   it('an index GUFI 0.8.0 reads wrongly says why on its row, whatever kind of library it is, and no other row has a note', async () => {
     const note = 'Written by a GUFI before 0.8.0 and rolled up, so the files of the folders it rolled up are listed more than once and counts and sizes over them are too high; rebuild it with GUFI 0.8.0 or later.'
     const rolled = { ...SITE, id: 'rolled', label: 'Rolled up', formatNote: note }
@@ -548,9 +561,122 @@ describe('Settings, Libraries', () => {
     // Built here, the sync applies it: no rebuild is asked for.
     await waitFor(() => expect(success).toHaveBeenCalledWith('Papers: Meaning on all files. It is applied in the background now.'))
     expect(posted(s, '/api/libraries/papers/rebuild')).toHaveLength(0)
+    expect(screen.queryByRole('button', { name: 'Rebuild now' })).toBeNull()
+    expect(within(rowOf('Papers')).queryByText(/^Depth changed/)).toBeNull()
     expect(within(rowOf('Site index')).queryByRole('combobox')).toBeNull()
     expect(within(rowOf('Site index')).getByText('as built')).toBeInTheDocument()
     expect(screen.getByText(/Depth is how far an index goes/)).toBeInTheDocument()
+  })
+
+  describe('a new depth on a library built on a remote system', () => {
+    const OVER_SSH = {
+      ...BUILT_REMOTE, indexRoot: '/home/me/.activate-studio/indexes/data-1a2b3c4d/data', state: 'ready', directories: 6, files: 40, builtAt: '2026-10-20T00:00:00Z', progress: null,
+      depth: 'ocr', builtDepth: 'ocr', buildingDepth: null,
+    }
+    const OVER_PW = { ...OVER_SSH, id: 'u-c1-data', label: 'data on c1', transport: 'pw', site: 'c1', destination: null, port: null }
+    const pick = async (name: string, stop: string) => {
+      fireEvent.click(within(rowOf(name)).getByRole('combobox', { name: `Index depth of ${name}` }))
+      const option = (await screen.findAllByRole('option')).find(o => o.textContent === stop)!
+      fireEvent.pointerDown(option)
+      fireEvent.click(option)
+    }
+    const open = async (lib: Record<string, unknown>) => {
+      const s = server({ libs: [PRIMARY], user: [lib] })
+      await renderPage(s)
+      await waitFor(() => rowOf(String(lib.label)))
+      return s
+    }
+
+    it.each([['ssh', OVER_SSH], ['pw ssh', OVER_PW]])('over %s it offers to rebuild, says what that does, and Rebuild now starts it', async (_over, lib) => {
+      const s = await open(lib)
+      await pick(lib.label, 'Meaning on all files')
+      await screen.findByText('Rebuild at Meaning on all files?')
+      const choice = detailOf(lib.label)
+      expect(choice).toHaveTextContent('The current index keeps answering searches until the new one replaces it.')
+      expect(choice).toHaveTextContent('about three times as long as on documents')
+      expect(posted(s, `/api/user-libraries/${lib.id}/refresh`)).toHaveLength(0)
+      s.user = [{ ...s.user[0], state: 'updating', buildingDepth: 'meaning-full', progress: { phase: 'Indexing folders', done: 0, total: 0, current: null } }]
+      fireEvent.click(within(choice).getByRole('button', { name: 'Rebuild now' }))
+      await waitFor(() => expect(posted(s, `/api/user-libraries/${lib.id}/refresh`)).toHaveLength(1))
+      await waitFor(() => expect(screen.queryByText('Rebuild at Meaning on all files?')).toBeNull())
+      // The row says so until that build finishes, and then stops.
+      expect(within(rowOf(lib.label)).getByText('Depth changed, applies when this build finishes')).toBeInTheDocument()
+      s.user = [{ ...s.user[0], state: 'ready', builtDepth: 'meaning-full', buildingDepth: null, progress: null }]
+      await waitFor(() => expect(within(rowOf(lib.label)).queryByText(/^Depth changed/)).toBeNull(), { timeout: 4000 })
+    })
+
+    it('Later leaves a note on the row, which is there when the page is opened again, until a build at that depth finishes', async () => {
+      const s = await open(OVER_SSH)
+      await pick('data on box', 'Meaning on documents')
+      fireEvent.click(await screen.findByRole('button', { name: 'Later' }))
+      await waitFor(() => expect(screen.queryByRole('button', { name: 'Rebuild now' })).toBeNull())
+      expect(posted(s, `/api/user-libraries/${OVER_SSH.id}/refresh`)).toHaveLength(0)
+      expect(within(rowOf('data on box')).getByText('Depth changed, Rebuild to apply')).toBeInTheDocument()
+
+      cleanup()
+      await renderPage(s)
+      await waitFor(() => expect(within(rowOf('data on box')).getByText('Depth changed, Rebuild to apply')).toBeInTheDocument())
+      expect(screen.queryByRole('button', { name: 'Rebuild now' })).toBeNull()
+
+      cleanup()
+      s.user = [{ ...s.user[0], builtDepth: 'meaning-documents' }]
+      await renderPage(s)
+      await waitFor(() => rowOf('data on box'))
+      expect(within(rowOf('data on box')).queryByText(/^Depth changed/)).toBeNull()
+    })
+
+    it('the row\'s own Rebuild answers the choice too', async () => {
+      const s = await open(OVER_SSH)
+      await pick('data on box', 'Meaning on documents')
+      await screen.findByRole('button', { name: 'Rebuild now' })
+      fireEvent.click(within(rowOf('data on box')).getByRole('button', { name: 'Rebuild' }))
+      await waitFor(() => expect(posted(s, `/api/user-libraries/${OVER_SSH.id}/refresh`)).toHaveLength(1))
+      await waitFor(() => expect(screen.queryByRole('button', { name: 'Rebuild now' })).toBeNull())
+    })
+
+    it('after a failed rebuild the note stays', async () => {
+      await open({ ...OVER_SSH, depth: 'meaning-full', error: 'gufi_dir2index failed' })
+      const row = rowOf('data on box')
+      expect(within(row).getByText('Ready; the last build failed')).toBeInTheDocument()
+      expect(within(row).getByText('Depth changed, Rebuild to apply')).toBeInTheDocument()
+    })
+
+    it('with a build running, it says the change waits for the next one and offers no rebuild', async () => {
+      const s = await open({ ...OVER_SSH, state: 'updating', buildingDepth: 'ocr', progress: { phase: 'Extracting text', done: 0, total: 0, current: null } })
+      await pick('data on box', 'Meaning on documents')
+      await waitFor(() => expect(screen.getByText('Meaning on documents applies to the next build')).toBeInTheDocument())
+      expect(detailOf('data on box')).toHaveTextContent('A build is running on')
+      expect(screen.queryByRole('button', { name: 'Rebuild now' })).toBeNull()
+      expect(within(rowOf('data on box')).getByText('Depth changed, applies at the next Rebuild')).toBeInTheDocument()
+      expect(posted(s, `/api/user-libraries/${OVER_SSH.id}/refresh`)).toHaveLength(0)
+    })
+
+    it('a lower depth is offered too, without saying search needs it', async () => {
+      await open({ ...OVER_SSH, depth: 'meaning-full', builtDepth: 'meaning-full' })
+      await pick('data on box', 'Text')
+      await screen.findByRole('button', { name: 'Rebuild now' })
+      const choice = detailOf('data on box')
+      expect(within(choice).getByRole('button', { name: 'Later' })).toBeInTheDocument()
+      expect(choice).toHaveTextContent('Search keeps working without a rebuild.')
+      expect(choice).not.toHaveTextContent('keeps answering searches until')
+    })
+
+    it('a library with no recorded depth is offered a rebuild, and shows no note', async () => {
+      await open({ ...OVER_SSH, builtDepth: null })
+      expect(within(rowOf('data on box')).queryByText(/^Depth changed/)).toBeNull()
+      await pick('data on box', 'Meaning on documents')
+      fireEvent.click(await screen.findByRole('button', { name: 'Later' }))
+      await waitFor(() => expect(screen.queryByRole('button', { name: 'Rebuild now' })).toBeNull())
+      expect(within(rowOf('data on box')).queryByText(/^Depth changed/)).toBeNull()
+    })
+
+    it('back at the depth its index has, there is nothing to rebuild', async () => {
+      await open({ ...OVER_SSH, depth: 'meaning-documents' })
+      expect(within(rowOf('data on box')).getByText('Depth changed, Rebuild to apply')).toBeInTheDocument()
+      await pick('data on box', 'Text + OCR')
+      await waitFor(() => expect(within(rowOf('data on box')).queryByText(/^Depth changed/)).toBeNull())
+      expect(screen.queryByRole('button', { name: 'Rebuild now' })).toBeNull()
+    })
   })
 
   it('a hosted Studio with a platform builds on a cluster through the workflow', async () => {

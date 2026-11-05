@@ -54,3 +54,9 @@ test('a file found several ways keeps its place and says the most exact way: wor
   ])
 })
 
+
+test('a name with an underscore matches itself, the underscore taken literally', () => {
+  assert.equal(nameClause('NIST_SP811'), "name LIKE '%NIST\\_SP811%' ESCAPE '\\'")
+  assert.equal(nameClause('___'), '0')
+  assert.equal(nameClause('%'), '0')
+})

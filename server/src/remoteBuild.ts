@@ -22,7 +22,15 @@ import { PROJECT_ROOT } from './config.js'
  * meaning, embed.py runs as well, with the Studio's ONNX embedding model
  * and its packages for that Python, kept in ~/.activate-studio/embed and
  * sent from here the first time (remoteEmbed.ts), or else with the GGUF
- * model where it is in ~/.activate-studio/models.
+ * model where it is in ~/.activate-studio/models. The document readers
+ * (pypdf, xlrd, olefile) go the same way to ~/.activate-studio/readers, at
+ * every depth with text, so a system with no poppler still reads its PDFs.
+ * The text and the vectors are made in the new index, before it is swapped
+ * in, so the one there answers whole until then. A rebuild walks and indexes
+ * every folder again; what it reuses is the text read before (.extract in
+ * the index folder) and the passages embedded before (.embed-cache.db
+ * there). The manifest says what the build could not read, counted from the
+ * index itself, and buildGaps puts that in words for the library's row.
  *
  * Every value reaches the scripts as a positional argument, never as text
  * inside them.
@@ -33,7 +41,8 @@ import { PROJECT_ROOT } from './config.js'
  *  Studio's embedding model and packages installed for the login
  *  (remoteEmbed.ts), as platform= and embeds= lines. */
 const EMBED_LINES = `echo "platform=$("$py" -c 'import platform, sys; m = platform.machine().lower(); a = {"amd64": "x86_64", "arm64": "aarch64"}.get(m, m); s = "macos" if sys.platform == "darwin" else "linux" if sys.platform.startswith("linux") else sys.platform; print("%s-%s-cp%d%d" % (s, "arm64" if s == "macos" and a == "aarch64" else a, sys.version_info[0], sys.version_info[1]))' 2>/dev/null)"
-echo "embeds=$(cd "$HOME/.activate-studio/embed" 2>/dev/null && for d in */ok; do [ -f "$d" ] && printf '%s ' "\${d%/ok}"; done)"`
+echo "embeds=$(cd "$HOME/.activate-studio/embed" 2>/dev/null && for d in */ok; do [ -f "$d" ] && printf '%s ' "\${d%/ok}"; done)"
+echo "readers=$(cd "$HOME/.activate-studio/readers" 2>/dev/null && for d in */ok; do [ -f "$d" ] && printf '%s ' "\${d%/ok}"; done)"`
 
 /** The same for the Python a build runs with, $1, as the build starts. */
 export const EMBED_PROBE = `py=$1
@@ -76,8 +85,9 @@ exit 0`
  *  level of search by meaning (meaningArgs), $10 enrich.py's for the depth
  *  (textArgs), both words with no spaces or quotes; $11 the version of the
  *  Studio's ONNX model and packages to embed with (remoteEmbed.ts) and $12
- *  the Python's platform, or empty. */
-export const BUILD_RUN = `s=$1 bin=$2 src=$3 idx=$4 threads=$5 py=$6 model=$7 create=$8 meaning=\${9:-} text=\${10:-} onnx=\${11:-} platform=\${12:-}
+ *  the Python's platform, or empty; $13 the version of the document readers
+ *  (remoteEmbed.ts), or empty, and $14 the depth, for the manifest. */
+export const BUILD_RUN = `s=$1 bin=$2 src=$3 idx=$4 threads=$5 py=$6 model=$7 create=$8 meaning=\${9:-} text=\${10:-} onnx=\${11:-} platform=\${12:-} readers=\${13:-} depth=\${14:-}
 uname -n > "$s/host" 2>/dev/null
 echo $$ > "$s/pid"
 phase() { printf '%s\\n' "$1" > "$s/phase"; }
@@ -122,10 +132,7 @@ fi
 # The index folders opened for this user, so the text pass can write in them
 # and the tree can be moved; their group and other bits stay the source's.
 [ "$(id -u)" = 0 ] || find "$stage/$base" -type d ! -perm -700 -exec chmod u+rwx {} + 2>/dev/null
-rmtree "$idx/.old"
-if [ -d "$tree" ]; then mv "$tree" "$idx/.old"; fi
-mv "$stage/$base" "$tree" || fail "The new index could not be moved into place."
-rmtree "$stage"; rmtree "$idx/.old"
+new="$stage/$base"
 # The Studio's ONNX embedding model and its packages for this Python, kept
 # in ~/.activate-studio/embed/<version> and installed once: from what the
 # Studio sends while the build runs (it keeps <version>.sending touched as
@@ -147,11 +154,32 @@ onnxready() {
   rmtree "$t"
   [ -f "$e/ok" ]
 }
-fulltext=false vectors=false
+# The document readers, kept in ~/.activate-studio/readers/<version> and
+# installed the same way, before the text pass that needs them.
+r="$HOME/.activate-studio/readers/$readers"
+readersready() {
+  [ -f "$r/ok" ] && return 0
+  while [ -f "$r.sending" ] && [ -n "$(find "$r.sending" -mmin -10 2>/dev/null)" ]; do sleep 1; done
+  t="$r.tmp-$$"; rmtree "$t"
+  if "$py" "$s/fetch_embed.py" --deps "$t/deps" --readers-only --cache "$r.files" > "$s/readers.log" 2>&1 &&
+    PYTHONPATH="$t/deps" "$py" -c 'import pypdf' >> "$s/readers.log" 2>&1; then
+    : > "$t/ok"
+    [ -e "$r" ] || mv "$t" "$r"
+    [ -f "$r/ok" ] && rmtree "$r.files"
+  fi
+  rmtree "$t"
+  [ -f "$r/ok" ]
+}
+fulltext=false vectors=false textwhy= vecwhy=
+rm -f "$s/text.json" "$s/embed.json"
+[ -n "$py" ] || [ "$depth" = names ] || [ -z "$depth" ] || textwhy="this system has no Python 3.10 or later with SQLite's full-text module"
 if [ -n "$py" ] && [ -f "$s/enrich.py" ]; then
   phase extract
+  if [ -n "$readers" ] && [ -f "$s/fetch_embed.py" ] && readersready; then
+    export PYTHONPATH="$r/deps\${PYTHONPATH:+:$PYTHONPATH}"
+  fi
   # shellcheck disable=SC2086
-  if "$py" "$s/enrich.py" --kb-root "$src" --index "$tree" --extract-cache "$idx/.extract" $text > "$s/enrich.log" 2>&1; then fulltext=true; fi
+  if "$py" "$s/enrich.py" --kb-root "$src" --index "$new" --extract-cache "$idx/.extract" --report "$s/text.json" $text > "$s/enrich.log" 2>&1; then fulltext=true; else textwhy="the text pass stopped: $(tail -n 1 "$s/enrich.log")"; fi
   if [ "$fulltext" = true ] && [ -x "$bin/gufi_sqlite3" ] && [ -f "$s/embed.py" ]; then
     phase embed
     onnxdir=
@@ -162,23 +190,46 @@ if [ -n "$py" ] && [ -f "$s/enrich.py" ]; then
     if [ -n "$onnxdir" ] || [ -n "$model" ]; then
       # embed.py takes the ONNX model when it loads, else the GGUF one.
       # shellcheck disable=SC2086
-      "$py" "$s/embed.py" --index "$tree" \${model:+--model "$model"} \${onnxdir:+--onnx "$onnxdir/model"} --gufi-sqlite3 "$bin/gufi_sqlite3" $meaning > "$s/embed.log" 2>&1 && vectors=true
+      "$py" "$s/embed.py" --index "$new" \${model:+--model "$model"} \${onnxdir:+--onnx "$onnxdir/model"} --gufi-sqlite3 "$bin/gufi_sqlite3" --cache "$idx/.embed-cache.db" --prune --report "$s/embed.json" $meaning > "$s/embed.log" 2>&1 && vectors=true
+      [ "$vectors" = true ] || vecwhy="the embedding pass stopped: $(tail -n 1 "$s/embed.log")"
+    else
+      vecwhy="the embedding model could not be installed: $(tail -n 1 "$s/onnx.log" 2>/dev/null)"
     fi
   fi
   # The Studio searches the text with gufi_query, whose SQLite must read it.
-  if [ "$fulltext" = true ]; then "$bin/gufi_query" -n 1 --max-level 0 -E 'SELECT count(*) FROM words;' "$tree" >/dev/null 2>&1 || fulltext=false; fi
+  if [ "$fulltext" = true ]; then "$bin/gufi_query" -n 1 --max-level 0 -E 'SELECT count(*) FROM words;' "$new" >/dev/null 2>&1 || { fulltext=false; textwhy="gufi_query on this system cannot read the text tables"; }; fi
 fi
+# The index answers whole until here: the new one, text and vectors in it,
+# takes its place in one move.
+rmtree "$idx/.old"
+if [ -d "$tree" ]; then mv "$tree" "$idx/.old"; fi
+mv "$new" "$tree" || fail "The new index could not be moved into place."
+rmtree "$stage"; rmtree "$idx/.old"
+case "$depth" in meaning-*) if [ "$vectors" != true ] && [ -z "$vecwhy" ]; then
+  if [ "$fulltext" != true ]; then vecwhy="there is no text to embed"
+  elif [ ! -x "$bin/gufi_sqlite3" ]; then vecwhy="there is no gufi_sqlite3 in $bin"
+  else vecwhy="there is no embedding model for this Python"; fi
+fi ;; esac
 phase count
 c=$("$bin/gufi_query" -n "$threads" -d '|' -a 1 -I 'CREATE TABLE t (d INT64, f INT64);' -K 'CREATE TABLE agg (d INT64, f INT64);' \\
   -E 'INSERT INTO t SELECT count(*), sum(totfiles) FROM vrsummary;' -J 'INSERT INTO agg SELECT * FROM t;' -G 'SELECT sum(d), sum(f) FROM agg;' "$tree" 2>/dev/null | tail -n 1)
 dirs=\${c%%|*}; files=\${c##*|}
 case "$dirs" in ''|*[!0-9]*) dirs=0 ;; esac
 case "$files" in ''|*[!0-9]*) files=0 ;; esac
-json() { printf '"%s"' "$(printf '%s' "$1" | sed -e 's/\\\\/\\\\\\\\/g' -e 's/"/\\\\"/g')"; }
+# What the index itself holds, whatever the passes reported. A folder
+# without the table answers nothing.
+sumq() { "$bin/gufi_query" -n "$threads" -E "$1" "$tree" 2>/dev/null | awk '{ n += $1 } END { print n + 0 }'; }
+pdfwords=$(sumq "SELECT count(*) FROM words WHERE lower(fname) LIKE '%.pdf';")
+pdfvectors=$(sumq "SELECT count(DISTINCT g.fname) FROM gchunks g JOIN gvec_rowids v ON v.rowid = g.cid WHERE lower(g.fname) LIKE '%.pdf';")
+vectorrows=$(sumq 'SELECT count(*) FROM gvec_rowids;')
+report() { if [ -s "$1" ]; then cat "$1"; else printf null; fi; }
+json() { printf '"%s"' "$(printf '%s' "$1" | tr '\\n\\t' '  ' | sed -e 's/\\\\/\\\\\\\\/g' -e 's/"/\\\\"/g')"; }
 {
   printf '{\\n  "version": 1,\\n  "source": %s,\\n  "index": %s,\\n  "indexDir": %s,\\n' "$(json "$src")" "$(json "$tree")" "$(json "$idx")"
   printf '  "builtAt": %s,\\n  "gufiBin": %s,\\n' "$(json "$(date -u +%Y-%m-%dT%H:%M:%SZ)")" "$(json "$bin")"
-  printf '  "directories": %s,\\n  "files": %s,\\n  "fullText": %s,\\n  "vectors": %s\\n}\\n' "$dirs" "$files" "$fulltext" "$vectors"
+  printf '  "directories": %s,\\n  "files": %s,\\n  "fullText": %s,\\n  "vectors": %s,\\n' "$dirs" "$files" "$fulltext" "$vectors"
+  printf '  "depth": %s,\\n  "pdfWords": %s,\\n  "pdfVectors": %s,\\n  "vectorRows": %s,\\n' "$(json "$depth")" "$pdfwords" "$pdfvectors" "$vectorrows"
+  printf '  "textWhy": %s,\\n  "vectorsWhy": %s,\\n  "text": %s,\\n  "embed": %s\\n}\\n' "$(json "$textwhy")" "$(json "$vecwhy")" "$(report "$s/text.json")" "$(report "$s/embed.json")"
 } > "$idx/.studio-index.json.tmp" && mv "$idx/.studio-index.json.tmp" "$idx/.studio-index.json"
 phase done
 exit 0`
@@ -188,7 +239,8 @@ exit 0`
  *  embed_onnx.py, $6 fetch_embed.py, $7 embed_deps.json (any may be
  *  empty), $8 the version of the embedding model the Studio sends while the
  *  build runs, marked as being sent before the build starts (or empty),
- *  then BUILD_RUN's arguments from its second. */
+ *  $9 the same for the document readers, then BUILD_RUN's arguments from its
+ *  second. */
 export const BUILD_START = `s="$HOME/.activate-studio/builds/$1"
 mkdir -p "$s" || exit 3
 printf '%s\\n' "$2" > "$s/run.sh"
@@ -199,7 +251,8 @@ rm -f "$s/enrich.py" "$s/embed.py" "$s/embed_onnx.py" "$s/fetch_embed.py" "$s/em
 [ -n "$6" ] && printf '%s\\n' "$6" > "$s/fetch_embed.py"
 [ -n "$7" ] && printf '%s\\n' "$7" > "$s/embed_deps.json"
 if [ -n "$8" ]; then mkdir -p "$HOME/.activate-studio/embed" && touch "$HOME/.activate-studio/embed/$8.sending"; fi
-shift 8
+if [ -n "$9" ]; then mkdir -p "$HOME/.activate-studio/readers" && touch "$HOME/.activate-studio/readers/$9.sending"; fi
+shift 9
 if command -v setsid >/dev/null 2>&1; then
   setsid nohup bash "$s/run.sh" "$s" "$@" </dev/null >"$s/log" 2>&1 &
 else
@@ -269,6 +322,48 @@ export function parseStatus(text: string): BuildStatus {
     dirs: kv.dirs !== undefined && /^\d+$/.test(kv.dirs) ? Number(kv.dirs) : null,
     manifest,
   }
+}
+
+const plural = (n: number, one: string) => `${n.toLocaleString('en-US')} ${one}${n === 1 ? ' has' : 's have'}`
+
+/** Whether a build's vectors are there: embed.py goes on past a table it
+ *  could not write, so the index is asked, through vectorRows. */
+export function vectorsMade(m: Record<string, unknown>): boolean {
+  const chunks = Number((m.embed as { chunks?: unknown } | null | undefined)?.chunks) || 0
+  return m.vectors === true && !(chunks > 0 && m.vectorRows === 0)
+}
+
+/**
+ * What a finished build could not read or embed, in words for the library's
+ * row, from its manifest. A manifest from an earlier version says nothing
+ * of this, and gives no lines.
+ */
+export function buildGaps(m: Record<string, unknown>): string[] {
+  const out: string[] = []
+  const depth = typeof m.depth === 'string' ? m.depth : ''
+  const text = m.text as { documents?: Record<string, { files?: number; noText?: number }>; pdfReader?: string; ocr?: boolean } | null | undefined
+  if (typeof m.textWhy === 'string' && m.textWhy) out.push(`No text in this index: ${m.textWhy}`)
+  for (const [suffix, n] of Object.entries(text?.documents ?? {})) {
+    const empty = Number(n.noText) || 0
+    if (!empty) continue
+    if (suffix !== '.pdf') { out.push(`${plural(empty, `${suffix} file`)} no text`); continue }
+    const why = !text?.pdfReader ? 'this system has no PDF reader'
+      : text.ocr ? `${text.pdfReader} and OCR found none, as with a damaged or protected file`
+      : depth === 'text' ? `${text.pdfReader} found none, as with scanned pages, and this depth runs no OCR`
+      : `${text.pdfReader} found none, as with scanned pages, and this system has no tesseract`
+    out.push(`${plural(empty, 'PDF')} no text: ${why}`)
+  }
+  if (depth.startsWith('meaning-')) {
+    const embed = m.embed as { chunks?: number; errors?: number; firstError?: string } | null | undefined
+    const missing = (Number(m.pdfWords) || 0) - (Number(m.pdfVectors) || 0)
+    if (typeof m.vectorsWhy === 'string' && m.vectorsWhy) out.push(`No search by meaning: ${m.vectorsWhy}`)
+    else if (!vectorsMade(m)) out.push(`No search by meaning: no vectors were written${embed?.firstError ? `: ${embed.firstError}` : ''}`)
+    else {
+      if (missing > 0) out.push(`${plural(missing, 'PDF')} text but no vectors: too little of it reads as prose`)
+      if (embed?.errors) out.push(`${plural(embed.errors, 'passage or folder')} no vectors: ${embed.firstError ?? 'the embedding pass could not write them'}`)
+    }
+  }
+  return out
 }
 
 /** The Studio's indexer scripts, copied to the remote system for a build. */

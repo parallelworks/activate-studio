@@ -73,7 +73,15 @@ the Studio builds (the main folder, and one built here or on a remote
 system) the Depth column is its index depth, Names, Text, Text + OCR,
 Meaning on documents or Meaning on all files, changed in place (`PUT
 /api/libraries/:id/depth`). A library built here or on a remote system
-starts at Meaning on documents (both below).
+starts at Meaning on documents (both below). A new depth on a library
+built on a remote system is stored and applies at its next build, so the
+row offers **Rebuild now** or **Later**, or, with a build running, says the
+change waits for the next one. The library records the depth of its last
+build that finished with what that depth makes (`builtDepth`), and until
+that matches its depth the state column says **Depth changed, Rebuild to
+apply**. A failed rebuild changes nothing there, nor does one that made no
+vectors at a Meaning depth; a library last built by an earlier version has
+no record and shows no note.
 The depth is stored with the library when it is added, so a later change
 of the default leaves it as it was built, and a library added by an
 earlier version, with no depth stored, keeps what it had: Text + OCR, or
@@ -313,6 +321,36 @@ fill `INDEX_BASE/embed-wheels` on another computer with
 `python3 indexer/fetch_embed.py --download --platform <platform> --cache <folder>`
 and copy the folder there.
 
+The document readers (pypdf, with typing_extensions for Python 3.10, xlrd
+and olefile) are pinned in the same file under `readers`, and are pure
+Python, so one set serves every platform and every Python the build
+accepts. At every depth with text they go the same way to
+`~/.activate-studio/readers/<digest of the pins>`, before the text pass,
+which waits for them; a host with no poppler reads its PDFs with that
+pypdf, with no network there. `fetch_embed.py --download-readers --cache
+<folder>` fetches them for a Studio without network; the platform bundle
+and the macOS app carry them in `app/indexer/wheels`.
+
+The build records in `.studio-index.json` what it could not read:
+`pdfWords`, `pdfVectors` and `vectorRows`, counted from the finished index
+with `gufi_query`; `text` and `embed`, the reports of `enrich.py` and
+`embed.py` (files and files with no text per document type, the PDF
+reader used, passages, errors); `textWhy` and `vectorsWhy`, why a pass did
+not run or stopped; and `depth`. The library's row shows these as a count
+and a reason. A library whose vector tables hold nothing, though passages
+were cut, counts as having no vectors. A Rebuild reads what the system can
+run again, so a Python installed since the library was added is used. It
+walks every folder again and reuses `.extract`, so only documents without
+text are read again; a document that gave no text is never cached.
+
+To see which case a library is in, on the system that holds it:
+
+```
+python3 --version; command -v pdftotext
+cat <index folder>/.studio-index.json
+ls ~/.activate-studio/builds/ ~/.activate-studio/readers/
+```
+
 Where the packages cannot be had or do not import there, the build uses
 the GGUF model through sqlite-lembed (`minilm384`) where
 `~/.activate-studio/models/minilm384.gguf` is on that system, whose
@@ -325,13 +363,13 @@ from the session (`setsid` where there is one, `nohup` always), so it
 goes on when the session or the Studio stops. Its state is a folder there,
 `~/.activate-studio/builds/<build id>`: the script, its phase, process id,
 exit status, error, and logs. It runs `gufi_dir2index -x` into
-`<index folder>/.build` and swaps the tree in when complete; where Python
+`<index folder>/.build`; where Python
 is there and the depth reads text, the Studio copies `enrich.py` into the
 state folder and runs it (with `--no-ocr` at Text), keeping extracted
 text in `<index folder>/.extract`, and at the meaning stops, where a GUFI
 with the embedding extension is there too, `embed.py`, with the Studio's
 ONNX model and `embed_onnx.py` beside it, or the GGUF model (above). It
-then counts the index and writes
+then swaps the finished tree in, counts the index and writes
 `.studio-index.json`, with `fullText` true only when that system's
 `gufi_query` can read the text tables. The Studio follows the build as a
 background job (`GET /api/jobs/<id>`), reading its state every few
@@ -339,7 +377,13 @@ seconds over the session and keeping the phase and folder count on the
 library; after a restart the next listing follows it again, and an
 update does not wait for it. When it ends the library is ready with its
 counts, or says why not; a rebuild that fails leaves the index it had.
-**Rebuild** runs the build again beside the current index. **Remove**
+**Rebuild** runs the build again beside the current index, text and
+vectors included, and swaps the result in at the end, so the index folder
+holds two copies while it runs. It walks and indexes every folder again
+and writes the text tables again; what it reuses is the text in `.extract`
+(by modification time, so PDF, Office and OCR work is not repeated) and
+the passages in `.embed-cache.db`, so a rebuild embeds only what is new.
+There is no pass that adds meaning alone. **Remove**
 forgets the library and leaves the index there. Search on these
 libraries covers names, metadata, and, with extraction, full text, and
 meaning where the build embedded with the ONNX model. A source folder

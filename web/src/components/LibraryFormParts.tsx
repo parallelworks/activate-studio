@@ -1,4 +1,4 @@
-import { ConfirmModal, DescriptionList, DescriptionListItem, StatusDot } from '@parallelworks/ui'
+import { ConfirmModal, DescriptionList, DescriptionListItem, StatusLabel } from '@parallelworks/ui'
 
 /** The parts the Add a library forms share: the steps of a check, and the
  *  confirmation before folders are made. */
@@ -15,7 +15,7 @@ export function StepList({ steps, label }: { steps: CheckStep[]; label: string }
     <DescriptionList aria-label={label}>
       {steps.map(s => (
         <DescriptionListItem key={s.name} label={STEP_LABEL[s.name] ?? s.name}>
-          <StatusDot variant={!s.ok ? 'error' : s.warn ? 'warning' : 'success'} /> {s.detail}
+          <StatusLabel variant={!s.ok ? 'error' : s.warn ? 'warning' : 'success'}>{s.detail}</StatusLabel>
         </DescriptionListItem>
       ))}
     </DescriptionList>

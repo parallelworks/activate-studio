@@ -157,6 +157,9 @@ PY_CP="cp$(echo "$PY_VERSION" | cut -d. -f1,2 | tr -d .)"
 echo "onnxruntime, tokenizers and numpy ($PY_CP), xlrd and olefile, and the ONNX embedding model..."
 python3 "$PROJECT_ROOT/indexer/fetch_embed.py" --platform "macos-arm64-$PY_CP" --cache "$CACHE_DIR/embed" \
   --deps "$(echo "$RES"/python/lib/python3.*/site-packages)" --model "$RES/models/minilm-l6"
+# The document readers again as wheels, which the app sends to a remote
+# system for a build there (server/src/remoteEmbed.ts).
+python3 "$PROJECT_ROOT/indexer/fetch_embed.py" --download-readers --cache "$RES/app/indexer/wheels"
 
 G="$RES/gufi"
 if [ -n "${GUFI_TARBALL:-}" ]; then

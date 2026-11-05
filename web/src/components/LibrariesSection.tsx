@@ -1,10 +1,10 @@
 import { Fragment, type ReactNode, useEffect, useRef, useState } from 'react'
 import {
-  Button, Callout, DescriptionList, DescriptionListItem, IconButton, Loader, Modal, ProgressBar, StatusBadge, Table, toast, useConfirm,
+  Button, Callout, DescriptionList, DescriptionListItem, IconButton, Loader, Modal, ProgressBar, StatusLabel, Table, toast, useConfirm,
 } from '@parallelworks/ui'
 import { AddIcon, CloseIcon } from '@parallelworks/ui/icons'
 import { api, type BuildProgress, type IndexDepth, type ReadThrough, type SettingsLibrary, type UserLibrary } from '../api'
-import { IndexDepthSelect, UNSTORED_LIBRARY_DEPTH, depthLabel } from './IndexDepth'
+import { IndexDepthSelect, UNSTORED_LIBRARY_DEPTH, deeper, depthLabel } from './IndexDepth'
 import { reloadAppConfig, useAppConfig } from '../config'
 import { AddLibrary } from './AddLibrary'
 import { FolderPicker, errText, json, type SetupStatus } from './PrimaryFolder'
@@ -29,6 +29,59 @@ export const KINDS: Record<LibraryKind, { label: string; description: string }> 
 
 const isBuilding = (state: string | undefined) => state === 'building' || state === 'updating'
 
+/** The note on the row of a library built on a remote system whose depth its
+ *  index does not have yet. A library with no recorded depth has none: what
+ *  its index holds is not known. */
+function depthNote(l: UserLib): string | null {
+  if (!l.depth || !l.builtDepth) return null
+  if (isBuilding(l.state)) {
+    if ((l.buildingDepth ?? l.builtDepth) !== l.depth) return 'Depth changed, applies at the next Rebuild'
+    return l.builtDepth !== l.depth ? 'Depth changed, applies when this build finishes' : null
+  }
+  return l.builtDepth !== l.depth ? 'Depth changed, Rebuild to apply' : null
+}
+
+/** What a rebuild at a deeper depth costs. */
+const DEPTH_TIME: Record<IndexDepth, string> = {
+  names: '',
+  text: 'Reading the files takes longer than indexing their names.',
+  ocr: 'Reading images and scanned pages adds to the time.',
+  'meaning-documents': 'Search by meaning is the slowest part of indexing, so it takes much longer than a build without it.',
+  'meaning-full': 'Search by meaning is the slowest part of indexing, and on all files it takes about three times as long as on documents.',
+}
+
+/**
+ * Under the row of a library built on a remote system, after its depth
+ * changed: the choice to rebuild now or later, or, with a build running,
+ * that the change waits for the next one. `from` is the depth its index has,
+ * as far as is known.
+ */
+function DepthRebuild({ l, host, from, busy, onRebuild, onClose }: {
+  l: UserLib; host: string; from: IndexDepth; busy: boolean; onRebuild: () => void; onClose: () => void
+}) {
+  const to = l.depth!
+  const name = depthLabel(to)
+  if (isBuilding(l.state)) {
+    if (l.buildingDepth === to) return null
+    return (
+      <Callout tone="info" size="sm" live title={`${name} applies to the next build`} onDismiss={onClose}>
+        A build is running on {host} and finishes at the depth it started with. Rebuild once it is done.
+      </Callout>
+    )
+  }
+  return (
+    <Callout tone="info" size="sm" live title={`Rebuild at ${name}?`}>
+      {deeper(to, from) || !l.indexRoot
+        ? <>The index on {host} is built again at this depth. {l.indexRoot && 'The current index keeps answering searches until the new one replaces it. '}{DEPTH_TIME[to]}</>
+        : <>Search keeps working without a rebuild. A rebuild drops what the index holds past {name}, which makes it smaller.</>}
+      <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+        <Button variant="primary" size="sm" loading={busy} onClick={onRebuild}>Rebuild now</Button>
+        <Button variant="secondary" size="sm" disabled={busy} onClick={onClose}>Later</Button>
+      </div>
+    </Callout>
+  )
+}
+
 /** A build's progress under its row: the phase, and folders so far. */
 function BuildLine({ progress }: { progress: BuildProgress | null | undefined }) {
   return (
@@ -52,7 +105,7 @@ interface Row {
   /** For a library the Studio builds: its depth, which can be changed here,
    *  and when a change applies: at the sync, in the background, for one
    *  built here; at the next Rebuild for one built on a remote system. */
-  depth?: { value: IndexDepth; reload: () => Promise<unknown>; applies: 'sync' | 'rebuild' }
+  depth?: { value: IndexDepth; reload: () => Promise<unknown>; applies: 'sync' | 'rebuild'; built?: IndexDepth | null; building?: boolean }
   actions: ReactNode
   /** A line under the row across the whole table, such as a build's progress. */
   detail?: ReactNode
@@ -86,6 +139,9 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
   const [adding, setAdding] = useState(false)
   const [changing, setChanging] = useState(false)
   const [restarting, setRestarting] = useState(false)
+  // The library just given a depth its index does not have, and the depth
+  // that index has: what the choice under its row is about.
+  const [asked, setAsked] = useState<{ id: string; from: IndexDepth } | null>(null)
   const ready = useRef(new Set<string>())
   const readyHere = useRef<Set<string> | null>(null)
 
@@ -334,7 +390,11 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
     const contents = counts(l.directories, l.files)
     if (l.built) {
       const host = l.transport === 'ssh' ? (l.reached ?? l.destination ?? l.site) : l.site
-      const notes: ReactNode[] = [contents, l.builtAt && `indexed ${when(l.builtAt)}`, l.error].filter(Boolean)
+      const notes: ReactNode[] = [contents, l.builtAt && `indexed ${when(l.builtAt)}`, l.error, depthNote(l), ...(l.gaps ?? [])].filter(Boolean)
+      const choice = asked?.id === l.id && (
+        <DepthRebuild l={l} host={host} from={asked.from} busy={busy === l.id} onClose={() => setAsked(null)}
+          onRebuild={() => void act(l.id, async () => { await api.refreshUserLibrary(l.id); await loadUser(); setAsked(null) }, `Rebuilding the index on ${host}.`)} />
+      )
       rows.push({
         key: l.id, name: l.label, kind: `Index built on ${host} over ${l.transport === 'ssh' ? 'ssh' : 'pw ssh'}, read only`,
         where: (
@@ -350,17 +410,20 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
           : l.state === 'updating' ? { tone: 'info', text: 'Updating', pulse: true, notes }
           : l.state === 'failed' ? { tone: 'error', text: 'Failed', notes }
           : l.error ? { tone: 'warning', text: 'Ready; the last build failed', notes }
+          : l.gaps?.length ? { tone: 'warning', text: 'Ready; some files were not read', notes }
           : { tone: 'success', text: 'Ready', notes },
         fullText: !!l.fullText, meaning: !!l.vectors,
-        depth: { value: l.depth ?? UNSTORED_LIBRARY_DEPTH, reload: loadUser, applies: 'rebuild' },
+        depth: { value: l.depth ?? UNSTORED_LIBRARY_DEPTH, reload: loadUser, applies: 'rebuild', built: l.builtDepth, building: isBuilding(l.state) },
         actions: (
           <>
             <Button variant="secondary" size="sm" loading={busy === l.id} disabled={busy !== null || isBuilding(l.state)}
-              onClick={() => void act(l.id, async () => { await api.refreshUserLibrary(l.id); await loadUser() }, `Rebuilding the index on ${host}.`)}>Rebuild</Button>
+              onClick={() => void act(l.id, async () => { await api.refreshUserLibrary(l.id); await loadUser(); setAsked(null) }, `Rebuilding the index on ${host}.`)}>Rebuild</Button>
             {remove}
           </>
         ),
-        detail: isBuilding(l.state) ? <BuildLine progress={l.progress} /> : undefined,
+        detail: isBuilding(l.state) || choice
+          ? <>{isBuilding(l.state) && <BuildLine progress={l.progress} />}{choice && <div className="lib-build">{choice}</div>}</>
+          : undefined,
       })
       continue
     }
@@ -484,14 +547,23 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
                   {r.where}
                 </Table.Item>
                 <Table.Item wrap>
-                  <StatusBadge variant={r.state.tone} pulse={r.state.pulse} dot={!r.state.pulse} size="sm">{r.state.text}</StatusBadge>
+                  <StatusLabel variant={r.state.tone} pulse={r.state.pulse}>{r.state.text}</StatusLabel>
                   {r.state.notes.map((n, i) => <div key={i} className="lib-id">{n}</div>)}
                 </Table.Item>
                 <Table.Item className="lib-cap" data-label="Depth">
                   {r.depth
                     ? <IndexDepthSelect library={r.name} value={r.depth.value} disabled={busy !== null}
-                        onChange={v => { const d = r.depth!; void act(r.key, async () => { await api.setLibraryDepth(r.key, v); await d.reload(); reloadAppConfig() },
-                          `${r.name}: ${depthLabel(v)}. ${d.applies === 'sync' ? 'It is applied in the background now.' : 'It applies at the next Rebuild.'}`) }} />
+                        onChange={v => {
+                          const d = r.depth!
+                          // Back at the depth its index has, there is nothing to rebuild.
+                          const from = d.built ?? (asked?.id === r.key ? asked.from : d.value)
+                          const same = from === v && !d.building
+                          void act(r.key, async () => {
+                            await api.setLibraryDepth(r.key, v); await d.reload(); reloadAppConfig()
+                            if (d.applies === 'rebuild') setAsked(same ? null : { id: r.key, from })
+                          }, d.applies === 'sync' ? `${r.name}: ${depthLabel(v)}. It is applied in the background now.`
+                            : same ? `${r.name}: ${depthLabel(v)}, the depth its index has.` : undefined)
+                        }} />
                     : <AsBuilt fullText={r.fullText} meaning={r.meaning} />}
                 </Table.Item>
                 <Table.Item className="lib-actions">{r.actions}</Table.Item>
@@ -506,8 +578,9 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
           Depth is how far an index goes, each stop adding to the one before: Names; Text, the words inside files; Text + OCR,
           text in images and scanned pages; Meaning on documents, search by meaning over documents and images; and Meaning on
           all files, about three times the indexing time of Meaning on documents. For a library {cfg.appName} builds it is a
-          choice: one built here applies a new depth in the background at once, one built on a remote system at its next
-          Rebuild. An index connected as it is stays as it was built.
+          choice: one built here applies a new depth in the background at once. One built on a remote system applies it when
+          it is rebuilt, which is offered as the depth changes, and its row says so until then. An index connected as it is
+          stays as it was built.
         </p>
       )}
 

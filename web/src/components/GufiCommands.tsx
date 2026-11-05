@@ -1,6 +1,6 @@
 import type { ReactElement } from 'react'
 import { CopyCodeBlock, Disclosure } from '@parallelworks/ui'
-import { toolSummary, useChatConfig, type ToolCallPart, type ToolRendererProps } from '@parallelworks/ui/ai'
+import { toolSummary, useChatConfig, type ToolCallPart, type ToolPresentation, type ToolRendererProps } from '@parallelworks/ui/ai'
 
 /** A GUFI command the server ran, as a shell takes it, and how it ended
  *  (gufiTrace.ts). */
@@ -47,6 +47,35 @@ export function commandMeta(c: GufiCommand): string {
   ].filter(Boolean).join(', ')
 }
 
+// A blob literal in the SQL, as written or inside a shell's single quotes.
+const BLOB = /\bX('\\''|')([0-9a-fA-F]{64,})\1/g
+
+/**
+ * A command as the page shows it, which is not always what it runs: a search
+ * by meaning carries its query vector as a hex literal, thousands of
+ * characters in each statement, and a shell writes every quote inside a
+ * statement as '\''. The vector is cut to its first bytes with a marker and
+ * the quotes read as SQL. Copy and the command log have the command itself.
+ */
+export function shownCommand(command: string): { text: string; vectors: number; quotes: boolean } {
+  let vectors = 0
+  const cut = command.replace(BLOB, (_, q: string, hex: string) => {
+    vectors++
+    const what = hex.length % 8 === 0 ? `${hex.length / 8}-value query vector` : `${hex.length / 2}-byte value`
+    return `X${q}${hex.slice(0, 8)}…${q} (${what})`
+  })
+  const text = cut.replaceAll(`'\\''`, `'`)
+  return { text, vectors, quotes: text.length !== cut.length }
+}
+
+/** The line that says what the page changed, or null where it changed nothing. */
+export function shownNote(commands: string[]): string | null {
+  const shown = commands.map(shownCommand)
+  const vectors = shown.some(s => s.vectors), quotes = shown.some(s => s.quotes)
+  if (vectors) return `Query vectors are shortened on screen${quotes ? ' and shell quote escapes left out' : ''}. Copy has the full command.`
+  return quotes ? 'Shell quote escapes are left out on screen. Copy has the command as it runs.' : null
+}
+
 const lines = (n: number, what = 'line') => `${n} ${what}${n === 1 ? '' : 's'}`
 
 /** The toggle's words for a command's error output. */
@@ -91,6 +120,7 @@ function CommandErrors({ c }: { c: GufiCommand }): ReactElement | null {
  *  output a click away. */
 export function GufiCommands({ commands }: { commands?: GufiCommand[] }): ReactElement | null {
   if (!commands?.length) return null
+  const note = shownNote(commands.map(c => c.command))
   return (
     <Disclosure
       className="gufi-cmds"
@@ -101,10 +131,11 @@ export function GufiCommands({ commands }: { commands?: GufiCommand[] }): ReactE
       {commands.map((c, i) => (
         <div key={i} className="gufi-cmd">
           <div className="muted">{commandMeta(c)}</div>
-          <CopyCodeBlock text={c.command} label="GUFI command">{c.command}</CopyCodeBlock>
+          <CopyCodeBlock text={c.command} label="GUFI command">{shownCommand(c.command).text}</CopyCodeBlock>
           <CommandErrors c={c} />
         </div>
       ))}
+      {note && <p className="gufi-cmds-note muted">{note}</p>}
     </Disclosure>
   )
 }
@@ -123,17 +154,16 @@ export function rememberToolCommands(callId: string, commands: GufiCommand[]): v
 export const GUFI_TOOLS = ['search_kb', 'query_corpus', 'list_kb_dir', 'read_kb_file']
 
 /**
- * Drawn under a GUFI tool's row in the chat: its result summary, which the
- * row shows itself for other tools, and the commands the call ran. The
- * model never sees the commands; the server sends them to the person who
- * asked, and only to them.
+ * Drawn in a GUFI tool's row when it is opened: its result summary, which
+ * the row shows itself until then, and the commands the call ran. The model
+ * never sees the commands; the server sends them to the person who asked,
+ * and only to them.
  */
 export function GufiToolCommands({ part }: ToolRendererProps): ReactElement | null {
   const { strings } = useChatConfig()
   const commands = (part as ToolCallPart & { gufi?: GufiCommand[] }).gufi ?? streamed.get(part.id)
-  // A failed call's reason is on the row already; a waiting one has none.
   const summary = part.status === 'running' ? strings.agentTranscript.running
-    : part.status === 'ok' ? toolSummary(part.name, part.args, part.result ?? '', false, { strings: strings.tools }) : ''
+    : part.status === 'ok' || part.status === 'error' ? toolSummary(part.name, part.args, part.result ?? '', part.status === 'error', { strings: strings.tools }) : ''
   if (!summary && !commands?.length) return null
   return (
     <div className="gufi-tool">
@@ -144,3 +174,49 @@ export function GufiToolCommands({ part }: ToolRendererProps): ReactElement | nu
 }
 
 export const GUFI_TOOL_RENDERERS = Object.fromEntries(GUFI_TOOLS.map(n => [n, GufiToolCommands]))
+
+const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
+
+/** How each GUFI tool's calls read, one and folded together. */
+const WORDS: Record<string, { label: (a: Record<string, unknown>) => string; rollup: (n: number) => string }> = {
+  search_kb: {
+    label: a => { const q = a.query || a.text || a.name; return q ? `Searched for ${String(q)}` : 'Searched' },
+    rollup: n => `ran ${count(n, 'search', 'searches')}`,
+  },
+  query_corpus: {
+    label: a => (a.canned ? `Queried the index: ${String(a.canned)}` : 'Queried the index'),
+    rollup: n => `ran ${count(n, 'index query', 'index queries')}`,
+  },
+  list_kb_dir: {
+    label: a => (a.path ? `Listed ${String(a.path)}` : 'Listed the top folder'),
+    rollup: n => `listed ${count(n, 'folder', 'folders')}`,
+  },
+  read_kb_file: {
+    label: a => (a.path ? `Read ${String(a.path)}` : 'Read a file'),
+    rollup: n => `read ${count(n, 'file', 'files')}`,
+  },
+}
+
+/** A call's arguments, which are partial while they stream. */
+function argsOf(json: string): Record<string, unknown> {
+  try { const v = JSON.parse(json) as unknown; return v && typeof v === 'object' ? v as Record<string, unknown> : {} } catch { return {} }
+}
+
+/**
+ * A GUFI tool's call in the transcript. With a presentation the package keeps
+ * the drawing above inside the call's row, so a finished call folds into the
+ * "Ran N tools" row like any other; without one a drawn call stays out of it,
+ * and a reply's calls made a long list. Only a finished call folds: a running
+ * one and a failed one keep their own rows.
+ */
+export function gufiToolPresentation(part: ToolCallPart): ToolPresentation | undefined {
+  const words = WORDS[part.name]
+  if (!words) return undefined
+  const rollup = words.rollup
+  return {
+    label: words.label(argsOf(part.args)),
+    summary: toolSummary(part.name, part.args, part.result ?? '', false),
+    rollup,
+    group: n => { const s = rollup(n); return s.charAt(0).toUpperCase() + s.slice(1) },
+  }
+}

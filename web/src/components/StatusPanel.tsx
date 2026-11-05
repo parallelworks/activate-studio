@@ -157,10 +157,10 @@ export function librariesSummary(lines: LibLine[], idx: IndexStatus | null): Sum
   const failed = lines.filter(l => l.tone === 'error').length
   const unavailable = lines.filter(l => l.tone === 'warning').length
   const building = lines.filter(l => l.pulse).length
-  if (failed) return { text: `${failed} failed`, tone: 'warning' }
+  if (failed) return { text: `${failed} failed`, tone: 'error' }
   if (unavailable) return { text: `${unavailable} unavailable`, tone: 'warning' }
   if (idx?.running) return { text: indexSummary(idx).text.replace(/^Indexing/, 'indexing'), tone: 'info', pulse: true }
-  if (idx?.lastError) return { text: 'sync failed', tone: 'warning' }
+  if (idx?.lastError) return { text: 'sync failed', tone: 'error' }
   if (building) return { text: `${building} building`, tone: 'info', pulse: true }
   if (idx?.lastSweepAt) return { text: `synced ${ago(idx.lastSweepAt)}`, tone: null }
   return { text: plural(lines.length, 'library', 'libraries'), tone: null }
@@ -423,7 +423,7 @@ function PanelCards({ view, cfg }: { view: string; cfg: AppConfig }) {
                   title={t.objective} onClick={() => go(`#view=agents:${t.id}`)} />
               ))}
               {fleet.map(a => (
-                <Row key={a.id} tone={a.state === 'working' ? 'info' : a.state === 'input-required' ? 'warning' : a.state === 'idle' ? 'success' : 'muted'}
+                <Row key={a.id} tone={a.state === 'working' ? 'info' : a.state === 'input-required' ? 'warning' : 'muted'}
                   pulse={a.state === 'working'} name={a.name} meta={a.state === 'input-required' ? 'needs you' : a.state}
                   onClick={() => go('#view=agents:fleet')} />
               ))}
