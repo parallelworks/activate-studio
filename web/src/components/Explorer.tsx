@@ -70,6 +70,7 @@ interface NodeProps {
   onContext: (path: string, isDir: boolean, x: number, y: number) => void
   selectMode: boolean
   showLabels: boolean
+  showHidden: boolean
   tagsTick: number
   /** Bumping re-fetches every open directory without collapsing the tree. */
   refreshTick: number
@@ -118,7 +119,7 @@ export function visibleRowPaths(): string[] {
 }
 
 function DirNode(props: NodeProps) {
-  const { path, name, depth, onOpen, onDirFocus, selected, multiSelected, onToggleMulti, onSelectRange, onMoveInto, onDropInto, onLabel, onContext, selectMode, showLabels, tagsTick, refreshTick, tags } = props
+  const { path, name, depth, onOpen, onDirFocus, selected, multiSelected, onToggleMulti, onSelectRange, onMoveInto, onDropInto, onLabel, onContext, selectMode, showLabels, showHidden, tagsTick, refreshTick, tags } = props
   const [open, setOpen] = useState(depth === 0)
   const [entries, setEntries] = useState<KbEntry[] | null>(null)
   const [dropOver, setDropOver] = useState(false)
@@ -126,8 +127,8 @@ function DirNode(props: NodeProps) {
   // Re-fetch on every open and on tagsTick so a just-applied label shows
   // without collapsing the expanded tree.
   useEffect(() => {
-    if (open) api.tree(path).then(r => setEntries(r.entries)).catch(() => setEntries([]))
-  }, [open, path, tagsTick, refreshTick])
+    if (open) api.tree(path, showHidden).then(r => setEntries(r.entries)).catch(() => setEntries([]))
+  }, [open, path, tagsTick, refreshTick, showHidden])
 
   // Reveal the selected file: expand every ancestor directory on the way.
   useEffect(() => {
@@ -206,7 +207,7 @@ function DirNode(props: NodeProps) {
   )
 }
 
-export function Explorer({ onOpen, onDirFocus, selected, rootLabel, multiSelected, onToggleMulti, onSelectRange, onMoveInto, onDropInto, onLabel, onContext, selectMode, showLabels, tagsTick, refreshTick }: {
+export function Explorer({ onOpen, onDirFocus, selected, rootLabel, multiSelected, onToggleMulti, onSelectRange, onMoveInto, onDropInto, onLabel, onContext, selectMode, showLabels, showHidden, tagsTick, refreshTick }: {
   onOpen: (path: string) => void
   onDirFocus: (path: string) => void
   selected: string | null
@@ -220,6 +221,7 @@ export function Explorer({ onOpen, onDirFocus, selected, rootLabel, multiSelecte
   onContext: (path: string, isDir: boolean, x: number, y: number) => void
   selectMode: boolean
   showLabels: boolean
+  showHidden: boolean
   tagsTick: number
   refreshTick: number
 }) {
@@ -240,7 +242,7 @@ export function Explorer({ onOpen, onDirFocus, selected, rootLabel, multiSelecte
         multiSelected={multiSelected} onToggleMulti={onToggleMulti}
         onDropInto={onDropInto} onSelectRange={onSelectRange} onMoveInto={onMoveInto}
         onLabel={onLabel} onContext={onContext} selectMode={selectMode}
-        showLabels={showLabels} tagsTick={tagsTick} refreshTick={refreshTick}
+        showLabels={showLabels} showHidden={showHidden} tagsTick={tagsTick} refreshTick={refreshTick}
       />
     </div>
   )

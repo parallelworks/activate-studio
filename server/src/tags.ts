@@ -6,7 +6,7 @@ import type { FastifyInstance } from 'fastify'
 import { EXCLUDE_DIRS, GUFI_BIN, GUFI_INDEX, KB_ROOT, gufiAvailable, gufiEnv, PYTHON_BIN } from './config.js'
 import { KbError, resolveKb } from './kb.js'
 import { reindexForDir, reindexForFile } from './indexing.js'
-import { identify, inodeOf, overlayAdopt, overlayByInode, overlayEmpty, overlayEntries, overlayFlush, overlayGet, overlayNotePath, overlayPrune, overlayRekey, overlaySet, sameObject } from './tagsOverlay.js'
+import { identify, inodeOf, overlayAdopt, overlayAtPath, overlayByInode, overlayEmpty, overlayEntries, overlayFlush, overlayGet, overlayNotePath, overlayPrune, overlayRekey, overlaySet, sameObject } from './tagsOverlay.js'
 import { libraryEffectiveLabels, libraryLabelCounts, libraryLabelsOf, pruneLibraryLabels, setLibraryLabels } from './libraryLabels.js'
 import { ALL, scopeLibraries } from './libraryScope.js'
 import { effectiveSettings } from './settings.js'
@@ -110,7 +110,7 @@ export async function tagMaps(): Promise<TagMaps> {
   // Overlay entries win over (possibly stale) index rows, and make labels
   // work even before a reindex has run or when GUFI is absent.
   if (!overlayEmpty()) {
-    for (const e of Object.values(overlayEntries())) {
+    for (const e of await overlayAtPath()) {
       ;(e.dir ? dirTags : fileTags).set(e.path, e.tags)
     }
   }

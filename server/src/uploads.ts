@@ -15,10 +15,21 @@ function sanitizeName(name: string): string {
   return base
 }
 
-/** Directory drops send the filename as a relative path; sanitize per segment. */
+/** Where a request's files go, in the order they are sent: the `paths`
+ *  field ahead of them. The multipart parser cuts a filename down to its base
+ *  name, so a folder's structure cannot ride in the filename. */
+function listedPaths(fields: Record<string, unknown>): string[] {
+  const field = fields.paths as { value?: unknown } | undefined
+  try {
+    const list = JSON.parse(String(field?.value ?? '[]')) as unknown
+    return Array.isArray(list) ? list.map(String) : []
+  } catch { return [] }
+}
+
+/** A relative path from an upload; sanitize per segment. */
 function sanitizeRelPath(name: string): string {
   const segments = name.split('/').filter(Boolean)
-  if (segments.length > 8) throw new KbError(400, 'path too deep')
+  if (segments.length > 32) throw new KbError(400, 'path too deep')
   return segments.map(sanitizeName).join('/')
 }
 
@@ -69,8 +80,9 @@ export async function uploadRoutes(app: FastifyInstance): Promise<void> {
     const dir = String((req.query as { dir?: string }).dir ?? 'uploads')
     const { abs, rel } = await targetDir(dir)
     const saved: string[] = []
+    let n = 0
     for await (const part of req.files({ limits: { fileSize: MAX_UPLOAD_BYTES, files: 200 } })) {
-      const name = sanitizeRelPath(part.filename ?? 'file')
+      const name = sanitizeRelPath(listedPaths(part.fields)[n++] ?? part.filename ?? 'file')
       const dest = path.join(abs, name)
       await fsp.mkdir(path.dirname(dest), { recursive: true })
       await fsp.writeFile(dest, await part.toBuffer())

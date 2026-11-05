@@ -367,7 +367,7 @@ async function postJson<T>(url: string, body: unknown): Promise<T> {
 }
 
 export const api = {
-  tree: (path: string) => getJson<{ entries: KbEntry[] }>(`/api/kb/tree?path=${encodeURIComponent(path)}`),
+  tree: (path: string, hidden = false) => getJson<{ entries: KbEntry[] }>(`/api/kb/tree?path=${encodeURIComponent(path)}${hidden ? '&hidden=1' : ''}`),
   file: (path: string) => getJson<FileContent>(`/api/kb/file?path=${encodeURIComponent(path)}`),
   downloadUrl: (path: string) => withLibrary(`/api/kb/download?path=${encodeURIComponent(path)}`),
   rawUrl: (path: string) => withLibrary(`/api/kb/raw?path=${encodeURIComponent(path)}`),
@@ -377,6 +377,8 @@ export const api = {
     const r = await postJson<{ deleted: string[]; skipped: { path: string; reason: string }[]; indexMs: number }>(`/api/kb/delete`, { paths })
     return { ...r, deleted: r.deleted.map(back), skipped: r.skipped.map(x => ({ ...x, path: back(x.path) })) }
   },
+  /** Bulk delete as a watchable job. */
+  deleteJob: (paths: string[]) => postJson<Job>('/api/kb/delete', { paths, async: true }),
   deleteFile: async (path: string) => {
     const res = await fetch(withLibrary(`/api/kb/file?path=${encodeURIComponent(path)}`, 'DELETE'), { method: 'DELETE' })
     const data = await res.json().catch(() => ({}))
@@ -388,6 +390,12 @@ export const api = {
     const data = await res.json().catch(() => ({}))
     if (!res.ok) throw new Error((data as any).error ?? `delete: ${res.status}`)
     return data as { deleted: string }
+  },
+  deleteDirJob: async (path: string) => {
+    const res = await fetch(withLibrary(`/api/kb/dir?path=${encodeURIComponent(path)}&async=1`, 'DELETE'), { method: 'DELETE' })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error((data as any).error ?? `delete: ${res.status}`)
+    return data as Job
   },
   stats: () => getJson<{ available: boolean; files?: number; dirs?: number; totalBytes?: number; libraries?: LibraryStats[] }>(`/api/kb/stats`),
   /** The single search box's `q`, or a refined search's name, text and
@@ -429,11 +437,11 @@ export const api = {
     dir: string,
     opts: { deferIndex?: boolean; onBytes?: (sent: number) => void; signal?: AbortSignal } = {},
   ) => {
+    // Where each file goes is said apart from the file: a part's filename
+    // reaches the server as a bare name, whatever folders it was sent with.
     const form = new FormData()
-    for (const f of files) {
-      if (f instanceof File) form.append('file', f, f.name)
-      else form.append('file', f.file, f.rel)
-    }
+    form.append('paths', JSON.stringify(files.map(f => (f instanceof File ? f.name : f.rel))))
+    for (const f of files) form.append('file', f instanceof File ? f : f.file)
     const url = withLibrary(`/api/kb/upload?dir=${encodeURIComponent(dir)}${opts.deferIndex ? '&index=0' : ''}`)
     // XHR rather than fetch: only XHR reports how much of the body has gone
     // out, which is what makes a large upload legible while it runs.
@@ -458,6 +466,23 @@ export const api = {
       xhr.ontimeout = () => reject(new Error('upload: timed out'))
       xhr.send(form)
     })
+  },
+
+  /** Files the desktop window listed: the window streams them from disk to
+   *  the same upload, and this answers with what the upload answered. */
+  sendListed: async (files: { rel: string; linked?: string }[], dir: string, signal?: AbortSignal) => {
+    const res = await fetch('/__shell/dropped-send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal,
+      body: JSON.stringify({
+        target: withLibrary(`/api/kb/upload?dir=${encodeURIComponent(dir)}&index=0`),
+        files: files.map(f => ({ id: f.linked, rel: f.rel })),
+      }),
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(data.error ?? `upload: ${res.status}`)
+    return { ...data, saved: (Array.isArray(data.saved) ? data.saved : []).map(prefixFor(dir)) } as UploadResult
   },
 
   dirs: () => getJson<{ dirs: string[] }>('/api/kb/dirs'),
@@ -714,7 +739,7 @@ export function onAbout(fn: () => void): () => void {
 export interface UploadResult { saved: string[]; indexMs?: number; indexed?: boolean; indexError?: string; deferred?: boolean }
 export interface Job {
   id: number
-  kind: 'move' | 'index'
+  kind: 'move' | 'delete' | 'index'
   phase: string
   state: 'running' | 'done' | 'error'
   done: number

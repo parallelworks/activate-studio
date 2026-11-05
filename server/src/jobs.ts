@@ -9,7 +9,7 @@
 
 export interface Job {
   id: number
-  kind: 'move' | 'index'
+  kind: 'move' | 'delete' | 'index'
   /** What the job is doing right now, for the label above the bar. */
   phase: string
   state: 'running' | 'done' | 'error'

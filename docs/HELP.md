@@ -44,6 +44,8 @@ Ask in plain language. The assistant searches the knowledge base, reads the file
 
 The folder tree beside a viewer. Markdown, code, images, PDFs, office documents, and STL and STEP models open in place.
 
+- **+ Add** takes files or a whole folder, by dropping them or with **Choose a folder**; folders keep their structure, and names that start with a dot are left out. One file can be up to 200 MB; a larger one is named as failed and the rest go up. Drop onto a folder in the tree to add there. Each upload, move, copy and delete has its own row below the tree with its progress, and more can be added while one runs: uploads wait their turn, and you can leave the page and come back.
+- The eye button above the tree shows hidden files and folders, those whose names start with a dot, and remembers your choice. Tool folders such as `.git` and `.cache` stay out of the tree either way.
 - **Right-click** a file or folder to label it, add a folder, or delete it. In a read-only library the actions that would change it are shown disabled, with the reason on hover; labels still apply.
 - **Find**, in the viewer's header, searches the open file.
 - **Indexed text** shows what search sees for a file, including text read from images.

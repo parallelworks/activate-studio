@@ -1,33 +1,41 @@
 import { useId, useRef, useState } from 'react'
 import { Button, Input, Popover, Tooltip } from '@parallelworks/ui'
 import { api } from '../api'
-import { uploadBatched, UploadProgress } from '../upload'
+import { collectChosen, collectDropped, collectListed, type UploadItem } from '../upload'
+import { chooseUpload, shellListsFolders } from '../nativeShell'
+import { startUpload } from '../transfers'
 
-export function UploadMenu({ targetDir, onTargetDir, onDone, onProgress, readOnly }: {
+export function UploadMenu({ targetDir, onTargetDir, onDone, readOnly }: {
   /** Why nothing can be added here (a read-only library): the button is
    *  disabled and says so. */
   readOnly?: string | null
   targetDir: string
   onTargetDir: (dir: string) => void
   onDone: (savedPaths: string[]) => void
-  onProgress: (p: UploadProgress | null) => void
 }) {
   const [url, setUrl] = useState('')
   const [newDir, setNewDir] = useState('')
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
+  const folderInput = useRef<HTMLInputElement>(null)
   const newDirId = useId()
   const urlId = useId()
 
-  const sendFiles = async (files: File[]) => {
-    if (!files.length) return
-    setBusy(true)
+  /** Queued, not awaited here: the next upload can be added at once, and
+   *  each shows in the panel below the tree. */
+  const send = async (items: UploadItem[]) => {
+    if (!items.length) return
     setNote('')
-    const items = files.map(f => ({ file: f, rel: f.name }))
-    const result = await uploadBatched(items, targetDir, onProgress)
-    setBusy(false)
+    const result = await startUpload(items, targetDir)
     if (result.done > 0) onDone([`${targetDir}/${items[0].rel}`])
+  }
+
+  /** The Linux window's file chooser cannot pick a folder, so it asks the
+   *  window for its own. */
+  const chooseFolder = async () => {
+    if (!shellListsFolders()) { folderInput.current?.click(); return }
+    await send(collectListed(await chooseUpload('Choose a folder to add')))
   }
 
   const sendUrl = async () => {
@@ -89,19 +97,26 @@ export function UploadMenu({ targetDir, onTargetDir, onDone, onProgress, readOnl
         onDrop={e => {
           e.preventDefault()
           e.stopPropagation()
-          void sendFiles([...e.dataTransfer.files])
+          void collectDropped(e.dataTransfer.items).then(send)
         }}
         onClick={() => fileInput.current?.click()}
       >
-        Drop files here or click to choose. Any number of files works; progress shows below the tree.
+        Drop files or folders here, or click to choose files. Folders keep their structure; progress shows below the tree.
         <input
           ref={fileInput}
           type="file"
           multiple
           hidden
-          onChange={e => { void sendFiles([...(e.target.files ?? [])]); e.target.value = '' }}
+          onChange={e => { void send(collectChosen([...(e.target.files ?? [])])); e.target.value = '' }}
         />
       </div>
+      <Button variant="outline" size="sm" onClick={() => void chooseFolder()}>Choose a folder</Button>
+      <input
+        ref={el => { folderInput.current = el; el?.setAttribute('webkitdirectory', '') }}
+        type="file"
+        hidden
+        onChange={e => { void send(collectChosen([...(e.target.files ?? [])])); e.target.value = '' }}
+      />
       <label className="field-label" htmlFor={newDirId}>Or create a new folder</label>
       <div className="url-row">
         <Input

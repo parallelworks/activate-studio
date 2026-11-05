@@ -30,6 +30,10 @@ applyRememberedFavicon()
 const loadWorkflowEngine = () =>
   import('@parallelworks/workflow-parser').then(m => m.createWorkflowEngine())
 
+// A file dropped where no drop zone took it would otherwise replace the page:
+// a browser, or the desktop window, opens what it is given.
+for (const type of ['dragover', 'drop']) window.addEventListener(type, e => e.preventDefault())
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <UIProvider engine={loadWorkflowEngine} data={{ useRunFile }}>

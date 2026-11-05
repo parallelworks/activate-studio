@@ -14,20 +14,16 @@ import { DagViewer } from '../components/DagViewer'
 import { UploadMenu } from '../components/UploadMenu'
 import { TagMenu } from '../components/TagMenu'
 import { sectionAllowed, useAppConfig } from '../config'
-import { collectDropped, uploadBatched, UploadProgress } from '../upload'
+import { collectDropped, collectListed, type UploadItem } from '../upload'
+import { onShellDrop } from '../nativeShell'
+import { startPathJob, startUpload } from '../transfers'
+import { TransferPanel } from '../components/TransferPanel'
 import { selectLibraryEntry } from '../components/LibraryDetails'
 
 const RAIL_MIN = 220
 const RAIL_MAX = 520
 
 /** Human-sized byte counts for the upload panel. */
-function fmtBytes(n: number): string {
-  if (n < 1024) return `${n} B`
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`
-  if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`
-  return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`
-}
-
 export function LibraryView({ display, onDisplay }: {
   display: Display | null
   onDisplay: (d: Display | null) => void
@@ -38,7 +34,6 @@ export function LibraryView({ display, onDisplay }: {
   const [refreshKey, setRefreshKey] = useState(0)
   const [railWidth, setRailWidth] = useState(() => Number(localStorage.getItem('ade-rail-width')) || 320)
   const [railCollapsed, setRailCollapsed] = useState(() => localStorage.getItem('ade-rail-collapsed') === '1')
-  const [progress, setProgress] = useState<UploadProgress | null>(null)
   const [multiSel, setMultiSel] = useState<Set<string>>(new Set())
   const [tagMenuOpen, setTagMenuOpen] = useState(false)
   const [selectMode, setSelectMode] = useState(false)
@@ -52,6 +47,7 @@ export function LibraryView({ display, onDisplay }: {
     rows: { path: string; labels: string[]; why: string; accept: boolean }[]
   } | null>(null)
   const [showLabels, setShowLabels] = useState(() => localStorage.getItem('ade-tree-labels') === '1')
+  const [showHidden, setShowHidden] = useState(() => localStorage.getItem('ade-tree-hidden') === '1')
   const [tagsTick, setTagsTick] = useState(0)
   const [confirmDelete, setConfirmDelete] = useState(false)
   // Right-click context menu on tree rows. Its New folder and Rename take a
@@ -76,10 +72,15 @@ export function LibraryView({ display, onDisplay }: {
   const ctxDelete = async () => {
     const t = deleteTarget
     if (!t) return
+    if (t.isDir) {
+      setDeleteTarget(null)
+      if (display?.kind === 'file' && display.target.startsWith(t.path + '/')) onDisplay(null)
+      void startPathJob('delete', [t.path], '', () => api.deleteDirJob(t.path))
+      return
+    }
     setDeleteTarget({ ...t, error: '' })
     try {
-      if (t.isDir) await api.deleteDir(t.path)
-      else await api.deleteFile(t.path)
+      await api.deleteFile(t.path)
       window.dispatchEvent(new Event('ade-kb-changed'))
       if (display?.kind === 'file' && (display.target === t.path || display.target.startsWith(t.path + '/'))) onDisplay(null)
       setRefreshKey(k => k + 1)
@@ -115,21 +116,12 @@ export function LibraryView({ display, onDisplay }: {
     }
   }
 
-  const bulkDelete = async () => {
+  /** Runs in the panel below the tree, so the dialog closes at once. */
+  const bulkDelete = () => {
     const files = [...multiSel]
-    try {
-      const r = await api.deleteFiles(files)
-      window.dispatchEvent(new Event('ade-kb-changed'))
-      const skippedDirs = r.skipped.filter((x: { reason: string }) => x.reason.includes('directories'))
-      const note = `${r.deleted.length} deleted${r.skipped.length ? `, ${r.skipped.length} skipped${skippedDirs.length ? ' (directories are not deletable)' : ''}` : ''}`
-      if (r.skipped.length) toast.warning(note)
-      else toast.success(note)
-      setMultiSel(new Set())
-      setRefreshKey(k => k + 1)
-      if (display?.kind === 'file' && r.deleted.includes(display.target)) onDisplay(null)
-    } catch (e) {
-      toast.error(String((e as Error).message ?? e))
-    }
+    setMultiSel(new Set())
+    if (display?.kind === 'file' && files.includes(display.target)) onDisplay(null)
+    void startPathJob('delete', files, '', paths => api.deleteJob(paths))
   }
   const drag = useRef<{ startX: number; startWidth: number } | null>(null)
   const cfg = useAppConfig()
@@ -171,6 +163,7 @@ export function LibraryView({ display, onDisplay }: {
   }, [])
 
   useEffect(() => { localStorage.setItem('ade-tree-labels', showLabels ? '1' : '0') }, [showLabels])
+  useEffect(() => { localStorage.setItem('ade-tree-hidden', showHidden ? '1' : '0') }, [showHidden])
   // Labeling is what select mode is for, so the tree shows them, and the
   // toggle says so and can still turn them off.
   useEffect(() => { if (selectMode) setShowLabels(true) }, [selectMode])
@@ -194,7 +187,6 @@ export function LibraryView({ display, onDisplay }: {
   // The row a range extends from: the last one clicked without shift.
   const anchor = useRef<string | null>(null)
   /** Live while an upload is in flight, so it can be stopped. */
-  const uploadAbort = useRef<AbortController | null>(null)
 
   const toggleMulti = (p: string) => {
     anchor.current = p
@@ -231,37 +223,7 @@ export function LibraryView({ display, onDisplay }: {
       setClipboard(null)
       return
     }
-    const paths = clipboard.paths
-    const p: UploadProgress = {
-      kind: 'move', phase: 'uploading', total: paths.length, done: 0, bytes: 0, totalBytes: 0,
-      current: paths[0], failed: [], indexMs: 0, finished: false, dir,
-    }
-    setProgress({ ...p })
-    try {
-      const job = await api.copyJob(paths, dir)
-      for (;;) {
-        await new Promise(r => setTimeout(r, 500))
-        const s = await api.job(job.id)
-        p.done = s.done
-        p.current = s.current
-        p.phase = s.phase === 'indexing' ? 'indexing' : 'uploading'
-        if (s.state === 'done') {
-          const r = s.result as { moved: unknown[]; skipped: { path: string; reason: string }[] } | null
-          p.done = r?.moved.length ?? s.done
-          p.failed = (r?.skipped ?? []).map(x => ({ name: x.path, error: x.reason }))
-          p.indexMs = s.ms ?? 0
-          break
-        }
-        if (s.state === 'error') { p.indexError = s.error ?? 'copy failed'; break }
-        setProgress({ ...p })
-      }
-    } catch (e) {
-      p.indexError = String((e as Error).message ?? e)
-    }
-    p.phase = 'done'
-    p.finished = true
-    setProgress({ ...p })
-    window.dispatchEvent(new CustomEvent('ade-kb-changed'))
+    await startPathJob('copy', clipboard.paths, dir, paths => api.copyJob(paths, dir))
   }
 
   /** Ask the model what this material should be labelled. */
@@ -308,37 +270,8 @@ export function LibraryView({ display, onDisplay }: {
   const moveInto = async (dir: string, paths: string[]) => {
     const clean = paths.filter(p => p && p !== dir && !dir.startsWith(`${p}/`))
     if (!clean.length) return
-    const p: UploadProgress = {
-      kind: 'move', phase: 'uploading', total: clean.length, done: 0, bytes: 0, totalBytes: 0,
-      current: clean[0], failed: [], indexMs: 0, finished: false, dir,
-    }
-    setProgress({ ...p })
-    try {
-      const job = await api.moveJob(clean, dir)
-      for (;;) {
-        await new Promise(r => setTimeout(r, 500))
-        const s = await api.job(job.id)
-        p.done = s.done
-        p.current = s.current
-        p.phase = s.phase === 'indexing' ? 'indexing' : 'uploading'
-        if (s.state === 'done') {
-          const r = s.result as { moved: unknown[]; skipped: { path: string; reason: string }[] } | null
-          p.done = r?.moved.length ?? s.done
-          p.failed = (r?.skipped ?? []).map(x => ({ name: x.path, error: x.reason }))
-          p.indexMs = s.ms ?? 0
-          break
-        }
-        if (s.state === 'error') { p.indexError = s.error ?? 'move failed'; break }
-        setProgress({ ...p })
-      }
-    } catch (e) {
-      p.indexError = String((e as Error).message ?? e)
-    }
-    p.phase = 'done'
-    p.finished = true
-    setProgress({ ...p })
+    await startPathJob('move', clean, dir, paths => api.moveJob(paths, dir))
     setMultiSel(new Set())
-    window.dispatchEvent(new CustomEvent('ade-kb-changed'))
   }
 
   /** Pick a destination for the selection from every folder in the library. */
@@ -420,17 +353,26 @@ export function LibraryView({ display, onDisplay }: {
     window.addEventListener('mouseup', onUp)
   }, [railWidth])
 
-  const uploadTo = useCallback(async (dir: string, items: DataTransferItemList) => {
-    const files = await collectDropped(items)
+  const uploadItems = useCallback(async (dir: string, files: UploadItem[]) => {
     if (!files.length) return
-    uploadAbort.current = new AbortController()
-    const result = await uploadBatched(files, dir, setProgress, uploadAbort.current.signal)
-    uploadAbort.current = null
-    setRefreshKey(k => k + 1)
+    const result = await startUpload(files, dir)
     if (result.done > 0 && files.length === 1) {
       onDisplay({ kind: 'file', target: (dir ? dir + '/' : '') + files[0].rel })
     }
   }, [onDisplay])
+
+  const uploadTo = useCallback(async (dir: string, items: DataTransferItemList) => {
+    await uploadItems(dir, await collectDropped(items))
+  }, [uploadItems])
+
+  // The Linux window takes a file manager's drop itself and says where it
+  // landed: a folder row, a file's folder, or the destination in use.
+  useEffect(() => onShellDrop(({ x, y, files }) => {
+    const row = document.elementFromPoint(x, y)?.closest<HTMLElement>('.tree-row[data-path]')
+    const at = row?.dataset.path
+    const dir = at === undefined ? targetDir : row?.classList.contains('dir') ? at : at.split('/').slice(0, -1).join('/')
+    if (writableAt(dir)) void uploadItems(dir, collectListed(files))
+  }), [targetDir, uploadItems, writableAt])
 
   const selectedFile = display?.kind === 'file' ? display.target : null
   const [dropOver, setDropOver] = useState(false)
@@ -466,6 +408,12 @@ export function LibraryView({ display, onDisplay }: {
                     icon={<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M2 2h5.2L14 8.8a1 1 0 0 1 0 1.4L10.2 14a1 1 0 0 1-1.4 0L2 7.2V2z"/><circle cx="5.2" cy="5.2" r="1" fill="currentColor" stroke="none"/></svg>}
                   />
                   <IconButton
+                    label="Show hidden files and folders"
+                    pressed={showHidden}
+                    onClick={() => setShowHidden(v => !v)}
+                    icon={<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z" /><circle cx="8" cy="8" r="2" /></svg>}
+                  />
+                  <IconButton
                     label="Select multiple items for labeling or deletion"
                     pressed={selectMode}
                     onClick={() => { setSelectMode(m => !m); setMultiSel(new Set()); setTagMenuOpen(false); setConfirmDelete(false) }}
@@ -480,7 +428,6 @@ export function LibraryView({ display, onDisplay }: {
                       setRefreshKey(k => k + 1)
                       if (paths[0]) onDisplay({ kind: 'file', target: paths[0] })
                     }}
-                    onProgress={setProgress}
                   />
                   <IconButton icon="«" label="Collapse tree" onClick={() => setRailCollapsed(true)} />
                 </span>
@@ -534,6 +481,7 @@ export function LibraryView({ display, onDisplay }: {
                 onContext={openContextMenu}
                 selectMode={selectMode}
                 showLabels={showLabels}
+                showHidden={showHidden}
                 tagsTick={tagsTick}
               />
               {suggest && (
@@ -586,45 +534,7 @@ export function LibraryView({ display, onDisplay }: {
                   )}
                 </div>
               )}
-              {progress && (
-                <div className="upload-panel">
-                  <div className="upload-panel-head">
-                    <span>
-                      {progress.phase === 'done'
-                        ? progress.cancelled
-                          ? `Cancelled: ${progress.done} of ${progress.total} had already been added to ${progress.dir || 'root'}`
-                          : `${progress.done} of ${progress.total} ${progress.kind === 'move' ? 'moved to' : 'added to'} ${progress.dir || 'root'}${progress.indexMs ? `, indexed in ${(progress.indexMs / 1000).toFixed(1)}s` : ''}`
-                        : progress.phase === 'indexing'
-                          ? `Indexing ${progress.done} ${progress.done === 1 ? 'item' : 'items'} in ${progress.dir || 'root'}…`
-                          : progress.kind === 'move'
-                            ? `Moving into ${progress.dir || 'root'}: ${progress.done} / ${progress.total}`
-                            : `Uploading to ${progress.dir || 'root'}: ${progress.done} / ${progress.total}${progress.totalBytes ? ` (${fmtBytes(progress.bytes)} of ${fmtBytes(progress.totalBytes)})` : ''}`}
-                    </span>
-                    {progress.phase === 'uploading' && progress.kind !== 'move' && uploadAbort.current ? (
-                      <Button variant="ghost" size="sm" onClick={() => uploadAbort.current?.abort()}>cancel</Button>
-                    ) : (
-                      <Button variant="ghost" size="sm" onClick={() => setProgress(null)}>dismiss</Button>
-                    )}
-                  </div>
-                  {/* Bytes drive the bar while uploading, so one large file
-                      still moves; indexing has no count to report, so the
-                      bar runs indeterminate until the job comes back. */}
-                  <ProgressBar
-                    className="upload-progress"
-                    aria-label={progress.kind === 'move' ? 'Move progress' : 'Upload progress'}
-                    value={progress.phase === 'indexing' ? null : (progress.totalBytes && progress.kind !== 'move' ? progress.bytes / progress.totalBytes : progress.done / Math.max(progress.total, 1)) * 100}
-                  />
-                  {progress.phase !== 'done' && progress.current && (
-                    <div className="upload-current">{progress.current}</div>
-                  )}
-                  {progress.indexError && (
-                    <Callout tone="error" size="sm" className="upload-failed">Uploaded, but indexing failed, so these files are not searchable yet: {progress.indexError}</Callout>
-                  )}
-                  {progress.failed.length > 0 && (
-                    <Callout tone="error" size="sm" className="upload-failed">{progress.failed.length} failed: {progress.failed.slice(0, 3).map(f => f.name).join(', ')}{progress.failed.length > 3 ? '…' : ''}</Callout>
-                  )}
-                </div>
-              )}
+              <TransferPanel />
             </aside>
             <div className="divider" onMouseDown={onDividerDown} title="Drag to resize" />
           </>

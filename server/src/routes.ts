@@ -8,10 +8,10 @@ import path from 'node:path'
 import fs, { createReadStream } from 'node:fs'
 import fsp from 'node:fs/promises'
 import { EXCLUDE_DIRS, GATEWAY_BASE, GUFI_INDEX, INDEX_BASE, KB_ROOT, PROJECT_ROOT, PW_CLI, gufiAvailable, gufiInstalled, indexerEnv } from './config.js'
-import { KbError, extractPath, listDir, moveCacheEntry, readFileContent, resolveKb } from './kb.js'
+import { KbError, extractPath, hiddenName, listDir, moveCacheEntry, readFileContent, resolveKb } from './kb.js'
 import { indexSettings, isIndexDepth, isMeaningLevel, saveIndexSettings } from './indexSettings.js'
 import { CONVERTIBLE, mimeFor, officeToPdf, OfficePreviewUnavailable, pdfPageCount, pdfPagePng, pdfPreviewPaths, previewPdfFor, removePdfPreview } from './preview.js'
-import { blendHits, corpusStats, searchFts, searchNames, searchVector, wantsSemantic } from './gufi.js'
+import { blendHits, corpusStats, invalidateDbList, searchFts, searchNames, searchVector, wantsSemantic } from './gufi.js'
 import { invalidateContext } from './chat/context.js'
 import { incrementalIndexDir, indexRootDb, reindexForFile, requestSweep } from './indexing.js'
 import { indexRoutes } from './indexRoutes.js'
@@ -361,21 +361,25 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
   }
 
   app.get('/api/kb/tree', async req => {
-    const { path: rel = '' } = req.query as { path?: string }
+    const { path: rel = '', hidden } = req.query as { path?: string; hidden?: string }
+    const showHidden = hidden === '1'
+    // A cluster's listing comes from its index, which holds dot entries too.
+    const remote = async (root: string, sub: string) =>
+      (await remoteTree(root, sub)).filter(e => showHidden || !hiddenName(e.name))
     if (inAll(req)) {
       if (!rel.replace(/^\/+|\/+$/g, '')) {
         return { path: '', entries: allLibs(req).map(l => ({ name: l.site ? `${l.label} (on ${l.site})` : l.label, path: l.id, type: 'dir', size: 0, mtime: 0, kind: 'dir' })) }
       }
       const { lib, sub } = splitAll(req, rel)
-      const entries = lib.site ? await remoteTree(lib.indexRoot, sub) : lib.sourceRoot ? await listDir(sub, lib.sourceRoot) : []
+      const entries = lib.site ? await remote(lib.indexRoot, sub) : lib.sourceRoot ? await listDir(sub, lib.sourceRoot, showHidden) : []
       const labeled = lib.primary ? entries : withKeptLabels(lib.id, entries)
       return { path: rel, entries: labeled.map(e => ({ ...e, path: `${lib.id}/${e.path}` })) }
     }
     // A user's library on a cluster lists from its index there.
     const lib = libOf(req)
-    if (lib.site) return { path: rel, entries: withKeptLabels(lib.id, await remoteTree(lib.indexRoot, rel)) }
+    if (lib.site) return { path: rel, entries: withKeptLabels(lib.id, await remote(lib.indexRoot, rel)) }
     const root = sourceOf(req)
-    const entries = await listDir(rel, root)
+    const entries = await listDir(rel, root, showHidden)
     // Own labels straight from the filesystem xattrs (one getfattr per
     // listing), so a just-applied label shows without waiting on the index.
     const tagged = await readTagsBatch(entries.map(e => resolveKb(e.path, root))).catch(() => new Map<string, string[]>())
@@ -485,15 +489,28 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
   // subtree once, so deleting fifty files costs a handful of reindexes.
   app.post('/api/kb/delete', async req => {
     requireWritable(libOf(req))
-    const body = req.body as { paths?: string[] }
+    const body = req.body as { paths?: string[]; async?: boolean }
     const paths = (body.paths ?? []).slice(0, 500)
     if (!paths.length) throw new KbError(400, 'paths required')
+    if (body.async) {
+      return startJob('delete', paths.length, async h => {
+        const r = await deletePaths(paths, (done, current) => h.progress({ phase: 'deleting', done, current }))
+        h.progress({ phase: 'indexing', done: paths.length, current: '' })
+        return { deleted: r.deleted, skipped: r.skipped, indexMs: await reindexDeleted(r) }
+      })
+    }
+    const r = await deletePaths(paths)
+    return { deleted: r.deleted, skipped: r.skipped, indexMs: await reindexDeleted(r) }
+  })
+
+  async function deletePaths(paths: string[], onProgress?: (done: number, current: string) => void) {
     const deleted: string[] = []
     const skipped: { path: string; reason: string }[] = []
     const roots = new Set<string>()
     let rootDb = false
-    for (const rel of paths) {
+    for (const [i, rel] of paths.entries()) {
       const cleaned = rel.replace(/^\/+|\/+$/g, '')
+      onProgress?.(i, cleaned)
       try {
         for (const part of cleaned.split('/')) {
           if (EXCLUDE_DIRS.has(part) || part.startsWith('.')) throw new KbError(400, 'protected path')
@@ -512,11 +529,15 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
         skipped.push({ path: cleaned, reason: err instanceof KbError ? err.message : 'not found' })
       }
     }
+    return { deleted, skipped, roots, rootDb }
+  }
+
+  async function reindexDeleted({ roots, rootDb }: { roots: Set<string>; rootDb: boolean }): Promise<number> {
     let indexMs = 0
     for (const root of roots) indexMs += (await incrementalIndexDir(root)).ms
     if (rootDb) indexMs += (await indexRootDb()).ms
-    return { deleted, skipped, indexMs }
-  })
+    return indexMs
+  }
 
   // Propose labels for material that has none. Nothing is applied here;
   // the reviewer decides, and applying runs through the ordinary tag path.
@@ -627,7 +648,7 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
   // the next sweep reconciles whatever this misses.
   app.delete('/api/kb/dir', async req => {
     requireWritable(libOf(req))
-    const { path: rel = '' } = req.query as { path?: string }
+    const { path: rel = '', async: inBackground } = req.query as { path?: string; async?: string }
     const cleaned = rel.replace(/^\/+|\/+$/g, '')
     if (!cleaned) throw new KbError(400, 'refusing to delete the knowledge base root')
     for (const part of cleaned.split('/')) {
@@ -637,12 +658,23 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
     const st = await fsp.stat(abs).catch(() => null)
     if (!st) throw new KbError(404, 'not found')
     if (!st.isDirectory()) throw new KbError(400, 'not a directory; use the file delete')
-    await fsp.rm(abs, { recursive: true })
-    for (const cache of ['extract', 'pdf-preview', 'pdf-pages', 'model-cache']) {
-      await fsp.rm(path.join(INDEX_BASE, cache, cleaned), { recursive: true, force: true }).catch(() => {})
+    const remove = async () => {
+      await fsp.rm(abs, { recursive: true })
+      for (const cache of ['extract', 'pdf-preview', 'pdf-pages', 'model-cache']) {
+        await fsp.rm(path.join(INDEX_BASE, cache, cleaned), { recursive: true, force: true }).catch(() => {})
+      }
+      await fsp.rm(path.join(GUFI_INDEX, cleaned), { recursive: true, force: true }).catch(() => {})
+      invalidateDbList()
+      invalidateContext()
     }
-    await fsp.rm(path.join(GUFI_INDEX, cleaned), { recursive: true, force: true }).catch(() => {})
-    invalidateContext()
+    if (inBackground === '1') {
+      return startJob('delete', 1, async h => {
+        h.progress({ phase: 'deleting', current: cleaned })
+        await remove()
+        return { deleted: [cleaned], skipped: [] }
+      })
+    }
+    await remove()
     return { deleted: cleaned }
   })
 
