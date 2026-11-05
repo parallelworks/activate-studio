@@ -33,6 +33,9 @@ func (b *Bridge) ShellState() ShellState { return b.app.State() }
 // Retry starts the server again after it failed.
 func (b *Bridge) Retry() { b.app.retry() }
 
+// SetBarColor paints the window's title bar (titlebar.go).
+func (b *Bridge) SetBarColor(color string) error { return b.app.setBarColor(color) }
+
 // OpenLogs opens the folder with the server's log in the file manager.
 // (Wails' BrowserOpenURL takes web addresses only.)
 func (b *Bridge) OpenLogs() { openFolder(filepath.Join(b.app.cfg.DataDir, "logs")) }

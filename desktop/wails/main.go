@@ -52,6 +52,8 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options/windows"
 )
 
+const windowTitle = "ACTIVATE Studio"
+
 // version is set at build time (-ldflags "-X main.version=...").
 var version = "dev"
 
@@ -95,8 +97,11 @@ func main() {
 		os.Exit(1)
 	}
 
+	useOwnTitleBar(windowTitle)
+	app.restoreBarColor()
+
 	err = wails.Run(&options.App{
-		Title:     "ACTIVATE Studio",
+		Title:     windowTitle,
 		Width:     1400,
 		Height:    900,
 		MinWidth:  720,

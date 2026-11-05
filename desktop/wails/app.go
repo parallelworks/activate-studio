@@ -67,9 +67,10 @@ type App struct {
 	localPort int
 	local     *http.Server
 
-	mu    sync.Mutex
-	state ShellState
-	moved *struct {
+	mu       sync.Mutex
+	state    ShellState
+	barColor string // the title bar's, #rrggbb (titlebar.go)
+	moved    *struct {
 		port int
 		hash string
 	}
@@ -171,8 +172,12 @@ func (a *App) onServerEvent(e ServerEvent) {
 			// The start page is showing; it sees "ready" and opens the
 			// Studio itself. Opening it from here too would load the page
 			// twice.
+		case e.Reason == "exit-75":
+			// A setting changed. The page that changed it waits for the
+			// server and carries on, as it does in the macOS window; a
+			// reload would send setup back to its first step.
 		default:
-			// After a restart (exit 75 or 76, or relaunch) the same page
+			// After a restart (exit 76, or relaunch) the same page
 			// loads again from the server now answering.
 			a.reloadStudio()
 		}

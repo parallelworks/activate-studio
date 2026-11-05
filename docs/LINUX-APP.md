@@ -26,6 +26,10 @@ For the Studio's own window, WebKitGTK and GTK 3:
 
 The `.deb` and `.rpm` declare these as dependencies. For the tarball, they are installed by the system's package manager (the install script installs nothing outside your home folder). Without WebKitGTK, or without a desktop session, the Studio runs in the background and opens in the default browser instead; everything works there except the system folder chooser and the window's own handling of downloads.
 
+## The window's title bar
+
+The window draws its own title bar (a GTK header bar), which takes the color the page names in its `theme-color` tag, as the macOS window's does: the classification banner's when one is shown, so the bar and the banner read as one strip, otherwise the page's ground in its light or dark theme, following changes while the window is open. The title and the window controls switch to light or dark to read on it. A bar the window manager draws cannot take the page's color, and `GTK_CSD=1` is not used for this because GTK ignores it where no compositor runs, as in many remote desktop sessions. The last color is kept in `run/bar-color` in the data folder, so the next launch opens with it. Dialogs such as the folder chooser keep the desktop's theme.
+
 ## Install
 
 Per user, no administrator rights:

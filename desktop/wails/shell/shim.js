@@ -131,6 +131,25 @@
     return nativeOpen.apply(window, arguments);
   };
 
+  // The window's title bar follows the page's theme-color tag, as the macOS
+  // window's does (titlebar.go). The tag holds whatever CSS color the theme
+  // uses; a canvas turns it into #rrggbb.
+  var bar = document.createElement('canvas').getContext('2d');
+  function reportBar(tag) {
+    var color = tag.getAttribute('content');
+    if (!color || !bar) return;
+    bar.fillStyle = '#000000';
+    bar.fillStyle = color;
+    if (/^#[0-9a-f]{6}$/i.test(bar.fillStyle)) call('SetBarColor', [bar.fillStyle]).catch(function () { /* the bar stays as it is */ });
+  }
+  function followBar() {
+    var tag = document.querySelector('meta[name="theme-color"]');
+    if (!tag) return;
+    reportBar(tag);
+    new MutationObserver(function () { reportBar(tag); }).observe(tag, { attributes: true, attributeFilter: ['content'] });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', followBar); else followBar();
+
   window.__studioShell = {
     cfg: cfg,
     call: call,
