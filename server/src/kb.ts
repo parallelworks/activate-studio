@@ -48,7 +48,15 @@ export function excluded(name: string, isDir: boolean): boolean {
   return EXCLUDE_FILE_SUFFIXES.some(s => name.toLowerCase().endsWith(s))
 }
 
-export async function listDir(rel: string, base: string = KB_ROOT): Promise<KbEntry[]> {
+/** Dot entries are left out of a listing unless asked for. The persona
+ *  library is the exception, material a user writes that only lives under a
+ *  dot to stay out of the way. Machinery (.git, .cache) stays out either
+ *  way, by excluded(). */
+export function hiddenName(name: string): boolean {
+  return name.startsWith('.') && name !== '.' && !VISIBLE_DOT_DIRS.has(name)
+}
+
+export async function listDir(rel: string, base: string = KB_ROOT, showHidden = false): Promise<KbEntry[]> {
   const abs = resolveKb(rel, base)
   let dirents
   try {
@@ -61,11 +69,7 @@ export async function listDir(rel: string, base: string = KB_ROOT): Promise<KbEn
   }
   const out: KbEntry[] = []
   for (const d of dirents) {
-    // Dot entries are hidden because they are machinery (.git, .cache).
-    // The persona library is the exception: it is material a user writes
-    // and should be browsable and readable like the rest of the corpus,
-    // and it only lives under a dot so it stays out of the way.
-    if (d.name.startsWith('.') && d.name !== '.' && !VISIBLE_DOT_DIRS.has(d.name)) continue
+    if (!showHidden && hiddenName(d.name)) continue
     if (excluded(d.name, d.isDirectory())) continue
     const p = path.join(abs, d.name)
     let st

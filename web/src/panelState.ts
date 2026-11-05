@@ -3,8 +3,9 @@ import { useSyncExternalStore } from 'react'
 /**
  * Whether the status panel shows, shared by the toggles on every page and
  * the panel itself. The viewer's choice is remembered; with none, the panel
- * starts open on a wide screen and closed on a narrow one, and a phone is
- * not offered it at all.
+ * starts open on a wide screen, and a phone is not offered it at all. A
+ * narrow window starts with it closed whatever the choice, since it would
+ * leave the page too little room, and opening it there lays it over the page.
  *
  * On a page with a side view (the chat's runs and sessions, the Workflows
  * page's), the two do not show together: while the side view is up the
@@ -27,10 +28,17 @@ function remembered(): boolean {
   return typeof window !== 'undefined' && window.innerWidth >= WIDE_PX
 }
 
-let state: PanelState = { open: remembered(), view: 'chat', side: { chat: false, page: false } }
+const narrow = () => typeof matchMedia === 'function' && matchMedia(`(max-width: ${WIDE_PX - 1}px)`).matches
+
+let state: PanelState = { open: !narrow() && remembered(), view: 'chat', side: { chat: false, page: false } }
 const subs = new Set<() => void>()
 const emit = () => { for (const fn of subs) fn() }
 const set = (patch: Partial<PanelState>) => { state = { ...state, ...patch }; emit() }
+
+// The same as the window changes size, leaving the remembered choice alone.
+if (typeof matchMedia === 'function') {
+  matchMedia(`(max-width: ${WIDE_PX - 1}px)`).addEventListener?.('change', e => set({ open: !e.matches && remembered() }))
+}
 
 /** The side view a page has: the chat's, or the Workflows page's. */
 export function sideTargetOf(view: string): SideTarget | null {

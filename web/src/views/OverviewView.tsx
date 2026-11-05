@@ -120,6 +120,14 @@ export function OverviewView({ onOpen }: { onOpen: (path: string) => void }) {
     return () => { live = false }
   }, [epoch])
 
+  // The view stays mounted while another page is open, so a change made
+  // there (an upload, a delete) has to reach it.
+  useEffect(() => {
+    const onChange = () => setEpoch(e => e + 1)
+    window.addEventListener('ade-kb-changed', onChange)
+    return () => window.removeEventListener('ade-kb-changed', onChange)
+  }, [])
+
   // While a job runs, the counts are read again every few seconds, so the
   // page grows with the index; the whole page reloads when the job ends.
   const running = !!idx?.running

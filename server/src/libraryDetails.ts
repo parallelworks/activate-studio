@@ -4,7 +4,7 @@ import type { FastifyInstance } from 'fastify'
 import { authEnabled } from './auth.js'
 import { entryStats, treeStats, treeStatsKept } from './gufi.js'
 import { KbError, resolveKb } from './kb.js'
-import { getLibrary, PRIMARY_ID, type Library } from './libraries.js'
+import { getLibrary, lacks, PRIMARY_ID, type Library } from './libraries.js'
 import { ALL, scopeLibraries } from './libraryScope.js'
 import { parseSshSite, siteName } from './remoteExec.js'
 import { effectiveSettings } from './settings.js'
@@ -31,6 +31,8 @@ export interface Details {
   /** Where the index is: a path here, or host:path for a remote one. Left
    *  out where users sign in, for indexes on the server. */
   index: string | null
+  /** False only when the index is known to hold no words; a tree still
+   *  being looked at, as after a build or a change of folder, is not. */
   fullText: boolean
   size: number
   /** Below a folder, at any depth; the folder itself is not counted. */
@@ -94,7 +96,7 @@ export async function describe(lib: Library, sub: string, viewerId: string | nul
   const base = {
     path: sub, name,
     library: { id: lib.id, label: lib.label, kind: kindOf(lib, viewerId), site: lib.site ?? null, writable: lib.writable },
-    index: indexOf(lib), fullText: lib.caps.fullText,
+    index: indexOf(lib), fullText: !lacks(lib, 'fullText'),
   }
   const dir = sub.includes('/') ? sub.slice(0, sub.lastIndexOf('/')) : ''
   // A file has an entry in its folder's index; a folder has a db.db of its

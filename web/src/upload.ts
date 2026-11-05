@@ -1,11 +1,22 @@
 import { api } from './api'
+import type { DroppedFile } from './nativeShell'
 
-export interface UploadItem { file: File; rel: string }
+export interface UploadItem {
+  file: File
+  rel: string
+  /** A file the desktop window listed, which the window itself sends: its id
+   *  there. `file` is then a stand-in, and `size` its size. */
+  linked?: string
+  size?: number
+}
+
+const sizeOf = (i: UploadItem) => i.size ?? i.file.size
 export interface UploadProgress {
-  /** Uploading from the desktop, or moving inside the corpus. */
-  kind?: 'upload' | 'move'
-  /** 'uploading' while bytes move, 'indexing' while the corpus catches up. */
-  phase: 'uploading' | 'indexing' | 'done'
+  /** Uploading from the desktop, or work inside the corpus. */
+  kind?: 'upload' | 'move' | 'copy' | 'delete'
+  /** 'queued' behind another upload, 'uploading' while bytes move (or a job
+   *  works through its paths), 'indexing' while the corpus catches up. */
+  phase: 'queued' | 'uploading' | 'indexing' | 'done'
   total: number
   done: number
   /** Bytes sent and total bytes, so one large file still shows movement. */
@@ -33,17 +44,38 @@ export interface UploadProgress {
  */
 const CONCURRENCY = 3
 const SMALL_FILE = 1024 * 1024
+/** What the server takes in one file (MAX_UPLOAD_BYTES). Told apart here, as
+ *  the server fails the whole request over one such file. */
+const MAX_FILE = 200 * 1024 * 1024
 
 function batchSize(items: UploadItem[]): number {
-  const avg = items.reduce((n, i) => n + i.file.size, 0) / Math.max(items.length, 1)
-  return avg < SMALL_FILE ? 12 : 4
+  const avg = items.reduce((n, i) => n + sizeOf(i), 0) / Math.max(items.length, 1)
+  if (avg < SMALL_FILE) return 12
+  // No byte counts come back for what the window sends, so progress moves a
+  // request at a time.
+  return items[0]?.linked ? 1 : 4
 }
 
-/** Walk dropped DataTransfer items, descending directories. */
+/** The server takes no names that start with a dot, and one in a batch fails
+ *  the batch, so a folder's .DS_Store never goes up. */
+const uploadable = (rel: string) => !rel.split('/').some(part => part.startsWith('.'))
+
+/** Files chosen in a file or folder picker, folders kept. */
+export function collectChosen(files: File[]): UploadItem[] {
+  return files.map(file => ({ file, rel: file.webkitRelativePath || file.name })).filter(i => uploadable(i.rel))
+}
+
+/** Files the desktop window listed, sent by the window when their turn
+ *  comes, so their bytes never pass through the page. */
+export function collectListed(files: DroppedFile[]): UploadItem[] {
+  return files.map(f => ({ file: new File([], f.rel.split('/').pop() ?? 'file'), rel: f.rel, linked: f.id, size: f.size }))
+}
+
+/** Walk a drop, descending directories. */
 export async function collectDropped(items: DataTransferItemList): Promise<UploadItem[]> {
   const out: UploadItem[] = []
   const walkEntry = async (entry: any, prefix: string): Promise<void> => {
-    if (!entry) return
+    if (!entry || !uploadable(entry.name)) return
     if (entry.isFile) {
       const file: File = await new Promise((res, rej) => entry.file(res, rej))
       out.push({ file, rel: prefix + file.name })
@@ -73,18 +105,29 @@ export async function uploadBatched(
   items: UploadItem[],
   dir: string,
   onProgress: (p: UploadProgress) => void,
-  signal?: AbortSignal,
+  { signal, turn, onLanded }: {
+    signal?: AbortSignal
+    /** Resolves when this upload may send, with what ends its turn. */
+    turn?: () => Promise<() => void>
+    /** The files are on disk; indexing has yet to run. */
+    onLanded?: () => void
+  } = {},
 ): Promise<UploadProgress> {
-  const totalBytes = items.reduce((n, i) => n + i.file.size, 0)
+  const sendable = items.filter(i => sizeOf(i) <= MAX_FILE)
+  const totalBytes = sendable.reduce((n, i) => n + sizeOf(i), 0)
   const p: UploadProgress = {
-    phase: 'uploading', total: items.length, done: 0, bytes: 0, totalBytes,
-    current: items[0]?.rel ?? '', failed: [], indexMs: 0, finished: false, dir,
+    kind: 'upload', phase: turn ? 'queued' : 'uploading', total: items.length, done: 0, bytes: 0, totalBytes,
+    current: sendable[0]?.rel ?? '', indexMs: 0, finished: false, dir,
+    failed: items.filter(i => sizeOf(i) > MAX_FILE).map(i => ({ name: i.rel, error: 'over the 200 MB limit for one file' })),
   }
   onProgress({ ...p })
+  const endTurn = await turn?.()
+  p.phase = 'uploading'
+  onProgress({ ...p })
 
-  const size = batchSize(items)
+  const size = batchSize(sendable)
   const batches: UploadItem[][] = []
-  for (let i = 0; i < items.length; i += size) batches.push(items.slice(i, i + size))
+  for (let i = 0; i < sendable.length; i += size) batches.push(sendable.slice(i, i + size))
 
   // Bytes are counted per batch and summed, since several are in the air at
   // once and each reports its own progress.
@@ -105,13 +148,15 @@ export async function uploadBatched(
       if (idx >= batches.length || signal?.aborted) return
       const batch = batches[idx]
       p.current = batch[0].rel
-      const bytes = batch.reduce((n, b) => n + b.file.size, 0)
+      const bytes = batch.reduce((n, b) => n + sizeOf(b), 0)
       try {
-        const r = await api.uploadFiles(batch, dir, {
-          deferIndex: true,
-          signal,
-          onBytes: sent => { inFlight.set(idx, sent); publish() },
-        })
+        const r = batch[0].linked
+          ? await api.sendListed(batch, dir, signal)
+          : await api.uploadFiles(batch, dir, {
+            deferIndex: true,
+            signal,
+            onBytes: sent => { inFlight.set(idx, sent); publish() },
+          })
         p.done += r.saved.length
       } catch (e) {
         if ((e as Error).name === 'AbortError') { p.cancelled = true; return }
@@ -124,11 +169,13 @@ export async function uploadBatched(
     }
   }
   await Promise.all(Array.from({ length: Math.min(CONCURRENCY, batches.length) }, worker))
+  endTurn?.()
   if (signal?.aborted) p.cancelled = true
 
   // One indexing pass for everything that landed, watched rather than
   // waited on inside a request.
   if (p.done > 0) {
+    onLanded?.()
     p.phase = 'indexing'
     p.current = ''
     onProgress({ ...p })
