@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Button, CopyButton, EmptyState, Field, Input, SearchInput, StatusBadge, Switch, ToggleGroup, type BadgeVariant } from '@parallelworks/ui'
 import { api, type PublicLibrary, SearchHit } from '../api'
 import { TagMenu } from '../components/TagMenu'
+import { useLabelVocabulary } from '../labelVocabulary'
 import { RowCheck } from '../components/Explorer'
 import { LibraryScope } from '../components/LibraryScope'
 import { warmRemoteHosts } from '../api'
@@ -98,16 +99,12 @@ export function SearchView({ onOpen }: { onOpen: (path: string, q?: string) => v
   const [note, setNote] = useState<string | null>(null)
   const [omitted, setOmitted] = useState<Omission[] | null>(null)
   const [busy, setBusy] = useState(false)
-  const [vocab, setVocab] = useState<{ tag: string; count: number }[]>([])
+  const vocab = useLabelVocabulary()
   const [activeTags, setActiveTags] = useState<Set<string>>(new Set())
   const [sel, setSel] = useState<Set<string>>(new Set())
   const [tagMenuOpen, setTagMenuOpen] = useState(false)
   const [lastLimit, setLastLimit] = useState(50)
   const [gufi, setGufi] = useState<GufiCommand[] | undefined>(undefined)
-
-  useEffect(() => {
-    api.tagVocabulary().then(v => setVocab(v.tags)).catch(() => {})
-  }, [])
 
   const refined = refineOpen && !!(name.trim() || text.trim())
   const run = async (limit = 50, query = q, over: Scope = scope) => {

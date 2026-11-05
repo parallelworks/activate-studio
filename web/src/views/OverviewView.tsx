@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Callout, Loader, RefreshButton, StatTile, StatTileGroup, Table } from '@parallelworks/ui'
 import { api, type FormatReadiness } from '../api'
+import { useLabelVocabulary } from '../labelVocabulary'
 import { indexSummary, phaseLine, useIndexStatus } from '../indexActivity'
 import { useShared } from '../statusShare'
 import { IndexControls, IndexJobView, IndexRuns, LastBuild, useIndexControls } from '../components/IndexActivity'
@@ -66,7 +67,7 @@ export function OverviewView({ onOpen }: { onOpen: (path: string) => void }) {
   const { authEnabled } = useShared()
   const [missing, setMissing] = useState<FormatReadiness[]>([])
   const [updatedAt, setUpdatedAt] = useState<number | null>(null)
-  const [tags, setTags] = useState<{ tag: string; count: number }[]>([])
+  const tags = useLabelVocabulary()
   const [largest, setLargest] = useState<QueryResult | null>(null)
   const [recent, setRecent] = useState<QueryResult | null>(null)
   const [activity, setActivity] = useState<{ conversations: number; latest: string | null; transcripts: number; attachments: number } | null>(null)
@@ -96,7 +97,6 @@ export function OverviewView({ onOpen }: { onOpen: (path: string) => void }) {
       for (const done of waiters.current.splice(0)) done()
     })
     api.extractors().then(r => { if (live) setMissing(r.missing ?? []) }).catch(() => {})
-    api.tagVocabulary().then(v => { if (live) setTags(v.tags) }).catch(() => {})
     const q = (body: unknown, set: (r: QueryResult) => void) =>
       fetch('/api/query', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...(body as object), ...(currentLibrary() !== 'kb' ? { library: currentLibrary() } : {}) }) })
         // An error payload parses as JSON too; only a shape with rows is a result.

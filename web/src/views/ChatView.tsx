@@ -16,6 +16,7 @@ import { createStudioAdapter, getChatListFilter, setChatListFilter, setViewerUse
 import { useAppConfig } from '../config'
 import { api, fetchModels, forgetModels, type ModelsResponse } from '../api'
 import { setChatLibrary, setLabelScope, setPersona } from '../labelScope'
+import { useLabelVocabulary } from '../labelVocabulary'
 import { PersonaIcon } from '../components/PersonaIcon'
 import { ConversationScrubber } from '../components/ConversationScrubber'
 import { EmbedFrame } from '../components/EmbedFrame'
@@ -158,7 +159,7 @@ export function ChatView() {
   credNoteRef.current = credNote
   const effectiveTheme = useEffectiveTheme()
   const [voiceOpen, setVoiceOpen] = useState(false)
-  const [vocab, setVocab] = useState<{ tag: string; count: number }[]>([])
+  const vocab = useLabelVocabulary()
   const [scope, setScope] = useState<Set<string>>(new Set())
   const [chatFilter, setChatFilterState] = useState<'all' | 'mine'>(getChatListFilter())
   const [chatEpoch, setChatEpoch] = useState(0)
@@ -289,7 +290,6 @@ export function ChatView() {
 
   useEffect(() => {
     migrateRememberedModel()
-    api.tagVocabulary().then(v => setVocab(v.tags)).catch(() => {})
     // The model picker is the package's and renders labels from the id
     // alone, so a locked provider cannot be marked inside it (upstream
     // issue filed). The warning therefore lives here, above the thread,
