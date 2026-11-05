@@ -2,7 +2,222 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
-## v1.186 (2026-11-04)
+## v1.187 (2026-11-05)
+
+### Offer a rebuild when a remote library's depth changes (#635)
+
+Changing the depth of a library built on a remote system used to store the change with a short message, and nothing ran until someone pressed Rebuild. The row now offers **Rebuild now** or **Later** in place, over ssh and pw ssh alike. Libraries built on this computer behave as before.
+
+The choice says what a rebuild does: the current index keeps answering searches until the new one replaces it, and what the new depth costs in time. For a lower depth it says search keeps working without a rebuild. With a build running it says the change applies to the next build and offers no rebuild. Going back to the depth the index already has asks nothing.
+
+A library now records the depth of its last build that finished with what that depth makes (`builtDepth`). Until that matches its depth, the state column says **Depth changed, Rebuild to apply**, also after Later, after closing the page, and after a failed rebuild. A library last built by an earlier version has no record and shows no note until its next build. A build at a Meaning depth that finished without vectors does not count as applied, so the note stays.
+
+Two changes to the remote build come with this. The new index used to be moved into place right after `gufi_dir2index`, before its text and vectors were made, so a library's words and meaning were missing from search while the rest of the build ran, and a build stopped then left an index without them. Text and vectors are now made in the staged tree and it is swapped in at the end, which is what the prompt says and what a library built here already does. The index folder therefore holds two copies for the whole build, not only the folders phase. `embed.py` also gets `--cache "$idx/.embed-cache.db" --prune`, so a rebuild embeds only passages it has not embedded before.
+
+A rebuild still walks and indexes every folder and writes the text tables again. It reuses extracted text from `.extract`. There is no pass that adds meaning alone, which would be the better answer for adding meaning to a large library, and that is left for later.
+
+Tested with web and server tests, and end to end against a throwaway container over ssh and through a stand-in `pw` that forwards to ssh: Text + OCR to Meaning on all files, Rebuild now, words searched during the build, and a search by meaning finding its passage afterwards.
+
+### Read PDFs in remote builds and say what a build could not read (#638)
+
+## Problem
+
+On a remote library, PDFs could be missing from search, chat and the semantic map while the build reported success. `enrich.py` reads PDFs with pdftotext, then pypdf, and returns no text if neither is there. A remote host got pypdf only if it was already installed, and downmark's binary is not on the remote. The library row still showed text and vectors as present.
+
+## Evidence
+
+Real ssh builds against local sshd stand-in hosts, public PDFs, rows counted in each `db.db`. Three text PDFs per host.
+
+| Host | Before: PDF words / gvec rows | After one Rebuild: PDF words / gvec rows | Row after |
+|---|---|---|---|
+| pdftotext, no pypdf | 3 / 36 | 3 / 36 | Ready |
+| Neither reader | 0 / 0, row said text and vectors | 3 / 33 | Ready |
+| No Python | 0 / 0, no reason given | 0 / 0 | Says why |
+| No Python, then installed | not applicable | 3 / 33 | Ready |
+| Python 3.10, neither reader (first build on the new code) | not measured | 3 / 0 | Says no embedding model for this Python |
+
+## Changes
+
+- `embed_deps.json` pins pypdf 6.21.2 (the macOS app's version) and typing_extensions, which pypdf needs on Python 3.10.
+- The Studio sends the readers to `~/.activate-studio/readers/<digest>` at every depth with text. `fetch_embed.py` checks each hash and installs with no network on the host.
+- `enrich.py` and `embed.py` take `--report`. `.studio-index.json` records those reports, the reasons a pass did not run, and counts from `gufi_query` on the finished index.
+- The library row shows "Ready; some files were not read" with the count and reason, such as "312 PDFs have no text: this system has no PDF reader".
+- A library whose vector tables are empty although passages were cut now counts as having no vectors.
+- A Rebuild reads the system's Python and GGUF model again. Text already read stays in `.extract`.
+- pypdf stops after 180 seconds per file and keeps the pages read by then, matching the pdftotext timeout. A single page that hangs is not interrupted.
+- A file name search with an underscore now matches. `NIST_SP811` was reduced to `NISTSP811`. This applies to every library.
+- The macOS app now carries the reader wheels to send.
+
+## Tests
+
+- New `server/test/remotePdfSshd.test.mjs`: 6 cases over real sshd. It needs `STUDIO_TEST_SSHD=1`, so CI skips it.
+- Unit tests that run in CI: row wording, vector check, reader pins, the `enrich.py` report with no reader, the underscore clause, and the row in the web page.
+- One existing test changed: `fetch_embed.py` is now sent at Text + OCR because it installs the readers. `embed.py` and `embed_onnx.py` are still not sent there, and the Names depth sends none of them.
+
+## Not tested
+
+- macOS app build with the new wheels step, and a macOS remote host.
+- pw ssh with real readers. The real ssh test uses plain ssh.
+- Python older than 3.10 as a real interpreter. It takes the same path as no Python.
+- A GUFI without sqlite-vec on a real host. The vector check has unit tests only.
+- Chat as a live model conversation. Search, which its tool calls, was tested.
+
+## Overlap with #635
+
+A trial merge with `depth-rebuild-prompt` conflicts in `server/src/remoteBuild.ts`, `server/src/userLibraries.ts`, `web/src/api.ts`, `web/src/components/LibrariesSection.tsx` and `docs/HELP.md`. The hunks are adjacent additions, and each resolves by keeping both sides:
+
+- `remoteBuild.ts`: the header comment, and the enrich and embed lines, which need both `--index "$new"` and `--report`, and both `--cache` and `--report`. The tree swap goes after this change's `vecwhy` block. The index counts here run after the swap on `$tree`, so they stay correct.
+- `userLibraries.ts`: the `gaps` and `builtDepth` fields, `rebuildRemote`, `finishBuild`, and `publicUserLibrary`.
+- `LibrariesSection.tsx`: the row's `notes` line.
+
+One point a textual merge does not catch: `madeDepth` in #635 reads `m.vectors === true`. After the rebase it should call `vectorsMade(m)`, so an empty vector table does not count as the depth being built.
+
+This branch does not add `RemoteBuild.depth`. The build script writes the depth into the manifest instead.
+
+### Chat tool calls fold again, library picker in full screen maps, shorter GUFI commands, chat stays in place (#637)
+
+Four fixes from testing v1.186 on a Mac.
+
+## Tool calls fold again
+
+Since #618 the chat passed `toolRenderers` for `search_kb`, `query_corpus`, `list_kb_dir` and `read_kb_file`. The package keeps a tool with a renderer out of the "Ran N tools" row unless it also has a presentation, and draws each call even when a run of them is folded. These tools now have a `toolPresentation`, so finished calls fold with the rest. The commands and the result summary are inside the call's row. A running call and a failed call keep their own rows. `read_original` has no renderer and already folded.
+
+One limit from the package: a failed call directly beside a finished call of the same tool joins a folded row that counts it ("1 failed"). The reason is one click away there.
+
+## Library picker in the full screen maps
+
+Both maps show the picker in the full screen header. Choosing a library changes the map in place. The window stays open while a library loads and for a library with no map, which shows its reason and its actions. The choice is remembered as before. Escape with the list open closes the list only. The full screen semantic map also shows a remote library's Refresh and notes.
+
+## Shorter GUFI commands
+
+The query vector is shown as `X'3f2a1b0c…' (384-value query vector)`, and the shell's `'\''` escapes read as plain quotes. One line under the commands says what changed on screen. Copy still gives the full command, and the server and the command log are unchanged. A real search by meaning went from 14,982 characters to 5,287 on screen. The copied command ran in bash with exit 0.
+
+## Chat lifting
+
+The thread was not positioned, so its absolutely placed screen reader labels escaped it and gave every box around it the conversation's full height to scroll. In a window of 760 px or less, the package's drawer layout adds an `overflow-hidden` box that was not in the shell list, and a `scrollIntoView` scrolled it 36 px, which left the composer lifted. This reproduces in Chromium and WebKit, on 0.89 and on 0.114.1.
+
+- The thread is now `position: relative`, which removes the extra height (`.chat-canvas` scrollHeight went from 48,607 to 800).
+- The drawer box is `overflow: clip`.
+- The scroll guard, moved to `shellScroll.ts`, covers every box around the thread.
+- The thread has `overscroll-behavior: none`, because the composer sits inside it and macOS elastic scrolling would move the composer with it.
+
+The elastic scrolling change is not verified: Linux WebKit has no rubber band, so this needs a check on a Mac.
+
+## Tests
+
+New vitest coverage for each fix, including `web/test/shellScroll.test.ts`. Web suite: 375 passed. Checked in Chromium and WebKit against a local server, including a live streamed chat with many tool calls and a reload.
+
+### Take @parallelworks/ui 0.114.1 and use what it added (#639)
+
+Takes `@parallelworks/ui` from ^0.89.0 to ^0.114.1 and uses what the releases added. Closes #580.
+
+## What changed
+
+Status displays now use the package components. Settings, Agents, Workflows and the status panel use `StatusLabel` and `RunStatusLabel`, and a new `web/src/statusLook.ts` holds the one mapping from a state to its look: under way is blue with a pulse, done is green, failed is red, needs a look is amber, waiting or off is gray. Before this change working and idle were green, completed was gray, and failed was amber in some places. `StatusBadge` is kept for flags only, as the package now requires.
+
+The Overview and History tiles use `StatTile` and `StatTileGroup` with the `loading` state. The hand-written tile CSS is gone.
+
+The chat list links to Model access through `extraLinks`, with Studio wording for the two strings.
+
+The tools dialog fix, question card tabs and previews, and allocation search come with the package. The server does not emit `kind: 'ask'` approvals, so the question card change needed no code. The Studio does not pass `allocations`, so the allocation picker is not shown.
+
+## Fixes found by the UI check
+
+- The composer sat under the bottom bar on an empty chat at 720x480. The brand mark now hides at short heights.
+- Query results collapsed to height 0 at short and narrow sizes, which made Export CSV unreachable.
+- Tag counts had 2.3:1 contrast.
+- `.chat-thread ::selection` and `.chat-composer ::selection` use the system highlight until foundation #635 is released. It is not in 0.114.1.
+
+## Testing
+
+`pnpm test`: server 793 passed, 20 skipped, 0 failed; web 362 passed; rhel9 348 passed. `pnpm install --frozen-lockfile` is clean.
+
+A scripted check ran both builds in Chromium on public data and a scripted model, in light and dark at 1440x900, 720x480 and 390x844: 698 steps per build, 0 new findings on 0.114.1, 9 findings gone.
+
+Known small regression: the Stats view shifts more while its lists load below the larger tiles (layout shift 0.165 to 0.272 at 720x480).
+
+Not tested: WKWebView on a Mac, WebKit (the host lacks its system libraries), and a live model.
+
+### Update test waits for its restart call before ending (#640)
+
+The macOS job failed twice on main at 41130db in `where the app started its run loop itself`, which checks that no `launchctl kickstart` ran.
+
+The test before it ends with an install and does not wait for that install's restart. The restart is a separate process, so its call can land in the next test's log after `fresh()` clears it. Slowing the fake `launchctl` by 0.15 seconds reproduces the failure on Linux every time.
+
+The earlier test now waits for its kickstart before ending. With the fix, the updater tests pass 22 of 22 in three runs with the slowed fake and three with the normal one. Test only, no change to the app.
+
+### Labels apply to the whole selection and show up everywhere at once (#642)
+
+Multi-select could not apply a label that one selected item already held, because the panel treated a label on any item as a label on all of them. The panel now counts how many selected items hold each label. A label on some of them appears in a new "On some of these items" row with an "n of N" button that adds it to the rest.
+
+The Labels toggle did nothing in select mode, because select mode forced labels on. Select mode now turns the toggle on visibly, and the toggle works from there.
+
+Chat, Search and Overview loaded the label list once, so new labels were missing until a refresh. They now share `useLabelVocabulary`, which reloads on `ade-tags-changed`, and the panel sends that event itself.
+
+Checked in the packaged Linux window on a desktop session. 391 web tests pass and `tsc` is clean. `docs/HELP.md` is updated.
+
+### Uploads keep folders, run side by side, and delete in the background (#643)
+
+Testing the Linux app on a real desktop, plus a drop of nested folders from a laptop, found these. Each was reproduced and rechecked in the packaged window, driven with real input.
+
+**Uploads**
+- Nested folders no longer flatten, on any platform. The multipart parser cuts a filename to its base name, so `paths` now goes as a JSON field ahead of the files.
+- Each upload, move, copy and delete has its own row (`transfers.ts`, `TransferPanel.tsx`). Uploads take turns, a queued one can be cancelled, and rows outlive a trip to another page.
+- The tree updates when files land, and clean rows go by themselves. Failed rows stay.
+- A file over 200 MB is named as failed with the reason, and the rest of the upload goes on. Before, one such file failed its whole batch.
+
+**Deletes**
+- Bulk and folder delete run as jobs, so the dialog closes at once.
+- A deleted folder leaves the Stats count straight away; the cached count used to hold for ten minutes.
+
+**Library and layout**
+- Eye button for hidden files, and Choose a folder in + Add.
+- Full screen maps clear the title bar in a window controls overlay, and the classification banner.
+- The Status panel starts closed under 1200 px, without changing the remembered choice.
+- The viewer header wraps in a narrow pane.
+
+**Desktop window**
+- `onShellDrop` and `chooseUpload` take drops and folders from the Linux shell, which sends the bytes. The shell half is in #633.
+- A drop nothing accepts no longer navigates the window away.
+
+**Labels and details**
+- An overlay entry only applies while its path still holds that object, which stops starter labels reaching other files.
+- Details says a file has no text only when that is known.
+
+Tests: web 397 passed, server 784 passed and 26 skipped, `tsc` clean. New tests cover upload paths, hidden files, transfers, queued cancel, and the size limit.
+
+### A finished reply keeps the bottom of the chat in view in WebKit (#644)
+
+WebKit has no scroll anchoring. When a finished reply swaps in, the list collapses for a frame, and the late scroll event reads as the reader scrolling up, so the end of the reply stayed below the fold. The macOS and Linux windows are both WebKit, which is why browsers never showed it.
+
+The fix belongs in `ChatMessageList` and is in foundation PR parallelworks/foundation#647. This carries it as a pnpm patch on `@parallelworks/ui` 0.114.1 so the Linux release does not wait on a foundation version. The next `@parallelworks/ui` taken drops the patch, as `pnpm-workspace.yaml` notes.
+
+`patches/*` now counts as an image input in `container.yaml`.
+
+Reproduced in the packaged Linux window and rechecked there: the reply ends at the bottom with its sources and footer in view. Web tests: 397 passed.
+
+### Chat tables show in full and keep their columns in view (#645)
+
+A starter question ("Which PDFs do I have") gives a reply with long tables, and they rendered badly at every width.
+
+- Streamdown caps a table's box with an inline height, so a table was cut off mid row behind its own scrollbar. The cap is gone in chat, and a reply scrolls with the chat. `StepSummaries` in `@parallelworks/ui` makes the same override.
+- A long path held its column at full width and pushed the next column out of view. Links and code in a cell now break anywhere. `overflow-wrap` does not reach WebKit's table sizing, so this uses `word-break`.
+
+Checked in the packaged Linux window at 1000 and 1500 px wide.
+
+### Linux app: window shell, per-user install, .deb and .rpm (#633)
+
+Stacked on #631 (base `linux-app`). Draft: nothing is merged, tagged or released.
+
+The Wails v2 shell from the desktop spike in `desktop/wails`, supervising the payload (`studio-run.sh --once`; restart on 75 and 76, update rollback, stop on quit, one window per data folder, folder chooser, port following, downloads, links, reopen after an update). A launcher with a browser fallback, `install.sh` and `uninstall.sh` for a per-user install in `~/.local/lib/activate-studio`, nfpm packages (the .deb with the WebKitGTK 4.1 shell, the .rpm with the 4.0 shell), and install tests under Xvfb on Ubuntu 22.04 and 24.04, Rocky 9 and AlmaLinux 9. `docs/LINUX-APP.md` has the install layout and markers the updater reads (`install-kind`, a stable payload path, the manifest `shell` entry).
+
+Contents beyond the diff to review:
+- The first three commits are the web Intl guard from #626, cherry-picked so the RHEL 9 runs draw the Studio. #626 must merge first; they drop out of this diff when it does.
+- `linux-updater` (#632) is merged in, so its changes show here until it merges.
+
+CI: run 41735769723 is green in every job.
+
+## v1.186 (2026-11-03)
 
 ### fix(web): fall back to plain number formatting when Intl cannot build it (#626)
 
@@ -29,6 +244,10 @@ Without the guard, the same window stays on the loading screen (the app never mo
 Limits: the window is a plain WebKitGTK 4.0 web view, not the Wails shell (the shell's self test drew the first screen earlier); WebGL ran on software rendering; only English formatting was checked; stock RHEL 9 itself was not run (UBI 9 carries the same build); RHEL 8 was not tested.
 
 `tsc --noEmit` passes, and the web suite passes in both passes (44 files, 360 tests, then 43 files, 346 tests). The long-running import tests now have a 60 s timeout: at the 5 s default the app load test timed out once under the parallel run.
+
+### Change log through v1.186 (#634)
+
+Regenerated with `node scripts/release-notes.mjs --changelog --next v1.186` before tagging v1.186.
 
 ## v1.185 (2026-11-03)
 
