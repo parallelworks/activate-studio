@@ -143,6 +143,24 @@ export function overlayEntries(): Record<string, OverlayEntry> {
   return load().entries
 }
 
+/** The entries whose file is at its recorded path. The path is a hint, and
+ *  the store outlives a change of folder, so an entry can name a path that
+ *  now holds a different file: a same-named folder in the new library must
+ *  not take the old one's labels. Compared on inode, since a rebuilt host
+ *  gives the same file a new fsid (see overlayPrune). Stats in small batches
+ *  so a large store on a network share does not hold the event loop. */
+export async function overlayAtPath(): Promise<OverlayEntry[]> {
+  const list = Object.entries(load().entries)
+  const out: OverlayEntry[] = []
+  for (let i = 0; i < list.length; i += 64) {
+    await Promise.all(list.slice(i, i + 64).map(async ([key, e]) => {
+      const st = await fs.promises.stat(path.join(KB_ROOT, e.path), { bigint: true }).catch(() => null)
+      if (st && String(st.ino) === inodeOf(key) && sameObject(e, { btime: String(st.birthtimeNs ?? 0n) })) out.push(e)
+    }))
+  }
+  return out
+}
+
 /** Inode (without the fsid) to the keys carrying it; the index reports
  *  inodes, and a single corpus rarely spans devices, so the fsid is
  *  confirmed by stat only for the rows that match. */

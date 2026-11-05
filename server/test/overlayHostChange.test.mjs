@@ -53,3 +53,15 @@ test('adopting from the index fills an empty overlay without overwriting a prese
   assert.equal(fresh.overlayAdopt('c.md', ['research']), true)
   assert.deepEqual(fresh.overlayGet('c.md'), ['research'])
 })
+
+test('an entry whose path now holds a different file is not shown there', async () => {
+  const fresh = await import('../dist/tagsOverlay.js?v=at-path')
+  fs.mkdirSync(path.join(KB, 'papers'))
+  fresh.overlaySet('papers', ['paper'])
+  assert.deepEqual((await fresh.overlayAtPath()).filter(e => e.path === 'papers').map(e => e.tags), [['paper']])
+  // A change of folder: the same name, a different folder.
+  fs.rmdirSync(path.join(KB, 'papers'))
+  fs.writeFileSync(path.join(KB, 'hold-the-inode'), 'x')
+  fs.mkdirSync(path.join(KB, 'papers'))
+  assert.equal((await fresh.overlayAtPath()).some(e => e.path === 'papers'), false)
+})

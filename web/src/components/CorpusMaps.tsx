@@ -1,4 +1,4 @@
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Button, IconButton, Loader, SegmentedControl } from '@parallelworks/ui'
 import { CloseIcon, ExpandIcon, ResetIcon, ZoomInIcon, ZoomOutIcon } from '@parallelworks/ui/icons'
@@ -269,6 +269,10 @@ export function pan3d(cam: Camera, dx: number, dy: number, scale: number): Camer
   return withTarget(cam, [cam.tx + mx, cam.ty + my, cam.tz + mz])
 }
 
+/** A map filling the window stops at the classification banner, which stays
+ *  on screen with whatever the page shows. */
+const bannerBottom = () => document.querySelector('.cls-banner:not(.banner-preview)')?.getBoundingClientRect().bottom ?? 0
+
 const reducedMotion = () => { try { return matchMedia('(prefers-reduced-motion: reduce)').matches } catch { return false } }
 
 // ---- the frame both maps sit in ----
@@ -311,7 +315,7 @@ function MapFrame({ title, full, onFull, controls, picker, busy, children }: {
   )
   if (!full) return <>{bar}{children}</>
   return createPortal(
-    <div className="map-full" role="dialog" aria-modal="true" aria-label={title} tabIndex={-1} ref={panel}>
+    <div className="map-full" role="dialog" aria-modal="true" aria-label={title} tabIndex={-1} ref={panel} style={{ '--map-top': `${bannerBottom()}px` } as CSSProperties}>
       <div className="map-full-head"><div className="map-full-title"><h2>{title}</h2>{picker}{busy}</div>{bar}</div>
       <div className="map-full-body">{children}</div>
     </div>,
