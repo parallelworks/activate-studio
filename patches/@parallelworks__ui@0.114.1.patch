@@ -1,0 +1,57 @@
+diff --git a/dist/ai/components/ChatMessageList.js b/dist/ai/components/ChatMessageList.js
+index 2a2ebd00e21a95e808f64652838ad1c428adc018..903917d47a543f50129ee75c99a787d10b5e6a66 100644
+--- a/dist/ai/components/ChatMessageList.js
++++ b/dist/ai/components/ChatMessageList.js
+@@ -79,14 +79,22 @@ function ChatMessageList({ messages, allMessages, streamingMessage: streamingMes
+ 	}, [streamingReasoning, isThinking]);
+ 	const isNearBottomRef = useRef(true);
+ 	const lastScrollTopRef = useRef(0);
++	const lastScrollHeightRef = useRef(0);
++	const readerHoldingRef = useRef(false);
+ 	const [pinned, setPinned] = useState(true);
+ 	const handleScroll = useCallback(() => {
+ 		if (!containerRef.current) return;
+-		const { scrollTop, scrollHeight, clientHeight } = containerRef.current;
++		const el = containerRef.current;
++		const { scrollTop, scrollHeight, clientHeight } = el;
+ 		const scrolledDown = scrollTop >= lastScrollTopRef.current;
++		const resized = scrollHeight !== lastScrollHeightRef.current;
+ 		lastScrollTopRef.current = scrollTop;
++		lastScrollHeightRef.current = scrollHeight;
+ 		if (scrollHeight - scrollTop - clientHeight < 24) {
+ 			if (scrolledDown) isNearBottomRef.current = true;
++		} else if (resized && isNearBottomRef.current && !readerHoldingRef.current) {
++			el.scrollTop = scrollHeight;
++			lastScrollTopRef.current = el.scrollTop;
+ 		} else isNearBottomRef.current = false;
+ 		setPinned(isNearBottomRef.current);
+ 	}, []);
+@@ -117,11 +125,28 @@ function ChatMessageList({ messages, allMessages, streamingMessage: streamingMes
+ 		};
+ 		container.addEventListener("scroll", handleScroll);
+ 		container.addEventListener("wheel", releaseOnWheelUp, { passive: true });
++		const hold = () => { readerHoldingRef.current = true; };
++		const letGo = () => { readerHoldingRef.current = false; };
++		const releaseOnKey = (e) => {
++			const typing = e.target.closest?.("input, textarea, [contenteditable]");
++			if (!typing && ["ArrowUp", "PageUp", "Home"].includes(e.key)) {
++				isNearBottomRef.current = false;
++				setPinned(false);
++			}
++		};
+ 		container.addEventListener("touchmove", releaseOnTouch, { passive: true });
++		container.addEventListener("pointerdown", hold);
++		container.addEventListener("keydown", releaseOnKey);
++		window.addEventListener("pointerup", letGo);
++		window.addEventListener("pointercancel", letGo);
+ 		return () => {
+ 			container.removeEventListener("scroll", handleScroll);
+ 			container.removeEventListener("wheel", releaseOnWheelUp);
+ 			container.removeEventListener("touchmove", releaseOnTouch);
++			container.removeEventListener("pointerdown", hold);
++			container.removeEventListener("keydown", releaseOnKey);
++			window.removeEventListener("pointerup", letGo);
++			window.removeEventListener("pointercancel", letGo);
+ 		};
+ 	}, [handleScroll, hasContent]);
+ 	const hadMessagesRef = useRef(false);
