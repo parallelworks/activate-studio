@@ -61,8 +61,8 @@ importers:
   web:
     dependencies:
       '@parallelworks/ui':
-        specifier: ^0.89.0
-        version: 0.89.0(@date-fns/tz@1.5.0)(@types/react@19.2.18)(date-fns@4.4.0)(monaco-editor@0.57.0)(react-dom@19.2.8(react@19.2.8))(react-hook-form@7.90.0(@types/react@19.2.18)(react@19.2.8))(react@19.2.8)
+        specifier: ^0.114.1
+        version: 0.114.1(@date-fns/tz@1.5.0)(@types/react@19.2.18)(date-fns@4.4.0)(monaco-editor@0.57.0)(react-dom@19.2.8(react@19.2.8))(react-hook-form@7.90.0(@types/react@19.2.18)(react@19.2.8))(react@19.2.8)
       '@parallelworks/workflow-parser':
         specifier: ^0.8.0
         version: 0.8.0
@@ -748,8 +748,8 @@ packages:
     os: [linux]
     libc: [glibc]
 
-  '@parallelworks/ui@0.89.0':
-    resolution: {integrity: sha512-6rH01251tKp6zMjNcjsdkhTgl07vBm1zDa0nopUmKiEi7jEsXz++k1BbwAYddGdEUu7XgEHl3zkSTQD7HiDVKw==}
+  '@parallelworks/ui@0.114.1':
+    resolution: {integrity: sha512-5D99RDNVBQyZJdIkNoLsso4sly4PFBfjCljZcRN9UvvhWUDTlII2GARsUZG2aLpkHBUMY99Fw26rmy7nrqwOqQ==}
     peerDependencies:
       monaco-editor: ^0.57.0
       react: ^19.0.0
@@ -956,14 +956,14 @@ packages:
     peerDependencies:
       react: ^18.0.0 || ^19.0.0
 
-  '@tanstack/react-virtual@3.14.21':
-    resolution: {integrity: sha512-wWE/ZJDNNDp18JHWy7n5PQooqerHePVkEEu6Op0twKQ2InF9DPhYMQptQY0syDEviMd3/r8D0OUvKJibDGm9HQ==}
+  '@tanstack/react-virtual@3.14.26':
+    resolution: {integrity: sha512-HUDlfsrYH6ko5xH56L62Mcl/uzT+AGVNMHFuDNqDJMdZWc1AQa2oeVKNUvZ/RWBZQ4TYtyQerFrNvLnp39h65A==}
     peerDependencies:
       react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
       react-dom: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
 
-  '@tanstack/virtual-core@3.19.6':
-    resolution: {integrity: sha512-CsTW892z23gy7IyxYTTorVu1uZWB+0N349rSMgKz4rFLPpLza7F7TpcCKeI5iUAwYQCt8QUlOU67J+KXCxtpGw==}
+  '@tanstack/virtual-core@3.19.11':
+    resolution: {integrity: sha512-/5iHb0RHBvj8Di59FDs4ESNm45jls33aZAi4zccVXZjc/6ZvwQP6nzEYeT6weXjTf9E6/vrp2JhYWRyO+ZP13A==}
 
   '@testing-library/dom@10.4.1':
     resolution: {integrity: sha512-o4PXJQidqJl82ckFaXUeoAW+XysPLauYI43Abki5hABd853iMhitooc6znOnczgbTYmEP6U6/y1ZyKAIsvMKGg==}
@@ -1819,17 +1819,13 @@ packages:
     engines: {node: '>=6'}
     hasBin: true
 
-  katex@0.18.10:
-    resolution: {integrity: sha512-/B6p9eY9DX7aHBfpkHdpirDTZ5QH9xTwL9y837PWuzuv41O5jFdqNQwVQEQsimY0/iVNkwBY4+4hMfhQ7d4Dbw==}
-    hasBin: true
-
   katex@0.18.11:
     resolution: {integrity: sha512-yvyz/2VMKqoho/35Hat5w37wIEdWJ5ElVMidTAlWrxr5uW4aBGsEpveTmKh18/zw08v/7lGswCPon4OhqmqrTA==}
     deprecated: Accidentally published with breaking changes. Use 0.19.0 instead.
     hasBin: true
 
-  katex@0.19.0:
-    resolution: {integrity: sha512-v6Tznz3zJ7u3niRCoDTsumM2+HA2XXcCu+WAacCeHD2z3p9A9Ks987o5FzfTGBN0e8A0vjEgIDvLbICrXpdw/Q==}
+  katex@0.19.1:
+    resolution: {integrity: sha512-jG8uKntjSEcm2EpQOh0XturpPuuC9r3Sq5HLHdsFdWZT27E672SF19QEi+of0/YeOy15lDgRhKvr5614uRrEfA==}
     hasBin: true
 
   khroma@2.1.0:
@@ -3189,20 +3185,20 @@ snapshots:
   '@napi-rs/lzma-linux-x64-gnu@1.5.1':
     optional: true
 
-  '@parallelworks/ui@0.89.0(@date-fns/tz@1.5.0)(@types/react@19.2.18)(date-fns@4.4.0)(monaco-editor@0.57.0)(react-dom@19.2.8(react@19.2.8))(react-hook-form@7.90.0(@types/react@19.2.18)(react@19.2.8))(react@19.2.8)':
+  '@parallelworks/ui@0.114.1(@date-fns/tz@1.5.0)(@types/react@19.2.18)(date-fns@4.4.0)(monaco-editor@0.57.0)(react-dom@19.2.8(react@19.2.8))(react-hook-form@7.90.0(@types/react@19.2.18)(react@19.2.8))(react@19.2.8)':
     dependencies:
       '@base-ui/react': 1.9.0(@date-fns/tz@1.5.0)(@types/react@19.2.18)(date-fns@4.4.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@daypicker/react': 10.0.2(@types/react@19.2.18)(react@19.2.8)
       '@streamdown/code': 2.0.0(react@19.2.8)
       '@streamdown/math': 1.0.3(react@19.2.8)
       '@streamdown/mermaid': 1.0.3(react@19.2.8)
-      '@tanstack/react-virtual': 3.14.21(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      '@tanstack/react-virtual': 3.14.26(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@types/luxon': 3.7.6
       anser: 2.3.5
       clsx: 2.1.1
       css-tree: 3.2.1
       dequal: 2.0.3
-      katex: 0.19.0
+      katex: 0.19.1
       luxon: 3.7.2
       react: 19.2.8
       react-dom: 19.2.8(react@19.2.8)
@@ -3354,7 +3350,7 @@ snapshots:
 
   '@streamdown/math@1.0.3(react@19.2.8)':
     dependencies:
-      katex: 0.18.10
+      katex: 0.18.11
       react: 19.2.8
       rehype-katex: 7.0.1
       remark-math: 6.0.0
@@ -3366,13 +3362,13 @@ snapshots:
       mermaid: 11.17.2
       react: 19.2.8
 
-  '@tanstack/react-virtual@3.14.21(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
+  '@tanstack/react-virtual@3.14.26(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
     dependencies:
-      '@tanstack/virtual-core': 3.19.6
+      '@tanstack/virtual-core': 3.19.11
       react: 19.2.8
       react-dom: 19.2.8(react@19.2.8)
 
-  '@tanstack/virtual-core@3.19.6': {}
+  '@tanstack/virtual-core@3.19.11': {}
 
   '@testing-library/dom@10.4.1':
     dependencies:
@@ -4414,15 +4410,11 @@ snapshots:
 
   json5@2.2.3: {}
 
-  katex@0.18.10:
-    dependencies:
-      commander: 15.0.0
-
   katex@0.18.11:
     dependencies:
       commander: 15.0.0
 
-  katex@0.19.0:
+  katex@0.19.1:
     dependencies:
       commander: 15.0.0
 
@@ -4707,7 +4699,7 @@ snapshots:
       dompurify: 3.4.17
       es-toolkit: 1.52.0
       fastdom: 1.0.12
-      katex: 0.18.10
+      katex: 0.18.11
       khroma: 2.1.0
       marked: 16.4.2
       roughjs: 4.6.6
@@ -4818,7 +4810,7 @@ snapshots:
     dependencies:
       '@types/katex': 0.16.8
       devlop: 1.1.0
-      katex: 0.18.10
+      katex: 0.18.11
       micromark-factory-space: 2.1.0
       micromark-util-character: 2.1.1
       micromark-util-symbol: 2.0.1
@@ -4828,14 +4820,14 @@ snapshots:
     dependencies:
       micromark-util-character: 2.1.1
       micromark-util-symbol: 2.0.1
-      micromark-util-types: 2.0.2
+      micromark-util-types: 2.0.3
 
   micromark-factory-label@2.0.1:
     dependencies:
       devlop: 1.1.0
       micromark-util-character: 2.1.1
       micromark-util-symbol: 2.0.1
-      micromark-util-types: 2.0.2
+      micromark-util-types: 2.0.3
 
   micromark-factory-space@2.0.1:
     dependencies:
@@ -4849,17 +4841,17 @@ snapshots:
 
   micromark-factory-title@2.0.1:
     dependencies:
-      micromark-factory-space: 2.0.1
+      micromark-factory-space: 2.1.0
       micromark-util-character: 2.1.1
       micromark-util-symbol: 2.0.1
-      micromark-util-types: 2.0.2
+      micromark-util-types: 2.0.3
 
   micromark-factory-whitespace@2.0.1:
     dependencies:
-      micromark-factory-space: 2.0.1
+      micromark-factory-space: 2.1.0
       micromark-util-character: 2.1.1
       micromark-util-symbol: 2.0.1
-      micromark-util-types: 2.0.2
+      micromark-util-types: 2.0.3
 
   micromark-util-character@2.1.1:
     dependencies:
@@ -5148,7 +5140,7 @@ snapshots:
       '@types/katex': 0.16.8
       hast-util-from-html-isomorphic: 2.0.0
       hast-util-to-text: 4.0.2
-      katex: 0.18.10
+      katex: 0.18.11
       unist-util-visit-parents: 6.0.2
       vfile: 6.0.3
 

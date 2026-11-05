@@ -84,7 +84,7 @@ describe('one status for every view', () => {
     expect(await within(footer).findByText('Indexing: text 45%', {}, { timeout: 5000 })).toBeInTheDocument()
     const stats = screen.getByTestId('stats')
     // The tile reads the same job; the page shows its phases with counts.
-    expect(stats.querySelector('.ov-index-state')?.textContent).toBe('text 45%')
+    expect(within(stats).getAllByText('text 45%').length).toBeGreaterThan(0)
     // The job's bar names the phase it is in, not a share of the whole.
     expect(within(stats).getByText('phase 3 of 4')).toBeInTheDocument()
     expect(within(stats).getByText('450 of 1,000 items')).toBeInTheDocument()
@@ -102,7 +102,7 @@ describe('one status for every view', () => {
     current = status({ last: done, lastBuild: done, runs: [done] })
     await waitFor(() => expect(within(footer).getByText('1,234 files indexed')).toBeInTheDocument(), { timeout: 5000 })
     expect(within(stats).queryByText('450 of 1,000 items')).toBeNull()
-    expect(stats.querySelector('.ov-index-state')?.textContent).toBe('healthy')
+    await waitFor(() => expect(within(stats).getAllByText('healthy').length).toBeGreaterThan(0))
     expect(asked.filter(u => u.startsWith('/api/kb/stats')).length).toBeGreaterThan(statsBefore)
     expect(within(stats).getAllByText(/Built the index in 4 min 12 s/).length).toBeGreaterThan(0)
     await act(async () => { await new Promise(r => setTimeout(r, 0)) })

@@ -1,7 +1,7 @@
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 import {
   Button, Callout, type CalloutTone, Checkbox, CopyButton, Disclosure, ExternalLink, Field, IconButton, Input, Loader, SegmentedControl, Select,
-  type SelectItem, StatusBadge, Table, Textarea,
+  type SelectItem, StatusBadge, StatusLabel, Table, Textarea,
 } from '@parallelworks/ui'
 import { CloseIcon } from '@parallelworks/ui/icons'
 import './ModelAccessSection.css'
@@ -687,12 +687,12 @@ function CliPanel({ access, busy, login, loginHost, setLoginHost, onUse, onStart
                   <Table.Item wrap>{c.server}{c.organization ? <span className="muted">, {c.organization}</span> : null}</Table.Item>
                   <Table.Item wrap>
                     {c.kind ? KIND_LABEL[c.kind] : <span className="muted">Kept by the CLI</span>}
-                    {c.expired && <StatusBadge variant="error" size="sm" className="ctx-badge">Expired</StatusBadge>}
+                    {c.expired && <StatusLabel variant="error" className="ctx-badge">Expired</StatusLabel>}
                     {c.renewError && <div className="muted ctx-error">{c.renewError}</div>}
                   </Table.Item>
                   <Table.Item>
                     {inUse
-                      ? <StatusBadge variant="success" dot>In use</StatusBadge>
+                      ? <StatusLabel variant="success">In use</StatusLabel>
                       : <Button variant="secondary" size="sm" disabled={busy} onClick={() => onUse(c.name)}>Use</Button>}
                   </Table.Item>
                 </tr>

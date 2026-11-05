@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Button, EmptyState, IconButton, Loader } from '@parallelworks/ui'
+import { Button, EmptyState, IconButton, Loader, StatTile, StatTileGroup } from '@parallelworks/ui'
 import { CloseIcon } from '@parallelworks/ui/icons'
 
 /**
@@ -143,12 +143,12 @@ export function HistoryView({ onOpen }: { onOpen: (path: string) => void }) {
         Snapshots record the file list with sizes and dates, not file contents, so opening a file here shows it as it is today.
       </p>
 
-      <div className="ov-tiles hist-tiles">
-        <div className="card ov-tile"><span className="stat-num">{snaps.length}</span><span className="stat-label">snapshots · {bytes(stored)} on disk</span></div>
-        <div className="card ov-tile"><span className="stat-num">{current!.files.toLocaleString()}</span><span className="stat-label">files at this point</span></div>
-        <div className="card ov-tile"><span className="stat-num">{bytes(current!.bytes)}</span><span className="stat-label">corpus size then</span></div>
-        <div className="card ov-tile"><span className="stat-num">{idx === 0 ? '—' : changed}</span><span className="stat-label">changes in this pass</span></div>
-      </div>
+      <StatTileGroup className="hist-tiles">
+        <StatTile value={snaps.length} label={`snapshots · ${bytes(stored)} on disk`} />
+        <StatTile value={current!.files} label="files at this point" />
+        <StatTile value={bytes(current!.bytes)} label="corpus size then" />
+        <StatTile value={idx === 0 ? '—' : changed} label="changes in this pass" />
+      </StatTileGroup>
 
       <div className="hist-main">
         <section className="card ov-list">

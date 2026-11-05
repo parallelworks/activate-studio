@@ -1,3 +1,4 @@
+import { statusLook } from '../statusLook'
 import { fetchModels } from '../api'
 import { useEffect, useState } from 'react'
 import {
@@ -27,10 +28,9 @@ interface Persona { name: string; description: string; icon: string }
 const CADENCES = ['15m', '30m', '1h', '2h', '6h', '12h', '1d', 'manual']
 const fmtTokens = (n: number) => n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n)
 const when = (iso: string | null) => iso ? new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'never'
-const toneFor = (st: string): BadgeVariant => st === 'working' || st === 'idle' ? 'success' : st === 'input-required' ? 'warning' : 'muted'
 // Journal kinds here and board topics on the Tasks page share one set of tones.
 const TOPIC_TONE: Record<string, BadgeVariant> = {
-  complete: 'success', result: 'success',
+  complete: 'accent', result: 'accent',
   failed: 'warning', refused: 'warning', error: 'warning',
   spawn: 'info', message: 'info', event: 'info',
 }
@@ -170,7 +170,7 @@ export function FleetPage({ personas, onOpenTask }: { personas: Persona[]; onOpe
           {live.map(a => (
             <div key={a.id} className={`task-card fleet-card${open === a.id ? ' selected' : ''}${a.state === 'working' ? ' live' : ''}`} onClick={() => setOpen(open === a.id ? null : a.id)}>
               <div className="task-card-top">
-                <StatusDot variant={toneFor(a.state)} pulse={a.state === 'working'} />
+                <StatusDot {...statusLook(a.state)} />
                 <span className="task-card-state">{a.state}</span>
                 <PersonaIcon icon={iconOf(a.persona)} name={a.persona ?? a.name} size={18} />
               </div>
@@ -187,7 +187,7 @@ export function FleetPage({ personas, onOpenTask }: { personas: Persona[]; onOpe
       {open && detail && (
         <div className="task-detail">
           <div className="task-detail-head">
-            <StatusDot variant={toneFor(detail.agent.state)} pulse={detail.agent.state === 'working'} />
+            <StatusDot {...statusLook(detail.agent.state)} />
             <span className="task-detail-objective">{detail.agent.name}</span>
             <span className="muted">{detail.agent.persona ?? 'no persona'} · {detail.agent.model} · every {detail.agent.triggers.every}{detail.agent.triggers.onRunEnd ? ' · on run end' : ''}{detail.agent.triggers.watchPath ? ` · watches ${detail.agent.triggers.watchPath}/` : ''}</span>
             {detail.agent.state !== 'working' && detail.agent.state !== 'retired' && <Button variant="secondary" onClick={() => void act(detail.agent.id, 'tick')}>Tick now</Button>}
