@@ -460,7 +460,6 @@ export function Viewer({ path, find, onDeleted, readOnly }: {
             paths={[file.path]}
             trigger={<Button variant="secondary" size="sm">Labels</Button>}
             align="end"
-            onApplied={() => window.dispatchEvent(new Event('ade-tags-changed'))}
           />
           <Button variant="primary" size="sm" href={api.downloadUrl(file.path)} reloadDocument>Download</Button>
           {readOnly

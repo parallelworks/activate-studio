@@ -171,6 +171,9 @@ export function LibraryView({ display, onDisplay }: {
   }, [])
 
   useEffect(() => { localStorage.setItem('ade-tree-labels', showLabels ? '1' : '0') }, [showLabels])
+  // Labeling is what select mode is for, so the tree shows them, and the
+  // toggle says so and can still turn them off.
+  useEffect(() => { if (selectMode) setShowLabels(true) }, [selectMode])
 
   // Cut, copy and paste from the keyboard, ignored while typing so a
   // rename box or a search field keeps its own shortcuts.
@@ -491,7 +494,6 @@ export function LibraryView({ display, onDisplay }: {
                     onOpenChange={setTagMenuOpen}
                     align="start"
                     trigger={<Button variant="secondary" size="sm" disabled={!multiSel.size}>Labels…</Button>}
-                    onApplied={() => window.dispatchEvent(new Event('ade-tags-changed'))}
                   />
                   {selLocked
                     ? (
@@ -531,7 +533,7 @@ export function LibraryView({ display, onDisplay }: {
                 onLabel={p => { setMultiSel(new Set([p])); setTagMenuOpen(true); setSelectMode(true) }}
                 onContext={openContextMenu}
                 selectMode={selectMode}
-                showLabels={showLabels || selectMode}
+                showLabels={showLabels}
                 tagsTick={tagsTick}
               />
               {suggest && (

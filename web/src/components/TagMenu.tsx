@@ -5,8 +5,9 @@ import { api } from '../api'
 
 type TagMenuProps = {
   paths: string[]
-  /** Called after each successful apply with the server's path -> tags map. */
-  onApplied: (updated: Record<string, string[]>) => void
+  /** Called after each successful apply with the server's path -> tags map.
+   *  The rest of the page hears of it through `ade-tags-changed`. */
+  onApplied?: (updated: Record<string, string[]>) => void
 } & (
   | {
       /** The button that opens it. Pass `open` and `onOpenChange` to open it
@@ -71,10 +72,11 @@ export function TagMenu(props: TagMenuProps) {
 function TagPanel({ paths, headId, onApplied }: {
   paths: string[]
   headId: string
-  onApplied: (updated: Record<string, string[]>) => void
+  onApplied?: (updated: Record<string, string[]>) => void
 }) {
   const [vocab, setVocab] = useState<{ tag: string; count: number }[]>([])
-  const [current, setCurrent] = useState<string[]>([])
+  // Each label on the selection, and how many of the items read carry it.
+  const [held, setHeld] = useState<Map<string, number>>(new Map())
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -87,7 +89,9 @@ function TagPanel({ paths, headId, onApplied }: {
     api.tagVocabulary().then(v => setVocab(v.tags)).catch(() => {})
     Promise.all(paths.slice(0, 30).map(p => api.tagsFor(p).catch(() => ({ own: [] as string[], inherited: [] as string[], stored: undefined }))))
       .then(all => {
-        setCurrent([...new Set(all.flatMap(t => t.own))])
+        const counts = new Map<string, number>()
+        for (const t of all) for (const tag of t.own) counts.set(tag, (counts.get(tag) ?? 0) + 1)
+        setHeld(counts)
         setKeptByStudio(all.some(t => t.stored === 'studio'))
       })
   }, [paths])
@@ -97,8 +101,14 @@ function TagPanel({ paths, headId, onApplied }: {
     setError('')
     try {
       const r = await api.applyTags(paths, add, remove)
-      setCurrent(c => [...new Set([...c.filter(t => !remove.includes(t)), ...add])])
-      onApplied(r.updated ?? {})
+      setHeld(h => {
+        const next = new Map(h)
+        for (const t of remove) next.delete(t)
+        for (const t of add) next.set(t, paths.length)
+        return next
+      })
+      onApplied?.(r.updated ?? {})
+      window.dispatchEvent(new Event('ade-tags-changed'))
       toast.success(r.stored === 'studio' ? 'Labels saved.' : 'Applied and re-indexed.')
     } catch (e) {
       setError(String((e as Error).message ?? e))
@@ -111,6 +121,13 @@ function TagPanel({ paths, headId, onApplied }: {
     const t = input.trim()
     if (t) { void apply([t], []); setInput('') }
   }
+
+  // A label on only some of the items is not done: it stays offered, so the
+  // rest can have it. Only the first 30 are read, so past that no label is
+  // known to be on all of them.
+  const onAll = [...held].filter(([, n]) => n >= paths.length).map(([t]) => t)
+  const onSome = [...held].filter(([, n]) => n < paths.length)
+  const counted = paths.length <= 30
 
   return (
     <>
@@ -125,9 +142,9 @@ function TagPanel({ paths, headId, onApplied }: {
       {paths.length > 1000 && (
         <p className="muted tag-note">Labels apply to the first 1,000 selected items per action.</p>
       )}
-      {current.length > 0 && (
+      {onAll.length > 0 && (
         <div className="tag-row">
-          {current.map(t => (
+          {onAll.map(t => (
             <span key={t} className="tag-pill on">
               {t}
               <IconButton className="tag-remove" size="xs" icon={<CloseIcon />} label="Remove label" onClick={() => void apply([], [t])} disabled={busy} />
@@ -135,11 +152,27 @@ function TagPanel({ paths, headId, onApplied }: {
           ))}
         </div>
       )}
-      {vocab.filter(v => !current.includes(v.tag)).length > 0 && (
+      {onSome.length > 0 && (
+        <>
+          <div className="field-label">On some of these items</div>
+          <div className="tag-row">
+            {onSome.map(([t, n]) => (
+              <span key={t} className="tag-pill partial">
+                <button className="tag-add-rest" onClick={() => void apply([t], [])} disabled={busy}
+                  title="Add this label to all the selected items">
+                  {t}{counted && <span className="tag-count"> {n} of {paths.length}</span>}
+                </button>
+                <IconButton className="tag-remove" size="xs" icon={<CloseIcon />} label="Remove label from all of them" onClick={() => void apply([], [t])} disabled={busy} />
+              </span>
+            ))}
+          </div>
+        </>
+      )}
+      {vocab.filter(v => !held.has(v.tag)).length > 0 && (
         <>
           <div className="field-label">Existing labels</div>
           <div className="tag-row">
-            {vocab.filter(v => !current.includes(v.tag)).slice(0, 14).map(v => (
+            {vocab.filter(v => !held.has(v.tag)).slice(0, 14).map(v => (
               <button key={v.tag} className="tag-pill" onClick={() => void apply([v.tag], [])} disabled={busy}>
                 {v.tag} <span className="tag-count">{v.count}</span>
               </button>

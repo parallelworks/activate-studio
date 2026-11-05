@@ -79,6 +79,8 @@ Drag files or folders onto the tree, or use **Add**, which also takes a web addr
 
 Labels organize files without moving them. Label a folder and everything in it carries the label, including files added later. Apply labels from the tree, the viewer, search results, or by asking the assistant; filter by them in Search, Query, and the chat's Scope.
 
+With several items selected, the Labels panel lists a label that only some of them carry under **On some of these items**: click it to add it to the rest, or its X to remove it from all of them. The tag button at the top of the tree shows or hides each item's own labels; selecting items turns it on.
+
 In the knowledge base the labels are saved on the files. In any other library, including a read-only folder and an index on another machine, {appName} saves them itself, so the files are never changed; the Labels panel says so. They show in the tree, Details, Search and Query like any other, and are removed with the library.
 
 ## Query
