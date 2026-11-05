@@ -1,0 +1,253 @@
+#!/bin/bash
+# ACTIVATE Studio for Linux: bin/activate-studio in the payload tree, which a
+# per-user install reaches through ~/.local/bin/activate-studio and a package
+# through /usr/bin/activate-studio.
+#
+#   activate-studio                       open the Studio: in its own window when
+#                                         WebKitGTK is installed, else in the default
+#                                         browser
+#   activate-studio --browser             the browser even where the window would work
+#   activate-studio --stop                close the window and stop the server, or stop
+#                                         the background server the browser mode runs
+#   activate-studio --uninstall [--purge] [--dry-run]
+#                                         remove a per-user install (a package is removed
+#                                         with apt or dnf); --purge also removes the index,
+#                                         settings and logs; --dry-run lists what would go
+#   activate-studio --version
+#
+# The window is a shell (bin/activate-studio-wk41 or -wk40, by the WebKitGTK
+# API the computer has) that runs the server itself and stops it when the
+# window closes. Without WebKitGTK, or without a display, the server runs in
+# the background, on 127.0.0.1 only, and the default browser opens it; it
+# keeps running after the browser closes, until --stop. STUDIO_NO_BROWSER=1
+# starts that background server and opens nothing.
+#
+# Data (the settings in studio.env, the index, logs, run/) is in
+# ${XDG_DATA_HOME:-~/.local/share}/activate-studio-data, or STUDIO_DATA_DIR;
+# the documents folder is ~/Documents/ACTIVATE Studio unless studio.env names
+# another. Your documents folder is never removed.
+set -u
+
+SELF="$(readlink -f "${BASH_SOURCE[0]}")"
+if [ -n "${STUDIO_TREE:-}" ] && [ -f "$STUDIO_TREE/studio-run.sh" ]; then
+  # The logical path of an install's "current" link: it is followed again at
+  # each start, so a window left open across an update restarts the new copy.
+  TREE="$STUDIO_TREE"
+else
+  TREE="$(cd "$(dirname "$SELF")/.." && pwd)"
+fi
+DATA="${STUDIO_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/activate-studio-data}"
+RUN="$DATA/run"
+PY="$TREE/python/bin/python3"
+
+say() { echo "$@" >&2; }
+
+# The documents folder the desktop names (~/Documents, or the translation of
+# it a locale uses), for the first start.
+default_kb() {
+  local cfg="${XDG_CONFIG_HOME:-$HOME/.config}/user-dirs.dirs" d=""
+  if [ -r "$cfg" ]; then
+    d="$(sed -n 's/^XDG_DOCUMENTS_DIR="\(.*\)"$/\1/p' "$cfg" | head -n 1 | sed "s|^\$HOME|$HOME|")"
+  fi
+  case "$d" in ''|"$HOME"|"$HOME"/) d="$HOME/Documents" ;; esac
+  printf '%s/ACTIVATE Studio' "$d"
+}
+export STUDIO_DEFAULT_KB="${STUDIO_DEFAULT_KB:-$(default_kb)}"
+
+have_lib() {
+  local d
+  for d in /usr/lib/x86_64-linux-gnu /usr/lib64 /usr/lib /lib/x86_64-linux-gnu /lib64 /usr/local/lib; do
+    [ -e "$d/$1" ] && return 0
+  done
+  return 1
+}
+
+# The shell built for the WebKitGTK this computer has: 4.1 first, then 4.0.
+pick_shell() {
+  local v lib bin
+  for v in wk41 wk40; do
+    bin="$TREE/bin/activate-studio-$v"
+    [ -x "$bin" ] || continue
+    case "$v" in wk41) lib=libwebkit2gtk-4.1.so.0 ;; *) lib=libwebkit2gtk-4.0.so.37 ;; esac
+    have_lib "$lib" || continue
+    # Every library the shell needs (GTK, libsoup) found, too.
+    if command -v ldd >/dev/null 2>&1 && ldd "$bin" 2>/dev/null | grep -q 'not found'; then continue; fi
+    printf '%s\n' "$bin"
+    return 0
+  done
+  return 1
+}
+
+# A process recorded in a pid file, while it runs: its PID, checked against
+# its command line so that a stale or reused number is never signalled.
+live_pid() {
+  local p
+  p="$(head -n 1 "$1" 2>/dev/null || true)"
+  case "$p" in ''|*[!0-9]*) return 1 ;; esac
+  if tr '\0' ' ' <"/proc/$p/cmdline" 2>/dev/null | grep -q -- "$2"; then printf '%s\n' "$p"; return 0; fi
+  return 1
+}
+
+setting() {
+  # One value from studio.env, as the run loop will see it.
+  # shellcheck source=/dev/null
+  ( set +eu; unset "$1"; [ -f "$DATA/studio.env" ] && . "$DATA/studio.env" >/dev/null 2>&1; printf '%s' "${!1:-}" )
+}
+
+port_free() {
+  "$PY" -I -c 'import socket, sys
+s = socket.socket()
+try:
+    s.bind(("127.0.0.1", int(sys.argv[1])))
+except OSError:
+    sys.exit(1)' "$1" 2>/dev/null
+}
+
+# The port the server uses: studio.env's, else the last one (kept so the
+# address stays the same), else 4180, else a free one.
+choose_port() {
+  local p
+  p="$(setting PORT)"
+  case "$p" in ''|*[!0-9]*) p= ;; esac
+  if [ -n "$p" ]; then printf '%s\n' "$p"; return; fi
+  for p in "$(head -n 1 "$RUN/server-port" 2>/dev/null || true)" 4180; do
+    case "$p" in ''|*[!0-9]*) continue ;; esac
+    if port_free "$p"; then printf '%s\n' "$p" >"$RUN/server-port"; printf '%s\n' "$p"; return; fi
+  done
+  p="$("$PY" -I -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')"
+  printf '%s\n' "$p" >"$RUN/server-port"
+  printf '%s\n' "$p"
+}
+
+# The port a server running now listens on.
+running_port() {
+  local p
+  p="$(setting PORT)"
+  case "$p" in ''|*[!0-9]*) p="$(head -n 1 "$RUN/server-port" 2>/dev/null || true)" ;; esac
+  printf '%s\n' "${p:-4180}"
+}
+
+up() { "$PY" -I -c 'import sys, urllib.request; urllib.request.urlopen("http://127.0.0.1:%s/api/version" % sys.argv[1], timeout=2)' "$1" >/dev/null 2>&1; }
+
+# The browser mode's server: the payload's run loop in a session of its own
+# (the payload's Python does the setsid), which outlives this script and the
+# browser, and ignores hangups.
+start_detached() {
+  local port="$1" p
+  STUDIO_RUN_PORT="$port" nohup "$PY" -B -c 'import os, signal, sys
+os.setsid()
+signal.signal(signal.SIGHUP, signal.SIG_IGN)
+os.execv("/bin/bash", ["/bin/bash"] + sys.argv[1:])' "$TREE/studio-run.sh" "$DATA" </dev/null >>"$DATA/logs/background.log" 2>&1 &
+  p=$!
+  disown "$p" 2>/dev/null || true
+  printf '%s\n' "$p" >"$RUN/server.pid"
+}
+
+stop_detached() {
+  local p n=0
+  if p="$(live_pid "$RUN/server.pid" studio-run.sh)"; then
+    kill -TERM "$p" 2>/dev/null || true
+    while [ "$n" -lt 70 ] && live_pid "$RUN/server.pid" studio-run.sh >/dev/null; do sleep 0.5; n=$((n + 1)); done
+    if p="$(live_pid "$RUN/server.pid" studio-run.sh)"; then kill -KILL -- "-$p" 2>/dev/null || kill -KILL "$p" 2>/dev/null || true; fi
+  fi
+  rm -f "$RUN/server.pid"
+}
+
+stop_window() {
+  local p n=0
+  if p="$(live_pid "$RUN/shell.pid" activate-studio)"; then
+    kill -TERM "$p" 2>/dev/null || true
+    while [ "$n" -lt 100 ] && live_pid "$RUN/shell.pid" activate-studio >/dev/null; do sleep 0.2; n=$((n + 1)); done
+    if p="$(live_pid "$RUN/shell.pid" activate-studio)"; then kill -KILL "$p" 2>/dev/null || true; fi
+  fi
+}
+
+open_url() {
+  [ "${STUDIO_NO_BROWSER:-}" = 1 ] && return 0
+  if [ -n "${BROWSER:-}" ]; then "$BROWSER" "$1" >/dev/null 2>&1 &
+  elif command -v xdg-open >/dev/null 2>&1; then xdg-open "$1" >/dev/null 2>&1 &
+  else say "Open $1 in a browser."; fi
+  return 0
+}
+
+browser_mode() {
+  local port n=0 url
+  mkdir -p "$RUN" "$DATA/logs"
+  if p="$(live_pid "$RUN/server.pid" studio-run.sh)" || live_pid "$RUN/shell.pid" activate-studio >/dev/null; then
+    port="$(running_port)"
+  else
+    # A second launch at the same moment waits for the first.
+    exec 9>"$RUN/launcher.lock"
+    command -v flock >/dev/null 2>&1 && flock 9
+    if p="$(live_pid "$RUN/server.pid" studio-run.sh)"; then
+      port="$(running_port)"
+    else
+      port="$(choose_port)"
+      start_detached "$port"
+    fi
+  fi
+  url="http://127.0.0.1:$port/"
+  while ! up "$port"; do
+    n=$((n + 1))
+    if [ "$n" -gt 240 ]; then say "The Studio did not answer at $url. Its log is $DATA/logs/studio.log."; exit 1; fi
+    sleep 0.5
+  done
+  say "ACTIVATE Studio is running at $url (in the background; 'activate-studio --stop' stops it)."
+  open_url "$url"
+}
+
+window_mode() {
+  local shell_bin="$1"
+  shift
+  # One server per data folder: the window starts its own.
+  stop_detached
+  export STUDIO_TREE="$TREE" STUDIO_DATA_DIR="$DATA"
+  exec "$shell_bin" "$@"
+}
+
+version() {
+  sed -n 's/^ *"version": *"\([^"]*\)".*/\1/p' "$TREE/manifest.json" 2>/dev/null | head -n 1
+}
+
+uninstall() {
+  kind="$(cut -d' ' -f1 "$TREE/install-kind" 2>/dev/null || true)"
+  if [ "$kind" = deb ] || [ "$kind" = rpm ]; then
+    say "ACTIVATE Studio was installed by your package manager ($kind). Remove it with:"
+    say "  sudo apt remove activate-studio     (Debian, Ubuntu)"
+    say "  sudo dnf remove activate-studio     (RHEL, Rocky, Alma, Fedora)"
+    say "Your index, settings and logs stay in $DATA until you delete that folder."
+    exit 1
+  fi
+  if [ -x "$TREE/uninstall.sh" ] && [ "$kind" = user ]; then
+    exec "$TREE/uninstall.sh" "$@"
+  fi
+  say "This copy was not installed (it runs from where it was unpacked); delete its folder to remove it."
+  exit 1
+}
+
+case "${1:-}" in
+  --stop)
+    stop_window
+    stop_detached
+    say "ACTIVATE Studio is stopped; opening it starts it again."
+    ;;
+  --uninstall) shift; uninstall "$@" ;;
+  --version)
+    echo "ACTIVATE Studio $(version)"
+    shell_bin="$(pick_shell || true)"
+    [ -n "$shell_bin" ] && "$shell_bin" --version
+    ;;
+  --browser) shift; browser_mode ;;
+  --help|-h) sed -n '2,/^set -u/p' "${BASH_SOURCE[0]}" | sed '$d; s/^# \{0,1\}//' ;;
+  '')
+    shell_bin=
+    if [ "${STUDIO_NO_BROWSER:-}" != 1 ] && [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then shell_bin="$(pick_shell || true)"; fi
+    if [ -n "$shell_bin" ]; then
+      window_mode "$shell_bin"
+    else
+      if [ -z "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then say "No desktop session found; starting the Studio for a browser."; fi
+      browser_mode
+    fi
+    ;;
+  *) say "unknown option $1 (see --help)"; exit 2 ;;
+esac

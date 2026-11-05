@@ -1,0 +1,472 @@
+# Build the Linux x86_64 payload of ACTIVATE Studio, the equivalent of the
+# macOS app's contents without a window or a package: a relocatable
+# directory tree (Node, Python with its packages, GUFI with its AI pieces
+# and the models, tesseract, the built server and web app, the document
+# converter's Linux binary) in activate-studio-linux-x86_64.tar.gz, with a
+# manifest and a SHA-256. See docs/LINUX-APP.md.
+#
+# GUFI and tesseract are built from source in a Rocky Linux 9 container
+# (glibc 2.34, the oldest target), so one payload runs on Ubuntu 22.04 and
+# later and on RHEL 9 and later; build_app.sh then checks that no file in
+# the tree needs a newer glibc. The archive is unpacked in clean Ubuntu
+# 22.04, Ubuntu 24.04 and Rocky Linux 9 containers and run there as a plain
+# user: indexing, search, Query, search by meaning, OCR, document
+# conversion and the update check.
+#
+# The window shell (desktop/wails, Wails v2) is built for both WebKitGTK
+# APIs, the 4.1 one on Ubuntu 22.04 (which runs on Ubuntu 24.04 too) and the
+# 4.0 one on Rocky Linux 9, and goes into the tree with the launcher and the
+# install scripts (desktop/linux). From that tree come the per-user archive
+# and the .deb (4.1 shell) and .rpm (4.0 shell), built with nfpm. Each
+# install type is then installed in a clean container of each target
+# distribution, started under Xvfb, checked (the Studio draws, a search finds
+# a document), quit, and uninstalled (desktop/linux/test_install.sh).
+#
+#
+# Nothing publishes unless a run is started by hand with the release input,
+# as for mac-app: the archive is otherwise a workflow artifact for 30 days.
+# Asked to for a published release (the release input), the run builds that
+# tag, checks it in the same containers, signs the update manifest with the
+# release key, and attaches the archive, the manifest and its signature to
+# the release, so per-user installs can update to it; and it puts the same
+# files in the linux release, the fixed address the installer and the docs
+# use (a prerelease that is never latest, as macos is). Releases are
+# frequent and most do not get a Linux build; an install updates to the
+# newest release that has one. An install from a .deb or .rpm package does
+# not update itself (docs/LINUX-APP.md).
+name: linux-app
+
+on:
+  push:
+    branches: [linux-app, linux-desktop]
+  workflow_dispatch:
+    inputs:
+      release:
+        description: A published release (such as v1.150) to build the payload for and attach it to; blank to build and check only
+        default: ""
+
+permissions: {}
+
+concurrency:
+  group: linux-app-${{ inputs.release || github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Base images for the build and the tests. Tags, not digests: the point of
+  # the test jobs is to run on what a person has today.
+  BUILD_IMAGE: rockylinux:9
+
+jobs:
+  # GUFI (with sqlite-vec and sqlite-lembed) and tesseract, built in a
+  # Rocky 9 container. They do not depend on each other, so they build side
+  # by side.
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        component: [gufi, ocr]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    steps:
+      - name: the release
+        if: inputs.release != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE: ${{ inputs.release }}
+        run: |
+          [[ "$RELEASE" =~ ^v[0-9]+\.[0-9]+(\.[0-9]+)?$ ]] || { echo "release must look like v1.150, not '$RELEASE'"; exit 1; }
+          gh release view "$RELEASE" -R "$GITHUB_REPOSITORY" --json tagName >/dev/null
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.release }}
+      - name: build ${{ matrix.component }} in Rocky Linux 9
+        env:
+          COMPONENT: ${{ matrix.component }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/out" "$RUNNER_TEMP/cache"
+          start=$(date +%s)
+          docker run --rm -v "$GITHUB_WORKSPACE:/src:ro" -v "$RUNNER_TEMP/out:/out" -v "$RUNNER_TEMP/cache:/cache" \
+            -e OUT_DIR=/out -e CACHE_DIR=/cache -e "JOBS=$(nproc)" "$BUILD_IMAGE" bash "/src/deploy/linux/build_$COMPONENT.sh"
+          echo "build_$COMPONENT took $(( $(date +%s) - start )) s" | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: native-${{ matrix.component }}
+          path: |
+            ${{ runner.temp }}/out/*.tar.gz
+            ${{ runner.temp }}/out/*.tar.gz.sha256
+          if-no-files-found: error
+          retention-days: 30
+
+  # The window shell for each WebKitGTK API, built (and unit tested) in a
+  # container of the oldest distribution that has the API, so that its glibc
+  # requirement is the lowest it can be.
+  shell:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: wk41
+            image: ubuntu:22.04
+          - variant: wk40
+            image: rockylinux:9
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.release }}
+      - name: build ${{ matrix.variant }} in ${{ matrix.image }}
+        env:
+          VARIANT: ${{ matrix.variant }}
+          IMAGE: ${{ matrix.image }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/out" "$RUNNER_TEMP/cache"
+          docker run --rm -v "$GITHUB_WORKSPACE:/src:ro" -v "$RUNNER_TEMP/out:/out" -v "$RUNNER_TEMP/cache:/cache" \
+            -e SRC=/src -e OUT_DIR=/out -e CACHE_DIR=/cache -e VERSION="$GITHUB_SHA" "$IMAGE" bash "/src/desktop/linux/build_shell.sh" "$VARIANT"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: shell-${{ matrix.variant }}
+          path: ${{ runner.temp }}/out/activate-studio-${{ matrix.variant }}
+          if-no-files-found: error
+          retention-days: 30
+
+  # The payload: the server and web app built here, the pinned Node and
+  # Python, the two archives above and the window shells, put together and
+  # checked.
+  app:
+    needs: [native, shell]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # git describe names the build; a release builds at its own tag.
+          fetch-depth: 0
+          ref: ${{ inputs.release }}
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26
+          # No cache: this job's output is what a release would ship.
+          package-manager-cache: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: native-*
+          path: ${{ runner.temp }}/native
+          merge-multiple: true
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: shell-*
+          path: ${{ runner.temp }}/shells
+          merge-multiple: true
+      - name: install and build
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+      - name: build the payload
+        env:
+          OUT_DIR: ${{ runner.temp }}/out
+          CACHE_DIR: ${{ runner.temp }}/cache
+          SKIP_BUILD: "1"
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends patchelf libatomic1 imagemagick shellcheck
+          shellcheck -x -s bash -S warning desktop/linux/*.sh desktop/linux/activate-studio
+          export SHELL_DIR="$RUNNER_TEMP/shells"
+          ls -l "$SHELL_DIR"
+          (cd "$RUNNER_TEMP/native" && sha256sum -c gufi-linux-x86_64.tar.gz.sha256 ocr-linux-x86_64.tar.gz.sha256)
+          start=$(date +%s)
+          GUFI_TARBALL="$RUNNER_TEMP/native/gufi-linux-x86_64.tar.gz" OCR_TARBALL="$RUNNER_TEMP/native/ocr-linux-x86_64.tar.gz" \
+            deploy/linux/build_app.sh 2>&1 | tee "$RUNNER_TEMP/build_app.log"
+          {
+            echo "### Payload"
+            echo "build_app took $(( $(date +%s) - start )) s (the web and server build and the downloads included)"
+            echo '```'
+            ls -l "$OUT_DIR"/activate-studio-linux-x86_64.*
+            du -sh "$OUT_DIR/activate-studio"
+            echo '```'
+            sed -n '/^Size$/,/^$/p' "$RUNNER_TEMP/build_app.log" | head -n 12
+            echo '```'
+            cat "$OUT_DIR/activate-studio-linux-x86_64.manifest.json"
+            echo '```'
+          } >>"$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: activate-studio-linux-x86_64
+          path: |
+            ${{ runner.temp }}/out/activate-studio-linux-x86_64.tar.gz
+            ${{ runner.temp }}/out/activate-studio-linux-x86_64.tar.gz.sha256
+            ${{ runner.temp }}/out/activate-studio-linux-x86_64.manifest.json
+          if-no-files-found: error
+          retention-days: 30
+
+  # The payload unpacked in a clean container of each target distribution
+  # and run as a plain user, on the image's own packages plus only the ones
+  # in extra_packages (which the log records).
+  test:
+    needs: app
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: ubuntu:22.04
+            extra_packages: ""
+          - image: ubuntu:24.04
+            extra_packages: ""
+          # Docker's official rockylinux:9 image is an old point release
+          # (9.3); the other two are current 9.x releases of the two
+          # rebuilds the Linux app targets.
+          - image: rockylinux:9
+            extra_packages: ""
+          - image: rockylinux/rockylinux:9
+            extra_packages: ""
+          - image: almalinux:9
+            extra_packages: ""
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.release }}
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: activate-studio-linux-x86_64
+          path: ${{ runner.temp }}/in
+      - name: run it in ${{ matrix.image }}
+        env:
+          IMAGE: ${{ matrix.image }}
+          EXTRA_PACKAGES: ${{ matrix.extra_packages }}
+        run: |
+          set -euo pipefail
+          (cd "$RUNNER_TEMP/in" && sha256sum -c activate-studio-linux-x86_64.tar.gz.sha256)
+          docker run --rm -v "$GITHUB_WORKSPACE:/src:ro" -v "$RUNNER_TEMP/in:/in:ro" -e EXTRA_PACKAGES \
+            "$IMAGE" bash /src/deploy/linux/test_in_container.sh 2>&1 | tee "$RUNNER_TEMP/test.log"
+      - name: summary
+        if: always()
+        env:
+          IMAGE: ${{ matrix.image }}
+        run: |
+          {
+            echo "### $IMAGE"
+            echo '```'
+            sed -n '/^Image:/,/^Payload manifest/p' "$RUNNER_TEMP/test.log" | head -n 8
+            grep -E '^  (ok|FAIL|note) ' "$RUNNER_TEMP/test.log" | sed 's/^  //' | cut -c1-200
+            sed -n '/^Dependencies/,$p' "$RUNNER_TEMP/test.log"
+            echo '```'
+          } >>"$GITHUB_STEP_SUMMARY" || true
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: test-log-${{ strategy.job-index }}
+          path: ${{ runner.temp }}/test.log
+          retention-days: 30
+
+  # The .deb and the .rpm, from the archive above with nfpm (pinned, and
+  # checked against the published SHA-256).
+  packages:
+    needs: app
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      NFPM_VERSION: "2.46.0"
+      NFPM_SHA256: 43b4cb72cde2d6e61c02e5b330e3276882252bf67c057e089957f9dbd2c8de42
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.release }}
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: activate-studio-linux-x86_64
+          path: ${{ runner.temp }}/in
+      - name: build the packages
+        run: |
+          set -euo pipefail
+          (cd "$RUNNER_TEMP/in" && sha256sum -c activate-studio-linux-x86_64.tar.gz.sha256)
+          curl -fsSL -o "$RUNNER_TEMP/nfpm.tgz" "https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VERSION}/nfpm_${NFPM_VERSION}_Linux_x86_64.tar.gz"
+          echo "$NFPM_SHA256  $RUNNER_TEMP/nfpm.tgz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/nfpm.tgz" -C "$RUNNER_TEMP" nfpm
+          NFPM="$RUNNER_TEMP/nfpm" desktop/linux/build_packages.sh "$RUNNER_TEMP/in/activate-studio-linux-x86_64.tar.gz" "$RUNNER_TEMP/pkgs"
+          (cd "$RUNNER_TEMP/pkgs" && sha256sum ./* >SHA256SUMS && cat SHA256SUMS)
+          {
+            echo "### Packages"
+            echo '```'
+            ls -l "$RUNNER_TEMP/pkgs"
+            echo '```'
+          } >>"$GITHUB_STEP_SUMMARY"
+      - name: package metadata
+        run: |
+          set -euo pipefail
+          dpkg-deb -I "$RUNNER_TEMP"/pkgs/*.deb
+          dpkg-deb -c "$RUNNER_TEMP"/pkgs/*.deb | grep -E ' \./(usr|opt/activate-studio/(bin|PACKAGE))' | head -n 30
+          rpm_info() { docker run --rm -v "$RUNNER_TEMP/pkgs:/p:ro" rockylinux:9 bash -c 'rpm -qpi /p/*.rpm; rpm -qpR /p/*.rpm; rpm -qp --provides /p/*.rpm; rpm -qpl /p/*.rpm | grep -E "^/(usr|opt/activate-studio/(bin|PACKAGE))"'; }
+          rpm_info
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: packages
+          path: |
+            ${{ runner.temp }}/pkgs/*.deb
+            ${{ runner.temp }}/pkgs/*.rpm
+            ${{ runner.temp }}/pkgs/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 30
+
+  # Each install type in a clean container of each target distribution, run
+  # under Xvfb as a plain user (desktop/linux/test_install.sh). The tarball is
+  # installed without sudo, first without WebKitGTK (the browser fallback),
+  # then with the system's package for it; the packages with apt or dnf.
+  # WebKitGTK's sandbox needs unprivileged user namespaces, so the containers
+  # run without Docker's seccomp and AppArmor profiles.
+  install:
+    needs: [app, packages]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {image: "ubuntu:22.04", kind: tarball, webkit: libwebkit2gtk-4.1-0, shell: wk41}
+          - {image: "ubuntu:22.04", kind: tarball, webkit: libwebkit2gtk-4.0-37, shell: wk40}
+          - {image: "ubuntu:22.04", kind: deb, webkit: "", shell: wk41}
+          - {image: "ubuntu:24.04", kind: tarball, webkit: libwebkit2gtk-4.1-0, shell: wk41}
+          - {image: "ubuntu:24.04", kind: deb, webkit: "", shell: wk41}
+          - {image: "rockylinux/rockylinux:9", kind: tarball, webkit: webkit2gtk3, shell: wk40}
+          - {image: "rockylinux/rockylinux:9", kind: rpm, webkit: "", shell: wk40}
+          - {image: "almalinux:9", kind: tarball, webkit: webkit2gtk3, shell: wk40}
+          - {image: "almalinux:9", kind: rpm, webkit: "", shell: wk40}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.release }}
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: "{activate-studio-linux-x86_64,packages}"
+          path: ${{ runner.temp }}/in
+          merge-multiple: true
+      - name: ${{ matrix.kind }} on ${{ matrix.image }}
+        env:
+          IMAGE: ${{ matrix.image }}
+          KIND: ${{ matrix.kind }}
+          WEBKIT_PACKAGES: ${{ matrix.webkit }}
+          EXPECT_SHELL: ${{ matrix.shell }}
+        run: |
+          set -euo pipefail
+          (cd "$RUNNER_TEMP/in" && sha256sum -c activate-studio-linux-x86_64.tar.gz.sha256)
+          mkdir -p "$RUNNER_TEMP/out"
+          docker run --rm --init --security-opt seccomp=unconfined --security-opt apparmor=unconfined \
+            -v "$GITHUB_WORKSPACE:/src:ro" -v "$RUNNER_TEMP/in:/in:ro" -v "$RUNNER_TEMP/out:/out" \
+            -e WEBKIT_PACKAGES -e EXPECT_SHELL "$IMAGE" bash /src/desktop/linux/test_install.sh "$KIND" 2>&1 | tee "$RUNNER_TEMP/out/test.log"
+      - name: summary
+        if: always()
+        env:
+          TITLE: ${{ matrix.kind }} on ${{ matrix.image }}
+        run: |
+          {
+            echo "### $TITLE"
+            echo '```'
+            grep -E '^(Image:|  (ok|FAIL|note) |Result:)' "$RUNNER_TEMP/out/test.log" | cut -c1-220
+            echo '```'
+          } >>"$GITHUB_STEP_SUMMARY" || true
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: install-${{ strategy.job-index }}-${{ matrix.kind }}
+          path: ${{ runner.temp }}/out
+          retention-days: 30
+
+  # Sign the update manifest and attach to the release. The only job that
+  # can write, and the only one that sees the update signing key; it runs
+  # no build code, and only after every distribution passed.
+  release:
+    if: >-
+      !cancelled() && github.event_name == 'workflow_dispatch' && inputs.release != ''
+      && needs.app.result == 'success' && needs.test.result == 'success'
+      && needs.packages.result == 'success' && needs.install.result == 'success'
+    needs: [app, test, packages, install]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            github.com:443
+            uploads.github.com:443
+            objects.githubusercontent.com:443
+            release-assets.githubusercontent.com:443
+            results-receiver.actions.githubusercontent.com:443
+            *.blob.core.windows.net:443
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            deploy/linux/sign_release.sh
+            deploy/mac/update-signing.pub
+          sparse-checkout-cone-mode: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: activate-studio-linux-x86_64
+          path: ${{ runner.temp }}/out
+      - name: sign the update manifest
+        env:
+          STUDIO_UPDATE_SIGNING_KEY: ${{ secrets.STUDIO_UPDATE_SIGNING_KEY }}
+          TAG: ${{ inputs.release }}
+        run: |
+          set -euo pipefail
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+(\.[0-9]+)?$ ]] || { echo "release must look like v1.150, not '$TAG'"; exit 1; }
+          (cd "$RUNNER_TEMP/out" && sha256sum -c activate-studio-linux-x86_64.tar.gz.sha256)
+          deploy/linux/sign_release.sh "$RUNNER_TEMP/out/activate-studio-linux-x86_64.tar.gz" "$TAG"
+      - name: attach to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.release }}
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/out"
+          files=(activate-studio-linux-x86_64.tar.gz activate-studio-linux-x86_64.tar.gz.sha256
+            activate-studio-linux-x86_64.manifest.json activate-studio-linux-x86_64.manifest.json.sig)
+          gh release upload "$TAG" -R "$GITHUB_REPOSITORY" --clobber "${files[@]}"
+          # The linux release holds the newest payload at a fixed address: a
+          # prerelease that is never latest, which the app's update check
+          # skips (its tag is not a version). An older version than the one
+          # there leaves it alone.
+          if gh release view linux -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            have="$(gh release download linux -R "$GITHUB_REPOSITORY" -p activate-studio-linux-x86_64.manifest.json -O - 2>/dev/null |
+              python3 -c 'import json, sys; print(json.load(sys.stdin)["version"])' 2>/dev/null || true)"
+            if [ -n "$have" ] && [ "$(printf '%s\n%s\n' "${have#v}" "${TAG#v}" | sort -V | tail -n 1)" != "${TAG#v}" ]; then
+              echo "The linux release has $have, newer than $TAG; left as it is."
+              exit 0
+            fi
+          else
+            gh release create linux -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease --latest=false \
+              --title "ACTIVATE Studio for Linux" --notes "The newest Linux app."
+          fi
+          gh release upload linux -R "$GITHUB_REPOSITORY" --clobber "${files[@]}"
+          gh release edit linux -R "$GITHUB_REPOSITORY" --notes "ACTIVATE Studio $TAG for Linux, x86_64, glibc 2.34 or later (Ubuntu 22.04, RHEL 9 and later).
+
+          A copy installed in a user's home folder updates itself from the release for its version. A copy installed from a .deb or .rpm package is updated through apt or dnf.
+
+          Changes: https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG and the releases before it."

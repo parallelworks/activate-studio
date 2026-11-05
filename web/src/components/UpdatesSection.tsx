@@ -142,10 +142,12 @@ export function UpdatesSection({ onPolicySaved, pollMs, giveUpMs, reload }: {
       {status.state === 'error' && status.error && <Callout className="rag-banner" tone="error">{status.error}</Callout>}
       {error && <Callout className="rag-banner" tone="error" live>{error}</Callout>}
 
-      {!status.canInstall && status.reason && <p className="muted key-note">{status.reason}</p>}
-      {status.mode === 'clone' && status.command && (
+      {!status.canInstall && status.reason && !(status.mode === 'package' && status.command) && <p className="muted key-note">{status.reason}</p>}
+      {status.command && (
         <>
-          <p className="muted key-note">To update this copy, run these in its folder, then stop the Studio and start it again with <code>pnpm start</code>:</p>
+          <p className="muted key-note">{status.mode === 'package'
+            ? (status.commandNote ?? 'To update, run this in a terminal, then quit and reopen ACTIVATE Studio:')
+            : <>To update this copy, run these in its folder, then stop the Studio and start it again with <code>pnpm start</code>:</>}</p>
           <CopyCodeBlock className="mcp-snippet" text={status.command} label="update commands">{status.command}</CopyCodeBlock>
         </>
       )}

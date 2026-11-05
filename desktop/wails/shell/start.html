@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ACTIVATE Studio</title>
+<style>
+  html, body { height: 100%; margin: 0; }
+  body {
+    display: flex; align-items: center; justify-content: center;
+    font: 13px system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: #f3f4f6; color: #4b5563;
+  }
+  @media (prefers-color-scheme: dark) { body { background: #111827; color: #9ca3af; } }
+  main { max-width: 520px; text-align: center; }
+  .spin {
+    width: 22px; height: 22px; margin: 0 auto 12px; border-radius: 50%;
+    border: 2px solid currentColor; border-right-color: transparent;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  pre { white-space: pre-wrap; text-align: left; font-size: 12px; }
+  button { margin: 12px 4px 0; padding: 4px 12px; font: inherit; }
+  [hidden] { display: none; }
+</style>
+</head>
+<body>
+<!-- The shell's own page: shown while the Studio's server starts, and
+     with Try Again when it stopped. It reads the shell's state through the
+     Wails bindings (window.go.main.Bridge) and opens the Studio once the
+     server answers. -->
+<main>
+  <div class="spin" id="spin"></div>
+  <div id="message">Starting ACTIVATE Studio…</div>
+  <pre id="detail" hidden></pre>
+  <div id="buttons" hidden>
+    <button id="retry">Try Again</button>
+    <button id="logs">Open Logs</button>
+  </div>
+</main>
+<script>
+  var bridge = function () { return window.go && window.go.main && window.go.main.Bridge; };
+  document.getElementById('retry').onclick = function () { bridge().Retry(); show({ phase: 'starting', message: 'Starting ACTIVATE Studio…' }); };
+  document.getElementById('logs').onclick = function () { bridge().OpenLogs(); };
+  function show(s) {
+    var failed = s.phase === 'failed';
+    var lines = (s.message || '').split('\n\n');
+    document.getElementById('spin').hidden = failed;
+    document.getElementById('message').textContent = lines[0];
+    var detail = document.getElementById('detail');
+    detail.hidden = !failed || lines.length < 2;
+    detail.textContent = lines.slice(1).join('\n\n');
+    document.getElementById('buttons').hidden = !failed;
+  }
+  function tick() {
+    var b = bridge();
+    if (!b) { setTimeout(tick, 100); return; }
+    b.ShellState().then(function (s) {
+      if (s.phase === 'ready') { location.replace(s.studioURL); return; }
+      show(s);
+      setTimeout(tick, 300);
+    }, function () { setTimeout(tick, 500); });
+  }
+  tick();
+</script>
+</body>
+</html>
