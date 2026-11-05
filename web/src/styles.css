@@ -1296,6 +1296,12 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
   --color-muted-foreground: var(--pw-muted);
 }
 /* Chat tables: soft header emphasis and subtle zebra striping. */
+/* A reply scrolls with the chat. Streamdown caps a table's box with an inline
+   height, which cut long tables off mid row behind a scrollbar of their own.
+   A path breaks anywhere, or it holds its column at full width and pushes the
+   next one out of view; overflow-wrap does not reach WebKit's table sizing. */
+.chat-canvas [data-streamdown='table-wrapper'] > div:has(> table) { max-height: none !important; }
+.chat-canvas [data-streamdown='table'] td :is(a, button, code) { word-break: break-all; }
 .chat-canvas [data-streamdown='table'] thead th { border-bottom: 1px solid var(--pw-border-strong); }
 .chat-canvas [data-streamdown='table'] tbody tr:nth-child(even) { background: var(--pw-bg); }
 /* divide-y sets 1px row borders whose color utility is missing (falls back
