@@ -286,6 +286,9 @@ test('a newer signed release installs: swapped in, the previous copy kept, the m
   assert.equal(t.reopen, false)
   assert.equal(versionIn(APP), 'v1.141')
   assert.equal(versionIn(PREVIOUS), 'v1.140')
+  // The restart is a process of its own: left running, its call lands in the
+  // next test's log.
+  assert.ok(await until(() => calls().includes(kickstart)), calls())
 })
 
 test('where the app started its run loop itself (no LaunchAgent), the installed update restarts through the run loop, not launchd', async () => {
