@@ -18,7 +18,7 @@
 #   install.sh --move     move it instead of copying (no second copy on the disk)
 #
 # Needs WebKitGTK for the Studio's own window (libwebkit2gtk-4.1-0 on Ubuntu 22.04 and
-# later, webkit2gtk3 on RHEL 9 and its rebuilds, libwebkit2gtk-4.0-37 on Debian 11); without it the
+# later, webkit2gtk3 on RHEL 8 and 9 and their rebuilds, libwebkit2gtk-4.0-37 on Debian 11); without it the
 # Studio opens in the default browser. A system package manager installs that;
 # this script installs nothing outside your home folder.
 #
@@ -102,9 +102,11 @@ exec_path="$BIN_DIR/activate-studio"
 case "$exec_path" in *" "*) exec_path="\"$exec_path\"" ;; esac
 sed "s|@BIN@|$exec_path|g" "$TREE/share/applications/activate-studio.desktop" >"$APPS_DIR/activate-studio.desktop"
 if [ -d "$TREE/share/icons/hicolor" ]; then
-  (cd "$TREE/share/icons/hicolor" && find . -name activate-studio.png) | while IFS= read -r f; do
-    mkdir -p "$ICON_DIR/$(dirname "$f")"
-    cp "$TREE/share/icons/hicolor/$f" "$ICON_DIR/$f"
+  for f in "$TREE"/share/icons/hicolor/*/apps/activate-studio.png; do
+    [ -e "$f" ] || continue
+    rel="${f#"$TREE"/share/icons/hicolor/}"
+    mkdir -p "$ICON_DIR/$(dirname "$rel")"
+    cp "$f" "$ICON_DIR/$rel"
   done
 fi
 update-desktop-database "$APPS_DIR" >/dev/null 2>&1 || true

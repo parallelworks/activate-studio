@@ -12,9 +12,9 @@
 # a standalone Python for the indexer (with pypdf, xlrd and olefile for
 # documents, and onnxruntime, tokenizers and numpy for the ONNX embedding
 # model), and the embedding models. Build GUFI and tesseract in a Rocky
-# Linux 9 container (glibc 2.34) so the tree runs on Ubuntu 22.04 and later
-# and on RHEL 9 and later: this script checks that no file in the tree
-# needs a newer glibc (elf_check.py).
+# Linux 8 container (glibc 2.28) so the tree runs on RHEL 8 and later and on
+# Ubuntu 22.04 and later: this script checks that no file in the tree needs
+# a newer glibc (elf_check.py).
 #
 # Usage: deploy/linux/build_app.sh
 #   OUT_DIR       where the outputs go (default deploy/linux/out)
@@ -51,11 +51,11 @@ TOP=activate-studio
 # What only this platform pins (the rest is deploy/common/pins.sh).
 NODE_SHA256=cb5c9ce9c80d7b8821e3a258543c71b939138cf17c74d5cc44bbe85d6dbc5ad8
 PY_SHA256=178d3d83b6e8e99285a65d3fce9c16b87952cc5efdb4d1a0e3ff3be18ff0fc9c
-# The oldest targets' libraries: RHEL 9's glibc, and the libstdc++ GCC 11
+# The oldest targets' libraries: RHEL 8's glibc, and the libstdc++ GCC 8
 # ships there.
-MAX_GLIBC=2.34
-MAX_GLIBCXX=3.4.29
-MAX_CXXABI=1.3.13
+MAX_GLIBC=2.28
+MAX_GLIBCXX=3.4.25
+MAX_CXXABI=1.3.11
 
 [ "$(uname -s)" = Linux ] && [ "$(uname -m)" = x86_64 ] || die "builds on Linux x86_64"
 for tool in python3 curl tar git pnpm patchelf; do

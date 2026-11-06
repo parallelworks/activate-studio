@@ -53,7 +53,9 @@ for suffix in previous new failed old; do
 done
 [ -f "$BIN" ] && grep -q 'ACTIVATE Studio command' "$BIN" && add command "$BIN"
 [ -f "$ENTRY" ] && add "menu entry" "$ENTRY"
-while IFS= read -r f; do [ -n "$f" ] && add icon "$f"; done < <(find "$ICON_DIR" -path '*/apps/activate-studio.png' 2>/dev/null)
+for f in "$ICON_DIR"/*/apps/activate-studio.png; do
+  if [ -e "$f" ]; then add icon "$f"; fi
+done
 # The window's web view keeps a cache and its storage (what the page saved
 # in the browser's storage: theme, recent searches) in folders named for the
 # program the shell gives itself (titlebar_linux.go), the same for both

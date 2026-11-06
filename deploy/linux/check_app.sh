@@ -40,9 +40,9 @@ done
 G="$APP/gufi"
 O="$APP/ocr"
 PY="$APP/python/bin/python3"
-MAX_GLIBC="${MAX_GLIBC:-2.34}"
-MAX_GLIBCXX="${MAX_GLIBCXX:-3.4.29}"
-MAX_CXXABI="${MAX_CXXABI:-1.3.13}"
+MAX_GLIBC="${MAX_GLIBC:-2.28}"
+MAX_GLIBCXX="${MAX_GLIBCXX:-3.4.25}"
+MAX_CXXABI="${MAX_CXXABI:-1.3.11}"
 failures=0
 ok() { echo "  ok    $1"; }
 bad() { echo "  FAIL  $1"; failures=$((failures + 1)); }
@@ -117,7 +117,7 @@ PY
   # The window shells and installer (desktop/linux), when the tree has them:
   # a shell links to the computer's own GTK and WebKitGTK, so only its CPU and
   # the newest glibc it needs are checked (a 4.1 shell is built on Ubuntu
-  # 22.04, so glibc 2.35; the 4.0 shell on RHEL 9, glibc 2.34).
+  # 22.04, so glibc 2.35; the 4.0 shell on RHEL 8, glibc 2.28).
   if [ -d "$APP/bin" ]; then
     echo "Desktop"
     for f in bin/activate-studio bin/activate-studio-wk41 bin/activate-studio-wk40 install.sh uninstall.sh \

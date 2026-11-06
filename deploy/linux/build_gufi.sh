@@ -10,8 +10,8 @@
 # elf_check.py: it needs no glibc newer than --max-glibc, and every library
 # it loads is in the tree or one every desktop has.
 #
-# Build it in the oldest glibc the app supports, a Rocky Linux 9 container
-# (glibc 2.34), so one tree runs on Ubuntu 22.04 and later and on RHEL 9 and
+# Build it in the oldest glibc the app supports, a Rocky Linux 8 container
+# (glibc 2.28), so one tree runs on RHEL 8 and later and on Ubuntu 22.04 and
 # later. The build installs its tools with dnf when it finds one and runs as
 # root (SKIP_DEPS=1 to skip that).
 #
@@ -56,6 +56,7 @@ if [ "${SKIP_DEPS:-}" != 1 ] && [ "$(id -u)" = 0 ] && command -v dnf >/dev/null 
     util-linux attr libattr-devel diffutils patch gawk which file findutils \
     autoconf automake libtool binutils zlib-devel libgomp libatomic epel-release >/dev/null
   dnf install -y -q patchelf >/dev/null
+  el8_tools
 fi
 for tool in gcc g++ cmake make git curl tar patchelf python3 column setfattr readelf; do
   command -v "$tool" >/dev/null 2>&1 || die "$tool is required"

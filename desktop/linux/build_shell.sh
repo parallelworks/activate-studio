@@ -7,8 +7,8 @@
 #
 #   wk41  WebKitGTK 4.1 (libsoup 3): Ubuntu 22.04 and later, Debian 12 and
 #         later, Fedora. Built on Ubuntu 22.04 (glibc 2.35).
-#   wk40  WebKitGTK 4.0 (libsoup 2): RHEL 9 and its rebuilds, Debian 11.
-#         Built on Rocky Linux 9 (glibc 2.34).
+#   wk40  WebKitGTK 4.0 (libsoup 2): RHEL 8 and 9 and their rebuilds,
+#         Debian 11. Built on Rocky Linux 8 (glibc 2.28).
 #
 # Usage: build_shell.sh wk41|wk40
 # Env:   SRC (the repository, default: this script's), OUT_DIR (default /out),
@@ -36,7 +36,9 @@ if command -v apt-get >/dev/null 2>&1; then
   apt-get install -y -qq --no-install-recommends ca-certificates curl gcc pkg-config libgtk-3-dev "$dev" >/dev/null
 else
   dnf -y -q install epel-release dnf-plugins-core >/dev/null
-  dnf config-manager --set-enabled crb
+  # The repository with the development packages: crb from RHEL 9 on,
+  # powertools on RHEL 8.
+  dnf config-manager --set-enabled crb 2>/dev/null || dnf config-manager --set-enabled powertools
   dnf -y -q install gcc pkgconf-pkg-config tar gzip webkit2gtk3-devel gtk3-devel >/dev/null
 fi
 

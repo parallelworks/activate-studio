@@ -14,15 +14,15 @@ Both come from the same tree, so they behave the same, and the update contract b
 
 ## Requirements
 
-A 64-bit Intel or AMD computer with glibc 2.34 or newer: Ubuntu 22.04 and 24.04, Debian 12, RHEL 9 and its rebuilds (Rocky Linux 9, AlmaLinux 9), or newer. RHEL 8 and Ubuntu 20.04 are too old. About 700 MB of disk for the program, plus the index.
+A 64-bit Intel or AMD computer with glibc 2.28 or newer. Each release's checks run in containers of RHEL, Rocky Linux, AlmaLinux and Oracle Linux 8 and 9, CentOS Stream 9, Ubuntu 20.04, 22.04 and 24.04, Debian 11, 12 and 13, Fedora 43 and Amazon Linux 2023. RHEL 7 is too old. About 700 MB of disk for the program, plus the index.
 
 For the Studio's own window, WebKitGTK and GTK 3:
 
 | System | Package | Window shell used |
 |---|---|---|
-| Ubuntu 22.04, 24.04, Debian 12, Fedora | `libwebkit2gtk-4.1-0` | WebKitGTK 4.1 |
-| RHEL 9, Rocky 9, AlmaLinux 9 | `webkit2gtk3` | WebKitGTK 4.0 |
-| Debian 11, Ubuntu 22.04 without 4.1 | `libwebkit2gtk-4.0-37` | WebKitGTK 4.0 |
+| Ubuntu 22.04, 24.04, Debian 12 and 13, Fedora | `libwebkit2gtk-4.1-0` | WebKitGTK 4.1 |
+| RHEL, Rocky, AlmaLinux, Oracle Linux 8 and 9, CentOS Stream 9 | `webkit2gtk3` | WebKitGTK 4.0 |
+| Debian 11, Ubuntu 20.04, Ubuntu 22.04 without 4.1 | `libwebkit2gtk-4.0-37` | WebKitGTK 4.0 |
 
 The `.deb` and `.rpm` declare these as dependencies. For the tarball, they are installed by the system's package manager (the install script installs nothing outside your home folder). Without WebKitGTK, or without a desktop session, the Studio runs in the background and opens in the default browser instead; everything works there except the system folder chooser and the window's own handling of downloads.
 
@@ -51,7 +51,7 @@ For everyone on the computer:
 
 ```
 sudo apt install ./activate-studio_<version>_amd64.deb      # Ubuntu, Debian
-sudo dnf install ./activate-studio-<version>.x86_64.rpm     # RHEL 9, Rocky, Alma
+sudo dnf install ./activate-studio-<version>.x86_64.rpm     # RHEL 8 or 9, Rocky, Alma, Oracle
 ```
 
 The `.deb` carries the WebKitGTK 4.1 window shell and depends on `libwebkit2gtk-4.1-0`, which Ubuntu 22.04 and 24.04 both have. The `.rpm` carries the 4.0 shell and depends on `webkit2gtk3`. Neither runs a script when it is installed. The package adds `/usr/bin/activate-studio` and a menu entry.
@@ -164,19 +164,20 @@ The window shell is a small Go program (Wails v2, `desktop/wails`) that links to
 
 ## What was measured
 
-The archive is about 255 MiB (the tree 687 MB: Node 144 MB, Python 196 MB, GUFI 182 MB, tesseract 12 MB, the server's `node_modules` 69 MB, the web app 36 MB, the models 47 MB), against 503 MB for the macOS app, whose GUFI is 55 MB and Python 142 MB. In CI, GUFI builds in about 8 to 9 minutes, tesseract in 2 to 3, and the payload is assembled in under a minute after the web and server build. The newest symbol versions anywhere in the tree are glibc 2.34, libstdc++ 3.4.29 (GCC 11) and CXXABI 1.3.13, so it needs RHEL 9's or Ubuntu 22.04's C libraries or newer, and does not run on RHEL 8 or Ubuntu 20.04.
+The archive is about 255 MiB (the tree 687 MB: Node 144 MB, Python 196 MB, GUFI 182 MB, tesseract 12 MB, the server's `node_modules` 69 MB, the web app 36 MB, the models 47 MB), against 503 MB for the macOS app, whose GUFI is 55 MB and Python 142 MB. In CI, GUFI builds in about 8 to 9 minutes, tesseract in 2 to 3, and the payload is assembled in under a minute after the web and server build. The build limits the tree to symbol versions of glibc 2.28, libstdc++ 3.4.25 (GCC 8) and CXXABI 1.3.11, so it needs RHEL 8's C libraries or newer. The WebKitGTK 4.1 shell is the exception: it is built on Ubuntu 22.04 and needs glibc 2.35, and it is used only where WebKitGTK 4.1 is installed.
 
-The system libraries the tree needs are the C library (libc, libm, libdl, libpthread, librt, libutil, ld-linux), libstdc++, libgcc_s and zlib: packages `libc6`, `libstdc++6`, `libgcc-s1` and `zlib1g` on Ubuntu, `glibc`, `libstdc++`, `libgcc` and `zlib` on RHEL 9. Every desktop has them, and the clean images the tests start from needed no other package. Node's libatomic and GCC's libgomp, which a RHEL 9 install may lack, are in the tree.
+The system libraries the tree needs are the C library (libc, libm, libdl, libpthread, librt, libutil, ld-linux), libstdc++, libgcc_s and zlib: packages `libc6`, `libstdc++6`, `libgcc-s1` and `zlib1g` on Ubuntu, `glibc`, `libstdc++`, `libgcc` and `zlib` on RHEL. Every desktop has them, and the clean images the tests start from needed no other package (the Rocky 8 images leave out findutils, which the checks themselves use and the Studio does not). Node's libatomic and GCC's libgomp, which a RHEL install may lack, are in the tree.
 
 ## Known limits
 
 - RHEL 9's WebKitGTK cannot construct `Intl.NumberFormat`; the Studio's page carries a small guard (`web/index.html`) that stands in for it. Only the pages the build's check opens were tried under that engine.
 - Not tested: Wayland, HiDPI, a physical GPU or the 3D map, SELinux enforcing, a real desktop session, microphone permission in the window, aarch64.
 - The window shell is not code signed and the packages are not signed.
+- On Fedora 43 the window crashed at launch twice in about ten test launches (in `gtk_main`, in a container on a remote desktop), and opened on the next try. The cause is not known.
 - Ubuntu 24.04 restricts unprivileged user namespaces; WebKitGTK's sandbox (bubblewrap) works there through Ubuntu's own profile for `/usr/bin/bwrap`.
 
 ## How it is built and tested
 
-`.github/workflows/linux-app.yml` builds GUFI and tesseract in a Rocky Linux 9 container (glibc 2.34), the two window shells (4.1 on Ubuntu 22.04, 4.0 on Rocky 9), puts the tree together (`deploy/linux/build_app.sh`, `desktop/linux/add_desktop.sh`), and builds the packages with nfpm (`desktop/linux/build_packages.sh`). `deploy/linux/check_app.sh` runs the payload in clean containers of Ubuntu 22.04, 24.04, Rocky 9 and AlmaLinux 9. `desktop/linux/test_install.sh` installs each package type in a clean container, launches it under Xvfb, checks that the Studio draws and a search finds a document, quits, checks that nothing is left running, uninstalls, and checks that nothing is left in the home folder but the data. `deploy/linux/elf_check.py` fails the build if a file in the tree needs a newer glibc than RHEL 9's.
+`.github/workflows/linux-app.yml` builds GUFI and tesseract in a Rocky Linux 8 container (glibc 2.28, with GCC 13 from `gcc-toolset-13` and Python 3.11, as GCC 8 and Python 3.6 are too old for them), the two window shells (4.1 on Ubuntu 22.04, 4.0 on Rocky 8), puts the tree together (`deploy/linux/build_app.sh`, `desktop/linux/add_desktop.sh`), and builds the packages with nfpm (`desktop/linux/build_packages.sh`). `deploy/linux/check_app.sh` runs the payload in clean containers of Ubuntu 22.04, 24.04, Rocky 8 and 9 and AlmaLinux 8 and 9. `desktop/linux/test_install.sh` installs each package type in a clean container, launches it under Xvfb, checks that the Studio draws and a search finds a document, quits, checks that nothing is left running, uninstalls, and checks that nothing is left in the home folder but the data. `deploy/linux/elf_check.py` fails the build if a file in the tree needs a newer glibc than RHEL 8's.
 
 The sizes: the archive is about 264 MiB, each package about 246 MiB, the tree 700 MB.

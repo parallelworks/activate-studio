@@ -5,17 +5,17 @@
 # converter's Linux binary) in activate-studio-linux-x86_64.tar.gz, with a
 # manifest and a SHA-256. See docs/LINUX-APP.md.
 #
-# GUFI and tesseract are built from source in a Rocky Linux 9 container
-# (glibc 2.34, the oldest target), so one payload runs on Ubuntu 22.04 and
-# later and on RHEL 9 and later; build_app.sh then checks that no file in
+# GUFI and tesseract are built from source in a Rocky Linux 8 container
+# (glibc 2.28, the oldest target), so one payload runs on RHEL 8 and later
+# and on Ubuntu 22.04 and later; build_app.sh then checks that no file in
 # the tree needs a newer glibc. The archive is unpacked in clean Ubuntu
-# 22.04, Ubuntu 24.04 and Rocky Linux 9 containers and run there as a plain
-# user: indexing, search, Query, search by meaning, OCR, document
+# 22.04, Ubuntu 24.04, Rocky Linux 8 and 9 and AlmaLinux 8 and 9 containers
+# and run there as a plain user: indexing, search, Query, search by meaning, OCR, document
 # conversion and the update check.
 #
 # The window shell (desktop/wails, Wails v2) is built for both WebKitGTK
 # APIs, the 4.1 one on Ubuntu 22.04 (which runs on Ubuntu 24.04 too) and the
-# 4.0 one on Rocky Linux 9, and goes into the tree with the launcher and the
+# 4.0 one on Rocky Linux 8, and goes into the tree with the launcher and the
 # install scripts (desktop/linux). From that tree come the per-user archive
 # and the .deb (4.1 shell) and .rpm (4.0 shell), built with nfpm. Each
 # install type is then installed in a clean container of each target
@@ -54,11 +54,11 @@ concurrency:
 env:
   # Base images for the build and the tests. Tags, not digests: the point of
   # the test jobs is to run on what a person has today.
-  BUILD_IMAGE: rockylinux:9
+  BUILD_IMAGE: rockylinux:8
 
 jobs:
   # GUFI (with sqlite-vec and sqlite-lembed) and tesseract, built in a
-  # Rocky 9 container. They do not depend on each other, so they build side
+  # Rocky 8 container. They do not depend on each other, so they build side
   # by side.
   native:
     strategy:
@@ -82,7 +82,7 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ inputs.release }}
-      - name: build ${{ matrix.component }} in Rocky Linux 9
+      - name: build ${{ matrix.component }} in Rocky Linux 8
         env:
           COMPONENT: ${{ matrix.component }}
         run: |
@@ -112,7 +112,7 @@ jobs:
           - variant: wk41
             image: ubuntu:22.04
           - variant: wk40
-            image: rockylinux:9
+            image: rockylinux:8
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
@@ -225,14 +225,45 @@ jobs:
             extra_packages: ""
           - image: ubuntu:24.04
             extra_packages: ""
-          # Docker's official rockylinux:9 image is an old point release
-          # (9.3); the other two are current 9.x releases of the two
-          # rebuilds the Linux app targets.
+          # Docker's official rockylinux images are old point releases
+          # (8.9 and 9.3); the others are current releases of the two
+          # rebuilds the Linux app targets. The Rocky 8 images leave out
+          # findutils, which these checks use and the Studio does not.
+          - image: rockylinux:8
+            extra_packages: findutils
+          - image: rockylinux/rockylinux:8
+            extra_packages: findutils
+          - image: almalinux:8
+            extra_packages: ""
           - image: rockylinux:9
             extra_packages: ""
           - image: rockylinux/rockylinux:9
             extra_packages: ""
           - image: almalinux:9
+            extra_packages: ""
+          # The rest of the Linux world the archive runs on. The minimal
+          # images leave out the tools these checks use.
+          - image: redhat/ubi8
+            extra_packages: findutils procps-ng util-linux shadow-utils
+          - image: redhat/ubi9
+            extra_packages: findutils procps-ng util-linux shadow-utils
+          - image: oraclelinux:8
+            extra_packages: findutils
+          - image: oraclelinux:9
+            extra_packages: findutils
+          - image: quay.io/centos/centos:stream9
+            extra_packages: findutils
+          - image: fedora:43
+            extra_packages: findutils procps-ng util-linux shadow-utils
+          - image: amazonlinux:2023
+            extra_packages: findutils procps-ng util-linux shadow-utils tar gzip
+          - image: ubuntu:20.04
+            extra_packages: ""
+          - image: debian:11
+            extra_packages: ""
+          - image: debian:12
+            extra_packages: ""
+          - image: debian:13
             extra_packages: ""
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -345,10 +376,18 @@ jobs:
           - {image: "ubuntu:22.04", kind: deb, webkit: "", shell: wk41}
           - {image: "ubuntu:24.04", kind: tarball, webkit: libwebkit2gtk-4.1-0, shell: wk41}
           - {image: "ubuntu:24.04", kind: deb, webkit: "", shell: wk41}
+          - {image: "rockylinux/rockylinux:8", kind: tarball, webkit: webkit2gtk3, shell: wk40}
+          - {image: "rockylinux/rockylinux:8", kind: rpm, webkit: "", shell: wk40}
+          - {image: "almalinux:8", kind: tarball, webkit: webkit2gtk3, shell: wk40}
+          - {image: "almalinux:8", kind: rpm, webkit: "", shell: wk40}
           - {image: "rockylinux/rockylinux:9", kind: tarball, webkit: webkit2gtk3, shell: wk40}
           - {image: "rockylinux/rockylinux:9", kind: rpm, webkit: "", shell: wk40}
           - {image: "almalinux:9", kind: tarball, webkit: webkit2gtk3, shell: wk40}
           - {image: "almalinux:9", kind: rpm, webkit: "", shell: wk40}
+          - {image: "oraclelinux:8", kind: tarball, webkit: webkit2gtk3, shell: wk40}
+          - {image: "oraclelinux:8", kind: rpm, webkit: "", shell: wk40}
+          - {image: "debian:12", kind: tarball, webkit: libwebkit2gtk-4.1-0, shell: wk41}
+          - {image: "debian:12", kind: deb, webkit: "", shell: wk41}
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     permissions:
@@ -465,7 +504,7 @@ jobs:
               --title "ACTIVATE Studio for Linux" --notes "The newest Linux app."
           fi
           gh release upload linux -R "$GITHUB_REPOSITORY" --clobber "${files[@]}"
-          gh release edit linux -R "$GITHUB_REPOSITORY" --notes "ACTIVATE Studio $TAG for Linux, x86_64, glibc 2.34 or later (Ubuntu 22.04, RHEL 9 and later).
+          gh release edit linux -R "$GITHUB_REPOSITORY" --notes "ACTIVATE Studio $TAG for Linux, x86_64, glibc 2.28 or later (RHEL 8, Ubuntu 22.04 and later).
 
           A copy installed in a user's home folder updates itself from the release for its version. A copy installed from a .deb or .rpm package is updated through apt or dnf.
 

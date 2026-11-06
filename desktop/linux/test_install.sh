@@ -66,7 +66,7 @@ if [ $PM = deb ]; then
   pm_install xvfb dbus-x11 procps imagemagick fonts-dejavu-core desktop-file-utils ca-certificates
 else
   dnf install -y -q epel-release >/dev/null 2>&1 || true
-  pm_install xorg-x11-server-Xvfb dbus-x11 dbus-daemon procps-ng ImageMagick dejavu-sans-fonts desktop-file-utils glibc-langpack-en
+  pm_install xorg-x11-server-Xvfb dbus-x11 dbus-daemon procps-ng findutils ImageMagick dejavu-sans-fonts desktop-file-utils glibc-langpack-en
 fi
 ok "Xvfb, a session bus, ImageMagick and desktop-file-utils installed"
 
@@ -287,7 +287,8 @@ if [ "$KIND" = tarball ]; then
     as tester mv "$H/.local/lib/.activate-studio.new" "$R"
     NEWHASH="$(sha256sum "$R/bin/activate-studio-${EXPECT_SHELL:-wk41}" | cut -d' ' -f1)"
     touch "$T/up1/reopen"; chmod 666 "$T/up1/reopen"
-    if wait_for 120 sh -c "[ -s '$T/up1/ready' ] && [ \"\$(head -n 1 '$T/up1/ready')\" != '$OLDPID' ]"; then
+    # The new window removes the file as it starts, so read it once.
+    if wait_for 120 sh -c "p=\"\$(head -n 1 '$T/up1/ready' 2>/dev/null)\"; [ -n \"\$p\" ] && [ \"\$p\" != '$OLDPID' ]"; then
       NEWPID="$(head -n 1 "$T/up1/ready")"
       ok "the window reopened as a new process once the Studio drew again"
       check "the old window is gone" test ! -e "/proc/$OLDPID"
