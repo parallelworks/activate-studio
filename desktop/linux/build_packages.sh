@@ -9,7 +9,7 @@
 # and nothing outside it but the link, the entry and the icons.
 #
 #   .deb  the WebKitGTK 4.1 shell (Ubuntu 22.04 and later, Debian 12 and later)
-#   .rpm  the WebKitGTK 4.0 shell (RHEL 9 and its rebuilds)
+#   .rpm  the WebKitGTK 4.0 shell (RHEL 8 and 9 and their rebuilds)
 #
 # Usage: build_packages.sh ARCHIVE OUT_DIR
 # Env:   NFPM (the nfpm binary, default: nfpm on PATH)
@@ -67,8 +67,8 @@ build() {
   done
   local lib_deps
   if [ "$fmt" = deb ]; then
-    # libc6 2.35: the 4.1 shell is built on Ubuntu 22.04. The rest of the
-    # tree needs 2.34 (libstdc++ 11 is GCC 11's, as on RHEL 9).
+    # libc6 2.35 and libstdc++ 11: the 4.1 shell is built on Ubuntu 22.04.
+    # The rest of the tree needs less (glibc 2.28, as on RHEL 8).
     lib_deps="    depends:
       - libwebkit2gtk-4.1-0
       - libgtk-3-0t64 | libgtk-3-0
@@ -83,8 +83,8 @@ build() {
     lib_deps="    depends:
       - webkit2gtk3
       - gtk3
-      - libc.so.6(GLIBC_2.34)(64bit)
-      - libstdc++.so.6(GLIBCXX_3.4.29)(64bit)
+      - libc.so.6(GLIBC_2.28)(64bit)
+      - libstdc++.so.6(GLIBCXX_3.4.25)(64bit)
       - libgcc_s.so.1()(64bit)
       - libz.so.1()(64bit)
     recommends:

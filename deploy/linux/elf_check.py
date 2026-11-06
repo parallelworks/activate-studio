@@ -11,12 +11,12 @@ needs, and checks:
   - no RUNPATH or RPATH names a directory outside --root, where the build
     machine's own copy would be found on that machine and nowhere else;
   - the newest glibc symbol version it needs is at most --max-glibc (the
-    oldest target's, 2.34 for RHEL 9), and likewise --max-glibcxx and
+    oldest target's, 2.28 for RHEL 8), and likewise --max-glibcxx and
     --max-cxxabi for libstdc++'s versions.
 It prints the newest versions across all files, and exits 1 on a problem.
 
-Usage: elf_check.py --root DIR [--max-glibc 2.34] [--max-glibcxx 3.4.29]
-                    [--max-cxxabi 1.3.13] [--list] FILE|DIR...
+Usage: elf_check.py --root DIR [--max-glibc 2.28] [--max-glibcxx 3.4.25]
+                    [--max-cxxabi 1.3.11] [--list] FILE|DIR...
 A directory is searched for ELF files (symbolic links are not followed).
 """
 import argparse

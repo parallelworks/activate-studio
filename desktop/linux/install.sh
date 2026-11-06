@@ -18,7 +18,7 @@
 #   install.sh --move     move it instead of copying (no second copy on the disk)
 #
 # Needs WebKitGTK for the Studio's own window (libwebkit2gtk-4.1-0 on Ubuntu 22.04 and
-# later, webkit2gtk3 on RHEL 9 and its rebuilds, libwebkit2gtk-4.0-37 on Debian 11); without it the
+# later, webkit2gtk3 on RHEL 8 and 9 and their rebuilds, libwebkit2gtk-4.0-37 on Debian 11); without it the
 # Studio opens in the default browser. A system package manager installs that;
 # this script installs nothing outside your home folder.
 #

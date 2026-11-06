@@ -22,7 +22,7 @@
 # tesseract finds its data through TESSDATA_PREFIX, which studio-run.sh sets
 # to share/tessdata here.
 #
-# Build it in the oldest glibc the app supports, a Rocky Linux 9 container
+# Build it in the oldest glibc the app supports, a Rocky Linux 8 container
 # (see build_gufi.sh), which installs the tools with dnf when run as root
 # (SKIP_DEPS=1 to skip that).
 #
@@ -52,6 +52,7 @@ if [ "${SKIP_DEPS:-}" != 1 ] && [ "$(id -u)" = 0 ] && command -v dnf >/dev/null 
   echo "Build tools from dnf..."
   dnf install -y -q --setopt=install_weak_deps=False \
     gcc gcc-c++ make cmake ca-certificates tar xz python3 pkgconf-pkg-config zlib-devel file binutils >/dev/null
+  el8_tools
 fi
 for tool in gcc g++ cmake make curl tar python3 readelf; do
   command -v "$tool" >/dev/null 2>&1 || die "$tool is required"
