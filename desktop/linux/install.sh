@@ -102,9 +102,11 @@ exec_path="$BIN_DIR/activate-studio"
 case "$exec_path" in *" "*) exec_path="\"$exec_path\"" ;; esac
 sed "s|@BIN@|$exec_path|g" "$TREE/share/applications/activate-studio.desktop" >"$APPS_DIR/activate-studio.desktop"
 if [ -d "$TREE/share/icons/hicolor" ]; then
-  (cd "$TREE/share/icons/hicolor" && find . -name activate-studio.png) | while IFS= read -r f; do
-    mkdir -p "$ICON_DIR/$(dirname "$f")"
-    cp "$TREE/share/icons/hicolor/$f" "$ICON_DIR/$f"
+  for f in "$TREE"/share/icons/hicolor/*/apps/activate-studio.png; do
+    [ -e "$f" ] || continue
+    rel="${f#"$TREE"/share/icons/hicolor/}"
+    mkdir -p "$ICON_DIR/$(dirname "$rel")"
+    cp "$f" "$ICON_DIR/$rel"
   done
 fi
 update-desktop-database "$APPS_DIR" >/dev/null 2>&1 || true

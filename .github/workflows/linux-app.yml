@@ -227,11 +227,12 @@ jobs:
             extra_packages: ""
           # Docker's official rockylinux images are old point releases
           # (8.9 and 9.3); the others are current releases of the two
-          # rebuilds the Linux app targets.
+          # rebuilds the Linux app targets. The Rocky 8 images leave out
+          # findutils, which these checks use and the Studio does not.
           - image: rockylinux:8
-            extra_packages: ""
+            extra_packages: findutils
           - image: rockylinux/rockylinux:8
-            extra_packages: ""
+            extra_packages: findutils
           - image: almalinux:8
             extra_packages: ""
           - image: rockylinux:9

@@ -166,7 +166,7 @@ The window shell is a small Go program (Wails v2, `desktop/wails`) that links to
 
 The archive is about 255 MiB (the tree 687 MB: Node 144 MB, Python 196 MB, GUFI 182 MB, tesseract 12 MB, the server's `node_modules` 69 MB, the web app 36 MB, the models 47 MB), against 503 MB for the macOS app, whose GUFI is 55 MB and Python 142 MB. In CI, GUFI builds in about 8 to 9 minutes, tesseract in 2 to 3, and the payload is assembled in under a minute after the web and server build. The build limits the tree to symbol versions of glibc 2.28, libstdc++ 3.4.25 (GCC 8) and CXXABI 1.3.11, so it needs RHEL 8's C libraries or newer. The WebKitGTK 4.1 shell is the exception: it is built on Ubuntu 22.04 and needs glibc 2.35, and it is used only where WebKitGTK 4.1 is installed.
 
-The system libraries the tree needs are the C library (libc, libm, libdl, libpthread, librt, libutil, ld-linux), libstdc++, libgcc_s and zlib: packages `libc6`, `libstdc++6`, `libgcc-s1` and `zlib1g` on Ubuntu, `glibc`, `libstdc++`, `libgcc` and `zlib` on RHEL. Every desktop has them, and the clean images the tests start from needed no other package. Node's libatomic and GCC's libgomp, which a RHEL install may lack, are in the tree.
+The system libraries the tree needs are the C library (libc, libm, libdl, libpthread, librt, libutil, ld-linux), libstdc++, libgcc_s and zlib: packages `libc6`, `libstdc++6`, `libgcc-s1` and `zlib1g` on Ubuntu, `glibc`, `libstdc++`, `libgcc` and `zlib` on RHEL. Every desktop has them, and the clean images the tests start from needed no other package (the Rocky 8 images leave out findutils, which the checks themselves use and the Studio does not). Node's libatomic and GCC's libgomp, which a RHEL install may lack, are in the tree.
 
 ## Known limits
 

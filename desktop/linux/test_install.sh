@@ -66,7 +66,7 @@ if [ $PM = deb ]; then
   pm_install xvfb dbus-x11 procps imagemagick fonts-dejavu-core desktop-file-utils ca-certificates
 else
   dnf install -y -q epel-release >/dev/null 2>&1 || true
-  pm_install xorg-x11-server-Xvfb dbus-x11 dbus-daemon procps-ng ImageMagick dejavu-sans-fonts desktop-file-utils glibc-langpack-en
+  pm_install xorg-x11-server-Xvfb dbus-x11 dbus-daemon procps-ng findutils ImageMagick dejavu-sans-fonts desktop-file-utils glibc-langpack-en
 fi
 ok "Xvfb, a session bus, ImageMagick and desktop-file-utils installed"
 
