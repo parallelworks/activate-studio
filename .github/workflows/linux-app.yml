@@ -241,6 +241,30 @@ jobs:
             extra_packages: ""
           - image: almalinux:9
             extra_packages: ""
+          # The rest of the Linux world the archive runs on. The minimal
+          # images leave out the tools these checks use.
+          - image: redhat/ubi8
+            extra_packages: findutils procps-ng util-linux shadow-utils
+          - image: redhat/ubi9
+            extra_packages: findutils procps-ng util-linux shadow-utils
+          - image: oraclelinux:8
+            extra_packages: findutils
+          - image: oraclelinux:9
+            extra_packages: findutils
+          - image: quay.io/centos/centos:stream9
+            extra_packages: findutils
+          - image: fedora:43
+            extra_packages: findutils procps-ng util-linux shadow-utils
+          - image: amazonlinux:2023
+            extra_packages: findutils procps-ng util-linux shadow-utils tar gzip
+          - image: ubuntu:20.04
+            extra_packages: ""
+          - image: debian:11
+            extra_packages: ""
+          - image: debian:12
+            extra_packages: ""
+          - image: debian:13
+            extra_packages: ""
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
@@ -360,6 +384,10 @@ jobs:
           - {image: "rockylinux/rockylinux:9", kind: rpm, webkit: "", shell: wk40}
           - {image: "almalinux:9", kind: tarball, webkit: webkit2gtk3, shell: wk40}
           - {image: "almalinux:9", kind: rpm, webkit: "", shell: wk40}
+          - {image: "oraclelinux:8", kind: tarball, webkit: webkit2gtk3, shell: wk40}
+          - {image: "oraclelinux:8", kind: rpm, webkit: "", shell: wk40}
+          - {image: "debian:12", kind: tarball, webkit: libwebkit2gtk-4.1-0, shell: wk41}
+          - {image: "debian:12", kind: deb, webkit: "", shell: wk41}
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     permissions:

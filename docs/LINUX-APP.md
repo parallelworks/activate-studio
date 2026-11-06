@@ -14,15 +14,15 @@ Both come from the same tree, so they behave the same, and the update contract b
 
 ## Requirements
 
-A 64-bit Intel or AMD computer with glibc 2.28 or newer. Tested on RHEL 8 and 9 rebuilds (Rocky Linux and AlmaLinux 8 and 9) and on Ubuntu 22.04 and 24.04. RHEL 7 is too old. About 700 MB of disk for the program, plus the index.
+A 64-bit Intel or AMD computer with glibc 2.28 or newer. Each release's checks run in containers of RHEL, Rocky Linux, AlmaLinux and Oracle Linux 8 and 9, CentOS Stream 9, Ubuntu 20.04, 22.04 and 24.04, Debian 11, 12 and 13, Fedora 43 and Amazon Linux 2023. RHEL 7 is too old. About 700 MB of disk for the program, plus the index.
 
 For the Studio's own window, WebKitGTK and GTK 3:
 
 | System | Package | Window shell used |
 |---|---|---|
-| Ubuntu 22.04, 24.04, Debian 12, Fedora | `libwebkit2gtk-4.1-0` | WebKitGTK 4.1 |
-| RHEL, Rocky, AlmaLinux 8 and 9 | `webkit2gtk3` | WebKitGTK 4.0 |
-| Debian 11, Ubuntu 22.04 without 4.1 | `libwebkit2gtk-4.0-37` | WebKitGTK 4.0 |
+| Ubuntu 22.04, 24.04, Debian 12 and 13, Fedora | `libwebkit2gtk-4.1-0` | WebKitGTK 4.1 |
+| RHEL, Rocky, AlmaLinux, Oracle Linux 8 and 9, CentOS Stream 9 | `webkit2gtk3` | WebKitGTK 4.0 |
+| Debian 11, Ubuntu 20.04, Ubuntu 22.04 without 4.1 | `libwebkit2gtk-4.0-37` | WebKitGTK 4.0 |
 
 The `.deb` and `.rpm` declare these as dependencies. For the tarball, they are installed by the system's package manager (the install script installs nothing outside your home folder). Without WebKitGTK, or without a desktop session, the Studio runs in the background and opens in the default browser instead; everything works there except the system folder chooser and the window's own handling of downloads.
 
@@ -51,7 +51,7 @@ For everyone on the computer:
 
 ```
 sudo apt install ./activate-studio_<version>_amd64.deb      # Ubuntu, Debian
-sudo dnf install ./activate-studio-<version>.x86_64.rpm     # RHEL 8 or 9, Rocky, Alma
+sudo dnf install ./activate-studio-<version>.x86_64.rpm     # RHEL 8 or 9, Rocky, Alma, Oracle
 ```
 
 The `.deb` carries the WebKitGTK 4.1 window shell and depends on `libwebkit2gtk-4.1-0`, which Ubuntu 22.04 and 24.04 both have. The `.rpm` carries the 4.0 shell and depends on `webkit2gtk3`. Neither runs a script when it is installed. The package adds `/usr/bin/activate-studio` and a menu entry.
@@ -173,6 +173,7 @@ The system libraries the tree needs are the C library (libc, libm, libdl, libpth
 - RHEL 9's WebKitGTK cannot construct `Intl.NumberFormat`; the Studio's page carries a small guard (`web/index.html`) that stands in for it. Only the pages the build's check opens were tried under that engine.
 - Not tested: Wayland, HiDPI, a physical GPU or the 3D map, SELinux enforcing, a real desktop session, microphone permission in the window, aarch64.
 - The window shell is not code signed and the packages are not signed.
+- On Fedora 43 the window crashed at launch twice in about ten test launches (in `gtk_main`, in a container on a remote desktop), and opened on the next try. The cause is not known.
 - Ubuntu 24.04 restricts unprivileged user namespaces; WebKitGTK's sandbox (bubblewrap) works there through Ubuntu's own profile for `/usr/bin/bwrap`.
 
 ## How it is built and tested

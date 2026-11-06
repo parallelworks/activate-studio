@@ -57,6 +57,8 @@ fi
 echo
 echo "Dependencies"
 echo "  the system libraries the payload's ELF files need, and the package that provides each here:"
+# Some images (Oracle Linux) ship without the linker cache.
+[ -e /etc/ld.so.cache ] || ldconfig 2>/dev/null || true
 for lib in $(sed -n 's/^ *"\(lib[^"]*\|ld-linux[^"]*\)",\{0,1\}$/\1/p' "$APP/manifest.json"); do
   path="$(ldconfig -p | awk -v l="$lib" '$1 == l {print $NF; exit}')"
   if [ -z "$path" ]; then echo "  $lib: NOT FOUND"; continue; fi
