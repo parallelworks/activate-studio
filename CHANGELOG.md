@@ -2,6 +2,36 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.188 (2026-11-06)
+
+### Linux app runs on RHEL 8 and its rebuilds (#647)
+
+The Linux app now runs on RHEL 8 and its rebuilds, as well as RHEL 9, Ubuntu 22.04 and later. It needed glibc 2.34 before, so GUFI and tesseract failed to load on RHEL 8 and indexing failed there.
+
+## What changed
+
+GUFI, tesseract and the WebKitGTK 4.0 shell are built on Rocky Linux 8. GCC 8 and Python 3.6 are too old for GUFI and tesseract, so on RHEL 8 the build scripts install `gcc-toolset-13` and Python 3.11 (`el8_tools` in `deploy/common/lib.sh`). gcc-toolset links what it adds to the C++ runtime statically, so the binaries still need only the system's libstdc++.
+
+The tree is limited to glibc 2.28, libstdc++ 3.4.25 and CXXABI 1.3.11, in `build_app.sh`, `check_app.sh` and the `.rpm` dependencies. The update manifest's `minGlibc` follows from the tree. The WebKitGTK 4.1 shell still builds on Ubuntu 22.04 and needs glibc 2.35. It is used only where WebKitGTK 4.1 is installed, which RHEL 8 does not have.
+
+`install.sh` and `uninstall.sh` use a glob for the icons, so they no longer need `find`. The Rocky 8 container images leave out findutils.
+
+`README.md` and `docs/LINUX-APP.md` state the new requirements, and the README line that said test builds only is gone, since the Linux app was released in v1.187.
+
+## Tested
+
+A full `linux-app.yml` run on this branch passed every job, with nothing published. Rocky Linux 8 (8.9 and current), AlmaLinux 8, and the existing Rocky 9, AlmaLinux 9 and Ubuntu 22.04 and 24.04 images ran the payload checks and the update path. The tarball and `.rpm` were installed on Rocky 8 and AlmaLinux 8 and started under Xvfb, where the Studio drew, a search found a document, and uninstall left only the data. The same install tests passed on Rocky 9, AlmaLinux 9 and Ubuntu, so one payload built on the older system runs on all of them.
+
+## Wider coverage
+
+The payload test matrix adds stock RHEL 8 and 9 (UBI images), Oracle Linux 8 and 9, CentOS Stream 9, Fedora 43, Amazon Linux 2023, Ubuntu 20.04 and Debian 11, 12 and 13, and the install test adds Oracle Linux 8 and Debian 12. All passed the 87 payload checks locally.
+
+The build also ran on a remote desktop, driven with real mouse and keyboard input, on Ubuntu 24.04 and on Rocky 8 in a container: window, indexing, search with OCR and meaning hits, query and Stats. The window also opened on Debian 12 and 13, Ubuntu 20.04, Oracle Linux 8 and 9, CentOS Stream 9 and Fedora 43.
+
+## Not tested
+
+A physical Rocky 8 desktop, and the window on stock RHEL (UBI repositories have no WebKitGTK), Debian 11 (its WebKitGTK packages are gone from the mirrors) and Amazon Linux 2023. Chat in the window was not run in this round. On Fedora 43 the window crashed at launch twice in about ten launches and opened on the next try. The cause is not known and is recorded in `docs/LINUX-APP.md`.
+
 ## v1.187 (2026-11-05)
 
 ### Offer a rebuild when a remote library's depth changes (#635)
@@ -216,6 +246,10 @@ Contents beyond the diff to review:
 - `linux-updater` (#632) is merged in, so its changes show here until it merges.
 
 CI: run 41735769723 is green in every job.
+
+### Change log through v1.187 (#646)
+
+Regenerated with `node scripts/release-notes.mjs --changelog --next v1.187` before tagging v1.187.
 
 ## v1.186 (2026-11-03)
 
