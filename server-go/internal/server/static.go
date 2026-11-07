@@ -1,6 +1,7 @@
 package server
 
 import (
+	"fmt"
 	"net/http"
 	"os"
 	"path"
@@ -51,6 +52,14 @@ func serveStatic(w http.ResponseWriter, r *http.Request, dist string) bool {
 		return true
 	}
 	w.Header().Set("Cache-Control", cacheControl(clean))
+	// @fastify/static's weak ETag (size and modification time in
+	// milliseconds, in hex), so a revalidation gets its 304 as from Node.
+	w.Header().Set("ETag", etag(st.Size(), st.ModTime().UnixMilli()))
 	http.ServeContent(w, r, file, st.ModTime(), f)
 	return true
+}
+
+// etag is the weak validator @fastify/static (the send package) sends.
+func etag(size, mtimeMs int64) string {
+	return fmt.Sprintf(`W/"%x-%x"`, size, mtimeMs)
 }

@@ -157,3 +157,31 @@ func TestNodeDown(t *testing.T) {
 		t.Fatalf("%d %s", res.StatusCode, body)
 	}
 }
+
+// The ETag is Node's (W/"<size hex>-<mtime ms hex>"), and a request that
+// sends it back gets a 304.
+func TestStaticETagAsNode(t *testing.T) {
+	dist := webDist(t)
+	mtime := time.UnixMilli(1793987792827)
+	os.Chtimes(filepath.Join(dist, "index.html"), mtime, mtime)
+	srv := front(t, dist, nil)
+	res, err := http.Get(srv.URL + "/some/deep/link")
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	want := `W/"12-1a1b2014fbb"` // 18 bytes, 1793987792827 ms
+	if got := res.Header.Get("ETag"); got != want {
+		t.Fatalf("ETag %q, want %q", got, want)
+	}
+	req, _ := http.NewRequest("GET", srv.URL+"/", nil)
+	req.Header.Set("If-None-Match", want)
+	res, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != http.StatusNotModified {
+		t.Fatalf("revalidation: %d, want 304", res.StatusCode)
+	}
+}
