@@ -28,13 +28,19 @@ const asExecution = (v: unknown): AgentExecution | undefined =>
 export interface UpdatePolicy {
   check: boolean
   install: 'manual' | 'auto'
-  channel: 'stable' | 'prerelease'
+  /** Preview also takes releases published as GitHub prereleases; the
+   *  setting's older value `prerelease` is read as preview (docs/UPDATES.md). */
+  channel: UpdateChannel
 }
+export type UpdateChannel = 'stable' | 'preview'
+/** stable or preview from a setting, with the older `prerelease` as preview. */
+export const asChannel = (v: unknown): UpdateChannel | null =>
+  v === 'stable' ? 'stable' : v === 'preview' || v === 'prerelease' ? 'preview' : null
 const UPDATE_DEFAULTS: UpdatePolicy = { check: true, install: 'manual', channel: 'stable' }
 const asPolicy = (v: Partial<UpdatePolicy> | undefined): UpdatePolicy => ({
   check: typeof v?.check === 'boolean' ? v.check : UPDATE_DEFAULTS.check,
   install: v?.install === 'auto' ? 'auto' : 'manual',
-  channel: v?.channel === 'prerelease' ? 'prerelease' : 'stable',
+  channel: asChannel(v?.channel) ?? 'stable',
 })
 
 export interface StudioSettings {
@@ -465,7 +471,7 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
       if (!u || typeof u !== 'object' || Array.isArray(u)) throw new KbError(400, 'updates must be an object')
       if (u.check !== undefined && typeof u.check !== 'boolean') throw new KbError(400, 'updates.check must be true or false')
       if (u.install !== undefined && u.install !== 'manual' && u.install !== 'auto') throw new KbError(400, 'updates.install must be manual or auto')
-      if (u.channel !== undefined && u.channel !== 'stable' && u.channel !== 'prerelease') throw new KbError(400, 'updates.channel must be stable or prerelease')
+      if (u.channel !== undefined && !asChannel(u.channel)) throw new KbError(400, 'updates.channel must be stable or preview')
       next.updates = asPolicy({ ...asPolicy(next.updates), ...u })
     }
     if (body.ragEndpointName !== undefined) {

@@ -10,7 +10,8 @@ import { parseNotes, readChangelog, type ChangeEntry, type ChangeVersion } from 
 import { INDEX_BASE, PROJECT_ROOT } from './config.js'
 import { KbError } from './kb.js'
 import { RELAUNCH_EXIT_CODE, requestRestart, runsWithoutAgent } from './lifecycle.js'
-import { effectiveSettings, type UpdatePolicy } from './settings.js'
+import { effectiveSettings, type UpdateChannel, type UpdatePolicy } from './settings.js'
+import { compatibleSnapshot, listSnapshots, restoreSnapshot, stateFormat, takeSnapshot, type Snapshot } from './stateFormat.js'
 import { connectionProblem, networkFailure } from './net.js'
 import { buildInfo } from './version.js'
 
@@ -32,6 +33,10 @@ import { buildInfo } from './version.js'
  * loop is restarted through exit 76. An install from a .deb or .rpm package
  * (the install-kind file in the payload's top directory) never replaces
  * itself: it is told the version and the package manager's command.
+ *
+ * Channels, the explicit install of another version (older included), the
+ * state snapshot before every change of version, and the relaunch a release
+ * can ask for follow docs/UPDATES.md, which the Go server implements alike.
  */
 
 const REPO = 'parallelworks/activate-studio'
@@ -93,7 +98,9 @@ function linuxKit(): Kit {
 }
 
 export type UpdateMode = 'app' | 'clone' | 'hosted' | 'package'
-export type UpdateState = 'idle' | 'checking' | 'downloading' | 'verifying' | 'installing' | 'restarting' | 'error'
+/** relaunch: a release that replaces the whole app is in place, and the
+ *  app has to be reopened to run it (docs/UPDATES.md, "Relaunch"). */
+export type UpdateState = 'idle' | 'checking' | 'downloading' | 'verifying' | 'installing' | 'restarting' | 'relaunch' | 'error'
 
 export interface UpdateStatus {
   mode: UpdateMode
@@ -130,6 +137,39 @@ export interface UpdateStatus {
   /** The last update changed the app's own executable: the window has to
    *  be reopened to run it (the launcher clears this when the app opens). */
   reopen: boolean
+  /** The signed releases this Studio can install on its channel, newest
+   *  first, the running one and older ones included (Install a version). */
+  versions: UpdateVersion[]
+  /** On Stable while running a newer Preview: the newest Stable, which
+   *  Move to Stable installs although it is older. */
+  moveToStable: { version: string } | null
+  /** The format of the state here, and the snapshots kept of it. */
+  stateFormat: number
+  snapshots: Omit<Snapshot, 'files'>[]
+}
+
+export interface UpdateVersion {
+  version: string
+  publishedAt: string | null
+  url: string
+  channel: UpdateChannel
+  current: boolean
+  newer: boolean
+}
+
+/** What installing a given version would do, from its signed manifest. */
+export interface VersionCheck {
+  version: string
+  older: boolean
+  channel: UpdateChannel
+  /** The state format that version reads, and the one here now. */
+  stateFormat: number
+  currentFormat: number
+  /** It reads the state as it is. */
+  readable: boolean
+  /** When it does not: the snapshot it would be given, or null. */
+  snapshot: Omit<Snapshot, 'files'> | null
+  requiresRelaunch: boolean
 }
 
 export interface UpdateRelease {
@@ -158,9 +198,23 @@ interface Release {
 
 interface Saved { etag: string | null; releases: Release[]; checkedAt: string | null }
 
-interface Manifest { version: string; asset: string; sha256: string; size: number; minMacos?: string; minGlibc?: string; builtAt?: string }
+interface Manifest {
+  version: string; asset: string; sha256: string; size: number; minMacos?: string; minGlibc?: string; builtAt?: string
+  /** The release's channel, signed; absent is stable unless the release is a GitHub prerelease. */
+  channel?: UpdateChannel
+  /** The newest state format the version reads; absent is 1. */
+  stateFormat?: number
+  /** The version replaces the whole app: reopen it, never restart the server into it. */
+  requiresRelaunch?: boolean
+}
 
-interface Prepared { version: string; from: string; shellChanged: boolean }
+interface Prepared { version: string; from: string; shellChanged: boolean; stateFormat: number; relaunch: boolean; older: boolean }
+
+/** How an install was asked for: the newest newer version, or one the
+ *  person picked, which may be older, with the state snapshot to restore
+ *  when that version cannot read the state. */
+interface InstallOpts { allowOlder: boolean; restoreState: boolean }
+const NEWEST: InstallOpts = { allowOlder: false, restoreState: false }
 
 /** A check the update failed, as opposed to a network or disk failure. */
 class Refused extends Error {}
@@ -281,7 +335,11 @@ function payloadRoot(): string | null {
     root = path.dirname(PROJECT_ROOT)
   }
   try { root = fs.realpathSync(root) } catch { return null }
-  return isFile(path.join(root, 'studio-run.sh')) && isFile(path.join(root, 'app', 'build-info.json')) ? root : null
+  // A payload that replaced this one with no run loop (requiresRelaunch)
+  // starts through bin/activate-studio; until the app reopens, this server
+  // runs from the copy moved aside and still counts as the app.
+  const started = isFile(path.join(root, 'studio-run.sh')) || isFile(path.join(root, 'bin', 'activate-studio'))
+  return started && isFile(path.join(root, 'app', 'build-info.json')) ? root : null
 }
 
 /** What the install-kind file holds: the kind, and optionally the package
@@ -485,6 +543,11 @@ async function fetchReleases(): Promise<void> {
 
 /** Whether a release carries the signed app this Studio installs from: the
  *  macOS app's archive, or the Linux payload's. */
+/** A release's channel as the list shows it: a GitHub prerelease is Preview. */
+export const releaseChannel = (r: { prerelease: boolean }): UpdateChannel => r.prerelease ? 'preview' : 'stable'
+/** Stable takes stable releases; Preview takes both. */
+const onChannel = (r: Release, channel: UpdateChannel) => channel === 'preview' || releaseChannel(r) === 'stable'
+
 const hasApp = (r: Release) => {
   const k = kit()
   return !!k && !!(r.assets[k.asset] && r.assets[k.manifest] && r.assets[k.signature])
@@ -497,10 +560,10 @@ const needsBuild = () => { const m = updateMode(); return m === 'app' || m === '
 /** The newest release the channel allows. For the app, the newest that
  *  carries the signed app: a release is published before its macOS build
  *  attaches the app, and one whose build failed never gets it. */
-function latestRelease(channel: UpdatePolicy['channel'], needsApp = needsBuild()): Release | null {
+function latestRelease(channel: UpdateChannel, needsApp = needsBuild()): Release | null {
   let best: Release | null = null
   for (const r of loadSaved().releases) {
-    if (r.prerelease && channel !== 'prerelease') continue
+    if (!onChannel(r, channel)) continue
     if (needsApp && !hasApp(r)) continue
     if (!best || compareVersions(r.tag, best.tag) > 0) best = r
   }
@@ -511,7 +574,7 @@ function latestRelease(channel: UpdatePolicy['channel'], needsApp = needsBuild()
  *  last PENDING_MS, may still get its macOS build, so the next check comes
  *  sooner. Older ones are releases the build was not asked for. */
 const PENDING_MS = 2 * 3600_000
-function appPending(channel: UpdatePolicy['channel'], now = Date.now()): boolean {
+function appPending(channel: UpdateChannel, now = Date.now()): boolean {
   const any = latestRelease(channel, false)
   const usable = latestRelease(channel, true)
   if (!any || hasApp(any) || (usable && compareVersions(any.tag, usable.tag) <= 0)) return false
@@ -521,7 +584,7 @@ function appPending(channel: UpdatePolicy['channel'], now = Date.now()): boolean
 
 // ---- status ----
 
-const inProgress = () => ['checking', 'downloading', 'verifying', 'installing', 'restarting'].includes(st.state)
+const inProgress = () => ['checking', 'downloading', 'verifying', 'installing', 'restarting', 'relaunch'].includes(st.state)
 
 const MANAGERS = { deb: 'apt', rpm: 'dnf' } as const
 
@@ -582,12 +645,33 @@ function previousVersion(): { version: string } | null {
  *  and including it, on the channel, newest first. A release the app cannot
  *  install (its macOS build failed, or has not finished) still counts, since
  *  its changes are in the later one. */
-function releasesUpTo(rel: Release, channel: UpdatePolicy['channel'], from: string): UpdateRelease[] {
+function releasesUpTo(rel: Release, channel: UpdateChannel, from: string): UpdateRelease[] {
   return loadSaved().releases
-    .filter(r => (!r.prerelease || channel === 'prerelease') && isNewer(r.tag, from) && compareVersions(r.tag, rel.tag) <= 0)
+    .filter(r => onChannel(r, channel) && isNewer(r.tag, from) && compareVersions(r.tag, rel.tag) <= 0)
     .sort((a, b) => compareVersions(b.tag, a.tag))
     .map(r => ({ version: r.tag, publishedAt: r.publishedAt, url: r.url, entries: parseNotes(r.notes) }))
 }
+
+/** The releases on the channel that carry the signed app, newest first. */
+function installable(channel: UpdateChannel): Release[] {
+  if (updateMode() !== 'app') return []
+  return loadSaved().releases.filter(r => onChannel(r, channel) && hasApp(r)).sort((a, b) => compareVersions(b.tag, a.tag))
+}
+
+/** The release of that version the person may pick on the channel. */
+function pickable(version: string, channel: UpdateChannel): Release | null {
+  return installable(channel).find(r => sameVersion(r.tag, version)) ?? null
+}
+
+/** On Stable while the running version is newer than every Stable release
+ *  (it is a Preview): the newest Stable, to go back to on purpose. */
+function stableBehind(policy: UpdatePolicy, cur: string): Release | null {
+  if (policy.channel !== 'stable' || !parseVersion(cur)) return null
+  const r = latestRelease('stable')
+  return r && compareVersions(r.tag, cur) < 0 ? r : null
+}
+
+const brief = ({ files: _f, ...s }: Snapshot) => s
 
 export function updateStatus(): UpdateStatus {
   const mode = updateMode()
@@ -617,6 +701,13 @@ export function updateStatus(): UpdateStatus {
     offline: st.offline,
     previous: previousVersion(),
     reopen: mode === 'app' && fs.existsSync(inUpdates('reopen')),
+    versions: installable(policy.channel).map(r => ({
+      version: r.tag, publishedAt: r.publishedAt, url: r.url, channel: releaseChannel(r),
+      current: sameVersion(r.tag, cur.version), newer: isNewer(r.tag, cur.version),
+    })),
+    moveToStable: mode === 'app' ? (r => r ? { version: r.tag } : null)(stableBehind(policy, cur.version)) : null,
+    stateFormat: stateFormat(),
+    snapshots: mode === 'app' ? listSnapshots().map(brief) : [],
   }
 }
 
@@ -696,7 +787,7 @@ async function fetchArchive(url: string, file: string, man: Manifest): Promise<v
   await fsp.rename(part, file)
 }
 
-function parseManifest(bytes: Buffer, rel: Release, from: string): Manifest {
+function parseManifest(bytes: Buffer, rel: Release, from: string, channel: UpdateChannel, allowOlder = false): Manifest {
   let m: Partial<Manifest>
   try { m = JSON.parse(bytes.toString('utf8')) } catch { throw new Refused('The manifest is not valid JSON.') }
   if (!m || typeof m !== 'object') throw new Refused('The manifest is not a JSON object.')
@@ -704,8 +795,18 @@ function parseManifest(bytes: Buffer, rel: Release, from: string): Manifest {
   if (m.asset !== k.asset) throw new Refused(`The manifest names the asset ${String(m.asset)}; this app installs ${k.asset}.`)
   const version = String(m.version ?? '')
   if (!parseVersion(version)) throw new Refused(`The manifest's version ${version || '(none)'} is not a version.`)
-  if (!isNewer(version, from)) throw new Refused(`The manifest's version ${version} is not newer than the running ${from}.`)
+  if (allowOlder ? sameVersion(version, from) : !isNewer(version, from)) {
+    throw new Refused(allowOlder ? `${version} is the version running.` : `The manifest's version ${version} is not newer than the running ${from}.`)
+  }
   if (!sameVersion(version, rel.tag)) throw new Refused(`The manifest is for ${version}, but the release is ${rel.tag}.`)
+  // The channel is signed: a release marked Preview that was published as
+  // a stable release is refused, since older Studios go by the flag alone.
+  if (m.channel !== undefined && m.channel !== 'stable' && m.channel !== 'preview') throw new Refused(`The manifest's channel ${String(m.channel)} is not stable or preview.`)
+  if (m.channel === 'preview' && !rel.prerelease) throw new Refused(`${version} is a Preview release, but it was published as a stable release.`)
+  const relChannel: UpdateChannel = m.channel === 'preview' || rel.prerelease ? 'preview' : 'stable'
+  if (relChannel === 'preview' && channel !== 'preview') throw new Refused(`${version} is a Preview release; this Studio is on Stable.`)
+  if (m.stateFormat !== undefined && (!Number.isSafeInteger(m.stateFormat) || m.stateFormat < 1)) throw new Refused('The manifest\'s stateFormat is not a whole number of 1 or more.')
+  if (m.requiresRelaunch !== undefined && typeof m.requiresRelaunch !== 'boolean') throw new Refused('The manifest\'s requiresRelaunch is not true or false.')
   if (typeof m.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(m.sha256)) throw new Refused('The manifest has no valid SHA-256.')
   if (!Number.isSafeInteger(m.size) || (m.size as number) <= 0) throw new Refused('The manifest has no valid size.')
   if (k.flavor === 'macos') {
@@ -719,7 +820,10 @@ function parseManifest(bytes: Buffer, rel: Release, from: string): Manifest {
       throw new Refused(`${version} needs glibc ${m.minGlibc}; this computer has ${have}.`)
     }
   }
-  return { version, asset: m.asset, sha256: m.sha256, size: m.size as number, minMacos: m.minMacos, minGlibc: m.minGlibc, builtAt: m.builtAt }
+  return {
+    version, asset: m.asset, sha256: m.sha256, size: m.size as number, minMacos: m.minMacos, minGlibc: m.minGlibc, builtAt: m.builtAt,
+    channel: relChannel, stateFormat: m.stateFormat ?? 1, requiresRelaunch: m.requiresRelaunch === true,
+  }
 }
 
 function isFile(p: string): boolean {
@@ -735,8 +839,16 @@ function plistString(plist: string, key: string): string | null {
 }
 
 /** The unpacked Linux payload is this app, complete, and the version the
- *  manifest says. */
-function checkPayload(dir: string, version: string): void {
+ *  manifest says. One that replaces the whole app (requiresRelaunch) need
+ *  not hold Node or the run loop: it is started by its own launcher. */
+function checkPayload(dir: string, version: string, relaunch = false): void {
+  if (relaunch) {
+    if (!executable(path.join(dir, 'bin', 'activate-studio'))) throw new Refused('The new app has no bin/activate-studio.')
+    for (const f of ['update-signing.pub', 'manifest.json']) if (!isFile(path.join(dir, f))) throw new Refused(`The new app has no ${f}.`)
+    const v = versionOf(dir)
+    if (!v || !sameVersion(v, version)) throw new Refused(`The new app is ${v ?? 'of no known version'}, not ${version}.`)
+    return
+  }
   if (!executable(path.join(dir, 'studio-run.sh'))) throw new Refused('The new app has no studio-run.sh.')
   for (const f of ['node/bin/node', 'app/server/dist/main.js', 'update-signing.pub', 'manifest.json']) {
     if (!isFile(path.join(dir, f))) throw new Refused(`The new app has no ${f}.`)
@@ -747,15 +859,17 @@ function checkPayload(dir: string, version: string): void {
 }
 
 /** The unpacked app is this app, complete, and the version the manifest says. */
-function checkBundle(dir: string, version: string): void {
-  if (kit()!.flavor === 'linux') return checkPayload(dir, version)
+function checkBundle(dir: string, version: string, relaunch = false): void {
+  if (kit()!.flavor === 'linux') return checkPayload(dir, version, relaunch)
   let plist = ''
   try { plist = fs.readFileSync(path.join(dir, 'Contents', 'Info.plist'), 'utf8') } catch { throw new Refused('The new app has no Info.plist.') }
   const id = plistString(plist, 'CFBundleIdentifier')
   if (id !== BUNDLE_ID) throw new Refused(`The new app's bundle identifier is ${id ?? 'missing'}, not ${BUNDLE_ID}.`)
   const exe = plistString(plist, 'CFBundleExecutable')
   if (!exe || exe.includes('/') || !executable(path.join(dir, 'Contents', 'MacOS', exe))) throw new Refused('The new app has no executable.')
-  for (const f of ['Resources/studio-run.sh', 'Resources/node/bin/node', 'Resources/app/server/dist/main.js']) {
+  // A copy that replaces the whole app (requiresRelaunch) starts through its
+  // own launcher and need not hold the Node run loop.
+  for (const f of relaunch ? ['Resources/update-signing.pub'] : ['Resources/studio-run.sh', 'Resources/node/bin/node', 'Resources/app/server/dist/main.js']) {
     if (!isFile(path.join(dir, 'Contents', f))) throw new Refused(`The new app has no ${f}.`)
   }
   const built = versionOf(dir)
@@ -837,31 +951,56 @@ async function cleanUp(): Promise<void> {
 
 /** Download and verify the release, and unpack it beside the app as
  *  `.<name>.new`, checked; nothing is swapped yet. */
-async function prepare(rel: Release): Promise<Prepared> {
+/** The release's manifest, its signature verified with this app's key and
+ *  its fields checked against the release, the channel and the running version. */
+async function verifiedManifest(rel: Release, allowOlder: boolean): Promise<Manifest> {
   const from = running().version
   const key = publicKey()
   if (!key) throw new Refused('This copy of the app carries no update signing key.')
   const k = kit()!
-  const urls = { archive: rel.assets[k.asset]?.url, manifest: rel.assets[k.manifest]?.url, sig: rel.assets[k.signature]?.url }
-  if (!urls.archive || !urls.manifest || !urls.sig) throw new Refused(`The release ${rel.tag} has no signed ${k.label}.`)
-  st.state = 'downloading'
-  st.progress = null
-  await fsp.mkdir(updatesDir(), { recursive: true })
+  const urls = { manifest: rel.assets[k.manifest]?.url, sig: rel.assets[k.signature]?.url }
+  if (!rel.assets[k.asset]?.url || !urls.manifest || !urls.sig) throw new Refused(`The release ${rel.tag} has no signed ${k.label}.`)
   const bytes = await fetchSmall(urls.manifest, 64 * 1024)
   const sig = Buffer.from((await fetchSmall(urls.sig, 4096)).toString('utf8').trim(), 'base64')
   let good = false
   try { good = sig.length === 64 && crypto.verify(null, bytes, key, sig) } catch { good = false }
   if (!good) throw new Refused('The manifest\'s signature does not verify with this app\'s key.')
-  const man = parseManifest(bytes, rel, from)
+  return parseManifest(bytes, rel, from, effectiveSettings().updates.channel, allowOlder)
+}
+
+/** What the state needs for a version reading formats up to `format`:
+ *  nothing, a snapshot to put back, or a refusal when none is kept. */
+function stateNeeds(format: number): { readable: boolean; snapshot: Snapshot | null } {
+  if (stateFormat() <= format) return { readable: true, snapshot: null }
+  return { readable: false, snapshot: compatibleSnapshot(format) }
+}
+
+async function prepare(rel: Release, opts: InstallOpts = NEWEST): Promise<Prepared> {
+  const from = running().version
+  const k = kit()!
+  st.state = 'downloading'
+  st.progress = null
+  await fsp.mkdir(updatesDir(), { recursive: true })
+  const man = await verifiedManifest(rel, opts.allowOlder)
+  const need = stateNeeds(man.stateFormat ?? 1)
+  if (!need.readable && !need.snapshot) {
+    throw new Refused(`${man.version} reads state up to format ${man.stateFormat ?? 1}; the state here is in format ${stateFormat()}, and no snapshot in a format it reads is kept.`)
+  }
+  if (!need.readable && !opts.restoreState) {
+    throw new Refused(`${man.version} cannot read the state as it is now; installing it puts back the state saved ${need.snapshot!.at}, which has to be asked for.`)
+  }
   const archive = inUpdates(k.asset)
-  await fetchArchive(urls.archive, archive, man)
+  await fetchArchive(rel.assets[k.asset].url, archive, man)
   st.state = 'verifying'
   st.progress = null
   const next = await unpack(archive)
   await fsp.rm(archive, { force: true })
-  checkBundle(next, man.version)
+  checkBundle(next, man.version, man.requiresRelaunch === true)
   if (k.flavor === 'linux') await markUser(next)
-  return { version: man.version, from, shellChanged: shellHash(next) !== shellHash(installRoot()!) }
+  return {
+    version: man.version, from, shellChanged: shellHash(next) !== shellHash(installRoot()!),
+    stateFormat: man.stateFormat ?? 1, relaunch: man.requiresRelaunch === true, older: compareVersions(man.version, from) < 0,
+  }
 }
 
 // ---- install ----
@@ -922,11 +1061,17 @@ function refreshIcon(bundle: string): void {
   })
 }
 
-async function swapIn(p: Prepared): Promise<void> {
+async function swapIn(p: Prepared, restoreState = false): Promise<void> {
   const app = installRoot()!
   const next = beside('new')
   const prev = beside('previous')
   st.state = 'installing'
+  // The state as it is, before anything changes (docs/UPDATES.md, "State").
+  const need = stateNeeds(p.stateFormat)
+  if (!need.readable && (!restoreState || !need.snapshot)) throw new Refused(`${p.version} cannot read the state here, and no snapshot it reads was chosen.`)
+  try { takeSnapshot({ from: p.from, to: p.version, reason: p.older ? 'before installing an older version' : 'before an update' }) } catch (e) {
+    throw new Refused(`The state could not be saved before the change, so nothing was changed: ${plain(e)}.`)
+  }
   await rmTree(prev)
   // The payload is at no path for the time between the two moves. A process
   // cut off there leaves it that way, so the Linux swap is written down
@@ -951,8 +1096,13 @@ async function swapIn(p: Prepared): Promise<void> {
   refreshIcon(app)
   await writeJson(inUpdates('pending.json'), { from: p.from, to: p.version, at: new Date().toISOString() })
   await fsp.rm(inUpdates('rolled-back.json'), { force: true })
-  if (p.shellChanged) await fsp.writeFile(inUpdates('reopen'), `${p.version}\n`)
+  if (p.shellChanged || p.relaunch) await fsp.writeFile(inUpdates('reopen'), `${p.version}\n`)
+  if (p.relaunch) await writeJson(inUpdates('relaunch.json'), { from: p.from, to: p.version, at: new Date().toISOString() })
   await fsp.rm(journal, { force: true })
+  if (!need.readable && need.snapshot) {
+    const s = restoreSnapshot(need.snapshot.id, p.from)
+    log(`update: the state saved ${s.at} (format ${s.format}) was put back for ${p.version}`)
+  }
 }
 
 function fail(e: unknown): void {
@@ -968,12 +1118,20 @@ function fail(e: unknown): void {
       : `The update failed: ${plain(e)}.${f ? ' The connection to the release server was lost; try again once this computer is online.' : ''}`
 }
 
-async function install(rel: Release): Promise<void> {
+async function install(rel: Release, opts: InstallOpts = NEWEST): Promise<void> {
   try {
-    const ready = prepared?.version === rel.tag && fs.existsSync(beside('new')) ? prepared : null
-    const p = ready ?? await prepare(rel)
+    const ready = !opts.allowOlder && prepared?.version === rel.tag && fs.existsSync(beside('new')) ? prepared : null
+    const p = ready ?? await prepare(rel, opts)
     prepared = null
-    await swapIn(p)
+    await swapIn(p, opts.restoreState)
+    if (p.relaunch) {
+      // The new copy replaces the whole app: this server keeps running from
+      // the old copy until the app is reopened, and never restarts into it.
+      st.state = 'relaunch'
+      st.progress = null
+      log(`update: ${p.from} replaced by ${p.version}, which runs once the app is reopened`)
+      return
+    }
     log(`update: ${p.from} replaced by ${p.version}; restarting`)
     restart()
   } catch (e) {
@@ -985,13 +1143,13 @@ async function install(rel: Release): Promise<void> {
   }
 }
 
-function startInstall(rel: Release): void {
+function startInstall(rel: Release, opts: InstallOpts = NEWEST): void {
   stopIdleWait()
   installWanted = false
   st.state = 'downloading'
   st.error = null
   rollbackNote = null
-  op = install(rel).finally(() => { op = null })
+  op = install(rel, opts).finally(() => { op = null })
 }
 
 async function check(): Promise<void> {
@@ -1058,6 +1216,9 @@ async function autoInstall(): Promise<void> {
     if (!prepared) return
     if (installWanted) { startInstall(rel); return }
   }
+  // A release that replaces the whole app waits for Update now: the app
+  // has to be reopened, which only a person in front of it can do.
+  if (prepared?.relaunch) return
   if (idleTimer) return
   let quietSince = Date.now()
   idleTimer = setInterval(() => {
@@ -1086,6 +1247,9 @@ async function rollBack(): Promise<void> {
   st.state = 'installing'
   st.error = null
   rollbackNote = null
+  // The version rolled back to puts back a snapshot at its start if it
+  // cannot read the state (stateFormat.ts, reconcileState).
+  takeSnapshot({ from, to, reason: 'before a rollback' })
   await rmTree(failed)
   await fsp.rename(app, failed)
   try { await fsp.rename(prev, app) } catch (e) {
@@ -1133,6 +1297,8 @@ export function startUpdates(logger: (msg: string) => void): void {
   if (mode === 'hosted') return
   if (mode === 'app') {
     void cleanUp()
+    // This copy runs: a relaunch an update asked for has happened.
+    fs.rmSync(inUpdates('relaunch.json'), { force: true })
     const back = readJson<{ from?: string; to?: string; reason?: string; noted?: boolean }>(inUpdates('rolled-back.json'))
     if (back && !back.noted) {
       rollbackNote = `${back.from ?? 'The update'} did not start properly (${back.reason ?? 'it kept stopping'}), so ${back.to ?? 'the previous version'} was put back.`
@@ -1214,8 +1380,21 @@ export async function updateRoutes(app: FastifyInstance): Promise<void> {
     return updateStatus()
   })
 
-  app.post('/api/updates/install', async () => {
+  app.post('/api/updates/install', async req => {
     requireApp()
+    const body = (req.body ?? {}) as { version?: unknown; restoreState?: unknown }
+    if (body.version !== undefined && body.version !== null) {
+      // A version the person picked: newer or older, on the channel.
+      if (typeof body.version !== 'string' || !parseVersion(body.version)) throw new KbError(400, 'version must be a release version')
+      if (op || inProgress()) throw new KbError(409, `An update is ${st.state}; wait for it to finish.`)
+      const s = updateStatus()
+      if (s.reason) throw new KbError(409, s.reason)
+      const rel = pickable(body.version, s.policy.channel)
+      if (!rel) throw new KbError(409, `${body.version} is not a release this Studio can install on the ${s.policy.channel === 'preview' ? 'Preview' : 'Stable'} channel.`)
+      if (sameVersion(rel.tag, s.current.version)) throw new KbError(409, `${rel.tag} is the version running.`)
+      startInstall(rel, { allowOlder: true, restoreState: body.restoreState === true })
+      return updateStatus()
+    }
     if (st.state === 'checking' && op) await op
     if (!inProgress() && !loadSaved().checkedAt) await check()
     // An automatic download under way installs as soon as it is verified.
@@ -1229,6 +1408,28 @@ export async function updateRoutes(app: FastifyInstance): Promise<void> {
     if (!s.canInstall) throw new KbError(409, s.reason ?? 'The update cannot be installed.')
     startInstall(rel)
     return updateStatus()
+  })
+
+  // What installing a version would do, from its signed manifest: older or
+  // not, and whether it reads the state or needs a snapshot put back.
+  app.post('/api/updates/inspect', async req => {
+    requireApp()
+    const v = (req.body as { version?: unknown } | null)?.version
+    if (typeof v !== 'string' || !parseVersion(v)) throw new KbError(400, 'version must be a release version')
+    const s = updateStatus()
+    const rel = pickable(v, s.policy.channel)
+    if (!rel) throw new KbError(409, `${v} is not a release this Studio can install on the ${s.policy.channel === 'preview' ? 'Preview' : 'Stable'} channel.`)
+    let man: Manifest
+    try { man = await verifiedManifest(rel, true) } catch (e) {
+      throw new KbError(e instanceof Refused ? 409 : 502, e instanceof Refused ? e.message : `The release could not be read: ${plain(e)}.`)
+    }
+    const need = stateNeeds(man.stateFormat ?? 1)
+    const out: VersionCheck = {
+      version: man.version, older: compareVersions(man.version, s.current.version) < 0, channel: man.channel ?? 'stable',
+      stateFormat: man.stateFormat ?? 1, currentFormat: stateFormat(), readable: need.readable,
+      snapshot: need.snapshot ? brief(need.snapshot) : null, requiresRelaunch: man.requiresRelaunch === true,
+    }
+    return out
   })
 
   app.post('/api/updates/rollback', async () => {

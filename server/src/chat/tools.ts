@@ -85,7 +85,7 @@ export const TOOL_CALLS: Record<string, string> = {
 /** The documents studio_docs can read, by the name the model passes. */
 const STUDIO_DOCS: Record<string, string> = {
   help: 'HELP.md', reference: 'REFERENCE.md', deploy: 'DEPLOY.md', architecture: 'ARCHITECTURE.md', customization: 'CUSTOMIZATION.md', libraries: 'LIBRARIES.md',
-  workflows: 'WORKFLOWS.md', agents: 'AGENTS.md', 'multi-user': 'MULTI-USER.md', macos: 'MACOS.md',
+  workflows: 'WORKFLOWS.md', agents: 'AGENTS.md', 'multi-user': 'MULTI-USER.md', macos: 'MACOS.md', updates: 'UPDATES.md',
 }
 
 export const TOOL_SPECS: ToolSpec[] = [

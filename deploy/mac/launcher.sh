@@ -389,6 +389,14 @@ start() {
     start_detached
   fi
 
+  # An update that asked for the app to be reopened (requiresRelaunch,
+  # docs/UPDATES.md) left the old copy's server running: it is started
+  # again from this copy.
+  if [ -f "$DATA/updates/relaunch.json" ]; then
+    rm -f "$DATA/updates/relaunch.json"
+    if [ "$WAS_RUNNING" = 1 ]; then restart_server; WAS_RUNNING=0; fi
+  fi
+
   local port
   port="$(setting PORT)"
   port="${port:-4180}"

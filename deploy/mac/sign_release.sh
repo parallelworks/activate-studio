@@ -14,6 +14,12 @@
 # later (OPENSSL names it); the openssl macOS ships is LibreSSL, which
 # cannot, so on a Mac it is taken from Homebrew's openssl@3.
 #
+# Optional fields for docs/UPDATES.md: STUDIO_RELEASE_CHANNEL (stable or
+# preview; a preview release must also be published as a GitHub
+# prerelease), STUDIO_STATE_FORMAT (the newest state format the version
+# reads, a whole number) and STUDIO_REQUIRES_RELAUNCH=1 (the version
+# replaces the whole app, so the app is reopened after it is installed).
+#
 # Writes ARCHIVE's name with .manifest.json and .manifest.json.sig (base64)
 # in place of .tar.gz.
 set -euo pipefail
@@ -73,10 +79,27 @@ version="${2:-$(release_of "$built")}"
 printf '%s' "$version" | grep -Eq '^v[0-9]+\.[0-9]+(\.[0-9]+)?$' || fail "$version is not a release version (vMAJOR.MINOR[.PATCH])"
 [ "$(release_of "$built")" = "$version" ] || fail "the app in the archive is ${built:-of no version}, not $version"
 
+# The optional fields, each on a line of its own after builtAt.
+extra=
+case "${STUDIO_RELEASE_CHANNEL:-}" in
+  '') ;;
+  stable|preview) extra="$extra,\n \"channel\": \"$STUDIO_RELEASE_CHANNEL\"" ;;
+  *) fail "STUDIO_RELEASE_CHANNEL must be stable or preview" ;;
+esac
+if [ -n "${STUDIO_STATE_FORMAT:-}" ]; then
+  printf '%s' "$STUDIO_STATE_FORMAT" | grep -Eq '^[1-9][0-9]*$' || fail "STUDIO_STATE_FORMAT must be a whole number of 1 or more"
+  extra="$extra,\n \"stateFormat\": $STUDIO_STATE_FORMAT"
+fi
+case "${STUDIO_REQUIRES_RELAUNCH:-}" in
+  ''|0) ;;
+  1) extra="$extra,\n \"requiresRelaunch\": true" ;;
+  *) fail "STUDIO_REQUIRES_RELAUNCH must be 1 or unset" ;;
+esac
+
 if command -v sha256sum >/dev/null 2>&1; then sum="$(sha256sum "$ARCHIVE" | awk '{print $1}')"; else sum="$(shasum -a 256 "$ARCHIVE" | awk '{print $1}')"; fi
 size="$(( $(wc -c <"$ARCHIVE") ))"
-printf '{\n "version": "%s",\n "asset": "%s",\n "sha256": "%s",\n "size": %s,\n "minMacos": "%s",\n "builtAt": "%s"\n}\n' \
-  "$version" "$(basename "$ARCHIVE")" "$sum" "$size" "$min_macos" "${built_at:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}" >"$MANIFEST"
+printf '{\n "version": "%s",\n "asset": "%s",\n "sha256": "%s",\n "size": %s,\n "minMacos": "%s",\n "builtAt": "%s"%b\n}\n' \
+  "$version" "$(basename "$ARCHIVE")" "$sum" "$size" "$min_macos" "${built_at:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}" "$extra" >"$MANIFEST"
 
 # The signature covers the manifest's exact bytes.
 "$OPENSSL_BIN" pkeyutl -sign -inkey "$KEY" -rawin -in "$MANIFEST" -out "$WORK/sig.bin" || fail "openssl could not sign the manifest"

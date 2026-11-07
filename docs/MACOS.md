@@ -181,7 +181,7 @@ update the person started with **Update now** or **Roll back**, and from
 **Reopen now** in the notice or in Settings after one installed
 automatically. The updater also has LaunchServices look at the new copy
 (`lsregister -f`), so Finder and the Dock show its icon.
-Settings can also turn the checks off, follow prereleases, or install
+Settings can also turn the checks off, choose the Stable or Preview channel, install a chosen version, older ones included, or install
 updates automatically, which happens once an update is verified
 and the Studio has had no chat answer or indexing running for ten
 minutes. An app in a folder its user cannot write to, such as
@@ -209,7 +209,9 @@ the proxy asks for a sign-in) and, if needed, `NO_PROXY` in `studio.env`.
 Roll back, which puts it back and restarts. The same happens without
 asking when a new version stops three times within two minutes of being
 installed; Settings then says so, and that version is not installed
-automatically again.
+automatically again. Channels, installing an older version, the state
+snapshot taken before every change of version, and releases that ask for
+the app to be reopened follow [`UPDATES.md`](UPDATES.md).
 
 *Publishing an update:* a release carries the
 `activate-studio-macos-arm64.tar.gz` that `build_app.sh` writes, and the

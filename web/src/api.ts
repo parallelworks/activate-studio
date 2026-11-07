@@ -599,12 +599,34 @@ export const api = {
 // ---- updates ----
 // Only the macOS app installs updates; a clone is told the version and the
 // command, and a hosted deployment has none (its routes answer 403).
-export interface UpdatePolicy { check: boolean; install: 'manual' | 'auto'; channel: 'stable' | 'prerelease' }
+/** Preview also takes releases published before they are Stable
+ *  (docs/UPDATES.md). */
+export type UpdateChannel = 'stable' | 'preview'
+export interface UpdatePolicy { check: boolean; install: 'manual' | 'auto'; channel: UpdateChannel }
+/** A signed release this Studio can install on its channel. */
+export interface UpdateVersion { version: string; publishedAt: string | null; url: string | null; channel: UpdateChannel; current: boolean; newer: boolean }
+/** A copy of the state the updater kept before a change of version. */
+export interface StateSnapshot { id: string; from: string; to: string | null; reason: string; format: number; at: string }
+/** What installing a picked version would do, from its signed manifest. */
+export interface VersionCheck {
+  version: string
+  older: boolean
+  channel: UpdateChannel
+  stateFormat: number
+  currentFormat: number
+  /** That version reads the state as it is. */
+  readable: boolean
+  /** When it does not: the snapshot it would be given, or null (it cannot be installed). */
+  snapshot: StateSnapshot | null
+  /** It replaces the whole app, which reopens. */
+  requiresRelaunch: boolean
+}
 /** One pull request's change: its title, and its description as markdown. */
 export interface ChangeEntry { title: string; pr: number | null; body: string }
 /** A release an update brings, with its notes as entries. */
 export interface UpdateRelease { version: string; publishedAt: string | null; url: string | null; entries: ChangeEntry[] }
-export type UpdateState = 'idle' | 'checking' | 'downloading' | 'verifying' | 'installing' | 'restarting' | 'error'
+/** relaunch: a release that replaces the whole app is in place; the app has to reopen. */
+export type UpdateState = 'idle' | 'checking' | 'downloading' | 'verifying' | 'installing' | 'restarting' | 'relaunch' | 'error'
 export interface UpdatesStatus {
   /** app: this copy replaces itself; clone and package: it is updated
    *  from outside (git, or a package manager); hosted: by its deployment. */
@@ -637,6 +659,12 @@ export interface UpdatesStatus {
   previous: { version: string } | null
   /** The last update changed the app's own window, which reopening runs. */
   reopen?: boolean
+  /** The signed releases on the channel, newest first (the running one included). */
+  versions?: UpdateVersion[]
+  /** On Stable while running a newer Preview: the newest Stable to go back to. */
+  moveToStable?: { version: string } | null
+  stateFormat?: number
+  snapshots?: StateSnapshot[]
 }
 
 async function sendUpdates(url: string, method: 'POST' | 'PUT', body: unknown = {}): Promise<unknown> {
@@ -658,6 +686,11 @@ export const updatesApi = {
   },
   check: () => sendUpdates('/api/updates/check', 'POST') as Promise<UpdatesStatus>,
   install: () => sendUpdates('/api/updates/install', 'POST') as Promise<UpdatesStatus>,
+  /** A version the person picked, older ones included; restoreState puts
+   *  back the snapshot that version reads when it cannot read the state. */
+  installVersion: (version: string, restoreState = false) =>
+    sendUpdates('/api/updates/install', 'POST', { version, restoreState }) as Promise<UpdatesStatus>,
+  inspect: (version: string) => sendUpdates('/api/updates/inspect', 'POST', { version }) as Promise<VersionCheck>,
   rollback: () => sendUpdates('/api/updates/rollback', 'POST') as Promise<UpdatesStatus>,
   /** Saved with the other settings. */
   savePolicy: (updates: UpdatePolicy) => sendUpdates('/api/settings', 'PUT', { updates }).then(() => undefined),
