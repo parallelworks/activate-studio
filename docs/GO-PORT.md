@@ -62,7 +62,7 @@ Environment the Go server reads today:
 | `STUDIO_LOG_FORMAT` | `json` | `text` for a terminal; one access-log line per request with `via` = `go`, `node` or `static` |
 | `STUDIO_SEMANTIC_MAP_BIN` | none | read by the Node server: run this binary in place of `indexer/semantic_map.py` |
 
-When Node exits on its own the Go server exits with Node's code, so exit 76 (a relaunch after an update, `lifecycle.ts`) still reaches the launcher. The desktop shell's supervisor (`desktop/wails/supervisor.go`) starts `node server/dist/main.js` today; pointing it at `studio-server` with `STUDIO_NODE_SPAWN=1` is the switch when the team wants it.
+When Node exits on its own the Go server exits with Node's code, so exit 76 (a relaunch after an update, `lifecycle.ts`) still reaches the launcher. The desktop shell's supervisor (`desktop/wails/supervisor.go`) starts Node by default. With `STUDIO_GO_SERVER=1` in the shell's environment it starts `studio-server` with `STUDIO_NODE_SPAWN=1` in its place and sets `STUDIO_SEMANTIC_MAP_BIN` to the `semantic-map` beside it: in the Linux payload the two binaries are `app/bin/studio-server` and `app/bin/semantic-map`, which `studio-run.sh` starts (the payload build does not put them there yet), and in a checkout `server-go/bin/`. Without the binary the shell starts Node as before. The process tree is then the shell, `studio-run.sh`, `studio-server`, Node.
 
 ## HTTP API inventory
 
