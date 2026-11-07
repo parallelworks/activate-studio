@@ -33,6 +33,17 @@ func webDist(t *testing.T) string {
 func fakeNode(t *testing.T) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/longstream" {
+			w.Header().Set("Content-Type", "text/event-stream")
+			for i := 0; i < 100; i++ {
+				if _, err := fmt.Fprintf(w, "data: %d\n\n", i); err != nil {
+					return
+				}
+				w.(http.Flusher).Flush()
+				time.Sleep(20 * time.Millisecond)
+			}
+			return
+		}
 		if r.URL.Path == "/api/stream" {
 			w.Header().Set("Content-Type", "text/event-stream")
 			for i := 0; i < 3; i++ {
@@ -185,3 +196,34 @@ func TestStaticETagAsNode(t *testing.T) {
 		t.Fatalf("revalidation: %d, want 304", res.StatusCode)
 	}
 }
+
+// A stream the client leaves (Stop in the chat) is still in the access log.
+func TestAbortedStreamIsLogged(t *testing.T) {
+	node := fakeNode(t)
+	u, _ := url.Parse(node.URL)
+	logs := make(chan string, 16)
+	cfg := config.Config{WebDist: webDist(t), GufiBin: t.TempDir(), GufiIndex: filepath.Join(t.TempDir(), "none")}
+	h := slog.New(slog.NewTextHandler(writerFunc(func(b []byte) { logs <- string(b) }), nil))
+	f := httptest.NewServer(New(cfg, h, u))
+	t.Cleanup(f.Close)
+	res, err := http.Get(f.URL + "/api/longstream")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := bufio.NewReader(res.Body).ReadString('\n'); err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	select {
+	case line := <-logs:
+		if !strings.Contains(line, "path=/api/longstream") || !strings.Contains(line, "aborted=true") || !strings.Contains(line, "via=node") {
+			t.Fatalf("log line %q", line)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the aborted stream was not logged")
+	}
+}
+
+type writerFunc func([]byte)
+
+func (f writerFunc) Write(b []byte) (int, error) { f(append([]byte(nil), b...)); return len(b), nil }

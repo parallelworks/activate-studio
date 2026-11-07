@@ -54,9 +54,24 @@ func (s *Server) healthz(w http.ResponseWriter, r *http.Request) {
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	rec := &recorder{ResponseWriter: w, status: http.StatusOK}
-	via := s.dispatch(rec, r)
-	s.log.Info("request", "method", r.Method, "path", r.URL.Path, "status", rec.status,
-		"bytes", rec.bytes, "ms", time.Since(start).Milliseconds(), "via", via)
+	// The proxy ends a response whose client went away (Stop in a chat
+	// stream, a closed page) by panicking with http.ErrAbortHandler, which
+	// net/http swallows; the request is logged all the same, then the
+	// panic goes on.
+	via := "node"
+	defer func() {
+		p := recover()
+		attrs := []any{"method", r.Method, "path", r.URL.Path, "status", rec.status,
+			"bytes", rec.bytes, "ms", time.Since(start).Milliseconds(), "via", via}
+		if p != nil {
+			attrs = append(attrs, "aborted", true)
+		}
+		s.log.Info("request", attrs...)
+		if p != nil {
+			panic(p)
+		}
+	}()
+	via = s.dispatch(rec, r)
 }
 
 func (s *Server) dispatch(w http.ResponseWriter, r *http.Request) string {
