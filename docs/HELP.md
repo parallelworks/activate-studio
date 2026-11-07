@@ -85,7 +85,7 @@ Labels organize files without moving them. Label a folder and everything in it c
 
 With several items selected, the Labels panel lists a label that only some of them carry under **On some of these items**: click it to add it to the rest, or its X to remove it from all of them. The tag button at the top of the tree shows or hides each item's own labels; selecting items turns it on.
 
-In the knowledge base the labels are saved on the files. In any other library, including a read-only folder and an index on another machine, {appName} saves them itself, so the files are never changed; the Labels panel says so. They show in the tree, Details, Search and Query like any other, and are removed with the library.
+In the knowledge base the labels are saved on the files. In any other library, including a read-only folder and an index on another machine, {appName} saves them itself, so the files are never changed; the Labels panel says so. They show in the tree, Details, Search and Query like any other, and are removed with the library. The assistant labels files in the library the chat's Scope selects, or in the knowledge base when all are selected.
 
 ## Query
 

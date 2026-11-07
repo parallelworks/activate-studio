@@ -360,6 +360,28 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
     return entries.map(e => (fileTags.get(e.path)?.length ? { ...e, tags: fileTags.get(e.path) } : e))
   }
 
+  // A listing of folders on this computer, with each entry's own labels
+  // straight from the filesystem xattrs (one getfattr per listing), so a
+  // just-applied label shows without waiting on the index, and for a library
+  // other than the main one the labels the Studio keeps for it. With one
+  // library selected and with All libraries alike.
+  const withLocalLabels = async <E extends { path: string }>(lib: { id: string; primary?: boolean }, root: string, entries: E[]): Promise<(E & { tags?: string[] })[]> => {
+    const out = entries as (E & { tags?: string[] })[]
+    const tagged = await readTagsBatch(entries.map(e => resolveKb(e.path, root))).catch(() => new Map<string, string[]>())
+    for (const e of out) {
+      const t = tagged.get(resolveKb(e.path, root))
+      if (t?.length) e.tags = t
+    }
+    if (!lib.primary) {
+      const { fileTags } = libraryLabelMaps(lib.id)
+      for (const e of out) {
+        const kept = fileTags.get(e.path)
+        if (kept?.length) e.tags = [...new Set([...(e.tags ?? []), ...kept])]
+      }
+    }
+    return out
+  }
+
   app.get('/api/kb/tree', async req => {
     const { path: rel = '', hidden } = req.query as { path?: string; hidden?: string }
     const showHidden = hidden === '1'
@@ -371,31 +393,16 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
         return { path: '', entries: allLibs(req).map(l => ({ name: l.site ? `${l.label} (on ${l.site})` : l.label, path: l.id, type: 'dir', size: 0, mtime: 0, kind: 'dir' })) }
       }
       const { lib, sub } = splitAll(req, rel)
-      const entries = lib.site ? await remote(lib.indexRoot, sub) : lib.sourceRoot ? await listDir(sub, lib.sourceRoot, showHidden) : []
-      const labeled = lib.primary ? entries : withKeptLabels(lib.id, entries)
+      const labeled = lib.site
+        ? withKeptLabels(lib.id, await remote(lib.indexRoot, sub))
+        : lib.sourceRoot ? await withLocalLabels(lib, lib.sourceRoot, await listDir(sub, lib.sourceRoot, showHidden)) : []
       return { path: rel, entries: labeled.map(e => ({ ...e, path: `${lib.id}/${e.path}` })) }
     }
     // A user's library on a cluster lists from its index there.
     const lib = libOf(req)
     if (lib.site) return { path: rel, entries: withKeptLabels(lib.id, await remote(lib.indexRoot, rel)) }
     const root = sourceOf(req)
-    const entries = await listDir(rel, root, showHidden)
-    // Own labels straight from the filesystem xattrs (one getfattr per
-    // listing), so a just-applied label shows without waiting on the index.
-    const tagged = await readTagsBatch(entries.map(e => resolveKb(e.path, root))).catch(() => new Map<string, string[]>())
-    for (const e of entries) {
-      const t = tagged.get(resolveKb(e.path, root))
-      if (t?.length) (e as typeof e & { tags?: string[] }).tags = t
-    }
-    if (!lib.primary) {
-      // Labels the files carry, and those the Studio keeps for them.
-      const { fileTags } = libraryLabelMaps(lib.id)
-      for (const e of entries as (typeof entries[number] & { tags?: string[] })[]) {
-        const kept = fileTags.get(e.path)
-        if (kept?.length) e.tags = [...new Set([...(e.tags ?? []), ...kept])]
-      }
-    }
-    return { path: rel, entries }
+    return { path: rel, entries: await withLocalLabels(lib, root, await listDir(rel, root, showHidden)) }
   })
 
   // A library's file for the viewer, from its own location and, when the
