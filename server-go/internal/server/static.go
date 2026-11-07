@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"fmt"
 	"net/http"
 	"os"
@@ -25,8 +26,10 @@ func cacheControl(urlPath string) string {
 // serveStatic answers from the built web app: the file asked for where it
 // exists, else index.html (the app routes in the browser). It reads from
 // disk on each request, so a rebuild of the web app needs no restart. It
-// returns false when there is no built web app.
-func serveStatic(w http.ResponseWriter, r *http.Request, dist string) bool {
+// returns false when there is no built web app. A text file goes out
+// compressed when the browser accepts it (compress.go), with Vary and an
+// ETag of its own.
+func serveStatic(w http.ResponseWriter, r *http.Request, dist string, cache *compressCache) bool {
 	index := filepath.Join(dist, "index.html")
 	if _, err := os.Stat(index); err != nil {
 		return false
@@ -51,10 +54,25 @@ func serveStatic(w http.ResponseWriter, r *http.Request, dist string) bool {
 		http.Error(w, "unreadable", http.StatusInternalServerError)
 		return true
 	}
-	w.Header().Set("Cache-Control", cacheControl(clean))
+	h := w.Header()
+	h.Set("Cache-Control", cacheControl(clean))
+	if cache != nil && compressible(file, st.Size()) {
+		h.Add("Vary", "Accept-Encoding")
+		if enc := negotiate(r.Header.Get("Accept-Encoding")); enc != "" {
+			if data, ctype, err := cache.get(file, st, enc); err == nil {
+				h.Set("Content-Encoding", enc)
+				h.Set("Content-Type", ctype)
+				h.Set("ETag", encodedETag(st.Size(), st.ModTime().UnixMilli(), enc))
+				// A range of a compressed body is of no use to a browser.
+				r.Header.Del("Range")
+				http.ServeContent(w, r, file, st.ModTime(), bytes.NewReader(data))
+				return true
+			}
+		}
+	}
 	// @fastify/static's weak ETag (size and modification time in
 	// milliseconds, in hex), so a revalidation gets its 304 as from Node.
-	w.Header().Set("ETag", etag(st.Size(), st.ModTime().UnixMilli()))
+	h.Set("ETag", etag(st.Size(), st.ModTime().UnixMilli()))
 	http.ServeContent(w, r, file, st.ModTime(), f)
 	return true
 }

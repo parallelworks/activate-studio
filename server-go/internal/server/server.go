@@ -29,11 +29,13 @@ type Server struct {
 	log    *slog.Logger
 	ported *http.ServeMux
 	node   *httputil.ReverseProxy // nil without a Node server
+	static *compressCache
 }
 
 // New makes the handler. node is the Node server's base URL, or nil.
 func New(cfg config.Config, log *slog.Logger, node *url.URL) *Server {
-	s := &Server{cfg: cfg, log: log, ported: http.NewServeMux()}
+	s := &Server{cfg: cfg, log: log, ported: http.NewServeMux(), static: newCompressCache()}
+	go s.static.warm(cfg.WebDist)
 	if node != nil {
 		s.node = newProxy(node, log)
 	}
@@ -103,7 +105,7 @@ func (s *Server) dispatch(w http.ResponseWriter, r *http.Request) string {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
 		return "none"
 	}
-	if serveStatic(w, r, s.cfg.WebDist) {
+	if serveStatic(w, r, s.cfg.WebDist, s.static) {
 		return "static"
 	}
 	// Without a built web app Node answers as it would (Fastify's 404).

@@ -3,6 +3,7 @@ module github.com/parallelworks/activate-studio/server-go
 go 1.26.0
 
 require (
+	github.com/andybalholm/brotli v1.2.8
 	gonum.org/v1/gonum v0.17.0
 	modernc.org/sqlite v1.62.0
 )
