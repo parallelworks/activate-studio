@@ -151,6 +151,17 @@ void import('./tags.js').then(m => m.reapplyTagOverlay())
 
 await app.listen({ host: HOST, port: PORT })
 
+// The Go front server (server-go/internal/nodeproc) passes a pipe as
+// STUDIO_READY_FD and starts serving as soon as a line arrives on it, in
+// place of polling /healthz. Unset (the default), nothing happens here.
+{
+  const fd = Number(process.env.STUDIO_READY_FD)
+  delete process.env.STUDIO_READY_FD
+  if (Number.isInteger(fd) && fd > 2) {
+    try { fs.writeSync(fd, 'ready\n'); fs.closeSync(fd) } catch { /* the front polls /healthz instead */ }
+  }
+}
+
 // Runs the assistant launched before the last restart are followed again,
 // so their end still reaches the conversations that asked for them.
 setRunsLog(msg => app.log.info(msg))

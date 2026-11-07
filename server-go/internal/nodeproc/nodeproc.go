@@ -26,7 +26,9 @@ type Proc struct {
 
 // Start runs `nodeBin main` with PORT set to a free loopback port and HOST
 // to 127.0.0.1, so only the Go front is reachable from outside, and waits
-// until its /healthz answers.
+// until Node is ready: a line on the STUDIO_READY_FD pipe, which Node writes
+// once it listens, or else its /healthz answering, polled from 5 ms up to
+// every 100 ms.
 func Start(ctx context.Context, log *slog.Logger, nodeBin, main string, wait time.Duration) (*Proc, error) {
 	port, err := freePort()
 	if err != nil {
@@ -35,26 +37,26 @@ func Start(ctx context.Context, log *slog.Logger, nodeBin, main string, wait tim
 	cmd := exec.Command(nodeBin, main)
 	cmd.Env = append(os.Environ(), "PORT="+strconv.Itoa(port), "HOST=127.0.0.1")
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
-	if err := cmd.Start(); err != nil {
+	ready, started, err := readySignal(cmd)
+	if err != nil {
+		return nil, fmt.Errorf("readiness pipe: %w", err)
+	}
+	err = cmd.Start()
+	started()
+	if err != nil {
 		return nil, fmt.Errorf("starting node: %w", err)
 	}
 	p := &Proc{URL: &url.URL{Scheme: "http", Host: "127.0.0.1:" + strconv.Itoa(port)}, cmd: cmd, done: make(chan struct{})}
 	go func() { p.err = cmd.Wait(); close(p.done) }()
 	log.Info("node starting", "pid", cmd.Process.Pid, "url", p.URL.String())
+	client := &http.Client{Timeout: 5 * time.Second}
 	deadline := time.Now().Add(wait)
+	delay := 5 * time.Millisecond
 	for {
-		select {
-		case <-p.done:
-			return nil, fmt.Errorf("node exited before answering: %v", p.err)
-		case <-ctx.Done():
-			p.Stop(5 * time.Second)
-			return nil, ctx.Err()
-		default:
-		}
-		if res, err := http.Get(p.URL.String() + "/healthz"); err == nil {
+		if res, err := client.Get(p.URL.String() + "/healthz"); err == nil {
 			res.Body.Close()
 			if res.StatusCode == http.StatusOK {
-				log.Info("node ready", "pid", cmd.Process.Pid)
+				log.Info("node ready", "pid", cmd.Process.Pid, "by", "healthz")
 				return p, nil
 			}
 		}
@@ -62,7 +64,22 @@ func Start(ctx context.Context, log *slog.Logger, nodeBin, main string, wait tim
 			p.Stop(5 * time.Second)
 			return nil, fmt.Errorf("node did not answer within %s", wait)
 		}
-		time.Sleep(200 * time.Millisecond)
+		t := time.NewTimer(delay)
+		select {
+		case <-ready:
+			t.Stop()
+			log.Info("node ready", "pid", cmd.Process.Pid, "by", "signal")
+			return p, nil
+		case <-p.done:
+			t.Stop()
+			return nil, fmt.Errorf("node exited before answering: %v", p.err)
+		case <-ctx.Done():
+			t.Stop()
+			p.Stop(5 * time.Second)
+			return nil, ctx.Err()
+		case <-t.C:
+		}
+		delay = min(2*delay, 100*time.Millisecond)
 	}
 }
 
