@@ -264,3 +264,134 @@ func TestBuildFromVectors(t *testing.T) {
 		t.Fatalf("summary %+v", sum)
 	}
 }
+
+// writeVectors writes n files as remoteMap.ts does, on 6 topics, with text
+// on every third and a few lines a reader must skip.
+func writeVectors(t *testing.T, path string, n int) {
+	t.Helper()
+	rng := rand.New(rand.NewPCG(7, 8))
+	words := []string{"turbine", "inlet", "vortex", "mesh", "solver", "plasma", "reef", "coral", "sensor", "orbit", "laser", "alloy"}
+	var b strings.Builder
+	for i := 0; i < n; i++ {
+		topic := i % 6
+		q := make([]byte, Dims)
+		for d := range q {
+			v := rng.NormFloat64() * 0.03
+			if d == topic*40 {
+				v += 1
+			}
+			q[d] = byte(int8(math.Max(-128, math.Min(127, math.Trunc((v+1)*127.5-128)))))
+		}
+		row := map[string]any{"p": fmt.Sprintf("area%d/d%d/doc%d.md", topic%2, i/100, i), "v": hex.EncodeToString(q)}
+		if i%5 != 0 {
+			row["r"] = 0.5 + rng.Float64()/2
+		}
+		if i%3 == 0 {
+			var tx []string
+			for k := 0; k < 40; k++ {
+				tx = append(tx, words[(topic*2+rng.IntN(3))%len(words)])
+			}
+			row["t"] = strings.Join(tx, " ")
+		}
+		line, _ := json.Marshal(row)
+		b.Write(line)
+		b.WriteByte('\n')
+		switch i % 997 {
+		case 1:
+			b.WriteString("not json\n")
+		case 2:
+			b.WriteString(`{"v":"00"}` + "\n")
+		case 3:
+			b.WriteString(`{"p":"short.md","v":"00ff"}` + "\n")
+		}
+	}
+	if err := os.WriteFile(path, []byte(b.String()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func collect(t *testing.T, src Source) []File {
+	t.Helper()
+	var out []File
+	if _, err := src(func(f File) error { out = append(out, f); return nil }); err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+// Reading a vectors.jsonl on many workers gives the same files in the same
+// order as one reader, and so the same map, byte for byte.
+func TestVectorsSourceParallelSameAsSequential(t *testing.T) {
+	tmp := t.TempDir()
+	vec := filepath.Join(tmp, "vectors.jsonl")
+	writeVectors(t, vec, 6000)
+	one := collect(t, vectorsSource(vec, "m", 1))
+	if len(one) != 6000 {
+		t.Fatalf("one reader: %d files", len(one))
+	}
+	for _, w := range []int{2, 8, 33} {
+		if many := collect(t, vectorsSource(vec, "m", w)); !reflect.DeepEqual(one, many) {
+			t.Fatalf("%d workers: the files differ from one reader's", w)
+		}
+	}
+	of := 9000
+	opt := Options{Sample: 3000, Fit: 20000, Of: &of}
+	outOne, outMany := filepath.Join(tmp, "one", "map"), filepath.Join(tmp, "many", "map")
+	if _, err := Build(vectorsSource(vec, "m", 1), outOne, opt); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Build(vectorsSource(vec, "m", 8), outMany, opt); err != nil {
+		t.Fatal(err)
+	}
+	names, _ := filepath.Glob(filepath.Join(outOne, "*"))
+	if len(names) < 3 {
+		t.Fatalf("map files: %v", names)
+	}
+	for _, a := range names {
+		b := filepath.Join(outMany, filepath.Base(a))
+		x, _ := os.ReadFile(a)
+		y, err := os.ReadFile(b)
+		if filepath.Base(a) == "overview.json" {
+			x, y = withoutTimes(t, x), withoutTimes(t, y)
+		}
+		if err != nil || string(x) != string(y) {
+			t.Fatalf("%s differs between one reader and many", filepath.Base(a))
+		}
+	}
+	if more, _ := filepath.Glob(filepath.Join(outMany, "*")); len(more) != len(names) {
+		t.Fatalf("%d map files from many readers, %d from one", len(more), len(names))
+	}
+}
+
+// withoutTimes drops the fields of overview.json that say when and how
+// fast the map was built.
+func withoutTimes(t *testing.T, b []byte) []byte {
+	t.Helper()
+	var m map[string]any
+	if err := json.Unmarshal(b, &m); err != nil {
+		t.Fatal(err)
+	}
+	delete(m, "builtAt")
+	delete(m, "ms")
+	delete(m, "readMs")
+	out, _ := json.Marshal(m)
+	return out
+}
+
+// An error from emit stops the read and is returned; nothing is left
+// running.
+func TestVectorsSourceStopsOnEmitError(t *testing.T) {
+	vec := filepath.Join(t.TempDir(), "vectors.jsonl")
+	writeVectors(t, vec, 5000)
+	stop := fmt.Errorf("stop")
+	n := 0
+	_, err := vectorsSource(vec, "m", 8)(func(File) error {
+		if n++; n == 700 {
+			return stop
+		}
+		return nil
+	})
+	if err != stop || n != 700 {
+		t.Fatalf("err %v after %d files", err, n)
+	}
+}

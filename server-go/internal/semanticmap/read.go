@@ -10,8 +10,10 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
+	"sync"
 
 	_ "modernc.org/sqlite" // pure Go: sqlite-vec's tables are read as plain tables, no extension
 )
@@ -274,8 +276,17 @@ func IndexSource(index string) Source {
 // length of its mean vector (r), the mean normalized and quantized to int8
 // by sqlite-vec's 'unit' scale, as hex (v), and, for some, the start of its
 // text (t). sqlite-vec truncates (x + 1) * 127.5 - 128, so each value is
-// read back at the middle of its step.
+// read back at the middle of its step. Lines are decoded and their terms
+// taken on every CPU, and handed to emit in file order, so the map is the
+// same as from one reader.
 func VectorsSource(path, model string) Source {
+	return vectorsSource(path, model, runtime.GOMAXPROCS(0))
+}
+
+// vectorsBatch is how many lines a worker decodes at a time.
+const vectorsBatch = 256
+
+func vectorsSource(path, model string, workers int) Source {
 	return func(emit func(File) error) (int, error) {
 		f, err := os.Open(path)
 		if err != nil {
@@ -284,54 +295,148 @@ func VectorsSource(path, model string) Source {
 		defer f.Close()
 		sc := bufio.NewScanner(f)
 		sc.Buffer(make([]byte, 1<<20), 64<<20)
-		for sc.Scan() {
-			var row struct {
-				P *string  `json:"p"`
-				R *float64 `json:"r"`
-				V string   `json:"v"`
-				T string   `json:"t"`
-			}
-			if json.Unmarshal(sc.Bytes(), &row) != nil || row.P == nil {
-				continue
-			}
-			q, err := hex.DecodeString(row.V)
-			if err != nil || len(q) != Dims {
-				continue
-			}
-			x := make([]float64, Dims)
-			norm := 0.0
-			for i, b := range q {
-				v := float64(int8(b))
-				sign := 0.0
-				if v > 0 {
-					sign = 1
-				} else if v < 0 {
-					sign = -1
+		if workers <= 1 {
+			for sc.Scan() {
+				if file, ok := vectorLine(sc.Bytes(), model); ok {
+					if err := emit(file); err != nil {
+						return 0, err
+					}
 				}
-				x[i] = (v+sign*0.5+128)/127.5 - 1
-				norm += x[i] * x[i]
 			}
-			norm = math.Sqrt(norm)
-			r := 1.0
-			if row.R != nil && *row.R != 0 {
-				r = *row.R
+			return 0, sc.Err()
+		}
+		// The reader cuts the file into batches and sends each to the
+		// workers and, in file order, to this goroutine, which waits for
+		// each batch in turn and emits its files. Both channels bound the
+		// batches in flight.
+		type batch struct {
+			data  []byte
+			ends  []int
+			files []File
+			done  chan struct{}
+		}
+		jobs := make(chan *batch, 2*workers)
+		order := make(chan *batch, 4*workers)
+		stop := make(chan struct{})
+		var readErr error
+		var wg sync.WaitGroup
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			defer close(order)
+			defer close(jobs)
+			for {
+				b := &batch{done: make(chan struct{})}
+				for len(b.ends) < vectorsBatch && sc.Scan() {
+					b.data = append(b.data, sc.Bytes()...)
+					b.ends = append(b.ends, len(b.data))
+				}
+				if len(b.ends) == 0 {
+					readErr = sc.Err()
+					return
+				}
+				select {
+				case order <- b:
+				case <-stop:
+					return
+				}
+				select {
+				case jobs <- b:
+				case <-stop:
+					return
+				}
 			}
-			scale := 0.0
-			if norm > 0 {
-				scale = r / norm
+		}()
+		for range workers {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for b := range jobs {
+					start := 0
+					for _, end := range b.ends {
+						if file, ok := vectorLine(b.data[start:end], model); ok {
+							b.files = append(b.files, file)
+						}
+						start = end
+					}
+					close(b.done)
+				}
+			}()
+		}
+		var emitErr error
+		for b := range order {
+			<-b.done
+			for _, file := range b.files {
+				if emitErr = emit(file); emitErr != nil {
+					break
+				}
 			}
-			vec := make([]float32, Dims)
-			for i := range x {
-				vec[i] = float32(x[i] * scale)
-			}
-			var terms []TermCount
-			if row.T != "" {
-				terms = fileTerms(wholeWords([]string{row.T}))
-			}
-			if err := emit(File{Path: *row.P, Vec: vec, Model: model, Terms: terms}); err != nil {
-				return 0, err
+			if emitErr != nil {
+				close(stop)
+				break
 			}
 		}
-		return 0, sc.Err()
+		if emitErr != nil {
+			// Let the reader and workers finish; a batch the reader still
+			// holds is dropped.
+			go func() {
+				for range order {
+				}
+			}()
+		}
+		wg.Wait()
+		if emitErr != nil {
+			return 0, emitErr
+		}
+		return 0, readErr
 	}
+}
+
+// vectorLine decodes one line of a vectors.jsonl; ok is false for a line
+// that is not a file with a whole vector, which is skipped.
+func vectorLine(line []byte, model string) (File, bool) {
+	var row struct {
+		P *string  `json:"p"`
+		R *float64 `json:"r"`
+		V string   `json:"v"`
+		T string   `json:"t"`
+	}
+	if json.Unmarshal(line, &row) != nil || row.P == nil {
+		return File{}, false
+	}
+	q, err := hex.DecodeString(row.V)
+	if err != nil || len(q) != Dims {
+		return File{}, false
+	}
+	x := make([]float64, Dims)
+	norm := 0.0
+	for i, b := range q {
+		v := float64(int8(b))
+		sign := 0.0
+		if v > 0 {
+			sign = 1
+		} else if v < 0 {
+			sign = -1
+		}
+		x[i] = (v+sign*0.5+128)/127.5 - 1
+		norm += x[i] * x[i]
+	}
+	norm = math.Sqrt(norm)
+	r := 1.0
+	if row.R != nil && *row.R != 0 {
+		r = *row.R
+	}
+	scale := 0.0
+	if norm > 0 {
+		scale = r / norm
+	}
+	vec := make([]float32, Dims)
+	for i := range x {
+		vec[i] = float32(x[i] * scale)
+	}
+	var terms []TermCount
+	if row.T != "" {
+		terms = fileTerms(wholeWords([]string{row.T}))
+	}
+	return File{Path: *row.P, Vec: vec, Model: model, Terms: terms}, true
 }
