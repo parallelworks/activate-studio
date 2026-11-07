@@ -33,8 +33,12 @@ type Config struct {
 	RunScript string // Tree/studio-run.sh
 	AppDir    string // holds server/dist/main.js and web/dist
 	Node      string
-	DataDir   string
-	KBRoot    string // the default documents folder, when studio.env names none
+	// GoServer and SemanticMap: the Go front server and map binary, with
+	// STUDIO_GO_SERVER=1 (goServerPaths); empty otherwise.
+	GoServer    string
+	SemanticMap string
+	DataDir     string
+	KBRoot      string // the default documents folder, when studio.env names none
 	// Wails' asset origin on this platform, where the start page is shown.
 	StartOrigin string
 
@@ -82,13 +86,15 @@ func NewApp(cfg Config) *App {
 	a.proxy = NewProxy(a)
 	a.state = ShellState{Phase: "starting", Message: "Starting ACTIVATE Studio…"}
 	a.sup = &Supervisor{
-		RunScript: cfg.RunScript,
-		Node:      cfg.Node,
-		Script:    filepath.Join(cfg.AppDir, "server", "dist", "main.js"),
-		AppDir:    cfg.AppDir,
-		DataDir:   cfg.DataDir,
-		KBRoot:    cfg.KBRoot,
-		Events:    a.onServerEvent,
+		RunScript:   cfg.RunScript,
+		Node:        cfg.Node,
+		Script:      filepath.Join(cfg.AppDir, "server", "dist", "main.js"),
+		GoServer:    cfg.GoServer,
+		SemanticMap: cfg.SemanticMap,
+		AppDir:      cfg.AppDir,
+		DataDir:     cfg.DataDir,
+		KBRoot:      cfg.KBRoot,
+		Events:      a.onServerEvent,
 	}
 	if cfg.Test {
 		a.test = NewSelfTest(a)

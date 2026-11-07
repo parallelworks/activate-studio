@@ -13,6 +13,13 @@ package main
 // exactly as the run loop does without a window; the shell does the
 // restarting itself. Without a tree (a checkout, and Windows) it starts
 // node directly.
+//
+// With GoServer set (STUDIO_GO_SERVER=1, see goServerPaths) the server is
+// the Go front server (server-go/cmd/studio-server, docs/GO-PORT.md), which
+// starts Node behind it on a loopback port (STUDIO_NODE_SPAWN=1) and passes
+// on Node's exit status, so 75 and 76 work as before. With a tree the run
+// script starts it (STUDIO_GO_SERVER_BIN); without one the supervisor does.
+// SemanticMap, when set, is given to the server as STUDIO_SEMANTIC_MAP_BIN.
 
 import (
 	"bufio"
@@ -44,14 +51,16 @@ type ServerEvent struct {
 }
 
 type Supervisor struct {
-	RunScript string // the payload's studio-run.sh; when set the server starts through it
-	Node      string // the node binary (no RunScript)
-	Script    string // server/dist/main.js (no RunScript)
-	AppDir    string // the Studio checkout or bundle (the server's working directory)
-	DataDir   string // per-user data: studio.env, index, logs
-	KBRoot    string // the documents folder
-	Events    func(ServerEvent)
-	Pause     time.Duration // the wait before starting again after an update's stop (default 2 s; tests shorten it)
+	RunScript   string // the payload's studio-run.sh; when set the server starts through it
+	Node        string // the node binary (no RunScript)
+	Script      string // server/dist/main.js (no RunScript)
+	GoServer    string // studio-server, the Go front server; empty: Node alone
+	SemanticMap string // the Go semantic-map binary, for STUDIO_SEMANTIC_MAP_BIN; empty: the server's default
+	AppDir      string // the Studio checkout or bundle (the server's working directory)
+	DataDir     string // per-user data: studio.env, index, logs
+	KBRoot      string // the documents folder
+	Events      func(ServerEvent)
+	Pause       time.Duration // the wait before starting again after an update's stop (default 2 s; tests shorten it)
 
 	mu       sync.Mutex
 	child    *serverProcess
@@ -314,9 +323,26 @@ func (s *Supervisor) command(port int, settings map[string]string) *exec.Cmd {
 		cmd := exec.Command("/bin/bash", s.RunScript, "--once", s.DataDir)
 		cmd.Dir = s.DataDir
 		// studio.env still wins over STUDIO_RUN_PORT, as choosePort expects.
-		cmd.Env = append(os.Environ(), "STUDIO_RUN_PORT="+strconv.Itoa(port))
+		// Which server runs is the shell's choice, not an inherited variable's.
+		cmd.Env = append(envWithout(os.Environ(), "STUDIO_GO_SERVER_BIN"), "STUDIO_RUN_PORT="+strconv.Itoa(port))
 		if s.KBRoot != "" {
 			cmd.Env = append(cmd.Env, "STUDIO_DEFAULT_KB="+s.KBRoot)
+		}
+		if s.GoServer != "" {
+			cmd.Env = append(cmd.Env, "STUDIO_GO_SERVER_BIN="+s.GoServer)
+			if s.SemanticMap != "" {
+				cmd.Env = append(envWithout(cmd.Env, "STUDIO_SEMANTIC_MAP_BIN"), "STUDIO_SEMANTIC_MAP_BIN="+s.SemanticMap)
+			}
+		}
+		return cmd
+	}
+	if s.GoServer != "" {
+		cmd := exec.Command(s.GoServer)
+		cmd.Dir = s.AppDir
+		cmd.Env = append(s.serverEnv(port, settings),
+			"STUDIO_NODE_SPAWN=1", "STUDIO_NODE_BIN="+s.Node, "STUDIO_NODE_MAIN="+s.Script, "STUDIO_PROJECT_ROOT="+s.AppDir)
+		if s.SemanticMap != "" {
+			cmd.Env = append(envWithout(cmd.Env, "STUDIO_SEMANTIC_MAP_BIN"), "STUDIO_SEMANTIC_MAP_BIN="+s.SemanticMap)
 		}
 		return cmd
 	}
@@ -324,6 +350,50 @@ func (s *Supervisor) command(port int, settings map[string]string) *exec.Cmd {
 	cmd.Dir = s.AppDir
 	cmd.Env = s.serverEnv(port, settings)
 	return cmd
+}
+
+// envWithout is env less the variables named.
+func envWithout(env []string, names ...string) []string {
+	out := make([]string, 0, len(env))
+next:
+	for _, kv := range env {
+		for _, n := range names {
+			if strings.HasPrefix(kv, n+"=") {
+				continue next
+			}
+		}
+		out = append(out, kv)
+	}
+	return out
+}
+
+// goServerPaths: with STUDIO_GO_SERVER=1, the Go front server and the Go
+// semantic map, from the tree (app/bin/) or a checkout (server-go/bin/), or
+// STUDIO_GO_SERVER_BIN and STUDIO_SEMANTIC_MAP_BIN when set. Empty when the
+// opt-in is off or studio-server is not there, which leaves Node alone.
+func goServerPaths(getenv func(string) string, tree, appDir string) (server, semanticMap string) {
+	if getenv("STUDIO_GO_SERVER") != "1" {
+		return "", ""
+	}
+	dir := filepath.Join(appDir, "server-go", "bin")
+	if tree != "" {
+		dir = filepath.Join(tree, "app", "bin")
+	}
+	server = getenv("STUDIO_GO_SERVER_BIN")
+	if server == "" {
+		server = filepath.Join(dir, "studio-server")
+	}
+	if st, err := os.Stat(server); err != nil || st.IsDir() {
+		return "", ""
+	}
+	semanticMap = getenv("STUDIO_SEMANTIC_MAP_BIN")
+	if semanticMap == "" {
+		semanticMap = filepath.Join(dir, "semantic-map")
+	}
+	if _, err := os.Stat(semanticMap); err != nil {
+		semanticMap = ""
+	}
+	return server, semanticMap
 }
 
 // choosePort: the port studio.env names (Settings, Server saves one there),

@@ -195,6 +195,16 @@ while [ "$stopping" = 0 ]; do
     if [ -d "$RES/models/minilm-l6" ] && { [ -L "$onnx" ] || [ ! -e "$onnx" ]; }; then
       ln -sfn "$RES/models/minilm-l6" "$onnx"
     fi
+    # The window's opt-in to the Go front server (STUDIO_GO_SERVER=1 in the
+    # shell, which names the binary): it listens on PORT and starts this
+    # Node server behind it on a loopback port, passing on Node's exit
+    # status (docs/GO-PORT.md).
+    if [ -n "${STUDIO_GO_SERVER_BIN:-}" ] && [ -x "$STUDIO_GO_SERVER_BIN" ]; then
+      echo "$(stamp) starting the Go server on http://127.0.0.1:$PORT/ with $KB_ROOT, Node behind it"
+      export STUDIO_NODE_SPAWN=1 STUDIO_NODE_BIN="$RES/node/bin/node" \
+        STUDIO_NODE_MAIN="$RES/app/server/dist/main.js" STUDIO_PROJECT_ROOT="$RES/app"
+      exec "$STUDIO_GO_SERVER_BIN"
+    fi
     echo "$(stamp) starting on http://127.0.0.1:$PORT/ with $KB_ROOT"
     exec "$RES/node/bin/node" "$RES/app/server/dist/main.js"
   ) >>"$LOG" 2>&1 &
