@@ -10,9 +10,9 @@ The Go server (`server-go/cmd/studio-server`) takes the Node server's place on `
 |---|---|
 | a route registered in `internal/server/server.go` (`routes()`) | Go |
 | `/api/*`, `/v1/*`, `/internal/*`, `/manifest.webmanifest` | Node (Node's routes outside `/api` win over a static file of the same name, as in Fastify) |
-| any other GET or HEAD | the file in `web/dist`, else `index.html`, with Node's cache rules (`/assets/*-<hash>.*` immutable for a year, everything else `no-store, must-revalidate`) |
+| any other GET or HEAD | the file in `web/dist`, else `index.html`, with Node's cache rules (`/assets/*-<hash>.*` immutable for a year, everything else `no-store, must-revalidate`); text types of 1 KB or more brotli or gzip compressed, which Node does not do |
 
-The proxy keeps the browser's `Host`, adds `X-Forwarded-*`, and flushes as it reads, so the two event streams (`/api/chat/stream`, `/v1/chat/completions`) and the session relay are not buffered. When Node does not answer, an API request gets a 502 with `{error}`. Node has no route that checks the client address, so being behind a proxy changes nothing for it.
+The proxy keeps the browser's `Host`, adds `X-Forwarded-*`, and writes `text/event-stream` responses and responses without a `Content-Length` out as it reads them, so the two event streams (`/api/chat/stream`, `/v1/chat/completions`) and the session relay are not buffered; a response of known length goes out in one write when it ends (`FlushInterval: 0`). Static files are compressed once per file and encoding, kept in memory by path, size and modification time, and carry `Vary: Accept-Encoding` and an ETag per encoding (Node's `W/"size-mtime"`, with `-br` or `-gz` for a compressed body). When Node does not answer, an API request gets a 502 with `{error}`. Node has no route that checks the client address, so being behind a proxy changes nothing for it.
 
 Two rules decide what can move when:
 
@@ -35,7 +35,7 @@ server-go/
   scripts/compare_semantic_map.py  Python against Go on the same inputs
 ```
 
-Dependencies: `modernc.org/sqlite` (pure Go SQLite, no cgo, so cross-compiling for macOS, Linux and Windows stays `GOOS=... go build`) and `gonum.org/v1/gonum` (the PCA's eigendecomposition). The server itself uses the standard library only (`net/http`, `httputil.ReverseProxy`, `log/slog`).
+Dependencies: `modernc.org/sqlite` (pure Go SQLite, no cgo, so cross-compiling for macOS, Linux and Windows stays `GOOS=... go build`) and `gonum.org/v1/gonum` (the PCA's eigendecomposition). The server itself uses the standard library (`net/http`, `httputil.ReverseProxy`, `log/slog`) and `github.com/andybalholm/brotli` (pure Go, no dependencies outside its tests) for brotli.
 
 ```
 cd server-go
@@ -57,7 +57,7 @@ Environment the Go server reads today:
 | `STUDIO_PROJECT_ROOT` | the folder above the binary or working directory holding `web/` and `server/` | where `web/dist` and `server/dist` are |
 | `STUDIO_WEB_DIST` | `<root>/web/dist` | the built web app |
 | `STUDIO_NODE_URL` | none | a Node server already running |
-| `STUDIO_NODE_SPAWN` | off | `1`: start `node server/dist/main.js` on a free loopback port (`HOST=127.0.0.1`), wait for its `/healthz`, stop it first on SIGTERM (it lets open streams finish, up to 20 s) |
+| `STUDIO_NODE_SPAWN` | off | `1`: start `node server/dist/main.js` on a free loopback port (`HOST=127.0.0.1`), wait until it is ready (a line Node writes once it listens on the pipe it is given as `STUDIO_READY_FD`, else its `/healthz`, polled from 5 ms up to every 100 ms), stop it first on SIGTERM (it lets open streams finish, up to 20 s) |
 | `STUDIO_NODE_BIN`, `STUDIO_NODE_MAIN` | `node`, `<root>/server/dist/main.js` | how to start Node |
 | `STUDIO_LOG_FORMAT` | `json` | `text` for a terminal; one access-log line per request with `via` = `go`, `node` or `static` |
 | `STUDIO_SEMANTIC_MAP_BIN` | none | read by the Node server: run this binary in place of `indexer/semantic_map.py` |
@@ -190,7 +190,7 @@ Equivalent means: the same number of files and clusters, the same schema, the sa
 | remote int8 vectors, 14 topics | 5,600 | 14, 14 | 0.908 | 0.908 | 11/14 | 16/20 | 1.0, 1.0, 1.0 | 2.96 s, 0.43 s |
 | 14 topics, past the 20,000-file fit | 49,994 | 14, 14 | 1.0 | 0.908 | 14/14 | 18/18 | 0.998, 0.998, 0.950 | 10.5 s, 4.5 s |
 
-Schema and sample rule held in every case. Where k-means has more than one good answer (the second and third rows) Go lands within Python's own seed-to-seed spread; on the largest case Go matched Python's seed 0 exactly while Python's seed 1 did not. The third axis correlates less on the largest case because both fit the PCA on a different random 20,000 of the 50,000 files and the 14 topics give near-equal eigenvalues. On that case reading took 3.2 s of Go's 4.5 s and 6.0 s of Python's 10.3 s. Times include process start (Python's import of numpy).
+Schema and sample rule held in every case. Where k-means has more than one good answer (the second and third rows) Go lands within Python's own seed-to-seed spread; on the largest case Go matched Python's seed 0 exactly while Python's seed 1 did not. The third axis correlates less on the largest case because both fit the PCA on a different random 20,000 of the 50,000 files and the 14 topics give near-equal eigenvalues. On that case reading took 3.2 s of Go's 4.5 s and 6.0 s of Python's 10.3 s. Times include process start (Python's import of numpy). Go now reads `vectors.jsonl` on every core (see Performance).
 
 In the Node test suite `semanticMap.test.mjs` passes 10 of 10 against the binary, and a Node process with `STUDIO_SEMANTIC_MAP_BIN` set and `PYTHON_BIN` pointing nowhere built the main folder's map through `scheduleSemanticMapRebuild`.
 
@@ -200,6 +200,25 @@ To repeat the comparison (numpy from `indexer/.deps`, which `indexer/fetch_embed
 cd server-go && go build -o bin/semantic-map ./cmd/semantic-map
 PYTHONPATH=../indexer/.deps python3 scripts/compare_semantic_map.py --go bin/semantic-map --work /tmp/map-compare
 ```
+
+## Performance
+
+Measured on a shared 20-core Linux host (load average 3 to 12 during the runs, recorded with each run) with the harness kept outside the repository; medians of 3 rounds, 10 runs for startup. "Before" is 3065f7d.
+
+| What | Before | After |
+|---|---|---|
+| Start to first `/healthz`, warm (Node alone 305 ms) | 425 ms | 311 ms |
+| Start to first `/healthz`, cold (Node alone 351 ms) | 433 ms | 362 ms |
+| Go CPU per proxied request, c = 20 (`/api/whoami`, `/api/libraries`, `/api/config`) | 300, 202, 169 µs | 93, 78, 94 µs |
+| Requests/s through Go, c = 20 (same routes) | 19,444, 22,540, 8,968 | 36,004, 25,883, 10,550 |
+| Proxy overhead p50 / p99 at c = 20, front minus Node behind (`/api/whoami`, `/api/config`; 7f69fad before) | 0.27 / 1.68, 0.24 / 1.40 ms | 0.18 / 0.69, 0.15 / 1.04 ms |
+| Entry script (2.78 MB), bytes sent with br accepted | 2,782,821 | 789,009 (gzip 907,980) |
+| Entry script, c = 50, requests/s and p50 (Node alone 1,075, 46 ms) | 7,132, 6.2 ms | 15,260, 2.9 ms |
+| Style sheet (282 KB), bytes sent with br accepted | 281,751 | 45,807 |
+| Semantic map from `vectors.jsonl`, 1M files: whole build, reading, peak RSS | 24.0 s, 17.1 s, 372 MB | 9.2 s, 2.6 s, 427 MB |
+| Same, 200,000 files | 5.7 s, 3.6 s, 182 MB | 2.6 s, 0.5 s, 262 MB |
+
+Event streams are unchanged by the flushing change (time to first event and the gaps between events through Go match Node's within run-to-run spread). At concurrency 1 the proxy numbers moved by up to 2x between rounds for both builds, in step with Node's own CPU per request, so no change there can be claimed. The first request for the entry script after a start waits about 90 ms for its compression when it arrives before the background pass has done it. The map's output at 1M files is the same as 3065f7d's, byte for byte apart from the build times; what remains of its time is the clustering after the read, still on one core.
 
 ## Open questions
 
