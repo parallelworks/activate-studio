@@ -282,3 +282,89 @@ func TestProxyKeepsConnectionsForABurst(t *testing.T) {
 		t.Fatalf("connections to Node: %d for the first burst, %d more for the second", first, opened-first)
 	}
 }
+
+// Every event of a stream reaches the browser before Node writes the next
+// one: Node here waits for the client to read each event, so a buffered
+// proxy would stall. This holds for both event streams, for an event
+// stream whose type carries a charset, and for a response with no length
+// (the session relay).
+func TestStreamsAreNotBuffered(t *testing.T) {
+	next := make(chan struct{})
+	node := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/chat/stream", "/v1/chat/completions":
+			w.Header().Set("Content-Type", "text/event-stream")
+		case "/api/charset-stream":
+			w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
+		default: // the relay: chunked, no Content-Length
+			w.Header().Set("Content-Type", "text/html")
+		}
+		for i := 0; i < 3; i++ {
+			fmt.Fprintf(w, "data: %d\n\n", i)
+			w.(http.Flusher).Flush()
+			select {
+			case <-next:
+			case <-time.After(5 * time.Second):
+				return
+			}
+		}
+	}))
+	t.Cleanup(node.Close)
+	u, _ := url.Parse(node.URL)
+	f := front(t, webDist(t), u)
+	for _, p := range []string{"/api/chat/stream", "/v1/chat/completions", "/api/charset-stream", "/api/session-proxy/h/x"} {
+		req, _ := http.NewRequest("POST", f.URL+p, strings.NewReader("{}"))
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		lines := make(chan string)
+		go func() {
+			br := bufio.NewReader(res.Body)
+			for {
+				l, err := br.ReadString('\n')
+				if err != nil {
+					close(lines)
+					return
+				}
+				if l != "\n" {
+					lines <- l
+				}
+			}
+		}()
+		for i := 0; i < 3; i++ {
+			select {
+			case l := <-lines:
+				if l != fmt.Sprintf("data: %d\n", i) {
+					t.Fatalf("%s: event %d is %q", p, i, l)
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatalf("%s: event %d did not arrive before Node wrote the next: buffered", p, i)
+			}
+			next <- struct{}{}
+		}
+		res.Body.Close()
+	}
+}
+
+// A response of known length is not flushed on its way through (it is
+// written out once, when it ends); an event stream is.
+func TestOnlyStreamsAreFlushed(t *testing.T) {
+	node := fakeNode(t)
+	u, _ := url.Parse(node.URL)
+	s := New(config.Config{WebDist: webDist(t), GufiBin: t.TempDir(), GufiIndex: filepath.Join(t.TempDir(), "none")},
+		slog.New(slog.NewTextHandler(io.Discard, nil)), u)
+	rec := httptest.NewRecorder()
+	s.ServeHTTP(rec, httptest.NewRequest("GET", "/api/config", nil))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"node":"GET /api/config"`) {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+	if rec.Flushed {
+		t.Fatal("a JSON answer of known length was flushed")
+	}
+	rec = httptest.NewRecorder()
+	s.ServeHTTP(rec, httptest.NewRequest("GET", "/api/stream", nil))
+	if !rec.Flushed || !strings.Contains(rec.Body.String(), "data: 2") {
+		t.Fatalf("event stream: flushed %v, body %q", rec.Flushed, rec.Body.String())
+	}
+}

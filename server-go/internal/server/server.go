@@ -11,6 +11,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/config"
@@ -122,9 +123,14 @@ func newProxy(target *url.URL, log *slog.Logger) *httputil.ReverseProxy {
 			pr.Out.Host = pr.In.Host
 			pr.SetXForwarded()
 		},
-		// Server-sent events (/api/chat/stream, /v1/chat/completions) go out
-		// as Node writes them.
-		FlushInterval: -1,
+		// 0 flushes only what streams: ReverseProxy writes a response out
+		// as Node sends it when it is text/event-stream (/api/chat/stream,
+		// /v1/chat/completions) or has no Content-Length (the session relay,
+		// chunked downloads). A response of known length, every JSON answer,
+		// goes out when it ends, in place of a flush (a write to the socket)
+		// for its header and each read from Node.
+		FlushInterval: 0,
+		BufferPool:    copyBuffers{},
 		Transport:     nodeTransport(),
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
 			log.Warn("node unreachable", "path", r.URL.Path, "err", err.Error())
@@ -146,6 +152,15 @@ func nodeTransport() *http.Transport {
 	t.IdleConnTimeout = 60 * time.Second
 	return t
 }
+
+// copyBuffers reuses ReverseProxy's 32 KB copy buffers, which it would
+// otherwise allocate for every proxied request.
+type copyBuffers struct{}
+
+var copyBufferPool = sync.Pool{New: func() any { b := make([]byte, 32<<10); return &b }}
+
+func (copyBuffers) Get() []byte  { return *copyBufferPool.Get().(*[]byte) }
+func (copyBuffers) Put(b []byte) { copyBufferPool.Put(&b) }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
