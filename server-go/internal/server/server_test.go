@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -227,3 +229,56 @@ func TestAbortedStreamIsLogged(t *testing.T) {
 type writerFunc func([]byte)
 
 func (f writerFunc) Write(b []byte) (int, error) { f(append([]byte(nil), b...)); return len(b), nil }
+
+// A second burst of concurrent requests reuses the connections to Node the
+// first one opened, in place of opening new ones.
+func TestProxyKeepsConnectionsForABurst(t *testing.T) {
+	var mu sync.Mutex
+	opened := 0
+	hold := make(chan struct{})
+	node := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-hold
+		w.Write([]byte("{}"))
+	}))
+	node.Config.ConnState = func(c net.Conn, st http.ConnState) {
+		if st == http.StateNew {
+			mu.Lock()
+			opened++
+			mu.Unlock()
+		}
+	}
+	node.Start()
+	t.Cleanup(node.Close)
+	u, _ := url.Parse(node.URL)
+	f := front(t, webDist(t), u)
+	client := &http.Client{Transport: &http.Transport{MaxIdleConnsPerHost: 100}}
+	burst := func() {
+		var wg sync.WaitGroup
+		for i := 0; i < 20; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				res, err := client.Get(f.URL + "/api/x")
+				if err == nil {
+					io.Copy(io.Discard, res.Body)
+					res.Body.Close()
+				}
+			}()
+		}
+		time.Sleep(200 * time.Millisecond) // all 20 waiting in Node at once
+		for i := 0; i < 20; i++ {
+			hold <- struct{}{}
+		}
+		wg.Wait()
+	}
+	burst()
+	mu.Lock()
+	first := opened
+	mu.Unlock()
+	burst()
+	mu.Lock()
+	defer mu.Unlock()
+	if first != 20 || opened-first > 2 {
+		t.Fatalf("connections to Node: %d for the first burst, %d more for the second", first, opened-first)
+	}
+}

@@ -125,11 +125,26 @@ func newProxy(target *url.URL, log *slog.Logger) *httputil.ReverseProxy {
 		// Server-sent events (/api/chat/stream, /v1/chat/completions) go out
 		// as Node writes them.
 		FlushInterval: -1,
+		Transport:     nodeTransport(),
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
 			log.Warn("node unreachable", "path", r.URL.Path, "err", err.Error())
 			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "the Node server is not answering"})
 		},
 	}
+}
+
+// nodeTransport is how the proxy reaches Node. http.DefaultTransport keeps
+// two idle connections per host, so a burst of requests (the page's polls,
+// searches across libraries, a chat) opened a new connection to Node for
+// nearly every request and closed it after; this keeps enough for a burst.
+// Idle connections are dropped before Node's keep-alive timeout (72 s,
+// main.ts) would close them under a request.
+func nodeTransport() *http.Transport {
+	t := http.DefaultTransport.(*http.Transport).Clone()
+	t.MaxIdleConns = 512
+	t.MaxIdleConnsPerHost = 256
+	t.IdleConnTimeout = 60 * time.Second
+	return t
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
