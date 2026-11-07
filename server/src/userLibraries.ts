@@ -577,6 +577,9 @@ export interface SshProbe {
   shell?: boolean
   /** The index carries full-text (words) tables, found by hasWords. */
   fullText?: boolean
+  /** The index carries the Studio's vector tables (gvec) somewhere in its
+   *  tree, counted by countIndex; undefined where that could not be told. */
+  vectors?: boolean
   /** Which GUFI wrote the index, found by remoteFormat. */
   indexFormat?: FormatRecord
   /** For adding the library: the host's `uname -s`, the paths with ~
@@ -748,15 +751,40 @@ async function probeIndex(h: ProbeHost, spec: { indexRoot: string; gufiBin: stri
 /** The index's directories and files in one aggregate gufi_query, and
  *  why not when it could not read them. gufi_query exits 0 either way: a
  *  directory that is missing, a file, or a folder without a db.db leaves
- *  the sums empty and says why on stderr. */
+ *  the sums empty and says why on stderr. The same walk counts the
+ *  directories with the Studio's vector table (gvec; gufi_query attaches
+ *  each directory's database as `tree`), so search by meaning knows the
+ *  index has vectors wherever they are in the tree; a GUFI that cannot
+ *  answer that is asked for the counts alone, and vectors stay unknown. */
 async function countIndex(h: ProbeHost, run: Run, bin: string, indexRoot: string) {
-  const c = await run([gufiTool(bin), '-n', String(await remoteThreads(h.site, h.key)), '-d', '|', '-a', '1',
-    '-I', 'CREATE TABLE t (d INT64, f INT64);', '-K', 'CREATE TABLE agg (d INT64, f INT64);',
-    '-E', 'INSERT INTO t SELECT count(*), sum(totfiles) FROM vrsummary;', '-J', 'INSERT INTO agg SELECT * FROM t;',
-    '-G', 'SELECT sum(d), sum(f) FROM agg;', indexRoot], 60_000)
-  const [d, f] = lastLine(c.stdout).split('|').map(s => (s.trim() ? Number(s) : NaN))
-  if (Number.isFinite(d)) return { directories: d, files: Number.isFinite(f) ? f : undefined, slow: false, error: '' }
-  return { directories: undefined, files: undefined, slow: /did not finish/.test(c.stderr), error: lastLine(c.stderr) || `exit ${c.code}` }
+  const threads = String(await remoteThreads(h.site, h.key))
+  const walk = (vectors: boolean) => run([gufiTool(bin), '-n', threads, '-d', '|', '-a', '1',
+    '-I', `CREATE TABLE t (d INT64, f INT64${vectors ? ', v INT64' : ''});`, '-K', `CREATE TABLE agg (d INT64, f INT64${vectors ? ', v INT64' : ''});`,
+    '-E', `INSERT INTO t SELECT count(*), sum(totfiles)${vectors ? ", (SELECT count(*) FROM tree.sqlite_master WHERE name = 'gvec')" : ''} FROM vrsummary;`,
+    '-J', 'INSERT INTO agg SELECT * FROM t;',
+    '-G', `SELECT sum(d), sum(f)${vectors ? ', sum(v)' : ''} FROM agg;`, indexRoot], 60_000)
+  const parse = (out: string) => lastLine(out).split('|').map(s => (s.trim() ? Number(s) : NaN))
+  let c = await walk(true)
+  let [d, f, v] = parse(c.stdout)
+  if (!Number.isFinite(d) && !/did not finish/.test(c.stderr)) {
+    c = await walk(false);
+    [d, f] = parse(c.stdout)
+    v = NaN
+  }
+  if (Number.isFinite(d)) return { directories: d, files: Number.isFinite(f) ? f : undefined, vectors: Number.isFinite(v) ? v > 0 : undefined, slow: false, error: '' }
+  return { directories: undefined, files: undefined, vectors: undefined, slow: /did not finish/.test(c.stderr), error: lastLine(c.stderr) || `exit ${c.code}` }
+}
+
+/** What the connection test says of an index: its counts, and what search
+ *  covers there. An index without vectors is said to be searched by name
+ *  and words only, so a search by meaning that finds nothing there is not
+ *  a surprise. */
+function indexDetail(directories: number, files: number | undefined, fullText: boolean | undefined, vectors: boolean | undefined): string {
+  const counts = `A GUFI index of ${directories.toLocaleString('en-US')} directories${files != null ? ` and ${files.toLocaleString('en-US')} files` : ''}`
+  const words = fullText ? ', with full-text tables, so search covers the words in its files' : ''
+  const meaning = vectors === true ? (fullText ? ', and vectors, so search by meaning covers it too' : ', with vectors, so search by meaning covers it')
+    : vectors === false ? '. It has no vectors, so search by meaning does not cover it' : ''
+  return `${counts}${words}${meaning}.`
 }
 
 /** Whether an index carries the Studio's full-text tables (words): one
@@ -820,7 +848,7 @@ async function probeQueryOnly(h: ProbeHost, spec: { indexRoot: string; gufiBin: 
   if (n.directories != null) {
     fullText = await hasWords(h, run, bin, indexRoot)
     indexFormat = await remoteFormat(h, run, bin, indexRoot)
-    steps.push({ name: 'index', ok: true, detail: `A GUFI index of ${n.directories.toLocaleString('en-US')} directories${n.files != null ? ` and ${n.files.toLocaleString('en-US')} files` : ''}${fullText ? ', with full-text tables, so search covers the words in its files' : ''}.` })
+    steps.push({ name: 'index', ok: true, detail: indexDetail(n.directories, n.files, fullText, n.vectors) })
   } else if (n.slow) {
     steps.push({ name: 'index', ok: true, detail: `gufi_query reads ${indexRoot}; counting its directories took over a minute, so the count is left out.` })
   } else {
@@ -833,7 +861,7 @@ async function probeQueryOnly(h: ProbeHost, spec: { indexRoot: string; gufiBin: 
   if (spec.sourceRoot) {
     steps.push({ name: 'source', ok: true, warn: true, detail: `The login on ${dest} runs only gufi_query, so files cannot be opened from the Studio; browsing and search work from the index.` })
   }
-  return done({ shell: false, gufiBin: bin, gufiVersion: version || undefined, directories: n.directories, files: n.files, fullText, indexFormat, indexRoot, sourceRoot: null, builtAt: null })
+  return done({ shell: false, gufiBin: bin, gufiVersion: version || undefined, directories: n.directories, files: n.files, fullText, vectors: n.vectors, indexFormat, indexRoot, sourceRoot: null, builtAt: null })
 }
 
 async function probeIndexNow(h: ProbeHost, spec: { indexRoot: string; gufiBin: string | null; sourceRoot: string | null }): Promise<SshProbe> {
@@ -873,7 +901,7 @@ async function probeIndexNow(h: ProbeHost, spec: { indexRoot: string; gufiBin: s
 
   const indexRoot = expand(spec.indexRoot)!
   const at = await run(['sh', '-c', INDEX_CHECK, '_', indexRoot])
-  let directories: number | undefined, files: number | undefined, builtAt: string | null = null, fullText: boolean | undefined, indexFormat: FormatRecord | undefined
+  let directories: number | undefined, files: number | undefined, builtAt: string | null = null, fullText: boolean | undefined, vectors: boolean | undefined, indexFormat: FormatRecord | undefined
   if (at.code === 0) {
     const mtime = Number(lastLine(at.stdout))
     builtAt = mtime > 0 ? new Date(mtime * 1000).toISOString() : null
@@ -884,7 +912,8 @@ async function probeIndexNow(h: ProbeHost, spec: { indexRoot: string; gufiBin: s
         directories = n.directories; files = n.files
         fullText = await hasWords(h, run, bin, indexRoot)
         indexFormat = await remoteFormat(h, run, bin, indexRoot)
-        steps.push({ name: 'index', ok: true, detail: `A GUFI index of ${n.directories.toLocaleString('en-US')} directories${files != null ? ` and ${files.toLocaleString('en-US')} files` : ''}${fullText ? ', with full-text tables, so search covers the words in its files' : ''}.` })
+        vectors = n.vectors
+        steps.push({ name: 'index', ok: true, detail: indexDetail(n.directories, files, fullText, vectors) })
       } else if (n.slow) {
         steps.push({ name: 'index', ok: true, detail: `${indexRoot} has a db.db; counting its directories took over a minute, so the count is left out.` })
       } else {
@@ -908,7 +937,7 @@ async function probeIndexNow(h: ProbeHost, spec: { indexRoot: string; gufiBin: s
       : { name: 'source', ok: false, detail: s.code === 3 ? `${sourceRoot} is not a directory on ${dest}. Leave the source directory empty to browse and search names only.`
         : s.code === 4 ? `${sourceRoot} is there, but the ssh login cannot read it.` : `The source directory could not be checked: ${lastLine(s.stderr) || `exit ${s.code}`}.` })
   }
-  return done({ shell: true, gufiBin: bin.startsWith('/') ? bin : undefined, gufiVersion: version || undefined, directories, files, fullText, indexFormat, os, indexRoot, sourceRoot, builtAt })
+  return done({ shell: true, gufiBin: bin.startsWith('/') ? bin : undefined, gufiVersion: version || undefined, directories, files, fullText, vectors, indexFormat, os, indexRoot, sourceRoot, builtAt })
 }
 
 // ---- building an index on the remote system ----
@@ -1158,7 +1187,7 @@ export async function addFromPw(viewerId: string | null | undefined, a: PwLibrar
   for (let i = 2; defs.some(d => d.id === id); i++) id = `${base}-${i}`
   const def: UserLibraryDef = {
     id, label, transport: 'pw', existing: true, site: spec.cluster, destination: null, port: null, os: p.os || null, gufiVersion: p.gufiVersion ?? null,
-    resource: spec.cluster, sourceDir: p.sourceRoot ?? '', sourceRoot: p.sourceRoot ?? null, indexRoot, gufiBin: p.gufiBin ?? '', ...(p.shell === false ? { shell: false } : {}), ...(p.fullText ? { fullText: true } : {}), ...(p.indexFormat ? { indexFormat: p.indexFormat } : {}),
+    resource: spec.cluster, sourceDir: p.sourceRoot ?? '', sourceRoot: p.sourceRoot ?? null, indexRoot, gufiBin: p.gufiBin ?? '', ...(p.shell === false ? { shell: false } : {}), ...(p.fullText ? { fullText: true } : {}), ...(p.vectors !== undefined ? { vectors: p.vectors } : {}), ...(p.indexFormat ? { indexFormat: p.indexFormat } : {}),
     state: 'ready', run: null, error: null, builtAt: p.builtAt ?? new Date().toISOString(), directories: p.directories ?? null, files: p.files ?? null, scheduler: null,
   }
   saveUserLibraries(owner, [...defs, def])
@@ -1185,7 +1214,7 @@ export async function addFromSsh(viewerId: string | null | undefined, a: SshLibr
   for (let i = 2; defs.some(d => d.id === id); i++) id = `${base}-${i}`
   const def: UserLibraryDef = {
     id, label, transport: 'ssh', site: spec.destination, destination: spec.destination, port: spec.port, ...(spec.sshOptions.length ? { sshOptions: spec.sshOptions } : {}),
-    os: p.os || null, gufiVersion: p.gufiVersion ?? null, resource: sshSite(spec.destination, spec.port, spec.sshOptions), sourceDir: p.sourceRoot ?? '', sourceRoot: p.sourceRoot ?? null, indexRoot, gufiBin: p.gufiBin ?? '', ...(p.shell === false ? { shell: false } : {}), ...(p.fullText ? { fullText: true } : {}), ...(p.indexFormat ? { indexFormat: p.indexFormat } : {}),
+    os: p.os || null, gufiVersion: p.gufiVersion ?? null, resource: sshSite(spec.destination, spec.port, spec.sshOptions), sourceDir: p.sourceRoot ?? '', sourceRoot: p.sourceRoot ?? null, indexRoot, gufiBin: p.gufiBin ?? '', ...(p.shell === false ? { shell: false } : {}), ...(p.fullText ? { fullText: true } : {}), ...(p.vectors !== undefined ? { vectors: p.vectors } : {}), ...(p.indexFormat ? { indexFormat: p.indexFormat } : {}),
     state: 'ready', run: null, error: null, builtAt: p.builtAt ?? new Date().toISOString(), directories: p.directories ?? null, files: p.files ?? null, scheduler: null,
   }
   saveUserLibraries(owner, [...defs, def])
@@ -1208,7 +1237,7 @@ async function recheckExisting(viewerId: string | null | undefined, owner: strin
     error: null, os: p.os || d.os || null, gufiVersion: p.gufiVersion ?? d.gufiVersion ?? null,
     directories: p.directories ?? d.directories, files: p.files ?? d.files, builtAt: p.builtAt ?? d.builtAt,
     // Whether the login runs a shell can change either way between tests.
-    shell: p.shell === false ? false : undefined, fullText: p.fullText ?? d.fullText, indexFormat: p.indexFormat ?? d.indexFormat,
+    shell: p.shell === false ? false : undefined, fullText: p.fullText ?? d.fullText, vectors: p.vectors ?? d.vectors, indexFormat: p.indexFormat ?? d.indexFormat,
   })!
   // The index there was made again since the last test.
   if (!failed && p.builtAt && p.builtAt !== d.builtAt) tell(builtHooks, remoteRootOf(owner, d.id))
@@ -1536,14 +1565,14 @@ export async function userLibraryRoutes(app: FastifyInstance): Promise<void> {
   app.post('/api/user-libraries/ssh/test', async req => {
     if (!sshAllowed(viewer(req))) throw new KbError(403, SSH_SINGLE_USER)
     const p = await probeSsh(sshSpec((req.body ?? {}) as SshLibraryInput))
-    return { ok: p.ok, steps: p.steps, gufiBin: p.gufiBin, gufiVersion: p.gufiVersion, directories: p.directories, shell: p.shell }
+    return { ok: p.ok, steps: p.steps, gufiBin: p.gufiBin, gufiVersion: p.gufiVersion, directories: p.directories, shell: p.shell, vectors: p.vectors }
   })
   app.post('/api/user-libraries/ssh', async req => publicUserLibrary(await addFromSsh(viewer(req), (req.body ?? {}) as SshLibraryInput)))
   // The same test and library for an existing index on a cluster, over pw ssh.
   app.post('/api/user-libraries/pw/test', async req => {
     const { key } = pwKey(viewer(req))
     const p = await probePw(pwSpec((req.body ?? {}) as PwLibraryInput), key)
-    return { ok: p.ok, steps: p.steps, gufiBin: p.gufiBin, gufiVersion: p.gufiVersion, directories: p.directories, shell: p.shell }
+    return { ok: p.ok, steps: p.steps, gufiBin: p.gufiBin, gufiVersion: p.gufiVersion, directories: p.directories, shell: p.shell, vectors: p.vectors }
   })
   app.post('/api/user-libraries/pw', async req => publicUserLibrary(await addFromPw(viewer(req), (req.body ?? {}) as PwLibraryInput)))
   // Building an index on the remote system, over either session: the check, then the build.
