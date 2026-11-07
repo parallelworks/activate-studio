@@ -95,6 +95,9 @@ export interface SemanticMapOverview {
 }
 
 const SCRIPT = path.join(PROJECT_ROOT, 'indexer', 'semantic_map.py')
+/** The Go semantic map (server-go/cmd/semantic-map), used in place of the
+ *  Python script when set; see docs/GO-PORT.md. */
+const GO_MAP_BIN = process.env.STUDIO_SEMANTIC_MAP_BIN || ''
 /** The map the server draws itself when numpy is missing: this many files at most. */
 const FALLBACK_FILES = 4000
 /** A cluster's points per request, at most. */
@@ -321,7 +324,10 @@ function buildWithPython(t: MapTarget): Promise<void> {
     ? ['--vectors', t.remote.vectors, '--model', t.remote.model ?? '', ...(t.remote.of ? ['--of', String(t.remote.of)] : [])]
     : ['--index', t.index]
   return new Promise((resolve, reject) => {
-    execFile(PYTHON_BIN, [SCRIPT, ...from, '--out', t.out],
+    // STUDIO_SEMANTIC_MAP_BIN (opt-in): the Go port (server-go/cmd/semantic-map),
+    // which takes the same arguments and writes the same files.
+    const [bin, args] = GO_MAP_BIN ? [GO_MAP_BIN, from] : [PYTHON_BIN, [SCRIPT, ...from]]
+    execFile(bin, [...args, '--out', t.out],
       { timeout: 30 * 60_000, maxBuffer: 4 * 1024 * 1024, env: indexerEnv({ PYTHONDONTWRITEBYTECODE: '1' }) },
       (err, stdout, stderr) => {
         if (!err) {

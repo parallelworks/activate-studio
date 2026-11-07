@@ -77,8 +77,14 @@ const app = Fastify()
 app.setErrorHandler(sanitizedErrorHandler(app))
 await app.register(M.semanticMapRoutes)
 await app.ready()
+// STUDIO_SEMANTIC_MAP_BIN runs the map's tests against the Go port
+// (server-go/cmd/semantic-map), which takes the same arguments.
+const mapBin = process.env.STUDIO_SEMANTIC_MAP_BIN
+const runMap = (args, opts) => mapBin
+  ? execFileSync(mapBin, args, opts)
+  : execFileSync(python, [path.join(root, 'indexer', 'semantic_map.py'), ...args], opts)
 const get = async url => { const r = await app.inject({ method: 'GET', url }); return { status: r.statusCode, body: r.json() } }
-const runScript = (...extra) => JSON.parse(execFileSync(python, [path.join(root, 'indexer', 'semantic_map.py'), '--index', INDEX, '--out', config.SEMANTIC_MAP_DIR, ...extra], { encoding: 'utf8' }).trim())
+const runScript = (...extra) => JSON.parse(runMap(['--index', INDEX, '--out', config.SEMANTIC_MAP_DIR, ...extra], { encoding: 'utf8' }).trim())
 
 test('the map is made from the stored vectors: every file with embeddings, in clusters named for their folders', { skip: !hasNumpy && 'numpy is not installed' }, () => {
   const summary = runScript('--sample', '100')
@@ -127,7 +133,7 @@ test('a library of a few files maps too: fewer files than the dimensions cluster
   const small = path.join(tmp, 'small')
   writeIndex(small, { notes: 7 }, 5)
   const out = path.join(tmp, 'small-map')
-  const summary = JSON.parse(execFileSync(python, [path.join(root, 'indexer', 'semantic_map.py'), '--index', small, '--out', out], { encoding: 'utf8' }).trim())
+  const summary = JSON.parse(runMap(['--index', small, '--out', out], { encoding: 'utf8' }).trim())
   assert.deepEqual([summary.available, summary.files], [true, 5])
   const overview = JSON.parse(fs.readFileSync(path.join(out, 'overview.json'), 'utf8'))
   assert.equal(overview.clusters.reduce((n, c) => n + c.count, 0), 5)
@@ -176,7 +182,7 @@ for i, (folder, text) in enumerate(words.items()):
     c.commit()
 `])
   const out = path.join(tmp, 'named-map')
-  execFileSync(python, [path.join(root, 'indexer', 'semantic_map.py'), '--index', tmpIdx, '--out', out])
+  runMap(['--index', tmpIdx, '--out', out])
   const overview = JSON.parse(fs.readFileSync(path.join(out, 'overview.json'), 'utf8'))
   assert.equal(overview.version, 3)
   const labels = overview.clusters.map(c => c.label)
@@ -295,7 +301,7 @@ for i, (folder, text) in enumerate(topics.items()):
     c.commit()
 `])
   const out = path.join(tmp, 'cut-map')
-  execFileSync(python, [path.join(root, 'indexer', 'semantic_map.py'), '--index', idx, '--out', out])
+  runMap(['--index', idx, '--out', out])
   const overview = JSON.parse(fs.readFileSync(path.join(out, 'overview.json'), 'utf8'))
   assert.ok(overview.clusters.length >= 3)
   for (const c of overview.clusters) {
@@ -422,7 +428,7 @@ test('a map from fetched vectors: the int8 means put back, clusters named by the
   const vectors = path.join(tmp, 'fetched.jsonl')
   fetchedFile(vectors, [['pw/docs', 'kubernetes helm ingress cluster'], ['wind', 'turbine blade rotor nacelle'], ['kitchen', 'sourdough starter flour oven']], 15)
   const out = path.join(tmp, 'fetched-map')
-  const summary = JSON.parse(execFileSync(python, [path.join(root, 'indexer', 'semantic_map.py'), '--vectors', vectors, '--model', 'minilm-l6-mean-int8', '--of', '900', '--out', out], { encoding: 'utf8' }).trim())
+  const summary = JSON.parse(runMap(['--vectors', vectors, '--model', 'minilm-l6-mean-int8', '--of', '900', '--out', out], { encoding: 'utf8' }).trim())
   assert.deepEqual([summary.available, summary.files, summary.of, summary.model], [true, 45, 900, 'minilm-l6-mean-int8'])
   const overview = JSON.parse(fs.readFileSync(path.join(out, 'overview.json'), 'utf8'))
   assert.deepEqual([overview.files, overview.of], [45, 900])
