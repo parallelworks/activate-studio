@@ -1,0 +1,109 @@
+// Package nodeproc runs the Node server behind the Go front: on a loopback
+// port, with the Go server's environment, until the Go server stops.
+package nodeproc
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+	"net"
+	"net/http"
+	"net/url"
+	"os"
+	"os/exec"
+	"strconv"
+	"time"
+)
+
+// Proc is a running Node server.
+type Proc struct {
+	URL  *url.URL
+	cmd  *exec.Cmd
+	done chan struct{}
+	err  error
+}
+
+// Start runs `nodeBin main` with PORT set to a free loopback port and HOST
+// to 127.0.0.1, so only the Go front is reachable from outside, and waits
+// until its /healthz answers.
+func Start(ctx context.Context, log *slog.Logger, nodeBin, main string, wait time.Duration) (*Proc, error) {
+	port, err := freePort()
+	if err != nil {
+		return nil, err
+	}
+	cmd := exec.Command(nodeBin, main)
+	cmd.Env = append(os.Environ(), "PORT="+strconv.Itoa(port), "HOST=127.0.0.1")
+	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("starting node: %w", err)
+	}
+	p := &Proc{URL: &url.URL{Scheme: "http", Host: "127.0.0.1:" + strconv.Itoa(port)}, cmd: cmd, done: make(chan struct{})}
+	go func() { p.err = cmd.Wait(); close(p.done) }()
+	log.Info("node starting", "pid", cmd.Process.Pid, "url", p.URL.String())
+	deadline := time.Now().Add(wait)
+	for {
+		select {
+		case <-p.done:
+			return nil, fmt.Errorf("node exited before answering: %v", p.err)
+		case <-ctx.Done():
+			p.Stop(5 * time.Second)
+			return nil, ctx.Err()
+		default:
+		}
+		if res, err := http.Get(p.URL.String() + "/healthz"); err == nil {
+			res.Body.Close()
+			if res.StatusCode == http.StatusOK {
+				log.Info("node ready", "pid", cmd.Process.Pid)
+				return p, nil
+			}
+		}
+		if time.Now().After(deadline) {
+			p.Stop(5 * time.Second)
+			return nil, fmt.Errorf("node did not answer within %s", wait)
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+}
+
+// Done is closed when Node exits.
+func (p *Proc) Done() <-chan struct{} { return p.done }
+
+// ExitCode is Node's exit code once Done is closed (76 asks for a relaunch,
+// server/src/lifecycle.ts), or -1.
+func (p *Proc) ExitCode() int {
+	var ee *exec.ExitError
+	if p.err == nil {
+		return 0
+	}
+	if errors.As(p.err, &ee) {
+		return ee.ExitCode()
+	}
+	return -1
+}
+
+// Stop asks Node to stop (it lets open streams finish, up to 20 seconds)
+// and kills it after grace.
+func (p *Proc) Stop(grace time.Duration) {
+	select {
+	case <-p.done:
+		return
+	default:
+	}
+	terminate(p.cmd.Process)
+	select {
+	case <-p.done:
+	case <-time.After(grace):
+		p.cmd.Process.Kill()
+		<-p.done
+	}
+}
+
+func freePort() (int, error) {
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return 0, err
+	}
+	defer l.Close()
+	return l.Addr().(*net.TCPAddr).Port, nil
+}
