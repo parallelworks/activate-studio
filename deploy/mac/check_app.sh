@@ -102,7 +102,12 @@ if [ "$SERVER" != node ]; then
 fi
 if [ "$SERVER" = go-only ]; then
   check "node/bin/node is the stand-in, executable, as older updaters check" sh -c "test -x '$R/node/bin/node' && head -c 2 '$R/node/bin/node' | grep -q '#!'"
-  check "no Node, Python or node_modules" sh -c "! [ -e '$R/python' ] && ! [ -e '$R/app/server/node_modules' ] && ! [ -e '$R/app/indexer' ]"
+  check "no Node, Python or node_modules, and of the indexer only embed_deps.json" sh -c "! [ -e '$R/python' ] && ! [ -e '$R/app/server/node_modules' ] && [ \"\$(ls -A '$R/app/indexer')\" = embed_deps.json ]"
+  check "app/indexer/embed_deps.json, the pins a build on another system is sent" python3 -c 'import json, sys; d = json.load(open(sys.argv[1])); sys.exit(0 if d["model"]["files"]["model.onnx"]["sha256"] else 1)' "$R/app/indexer/embed_deps.json"
+  # The helper a library's build on another system runs, one folder per
+  # platform (internal/userlibs): Linux x64 and arm64 at least, and any
+  # further platform, such as darwin-arm64, holding the same file.
+  check "studio-remote for linux-amd64, linux-arm64 and each platform beside them" sh -c 'd="$1/app/bin/remote"; for p in linux-amd64 linux-arm64; do [ -x "$d/$p/studio-remote" ] || exit 1; done; for p in "$d"/*; do [ -x "$p/studio-remote" ] || exit 1; done' sh "$R"
 fi
 if [ -d "$O" ]; then
   for f in Resources/ocr/bin/tesseract Resources/ocr/lib/libleptonica.6.dylib \
@@ -195,7 +200,10 @@ else
 fi
 elf="$(python3 - "$APP" <<'PY'
 import os, sys
-for d, _dirs, files in os.walk(sys.argv[1]):
+for d, dirs, files in os.walk(sys.argv[1]):
+    # The helpers sent to Linux systems for a library's build there.
+    if d.endswith('/app/bin'):
+        dirs[:] = [x for x in dirs if x != 'remote']
     for f in files:
         p = os.path.join(d, f)
         if not os.path.islink(p):
@@ -204,7 +212,7 @@ for d, _dirs, files in os.walk(sys.argv[1]):
                     print(p)
 PY
 )"
-if [ -z "$elf" ]; then ok "no Linux (ELF) binaries"; else bad "Linux binaries in the app:"; printf '        %s\n' "$elf"; fi
+if [ -z "$elf" ]; then ok "no Linux (ELF) binaries outside app/bin/remote"; else bad "Linux binaries in the app:"; printf '        %s\n' "$elf"; fi
 # Signed by sign_app.sh, with the hardened runtime: every Mach-O file, as
 # file(1) finds them, is signed the same way, as notarization requires and
 # library validation assumes.
@@ -232,7 +240,7 @@ fi
 
 echo "Size"
 echo "  $(du -sh "$APP" | cut -f1)  total"
-for d in node python gufi ocr app/lib app/occt app/bin app/server/node_modules app/web models; do
+for d in node python gufi ocr app/lib app/occt app/bin app/bin/remote app/server/node_modules app/web models; do
   [ -e "$R/$d" ] || continue
   echo "  $(du -sh "$R/$d" | cut -f1)  $d"
 done
