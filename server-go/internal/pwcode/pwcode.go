@@ -118,9 +118,14 @@ func (l *localClient) Call(ctx context.Context, method, route string, body any, 
 	return Request(ctx, client, method, route, body, timeout)
 }
 
-// Request is daemonRequest: one request over client, whose transport
-// reaches the daemon. The timeout (default 30 s) is a plain timer.
-func Request(ctx context.Context, client *http.Client, method, route string, body any, timeout time.Duration) (any, error) {
+// Doer sends one HTTP request (an *http.Client, or a bridge's pipe).
+type Doer interface {
+	Do(*http.Request) (*http.Response, error)
+}
+
+// Request is daemonRequest: one request through client, which reaches the
+// daemon. The timeout (default 30 s) is a plain timer.
+func Request(ctx context.Context, client Doer, method, route string, body any, timeout time.Duration) (any, error) {
 	if timeout <= 0 {
 		timeout = 30 * time.Second
 	}

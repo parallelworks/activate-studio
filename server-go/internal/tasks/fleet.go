@@ -67,6 +67,18 @@ type Fleet struct {
 	loaded bool
 	agents map[string]*jsonv.Object
 	order  []string
+	// stopScheduler ends a scheduler started without an App (tests).
+	stopScheduler context.CancelFunc
+}
+
+// StopScheduler ends a scheduler Start ran without an App.
+func (f *Fleet) StopScheduler() {
+	f.mu.Lock()
+	stop := f.stopScheduler
+	f.mu.Unlock()
+	if stop != nil {
+		stop()
+	}
 }
 
 // NewFleet is the fleet over e; it listens for e's finished tasks.
@@ -626,7 +638,11 @@ func (f *Fleet) Start(a *app.App, every time.Duration) int {
 	if a != nil {
 		a.Go("fleet scheduler", run)
 	} else {
-		go run(context.Background())
+		ctx, cancel := context.WithCancel(context.Background())
+		f.mu.Lock()
+		f.stopScheduler = cancel
+		f.mu.Unlock()
+		go run(ctx)
 	}
 	if n > 0 {
 		f.log("fleet: " + num(float64(n)) + " standing agent(s) loaded")

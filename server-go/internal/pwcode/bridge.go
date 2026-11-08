@@ -1,12 +1,15 @@
 package pwcode
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"io"
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -39,15 +42,19 @@ type bridges struct {
 }
 
 type bridge struct {
-	id        string
-	resource  string
-	transport *http.Transport
-	client    *http.Client
+	id       string
+	resource string
+	spawn    func() *exec.Cmd
+
+	// reqMu makes requests take turns on the one connection (maxSockets 1).
+	reqMu sync.Mutex
 
 	mu     sync.Mutex
 	last   time.Time
 	stderr string
-	conns  map[*pipeConn]struct{}
+	conn   *pipeConn
+	rd     *bufio.Reader
+	dead   bool
 }
 
 func newBridges(s *Service) *bridges {
@@ -106,18 +113,9 @@ func (r *remoteClient) bridge() *bridge {
 	if b := bs.m[r.id]; b != nil {
 		return b
 	}
-	b := &bridge{id: r.id, resource: r.resource, last: time.Now(), conns: map[*pipeConn]struct{}{}}
 	spawn := bs.spawn
 	resource, key := r.resource, r.key
-	b.transport = &http.Transport{
-		DialContext: func(context.Context, string, string) (net.Conn, error) {
-			return b.open(spawn(resource, key))
-		},
-		MaxConnsPerHost:     1,
-		MaxIdleConnsPerHost: 1,
-		DisableCompression:  true,
-	}
-	b.client = &http.Client{Transport: b.transport}
+	b := &bridge{id: r.id, resource: r.resource, last: time.Now(), spawn: func() *exec.Cmd { return spawn(resource, key) }}
 	bs.m[r.id] = b
 	return b
 }
@@ -130,7 +128,7 @@ func (r *remoteClient) Call(ctx context.Context, method, route string, body any,
 	b.mu.Lock()
 	b.last = time.Now()
 	b.mu.Unlock()
-	v, err := Request(ctx, b.client, method, route, body, timeout)
+	v, err := Request(ctx, b, method, route, body, timeout)
 	if err == nil {
 		return v, nil
 	}
@@ -165,47 +163,114 @@ func (bs *bridges) drop(b *bridge) {
 	bs.mu.Unlock()
 }
 
-// destroy is agent.destroy(): every pipe closed, its process killed.
+// destroy is agent.destroy(): the pipe closed, its process killed.
 func (b *bridge) destroy() {
-	b.transport.CloseIdleConnections()
 	b.mu.Lock()
-	conns := make([]*pipeConn, 0, len(b.conns))
-	for c := range b.conns {
-		conns = append(conns, c)
-	}
+	c := b.conn
+	b.conn, b.rd, b.dead = nil, nil, true
 	b.mu.Unlock()
-	for _, c := range conns {
+	if c != nil {
 		c.Close()
 	}
 }
 
+// Do sends one request over the bridge's connection, opening it first
+// when there is none. A request is never sent twice: what fails on the
+// pipe fails the request (Node's agent does not retry either).
+func (b *bridge) Do(req *http.Request) (*http.Response, error) {
+	b.reqMu.Lock()
+	b.mu.Lock()
+	c, rd := b.conn, b.rd
+	b.mu.Unlock()
+	if c == nil {
+		conn, err := b.open(b.spawn())
+		if err != nil {
+			b.reqMu.Unlock()
+			return nil, err
+		}
+		c, rd = conn, bufio.NewReader(conn)
+		b.mu.Lock()
+		b.conn, b.rd, b.dead = conn, rd, false
+		b.mu.Unlock()
+	}
+	type result struct {
+		res *http.Response
+		err error
+	}
+	done := make(chan result, 1)
+	go func() {
+		if err := req.Write(c); err != nil {
+			done <- result{nil, err}
+			return
+		}
+		res, err := http.ReadResponse(rd, req)
+		if err != nil {
+			done <- result{nil, err}
+			return
+		}
+		// The body is read whole here, so the connection is free for the
+		// next request as soon as this one returns.
+		data, err := io.ReadAll(res.Body)
+		res.Body.Close()
+		if err != nil {
+			done <- result{nil, err}
+			return
+		}
+		res.Body = io.NopCloser(bytes.NewReader(data))
+		if res.Close {
+			b.mu.Lock()
+			if b.conn == c {
+				b.conn, b.rd = nil, nil
+			}
+			b.mu.Unlock()
+			c.Close()
+		}
+		done <- result{res, nil}
+	}()
+	select {
+	case r := <-done:
+		b.reqMu.Unlock()
+		return r.res, r.err
+	case <-req.Context().Done():
+		// req.destroy(): the pipe goes with the request.
+		b.mu.Lock()
+		if b.conn == c {
+			b.conn, b.rd = nil, nil
+		}
+		b.mu.Unlock()
+		c.Close()
+		b.reqMu.Unlock()
+		return nil, req.Context().Err()
+	}
+}
+
 // open starts the bridge process and gives its stdio as a connection.
-func (b *bridge) open(cmd *exec.Cmd) (net.Conn, error) {
+func (b *bridge) open(cmd *exec.Cmd) (*pipeConn, error) {
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, err
 	}
-	stdout, err := cmd.StdoutPipe()
+	// Its stdout through a pipe of our own: cmd.Wait closes the pipes it
+	// made, which could drop what the daemon wrote just before exiting.
+	stdout, w, err := os.Pipe()
 	if err != nil {
 		return nil, err
 	}
+	cmd.Stdout = w
 	b.mu.Lock()
 	b.stderr = ""
 	b.mu.Unlock()
 	cmd.Stderr = stderrTail{b}
-	if err := cmd.Start(); err != nil {
+	err = cmd.Start()
+	w.Close()
+	if err != nil {
+		stdout.Close()
 		return nil, err
 	}
 	c := &pipeConn{cmd: cmd, in: stdin, out: stdout, b: b, exited: make(chan struct{})}
-	b.mu.Lock()
-	b.conns[c] = struct{}{}
-	b.mu.Unlock()
 	go func() {
 		cmd.Wait()
 		close(c.exited)
-		b.mu.Lock()
-		delete(b.conns, c)
-		b.mu.Unlock()
 	}()
 	return c, nil
 }
@@ -240,6 +305,7 @@ func (c *pipeConn) Write(p []byte) (int, error) { return c.in.Write(p) }
 func (c *pipeConn) Close() error {
 	c.once.Do(func() {
 		c.in.Close()
+		c.out.Close()
 		if c.cmd.Process != nil {
 			c.cmd.Process.Signal(syscall.SIGTERM)
 		}

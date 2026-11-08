@@ -1457,6 +1457,7 @@ func (e *Engine) Get(id string) *Snapshot {
 		Board: append([]BoardMsg(nil), m.board...), Procs: len(m.procs), Pollers: len(m.pollers)}
 	for _, a := range m.nodes {
 		c := *a
+		c.order = append([]string(nil), a.order...)
 		c.Approvals = append([]Approval(nil), a.Approvals...)
 		if a.Approvals == nil {
 			c.Approvals = nil

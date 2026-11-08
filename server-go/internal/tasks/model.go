@@ -81,9 +81,9 @@ func (a *Agent) setUsage(u *Usage)          { a.Usage = u; a.touch("usage") }
 func (a *Agent) setSession(id any)          { a.SessionID = id; a.touch("sessionId") }
 func (a *Agent) setApprovals(ap []Approval) { a.Approvals = ap; a.touch("approvals") }
 
-func (a *Agent) resultPath() string { s, _ := a.ResultPath.(string); return s }
-func (a *Agent) sessionID() string  { return truthyStr(a.SessionID) }
-func (a *Agent) runSlug() string    { return truthyStr(a.RunSlug) }
+func (a Agent) resultPath() string { s, _ := a.ResultPath.(string); return s }
+func (a Agent) sessionID() string  { return truthyStr(a.SessionID) }
+func (a Agent) runSlug() string    { return truthyStr(a.RunSlug) }
 
 func truthyStr(v any) string {
 	if !jsonv.Truthy(v) {
