@@ -50,14 +50,15 @@ cd "$(git rev-parse --show-toplevel)"
 git fetch -q --tags origin go-port || fail "could not fetch go-port and the tags from origin"
 COMMIT="$(git rev-parse --verify "${1:-origin/go-port}^{commit}")" || fail "no commit ${1:-origin/go-port}"
 git merge-base --is-ancestor "$COMMIT" origin/go-port || fail "$COMMIT is not on origin/go-port"
+# grep -c reads to the end: grep -q would quit early and, under pipefail, git show's SIGPIPE would fail the check.
 # The build at that commit must be the Go version by default.
-git show "$COMMIT:deploy/linux/build_app.sh" | grep -q 'STUDIO_SERVER:-go-only' ||
+git show "$COMMIT:deploy/linux/build_app.sh" | grep -c 'STUDIO_SERVER:-go-only' >/dev/null ||
   fail "deploy/linux/build_app.sh at $COMMIT does not build the Go version by default"
-git show "$COMMIT:deploy/mac/build_app.sh" | grep -q 'STUDIO_SERVER:-go-only' ||
+git show "$COMMIT:deploy/mac/build_app.sh" | grep -c 'STUDIO_SERVER:-go-only' >/dev/null ||
   fail "deploy/mac/build_app.sh at $COMMIT does not build the Go version by default"
 # The workflows dispatched must sign for a channel.
 for w in linux-app mac-app; do
-  git show "origin/$WORKFLOW_REF:.github/workflows/$w.yml" 2>/dev/null | grep -q '^      channel:' ||
+  git show "origin/$WORKFLOW_REF:.github/workflows/$w.yml" 2>/dev/null | grep -c '^      channel:' >/dev/null ||
     fail ".github/workflows/$w.yml on $WORKFLOW_REF has no channel input"
 done
 
