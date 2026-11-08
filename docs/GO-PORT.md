@@ -82,7 +82,7 @@ When Node exits on its own the Go server exits with Node's code, so exit 76 (a r
 
 ## HTTP API inventory
 
-219 method and path pairs from 212 registrations in 32 files (93 `.ts` files, about 32,800 lines in `server/src`; tests about 19,500 lines). Loops expand `act()` in `fleet.ts` to five routes, the `ssh`/`pw` loop in `userLibraries.ts` to four, and the session relay is GET and HEAD. On top of these, `main.ts` serves `web/dist` (`@fastify/static`, wildcard) with an `index.html` fallback outside `/api`, and Fastify answers HEAD for every GET. There are no websocket routes. Streams: SSE in `/api/chat/stream` (761-line handler: the agent loop) and `/v1/chat/completions`, the relay in `/api/session-proxy/:host/*`, file downloads, and multipart uploads (`/api/kb/upload`, `/api/chat/attachments`, `/api/setup/icon`, `/api/extensions/persona-icon`). Ported: `/healthz`, and in front-auth mode `/api/whoami` and the new `/api/auth/*` (Stage 1).
+219 method and path pairs from 212 registrations in 32 files (93 `.ts` files, about 32,800 lines in `server/src`; tests about 19,500 lines). Loops expand `act()` in `fleet.ts` to five routes, the `ssh`/`pw` loop in `userLibraries.ts` to four, and the session relay is GET and HEAD. On top of these, `main.ts` serves `web/dist` (`@fastify/static`, wildcard) with an `index.html` fallback outside `/api`, and Fastify answers HEAD for every GET. There are no websocket routes. Streams: SSE in `/api/chat/stream` (761-line handler: the agent loop) and `/v1/chat/completions`, the relay in `/api/session-proxy/:host/*`, file downloads, and multipart uploads (`/api/kb/upload`, `/api/chat/attachments`, `/api/setup/icon`, `/api/extensions/persona-icon`). Ported: `/healthz`, and in front-auth mode `/api/whoami` and the new `/api/auth/*` (Stage 1). The files track (`internal/kb`) serves the KB file, upload and label routes; see "Files and labels in Go".
 
 Dependencies, as an upper bound from the static call graph: `gufi` the GUFI binaries (`gufi_query`, `gufi_sqlite3`, `gufi_vt`, `gufi_dir2index`); `ssh` plain ssh or `pw ssh` for libraries on other systems; `pw` the pw CLI, `pw-token` only to renew the deployment token; `python` an indexer script (`enrich.py`, `embed.py`, `embed_query.py`, `semantic_map.py`, `fetch_embed.py`, or `python -c` with `sqlite3`); `node:sqlite` Node's built-in SQLite (`textCleanup.ts`, `refine.ts`; every other SQLite access goes through GUFI's binaries or Python); `llm` the OpenAI-compatible gateway; `platform` the ACTIVATE API; `github`; `mcp` MCP servers; `soffice` LibreOffice and poppler; `xattr` `getfattr`/`setfattr`; `http` another outbound fetch. Almost every handler also reads `settings.json`.
 
@@ -238,6 +238,24 @@ What was converted, because it was cheap:
 `npm run test:front` in `server/` (since Stage 1) runs the whole suite through the Go server without changing a test. `test/front.mjs`, preloaded, points `fastify` at `test/frontFastify.mjs` for the tests and `server/dist`: the same Fastify, whose `app.inject` makes the app listen on a loopback port, starts `STUDIO_TEST_FRONT` in front of it (`STUDIO_NODE_URL`, `STUDIO_FRONT_AUTH=0`, a port from 5870 to 5899 or the range in `STUDIO_TEST_FRONT_PORTS`, such as `5900-5919`, no web app), and sends the request over HTTP through it. The test's process, module state and stubs are untouched, which is what kept the 58 `app.inject` files from running against another server. `STUDIO_TEST_FRONT_COUNT=<file>` records how many requests each file sent through the Go server. What it does not cover: the 63 files that call module functions, and front-auth mode, which `internal/server`'s `TestNodeTrustsTheFrontOnly` checks against the real Node server.
 
 A URL switch alone (`STUDIO_TEST_URL`) does not fit these tests: each needs a server started on its own fixture directory. The workable form is the one above: a helper that starts the built server with the test's environment and, with `STUDIO_TEST_FRONT`, the Go server in front. Converting an `app.inject` file means moving its fixtures into that environment and dropping its module hooks; that is worth doing for each module as it is ported, starting with the routes of step 2.
+
+## Files and labels in Go
+
+`internal/kb` serves 26 routes: GET `/api/kb/tree`, `/file`, `/download`, `/raw`, `/html`, `/pdf`, `/pdf-info`, `/pdf-page`, `/office-preview`, `/office-media`, `/dirs`, `/stats`; POST `/api/kb/move`, `/copy`, `/rename`, `/delete`, `/mkdir`, `/upload`, `/upload-url`; DELETE `/api/kb/dir`, `/api/kb/file`; GET `/api/tags`; GET and POST `/api/kb/tags`; POST `/api/kb/tags/recover`; GET `/api/jobs/:id`. It owns the KB roots, path resolution, file operations, previews, the office outline, uploads and labels (xattr `user.studio.tags` through `golang.org/x/sys/unix`, the overlay keyed by `fsid.inode` with birth time, per-library labels, recovery 20 s after a Node-free start). Re-index requests go through `app.Providers` (`IndexDirMS`, `IndexRootDB`, `Changed`), which the index track replaces. `/api/kb/dag` stays in Node with `/api/workflows/:name` (workflow parser and schema check, platform track), and `/api/kb/label-suggestions` with the chat track.
+
+Libraries only Node reaches (a viewer's own libraries over ssh or pw, read-through hosts, an id Go does not know) are handed to Node with `app.HandOff`, which the proxy marks with `X-Studio-Internal` for strict mode; each call site is a TODO for `internal/libraries` and `internal/remote`, and Node-free they answer 501. Node and Go both reread `tags-overlay.json` and `libraries/<id>/labels.json` when the file changes and write them by rename.
+
+Differences from Node, kept on purpose:
+
+| Case | Node | Go |
+|---|---|---|
+| download of a non-ASCII name | 500 (invalid header) or a Latin-1 header | `filename="ascii fallback"; filename*=UTF-8''...` |
+| raw or download of a missing path or a folder | 500 with Fastify's payload error | 500 `internal error (ref ...)` |
+| file answers | chunked | `Content-Length` set; Range is ignored by both |
+| job ids | from 1 | Go's jobs from 2^20, lower ids proxied to Node |
+| labels without the attr package | overlay | xattrs by syscall, overlay only where they fail |
+| `/api/kb/stats` after a change made here | counts up to 10 minutes stale | counts dropped |
+| error bodies | no trailing newline | `apierr` adds one |
 
 ## The semantic map in Go
 
