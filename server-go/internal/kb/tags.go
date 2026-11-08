@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -589,4 +590,36 @@ func (t *Tags) Counts(ctx context.Context) (labels []string, counts map[string]i
 		add(m.files[p])
 	}
 	return labels, counts
+}
+
+// ApplyLabelsIn is tags.ts's applyLabelsIn for a library this host knows,
+// by id ("" is the main one): each path's labels after the change, in the
+// order applied, and where they are kept ("files" or "studio"). known is
+// false for a library only Node knows (a viewer's own, over ssh or pw).
+func (m *Module) ApplyLabelsIn(ctx context.Context, id string, rels, add, remove []string) (keys []string, updated map[string][]string, stored, label string, known bool, err error) {
+	lib, ok, err := m.Libs.Get(id)
+	if err != nil || !ok {
+		return nil, nil, "", "", ok, err
+	}
+	updated = map[string][]string{}
+	if lib.ID == PrimaryID {
+		o, err := m.Tags.Apply(ctx, rels, add, remove)
+		if err != nil {
+			return nil, nil, "", lib.Label, true, err
+		}
+		for _, k := range o.keys {
+			updated[k] = o.vals[k].([]string)
+		}
+		return o.keys, updated, "files", lib.Label, true, nil
+	}
+	got, err := m.applyLibraryLabels(lib, rels, add, remove)
+	if err != nil {
+		return nil, nil, "", lib.Label, true, err
+	}
+	for _, rel := range rels {
+		if _, ok := got[rel]; ok && !slices.Contains(keys, rel) {
+			keys = append(keys, rel)
+		}
+	}
+	return keys, got, "studio", lib.Label, true, nil
 }

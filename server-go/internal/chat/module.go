@@ -256,9 +256,12 @@ func Register(mux *http.ServeMux, a *app.App) {
 
 	a.Providers.GatewayConfigured = func(r *http.Request) bool { return m.GatewayKey() != "" }
 	a.Providers.GatewayKey = m.GatewayKey
-	// The MCP listing is kept here and, while Node runs, in Node too: a
-	// settings save drops both (the bridge's changed op tells Node).
-	a.Providers.InvalidateMCP = func() { a.Providers.Changed(context.Background(), "mcp") }
+	// The MCP listing is Go's. Node's, which only its RAG proxy and /api/mcp
+	// still read, drops itself when the saved server list changes
+	// (mcpClient.ts) and otherwise expires within a minute, so Node is not
+	// told.
+	a.Providers.InvalidateMCP = m.mcp.Invalidate
+	a.Providers.ConversationNote = m.Conv.AppendNote
 	changed := a.Providers.Changed
 	a.Providers.Changed = func(ctx context.Context, what ...string) {
 		for _, w := range what {
