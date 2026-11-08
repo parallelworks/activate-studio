@@ -222,6 +222,12 @@ if command -v codesign >/dev/null 2>&1 && codesign -dv "$APP" 2>&1 | grep -q '^C
   else
     bad "Mach-O files not signed like the bundle:"; printf '%s\n' "$unlike" | sed 's/^/        /'
   fi
+  # The STEP preview's WebAssembly runs as machine code wazero writes into
+  # memory, which the hardened runtime refuses the Go server without this.
+  if [ -f "$R/app/bin/studio-server" ]; then
+    check "the Go server is signed with allow-unsigned-executable-memory (the STEP preview)" sh -c \
+      'codesign -d --entitlements - --xml "$1" 2>/dev/null | grep -q com.apple.security.cs.allow-unsigned-executable-memory' _ "$R/app/bin/studio-server"
+  fi
 fi
 
 echo "Size"

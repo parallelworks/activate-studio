@@ -1,21 +1,30 @@
 #!/usr/bin/env bash
 # Sign "ACTIVATE Studio.app" with a certificate, for notarization. Each
-# Mach-O file in the bundle (Node, Python and its libraries, GUFI's tools
-# and libraries, tesseract and leptonica, the document converter, and any
-# other file that is one)
-# is signed first, deepest first, then the bundle itself, which signs its
+# Mach-O file in the bundle is signed first: in the Go version (the
+# default build) the Go server and semantic-map in Resources/app/bin, the
+# ONNX runtime library in Resources/app/lib, GUFI's tools and libraries,
+# tesseract and leptonica; in a Node build, Node, Python and its libraries
+# and the document converter too; and any other file that is one. They are
+# signed deepest first, then the bundle itself, which signs its
 # executable and seals every other file. Everything is signed with the
 # hardened runtime, a secure timestamp, and the entitlements it needs,
 # from deploy/mac/entitlements:
 #
-#   node.plist  Resources/node/bin/node. V8 compiles JavaScript to machine
+#   server.plist  Resources/app/bin/studio-server, the Go server. The STEP
+#               preview runs its WebAssembly modules with wazero, which
+#               compiles them to machine code in memory it maps writable and
+#               then executable, without MAP_JIT:
+#               allow-unsigned-executable-memory.
+#   node.plist  Resources/node/bin/node, in a Node build (in the Go version
+#               it is a stand-in script). V8 compiles JavaScript to machine
 #               code as it runs: allow-jit and
 #               allow-unsigned-executable-memory.
-#   app.plist   the app's executable, the window. The chat's voice input
-#               records from the microphone, which Info.plist's
+#   app.plist   the app's executable, the window (the Wails window in the
+#               Go version, the Swift one in a Node build). The chat's voice
+#               input records from the microphone, which Info.plist's
 #               NSMicrophoneUsageDescription explains: device.audio-input.
 #
-# Python, GUFI, tesseract and the converter need none. Library validation,
+# semantic-map, Python, GUFI, tesseract and the converter need none. Library validation,
 # which the hardened runtime turns on, lets a program load only the
 # system's libraries and those signed by its own team, and every file here
 # is signed by the same one.
@@ -45,12 +54,13 @@ IDENTITY="$2"
 KEYCHAIN="${3:-}"
 TS=--timestamp
 [ "$IDENTITY" != - ] || TS=--timestamp=none
-for f in "$ENT/node.plist" "$ENT/app.plist"; do
+for f in "$ENT/node.plist" "$ENT/app.plist" "$ENT/server.plist"; do
   plutil -lint "$f" >/dev/null || fail "$f is not a valid plist"
 done
 
 EXE="$APP/Contents/MacOS/$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP/Contents/Info.plist")"
 NODE="$APP/Contents/Resources/node/bin/node"
+SERVER="$APP/Contents/Resources/app/bin/studio-server"
 # A script as the executable (an app built on Linux) keeps its signature in
 # extended attributes, which the release archive drops.
 file -b "$EXE" | grep -q Mach-O || fail "the app's executable is not the native window ($(file -b "$EXE")); build the app on a Mac"
@@ -63,6 +73,7 @@ entitlements_for() {
   case "$1" in
     "$APP") printf '%s' "$ENT/app.plist" ;;
     "$NODE") printf '%s' "$ENT/node.plist" ;;
+    "$SERVER") printf '%s' "$ENT/server.plist" ;;
   esac
 }
 
@@ -154,5 +165,13 @@ if [ "$failures" -gt 0 ]; then
   fail "$failures signature check(s) failed"
 fi
 echo "  every signature verifies, with the hardened runtime$([ "$TS" = --timestamp ] && echo ' and a timestamp'), team ${team:-none}"
-echo "  node: $(keys_signed "$NODE")"
+# What the build carries: the Go server, or Node (a stand-in script in the
+# Go version, which is no Mach-O file and is sealed as data).
+if [ -f "$SERVER" ]; then
+  file -b "$SERVER" | grep -q Mach-O || fail "Resources/app/bin/studio-server is not a macOS program"
+  echo "  studio-server: $(keys_signed "$SERVER")"
+fi
+if file -b "$NODE" 2>/dev/null | grep -q Mach-O; then
+  echo "  node: $(keys_signed "$NODE")"
+fi
 echo "  the executable: $(keys_signed "$APP")"

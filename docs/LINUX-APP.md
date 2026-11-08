@@ -1,6 +1,6 @@
 # The Linux app (draft)
 
-ACTIVATE Studio for Linux x86_64 is the macOS app's contents without Apple's parts: one directory tree (Node, Python with its packages, GUFI with its AI pieces and models, tesseract, the built server and web app) that runs from any path, a window around it, and two ways to install it. Nothing here is published yet: the `linux-app` workflow builds the archive and the packages, and they are workflow artifacts.
+ACTIVATE Studio for Linux x86_64 is the macOS app's contents without Apple's parts: one directory tree (the Go server, GUFI, tesseract, the embedding model and the built web app, with no Node and no Python) that runs from any path, a window around it, and two ways to install it. Nothing here is published yet: the `linux-app` workflow builds the archive and the packages, and they are workflow artifacts.
 
 | | Per-user tarball | .deb and .rpm packages |
 |---|---|---|
@@ -143,30 +143,30 @@ activate-studio/
   bin/activate-studio-wk40      the window shell for WebKitGTK 4.0
   install.sh, uninstall.sh      (not in packages)
   install-kind                  written by install.sh or the package
-  node/  python/  app/  gufi/  ocr/  models/
+  node/  app/  gufi/  ocr/  models/  licenses/
   share/                        icons, menu entry template
   studio-run.sh  studio-recover.sh  manifest.json  update-signing.pub  LICENSE  NOTICE
 ```
 
 | Path | Contents |
 |---|---|
-| `node/` | Node 26 for Linux x64, with `lib/libatomic.so.1` beside it (Node's run path finds it) |
-| `python/` | python-build-standalone 3.12 with pypdf, xlrd, olefile, onnxruntime, tokenizers and numpy |
-| `app/` | the built server with its production `node_modules` (including the document converter's Linux binary), the built web app, the indexer, `docs/`, `CHANGELOG.md`, `build-info.json` |
-| `gufi/` | GUFI 0.8.0 with sqlite-vec and sqlite-lembed, PCRE2 and `libgomp.so.1` |
+| `node/` | stand-ins only: `node/bin/node` and `app/server/dist/main.js` are what the v1.187 and v1.188 updaters check for before they install, marked by `node/PLACEHOLDER` |
+| `app/` | `bin/` (`studio-server`, `semantic-map`), `lib/libonnxruntime.so.1`, `occt/` (the STEP preview's modules), the built web app, `docs/`, `CHANGELOG.md`, `build-info.json` |
+| `gufi/` | GUFI 0.8.0, the lean build (sqlite-vec, no llama.cpp), with PCRE2 and `libgomp.so.1` |
 | `ocr/` | tesseract and leptonica with the English model |
-| `models/` | the GGUF and ONNX embedding models |
+| `models/` | the ONNX embedding model (MiniLM) and its tokenizer |
+| `licenses/` | the licenses of ONNX Runtime and the STEP modules (LGPL) |
 | `studio-run.sh` | the run loop: starts the server with the payload's own programs, restarts it on exit 75 |
 | `studio-recover.sh` | finishes or undoes an update cut off between its two moves (see Updates) |
 | `manifest.json` | what it was built from and the system libraries it needs |
 
 The window shell is a small Go program (Wails v2, `desktop/wails`) that links to the computer's GTK and WebKitGTK. It starts the server through `studio-run.sh --once`, waits for `/api/version`, and shows the Studio through a reverse proxy it serves on 127.0.0.1, which gives the page the same bridge the macOS window gives (folder chooser, following the server to another port, relaunch after an update, downloads into `~/Downloads`, links that leave the Studio opening in the browser). It starts the server again after exit 75 or 76, shows an error with **Try Again** after any other exit, and ends the server and everything it started when the window closes, on TERM, and when the shell itself is killed (a guard process does that).
 
-The Go version (`STUDIO_SERVER=go-only`, docs/UPDATES.md "The Go version") has no `python/` and no `app/server/node_modules`; `node/bin/node` and `app/server/dist/main.js` are stand-ins that the v1.187 and v1.188 updaters check for, marked by `node/PLACEHOLDER`. It adds `app/bin/` (`studio-server`, `semantic-map`), `app/lib/libonnxruntime.so.1`, `app/occt/` (the STEP preview's modules) and `licenses/`, and its `gufi/` is the lean build (sqlite-vec, no llama.cpp) with three programs. The window shell reads the tree at each start of the server: `"server": "go"` in `manifest.json` (or `STUDIO_GO_SERVER=1`) starts the Go server through `studio-run.sh`, and a rollback to a Node payload under a running window starts Node.
+This is the Go version, the default of `deploy/linux/build_app.sh` (`STUDIO_SERVER=go-only`, docs/UPDATES.md "The Go version"). The payload of v1.188 and earlier (`STUDIO_SERVER=node`) has instead Node 26 in `node/` with `libatomic.so.1`, python-build-standalone 3.12 in `python/` with pypdf, xlrd, olefile, onnxruntime, tokenizers and numpy, the Node server with its production `node_modules` and the indexer in `app/`, GUFI with sqlite-lembed, and the GGUF model. The window shell reads the tree at each start of the server: `"server": "go"` in `manifest.json` (or `STUDIO_GO_SERVER=1`) starts the Go server through `studio-run.sh`, and a rollback to a Node payload under a running window starts Node.
 
 ## What was measured
 
-The archive is about 255 MiB (the tree 687 MB: Node 144 MB, Python 196 MB, GUFI 182 MB, tesseract 12 MB, the server's `node_modules` 69 MB, the web app 36 MB, the models 47 MB), against 503 MB for the macOS app, whose GUFI is 55 MB and Python 142 MB. In CI, GUFI builds in about 8 to 9 minutes, tesseract in 2 to 3, and the payload is assembled in under a minute after the web and server build. The build limits the tree to symbol versions of glibc 2.28, libstdc++ 3.4.25 (GCC 8) and CXXABI 1.3.11, so it needs RHEL 8's C libraries or newer. The WebKitGTK 4.1 shell is the exception: it is built on Ubuntu 22.04 and needs glibc 2.35, and it is used only where WebKitGTK 4.1 is installed.
+The archive is about 87 MB (the tree 197 MB: the Go programs 39 MB, ONNX Runtime 28 MB, the models 23 MB, GUFI 22 MB, the window shells 22 MB, the web app 36 MB, the STEP modules 15 MB, tesseract 13 MB), against 278 MB (757 MB unpacked) for the Node payload of v1.188, and 230 MB for the macOS app. In CI, GUFI builds in about 8 to 9 minutes, tesseract in 2 to 3, and the payload is assembled in under a minute after the web and server build. The build limits the tree to symbol versions of glibc 2.28, libstdc++ 3.4.25 (GCC 8) and CXXABI 1.3.11, so it needs RHEL 8's C libraries or newer. The WebKitGTK 4.1 shell is the exception: it is built on Ubuntu 22.04 and needs glibc 2.35, and it is used only where WebKitGTK 4.1 is installed.
 
 The system libraries the tree needs are the C library (libc, libm, libdl, libpthread, librt, libutil, ld-linux), libstdc++, libgcc_s and zlib: packages `libc6`, `libstdc++6`, `libgcc-s1` and `zlib1g` on Ubuntu, `glibc`, `libstdc++`, `libgcc` and `zlib` on RHEL. Every desktop has them, and the clean images the tests start from needed no other package (the Rocky 8 images leave out findutils, which the checks themselves use and the Studio does not). Node's libatomic and GCC's libgomp, which a RHEL install may lack, are in the tree.
 
@@ -180,6 +180,6 @@ The system libraries the tree needs are the C library (libc, libm, libdl, libpth
 
 ## How it is built and tested
 
-`.github/workflows/linux-app.yml` builds GUFI and tesseract in a Rocky Linux 8 container (glibc 2.28, with GCC 13 from `gcc-toolset-13` and Python 3.11, as GCC 8 and Python 3.6 are too old for them), the two window shells (4.1 on Ubuntu 22.04, 4.0 on Rocky 8), puts the tree together (`deploy/linux/build_app.sh`, `desktop/linux/add_desktop.sh`), and builds the packages with nfpm (`desktop/linux/build_packages.sh`). `deploy/linux/check_app.sh` runs the payload in clean containers of Ubuntu 22.04, 24.04, Rocky 8 and 9 and AlmaLinux 8 and 9. `desktop/linux/test_install.sh` installs each package type in a clean container, launches it under Xvfb, checks that the Studio draws and a search finds a document, quits, checks that nothing is left running, uninstalls, and checks that nothing is left in the home folder but the data. `deploy/linux/elf_check.py` fails the build if a file in the tree needs a newer glibc than RHEL 8's.
+`.github/workflows/linux-app.yml` builds the lean GUFI and tesseract in a Rocky Linux 8 container (glibc 2.28, with GCC 13 from `gcc-toolset-13` and Python 3.11, as GCC 8 and Python 3.6 are too old for them), the two window shells (4.1 on Ubuntu 22.04, 4.0 on Rocky 8), puts the Go tree together (`deploy/linux/build_app.sh`, `desktop/linux/add_desktop.sh`), and builds the packages with nfpm (`desktop/linux/build_packages.sh`). `deploy/linux/check_app.sh` runs the payload in clean containers of Ubuntu 22.04, 24.04, Rocky 8 and 9 and AlmaLinux 8 and 9, with the image's `python3` added for the checks. `deploy/linux/test_go_bridge_e2e.sh` installs the last release (Node), updates it to the new payload through that release's own updater on the Stable and the Preview channel, and rolls back; `deploy/app-go.def` builds the payload into the Go container image. The earlier payloads (`node`, and `go` with Node behind it) are built only when a run asks for them (the `legacy` input), and do not fail it. `desktop/linux/test_install.sh` installs each package type in a clean container, launches it under Xvfb, checks that the Studio draws and a search finds a document, quits, checks that nothing is left running, uninstalls, and checks that nothing is left in the home folder but the data. `deploy/linux/elf_check.py` fails the build if a file in the tree needs a newer glibc than RHEL 8's.
 
-The sizes: the archive is about 264 MiB, each package about 246 MiB, the tree 700 MB.
+The sizes of the Node payload of v1.188 were an archive of about 264 MiB, each package about 246 MiB, and a tree of 700 MB; the Go payload's are above.

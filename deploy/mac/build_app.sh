@@ -1,15 +1,18 @@
 #!/usr/bin/env bash
 # Build "ACTIVATE Studio.app" for macOS on Apple silicon from this checkout.
 #
-# The app carries everything it runs: Node for macOS arm64, the built server
-# and web app with production node_modules, GUFI (from GUFI's own macOS
-# package, or built for an older macOS by deploy/mac/build_gufi.sh; either
-# way loading its libraries from inside the app), tesseract for OCR (built
-# by deploy/mac/build_ocr.sh), a standalone Python for the indexer (with
-# pypdf, xlrd and olefile for documents, and onnxruntime, tokenizers and
-# numpy for the ONNX embedding model), and the embedding models. It builds
-# on macOS or Linux; the .dmg is made only on macOS, where hdiutil exists,
-# and OCR is built only on a Mac (or given as OCR_TARBALL).
+# By default (STUDIO_SERVER=go-only) the app is the Go version: the Wails
+# window (desktop/wails), the Go server in Resources/app/bin with the ONNX
+# runtime library and the embedding model, the built web app, GUFI (from
+# GUFI's own macOS package, or built for an older macOS by
+# deploy/mac/build_gufi.sh; either way loading its libraries from inside the
+# app), tesseract for OCR (built by deploy/mac/build_ocr.sh) and the STEP
+# preview's modules, with no Node and no Python. STUDIO_SERVER=node builds
+# the earlier app: the Swift window, Node for macOS arm64, the built server
+# with production node_modules, and a standalone Python for the indexer. It
+# builds on macOS or Linux (the Wails window only on a Mac); the .dmg is
+# made only on macOS, where hdiutil exists, and OCR is built only on a Mac
+# (or given as OCR_TARBALL).
 #
 # Usage: deploy/mac/build_app.sh
 #   OUT_DIR     where the outputs go (default deploy/mac/out)
@@ -24,13 +27,14 @@
 #   MIN_MACOS   LSMinimumSystemVersion; by default the newest macOS that any
 #               bundled binary declares it needs
 #   STUDIO_SERVER  which server the app runs (docs/UPDATES.md, "The Go version"):
-#               node (default), go (the Go server in Resources/app/bin with Node
-#               and Python behind it), or go-only (the Go server alone: no Node,
+#               go-only (default: the Go server alone, no Node,
 #               no Python, no node_modules, no GGUF model; the ONNX runtime
 #               library in Resources/app/lib; node/bin/node and
 #               app/server/dist/main.js are stand-ins that older updaters'
-#               checks look for, marked by node/PLACEHOLDER). Needs Go.
-#               Both Go builds carry the ONNX runtime library in app/lib
+#               checks look for, marked by node/PLACEHOLDER); node (the
+#               build of v1.188 and earlier); or go (the Go server in
+#               Resources/app/bin with Node and Python behind it). The Go
+#               builds need Go. Both carry the ONNX runtime library in app/lib
 #               (beside app/bin/studio-server, where its embedder looks) and
 #               the STEP preview's modules in app/occt, with their licenses
 #               in Resources/licenses.
@@ -74,7 +78,7 @@ LIBOMP_SHA256=af8425bbe39630ec9b2022b67449ac737e0ed6d48e98a6309f841295d3c6f0f2
 PCRE2_VERSION=10.49
 PCRE2_SHA256=0ec47d18c50f5770db2b3f07b5b85644284cc6ee8e07e23b11d2727e95932b77
 
-SERVER="${STUDIO_SERVER:-node}"
+SERVER="${STUDIO_SERVER:-go-only}"
 case "$SERVER" in node | go | go-only) ;; *) echo "build_app: STUDIO_SERVER is node, go or go-only" >&2; exit 1 ;; esac
 MAC_SHELL="${MAC_SHELL:-$([ "$SERVER" = go-only ] && echo wails || echo swift)}"
 case "$MAC_SHELL" in swift | wails) ;; *) echo "build_app: MAC_SHELL is swift or wails" >&2; exit 1 ;; esac

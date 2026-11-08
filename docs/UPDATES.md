@@ -91,7 +91,9 @@ No bridge release is needed. The updaters of the releases already installed acce
 - **Rolling back.** Putting a Node release back keeps the newer data: the snapshot taken before the change holds the state as it was, and what changed since (conversations made in a Preview, say) stays in the snapshot taken when it was replaced. Settings, Updates says so beside **Roll back**.
 - **State.** It raises `stateFormat` only with a migration and a snapshot first. Going back to a Node release then puts that snapshot back.
 
-What the Go build carries, by platform (`STUDIO_SERVER=go-only` in `deploy/linux/build_app.sh` and `deploy/mac/build_app.sh`, `deploy/app-go.def` for the container):
+The Go version is the default build: `deploy/linux/build_app.sh` and `deploy/mac/build_app.sh` build it unless `STUDIO_SERVER` says otherwise (`node` for the payload of v1.188 and earlier, `go` for the Go server with Node behind it), and it is what the release jobs of `linux-app.yml` and `mac-app.yml` build, check, sign and attach. On macOS the release signs and notarizes it with the Developer ID certificate; `deploy/mac/sign_app.sh` signs every Mach-O file in it, the Go server with `allow-unsigned-executable-memory` (`deploy/mac/entitlements/server.plist`, for the STEP preview's WebAssembly) and the Wails window with `app.plist`. The earlier builds stay buildable through the workflows' `legacy` input and do not fail a run.
+
+What the Go build carries, by platform (`STUDIO_SERVER=go-only`, the default, in `deploy/linux/build_app.sh` and `deploy/mac/build_app.sh`; `deploy/app-go.def` for the container):
 
 | Part | Where | Notes |
 | --- | --- | --- |
