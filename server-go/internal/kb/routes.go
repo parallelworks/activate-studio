@@ -567,6 +567,14 @@ func (m *Module) sourceFile(r *http.Request) (Library, string, string, error) {
 	return lib, rel, abs, err
 }
 
+// SourceFile is the library, path and file on this host that a request's
+// library and path name, for routes outside this package (the 3D model
+// preview).
+func (m *Module) SourceFile(r *http.Request) (lib, rel, abs string, err error) {
+	l, rel, abs, err := m.sourceFile(r)
+	return l.ID, rel, abs, err
+}
+
 func (m *Module) raw(w http.ResponseWriter, r *http.Request) error {
 	_, _, abs, err := m.sourceFile(r)
 	if err != nil {

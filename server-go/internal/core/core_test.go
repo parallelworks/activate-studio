@@ -25,6 +25,7 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/apierr"
 	"github.com/parallelworks/activate-studio/server-go/internal/app"
 	"github.com/parallelworks/activate-studio/server-go/internal/config"
+	"github.com/parallelworks/activate-studio/server-go/internal/kb"
 	"github.com/parallelworks/activate-studio/server-go/internal/stepmesh"
 )
 
@@ -477,6 +478,54 @@ func TestModelSTL(t *testing.T) {
 	os.WriteFile(filepath.Join(e.kb, "part.step"), []byte("ISO-10303-21;"), 0o644)
 	if s := e.do("GET", "/api/kb/model?path=part.step", nil); s.status != 501 {
 		t.Fatalf("STEP without the module or Node: %d", s.status)
+	}
+}
+
+// A model in another library on this host is read from that library's
+// folder when the request names it (the viewer sends library= as the other
+// viewers do), and cached apart from the main folder's; a missing file is
+// a 404.
+func TestModelInAnotherLibrary(t *testing.T) {
+	e := newEnv(t, nil)
+	kb.Register(e.mux, e.a)
+	t.Cleanup(func() { kb.Default = nil })
+	src := t.TempDir()
+	var b bytes.Buffer
+	b.Write(make([]byte, 80))
+	binary.Write(&b, binary.LittleEndian, uint32(1))
+	b.Write(make([]byte, 12))
+	for _, f := range []float32{0, 0, 0, 1, 0, 0, 0, 1, 0} {
+		binary.Write(&b, binary.LittleEndian, math.Float32bits(f))
+	}
+	b.Write([]byte{0, 0})
+	os.MkdirAll(filepath.Join(src, "models"), 0o755)
+	os.WriteFile(filepath.Join(src, "models", "part.stl"), b.Bytes(), 0o644)
+	defs, _ := json.Marshal([]map[string]any{{"id": "parts", "indexRoot": filepath.Join(e.ix, "parts-index"), "sourceRoot": src}})
+	os.WriteFile(filepath.Join(e.ix, "libraries.json"), defs, 0o644)
+
+	if r := e.do("GET", "/api/kb/model?library=parts&path=models/part.stl", nil); r.status != 200 {
+		t.Fatalf("model in another library: %d %s", r.status, r.raw)
+	}
+	if _, err := os.Stat(filepath.Join(e.ix, "model-cache", "libraries", "parts", "models", "part.stl.mdl")); err != nil {
+		t.Fatal("not cached under the library")
+	}
+	// The same path in the main folder is another file, here a missing one.
+	if r := e.do("GET", "/api/kb/model?path=models/part.stl", nil); r.status != 404 {
+		t.Fatalf("missing in the main folder: %d %s", r.status, r.raw)
+	}
+	if r := e.do("GET", "/api/kb/model?library=parts&path=models/none.stl", nil); r.status != 404 {
+		t.Fatalf("missing in the library: %d %s", r.status, r.raw)
+	}
+	if r := e.do("GET", "/api/kb/model?library=parts&path=../x.stl", nil); r.status != 400 {
+		t.Fatalf("escape: %d", r.status)
+	}
+	if r := e.do("GET", "/api/kb/model?library=nope&path=models/part.stl", nil); r.status != 404 {
+		t.Fatalf("unknown library: %d", r.status)
+	}
+	// library=kb is the main folder.
+	os.WriteFile(filepath.Join(e.kb, "main.stl"), b.Bytes(), 0o644)
+	if r := e.do("GET", "/api/kb/model?library=kb&path=main.stl", nil); r.status != 200 {
+		t.Fatalf("library=kb: %d %s", r.status, r.raw)
 	}
 }
 

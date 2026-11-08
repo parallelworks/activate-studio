@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
+	"io/fs"
 	"math"
 	"net/http"
 	"os"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/parallelworks/activate-studio/server-go/internal/apierr"
 	"github.com/parallelworks/activate-studio/server-go/internal/app"
+	"github.com/parallelworks/activate-studio/server-go/internal/kb"
 	"github.com/parallelworks/activate-studio/server-go/internal/stepmesh"
 )
 
@@ -184,8 +186,18 @@ func (c *Core) model(w http.ResponseWriter, r *http.Request) error {
 	if rel == "" {
 		return apierr.New(400, "path required")
 	}
-	abs, err := ResolveKb(rel, c.a.Cfg.KBRoot)
-	if err != nil {
+	// The cache key is the path in the main folder, and the library and
+	// path for a model in another library on this host.
+	key := rel
+	var abs string
+	var err error
+	if lib := r.URL.Query().Get("library"); lib != "" && lib != kb.PrimaryID && kb.Default != nil {
+		var id string
+		if id, rel, abs, err = kb.Default.SourceFile(r); err != nil {
+			return err
+		}
+		key = filepath.Join("libraries", id, rel)
+	} else if abs, err = ResolveKb(rel, c.a.Cfg.KBRoot); err != nil {
 		return err
 	}
 	suffix := strings.ToLower(filepath.Ext(abs))
@@ -193,6 +205,9 @@ func (c *Core) model(w http.ResponseWriter, r *http.Request) error {
 		return apierr.New(415, "not a supported 3D model type")
 	}
 	st, err := os.Stat(abs)
+	if errors.Is(err, fs.ErrNotExist) {
+		return apierr.New(404, "not found")
+	}
 	if err != nil {
 		return err
 	}
@@ -200,7 +215,7 @@ func (c *Core) model(w http.ResponseWriter, r *http.Request) error {
 		mb := func(n int64) string { return strconv.Itoa(int(math.Round(float64(n)/(1024*1024)))) + " MB" }
 		return apierr.New(413, "this model is %s and the inline preview stops at %s", mb(st.Size()), mb(MaxModelBytes))
 	}
-	cached := c.modelCache(rel)
+	cached := c.modelCache(key)
 	if cst, err := os.Stat(cached); err == nil && cst.ModTime().After(st.ModTime()) {
 		return sendModel(w, cached)
 	}
