@@ -111,7 +111,10 @@ func (b *Bridge) OpenExternal(raw string) error {
 		b.app.test.note("openExternal", raw)
 		return nil
 	}
-	wruntime.BrowserOpenURL(b.app.ctx, u.String())
+	// Under WSL the page opens in a Windows browser (wslopen_unix.go).
+	if !openInWindows(u.String(), true) {
+		wruntime.BrowserOpenURL(b.app.ctx, u.String())
+	}
 	return nil
 }
 

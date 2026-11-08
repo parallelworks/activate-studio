@@ -19,6 +19,7 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/apierr"
 	"github.com/parallelworks/activate-studio/server-go/internal/app"
 	"github.com/parallelworks/activate-studio/server-go/internal/auth"
+	"github.com/parallelworks/activate-studio/server-go/internal/wslpath"
 )
 
 // Register serves the index's routes (indexRoutes.ts) and the history routes (history.ts) where Go builds the index
@@ -234,6 +235,10 @@ func (ix *Indexer) readerOptions() ReaderOptions {
 func (ix *Indexer) report() Report { return ExtractorReportFor(ix.readerOptions(), ix.P.ProjectRoot) }
 
 func expandHome(p string) string {
+	// A Windows path typed under WSL (C:\Users\me) is its /mnt/c folder.
+	if q, ok := wslpath.FromWindows(p); ok {
+		p = q
+	}
 	home, _ := os.UserHomeDir()
 	if p == "~" {
 		return home

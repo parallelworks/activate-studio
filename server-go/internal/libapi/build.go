@@ -23,6 +23,7 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/libraries"
 	"github.com/parallelworks/activate-studio/server-go/internal/reqbody"
 	"github.com/parallelworks/activate-studio/server-go/internal/search"
+	"github.com/parallelworks/activate-studio/server-go/internal/wslpath"
 )
 
 // Libraries the Studio builds of a folder on this computer
@@ -156,6 +157,10 @@ func homeDir() string {
 // expand is a path as typed: ~ is the home folder, and a relative path is
 // taken from it.
 func expand(p string) string {
+	// A Windows path typed under WSL (C:\Users\me) is its /mnt/c folder.
+	if q, ok := wslpath.FromWindows(p); ok {
+		p = q
+	}
 	home := homeDir()
 	if p == "~" {
 		return home
