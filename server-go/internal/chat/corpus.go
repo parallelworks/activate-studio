@@ -31,10 +31,9 @@ func (m *Module) gufiInstalled() bool {
 func (m *Module) primaryLabel() string { return filepath.Base(m.A.Cfg.KBRoot) }
 
 // viewerOfCtx is the tool call's viewer for the registry (toolContext's
-// userId); nil for none.
+// userId).
 func viewerOfCtx(ctx ToolCtx) libraries.Viewer {
-	if ctx.UserID == nil || *ctx.UserID == "" {
-		return nil
-	}
-	return libraries.ViewerOf(*ctx.UserID)
+	// executeTool's userId is req.user?.id ?? null: never undefined, so with
+	// sign-in off the one person's own libraries are in scope (ownerOf).
+	return libraries.ViewerOf(deref(ctx.UserID))
 }

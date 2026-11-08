@@ -18,6 +18,7 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/bridge"
 	"github.com/parallelworks/activate-studio/server-go/internal/conversations"
 	"github.com/parallelworks/activate-studio/server-go/internal/extensions"
+	"github.com/parallelworks/activate-studio/server-go/internal/libapi"
 	"github.com/parallelworks/activate-studio/server-go/internal/llm"
 	"github.com/parallelworks/activate-studio/server-go/internal/mcpclient"
 	"github.com/parallelworks/activate-studio/server-go/internal/modelkeys"
@@ -76,6 +77,9 @@ type Module struct {
 	// siteDefaults' answers per system, ten minutes each (tools.ts siteCache)
 	siteMu    sync.Mutex
 	siteCache map[string]siteCacheEntry
+	// libs opens originals for read_original and read_kb_file (libapi.New).
+	libOnce sync.Once
+	libs    *libapi.Service
 
 	// Corpus is the libraries and search pair the corpus tools read.
 	Corpus *Corpus
@@ -87,7 +91,7 @@ var Default *Module
 // New builds the module over a's configuration.
 func New(a *app.App) *Module {
 	m := &Module{A: a}
-	m.Tools = goTools{m: m, node: nodeTools{a}}
+	m.Tools = goTools{m: m}
 	m.access = *envAccess()
 	m.Ext = extensions.New(a.Cfg.IndexBase, a.Cfg.ProjectRoot, a.Cfg.KBRoot)
 	m.mcp = mcpclient.New(func() []json.RawMessage { return m.eff().McpServers })

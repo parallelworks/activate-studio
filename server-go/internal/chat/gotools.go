@@ -18,12 +18,9 @@ import (
 )
 
 // goTools is the tool layer in Go: the catalog, the system prompt, the
-// held calls and the tools ported so far. A tool not ported yet runs in
-// Node through the bridge (nodeTools.Execute), as do the platform values
-// (Access) until internal/platform is merged.
+// held calls and every tool.
 type goTools struct {
-	m    *Module
-	node nodeTools
+	m *Module
 }
 
 const mcpSep = mcpclient.Sep
@@ -271,7 +268,8 @@ func (t goTools) Execute(r *http.Request, name, args string, ctx ToolCtx) (*Outc
 	if o, ok := t.m.executeInGo(r, name, args, ctx); ok {
 		return o, nil
 	}
-	return t.node.Execute(r, name, args, ctx)
+	return &Outcome{Result: "The tool " + name + " does not exist in this environment; it may be a backend built-in that is unavailable here. Use only the tools declared for this conversation, or answer in plain text.",
+		Summary: "no such tool " + name}, nil
 }
 
 func (t goTools) Prepare(r *http.Request, name, args, changeKey string) (*Prepared, error) {

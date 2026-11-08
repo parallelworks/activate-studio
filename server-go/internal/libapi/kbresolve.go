@@ -16,7 +16,8 @@ import (
 // system or read through another host.
 type kbResolver struct{ s *Service }
 
-func toKB(l libraries.Library) kb.Library {
+// ToKB is a registry library as internal/kb takes it.
+func ToKB(l libraries.Library) kb.Library {
 	return kb.Library{
 		ID: l.ID, Label: l.Label, IndexRoot: l.IndexRoot, SourceRoot: l.SourceRoot, CacheRoot: l.CacheRoot,
 		Writable: l.Writable, Primary: l.Primary, Pinned: l.Pinned, Indexed: l.Caps.Index,
@@ -43,7 +44,7 @@ func (k kbResolver) Library(r *http.Request, id string) (kb.Library, error) {
 	if err != nil {
 		return kb.Library{}, err
 	}
-	return toKB(l), nil
+	return ToKB(l), nil
 }
 
 func (k kbResolver) All(r *http.Request) ([]kb.Library, error) {
@@ -57,7 +58,7 @@ func (k kbResolver) All(r *http.Request) ([]kb.Library, error) {
 	}
 	out := make([]kb.Library, len(libs))
 	for i, l := range libs {
-		out[i] = toKB(l)
+		out[i] = ToKB(l)
 	}
 	return out, nil
 }

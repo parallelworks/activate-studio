@@ -16,8 +16,8 @@ import (
 
 // TestViewerAndLabelToolsRunInGo checks that apply_labels and
 // show_in_viewer answer here for the main library (the golden harness
-// compares their text with Node's), and that a library only Node knows is
-// left to Node.
+// compares their text with Node's), and that a library no one has is
+// said to be missing, as getLibrary says it.
 func TestViewerAndLabelToolsRunInGo(t *testing.T) {
 	dir := t.TempDir()
 	kb := filepath.Join(dir, "kb")
@@ -37,8 +37,8 @@ func TestViewerAndLabelToolsRunInGo(t *testing.T) {
 	if !ok || !strings.HasPrefix(out.Result, "Labels updated (on the files, and re-indexed):\nnotes/a.md: [alpha]") {
 		t.Errorf("apply_labels %v %+v", ok, out)
 	}
-	if _, ok := m.executeInGo(r, "apply_labels", `{"paths":"x","add":"a","library":"someone-elses"}`, ToolCtx{}); ok {
-		t.Errorf("a library only Node knows ran here")
+	if out, _ := m.executeInGo(r, "apply_labels", `{"paths":"x","add":"a","library":"someone-elses"}`, ToolCtx{}); out == nil || out.Result != "Tool error: no library named someone-elses" {
+		t.Errorf("unknown library: %+v", out)
 	}
 	out, ok = m.executeInGo(r, "show_in_viewer", `{"target":"notes/a.md"}`, ToolCtx{})
 	if !ok || out.Summary != "link for notes/a.md" {

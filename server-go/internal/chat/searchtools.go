@@ -2,7 +2,6 @@ package chat
 
 import (
 	"context"
-	"errors"
 	"math"
 	"net/http"
 	"sort"
@@ -21,12 +20,9 @@ import (
 )
 
 // The corpus tools of tools.ts that run on the libraries track's packages:
-// search_kb, list_kb_dir, list_libraries and query_corpus. What those
-// packages do not have yet stays in Node (errNodeTool): search_kb's grep
-// fallback (no GUFI here and no library on another system) and the
-// gufi_vt form of a search across libraries, and listing a library on
-// another system (userLibraries.ts remoteTree). read_kb_file and
-// read_original wait on the index-text read and openOriginal.
+// search_kb (with its grep fallback where there is no GUFI here and no
+// library on another system), list_kb_dir, list_libraries and
+// query_corpus. read_kb_file and read_original are in readtools.go.
 
 func init() {
 	goExecutors["search_kb"] = (*Module).toolSearchKB
@@ -146,7 +142,7 @@ func tagList(v any) []string {
 func traced(r *http.Request, fn func(ctx context.Context) (*Outcome, error)) (*Outcome, error) {
 	ctx, commands := gufitrace.Start(r.Context(), "tool")
 	out, err := fn(ctx)
-	if err != nil && !errors.Is(err, errNodeTool) {
+	if err != nil {
 		// executeToolImpl's catch: the error is the result, and the
 		// commands that ran before it stay on it.
 		out, err = &Outcome{Result: "Tool error: " + err.Error(), Summary: "error"}, nil
@@ -161,7 +157,7 @@ func traced(r *http.Request, fn func(ctx context.Context) (*Outcome, error)) (*O
 
 func (m *Module) toolSearchKB(r *http.Request, args map[string]any, ctx ToolCtx) (*Outcome, error) {
 	if m.Corpus == nil {
-		return nil, errNodeTool
+		return nil, errNotHere
 	}
 	query := jsval.Slice(jsString(args["query"]), 200)
 	limit := int(math.Min(jsNumberOr(args["limit"], 10), 25))
@@ -186,12 +182,21 @@ func (m *Module) toolSearchKB(r *http.Request, args map[string]any, ctx ToolCtx)
 		}
 	}
 	if !m.gufiInstalled() && !remoteLib {
-		// TODO(libraries track): grepFallback.
-		return nil, errNodeTool
-	}
-	if ref == nil && len(libs) > 1 && m.eff().SearchEngine == "gufi_vt" {
-		// TODO(libraries track): searchScopeVt.
-		return nil, errNodeTool
+		return traced(r, func(c context.Context) (*Outcome, error) {
+			q := query
+			if ref != nil {
+				q = ref.Text
+				if q == "" {
+					q = ref.Name
+				}
+			}
+			rels := search.GrepFallback(c, q, m.A.Cfg.KBRoot, limit)
+			files := make([]conversations.File, len(rels))
+			for i, p := range rels {
+				files[i] = conversations.File{Path: p}
+			}
+			return &Outcome{Result: orStr(strings.Join(rels, "\n"), "No matches."), Summary: strconv.Itoa(len(rels)) + " hits (grep fallback)", Files: citedFiles(files)}, nil
+		})
 	}
 	return traced(r, func(c context.Context) (*Outcome, error) {
 		eng := m.Corpus.Search
@@ -300,7 +305,7 @@ func (m *Module) toolSearchKB(r *http.Request, args map[string]any, ctx ToolCtx)
 
 func (m *Module) toolListKBDir(r *http.Request, args map[string]any, ctx ToolCtx) (*Outcome, error) {
 	if m.Corpus == nil {
-		return nil, errNodeTool
+		return nil, errNotHere
 	}
 	lib, err := m.namedLibrary(args["library"], ctx)
 	if err != nil {
@@ -309,13 +314,24 @@ func (m *Module) toolListKBDir(r *http.Request, args map[string]any, ctx ToolCtx
 	if lib.Site == "" && lib.SourceRoot == "" {
 		return nil, &toolError{lib.Label + " has no files on this host; it can be searched but not listed"}
 	}
+	var entries []kb.Entry
 	if lib.Site != "" {
-		// TODO(libraries track): remoteTree.
-		return nil, errNodeTool
-	}
-	entries, err := kb.ListDir(jsString(args["path"]), lib.SourceRoot, false)
-	if err != nil {
-		return nil, err
+		// Hidden names left out, as a listing here leaves them out (the
+		// tree route's filter).
+		all, err := m.Corpus.Search.RemoteTree(r.Context(), lib.IndexRoot, jsString(args["path"]))
+		if err != nil {
+			return nil, err
+		}
+		for _, e := range all {
+			if !kb.HiddenName(e.Name) {
+				entries = append(entries, e)
+			}
+		}
+	} else {
+		var err error
+		if entries, err = kb.ListDir(jsString(args["path"]), lib.SourceRoot, false); err != nil {
+			return nil, err
+		}
 	}
 	var b strings.Builder
 	files := []conversations.File{}
@@ -335,7 +351,7 @@ func (m *Module) toolListKBDir(r *http.Request, args map[string]any, ctx ToolCtx
 
 func (m *Module) toolListLibraries(r *http.Request, _ map[string]any, ctx ToolCtx) (*Outcome, error) {
 	if m.Corpus == nil {
-		return nil, errNodeTool
+		return nil, errNotHere
 	}
 	reg := m.Corpus.Reg
 	libs := reg.List(m.primaryLabel(), viewerOfCtx(ctx))
@@ -366,7 +382,7 @@ func (m *Module) toolListLibraries(r *http.Request, _ map[string]any, ctx ToolCt
 
 func (m *Module) toolQueryCorpus(r *http.Request, args map[string]any, ctx ToolCtx) (*Outcome, error) {
 	if m.Corpus == nil {
-		return nil, errNodeTool
+		return nil, errNotHere
 	}
 	body := map[string]any{
 		"canned": jsString(args["canned"]),

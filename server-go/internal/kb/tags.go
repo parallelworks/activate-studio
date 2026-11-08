@@ -601,25 +601,32 @@ func (m *Module) ApplyLabelsIn(ctx context.Context, id string, rels, add, remove
 	if err != nil || !ok {
 		return nil, nil, "", "", ok, err
 	}
+	keys, updated, stored, err = m.ApplyLabelsInLibrary(ctx, lib, rels, add, remove)
+	return keys, updated, stored, lib.Label, true, err
+}
+
+// ApplyLabelsInLibrary is applyLabelsIn for a library already resolved, such
+// as a viewer's own library on another system, which Libs does not hold.
+func (m *Module) ApplyLabelsInLibrary(ctx context.Context, lib Library, rels, add, remove []string) (keys []string, updated map[string][]string, stored string, err error) {
 	updated = map[string][]string{}
 	if lib.ID == PrimaryID {
 		o, err := m.Tags.Apply(ctx, rels, add, remove)
 		if err != nil {
-			return nil, nil, "", lib.Label, true, err
+			return nil, nil, "", err
 		}
 		for _, k := range o.keys {
 			updated[k] = o.vals[k].([]string)
 		}
-		return o.keys, updated, "files", lib.Label, true, nil
+		return o.keys, updated, "files", nil
 	}
 	got, err := m.applyLibraryLabels(lib, rels, add, remove)
 	if err != nil {
-		return nil, nil, "", lib.Label, true, err
+		return nil, nil, "", err
 	}
 	for _, rel := range rels {
 		if _, ok := got[rel]; ok && !slices.Contains(keys, rel) {
 			keys = append(keys, rel)
 		}
 	}
-	return keys, got, "studio", lib.Label, true, nil
+	return keys, got, "studio", nil
 }

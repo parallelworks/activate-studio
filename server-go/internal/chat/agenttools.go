@@ -716,7 +716,7 @@ func plural(n int) string {
 func (m *Module) sites() (*agentsites.Sites, error) {
 	s := tasks.CurrentSites()
 	if s == nil {
-		return nil, errNodeTool
+		return nil, errNotHere
 	}
 	return s, nil
 }
@@ -979,7 +979,7 @@ func (m *Module) toolDelegate(r *http.Request, args map[string]any, ctx ToolCtx)
 	}
 	e := tasks.CurrentEngine()
 	if e == nil {
-		return nil, errNodeTool
+		return nil, errNotHere
 	}
 	execution := "local"
 	if arg(args, "execution") == "campaign" {
@@ -1019,7 +1019,7 @@ func (m *Module) toolDelegate(r *http.Request, args map[string]any, ctx ToolCtx)
 func (m *Module) toolTaskStatus(r *http.Request, args map[string]any, ctx ToolCtx) (*Outcome, error) {
 	e := tasks.CurrentEngine()
 	if e == nil {
-		return nil, errNodeTool
+		return nil, errNotHere
 	}
 	mid := tmplOr(arg(args, "id"), "")
 	if mid == "" {

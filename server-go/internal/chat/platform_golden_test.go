@@ -191,7 +191,7 @@ func TestGoldenPlatformToolsMatchNode(t *testing.T) {
 		saved[name] = fn
 		goExecutors[name] = func(m *Module, r *http.Request, args map[string]any, ctx ToolCtx) (*Outcome, error) {
 			out, err := fn(m, r, args, ctx)
-			if err != errNodeTool {
+			if err != errNotHere {
 				mu.Lock()
 				ranInGo[name] = true
 				mu.Unlock()

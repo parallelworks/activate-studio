@@ -156,9 +156,6 @@ func (m *Module) executeInGo(r *http.Request, name, argsJSON string, ctx ToolCtx
 	default:
 		out, err = m.runCustomTool(r.Context(), *custom, args)
 	}
-	if errors.Is(err, errNodeTool) {
-		return nil, false
-	}
 	if err != nil {
 		return &Outcome{Result: "Tool error: " + err.Error(), Summary: "error"}, true
 	}
