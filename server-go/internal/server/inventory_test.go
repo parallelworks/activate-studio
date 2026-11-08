@@ -74,7 +74,7 @@ func TestNodeFreeAnswers501ForUnported(t *testing.T) {
 		status       int
 	}{
 		{"POST", "/api/chat/stream", 501},
-		{"GET", "/api/kb/history", 501},
+		{"GET", "/api/kb/topology", 501},
 		{"GET", "/api/no-such-route", 404},
 		{"GET", "/healthz", 200},
 	} {

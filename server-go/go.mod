@@ -4,6 +4,7 @@ go 1.26.0
 
 require (
 	github.com/andybalholm/brotli v1.2.8
+	github.com/ebitengine/purego v0.11.3
 	github.com/giraffesyo/downmark v0.10.0
 	github.com/giraffesyo/pdf v0.6.0
 	github.com/richardlehane/mscfb v1.0.9

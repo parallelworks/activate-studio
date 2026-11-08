@@ -86,7 +86,7 @@ When Node exits on its own the Go server exits with Node's code, so exit 76 (a r
 
 ## HTTP API inventory
 
-219 method and path pairs from 212 registrations in 32 files (93 `.ts` files, about 32,800 lines in `server/src`; tests about 19,500 lines). Loops expand `act()` in `fleet.ts` to five routes, the `ssh`/`pw` loop in `userLibraries.ts` to four, and the session relay is GET and HEAD. On top of these, `main.ts` serves `web/dist` (`@fastify/static`, wildcard) with an `index.html` fallback outside `/api`, and Fastify answers HEAD for every GET. There are no websocket routes. Streams: SSE in `/api/chat/stream` (761-line handler: the agent loop) and `/v1/chat/completions`, the relay in `/api/session-proxy/:host/*`, file downloads, and multipart uploads (`/api/kb/upload`, `/api/chat/attachments`, `/api/setup/icon`, `/api/extensions/persona-icon`). Ported: `/healthz`, and in front-auth mode `/api/whoami` and the new `/api/auth/*` (Stage 1). The files track (`internal/kb`) serves the KB file, upload and label routes; see "Files and labels in Go".
+219 method and path pairs from 212 registrations in 32 files (93 `.ts` files, about 32,800 lines in `server/src`; tests about 19,500 lines). Loops expand `act()` in `fleet.ts` to five routes, the `ssh`/`pw` loop in `userLibraries.ts` to four, and the session relay is GET and HEAD. On top of these, `main.ts` serves `web/dist` (`@fastify/static`, wildcard) with an `index.html` fallback outside `/api`, and Fastify answers HEAD for every GET. There are no websocket routes. Streams: SSE in `/api/chat/stream` (761-line handler: the agent loop) and `/v1/chat/completions`, the relay in `/api/session-proxy/:host/*`, file downloads, and multipart uploads (`/api/kb/upload`, `/api/chat/attachments`, `/api/setup/icon`, `/api/extensions/persona-icon`). Ported: `/healthz`, and in front-auth mode `/api/whoami` and the new `/api/auth/*` (Stage 1). The files track (`internal/kb`) serves the KB file, upload and label routes; see "Files and labels in Go". The index track (`internal/index`) serves the 16 routes of `indexRoutes.ts` and the 6 of `history.ts` when `STUDIO_GO_INDEX=1` or Node is off; see "The index in Go".
 
 Dependencies, as an upper bound from the static call graph: `gufi` the GUFI binaries (`gufi_query`, `gufi_sqlite3`, `gufi_vt`, `gufi_dir2index`); `ssh` plain ssh or `pw ssh` for libraries on other systems; `pw` the pw CLI, `pw-token` only to renew the deployment token; `python` an indexer script (`enrich.py`, `embed.py`, `embed_query.py`, `semantic_map.py`, `fetch_embed.py`, or `python -c` with `sqlite3`); `node:sqlite` Node's built-in SQLite (`textCleanup.ts`, `refine.ts`; every other SQLite access goes through GUFI's binaries or Python); `llm` the OpenAI-compatible gateway; `platform` the ACTIVATE API; `github`; `mcp` MCP servers; `soffice` LibreOffice and poppler; `xattr` `getfattr`/`setfattr`; `http` another outbound fetch. Almost every handler also reads `settings.json`.
 
@@ -147,6 +147,8 @@ Dependencies, as an upper bound from the static call graph: `gufi` the GUFI bina
 | Conversation export reindex | conversations.ts | 5 s after an export, 2 s after deletes | an index job |
 | CLI device login | access.ts | the login route | `pw auth login --device` |
 | SSE keepalive | chat/routes.ts, ragProxy.ts | every 3 s during a stream | none |
+
+In Go (`internal/index`), the sweep, the index jobs, history snapshots, the query embedder and the map rebuild after a job run with the same triggers. The jobs run `studio-server extract`, `gufi_dir2index`, words in process, and `studio-server embed` with `gufi_sqlite3`; the map is built in process by `internal/semanticmap`.
 
 ## Environment
 
@@ -352,6 +354,32 @@ OMP_THREAD_LIMIT=1 ./bin/studio-extract --kb-root ~/kb --extract-cache ~/.cache/
 ENRICH_PY=../indexer/enrich.py ENRICH_DEPS=../indexer/.deps go test ./internal/extract/...   # compares with Python
 ```
 
+## The index in Go
+
+`internal/index` ports `indexing.ts`, `indexRoutes.ts`, `history.ts`, `indexFormat.ts`, `indexModes.ts`, `indexSettings.ts`, `indexLog.ts`, `depthState.ts`, `omissions.ts`, `dirScan.ts` and `extractors.ts`. It registers from `internal/server/tracks_index.go`, and only when `a.GoIndexes()` (Node off, or `STUDIO_GO_INDEX=1`); otherwise the routes stay with Node. Routes: GET `/api/index/status`, `/api/index/extractors`, `/api/index/log`, `/api/index/job/:id`; GET and PUT `/api/index/settings`; POST `/api/index/dir`, `/api/index/job`, `/api/index/job/:id/cancel`, `/api/index/cancel`, `/api/index/build`, `/api/reindex`, `/api/index/sweep`, `/api/index/log/reveal`, `/api/index/location`; DELETE `/api/index`; and the history routes GET `/api/kb/history`, `/api/kb/history/level`, `/api/kb/history/diff`, DELETE `/api/kb/history/snapshot`, POST `/api/kb/history/prune`, `/api/kb/history/capture`.
+
+It fills the providers the files and core tracks call (`StartBuild`, `IndexDir`, `IndexDirMS`, `IndexRootDB`, `SetupIndexState`), reports changes through `Providers.Changed` (`dbList`, `context`), and starts the sweep from `OnIndexWork` under the index lock. A job is the same three phases as Node's. Documents runs `studio-server extract` (the pass in "Document extraction in Go"), with `--pdf-reader`, `--soffice` and `INDEX_BASE/extractors.json` when that file exists. Text writes the words in process, byte for byte as `enrich.py` writes them. Meaning runs `studio-server embed` (ONNX), and is skipped without a model, as in Node. Each child runs in its own process group, killed on cancel and after 30 minutes without progress.
+
+Behavior differences from Node:
+
+| Case | Node | Go |
+|---|---|---|
+| documents phase totals | files `preextract` converts | every file the pass reads, images and native formats included (275 against 190 on the corpus below) |
+| text phase totals | files `enrich.py` reads | directories written (26 against 138) |
+| index log tool names | `enrich.py`, `embed.py` | `extract`, `embed` |
+| extractor report | pypdf, xlrd and olefile as Python packages | pypdf never available; the `.xls`, `.ppt` and OpenDocument readers built in |
+| job ids with Node beside | from 1 | from 2^21; lower ids for `/api/index/job/:id` and its cancel go to Node |
+| map rebuild after a job | `semantic_map.py` | `internal/semanticmap` in process, logged to the server log |
+| error bodies | no trailing newline | `apierr` adds one |
+
+`/api/jobs/:id` stays in `internal/kb`, which hands ids it does not know to Node: Node's library builds still create `jobs.ts` jobs, so that hand-off is removed with the libraries track. `fetch_embed.py` is used only by `remoteEmbed.ts` and moves with the libraries track.
+
+Parity, Node with Python against Go on a 386-file KB (26 databases): `entries`, the words, `gchunks` and `gvecmodel` are equal; all 835 vectors agree within 8.94e-08; the extract cache is 275 of 275 equal; `sweep-state.json`, `index-depth.json`, `indexed-root` and `skip-dirs` are equal; the map has the same 221 files and 11 clusters. A full index took 141.8 s with Node and Python (documents 7.9, text 77.0, meaning 56.5) and 28.0 to 29.5 s with Go (documents 24.0, text 0.19, meaning 5.3), on the shared host at load 2 to 12. The whole Node suite through the Go front with `STUDIO_TEST_FRONT_STRICT=1` and `STUDIO_GO_INDEX=1` passes (873 pass, 20 skipped, 0 fail); `depthSync.test.mjs` and `indexJobs.test.mjs` were converted to wrap the Go children when the Go index runs.
+
+ONNX Runtime is loaded with `github.com/ebitengine/purego` (v0.11.3, no cgo, API version 14) in the `embed` and `embed-query` children, never in the server. The library is found through `STUDIO_ORT_LIB`, then beside the executable (its folder, `lib/`, `../lib/`), then in the onnxruntime wheel under `indexer/.deps`. Each package ships the release library for its OS from the onnxruntime 1.31.0 assets: linux-x64 (11.4 MB archive, 29 MB library), linux-aarch64 (10.3 MB archive), osx-arm64 (36.5 MB archive) and win-x64 (82.9 MB zip). Intel macOS has no release after 1.23.2 (11.7 MB archive), so that build would pin it. The tokenizer matched Hugging Face tokenizers 0.23.3 on 26,004 samples; on 3,100 texts 748 vectors were equal bit for bit and the rest within 8.94e-08 (lowest cosine 0.9999995). The int8 model quantizes activations per batch, so a vector depends on the batch it was embedded in, as in Python.
+
+Variables the Go index reads besides Node's: `STUDIO_GO_INDEX=1` (Go serves the index beside Node), `STUDIO_ORT_LIB` (the onnxruntime library), and for tests `STUDIO_EXTRACT_BIN`, `STUDIO_EMBED_BIN` and `STUDIO_EMBED_QUERY_BIN` (a command run with the subcommand's flags in place of `studio-server extract`, `embed` or `embed-query`) and `STUDIO_INDEX_HOLD_FILE` (the text phase waits while the file exists).
+
 ## Performance
 
 Measured on a shared 20-core Linux host (load average 3 to 12 during the runs, recorded with each run) with the harness kept outside the repository; medians of 3 rounds, 10 runs for startup. "Before" is 3065f7d.
@@ -378,6 +406,8 @@ Event streams are unchanged by the flushing change (time to first event and the 
 - Retention of persisted OIDC sessions: they last `OIDC_SESSION_MAX_AGE_SEC`, or as long as refresh succeeds with `offline_access`, and are pruned every ten minutes; deleting `INDEX_BASE/.oidc-session-key` ends them all. Whether to offer a setting that ends them at restart, as the branch's in-memory sessions did, is open.
 - `/v1/` and `/internal/` are left to Node's own checks under required sign-in, where the `oidc-signin` branch redirected them to sign-in.
 - Where the Go server lives in the packaged apps: the desktop supervisor and `deploy/` start `node server/dist/main.js` today. Switching them to `studio-server` with `STUDIO_NODE_SPAWN=1` is one change per launcher.
-- The ONNX embedder in Go (step 4): onnxruntime through cgo, or a pure Go MiniLM. cgo makes cross-compiling harder; pure Go is slower.
+- The ONNX embedder in Go is onnxruntime through purego (see "The index in Go"). Open: whether Intel macOS keeps onnxruntime 1.23.2, or drops meaning search there.
+- `extract.Suffix` uses `filepath.Ext`, which gives `.bashrc` for a dotfile where Python's `splitext` gives no suffix. The cache entries agree on the corpus; the extract code should decide which rule it follows.
+- `semanticmap.Build` panics when given zero-valued `Options`; the index passes the defaults (sample 3000, fit 20000) and recovers, but the package should reject them.
 - Document extraction (step 4): whether the Go pass needs pypdf's role (PDF text without poppler) or the Go renderer covers it; where the external extractor file lives in Settings; whether `enrich.py --jobs 1` should set `OMP_THREAD_LIMIT` as its pool workers do; and whether a Windows cache written by Python (which writes \r\n) and one written by Go (\n) should be treated alike, not yet compared.
 - `semantic_map.py` labels the map with the model most files use but maps the files of every model; the Go port does the same. Whether files of other models should be left out, as the docstring says, is a decision for the Python and Go code together.
