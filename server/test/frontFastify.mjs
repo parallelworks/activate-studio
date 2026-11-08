@@ -48,6 +48,9 @@ const NODE_DIRECT = new Map([
   ['standaloneChat.test.mjs', 'server-go/internal/chat (TestGoldenStreamMatchesNode, TestCitationsMatchNode)'],
   ['toolApproval.test.mjs', 'server-go/internal/chat (TestHeldCallsAskThenRunOnce, TestToolCatalogMatchesNode)'],
   ['unansweredTurn.test.mjs', 'server-go/internal/conversations (TestUnansweredWhileAReplyStreams)'],
+  // Its two clusters are stood in with setRemoteSpawn in the test's own
+  // process; internal/search runs its cases with a stand-in Spawn.
+  ['libraryScope.test.mjs', 'server-go/internal/search (TestScopeAcrossUserLibraries)'],
 ])
 const direct = NODE_DIRECT.has(path.basename(process.argv[1] ?? ''))
 // The ports the Go servers take; another test process may hold one.
