@@ -357,9 +357,11 @@ func Dequantize(h string, scale float64) []float32 {
 		} else if q < 0 {
 			sign = -1
 		}
-		x := float32((q+sign*0.5+128)/127.5 - 1)
-		out[i] = x
-		norm += float64(x) * float64(x)
+		// Node sums the norm over the doubles, before the Float32Array
+		// rounds them.
+		x := (q+sign*0.5+128)/127.5 - 1
+		out[i] = float32(x)
+		norm += x * x
 	}
 	f := 0.0
 	if norm > 0 {
