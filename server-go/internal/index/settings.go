@@ -8,6 +8,8 @@ import (
 	"runtime"
 	"slices"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/apierr"
 )
@@ -103,12 +105,29 @@ type SettingsStore struct {
 	stamp string
 }
 
-func settingsStamp(f string) string {
+func settingsStamp(f string) string { return FileStamp(f, "") }
+
+// SettledFor is how long after a file last changed its size and time are
+// taken to tell it apart from any later version. A second write within
+// the same tick of the file system's clock can keep both; one in place by
+// Node, the same length, would then go unseen.
+const SettledFor = 2 * time.Second
+
+var unsettled atomic.Int64
+
+// FileStamp is a file's size and time, with extra appended, to tell when
+// the file has changed since it was read. A file changed in the last
+// SettledFor stamps as one never seen before, so a copy kept from it is
+// read again on the next call.
+func FileStamp(f, extra string) string {
 	st, err := os.Stat(f)
 	if err != nil {
 		return "none"
 	}
-	return fmt.Sprintf("%d:%d", st.Size(), st.ModTime().UnixNano())
+	if time.Since(st.ModTime()) < SettledFor {
+		return fmt.Sprintf("unsettled:%d", unsettled.Add(1))
+	}
+	return fmt.Sprintf("%d:%d%s", st.Size(), st.ModTime().UnixNano(), extra)
 }
 
 // NewSettingsStore is the store under indexBase.

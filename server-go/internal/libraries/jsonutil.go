@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	"github.com/parallelworks/activate-studio/server-go/internal/index"
 )
 
 // orderedObject is a JSON object with its keys in the order they came,
@@ -98,7 +100,7 @@ func fileStamp(file string) string {
 	if err != nil {
 		return "none"
 	}
-	return fmt.Sprintf("%d:%d:%d", st.Size(), st.ModTime().UnixNano(), inode(st))
+	return index.FileStamp(file, fmt.Sprintf(":%d", inode(st)))
 }
 
 // writeAtomic writes through a temporary file renamed over the old one, so
