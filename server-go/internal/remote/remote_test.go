@@ -177,3 +177,33 @@ func TestSSHSiteRoundTrip(t *testing.T) {
 		}
 	}
 }
+
+// Requests made at once on one session each get their own answer: the
+// order they are queued in is the order they are written in.
+func TestConcurrentRunsGetTheirOwnAnswers(t *testing.T) {
+	p := localPool(t, map[string]string{"STUDIO_REMOTE_SESSIONS": "1"})
+	ctx := context.Background()
+	if _, err := p.Run(ctx, "cluster", "k", []string{"true"}, 10*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	for round := 0; round < 20; round++ {
+		var wg sync.WaitGroup
+		errs := make(chan string, 16)
+		for i := 0; i < 16; i++ {
+			wg.Add(1)
+			go func(i int) {
+				defer wg.Done()
+				want := strconv.Itoa(round*100 + i)
+				r, err := p.Run(ctx, "cluster", "k", []string{"echo", want}, 10*time.Second)
+				if err != nil || strings.TrimSpace(r.Stdout) != want {
+					errs <- want + " got " + strings.TrimSpace(r.Stdout)
+				}
+			}(i)
+		}
+		wg.Wait()
+		close(errs)
+		for e := range errs {
+			t.Fatal(e)
+		}
+	}
+}
