@@ -46,7 +46,7 @@ const NODE_DIRECT = new Map([
   ['modelsListingCache.test.mjs', 'server-go/internal/chat (TestModelListingIsCached)'],
   ['offline.test.mjs', 'server-go/internal/chat (TestNoCredentialIsASentence), internal/llm'],
   ['standaloneChat.test.mjs', 'server-go/internal/chat (TestGoldenStreamMatchesNode, TestCitationsMatchNode)'],
-  ['toolApproval.test.mjs', 'server-go/internal/chat (TestGoldenStreamMatchesNode); approvals stay in Node behind the chat bridge'],
+  ['toolApproval.test.mjs', 'server-go/internal/chat (TestHeldCallsAskThenRunOnce, TestToolCatalogMatchesNode)'],
   ['unansweredTurn.test.mjs', 'server-go/internal/conversations (TestUnansweredWhileAReplyStreams)'],
 ])
 const direct = NODE_DIRECT.has(path.basename(process.argv[1] ?? ''))

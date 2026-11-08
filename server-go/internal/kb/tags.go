@@ -567,3 +567,26 @@ func (t *Tags) Recover(ctx context.Context) int {
 	}
 	return adopted
 }
+
+// Counts is each label in the main library and how many folders and files
+// carry it, in first-seen order over folders, then files (the chat's
+// get_labels and labeling.ts's vocabulary).
+func (t *Tags) Counts(ctx context.Context) (labels []string, counts map[string]int) {
+	m := t.maps(ctx)
+	counts = map[string]int{}
+	add := func(tags []string) {
+		for _, tag := range tags {
+			if _, ok := counts[tag]; !ok {
+				labels = append(labels, tag)
+			}
+			counts[tag]++
+		}
+	}
+	for _, p := range m.dirOrd {
+		add(m.dirs[p])
+	}
+	for _, p := range m.fileOrd {
+		add(m.files[p])
+	}
+	return labels, counts
+}

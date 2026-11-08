@@ -110,6 +110,7 @@ func call(name string, args string) reply {
 }
 
 type goldenEnv struct {
+	kb     string
 	gw     *fakeGateway
 	node   string
 	goURL  string
@@ -129,6 +130,18 @@ func startGolden(t *testing.T) *goldenEnv {
 	gw := &fakeGateway{}
 	gs := httptest.NewServer(gw)
 	t.Cleanup(gs.Close)
+	mcp := httptest.NewServer(http.HandlerFunc(fakeMCPServer))
+	t.Cleanup(mcp.Close)
+	// The deployment's own tools, the same for both servers.
+	for _, base := range []string{ix, filepath.Join(dir, "ix-go")} {
+		os.MkdirAll(filepath.Join(base, "extensions", "skills"), 0o755)
+		os.WriteFile(filepath.Join(base, "extensions", "skills", "brief-writer.md"), []byte("---\ndescription: Writes a short brief.\n---\nWrite two paragraphs.\n"), 0o644)
+		settings, _ := json.Marshal(map[string]any{
+			"customTools": []any{map[string]any{"name": "greet", "description": "Says hi", "command": "echo hi"}},
+			"mcpServers":  []any{map[string]any{"name": "crm", "url": mcp.URL + "/mcp"}},
+		})
+		os.WriteFile(filepath.Join(base, "settings.json"), settings, 0o644)
+	}
 	env := map[string]string{
 		"INDEX_BASE": ix, "KB_ROOT": kb, "PW_GATEWAY_URL": gs.URL + "/v1", "PW_API_KEY": "test-key",
 		"STUDIO_BRIDGE_SECRET": "golden-secret", "PW_CREDENTIALS_DIR": filepath.Join(dir, "nopw"), "PW_CLI": "/bin/false",
@@ -175,7 +188,7 @@ func startGolden(t *testing.T) *goldenEnv {
 	Register(mux, a)
 	gsrv := httptest.NewServer(mux)
 	t.Cleanup(gsrv.Close)
-	return &goldenEnv{gw: gw, node: nodeURL, goURL: gsrv.URL, module: Default}
+	return &goldenEnv{kb: kb, gw: gw, node: nodeURL, goURL: gsrv.URL, module: Default}
 }
 
 func post(t *testing.T, base string, body map[string]any) string {
@@ -203,6 +216,7 @@ var (
 	durRe    = regexp.MustCompile(`"reasoningDuration":\d+`)
 	idRe     = regexp.MustCompile(`"id":"[0-9a-f-]{36}"`)
 	refRe    = regexp.MustCompile(`\(ref [0-9a-z]+\)`)
+	reixRe   = regexp.MustCompile(`re-indexed in \d+ ms`)
 )
 
 func normal(s string) string {
@@ -214,6 +228,7 @@ func normal(s string) string {
 	s = dateRe.ReplaceAllString(s, "DATE")
 	s = nonceRe.ReplaceAllString(s, `nonce$1":$2"N`)
 	s = corpusRe.ReplaceAllString(s, `\nCORPUS\n`)
+	s = reixRe.ReplaceAllString(s, "re-indexed in N ms")
 	return refRe.ReplaceAllString(s, "(ref R)")
 }
 
@@ -223,11 +238,17 @@ type scenario struct {
 	text    string
 	replies []reply
 	extra   map[string]any
+	// setup runs before each server's run.
+	setup func(g *goldenEnv)
 }
 
 func scenarios() []scenario {
 	long := strings.Repeat("The kickoff agenda lists the topics for the first meeting. ", 5)
 	return []scenario{
+		// First, before any conversation is exported: an export labels its
+		// transcript chat-session, in the labels Node keeps.
+		{name: "labels and label proposals", text: "label my notes", replies: []reply{call("get_labels", `{}`), call("suggest_labels", `{"dir":"notes"}`),
+			text("```json\n" + `[{"path":"notes/kickoff agenda.md","labels":["Meeting Notes","agenda!","meeting-notes"],"why":"an agenda"},{"path":"elsewhere.md","labels":["x"]}]` + "\n```"), text(long)}},
 		{name: "plain", text: "hello there", replies: []reply{text("Hello", " world.")}},
 		{name: "citation split across pieces", text: "where is the agenda?", replies: []reply{text("See [relative/path/notes/kick", "off agenda.md] for it, and [an aside].")}},
 		{name: "a tool round, then the answer", text: "what is in my folder?", replies: []reply{call("list_kb_dir", `{"path":"notes"}`), text(long + "[notes/kickoff agenda.md]")}},
@@ -262,6 +283,11 @@ func scenarios() []scenario {
 			{frames: []any{delta(map[string]any{"tool_calls": []any{map[string]any{"index": 0, "id": "u1", "type": "function", "function": map[string]any{"name": "list_kb_dir", "arguments": "{}"}}}}),
 				map[string]any{"model": "test-model", "choices": []any{map[string]any{"index": 0, "delta": map[string]any{}, "finish_reason": "tool_calls"}}, "usage": map[string]any{"prompt_tokens": 7, "completion_tokens": 3}}}},
 			{frames: []any{delta(map[string]any{"content": long}), map[string]any{"model": "served-name", "choices": []any{map[string]any{"index": 0, "delta": map[string]any{}, "finish_reason": "stop"}}, "usage": map[string]any{"prompt_tokens": 20, "completion_tokens": 9, "total_tokens": 29}}}}}},
+		{name: "a skill and a command tool", text: "brief me", replies: []reply{call("use_skill", `{"name":"brief_writer"}`), call("greet", `{"args":"there 'two words'"}`), text(long)}},
+		{name: "the Studio's own docs", text: "how do labels work in this app?", replies: []reply{call("studio_docs", `{"doc":"nope"}`), text(long)}},
+		{name: "writing a file", text: "save a note", setup: func(g *goldenEnv) { os.Remove(filepath.Join(g.kb, "notes", "new note.md")) },
+			replies: []reply{call("write_kb_file", `{"path":"/notes/new note.md","content":"# New\n"}`), call("write_kb_file", `{"path":"notes/new note.md","content":"again"}`), call("write_kb_file", `{"path":".git/x","content":"x"}`), text(long)}},
+		{name: "a tool from an attached MCP server", text: "find deals", replies: []reply{call("crm__find_deals", `{"q":"pumps"}`), call("crm__fail", `{}`), text(long)}},
 		{name: "a steer is not queued, labels scope the prompt", text: "scoped", extra: map[string]any{"labelScope": []any{"alpha", "beta"}}, replies: []reply{text("Scoped answer.")}},
 	}
 }
@@ -275,6 +301,9 @@ func TestGoldenStreamMatchesNode(t *testing.T) {
 				model = "test-model"
 			}
 			run := func(base, who string) (string, []json.RawMessage) {
+				if sc.setup != nil {
+					sc.setup(g)
+				}
 				g.gw.load(sc.replies)
 				body := map[string]any{"model": model, "conversationId": fmt.Sprintf("conv-%s-%d", who, i), "userMessageId": "u1",
 					"messages": []any{map[string]any{"role": "user", "content": sc.text}}}
@@ -318,4 +347,40 @@ func TestGoldenStreamMatchesNode(t *testing.T) {
 			}
 		})
 	}
+}
+
+// fakeMCPServer is an attached MCP server with two tools.
+func fakeMCPServer(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		ID     any             `json:"id"`
+		Method string          `json:"method"`
+		Params json.RawMessage `json:"params"`
+	}
+	b, _ := io.ReadAll(r.Body)
+	json.Unmarshal(b, &req)
+	var result any
+	switch req.Method {
+	case "initialize":
+		w.Header().Set("Mcp-Session-Id", "s1")
+		result = map[string]any{}
+	case "tools/list":
+		result = map[string]any{"tools": []any{
+			map[string]any{"name": "find.deals", "description": "Find deals by text", "inputSchema": map[string]any{"type": "object", "properties": map[string]any{"q": map[string]any{"type": "string"}}}},
+			map[string]any{"name": "fail"},
+		}}
+	case "tools/call":
+		var p struct {
+			Name      string          `json:"name"`
+			Arguments json.RawMessage `json:"arguments"`
+		}
+		json.Unmarshal(req.Params, &p)
+		if p.Name == "fail" {
+			out, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": req.ID, "error": map[string]any{"message": "the CRM is down"}})
+			w.Write(out)
+			return
+		}
+		result = map[string]any{"content": []any{map[string]any{"type": "text", "text": "2 deals for " + string(p.Arguments)}}}
+	}
+	out, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": result})
+	w.Write(out)
 }

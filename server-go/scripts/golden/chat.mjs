@@ -20,6 +20,65 @@ if (op === 'citations') {
     return [...c.pieces.map(p => s.push(p)), s.flush()]
   })
   console.log(JSON.stringify(out))
+} else if (op === 'catalog') {
+  // The built-in tool catalog as tools.ts and platformTools.ts declare it:
+  // the source of internal/chat/toolcatalog.json, and what the Go
+  // catalog is checked against.
+  const { TOOL_SPECS, TOOL_CALLS, TOOL_GROUPS } = await import(dist('chat/tools.js'))
+  const { PLATFORM_TOOLS, toolHash } = await import(dist('chat/platformTools.js'))
+  console.log(JSON.stringify({
+    specs: TOOL_SPECS.map(t => t.function),
+    calls: TOOL_CALLS,
+    groups: Object.fromEntries(Object.entries(TOOL_GROUPS).map(([g, d]) => [g, { summary: d.summary, names: d.names, cue: d.cue.source }])),
+    platform: PLATFORM_TOOLS,
+    hashes: Object.fromEntries(PLATFORM_TOOLS.map(t => [t.name, toolHash(t.name)])),
+  }, null, 1))
+} else if (op === 'tools') {
+  // What tools.ts, platformTools.ts, context.ts and approvals.ts work out
+  // for the cases on stdin, over the INDEX_BASE and KB_ROOT of the
+  // environment, and the catalog routes' answers.
+  const req = createRequire(path.join(path.resolve(repo), 'server/package.json'))
+  const { default: Fastify } = await import(pathToFileURL(req.resolve('fastify')).href)
+  const t = await import(dist('chat/tools.js'))
+  const p = await import(dist('chat/platformTools.js'))
+  const { systemPrompt } = await import(dist('chat/context.js'))
+  const { chatRoutes } = await import(dist('chat/routes.js'))
+  const app = Fastify()
+  await app.register(chatRoutes)
+  const get = async url => JSON.parse((await app.inject({ method: 'GET', url })).body)
+  const cases = JSON.parse(fs.readFileSync(0, 'utf8'))
+  const all = await t.activeToolSpecsWithRemote()
+  const out = {
+    tools: await get('/api/chat/tools'),
+    options: await get('/api/chat/tool-options'),
+    active: t.activeToolSpecs().map(s => s.function.name),
+    labels: Object.fromEntries(all.map(s => [s.function.name, t.toolOptionLabel(s.function.name)])),
+    slash: cases.slash.map(s => t.expandSlashCommand(s)),
+    groups: cases.texts.map(s => [...t.initialToolGroups(s, cases.used)].sort()),
+    selected: cases.groupSets.map(g => t.selectToolSpecs(all, new Set(g))),
+    prepared: cases.prepare.map(c => p.prepareArgs(c.tool, c.args, c.user)),
+    approvals: cases.prepare.map(c => {
+      const r = p.prepareArgs(c.tool, c.args, c.user)
+      return 'args' in r ? p.approvalPart(c.tool, r.args, 'call_1', '2026-01-01T00:00:00.000Z') : null
+    }),
+    projected: cases.project.map(c => p.projectResult(p.platformTool(c.tool), c.value)),
+  }
+  out.prompts = []
+  for (const [platform, connected] of [[true, true], [false, true], [false, false]]) out.prompts.push(await systemPrompt({ platform, connected }))
+  // Written whole before the exit: console.log to a pipe is asynchronous.
+  fs.writeSync(1, JSON.stringify(out) + '\n')
+  process.exit(0)
+} else if (op === 'mcp') {
+  // mcpClient.ts over the servers saved in INDEX_BASE's settings: the
+  // tools listed, each server's state, and the calls on stdin.
+  const c = await import(dist('mcpClient.js'))
+  const calls = JSON.parse(fs.readFileSync(0, 'utf8'))
+  const out = { specs: await c.remoteToolSpecs(), status: await c.remoteStatus(), remote: calls.map(x => c.isRemoteTool(x.name)), calls: [] }
+  for (const x of calls) {
+    try { out.calls.push({ ok: await c.callRemoteTool(x.name, x.args) }) } catch (e) { out.calls.push({ error: String(e.message ?? e) }) }
+  }
+  fs.writeSync(1, JSON.stringify(out) + '\n')
+  process.exit(0)
 } else if (op === 'serve') {
   const req = createRequire(path.join(path.resolve(repo), 'server/package.json'))
   const { default: Fastify } = await import(pathToFileURL(req.resolve('fastify')).href)
