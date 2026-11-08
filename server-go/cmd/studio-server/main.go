@@ -7,10 +7,9 @@ package main
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/parallelworks/activate-studio/server-go/internal/bridge"
 	"log/slog"
 	"net"
 	"net/http"
@@ -32,7 +31,12 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/version"
 )
 
-func main() { os.Exit(run()) }
+func main() {
+	if code, ok := dispatchSubcommand(); ok {
+		os.Exit(code)
+	}
+	os.Exit(run())
+}
 
 func logLevel(v string) slog.Level {
 	switch v {
@@ -103,11 +107,9 @@ func run() int {
 			return 2
 		}
 	case cfg.NodeSpawn:
-		// The transitional bridge's secret (app/bridge.go), for Node and the
-		// Go server alike.
-		if os.Getenv(app.BridgeSecretEnv) == "" {
-			os.Setenv(app.BridgeSecretEnv, randomSecret())
-		}
+		// Modules ported to Go add what the Node behind them needs to know
+		// (the bridge secret, the Go server's URL, the work Go has taken over).
+		nodeEnv = bridge.NodeEnv(nodeEnv, "http://127.0.0.1:"+strconv.Itoa(cfg.Port))
 		if proc, err = nodeproc.Start(ctx, log, cfg.NodeBin, cfg.NodeMain, 90*time.Second, nodeEnv); err != nil {
 			log.Error("node", "err", err.Error())
 			return 1
@@ -265,12 +267,3 @@ func nodeString(u *url.URL) string {
 }
 
 func nodeRoutesCount(s *server.Server) []string { return append(s.Ported(), s.Unported()...) }
-
-// randomSecret is 32 random bytes in hex.
-func randomSecret() string {
-	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
-		panic(err)
-	}
-	return hex.EncodeToString(b)
-}

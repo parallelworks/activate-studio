@@ -47,9 +47,9 @@ func splitTags(v string) []string {
 // tagMaps are the main library's labels by path from its index, with the
 // overlay over them: folders and files apart.
 type tagMaps struct {
-	dirs, files       map[string][]string
-	dirOrd, fileOrd   []string
-	at                time.Time
+	dirs, files     map[string][]string
+	dirOrd, fileOrd []string
+	at              time.Time
 }
 
 func (m *tagMaps) set(dir bool, p string, t []string) {

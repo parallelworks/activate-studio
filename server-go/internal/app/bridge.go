@@ -9,8 +9,9 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"time"
+
+	"github.com/parallelworks/activate-studio/server-go/internal/bridge"
 )
 
 // The Node bridge is TRANSITIONAL. It exists only so the Go file routes can
@@ -22,41 +23,32 @@ import (
 // Nothing else is to be routed through it.
 //
 // server/src/goBridge.ts answers POST /internal/go/index and
-// /internal/go/changed when the request carries STUDIO_BRIDGE_SECRET in
-// BridgeHeader; the Go front refuses BridgePrefix from clients.
+// /internal/go/changed when the request carries internal/bridge's secret;
+// the Go front refuses BridgePrefix to clients (bridge.RegisterPrivatePrefix).
 
-// BridgeHeader carries the bridge's secret.
-const BridgeHeader = "X-Studio-Bridge"
-
-// BridgePrefix is the bridge's path on the Node server.
+// BridgePrefix is these calls' path on the Node server.
 const BridgePrefix = "/internal/go/"
 
-// BridgeSecretEnv names the secret, which the Go server makes when it
-// starts Node and a test harness sets for both.
-const BridgeSecretEnv = "STUDIO_BRIDGE_SECRET"
+func init() { bridge.RegisterPrivatePrefix(BridgePrefix) }
 
-type bridge struct {
+type nodeBridge struct {
 	base   *url.URL
 	client *http.Client
 }
 
 // Index jobs wait behind each other, and a large subtree takes minutes.
-func newBridge(base *url.URL) *bridge {
-	return &bridge{base: base, client: &http.Client{Timeout: 6 * time.Hour}}
+func newBridge(base *url.URL) *nodeBridge {
+	return &nodeBridge{base: base, client: &http.Client{Timeout: 6 * time.Hour}}
 }
 
-func (b *bridge) post(ctx context.Context, path string, body any, out any) error {
-	secret := os.Getenv(BridgeSecretEnv)
-	if secret == "" {
-		return errors.New("the Node bridge has no secret (" + BridgeSecretEnv + ")")
-	}
+func (b *nodeBridge) post(ctx context.Context, path string, body any, out any) error {
 	raw, _ := json.Marshal(body)
 	req, err := http.NewRequestWithContext(ctx, "POST", b.base.JoinPath(path).String(), bytes.NewReader(raw))
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set(BridgeHeader, secret)
+	bridge.Sign(req)
 	req.Header.Set(InternalHeader, "1")
 	res, err := b.client.Do(req)
 	if err != nil {
@@ -83,7 +75,7 @@ func (b *bridge) post(ctx context.Context, path string, body any, out any) error
 
 // index runs an index job in Node. It is not cancelled with the request
 // that asked for it, as Node's own routes do not cancel theirs.
-func (b *bridge) index(ctx context.Context, op, rel string) (int64, error) {
+func (b *nodeBridge) index(ctx context.Context, op, rel string) (int64, error) {
 	var out struct {
 		MS int64 `json:"ms"`
 	}
@@ -91,6 +83,6 @@ func (b *bridge) index(ctx context.Context, op, rel string) (int64, error) {
 	return out.MS, err
 }
 
-func (b *bridge) changed(ctx context.Context, what []string) {
+func (b *nodeBridge) changed(ctx context.Context, what []string) {
 	b.post(context.WithoutCancel(ctx), BridgePrefix+"changed", map[string]any{"what": what}, nil)
 }

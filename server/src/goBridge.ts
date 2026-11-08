@@ -19,7 +19,7 @@ import { invalidateTagMaps } from './tags.js'
  * exist. The Go server refuses /internal/go/ from clients.
  */
 
-const HEADER = 'x-studio-bridge'
+const HEADER = 'x-studio-bridge-secret'
 
 function allowed(given: unknown): boolean {
   const secret = process.env.STUDIO_BRIDGE_SECRET

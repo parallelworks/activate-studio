@@ -6,6 +6,7 @@ package server
 
 import (
 	"encoding/json"
+	"github.com/parallelworks/activate-studio/server-go/internal/bridge"
 	"log/slog"
 	"net/http"
 	"net/http/httputil"
@@ -180,6 +181,14 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			panic(p)
 		}
 	}()
+	// Bridge-only paths (the transitional Go and Node channel) answer 404
+	// to anything without the bridge secret, before sign-in, so a browser
+	// cannot reach them through the front.
+	if bridge.IsPrivate(r.URL.Path) && !bridge.Authorized(r) {
+		via = "bridge-refused"
+		http.NotFound(rec, r)
+		return
+	}
 	if s.front != nil {
 		gated := s.front.Gate(rec, r)
 		if gated == nil {
@@ -192,11 +201,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) dispatch(w http.ResponseWriter, r *http.Request) string {
-	if strings.HasPrefix(r.URL.Path, app.BridgePrefix) {
-		// The transitional Node bridge is the Go server's own (app/bridge.go).
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
-		return "none"
-	}
 	if _, pattern := s.ported.Handler(r); pattern != "" {
 		s.ported.ServeHTTP(w, r)
 		return "go"
