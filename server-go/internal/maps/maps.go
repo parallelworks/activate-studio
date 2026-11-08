@@ -11,6 +11,7 @@ package maps
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"math"
 	"net/http"
@@ -23,7 +24,6 @@ import (
 
 	"github.com/parallelworks/activate-studio/server-go/internal/apierr"
 	"github.com/parallelworks/activate-studio/server-go/internal/app"
-	"github.com/parallelworks/activate-studio/server-go/internal/auth"
 	"github.com/parallelworks/activate-studio/server-go/internal/bridge"
 	"github.com/parallelworks/activate-studio/server-go/internal/gufi"
 	"github.com/parallelworks/activate-studio/server-go/internal/index"
@@ -184,40 +184,27 @@ func (k ownerKeys) KeyOf(owner string) string {
 	return ""
 }
 
-// viewerOf is req.user?.id ?? null as Node's routes read it (libapi's).
+// viewerOf is req.user?.id ?? null as Node's routes read it, through the
+// platform track's ViewerOf as libapi's routes take it (the front's user,
+// or Node's answer over the bridge).
 func viewerOf(a *app.App, r *http.Request) (libraries.Viewer, error) {
-	if a.Cfg.FrontAuth {
-		if u := auth.UserOf(r); u != nil {
-			return libraries.ViewerOf(u.ID), nil
+	v, err := platform.Of(a).ViewerOf(r)
+	if err != nil {
+		var ne *app.NodeError
+		if errors.As(err, &ne) && ne.Status == http.StatusUnauthorized {
+			return nil, apierr.New(401, "authentication required")
 		}
-		if a.Cfg.AuthEnabled() {
-			return libraries.Deployment, nil
-		}
-		return libraries.ViewerOf(""), nil
-	}
-	n := a.NodeCaller()
-	if n == nil {
-		return libraries.ViewerOf(""), nil
-	}
-	var who struct {
-		AuthEnabled bool `json:"authEnabled"`
-		User        *struct {
-			ID string `json:"id"`
-		} `json:"user"`
-	}
-	if err := n.Do(r, "GET", "/api/whoami", nil, &who); err != nil {
 		return nil, err
 	}
-	if who.User != nil {
-		return libraries.ViewerOf(who.User.ID), nil
+	if v != nil && v.User != nil {
+		return libraries.ViewerOf(v.User.ID), nil
 	}
-	if who.AuthEnabled {
+	if v != nil && v.AuthEnabled {
 		return libraries.Deployment, nil
 	}
 	return libraries.ViewerOf(""), nil
 }
 
-// Register serves the routes, and Node's bridge calls.
 func Register(mux *http.ServeMux, a *app.App) {
 	m := Of(a)
 	m.Routes(mux, a.Log)

@@ -20,52 +20,81 @@ const python = process.env.PYTHON_BIN || 'python3'
 const hasNumpy = (() => {
   try { execFileSync(python, ['-c', `import sys; sys.path.insert(0, ${JSON.stringify(path.join(root, 'indexer', '.deps'))}); import numpy`], { stdio: 'ignore' }); return true } catch { return false }
 })()
+// Through the Go front (test/front.mjs) the Go server owns the maps: it makes
+// them in process, and its semantic-map subcommand stands in for the script,
+// so these tests need neither Python nor numpy there. Its builds are counted
+// in STUDIO_TEST_MAP_BUILDS, a line each.
+const goFront = process.env.STUDIO_TEST_FRONT
+const canMap = hasNumpy || !!goFront || !!process.env.STUDIO_SEMANTIC_MAP_BIN
+const noMap = !canMap && 'numpy is not installed'
+const buildLog = path.join(tmp, 'builds.log')
+if (goFront) process.env.STUDIO_TEST_MAP_BUILDS = buildLog
+const goBuilds = () => { try { return fs.readFileSync(buildLog, 'utf8').split('\n').filter(Boolean).length } catch { return 0 } }
+const sleep = ms => new Promise(r => setTimeout(r, ms))
 
 // Folders each about one topic: its files' vectors point one way, with
 // noise. One passage sits in a slot marked invalid, as a deleted row is,
 // and must not count.
-const writeIndex = (root, topics, files) => execFileSync(python, ['-c', `
-import os, random, sqlite3, struct
-random.seed(1)
-D = 384
-def unit(axis):
-    v = [random.gauss(0, 0.05) for _ in range(D)]
-    v[axis] += 1.0
-    return v
-topics = ${JSON.stringify(topics)}
-root = ${JSON.stringify(root)}
-for folder, axis in [('', None)] + list(topics.items()):
-    d = os.path.join(root, folder) if folder else root
-    os.makedirs(d, exist_ok=True)
-    c = sqlite3.connect(os.path.join(d, 'db.db'))
-    c.execute('CREATE TABLE entries (name TEXT)')
-    if axis is None:
-        c.commit(); continue
-    c.execute('CREATE TABLE gchunks (cid INTEGER PRIMARY KEY, tinode TEXT, fname TEXT, seq INTEGER, ctext TEXT, h TEXT)')
-    c.execute('CREATE TABLE gvec_rowids (rowid INTEGER PRIMARY KEY AUTOINCREMENT, id, chunk_id INTEGER, chunk_offset INTEGER)')
-    c.execute('CREATE TABLE gvec_chunks (chunk_id INTEGER PRIMARY KEY AUTOINCREMENT, size INTEGER NOT NULL, validity BLOB NOT NULL, rowids BLOB NOT NULL)')
-    c.execute('CREATE TABLE gvec_vector_chunks00 (rowid PRIMARY KEY, vectors BLOB NOT NULL)')
-    c.execute('CREATE TABLE gvecmodel (model TEXT)')
-    c.execute("INSERT INTO gvecmodel VALUES ('minilm-l6-mean-int8')")
-    vecs, valid = [], bytearray(128)
-    cid = 0
-    for f in range(${files}):
-        for seq in range(2):
-            cid += 1
-            c.execute('INSERT INTO gchunks VALUES (?, ?, ?, ?, ?, ?)', (cid, '1', f'{folder}-{f}.md', seq, 'text', f'h{cid}'))
-            c.execute('INSERT INTO gvec_rowids (rowid, chunk_id, chunk_offset) VALUES (?, 1, ?)', (cid, cid - 1))
-            vecs.append(unit(axis))
-            valid[(cid - 1) >> 3] |= 1 << ((cid - 1) & 7)
-    # A passage in a slot that is no longer valid, for a file that has no other.
-    cid += 1
-    c.execute('INSERT INTO gchunks VALUES (?, ?, ?, ?, ?, ?)', (cid, '1', 'deleted.md', 0, 'gone', 'hx'))
-    c.execute('INSERT INTO gvec_rowids (rowid, chunk_id, chunk_offset) VALUES (?, 1, ?)', (cid, cid - 1))
-    vecs.append(unit(300))
-    blob = b''.join(struct.pack('<384f', *v) for v in vecs) + bytes(4 * D * (1024 - len(vecs)))
-    c.execute('INSERT INTO gvec_chunks VALUES (1, 1024, ?, ?)', (bytes(valid), b''))
-    c.execute('INSERT INTO gvec_vector_chunks00 VALUES (1, ?)', (blob,))
-    c.commit()
-`])
+// The fixtures are written with Node's own SQLite, so no Python is needed.
+const { DatabaseSync } = await import('node:sqlite')
+const D = 384
+// Seeded noise: mulberry32, and Box-Muller for a normal draw.
+const noise = seed => {
+  let s = seed >>> 0
+  const r = () => {
+    s = (s + 0x6D2B79F5) >>> 0
+    let t = s
+    t = Math.imul(t ^ (t >>> 15), t | 1)
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+  return { rand: r, gauss: sd => sd * Math.sqrt(-2 * Math.log(1 - r())) * Math.cos(2 * Math.PI * r()) }
+}
+const along = (rng, axis) => { const v = Array.from({ length: D }, () => rng.gauss(0.05)); v[axis] += 1; return v }
+// A folder's db.db with vectors the way sqlite-vec stores them: rows are
+// { fname, seq, text, v, valid }, all in one chunk of 1024 slots.
+const vecDb = (dir, rows, { model, entries } = {}) => {
+  fs.mkdirSync(dir, { recursive: true })
+  const c = new DatabaseSync(path.join(dir, 'db.db'))
+  if (entries) c.exec('CREATE TABLE entries (name TEXT)')
+  c.exec(`CREATE TABLE gchunks (cid INTEGER PRIMARY KEY, tinode TEXT, fname TEXT, seq INTEGER, ctext TEXT, h TEXT);
+    CREATE TABLE gvec_rowids (rowid INTEGER PRIMARY KEY AUTOINCREMENT, id, chunk_id INTEGER, chunk_offset INTEGER);
+    CREATE TABLE gvec_chunks (chunk_id INTEGER PRIMARY KEY AUTOINCREMENT, size INTEGER NOT NULL, validity BLOB NOT NULL, rowids BLOB NOT NULL);
+    CREATE TABLE gvec_vector_chunks00 (rowid PRIMARY KEY, vectors BLOB NOT NULL);`)
+  if (model) { c.exec('CREATE TABLE gvecmodel (model TEXT)'); c.prepare('INSERT INTO gvecmodel VALUES (?)').run(model) }
+  const valid = Buffer.alloc(128)
+  const blob = Buffer.alloc(4 * D * 1024)
+  const chunk = c.prepare('INSERT INTO gchunks VALUES (?, ?, ?, ?, ?, ?)')
+  const rowid = c.prepare('INSERT INTO gvec_rowids (rowid, chunk_id, chunk_offset) VALUES (?, 1, ?)')
+  rows.forEach((r, i) => {
+    const cid = i + 1
+    chunk.run(cid, '1', r.fname, r.seq, r.text, `h${cid}`)
+    rowid.run(cid, i)
+    r.v.forEach((x, k) => blob.writeFloatLE(x, (i * D + k) * 4))
+    if (r.valid !== false) valid[i >> 3] |= 1 << (i & 7)
+  })
+  c.prepare('INSERT INTO gvec_chunks VALUES (1, 1024, ?, ?)').run(valid, Buffer.alloc(0))
+  c.prepare('INSERT INTO gvec_vector_chunks00 VALUES (1, ?)').run(blob)
+  c.close()
+}
+
+// Folders each about one topic: its files' vectors point one way, with
+// noise. One passage sits in a slot marked invalid, as a deleted row is,
+// and must not count.
+const writeIndex = (root, topics, files) => {
+  const rng = noise(1)
+  fs.mkdirSync(root, { recursive: true })
+  const top = new DatabaseSync(path.join(root, 'db.db'))
+  top.exec('CREATE TABLE entries (name TEXT)')
+  top.close()
+  for (const [folder, axis] of Object.entries(topics)) {
+    const rows = []
+    for (let f = 0; f < files; f++) for (let seq = 0; seq < 2; seq++) rows.push({ fname: `${folder}-${f}.md`, seq, text: 'text', v: along(rng, axis) })
+    // A passage in a slot that is no longer valid, for a file that has no other.
+    rows.push({ fname: 'deleted.md', seq: 0, text: 'gone', v: along(rng, 300), valid: false })
+    vecDb(path.join(root, folder), rows, { model: 'minilm-l6-mean-int8', entries: true })
+  }
+}
 writeIndex(INDEX, { turbines: 3, bread: 100, tax: 200 }, 20)
 
 const config = await import('../dist/config.js')
@@ -78,15 +107,18 @@ app.setErrorHandler(sanitizedErrorHandler(app))
 await app.register(M.semanticMapRoutes)
 await app.ready()
 // STUDIO_SEMANTIC_MAP_BIN runs the map's tests against the Go port
-// (server-go/cmd/semantic-map), which takes the same arguments.
+// (server-go/cmd/semantic-map), which takes the same arguments; through the
+// front, the Go server's own semantic-map subcommand does.
 const mapBin = process.env.STUDIO_SEMANTIC_MAP_BIN
 const runMap = (args, opts) => mapBin
   ? execFileSync(mapBin, args, opts)
-  : execFileSync(python, [path.join(root, 'indexer', 'semantic_map.py'), ...args], opts)
-const get = async url => { const r = await app.inject({ method: 'GET', url }); return { status: r.statusCode, body: r.json() } }
+  : goFront
+    ? execFileSync(goFront, ['semantic-map', ...args], opts)
+    : execFileSync(python, [path.join(root, 'indexer', 'semantic_map.py'), ...args], opts)
+const get = async url => { const r = await app.inject({ method: "GET", url }); if (r.statusCode >= 500) console.error("DBG", url, r.payload); return { status: r.statusCode, body: r.json() } }
 const runScript = (...extra) => JSON.parse(runMap(['--index', INDEX, '--out', config.SEMANTIC_MAP_DIR, ...extra], { encoding: 'utf8' }).trim())
 
-test('the map is made from the stored vectors: every file with embeddings, in clusters named for their folders', { skip: !hasNumpy && 'numpy is not installed' }, () => {
+test('the map is made from the stored vectors: every file with embeddings, in clusters named for their folders', { skip: noMap }, () => {
   const summary = runScript('--sample', '100')
   assert.equal(summary.available, true)
   assert.equal(summary.files, 60, 'a passage in an invalid slot is not a file of the map')
@@ -129,7 +161,7 @@ test('the map is made from the stored vectors: every file with embeddings, in cl
   assert.ok(overview.points.length <= 100)
 })
 
-test('a library of a few files maps too: fewer files than the dimensions clusters are found in', { skip: !hasNumpy && 'numpy is not installed' }, () => {
+test('a library of a few files maps too: fewer files than the dimensions clusters are found in', { skip: noMap }, () => {
   const small = path.join(tmp, 'small')
   writeIndex(small, { notes: 7 }, 5)
   const out = path.join(tmp, 'small-map')
@@ -140,6 +172,17 @@ test('a library of a few files maps too: fewer files than the dimensions cluster
   assert.equal(overview.points.length, 5)
 })
 
+// embed.py's chunk(): windows of 1000 characters every 880, kept when
+// mostly letters and spaces, so a window's ends fall inside words.
+const embedChunks = (text, cap) => {
+  const out = []
+  for (let i = 0; i < text.length && out.length < cap; i += 1000 - 120) {
+    const c = text.slice(i, i + 1000)
+    if ([...c].filter(ch => /[A-Za-z\s]/.test(ch)).length / Math.max(c.length, 1) > 0.6) out.push(c)
+  }
+  return out
+}
+
 // The naming functions on their own, through the script's module.
 const py = code => JSON.parse(execFileSync(python, ['-c', `
 import json, sys
@@ -147,40 +190,19 @@ sys.path.insert(0, ${JSON.stringify(path.join(root, 'indexer'))})
 import semantic_map as sm
 ${code}`], { encoding: 'utf8' }).trim())
 
-test('clusters are named by their distinctive words: TF-IDF against the whole map, unique, short', { skip: !hasNumpy && 'numpy is not installed' }, () => {
-  // Words, stop words, short words and digit runs.
-  assert.deepEqual(py(`print(json.dumps(sm.file_terms('The turbine blades of the turbine; v2.1.0 build 20261023 and xy ok turbine Rotor rotor')))`),
+test('clusters are named by their distinctive words: TF-IDF against the whole map, unique, short', { skip: noMap }, () => {
+  // Words, stop words, short words and digit runs (the script's own
+  // functions: with numpy only; the Go port's are in TestPythonGolden).
+  if (hasNumpy) assert.deepEqual(py(`print(json.dumps(sm.file_terms('The turbine blades of the turbine; v2.1.0 build 20261023 and xy ok turbine Rotor rotor')))`),
     [['turbine', 3], ['rotor', 2], ['blades', 1], ['build', 1]])
   // Three folders whose files share the word "docs" (so it names nothing) and
   // each have words of their own; the folder "docs" twice under two parents.
   const tmpIdx = path.join(tmp, 'named')
-  execFileSync(python, ['-c', `
-import os, random, sqlite3, struct
-random.seed(2)
-D = 384
-words = {'pw/docs': 'kubernetes helm ingress cluster', 'gs/docs': 'turbine blade rotor wind', 'kitchen': 'sourdough starter flour oven'}
-root = ${JSON.stringify(tmpIdx)}
-for i, (folder, text) in enumerate(words.items()):
-    d = os.path.join(root, folder)
-    os.makedirs(d, exist_ok=True)
-    c = sqlite3.connect(os.path.join(d, 'db.db'))
-    c.execute('CREATE TABLE gchunks (cid INTEGER PRIMARY KEY, tinode TEXT, fname TEXT, seq INTEGER, ctext TEXT, h TEXT)')
-    c.execute('CREATE TABLE gvec_rowids (rowid INTEGER PRIMARY KEY AUTOINCREMENT, id, chunk_id INTEGER, chunk_offset INTEGER)')
-    c.execute('CREATE TABLE gvec_chunks (chunk_id INTEGER PRIMARY KEY AUTOINCREMENT, size INTEGER NOT NULL, validity BLOB NOT NULL, rowids BLOB NOT NULL)')
-    c.execute('CREATE TABLE gvec_vector_chunks00 (rowid PRIMARY KEY, vectors BLOB NOT NULL)')
-    vecs, valid = [], bytearray(128)
-    for f in range(12):
-        cid = f + 1
-        c.execute('INSERT INTO gchunks VALUES (?, ?, ?, ?, ?, ?)', (cid, '1', f'n{f}.md', 0, f'docs docs {text} {text} note{f}', f'h{cid}'))
-        c.execute('INSERT INTO gvec_rowids (rowid, chunk_id, chunk_offset) VALUES (?, 1, ?)', (cid, cid - 1))
-        v = [random.gauss(0, 0.05) for _ in range(D)]; v[i * 40] += 1.0
-        vecs.append(v)
-        valid[(cid - 1) >> 3] |= 1 << ((cid - 1) & 7)
-    blob = b''.join(struct.pack('<384f', *v) for v in vecs) + bytes(4 * D * (1024 - len(vecs)))
-    c.execute('INSERT INTO gvec_chunks VALUES (1, 1024, ?, ?)', (bytes(valid), b''))
-    c.execute('INSERT INTO gvec_vector_chunks00 VALUES (1, ?)', (blob,))
-    c.commit()
-`])
+  const rng = noise(2)
+  const words = { 'pw/docs': 'kubernetes helm ingress cluster', 'gs/docs': 'turbine blade rotor wind', kitchen: 'sourdough starter flour oven' }
+  for (const [i, [folder, text]] of Object.entries(words).entries()) {
+    vecDb(path.join(tmpIdx, folder), Array.from({ length: 12 }, (_, f) => ({ fname: `n${f}.md`, seq: 0, text: `docs docs ${text} ${text} note${f}`, v: along(rng, i * 40) })))
+  }
   const out = path.join(tmp, 'named-map')
   runMap(['--index', tmpIdx, '--out', out])
   const overview = JSON.parse(fs.readFileSync(path.join(out, 'overview.json'), 'utf8'))
@@ -201,6 +223,7 @@ for i, (folder, text) in enumerate(words.items()):
     for (const t of c.terms) assert.ok(words.split(' ').includes(t), `${c.label} is named from its own folder's words (${c.folder})`)
   }
 
+  if (!hasNumpy) return
   // Unique names: two clusters with the same best words take the next ones;
   // a term another name has goes behind fresh ones.
   const [names, chosen] = py(`print(json.dumps(sm.name_clusters([['alpha', 'beta', 'gamma'], ['alpha', 'beta', 'delta'], ['alpha', 'epsilon', 'zeta'], [], ['lonely']], ['a', 'b', 'c', 'pw/docs + gs/docs', 'admin + hr'])))`)
@@ -221,17 +244,18 @@ assign = np.array([0] * 9 + [1] * 9, dtype=np.int32)
 print(json.dumps(sm.label_clusters(paths, assign, 2)))`), ['pw/docs + gs/docs', 'pw/src + lib'])
 })
 
-test('the routes read the map and never make one while it is there', { skip: !hasNumpy && 'numpy is not installed' }, async () => {
+test('the routes read the map and never make one while it is there', { skip: noMap }, async () => {
   let builds = 0
-  M.resetSemanticMapForTests()
+  await M.resetSemanticMapForTests()
   M.setSemanticMapBuilderForTests(async () => { builds++ })
+  const before = goBuilds()
   const a = await get('/api/kb/semantic-map')
   assert.equal(a.status, 200)
   assert.equal(a.body.available, true)
   assert.equal(a.body.building, false)
   await get('/api/kb/semantic-map')
   await new Promise(r => setTimeout(r, 20))
-  assert.equal(builds, 0, 'reading the map does not rebuild it')
+  assert.equal(builds + goBuilds() - before, 0, 'reading the map does not rebuild it')
 
   const c0 = a.body.clusters[0]
   const page = await get(`/api/kb/semantic-map/cluster/${c0.c}?offset=0&limit=5`)
@@ -244,12 +268,15 @@ test('the routes read the map and never make one while it is there', { skip: !ha
   assert.equal((await get('/api/kb/semantic-map/cluster/x')).status, 400)
 })
 
-test('cluster names are whole words: passages cut inside a word give no fragments', { skip: !hasNumpy && 'numpy is not installed' }, () => {
+test('cluster names are whole words: passages cut inside a word give no fragments', { skip: noMap }, () => {
   // embed.py's own passages of texts made of these words, with a stretch of
   // figures that is not embedded, so some passages have no neighbor to say
   // where their cut fell.
   const vocab = 'reef sonar plankton estuary current coral kelp ocean tide salinity anemometer turbine nacelle gearbox rotor blade sourdough starter flour oven proofing gluten'.split(' ')
-  const left = py(`
+  const parts = embedChunks(Array.from({ length: 2500 }, (_, n) => vocab[n % vocab.length]).join(' '), 12)
+  assert.ok(parts.join(' ').split(' ').filter(w => !vocab.includes(w)).length > 2, 'the passages as cut do split words')
+  if (hasNumpy) {
+    const left = py(`
 import random
 sys.path.insert(0, ${JSON.stringify(path.join(root, 'indexer'))})
 import embed
@@ -264,42 +291,23 @@ for n in range(400):
     cut |= {w for w in ' '.join(parts).split() if w.isalpha() and w not in vocab}
     bad |= {w for w in sm.whole_words(parts).split() if w.isalpha() and w not in vocab}
 print(json.dumps([sorted(bad), len(cut)]))`)
-  assert.deepEqual(left[0], [], `fragments: ${left[0]}`)
-  assert.ok(left[1] > 20, 'the passages as cut do split words')
+    assert.deepEqual(left[0], [], `fragments: ${left[0]}`)
+    assert.ok(left[1] > 20, 'the passages as cut do split words')
+  }
 
   // A map whose passages are embed.py's: no cluster is named for a fragment.
   const idx = path.join(tmp, 'cut')
-  execFileSync(python, ['-c', `
-import os, random, sqlite3, struct, sys
-sys.path.insert(0, ${JSON.stringify(path.join(root, 'indexer'))})
-import embed
-random.seed(5)
-D = 384
-topics = {'sea': 'reef sonar plankton estuary current coral kelp ocean', 'wind': 'turbine nacelle gearbox rotor blade anemometer', 'bread': 'sourdough starter flour oven proofing gluten'}
-root = ${JSON.stringify(idx)}
-for i, (folder, text) in enumerate(topics.items()):
-    d = os.path.join(root, folder)
-    os.makedirs(d, exist_ok=True)
-    c = sqlite3.connect(os.path.join(d, 'db.db'))
-    c.execute('CREATE TABLE gchunks (cid INTEGER PRIMARY KEY, tinode TEXT, fname TEXT, seq INTEGER, ctext TEXT, h TEXT)')
-    c.execute('CREATE TABLE gvec_rowids (rowid INTEGER PRIMARY KEY AUTOINCREMENT, id, chunk_id INTEGER, chunk_offset INTEGER)')
-    c.execute('CREATE TABLE gvec_chunks (chunk_id INTEGER PRIMARY KEY AUTOINCREMENT, size INTEGER NOT NULL, validity BLOB NOT NULL, rowids BLOB NOT NULL)')
-    c.execute('CREATE TABLE gvec_vector_chunks00 (rowid PRIMARY KEY, vectors BLOB NOT NULL)')
-    vecs, valid, cid = [], bytearray(128), 0
-    for f in range(10):
-        words = text.split()
-        for seq, part in enumerate(embed.chunk(' '.join(random.choice(words) for _ in range(1200)), 4)):
-            cid += 1
-            c.execute('INSERT INTO gchunks VALUES (?, ?, ?, ?, ?, ?)', (cid, '1', f'n{f}.md', seq, part, f'h{cid}'))
-            c.execute('INSERT INTO gvec_rowids (rowid, chunk_id, chunk_offset) VALUES (?, 1, ?)', (cid, cid - 1))
-            v = [random.gauss(0, 0.05) for _ in range(D)]; v[i * 40] += 1.0
-            vecs.append(v)
-            valid[(cid - 1) >> 3] |= 1 << ((cid - 1) & 7)
-    blob = b''.join(struct.pack('<384f', *v) for v in vecs) + bytes(4 * D * (1024 - len(vecs)))
-    c.execute('INSERT INTO gvec_chunks VALUES (1, 1024, ?, ?)', (bytes(valid), b''))
-    c.execute('INSERT INTO gvec_vector_chunks00 VALUES (1, ?)', (blob,))
-    c.commit()
-`])
+  const rng = noise(5)
+  const topics = { sea: 'reef sonar plankton estuary current coral kelp ocean', wind: 'turbine nacelle gearbox rotor blade anemometer', bread: 'sourdough starter flour oven proofing gluten' }
+  for (const [i, [folder, text]] of Object.entries(topics).entries()) {
+    const words = text.split(' ')
+    const rows = []
+    for (let f = 0; f < 10; f++) {
+      const passages = embedChunks(Array.from({ length: 1200 }, () => words[Math.floor(rng.rand() * words.length)]).join(' '), 4)
+      passages.forEach((part, seq) => rows.push({ fname: `n${f}.md`, seq, text: part, v: along(rng, i * 40) }))
+    }
+    vecDb(path.join(idx, folder), rows)
+  }
   const out = path.join(tmp, 'cut-map')
   runMap(['--index', idx, '--out', out])
   const overview = JSON.parse(fs.readFileSync(path.join(out, 'overview.json'), 'utf8'))
@@ -342,7 +350,7 @@ const vecFolder = (folder, model, files) => {
   execFileSync(sqlite3Bin, [path.join(d, 'db.db')], { input: sql.join('\n') })
 }
 
-test('a file\'s nearest files by meaning: the mean of its passages, across folders, one model, with their places', { skip: !(hasVec && hasNumpy) && 'needs GUFI\'s sqlite3 with sqlite-vec, and numpy' }, async () => {
+test('a file\'s nearest files by meaning: the mean of its passages, across folders, one model, with their places', { skip: !hasVec ? 'needs GUFI\'s sqlite3 with sqlite-vec' : noMap }, async () => {
   vecFolder('near', 'minilm-l6-mean-int8', [
     ['a.md', vecHex(10), vecHex(10, 11, 0.2)],   // two passages, both along 10
     ['b.md', vecHex(10, 11, 0.3)],
@@ -352,7 +360,7 @@ test('a file\'s nearest files by meaning: the mean of its passages, across folde
   // The same direction from another model is not comparable: never a neighbor.
   vecFolder('other-model', 'minilm384', [['twin.md', vecHex(10)]])
   runScript('--sample', '200')
-  M.resetSemanticMapForTests()
+  await M.resetSemanticMapForTests()
   M.resetNeighborsForTests()
 
   const r = await get(`/api/kb/semantic-map/neighbors?file=${encodeURIComponent('near/a.md')}&k=3`)
@@ -376,25 +384,31 @@ test('a file\'s nearest files by meaning: the mean of its passages, across folde
 
 test('rebuilds asked for together run once; a missing map is made once, in the background', async () => {
   let builds = 0
-  M.resetSemanticMapForTests()
+  // The Go server is up before its schedule is asked for.
+  await get('/api/kb/semantic-map')
+  await M.resetSemanticMapForTests()
   M.setSemanticMapBuilderForTests(async () => { builds++ })
+  let before = goBuilds()
   M.scheduleSemanticMapRebuild(30)
   M.scheduleSemanticMapRebuild(10)
   M.scheduleSemanticMapRebuild(50)
-  await new Promise(r => setTimeout(r, 120))
-  assert.equal(builds, 1)
+  await sleep(120)
+  assert.equal(builds + goBuilds() - before, 1)
+  // The Go server's build is a real one: done before its map goes.
+  for (let t = 0; t < 600 && (await get('/api/kb/semantic-map')).body.building; t++) await sleep(50)
 
   fs.rmSync(config.SEMANTIC_MAP_DIR, { recursive: true, force: true })
-  M.resetSemanticMapForTests()
+  await M.resetSemanticMapForTests()
   M.setSemanticMapBuilderForTests(async () => { builds++ })
   builds = 0
+  before = goBuilds()
   const r = await get('/api/kb/semantic-map')
   assert.equal(r.body.available, false)
   assert.equal(r.body.reason, 'none')
   assert.equal(r.body.building, true)
   await get('/api/kb/semantic-map')
   await new Promise(r2 => setTimeout(r2, 30))
-  assert.equal(builds, 1, 'one build for a missing map, however many reads')
+  assert.equal(builds + goBuilds() - before, 1, 'one build for a missing map, however many reads')
 })
 
 test('with search by meaning off for the main folder there is no map, and it says why', async () => {
@@ -424,7 +438,7 @@ const fetchedFile = (file, topics, perTopic) => {
   fs.writeFileSync(file, lines.join('\n') + '\n')
 }
 
-test('a map from fetched vectors: the int8 means put back, clusters named by their text, the sample\'s share of the files there', { skip: !hasNumpy && 'numpy is not installed' }, () => {
+test('a map from fetched vectors: the int8 means put back, clusters named by their text, the sample\'s share of the files there', { skip: noMap }, () => {
   const vectors = path.join(tmp, 'fetched.jsonl')
   fetchedFile(vectors, [['pw/docs', 'kubernetes helm ingress cluster'], ['wind', 'turbine blade rotor nacelle'], ['kitchen', 'sourdough starter flour oven']], 15)
   const out = path.join(tmp, 'fetched-map')
@@ -440,7 +454,9 @@ test('a map from fetched vectors: the int8 means put back, clusters named by the
     assert.ok(c.terms.length >= 2 && c.terms.every(t => words.split(' ').includes(t)), `${c.label}: ${c.terms}`)
   }
   // The file means as the script reads them back: the quantized vector at
-  // the middle of each step, scaled to the length the row gives.
+  // the middle of each step, scaled to the length the row gives (the Go
+  // port's own reading is in internal/semanticmap's golden tests).
+  if (!hasNumpy) return
   const back = py(`
 import numpy as np
 from pathlib import Path
