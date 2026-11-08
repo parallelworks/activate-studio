@@ -7,37 +7,55 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
-process.env.KB_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'sub-kb-'))
-process.env.INDEX_BASE = fs.mkdtempSync(path.join(os.tmpdir(), 'sub-ix-'))
-process.env.PW_GATEWAY_URL = 'https://platform.example.com/api/openai/v1'
-process.env.PW_API_KEY = 'alex-platform-key'
-process.env.PW_CREDENTIALS_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'sub-pw-'))
+import http from 'node:http'
 
+// The platform is a stand-in on loopback, so the Go front reaches it as
+// Node does. A platform out of reach is the same port with nothing on it.
 const calls = []
 let pollsUntilConnected = 2
 let copilotOffered = true
-globalThis.fetch = async (url, init = {}) => {
-  const u = new URL(String(url))
-  const method = init.method ?? 'GET'
-  calls.push({ method, path: u.pathname, auth: init.headers?.Authorization ?? null, body: init.body ? JSON.parse(init.body) : null })
-  const json = (d, status = 200) => new Response(JSON.stringify(d), { status, headers: { 'content-type': 'application/json' } })
-  if (u.pathname === '/api/auth/whoami') return new Response('user:alex', { status: 200, headers: { 'content-type': 'text/plain' } })
-  if (u.pathname === '/api/auth/whoami/organization') return json('org-a')
-  if (u.pathname === '/api/organizations/org-a/ai-integrations') return json({ integrations: [
-    { id: 'codex-subscription', kind: 'codex-subscription', displayName: 'Codex subscription', lifecycle: 'active' },
-    ...(copilotOffered ? [{ id: 'copilot-entry', kind: 'github-copilot', displayName: 'GitHub Copilot', lifecycle: 'active' }] : []),
-  ] })
-  if (u.pathname === '/api/organizations/org-a/users/alex/ai-providers' && method === 'GET') return json([
-    { name: 'chatgpt', displayName: 'ChatGPT', catalogEntryId: 'codex-subscription', status: 'provisioned', accountEmail: 'alex@example.com' },
-  ])
-  if (u.pathname === '/api/organizations/org-a/users/alex/ai-providers' && method === 'POST') return json({ name: 'copilot', displayName: 'GitHub Copilot', catalogEntryId: 'copilot-entry', accountLogin: 'alex-gh' })
-  if (u.pathname === '/api/integrations/github/oauth/status') return json({ appConfigured: true, tokensAllowed: false, username: 'alex-gh' })
-  if (u.pathname === '/api/organizations/org-a/users/alex/codex-device-authorizations') return json({ id: 'auth-1', providerName: 'chatgpt', verificationUrl: 'https://auth.example.com/codex/device', userCode: 'WXYZ-1234', expiresAt: '2026-10-22T12:00:00Z', pollIntervalSeconds: 5 })
-  if (u.pathname === '/api/organizations/org-a/users/alex/codex-device-authorizations/auth-1') {
-    return json(--pollsUntilConnected > 0 ? { status: 'pending' } : { status: 'connected', provider: { name: 'chatgpt', displayName: 'ChatGPT', accountEmail: 'alex@example.com' } })
-  }
-  return json({ message: 'not found' }, 404)
+const handler = (req, res) => {
+  // No kept connections, so a platform taken away refuses the next one.
+  res.setHeader('connection', 'close')
+  let raw = ''
+  req.on('data', c => { raw += c })
+  req.on('end', () => {
+    const u = new URL(req.url, 'http://x')
+    const method = req.method
+    calls.push({ method, path: u.pathname, auth: req.headers.authorization ?? null, body: raw ? JSON.parse(raw) : null })
+    const json = (d, status = 200) => { res.writeHead(status, { 'content-type': 'application/json' }); res.end(JSON.stringify(d)) }
+    if (u.pathname === '/api/auth/whoami') { res.writeHead(200, { 'content-type': 'text/plain' }); return res.end('user:alex') }
+    if (u.pathname === '/api/auth/whoami/organization') return json('org-a')
+    if (u.pathname === '/api/organizations/org-a/ai-integrations') return json({ integrations: [
+      { id: 'codex-subscription', kind: 'codex-subscription', displayName: 'Codex subscription', lifecycle: 'active' },
+      ...(copilotOffered ? [{ id: 'copilot-entry', kind: 'github-copilot', displayName: 'GitHub Copilot', lifecycle: 'active' }] : []),
+    ] })
+    if (u.pathname === '/api/organizations/org-a/users/alex/ai-providers' && method === 'GET') return json([
+      { name: 'chatgpt', displayName: 'ChatGPT', catalogEntryId: 'codex-subscription', status: 'provisioned', accountEmail: 'alex@example.com' },
+    ])
+    if (u.pathname === '/api/organizations/org-a/users/alex/ai-providers' && method === 'POST') return json({ name: 'copilot', displayName: 'GitHub Copilot', catalogEntryId: 'copilot-entry', accountLogin: 'alex-gh' })
+    if (u.pathname === '/api/integrations/github/oauth/status') return json({ appConfigured: true, tokensAllowed: false, username: 'alex-gh' })
+    if (u.pathname === '/api/organizations/org-a/users/alex/codex-device-authorizations') return json({ id: 'auth-1', providerName: 'chatgpt', verificationUrl: 'https://auth.example.com/codex/device', userCode: 'WXYZ-1234', expiresAt: '2026-10-22T12:00:00Z', pollIntervalSeconds: 5 })
+    if (u.pathname === '/api/organizations/org-a/users/alex/codex-device-authorizations/auth-1') {
+      return json(--pollsUntilConnected > 0 ? { status: 'pending' } : { status: 'connected', provider: { name: 'chatgpt', displayName: 'ChatGPT', accountEmail: 'alex@example.com' } })
+    }
+    return json({ message: 'not found' }, 404)
+  })
 }
+let platform = http.createServer(handler)
+await new Promise(r => platform.listen(0, '127.0.0.1', r))
+platform.unref()
+const PORT = platform.address().port
+const HOST = `127.0.0.1:${PORT}`
+const offline = () => new Promise(r => { platform.closeAllConnections(); platform.close(r) })
+const online = async () => { platform = http.createServer(handler); await new Promise(r => platform.listen(PORT, '127.0.0.1', r)); platform.unref() }
+
+process.env.KB_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'sub-kb-'))
+process.env.INDEX_BASE = fs.mkdtempSync(path.join(os.tmpdir(), 'sub-ix-'))
+process.env.PW_GATEWAY_URL = `http://${HOST}/api/openai/v1`
+process.env.PW_API_KEY = 'alex-platform-key'
+process.env.PW_CREDENTIALS_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'sub-pw-'))
+const unreachable = new RegExp(`^Nothing answers at ${HOST.replace(/\./g, '\\.')} \\(ECONNREFUSED\\)`)
 
 const { accessRoutes } = await import('../dist/accessRoutes.js')
 const { sanitizedErrorHandler } = await import('../dist/routes.js')
@@ -85,25 +103,23 @@ test('Copilot is added as a platform provider from the catalog entry the platfor
 })
 
 test('a platform that cannot be reached is said plainly', async () => {
-  const prev = globalThis.fetch
-  globalThis.fetch = async () => { throw Object.assign(new TypeError('fetch failed'), { cause: { code: 'ENOTFOUND' } }) }
+  const { resetAccessRoutesForTests } = await import('../dist/accessRoutes.js')
+  resetAccessRoutesForTests()
+  await offline()
   try {
-    const { resetAccessRoutesForTests } = await import('../dist/accessRoutes.js')
-    resetAccessRoutesForTests()
     const r = await req('POST', '/api/access/codex', {})
     assert.equal(r.status, 503)
-    assert.match(r.body.error, /^Could not reach platform\.example\.com \(ENOTFOUND\)/)
-  } finally { globalThis.fetch = prev }
+    assert.match(r.body.error, unreachable)
+  } finally { await online() }
 })
 
 test('offline, the subscriptions are not reported as "not offered"', async () => {
-  const prev = globalThis.fetch
   // The account is known from before; the platform has since gone out of reach.
-  await req('GET', '/api/access/subscriptions')
-  globalThis.fetch = async () => { throw Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNRESET' } }) }
+  assert.equal((await req('GET', '/api/access/subscriptions')).status, 200)
+  await offline()
   try {
     const r = await req('GET', '/api/access/subscriptions')
     assert.equal(r.status, 503)
-    assert.match(r.body.error, /^Could not reach platform\.example\.com \(ECONNRESET\)/)
-  } finally { globalThis.fetch = prev }
+    assert.match(r.body.error, unreachable)
+  } finally { await online() }
 })

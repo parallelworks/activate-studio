@@ -5,7 +5,6 @@
 package server
 
 import (
-	"encoding/json"
 	"github.com/parallelworks/activate-studio/server-go/internal/bridge"
 	"log/slog"
 	"net/http"
@@ -319,11 +318,8 @@ var copyBufferPool = sync.Pool{New: func() any { b := make([]byte, 32<<10); retu
 func (copyBuffers) Get() []byte  { return *copyBufferPool.Get().(*[]byte) }
 func (copyBuffers) Put(b []byte) { copyBufferPool.Put(&b) }
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(v)
-}
+// writeJSON is apierr.JSON: Fastify's bytes, with no trailing newline.
+func writeJSON(w http.ResponseWriter, status int, v any) { apierr.JSON(w, status, v) }
 
 // recorder notes the status and size of a response for the access log and
 // passes Flush through, which the proxy needs for event streams.

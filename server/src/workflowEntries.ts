@@ -14,6 +14,12 @@ export type WorkflowEntry =
   | { kind: 'marketplace'; entry: string; slug: string }
   | { kind: 'github'; entry: string; owner: string; repo: string; path: string; ref: string | null }
 
+/** GitHub's REST API and raw-file hosts. STUDIO_GITHUB_API_URL and
+ *  STUDIO_GITHUB_RAW_URL point them at a local fake in tests, the same
+ *  variables the Go server reads. */
+export const githubApiBase = (): string => (process.env.STUDIO_GITHUB_API_URL || 'https://api.github.com').replace(/\/$/, '')
+export const githubRawBase = (): string => (process.env.STUDIO_GITHUB_RAW_URL || 'https://raw.githubusercontent.com').replace(/\/$/, '')
+
 const NAME = /^[A-Za-z0-9_.-]{1,120}$/
 const SEG = '[A-Za-z0-9_.-]+'
 const GITHUB = new RegExp(`^github\\.com/(${SEG})/(${SEG})((?:/${SEG})*)(?:@([A-Za-z0-9_./-]{1,120}))?$`)
@@ -35,7 +41,7 @@ export function parseWorkflowEntry(raw: string): WorkflowEntry | null {
 /** The raw file URLs to try for a GitHub entry: the named file, or
  *  workflow.yaml then workflow.yml in the named directory. */
 export function githubYamlUrls(e: Extract<WorkflowEntry, { kind: 'github' }>): string[] {
-  const base = `https://raw.githubusercontent.com/${e.owner}/${e.repo}/${e.ref ?? 'HEAD'}`
+  const base = `${githubRawBase()}/${e.owner}/${e.repo}/${e.ref ?? 'HEAD'}`
   if (/\.ya?ml$/.test(e.path)) return [`${base}/${e.path}`]
   const dir = e.path ? `${base}/${e.path}` : base
   return [`${dir}/workflow.yaml`, `${dir}/workflow.yml`]
@@ -44,7 +50,7 @@ export function githubYamlUrls(e: Extract<WorkflowEntry, { kind: 'github' }>): s
 /** Where a GitHub workflow's thumbnail would be, by the platform's convention. */
 export function githubThumbnail(e: Extract<WorkflowEntry, { kind: 'github' }>): string {
   const dir = /\.ya?ml$/.test(e.path) ? e.path.replace(/\/?[^/]+$/, '') : e.path
-  return `https://raw.githubusercontent.com/${e.owner}/${e.repo}/${e.ref ?? 'HEAD'}/${dir ? `${dir}/` : ''}thumbnail.png`
+  return `${githubRawBase()}/${e.owner}/${e.repo}/${e.ref ?? 'HEAD'}/${dir ? `${dir}/` : ''}thumbnail.png`
 }
 
 /** A readable default title: the repository, or its last path segment. */

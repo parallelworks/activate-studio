@@ -234,19 +234,6 @@ export function getConversation(id: string): StoredConversation | undefined {
 }
 
 export function appendConversationNote(conversationId: string, content: string): boolean {
-  // TRANSITIONAL: behind a Go server that keeps conversations.json, the
-  // note is written there and this process never reads the file. Goes away
-  // when the run watcher (runs.ts) runs in Go, which calls the chat track's
-  // Providers.ConversationNote.
-  const front = process.env.STUDIO_FRONT_URL
-  if (process.env.STUDIO_GO_CONVERSATIONS === '1' && front) {
-    fetch(`${front.replace(/\/$/, '')}/internal/go-chat/note`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-studio-bridge-secret': process.env.STUDIO_BRIDGE_SECRET ?? '' },
-      body: JSON.stringify({ conversationId, content }),
-    }).catch(() => { /* the note is lost with the Go server; the run itself is not */ })
-    return true
-  }
   const c = load().find(x => x.id === conversationId)
   if (!c) return false
   const last = c.messages[c.messages.length - 1]

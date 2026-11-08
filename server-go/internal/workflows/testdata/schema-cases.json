@@ -1,0 +1,12 @@
+[
+ {"jobs": {"a": {"steps": [{"uses": "cloudinit"}]}}},
+ {"jobs": {"A": {"steps": []}}},
+ {"jobs": {"a": {"steps": [{"run": 5}]}}},
+ {"jobs": {"a": {"steps": [{"run": "true", "bogus": 1}]}}},
+ {"jobs": {}, "extra": true},
+ {"on": {"execute": {"inputs": {"x": {"type": "nosuchtype"}}}}, "jobs": {"a": {"steps": [{"run": "true"}]}}},
+ {"on": {"execute": {"inputs": {"$meta": {"layout": {"type": "columns", "children": []}}, "x": {"type": "string"}}}}, "jobs": {"a": {"steps": [{"run": "true"}]}}},
+ {"jobs": {"a": {"needs": "b", "steps": [{"run": "true"}]}}},
+ "not an object",
+ {"jobs": {"a": {"steps": [{"run": "true"}]}}, "permissions": ["*"]}
+]

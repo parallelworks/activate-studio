@@ -1,0 +1,173 @@
+permissions:
+  - '*'
+sessions:
+  session:
+    useTLS: false
+    redirect: true
+'on':
+  execute:
+    inputs:
+      $meta:
+        wizard:
+          flatten: false
+      header1:
+        type: header
+        text: Cluster
+        size: 20
+      banner:
+        size: 14
+        text: A label without a type
+      cluster:
+        type: compute-clusters
+        label: Cluster
+        autoselect: true
+      clusters:
+        type: compute-clusters
+        multiple: true
+      store:
+        type: bucket
+      itype:
+        type: instance-type
+        provider: aws
+      color:
+        type: color-picker
+      notes:
+        type: string
+        textarea: true
+        default: |
+          line one
+          line two
+      cores:
+        type: number
+        slider: true
+        min: 1
+        max: 64
+        step: 1
+      count:
+        type: number
+        default: 2
+      mode:
+        type: dropdown
+        option-key: provider
+        default: fast
+        options:
+          - value: fast
+          - value: slow
+            label: Slow lane
+          - value: 3
+          - plain
+      acct:
+        type: slurm-accounts
+        resource: ${{ inputs.cluster }}
+      qos:
+        type: slurm-qos
+      part:
+        type: slurm-partitions
+      queue:
+        type: pbs-queues
+      groups:
+        type: organization-groups
+      disk:
+        type: storage
+        subtype: lustre
+      disk2:
+        type: storage
+        subType: nfs
+      skipme:
+        type: string
+        ignore: true
+        default: x
+      expr:
+        type: string
+        ignore: 'true'
+        default: ${{ inputs.mode }}
+      advanced:
+        type: group
+        label: Advanced
+        collapsed: true
+        items:
+          threads:
+            type: number
+            default: 4
+          hidden:
+            type: string
+            ignore: true
+      flat:
+        type: group
+        flatten: true
+        items:
+          a:
+            type: string
+          b:
+            type: boolean
+            default: false
+      ignoredgroup:
+        type: group
+        ignore: true
+        items:
+          inner:
+            type: string
+          deep:
+            type: group
+            flatten: true
+            items:
+              deeper:
+                type: string
+      envs:
+        type: list
+        items-collapsible: true
+        template:
+          key:
+            type: string
+          secret:
+            type: string
+            ignore: true
+          where:
+            type: compute-clusters
+      plainlist:
+        type: list
+        options:
+          name:
+            type: string
+      wizard1:
+        type: step
+        options:
+          s1:
+            type: string
+          s2:
+            type: string
+            ignore: true
+      section:
+        type: object
+        template:
+          x:
+            type: string
+          y:
+            type: string
+            ignore: true
+jobs:
+  setup:
+    steps:
+      - name: Named step
+        run: echo hi
+      - run: |
+
+          # a comment line that is long enough to be cut at sixty-four characters exactly here
+          echo two
+      - uses: marketplace/checkout
+      - subworkflow: other
+      - {}
+  build:
+    needs:
+      - setup
+    steps:
+      - run: make
+  test:
+    needs: [build]
+    steps:
+      - run: "make test"
+  deploy:
+    needs:
+      - test
+      - setup
+    steps: []

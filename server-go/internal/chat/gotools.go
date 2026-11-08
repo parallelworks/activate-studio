@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/url"
-	"os"
 	"os/exec"
 	"slices"
 	"strings"
@@ -46,52 +44,14 @@ func (t remoteTools) IsRemoteTool(name string) bool { return t.c.IsRemoteTool(na
 /* ---- the platform values ---- */
 
 // Platform is the part of internal/platform's *Platform the chat reads, by
-// the names it has there.
-// TODO(platform merge): m.Plat becomes the track's *platform.Platform and
-// accessPlatform goes, with the bridge's access op.
+// the names it has there; m.Plat is the shared one (platform.Of), and
+// tests put a stand-in in its place.
 type Platform interface {
 	GatewayBase() string
 	Origin() string
 	PlatformGateway() bool
 	CredentialContextName() string
 	CLI() string
-}
-
-// accessPlatform is Platform over the values the bridge's access op reads
-// from Node (access.ts, config.ts).
-type accessPlatform struct{ m *Module }
-
-func (p accessPlatform) GatewayBase() string { return p.m.gatewayBase() }
-
-func (p accessPlatform) Origin() string {
-	u, err := url.Parse(p.GatewayBase())
-	if err != nil || u.Scheme == "" || u.Host == "" {
-		return ""
-	}
-	return u.Scheme + "://" + u.Host
-}
-
-func (p accessPlatform) PlatformGateway() bool {
-	if p.Origin() == "" {
-		return false
-	}
-	fromEnv := os.Getenv("PW_GATEWAY_URL") != "" || os.Getenv("OPENAI_BASE_URL") != ""
-	return !fromEnv || strings.HasSuffix(p.GatewayBase(), "/api/openai/v1")
-}
-
-func (p accessPlatform) CredentialContextName() string { return deref(p.m.contextName()) }
-
-func (p accessPlatform) CLI() string {
-	p.m.accessMu.Lock()
-	cli := p.m.access.CLI
-	p.m.accessMu.Unlock()
-	if cli != "" {
-		return cli
-	}
-	if v := os.Getenv("PW_CLI"); v != "" {
-		return v
-	}
-	return "pw"
 }
 
 // pwCLI runs the pw CLI and returns its standard output.
@@ -377,6 +337,25 @@ func (t goTools) Held(r *http.Request, conversationID string) ([]conversations.H
 	return holders(t.m.held.in(conversationID)), nil
 }
 
+// Access is the platform values the chat reads, from the shared platform:
+// ensureFreshAccess(freshMS), GATEWAY_BASE, the deployment credential, the
+// credential's context, platformAvailable for the viewer and the pw CLI.
 func (t goTools) Access(r *http.Request, freshMS int) (*Access, error) {
-	return t.node.Access(r, freshMS)
+	p := t.m.pf
+	if freshMS > 0 {
+		p.EnsureFreshAccess(time.Duration(freshMS) * time.Millisecond)
+	}
+	key := p.APIKeyEnv()
+	if key == "" {
+		key = p.CLICredential()
+	}
+	var ctxName *string
+	if n := p.CredentialContextName(); n != "" {
+		ctxName = &n
+	}
+	avail := false
+	if r != nil && t.m.A.Providers.PlatformAvailable != nil {
+		avail = t.m.A.Providers.PlatformAvailable(r, userID(r))
+	}
+	return &Access{GatewayBase: p.GatewayBase(), DeploymentKey: key, ContextName: ctxName, Platform: avail, CLI: p.CLI()}, nil
 }

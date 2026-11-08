@@ -1,0 +1,21 @@
+{
+ "json": [
+  "{\"b\":1,\"a\":2,\"10\":3,\"2\":4,\"01\":5}",
+  "[1.0, 1e21, 1e-7, 123456789012345678901, 0.1, -0, 5e-324, 1.5e300]",
+  "{\"s\":\"<a href='x'>&amp;</a> \\u2028 \\u0001 \\t é 😀\"}",
+  "{\"a\":1,\"a\":2,\"b\":{\"c\":[true,false,null]}}",
+  "{\"4294967295\":1,\"4294967294\":2,\"-1\":3,\"1.5\":4}",
+  "[]", "{}", "\"x\"", "null", "{bad"
+ ],
+ "yaml": [
+  "on:\n  execute:\n    inputs:\n      z: {type: string}\n      a: {type: number, default: 1.50}\n",
+  "a: yes\nb: no\nc: on\nd: 2024-01-02\ne: 0o17\nf: 0x1F\ng: 017\nh: .inf\ni: ~\nj: True\nk: 1_000\nl: '1'\nm: 1e3\nn: +5\n",
+  "base: &b {x: 1, y: 2}\nuse: *b\nmerge:\n  <<: *b\n  z: 3\n",
+  "list:\n  - a\n  - {b: c}\n  - [1, 2]\nmulti: |\n  line1\n  line2\nfolded: >-\n  one\n  two\n",
+  "2: two\n1: one\nb: bee\n0: zero\n",
+  "a: 1\na: 2\n",
+  "",
+  "--- a\n--- b\n",
+  "jobs:\n  main:\n    steps:\n      - name: x\n        run: echo ${{ inputs.a }}\n"
+ ]
+}

@@ -10,7 +10,6 @@ import path from 'node:path'
 process.env.KB_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'wr-kb-'))
 process.env.INDEX_BASE = fs.mkdtempSync(path.join(os.tmpdir(), 'wr-ix-'))
 process.env.PW_API_KEY = 'viewer-key'
-process.env.PW_GATEWAY_URL = 'https://platform.test/api/openai/v1'
 
 const PNG = Buffer.from('89504e470d0a1a0a', 'hex')
 const README = [
@@ -24,22 +23,25 @@ const README = [
   '<img src="../shared/logo.png" width="80">',
 ].join('\n')
 const seen = []
-globalThis.fetch = async (url, init) => {
+const { fakePlatform } = await import('./fakePlatform.mjs')
+const fake = await fakePlatform()
+const platformFetch = async (url, init) => {
   const u = new URL(String(url))
   seen.push({ url: String(url), auth: init?.headers?.Authorization ?? null })
-  if (u.pathname === '/api/workflows/gitlab-flow') return Response.json({ name: 'gitlab-flow', type: 'remote', remote: { repo: 'https://gitlab.example.org/team/flows.git', branch: 'main', readme: 'sweep/README.md', yaml: 'sweep/workflow.yaml' } })
+  // gitlab-flow-2 is the same record under a name no earlier case has cached.
+  if (u.pathname === '/api/workflows/gitlab-flow' || u.pathname === '/api/workflows/gitlab-flow-2') return Response.json({ name: 'gitlab-flow', type: 'remote', remote: { repo: 'https://gitlab.example.org/team/flows.git', branch: 'main', readme: 'sweep/README.md', yaml: 'sweep/workflow.yaml' } })
   if (u.pathname === '/api/workflows/local-flow') return Response.json({ name: 'local-flow', type: 'local' })
   if (u.pathname === '/api/repositories/readme') return Response.json({ markdown: `${README}\n<!-- ${u.searchParams.get('repo')} ${u.searchParams.get('ref')} ${u.searchParams.get('path')} -->` })
   if (u.pathname === '/api/repositories/thumbnail') return new Response(PNG, { headers: { 'content-type': 'image/png' } })
   return new Response('no', { status: 404 })
 }
 
-const tab = await import('../dist/workflowsTab.js')
-tab.setWorkflowsCli(async args => {
+fake.fetch = platformFetch
+fake.cli = async args => {
   if (args[0] === 'marketplace' && args[1] === 'get') return JSON.stringify({ slug: args[2], versionTags: { latest: 'v2' }, versionOrder: ['v1', 'v2'],
     versions: { v1: { repo: 'https://github.com/acme/flows.git', branch: 'old', readme: 'x/README.md' }, v2: { repo: 'https://github.com/acme/flows.git', branch: 'canary', readme: 'workflows/naca/README.md' } } })
   throw new Error(`unexpected ${args.join(' ')}`)
-})
+}
 const wr = await import('../dist/workflowReadme.js')
 const { default: Fastify } = await import('fastify')
 const app = Fastify()
@@ -95,11 +97,10 @@ test('a marketplace entry reads its latest version\'s README; a platform-only wo
 
 test('a failed lookup is not remembered as no README', async () => {
   wr.resetWorkflowReadmeForTests()
-  const saved = globalThis.fetch
-  globalThis.fetch = async () => new Response('down', { status: 503 })
-  assert.deepEqual((await app.inject({ url: '/api/workflows/item/readme?w=gitlab-flow' })).json(), { markdown: null, web: null })
-  globalThis.fetch = saved
-  assert.match((await app.inject({ url: '/api/workflows/item/readme?w=gitlab-flow' })).json().markdown, /^# Sweep/, 'asked again once the platform answers')
+  fake.fetch = async () => new Response('down', { status: 503 })
+  assert.deepEqual((await app.inject({ url: '/api/workflows/item/readme?w=gitlab-flow-2' })).json(), { markdown: null, web: null })
+  fake.fetch = platformFetch
+  assert.match((await app.inject({ url: '/api/workflows/item/readme?w=gitlab-flow-2' })).json().markdown, /^# Sweep/, 'asked again once the platform answers')
 })
 
 test('the asset route serves repository images only', async () => {

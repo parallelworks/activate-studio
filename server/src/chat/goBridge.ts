@@ -1,8 +1,6 @@
 import crypto from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
-import { platformAvailable } from '../workflowsTab.js'
-import { cliCredential, credentialContextName, ensureFreshAccess } from '../access.js'
-import { GATEWAY_BASE, PW_API_KEY, PW_CLI, gufiAvailable } from '../config.js'
+import { gufiAvailable } from '../config.js'
 import { executeTool } from './tools.js'
 import { buildContext } from '../ragProxy.js'
 
@@ -11,11 +9,9 @@ import { buildContext } from '../ragProxy.js'
  * runs POST /api/chat/stream, the tool catalog, the system prompt and the
  * calls held for approval (internal/chat), the RAG proxy (/v1) and
  * /api/mcp; the tools not ported yet and the RAG proxy's retrieval still
- * run here, in tools.ts and ragProxy.ts, and the platform values the loop
- * reads are still access.ts's. Each op is one of the calls the Node route
- * made in-process, with the same inputs. It goes away with the tools' and
- * library search's port and the platform track's merge; nothing else
- * belongs here.
+ * run here, in tools.ts and ragProxy.ts. Each op is one of the calls the
+ * Node route made in-process, with the same inputs. It goes away with the
+ * tools' and library search's port; nothing else belongs here.
  *
  * Only a request carrying STUDIO_BRIDGE_SECRET is answered, and the Go
  * server refuses /internal/go/ from clients.
@@ -34,13 +30,6 @@ type Body = Record<string, any>
 
 async function op(name: string, b: Body, req: any): Promise<unknown> {
   switch (name) {
-    // The platform values the loop reads from the pw CLI's context, which
-    // Node still owns (access.ts): the gateway, the CLI credential, whether
-    // a platform answers for this viewer, and the pw CLI chosen.
-    case 'access': {
-      if (b.fresh) await ensureFreshAccess(Number(b.fresh) || undefined)
-      return { gatewayBase: GATEWAY_BASE, deploymentKey: PW_API_KEY || cliCredential(), contextName: credentialContextName(), platform: platformAvailable(req.user?.id), cli: PW_CLI }
-    }
     // A tool not ported to Go yet.
     case 'execute':
       return executeTool(String(b.name), String(b.args ?? ''), b.ctx ?? {})
