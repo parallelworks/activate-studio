@@ -22,7 +22,9 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/mcpclient"
 	"github.com/parallelworks/activate-studio/server-go/internal/modelkeys"
 	"github.com/parallelworks/activate-studio/server-go/internal/platform"
+	"github.com/parallelworks/activate-studio/server-go/internal/reqbody"
 	"github.com/parallelworks/activate-studio/server-go/internal/settings"
+	"github.com/parallelworks/activate-studio/server-go/internal/workflows"
 )
 
 // KeyHeader carries the viewer's personal key, sealed, on each request
@@ -249,6 +251,7 @@ func Register(mux *http.ServeMux, a *app.App) {
 	h("GET /api/settings/mcp-servers", m.mcpServers)
 	h("POST /api/kb/label-suggestions", m.labelSuggestionsRoute)
 	h("GET /api/rag/calls", m.ragCalls)
+	h("GET /api/runs", m.runsRoute)
 	h("GET /v1/models", m.v1Models)
 	h("POST /v1/chat/completions", m.v1Completions)
 	h("POST /api/mcp", m.mcpPost)
@@ -323,4 +326,15 @@ func Register(mux *http.ServeMux, a *app.App) {
 func (m *Module) toNode(w http.ResponseWriter, r *http.Request, why string) {
 	m.A.Log.Info("chat: to node", "path", r.URL.Path, "why", why)
 	m.A.Node().ServeHTTP(w, app.HandOff(r, why))
+}
+
+// runsRoute is GET /api/runs: the workflow runs the assistant launched,
+// newest first, from the platform track's run registry.
+func (m *Module) runsRoute(w http.ResponseWriter, r *http.Request) error {
+	wf := workflows.Current()
+	if wf == nil {
+		m.toNode(w, r, "no run registry here")
+		return nil
+	}
+	return reqbody.OK(w, reqbody.O("runs", wf.Runs.List(60)))
 }

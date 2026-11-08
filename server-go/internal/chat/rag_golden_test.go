@@ -233,3 +233,56 @@ func TestRAGContextSplice(t *testing.T) {
 		t.Fatalf("fail-closed %d %s", res.StatusCode, b)
 	}
 }
+
+// TestMCPTaskBearer checks /api/mcp with the task board set: a task's
+// bearer lists and runs the board tools here, another bearer gets the
+// corpus tools only, and without the board a bearer is left to Node.
+func TestMCPTaskBearer(t *testing.T) {
+	m, ts, _, _ := newTestModule(t, nil)
+	var asked []string
+	m.A.Providers.TaskBoard = func(token, agent, tool string, args json.RawMessage) (bool, json.RawMessage) {
+		asked = append(asked, token+" "+agent+" "+tool+" "+string(args))
+		if token != "task-1" {
+			return false, nil
+		}
+		if tool == "" {
+			return true, nil
+		}
+		return true, json.RawMessage(`{"ok":true}`)
+	}
+	rpc := func(bearer, body string) (int, string) {
+		req, _ := http.NewRequest("POST", ts.URL+"/api/mcp", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		if bearer != "" {
+			req.Header.Set("Authorization", "Bearer "+bearer)
+			req.Header.Set("X-Task-Agent", "w1")
+		}
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer res.Body.Close()
+		b, _ := io.ReadAll(res.Body)
+		return res.StatusCode, string(b)
+	}
+	list := `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`
+	if _, b := rpc("task-1", list); !strings.Contains(b, `"name":"board_offer_task"`) || !strings.Contains(b, `"name":"search_kb"`) {
+		t.Errorf("task list %s", b)
+	}
+	if _, b := rpc("other", list); strings.Contains(b, "board_") {
+		t.Errorf("other bearer %s", b)
+	}
+	if _, b := rpc("task-1", `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"board_post","arguments":{"body":"hi","n":1.0}}}`); b != `{"jsonrpc":"2.0","id":2,"result":{"content":[{"type":"text","text":"{\"ok\":true}"}],"isError":false}}` {
+		t.Errorf("board_post %s", b)
+	}
+	if last := asked[len(asked)-1]; last != `task-1 w1 board_post {"body":"hi","n":1}` {
+		t.Errorf("board asked %q", last)
+	}
+	if names := m.TaskToolNames(); len(names) != 13 || names[0] != "search_kb" || names[12] != "board_offer_task" {
+		t.Errorf("task tools %q", names)
+	}
+	m.A.Providers.TaskBoard = nil
+	if st, _ := rpc("task-1", list); st != 501 {
+		t.Errorf("without the board: %d", st)
+	}
+}

@@ -313,7 +313,7 @@ func (t goTools) Hold(r *http.Request, in map[string]any) (json.RawMessage, erro
 		Groups         []string          `json:"groups"`
 	}
 	remarshal(in, &b)
-	rec := newHold(b.ConversationID, b.MessageID, b.ToolCallID, b.Tool, b.Canonical, viewer, b.Turn, b.Groups, time.Now())
+	rec := newHold(b.ConversationID, b.MessageID, b.ToolCallID, b.Tool, b.Canonical, viewer, b.Turn, b.Groups, t.m.held.now())
 	args, err := jsonobj.Parse(b.Args)
 	if err != nil || args == nil {
 		args = jsonobj.New()
