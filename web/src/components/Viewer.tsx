@@ -403,7 +403,7 @@ export function Viewer({ path, find, onDeleted, readOnly }: {
   const previewView = isStructured ? treeView : isHtml ? (
     <iframe
       sandbox="allow-scripts"
-      src={`/api/kb/html?path=${encodeURIComponent(path)}`}
+      src={withLibrary(`/api/kb/html?path=${encodeURIComponent(path)}`)}
       title={path}
       className="html-preview-frame"
     />
