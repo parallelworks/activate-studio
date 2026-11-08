@@ -95,8 +95,8 @@ type Tools struct {
 func FindTools() Tools {
 	var t Tools
 	if p, err := exec.LookPath("tesseract"); err == nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		if exec.CommandContext(ctx, p, "--version").Run() == nil {
+		cmd, _, cancel := helper(context.Background(), 10*time.Second, p, "--version")
+		if cmd.Run() == nil {
 			t.Tesseract = p
 		}
 		cancel()

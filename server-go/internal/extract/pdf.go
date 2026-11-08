@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"os"
-	"os/exec"
 
 	"github.com/giraffesyo/downmark"
 	"github.com/giraffesyo/downmark/all"
@@ -95,10 +94,8 @@ var errTooLarge = errors.New("exceeds the converter's input limit")
 func (x *Extractor) pdfText(ctx context.Context, path string) string {
 	text := ""
 	if x.tools.Pdftotext != "" && (x.opt.PDFReader == "auto" || x.opt.PDFReader == "pdftotext") {
-		tctx, cancel := context.WithTimeout(ctx, pdftotextTimeout)
 		// -layout keeps columns and table cells apart.
-		cmd := exec.CommandContext(tctx, x.tools.Pdftotext, "-layout", "-q", path, "-")
-		cmd.Env = helperEnv()
+		cmd, _, cancel := helper(ctx, pdftotextTimeout, x.tools.Pdftotext, "-layout", "-q", path, "-")
 		var out bytes.Buffer
 		cmd.Stdout = &out
 		if cmd.Run() == nil {
