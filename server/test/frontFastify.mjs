@@ -6,10 +6,31 @@ import fs from 'node:fs'
 import http from 'node:http'
 import os from 'node:os'
 import path from 'node:path'
-import { spawn } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import realFastify from 'fastify'
 
 const BIN = process.env.STUDIO_TEST_FRONT
+// One bridge secret for the Go server and this process's Node app
+// (server-go/internal/bridge), as a Go server that spawns Node hands it on.
+process.env.STUDIO_BRIDGE_SECRET ||= `test-${process.pid}-${Math.random().toString(36).slice(2)}`
+// STUDIO_TEST_FRONT_STRICT=1: a request for a route the Go server serves
+// that reaches Node anyway fails, unless the Go server sent it itself for
+// a value Node still owns (X-Studio-Internal). The routes come from
+// `studio-server routes`, Go patterns written as Fastify's.
+const STRICT = process.env.STUDIO_TEST_FRONT_STRICT === '1'
+const goRoutes = STRICT
+  ? new Set(JSON.parse(execFileSync(BIN, ['routes'], { encoding: 'utf8' })).ported
+    .map(r => r.replace(/\{([A-Za-z_]+)\.\.\.\}/g, '*').replace(/\{([A-Za-z_]+)\}/g, ':$1')))
+  : null
+// Test files that change the environment, the restart hook or the port
+// between requests for routes the Go server serves. The Go server reads its
+// environment once at start, so these files keep plain inject against Node,
+// and their cases run against the Go routes in the Go test named.
+const NODE_DIRECT = new Map([
+  ['setup.test.mjs', 'server-go/internal/core (TestSetupStatusAndBrowse, TestPrimaryFolderAndRestart, TestPort, TestPersonalDefaultsAndComplete)'],
+  ['setupSignIn.test.mjs', 'server-go/internal/core (TestSignInRefusesSetup)'],
+])
+const direct = NODE_DIRECT.has(path.basename(process.argv[1] ?? ''))
 // The ports the Go servers take; another test process may hold one.
 const PORTS = (process.env.STUDIO_TEST_FRONT_PORTS ?? '5870-5899').split('-').map(Number)
 const fronts = new Set()
@@ -135,6 +156,15 @@ function parseCookies(setCookie) {
 }
 
 function install(app) {
+  if (direct) return app
+  if (STRICT) {
+    app.addHook('onRequest', async (req, reply) => {
+      const key = `${req.method === 'HEAD' ? 'GET' : req.method} ${req.routeOptions?.url ?? ''}`
+      if (goRoutes.has(key) && !req.headers['x-studio-internal']) {
+        reply.code(599).send({ error: `strict front: ${key} is served by Go but reached Node` })
+      }
+    })
+  }
   let front = null
   let starting = null
   const ensure = async () => {

@@ -13,6 +13,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { HOST, PORT, PROJECT_ROOT, KB_ROOT, gufiAvailable } from './config.js'
 import { kbRoutes, sanitizedErrorHandler } from './routes.js'
+import { goBridgeRoutes } from './goBridge.js'
 import { uploadRoutes } from './uploads.js'
 import { queryRoutes } from './query.js'
 import { runPaneRoutes } from './runPane.js'
@@ -97,6 +98,7 @@ if (fs.existsSync(webDist)) {
 
 app.setErrorHandler(sanitizedErrorHandler(app))
 await app.register(kbRoutes)
+await app.register(goBridgeRoutes)
 await app.register(workflowsTabRoutes)
 await app.register(accessRoutes)
 await app.register(sessionRoutes)
