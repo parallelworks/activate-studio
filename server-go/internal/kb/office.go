@@ -47,11 +47,11 @@ const (
 /* ---- zip ---- */
 
 type zipEntry struct {
-	name           string
-	method         uint16
-	csize, usize   uint32
-	offset         uint32
-	encrypted      bool
+	name         string
+	method       uint16
+	csize, usize uint32
+	offset       uint32
+	encrypted    bool
 }
 
 type officeZip struct {
@@ -397,9 +397,9 @@ func displayable(z *officeZip, member string) bool {
 /* ---- blocks ---- */
 
 func hBlock(level float64, text string) *Obj { return O("t", "h", "level", level, "text", text) }
-func pBlock(text string) *Obj               { return O("t", "p", "text", text) }
-func tableBlock(rows [][]string) *Obj       { return O("t", "table", "rows", rows) }
-func imgBlock(media string) *Obj            { return O("t", "img", "media", media) }
+func pBlock(text string) *Obj                { return O("t", "p", "text", text) }
+func tableBlock(rows [][]string) *Obj        { return O("t", "table", "rows", rows) }
+func imgBlock(media string) *Obj             { return O("t", "img", "media", media) }
 
 // jsNum is Number(v) || 0 for an attribute.
 func jsNum(v string, ok bool, def float64) float64 {

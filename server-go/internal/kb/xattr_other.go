@@ -8,6 +8,6 @@ package kb
 // Labels on files there are an open question (docs/GO-PORT.md).
 const xattrsSupported = false
 
-func getXattr(abs, name string) (string, bool)  { return "", false }
-func setXattr(abs, name, value string) bool     { return false }
-func removeXattr(abs, name string)              {}
+func getXattr(abs, name string) (string, bool) { return "", false }
+func setXattr(abs, name, value string) bool    { return false }
+func removeXattr(abs, name string)             {}

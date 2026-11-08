@@ -37,11 +37,13 @@ type Library struct {
 
 // libraryDef is an entry of STUDIO_LIBRARIES or INDEX_BASE/libraries.json.
 type libraryDef struct {
-	ID          string          `json:"id"`
-	Label       string          `json:"label"`
-	IndexRoot   string          `json:"indexRoot"`
-	SourceRoot  *string         `json:"sourceRoot"`
-	Build       *struct{ CacheRoot *string `json:"cacheRoot"` } `json:"build"`
+	ID         string  `json:"id"`
+	Label      string  `json:"label"`
+	IndexRoot  string  `json:"indexRoot"`
+	SourceRoot *string `json:"sourceRoot"`
+	Build      *struct {
+		CacheRoot *string `json:"cacheRoot"`
+	} `json:"build"`
 	ReadThrough json.RawMessage `json:"readThrough"`
 }
 

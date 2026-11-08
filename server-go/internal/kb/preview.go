@@ -19,8 +19,8 @@ import (
 var MIME = map[string]string{
 	".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
 	".gif": "image/gif", ".webp": "image/webp", ".svg": "image/svg+xml",
-	".pdf":  "application/pdf",
-	".md":   "text/plain; charset=utf-8", ".txt": "text/plain; charset=utf-8",
+	".pdf": "application/pdf",
+	".md":  "text/plain; charset=utf-8", ".txt": "text/plain; charset=utf-8",
 	".html": "text/html; charset=utf-8", ".json": "application/json",
 	".csv": "text/csv; charset=utf-8",
 }
@@ -80,7 +80,9 @@ func (p *Previews) pageDir(rel string) string { return filepath.Join(p.Roots.PDF
 
 // PreviewPaths are the cached renderings of a file, so a move can carry
 // them: its PDF and its page images.
-func (p *Previews) PreviewPaths(rel string) (file, pages string) { return p.pdfOut(rel), p.pageDir(rel) }
+func (p *Previews) PreviewPaths(rel string) (file, pages string) {
+	return p.pdfOut(rel), p.pageDir(rel)
+}
 
 // RemovePreview drops a file's cached renderings.
 func (p *Previews) RemovePreview(rel string) {

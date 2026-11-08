@@ -180,7 +180,7 @@ func jsResolve(base, rel string) string {
 	return filepath.Clean(base + "/" + rel)
 }
 
-// trimSlashes is rel.replace(/^\/+|\/+$/g, '').
+// trimSlashes is rel.replace(/^\/+|\/+$/g, ”).
 func trimSlashes(s string) string { return strings.Trim(s, "/") }
 
 // protected is the check every mutation runs on each part of a path: no

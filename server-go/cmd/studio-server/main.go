@@ -7,6 +7,8 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -101,6 +103,11 @@ func run() int {
 			return 2
 		}
 	case cfg.NodeSpawn:
+		// The transitional bridge's secret (app/bridge.go), for Node and the
+		// Go server alike.
+		if os.Getenv(app.BridgeSecretEnv) == "" {
+			os.Setenv(app.BridgeSecretEnv, randomSecret())
+		}
 		if proc, err = nodeproc.Start(ctx, log, cfg.NodeBin, cfg.NodeMain, 90*time.Second, nodeEnv); err != nil {
 			log.Error("node", "err", err.Error())
 			return 1
@@ -258,3 +265,12 @@ func nodeString(u *url.URL) string {
 }
 
 func nodeRoutesCount(s *server.Server) []string { return append(s.Ported(), s.Unported()...) }
+
+// randomSecret is 32 random bytes in hex.
+func randomSecret() string {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		panic(err)
+	}
+	return hex.EncodeToString(b)
+}

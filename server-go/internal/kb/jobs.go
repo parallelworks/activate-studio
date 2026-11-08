@@ -55,8 +55,8 @@ func isoNow() string { return time.Now().UTC().Format("2006-01-02T15:04:05.000Z"
 
 // JobHandle reports a job's progress.
 type JobHandle struct {
-	j    *Jobs
-	job  *Job
+	j   *Jobs
+	job *Job
 }
 
 // Progress is handle.progress: Object.assign of the given fields.

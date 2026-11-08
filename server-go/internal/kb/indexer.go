@@ -31,7 +31,9 @@ func (p ProviderIndexer) IndexDir(ctx context.Context, rel string) (int64, error
 func (p ProviderIndexer) IndexRootDB(ctx context.Context) (int64, error) {
 	return p.A.Providers.IndexRootDB(ctx)
 }
-func (p ProviderIndexer) Changed(ctx context.Context, what ...string) { p.A.Providers.Changed(ctx, what...) }
+func (p ProviderIndexer) Changed(ctx context.Context, what ...string) {
+	p.A.Providers.Changed(ctx, what...)
+}
 
 // NoIndexer re-indexes nothing (tests; the sweep finds the change).
 type NoIndexer struct{}
