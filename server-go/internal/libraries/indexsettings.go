@@ -83,8 +83,8 @@ func TextArgs(depth string) []string {
 type FileIndexSettings struct {
 	File string
 
-	mu    sync.Mutex
-	stamp string
+	mu      sync.Mutex
+	stamp   string
 	data    map[string]map[string]json.RawMessage
 	order   []string
 	libKeys map[string][]string

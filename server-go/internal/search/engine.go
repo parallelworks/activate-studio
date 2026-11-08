@@ -388,3 +388,29 @@ func (e *Engine) toKbRel(p, indexRoot string) string {
 	}
 	return strings.TrimPrefix(p, "./")
 }
+
+// GufiInstalled is gufiInstalled.
+func (e *Engine) GufiInstalled() bool { return e.gufiInstalled() }
+
+// CheckFTS is fts5's own parser on expr, run in gufi_sqlite3: its message
+// for a malformed expression, "" for a good one or no parser here.
+func (e *Engine) CheckFTS(ctx context.Context, expr string) string {
+	if e.Local == nil {
+		return ""
+	}
+	res, err := e.Local.Run(ctx, gufi.Command{Tool: gufi.ToolSQLite3, Stdin: []byte("CREATE VIRTUAL TABLE t USING fts5(x);\nSELECT count(*) FROM t WHERE t MATCH " + q(expr) + ";\n"), Timeout: 10 * time.Second})
+	if err != nil {
+		return ""
+	}
+	se := strings.TrimSpace(res.Stderr)
+	if se == "" {
+		return ""
+	}
+	if strings.Contains(se, "no such module") {
+		return ""
+	}
+	line := lastLine(se)
+	// gufi_sqlite3 writes "Error: SQL error: <sqlite's message>".
+	line = strings.TrimPrefix(line, "Error: ")
+	return strings.TrimPrefix(line, "SQL error: ")
+}

@@ -342,7 +342,9 @@ func (e *Engine) listVectorDbs(ctx context.Context, root string) []vecDB {
 	return dbs
 }
 
-func (e *Engine) embedModelFile() string { return filepath.Join(e.IndexBase, "models", "minilm384.gguf") }
+func (e *Engine) embedModelFile() string {
+	return filepath.Join(e.IndexBase, "models", "minilm384.gguf")
+}
 
 // vectorsAvailable is vectorsAvailable.
 func (e *Engine) vectorsAvailable() bool {
