@@ -245,4 +245,3 @@ func ExtractorReportFor(o ReaderOptions, projectRoot string) Report {
 	}
 	return Report{ex, formats, missing, installInfo(tess != "", p.tools.Pdftotext != "" && p.tools.Pdftoppm != "", p.soffice != "", tess != "", p.brew, p.apt)}
 }
-

@@ -632,4 +632,3 @@ func (h *History) register(mux *http.ServeMux, wrap func(func(http.ResponseWrite
 		return writeOK(w, d)
 	}))
 }
-

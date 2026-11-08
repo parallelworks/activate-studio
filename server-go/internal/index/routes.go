@@ -579,7 +579,6 @@ func (ix *Indexer) register(mux *http.ServeMux) {
 		return writeOK(w, ordered{{"moved", true}, {"restarting", false}, {"job", job}, {"note", "Restart the Studio to use the index there."}}.Map())
 	}))
 
-
 	ix.History.register(mux, wrap)
 }
 
@@ -593,4 +592,3 @@ func writableDir(p string) bool {
 	os.Remove(name)
 	return true
 }
-
