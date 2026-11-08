@@ -128,8 +128,8 @@ func TestProxyToNode(t *testing.T) {
 		t.Fatalf("host and forwarded-for: %s", body)
 	}
 	// Node's routes outside /api win over a static file of the same name.
-	_, body = get(t, f.URL+"/manifest.webmanifest")
-	if !strings.Contains(body, `"node":"GET /manifest.webmanifest"`) {
+	_, body = get(t, f.URL+"/v1/models")
+	if !strings.Contains(body, `"node":"GET /v1/models"`) {
 		t.Fatalf("manifest: %s", body)
 	}
 	res2, err := http.Post(f.URL+"/v1/chat/completions", "application/json", strings.NewReader(`{"x":1}`))
@@ -165,7 +165,7 @@ func TestEventStreamIsNotBuffered(t *testing.T) {
 func TestNodeDown(t *testing.T) {
 	u, _ := url.Parse("http://127.0.0.1:1")
 	f := front(t, webDist(t), u)
-	res, body := get(t, f.URL+"/api/config")
+	res, body := get(t, f.URL+"/api/kb/tree")
 	if res.StatusCode != http.StatusBadGateway || !strings.Contains(body, "Node server") {
 		t.Fatalf("%d %s", res.StatusCode, body)
 	}
@@ -355,8 +355,8 @@ func TestOnlyStreamsAreFlushed(t *testing.T) {
 	s := New(config.Config{WebDist: webDist(t), GufiBin: t.TempDir(), GufiIndex: filepath.Join(t.TempDir(), "none")},
 		slog.New(slog.NewTextHandler(io.Discard, nil)), u, nil)
 	rec := httptest.NewRecorder()
-	s.ServeHTTP(rec, httptest.NewRequest("GET", "/api/config", nil))
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"node":"GET /api/config"`) {
+	s.ServeHTTP(rec, httptest.NewRequest("GET", "/api/kb/stats", nil))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"node":"GET /api/kb/stats"`) {
 		t.Fatalf("%d %s", rec.Code, rec.Body.String())
 	}
 	if rec.Flushed {

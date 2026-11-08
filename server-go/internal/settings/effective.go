@@ -318,3 +318,19 @@ func asPolicy(raw json.RawMessage) UpdatePolicy {
 	}
 	return p
 }
+
+// EnvPrompts is settings.ts's envPrompts(): SUGGESTED_PROMPTS, else the
+// defaults for a computer of its own or a deployment.
+func (s *Store) EnvPrompts() []string { return s.envPrompts() }
+
+// DefaultMission is settings.ts's defaultMission(): KB_MISSION, else, on a
+// computer of its own, the mission written for its owner's files.
+func (s *Store) DefaultMission() string {
+	if v, ok := s.lookup("KB_MISSION"); ok {
+		return v
+	}
+	if s.PersonalInstall() {
+		return PersonalMission
+	}
+	return ""
+}
