@@ -70,6 +70,15 @@ type blob struct {
 func NewRoutes(a *app.App, p *platform.Platform) *Routes {
 	r := &Routes{a: a, p: p, Runs: runs.New(p), Schema: NewSchema(p)}
 	r.CLI = r.execCLI
+	if a != nil {
+		// Read at each note: the chat track sets the provider after this
+		// track registers.
+		r.Runs.Note = func(id, content string) {
+			if !a.Providers.ConversationNote(id, content) {
+				r.Runs.Log("run note for conversation " + id + " not delivered: no such conversation")
+			}
+		}
+	}
 	r.Curated = func() []string {
 		if a == nil || a.Settings == nil {
 			return nil

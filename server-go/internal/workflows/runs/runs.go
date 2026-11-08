@@ -102,7 +102,8 @@ type Registry struct {
 	Go func(name string, fn func(ctx context.Context))
 	// Log reports the watcher's events.
 	Log func(string)
-	// Note appends a note to a conversation (Node's bridge).
+	// Note appends a note to a conversation (the chat track's
+	// Providers.ConversationNote, set by NewRoutes).
 	Note func(conversationID, content string)
 	// SessionKey is the key a run's sessions are listed with, for its owner.
 	SessionKey func(owner *string) string
@@ -124,14 +125,7 @@ func New(p *platform.Platform) *Registry {
 	r.Go = func(name string, fn func(ctx context.Context)) { go fn(context.Background()) }
 	r.Log = func(msg string) { p.Log().Info(msg) }
 	r.Note = func(id, content string) {
-		b := p.Node()
-		if b == nil {
-			r.Log("run note for conversation " + id + " not delivered: no Node server")
-			return
-		}
-		if err := b.Background(http.MethodPost, platform.BridgePrefix+"conversation-note", jsonv.NewObject("conversationId", id, "content", content), nil); err != nil {
-			r.Log("run note for conversation " + id + " not delivered: " + err.Error())
-		}
+		r.Log("run note for conversation " + id + " not delivered: no conversation store")
 	}
 	r.SessionKey = func(owner *string) string {
 		if owner == nil {

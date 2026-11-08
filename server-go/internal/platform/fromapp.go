@@ -3,10 +3,24 @@ package platform
 import (
 	"net/http"
 	"os"
+	"sync"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/app"
 	"github.com/parallelworks/activate-studio/server-go/internal/bridge"
 )
+
+var shared sync.Map // *app.App -> *Platform
+
+// Of is a's one Platform, shared by every package that needs it (the
+// platform track's routes, chat's tools), so its CLI choice, contexts,
+// renewals and reachability are one state.
+func Of(a *app.App) *Platform {
+	if v, ok := shared.Load(a); ok {
+		return v.(*Platform)
+	}
+	v, _ := shared.LoadOrStore(a, FromApp(a))
+	return v.(*Platform)
+}
 
 // FromApp is the process's Platform for a: its paths, its logger, the Go
 // front's authEnabled where the front verifies identity, and the Node

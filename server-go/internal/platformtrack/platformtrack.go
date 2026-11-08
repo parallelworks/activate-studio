@@ -27,7 +27,7 @@ func init() {
 
 // Register is the track's one line in internal/server/tracks.go.
 func Register(mux *http.ServeMux, a *app.App) {
-	p := platform.FromApp(a)
+	p := platform.Of(a)
 	a.Providers.PlatformAvailable = func(r *http.Request, viewer string) bool {
 		v, err := p.ViewerOf(r)
 		if err != nil {

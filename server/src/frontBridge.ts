@@ -95,12 +95,6 @@ export async function frontBridgeRoutes(app: FastifyInstance): Promise<void> {
   } })
 
   // A note in the conversation a finished run was launched from (runs.ts).
-  app.route({ method: 'POST', url: '/api/__bridge/conversation-note', onRequest: guard, handler: async req => {
-    const b = (req.body ?? {}) as { conversationId?: string; content?: string }
-    const { appendConversationNote } = await import('./conversations.js')
-    return { ok: appendConversationNote(String(b.conversationId ?? ''), String(b.content ?? '')) }
-  } })
-
   // What a task agent's session pre-approves (mcp.ts taskToolNames).
   app.route({ method: 'GET', url: '/api/__bridge/task-tools', onRequest: guard, handler: async () => {
     const { taskToolNames } = await import('./mcp.js')
