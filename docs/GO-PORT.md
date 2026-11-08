@@ -212,6 +212,10 @@ Runner overhead: on the 200,000-file test index a canned query took 198.5 and 20
 
 Routes that could move to Go next at low risk, all read-only over files Go already reads or with no state of their own: `GET /api/version`, `/api/help`, `/api/changelog`, `/api/brand-icon`, `/api/favicon`, `/manifest.webmanifest`, `/api/kb/model`, `/api/index/log`, and the saved queries (`GET` and `POST /api/query/saved`, `DELETE /api/query/saved/:id`; one JSON file Node reads on every request). `POST /api/query/sql` needs only the plans above for the main library but the library list for the rest, so it waits for step 6. `/api/config` reads most of the server's state and is better left to the end of step 2.
 
+## Subcommands
+
+`studio-server <name> args...` runs the binary as a helper in place of the server. Work that loads native code or can crash, such as extraction (`extract`) and the ONNX embedder (`embed`, `embed-query`), runs this way as a child of the server, so a failure there cannot take the server down. Each subcommand registers itself from its own file in `cmd/studio-server` (`sub_<name>.go`, an `init` calling `registerSubcommand`); `studio-server help-subcommands` lists them.
+
 ## Tests against a server URL
 
 `server/test` has 121 files on `node:test`, run against `server/dist` with `test/setup.mjs` preloaded (it blocks non-loopback fetches). None starts the server or reads a base URL:
