@@ -122,7 +122,9 @@ var (
 	authFail  = regexp.MustCompile(`(?i)authentication has expired|please authenticate|401|unauthorized`)
 )
 
-func cleanCLI(msg string) string { return logPrefix.ReplaceAllString(ansiColor.ReplaceAllString(msg, ""), "") }
+func cleanCLI(msg string) string {
+	return logPrefix.ReplaceAllString(ansiColor.ReplaceAllString(msg, ""), "")
+}
 
 // PlatformError is platformError: a failed CLI call as an error the page
 // can show.
@@ -710,7 +712,9 @@ func truthyOnly(v any) []any {
 	return out
 }
 
-func iconOf(entry string) string { return "/api/workflows/item/icon?w=" + platform.EncodeURIComponent(entry) }
+func iconOf(entry string) string {
+	return "/api/workflows/item/icon?w=" + platform.EncodeURIComponent(entry)
+}
 
 func (r *Routes) collection(w http.ResponseWriter, req *http.Request) (any, error) {
 	ctx := req.Context()
@@ -743,13 +747,6 @@ func (r *Routes) collection(w http.ResponseWriter, req *http.Request) (any, erro
 		}
 	}
 	byName := map[string]any{}
-	for _, wf := range mine {
-		if n, ok := at(wf, "name").(string); ok {
-			if _, dup := byName[n]; !dup {
-				byName[n] = wf
-			}
-		}
-	}
 	// new Map(rows.map(...)) keeps the last of a repeated name.
 	for _, wf := range mine {
 		if n, ok := at(wf, "name").(string); ok {

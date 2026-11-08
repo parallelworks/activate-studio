@@ -45,7 +45,9 @@ func ResetGitHubCaches() {
 	ghMu.Unlock()
 }
 
-func rawPath(e *Entry, p string) string { return "/" + e.Owner + "/" + e.Repo + "/" + e.RefOf() + "/" + p }
+func rawPath(e *Entry, p string) string {
+	return "/" + e.Owner + "/" + e.Repo + "/" + e.RefOf() + "/" + p
+}
 
 func rawURL(e *Entry, p string) string { return rawBase() + rawPath(e, p) }
 

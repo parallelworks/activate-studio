@@ -147,7 +147,9 @@ func New(p *platform.Platform) *Registry {
 		// A username names no stored key; a live personal key is Node's.
 		return p.GatewayKey()
 	}
-	r.Sessions = func(ctx context.Context, key string) ([]*sessions.SessionRow, error) { return sessions.List(ctx, p, key) }
+	r.Sessions = func(ctx context.Context, key string) ([]*sessions.SessionRow, error) {
+		return sessions.List(ctx, p, key)
+	}
 	return r
 }
 
