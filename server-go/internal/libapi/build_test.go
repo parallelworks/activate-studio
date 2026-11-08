@@ -439,6 +439,7 @@ func TestStartResumesInterruptedBuilds(t *testing.T) {
 	cancel()
 	<-done
 	ctx, cancel = context.WithCancel(context.Background())
+	defer cancel()
 	done = make(chan struct{})
 	go func() { f.s.builds.startSync(ctx); close(done) }()
 	time.Sleep(200 * time.Millisecond)
