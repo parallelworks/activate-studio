@@ -487,6 +487,21 @@ Measured on a shared 20-core Linux host (load average 3 to 12 during the runs, r
 
 Event streams are unchanged by the flushing change (time to first event and the gaps between events through Go match Node's within run-to-run spread). At concurrency 1 the proxy numbers moved by up to 2x between rounds for both builds, in step with Node's own CPU per request, so no change there can be claimed. The first request for the entry script after a start waits about 90 ms for its compression when it arrives before the background pass has done it. The map's output at 1M files is the same as 3065f7d's, byte for byte apart from the build times; what remains of its time is the clustering after the read, still on one core.
 
+Search, query, map and details, Go Node-free against Node at the parity base 677d6a1, on a private copy of a 199,100-file index (16 requests per row, load 2 to 25, rising with other work on the host during the Node run). Latency is p50 / p95 in ms at 1 and at 4 clients; CPU is seconds for the 16 requests at 1 client, including the GUFI processes; RSS is the server's peak.
+
+| Endpoint | Go, 1 client | Node, 1 client | Go, 4 clients | Node, 4 clients | CPU s, Go / Node | RSS MB, Go / Node |
+|---|---|---|---|---|---|---|
+| Search, words | 521 / 767 | 506 / 853 | 1362 / 1744 | 1349 / 1769 | 91.6 / 87.6 | 155 to 174 / 310 |
+| Search, meaning | 537 / 602 | 553 / 648 | 2013 / 2298 | 2081 / 2427 | 128 / 129 | 155 to 174 / 275 |
+| Search, name | 146 / 168 | 145 / 150 | 484 / 546 | 484 / 645 | 33.5 / 33.0 | 155 to 174 / 193 |
+| Search, text | 749 / 1032 | 717 / 1132 | 2182 / 2740 | 2405 / 3956 | 151 / 155 | 155 to 174 / 195 |
+| Query, largest | 152 / 178 | 158 / 174 | 377 / 415 | 328 / 429 | 17.0 / 17.6 | 48 to 68 / 196 |
+| Query, by extension | 163 / 225 | 163 / 193 | 404 / 420 | 373 / 447 | 19.0 / 19.2 | 48 to 68 / 196 |
+| Map, built | 3 / 5 | 2 / 2 | 4 / 6 | 3 / 4 | under 0.1 | 102 / 207 |
+| Details, cached | 0 to 3 | 0 / 1 | 0 to 3 | 1 / 1 | under 0.1 | 48 to 68 / 217 |
+
+Latency and CPU match within run-to-run spread, since both spend their time in the same gufi_query and gufi_sqlite3 runs. Go holds about half Node's memory. The map built in process in 28.2 s for 165,837 files; Node read the same built map.
+
 ## Open questions
 
 - Operator gating with OIDC (`OIDC_OPERATOR_GROUP`): the Studio has no operator or owner role in shared mode to map a group onto; deployment-level controls are closed to everyone once sign-in is on. Whether to add such a role, and what it opens, is a decision before a group can gate it.
