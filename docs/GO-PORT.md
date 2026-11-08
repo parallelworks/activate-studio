@@ -219,6 +219,8 @@ Routes that could move to Go next at low risk, all read-only over files Go alrea
 
 `internal/app` is what every track builds on: the config, logger, settings store, GUFI runner and the Node caller (`App.NodeAPI`, which sends `X-Studio-Internal: 1`; `App.Node()` is the proxy, or a 501 in Node-free mode); start, index-work and stop hooks, background jobs and the busy count; the restart contract of `lifecycle.ts` (`RequestRestart`, exit 75 to restart and 76 to relaunch, after 300 ms, only with `STUDIO_RESTARTABLE=1`); the launcher's `studio.env` (`KEY='value'` lines, 0600, written through a rename); the index lock (`.studio-instance`, whose holder counts as a Studio when it is a node running `main.js` or a `studio-server`, on both sides); and `App.Providers`, function fields for the values another track still owns, each asking Node while it runs and giving the Node-free answer otherwise. Each track registers its routes in its slot in `internal/server/tracks.go`. `studio-server routes` prints the ported and unported routes as JSON.
 
+Outbound HTTPS trusts what Node's does (`netTrust.ts`): the bundled list (Mozilla's, from `golang.org/x/crypto/x509roots/fallback/bundle`, as Node bundles its own) plus the system's trusted certificates, or with `STUDIO_SYSTEM_CA=0` the bundled list only. `internal/netx` sets them as crypto/x509's roots once at start (`SetFallbackRoots` with `x509usefallbackroots=1` for that call).
+
 `internal/core` serves `GET /api/config`, `/api/version`, `/api/help`, `/api/brand-icon`, `/api/favicon`, `/manifest.webmanifest`, `GET` and `PUT /api/settings`, the 8 setup routes, the 7 extension routes and `/api/kb/model`. `GET /api/settings/mcp-servers` probes MCP servers and stays with Node for the chat track. Settings keep the file's key order and are written as `JSON.stringify(next, null, 1)` through a rename; Node's MCP listing cache now drops itself when the server list in the file changes.
 
 Differences from Node:
@@ -226,10 +228,9 @@ Differences from Node:
 - `/api/version`'s `startedAt` is the Go process's start.
 - A STEP model not in the cache goes to Node (OpenCascade is WebAssembly in Node); without Node it answers 501. STL is meshed in Go into the same cache file.
 - Node-free, the libraries in `/api/config` and setup are the main folder only, the gateway key is `PW_API_KEY` or `OPENAI_API_KEY` from the environment, and a setup index start answers 501 until the index track lands.
-- `STUDIO_SYSTEM_CA=0` is not followed: the Go server always uses the system's certificates, and logs an error saying so.
-- Bodies are the same JSON values in the same key order (`internal/jsonobj`, no HTML escaping); byte-level equality is not checked beyond the cases in the tests.
+- Bodies are the same JSON values in the same key order. Error bodies are Fastify's bytes (`internal/apierr`, golden test against `sanitizedErrorHandler`); other bodies go through `jsonobj.Marshal`, which writes JSON.stringify's escapes, and are compared byte for byte only where the tests do.
 
-`STUDIO_TEST_FRONT_STRICT=1` makes the front harness answer 599 when a route the Go server serves reaches Node without `X-Studio-Internal`, and the Go server drops that header from clients. `setup.test.mjs` and `setupSignIn.test.mjs` change the environment and the restart hook between requests, which the Go server reads once at start, so the harness sends their requests to Node directly and their cases run against the Go routes in `internal/core`'s tests.
+`STUDIO_TEST_FRONT_STRICT=1` makes the front harness answer 599 when a route the Go server serves reaches Node without `X-Studio-Internal`, and the Go server drops that header from clients. `setup.test.mjs` and `setupSignIn.test.mjs` change the environment and the restart hook between requests, which the Go server reads once at start, so the harness sends their requests to Node directly (`NODE_DIRECT` in `test/frontFastify.mjs`) and their cases run against the Go routes in `internal/core`'s tests. This is the agreed exception to running every file through the Go server.
 
 ## The Node bridge (transitional)
 
