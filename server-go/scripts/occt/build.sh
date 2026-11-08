@@ -23,6 +23,13 @@ BINARYEN_INTEGRITY=sha512-4Usg7yEvwO3FMso3Oov6qkOOHSod1IEv+boKkh77kTljM+eNBouqCT
 OUT_SHA256_WASM=78435f4cdec688511f65a300352948d42dcef45b529904095d0a8c40ac9a0d0e
 OUT_SHA256_NOEH=13fcfcf5f225b6dc86d9cb3c827dec81a6024f83f8b82cd3ad03639887a0b52f
 
+# timeout SECONDS COMMAND where there is one (macOS has none).
+limit() {
+  local s="$1"
+  shift
+  if command -v timeout >/dev/null 2>&1; then timeout "$s" "$@"; else "$@"; fi
+}
+
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
@@ -31,7 +38,7 @@ trap 'rm -rf "$tmp"' EXIT
 fetch() {
   local name="$1" version="$2" want="$3" tgz got
   mkdir -p "$tmp/$name"
-  tgz="$(cd "$tmp/$name" && timeout 300 npm pack --silent "$name@$version" | tail -n 1)"
+  tgz="$(cd "$tmp/$name" && limit 300 npm pack --silent "$name@$version" | tail -n 1)"
   got="sha512-$(node -e 'process.stdout.write(require("crypto").createHash("sha512").update(require("fs").readFileSync(process.argv[1])).digest("base64"))' "$tmp/$name/$tgz")"
   if [ "$got" != "$want" ]; then
     echo "build.sh: $name@$version has integrity $got, not the recorded $want" >&2
@@ -51,7 +58,7 @@ if [ -f "$lock" ] && ! grep -qF "occt-import-js@$OCCT_VERSION:" "$lock"; then
 fi
 
 mkdir -p "$out"
-timeout 600 node "$here/prepare.mjs" "$tmp/binaryen/package/index.js" "$tmp/occt-import-js/package/dist/occt-import-js.wasm" "$out/occt-import-js.wasm"
+limit 600 node "$here/prepare.mjs" "$tmp/binaryen/package/index.js" "$tmp/occt-import-js/package/dist/occt-import-js.wasm" "$out/occt-import-js.wasm"
 # The licenses, for a bundle that carries the modules.
 cp "$tmp/occt-import-js/package/dist/license.occt-import-js.txt" "$tmp/occt-import-js/package/dist/license.occt.txt" "$out/"
 sum() { node -e 'process.stdout.write(require("crypto").createHash("sha256").update(require("fs").readFileSync(process.argv[1])).digest("hex"))' "$1"; }
