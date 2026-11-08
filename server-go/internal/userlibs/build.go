@@ -632,7 +632,7 @@ func (m *Module) followLoop(ctx context.Context, w who, owner, id string, h *kb.
 		}
 		b := *d.Build
 		st, err := func() (buildStatus, error) {
-			site, key, err := m.sessionOf(w, owner, d)
+			site, key, err := m.sessionOf(m.pollKey(w, owner), owner, d)
 			if err != nil {
 				return buildStatus{}, err
 			}
