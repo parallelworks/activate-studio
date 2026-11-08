@@ -39,6 +39,19 @@ type Config struct {
 	NodeMain  string // STUDIO_NODE_MAIN, default ProjectRoot/server/dist/main.js
 
 	LogFormat string // STUDIO_LOG_FORMAT: json (default) or text
+	// LogLevel is STUDIO_LOG_LEVEL: debug, info (default), warn or error.
+	LogLevel string
+
+	// NodeOff (STUDIO_NODE=off) runs the Go server with no Node server:
+	// every route is Go's, a route not ported yet answers 501, and the Go
+	// server does what main.ts does at start (state check, seeding, the
+	// index lock, background work). The release configuration once every
+	// track has landed. STUDIO_NODE_URL and STUDIO_NODE_SPAWN are ignored.
+	NodeOff bool
+	// GoIndex (STUDIO_GO_INDEX=1): the Go server does the index work (holds
+	// the index lock, runs OnIndexWork hooks) while Node is behind it; for
+	// the index track's transition. Always on in Node-free mode.
+	GoIndex bool
 
 	// FrontAuth: the Go server verifies identity itself (the session
 	// proxy's JWT, OIDC sign-in) and hands it to Node in a token of its
@@ -124,6 +137,12 @@ func Load(env Getenv) (Config, error) {
 		NodeSpawn: env("STUDIO_NODE_SPAWN") == "1",
 		NodeBin:   orDefault(env("STUDIO_NODE_BIN"), "node"),
 		LogFormat: orDefault(env("STUDIO_LOG_FORMAT"), "json"),
+		LogLevel:  strings.ToLower(orDefault(env("STUDIO_LOG_LEVEL"), "info")),
+		NodeOff:   strings.EqualFold(env("STUDIO_NODE"), "off"),
+		GoIndex:   env("STUDIO_GO_INDEX") == "1",
+	}
+	if c.NodeOff {
+		c.NodeURL, c.NodeSpawn = "", false
 	}
 	port, err := strconv.Atoi(orDefault(env("PORT"), "4080"))
 	if err != nil || port < 0 || port > 65535 {
@@ -158,7 +177,9 @@ func Load(env Getenv) (Config, error) {
 	case "0":
 		c.FrontAuth = false
 	default:
-		c.FrontAuth = c.NodeSpawn && c.NodeURL == ""
+		// On wherever the Go server is the only one checking identity:
+		// it starts Node itself, or there is no Node.
+		c.FrontAuth = (c.NodeSpawn || c.NodeOff) && c.NodeURL == ""
 	}
 	c.IdentityAddr = orDefault(env("STUDIO_IDENTITY_ADDR"), "127.0.0.1:0")
 	c.Auth = Auth{

@@ -7,6 +7,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"net"
@@ -19,13 +20,29 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/parallelworks/activate-studio/server-go/internal/app"
 	"github.com/parallelworks/activate-studio/server-go/internal/auth"
 	"github.com/parallelworks/activate-studio/server-go/internal/config"
+	"github.com/parallelworks/activate-studio/server-go/internal/netx"
 	"github.com/parallelworks/activate-studio/server-go/internal/nodeproc"
 	"github.com/parallelworks/activate-studio/server-go/internal/server"
+	"github.com/parallelworks/activate-studio/server-go/internal/state"
+	"github.com/parallelworks/activate-studio/server-go/internal/version"
 )
 
 func main() { os.Exit(run()) }
+
+func logLevel(v string) slog.Level {
+	switch v {
+	case "debug":
+		return slog.LevelDebug
+	case "warn":
+		return slog.LevelWarn
+	case "error":
+		return slog.LevelError
+	}
+	return slog.LevelInfo
+}
 
 func run() int {
 	cfg, err := config.Load(nil)
@@ -33,11 +50,30 @@ func run() int {
 		slog.Error("config", "err", err.Error())
 		return 2
 	}
-	var handler slog.Handler = slog.NewJSONHandler(os.Stderr, nil)
+	opts := &slog.HandlerOptions{Level: logLevel(cfg.LogLevel)}
+	var handler slog.Handler = slog.NewJSONHandler(os.Stderr, opts)
 	if cfg.LogFormat == "text" {
-		handler = slog.NewTextHandler(os.Stderr, nil)
+		handler = slog.NewTextHandler(os.Stderr, opts)
 	}
 	log := slog.New(handler)
+
+	// -routes: which of the Node server's routes Go serves, as JSON
+	// ({ported, unported}), for the test harness's strict mode and the
+	// coordinator's count. Nothing is started.
+	if len(os.Args) > 1 && os.Args[1] == "-routes" {
+		s := server.New(cfg, slog.New(slog.DiscardHandler), nil, nil)
+		json.NewEncoder(os.Stdout).Encode(map[string]any{"ported": s.Ported(), "unported": s.Unported()})
+		return 0
+	}
+
+	// netStart.ts and stateStart.ts: how the server reaches out, then the
+	// state's format, before anything reads settings or conversations
+	// (and before Node starts, which checks it again and finds it done).
+	log.Info(netx.Setup().Line())
+	ver := version.Of(cfg.ProjectRoot).Version
+	if _, err := (state.Dir{Base: cfg.IndexBase}).Reconcile(ver, func(m string) { log.Info(m) }); err != nil {
+		log.Warn("state: the state format could not be checked: " + err.Error())
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -57,6 +93,8 @@ func run() int {
 	var node *url.URL
 	var proc *nodeproc.Proc
 	switch {
+	case cfg.NodeOff:
+		log.Info("Node-free mode (STUDIO_NODE=off): routes not ported to Go answer 501")
 	case cfg.NodeURL != "":
 		if node, err = url.Parse(cfg.NodeURL); err != nil || node.Host == "" {
 			log.Error("STUDIO_NODE_URL is not a URL", "value", cfg.NodeURL)
@@ -72,9 +110,33 @@ func run() int {
 		log.Warn("no Node server (STUDIO_NODE_URL or STUDIO_NODE_SPAWN=1): only Go routes and the web app answer")
 	}
 
+	var nodeCaller *app.Node
+	if node != nil {
+		nodeCaller = app.NewNode(node, front, cfg.Auth.Header)
+	}
+	a := app.New(cfg, log, nil, nodeCaller)
+	fsrv := server.NewWithApp(cfg, log, a, node, front)
+	// A restart the launcher asked for (setup's new folder or port, an
+	// update's relaunch): the server stops gracefully with that code.
+	restart := make(chan int, 1)
+	a.SetStopper(func(code int) {
+		select {
+		case restart <- code:
+		default:
+		}
+	})
+	unported := fsrv.Unported()
+	log.Info("routes", "go", len(nodeRoutesCount(fsrv))-len(unported), "unported", len(unported), "nodeFree", cfg.NodeOff)
+	for _, r := range unported {
+		log.Debug("unported route", "route", r)
+	}
+	if cfg.NodeOff {
+		// main.ts's first-run work, which Node does when it runs.
+		a.SeedKnowledgeBase(ctx, func(m string) { log.Info(m) })
+	}
 	srv := &http.Server{
 		Addr:              net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Port)),
-		Handler:           server.New(cfg, log, node, front),
+		Handler:           fsrv,
 		ReadHeaderTimeout: 30 * time.Second,
 	}
 	ln, err := net.Listen("tcp", srv.Addr)
@@ -89,15 +151,24 @@ func run() int {
 		"kbRoot", cfg.KBRoot, "indexBase", cfg.IndexBase, "gufi", cfg.GufiAvailable())
 	served := make(chan error, 1)
 	go func() { served <- srv.Serve(ln) }()
+	// Start hooks and background jobs; the index lock only where this
+	// process does index work, which is where no Node does it.
+	jobs, endJobs := context.WithCancel(ctx)
+	defer endJobs()
+	a.Start(jobs)
 
 	var nodeDone <-chan struct{}
 	if proc != nil {
 		nodeDone = proc.Done()
 	}
 	code := 0
+	reason := "SIGTERM"
 	select {
 	case <-ctx.Done():
 		log.Info("stopping")
+	case code = <-restart:
+		reason = "restart"
+		log.Info("restarting for the launcher", "code", code)
 	case err := <-served:
 		if !errors.Is(err, http.ErrServerClosed) {
 			log.Error("serve", "err", err.Error())
@@ -110,6 +181,9 @@ func run() int {
 		code = proc.ExitCode()
 		log.Warn("node exited", "code", code)
 	}
+	// main.ts's stop: indexing programs end, open streams get up to 20 s.
+	a.Drain(reason, 20*time.Second)
+	endJobs()
 	// Node first: it lets open answers finish (up to 20 s), and they reach
 	// the browser through this server, which is still serving.
 	if proc != nil {
@@ -120,6 +194,7 @@ func run() int {
 	if err := srv.Shutdown(shutdown); err != nil {
 		log.Warn("shutdown", "err", err.Error())
 	}
+	a.Wait(5 * time.Second)
 	return code
 }
 
@@ -181,3 +256,5 @@ func nodeString(u *url.URL) string {
 	}
 	return u.String()
 }
+
+func nodeRoutesCount(s *server.Server) []string { return append(s.Ported(), s.Unported()...) }
