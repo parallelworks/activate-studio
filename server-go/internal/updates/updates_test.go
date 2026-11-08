@@ -277,7 +277,7 @@ func newFixture(t *testing.T, flavor, version string, l layout) *fixture {
 		SystemVersion: func() string { return "14.5" },
 		Timings:       Timings{FirstCheck: time.Hour, Interval: time.Hour, Soon: time.Hour, Poll: time.Hour, Idle: 50 * time.Millisecond, IdlePoll: 10 * time.Millisecond, Healthy: time.Hour},
 	})
-	t.Cleanup(fx.u.Stop)
+	t.Cleanup(fx.u.wait)
 	return fx
 }
 

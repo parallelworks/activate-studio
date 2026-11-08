@@ -122,6 +122,10 @@ type Updater struct {
 	state state.Dir
 	log   func(string)
 
+	// bg counts the goroutines the updater started, and the programs they
+	// wait for (launchctl, lsregister), so a test can wait for them.
+	bg sync.WaitGroup
+
 	mu         sync.Mutex
 	st         status
 	saved      *saved
@@ -1836,7 +1840,7 @@ func (u *Updater) restart() {
 		}
 		return
 	}
-	go func() {
+	u.spawn(func() {
 		if err := cmd.Wait(); err != nil {
 			u.mu.Lock()
 			defer u.mu.Unlock()
@@ -1844,7 +1848,7 @@ func (u *Updater) restart() {
 				failed()
 			}
 		}
-	}()
+	})
 }
 
 // refreshIcon has LaunchServices look at the new copy (macOS only;
@@ -1860,7 +1864,7 @@ func (u *Updater) refreshIcon(bundle string) {
 	if tool == "" {
 		return
 	}
-	go func() {
+	u.spawn(func() {
 		now := time.Now()
 		_ = os.Chtimes(bundle, now, now)
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -1868,7 +1872,7 @@ func (u *Updater) refreshIcon(bundle string) {
 		if err := exec.CommandContext(ctx, tool, "-f", bundle).Run(); err != nil {
 			u.log("update: LaunchServices did not take the new icon: " + err.Error())
 		}
-	}()
+	})
 }
 
 func (u *Updater) swapIn(p *prepared, restoreState bool) error {
@@ -2039,12 +2043,12 @@ func (u *Updater) startInstall(rel release, o installOpts) {
 	u.st.Error = nil
 	u.rollback = nil
 	c := u.beginOp()
-	go func() {
+	u.spawn(func() {
 		u.install(rel, o)
 		u.mu.Lock()
 		u.endOp(c)
 		u.mu.Unlock()
-	}()
+	})
 }
 
 // Check asks the release server now and returns once it answered (the
@@ -2065,7 +2069,7 @@ func (u *Updater) startCheck() chan struct{} {
 	u.lastTry = time.Now()
 	u.st.State = "checking"
 	c := u.beginOp()
-	go func() {
+	u.spawn(func() {
 		u.mu.Lock()
 		err := u.fetchReleases()
 		if err == nil {
@@ -2083,7 +2087,7 @@ func (u *Updater) startCheck() chan struct{} {
 		u.endOp(c)
 		u.mu.Unlock()
 		u.autoInstall()
-	}()
+	})
 	return c
 }
 
@@ -2149,7 +2153,7 @@ func (u *Updater) autoInstall() {
 	u.idleStop = stop
 	t := u.o.Timings
 	u.mu.Unlock()
-	go func() {
+	u.spawn(func() {
 		quietSince := time.Now()
 		tick := time.NewTicker(t.IdlePoll)
 		defer tick.Stop()
@@ -2186,7 +2190,7 @@ func (u *Updater) autoInstall() {
 				return
 			}
 		}
-	}()
+	})
 }
 
 func (u *Updater) stopIdleWait() {
@@ -2255,7 +2259,7 @@ func (u *Updater) Start() {
 		// Up for a minute after an update: the run loop no longer rolls back.
 		if exists(u.inUpdates("pending.json")) {
 			healthy := u.o.Timings.Healthy
-			go func() {
+			u.spawn(func() {
 				select {
 				case <-u.stop:
 					return
@@ -2266,15 +2270,15 @@ func (u *Updater) Start() {
 				os.Remove(u.inUpdates("pending.json"))
 				u.log(fmt.Sprintf("update: %s is running; Roll back goes to %s", orText(p.To, u.running().Version), orText(p.From, "the previous version")))
 				u.retireLoop()
-			}()
+			})
 		} else {
-			go u.retireLoop()
+			u.spawn(u.retireLoop)
 		}
 	}
 	u.scheduled = true
 	t := u.o.Timings
 	u.mu.Unlock()
-	go func() {
+	u.spawn(func() {
 		select {
 		case <-u.stop:
 			return
@@ -2301,7 +2305,7 @@ func (u *Updater) Start() {
 				u.Check()
 			}
 		}
-	}()
+	})
 }
 
 // setKey sets one key of the JSON object in file, keeping the others and
@@ -2326,6 +2330,22 @@ func setKey(file, key string, value any) error {
 }
 
 // Stop ends the background work.
+// spawn runs f in a goroutine that wait counts.
+func (u *Updater) spawn(f func()) {
+	u.bg.Add(1)
+	go func() {
+		defer u.bg.Done()
+		f()
+	}()
+}
+
+// wait stops the updater and waits for what it started: a check, an
+// install, the retire loop, and launchctl or lsregister still running.
+func (u *Updater) wait() {
+	u.Stop()
+	u.bg.Wait()
+}
+
 func (u *Updater) Stop() {
 	u.mu.Lock()
 	defer u.mu.Unlock()

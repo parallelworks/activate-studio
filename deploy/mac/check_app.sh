@@ -105,9 +105,9 @@ if [ "$SERVER" = go-only ]; then
   check "no Node, Python or node_modules, and of the indexer only embed_deps.json" sh -c "! [ -e '$R/python' ] && ! [ -e '$R/app/server/node_modules' ] && [ \"\$(ls -A '$R/app/indexer')\" = embed_deps.json ]"
   check "app/indexer/embed_deps.json, the pins a build on another system is sent" python3 -c 'import json, sys; d = json.load(open(sys.argv[1])); sys.exit(0 if d["model"]["files"]["model.onnx"]["sha256"] else 1)' "$R/app/indexer/embed_deps.json"
   # The helper a library's build on another system runs, one folder per
-  # platform (internal/userlibs): Linux x64 and arm64 at least, and any
-  # further platform, such as darwin-arm64, holding the same file.
-  check "studio-remote for linux-amd64, linux-arm64 and each platform beside them" sh -c 'd="$1/app/bin/remote"; for p in linux-amd64 linux-arm64; do [ -x "$d/$p/studio-remote" ] || exit 1; done; for p in "$d"/*; do [ -x "$p/studio-remote" ] || exit 1; done' sh "$R"
+  # platform (internal/userlibs): Linux x64 and arm64 and macOS arm64, and any
+  # further platform holding the same file.
+  check "studio-remote for linux-amd64, linux-arm64, darwin-arm64 and any platform added beside them" sh -c 'd="$1/app/bin/remote"; for p in linux-amd64 linux-arm64 darwin-arm64; do [ -x "$d/$p/studio-remote" ] || exit 1; done; for p in "$d"/*; do [ -x "$p/studio-remote" ] || exit 1; done' sh "$R"
 fi
 if [ -d "$O" ]; then
   for f in Resources/ocr/bin/tesseract Resources/ocr/lib/libleptonica.6.dylib \
@@ -184,7 +184,7 @@ elif command -v file >/dev/null 2>&1; then
 fi
 MIN="$(python3 -c 'import plistlib,sys; print(plistlib.load(open(sys.argv[1],"rb"))["LSMinimumSystemVersion"])' "$C/Info.plist")"
 NATIVE=("$G"/bin/* "$G"/lib/*.dylib "$O"/bin/* "$O"/lib/*.dylib)
-[ "$SERVER" = node ] || NATIVE+=("$R"/app/bin/* "$R"/app/lib/*.dylib)
+[ "$SERVER" = node ] || NATIVE+=("$R"/app/bin/* "$R"/app/bin/remote/darwin-*/studio-remote "$R"/app/lib/*.dylib)
 if [ "$SERVER" != go-only ]; then
   NATIVE+=("$R/node/bin/node" "$R"/python/bin/python3.* "$R"/python/lib/*.dylib "$R"/python/lib/python3.*/lib-dynload/*.so)
   # The Python packages' native libraries (onnxruntime, numpy and others), read

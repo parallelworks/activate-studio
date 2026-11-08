@@ -304,6 +304,10 @@ else
   "$NODE" "$MJS" remove-release "$T/rel" "$CRASH"
   # The swap keeps $NEW_VERSION beside it and writes pending.json; the run
   # loop then puts it back, which only that copy makes possible.
+  # The server answers as $NEW_VERSION until the swap, so wait for the swap
+  # first (pending.json, or $CRASH on disk), then for the run loop's note.
+  n=0; until [ -f "$UPD/pending.json" ] || [ "$(app_version)" = "$CRASH" ] || [ -f "$UPD/rolled-back.json" ] || [ "$n" -ge 240 ]; do sleep 1; n=$((n + 1)); done
+  n=0; until [ -f "$UPD/rolled-back.json" ] || [ "$n" -ge 300 ]; do sleep 1; n=$((n + 1)); done
   if wait_version "$NEW_VERSION" 300 && [ "$(app_version)" = "$NEW_VERSION" ]; then ok "after three failed starts the run loop put $NEW_VERSION back"; else bad "$NEW_VERSION was not put back"; log_tail; fi
   grep -q "\"$CRASH\"" "$UPD/rolled-back.json" 2>/dev/null && ok "rolled-back.json says $CRASH did not start" || bad "rolled-back.json: $(cat "$UPD/rolled-back.json" 2>/dev/null)"
   sleep 2
