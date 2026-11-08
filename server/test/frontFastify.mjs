@@ -22,6 +22,15 @@ const goRoutes = STRICT
   ? new Set(JSON.parse(execFileSync(BIN, ['routes'], { encoding: 'utf8' })).ported
     .map(r => r.replace(/\{([A-Za-z_]+)\.\.\.\}/g, '*').replace(/\{([A-Za-z_]+)\}/g, ':$1')))
   : null
+// Test files that change the environment, the restart hook or the port
+// between requests for routes the Go server serves. The Go server reads its
+// environment once at start, so these files keep plain inject against Node,
+// and their cases run against the Go routes in the Go test named.
+const NODE_DIRECT = new Map([
+  ['setup.test.mjs', 'server-go/internal/core (TestSetupStatusAndBrowse, TestPrimaryFolderAndRestart, TestPort, TestPersonalDefaultsAndComplete)'],
+  ['setupSignIn.test.mjs', 'server-go/internal/core (TestSignInRefusesSetup)'],
+])
+const direct = NODE_DIRECT.has(path.basename(process.argv[1] ?? ''))
 // The ports the Go servers take; another test process may hold one.
 const PORTS = (process.env.STUDIO_TEST_FRONT_PORTS ?? '5870-5899').split('-').map(Number)
 const fronts = new Set()
@@ -147,6 +156,7 @@ function parseCookies(setCookie) {
 }
 
 function install(app) {
+  if (direct) return app
   if (STRICT) {
     app.addHook('onRequest', async (req, reply) => {
       const key = `${req.method === 'HEAD' ? 'GET' : req.method} ${req.routeOptions?.url ?? ''}`

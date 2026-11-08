@@ -71,6 +71,9 @@ Environment the Go server reads today:
 | `STUDIO_NODE_URL` | none | a Node server already running |
 | `STUDIO_NODE_SPAWN` | off | `1`: start `node server/dist/main.js` on a free loopback port (`HOST=127.0.0.1`), wait until it is ready (a line Node writes once it listens on the pipe it is given as `STUDIO_READY_FD`, else its `/healthz`, polled from 5 ms up to every 100 ms), stop it first on SIGTERM (it lets open streams finish, up to 20 s) |
 | `STUDIO_NODE_BIN`, `STUDIO_NODE_MAIN` | `node`, `<root>/server/dist/main.js` | how to start Node |
+| `STUDIO_NODE` | on | `off`: Node-free mode. No Node is started or proxied; a route not ported answers 501 `{error}` with a log line, the unported routes are listed at start under `STUDIO_LOG_LEVEL=debug`, the starter extensions are seeded and the Go server holds the index lock |
+| `STUDIO_GO_INDEX` | off | `1`: the Go server takes the index lock and runs the `OnIndexWork` hooks while Node runs; Node then runs no index jobs |
+| `STUDIO_LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error` |
 | `STUDIO_LOG_FORMAT` | `json` | `text` for a terminal; one access-log line per request with `via` = `go`, `node` or `static` |
 | `STUDIO_SEMANTIC_MAP_BIN` | none | read by the Node server: run this binary in place of `indexer/semantic_map.py` |
 | `STUDIO_FRONT_AUTH` | on with `STUDIO_NODE_SPAWN=1`, off with `STUDIO_NODE_URL` | `1`: verify identity here and hand it to Node (Stage 1); `0`: pass identity headers through to Node |
@@ -211,6 +214,22 @@ The golden files are written by `server-go/scripts/golden/*.mjs` from `server/di
 Runner overhead: on the 200,000-file test index a canned query took 198.5 and 200.9 ms run directly and 197.0 and 198.6 ms through the runner (10 runs each, two rounds), and on the fixture index 10.5 ms either way; the difference is inside run-to-run spread. Admission and release alone take about 0.1 µs uncontended and 0.6 µs with four callers on two slots.
 
 Routes that could move to Go next at low risk, all read-only over files Go already reads or with no state of their own: `GET /api/version`, `/api/help`, `/api/changelog`, `/api/brand-icon`, `/api/favicon`, `/manifest.webmanifest`, `/api/kb/model`, `/api/index/log`, and the saved queries (`GET` and `POST /api/query/saved`, `DELETE /api/query/saved/:id`; one JSON file Node reads on every request). `POST /api/query/sql` needs only the plans above for the main library but the library list for the rest, so it waits for step 6. `/api/config` reads most of the server's state and is better left to the end of step 2.
+
+## Core (port-core)
+
+`internal/app` is what every track builds on: the config, logger, settings store, GUFI runner and the Node caller (`App.NodeAPI`, which sends `X-Studio-Internal: 1`; `App.Node()` is the proxy, or a 501 in Node-free mode); start, index-work and stop hooks, background jobs and the busy count; the restart contract of `lifecycle.ts` (`RequestRestart`, exit 75 to restart and 76 to relaunch, after 300 ms, only with `STUDIO_RESTARTABLE=1`); the launcher's `studio.env` (`KEY='value'` lines, 0600, written through a rename); the index lock (`.studio-instance`, whose holder counts as a Studio when it is a node running `main.js` or a `studio-server`, on both sides); and `App.Providers`, function fields for the values another track still owns, each asking Node while it runs and giving the Node-free answer otherwise. Each track registers its routes in its slot in `internal/server/tracks.go`. `studio-server routes` prints the ported and unported routes as JSON.
+
+`internal/core` serves `GET /api/config`, `/api/version`, `/api/help`, `/api/brand-icon`, `/api/favicon`, `/manifest.webmanifest`, `GET` and `PUT /api/settings`, the 8 setup routes, the 7 extension routes and `/api/kb/model`. `GET /api/settings/mcp-servers` probes MCP servers and stays with Node for the chat track. Settings keep the file's key order and are written as `JSON.stringify(next, null, 1)` through a rename; Node's MCP listing cache now drops itself when the server list in the file changes.
+
+Differences from Node:
+
+- `/api/version`'s `startedAt` is the Go process's start.
+- A STEP model not in the cache goes to Node (OpenCascade is WebAssembly in Node); without Node it answers 501. STL is meshed in Go into the same cache file.
+- Node-free, the libraries in `/api/config` and setup are the main folder only, the gateway key is `PW_API_KEY` or `OPENAI_API_KEY` from the environment, and a setup index start answers 501 until the index track lands.
+- `STUDIO_SYSTEM_CA=0` is not followed: the Go server always uses the system's certificates, and logs an error saying so.
+- Bodies are the same JSON values in the same key order (`internal/jsonobj`, no HTML escaping); byte-level equality is not checked beyond the cases in the tests.
+
+`STUDIO_TEST_FRONT_STRICT=1` makes the front harness answer 599 when a route the Go server serves reaches Node without `X-Studio-Internal`, and the Go server drops that header from clients. `setup.test.mjs` and `setupSignIn.test.mjs` change the environment and the restart hook between requests, which the Go server reads once at start, so the harness sends their requests to Node directly and their cases run against the Go routes in `internal/core`'s tests.
 
 ## The Node bridge (transitional)
 
