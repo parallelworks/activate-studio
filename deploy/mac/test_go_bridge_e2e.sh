@@ -174,12 +174,38 @@ server_is go && ok "and it is the Go server" || bad "the server is not the Go se
 check_exe() { "$PY" -I -c 'import plistlib, sys; print(plistlib.load(open(sys.argv[1], "rb"))["CFBundleExecutable"])' "$APP/Contents/Info.plist"; }
 file -b "$APP/Contents/MacOS/$(check_exe)" | grep -q 'Mach-O' && ok "the installed app's executable is a program (the Wails window)" || bad "the installed app's executable is not a program"
 codesign --verify --deep --strict "$APP" >/dev/null 2>&1 && ok "the installed app's signature verifies" || bad "the installed app's signature does not verify"
-api -m 10 GET "$U/api/updates" | json "d.get('previous') == {'version': '$OLD_VERSION'}" && ok "the Go updater offers the rollback" || bad "the Go updater offers no rollback"
+api -m 10 GET "$U/api/updates" | json "(d.get('previous') or {}).get('version') == '$OLD_VERSION'" && ok "the Go updater offers the rollback" || bad "the Go updater offers no rollback"
 data_ok "on $NEW_VERSION"
 
-# ---- 4. back to the Node version ----
+# ---- 4. the copy kept beside it goes after the first clean start ----
+
+echo "After the first clean start"
+PREV="$H/Applications/.$NAME.app.previous"
+UPD="$DATA/updates"
+n=0
+while [ -d "$PREV" ] && [ "$n" -lt 240 ]; do sleep 1; n=$((n + 1)); done
+if [ ! -d "$PREV" ]; then
+  ok "the copy of $OLD_VERSION is removed after the clean start (${n}s)"
+  [ ! -e "$UPD/pending.json" ] && ok "and only once pending.json was cleared" || bad "the copy was removed while pending.json was there"
+else
+  bad "the copy of $OLD_VERSION is still there after ${n}s"; log_tail
+fi
+grep -q "\"$OLD_VERSION\"" "$UPD/previous.json" 2>/dev/null && ok "updates/previous.json names $OLD_VERSION" || bad "previous.json: $(cat "$UPD/previous.json" 2>/dev/null)"
+
+# ---- 5. back to the Node version, by download ----
 
 echo "Roll back"
+mkdir -p "$T/stage/old"
+ditto "$T/old/$NAME.app" "$T/stage/old/$NAME.app"
+"$NODE" "$MJS" stamp "$T/stage/old/$NAME.app/Contents/Resources" "$OLD_VERSION" "$T/keys/update.pub"
+codesign --force --deep --sign - "$T/stage/old/$NAME.app" >/dev/null 2>&1 || bad "codesign could not sign the stamped old app"
+mkdir -p "$T/stage/$OLD_VERSION"
+(cd "$T/stage/old" && tar -czf "$T/stage/$OLD_VERSION/activate-studio-macos-arm64.tar.gz" "$NAME.app")
+rm -rf "$T/stage/old"
+"$NODE" "$MJS" add-release "$T/rel" "$FEED_PORT" "$OLD_VERSION" "$T/stage/$OLD_VERSION/activate-studio-macos-arm64.tar.gz" "$T/keys/update.key"
+api -m 60 POST "$U/api/updates/check" '{}' >/dev/null || true
+api -m 10 GET "$U/api/updates" | json "(d.get('previous') or {}).get('version') == '$OLD_VERSION' and (d['previous'].get('size') or 0) > 0" &&
+  ok "Roll back offers $OLD_VERSION, a download of its size" || bad "Roll back does not offer the download"
 api -m 60 POST "$U/api/updates/rollback" '{}' >/dev/null || bad "the rollback was refused"
 if wait_version "$OLD_VERSION" 300; then ok "the server answers as $OLD_VERSION again"; else bad "the server did not come back as $OLD_VERSION"; log_tail; fi
 sleep 2

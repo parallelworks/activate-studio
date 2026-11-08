@@ -501,30 +501,182 @@ func TestRefusals(t *testing.T) {
 	}
 }
 
-func TestRollbackAndAutoSkips(t *testing.T) {
-	fx := newFixture(t, "macos", "v1.139", nodeLayout)
-	fx.feed.set(fx.rel("v1.140", goLayout, relOpts{}))
+// updated is a fixture updated from v1.139 to v1.140 through the feed,
+// which also offers v1.139; the updater now reports v1.140 as running.
+func updated(t *testing.T, flavor string) *fixture {
+	t.Helper()
+	fx := newFixture(t, flavor, "v1.139", nodeLayout)
+	fx.feed.set(fx.rel("v1.139", nodeLayout, relOpts{}), fx.rel("v1.140", goLayout, relOpts{}))
+	fx.u.Check()
 	fx.install(nil)
-	fx.settle()
+	if s := fx.settle(); s.State != "restarting" {
+		t.Fatalf("the update ended %s %q", s.State, deref(s.Error))
+	}
 	fx.mu.Lock()
 	fx.version = "v1.140"
 	fx.mu.Unlock()
 	fx.u.mu.Lock()
 	fx.u.st = status{State: "idle"}
 	fx.u.mu.Unlock()
+	return fx
+}
+
+func (fx *fixture) prev() string {
+	if fx.env["STUDIO_APP_BUNDLE"] != "" {
+		return filepath.Join(filepath.Dir(fx.app), ".ACTIVATE Studio.app.previous")
+	}
+	return filepath.Join(filepath.Dir(fx.app), ".activate-studio.previous")
+}
+
+func TestPreviousCopyKeptUntilCleanStart(t *testing.T) {
+	for _, flavor := range []string{"macos", "linux"} {
+		t.Run(flavor, func(t *testing.T) {
+			fx := updated(t, flavor)
+			updates := filepath.Join(fx.data, "updates")
+			index := filepath.Join(fx.data, "index")
+			// What the Node version's run loop linked into the data folder:
+			// the GGUF model, into the copy now kept beside the app.
+			models := filepath.Join(index, "models")
+			os.MkdirAll(models, 0o755)
+			gguf := filepath.Join(models, "minilm384.gguf")
+			os.Symlink(filepath.Join(fx.app, "models", "minilm384.gguf"), gguf)
+			onnx := filepath.Join(models, "minilm-l6")
+			os.MkdirAll(filepath.Join(t.TempDir(), "m"), 0o755)
+			os.Symlink(t.TempDir(), onnx)
+			var running []int
+			fx.u.o.InUse = func(string) []int { return running }
+
+			if !exists(filepath.Join(updates, "pending.json")) || !exists(fx.prev()) {
+				t.Fatal("no pending.json or no copy beside the app after the update")
+			}
+			// Before the clean start: kept, for the run loop's rollback.
+			if fx.u.retirePrevious() || !exists(fx.prev()) {
+				t.Fatal("the copy was removed while pending.json was there")
+			}
+			if p := fx.u.Status().Previous.(*previousInfo); p.Version != "v1.139" || p.Size == nil || *p.Size <= 0 {
+				t.Fatalf("previous %+v", p)
+			}
+			os.Remove(filepath.Join(updates, "pending.json"))
+			// The old window still runs from it: kept.
+			running = []int{4242}
+			if fx.u.retirePrevious() || !exists(fx.prev()) {
+				t.Fatal("the copy was removed while a process ran from it")
+			}
+			if fi, err := os.Lstat(gguf); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+				t.Fatal("the model link went before the copy")
+			}
+			running = nil
+			if !fx.u.retirePrevious() || exists(fx.prev()) {
+				t.Fatal("the copy stays after the clean start")
+			}
+			if _, err := os.Lstat(gguf); err == nil {
+				t.Fatal("the dangling model link stays")
+			}
+			if _, err := os.Lstat(onnx); err != nil {
+				t.Fatal("a link the Go version uses was removed")
+			}
+			var rec prevRecord
+			if !readJSON(filepath.Join(updates, previousRecord), &rec) || rec.Version != "v1.139" {
+				t.Fatalf("previous.json %+v", rec)
+			}
+			if p := fx.u.Status().Previous.(*previousInfo); p.Version != "v1.139" || p.Size == nil {
+				t.Fatalf("previous after the removal %+v", p)
+			}
+			if exists(filepath.Join(filepath.Dir(fx.app), filepath.Base(fx.prev())[:len(filepath.Base(fx.prev()))-len("previous")]+"retired")) {
+				t.Fatal("the removed copy was left under another name")
+			}
+		})
+	}
+}
+
+func TestRollbackDownloadsThePreviousVersion(t *testing.T) {
+	for _, flavor := range []string{"macos", "linux"} {
+		t.Run(flavor, func(t *testing.T) {
+			fx := updated(t, flavor)
+			fx.u.o.InUse = func(string) []int { return nil }
+			os.Remove(filepath.Join(fx.data, "updates", "pending.json"))
+			if !fx.u.retirePrevious() {
+				t.Fatal("not removed")
+			}
+			fx.mu.Lock()
+			fx.restarts = nil
+			fx.mu.Unlock()
+			if code, body := call(fx, "POST", "/api/updates/rollback", nil); code != 200 {
+				t.Fatalf("rollback %d %s", code, body)
+			}
+			if s := fx.settle(); s.State != "restarting" {
+				t.Fatalf("the rollback ended %s %q", s.State, deref(s.Error))
+			}
+			if v := fx.versionIn(fx.app); v != "v1.139" {
+				t.Fatalf("rolled back to %s", v)
+			}
+			if v := fx.versionIn(fx.prev()); v != "v1.140" {
+				t.Fatalf("the copy beside it is %s", v)
+			}
+			var back map[string]any
+			readJSON(filepath.Join(fx.data, "updates", "rolled-back.json"), &back)
+			if back["from"] != "v1.140" || back["to"] != "v1.139" || back["noted"] != true {
+				t.Fatalf("rolled-back.json %v", back)
+			}
+			if !exists(filepath.Join(fx.data, "updates", "pending.json")) {
+				t.Fatal("no pending.json: the run loop could not undo a rollback that does not start")
+			}
+			// Linux restarts through the run loop (exit 76); the macOS
+			// fixture's LaunchAgent through launchctl kickstart.
+			fx.mu.Lock()
+			n := len(fx.restarts)
+			fx.mu.Unlock()
+			if flavor == "linux" && n == 0 {
+				t.Fatal("no restart after the rollback")
+			}
+			snaps := fx.u.state.ListSnapshots()
+			if len(snaps) == 0 {
+				t.Fatal("no snapshot before the rollback")
+			}
+		})
+	}
+}
+
+func TestRollbackOffline(t *testing.T) {
+	fx := updated(t, "linux")
+	fx.u.o.InUse = func(string) []int { return nil }
+	os.Remove(filepath.Join(fx.data, "updates", "pending.json"))
+	fx.u.retirePrevious()
+	// The release server stops answering after the check.
+	fx.feed.srv.Close()
 	if code, body := call(fx, "POST", "/api/updates/rollback", nil); code != 200 {
 		t.Fatalf("rollback %d %s", code, body)
 	}
-	if v := fx.versionIn(fx.app); v != "v1.139" {
-		t.Fatalf("rolled back to %s", v)
+	s := fx.settle()
+	if s.State != "error" || !strings.Contains(deref(s.Error), "Rolling back downloads v1.139") || !strings.Contains(deref(s.Error), "still installed") {
+		t.Fatalf("state %s error %q", s.State, deref(s.Error))
 	}
-	var back map[string]any
-	readJSON(filepath.Join(fx.data, "updates", "rolled-back.json"), &back)
-	if back["from"] != "v1.140" || back["to"] != "v1.139" || back["noted"] != true {
-		t.Fatalf("rolled-back.json %v", back)
+	if v := fx.versionIn(fx.app); v != "v1.140" {
+		t.Fatalf("the app changed to %s", v)
 	}
-	if exists(filepath.Join(fx.data, "updates", "pending.json")) {
-		t.Fatal("pending.json stays after a rollback")
+	if exists(filepath.Join(filepath.Dir(fx.app), ".activate-studio.new")) {
+		t.Fatal("left a staged copy")
+	}
+	// Never checked and offline: refused at once, with the reason.
+	fx2 := updated(t, "linux")
+	fx2.u.o.InUse = func(string) []int { return nil }
+	os.Remove(filepath.Join(fx2.data, "updates", "pending.json"))
+	fx2.u.retirePrevious()
+	fx2.u.mu.Lock()
+	fx2.u.saved = &saved{}
+	fx2.u.mu.Unlock()
+	os.Remove(filepath.Join(fx2.data, "updates", "state.json"))
+	fx2.feed.srv.Close()
+	code, body := call(fx2, "POST", "/api/updates/rollback", nil)
+	if code != 409 || !strings.Contains(body, "Rolling back downloads v1.139") {
+		t.Fatalf("offline, never checked: %d %s", code, body)
+	}
+}
+
+func TestNoRollbackWithoutAPrevious(t *testing.T) {
+	fx := newFixture(t, "linux", "v1.139", nodeLayout)
+	if code, body := call(fx, "POST", "/api/updates/rollback", nil); code != 409 || !strings.Contains(body, "no previous version") {
+		t.Fatalf("%d %s", code, body)
 	}
 }
 

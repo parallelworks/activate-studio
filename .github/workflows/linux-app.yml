@@ -50,6 +50,9 @@ on:
       release:
         description: A published release (such as v1.150) to build the payload for and attach it to; blank to build and check only
         default: ""
+      channel:
+        description: For a release, the channel its manifest is signed for (stable, or preview for a prerelease that only Preview installs take; a preview release leaves the fixed linux release alone)
+        default: stable
       legacy:
         description: Also build and check the earlier payloads (STUDIO_SERVER=node, and go with Node behind it); they do not fail the run
         type: boolean
@@ -705,21 +708,32 @@ jobs:
         env:
           STUDIO_UPDATE_SIGNING_KEY: ${{ secrets.STUDIO_UPDATE_SIGNING_KEY }}
           TAG: ${{ inputs.release }}
+          # Stable is the manifest without the field, as before channels.
+          CHANNEL: ${{ inputs.channel }}
         run: |
           set -euo pipefail
           [[ "$TAG" =~ ^v[0-9]+\.[0-9]+(\.[0-9]+)?$ ]] || { echo "release must look like v1.150, not '$TAG'"; exit 1; }
+          case "$CHANNEL" in stable) ;; preview) export STUDIO_RELEASE_CHANNEL=preview ;; *) echo "channel is stable or preview, not '$CHANNEL'"; exit 1 ;; esac
           (cd "$RUNNER_TEMP/out" && sha256sum -c activate-studio-linux-x86_64.tar.gz.sha256)
           deploy/linux/sign_release.sh "$RUNNER_TEMP/out/activate-studio-linux-x86_64.tar.gz" "$TAG"
       - name: attach to the release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.release }}
+          CHANNEL: ${{ inputs.channel }}
         run: |
           set -euo pipefail
           cd "$RUNNER_TEMP/out"
           files=(activate-studio-linux-x86_64.tar.gz activate-studio-linux-x86_64.tar.gz.sha256
             activate-studio-linux-x86_64.manifest.json activate-studio-linux-x86_64.manifest.json.sig)
           gh release upload "$TAG" -R "$GITHUB_REPOSITORY" --clobber "${files[@]}"
+          # A Preview release reaches installs that chose Preview, through
+          # their updater; the fixed address new installs come from keeps
+          # the newest Stable payload.
+          if [ "$CHANNEL" = preview ]; then
+            echo "A Preview release: the linux release is left as it is."
+            exit 0
+          fi
           # The linux release holds the newest payload at a fixed address: a
           # prerelease that is never latest, which the app's update check
           # skips (its tag is not a version). An older version than the one

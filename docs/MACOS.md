@@ -176,7 +176,8 @@ installed only if the release's manifest is signed by the release key
 (the app carries its public half, `Contents/Resources/update-signing.pub`),
 names this app's archive and a newer version than the one running, and
 matches the download's size and SHA-256. The new copy then takes the app's place, the old one is
-kept beside it as `.ACTIVATE Studio.app.previous` (hidden in Finder), and
+kept beside it as `.ACTIVATE Studio.app.previous` (hidden in Finder) until
+the new version has started cleanly and the old window has closed, and
 the server restarts on the new version while the window reloads; the
 reloaded page lists, once, what the new version changed. The window is
 part of the old copy until the app opens again, so if the update changed
@@ -209,10 +210,12 @@ the proxy asks for a sign-in) and, if needed, `NO_PROXY` in `studio.env`.
 `STUDIO_SYSTEM_CA=0` there leaves Node's own list alone, and
 `NODE_EXTRA_CA_CERTS` adds a file of authorities as it does for any Node.
 
-*Rolling back:* while the previous copy is there, Settings, General, Updates offers
-Roll back, which puts it back and restarts. The same happens without
-asking when a new version stops three times within two minutes of being
-installed; Settings then says so, and that version is not installed
+*Rolling back:* Settings, General, Updates offers Roll back, which
+downloads the version installed before again (the size is shown), checks
+it as an update is checked, installs it and restarts; offline it says so
+and changes nothing. A new version that stops three times within two
+minutes of being installed is replaced by the copy kept beside it without
+asking; Settings then says so, and that version is not installed
 automatically again. Channels, installing an older version, the state
 snapshot taken before every change of version, and releases that ask for
 the app to be reopened follow [`UPDATES.md`](UPDATES.md).

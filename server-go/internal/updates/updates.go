@@ -76,11 +76,14 @@ const (
 // server looks whether one is due (a Mac's timers stop while it sleeps).
 type Timings struct {
 	FirstCheck, Interval, Soon, Poll, Idle, IdlePoll, Healthy time.Duration
+	// Retire is how often the server looks again whether the copy an update
+	// replaced can be removed (retire.go); 30 seconds when unset.
+	Retire time.Duration
 }
 
 // DefaultTimings are updates.ts's.
 var DefaultTimings = Timings{FirstCheck: time.Minute, Interval: 15 * time.Minute, Soon: 5 * time.Minute,
-	Poll: 2 * time.Minute, Idle: 10 * time.Minute, IdlePoll: 30 * time.Second, Healthy: time.Minute}
+	Poll: 2 * time.Minute, Idle: 10 * time.Minute, IdlePoll: 30 * time.Second, Healthy: time.Minute, Retire: 30 * time.Second}
 
 // Options is what the updater needs from the server.
 type Options struct {
@@ -108,6 +111,9 @@ type Options struct {
 	// ShellExe, when set, stands for the program of the window that started
 	// this server, "" with none (tests); else read from /proc on Linux.
 	ShellExe func() string
+	// InUse, when set, stands for the processes running from a folder
+	// (tests); else read from /proc on Linux and lsof on macOS.
+	InUse func(dir string) []int
 }
 
 // Updater is the update state of one server.
@@ -194,7 +200,10 @@ type prepared struct {
 	Older        bool
 }
 
-type installOpts struct{ allowOlder, restoreState bool }
+// installOpts: allowOlder for a picked version, restoreState to put back
+// the snapshot a version needs, rollback for Roll back (a picked version
+// that is reported as a rollback).
+type installOpts struct{ allowOlder, restoreState, rollback bool }
 
 // refusedErr is a check the update failed, as opposed to a network or disk failure.
 type refusedErr struct{ msg string }
@@ -227,6 +236,9 @@ func New(o Options) *Updater {
 	}
 	if o.Timings == (Timings{}) {
 		o.Timings = DefaultTimings
+	}
+	if o.Timings.Retire <= 0 {
+		o.Timings.Retire = DefaultTimings.Retire
 	}
 	if o.GOOS == "" {
 		o.GOOS = runtime.GOOS
@@ -909,21 +921,6 @@ func (u *Updater) refusal(mode string, rel *release, available bool) *string {
 		return strp("An update is already " + u.st.State + ".")
 	}
 	return nil
-}
-
-func (u *Updater) previousVersion() *struct {
-	Version string `json:"version"`
-} {
-	if u.Mode() != "app" {
-		return nil
-	}
-	v := u.versionOf(u.beside("previous"))
-	if v == "" {
-		return nil
-	}
-	return &struct {
-		Version string `json:"version"`
-	}{v}
 }
 
 // UpdateRelease is one release an update brings, with its notes as entries.
@@ -1702,7 +1699,7 @@ func makeWritable(dir string) {
 
 func (u *Updater) cleanUp() {
 	if u.installRoot() != "" {
-		for _, s := range []string{"new", "unpack", "failed"} {
+		for _, s := range []string{"new", "unpack", "failed", "retired"} {
 			_ = rmTree(u.beside(s))
 		}
 	}
@@ -1995,8 +1992,29 @@ func (u *Updater) install(rel release, o installOpts) {
 		}
 		u.cleanUp()
 		u.fail(err)
+		if o.rollback && !isRefused(err) {
+			size := ""
+			if a, ok := rel.Assets[u.kit().asset]; ok && a.Size > 0 {
+				size = fmt.Sprintf(" (%.0f MB)", float64(a.Size)/1e6)
+			}
+			msg := fmt.Sprintf("Rolling back downloads %s%s from the release server again, and the download failed: %s. This version is still installed; try again once this computer is online.", rel.Tag, size, plain(err))
+			if conn := netx.ConnectionProblem(err, "github.com", u.env); conn != "" {
+				msg = fmt.Sprintf("Rolling back downloads %s%s from the release server again, and it could not be reached. %s This version is still installed.", rel.Tag, size, conn)
+			}
+			u.st.Error = &msg
+		}
 		u.log("update to " + rel.Tag + " not installed: " + *u.st.Error)
 		return
+	}
+	if o.rollback {
+		to := p.Version
+		_ = writeJSON(u.inUpdates("rolled-back.json"), struct {
+			From   string  `json:"from"`
+			To     *string `json:"to"`
+			At     string  `json:"at"`
+			Reason string  `json:"reason"`
+			Noted  bool    `json:"noted"`
+		}{p.From, &to, state.ISO(time.Now()), "rolled back from Settings", true})
 	}
 	if p.Relaunch {
 		// The new copy replaces the whole app: this server keeps running
@@ -2178,55 +2196,6 @@ func (u *Updater) stopIdleWait() {
 	}
 }
 
-func (u *Updater) rollBack() error {
-	app, prev, failed := u.installRoot(), u.beside("previous"), u.beside("failed")
-	from := orText(u.versionOf(app), u.running().Version)
-	to := u.versionOf(prev)
-	shellChanged := u.shellHash(prev) != u.shellHash(app)
-	u.st.State = "installing"
-	u.st.Error = nil
-	u.rollback = nil
-	// The version rolled back to puts back a snapshot at its start if it
-	// cannot read the state (Reconcile).
-	var toP *string
-	if to != "" {
-		toP = &to
-	}
-	if _, err := u.state.TakeSnapshot(state.SnapshotOpts{From: from, To: toP, Reason: "before a rollback"}); err != nil {
-		return err
-	}
-	if err := rmTree(failed); err != nil {
-		return err
-	}
-	if err := os.Rename(app, failed); err != nil {
-		return err
-	}
-	if err := os.Rename(prev, app); err != nil {
-		_ = os.Rename(failed, app)
-		return err
-	}
-	_ = rmTree(failed)
-	u.refreshIcon(app)
-	if err := writeJSON(u.inUpdates("rolled-back.json"), struct {
-		From   string  `json:"from"`
-		To     *string `json:"to"`
-		At     string  `json:"at"`
-		Reason string  `json:"reason"`
-		Noted  bool    `json:"noted"`
-	}{from, toP, state.ISO(time.Now()), "rolled back from Settings", true}); err != nil {
-		return err
-	}
-	os.Remove(u.inUpdates("pending.json"))
-	if shellChanged {
-		_ = os.WriteFile(u.inUpdates("reopen"), []byte(to+"\n"), 0o644)
-	}
-	u.prepared = nil
-	u.cleanUp()
-	u.log("update: rolled back from " + from + " to " + to + "; restarting")
-	u.restart()
-	return nil
-}
-
 // ---- schedule ----
 
 func (u *Updater) waitAfterCheck() time.Duration {
@@ -2295,8 +2264,11 @@ func (u *Updater) Start() {
 				var p struct{ From, To string }
 				readJSON(u.inUpdates("pending.json"), &p)
 				os.Remove(u.inUpdates("pending.json"))
-				u.log(fmt.Sprintf("update: %s is running; %s stays available to roll back to", orText(p.To, u.running().Version), orText(p.From, "the previous version")))
+				u.log(fmt.Sprintf("update: %s is running; Roll back goes to %s", orText(p.To, u.running().Version), orText(p.From, "the previous version")))
+				u.retireLoop()
 			}()
+		} else {
+			go u.retireLoop()
 		}
 	}
 	u.scheduled = true

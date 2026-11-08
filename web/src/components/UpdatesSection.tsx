@@ -5,7 +5,7 @@ import {
   formatBytes, formatDateTime,
 } from '@parallelworks/ui'
 import { onUpdatesFocus, openWhatsNew, updatesApi, type UpdatePolicy, type VersionCheck } from '../api'
-import { reloadPage, setUpdateFlowOptions, underWay as isUnderWay, updateActions, useUpdateFlow, type UpdateFlow } from '../updateFlow'
+import { installTarget, reloadPage, setUpdateFlowOptions, underWay as isUnderWay, updateActions, useUpdateFlow, type UpdateFlow } from '../updateFlow'
 import { ReleaseList } from './ChangeList'
 import { ReopenApp } from './ReopenApp'
 
@@ -236,7 +236,7 @@ export function UpdatesSection({ onPolicySaved, pollMs, giveUpMs, reload }: {
       {status.previous && (
         <ConfirmModal open={confirmRollback} onClose={() => setConfirmRollback(false)}
           title={`Roll back to ${status.previous.version}?`}
-          description={`The Studio goes back to version ${status.previous.version} and restarts. Its settings and conversations as they are now, newer ones included, are saved in a snapshot first, so nothing made since the update is lost. This page reloads when it is running.`}
+          description={`Rolling back downloads version ${status.previous.version}${status.previous.size ? ` (${formatBytes(status.previous.size)})` : ''} from the release server again and installs it, so this computer needs to be online. The Studio then restarts on it. Its settings and conversations as they are now, newer ones included, are saved in a snapshot first, so nothing made since the update is lost. This page reloads when it is running.`}
           confirmLabel="Roll back"
           onConfirm={rollback} />
       )}
@@ -249,7 +249,7 @@ export function UpdatesSection({ onPolicySaved, pollMs, giveUpMs, reload }: {
 export function UpdateProgress({ flow, barClassName = 'settings-field' }: { flow: UpdateFlow; barClassName?: string }) {
   const { status, waiting } = flow
   if (!status) return null
-  const expected = waiting?.version ?? status.latest?.version ?? ''
+  const expected = waiting?.version ?? installTarget() ?? status.latest?.version ?? ''
   const progress = status.progress
   const percentKnown = !!progress?.total
   return (

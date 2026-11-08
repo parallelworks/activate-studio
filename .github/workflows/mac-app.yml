@@ -33,6 +33,9 @@ on:
       release:
         description: A published release (such as v1.150) to build the app for and attach it to; blank to build and check only
         default: ""
+      channel:
+        description: For a release, the channel its manifest is signed for (stable, or preview for a prerelease that only Preview installs take; a preview release leaves the fixed macos release alone)
+        default: stable
       gufi_run:
         description: A gufi-macos run id whose GUFI archive to use
         default: ""
@@ -520,11 +523,17 @@ jobs:
         env:
           STUDIO_UPDATE_SIGNING_KEY: ${{ secrets.STUDIO_UPDATE_SIGNING_KEY }}
           TAG: ${{ inputs.release }}
-        run: deploy/mac/sign_release.sh "$RUNNER_TEMP/out/activate-studio-macos-arm64.tar.gz" "$TAG"
+          # Stable is the manifest without the field, as before channels.
+          CHANNEL: ${{ inputs.channel }}
+        run: |
+          set -euo pipefail
+          case "$CHANNEL" in stable) ;; preview) export STUDIO_RELEASE_CHANNEL=preview ;; *) echo "channel is stable or preview, not '$CHANNEL'"; exit 1 ;; esac
+          deploy/mac/sign_release.sh "$RUNNER_TEMP/out/activate-studio-macos-arm64.tar.gz" "$TAG"
       - name: attach to the release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.release }}
+          CHANNEL: ${{ inputs.channel }}
         run: |
           set -euo pipefail
           cd "$RUNNER_TEMP/out"
@@ -532,6 +541,13 @@ jobs:
             activate-studio-macos-arm64.manifest.json activate-studio-macos-arm64.manifest.json.sig
             activate-studio-macos-arm64.dmg install.sh)
           gh release upload "$TAG" -R "$GITHUB_REPOSITORY" --clobber "${files[@]}"
+          # A Preview release reaches installs that chose Preview, through
+          # their updater; the fixed address new installs come from keeps
+          # the newest Stable app.
+          if [ "$CHANNEL" = preview ]; then
+            echo "A Preview release: the macos release is left as it is."
+            exit 0
+          fi
           # The macos release holds the newest app at a fixed address: a
           # prerelease that is never latest, which the app's update check
           # skips (its tag is not a version). An older version than the one

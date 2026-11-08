@@ -244,30 +244,41 @@ func Routes(u *Updater, mux *http.ServeMux, log *slog.Logger) {
 		return nil
 	}))
 
+	// Roll back: the version the last update replaced, downloaded and
+	// installed as a picked version is (retire.go), the state snapshot put
+	// back when it cannot read the state as it is.
 	mux.HandleFunc("POST /api/updates/rollback", h(func(w http.ResponseWriter, r *http.Request) error {
 		if err := requireApp(); err != nil {
 			return err
 		}
 		u.mu.Lock()
-		if u.inProgress() {
-			st := u.st.State
-			u.mu.Unlock()
-			return apierr.New(409, "An update is %s; wait for it to finish.", st)
-		}
-		if u.previousVersion() == nil {
-			u.mu.Unlock()
-			return apierr.New(409, "There is no previous version to go back to.")
-		}
-		if c := u.op; c != nil {
+		if c := u.op; c != nil && u.st.State == "checking" {
 			u.mu.Unlock()
 			<-c
 			u.mu.Lock()
 		}
 		defer u.mu.Unlock()
-		if err := u.rollBack(); err != nil {
-			u.fail(err)
-			return apierr.New(500, "%s", *u.st.Error)
+		if u.op != nil || u.inProgress() {
+			return apierr.New(409, "An update is %s; wait for it to finish.", u.st.State)
 		}
+		prev := u.previousVersion()
+		if prev == nil {
+			return apierr.New(409, "There is no previous version to go back to.")
+		}
+		rel := u.rollbackRelease(prev.Version)
+		if rel == nil && u.loadSaved().CheckedAt == nil {
+			u.mu.Unlock()
+			u.Check()
+			u.mu.Lock()
+			rel = u.rollbackRelease(prev.Version)
+		}
+		if rel == nil {
+			if u.st.Offline {
+				return apierr.New(409, "Rolling back downloads %s from the release server again, and this computer could not reach it. This version is still installed; try again once it is online.", prev.Version)
+			}
+			return apierr.New(409, "Rolling back downloads %s again, and the release server has no signed build of it on the %s channel.", prev.Version, channelName(u.policy().Channel))
+		}
+		u.startInstall(*rel, installOpts{allowOlder: true, restoreState: true, rollback: true})
 		apierr.JSON(w, 200, u.status())
 		return nil
 	}))

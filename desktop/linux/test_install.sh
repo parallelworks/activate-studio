@@ -72,8 +72,9 @@ ok "Xvfb, a session bus, ImageMagick, desktop-file-utils and python3 installed"
 # The checks' Python: the tree's own in a Node build, else the system's
 # (the Go version carries none).
 py_of() { if [ -x "$1/python/bin/python3" ]; then echo "$1/python/bin/python3"; else command -v python3; fi; }
-# The server's processes: Node's in a Node build, the Go server's otherwise.
-SERVER_RE='node/bin/node.*server/dist/main.js|app/bin/studio-server( |$)'
+# The server: Node in a Node build, the Go server otherwise (its helpers,
+# such as studio-server embed, run with arguments and are not counted).
+SERVER_RE='node/bin/node.*server/dist/main.js|app/bin/studio-server$'
 
 
 useradd -m tester

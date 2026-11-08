@@ -816,7 +816,14 @@ EOF
           check "and stopped the server running from it" sh -c 'for _ in $(seq 1 30); do curl -fsS -m 2 "http://127.0.0.1:$1/api/version" >/dev/null 2>&1 || exit 0; sleep 1; done; exit 1' _ "$PORT4"
           check "with the old copy gone, and no staging copies left" sh -c '! [ -e "$1/Contents/old-copy-marker" ] && ! ls -a "$2" | grep -q "^\.$3\.app\."' _ "$COPY" "$H3/Applications" "$NAME"
           check "the replaced copy's signature verifies" codesign --verify --deep --strict "$COPY"
-          check "opening it starts the server again" fresh env STUDIO_NO_BROWSER=1 "$COPY/Contents/Resources/launcher.sh"
+          if fresh env STUDIO_NO_BROWSER=1 "$COPY/Contents/Resources/launcher.sh" >"$T/reopen.out" 2>&1; then
+            ok "opening it starts the server again"
+          else
+            bad "opening it starts the server again:"
+            { tail -n 8 "$T/reopen.out"; tail -n 12 "$D3/logs/agent.log"; tail -n 20 "$D3/logs/studio.log"
+              launchctl print "gui/$(id -u)/com.parallelworks.activate-studio" 2>&1 | grep -E 'state|path|last exit|disabled' | head -n 8
+              lsof -nP -iTCP:"$PORT4" -sTCP:LISTEN 2>/dev/null; } 2>/dev/null | cut -c1-220 | sed 's/^/        /'
+          fi
           check "--stop stops it" fresh "$COPY/Contents/Resources/launcher.sh" --stop
           launchctl enable "gui/$(id -u)/com.parallelworks.activate-studio" 2>/dev/null || true
           # A copy macOS marked as downloaded (quarantined): the installed

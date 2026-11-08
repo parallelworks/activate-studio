@@ -41,6 +41,8 @@ interface Server {
   version: string
   calls: { method: string; url: string; body: unknown }[]
   onPost?: (url: string, s: Server) => void
+  /** Called before each GET /api/updates is answered. */
+  onStatus?: (s: Server) => void
   /** The answer to POST /api/updates/inspect. */
   inspect?: unknown
 }
@@ -54,6 +56,7 @@ function stubServer(s: Server) {
     const body = init?.body ? JSON.parse(String(init.body)) : undefined
     s.calls.push({ method, url, body })
     if (url === '/api/updates') {
+      s.onStatus?.(s)
       if (s.code === 0) throw new TypeError('Failed to fetch')
       return s.code === 200 ? reply(s.updates) : reply({ error: 'not available here' }, s.code)
     }
@@ -253,6 +256,42 @@ describe('the Updates section', () => {
     expect(await screen.findByText('This page reloads when version v1.139 is running.')).toBeInTheDocument()
     s.version = 'v1.139'
     await waitFor(() => expect(reload).toHaveBeenCalledTimes(1))
+  })
+
+  it('a rollback downloads the earlier version: it says so with the size, shows the download, then waits for the restart', async () => {
+    const s = server({
+      updates: status({ available: false, previous: { version: 'v1.139', size: 87_000_000 } }),
+      onPost: (url, srv) => {
+        if (url === '/api/updates/rollback') srv.updates = status({ state: 'downloading', available: false, progress: { bytes: 1_000_000, total: 87_000_000 }, previous: { version: 'v1.139', size: 87_000_000 } })
+      },
+    })
+    stubServer(s)
+    const reload = vi.fn()
+    render(<UpdatesSection pollMs={5} reload={reload} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Roll back to v1.139' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Roll back to v1.139?' })
+    expect(dialog.textContent).toContain('downloads version v1.139 (82.97 MB)')
+    expect(dialog.textContent).toContain('needs to be online')
+    fireEvent.click(screen.getByRole('button', { name: 'Roll back' }))
+    expect(await screen.findByText('Downloading version v1.139')).toBeInTheDocument()
+    s.updates = status({ state: 'restarting', available: false })
+    expect(await screen.findByText('This page reloads when version v1.139 is running.')).toBeInTheDocument()
+    s.version = 'v1.139'
+    await waitFor(() => expect(reload).toHaveBeenCalledTimes(1))
+  })
+
+  it('a rollback that cannot download says why', async () => {
+    const s = server({
+      updates: status({ available: false, previous: { version: 'v1.139', size: null } }),
+      onPost: (url, srv) => {
+        if (url === '/api/updates/rollback') srv.updates = status({ state: 'error', available: false, error: 'Rolling back downloads v1.139 from the release server again, and the download failed: connection refused. This version is still installed; try again once this computer is online.', previous: { version: 'v1.139', size: null } })
+      },
+    })
+    stubServer(s)
+    render(<UpdatesSection pollMs={5} reload={vi.fn()} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Roll back to v1.139' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Roll back' }))
+    expect(await screen.findByText(/This version is still installed/)).toBeInTheDocument()
   })
 
   it('on Stable while running a Preview: Move to Stable asks, then installs the older Stable by version', async () => {
