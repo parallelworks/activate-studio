@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/app"
+	"github.com/parallelworks/activate-studio/server-go/internal/bridge"
 )
 
 // FromApp is the process's Platform for a: its paths, its logger, the Go
@@ -34,15 +35,9 @@ func FromApp(a *app.App) *Platform {
 // unless STUDIO_PLATFORM_JOBS=1.
 func (p *Platform) OwnsJobs() bool { return p.ownsJobs }
 
-// RefuseBridge answers /api/__bridge/ from a client: Node's bridge is for
-// the Go server alone.
-func RefuseBridge(w http.ResponseWriter, r *http.Request) {
-	JSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
-}
-
 // RequireSecret guards a Go route Node calls (/internal/platform/*).
 func RequireSecret(r *http.Request) error {
-	if !SecretOK(r.Header.Get(BridgeHeader)) {
+	if !bridge.Authorized(r) {
 		return KbError(http.StatusNotFound, "not found")
 	}
 	return nil

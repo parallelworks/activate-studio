@@ -3,9 +3,6 @@ package platform
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
-	"crypto/subtle"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,16 +11,13 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/app"
 	"github.com/parallelworks/activate-studio/server-go/internal/auth"
+	"github.com/parallelworks/activate-studio/server-go/internal/bridge"
 	"github.com/parallelworks/activate-studio/server-go/internal/keycookie"
 )
-
-// BridgeHeader carries the bridge secret both ways (server/src/frontBridge.ts).
-const BridgeHeader = "X-Studio-Bridge"
 
 // BridgePrefix is Node's bridge; the Go front refuses it from clients.
 const BridgePrefix = "/api/__bridge/"
@@ -35,49 +29,18 @@ const SingleOwner = "single"
 // holds: the viewer's personal key, conversations, the MCP tool list.
 type NodeBridge struct {
 	Node   *app.Node
-	Secret string
 	client *http.Client
 }
 
-var (
-	secretOnce sync.Once
-	secret     string
-)
-
-// BridgeSecret is STUDIO_BRIDGE_SECRET, made once per process when unset;
-// a Node server the Go server starts gets it in NodeEnv.
-func BridgeSecret() string {
-	secretOnce.Do(func() {
-		secret = os.Getenv("STUDIO_BRIDGE_SECRET")
-		if secret == "" {
-			b := make([]byte, 24)
-			rand.Read(b)
-			secret = hex.EncodeToString(b)
-		}
-	})
-	return secret
-}
-
-// SecretOK checks a bridge secret in constant time.
-func SecretOK(given string) bool {
-	want := BridgeSecret()
-	return given != "" && len(given) == len(want) && subtle.ConstantTimeCompare([]byte(given), []byte(want)) == 1
-}
-
-// NodeEnv is what a Node server the Go server starts needs for the bridge:
-// the secret, the Go server's loopback address, and that the Go server owns
-// this track's state and background work. frontURL is
-// http://127.0.0.1:<PORT>.
-func NodeEnv(frontURL string) map[string]string {
-	return map[string]string{"STUDIO_BRIDGE_SECRET": BridgeSecret(), "STUDIO_FRONT_URL": frontURL, "STUDIO_GO_PLATFORM": "1"}
-}
+// BridgeSecret is the one bridge secret (internal/bridge).
+func BridgeSecret() string { return bridge.Secret() }
 
 // NewNodeBridge wraps a's Node, or is nil without one.
 func NewNodeBridge(n *app.Node) *NodeBridge {
 	if n == nil {
 		return nil
 	}
-	return &NodeBridge{Node: n, Secret: BridgeSecret(), client: &http.Client{Timeout: 30 * time.Second}}
+	return &NodeBridge{Node: n, client: &http.Client{Timeout: 30 * time.Second}}
 }
 
 // Do sends a bridge call for the viewer of r (nil: no viewer) and decodes
@@ -106,7 +69,7 @@ func (b *NodeBridge) Do(r *http.Request, method, path string, body, out any) err
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	req.Header.Set(BridgeHeader, b.Secret)
+	bridge.Sign(req)
 	req.Header.Set(app.InternalHeader, "1")
 	if r != nil {
 		req.Host = r.Host

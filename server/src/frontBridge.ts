@@ -13,13 +13,13 @@ import { getSharedKeyStatus, getUserKeyStatus, hydrateFromCookie, personalKeysDi
  * for any route; and this server asks the Go server for state it no longer
  * holds (the task board, the run registry) at STUDIO_FRONT_URL.
  *
- * Both directions carry STUDIO_BRIDGE_SECRET in x-studio-bridge. The Go
+ * Both directions carry STUDIO_BRIDGE_SECRET in x-studio-bridge-secret. The Go
  * server makes the secret and passes it to a Node server it starts; the Go
  * front refuses /api/__bridge/ from any client. Without the secret set,
  * none of this is registered and every module works as before.
  */
 
-export const BRIDGE_HEADER = 'x-studio-bridge'
+export const BRIDGE_HEADER = 'x-studio-bridge-secret'
 
 export function bridgeSecret(): string { return process.env.STUDIO_BRIDGE_SECRET ?? '' }
 
