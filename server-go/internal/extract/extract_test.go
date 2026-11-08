@@ -528,3 +528,50 @@ sys.stdout.buffer.write(f(pathlib.Path(sys.argv[2])).encode())`
 		}
 	}
 }
+
+// TestWindowsLineEnds: entries enrich.py wrote on Windows end lines in
+// "\r\n"; they stay current and read as "\n".
+func TestWindowsLineEnds(t *testing.T) {
+	kb, cache := t.TempDir(), t.TempDir()
+	put(t, filepath.Join(kb, "a.docx"), docx(t, "Hello"))
+	put(t, filepath.Join(kb, "b.odt"), []byte("x"))
+	x := newX(t, Options{})
+	crlf := "<!-- extracted by downmark " + x.Version() + " -->\r\n\r\nHello\r\nWorld\r\n"
+	put(t, CacheFile(cache, "a.docx"), []byte(crlf))
+	put(t, CacheFile(cache, "b.odt"), []byte("plain\r\ntext"))
+	for _, rel := range []string{"a.docx", "b.odt"} {
+		if r := x.Update(context.Background(), filepath.Join(kb, rel), rel, cache); r.Action != Reused {
+			t.Errorf("%s: %+v", rel, r)
+		}
+	}
+	got, err := ReadEntry(CacheFile(cache, "a.docx"))
+	if err != nil || got != strings.ReplaceAll(crlf, "\r\n", "\n") {
+		t.Fatalf("ReadEntry %q %v", got, err)
+	}
+	if IndexText(crlf) != "Hello\nWorld\n" || IndexText(got) != "Hello\nWorld\n" {
+		t.Fatalf("IndexText %q", IndexText(crlf))
+	}
+	if read(t, CacheFile(cache, "a.docx")) != crlf {
+		t.Fatal("a reused entry was rewritten")
+	}
+}
+
+// TestReaderText: with no pdftotext, a PDF downmark did not convert is
+// read by the built-in reader, as enrich.py reads it with pypdf, unless
+// --pdf-reader pdftotext asks for pdftotext only.
+func TestReaderText(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "a.pdf")
+	put(t, p, pdfDoc("first page words", "second page words"))
+	x := newX(t, Options{})
+	got := x.pdfText(context.Background(), p)
+	if !strings.Contains(got, "first page words") || !strings.Contains(got, "second page words") {
+		t.Fatalf("auto: %q", got)
+	}
+	if got := newX(t, Options{PDFReader: "pdftotext"}).pdfText(context.Background(), p); got != "" {
+		t.Fatalf("pdftotext only: %q", got)
+	}
+	if got := newX(t, Options{PDFReader: "pypdf"}).pdfText(context.Background(), p); !strings.Contains(got, "second page words") {
+		t.Fatalf("pypdf: %q", got)
+	}
+}

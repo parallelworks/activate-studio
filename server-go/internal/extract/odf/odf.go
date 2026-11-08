@@ -9,11 +9,15 @@
 // are left out of paragraphs, as they are for Word documents.
 //
 // The reader streams the XML instead of building a tree of the whole
-// document: content.xml is read twice, once to check that it is well
-// formed (enrich.py's ElementTree parse rejects a document that is not,
-// whatever text came before the fault) and to learn what kind of document
-// it is, and once to emit lines, stopping as soon as the text reaches the
-// limit. Only one paragraph or table cell at a time is held as a tree.
+// document, and reads content.xml once: it walks the body, learning on the
+// way whether it is a text document or a spreadsheet (office:text or
+// office:spreadsheet below the root, which opens the body in every ODF
+// writer's output), and after the text reaches the limit it still reads
+// the rest of the part, since enrich.py's ElementTree parse rejects a
+// document that is not well formed whatever text came before the fault.
+// When the kind turns up only after lines that depend on it, the part is
+// read again knowing it. Only one paragraph or table cell at a time is
+// held as a tree.
 //
 // Deliberate differences from enrich.py, all on documents no ODF writer
 // produces: a text:c count that Python's int() rejects counts as one space
@@ -83,21 +87,37 @@ func Text(r io.ReaderAt, size int64, maxText int) (text string, err error) {
 	if content == nil {
 		return "", ErrNotODF
 	}
+	styles := member(zr, "styles.xml")
+	// One pass, learning the kind of document on the way: the usual case,
+	// where office:text or office:spreadsheet opens the body before any
+	// line depends on it.
+	w := &walker{max: maxText, styles: styles}
+	err = w.single(content)
+	if !w.redo && !twoPass {
+		if err != nil {
+			return "", err
+		}
+		return strings.Join(w.out, "\n"), nil
+	}
+	// The kind turned up after lines that depend on it: check the whole
+	// part first, then walk it knowing.
 	kind, err := scan(content)
 	if err != nil {
 		return "", err
 	}
-	w := &walker{max: maxText, spreadsheet: kind.spreadsheet}
-	if kind.text {
-		if styles := member(zr, "styles.xml"); styles != nil {
-			w.headers(styles)
-		}
+	w = &walker{max: maxText, kind: kind, known: true}
+	if kind.text && styles != nil {
+		w.headers(styles)
 	}
 	if err := w.run(content, nil); err != nil {
 		return "", err
 	}
 	return strings.Join(w.out, "\n"), nil
 }
+
+// twoPass makes Text always take the two-pass path, for the test that
+// the single pass gives the same result.
+var twoPass = false
 
 // member is the zip entry name, the last one when the name repeats (as
 // Python's zipfile reads it), or nil.
@@ -112,7 +132,7 @@ func member(zr *zip.Reader, name string) *zip.File {
 }
 
 // open returns a decoder over a zip member, bounded by MaxPart.
-func open(f *zip.File) (*xml.Decoder, io.Closer, error) {
+func open(f *zip.File) (*dec, io.Closer, error) {
 	if f.Flags&0x1 != 0 {
 		return nil, nil, errors.New("odf: encrypted member")
 	}
@@ -128,7 +148,7 @@ func open(f *zip.File) (*xml.Decoder, io.Closer, error) {
 	d := xml.NewDecoder(br)
 	d.Strict = true
 	d.CharsetReader = charsetReader
-	return d, rc, nil
+	return &dec{d: d}, rc, nil
 }
 
 // limitedReader fails, where io.LimitReader would end quietly, once more
@@ -166,19 +186,46 @@ func charsetReader(label string, in io.Reader) (io.Reader, error) {
 	return nil, fmt.Errorf("odf: unsupported encoding %q", label)
 }
 
-// tokens yields the element and text tokens of d, dropping comments,
-// processing instructions and directives as ElementTree does.
-func next(d *xml.Decoder) (xml.Token, error) {
+// dec reads the tokens of one part, tracking the depth of open elements
+// and showing each element start to seen, when set.
+type dec struct {
+	d     *xml.Decoder
+	depth int
+	seen  func(xml.StartElement)
+}
+
+// next is the next element or text token, comments, processing
+// instructions and directives dropped as ElementTree drops them.
+func (d *dec) next() (xml.Token, error) {
 	for {
-		tok, err := d.Token()
+		tok, err := d.d.Token()
 		if err != nil {
 			return nil, err
 		}
-		switch tok.(type) {
-		case xml.StartElement, xml.EndElement, xml.CharData:
+		switch t := tok.(type) {
+		case xml.StartElement:
+			d.depth++
+			if d.seen != nil {
+				d.seen(t)
+			}
+			return tok, nil
+		case xml.EndElement:
+			d.depth--
+			return tok, nil
+		case xml.CharData:
 			return tok, nil
 		}
 	}
+}
+
+// skip consumes the element whose start was just read, through its end.
+func (d *dec) skip() error {
+	for depth := d.depth - 1; d.depth > depth; {
+		if _, err := d.next(); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 type docKind struct{ text, spreadsheet bool }
@@ -196,7 +243,7 @@ func scan(f *zip.File) (docKind, error) {
 	depth := 0
 	sawRoot := false
 	for {
-		tok, err := d.Token()
+		tok, err := d.d.Token()
 		if err == io.EOF {
 			if !sawRoot {
 				return k, ErrMalformed
@@ -233,12 +280,94 @@ func scan(f *zip.File) (docKind, error) {
 
 // walker emits lines as enrich.py's walk() does.
 type walker struct {
-	max         int
-	spreadsheet bool
-	out         []string
-	size        int
-	slides      int
-	stop        bool // the text reached the limit: every walk returns
+	max    int
+	kind   docKind
+	out    []string
+	size   int
+	slides int
+	stop   bool // the text reached the limit: every walk returns
+
+	// In a single pass the kind is learned on the way (known is false):
+	known       bool
+	styles      *zip.File // read for headers once office:text is seen
+	open        int       // slides and notes being walked
+	sheetMissed bool      // a named table went by while not a spreadsheet
+	redo        bool      // the kind changed lines already emitted
+}
+
+// see learns the kind of document from an element start below the root,
+// as scan does. Lines emitted before it changes would have come out
+// otherwise; then the pass is redone with the kind known.
+func (w *walker) see(t xml.StartElement) {
+	if t.Name.Space != nsOffice || w.redo {
+		return
+	}
+	switch t.Name.Local {
+	case "text":
+		if w.kind.text {
+			return
+		}
+		w.kind.text = true
+		if len(w.out) > 0 || w.open > 0 {
+			w.redo = true
+		} else if w.styles != nil {
+			// Headers and footers come first; nothing has been emitted.
+			w.headers(w.styles)
+		}
+	case "spreadsheet":
+		if !w.kind.spreadsheet {
+			w.kind.spreadsheet = true
+			w.redo = w.sheetMissed
+		}
+	}
+}
+
+// single reads content.xml once: the walk, then the rest of the part,
+// which has to be well formed for enrich.py to have used any of it.
+func (w *walker) single(f *zip.File) error {
+	d, c, err := open(f)
+	if err != nil {
+		return ErrNotODF
+	}
+	defer c.Close()
+	if err := root(d); err != nil {
+		return err
+	}
+	d.seen = w.see
+	if err := w.walk(d); err != nil {
+		return ErrMalformed
+	}
+	for d.depth > 0 {
+		// Stopped at the limit: the rest of the root, then what follows.
+		if _, err := d.next(); err != nil {
+			return ErrMalformed
+		}
+		if w.redo {
+			return nil
+		}
+	}
+	if err := trailer(d); err != nil {
+		return ErrMalformed
+	}
+	return nil
+}
+
+// root reads up to and including the start of the root element.
+func root(d *dec) error {
+	for {
+		tok, err := d.next()
+		if err != nil {
+			return ErrMalformed
+		}
+		switch t := tok.(type) {
+		case xml.StartElement:
+			return nil
+		case xml.CharData:
+			if strings.TrimLeft(string(t), " \t\r\n") != "" {
+				return ErrMalformed // text before the root
+			}
+		}
+	}
 }
 
 func (w *walker) full() bool { return w.max > 0 && w.size >= w.max }
@@ -259,14 +388,14 @@ func (w *walker) emit(line string) {
 // run walks the children of the root element of the part f. With parts
 // set, it walks instead the children of each header and footer of each
 // master page (styles.xml).
-func (w *walker) run(f *zip.File, parts func(*xml.Decoder) error) error {
+func (w *walker) run(f *zip.File, parts func(*dec) error) error {
 	d, c, err := open(f)
 	if err != nil {
 		return ErrNotODF
 	}
 	defer c.Close()
 	for {
-		tok, err := next(d)
+		tok, err := d.next()
 		if err != nil {
 			return ErrMalformed
 		}
@@ -294,7 +423,7 @@ var errStopped = errors.New("odf: text limit reached")
 func (w *walker) headers(f *zip.File) {
 	saved := *w
 	saved.out = append([]string(nil), w.out...)
-	err := w.run(f, func(d *xml.Decoder) error {
+	err := w.run(f, func(d *dec) error {
 		if err := w.stylesWalk(d); err != nil {
 			return err
 		}
@@ -322,7 +451,7 @@ func wellFormed(f *zip.File) bool {
 	}
 	defer c.Close()
 	for {
-		tok, err := next(d)
+		tok, err := d.next()
 		if err != nil {
 			return false
 		}
@@ -330,16 +459,16 @@ func wellFormed(f *zip.File) bool {
 			break
 		}
 	}
-	if err := d.Skip(); err != nil {
+	if err := d.skip(); err != nil {
 		return false
 	}
 	return trailer(d) == nil
 }
 
 // trailer checks that nothing but whitespace follows the root element.
-func trailer(d *xml.Decoder) error {
+func trailer(d *dec) error {
 	for {
-		tok, err := d.Token()
+		tok, err := d.d.Token()
 		if err == io.EOF {
 			return nil
 		}
@@ -365,9 +494,9 @@ var headerParts = map[string]bool{
 // stylesWalk consumes the children of the current element through its
 // end, walking the header and footer children of each master page in it
 // (ElementTree's styles.iter('style:master-page')).
-func (w *walker) stylesWalk(d *xml.Decoder) error {
+func (w *walker) stylesWalk(d *dec) error {
 	for {
-		tok, err := next(d)
+		tok, err := d.next()
 		if err != nil {
 			return err
 		}
@@ -387,9 +516,9 @@ func (w *walker) stylesWalk(d *xml.Decoder) error {
 	}
 }
 
-func (w *walker) masterPage(d *xml.Decoder) error {
+func (w *walker) masterPage(d *dec) error {
 	for {
-		tok, err := next(d)
+		tok, err := d.next()
 		if err != nil {
 			return err
 		}
@@ -413,9 +542,9 @@ func (w *walker) masterPage(d *xml.Decoder) error {
 
 // walk consumes the children of the element whose start was just read,
 // through its end, emitting lines.
-func (w *walker) walk(d *xml.Decoder) error {
+func (w *walker) walk(d *dec) error {
 	for {
-		tok, err := next(d)
+		tok, err := d.next()
 		if err != nil {
 			return err
 		}
@@ -428,8 +557,8 @@ func (w *walker) walk(d *xml.Decoder) error {
 		case xml.StartElement:
 			start = t
 		}
-		if w.full() {
-			w.stop = true
+		if w.full() || w.redo {
+			w.stop = w.stop || w.full()
 			return nil
 		}
 		n := start.Name
@@ -441,12 +570,16 @@ func (w *walker) walk(d *xml.Decoder) error {
 			}
 			w.emit(inline(el))
 		case n.Space == nsOffice && n.Local == "annotation":
-			if err := d.Skip(); err != nil {
+			if err := d.skip(); err != nil {
 				return err
 			}
 		case n.Space == nsTable && n.Local == "table":
-			if name := attr(start, nsTable, "name"); w.spreadsheet && name != "" {
-				w.emit("Sheet: " + name)
+			if name := attr(start, nsTable, "name"); name != "" {
+				if w.kind.spreadsheet {
+					w.emit("Sheet: " + name)
+				} else if !w.known {
+					w.sheetMissed = true
+				}
 			}
 			if err := w.walk(d); err != nil || w.stop {
 				return err
@@ -464,7 +597,9 @@ func (w *walker) walk(d *xml.Decoder) error {
 			w.slides++
 			at := len(w.out)
 			w.emit(fmt.Sprintf("Slide %d", w.slides))
+			w.open++
 			err := w.walk(d)
+			w.open--
 			// A slide's own name, unless it is the default (page1) or
 			// repeats the slide's first line, its title.
 			name := attr(start, nsDraw, "name")
@@ -477,7 +612,9 @@ func (w *walker) walk(d *xml.Decoder) error {
 			}
 		case n.Space == nsPres && n.Local == "notes":
 			before := len(w.out)
+			w.open++
 			err := w.walk(d)
+			w.open--
 			if len(w.out) > before {
 				w.out = append(w.out, "")
 				copy(w.out[before+1:], w.out[before:])
@@ -511,10 +648,10 @@ func attr(t xml.StartElement, space, local string) string {
 }
 
 // row reads a table row through its end and returns its cells' text.
-func row(d *xml.Decoder) ([]string, error) {
+func row(d *dec) ([]string, error) {
 	var cells []string
 	for {
-		tok, err := next(d)
+		tok, err := d.next()
 		if err != nil {
 			return nil, err
 		}
@@ -530,7 +667,7 @@ func row(d *xml.Decoder) ([]string, error) {
 				cells = append(cells, cellText(el))
 				continue
 			}
-			if err := d.Skip(); err != nil {
+			if err := d.skip(); err != nil {
 				return nil, err
 			}
 		}
@@ -552,8 +689,8 @@ func (n *node) is(space, local string) bool {
 }
 
 // tree reads the element whose start was just read into a node.
-func tree(d *xml.Decoder, start xml.StartElement) (*node, error) {
-	root := &node{name: start.Name, start: start.Copy()}
+func tree(d *dec, start xml.StartElement) (*node, error) {
+	root := &node{name: start.Name, start: start}
 	stack := []*node{root}
 	var last *node // the child that just ended, whose tail text follows
 	var text, tail strings.Builder
@@ -567,7 +704,7 @@ func tree(d *xml.Decoder, start xml.StartElement) (*node, error) {
 		tail.Reset()
 	}
 	for {
-		tok, err := next(d)
+		tok, err := d.next()
 		if err != nil {
 			return nil, err
 		}
@@ -580,7 +717,7 @@ func tree(d *xml.Decoder, start xml.StartElement) (*node, error) {
 			}
 		case xml.StartElement:
 			flush()
-			n := &node{name: t.Name, start: t.Copy()}
+			n := &node{name: t.Name, start: t}
 			p := stack[len(stack)-1]
 			p.children = append(p.children, n)
 			stack = append(stack, n)

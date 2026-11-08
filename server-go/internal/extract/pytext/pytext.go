@@ -11,8 +11,10 @@
 package pytext
 
 import (
+	"encoding/binary"
 	"strings"
 	"unicode"
+	"unicode/utf16"
 	"unicode/utf8"
 )
 
@@ -240,4 +242,21 @@ func ParseInt(s string) (n int, ok bool) {
 		n = -n
 	}
 	return n, true
+}
+
+// DecodeUTF16LE is Python's bytes.decode('utf-16-le', errors='replace'):
+// one U+FFFD for each unpaired surrogate, and one for an odd final byte,
+// which takes in a high surrogate left waiting for its pair.
+func DecodeUTF16LE(b []byte) string {
+	u := make([]uint16, len(b)/2)
+	for i := range u {
+		u[i] = binary.LittleEndian.Uint16(b[2*i:])
+	}
+	if len(b)%2 == 0 {
+		return string(utf16.Decode(u))
+	}
+	if n := len(u); n > 0 && u[n-1] >= 0xD800 && u[n-1] <= 0xDBFF {
+		u = u[:n-1]
+	}
+	return string(utf16.Decode(u)) + "\ufffd"
 }

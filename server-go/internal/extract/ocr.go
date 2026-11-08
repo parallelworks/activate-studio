@@ -5,10 +5,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"image/png"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -17,20 +18,25 @@ import (
 	gpdf "github.com/giraffesyo/pdf"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/extract/pytext"
+	"github.com/parallelworks/activate-studio/server-go/internal/extract/render"
 )
 
 // OCR budgets, as enrich.py and preextract.ts set them.
 const (
-	ocrMaxPages      = 30  // pages OCR'd per document
-	ocrCharsPerPage  = 120 // below this per page a PDF's text layer is thin
-	ocrTextCeiling   = ocrCharsPerPage * ocrMaxPages
-	ocrRenderDPI     = "200"             // pdftoppm -r
+	ocrMaxPages     = 30  // pages OCR'd per document
+	ocrCharsPerPage = 120 // below this per page a PDF's text layer is thin
+	ocrTextCeiling  = ocrCharsPerPage * ocrMaxPages
+	ocrRenderDPI    = "200" // pdftoppm -r
+	dmMinGlyphs     = 50    // downmark's "thin" policy floor
+)
+
+// Helper timeouts, variables so the tests can shorten them.
+var (
 	ocrRenderTimeout = 600 * time.Second // pdftoppm, the whole document
 	ocrPageTimeout   = 180 * time.Second // tesseract, one rendered page
 	ocrImageTimeout  = 120 * time.Second // tesseract, one image
 	dmPageTimeout    = 120 * time.Second // downmark's OCR, one page
 	dmTotalTimeout   = 300 * time.Second // downmark's OCR, one document
-	dmMinGlyphs      = 50                // downmark's "thin" policy floor
 	pdftotextTimeout = 180 * time.Second
 	pdfinfoTimeout   = 60 * time.Second
 )
@@ -79,14 +85,12 @@ func (x *Extractor) tesseract(ctx context.Context, path string, timeout time.Dur
 		return "", err
 	}
 	defer x.release()
-	ctx, cancel := context.WithTimeout(ctx, timeout)
+	cmd, hctx, cancel := helper(ctx, timeout, x.tools.Tesseract, path, "stdout", "--psm", "3")
 	defer cancel()
-	cmd := exec.CommandContext(ctx, x.tools.Tesseract, path, "stdout", "--psm", "3")
-	cmd.Env = helperEnv()
 	var out bytes.Buffer
 	cmd.Stdout = &out
-	if err := cmd.Run(); err != nil && ctx.Err() != nil {
-		return "", ctx.Err()
+	if err := cmd.Run(); err != nil && hctx.Err() != nil {
+		return "", hctx.Err()
 	}
 	// enrich.py keeps whatever tesseract printed, whatever its exit status.
 	if !utf8.Valid(out.Bytes()) {
@@ -136,10 +140,8 @@ func (x *Extractor) pageCount(ctx context.Context, path string) int {
 }
 
 func pdfinfoPages(ctx context.Context, bin, path string) (int, bool) {
-	ctx, cancel := context.WithTimeout(ctx, pdfinfoTimeout)
+	cmd, _, cancel := helper(ctx, pdfinfoTimeout, bin, path)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, bin, path)
-	cmd.Env = helperEnv()
 	out, _ := cmd.Output()
 	for _, line := range strings.Split(string(out), "\n") {
 		if v, ok := strings.CutPrefix(line, "Pages:"); ok {
@@ -153,7 +155,7 @@ func pdfinfoPages(ctx context.Context, bin, path string) (int, bool) {
 // (enrich.py's _pdf_ocr). The pages are read side by side within the
 // pass's OCR slots and joined in page order.
 func (x *Extractor) pdfOCR(ctx context.Context, path string, pages int) string {
-	if !x.ocr || x.tools.Pdftoppm == "" {
+	if !x.ocr {
 		return ""
 	}
 	limit := min(pages, ocrMaxPages)
@@ -191,21 +193,58 @@ func (x *Extractor) pdfOCR(ctx context.Context, path string, pages int) string {
 	return OCRHeader + "\n" + strings.Join(keep, "\n\n")
 }
 
-// render writes pages 1 to last of a PDF as PNGs at 200 dpi, prefix-NN.png.
-// pdftoppm's exit status does not matter: enrich.py reads whatever pages it
-// wrote. It takes an OCR slot, since it is as heavy as a tesseract.
+// render writes pages 1 to last of a PDF as PNGs at 200 dpi, prefix-NN.png,
+// with pdftoppm, or with the built-in renderer where poppler is not
+// installed. pdftoppm's exit status does not matter: enrich.py reads
+// whatever pages it wrote. It takes an OCR slot, since it is as heavy as
+// a tesseract.
 func (x *Extractor) render(ctx context.Context, path string, last int, prefix string) error {
 	if err := x.acquire(ctx); err != nil {
 		return err
 	}
 	defer x.release()
-	ctx, cancel := context.WithTimeout(ctx, ocrRenderTimeout)
+	if x.tools.Pdftoppm == "" {
+		return renderBuiltin(ctx, path, last, prefix)
+	}
+	cmd, hctx, cancel := helper(ctx, ocrRenderTimeout, x.tools.Pdftoppm, "-r", ocrRenderDPI, "-f", "1", "-l", fmt.Sprint(last), "-png", path, prefix)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, x.tools.Pdftoppm, "-r", ocrRenderDPI, "-f", "1", "-l", fmt.Sprint(last), "-png", path, prefix)
-	cmd.Env = helperEnv()
 	_ = cmd.Run()
-	if ctx.Err() != nil {
-		return ctx.Err() // enrich.py gives up on the document after a timeout
+	if hctx.Err() != nil {
+		return hctx.Err() // enrich.py gives up on the document after a timeout
 	}
 	return nil
+}
+
+// renderPageTimeout bounds the built-in renderer on one page.
+var renderPageTimeout = 60 * time.Second
+
+// renderBuiltin is render without poppler: each page drawn by the
+// built-in renderer within renderPageTimeout, the whole within
+// ocrRenderTimeout. A page that fails or runs out of time is written as
+// far as it was drawn, or left out when nothing was.
+func renderBuiltin(ctx context.Context, path string, last int, prefix string) error {
+	ctx, cancel := context.WithTimeout(ctx, ocrRenderTimeout)
+	defer cancel()
+	d, err := render.Open(ctx, path)
+	if err != nil {
+		return nil // as pdftoppm writing nothing
+	}
+	defer d.Close()
+	dpi, _ := strconv.ParseFloat(ocrRenderDPI, 64)
+	for n := 1; n <= min(last, d.PageCount()); n++ {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		pctx, pcancel := context.WithTimeout(ctx, renderPageTimeout)
+		img, _ := d.Page(pctx, n, dpi)
+		pcancel()
+		if img == nil {
+			continue
+		}
+		var buf bytes.Buffer
+		if png.Encode(&buf, img) == nil {
+			os.WriteFile(fmt.Sprintf("%s-%03d.png", prefix, n), buf.Bytes(), 0o600)
+		}
+	}
+	return ctx.Err()
 }

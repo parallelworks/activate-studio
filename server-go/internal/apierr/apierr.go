@@ -8,12 +8,14 @@ package apierr
 
 import (
 	"crypto/rand"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"math/big"
 	"net/http"
+	"strconv"
+
+	"github.com/parallelworks/activate-studio/server-go/internal/jsonobj"
 )
 
 // Error is Node's KbError: a status and a message the client may see.
@@ -84,9 +86,16 @@ func Ref() string {
 	return string(b)
 }
 
-// JSON writes v with Fastify's content type.
+// JSON writes v as Fastify sends an object: JSON.stringify's bytes (no
+// trailing newline, no HTML escaping), with its content type and length.
 func JSON(w http.ResponseWriter, status int, v any) {
+	b, err := jsonobj.Marshal(v)
+	if err != nil {
+		b = []byte(`{"error":"internal error"}`)
+		status = http.StatusInternalServerError
+	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Content-Length", strconv.Itoa(len(b)))
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(v)
+	w.Write(b)
 }

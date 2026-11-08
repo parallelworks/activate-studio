@@ -25,21 +25,36 @@ const GUFI = fs.existsSync(path.join(REAL_GUFI, 'gufi_dir2index')) ? REAL_GUFI :
 const REAL = GUFI === REAL_GUFI && fs.existsSync(path.join(GUFI, 'gufi_query'))
 const TESSERACT = spawnSync('tesseract', ['--version'], { stdio: 'ignore' }).status === 0
 
-// Python runs through this wrapper, which notes each indexer script it
-// starts, and fails enrich.py while the FAIL file exists.
+// The indexer's programs run through wrappers that note the phase each
+// reads for (text, meaning) and fail the text phase while the FAIL file
+// exists: Python's enrich.py and embed.py under Node, and the Go server's
+// extract and embed children where it builds the index
+// (STUDIO_GO_INDEX=1 through the Go front).
 const CALLS = path.join(HOME, 'calls')
 const FAIL = path.join(HOME, 'fail')
 const WRAPPER = path.join(HOME, 'python')
 fs.writeFileSync(WRAPPER, `#!/bin/sh
 for a in "$@"; do
   case "$a" in *.py)
-    n=$(basename "$a"); echo "$n" >> '${CALLS}'
+    n=$(basename "$a")
+    case "$n" in enrich.py) echo text >> '${CALLS}';; embed.py) echo meaning >> '${CALLS}';; esac
     if [ "$n" = enrich.py ] && [ -f '${FAIL}' ]; then echo 'enrich.py failed on purpose' >&2; exit 1; fi
     break;;
   esac
 done
 exec python3 "$@"
 `, { mode: 0o755 })
+if (process.env.STUDIO_TEST_FRONT && process.env.STUDIO_GO_INDEX === '1') {
+  for (const [sub, phase] of [['extract', 'text'], ['embed', 'meaning']]) {
+    const w = path.join(HOME, `go-${sub}`)
+    fs.writeFileSync(w, `#!/bin/sh
+echo ${phase} >> '${CALLS}'
+if [ ${phase} = text ] && [ -f '${FAIL}' ]; then echo 'extraction failed on purpose' >&2; exit 1; fi
+exec '${process.env.STUDIO_TEST_FRONT}' ${sub} "$@"
+`, { mode: 0o755 })
+    process.env[`STUDIO_${sub.toUpperCase()}_BIN`] = w
+  }
+}
 const calls = () => { try { return fs.readFileSync(CALLS, 'utf8').split('\n').filter(Boolean) } catch { return [] } }
 
 Object.assign(process.env, { HOME, KB_ROOT: KB, INDEX_BASE: IX, GUFI_BIN: GUFI, PYTHON_BIN: WRAPPER, SWEEP_INTERVAL_SEC: '300' })
@@ -122,7 +137,7 @@ test('Text to Text + OCR: Sync now reads images and scanned pages again, with no
   assert.equal(p.documents[0], 'done')
   assert.equal(p.text[0], 'done')
   assert.deepEqual(p.meaning, ['skipped', 'unchanged'])
-  assert.deepEqual(calls(), ['enrich.py'])
+  assert.deepEqual(calls(), ['text'])
   assert.deepEqual(record(), { depth: 'ocr', ocr: true, meaningSpeed: 'standard' })
   if (REAL) {
     assert.deepEqual(await hits('heliotrope'), ['pics/sign.png'], 'the picture is found by its text')
@@ -159,7 +174,7 @@ test('a failed run keeps the old record, and the next sync tries again', { timeo
   const job = (await status()).last
   assert.equal(job.state, 'done', job.error ?? '')
   assert.equal(job.label, 'Applying the new index depth: text')
-  assert.deepEqual(calls(), ['enrich.py'])
+  assert.deepEqual(calls(), ['text'])
   assert.equal(record().depth, 'text')
   if (REAL) assert.deepEqual(await hits('quokkafish'), ['notes/a.md'])
 })
@@ -175,7 +190,7 @@ test('Text to search by meaning runs the meaning phase alone', { timeout: 120_00
   const p = phases(job)
   assert.deepEqual([p.names, p.documents, p.text], [['skipped', 'unchanged'], ['skipped', 'unchanged'], ['skipped', 'unchanged']])
   assert.notEqual(p.meaning[1], 'unchanged', 'the meaning phase ran (or said why it could not, here without the model)')
-  assert.ok(!calls().includes('enrich.py'))
+  assert.ok(!calls().includes('text'))
   assert.equal(record().depth, 'meaning-documents')
 })
 
@@ -248,7 +263,7 @@ test('a library the Studio builds applies a new depth at its sync, and saving th
   fs.writeFileSync(CALLS, '')
   const changed = await B.syncLibrary('papers')
   assert.deepEqual(changed, [`(index depth: ${TESSERACT ? 'ocr' : 'text'})`])
-  assert.deepEqual(calls(), ['enrich.py'])
+  assert.deepEqual(calls(), ['text'])
   assert.equal(rec().depth, TESSERACT ? 'ocr' : 'text')
   assert.equal((await lib()).build.state, 'ready')
   if (TESSERACT) assert.deepEqual(await fts('heliotrope'), ['sign.png'])
