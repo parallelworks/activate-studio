@@ -7,8 +7,8 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
+	"github.com/parallelworks/activate-studio/server-go/internal/bridge"
 	"log/slog"
 	"net"
 	"net/http"
@@ -30,7 +30,12 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/version"
 )
 
-func main() { os.Exit(run()) }
+func main() {
+	if code, ok := dispatchSubcommand(); ok {
+		os.Exit(code)
+	}
+	os.Exit(run())
+}
 
 func logLevel(v string) slog.Level {
 	switch v {
@@ -57,15 +62,6 @@ func run() int {
 	}
 	log := slog.New(handler)
 
-	// -routes: which of the Node server's routes Go serves, as JSON
-	// ({ported, unported}), for the test harness's strict mode and the
-	// coordinator's count. Nothing is started.
-	if len(os.Args) > 1 && os.Args[1] == "-routes" {
-		s := server.New(cfg, slog.New(slog.DiscardHandler), nil, nil)
-		json.NewEncoder(os.Stdout).Encode(map[string]any{"ported": s.Ported(), "unported": s.Unported()})
-		return 0
-	}
-
 	// netStart.ts and stateStart.ts: how the server reaches out, then the
 	// state's format, before anything reads settings or conversations
 	// (and before Node starts, which checks it again and finds it done).
@@ -90,6 +86,12 @@ func run() int {
 		go front.Run(ctx)
 	}
 
+	// The App and every track's routes first, so each module has added
+	// what a Node it fronts needs (bridge.RegisterNodeEnv) before Node
+	// starts; Node is attached once it is up.
+	a := app.New(cfg, log, nil, nil)
+	fsrv := server.NewWithApp(cfg, log, a, nil, front)
+
 	var node *url.URL
 	var proc *nodeproc.Proc
 	switch {
@@ -101,6 +103,9 @@ func run() int {
 			return 2
 		}
 	case cfg.NodeSpawn:
+		// Modules ported to Go add what the Node behind them needs to know
+		// (the bridge secret, the Go server's URL, the work Go has taken over).
+		nodeEnv = bridge.NodeEnv(nodeEnv, "http://127.0.0.1:"+strconv.Itoa(cfg.Port))
 		if proc, err = nodeproc.Start(ctx, log, cfg.NodeBin, cfg.NodeMain, 90*time.Second, nodeEnv); err != nil {
 			log.Error("node", "err", err.Error())
 			return 1
@@ -110,12 +115,7 @@ func run() int {
 		log.Warn("no Node server (STUDIO_NODE_URL or STUDIO_NODE_SPAWN=1): only Go routes and the web app answer")
 	}
 
-	var nodeCaller *app.Node
-	if node != nil {
-		nodeCaller = app.NewNode(node, front, cfg.Auth.Header)
-	}
-	a := app.New(cfg, log, nil, nodeCaller)
-	fsrv := server.NewWithApp(cfg, log, a, node, front)
+	fsrv.AttachNode(node)
 	// A restart the launcher asked for (setup's new folder or port, an
 	// update's relaunch): the server stops gracefully with that code.
 	restart := make(chan int, 1)

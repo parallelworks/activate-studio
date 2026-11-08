@@ -6,6 +6,7 @@ package server
 
 import (
 	"encoding/json"
+	"github.com/parallelworks/activate-studio/server-go/internal/bridge"
 	"log/slog"
 	"net/http"
 	"net/http/httputil"
@@ -51,6 +52,20 @@ func New(cfg config.Config, log *slog.Logger, node *url.URL, front *auth.Front) 
 		n = app.NewNode(node, front, cfg.Auth.Header)
 	}
 	return NewWithApp(cfg, log, app.New(cfg, log, nil, n), node, front)
+}
+
+// AttachNode points the server at Node once it is up: unported routes go
+// to it, and App.Node() and the App's value calls reach it. main.go builds
+// the server and the tracks' routes first, so every module's Node
+// environment (bridge.RegisterNodeEnv) is in before Node starts. Call it
+// before serving.
+func (s *Server) AttachNode(node *url.URL) {
+	if node == nil {
+		return
+	}
+	s.node = newProxy(node, s.log, s.front)
+	s.App.SetNodeHandler(s.node)
+	s.App.AttachNode(app.NewNode(node, s.front, s.cfg.Auth.Header))
 }
 
 // NewWithApp makes the handler for an App made by the caller (main.go).
@@ -180,6 +195,14 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			panic(p)
 		}
 	}()
+	// Bridge-only paths (the transitional Go and Node channel) answer 404
+	// to anything without the bridge secret, before sign-in, so a browser
+	// cannot reach them through the front.
+	if bridge.IsPrivate(r.URL.Path) && !bridge.Authorized(r) {
+		via = "bridge-refused"
+		http.NotFound(rec, r)
+		return
+	}
 	if s.front != nil {
 		gated := s.front.Gate(rec, r)
 		if gated == nil {
