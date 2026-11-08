@@ -1,0 +1,17 @@
+{
+ "docs": [
+  {"file": "forms.yaml", "submit": [
+   {"user": "alice", "values": {"header1": null, "cluster": {"id": "user-workspace"}, "clusters": [{"name": "c1", "type": "managed-cluster"}, {"name": "c2", "user": "bob"}, {"type": "x"}], "store": {"name": "b1", "user": "carol"}, "skipme": "gone", "expr": "${{ inputs.mode }}", "advanced": {"threads": 8, "hidden": "h"}, "a": "A", "b": true, "inner": "x", "deeper": "y", "envs": [{"key": "K", "secret": "S", "where": {"name": "w1"}}, "raw"], "plainlist": [{"name": "n"}], "wizard1": {"s1": "one", "s2": "two"}, "section": {"x": 1, "y": 2}, "extra": 5}},
+   {"user": "alice", "values": {"cluster": {"name": "solo"}, "store": {"name": "nouser"}, "envs": {"key": "K", "secret": "S"}}}
+  ]},
+  {"file": "dump.yaml"},
+  {"file": "../../../../../deploy/workflow.yaml", "submit": [{"user": "dana", "values": {}}]},
+  {"file": "../../../../../deploy/gufi-index.yaml"},
+  {"file": "../../../../../deploy/workflow-unmute.yaml"},
+  {"file": "../../../../../testdata/corpus/notes/solver.yaml"}
+ ],
+ "values": [
+  null, "plain", "", "multi\nline\n", 5, [1, "two", null], {}, [], {"a": {}}, [[]],
+  {"a": [{"b": [{"c": "d"}]}]}, ["- x", "x: y", "  "], {"k": "\n"}, "\n\ntrail\n\n"
+ ]
+}

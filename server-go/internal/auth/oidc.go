@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/parallelworks/activate-studio/server-go/internal/apierr"
 	"github.com/parallelworks/activate-studio/server-go/internal/config"
 )
 
@@ -270,11 +271,8 @@ func failurePage(w http.ResponseWriter, status int, message string) {
 		`<p><a href="%s">Sign in again</a></p></body></html>`, html.EscapeString(message), LoginPath)
 }
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(v)
-}
+// writeJSON is apierr.JSON: Fastify's bytes, with no trailing newline.
+func writeJSON(w http.ResponseWriter, status int, v any) { apierr.JSON(w, status, v) }
 
 type tokenResponse struct {
 	AccessToken      string   `json:"access_token"`

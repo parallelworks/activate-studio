@@ -40,6 +40,11 @@ const NODE_DIRECT = new Map([
   // tests (TestGoldenStreamMatchesNode drives these routes of Node and of Go
   // against one fake gateway) and the unit tests named.
   ['aiFeatures.test.mjs', 'server-go/internal/chat (TestAIOffAnswersWithoutAModel)'],
+  // The MCP tests' Node app has no chat bridge for the tools still in Node,
+  // and the board test's tasks live in the test's own Node process; the Go
+  // server's task board is its own.
+  ['mcp.test.mjs', 'server-go/internal/chat (TestGoldenRAGMatchesNode)'],
+  ['board.test.mjs', 'server-go/internal/chat (TestMCPTaskBearer), internal/tasks (TestBoardOverTheBridge, TestBoardBridgeWithNode)'],
   ['bulkDelete.test.mjs', 'server-go/internal/conversations (TestBulkDeleteOwnAndUnownedOnly)'],
   ['endpointOptions.test.mjs', 'server-go/internal/modelkeys, internal/llm; internal/chat (TestModelKeyWithSignInOff)'],
   ['gufiCommands.test.mjs', 'server-go/internal/chat (TestGoldenStreamMatchesNode)'],
@@ -48,6 +53,19 @@ const NODE_DIRECT = new Map([
   ['standaloneChat.test.mjs', 'server-go/internal/chat (TestGoldenStreamMatchesNode, TestCitationsMatchNode)'],
   ['toolApproval.test.mjs', 'server-go/internal/chat (TestHeldCallsAskThenRunOnce, TestToolCatalogMatchesNode)'],
   ['unansweredTurn.test.mjs', 'server-go/internal/conversations (TestUnansweredWhileAReplyStreams)'],
+  // Its two clusters are stood in with setRemoteSpawn in the test's own
+  // process; internal/search runs its cases with a stand-in Spawn.
+  ['libraryScope.test.mjs', 'server-go/internal/search (TestScopeAcrossUserLibraries)'],
+  // The user library tests stand the remote systems in with setRemoteSpawn
+  // and setSshLocal, functions in the test's own process that the Go
+  // server's sessions cannot reach. internal/userlibs runs their cases with
+  // a stand-in Spawn of the same kind.
+  ['sshLibraries.test.mjs', 'server-go/internal/userlibs (TestSSHConnectionTestStepByStep, TestSSHFailingStepsSayWhatToChange, TestSSHLibraryAddListRefreshRemove, TestSignInKeepsSSHOut)'],
+  ['pwLibraries.test.mjs', 'server-go/internal/userlibs (TestPwLibraryOverPwSSH)'],
+  ['remoteBuild.test.mjs', 'server-go/internal/userlibs (TestRemoteBuildCheckAndBuild)'],
+  ['restrictedRemote.test.mjs', 'server-go/internal/userlibs (TestQueryOnlyHost)'],
+  ['sshOptions.test.mjs', 'server-go/internal/userlibs (TestSSHOptionsChange)'],
+  ['libraryMaps.test.mjs', 'server-go/internal/userlibs (TestQueryOnlyHost); the maps of remote libraries stay in Node'],
 ])
 const direct = NODE_DIRECT.has(path.basename(process.argv[1] ?? ''))
 // The ports the Go servers take; another test process may hold one.
@@ -176,6 +194,12 @@ function parseCookies(setCookie) {
 
 function install(app) {
   if (direct) return app
+  // Every test app answers the bridge the Go routes ask (src/frontBridge.ts),
+  // loaded when the app starts, after the test has set its environment.
+  app.register(async a => {
+    const { frontBridgeRoutes } = await import(new URL('../dist/frontBridge.js', import.meta.url).href)
+    await frontBridgeRoutes(a)
+  })
   if (STRICT) {
     app.addHook('onRequest', async (req, reply) => {
       const key = `${req.method === 'HEAD' ? 'GET' : req.method} ${req.routeOptions?.url ?? ''}`

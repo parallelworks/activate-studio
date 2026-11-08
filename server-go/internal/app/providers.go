@@ -38,10 +38,31 @@ type Providers struct {
 	// track. Default: PW_API_KEY, else OPENAI_API_KEY (no shared key or CLI
 	// credential until the chat track lands).
 	GatewayKey func() string
+	// PersonalCred is credentials.ts's resolveUserCred(sub), for work that
+	// goes on without a request (a remote build followed in the
+	// background): the user's key and its base URL, ok false for none. A
+	// cookieHeader rehydrates the session first, as main.ts's onRequest hook
+	// does. Owner: chat track. Default: nil, none known.
+	PersonalCred func(sub, cookieHeader string) (key, baseURL string, ok bool)
 	// InvalidateMCP is mcpClient.ts's invalidateRemote(), after a settings
 	// write. Owner: chat track. Node rereads its MCP status when the
 	// settings file changes (mcpClient.ts), so the default does nothing.
 	InvalidateMCP func()
+	// ConversationNote is conversations.ts's appendConversationNote: a note
+	// added to a conversation (the run watcher's, runs.ts), false when the
+	// conversation is not stored. Owner: chat track. Default: nothing is
+	// stored, false.
+	ConversationNote func(conversationID, content string) bool
+	// TaskBoard is tasks.ts's task board for a task token's MCP calls
+	// (mcp.ts's taskByToken and runBoardTool): tool "" asks whether the
+	// token names a task; otherwise the board tool runs on args and out is
+	// its answer. Owner: platform track (tasks). Default nil: the tokens
+	// are Node's, and /api/mcp hands a request with a bearer to Node.
+	TaskBoard func(token, agent, tool string, args json.RawMessage) (found bool, out json.RawMessage)
+	// TaskToolNames is mcp.ts's taskToolNames(): the tools a task agent's
+	// pw code session pre-approves. Owner: chat track. Default nil (ask
+	// Node).
+	TaskToolNames func() []string
 	// StopRagEndpoint is ragEndpoint.ts's stopRagEndpoint(), when the RAG
 	// proxy is turned off. Owner: platform track. Node: POST
 	// /api/rag/endpoint/stop. Node-free: nothing runs, so nothing.
@@ -107,7 +128,8 @@ func defaultProviders(a *App) Providers {
 			}
 			return os.Getenv("OPENAI_API_KEY")
 		},
-		InvalidateMCP: func() {},
+		InvalidateMCP:    func() {},
+		ConversationNote: func(string, string) bool { return false },
 		GufiLogInfo: func() any {
 			// gufiLog.ts: LOG_DIR/gufi-commands.log, LOG_DIR being
 			// STUDIO_DATA_DIR/logs, else INDEX_BASE/logs (indexLog.ts).

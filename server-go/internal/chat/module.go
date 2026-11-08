@@ -21,31 +21,25 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/llm"
 	"github.com/parallelworks/activate-studio/server-go/internal/mcpclient"
 	"github.com/parallelworks/activate-studio/server-go/internal/modelkeys"
+	"github.com/parallelworks/activate-studio/server-go/internal/platform"
 	"github.com/parallelworks/activate-studio/server-go/internal/reqbody"
 	"github.com/parallelworks/activate-studio/server-go/internal/settings"
+	"github.com/parallelworks/activate-studio/server-go/internal/workflows"
 )
 
 // KeyHeader carries the viewer's personal key, sealed, on each request
 // passed to Node while Node still reads keys (credentials.ts mirrorFromGo).
 const KeyHeader = "X-Studio-Model-Key"
 
-// NotePath is where Node sends a conversation note while Go writes
-// conversations.json (conversations.ts appendConversationNote).
-const NotePath = "/internal/go-chat/note"
-
 func init() {
 	bridge.RegisterPrivatePrefix("/internal/go-chat/")
 	// What the Node the Go server spawns is told the Go server has taken:
-	// the keys where the front verifies identity, the conversations file
-	// wherever Go knows the viewer.
+	// the keys where the front verifies identity.
 	bridge.RegisterNodeEnv("chat", func(string) map[string]string {
 		out := map[string]string{}
 		if m := Default; m != nil {
 			if m.A.Cfg.AuthEnabled() && m.A.Cfg.FrontAuth {
 				out["STUDIO_GO_MODEL_KEYS"] = "1"
-			}
-			if m.known() {
-				out["STUDIO_GO_CONVERSATIONS"] = "1"
 			}
 		}
 		return out
@@ -66,6 +60,7 @@ type Module struct {
 	MCP    remoteTools
 	mcp    *mcpclient.Client
 	Plat   Platform
+	pf     *platform.Platform
 	held   *heldStore
 	prompt promptCache
 
@@ -74,6 +69,7 @@ type Module struct {
 
 	listings *listingCache
 	noCap    *noTokenCap
+	rag      *ragState
 }
 
 // Default is the registered module.
@@ -87,7 +83,8 @@ func New(a *app.App) *Module {
 	m.Ext = extensions.New(a.Cfg.IndexBase, a.Cfg.ProjectRoot, a.Cfg.KBRoot)
 	m.mcp = mcpclient.New(func() []json.RawMessage { return m.eff().McpServers })
 	m.MCP = remoteTools{m.mcp}
-	m.Plat = accessPlatform{m}
+	m.pf = platform.Of(a)
+	m.Plat = m.pf
 	m.held = newHeldStore(a.Cfg.IndexBase)
 	m.Keys = modelkeys.New(a.Cfg.IndexBase, a.Cfg.AuthEnabled)
 	m.LLM = llm.New(m.gatewayBase, m.GatewayKey)
@@ -109,6 +106,7 @@ func New(a *app.App) *Module {
 	})
 	m.listings = newListingCache()
 	m.noCap = loadNoTokenCap(a.Cfg.IndexBase)
+	m.rag = newRagState(m)
 	return m
 }
 
@@ -252,13 +250,37 @@ func Register(mux *http.ServeMux, a *app.App) {
 	h("GET /api/chat/tool-options", m.toolOptions)
 	h("GET /api/settings/mcp-servers", m.mcpServers)
 	h("POST /api/kb/label-suggestions", m.labelSuggestionsRoute)
+	h("GET /api/rag/calls", m.ragCalls)
+	h("GET /api/runs", m.runsRoute)
+	h("GET /v1/models", m.v1Models)
+	h("POST /v1/chat/completions", m.v1Completions)
+	h("POST /api/mcp", m.mcpPost)
+	h("GET /api/mcp", m.mcpGet)
 	m.attachmentRoutes(h)
 
 	a.Providers.GatewayConfigured = func(r *http.Request) bool { return m.GatewayKey() != "" }
 	a.Providers.GatewayKey = m.GatewayKey
-	// The MCP listing is kept here and, while Node runs, in Node too: a
-	// settings save drops both (the bridge's changed op tells Node).
-	a.Providers.InvalidateMCP = func() { a.Providers.Changed(context.Background(), "mcp") }
+	a.Providers.PersonalCred = func(sub, cookieHeader string) (string, string, bool) {
+		if sub != "" && cookieHeader != "" {
+			m.Keys.Hydrate(sub, cookieHeader)
+		}
+		c := m.Keys.Resolve(sub)
+		if c == nil {
+			return "", "", false
+		}
+		base := ""
+		if c.BaseURL != nil {
+			base = *c.BaseURL
+		}
+		return c.Key, base, true
+	}
+	a.Providers.TaskToolNames = m.TaskToolNames
+	// The MCP listing is Go's. Node's, which only its RAG proxy and /api/mcp
+	// still read, drops itself when the saved server list changes
+	// (mcpClient.ts) and otherwise expires within a minute, so Node is not
+	// told.
+	a.Providers.InvalidateMCP = m.mcp.Invalidate
+	a.Providers.ConversationNote = m.Conv.AppendNote
 	changed := a.Providers.Changed
 	a.Providers.Changed = func(ctx context.Context, what ...string) {
 		for _, w := range what {
@@ -294,20 +316,6 @@ func Register(mux *http.ServeMux, a *app.App) {
 		}
 	})
 
-	// TRANSITIONAL: conversations.json has one writer. Where Go serves the
-	// conversation routes, the note Node's run watcher adds (runs.ts) is
-	// written here (credentials.ts-style env tells the Node Go spawns).
-	h("POST "+NotePath, func(w http.ResponseWriter, r *http.Request) error {
-		if !bridge.Authorized(r) {
-			return apierr.New(404, "not found")
-		}
-		b, err := reqbody.Read(r)
-		if err != nil {
-			return err
-		}
-		return reqbody.OK(w, reqbody.O("ok", m.Conv.AppendNote(b.Str("conversationId"), b.Str("content"))))
-	})
-
 	a.OnStart("chat: personal key vault scrub", func(context.Context) {
 		a.Log.Info("personal key vault scrub", "removed", m.Keys.ScrubPersonal())
 	})
@@ -332,4 +340,15 @@ func Register(mux *http.ServeMux, a *app.App) {
 func (m *Module) toNode(w http.ResponseWriter, r *http.Request, why string) {
 	m.A.Log.Info("chat: to node", "path", r.URL.Path, "why", why)
 	m.A.Node().ServeHTTP(w, app.HandOff(r, why))
+}
+
+// runsRoute is GET /api/runs: the workflow runs the assistant launched,
+// newest first, from the platform track's run registry.
+func (m *Module) runsRoute(w http.ResponseWriter, r *http.Request) error {
+	wf := workflows.Current()
+	if wf == nil {
+		m.toNode(w, r, "no run registry here")
+		return nil
+	}
+	return reqbody.OK(w, reqbody.O("runs", wf.Runs.List(60)))
 }

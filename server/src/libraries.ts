@@ -134,6 +134,12 @@ const FILE = path.join(INDEX_BASE, 'libraries.json')
 const ID_RE = /^[a-z0-9][a-z0-9_-]{0,39}$/
 
 let added: LibraryDef[] | null = null
+let addedStamp = ''
+/** A file's size, modification time and inode: the Go server writes these
+ *  files too, so each is read again when it has changed on disk. */
+function stampOf(file: string): string {
+  try { const st = fs.statSync(file); return `${st.size}:${st.mtimeMs}:${st.ino}` } catch { return 'none' }
+}
 /** When each tree was last probed, in this process: a probe younger than
  *  PROBE_TTL_MS is not repeated. */
 let probeCache = new Map<string, { caps: LibraryCaps; at: number }>()
@@ -159,6 +165,7 @@ export interface KnownCaps {
 }
 const CAPS_FILE = path.join(INDEX_BASE, 'library-caps.json')
 let known: Map<string, KnownCaps> | null = null
+let knownStamp = ''
 const probing = new Map<string, Promise<LibraryCaps>>()
 /** Each tree's changes, as staleProbe marks them: a count that began
  *  before one is not taken, and the tree is counted again. */
@@ -166,7 +173,9 @@ const generation = new Map<string, number>()
 const counting = new Set<string>()
 
 function knownCapsMap(): Map<string, KnownCaps> {
-  if (known) return known
+  const stamp = stampOf(CAPS_FILE)
+  if (known && stamp === knownStamp) return known
+  knownStamp = stamp
   known = new Map()
   try {
     const raw = JSON.parse(fs.readFileSync(CAPS_FILE, 'utf8')) as Record<string, KnownCaps>
@@ -189,6 +198,7 @@ function saveKnownCaps(): void {
     const tmp = `${CAPS_FILE}.${process.pid}.tmp`
     fs.writeFileSync(tmp, JSON.stringify(Object.fromEntries(knownCapsMap()), null, 1))
     fs.renameSync(tmp, CAPS_FILE)
+    knownStamp = stampOf(CAPS_FILE)
   } catch (e) { console.warn(`library capabilities not saved: ${(e as Error).message}`) }
 }
 
@@ -230,7 +240,9 @@ function capsOf(abs: string, fallback: () => LibraryCaps): LibraryCaps {
 }
 
 function loadAdded(): LibraryDef[] {
-  if (added) return added
+  const stamp = stampOf(FILE)
+  if (added && stamp === addedStamp) return added
+  addedStamp = stamp
   try {
     const raw = JSON.parse(fs.readFileSync(FILE, 'utf8')) as unknown
     added = Array.isArray(raw) ? raw.filter(isDef) : []
@@ -241,7 +253,12 @@ function loadAdded(): LibraryDef[] {
 function saveAdded(defs: LibraryDef[]): void {
   added = defs
   fs.mkdirSync(path.dirname(FILE), { recursive: true })
-  fs.writeFileSync(FILE, JSON.stringify(defs, null, 2))
+  // Through a temporary file renamed over the old one, so the Go server
+  // never reads half a list.
+  const tmp = `${FILE}.${process.pid}.tmp`
+  fs.writeFileSync(tmp, JSON.stringify(defs, null, 2))
+  fs.renameSync(tmp, FILE)
+  addedStamp = stampOf(FILE)
 }
 
 function isDef(x: unknown): x is LibraryDef {

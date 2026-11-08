@@ -135,9 +135,17 @@ export function cpuCount(): number {
 export const MAX_THREADS = 256
 
 let cache: { libraries: Record<string, Saved> } | null = null
+let cacheStamp = ''
+/** Size, modification time and inode: the Go server writes this file too,
+ *  so it is read again when it has changed on disk. */
+function stampOf(): string {
+  try { const st = fs.statSync(FILE); return `${st.size}:${st.mtimeMs}:${st.ino}` } catch { return 'none' }
+}
 
 function load(): { libraries: Record<string, Saved> } {
-  if (cache) return cache
+  const stamp = stampOf()
+  if (cache && stamp === cacheStamp) return cache
+  cacheStamp = stamp
   try {
     const raw = JSON.parse(fs.readFileSync(FILE, 'utf8')) as { libraries?: Record<string, Saved> }
     cache = { libraries: raw && typeof raw.libraries === 'object' && raw.libraries ? raw.libraries : {} }
@@ -180,8 +188,20 @@ export async function forgetIndexSettings(library: string): Promise<void> {
   if (library === 'kb' || !load().libraries[library]) return
   const { [library]: _gone, ...rest } = load().libraries
   const all = { libraries: rest }
-  await fsp.writeFile(FILE, JSON.stringify(all, null, 1))
+  await writeFile(all)
   cache = all
+}
+
+/** Through a temporary file renamed over the old one, so a reader in the
+ *  other server never sees half a file. */
+let tmpSeq = 0
+async function writeFile(all: { libraries: Record<string, Saved> }): Promise<void> {
+  // Written and renamed in one step, with a name of its own, so two saves
+  // at once never rename each other's file.
+  const tmp = `${FILE}.${process.pid}.${++tmpSeq}.tmp`
+  fs.writeFileSync(tmp, JSON.stringify(all, null, 1))
+  fs.renameSync(tmp, FILE)
+  cacheStamp = stampOf()
 }
 
 /** Checked and saved; returns the settings now in force. */
@@ -234,7 +254,7 @@ export async function saveIndexSettings(library: string, body: Partial<Record<ke
   }
   const all = { libraries: { ...load().libraries, [library]: next } }
   await fsp.mkdir(path.dirname(FILE), { recursive: true })
-  await fsp.writeFile(FILE, JSON.stringify(all, null, 1))
+  await writeFile(all)
   cache = all
   return indexSettings(library)
 }

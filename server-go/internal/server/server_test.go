@@ -128,11 +128,12 @@ func TestProxyToNode(t *testing.T) {
 		t.Fatalf("host and forwarded-for: %s", body)
 	}
 	// Node's routes outside /api win over a static file of the same name.
-	_, body = get(t, f.URL+"/v1/models")
-	if !strings.Contains(body, `"node":"GET /v1/models"`) {
-		t.Fatalf("manifest: %s", body)
+	// (/v1/models and /v1/chat/completions are Go's; the rest of /v1 is not.)
+	_, body = get(t, f.URL+"/v1/embeddings")
+	if !strings.Contains(body, `"node":"GET /v1/embeddings"`) {
+		t.Fatalf("/v1 path: %s", body)
 	}
-	res2, err := http.Post(f.URL+"/v1/chat/completions", "application/json", strings.NewReader(`{"x":1}`))
+	res2, err := http.Post(f.URL+"/v1/embeddings", "application/json", strings.NewReader(`{"x":1}`))
 	if err != nil {
 		t.Fatal(err)
 	}

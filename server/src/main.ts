@@ -32,6 +32,7 @@ import { settingsRoutes } from './settings.js'
 import { setupRoutes } from './setup.js'
 import { chatRoutes } from './chat/routes.js'
 import { mcpRoutes } from './mcp.js'
+import { frontBridgeRoutes, goOwnsPlatform } from './frontBridge.js'
 import { taskRoutes } from './tasks.js'
 import { ragProxyRoutes } from './ragProxy.js'
 import { maybeAutoStart, ragEndpointRoutes } from './ragEndpoint.js'
@@ -136,6 +137,7 @@ await app.register(chatRoutes)
 await app.register(mcpRoutes)
 await app.register(taskRoutes)
 await app.register(fleetRoutes)
+await app.register(frontBridgeRoutes)
 
 // A brand-new deployment opens on a corpus with some shape rather than an
 // empty tree; only ever runs when the knowledge base has nothing in it.
@@ -174,15 +176,18 @@ await app.listen({ host: HOST, port: PORT })
 
 // Runs the assistant launched before the last restart are followed again,
 // so their end still reaches the conversations that asked for them.
+// With the Go server owning the platform track (frontBridge.ts), it
+// follows runs, ticks the fleet and registers the RAG endpoint; this
+// server does none of it, or both would.
 setRunsLog(msg => app.log.info(msg))
-startFleet(msg => app.log.info(msg))
+if (!goOwnsPlatform()) startFleet(msg => app.log.info(msg))
 // An automatic update waits until no answer is streaming and nothing is indexing.
 setUpdateBusyCheck(() => streamsInFlight() > 0 || indexStatus().running || indexJobsRunning())
 // Behind the Go server (STUDIO_BEHIND_GO=1, which it sets when it starts
 // Node), the Go server owns the update routes and the check: two checkers
 // would race to install. The busy state goes to it in /api/index/status.
 if (process.env.STUDIO_BEHIND_GO !== '1') startUpdates(msg => app.log.info(msg))
-{
+if (!goOwnsPlatform()) {
   const n = watchRegisteredRuns()
   if (n) app.log.info(`following ${n} workflow run(s) registered before this start`)
 }
@@ -233,7 +238,7 @@ process.on('uncaughtException', err => {
   app.log.error({ err }, 'uncaught exception; the deployment stays up')
 })
 
-maybeAutoStart(msg => app.log.info(msg))
+if (!goOwnsPlatform()) maybeAutoStart(msg => app.log.info(msg))
 app.log.info(`kb root: ${KB_ROOT}`)
 app.log.info(`gufi index: ${gufiAvailable() ? 'available' : 'NOT BUILT (run indexer/reindex.sh)'}`)
 app.log.info(`gateway: ${gatewayConfigured() ? 'configured' : 'PW_API_KEY NOT SET; chat disabled'}`)
