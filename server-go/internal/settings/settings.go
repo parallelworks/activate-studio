@@ -16,9 +16,12 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/parallelworks/activate-studio/server-go/internal/jsonobj"
 )
 
 // Store is one settings file.
@@ -34,6 +37,8 @@ type Store struct {
 	mu    sync.Mutex
 	stamp string
 	saved map[string]json.RawMessage
+	// obj is saved with the file's key order.
+	obj *jsonobj.Object
 }
 
 // Open is the settings of indexBase. lookup is os.LookupEnv in the server
@@ -68,49 +73,43 @@ func (s *Store) Saved() map[string]json.RawMessage {
 	}
 	b, err := os.ReadFile(s.file)
 	var m map[string]json.RawMessage
+	var o *jsonobj.Object
 	if err == nil {
 		err = json.Unmarshal(b, &m)
+	}
+	if err == nil {
+		o, err = jsonobj.Parse(b)
 	}
 	if err != nil || m == nil {
 		// Half written or unreadable: keep the last good read, else nothing.
 		if stamp != "none" && s.saved != nil {
 			return s.saved
 		}
-		m = map[string]json.RawMessage{}
+		m, o = map[string]json.RawMessage{}, jsonobj.New()
 	}
-	s.saved, s.stamp = m, stamp
+	s.saved, s.obj, s.stamp = m, o, stamp
 	return m
 }
 
-// Update saves patch over the saved settings, keeping the rest (settings.ts
-// updateSettings). A nil value removes the key, as undefined does in JSON.
-func (s *Store) Update(patch map[string]any) error {
-	cur := s.Saved()
-	next := make(map[string]json.RawMessage, len(cur)+len(patch))
-	for k, v := range cur {
-		next[k] = v
+// SavedObject is the saved settings in the file's key order, a copy the
+// caller may change and hand to WriteObject (PUT /api/settings's next).
+func (s *Store) SavedObject() *jsonobj.Object {
+	s.Saved()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.obj == nil {
+		return jsonobj.New()
 	}
-	for k, v := range patch {
-		if v == nil {
-			delete(next, k)
-			continue
-		}
-		b, err := json.Marshal(v)
-		if err != nil {
-			return err
-		}
-		next[k] = b
-	}
-	return s.write(next)
+	return s.obj.Clone()
 }
 
-func (s *Store) write(next map[string]json.RawMessage) error {
+// WriteObject writes the settings whole, as writeSettingsFile does:
+// JSON.stringify(next, null, 1), to a temporary file renamed over the old.
+func (s *Store) WriteObject(next *jsonobj.Object) error {
 	if err := os.MkdirAll(filepath.Dir(s.file), 0o755); err != nil {
 		return err
 	}
-	// JSON.stringify(next, null, 1) keeps insertion order; Go sorts keys.
-	// Either reads back the same.
-	b, err := json.MarshalIndent(next, "", " ")
+	b, err := next.Indent(" ")
 	if err != nil {
 		return err
 	}
@@ -122,10 +121,32 @@ func (s *Store) write(next map[string]json.RawMessage) error {
 		os.Remove(tmp)
 		return err
 	}
+	m := map[string]json.RawMessage{}
+	for _, k := range next.Keys() {
+		m[k] = next.Get(k)
+	}
 	s.mu.Lock()
-	s.saved, s.stamp = next, stampOf(s.file)
+	s.saved, s.obj, s.stamp = m, next.Clone(), stampOf(s.file)
 	s.mu.Unlock()
 	return nil
+}
+
+// Update saves patch over the saved settings, keeping the rest and the
+// file's key order (settings.ts updateSettings). A nil value removes the
+// key, as undefined does in JSON.
+func (s *Store) Update(patch map[string]any) error {
+	next := s.SavedObject()
+	keys := make([]string, 0, len(patch))
+	for k := range patch {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		if err := next.SetValue(k, patch[k]); err != nil {
+			return err
+		}
+	}
+	return s.WriteObject(next)
 }
 
 // field decodes one saved value into v. A value of another type than the
