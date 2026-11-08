@@ -1,17 +1,15 @@
 import crypto from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
-import { gufiAvailable } from '../config.js'
 import { executeTool } from './tools.js'
-import { buildContext } from '../ragProxy.js'
 
 /**
  * TRANSITIONAL: the chat tools for the Go server in front. The Go server
  * runs POST /api/chat/stream, the tool catalog, the system prompt and the
- * calls held for approval (internal/chat), the RAG proxy (/v1) and
- * /api/mcp; the tools not ported yet and the RAG proxy's retrieval still
- * run here, in tools.ts and ragProxy.ts. Each op is one of the calls the
- * Node route made in-process, with the same inputs. It goes away with the
- * tools' and library search's port; nothing else belongs here.
+ * calls held for approval (internal/chat), the RAG proxy (/v1),
+ * /api/mcp and the corpus tools search_kb, list_kb_dir and list_libraries;
+ * the tools not ported yet still run here, in tools.ts. The one op is the
+ * call the Node route made in-process, with the same inputs. It goes away
+ * with the tools' port; nothing else belongs here.
  *
  * Only a request carrying STUDIO_BRIDGE_SECRET is answered, and the Go
  * server refuses /internal/go/ from clients.
@@ -33,14 +31,6 @@ async function op(name: string, b: Body, req: any): Promise<unknown> {
     // A tool not ported to Go yet.
     case 'execute':
       return executeTool(String(b.name), String(b.args ?? ''), b.ctx ?? {})
-    // The RAG proxy's retrieval (ragProxy.ts buildContext), which needs
-    // library search: available is gufiAvailable(), context the blocks or
-    // null when nothing matched.
-    case 'ragContext': {
-      if (!gufiAvailable()) return { available: false, context: null }
-      const tags = Array.isArray(b.tags) ? b.tags.map(String) : []
-      return { available: true, context: await buildContext(String(b.query ?? ''), Number(b.topK) || 1, tags) }
-    }
   }
   throw new Error(`unknown op ${name}`)
 }
