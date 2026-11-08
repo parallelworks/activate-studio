@@ -1,0 +1,102 @@
+{
+ "files": [
+  "@config/studio.env",
+  "branding/icon-0123456789abcdef.png",
+  "conversations.json",
+  "credentials.enc",
+  "extensions/agents/default.md",
+  "libraries/lib1/labels.json",
+  "settings.json",
+  "tasks/t.json",
+  "users/u1/notes/a.txt",
+  "users/u1/prefs.json"
+ ],
+ "formatBefore": 1,
+ "first": "marked",
+ "marker": {
+  "format": 1,
+  "writtenBy": "v1"
+ },
+ "again": "ok",
+ "snapshot": {
+  "from": "v1",
+  "to": "v2",
+  "reason": "update",
+  "format": 1,
+  "files": [
+   "@config/studio.env",
+   "branding/icon-0123456789abcdef.png",
+   "conversations.json",
+   "credentials.enc",
+   "extensions/agents/default.md",
+   "libraries/lib1/labels.json",
+   "settings.json",
+   "state-format.json",
+   "tasks/t.json",
+   "users/u1/notes/a.txt",
+   "users/u1/prefs.json"
+  ],
+  "idShape": true
+ },
+ "snapshotFiles": [
+  "@config",
+  "@config/studio.env",
+  "branding",
+  "branding/icon-0123456789abcdef.png",
+  "conversations.json",
+  "credentials.enc",
+  "extensions",
+  "extensions/agents",
+  "extensions/agents/default.md",
+  "libraries",
+  "libraries/lib1",
+  "libraries/lib1/labels.json",
+  "settings.json",
+  "state-format.json",
+  "tasks",
+  "tasks/t.json",
+  "users",
+  "users/u1",
+  "users/u1/notes",
+  "users/u1/notes/a.txt",
+  "users/u1/prefs.json"
+ ],
+ "formatNewer": 2,
+ "downgrade": "restored",
+ "log": [
+  "state: format 2 is newer than this version reads; the snapshot taken <at> (before v1 changed to v2) was put back"
+ ],
+ "after": [
+  "@config/studio.env",
+  "branding/icon-0123456789abcdef.png",
+  "conversations.json",
+  "credentials.enc",
+  "extensions/agents/default.md",
+  "libraries/lib1/labels.json",
+  "settings.json",
+  "state-format.json",
+  "tasks/t.json",
+  "users/u1/notes/a.txt",
+  "users/u1/prefs.json"
+ ],
+ "settings": "{\n  \"appName\": \"Old\",\n  \"theme\": \"dark\",\n  \"updates\": {\n    \"check\": false,\n    \"channel\": \"preview\"\n  }\n}\n",
+ "config": "KB_ROOT='/kb'\n",
+ "markerAfter": 1,
+ "snapshots": [
+  {
+   "from": "v1",
+   "to": "v1",
+   "reason": "replaced by the snapshot of <at>",
+   "format": 2,
+   "files": 11
+  },
+  {
+   "from": "v1",
+   "to": "v2",
+   "reason": "update",
+   "format": 1,
+   "files": 11
+  }
+ ],
+ "unreadable": "unreadable"
+}

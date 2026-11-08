@@ -1,0 +1,20 @@
+The .xls files in this directory are from Apache POI
+(https://github.com/apache/poi, test-data/spreadsheet), unchanged:
+1904DateWindowing.xls, DateFormats.xls, SharedFormulaTest.xls,
+testArraysAndTables.xls, testEXCEL_95.xls.
+
+Apache POI
+Copyright 2003-2026 The Apache Software Foundation
+
+This product includes software developed at
+The Apache Software Foundation (https://www.apache.org/).
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use these files except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.

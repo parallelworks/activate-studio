@@ -14,6 +14,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/parallelworks/activate-studio/server-go/internal/apierr"
+	"github.com/parallelworks/activate-studio/server-go/internal/app"
 	"github.com/parallelworks/activate-studio/server-go/internal/auth"
 	"github.com/parallelworks/activate-studio/server-go/internal/config"
 )
@@ -34,17 +36,33 @@ type Server struct {
 	// front verifies identity and hands it to Node (docs/GO-PORT.md,
 	// Stage 1); nil passes identity headers through to Node unchanged.
 	front *auth.Front
+	// App is the process every module shares (internal/app).
+	App *app.App
+	// unported answers 501 for a Node route no Go package serves, in
+	// Node-free mode (cfg.NodeOff).
+	unported *http.ServeMux
 }
 
-// New makes the handler. node is the Node server's base URL, or nil;
-// front is the identity front, or nil.
+// New makes the handler with a new App. node is the Node server's base
+// URL, or nil; front is the identity front, or nil.
 func New(cfg config.Config, log *slog.Logger, node *url.URL, front *auth.Front) *Server {
-	s := &Server{cfg: cfg, log: log, ported: http.NewServeMux(), static: newCompressCache(), front: front}
+	var n *app.Node
+	if node != nil {
+		n = app.NewNode(node, front, cfg.Auth.Header)
+	}
+	return NewWithApp(cfg, log, app.New(cfg, log, nil, n), node, front)
+}
+
+// NewWithApp makes the handler for an App made by the caller (main.go).
+func NewWithApp(cfg config.Config, log *slog.Logger, a *app.App, node *url.URL, front *auth.Front) *Server {
+	s := &Server{cfg: cfg, log: log, ported: http.NewServeMux(), static: newCompressCache(), front: front, App: a}
 	go s.static.warm(cfg.WebDist)
 	if node != nil {
 		s.node = newProxy(node, log, front)
+		a.SetNodeHandler(s.node)
 	}
 	s.routes()
+	s.unported = s.unportedMux()
 	return s
 }
 
@@ -57,6 +75,84 @@ func (s *Server) routes() {
 		// front verified.
 		s.front.Routes(s.ported)
 	}
+	registerTracks(s.ported, s.App)
+}
+
+// Unported is every Node route no Go package serves, as "METHOD pattern".
+func (s *Server) Unported() []string {
+	var out []string
+	for _, r := range nodeRoutes {
+		if !s.Serves(r.method, r.pattern) {
+			out = append(out, r.method+" "+r.pattern)
+		}
+	}
+	return out
+}
+
+// Ported is every Node route a Go package serves, as "METHOD pattern".
+func (s *Server) Ported() []string {
+	var out []string
+	for _, r := range nodeRoutes {
+		if s.Serves(r.method, r.pattern) {
+			out = append(out, r.method+" "+r.pattern)
+		}
+	}
+	return out
+}
+
+// Serves reports whether a Go handler answers method on a path the
+// pattern stands for (each {name} filled with a sample value).
+func (s *Server) Serves(method, pattern string) bool {
+	p := samplePath(pattern)
+	r, err := http.NewRequest(method, p, nil)
+	if err != nil {
+		return false
+	}
+	_, got := s.ported.Handler(r)
+	return got != ""
+}
+
+// samplePath fills a pattern's wildcards: {rest...} with a/b, {x} with x1.
+func samplePath(pattern string) string {
+	var b strings.Builder
+	for i := 0; i < len(pattern); i++ {
+		if pattern[i] != '{' {
+			b.WriteByte(pattern[i])
+			continue
+		}
+		j := strings.IndexByte(pattern[i:], '}')
+		name := pattern[i+1 : i+j]
+		if strings.HasSuffix(name, "...") {
+			b.WriteString("a/b")
+		} else {
+			b.WriteString(name + "1")
+		}
+		i += j
+	}
+	return b.String()
+}
+
+// unportedMux answers 501 for the Node routes no Go package serves, in
+// Node-free mode; nil otherwise.
+func (s *Server) unportedMux() *http.ServeMux {
+	if !s.cfg.NodeOff {
+		return nil
+	}
+	m := http.NewServeMux()
+	seen := map[string]bool{}
+	for _, r := range nodeRoutes {
+		key := r.method + " " + r.pattern
+		if seen[key] || s.Serves(r.method, r.pattern) {
+			continue
+		}
+		seen[key] = true
+		file := r.file
+		m.HandleFunc(key, func(w http.ResponseWriter, req *http.Request) {
+			s.log.Warn("unported route", "method", req.Method, "path", req.URL.Path, "route", key, "node", file)
+			apierr.JSON(w, http.StatusNotImplemented, map[string]string{"error": key + " is not ported to the Go server yet (" + file + "), and this server runs without Node (STUDIO_NODE=off)"})
+		})
+	}
+	return m
 }
 
 // healthz answers as routes.ts does: {ok, gufi}.
@@ -99,6 +195,12 @@ func (s *Server) dispatch(w http.ResponseWriter, r *http.Request) string {
 	if _, pattern := s.ported.Handler(r); pattern != "" {
 		s.ported.ServeHTTP(w, r)
 		return "go"
+	}
+	if s.unported != nil {
+		if _, pattern := s.unported.Handler(r); pattern != "" {
+			s.unported.ServeHTTP(w, r)
+			return "unported"
+		}
 	}
 	p := r.URL.Path
 	toNode := strings.HasPrefix(p, "/api/") || p == "/api"
