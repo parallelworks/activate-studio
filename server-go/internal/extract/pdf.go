@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"strings"
 
 	"github.com/giraffesyo/downmark"
 	"github.com/giraffesyo/downmark/all"
@@ -89,8 +90,9 @@ func (x *Extractor) Downmark(ctx context.Context, path string) (entry string, wa
 var errTooLarge = errors.New("exceeds the converter's input limit")
 
 // pdfText is enrich.py's extract_pdf for a PDF downmark did not convert:
-// pdftotext -layout where installed and allowed, then the OCR of a thin
-// text layer. enrich.py's last resort, pypdf, has no counterpart here.
+// pdftotext -layout where installed and allowed, then, where that gave
+// nothing, the PDF reader downmark is built on, in pypdf's place, then the
+// OCR of a thin text layer.
 func (x *Extractor) pdfText(ctx context.Context, path string) string {
 	text := ""
 	if x.tools.Pdftotext != "" && (x.opt.PDFReader == "auto" || x.opt.PDFReader == "pdftotext") {
@@ -103,7 +105,57 @@ func (x *Extractor) pdfText(ctx context.Context, path string) string {
 		}
 		cancel()
 	}
+	if pytext.Strip(text) == "" && (x.opt.PDFReader == "auto" || x.opt.PDFReader == "pypdf") {
+		text = readerText(ctx, path)
+	}
 	return x.ocrIfThin(ctx, path, text)
+}
+
+// readerPages is how many pages readerText reads at a time, so that it can
+// stop at the text limit or its time without reading the rest.
+const readerPages = 32
+
+// readerText is a PDF's text layer by github.com/giraffesyo/pdf, page by
+// page in reading order, with no input size limit: enrich.py's pypdf step,
+// which reads the PDFs downmark leaves (those over its 64 MB input limit
+// among them) where there is no pdftotext. Like that step it stops past
+// MaxText characters or after pdftotext's timeout, keeping the pages read.
+func readerText(ctx context.Context, path string) string {
+	f, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	st, err := f.Stat()
+	if err != nil {
+		return ""
+	}
+	ctx, cancel := context.WithTimeout(ctx, pdftotextTimeout)
+	defer cancel()
+	var parts []string
+	size := 0
+	for first, total := 1, -1; total < 0 || first <= total; first += readerPages {
+		var doc *gpdf.Document
+		err := guard(func() error {
+			var err error
+			doc, err = gpdf.ExtractWithOptions(ctx, f, st.Size(), gpdf.Options{
+				Pages: []gpdf.PageRange{{First: first, Last: first + readerPages - 1}}, Concurrency: 1})
+			return err
+		})
+		if err != nil || doc == nil {
+			break
+		}
+		total = doc.PageCount
+		for _, p := range doc.Pages {
+			t := p.Text()
+			parts = append(parts, t)
+			size += pytext.Len(t)
+		}
+		if size > MaxText || ctx.Err() != nil || len(doc.Pages) == 0 {
+			break
+		}
+	}
+	return strings.Join(parts, "\n")
 }
 
 // PDFPageCount is a PDF's page count by the PDF reader downmark uses.

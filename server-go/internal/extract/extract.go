@@ -115,9 +115,10 @@ type Options struct {
 	// NoDocuments leaves PDFs and Office documents unread: they index by
 	// name. Images are still read (enrich.py's --no-documents).
 	NoDocuments bool
-	// PDFReader is how a PDF downmark cannot open is read: "auto" or
-	// "pdftotext" (pdftotext where installed), or "pypdf", for which
-	// there is no reader here, so such a PDF has no text.
+	// PDFReader is how a PDF downmark did not convert is read, as
+	// enrich.py's --pdf-reader: "auto" (pdftotext where installed, then
+	// the built-in reader), "pdftotext" (pdftotext only) or "pypdf" (the
+	// built-in reader only, which stands in for pypdf).
 	PDFReader string
 	// Soffice is LibreOffice's soffice, for a legacy file the readers
 	// here get nothing from; empty for none.

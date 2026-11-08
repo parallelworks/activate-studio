@@ -555,3 +555,23 @@ func TestWindowsLineEnds(t *testing.T) {
 		t.Fatal("a reused entry was rewritten")
 	}
 }
+
+// TestReaderText: with no pdftotext, a PDF downmark did not convert is
+// read by the built-in reader, as enrich.py reads it with pypdf, unless
+// --pdf-reader pdftotext asks for pdftotext only.
+func TestReaderText(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "a.pdf")
+	put(t, p, pdfDoc("first page words", "second page words"))
+	x := newX(t, Options{})
+	got := x.pdfText(context.Background(), p)
+	if !strings.Contains(got, "first page words") || !strings.Contains(got, "second page words") {
+		t.Fatalf("auto: %q", got)
+	}
+	if got := newX(t, Options{PDFReader: "pdftotext"}).pdfText(context.Background(), p); got != "" {
+		t.Fatalf("pdftotext only: %q", got)
+	}
+	if got := newX(t, Options{PDFReader: "pypdf"}).pdfText(context.Background(), p); !strings.Contains(got, "second page words") {
+		t.Fatalf("pypdf: %q", got)
+	}
+}

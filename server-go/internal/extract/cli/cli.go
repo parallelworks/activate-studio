@@ -47,7 +47,7 @@ func Main(args []string, stdout, stderr io.Writer) int {
 	progress := fs.Bool("progress", false, "print @progress lines on stdout")
 	noOCR := fs.Bool("no-ocr", false, "do not run tesseract on images or scanned PDFs")
 	noDocs := fs.Bool("no-documents", false, "leave PDFs and Office documents unread (indexed by name)")
-	pdfReader := fs.String("pdf-reader", "auto", "how a PDF downmark cannot open is read: auto, pdftotext, or pypdf (no reader here)")
+	pdfReader := fs.String("pdf-reader", "auto", "how a PDF downmark did not convert is read: auto, pdftotext, or pypdf (the built-in reader)")
 	soffice := fs.String("soffice", "", "LibreOffice's soffice, for a legacy file the readers here get nothing from")
 	extractors := fs.String("extractors", "", "a JSON file of contributed extractors (default: $STUDIO_EXTRACTORS, else INDEX_BASE/extractors.json if present)")
 	report := fs.String("report", "", "also write the summary to this JSON file")
