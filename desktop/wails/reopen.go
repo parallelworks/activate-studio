@@ -17,6 +17,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -52,23 +53,30 @@ func (a *App) shellChanged() bool {
 	return shellChangedFrom("/proc/self/exe", a.installedShell())
 }
 
-// shellChangedFrom: the program running (self, which stat follows to the
-// running file even once it was deleted) is not the file the install holds
-// at inst. Where both can be stat'ed the file decides, whatever its
-// content: an update replaces the whole tree, and a window still running
-// the replaced file (renamed beside the app, or deleted) keeps that copy in
-// use and has to be reopened, even when the new file is byte for byte the
-// same. Elsewhere (no /proc) the contents are compared.
+// shellChangedFrom: the program running (self, /proc/self/exe) is not the
+// file the install holds at inst. The kernel names the running file where it
+// is now: an update moves the whole tree beside the app, so a window still
+// running the replaced file is named there, or "(deleted)" once that copy
+// is removed; it keeps the copy in use and has to be reopened, even when the
+// new file is byte for byte the same. (Device and inode would say the same,
+// but overlayfs, as in containers, reports other numbers for a running
+// program than for its path.) Without /proc the contents are compared.
 func shellChangedFrom(self, inst string) bool {
 	if inst == "" {
 		return false
 	}
-	ist, err := os.Stat(inst)
+	real, err := filepath.EvalSymlinks(inst)
 	if err != nil {
 		return false
 	}
-	if sst, err := os.Stat(self); err == nil {
-		return !os.SameFile(sst, ist)
+	if link, err := os.Readlink(self); err == nil {
+		if strings.HasSuffix(link, " (deleted)") {
+			return true
+		}
+		if r, err := filepath.EvalSymlinks(link); err == nil {
+			link = r
+		}
+		return link != real
 	}
 	now, was := fileHash(inst), fileHash(self)
 	return now != "" && was != "" && now != was
