@@ -2409,6 +2409,7 @@ button.status-row:hover { background: var(--pw-hover-row); }
 .details-index { display: flex; align-items: center; gap: 4px; min-width: 0; }
 .details-index { align-items: flex-start; }
 .details-index code { min-width: 0; font-size: 12px; overflow-wrap: anywhere; word-break: normal; }
+.details-index .path-part { white-space: nowrap; }
 /* The type bars line up whatever their sizes read. */
 .details-track { flex: none; width: calc(100% - 72px); }
 .details-note { margin: 0; padding: 0 6px 4px; font-size: 13px; color: var(--pw-muted); }

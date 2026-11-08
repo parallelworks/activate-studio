@@ -177,8 +177,11 @@ function Uncounted({ state, d }: { state: DetailsState; d: EntryDetails }) {
   )
 }
 
-/** A path that wraps after its slashes, and inside a part only when one
- *  part is wider than the card. */
+/** A path that wraps after its slashes. A part short enough to fit the
+ *  card is kept whole (a browser would otherwise also break it after a
+ *  hyphen); a longer one may still break anywhere. */
 export function breakAtSlashes(path: string): ReactNode {
-  return path.split('/').map((part, i) => <Fragment key={i}>{i > 0 && <>/<wbr /></>}{part}</Fragment>)
+  return path.split('/').map((part, i) => (
+    <Fragment key={i}>{i > 0 && <>/<wbr /></>}{part.length <= 32 ? <span className="path-part">{part}</span> : part}</Fragment>
+  ))
 }
