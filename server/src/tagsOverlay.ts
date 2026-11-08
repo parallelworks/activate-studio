@@ -86,14 +86,29 @@ function migrate(raw: unknown): OverlayFile {
   return out
 }
 
+/** Size, modification time and inode of the file: the Go server writes it
+ *  too, so a change there is read again (as settings.json is). */
+let stamp = ''
+function stampOf(): string {
+  try { const st = fs.statSync(FILE); return `${st.size}:${st.mtimeMs}:${st.ino}` } catch { return 'none' }
+}
+
 function load(): OverlayFile {
-  if (cache) return cache
-  try { cache = migrate(JSON.parse(fs.readFileSync(FILE, 'utf8'))) } catch { cache = { version: 2, entries: {} } }
+  const now = stampOf()
+  if (cache && now === stamp) return cache
+  stamp = now
+  try { cache = migrate(JSON.parse(fs.readFileSync(FILE, 'utf8'))) } catch { cache = cache ?? { version: 2, entries: {} } }
   return cache!
 }
 
+/** Written to a temporary file renamed over the old one, so a reader (this
+ *  process or the Go server) never sees half of it. */
 function persist(): void {
-  fs.writeFileSync(FILE, JSON.stringify(load(), null, 1))
+  const data = JSON.stringify(cache ?? load(), null, 1)
+  const tmp = `${FILE}.${process.pid}.tmp`
+  fs.writeFileSync(tmp, data)
+  fs.renameSync(tmp, FILE)
+  stamp = stampOf()
 }
 
 export function overlayGet(rel: string): string[] | null {

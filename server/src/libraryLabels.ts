@@ -32,9 +32,18 @@ const PRUNE_EVERY_MS = 10 * 60_000
 
 const clean = (rel: string) => String(rel ?? '').replace(/^\/+|\/+$/g, '')
 
+/** Each store's file stamp (size, modification time, inode): the Go server
+ *  writes these files too, so a change there is read again. */
+const stamps = new Map<string, string>()
+function stampOf(id: string): string {
+  try { const st = fs.statSync(labelsFile(id)); return `${st.size}:${st.mtimeMs}:${st.ino}` } catch { return 'none' }
+}
+
 function load(id: string): Store {
   const have = stores.get(id)
-  if (have) return have
+  const now = stampOf(id)
+  if (have && stamps.get(id) === now) return have
+  stamps.set(id, now)
   let store: Store = { version: 1, indexRoot: '', entries: {} }
   try {
     const raw = JSON.parse(fs.readFileSync(labelsFile(id), 'utf8')) as Store
@@ -48,8 +57,9 @@ function persist(id: string): void {
   const file = labelsFile(id)
   fs.mkdirSync(path.dirname(file), { recursive: true })
   const tmp = `${file}.${process.pid}.tmp`
-  fs.writeFileSync(tmp, JSON.stringify(load(id), null, 1))
+  fs.writeFileSync(tmp, JSON.stringify(stores.get(id) ?? load(id), null, 1))
   fs.renameSync(tmp, file)
+  stamps.set(id, stampOf(id))
 }
 
 /** A label set for one path in a library; an empty set removes the entry.
@@ -172,6 +182,7 @@ export function libraryLabelsForIndexRoot(root: string): { dirTags: Map<string, 
 /** Forget a library's labels, as it is removed. */
 export function forgetLibraryLabels(id: string): void {
   stores.delete(id)
+  stamps.delete(id)
   pruned.delete(id)
   fs.rmSync(labelsFile(id), { force: true })
   fs.rmSync(`${labelsFile(id)}.bak`, { force: true })
@@ -182,5 +193,6 @@ onLibraryRemoved(forgetLibraryLabels)
 /** For tests: drop what is held in memory. */
 export function resetLibraryLabelsForTests(): void {
   stores.clear()
+  stamps.clear()
   pruned.clear()
 }

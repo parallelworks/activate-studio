@@ -268,8 +268,13 @@ func newProxy(target *url.URL, log *slog.Logger, front *auth.Front) *httputil.Re
 			pr.Out.Host = pr.In.Host
 			pr.SetXForwarded()
 			// Only the Go server's own value calls (app.Node.Do, which go
-			// to Node directly) carry this; a client's is dropped.
+			// to Node directly) and marked hand-offs carry this; a
+			// client's is dropped.
 			pr.Out.Header.Del(app.InternalHeader)
+			// A Go route's deliberate hand-off (app.HandOff) is marked.
+			if _, ok := app.IsHandOff(pr.In); ok {
+				pr.Out.Header.Set(app.InternalHeader, "1")
+			}
 			if front != nil {
 				front.ToNode(pr.Out, auth.UserOf(pr.In))
 			}
