@@ -34,6 +34,20 @@ const NODE_DIRECT = new Map([
   ['updates.test.mjs', 'server-go/internal/updates (TestMacInstallKickstartsTheAgent, TestDetachedRunLoopRestartsWith76, TestRefusals, TestRollbackAndAutoSkips, TestAutoInstallWaitsForIdle, TestCloneAndHosted, TestOfflineIsNotAnError)'],
   ['updateChannels.test.mjs', 'server-go/internal/updates (TestChannelsPickerAndMoveToStable, TestStateNewerFormatNeedsSnapshot, TestRequiresRelaunch)'],
   ['updatesLinux.test.mjs', 'server-go/internal/updates (TestLinuxGoPayloadInstalls, TestLinuxPackageInstallsDoNotUpdate)'],
+  // The chat tests build their own app (no chat bridge) and script the
+  // gateway through globalThis.fetch or inject a user; the Go server calls
+  // the gateway itself. Their cases run against Go in internal/chat's golden
+  // tests (TestGoldenStreamMatchesNode drives these routes of Node and of Go
+  // against one fake gateway) and the unit tests named.
+  ['aiFeatures.test.mjs', 'server-go/internal/chat (TestAIOffAnswersWithoutAModel)'],
+  ['bulkDelete.test.mjs', 'server-go/internal/conversations (TestBulkDeleteOwnAndUnownedOnly)'],
+  ['endpointOptions.test.mjs', 'server-go/internal/modelkeys, internal/llm; internal/chat (TestModelKeyWithSignInOff)'],
+  ['gufiCommands.test.mjs', 'server-go/internal/chat (TestGoldenStreamMatchesNode)'],
+  ['modelsListingCache.test.mjs', 'server-go/internal/chat (TestModelListingIsCached)'],
+  ['offline.test.mjs', 'server-go/internal/chat (TestNoCredentialIsASentence), internal/llm'],
+  ['standaloneChat.test.mjs', 'server-go/internal/chat (TestGoldenStreamMatchesNode, TestCitationsMatchNode)'],
+  ['toolApproval.test.mjs', 'server-go/internal/chat (TestGoldenStreamMatchesNode); approvals stay in Node behind the chat bridge'],
+  ['unansweredTurn.test.mjs', 'server-go/internal/conversations (TestUnansweredWhileAReplyStreams)'],
 ])
 const direct = NODE_DIRECT.has(path.basename(process.argv[1] ?? ''))
 // The ports the Go servers take; another test process may hold one.
