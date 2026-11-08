@@ -212,6 +212,10 @@ Runner overhead: on the 200,000-file test index a canned query took 198.5 and 20
 
 Routes that could move to Go next at low risk, all read-only over files Go already reads or with no state of their own: `GET /api/version`, `/api/help`, `/api/changelog`, `/api/brand-icon`, `/api/favicon`, `/manifest.webmanifest`, `/api/kb/model`, `/api/index/log`, and the saved queries (`GET` and `POST /api/query/saved`, `DELETE /api/query/saved/:id`; one JSON file Node reads on every request). `POST /api/query/sql` needs only the plans above for the main library but the library list for the rest, so it waits for step 6. `/api/config` reads most of the server's state and is better left to the end of step 2.
 
+## The Node bridge (transitional)
+
+While Go fronts Node, `internal/bridge` is the one channel between them. A ported module that needs state Node still owns, or that Node needs from Go, calls the other side with the bridge secret in `X-Studio-Bridge-Secret` (`bridge.Sign`, `bridge.Authorized`). The Go server makes the secret at start, or takes `STUDIO_BRIDGE_SECRET` (the test harness sets it), and passes it with `STUDIO_FRONT_URL` to the Node it spawns. Modules add the variables that tell a spawned Node which work Go has taken over with `bridge.RegisterNodeEnv`, and mark their bridge paths with `bridge.RegisterPrivatePrefix`; the server answers 404 on those paths to any request without the secret, before sign-in. Nothing here is used in Node-free mode, and the package is removed with Node.
+
 ## Subcommands
 
 `studio-server <name> args...` runs the binary as a helper in place of the server. Work that loads native code or can crash, such as extraction (`extract`) and the ONNX embedder (`embed`, `embed-query`), runs this way as a child of the server, so a failure there cannot take the server down. Each subcommand registers itself from its own file in `cmd/studio-server` (`sub_<name>.go`, an `init` calling `registerSubcommand`); `studio-server help-subcommands` lists them.

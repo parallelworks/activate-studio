@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/parallelworks/activate-studio/server-go/internal/bridge"
 	"log/slog"
 	"net"
 	"net/http"
@@ -106,6 +107,9 @@ func run() int {
 			return 2
 		}
 	case cfg.NodeSpawn:
+		// Modules ported to Go add what the Node behind them needs to know
+		// (the bridge secret, the Go server's URL, the work Go has taken over).
+		nodeEnv = bridge.NodeEnv(nodeEnv, "http://127.0.0.1:"+strconv.Itoa(cfg.Port))
 		if proc, err = nodeproc.Start(ctx, log, cfg.NodeBin, cfg.NodeMain, 90*time.Second, nodeEnv); err != nil {
 			log.Error("node", "err", err.Error())
 			return 1
