@@ -339,14 +339,14 @@ func (ix *Indexer) register(mux *http.ServeMux) {
 		return writeOK(w, j)
 	}))
 
-	// A job of Node's: a library's build, which runs in Node until the
-	// libraries track's builds run here.
+	// A job of Node's: with Node beside, library builds are Node's (the
+	// libraries track serves them in Go only Node-free), so their job ids
+	// are answered there.
 	nodeJob := func(w http.ResponseWriter, r *http.Request) bool {
 		id := jobID(r)
 		if ix.App.NodeFree() || id < 0 || id >= NodeJobIDs {
 			return false
 		}
-		// TODO(internal/libraries): hand-off until library builds run in Go.
 		ix.App.Node().ServeHTTP(w, app.HandOff(r, "an index job of Node's"))
 		return true
 	}

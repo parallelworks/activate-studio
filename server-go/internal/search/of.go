@@ -38,6 +38,7 @@ func Of(a *app.App) *Engine {
 		GufiBin: cfg.GufiBin, GufiIndex: cfg.GufiIndex, KBRoot: cfg.KBRoot, IndexBase: cfg.IndexBase,
 		Pool: pool, Remote: runners, Embed: &QueryEmbedder{Dir: dir, Q: q}, Getenv: os.Getenv,
 		SearchEngine: func() string { return a.Settings.Effective().SearchEngine }, Log: a.Log,
+		VtURL: func() string { return SelfVtURL(cfg.Host, cfg.Port) },
 	}
 	if kb.Default != nil {
 		e.Tags = kb.Default.Tags

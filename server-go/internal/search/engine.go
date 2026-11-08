@@ -54,6 +54,9 @@ type Engine struct {
 	// "gufi_vt" or the default.
 	SearchEngine func() string
 	Log          *slog.Logger
+	// VtURL is where gufi_vt's remote command reaches this server
+	// (/internal/gufi-vt).
+	VtURL func() string
 }
 
 func (e *Engine) env(k string) string {

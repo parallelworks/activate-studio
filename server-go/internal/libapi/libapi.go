@@ -85,6 +85,10 @@ func Register(mux *http.ServeMux, a *app.App) {
 	mux.HandleFunc("GET /api/kb/details", h(s.details))
 	mux.HandleFunc("GET /api/kb/topology", h(s.topology))
 	mux.HandleFunc("GET /api/libraries/{id}/topology", h(s.topology))
+	// gufi_vt's remote command reaches the server here (gufiVt.ts): a
+	// location's gufi_query, run on its host. Go's own: the locations it
+	// answers for are those of the Go server's statements.
+	mux.HandleFunc("POST /internal/gufi-vt", s.Engine.ServeGufiVt)
 	mux.HandleFunc("POST /api/query", h(s.query))
 	mux.HandleFunc("POST /api/query/sql", h(s.querySQL))
 	mux.HandleFunc("GET /api/query/saved", h(s.savedList))
