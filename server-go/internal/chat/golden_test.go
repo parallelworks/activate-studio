@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/http/httputil"
 	"net/url"
 	"os"
 	"os/exec"
@@ -185,6 +186,8 @@ func startGolden(t *testing.T) *goldenEnv {
 	})
 	u, _ := url.Parse(nodeURL)
 	a := app.New(cfg, slog.New(slog.DiscardHandler), nil, app.NewNode(u, nil, ""))
+	// A route's hand-off reaches the same Node.
+	a.SetNodeHandler(httputil.NewSingleHostReverseProxy(u))
 	mux := http.NewServeMux()
 	kbpkg.Register(mux, a)
 	Register(mux, a)

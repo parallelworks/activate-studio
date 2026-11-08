@@ -47,6 +47,16 @@ type Providers struct {
 	// conversation is not stored. Owner: chat track. Default: nothing is
 	// stored, false.
 	ConversationNote func(conversationID, content string) bool
+	// TaskBoard is tasks.ts's task board for a task token's MCP calls
+	// (mcp.ts's taskByToken and runBoardTool): tool "" asks whether the
+	// token names a task; otherwise the board tool runs on args and out is
+	// its answer. Owner: platform track (tasks). Default nil: the tokens
+	// are Node's, and /api/mcp hands a request with a bearer to Node.
+	TaskBoard func(token, agent, tool string, args json.RawMessage) (found bool, out json.RawMessage)
+	// TaskToolNames is mcp.ts's taskToolNames(): the tools a task agent's
+	// pw code session pre-approves. Owner: chat track. Default nil (ask
+	// Node).
+	TaskToolNames func() []string
 	// StopRagEndpoint is ragEndpoint.ts's stopRagEndpoint(), when the RAG
 	// proxy is turned off. Owner: platform track. Node: POST
 	// /api/rag/endpoint/stop. Node-free: nothing runs, so nothing.

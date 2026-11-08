@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/gufi"
@@ -193,12 +192,12 @@ func (f *FileLabels) overlayAtPath() []overlayEntry {
 		if err != nil {
 			continue
 		}
-		sys, ok := st.Sys().(*syscall.Stat_t)
+		inode, ok := inodeOf(st)
 		ino := key
 		if i := strings.IndexByte(key, '.'); i >= 0 {
 			ino = key[i+1:]
 		}
-		if ok && strconv.FormatUint(uint64(sys.Ino), 10) == ino {
+		if ok && strconv.FormatUint(inode, 10) == ino {
 			out = append(out, e)
 		}
 	}

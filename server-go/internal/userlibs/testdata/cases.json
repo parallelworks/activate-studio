@@ -1,0 +1,106 @@
+{
+ "keyValues": [
+  "source=ok\nsource_real=/home/me/proj\nindex=create\nindex_at=/home/me\npython=/usr/bin/python3\npython_version=3.12\n",
+  "a=1\nA=2\n=3\nb_c= spaced value \nb_c=later\nnoequals\n x=1\nd=e=f",
+  ""
+ ],
+ "statuses": [
+  "state=missing\n",
+  "phase=index\ndirs=42\n",
+  "phase=index\ndirs=\n",
+  "phase=extract\nstate=gone\nlog=line one line two \n",
+  "phase=done\nexit=0\n__MANIFEST__\n{\"index\":\"/home/me/idx/proj\",\"directories\":3,\"files\":7,\"fullText\":true}\n",
+  "phase=done\nexit=0\n__MANIFEST__\n{\"index\": \"/x\", broken",
+  "phase=embed\nexit=2\nerror=embed.py failed: out of memory \n",
+  "phase=\nexit=x1\n"
+ ],
+ "manifests": [
+  {},
+  {"vectors": true},
+  {"vectors": true, "embed": {"chunks": 10}, "vectorRows": 0},
+  {"vectors": true, "embed": {"chunks": "3"}, "vectorRows": 5},
+  {"vectors": false},
+  {"depth": "text", "textWhy": "no Python 3.10 or later"},
+  {"depth": "text", "text": {"documents": {".docx": {"files": 4, "noText": 1}, ".pdf": {"files": 9, "noText": 3}, ".xlsx": {"files": 2, "noText": 0}}, "pdfReader": "pdftotext"}},
+  {"depth": "ocr", "text": {"documents": {".pdf": {"files": 9, "noText": 1}}, "pdfReader": "pypdf", "ocr": true}},
+  {"depth": "ocr", "text": {"documents": {".pdf": {"files": 9, "noText": 1200}}}},
+  {"depth": "ocr", "text": {"documents": {".pdf": {"files": 9, "noText": 2}}, "pdfReader": "pdftotext"}},
+  {"depth": "meaning-documents", "vectorsWhy": "no embedding model there"},
+  {"depth": "meaning-documents", "vectors": false, "embed": {"firstError": "model not found"}},
+  {"depth": "meaning-documents", "vectors": false},
+  {"depth": "meaning-full", "vectors": true, "pdfWords": 10, "pdfVectors": 7, "embed": {"chunks": 20, "errors": 1, "firstError": "a table could not be written"}},
+  {"depth": "meaning-full", "vectors": true, "pdfWords": 3, "pdfVectors": 3, "embed": {"chunks": 20, "errors": 2}},
+  {"depth": "meaning-full", "vectors": true, "pdfWords": 4, "pdfVectors": 3, "embed": {"chunks": 20}}
+ ],
+ "dests": [
+  {"destination": "me@box"},
+  {"destination": " me@box:2222 "},
+  {"destination": "me@box:2222", "port": "2200"},
+  {"destination": "me@box", "port": 22},
+  {"destination": "me@box", "port": "22"},
+  {"destination": "me@box", "port": ""},
+  {"destination": "me@box", "port": 0},
+  {"destination": "me@box", "port": 70000},
+  {"destination": "me@box", "port": 22.5},
+  {"destination": "me@box", "port": "abc"},
+  {"destination": "-oProxyCommand=sh"},
+  {"destination": ""},
+  {"destination": "me@box", "sshOptions": "-J me@jump"},
+  {"destination": "me@box", "sshOptions": ["-J", "me@jump"]},
+  {"destination": "me@box", "sshOptions": "-o ProxyCommand=sh"},
+  {"destination": "me@box", "port": 2222, "sshOptions": "-p 2200"},
+  {"destination": "me@box", "port": true}
+ ],
+ "sshSpecs": [
+  {"destination": "me@box", "indexRoot": "~/idx/proj", "sourceRoot": "~/proj", "gufiBin": "/opt/gufi/bin/"},
+  {"destination": "me@box"},
+  {"destination": "me@box", "indexRoot": "relative/path"},
+  {"destination": "me@box", "indexRoot": "/a/../b"},
+  {"destination": "me@box", "indexRoot": "/"},
+  {"destination": "me@box", "indexRoot": "~"},
+  {"destination": "me@box", "indexRoot": "/idx///"},
+  {"destination": "me@box", "indexRoot": "/idx\nx"},
+  {"destination": "me@box", "indexRoot": "/idx", "gufiBin": "bin"},
+  {"destination": "me@box", "indexRoot": "/idx", "sourceRoot": "~user/x"},
+  {"destination": "me@box", "indexRoot": 42}
+ ],
+ "pwSpecs": [
+  {"cluster": "my-cluster", "indexRoot": "/scratch/idx", "sourceRoot": "~/data"},
+  {"cluster": "-bad", "indexRoot": "/x"},
+  {"cluster": "", "indexRoot": "/x"},
+  {"cluster": "ok"},
+  {"cluster": " spaced ", "indexRoot": "/x", "gufiBin": "~/gufi/bin"}
+ ],
+ "advice": [
+  {"message": "me@box: spawn ssh ENOENT", "destination": "me@box", "port": null},
+  {"message": "me@box: me@box: Permission denied (publickey,password).", "destination": "me@box", "port": null},
+  {"message": "me@box: Host key verification failed.", "destination": "me@box", "port": null},
+  {"message": "me@box: ssh: Could not resolve hostname box: Name or service not known", "destination": "me@box", "port": null},
+  {"message": "me@box: ssh: connect to host box port 2222: Connection refused", "destination": "me@box", "port": 2222},
+  {"message": "me@box: ssh: connect to host box port 22: Connection refused", "destination": "me@box", "port": null},
+  {"message": "me@box: the command did not finish in 45 s", "destination": "me@box", "port": null},
+  {"message": "me@box: bash: bash: not found", "destination": "me@box", "port": null},
+  {"message": "me@box:2222: something else", "destination": "me@box", "port": 2222},
+  {"message": "exit 1", "destination": "me@box", "port": null}
+ ],
+ "indexDirs": [
+  ["/home/me", "/home/me/proj"],
+  ["/home/me/", "/data/my project (1)"],
+  ["/home/me", "/"],
+  ["/root", "/a/very-long-folder-name-that-goes-on-and-on-and-on-past-sixty-characters-for-sure"],
+  ["/home/me", "/data/café"]
+ ],
+ "logs": [
+  "noise\nSTUDIO_INDEX_BEGIN\n{\"index\":\"~/idx\",\"files\":3}\nSTUDIO_INDEX_END\nmore",
+  "STUDIO_INDEX_BEGIN\nnot json\nSTUDIO_INDEX_END",
+  "nothing here",
+  "STUDIO_INDEX_BEGIN  \n{\"a\":1}\n   STUDIO_INDEX_END"
+ ],
+ "defs": [
+  {"id": "u-old", "label": "old", "site": "cluster-a", "resource": "pw://jdoe/cluster-a", "sourceDir": "$WORKDIR", "sourceRoot": null, "indexRoot": null, "gufiBin": null, "state": "building", "run": {"slug": "abc", "mode": "build", "startedAt": "2026-01-01T00:00:00.000Z", "checkedAt": "2026-01-01T00:01:00.000Z"}, "error": null, "builtAt": null, "directories": null, "files": null, "scheduler": {"partition": "gpu"}},
+  {"id": "u-box-proj", "label": "Remote project", "transport": "ssh", "site": "me@box", "destination": "me@box", "port": 2222, "sshOptions": ["-J", "me@jump", "-o", "ServerAliveInterval=5"], "os": "Linux", "gufiVersion": "0.6.9", "resource": "ssh://me@box:2222", "sourceDir": "/home/me/proj", "sourceRoot": "/home/me/proj", "indexRoot": "/home/me/idx/proj", "gufiBin": "/opt/gufi/bin", "state": "ready", "run": null, "error": null, "builtAt": "2026-01-01T00:00:00.000Z", "directories": 2, "files": 3, "scheduler": null, "fullText": true, "vectors": false, "indexFormat": {"format": "older", "rolledUp": true}, "readThrough": {"destination": "me@other", "port": 2200, "sshOptions": ["-J", "me@jump"], "root": "/mirror"}},
+  {"id": "u-cl-docs", "label": "docs", "transport": "pw", "existing": false, "site": "cl", "destination": null, "port": null, "resource": "cl", "sourceDir": "/home/me/docs", "sourceRoot": null, "indexRoot": null, "gufiBin": null, "state": "building", "run": null, "error": null, "builtAt": null, "directories": null, "files": null, "scheduler": null, "build": {"id": "u-cl-docs-abc", "indexDir": "/home/me/.activate-studio/indexes/docs-1234", "sourceRoot": "/home/me/docs", "gufiBin": "/opt/gufi/bin", "python": "/usr/bin/python3", "model": null, "startedAt": "2026-01-01T00:00:00.000Z", "depth": "text", "progress": {"phase": "Indexing folders", "done": 12, "total": 0, "current": "12 folders"}}, "builtDepth": "names", "gaps": ["1 PDF has no text"], "job": 1048577},
+  {"id": "u-cl-idx", "label": "idx", "transport": "pw", "existing": true, "site": "cl", "resource": "cl", "sourceDir": "", "sourceRoot": null, "indexRoot": "/scratch/idx", "gufiBin": "", "shell": false, "state": "ready", "run": null, "error": "it failed", "builtAt": "2026-01-01T00:00:00.000Z", "directories": 0, "files": 0, "scheduler": null}
+ ],
+ "platforms": ["linux-x86_64-cp312", "macos-arm64-cp313", "linux-x86_64-cp39", "Linux-x86_64-cp312", "", "linux-x86_64-cp3"]
+}

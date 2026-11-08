@@ -19,7 +19,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/apierr"
@@ -244,7 +243,7 @@ func SocketDir(dirs []string, uid int) string {
 		if err != nil || !st.IsDir() || st.Mode()&os.ModeSymlink != 0 {
 			continue
 		}
-		if sys, ok := st.Sys().(*syscall.Stat_t); ok && int(sys.Uid) == uid && st.Mode().Perm() == 0o700 {
+		if ownedBy(st, uid) && st.Mode().Perm() == 0o700 {
 			return dir
 		}
 	}

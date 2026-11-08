@@ -1,7 +1,7 @@
 // The chat routes of server/dist, for internal/chat's golden tests.
 // node chat.mjs <repo> serve: a Fastify app with the chat routes, the
-//   conversation routes and the chat bridge (server/src/chat/goBridge.ts);
-//   prints its port. The environment names the gateway (a fake the test
+//   conversation routes, the RAG proxy (/v1), /api/mcp and the chat bridge
+//   (server/src/chat/goBridge.ts); prints its port. The environment names the gateway (a fake the test
 //   runs), INDEX_BASE, KB_ROOT and STUDIO_BRIDGE_SECRET.
 // node chat.mjs <repo> citations < cases.json: each case's pieces pushed
 //   through a CitationStream and flushed, the outputs in order.
@@ -85,12 +85,16 @@ if (op === 'citations') {
   const { chatRoutes } = await import(dist('chat/routes.js'))
   const { conversationRoutes } = await import(dist('conversations.js'))
   const { goChatBridgeRoutes } = await import(dist('chat/goBridge.js'))
+  const { ragProxyRoutes } = await import(dist('ragProxy.js'))
+  const { mcpRoutes } = await import(dist('mcp.js'))
   const { sanitizedErrorHandler } = await import(dist('routes.js'))
   const app = Fastify()
   app.setErrorHandler(sanitizedErrorHandler(app))
   await app.register(chatRoutes)
   await app.register(conversationRoutes)
   await app.register(goChatBridgeRoutes)
+  await app.register(ragProxyRoutes)
+  await app.register(mcpRoutes)
   await app.listen({ host: '127.0.0.1', port: 0 })
   console.log(app.server.address().port)
   // The test closes stdin when it is done.

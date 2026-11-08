@@ -94,11 +94,16 @@ export async function frontBridgeRoutes(app: FastifyInstance): Promise<void> {
     return { ok: true }
   } })
 
-  // A note in the conversation a finished run was launched from (runs.ts).
-  // What a task agent's session pre-approves (mcp.ts taskToolNames).
-  app.route({ method: 'GET', url: '/api/__bridge/task-tools', onRequest: guard, handler: async () => {
-    const { taskToolNames } = await import('./mcp.js')
-    return { tools: taskToolNames() }
+  // A library on another system that the Go server removed, or whose build
+  // there finished: what keeps something here per library (semanticMap.ts)
+  // is told, as userLibraries.ts tells it.
+  app.route({ method: 'POST', url: '/api/__bridge/user-library', onRequest: guard, handler: async req => {
+    const b = (req.body ?? {}) as { event?: unknown; root?: unknown }
+    const root = String(b.root ?? '')
+    if ((b.event !== 'removed' && b.event !== 'built') || !root.startsWith('remote:')) throw new KbError(400, 'event: removed or built, and a remote root')
+    const { tellUserLibrary } = await import('./userLibraries.js')
+    tellUserLibrary(b.event, root)
+    return { ok: true }
   } })
 
   // The personas a task agent can adopt (extensions.ts).
