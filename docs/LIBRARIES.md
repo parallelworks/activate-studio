@@ -280,12 +280,13 @@ stored with the library.
 
 The Go version of the Studio runs no Python there. Its connection test
 reads the system's platform with `uname` and offers text and meaning on
-Linux x86_64 and aarch64. The first build sends the Studio's helper
+Linux x86_64 and aarch64 and macOS arm64; another system gets names only,
+and the test says why. The first build sends the Studio's helper
 (`studio-remote`, about 25 MB, kept in `~/.activate-studio/go/<platform>-<digest>`),
 which runs the text pass (its own readers for PDF, Office and
 OpenDocument files, pdftotext and tesseract where the system has them)
 and the embedder, and for the meaning stops ONNX Runtime's library, taken
-from the pinned onnxruntime wheel, with `model.onnx` and `tokenizer.json`
+from the pinned onnxruntime wheel for that platform, with `model.onnx` and `tokenizer.json`
 (kept in `~/.activate-studio/embed/<platform>-<digest of the pins>`). Each
 is sent with a `SHA256SUMS` file, which the helper checks before the build
 uses the folder. The index, its reports and the files described below are

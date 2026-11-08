@@ -38,11 +38,12 @@ import (
 var helperPlatforms = map[string]string{
 	"Linux x86_64": "linux-amd64", "Linux amd64": "linux-amd64",
 	"Linux aarch64": "linux-arm64", "Linux arm64": "linux-arm64",
+	"Darwin arm64": "darwin-arm64",
 }
 
 // wheelPlatforms are the platforms of embed_deps.json's wheels whose
 // ONNX Runtime a helper platform loads.
-var wheelPlatforms = map[string]string{"linux-amd64": "linux-x86_64-", "linux-arm64": "linux-aarch64-"}
+var wheelPlatforms = map[string]string{"linux-amd64": "linux-x86_64-", "linux-arm64": "linux-aarch64-", "darwin-arm64": "macos-arm64-"}
 
 // helperPlatform is a system's platform as the helpers are named, "" for
 // one there is no helper for.
@@ -270,47 +271,57 @@ func (m *Module) have(ctx context.Context, p *jsonv.Object, local string) (strin
 }
 
 // ortLibrary is ONNX Runtime's library from the wheel, unpacked beside it
-// once: <wheel digest>-libonnxruntime.so.
-var ortMember = regexp.MustCompile(`^onnxruntime/capi/libonnxruntime\.so\.\d[\d.]*$`)
+// once: <wheel digest>-libonnxruntime.so (Linux) or .dylib (macOS).
+var ortMember = regexp.MustCompile(`^onnxruntime/capi/libonnxruntime(\.so\.\d[\d.]*|\.\d[\d.]*\.dylib)$`)
+
+// ortName is the library's name in a kit, by the wheel's member.
+func ortName(member string) string {
+	if strings.HasSuffix(member, ".dylib") {
+		return "libonnxruntime.dylib"
+	}
+	return "libonnxruntime.so"
+}
 
 func (m *Module) ortLibrary(wheel, wheelSHA string) (string, error) {
-	dest := filepath.Join(m.embedCache(), wheelSHA[:16]+"-libonnxruntime.so")
 	z, err := zip.OpenReader(wheel)
 	if err != nil {
 		return "", err
 	}
 	defer z.Close()
 	for _, f := range z.File {
-		if !ortMember.MatchString(f.Name) {
-			continue
+		if ortMember.MatchString(f.Name) {
+			return m.unpackORT(f, filepath.Join(m.embedCache(), wheelSHA[:16]+"-"+ortName(f.Name)))
 		}
-		if st, err := os.Stat(dest); err == nil && st.Size() == int64(f.UncompressedSize64) {
-			return dest, nil
-		}
-		r, err := f.Open()
-		if err != nil {
-			return "", err
-		}
-		defer r.Close()
-		if err := os.MkdirAll(m.embedCache(), 0o777); err != nil {
-			return "", err
-		}
-		tmp := dest + ".part"
-		out, err := os.Create(tmp)
-		if err != nil {
-			return "", err
-		}
-		_, err = io.Copy(out, r) // the zip reader checks the member's CRC-32
-		if cerr := out.Close(); err == nil {
-			err = cerr
-		}
-		if err != nil {
-			os.Remove(tmp)
-			return "", err
-		}
-		return dest, os.Rename(tmp, dest)
 	}
 	return "", fmt.Errorf("%s holds no ONNX Runtime library", filepath.Base(wheel))
+}
+
+func (m *Module) unpackORT(f *zip.File, dest string) (string, error) {
+	if st, err := os.Stat(dest); err == nil && st.Size() == int64(f.UncompressedSize64) {
+		return dest, nil
+	}
+	r, err := f.Open()
+	if err != nil {
+		return "", err
+	}
+	defer r.Close()
+	if err := os.MkdirAll(m.embedCache(), 0o777); err != nil {
+		return "", err
+	}
+	tmp := dest + ".part"
+	out, err := os.Create(tmp)
+	if err != nil {
+		return "", err
+	}
+	_, err = io.Copy(out, r) // the zip reader checks the member's CRC-32
+	if cerr := out.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		os.Remove(tmp)
+		return "", err
+	}
+	return dest, os.Rename(tmp, dest)
 }
 
 // embedKit is the kit's files for a platform, downloading and unpacking
@@ -328,7 +339,7 @@ func (m *Module) embedKit(ctx context.Context, platform string) ([]sendFile, err
 	if err != nil {
 		return nil, err
 	}
-	files := []sendFile{{Name: "libonnxruntime.so", Path: lib}}
+	files := []sendFile{{Name: ortName(lib), Path: lib}}
 	model := m.modelPins()
 	for _, k := range model.Keys() {
 		p, err := m.have(ctx, jsonv.Obj(get(model, k)), k)

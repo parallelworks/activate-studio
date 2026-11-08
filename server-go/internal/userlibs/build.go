@@ -245,7 +245,7 @@ func (m *Module) probeBuild(ctx context.Context, h probeHost, spec buildSpec) *p
 		add(step{Name: "extract", OK: true, Warn: true, Detail: fmt.Sprintf("This installation of the Studio has no helper for %s (%s, which server-go/scripts/build_remote.sh builds), so the index has names and metadata only.",
 			dest, plat)})
 	} else {
-		add(step{Name: "extract", OK: true, Warn: true, Detail: fmt.Sprintf("The Studio has no reader for %s (%s; it has them for Linux x86_64 and aarch64), so the index has names and metadata only.",
+		add(step{Name: "extract", OK: true, Warn: true, Detail: fmt.Sprintf("The Studio has no reader for %s (%s; it has them for Linux x86_64 and aarch64, and macOS arm64), so the index has names and metadata only.",
 			dest, or(strings.TrimSpace(kv["platform"]), "an unknown system"))})
 	}
 	p.OS = &c.OS
@@ -277,7 +277,7 @@ func (m *Module) meaningThere(platform string, embeds string, gguf *string) stri
 		return fmt.Sprintf("At a Meaning depth, embeddings are made with the Studio's model: the first build sends it with ONNX Runtime (about %s MB, once) to ~/.activate-studio/embed.",
 			jsonv.FormatNumber(m.embedMegabytes(platform)))
 	}
-	why := "There is no ONNX Runtime of the Studio's for this system (it has them for Linux x86_64 and aarch64)"
+	why := "There is no ONNX Runtime of the Studio's for this system (it has them for Linux x86_64 and aarch64, and macOS arm64)"
 	if gguf != nil {
 		return why + ", so at a Meaning depth embeddings are made with the GGUF model in ~/.activate-studio/models, which search does not read."
 	}

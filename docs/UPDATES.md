@@ -118,7 +118,7 @@ What the Go build carries, by platform (`STUDIO_SERVER=go-only`, the default, in
 | Part | Where | Notes |
 | --- | --- | --- |
 | `studio-server`, `semantic-map` | `app/bin/` | built without cgo; `studio-server` also runs `extract`, `embed`, `embed-query` and `routes` |
-| `studio-remote` for Linux x86_64 and aarch64 | `app/bin/remote/<platform>/` | built without cgo (`server-go/scripts/build_remote.sh`), about 25 MB each; sent to the systems libraries are built on; `app/indexer/embed_deps.json` pins what goes with it |
+| `studio-remote` for Linux x86_64 and aarch64 and macOS arm64 | `app/bin/remote/<platform>/` | built without cgo (`server-go/scripts/build_remote.sh`), about 25 MB each (33 MB for the three, compressed); sent to the systems libraries are built on; `app/indexer/embed_deps.json` pins what goes with it |
 | ONNX Runtime 1.31.0 | `app/lib/` | Microsoft's release archive at a pinned SHA-256; found beside `app/bin` and named in `STUDIO_ORT_LIB` |
 | MiniLM model and tokenizer | `models/minilm-l6/` | `indexer/fetch_embed.py --model`, pinned; no GGUF model |
 | STEP preview modules | `app/occt/` | `server-go/scripts/occt/build.sh`; separate LGPL files, named in `STUDIO_OCCT_WASM` |
