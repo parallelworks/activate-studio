@@ -49,6 +49,7 @@ server-go/
   third_party/giraffesyo-pdf/    giraffesyo/pdf v0.6.0 with the reader fixes listed in its README
   internal/extract/pytext/       Python and JavaScript string semantics for the readers
   scripts/compare_semantic_map.py  Python against Go on the same inputs
+  scripts/crossvet.sh            go vet ./... for every target platform
 ```
 
 Dependencies: `modernc.org/sqlite` (pure Go SQLite, no cgo, so cross-compiling for macOS, Linux and Windows stays `GOOS=... go build`) and `gonum.org/v1/gonum` (the PCA's eigendecomposition). The server itself uses the standard library (`net/http`, `httputil.ReverseProxy`, `log/slog`) and `github.com/andybalholm/brotli` (pure Go, no dependencies outside its tests) for brotli.
@@ -56,6 +57,7 @@ Dependencies: `modernc.org/sqlite` (pure Go SQLite, no cgo, so cross-compiling f
 ```
 cd server-go
 go test ./...
+scripts/crossvet.sh                          # go vet for Linux, macOS and Windows, amd64 and arm64
 go build -o bin/studio-server ./cmd/studio-server
 go build -o bin/semantic-map ./cmd/semantic-map
 pnpm build                                   # at the repo root: web/dist and server/dist
