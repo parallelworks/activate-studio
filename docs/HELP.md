@@ -160,6 +160,12 @@ Settings, General, **Sidebar** has a switch for each page. A page switched off l
 
 On a computer of its own, the suggested questions and the mission start out written for one person's own files; change them under Settings, General, AI features.
 
+## Signing in
+
+A shared {appName} may ask you to sign in. Choose **Sign in** at the bottom of the navigation, sign in with your organization's account, and you come back to the page you were on. Your name then shows in its place; a click on it shows what the sign-in says about you and has **Sign out**. **Sign out** ends your session in {appName}; your organization's sign-in stays, so signing in again may not ask for your password. If {appName} is open inside the ACTIVATE platform's session view, **Sign in** opens a new tab, since sign-in does not complete inside that view; keep using {appName} in that tab.
+
+Signing in tells {appName} who you are. It does not let {appName} act for you on the platform: running workflows or using the platform's models as yourself still needs your own key under Model access.
+
 ## Model access
 
 Settings, **Model access** shows where {appName} gets its models, with the models available or what failed; **Re-check** asks again. **What each part uses** lists the credential behind models, the Workflows page and the assistant's platform tools, libraries on ACTIVATE systems, and ChatGPT and Copilot subscriptions. All but models also run the pw CLI. When {appName} cannot find the CLI, the ACTIVATE (pw CLI) tab says so and takes its location (`command -v pw` in Terminal prints it).
