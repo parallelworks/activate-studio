@@ -74,6 +74,7 @@ type Module struct {
 
 	listings *listingCache
 	noCap    *noTokenCap
+	rag      *ragState
 }
 
 // Default is the registered module.
@@ -109,6 +110,7 @@ func New(a *app.App) *Module {
 	})
 	m.listings = newListingCache()
 	m.noCap = loadNoTokenCap(a.Cfg.IndexBase)
+	m.rag = newRagState(m)
 	return m
 }
 
@@ -252,10 +254,16 @@ func Register(mux *http.ServeMux, a *app.App) {
 	h("GET /api/chat/tool-options", m.toolOptions)
 	h("GET /api/settings/mcp-servers", m.mcpServers)
 	h("POST /api/kb/label-suggestions", m.labelSuggestionsRoute)
+	h("GET /api/rag/calls", m.ragCalls)
+	h("GET /v1/models", m.v1Models)
+	h("POST /v1/chat/completions", m.v1Completions)
+	h("POST /api/mcp", m.mcpPost)
+	h("GET /api/mcp", m.mcpGet)
 	m.attachmentRoutes(h)
 
 	a.Providers.GatewayConfigured = func(r *http.Request) bool { return m.GatewayKey() != "" }
 	a.Providers.GatewayKey = m.GatewayKey
+	a.Providers.TaskToolNames = m.TaskToolNames
 	// The MCP listing is Go's. Node's, which only its RAG proxy and /api/mcp
 	// still read, drops itself when the saved server list changes
 	// (mcpClient.ts) and otherwise expires within a minute, so Node is not
