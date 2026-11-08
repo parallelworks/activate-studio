@@ -30,7 +30,12 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/version"
 )
 
-func main() { os.Exit(run()) }
+func main() {
+	if code, ok := dispatchSubcommand(); ok {
+		os.Exit(code)
+	}
+	os.Exit(run())
+}
 
 func logLevel(v string) slog.Level {
 	switch v {
