@@ -134,40 +134,47 @@ func ragCases() []httpCase {
 func TestGoldenRAGMatchesNode(t *testing.T) {
 	g := startGolden(t)
 	for _, c := range ragCases() {
-		t.Run(c.name, func(t *testing.T) {
-			run := func(base string) (httpAnswer, []json.RawMessage) {
-				g.gw.load(c.replies)
-				a := doHTTP(t, base, c)
-				g.gw.mu.Lock()
-				defer g.gw.mu.Unlock()
-				return a, append([]json.RawMessage(nil), g.gw.requests...)
-			}
-			n, nreq := run(g.node)
-			o, oreq := run(g.goURL)
-			if os.Getenv("GOLDEN_SHOW") != "" {
-				t.Logf("node: %d %s\n%s\ngo: %d %s\n%s", n.status, n.contentType, n.body, o.status, o.contentType, o.body)
-			}
-			if c.goStatus != 0 {
-				if n.status != 500 || o.status != c.goStatus {
-					t.Errorf("status node %d (want 500), go %d (want %d)", n.status, o.status, c.goStatus)
-				}
-				return
-			}
-			if n.status != o.status || n.contentType != o.contentType {
-				t.Errorf("status node %d %q, go %d %q", n.status, n.contentType, o.status, o.contentType)
-			}
-			if normalRAG(n.body) != normalRAG(o.body) {
-				t.Errorf("body differs\nnode: %s\ngo:   %s", normalRAG(n.body), normalRAG(o.body))
-			}
-			if len(nreq) != len(oreq) {
-				t.Fatalf("gateway calls: node %d, go %d", len(nreq), len(oreq))
-			}
-			for k := range nreq {
-				if normalRAG(string(nreq[k])) != normalRAG(string(oreq[k])) {
-					t.Errorf("gateway request %d differs\nnode: %s\ngo:   %s", k, normalRAG(string(nreq[k])), normalRAG(string(oreq[k])))
-				}
-			}
-		})
+		t.Run(c.name, func(t *testing.T) { runHTTPCase(t, g, c) })
+	}
+}
+
+// runHTTPCase sends one request to both servers and compares the answers
+// and the gateway requests.
+func runHTTPCase(t *testing.T, g *goldenEnv, c httpCase) {
+	run := func(base string) (httpAnswer, []json.RawMessage) {
+		g.gw.load(c.replies)
+		a := doHTTP(t, base, c)
+		g.gw.mu.Lock()
+		defer g.gw.mu.Unlock()
+		return a, append([]json.RawMessage(nil), g.gw.requests...)
+	}
+	n, nreq := run(g.node)
+	o, oreq := run(g.goURL)
+	if os.Getenv("GOLDEN_SHOW") != "" {
+		t.Logf("node: %d %s\n%s\ngo: %d %s\n%s", n.status, n.contentType, n.body, o.status, o.contentType, o.body)
+		for _, q := range oreq {
+			t.Logf("go request: %s", q)
+		}
+	}
+	if c.goStatus != 0 {
+		if n.status != 500 || o.status != c.goStatus {
+			t.Errorf("status node %d (want 500), go %d (want %d)", n.status, o.status, c.goStatus)
+		}
+		return
+	}
+	if n.status != o.status || n.contentType != o.contentType {
+		t.Errorf("status node %d %q, go %d %q", n.status, n.contentType, o.status, o.contentType)
+	}
+	if normalRAG(n.body) != normalRAG(o.body) {
+		t.Errorf("body differs\nnode: %s\ngo:   %s", normalRAG(n.body), normalRAG(o.body))
+	}
+	if len(nreq) != len(oreq) {
+		t.Fatalf("gateway calls: node %d, go %d", len(nreq), len(oreq))
+	}
+	for k := range nreq {
+		if normalRAG(string(nreq[k])) != normalRAG(string(oreq[k])) {
+			t.Errorf("gateway request %d differs\nnode: %s\ngo:   %s", k, normalRAG(string(nreq[k])), normalRAG(string(oreq[k])))
+		}
 	}
 }
 

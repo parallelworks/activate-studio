@@ -16,6 +16,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -119,7 +120,11 @@ type goldenEnv struct {
 	module *Module
 }
 
-func startGolden(t *testing.T) *goldenEnv {
+func startGolden(t *testing.T) *goldenEnv { return startGoldenWith(t, nil) }
+
+// startGoldenWith is startGolden with prep run on the folders before
+// either server starts: the main folder and the two INDEX_BASEs.
+func startGoldenWith(t *testing.T, prep func(kb string, bases []string)) *goldenEnv {
 	node := os.Getenv("STUDIO_GOLDEN_NODE")
 	if node == "" {
 		t.Skip("STUDIO_GOLDEN_NODE unset")
@@ -143,6 +148,9 @@ func startGolden(t *testing.T) *goldenEnv {
 			"mcpServers":  []any{map[string]any{"name": "crm", "url": mcp.URL + "/mcp"}},
 		})
 		os.WriteFile(filepath.Join(base, "settings.json"), settings, 0o644)
+	}
+	if prep != nil {
+		prep(kb, []string{ix, filepath.Join(dir, "ix-go")})
 	}
 	env := map[string]string{
 		"INDEX_BASE": ix, "KB_ROOT": kb, "PW_GATEWAY_URL": gs.URL + "/v1", "PW_API_KEY": "test-key",
@@ -222,7 +230,68 @@ var (
 	idRe     = regexp.MustCompile(`"id":"[0-9a-f-]{36}"`)
 	refRe    = regexp.MustCompile(`\(ref [0-9a-z]+\)`)
 	reixRe   = regexp.MustCompile(`re-indexed in \d+ ms`)
+	// A GUFI command's time, and the INDEX_BASE in its paths (each server
+	// has its own).
+	gufiMsRe = regexp.MustCompile(`"ms":\d+`)
+	ixGoRe   = regexp.MustCompile(`/ix-go/`)
+	substrRe = regexp.MustCompile(`substr\(rpath\(sname, sroll\), \d+\)`)
 )
+
+// sortGufi orders each GUFI command trace of more than one command by
+// command: commands that run at once are traced as each ends. Only a
+// JSON value (an SSE data line, or the whole text) holding one is
+// rewritten.
+func sortGufi(s string) string {
+	if !strings.Contains(s, `"gufi":[{`) {
+		return s
+	}
+	var walk func(v any) bool
+	walk = func(v any) bool {
+		changed := false
+		switch x := v.(type) {
+		case map[string]any:
+			for k, c := range x {
+				if arr, ok := c.([]any); ok && k == "gufi" && len(arr) > 1 {
+					sort.SliceStable(arr, func(i, j int) bool {
+						a, _ := arr[i].(map[string]any)
+						b, _ := arr[j].(map[string]any)
+						return fmt.Sprint(a["command"]) < fmt.Sprint(b["command"])
+					})
+					changed = true
+				}
+				changed = walk(c) || changed
+			}
+		case []any:
+			for _, c := range x {
+				changed = walk(c) || changed
+			}
+		}
+		return changed
+	}
+	rewrite := func(text string) (string, bool) {
+		var v any
+		if json.Unmarshal([]byte(text), &v) != nil || !walk(v) {
+			return text, false
+		}
+		var b bytes.Buffer
+		enc := json.NewEncoder(&b)
+		enc.SetEscapeHTML(false)
+		enc.Encode(v)
+		return strings.TrimSuffix(b.String(), "\n"), true
+	}
+	if out, ok := rewrite(s); ok {
+		return out
+	}
+	lines := strings.Split(s, "\n")
+	for i, l := range lines {
+		if rest, ok := strings.CutPrefix(l, "data: "); ok {
+			if out, ok := rewrite(rest); ok {
+				lines[i] = "data: " + out
+			}
+		}
+	}
+	return strings.Join(lines, "\n")
+}
 
 func normal(s string) string {
 	s = keepaliveRe.ReplaceAllString(s, "")
@@ -234,7 +303,11 @@ func normal(s string) string {
 	s = nonceRe.ReplaceAllString(s, `nonce$1":$2"N`)
 	s = corpusRe.ReplaceAllString(s, `\nCORPUS\n`)
 	s = reixRe.ReplaceAllString(s, "re-indexed in N ms")
-	return refRe.ReplaceAllString(s, "(ref R)")
+	s = gufiMsRe.ReplaceAllString(s, `"ms":0`)
+	s = ixGoRe.ReplaceAllString(s, "/ix/")
+	s = substrRe.ReplaceAllString(s, "substr(rpath(sname, sroll), N)")
+	// Last: the order of a trace compares the normalized commands.
+	return sortGufi(refRe.ReplaceAllString(s, "(ref R)"))
 }
 
 type scenario struct {
@@ -315,57 +388,64 @@ func scenarios() []scenario {
 func TestGoldenStreamMatchesNode(t *testing.T) {
 	g := startGolden(t)
 	for i, sc := range scenarios() {
-		t.Run(sc.name, func(t *testing.T) {
-			model := sc.model
-			if model == "" {
-				model = "test-model"
-			}
-			run := func(base, who string) (string, []json.RawMessage) {
-				if sc.setup != nil {
-					sc.setup(g)
-				}
-				g.gw.load(sc.replies)
-				body := map[string]any{"model": model, "conversationId": fmt.Sprintf("conv-%s-%d", who, i), "userMessageId": "u1",
-					"messages": []any{map[string]any{"role": "user", "content": sc.text}}}
-				for k, v := range sc.extra {
-					body[k] = v
-				}
-				sse := post(t, base, body)
-				g.gw.mu.Lock()
-				defer g.gw.mu.Unlock()
-				return sse, append([]json.RawMessage(nil), g.gw.requests...)
-			}
-			nodeSSE, nodeReq := run(g.node, "node")
-			goSSE, goReq := run(g.goURL, "go")
-			if os.Getenv("GOLDEN_SHOW") != "" {
-				t.Logf("node:\n%s\ngo:\n%s\nrequests: %d", nodeSSE, goSSE, len(goReq))
-			}
-			if normal(nodeSSE) != normal(goSSE) {
-				t.Errorf("SSE differs\nnode:\n%s\ngo:\n%s", normal(nodeSSE), normal(goSSE))
-			}
-			// The stored conversations, as each server reads its own back.
-			time.Sleep(150 * time.Millisecond)
-			get := func(base, who string) string {
-				res, err := http.Get(fmt.Sprintf("%s/api/chat/conversations/conv-%s-%d", base, who, i))
-				if err != nil {
-					t.Fatal(err)
-				}
-				defer res.Body.Close()
-				b, _ := io.ReadAll(res.Body)
-				return durRe.ReplaceAllString(idRe.ReplaceAllString(normal(string(b)), `"id":"ID"`), `"reasoningDuration":D`)
-			}
-			if n, g2 := get(g.node, "node"), get(g.goURL, "go"); n != g2 {
-				t.Errorf("stored conversation differs\nnode: %s\ngo:   %s", n, g2)
-			}
-			if len(nodeReq) != len(goReq) {
-				t.Fatalf("gateway calls: node %d, go %d", len(nodeReq), len(goReq))
-			}
-			for k := range nodeReq {
-				if normal(string(nodeReq[k])) != normal(string(goReq[k])) {
-					t.Errorf("gateway request %d differs\nnode: %s\ngo:   %s", k, normal(string(nodeReq[k])), normal(string(goReq[k])))
-				}
-			}
-		})
+		t.Run(sc.name, func(t *testing.T) { runScenario(t, g, i, sc) })
+	}
+}
+
+// runScenario runs one scenario on both servers and compares the streams,
+// the stored conversations and the gateway requests.
+func runScenario(t *testing.T, g *goldenEnv, i int, sc scenario) {
+	model := sc.model
+	if model == "" {
+		model = "test-model"
+	}
+	run := func(base, who string) (string, []json.RawMessage) {
+		if sc.setup != nil {
+			sc.setup(g)
+		}
+		g.gw.load(sc.replies)
+		body := map[string]any{"model": model, "conversationId": fmt.Sprintf("conv-%s-%d", who, i), "userMessageId": "u1",
+			"messages": []any{map[string]any{"role": "user", "content": sc.text}}}
+		for k, v := range sc.extra {
+			body[k] = v
+		}
+		sse := post(t, base, body)
+		g.gw.mu.Lock()
+		defer g.gw.mu.Unlock()
+		return sse, append([]json.RawMessage(nil), g.gw.requests...)
+	}
+	nodeSSE, nodeReq := run(g.node, "node")
+	goSSE, goReq := run(g.goURL, "go")
+	if os.Getenv("GOLDEN_SHOW") != "" {
+		t.Logf("node:\n%s\ngo:\n%s\nrequests: %d", nodeSSE, goSSE, len(goReq))
+		for _, q := range goReq {
+			t.Logf("go request: %s", q)
+		}
+	}
+	if normal(nodeSSE) != normal(goSSE) {
+		t.Errorf("SSE differs\nnode:\n%s\ngo:\n%s", normal(nodeSSE), normal(goSSE))
+	}
+	// The stored conversations, as each server reads its own back.
+	time.Sleep(150 * time.Millisecond)
+	get := func(base, who string) string {
+		res, err := http.Get(fmt.Sprintf("%s/api/chat/conversations/conv-%s-%d", base, who, i))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer res.Body.Close()
+		b, _ := io.ReadAll(res.Body)
+		return durRe.ReplaceAllString(idRe.ReplaceAllString(normal(string(b)), `"id":"ID"`), `"reasoningDuration":D`)
+	}
+	if n, g2 := get(g.node, "node"), get(g.goURL, "go"); n != g2 {
+		t.Errorf("stored conversation differs\nnode: %s\ngo:   %s", n, g2)
+	}
+	if len(nodeReq) != len(goReq) {
+		t.Fatalf("gateway calls: node %d, go %d", len(nodeReq), len(goReq))
+	}
+	for k := range nodeReq {
+		if normal(string(nodeReq[k])) != normal(string(goReq[k])) {
+			t.Errorf("gateway request %d differs\nnode: %s\ngo:   %s", k, normal(string(nodeReq[k])), normal(string(goReq[k])))
+		}
 	}
 }
 
