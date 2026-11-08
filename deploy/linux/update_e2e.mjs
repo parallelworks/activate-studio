@@ -13,6 +13,7 @@
 //                                            after the manifest was made, so its SHA-256 is wrong);
 //                                            PRERELEASE=1 publishes it as a GitHub prerelease, and
 //                                            CHANNEL=stable|preview puts that channel in the signed manifest
+//   remove-release DIR TAG                   take release TAG off the list
 //   serve DIR PORT                           the releases API and the downloads
 import crypto from 'node:crypto'
 import fs from 'node:fs'
@@ -65,6 +66,10 @@ if (cmd === 'keygen') {
     body: `- A stand-in release ${tag} for the update check.`, html_url: `https://example.invalid/releases/${tag}`, assets,
   })
   writeJson(list, have)
+} else if (cmd === 'remove-release') {
+  const [dir, tag] = a
+  const list = path.join(dir, 'releases.json')
+  writeJson(list, (fs.existsSync(list) ? readJson(list) : []).filter(r => r.tag_name !== tag))
 } else if (cmd === 'serve') {
   const [dir, port] = a
   http.createServer((req, res) => {
@@ -83,6 +88,6 @@ if (cmd === 'keygen') {
     fs.createReadStream(file).pipe(res)
   }).listen(Number(port), '127.0.0.1')
 } else {
-  console.error('usage: update_e2e.mjs keygen|stamp|add-release|serve ...')
+  console.error('usage: update_e2e.mjs keygen|stamp|add-release|remove-release|serve ...')
   process.exit(2)
 }

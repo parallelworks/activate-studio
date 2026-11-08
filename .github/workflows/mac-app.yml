@@ -1,7 +1,11 @@
-# Build the macOS app on a Mac, where its own window (deploy/mac/shell) is
-# compiled and the .dmg is made, and run the checks only a Mac can: the
-# bundled Node, Python, GUFI and tesseract, the server from the app's run
-# loop, and the launcher with its LaunchAgent. A copy of the app is also
+# Build the macOS app on a Mac, where its window is compiled and the .dmg is
+# made, and run the checks only a Mac can: the bundled server, GUFI and
+# tesseract, the server from the app's run loop, and the launcher with its
+# LaunchAgent. The app is the Go version (deploy/mac/build_app.sh's default,
+# STUDIO_SERVER=go-only): the Wails window (desktop/wails) and the Go
+# server, with no Node and no Python. It is the build releases ship, and it
+# is updated to from the last release (Node) through that release's own
+# updater (the bridge job). A copy of the app is also
 # signed the way a release signs it, with a throwaway identity, and run (the
 # hardened job). Asked to for a published release (the release input), it
 # builds that tag; signs, notarizes and staples the app with the Developer ID
@@ -29,22 +33,29 @@ on:
       release:
         description: A published release (such as v1.150) to build the app for and attach it to; blank to build and check only
         default: ""
+      channel:
+        description: For a release, the channel its manifest is signed for (stable, or preview for a prerelease that only Preview installs take; a preview release leaves the fixed macos release alone)
+        default: stable
       gufi_run:
         description: A gufi-macos run id whose GUFI archive to use
         default: ""
       gufi_vec_run:
-        description: For the Go version's build, a gufi-macos run id made with lembed off (the lean GUFI); blank for the GUFI above
+        description: A gufi-macos run id made with lembed off (the lean GUFI) for the Go version; blank for the GUFI above
         default: ""
+      legacy:
+        description: Also build and check the earlier builds (STUDIO_SERVER=node, and go with Node behind it); they do not fail the run
+        type: boolean
+        default: false
   # A change to the app or its build is built and checked on a Mac, and so
-  # is a change to the server or the indexer, which check_app.sh runs from
+  # is a change to the Go server or the window, which check_app.sh runs from
   # the app (indexing, search, Query, libraries over ssh). The web client is
   # only bundled, not exercised there, so it is left to CI.
   pull_request:
     paths:
       - deploy/mac/**
       - deploy/common/**
-      - server/src/**
-      - indexer/**
+      - server-go/**
+      - desktop/wails/**
       - .github/workflows/mac-app.yml
 
 permissions: {}
@@ -88,6 +99,11 @@ jobs:
           # No cache: this job's output is what releases ship.
           package-manager-cache: false
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: server-go/go.mod
+          # No cache: this job's output is what releases ship.
+          cache: false
 
       - name: install and build
         run: |
@@ -97,7 +113,7 @@ jobs:
       - name: GUFI
         env:
           GH_TOKEN: ${{ github.token }}
-          GUFI_RUN_INPUT: ${{ inputs.gufi_run }}
+          GUFI_RUN_INPUT: ${{ inputs.gufi_vec_run || inputs.gufi_run }}
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/gufi"
@@ -124,7 +140,21 @@ jobs:
         env:
           SKIP_BUILD: "1"
           OUT_DIR: ${{ runner.temp }}/out
-        run: deploy/mac/build_app.sh
+        run: |
+          set -euo pipefail
+          deploy/mac/build_app.sh 2>&1 | tee "$RUNNER_TEMP/build_app.log"
+          {
+            echo "### The app"
+            echo '```'
+            ls -l "$OUT_DIR"/activate-studio-macos-arm64.*
+            du -sh "$OUT_DIR/ACTIVATE Studio.app"
+            echo '```'
+            sed -n '/^Size$/,/^$/p' "$RUNNER_TEMP/build_app.log" | head -n 14
+          } >>"$GITHUB_STEP_SUMMARY"
+
+      - name: the Wails window's tests
+        working-directory: desktop/wails
+        run: go test -p 4 ./...
 
       # On a runner older than the app's minimum macOS, static checks only.
       - name: check it on this Mac
@@ -143,20 +173,17 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-  # The Go version (docs/UPDATES.md, "The Go version"): the Wails window with
-  # the Go server, in both shapes (STUDIO_SERVER=go, Node behind it for what
-  # is not ported yet, and go-only, which may fail until every route is
-  # ported and so does not fail the run), built and checked here, and
-  # updated to from the last release (the Swift window and Node) through
-  # that release's own updater, then rolled back
-  # (deploy/mac/test_go_bridge_e2e.sh, with a throwaway key on 127.0.0.1).
-  # Neither job publishes anything, and neither runs for a release.
-  build-go:
-    if: inputs.release == ''
+  # The earlier builds, on request (the legacy input): Node with the Swift
+  # window (STUDIO_SERVER=node, the build of v1.188 and earlier), and the Go
+  # server with Node behind it (go). Kept buildable for a fallback; they do
+  # not fail the run and publish nothing.
+  build-legacy:
+    if: inputs.release == '' && inputs.legacy
+    continue-on-error: true
     strategy:
       fail-fast: false
       matrix:
-        server: [go, go-only]
+        server: [node, go]
     runs-on: macos-15
     timeout-minutes: 75
     permissions:
@@ -183,8 +210,7 @@ jobs:
       - name: GUFI
         env:
           GH_TOKEN: ${{ github.token }}
-          # The lean GUFI only for the Go server alone.
-          GUFI_RUN_INPUT: ${{ matrix.server == 'go-only' && inputs.gufi_vec_run || inputs.gufi_run }}
+          GUFI_RUN_INPUT: ${{ inputs.gufi_run }}
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/gufi"
@@ -201,49 +227,33 @@ jobs:
           set -euo pipefail
           OUT_DIR="$RUNNER_TEMP/ocr" deploy/mac/build_ocr.sh
           echo "OCR_TARBALL=$RUNNER_TEMP/ocr/ocr-macos-arm64.tar.gz" >> "$GITHUB_ENV"
-      - name: build the Go version
+      - name: build it
         env:
           SKIP_BUILD: "1"
           OUT_DIR: ${{ runner.temp }}/out
           STUDIO_SERVER: ${{ matrix.server }}
-          MAC_SHELL: wails
         run: |
           set -euo pipefail
           deploy/mac/build_app.sh 2>&1 | tee "$RUNNER_TEMP/build_app.log"
           {
-            echo "### The Go version for macOS ($STUDIO_SERVER)"
+            echo "### The earlier build for macOS ($STUDIO_SERVER)"
             echo '```'
             ls -l "$OUT_DIR"/activate-studio-macos-arm64.*
             du -sh "$OUT_DIR/ACTIVATE Studio.app"
             echo '```'
-            sed -n '/^Size$/,/^$/p' "$RUNNER_TEMP/build_app.log" | head -n 14
           } >>"$GITHUB_STEP_SUMMARY"
-      - name: the Wails window's tests
-        working-directory: desktop/wails
-        run: go test -p 4 ./...
       - name: check it on this Mac
         env:
           OUT_DIR: ${{ runner.temp }}/out
         run: deploy/mac/check_app.sh "$OUT_DIR/ACTIVATE Studio.app" --run
-      # Kept when the checks fail too, so bridge-go can still try the update
-      # (the Go-only build fails the checks of the routes not yet ported).
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: ${{ !cancelled() }}
-        with:
-          name: activate-studio-${{ matrix.server }}-macos-arm64
-          path: |
-            ${{ runner.temp }}/out/activate-studio-macos-arm64.tar.gz
-            ${{ runner.temp }}/out/activate-studio-macos-arm64.tar.gz.sha256
-            ${{ runner.temp }}/out/activate-studio-macos-arm64.dmg
-          if-no-files-found: error
-          retention-days: 30
 
-  bridge-go:
-    needs: build-go
-    strategy:
-      fail-fast: false
-      matrix:
-        server: [go, go-only]
+  # The last release (Node and the Swift window) installed, updated to this
+  # build through that release's own updater, and rolled back
+  # (deploy/mac/test_go_bridge_e2e.sh, with a throwaway key on 127.0.0.1).
+  # It publishes nothing, and does not run for a release.
+  bridge:
+    if: inputs.release == ''
+    needs: build
     runs-on: macos-15
     timeout-minutes: 45
     permissions:
@@ -254,7 +264,7 @@ jobs:
           persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: activate-studio-${{ matrix.server }}-macos-arm64
+          name: activate-studio-macos-arm64
           path: ${{ runner.temp }}/new
       - name: the last release's app
         env:
@@ -266,7 +276,7 @@ jobs:
           gh release download "$last" -R "$GITHUB_REPOSITORY" -p activate-studio-macos-arm64.tar.gz \
             -p activate-studio-macos-arm64.tar.gz.sha256 -D "$RUNNER_TEMP/old"
           (cd "$RUNNER_TEMP/old" && shasum -a 256 -c activate-studio-macos-arm64.tar.gz.sha256)
-      - name: update to the Go version and roll back
+      - name: update to this build and roll back
         run: |
           set -euo pipefail
           (cd "$RUNNER_TEMP/new" && shasum -a 256 -c activate-studio-macos-arm64.tar.gz.sha256)
@@ -285,8 +295,8 @@ jobs:
   # that fails to run or that running changes. It cannot show a missing
   # entitlement: macOS treats a signature without Apple's certificate chain
   # as ad hoc, and for ad hoc code it enforces neither the hardened runtime
-  # (Node compiles code without allow-jit, DYLD_* variables work) nor
-  # library validation. The sign job's run of the signed app shows that,
+  # (code compiled in memory runs without its entitlement, DYLD_* variables
+  # work) nor library validation. The sign job's run of the signed app shows that,
   # for a release.
   hardened:
     if: inputs.release == ''
@@ -513,11 +523,17 @@ jobs:
         env:
           STUDIO_UPDATE_SIGNING_KEY: ${{ secrets.STUDIO_UPDATE_SIGNING_KEY }}
           TAG: ${{ inputs.release }}
-        run: deploy/mac/sign_release.sh "$RUNNER_TEMP/out/activate-studio-macos-arm64.tar.gz" "$TAG"
+          # Stable is the manifest without the field, as before channels.
+          CHANNEL: ${{ inputs.channel }}
+        run: |
+          set -euo pipefail
+          case "$CHANNEL" in stable) ;; preview) export STUDIO_RELEASE_CHANNEL=preview ;; *) echo "channel is stable or preview, not '$CHANNEL'"; exit 1 ;; esac
+          deploy/mac/sign_release.sh "$RUNNER_TEMP/out/activate-studio-macos-arm64.tar.gz" "$TAG"
       - name: attach to the release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.release }}
+          CHANNEL: ${{ inputs.channel }}
         run: |
           set -euo pipefail
           cd "$RUNNER_TEMP/out"
@@ -525,6 +541,13 @@ jobs:
             activate-studio-macos-arm64.manifest.json activate-studio-macos-arm64.manifest.json.sig
             activate-studio-macos-arm64.dmg install.sh)
           gh release upload "$TAG" -R "$GITHUB_REPOSITORY" --clobber "${files[@]}"
+          # A Preview release reaches installs that chose Preview, through
+          # their updater; the fixed address new installs come from keeps
+          # the newest Stable app.
+          if [ "$CHANNEL" = preview ]; then
+            echo "A Preview release: the macos release is left as it is."
+            exit 0
+          fi
           # The macos release holds the newest app at a fixed address: a
           # prerelease that is never latest, which the app's update check
           # skips (its tag is not a version). An older version than the one

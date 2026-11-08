@@ -102,7 +102,12 @@ if [ "$SERVER" != node ]; then
 fi
 if [ "$SERVER" = go-only ]; then
   check "node/bin/node is the stand-in, executable, as older updaters check" sh -c "test -x '$R/node/bin/node' && head -c 2 '$R/node/bin/node' | grep -q '#!'"
-  check "no Node, Python or node_modules" sh -c "! [ -e '$R/python' ] && ! [ -e '$R/app/server/node_modules' ] && ! [ -e '$R/app/indexer' ]"
+  check "no Node, Python or node_modules, and of the indexer only embed_deps.json" sh -c "! [ -e '$R/python' ] && ! [ -e '$R/app/server/node_modules' ] && [ \"\$(ls -A '$R/app/indexer')\" = embed_deps.json ]"
+  check "app/indexer/embed_deps.json, the pins a build on another system is sent" python3 -c 'import json, sys; d = json.load(open(sys.argv[1])); sys.exit(0 if d["model"]["files"]["model.onnx"]["sha256"] else 1)' "$R/app/indexer/embed_deps.json"
+  # The helper a library's build on another system runs, one folder per
+  # platform (internal/userlibs): Linux x64 and arm64 and macOS arm64, and any
+  # further platform holding the same file.
+  check "studio-remote for linux-amd64, linux-arm64, darwin-arm64 and any platform added beside them" sh -c 'd="$1/app/bin/remote"; for p in linux-amd64 linux-arm64 darwin-arm64; do [ -x "$d/$p/studio-remote" ] || exit 1; done; for p in "$d"/*; do [ -x "$p/studio-remote" ] || exit 1; done' sh "$R"
 fi
 if [ -d "$O" ]; then
   for f in Resources/ocr/bin/tesseract Resources/ocr/lib/libleptonica.6.dylib \
@@ -145,11 +150,9 @@ if command -v codesign >/dev/null 2>&1; then
     bad "the bundle's signature does not verify:"; printf '%s\n' "$out" | head -n 20 | sed 's/^/        /'
   fi
 fi
-if [ "$SERVER" = go-only ]; then
-  check "the ONNX model is the pinned file" sh -c "python3 -c 'import hashlib, json, sys; d = json.load(open(sys.argv[1])); sys.exit(0 if hashlib.sha256(open(sys.argv[2], \"rb\").read()).hexdigest() == d[\"model\"][\"files\"][\"model.onnx\"][\"sha256\"] else 1)' '$HERE/../../indexer/embed_deps.json' '$R/models/minilm-l6/model.onnx'"
-else
-check "the model is the full file (over 10 MB)" test "$(( $(wc -c <"$R/models/minilm384.gguf") ))" -gt 10000000
 check "the ONNX model is the pinned file" sh -c "python3 -c 'import hashlib, json, sys; d = json.load(open(sys.argv[1])); sys.exit(0 if hashlib.sha256(open(sys.argv[2], \"rb\").read()).hexdigest() == d[\"model\"][\"files\"][\"model.onnx\"][\"sha256\"] else 1)' '$R/app/indexer/embed_deps.json' '$R/models/minilm-l6/model.onnx'"
+if [ "$SERVER" != go-only ]; then
+check "the model is the full file (over 10 MB)" test "$(( $(wc -c <"$R/models/minilm384.gguf") ))" -gt 10000000
 check "onnxruntime, tokenizers and numpy are in the app's Python" sh -c "ls -d '$R'/python/lib/python3.*/site-packages/onnxruntime/__init__.py '$R'/python/lib/python3.*/site-packages/tokenizers/__init__.py '$R'/python/lib/python3.*/site-packages/numpy/__init__.py"
 check "pypdf is in the app's Python, for PDFs downmark cannot read" sh -c "ls -d '$R'/python/lib/python3.*/site-packages/pypdf/__init__.py '$R'/python/lib/python3.*/site-packages/pypdf-*.dist-info/licenses"
 check "the document converter's macOS arm64 binary is there" \
@@ -179,7 +182,7 @@ elif command -v file >/dev/null 2>&1; then
 fi
 MIN="$(python3 -c 'import plistlib,sys; print(plistlib.load(open(sys.argv[1],"rb"))["LSMinimumSystemVersion"])' "$C/Info.plist")"
 NATIVE=("$G"/bin/* "$G"/lib/*.dylib "$O"/bin/* "$O"/lib/*.dylib)
-[ "$SERVER" = node ] || NATIVE+=("$R"/app/bin/* "$R"/app/lib/*.dylib)
+[ "$SERVER" = node ] || NATIVE+=("$R"/app/bin/* "$R"/app/bin/remote/darwin-*/studio-remote "$R"/app/lib/*.dylib)
 if [ "$SERVER" != go-only ]; then
   NATIVE+=("$R/node/bin/node" "$R"/python/bin/python3.* "$R"/python/lib/*.dylib "$R"/python/lib/python3.*/lib-dynload/*.so)
   # The Python packages' native libraries (onnxruntime, numpy and others), read
@@ -195,7 +198,10 @@ else
 fi
 elf="$(python3 - "$APP" <<'PY'
 import os, sys
-for d, _dirs, files in os.walk(sys.argv[1]):
+for d, dirs, files in os.walk(sys.argv[1]):
+    # The helpers sent to other systems for library builds there.
+    if d.endswith('/app/bin'):
+        dirs[:] = [x for x in dirs if x != 'remote']
     for f in files:
         p = os.path.join(d, f)
         if not os.path.islink(p):
@@ -204,7 +210,7 @@ for d, _dirs, files in os.walk(sys.argv[1]):
                     print(p)
 PY
 )"
-if [ -z "$elf" ]; then ok "no Linux (ELF) binaries"; else bad "Linux binaries in the app:"; printf '        %s\n' "$elf"; fi
+if [ -z "$elf" ]; then ok "no Linux (ELF) binaries outside app/bin/remote"; else bad "Linux binaries in the app:"; printf '        %s\n' "$elf"; fi
 # Signed by sign_app.sh, with the hardened runtime: every Mach-O file, as
 # file(1) finds them, is signed the same way, as notarization requires and
 # library validation assumes.
@@ -222,11 +228,17 @@ if command -v codesign >/dev/null 2>&1 && codesign -dv "$APP" 2>&1 | grep -q '^C
   else
     bad "Mach-O files not signed like the bundle:"; printf '%s\n' "$unlike" | sed 's/^/        /'
   fi
+  # The STEP preview's WebAssembly runs as machine code wazero writes into
+  # memory, which the hardened runtime refuses the Go server without this.
+  if [ -f "$R/app/bin/studio-server" ]; then
+    check "the Go server is signed with allow-unsigned-executable-memory (the STEP preview)" sh -c \
+      'codesign -d --entitlements - --xml "$1" 2>/dev/null | grep -q com.apple.security.cs.allow-unsigned-executable-memory' _ "$R/app/bin/studio-server"
+  fi
 fi
 
 echo "Size"
 echo "  $(du -sh "$APP" | cut -f1)  total"
-for d in node python gufi ocr app/lib app/occt app/bin app/server/node_modules app/web models; do
+for d in node python gufi ocr app/lib app/occt app/bin app/bin/remote app/server/node_modules app/web models; do
   [ -e "$R/$d" ] || continue
   echo "  $(du -sh "$R/$d" | cut -f1)  $d"
 done
@@ -810,7 +822,14 @@ EOF
           check "and stopped the server running from it" sh -c 'for _ in $(seq 1 30); do curl -fsS -m 2 "http://127.0.0.1:$1/api/version" >/dev/null 2>&1 || exit 0; sleep 1; done; exit 1' _ "$PORT4"
           check "with the old copy gone, and no staging copies left" sh -c '! [ -e "$1/Contents/old-copy-marker" ] && ! ls -a "$2" | grep -q "^\.$3\.app\."' _ "$COPY" "$H3/Applications" "$NAME"
           check "the replaced copy's signature verifies" codesign --verify --deep --strict "$COPY"
-          check "opening it starts the server again" fresh env STUDIO_NO_BROWSER=1 "$COPY/Contents/Resources/launcher.sh"
+          if fresh env STUDIO_NO_BROWSER=1 "$COPY/Contents/Resources/launcher.sh" >"$T/reopen.out" 2>&1; then
+            ok "opening it starts the server again"
+          else
+            bad "opening it starts the server again:"
+            { tail -n 8 "$T/reopen.out"; tail -n 12 "$D3/logs/agent.log"; tail -n 20 "$D3/logs/studio.log"
+              launchctl print "gui/$(id -u)/com.parallelworks.activate-studio" 2>&1 | grep -E 'state|path|last exit|disabled' | head -n 8
+              lsof -nP -iTCP:"$PORT4" -sTCP:LISTEN 2>/dev/null; } 2>/dev/null | cut -c1-220 | sed 's/^/        /'
+          fi
           check "--stop stops it" fresh "$COPY/Contents/Resources/launcher.sh" --stop
           launchctl enable "gui/$(id -u)/com.parallelworks.activate-studio" 2>/dev/null || true
           # A copy macOS marked as downloaded (quarantined): the installed

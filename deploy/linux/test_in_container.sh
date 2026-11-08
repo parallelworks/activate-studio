@@ -24,7 +24,17 @@ if [ -n "${EXTRA_PACKAGES:-}" ]; then
     export DEBIAN_FRONTEND=noninteractive
     apt-get update -qq >/dev/null
     # shellcheck disable=SC2086  # a list of names
-    apt-get install -y -qq --no-install-recommends $EXTRA_PACKAGES >/dev/null
+    if ! apt-get install -y -qq --no-install-recommends $EXTRA_PACKAGES >/dev/null; then
+      # A Debian release past its support (Debian 11 since August 2026) has
+      # its packages on archive.debian.org only.
+      echo "Its package mirrors fail; trying archive.debian.org"
+      sed -i -e 's|deb.debian.org/debian-security|archive.debian.org/debian-security|' -e 's|deb.debian.org/debian|archive.debian.org/debian|' \
+        /etc/apt/sources.list /etc/apt/sources.list.d/* 2>/dev/null || true
+      sed -i '/-updates/d' /etc/apt/sources.list 2>/dev/null || true
+      apt-get update -qq >/dev/null
+      # shellcheck disable=SC2086
+      apt-get install -y -qq --no-install-recommends $EXTRA_PACKAGES >/dev/null
+    fi
   else
     # shellcheck disable=SC2086
     dnf install -y -q --setopt=install_weak_deps=False $EXTRA_PACKAGES >/dev/null

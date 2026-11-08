@@ -94,6 +94,12 @@ if [ "$STATIC" = 1 ]; then
   if [ "$SERVER" = go-only ]; then
     check "node/bin/node is the stand-in, executable, as older updaters check" sh -c "[ -x '$APP/node/bin/node' ] && head -c 2 '$APP/node/bin/node' | grep -q '#!'"
     check "no Node, Python or node_modules" sh -c "[ ! -d '$APP/python' ] && [ ! -d '$APP/app/server/node_modules' ] && ! head -c 4 '$APP/node/bin/node' | grep -q ELF"
+    check "app/indexer/embed_deps.json, the pins a build on another system is sent" "$PY" -I -c 'import json, sys; d = json.load(open(sys.argv[1])); sys.exit(0 if d["model"]["files"]["model.onnx"]["sha256"] else 1)' "$APP/app/indexer/embed_deps.json"
+    # The helper a library's build on another system runs, one folder per
+    # platform (internal/userlibs): Linux x64 and arm64 and macOS arm64, and any
+    # further platform holding the same file.
+    check "studio-remote for linux-amd64, linux-arm64, darwin-arm64 and any platform added beside them" sh -c 'd="$1/app/bin/remote"; for p in linux-amd64 linux-arm64 darwin-arm64; do [ -x "$d/$p/studio-remote" ] || exit 1; done; for p in "$d"/*; do [ -x "$p/studio-remote" ] || exit 1; done' sh "$APP"
+    check "the linux-amd64 helper is x86-64 and needs no glibc newer than $MAX_GLIBC" "$PY" -I "$HERE/elf_check.py" --root "$APP" --no-libs --max-glibc "$MAX_GLIBC" "$APP/app/bin/remote/linux-amd64/studio-remote"
   fi
   check "update-signing.pub is an Ed25519 public key" "$PY" -I - "$APP/update-signing.pub" <<'PY'
 import base64, sys
@@ -127,7 +133,10 @@ PY
   macho="$("$PY" -I - "$APP" <<'PY'
 import os, sys
 magics = {bytes.fromhex(x) for x in ('feedface', 'feedfacf', 'cefaedfe', 'cffaedfe', 'cafebabe')}
-for d, _dirs, files in os.walk(sys.argv[1]):
+for d, dirs, files in os.walk(sys.argv[1]):
+    # The helpers sent to other systems for library builds there.
+    if d.endswith('/app/bin'):
+        dirs[:] = [x for x in dirs if x != 'remote']
     for f in files:
         p = os.path.join(d, f)
         if os.path.islink(p) or not os.path.isfile(p):
@@ -139,8 +148,8 @@ for d, _dirs, files in os.walk(sys.argv[1]):
             print(p)
 PY
 )"
-  if [ -z "$macho" ]; then ok "no macOS (Mach-O) binaries"; else bad "macOS binaries in the payload:"; printf '        %s\n' "$macho"; fi
-  if out="$("$PY" -I "$HERE/elf_check.py" --root "$APP" --skip bin/activate-studio-wk --max-glibc "$MAX_GLIBC" --max-glibcxx "$MAX_GLIBCXX" --max-cxxabi "$MAX_CXXABI" "$APP" 2>&1)"; then
+  if [ -z "$macho" ]; then ok "no macOS (Mach-O) binaries outside app/bin/remote"; else bad "macOS binaries in the payload:"; printf '        %s\n' "$macho"; fi
+  if out="$("$PY" -I "$HERE/elf_check.py" --root "$APP" --skip bin/activate-studio-wk --skip app/bin/remote --max-glibc "$MAX_GLIBC" --max-glibcxx "$MAX_GLIBCXX" --max-cxxabi "$MAX_CXXABI" "$APP" 2>&1)"; then
     ok "x86-64, libraries beside the files that load them, no symbol newer than glibc $MAX_GLIBC, libstdc++ $MAX_GLIBCXX"
     printf '%s\n' "$out" | sed 's/^/        /'
   else
@@ -167,7 +176,7 @@ PY
 
   echo "Size"
   echo "  $(du -sh "$APP" | cut -f1)  total"
-  for d in node python gufi ocr app/lib app/occt app/bin app/server/node_modules app/web models; do
+  for d in node python gufi ocr app/lib app/occt app/bin app/bin/remote app/server/node_modules app/web models; do
     [ -e "$APP/$d" ] || continue
     echo "  $(du -sh "$APP/$d" | cut -f1)  $d"
   done

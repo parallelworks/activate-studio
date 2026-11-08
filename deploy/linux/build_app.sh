@@ -5,16 +5,18 @@
 # come after it; the tree runs from any path (deploy/linux/studio-run.sh at
 # its top starts the server).
 #
-# The tree carries everything it runs: Node for Linux x64 (with the one
-# library Node needs that a desktop may lack, libatomic), the built server
-# and web app with production node_modules, GUFI built by
-# deploy/linux/build_gufi.sh, tesseract built by deploy/linux/build_ocr.sh,
-# a standalone Python for the indexer (with pypdf, xlrd and olefile for
-# documents, and onnxruntime, tokenizers and numpy for the ONNX embedding
-# model), and the embedding models. Build GUFI and tesseract in a Rocky
-# Linux 8 container (glibc 2.28) so the tree runs on RHEL 8 and later and on
-# Ubuntu 22.04 and later: this script checks that no file in the tree needs
-# a newer glibc (elf_check.py).
+# By default (STUDIO_SERVER=go-only) the tree is the Go version: the Go
+# server (app/bin/studio-server) with the ONNX runtime library and the
+# embedding model, the built web app, GUFI built by
+# deploy/linux/build_gufi.sh (the lean one, GUFI_LEMBED=0, is enough),
+# tesseract built by deploy/linux/build_ocr.sh, the STEP preview's modules,
+# and the window shells, with no Node and no Python. STUDIO_SERVER=node
+# builds the earlier tree: Node for Linux x64 (with libatomic, which a
+# desktop may lack), the built server with production node_modules, a
+# standalone Python for the indexer, and GUFI with its embedding extension.
+# Build GUFI and tesseract in a Rocky Linux 8 container (glibc 2.28) so the
+# tree runs on RHEL 8 and later and on Ubuntu 22.04 and later: this script
+# checks that no file in the tree needs a newer glibc (elf_check.py).
 #
 # Usage: deploy/linux/build_app.sh
 #   OUT_DIR       where the outputs go (default deploy/linux/out)
@@ -25,15 +27,15 @@
 #                 gcc reports)
 #   SKIP_BUILD    1 to use the existing server/dist and web/dist
 #   STUDIO_SERVER which server the tree runs (docs/UPDATES.md, "The Go version"):
-#                 node (default) Node, as before;
-#                 go       the Go server (app/bin/studio-server) with Node and
-#                          Python behind it for what is not ported yet;
-#                 go-only  the Go server alone: no Node, no Python, no
+#                 go-only  (default) the Go server alone: no Node, no Python, no
 #                          node_modules, no GGUF model; GUFI may be the lean
 #                          one (build_gufi.sh with GUFI_LEMBED=0), and
 #                          node/bin/node and app/server/dist/main.js are
 #                          placeholders that older updaters' checks look for
-#                          (node/PLACEHOLDER marks them)
+#                          (node/PLACEHOLDER marks them);
+#                 node     Node, the build of v1.188 and earlier;
+#                 go       the Go server (app/bin/studio-server) with Node and
+#                          Python behind it for what is not ported yet.
 #                 Both Go builds carry the ONNX runtime library in
 #                 app/lib (beside app/bin/studio-server, where its embedder
 #                 looks) and the STEP preview's modules in app/occt, with
@@ -65,7 +67,7 @@ CACHE_DIR="${CACHE_DIR:-$HERE/.cache}"
 ASSET=activate-studio-linux-x86_64
 TOP=activate-studio
 
-SERVER="${STUDIO_SERVER:-node}"
+SERVER="${STUDIO_SERVER:-go-only}"
 case "$SERVER" in node | go | go-only) ;; *) die "STUDIO_SERVER is node, go or go-only" ;; esac
 
 # What only this platform pins (the rest is deploy/common/pins.sh).
@@ -340,7 +342,7 @@ find "$APP" -type l | while IFS= read -r l; do [ -e "$l" ] || rm -f "$l"; done
 # The tree's own manifest: what it was built from, and what the checks above
 # found about the libraries it needs.
 echo "Manifest..."
-ELF_REPORT="$(python3 -I "$HERE/elf_check.py" --root "$APP" --skip bin/activate-studio-wk --max-glibc "$MAX_GLIBC" --max-glibcxx "$MAX_GLIBCXX" --max-cxxabi "$MAX_CXXABI" "$APP")"
+ELF_REPORT="$(python3 -I "$HERE/elf_check.py" --root "$APP" --skip bin/activate-studio-wk --skip app/bin/remote --max-glibc "$MAX_GLIBC" --max-glibcxx "$MAX_GLIBCXX" --max-cxxabi "$MAX_CXXABI" "$APP")"
 SERVER="$SERVER" ORT_VERSION="$ORT_VERSION" \
 VERSION="$VERSION" COMMIT="$COMMIT" BUILT_AT="$BUILT_AT" NODE_VERSION="$NODE_VERSION" PY_VERSION="$PY_VERSION" PY_TAG="$PY_TAG" \
   GUFI_SUM="$GUFI_SUM" OCR_SUM="$OCR_SUM" ELF_REPORT="$ELF_REPORT" MAX_GLIBC="$MAX_GLIBC" ASSET="$ASSET" \

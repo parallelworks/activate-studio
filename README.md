@@ -10,6 +10,8 @@ A web workspace over a folder of documents. It indexes the folder, including the
 
 **On Linux (x86_64, glibc 2.28 or newer, so RHEL 8 and 9 and their rebuilds, Ubuntu 20.04 and later, Debian 11 and later):** a per-user install with no administrator rights (`activate-studio/install.sh` from the unpacked archive) or an administrator's `.deb` (Ubuntu, Debian) or `.rpm` (RHEL, Rocky, Alma) puts the same Studio in its own window, where WebKitGTK is installed, and in your browser where it is not. See [`docs/LINUX-APP.md`](docs/LINUX-APP.md).
 
+The macOS and Linux apps are built as the Go version: the Go server (`server-go`) with GUFI, tesseract and the embedding model, and no Node or Python. Installed copies of v1.188 and earlier move to it through their normal update ([`docs/UPDATES.md`](docs/UPDATES.md), "The Go version"). The container image on ghcr.io is still built from `deploy/app.def` with Node; `deploy/app-go.def` builds the Go one.
+
 **On Windows:** the Linux app runs inside WSL2 (Windows Subsystem for Linux), in its own window through WSLg or in a Windows browser, and indexes Windows folders through `/mnt/c`. There is no native Windows build, and this setup has been tested only in containers so far. A browser can also open a Studio that runs on a Linux machine. See [`docs/WINDOWS.md`](docs/WINDOWS.md).
 
 **On ACTIVATE:** run the workflow in [`deploy/workflow.yaml`](deploy/workflow.yaml) on a connected resource and set its "Knowledge Base Directory" to your folder. It builds the index and opens the Studio as a session. The platform's models work with no setup.

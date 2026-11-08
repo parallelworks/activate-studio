@@ -63,12 +63,19 @@ section "Test tools"
 if [ $PM = deb ]; then
   export DEBIAN_FRONTEND=noninteractive
   apt-get update -qq >/dev/null
-  pm_install xvfb dbus-x11 procps imagemagick fonts-dejavu-core desktop-file-utils ca-certificates
+  pm_install xvfb dbus-x11 procps imagemagick fonts-dejavu-core desktop-file-utils ca-certificates python3
 else
   dnf install -y -q epel-release >/dev/null 2>&1 || true
-  pm_install xorg-x11-server-Xvfb dbus-x11 dbus-daemon procps-ng findutils ImageMagick dejavu-sans-fonts desktop-file-utils glibc-langpack-en
+  pm_install xorg-x11-server-Xvfb dbus-x11 dbus-daemon procps-ng findutils ImageMagick dejavu-sans-fonts desktop-file-utils glibc-langpack-en python3
 fi
-ok "Xvfb, a session bus, ImageMagick and desktop-file-utils installed"
+ok "Xvfb, a session bus, ImageMagick, desktop-file-utils and python3 installed"
+# The checks' Python: the tree's own in a Node build, else the system's
+# (the Go version carries none).
+py_of() { if [ -x "$1/python/bin/python3" ]; then echo "$1/python/bin/python3"; else command -v python3; fi; }
+# The server: Node in a Node build, the Go server otherwise (its helpers,
+# such as studio-server embed, run with arguments and are not counted).
+SERVER_RE='node/bin/node.*server/dist/main.js|app/bin/studio-server$'
+
 
 useradd -m tester
 useradd -m tester2
@@ -135,7 +142,7 @@ case "$KIND" in
     as tester env DISPLAY=:99 PATH="$T/stub:$PATH" "$BIN" >"$OUT/browser-mode.log" 2>&1
     check "the launcher started the server and opened the browser" grep -q '^http://127.0.0.1:[0-9]*/$' "$T/stub/xdg-open.log"
     PORT="$(sed -n 's|^http://127.0.0.1:\([0-9]*\)/$|\1|p' "$T/stub/xdg-open.log" | head -n 1)"
-    PY="$R/python/bin/python3"
+    PY="$(py_of "$R")"
     api() { as tester "$PY" -I /src/deploy/linux/api.py "$@"; }
     check "the server answers" api -m 5 GET "http://127.0.0.1:$PORT/api/version"
     api -m 10 POST "http://127.0.0.1:$PORT/api/reindex" '{}' >/dev/null 2>&1
@@ -205,7 +212,7 @@ launch() {
   LAUNCHED=$!
 }
 shot() { as tester env DISPLAY=:99 import -window root "$OUT/$1.png" >/dev/null 2>&1 || true; }
-json() { "$TREE/python/bin/python3" -I -c 'import json, sys; d = json.load(open(sys.argv[1])); print(eval(sys.argv[2]))' "$@" 2>/dev/null; }
+json() { "$(py_of "$TREE")" -I -c 'import json, sys; d = json.load(open(sys.argv[1])); print(eval(sys.argv[2]))' "$@" 2>/dev/null; }
 
 section "The window: the Studio draws, the bridge answers, a search finds a word, relaunch, port move"
 launch run1 install
@@ -248,7 +255,7 @@ if wait_for 300 test -s "$T/hold1/ready"; then
   second=$?
   check "a second launch exits at once and says the first was brought forward" sh -c "[ $second = 0 ] && grep -q 'already running' '$OUT/second-launch.log'"
   check "the first is still running" test -e "/proc/$SHELLPID"
-  check "there is still one server" sh -c "[ \$(ps -u tester -o args= | grep -c 'node/bin/node.*server/dist/main.js') = 1 ]"
+  check "there is still one server" sh -c "[ \$(ps -u tester -o args= | grep -cE '$SERVER_RE') = 1 ]"
   as tester "$BIN" --stop >/dev/null 2>&1
   wait_for 20 test ! -e "/proc/$SHELLPID" && ok "--stop closed the window" || bad "--stop did not end the shell"
   wait_gone tester && ok "and nothing of the Studio's was left running" || { bad "left running after --stop:"; leftovers tester | sed 's/^/        /'; }
@@ -293,7 +300,7 @@ if [ "$KIND" = tarball ]; then
       ok "the window reopened as a new process once the Studio drew again"
       check "the old window is gone" test ! -e "/proc/$OLDPID"
       check "the new window runs the updated program" sh -c "ps -o args= -p $NEWPID | grep -q 'bin/activate-studio-${EXPECT_SHELL:-wk4}' && [ \"\$(sha256sum \"/proc/$NEWPID/exe\" 2>/dev/null | cut -d' ' -f1)\" = '$NEWHASH' -o -n '$NEWHASH' ]"
-      check "there is one server" sh -c "[ \$(ps -u tester -o args= | grep -c 'node/bin/node.*server/dist/main.js') = 1 ]"
+      check "there is one server" sh -c "[ \$(ps -u tester -o args= | grep -cE '$SERVER_RE') = 1 ]"
       note "old program $OLDHASH, new $NEWHASH"
     else
       bad "the window did not reopen after the update"; tail -n 15 "$OUT/up1.log" | sed 's/^/        /'

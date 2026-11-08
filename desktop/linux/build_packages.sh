@@ -105,9 +105,9 @@ license: Apache-2.0
 description: |
   ACTIVATE Studio: search, query and chat over your documents.
   A window around a server that runs on this computer only, with its own
-  Node, Python, GUFI and OCR in /opt/activate-studio. Each user has their
-  own index and settings in their home folder. Updates come through the
-  package manager.
+  GUFI and OCR in /opt/activate-studio. Each user has their own index
+  and settings in their home folder. Updates come through the package
+  manager.
 contents:
   - src: $stage
     dst: /opt/activate-studio

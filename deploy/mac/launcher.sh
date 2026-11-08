@@ -168,6 +168,10 @@ stop() {
   launchctl bootout "$SERVICE" 2>/dev/null || true
   # Disabled, so it does not start again at login until the app is opened.
   launchctl disable "$SERVICE" 2>/dev/null || true
+  # bootout returns while a server draining its streams has yet to exit, and
+  # until it has the service still shows as loaded: an open right after
+  # would take it for running and start nothing.
+  for _ in $(seq 1 60); do loaded || break; sleep 0.5; done
   stop_detached
 }
 

@@ -89,6 +89,8 @@ const listeners = new Set<() => void>()
 let gen = 0
 /** The version an install or rollback is going to. */
 let target: string | null = null
+/** The version an install or rollback under way goes to, when known. */
+export const installTarget = (): string | null => target
 /** The install or rollback was started on this page, not by the server. */
 let asked = false
 let lastState: UpdateState = 'idle'
@@ -297,13 +299,12 @@ export const updateActions = {
     asked = true
     return act('install', () => updatesApi.installVersion(version, restoreState))
   },
-  /** A rollback restarts at once, whatever state the answer reports. */
-  rollback: async () => {
-    const from = flow.status?.current.version ?? ''
-    const to = flow.status?.previous?.version ?? null
-    target = to
+  /** The version the last update replaced, downloaded and installed as a
+   *  picked version is, then the restart; followed as an install is. */
+  rollback: () => {
+    target = flow.status?.previous?.version ?? null
     asked = true
-    if (await act('rollback', updatesApi.rollback)) waitFor(to, from)
+    return act('rollback', updatesApi.rollback)
   },
   /** Shows a policy at once, before or after it is saved. */
   showPolicy: (policy: UpdatePolicy) => {

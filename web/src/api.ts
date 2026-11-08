@@ -667,8 +667,10 @@ export interface UpdatesStatus {
   checkedAt: string | null
   /** The last check could not reach the release server; it checks again later. */
   offline?: boolean
-  /** The version a rollback goes back to. */
-  previous: { version: string } | null
+  /** The version a rollback goes back to: the one the last update
+   *  replaced, which Roll back downloads again (size: the download, null
+   *  when the release is not known here). */
+  previous: { version: string; size?: number | null } | null
   /** The last update changed the app's own window, which reopening runs. */
   reopen?: boolean
   /** The signed releases on the channel, newest first (the running one included). */

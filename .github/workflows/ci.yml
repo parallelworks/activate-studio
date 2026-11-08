@@ -19,6 +19,9 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # The web client, which every build ships, and the Node server and
+  # indexer, which only the earlier builds carry (STUDIO_SERVER=node or go
+  # in the build scripts); releases ship the Go version (the go job).
   build-and-test:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -85,9 +88,10 @@ jobs:
           pnpm --filter @activate-studio/server --prod deploy --legacy /tmp/deploy-check
           node testdata/check-packaging.mjs /tmp/deploy-check
 
-  # The Go server (server-go): vet and tests on Linux, and vet for every
-  # platform the desktop app targets. Tests that need GUFI, Node or the
-  # ONNX runtime skip themselves when those are absent, as here.
+  # The Go server (server-go), the server releases ship: vet and tests on
+  # Linux, vet for every platform the desktop app targets, and the release
+  # binaries built as the build scripts build them. Tests that need GUFI,
+  # Node or the ONNX runtime skip themselves when those are absent, as here.
   go:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -125,6 +129,16 @@ jobs:
       - name: go vet for each platform
         working-directory: server-go
         run: sh scripts/crossvet.sh
+      # As deploy/linux/build_app.sh and deploy/mac/build_app.sh build them
+      # (static, no cgo); the Linux server must list its routes.
+      - name: the release binaries
+        working-directory: server-go
+        run: |
+          set -euo pipefail
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o "$RUNNER_TEMP/linux/" ./cmd/studio-server ./cmd/semantic-map
+          CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags "-s -w" -o "$RUNNER_TEMP/darwin/" ./cmd/studio-server ./cmd/semantic-map
+          "$RUNNER_TEMP/linux/studio-server" routes >/dev/null
+          ls -l "$RUNNER_TEMP/linux" "$RUNNER_TEMP/darwin"
 
   macos:
     # The Studio is expected to run from source on a laptop, and macOS is

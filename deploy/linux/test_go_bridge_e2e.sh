@@ -113,8 +113,8 @@ env -i HOME="$H" PATH=/usr/bin:/bin /bin/bash "$OLD/install.sh" >"$T/install.log
 [ "$(cut -d' ' -f1 "$APP/install-kind")" = user ] && ok "$OLD_VERSION installed per user with its own install.sh" || bad "install-kind is not user"
 mkdir -p "$DATA"
 printf "PORT='%s'\nKB_ROOT='%s'\nSTUDIO_UPDATE_URL='http://127.0.0.1:%s'\n" "$PORT" "$KB" "$FEED_PORT" >"$DATA/studio.env"
-"$NODE" "$MJS" serve "$T/rel" "$FEED_PORT" &
-pids+=($!)
+serve_feed() { "$NODE" "$MJS" serve "$T/rel" "$FEED_PORT" & FEED_PID=$!; pids+=("$FEED_PID"); sleep 1; }
+serve_feed
 if [ "${WINDOW:-}" = 1 ]; then
   [ -n "${DISPLAY:-}" ] || { echo "WINDOW=1 needs DISPLAY" >&2; exit 2; }
   setsid env -i HOME="$H" PATH=/usr/bin:/bin DISPLAY="$DISPLAY" XAUTHORITY="${XAUTHORITY:-}" \
@@ -159,16 +159,39 @@ MIN_GLIBC="$("$PY" -I -c 'import json, sys; print(json.load(open(sys.argv[1]))["
 export MIN_GLIBC
 (cd "$T/stage/x" && tar --owner=0 --group=0 --numeric-owner --sort=name -I 'gzip -1' -cf "$T/stage/activate-studio-linux-x86_64.tar.gz" activate-studio)
 rm -rf "$T/stage/x"
+# go_release VERSION [crash]: the Go payload stamped as VERSION, in
+# $T/stage/VERSION/; crash: its server exits at once, every time.
+go_release() {
+  local d="$T/stage/$1"
+  mkdir -p "$d/x"
+  tar -xzf "$NEW_ARCHIVE" -C "$d/x"
+  "$NODE" "$MJS" stamp "$d/x/activate-studio" "$1" "$T/keys/update.pub"
+  if [ "${2:-}" = crash ]; then printf '#!/bin/sh\nexit 1\n' >"$d/x/activate-studio/app/bin/studio-server"; fi
+  (cd "$d/x" && tar --owner=0 --group=0 --numeric-owner --sort=name -I 'gzip -1' -cf "$d/activate-studio-linux-x86_64.tar.gz" activate-studio)
+  rm -rf "$d/x"
+}
+bump() { "$PY" -I -c 'import sys; p = sys.argv[1].lstrip("v").split("."); p = p + ["0"] if len(p) == 2 else p; p[2] = str(int(p[2]) + 1); print("v" + ".".join(p))' "$1"; }
+UPD="$DATA/updates"
+app_version() { "$PY" -I -c 'import json, sys; print(json.load(open(sys.argv[1]))["version"])' "$APP/app/build-info.json" 2>/dev/null; }
+GGUF="$DATA/index/models/minilm384.gguf"
+[ -L "$GGUF" ] && had_gguf=1 || had_gguf=''
+
 CHANNEL="${CHANNEL:-stable}"
 if [ "$CHANNEL" = preview ]; then
   # The setting as the old version names it; the Go updater reads it as preview.
   api -m 30 PUT "$U/api/settings" '{"updates": {"channel": "prerelease"}}' >/dev/null || bad "the channel was not saved"
   PRERELEASE=1 CHANNEL=preview "$NODE" "$MJS" add-release "$T/rel" "$FEED_PORT" "$NEW_VERSION" "$T/stage/activate-studio-linux-x86_64.tar.gz" "$T/keys/update.key"
 else
-  CHANNEL=stable "$NODE" "$MJS" add-release "$T/rel" "$FEED_PORT" "$NEW_VERSION" "$T/stage/activate-studio-linux-x86_64.tar.gz" "$T/keys/update.key"
-  # A newer Preview release, which a Stable install never takes.
-  PRE_VERSION="$("$PY" -I -c 'import sys; m, n = sys.argv[1].lstrip("v").split(".")[:2]; print(f"v{m}.{int(n) + 1}")' "$NEW_VERSION")"
+  # A Preview release, which a Stable install never takes: by default one
+  # newer than the Stable release below; PRE_VERSION=v1.188.1 is the kind
+  # deploy/release_preview.sh publishes, between two Stable releases. It is
+  # published first, alone, and the old version's updater must not offer it.
+  PRE_VERSION="${PRE_VERSION:-$("$PY" -I -c 'import sys; m, n = sys.argv[1].lstrip("v").split(".")[:2]; print(f"v{m}.{int(n) + 1}")' "$NEW_VERSION")}"
   PRERELEASE=1 CHANNEL=preview "$NODE" "$MJS" add-release "$T/rel" "$FEED_PORT" "$PRE_VERSION" "$T/stage/activate-studio-linux-x86_64.tar.gz" "$T/keys/update.key"
+  api -m 60 POST "$U/api/updates/check" '{}' >"$T/check0.json" || true
+  json "not d['available'] and all(v['version'] != '$PRE_VERSION' for v in d.get('versions') or [])" <"$T/check0.json" &&
+    ok "$OLD_VERSION on Stable is not offered the Preview $PRE_VERSION" || bad "$OLD_VERSION on Stable offers the Preview: $(cut -c1-300 "$T/check0.json")"
+  CHANNEL=stable "$NODE" "$MJS" add-release "$T/rel" "$FEED_PORT" "$NEW_VERSION" "$T/stage/activate-studio-linux-x86_64.tar.gz" "$T/keys/update.key"
 fi
 api -m 60 POST "$U/api/updates/check" '{}' >"$T/check.json" || true
 if json "d['available'] and d['latest']['version'] == '$NEW_VERSION' and d['canInstall']" <"$T/check.json"; then
@@ -178,8 +201,8 @@ api -m 30 POST "$U/api/updates/install" '{}' >/dev/null || bad "the install requ
 if wait_version "$NEW_VERSION" 240; then ok "the server answers as $NEW_VERSION"; else bad "the server did not come back as $NEW_VERSION"; log_tail; fi
 sleep 2
 server_is go && ok "and it is the Go server" || bad "the server is not the Go server"
-[ -d "$LIB/.activate-studio.previous" ] && ok "$OLD_VERSION is kept beside it" || bad "no previous payload"
-api -m 10 GET "$U/api/updates" | json "d.get('previous') == {'version': '$OLD_VERSION'} and d.get('mode') == 'app'" && ok "the Go updater offers the rollback" || bad "the Go updater offers no rollback"
+[ -d "$LIB/.activate-studio.previous" ] && [ -f "$UPD/pending.json" ] && ok "$OLD_VERSION is kept beside it until the first clean start" || bad "no previous payload, or no pending.json, right after the update"
+api -m 10 GET "$U/api/updates" | json "(d.get('previous') or {}).get('version') == '$OLD_VERSION' and d.get('mode') == 'app'" && ok "the Go updater offers the rollback" || bad "the Go updater offers no rollback"
 data_ok "on $NEW_VERSION"
 api -m 60 POST "$U/api/updates/check" '{}' >"$T/check2.json" || true
 if [ "$CHANNEL" = preview ]; then
@@ -233,18 +256,93 @@ if [ "${WINDOW:-}" = 1 ]; then
   [ -n "${SHOT:-}" ] && "${SHOT}" "$T" go-after-reopen || true
 fi
 
-# ---- 4. back to the Node version ----
+# ---- 4. the copy kept beside it goes after the first clean start ----
 
-echo "Roll back"
-api -m 60 POST "$U/api/updates/rollback" '{}' >/dev/null || bad "the rollback was refused"
-if wait_version "$OLD_VERSION" 240; then ok "the server answers as $OLD_VERSION again"; else
-  bad "the server did not come back as $OLD_VERSION"; log_tail
-  ps -u "$(id -u)" -o pid=,ppid=,args= | grep -F "$T" | grep -v grep | cut -c1-200 | sed 's/^/        /' || true
+echo "After the first clean start"
+# pending.json is cleared a minute after the start; the copy goes once no
+# process runs from it (with WINDOW=1 the old window did until the reopen).
+n=0
+while [ -d "$LIB/.activate-studio.previous" ] && [ "$n" -lt 240 ]; do sleep 1; n=$((n + 1)); done
+if [ ! -d "$LIB/.activate-studio.previous" ]; then
+  ok "the copy of $OLD_VERSION is removed after the clean start (${n}s)"
+  [ ! -e "$UPD/pending.json" ] && ok "and only once pending.json was cleared" || bad "the copy was removed while pending.json was there"
+else
+  bad "the copy of $OLD_VERSION is still there after ${n}s"; log_tail
 fi
-[ "${WINDOW:-}" = 1 ] && [ -n "${SHOT:-}" ] && "${SHOT}" "$T" after-rollback || true
-sleep 2
-server_is node && ok "with the Node server" || bad "the server is not Node's after the rollback"
-data_ok "after the rollback"
+grep -q "\"$OLD_VERSION\"" "$UPD/previous.json" 2>/dev/null && ok "updates/previous.json names $OLD_VERSION" || bad "previous.json: $(cat "$UPD/previous.json" 2>/dev/null)"
+if [ -n "$had_gguf" ]; then
+  n=0; while [ -L "$GGUF" ] && [ "$n" -lt 30 ]; do sleep 1; n=$((n + 1)); done
+  [ ! -e "$GGUF" ] && [ ! -L "$GGUF" ] && ok "the Node version's model link in the data folder went with it" || bad "the dangling model link is still there"
+fi
+data_ok "after the copy was removed"
+
+if [ "$CHANNEL" = preview ]; then
+  # ---- 5. Go to an earlier Go Preview, by download ----
+  NEW2="$(bump "$NEW_VERSION")"
+  echo "Roll back from $NEW2 to the earlier Preview $NEW_VERSION"
+  go_release "$NEW2"
+  PRERELEASE=1 CHANNEL=preview "$NODE" "$MJS" add-release "$T/rel" "$FEED_PORT" "$NEW2" "$T/stage/$NEW2/activate-studio-linux-x86_64.tar.gz" "$T/keys/update.key"
+  api -m 60 POST "$U/api/updates/check" '{}' >/dev/null || true
+  api -m 30 POST "$U/api/updates/install" '{}' >/dev/null || bad "the install of $NEW2 was refused"
+  wait_version "$NEW2" 240 && ok "$NEW2 runs" || { bad "$NEW2 did not start"; log_tail; }
+  n=0; while [ -d "$LIB/.activate-studio.previous" ] && [ "$n" -lt 240 ]; do sleep 1; n=$((n + 1)); done
+  [ ! -d "$LIB/.activate-studio.previous" ] && ok "the copy of $NEW_VERSION is removed after the clean start" || bad "the copy of $NEW_VERSION is still there"
+  api -m 10 GET "$U/api/updates" | json "(d.get('previous') or {}).get('version') == '$NEW_VERSION' and (d['previous'].get('size') or 0) > 0" &&
+    ok "Roll back offers $NEW_VERSION, a download of its size" || bad "previous: $(api -m 10 GET "$U/api/updates" | field 'd.get("previous")')"
+  api -m 60 POST "$U/api/updates/rollback" '{}' >/dev/null || bad "the rollback was refused"
+  wait_version "$NEW_VERSION" 240 && ok "the server answers as $NEW_VERSION again, downloaded" || { bad "the server did not come back as $NEW_VERSION"; log_tail; }
+  sleep 2
+  server_is go && ok "with the Go server" || bad "the server is not the Go server after the rollback"
+  data_ok "after the rollback to $NEW_VERSION"
+else
+  # ---- 5. a crash loop before the clean start puts the copy back ----
+  CRASH="$(bump "$NEW_VERSION")"
+  echo "A version that never starts ($CRASH)"
+  go_release "$CRASH" crash
+  CHANNEL=stable "$NODE" "$MJS" add-release "$T/rel" "$FEED_PORT" "$CRASH" "$T/stage/$CRASH/activate-studio-linux-x86_64.tar.gz" "$T/keys/update.key"
+  api -m 60 POST "$U/api/updates/check" '{}' >/dev/null || true
+  api -m 30 POST "$U/api/updates/install" '{}' >/dev/null || bad "the install of $CRASH was refused"
+  "$NODE" "$MJS" remove-release "$T/rel" "$CRASH"
+  # The swap keeps $NEW_VERSION beside it and writes pending.json; the run
+  # loop then puts it back, which only that copy makes possible.
+  # The server answers as $NEW_VERSION until the swap, so wait for the swap
+  # first (pending.json, or $CRASH on disk), then for the run loop's note.
+  n=0; until [ -f "$UPD/pending.json" ] || [ "$(app_version)" = "$CRASH" ] || [ -f "$UPD/rolled-back.json" ] || [ "$n" -ge 240 ]; do sleep 1; n=$((n + 1)); done
+  n=0; until [ -f "$UPD/rolled-back.json" ] || [ "$n" -ge 300 ]; do sleep 1; n=$((n + 1)); done
+  if wait_version "$NEW_VERSION" 300 && [ "$(app_version)" = "$NEW_VERSION" ]; then ok "after three failed starts the run loop put $NEW_VERSION back"; else bad "$NEW_VERSION was not put back"; log_tail; fi
+  grep -q "\"$CRASH\"" "$UPD/rolled-back.json" 2>/dev/null && ok "rolled-back.json says $CRASH did not start" || bad "rolled-back.json: $(cat "$UPD/rolled-back.json" 2>/dev/null)"
+  sleep 2
+  server_is go && ok "with the Go server" || bad "the server is not the Go server after the run loop's rollback"
+  data_ok "after the run loop's rollback"
+
+  # ---- 6. back to the Node version, by download ----
+  echo "Roll back to $OLD_VERSION"
+  (cd "$T/old" && mkdir -p "$T/stage/$OLD_VERSION" && tar --owner=0 --group=0 --numeric-owner --sort=name -I 'gzip -1' -cf "$T/stage/$OLD_VERSION/activate-studio-linux-x86_64.tar.gz" activate-studio)
+  CHANNEL=stable "$NODE" "$MJS" add-release "$T/rel" "$FEED_PORT" "$OLD_VERSION" "$T/stage/$OLD_VERSION/activate-studio-linux-x86_64.tar.gz" "$T/keys/update.key"
+  api -m 60 POST "$U/api/updates/check" '{}' >/dev/null || true
+  api -m 10 GET "$U/api/updates" | json "(d.get('previous') or {}).get('version') == '$OLD_VERSION' and (d['previous'].get('size') or 0) > 0" &&
+    ok "Roll back offers $OLD_VERSION, a download of its size" || bad "previous: $(api -m 10 GET "$U/api/updates" | field 'd.get("previous")')"
+  # Offline: the release server is gone; the rollback fails and changes nothing.
+  kill -TERM "$FEED_PID" 2>/dev/null || true
+  sleep 1
+  api -m 60 POST "$U/api/updates/rollback" '{}' >"$T/offline.json" 2>&1 || true
+  poll 60 /api/updates 'd["state"] == "error" and "Rolling back downloads" in (d.get("error") or "")' &&
+    ok "offline, the rollback fails with: $(api -m 10 GET "$U/api/updates" | field 'd["error"]' | cut -c1-160)" ||
+    bad "offline: $(cat "$T/offline.json"; api -m 10 GET "$U/api/updates" | field '(d["state"], d.get("error"))')"
+  [ "$(running_version)" = "$NEW_VERSION" ] && server_is go && ok "and $NEW_VERSION still runs" || bad "the offline rollback changed the version"
+  [ ! -d "$LIB/.activate-studio.new" ] && ok "and left nothing staged" || bad "a staged copy was left"
+  serve_feed
+  api -m 60 POST "$U/api/updates/rollback" '{}' >/dev/null || bad "the rollback was refused"
+  if wait_version "$OLD_VERSION" 300; then ok "the server answers as $OLD_VERSION again, downloaded"; else
+    bad "the server did not come back as $OLD_VERSION"; log_tail
+    ps -u "$(id -u)" -o pid=,ppid=,args= | grep -F "$T" | grep -v grep | cut -c1-200 | sed 's/^/        /' || true
+  fi
+  [ "${WINDOW:-}" = 1 ] && [ -n "${SHOT:-}" ] && "${SHOT}" "$T" after-rollback || true
+  sleep 2
+  server_is node && ok "with the Node server" || bad "the server is not Node's after the rollback"
+  [ -x "$APP/node/bin/node" ] && [ ! -e "$APP/node/PLACEHOLDER" ] && ok "a whole Node install, not the stand-ins" || bad "the install after the rollback is not the Node payload"
+  data_ok "after the rollback"
+fi
 
 echo
 if [ "$failures" -gt 0 ]; then echo "$failures check(s) failed"; exit 1; fi

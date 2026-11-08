@@ -3,7 +3,7 @@
 # deployment, with no Node and no Python (docs/UPDATES.md, "The Go version").
 #
 #   The image carries the Linux payload that deploy/linux/build_app.sh makes
-#   with STUDIO_SERVER=go-only: the Go server (app/bin/studio-server), the
+#   by default (STUDIO_SERVER=go-only): the Go server (app/bin/studio-server), the
 #   built SPA, the lean GUFI (sqlite-vec, no llama.cpp), tesseract, the ONNX
 #   runtime library and model, and the STEP preview's modules. Only poppler
 #   (optional: the Go PDF renderer reads PDFs without it) and LibreOffice
@@ -13,7 +13,7 @@
 #   settings and credential store live under DATA_DIR. INDEX_ON_START=1
 #   builds or refreshes the index before serving.
 #
-# Build:   deploy/linux/build_app.sh with STUDIO_SERVER=go-only, then unpack
+# Build:   deploy/linux/build_app.sh (its default build), then unpack
 #          its archive so that .container/activate-studio is the payload
 #          tree, and from the repo root:
 #            apptainer build studio-go.sif deploy/app-go.def
