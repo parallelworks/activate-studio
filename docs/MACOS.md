@@ -276,6 +276,31 @@ and checks both with Gatekeeper. `deploy/mac/keychain.sh` keeps the
 certificate in a keychain of its own. The release workflow runs these in
 that order, then packs the archive from the stapled app.
 
+## The Go version's window (Wails)
+
+The Go version (`STUDIO_SERVER=go-only` in `deploy/mac/build_app.sh`, which defaults to `MAC_SHELL=wails`) replaces the Swift window (`deploy/mac/shell/StudioShell.swift`) with `desktop/wails`, built for macOS with `-tags desktop,production` into `Contents/MacOS/ACTIVATE Studio`. Like the Swift window it does not supervise the server: it runs `Resources/launcher.sh` with `STUDIO_NO_BROWSER=1`, reads the address the launcher prints, and leaves the server running when the window closes. The launcher restarts a server whose `builtAt` differs from its own copy, so the first start after the update to the Go version stops the Node server the LaunchAgent ran and starts the Go one.
+
+| Swift window | Wails window |
+| --- | --- |
+| Runs `launcher.sh`, opens the address it prints, keeps the server on close | Same (`launcher_darwin.go`) |
+| Starting and failure pages, Try Again | Same (the shell's start page), plus the server log's end |
+| Open Logs on the failure page | Not yet |
+| About, Check for Updates, Run Setup, Stop Background Server | Same menu items |
+| Uninstall, with the dry-run plan and the keep-data choice | Same (`launcher.sh --uninstall --dry-run`, then the chosen run) |
+| Hide, Hide Others, Show All, Quit; Edit menu; Minimize, Zoom, Close | Same, without Hide Others |
+| Reload, Actual Size, Zoom In, Zoom Out, Enter Full Screen | Same (zoom through the page) |
+| Folder chooser, file open panel, alert and confirm dialogs | Same (the shell's bridge) |
+| Downloads to ~/Downloads, revealed in Finder | Same |
+| Reopen after an update that changed the window | Same: the bundle is opened again after this process ends |
+| Title bar in the page's color, light or dark ink | Not yet: the system title bar |
+| Microphone permission for dictation | Not yet (`NSMicrophoneUsageDescription` stays in Info.plist) |
+| Window size and place remembered | Not yet |
+| Popup windows for Studio pages | Opened in the default browser |
+| Install offer when run from the disk image | Left to `launcher.sh` (`--install`) |
+| Purge of the window's own web data on uninstall | Not yet |
+
+Code signing and notarization are as for the Swift window: `deploy/mac/sign_app.sh` signs every Mach-O file in the bundle, the Go programs and the Wails window among them. The releases from v1.180 on install a bundle that has `Resources/node/bin/node`, `Resources/app/server/dist/main.js` and `Resources/studio-run.sh` and the manifest's signature; the Go version carries stand-ins at the first two paths (docs/UPDATES.md, "The Go version").
+
 ## From a clone
 
 This is the whole path from nothing installed to a working index, in the

@@ -65,7 +65,7 @@ if [ "${SKIP_DEPS:-}" != 1 ] && [ "$(id -u)" = 0 ] && command -v dnf >/dev/null 
   dnf install -y -q patchelf >/dev/null
   el8_tools
 fi
-for tool in gcc g++ cmake make git curl tar patchelf python3 column setfattr readelf; do
+for tool in gcc g++ cmake make git curl tar patchelf python3 column setfattr readelf strip; do
   command -v "$tool" >/dev/null 2>&1 || die "$tool is required"
 done
 
@@ -233,6 +233,11 @@ done
 for f in "$TREE"/lib/*; do
   if [ -f "$f" ] && [ ! -L "$f" ] && head -c 4 "$f" | grep -q ELF; then ELF_LIBS+=("$f"); fi
 done
+# The lean build's programs lose their symbols first (strip after patchelf
+# leaves a program the loader rejects): about 10 MB each become under 1 MB.
+if [ "$LEMBED" = 0 ]; then
+  for f in "${ELF_BINS[@]}"; do strip --strip-unneeded "$f"; done
+fi
 for f in "${ELF_BINS[@]}"; do patchelf --set-rpath '$ORIGIN/../lib' "$f"; done
 for f in "${ELF_LIBS[@]}"; do patchelf --set-rpath '$ORIGIN' "$f"; done
 echo "  run paths set on ${#ELF_BINS[@]} programs and ${#ELF_LIBS[@]} libraries"

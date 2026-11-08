@@ -195,10 +195,14 @@ while [ "$stopping" = 0 ]; do
     if [ -f "$RES/models/minilm384.gguf" ] && { [ -L "$model" ] || [ ! -e "$model" ]; }; then
       mkdir -p "$INDEX_BASE/models" && ln -sfn "$RES/models/minilm384.gguf" "$model"
     fi
-    # The ONNX runtime library the Go server's embedder loads, where the app
-    # has one (the Go version; Node's Python carries its own).
-    if [ -f "$RES/onnxruntime/lib/libonnxruntime.dylib" ]; then
-      export STUDIO_ONNXRUNTIME_LIB="${STUDIO_ONNXRUNTIME_LIB:-$RES/onnxruntime/lib/libonnxruntime.dylib}"
+    # The ONNX runtime library the Go server's embedder loads (app/lib,
+    # where it looks on its own; named here so that a copy elsewhere on the
+    # system is never used), and the STEP preview's modules (app/occt).
+    if [ -f "$RES/app/lib/libonnxruntime.dylib" ]; then
+      export STUDIO_ORT_LIB="${STUDIO_ORT_LIB:-$RES/app/lib/libonnxruntime.dylib}"
+    fi
+    if [ -f "$RES/app/occt/occt-import-js.wasm" ]; then
+      export STUDIO_OCCT_WASM="${STUDIO_OCCT_WASM:-$RES/app/occt/occt-import-js.wasm}"
     fi
     [ -x "$PYTHON_BIN" ] || unset PYTHON_BIN
     onnx="$INDEX_BASE/models/minilm-l6"

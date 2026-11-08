@@ -236,7 +236,7 @@ export function UpdatesSection({ onPolicySaved, pollMs, giveUpMs, reload }: {
       {status.previous && (
         <ConfirmModal open={confirmRollback} onClose={() => setConfirmRollback(false)}
           title={`Roll back to ${status.previous.version}?`}
-          description={`The Studio goes back to version ${status.previous.version} and restarts. This page reloads when it is running.`}
+          description={`The Studio goes back to version ${status.previous.version} and restarts. Its settings and conversations as they are now, newer ones included, are saved in a snapshot first, so nothing made since the update is lost. This page reloads when it is running.`}
           confirmLabel="Roll back"
           onConfirm={rollback} />
       )}

@@ -40,6 +40,10 @@ on:
         description: For that check, build the AI dependencies (sqlite-vec and sqlite-lembed)
         type: boolean
         default: true
+      lembed:
+        description: With sqlite-lembed and llama.cpp; off for the lean GUFI of the Go version (sqlite-vec alone, GUFI_LEMBED=0), whose archive keeps the usual file names
+        type: boolean
+        default: true
   push:
     tags: ["gufi-*"]
 
@@ -62,7 +66,20 @@ jobs:
           # build_gufi.sh refuses anything that is not a ref or a version.
           GUFI_REF: ${{ inputs.gufi_ref }}
           MACOSX_DEPLOYMENT_TARGET: ${{ inputs.deployment_target || '14.0' }}
-        run: OUT_DIR="$RUNNER_TEMP/gufi" deploy/mac/build_gufi.sh
+          # A tag push has no inputs: the full build.
+          GUFI_LEMBED: ${{ inputs.lembed == false && '0' || '1' }}
+        run: |
+          set -euo pipefail
+          OUT_DIR="$RUNNER_TEMP/gufi" deploy/mac/build_gufi.sh
+          # The lean archive under the usual names, for the jobs below and
+          # build_app.sh; its manifest says "sqlite-lembed": "none".
+          if [ "$GUFI_LEMBED" = 0 ]; then
+            cd "$RUNNER_TEMP/gufi"
+            mv gufi-vec-macos-arm64.tar.gz gufi-macos-arm64.tar.gz
+            mv gufi-vec-macos-arm64.manifest.json gufi-macos-arm64.manifest.json
+            rm -f gufi-vec-macos-arm64.tar.gz.sha256
+            shasum -a 256 gufi-macos-arm64.tar.gz >gufi-macos-arm64.tar.gz.sha256
+          fi
 
       # Unpacked from the archive into a fresh directory, after the build's
       # own directories are gone, so nothing can load from where it was built.

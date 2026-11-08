@@ -27,9 +27,16 @@
 #               node (default), go (the Go server in Resources/app/bin with Node
 #               and Python behind it), or go-only (the Go server alone: no Node,
 #               no Python, no node_modules, no GGUF model; the ONNX runtime
-#               library in Resources/onnxruntime/lib; node/bin/node and
+#               library in Resources/app/lib; node/bin/node and
 #               app/server/dist/main.js are stand-ins that older updaters'
 #               checks look for, marked by node/PLACEHOLDER). Needs Go.
+#               Both Go builds carry the ONNX runtime library in app/lib
+#               (beside app/bin/studio-server, where its embedder looks) and
+#               the STEP preview's modules in app/occt, with their licenses
+#               in Resources/licenses.
+#   OCCT_DIR    a folder with occt-import-js.wasm and occt-import-js.noeh.wasm
+#               from server-go/scripts/occt/build.sh, used instead of
+#               building them
 #   MAC_SHELL   swift or wails: the window. Default wails for go-only, else
 #               swift. wails is desktop/wails built for macOS (Go with cgo, on a
 #               Mac), with the Swift window's features (docs/MACOS.md)
@@ -106,10 +113,24 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$RES/app/server" "$RES/app/web" "$RES/app/deploy" "$RES/node/bin" "$RES/models"
 
 if [ "$SERVER" != node ]; then
-  echo "The Go server (studio-server, semantic-map, studio-extract) for macOS arm64..."
+  echo "The Go server (studio-server, semantic-map) for macOS arm64..."
   mkdir -p "$RES/app/bin"
   (cd "$PROJECT_ROOT/server-go" && CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags "-s -w" \
-    -o "$RES/app/bin/" ./cmd/studio-server ./cmd/semantic-map ./cmd/studio-extract)
+    -o "$RES/app/bin/" ./cmd/studio-server ./cmd/semantic-map)
+  # The STEP preview's modules (occt-import-js, Open CASCADE, LGPL 2.1):
+  # separate files beside the server, not built into it, so they stay
+  # replaceable. OCCT_DIR names a folder with them already built
+  # (server-go/scripts/occt/build.sh); else they are built here from the
+  # occt-import-js package server/ installs, with binaryen from npm.
+  echo "The STEP preview modules (occt-import-js)..."
+  mkdir -p "$RES/app/occt" "$RES/licenses"
+  if [ -n "${OCCT_DIR:-}" ]; then
+    cp "$OCCT_DIR/occt-import-js.wasm" "$OCCT_DIR/occt-import-js.noeh.wasm" "$RES/app/occt/"
+  else
+    "$PROJECT_ROOT/server-go/scripts/occt/build.sh" "$RES/app/occt" >/dev/null
+  fi
+  cp "$PROJECT_ROOT/server/node_modules/occt-import-js/dist/license.occt-import-js.txt" "$RES/licenses/occt-import-js-LICENSE.txt"
+  cp "$PROJECT_ROOT/server/node_modules/occt-import-js/dist/license.occt.txt" "$RES/licenses/occt-LICENSE.txt"
 fi
 if [ "$SERVER" = go-only ]; then
   # What the updaters of v1.180 to v1.188 check in a bundle before they
@@ -214,10 +235,11 @@ if [ "$SERVER" != node ]; then
   fetch "https://github.com/microsoft/onnxruntime/releases/download/v$ORT_VERSION/$ORT_DIST.tgz" "$CACHE_DIR/$ORT_DIST.tgz" "$ORT_SHA256"
   # The macOS archive's paths start with ./ (the Linux one's do not).
   tar -xzf "$CACHE_DIR/$ORT_DIST.tgz" -C "$WORK" "./$ORT_DIST/lib/libonnxruntime.$ORT_VERSION.dylib" "./$ORT_DIST/LICENSE" "./$ORT_DIST/ThirdPartyNotices.txt"
-  mkdir -p "$RES/onnxruntime/lib" "$RES/onnxruntime/licenses"
-  cp "$WORK/$ORT_DIST/lib/libonnxruntime.$ORT_VERSION.dylib" "$RES/onnxruntime/lib/libonnxruntime.dylib"
-  cp "$WORK/$ORT_DIST/LICENSE" "$RES/onnxruntime/licenses/onnxruntime-LICENSE.txt"
-  cp "$WORK/$ORT_DIST/ThirdPartyNotices.txt" "$RES/onnxruntime/licenses/onnxruntime-ThirdPartyNotices.txt"
+  # In app/lib: the embedder looks beside studio-server and in ../lib.
+  mkdir -p "$RES/app/lib" "$RES/licenses"
+  cp "$WORK/$ORT_DIST/lib/libonnxruntime.$ORT_VERSION.dylib" "$RES/app/lib/libonnxruntime.dylib"
+  cp "$WORK/$ORT_DIST/LICENSE" "$RES/licenses/onnxruntime-LICENSE.txt"
+  cp "$WORK/$ORT_DIST/ThirdPartyNotices.txt" "$RES/licenses/onnxruntime-ThirdPartyNotices.txt"
 fi
 
 G="$RES/gufi"
@@ -419,7 +441,7 @@ MACHO_ALL=("$G"/bin/* "$G"/lib/*.dylib "$O"/bin/* "$O"/lib/*.dylib)
 if [ "$SERVER" != go-only ]; then
   MACHO_ALL+=("$RES/node/bin/node" "$RES"/python/bin/python3.* "$RES"/python/lib/*.dylib "$RES"/python/lib/python3.*/lib-dynload/*.so)
 fi
-[ "$SERVER" = node ] || MACHO_ALL+=("$RES"/app/bin/* "$RES"/onnxruntime/lib/*.dylib)
+[ "$SERVER" = node ] || MACHO_ALL+=("$RES"/app/bin/* "$RES"/app/lib/*.dylib)
 NEEDS="$(python3 "$HERE/macho_check.py" --print-minos "${MACHO_ALL[@]}" ${SITE_NATIVE[@]+"${SITE_NATIVE[@]}"})"
 MIN_MACOS="${MIN_MACOS:-$NEEDS}"
 APP_NAME="$APP_NAME" BUNDLE_ID="$BUNDLE_ID" SHORT_VERSION="$SHORT_VERSION" BUNDLE_VERSION="$BUNDLE_VERSION" \

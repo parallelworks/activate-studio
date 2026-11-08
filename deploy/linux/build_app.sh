@@ -30,12 +30,18 @@
 #                          Python behind it for what is not ported yet;
 #                 go-only  the Go server alone: no Node, no Python, no
 #                          node_modules, no GGUF model; GUFI may be the lean
-#                          one (build_gufi.sh with GUFI_LEMBED=0), the ONNX
-#                          runtime library is in onnxruntime/lib, and
+#                          one (build_gufi.sh with GUFI_LEMBED=0), and
 #                          node/bin/node and app/server/dist/main.js are
 #                          placeholders that older updaters' checks look for
 #                          (node/PLACEHOLDER marks them)
-#                 The Go builds need Go on PATH; the binaries are static.
+#                 Both Go builds carry the ONNX runtime library in
+#                 app/lib (beside app/bin/studio-server, where its embedder
+#                 looks) and the STEP preview's modules in app/occt, with
+#                 their licenses in licenses/. They need Go on PATH; the
+#                 binaries are static.
+#   OCCT_DIR      a folder with occt-import-js.wasm and occt-import-js.noeh.wasm
+#                 from server-go/scripts/occt/build.sh, used instead of
+#                 building them
 #   SHELL_DIR     a folder with activate-studio-wk41 and activate-studio-wk40,
 #                 the window shells (desktop/linux/build_shell.sh); when set the
 #                 tree also gets bin/, install.sh, uninstall.sh, the menu entry
@@ -76,7 +82,7 @@ MAX_GLIBCXX=3.4.25
 MAX_CXXABI=1.3.11
 
 [ "$(uname -s)" = Linux ] && [ "$(uname -m)" = x86_64 ] || die "builds on Linux x86_64"
-TOOLS="python3 curl tar git pnpm strip"
+TOOLS="python3 curl tar git pnpm"
 [ "$SERVER" = go-only ] || TOOLS="$TOOLS patchelf"
 [ "$SERVER" = node ] || TOOLS="$TOOLS go"
 for tool in $TOOLS; do
@@ -109,10 +115,24 @@ done
 mkdir -p "$APP/app/server" "$APP/app/web" "$APP/app/deploy" "$APP/node/bin" "$APP/models" "$APP/share"
 
 if [ "$SERVER" != node ]; then
-  echo "The Go server (studio-server, semantic-map, studio-extract)..."
+  echo "The Go server (studio-server, semantic-map)..."
   mkdir -p "$APP/app/bin"
   (cd "$PROJECT_ROOT/server-go" && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-s -w" \
-    -o "$APP/app/bin/" ./cmd/studio-server ./cmd/semantic-map ./cmd/studio-extract)
+    -o "$APP/app/bin/" ./cmd/studio-server ./cmd/semantic-map)
+  # The STEP preview's modules (occt-import-js, Open CASCADE, LGPL 2.1):
+  # separate files beside the server, not built into it, so they stay
+  # replaceable. OCCT_DIR names a folder with them already built
+  # (server-go/scripts/occt/build.sh); else they are built here from the
+  # occt-import-js package server/ installs, with binaryen from npm.
+  echo "The STEP preview modules (occt-import-js)..."
+  mkdir -p "$APP/app/occt" "$APP/licenses"
+  if [ -n "${OCCT_DIR:-}" ]; then
+    cp "$OCCT_DIR/occt-import-js.wasm" "$OCCT_DIR/occt-import-js.noeh.wasm" "$APP/app/occt/"
+  else
+    "$PROJECT_ROOT/server-go/scripts/occt/build.sh" "$APP/app/occt" >/dev/null
+  fi
+  cp "$PROJECT_ROOT/server/node_modules/occt-import-js/dist/license.occt-import-js.txt" "$APP/licenses/occt-import-js-LICENSE.txt"
+  cp "$PROJECT_ROOT/server/node_modules/occt-import-js/dist/license.occt.txt" "$APP/licenses/occt-LICENSE.txt"
 fi
 
 if [ "$SERVER" = go-only ]; then
@@ -231,10 +251,11 @@ if [ "$SERVER" != node ]; then
   ORT_DIST="onnxruntime-linux-x64-$ORT_VERSION"
   fetch "https://github.com/microsoft/onnxruntime/releases/download/v$ORT_VERSION/$ORT_DIST.tgz" "$CACHE_DIR/$ORT_DIST.tgz" "$ORT_SHA256"
   tar -xzf "$CACHE_DIR/$ORT_DIST.tgz" -C "$WORK" "$ORT_DIST/lib/libonnxruntime.so.$ORT_VERSION" "$ORT_DIST/LICENSE" "$ORT_DIST/ThirdPartyNotices.txt"
-  mkdir -p "$APP/onnxruntime/lib" "$APP/onnxruntime/licenses"
-  mv "$WORK/$ORT_DIST/lib/libonnxruntime.so.$ORT_VERSION" "$APP/onnxruntime/lib/libonnxruntime.so.1"
-  mv "$WORK/$ORT_DIST/LICENSE" "$APP/onnxruntime/licenses/onnxruntime-LICENSE.txt"
-  mv "$WORK/$ORT_DIST/ThirdPartyNotices.txt" "$APP/onnxruntime/licenses/onnxruntime-ThirdPartyNotices.txt"
+  # In app/lib: the embedder looks beside studio-server and in ../lib.
+  mkdir -p "$APP/app/lib" "$APP/licenses"
+  mv "$WORK/$ORT_DIST/lib/libonnxruntime.so.$ORT_VERSION" "$APP/app/lib/libonnxruntime.so.1"
+  mv "$WORK/$ORT_DIST/LICENSE" "$APP/licenses/onnxruntime-LICENSE.txt"
+  mv "$WORK/$ORT_DIST/ThirdPartyNotices.txt" "$APP/licenses/onnxruntime-ThirdPartyNotices.txt"
 fi
 
 echo "GUFI from $GUFI_TARBALL (deploy/linux/build_gufi.sh)..."
@@ -254,11 +275,11 @@ done
 mv "$WORK/gufi-tarball/gufi" "$APP/gufi"
 if [ "$SERVER" = go-only ]; then
   # The Go version keeps the three GUFI tools the server runs (and gufi_vt,
-  # which runs gufi_query), without their symbols: 207 MB of programs become
-  # about 10 MB.
+  # which runs gufi_query). The lean GUFI's programs come stripped
+  # (build_gufi.sh GUFI_LEMBED=0): stripped here, after patchelf, they
+  # would not load.
   find "$APP/gufi/bin" -mindepth 1 -maxdepth 1 ! -name gufi_query ! -name gufi_dir2index ! -name gufi_sqlite3 -exec rm -f {} +
   rm -f "$APP"/gufi/lib/*.py
-  strip --strip-unneeded "$APP"/gufi/bin/gufi_query "$APP"/gufi/bin/gufi_dir2index "$APP"/gufi/bin/gufi_sqlite3
 fi
 
 echo "OCR from $OCR_TARBALL (deploy/linux/build_ocr.sh)..."

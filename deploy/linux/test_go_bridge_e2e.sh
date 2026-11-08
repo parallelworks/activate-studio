@@ -201,7 +201,11 @@ fi
 
 echo "Roll back"
 api -m 60 POST "$U/api/updates/rollback" '{}' >/dev/null || bad "the rollback was refused"
-if wait_version "$OLD_VERSION" 240; then ok "the server answers as $OLD_VERSION again"; else bad "the server did not come back as $OLD_VERSION"; log_tail; fi
+if wait_version "$OLD_VERSION" 240; then ok "the server answers as $OLD_VERSION again"; else
+  bad "the server did not come back as $OLD_VERSION"; log_tail
+  ps -u "$(id -u)" -o pid=,ppid=,args= | grep -F "$T" | grep -v grep | cut -c1-200 | sed 's/^/        /' || true
+fi
+[ "${WINDOW:-}" = 1 ] && [ -n "${SHOT:-}" ] && "${SHOT}" "$T" after-rollback || true
 sleep 2
 server_is node && ok "with the Node server" || bad "the server is not Node's after the rollback"
 data_ok "after the rollback"

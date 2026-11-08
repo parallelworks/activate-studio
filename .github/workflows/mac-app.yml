@@ -32,6 +32,9 @@ on:
       gufi_run:
         description: A gufi-macos run id whose GUFI archive to use
         default: ""
+      gufi_vec_run:
+        description: For the Go version's build, a gufi-macos run id made with lembed off (the lean GUFI); blank for the GUFI above
+        default: ""
   # A change to the app or its build is built and checked on a Mac, and so
   # is a change to the server or the indexer, which check_app.sh runs from
   # the app (indexing, search, Query, libraries over ssh). The web client is
@@ -139,6 +142,139 @@ jobs:
             ${{ runner.temp }}/out/install.sh
           if-no-files-found: error
           retention-days: 30
+
+  # The Go version (docs/UPDATES.md, "The Go version"): the Wails window with
+  # the Go server, in both shapes (STUDIO_SERVER=go, Node behind it for what
+  # is not ported yet, and go-only, which may fail until every route is
+  # ported and so does not fail the run), built and checked here, and
+  # updated to from the last release (the Swift window and Node) through
+  # that release's own updater, then rolled back
+  # (deploy/mac/test_go_bridge_e2e.sh, with a throwaway key on 127.0.0.1).
+  # Neither job publishes anything, and neither runs for a release.
+  build-go:
+    if: inputs.release == ''
+    strategy:
+      fail-fast: false
+      matrix:
+        server: [go, go-only]
+    continue-on-error: ${{ matrix.server == 'go-only' }}
+    runs-on: macos-15
+    timeout-minutes: 75
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26
+          package-manager-cache: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: server-go/go.mod
+          cache: false
+      - name: install and build
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+      - name: GUFI
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # The lean GUFI only for the Go server alone.
+          GUFI_RUN_INPUT: ${{ matrix.server == 'go-only' && inputs.gufi_vec_run || inputs.gufi_run }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/gufi"
+          run="${GUFI_RUN_INPUT:-$GUFI_RUN}"
+          if [ -n "$run" ]; then
+            gh run download "$run" -R "$GITHUB_REPOSITORY" -n gufi-macos-arm64 -D "$RUNNER_TEMP/gufi"
+          else
+            gh release download "$GUFI_RELEASE" -R "$GITHUB_REPOSITORY" -p 'gufi-macos-arm64.tar.gz*' -D "$RUNNER_TEMP/gufi"
+          fi
+          (cd "$RUNNER_TEMP/gufi" && shasum -a 256 -c gufi-macos-arm64.tar.gz.sha256)
+          echo "GUFI_TARBALL=$RUNNER_TEMP/gufi/gufi-macos-arm64.tar.gz" >> "$GITHUB_ENV"
+      - name: OCR
+        run: |
+          set -euo pipefail
+          OUT_DIR="$RUNNER_TEMP/ocr" deploy/mac/build_ocr.sh
+          echo "OCR_TARBALL=$RUNNER_TEMP/ocr/ocr-macos-arm64.tar.gz" >> "$GITHUB_ENV"
+      - name: build the Go version
+        env:
+          SKIP_BUILD: "1"
+          OUT_DIR: ${{ runner.temp }}/out
+          STUDIO_SERVER: ${{ matrix.server }}
+          MAC_SHELL: wails
+        run: |
+          set -euo pipefail
+          deploy/mac/build_app.sh 2>&1 | tee "$RUNNER_TEMP/build_app.log"
+          {
+            echo "### The Go version for macOS ($STUDIO_SERVER)"
+            echo '```'
+            ls -l "$OUT_DIR"/activate-studio-macos-arm64.*
+            du -sh "$OUT_DIR/ACTIVATE Studio.app"
+            echo '```'
+            sed -n '/^Size$/,/^$/p' "$RUNNER_TEMP/build_app.log" | head -n 14
+          } >>"$GITHUB_STEP_SUMMARY"
+      - name: the Wails window's tests
+        working-directory: desktop/wails
+        run: go test -p 4 ./...
+      - name: check it on this Mac
+        env:
+          OUT_DIR: ${{ runner.temp }}/out
+        run: deploy/mac/check_app.sh "$OUT_DIR/ACTIVATE Studio.app" --run
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: activate-studio-${{ matrix.server }}-macos-arm64
+          path: |
+            ${{ runner.temp }}/out/activate-studio-macos-arm64.tar.gz
+            ${{ runner.temp }}/out/activate-studio-macos-arm64.tar.gz.sha256
+            ${{ runner.temp }}/out/activate-studio-macos-arm64.dmg
+          if-no-files-found: error
+          retention-days: 30
+
+  bridge-go:
+    needs: build-go
+    strategy:
+      fail-fast: false
+      matrix:
+        server: [go, go-only]
+    continue-on-error: ${{ matrix.server == 'go-only' }}
+    runs-on: macos-15
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: activate-studio-${{ matrix.server }}-macos-arm64
+          path: ${{ runner.temp }}/new
+      - name: the last release's app
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          last="$(gh release list -R "$GITHUB_REPOSITORY" --exclude-pre-releases --exclude-drafts -L 1 --json tagName -q '.[0].tagName')"
+          echo "last release: $last" | tee -a "$GITHUB_STEP_SUMMARY"
+          gh release download "$last" -R "$GITHUB_REPOSITORY" -p activate-studio-macos-arm64.tar.gz \
+            -p activate-studio-macos-arm64.tar.gz.sha256 -D "$RUNNER_TEMP/old"
+          (cd "$RUNNER_TEMP/old" && shasum -a 256 -c activate-studio-macos-arm64.tar.gz.sha256)
+      - name: update to the Go version and roll back
+        run: |
+          set -euo pipefail
+          (cd "$RUNNER_TEMP/new" && shasum -a 256 -c activate-studio-macos-arm64.tar.gz.sha256)
+          bash deploy/mac/test_go_bridge_e2e.sh "$RUNNER_TEMP/old/activate-studio-macos-arm64.tar.gz" \
+            "$RUNNER_TEMP/new/activate-studio-macos-arm64.tar.gz" 2>&1 | tee "$RUNNER_TEMP/bridge.log"
+      - name: summary
+        if: always()
+        run: |
+          { echo "### Update to the Go version on macOS"; echo '```'; grep -E '^(  (ok|FAIL) |[A-Z])' "$RUNNER_TEMP/bridge.log" | cut -c1-200; echo '```'; } >>"$GITHUB_STEP_SUMMARY" || true
 
   # The release signing, on every build but a release's: a copy of the app
   # is signed with the sign job's scripts and keychain steps, but with a

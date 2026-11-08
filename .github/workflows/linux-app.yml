@@ -307,6 +307,264 @@ jobs:
           path: ${{ runner.temp }}/test.log
           retention-days: 30
 
+  # The Go version (docs/UPDATES.md, "The Go version"), in both shapes: the
+  # Go server with Node behind it for what is not ported yet (STUDIO_SERVER=go)
+  # and the Go server alone (go-only). Each is checked like the payload above
+  # on some of the same distributions and updated to from the last release
+  # through that release's own updater, then rolled back; go-only is also
+  # built into the Go container image (deploy/app-go.def). go-only jobs may
+  # fail until every route is ported, so they do not fail the run. None of
+  # these jobs publishes anything; the release job above does not wait for
+  # them.
+  native-lean:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.release }}
+      - name: build the lean GUFI (sqlite-vec, no llama.cpp) in Rocky Linux 8
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/out" "$RUNNER_TEMP/cache"
+          start=$(date +%s)
+          docker run --rm -v "$GITHUB_WORKSPACE:/src:ro" -v "$RUNNER_TEMP/out:/out" -v "$RUNNER_TEMP/cache:/cache" \
+            -e OUT_DIR=/out -e CACHE_DIR=/cache -e GUFI_LEMBED=0 -e "JOBS=$(nproc)" "$BUILD_IMAGE" bash /src/deploy/linux/build_gufi.sh
+          echo "build_gufi (lean) took $(( $(date +%s) - start )) s" | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: native-gufi-vec
+          path: |
+            ${{ runner.temp }}/out/*.tar.gz
+            ${{ runner.temp }}/out/*.tar.gz.sha256
+          if-no-files-found: error
+          retention-days: 30
+
+  app-go:
+    needs: [native, native-lean, shell]
+    strategy:
+      fail-fast: false
+      matrix:
+        server: [go, go-only]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+          ref: ${{ inputs.release }}
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26
+          package-manager-cache: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: server-go/go.mod
+          # No cache: this job's output is what a release would ship.
+          cache: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: native-*
+          path: ${{ runner.temp }}/native
+          merge-multiple: true
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: shell-*
+          path: ${{ runner.temp }}/shells
+          merge-multiple: true
+      - name: install and build
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+      - name: build the Go payload
+        env:
+          OUT_DIR: ${{ runner.temp }}/out
+          CACHE_DIR: ${{ runner.temp }}/cache
+          SKIP_BUILD: "1"
+          STUDIO_SERVER: ${{ matrix.server }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends imagemagick patchelf libatomic1
+          export SHELL_DIR="$RUNNER_TEMP/shells"
+          # The Go server alone takes the lean GUFI; with Node behind it, the
+          # full one that Node's indexer embeds with.
+          gufi=gufi-linux-x86_64
+          [ "$STUDIO_SERVER" = go-only ] && gufi=gufi-vec-linux-x86_64
+          (cd "$RUNNER_TEMP/native" && sha256sum -c "$gufi.tar.gz.sha256" ocr-linux-x86_64.tar.gz.sha256)
+          GUFI_TARBALL="$RUNNER_TEMP/native/$gufi.tar.gz" OCR_TARBALL="$RUNNER_TEMP/native/ocr-linux-x86_64.tar.gz" \
+            deploy/linux/build_app.sh 2>&1 | tee "$RUNNER_TEMP/build_app.log"
+          {
+            echo "### The Go payload ($STUDIO_SERVER)"
+            echo '```'
+            ls -l "$OUT_DIR"/activate-studio-linux-x86_64.*
+            du -sh "$OUT_DIR/activate-studio"
+            echo '```'
+            sed -n '/^Size$/,/^$/p' "$RUNNER_TEMP/build_app.log" | head -n 14
+          } >>"$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: activate-studio-${{ matrix.server }}-linux-x86_64
+          path: |
+            ${{ runner.temp }}/out/activate-studio-linux-x86_64.tar.gz
+            ${{ runner.temp }}/out/activate-studio-linux-x86_64.tar.gz.sha256
+            ${{ runner.temp }}/out/activate-studio-linux-x86_64.manifest.json
+          if-no-files-found: error
+          retention-days: 30
+
+  test-go:
+    needs: app-go
+    strategy:
+      fail-fast: false
+      matrix:
+        server: [go, go-only]
+        image: [rockylinux:8, rockylinux:9, "ubuntu:22.04", "debian:12", "fedora:43"]
+        include:
+          - image: rockylinux:8
+            extra_packages: findutils
+          - image: fedora:43
+            extra_packages: findutils procps-ng util-linux shadow-utils
+    continue-on-error: ${{ matrix.server == 'go-only' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.release }}
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: activate-studio-${{ matrix.server }}-linux-x86_64
+          path: ${{ runner.temp }}/in
+      - name: run it in ${{ matrix.image }}
+        env:
+          IMAGE: ${{ matrix.image }}
+          EXTRA_PACKAGES: ${{ matrix.extra_packages }}
+        run: |
+          set -euo pipefail
+          (cd "$RUNNER_TEMP/in" && sha256sum -c activate-studio-linux-x86_64.tar.gz.sha256)
+          docker run --rm -v "$GITHUB_WORKSPACE:/src:ro" -v "$RUNNER_TEMP/in:/in:ro" -e EXTRA_PACKAGES \
+            "$IMAGE" bash /src/deploy/linux/test_in_container.sh 2>&1 | tee "$RUNNER_TEMP/test.log"
+
+  # The last release (Node) installed in a scratch home with its own
+  # install.sh, given data, updated to the Go payload through its own
+  # updater from a local feed signed with a throwaway key, and rolled back
+  # (deploy/linux/test_go_bridge_e2e.sh). The release key is never used.
+  bridge-e2e:
+    needs: app-go
+    strategy:
+      fail-fast: false
+      matrix:
+        server: [go, go-only]
+    continue-on-error: ${{ matrix.server == 'go-only' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.release }}
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: activate-studio-${{ matrix.server }}-linux-x86_64
+          path: ${{ runner.temp }}/new
+      - name: the last release's payload
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          last="$(gh release list -R "$GITHUB_REPOSITORY" --exclude-pre-releases --exclude-drafts -L 1 --json tagName -q '.[0].tagName')"
+          echo "last release: $last" | tee -a "$GITHUB_STEP_SUMMARY"
+          gh release download "$last" -R "$GITHUB_REPOSITORY" -p activate-studio-linux-x86_64.tar.gz \
+            -p activate-studio-linux-x86_64.tar.gz.sha256 -D "$RUNNER_TEMP/old"
+          (cd "$RUNNER_TEMP/old" && sha256sum -c activate-studio-linux-x86_64.tar.gz.sha256)
+      - name: update to the Go version and roll back
+        run: |
+          set -euo pipefail
+          bash deploy/linux/test_go_bridge_e2e.sh "$RUNNER_TEMP/old/activate-studio-linux-x86_64.tar.gz" \
+            "$RUNNER_TEMP/new/activate-studio-linux-x86_64.tar.gz" 2>&1 | tee "$RUNNER_TEMP/bridge.log"
+      - name: summary
+        if: always()
+        env:
+          SERVER: ${{ matrix.server }}
+        run: |
+          { echo "### Update to the Go version ($SERVER)"; echo '```'; grep -E '^(  (ok|FAIL) |[A-Z])' "$RUNNER_TEMP/bridge.log" | cut -c1-200; echo '```'; } >>"$GITHUB_STEP_SUMMARY" || true
+
+  # The container image of the Go version, from the payload above, started
+  # as container.yaml starts the Node one.
+  container-go:
+    needs: app-go
+    continue-on-error: true
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    env:
+      SINGULARITY_VERSION: "4.5.1"
+      SINGULARITY_DEB_SHA256: "e9cdcec5e479e9f96f7fb95338d5bae2835099ee9f97222d204cb8a3f3f38070"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.release }}
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: activate-studio-go-only-linux-x86_64
+          path: ${{ runner.temp }}/in
+      - name: install SingularityCE
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          deb="singularity-ce_${SINGULARITY_VERSION}-noble_amd64.deb"
+          gh release download "v${SINGULARITY_VERSION}" --repo sylabs/singularity --pattern "$deb" --dir "$RUNNER_TEMP"
+          echo "${SINGULARITY_DEB_SHA256}  $RUNNER_TEMP/$deb" | sha256sum -c -
+          sudo apt-get update
+          sudo apt-get install -y "$RUNNER_TEMP/$deb"
+      - name: build studio-go.sif
+        run: |
+          set -euo pipefail
+          (cd "$RUNNER_TEMP/in" && sha256sum -c activate-studio-linux-x86_64.tar.gz.sha256)
+          mkdir -p .container
+          tar -xzf "$RUNNER_TEMP/in/activate-studio-linux-x86_64.tar.gz" -C .container
+          sudo singularity build studio-go.sif deploy/app-go.def
+          { echo "### The Go container image"; echo '```'; ls -l studio-go.sif; echo '```'; } >>"$GITHUB_STEP_SUMMARY"
+      - name: smoke test
+        run: |
+          set -euo pipefail
+          kb="$RUNNER_TEMP/kb"; data="$RUNNER_TEMP/data"; log="$RUNNER_TEMP/studio.log"
+          mkdir -p "$kb/docs" "$data"
+          echo "Smoke-test document about container builds and GUFI." > "$kb/docs/hello.md"
+          singularity run --cleanenv --env PORT=8080 --env KB_ROOT=/kb --env DATA_DIR=/data --env INDEX_ON_START=1 \
+            --bind "$kb:/kb" --bind "$data:/data" studio-go.sif > "$log" 2>&1 &
+          pid=$!
+          ok=0
+          for _ in $(seq 1 90); do
+            curl -fsS --max-time 5 http://127.0.0.1:8080/api/version && { ok=1; break; }
+            kill -0 "$pid" 2>/dev/null || break
+            sleep 2
+          done
+          found=0
+          for _ in $(seq 1 90); do
+            [ "$ok" = 1 ] || break
+            curl -fsS --max-time 10 "http://127.0.0.1:8080/api/search?q=container" | grep -q hello.md && { found=1; break; }
+            sleep 2
+          done
+          echo; echo "----- container log -----"; tail -n 60 "$log"
+          kill "$pid" 2>/dev/null || true
+          [ "$ok" = 1 ] || { echo "::error::the Go server never answered"; exit 1; }
+          [ "$found" = 1 ] || { echo "::error::the index on start did not make the document searchable"; exit 1; }
+
   # The .deb and the .rpm, from the archive above with nfpm (pinned, and
   # checked against the published SHA-256).
   packages:

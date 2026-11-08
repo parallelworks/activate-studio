@@ -21,6 +21,7 @@
 # system's Python: the payload's own is used.
 #
 # Usage: deploy/linux/check_app.sh PAYLOAD_DIR [--static] [--run]
+# Env:   CHECK_PORTS FROM-TO, the ports --run may use (default: any free one)
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -72,15 +73,18 @@ if [ "$STATIC" = 1 ]; then
   [ "$SERVER" = go-only ] || LAYOUT="$LAYOUT node/lib/libatomic.so.1 node/LICENSE python/bin/python3 models/minilm384.gguf
     app/server/node_modules/fastify/package.json app/indexer/enrich.py app/indexer/embed.py app/indexer/embed_onnx.py
     app/indexer/embed_query.py app/indexer/semantic_map.py app/indexer/reindex.sh gufi/lib/lembed0.so"
-  [ "$SERVER" = node ] || LAYOUT="$LAYOUT app/bin/studio-server app/bin/semantic-map app/bin/studio-extract
-    onnxruntime/lib/libonnxruntime.so.1 onnxruntime/licenses/onnxruntime-LICENSE.txt"
+  [ "$SERVER" = node ] || LAYOUT="$LAYOUT app/bin/studio-server app/bin/semantic-map
+    app/lib/libonnxruntime.so.1 licenses/onnxruntime-LICENSE.txt app/occt/occt-import-js.wasm app/occt/occt-import-js.noeh.wasm
+    licenses/occt-import-js-LICENSE.txt licenses/occt-LICENSE.txt"
   [ "$SERVER" != go-only ] || LAYOUT="$LAYOUT node/PLACEHOLDER"
   for f in $LAYOUT; do
     check "$f" test -s "$APP/$f"
   done
   if [ "$SERVER" != node ]; then
     check "the manifest says the Go server runs" grep -q '"server": *"go"' "$APP/manifest.json"
-    check "studio-server is a static program" sh -c "! readelf -d '$APP/app/bin/studio-server' 2>/dev/null | grep -q NEEDED"
+    # Built without cgo; it loads the ONNX runtime with purego, which links
+    # it to the C library alone (libc, libdl, libpthread) for dlopen.
+    check "studio-server needs only the C library" sh -c "! readelf -d '$APP/app/bin/studio-server' 2>/dev/null | sed -n 's/.*Shared library: \\[\\(.*\\)\\]/\\1/p' | grep -vqxE 'libc\\.so\\.6|libdl\\.so\\.2|libpthread\\.so\\.0'"
   fi
   if [ "$SERVER" = go-only ]; then
     check "node/bin/node is the stand-in, executable, as older updaters check" sh -c "[ -x '$APP/node/bin/node' ] && head -c 2 '$APP/node/bin/node' | grep -q '#!'"
@@ -158,7 +162,7 @@ PY
 
   echo "Size"
   echo "  $(du -sh "$APP" | cut -f1)  total"
-  for d in node python gufi ocr onnxruntime app/bin app/server/node_modules app/web models; do
+  for d in node python gufi ocr app/lib app/occt app/bin app/server/node_modules app/web models; do
     [ -e "$APP/$d" ] || continue
     echo "  $(du -sh "$APP/$d" | cut -f1)  $d"
   done
@@ -275,8 +279,22 @@ SQL
 
   # A stand-in for the release server the update check asks (GitHub's API):
   # one release, newer than any this build can be, with no Linux asset.
-  free_port() { "$PY" -I -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])'; }
+  # A free port: any, or the first free one in CHECK_PORTS (FROM-TO), for a
+  # host where only some ports are this check's to use.
+  free_port() { "$PY" -I -c '
+import socket, sys
+lo, _, hi = sys.argv[1].partition("-")
+for p in (range(int(lo), int(hi or lo) + 1) if lo else [0]):
+    s = socket.socket()
+    try:
+        s.bind(("127.0.0.1", p))
+    except OSError:
+        continue
+    if p and str(p) in sys.argv[2].split():
+        continue
+    print(s.getsockname()[1]); break' "${CHECK_PORTS:-}" "${PORTS_TAKEN:-}"; }
   FAKE_PORT="$(free_port)"
+  PORTS_TAKEN="$FAKE_PORT"
   mkdir -p "$T/fake"
   cat >"$T/fake/server.py" <<'PY'
 import http.server, json, sys

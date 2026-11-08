@@ -85,6 +85,47 @@ jobs:
           pnpm --filter @activate-studio/server --prod deploy --legacy /tmp/deploy-check
           node testdata/check-packaging.mjs /tmp/deploy-check
 
+  # The Go server (server-go): vet and tests on Linux, and vet for every
+  # platform the desktop app targets. Tests that need GUFI, Node or the
+  # ONNX runtime skip themselves when those are absent, as here.
+  go:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      # GitHub (setup-go's version manifest and Go's archives), Go's own
+      # download host, and the module proxy and checksum database.
+      - uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            github.com:443
+            raw.githubusercontent.com:443
+            release-assets.githubusercontent.com:443
+            objects.githubusercontent.com:443
+            results-receiver.actions.githubusercontent.com:443
+            go.dev:443
+            dl.google.com:443
+            storage.googleapis.com:443
+            proxy.golang.org:443
+            sum.golang.org:443
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: server-go/go.mod
+          cache-dependency-path: server-go/go.sum
+      - name: go vet
+        working-directory: server-go
+        run: go vet ./...
+      - name: go test
+        working-directory: server-go
+        run: go test -p 4 ./...
+      - name: go vet for each platform
+        working-directory: server-go
+        run: sh scripts/crossvet.sh
+
   macos:
     # The Studio is expected to run from source on a laptop, and macOS is
     # where that claim rots quietly: a Linux-only assumption in the server

@@ -5,7 +5,8 @@
 // GitHub's releases API, for the Studio's update check.
 //
 //   keygen DIR                               DIR/update.key (PEM) and DIR/update.pub
-//   stamp TREE VERSION PUBFILE               TREE becomes VERSION, verifying updates with PUBFILE
+//   stamp TREE VERSION PUBFILE               TREE (a Linux payload, or a macOS app's Contents/Resources)
+//                                            becomes VERSION, verifying updates with PUBFILE
 //   add-release DIR PORT TAG ARCHIVE KEY [corrupt]
 //                                            put the archive, a manifest and a signature in DIR as
 //                                            release TAG ("corrupt": the archive's bytes are changed
@@ -29,8 +30,10 @@ if (cmd === 'keygen') {
   const [tree, version, pub] = a
   const info = path.join(tree, 'app', 'build-info.json')
   writeJson(info, { ...readJson(info), version })
+  // The Linux payload's manifest.json; the macOS app (TREE is its
+  // Contents/Resources) has one only from the Go version on.
   const man = path.join(tree, 'manifest.json')
-  writeJson(man, { ...readJson(man), version })
+  if (fs.existsSync(man)) writeJson(man, { ...readJson(man), version })
   fs.copyFileSync(pub, path.join(tree, 'update-signing.pub'))
 } else if (cmd === 'add-release') {
   const [dir, port, tag, archive, keyFile, corrupt] = a

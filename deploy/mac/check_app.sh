@@ -84,8 +84,10 @@ if [ "$SERVER" != go-only ]; then
 fi
 [ "$LEMBED" = 1 ] && LAYOUT+=(Resources/gufi/lib/lembed0.dylib)
 if [ "$SERVER" != node ]; then
-  LAYOUT+=(Resources/manifest.json Resources/app/bin/studio-server Resources/app/bin/semantic-map Resources/app/bin/studio-extract
-    Resources/onnxruntime/lib/libonnxruntime.dylib Resources/onnxruntime/licenses/onnxruntime-LICENSE.txt)
+  LAYOUT+=(Resources/manifest.json Resources/app/bin/studio-server Resources/app/bin/semantic-map
+    Resources/app/lib/libonnxruntime.dylib Resources/licenses/onnxruntime-LICENSE.txt
+    Resources/app/occt/occt-import-js.wasm Resources/app/occt/occt-import-js.noeh.wasm
+    Resources/licenses/occt-import-js-LICENSE.txt Resources/licenses/occt-LICENSE.txt)
 fi
 [ "$SERVER" = go-only ] && LAYOUT+=(Resources/node/PLACEHOLDER)
 for f in "${LAYOUT[@]}"; do
@@ -173,7 +175,7 @@ elif command -v file >/dev/null 2>&1; then
 fi
 MIN="$(python3 -c 'import plistlib,sys; print(plistlib.load(open(sys.argv[1],"rb"))["LSMinimumSystemVersion"])' "$C/Info.plist")"
 NATIVE=("$G"/bin/* "$G"/lib/*.dylib "$O"/bin/* "$O"/lib/*.dylib)
-[ "$SERVER" = node ] || NATIVE+=("$R"/app/bin/* "$R"/onnxruntime/lib/*.dylib)
+[ "$SERVER" = node ] || NATIVE+=("$R"/app/bin/* "$R"/app/lib/*.dylib)
 if [ "$SERVER" != go-only ]; then
   NATIVE+=("$R/node/bin/node" "$R"/python/bin/python3.* "$R"/python/lib/*.dylib "$R"/python/lib/python3.*/lib-dynload/*.so)
   # The Python packages' native libraries (onnxruntime, numpy and others), read
@@ -220,7 +222,7 @@ fi
 
 echo "Size"
 echo "  $(du -sh "$APP" | cut -f1)  total"
-for d in node python gufi ocr onnxruntime app/bin app/server/node_modules app/web models; do
+for d in node python gufi ocr app/lib app/occt app/bin app/server/node_modules app/web models; do
   [ -e "$R/$d" ] || continue
   echo "  $(du -sh "$R/$d" | cut -f1)  $d"
 done
