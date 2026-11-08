@@ -124,6 +124,10 @@ type Indexer struct {
 	reconcileMu sync.Mutex
 	mapState    mapState
 
+	// deniedTo, when set, takes the folders gufi_dir2index could not read
+	// or index in place of the main folder's record (a library's work).
+	deniedTo func(paths []string)
+
 	// holdFile, when set, holds each job at the start of its text phase
 	// while the file exists (STUDIO_INDEX_HOLD_FILE): for tests that stop
 	// a running job, which Node's held through a slow Python.

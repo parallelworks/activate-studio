@@ -11,6 +11,8 @@
 // both run.
 package libraries
 
+import "encoding/json"
+
 // Caps is what a tree supports (LibraryCaps).
 type Caps struct {
 	Index    bool `json:"index"`
@@ -24,11 +26,59 @@ type LocalBuild struct {
 	CacheRoot string  `json:"cacheRoot"`
 	Managed   bool    `json:"managed"`
 	State     string  `json:"state"` // building, ready, updating, failed
-	Pending   *string `json:"pending,omitempty"`
 	Error     *string `json:"error"`
 	BuiltAt   *string `json:"builtAt"`
 	Files     *int64  `json:"files"`
 	Dirs      *int64  `json:"dirs"`
+	// Pending is "depth" while a change of depth is applied. Node's
+	// updateBuild adds the key last and leaves it null once cleared, so
+	// HasPending says whether the stored entry has the key.
+	Pending    *string `json:"pending"`
+	HasPending bool    `json:"-"`
+}
+
+type localBuildJSON struct {
+	IndexDir  string  `json:"indexDir"`
+	CacheRoot string  `json:"cacheRoot"`
+	Managed   bool    `json:"managed"`
+	State     string  `json:"state"`
+	Error     *string `json:"error"`
+	BuiltAt   *string `json:"builtAt"`
+	Files     *int64  `json:"files"`
+	Dirs      *int64  `json:"dirs"`
+}
+
+// MarshalJSON writes the keys in the order Node's entries have them, with
+// pending last and only where the entry has it.
+func (b LocalBuild) MarshalJSON() ([]byte, error) {
+	base, err := json.Marshal(localBuildJSON{b.IndexDir, b.CacheRoot, b.Managed, b.State, b.Error, b.BuiltAt, b.Files, b.Dirs})
+	if err != nil || !(b.HasPending || b.Pending != nil) {
+		return base, err
+	}
+	p, err := json.Marshal(b.Pending)
+	if err != nil {
+		return nil, err
+	}
+	return append(append(base[:len(base)-1], `,"pending":`...), append(p, '}')...), nil
+}
+
+// UnmarshalJSON notes whether the entry has a pending key.
+func (b *LocalBuild) UnmarshalJSON(data []byte) error {
+	var j localBuildJSON
+	if err := json.Unmarshal(data, &j); err != nil {
+		return err
+	}
+	var keys map[string]json.RawMessage
+	json.Unmarshal(data, &keys)
+	*b = LocalBuild{IndexDir: j.IndexDir, CacheRoot: j.CacheRoot, Managed: j.Managed, State: j.State, Error: j.Error, BuiltAt: j.BuiltAt, Files: j.Files, Dirs: j.Dirs}
+	if raw, ok := keys["pending"]; ok {
+		b.HasPending = true
+		var s *string
+		if json.Unmarshal(raw, &s) == nil {
+			b.Pending = s
+		}
+	}
+	return nil
 }
 
 // ReadThrough is another host over ssh that has a library's files.
