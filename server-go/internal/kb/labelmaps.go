@@ -81,3 +81,29 @@ func orderedEntries(raw json.RawMessage) []gufi.LabelEntry {
 }
 
 func bytesReader(b []byte) *bytes.Reader { return bytes.NewReader(b) }
+
+// FileEntries is tagMaps().fileTags: the main library's files' labels.
+func (t *Tags) FileEntries(ctx context.Context) []gufi.LabelEntry {
+	m := t.maps(ctx)
+	out := make([]gufi.LabelEntry, 0, len(m.fileOrd))
+	for _, p := range m.fileOrd {
+		out = append(out, gufi.LabelEntry{Rel: p, Tags: m.files[p]})
+	}
+	return out
+}
+
+// Entries is a library's kept labels in its file's order.
+func (l *LibraryLabels) Entries(id string) []gufi.LabelEntry {
+	b, err := os.ReadFile(l.LabelsFile(id))
+	if err != nil {
+		return nil
+	}
+	var head struct {
+		Version int             `json:"version"`
+		Entries json.RawMessage `json:"entries"`
+	}
+	if json.Unmarshal(b, &head) != nil || head.Version != 1 {
+		return nil
+	}
+	return orderedEntries(head.Entries)
+}
