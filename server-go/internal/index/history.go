@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -46,6 +47,8 @@ type SnapshotMeta struct {
 type snapshot struct {
 	SnapshotMeta
 	Entries []Entry `json:"entries"`
+	// at is its file's time when read, for readParsed.
+	at time.Time
 }
 
 // History is the main folder's history.
@@ -54,10 +57,17 @@ type History struct {
 	dir  string
 	keep int
 	mu   sync.Mutex
-	// cached is the census of one snapshot, which a view walks a level at
-	// a time.
-	cachedID string
-	cached   *snapshot
+	// metas is each snapshot's metadata by file, so a listing reads only
+	// the snapshots written since the last one; parsed keeps the last few
+	// snapshots read whole, which a diff and a level walk reuse.
+	metas  map[string]metaEntry
+	parsed []*snapshot
+}
+
+type metaEntry struct {
+	size  int64
+	mtime time.Time
+	meta  SnapshotMeta
 }
 
 func newHistory(ix *Indexer) *History {
@@ -97,6 +107,90 @@ func (h *History) read(id string) (*snapshot, error) {
 	return &s, nil
 }
 
+// readMeta reads a snapshot's metadata, which both servers write before
+// its entries, without decoding the entries; a file written the other way
+// round is read whole.
+func (h *History) readMeta(id string) (SnapshotMeta, error) {
+	var m SnapshotMeta
+	f, err := os.Open(h.fileFor(id))
+	if err != nil {
+		return m, err
+	}
+	defer f.Close()
+	zr, err := gzip.NewReader(f)
+	if err != nil {
+		return m, err
+	}
+	dec := json.NewDecoder(zr)
+	if t, err := dec.Token(); err != nil || t != json.Delim('{') {
+		return m, fmt.Errorf("snapshot %s: not an object", id)
+	}
+	seen := 0
+	for dec.More() && seen < 3 {
+		t, err := dec.Token()
+		if err != nil {
+			return m, err
+		}
+		var dst any
+		switch t {
+		case "takenAt":
+			dst = &m.TakenAt
+		case "files":
+			dst = &m.Files
+		case "bytes":
+			dst = &m.Bytes
+		case "entries":
+			s, err := h.read(id)
+			if err != nil {
+				return m, err
+			}
+			return s.SnapshotMeta, nil
+		default:
+			var skip json.RawMessage
+			dst = &skip
+			seen--
+		}
+		if err := dec.Decode(dst); err != nil {
+			return m, err
+		}
+		seen++
+	}
+	if seen < 3 {
+		return m, fmt.Errorf("snapshot %s: no metadata", id)
+	}
+	return m, nil
+}
+
+// readParsed is read, reusing the last few snapshots read whole while
+// their files are unchanged (a snapshot file is written once, so its size
+// and time name its content).
+func (h *History) readParsed(id string) (*snapshot, error) {
+	st, err := os.Stat(h.fileFor(id))
+	if err != nil {
+		return nil, err
+	}
+	h.mu.Lock()
+	for _, s := range h.parsed {
+		if s.ID == id && s.Disk == st.Size() && s.at.Equal(st.ModTime()) {
+			h.mu.Unlock()
+			return s, nil
+		}
+	}
+	h.mu.Unlock()
+	s, err := h.read(id)
+	if err != nil {
+		return nil, err
+	}
+	s.ID, s.Disk, s.at = id, st.Size(), st.ModTime()
+	h.mu.Lock()
+	h.parsed = append([]*snapshot{s}, h.parsed...)
+	if len(h.parsed) > 3 {
+		h.parsed = h.parsed[:3]
+	}
+	h.mu.Unlock()
+	return s, nil
+}
+
 // List is listSnapshots, oldest first.
 func (h *History) List() []SnapshotMeta {
 	entries, err := os.ReadDir(h.dir)
@@ -109,15 +203,27 @@ func (h *History) List() []SnapshotMeta {
 			continue
 		}
 		id := strings.TrimSuffix(e.Name(), ".json.gz")
-		s, err := h.read(id)
-		if err != nil {
-			continue
-		}
 		st, err := os.Stat(h.fileFor(id))
 		if err != nil {
 			continue
 		}
-		out = append(out, SnapshotMeta{ID: id, TakenAt: s.TakenAt, Files: s.Files, Bytes: s.Bytes, Disk: st.Size()})
+		h.mu.Lock()
+		c, ok := h.metas[id]
+		h.mu.Unlock()
+		if !ok || c.size != st.Size() || !c.mtime.Equal(st.ModTime()) {
+			m, err := h.readMeta(id)
+			if err != nil {
+				continue
+			}
+			c = metaEntry{st.Size(), st.ModTime(), SnapshotMeta{ID: id, TakenAt: m.TakenAt, Files: m.Files, Bytes: m.Bytes, Disk: st.Size()}}
+			h.mu.Lock()
+			if h.metas == nil {
+				h.metas = map[string]metaEntry{}
+			}
+			h.metas[id] = c
+			h.mu.Unlock()
+		}
+		out = append(out, c.meta)
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].TakenAt < out[j].TakenAt })
 	return out
@@ -251,9 +357,14 @@ func (h *History) Capture(ctx context.Context) (*SnapshotMeta, error) {
 func (h *History) delete(id string) {
 	os.Remove(h.fileFor(id))
 	h.mu.Lock()
-	if h.cachedID == id {
-		h.cachedID, h.cached = "", nil
+	delete(h.metas, id)
+	kept := h.parsed[:0]
+	for _, s := range h.parsed {
+		if s.ID != id {
+			kept = append(kept, s)
+		}
 	}
+	h.parsed = kept
 	h.mu.Unlock()
 }
 
@@ -339,19 +450,7 @@ func (h *History) CaptureIfStale(ctx context.Context) (*SnapshotMeta, error) {
 	return h.Capture(ctx)
 }
 
-func (h *History) snapshotOf(id string) (*snapshot, error) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if h.cachedID == id && h.cached != nil {
-		return h.cached, nil
-	}
-	s, err := h.read(id)
-	if err != nil {
-		return nil, err
-	}
-	h.cachedID, h.cached = id, s
-	return s, nil
-}
+func (h *History) snapshotOf(id string) (*snapshot, error) { return h.readParsed(id) }
 
 type levelDir struct {
 	Name  string  `json:"name"`
@@ -467,11 +566,11 @@ func capList[T any](xs []T) []T {
 }
 
 func (h *History) diff(fromID, toID string) (diffOut, error) {
-	a, err := h.read(fromID)
+	a, err := h.readParsed(fromID)
 	if err != nil {
 		return diffOut{}, err
 	}
-	b, err := h.read(toID)
+	b, err := h.readParsed(toID)
 	if err != nil {
 		return diffOut{}, err
 	}

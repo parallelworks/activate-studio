@@ -1916,6 +1916,11 @@ a.identity-btn { text-decoration: none; }
    collapse button past the pane's edge. */
 .rail-head .library-switch { margin-right: auto; flex: 1 1 0; min-width: 0; max-width: none; }
 .rail-head .rail-actions { flex-shrink: 0; }
+/* With more than one library the picker has a row of its own over the
+   buttons, so a library's name reads in full at any tree width. */
+.rail-head.rail-head-switch { height: auto; flex-wrap: wrap; row-gap: 8px; padding: 10px 12px; }
+.rail-head.rail-head-switch .library-switch { flex: 1 0 100%; margin-right: 0; }
+.rail-head.rail-head-switch .rail-actions { margin-left: auto; }
 
 /* ---- Settings > Libraries ---- */
 .libraries-table .lib-name { font-weight: 600; color: var(--pw-text); }

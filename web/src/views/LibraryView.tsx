@@ -401,7 +401,7 @@ export function LibraryView({ display, onDisplay }: {
         ) : (
           <>
             <aside ref={railRef} className="library-rail" style={{ width: railWidth }}>
-              <div className="rail-head">
+              <div className={`rail-head${cfg.libraries && cfg.libraries.length > 1 ? ' rail-head-switch' : ''}`}>
                 {cfg.libraries && cfg.libraries.length > 1
                   ? <LibrarySwitch libraries={cfg.libraries} />
                   : <span className="rail-title" title={cfg.kbLabel}>Library</span>}
