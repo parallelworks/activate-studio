@@ -61,6 +61,11 @@ func Register(mux *http.ServeMux, a *app.App) {
 	}
 	mux.HandleFunc("GET /api/search", h(s.search))
 	mux.HandleFunc("GET /api/libraries", h(s.list))
+	mux.HandleFunc("POST /api/query", h(s.query))
+	mux.HandleFunc("POST /api/query/sql", h(s.querySQL))
+	mux.HandleFunc("GET /api/query/saved", h(s.savedList))
+	mux.HandleFunc("POST /api/query/saved", h(s.savedAdd))
+	mux.HandleFunc("DELETE /api/query/saved/{id}", h(s.savedDelete))
 }
 
 // viewer is req.user?.id ?? null as Node's routes read it: the front's
