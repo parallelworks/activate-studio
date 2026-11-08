@@ -30,6 +30,21 @@ type cmapData struct {
 	cids     map[codeKey]uint32
 	identity bool
 	wmode    int
+	// unicodeIdentity marks a /ToUnicode given as the name Identity-H or
+	// Identity-V: each code is its own UCS-2 value, as the file states.
+	unicodeIdentity bool
+	// charset decodes the codes of a predefined CJK CMap read without
+	// its CMap file (charset.go).
+	charset *charset
+}
+
+// identityText is the text of code under an Identity ToUnicode: the code
+// as a UCS-2 value, nothing for a surrogate or a control character.
+func identityText(code uint32) (string, bool) {
+	if code > 0xFFFF || code >= 0xD800 && code <= 0xDFFF || code < 0x20 && code != '\t' && code != '\n' && code != '\r' || code >= 0x7F && code < 0xA0 {
+		return "", false
+	}
+	return string(rune(code)), true
 }
 
 func identityCMap(vertical bool) *cmapData {
@@ -47,6 +62,13 @@ func identityCMap(vertical bool) *cmapData {
 // parseToUnicode reads a /ToUnicode CMap stream. Codespace ranges are retained
 // so composite-font strings can be split into variable-width character codes.
 func parseToUnicode(v object.Value, resolver CMapResolver, streamLimit int) (*cmapData, error) {
+	if v.Kind() == object.Name {
+		switch v.Name() {
+		case "Identity-H", "Identity-V", "Identity":
+			return &cmapData{spaces: []codeSpace{{low: 0, high: 0xffff, bytes: 2}}, unicodeIdentity: true}, nil
+		}
+		return nil, nil
+	}
 	if v.Kind() != object.Stream {
 		return nil, nil
 	}
@@ -83,15 +105,22 @@ func resolveCMap(name string, resolver CMapResolver, seen map[string]bool) (*cma
 		return nil, fmt.Errorf("cyclic usecmap reference %q", name)
 	}
 	if resolver == nil {
+		if c := charsetCMap(name); c != nil {
+			return c, nil
+		}
 		return nil, fmt.Errorf("predefined CMap %q requires a CMapResolver", name)
 	}
 	seen[name] = true
 	data, err := resolver(name)
-	if err != nil {
-		return nil, fmt.Errorf("resolve CMap %q: %w", name, err)
+	if err == nil && len(data) == 0 {
+		err = errors.New("empty CMap")
 	}
-	if len(data) == 0 {
-		return nil, fmt.Errorf("resolve CMap %q: empty CMap", name)
+	if err != nil {
+		delete(seen, name)
+		if c := charsetCMap(name); c != nil {
+			return c, nil
+		}
+		return nil, fmt.Errorf("resolve CMap %q: %w", name, err)
 	}
 	cmap, err := parseCMap(data, resolver, seen)
 	delete(seen, name)
@@ -333,12 +362,18 @@ func (c *cmapData) nextCode(raw []byte) (codeKey, int) {
 	return codeKey{value: uint32(raw[0]), bytes: 1}, 1
 }
 
+// noCID is a CID no font's widths name (CIDs are at most 0xFFFF).
+const noCID = 1 << 31
+
 func (c *cmapData) cid(key codeKey) uint32 {
 	if c == nil {
 		return key.value
 	}
 	if cid, ok := c.cids[key]; ok {
 		return cid
+	}
+	if c.charset != nil {
+		return noCID // unknown without the CMap file: the default width
 	}
 	if c.identity {
 		return key.value
@@ -433,7 +468,13 @@ func beUint(b []byte) uint32 {
 	return v
 }
 
+// utf16beUnits reads big-endian UTF-16 units. A one-byte destination,
+// which some writers emit for Latin text ("<00> <7f> <00>"), is the unit
+// of that value, as pypdf and poppler read it.
 func utf16beUnits(b []byte) []uint16 {
+	if len(b) == 1 {
+		return []uint16{uint16(b[0])}
+	}
 	units := make([]uint16, 0, len(b)/2)
 	for i := 0; i+1 < len(b); i += 2 {
 		units = append(units, uint16(b[i])<<8|uint16(b[i+1]))

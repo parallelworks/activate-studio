@@ -1,3 +1,31 @@
+# pdf (patched copy of v0.6.0)
+
+This directory is `github.com/giraffesyo/pdf` v0.6.0 (MIT, see LICENSE),
+used by `server-go` through a `replace` directive in its `go.mod`, with
+changes for text that real documents carry and v0.6.0 drops. Each has a
+test in `patches_test.go` or `internal/filter/patches_test.go`:
+
+- objects larger than the reader's first 4 KB window are read whole
+  (a container cut off by the window was taken as complete, losing the
+  entries after it, such as a font's /ToUnicode after a long /W array);
+- an object whose xref entry points at the wrong place, or past the
+  table, is read from its "N G obj" header, found by one scan of the file;
+- a dictionary with a stray token where a key belongs ("/Arial,Unicode
+  MS") skips the token and keeps the keys after it;
+- /ToUnicode given as the name Identity-H or Identity-V; a ToUnicode
+  whose codespace is narrower or wider than the encoding's codes; and
+  one-byte bfrange destinations;
+- the predefined CJK CMaps (Shift-JIS, EUC, GBK, Big5, UHC, UCS-2 and
+  UTF-16 families) without a CMapResolver, decoded with the character set
+  their codes are (`charset.go`; adds golang.org/x/text);
+- Type3 fonts without ToUnicode read through /Differences names the
+  glyph list knows and dvips's "a<code>" names, with widths scaled by
+  /FontMatrix;
+- FlateDecode data ends at a bad checksum or at damage after the start,
+  keeping what was decoded.
+
+The upstream README follows.
+
 # pdf
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/giraffesyo/pdf.svg)](https://pkg.go.dev/github.com/giraffesyo/pdf)

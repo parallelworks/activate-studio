@@ -275,6 +275,10 @@ func hexVal(c byte) (byte, bool) {
 	return 0, false
 }
 
+// structural are the keywords that end an object; a dictionary missing
+// its ">>" ends at them.
+var structural = map[string]bool{"endobj": true, "stream": true, "endstream": true, "obj": true, "trailer": true, "xref": true, "startxref": true}
+
 // errRecursion caps nested container depth.
 var errRecursion = errors.New("pdf: object nesting too deep")
 
@@ -296,6 +300,10 @@ func (p *objParser) parseObject(depth int) (any, error) {
 type objParser struct {
 	lex *lexer
 	r   *Reader
+	// eof is set when a container ran into the end of the input: the
+	// object was cut short, which for a window onto the file means the
+	// window was too small.
+	eof bool
 }
 
 func (p *objParser) parseFrom(tok token, depth int) (any, error) {
@@ -350,7 +358,11 @@ func (p *objParser) parseArray(depth int) (any, error) {
 	var arr []Value
 	for {
 		tok := p.lex.next()
-		if tok.kind == tokArrayClose || tok.kind == tokEOF {
+		if tok.kind == tokEOF {
+			p.eof = true
+			return arr, nil
+		}
+		if tok.kind == tokArrayClose {
 			return arr, nil
 		}
 		v, err := p.parseFrom(tok, depth+1)
@@ -367,9 +379,18 @@ func (p *objParser) parseArray(depth int) (any, error) {
 func (p *objParser) parseDict(depth int) (any, error) {
 	d := dict{}
 	for {
+		save := p.lex.pos
 		tok := p.lex.next()
+		if tok.kind == tokKeyword && structural[tok.str] {
+			// An unterminated dictionary: it ends where the object does.
+			p.lex.pos = save
+			return d, nil
+		}
 		switch tok.kind {
-		case tokDictClose, tokEOF:
+		case tokEOF:
+			p.eof = true
+			return d, nil
+		case tokDictClose:
 			return d, nil
 		case tokName:
 			v, err := p.parseObject(depth + 1)
@@ -377,12 +398,26 @@ func (p *objParser) parseDict(depth int) (any, error) {
 				if errors.Is(err, errRecursion) {
 					return nil, err
 				}
-				return d, nil
+				if errors.Is(err, io.EOF) {
+					p.eof = true
+					return d, nil
+				}
+				continue // a malformed value: skip it, keep reading keys
 			}
 			d[tok.str] = v
 		default:
-			// A non-name key is malformed; stop at the dictionary we have.
-			return d, nil
+			// A token where a key belongs is malformed, such as the rest
+			// of a name a writer left a space in ("/Arial,Unicode MS"):
+			// skip it and read on to the next key, as poppler and pypdf
+			// do, so the entries after it are not lost.
+			if tok.kind == tokArrayClose {
+				continue
+			}
+			if tok.kind == tokArrayOpen || tok.kind == tokDictOpen {
+				if _, err := p.parseFrom(tok, depth+1); errors.Is(err, errRecursion) {
+					return nil, err
+				}
+			}
 		}
 	}
 }

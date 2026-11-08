@@ -37,6 +37,12 @@ type Reader struct {
 	resolving map[int]bool // objects mid-resolution, to break cycles
 	objStms   *objStmCache
 	err       error // first resolution error (sticky)
+
+	// headers maps object numbers to the last "N G obj" header in the
+	// file, scanned on first need: where an xref entry points at the
+	// wrong place, or a number is past the table, the object is looked
+	// for where its header is, as poppler and pypdf do.
+	headers map[int]int64
 }
 
 // NewReader parses the file's cross-reference data and trailer, preparing
@@ -189,11 +195,14 @@ func headerOffset(ra io.ReaderAt, size int64) (int64, error) {
 // object resolves an object by number, using the cache, the xref table,
 // and (for packed objects) the object-stream cache.
 func (r *Reader) object(num, gen int) (any, error) {
-	if num < 0 || num >= len(r.xref) {
+	if num < 0 {
 		return nil, fmt.Errorf("pdf: object %d out of range", num)
 	}
 	if v, ok := r.cache[num]; ok {
 		return v, nil
+	}
+	if num >= len(r.xref) {
+		return r.objectByHeader(num, gen, fmt.Errorf("pdf: object %d out of range", num))
 	}
 	// Break reference cycles: an object whose own parsing needs itself
 	// (e.g. a stream /Length that points back at the stream object).
@@ -211,6 +220,10 @@ func (r *Reader) object(num, gen int) (any, error) {
 	switch e.kind {
 	case 1:
 		obj, err = r.parseObjectAt(e.offset, num, gen)
+		if err != nil {
+			delete(r.resolving, num)
+			return r.objectByHeader(num, gen, err)
+		}
 	case 2:
 		obj, err = r.objStmObject(e.stmNum, e.stmIdx, num)
 	default:
@@ -270,7 +283,7 @@ func (r *Reader) parseIndirect(buf []byte, base int64, wantNum, wantGen int) (ob
 	}
 	p := &objParser{lex: lex, r: r}
 	val, perr := p.parseObject(0)
-	if errors.Is(perr, io.EOF) && int64(len(buf)) < r.size-base {
+	if (errors.Is(perr, io.EOF) || p.eof) && int64(len(buf)) < r.size-base {
 		return nil, 0, false, errNeedMore
 	}
 	if perr != nil && !errors.Is(perr, io.EOF) {
@@ -455,4 +468,32 @@ func (v Value) intOr(d int64) int64 {
 		return n
 	}
 	return d
+}
+
+// objectByHeader resolves an object from the header scan, after the xref
+// failed with err; err is returned when the scan does not help.
+func (r *Reader) objectByHeader(num, gen int, err error) (any, error) {
+	if r.headers == nil {
+		r.headers = map[int]int64{}
+		for _, h := range objHeaderRE(r.slice(0, r.size)) {
+			if h.num < maxObjects {
+				r.headers[h.num] = h.off
+			}
+		}
+	}
+	off, ok := r.headers[num]
+	if !ok || r.resolving[num] {
+		return nil, err
+	}
+	if num < len(r.xref) && r.xref[num].kind == 1 && r.xref[num].offset == off {
+		return nil, err // the same place: nothing new to try
+	}
+	r.resolving[num] = true
+	defer delete(r.resolving, num)
+	obj, perr := r.parseObjectAt(off, num, gen)
+	if perr != nil {
+		return nil, err
+	}
+	r.cache[num] = obj
+	return obj, nil
 }

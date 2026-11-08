@@ -50,6 +50,7 @@ type flateReader struct {
 	zr io.ReadCloser // pooled zlib reader, when the header is valid
 	fr io.ReadCloser // pooled raw deflate reader otherwise
 	r  io.Reader     // the active one; nil once released
+	n  int64         // bytes decoded so far
 }
 
 func newFlateReader(src io.Reader) (*flateReader, error) {
@@ -89,11 +90,23 @@ func zlibHeaderOK(cmf, flg byte) bool {
 		flg&0x20 == 0 // FDICT: a preset dictionary we cannot supply
 }
 
+// Read ends the data at damage: a checksum that does not match, data cut
+// short, or corrupt input after the start reads as the end of what was
+// decoded, as poppler and zlib-based readers keep it. A stream damaged
+// from its first byte is still an error.
 func (f *flateReader) Read(p []byte) (int, error) {
 	if f.r == nil {
 		return 0, errReleased
 	}
-	return f.r.Read(p)
+	n, err := f.r.Read(p)
+	f.n += int64(n)
+	if err != nil && err != io.EOF && f.n > 0 {
+		var corrupt flate.CorruptInputError
+		if errors.Is(err, zlib.ErrChecksum) || errors.Is(err, io.ErrUnexpectedEOF) || errors.As(err, &corrupt) {
+			return n, io.EOF
+		}
+	}
+	return n, err
 }
 
 // Release returns the decompressor and buffer to their pools. The pooled

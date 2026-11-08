@@ -1,6 +1,7 @@
 package pdf
 
 import (
+	"math"
 	"slices"
 	"strings"
 	"sync"
@@ -18,6 +19,7 @@ type fontInfo struct {
 	fallback      *encoding.Encoding // simple-font encoding (WinAnsi/MacRoman/Differences/...)
 	fallbackFirst bool               // explicit/standard PDF encoding precedes font-program hints
 	differences   map[byte]string    // explicit /Differences always override font-program hints
+	type3Only     bool               // a Type3 font without ToUnicode: /Differences names only
 	warnings      []error
 
 	// The embedded font program's code→text hints are consulted only when
@@ -166,7 +168,17 @@ func newFontInfo(fv object.Value, resolver CMapResolver, streamLimit int) *fontI
 	// addressed by arbitrary codes; no encoding fallback can recover text,
 	// and passing raw codes through produces convincing-looking garbage.
 	// Dropping the glyphs lets truly image-like documents fail honestly.
-	if fv.Key("Subtype").Name() == "Type3" && f.toUni == nil {
+	//
+	// What a Type3 font's /Differences names are glyph names, though, and
+	// where they are names the glyph list knows (the "a", "eacute" and
+	// "uni0041" that TeX and other writers give their bitmap fonts), they
+	// are the text, as pypdf and poppler read them. Codes the names leave
+	// out, and names the list does not know, stay dropped.
+	type3 := fv.Key("Subtype").Name() == "Type3"
+	if type3 && f.toUni == nil {
+		f.differences = type3Differences(fv.Key("Encoding").Key("Differences"))
+		f.type3Only = true
+		f.readWidths(fv)
 		return f
 	}
 	f.differences = parseDifferences(fv.Key("Encoding").Key("Differences"))
@@ -174,17 +186,33 @@ func newFontInfo(fv object.Value, resolver CMapResolver, streamLimit int) *fontI
 	f.loadEmbedded = func() (map[uint32]string, error) {
 		return embeddedSimpleFallback(fv, streamLimit)
 	}
+	f.readWidths(fv)
+	return f
+}
+
+// readWidths reads a simple font's /FirstChar, /Widths and MissingWidth.
+// A Type3 font's widths are in its glyph space; /FontMatrix scales them
+// to the thousandths of text space the other fonts' widths are in.
+func (f *fontInfo) readWidths(fv object.Value) {
+	scale := 1.0
+	if fv.Key("Subtype").Name() == "Type3" {
+		if fm := fv.Key("FontMatrix"); fm.Kind() == object.Array && fm.Len() == 6 {
+			if a, ok := fm.Index(0).Float64(); ok && a != 0 && !math.IsNaN(a) && !math.IsInf(a, 0) {
+				scale = a * 1000
+			}
+		}
+	}
 	f.firstChar = int(intOr(fv.Key("FirstChar"), 0))
 	if wArr := fv.Key("Widths"); wArr.Kind() == object.Array {
 		f.widths = make([]float64, wArr.Len())
 		for i := range f.widths {
 			f.widths[i], _ = wArr.Index(i).Float64()
+			f.widths[i] *= scale
 		}
 	}
 	if mw, ok := fv.Key("FontDescriptor").Key("MissingWidth").Float64(); ok {
-		f.defWidth = mw
+		f.defWidth = mw * scale
 	}
-	return f
 }
 
 // intOr returns the value's integer, or d for non-integers.
@@ -397,7 +425,7 @@ func (f *fontInfo) mapSimple(code uint32) string {
 
 func (f *fontInfo) resolveSimple(code uint32) string {
 	if f.toUni != nil {
-		if s, ok := f.toUni.unicode[codeKey{value: code, bytes: 1}]; ok {
+		if s, ok := f.toUni.lookup(codeKey{value: code, bytes: 1}); ok {
 			return s
 		}
 	}
@@ -405,6 +433,9 @@ func (f *fontInfo) resolveSimple(code uint32) string {
 		if s, explicitlyMapped := f.differences[byte(code)]; explicitlyMapped {
 			return s
 		}
+	}
+	if f.type3Only {
+		return "�"
 	}
 	if f.fallbackFirst && f.fallback != nil && code <= 0xff {
 		if s := f.fallback.Decode(byte(code)); s != "" {
@@ -422,7 +453,12 @@ func (f *fontInfo) resolveSimple(code uint32) string {
 
 func (f *fontInfo) mapComposite(key codeKey, cid uint32) string {
 	if f.toUni != nil {
-		if s, ok := f.toUni.unicode[key]; ok {
+		if s, ok := f.toUni.lookup(key); ok {
+			return s
+		}
+	}
+	if f.encoding != nil && f.encoding.charset != nil {
+		if s := f.encoding.charset.text(key); s != "" {
 			return s
 		}
 	}
@@ -525,4 +561,76 @@ func (f *fontInfo) cidWidth(code uint32) float64 {
 		return w
 	}
 	return f.defWidth
+}
+
+// lookup is the text a ToUnicode CMap gives a code. A code it has no
+// entry for at the code's width is looked up at the widths of the CMap's
+// own codespace ranges, as poppler and pypdf do: writers pair a two-byte
+// Identity-H encoding with a one-byte ToUnicode, and the reverse.
+func (c *cmapData) lookup(key codeKey) (string, bool) {
+	if c.unicodeIdentity {
+		return identityText(key.value)
+	}
+	if s, ok := c.unicode[key]; ok {
+		return s, true
+	}
+	for _, sp := range c.spaces {
+		if sp.bytes == key.bytes || sp.bytes == 0 || sp.bytes < 4 && key.value >= 1<<(8*uint(sp.bytes)) {
+			continue
+		}
+		if s, ok := c.unicode[codeKey{value: key.value, bytes: sp.bytes}]; ok {
+			return s, true
+		}
+	}
+	return "", false
+}
+
+// type3Differences is parseDifferences for a Type3 font without
+// ToUnicode. Beyond the glyph list's names, it reads the names dvips gives
+// the glyphs of TeX's bitmap fonts, "a" and the glyph's own code in
+// decimal ("a65" at code 65, "a224" at 224): such a name says the code is
+// the character's, which for a printable code is the Latin-1 character,
+// as poppler reads them. Other numbered names ("g33", often a glyph
+// index), and an "a" name whose number is not its code, stay dropped.
+func type3Differences(arr object.Value) map[byte]string {
+	m := parseDifferences(arr)
+	if arr.Kind() != object.Array {
+		return m
+	}
+	code := -1
+	for i := range arr.Len() {
+		el := arr.Index(i)
+		switch el.Kind() {
+		case object.Integer:
+			n, _ := el.Int64()
+			code = int(n)
+		case object.Name:
+			if code >= 0 && code <= 0xFF && m[byte(code)] == "" {
+				if n, ok := numberedGlyph(el.Name()); ok && n == code && (n >= 0x20 && n < 0x7F || n >= 0xA0) {
+					if m == nil {
+						m = map[byte]string{}
+					}
+					m[byte(code)] = string(rune(n))
+				}
+			}
+			code++
+		}
+	}
+	return m
+}
+
+// numberedGlyph reads "a" and two or three decimal digits.
+func numberedGlyph(name string) (int, bool) {
+	digits, ok := strings.CutPrefix(name, "a")
+	if !ok || len(digits) < 2 || len(digits) > 3 {
+		return 0, false
+	}
+	n := 0
+	for _, c := range digits {
+		if c < '0' || c > '9' {
+			return 0, false
+		}
+		n = n*10 + int(c-'0')
+	}
+	return n, true
 }
