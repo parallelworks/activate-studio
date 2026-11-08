@@ -110,7 +110,7 @@ export const AI_LABEL: Record<AiHealth['status'], string> = {
   ok: 'models ready',
   auth: 'model key rejected',
   unreachable: 'models unreachable',
-  offline: 'offline',
+  offline: 'models offline',
   unconfigured: 'models not configured',
   'key-required': 'add your model key',
   off: 'AI features off',
