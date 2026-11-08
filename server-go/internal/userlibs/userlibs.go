@@ -97,6 +97,11 @@ func Of(a *app.App) *Module {
 		return remote.Options{IndexBase: a.Cfg.IndexBase, PwCLI: p.CLI, GatewayBase: p.GatewayBase}
 	})
 	m := New(p, pool, runners, a.Cfg.IndexBase, a.Cfg.ProjectRoot, a.Log)
+	// The libraries track's one registry keeps the same stores, so both
+	// see one state (libraries.Of, search.Of).
+	m.Users = libraries.Of(a).Users()
+	m.Settings = libraries.Of(a).FileSettings()
+	m.eng = search.Of(a)
 	m.Jobs = func() *kb.Jobs {
 		if kb.Default != nil {
 			return kb.Default.Jobs

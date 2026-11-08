@@ -10,7 +10,6 @@ import (
 	"math"
 	"net/http"
 	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 
@@ -32,46 +31,10 @@ type Service struct {
 	Pool   *remote.Pool
 }
 
-func pythonBin() string {
-	if p := os.Getenv("PYTHON_BIN"); p != "" {
-		return p
-	}
-	for _, c := range []string{"python3.13", "python3.12", "python3.11", "python3.10", "python3"} {
-		out, err := exec.Command(c, "-c", "import sys; print(sys.version_info >= (3, 10))").Output()
-		if err == nil && strings.TrimSpace(string(out)) == "True" {
-			return c
-		}
-	}
-	return "python3"
-}
-
-// New builds the service from the App.
+// New is the service over a's shared registry and engine.
 func New(a *app.App) *Service {
-	cfg := a.Cfg
-	pool := remote.New(remote.Options{IndexBase: cfg.IndexBase})
-	reg := libraries.New(libraries.Options{
-		KBRoot: cfg.KBRoot, IndexBase: cfg.IndexBase, GufiIndex: cfg.GufiIndex, GufiBin: cfg.GufiBin,
-		AuthEnabled: cfg.AuthEnabled(), Runner: a.Gufi, SSHSite: remote.SSHSite, Log: a.Log,
-		ReachedLabel: func(site string) string {
-			if r := pool.ReachedHost(site); r != nil {
-				return r.Label
-			}
-			return ""
-		},
-		Learn: func(site string) { pool.Warm(site) },
-	})
-	keys := libraries.DeploymentKeys{AuthEnabled: false}
-	eng := &search.Engine{
-		Reg: reg, Keys: keys, Local: a.Gufi, GufiBin: cfg.GufiBin, GufiIndex: cfg.GufiIndex,
-		KBRoot: cfg.KBRoot, IndexBase: cfg.IndexBase, Pool: pool,
-		Remote:       &remote.Runners{Pool: pool, Options: gufi.OptionsFrom(cfg.Gufi)},
-		Embed:        &search.WorkerEmbedder{Python: pythonBin(), ProjectRoot: cfg.ProjectRoot, IndexBase: cfg.IndexBase},
-		Labels:       &search.FileLabels{IndexBase: cfg.IndexBase, KBRoot: cfg.KBRoot, GufiIndex: cfg.GufiIndex, Runner: a.Gufi},
-		Getenv:       os.Getenv,
-		SearchEngine: func() string { return a.Settings.Effective().SearchEngine },
-		Log:          a.Log,
-	}
-	return &Service{a: a, Reg: reg, Engine: eng, Pool: pool}
+	e := search.Of(a)
+	return &Service{a: a, Reg: e.Reg, Engine: e, Pool: e.Pool}
 }
 
 // Register serves the track's routes on mux and fills its provider.
@@ -81,13 +44,6 @@ func Register(mux *http.ServeMux, a *app.App) {
 		gufitrace.Default = gufitrace.NewLog(os.Getenv("STUDIO_DATA_DIR"), a.Cfg.IndexBase, func() bool { return a.Settings.Effective().GufiLog })
 	}
 	libraries.CheckDest = remote.SSHDest
-	a.OnStop("remote sessions", func() int {
-		s.Pool.Shutdown()
-		if w, ok := s.Engine.Embed.(*search.WorkerEmbedder); ok {
-			w.Stop()
-		}
-		return 0
-	})
 	a.Providers.Libraries = func(r *http.Request, kbLabel, viewer string) ([]json.RawMessage, error) {
 		v := libraries.ViewerOf(viewer)
 		var out []json.RawMessage
