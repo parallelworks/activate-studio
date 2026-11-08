@@ -2361,7 +2361,7 @@ a.identity-btn { text-decoration: none; }
 .status-card-chev.open { transform: rotate(90deg); }
 .status-card-head:hover .status-card-chev { color: var(--pw-text); }
 .status-card-summary { margin-left: auto; min-width: 0; display: flex; align-items: center; gap: 6px; padding-left: 8px; font-size: 13px; color: var(--pw-muted); }
-.status-card-summary > :first-child { flex-shrink: 0; }
+.status-card-summary > :first-child:not(.status-card-summary-text) { flex-shrink: 0; }
 .status-card-summary-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .status-card-inner { padding: 0 8px 10px; }
 .status-group + .status-group { margin-top: 6px; }
@@ -2403,10 +2403,12 @@ button.status-row:hover { background: var(--pw-hover-row); }
 .details-inherited { color: var(--pw-muted); }
 .details-index { display: flex; align-items: center; gap: 4px; min-width: 0; }
 .details-index { align-items: flex-start; }
-.details-index code { min-width: 0; font-size: 12px; overflow-wrap: anywhere; }
+.details-index code { min-width: 0; font-size: 12px; overflow-wrap: anywhere; word-break: normal; }
 /* The type bars line up whatever their sizes read. */
 .details-track { flex: none; width: calc(100% - 72px); }
 .details-note { margin: 0; padding: 0 6px 4px; font-size: 13px; color: var(--pw-muted); }
+/* Inside the card the note lines up with the rest of it. */
+.details .details-note { padding: 0; }
 .details-loading { padding: 2px 6px 6px; }
 /* Its toggle: at the end of a page header, beside the chat's own controls,
    and over the top right of the pages that draw their own tops. */

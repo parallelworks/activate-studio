@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore } from 'react'
+import { Fragment, useEffect, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { Button, CopyButton, Loader, Meter, RelativeTime, TagList, formatBytes } from '@parallelworks/ui'
 import { api, currentLibrary, onLibraryChange, type EntryDetails } from '../api'
 
@@ -138,7 +138,7 @@ export function DetailsBody({ state }: { state: DetailsState }) {
         <div>{d.library.label} <span className="details-muted">· {d.library.kind}{d.library.writable ? ', read and write' : ', read only'}</span></div>
         {d.index && (
           <div className="details-index">
-            <code title={d.index}>{d.index}</code>
+            <code title={d.index}>{breakAtSlashes(d.index)}</code>
             <CopyButton text={d.index} label="index path" size="xs" />
           </div>
         )}
@@ -168,11 +168,17 @@ function Uncounted({ state, d }: { state: DetailsState; d: EntryDetails }) {
         <div>{d.library.label} <span className="details-muted">· {d.library.kind}, read only</span></div>
         {d.index && (
           <div className="details-index">
-            <code title={d.index}>{d.index}</code>
+            <code title={d.index}>{breakAtSlashes(d.index)}</code>
             <CopyButton text={d.index} label="index path" size="xs" />
           </div>
         )}
       </div>
     </div>
   )
+}
+
+/** A path that wraps after its slashes, and inside a part only when one
+ *  part is wider than the card. */
+export function breakAtSlashes(path: string): ReactNode {
+  return path.split('/').map((part, i) => <Fragment key={i}>{i > 0 && <>/<wbr /></>}{part}</Fragment>)
 }
