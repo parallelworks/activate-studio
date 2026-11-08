@@ -350,7 +350,15 @@ func (t *Tags) Vocabulary(ctx context.Context, others []Library) []*Obj {
 	}
 	t.Library.Counts(ids, counts)
 	keys := append([]string(nil), counts.keys...)
-	sort.SliceStable(keys, func(i, j int) bool { return counts.n[keys[i]] > counts.n[keys[j]] })
+	// Most used first, then by name. Node leaves labels used equally often
+	// in the order GUFI's threads returned their rows, which changes from
+	// one visit to the next; here the order is fixed (docs/GO-PORT.md).
+	sort.SliceStable(keys, func(i, j int) bool {
+		if ni, nj := counts.n[keys[i]], counts.n[keys[j]]; ni != nj {
+			return ni > nj
+		}
+		return keys[i] < keys[j]
+	})
 	out := make([]*Obj, len(keys))
 	for i, k := range keys {
 		out[i] = O("tag", k, "count", counts.n[k])

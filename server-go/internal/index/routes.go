@@ -19,6 +19,7 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/apierr"
 	"github.com/parallelworks/activate-studio/server-go/internal/app"
 	"github.com/parallelworks/activate-studio/server-go/internal/auth"
+	"github.com/parallelworks/activate-studio/server-go/internal/kb"
 	"github.com/parallelworks/activate-studio/server-go/internal/wslpath"
 )
 
@@ -61,6 +62,14 @@ func Register(mux *http.ServeMux, a *app.App) {
 		if !indexed {
 			if e := ix.EarlierIndexOf(ix.P.KBRoot); e != nil {
 				out.EarlierIndex, _ = marshal(e)
+			}
+		}
+		// ?files=1 (Settings, Libraries and the wizard): the main folder's
+		// count from its index, as setup.ts reads corpusStats.
+		if files && indexed && kb.Default != nil {
+			if ok, n, _, _ := kb.Default.CorpusStats(r.Context()); ok {
+				f := int(n)
+				out.Files = &f
 			}
 		}
 		return out, nil

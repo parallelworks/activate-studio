@@ -321,6 +321,8 @@ Differences from Node, kept on purpose:
 | labels without the attr package | overlay | xattrs by syscall, overlay only where they fail |
 | `/api/kb/stats` after a change made here | counts up to 10 minutes stale | counts dropped |
 
+The label list (`GET /api/tags`) puts the most used labels first and orders labels used equally often by name. This is a deliberate difference: Node leaves those in the order GUFI's threads returned their rows, which changes from one visit to the next, so the chips under Search and Stats moved around.
+
 ## The semantic map in Go
 
 `cmd/semantic-map` takes the Python script's arguments (`--index`, or `--vectors` with `--model` and `--of`; `--out`, `--sample`, `--fit`) and writes the same `overview.json` (version 3) and `cluster-<c>.json` into a scratch folder swapped in whole, and prints the same summary line. It reads `gvec_rowids`, `gvec_vector_chunks00`, the validity bits in `gvec_chunks`, `gvecmodel` and `gchunks` as plain tables through `modernc.org/sqlite`, read only. Term extraction, whole-word cuts, TF-IDF naming, folder labels, the two links per cluster and the sample quotas follow the Python line by line. Differences: the PCA takes the eigenvectors of the scatter matrix of the fitted rows in place of numpy's SVD (the same axes up to sign; Go fixes each sign so the largest coordinate is positive), the random generator is Go's PCG with seed 0 in place of numpy's, the means and terms are kept in scratch files as the Python does, and it never exits 3, since it has no numpy to miss. Node alone uses it when `STUDIO_SEMANTIC_MAP_BIN` names it, and Python by default; the Go server makes its maps with the package in process, and `studio-server semantic-map` is the same command line.
