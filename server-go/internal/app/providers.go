@@ -69,6 +69,20 @@ type Providers struct {
 	// main folder. Owner: files track. Node: POST /api/kb/tags.
 	// Node-free: nothing (labels are optional where they are used).
 	ApplyLabels func(ctx context.Context, r *http.Request, paths, add, remove []string) error
+	// IndexDirMS is incrementalIndexDir(rel) with how long it took, which
+	// the file routes answer with (indexMs). Owner: index track. Node: the
+	// bridge (bridge.go). Node-free: nothing, 0 ms.
+	IndexDirMS func(ctx context.Context, rel string) (ms int64, err error)
+	// IndexRootDB is indexing.ts's indexRootDb(): the files directly under
+	// the main folder. Owner: index track. Node: the bridge. Node-free:
+	// nothing, 0 ms.
+	IndexRootDB func(ctx context.Context) (ms int64, err error)
+	// Changed says what derived state is stale after the files track
+	// changed files or labels without an index job: "dbList" (gufi.ts's
+	// invalidateDbList), "context" (chat/context.ts's invalidateContext),
+	// "tagMaps" (tags.ts's invalidateTagMaps). Owners: the libraries
+	// (gufi), chat and files tracks. Node: the bridge. Node-free: nothing.
+	Changed func(ctx context.Context, what ...string)
 }
 
 // SetupIndex is the index state /api/setup/status shows.
@@ -117,6 +131,9 @@ func defaultProviders(a *App) Providers {
 		p.StartBuild = func(*http.Request) (json.RawMessage, error) { return nil, &Unported{"the index build"} }
 		p.IndexDir = func(*http.Request, string) error { return nil }
 		p.ApplyLabels = func(context.Context, *http.Request, []string, []string, []string) error { return nil }
+		p.IndexDirMS = func(context.Context, string) (int64, error) { return 0, nil }
+		p.IndexRootDB = func(context.Context) (int64, error) { return 0, nil }
+		p.Changed = func(context.Context, ...string) {}
 		return p
 	}
 	n := a.Node
@@ -176,6 +193,10 @@ func defaultProviders(a *App) Providers {
 		}
 		return n.Do(r, "POST", "/api/kb/tags", map[string]any{"paths": paths, "add": add, "remove": remove}, nil)
 	}
+	b := newBridge(n.Base)
+	p.IndexDirMS = func(ctx context.Context, rel string) (int64, error) { return b.index(ctx, "dir", rel) }
+	p.IndexRootDB = func(ctx context.Context) (int64, error) { return b.index(ctx, "root", "") }
+	p.Changed = func(ctx context.Context, what ...string) { b.changed(ctx, what) }
 	return p
 }
 
