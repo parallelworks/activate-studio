@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import { TOOL_SPECS, executeTool } from './chat/tools.js'
 import { effectiveSettings } from './settings.js'
 import { board, taskByToken, type Task } from './tasks.js'
+import { callFront, goOwnsPlatform } from './frontBridge.js'
 
 /**
  * The knowledge base as an MCP server, at POST /api/mcp.
@@ -76,12 +77,27 @@ const BOARD_TOOLS = [
   },
 ]
 
-function taskOf(req: { headers: Record<string, unknown> }): { m: Task; agent: string } | null {
+/** A task bearer's task: this server's, or with the Go server owning tasks
+ *  (frontBridge.ts), the Go server's, whose board then runs the tools. */
+type TaskRef = { m: Task | null; token: string; agent: string }
+async function taskOf(req: { headers: Record<string, unknown> }): Promise<TaskRef | null> {
   const auth = String(req.headers.authorization ?? '')
   const token = auth.startsWith('Bearer ') ? auth.slice(7).trim() : ''
+  const agent = String(req.headers['x-task-agent'] ?? 'agent')
+  if (goOwnsPlatform()) {
+    if (!token) return null
+    const r = await callFront<{ found: boolean }>('/internal/platform/board', { token, agent, tool: '' }).catch(() => ({ found: false }))
+    return r.found ? { m: null, token, agent } : null
+  }
   const m = taskByToken(token)
   if (!m) return null
-  return { m, agent: String(req.headers['x-task-agent'] ?? 'agent') }
+  return { m, token, agent }
+}
+
+async function boardTool(t: TaskRef, name: string, a: Record<string, unknown>): Promise<unknown> {
+  if (t.m) return runBoardTool(t.m, t.agent, name, a)
+  const r = await callFront<{ found: boolean; out?: unknown }>('/internal/platform/board', { token: t.token, agent: t.agent, tool: name, args: a })
+  return r.found ? r.out : { error: 'unknown board tool' }
 }
 
 function runBoardTool(m: Task, agent: string, name: string, a: Record<string, unknown>): unknown {
@@ -146,16 +162,16 @@ export async function mcpRoutes(app: FastifyInstance): Promise<void> {
       case 'ping':
         return rpcResult(msg.id, {})
       case 'tools/list': {
-        const task = taskOf(req as never)
+        const task = await taskOf(req as never)
         return rpcResult(msg.id, { tools: task ? [...exposedTools(), ...BOARD_TOOLS] : exposedTools() })
       }
       case 'tools/call': {
         const name = String((msg.params as { name?: string })?.name ?? '')
         if (name.startsWith('board_')) {
-          const task = taskOf(req as never)
+          const task = await taskOf(req as never)
           if (!task) return rpcError(msg.id, -32602, 'board tools need a task token')
           const a = ((msg.params as { arguments?: Record<string, unknown> })?.arguments ?? {})
-          const out = runBoardTool(task.m, task.agent, name, a)
+          const out = await boardTool(task, name, a)
           return rpcResult(msg.id, { content: [{ type: 'text', text: JSON.stringify(out) }], isError: false })
         }
         if (!EXPOSED.has(name)) return rpcError(msg.id, -32602, `unknown tool: ${name}`)

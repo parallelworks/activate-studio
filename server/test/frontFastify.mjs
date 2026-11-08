@@ -22,6 +22,34 @@ const goRoutes = STRICT
   ? new Set(JSON.parse(execFileSync(BIN, ['routes'], { encoding: 'utf8' })).ported
     .map(r => r.replace(/\{([A-Za-z_]+)\.\.\.\}/g, '*').replace(/\{([A-Za-z_]+)\}/g, ':$1')))
   : null
+// Test files that change the environment, the restart hook or the port
+// between requests for routes the Go server serves. The Go server reads its
+// environment once at start, so these files keep plain inject against Node,
+// and their cases run against the Go routes in the Go test named.
+const NODE_DIRECT = new Map([
+  ['setup.test.mjs', 'server-go/internal/core (TestSetupStatusAndBrowse, TestPrimaryFolderAndRestart, TestPort, TestPersonalDefaultsAndComplete)'],
+  ['setupSignIn.test.mjs', 'server-go/internal/core (TestSignInRefusesSetup)'],
+  // The chat tests build their own app (no chat bridge) and script the
+  // gateway through globalThis.fetch or inject a user; the Go server calls
+  // the gateway itself. Their cases run against Go in internal/chat's golden
+  // tests (TestGoldenStreamMatchesNode drives these routes of Node and of Go
+  // against one fake gateway) and the unit tests named.
+  ['aiFeatures.test.mjs', 'server-go/internal/chat (TestAIOffAnswersWithoutAModel)'],
+  // The MCP tests' Node app has no chat bridge for the tools still in Node,
+  // and the board test's tasks live in the test's own Node process; the Go
+  // server's task board is its own.
+  ['mcp.test.mjs', 'server-go/internal/chat (TestGoldenRAGMatchesNode)'],
+  ['board.test.mjs', 'server-go/internal/chat (TestMCPTaskBearer), internal/tasks (TestBoardOverTheBridge, TestBoardBridgeWithNode)'],
+  ['bulkDelete.test.mjs', 'server-go/internal/conversations (TestBulkDeleteOwnAndUnownedOnly)'],
+  ['endpointOptions.test.mjs', 'server-go/internal/modelkeys, internal/llm; internal/chat (TestModelKeyWithSignInOff)'],
+  ['gufiCommands.test.mjs', 'server-go/internal/chat (TestGoldenStreamMatchesNode)'],
+  ['modelsListingCache.test.mjs', 'server-go/internal/chat (TestModelListingIsCached)'],
+  ['offline.test.mjs', 'server-go/internal/chat (TestNoCredentialIsASentence), internal/llm'],
+  ['standaloneChat.test.mjs', 'server-go/internal/chat (TestGoldenStreamMatchesNode, TestCitationsMatchNode)'],
+  ['toolApproval.test.mjs', 'server-go/internal/chat (TestHeldCallsAskThenRunOnce, TestToolCatalogMatchesNode)'],
+  ['unansweredTurn.test.mjs', 'server-go/internal/conversations (TestUnansweredWhileAReplyStreams)'],
+])
+const direct = NODE_DIRECT.has(path.basename(process.argv[1] ?? ''))
 // The ports the Go servers take; another test process may hold one.
 const PORTS = (process.env.STUDIO_TEST_FRONT_PORTS ?? '5870-5899').split('-').map(Number)
 const fronts = new Set()
@@ -147,6 +175,13 @@ function parseCookies(setCookie) {
 }
 
 function install(app) {
+  if (direct) return app
+  // Every test app answers the bridge the Go routes ask (src/frontBridge.ts),
+  // loaded when the app starts, after the test has set its environment.
+  app.register(async a => {
+    const { frontBridgeRoutes } = await import(new URL('../dist/frontBridge.js', import.meta.url).href)
+    await frontBridgeRoutes(a)
+  })
   if (STRICT) {
     app.addHook('onRequest', async (req, reply) => {
       const key = `${req.method === 'HEAD' ? 'GET' : req.method} ${req.routeOptions?.url ?? ''}`

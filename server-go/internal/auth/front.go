@@ -162,10 +162,10 @@ func (f *Front) Gate(w http.ResponseWriter, r *http.Request) *http.Request {
 	if u != nil {
 		return WithUser(r, u)
 	}
-	// A mission worker presents its mission token, which only Node's task
-	// board can check: the request goes on to Node, which admits it for a
-	// task token and otherwise refuses it as it would any unsigned call
-	// (it has AUTH_REQUIRED when sign-in is required here).
+	// A mission worker presents its mission token, which the task board
+	// checks: the request goes on to /api/mcp (internal/chat), which admits
+	// it for a task token and otherwise refuses it as any unsigned call is
+	// refused where sign-in is required.
 	if strings.HasPrefix(p, "/api/mcp") {
 		if a := r.Header.Get("Authorization"); strings.HasPrefix(a, "Bearer ") && strings.TrimSpace(a[7:]) != "" {
 			return r

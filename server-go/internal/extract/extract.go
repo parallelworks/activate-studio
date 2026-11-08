@@ -41,7 +41,9 @@ import (
 	"time"
 
 	"github.com/giraffesyo/downmark"
+
 	"github.com/giraffesyo/downmark/all"
+	"github.com/parallelworks/activate-studio/server-go/internal/kb"
 )
 
 // MaxText is the most text kept per document, in characters (enrich.py
@@ -95,8 +97,8 @@ type Tools struct {
 func FindTools() Tools {
 	var t Tools
 	if p, err := exec.LookPath("tesseract"); err == nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		if exec.CommandContext(ctx, p, "--version").Run() == nil {
+		cmd, _, cancel := helper(context.Background(), 10*time.Second, p, "--version")
+		if cmd.Run() == nil {
 			t.Tesseract = p
 		}
 		cancel()
@@ -115,9 +117,10 @@ type Options struct {
 	// NoDocuments leaves PDFs and Office documents unread: they index by
 	// name. Images are still read (enrich.py's --no-documents).
 	NoDocuments bool
-	// PDFReader is how a PDF downmark cannot open is read: "auto" or
-	// "pdftotext" (pdftotext where installed), or "pypdf", for which
-	// there is no reader here, so such a PDF has no text.
+	// PDFReader is how a PDF downmark did not convert is read, as
+	// enrich.py's --pdf-reader: "auto" (pdftotext where installed, then
+	// the built-in reader), "pdftotext" (pdftotext only) or "pypdf" (the
+	// built-in reader only, which stands in for pypdf).
 	PDFReader string
 	// Soffice is LibreOffice's soffice, for a legacy file the readers
 	// here get nothing from; empty for none.
@@ -266,8 +269,13 @@ func normSuffix(s string) string {
 
 // Suffix is a file name's lower-cased extension, as enrich.py and
 // preextract.ts take it.
+//
+// It is Node's path.extname (kb.ExtName), lower-cased: no suffix for a
+// dotfile such as ".bashrc", ".y" for "..y". enrich.py's pathlib suffix
+// agrees except on a name ending in a dot ("." against ""), which names
+// no kind either way.
 func Suffix(name string) string {
-	return strings.ToLower(filepath.Ext(name))
+	return strings.ToLower(kb.ExtName(filepath.ToSlash(name)))
 }
 
 // KindOf is how this extractor reads a file of this name.

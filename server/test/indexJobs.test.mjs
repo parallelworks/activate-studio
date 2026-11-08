@@ -28,6 +28,16 @@ const SLOW = path.join(IX, 'slow')
 const PIDS = path.join(IX, 'pids')
 const WRAPPER = path.join(HOME, 'slowpython')
 fs.writeFileSync(WRAPPER, `#!/bin/sh\necho $$ >> '${PIDS}'\nwhile [ -f '${SLOW}' ]; do sleep 0.1; done\nexec python3 "$@"\n`, { mode: 0o755 })
+// Where the Go server builds the index (STUDIO_GO_INDEX=1 through the Go
+// front), the text is written in process, and the slow program is its
+// extraction child, in the documents phase.
+const GO_INDEX = !!process.env.STUDIO_TEST_FRONT && process.env.STUDIO_GO_INDEX === '1'
+const SLOW_PHASE = GO_INDEX ? 'documents' : 'text'
+if (GO_INDEX) {
+  const w = path.join(HOME, 'slowextract')
+  fs.writeFileSync(w, `#!/bin/sh\necho $$ >> '${PIDS}'\nwhile [ -f '${SLOW}' ]; do sleep 0.1; done\nexec '${process.env.STUDIO_TEST_FRONT}' extract "$@"\n`, { mode: 0o755 })
+  process.env.STUDIO_EXTRACT_BIN = w
+}
 
 Object.assign(process.env, { HOME, KB_ROOT: KB, INDEX_BASE: IX, GUFI_BIN: GUFI, PYTHON_BIN: WRAPPER })
 for (const k of ['AUTH_JWKS_URL', 'STUDIO_CONFIG_FILE', 'STUDIO_RESTARTABLE', 'PW_PLATFORM_HOST', 'STUDIO_INDEX_DIR', 'STUDIO_DATA_DIR']) delete process.env[k]
@@ -76,10 +86,10 @@ test('a build counts each phase, and the one status agrees with the job while it
   // A second request while it runs gets the same job.
   assert.equal((await j('POST', '/api/index/build')).body.id, start.body.id)
 
-  // Held in the text phase: names are counted, done and searchable.
+  // Held in the slow phase: names are counted, done and searchable.
   const during = await until(async () => {
     const s = (await j('GET', '/api/index/status')).body
-    return s.job?.phases.find(p => p.id === 'text').state === 'running' ? s : null
+    return s.job?.phases.find(p => p.id === SLOW_PHASE).state === 'running' ? s : null
   })
   assert.equal(during.running, true)
   assert.equal(during.job.id, start.body.id)
@@ -145,7 +155,7 @@ test('stopping a build stops its programs, and a job waiting behind it is droppe
   assert.equal(stop.body.stopped, 1)
   const job = await finished(build.id)
   assert.equal(job.state, 'cancelled')
-  assert.equal(job.phases.find(p => p.id === 'text').note, 'stopped')
+  assert.equal(job.phases.find(p => p.id === SLOW_PHASE).note, 'stopped')
   await until(() => !alive(pid), 10_000)
   fs.rmSync(SLOW)
 

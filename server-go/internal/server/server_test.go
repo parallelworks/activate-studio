@@ -119,8 +119,8 @@ func TestProxyToNode(t *testing.T) {
 	node := fakeNode(t)
 	u, _ := url.Parse(node.URL)
 	f := front(t, webDist(t), u)
-	res, body := get(t, f.URL+"/api/kb/tree?path=a%20b")
-	if res.StatusCode != 200 || !strings.Contains(body, `"node":"GET /api/kb/tree?path=a%20b"`) {
+	res, body := get(t, f.URL+"/api/node-only?path=a%20b")
+	if res.StatusCode != 200 || !strings.Contains(body, `"node":"GET /api/node-only?path=a%20b"`) {
 		t.Fatalf("api: %s", body)
 	}
 	fu, _ := url.Parse(f.URL)
@@ -128,11 +128,12 @@ func TestProxyToNode(t *testing.T) {
 		t.Fatalf("host and forwarded-for: %s", body)
 	}
 	// Node's routes outside /api win over a static file of the same name.
-	_, body = get(t, f.URL+"/manifest.webmanifest")
-	if !strings.Contains(body, `"node":"GET /manifest.webmanifest"`) {
-		t.Fatalf("manifest: %s", body)
+	// (/v1/models and /v1/chat/completions are Go's; the rest of /v1 is not.)
+	_, body = get(t, f.URL+"/v1/embeddings")
+	if !strings.Contains(body, `"node":"GET /v1/embeddings"`) {
+		t.Fatalf("/v1 path: %s", body)
 	}
-	res2, err := http.Post(f.URL+"/v1/chat/completions", "application/json", strings.NewReader(`{"x":1}`))
+	res2, err := http.Post(f.URL+"/v1/embeddings", "application/json", strings.NewReader(`{"x":1}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -162,10 +163,12 @@ func TestEventStreamIsNotBuffered(t *testing.T) {
 	}
 }
 
+// The proxy tests use paths under /api/__test/ and /v1/__test/, which no
+// track ports, so they keep testing the proxy as routes move to Go.
 func TestNodeDown(t *testing.T) {
 	u, _ := url.Parse("http://127.0.0.1:1")
 	f := front(t, webDist(t), u)
-	res, body := get(t, f.URL+"/api/config")
+	res, body := get(t, f.URL+"/api/__test/proxied")
 	if res.StatusCode != http.StatusBadGateway || !strings.Contains(body, "Node server") {
 		t.Fatalf("%d %s", res.StatusCode, body)
 	}
@@ -292,9 +295,9 @@ func TestStreamsAreNotBuffered(t *testing.T) {
 	next := make(chan struct{})
 	node := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/api/chat/stream", "/v1/chat/completions":
+		case "/api/__test/event-stream", "/v1/__test/event-stream":
 			w.Header().Set("Content-Type", "text/event-stream")
-		case "/api/charset-stream":
+		case "/api/__test/charset-stream":
 			w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
 		default: // the relay: chunked, no Content-Length
 			w.Header().Set("Content-Type", "text/html")
@@ -312,7 +315,7 @@ func TestStreamsAreNotBuffered(t *testing.T) {
 	t.Cleanup(node.Close)
 	u, _ := url.Parse(node.URL)
 	f := front(t, webDist(t), u)
-	for _, p := range []string{"/api/chat/stream", "/v1/chat/completions", "/api/charset-stream", "/api/session-proxy/h/x"} {
+	for _, p := range []string{"/api/__test/event-stream", "/v1/__test/event-stream", "/api/__test/charset-stream", "/api/__test/relay/h/x"} {
 		req, _ := http.NewRequest("POST", f.URL+p, strings.NewReader("{}"))
 		res, err := http.DefaultClient.Do(req)
 		if err != nil {
@@ -355,8 +358,8 @@ func TestOnlyStreamsAreFlushed(t *testing.T) {
 	s := New(config.Config{WebDist: webDist(t), GufiBin: t.TempDir(), GufiIndex: filepath.Join(t.TempDir(), "none")},
 		slog.New(slog.NewTextHandler(io.Discard, nil)), u, nil)
 	rec := httptest.NewRecorder()
-	s.ServeHTTP(rec, httptest.NewRequest("GET", "/api/config", nil))
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"node":"GET /api/config"`) {
+	s.ServeHTTP(rec, httptest.NewRequest("GET", "/api/__test/proxied", nil))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"node":"GET /api/__test/proxied"`) {
 		t.Fatalf("%d %s", rec.Code, rec.Body.String())
 	}
 	if rec.Flushed {

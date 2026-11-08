@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 )
@@ -41,6 +42,21 @@ type Providers struct {
 	// write. Owner: chat track. Node rereads its MCP status when the
 	// settings file changes (mcpClient.ts), so the default does nothing.
 	InvalidateMCP func()
+	// ConversationNote is conversations.ts's appendConversationNote: a note
+	// added to a conversation (the run watcher's, runs.ts), false when the
+	// conversation is not stored. Owner: chat track. Default: nothing is
+	// stored, false.
+	ConversationNote func(conversationID, content string) bool
+	// TaskBoard is tasks.ts's task board for a task token's MCP calls
+	// (mcp.ts's taskByToken and runBoardTool): tool "" asks whether the
+	// token names a task; otherwise the board tool runs on args and out is
+	// its answer. Owner: platform track (tasks). Default nil: the tokens
+	// are Node's, and /api/mcp hands a request with a bearer to Node.
+	TaskBoard func(token, agent, tool string, args json.RawMessage) (found bool, out json.RawMessage)
+	// TaskToolNames is mcp.ts's taskToolNames(): the tools a task agent's
+	// pw code session pre-approves. Owner: chat track. Default nil (ask
+	// Node).
+	TaskToolNames func() []string
 	// StopRagEndpoint is ragEndpoint.ts's stopRagEndpoint(), when the RAG
 	// proxy is turned off. Owner: platform track. Node: POST
 	// /api/rag/endpoint/stop. Node-free: nothing runs, so nothing.
@@ -69,6 +85,20 @@ type Providers struct {
 	// main folder. Owner: files track. Node: POST /api/kb/tags.
 	// Node-free: nothing (labels are optional where they are used).
 	ApplyLabels func(ctx context.Context, r *http.Request, paths, add, remove []string) error
+	// IndexDirMS is incrementalIndexDir(rel) with how long it took, which
+	// the file routes answer with (indexMs). Owner: index track. Node: the
+	// bridge (bridge.go). Node-free: nothing, 0 ms.
+	IndexDirMS func(ctx context.Context, rel string) (ms int64, err error)
+	// IndexRootDB is indexing.ts's indexRootDb(): the files directly under
+	// the main folder. Owner: index track. Node: the bridge. Node-free:
+	// nothing, 0 ms.
+	IndexRootDB func(ctx context.Context) (ms int64, err error)
+	// Changed says what derived state is stale after the files track
+	// changed files or labels without an index job: "dbList" (gufi.ts's
+	// invalidateDbList), "context" (chat/context.ts's invalidateContext),
+	// "tagMaps" (tags.ts's invalidateTagMaps). Owners: the libraries
+	// (gufi), chat and files tracks. Node: the bridge. Node-free: nothing.
+	Changed func(ctx context.Context, what ...string)
 }
 
 // SetupIndex is the index state /api/setup/status shows.
@@ -92,7 +122,8 @@ func defaultProviders(a *App) Providers {
 			}
 			return os.Getenv("OPENAI_API_KEY")
 		},
-		InvalidateMCP: func() {},
+		InvalidateMCP:    func() {},
+		ConversationNote: func(string, string) bool { return false },
 		GufiLogInfo: func() any {
 			// gufiLog.ts: LOG_DIR/gufi-commands.log, LOG_DIR being
 			// STUDIO_DATA_DIR/logs, else INDEX_BASE/logs (indexLog.ts).
@@ -157,6 +188,23 @@ func defaultProviders(a *App) Providers {
 		}
 		return free.ApplyLabels(ctx, r, paths, add, remove)
 	}
+	p.IndexDirMS = func(ctx context.Context, rel string) (int64, error) {
+		if on() != nil {
+			return node.IndexDirMS(ctx, rel)
+		}
+		return free.IndexDirMS(ctx, rel)
+	}
+	p.IndexRootDB = func(ctx context.Context) (int64, error) {
+		if on() != nil {
+			return node.IndexRootDB(ctx)
+		}
+		return free.IndexRootDB(ctx)
+	}
+	p.Changed = func(ctx context.Context, what ...string) {
+		if on() != nil {
+			node.Changed(ctx, what...)
+		}
+	}
 	return p
 }
 
@@ -174,6 +222,9 @@ func freeProviders(a *App, p Providers) Providers {
 	p.StartBuild = func(*http.Request) (json.RawMessage, error) { return nil, &Unported{"the index build"} }
 	p.IndexDir = func(*http.Request, string) error { return nil }
 	p.ApplyLabels = func(context.Context, *http.Request, []string, []string, []string) error { return nil }
+	p.IndexDirMS = func(context.Context, string) (int64, error) { return 0, nil }
+	p.IndexRootDB = func(context.Context) (int64, error) { return 0, nil }
+	p.Changed = func(context.Context, ...string) {}
 	return p
 }
 
@@ -236,6 +287,10 @@ func nodeProviders(a *App, p Providers) Providers {
 		}
 		return n().Do(r, "POST", "/api/kb/tags", map[string]any{"paths": paths, "add": add, "remove": remove}, nil)
 	}
+	b := newBridge(func() *url.URL { return n().Base })
+	p.IndexDirMS = func(ctx context.Context, rel string) (int64, error) { return b.index(ctx, "dir", rel) }
+	p.IndexRootDB = func(ctx context.Context) (int64, error) { return b.index(ctx, "root", "") }
+	p.Changed = func(ctx context.Context, what ...string) { b.changed(ctx, what) }
 	return p
 }
 

@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/parallelworks/activate-studio/server-go/internal/extract/pytext"
 )
 
 // The extract cache holds one entry per document, <cache>/<rel>.txt, the
@@ -54,10 +56,23 @@ func EntryVersion(file string) string {
 	return string(head[len(ProvenancePrefix):end])
 }
 
+// ReadEntry is a cache entry's text. Entries enrich.py wrote on Windows
+// have "\r\n" line ends (Python's text mode); they read as "\n", as
+// Python reads them back, so an existing cache stays valid. Go writes
+// "\n" everywhere.
+func ReadEntry(file string) (string, error) {
+	b, err := os.ReadFile(file)
+	if err != nil {
+		return "", err
+	}
+	return pytext.Newlines(pytext.Decode(b)), nil
+}
+
 // IndexText is a cache entry's text as it is indexed: without the
 // provenance line, so it is neither searched nor shown in a snippet
-// (enrich.py's index_text).
+// (enrich.py's index_text). "\r\n" counts as "\n".
 func IndexText(text string) string {
+	text = pytext.Newlines(text)
 	if strings.HasPrefix(text, ProvenancePrefix) {
 		nl := strings.IndexByte(text, '\n')
 		if nl < 0 {
