@@ -1,0 +1,23 @@
+The .ppt files in this directory are from Apache POI
+(https://github.com/apache/poi, test-data/slideshow), unchanged:
+42474-1.ppt, basic_test_ppt_file.ppt, bullets.ppt,
+clusterfuzz-testcase-minimized-POIHSLFFuzzer-6614960949821440.ppt,
+empty.ppt, headers_footers.ppt, Password_Protected-hello.ppt,
+slide_master.ppt, WithComments.ppt, with_textbox.ppt.
+The .txt beside each is indexer/enrich.py's extract_ppt output for it.
+
+Apache POI
+Copyright 2003-2026 The Apache Software Foundation
+
+This product includes software developed at
+The Apache Software Foundation (https://www.apache.org/).
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use these files except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.

@@ -1,0 +1,10 @@
+Slide Masters
+PowerPoint presentations can have multiple masters 
+The placement and formatting of text objects can be changed on individual slides without affecting the master 
+To modify background objects and background animation, you must edit the master, which affects all slides in a presentation.
+Slide Masters (cont’d)
+Masters determine placement and formatting of text objects, background objects, and background animation effects for every slide in a presentation.
+I’m a slide with a Title layout
+And I follow the design pattern from the TitleMaster
+Click to edit Master title style
+Click to edit Master subtitle style
