@@ -35,6 +35,8 @@ func todayTree(t *testing.T, kb string) {
 		".github/n.docx": docx(t, "gh"), "build/o.docx": docx(t, "b"), "sub/__pycache__/p.docx": docx(t, "p"),
 		"~$a.docx": []byte("lock"), ".~lock.a.docx#": []byte("lock"), "notes.md": []byte("# text"),
 		"empty.docx": {}, "q.unknown": []byte("x"),
+		// Dotfiles named like a suffix have none; "..pdf" has ".pdf".
+		".pdf": pdfDoc("dotfile"), "sub/.docx": docx(t, "dotfile"), "r..pdf": pdfDoc("two dots pdf"), "s.odt.": odt,
 	}
 	files["sub/deep/c.xlsx"] = zipOf(t, map[string]string{
 		"[Content_Types].xml":        `<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>`,

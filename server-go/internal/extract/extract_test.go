@@ -575,3 +575,17 @@ func TestReaderText(t *testing.T) {
 		t.Fatalf("pypdf: %q", got)
 	}
 }
+
+// TestSuffix: Node's path.extname, lower-cased; enrich.py's pathlib suffix
+// differs only on a trailing dot, which names no kind.
+func TestSuffix(t *testing.T) {
+	for name, want := range map[string]string{
+		".bashrc": "", "dir/.bashrc": "", "a.b.c": ".c", "x/..y": ".y", "x/.y.z": ".z",
+		"a.": ".", "a..": ".", "a.b.": ".", "..": "", ".": "",
+		"x/Report.PDF": ".pdf", "dir.d/file": "", "noext": "",
+	} {
+		if got := Suffix(name); got != want {
+			t.Errorf("Suffix(%q) = %q, want %q", name, got, want)
+		}
+	}
+}
