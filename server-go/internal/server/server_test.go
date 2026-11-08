@@ -119,8 +119,8 @@ func TestProxyToNode(t *testing.T) {
 	node := fakeNode(t)
 	u, _ := url.Parse(node.URL)
 	f := front(t, webDist(t), u)
-	res, body := get(t, f.URL+"/api/kb/tree?path=a%20b")
-	if res.StatusCode != 200 || !strings.Contains(body, `"node":"GET /api/kb/tree?path=a%20b"`) {
+	res, body := get(t, f.URL+"/api/node-only?path=a%20b")
+	if res.StatusCode != 200 || !strings.Contains(body, `"node":"GET /api/node-only?path=a%20b"`) {
 		t.Fatalf("api: %s", body)
 	}
 	fu, _ := url.Parse(f.URL)
