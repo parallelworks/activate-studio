@@ -5,6 +5,7 @@ import (
 	"io"
 	"log/slog"
 
+	"github.com/parallelworks/activate-studio/server-go/internal/auth"
 	"github.com/parallelworks/activate-studio/server-go/internal/config"
 	"github.com/parallelworks/activate-studio/server-go/internal/server"
 )
@@ -21,7 +22,16 @@ func init() {
 				io.WriteString(stderr, err.Error()+"\n")
 				return 2
 			}
-			s := server.New(cfg, slog.New(slog.DiscardHandler), nil, nil)
+			log := slog.New(slog.DiscardHandler)
+			// The front the server runs with: where it verifies identity
+			// itself (with Node off, for one), it answers /api/whoami and
+			// /api/auth/*. Nothing it would start (the hand-off's key set)
+			// is started for a listing.
+			var front *auth.Front
+			if cfg.FrontAuth {
+				front = auth.NewFront(cfg, log, nil, nil)
+			}
+			s := server.New(cfg, log, nil, front)
 			json.NewEncoder(stdout).Encode(map[string]any{"ported": s.Ported(), "unported": s.Unported()})
 			return 0
 		},
