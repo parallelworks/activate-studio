@@ -1,0 +1,281 @@
+package updates
+
+import (
+	"context"
+	"encoding/json"
+	"io"
+	"log/slog"
+	"net/http"
+	"time"
+
+	"github.com/parallelworks/activate-studio/server-go/internal/apierr"
+	"github.com/parallelworks/activate-studio/server-go/internal/app"
+	"github.com/parallelworks/activate-studio/server-go/internal/version"
+)
+
+// Register makes the updater of a server, registers its routes on mux,
+// and runs its background check through a.Go, as main.ts's startUpdates
+// and updateRoutes do. It returns the updater, for tests.
+func Register(mux *http.ServeMux, a *app.App) *Updater {
+	root := a.Cfg.ProjectRoot
+	u := New(Options{
+		ProjectRoot: root,
+		IndexBase:   a.Cfg.IndexBase,
+		Settings:    a.Settings,
+		AuthEnabled: a.Cfg.AuthEnabled(),
+		Log:         func(m string) { a.Log.Info(m) },
+		Restart:     a.RequestRestart,
+		Busy:        a.Busy,
+		Version: func() (string, *string) {
+			i := version.Of(root)
+			return i.Version, i.BuiltAt
+		},
+	})
+	if a.NodeAPI != nil {
+		// While Node still answers chats and indexes, an automatic update
+		// also waits on Node's own busy check (main.ts), which it reports
+		// with the index status; streams through the proxy count in a.Busy.
+		a.AddBusy(func() bool {
+			var st struct {
+				Running bool `json:"running"`
+				Busy    bool `json:"busy"`
+			}
+			req, _ := http.NewRequest(http.MethodGet, "/api/index/status", nil)
+			if err := a.NodeAPI.Do(req, http.MethodGet, "/api/index/status", nil, &st); err != nil {
+				return false
+			}
+			return st.Running || st.Busy
+		})
+	}
+	a.Go("updates", func(ctx context.Context) {
+		u.Start()
+		<-ctx.Done()
+		u.Stop()
+	})
+	Routes(u, mux, a.Log)
+	return u
+}
+
+// Routes registers the six routes on mux.
+func Routes(u *Updater, mux *http.ServeMux, log *slog.Logger) {
+	h := func(fn func(w http.ResponseWriter, r *http.Request) error) http.HandlerFunc { return apierr.Handler(log, fn) }
+	refuseHosted := func() error {
+		if u.Mode() == "hosted" {
+			return apierr.New(403, "This Studio is updated by its deployment, not from here.")
+		}
+		return nil
+	}
+	requireApp := func() error {
+		if err := refuseHosted(); err != nil {
+			return err
+		}
+		if mode := u.Mode(); mode != "app" {
+			u.mu.Lock()
+			r := u.refusal(mode, nil, false)
+			u.mu.Unlock()
+			msg := "Only an installed app updates itself."
+			if r != nil {
+				msg = *r
+			}
+			return apierr.New(409, "%s", msg)
+		}
+		return nil
+	}
+
+	mux.HandleFunc("GET /api/updates", h(func(w http.ResponseWriter, r *http.Request) error {
+		if err := refuseHosted(); err != nil {
+			return err
+		}
+		// The window opening after the Mac slept past a check starts it
+		// here, without waiting for the next poll.
+		u.mu.Lock()
+		if u.scheduled && u.checkDue(time.Now()) {
+			u.startCheck()
+		}
+		u.mu.Unlock()
+		apierr.JSON(w, 200, u.Status())
+		return nil
+	}))
+
+	// Every mode, hosted included: What's new reads it.
+	mux.HandleFunc("GET /api/changelog", h(func(w http.ResponseWriter, r *http.Request) error {
+		apierr.JSON(w, 200, u.Changelog(r.URL.Query().Get("after")))
+		return nil
+	}))
+
+	mux.HandleFunc("POST /api/updates/check", h(func(w http.ResponseWriter, r *http.Request) error {
+		if err := refuseHosted(); err != nil {
+			return err
+		}
+		u.mu.Lock()
+		busy := u.inProgress()
+		u.mu.Unlock()
+		if !busy {
+			u.Check()
+		}
+		apierr.JSON(w, 200, u.Status())
+		return nil
+	}))
+
+	mux.HandleFunc("POST /api/updates/install", h(func(w http.ResponseWriter, r *http.Request) error {
+		if err := requireApp(); err != nil {
+			return err
+		}
+		body := readBody(r)
+		if v, ok := body["version"]; ok && v != nil {
+			// A version the person picked: newer or older, on the channel.
+			vs, isStr := v.(string)
+			if _, valid := ParseVersion(vs); !isStr || !valid {
+				return apierr.New(400, "version must be a release version")
+			}
+			u.mu.Lock()
+			defer u.mu.Unlock()
+			if u.op != nil || u.inProgress() {
+				return apierr.New(409, "An update is %s; wait for it to finish.", u.st.State)
+			}
+			s := u.status()
+			if s.Reason != nil {
+				return apierr.New(409, "%s", *s.Reason)
+			}
+			rel := u.pickable(vs, s.Policy.Channel)
+			if rel == nil {
+				return apierr.New(409, "%s is not a release this Studio can install on the %s channel.", vs, channelName(s.Policy.Channel))
+			}
+			if sameVersion(rel.Tag, s.Current.Version) {
+				return apierr.New(409, "%s is the version running.", rel.Tag)
+			}
+			restore, _ := body["restoreState"].(bool)
+			u.startInstall(*rel, installOpts{allowOlder: true, restoreState: restore})
+			apierr.JSON(w, 200, u.status())
+			return nil
+		}
+		u.mu.Lock()
+		if c := u.op; u.st.State == "checking" && c != nil {
+			u.mu.Unlock()
+			<-c
+			u.mu.Lock()
+		}
+		if !u.inProgress() && u.loadSaved().CheckedAt == nil {
+			u.mu.Unlock()
+			u.Check()
+			u.mu.Lock()
+		}
+		defer u.mu.Unlock()
+		// An automatic download under way installs as soon as it is verified.
+		if u.op != nil || u.inProgress() {
+			if u.st.State == "downloading" || u.st.State == "verifying" {
+				u.wanted = true
+			}
+			apierr.JSON(w, 200, u.status())
+			return nil
+		}
+		s := u.status()
+		rel := u.latestRelease(s.Policy.Channel, u.needsBuild())
+		if rel == nil || !s.Available {
+			return apierr.New(409, "There is no version newer than %s.", s.Current.Version)
+		}
+		if !s.CanInstall {
+			msg := "The update cannot be installed."
+			if s.Reason != nil {
+				msg = *s.Reason
+			}
+			return apierr.New(409, "%s", msg)
+		}
+		u.startInstall(*rel, installOpts{})
+		apierr.JSON(w, 200, u.status())
+		return nil
+	}))
+
+	// What installing a version would do, from its signed manifest: older
+	// or not, and whether it reads the state or needs a snapshot put back.
+	mux.HandleFunc("POST /api/updates/inspect", h(func(w http.ResponseWriter, r *http.Request) error {
+		if err := requireApp(); err != nil {
+			return err
+		}
+		vs, _ := readBody(r)["version"].(string)
+		if _, ok := ParseVersion(vs); !ok {
+			return apierr.New(400, "version must be a release version")
+		}
+		u.mu.Lock()
+		s := u.status()
+		rel := u.pickable(vs, s.Policy.Channel)
+		u.mu.Unlock()
+		if rel == nil {
+			return apierr.New(409, "%s is not a release this Studio can install on the %s channel.", vs, channelName(s.Policy.Channel))
+		}
+		man, err := u.verifiedManifest(*rel, true)
+		if err != nil {
+			if isRefused(err) {
+				return apierr.New(409, "%s", err.Error())
+			}
+			return apierr.New(502, "The release could not be read: %s.", plain(err))
+		}
+		readable, snap := u.stateNeeds(man.StateFormat)
+		out := VersionCheck{Version: man.Version, Older: CompareVersions(man.Version, s.Current.Version) < 0, Channel: man.Channel,
+			StateFormat: man.StateFormat, CurrentFormat: u.state.StateFormat(), Readable: readable, RequiresRelaunch: man.RequiresRelaunch}
+		if snap != nil {
+			b := brief(*snap)
+			out.Snapshot = &b
+		}
+		apierr.JSON(w, 200, out)
+		return nil
+	}))
+
+	mux.HandleFunc("POST /api/updates/rollback", h(func(w http.ResponseWriter, r *http.Request) error {
+		if err := requireApp(); err != nil {
+			return err
+		}
+		u.mu.Lock()
+		if u.inProgress() {
+			st := u.st.State
+			u.mu.Unlock()
+			return apierr.New(409, "An update is %s; wait for it to finish.", st)
+		}
+		if u.previousVersion() == nil {
+			u.mu.Unlock()
+			return apierr.New(409, "There is no previous version to go back to.")
+		}
+		if c := u.op; c != nil {
+			u.mu.Unlock()
+			<-c
+			u.mu.Lock()
+		}
+		defer u.mu.Unlock()
+		if err := u.rollBack(); err != nil {
+			u.fail(err)
+			return apierr.New(500, "%s", *u.st.Error)
+		}
+		apierr.JSON(w, 200, u.status())
+		return nil
+	}))
+}
+
+// VersionCheck is what installing a given version would do.
+type VersionCheck struct {
+	Version          string `json:"version"`
+	Older            bool   `json:"older"`
+	Channel          string `json:"channel"`
+	StateFormat      int    `json:"stateFormat"`
+	CurrentFormat    int    `json:"currentFormat"`
+	Readable         bool   `json:"readable"`
+	Snapshot         *Brief `json:"snapshot"`
+	RequiresRelaunch bool   `json:"requiresRelaunch"`
+}
+
+func channelName(c string) string {
+	if c == "preview" {
+		return "Preview"
+	}
+	return "Stable"
+}
+
+func readBody(r *http.Request) map[string]any {
+	b, _ := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	var m map[string]any
+	_ = json.Unmarshal(b, &m)
+	if m == nil {
+		m = map[string]any{}
+	}
+	return m
+}
+

@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/app"
+	"github.com/parallelworks/activate-studio/server-go/internal/updates"
 )
 
 // registerTracks registers each track's routes on mux (the ported-routes
@@ -27,7 +28,7 @@ func registerTracks(mux *http.ServeMux, a *app.App) {
 
 	// slot: platform (port-platform)
 
-	// slot: updates (port-updates)
+	updates.Register(mux, a)
 
 	// slot: chat (port-chat)
 
