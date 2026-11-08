@@ -50,6 +50,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/logger"
@@ -150,6 +151,9 @@ func main() {
 			WebviewUserDataPath: filepath.Join(cfg.DataDir, "webview"),
 		},
 	})
+	// The window is gone; its page's helper processes end before the shell
+	// does (webkitreap_linux.go).
+	reapWebKit(5 * time.Second)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Error:", err)
 		app.sup.Stop()
