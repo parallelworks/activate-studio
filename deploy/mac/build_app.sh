@@ -34,9 +34,8 @@
 #               (beside app/bin/studio-server, where its embedder looks) and
 #               the STEP preview's modules in app/occt, with their licenses
 #               in Resources/licenses.
-#   OCCT_DIR    a folder with occt-import-js.wasm and occt-import-js.noeh.wasm
-#               from server-go/scripts/occt/build.sh, used instead of
-#               building them
+#   OCCT_DIR    a folder from server-go/scripts/occt/build.sh (the two
+#               modules and their licenses), used instead of building them
 #   MAC_SHELL   swift or wails: the window. Default wails for go-only, else
 #               swift. wails is desktop/wails built for macOS (Go with cgo, on a
 #               Mac), with the Swift window's features (docs/MACOS.md)
@@ -120,17 +119,16 @@ if [ "$SERVER" != node ]; then
   # The STEP preview's modules (occt-import-js, Open CASCADE, LGPL 2.1):
   # separate files beside the server, not built into it, so they stay
   # replaceable. OCCT_DIR names a folder with them already built
-  # (server-go/scripts/occt/build.sh); else they are built here from the
-  # occt-import-js package server/ installs, with binaryen from npm.
+  # (server-go/scripts/occt/build.sh); else they are built here.
   echo "The STEP preview modules (occt-import-js)..."
   mkdir -p "$RES/app/occt" "$RES/licenses"
-  if [ -n "${OCCT_DIR:-}" ]; then
-    cp "$OCCT_DIR/occt-import-js.wasm" "$OCCT_DIR/occt-import-js.noeh.wasm" "$RES/app/occt/"
-  else
-    "$PROJECT_ROOT/server-go/scripts/occt/build.sh" "$RES/app/occt" >/dev/null
-  fi
-  cp "$PROJECT_ROOT/server/node_modules/occt-import-js/dist/license.occt-import-js.txt" "$RES/licenses/occt-import-js-LICENSE.txt"
-  cp "$PROJECT_ROOT/server/node_modules/occt-import-js/dist/license.occt.txt" "$RES/licenses/occt-LICENSE.txt"
+  # build.sh fetches occt-import-js and binaryen at the versions and npm
+  # integrity hashes it records, and stops on a mismatch.
+  occt="${OCCT_DIR:-$WORK/occt}"
+  [ -n "${OCCT_DIR:-}" ] || "$PROJECT_ROOT/server-go/scripts/occt/build.sh" "$occt" >/dev/null
+  cp "$occt/occt-import-js.wasm" "$occt/occt-import-js.noeh.wasm" "$RES/app/occt/"
+  cp "$occt/license.occt-import-js.txt" "$RES/licenses/occt-import-js-LICENSE.txt"
+  cp "$occt/license.occt.txt" "$RES/licenses/occt-LICENSE.txt"
 fi
 if [ "$SERVER" = go-only ]; then
   # What the updaters of v1.180 to v1.188 check in a bundle before they
