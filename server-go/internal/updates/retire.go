@@ -115,10 +115,12 @@ func (u *Updater) retirePrevious() bool {
 		u.log("update: the previous copy could not be removed: " + plain(err))
 		return false
 	}
+	// Before the removal, which can take seconds: the links into the copy
+	// lead nowhere from the rename on.
+	removed := u.removeNodeLeftovers()
 	if err := rmTree(gone); err != nil {
 		u.log("update: the previous copy could not be removed: " + plain(err))
 	}
-	removed := u.removeNodeLeftovers()
 	u.log(fmt.Sprintf("update: the copy of %s kept beside the app was removed%s; Roll back downloads it again", orText(v, "the previous version"), removed))
 	return true
 }

@@ -271,6 +271,7 @@ else
 fi
 grep -q "\"$OLD_VERSION\"" "$UPD/previous.json" 2>/dev/null && ok "updates/previous.json names $OLD_VERSION" || bad "previous.json: $(cat "$UPD/previous.json" 2>/dev/null)"
 if [ -n "$had_gguf" ]; then
+  n=0; while [ -L "$GGUF" ] && [ "$n" -lt 30 ]; do sleep 1; n=$((n + 1)); done
   [ ! -e "$GGUF" ] && [ ! -L "$GGUF" ] && ok "the Node version's model link in the data folder went with it" || bad "the dangling model link is still there"
 fi
 data_ok "after the copy was removed"
