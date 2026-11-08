@@ -119,8 +119,8 @@ func TestProxyToNode(t *testing.T) {
 	node := fakeNode(t)
 	u, _ := url.Parse(node.URL)
 	f := front(t, webDist(t), u)
-	res, body := get(t, f.URL+"/api/kb/tree?path=a%20b")
-	if res.StatusCode != 200 || !strings.Contains(body, `"node":"GET /api/kb/tree?path=a%20b"`) {
+	res, body := get(t, f.URL+"/api/node-only?path=a%20b")
+	if res.StatusCode != 200 || !strings.Contains(body, `"node":"GET /api/node-only?path=a%20b"`) {
 		t.Fatalf("api: %s", body)
 	}
 	fu, _ := url.Parse(f.URL)
@@ -165,7 +165,7 @@ func TestEventStreamIsNotBuffered(t *testing.T) {
 func TestNodeDown(t *testing.T) {
 	u, _ := url.Parse("http://127.0.0.1:1")
 	f := front(t, webDist(t), u)
-	res, body := get(t, f.URL+"/api/kb/tree")
+	res, body := get(t, f.URL+"/api/chat/models")
 	if res.StatusCode != http.StatusBadGateway || !strings.Contains(body, "Node server") {
 		t.Fatalf("%d %s", res.StatusCode, body)
 	}
@@ -355,8 +355,8 @@ func TestOnlyStreamsAreFlushed(t *testing.T) {
 	s := New(config.Config{WebDist: webDist(t), GufiBin: t.TempDir(), GufiIndex: filepath.Join(t.TempDir(), "none")},
 		slog.New(slog.NewTextHandler(io.Discard, nil)), u, nil)
 	rec := httptest.NewRecorder()
-	s.ServeHTTP(rec, httptest.NewRequest("GET", "/api/kb/stats", nil))
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"node":"GET /api/kb/stats"`) {
+	s.ServeHTTP(rec, httptest.NewRequest("GET", "/api/chat/models", nil))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"node":"GET /api/chat/models"`) {
 		t.Fatalf("%d %s", rec.Code, rec.Body.String())
 	}
 	if rec.Flushed {

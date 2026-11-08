@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/apierr"
+	"github.com/parallelworks/activate-studio/server-go/internal/app"
 	"github.com/parallelworks/activate-studio/server-go/internal/jsonobj"
 )
 
@@ -142,7 +143,7 @@ func (c *Core) model(w http.ResponseWriter, r *http.Request) error {
 	}
 	if suffix != ".stl" {
 		c.log.Info("model: STEP meshing is Node's (OpenCascade); handing the request on", "path", rel)
-		c.a.Node().ServeHTTP(w, r)
+		c.a.Node().ServeHTTP(w, app.HandOff(r, "STEP meshing (OpenCascade) until a Go or helper mesher"))
 		return nil
 	}
 	buf, err := os.ReadFile(abs)

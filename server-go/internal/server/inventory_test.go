@@ -74,7 +74,7 @@ func TestNodeFreeAnswers501ForUnported(t *testing.T) {
 		status       int
 	}{
 		{"POST", "/api/chat/stream", 501},
-		{"GET", "/api/kb/tree", 501},
+		{"GET", "/api/kb/history", 501},
 		{"GET", "/api/no-such-route", 404},
 		{"GET", "/healthz", 200},
 	} {
@@ -103,7 +103,7 @@ func TestClientCannotClaimAnInternalCall(t *testing.T) {
 	s := New(cfg, slog.New(slog.DiscardHandler), nil, nil)
 	u, _ := url.Parse(node.URL)
 	s.AttachNode(u)
-	r := httptest.NewRequest("GET", "/api/kb/tree", nil)
+	r := httptest.NewRequest("GET", "/api/node-only", nil)
 	r.Header.Set("X-Studio-Internal", "1")
 	r.Header.Set("X-Other", "kept")
 	s.ServeHTTP(httptest.NewRecorder(), r)
