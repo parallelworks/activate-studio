@@ -8,7 +8,6 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 )
@@ -30,11 +29,6 @@ func stubborn(t *testing.T, dir string) (bin, pids string) {
 	return bin, pids
 }
 
-func alive(pid int) bool {
-	err := syscall.Kill(pid, 0)
-	return err == nil || err == syscall.EPERM
-}
-
 // gone waits for the processes listed in pids to exit.
 func gone(t *testing.T, pids string) {
 	t.Helper()
@@ -53,7 +47,7 @@ func gone(t *testing.T, pids string) {
 			time.Sleep(20 * time.Millisecond)
 		}
 		if alive(id) {
-			syscall.Kill(id, syscall.SIGKILL)
+			killHard(id)
 			t.Errorf("process %d outlived the helper's timeout", id)
 		}
 	}
