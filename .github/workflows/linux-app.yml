@@ -586,10 +586,14 @@ jobs:
           name: activate-studio-linux-x86_64
           path: ${{ runner.temp }}/in
       - name: build the packages
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           (cd "$RUNNER_TEMP/in" && sha256sum -c activate-studio-linux-x86_64.tar.gz.sha256)
-          curl -fsSL -o "$RUNNER_TEMP/nfpm.tgz" "https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VERSION}/nfpm_${NFPM_VERSION}_Linux_x86_64.tar.gz"
+          # Through the release API (gh), which works when GitHub's download
+          # host does not; the hash below is the check either way.
+          timeout 300 gh release download "v${NFPM_VERSION}" --repo goreleaser/nfpm --pattern "nfpm_${NFPM_VERSION}_Linux_x86_64.tar.gz" --output "$RUNNER_TEMP/nfpm.tgz"
           echo "$NFPM_SHA256  $RUNNER_TEMP/nfpm.tgz" | sha256sum -c -
           tar -xzf "$RUNNER_TEMP/nfpm.tgz" -C "$RUNNER_TEMP" nfpm
           NFPM="$RUNNER_TEMP/nfpm" desktop/linux/build_packages.sh "$RUNNER_TEMP/in/activate-studio-linux-x86_64.tar.gz" "$RUNNER_TEMP/pkgs"

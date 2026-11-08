@@ -21,6 +21,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -125,13 +126,30 @@ type feed struct {
 	releases []map[string]any
 	etag     string
 	seq      int
+	// api: the release API's asset addresses, id to download path; fail:
+	// the status the download addresses answer instead (0, they serve);
+	// apiHits: the files fetched through the release API.
+	api     map[string]string
+	fail    int
+	apiHits []string
 }
 
 func newFeed(t *testing.T) *feed {
-	f := &feed{files: map[string][]byte{}, etag: `"r0"`}
+	f := &feed{files: map[string][]byte{}, api: map[string]string{}, etag: `"r0"`}
 	f.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
 		defer f.mu.Unlock()
+		if id, ok := strings.CutPrefix(r.URL.Path, "/repos/parallelworks/activate-studio/releases/assets/"); ok {
+			// GitHub answers JSON here unless the bytes are asked for.
+			p, known := f.api[id]
+			if !known || r.Header.Get("Accept") != "application/octet-stream" {
+				w.WriteHeader(415)
+				return
+			}
+			f.apiHits = append(f.apiHits, path.Base(p))
+			w.Write(f.files[p])
+			return
+		}
 		if strings.HasPrefix(r.URL.Path, "/repos/parallelworks/activate-studio/releases") {
 			if r.Header.Get("If-None-Match") == f.etag {
 				w.WriteHeader(304)
@@ -139,6 +157,10 @@ func newFeed(t *testing.T) *feed {
 			}
 			w.Header().Set("Etag", f.etag)
 			json.NewEncoder(w).Encode(f.releases)
+			return
+		}
+		if f.fail != 0 {
+			w.WriteHeader(f.fail)
 			return
 		}
 		b, ok := f.files[r.URL.Path]
@@ -185,7 +207,10 @@ func (f *feed) release(tag, asset string, arc []byte, o relOpts) map[string]any 
 	for name, b := range map[string][]byte{asset: body, manifestName: mb, manifestName + ".sig": []byte(sig)} {
 		p := fmt.Sprintf("/dl/%d/%s", f.seq, name)
 		f.files[p] = b
-		assets = append(assets, map[string]any{"name": name, "size": len(b), "browser_download_url": f.srv.URL + p})
+		id := fmt.Sprint(len(f.api) + 1)
+		f.api[id] = p
+		assets = append(assets, map[string]any{"name": name, "size": len(b), "browser_download_url": f.srv.URL + p,
+			"url": f.srv.URL + "/repos/parallelworks/activate-studio/releases/assets/" + id})
 	}
 	return map[string]any{"tag_name": tag, "draft": false, "prerelease": o.prerelease, "published_at": "2026-10-20T12:00:00Z",
 		"body": "### Change in " + tag + " (#1)\n\nDetails.", "html_url": f.srv.URL + "/releases/" + tag, "assets": assets}
@@ -707,4 +732,69 @@ func deref(s *string) string {
 		return ""
 	}
 	return *s
+}
+
+// The download address failing with a 5xx or a network error: the release
+// API's address serves the manifest, its signature and the archive, each
+// checked as before.
+func TestDownloadFallsBackToTheReleaseAPI(t *testing.T) {
+	for _, how := range []string{"504", "unreachable"} {
+		fx := newFixture(t, "linux", "v1.188", nodeLayout)
+		rel := fx.rel("v1.190", goLayout, relOpts{})
+		if how == "504" {
+			fx.feed.fail = 504
+		} else {
+			for _, a := range rel["assets"].([]map[string]any) {
+				a["browser_download_url"] = "http://127.0.0.1:1/dl/" + a["name"].(string)
+			}
+		}
+		fx.feed.set(rel)
+		fx.install(nil)
+		s := fx.settle()
+		if s.State != "restarting" || len(fx.restarts) != 1 || fx.restarts[0] != 76 {
+			t.Fatalf("%s: %s %v %v", how, s.State, deref(s.Error), fx.restarts)
+		}
+		got := strings.Join(fx.feed.apiHits, " ")
+		want := "activate-studio-linux-x86_64.manifest.json activate-studio-linux-x86_64.manifest.json.sig activate-studio-linux-x86_64.tar.gz"
+		if got != want {
+			t.Fatalf("%s: fetched through the API: %q", how, got)
+		}
+	}
+}
+
+// A signature from another key is refused when it comes through the API.
+func TestFallbackStillChecksTheSignature(t *testing.T) {
+	fx := newFixture(t, "linux", "v1.188", nodeLayout)
+	fx.feed.fail = 503
+	fx.feed.set(fx.rel("v1.190", goLayout, relOpts{signWith: newKeys(t).priv}))
+	fx.install(nil)
+	s := fx.settle()
+	if s.State != "error" || !strings.Contains(deref(s.Error), "signature does not verify") || len(fx.restarts) != 0 {
+		t.Fatalf("%s %v", s.State, deref(s.Error))
+	}
+}
+
+// A 4xx is the answer, and an API address on another host is never used.
+func TestNoFallbackFor4xxOrAForeignAddress(t *testing.T) {
+	for _, how := range []string{"404", "foreign"} {
+		fx := newFixture(t, "linux", "v1.188", nodeLayout)
+		rel := fx.rel("v1.190", goLayout, relOpts{})
+		if how == "404" {
+			fx.feed.fail = 404
+		} else {
+			fx.feed.fail = 502
+			for _, a := range rel["assets"].([]map[string]any) {
+				a["url"] = strings.Replace(a["url"].(string), "127.0.0.1", "localhost", 1)
+			}
+		}
+		fx.feed.set(rel)
+		fx.install(nil)
+		s := fx.settle()
+		if s.State != "error" || len(fx.feed.apiHits) != 0 {
+			t.Fatalf("%s: %s %v %v", how, s.State, deref(s.Error), fx.feed.apiHits)
+		}
+		if want := map[string]string{"404": "HTTP 404", "foreign": "HTTP 502"}[how]; !strings.Contains(deref(s.Error), want) {
+			t.Fatalf("%s: %v", how, deref(s.Error))
+		}
+	}
 }

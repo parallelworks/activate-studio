@@ -149,6 +149,9 @@ type Progress struct {
 type asset struct {
 	URL  string `json:"url"`
 	Size int64  `json:"size"`
+	// API is the asset's address on the release API (its "url"), the second
+	// way to fetch it when the download address fails (fetchAsset).
+	API string `json:"api,omitempty"`
 }
 
 type release struct {
@@ -666,7 +669,8 @@ func toRelease(r map[string]any) release {
 				if math.IsNaN(size) {
 					size = 0
 				}
-				rel.Assets[name] = asset{URL: dl, Size: int64(size)}
+				api, _ := m["url"].(string)
+				rel.Assets[name] = asset{URL: dl, Size: int64(size), API: api}
 			}
 		}
 	}
@@ -1162,7 +1166,70 @@ func (u *Updater) Changelog(after string) Changelog {
 
 // ---- download ----
 
-func (u *Updater) fetchSmall(rawURL string, limit int) ([]byte, error) {
+// statusErr is a download that answered with an HTTP status outside 2xx.
+type statusErr struct {
+	msg  string
+	code int
+}
+
+func (e *statusErr) Error() string { return e.msg }
+
+// worthAnotherWay: a failure the release API's address may not share, a
+// network error or a 5xx; never a refusal (size, hash, signature) or a 4xx.
+func worthAnotherWay(err error) bool {
+	if err == nil || isRefused(err) {
+		return false
+	}
+	var se *statusErr
+	if errors.As(err, &se) {
+		return se.code >= 500
+	}
+	return true
+}
+
+// apiURL is a's address on the release API when it is one of this feed's
+// (the host and repository the release list came from), else "".
+func (u *Updater) apiURL(a asset) string {
+	prefix := u.releaseBase() + "/repos/" + repo + "/releases/assets/"
+	rest, ok := strings.CutPrefix(a.API, prefix)
+	if !ok || rest == "" || strings.ContainsAny(rest, "/?#") {
+		return ""
+	}
+	return a.API
+}
+
+// fetchAsset runs get on a's download address and, when that fails with a
+// network error or a 5xx, once more on its release API address, which
+// GitHub serves apart from the download host. What is fetched is checked
+// the same either way (size, SHA-256, signature); the first failure is the
+// one reported when both fail.
+func (u *Updater) fetchAsset(a asset, get func(rawURL, accept string) error) error {
+	err := get(a.URL, "")
+	if !worthAnotherWay(err) {
+		return err
+	}
+	api := u.apiURL(a)
+	if api == "" {
+		return err
+	}
+	u.log("update: " + plain(err) + "; trying the release API")
+	if err2 := get(api, "application/octet-stream"); err2 != nil {
+		return err
+	}
+	return nil
+}
+
+func (u *Updater) fetchSmallAsset(a asset, limit int) ([]byte, error) {
+	var out []byte
+	err := u.fetchAsset(a, func(rawURL, accept string) error {
+		b, err := u.fetchSmall(rawURL, accept, limit)
+		out = b
+		return err
+	})
+	return out, err
+}
+
+func (u *Updater) fetchSmall(rawURL, accept string, limit int) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), requestTimout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
@@ -1170,6 +1237,9 @@ func (u *Updater) fetchSmall(rawURL string, limit int) ([]byte, error) {
 		return nil, err
 	}
 	req.Header.Set("User-Agent", u.userAgent())
+	if accept != "" {
+		req.Header.Set("Accept", accept)
+	}
 	res, err := u.o.Client.Do(req)
 	if err != nil {
 		return nil, err
@@ -1177,7 +1247,7 @@ func (u *Updater) fetchSmall(rawURL string, limit int) ([]byte, error) {
 	defer res.Body.Close()
 	name := path.Base(req.URL.Path)
 	if res.StatusCode < 200 || res.StatusCode > 299 {
-		return nil, fmt.Errorf("%s: HTTP %d", name, res.StatusCode)
+		return nil, &statusErr{fmt.Sprintf("%s: HTTP %d", name, res.StatusCode), res.StatusCode}
 	}
 	b, err := io.ReadAll(io.LimitReader(res.Body, int64(limit)+1))
 	if err != nil {
@@ -1206,7 +1276,11 @@ func (s *stallReader) Read(p []byte) (int, error) {
 
 var errStalled = errors.New("no data for 15 seconds")
 
-func (u *Updater) fetchArchive(rawURL, file string, man manifest) error {
+func (u *Updater) fetchArchive(a asset, file string, man manifest) error {
+	return u.fetchAsset(a, func(rawURL, accept string) error { return u.fetchArchiveFrom(rawURL, accept, file, man) })
+}
+
+func (u *Updater) fetchArchiveFrom(rawURL, accept, file string, man manifest) error {
 	ctx, cancel := context.WithCancelCause(context.Background())
 	defer cancel(nil)
 	timer := time.AfterFunc(requestTimout, func() { cancel(errStalled) })
@@ -1230,6 +1304,9 @@ func (u *Updater) fetchArchive(rawURL, file string, man manifest) error {
 		return err
 	}
 	req.Header.Set("User-Agent", u.userAgent())
+	if accept != "" {
+		req.Header.Set("Accept", accept)
+	}
 	res, err := u.o.Client.Do(req)
 	if err != nil {
 		if c := context.Cause(ctx); errors.Is(c, errStalled) {
@@ -1239,7 +1316,7 @@ func (u *Updater) fetchArchive(rawURL, file string, man manifest) error {
 	}
 	defer res.Body.Close()
 	if res.StatusCode < 200 || res.StatusCode > 299 {
-		return fmt.Errorf("the download answered HTTP %d", res.StatusCode)
+		return &statusErr{fmt.Sprintf("the download answered HTTP %d", res.StatusCode), res.StatusCode}
 	}
 	h := sha256.New()
 	var bytesIn int64
@@ -1650,11 +1727,11 @@ func (u *Updater) verifiedManifest(rel release, allowOlder bool) (manifest, erro
 	if a.URL == "" || m.URL == "" || s.URL == "" {
 		return manifest{}, refuse("The release %s has no signed %s.", rel.Tag, k.label)
 	}
-	body, err := u.fetchSmall(m.URL, 64*1024)
+	body, err := u.fetchSmallAsset(m, 64*1024)
 	if err != nil {
 		return manifest{}, err
 	}
-	sigText, err := u.fetchSmall(s.URL, 4096)
+	sigText, err := u.fetchSmallAsset(s, 4096)
 	if err != nil {
 		return manifest{}, err
 	}
@@ -1701,7 +1778,7 @@ func (u *Updater) prepare(rel release, o installOpts) (*prepared, error) {
 		return nil, refuse("%s cannot read the state as it is now; installing it puts back the state saved %s, which has to be asked for.", man.Version, snap.At)
 	}
 	archive := u.inUpdates(k.asset)
-	if err := u.fetchArchive(rel.Assets[k.asset].URL, archive, man); err != nil {
+	if err := u.fetchArchive(rel.Assets[k.asset], archive, man); err != nil {
 		return nil, err
 	}
 	u.mu.Lock()
