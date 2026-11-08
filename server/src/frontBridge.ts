@@ -94,13 +94,6 @@ export async function frontBridgeRoutes(app: FastifyInstance): Promise<void> {
     return { ok: true }
   } })
 
-  // A note in the conversation a finished run was launched from (runs.ts).
-  // What a task agent's session pre-approves (mcp.ts taskToolNames).
-  app.route({ method: 'GET', url: '/api/__bridge/task-tools', onRequest: guard, handler: async () => {
-    const { taskToolNames } = await import('./mcp.js')
-    return { tools: taskToolNames() }
-  } })
-
   // A library on another system that the Go server removed, or whose build
   // there finished: what keeps something here per library (semanticMap.ts)
   // is told, as userLibraries.ts tells it.

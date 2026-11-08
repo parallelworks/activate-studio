@@ -51,10 +51,12 @@ type heldStore struct {
 	mu   sync.Mutex
 	recs []*HeldCall
 	read bool
+	// now is the clock holds, answers and expiry read (a test sets it).
+	now func() time.Time
 }
 
 func newHeldStore(indexBase string) *heldStore {
-	return &heldStore{file: filepath.Join(indexBase, "held-tool-calls.json")}
+	return &heldStore{file: filepath.Join(indexBase, "held-tool-calls.json"), now: time.Now}
 }
 
 func (s *heldStore) load() {
@@ -94,7 +96,7 @@ func (s *heldStore) put(r *HeldCall) {
 
 // persist writes the store whole, dropping expired records.
 func (s *heldStore) persist() {
-	now := time.Now()
+	now := s.now()
 	kept := s.recs[:0]
 	for _, r := range s.recs {
 		if t, ok := parseISO(r.ExpiresAt); ok && t.Before(now) {
@@ -313,7 +315,7 @@ func (m *Module) answerHeld(ctx context.Context, a answer, viewer *Viewer, key *
 			return &Answered{Why: tool + " is turned off for this deployment; nothing ran."}
 		}
 	}
-	rec, tool, why := m.takeAnswer(a, viewer, time.Now())
+	rec, tool, why := m.takeAnswer(a, viewer, m.held.now())
 	if rec == nil {
 		return &Answered{Why: why}
 	}

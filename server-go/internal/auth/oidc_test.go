@@ -775,8 +775,9 @@ func TestSignInRequired(t *testing.T) {
 func TestMissionBearerGoesOnToNode(t *testing.T) {
 	p := newProvider(t)
 	s := newStudio(t, p, opts{required: true})
-	// Only Node's task board knows mission tokens: the front lets the call
-	// through and Node, started with AUTH_REQUIRED, refuses an unknown one.
+	// The task board checks mission tokens behind the front: the front lets
+	// the call through to /api/mcp (Node's here, the chat track's in the
+	// server), which refuses an unknown one where sign-in is required.
 	if res := s.do("POST", "/api/mcp", map[string]string{"Authorization": "Bearer nope"}); res.status != 200 {
 		t.Fatalf("%d %s", res.status, res.body)
 	}

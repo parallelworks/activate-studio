@@ -2,6 +2,7 @@ package tasks
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strconv"
 	"syscall"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/parallelworks/activate-studio/server-go/internal/agentsites"
 	"github.com/parallelworks/activate-studio/server-go/internal/app"
+	"github.com/parallelworks/activate-studio/server-go/internal/jsonv"
 	"github.com/parallelworks/activate-studio/server-go/internal/platform"
 	"github.com/parallelworks/activate-studio/server-go/internal/pwcode"
 )
@@ -43,14 +45,11 @@ func Register(mux *http.ServeMux, a *app.App, p *platform.Platform) *Fleet {
 			}
 			return ReadPersonas(a.Cfg.KBRoot, a.Cfg.IndexBase)
 		},
+		// The chat track's /api/mcp serves the corpus tools and the board.
 		TaskTools: func() []string {
-			if n := p.Node(); n != nil {
-				var out struct{ Tools []string }
-				if err := n.Background(http.MethodGet, platform.BridgePrefix+"task-tools", nil, &out); err == nil && out.Tools != nil {
-					return out.Tools
-				}
+			if fn := a.Providers.TaskToolNames; fn != nil {
+				return fn()
 			}
-			// Without Node there is no /api/mcp corpus server: the board only.
 			return BoardTools
 		},
 		IndexDir: func(rel string) {
@@ -63,6 +62,23 @@ func Register(mux *http.ServeMux, a *app.App, p *platform.Platform) *Fleet {
 		CampaignPoll: envMs(p, "STUDIO_CAMPAIGN_POLL_MS", 20*time.Second),
 	})
 	e.Routes(mux, a)
+	// /api/mcp (internal/chat) asks the board about a task bearer.
+	a.Providers.TaskBoard = func(token, agent, tool string, args json.RawMessage) (bool, json.RawMessage) {
+		var in *jsonv.Object
+		if len(args) > 0 {
+			v, _ := jsonv.Decode(args)
+			in = jsonv.Obj(v)
+		}
+		found, out := e.BoardTool(token, agent, tool, in)
+		if !found || tool == "" {
+			return found, nil
+		}
+		b, err := jsonv.Marshal(out)
+		if err != nil {
+			return true, nil
+		}
+		return true, b
+	}
 
 	fleet := NewFleet(e, func(m string) { a.Log.Info(m) })
 	fleet.Routes(mux, a, p, func() bool { return a.Settings.Effective().DelegationEnabled })
