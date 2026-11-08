@@ -75,11 +75,20 @@ check() {
   fi
 }
 
+# The lean build (build_gufi.sh with GUFI_LEMBED=0, for the Go version) has
+# no sqlite-lembed or llama.cpp; its manifest says so.
+LEMBED="${GUFI_LEMBED:-}"
+if [ -z "$LEMBED" ]; then
+  LEMBED=1
+  grep -q '"sqlite-lembed": *"none"' "$G/manifest.json" 2>/dev/null && LEMBED=0
+fi
+LEMBED_FILES="lib/lembed0.dylib licenses/sqlite-lembed-LICENSE.txt licenses/llama.cpp-LICENSE.txt"
+[ "$LEMBED" = 1 ] || LEMBED_FILES=
 echo "Layout"
 for f in bin/gufi_query bin/gufi_dir2index bin/gufi_sqlite3 \
-  lib/gufi_vt.dylib lib/vec0.dylib lib/lembed0.dylib lib/libsqlite3-pcre.dylib lib/libomp.dylib lib/libpcre2-8.0.dylib \
-  licenses/GUFI-LICENSE.txt licenses/sqlite-vec-LICENSE-MIT.txt licenses/sqlite-lembed-LICENSE.txt \
-  licenses/llama.cpp-LICENSE.txt licenses/jemalloc-COPYING.txt licenses/libomp-LICENSE.txt licenses/pcre2-LICENCE.md \
+  lib/gufi_vt.dylib lib/vec0.dylib lib/libsqlite3-pcre.dylib lib/libomp.dylib lib/libpcre2-8.0.dylib \
+  licenses/GUFI-LICENSE.txt licenses/sqlite-vec-LICENSE-MIT.txt $LEMBED_FILES \
+  licenses/jemalloc-COPYING.txt licenses/libomp-LICENSE.txt licenses/pcre2-LICENCE.md \
   README.txt manifest.json; do
   check "$f" test -s "$G/$f"
 done
@@ -116,7 +125,9 @@ elif [ "$(uname -s)" != Darwin ] || [ "$(uname -m)" != arm64 ]; then
   echo "(running the tools needs a Mac with Apple silicon; skipped)"
 else
   echo "Running on macOS $(sw_vers -productVersion)"
-  if [ -n "${GUFI_TEST_MODEL:-}" ]; then
+  if [ "$LEMBED" = 0 ]; then
+    MODEL=none
+  elif [ -n "${GUFI_TEST_MODEL:-}" ]; then
     MODEL="$GUFI_TEST_MODEL"
   else
     MODEL="$CACHE_DIR/minilm384-$MODEL_COMMIT.gguf"
@@ -153,6 +164,7 @@ SELECT length(lembed('m', 'hello'));
 SQL
   # The Studio's pattern: load the model, embed the question with lembed,
   # store document vectors in a vec0 table, and take the nearest.
+  if [ "$LEMBED" = 1 ]; then
   cat >"$T/search.sql" <<SQL
 INSERT INTO temp.lembed_models(name, model) SELECT 'm', lembed_model_from_file('$MODEL');
 CREATE VIRTUAL TABLE v USING vec0(id INTEGER PRIMARY KEY, fp384 float[384]);
@@ -160,6 +172,15 @@ INSERT INTO v(id, fp384) VALUES (1, lembed('m', 'a tree of per-directory databas
 CREATE TABLE q AS SELECT lembed('m', 'how is the file index laid out') AS e;
 SELECT id FROM v WHERE fp384 MATCH (SELECT e FROM q) ORDER BY distance LIMIT 2;
 SQL
+  else
+  # The Go version's vectors come from its ONNX embedder; GUFI stores and
+  # searches them.
+  cat >"$T/search.sql" <<SQL
+CREATE VIRTUAL TABLE v USING vec0(id INTEGER PRIMARY KEY, fp3 float[3]);
+INSERT INTO v(id, fp3) VALUES (1, '[0.9, 0.1, 0.0]'), (2, '[0.0, 0.2, 0.98]');
+SELECT id FROM v WHERE fp3 MATCH '[1, 0, 0]' ORDER BY distance LIMIT 2;
+SQL
+  fi
 
   # Through /bin/sh, which drops DYLD_* variables, as gufi_vt and scripts start the tools.
   # shellcheck disable=SC2016  # $0 and $1 are expanded by that shell
@@ -170,8 +191,12 @@ SQL
   # shellcheck disable=SC2016
   check "gufi_vt runs gufi_query through the shell" clean /bin/sh -c 'gufi_sqlite3 <"$0" | grep cake.txt' "$T/vt.sql"
   # shellcheck disable=SC2016
-  check "sqlite-lembed embeds with the model (384 floats)" clean /bin/sh -c \
-    'gufi_sqlite3 <"$0" | grep -x 1536' "$T/embed.sql"
+  if [ "$LEMBED" = 1 ]; then
+    check "sqlite-lembed embeds with the model (384 floats)" clean /bin/sh -c \
+      'gufi_sqlite3 <"$0" | grep -x 1536' "$T/embed.sql"
+  else
+    check "no sqlite-lembed or llama.cpp in the lean tree" sh -c "! ls '$G'/lib | grep -q -e lembed -e llama -e ggml"
+  fi
   # shellcheck disable=SC2016
   check "sqlite-vec puts the related text first" clean /bin/sh -c \
     'gufi_sqlite3 <"$0" | head -n 1 | grep -x 1' "$T/search.sql"

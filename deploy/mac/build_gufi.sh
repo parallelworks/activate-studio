@@ -28,6 +28,9 @@
 #   CACHE_DIR    downloads, kept between builds (default deploy/mac/.cache)
 #   JOBS         parallel build jobs (default: the number of CPUs)
 #   SKIP_BREW    1 to skip installing the Homebrew build tools
+#   GUFI_LEMBED  0 for the lean build of the Go version: sqlite-vec without
+#                sqlite-lembed and llama.cpp (deploy/common/gufi-no-lembed.patch);
+#                its archive is gufi-vec-macos-arm64.tar.gz
 #
 # Outputs in OUT_DIR: gufi-macos-arm64.tar.gz (gufi/ with bin, lib,
 # licenses, README.txt and manifest.json), its .sha256, and
@@ -39,6 +42,8 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUT_DIR="${OUT_DIR:-$HERE/out}"
 CACHE_DIR="${CACHE_DIR:-$HERE/.cache}"
 ASSET=gufi-macos-arm64
+LEMBED="${GUFI_LEMBED:-1}"
+case "$LEMBED" in 1) ;; 0) ASSET=gufi-vec-macos-arm64 ;; *) echo "build_gufi: GUFI_LEMBED is 1 or 0" >&2; exit 1 ;; esac
 TARGET="${MACOSX_DEPLOYMENT_TARGET:-14.0}"
 NAME=build_gufi
 . "$HERE/../common/lib.sh"
@@ -170,6 +175,11 @@ else
 fi
 GUFI_COMMIT="$(git -C "$SRC" rev-parse HEAD)"
 GUFI_DESCRIBE="$(git -C "$SRC" describe --tags --always --dirty)"
+if [ "$LEMBED" = 0 ]; then
+  echo "  without sqlite-lembed and llama.cpp (deploy/common/gufi-no-lembed.patch)"
+  git -C "$SRC" apply --check "$HERE/../common/gufi-no-lembed.patch" || die "gufi-no-lembed.patch does not apply to this GUFI"
+  git -C "$SRC" apply "$HERE/../common/gufi-no-lembed.patch"
+fi
 echo "  $GUFI_DESCRIBE ($GUFI_COMMIT)"
 (
   # GUFI's scripts and dependency builds expect the GNU utilities (sed -i,
@@ -192,7 +202,8 @@ echo "  $GUFI_DESCRIBE ($GUFI_COMMIT)"
   run cmake -S "$SRC" -B "$BUILD" \
     -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$STAGE" \
     -DCMAKE_OSX_SYSROOT=macosx -DCMAKE_OSX_DEPLOYMENT_TARGET="$TARGET" \
-    -DDEP_AI=On -DDEP_BUILD_THREADS="$JOBS" -DOpenMP_ROOT="$DEPS" \
+    -DDEP_AI=On -DDEP_LEMBED="$([ "$LEMBED" = 1 ] && echo On || echo Off)" \
+    -DDEP_BUILD_THREADS="$JOBS" -DOpenMP_ROOT="$DEPS" \
     -DOpenMP_C_FLAGS=-fopenmp -DOpenMP_C_LIB_NAMES=libomp \
     -DOpenMP_CXX_FLAGS=-fopenmp -DOpenMP_CXX_LIB_NAMES=libomp \
     -DOpenMP_libomp_LIBRARY="$DEPS/lib/libomp.dylib"
@@ -214,7 +225,7 @@ echo "  $GUFI_DESCRIBE ($GUFI_COMMIT)"
   stock "$WORK/pcre2-$PCRE2_VERSION/LICENCE.md" pcre2-LICENSE.md
   stock "$B0/sqlite-vec-main/LICENSE-APACHE" sqlite-vec-LICENSE-APACHE
   stock "$B0/sqlite-vec-main/LICENSE-MIT" sqlite-vec-LICENSE-MIT
-  stock "$B0/sqlite-lembed/vendor/llama.cpp/LICENSE" llama.cpp-LICENSE
+  [ "$LEMBED" = 0 ] || stock "$B0/sqlite-lembed/vendor/llama.cpp/LICENSE" llama.cpp-LICENSE
   stock "$WORK/$LLVM_SRC/openmp/LICENSE.TXT" openmp-LICENSE.TXT
   stock "$B0/jemalloc-dev/COPYING" jemalloc-COPYING
   printf '%s\n' "sqlite-lembed has no license file in its repository; its sqlite-dist.toml lists MIT OR Apache." \
@@ -304,11 +315,12 @@ B="$BUILD/builds"    # GUFI's DEP_BUILD_PREFIX: its dependencies' sources
 license "$SRC/LICENSE.txt" GUFI-LICENSE.txt
 license "$B/sqlite-vec-main/LICENSE-MIT" sqlite-vec-LICENSE-MIT.txt
 license "$B/sqlite-vec-main/LICENSE-APACHE" sqlite-vec-LICENSE-APACHE.txt
-license "$B/sqlite-lembed/vendor/llama.cpp/LICENSE" llama.cpp-LICENSE.txt
+[ "$LEMBED" = 0 ] || license "$B/sqlite-lembed/vendor/llama.cpp/LICENSE" llama.cpp-LICENSE.txt
 license "$B/jemalloc-dev/COPYING" jemalloc-COPYING.txt
 license "$WORK/$LLVM_SRC/openmp/LICENSE.TXT" libomp-LICENSE.txt
 license "$WORK/pcre2-$PCRE2_VERSION/LICENCE.md" pcre2-LICENCE.md
 # sqlite-lembed has no license file; its sqlite-dist.toml states the license.
+if [ "$LEMBED" = 1 ]; then
 [ -f "$B/sqlite-lembed/sqlite-dist.toml" ] || die "no sqlite-dist.toml in sqlite-lembed"
 {
   echo "sqlite-lembed (https://github.com/asg017/sqlite-lembed) has no license file."
@@ -319,6 +331,7 @@ license "$WORK/pcre2-$PCRE2_VERSION/LICENCE.md" pcre2-LICENCE.md
   echo "The MIT and Apache 2.0 texts are those of sqlite-vec, by the same author:"
   echo "sqlite-vec-LICENSE-MIT.txt and sqlite-vec-LICENSE-APACHE.txt here."
 } >"$TREE/licenses/sqlite-lembed-LICENSE.txt"
+fi
 
 # The versions GUFI's bundled dependencies report, or "unknown".
 version_in() { if [ -f "$1" ]; then head -n 1 "$1" | tr -d '[:space:]'; else echo unknown; fi; }
@@ -327,6 +340,7 @@ SQLITE_VERSION="$(pc_version "$BUILD/deps/sqlite3/lib/pkgconfig/sqlite3.pc")"
 LLAMA_VERSION="$(pc_version "$BUILD/deps/llama.cpp/lib/pkgconfig/llama.pc")"
 VEC_VERSION="$(version_in "$B/sqlite-vec-main/VERSION")"
 LEMBED_VERSION="$(version_in "$B/sqlite-lembed/VERSION")"
+[ "$LEMBED" = 1 ] || LEMBED_VERSION=none LLAMA_VERSION=none
 MINOS="$(python3 "$HERE/macho_check.py" --print-minos "${MACHO[@]}")"
 
 cat >"$TREE/README.txt" <<README
@@ -375,7 +389,7 @@ with open(sys.argv[1], 'w') as fh:
 PY
 
 echo "Checking the tree..."
-"$HERE/check_gufi.sh" --static "$TREE"
+GUFI_LEMBED="$LEMBED" "$HERE/check_gufi.sh" --static "$TREE"
 
 echo "Packing..."
 rm -f "$OUT_DIR/$ASSET.tar.gz" "$OUT_DIR/$ASSET.tar.gz.sha256" "$OUT_DIR/$ASSET.manifest.json"

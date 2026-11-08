@@ -66,10 +66,16 @@ api() { "$PY" -I "$HERE/api.py" "$@"; }
 json() { "$PY" -I -c 'import json, sys; d = json.load(sys.stdin); sys.exit(0 if eval(sys.argv[1]) else 1)' "$1"; }
 field() { "$PY" -I -c 'import json, sys; d = json.load(sys.stdin); print(eval(sys.argv[1]))' "$1"; }
 U="http://127.0.0.1:$PORT"
+# The version running: /api/version, or where that is not served (a Go
+# server whose version route is not ported yet), the updater's own report.
+running_version() {
+  api -m 2 GET "$U/api/version" 2>/dev/null | field 'd["version"]' 2>/dev/null ||
+    api -m 5 GET "$U/api/updates" 2>/dev/null | field 'd["current"]["version"]' 2>/dev/null || true
+}
 wait_version() {   # wait_version VERSION SECONDS
   local n=0
   while [ "$n" -lt "$2" ]; do
-    if [ "$(api -m 2 GET "$U/api/version" 2>/dev/null | field 'd["version"]' 2>/dev/null || true)" = "$1" ]; then return 0; fi
+    if [ "$(running_version)" = "$1" ]; then return 0; fi
     sleep 1; n=$((n + 1))
   done
   return 1
@@ -129,7 +135,7 @@ api -m 10 POST "$U/api/reindex" '{}' >/dev/null || bad "the index did not start"
 search_ok() { poll "$1" "/api/search?q=lemon" 'any(x.get("name") == "cake.txt" for x in (d.get("results") or d.get("hits") or []))'; }
 if [ "${SEARCH:-1}" = 1 ]; then search_ok 180 && ok "the folder is indexed and searchable" || bad "search found nothing"; fi
 data_ok() {   # data_ok WHEN
-  api -m 10 GET "$U/api/settings" | json 'd.get("appName") == "Bridge Check" and d.get("theme") == "dark"' && ok "$1: settings kept" || bad "$1: settings lost"
+  api -m 10 GET "$U/api/settings" | json 'd["saved"].get("appName") == "Bridge Check" and d["saved"].get("theme") == "dark"' && ok "$1: settings kept" || bad "$1: settings lost"
   api -m 10 GET "$U/api/kb/tags?path=notes/design.md" | json '"keep-me" in str(d)' && ok "$1: the label kept" || bad "$1: the label lost"
   api -m 10 GET "$U/api/libraries" | json '"second" in str(d)' && ok "$1: the second library kept" || bad "$1: the second library lost"
   api -m 10 GET "$U/api/chat/conversations" | json '"kept across the update" in str(d)' && ok "$1: the conversation kept" || bad "$1: the conversation lost"

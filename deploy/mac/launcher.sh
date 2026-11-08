@@ -85,14 +85,17 @@ detached_pid() {
 }
 
 # Starts studio-run.sh as the LaunchAgent runs it, as a process of this
-# person's own, where no agent can be installed or loaded. The app's Python
-# gives it a session of its own (setsid), so it outlives this script and the
-# app's window, and it ignores hangups. Its output goes where the agent's
+# person's own, where no agent can be installed or loaded. The Go server's
+# detach helper (studio-server detach), or in a Node app its Python, gives it
+# a session of its own (setsid), so it outlives this script and the app's
+# window, and it ignores hangups. Its output goes where the agent's
 # goes. STUDIO_SUPERVISOR=detached tells the server that an update restarts
 # it through the run loop (studio-run.sh, exit 76) rather than launchd.
 start_detached() {
-  local py="$RES/python/bin/python3" log="$DATA/logs/agent.log" p
-  if [ -x "$py" ]; then
+  local py="$RES/python/bin/python3" go="$RES/app/bin/studio-server" log="$DATA/logs/agent.log" p
+  if [ -x "$go" ]; then
+    STUDIO_APP_BUNDLE="$APP" STUDIO_SUPERVISOR=detached nohup "$go" detach /bin/bash "$RES/studio-run.sh" "$DATA" </dev/null >>"$log" 2>&1 &
+  elif [ -x "$py" ]; then
     STUDIO_APP_BUNDLE="$APP" STUDIO_SUPERVISOR=detached nohup "$py" -B -c 'import os, signal, sys
 os.setsid()
 signal.signal(signal.SIGHUP, signal.SIG_IGN)
@@ -482,12 +485,16 @@ plan() {
     fi
     # Libraries built of folders here, with their index in a folder chosen
     # for it: those holding the manifest the Studio writes beside the index.
+    if [ -x "$RES/app/bin/studio-server" ]; then
+      libs="$("$RES/app/bin/studio-server" library-index-dirs "$base/libraries.json" 2>/dev/null || true)"
+    else
     libs="$(pyrun -c 'import json, sys
 try: defs = json.load(open(sys.argv[1]))
 except Exception: defs = []
 for d in defs if isinstance(defs, list) else []:
     b = d.get("build") if isinstance(d, dict) else None
     if isinstance(b, dict) and isinstance(b.get("indexDir"), str) and b["indexDir"].startswith("/"): print(b["indexDir"])' "$base/libraries.json" 2>/dev/null || true)"
+    fi
     while IFS= read -r d; do
       [ -n "$d" ] && [ -f "$d/.studio-index.json" ] || continue
       inside "$d" "$DATA" || inside "$d" "$base" || inside "$kb" "$d" || printf 'library-index	%s
@@ -512,7 +519,11 @@ for d in defs if isinstance(defs, list) else []:
 # folder itself only when nothing else is left in it.
 remove_library_index() {
   local d="$1" tree s
-  tree="$(pyrun -c 'import json, sys; print(json.load(open(sys.argv[1])).get("index", ""))' "$d/.studio-index.json" 2>/dev/null || true)"
+  if [ -x "$RES/app/bin/studio-server" ]; then
+    tree="$("$RES/app/bin/studio-server" json-string "$d/.studio-index.json" index 2>/dev/null || true)"
+  else
+    tree="$(pyrun -c 'import json, sys; print(json.load(open(sys.argv[1])).get("index", ""))' "$d/.studio-index.json" 2>/dev/null || true)"
+  fi
   if [ -n "$tree" ] && inside "$tree" "$d" && [ "$tree" != "$d" ]; then rm -rf "$tree"; fi
   for s in "$d"/.build "$d"/.old "$d"/.inc-*; do [ -e "$s" ] && rm -rf "$s"; done
   rm -f "$d/.studio-index.json"
