@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/app"
+	"github.com/parallelworks/activate-studio/server-go/internal/kb"
 	"github.com/parallelworks/activate-studio/server-go/internal/updates"
 )
 
@@ -22,7 +23,7 @@ func registerTracks(mux *http.ServeMux, a *app.App) {
 
 	// slot: index (port-index)
 
-	// slot: files (port-files)
+	kb.Register(mux, a)
 
 	// slot: libraries (port-libraries)
 

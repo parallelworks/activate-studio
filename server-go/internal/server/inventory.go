@@ -68,6 +68,8 @@ var nodeRoutes = []nodeRoute{
 	{"fleet.ts", "POST", "/api/fleet/{id}/resume"},
 	{"fleet.ts", "POST", "/api/fleet/{id}/retire"},
 	{"fleet.ts", "POST", "/api/fleet/{id}/message"},
+	{"goBridge.ts", "POST", "/internal/go/index"},
+	{"goBridge.ts", "POST", "/internal/go/changed"},
 	{"gufiVt.ts", "POST", "/internal/gufi-vt"},
 	{"history.ts", "GET", "/api/kb/history"},
 	{"history.ts", "DELETE", "/api/kb/history/snapshot"},
