@@ -135,6 +135,12 @@ function parseCookies(setCookie) {
 }
 
 function install(app) {
+  // Every test app answers the bridge the Go routes ask (src/frontBridge.ts),
+  // loaded when the app starts, after the test has set its environment.
+  app.register(async a => {
+    const { frontBridgeRoutes } = await import(new URL('../dist/frontBridge.js', import.meta.url).href)
+    await frontBridgeRoutes(a)
+  })
   let front = null
   let starting = null
   const ensure = async () => {

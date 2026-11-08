@@ -9,6 +9,7 @@ require (
 	github.com/richardlehane/mscfb v1.0.9
 	golang.org/x/text v0.43.0
 	gonum.org/v1/gonum v0.17.0
+	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.62.0
 )
 

@@ -9,6 +9,9 @@
 import { registerHooks } from 'node:module'
 
 if (process.env.STUDIO_TEST_FRONT) {
+  // The Go server and the test's Node app share the bridge secret
+  // (src/frontBridge.ts), so Go routes can ask Node for what it still holds.
+  process.env.STUDIO_BRIDGE_SECRET ??= (await import('node:crypto')).randomBytes(24).toString('hex')
   const shim = new URL('./frontFastify.mjs', import.meta.url).href
   registerHooks({
     resolve(specifier, context, next) {
