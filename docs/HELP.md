@@ -15,6 +15,8 @@ On a computer of its own, setup can be run again at any time, starting from what
 
 On Linux, the app is installed for one user with no administrator rights (`install.sh` from the unpacked archive), or for everyone by an administrator with a `.deb` or `.rpm` package. It opens in its own window where WebKitGTK is installed, with the system folder chooser for **Choose another folder…**, and in the default browser where it is not (then `activate-studio --stop` stops it). Run `activate-studio --uninstall` to remove a per-user install; your documents are never removed. See `docs/LINUX-APP.md`.
 
+On Windows, the Linux app runs inside WSL2 (Windows Subsystem for Linux): in its own window on the Windows desktop, or with `activate-studio --browser` in a Windows browser. Windows folders are under `/mnt/c`, and a Windows path such as `C:\Users\me\Documents` can be typed wherever a folder is asked for. Labels on files in Windows folders are kept by {appName}, and changes made in Windows are found by the background sync. See `docs/WINDOWS.md`.
+
 The macOS app needs no administrator rights. Opened from its disk image, it offers to install itself in Applications in your home folder (`~/Applications`), where it updates itself. An administrator can put it in `/Applications` instead; that copy updates itself only for users who can write there. On a Mac that does not allow the app's background item (a LaunchAgent), the app starts its server itself when it opens, instead of at login.
 
 # Basics

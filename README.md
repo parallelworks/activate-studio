@@ -10,7 +10,7 @@ A web workspace over a folder of documents. It indexes the folder, including the
 
 **On Linux (x86_64, glibc 2.28 or newer, so RHEL 8 and 9 and their rebuilds, Ubuntu 20.04 and later, Debian 11 and later):** a per-user install with no administrator rights (`activate-studio/install.sh` from the unpacked archive) or an administrator's `.deb` (Ubuntu, Debian) or `.rpm` (RHEL, Rocky, Alma) puts the same Studio in its own window, where WebKitGTK is installed, and in your browser where it is not. See [`docs/LINUX-APP.md`](docs/LINUX-APP.md).
 
-**On Windows:** the Studio runs in WSL2 (Windows Subsystem for Linux) and opens in a Windows browser, or a browser can open a Studio that runs on a Linux machine. There is no native Windows build. See [`docs/WINDOWS.md`](docs/WINDOWS.md).
+**On Windows:** the Linux app runs inside WSL2 (Windows Subsystem for Linux), in its own window through WSLg or in a Windows browser, and indexes Windows folders through `/mnt/c`. There is no native Windows build, and this setup has been tested only in containers so far. A browser can also open a Studio that runs on a Linux machine. See [`docs/WINDOWS.md`](docs/WINDOWS.md).
 
 **On ACTIVATE:** run the workflow in [`deploy/workflow.yaml`](deploy/workflow.yaml) on a connected resource and set its "Knowledge Base Directory" to your folder. It builds the index and opens the Studio as a session. The platform's models work with no setup.
 
@@ -72,7 +72,7 @@ The in-app Help is the user guide: [`docs/HELP.md`](docs/HELP.md), with the deta
 | [`docs/UPDATES.md`](docs/UPDATES.md) | update channels (Stable and Preview), installing another version, the state snapshot and format, and what the Go version must keep |
 | [`docs/LINUX-APP.md`](docs/LINUX-APP.md) | the Linux app: per-user install, `.deb` and `.rpm`, requirements, update and uninstall, the install layout |
 | [`docs/GUFI-MACOS.md`](docs/GUFI-MACOS.md) | GUFI built for macOS 14 and later: the published archive, building and checking it |
-| [`docs/WINDOWS.md`](docs/WINDOWS.md) | running the Studio on Windows through WSL2, with your folders, shares and models |
+| [`docs/WINDOWS.md`](docs/WINDOWS.md) | the Linux app on Windows through WSL2: install, window or browser, Windows folders under `/mnt/c`, labels and sync there |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | how the index, retrieval, and server work |
 
 ## Built on
