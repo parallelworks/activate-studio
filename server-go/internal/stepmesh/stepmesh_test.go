@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"math"
 	"os"
 	"path/filepath"
@@ -161,5 +162,45 @@ func TestBothModulesAgree(t *testing.T) {
 		if _, err := m.ReadStep(ctx, junk); err != ErrUnconvertible {
 			t.Errorf("%q: %v", junk, err)
 		}
+	}
+}
+
+// A fake module pair: the stripped one traps, the full one runs until it
+// is stopped. The full run is cut at the bound with ErrTooComplex; a
+// caller's own cancellation stays a cancellation.
+func TestFullModuleIsBounded(t *testing.T) {
+	m := &Mesher{fast: &module{}, full: &module{}}
+	var ran []*module
+	slow := func(ctx context.Context, mod *module, _ []byte) ([]Mesh, error) {
+		ran = append(ran, mod)
+		if mod == m.fast {
+			return nil, errors.New("wasm error: unreachable")
+		}
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+	start := time.Now()
+	if _, err := m.readStep(context.Background(), nil, slow, 50*time.Millisecond); err != ErrTooComplex {
+		t.Fatal(err)
+	}
+	if d := time.Since(start); d > 2*time.Second || len(ran) != 2 || ran[0] != m.fast || ran[1] != m.full {
+		t.Fatal(d, len(ran))
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := m.readStep(ctx, nil, slow, time.Minute); err == ErrTooComplex || err == nil {
+		t.Fatal("a cancelled request is not too complex:", err)
+	}
+	quick := func(_ context.Context, mod *module, _ []byte) ([]Mesh, error) {
+		if mod == m.fast {
+			return nil, errors.New("wasm error: unreachable")
+		}
+		return []Mesh{{Positions: []float32{1}}}, nil
+	}
+	if got, err := m.readStep(context.Background(), nil, quick, time.Minute); err != nil || len(got) != 1 {
+		t.Fatal(got, err)
+	}
+	if FullTimeout != 3*time.Minute {
+		t.Fatal(FullTimeout)
 	}
 }

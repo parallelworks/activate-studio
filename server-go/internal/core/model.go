@@ -118,6 +118,7 @@ type stepMesher struct {
 	m    *stepmesh.Mesher
 	err  error
 	done bool
+	fake stepReader
 }
 
 func (c *Core) mesher() (*stepmesh.Mesher, error) {
@@ -136,6 +137,22 @@ func (c *Core) mesher() (*stepmesh.Mesher, error) {
 		}
 	}
 	return c.step.m, c.step.err
+}
+
+// stepReader is the mesher the model route uses; tests replace it.
+type stepReader interface {
+	ReadStep(ctx context.Context, buf []byte) ([]stepmesh.Mesh, error)
+}
+
+func (c *Core) stepReader() (stepReader, error) {
+	if c.step.fake != nil {
+		return c.step.fake, nil
+	}
+	m, err := c.mesher()
+	if err != nil {
+		return nil, err
+	}
+	return m, nil
 }
 
 // stepTimeout bounds one STEP file's meshing; Node has no bound.
@@ -178,7 +195,7 @@ func (c *Core) model(w http.ResponseWriter, r *http.Request) error {
 		}
 		data = EncodeSTL(pos)
 	} else {
-		m, merr := c.mesher()
+		m, merr := c.stepReader()
 		if merr != nil {
 			c.a.Node().ServeHTTP(w, app.HandOff(r, "STEP meshing: no prepared occt-import-js module ("+OcctWasm(c.a.Cfg.ProjectRoot)+")"))
 			return nil
@@ -191,13 +208,23 @@ func (c *Core) model(w http.ResponseWriter, r *http.Request) error {
 		// Node does.
 		ctx, cancel := context.WithTimeout(contextWithoutCancel(r), stepTimeout)
 		defer cancel()
+		start := time.Now()
 		meshes, err := m.ReadStep(ctx, buf)
-		if errors.Is(err, stepmesh.ErrUnconvertible) {
+		ms := time.Since(start).Milliseconds()
+		switch {
+		case errors.Is(err, stepmesh.ErrUnconvertible):
+			c.log.Info("model: STEP has no geometry", "path", rel, "bytes", len(buf), "ms", ms)
 			return apierr.New(422, "could not convert STEP geometry")
-		}
-		if err != nil {
+		case errors.Is(err, stepmesh.ErrTooComplex):
+			// Node's shape for a failed mesh; nothing is cached, so the
+			// next request tries again.
+			c.log.Warn("model: STEP meshing stopped at the bound", "path", rel, "bytes", len(buf), "ms", ms)
+			return apierr.New(422, "this STEP file is too complex to preview")
+		case err != nil:
+			c.log.Warn("model: STEP meshing failed", "path", rel, "bytes", len(buf), "ms", ms, "err", err)
 			return err
 		}
+		c.log.Info("model: STEP meshed", "path", rel, "bytes", len(buf), "ms", ms, "meshes", len(meshes))
 		data = stepmesh.Encode("step", stepmesh.Triangles(meshes), meshes)
 	}
 	if err := os.MkdirAll(filepath.Dir(cached), 0o755); err != nil {

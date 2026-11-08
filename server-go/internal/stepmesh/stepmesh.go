@@ -119,19 +119,38 @@ func (m *Mesher) Package() string { return m.full.sec.Package }
 // Close frees the runtime.
 func (m *Mesher) Close(ctx context.Context) error { return m.rt.Close(ctx) }
 
+// FullTimeout bounds the run on the module with exception handling, which
+// wazero runs about a hundred times slower than Node runs it.
+const FullTimeout = 3 * time.Minute
+
+// ErrTooComplex is a file the full module did not finish in FullTimeout.
+var ErrTooComplex = errors.New("this STEP file is too complex to preview")
+
 // ReadStep is ReadStepFile(new Uint8Array(buf), null), the meshes as
 // parseStep keeps them. The module without exception handling runs first;
-// when it traps (a C++ throw, which it cannot catch), the full one runs.
+// when it traps (a C++ throw, which it cannot catch), the full one runs, for
+// at most FullTimeout (ErrTooComplex past it).
 func (m *Mesher) ReadStep(ctx context.Context, buf []byte) ([]Mesh, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	return m.readStep(ctx, buf, m.read, FullTimeout)
+}
+
+// readStep is ReadStep with the run and the bound given, for the tests.
+func (m *Mesher) readStep(ctx context.Context, buf []byte, read func(context.Context, *module, []byte) ([]Mesh, error), full time.Duration) ([]Mesh, error) {
 	if m.fast != nil {
-		result, err := m.read(ctx, m.fast, buf)
+		result, err := read(ctx, m.fast, buf)
 		if err == nil || ctx.Err() != nil {
 			return result, err
 		}
 	}
-	return m.read(ctx, m.full, buf)
+	fctx, cancel := context.WithTimeout(ctx, full)
+	defer cancel()
+	result, err := read(fctx, m.full, buf)
+	if err != nil && ctx.Err() == nil && fctx.Err() != nil {
+		return nil, ErrTooComplex
+	}
+	return result, err
 }
 
 func (m *Mesher) read(ctx context.Context, mod *module, buf []byte) ([]Mesh, error) {
