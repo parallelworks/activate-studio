@@ -242,8 +242,13 @@ func newFixture(t *testing.T, flavor, version string, l layout) *fixture {
 	store := settings.Open(index, filepath.Join(root, "kb"), false, func(k string) (string, bool) { v, ok := fx.env[k]; return v, ok })
 	fx.u = New(Options{
 		ProjectRoot: projectRoot, IndexBase: index, Getenv: fx.getenv, Settings: store, GOOS: "linux", GOARCH: "amd64",
-		Restart: func(code int) bool { fx.mu.Lock(); fx.restarts = append(fx.restarts, code); fx.mu.Unlock(); return true },
-		Version: func() (string, *string) { fx.mu.Lock(); defer fx.mu.Unlock(); return fx.version, nil },
+		Restart: func(code int) bool {
+			fx.mu.Lock()
+			fx.restarts = append(fx.restarts, code)
+			fx.mu.Unlock()
+			return true
+		},
+		Version:       func() (string, *string) { fx.mu.Lock(); defer fx.mu.Unlock(); return fx.version, nil },
 		SystemVersion: func() string { return "14.5" },
 		Timings:       Timings{FirstCheck: time.Hour, Interval: time.Hour, Soon: time.Hour, Poll: time.Hour, Idle: 50 * time.Millisecond, IdlePoll: 10 * time.Millisecond, Healthy: time.Hour},
 	})

@@ -6,10 +6,13 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/http/httptest"
+	"sync"
 	"time"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/apierr"
 	"github.com/parallelworks/activate-studio/server-go/internal/app"
+	"github.com/parallelworks/activate-studio/server-go/internal/bridge"
 	"github.com/parallelworks/activate-studio/server-go/internal/version"
 )
 
@@ -31,22 +34,19 @@ func Register(mux *http.ServeMux, a *app.App) *Updater {
 			return i.Version, i.BuiltAt
 		},
 	})
-	if a.NodeAPI != nil {
-		// While Node still answers chats and indexes, an automatic update
-		// also waits on Node's own busy check (main.ts), which it reports
-		// with the index status; streams through the proxy count in a.Busy.
-		a.AddBusy(func() bool {
-			var st struct {
-				Running bool `json:"running"`
-				Busy    bool `json:"busy"`
-			}
-			req, _ := http.NewRequest(http.MethodGet, "/api/index/status", nil)
-			if err := a.NodeAPI.Do(req, http.MethodGet, "/api/index/status", nil, &st); err != nil {
-				return false
-			}
-			return st.Running || st.Busy
+	// While Node still answers chats and indexes, an automatic update also
+	// waits on Node's own busy check (main.ts), which it reports with the
+	// index status when it runs behind Go (STUDIO_BEHIND_GO); streams
+	// through the proxy count in a.Busy. Node is attached after Register,
+	// so its handler is looked up at each check; without Node it answers
+	// 501 and nothing is busy there.
+	a.AddBusy(func() bool { return nodeBusy(a.Node()) })
+	// The Node this server spawns leaves the update check to Go.
+	nodeEnvOnce.Do(func() {
+		bridge.RegisterNodeEnv("updates", func(string) map[string]string {
+			return map[string]string{"STUDIO_BEHIND_GO": "1"}
 		})
-	}
+	})
 	a.Go("updates", func(ctx context.Context) {
 		u.Start()
 		<-ctx.Done()
@@ -56,9 +56,32 @@ func Register(mux *http.ServeMux, a *app.App) *Updater {
 	return u
 }
 
+var nodeEnvOnce sync.Once
+
+// nodeBusy asks Node, through h, whether it is busy.
+func nodeBusy(h http.Handler) bool {
+	req := httptest.NewRequest(http.MethodGet, "/api/index/status", nil)
+	req.RemoteAddr = "127.0.0.1:0"
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		return false
+	}
+	var st struct {
+		Running bool `json:"running"`
+		Busy    bool `json:"busy"`
+	}
+	if json.Unmarshal(rec.Body.Bytes(), &st) != nil {
+		return false
+	}
+	return st.Running || st.Busy
+}
+
 // Routes registers the six routes on mux.
 func Routes(u *Updater, mux *http.ServeMux, log *slog.Logger) {
-	h := func(fn func(w http.ResponseWriter, r *http.Request) error) http.HandlerFunc { return apierr.Handler(log, fn) }
+	h := func(fn func(w http.ResponseWriter, r *http.Request) error) http.HandlerFunc {
+		return apierr.Handler(log, fn)
+	}
 	refuseHosted := func() error {
 		if u.Mode() == "hosted" {
 			return apierr.New(403, "This Studio is updated by its deployment, not from here.")
@@ -278,4 +301,3 @@ func readBody(r *http.Request) map[string]any {
 	}
 	return m
 }
-

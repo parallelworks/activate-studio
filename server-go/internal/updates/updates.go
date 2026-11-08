@@ -768,7 +768,9 @@ func releaseChannel(r release) string {
 	return "stable"
 }
 
-func onChannel(r release, channel string) bool { return channel == "preview" || releaseChannel(r) == "stable" }
+func onChannel(r release, channel string) bool {
+	return channel == "preview" || releaseChannel(r) == "stable"
+}
 
 func (u *Updater) hasApp(r release) bool {
 	k := u.kit()
@@ -994,28 +996,30 @@ type latest struct {
 
 // Status is GET /api/updates, its keys in updates.ts's order.
 type Status struct {
-	Mode         string                 `json:"mode"`
-	Current      current                `json:"current"`
-	Policy       settings.UpdatePolicy  `json:"policy"`
-	Latest       *latest                `json:"latest"`
-	Releases     []UpdateRelease        `json:"releases"`
-	Available    bool                   `json:"available"`
-	CanInstall   bool                   `json:"canInstall"`
-	Reason       *string                `json:"reason"`
-	Command      *string                `json:"command"`
-	CommandNote  *string                `json:"commandNote"`
-	Package      *PackageInfo           `json:"package"`
-	State        string                 `json:"state"`
-	Progress     *Progress              `json:"progress"`
-	Error        *string                `json:"error"`
-	CheckedAt    *string                `json:"checkedAt"`
-	Offline      bool                   `json:"offline"`
-	Previous     any                    `json:"previous"`
-	Reopen       bool                   `json:"reopen"`
-	Versions     []UpdateVersion        `json:"versions"`
-	MoveToStable *struct{ Version string `json:"version"` } `json:"moveToStable"`
-	StateFormat  int                    `json:"stateFormat"`
-	Snapshots    []Brief                `json:"snapshots"`
+	Mode         string                `json:"mode"`
+	Current      current               `json:"current"`
+	Policy       settings.UpdatePolicy `json:"policy"`
+	Latest       *latest               `json:"latest"`
+	Releases     []UpdateRelease       `json:"releases"`
+	Available    bool                  `json:"available"`
+	CanInstall   bool                  `json:"canInstall"`
+	Reason       *string               `json:"reason"`
+	Command      *string               `json:"command"`
+	CommandNote  *string               `json:"commandNote"`
+	Package      *PackageInfo          `json:"package"`
+	State        string                `json:"state"`
+	Progress     *Progress             `json:"progress"`
+	Error        *string               `json:"error"`
+	CheckedAt    *string               `json:"checkedAt"`
+	Offline      bool                  `json:"offline"`
+	Previous     any                   `json:"previous"`
+	Reopen       bool                  `json:"reopen"`
+	Versions     []UpdateVersion       `json:"versions"`
+	MoveToStable *struct {
+		Version string `json:"version"`
+	} `json:"moveToStable"`
+	StateFormat int     `json:"stateFormat"`
+	Snapshots   []Brief `json:"snapshots"`
 }
 
 // Status is the update status (the caller holds no lock).

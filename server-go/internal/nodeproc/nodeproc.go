@@ -37,7 +37,7 @@ func Start(ctx context.Context, log *slog.Logger, nodeBin, main string, wait tim
 		return nil, err
 	}
 	cmd := exec.Command(nodeBin, main)
-	cmd.Env = append(Environ(os.Environ(), env), "PORT="+strconv.Itoa(port), "HOST=127.0.0.1", "STUDIO_BEHIND_GO=1")
+	cmd.Env = append(Environ(os.Environ(), env), "PORT="+strconv.Itoa(port), "HOST=127.0.0.1")
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 	ready, started, err := readySignal(cmd)
 	if err != nil {
