@@ -558,7 +558,7 @@ func (m *Module) public(d *libraries.UserDef, job int) *jsonv.Object {
 	}
 	var readThrough any
 	if rt := libraries.PublicReadThrough(d.ReadThrough); rt != nil {
-		readThrough = jsonv.NewObject("destination", rt.Destination, "port", undefIfNil(rt.Port), "sshOptions", undefIfNil(rt.SSHOptions), "root", sptr(rt.Root))
+		readThrough = jsonv.NewObject("destination", rt.Destination, "port", intPtr(rt.Port), "sshOptions", sptr(rt.SSHOptions), "root", sptr(rt.Root))
 	}
 	var indexDir, progress, buildingDepth any
 	if built {
@@ -591,13 +591,6 @@ func (m *Module) public(d *libraries.UserDef, job int) *jsonv.Object {
 
 // The read-through view's port and options are undefined when absent
 // (Node spreads them in only when set): left out of the object.
-func undefIfNil[T any](p *T) any {
-	if p == nil {
-		return jsonv.Undefined
-	}
-	return *p
-}
-
 func intPtr(p *int) any {
 	if p == nil {
 		return nil

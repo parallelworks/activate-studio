@@ -550,6 +550,98 @@
    "builtDepth": null,
    "gaps": [],
    "buildingDepth": null
+  },
+  {
+   "id": "u-rt-plain",
+   "label": "old",
+   "transport": "pw",
+   "existing": false,
+   "meaning": null,
+   "depth": null,
+   "site": "cluster-a",
+   "destination": null,
+   "reached": null,
+   "port": null,
+   "sshOptions": null,
+   "jump": null,
+   "gufiVersion": null,
+   "sourceDir": "$WORKDIR",
+   "sourceRoot": null,
+   "indexRoot": null,
+   "state": "building",
+   "run": {
+    "slug": "abc",
+    "mode": "build",
+    "startedAt": "2026-01-01T00:00:00.000Z"
+   },
+   "error": null,
+   "builtAt": null,
+   "directories": null,
+   "files": null,
+   "scheduler": {
+    "partition": "gpu"
+   },
+   "fullText": false,
+   "vectors": false,
+   "formatNote": null,
+   "readThrough": {
+    "destination": "me@xfer",
+    "port": null,
+    "sshOptions": null,
+    "root": "/data/x"
+   },
+   "built": false,
+   "indexDir": null,
+   "progress": null,
+   "builtDepth": null,
+   "gaps": [],
+   "buildingDepth": null
+  },
+  {
+   "id": "u-rt-full",
+   "label": "old",
+   "transport": "pw",
+   "existing": false,
+   "meaning": null,
+   "depth": null,
+   "site": "cluster-a",
+   "destination": null,
+   "reached": null,
+   "port": null,
+   "sshOptions": null,
+   "jump": null,
+   "gufiVersion": null,
+   "sourceDir": "$WORKDIR",
+   "sourceRoot": null,
+   "indexRoot": null,
+   "state": "building",
+   "run": {
+    "slug": "abc",
+    "mode": "build",
+    "startedAt": "2026-01-01T00:00:00.000Z"
+   },
+   "error": null,
+   "builtAt": null,
+   "directories": null,
+   "files": null,
+   "scheduler": {
+    "partition": "gpu"
+   },
+   "fullText": false,
+   "vectors": false,
+   "formatNote": null,
+   "readThrough": {
+    "destination": "me@xfer",
+    "port": 2222,
+    "sshOptions": "-J me@jump",
+    "root": null
+   },
+   "built": false,
+   "indexDir": null,
+   "progress": null,
+   "builtDepth": null,
+   "gaps": [],
+   "buildingDepth": null
   }
  ],
  "embed": [

@@ -193,7 +193,9 @@ func (h *harness) do(method, url string, body any) answer {
 }
 
 func (h *harness) post(url string, body any) answer { return h.do(http.MethodPost, url, body) }
-func (h *harness) listing() map[string]any         { return h.do(http.MethodGet, "/api/user-libraries", nil).Body }
+func (h *harness) listing() map[string]any {
+	return h.do(http.MethodGet, "/api/user-libraries", nil).Body
+}
 
 func steps(a answer) [][2]any {
 	var out [][2]any

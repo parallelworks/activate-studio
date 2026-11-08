@@ -48,6 +48,16 @@ const NODE_DIRECT = new Map([
   ['standaloneChat.test.mjs', 'server-go/internal/chat (TestGoldenStreamMatchesNode, TestCitationsMatchNode)'],
   ['toolApproval.test.mjs', 'server-go/internal/chat (TestHeldCallsAskThenRunOnce, TestToolCatalogMatchesNode)'],
   ['unansweredTurn.test.mjs', 'server-go/internal/conversations (TestUnansweredWhileAReplyStreams)'],
+  // The user library tests stand the remote systems in with setRemoteSpawn
+  // and setSshLocal, functions in the test's own process that the Go
+  // server's sessions cannot reach. internal/userlibs runs their cases with
+  // a stand-in Spawn of the same kind.
+  ['sshLibraries.test.mjs', 'server-go/internal/userlibs (TestSSHConnectionTestStepByStep, TestSSHFailingStepsSayWhatToChange, TestSSHLibraryAddListRefreshRemove, TestSignInKeepsSSHOut)'],
+  ['pwLibraries.test.mjs', 'server-go/internal/userlibs (TestPwLibraryOverPwSSH)'],
+  ['remoteBuild.test.mjs', 'server-go/internal/userlibs (TestRemoteBuildCheckAndBuild)'],
+  ['restrictedRemote.test.mjs', 'server-go/internal/userlibs (TestQueryOnlyHost)'],
+  ['sshOptions.test.mjs', 'server-go/internal/userlibs (TestSSHOptionsChange)'],
+  ['libraryMaps.test.mjs', 'server-go/internal/userlibs (TestQueryOnlyHost); the maps of remote libraries stay in Node'],
 ])
 const direct = NODE_DIRECT.has(path.basename(process.argv[1] ?? ''))
 // The ports the Go servers take; another test process may hold one.
