@@ -8,7 +8,6 @@ import (
 	"io"
 	"math"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -192,45 +191,6 @@ func (m *Module) findLocal(files []embedFile) []string {
 	return out
 }
 
-// download fetches what is missing here into the Studio's own folder with
-// fetch_embed.py; why not, or "".
-func (m *Module) download(what []string) string {
-	args := append([]string{filepath.Join(m.ProjectRoot, "indexer", "fetch_embed.py")}, what...)
-	args = append(args, "--cache", filepath.Join(m.IndexBase, "embed-wheels"))
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, m.python(), args...)
-	var errb strings.Builder
-	cmd.Stderr = &tail{b: &errb, max: 1000}
-	err := cmd.Run()
-	if err == nil {
-		return ""
-	}
-	if ee, ok := err.(*exec.ExitError); ok {
-		if last := lastOf(errb.String()); last != "" {
-			return last
-		}
-		return fmt.Sprintf("exit %d", ee.ExitCode())
-	}
-	return err.Error()
-}
-
-// tail keeps the last max bytes written.
-type tail struct {
-	b   *strings.Builder
-	max int
-}
-
-func (t *tail) Write(p []byte) (int, error) {
-	s := t.b.String() + string(p)
-	if len(s) > t.max {
-		s = s[len(s)-t.max:]
-	}
-	t.b.Reset()
-	t.b.WriteString(s)
-	return len(p), nil
-}
-
 // sendEmbed sends a build there what it needs to embed with the ONNX
 // model and does not have, while the build runs: BUILD_START marked the
 // version as being sent, and the build waits for that mark to go before
@@ -241,7 +201,7 @@ func (m *Module) sendEmbed(site, key, platform, version string) {
 		return
 	}
 	m.queued(slice16(key)+"|"+site+"|"+version, func() {
-		m.send(site, key, "embed/"+version, files, []string{"--download", "--platform", platform}, "the ONNX packages for "+platform)
+		m.send(site, key, "embed/"+version, files, platform, "the ONNX packages for "+platform)
 	})
 }
 
@@ -249,7 +209,7 @@ func (m *Module) sendEmbed(site, key, platform, version string) {
 // waits for.
 func (m *Module) sendReaders(site, key, version string) {
 	m.queued(slice16(key)+"|"+site+"|readers/"+version, func() {
-		m.send(site, key, "readers/"+version, m.readerFiles(), []string{"--download-readers"}, "the document readers")
+		m.send(site, key, "readers/"+version, m.readerFiles(), "", "the document readers")
 	})
 }
 
@@ -274,7 +234,9 @@ func (m *Module) queued(k string, job func()) {
 	job()
 }
 
-func (m *Module) send(site, key, folder string, files []embedFile, fetchArgs []string, what string) {
+// send is one sending; platform names the ONNX packages to download here
+// for files that are missing, "" the document readers.
+func (m *Module) send(site, key, folder string, files []embedFile, platform, what string) {
 	ctx := context.Background()
 	stop := make(chan struct{})
 	go func() {
@@ -298,7 +260,11 @@ func (m *Module) send(site, key, folder string, files []embedFile, fetchArgs []s
 	}
 	local := m.findLocal(files)
 	if missing(local) {
-		if why := m.download(fetchArgs); why != "" {
+		download := m.download
+		if m.offline != nil {
+			download = m.offline
+		}
+		if why := download(platform); why != "" {
 			m.Log.Warn(fmt.Sprintf("a build on %s: %s could not be downloaded here (%s); the build there downloads them itself where it can", remote.SiteName(site), what, why))
 		}
 		local = m.findLocal(files)

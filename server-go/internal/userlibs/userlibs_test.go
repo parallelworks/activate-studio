@@ -114,7 +114,7 @@ func newHarness(t *testing.T, env map[string]string) *harness {
 	root, _ := filepath.Abs("../../..")
 	h.m = New(p, pool, nil, ix, root, nil)
 	h.m.PollEvery = 50 * time.Millisecond
-	h.m.Python = func() string { return "/bin/false" } // nothing is downloaded here
+	h.m.offline = func(string) string { return "offline" } // nothing is downloaded here
 	jobs := &kb.Jobs{}
 	h.m.Jobs = func() *kb.Jobs { return jobs }
 	h.mux = http.NewServeMux()
