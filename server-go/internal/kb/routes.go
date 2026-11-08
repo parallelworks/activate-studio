@@ -732,7 +732,7 @@ func (m *Module) move(w http.ResponseWriter, r *http.Request) error {
 		paths := capPaths(b.list("paths"))
 		dest, _ := b.str("dest")
 		if b.truthy("async") {
-			job := m.Jobs.Start(r.Context(), "move", len(paths), nil, func(ctx context.Context, h *JobHandle) (any, error) {
+			job := m.Jobs.Start(context.WithoutCancel(r.Context()), "move", len(paths), nil, func(ctx context.Context, h *JobHandle) (any, error) {
 				o, err := m.Files.Move(paths, dest, func(done int, cur string) { h.Progress("moving", done, cur) })
 				if err != nil {
 					return nil, err
@@ -769,7 +769,7 @@ func (m *Module) copy(w http.ResponseWriter, r *http.Request) error {
 		paths := capPaths(b.list("paths"))
 		dest, _ := b.str("dest")
 		if b.truthy("async") {
-			job := m.Jobs.Start(r.Context(), "move", len(paths), nil, func(ctx context.Context, h *JobHandle) (any, error) {
+			job := m.Jobs.Start(context.WithoutCancel(r.Context()), "move", len(paths), nil, func(ctx context.Context, h *JobHandle) (any, error) {
 				o, err := m.Files.Copy(paths, dest, func(done int, cur string) { h.Progress("copying", done, cur) })
 				if err != nil {
 					return nil, err
@@ -836,7 +836,7 @@ func (m *Module) bulkDelete(w http.ResponseWriter, r *http.Request) error {
 		}
 		if b.truthy("async") {
 			first := func(h *JobHandle) { h.Progress("deleting", 0, trimSlashes(paths[0])) }
-			job := m.Jobs.Start(r.Context(), "delete", len(paths), first, func(ctx context.Context, h *JobHandle) (any, error) {
+			job := m.Jobs.Start(context.WithoutCancel(r.Context()), "delete", len(paths), first, func(ctx context.Context, h *JobHandle) (any, error) {
 				d := m.Files.DeletePaths(paths, func(done int, cur string) { h.Progress("deleting", done, cur) })
 				h.Progress("indexing", len(paths), "")
 				ms, err := reindex(ctx, d)
@@ -882,7 +882,7 @@ func (m *Module) deleteDir(w http.ResponseWriter, r *http.Request) error {
 	}
 	if qs(r, "async") == "1" {
 		first := func(h *JobHandle) { h.Phase("deleting", cleaned) }
-		job := m.Jobs.Start(r.Context(), "delete", 1, first, func(ctx context.Context, h *JobHandle) (any, error) {
+		job := m.Jobs.Start(context.WithoutCancel(r.Context()), "delete", 1, first, func(ctx context.Context, h *JobHandle) (any, error) {
 			if err := m.Files.DeleteDir(ctx, cleaned, abs); err != nil {
 				return nil, err
 			}
