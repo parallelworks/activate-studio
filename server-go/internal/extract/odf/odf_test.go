@@ -122,6 +122,25 @@ var cases = []tcase{
 	{name: "drawing", files: map[string]string{"content.xml": head +
 		`<office:drawing><draw:page draw:name="Seite1"><draw:custom-shape><text:p>shape text</text:p></draw:custom-shape></draw:page></office:drawing>` + tail},
 		want: "Slide 1: Seite1\nshape text"},
+	{name: "spreadsheet found after a named table", files: map[string]string{"content.xml": head +
+		`<office:text><table:table table:name="T"><table:table-row><table:table-cell><text:p>x</text:p></table:table-cell></table:table-row></table:table></office:text><office:spreadsheet/>` + tail},
+		want: "Sheet: T\nx"},
+	{name: "text found after a slide", files: map[string]string{
+		"content.xml": head + `<office:presentation><draw:page><text:p>body</text:p></draw:page></office:presentation><office:text/>` + tail,
+		"styles.xml":  stylesHead + `<style:master-page><style:header><text:p>Head</text:p></style:header></style:master-page>` + stylesTail},
+		want: "Head\nSlide 1\nbody"},
+	{name: "text found inside notes", files: map[string]string{
+		"content.xml": head + `<office:presentation><draw:page><presentation:notes><office:text><text:p>n</text:p></office:text></presentation:notes></draw:page></office:presentation>` + tail,
+		"styles.xml":  stylesHead + `<style:master-page><style:footer><text:p>Foot</text:p></style:footer></style:master-page>` + stylesTail},
+		want: "Foot\nSlide 1\nNotes:\nn"},
+	{name: "spreadsheet found past the limit", max: 3, files: map[string]string{"content.xml": head +
+		`<office:text><table:table table:name="T"><table:table-row><table:table-cell><text:p>aaaa</text:p></table:table-cell></table:table-row></table:table></office:text><office:spreadsheet/>` + tail},
+		want: "Sheet: T"},
+	{name: "malformed past the limit", max: 3, files: map[string]string{"content.xml": head +
+		`<office:text><text:p>aaaa</text:p><text:p>b</text:p></office:text>` + tail + `<extra/>`},
+		wantErr: true},
+	{name: "text before the root", files: map[string]string{"content.xml": "junk" + head + `<office:text><text:p>a</text:p></office:text>` + tail},
+		wantErr: true},
 }
 
 func run(t testing.TB, c tcase) (string, error) {
@@ -223,4 +242,41 @@ func FuzzContent(f *testing.F) {
 		b := pkg(t, map[string]string{"content.xml": content, "styles.xml": styles})
 		Text(bytes.NewReader(b), int64(len(b)), 300)
 	})
+}
+
+// FuzzSinglePass checks the single pass against the two-pass reading
+// (well-formedness and kind first), which follows enrich.py's order.
+func FuzzSinglePass(f *testing.F) {
+	for _, c := range cases {
+		if s, ok := c.files["content.xml"]; ok {
+			f.Add(s, c.files["styles.xml"], c.max)
+		}
+	}
+	f.Fuzz(func(t *testing.T, content, styles string, max int) {
+		files := map[string]string{"content.xml": content}
+		if styles != "" {
+			files["styles.xml"] = styles
+		}
+		b := pkg(t, files)
+		max = max % 200
+		one, err1 := Text(bytes.NewReader(b), int64(len(b)), max)
+		twoPass = true
+		two, err2 := Text(bytes.NewReader(b), int64(len(b)), max)
+		twoPass = false
+		if one != two || (err1 == nil) != (err2 == nil) {
+			t.Fatalf("single %q %v\ntwo-pass %q %v", one, err1, two, err2)
+		}
+	})
+}
+
+func TestSinglePassCases(t *testing.T) {
+	for _, c := range cases {
+		one, err1 := run(t, c)
+		twoPass = true
+		two, err2 := run(t, c)
+		twoPass = false
+		if one != two || (err1 == nil) != (err2 == nil) {
+			t.Errorf("%s: single %q %v, two-pass %q %v", c.name, one, err1, two, err2)
+		}
+	}
 }

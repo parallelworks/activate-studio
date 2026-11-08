@@ -14,6 +14,7 @@ import path from 'node:path'
 import { HOST, PORT, PROJECT_ROOT, KB_ROOT, gufiAvailable } from './config.js'
 import { kbRoutes, sanitizedErrorHandler } from './routes.js'
 import { goBridgeRoutes } from './goBridge.js'
+import { goChatBridgeRoutes } from './chat/goBridge.js'
 import { uploadRoutes } from './uploads.js'
 import { queryRoutes } from './query.js'
 import { runPaneRoutes } from './runPane.js'
@@ -26,7 +27,7 @@ import { attachmentRoutes } from './attachments.js'
 import { extensionRoutes, seedExtensions } from './extensions.js'
 import { conversationRoutes } from './conversations.js'
 import { authHook, authEnabled } from './auth.js'
-import { hydrateFromCookie, scrubPersonalVaultEntries } from './credentials.js'
+import { hydrateFromCookie, mirrorFromGo, scrubPersonalVaultEntries } from './credentials.js'
 import { settingsRoutes } from './settings.js'
 import { setupRoutes } from './setup.js'
 import { chatRoutes } from './chat/routes.js'
@@ -58,8 +59,13 @@ await app.register(fastifyMultipart)
 await authHook(app)
 // Browser-held personal keys: a request from a verified user whose memory
 // entry has expired rehydrates it from the sealed key cookie.
+// TRANSITIONAL: behind the Go server, which owns the keys and their
+// cookies (server-go/internal/modelkeys), each request carries the
+// viewer's current key from Go instead (mirrorFromGo).
 app.addHook('onRequest', async req => {
-  if (req.user?.id) hydrateFromCookie(req.user.id, req.headers.cookie)
+  if (!req.user?.id) return
+  if (process.env.STUDIO_GO_MODEL_KEYS === '1') mirrorFromGo(req.user.id, req.headers['x-studio-model-key'])
+  else hydrateFromCookie(req.user.id, req.headers.cookie)
 })
 app.log.info(`personal key vault scrub: ${scrubPersonalVaultEntries()} legacy entries removed`)
 
@@ -100,6 +106,7 @@ if (fs.existsSync(webDist)) {
 app.setErrorHandler(sanitizedErrorHandler(app))
 await app.register(kbRoutes)
 await app.register(goBridgeRoutes)
+await app.register(goChatBridgeRoutes)
 await app.register(workflowsTabRoutes)
 await app.register(accessRoutes)
 await app.register(sessionRoutes)

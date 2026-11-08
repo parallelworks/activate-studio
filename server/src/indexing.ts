@@ -1108,6 +1108,10 @@ function runWantedSweep(): void {
 export async function sweep(log: (msg: string) => void): Promise<string[]> {
   if (sweeping || current || queue.length) return []
   sweeping = true
+  // This sweep reads the settings now, so it covers a sync asked for before
+  // it started; one asked for while it runs sets the flag again.
+  sweepWanted = false
+  if (kickTimer) { clearTimeout(kickTimer); kickTimer = null }
   const t0 = Date.now()
   try {
     const state = loadSweepState()
