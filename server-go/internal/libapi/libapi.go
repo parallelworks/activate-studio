@@ -13,11 +13,14 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/apierr"
 	"github.com/parallelworks/activate-studio/server-go/internal/app"
 	"github.com/parallelworks/activate-studio/server-go/internal/gufi"
 	"github.com/parallelworks/activate-studio/server-go/internal/gufitrace"
+	"github.com/parallelworks/activate-studio/server-go/internal/index"
+	"github.com/parallelworks/activate-studio/server-go/internal/kb"
 	"github.com/parallelworks/activate-studio/server-go/internal/libraries"
 	"github.com/parallelworks/activate-studio/server-go/internal/platform"
 	"github.com/parallelworks/activate-studio/server-go/internal/remote"
@@ -30,12 +33,28 @@ type Service struct {
 	Reg    *libraries.Registry
 	Engine *search.Engine
 	Pool   *remote.Pool
+	builds *builds
 }
 
-// New is the service over a's shared registry and engine.
+var (
+	buildsMu sync.Mutex
+	buildsOf = map[*app.App]*builds{}
+)
+
+// New is the service over a's shared registry and engine, and its one
+// set of library builds.
 func New(a *app.App) *Service {
 	e := search.Of(a)
-	return &Service{a: a, Reg: e.Reg, Engine: e, Pool: e.Pool}
+	s := &Service{a: a, Reg: e.Reg, Engine: e, Pool: e.Pool}
+	buildsMu.Lock()
+	b := buildsOf[a]
+	if b == nil {
+		b = newBuilds(s)
+		buildsOf[a] = b
+	}
+	buildsMu.Unlock()
+	s.builds = b
+	return s
 }
 
 // Register serves the track's routes on mux and fills its provider.
@@ -45,6 +64,7 @@ func Register(mux *http.ServeMux, a *app.App) {
 		gufitrace.Default = gufitrace.NewLog(os.Getenv("STUDIO_DATA_DIR"), a.Cfg.IndexBase, func() bool { return a.Settings.Effective().GufiLog })
 	}
 	libraries.CheckDest = remote.SSHDest
+	kb.LibraryResolver = kbResolver{s}
 	a.Providers.Libraries = func(r *http.Request, kbLabel, viewer string) ([]json.RawMessage, error) {
 		v := libraries.ViewerOf(viewer)
 		var out []json.RawMessage
@@ -65,11 +85,33 @@ func Register(mux *http.ServeMux, a *app.App) {
 	mux.HandleFunc("GET /api/kb/details", h(s.details))
 	mux.HandleFunc("GET /api/kb/topology", h(s.topology))
 	mux.HandleFunc("GET /api/libraries/{id}/topology", h(s.topology))
+	// gufi_vt's remote command reaches the server here (gufiVt.ts): a
+	// location's gufi_query, run on its host. Go's own: the locations it
+	// answers for are those of the Go server's statements.
+	mux.HandleFunc("POST /internal/gufi-vt", s.Engine.ServeGufiVt)
 	mux.HandleFunc("POST /api/query", h(s.query))
 	mux.HandleFunc("POST /api/query/sql", h(s.querySQL))
 	mux.HandleFunc("GET /api/query/saved", h(s.savedList))
 	mux.HandleFunc("POST /api/query/saved", h(s.savedAdd))
 	mux.HandleFunc("DELETE /api/query/saved/{id}", h(s.savedDelete))
+	// The library write routes, builds and read-through settings: Go's in
+	// Node-free mode. With Node beside, they stay Node's, which keeps the
+	// libraries it builds and syncs in its own memory.
+	if a.NodeFree() {
+		mux.HandleFunc("POST /api/libraries", h(s.addLibrary))
+		mux.HandleFunc("DELETE /api/libraries/{id}", h(s.removeLibrary))
+		mux.HandleFunc("PUT /api/libraries/{id}/depth", h(s.setDepth))
+		mux.HandleFunc("PUT /api/libraries/{id}/meaning", h(s.setMeaning))
+		mux.HandleFunc("POST /api/libraries/build/check", h(s.buildCheck))
+		mux.HandleFunc("POST /api/libraries/build", h(s.buildAdd))
+		mux.HandleFunc("POST /api/libraries/{id}/rebuild", h(s.rebuild))
+		mux.HandleFunc("PUT /api/libraries/{id}/read-through", h(s.readThroughSave))
+		mux.HandleFunc("POST /api/libraries/{id}/read-through/test", h(s.readThroughTest))
+		index.Of(a).Hooks.RequestAllLibrarySyncs = s.builds.requestAllSyncs
+		a.OnIndexWork("libraries: sync", s.builds.startSync)
+		a.OnStop("libraries: stop builds", s.builds.stop)
+	}
+	logLibraryStates(a, s)
 }
 
 // viewer is req.user?.id ?? null as Node's routes read it, through the

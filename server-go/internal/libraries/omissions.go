@@ -261,3 +261,47 @@ func OmissionsText(list []Omission) string {
 	}
 	return "Left out or searched in part: " + strings.Join(parts, "; ") + "."
 }
+
+// RecordDenied is recordDenied: what a build or sync of a library could
+// not read; nothing denied clears the record.
+func (r *Registry) RecordDenied(id string, folders []string, files int) {
+	f := r.deniedFile(id)
+	if len(folders) == 0 && files == 0 {
+		os.Remove(f)
+		return
+	}
+	seen := map[string]bool{}
+	uniq := []string{}
+	for _, p := range folders {
+		if !seen[p] {
+			seen[p] = true
+			uniq = append(uniq, p)
+		}
+	}
+	if len(uniq) > 200 {
+		uniq = uniq[:200]
+	}
+	os.MkdirAll(filepath.Dir(f), 0o755)
+	b, err := marshalJS(DeniedRecord{Folders: uniq, Files: files, At: nowISO()}, "")
+	if err == nil {
+		os.WriteFile(f, b, 0o644)
+	}
+}
+
+var (
+	diskFullRe   = regexp.MustCompile(`(?i)No space left on device|database or disk is full|ENOSPC|File too large|EFBIG|SIGXFSZ`)
+	noWriteRe    = regexp.MustCompile(`(?i)EACCES|EPERM|Permission denied|Operation not permitted|read-only file system|EROFS`)
+	writeVerbsRe = regexp.MustCompile(`(?i)mkdir|open|rename|write|\.build|index`)
+)
+
+// PlainBuildError is plainBuildError: a build's failure in words a
+// person can act on.
+func PlainBuildError(message string) string {
+	if diskFullRe.MatchString(message) {
+		return "The disk the index is written on is full, so the new index was not finished. The index in place is untouched; free some space and rebuild."
+	}
+	if noWriteRe.MatchString(message) && writeVerbsRe.MatchString(message) {
+		return "The index folder cannot be written (" + short(message, 120) + "), so nothing was changed. The index in place is untouched; make the folder writable and rebuild."
+	}
+	return message
+}

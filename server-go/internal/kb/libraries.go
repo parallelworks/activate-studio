@@ -1,8 +1,6 @@
 package kb
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -31,8 +29,10 @@ type Library struct {
 	// Indexed is caps.index: a db.db at the index root.
 	Indexed bool
 	// ReadThrough is set when the library names another host for its
-	// originals (originals.ts); such a library's files are Node's still.
+	// originals (originals.ts).
 	ReadThrough bool
+	// Site is the system a viewer's own library lives on; "" for one here.
+	Site string
 }
 
 // libraryDef is an entry of STUDIO_LIBRARIES or INDEX_BASE/libraries.json.
@@ -48,7 +48,6 @@ type libraryDef struct {
 }
 
 var libraryIDRe = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,39}$`)
-var userLibraryIDRe = regexp.MustCompile(`^u-[a-z0-9][a-z0-9-]{0,38}$`)
 
 // Libraries reads the libraries this host has: the main one, those the
 // deployment pins (STUDIO_LIBRARIES) and those added in Settings
@@ -195,46 +194,6 @@ func (l *Libraries) ScopeAll() []Library {
 		}
 	}
 	return out
-}
-
-// Owner is userLibraries.ts's ownerOf: whose libraries a viewer sees, ""
-// for none. known false means the viewer is not known here (identity
-// is checked by Node), so whether they have libraries cannot be told.
-func (l *Libraries) Owner(viewer string, known bool) (owner string, ok bool) {
-	if viewer != "" {
-		return viewer, true
-	}
-	if l.AuthEnabled {
-		if !known {
-			return "", false
-		}
-		return "", true
-	}
-	return "single", true
-}
-
-// HasOwn is whether a viewer has libraries of their own on their clusters,
-// which only Node can reach: any entry of their libraries.json that a
-// listing would show (an index root and a GUFI bin).
-func (l *Libraries) HasOwn(owner string) bool {
-	if owner == "" {
-		return false
-	}
-	h := sha256.Sum256([]byte(owner))
-	f := filepath.Join(l.Roots.IndexBase, "users", hex.EncodeToString(h[:])[:16], "libraries.json")
-	var defs []map[string]any
-	if json.Unmarshal(readFileOr(f), &defs) != nil {
-		return false
-	}
-	for _, d := range defs {
-		id, _ := d["id"].(string)
-		root, _ := d["indexRoot"].(string)
-		_, bin := d["gufiBin"]
-		if userLibraryIDRe.MatchString(id) && root != "" && bin && d["gufiBin"] != nil {
-			return true
-		}
-	}
-	return false
 }
 
 // RequireWritable is the guard every mutation runs.

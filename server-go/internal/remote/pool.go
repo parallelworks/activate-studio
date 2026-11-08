@@ -482,6 +482,9 @@ func deliver(pd *pending, r pendingResult) {
 type channel struct {
 	cmd   *exec.Cmd
 	stdin io.WriteCloser
+	// writeMu keeps the queue's order and the order requests are written
+	// in the same: answers are matched to the queue first in, first out.
+	writeMu sync.Mutex
 
 	mu      sync.Mutex
 	queue   []*pending
@@ -713,10 +716,12 @@ func (p *Pool) Run(ctx context.Context, site, key string, argv []string, timeout
 	for i, a := range argv {
 		enc[i] = "x" + base64.StdEncoding.EncodeToString([]byte(a))
 	}
+	c.writeMu.Lock()
 	c.mu.Lock()
 	c.last = time.Now()
 	if c.dead || c.killed {
 		c.mu.Unlock()
+		c.writeMu.Unlock()
 		return p.Run(ctx, site, key, argv, timeout)
 	}
 	pd.timer = time.AfterFunc(timeout, func() {
@@ -737,6 +742,7 @@ func (p *Pool) Run(ctx context.Context, site, key string, argv []string, timeout
 	c.queue = append(c.queue, pd)
 	c.mu.Unlock()
 	c.stdin.Write([]byte(strings.Join(enc, " ") + "\n"))
+	c.writeMu.Unlock()
 	select {
 	case r := <-pd.ch:
 		return r.r, r.err

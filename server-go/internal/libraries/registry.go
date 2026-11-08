@@ -18,6 +18,7 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/apierr"
 	"github.com/parallelworks/activate-studio/server-go/internal/gufi"
 	"github.com/parallelworks/activate-studio/server-go/internal/gufitrace"
+	"github.com/parallelworks/activate-studio/server-go/internal/index"
 )
 
 // PrimaryID names the main folder's library.
@@ -79,6 +80,26 @@ type Registry struct {
 
 	removedHooks []func(id string)
 	progressOf   func(id string) *BuildProgress
+	mapSchedule  func(id string, delay time.Duration)
+}
+
+// SetMapScheduler sets what makes a library's semantic map again after a
+// delay (semanticMap.ts's scheduleSemanticMapRebuild), for the maps track.
+func (r *Registry) SetMapScheduler(fn func(id string, delay time.Duration)) {
+	r.mu.Lock()
+	r.mapSchedule = fn
+	r.mu.Unlock()
+}
+
+// ScheduleMap asks for a library's map to be made again after delay; a
+// no-op until the maps track sets the scheduler.
+func (r *Registry) ScheduleMap(id string, delay time.Duration) {
+	r.mu.Lock()
+	fn := r.mapSchedule
+	r.mu.Unlock()
+	if fn != nil {
+		fn(id, delay)
+	}
 }
 
 type probeEntry struct {
@@ -1091,7 +1112,7 @@ func (r *Registry) Remove(id string) error {
 	}
 	dir := r.BuiltLibraryDir(id)
 	if def != nil && def.Build != nil {
-		os.RemoveAll(dir)
+		index.RmTree(dir)
 	}
 	os.Remove(filepath.Join(dir, "labels.json"))
 	os.Remove(filepath.Join(dir, "labels.json.bak"))

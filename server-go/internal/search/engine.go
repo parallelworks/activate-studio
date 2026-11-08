@@ -54,6 +54,9 @@ type Engine struct {
 	// "gufi_vt" or the default.
 	SearchEngine func() string
 	Log          *slog.Logger
+	// VtURL is where gufi_vt's remote command reaches this server
+	// (/internal/gufi-vt).
+	VtURL func() string
 }
 
 func (e *Engine) env(k string) string {
@@ -65,6 +68,9 @@ func (e *Engine) env(k string) string {
 
 // localThreads is LOCAL_THREADS: one per core up to 16.
 func localThreads() int { return min(max(runtime.NumCPU(), 1), 16) }
+
+// LocalThreads is LOCAL_THREADS: the -n a query here asks for.
+func LocalThreads() int { return localThreads() }
 
 var unknownOptionRe = regexp.MustCompile(`(?i)unrecognized option|invalid option|unknown option`)
 

@@ -199,14 +199,17 @@ func deadlineText(ms int) string {
 	return fmt.Sprintf("%d ms", ms)
 }
 
-// SearchScope is searchScope, without the gufi_vt form: the route hands a
-// search Settings sends to gufi_vt to Node while Node runs.
+// SearchScope is searchScope; with Settings, General, "Search across
+// libraries" set to gufi_vt, the earlier form runs (searchScopeVt).
 func (e *Engine) SearchScope(ctx context.Context, libs []libraries.Library, q string, limit int, o ScopeOpts) []ScopedHit {
 	if o.Omitted == nil {
 		o.Omitted = &libraries.Omissions{}
 	}
 	refine := o.Refine
 	libs = e.withoutGaps(libs, o)
+	if refine == nil && len(libs) > 1 && e.SearchEngine != nil && e.SearchEngine() == "gufi_vt" && e.GufiVtAvailable(ctx) {
+		return e.searchScopeVt(ctx, libs, q, limit, o)
+	}
 	nameLimit := o.NameLimit
 	if nameLimit == 0 {
 		nameLimit = min(max(10, limit/5), 50)

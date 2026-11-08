@@ -41,7 +41,7 @@ func Of(a *app.App) *Registry {
 	r := New(Options{
 		KBRoot: cfg.KBRoot, IndexBase: cfg.IndexBase, GufiIndex: cfg.GufiIndex, GufiBin: cfg.GufiBin,
 		AuthEnabled: cfg.AuthEnabled(), Getenv: os.Getenv, Runner: a.Gufi, Settings: settings,
-		Users: &Users{IndexBase: cfg.IndexBase, AuthEnabled: cfg.AuthEnabled()},
+		Users:   &Users{IndexBase: cfg.IndexBase, AuthEnabled: cfg.AuthEnabled()},
 		SSHSite: remote.SSHSite, Log: a.Log,
 		ReachedLabel: func(site string) string {
 			pool, _ := SharedRemote(a)
