@@ -1,6 +1,7 @@
 package index
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -29,6 +30,14 @@ func Register(mux *http.ServeMux, a *app.App) {
 		return
 	}
 	ix := Of(a)
+	if !a.Cfg.NodeOff {
+		// Node runs beside (STUDIO_GO_INDEX=1) and numbers its own index jobs
+		// (a library's build) from 1: Go's start above them, and a job id
+		// below that is Node's.
+		ix.mu.Lock()
+		ix.seq = max(ix.seq, NodeJobIDs)
+		ix.mu.Unlock()
+	}
 	ix.Hooks.RequireWritable = ix.defaultRequireWritable
 	ix.History = newHistory(ix)
 	ix.register(mux)
@@ -72,6 +81,9 @@ func Register(mux *http.ServeMux, a *app.App) {
 	a.OnStop("index jobs", func() int { return ix.CancelAll() })
 }
 
+// NodeJobIDs is where Go's index job ids start while Node runs beside it.
+const NodeJobIDs = 1 << 21
+
 func writeOK(w http.ResponseWriter, v any) error {
 	b, err := marshal(v)
 	if err != nil {
@@ -90,6 +102,8 @@ func readBody(r *http.Request) map[string]any {
 		return m
 	}
 	b, _ := io.ReadAll(io.LimitReader(r.Body, 8<<20))
+	// Kept, for a request handed on to Node.
+	r.Body = io.NopCloser(bytes.NewReader(b))
 	if len(b) > 0 {
 		json.Unmarshal(b, &m)
 	}
@@ -325,9 +339,23 @@ func (ix *Indexer) register(mux *http.ServeMux) {
 		return writeOK(w, j)
 	}))
 
+	// A job of Node's: a library's build, which runs in Node until the
+	// libraries track's builds run here.
+	nodeJob := func(w http.ResponseWriter, r *http.Request) bool {
+		id := jobID(r)
+		if ix.App.NodeFree() || id < 0 || id >= NodeJobIDs {
+			return false
+		}
+		// TODO(internal/libraries): hand-off until library builds run in Go.
+		ix.App.Node().ServeHTTP(w, app.HandOff(r, "an index job of Node's"))
+		return true
+	}
 	getJob := wrap(func(w http.ResponseWriter, r *http.Request) error {
 		j, ok := ix.Job(jobID(r))
 		if !ok {
+			if nodeJob(w, r) {
+				return nil
+			}
 			return notFound(w)
 		}
 		return writeOK(w, j)
@@ -337,6 +365,9 @@ func (ix *Indexer) register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/index/job/{id}/cancel", writable(func(w http.ResponseWriter, r *http.Request, _ map[string]any) error {
 		j, ok := ix.Cancel(jobID(r))
 		if !ok {
+			if nodeJob(w, r) {
+				return nil
+			}
 			return notFound(w)
 		}
 		return writeOK(w, j)
