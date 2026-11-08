@@ -48,8 +48,8 @@ type Engine struct {
 	Remote    *remote.Runners
 	Embed     Embedder
 	// Tags are the files track's labels (internal/kb), beside each hit.
-	Tags *kb.Tags
-	Getenv    func(string) string
+	Tags   *kb.Tags
+	Getenv func(string) string
 	// SearchEngine is Settings, General, "Search across libraries":
 	// "gufi_vt" or the default.
 	SearchEngine func() string

@@ -31,7 +31,7 @@ func envMs(p *platform.Platform, k string, d time.Duration) time.Duration {
 func Register(mux *http.ServeMux, a *app.App, p *platform.Platform) *Fleet {
 	daemon := pwcode.New(p)
 	daemon.Start(a)
-	agentsites.Register(mux, a, p, daemon)
+	currentSites.Store(agentsites.Register(mux, a, p, daemon))
 
 	e := New(Config{
 		IndexBase: a.Cfg.IndexBase, KBRoot: a.Cfg.KBRoot, Port: a.Cfg.Port, P: p, Daemon: daemon,
@@ -62,6 +62,7 @@ func Register(mux *http.ServeMux, a *app.App, p *platform.Platform) *Fleet {
 		CampaignPoll: envMs(p, "STUDIO_CAMPAIGN_POLL_MS", 20*time.Second),
 	})
 	e.Routes(mux, a)
+	currentEngine.Store(e)
 	// /api/mcp (internal/chat) asks the board about a task bearer.
 	a.Providers.TaskBoard = func(token, agent, tool string, args json.RawMessage) (bool, json.RawMessage) {
 		var in *jsonv.Object

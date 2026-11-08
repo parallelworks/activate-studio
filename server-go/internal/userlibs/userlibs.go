@@ -34,6 +34,7 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/jsonv"
 	"github.com/parallelworks/activate-studio/server-go/internal/kb"
 	"github.com/parallelworks/activate-studio/server-go/internal/libraries"
+	"github.com/parallelworks/activate-studio/server-go/internal/maps"
 	"github.com/parallelworks/activate-studio/server-go/internal/platform"
 	"github.com/parallelworks/activate-studio/server-go/internal/remote"
 	"github.com/parallelworks/activate-studio/server-go/internal/search"
@@ -124,13 +125,9 @@ func Of(a *app.App) *Module {
 		}
 		return key, true
 	}
-	m.Notify = func(event, root string) {
-		if n := p.Node(); n != nil {
-			if err := n.Background(http.MethodPost, platform.BridgePrefix+"user-library", map[string]string{"event": event, "root": root}, nil); err != nil {
-				m.Log.Warn("telling Node of a user library", "event", event, "root", root, "err", err.Error())
-			}
-		}
-	}
+	// What keeps something per library on another system (its semantic
+	// map, internal/maps) is told, as userLibraries.ts tells semanticMap.ts.
+	m.Notify = func(event, root string) { maps.Of(a).UserLibrary(event, root) }
 	a.OnStop("user libraries: ssh sessions", func() int { pool.Close(); return 0 })
 	inst[a] = m
 	return m

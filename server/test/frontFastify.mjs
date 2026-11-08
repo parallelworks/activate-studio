@@ -65,7 +65,9 @@ const NODE_DIRECT = new Map([
   ['remoteBuild.test.mjs', 'server-go/internal/userlibs (TestRemoteBuildCheckAndBuild)'],
   ['restrictedRemote.test.mjs', 'server-go/internal/userlibs (TestQueryOnlyHost)'],
   ['sshOptions.test.mjs', 'server-go/internal/userlibs (TestSSHOptionsChange)'],
-  ['libraryMaps.test.mjs', 'server-go/internal/userlibs (TestQueryOnlyHost); the maps of remote libraries stay in Node'],
+  // Its remote systems are stood in with setRemoteSpawn in the test's own
+  // process; internal/maps runs its cases with a stand-in Spawn.
+  ['libraryMaps.test.mjs', 'server-go/internal/maps (TestRemoteMap*), internal/userlibs (TestQueryOnlyHost)'],
 ])
 const direct = NODE_DIRECT.has(path.basename(process.argv[1] ?? ''))
 // The ports the Go servers take; another test process may hold one.
@@ -99,7 +101,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms))
 /** The Go server in front of a Node app listening on nodePort. */
 async function startFront(nodePort) {
   const env = { ...process.env }
-  for (const k of Object.keys(env)) if (k.startsWith('AUTH_') || k.startsWith('OIDC_') || k === 'STUDIO_NODE_SPAWN') delete env[k]
+  for (const k of Object.keys(env)) if (k.startsWith('AUTH_') || k.startsWith('OIDC_') || k === 'STUDIO_NODE_SPAWN' || k === 'STUDIO_FRONT_URL' || k === 'STUDIO_GO_MAPS') delete env[k]
   const webDist = fs.mkdtempSync(path.join(os.tmpdir(), 'front-web-'))
   Object.assign(env, {
     STUDIO_NODE_URL: `http://127.0.0.1:${nodePort}`, STUDIO_FRONT_AUTH: '0', HOST: '127.0.0.1',
@@ -116,6 +118,8 @@ async function startFront(nodePort) {
     const up = await new Promise(resolve => {
       const timer = setTimeout(() => resolve(false), 20_000)
       child.stderr.on('data', d => {
+        // STUDIO_TEST_FRONT_LOG names a file that gets the Go servers' logs.
+        if (process.env.STUDIO_TEST_FRONT_LOG) fs.appendFileSync(process.env.STUDIO_TEST_FRONT_LOG, d)
         if (log.length < 8000) log += d
         if (/msg=listening/.test(log)) { clearTimeout(timer); resolve(true) }
       })
@@ -140,6 +144,11 @@ async function startFront(nodePort) {
 function stopFront(front) {
   if (!front) return
   fronts.delete(front)
+  if (process.env.STUDIO_FRONT_URL === `http://127.0.0.1:${front.port}`) {
+    const next = [...fronts].at(-1)
+    if (next) process.env.STUDIO_FRONT_URL = `http://127.0.0.1:${next.port}`
+    else { delete process.env.STUDIO_FRONT_URL; delete process.env.STUDIO_GO_MAPS }
+  }
   front.child.kill('SIGTERM')
   fs.rmSync(front.webDist, { recursive: true, force: true })
 }
@@ -222,6 +231,11 @@ function install(app) {
         app.server.on('connection', socket => socket.unref())
       }
       front = await startFront(app.server.address().port)
+      // The test's own process is the Node server behind it, so Node's calls
+      // to the Go server (frontBridge.ts) reach this one, and Go owns the
+      // semantic maps, as with a Node the Go server spawns.
+      process.env.STUDIO_FRONT_URL = `http://127.0.0.1:${front.port}`
+      process.env.STUDIO_GO_MAPS = '1'
       return front
     })()
     return starting

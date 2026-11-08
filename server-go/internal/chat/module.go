@@ -70,6 +70,15 @@ type Module struct {
 	listings *listingCache
 	noCap    *noTokenCap
 	rag      *ragState
+
+	monitorMu sync.Mutex
+	monitor   monitorCache
+	// siteDefaults' answers per system, ten minutes each (tools.ts siteCache)
+	siteMu    sync.Mutex
+	siteCache map[string]siteCacheEntry
+
+	// Corpus is the libraries and search pair the corpus tools read.
+	Corpus *Corpus
 }
 
 // Default is the registered module.
@@ -106,6 +115,7 @@ func New(a *app.App) *Module {
 	})
 	m.listings = newListingCache()
 	m.noCap = loadNoTokenCap(a.Cfg.IndexBase)
+	m.Corpus = newCorpus(a)
 	m.rag = newRagState(m)
 	return m
 }

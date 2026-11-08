@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -51,21 +52,25 @@ func TestRunCarriesArgumentsUnquoted(t *testing.T) {
 
 func TestPoolRunsSideBySide(t *testing.T) {
 	p := localPool(t, nil)
+	// A barrier on disk: each run marks itself and waits until all three
+	// have, so the runs pass only if they are open at the same time. Run
+	// one after another, the first waits out its bound and fails.
+	dir := t.TempDir()
+	barrier := `touch "$0/$1"; i=0; while [ "$(ls "$0" | wc -l)" -lt 3 ]; do i=$((i+1)); [ $i -gt 600 ] && exit 9; sleep 0.05; done`
 	var wg sync.WaitGroup
-	t0 := time.Now()
 	for i := 0; i < 3; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if _, err := p.Run(context.Background(), "c", "k", []string{"sleep", "0.5"}, 10*time.Second); err != nil {
+			r, err := p.Run(context.Background(), "c", "k", []string{"sh", "-c", barrier, dir, strconv.Itoa(i)}, 60*time.Second)
+			if err != nil {
 				t.Error(err)
+			} else if r.Code != 0 {
+				t.Errorf("run %d did not see the other two at the same time (code %d)", i, r.Code)
 			}
 		}()
 	}
 	wg.Wait()
-	if el := time.Since(t0); el > 1400*time.Millisecond {
-		t.Fatalf("three runs on three sessions took %v", el)
-	}
 	p.mu.Lock()
 	n := len(p.channels[channelID("c", "k")])
 	p.mu.Unlock()
