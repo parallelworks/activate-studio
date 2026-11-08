@@ -1,0 +1,15 @@
+{
+ "options": ["", "-J me@jump", "-Jme@jump,other:2200", "-p 2222 -i ~/.ssh/id -l bob", "-o ConnectTimeout=5 -o ServerAliveInterval=10", "-4 -C -6",
+  "-o ProxyCommand=nc", "-o BatchMode=no", "-o Frobnicate=1", "-X", "-p", "-p 0", "-i relative", "-i \"quoted\"", "-o ConnectTimeout", "-o StrictHostKeyChecking=accept-new", "-o IdentityFile=none", "-o Ciphers=aes128-ctr,aes256-ctr", "-J bad host"],
+ "sites": [
+  {"destination": "me@box", "port": null, "options": []},
+  {"destination": "me@box", "port": 2222, "options": ["-J", "me@jump"]},
+  {"destination": "box", "port": null, "options": ["-o", "ConnectTimeout=5", "-o", "USER=bob"]},
+  {"destination": "box", "port": 22, "options": ["-p", "23"]},
+  {"destination": "-oProxyCommand=x", "port": null, "options": []},
+  {"destination": "a@b", "port": 70000, "options": []}
+ ],
+ "parsed": ["cluster", "ssh://me@box", "ssh://me@box:2222", "ssh://box#WyItSiIsIm1lQGp1bXAiXQ", "ssh://box#notjson", "ssh://-x", "ssh://me@box:0"],
+ "words": ["gufi_query", "-n", "4", "SELECT 'a';", "", "a b", "it's", "/p/x.y", "$HOME", "x=y,z:1@h%"],
+ "stderr": ["** WARNING: connection is not using a post-quantum key exchange algorithm.\nreal error", "Warning: Permanently added 'h' (ED25519) to the list of known hosts.\n\nok", ""]
+}
