@@ -149,10 +149,9 @@ func (e errToNode) Error() string { return "to node: " + e.why }
 // toNode passes the request on to Node, logging why.
 func (m *Module) toNode(w http.ResponseWriter, r *http.Request, why string) error {
 	m.A.Log.Info("files: to node", "path", r.URL.Path, "why", why)
-	// A deliberate hand-off for a library whose files only Node reaches,
-	// marked as such for the front harness's strict mode.
-	r.Header.Set(app.InternalHeader, "1")
-	m.A.Node().ServeHTTP(w, r)
+	// A deliberate hand-off, marked so the proxy tells Node (and the
+	// front harness's strict mode) it was meant. Node-free, it is a 501.
+	m.A.Node().ServeHTTP(w, app.HandOff(r, why))
 	return nil
 }
 
@@ -272,6 +271,8 @@ func (m *Module) lib(r *http.Request, b body) (Library, error) {
 		return Library{}, err
 	}
 	if !ok {
+		// TODO(internal/libraries, internal/remote): hand-off until the libraries
+		// track resolves this library here; remove it then.
 		return Library{}, errToNode{"library " + id + " is not one of this host's"}
 	}
 	return lib, nil
@@ -297,9 +298,13 @@ func (m *Module) allLibs(r *http.Request) ([]Library, error) {
 	known := !m.A.Cfg.AuthEnabled() || m.A.Cfg.FrontAuth
 	owner, ok := m.Libs.Owner(viewer, known)
 	if !ok {
+		// TODO(internal/libraries, internal/remote): hand-off until the libraries
+		// track resolves this library here; remove it then.
 		return nil, errToNode{"the viewer is identified by Node"}
 	}
 	if m.Libs.HasOwn(owner) {
+		// TODO(internal/libraries, internal/remote): hand-off until the libraries
+		// track resolves this library here; remove it then.
 		return nil, errToNode{"the viewer has libraries on their clusters"}
 	}
 	return m.Libs.ScopeAll(), nil
@@ -419,6 +424,8 @@ func (m *Module) file(w http.ResponseWriter, r *http.Request) error {
 				return err
 			}
 			if lib.ReadThrough {
+				// TODO(internal/libraries, internal/remote): hand-off until the libraries
+				// track resolves this library here; remove it then.
 				return errToNode{"the library reads originals through another host"}
 			}
 			if lib.SourceRoot == "" {
@@ -436,6 +443,8 @@ func (m *Module) file(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 		if lib.ReadThrough {
+			// TODO(internal/libraries, internal/remote): hand-off until the libraries
+			// track resolves this library here; remove it then.
 			return errToNode{"the library reads originals through another host"}
 		}
 		root, err := m.source(lib)
@@ -527,6 +536,8 @@ func (m *Module) download(w http.ResponseWriter, r *http.Request) error {
 				return err
 			}
 			if lib.ReadThrough {
+				// TODO(internal/libraries, internal/remote): hand-off until the libraries
+				// track resolves this library here; remove it then.
 				return errToNode{"the library reads originals through another host"}
 			}
 			if lib.SourceRoot == "" {
@@ -543,6 +554,8 @@ func (m *Module) download(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 		if lib.ReadThrough {
+			// TODO(internal/libraries, internal/remote): hand-off until the libraries
+			// track resolves this library here; remove it then.
 			return errToNode{"the library reads originals through another host"}
 		}
 		root, err := m.source(lib)
@@ -1051,6 +1064,8 @@ func (m *Module) labelLib(r *http.Request, b body, rel string) (Library, string,
 		return Library{}, "", err
 	}
 	if !ok {
+		// TODO(internal/libraries, internal/remote): hand-off until the libraries
+		// track resolves this library here; remove it then.
 		return Library{}, "", errToNode{"library " + want + " is not one of this host's"}
 	}
 	return lib, cleaned, nil
@@ -1205,5 +1220,6 @@ func (m *Module) job(w http.ResponseWriter, r *http.Request) error {
 		writeJSON(w, 404, map[string]string{"error": "no such job"})
 		return nil
 	}
+	// TODO(internal/index): hand-off until every job kind runs in Go.
 	return m.toNode(w, r, "a job of Node's")
 }
