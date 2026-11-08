@@ -115,6 +115,7 @@ func main() {
 
 	useOwnTitleBar(windowTitle)
 	app.restoreBarColor()
+	watchMacWindow()
 
 	err = wails.Run(&options.App{
 		Title:     windowTitle,

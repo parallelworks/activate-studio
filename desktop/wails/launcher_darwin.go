@@ -15,7 +15,7 @@ package main
 // What the window adds to the shared code: the bundle's own paths and data
 // folder, the launcher's command line flags passed through (--install,
 // --stop, --uninstall, --help), the app menu (About, Check for Updates, Run
-// Setup, Stop Background Server, Uninstall, Hide, Quit), Edit, View and
+// Setup, Stop Background Server, Uninstall, Hide, Hide Others, Quit), Edit, View and
 // Window menus, the About panel, and the reopen after an update, which
 // opens the bundle again once this process has ended.
 
@@ -289,6 +289,7 @@ func appMenu(a *App) *menu.Menu {
 	app.AddText("Uninstall "+windowTitle+"…", nil, func(*menu.CallbackData) { a.uninstall() })
 	app.AddSeparator()
 	app.AddText("Hide "+windowTitle, keys.CmdOrCtrl("h"), func(*menu.CallbackData) { wruntime.Hide(a.ctx) })
+	app.AddText("Hide Others", keys.Combo("h", keys.CmdOrCtrlKey, keys.OptionOrAltKey), func(*menu.CallbackData) { hideOthers() })
 	app.AddText("Show All", nil, func(*menu.CallbackData) { wruntime.Show(a.ctx) })
 	app.AddSeparator()
 	app.AddText("Quit "+windowTitle, keys.CmdOrCtrl("q"), func(*menu.CallbackData) { wruntime.Quit(a.ctx) })
@@ -374,6 +375,9 @@ func (a *App) uninstall() {
 		return
 	}
 	a.sup.Stop()
+	// As the Swift window did: the window stops keeping its frame, and
+	// with the data its web data and preferences go too.
+	forgetMacWindow(len(args) > 1)
 	if out, err := a.runLauncher(args...); err != nil {
 		_, _ = wruntime.MessageDialog(a.ctx, wruntime.MessageDialogOptions{Type: wruntime.ErrorDialog, Title: "Uninstall", Message: out})
 		return

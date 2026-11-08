@@ -15,3 +15,6 @@ func newLauncherServer(Config, func(ServerEvent)) serverRunner { return nil }
 func appMenu(*App) *menu.Menu                                  { return nil }
 func (a *App) reopenBundle() bool                              { return false }
 func macOptions() *mac.Options                                 { return nil }
+
+// watchMacWindow: the macOS window behaviours (macwindow_darwin.go).
+func watchMacWindow() {}

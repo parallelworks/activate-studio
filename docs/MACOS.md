@@ -294,20 +294,20 @@ The Go version (`STUDIO_SERVER=go-only`, the default of `deploy/mac/build_app.sh
 | --- | --- |
 | Runs `launcher.sh`, opens the address it prints, keeps the server on close | Same (`launcher_darwin.go`) |
 | Starting and failure pages, Try Again | Same (the shell's start page), plus the server log's end |
-| Open Logs on the failure page | Not yet |
+| Open Logs on the failure page | Same |
 | About, Check for Updates, Run Setup, Stop Background Server | Same menu items |
 | Uninstall, with the dry-run plan and the keep-data choice | Same (`launcher.sh --uninstall --dry-run`, then the chosen run) |
-| Hide, Hide Others, Show All, Quit; Edit menu; Minimize, Zoom, Close | Same, without Hide Others |
+| Hide, Hide Others, Show All, Quit; Edit menu; Minimize, Zoom, Close | Same |
 | Reload, Actual Size, Zoom In, Zoom Out, Enter Full Screen | Same (zoom through the page) |
 | Folder chooser, file open panel, alert and confirm dialogs | Same (the shell's bridge) |
 | Downloads to ~/Downloads, revealed in Finder | Same |
 | Reopen after an update that changed the window | Same: the bundle is opened again after this process ends |
-| Title bar in the page's color, light or dark ink | Not yet: the system title bar |
-| Microphone permission for dictation | Not yet (`NSMicrophoneUsageDescription` stays in Info.plist) |
-| Window size and place remembered | Not yet |
+| Title bar in the page's color, light or dark ink | Same (`titlebar_darwin.go`), from the page's theme-color tag, remembered for the next launch |
+| Microphone permission for dictation | Same: granted to the Studio's page (127.0.0.1) after macOS asks, refused elsewhere (`macwindow_darwin.go`) |
+| Window size and place remembered | Same, under the Swift window's autosave name, so they carry over from it |
 | Popup windows for Studio pages | Opened in the default browser |
 | Install offer when run from the disk image | Left to `launcher.sh` (`--install`) |
-| Purge of the window's own web data on uninstall | Not yet |
+| Purge of the window's own web data on uninstall | Same: the frame is forgotten, and with the data the web data and preferences are cleared |
 
 Code signing and notarization are as for the Swift window: `deploy/mac/sign_app.sh` signs every Mach-O file in the bundle (the Wails window with `app.plist`, `studio-server` with `server.plist`, `semantic-map`, the macOS `studio-remote` helper in `Resources/app/bin/remote/darwin-arm64`, the ONNX runtime library, GUFI's programs and libraries, tesseract and leptonica), then the bundle. The `mac-app` workflow's release path signs, notarizes and staples this build; on every other run its `hardened` job signs it with a throwaway identity and runs it, and `check_app.sh` then checks that every Mach-O file has the hardened runtime and the bundle's team and that `studio-server` carries its entitlement. A throwaway identity cannot show that the entitlement is enough, since macOS enforces the hardened runtime only under Apple's certificate chain; the release's own run of the signed app shows that. The releases from v1.180 on install a bundle that has `Resources/node/bin/node`, `Resources/app/server/dist/main.js` and `Resources/studio-run.sh` and the manifest's signature; the Go version carries stand-ins at the first two paths (docs/UPDATES.md, "The Go version").
 
