@@ -63,6 +63,14 @@ const NODE_DIRECT = new Map([
   // Its remote systems are stood in with setRemoteSpawn in the test's own
   // process; internal/maps runs its cases with a stand-in Spawn.
   ['libraryMaps.test.mjs', 'server-go/internal/maps (TestRemoteMap*), internal/userlibs (TestQueryOnlyHost)'],
+  // gufi_vt's remote command posts to this process's own gufiVtRoutes, and
+  // its cluster is stood in with setRemoteSpawn; the Go server answers its
+  // own statements' locations. internal/search runs the cases.
+  ['gufiVt.test.mjs', 'server-go/internal/search (TestQueryAcrossAsOneGufiVtStatement, TestSearchAcrossWithTheGufiVtSetting, TestGufiVtRoute, TestVtScript, TestCheckRemoteArgs, TestSplitCommandLine)'],
+  ['gufiVtSpaces.test.mjs', 'server-go/internal/search (TestGufiVtWithTheAppsPaths, TestVtScript)'],
+  // Its ssh hosts are stood in with setRemoteSpawn; internal/libapi runs
+  // the read-through route and viewer cases with a stand-in Spawn.
+  ['readOriginal.test.mjs', 'server-go/internal/libapi (TestReadThroughRoutesAndViewer)'],
 ])
 const direct = NODE_DIRECT.has(path.basename(process.argv[1] ?? ''))
 // The ports the Go servers take; another test process may hold one.

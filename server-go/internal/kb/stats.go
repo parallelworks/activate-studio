@@ -62,20 +62,11 @@ func (s *statsCache) forget() { s.mu.Lock(); s.m = nil; s.mu.Unlock() }
 
 var localThreads = strconv.Itoa(min(max(runtime.NumCPU(), 1), 16))
 
-// corpusStats counts a library's index here in one aggregate walk.
-func (m *Module) corpusStats(ctx context.Context, indexRoot string) (corpus, error) {
-	if !exists(filepath.Join(m.Roots.GufiBin, "gufi_query")) || !exists(indexRoot) {
-		return corpus{}, nil
-	}
-	m.stats.mu.Lock()
-	if hit, ok := m.stats.m[indexRoot]; ok && time.Since(hit.at) < 10*time.Minute {
-		m.stats.mu.Unlock()
-		return hit.c, nil
-	}
-	m.stats.mu.Unlock()
+// corpusStages is countCorpus's aggregate: totals and the file types in
+// one walk, summary rows keyed with a leading \x01.
+func corpusStages() []string {
 	ext := `lower(CASE WHEN name LIKE '%.%' THEN replace(name, rtrim(name, replace(name, '.', '')), '') ELSE '' END)`
-	res, err := m.Tags.Runner.Run(ctx, gufi.Command{Tool: gufi.ToolQuery, Timeout: 60 * time.Second, Args: []string{
-		"-n", localThreads, "-d", tagDelim, "-a", "1",
+	return []string{
 		"-I", "CREATE TABLE t (k TEXT, n INT64, b INT64);",
 		"-K", "CREATE TABLE agg (k TEXT, n INT64, b INT64);",
 		"-E", "INSERT INTO t SELECT " + ext + ", count(*), sum(size) FROM vrpentries GROUP BY 1; " +
@@ -83,14 +74,11 @@ func (m *Module) corpusStats(ctx context.Context, indexRoot string) (corpus, err
 			"INSERT INTO t SELECT char(1)||'dirs', count(*), 0 FROM vrsummary;",
 		"-J", "INSERT INTO agg SELECT * FROM t;",
 		"-G", "SELECT k, sum(n), sum(b) FROM agg GROUP BY k;",
-		indexRoot,
-	}})
-	if err != nil {
-		return corpus{}, err
 	}
-	if res.ExitCode != 0 && len(res.Stdout) == 0 {
-		return corpus{}, errors.New("gufi_query failed: " + firstNonEmpty(res.Stderr, "exit "+strconv.Itoa(res.ExitCode)))
-	}
+}
+
+// parseCorpus reads the aggregate's rows.
+func parseCorpus(stdout string) corpus {
 	c := corpus{Available: true, ByExt: []extCount{}}
 	num := func(s string) int64 {
 		f := settings.JSNumber(s)
@@ -99,7 +87,7 @@ func (m *Module) corpusStats(ctx context.Context, indexRoot string) (corpus, err
 		}
 		return int64(f)
 	}
-	for _, l := range strings.Split(string(res.Stdout), "\n") {
+	for _, l := range strings.Split(stdout, "\n") {
 		if l == "" {
 			continue
 		}
@@ -122,6 +110,33 @@ func (m *Module) corpusStats(ctx context.Context, indexRoot string) (corpus, err
 	}
 	sort.SliceStable(c.ByExt, func(i, j int) bool { return c.ByExt[i].Count > c.ByExt[j].Count })
 	c.ByExt = c.ByExt[:min(len(c.ByExt), 25)]
+	return c
+}
+
+// corpusStats counts a library's index in one aggregate walk: here, or
+// on the system a viewer's own library is on.
+func (m *Module) corpusStats(ctx context.Context, indexRoot string) (corpus, error) {
+	if strings.HasPrefix(indexRoot, remotePrefix) {
+		return m.remoteCorpus(ctx, indexRoot, corpusStages())
+	}
+	if !exists(filepath.Join(m.Roots.GufiBin, "gufi_query")) || !exists(indexRoot) {
+		return corpus{}, nil
+	}
+	m.stats.mu.Lock()
+	if hit, ok := m.stats.m[indexRoot]; ok && time.Since(hit.at) < 10*time.Minute {
+		m.stats.mu.Unlock()
+		return hit.c, nil
+	}
+	m.stats.mu.Unlock()
+	args := append(append([]string{"-n", localThreads, "-d", tagDelim, "-a", "1"}, corpusStages()...), indexRoot)
+	res, err := m.Tags.Runner.Run(ctx, gufi.Command{Tool: gufi.ToolQuery, Timeout: 60 * time.Second, Args: args})
+	if err != nil {
+		return corpus{}, err
+	}
+	if res.ExitCode != 0 && len(res.Stdout) == 0 {
+		return corpus{}, errors.New("gufi_query failed: " + firstNonEmpty(res.Stderr, "exit "+strconv.Itoa(res.ExitCode)))
+	}
+	c := parseCorpus(string(res.Stdout))
 	m.stats.mu.Lock()
 	if m.stats.m == nil {
 		m.stats.m = map[string]struct {

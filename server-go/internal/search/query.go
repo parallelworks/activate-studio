@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/apierr"
@@ -466,8 +467,8 @@ func mergeRows(rows []tagged, o *mergeOrd) []tagged {
 func jsNum(f float64) string { return strconv.FormatFloat(f, 'f', -1, 64) }
 
 // QueryScope is queryScope: a query on one library, or merged across
-// several. gufi_vt is not used: across several libraries the rows are
-// merged here (engine "merge").
+// several: across several, one gufi_vt statement where it can carry the
+// query (engine "gufi_vt"), else each library's rows merged here.
 func (e *Engine) QueryScope(ctx context.Context, body []byte, viewer libraries.Viewer, label string) (*QueryResult, error) {
 	libs, omittedList, err := e.Reg.Scope(libraryParam(body), viewer, label)
 	if err != nil {
@@ -540,42 +541,92 @@ func (e *Engine) QueryScope(ctx context.Context, body []byte, viewer libraries.V
 		}
 		return &QueryResult{Columns: cols, Rows: [][]string{}, hasRowLibrary: true, Failed: &failed, Engine: "merge", Omitted: om.Items()}, nil
 	}
-	type part struct {
-		rows []tagged
-		err  string
-		ok   bool
-	}
-	parts := make([]part, len(plans))
-	done := make(chan struct{}, len(plans))
-	for i, x := range plans {
-		go func(i int, x planned) {
-			defer func() { done <- struct{}{} }()
-			if !x.l.Remote() && !(e.GufiInstalled() && exists(x.l.IndexRoot)) {
-				parts[i] = part{err: "index not built yet"}
-				return
-			}
-			r, err := e.RunPlan(ctx, x.p, x.l, x.plan)
-			if err != nil {
-				parts[i] = part{err: jsSlice(err.Error(), 300)}
-				return
-			}
-			var rows []tagged
-			for _, row := range r.Rows {
-				rows = append(rows, tagged{x.l.ID, row})
-			}
-			parts[i] = part{rows: rows, ok: true}
-		}(i, x)
-	}
-	for range plans {
-		<-done
-	}
 	var rows []tagged
-	failed := []QueryFailure{}
-	for i, p := range parts {
-		if p.ok {
-			rows = append(rows, p.rows...)
+	var failed []QueryFailure
+	engine, mergeReason := "merge", ""
+	eligible, locatable := true, true
+	for _, x := range plans {
+		eligible = eligible && VtEligible(x.plan)
+	}
+	if eligible {
+		for _, x := range plans {
+			locatable = locatable && e.VtLocatable(x.l)
+		}
+	}
+	switch {
+	case !eligible:
+		mergeReason = "the query has a double quote outside a string, which gufi_vt cannot take"
+	case !locatable:
+		mergeReason = "a library's path cannot be given to gufi_vt"
+	case !e.GufiVtAvailable(ctx):
+		mergeReason = "this computer's GUFI has no gufi_vt with remote locations"
+	default:
+		// The outer ORDER BY is exact for numbers and timestamps; names, and
+		// grouped totals, are ordered here.
+		var pushed *VtOrder
+		if order != nil && order.groupBy < 0 && order.numeric {
+			pushed = &VtOrder{Col: order.col, Desc: order.desc, Limit: order.limit}
+		}
+		items := make([]VtItem, len(plans))
+		for i, x := range plans {
+			items[i] = VtItem{Lib: x.l, Plan: x.plan}
+		}
+		r, err := e.RunAcross(ctx, items, pushed)
+		if err == nil {
+			engine = "gufi_vt"
+			rows = []tagged{}
+			for _, t := range r.Rows {
+				rows = append(rows, tagged{t.ID, t.Row})
+			}
+			failed = []QueryFailure{}
+			for _, f := range r.Failed {
+				failed = append(failed, QueryFailure{f.Library, f.Error})
+			}
 		} else {
-			failed = append(failed, QueryFailure{plans[i].l.Label, p.err})
+			vtFallbacks.Add(1)
+			mergeReason = "gufi_vt failed: " + jsSlice(err.Error(), 200)
+			if e.Log != nil {
+				e.Log.Warn("gufi_vt query fell back to the per-library merge: " + err.Error())
+			}
+		}
+	}
+	if engine == "merge" {
+		type part struct {
+			rows []tagged
+			err  string
+			ok   bool
+		}
+		parts := make([]part, len(plans))
+		done := make(chan struct{}, len(plans))
+		for i, x := range plans {
+			go func(i int, x planned) {
+				defer func() { done <- struct{}{} }()
+				if !x.l.Remote() && !(e.GufiInstalled() && exists(x.l.IndexRoot)) {
+					parts[i] = part{err: "index not built yet"}
+					return
+				}
+				r, err := e.RunPlan(ctx, x.p, x.l, x.plan)
+				if err != nil {
+					parts[i] = part{err: jsSlice(err.Error(), 300)}
+					return
+				}
+				var rows []tagged
+				for _, row := range r.Rows {
+					rows = append(rows, tagged{x.l.ID, row})
+				}
+				parts[i] = part{rows: rows, ok: true}
+			}(i, x)
+		}
+		for range plans {
+			<-done
+		}
+		rows, failed = nil, []QueryFailure{}
+		for i, p := range parts {
+			if p.ok {
+				rows = append(rows, p.rows...)
+			} else {
+				failed = append(failed, QueryFailure{plans[i].l.Label, p.err})
+			}
 		}
 	}
 	labels := map[string]string{}
@@ -615,7 +666,7 @@ func (e *Engine) QueryScope(ctx context.Context, body []byte, viewer libraries.V
 		}
 	}
 	res := &QueryResult{Columns: cols, Rows: [][]string{}, hasRowLibrary: true, ElapsedMS: time.Since(t0).Milliseconds(),
-		Truncated: len(merged) > gufi.MaxRows, Failed: &failed, Engine: "merge", Omitted: om.Items()}
+		Truncated: len(merged) > gufi.MaxRows, Failed: &failed, Engine: engine, Omitted: om.Items()}
 	for i, t := range merged {
 		if i >= gufi.MaxRows {
 			break
@@ -629,10 +680,17 @@ func (e *Engine) QueryScope(ctx context.Context, body []byte, viewer libraries.V
 		res.Rows = append(res.Rows, append([]string{name}, t.row...))
 		res.RowLibraries = append(res.RowLibraries, t.id)
 	}
-	if len(plans) > 1 {
-		res.MergeReason = e.mergeReason(ctx, plans[0].plan)
+	if engine == "merge" && len(plans) > 1 {
+		res.MergeReason = mergeReason
 	}
 	return res, nil
 }
+
+// vtFallbacks counts gufi_vt statements that failed and were answered by
+// the merge instead (vtFallbackCount).
+var vtFallbacks atomic.Int64
+
+// VtFallbackCount is vtFallbackCount.
+func VtFallbackCount() int64 { return vtFallbacks.Load() }
 
 func exists(p string) bool { _, err := os.Stat(p); return err == nil }

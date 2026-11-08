@@ -24,6 +24,9 @@ type Command struct {
 	Args    []string
 	Stdin   []byte
 	Timeout time.Duration // 0: the runner's
+	// Env is NAME=value pairs added to the executor's environment for this
+	// run only (gufiEnv(extra)).
+	Env []string
 }
 
 // Result is a finished run. A nonzero exit is not an error: gufi_query
@@ -113,6 +116,9 @@ func (l *LocalExecutor) Exec(ctx context.Context, c Command) (Result, error) {
 	cmd.Env = l.Env
 	if cmd.Env == nil {
 		cmd.Env = EnvFor(l.Bin, os.Environ(), nil, EnvOptions{})
+	}
+	if len(c.Env) > 0 {
+		cmd.Env = append(append([]string{}, cmd.Env...), c.Env...)
 	}
 	if c.Stdin != nil {
 		cmd.Stdin = bytes.NewReader(c.Stdin)

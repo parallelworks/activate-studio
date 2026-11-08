@@ -380,6 +380,10 @@ func (c *jobCtx) names(src, staging string, maxLevel0 bool) (string, error) {
 		name: "gufi_dir2index", cmd: filepath.Join(ix.P.GufiBin, "gufi_dir2index"), args: args, env: ix.gufiEnv(nil, false),
 		onDenied: func(paths []string) {
 			c.log(fmt.Sprintf("%d folder(s) could not be read and are left out: %s", len(paths), strings.Join(first(paths, 5), ", ")))
+			if ix.deniedTo != nil {
+				ix.deniedTo(paths)
+				return
+			}
 			ix.recordDenied(paths)
 		},
 		onErr: func(line string) {
@@ -399,6 +403,11 @@ func (c *jobCtx) names(src, staging string, maxLevel0 bool) (string, error) {
 	openIndex(built, locked)
 	if len(unmade) > 0 {
 		c.log(fmt.Sprintf("%d folder(s) could not be indexed and are left out: %s", len(unmade), strings.Join(first(unmade, 5), ", ")))
+		if ix.deniedTo != nil {
+			ix.deniedTo(unmade)
+			ph.finish("")
+			return built, nil
+		}
 		var was []string
 		if d := ix.ReadDenied(); d != nil {
 			was = d.Folders

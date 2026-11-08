@@ -134,7 +134,7 @@ func Of(a *app.App) *Module {
 	e := search.Of(a)
 	cfg := a.Cfg
 	m := New(e.Reg, e, e.Pool, a.Gufi, cfg.KBRoot, cfg.GufiIndex, filepath.Join(cfg.IndexDir, "semantic-map"), cfg.IndexBase, a.Log)
-	m.Keys = ownerKeys{a: a}
+	m.Keys = e.Keys
 	m.BuildLog = os.Getenv("STUDIO_TEST_MAP_BUILDS")
 	m.Viewer = func(r *http.Request) (libraries.Viewer, error) { return viewerOf(a, r) }
 	// The main folder's map after an index job here (index.Indexer's hook):
@@ -163,25 +163,6 @@ func New(reg *libraries.Registry, eng *search.Engine, pool *remote.Pool, local *
 		RemoteFiles: remoteMapFiles,
 		states:      map[string]*state{}, neighbors: map[string]*neighborCache{},
 	}
-}
-
-// ownerKeys is keyOf(owner): the owner's personal key from the key store;
-// the deployment's on a Studio without sign-in.
-type ownerKeys struct{ a *app.App }
-
-func (k ownerKeys) KeyOf(owner string) string {
-	if owner == "single" {
-		if k.a.Cfg.AuthEnabled() {
-			return ""
-		}
-		return platform.Of(k.a).GatewayKey()
-	}
-	if f := k.a.Providers.PersonalCred; f != nil {
-		if key, base, ok := f(owner, ""); ok && base == "" {
-			return key
-		}
-	}
-	return ""
 }
 
 // viewerOf is req.user?.id ?? null as Node's routes read it, through the
