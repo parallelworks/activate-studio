@@ -54,6 +54,20 @@ func New(cfg config.Config, log *slog.Logger, node *url.URL, front *auth.Front) 
 	return NewWithApp(cfg, log, app.New(cfg, log, nil, n), node, front)
 }
 
+// AttachNode points the server at Node once it is up: unported routes go
+// to it, and App.Node() and the App's value calls reach it. main.go builds
+// the server and the tracks' routes first, so every module's Node
+// environment (bridge.RegisterNodeEnv) is in before Node starts. Call it
+// before serving.
+func (s *Server) AttachNode(node *url.URL) {
+	if node == nil {
+		return
+	}
+	s.node = newProxy(node, s.log, s.front)
+	s.App.SetNodeHandler(s.node)
+	s.App.AttachNode(app.NewNode(node, s.front, s.cfg.Auth.Header))
+}
+
 // NewWithApp makes the handler for an App made by the caller (main.go).
 func NewWithApp(cfg config.Config, log *slog.Logger, a *app.App, node *url.URL, front *auth.Front) *Server {
 	s := &Server{cfg: cfg, log: log, ported: http.NewServeMux(), static: newCompressCache(), front: front, App: a}
@@ -253,6 +267,9 @@ func newProxy(target *url.URL, log *slog.Logger, front *auth.Front) *httputil.Re
 			// Node sees the host the browser asked for, as it does today.
 			pr.Out.Host = pr.In.Host
 			pr.SetXForwarded()
+			// Only the Go server's own value calls (app.Node.Do, which go
+			// to Node directly) carry this; a client's is dropped.
+			pr.Out.Header.Del(app.InternalHeader)
 			if front != nil {
 				front.ToNode(pr.Out, auth.UserOf(pr.In))
 			}

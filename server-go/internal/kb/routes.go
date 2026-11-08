@@ -91,20 +91,18 @@ func Register(mux *http.ServeMux, a *app.App) {
 	// An empty overlay beside an index that still carries labels is a lost
 	// overlay; recover once the index is up. With Node behind the Go
 	// server, Node's own timer does it (tags.ts).
-	if a.NodeFree() {
-		a.OnStart("files: label overlay recovery", func(ctx context.Context) {
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(20 * time.Second):
+	a.OnStart("files: label overlay recovery", func(ctx context.Context) {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(20 * time.Second):
+		}
+		if a.NodeFree() && m.Tags.Overlay.Empty() {
+			if n := m.Tags.Recover(ctx); n > 0 {
+				a.Log.Warn("label overlay was empty; entries recovered from the index", "adopted", n)
 			}
-			if m.Tags.Overlay.Empty() {
-				if n := m.Tags.Recover(ctx); n > 0 {
-					a.Log.Warn("label overlay was empty; entries recovered from the index", "adopted", n)
-				}
-			}
-		})
-	}
+		}
+	})
 }
 
 // Routes registers the handlers.
@@ -151,6 +149,9 @@ func (e errToNode) Error() string { return "to node: " + e.why }
 // toNode passes the request on to Node, logging why.
 func (m *Module) toNode(w http.ResponseWriter, r *http.Request, why string) error {
 	m.A.Log.Info("files: to node", "path", r.URL.Path, "why", why)
+	// A deliberate hand-off for a library whose files only Node reaches,
+	// marked as such for the front harness's strict mode.
+	r.Header.Set(app.InternalHeader, "1")
 	m.A.Node().ServeHTTP(w, r)
 	return nil
 }

@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -87,5 +88,26 @@ func TestNodeFreeAnswers501ForUnported(t *testing.T) {
 	s.App.Node().ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/x", nil))
 	if w.Code != 501 {
 		t.Errorf("App.Node() without Node: %d", w.Code)
+	}
+}
+
+func TestClientCannotClaimAnInternalCall(t *testing.T) {
+	var got string
+	node := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.Header.Get("X-Studio-Internal") + "|" + r.Header.Get("X-Other")
+	}))
+	defer node.Close()
+	cfg, _ := config.Load(func(k string) string {
+		return map[string]string{"INDEX_BASE": t.TempDir(), "KB_ROOT": t.TempDir(), "STUDIO_WEB_DIST": t.TempDir()}[k]
+	})
+	s := New(cfg, slog.New(slog.DiscardHandler), nil, nil)
+	u, _ := url.Parse(node.URL)
+	s.AttachNode(u)
+	r := httptest.NewRequest("GET", "/api/kb/tree", nil)
+	r.Header.Set("X-Studio-Internal", "1")
+	r.Header.Set("X-Other", "kept")
+	s.ServeHTTP(httptest.NewRecorder(), r)
+	if got != "|kept" {
+		t.Fatalf("Node saw %q", got)
 	}
 }

@@ -32,18 +32,18 @@ const BridgePrefix = "/internal/go/"
 func init() { bridge.RegisterPrivatePrefix(BridgePrefix) }
 
 type nodeBridge struct {
-	base   *url.URL
+	base   func() *url.URL
 	client *http.Client
 }
 
 // Index jobs wait behind each other, and a large subtree takes minutes.
-func newBridge(base *url.URL) *nodeBridge {
+func newBridge(base func() *url.URL) *nodeBridge {
 	return &nodeBridge{base: base, client: &http.Client{Timeout: 6 * time.Hour}}
 }
 
 func (b *nodeBridge) post(ctx context.Context, path string, body any, out any) error {
 	raw, _ := json.Marshal(body)
-	req, err := http.NewRequestWithContext(ctx, "POST", b.base.JoinPath(path).String(), bytes.NewReader(raw))
+	req, err := http.NewRequestWithContext(ctx, "POST", b.base().JoinPath(path).String(), bytes.NewReader(raw))
 	if err != nil {
 		return err
 	}

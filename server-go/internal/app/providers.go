@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 )
@@ -118,46 +119,123 @@ func defaultProviders(a *App) Providers {
 			return map[string]any{"path": file, "bytes": bytes}
 		},
 	}
-	if a.NodeAPI == nil {
-		p.Libraries = func(r *http.Request, kbLabel, viewer string) ([]json.RawMessage, error) {
-			return []json.RawMessage{a.primaryOnly(kbLabel)}, nil
+	free := freeProviders(a, p)
+	node := nodeProviders(a, p)
+	// Node may be attached after the routes are registered (main.go starts
+	// it once every module has added its environment), so the choice is
+	// made at each call.
+	on := func() *Node { return a.nodeAPI() }
+	p.Libraries = func(r *http.Request, l, v string) ([]json.RawMessage, error) {
+		if on() != nil {
+			return node.Libraries(r, l, v)
 		}
-		p.PlatformAvailable = func(*http.Request, string) bool { return false }
-		p.GatewayConfigured = func(*http.Request) bool { return p.GatewayKey() != "" }
-		p.StopRagEndpoint = func(*http.Request) {}
-		p.SetupIndexState = func(*http.Request, bool, bool) (SetupIndex, error) {
-			return SetupIndex{Job: json.RawMessage("null"), EarlierIndex: json.RawMessage("null")}, nil
-		}
-		p.StartBuild = func(*http.Request) (json.RawMessage, error) { return nil, &Unported{"the index build"} }
-		p.IndexDir = func(*http.Request, string) error { return nil }
-		p.ApplyLabels = func(context.Context, *http.Request, []string, []string, []string) error { return nil }
-		p.IndexDirMS = func(context.Context, string) (int64, error) { return 0, nil }
-		p.IndexRootDB = func(context.Context) (int64, error) { return 0, nil }
-		p.Changed = func(context.Context, ...string) {}
-		return p
+		return free.Libraries(r, l, v)
 	}
-	n := a.NodeAPI
+	p.PlatformAvailable = func(r *http.Request, v string) bool {
+		if on() != nil {
+			return node.PlatformAvailable(r, v)
+		}
+		return free.PlatformAvailable(r, v)
+	}
+	p.GatewayConfigured = func(r *http.Request) bool {
+		if on() != nil {
+			return node.GatewayConfigured(r)
+		}
+		return free.GatewayConfigured(r)
+	}
+	p.StopRagEndpoint = func(r *http.Request) {
+		if on() != nil {
+			node.StopRagEndpoint(r)
+		}
+	}
+	p.SetupIndexState = func(r *http.Request, indexed, files bool) (SetupIndex, error) {
+		if on() != nil {
+			return node.SetupIndexState(r, indexed, files)
+		}
+		return free.SetupIndexState(r, indexed, files)
+	}
+	p.StartBuild = func(r *http.Request) (json.RawMessage, error) {
+		if on() != nil {
+			return node.StartBuild(r)
+		}
+		return free.StartBuild(r)
+	}
+	p.IndexDir = func(r *http.Request, rel string) error {
+		if on() != nil {
+			return node.IndexDir(r, rel)
+		}
+		return free.IndexDir(r, rel)
+	}
+	p.ApplyLabels = func(ctx context.Context, r *http.Request, paths, add, remove []string) error {
+		if on() != nil {
+			return node.ApplyLabels(ctx, r, paths, add, remove)
+		}
+		return free.ApplyLabels(ctx, r, paths, add, remove)
+	}
+	p.IndexDirMS = func(ctx context.Context, rel string) (int64, error) {
+		if on() != nil {
+			return node.IndexDirMS(ctx, rel)
+		}
+		return free.IndexDirMS(ctx, rel)
+	}
+	p.IndexRootDB = func(ctx context.Context) (int64, error) {
+		if on() != nil {
+			return node.IndexRootDB(ctx)
+		}
+		return free.IndexRootDB(ctx)
+	}
+	p.Changed = func(ctx context.Context, what ...string) {
+		if on() != nil {
+			node.Changed(ctx, what...)
+		}
+	}
+	return p
+}
+
+// freeProviders are the defaults with no Node: the plainest true answers.
+func freeProviders(a *App, p Providers) Providers {
+	p.Libraries = func(r *http.Request, kbLabel, viewer string) ([]json.RawMessage, error) {
+		return []json.RawMessage{a.primaryOnly(kbLabel)}, nil
+	}
+	p.PlatformAvailable = func(*http.Request, string) bool { return false }
+	p.GatewayConfigured = func(*http.Request) bool { return p.GatewayKey() != "" }
+	p.StopRagEndpoint = func(*http.Request) {}
+	p.SetupIndexState = func(*http.Request, bool, bool) (SetupIndex, error) {
+		return SetupIndex{Job: json.RawMessage("null"), EarlierIndex: json.RawMessage("null")}, nil
+	}
+	p.StartBuild = func(*http.Request) (json.RawMessage, error) { return nil, &Unported{"the index build"} }
+	p.IndexDir = func(*http.Request, string) error { return nil }
+	p.ApplyLabels = func(context.Context, *http.Request, []string, []string, []string) error { return nil }
+	p.IndexDirMS = func(context.Context, string) (int64, error) { return 0, nil }
+	p.IndexRootDB = func(context.Context) (int64, error) { return 0, nil }
+	p.Changed = func(context.Context, ...string) {}
+	return p
+}
+
+// nodeProviders are the defaults with Node behind: Node's own answers.
+func nodeProviders(a *App, p Providers) Providers {
+	n := a.nodeAPI
 	p.Libraries = func(r *http.Request, _, _ string) ([]json.RawMessage, error) {
 		var c struct {
 			Libraries []json.RawMessage `json:"libraries"`
 		}
-		err := n.Do(r, "GET", "/api/config", nil, &c)
+		err := n().Do(r, "GET", "/api/config", nil, &c)
 		return c.Libraries, err
 	}
 	p.PlatformAvailable = func(r *http.Request, _ string) bool {
 		var c struct {
 			Platform bool `json:"platform"`
 		}
-		return n.Do(r, "GET", "/api/config", nil, &c) == nil && c.Platform
+		return n().Do(r, "GET", "/api/config", nil, &c) == nil && c.Platform
 	}
 	p.GatewayConfigured = func(r *http.Request) bool {
 		var c struct {
 			DeploymentCredential bool `json:"deploymentCredential"`
 		}
-		return n.Do(r, "GET", "/api/settings", nil, &c) == nil && c.DeploymentCredential
+		return n().Do(r, "GET", "/api/settings", nil, &c) == nil && c.DeploymentCredential
 	}
 	p.StopRagEndpoint = func(r *http.Request) {
-		if err := n.Do(r, "POST", "/api/rag/endpoint/stop", map[string]any{}, nil); err != nil {
+		if err := n().Do(r, "POST", "/api/rag/endpoint/stop", map[string]any{}, nil); err != nil {
 			a.Log.Warn("rag endpoint stop", "err", err.Error())
 		}
 	}
@@ -173,7 +251,7 @@ func defaultProviders(a *App) Providers {
 			} `json:"primary"`
 			Job json.RawMessage `json:"job"`
 		}
-		if err := n.Do(r, "GET", q, nil, &s); err != nil {
+		if err := n().Do(r, "GET", q, nil, &s); err != nil {
 			return SetupIndex{}, err
 		}
 		out := SetupIndex{Job: orNull(s.Job), EarlierIndex: orNull(s.Primary.EarlierIndex), Files: s.Primary.Files}
@@ -181,19 +259,19 @@ func defaultProviders(a *App) Providers {
 	}
 	p.StartBuild = func(r *http.Request) (json.RawMessage, error) {
 		var job json.RawMessage
-		err := n.Do(r, "POST", "/api/index/build", map[string]any{}, &job)
+		err := n().Do(r, "POST", "/api/index/build", map[string]any{}, &job)
 		return job, err
 	}
 	p.IndexDir = func(r *http.Request, rel string) error {
-		return n.Do(r, "POST", "/api/index/dir", map[string]any{"path": rel}, nil)
+		return n().Do(r, "POST", "/api/index/dir", map[string]any{"path": rel}, nil)
 	}
 	p.ApplyLabels = func(ctx context.Context, r *http.Request, paths, add, remove []string) error {
 		if remove == nil {
 			remove = []string{}
 		}
-		return n.Do(r, "POST", "/api/kb/tags", map[string]any{"paths": paths, "add": add, "remove": remove}, nil)
+		return n().Do(r, "POST", "/api/kb/tags", map[string]any{"paths": paths, "add": add, "remove": remove}, nil)
 	}
-	b := newBridge(n.Base)
+	b := newBridge(func() *url.URL { return n().Base })
 	p.IndexDirMS = func(ctx context.Context, rel string) (int64, error) { return b.index(ctx, "dir", rel) }
 	p.IndexRootDB = func(ctx context.Context) (int64, error) { return b.index(ctx, "root", "") }
 	p.Changed = func(ctx context.Context, what ...string) { b.changed(ctx, what) }
