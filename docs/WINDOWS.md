@@ -6,7 +6,7 @@ There is no native Windows build of the Studio. On a Windows computer it runs as
 
 ## Requirements
 
-- Windows 11, with WSL2 and WSLg, which shows Linux windows on the Windows desktop. Windows 10 has not been tried.
+- Windows 11, with WSL2 and WSLg, which shows Linux windows on the Windows desktop. This is the tested target. Windows 10 22H2 with WSL from the Microsoft Store may work, but is untested.
 - Virtualization turned on in the computer's firmware (Task Manager, Performance, CPU shows it).
 - Administrator rights once, to install WSL. On a computer managed by an organization, group policy can block WSL (error 0x800704ec); ask the administrator first. The Studio itself needs no administrator rights.
 - 16 GB of memory or more. WSL2 takes half of the computer's memory by default.
