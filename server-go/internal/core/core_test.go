@@ -2,6 +2,8 @@ package core
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -467,8 +469,34 @@ func TestModelSTL(t *testing.T) {
 	if e.do("GET", "/api/kb/model?path=../x.stl", nil).status != 400 || e.do("GET", "/api/kb/model?path=a.txt", nil).status != 415 {
 		t.Fatal("refusals")
 	}
+	// No prepared occt-import-js module and no Node: a STEP file is a 501.
+	t.Setenv("STUDIO_OCCT_WASM", filepath.Join(e.home, "none.wasm"))
 	os.WriteFile(filepath.Join(e.kb, "part.step"), []byte("ISO-10303-21;"), 0o644)
 	if s := e.do("GET", "/api/kb/model?path=part.step", nil); s.status != 501 {
-		t.Fatalf("STEP without Node: %d", s.status)
+		t.Fatalf("STEP without the module or Node: %d", s.status)
+	}
+}
+
+// A STEP file is meshed here, without Node, into the cache file Node
+// writes (internal/stepmesh/testdata/golden.json).
+func TestModelSTEPWithoutNode(t *testing.T) {
+	wasm := os.Getenv("STUDIO_OCCT_WASM")
+	src, err := os.ReadFile("../../../server/node_modules/occt-import-js/test/testfiles/rounded-cube/rounded-cube.step")
+	if wasm == "" || err != nil {
+		t.Skip("STUDIO_OCCT_WASM unset or occt-import-js's test files not installed")
+	}
+	e := newEnv(t, map[string]string{"STUDIO_OCCT_WASM": wasm})
+	os.WriteFile(filepath.Join(e.kb, "part.step"), src, 0o644)
+	r := e.do("GET", "/api/kb/model?path=part.step", nil)
+	if r.status != 200 {
+		t.Fatalf("%d %s", r.status, r.raw)
+	}
+	sum := sha256.Sum256(r.raw)
+	if hex.EncodeToString(sum[:]) != "70049c6e6cb7b6f401328035ca02b07289d64b9a77ceae2f3198f8b440408310" {
+		t.Fatalf("not Node's cache file: %d bytes", len(r.raw))
+	}
+	os.WriteFile(filepath.Join(e.kb, "junk.stp"), []byte("not a step file"), 0o644)
+	if j := e.do("GET", "/api/kb/model?path=junk.stp", nil); j.status != 422 || j.body["error"] != "could not convert STEP geometry" {
+		t.Fatalf("%d %s", j.status, j.raw)
 	}
 }

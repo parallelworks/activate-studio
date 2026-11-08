@@ -1,0 +1,60 @@
+{
+ "kb": [
+  {
+   "status": 400,
+   "contentType": "application/json; charset=utf-8",
+   "body": "eyJlcnJvciI6Im5vIHN1Y2ggcGVyc29uYSJ9"
+  },
+  {
+   "status": 401,
+   "contentType": "application/json; charset=utf-8",
+   "body": "eyJlcnJvciI6InBhdGggZXNjYXBlcyB0aGUga25vd2xlZGdlIGJhc2Ugcm9vdCJ9"
+  },
+  {
+   "status": 402,
+   "contentType": "application/json; charset=utf-8",
+   "body": "eyJlcnJvciI6IjxiPiZhbXA7PC9iPiAncXVvdGVkJyBcImRvdWJsZVwiIGJhY2tcXHNsYXNoIC9zbGFzaCJ9"
+  },
+  {
+   "status": 403,
+   "contentType": "application/json; charset=utf-8",
+   "body": "eyJlcnJvciI6ImxpbmVcbmJyZWFrXHR0YWJccnJldHVyblxiYmFja1xmZm9ybSJ9"
+  },
+  {
+   "status": 404,
+   "contentType": "application/json; charset=utf-8",
+   "body": "eyJlcnJvciI6Ilx1MDAwMFx1MDAwMVx1MDAxZn8ifQ=="
+  },
+  {
+   "status": 405,
+   "contentType": "application/json; charset=utf-8",
+   "body": "eyJlcnJvciI6InNlcOKAqHBhcmHigKllbmQifQ=="
+  },
+  {
+   "status": 406,
+   "contentType": "application/json; charset=utf-8",
+   "body": "eyJlcnJvciI6ImNhZsOpIOKYgyDwn5OBIO+/vSJ9"
+  },
+  {
+   "status": 407,
+   "contentType": "application/json; charset=utf-8",
+   "body": "eyJlcnJvciI6IiJ9"
+  },
+  {
+   "status": 408,
+   "contentType": "application/json; charset=utf-8",
+   "body": "eyJlcnJvciI6IkxpYiBoYXMgbm8gZmlsZXMgb24gdGhpcyBob3N0OyBpdCBjYW4gYmUgc2VhcmNoZWQgYW5kIGRlc2NyaWJlZCBidXQgbm90IG9wZW5lZCJ9"
+  }
+ ],
+ "validation": {
+  "message": "body must have required property 'x'",
+  "status": 400,
+  "contentType": "application/json; charset=utf-8",
+  "body": "eyJlcnJvciI6ImJvZHkgbXVzdCBoYXZlIHJlcXVpcmVkIHByb3BlcnR5ICd4JyJ9"
+ },
+ "internal": {
+  "status": 500,
+  "contentType": "application/json; charset=utf-8",
+  "body": "eyJlcnJvciI6ImludGVybmFsIGVycm9yIChyZWYgPHJlZj4pIn0="
+ }
+}
