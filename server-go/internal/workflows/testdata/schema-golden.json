@@ -1,0 +1,96 @@
+[
+ {
+  "ok": false,
+  "errors": [
+   "/jobs/a/steps/0/uses: must be equal to constant",
+   "/jobs/a/steps/0/uses: must be equal to constant",
+   "/jobs/a/steps/0/uses: must be equal to constant",
+   "/jobs/a/steps/0/uses: must be equal to constant",
+   "/jobs/a/steps/0/uses: must be equal to constant",
+   "/jobs/a/steps/0/uses: must match pattern \"^marketplace/\"",
+   "/jobs/a/steps/0/uses: must match pattern \"^workflow/\"",
+   "/jobs/a/steps/0/uses: must match pattern \"^github/\"",
+   "/jobs/a/steps/0/uses: must match pattern \"^gitlab/\"",
+   "/jobs/a/steps/0/uses: must match a schema in anyOf"
+  ]
+ },
+ {
+  "ok": false,
+  "errors": [
+   "/jobs: must NOT have additional properties (\"A\")"
+  ]
+ },
+ {
+  "ok": false,
+  "errors": [
+   "/jobs/a/steps/0/run: must be string"
+  ]
+ },
+ {
+  "ok": false,
+  "errors": [
+   "/jobs/a/steps/0: must NOT have additional properties (\"bogus\")"
+  ]
+ },
+ {
+  "ok": false,
+  "errors": [
+   "(document root): must NOT have additional properties (\"extra\")"
+  ]
+ },
+ {
+  "ok": false,
+  "errors": [
+   "/on/execute/inputs/x/type: must be equal to constant",
+   "/on/execute/inputs/x: must have required property 'clusterName'",
+   "/on/execute/inputs/x/type: must be equal to constant",
+   "/on/execute/inputs/x: must have required property 'clusterName'",
+   "/on/execute/inputs/x: must have required property 'namespace'",
+   "/on/execute/inputs/x/type: must be equal to constant",
+   "/on/execute/inputs/x: must have required property 'clusterName'",
+   "/on/execute/inputs/x: must have required property 'namespace'",
+   "/on/execute/inputs/x/type: must be equal to constant",
+   "/on/execute/inputs/x: must have required property 'clusterName'",
+   "/on/execute/inputs/x: must have required property 'namespace'",
+   "/on/execute/inputs/x/type: must be equal to constant",
+   "/on/execute/inputs/x: must have required property 'clusterName'",
+   "/on/execute/inputs/x: must have required property 'namespace'",
+   "/on/execute/inputs/x/type: must be equal to constant",
+   "/on/execute/inputs/x: must have required property 'clusterName'",
+   "/on/execute/inputs/x: must have required property 'namespace'",
+   "/on/execute/inputs/x/type: must be equal to constant",
+   "/on/execute/inputs/x: must have required property 'clusterName'",
+   "/on/execute/inputs/x: must have required property 'namespace'"
+  ]
+ },
+ {
+  "ok": false,
+  "errors": [
+   "/on/execute/inputs/$meta/layout: must have required property 'field'",
+   "/on/execute/inputs/$meta/layout: must NOT have additional properties (\"children\")",
+   "/on/execute/inputs/$meta/layout/type: must be equal to constant",
+   "/on/execute/inputs/$meta/layout/type: must be equal to constant",
+   "/on/execute/inputs/$meta/layout: must have required property 'columns'",
+   "/on/execute/inputs/$meta/layout/type: must be equal to constant",
+   "/on/execute/inputs/$meta/layout: must have required property 'label'",
+   "/on/execute/inputs/$meta/layout/type: must be equal to constant",
+   "/on/execute/inputs/$meta/layout: must match exactly one schema in oneOf"
+  ]
+ },
+ {
+  "ok": false,
+  "errors": [
+   "/jobs/a/needs: must match pattern \"^\\${{.*}}$\""
+  ]
+ },
+ {
+  "ok": false,
+  "errors": [
+   "(document root): must be object"
+  ]
+ },
+ {
+  "ok": true,
+  "errors": []
+ }
+]

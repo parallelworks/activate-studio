@@ -1,8 +1,5 @@
 import crypto from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
-import { platformAvailable } from '../workflowsTab.js'
-import { cliCredential, credentialContextName, ensureFreshAccess } from '../access.js'
-import { GATEWAY_BASE, PW_API_KEY, PW_CLI } from '../config.js'
 import { executeTool } from './tools.js'
 
 /**
@@ -34,10 +31,6 @@ async function op(name: string, b: Body, req: any): Promise<unknown> {
     // The platform values the loop reads from the pw CLI's context, which
     // Node still owns (access.ts): the gateway, the CLI credential, whether
     // a platform answers for this viewer, and the pw CLI chosen.
-    case 'access': {
-      if (b.fresh) await ensureFreshAccess(Number(b.fresh) || undefined)
-      return { gatewayBase: GATEWAY_BASE, deploymentKey: PW_API_KEY || cliCredential(), contextName: credentialContextName(), platform: platformAvailable(req.user?.id), cli: PW_CLI }
-    }
     // A tool not ported to Go yet.
     case 'execute':
       return executeTool(String(b.name), String(b.args ?? ''), b.ctx ?? {})

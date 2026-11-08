@@ -5,6 +5,7 @@ import { execFile } from 'node:child_process'
 import { INDEX_BASE, PW_CLI } from './config.js'
 import { appendConversationNote } from './conversations.js'
 import { listSessions, sessionEmbed, sessionKeyFor, sessionOfRun } from './sessions.js'
+import { callFront, goOwnsPlatform } from './frontBridge.js'
 
 /**
  * Every workflow run the assistant launches, kept on disk and followed to
@@ -32,6 +33,10 @@ const TERMINAL = new Set(['completed', 'error', 'failed', 'canceled', 'cancelled
 export const isTerminalRunState = (s: string): boolean => TERMINAL.has(String(s).toLowerCase())
 
 let cache: Map<string, RunRecord> | null = null
+/** The registry file as last read; the Go server appends to it when it
+ *  owns the watcher (frontBridge.ts), so a change is read again. */
+let cacheStamp = ''
+const stampOf = () => { try { const st = fs.statSync(FILE); return `${st.size}:${st.mtimeMs}:${st.ino}` } catch { return '' } }
 /** Runs whose session has already been shown in their conversation. */
 const sessionShown = new Set<string>()
 const timers = new Map<string, NodeJS.Timeout>()
@@ -47,8 +52,10 @@ export function setRunsCli(fn: Cli): void { cli = fn }
 export function setRunsLog(fn: (msg: string) => void): void { log = fn }
 
 function load(): Map<string, RunRecord> {
-  if (cache) return cache
+  if (cache && (!goOwnsPlatform() || stampOf() === cacheStamp)) return cache
+  cacheStamp = stampOf()
   cache = new Map()
+  sessionShown.clear()
   try {
     for (const line of fs.readFileSync(FILE, 'utf8').split('\n')) {
       if (!line.trim()) continue
@@ -69,6 +76,11 @@ function append(ev: Record<string, unknown>): void {
 
 export function recordRun(rec: { slug: string; workflow: string; resource?: string | null; conversationId?: string | null; owner?: string | null }): RunRecord {
   const r: RunRecord = { slug: rec.slug, workflow: rec.workflow, resource: rec.resource ?? null, conversationId: rec.conversationId ?? null, owner: rec.owner ?? null, launchedAt: new Date().toISOString(), state: 'running', endedAt: null }
+  if (goOwnsPlatform()) {
+    // The Go server records and follows it; this server reads the registry.
+    void callFront('/internal/platform/runs', r).catch(e => log(`run ${r.slug}: the Go server did not record it: ${String((e as Error).message)}`))
+    return r
+  }
   load().set(r.slug, r)
   append({ t: 'launch', ...r })
   watchRun(r.slug)
@@ -109,6 +121,8 @@ async function showRunSession(slug: string): Promise<void> {
   if (!key) return
   let rows
   try { rows = await listSessions(key) } catch { return }
+  // Polls overlap when the platform answers slower than the poll interval.
+  if (sessionShown.has(slug)) return
   const s = rows.find(x => sessionOfRun(x, slug) && x.status === 'running')
   if (!s) return
   sessionShown.add(slug)

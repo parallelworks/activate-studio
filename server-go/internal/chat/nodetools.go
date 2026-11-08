@@ -252,17 +252,6 @@ func (n nodeTools) Held(r *http.Request, conversationID string) ([]conversations
 	return hs, nil
 }
 
-func (n nodeTools) Access(r *http.Request, freshMS int) (*Access, error) {
-	if n.a.NodeFree() || n.a.NodeAPI == nil {
-		return envAccess(), nil
-	}
-	var a Access
-	if err := n.call(r, "access", map[string]any{"fresh": freshMS}, &a); err != nil {
-		return envAccess(), err
-	}
-	return &a, nil
-}
-
 // envAccess is GATEWAY_BASE and the deployment credential from the
 // environment and the pw CLI's credentials file, without Node.
 func envAccess() *Access {

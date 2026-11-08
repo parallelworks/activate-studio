@@ -1,6 +1,7 @@
 // The Workflows tab: a curated set of platform workflows, listed as tiles
-// and run from their own forms. The pw CLI is replaced with a stub that
-// records each call, so these run without a platform.
+// and run from their own forms. The platform and the pw CLI are a loopback
+// fake (fakePlatform.mjs) that records each call, so these run without a
+// platform, against Node or the Go server in front of it.
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
@@ -11,7 +12,6 @@ process.env.KB_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'wf-kb-'))
 process.env.INDEX_BASE = fs.mkdtempSync(path.join(os.tmpdir(), 'wf-ix-'))
 process.env.PW_API_KEY = 'deployment-key'
 process.env.STUDIO_WORKFLOWS = 'batch-job,missing-one'
-process.env.PW_GATEWAY_URL = 'https://platform.test/api/openai/v1'
 
 // The platform API returns a workflow's YAML with its inputs in declared
 // order; `pw workflows get -o json` returns them sorted. Only ordered-job
@@ -25,7 +25,9 @@ const LAID_OUT = { on: { execute: { inputs: {
     $meta: { layout: { type: 'stack', children: [{ type: 'field', field: 'high' }, { type: 'field', field: 'low' }] } },
     low: { type: 'number', label: 'Low' }, high: { type: 'number', label: 'High' } } },
 } } }, jobs: { main: { steps: [{ run: 'echo hi' }] } } }
-globalThis.fetch = async url => {
+const { fakePlatform } = await import('./fakePlatform.mjs')
+const fake = await fakePlatform()
+fake.fetch = async url => {
   if (String(url) === 'https://platform.test/api/workflows/laid-out') return Response.json({ name: 'laid-out', displayName: 'Laid out', yaml: LAID_OUT, configurations: [] })
   if (String(url) === 'https://platform.test/api/workflows/ordered-job') return Response.json({ name: 'ordered-job', displayName: 'Ordered', yaml: ORDERED, configurations: [] })
   return new Response('not found', { status: 404 })
@@ -33,7 +35,7 @@ globalThis.fetch = async url => {
 
 const { default: Fastify } = await import('fastify')
 const { sanitizedErrorHandler } = await import('../dist/routes.js')
-const { workflowsTabRoutes, setWorkflowsCli, resetWorkflowsTabForTests, resolveStudioRefs, firstJson, recordSource } = await import('../dist/workflowsTab.js')
+const { workflowsTabRoutes, resetWorkflowsTabForTests, resolveStudioRefs, firstJson, recordSource } = await import('../dist/workflowsTab.js')
 
 const YAML = `
 on:
@@ -51,7 +53,7 @@ jobs:
       - run: echo hi
 `
 const calls = []
-setWorkflowsCli(async args => {
+fake.cli = async args => {
   calls.push(args)
   const [, verb, name] = args
   if (verb === 'ls') return JSON.stringify([
@@ -62,7 +64,7 @@ setWorkflowsCli(async args => {
   if (verb === 'get') return JSON.stringify({ name, displayName: 'Batch job', yaml: YAML, configurations: [{ name: 'small', inputs: { steps: 1 } }] })
   if (verb === 'run') return args.includes('--dry-run') ? 'inputs are valid' : JSON.stringify({ slug: 'batch-job-00001' })
   throw new Error(`unexpected ${args.join(' ')}`)
-})
+}
 
 const app = Fastify()
 app.setErrorHandler(sanitizedErrorHandler(app))
@@ -155,13 +157,20 @@ test('an expired platform credential is reported as such, not as an internal err
   const other = platformError(new Error('2026-10-02T14:33:54Z [ERROR] invalid workflow name\nmore'))
   assert.equal(other.status ?? other.statusCode, 502)
   assert.equal(other.message, 'The platform did not answer: invalid workflow name')
-  // A dropped connection is the network, said as such (net.ts).
+  // A dropped connection is the network, said as such (net.ts); the
+  // wording for a platform on a remote host is in the Go test
+  // TestPlatformErrorNamesTheCause, as this one is on loopback.
   const offline = platformError(new Error('2026-10-02T14:33:54Z [ERROR] connection reset by peer\nmore'))
   assert.equal(offline.status ?? offline.statusCode, 503)
-  assert.match(offline.message, /^Could not reach platform\.test\. This computer may be offline/)
+  const host = new URL(process.env.PW_GATEWAY_URL).host
+  assert.ok(offline.message.includes(host), offline.message)
 })
 
-test('with the deployment credential expired, the catalog lists the viewer\'s own account', async () => {
+// A signed-in viewer set by an onRequest hook is Node's alone, and the Go
+// server keeps the deployment's list cached across the file's cases.
+test('with the deployment credential expired, the catalog lists the viewer\'s own account', {
+  skip: process.env.STUDIO_TEST_FRONT && 'served by Go: server-go/internal/workflows TestCatalogFallsBackToTheViewersOwnAccount',
+}, async () => {
   const { setUserKey } = await import('../dist/credentials.js')
   setUserKey('viewer-1', 'viewer-key', false)
   const app2 = Fastify()
@@ -170,11 +179,11 @@ test('with the deployment credential expired, the catalog lists the viewer\'s ow
   await app2.register(workflowsTabRoutes)
   await app2.ready()
   resetWorkflowsTabForTests()
-  setWorkflowsCli(async (args, key) => {
+  fake.cli = async (args, key) => {
     if (key === 'deployment-key') throw new Error("2026-10-02T14:33:54Z [ERROR] Authentication has expired. Please authenticate again using 'pw auth'.")
     if (args[1] === 'ls') return JSON.stringify([{ name: 'mine-only', displayName: 'Mine only' }])
     throw new Error(`unexpected ${args.join(' ')}`)
-  })
+  }
   const res = await app2.inject({ method: 'GET', url: '/api/workflows/catalog' })
   assert.equal(res.statusCode, 200)
   const body = res.json()

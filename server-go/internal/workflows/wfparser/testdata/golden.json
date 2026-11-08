@@ -1,0 +1,1303 @@
+{
+ "docs": [
+  {
+   "file": "forms.yaml",
+   "dump": {
+    "out": "permissions:\n  - '*'\nsessions:\n  session:\n    useTLS: false\n    redirect: true\n'on':\n  execute:\n    inputs:\n      $meta:\n        wizard:\n          flatten: false\n      header1:\n        type: header\n        text: Cluster\n        size: 20\n      banner:\n        size: 14\n        text: A label without a type\n      cluster:\n        type: compute-clusters\n        label: Cluster\n        autoselect: true\n      clusters:\n        type: compute-clusters\n        multiple: true\n      store:\n        type: bucket\n      itype:\n        type: instance-type\n        provider: aws\n      color:\n        type: color-picker\n      notes:\n        type: string\n        textarea: true\n        default: |\n          line one\n          line two\n      cores:\n        type: number\n        slider: true\n        min: 1\n        max: 64\n        step: 1\n      count:\n        type: number\n        default: 2\n      mode:\n        type: dropdown\n        option-key: provider\n        default: fast\n        options:\n          - value: fast\n          - value: slow\n            label: Slow lane\n          - value: 3\n          - plain\n      acct:\n        type: slurm-accounts\n        resource: ${{ inputs.cluster }}\n      qos:\n        type: slurm-qos\n      part:\n        type: slurm-partitions\n      queue:\n        type: pbs-queues\n      groups:\n        type: organization-groups\n      disk:\n        type: storage\n        subtype: lustre\n      disk2:\n        type: storage\n        subType: nfs\n      skipme:\n        type: string\n        ignore: true\n        default: x\n      expr:\n        type: string\n        ignore: 'true'\n        default: ${{ inputs.mode }}\n      advanced:\n        type: group\n        label: Advanced\n        collapsed: true\n        items:\n          threads:\n            type: number\n            default: 4\n          hidden:\n            type: string\n            ignore: true\n      flat:\n        type: group\n        flatten: true\n        items:\n          a:\n            type: string\n          b:\n            type: boolean\n            default: false\n      ignoredgroup:\n        type: group\n        ignore: true\n        items:\n          inner:\n            type: string\n          deep:\n            type: group\n            flatten: true\n            items:\n              deeper:\n                type: string\n      envs:\n        type: list\n        items-collapsible: true\n        template:\n          key:\n            type: string\n          secret:\n            type: string\n            ignore: true\n          where:\n            type: compute-clusters\n      plainlist:\n        type: list\n        options:\n          name:\n            type: string\n      wizard1:\n        type: step\n        options:\n          s1:\n            type: string\n          s2:\n            type: string\n            ignore: true\n      section:\n        type: object\n        template:\n          x:\n            type: string\n          'y':\n            type: string\n            ignore: true\njobs:\n  setup:\n    steps:\n      - name: Named step\n        run: echo hi\n      - run: |\n\n          # a comment line that is long enough to be cut at sixty-four characters exactly here\n          echo two\n      - uses: marketplace/checkout\n      - subworkflow: other\n      - {}\n  build:\n    needs:\n      - setup\n    steps:\n      - run: make\n  test:\n    needs:\n      - build\n    steps:\n      - run: make test\n  deploy:\n    needs:\n      - test\n      - setup\n    steps: []\n"
+   },
+   "hasInputs": true,
+   "form": {
+    "out": {
+     "$meta": {
+      "wizard": {
+       "flatten": false
+      }
+     },
+     "header1": {
+      "type": "label",
+      "text": "Cluster",
+      "size": 20
+     },
+     "banner": {
+      "size": 14,
+      "type": "label",
+      "label": "A label without a type"
+     },
+     "cluster": {
+      "type": "compute-clusters",
+      "label": "Cluster",
+      "autoselect": true
+     },
+     "clusters": {
+      "type": "compute-clusters",
+      "multiple": true
+     },
+     "store": {
+      "type": "bucket"
+     },
+     "itype": {
+      "type": "instances",
+      "provider": "aws"
+     },
+     "color": {
+      "type": "color"
+     },
+     "notes": {
+      "type": "textarea",
+      "textarea": true,
+      "default": "line one\nline two\n"
+     },
+     "cores": {
+      "type": "range",
+      "min": 1,
+      "max": 64,
+      "step": 1
+     },
+     "count": {
+      "type": "number",
+      "default": 2
+     },
+     "mode": {
+      "type": "dropdown",
+      "default": "fast",
+      "options": [
+       {
+        "value": "fast",
+        "label": "fast"
+       },
+       {
+        "value": "slow",
+        "label": "Slow lane"
+       },
+       {
+        "value": 3
+       },
+       "plain"
+      ],
+      "depends_on": "provider"
+     },
+     "acct": {
+      "type": "dynamicAccountDropdown",
+      "resource": "${{ inputs.cluster }}"
+     },
+     "qos": {
+      "type": "dynamicQOSDropdown"
+     },
+     "part": {
+      "type": "dynamicPartitionDropdown"
+     },
+     "queue": {
+      "type": "dynamicPbsQueuesDropdown"
+     },
+     "groups": {
+      "type": "groups"
+     },
+     "disk": {
+      "type": "storage",
+      "subtype": "lustre",
+      "subType": "lustre"
+     },
+     "disk2": {
+      "type": "storage",
+      "subType": "nfs"
+     },
+     "skipme": {
+      "type": "string",
+      "ignore": true,
+      "default": "x"
+     },
+     "expr": {
+      "type": "string",
+      "ignore": "true",
+      "default": "${{ inputs.mode }}"
+     },
+     "advanced": {
+      "type": "object",
+      "label": "Advanced",
+      "collapsed": true,
+      "options": {
+       "threads": {
+        "type": "number",
+        "default": 4
+       },
+       "hidden": {
+        "type": "string",
+        "ignore": true
+       }
+      }
+     },
+     "flat": {
+      "type": "group",
+      "flatten": true,
+      "options": {
+       "a": {
+        "type": "string"
+       },
+       "b": {
+        "type": "boolean",
+        "default": false
+       }
+      }
+     },
+     "ignoredgroup": {
+      "type": "object",
+      "ignore": true,
+      "options": {
+       "inner": {
+        "type": "string"
+       },
+       "deep": {
+        "type": "group",
+        "flatten": true,
+        "options": {
+         "deeper": {
+          "type": "string"
+         }
+        }
+       }
+      }
+     },
+     "envs": {
+      "type": "list",
+      "itemsCollapsible": true,
+      "options": {
+       "key": {
+        "type": "string"
+       },
+       "secret": {
+        "type": "string",
+        "ignore": true
+       },
+       "where": {
+        "type": "compute-clusters"
+       }
+      }
+     },
+     "plainlist": {
+      "type": "list",
+      "options": {
+       "name": {
+        "type": "string"
+       }
+      }
+     },
+     "wizard1": {
+      "type": "step",
+      "options": {
+       "s1": {
+        "type": "string"
+       },
+       "s2": {
+        "type": "string",
+        "ignore": true
+       }
+      }
+     },
+     "section": {
+      "type": "object",
+      "template": {
+       "x": {
+        "type": "string"
+       },
+       "y": {
+        "type": "string",
+        "ignore": true
+       }
+      }
+     }
+    }
+   },
+   "labels": {
+    "setup": {
+     "out": [
+      "Named step",
+      "# a comment line that is long enough to be cut at sixty-four cha...",
+      "marketplace/checkout",
+      "subworkflow",
+      "Step 4"
+     ]
+    },
+    "build": {
+     "out": [
+      "make"
+     ]
+    },
+    "test": {
+     "out": [
+      "make test"
+     ]
+    },
+    "deploy": {
+     "out": []
+    }
+   },
+   "deps": {
+    "setup": {
+     "out": []
+    },
+    "build": {
+     "out": [
+      "setup"
+     ]
+    },
+    "test": {
+     "out": [
+      "build",
+      "setup"
+     ]
+    },
+    "deploy": {
+     "out": [
+      "test",
+      "setup",
+      "build"
+     ]
+    }
+   },
+   "submit": [
+    {
+     "out": {
+      "header1": null,
+      "cluster": "pw://alice/user-workspace",
+      "clusters": [
+       "pw://c1",
+       "pw://bob/c2",
+       null
+      ],
+      "store": "pw://carol/b1",
+      "expr": "${{ inputs.mode }}",
+      "advanced": {
+       "threads": 8
+      },
+      "a": "A",
+      "b": true,
+      "envs": [
+       {
+        "key": "K",
+        "where": "pw://alice/w1"
+       },
+       "raw"
+      ],
+      "plainlist": [
+       {
+        "name": "n"
+       }
+      ],
+      "wizard1": {
+       "s1": "one"
+      },
+      "section": {
+       "x": 1
+      },
+      "extra": 5
+     }
+    },
+    {
+     "out": {
+      "cluster": "pw://alice/solo",
+      "store": {
+       "name": "nouser"
+      },
+      "envs": {
+       "key": "K"
+      },
+      "wizard1": {}
+     }
+    }
+   ]
+  },
+  {
+   "file": "dump.yaml",
+   "dump": {
+    "out": "'0': zero\n'1': one\n'123': numeric key\n'on': 'on'\n'yes': 'yes'\n'no': 'n'\nnul:\ntilde:\nempty: ''\nspaces: \"   \"\nnum: '123'\noctal: '0755'\nhex: '0x1F'\nfloat: '1.5'\nexp: '1e3'\ndot: '.5'\ninf: '.inf'\ndate: '2026-11-08'\nbaddate: 2026-13-45\nstamp: '2026-11-08T10:00:00Z'\nmerge: '<<'\neq: '='\ncolon: 'a: b'\ncolonend: 'a:'\nurlish: http://example.org/x?y=1#frag\nhash: 'a #b'\nhash2: a#b\nlead: '- item'\nq: ?x\ndash: -x\nstar: '*x'\namp: '&x'\nbang: '!x'\npct: '%x'\nat: '@x'\ntick: '`x'\nquote: it's\ndq: say \"hi\"\nbrace: '{a}'\nbracket: '[a]'\ncomma: a, b\ntrail: 'trailing '\nleadsp: ' leading'\ntab: \"a\\tb\"\ncr: \"a\\rb\"\nnbsp: \"a\\_b\"\nbom: \"\\uFEFFx\"\nctrl: \"a\\x01b\"\nesc: \"a\\eb\"\nuni: héllo wörld\nemoji: rocket 🚀\ndoc: ---\ndots: ... x\nml: |\n  one\n  two\nmlstrip: |-\n  one\n  two\nmlkeep: |+\n  one\n  two\n\nmllead: |2\n    indented\n  next\nmlleadnl: |\n\n\n  after blank\nmltab: \"one\\n\\ttwo\\n\"\nmlcr: \"one\\r\\ntwo\\n\"\nnl: \"\\n\"\n'true': true\n'false': false\nint: 42\nneg: -7\nbig: 12345678901234567000\nsmall: 0.000001\ntiny: 1.e-7\npi: 3.14159\nnegzero: -0.0\nemptymap: {}\nemptyseq: []\nnested:\n  - []\n  - {}\n  - - a\n    - b\n  - k: v\n    k2:\n      - 1\n      -\n  -\n  - ''\n? \"multi\\nline key\"\n: v\n'-1': minus\n'': empty key\n' sp': space key\n'a: b': colon key\n"
+   },
+   "hasInputs": false,
+   "form": {
+    "out": null
+   },
+   "labels": {},
+   "deps": {},
+   "submit": []
+  },
+  {
+   "file": "../../../../../deploy/workflow.yaml",
+   "dump": {
+    "out": "permissions:\n  - '*'\n'on':\n  execute:\n    inputs:\n      resource_and_execution:\n        label: Resource & Execution\n        type: group\n        collapsed: false\n        items:\n          resource:\n            label: Resource Target\n            type: compute-clusters\n            autoselect: true\n            optional: false\n          scheduler:\n            label: Submit as a Scheduler Job\n            type: boolean\n            default: false\n            hidden: ${{ inputs.resource_and_execution.resource.schedulerType == '' }}\n            tooltip: |\n              On, the whole stack runs as one batch job on a compute node,\n              submitted in the resource's scheduler dialect (Slurm or PBS),\n              optionally with a vLLM model serve on the node's GPUs; the app\n              ends with the walltime and relaunches reuse the corpus, index,\n              and session names. Off, the app runs on the login node and\n              outlives the workflow. Scheduler placement runs the container\n              source only.\n      slurm:\n        label: Slurm Job\n        type: group\n        collapsed: false\n        hidden: ${{ inputs.resource_and_execution.resource.schedulerType != 'slurm' || inputs.resource_and_execution.scheduler == false }}\n        items:\n          account:\n            label: Account\n            type: slurm-accounts\n            resource: ${{ inputs.resource_and_execution.resource }}\n            optional: true\n            ignore: ${{ inputs.resource_and_execution.resource.schedulerType != 'slurm' || inputs.resource_and_execution.scheduler == false }}\n            tooltip: Scheduler account for the job (--account).\n          partition:\n            label: Partition\n            type: slurm-partitions\n            resource: ${{ inputs.resource_and_execution.resource }}\n            optional: true\n            ignore: ${{ inputs.resource_and_execution.resource.schedulerType != 'slurm' || inputs.resource_and_execution.scheduler == false }}\n            tooltip: Partition with the GPUs (--partition). Empty uses the cluster default.\n          qos:\n            label: Quality of Service\n            type: slurm-qos\n            resource: ${{ inputs.resource_and_execution.resource }}\n            optional: true\n            ignore: ${{ inputs.resource_and_execution.resource.schedulerType != 'slurm' || inputs.resource_and_execution.scheduler == false }}\n            tooltip: QOS for the job (--qos), where the site requires one.\n          walltime:\n            label: Walltime\n            type: string\n            default: '02:00:00'\n            tooltip: The stack ends with the job (--time). Relaunching reuses the corpus, index, and session names.\n          scheduler_directives:\n            label: Extra Scheduler Directives\n            type: string\n            default: ''\n            optional: true\n            tooltip: Semicolon-separated sbatch directives without the\n      pbs:\n        label: PBS Job\n        type: group\n        collapsed: false\n        hidden: ${{ inputs.resource_and_execution.resource.schedulerType != 'pbs' || inputs.resource_and_execution.scheduler == false }}\n        items:\n          account:\n            label: Account\n            type: string\n            default: ''\n            optional: true\n            tooltip: Allocation for the job (-A).\n          queue:\n            label: Queue\n            type: string\n            default: ''\n            optional: true\n            tooltip: Queue for the job (-q). Empty uses the cluster default.\n          walltime:\n            label: Walltime\n            type: string\n            default: '02:00:00'\n            tooltip: The stack ends with the job (-l walltime=). Relaunching reuses the corpus, index, and session names.\n          scheduler_directives:\n            label: Extra Scheduler Directives\n            type: string\n            default: -l select=1:ngpus=1\n            optional: true\n            tooltip: Semicolon-separated qsub directives without the\n      session_settings:\n        label: Session\n        type: group\n        collapsed: false\n        items:\n          session_name:\n            label: Session Name\n            type: string\n            default: studio\n            tooltip: Session and endpoint name, and also the URL subdomain, so keep it stable across relaunches. Shell variables are expanded, so a name like studio-${USER} gives each person their own session and URL where several people launch the same workflow.\n          unique_suffix:\n            label: Append Port to Session Name\n            type: boolean\n            default: false\n            tooltip: Appends the app port to the session name so each launch gets a unique URL. Leave off for a stable URL that survives relaunches.\n          session_method:\n            label: Session Method\n            type: dropdown\n            default: web\n            options:\n              - label: Web (endpoint URL)\n                value: web\n              - label: E2E test (verify & tear down)\n                value: e2e\n              - label: Cleanup (stop everything from prior launches)\n                value: cleanup\n            tooltip: |\n              Web     → pw endpoints http exposes the app at a root URL.\n              E2E     → launch everything, assert HTTP 200 at /healthz, tear down, exit.\n              Cleanup → stop every process prior launches left on the node, then exit.\n      app_settings:\n        label: App & Bundle\n        type: group\n        collapsed: true\n        items:\n          app_name:\n            label: App Name\n            type: string\n            default: Studio\n            tooltip: Product name shown in the interface (APP_NAME).\n          icon_path:\n            label: Brand Icon Path\n            type: string\n            default: ''\n            optional: true\n            tooltip: Image used as the interface brand icon and favicon (APP_ICON). Either an https URL, or an absolute path on the resource, in which case stage the file first (for a container deployment it must sit under a bind-mounted directory, such as a .branding folder inside the knowledge base).\n          icon_path_dark:\n            label: Brand Icon Path (dark mode)\n            type: string\n            default: ''\n            optional: true\n            tooltip: Icon variant for dark mode; same rules as the light icon. Empty reuses the light icon.\n          banner_text:\n            label: Classification Banner\n            type: string\n            default: ''\n            optional: true\n            tooltip: Banner text across the top of the app, e.g. the CUI marking. The platform draws its own banner around an embedded session, so this one appears only when the app is opened on its own; editable later in Settings.\n          banner_color:\n            label: Classification Banner Color\n            type: string\n            default: ''\n            optional: true\n            tooltip: Banner background as\n          suggested_prompts:\n            label: Chat Starter Prompts\n            type: string\n            default: ''\n            optional: true\n            tooltip: Semicolon-separated example questions shown on the empty chat page. Empty keeps the app defaults; editable later in Settings.\n          workdir:\n            label: Work Directory\n            type: string\n            default: ${HOME}/studio-work\n            tooltip: Directory on the resource where the app is unpacked, built, and run.\n          source:\n            label: App Source\n            type: dropdown\n            default: github\n            options:\n              - label: Container (Apptainer image; pinned runtime, no build on the resource)\n                value: container\n              - label: GitHub (clone and build on the resource)\n                value: github\n              - label: Bundle (bucket or pre-staged; for air-gapped systems)\n                value: bundle\n            tooltip: |\n              Container → run a prebuilt Apptainer image (deploy/app.def) that\n              carries Node, Python, GUFI, and the embedding model, so nothing is\n              compiled on the resource and host differences stop mattering.\n              GitHub → clone the repository on the resource and build there (needs\n              outbound HTTPS to github.com and nodejs.org; Node is fetched\n              automatically when absent).\n              Bundle → self-contained tarball from deploy/make_bundle.sh, pulled from\n              the bucket or pre-staged at <workdir>/bundle-prestage.tar.gz; nothing\n              is fetched from the internet.\n          container_dir:\n            label: Container Scratch Directory\n            type: string\n            default: /tmp/studio-container\n            hidden: ${{ inputs.app_settings.source != 'container' }}\n            tooltip: Where the image and its expanded sandbox live on the resource. Keep this on node-local disk, since it is derived from the image and costs nothing to recreate, while a shared filesystem charges for the space and extracts far more slowly.\n          image_path:\n            label: Container Image\n            type: string\n            default: ''\n            optional: true\n            hidden: ${{ inputs.app_settings.source != 'container' }}\n            tooltip: Path to the .sif on the resource, a platform bucket URI (pw://user/bucket/studio.sif), or a library/docker URI the container runtime can pull. Several may be listed, separated by semicolons, and the first that works is used, so a shared copy can name a bucket behind it. Empty looks for studio.sif in the work directory.\n          repo_url:\n            label: Repository URL\n            type: string\n            default: https://github.com/parallelworks/activate-studio\n            hidden: ${{ inputs.app_settings.source == 'bundle' }}\n            tooltip: Repository to clone. For a private repository, embed a token (https://<token>@github.com/...) or install a deploy key on the resource.\n          git_ref:\n            label: Git Ref\n            type: string\n            default: main\n            hidden: ${{ inputs.app_settings.source == 'bundle' }}\n            tooltip: Branch, tag, or commit to check out.\n          rundir:\n            label: Run Directory\n            type: string\n            default: ${PW_PARENT_JOB_DIR}\n            hidden: true\n          bundlebucket:\n            label: Bundle Bucket\n            type: bucket\n            optional: true\n            tooltip: Bucket holding the deployment bundle built by deploy/make_bundle.sh. If the platform bucket API is unavailable, pre-stage the bundle on the resource as <workdir>/bundle-prestage.tar.gz instead; the pull step falls back to it.\n          self_url:\n            label: Public Studio URL\n            type: string\n            default: ''\n            optional: true\n            tooltip: The session URL this deployment is reached at (e.g. https://my-studio.example). Campaign agents running on other systems use it to reach the task board; empty keeps the board local-only.\n          bundle_file:\n            label: Bundle File\n            type: string\n            default: studio-bundle.tar.gz\n            tooltip: Filename of the bundle in the bucket. Bump to roll to a newer build.\n          refresh_software:\n            label: Load Latest Bundle\n            type: boolean\n            default: false\n            tooltip: Clobber the cached bundle and re-pull the latest from the bucket.\n          office_runtime:\n            label: LibreOffice Runtime (bucket)\n            type: string\n            optional: true\n            tooltip: Bucket path of an office-runtime.tar.gz (the official LibreOffice Linux binaries repacked as a relocatable directory). Pulled and cached once per host when soffice is absent, like the Node runtime, so Word, PowerPoint and Excel files render as pages. Leave empty to fall back to extracted-text previews.\n          app_port:\n            label: App Port\n            type: number\n            default: 0\n            hidden: true\n      kb_settings:\n        label: Knowledge Base\n        type: group\n        collapsed: false\n        items:\n          kb_root:\n            label: Knowledge Base Directory\n            type: string\n            default: ${HOME}/knowledge-base\n            tooltip: The directory to index and serve. Created if missing; point it at an existing corpus to work over it.\n          index_base:\n            label: Index Directory\n            type: string\n            default: ''\n            optional: true\n            tooltip: Where the search index, settings, and credential store live. Empty keeps it inside the work directory; set an absolute path (e.g. a /shared location) to survive work-directory rebuilds.\n          starter_dirs:\n            label: Starter Directories\n            type: string\n            default: ''\n            optional: true\n            tooltip: Comma-separated directory names for a knowledge base that is new or empty (e.g. papers,software,datasets). Empty uses the default set, and a knowledge base that already holds content is never touched.\n          starter_bundle:\n            label: Starter Knowledge Base (bucket)\n            type: string\n            default: ''\n            optional: true\n            tooltip: Tarball pulled and extracted into an empty knowledge base on first launch, so a fresh deployment starts with a working corpus. Takes a bucket URI, a path on the resource, or several of either separated by semicolons, in which case the first that works is used. A knowledge base that already has content is never touched. Scheduler placement only.\n          kb_label:\n            label: Knowledge Base Label\n            type: string\n            default: Knowledge Base\n            tooltip: Display name in the interface.\n          mission:\n            label: Mission and Context\n            type: string\n            optional: true\n            tooltip: One short paragraph on what this Studio is for; injected into the assistant's system prompt and editable later in Settings.\n          libraries:\n            label: Additional Libraries\n            type: string\n            optional: true\n            tooltip: |\n              Other indexes this Studio mounts read only, as a JSON list. Each entry\n              needs an id and an indexRoot (a GUFI tree); a label and a sourceRoot\n              (where the files are, when they are on this host) are optional.\n              Example: [{\"id\":\"scratch\",\"label\":\"Scratch\",\"indexRoot\":\"/gufi/scratch\"}]\n          sections:\n            label: Visible Sections\n            type: string\n            optional: true\n            tooltip: |\n              Comma-separated list of the sections to show, from chat, library,\n              search, query, overview, history, agents, workflows. Leave empty for all of them.\n              \"library,search,overview\" makes the Studio an index viewer with no assistant.\n          workflows:\n            label: Offered Workflows\n            type: string\n            optional: true\n            tooltip: |\n              Comma-separated workflows to offer as tiles on the Workflows tab, in\n              order: account workflow names, marketplace/<slug>, or\n              github.com/<owner>/<repo>[/path][@ref]. Each viewer runs them under\n              their own account.\n              Administrators can also pick them in Settings, Workflows, from the\n              workflows on the account this Studio is deployed under.\n          build_gufi:\n            label: Build GUFI Index Engine\n            type: boolean\n            default: true\n            tooltip: |\n              Build GUFI from the bundled source (needs cmake and a C compiler on the\n              resource; takes a few minutes the first time, cached afterwards). When\n              off or when the build fails, the app still runs with filesystem browsing\n              and grep-backed search.\n          run_index:\n            label: Index on Launch\n            type: boolean\n            default: true\n            tooltip: Run the full index (metadata, text extraction, embeddings) before starting. Turn off for an instant relaunch on an unchanged corpus.\n      model_settings:\n        label: Models (optional)\n        type: group\n        collapsed: true\n        items:\n          posture:\n            label: Deployment Posture\n            type: dropdown\n            default: single\n            options:\n              - label: Single user (no identity, deployment credential only)\n                value: single\n              - label: Multi-user, shared credential (no key collection)\n                value: multi-shared\n              - label: Multi-user, personal keys allowed\n                value: multi-personal\n              - label: Multi-user, personal keys required\n                value: multi-strict\n            tooltip: |\n              Single user runs with no platform identity and never creates the\n              per-user credential store. Multi-user postures verify the platform\n              identity header; shared keeps everyone on the deployment credential\n              with key collection hard-disabled, personal lets users add their own\n              model keys, strict requires them for chat. Multi-user postures need\n              the platform host below.\n          platform_host:\n            label: Platform Host (multi-user postures)\n            type: string\n            default: ''\n            optional: true\n            tooltip: Platform host for identity verification, e.g. activate.parallel.works; the JWKS path is appended automatically. Ignored for the single-user posture.\n          pw_api_key:\n            label: Platform API key\n            tooltip: A platform API key from your ACTIVATE account (Account, API keys), not an AI gateway or model key. The deployment's endpoint agent, CLI calls, and campaign runner authenticate with it, so the host never depends on a pw login that expires.\n            type: string\n            default: ''\n            optional: true\n          gateway_url:\n            label: Gateway Base URL\n            type: string\n            default: ''\n            optional: true\n            tooltip: Override the OpenAI-compatible endpoint base URL (defaults to the ACTIVATE platform gateway).\n          serve:\n            label: Serve a Model in the Job\n            type: boolean\n            default: false\n            hidden: ${{ inputs.resource_and_execution.scheduler != true }}\n            tooltip: Scheduler placement only. Start vLLM on the job's GPUs and point the Studio at it; off, the Studio uses the gateway settings above.\n          model_dir:\n            label: Model Directory\n            type: string\n            default: ''\n            optional: true\n            hidden: ${{ inputs.resource_and_execution.scheduler != true }}\n            tooltip: HuggingFace-format model directory on the resource. Empty derives <workdir>/models/<model id>. Downloaded on the login node when missing and a model id is set; a read-only shared copy is served in place, so one copy covers every user.\n          hf_model_id:\n            label: HuggingFace Model ID\n            type: string\n            default: ''\n            optional: true\n            hidden: ${{ inputs.resource_and_execution.scheduler != true }}\n            tooltip: Downloaded into the model directory when it does not exist yet.\n          hf_token:\n            label: HuggingFace Token\n            type: string\n            default: ''\n            optional: true\n            hidden: ${{ inputs.resource_and_execution.scheduler != true }}\n          served_name:\n            label: Served Model Name\n            type: string\n            default: model\n            hidden: ${{ inputs.resource_and_execution.scheduler != true }}\n          vllm_image:\n            label: vLLM Image (bucket or path)\n            type: string\n            default: ''\n            optional: true\n            hidden: ${{ inputs.resource_and_execution.scheduler != true }}\n            tooltip: Bucket URI or path of the vLLM Apptainer image, or several separated by semicolons, the first that works being used. Staged beside the Studio image and cached on the resource.\n          gpu_ids:\n            label: GPU IDs\n            type: string\n            default: '0'\n            hidden: ${{ inputs.resource_and_execution.scheduler != true }}\n            tooltip: CUDA_VISIBLE_DEVICES for the model server. The Studio itself needs no GPU.\n          vllm_args:\n            label: vLLM Arguments\n            type: string\n            default: --tensor-parallel-size 1 --gpu-memory-utilization 0.92 --max-model-len 32768\n            hidden: ${{ inputs.resource_and_execution.scheduler != true }}\n            tooltip: Tool-call and reasoning parsers are model-specific; a Gemma 4 model wants --tool-call-parser gemma4 --reasoning-parser gemma4 and its chat template, a Qwen model --tool-call-parser qwen3_coder --reasoning-parser qwen3.\n          register_openai:\n            label: Register the Model in the Catalog\n            type: boolean\n            default: true\n            hidden: ${{ inputs.resource_and_execution.scheduler != true }}\n            tooltip: Also expose the served model as a platform model (pw endpoints --openai), so other tools can use it while the job runs.\n          model_endpoint_name:\n            label: Model Endpoint Name\n            type: string\n            default: ''\n            optional: true\n            hidden: ${{ inputs.resource_and_execution.scheduler != true }}\n            tooltip: Platform endpoint name for the served model, expanded like the session name, so gemma-${USER} gives each person their own. Empty derives <session name>-model.\njobs:\n  setup:\n    if: ${{ inputs.resource_and_execution.scheduler != true }}\n    ssh:\n      remoteHost: ${{ inputs.resource_and_execution.resource.ip }}\n    steps:\n      - name: Create directories\n        run: |\n          mkdir -p ${{ inputs.app_settings.workdir }}\n          mkdir -p ${{ inputs.kb_settings.kb_root }}\n          if [ -n \"${{ inputs.kb_settings.index_base }}\" ]; then\n            mkdir -p \"${{ inputs.kb_settings.index_base }}\"\n          fi\n  get_ports:\n    if: ${{ inputs.resource_and_execution.scheduler != true }}\n    outputs:\n      APP_PORT: ${{ needs.get_ports.steps.ports.outputs.APP_PORT }}\n    ssh:\n      remoteHost: ${{ inputs.resource_and_execution.resource.ip }}\n    steps:\n      - name: Get open port\n        id: ports\n        run: |\n          if [[ ${{ inputs.app_settings.app_port }} == \"0\" ]]; then\n            APP_PORT=$(pw agent open-port)\n          else\n            APP_PORT=${{ inputs.app_settings.app_port }}\n          fi\n          echo \"App port: $APP_PORT\"\n          echo APP_PORT=$APP_PORT >> $OUTPUTS\n  pull_software:\n    if: ${{ inputs.resource_and_execution.scheduler != true }}\n    needs:\n      - setup\n    ssh:\n      remoteHost: ${{ inputs.resource_and_execution.resource.ip }}\n    steps:\n      - name: Clone and build from GitHub\n        run: |\n          if [ \"${{ inputs.session_settings.session_method }}\" = \"cleanup\" ]; then exit 0; fi\n          if [ \"${{ inputs.app_settings.source }}\" != \"github\" ]; then\n            echo \"Not GitHub mode; a later step stages the image or bundle.\"\n            exit 0\n          fi\n          cd ${{ inputs.app_settings.workdir }}\n          set -e\n          # A workdir node-runtime shadows the system node on PATH, so an\n          # older one is discarded rather than kept.\n          node_ok() { [ \"$(\"$1\" -p 'process.version.slice(1).split(\".\")[0]' 2>/dev/null || echo 0)\" -ge 26 ]; }\n          if [ -x node-runtime/bin/node ] && ! node_ok node-runtime/bin/node; then\n            rm -rf node-runtime\n          fi\n          NEED_NODE=1\n          if [ -x node-runtime/bin/node ]; then\n            NEED_NODE=0\n          elif command -v node >/dev/null 2>&1 && node_ok node; then\n            NEED_NODE=0\n          fi\n          if [ \"$NEED_NODE\" = \"1\" ]; then\n            echo \"Fetching Node runtime...\"\n            curl -fsSL -o node.tar.xz https://nodejs.org/dist/v26.10.0/node-v26.10.0-linux-x64.tar.xz\n            # SHASUMS256.txt digest for the version above; change both together.\n            echo \"ca70e9e349de048b9522abb3adc05b3bd6f43c5ffd3ec57916c7da292f59f022  node.tar.xz\" | sha256sum -c -\n            mkdir -p node-runtime\n            tar -xJf node.tar.xz -C node-runtime --strip-components=1\n            rm -f node.tar.xz\n          fi\n          PATH=\"$PWD/node-runtime/bin:$PATH\"; export PATH\n          echo \"node: $(node --version)\"\n          if [ -d repo/.git ]; then\n            echo \"Updating existing clone...\"\n            git -C repo fetch --all --prune\n          else\n            # A repo dir without .git is debris (interrupted copy or failed\n            # clone); wipe it rather than dying on a non-empty destination.\n            rm -rf repo\n            git clone \"${{ inputs.app_settings.repo_url }}\" repo\n          fi\n          git -C repo checkout -f \"${{ inputs.app_settings.git_ref }}\"\n          # Hard reset so force-pushed branches update too; a plain ff-only\n          # pull fails silently after a force push and builds a stale tree.\n          git -C repo reset --hard \"origin/${{ inputs.app_settings.git_ref }}\" 2>/dev/null || true\n          echo \"building $(git -C repo rev-parse --short HEAD): $(git -C repo log -1 --format=%s)\"\n\n          cd repo\n          # No corepack: its vm loader crashes on several pnpm/Node pairings\n          # and its shims linger broken across runs. A plain npm global\n          # install of pnpm 11 overwrites any stale shim and just works.\n          PNPM_MAJ=$(pnpm --version 2>/dev/null | cut -d. -f1 || echo 0)\n          if [ \"${PNPM_MAJ:-0}\" -lt 11 ] 2>/dev/null; then\n            echo \"installing pnpm via npm\"\n            npm install -g pnpm@11 >/dev/null 2>&1 || true\n          fi\n          pnpm --version >/dev/null 2>&1 || { echo \"ERROR: pnpm unavailable\"; exit 1; }\n          echo \"pnpm: $(pnpm --version)\"\n\n          echo \"Installing dependencies and building...\"\n          pnpm install --frozen-lockfile\n          pnpm build\n          # Lay out the same app/ tree the bundle uses, so later jobs are identical.\n          cd ..\n          rm -rf app\n          mkdir -p app/web\n          pnpm --dir repo --filter @activate-studio/server --prod deploy --legacy \"$PWD/app/server\"\n          cp -r repo/web/dist app/web/dist\n          cp -r repo/indexer app/indexer\n          cp -r repo/docs app/docs\n          cp -r repo/extensions-starter app/extensions-starter\n          mkdir -p app/index/models cache\n          # The app tree is rebuilt from scratch each run, so the model is\n          # cached beside it rather than inside it; otherwise every update\n          # re-downloads it.\n          if [ ! -f cache/minilm384.gguf ]; then\n            echo \"Fetching embedding model...\"\n            curl -fsSL -o cache/minilm384.gguf \\\n              'https://huggingface.co/asg017/sqlite-lembed-model-examples/resolve/main/all-MiniLM-L6-v2/all-MiniLM-L6-v2.e4ce9877.q8_0.gguf' \\\n              || echo \"WARNING: model fetch failed; vector search disabled.\"\n          else\n            echo \"embedding model already cached\"\n          fi\n          [ -f cache/minilm384.gguf ] && cp -f cache/minilm384.gguf app/index/models/minilm384.gguf\n          if [ ! -f gufi-src.tar.gz ]; then\n            echo \"Fetching GUFI source...\"\n            # GUFI's cmake runs git describe for its version string; a shallow\n            # clone has no tags, so stamp one and keep .git in the tarball.\n            # The 0.8.0 release, not whatever main is: an index built by one GUFI\n            # is read by the others, and the Studio is tested against this one.\n            if git clone --depth 1 --branch 0.8.0 --recurse-submodules --shallow-submodules https://github.com/mar-file-system/GUFI gufi-clone \\\n                && [ \"$(git -C gufi-clone rev-parse HEAD)\" = \"021a717a6089b9e28b068695dc7c7f3732fd1a56\" ]; then\n              git -C gufi-clone -c user.name=deploy -c user.email=deploy@localhost tag -a deploy-snapshot -m \"deploy snapshot\" 2>/dev/null || true\n              tar -czf gufi-src.tar.gz --transform 's|^gufi-clone|GUFI|' gufi-clone\n            else\n              echo \"WARNING: GUFI source fetch failed; index engine unavailable.\"\n            fi\n            rm -rf gufi-clone\n          fi\n          echo \"github\" > .bundle\n      - name: Pull and unpack the bundle\n        run: |\n          if [ \"${{ inputs.session_settings.session_method }}\" = \"cleanup\" ]; then\n            echo \"Cleanup run; nothing to pull.\"\n            exit 0\n          fi\n          if [ \"${{ inputs.app_settings.source }}\" = \"github\" ]; then\n            echo \"GitHub mode; app already built in the previous step.\"\n            exit 0\n          fi\n          if [ \"${{ inputs.app_settings.source }}\" = \"container\" ]; then\n            CDIR=\"${{ inputs.app_settings.container_dir }}\"\n            [ -n \"$CDIR\" ] || CDIR=\"${{ inputs.app_settings.workdir }}\"\n            mkdir -p \"$CDIR\" || { echo \"ERROR: cannot create $CDIR\"; exit 1; }\n            cd \"$CDIR\"\n            IMG=\"${{ inputs.app_settings.image_path }}\"\n            [ -n \"$IMG\" ] || IMG=\"$PWD/studio.sif\"\n            command -v apptainer >/dev/null 2>&1 || command -v singularity >/dev/null 2>&1 || \\\n              { echo \"ERROR: neither apptainer nor singularity is on the resource\"; exit 1; }\n            RUNTIME=\"$(command -v apptainer || command -v singularity)\"\n            case \"$IMG\" in\n              pw://*|s3://*|gs://*|az://*)\n                # Platform buckets are not something the container runtime\n                # can pull; stage through the CLI instead.\n                echo \"Staging image from bucket: $IMG\"\n                # The CLI draws a carriage-return progress bar, which the\n                # platform log viewer renders as one endless line; keep the\n                # transcript readable and surface only the outcome.\n                pw buckets cp \"$IMG\" \"$PWD/studio.sif\" > bucket-cp.log 2>&1 \\\n                  || { echo \"ERROR: bucket copy failed\"; tr '\\r' '\\n' < bucket-cp.log | tail -3; exit 1; }\n                echo \"staged image: $(du -h \"$PWD/studio.sif\" | cut -f1)\"\n                IMG=\"$PWD/studio.sif\" ;;\n              *://*)\n                echo \"Pulling image $IMG ...\"\n                \"$RUNTIME\" pull -F \"$PWD/studio.sif\" \"$IMG\" || { echo \"ERROR: image pull failed\"; exit 1; }\n                IMG=\"$PWD/studio.sif\" ;;\n            esac\n            [ -f \"$IMG\" ] || { echo \"ERROR: container image not found: $IMG\"; exit 1; }\n            # A SIF is a squashfs image, and some login nodes run kernels\n            # without squashfs (and without squashfuse or the privileges to\n            # load the module). Where the runtime cannot mount the image,\n            # expand it once into a sandbox directory and run from that;\n            # unsquashfs needs no kernel support. Cached against the image's\n            # timestamp so a rerun does not repeat the extraction.\n            if \"$RUNTIME\" exec \"$IMG\" true 2>/dev/null; then\n              echo \"$IMG\" > .image\n            else\n              echo \"Runtime cannot mount the image directly (no squashfs); expanding to a sandbox.\"\n              command -v unsquashfs >/dev/null 2>&1 || { echo \"ERROR: no squashfs support and unsquashfs is unavailable\"; exit 1; }\n              if [ -d sandbox ] && [ -f .sandbox-src ] && [ \"$(cat .sandbox-src)\" = \"$IMG:$(stat -c %Y \"$IMG\")\" ]; then\n                echo \"Sandbox already expanded from this image.\"\n              else\n                FS_ID=$(\"$RUNTIME\" sif list \"$IMG\" | awk -F'|' '$5 ~ /Squashfs/ { gsub(/ /, \"\", $1); print $1; exit }')\n                [ -n \"$FS_ID\" ] || { echo \"ERROR: no squashfs partition found in $IMG\"; exit 1; }\n                rm -rf sandbox rootfs.squash\n                \"$RUNTIME\" sif dump \"$FS_ID\" \"$IMG\" > rootfs.squash || { echo \"ERROR: could not read the image partition\"; exit 1; }\n                # -no-xattrs: the destination is often a filesystem that\n                # refuses them, and nothing in the image depends on them.\n                unsquashfs -q -f -no-xattrs -d sandbox rootfs.squash || { echo \"ERROR: sandbox expansion failed\"; exit 1; }\n                rm -f rootfs.squash\n                echo \"$IMG:$(stat -c %Y \"$IMG\")\" > .sandbox-src\n              fi\n              echo \"$PWD/sandbox\" > .image\n              # The image itself is no longer needed once expanded, and on a\n              # shared filesystem it is pure cost.\n              case \"${{ inputs.app_settings.image_path }}\" in\n                *://*) rm -f \"$IMG\" ;;\n              esac\n            fi\n            cp .image \"${{ inputs.app_settings.workdir }}/.image\"\n            echo \"container: $(cat .image) ($(\"$RUNTIME\" --version))\"\n            exit 0\n          fi\n          cd ${{ inputs.app_settings.workdir }}\n          BUNDLE=\"${{ inputs.app_settings.bundle_file }}\"\n          if [[ -d app && \"$(cat .bundle 2>/dev/null)\" == \"$BUNDLE\" && \"${{ inputs.app_settings.refresh_software }}\" == \"false\" ]]; then\n            echo \"Bundle ($BUNDLE) already unpacked.\"\n          else\n            echo \"Pulling bundle $BUNDLE ...\"\n            # Bucket inputs interpolate as objects; .uri is required (the bare\n            # form injects JSON and the copy fails silently).\n            pw buckets cp \"${{ inputs.app_settings.bundlebucket.uri }}/$BUNDLE\" ./bundle.tar.gz > bucket-cp.log 2>&1 || {\n              tr '\\r' '\\n' < bucket-cp.log | tail -3\n              if [ -f bundle-prestage.tar.gz ]; then\n                echo \"Bucket pull failed; using pre-staged bundle-prestage.tar.gz\"\n                cp bundle-prestage.tar.gz bundle.tar.gz\n              else\n                echo \"ERROR: bundle pull failed and no pre-staged bundle found\"; exit 1\n              fi\n            }\n            # With no index_base set, the index base is app/index, which\n            # holds the search index, the per-user credential vault and the\n            # secret that decrypts it. Refreshing the bundle replaces the\n            # code, so this state has to survive it; without this, every\n            # redeploy silently made users re-enter their keys.\n            if [ -d app/index ]; then\n              rm -rf .index-keep\n              mv app/index .index-keep\n            fi\n            rm -rf app node-* gufi-src.tar.gz\n            tar -xzf bundle.tar.gz\n            if [ -d .index-keep ]; then\n              mkdir -p app/index\n              # Preserved state wins; anything the new bundle ships that the\n              # old base did not have is kept.\n              cp -a .index-keep/. app/index/\n              rm -rf .index-keep\n            fi\n            rm -f bundle.tar.gz\n            echo \"$BUNDLE\" > .bundle\n          fi\n          # Node runtime from the bundle, unless the resource has v26+.\n          NEED_NODE=1\n          if [ -x node-runtime/bin/node ]; then\n            NEED_NODE=0\n          elif command -v node >/dev/null 2>&1; then\n            MAJ=$(node -p 'process.version.slice(1).split(\".\")[0]' 2>/dev/null || echo 0)\n            [ \"$MAJ\" -ge 26 ] && NEED_NODE=0\n          fi\n          if [ \"$NEED_NODE\" = \"1\" ]; then\n            NODE_TAR=$(ls node-*-linux-x64.tar.xz 2>/dev/null | head -1)\n            if [ -n \"$NODE_TAR\" ]; then\n              mkdir -p node-runtime\n              tar -xJf \"$NODE_TAR\" -C node-runtime --strip-components=1\n            fi\n          fi\n          PATH=\"$PWD/node-runtime/bin:$PATH\"; export PATH\n          echo \"node: $(command -v node) $(node --version 2>/dev/null || echo 'MISSING')\"\n      - name: Office rendering runtime when soffice is absent\n        run: |\n          cd ${{ inputs.app_settings.workdir }}\n          RT_URI=\"${{ inputs.app_settings.office_runtime }}\"\n          if [ -z \"$RT_URI\" ]; then echo \"No office runtime configured.\"; exit 0; fi\n          if command -v soffice >/dev/null 2>&1; then echo \"System soffice present; staged runtime not needed.\"; exit 0; fi\n          SOFFICE=\"$(find \"$PWD/office-runtime\" -name soffice -path \"*/program/*\" 2>/dev/null | head -1)\"\n          if [ -z \"$SOFFICE\" ]; then\n            PW_BIN=\"$(command -v pw || echo pw)\"\n            \"$PW_BIN\" buckets cp \"$RT_URI\" office-runtime.tar.gz || { echo \"office runtime pull failed; office rendering stays unavailable.\"; exit 0; }\n            tar -xzf office-runtime.tar.gz && rm -f office-runtime.tar.gz\n            SOFFICE=\"$(find \"$PWD/office-runtime\" -name soffice -path \"*/program/*\" | head -1)\"\n          fi\n          [ -n \"$SOFFICE\" ] || { echo \"no soffice in the runtime; office rendering stays unavailable.\"; exit 0; }\n          printf '#!/bin/bash\\nexec \"%s\" \"$@\"\\n' \"$SOFFICE\" > soffice-wrapper.sh\n          chmod +x soffice-wrapper.sh\n          echo \"Office rendering via staged runtime: $SOFFICE\"\n      - name: Search by meaning packages, document readers and models\n        run: |\n          # On every launch, whether or not the index is built on launch: the\n          # server embeds as it syncs, and answers searches by meaning, with\n          # what is in place here. Without the ONNX packages it uses the GGUF\n          # model through sqlite-lembed, slower and with lower ranking.\n          if [ \"${{ inputs.session_settings.session_method }}\" = \"cleanup\" ]; then exit 0; fi\n          if [ \"${{ inputs.app_settings.source }}\" = \"container\" ]; then\n            echo \"Container mode; the image carries the embedding backend.\"\n            exit 0\n          fi\n          cd ${{ inputs.app_settings.workdir }}\n          INDEX_BASE=\"${{ inputs.kb_settings.index_base }}\"\n          [ -n \"$INDEX_BASE\" ] || INDEX_BASE=\"$PWD/app/index\"\n          # The models ship inside the app tree; a relocated index needs them\n          # at $INDEX_BASE/models, where the server and the indexer look.\n          if [ \"$INDEX_BASE\" != \"$PWD/app/index\" ]; then\n            mkdir -p \"$INDEX_BASE/models\"\n            if [ ! -f \"$INDEX_BASE/models/minilm384.gguf\" ] && [ -f app/index/models/minilm384.gguf ]; then\n              cp app/index/models/minilm384.gguf \"$INDEX_BASE/models/\"\n            fi\n          fi\n          # The packages for the Python the server will run (the same choice\n          # server/src/config.ts makes: the newest python3.x that is 3.10 or\n          # later), from the wheels the bundle carries, so no network is\n          # needed; a Python the bundle has no wheels for downloads its own.\n          PY=\"\"\n          for cand in python3.13 python3.12 python3.11 python3.10 python3; do\n            if command -v \"$cand\" >/dev/null 2>&1 && \"$cand\" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)' 2>/dev/null; then\n              PY=\"$cand\"; break\n            fi\n          done\n          if [ -z \"$PY\" ]; then\n            echo \"NOTE: no Python 3.10 or later here; search by meaning uses the GGUF model.\"\n            exit 0\n          fi\n          # Only what is missing: the model ships in the app tree, and packages\n          # already unpacked for this Python are kept.\n          WANT=\"\"\n          [ -f app/index/models/minilm-l6/model.onnx ] || WANT=\"--model app/index/models/minilm-l6\"\n          \"$PY\" -c 'import sys; sys.path.insert(0, \"app/indexer/.deps\"); import onnxruntime, tokenizers, numpy, xlrd, olefile' 2>/dev/null \\\n            || WANT=\"$WANT --deps app/indexer/.deps\"\n          if [ -z \"$WANT\" ] || \"$PY\" app/indexer/fetch_embed.py $WANT --cache app/indexer/wheels; then\n            echo \"Search by meaning: the ONNX backend, for $($PY --version 2>&1).\"\n          else\n            echo \"NOTE: the ONNX embedding backend is not installed here; search by meaning uses the GGUF model.\"\n          fi\n          if [ \"$INDEX_BASE\" != \"$PWD/app/index\" ] && [ -d app/index/models/minilm-l6 ] && [ ! -e \"$INDEX_BASE/models/minilm-l6\" ]; then\n            ln -s \"$PWD/app/index/models/minilm-l6\" \"$INDEX_BASE/models/minilm-l6\"\n          fi\n  build_gufi:\n    if: ${{ inputs.resource_and_execution.scheduler != true }}\n    needs:\n      - pull_software\n    ssh:\n      remoteHost: ${{ inputs.resource_and_execution.resource.ip }}\n    steps:\n      - name: Build GUFI from bundled source\n        run: |\n          if [ \"${{ inputs.session_settings.session_method }}\" = \"cleanup\" ]; then exit 0; fi\n          if [ \"${{ inputs.app_settings.source }}\" = \"container\" ]; then\n            echo \"Container mode; GUFI ships inside the image.\"\n            exit 0\n          fi\n          if [ \"${{ inputs.kb_settings.build_gufi }}\" != \"true\" ]; then\n            echo \"GUFI build disabled; the app will run with filesystem browsing and grep search.\"\n            exit 0\n          fi\n          cd ${{ inputs.app_settings.workdir }}\n          if [ -x gufi-install/bin/gufi_query ]; then\n            echo \"GUFI already built.\"\n            exit 0\n          fi\n          if ! command -v cmake >/dev/null 2>&1; then\n            module load cmake 2>/dev/null || true\n          fi\n          if ! command -v cmake >/dev/null 2>&1; then\n            echo \"WARNING: cmake not available; skipping GUFI build. The app degrades gracefully.\"\n            exit 0\n          fi\n          rm -rf GUFI\n          tar -xzf gufi-src.tar.gz\n          # llama.cpp (vendored for the embedding layer) defaults to\n          # -march=native; older assemblers reject the AVX-VNNI instructions\n          # new CPUs advertise (seen as vpdpbusd errors). Build it portable.\n          sed -i 's/-DGGML_CCACHE=Off/-DGGML_CCACHE=Off -DGGML_NATIVE=Off/' GUFI/contrib/deps/sqlite-lembed.sh 2>/dev/null || true\n          mkdir -p GUFI/build\n          cd GUFI/build\n          # SERVER_CONFIG/CLIENT_CONFIG default under /etc/GUFI and the\n          # completion script installs to /etc/bash_completion.d; neither is\n          # writable without root, so keep config in the prefix and skip\n          # the completion install.\n          GUFI_PREFIX=\"${{ inputs.app_settings.workdir }}/gufi-install\"\n          cmake .. -DCMAKE_INSTALL_PREFIX=\"$GUFI_PREFIX\" -DCMAKE_BUILD_TYPE=Release \\\n            -DSERVER_CONFIG=\"$GUFI_PREFIX/etc/server\" -DCLIENT_CONFIG=\"$GUFI_PREFIX/etc/client\" \\\n            -DBASH_COMPLETION=Off \\\n            || { echo \"WARNING: cmake configure failed; continuing without GUFI\"; exit 0; }\n          make -j \"$(nproc)\" || { echo \"WARNING: GUFI build failed; continuing without GUFI\"; exit 0; }\n          make install || { echo \"WARNING: GUFI install failed; continuing without GUFI\"; exit 0; }\n          echo \"GUFI installed at ${{ inputs.app_settings.workdir }}/gufi-install\"\n  index_kb:\n    if: ${{ inputs.resource_and_execution.scheduler != true }}\n    needs:\n      - build_gufi\n    ssh:\n      remoteHost: ${{ inputs.resource_and_execution.resource.ip }}\n    steps:\n      - name: Index the knowledge base\n        run: |\n          if [ \"${{ inputs.session_settings.session_method }}\" = \"cleanup\" ]; then exit 0; fi\n          if [ \"${{ inputs.kb_settings.run_index }}\" != \"true\" ]; then\n            echo \"Indexing on launch disabled.\"\n            exit 0\n          fi\n          if [ \"${{ inputs.app_settings.source }}\" = \"container\" ]; then\n            echo \"Container mode; the image indexes on start (INDEX_ON_START).\"\n            exit 0\n          fi\n          cd ${{ inputs.app_settings.workdir }}\n          if [ ! -x gufi-install/bin/gufi_dir2index ]; then\n            echo \"GUFI not present; skipping index build (search falls back to grep).\"\n            exit 0\n          fi\n          export KB_ROOT=\"${{ inputs.kb_settings.kb_root }}\"\n          export GUFI_BIN=\"$PWD/gufi-install/bin\"\n          # Each step is its own shell, so the PATH pull_software exported is\n          # gone. Document conversion runs as a Node CLI: without this, a\n          # resource whose only Node is the staged runtime indexes Word,\n          # PowerPoint and Excel files with the fallback reader and says so\n          # only in passing.\n          if [ -x node-runtime/bin/node ]; then\n            PATH=\"$PWD/node-runtime/bin:$PATH\"; export PATH\n          fi\n          export INDEX_BASE=\"${{ inputs.kb_settings.index_base }}\"\n          [ -n \"$INDEX_BASE\" ] || INDEX_BASE=\"$PWD/app/index\"\n          export INDEX_BASE\n          # The embedding models and the ONNX packages are put in place by\n          # pull_software, on every launch.\n          bash app/indexer/reindex.sh || echo \"WARNING: index build failed; the app still serves the filesystem.\"\n  run_app:\n    if: ${{ inputs.resource_and_execution.scheduler != true }}\n    needs:\n      - index_kb\n      - get_ports\n    ssh:\n      remoteHost: ${{ inputs.resource_and_execution.resource.ip }}\n    steps:\n      - name: Stop dangling processes from a prior launch\n        run: |\n          cd ${{ inputs.app_settings.workdir }}\n          # The watchdog dies first so it cannot resurrect what follows.\n          # The pid file is best effort; the sweep below catches watchdogs\n          # whose pid file is stale or was written wrong.\n          if [ -f watchdog.pid ]; then\n            kill \"$(cat watchdog.pid)\" 2>/dev/null || true\n            rm -f watchdog.pid\n          fi\n          for p in $(pgrep -f \"bash watchdog[.]sh\" 2>/dev/null); do\n            [ \"$(readlink /proc/$p/cwd 2>/dev/null)\" = \"$PWD\" ] && kill -9 \"$p\" 2>/dev/null && echo \"  swept stale watchdog $p\"\n          done\n          if [ -f app-custom.pids ]; then\n            echo \"Stopping processes from a prior launch:\"; cat app-custom.pids || true\n            while read -r p; do\n              [ -n \"$p\" ] || continue\n              kill \"$p\" 2>/dev/null || true\n              kill -- -\"$p\" 2>/dev/null || true\n            done < app-custom.pids\n          fi\n          : > app-custom.pids\n          # Sweep by pattern too, scoped so other deployments on the node\n          # survive: studio servers are matched by working directory, the\n          # endpoint agent by this deployment's session name.\n          for p in $(pgrep -f \"app/server/dist/main[.]js\" 2>/dev/null); do\n            [ \"$(readlink /proc/$p/cwd 2>/dev/null)\" = \"$PWD\" ] && kill \"$p\" 2>/dev/null && echo \"  swept stale server $p\"\n          done\n          PREFIX=\"$(eval echo \"${{ inputs.session_settings.session_name }}\" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-' | sed -E 's/-+/-/g; s/^-//; s/-$//')\"\n          [ -n \"$PREFIX\" ] || PREFIX=\"studio\"\n          pkill -f \"endpoints http.*--name ${PREFIX}\" 2>/dev/null && echo \"  swept stale endpoint agent (${PREFIX})\" || true\n      - name: Generate run_app.sh\n        run: |\n          RUNDIR=\"${{ inputs.app_settings.rundir }}\"\n          WORKDIR=\"${{ inputs.app_settings.workdir }}\"\n          SCRIPT=\"${RUNDIR}/run_app.sh\"\n          mkdir -p ${RUNDIR}\n\n          cat > ${SCRIPT} << 'SCRIPT_HEADER'\n          #!/bin/bash\n          export PATH=\"$HOME/.local/bin:$HOME/pw:$PATH\"\n          hostname; date; pwd\n          SCRIPT_HEADER\n\n          echo \"pushd ${WORKDIR}\" >> ${SCRIPT}\n          echo \"export PATH=\\\"${WORKDIR}/node-runtime/bin:\\$PATH\\\"\" >> ${SCRIPT}\n          # The watchdog re-runs this script in an environment that may\n          # lack the system node the deploy step saw (module-provided node\n          # does not survive into a bare restart shell). If node is absent\n          # at run time, extract the bundle's runtime on the spot; without\n          # this a watchdog restart died with \"nohup: failed to run\n          # command 'node'\" and the deployment stayed down.\n          cat >> ${SCRIPT} << 'NODE_FALLBACK'\n          if ! command -v node >/dev/null 2>&1; then\n            NT=$(ls node-*-linux-x64.tar.xz 2>/dev/null | head -1)\n            if [ -n \"$NT\" ]; then\n              mkdir -p node-runtime\n              tar -xJf \"$NT\" -C node-runtime --strip-components=1\n              echo \"node runtime extracted at restart: $(command -v node)\"\n            else\n              echo \"ERROR: no node on PATH and no bundled runtime to extract\"\n            fi\n          fi\n          NODE_FALLBACK\n          echo \"export PORT=${{ needs.get_ports.outputs.APP_PORT }}\" >> ${SCRIPT}\n          echo \"export KB_ROOT=${{ inputs.kb_settings.kb_root }}\" >> ${SCRIPT}\n          echo \"export KB_LABEL='${{ inputs.kb_settings.kb_label }}'\" >> ${SCRIPT}\n          # The mission is free text; a quoted heredoc plus %q survives any\n          # quoting the operator types (apostrophes included).\n          KB_MISSION_TEXT=$(cat << 'MISSION_EOF'\n          ${{ inputs.kb_settings.mission }}\n          MISSION_EOF\n          )\n          printf 'export KB_MISSION=%q\\n' \"$KB_MISSION_TEXT\" >> ${SCRIPT}\n          echo \"export GUFI_BIN=${WORKDIR}/gufi-install/bin\" >> ${SCRIPT}\n          if [ -x \"${WORKDIR}/soffice-wrapper.sh\" ]; then\n            echo \"export SOFFICE_BIN=${WORKDIR}/soffice-wrapper.sh\" >> ${SCRIPT}\n          fi\n          if [ -n \"${{ inputs.kb_settings.index_base }}\" ]; then\n            echo \"export INDEX_BASE='${{ inputs.kb_settings.index_base }}'\" >> ${SCRIPT}\n          else\n            echo \"export INDEX_BASE=${WORKDIR}/app/index\" >> ${SCRIPT}\n          fi\n          echo \"export APP_NAME='${{ inputs.app_settings.app_name }}'\" >> ${SCRIPT}\n          if [ -n \"${{ inputs.app_settings.banner_text }}\" ]; then\n            echo \"export BANNER_TEXT='${{ inputs.app_settings.banner_text }}'\" >> ${SCRIPT}\n          fi\n          if [ -n \"${{ inputs.app_settings.banner_color }}\" ]; then\n            echo \"export BANNER_COLOR='${{ inputs.app_settings.banner_color }}'\" >> ${SCRIPT}\n          fi\n          if [ -n \"${{ inputs.kb_settings.starter_dirs }}\" ]; then\n            echo \"export KB_STARTER_DIRS='${{ inputs.kb_settings.starter_dirs }}'\" >> ${SCRIPT}\n          fi\n          if [ -n \"${{ inputs.kb_settings.libraries }}\" ]; then\n            printf 'export STUDIO_LIBRARIES=%q\\n' '${{ inputs.kb_settings.libraries }}' >> ${SCRIPT}\n          fi\n          if [ -n \"${{ inputs.kb_settings.sections }}\" ]; then\n            printf 'export STUDIO_SECTIONS=%q\\n' '${{ inputs.kb_settings.sections }}' >> ${SCRIPT}\n          fi\n          if [ -n \"${{ inputs.kb_settings.workflows }}\" ]; then\n            printf 'export STUDIO_WORKFLOWS=%q\\n' '${{ inputs.kb_settings.workflows }}' >> ${SCRIPT}\n          fi\n          if [ -n \"${{ inputs.app_settings.icon_path }}\" ]; then\n            echo \"export APP_ICON='${{ inputs.app_settings.icon_path }}'\" >> ${SCRIPT}\n          fi\n          PROMPTS='${{ inputs.app_settings.suggested_prompts }}'\n          if [ -n \"$PROMPTS\" ]; then\n            JSON=\"[\"\n            IFS=';'\n            first=1\n            for q in $PROMPTS; do\n              q=$(echo \"$q\" | xargs | sed 's/\\\\/\\\\\\\\/g; s/\"/\\\\\"/g')\n              [ -n \"$q\" ] || continue\n              [ \"$first\" = \"1\" ] && first=0 || JSON=\"$JSON,\"\n              JSON=\"$JSON\\\"$q\\\"\"\n            done\n            unset IFS\n            JSON=\"$JSON]\"\n            echo \"export SUGGESTED_PROMPTS='$JSON'\" >> ${SCRIPT}\n          fi\n          if [ -n \"${{ inputs.model_settings.pw_api_key }}\" ]; then\n            echo \"export PW_API_KEY='${{ inputs.model_settings.pw_api_key }}'\" >> ${SCRIPT}\n          fi\n          if [ -n \"${{ inputs.model_settings.gateway_url }}\" ]; then\n            echo \"export PW_GATEWAY_URL='${{ inputs.model_settings.gateway_url }}'\" >> ${SCRIPT}\n          fi\n          POSTURE='${{ inputs.model_settings.posture }}'\n          PLATFORM_HOST='${{ inputs.model_settings.platform_host }}'\n          # The pw CLI resolves a server from its stored context, and a\n          # container has none. Without this, a key entered in Settings\n          # authenticates against nothing and every platform tool fails,\n          # so pass the host the deployment already knows.\n          if [ -n \"$PLATFORM_HOST\" ]; then\n            echo \"export PW_PLATFORM_HOST='${PLATFORM_HOST}'\" >> ${SCRIPT}\n          fi\n          if [ -n \"${{ inputs.app_settings.self_url }}\" ]; then\n            echo \"export STUDIO_SELF_URL='${{ inputs.app_settings.self_url }}'\" >> ${SCRIPT}\n          fi\n          # A bundle deployment runs on the host and inherits its pw on\n          # PATH; a container has neither, so bind the host's binary in the\n          # way the compute path already does. Without it every platform\n          # tool in the assistant fails on a container deployment.\n          PW_BIN_HOST=\"$(command -v pw || true)\"\n          if [ -n \"$PW_BIN_HOST\" ]; then\n            echo \"export PW_BIN_HOST='${PW_BIN_HOST}'\" >> ${SCRIPT}\n          fi\n          if [ \"$POSTURE\" != \"single\" ] && [ -n \"$PLATFORM_HOST\" ]; then\n            echo \"export AUTH_JWKS_URL='https://${PLATFORM_HOST}/api/platform/keys'\" >> ${SCRIPT}\n            echo \"export AUTH_ISSUER='pw-session-proxy'\" >> ${SCRIPT}\n          fi\n          if [ \"$POSTURE\" = \"multi-shared\" ]; then\n            echo \"export DISABLE_PERSONAL_KEYS=1\" >> ${SCRIPT}\n          fi\n          if [ \"$POSTURE\" = \"multi-strict\" ]; then\n            echo \"export REQUIRE_PERSONAL_KEY=1\" >> ${SCRIPT}\n          fi\n\n          if [ \"${{ inputs.session_settings.session_method }}\" = \"cleanup\" ]; then\n            cat >> ${SCRIPT} << 'CLEANUP_BODY'\n          echo \"CLEANUP RUN: stopping all Studio processes from prior launches on this node.\"\n          if [ -f app-custom.pids ]; then\n            while read -r p; do [ -n \"$p\" ] && kill \"$p\" 2>/dev/null && echo \"  killed $p\"; done < app-custom.pids\n            : > app-custom.pids\n          fi\n          for pat in \"server/dist/main[.]js\" \"pw endpoints http.*studio\"; do\n            pkill -f \"$pat\" 2>/dev/null && echo \"  killed by pattern: $pat\"\n          done\n          echo \"cleanup complete\"\n          CLEANUP_BODY\n            cat ${SCRIPT}\n            exit 0\n          fi\n\n          if [ \"${{ inputs.app_settings.source }}\" = \"container\" ]; then\n            # The image tests for 1 exactly; \"true\" reads as off.\n            if [ \"${{ inputs.kb_settings.run_index }}\" = \"true\" ]; then\n              echo \"export INDEX_ON_START=1\" >> ${SCRIPT}\n            else\n              echo \"export INDEX_ON_START=0\" >> ${SCRIPT}\n            fi\n            cat >> ${SCRIPT} << 'CONTAINER_LAUNCH'\n          IMG=\"$(cat .image 2>/dev/null)\"\n          RUNTIME=\"$(command -v apptainer || command -v singularity)\"\n          echo \"Starting Studio container on port ${PORT} over ${KB_ROOT} ...\"\n          # The last server's log is kept, so a relaunch does not erase the\n          # record of what the previous one did.\n          [ -f app.log ] && mv -f app.log app.log.prev\n          # The corpus and all writable state stay on the host; the image is\n          # read-only. DATA_DIR holds the index, settings, and credentials.\n          setsid nohup \"$RUNTIME\" run \\\n            --env PORT=\"${PORT}\" --env KB_ROOT=\"${KB_ROOT}\" --env DATA_DIR=\"${INDEX_BASE}\" \\\n            --env INDEX_BASE=\"${INDEX_BASE}\" --env KB_LABEL=\"${KB_LABEL}\" \\\n            --env APP_NAME=\"${APP_NAME}\" --env INDEX_ON_START=\"${INDEX_ON_START}\" \\\n            ${KB_STARTER_DIRS:+--env KB_STARTER_DIRS=\"${KB_STARTER_DIRS}\"} \\\n            ${STUDIO_LIBRARIES:+--env STUDIO_LIBRARIES=\"${STUDIO_LIBRARIES}\"} \\\n            ${STUDIO_SECTIONS:+--env STUDIO_SECTIONS=\"${STUDIO_SECTIONS}\"} \\\n            ${STUDIO_WORKFLOWS:+--env STUDIO_WORKFLOWS=\"${STUDIO_WORKFLOWS}\"} \\\n            ${BANNER_TEXT:+--env BANNER_TEXT=\"${BANNER_TEXT}\"} \\\n            ${BANNER_COLOR:+--env BANNER_COLOR=\"${BANNER_COLOR}\"} \\\n            ${APP_ICON:+--env APP_ICON=\"${APP_ICON}\"} \\\n            ${SUGGESTED_PROMPTS:+--env SUGGESTED_PROMPTS=\"${SUGGESTED_PROMPTS}\"} \\\n            ${PW_API_KEY:+--env PW_API_KEY=\"${PW_API_KEY}\"} \\\n            ${PW_PLATFORM_HOST:+--env PW_PLATFORM_HOST=\"${PW_PLATFORM_HOST}\"} \\\n            ${STUDIO_SELF_URL:+--env STUDIO_SELF_URL=\"${STUDIO_SELF_URL}\"} \\\n            ${PW_GATEWAY_URL:+--env PW_GATEWAY_URL=\"${PW_GATEWAY_URL}\"} \\\n            ${AUTH_JWKS_URL:+--env AUTH_JWKS_URL=\"${AUTH_JWKS_URL}\"} \\\n            ${AUTH_ISSUER:+--env AUTH_ISSUER=\"${AUTH_ISSUER}\"} \\\n            ${DISABLE_PERSONAL_KEYS:+--env DISABLE_PERSONAL_KEYS=\"${DISABLE_PERSONAL_KEYS}\"} \\\n            ${REQUIRE_PERSONAL_KEY:+--env REQUIRE_PERSONAL_KEY=\"${REQUIRE_PERSONAL_KEY}\"} \\\n            --env PW_CLI=\"/usr/local/bin/pw\" \\\n            --bind \"${KB_ROOT}:${KB_ROOT}\" --bind \"${INDEX_BASE}:${INDEX_BASE}\" \\\n            ${PW_BIN_HOST:+--bind \"${PW_BIN_HOST}:/usr/local/bin/pw\"} \\\n            \"$IMG\" > app.log 2>&1 < /dev/null &\n          CONTAINER_LAUNCH\n          else\n            cat >> ${SCRIPT} << 'APP_LAUNCH'\n          echo \"Starting Studio server on port ${PORT} over ${KB_ROOT} ...\"\n          [ -f app.log ] && mv -f app.log app.log.prev\n          setsid nohup node app/server/dist/main.js > app.log 2>&1 < /dev/null &\n          APP_LAUNCH\n          fi\n          cat >> ${SCRIPT} << 'APP_LAUNCH'\n          echo \"$!\" >> app-custom.pids\n          echo \"Server forked; logs: $(pwd)/app.log\"\n          for i in $(seq 1 60); do\n            (exec 3<>/dev/tcp/127.0.0.1/${PORT}) 2>/dev/null && { exec 3>&- 3<&-; echo \"app listening after ~$(( (i-1) * 2 ))s\"; break; }\n            sleep 2\n          done\n          if [ \"${{ inputs.session_settings.session_method }}\" = \"web\" ]; then\n            PREFIX=\"$(eval echo \"${{ inputs.session_settings.session_name }}\" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-' | sed -E 's/-+/-/g; s/^-//; s/-$//')\"\n            [ -n \"$PREFIX\" ] || PREFIX=\"studio\"\n            if [ \"${{ inputs.session_settings.unique_suffix }}\" = \"true\" ]; then\n              EP_NAME=\"${PREFIX}-${PORT}\"\n            else\n              EP_NAME=\"${PREFIX}\"\n            fi\n            PW_BIN=\"$(command -v pw || echo pw)\"\n            echo \"Forking web endpoint ${EP_NAME} -> localhost:${PORT}; log: $(pwd)/endpoint.log\"\n            # No --keep: a session that outlives its server is a URL that\n            # resolves to nothing, and it hides from anyone reading the session\n            # list that the deployment is down. The watchdog below restarts the\n            # app and re-registers, which covers the case --keep was there for.\n            setsid nohup \"$PW_BIN\" endpoints http -o text --name \"$EP_NAME\" --subdomain \"$EP_NAME\" \"$PORT\" > endpoint.log 2>&1 < /dev/null &\n            echo \"$!\" >> app-custom.pids\n            echo \"$!\" > agent.pid\n            # Watchdog: if the app stops answering or the endpoint agent\n            # process dies, kill what is left of this deployment (servers\n            # scoped by workdir, the agent by recorded pid) and re-run this\n            # script for a clean start. Liveness uses the app health URL and\n            # the agent pid file; matching the agent by command line proved\n            # unreliable. A workflow relaunch kills the watchdog first, so\n            # the two never fight.\n            RUN_SCRIPT=\"$(cd \"$(dirname \"$0\")\" && pwd)/$(basename \"$0\")\"\n            cat > watchdog.sh << WATCHDOG\n          cd \"\\$(dirname \"\\$0\")\"\n          while sleep 120; do\n            ok=1\n            curl -sf -m 8 \"localhost:${PORT}/healthz\" > /dev/null || ok=0\n            kill -0 \"\\$(cat agent.pid 2>/dev/null)\" 2>/dev/null || ok=0\n            [ \"\\$ok\" = 1 ] && continue\n            echo \"\\$(date -Is) unhealthy; restarting stack\" >> watchdog.log\n            for p in \\$(pgrep -f \"app/server/dist/main[.]js\" 2>/dev/null); do\n              [ \"\\$(readlink /proc/\\$p/cwd 2>/dev/null)\" = \"\\$PWD\" ] && kill \"\\$p\" 2>/dev/null\n            done\n            kill \"\\$(cat agent.pid 2>/dev/null)\" 2>/dev/null\n            sleep 3\n            bash \"${RUN_SCRIPT}\" >> watchdog.log 2>&1\n            sleep 60\n          done\n          WATCHDOG\n            if [ -f watchdog.pid ]; then kill \"$(cat watchdog.pid)\" 2>/dev/null || true; fi\n            setsid nohup bash watchdog.sh > /dev/null 2>&1 < /dev/null &\n            echo \"$!\" > watchdog.pid\n            echo \"Watchdog forked; log: $(pwd)/watchdog.log\"\n          fi\n          echo \"Done running main workflow script.\"\n          APP_LAUNCH\n          cat ${SCRIPT}\n      - name: Launch app on the login node\n        run: |\n          bash ${{ inputs.app_settings.rundir }}/run_app.sh 2>&1 | tee ${{ inputs.app_settings.rundir }}/run_app.out\n  expose_session:\n    if: ${{ inputs.resource_and_execution.scheduler != true }}\n    needs:\n      - run_app\n      - get_ports\n    ssh:\n      remoteHost: ${{ inputs.resource_and_execution.resource.ip }}\n    steps:\n      - name: Verify and surface the session\n        run: |\n          cd ${{ inputs.app_settings.workdir }}\n          METHOD=\"${{ inputs.session_settings.session_method }}\"\n          PORT=${{ needs.get_ports.outputs.APP_PORT }}\n          if [ \"$METHOD\" = \"cleanup\" ]; then\n            echo \"Cleanup run complete; no session created.\"\n            exit 0\n          fi\n          up=0\n          for i in $(seq 1 60); do\n            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 \"http://localhost:${PORT}/healthz\" || echo 000)\n            if [ \"$code\" != \"000\" ]; then\n              echo \"App responding (HTTP ${code}) after ~$(( (i-1) * 5 ))s.\"\n              up=1\n              break\n            fi\n            sleep 5\n          done\n          if [ \"$METHOD\" = \"e2e\" ]; then\n            body=$(curl -s --max-time 10 \"http://localhost:${PORT}/healthz\" || echo '')\n            echo \"healthz: $body\"\n            echo \"Tearing down forked processes...\"\n            if [ -f app-custom.pids ]; then\n              while read -r p; do\n                [ -n \"$p\" ] || continue\n                kill \"$p\" 2>/dev/null || true\n                kill -- -\"$p\" 2>/dev/null || true\n              done < app-custom.pids\n              : > app-custom.pids\n            fi\n            if [ \"$up\" = \"1\" ] && echo \"$body\" | grep -q '\"ok\":true'; then\n              echo \"E2E PASS: bundle unpacked, server answered healthz, torn down cleanly.\"\n            else\n              echo \"E2E FAIL: server never answered healthz (see app.log in the workdir).\"\n              exit 1\n            fi\n            exit 0\n          fi\n          [ \"$up\" = \"1\" ] || echo \"WARNING: app never responded; check app.log. Continuing.\"\n          echo \"Web endpoint was forked in run_app.sh; URL from endpoint.log:\"\n          for i in $(seq 1 12); do\n            [ -s endpoint.log ] && break\n            sleep 5\n          done\n          head -30 endpoint.log 2>/dev/null || echo \"(endpoint.log not found)\"\n  stage_compute:\n    if: ${{ inputs.resource_and_execution.scheduler == true }}\n    ssh:\n      remoteHost: ${{ inputs.resource_and_execution.resource.ip }}\n    steps:\n      - name: Stage directories, images, and starter corpus\n        run: |\n          if [ \"${{ inputs.session_settings.session_method }}\" = \"cleanup\" ]; then\n            echo \"Cleanup run; nothing to stage.\"\n            exit 0\n          fi\n          if [ \"${{ inputs.app_settings.source }}\" != \"container\" ]; then\n            echo \"ERROR: scheduler placement runs the container source only; set App Source to Container.\"\n            exit 1\n          fi\n          WORKDIR=\"$(eval echo '${{ inputs.app_settings.workdir }}')\"\n          RUNDIR=\"$WORKDIR/compute-run\"\n          KB=\"$(eval echo '${{ inputs.kb_settings.kb_root }}')\"\n          IDX=\"$(eval echo '${{ inputs.kb_settings.index_base }}')\"\n          [ -n \"$IDX\" ] || IDX=\"$WORKDIR/studio-index\"\n          mkdir -p \"$RUNDIR\" \"$KB\" \"$IDX\" \"$WORKDIR/containers\"\n          PW_BIN=\"$(command -v pw || echo ~/pw/pw)\"\n          # An empty knowledge base seeds itself from the starter bundle, so\n          # a first launch lands with a working corpus; existing content is\n          # never touched.\n          BUNDLES=\"${{ inputs.kb_settings.starter_bundle }}\"\n          if [ -n \"$BUNDLES\" ] && [ -z \"$(ls -A \"$KB\" 2>/dev/null)\" ]; then\n            SRC=\"\"; USED=\"\"\n            OLDIFS=\"$IFS\"; IFS=';,'\n            for BUNDLE in $BUNDLES; do\n              IFS=\"$OLDIFS\"\n              BUNDLE=\"$(echo \"$BUNDLE\" | xargs)\"\n              [ -n \"$BUNDLE\" ] || continue\n              case \"$BUNDLE\" in\n                pw://*|s3://*|gs://*|az://*)\n                  if \"$PW_BIN\" buckets cp \"$BUNDLE\" \"$RUNDIR/starter-kb.tar.gz\" > bundle-cp.log 2>&1; then\n                    SRC=\"$RUNDIR/starter-kb.tar.gz\"; USED=\"$BUNDLE\"; break\n                  fi\n                  tr '\\r' '\\n' < bundle-cp.log | tail -3 ;;\n                *)\n                  # A tarball already on the resource, e.g. one shared copy\n                  # every trainee reads.\n                  if [ -r \"$BUNDLE\" ]; then SRC=\"$BUNDLE\"; USED=\"$BUNDLE\"; break; fi\n                  echo \"Not readable here, trying the next source: $BUNDLE\" ;;\n              esac\n              IFS=';,'\n            done\n            IFS=\"$OLDIFS\"\n            if [ -n \"$SRC\" ] && tar -xzf \"$SRC\" -C \"$KB\"; then\n              echo \"Seeded the knowledge base from $USED\"\n            else\n              echo \"No starter bundle could be read; continuing with an empty knowledge base.\"\n            fi\n            rm -f \"$RUNDIR/starter-kb.tar.gz\"\n          fi\n          # Images live on the shared filesystem so the compute node sees\n          # what the login node staged; an existing file is reused, delete\n          # it to force a fresh pull.\n          # Each setting may list several sources, separated by semicolons or\n          # commas, and the first that works wins. That lets one deployment\n          # name a shared copy on its own filesystem and a bucket behind it,\n          # so the same configuration still launches on a system where that\n          # path does not exist.\n          # The bucket cache is keyed by destination path alone, so once a\n          # copy exists it is reused whatever the source now holds. That\n          # makes a bucket-hosted image impossible to update for anyone who\n          # has launched before, which is the wrong default for the one\n          # artifact that changes with every fix. Refresh Software clears\n          # the cached copy first so the next launch takes the current one.\n          # Lowercased because the form sends a real boolean (\"true\") while a\n          # CLI launch that fills inputs by hand can easily send the string\n          # \"True\", and a case-sensitive test turns that into a silent no-op:\n          # the launch reports success and quietly keeps the cached image.\n          REFRESH=\"$(printf '%s' \"${{ inputs.app_settings.refresh_software }}\" | tr '[:upper:]' '[:lower:]')\"\n          resolve() { # $1 = configured sources, $2 = cache path; prints the usable path\n            SRCS=\"$1\"; DST=\"$2\"\n            [ -n \"$SRCS\" ] || SRCS=\"$DST\"\n            OLDIFS=\"$IFS\"; IFS=';,'\n            for SRC in $SRCS; do\n              IFS=\"$OLDIFS\"\n              SRC=\"$(echo \"$SRC\" | xargs)\"\n              [ -n \"$SRC\" ] || continue\n              case \"$SRC\" in\n                pw://*|s3://*|gs://*|az://*)\n                  if [ -f \"$DST\" ] && [ \"$REFRESH\" != \"true\" ]; then echo \"$DST\"; return 0; fi\n                  [ \"$REFRESH\" = \"true\" ] && [ -f \"$DST\" ] && \\\n                    { echo \"Refresh requested; discarding the cached $DST\" >&2; rm -f \"$DST\"; }\n                  echo \"Staging $SRC -> $DST\" >&2\n                  if \"$PW_BIN\" buckets cp \"$SRC\" \"$DST\" > image-cp.log 2>&1; then\n                    echo \"$DST\"; return 0\n                  fi\n                  tr '\\r' '\\n' < image-cp.log | tail -3 >&2 ;;\n                *)\n                  if [ -r \"$SRC\" ]; then echo \"$SRC\"; return 0; fi\n                  echo \"Not readable here, trying the next source: $SRC\" >&2 ;;\n              esac\n              IFS=';,'\n            done\n            IFS=\"$OLDIFS\"\n            return 1\n          }\n          cd \"$RUNDIR\"\n          # resolve runs in a subshell, so a failure inside it cannot end\n          # the step; the empty result is what this checks.\n          SSIF=\"$(resolve \"${{ inputs.app_settings.image_path }}\" \"$WORKDIR/containers/studio.sif\")\"\n          [ -n \"$SSIF\" ] || { echo \"ERROR: Studio image unavailable: ${{ inputs.app_settings.image_path }}\"; exit 1; }\n          VSIF=\"$WORKDIR/containers/vllm.sif\"\n          if [ \"${{ inputs.model_settings.serve }}\" = \"true\" ]; then\n            VSIF=\"$(resolve \"${{ inputs.model_settings.vllm_image }}\" \"$WORKDIR/containers/vllm.sif\")\"\n            [ -n \"$VSIF\" ] || { echo \"ERROR: vLLM image unavailable: ${{ inputs.model_settings.vllm_image }}\"; exit 1; }\n          fi\n          printf 'SSIF=%s\\nVSIF=%s\\n' \"$SSIF\" \"$VSIF\" > \"$RUNDIR/images.env\"\n          cat \"$RUNDIR/images.env\"\n      - name: Fetch the model if missing\n        run: |\n          if [ \"${{ inputs.session_settings.session_method }}\" = \"cleanup\" ]; then exit 0; fi\n          if [ \"${{ inputs.model_settings.serve }}\" != \"true\" ]; then echo \"Not serving a model.\"; exit 0; fi\n          WORKDIR=\"$(eval echo '${{ inputs.app_settings.workdir }}')\"\n          MODEL_DIR=\"$(eval echo '${{ inputs.model_settings.model_dir }}')\"\n          [ -n \"$MODEL_DIR\" ] || MODEL_DIR=\"$WORKDIR/models/$(basename '${{ inputs.model_settings.hf_model_id }}')\"\n          if [ -f \"$MODEL_DIR/config.json\" ]; then echo \"Model present at $MODEL_DIR; reusing.\"; exit 0; fi\n          if [ -z \"${{ inputs.model_settings.hf_model_id }}\" ]; then echo \"ERROR: no model directory and no model id to download.\"; exit 1; fi\n          # pip on the login node rather than the container: some login\n          # nodes exhaust user namespaces and refuse containers entirely.\n          python3 -m pip install --user -q \"huggingface_hub[cli]\"\n          HF_TOKEN='${{ inputs.model_settings.hf_token }}' ~/.local/bin/hf download '${{ inputs.model_settings.hf_model_id }}' --local-dir \"$MODEL_DIR\"\n          ls \"$MODEL_DIR\" | head -5\n  submit_compute:\n    if: ${{ inputs.resource_and_execution.scheduler == true }}\n    needs:\n      - stage_compute\n    ssh:\n      remoteHost: ${{ inputs.resource_and_execution.resource.ip }}\n    steps:\n      - name: Write the job script\n        run: |\n          if [ \"${{ inputs.session_settings.session_method }}\" = \"cleanup\" ]; then exit 0; fi\n          WORKDIR=\"$(eval echo '${{ inputs.app_settings.workdir }}')\"\n          RUNDIR=\"$WORKDIR/compute-run\"\n          cd \"$RUNDIR\"\n          KB=\"$(eval echo '${{ inputs.kb_settings.kb_root }}')\"\n          IDX=\"$(eval echo '${{ inputs.kb_settings.index_base }}')\"\n          [ -n \"$IDX\" ] || IDX=\"$WORKDIR/studio-index\"\n          # Paths resolved during staging: a shared image is read where it\n          # sits, a bucket image from the per-user cache.\n          SSIF=\"$WORKDIR/containers/studio.sif\"; VSIF=\"$WORKDIR/containers/vllm.sif\"\n          [ -f \"$RUNDIR/images.env\" ] && . \"$RUNDIR/images.env\"\n          MODEL_DIR=\"$(eval echo '${{ inputs.model_settings.model_dir }}')\"\n          [ -n \"$MODEL_DIR\" ] || MODEL_DIR=\"$WORKDIR/models/$(basename '${{ inputs.model_settings.hf_model_id }}')\"\n          PW_BIN=\"$(command -v pw || echo ~/pw/pw)\"\n          SESSION=\"$(eval echo \"${{ inputs.session_settings.session_name }}\" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-' | sed -E 's/-+/-/g; s/^-//; s/-$//')\"\n          [ -n \"$SESSION\" ] || SESSION=\"studio\"\n          # Expanded and slugified like the session name, since this is an\n          # endpoint name too and several people may run the same workflow.\n          MODEL_EP=\"$(eval echo \"${{ inputs.model_settings.model_endpoint_name }}\" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-' | sed -E 's/-+/-/g; s/^-//; s/-$//')\"\n          [ -n \"$MODEL_EP\" ] || MODEL_EP=\"${SESSION}-model\"\n          ICON=\"$(eval echo '${{ inputs.app_settings.icon_path }}')\"\n          ICON_DARK=\"$(eval echo '${{ inputs.app_settings.icon_path_dark }}')\"\n          # Free text arrives through quoted heredocs so an apostrophe, a\n          # quote, or a line break in an operator's wording cannot break the\n          # script that carries it.\n          MISSION=$(cat << 'FIELD_EOF'\n          ${{ inputs.kb_settings.mission }}\n          FIELD_EOF\n          )\n          APP_NAME=$(cat << 'FIELD_EOF'\n          ${{ inputs.app_settings.app_name }}\n          FIELD_EOF\n          )\n          KB_LABEL=$(cat << 'FIELD_EOF'\n          ${{ inputs.kb_settings.kb_label }}\n          FIELD_EOF\n          )\n          PROMPTS=$(cat << 'FIELD_EOF'\n          ${{ inputs.app_settings.suggested_prompts }}\n          FIELD_EOF\n          )\n          BANNER_TEXT=$(cat << 'FIELD_EOF'\n          ${{ inputs.app_settings.banner_text }}\n          FIELD_EOF\n          )\n          VLLM_ARGS=$(cat << 'FIELD_EOF'\n          ${{ inputs.model_settings.vllm_args }}\n          FIELD_EOF\n          )\n          PROMPTS_JSON=$(P=\"$PROMPTS\" python3 -c \"import json,os; print(json.dumps([q.strip() for q in os.environ['P'].split(';') if q.strip()]))\")\n          JWKS=\"\"\n          if [ \"${{ inputs.model_settings.posture }}\" != \"single\" ] && [ -n \"${{ inputs.model_settings.platform_host }}\" ]; then\n            JWKS=\"https://${{ inputs.model_settings.platform_host }}/api/platform/keys\"\n          fi\n          DISABLE_KEYS=\"\"; [ \"${{ inputs.model_settings.posture }}\" = \"multi-shared\" ] && DISABLE_KEYS=1\n          REQUIRE_KEY=\"\"; [ \"${{ inputs.model_settings.posture }}\" = \"multi-strict\" ] && REQUIRE_KEY=1\n          # The image tests INDEX_ON_START=1 exactly, so \"true\" reads as off and\n          # the corpus is served unindexed with search silently on the grep\n          # fallback. Send what the image checks for.\n          INDEX_ON_START=0; [ \"${{ inputs.kb_settings.run_index }}\" = \"true\" ] && INDEX_ON_START=1\n\n          # Every launch-specific value lands here, %q-quoted, so the job\n          # script itself stays a plain readable script with no generated\n          # substitutions in its body.\n          {\n            printf 'RUNDIR=%q\\n'         \"$RUNDIR\"\n            printf 'KB=%q\\n'             \"$KB\"\n            printf 'IDX=%q\\n'            \"$IDX\"\n            printf 'SSIF=%q\\n'           \"$SSIF\"\n            printf 'VSIF=%q\\n'           \"$VSIF\"\n            printf 'MODEL_DIR=%q\\n'      \"$MODEL_DIR\"\n            printf 'PW_BIN=%q\\n'         \"$PW_BIN\"\n            printf 'SESSION=%q\\n'        \"$SESSION\"\n            printf 'MODEL_EP=%q\\n'       \"$MODEL_EP\"\n            printf 'SERVE=%q\\n'          '${{ inputs.model_settings.serve }}'\n            printf 'GPU_IDS=%q\\n'        '${{ inputs.model_settings.gpu_ids }}'\n            printf 'SERVED_NAME=%q\\n'    '${{ inputs.model_settings.served_name }}'\n            printf 'VLLM_ARGS=%q\\n'      \"$VLLM_ARGS\"\n            printf 'REGISTER_OPENAI=%q\\n' '${{ inputs.model_settings.register_openai }}'\n            printf 'GATEWAY_URL=%q\\n'    '${{ inputs.model_settings.gateway_url }}'\n            printf 'GATEWAY_KEY=%q\\n'    '${{ inputs.model_settings.pw_api_key }}'\n            printf 'PLATFORM_HOST=%q\\n' '${{ inputs.model_settings.platform_host }}'\n            printf 'APP_NAME=%q\\n'       \"$APP_NAME\"\n            printf 'KB_LABEL=%q\\n'       \"$KB_LABEL\"\n            printf 'STARTER_DIRS=%q\\n'   '${{ inputs.kb_settings.starter_dirs }}'\n            printf 'BANNER_TEXT=%q\\n'    \"$BANNER_TEXT\"\n            printf 'BANNER_COLOR=%q\\n'   '${{ inputs.app_settings.banner_color }}'\n            printf 'ICON=%q\\n'           \"$ICON\"\n            printf 'ICON_DARK=%q\\n'      \"$ICON_DARK\"\n            printf 'MISSION=%q\\n'        \"$MISSION\"\n            printf 'PROMPTS_JSON=%q\\n'   \"$PROMPTS_JSON\"\n            printf 'JWKS=%q\\n'           \"$JWKS\"\n            printf 'DISABLE_KEYS=%q\\n'   \"$DISABLE_KEYS\"\n            printf 'REQUIRE_KEY=%q\\n'    \"$REQUIRE_KEY\"\n            printf 'INDEX_ON_START=%q\\n' \"$INDEX_ON_START\"\n          } > job.env\n          cat job.env\n\n          # The only generated line in the job script is the path to the\n          # values above; the scheduler copies the script elsewhere, so it\n          # cannot find them relative to itself.\n          printf '#!/bin/bash\\nJOB_ENV=%q\\n' \"$RUNDIR/job.env\" > job.sh\n          cat >> job.sh << 'JOB'\n          set -u\n          . \"$JOB_ENV\"\n          cd \"$RUNDIR\"\n\n          # The run directory persists across launches; stale logs from the\n          # previous job must not satisfy this launch's watchers.\n          : > endpoint.log; : > model-endpoint.log; : > vllm.out; : > studio.out\n\n          RUNTIME=\"$(command -v apptainer || command -v singularity)\"\n          cleanup() {\n            \"$RUNTIME\" instance stop studio-compute-vllm 2>/dev/null\n            [ -f model-endpoint.pid ] && kill \"$(cat model-endpoint.pid)\" 2>/dev/null\n            # The endpoint agent deletes its own session when it exits\n            # cleanly, but a walltime kill never lets it, which leaves a\n            # record behind pointing at a node that is no longer serving.\n            # Delete both by name; a session that has already gone makes\n            # this a no-op.\n            [ -n \"$MODEL_EP\" ] && \"$PW_BIN\" endpoints delete \"$MODEL_EP\" > /dev/null 2>&1\n            [ -n \"$SESSION\" ] && \"$PW_BIN\" endpoints delete \"$SESSION\" > /dev/null 2>&1\n            return 0\n          }\n          # EXIT alone does not fire when the shell is killed by a signal,\n          # which is exactly how a job ends at its walltime.\n          trap cleanup EXIT INT TERM\n\n          pickport() { python3 -c 'import socket; s=socket.socket(); s.bind((\"\",0)); print(s.getsockname()[1]); s.close()'; }\n\n          # A model served in this job takes the node's GPUs and the Studio\n          # points at it; otherwise the Studio uses the configured gateway.\n          if [ \"$SERVE\" = \"true\" ]; then\n            VPORT=$(pickport)\n            \"$RUNTIME\" instance start --nv --cleanenv --writable-tmpfs \\\n              --bind \"$MODEL_DIR:/model\" --bind \"$PWD:/rundir\" \\\n              \"$VSIF\" studio-compute-vllm\n            \"$RUNTIME\" exec instance://studio-compute-vllm bash -c \"\n              export CUDA_VISIBLE_DEVICES='$GPU_IDS'\n              nohup python3 -m vllm.entrypoints.openai.api_server \\\n                --model /model --served-model-name '$SERVED_NAME' \\\n                --host 0.0.0.0 --port $VPORT $VLLM_ARGS \\\n                > /rundir/vllm.out 2>&1 &\n            \"\n            for i in $(seq 1 240); do\n              curl -s -m 5 \"localhost:$VPORT/v1/models\" | grep -q '\"id\"' && { echo \"vLLM up after ~$((i*5))s\"; break; }\n              pgrep -f \"openai.api_server.*--port $VPORT\" > /dev/null || { echo \"vLLM exited:\"; tail -30 vllm.out; exit 1; }\n              sleep 5\n            done\n            curl -s -m 5 \"localhost:$VPORT/v1/models\" | grep -q '\"id\"' || { echo \"vLLM never came up:\"; tail -30 vllm.out; exit 1; }\n            # The served model is given to the Studio as a second target\n            # rather than as the gateway. Replacing the gateway made this\n            # model the only one anybody could pick, which hid the platform\n            # provider models from a deployment\n            # that is otherwise entitled to them. Listed side by side, the\n            # private model on this node and the platform providers appear\n            # in one picker and either can be called in the same\n            # conversation. Where no platform credential is configured the\n            # Studio still finds one from the pw CLI store bound in below,\n            # and if there is genuinely none, the local model stands alone,\n            # which is the old behaviour.\n            SIDECAR_URL=\"http://localhost:$VPORT/v1\"\n              # No --keep: a model session outliving its job points at nothing.\n            if [ \"$REGISTER_OPENAI\" = \"true\" ]; then\n              setsid nohup \"$PW_BIN\" endpoints http --openai -o text \\\n                --name \"$MODEL_EP\" \"$VPORT\" > model-endpoint.log 2>&1 < /dev/null &\n              echo $! > model-endpoint.pid\n            fi\n          fi\n\n\n          # The Studio runs under the endpoint agent rather than beside it:\n          # `endpoints run` owns the process tree and tears it down when the\n          # endpoint goes, so deleting the session releases the node instead\n          # of leaving the job to burn the rest of its walltime. The walltime\n          # remains the backstop for a session nobody deletes.\n          # The endpoint agent joins the command it is given back into one\n          # string, so a --env value containing a space arrives as separate\n          # arguments and the container is handed nonsense. Keep the whole\n          # invocation in a script and let the agent run just that; the port\n          # it assigns arrives in the environment.\n          # The launcher runs as a fresh shell, so it reads the same %q-quoted\n          # values the job script uses rather than having them pasted in: a JSON\n          # value re-parsed by a second shell loses its quoting, and the starter\n          # prompts are JSON. Only the runtime and the gateway are added here,\n          # since both are decided after job.env was written.\n          printf 'RUNTIME=%q\\nGATEWAY_URL=%q\\nGATEWAY_KEY=%q\\nSIDECAR_URL=%q\\n' \\\n            \"$RUNTIME\" \"$GATEWAY_URL\" \"$GATEWAY_KEY\" \"${SIDECAR_URL:-}\" >> \"$JOB_ENV\"\n          printf '#!/bin/bash\\nJOB_ENV=%q\\n' \"$JOB_ENV\" > launch-studio.sh\n          cat >> launch-studio.sh << 'LAUNCH'\n          . \"$JOB_ENV\"\n          # Restart rather than die. The endpoint agent owns this process\n          # tree, so when the Studio exits the endpoint is removed and the\n          # job ends, taking any model serving beside it on the node with\n          # it. A crash should cost a reconnect, not the allocation. A\n          # clean exit (code 0) is a real shutdown and ends the loop; a\n          # crash is retried a few times and then allowed to fail, so a\n          # deployment that cannot start does not restart forever.\n          tries=0\n          while :; do\n            \"$RUNTIME\" run --cleanenv \\\n            --env PORT=\"$PORT\" --env KB_ROOT=\"$KB\" --env DATA_DIR=\"$IDX\" \\\n            --env INDEX_BASE=\"$IDX\" --env KB_LABEL=\"$KB_LABEL\" \\\n            --env APP_NAME=\"$APP_NAME\" --env INDEX_ON_START=\"$INDEX_ON_START\" \\\n            --env KB_MISSION=\"$MISSION\" --env KB_STARTER_DIRS=\"$STARTER_DIRS\" \\\n            --env SUGGESTED_PROMPTS=\"$PROMPTS_JSON\" \\\n            --env APP_ICON=\"$ICON\" --env APP_ICON_DARK=\"$ICON_DARK\" \\\n            ${GATEWAY_URL:+--env PW_GATEWAY_URL=\"$GATEWAY_URL\"} \\\n            ${GATEWAY_KEY:+--env PW_API_KEY=\"$GATEWAY_KEY\"} \\\n            ${PLATFORM_HOST:+--env PW_PLATFORM_HOST=\"$PLATFORM_HOST\"} \\\n            ${BANNER_TEXT:+--env BANNER_TEXT=\"$BANNER_TEXT\"} \\\n            ${BANNER_COLOR:+--env BANNER_COLOR=\"$BANNER_COLOR\"} \\\n            ${JWKS:+--env AUTH_JWKS_URL=\"$JWKS\"} \\\n            ${JWKS:+--env AUTH_ISSUER=\"pw-session-proxy\"} \\\n            ${DISABLE_KEYS:+--env DISABLE_PERSONAL_KEYS=\"$DISABLE_KEYS\"} \\\n            ${REQUIRE_KEY:+--env REQUIRE_PERSONAL_KEY=\"$REQUIRE_KEY\"} \\\n            ${SIDECAR_URL:+--env SIDECAR_MODEL_URL=\"$SIDECAR_URL\"} \\\n            ${SIDECAR_URL:+--env SIDECAR_ENDPOINT=\"$MODEL_EP\"} \\\n            --env PW_CLI=\"/usr/local/bin/pw\" --env HOME=\"$HOME\" \\\n            --bind \"$PW_BIN:/usr/local/bin/pw\" \\\n            --bind \"$KB:$KB\" --bind \"$IDX:$IDX\" \\\n            \"$SSIF\" && break\n            rc=$?\n            tries=$((tries + 1))\n            if [ \"$tries\" -ge 5 ]; then\n              echo \"Studio exited $rc five times; not restarting again.\"\n              exit \"$rc\"\n            fi\n            echo \"Studio exited $rc; restarting (attempt $tries of 5).\"\n            sleep 5\n          done\n          LAUNCH\n          chmod +x launch-studio.sh\n          # The agent owns this process tree: deleting the session ends the job.\n          \"$PW_BIN\" endpoints run --name \"$SESSION\" --subdomain \"$SESSION\" -- \\\n            bash \"$RUNDIR/launch-studio.sh\" 2>&1 | tee studio.out\n\n          # Reached when the endpoint is deleted, the Studio exits, or the\n          # walltime arrives; the trap stops the model beside it.\n          echo \"Studio endpoint closed; ending the job.\"\n          JOB\n          chmod +x job.sh\n          bash -n job.sh && echo \"job script syntax ok\"\n      - name: Submit in the resource's scheduler dialect and watch\n        run: |\n          WORKDIR=\"$(eval echo '${{ inputs.app_settings.workdir }}')\"\n          RUNDIR=\"$WORKDIR/compute-run\"\n          mkdir -p \"$RUNDIR\"; cd \"$RUNDIR\"\n          METHOD=\"${{ inputs.session_settings.session_method }}\"\n          STYPE=\"${{ inputs.resource_and_execution.resource.schedulerType }}\"\n          SESSION=\"$(eval echo \"${{ inputs.session_settings.session_name }}\" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-' | sed -E 's/-+/-/g; s/^-//; s/-$//')\"\n          [ -n \"$SESSION\" ] || SESSION=\"studio\"\n          JOB_NAME=\"studio-$SESSION\"\n          echo \"scheduler dialect: ${STYPE:-none}\"\n\n          cancel_by_name() {\n            if [ \"$STYPE\" = \"slurm\" ]; then\n              scancel --name \"$JOB_NAME\" 2>/dev/null || true\n            elif [ \"$STYPE\" = \"pbs\" ]; then\n              # PBS caps job names; cancel what a prior submit could have used.\n              for id in $(qselect -N \"$(echo \"$JOB_NAME\" | cut -c1-15)\" 2>/dev/null); do qdel \"$id\" 2>/dev/null || true; done\n            fi\n          }\n          if [ \"$METHOD\" = \"cleanup\" ]; then\n            echo \"Cleanup run: cancelling any $JOB_NAME job.\"\n            cancel_by_name\n            exit 0\n          fi\n\n          # One stack per session name: end any previous job before submitting.\n          cancel_by_name\n          # A fresh output file per submission: a watcher reading a prior\n          # job's leftover output mistakes its state for this run's.\n          OUT=\"$RUNDIR/job-$(date +%s).out\"\n          ln -sf \"$OUT\" \"$RUNDIR/job.out\"\n          # CLI-supplied partial input groups arrive with unset fields empty\n          # (form defaults live only in the form), so walltime is backed by\n          # a fallback; empty partition, account, qos, and queue mean the\n          # flag is omitted and the cluster default applies.\n          if [ \"$STYPE\" = \"slurm\" ]; then\n            WALLTIME='${{ inputs.slurm.walltime }}'; [ -n \"$WALLTIME\" ] || WALLTIME='02:00:00'\n            {\n              echo \"#SBATCH --job-name=$JOB_NAME\"\n              echo \"#SBATCH --nodes=1\"\n              echo \"#SBATCH --time=$WALLTIME\"\n              # Ask for SIGTERM at the batch shell a minute before the\n              # walltime, so the cleanup trap has time to delete the\n              # endpoint sessions instead of being killed outright and\n              # leaving them behind as stopped records.\n              echo \"#SBATCH --signal=B:TERM@60\"\n              echo \"#SBATCH --output=$OUT\"\n              [ -n \"${{ inputs.slurm.partition }}\" ] && echo \"#SBATCH --partition=${{ inputs.slurm.partition }}\"\n              [ -n \"${{ inputs.slurm.account }}\" ] && echo \"#SBATCH --account=${{ inputs.slurm.account }}\"\n              [ -n \"${{ inputs.slurm.qos }}\" ] && echo \"#SBATCH --qos=${{ inputs.slurm.qos }}\"\n              DIRECTIVES='${{ inputs.slurm.scheduler_directives }}'\n              IFS=';'\n              for d in $DIRECTIVES; do d=$(echo \"$d\" | xargs); [ -n \"$d\" ] && echo \"#SBATCH $d\"; done\n              unset IFS\n              true\n            } > headers.sh\n          elif [ \"$STYPE\" = \"pbs\" ]; then\n            WALLTIME='${{ inputs.pbs.walltime }}'; [ -n \"$WALLTIME\" ] || WALLTIME='02:00:00'\n            {\n              echo \"#PBS -N $(echo \"$JOB_NAME\" | cut -c1-15)\"\n              echo \"#PBS -o $OUT\"\n              echo \"#PBS -j oe\"\n              echo \"#PBS -l walltime=$WALLTIME\"\n              [ -n \"${{ inputs.pbs.account }}\" ] && echo \"#PBS -A ${{ inputs.pbs.account }}\"\n              [ -n \"${{ inputs.pbs.queue }}\" ] && echo \"#PBS -q ${{ inputs.pbs.queue }}\"\n              DIRECTIVES='${{ inputs.pbs.scheduler_directives }}'\n              IFS=';'\n              for d in $DIRECTIVES; do d=$(echo \"$d\" | xargs); [ -n \"$d\" ] && echo \"#PBS $d\"; done\n              unset IFS\n              true\n            } > headers.sh\n          else\n            echo \"ERROR: the resource reports no scheduler; turn off scheduler placement or pick a cluster with one.\"\n            exit 1\n          fi\n          { head -1 job.sh; cat headers.sh; tail -n +2 job.sh; } > job-submit.sh\n          chmod +x job-submit.sh\n          sed -n '1,20p' job-submit.sh\n\n          if [ \"$STYPE\" = \"slurm\" ]; then\n            JOBID=$(sbatch job-submit.sh | grep -oE '[0-9]+$') || { echo \"ERROR: submission failed\"; exit 1; }\n            job_state() { squeue -j \"$JOBID\" -h -o %T 2>/dev/null || true; }\n            is_running() { [ \"$1\" = \"RUNNING\" ]; }\n          else\n            QSUB_OUT=$(qsub job-submit.sh 2>&1) || { echo \"ERROR: submission failed: $QSUB_OUT\"; exit 1; }\n            JOBID=$(echo \"$QSUB_OUT\" | head -1)\n            job_state() { qstat -f \"$JOBID\" 2>/dev/null | grep job_state | cut -d'=' -f2 | tr -d ' '; }\n            is_running() { [ \"$1\" = \"R\" ]; }\n          fi\n          echo \"Submitted job $JOBID\"\n          for i in $(seq 1 240); do\n            ST=$(job_state)\n            [ -z \"$ST\" ] && { echo \"Job left the queue; output:\"; tail -40 job.out 2>/dev/null; exit 1; }\n            is_running \"$ST\" && break\n            sleep 15\n          done\n          echo \"Job running; waiting for the session URL...\"\n          URL=\"\"\n          for i in $(seq 1 240); do\n            URL=$(grep -oE \"https://[^ ]+\" endpoint.log 2>/dev/null | head -1 || true)\n            [ -n \"$URL\" ] && { echo \"Studio session: $URL\"; break; }\n            ST=$(job_state)\n            [ -z \"$ST\" ] && { echo \"Job ended before the session came up; output:\"; tail -40 job.out 2>/dev/null; exit 1; }\n            sleep 10\n          done\n          if [ \"$METHOD\" = \"e2e\" ]; then\n            if [ -n \"$URL\" ]; then\n              echo \"E2E PASS: job ran, stack came up, session registered; cancelling the job.\"\n              if [ \"$STYPE\" = \"slurm\" ]; then scancel \"$JOBID\"; else qdel \"$JOBID\"; fi\n            else\n              echo \"E2E FAIL: session never came up; cancelling the job.\"\n              if [ \"$STYPE\" = \"slurm\" ]; then scancel \"$JOBID\"; else qdel \"$JOBID\"; fi\n              exit 1\n            fi\n            exit 0\n          fi\n          tail -5 job.out 2>/dev/null || true\n"
+   },
+   "hasInputs": true,
+   "form": {
+    "out": {
+     "resource_and_execution": {
+      "label": "Resource & Execution",
+      "type": "object",
+      "collapsed": false,
+      "options": {
+       "resource": {
+        "label": "Resource Target",
+        "type": "compute-clusters",
+        "autoselect": true,
+        "optional": false
+       },
+       "scheduler": {
+        "label": "Submit as a Scheduler Job",
+        "type": "boolean",
+        "default": false,
+        "hidden": "${{ inputs.resource_and_execution.resource.schedulerType == '' }}",
+        "tooltip": "On, the whole stack runs as one batch job on a compute node,\nsubmitted in the resource's scheduler dialect (Slurm or PBS),\noptionally with a vLLM model serve on the node's GPUs; the app\nends with the walltime and relaunches reuse the corpus, index,\nand session names. Off, the app runs on the login node and\noutlives the workflow. Scheduler placement runs the container\nsource only.\n"
+       }
+      }
+     },
+     "slurm": {
+      "label": "Slurm Job",
+      "type": "object",
+      "collapsed": false,
+      "hidden": "${{ inputs.resource_and_execution.resource.schedulerType != 'slurm' || inputs.resource_and_execution.scheduler == false }}",
+      "options": {
+       "account": {
+        "label": "Account",
+        "type": "dynamicAccountDropdown",
+        "resource": "${{ inputs.resource_and_execution.resource }}",
+        "optional": true,
+        "ignore": "${{ inputs.resource_and_execution.resource.schedulerType != 'slurm' || inputs.resource_and_execution.scheduler == false }}",
+        "tooltip": "Scheduler account for the job (--account)."
+       },
+       "partition": {
+        "label": "Partition",
+        "type": "dynamicPartitionDropdown",
+        "resource": "${{ inputs.resource_and_execution.resource }}",
+        "optional": true,
+        "ignore": "${{ inputs.resource_and_execution.resource.schedulerType != 'slurm' || inputs.resource_and_execution.scheduler == false }}",
+        "tooltip": "Partition with the GPUs (--partition). Empty uses the cluster default."
+       },
+       "qos": {
+        "label": "Quality of Service",
+        "type": "dynamicQOSDropdown",
+        "resource": "${{ inputs.resource_and_execution.resource }}",
+        "optional": true,
+        "ignore": "${{ inputs.resource_and_execution.resource.schedulerType != 'slurm' || inputs.resource_and_execution.scheduler == false }}",
+        "tooltip": "QOS for the job (--qos), where the site requires one."
+       },
+       "walltime": {
+        "label": "Walltime",
+        "type": "string",
+        "default": "02:00:00",
+        "tooltip": "The stack ends with the job (--time). Relaunching reuses the corpus, index, and session names."
+       },
+       "scheduler_directives": {
+        "label": "Extra Scheduler Directives",
+        "type": "string",
+        "default": "",
+        "optional": true,
+        "tooltip": "Semicolon-separated sbatch directives without the"
+       }
+      }
+     },
+     "pbs": {
+      "label": "PBS Job",
+      "type": "object",
+      "collapsed": false,
+      "hidden": "${{ inputs.resource_and_execution.resource.schedulerType != 'pbs' || inputs.resource_and_execution.scheduler == false }}",
+      "options": {
+       "account": {
+        "label": "Account",
+        "type": "string",
+        "default": "",
+        "optional": true,
+        "tooltip": "Allocation for the job (-A)."
+       },
+       "queue": {
+        "label": "Queue",
+        "type": "string",
+        "default": "",
+        "optional": true,
+        "tooltip": "Queue for the job (-q). Empty uses the cluster default."
+       },
+       "walltime": {
+        "label": "Walltime",
+        "type": "string",
+        "default": "02:00:00",
+        "tooltip": "The stack ends with the job (-l walltime=). Relaunching reuses the corpus, index, and session names."
+       },
+       "scheduler_directives": {
+        "label": "Extra Scheduler Directives",
+        "type": "string",
+        "default": "-l select=1:ngpus=1",
+        "optional": true,
+        "tooltip": "Semicolon-separated qsub directives without the"
+       }
+      }
+     },
+     "session_settings": {
+      "label": "Session",
+      "type": "object",
+      "collapsed": false,
+      "options": {
+       "session_name": {
+        "label": "Session Name",
+        "type": "string",
+        "default": "studio",
+        "tooltip": "Session and endpoint name, and also the URL subdomain, so keep it stable across relaunches. Shell variables are expanded, so a name like studio-${USER} gives each person their own session and URL where several people launch the same workflow."
+       },
+       "unique_suffix": {
+        "label": "Append Port to Session Name",
+        "type": "boolean",
+        "default": false,
+        "tooltip": "Appends the app port to the session name so each launch gets a unique URL. Leave off for a stable URL that survives relaunches."
+       },
+       "session_method": {
+        "label": "Session Method",
+        "type": "dropdown",
+        "default": "web",
+        "tooltip": "Web     → pw endpoints http exposes the app at a root URL.\nE2E     → launch everything, assert HTTP 200 at /healthz, tear down, exit.\nCleanup → stop every process prior launches left on the node, then exit.\n",
+        "options": [
+         {
+          "label": "Web (endpoint URL)",
+          "value": "web"
+         },
+         {
+          "label": "E2E test (verify & tear down)",
+          "value": "e2e"
+         },
+         {
+          "label": "Cleanup (stop everything from prior launches)",
+          "value": "cleanup"
+         }
+        ]
+       }
+      }
+     },
+     "app_settings": {
+      "label": "App & Bundle",
+      "type": "object",
+      "collapsed": true,
+      "options": {
+       "app_name": {
+        "label": "App Name",
+        "type": "string",
+        "default": "Studio",
+        "tooltip": "Product name shown in the interface (APP_NAME)."
+       },
+       "icon_path": {
+        "label": "Brand Icon Path",
+        "type": "string",
+        "default": "",
+        "optional": true,
+        "tooltip": "Image used as the interface brand icon and favicon (APP_ICON). Either an https URL, or an absolute path on the resource, in which case stage the file first (for a container deployment it must sit under a bind-mounted directory, such as a .branding folder inside the knowledge base)."
+       },
+       "icon_path_dark": {
+        "label": "Brand Icon Path (dark mode)",
+        "type": "string",
+        "default": "",
+        "optional": true,
+        "tooltip": "Icon variant for dark mode; same rules as the light icon. Empty reuses the light icon."
+       },
+       "banner_text": {
+        "label": "Classification Banner",
+        "type": "string",
+        "default": "",
+        "optional": true,
+        "tooltip": "Banner text across the top of the app, e.g. the CUI marking. The platform draws its own banner around an embedded session, so this one appears only when the app is opened on its own; editable later in Settings."
+       },
+       "banner_color": {
+        "label": "Classification Banner Color",
+        "type": "string",
+        "default": "",
+        "optional": true,
+        "tooltip": "Banner background as"
+       },
+       "suggested_prompts": {
+        "label": "Chat Starter Prompts",
+        "type": "string",
+        "default": "",
+        "optional": true,
+        "tooltip": "Semicolon-separated example questions shown on the empty chat page. Empty keeps the app defaults; editable later in Settings."
+       },
+       "workdir": {
+        "label": "Work Directory",
+        "type": "string",
+        "default": "${HOME}/studio-work",
+        "tooltip": "Directory on the resource where the app is unpacked, built, and run."
+       },
+       "source": {
+        "label": "App Source",
+        "type": "dropdown",
+        "default": "github",
+        "tooltip": "Container → run a prebuilt Apptainer image (deploy/app.def) that\ncarries Node, Python, GUFI, and the embedding model, so nothing is\ncompiled on the resource and host differences stop mattering.\nGitHub → clone the repository on the resource and build there (needs\noutbound HTTPS to github.com and nodejs.org; Node is fetched\nautomatically when absent).\nBundle → self-contained tarball from deploy/make_bundle.sh, pulled from\nthe bucket or pre-staged at <workdir>/bundle-prestage.tar.gz; nothing\nis fetched from the internet.\n",
+        "options": [
+         {
+          "label": "Container (Apptainer image; pinned runtime, no build on the resource)",
+          "value": "container"
+         },
+         {
+          "label": "GitHub (clone and build on the resource)",
+          "value": "github"
+         },
+         {
+          "label": "Bundle (bucket or pre-staged; for air-gapped systems)",
+          "value": "bundle"
+         }
+        ]
+       },
+       "container_dir": {
+        "label": "Container Scratch Directory",
+        "type": "string",
+        "default": "/tmp/studio-container",
+        "hidden": "${{ inputs.app_settings.source != 'container' }}",
+        "tooltip": "Where the image and its expanded sandbox live on the resource. Keep this on node-local disk, since it is derived from the image and costs nothing to recreate, while a shared filesystem charges for the space and extracts far more slowly."
+       },
+       "image_path": {
+        "label": "Container Image",
+        "type": "string",
+        "default": "",
+        "optional": true,
+        "hidden": "${{ inputs.app_settings.source != 'container' }}",
+        "tooltip": "Path to the .sif on the resource, a platform bucket URI (pw://user/bucket/studio.sif), or a library/docker URI the container runtime can pull. Several may be listed, separated by semicolons, and the first that works is used, so a shared copy can name a bucket behind it. Empty looks for studio.sif in the work directory."
+       },
+       "repo_url": {
+        "label": "Repository URL",
+        "type": "string",
+        "default": "https://github.com/parallelworks/activate-studio",
+        "hidden": "${{ inputs.app_settings.source == 'bundle' }}",
+        "tooltip": "Repository to clone. For a private repository, embed a token (https://<token>@github.com/...) or install a deploy key on the resource."
+       },
+       "git_ref": {
+        "label": "Git Ref",
+        "type": "string",
+        "default": "main",
+        "hidden": "${{ inputs.app_settings.source == 'bundle' }}",
+        "tooltip": "Branch, tag, or commit to check out."
+       },
+       "rundir": {
+        "label": "Run Directory",
+        "type": "string",
+        "default": "${PW_PARENT_JOB_DIR}",
+        "hidden": true
+       },
+       "bundlebucket": {
+        "label": "Bundle Bucket",
+        "type": "bucket",
+        "optional": true,
+        "tooltip": "Bucket holding the deployment bundle built by deploy/make_bundle.sh. If the platform bucket API is unavailable, pre-stage the bundle on the resource as <workdir>/bundle-prestage.tar.gz instead; the pull step falls back to it."
+       },
+       "self_url": {
+        "label": "Public Studio URL",
+        "type": "string",
+        "default": "",
+        "optional": true,
+        "tooltip": "The session URL this deployment is reached at (e.g. https://my-studio.example). Campaign agents running on other systems use it to reach the task board; empty keeps the board local-only."
+       },
+       "bundle_file": {
+        "label": "Bundle File",
+        "type": "string",
+        "default": "studio-bundle.tar.gz",
+        "tooltip": "Filename of the bundle in the bucket. Bump to roll to a newer build."
+       },
+       "refresh_software": {
+        "label": "Load Latest Bundle",
+        "type": "boolean",
+        "default": false,
+        "tooltip": "Clobber the cached bundle and re-pull the latest from the bucket."
+       },
+       "office_runtime": {
+        "label": "LibreOffice Runtime (bucket)",
+        "type": "string",
+        "optional": true,
+        "tooltip": "Bucket path of an office-runtime.tar.gz (the official LibreOffice Linux binaries repacked as a relocatable directory). Pulled and cached once per host when soffice is absent, like the Node runtime, so Word, PowerPoint and Excel files render as pages. Leave empty to fall back to extracted-text previews."
+       },
+       "app_port": {
+        "label": "App Port",
+        "type": "number",
+        "default": 0,
+        "hidden": true
+       }
+      }
+     },
+     "kb_settings": {
+      "label": "Knowledge Base",
+      "type": "object",
+      "collapsed": false,
+      "options": {
+       "kb_root": {
+        "label": "Knowledge Base Directory",
+        "type": "string",
+        "default": "${HOME}/knowledge-base",
+        "tooltip": "The directory to index and serve. Created if missing; point it at an existing corpus to work over it."
+       },
+       "index_base": {
+        "label": "Index Directory",
+        "type": "string",
+        "default": "",
+        "optional": true,
+        "tooltip": "Where the search index, settings, and credential store live. Empty keeps it inside the work directory; set an absolute path (e.g. a /shared location) to survive work-directory rebuilds."
+       },
+       "starter_dirs": {
+        "label": "Starter Directories",
+        "type": "string",
+        "default": "",
+        "optional": true,
+        "tooltip": "Comma-separated directory names for a knowledge base that is new or empty (e.g. papers,software,datasets). Empty uses the default set, and a knowledge base that already holds content is never touched."
+       },
+       "starter_bundle": {
+        "label": "Starter Knowledge Base (bucket)",
+        "type": "string",
+        "default": "",
+        "optional": true,
+        "tooltip": "Tarball pulled and extracted into an empty knowledge base on first launch, so a fresh deployment starts with a working corpus. Takes a bucket URI, a path on the resource, or several of either separated by semicolons, in which case the first that works is used. A knowledge base that already has content is never touched. Scheduler placement only."
+       },
+       "kb_label": {
+        "label": "Knowledge Base Label",
+        "type": "string",
+        "default": "Knowledge Base",
+        "tooltip": "Display name in the interface."
+       },
+       "mission": {
+        "label": "Mission and Context",
+        "type": "string",
+        "optional": true,
+        "tooltip": "One short paragraph on what this Studio is for; injected into the assistant's system prompt and editable later in Settings."
+       },
+       "libraries": {
+        "label": "Additional Libraries",
+        "type": "string",
+        "optional": true,
+        "tooltip": "Other indexes this Studio mounts read only, as a JSON list. Each entry\nneeds an id and an indexRoot (a GUFI tree); a label and a sourceRoot\n(where the files are, when they are on this host) are optional.\nExample: [{\"id\":\"scratch\",\"label\":\"Scratch\",\"indexRoot\":\"/gufi/scratch\"}]\n"
+       },
+       "sections": {
+        "label": "Visible Sections",
+        "type": "string",
+        "optional": true,
+        "tooltip": "Comma-separated list of the sections to show, from chat, library,\nsearch, query, overview, history, agents, workflows. Leave empty for all of them.\n\"library,search,overview\" makes the Studio an index viewer with no assistant.\n"
+       },
+       "workflows": {
+        "label": "Offered Workflows",
+        "type": "string",
+        "optional": true,
+        "tooltip": "Comma-separated workflows to offer as tiles on the Workflows tab, in\norder: account workflow names, marketplace/<slug>, or\ngithub.com/<owner>/<repo>[/path][@ref]. Each viewer runs them under\ntheir own account.\nAdministrators can also pick them in Settings, Workflows, from the\nworkflows on the account this Studio is deployed under.\n"
+       },
+       "build_gufi": {
+        "label": "Build GUFI Index Engine",
+        "type": "boolean",
+        "default": true,
+        "tooltip": "Build GUFI from the bundled source (needs cmake and a C compiler on the\nresource; takes a few minutes the first time, cached afterwards). When\noff or when the build fails, the app still runs with filesystem browsing\nand grep-backed search.\n"
+       },
+       "run_index": {
+        "label": "Index on Launch",
+        "type": "boolean",
+        "default": true,
+        "tooltip": "Run the full index (metadata, text extraction, embeddings) before starting. Turn off for an instant relaunch on an unchanged corpus."
+       }
+      }
+     },
+     "model_settings": {
+      "label": "Models (optional)",
+      "type": "object",
+      "collapsed": true,
+      "options": {
+       "posture": {
+        "label": "Deployment Posture",
+        "type": "dropdown",
+        "default": "single",
+        "tooltip": "Single user runs with no platform identity and never creates the\nper-user credential store. Multi-user postures verify the platform\nidentity header; shared keeps everyone on the deployment credential\nwith key collection hard-disabled, personal lets users add their own\nmodel keys, strict requires them for chat. Multi-user postures need\nthe platform host below.\n",
+        "options": [
+         {
+          "label": "Single user (no identity, deployment credential only)",
+          "value": "single"
+         },
+         {
+          "label": "Multi-user, shared credential (no key collection)",
+          "value": "multi-shared"
+         },
+         {
+          "label": "Multi-user, personal keys allowed",
+          "value": "multi-personal"
+         },
+         {
+          "label": "Multi-user, personal keys required",
+          "value": "multi-strict"
+         }
+        ]
+       },
+       "platform_host": {
+        "label": "Platform Host (multi-user postures)",
+        "type": "string",
+        "default": "",
+        "optional": true,
+        "tooltip": "Platform host for identity verification, e.g. activate.parallel.works; the JWKS path is appended automatically. Ignored for the single-user posture."
+       },
+       "pw_api_key": {
+        "label": "Platform API key",
+        "tooltip": "A platform API key from your ACTIVATE account (Account, API keys), not an AI gateway or model key. The deployment's endpoint agent, CLI calls, and campaign runner authenticate with it, so the host never depends on a pw login that expires.",
+        "type": "string",
+        "default": "",
+        "optional": true
+       },
+       "gateway_url": {
+        "label": "Gateway Base URL",
+        "type": "string",
+        "default": "",
+        "optional": true,
+        "tooltip": "Override the OpenAI-compatible endpoint base URL (defaults to the ACTIVATE platform gateway)."
+       },
+       "serve": {
+        "label": "Serve a Model in the Job",
+        "type": "boolean",
+        "default": false,
+        "hidden": "${{ inputs.resource_and_execution.scheduler != true }}",
+        "tooltip": "Scheduler placement only. Start vLLM on the job's GPUs and point the Studio at it; off, the Studio uses the gateway settings above."
+       },
+       "model_dir": {
+        "label": "Model Directory",
+        "type": "string",
+        "default": "",
+        "optional": true,
+        "hidden": "${{ inputs.resource_and_execution.scheduler != true }}",
+        "tooltip": "HuggingFace-format model directory on the resource. Empty derives <workdir>/models/<model id>. Downloaded on the login node when missing and a model id is set; a read-only shared copy is served in place, so one copy covers every user."
+       },
+       "hf_model_id": {
+        "label": "HuggingFace Model ID",
+        "type": "string",
+        "default": "",
+        "optional": true,
+        "hidden": "${{ inputs.resource_and_execution.scheduler != true }}",
+        "tooltip": "Downloaded into the model directory when it does not exist yet."
+       },
+       "hf_token": {
+        "label": "HuggingFace Token",
+        "type": "string",
+        "default": "",
+        "optional": true,
+        "hidden": "${{ inputs.resource_and_execution.scheduler != true }}"
+       },
+       "served_name": {
+        "label": "Served Model Name",
+        "type": "string",
+        "default": "model",
+        "hidden": "${{ inputs.resource_and_execution.scheduler != true }}"
+       },
+       "vllm_image": {
+        "label": "vLLM Image (bucket or path)",
+        "type": "string",
+        "default": "",
+        "optional": true,
+        "hidden": "${{ inputs.resource_and_execution.scheduler != true }}",
+        "tooltip": "Bucket URI or path of the vLLM Apptainer image, or several separated by semicolons, the first that works being used. Staged beside the Studio image and cached on the resource."
+       },
+       "gpu_ids": {
+        "label": "GPU IDs",
+        "type": "string",
+        "default": "0",
+        "hidden": "${{ inputs.resource_and_execution.scheduler != true }}",
+        "tooltip": "CUDA_VISIBLE_DEVICES for the model server. The Studio itself needs no GPU."
+       },
+       "vllm_args": {
+        "label": "vLLM Arguments",
+        "type": "string",
+        "default": "--tensor-parallel-size 1 --gpu-memory-utilization 0.92 --max-model-len 32768",
+        "hidden": "${{ inputs.resource_and_execution.scheduler != true }}",
+        "tooltip": "Tool-call and reasoning parsers are model-specific; a Gemma 4 model wants --tool-call-parser gemma4 --reasoning-parser gemma4 and its chat template, a Qwen model --tool-call-parser qwen3_coder --reasoning-parser qwen3."
+       },
+       "register_openai": {
+        "label": "Register the Model in the Catalog",
+        "type": "boolean",
+        "default": true,
+        "hidden": "${{ inputs.resource_and_execution.scheduler != true }}",
+        "tooltip": "Also expose the served model as a platform model (pw endpoints --openai), so other tools can use it while the job runs."
+       },
+       "model_endpoint_name": {
+        "label": "Model Endpoint Name",
+        "type": "string",
+        "default": "",
+        "optional": true,
+        "hidden": "${{ inputs.resource_and_execution.scheduler != true }}",
+        "tooltip": "Platform endpoint name for the served model, expanded like the session name, so gemma-${USER} gives each person their own. Empty derives <session name>-model."
+       }
+      }
+     }
+    }
+   },
+   "labels": {
+    "setup": {
+     "out": [
+      "Create directories"
+     ]
+    },
+    "get_ports": {
+     "out": [
+      "Get open port"
+     ]
+    },
+    "pull_software": {
+     "out": [
+      "Clone and build from GitHub",
+      "Pull and unpack the bundle",
+      "Office rendering runtime when soffice is absent",
+      "Search by meaning packages, document readers and models"
+     ]
+    },
+    "build_gufi": {
+     "out": [
+      "Build GUFI from bundled source"
+     ]
+    },
+    "index_kb": {
+     "out": [
+      "Index the knowledge base"
+     ]
+    },
+    "run_app": {
+     "out": [
+      "Stop dangling processes from a prior launch",
+      "Generate run_app.sh",
+      "Launch app on the login node"
+     ]
+    },
+    "expose_session": {
+     "out": [
+      "Verify and surface the session"
+     ]
+    },
+    "stage_compute": {
+     "out": [
+      "Stage directories, images, and starter corpus",
+      "Fetch the model if missing"
+     ]
+    },
+    "submit_compute": {
+     "out": [
+      "Write the job script",
+      "Submit in the resource's scheduler dialect and watch"
+     ]
+    }
+   },
+   "deps": {
+    "setup": {
+     "out": []
+    },
+    "get_ports": {
+     "out": []
+    },
+    "pull_software": {
+     "out": [
+      "setup"
+     ]
+    },
+    "build_gufi": {
+     "out": [
+      "pull_software",
+      "setup"
+     ]
+    },
+    "index_kb": {
+     "out": [
+      "build_gufi",
+      "pull_software",
+      "setup"
+     ]
+    },
+    "run_app": {
+     "out": [
+      "index_kb",
+      "get_ports",
+      "build_gufi",
+      "pull_software",
+      "setup"
+     ]
+    },
+    "expose_session": {
+     "out": [
+      "run_app",
+      "get_ports",
+      "index_kb",
+      "build_gufi",
+      "pull_software",
+      "setup"
+     ]
+    },
+    "stage_compute": {
+     "out": []
+    },
+    "submit_compute": {
+     "out": [
+      "stage_compute"
+     ]
+    }
+   },
+   "submit": [
+    {
+     "out": {}
+    }
+   ]
+  },
+  {
+   "file": "../../../../../deploy/gufi-index.yaml",
+   "dump": {
+    "out": "permissions:\n  - '*'\njobs:\n  prepare:\n    ssh:\n      remoteHost: ${{ inputs.resource.ip }}\n    steps:\n      - name: Check inputs and write the index script\n        run: |\n          set -e\n          # Each value goes through a quoted heredoc, so nothing in it is\n          # expanded by this shell, and is quoted with %q when it is written\n          # into the job script.\n          cat > in.source_dir <<'STUDIO_GUFI_INPUT'\n          ${{ inputs.index.source_dir }}\n          STUDIO_GUFI_INPUT\n          cat > in.index_dir <<'STUDIO_GUFI_INPUT'\n          ${{ inputs.index.index_dir }}\n          STUDIO_GUFI_INPUT\n          cat > in.mode <<'STUDIO_GUFI_INPUT'\n          ${{ inputs.index.mode }}\n          STUDIO_GUFI_INPUT\n          cat > in.threads <<'STUDIO_GUFI_INPUT'\n          ${{ inputs.index.threads }}\n          STUDIO_GUFI_INPUT\n          cat > in.prefix <<'STUDIO_GUFI_INPUT'\n          ${{ inputs.gufi.prefix }}\n          STUDIO_GUFI_INPUT\n          cat > in.source <<'STUDIO_GUFI_INPUT'\n          ${{ inputs.gufi.source }}\n          STUDIO_GUFI_INPUT\n          value() { tr -d '\\r' < \"in.$1\" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' | sed -n '1p'; }\n          fail() { echo \"::error title=Invalid input::$1\"; exit 1; }\n          # ~, $HOME, and $WORKDIR at the start of a path are expanded from\n          # this account's environment on the cluster; nothing else is.\n          expand() {\n            case \"$1\" in\n              \"~\") printf '%s' \"$HOME\" ;;\n              \"~/\"*) printf '%s/%s' \"$HOME\" \"${1#\\~/}\" ;;\n              '$HOME'|'${HOME}') printf '%s' \"$HOME\" ;;\n              '$HOME/'*) printf '%s/%s' \"$HOME\" \"${1#\\$HOME/}\" ;;\n              '${HOME}/'*) printf '%s/%s' \"$HOME\" \"${1#\\$\\{HOME\\}/}\" ;;\n              '$WORKDIR'|'${WORKDIR}') printf '%s' \"${WORKDIR:-}\" ;;\n              '$WORKDIR/'*) [ -n \"${WORKDIR:-}\" ] && printf '%s/%s' \"$WORKDIR\" \"${1#\\$WORKDIR/}\" ;;\n              '${WORKDIR}/'*) [ -n \"${WORKDIR:-}\" ] && printf '%s/%s' \"$WORKDIR\" \"${1#\\$\\{WORKDIR\\}/}\" ;;\n              *) printf '%s' \"$1\" ;;\n            esac\n          }\n\n          # The default is the account's work directory on the cluster. Where\n          # the cluster sets no $WORKDIR, the home directory is indexed.\n          SOURCE_SPEC=\"$(value source_dir)\"\n          [ -n \"$SOURCE_SPEC\" ] || SOURCE_SPEC='$WORKDIR'\n          case \"$SOURCE_SPEC\" in\n            '$WORKDIR'|'${WORKDIR}')\n              if [ -z \"${WORKDIR:-}\" ]; then\n                echo \"::warning title=No WORKDIR::\\$WORKDIR is not set for $(whoami) on $(hostname -s); indexing the home directory instead.\"\n                SOURCE_SPEC='$HOME'\n              fi\n              ;;\n            '$WORKDIR/'*|'${WORKDIR}/'*)\n              [ -n \"${WORKDIR:-}\" ] || fail \"\\$WORKDIR is not set for $(whoami) on $(hostname -s), so $SOURCE_SPEC cannot be resolved.\"\n              ;;\n          esac\n          SOURCE_DIR=\"$(expand \"$SOURCE_SPEC\")\"\n          [ -n \"$SOURCE_DIR\" ] || fail \"No directory to index was given.\"\n          case \"$SOURCE_DIR\" in /*) ;; *) fail \"The directory to index must be an absolute path or start with ~/ (got: $SOURCE_DIR).\" ;; esac\n          [ -d \"$SOURCE_DIR\" ] || fail \"$SOURCE_DIR is not a directory on $(hostname -s).\"\n          [ -r \"$SOURCE_DIR\" ] && [ -x \"$SOURCE_DIR\" ] || fail \"$SOURCE_DIR is not readable by $(whoami).\"\n          SOURCE_DIR=\"$(cd \"$SOURCE_DIR\" && pwd -P)\"\n          [ \"$SOURCE_DIR\" != \"/\" ] || fail \"Indexing / is not supported; choose a directory.\"\n\n          INDEX_DIR=\"$(expand \"$(value index_dir)\")\"\n          DEFAULT_INDEX_DIR=no\n          if [ -z \"$INDEX_DIR\" ]; then\n            DEFAULT_INDEX_DIR=yes\n            name=\"$(printf '%s' \"${SOURCE_DIR##*/}\" | tr -c 'A-Za-z0-9._-' '_')\"\n            hash=\"$(printf '%s' \"$SOURCE_DIR\" | sha256sum | cut -c1-8)\"\n            INDEX_DIR=\"$HOME/.activate-studio/indexes/${name}-${hash}\"\n          fi\n          case \"$INDEX_DIR\" in /*) ;; *) fail \"The index directory must be an absolute path or start with ~/ (got: $INDEX_DIR).\" ;; esac\n          INDEX_DIR=\"$(realpath -m \"$INDEX_DIR\")\"\n          # An index inside the tree it indexes would index itself, and every\n          # update would grow it; one that holds the tree would be swapped\n          # over it. The one exception is the default location when the home\n          # directory is indexed: the build then skips directories named\n          # .activate-studio, and since an update cannot skip anything, it\n          # always rebuilds.\n          SKIP_NAME=\"\"\n          case \"$INDEX_DIR/\" in\n            \"$SOURCE_DIR/\"*)\n              if [ \"$DEFAULT_INDEX_DIR\" = yes ] && [ \"$SOURCE_DIR\" = \"$(cd \"$HOME\" && pwd -P)\" ]; then\n                SKIP_NAME=.activate-studio\n              else\n                fail \"The index directory $INDEX_DIR is inside $SOURCE_DIR. Choose an index directory outside the directory being indexed.\"\n              fi\n              ;;\n          esac\n          case \"$SOURCE_DIR/\" in \"$INDEX_DIR/\"*) fail \"$SOURCE_DIR is inside the index directory $INDEX_DIR.\" ;; esac\n          # Only a directory this workflow wrote, or an empty one, is used:\n          # a rebuild replaces what is there.\n          if [ -d \"$INDEX_DIR\" ] && [ -n \"$(ls -A \"$INDEX_DIR\" 2>/dev/null)\" ] && [ ! -f \"$INDEX_DIR/.studio-index.json\" ]; then\n            fail \"$INDEX_DIR already holds files this workflow did not write. Choose an empty or new index directory.\"\n          fi\n\n          MODE=\"$(value mode)\"\n          case \"$MODE\" in build|update) ;; \"\") MODE=update ;; *) fail \"Mode must be build or update (got: $MODE).\" ;; esac\n          THREADS=\"$(value threads)\"\n          case \"$THREADS\" in ''|*[!0-9]*) THREADS=4 ;; esac\n          [ \"$THREADS\" -ge 1 ] && [ \"$THREADS\" -le 256 ] || THREADS=4\n          if [ -n \"$SKIP_NAME\" ] && [ \"$MODE\" = update ]; then\n            echo \"The index is inside the directory being indexed, so it is rebuilt rather than updated.\"\n            MODE=build\n          fi\n\n          PREFIX=\"$(expand \"$(value prefix)\")\"\n          [ -n \"$PREFIX\" ] || PREFIX=\"$HOME/.activate-studio/gufi\"\n          case \"$PREFIX\" in /*) ;; *) fail \"The GUFI prefix must be an absolute path or start with ~/ (got: $PREFIX).\" ;; esac\n          PREFIX=\"$(realpath -m \"$PREFIX\")\"\n\n          # The GUFI source: a git URL with @<ref>, or a pw:// tarball of a\n          # GUFI source tree for systems that cannot reach GitHub. The install\n          # is keyed by commit, or by a hash of the tarball's path.\n          GUFI_SOURCE=\"$(value source)\"\n          [ -n \"$GUFI_SOURCE\" ] || GUFI_SOURCE=\"https://github.com/mar-file-system/GUFI@021a717a6089b9e28b068695dc7c7f3732fd1a56\"\n          case \"$GUFI_SOURCE\" in\n            pw://*)\n              GUFI_ID=\"tar-$(printf '%s' \"$GUFI_SOURCE\" | sha256sum | cut -c1-12)\"\n              ;;\n            *@*)\n              repo=\"${GUFI_SOURCE%@*}\"; ref=\"${GUFI_SOURCE##*@}\"\n              if printf '%s' \"$ref\" | grep -Eq '^[0-9a-f]{40}$'; then\n                GUFI_ID=\"$ref\"\n              else\n                GUFI_ID=\"$(git ls-remote \"$repo\" \"$ref\" \"refs/tags/$ref^{}\" 2>/dev/null | awk 'NR==1 {print $1}')\"\n                [ -n \"$GUFI_ID\" ] || fail \"Could not resolve $ref in $repo from $(hostname -s).\"\n              fi\n              ;;\n            *) fail \"The GUFI source must be <git URL>@<commit, tag, or branch> or a pw:// tarball (got: $GUFI_SOURCE).\" ;;\n          esac\n          GUFI_DIR=\"$PREFIX/$GUFI_ID\"\n\n          # The job script. Its exit status is recorded in a file because the\n          # submitter does not report it; record checks it.\n          SCRIPT=\"$PWD/gufi-index.sh\"\n          EXIT_FILE=\"$PWD/gufi-index.exit\"\n          rm -f \"$EXIT_FILE\"\n          {\n            echo '#!/bin/bash'\n            printf 'EXIT_FILE=%q\\n' \"$EXIT_FILE\"\n            printf 'GUFI_BIN=%q\\n' \"$GUFI_DIR/bin\"\n            printf 'GUFI_ID=%q\\n' \"$GUFI_ID\"\n            printf 'SOURCE_DIR=%q\\n' \"$SOURCE_DIR\"\n            printf 'INDEX_DIR=%q\\n' \"$INDEX_DIR\"\n            printf 'MODE=%q\\n' \"$MODE\"\n            printf 'THREADS=%q\\n' \"$THREADS\"\n            printf 'SKIP_NAME=%q\\n' \"$SKIP_NAME\"\n          } > \"$SCRIPT\"\n          cat >> \"$SCRIPT\" <<'STUDIO_GUFI_SCRIPT'\n          set -euo pipefail\n          trap 'echo $? > \"$EXIT_FILE\"' EXIT\n          export PATH=\"$GUFI_BIN:$PATH\"\n          json() { printf '\"%s\"' \"$(printf '%s' \"$1\" | sed -e 's/\\\\/\\\\\\\\/g' -e 's/\"/\\\\\"/g')\"; }\n\n          base=\"$(basename \"$SOURCE_DIR\")\"\n          tree=\"$INDEX_DIR/$base\"\n          manifest=\"$INDEX_DIR/.studio-index.json\"\n          mkdir -p \"$INDEX_DIR\"\n          started=\"$(date +%s)\"\n          previous=\"$( { sed -n 's/.*\"startedAt\": *\\([0-9][0-9]*\\).*/\\1/p' \"$manifest\" 2>/dev/null || true; } | head -1)\"\n          echo \"Indexing $SOURCE_DIR into $tree on $(hostname -s) with $THREADS threads (mode $MODE)\"\n\n          # gufi_incremental_update resolves the tree's entries relative to its\n          # working directory and creates (and removes) a temporary database\n          # there, so it runs from the directory that holds the tree, which\n          # must be writable. Where it is not, as for a work directory under\n          # a site-owned parent, the index is rebuilt instead.\n          parent=\"$(dirname \"$SOURCE_DIR\")\"\n          can_update=no\n          if [ \"$MODE\" = update ] && [ -f \"$tree/db.db\" ] && [ -n \"$previous\" ]; then\n            if [ -w \"$parent\" ]; then\n              can_update=yes\n            else\n              echo \"An update writes a temporary file in $parent, which $(whoami) cannot write; rebuilding instead.\"\n            fi\n          fi\n\n          if [ \"$can_update\" = yes ]; then\n            # Only directories changed since the previous run are rescanned,\n            # with a minute's margin for clock skew between nodes.\n            action=update\n            park=\"$INDEX_DIR/.parking\"\n            rm -rf \"$park\"; mkdir -p \"$park\"\n            cd \"$parent\"\n            # The update names every directory it changes, so its output\n            # goes to a log beside the index rather than into the run log.\n            if ! gufi_incremental_update -n \"$THREADS\" --suspect-stat --suspect-method 3 \\\n              --suspect-time \"$((previous - 60))\" \"$tree\" \"$SOURCE_DIR\" \"$park\" > \"$INDEX_DIR/.update.log\" 2>&1; then\n              echo \"gufi_incremental_update failed; its output is in $INDEX_DIR/.update.log\"\n              exit 1\n            fi\n            cd \"$INDEX_DIR\"\n            rm -rf \"$park\"\n          else\n            # A full build goes beside the current index and replaces it only\n            # when complete.\n            action=build\n            rm -f \"$INDEX_DIR/.update.log\"\n            stage=\"$INDEX_DIR/.build-$$\"\n            rm -rf \"$stage\"\n            skip=()\n            if [ -n \"$SKIP_NAME\" ]; then\n              printf '%s\\n' \"$SKIP_NAME\" > \"$INDEX_DIR/.skip\"\n              skip=(--skip-file \"$INDEX_DIR/.skip\")\n            fi\n            gufi_dir2index -n \"$THREADS\" ${skip[@]+\"${skip[@]}\"} \"$SOURCE_DIR\" \"$stage\"\n            [ -d \"$stage/$base\" ] || { echo \"gufi_dir2index wrote no tree at $stage/$base\"; exit 1; }\n            if [ -d \"$tree\" ]; then mv \"$tree\" \"$INDEX_DIR/.old-$$\"; fi\n            mv \"$stage/$base\" \"$tree\"\n            rm -rf \"$stage\" \"$INDEX_DIR/.old-$$\"\n          fi\n\n          directories=\"$(gufi_query -n \"$THREADS\" -d ' ' -S \"SELECT 1 FROM summary WHERE isroot = 1\" \"$tree\" | wc -l)\"\n          entries=\"$(gufi_query -n \"$THREADS\" -d ' ' -E \"SELECT COUNT(*) FROM pentries\" \"$tree\" | awk '{ s += $1 } END { print s + 0 }')\"\n          finished=\"$(date +%s)\"\n          {\n            echo '{'\n            echo '  \"version\": 1,'\n            echo \"  \\\"source\\\": $(json \"$SOURCE_DIR\"),\"\n            echo \"  \\\"index\\\": $(json \"$tree\"),\"\n            echo \"  \\\"indexDir\\\": $(json \"$INDEX_DIR\"),\"\n            echo \"  \\\"mode\\\": $(json \"$MODE\"),\"\n            echo \"  \\\"action\\\": $(json \"$action\"),\"\n            echo \"  \\\"startedAt\\\": $started,\"\n            echo \"  \\\"builtAt\\\": $(json \"$(date -u -d \"@$finished\" +%Y-%m-%dT%H:%M:%SZ)\"),\"\n            echo \"  \\\"seconds\\\": $((finished - started)),\"\n            echo \"  \\\"gufiCommit\\\": $(json \"$GUFI_ID\"),\"\n            echo \"  \\\"gufiBin\\\": $(json \"$GUFI_BIN\"),\"\n            echo \"  \\\"host\\\": $(json \"$(hostname -s)\"),\"\n            echo \"  \\\"user\\\": $(json \"$(whoami)\"),\"\n            echo \"  \\\"directories\\\": $directories,\"\n            echo \"  \\\"files\\\": $entries\"\n            echo '}'\n          } > \"$manifest.tmp\"\n          mv \"$manifest.tmp\" \"$manifest\"\n          echo \"Index $action finished in $((finished - started))s: $directories directories, $entries files\"\n          STUDIO_GUFI_SCRIPT\n          chmod 700 \"$SCRIPT\"\n\n          echo \"Directory:  $SOURCE_DIR\"\n          echo \"Index:      $INDEX_DIR\"\n          echo \"Mode:       $MODE, $THREADS threads\"\n          echo \"GUFI:       $GUFI_SOURCE -> $GUFI_DIR\"\n          # Later jobs read these values from files rather than from\n          # outputs, which are pasted into their scripts unquoted.\n          printf '%s\\n' \"$GUFI_SOURCE\" > state.gufi_source\n          printf '%s\\n' \"$GUFI_ID\" > state.gufi_id\n          printf '%s\\n' \"$GUFI_DIR\" > state.gufi_dir\n          printf '%s\\n' \"$INDEX_DIR\" > state.index_dir\n          echo \"STATE=$PWD/state\" | tee -a $OUTPUTS\n          echo \"SCRIPT_PATH=$SCRIPT\" | tee -a $OUTPUTS\n          echo \"EXIT_FILE=$EXIT_FILE\" | tee -a $OUTPUTS\n  install_gufi:\n    needs:\n      - prepare\n    ssh:\n      remoteHost: ${{ inputs.resource.ip }}\n    steps:\n      - name: Install GUFI if this commit is not installed\n        run: |\n          set -e\n          STATE=\"${{ needs.prepare.outputs.STATE }}\"\n          GUFI_DIR=\"$(cat \"$STATE.gufi_dir\")\"\n          GUFI_ID=\"$(cat \"$STATE.gufi_id\")\"\n          GUFI_SOURCE=\"$(cat \"$STATE.gufi_source\")\"\n          if [ -f \"$GUFI_DIR/.installed\" ] && [ -x \"$GUFI_DIR/bin/gufi_dir2index\" ]; then\n            echo \"GUFI $GUFI_ID is installed at $GUFI_DIR.\"\n            exit 0\n          fi\n          if ! command -v cmake >/dev/null 2>&1 || ! command -v gcc >/dev/null 2>&1; then\n            module load cmake gcc >/dev/null 2>&1 || true\n          fi\n          for tool in cmake gcc g++ make; do\n            command -v \"$tool\" >/dev/null 2>&1 || { echo \"::error title=Missing build tool::$tool is not on PATH on $(hostname -s); GUFI cannot be built here. Install it or load its module, or install GUFI at $GUFI_DIR by hand.\"; exit 1; }\n          done\n\n          # One install per commit at a time. mkdir is atomic on shared file\n          # systems where flock may not be; a lock older than two hours is\n          # taken to be left by a run that died.\n          mkdir -p \"$(dirname \"$GUFI_DIR\")\"\n          lock=\"$GUFI_DIR.lock\"\n          locked=no\n          for i in $(seq 1 240); do\n            if mkdir \"$lock\" 2>/dev/null; then locked=yes; break; fi\n            if [ -n \"$(find \"$lock\" -maxdepth 0 -mmin +120 2>/dev/null)\" ]; then rmdir \"$lock\" 2>/dev/null || true; continue; fi\n            [ -f \"$GUFI_DIR/.installed\" ] && { echo \"Another run installed GUFI $GUFI_ID.\"; exit 0; }\n            sleep 15\n          done\n          [ \"$locked\" = yes ] || { echo \"::error title=Install lock::Timed out waiting for $lock\"; exit 1; }\n          trap 'rmdir \"$lock\" 2>/dev/null || true' EXIT\n          [ -f \"$GUFI_DIR/.installed\" ] && { echo \"Another run installed GUFI $GUFI_ID.\"; exit 0; }\n\n          build=\"$(mktemp -d \"${TMPDIR:-/tmp}/gufi-build.XXXXXX\")\"\n          trap 'rmdir \"$lock\" 2>/dev/null || true; rm -rf \"$build\"' EXIT\n          case \"$GUFI_SOURCE\" in\n            pw://*)\n              pw buckets cp \"$GUFI_SOURCE\" \"$build/gufi-src.tar.gz\" > \"$build/cp.log\" 2>&1 || { tr '\\r' '\\n' < \"$build/cp.log\" | tail -3; echo \"::error title=GUFI source::Could not copy $GUFI_SOURCE\"; exit 1; }\n              mkdir -p \"$build/src\"\n              tar -xzf \"$build/gufi-src.tar.gz\" -C \"$build/src\" --strip-components=1\n              ;;\n            *)\n              # A blobless clone fetches file contents for the one commit only;\n              # the tags stay, which GUFI's version string is built from.\n              git clone --quiet --filter=blob:none --no-checkout \"${GUFI_SOURCE%@*}\" \"$build/src\"\n              git -C \"$build/src\" -c advice.detachedHead=false checkout --quiet \"$GUFI_ID\"\n              ;;\n          esac\n          [ -f \"$build/src/CMakeLists.txt\" ] || { echo \"::error title=GUFI source::No CMakeLists.txt in the GUFI source\"; exit 1; }\n          # open() with O_CREAT needs a mode; compilers that enforce\n          # _FORTIFY_SOURCE reject the call without one.\n          sed -i 's/open(extdb_path, O_CREAT | O_WRONLY);/open(extdb_path, O_CREAT | O_WRONLY, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);/' \\\n            \"$build/src/src/gufi_query/spread_tree.c\" 2>/dev/null || true\n\n          # The system compilers, not whatever CC a site's default modules set,\n          # so the binaries need no module loaded to run.\n          export CC=\"$(command -v gcc)\" CXX=\"$(command -v g++)\"\n          # GUFI's configure requires Python 3.9 or later; some systems'\n          # python3 is older while a newer python3.X is installed beside it.\n          python=\"\"\n          for p in python3 python3.13 python3.12 python3.11 python3.10 python3.9; do\n            p=\"$(command -v \"$p\" 2>/dev/null)\" || continue\n            \"$p\" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 9) else 1)' 2>/dev/null && { python=\"$p\"; break; }\n          done\n          [ -n \"$python\" ] || { echo \"::error title=Missing build tool::GUFI needs Python 3.9 or later on $(hostname -s); none was found.\"; exit 1; }\n          # setfattr and getfattr are required at configure time but only\n          # GUFI's tests run them; where they are missing, a command that\n          # fails stands in, so anything that does call them fails visibly.\n          xattr_args=\"\"\n          command -v setfattr >/dev/null 2>&1 || xattr_args=\"$xattr_args -DSETFATTR=/bin/false\"\n          command -v getfattr >/dev/null 2>&1 || xattr_args=\"$xattr_args -DGETFATTR=/bin/false\"\n\n          jobs=\"$(nproc 2>/dev/null || echo 4)\"; [ \"$jobs\" -le 8 ] || jobs=8\n          echo \"Building GUFI $GUFI_ID into $GUFI_DIR with $jobs jobs on $(hostname -s) ($CC, $python)\"\n          # DEP_INSTALL_PREFIX inside the install prefix keeps the install\n          # self-contained: the binaries' runtime paths point at it. Config\n          # and completion default to /etc, which needs root.\n          cmake -S \"$build/src\" -B \"$build/b\" $xattr_args \\\n            -DPython3_EXECUTABLE=\"$python\" \\\n            -DPython3_SHEBANG=\"$python\" \\\n            -DCMAKE_BUILD_TYPE=Release \\\n            -DCMAKE_INSTALL_PREFIX=\"$GUFI_DIR\" \\\n            -DDEP_INSTALL_PREFIX=\"$GUFI_DIR/deps\" \\\n            -DDEP_BUILD_THREADS=\"$jobs\" \\\n            -DDEP_AI=Off \\\n            -DENABLE_SUDO_TESTS=Off \\\n            -DSERVER_CONFIG=\"$GUFI_DIR/etc/GUFI/config\" \\\n            -DCLIENT_CONFIG=\"$GUFI_DIR/etc/GUFI/config\" \\\n            -DBASH_COMPLETION=Off > \"$build/configure.log\" 2>&1 \\\n            || { tail -30 \"$build/configure.log\"; echo \"::error title=GUFI build::cmake configure failed\"; exit 1; }\n          cmake --build \"$build/b\" -j \"$jobs\" > \"$build/build.log\" 2>&1 \\\n            || { tail -40 \"$build/build.log\"; echo \"::error title=GUFI build::compile failed\"; exit 1; }\n          cmake --install \"$build/b\" > \"$build/install.log\" 2>&1 \\\n            || { tail -20 \"$build/install.log\"; echo \"::error title=GUFI build::install failed\"; exit 1; }\n          \"$GUFI_DIR/bin/gufi_dir2index\" -v\n          touch \"$GUFI_DIR/.installed\"\n          echo \"GUFI $GUFI_ID installed at $GUFI_DIR\"\n  index:\n    needs:\n      - prepare\n      - install_gufi\n    ssh:\n      remoteHost: ${{ inputs.resource.ip }}\n    steps:\n      - name: Run the index script\n        uses: marketplace/script_submitter/v3.6\n        with:\n          resource: ${{ inputs.resource }}\n          shebang: '#!/bin/bash'\n          use_existing_script: true\n          script_path: ${{ needs.prepare.outputs.SCRIPT_PATH }}\n          define_cleanup_script: false\n          scheduler: ${{ inputs.cluster.scheduler }}\n          use_scheduler_agent: false\n          submit_and_exit: false\n          slurm:\n            is_enabled: ${{ inputs.cluster.slurm.is_enabled }}\n            account: ${{ inputs.cluster.slurm.account }}\n            partition: ${{ inputs.cluster.slurm.partition }}\n            qos: ${{ inputs.cluster.slurm.qos }}\n            cpus_per_task: ${{ inputs.index.threads }}\n            nodes: 1\n            node_type: ''\n            time: ${{ inputs.cluster.slurm.time }}\n            scheduler_directives: ${{ inputs.cluster.slurm.scheduler_directives }}\n          pbs:\n            is_enabled: ${{ inputs.cluster.pbs.is_enabled }}\n            account: ${{ inputs.cluster.pbs.account }}\n            scheduler_directives: ${{ inputs.cluster.pbs.scheduler_directives }}\n  record:\n    needs:\n      - prepare\n      - index\n    ssh:\n      remoteHost: ${{ inputs.resource.ip }}\n    steps:\n      - name: Check the result and print the manifest\n        run: |\n          exit_file=\"${{ needs.prepare.outputs.EXIT_FILE }}\"\n          manifest=\"$(cat \"${{ needs.prepare.outputs.STATE }}.index_dir\")/.studio-index.json\"\n          if [ ! -f \"$exit_file\" ]; then\n            echo \"::error title=Index::No exit status in $exit_file; the index script did not run to its end\"\n            exit 1\n          fi\n          status=\"$(cat \"$exit_file\")\"\n          if [ \"$status\" != \"0\" ]; then\n            echo \"::error title=Index::The index script exited with status $status\"\n            exit 1\n          fi\n          # The Studio reads the manifest from between these markers in the\n          # run log.\n          echo \"STUDIO_INDEX_BEGIN\"\n          cat \"$manifest\"\n          echo \"STUDIO_INDEX_END\"\n'on':\n  execute:\n    inputs:\n      resource:\n        type: compute-clusters\n        label: Compute resource\n        include-workspace: false\n        tooltip: The cluster that holds the directory. GUFI is installed and the index is written there, as you.\n      cluster:\n        type: group\n        label: Scheduler\n        hidden: ${{ inputs.resource.schedulerType == '' }}\n        ignore: ${{ .hidden }}\n        items:\n          scheduler:\n            type: boolean\n            default: false\n            label: Submit the index build to the scheduler?\n            tooltip: |\n              Yes: the build runs as a batch job (sbatch or qsub). Use this for\n              large directories, since login nodes are shared.\n              No: the build runs on the login or controller node.\n          slurm:\n            type: group\n            label: Slurm\n            hidden: ${{ inputs.resource.schedulerType != 'slurm' || inputs.cluster.scheduler == false }}\n            ignore: ${{ .hidden }}\n            items:\n              is_enabled:\n                type: boolean\n                hidden: true\n                default: true\n              account:\n                label: Account\n                type: slurm-accounts\n                resource: ${{ inputs.resource }}\n                tooltip: --account\n                ignore: ${{ 'existing' != inputs.resource.provider }}\n                hidden: ${{ .ignore }}\n              partition:\n                label: Partition\n                type: slurm-partitions\n                optional: true\n                resource: ${{ inputs.resource }}\n              qos:\n                label: Quality of service\n                type: slurm-qos\n                resource: ${{ inputs.resource }}\n                tooltip: --qos\n                ignore: ${{ 'existing' != inputs.resource.provider }}\n                hidden: ${{ .ignore }}\n              time:\n                label: Walltime\n                type: string\n                default: '01:00:00'\n                tooltip: --time, as HH:MM:SS or D-HH:MM:SS\n              scheduler_directives:\n                label: Extra directives\n                type: editor\n                optional: true\n                default: ''\n                tooltip: 'One #SBATCH line per directive.'\n          pbs:\n            type: group\n            label: PBS\n            hidden: ${{ inputs.resource.schedulerType != 'pbs' || inputs.cluster.scheduler == false }}\n            ignore: ${{ .hidden }}\n            items:\n              is_enabled:\n                type: boolean\n                hidden: true\n                default: true\n              account:\n                label: Account\n                type: string\n                optional: true\n                tooltip: -A\n              scheduler_directives:\n                label: Directives\n                type: editor\n                default: |\n                  #PBS -l walltime=01:00:00\n                  #PBS -l select=1\n                tooltip: 'One #PBS line per directive.'\n      index:\n        type: group\n        label: Index\n        items:\n          source_dir:\n            label: Directory to index\n            type: string\n            optional: true\n            default: $WORKDIR\n            tooltip: An absolute path on the cluster, or one starting with ~/, $HOME, or $WORKDIR, which are resolved there. $WORKDIR falls back to the home directory where it is not set. The directory is only read.\n          index_dir:\n            label: Index directory\n            type: string\n            optional: true\n            default: ''\n            tooltip: Where the index is written; it must not be inside the directory being indexed. Empty uses ~/.activate-studio/indexes/<name>-<hash>.\n          mode:\n            label: Mode\n            type: dropdown\n            default: update\n            options:\n              - label: Update (rescan what changed since the last run; builds if there is no index)\n                value: update\n              - label: Build (full rebuild, swapped in when complete)\n                value: build\n          threads:\n            label: Threads\n            type: number\n            default: 4\n            min: 1\n            max: 256\n            tooltip: Threads for the scan; also the CPUs requested from Slurm.\n      gufi:\n        type: group\n        label: GUFI install\n        collapsed: true\n        items:\n          prefix:\n            label: Install prefix\n            type: string\n            default: ~/.activate-studio/gufi\n            tooltip: GUFI is built once per commit into <prefix>/<commit>.\n          source:\n            label: GUFI source\n            type: string\n            default: https://github.com/mar-file-system/GUFI@021a717a6089b9e28b068695dc7c7f3732fd1a56\n            tooltip: A git URL with @<commit, tag, or branch>, or a pw:// path to a tarball of the GUFI source for clusters that cannot reach GitHub.\n"
+   },
+   "hasInputs": true,
+   "form": {
+    "out": {
+     "resource": {
+      "type": "compute-clusters",
+      "label": "Compute resource",
+      "include-workspace": false,
+      "tooltip": "The cluster that holds the directory. GUFI is installed and the index is written there, as you."
+     },
+     "cluster": {
+      "type": "object",
+      "label": "Scheduler",
+      "hidden": "${{ inputs.resource.schedulerType == '' }}",
+      "ignore": "${{ .hidden }}",
+      "options": {
+       "scheduler": {
+        "type": "boolean",
+        "default": false,
+        "label": "Submit the index build to the scheduler?",
+        "tooltip": "Yes: the build runs as a batch job (sbatch or qsub). Use this for\nlarge directories, since login nodes are shared.\nNo: the build runs on the login or controller node.\n"
+       },
+       "slurm": {
+        "type": "object",
+        "label": "Slurm",
+        "hidden": "${{ inputs.resource.schedulerType != 'slurm' || inputs.cluster.scheduler == false }}",
+        "ignore": "${{ .hidden }}",
+        "options": {
+         "is_enabled": {
+          "type": "boolean",
+          "hidden": true,
+          "default": true
+         },
+         "account": {
+          "label": "Account",
+          "type": "dynamicAccountDropdown",
+          "resource": "${{ inputs.resource }}",
+          "tooltip": "--account",
+          "ignore": "${{ 'existing' != inputs.resource.provider }}",
+          "hidden": "${{ .ignore }}"
+         },
+         "partition": {
+          "label": "Partition",
+          "type": "dynamicPartitionDropdown",
+          "optional": true,
+          "resource": "${{ inputs.resource }}"
+         },
+         "qos": {
+          "label": "Quality of service",
+          "type": "dynamicQOSDropdown",
+          "resource": "${{ inputs.resource }}",
+          "tooltip": "--qos",
+          "ignore": "${{ 'existing' != inputs.resource.provider }}",
+          "hidden": "${{ .ignore }}"
+         },
+         "time": {
+          "label": "Walltime",
+          "type": "string",
+          "default": "01:00:00",
+          "tooltip": "--time, as HH:MM:SS or D-HH:MM:SS"
+         },
+         "scheduler_directives": {
+          "label": "Extra directives",
+          "type": "editor",
+          "optional": true,
+          "default": "",
+          "tooltip": "One #SBATCH line per directive."
+         }
+        }
+       },
+       "pbs": {
+        "type": "object",
+        "label": "PBS",
+        "hidden": "${{ inputs.resource.schedulerType != 'pbs' || inputs.cluster.scheduler == false }}",
+        "ignore": "${{ .hidden }}",
+        "options": {
+         "is_enabled": {
+          "type": "boolean",
+          "hidden": true,
+          "default": true
+         },
+         "account": {
+          "label": "Account",
+          "type": "string",
+          "optional": true,
+          "tooltip": "-A"
+         },
+         "scheduler_directives": {
+          "label": "Directives",
+          "type": "editor",
+          "default": "#PBS -l walltime=01:00:00\n#PBS -l select=1\n",
+          "tooltip": "One #PBS line per directive."
+         }
+        }
+       }
+      }
+     },
+     "index": {
+      "type": "object",
+      "label": "Index",
+      "options": {
+       "source_dir": {
+        "label": "Directory to index",
+        "type": "string",
+        "optional": true,
+        "default": "$WORKDIR",
+        "tooltip": "An absolute path on the cluster, or one starting with ~/, $HOME, or $WORKDIR, which are resolved there. $WORKDIR falls back to the home directory where it is not set. The directory is only read."
+       },
+       "index_dir": {
+        "label": "Index directory",
+        "type": "string",
+        "optional": true,
+        "default": "",
+        "tooltip": "Where the index is written; it must not be inside the directory being indexed. Empty uses ~/.activate-studio/indexes/<name>-<hash>."
+       },
+       "mode": {
+        "label": "Mode",
+        "type": "dropdown",
+        "default": "update",
+        "options": [
+         {
+          "label": "Update (rescan what changed since the last run; builds if there is no index)",
+          "value": "update"
+         },
+         {
+          "label": "Build (full rebuild, swapped in when complete)",
+          "value": "build"
+         }
+        ]
+       },
+       "threads": {
+        "label": "Threads",
+        "type": "number",
+        "default": 4,
+        "min": 1,
+        "max": 256,
+        "tooltip": "Threads for the scan; also the CPUs requested from Slurm."
+       }
+      }
+     },
+     "gufi": {
+      "type": "object",
+      "label": "GUFI install",
+      "collapsed": true,
+      "options": {
+       "prefix": {
+        "label": "Install prefix",
+        "type": "string",
+        "default": "~/.activate-studio/gufi",
+        "tooltip": "GUFI is built once per commit into <prefix>/<commit>."
+       },
+       "source": {
+        "label": "GUFI source",
+        "type": "string",
+        "default": "https://github.com/mar-file-system/GUFI@021a717a6089b9e28b068695dc7c7f3732fd1a56",
+        "tooltip": "A git URL with @<commit, tag, or branch>, or a pw:// path to a tarball of the GUFI source for clusters that cannot reach GitHub."
+       }
+      }
+     }
+    }
+   },
+   "labels": {
+    "prepare": {
+     "out": [
+      "Check inputs and write the index script"
+     ]
+    },
+    "install_gufi": {
+     "out": [
+      "Install GUFI if this commit is not installed"
+     ]
+    },
+    "index": {
+     "out": [
+      "Run the index script"
+     ]
+    },
+    "record": {
+     "out": [
+      "Check the result and print the manifest"
+     ]
+    }
+   },
+   "deps": {
+    "prepare": {
+     "out": []
+    },
+    "install_gufi": {
+     "out": [
+      "prepare"
+     ]
+    },
+    "index": {
+     "out": [
+      "prepare",
+      "install_gufi"
+     ]
+    },
+    "record": {
+     "out": [
+      "prepare",
+      "index",
+      "install_gufi"
+     ]
+    }
+   },
+   "submit": []
+  },
+  {
+   "file": "../../../../../deploy/workflow-unmute.yaml",
+   "dump": {
+    "out": "permissions:\n  - '*'\n'on':\n  execute:\n    inputs:\n      resource:\n        label: GPU system\n        type: compute-clusters\n        autoselect: true\n        optional: false\n        tooltip: A Linux x86_64 node with one GPU of 16 GB or more (STT about 2.5 GB, TTS about 5.3 GB) and Docker with the NVIDIA runtime.\n      studio:\n        type: group\n        label: Studio\n        items:\n          v1_url:\n            label: Model base URL\n            type: string\n            optional: false\n            tooltip: 'Where the conversational model lives, WITHOUT the /v1 suffix: Unmute appends it. A Studio (https://my-studio.example) puts the corpus, tools and workflows behind the voice; the platform gateway (https://activate.parallel.works/api/openai) is the shortest path to a plain conversation.'\n          api_key:\n            label: Studio API key\n            type: string\n            optional: false\n            tooltip: A platform token or API key the Studio accepts on /v1.\n          model:\n            label: Model\n            type: string\n            default: studio-voice\n            tooltip: 'Against a Studio: studio-voice is the assistant with its tools and grounding, answering in spoken sentences, and studio-voice/<gateway-model-id> names the model behind it (an API model such as a Sol or Gemini id). Against the gateway directly: the model id itself.'\n      unmute:\n        type: group\n        label: Unmute\n        items:\n          repo:\n            label: Repository\n            type: string\n            default: https://github.com/kyutai-labs/unmute.git\n          ref:\n            label: Git ref\n            type: string\n            default: main\n          hf_token:\n            label: Hugging Face token\n            type: string\n            optional: true\n            tooltip: Optional. The Kyutai STT and TTS weights and the stock voices download without one; a token is only needed for gated or private voice repositories.\n          stt_gpu:\n            label: GPU index for speech recognition\n            type: string\n            default: '0'\n            tooltip: The NVIDIA device index the STT service is pinned to (about 2.5 GB).\n          tts_gpu:\n            label: GPU index for speech synthesis\n            type: string\n            default: '0'\n            tooltip: The NVIDIA device index the TTS service is pinned to (about 5.3 GB). Use a second index to split the two across cards.\n          session_name:\n            label: Session name\n            type: string\n            default: unmute\n          workdir:\n            label: Working directory\n            type: string\n            default: ~/unmute-work\njobs:\n  deploy:\n    ssh:\n      remoteHost: ${{ inputs.resource.ip }}\n    steps:\n      - name: Fetch Unmute\n        run: |\n          set -e\n          mkdir -p ${{ inputs.unmute.workdir }} && cd ${{ inputs.unmute.workdir }}\n          if [ ! -d unmute ]; then git clone --depth 1 --branch \"${{ inputs.unmute.ref }}\" \"${{ inputs.unmute.repo }}\" unmute; fi\n          cd unmute && git fetch --depth 1 origin \"${{ inputs.unmute.ref }}\" && git checkout -q FETCH_HEAD\n          command -v docker >/dev/null || { echo \"docker is required on the node\"; exit 1; }\n          docker info 2>/dev/null | grep -qi nvidia || echo \"warning: no NVIDIA runtime reported by docker; STT and TTS will not start without it\"\n      - name: Point the backend at the Studio and drop the bundled LLM\n        run: |\n          set -e\n          cd ${{ inputs.unmute.workdir }}/unmute\n          # The image's start script logs into Hugging Face unconditionally and\n          # dies on an empty token; the weights are public, so the login is\n          # made optional here. The cargo build of moshi-server is kept in a\n          # named volume so only the first start compiles it.\n          cat > start_moshi_server_studio.sh << 'EOF3'\n          #!/bin/bash\n          set -ex\n          export LD_LIBRARY_PATH=$(python3 -c 'import sysconfig; print(sysconfig.get_config_var(\"LIBDIR\"))')\n          if [ -n \"$HUGGING_FACE_HUB_TOKEN\" ]; then uvx hf auth login --token \"$HUGGING_FACE_HUB_TOKEN\"; fi\n          CARGO_TARGET_DIR=/app/target cargo install --features cuda moshi-server@0.6.4\n          /root/.cargo/bin/moshi-server \"$@\"\n          EOF3\n          chmod +x start_moshi_server_studio.sh\n          # Verified on a two-GPU host: the NVIDIA container runtime with explicit\n          # device ids, not CDI names, which failed there on a stale device spec.\n          cat > docker-compose.studio.yml << 'EOF2'\n          services:\n            backend:\n              environment:\n                KYUTAI_LLM_URL: ${STUDIO_V1_URL}\n                KYUTAI_LLM_MODEL: ${STUDIO_MODEL:-studio-voice}\n                KYUTAI_LLM_API_KEY: ${STUDIO_API_KEY:-none}\n              extra_hosts:\n                - \"host.docker.internal:host-gateway\"\n              depends_on: !override\n                - stt\n                - tts\n            llm:\n              profiles: [\"disabled\"]\n            stt:\n              entrypoint: [\"uv\", \"run\", \"--locked\", \"--project\", \"./moshi-server\", \"./start_moshi_server_studio.sh\"]\n              volumes:\n                - ./start_moshi_server_studio.sh:/app/start_moshi_server_studio.sh:ro\n                - moshi-target:/app/target\n              deploy:\n                resources:\n                  reservations:\n                    devices: !override\n                      - driver: nvidia\n                        device_ids: [\"${STT_GPU:-0}\"]\n                        capabilities: [gpu]\n            tts:\n              entrypoint: [\"uv\", \"run\", \"--locked\", \"--project\", \"./moshi-server\", \"./start_moshi_server_studio.sh\"]\n              volumes:\n                - ./start_moshi_server_studio.sh:/app/start_moshi_server_studio.sh:ro\n                - moshi-target:/app/target\n              deploy:\n                resources:\n                  reservations:\n                    devices: !override\n                      - driver: nvidia\n                        device_ids: [\"${TTS_GPU:-0}\"]\n                        capabilities: [gpu]\n            traefik:\n              ports: !override\n                - \"${UNMUTE_PORT:-80}:80\"\n          volumes:\n            moshi-target:\n          EOF2\n          {\n            echo \"STUDIO_V1_URL=${{ inputs.studio.v1_url }}\"\n            echo \"STUDIO_MODEL=${{ inputs.studio.model }}\"\n            echo \"STUDIO_API_KEY=${{ inputs.studio.api_key }}\"\n            echo \"HUGGING_FACE_HUB_TOKEN=${{ inputs.unmute.hf_token }}\"\n            echo \"STT_GPU=${{ inputs.unmute.stt_gpu }}\"\n            echo \"TTS_GPU=${{ inputs.unmute.tts_gpu }}\"\n          } > .env.studio\n          chmod 600 .env.studio\n      - name: Build the images\n        run: |\n          set -e\n          cd ${{ inputs.unmute.workdir }}/unmute\n          docker compose --env-file .env.studio -f docker-compose.yml -f docker-compose.studio.yml build\n      - name: Serve Unmute as a platform session\n        run: |\n          set -e\n          cd ${{ inputs.unmute.workdir }}/unmute\n          # The endpoint agent hands this command a free port in PORT; traefik\n          # publishes on it, and the agent tunnels it to the session URL.\n          pw endpoints run --name \"${{ inputs.unmute.session_name }}\" --subdomain \"${{ inputs.unmute.session_name }}\" -- \\\n            bash -c 'UNMUTE_PORT=\"$PORT\" docker compose --env-file .env.studio -f docker-compose.yml -f docker-compose.studio.yml up --abort-on-container-exit'\n"
+   },
+   "hasInputs": true,
+   "form": {
+    "out": {
+     "resource": {
+      "label": "GPU system",
+      "type": "compute-clusters",
+      "autoselect": true,
+      "optional": false,
+      "tooltip": "A Linux x86_64 node with one GPU of 16 GB or more (STT about 2.5 GB, TTS about 5.3 GB) and Docker with the NVIDIA runtime."
+     },
+     "studio": {
+      "type": "object",
+      "label": "Studio",
+      "options": {
+       "v1_url": {
+        "label": "Model base URL",
+        "type": "string",
+        "optional": false,
+        "tooltip": "Where the conversational model lives, WITHOUT the /v1 suffix: Unmute appends it. A Studio (https://my-studio.example) puts the corpus, tools and workflows behind the voice; the platform gateway (https://activate.parallel.works/api/openai) is the shortest path to a plain conversation."
+       },
+       "api_key": {
+        "label": "Studio API key",
+        "type": "string",
+        "optional": false,
+        "tooltip": "A platform token or API key the Studio accepts on /v1."
+       },
+       "model": {
+        "label": "Model",
+        "type": "string",
+        "default": "studio-voice",
+        "tooltip": "Against a Studio: studio-voice is the assistant with its tools and grounding, answering in spoken sentences, and studio-voice/<gateway-model-id> names the model behind it (an API model such as a Sol or Gemini id). Against the gateway directly: the model id itself."
+       }
+      }
+     },
+     "unmute": {
+      "type": "object",
+      "label": "Unmute",
+      "options": {
+       "repo": {
+        "label": "Repository",
+        "type": "string",
+        "default": "https://github.com/kyutai-labs/unmute.git"
+       },
+       "ref": {
+        "label": "Git ref",
+        "type": "string",
+        "default": "main"
+       },
+       "hf_token": {
+        "label": "Hugging Face token",
+        "type": "string",
+        "optional": true,
+        "tooltip": "Optional. The Kyutai STT and TTS weights and the stock voices download without one; a token is only needed for gated or private voice repositories."
+       },
+       "stt_gpu": {
+        "label": "GPU index for speech recognition",
+        "type": "string",
+        "default": "0",
+        "tooltip": "The NVIDIA device index the STT service is pinned to (about 2.5 GB)."
+       },
+       "tts_gpu": {
+        "label": "GPU index for speech synthesis",
+        "type": "string",
+        "default": "0",
+        "tooltip": "The NVIDIA device index the TTS service is pinned to (about 5.3 GB). Use a second index to split the two across cards."
+       },
+       "session_name": {
+        "label": "Session name",
+        "type": "string",
+        "default": "unmute"
+       },
+       "workdir": {
+        "label": "Working directory",
+        "type": "string",
+        "default": "~/unmute-work"
+       }
+      }
+     }
+    }
+   },
+   "labels": {
+    "deploy": {
+     "out": [
+      "Fetch Unmute",
+      "Point the backend at the Studio and drop the bundled LLM",
+      "Build the images",
+      "Serve Unmute as a platform session"
+     ]
+    }
+   },
+   "deps": {
+    "deploy": {
+     "out": []
+    }
+   },
+   "submit": []
+  },
+  {
+   "file": "../../../../../testdata/corpus/notes/solver.yaml",
+   "dump": {
+    "out": "solver:\n  scheme: implicit\n  steps: 400\n  tolerance: 0.000001\n"
+   },
+   "hasInputs": false,
+   "form": {
+    "out": null
+   },
+   "labels": {},
+   "deps": {},
+   "submit": []
+  }
+ ],
+ "values": [
+  {
+   "out": "\n"
+  },
+  {
+   "out": "plain\n"
+  },
+  {
+   "out": "''\n"
+  },
+  {
+   "out": "|\n  multi\n  line\n"
+  },
+  {
+   "out": "5\n"
+  },
+  {
+   "out": "- 1\n- two\n-\n"
+  },
+  {
+   "out": "{}\n"
+  },
+  {
+   "out": "[]\n"
+  },
+  {
+   "out": "a: {}\n"
+  },
+  {
+   "out": "- []\n"
+  },
+  {
+   "out": "a:\n  - b:\n      - c: d\n"
+  },
+  {
+   "out": "- '- x'\n- 'x: y'\n- \"  \"\n"
+  },
+  {
+   "out": "k: \"\\n\"\n"
+  },
+  {
+   "out": "|+\n\n\n  trail\n\n...\n"
+  }
+ ]
+}
