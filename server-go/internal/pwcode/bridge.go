@@ -140,7 +140,15 @@ func (r *remoteClient) Call(ctx context.Context, method, route string, body any,
 		return nil, err
 	}
 	r.s.bridges.drop(b)
-	b.destroy()
+	if c := b.destroy(); c != nil {
+		// What ssh said reaches stderr through a copy that ends only when
+		// the process is reaped; a write that failed with EPIPE can come
+		// first, so wait for it (briefly) before reading the tail.
+		select {
+		case <-c.exited:
+		case <-time.After(2 * time.Second):
+		}
+	}
 	b.mu.Lock()
 	said := ""
 	for _, l := range strings.Split(trimJS(b.stderr), "\n") {
@@ -163,8 +171,9 @@ func (bs *bridges) drop(b *bridge) {
 	bs.mu.Unlock()
 }
 
-// destroy is agent.destroy(): the pipe closed, its process killed.
-func (b *bridge) destroy() {
+// destroy is agent.destroy(): the pipe closed, its process killed. It
+// returns the connection it closed, if any.
+func (b *bridge) destroy() *pipeConn {
 	b.mu.Lock()
 	c := b.conn
 	b.conn, b.rd, b.dead = nil, nil, true
@@ -172,6 +181,7 @@ func (b *bridge) destroy() {
 	if c != nil {
 		c.Close()
 	}
+	return c
 }
 
 // Do sends one request over the bridge's connection, opening it first
