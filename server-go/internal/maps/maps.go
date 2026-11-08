@@ -52,7 +52,7 @@ func init() {
 // another system its root, which names its owner too.
 type Target struct {
 	ID, Key, Index, Out string
-	Remote             *RemoteTarget
+	Remote              *RemoteTarget
 }
 
 // RemoteTarget is a library on another system: its root, its owner's
@@ -96,9 +96,9 @@ type Module struct {
 	Local    *gufi.Runner
 	Settings *libraries.FileIndexSettings
 	// Keys is the platform key a remote library's owner acts with.
-	Keys libraries.Keys
+	Keys                                         libraries.Keys
 	KBRoot, GufiIndex, SemanticMapDir, IndexBase string
-	Log                                         *slog.Logger
+	Log                                          *slog.Logger
 	// Build makes a map (the builder Node's tests replace); nil: in process.
 	Build func(t Target) error
 	// DelayScale scales every delay asked for (Node's delayScale), and
