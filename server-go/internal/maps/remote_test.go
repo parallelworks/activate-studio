@@ -447,7 +447,9 @@ func TestRemoteMap(t *testing.T) {
 		w.m.RemoteFiles = func() int { return 5 }
 		defer func() { w.m.RemoteFiles = was }()
 		byHash := append([]*farFile{}, mapped...)
-		sort.SliceStable(byHash, func(i, j int) bool { return maps.FileHash(int64(byHash[i].inode)) < maps.FileHash(int64(byHash[j].inode)) })
+		sort.SliceStable(byHash, func(i, j int) bool {
+			return maps.FileHash(int64(byHash[i].inode)) < maps.FileHash(int64(byHash[j].inode))
+		})
 		want := paths(byHash[:5])
 		for round := 0; round < 2; round++ {
 			w.clearLog()
