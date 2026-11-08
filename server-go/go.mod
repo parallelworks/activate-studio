@@ -7,6 +7,7 @@ require (
 	github.com/giraffesyo/downmark v0.10.0
 	github.com/giraffesyo/pdf v0.6.0
 	github.com/richardlehane/mscfb v1.0.9
+	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	golang.org/x/text v0.43.0
 	gonum.org/v1/gonum v0.17.0
 	gopkg.in/yaml.v3 v3.0.1
