@@ -182,7 +182,7 @@ static char *mac_window_report(void) {
 			@"background": hex,
 			@"barAppearance": bar.appearance.name ?: @"",
 			@"frameAutosaveName": main.frameAutosaveName ?: @"",
-			@"frameSaved": @([[NSUserDefaults standardUserDefaults] objectForKey:[@"NSWindow Frame " stringByAppendingString:frameName]] != nil),
+			@"frameSaved": @((BOOL)([[NSUserDefaults standardUserDefaults] objectForKey:[@"NSWindow Frame " stringByAppendingString:frameName]] != nil)),
 			@"microphoneHandler": @([d respondsToSelector:@selector(webView:requestMediaCapturePermissionForOrigin:initiatedByFrame:type:decisionHandler:)]),
 			@"popupHandler": @([d respondsToSelector:@selector(webView:createWebViewWithConfiguration:forNavigationAction:windowFeatures:)]),
 			@"closeHandler": @([d respondsToSelector:@selector(webViewDidClose:)]),
