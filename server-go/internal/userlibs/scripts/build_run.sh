@@ -88,7 +88,7 @@ if [ "$reads" = 1 ] && [ -z "$textwhy" ]; then
     if [ -n "$onnxdir" ] || [ -n "$model" ]; then
       # The ONNX model when its kit is there, else the GGUF one.
       # shellcheck disable=SC2086
-      STUDIO_ORT_LIB=${onnxdir:+$onnxdir/libonnxruntime.so} "$helper" embed --index "$new" ${model:+--model "$model"} ${onnxdir:+--onnx "$onnxdir"} --gufi-sqlite3 "$bin/gufi_sqlite3" --cache "$idx/.embed-cache.db" --prune --report "$s/embed.json" $meaning > "$s/embed.log" 2>&1 && vectors=true
+      STUDIO_ORT_LIB=${onnxdir:+$(ls "$onnxdir"/libonnxruntime.* 2>/dev/null | head -n 1)} "$helper" embed --index "$new" ${model:+--model "$model"} ${onnxdir:+--onnx "$onnxdir"} --gufi-sqlite3 "$bin/gufi_sqlite3" --cache "$idx/.embed-cache.db" --prune --report "$s/embed.json" $meaning > "$s/embed.log" 2>&1 && vectors=true
       [ "$vectors" = true ] || vecwhy="the embedding pass stopped: $(tail -n 1 "$s/embed.log")"
     else
       vecwhy="the embedding model could not be installed: $(tail -n 1 "$s/onnx.log" 2>/dev/null)"

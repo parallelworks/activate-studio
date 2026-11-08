@@ -116,8 +116,9 @@ if [ "$SERVER" != node ]; then
   mkdir -p "$RES/app/bin"
   (cd "$PROJECT_ROOT/server-go" && CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags "-s -w" \
     -o "$RES/app/bin/" ./cmd/studio-server ./cmd/semantic-map)
-  # The helper a library's build on another system runs, for each Linux
-  # it is sent to (internal/userlibs); about 25 MB each.
+  # The helper a library's build on another system runs, for each system
+  # it is sent to: Linux x86_64 and aarch64, macOS arm64 (internal/userlibs);
+  # about 25 MB each.
   "$PROJECT_ROOT/server-go/scripts/build_remote.sh" "$RES/app/bin/remote"
   # The STEP preview's modules (occt-import-js, Open CASCADE, LGPL 2.1):
   # separate files beside the server, not built into it, so they stay

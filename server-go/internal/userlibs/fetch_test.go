@@ -398,7 +398,7 @@ func (m *Module) downloadReaders(ctx context.Context, cache string) error {
 }
 
 func TestHelperPlatforms(t *testing.T) {
-	for in, want := range map[string]string{"Linux x86_64": "linux-amd64", "Linux aarch64\n": "linux-arm64", "Darwin arm64": "", "": ""} {
+	for in, want := range map[string]string{"Linux x86_64": "linux-amd64", "Linux aarch64\n": "linux-arm64", "Darwin arm64": "darwin-arm64", "Darwin x86_64": "", "FreeBSD amd64": "", "": ""} {
 		if got := helperPlatform(in); got != want {
 			t.Errorf("%q: %q, want %q", in, got, want)
 		}
@@ -423,6 +423,22 @@ func TestONNXRuntimeFromTheWheel(t *testing.T) {
 		t.Fatal(err)
 	}
 	if b, _ := os.ReadFile(p); string(b) != "the library" || filepath.Base(p) != sum[:16]+"-libonnxruntime.so" {
+		t.Fatalf("%s: %q", p, b)
+	}
+	// The macOS wheel's library.
+	mac := filepath.Join(t.TempDir(), "ort-mac.whl")
+	f, _ = os.Create(mac)
+	z = zip.NewWriter(f)
+	zw, _ := z.Create("onnxruntime/capi/libonnxruntime.1.31.0.dylib")
+	zw.Write([]byte("the dylib"))
+	z.Close()
+	f.Close()
+	msum := strings.Repeat("cd", 32)
+	p, err = m.ortLibrary(mac, msum)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(p); string(b) != "the dylib" || filepath.Base(p) != msum[:16]+"-libonnxruntime.dylib" || ortName(p) != "libonnxruntime.dylib" {
 		t.Fatalf("%s: %q", p, b)
 	}
 	if _, err := m.ortLibrary(filepath.Join(t.TempDir(), "none.whl"), sum); err == nil {
