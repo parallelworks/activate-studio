@@ -12,6 +12,23 @@ import (
 type File struct {
 	Path    string  `json:"path"`
 	Library *string `json:"library"`
+	Extra   Extra   `json:"-"`
+}
+
+type fileFields File
+
+var fileKeys = keys("path", "library")
+
+func (f File) MarshalJSON() ([]byte, error) { return marshalWith(f.Extra, fileFields(f)) }
+
+func (f *File) UnmarshalJSON(b []byte) error {
+	var v fileFields
+	if err := json.Unmarshal(b, &v); err != nil {
+		return err
+	}
+	x, err := readExtra(b, fileKeys)
+	*f, f.Extra = File(v), x
+	return err
 }
 
 // Decision is a held call's answer.
@@ -21,6 +38,23 @@ type Decision struct {
 	Name   string `json:"name,omitempty"`
 	At     string `json:"at,omitempty"`
 	Note   string `json:"note,omitempty"`
+	Extra  Extra  `json:"-"`
+}
+
+type decisionFields Decision
+
+var decisionKeys = keys("status", "by", "name", "at", "note")
+
+func (d Decision) MarshalJSON() ([]byte, error) { return marshalWith(d.Extra, decisionFields(d)) }
+
+func (d *Decision) UnmarshalJSON(b []byte) error {
+	var v decisionFields
+	if err := json.Unmarshal(b, &v); err != nil {
+		return err
+	}
+	x, err := readExtra(b, decisionKeys)
+	*d, d.Extra = Decision(v), x
+	return err
 }
 
 // Alternative is a tool the user may run in place of a held call.
@@ -28,6 +62,23 @@ type Alternative struct {
 	Tool        string `json:"tool"`
 	Label       string `json:"label"`
 	Description string `json:"description,omitempty"`
+	Extra       Extra  `json:"-"`
+}
+
+type alternativeFields Alternative
+
+var alternativeKeys = keys("tool", "label", "description")
+
+func (a Alternative) MarshalJSON() ([]byte, error) { return marshalWith(a.Extra, alternativeFields(a)) }
+
+func (a *Alternative) UnmarshalJSON(b []byte) error {
+	var v alternativeFields
+	if err := json.Unmarshal(b, &v); err != nil {
+		return err
+	}
+	x, err := readExtra(b, alternativeKeys)
+	*a, a.Extra = Alternative(v), x
+	return err
 }
 
 // Part is StoredToolCallPart or StoredApprovalPart, by Kind.
@@ -58,7 +109,15 @@ type Part struct {
 	Resolved          bool
 	Answer            string
 	WaitingOn         string
+
+	// Extra is the stored part's other fields and key order.
+	Extra Extra
 }
+
+var (
+	toolCallKeys = keys("kind", "id", "name", "args", "status", "result", "gufi", "gufiViewer", "files", "decision")
+	approvalKeys = keys("kind", "id", "approvalKind", "toolName", "subject", "header", "command", "reason", "canAllowDirectory", "expiresAt", "instead", "resolved", "answer", "waitingOn")
+)
 
 // MarshalJSON writes the part's keys in the order Node builds them.
 func (p Part) MarshalJSON() ([]byte, error) {
@@ -100,7 +159,7 @@ func (p Part) MarshalJSON() ([]byte, error) {
 		if p.WaitingOn != "" {
 			_ = o.SetValue("waitingOn", p.WaitingOn)
 		}
-		return jsonobj.Marshal(o)
+		return jsonobj.Marshal(p.Extra.apply(o))
 	}
 	_ = o.SetValue("name", p.Name)
 	_ = o.SetValue("args", p.Args)
@@ -120,7 +179,7 @@ func (p Part) MarshalJSON() ([]byte, error) {
 	if p.Decision != nil {
 		_ = o.SetValue("decision", p.Decision)
 	}
-	return jsonobj.Marshal(o)
+	return jsonobj.Marshal(p.Extra.apply(o))
 }
 
 // UnmarshalJSON reads either kind.
@@ -158,7 +217,13 @@ func (p *Part) UnmarshalJSON(b []byte) error {
 	if g := bytes.TrimSpace(raw.Gufi); len(g) > 0 && string(g) != "null" {
 		p.Gufi = append(json.RawMessage(nil), g...)
 	}
-	return nil
+	known := toolCallKeys
+	if raw.Kind == "approval" {
+		known = approvalKeys
+	}
+	x, err := readExtra(b, known)
+	p.Extra = x
+	return err
 }
 
 // Usage is the token counts summed over a turn's model calls.
@@ -185,7 +250,12 @@ type Message struct {
 	FinishReason      string
 	// Error is set on read only (withUnanswered); never stored.
 	Error string
+
+	// Extra is the stored message's other fields and key order.
+	Extra Extra
 }
+
+var messageKeys = keys("id", "role", "content", "parentId", "timestamp", "model", "reasoning", "reasoningDuration", "tokensUsed", "parts", "finishReason", "error")
 
 // Text is the content, ” for null.
 func (m *Message) Text() string {
@@ -236,7 +306,7 @@ func (m Message) MarshalJSON() ([]byte, error) {
 	if m.Error != "" {
 		_ = o.SetValue("error", m.Error)
 	}
-	return jsonobj.Marshal(o)
+	return jsonobj.Marshal(m.Extra.apply(o))
 }
 
 // UnmarshalJSON reads a stored message.
@@ -266,7 +336,9 @@ func (m *Message) UnmarshalJSON(b []byte) error {
 	if t := bytes.TrimSpace(raw.TokensUsed); len(t) > 0 && string(t) != "null" {
 		m.TokensUsed = append(json.RawMessage(nil), t...)
 	}
-	return nil
+	x, err := readExtra(b, messageKeys)
+	m.Extra = x
+	return err
 }
 
 // Conversation is StoredConversation.
@@ -278,6 +350,28 @@ type Conversation struct {
 	UpdatedAt      string    `json:"updatedAt"`
 	ActiveBranchID *string   `json:"activeBranchId"`
 	Messages       []Message `json:"messages"`
+	// Extra is the stored conversation's other fields and key order.
+	Extra Extra `json:"-"`
+}
+
+type conversationFields Conversation
+
+var conversationKeys = keys("id", "title", "owner", "createdAt", "updatedAt", "activeBranchId", "messages")
+
+// MarshalJSON writes the fields in their declared order over the stored object.
+func (c Conversation) MarshalJSON() ([]byte, error) {
+	return marshalWith(c.Extra, conversationFields(c))
+}
+
+// UnmarshalJSON reads a stored conversation.
+func (c *Conversation) UnmarshalJSON(b []byte) error {
+	var v conversationFields
+	if err := json.Unmarshal(b, &v); err != nil {
+		return err
+	}
+	x, err := readExtra(b, conversationKeys)
+	*c, c.Extra = Conversation(v), x
+	return err
 }
 
 // OwnerName is the owner, ” for none.
