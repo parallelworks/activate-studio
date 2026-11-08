@@ -57,6 +57,9 @@ func TestHeldCallsAskThenRunOnce(t *testing.T) {
 	a := app.New(cfg, slog.New(slog.DiscardHandler), nil, nil)
 	m := New(a)
 	m.Plat = stubPlatform{plat.URL}
+	// The holds' clock moves only when the test moves it.
+	clock := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	m.held.now = func() time.Time { return clock }
 	tools := goTools{m: m}
 	r := httptest.NewRequest("POST", "/api/chat/stream", nil)
 	key := "own-key"
@@ -134,7 +137,7 @@ func TestHeldCallsAskThenRunOnce(t *testing.T) {
 	// An expired hold is refused and dropped.
 	t.Setenv("STUDIO_APPROVAL_TTL_MS", "1")
 	tools.Hold(r, map[string]any{"conversationId": "conv-1", "messageId": "srv-4", "toolCallId": "call_3", "tool": "cancel_workflow_run", "canonical": `{"slug":"r1"}`, "args": json.RawMessage(`{"slug":"r1"}`)})
-	time.Sleep(5 * time.Millisecond)
+	clock = clock.Add(5 * time.Millisecond)
 	if e := answer(map[string]any{"messageId": "srv-4", "toolCallId": "call_3"}); e.OK || !strings.HasPrefix(e.Why, "This request expired") {
 		t.Errorf("expired %+v", e)
 	}

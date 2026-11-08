@@ -35,6 +35,11 @@ const NODE_DIRECT = new Map([
   // tests (TestGoldenStreamMatchesNode drives these routes of Node and of Go
   // against one fake gateway) and the unit tests named.
   ['aiFeatures.test.mjs', 'server-go/internal/chat (TestAIOffAnswersWithoutAModel)'],
+  // The MCP tests' Node app has no chat bridge for the tools still in Node,
+  // and the board test's tasks live in the test's own Node process; the Go
+  // server's task board is its own.
+  ['mcp.test.mjs', 'server-go/internal/chat (TestGoldenRAGMatchesNode)'],
+  ['board.test.mjs', 'server-go/internal/chat (TestMCPTaskBearer), internal/tasks (TestBoardOverTheBridge, TestBoardBridgeWithNode)'],
   ['bulkDelete.test.mjs', 'server-go/internal/conversations (TestBulkDeleteOwnAndUnownedOnly)'],
   ['endpointOptions.test.mjs', 'server-go/internal/modelkeys, internal/llm; internal/chat (TestModelKeyWithSignInOff)'],
   ['gufiCommands.test.mjs', 'server-go/internal/chat (TestGoldenStreamMatchesNode)'],

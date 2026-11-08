@@ -94,13 +94,6 @@ export async function frontBridgeRoutes(app: FastifyInstance): Promise<void> {
     return { ok: true }
   } })
 
-  // A note in the conversation a finished run was launched from (runs.ts).
-  // What a task agent's session pre-approves (mcp.ts taskToolNames).
-  app.route({ method: 'GET', url: '/api/__bridge/task-tools', onRequest: guard, handler: async () => {
-    const { taskToolNames } = await import('./mcp.js')
-    return { tools: taskToolNames() }
-  } })
-
   // The personas a task agent can adopt (extensions.ts).
   app.route({ method: 'GET', url: '/api/__bridge/personas', onRequest: guard, handler: async () => {
     const { personas } = await import('./extensions.js')
