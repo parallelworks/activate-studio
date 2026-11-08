@@ -162,7 +162,7 @@ func (p *Pool) sweep() {
 			for id, pool := range p.channels {
 				for _, c := range pool {
 					c.mu.Lock()
-					idle := time.Since(c.last) > idleTimeout && len(c.queue) == 0
+					idle := time.Since(c.last) > idleTimeout && len(c.queue) == 0 && c.picked == 0
 					c.mu.Unlock()
 					if idle {
 						c.kill()
@@ -486,8 +486,12 @@ type channel struct {
 	// in the same: answers are matched to the queue first in, first out.
 	writeMu sync.Mutex
 
-	mu      sync.Mutex
-	queue   []*pending
+	mu    sync.Mutex
+	queue []*pending
+	// picked counts requests pick has handed this session that Run has
+	// not queued yet, so they count as busy (Node picks and queues in one
+	// step, so it has no such gap).
+	picked  int
 	last    time.Time
 	stderr  string
 	dead    bool
@@ -661,12 +665,18 @@ func (p *Pool) pick(id, site, key string) (*channel, error) {
 			live = append(live, c)
 		}
 	}
+	take := func(c *channel) *channel {
+		c.mu.Lock()
+		c.picked++
+		c.mu.Unlock()
+		return c
+	}
 	for _, c := range live {
 		c.mu.Lock()
-		n := len(c.queue)
+		n := len(c.queue) + c.picked
 		c.mu.Unlock()
 		if n == 0 {
-			return c, nil
+			return take(c), nil
 		}
 	}
 	if len(live) < p.poolMax {
@@ -675,18 +685,18 @@ func (p *Pool) pick(id, site, key string) (*channel, error) {
 			return nil, err
 		}
 		p.channels[id] = append(live, ch)
-		return ch, nil
+		return take(ch), nil
 	}
 	best, bestN := live[0], -1
 	for _, c := range live {
 		c.mu.Lock()
-		n := len(c.queue)
+		n := len(c.queue) + c.picked
 		c.mu.Unlock()
 		if bestN < 0 || n < bestN {
 			best, bestN = c, n
 		}
 	}
-	return best, nil
+	return take(best), nil
 }
 
 // Run is remoteRun: argv on the site as the key's user (or the ssh login).
@@ -718,6 +728,7 @@ func (p *Pool) Run(ctx context.Context, site, key string, argv []string, timeout
 	}
 	c.writeMu.Lock()
 	c.mu.Lock()
+	c.picked--
 	c.last = time.Now()
 	if c.dead || c.killed {
 		c.mu.Unlock()
