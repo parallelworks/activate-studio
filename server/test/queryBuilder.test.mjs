@@ -112,11 +112,12 @@ test('each field takes its own conditions, and says which when given another', a
   ]) {
     const r = await post('/api/query/sql', B([{ field, op, value: '1' }]))
     assert.equal(r.status, 400, field)
-    assert.match(r.body.message, msg)
+    // The app's error handler sends { error }; a bare Fastify, { message }.
+    assert.match(r.body.message ?? r.body.error, msg)
   }
   const dirs = await post('/api/query/sql', B([{ field: 'path', op: 'contains', value: 'x' }], { source: 'directories' }))
   assert.equal(dirs.status, 400)
-  assert.match(dirs.body.message, /directories take name, owner, size and modified conditions/)
+  assert.match(dirs.body.message ?? dirs.body.error, /directories take name, owner, size and modified conditions/)
 })
 
 test('directories: conditions on their own columns, so a value that looks like a column name stays a value', async () => {

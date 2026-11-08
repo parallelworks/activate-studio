@@ -35,7 +35,9 @@ func Of(a *app.App) *Registry {
 		return r
 	}
 	cfg := a.Cfg
-	settings := &FileIndexSettings{File: NewFileIndexSettings(cfg.IndexBase).File, Store: index.Of(a).Settings}
+	ix := index.Of(a)
+	PrimaryBuilt, PrimaryIndexing = ix.PrimaryBuilt, ix.PrimaryIndexing
+	settings := &FileIndexSettings{File: NewFileIndexSettings(cfg.IndexBase).File, Store: ix.Settings}
 	r := New(Options{
 		KBRoot: cfg.KBRoot, IndexBase: cfg.IndexBase, GufiIndex: cfg.GufiIndex, GufiBin: cfg.GufiBin,
 		AuthEnabled: cfg.AuthEnabled(), Getenv: os.Getenv, Runner: a.Gufi, Settings: settings,

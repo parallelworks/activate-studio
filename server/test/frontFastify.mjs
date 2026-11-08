@@ -48,6 +48,9 @@ const NODE_DIRECT = new Map([
   ['standaloneChat.test.mjs', 'server-go/internal/chat (TestGoldenStreamMatchesNode, TestCitationsMatchNode)'],
   ['toolApproval.test.mjs', 'server-go/internal/chat (TestHeldCallsAskThenRunOnce, TestToolCatalogMatchesNode)'],
   ['unansweredTurn.test.mjs', 'server-go/internal/conversations (TestUnansweredWhileAReplyStreams)'],
+  // Its two clusters are stood in with setRemoteSpawn in the test's own
+  // process; internal/search runs its cases with a stand-in Spawn.
+  ['libraryScope.test.mjs', 'server-go/internal/search (TestScopeAcrossUserLibraries)'],
   // The user library tests stand the remote systems in with setRemoteSpawn
   // and setSshLocal, functions in the test's own process that the Go
   // server's sessions cannot reach. internal/userlibs runs their cases with

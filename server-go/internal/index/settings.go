@@ -97,8 +97,18 @@ func Defaults() Settings {
 type SettingsStore struct {
 	file string
 	mu   sync.Mutex
-	// cache, as Node keeps it: read once, replaced on write.
+	// cache, as Node keeps it: replaced on write, and read again when the
+	// file changes on disk (Node writes it too while it runs).
 	cache map[string]map[string]any
+	stamp string
+}
+
+func settingsStamp(f string) string {
+	st, err := os.Stat(f)
+	if err != nil {
+		return "none"
+	}
+	return fmt.Sprintf("%d:%d", st.Size(), st.ModTime().UnixNano())
 }
 
 // NewSettingsStore is the store under indexBase.
@@ -107,9 +117,11 @@ func NewSettingsStore(indexBase string) *SettingsStore {
 }
 
 func (s *SettingsStore) load() map[string]map[string]any {
-	if s.cache != nil {
+	stamp := settingsStamp(s.file)
+	if s.cache != nil && stamp == s.stamp {
 		return s.cache
 	}
+	s.stamp = stamp
 	s.cache = map[string]map[string]any{}
 	b, err := os.ReadFile(s.file)
 	if err != nil {
@@ -243,6 +255,7 @@ func (s *SettingsStore) ForgetLibrary(library string) error {
 		return err
 	}
 	s.cache = next
+	s.stamp = settingsStamp(s.file)
 	return nil
 }
 
@@ -392,6 +405,7 @@ func (s *SettingsStore) Save(library string, body map[string]any) (Settings, err
 		return Settings{}, err
 	}
 	s.cache = nextAll
+	s.stamp = settingsStamp(s.file)
 	return s.get(library), nil
 }
 

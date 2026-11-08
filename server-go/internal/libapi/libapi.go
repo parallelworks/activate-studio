@@ -7,6 +7,7 @@ package libapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"math"
 	"net/http"
 	"os"
@@ -15,10 +16,10 @@ import (
 
 	"github.com/parallelworks/activate-studio/server-go/internal/apierr"
 	"github.com/parallelworks/activate-studio/server-go/internal/app"
-	"github.com/parallelworks/activate-studio/server-go/internal/auth"
 	"github.com/parallelworks/activate-studio/server-go/internal/gufi"
 	"github.com/parallelworks/activate-studio/server-go/internal/gufitrace"
 	"github.com/parallelworks/activate-studio/server-go/internal/libraries"
+	"github.com/parallelworks/activate-studio/server-go/internal/platform"
 	"github.com/parallelworks/activate-studio/server-go/internal/remote"
 	"github.com/parallelworks/activate-studio/server-go/internal/search"
 )
@@ -68,36 +69,22 @@ func Register(mux *http.ServeMux, a *app.App) {
 	mux.HandleFunc("DELETE /api/query/saved/{id}", h(s.savedDelete))
 }
 
-// viewer is req.user?.id ?? null as Node's routes read it: the front's
-// verified user where the Go server checks identity; where identity
-// headers pass through to Node, Node's own answer for this request.
+// viewer is req.user?.id ?? null as Node's routes read it, through the
+// platform track's ViewerOf (the front's verified user, or Node's answer
+// over the bridge where identity headers pass through).
 func (s *Service) viewer(r *http.Request) (libraries.Viewer, error) {
-	if s.a.Cfg.FrontAuth {
-		if u := auth.UserOf(r); u != nil {
-			return libraries.ViewerOf(u.ID), nil
+	v, err := platform.Of(s.a).ViewerOf(r)
+	if err != nil {
+		var ne *app.NodeError
+		if errors.As(err, &ne) && ne.Status == http.StatusUnauthorized {
+			return nil, apierr.New(401, "authentication required")
 		}
-		if s.a.Cfg.AuthEnabled() {
-			return libraries.Deployment, nil
-		}
-		return libraries.ViewerOf(""), nil
-	}
-	n := s.a.NodeCaller()
-	if n == nil {
-		return libraries.ViewerOf(""), nil
-	}
-	var who struct {
-		AuthEnabled bool `json:"authEnabled"`
-		User        *struct {
-			ID string `json:"id"`
-		} `json:"user"`
-	}
-	if err := n.Do(r, "GET", "/api/whoami", nil, &who); err != nil {
 		return nil, err
 	}
-	if who.User != nil {
-		return libraries.ViewerOf(who.User.ID), nil
+	if v != nil && v.User != nil {
+		return libraries.ViewerOf(v.User.ID), nil
 	}
-	if who.AuthEnabled {
+	if v != nil && v.AuthEnabled {
 		// ownerOf(null) with sign-in on: nobody, so no user libraries.
 		return libraries.Deployment, nil
 	}
@@ -262,16 +249,8 @@ func (s *Service) list(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (s *Service) authEnabled(r *http.Request) bool {
-	if s.a.Cfg.FrontAuth {
-		return s.a.Cfg.AuthEnabled()
-	}
-	if n := s.a.NodeCaller(); n != nil {
-		var who struct {
-			AuthEnabled bool `json:"authEnabled"`
-		}
-		if n.Do(r, "GET", "/api/whoami", nil, &who) == nil {
-			return who.AuthEnabled
-		}
+	if v, err := platform.Of(s.a).ViewerOf(r); err == nil && v != nil {
+		return v.AuthEnabled
 	}
 	return s.a.Cfg.AuthEnabled()
 }
