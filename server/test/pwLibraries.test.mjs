@@ -11,6 +11,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { spawn } from 'node:child_process'
+import { createHash } from 'node:crypto'
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pwlib-'))
 process.env.KB_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'pwlib-kb-'))
@@ -32,6 +33,10 @@ for last; do :; done
 R=$(printf '\\036')
 case "$args" in
   *--version*) echo "gufi_query 0.6.9" ;;
+  # The count, with the directories that hold vectors (gvec): none in an
+  # index whose path names novec.
+  *gvec*novec*) echo "2|3|0" ;;
+  *gvec*) echo "2|3|1" ;;
   *"-G "*) echo "2|3" ;;
   *"--max-level 0"*) printf 'readme.txt%sf%s22%s1700000000\\n' "$R" "$R" "$R" ;;
   *"--max-level 1"*) printf 'data%s1700000001\\n' "$R" ;;
@@ -40,6 +45,7 @@ esac
 `, 0o755)
 const index = path.join(home, 'idx', 'proj')
 write(path.join(index, 'db.db'), '')
+write(path.join(home, 'idx', 'novec', 'db.db'), '')
 write(path.join(home, 'holder', 'sub', 'db.db'), '')
 write(path.join(home, 'proj', 'readme.txt'), 'hello from the cluster\n')
 
@@ -61,6 +67,7 @@ R.setRemoteSpawn((site, key, command) => {
 })
 const U = await import('../dist/userLibraries.js')
 const L = await import('../dist/libraries.js')
+const { meaningSearched } = await import('../dist/libraryScope.js')
 const { default: Fastify } = await import('fastify')
 const app = Fastify()
 app.setErrorHandler((err, _req, reply) => reply.status(err.status ?? 500).send({ error: err.message }))
@@ -141,6 +148,45 @@ test('added, the library is ready and read only, and reads the tree and files on
   assert.deepEqual((await U.remoteTree(lib.indexRoot, '')).map(e => [e.type, e.name]), [['dir', 'data'], ['file', 'readme.txt']])
   const f = await U.remoteFile(lib.indexRoot, 'readme.txt')
   assert.equal(f.content, 'hello from the cluster\n')
+})
+
+// The libraries this one-person Studio's owner has, as saved.
+const savedFile = path.join(process.env.INDEX_BASE, 'users', createHash('sha256').update('single').digest('hex').slice(0, 16), 'libraries.json')
+
+test('the connection test finds the vectors anywhere in the index, so search by meaning looks there', async () => {
+  const r = await probe({ cluster, indexRoot: '~/idx/proj' })
+  assert.equal(r.vectors, true)
+  assert.match(r.steps.find(s => s.name === 'index').detail, /vectors, so search by meaning covers it/)
+  // Saved with the library, so search sends the query's vector to the cluster.
+  assert.equal(lib.caps.vectors, true)
+  assert.equal(L.lacks(lib, 'vectors'), false)
+  assert.equal(meaningSearched(lib), true)
+
+  // An index without vectors says so at the test, and is not searched by meaning.
+  const none = await probe({ cluster, indexRoot: '~/idx/novec' })
+  assert.equal(none.vectors, false)
+  assert.match(none.steps.find(s => s.name === 'index').detail, /no vectors, so search by meaning does not cover it/)
+  const added = await post('/api/user-libraries/pw', { cluster, indexRoot: '~/idx/novec' })
+  assert.equal(added.status, 200, JSON.stringify(added.body))
+  const bare = L.listLibraries('kb', null).find(l => l.id === added.body.id)
+  assert.equal(meaningSearched(bare), false)
+  assert.equal((await app.inject({ method: 'DELETE', url: `/api/user-libraries/${bare.id}` })).statusCode, 200)
+})
+
+test('a library connected before its vectors were looked for is still searched by meaning, and refresh records them', async () => {
+  // As an earlier version saved it: no vectors field at all.
+  const defs = JSON.parse(fs.readFileSync(savedFile, 'utf8'))
+  for (const d of defs) delete d.vectors
+  fs.writeFileSync(savedFile, JSON.stringify(defs))
+  const old = L.listLibraries('kb', null).find(l => l.id === lib.id)
+  assert.equal(old.caps.vectors, false)
+  assert.equal(L.lacks(old, 'vectors'), false, 'not known to lack vectors')
+  assert.equal(meaningSearched(old), true)
+
+  assert.equal((await post(`/api/user-libraries/${lib.id}/refresh`, {})).status, 200)
+  const now = L.listLibraries('kb', null).find(l => l.id === lib.id)
+  assert.equal(now.caps.vectors, true)
+  assert.equal(JSON.parse(fs.readFileSync(savedFile, 'utf8')).find(d => d.id === lib.id).vectors, true)
 })
 
 test('refresh checks again rather than starting a build, and removing forgets it', async () => {

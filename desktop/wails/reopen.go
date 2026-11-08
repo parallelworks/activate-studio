@@ -57,6 +57,15 @@ func (a *App) shellChanged() bool {
 	return now != "" && was != "" && now != was
 }
 
+// relaunchAsked: the server installed a release that replaces the whole
+// app (its manifest's requiresRelaunch, docs/UPDATES.md), and wrote
+// updates/relaunch.json: the app is reopened even where this program is
+// unchanged, never only the server restarted into the new copy.
+func (a *App) relaunchAsked() bool {
+	_, err := os.Stat(filepath.Join(a.cfg.DataDir, "updates", "relaunch.json"))
+	return err == nil
+}
+
 // reopen starts the install's launcher in a session of its own, which waits
 // for this process to end (STUDIO_WAIT_PID), and quits.
 func (a *App) reopen(inst *instance) bool {

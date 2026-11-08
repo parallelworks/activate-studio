@@ -69,6 +69,7 @@ The in-app Help is the user guide: [`docs/HELP.md`](docs/HELP.md), with the deta
 | [`docs/AGENTS.md`](docs/AGENTS.md) | delegated agents |
 | [`docs/MULTI-USER.md`](docs/MULTI-USER.md) | several people on one deployment |
 | [`docs/MACOS.md`](docs/MACOS.md) | the macOS app, and running from a clone on macOS |
+| [`docs/UPDATES.md`](docs/UPDATES.md) | update channels (Stable and Preview), installing another version, the state snapshot and format, and what the Go version must keep |
 | [`docs/LINUX-APP.md`](docs/LINUX-APP.md) | the Linux app: per-user install, `.deb` and `.rpm`, requirements, update and uninstall, the install layout |
 | [`docs/GUFI-MACOS.md`](docs/GUFI-MACOS.md) | GUFI built for macOS 14 and later: the published archive, building and checking it |
 | [`docs/WINDOWS.md`](docs/WINDOWS.md) | running the Studio on Windows through WSL2, with your folders, shares and models |

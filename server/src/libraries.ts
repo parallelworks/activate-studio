@@ -60,6 +60,10 @@ export interface Library {
   /** Pinned by the deployment; cannot be removed from Settings. */
   pinned: boolean
   caps: LibraryCaps
+  /** For a library on another system, that whether its index has vectors
+   *  was never told (one connected before the connection test looked):
+   *  caps.vectors false then means unknown, and search looks there. */
+  vectorsUnknown?: boolean
   /** A user's library on one of their clusters (userLibraries.ts). */
   site?: string | null
   /** Which GUFI wrote the index (indexFormat.ts); unknown until it is probed. */
@@ -200,11 +204,12 @@ export function knownCaps(indexRoot: string): KnownCaps | null {
  * whole tree found none since it last changed. Until then (before its
  * first probe, or while a build or sync has marked it stale) it is not
  * known, and search looks there. A library on another system says what it
- * holds when it is built or connected.
+ * holds when it is built or connected; one connected before its vectors
+ * were looked for (vectorsUnknown) is not known to lack them.
  */
-export function lacks(l: Pick<Library, 'caps' | 'indexRoot'>, what: 'fullText' | 'vectors'): boolean {
+export function lacks(l: Pick<Library, 'caps' | 'indexRoot' | 'vectorsUnknown'>, what: 'fullText' | 'vectors'): boolean {
   if (l.caps[what]) return false
-  if (l.indexRoot.startsWith(REMOTE_PREFIX)) return true
+  if (l.indexRoot.startsWith(REMOTE_PREFIX)) return !(what === 'vectors' && l.vectorsUnknown)
   const k = knownCapsMap().get(path.resolve(l.indexRoot))
   return !!k && !!k.exactAt && !k.stale && !k.caps[what]
 }
@@ -514,6 +519,7 @@ function userLibrariesOf(viewerId: string | null | undefined): Library[] {
   return defs.filter(d => d.indexRoot && d.gufiBin != null).map(d => ({
     id: d.id, label: d.label, indexRoot: remoteRootOf(owner, d.id), sourceRoot: null,
     writable: false, primary: false, pinned: false, caps: { index: true, fullText: !!d.fullText, vectors: !!d.vectors }, site: reachedLabel(d) ?? d.site,
+    ...(d.vectors === undefined && !d.build ? { vectorsUnknown: true } : {}),
     meaning: d.build ? indexSettings(d.id).meaning : null,
     depth: d.build ? indexSettings(d.id).depth : null,
     format: d.indexFormat ?? null,

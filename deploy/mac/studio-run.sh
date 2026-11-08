@@ -138,6 +138,13 @@ roll_back() {
 backoff=2
 failures=
 while [ "$stopping" = 0 ]; do
+  # An update that replaces the whole app (requiresRelaunch, docs/UPDATES.md)
+  # may hold no Node: this loop, the old copy's, stops, and the reopened app
+  # starts its own server.
+  if [ ! -x "$RES/node/bin/node" ] && [ -f "$DATA/updates/relaunch.json" ]; then
+    echo "$(stamp) the app was replaced by a version that runs once the app is reopened; this run loop stops" >>"$LOG"
+    exit 0
+  fi
   # One previous log is kept.
   if [ -f "$LOG" ] && [ $(( $(wc -c <"$LOG") )) -gt 10485760 ]; then mv -f "$LOG" "$LOG.1"; fi
   (

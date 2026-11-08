@@ -589,6 +589,18 @@ the test again otherwise. **Check** reruns it and updates the counts and the ind
 time (the modified time of the index's `db.db`), which is also when
 Statistics counts the library again.
 
+The same aggregate `gufi_query` counts the directories whose database
+has the Studio's vector table (`gvec`, read from `tree.sqlite_master`),
+so the index step says whether search by meaning covers the index, and
+the library is saved with `vectors`. Search sends the query's vector to
+the host only for a library with vectors. A library connected by
+v1.188 or earlier was saved without `vectors`, so its search by meaning
+returned nothing; it is now treated as unknown and searched by meaning,
+and **Check** records what the index has. Vectors match only where the
+directory's `gvecmodel` names the Studio's ONNX model
+(`minilm-l6-mean-int8`); an index embedded with another model is
+searched by name and words.
+
 ### SSH options
 
 A library over ssh may carry its own ssh options, in the form's **SSH

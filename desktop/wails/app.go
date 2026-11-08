@@ -204,9 +204,10 @@ func (a *App) relaunch() {
 	// After the reply has reached the page.
 	go func() {
 		time.Sleep(300 * time.Millisecond)
-		// An update that changed this window's own program: open the new one
+		// An update that changed this window's own program, or one that
+		// replaces the whole app (relaunchAsked): open the new one
 		// (reopen.go). Otherwise only the server starts again.
-		if a.shellChanged() && a.reopen(a.inst) {
+		if (a.shellChanged() || a.relaunchAsked()) && a.reopen(a.inst) {
 			a.sup.Stop()
 			wruntime.Quit(a.ctx)
 			return

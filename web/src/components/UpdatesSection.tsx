@@ -4,7 +4,7 @@ import {
   Button, Callout, ConfirmModal, CopyCodeBlock, Field, Loader, ProgressBar, Select, type SelectItem, Switch,
   formatBytes, formatDateTime,
 } from '@parallelworks/ui'
-import { onUpdatesFocus, openWhatsNew, updatesApi, type UpdatePolicy } from '../api'
+import { onUpdatesFocus, openWhatsNew, updatesApi, type UpdatePolicy, type VersionCheck } from '../api'
 import { reloadPage, setUpdateFlowOptions, underWay as isUnderWay, updateActions, useUpdateFlow, type UpdateFlow } from '../updateFlow'
 import { ReleaseList } from './ChangeList'
 import { ReopenApp } from './ReopenApp'
@@ -13,8 +13,18 @@ export { bare } from '../updateFlow'
 
 const CHANNELS: SelectItem<UpdatePolicy['channel']>[] = [
   { value: 'stable', label: 'Stable' },
-  { value: 'prerelease', label: 'Pre-release' },
+  { value: 'preview', label: 'Preview' },
 ]
+
+/** What the confirmation says about installing a picked version. */
+function pickDescription(c: VersionCheck, from: string): string {
+  const reopen = c.requiresRelaunch ? ' The app reopens to finish.' : ' The Studio restarts on it.'
+  if (!c.readable && c.snapshot) {
+    return `${c.version} cannot read this Studio's data as it is now, so the settings, conversations and credentials saved ${formatDateTime(c.snapshot.at, 'short')} (before ${c.snapshot.from} changed to ${c.snapshot.to ?? 'another version'}) are put back. What is there now is kept in a snapshot.${reopen}`
+  }
+  if (c.older) return `${c.version} is older than ${from}. The Studio saves its settings and conversations first, and Roll back returns to ${from}.${reopen}`
+  return `The Studio saves its settings and conversations first.${reopen}`
+}
 
 /** How a clone of the repository updates itself, before a restart; the
  *  server's `command` names it. */
@@ -46,6 +56,9 @@ export function UpdatesSection({ onPolicySaved, pollMs, giveUpMs, reload }: {
   const [policyBusy, setPolicyBusy] = useState(false)
   const [policyError, setPolicyError] = useState('')
   const [confirmRollback, setConfirmRollback] = useState(false)
+  const [pick, setPick] = useState<string | null>(null)
+  const [picked, setPicked] = useState<VersionCheck | null>(null)
+  const [inspecting, setInspecting] = useState(false)
   const section = useRef<HTMLElement>(null)
 
   // The footer's "update available" lands here.
@@ -58,6 +71,16 @@ export function UpdatesSection({ onPolicySaved, pollMs, giveUpMs, reload }: {
   const check = () => updateActions.check()
   const install = () => updateActions.install()
   const rollback = () => updateActions.rollback()
+  /** Reads the picked version's signed manifest, then asks before installing. */
+  const inspect = async (version: string) => {
+    setInspecting(true)
+    setPolicyError('')
+    try {
+      const c = await updatesApi.inspect(version)
+      if (!c.readable && !c.snapshot) setPolicyError(`${c.version} cannot read this Studio's data, and no saved copy it can read is kept, so it cannot be installed.`)
+      else setPicked(c)
+    } catch (e) { setPolicyError(errText(e)) } finally { setInspecting(false) }
+  }
 
   const savePolicy = async (next: UpdatePolicy) => {
     if (!status) return
@@ -89,6 +112,8 @@ export function UpdatesSection({ onPolicySaved, pollMs, giveUpMs, reload }: {
   const checking = busy === 'check' || status.state === 'checking'
   const error = flow.error || policyError
   const releases = status.releases ?? []
+  const others = (status.versions ?? []).filter(v => !v.current)
+  const pickItems: SelectItem<string>[] = others.map(v => ({ value: v.version, label: `${v.version}${v.channel === 'preview' ? ' (Preview)' : ''}${v.newer ? '' : ', older'}` }))
 
   return (
     <section ref={section} id="settings-updates" className="settings-field" aria-labelledby="settings-updates-head">
@@ -109,8 +134,18 @@ export function UpdatesSection({ onPolicySaved, pollMs, giveUpMs, reload }: {
         <Button variant="ghost" size="sm" onClick={openWhatsNew}>What's new</Button>
       </div>
 
-      {status.reopen && (
+      {status.state === 'relaunch' ? (
+        <Callout tone="info" action={<ReopenApp />}>The new version is in place and runs once the app reopens.</Callout>
+      ) : status.reopen && (
         <Callout tone="info" action={<ReopenApp />}>The update also changed the app's window, which updates when the app reopens.</Callout>
+      )}
+
+      {status.mode === 'app' && status.moveToStable && (
+        <Callout className="rag-banner" tone="info" title={`This is a Preview version; the newest Stable is ${status.moveToStable.version}`}
+          action={<Button variant="secondary" size="sm" loading={inspecting} disabled={!!busy || policyBusy || underWay}
+            onClick={() => void inspect(status.moveToStable!.version)}>Move to Stable</Button>}>
+          <p className="muted key-note">Moving installs the older Stable version.</p>
+        </Callout>
       )}
 
       {latest && status.available ? (
@@ -134,7 +169,7 @@ export function UpdatesSection({ onPolicySaved, pollMs, giveUpMs, reload }: {
           ) : null}
         </Callout>
       ) : status.checkedAt && status.state !== 'error' && !status.offline ? (
-        <p className="muted key-note">This is the latest version{policy.channel === 'prerelease' ? ', pre-releases included' : ''}.</p>
+        <p className="muted key-note">This is the latest version{policy.channel === 'preview' ? ', Preview included' : ''}.</p>
       ) : null}
 
       <UpdateProgress flow={flow} />
@@ -165,11 +200,31 @@ export function UpdatesSection({ onPolicySaved, pollMs, giveUpMs, reload }: {
         </Field>
       )}
       <div className="settings-grid">
-        <Field label="Channel" description="Pre-release also offers test versions published before a stable release.">
+        <Field label="Channel" description="Preview gets new versions before Stable does; they are tested less and may be withdrawn.">
           <Select items={CHANNELS} value={policy.channel} disabled={policyBusy}
             onValueChange={v => { if (v && v !== policy.channel) void savePolicy({ ...policy, channel: v }) }} />
         </Field>
       </div>
+
+      {status.mode === 'app' && pickItems.length > 0 && (
+        <div className="settings-grid">
+          <Field label="Install a version" description="Any signed release on this channel, older ones included.">
+            <div className="query-actions" style={{ marginTop: 0 }}>
+              <Select items={pickItems} value={pick ?? null} placeholder="Choose a version" disabled={!!busy || policyBusy || underWay}
+                onValueChange={v => setPick(v ?? null)} />
+              <Button variant="secondary" size="sm" loading={inspecting} disabled={!pick || !!busy || policyBusy || underWay}
+                onClick={() => pick && void inspect(pick)}>Install</Button>
+            </div>
+          </Field>
+        </div>
+      )}
+      {picked && (
+        <ConfirmModal open onClose={() => setPicked(null)}
+          title={`Install ${picked.version}?`}
+          description={pickDescription(picked, current.version)}
+          confirmLabel="Install"
+          onConfirm={() => { const c = picked; setPicked(null); void updateActions.installVersion(c.version, !c.readable) }} />
+      )}
 
       {status.mode === 'app' && status.previous && (
         <div className="query-actions">
