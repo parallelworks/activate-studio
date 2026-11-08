@@ -48,6 +48,8 @@ From: debian:bookworm-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422
     grep -q '"server": *"go"' /app/manifest.json
     /app/app/bin/studio-server routes >/dev/null
     test -f /app/app/lib/libonnxruntime.so.1
+    test -x /app/app/bin/remote/linux-amd64/studio-remote
+    test -f /app/app/indexer/embed_deps.json
     test -f /app/models/minilm-l6/model.onnx
     test -f /app/app/occt/occt-import-js.wasm
     /app/gufi/bin/gufi_query --help >/dev/null 2>&1 || /app/gufi/bin/gufi_query -h >/dev/null 2>&1 || true

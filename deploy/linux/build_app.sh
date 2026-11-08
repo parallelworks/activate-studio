@@ -118,6 +118,9 @@ if [ "$SERVER" != node ]; then
   mkdir -p "$APP/app/bin"
   (cd "$PROJECT_ROOT/server-go" && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-s -w" \
     -o "$APP/app/bin/" ./cmd/studio-server ./cmd/semantic-map)
+  # The helper a library's build on another system runs, for each Linux
+  # it is sent to (internal/userlibs); about 25 MB each.
+  "$PROJECT_ROOT/server-go/scripts/build_remote.sh" "$APP/app/bin/remote"
   # The STEP preview's modules (occt-import-js, Open CASCADE, LGPL 2.1):
   # separate files beside the server, not built into it, so they stay
   # replaceable. OCCT_DIR names a folder with them already built
@@ -163,7 +166,12 @@ fi
 
 echo "Staging web, indexer, docs, change log, starters..."
 cp -R "$PROJECT_ROOT/web/dist" "$APP/app/web/dist"
-[ "$SERVER" = go-only ] || cp -R "$PROJECT_ROOT/indexer" "$APP/app/indexer"
+if [ "$SERVER" = go-only ]; then
+  # The pins of what a build on another system is sent (internal/userlibs).
+  mkdir -p "$APP/app/indexer" && cp "$PROJECT_ROOT/indexer/embed_deps.json" "$APP/app/indexer/"
+else
+  cp -R "$PROJECT_ROOT/indexer" "$APP/app/indexer"
+fi
 cp -R "$PROJECT_ROOT/docs" "$APP/app/docs"
 # What's new and the notice after an update read it.
 cp "$PROJECT_ROOT/CHANGELOG.md" "$APP/app/CHANGELOG.md"
