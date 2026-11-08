@@ -18,12 +18,36 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/conversations"
 	"github.com/parallelworks/activate-studio/server-go/internal/llm"
 	"github.com/parallelworks/activate-studio/server-go/internal/modelkeys"
+	"github.com/parallelworks/activate-studio/server-go/internal/reqbody"
 	"github.com/parallelworks/activate-studio/server-go/internal/settings"
 )
 
 // KeyHeader carries the viewer's personal key, sealed, on each request
 // passed to Node while Node still reads keys (credentials.ts mirrorFromGo).
 const KeyHeader = "X-Studio-Model-Key"
+
+// NotePath is where Node sends a conversation note while Go writes
+// conversations.json (conversations.ts appendConversationNote).
+const NotePath = "/internal/go-chat/note"
+
+func init() {
+	bridge.RegisterPrivatePrefix("/internal/go-chat/")
+	// What the Node the Go server spawns is told the Go server has taken:
+	// the keys where the front verifies identity, the conversations file
+	// wherever Go knows the viewer.
+	bridge.RegisterNodeEnv("chat", func(string) map[string]string {
+		out := map[string]string{}
+		if m := Default; m != nil {
+			if m.A.Cfg.AuthEnabled() && m.A.Cfg.FrontAuth {
+				out["STUDIO_GO_MODEL_KEYS"] = "1"
+			}
+			if m.known() {
+				out["STUDIO_GO_CONVERSATIONS"] = "1"
+			}
+		}
+		return out
+	})
+}
 
 // Module is the track's state.
 type Module struct {
@@ -218,11 +242,6 @@ func Register(mux *http.ServeMux, a *app.App) {
 
 	// Node reads the viewer's key from Go while routes that use it remain
 	// there; only where the front verifies identity does Go hold sessions.
-	if a.Cfg.AuthEnabled() && a.Cfg.FrontAuth {
-		bridge.RegisterNodeEnv("STUDIO_GO_MODEL_KEYS", func(string) map[string]string {
-			return map[string]string{"STUDIO_GO_MODEL_KEYS": "1"}
-		})
-	}
 	app.OnToNode(func(in, out *http.Request) {
 		out.Header.Del(KeyHeader)
 		if !a.Cfg.AuthEnabled() || !a.Cfg.FrontAuth {
@@ -238,6 +257,20 @@ func Register(mux *http.ServeMux, a *app.App) {
 		} else {
 			out.Header.Set(KeyHeader, "-")
 		}
+	})
+
+	// TRANSITIONAL: conversations.json has one writer. Where Go serves the
+	// conversation routes, the note Node's run watcher adds (runs.ts) is
+	// written here (credentials.ts-style env tells the Node Go spawns).
+	h("POST "+NotePath, func(w http.ResponseWriter, r *http.Request) error {
+		if !bridge.Authorized(r) {
+			return apierr.New(404, "not found")
+		}
+		b, err := reqbody.Read(r)
+		if err != nil {
+			return err
+		}
+		return reqbody.OK(w, reqbody.O("ok", m.Conv.AppendNote(b.Str("conversationId"), b.Str("content"))))
 	})
 
 	a.OnStart("chat: personal key vault scrub", func(context.Context) {

@@ -128,8 +128,12 @@ func (s *Store) persist() {
 	if os.WriteFile(tmp, b, 0o644) != nil {
 		return
 	}
+	// The stamp is the written file's, taken before the rename: one taken
+	// after could be a write of Node's that landed in between, which would
+	// then never be read.
+	st := stampOf(tmp)
 	if os.Rename(tmp, s.file) == nil {
-		s.stamp = stampOf(s.file)
+		s.stamp = st
 	}
 }
 

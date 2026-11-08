@@ -165,7 +165,9 @@ func startGolden(t *testing.T) *goldenEnv {
 	}
 	nodeURL := "http://127.0.0.1:" + strings.TrimSpace(line)
 	cfg, _ := config.Load(func(k string) string {
-		return map[string]string{"INDEX_BASE": ix, "KB_ROOT": kb, "STUDIO_NODE_URL": nodeURL, "STUDIO_WEB_DIST": filepath.Join(dir, "web")}[k]
+		// Its own INDEX_BASE: conversations.json has one writer at a time
+		// (Node's run notes go through Go), and here both routes write.
+		return map[string]string{"INDEX_BASE": filepath.Join(dir, "ix-go"), "KB_ROOT": kb, "STUDIO_NODE_URL": nodeURL, "STUDIO_WEB_DIST": filepath.Join(dir, "web")}[k]
 	})
 	u, _ := url.Parse(nodeURL)
 	a := app.New(cfg, slog.New(slog.DiscardHandler), nil, app.NewNode(u, nil, ""))
