@@ -9,8 +9,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/gufi"
 )
@@ -34,8 +36,20 @@ func corpusGufiBin(t *testing.T) string {
 	return bin
 }
 
+var corpusEpoch = time.Date(2025, 6, 1, 12, 0, 0, 0, time.UTC)
+
 // copyTree copies from into to.
 func copyTree(t *testing.T, from, to string) {
+	var files []string
+	defer func() {
+		// Distinct modification times, an hour apart in path order, so a
+		// query ordered by time has one answer.
+		sort.Strings(files)
+		for i, f := range files {
+			at := corpusEpoch.Add(time.Duration(i) * time.Hour)
+			os.Chtimes(f, at, at)
+		}
+	}()
 	err := filepath.WalkDir(from, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -49,6 +63,7 @@ func copyTree(t *testing.T, from, to string) {
 		if err != nil {
 			return err
 		}
+		files = append(files, dst)
 		return os.WriteFile(dst, b, 0o644)
 	})
 	if err != nil {
@@ -129,6 +144,15 @@ func TestGoldenCorpusMatchesNode(t *testing.T) {
 		{name: "search another library and all", text: "everywhere", replies: []reply{
 			call("search_kb", `{"query":"budget","library":"docs"}`), call("search_kb", `{"query":"budget","library":"all"}`), call("search_kb", `{"query":"budget","library":"nope"}`), text(long)}},
 		{name: "a label scope", text: "scoped search", extra: map[string]any{"labelScope": []any{"finance"}}, replies: []reply{call("search_kb", `{"query":"budget","tags":"other"}`), text(long)}},
+		{name: "queries", text: "what is big?", replies: []reply{
+			call("query_corpus", `{"canned":"largest","n":3}`), call("query_corpus", `{"canned":"newest","subtree":"reports"}`), call("query_corpus", `{"canned":"recent","days":"3650"}`),
+			call("query_corpus", `{"canned":"big_directories","library":"docs"}`),
+			call("query_corpus", `{"canned":"oldest","n":500}`), call("query_corpus", `{"canned":"nope"}`), call("query_corpus", `{"canned":"largest","library":"nope"}`), call("query_corpus", `{"canned":"largest","subtree":"../x"}`), text(long)}},
+		// Across libraries Node runs one gufi_vt statement where this
+		// host's GUFI has it; Go merges each library's rows, as its
+		// /api/query does. The rows the model reads are the same.
+		{name: "a query across libraries", text: "by type", requestsOnly: true, replies: []reply{
+			call("query_corpus", `{"canned":"by_extension","library":"all"}`), call("query_corpus", `{"canned":"largest","n":4,"library":"all"}`), text(long)}},
 		{name: "listings", text: "list", replies: []reply{
 			call("list_kb_dir", `{}`), call("list_kb_dir", `{"path":"reports"}`), call("list_kb_dir", `{"library":"docs"}`),
 			call("list_kb_dir", `{"library":"all"}`), call("list_kb_dir", `{"library":"nope"}`), call("list_kb_dir", `{"path":"../x"}`), call("list_kb_dir", `{"path":"missing"}`), text(long)}},

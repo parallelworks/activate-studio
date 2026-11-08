@@ -24,6 +24,7 @@ import (
 
 	"github.com/parallelworks/activate-studio/server-go/internal/app"
 	"github.com/parallelworks/activate-studio/server-go/internal/config"
+	"github.com/parallelworks/activate-studio/server-go/internal/jsonv"
 )
 
 // The golden tests run the Node chat routes (scripts/golden/chat.mjs)
@@ -234,6 +235,9 @@ var (
 	// has its own).
 	gufiMsRe = regexp.MustCompile(`"ms":\d+`)
 	ixGoRe   = regexp.MustCompile(`/ix-go/`)
+	rowsMsRe = regexp.MustCompile(`rows in \d+ ms`)
+	// A query's cutoff, from the second it ran.
+	cutoffRe = regexp.MustCompile(`mtime > \d+`)
 	substrRe = regexp.MustCompile(`substr\(rpath\(sname, sroll\), \d+\)`)
 )
 
@@ -249,13 +253,12 @@ func sortGufi(s string) string {
 	walk = func(v any) bool {
 		changed := false
 		switch x := v.(type) {
-		case map[string]any:
-			for k, c := range x {
+		case *jsonv.Object:
+			for _, k := range x.Keys() {
+				c, _ := x.Get(k)
 				if arr, ok := c.([]any); ok && k == "gufi" && len(arr) > 1 {
 					sort.SliceStable(arr, func(i, j int) bool {
-						a, _ := arr[i].(map[string]any)
-						b, _ := arr[j].(map[string]any)
-						return fmt.Sprint(a["command"]) < fmt.Sprint(b["command"])
+						return jsonv.String(jsonv.Path(arr[i], "command")) < jsonv.String(jsonv.Path(arr[j], "command"))
 					})
 					changed = true
 				}
@@ -268,16 +271,17 @@ func sortGufi(s string) string {
 		}
 		return changed
 	}
+	// Decoded and written again in key order, as JSON.stringify would.
 	rewrite := func(text string) (string, bool) {
-		var v any
-		if json.Unmarshal([]byte(text), &v) != nil || !walk(v) {
+		v, err := jsonv.Decode([]byte(text))
+		if err != nil || !walk(v) {
 			return text, false
 		}
-		var b bytes.Buffer
-		enc := json.NewEncoder(&b)
-		enc.SetEscapeHTML(false)
-		enc.Encode(v)
-		return strings.TrimSuffix(b.String(), "\n"), true
+		b, err := jsonv.Marshal(v)
+		if err != nil {
+			return text, false
+		}
+		return string(b), true
 	}
 	if out, ok := rewrite(s); ok {
 		return out
@@ -305,6 +309,8 @@ func normal(s string) string {
 	s = reixRe.ReplaceAllString(s, "re-indexed in N ms")
 	s = gufiMsRe.ReplaceAllString(s, `"ms":0`)
 	s = ixGoRe.ReplaceAllString(s, "/ix/")
+	s = rowsMsRe.ReplaceAllString(s, "rows in N ms")
+	s = cutoffRe.ReplaceAllString(s, "mtime > N")
 	s = substrRe.ReplaceAllString(s, "substr(rpath(sname, sroll), N)")
 	// Last: the order of a trace compares the normalized commands.
 	return sortGufi(refRe.ReplaceAllString(s, "(ref R)"))
@@ -318,6 +324,10 @@ type scenario struct {
 	extra   map[string]any
 	// setup runs before each server's run.
 	setup func(g *goldenEnv)
+	// requestsOnly compares the gateway requests (what the model reads)
+	// and not the streams, where the servers trace different commands on
+	// purpose.
+	requestsOnly bool
 }
 
 func scenarios() []scenario {
@@ -422,6 +432,9 @@ func runScenario(t *testing.T, g *goldenEnv, i int, sc scenario) {
 			t.Logf("go request: %s", q)
 		}
 	}
+	if sc.requestsOnly {
+		nodeSSE, goSSE = "", ""
+	}
 	if normal(nodeSSE) != normal(goSSE) {
 		t.Errorf("SSE differs\nnode:\n%s\ngo:\n%s", normal(nodeSSE), normal(goSSE))
 	}
@@ -436,7 +449,7 @@ func runScenario(t *testing.T, g *goldenEnv, i int, sc scenario) {
 		b, _ := io.ReadAll(res.Body)
 		return durRe.ReplaceAllString(idRe.ReplaceAllString(normal(string(b)), `"id":"ID"`), `"reasoningDuration":D`)
 	}
-	if n, g2 := get(g.node, "node"), get(g.goURL, "go"); n != g2 {
+	if n, g2 := get(g.node, "node"), get(g.goURL, "go"); n != g2 && !sc.requestsOnly {
 		t.Errorf("stored conversation differs\nnode: %s\ngo:   %s", n, g2)
 	}
 	if len(nodeReq) != len(goReq) {

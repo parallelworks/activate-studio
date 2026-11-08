@@ -2,6 +2,7 @@ package chat
 
 import (
 	"context"
+	"errors"
 	"math"
 	"net/http"
 	"sort"
@@ -20,17 +21,18 @@ import (
 )
 
 // The corpus tools of tools.ts that run on the libraries track's packages:
-// search_kb, list_kb_dir and list_libraries. What those packages do not
-// have yet stays in Node (errNodeTool): search_kb's grep fallback (no
-// GUFI here and no library on another system) and the gufi_vt form of a
-// search across libraries, and listing a library on another system
-// (userLibraries.ts remoteTree). read_kb_file, read_original and
-// query_corpus wait on the index-text read, openOriginal and query.ts.
+// search_kb, list_kb_dir, list_libraries and query_corpus. What those
+// packages do not have yet stays in Node (errNodeTool): search_kb's grep
+// fallback (no GUFI here and no library on another system) and the
+// gufi_vt form of a search across libraries, and listing a library on
+// another system (userLibraries.ts remoteTree). read_kb_file and
+// read_original wait on the index-text read and openOriginal.
 
 func init() {
 	goExecutors["search_kb"] = (*Module).toolSearchKB
 	goExecutors["list_kb_dir"] = (*Module).toolListKBDir
 	goExecutors["list_libraries"] = (*Module).toolListLibraries
+	goExecutors["query_corpus"] = (*Module).toolQueryCorpus
 }
 
 // citedFiles is tools.ts's citedFiles: at most 60, the main library null.
@@ -144,6 +146,11 @@ func tagList(v any) []string {
 func traced(r *http.Request, fn func(ctx context.Context) (*Outcome, error)) (*Outcome, error) {
 	ctx, commands := gufitrace.Start(r.Context(), "tool")
 	out, err := fn(ctx)
+	if err != nil && !errors.Is(err, errNodeTool) {
+		// executeToolImpl's catch: the error is the result, and the
+		// commands that ran before it stay on it.
+		out, err = &Outcome{Result: "Tool error: " + err.Error(), Summary: "error"}, nil
+	}
 	if out != nil {
 		if cs := commands(); len(cs) > 0 {
 			out.Gufi, _ = jsonv.Marshal(cs)
@@ -277,8 +284,8 @@ func (m *Module) toolSearchKB(r *http.Request, args map[string]any, ctx ToolCtx)
 				b.WriteString("\n")
 			}
 			b.WriteString(h.Path)
-			if len(h.Tags) > 0 {
-				b.WriteString(" [labels: " + strings.Join(h.Tags, ", ") + "]")
+			if h.Tags != nil && len(*h.Tags) > 0 {
+				b.WriteString(" [labels: " + strings.Join(*h.Tags, ", ") + "]")
 			}
 			b.WriteString("\n  " + orStr(h.Snippet, "(filename match)"))
 			files = append(files, fileIn(h.Path, libs[0].ID))
@@ -355,6 +362,39 @@ func (m *Module) toolListLibraries(r *http.Request, _ map[string]any, ctx ToolCt
 		noun = "library"
 	}
 	return &Outcome{Result: orStr(strings.Join(lines, "\n"), "No libraries."), Summary: strconv.Itoa(len(libs)) + " " + noun}, nil
+}
+
+func (m *Module) toolQueryCorpus(r *http.Request, args map[string]any, ctx ToolCtx) (*Outcome, error) {
+	if m.Corpus == nil {
+		return nil, errNodeTool
+	}
+	body := map[string]any{
+		"canned": jsString(args["canned"]),
+		"n":      math.Min(jsNumberOr(args["n"], 25), 100),
+		"days":   math.Min(jsNumberOr(args["days"], 7), 3650),
+	}
+	if jsTruthy(args["subtree"]) {
+		body["subtree"] = jsString(args["subtree"])
+	}
+	if lib := scopeParam(args["library"], ctx); lib != nil {
+		body["library"] = lib[0]
+	}
+	raw, err := jsonv.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	return traced(r, func(c context.Context) (*Outcome, error) {
+		res, err := m.Corpus.Search.QueryScope(c, raw, viewerOfCtx(ctx), m.primaryLabel())
+		if err != nil {
+			return nil, err
+		}
+		lines := []string{strings.Join(res.Columns, " | ")}
+		for _, row := range res.Rows {
+			lines = append(lines, strings.Join(row, " | "))
+		}
+		return &Outcome{Result: jsval.Slice(strings.Join(lines, "\n"), toolOutputCap),
+			Summary: strconv.Itoa(len(res.Rows)) + " rows in " + strconv.FormatInt(res.ElapsedMS, 10) + " ms"}, nil
+	})
 }
 
 /* ---- the RAG proxy's retrieval (ragProxy.ts buildContext) ---- */
@@ -492,8 +532,8 @@ func (m *Module) buildContext(ctx context.Context, query string, topK int, tags 
 		}
 		total += n
 		labels := ""
-		if len(h.Tags) > 0 {
-			labels = " (labels: " + strings.Join(h.Tags, ", ") + ")"
+		if h.Tags != nil && len(*h.Tags) > 0 {
+			labels = " (labels: " + strings.Join(*h.Tags, ", ") + ")"
 		}
 		blocks = append(blocks, "["+strconv.Itoa(len(blocks)+1)+"] "+h.Path+labels+"\n"+text)
 	}
