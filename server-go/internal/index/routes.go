@@ -70,6 +70,7 @@ func Register(mux *http.ServeMux, a *app.App) {
 	// are stale (gufi.ts, chat/context.ts); their owners answer Changed.
 	ix.Hooks.InvalidateContext = func() { a.Providers.Changed(context.Background(), "context") }
 	ix.OnChange(func(string) { a.Providers.Changed(context.Background(), "dbList", "context") })
+	registerOverlay(a, ix)
 	a.AddBusy(ix.Running)
 	a.OnIndexWork("index sync", func(ctx context.Context) {
 		ix.Start(ctx, func(ctx context.Context, log func(string)) {

@@ -70,6 +70,7 @@ func Register(mux *http.ServeMux, a *app.App) {
 	mux.HandleFunc("GET /api/query/saved", h(s.savedList))
 	mux.HandleFunc("POST /api/query/saved", h(s.savedAdd))
 	mux.HandleFunc("DELETE /api/query/saved/{id}", h(s.savedDelete))
+	logLibraryStates(a, s)
 }
 
 // viewer is req.user?.id ?? null as Node's routes read it, through the
