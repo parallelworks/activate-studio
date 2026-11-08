@@ -76,7 +76,7 @@ func (a *App) setBarColor(color string) error {
 	if same {
 		return nil
 	}
-	paintBar(barCSS(color))
+	paintBar(color)
 	file := barColorFile(a.cfg.DataDir)
 	if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
 		return err

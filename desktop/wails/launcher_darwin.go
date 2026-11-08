@@ -414,7 +414,7 @@ func planText(plan string) string {
 }
 
 // macOptions: the About panel's credit, the web view's user agent and
-// its own title bar, which takes the page's color (titlebar.go).
+// a title bar that takes the page's color (titlebar.go, titlebar_darwin.go).
 func macOptions() *mac.Options {
 	return &mac.Options{
 		TitleBar:   mac.TitleBarDefault(),

@@ -1,7 +1,7 @@
-//go:build !linux
+//go:build !linux && !darwin
 
 package main
 
 func useOwnTitleBar(string) {}
 
-func paintBar(string) {}
+func paintBar(color string) {}

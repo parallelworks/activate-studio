@@ -7,6 +7,7 @@
 package apierr
 
 import (
+	"context"
 	"crypto/rand"
 	"errors"
 	"fmt"
@@ -60,10 +61,20 @@ func Write(w http.ResponseWriter, log *slog.Logger, err error) {
 	}
 }
 
+// StatusClientClosed is the status logged for a request whose client left
+// before the answer was ready (nginx's 499).
+const StatusClientClosed = 499
+
 // Handler adapts a handler that returns an error to http.Handler.
 func Handler(log *slog.Logger, h func(http.ResponseWriter, *http.Request) error) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if err := h(w, r); err != nil {
+			if errors.Is(err, context.Canceled) && r.Context().Err() != nil {
+				// The client left (a reload, a closed tab): nobody reads the
+				// answer and nothing failed, so no error and no 500 in the log.
+				w.WriteHeader(StatusClientClosed)
+				return
+			}
 			Write(w, log, err)
 		}
 	}

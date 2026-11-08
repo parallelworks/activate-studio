@@ -72,8 +72,9 @@ func useOwnTitleBar(title string) {
 	C.bar_watch(c)
 }
 
-func paintBar(css string) {
-	c := C.CString(css)
+// paintBar styles the bar in the page's #rrggbb (barCSS).
+func paintBar(color string) {
+	c := C.CString(barCSS(color))
 	defer C.free(unsafe.Pointer(c))
 	C.bar_set(c)
 }

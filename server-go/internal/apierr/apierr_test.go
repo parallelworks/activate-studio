@@ -2,13 +2,15 @@ package apierr
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
-	"net/http/httptest"
 	"regexp"
 	"strings"
 	"testing"
@@ -128,5 +130,25 @@ func TestGoldenIsCurrent(t *testing.T) {
 	want, _ := os.ReadFile("testdata/golden.json")
 	if !bytes.Equal(bytes.TrimSpace(out), bytes.TrimSpace(want)) {
 		t.Fatal("Fastify's error bodies changed: regenerate testdata/golden.json")
+	}
+}
+
+// A request whose client left is answered 499 and logs no error; a canceled
+// context while the client is still there is still an internal error.
+func TestClientGoneIsNotAnError(t *testing.T) {
+	var logged bytes.Buffer
+	log := slog.New(slog.NewTextHandler(&logged, nil))
+	h := Handler(log, func(http.ResponseWriter, *http.Request) error { return fmt.Errorf("gufi: %w", context.Canceled) })
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	rec := httptest.NewRecorder()
+	h(rec, httptest.NewRequest("GET", "/api/kb/topology", nil).WithContext(ctx))
+	if rec.Code != StatusClientClosed || logged.Len() != 0 {
+		t.Fatalf("client gone: %d, log %q", rec.Code, logged.String())
+	}
+	rec = httptest.NewRecorder()
+	h(rec, httptest.NewRequest("GET", "/api/kb/topology", nil))
+	if rec.Code != 500 || !strings.Contains(logged.String(), "unhandled route error") {
+		t.Fatalf("client present: %d, log %q", rec.Code, logged.String())
 	}
 }
