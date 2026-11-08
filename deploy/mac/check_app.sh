@@ -275,7 +275,7 @@ if [ "$RUN" = 1 ]; then
     # Through /bin/sh, which drops DYLD_* variables, as gufi_vt and scripts start the tools.
     check "gufi_dir2index indexes a folder" clean /bin/sh -c "'$G/bin/gufi_dir2index' -x '$T/corpus' '$T/idx'"
     check "gufi_query reads the index" clean /bin/sh -c "'$G/bin/gufi_query' -d ' ' -E 'SELECT name FROM vrpentries;' '$T/idx/corpus' | grep -q cake.txt"
-    [ "$LEMBED" = 0 ] || check "gufi_sqlite3 embeds with the bundled model" clean /bin/sh -c "printf '%s\n' \"INSERT INTO temp.lembed_models(name, model) SELECT 'm', lembed_model_from_file('$R/models/minilm384.gguf');\" \"SELECT length(lembed('m', 'hello'));\" | '$G/bin/gufi_sqlite3' | grep -q 1536"
+    [ "$LEMBED" = 0 ] || [ "$SERVER" = go-only ] || check "gufi_sqlite3 embeds with the bundled model" clean /bin/sh -c "printf '%s\n' \"INSERT INTO temp.lembed_models(name, model) SELECT 'm', lembed_model_from_file('$R/models/minilm384.gguf');\" \"SELECT length(lembed('m', 'hello'));\" | '$G/bin/gufi_sqlite3' | grep -q 1536"
     # dyld's lines are "dyld[pid]: /path", or on macOS 15 "dyld[pid]: <uuid>
     # /path" with "delayed: <name>" lines for libraries it defers.
     loaded="$(DYLD_PRINT_LIBRARIES=1 "$G/bin/gufi_sqlite3" :memory: 'SELECT 1;' 2>&1 >/dev/null |

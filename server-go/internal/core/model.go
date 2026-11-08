@@ -30,8 +30,8 @@ import (
 // writes, byte for byte, so either server serves the other's. STEP is
 // meshed by OpenCascade: occt-import-js's WebAssembly, as Node runs it, here
 // under wazero (internal/stepmesh) from the module scripts/occt/prepare.mjs
-// prepares (STUDIO_OCCT_WASM, else ProjectRoot/server-go/occt/
-// occt-import-js.wasm). Without that module a STEP file not in the cache
+// prepares (OcctWasm: STUDIO_OCCT_WASM, else beside the server binary, else
+// ProjectRoot/server-go/occt/occt-import-js.wasm). Without that module a STEP file not in the cache
 // goes to Node while Node runs, and answers 501 without it.
 
 // MaxModelBytes is model.ts's MAX_MODEL_BYTES.
@@ -103,12 +103,33 @@ func EncodeSTL(pos []float32) []byte {
 	return stepmesh.Encode("stl", float64(len(pos))/9, []stepmesh.Mesh{{Positions: pos}})
 }
 
-// OcctWasm is the prepared occt-import-js module.
+// OcctWasm is the prepared occt-import-js module: STUDIO_OCCT_WASM, else
+// the one a bundle carries beside the server (occt/ next to it or one up,
+// app/occt for app/bin/studio-server), else the clone's server-go/occt.
 func OcctWasm(projectRoot string) string {
 	if p := os.Getenv("STUDIO_OCCT_WASM"); p != "" {
 		return p
 	}
+	if exe, err := os.Executable(); err == nil {
+		if r, err := filepath.EvalSymlinks(exe); err == nil {
+			exe = r
+		}
+		if p := occtBeside(filepath.Dir(exe)); p != "" {
+			return p
+		}
+	}
 	return filepath.Join(projectRoot, "server-go", "occt", "occt-import-js.wasm")
+}
+
+// occtBeside is the module in dir/occt or dir/../occt, or "".
+func occtBeside(dir string) string {
+	for _, d := range []string{filepath.Join(dir, "occt"), filepath.Join(dir, "..", "occt")} {
+		p := filepath.Join(d, "occt-import-js.wasm")
+		if st, err := os.Stat(p); err == nil && st.Mode().IsRegular() {
+			return filepath.Clean(p)
+		}
+	}
+	return ""
 }
 
 // stepMesher is the STEP mesher, made at the first STEP file; nil (and
