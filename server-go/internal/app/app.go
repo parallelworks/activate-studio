@@ -15,6 +15,10 @@
 //	a.AddBusy(func() bool { ... })                                      // an update waits while true
 //	a.RequestRestart(app.RelaunchExitCode)                              // after an update
 //	a.Providers.Libraries = myLibraries                                 // fill a provider
+//	a.Node().ServeHTTP(w, r)                                            // not served here yet: Node, or 501 without it
+//
+// The shared stage-1 objects are fields: Cfg, Log, Settings, Gufi (the
+// GUFI runner), Lock (the index lock).
 //
 // Hooks run in registration order; each runs in its own goroutine for
 // OnStart and OnIndexWork, so a slow one does not hold up the rest.
@@ -23,11 +27,14 @@ package app
 import (
 	"context"
 	"log/slog"
+	"net/http"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/parallelworks/activate-studio/server-go/internal/apierr"
 	"github.com/parallelworks/activate-studio/server-go/internal/config"
+	"github.com/parallelworks/activate-studio/server-go/internal/gufi"
 	"github.com/parallelworks/activate-studio/server-go/internal/settings"
 )
 
@@ -36,9 +43,13 @@ type App struct {
 	Cfg      config.Config
 	Log      *slog.Logger
 	Settings *settings.Store
-	// Node calls the Node server behind the Go server, nil in Node-free
-	// mode (STUDIO_NODE=off) or with no Node.
-	Node *Node
+	// NodeAPI calls the Node server behind the Go server for a value (a
+	// provider's default), nil in Node-free mode (STUDIO_NODE=off) or with
+	// no Node. To hand a whole request to Node, use Node().
+	NodeAPI *Node
+	// Gufi is the one GUFI runner every route's queries go through
+	// (admission control, internal/gufi).
+	Gufi *gufi.Runner
 	// Providers are the values modules of other tracks own (providers.go).
 	Providers Providers
 	// Lock is the index folder lock (instancelock.go). Held only where
@@ -56,6 +67,8 @@ type App struct {
 	ctx      context.Context
 	jobs     sync.WaitGroup
 	streams  atomic.Int64
+	// fallback is Node(): the reverse proxy to Node, set by the server.
+	fallback http.Handler
 }
 
 type hook struct {
@@ -73,7 +86,8 @@ func New(cfg config.Config, log *slog.Logger, store *settings.Store, node *Node)
 	if store == nil {
 		store = settings.Open(cfg.IndexBase, cfg.KBRoot, cfg.AuthEnabled(), nil)
 	}
-	a := &App{Cfg: cfg, Log: log, Settings: store, Node: node, ctx: context.Background()}
+	a := &App{Cfg: cfg, Log: log, Settings: store, NodeAPI: node, ctx: context.Background()}
+	a.Gufi = gufi.NewRunner(gufi.NewLocal(cfg.GufiBin), log, gufi.OptionsFrom(cfg.Gufi))
 	a.Lock = NewIndexLock(cfg.IndexBase, cfg.Port)
 	a.Providers = defaultProviders(a)
 	return a
@@ -81,7 +95,39 @@ func New(cfg config.Config, log *slog.Logger, store *settings.Store, node *Node)
 
 // NodeFree reports whether the Go server runs with no Node server: every
 // route is Go's, and one not ported yet answers 501.
-func (a *App) NodeFree() bool { return a.Node == nil }
+func (a *App) NodeFree() bool { return a.Cfg.NodeOff }
+
+// SetNodeHandler is how the server hands the App its reverse proxy to
+// Node (internal/server); nil where there is no Node.
+func (a *App) SetNodeHandler(h http.Handler) {
+	a.mu.Lock()
+	a.fallback = h
+	a.mu.Unlock()
+}
+
+// Node is the handler a route uses to give a request it cannot serve yet
+// to Node, after logging why: the reverse proxy to Node, or, without a
+// Node (Node-free mode), a handler that answers 501 "not ported" and logs
+// it. The request reaches Node exactly as the browser sent it, identity
+// handed on as for any proxied request.
+func (a *App) Node() http.Handler {
+	a.mu.Lock()
+	h := a.fallback
+	a.mu.Unlock()
+	if h != nil {
+		return h
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		a.Log.Warn("not ported", "method", r.Method, "path", r.URL.Path)
+		apierr.JSON(w, http.StatusNotImplemented, map[string]string{"error": r.Method + " " + r.URL.Path + " is not ported to the Go server yet, and this server runs without Node (STUDIO_NODE=off)"})
+	})
+}
+
+// GoIndexes reports whether this process does the index work: Node-free
+// mode, or STUDIO_GO_INDEX=1 (the index track's switch while Node is
+// still behind the Go server). Otherwise Node holds the index lock and
+// OnIndexWork hooks never run.
+func (a *App) GoIndexes() bool { return a.Cfg.NodeOff || a.Cfg.GoIndex }
 
 // OnStart runs fn once the server listens, in its own goroutine, with a
 // context that ends at stop. Registered after the start, it runs at once.
@@ -177,9 +223,10 @@ func (a *App) Stream() (done func()) {
 func (a *App) StreamsInFlight() int { return int(a.streams.Load()) }
 
 // Start runs the start hooks, and takes the index lock first where this
-// process does index work (lockIndex) and runs the index hooks only when
+// process does index work (GoIndexes) and runs the index hooks only when
 // it got it. ctx ends at stop.
-func (a *App) Start(ctx context.Context, lockIndex bool) {
+func (a *App) Start(ctx context.Context) {
+	lockIndex := a.GoIndexes()
 	a.mu.Lock()
 	a.ctx = ctx
 	a.started = true

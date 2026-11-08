@@ -147,12 +147,12 @@ func (d Dir) StateFormat() int {
 		return 1
 	}
 	var m struct {
-		Format json.Number `json:"format"`
+		Format json.RawMessage `json:"format"`
 	}
-	if json.Unmarshal(b, &m) != nil {
+	if json.Unmarshal(b, &m) != nil || len(m.Format) == 0 || m.Format[0] == '"' {
 		return 1
 	}
-	n, err := m.Format.Int64()
+	n, err := json.Number(m.Format).Int64()
 	if err != nil || n < 1 || n > 1<<53-1 {
 		return 1
 	}
@@ -337,7 +337,7 @@ func (d Dir) ListSnapshots() []Snapshot {
 		var raw struct {
 			ID     string          `json:"id"`
 			Files  json.RawMessage `json:"files"`
-			Format json.Number     `json:"format"`
+			Format json.RawMessage `json:"format"`
 		}
 		var s Snapshot
 		if json.Unmarshal(b, &raw) != nil || raw.ID != n.Name() || !isArray(raw.Files) || !safeInt(raw.Format) || json.Unmarshal(b, &s) != nil {
@@ -354,8 +354,11 @@ func isArray(b json.RawMessage) bool {
 	return len(b) > 0 && b[0] == '['
 }
 
-func safeInt(n json.Number) bool {
-	v, err := n.Int64()
+func safeInt(raw json.RawMessage) bool {
+	if len(raw) == 0 || raw[0] == '"' {
+		return false
+	}
+	v, err := json.Number(raw).Int64()
 	return err == nil && v >= -(1<<53-1) && v <= 1<<53-1
 }
 

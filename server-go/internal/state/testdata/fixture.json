@@ -1,0 +1,22 @@
+{
+ "files": {
+  "settings.json": "{\n \"appName\": \"Old\",\n \"theme\": \"dark\",\n \"updates\": {\"check\": true, \"channel\": \"stable\"}\n}",
+  "credentials.enc": "sealed",
+  "conversations.json": "[]",
+  ".studio-instance": "{\"pid\":1}",
+  "embed-cache.db": "cache",
+  "runs.jsonl": "",
+  "settings.json.1.tmp": "half",
+  "users/u1/prefs.json": "{}",
+  "users/u1/maps/overview.json": "{}",
+  "users/u1/notes/a.txt": "a",
+  "tasks/t.json": "{}",
+  "extensions/agents/default.md": "be brief",
+  "branding/icon-0123456789abcdef.png": "png",
+  "libraries/lib1/labels.json": "{}",
+  "libraries/lib1/db.db": "index",
+  "gufi/kb/db.db": "index",
+  "logs/indexing.log": "log",
+  "@config": "KB_ROOT='/kb'\n"
+ }
+}
