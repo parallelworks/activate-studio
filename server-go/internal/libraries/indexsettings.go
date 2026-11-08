@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/apierr"
+	"github.com/parallelworks/activate-studio/server-go/internal/index"
 )
 
 // IndexSettings is what this package needs of a library's index settings
@@ -82,9 +83,12 @@ func TextArgs(depth string) []string {
 // Node's writes are seen here.
 type FileIndexSettings struct {
 	File string
+	// Store, when set, is the index track's store (internal/index), which
+	// every read and write goes to; the file reading below is then unused.
+	Store *index.SettingsStore
 
-	mu    sync.Mutex
-	stamp string
+	mu      sync.Mutex
+	stamp   string
 	data    map[string]map[string]json.RawMessage
 	order   []string
 	libKeys map[string][]string
@@ -170,6 +174,9 @@ func (s *FileIndexSettings) depthLocked(library string) string {
 
 // Depth is indexSettings(library).depth.
 func (s *FileIndexSettings) Depth(library string) string {
+	if s.Store != nil {
+		return string(s.Store.Get(library).Depth)
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.loadLocked()
@@ -181,6 +188,12 @@ func (s *FileIndexSettings) Meaning(library string) string { return MeaningOfDep
 
 // MeaningSpeed is indexSettings(library).meaningSpeed.
 func (s *FileIndexSettings) MeaningSpeed(library string) string {
+	if s.Store != nil {
+		if v := s.Store.Get(library).MeaningSpeed; v != "" {
+			return v
+		}
+		return "standard"
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.loadLocked()
@@ -215,6 +228,10 @@ func (s *FileIndexSettings) writeLocked() error {
 
 // Forget is forgetIndexSettings.
 func (s *FileIndexSettings) Forget(library string) {
+	if s.Store != nil {
+		s.Store.ForgetLibrary(library)
+		return
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.loadLocked()
@@ -230,6 +247,10 @@ func (s *FileIndexSettings) Forget(library string) {
 // depth, meaning, embeddings, documents, ocr, threads, imageDescriptions,
 // legacyOffice, pdfReader, meaningSpeed.
 func (s *FileIndexSettings) Save(library string, body map[string]any) error {
+	if s.Store != nil {
+		_, err := s.Store.Save(library, body)
+		return err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.loadLocked()

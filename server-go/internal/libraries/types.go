@@ -20,15 +20,15 @@ type Caps struct {
 
 // LocalBuild is an index the Studio builds of a folder on this computer.
 type LocalBuild struct {
-	IndexDir string  `json:"indexDir"`
-	CacheRoot string `json:"cacheRoot"`
-	Managed  bool    `json:"managed"`
-	State    string  `json:"state"` // building, ready, updating, failed
-	Pending  *string `json:"pending,omitempty"`
-	Error    *string `json:"error"`
-	BuiltAt  *string `json:"builtAt"`
-	Files    *int64  `json:"files"`
-	Dirs     *int64  `json:"dirs"`
+	IndexDir  string  `json:"indexDir"`
+	CacheRoot string  `json:"cacheRoot"`
+	Managed   bool    `json:"managed"`
+	State     string  `json:"state"` // building, ready, updating, failed
+	Pending   *string `json:"pending,omitempty"`
+	Error     *string `json:"error"`
+	BuiltAt   *string `json:"builtAt"`
+	Files     *int64  `json:"files"`
+	Dirs      *int64  `json:"dirs"`
 }
 
 // ReadThrough is another host over ssh that has a library's files.
@@ -76,7 +76,9 @@ type Library struct {
 }
 
 // Remote reports whether the library is on another system.
-func (l *Library) Remote() bool { return len(l.IndexRoot) >= len(RemotePrefix) && l.IndexRoot[:len(RemotePrefix)] == RemotePrefix }
+func (l *Library) Remote() bool {
+	return len(l.IndexRoot) >= len(RemotePrefix) && l.IndexRoot[:len(RemotePrefix)] == RemotePrefix
+}
 
 // BuildProgress is how far a build has got.
 type BuildProgress struct {

@@ -94,6 +94,18 @@ export async function frontBridgeRoutes(app: FastifyInstance): Promise<void> {
     return { ok: true }
   } })
 
+  // A library on another system that the Go server removed, or whose build
+  // there finished: what keeps something here per library (semanticMap.ts)
+  // is told, as userLibraries.ts tells it.
+  app.route({ method: 'POST', url: '/api/__bridge/user-library', onRequest: guard, handler: async req => {
+    const b = (req.body ?? {}) as { event?: unknown; root?: unknown }
+    const root = String(b.root ?? '')
+    if ((b.event !== 'removed' && b.event !== 'built') || !root.startsWith('remote:')) throw new KbError(400, 'event: removed or built, and a remote root')
+    const { tellUserLibrary } = await import('./userLibraries.js')
+    tellUserLibrary(b.event, root)
+    return { ok: true }
+  } })
+
   // The personas a task agent can adopt (extensions.ts).
   app.route({ method: 'GET', url: '/api/__bridge/personas', onRequest: guard, handler: async () => {
     const { personas } = await import('./extensions.js')

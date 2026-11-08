@@ -28,7 +28,9 @@ type DeploymentKeys struct {
 
 // KeyOf is keyOf without personal keys.
 func (k DeploymentKeys) KeyOf(owner string) string {
-	if k.AuthEnabled {
+	// Only the one user of a Studio without sign-in ("single") acts with
+	// the deployment's key; a signed-in owner needs their own.
+	if k.AuthEnabled || owner != "single" {
 		return ""
 	}
 	get := k.Getenv
@@ -65,8 +67,8 @@ func CLICredential(get func(string) string) string {
 		APIKey string `json:"apikey"`
 	}
 	var store struct {
-		CurrentIdentity string                    `json:"currentIdentity"`
-		Identities      orderedObject             `json:"identities"`
+		CurrentIdentity string        `json:"currentIdentity"`
+		Identities      orderedObject `json:"identities"`
 	}
 	if json.Unmarshal(b, &store) != nil {
 		return ""
