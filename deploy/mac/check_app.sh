@@ -201,7 +201,7 @@ fi
 elf="$(python3 - "$APP" <<'PY'
 import os, sys
 for d, dirs, files in os.walk(sys.argv[1]):
-    # The helpers sent to Linux systems for a library's build there.
+    # The helpers sent to other systems for library builds there.
     if d.endswith('/app/bin'):
         dirs[:] = [x for x in dirs if x != 'remote']
     for f in files:

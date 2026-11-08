@@ -342,7 +342,7 @@ find "$APP" -type l | while IFS= read -r l; do [ -e "$l" ] || rm -f "$l"; done
 # The tree's own manifest: what it was built from, and what the checks above
 # found about the libraries it needs.
 echo "Manifest..."
-ELF_REPORT="$(python3 -I "$HERE/elf_check.py" --root "$APP" --skip bin/activate-studio-wk --max-glibc "$MAX_GLIBC" --max-glibcxx "$MAX_GLIBCXX" --max-cxxabi "$MAX_CXXABI" "$APP")"
+ELF_REPORT="$(python3 -I "$HERE/elf_check.py" --root "$APP" --skip bin/activate-studio-wk --skip app/bin/remote --max-glibc "$MAX_GLIBC" --max-glibcxx "$MAX_GLIBCXX" --max-cxxabi "$MAX_CXXABI" "$APP")"
 SERVER="$SERVER" ORT_VERSION="$ORT_VERSION" \
 VERSION="$VERSION" COMMIT="$COMMIT" BUILT_AT="$BUILT_AT" NODE_VERSION="$NODE_VERSION" PY_VERSION="$PY_VERSION" PY_TAG="$PY_TAG" \
   GUFI_SUM="$GUFI_SUM" OCR_SUM="$OCR_SUM" ELF_REPORT="$ELF_REPORT" MAX_GLIBC="$MAX_GLIBC" ASSET="$ASSET" \
