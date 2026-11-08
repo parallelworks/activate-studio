@@ -278,6 +278,7 @@ func newProxy(target *url.URL, log *slog.Logger, front *auth.Front) *httputil.Re
 			if front != nil {
 				front.ToNode(pr.Out, auth.UserOf(pr.In))
 			}
+			app.RunToNode(pr.In, pr.Out)
 		},
 		// 0 flushes only what streams: ReverseProxy writes a response out
 		// as Node sends it when it is text/event-stream (/api/chat/stream,
