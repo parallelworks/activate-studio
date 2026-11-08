@@ -411,7 +411,9 @@ func (r *Registry) aggregate(ctx context.Context, a string, args []string) strin
 
 // countTables is countTables: directories with words and with vectors.
 func (r *Registry) countTables(ctx context.Context, a string) (words, vectors int64, ok bool) {
-	has := func(name string) string { return "(SELECT count(*) FROM tree.sqlite_master WHERE name = '" + name + "')" }
+	has := func(name string) string {
+		return "(SELECT count(*) FROM tree.sqlite_master WHERE name = '" + name + "')"
+	}
 	out := r.aggregate(ctx, a, []string{"-n", strconv.Itoa(probeThreads()), "-a", "1", "-d", "|",
 		"-I", "CREATE TABLE t (w INT64, v INT64);",
 		"-K", "CREATE TABLE agg (w INT64, v INT64);",

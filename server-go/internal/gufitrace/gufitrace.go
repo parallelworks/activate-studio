@@ -18,18 +18,18 @@ import (
 
 // Command is one command as a view shows it (GufiCommand).
 type Command struct {
-	Engine          string `json:"engine"`
-	Site            string `json:"site,omitempty"`
-	Shell           string `json:"shell,omitempty"`
-	Command         string `json:"command"`
-	MS              *int64 `json:"ms,omitempty"`
-	At              string `json:"at,omitempty"`
-	Exit            *int   `json:"exit,omitempty"`
-	Failed          string `json:"failed,omitempty"`
+	Engine          string  `json:"engine"`
+	Site            string  `json:"site,omitempty"`
+	Shell           string  `json:"shell,omitempty"`
+	Command         string  `json:"command"`
+	MS              *int64  `json:"ms,omitempty"`
+	At              string  `json:"at,omitempty"`
+	Exit            *int    `json:"exit,omitempty"`
+	Failed          string  `json:"failed,omitempty"`
 	Stderr          *string `json:"stderr,omitempty"`
-	StderrCut       bool   `json:"stderrCut,omitempty"`
-	Expected        int    `json:"expected,omitempty"`
-	ExpectedExample string `json:"expectedExample,omitempty"`
+	StderrCut       bool    `json:"stderrCut,omitempty"`
+	Expected        int     `json:"expected,omitempty"`
+	ExpectedExample string  `json:"expectedExample,omitempty"`
 }
 
 const (
