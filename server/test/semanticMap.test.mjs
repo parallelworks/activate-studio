@@ -38,17 +38,59 @@ const sleep = ms => new Promise(r => setTimeout(r, ms))
 // The fixtures are written with Node's own SQLite, so no Python is needed.
 const { DatabaseSync } = await import('node:sqlite')
 const D = 384
-// Seeded noise: mulberry32, and Box-Muller for a normal draw.
+// Python's random, seeded as random.seed(n) is (MT19937 and its gauss and
+// choice), so the fixtures are the ones the Python script's tests used.
 const noise = seed => {
-  let s = seed >>> 0
-  const r = () => {
-    s = (s + 0x6D2B79F5) >>> 0
-    let t = s
-    t = Math.imul(t ^ (t >>> 15), t | 1)
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  const mt = new Uint32Array(624)
+  let mti = 625
+  const init = s => { mt[0] = s >>> 0; for (mti = 1; mti < 624; mti++) mt[mti] = (Math.imul(1812433253, mt[mti - 1] ^ (mt[mti - 1] >>> 30)) + mti) >>> 0 }
+  init(19650218)
+  let i = 1
+  for (let k = 624, j = 0; k; k--) {
+    mt[i] = ((mt[i] ^ Math.imul(mt[i - 1] ^ (mt[i - 1] >>> 30), 1664525)) + seed + j) >>> 0
+    i++; j = 0
+    if (i >= 624) { mt[0] = mt[623]; i = 1 }
   }
-  return { rand: r, gauss: sd => sd * Math.sqrt(-2 * Math.log(1 - r())) * Math.cos(2 * Math.PI * r()) }
+  for (let k = 623; k; k--) {
+    mt[i] = ((mt[i] ^ Math.imul(mt[i - 1] ^ (mt[i - 1] >>> 30), 1566083941)) - i) >>> 0
+    i++
+    if (i >= 624) { mt[0] = mt[623]; i = 1 }
+  }
+  mt[0] = 0x80000000
+  const next = () => {
+    if (mti >= 624) {
+      for (let k = 0; k < 624; k++) {
+        const y = (mt[k] & 0x80000000) | (mt[(k + 1) % 624] & 0x7fffffff)
+        mt[k] = mt[(k + 397) % 624] ^ (y >>> 1) ^ (y & 1 ? 0x9908b0df : 0)
+      }
+      mti = 0
+    }
+    let y = mt[mti++]
+    y ^= y >>> 11
+    y ^= (y << 7) & 0x9d2c5680
+    y ^= (y << 15) & 0xefc60000
+    return (y ^ (y >>> 18)) >>> 0
+  }
+  const rand = () => ((next() >>> 5) * 67108864 + (next() >>> 6)) / 9007199254740992
+  let spare = null
+  const gauss = sd => {
+    let z = spare
+    spare = null
+    if (z === null) {
+      const x2pi = rand() * 2 * Math.PI
+      const g2rad = Math.sqrt(-2 * Math.log(1 - rand()))
+      z = Math.cos(x2pi) * g2rad
+      spare = Math.sin(x2pi) * g2rad
+    }
+    return z * sd
+  }
+  const choice = a => {
+    const k = a.length.toString(2).length
+    let r
+    do r = next() >>> (32 - k); while (r >= a.length)
+    return a[r]
+  }
+  return { rand, gauss, choice }
 }
 const along = (rng, axis) => { const v = Array.from({ length: D }, () => rng.gauss(0.05)); v[axis] += 1; return v }
 // A folder's db.db with vectors the way sqlite-vec stores them: rows are
@@ -115,7 +157,7 @@ const runMap = (args, opts) => mapBin
   : goFront
     ? execFileSync(goFront, ['semantic-map', ...args], opts)
     : execFileSync(python, [path.join(root, 'indexer', 'semantic_map.py'), ...args], opts)
-const get = async url => { const r = await app.inject({ method: "GET", url }); if (r.statusCode >= 500) console.error("DBG", url, r.payload); return { status: r.statusCode, body: r.json() } }
+const get = async url => { const r = await app.inject({ method: 'GET', url }); return { status: r.statusCode, body: r.json() } }
 const runScript = (...extra) => JSON.parse(runMap(['--index', INDEX, '--out', config.SEMANTIC_MAP_DIR, ...extra], { encoding: 'utf8' }).trim())
 
 test('the map is made from the stored vectors: every file with embeddings, in clusters named for their folders', { skip: noMap }, () => {
@@ -303,7 +345,7 @@ print(json.dumps([sorted(bad), len(cut)]))`)
     const words = text.split(' ')
     const rows = []
     for (let f = 0; f < 10; f++) {
-      const passages = embedChunks(Array.from({ length: 1200 }, () => words[Math.floor(rng.rand() * words.length)]).join(' '), 4)
+      const passages = embedChunks(Array.from({ length: 1200 }, () => rng.choice(words)).join(' '), 4)
       passages.forEach((part, seq) => rows.push({ fname: `n${f}.md`, seq, text: part, v: along(rng, i * 40) }))
     }
     vecDb(path.join(idx, folder), rows)
