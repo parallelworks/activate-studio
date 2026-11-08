@@ -324,3 +324,23 @@ func FuzzContent(f *testing.F) {
 		d.Page(ctx, 1, 72)
 	})
 }
+
+// TestCyclicPageTree: a page tree that lists itself as a kid is walked
+// once, where pdfcpu's own walk overflows the stack.
+func TestCyclicPageTree(t *testing.T) {
+	p := writePDF(t, []string{
+		"<< /Type /Catalog /Pages 2 0 R >>",
+		"<< /Type /Pages /Kids [2 0 R 5 0 R 3 0 R] /Count 2 >>",
+		"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Contents 4 0 R >>",
+		"<< /Length 14 >>\nstream\n0 0 50 50 re f\nendstream",
+		"<< /Type /Pages /Kids [5 0 R 2 0 R] /Count 1 >>",
+	})
+	d, err := Open(context.Background(), p)
+	if err != nil {
+		t.Skip("not opened:", err)
+	}
+	defer d.Close()
+	for n := 1; n <= d.PageCount(); n++ {
+		d.Page(context.Background(), n, 72)
+	}
+}

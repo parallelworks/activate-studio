@@ -203,9 +203,8 @@ func (d *Doc) page(ctx context.Context, n int, dpi float64) (*renderer, error) {
 	var inh *model.InheritedPageAttrs
 	if d.pc != nil {
 		guard(func() error {
-			var err error
-			pageDict, _, inh, err = d.pc.PageDict(n, false)
-			return err
+			pageDict, inh = findPage(d.pc, n)
+			return nil
 		})
 	}
 	box, rot, ok := geometry(gp, inh)
@@ -263,7 +262,7 @@ func geometry(gp *gpdf.Page, inh *model.InheritedPageAttrs) (box, int, bool) {
 	default:
 		return b, 0, false
 	}
-	rot = ((rot%360)+360)%360/90*90
+	rot = ((rot % 360) + 360) % 360 / 90 * 90
 	ok := b.x1-b.x0 >= 1 && b.y1-b.y0 >= 1 && !math.IsInf(b.x1-b.x0, 0) && !math.IsNaN(b.x0+b.y0+b.x1+b.y1)
 	return b, rot, ok
 }
@@ -302,11 +301,11 @@ type paint struct {
 }
 
 type gstate struct {
-	ctm            mat
-	fill, stroke   paint
-	fillCS, strCS  *colorSpace
-	lineWidth      float64
-	clip           *image.Alpha // nil: the whole page
+	ctm           mat
+	fill, stroke  paint
+	fillCS, strCS *colorSpace
+	lineWidth     float64
+	clip          *image.Alpha // nil: the whole page
 }
 
 type renderer struct {
@@ -908,4 +907,81 @@ func withAlpha(src image.Image, a *image.Gray) image.Image {
 		}
 	}
 	return out
+}
+
+// findPage is page n's dictionary and the attributes it inherits, found
+// by walking the page tree. pdfcpu's own walk recurses without a guard,
+// and a page tree that refers to itself overflows the stack, which no
+// recover can catch; this one visits each node once and only so deep.
+func findPage(pc *model.Context, n int) (types.Dict, *model.InheritedPageAttrs) {
+	root, err := pc.Pages()
+	if err != nil || root == nil {
+		return nil, nil
+	}
+	seen := map[int]bool{}
+	rect := func(o types.Object) *types.Rectangle {
+		a, err := pc.DereferenceArray(o)
+		if err != nil || len(a) != 4 {
+			return nil
+		}
+		var v [4]float64
+		for i, e := range a {
+			if v[i], err = pc.DereferenceNumber(e); err != nil {
+				return nil
+			}
+		}
+		return types.NewRectangle(v[0], v[1], v[2], v[3])
+	}
+	count := 0
+	var walk func(o types.Object, inh model.InheritedPageAttrs, depth int) (types.Dict, *model.InheritedPageAttrs)
+	walk = func(o types.Object, inh model.InheritedPageAttrs, depth int) (types.Dict, *model.InheritedPageAttrs) {
+		if depth > 64 {
+			return nil, nil
+		}
+		if ref, ok := o.(types.IndirectRef); ok {
+			if seen[ref.ObjectNumber.Value()] {
+				return nil, nil
+			}
+			seen[ref.ObjectNumber.Value()] = true
+		}
+		d, err := pc.DereferenceDict(o)
+		if err != nil || d == nil {
+			return nil, nil
+		}
+		if r, err := pc.DereferenceDict(d["Resources"]); err == nil && r != nil {
+			inh.Resources = r
+		}
+		if r := rect(d["MediaBox"]); r != nil {
+			inh.MediaBox = r
+		}
+		if r := rect(d["CropBox"]); r != nil {
+			inh.CropBox = r
+		}
+		if v, ok := d["Rotate"]; ok {
+			if f, err := pc.DereferenceNumber(v); err == nil {
+				inh.Rotate = int(f)
+			}
+		}
+		kids, err := pc.DereferenceArray(d["Kids"])
+		if err != nil || kids == nil {
+			if t := d.NameEntry("Type"); t != nil && *t == "Pages" {
+				return nil, nil
+			}
+			count++
+			if count == n {
+				return d, &inh
+			}
+			return nil, nil
+		}
+		for _, k := range kids {
+			if count >= n {
+				break
+			}
+			if pd, pi := walk(k, inh, depth+1); pd != nil {
+				return pd, pi
+			}
+		}
+		return nil, nil
+	}
+	return walk(*root, model.InheritedPageAttrs{}, 0)
 }

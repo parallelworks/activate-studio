@@ -33,7 +33,6 @@ var (
 	ErrCorrupt = errors.New("ppt: corrupt presentation")
 )
 
-
 const (
 	recTextChars    = 0x0FA0
 	recTextBytes    = 0x0FA8
