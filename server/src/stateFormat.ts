@@ -9,8 +9,8 @@ import { INDEX_BASE } from './config.js'
  * The state is what a newer version might migrate: settings, conversations,
  * the credential vault, the library list and labels, per-user data, tasks,
  * the fleet, extensions, branding, and the launcher's studio.env. Indexes,
- * caches, models, logs and agent workspaces are not state: they are rebuilt,
- * or carry their own format.
+ * index history, caches, models, logs and agent workspaces are not state:
+ * they are rebuilt, or carry their own format.
  *
  * INDEX_BASE/state-format.json says which format the state is in. A version
  * reads the formats up to its own STATE_FORMAT. One that finds a newer
@@ -31,8 +31,10 @@ const KEEP = 3
 const STATE_DIRS = ['users', 'tasks', 'fleet', 'extensions', 'branding', 'ssh']
 /** Top-level files of INDEX_BASE that are caches, locks or logs. */
 const SKIP_FILES = new Set(['.studio-instance', 'embed-cache.db', 'embed-cache.db-wal', 'embed-cache.db-shm', 'semantic-map.json', 'runs.jsonl'])
-/** Below users/<id>/, the semantic maps are caches. */
-const SKIP_UNDER_USERS = new Set(['maps'])
+/** Below users/<id>/ the semantic maps are caches, and below tasks/<id>/
+ *  the agents' workspaces (work/) are scratch, not state. Index history
+ *  (INDEX_BASE/history) is not a state directory at all. */
+const SKIP_BELOW: Record<string, Set<string>> = { users: new Set(['maps']), tasks: new Set(['work']) }
 
 export interface Marker { format: number; writtenBy?: string; at?: string }
 export interface Snapshot {
@@ -80,7 +82,7 @@ export function stateFiles(base = INDEX_BASE): string[] {
     for (const e of entries) {
       const r = path.join(rel, e.name)
       if (e.isFile()) out.push(r)
-      else if (e.isDirectory() && !(depth === 1 && rel.startsWith('users') && SKIP_UNDER_USERS.has(e.name))) walk(r, depth + 1)
+      else if (e.isDirectory() && !(depth === 1 && SKIP_BELOW[rel.split(path.sep)[0]]?.has(e.name))) walk(r, depth + 1)
     }
   }
   let top: fs.Dirent[] = []

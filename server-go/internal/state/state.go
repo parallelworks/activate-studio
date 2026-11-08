@@ -47,8 +47,18 @@ var stateDirs = map[string]bool{"users": true, "tasks": true, "fleet": true, "ex
 // Top-level files of INDEX_BASE that are caches, locks or logs.
 var skipFiles = map[string]bool{".studio-instance": true, "embed-cache.db": true, "embed-cache.db-wal": true, "embed-cache.db-shm": true, "semantic-map.json": true, "runs.jsonl": true}
 
-// Below users/<id>/, the semantic maps are caches.
-var skipUnderUsers = map[string]bool{"maps": true}
+// Below users/<id>/ the semantic maps are caches, and below tasks/<id>/ the
+// agents' workspaces (work/) are scratch, not state (docs/UPDATES.md).
+// Index history (INDEX_BASE/history) is not a state directory at all.
+var skipBelow = map[string]map[string]bool{"users": {"maps": true}, "tasks": {"work": true}}
+
+// topOf is the first element of a relative path.
+func topOf(rel string) string {
+	if i := strings.IndexByte(rel, filepath.Separator); i >= 0 {
+		return rel[:i]
+	}
+	return rel
+}
 
 const configName = "@config/studio.env"
 
@@ -191,7 +201,7 @@ func (d Dir) Files() []string {
 			switch {
 			case e.Type().IsRegular():
 				out = append(out, r)
-			case e.IsDir() && !(depth == 1 && strings.HasPrefix(rel, "users") && skipUnderUsers[e.Name()]):
+			case e.IsDir() && !(depth == 1 && skipBelow[topOf(rel)][e.Name()]):
 				walk(r, depth+1)
 			}
 		}
