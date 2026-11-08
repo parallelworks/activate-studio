@@ -106,11 +106,15 @@ L.setStopper(code => { stops.push(code) })
 // ---- the payload and its archive ----
 
 /** A payload tree: what the installer checks, with the real run loop. */
-function payloadTree(dir, version, { key = PUB, kind, shell, manifest = {}, noRun = false, node = '#!/bin/sh\n', locked = false } = {}) {
+function payloadTree(dir, version, { key = PUB, kind, shell, manifest = {}, noRun = false, node = '#!/bin/sh\n', locked = false, noNode = false, launcher = false } = {}) {
   if (!noRun) write(path.join(dir, 'studio-run.sh'), fs.readFileSync(path.join(LINUX, 'studio-run.sh')), 0o755)
   write(path.join(dir, 'studio-recover.sh'), fs.readFileSync(path.join(LINUX, 'studio-recover.sh')), 0o755)
-  write(path.join(dir, 'node', 'bin', 'node'), node, 0o755)
-  write(path.join(dir, 'app', 'server', 'dist', 'main.js'), '// server\n')
+  // A payload with no Node (the Go version) starts through its launcher.
+  if (!noNode) {
+    write(path.join(dir, 'node', 'bin', 'node'), node, 0o755)
+    write(path.join(dir, 'app', 'server', 'dist', 'main.js'), '// server\n')
+  }
+  if (launcher) write(path.join(dir, 'bin', 'activate-studio'), '#!/bin/sh\n', 0o755)
   write(path.join(dir, 'app', 'build-info.json'), `{\n "version": "${version}",\n "builtAt": "2026-10-01T00:00:00Z"\n}\n`)
   write(path.join(dir, 'manifest.json'), JSON.stringify({ name: 'ACTIVATE Studio', platform: 'linux-x86_64', version, minGlibc: '2.34', ...(shell ? { shell: 'bin/window' } : {}), ...manifest }, null, 1) + '\n')
   if (shell) write(path.join(dir, 'bin', 'window'), shell, 0o755)
@@ -302,7 +306,7 @@ test('a newer signed release installs: unpacked beside, swapped in, the previous
   await sleep(150)
   assert.equal(calls(), '', 'no LaunchAgent and no LaunchServices on Linux')
   assert.deepEqual(listing(LIB), ['.activate-studio.previous', 'activate-studio'])
-  assert.deepEqual(listing(UPD), ['pending.json', 'state.json'])
+  assert.deepEqual(listing(UPD), ['pending.json', 'state-snapshots', 'state.json'], 'the state was saved before the change')
   assert.ok(fs.statSync(path.join(ROOT, 'studio-run.sh')).mode & 0o100, 'the run loop is executable')
   assert.equal((await j('POST', '/api/updates/install')).body.state, 'restarting', 'a second request changes nothing')
 
@@ -316,6 +320,38 @@ test('a newer signed release installs: unpacked beside, swapped in, the previous
   assert.equal(versionIn(ROOT), 'v1.141')
   assert.equal(versionIn(PREVIOUS), 'v1.140')
   assert.equal(fs.readFileSync(path.join(ROOT, 'install-kind'), 'utf8'), 'user foo-studio\n')
+})
+
+test('a release that replaces the whole app (requiresRelaunch) may hold no Node; it is swapped in, never restarted into, and waits for the app to reopen', async () => {
+  const shape = { noRun: true, noNode: true, launcher: true }
+  // Without the field, a payload with no run loop is refused.
+  await fresh('v1.150')
+  setReleases([release('v2.0', { app: shape })])
+  await j('POST', '/api/updates/install')
+  let s = await settled()
+  assert.equal(s.state, 'error')
+  assert.match(s.error, /no studio-run\.sh/)
+  assert.equal(versionIn(ROOT), 'v1.150')
+
+  // With it, the launcher is what has to be there.
+  await fresh('v1.150')
+  setReleases([release('v2.0', { app: { noRun: true, noNode: true }, manifest: { requiresRelaunch: true } })])
+  await j('POST', '/api/updates/install')
+  s = await settled()
+  assert.match(s.error, /no bin\/activate-studio/)
+  assert.equal(versionIn(ROOT), 'v1.150')
+
+  await fresh('v1.150')
+  setReleases([release('v2.0', { app: shape, manifest: { requiresRelaunch: true } })])
+  await j('POST', '/api/updates/install')
+  assert.ok(await until(async () => { s = (await j('GET', '/api/updates')).body; return ['relaunch', 'error', 'restarting'].includes(s.state) }))
+  assert.equal(s.state, 'relaunch', s.error)
+  assert.equal(s.reopen, true)
+  assert.equal(versionIn(ROOT), 'v2.0')
+  assert.equal(versionIn(PREVIOUS), 'v1.150')
+  assert.ok(fs.existsSync(path.join(UPD, 'relaunch.json')))
+  await sleep(200)
+  assert.deepEqual(stops, [], 'no exit 76: the run loop does not start the new copy')
 })
 
 test('an update that changes the window program asks for the window to be reopened; one that does not, does not', async () => {

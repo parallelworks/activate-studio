@@ -272,7 +272,7 @@ test('a newer signed release installs: swapped in, the previous copy kept, the m
   assert.ok(await until(() => calls().includes(kickstart)), calls())
   assert.ok(await until(() => calls().includes(`lsregister -f ${APP}`)), 'LaunchServices looks at the new copy, for its icon')
   assert.deepEqual(fs.readdirSync(APPS).sort(), ['.ACTIVATE Studio.app.previous', 'ACTIVATE Studio.app'])
-  assert.deepEqual(fs.readdirSync(UPD).sort(), ['pending.json', 'reopen', 'state.json'])
+  assert.deepEqual(fs.readdirSync(UPD).sort(), ['pending.json', 'reopen', 'state-snapshots', 'state.json'], 'the state was saved before the change')
   // A second request while restarting changes nothing.
   assert.equal((await j('POST', '/api/updates/install')).body.state, 'restarting')
 

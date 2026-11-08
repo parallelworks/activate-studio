@@ -41,6 +41,8 @@ interface Server {
   version: string
   calls: { method: string; url: string; body: unknown }[]
   onPost?: (url: string, s: Server) => void
+  /** The answer to POST /api/updates/inspect. */
+  inspect?: unknown
 }
 
 const reply = (body: unknown, code = 200) => new Response(JSON.stringify(body), { status: code, headers: { 'Content-Type': 'application/json' } })
@@ -55,6 +57,7 @@ function stubServer(s: Server) {
       if (s.code === 0) throw new TypeError('Failed to fetch')
       return s.code === 200 ? reply(s.updates) : reply({ error: 'not available here' }, s.code)
     }
+    if (url === '/api/updates/inspect' && method === 'POST') return reply(s.inspect ?? { error: 'no' }, s.inspect ? 200 : 409)
     if (url.startsWith('/api/updates/') && method === 'POST') {
       s.onPost?.(url, s)
       return reply(s.updates)
@@ -228,10 +231,10 @@ describe('the Updates section', () => {
 
     // Another channel saves and checks again.
     fireEvent.click(screen.getByRole('combobox', { name: 'Channel' }))
-    const pre = (await screen.findAllByRole('option')).find(o => o.textContent === 'Pre-release')!
+    const pre = (await screen.findAllByRole('option')).find(o => o.textContent === 'Preview')!
     fireEvent.pointerDown(pre)
     fireEvent.click(pre)
-    await waitFor(() => expect(saved).toHaveBeenLastCalledWith({ check: false, install: 'auto', channel: 'prerelease' }))
+    await waitFor(() => expect(saved).toHaveBeenLastCalledWith({ check: false, install: 'auto', channel: 'preview' }))
     await waitFor(() => expect(s.calls.some(c => c.url === '/api/updates/check' && c.method === 'POST')).toBe(true))
     expect(s.calls.filter(c => c.url === '/api/settings').length).toBe(3)
   })
@@ -250,6 +253,55 @@ describe('the Updates section', () => {
     expect(await screen.findByText('This page reloads when version v1.139 is running.')).toBeInTheDocument()
     s.version = 'v1.139'
     await waitFor(() => expect(reload).toHaveBeenCalledTimes(1))
+  })
+
+  it('on Stable while running a Preview: Move to Stable asks, then installs the older Stable by version', async () => {
+    const s = server({
+      updates: status({ current: { version: 'v1.150', builtAt: null }, latest: { version: 'v1.145', publishedAt: null, notes: '', url: '' }, available: false, canInstall: false, moveToStable: { version: 'v1.145' } }),
+      inspect: { version: 'v1.145', older: true, channel: 'stable', stateFormat: 1, currentFormat: 1, readable: true, snapshot: null, requiresRelaunch: false },
+      onPost: (url, srv) => { if (url === '/api/updates/install') srv.updates = status({ state: 'restarting', available: false }) },
+    })
+    stubServer(s)
+    render(<UpdatesSection pollMs={5} reload={vi.fn()} />)
+    expect(await screen.findByText('This is a Preview version; the newest Stable is v1.145')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Move to Stable' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Install v1.145?' })
+    expect(dialog.textContent).toContain('v1.145 is older than v1.150')
+    fireEvent.click(screen.getByRole('button', { name: 'Install' }))
+    await waitFor(() => expect(s.calls.find(c => c.url === '/api/updates/install')?.body).toEqual({ version: 'v1.145', restoreState: false }))
+  })
+
+  it('installing a picked version that cannot read the state says which saved state comes back, and asks for it', async () => {
+    const s = server({
+      updates: status({ available: false, versions: [
+        { version: 'v1.141', publishedAt: null, url: null, channel: 'preview', current: false, newer: true },
+        { version: 'v1.140', publishedAt: null, url: null, channel: 'stable', current: true, newer: false },
+        { version: 'v1.139', publishedAt: null, url: null, channel: 'stable', current: false, newer: false },
+      ] }),
+      inspect: { version: 'v1.139', older: true, channel: 'stable', stateFormat: 1, currentFormat: 2, readable: false,
+        snapshot: { id: 's1', from: 'v1.139', to: 'v1.140', reason: 'before an update', format: 1, at: '2026-10-21T08:00:00Z' }, requiresRelaunch: false },
+    })
+    stubServer(s)
+    render(<UpdatesSection pollMs={5} reload={vi.fn()} />)
+    fireEvent.click(await screen.findByRole('combobox', { name: 'Install a version' }))
+    const options = (await screen.findAllByRole('option')).map(o => o.textContent)
+    expect(options).toEqual(['v1.141 (Preview)', 'v1.139, older'])
+    const older = (await screen.findAllByRole('option')).find(o => o.textContent === 'v1.139, older')!
+    fireEvent.pointerDown(older)
+    fireEvent.click(older)
+    fireEvent.click(screen.getByRole('button', { name: 'Install' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Install v1.139?' })
+    expect(dialog.textContent).toContain('cannot read this Studio\'s data as it is now')
+    fireEvent.click(screen.getAllByRole('button', { name: 'Install' }).at(-1)!)
+    await waitFor(() => expect(s.calls.find(c => c.url === '/api/updates/install')?.body).toEqual({ version: 'v1.139', restoreState: true }))
+  })
+
+  it('a release that replaces the whole app waits for the app to reopen', async () => {
+    stubServer(server({ updates: status({ state: 'relaunch', available: false, reopen: true }) }))
+    render(<UpdatesSection />)
+    expect(await screen.findByText('The new version is in place and runs once the app reopens.')).toBeInTheDocument()
+    // Outside the app's window, the words in place of Reopen now.
+    expect(screen.getByText('Quit and reopen ACTIVATE Studio to finish.')).toBeInTheDocument()
   })
 })
 

@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react'
 import { updatesApi, type UpdatePolicy, type UpdateState, type UpdatesStatus } from './api'
+import { reopenApp } from './nativeShell'
 
 /**
  * The page's one view of updates: the status the server reports, a check,
@@ -13,6 +14,8 @@ import { updatesApi, type UpdatePolicy, type UpdateState, type UpdatesStatus } f
  * appears, every two minutes after, and again when the window is shown or
  * focused, which also starts a check the server finds due (GET /api/updates
  * does), so a version found while the Mac slept shows within seconds. A
+ * release that replaces the whole app ends in the relaunch state instead:
+ * the server does not restart, and the page asks the app to reopen. A
  * check under way is read again until it ends. With no readers left,
  * everything is forgotten.
  */
@@ -42,9 +45,10 @@ export interface UpdateFlow {
 /** The server's work on an install, which the page follows. */
 export const UNDER_WAY = new Set<UpdateState>(['downloading', 'verifying', 'installing'])
 
-/** An install or rollback is under way, or the page waits for its restart. */
+/** An install or rollback is under way, or the page waits for its restart
+ *  or for the app to reopen. */
 export const underWay = (f: UpdateFlow): boolean =>
-  !!f.waiting || (!!f.status && (UNDER_WAY.has(f.status.state) || f.status.state === 'restarting'))
+  !!f.waiting || (!!f.status && (UNDER_WAY.has(f.status.state) || f.status.state === 'restarting' || f.status.state === 'relaunch'))
 
 // A release as both sides report it: no leading v, and no git describe
 // suffix (v1.140-1-gabc1234 is the v1.140 release built a commit later).
@@ -88,6 +92,8 @@ let target: string | null = null
 /** The install or rollback was started on this page, not by the server. */
 let asked = false
 let lastState: UpdateState = 'idle'
+/** The app was asked to reopen after a relaunch install, once. */
+let reopenAsked = false
 let follow: { timer: number; from: string } | null = null
 let refresh: number | null = null
 let waitRun: object | null = null
@@ -145,6 +151,12 @@ function apply(s: UpdatesStatus): void {
   // A restart quick enough to fall between two reads: the server already
   // runs the version being installed.
   if (target && s.state === 'idle' && bare(s.current.version) === bare(target)) { reloadOnNewVersion(); return }
+  // In place, and runs once the app reopens: asked for at once when the
+  // person started it here; otherwise Settings offers Reopen now.
+  if (s.state === 'relaunch') {
+    if (asked && !reopenAsked) { reopenAsked = true; void reopenApp() }
+    return
+  }
   // An install the server started on its own is followed the same way.
   if (!target && s.latest && (UNDER_WAY.has(s.state) || s.state === 'restarting')) target = s.latest.version
   if (s.state === 'restarting') waitFor(target, s.current.version)
@@ -237,6 +249,7 @@ function reset(): void {
   waitRun = null
   target = null
   asked = false
+  reopenAsked = false
   lastState = 'idle'
   flow = EMPTY
   Object.assign(options, DEFAULTS)
@@ -277,6 +290,12 @@ export const updateActions = {
     target = flow.status?.latest?.version ?? null
     asked = true
     return act('install', updatesApi.install)
+  },
+  /** A version the person picked, which may be older than the one running. */
+  installVersion: (version: string, restoreState = false) => {
+    target = version
+    asked = true
+    return act('install', () => updatesApi.installVersion(version, restoreState))
   },
   /** A rollback restarts at once, whatever state the answer reports. */
   rollback: async () => {

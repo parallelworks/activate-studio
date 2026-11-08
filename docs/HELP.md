@@ -191,6 +191,8 @@ When a newer version is available, a one-line notice at the top of every page sa
 
 Settings, General, **Updates** has the same, and **Roll back**, which returns to the version installed before. The app checks a minute after it starts, then every 15 minutes, and when its window opens after a longer gap (time the Mac was asleep counts), unless **Check for updates automatically** is off; with **Install updates automatically when idle** on, it installs a new version once no chat reply or indexing has run for ten minutes. The first time {appName} opens on a new version, a notice says **Updated to** that version and lists its changes. When an update also changed the macOS app's own window (the title bar, the Dock icon), the app reopens on its own after an update you started; after one installed while idle, the notice and Settings, Updates offer **Reopen now**. A hosted deployment is updated by its operator and shows none of these.
 
+**Channel** is Stable or Preview; Preview gets new versions first. **Install a version** installs any release on the channel, older ones included, and on Stable while running a Preview, **Move to Stable** installs the newest Stable. {appName} saves your settings, conversations and credentials before every change of version, and puts the saved copy back when an older version cannot read them.
+
 To remove the macOS app, choose **Uninstall ACTIVATE Studio…** in its app menu. It lists everything it removes, with your indexes, settings and logs included unless you untick them, and never removes your documents.
 
 **What's new**, at the top of Help, lists every version's changes, newest first. The version at the bottom of the navigation and Settings, Updates open it too.
