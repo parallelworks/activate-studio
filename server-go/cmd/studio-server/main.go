@@ -23,6 +23,7 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/app"
 	"github.com/parallelworks/activate-studio/server-go/internal/auth"
 	"github.com/parallelworks/activate-studio/server-go/internal/config"
+	"github.com/parallelworks/activate-studio/server-go/internal/extract/cli"
 	"github.com/parallelworks/activate-studio/server-go/internal/netx"
 	"github.com/parallelworks/activate-studio/server-go/internal/nodeproc"
 	"github.com/parallelworks/activate-studio/server-go/internal/server"
@@ -30,7 +31,25 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/version"
 )
 
-func main() { os.Exit(run()) }
+func main() {
+	if len(os.Args) > 1 {
+		if sub, ok := subcommands[os.Args[1]]; ok {
+			os.Exit(sub(os.Args[2:]))
+		}
+	}
+	os.Exit(run())
+}
+
+// subcommands run instead of the server: `studio-server <name> args...`.
+// Each is a child the server (or the index job) starts, with its own
+// flags; none reads the server's configuration unless it needs it.
+var subcommands = map[string]func(args []string) int{
+	// The document extraction pass (internal/extract/cli), the stand-in
+	// for preextract.js and enrich.py's extraction step. It runs as a
+	// child process so that a reader failing badly on one file cannot
+	// take the server down.
+	"extract": func(args []string) int { return cli.Main(args, os.Stdout, os.Stderr) },
+}
 
 func logLevel(v string) slog.Level {
 	switch v {
