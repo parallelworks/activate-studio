@@ -157,7 +157,6 @@ jobs:
       fail-fast: false
       matrix:
         server: [go, go-only]
-    continue-on-error: ${{ matrix.server == 'go-only' }}
     runs-on: macos-15
     timeout-minutes: 75
     permissions:
@@ -245,7 +244,6 @@ jobs:
       fail-fast: false
       matrix:
         server: [go, go-only]
-    continue-on-error: ${{ matrix.server == 'go-only' }}
     runs-on: macos-15
     timeout-minutes: 45
     permissions:

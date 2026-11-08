@@ -431,7 +431,6 @@ jobs:
             extra_packages: findutils
           - image: fedora:43
             extra_packages: findutils procps-ng util-linux shadow-utils
-    continue-on-error: ${{ matrix.server == 'go-only' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
@@ -466,7 +465,10 @@ jobs:
       fail-fast: false
       matrix:
         server: [go, go-only]
-    continue-on-error: ${{ matrix.server == 'go-only' }}
+        # stable: a Stable release, and a newer Preview one the install
+        # must not take; preview: a Preview release on an install set to
+        # take prereleases.
+        channel: [stable, preview]
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
@@ -491,6 +493,8 @@ jobs:
             -p activate-studio-linux-x86_64.tar.gz.sha256 -D "$RUNNER_TEMP/old"
           (cd "$RUNNER_TEMP/old" && sha256sum -c activate-studio-linux-x86_64.tar.gz.sha256)
       - name: update to the Go version and roll back
+        env:
+          CHANNEL: ${{ matrix.channel }}
         run: |
           set -euo pipefail
           bash deploy/linux/test_go_bridge_e2e.sh "$RUNNER_TEMP/old/activate-studio-linux-x86_64.tar.gz" \
@@ -499,14 +503,14 @@ jobs:
         if: always()
         env:
           SERVER: ${{ matrix.server }}
+          CHANNEL: ${{ matrix.channel }}
         run: |
-          { echo "### Update to the Go version ($SERVER)"; echo '```'; grep -E '^(  (ok|FAIL) |[A-Z])' "$RUNNER_TEMP/bridge.log" | cut -c1-200; echo '```'; } >>"$GITHUB_STEP_SUMMARY" || true
+          { echo "### Update to the Go version ($SERVER, $CHANNEL)"; echo '```'; grep -E '^(  (ok|FAIL) |[A-Z])' "$RUNNER_TEMP/bridge.log" | cut -c1-200; echo '```'; } >>"$GITHUB_STEP_SUMMARY" || true
 
   # The container image of the Go version, from the payload above, started
   # as container.yaml starts the Node one.
   container-go:
     needs: app-go
-    continue-on-error: true
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
