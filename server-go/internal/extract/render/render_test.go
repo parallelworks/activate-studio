@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/zlib"
 	"context"
+	"errors"
 	"fmt"
 	"image"
 	"os"
@@ -250,28 +251,44 @@ func TestCompressedContent(t *testing.T) {
 	}
 }
 
+// TestDeadline: a page stops at the first operator after its context
+// ends, keeping what it drew. The context is cancelled from inside the
+// interpreter at a known operator, so the check is of the granularity,
+// not of wall time on a loaded host.
 func TestDeadline(t *testing.T) {
 	var c strings.Builder
-	for i := 0; i < 200000; i++ {
-		c.WriteString("0 0 100 100 re f\n")
+	for i := 0; i < 2000; i++ {
+		fmt.Fprintf(&c, "%d 0 1 100 re f\n", i%100)
 	}
 	d, err := Open(context.Background(), makePDF(t, 100, 100, "", "", c.String()))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer d.Close()
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	const at = 300 // operators: each fill is "re" then "f"
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	start := time.Now()
-	img, err := d.Page(ctx, 1, 300)
-	if err == nil {
-		t.Fatal("no error past the deadline")
+	testOnOp = func(ops int) {
+		if ops == at {
+			cancel()
+		}
 	}
-	if img == nil {
-		t.Error("no partial page")
+	defer func() { testOnOp = nil }()
+	r, err := d.page(ctx, 1, 72)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err %v, want the context's", err)
 	}
-	if el := time.Since(start); el > 2*time.Second {
-		t.Errorf("took %v", el)
+	if r == nil || r.ops != at {
+		t.Fatalf("ran %d operators, want %d: none after the one running at the cancel", r.ops, at)
+	}
+	// The first 150 fills drew: every column once, the first 50 twice.
+	if g := r.canvas.GrayAt(50, 50).Y; g > 40 {
+		t.Errorf("partial page not drawn: %d", g)
+	}
+	// A context that has already ended runs nothing.
+	r, err = d.page(ctx, 1, 72)
+	if err == nil || r.ops > 1 {
+		t.Errorf("after the deadline: %d operators, %v", r.ops, err)
 	}
 }
 
