@@ -92,16 +92,21 @@ poll() {   # poll SECONDS PATH PYTHON-EXPRESSION-ON-d
 }
 log_tail() { tail -n 15 "$DATA/logs/studio.log" 2>/dev/null | cut -c1-240 | sed 's/^/        /'; }
 # Which server listens on the port: the Go one is app/bin/studio-server.
-server_is() {   # server_is go|node
-  local p cmd found=
-  for p in $(lsof -ti "tcp:$PORT" -sTCP:LISTEN 2>/dev/null || true); do
+server_is() {   # server_is go|node: what listens on the Studio's port
+  local p cmd go=0 node=0 seen=
+  for p in $(lsof -nP -a -iTCP:"$PORT" -sTCP:LISTEN -t 2>/dev/null || true); do
     cmd="$(ps -o command= -p "$p" 2>/dev/null || true)"
+    seen="$seen
+        $p $cmd"
     case "$cmd" in
-      "$RES/app/bin/studio-server"*) found=go ;;
-      "$RES/node/bin/node"*) found=node ;;
+      *"/app/bin/studio-server"*) go=1 ;;
+      *"/node/bin/node"*) node=1 ;;
     esac
   done
-  [ "$found" = "$1" ]
+  if [ "$1" = go ] && [ "$go" = 1 ]; then return 0; fi
+  if [ "$1" = node ] && [ "$node" = 1 ] && [ "$go" = 0 ]; then return 0; fi
+  echo "        listening on $PORT:${seen:- nothing}"
+  return 1
 }
 
 # ---- 1. the released app ----
