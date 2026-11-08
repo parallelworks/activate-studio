@@ -162,9 +162,26 @@ stop_window() {
   fi
 }
 
+# WSL (Windows Subsystem for Linux, docs/WINDOWS.md): set for what WSL
+# starts, and its handler for Windows programs.
+in_wsl() { [ -n "${WSL_DISTRO_NAME:-}" ] || [ -e /proc/sys/fs/binfmt_misc/WSLInterop ]; }
+# Windows' rundll32, on the Windows PATH WSL appends or at its usual place.
+win_rundll() {
+  command -v rundll32.exe 2>/dev/null && return 0
+  local r
+  for r in /mnt/c/Windows/System32/rundll32.exe /mnt/c/WINDOWS/system32/rundll32.exe; do
+    [ -x "$r" ] && { printf '%s\n' "$r"; return 0; }
+  done
+  return 1
+}
 open_url() {
   [ "${STUDIO_NO_BROWSER:-}" = 1 ] && return 0
+  local r
   if [ -n "${BROWSER:-}" ]; then "$BROWSER" "$1" >/dev/null 2>&1 &
+  # Under WSL the page opens in the Windows browser: wslview (wslu) where
+  # installed, else rundll32 with url.dll, which no shell parses.
+  elif in_wsl && command -v wslview >/dev/null 2>&1; then wslview "$1" >/dev/null 2>&1 &
+  elif in_wsl && r="$(win_rundll)"; then "$r" url.dll,FileProtocolHandler "$1" >/dev/null 2>&1 &
   elif command -v xdg-open >/dev/null 2>&1; then xdg-open "$1" >/dev/null 2>&1 &
   else say "Open $1 in a browser."; fi
   return 0
@@ -202,6 +219,9 @@ window_mode() {
   # One server per data folder: the window starts its own.
   stop_detached
   export STUDIO_TREE="$TREE" STUDIO_DATA_DIR="$DATA"
+  # WSLg has no DRM device for WebKitGTK's DMA-BUF renderer, which can leave
+  # the window blank; the renderer it falls back to draws (docs/WINDOWS.md).
+  if in_wsl && [ ! -e /dev/dri ]; then export WEBKIT_DISABLE_DMABUF_RENDERER="${WEBKIT_DISABLE_DMABUF_RENDERER:-1}"; fi
   exec "$shell_bin" "$@"
 }
 
