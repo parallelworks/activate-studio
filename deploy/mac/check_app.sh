@@ -631,7 +631,11 @@ EOF
         printf 'turbine blade %s, the rotor and the gearbox of a wind turbine\n' "$n" >"$T/mapsrc/wind/turbine-$n.txt"
         printf 'sourdough loaf %s, the starter, the flour and the oven\n' "$n" >"$T/mapsrc/bread/loaf-$n.txt"
       done
-      if clean "$G/bin/gufi_dir2index" -x "$T/mapsrc" "$T/mapidx" >/dev/null 2>&1 &&
+      # The fixture is made with the Node version's Python indexer and GGUF
+      # model, which the Go-only app does not carry.
+      if [ "$SERVER" = go-only ]; then
+        echo "  note  the remote semantic map check is skipped: its fixture needs the Node version's indexer"
+      elif clean "$G/bin/gufi_dir2index" -x "$T/mapsrc" "$T/mapidx" >/dev/null 2>&1 &&
         clean "$R/python/bin/python3" "$R/app/indexer/enrich.py" --kb-root "$T/mapsrc" --index "$T/mapidx/mapsrc" --extract-cache "$T/mapextract" >/dev/null 2>&1 &&
         clean "$R/python/bin/python3" "$R/app/indexer/embed.py" --index "$T/mapidx/mapsrc" --model "$R/models/minilm384.gguf" --gufi-sqlite3 "$G/bin/gufi_sqlite3" >"$T/mapembed.out" 2>&1 &&
         curl -fsS -m 120 -X POST -H 'content-type: application/json' \
