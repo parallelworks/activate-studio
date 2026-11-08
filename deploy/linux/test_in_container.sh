@@ -49,7 +49,13 @@ runuser -u tester -- env HOME=/home/tester bash /src/deploy/linux/check_app.sh "
 # download, a release that will not start, and the read-only /opt installs a
 # package leaves), against a local stand-in for the release server. Set
 # UPDATE_E2E=0 to skip it.
-if [ "${UPDATE_E2E:-1}" = 1 ]; then
+# It drives its stand-in release server with the payload's Node, so a payload
+# without Node (node/PLACEHOLDER) skips it; bridge-e2e updates that payload
+# from the last release instead.
+if [ -e "$APP/node/PLACEHOLDER" ]; then
+  echo
+  echo "Update end to end: skipped, the payload has no Node to serve the stand-in feed (bridge-e2e covers it)"
+elif [ "${UPDATE_E2E:-1}" = 1 ]; then
   echo
   bash /src/deploy/linux/test_update_e2e.sh || status=$?
 fi

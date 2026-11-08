@@ -49,9 +49,14 @@ if [ -z "$SERVER" ]; then
   grep -q '"server": *"go"' "$APP/manifest.json" 2>/dev/null && SERVER=go
   [ -e "$APP/node/PLACEHOLDER" ] && SERVER=go-only
 fi
+# Across several libraries Node runs gufi_vt; the Go server merges the rows
+# itself (engine "merge") until gufi_vt is ported (docs/GO-PORT.md).
+ENGINES='("gufi_vt",)'
+[ "$SERVER" = node ] || [ -z "$SERVER" ] || ENGINES='("gufi_vt", "merge")'
 # The checks' own Python: the payload's, or, in a tree without one, the
 # system's, run isolated.
-[ -x "$PY" ] || PY="$(command -v python3)"
+[ -x "$PY" ] || PY="$(command -v python3 || true)"
+[ -n "$PY" ] || { echo "check_app: the checks need python3 (the payload has none; install it to run them)" >&2; exit 2; }
 MAX_GLIBC="${MAX_GLIBC:-2.28}"
 MAX_GLIBCXX="${MAX_GLIBCXX:-3.4.25}"
 MAX_CXXABI="${MAX_CXXABI:-1.3.11}"
@@ -376,7 +381,7 @@ PY
     api -m 30 POST "http://127.0.0.1:$PORT/api/libraries" \
       "$("$PY" -I -c 'import json, sys; print(json.dumps({"id": "second", "label": "Second", "indexRoot": sys.argv[1]}))' "$second/corpus")" >/dev/null; then
     api -m 60 POST "http://127.0.0.1:$PORT/api/query" '{"library": "all", "canned": "largest", "n": 20}' >"$T/query.json" 2>"$T/query.err" || true
-    if assert_json 'd.get("engine") == "gufi_vt" and {"kb", "second"} <= set(d.get("rowLibraries") or []) and not d.get("failed")' <"$T/query.json" 2>/dev/null; then
+    if assert_json 'd.get("engine") in '"$ENGINES"' and {"kb", "second"} <= set(d.get("rowLibraries") or []) and not d.get("failed")' <"$T/query.json" 2>/dev/null; then
       ok "a query across two libraries runs through gufi_vt"
     else
       bad "a query across two libraries did not run through gufi_vt:"
@@ -387,7 +392,7 @@ PY
       api -m 60 POST "http://127.0.0.1:$PORT/api/query" \
         '{"library": "all", "builder": {"source": "files", "filters": [{"field": "text", "op": "match", "value": "heliotrope"}], "groupBy": "none", "sort": "size", "dir": "desc", "limit": 20}}' \
         >"$T/qwords.json" 2>/dev/null || true
-      if assert_json 'd.get("engine") == "gufi_vt" and any("ocr-sample" in str(r) for r in d.get("rows") or []) and not d.get("failed")' <"$T/qwords.json" 2>/dev/null; then
+      if assert_json 'd.get("engine") in '"$ENGINES"' and any("ocr-sample" in str(r) for r in d.get("rows") or []) and not d.get("failed")' <"$T/qwords.json" 2>/dev/null; then
         ok "and a query with a words condition runs through gufi_vt too"
       else
         bad "a query with a words condition did not run through gufi_vt"

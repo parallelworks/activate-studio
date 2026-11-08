@@ -150,7 +150,8 @@ server_pid() {
   for s in /proc/[0-9]*/stat; do
     p="${s#/proc/}"; p="${p%/stat}"
     [ "$(sed 's/^[0-9]* (.*) //' "$s" 2>/dev/null | awk '{print $2}')" = "$1" ] || continue
-    if tr '\0' ' ' <"/proc/$p/cmdline" 2>/dev/null | grep -q 'app/server/dist/main.js'; then echo "$p"; return; fi
+    # Node's server, or the Go server (with Node behind it, its child).
+    if tr '\0' ' ' <"/proc/$p/cmdline" 2>/dev/null | grep -q -e 'app/server/dist/main.js' -e 'app/bin/studio-server'; then echo "$p"; return; fi
   done
 }
 stop_loop() { kill -TERM "$1" 2>/dev/null || true; local n=0; while kill -0 "$1" 2>/dev/null && [ "$n" -lt 100 ]; do sleep 0.1; n=$((n + 1)); done; }

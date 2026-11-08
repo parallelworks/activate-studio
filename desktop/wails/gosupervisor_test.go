@@ -134,6 +134,11 @@ func TestRunScriptStartsTheGoServer(t *testing.T) {
 		t.Fatal(err)
 	}
 	tree, data := t.TempDir(), t.TempDir()
+	// studio-run.sh names its own folder as pwd -P does; on macOS the
+	// temporary folder is under /var, a link to /private/var.
+	if r, err := filepath.EvalSymlinks(tree); err == nil {
+		tree = r
+	}
 	write := func(f, body string) {
 		touch(t, filepath.Join(tree, f), 0o755)
 		if err := os.WriteFile(filepath.Join(tree, f), []byte(body), 0o755); err != nil {
@@ -146,7 +151,7 @@ func TestRunScriptStartsTheGoServer(t *testing.T) {
 	write("app/bin/studio-server", fmt.Sprintf("#!/bin/bash\n{ echo studio-server; env | grep -E '^(STUDIO_NODE_|STUDIO_PROJECT_ROOT|STUDIO_SEMANTIC_MAP_BIN|PORT=|HOST=)' | sort; } >\"$STUDIO_DATA_DIR/started\"\nexec env STUDIO_FAKE_SERVER=1 %q\n", exe))
 	write("app/bin/semantic-map", "")
 
-	t.Setenv("SHELL", "/bin/false") // no login shell to wait on
+	t.Setenv("SHELL", "/bin/false")   // no login shell to wait on
 	t.Setenv("STUDIO_GO_SERVER", "1") // the switch, which the supervisor reads at each start
 	srv, smap := goServerPaths(os.Getenv, tree, filepath.Join(tree, "app"))
 	events := make(chan ServerEvent, 16)

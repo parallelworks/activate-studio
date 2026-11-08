@@ -50,6 +50,10 @@ if [ -z "${STUDIO_SERVER:-}" ]; then
   else STUDIO_SERVER=node; fi
 fi
 SERVER="$STUDIO_SERVER"
+# Across several libraries Node runs gufi_vt; the Go server merges the rows
+# itself (engine "merge") until gufi_vt is ported (docs/GO-PORT.md).
+ENGINES='("gufi_vt",)'
+[ "$SERVER" = node ] || ENGINES='("gufi_vt", "merge")'
 # GUFI built without sqlite-lembed (GUFI_LEMBED=0) has no lembed0.dylib.
 LEMBED=1
 grep -q '"sqlite-lembed": *"none"' "$G/manifest.json" 2>/dev/null && LEMBED=0
@@ -489,7 +493,7 @@ SQL
         "http://127.0.0.1:$PORT_FREE/api/libraries" >/dev/null; then
       curl -fsS -m 60 -X POST -H 'content-type: application/json' -d '{"library": "all", "canned": "largest", "n": 20}' \
         "http://127.0.0.1:$PORT_FREE/api/query" >"$T/query.json" 2>"$T/query.err" || true
-      if python3 -c 'import json, sys; d = json.load(open(sys.argv[1])); libs = set(d.get("rowLibraries") or []); sys.exit(0 if d.get("engine") == "gufi_vt" and {"kb", "second"} <= libs and not d.get("failed") else 1)' "$T/query.json" 2>/dev/null; then
+      if python3 -c 'import json, sys; d = json.load(open(sys.argv[1])); libs = set(d.get("rowLibraries") or []); sys.exit(0 if d.get("engine") in '"$ENGINES"' and {"kb", "second"} <= libs and not d.get("failed") else 1)' "$T/query.json" 2>/dev/null; then
         ok "a query across two libraries runs through gufi_vt"
       else
         bad "a query across two libraries did not run through gufi_vt:"
@@ -513,7 +517,7 @@ SQL
         curl -fsS -m 60 -X POST -H 'content-type: application/json' \
           -d '{"library": "all", "builder": {"source": "files", "filters": [{"field": "text", "op": "match", "value": "heliotrope"}], "groupBy": "none", "sort": "size", "dir": "desc", "limit": 20}}' \
           "http://127.0.0.1:$PORT_FREE/api/query" >"$T/qwords.json" 2>"$T/qwords.err" || true
-        if python3 -c 'import json, sys; d = json.load(open(sys.argv[1])); found = any("ocr-sample" in str(r) for r in d.get("rows") or []); sys.exit(0 if d.get("engine") == "gufi_vt" and found and not d.get("failed") else 1)' "$T/qwords.json" 2>/dev/null; then
+        if python3 -c 'import json, sys; d = json.load(open(sys.argv[1])); found = any("ocr-sample" in str(r) for r in d.get("rows") or []); sys.exit(0 if d.get("engine") in '"$ENGINES"' and found and not d.get("failed") else 1)' "$T/qwords.json" 2>/dev/null; then
           ok "and a query with a words condition runs through gufi_vt too"
         else
           bad "a query with a words condition did not run through gufi_vt:"
@@ -565,7 +569,7 @@ EOF
         qid="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["id"])' "$T/qadd.json" 2>/dev/null || true)"
         curl -fsS -m 120 -X POST -H 'content-type: application/json' -d '{"library": "all", "canned": "largest", "n": 50}' \
           "http://127.0.0.1:$PORT_FREE/api/query" >"$T/qquery.json" 2>"$T/qquery.err" || true
-        if python3 -c 'import json, sys; d = json.load(open(sys.argv[1])); sys.exit(0 if d.get("engine") == "gufi_vt" and sys.argv[2] in set(d.get("rowLibraries") or []) and not d.get("failed") else 1)' "$T/qquery.json" "$qid" 2>/dev/null; then
+        if python3 -c 'import json, sys; d = json.load(open(sys.argv[1])); sys.exit(0 if d.get("engine") in '"$ENGINES"' and sys.argv[2] in set(d.get("rowLibraries") or []) and not d.get("failed") else 1)' "$T/qquery.json" "$qid" 2>/dev/null; then
           ok "and Query reaches its index through gufi_vt with gufi_query alone"
         else
           bad "Query across libraries did not reach the gufi_query-only host:"
@@ -602,7 +606,7 @@ EOF
           curl -fsS -m 120 -X POST -H 'content-type: application/json' -d '{"library": "all", "canned": "largest", "n": 50}' \
             "http://127.0.0.1:$PORT_FREE/api/query" >"$T/qstack.json" 2>"$T/qstack.err" || true
           ran=$(( $(wc -l <"$T/qonly.log") - before ))
-          if [ "$ran" = 2 ] && python3 -c 'import json, sys; d = json.load(open(sys.argv[1])); libs = set(d.get("rowLibraries") or []); sys.exit(0 if d.get("engine") == "gufi_vt" and {sys.argv[2], sys.argv[3]} <= libs and not d.get("failed") else 1)' "$T/qstack.json" "$qid" "$q2id" 2>/dev/null; then
+          if [ "$ran" = 2 ] && python3 -c 'import json, sys; d = json.load(open(sys.argv[1])); libs = set(d.get("rowLibraries") or []); sys.exit(0 if d.get("engine") in '"$ENGINES"' and {sys.argv[2], sys.argv[3]} <= libs and not d.get("failed") else 1)' "$T/qstack.json" "$qid" "$q2id" 2>/dev/null; then
             ok "two libraries on one host: Query asks it once (a check and a gufi_query), rows back to each"
           else
             bad "two libraries on one host were not asked together ($ran commands there):"

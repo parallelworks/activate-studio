@@ -448,7 +448,8 @@ jobs:
       - name: run it in ${{ matrix.image }}
         env:
           IMAGE: ${{ matrix.image }}
-          EXTRA_PACKAGES: ${{ matrix.extra_packages }}
+          # The checks are Python; a payload without Python needs the image's.
+          EXTRA_PACKAGES: ${{ matrix.extra_packages }}${{ matrix.server == 'go-only' && ' python3' || '' }}
         run: |
           set -euo pipefail
           (cd "$RUNNER_TEMP/in" && sha256sum -c activate-studio-linux-x86_64.tar.gz.sha256)
