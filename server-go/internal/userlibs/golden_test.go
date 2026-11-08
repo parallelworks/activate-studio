@@ -69,13 +69,13 @@ func goGolden(t *testing.T) []byte {
 	m := testModule(t)
 	out := jsonv.NewObject()
 
-	out.Set("scripts", jsonv.NewObject("build_check", buildCheck, "build_run", buildRun, "build_start", buildStart, "build_status", buildStatusSh, "embed_probe", embedProbe))
+	out.Set("scripts", jsonv.NewObject("build_status", buildStatusSh))
 	phases := jsonv.NewObject()
 	for k, v := range phaseLabel {
 		phases.Set(k, v)
 	}
 	out.Set("phases", phases)
-	var kvs, statuses, made, gaps, dests, specs, pws, advice, dirs, manifests, public, embeds []any
+	var kvs, statuses, made, gaps, dests, specs, pws, advice, dirs, manifests, public []any
 	for _, x := range list("keyValues") {
 		o := jsonv.NewObject()
 		for k, v := range keyValues(x.(string)) {
@@ -142,23 +142,8 @@ func goGolden(t *testing.T) []byte {
 		job, _ := get(jsonv.Obj(x), "job").(float64)
 		public = append(public, m.public(&d, int(job)))
 	}
-	files := func(fs []embedFile) any {
-		if fs == nil {
-			return nil
-		}
-		out := []any{}
-		for _, f := range fs {
-			out = append(out, f.json())
-		}
-		return out
-	}
-	for _, x := range list("platforms") {
-		p := x.(string)
-		embeds = append(embeds, jsonv.NewObject("files", files(m.embedFiles(p)), "version", nullable(m.embedVersion(p)), "megabytes", m.embedMegabytes(p)))
-	}
 	out.Set("keyValues", kvs).Set("statuses", statuses).Set("vectorsMade", made).Set("gaps", gaps).Set("dests", dests).Set("sshSpecs", specs)
-	out.Set("pwSpecs", pws).Set("advice", advice).Set("indexDirs", dirs).Set("manifestFrom", manifests).Set("public", public).Set("embed", embeds)
-	out.Set("readers", jsonv.NewObject("files", files(m.readerFiles()), "version", m.readersVersion()))
+	out.Set("pwSpecs", pws).Set("advice", advice).Set("indexDirs", dirs).Set("manifestFrom", manifests).Set("public", public)
 	b, err := jsonv.Marshal(out)
 	if err != nil {
 		t.Fatal(err)
@@ -182,6 +167,13 @@ func TestMatchesNodeGolden(t *testing.T) {
 		t.Fatal(err)
 	}
 	g, w := normal(t, goGolden(t)).(map[string]any), normal(t, want).(map[string]any)
+	// Go's builds there run the Studio's helper, not the indexer's Python:
+	// the scripts that start and check them and what is sent are Go's own.
+	// The status script, which reads the phase, exit and summary files
+	// both leave, is still Node's.
+	delete(w, "embed")
+	delete(w, "readers")
+	w["scripts"] = map[string]any{"build_status": w["scripts"].(map[string]any)["build_status"]}
 	for k := range w {
 		if !reflect.DeepEqual(g[k], w[k]) {
 			gl, wl := g[k], w[k]
@@ -223,10 +215,9 @@ func TestGoldenIsCurrent(t *testing.T) {
 	if err := exec.Command(node, "../../scripts/golden/userlibs.mjs", "--scripts", dir, "../../..").Run(); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"build_check", "build_run", "build_start", "build_status", "embed_probe"} {
-		got, _ := os.ReadFile(filepath.Join(dir, name+".sh"))
-		if string(got) != script(name) {
-			t.Errorf("scripts/%s.sh is not remoteBuild.ts's: run scripts/golden/userlibs.mjs --scripts internal/userlibs/scripts", name)
-		}
+	// Only the status script is still shared with Node (see TestMatchesNodeGolden).
+	got, _ := os.ReadFile(filepath.Join(dir, "build_status.sh"))
+	if string(got) != script("build_status") {
+		t.Errorf("scripts/build_status.sh is not remoteBuild.ts's: copy it from scripts/golden/userlibs.mjs --scripts")
 	}
 }

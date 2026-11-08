@@ -20,7 +20,6 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"os/exec"
 	"path"
 	"path/filepath"
 	"regexp"
@@ -55,8 +54,6 @@ type Module struct {
 	Jobs func() *kb.Jobs
 	// PollEvery is how often a build there is read (setBuildPollMs).
 	PollEvery time.Duration
-	// Python runs fetch_embed.py here (PYTHON_BIN).
-	Python func() string
 	// Notify tells Node's modules that keep something per library on
 	// another system (semanticMap.ts) that one was removed or built.
 	Notify func(event, root string)
@@ -69,14 +66,17 @@ type Module struct {
 
 	mu        sync.Mutex
 	passed    map[string]passedProbe
-	checked   map[string]string
+	digests   map[string][2]string
 	sending   map[string]*sync.Mutex
 	followers map[string]*follower
-	embedSent int
+	sent      int
 	pinned    pinsFile
 	eng       *search.Engine
-	py        string
-	pyOnce    sync.Once
+	// offline, in tests, stands in for the downloads here.
+	offline func(platform string) string
+	// Helpers is a folder of the helpers by platform
+	// (<platform>/studio-remote), looked in first (STUDIO_REMOTE_HELPERS).
+	Helpers string
 }
 
 type follower struct {
@@ -107,6 +107,7 @@ func Of(a *app.App) *Module {
 	m.Users = libraries.Of(a).Users()
 	m.Settings = libraries.Of(a).FileSettings()
 	m.eng = search.Of(a)
+	m.Helpers = os.Getenv("STUDIO_REMOTE_HELPERS")
 	m.Jobs = func() *kb.Jobs {
 		if kb.Default != nil {
 			return kb.Default.Jobs
@@ -149,7 +150,7 @@ func New(p *platform.Platform, pool *remote.Pool, runners *remote.Runners, index
 		Users:     &libraries.Users{IndexBase: indexBase},
 		Settings:  libraries.NewFileIndexSettings(indexBase),
 		PollEvery: 3 * time.Second,
-		passed:    map[string]passedProbe{}, checked: map[string]string{}, sending: map[string]*sync.Mutex{},
+		passed:    map[string]passedProbe{}, digests: map[string][2]string{}, sending: map[string]*sync.Mutex{},
 		followers: map[string]*follower{},
 	}
 	m.Jobs = m.ownJobs
@@ -168,29 +169,6 @@ func (m *Module) engine() *search.Engine {
 }
 
 func (m *Module) getenv(k string) string { return m.P.Getenv(k) }
-
-// python is PYTHON_BIN: the one set, else the newest python3 on the PATH
-// that is 3.10 or later, else python3.
-func (m *Module) python() string {
-	if m.Python != nil {
-		return m.Python()
-	}
-	m.pyOnce.Do(func() {
-		if v := m.getenv("PYTHON_BIN"); v != "" {
-			m.py = v
-			return
-		}
-		for _, c := range []string{"python3.13", "python3.12", "python3.11", "python3.10", "python3"} {
-			out, err := exec.Command(c, "-c", "import sys; print(sys.version_info >= (3, 10))").Output()
-			if err == nil && strings.TrimSpace(string(out)) == "True" {
-				m.py = c
-				return
-			}
-		}
-		m.py = "python3"
-	})
-	return m.py
-}
 
 // ---- who acts ----
 

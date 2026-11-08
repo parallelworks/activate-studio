@@ -278,6 +278,20 @@ asks before making a folder the user named, and the server tests again
 first. The depth starts at Meaning on documents when none is chosen,
 stored with the library.
 
+The Go version of the Studio runs no Python there. Its connection test
+reads the system's platform with `uname` and offers text and meaning on
+Linux x86_64 and aarch64. The first build sends the Studio's helper
+(`studio-remote`, about 25 MB, kept in `~/.activate-studio/go/<platform>-<digest>`),
+which runs the text pass (its own readers for PDF, Office and
+OpenDocument files, pdftotext and tesseract where the system has them)
+and the embedder, and for the meaning stops ONNX Runtime's library, taken
+from the pinned onnxruntime wheel, with `model.onnx` and `tokenizer.json`
+(kept in `~/.activate-studio/embed/<platform>-<digest of the pins>`). Each
+is sent with a `SHA256SUMS` file, which the helper checks before the build
+uses the folder. The index, its reports and the files described below are
+the same; the extract cache entries start with the line the Studio's own
+cache has. The rest of this section describes the Node version.
+
 Search reads a remote index's vectors in its one-pass walk, which embeds
 the query with the Studio's ONNX model and matches the directories whose
 `gvecmodel` names that model, so the build there embeds with the same

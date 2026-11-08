@@ -100,7 +100,7 @@ Promoting a Preview to Stable is a new release with a new version, signed withou
 
 ## The Go version
 
-The Go version runs the Go server (`app/bin/studio-server`) with no Node and no Python. It ships to Preview first, as an ordinary update, and every install can move between it and the Node versions.
+The Go version runs the Go server (`app/bin/studio-server`) with no Node and no Python, here or on the other systems it builds libraries on: there it sends its helper (`app/bin/remote`) and, for search by meaning, ONNX Runtime from the onnxruntime wheel pinned in `indexer/embed_deps.json`, which it downloads and checks in Go. It ships to Preview first, as an ordinary update, and every install can move between it and the Node versions.
 
 No bridge release is needed. The updaters of the releases already installed accept a Go build as it is: the macOS updater of v1.180 to v1.188 checks that the new bundle has `Resources/studio-run.sh`, `Resources/node/bin/node` and `Resources/app/server/dist/main.js`, and the Linux updater of v1.187 and v1.188 checks for an executable `node/bin/node`, `app/server/dist/main.js`, `update-signing.pub` and `manifest.json`. Neither checks a signature on the bundle beyond the manifest's. The Go build carries stand-ins at those paths (a shell script that exits 1 and a one-line module), marked by `node/PLACEHOLDER`. After the swap the old server restarts its run loop the way the install started it, and either way the new copy's `studio-run.sh` runs: on macOS with a LaunchAgent, `launchctl kickstart -k` starts the agent's `studio-run.sh`, which is the new copy's; without one (`STUDIO_SUPERVISOR=detached`, set by `launcher.sh`) and on Linux, the server exits 76 and the old run loop executes the new copy's `studio-run.sh` (macOS from v1.180, Linux from v1.187). That script reads `"server": "go"` in `manifest.json` and starts the Go server. `requiresRelaunch` is not needed for this move. `deploy/linux/test_go_bridge_e2e.sh` and `deploy/mac/test_go_bridge_e2e.sh` check it from the last release with a throwaway key: install, data, update through the old updater, the Go server, data, rollback, data.
 
@@ -118,6 +118,7 @@ What the Go build carries, by platform (`STUDIO_SERVER=go-only`, the default, in
 | Part | Where | Notes |
 | --- | --- | --- |
 | `studio-server`, `semantic-map` | `app/bin/` | built without cgo; `studio-server` also runs `extract`, `embed`, `embed-query` and `routes` |
+| `studio-remote` for Linux x86_64 and aarch64 | `app/bin/remote/<platform>/` | built without cgo (`server-go/scripts/build_remote.sh`), about 25 MB each; sent to the systems libraries are built on; `app/indexer/embed_deps.json` pins what goes with it |
 | ONNX Runtime 1.31.0 | `app/lib/` | Microsoft's release archive at a pinned SHA-256; found beside `app/bin` and named in `STUDIO_ORT_LIB` |
 | MiniLM model and tokenizer | `models/minilm-l6/` | `indexer/fetch_embed.py --model`, pinned; no GGUF model |
 | STEP preview modules | `app/occt/` | `server-go/scripts/occt/build.sh`; separate LGPL files, named in `STUDIO_OCCT_WASM` |

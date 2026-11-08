@@ -226,21 +226,27 @@ func (m *Module) probeBuild(ctx context.Context, h probeHost, spec buildSpec) *p
 		add(step{Name: "index", Detail: detail})
 	}
 
-	var python, model, platform *string
-	if py := kv["python"]; strings.HasPrefix(py, "/") {
-		python = &py
-		if md := kv["model"]; strings.HasPrefix(md, "/") {
-			model = &md
-		}
-		if pl := kv["platform"]; pl != "" {
-			platform = &pl
-		}
+	var model, platform *string
+	if md := kv["model"]; strings.HasPrefix(md, "/") {
+		model = &md
 	}
-	if python != nil {
-		add(step{Name: "extract", OK: true, Detail: fmt.Sprintf("Text is extracted there with Python %s, so search covers what the files say. %s",
-			or(kv["python_version"], "3"), m.meaningThere(platform, kv["embeds"], model))})
+	plat := helperPlatform(kv["platform"])
+	if plat != "" {
+		platform = &plat
+	}
+	if tools := m.toolsVersion(plat); tools != "" {
+		how := fmt.Sprintf("which the first build sends (about %s MB, once) to ~/.activate-studio/go", jsonv.FormatNumber(m.toolsMegabytes(plat)))
+		if fieldsHave(kv["tools"], tools) {
+			how = "which is there in ~/.activate-studio/go"
+		}
+		add(step{Name: "extract", OK: true, Detail: fmt.Sprintf("Text is extracted there by the Studio's own reader, %s, so search covers what the files say. %s",
+			how, m.meaningThere(plat, kv["embeds"], model))})
+	} else if plat != "" {
+		add(step{Name: "extract", OK: true, Warn: true, Detail: fmt.Sprintf("This installation of the Studio has no helper for %s (%s, which server-go/scripts/build_remote.sh builds), so the index has names and metadata only.",
+			dest, plat)})
 	} else {
-		add(step{Name: "extract", OK: true, Warn: true, Detail: fmt.Sprintf("No Python 3.10 or later with SQLite's full-text module on %s, so the index has names and metadata only.", dest)})
+		add(step{Name: "extract", OK: true, Warn: true, Detail: fmt.Sprintf("The Studio has no reader for %s (%s; it has them for Linux x86_64 and aarch64), so the index has names and metadata only.",
+			dest, or(strings.TrimSpace(kv["platform"]), "an unknown system"))})
 	}
 	p.OS = &c.OS
 	p.GufiBin = &g.Bin
@@ -248,7 +254,7 @@ func (m *Module) probeBuild(ctx context.Context, h probeHost, spec buildSpec) *p
 		p.GufiVersion = &g.Version
 	}
 	p.SourceRoot, p.IndexDir, p.Create = &source, &indexDir, create
-	p.Python, p.Model, p.Platform = python, model, platform
+	p.Model, p.Platform = model, platform
 	return done()
 }
 
@@ -262,23 +268,16 @@ func fieldsHave(list, v string) bool {
 }
 
 // meaningThere is how search by meaning is made there, for the check.
-func (m *Module) meaningThere(platform *string, embeds string, gguf *string) string {
-	v := ""
-	if platform != nil {
-		v = m.embedVersion(*platform)
-	}
+func (m *Module) meaningThere(platform string, embeds string, gguf *string) string {
+	v := m.embedVersion(platform)
 	if v != "" && fieldsHave(embeds, v) {
 		return "At a Meaning depth, embeddings are made with the Studio's model, which is there in ~/.activate-studio/embed."
 	}
 	if v != "" {
-		return fmt.Sprintf("At a Meaning depth, embeddings are made with the Studio's model: the first build sends it with its packages for this Python (about %s MB, once) to ~/.activate-studio/embed.",
-			jsonv.FormatNumber(m.embedMegabytes(*platform)))
+		return fmt.Sprintf("At a Meaning depth, embeddings are made with the Studio's model: the first build sends it with ONNX Runtime (about %s MB, once) to ~/.activate-studio/embed.",
+			jsonv.FormatNumber(m.embedMegabytes(platform)))
 	}
-	pl := "this Python"
-	if platform != nil {
-		pl = *platform
-	}
-	why := "There are no packages of the Studio's embedding model for " + pl + " (Python 3.11 to 3.13 on Linux x86_64 or aarch64, or macOS arm64)"
+	why := "There is no ONNX Runtime of the Studio's for this system (it has them for Linux x86_64 and aarch64)"
 	if gguf != nil {
 		return why + ", so at a Meaning depth embeddings are made with the GGUF model in ~/.activate-studio/models, which search does not read."
 	}
@@ -298,92 +297,63 @@ func (m *Module) startRemote(ctx context.Context, site, key string, b *libraries
 	depth := b.Depth
 	level := libraries.MeaningArgs(libraries.MeaningOfDepth(depth), m.Settings.MeaningSpeed("kb"))
 	text := libraries.TextArgs(depth)
-	py := deref(b.Python)
-	read := func(name string) (string, error) { return m.indexerScript(name) }
-	enrich := ""
-	if py != "" && text != nil {
-		var err error
-		if enrich, err = read("enrich.py"); err != nil {
-			return err
-		}
-	}
-	// The Python's platform is read again at each build: the check of a
-	// library built by an earlier version did not record it.
-	platform, version, send, sendText := "", "", false, false
-	readers := ""
-	if enrich != "" {
-		readers = m.readersVersion()
-		r, err := m.Pool.Run(ctx, site, key, []string{"sh", "-c", embedProbe, "_", py}, 60*time.Second)
+	reads := text != nil
+	embeds := reads && level != nil
+	// What the system runs is read again at each build: a helper or kit
+	// sent since, or by an earlier version, is taken as it is.
+	platform, tools, version := "", "", ""
+	sendTools, send := false, false
+	if reads {
+		r, err := m.Pool.Run(ctx, site, key, []string{"sh", "-c", embedProbe}, 60*time.Second)
 		out := ""
 		if err == nil {
 			out = r.Stdout
 		}
 		kv := keyValues(out)
-		sendText = !fieldsHave(kv["readers"], readers)
-		if level != nil && kv["platform"] != "" {
-			if v := m.embedVersion(kv["platform"]); v != "" {
-				platform, version = kv["platform"], v
-				send = !fieldsHave(kv["embeds"], v)
+		platform = helperPlatform(kv["platform"])
+		if tools = m.toolsVersion(platform); tools != "" {
+			sendTools = !fieldsHave(kv["tools"], tools)
+			if embeds {
+				if v := m.embedVersion(platform); v != "" {
+					version = v
+					send = !fieldsHave(kv["embeds"], v)
+				}
 			}
 		}
 	}
-	embed := ""
-	if enrich != "" && level != nil && (deref(b.Model) != "" || version != "") {
-		var err error
-		if embed, err = read("embed.py"); err != nil {
-			return err
-		}
-	}
-	onnx := embed != "" && version != ""
-	pick := func(on bool, name string) (string, error) {
-		if !on {
-			return "", nil
-		}
-		return read(name)
-	}
-	onnxScript, err := pick(onnx, "embed_onnx.py")
-	if err != nil {
-		return err
-	}
-	fetch, err := pick(enrich != "", "fetch_embed.py")
-	if err != nil {
-		return err
-	}
-	deps, err := pick(enrich != "", "embed_deps.json")
-	if err != nil {
-		return err
-	}
+	onnx := version != ""
+	embedding := embeds && tools != "" && (onnx || deref(b.Model) != "")
 	when := func(on bool, v string) string {
 		if on {
 			return v
 		}
 		return ""
 	}
+	flag := func(on bool) string { return when(on, "1") }
 	createArg := "0"
 	if create {
 		createArg = "1"
 	}
 	threads := strconv.Itoa(m.Pool.Threads(ctx, site, key))
-	r, err := m.Pool.Run(ctx, site, key, []string{"bash", "-c", buildStart, "_", b.ID, buildRun, enrich, embed,
-		onnxScript, fetch, deps, when(onnx && send, version), when(sendText, readers),
-		b.GufiBin, b.SourceRoot, b.IndexDir, threads, py, deref(b.Model), createArg, strings.Join(level, " "),
-		strings.Join(text, " "), when(onnx, version), when(onnx, platform), readers, depth}, 60*time.Second)
+	r, err := m.Pool.Run(ctx, site, key, []string{"bash", "-c", buildStart, "_", b.ID, buildRun, when(sendTools, tools), when(onnx && send, version),
+		b.GufiBin, b.SourceRoot, b.IndexDir, threads, tools, deref(b.Model), createArg, strings.Join(level, " "),
+		strings.Join(text, " "), version, flag(reads), flag(embedding), depth}, 60*time.Second)
 	if err != nil {
 		return err
 	}
 	if r.Code != 0 || !strings.Contains(r.Stdout, "started") {
 		return apierr.New(502, "The build could not be started on %s: %s", remote.SiteName(site), lastOrExit(r.Stderr, r.Code))
 	}
-	// The readers first: the text pass waits for them.
-	if sendText {
+	// The helper first: the text pass waits for it.
+	if sendTools || (onnx && send) {
 		go func() {
-			m.sendReaders(site, key, readers)
+			if sendTools {
+				m.sendTools(site, key, platform, tools)
+			}
 			if onnx && send {
 				m.sendEmbed(site, key, platform, version)
 			}
 		}()
-	} else if onnx && send {
-		go m.sendEmbed(site, key, platform, version)
 	}
 	return nil
 }
@@ -448,7 +418,7 @@ func (m *Module) addBuild(ctx context.Context, w who, transport string, b *jsonv
 		return nil, 0, err
 	}
 	build := &libraries.RemoteBuild{ID: newBuildID(id), IndexDir: *p.IndexDir, SourceRoot: *p.SourceRoot, GufiBin: deref(p.GufiBin),
-		Python: p.Python, Model: p.Model, StartedAt: isoNow(), Depth: m.Settings.Depth(id), Progress: preparing()}
+		Model: p.Model, StartedAt: isoNow(), Depth: m.Settings.Depth(id), Progress: preparing()}
 	creating := false
 	for _, c := range p.Create {
 		if c == build.SourceRoot {
@@ -491,16 +461,13 @@ func (m *Module) rebuildRemote(ctx context.Context, w who, owner string, d *libr
 		return nil, err
 	}
 	build := *d.Build
-	// What the system can run is read again: a Python installed since the
-	// library was added is what a rebuild is often for.
+	// What the system has is read again: a GGUF model installed since the
+	// library was added is used.
 	if check, err := m.Pool.Run(ctx, site, key, []string{"sh", "-c", buildCheck, "_", d.Build.SourceRoot, d.Build.IndexDir}, 60*time.Second); err == nil && check.Code == 0 {
 		kv := keyValues(check.Stdout)
 		build.Python, build.Model = nil, nil
-		if py := kv["python"]; strings.HasPrefix(py, "/") {
-			build.Python = &py
-			if md := kv["model"]; strings.HasPrefix(md, "/") {
-				build.Model = &md
-			}
+		if md := kv["model"]; strings.HasPrefix(md, "/") {
+			build.Model = &md
 		}
 	}
 	build.ID, build.StartedAt, build.Depth, build.Progress = newBuildID(d.ID), isoNow(), m.Settings.Depth(d.ID), preparing()

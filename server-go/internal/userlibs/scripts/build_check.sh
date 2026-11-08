@@ -12,16 +12,8 @@ if [ -d "$2" ]; then
   echo "index_real=$(cd "$2" 2>/dev/null && pwd -P)"
 elif [ -e "$2" ]; then echo index=notdir
 else a=$(near "$2"); if [ -d "$a" ] && [ -w "$a" ]; then echo index=create; else echo index=nocreate; fi; echo "index_at=$a"; fi
-for p in python3.13 python3.12 python3.11 python3.10 python3; do
-  c=$(command -v "$p" 2>/dev/null) || continue
-  if "$c" -c 'import sqlite3, sys; sqlite3.connect(":memory:").execute("CREATE VIRTUAL TABLE t USING fts5(x)"); sys.exit(0 if sys.version_info >= (3, 10) else 1)' 2>/dev/null; then
-    echo "python=$c"; echo "python_version=$("$c" -c 'import sys; print("%d.%d" % sys.version_info[:2])')"
-    py=$c
-echo "platform=$("$py" -c 'import platform, sys; m = platform.machine().lower(); a = {"amd64": "x86_64", "arm64": "aarch64"}.get(m, m); s = "macos" if sys.platform == "darwin" else "linux" if sys.platform.startswith("linux") else sys.platform; print("%s-%s-cp%d%d" % (s, "arm64" if s == "macos" and a == "aarch64" else a, sys.version_info[0], sys.version_info[1]))' 2>/dev/null)"
+echo "platform=$(uname -s 2>/dev/null) $(uname -m 2>/dev/null)"
+echo "tools=$(cd "$HOME/.activate-studio/go" 2>/dev/null && for d in */ok; do [ -f "$d" ] && printf '%s ' "${d%/ok}"; done)"
 echo "embeds=$(cd "$HOME/.activate-studio/embed" 2>/dev/null && for d in */ok; do [ -f "$d" ] && printf '%s ' "${d%/ok}"; done)"
-echo "readers=$(cd "$HOME/.activate-studio/readers" 2>/dev/null && for d in */ok; do [ -f "$d" ] && printf '%s ' "${d%/ok}"; done)"
-    break
-  fi
-done
 m="$HOME/.activate-studio/models/minilm384.gguf"; [ -f "$m" ] && echo "model=$m"
 exit 0

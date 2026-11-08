@@ -18,10 +18,12 @@ import (
 
 // remotePdfSshd.test.mjs against the Go routes: libraries built on other
 // systems over real ssh, one sshd per stand-in host, run by this user on a
-// loopback port, each login forced into a HOME and PATH of its own. Nothing
-// is downloaded: where the Node file has the Studio send pypdf, a pdftotext
-// stand-in on the host's PATH is the reader. Each case is confirmed by
-// counting rows in the index itself. Skipped unless STUDIO_TEST_SSHD=1.
+// loopback port, each login forced into a HOME and PATH of its own. The
+// Studio sends its helper, which reads PDFs with pdftotext where the host
+// has it (a stand-in here) and with its own reader otherwise; nothing is
+// downloaded. Each case is confirmed by counting rows in the index itself.
+// Skipped unless STUDIO_TEST_SSHD=1; the sshds listen on
+// STUDIO_TEST_SSHD_PORTS (default 5990-5999).
 //
 //   STUDIO_TEST_SSHD=1 go test -run TestRemotePdf ./internal/userlibs/
 
@@ -109,8 +111,23 @@ func newSshdRig(t *testing.T) *sshdRig {
 	return r
 }
 
+// freePort is a port of STUDIO_TEST_SSHD_PORTS (first-last, by default
+// 5990-5999).
 func (r *sshdRig) freePort() int {
-	for ; r.next <= 5999; r.next++ {
+	last := 5999
+	if v := os.Getenv("STUDIO_TEST_SSHD_PORTS"); v != "" {
+		a, b, _ := strings.Cut(v, "-")
+		first, err1 := strconv.Atoi(a)
+		end, err2 := strconv.Atoi(b)
+		if err1 != nil || err2 != nil {
+			r.t.Fatalf("STUDIO_TEST_SSHD_PORTS=%s is not first-last", v)
+		}
+		if r.next < first || r.next > end {
+			r.next = first
+		}
+		last = end
+	}
+	for ; r.next <= last; r.next++ {
 		l, err := net.Listen("tcp", "127.0.0.1:"+strconv.Itoa(r.next))
 		if err == nil {
 			l.Close()
@@ -118,7 +135,7 @@ func (r *sshdRig) freePort() int {
 			return r.next - 1
 		}
 	}
-	r.t.Fatal("no free port in 5990-5999")
+	r.t.Fatal("no free port for an sshd")
 	return 0
 }
 
@@ -265,33 +282,28 @@ func TestRemotePdfOverRealSSH(t *testing.T) {
 		eq(t, gapsOf(l), []string{}, "gaps")
 	})
 
-	t.Run("where no reader can be sent, the row says so, and a Rebuild with one recovers the library", func(t *testing.T) {
+	t.Run("a host with no PDF tools reads its PDFs with the helper's own reader", func(t *testing.T) {
 		r.t = t
-		h := r.host("unsent", false, false)
-		l := r.build("unsent", h, "text")
+		h := r.host("nopoppler", false, false)
+		l := r.build("nopoppler", h, "text")
 		readyOrFail(t, l)
-		eq(t, []any{l["fullText"], r.pdfRows(l["indexRoot"].(string))}, []any{true, 0}, "no reader")
-		eq(t, gapsOf(l), []string{"1 PDF has no text: this system has no PDF reader"}, "gaps")
-		r.pdftotext(h.bin)
-		again := r.rebuild(l["id"].(string))
-		eq(t, []any{r.pdfRows(again["indexRoot"].(string)), gapsOf(again)}, []any{1, []string{}}, "recovered")
+		eq(t, []any{l["fullText"], r.pdfRows(l["indexRoot"].(string)), gapsOf(l)}, []any{true, 1, []string{}}, "built-in reader")
 	})
 
-	t.Run("a host with no Python says why it has no text, and a Rebuild after one is installed finds it", func(t *testing.T) {
+	t.Run("a host with no Python has its text, and says why it has no vectors", func(t *testing.T) {
 		r.t = t
 		h := r.host("nopython", true, true)
 		l := r.build("nopython", h, "meaning-documents")
 		readyOrFail(t, l)
-		eq(t, []any{l["fullText"], l["vectors"]}, []any{false, false}, "no text")
+		eq(t, []any{l["fullText"], r.pdfRows(l["indexRoot"].(string)), l["vectors"]}, []any{true, 1, false}, "text, no vectors")
 		g := gapsOf(l)
-		if len(g) < 2 {
+		if len(g) != 1 {
 			t.Fatalf("gaps %v", g)
 		}
-		match(t, g[0], `^No text in this index: this system has no Python 3\.10 or later`, "gap 0")
-		match(t, g[1], `^No search by meaning: there is no text to embed`, "gap 1")
-		r.python3(h.bin)
+		match(t, g[0], `^No search by meaning: the embedding model could not be installed`, "gap")
+		// The helper stays there for the next build.
 		again := r.rebuild(l["id"].(string))
-		eq(t, []any{again["fullText"], r.pdfRows(again["indexRoot"].(string))}, []any{true, 1}, "found")
+		eq(t, []any{again["fullText"], r.pdfRows(again["indexRoot"].(string))}, []any{true, 1}, "again")
 	})
 
 	t.Run("a Meaning depth with no embedding model to be had says so; the words are still there", func(t *testing.T) {
