@@ -20,8 +20,7 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/auth"
 )
 
-// Register serves the index's routes (indexRoutes.ts), GET /api/jobs/:id
-// (jobs.ts) and the history routes (history.ts) where Go builds the index
+// Register serves the index's routes (indexRoutes.ts) and the history routes (history.ts) where Go builds the index
 // (Node-free mode, or STUDIO_GO_INDEX=1), sets the index providers, and
 // runs the background sync where this process holds the index lock.
 // Elsewhere it registers nothing, and the routes stay Node's.
@@ -56,6 +55,12 @@ func Register(mux *http.ServeMux, a *app.App) {
 		}
 		return out, nil
 	}
+	a.Providers.IndexDirMS = func(ctx context.Context, rel string) (int64, error) { return ix.IndexDir(ctx, rel) }
+	a.Providers.IndexRootDB = func(ctx context.Context) (int64, error) { return ix.IndexRootDb(ctx) }
+	// afterChange: the folder list and the assistant's view of the folder
+	// are stale (gufi.ts, chat/context.ts); their owners answer Changed.
+	ix.Hooks.InvalidateContext = func() { a.Providers.Changed(context.Background(), "context") }
+	ix.OnChange(func(string) { a.Providers.Changed(context.Background(), "dbList", "context") })
 	a.AddBusy(ix.Running)
 	a.OnIndexWork("index sync", func(ctx context.Context) {
 		ix.Start(ctx, func(ctx context.Context, log func(string)) {
@@ -543,13 +548,6 @@ func (ix *Indexer) register(mux *http.ServeMux) {
 		return writeOK(w, ordered{{"moved", true}, {"restarting", false}, {"job", job}, {"note", "Restart the Studio to use the index there."}}.Map())
 	}))
 
-	mux.HandleFunc("GET /api/jobs/{id}", wrap(func(w http.ResponseWriter, r *http.Request) error {
-		j, ok := ix.Jobs.Get(jobID(r))
-		if !ok {
-			return notFound(w)
-		}
-		return writeOK(w, j)
-	}))
 
 	ix.History.register(mux, wrap)
 }

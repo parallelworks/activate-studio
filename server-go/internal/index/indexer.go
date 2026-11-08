@@ -23,7 +23,6 @@
 //	ix.Running() bool                         a job is queued or running
 //	ix.RequestSweep(delay)                    a sync soon
 //	ix.Job(id) (IndexJob, bool)               getIndexJob
-//	ix.Jobs                                   jobs.ts: Start(kind, total, work), Get(id)
 //	ix.Settings                               indexSettings.ts: Get, Built, Save, Threads, ForgetLibrary
 //	ix.OnChange(func(rel string))             after the index changed (afterChange)
 //	ix.Hooks                                  what other tracks provide (requireWritable, the map rebuild)
@@ -101,7 +100,6 @@ type Indexer struct {
 	P        Paths
 	Settings *SettingsStore
 	Log      *Log
-	Jobs     *Jobs
 	Hooks    Hooks
 	History  *History
 
@@ -159,7 +157,7 @@ func Of(a *app.App) *Indexer {
 
 // New is an indexer over p.
 func New(a *app.App, p Paths) *Indexer {
-	ix := &Indexer{App: a, P: p, Settings: NewSettingsStore(p.IndexBase), Log: NewLog(p.LogDir), Jobs: NewJobs(), recs: map[int]*jobRec{}}
+	ix := &Indexer{App: a, P: p, Settings: NewSettingsStore(p.IndexBase), Log: NewLog(p.LogDir), recs: map[int]*jobRec{}}
 	ix.status.LastChanges = []string{}
 	ix.status.SweepIntervalSec = 300
 	if v := os.Getenv("SWEEP_INTERVAL_SEC"); v != "" {
