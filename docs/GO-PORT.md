@@ -136,7 +136,7 @@ Dependencies, as an upper bound from the static call graph: `gufi` the GUFI bina
 | Mission tasks | tasks.ts | per agent, polls every 20 s and 2 s | pw CLI, the pw code daemon socket; workers call `/api/mcp` |
 | Workflow run watcher | runs.ts | per unfinished run, every `STUDIO_RUN_POLL_MS` (60 s) | `pw workflows runs view` |
 | Updates | updates.ts | 60 s after start, then every 2 min when due (personal installs only) | GitHub releases, `rpm`, `launchctl`, `lsregister`; restart with exit 76 |
-| RAG endpoint | ragEndpoint.ts | at start when enabled, or the start route | long-lived `pw endpoints run ... node -e FORWARDER` |
+| RAG endpoint | ragEndpoint.ts | at start when enabled, or the start route | long-lived `pw endpoints run ... node -e FORWARDER` (Go: `studio-server rag-forward`) |
 | ssh pool and pw code bridge sweepers | remoteExec.ts, pwcodeBridge.ts | every 60 s | close idle channels |
 | Remote embed heartbeat | remoteEmbed.ts | during a remote embed, every 60 s | ssh |
 | Label overlay recovery | tags.ts | once, 20 s after start | `gufi_query`, xattrs |
@@ -215,6 +215,14 @@ Routes that could move to Go next at low risk, all read-only over files Go alrea
 ## The Node bridge (transitional)
 
 While Go fronts Node, `internal/bridge` is the one channel between them. A ported module that needs state Node still owns, or that Node needs from Go, calls the other side with the bridge secret in `X-Studio-Bridge-Secret` (`bridge.Sign`, `bridge.Authorized`). The Go server makes the secret at start, or takes `STUDIO_BRIDGE_SECRET` (the test harness sets it), and passes it with `STUDIO_FRONT_URL` to the Node it spawns. Modules add the variables that tell a spawned Node which work Go has taken over with `bridge.RegisterNodeEnv`, and mark their bridge paths with `bridge.RegisterPrivatePrefix`; the server answers 404 on those paths to any request without the secret, before sign-in. Nothing here is used in Node-free mode, and the package is removed with Node.
+
+## The platform track
+
+`internal/platform` is the shared layer for the platform routes: the pw CLI (where it is found, `Exec` and `ExecFile` with Node's timeouts, buffer limits and error messages), the CLI's contexts and the `access.json` choice, token renewal (`auth token --print -o json --context <name>`, one at a time per context), the device sign-in (`pw auth login --device`), the platform API client and its reachability probe, and the GitHub client. `internal/jsonv` keeps JavaScript's object key order, `JSON.stringify`'s number and string formatting, and the npm `yaml` package's core schema, so answers built in Go are byte for byte Node's. `internal/platformtrack` registers the track's packages, one line each.
+
+While Node runs behind Go, the server passes `STUDIO_GO_PLATFORM=1` to the Node it starts. Node then leaves the run watcher, the fleet ticks, task rehydration and the RAG endpoint's auto-start to Go, sends a run it records to Go (`/internal/platform/runs`), rereads `runs.jsonl` when its stamp changes, and asks Go's task board (`/internal/platform/board`) about mission tokens on `/api/mcp`. Go asks Node, over `/api/__bridge/`, who the viewer is and which personal key they hold, and tells it when the access choice changes, when provider probes are stale, and when a conversation note is due. Both prefixes are private to the bridge. With `STUDIO_NODE_URL` (a Node the Go server did not start, as in the test harness) Node keeps that background work unless `STUDIO_PLATFORM_JOBS=1`.
+
+The RAG endpoint runs `pw endpoints run ... -- studio-server rag-forward`: the forwarder that was `node -e` is now a subcommand of the Go binary, with the same `STUDIO_TARGET_PORT` and `STUDIO_INJECT_KEY`. `STUDIO_GITHUB_API_URL` and `STUDIO_GITHUB_RAW_URL` point the GitHub client at a local fake in tests.
 
 ## Subcommands
 
