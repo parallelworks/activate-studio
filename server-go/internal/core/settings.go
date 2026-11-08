@@ -459,6 +459,17 @@ type policy struct {
 	Channel string `json:"channel"`
 }
 
+// MarshalJSON writes Preview as "prerelease", the value releases up to
+// v1.188 store and read, so a rollback to one of them stays on the channel
+// it was on; every reader here takes both spellings as preview.
+func (p policy) MarshalJSON() ([]byte, error) {
+	type plain policy
+	if p.Channel == "preview" {
+		p.Channel = "prerelease"
+	}
+	return json.Marshal(plain(p))
+}
+
 func asPolicy(m map[string]json.RawMessage) policy {
 	p := policy{Check: true, Install: "manual", Channel: "stable"}
 	if v, ok := m["check"]; ok && (string(v) == "true" || string(v) == "false") {

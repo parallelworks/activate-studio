@@ -311,6 +311,16 @@ func TestSettingsValidation(t *testing.T) {
 	if got, _ := json.Marshal(saved["sections"]); string(got) != `["chat","null"]` {
 		t.Fatalf("String(null) is \"null\": %s", got)
 	}
+	// On disk Preview is "prerelease", the value v1.188 and older read, so
+	// a rollback to one of them stays on the channel.
+	file, _ := os.ReadFile(filepath.Join(e.ix, "settings.json"))
+	if !strings.Contains(string(file), `"channel": "prerelease"`) {
+		t.Fatalf("settings.json: %s", file)
+	}
+	e.do("PUT", "/api/settings", map[string]any{"updates": map[string]any{"channel": "preview"}})
+	if file, _ := os.ReadFile(filepath.Join(e.ix, "settings.json")); !strings.Contains(string(file), `"channel": "prerelease"`) {
+		t.Fatalf("settings.json after preview: %s", file)
+	}
 }
 
 func TestConfigAndManifest(t *testing.T) {
