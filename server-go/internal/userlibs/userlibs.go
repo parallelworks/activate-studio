@@ -66,14 +66,17 @@ type Module struct {
 
 	mu        sync.Mutex
 	passed    map[string]passedProbe
-	checked   map[string]string
+	digests   map[string][2]string
 	sending   map[string]*sync.Mutex
 	followers map[string]*follower
-	embedSent int
+	sent      int
 	pinned    pinsFile
 	eng       *search.Engine
 	// offline, in tests, stands in for the downloads here.
 	offline func(platform string) string
+	// Helpers is a folder of the helpers by platform
+	// (<platform>/studio-remote), looked in first (STUDIO_REMOTE_HELPERS).
+	Helpers string
 }
 
 type follower struct {
@@ -104,6 +107,7 @@ func Of(a *app.App) *Module {
 	m.Users = libraries.Of(a).Users()
 	m.Settings = libraries.Of(a).FileSettings()
 	m.eng = search.Of(a)
+	m.Helpers = os.Getenv("STUDIO_REMOTE_HELPERS")
 	m.Jobs = func() *kb.Jobs {
 		if kb.Default != nil {
 			return kb.Default.Jobs
@@ -146,7 +150,7 @@ func New(p *platform.Platform, pool *remote.Pool, runners *remote.Runners, index
 		Users:     &libraries.Users{IndexBase: indexBase},
 		Settings:  libraries.NewFileIndexSettings(indexBase),
 		PollEvery: 3 * time.Second,
-		passed:    map[string]passedProbe{}, checked: map[string]string{}, sending: map[string]*sync.Mutex{},
+		passed:    map[string]passedProbe{}, digests: map[string][2]string{}, sending: map[string]*sync.Mutex{},
 		followers: map[string]*follower{},
 	}
 	m.Jobs = m.ownJobs

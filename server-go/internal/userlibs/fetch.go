@@ -19,12 +19,12 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/jsonv"
 )
 
-// fetch_embed.py's --download and --download-readers, the part of it the
-// Studio runs on its own machine: the pinned files of embed_deps.json into
-// a cache, under the names the script gives them, each checked against its
-// SHA-256. The other system still runs the script, with that cache and no
-// network, so the cache here is what the script would have left: the same
-// files under the same names and nothing else.
+// fetch_embed.py's download step in Go: a pinned file of embed_deps.json
+// into the Studio's cache (INDEX_BASE/embed-wheels), under the name the
+// script gives it, checked against its SHA-256, so the cache is what the
+// script would have left: the same files under the same names and
+// nothing else. The Studio fetches what it sends a build on another
+// system (embed.go) this way.
 
 // fetchIdle is how long a download may go without a byte, as the script's
 // urlopen(timeout=120) allows each connection and read.
@@ -150,53 +150,4 @@ func fetchAll(ctx context.Context, files []*jsonv.Object, cache string) error {
 		}
 	}
 	return nil
-}
-
-func values(o *jsonv.Object) []*jsonv.Object {
-	if o == nil {
-		return nil
-	}
-	out := []*jsonv.Object{}
-	for _, k := range o.Keys() {
-		out = append(out, jsonv.Obj(get(o, k)))
-	}
-	return out
-}
-
-// downloadPlatform is --download --platform: the wheels for a platform and
-// the model files, into the cache only.
-func (m *Module) downloadPlatform(ctx context.Context, platform, cache string) error {
-	wheels := jsonv.Obj(get(jsonv.Obj(get(m.pins(), "wheels")), platform))
-	if wheels == nil || len(wheels.Keys()) == 0 {
-		return fmt.Errorf("no pinned wheels for %s", platform)
-	}
-	files := values(wheels)
-	files = append(files, values(jsonv.Obj(get(jsonv.Obj(get(m.pins(), "model")), "files")))...)
-	return fetchAll(ctx, files, cache)
-}
-
-// downloadReaders is --download-readers: the document readers' wheels, into
-// the cache only.
-func (m *Module) downloadReaders(ctx context.Context, cache string) error {
-	return fetchAll(ctx, values(jsonv.Obj(get(m.pins(), "readers"))), cache)
-}
-
-// download fetches what is missing here into the Studio's own folder, with
-// platform "" for the document readers; why not, or "".
-func (m *Module) download(platform string) string {
-	ctx, cancel := context.WithTimeout(context.Background(), fetchTotal)
-	defer cancel()
-	fetchMu.Lock()
-	defer fetchMu.Unlock()
-	cache := filepath.Join(m.IndexBase, "embed-wheels")
-	var err error
-	if platform == "" {
-		err = m.downloadReaders(ctx, cache)
-	} else {
-		err = m.downloadPlatform(ctx, platform, cache)
-	}
-	if err != nil {
-		return err.Error()
-	}
-	return ""
 }

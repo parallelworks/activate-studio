@@ -6,9 +6,10 @@ import (
 	"path/filepath"
 )
 
-// The scripts a build on another system runs (remoteBuild.ts), written
-// from server/dist by scripts/golden/userlibs.mjs --scripts, so they are
-// Node's text byte for byte; TestScriptsAreNodes checks they still are.
+// The scripts a build on another system runs (remoteBuild.ts's, with the
+// Studio's helper in place of the indexer's Python): build_status.sh is
+// still Node's text byte for byte, which TestGoldenIsCurrent checks; the
+// others start the helper's passes and are Go's own.
 //
 //go:embed scripts/*.sh
 var scriptFiles embed.FS

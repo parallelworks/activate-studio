@@ -56,7 +56,6 @@ type probe struct {
 	// The check before a build.
 	IndexDir *string
 	Create   []string
-	Python   *string
 	Model    *string
 	Platform *string
 }

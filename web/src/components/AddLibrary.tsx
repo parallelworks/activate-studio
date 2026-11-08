@@ -55,7 +55,7 @@ function describe(where: Where, how: How, via: Via | undefined): string {
   if (via === 'workflow') return 'A folder on one of your clusters, indexed there by the platform\'s index workflow with your own key, on the login node or as a Slurm job. Only you see it.'
   const over = via === 'pw' ? 'over pw ssh with this computer\'s pw sign-in' : 'over ssh with your own keys (no password prompts)'
   return how === 'build'
-    ? `A folder on a remote system, indexed there with GUFI ${over}. The build runs there, with text extraction where Python is installed, and leaves the folder as it is.`
+    ? `A folder on a remote system, indexed there with GUFI ${over}. The build runs there, reads the text of its files where it can, and leaves the folder as it is.`
     : `A GUFI index already on a remote system, read ${over}. Read only: nothing is written there.`
 }
 

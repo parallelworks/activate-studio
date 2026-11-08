@@ -115,6 +115,7 @@ func newHarness(t *testing.T, env map[string]string) *harness {
 	h.m = New(p, pool, nil, ix, root, nil)
 	h.m.PollEvery = 50 * time.Millisecond
 	h.m.offline = func(string) string { return "offline" } // nothing is downloaded here
+	h.m.Helpers = testHelpers(t)
 	jobs := &kb.Jobs{}
 	h.m.Jobs = func() *kb.Jobs { return jobs }
 	h.mux = http.NewServeMux()
@@ -648,7 +649,7 @@ func TestRemoteBuildCheckAndBuild(t *testing.T) {
 	eq(t, r.Body["sourceRoot"], box+"/inbox", "source")
 	match(t, r.Body["indexDir"], `^`+regexp.QuoteMeta(box)+`/\.activate-studio/indexes/inbox-[0-9a-f]{8}$`, "index dir")
 	eq(t, r.Body["create"], []any{box + "/inbox"}, "create")
-	match(t, stepDetail(r, "extract"), `Text is extracted there with Python 3\.\d+`, "extract")
+	match(t, stepDetail(r, "extract"), `^Text is extracted there by the Studio's own reader, which the first build sends \(about \d+ MB, once\) to ~/\.activate-studio/go`, "extract")
 	if _, err := os.Stat(box + "/inbox"); err == nil {
 		t.Error("a check makes nothing")
 	}

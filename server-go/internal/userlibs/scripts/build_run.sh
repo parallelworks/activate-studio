@@ -1,4 +1,4 @@
-s=$1 bin=$2 src=$3 idx=$4 threads=$5 py=$6 model=$7 create=$8 meaning=${9:-} text=${10:-} onnx=${11:-} platform=${12:-} readers=${13:-} depth=${14:-}
+s=$1 bin=$2 src=$3 idx=$4 threads=$5 tools=$6 model=$7 create=$8 meaning=${9:-} text=${10:-} onnx=${11:-} reads=${12:-} embeds=${13:-} depth=${14:-}
 uname -n > "$s/host" 2>/dev/null
 echo $$ > "$s/pid"
 phase() { printf '%s\n' "$1" > "$s/phase"; }
@@ -44,64 +44,51 @@ fi
 # and the tree can be moved; their group and other bits stay the source's.
 [ "$(id -u)" = 0 ] || find "$stage/$base" -type d ! -perm -700 -exec chmod u+rwx {} + 2>/dev/null
 new="$stage/$base"
-# The Studio's ONNX embedding model and its packages for this Python, kept
-# in ~/.activate-studio/embed/<version> and installed once: from what the
-# Studio sends while the build runs (it keeps <version>.sending touched as
-# it goes, and removes it when done), by fetch_embed.py with no network, or
-# downloaded here for what it could not send, where this system reaches the
-# network. Several builds may install at once; the first to finish keeps
+# The Studio's helper, which runs the text pass and the embedder, kept in
+# ~/.activate-studio/go/<version>, and ONNX Runtime with the embedding
+# model, kept in ~/.activate-studio/embed/<version>: each taken into use
+# once, from what the Studio sends while the build runs (it keeps
+# <version>.sending touched as it goes, and removes it when done), after
+# the helper has checked every file against the SHA256SUMS sent last.
+# Several builds may take one into use at once; the first to finish keeps
 # its copy.
+g="$HOME/.activate-studio/go/$tools"
+helper="$g/studio-remote"
+# kitready DIR CHECKER LOG: DIR whole, from DIR.files.
+kitready() {
+  [ -f "$1/ok" ] && return 0
+  while [ -f "$1.sending" ] && [ -n "$(find "$1.sending" -mmin -10 2>/dev/null)" ]; do sleep 1; done
+  t="$1.tmp-$$"; rmtree "$t"
+  if [ -f "$1.files/SHA256SUMS" ] && mkdir -p "$t" && cp "$1.files"/* "$t"/ 2>"$3" && { [ ! -f "$t/studio-remote" ] || chmod 755 "$t/studio-remote"; } &&
+    "$2" verify "$t" $(awk '{ print $2 "=" $1 }' "$t/SHA256SUMS") >> "$3" 2>&1; then
+    : > "$t/ok"
+    [ -e "$1" ] || mv "$t" "$1"
+    [ -f "$1/ok" ] && rmtree "$1.files"
+  fi
+  rmtree "$t"
+  [ -f "$1/ok" ]
+}
+toolsready() { kitready "$g" "$g.tmp-$$/studio-remote" "$s/tools.log"; }
 e="$HOME/.activate-studio/embed/$onnx"
-onnxready() {
-  [ -f "$e/ok" ] && return 0
-  while [ -f "$e.sending" ] && [ -n "$(find "$e.sending" -mmin -10 2>/dev/null)" ]; do sleep 2; done
-  t="$e.tmp-$$"; rmtree "$t"
-  if "$py" "$s/fetch_embed.py" --deps "$t/deps" --no-readers --model "$t/model" --platform "$platform" --cache "$e.files" > "$s/onnx.log" 2>&1 &&
-    PYTHONPATH="$t/deps" "$py" -c 'import numpy, onnxruntime, tokenizers' >> "$s/onnx.log" 2>&1; then
-    : > "$t/ok"
-    [ -e "$e" ] || mv "$t" "$e"
-    [ -f "$e/ok" ] && rmtree "$e.files"
-  fi
-  rmtree "$t"
-  [ -f "$e/ok" ]
-}
-# The document readers, kept in ~/.activate-studio/readers/<version> and
-# installed the same way, before the text pass that needs them.
-r="$HOME/.activate-studio/readers/$readers"
-readersready() {
-  [ -f "$r/ok" ] && return 0
-  while [ -f "$r.sending" ] && [ -n "$(find "$r.sending" -mmin -10 2>/dev/null)" ]; do sleep 1; done
-  t="$r.tmp-$$"; rmtree "$t"
-  if "$py" "$s/fetch_embed.py" --deps "$t/deps" --readers-only --cache "$r.files" > "$s/readers.log" 2>&1 &&
-    PYTHONPATH="$t/deps" "$py" -c 'import pypdf' >> "$s/readers.log" 2>&1; then
-    : > "$t/ok"
-    [ -e "$r" ] || mv "$t" "$r"
-    [ -f "$r/ok" ] && rmtree "$r.files"
-  fi
-  rmtree "$t"
-  [ -f "$r/ok" ]
-}
+onnxready() { kitready "$e" "$helper" "$s/onnx.log"; }
 fulltext=false vectors=false textwhy= vecwhy=
 rm -f "$s/text.json" "$s/embed.json"
-[ -n "$py" ] || [ "$depth" = names ] || [ -z "$depth" ] || textwhy="this system has no Python 3.10 or later with SQLite's full-text module"
-if [ -n "$py" ] && [ -f "$s/enrich.py" ]; then
+if [ "$reads" = 1 ]; then
+  if [ -z "$tools" ]; then textwhy="the Studio has no helper for this system ($(uname -s) $(uname -m))"
+  elif ! toolsready; then textwhy="the Studio's helper could not be installed: $(tail -n 1 "$s/tools.log" 2>/dev/null)"; fi
+fi
+if [ "$reads" = 1 ] && [ -z "$textwhy" ]; then
   phase extract
-  if [ -n "$readers" ] && [ -f "$s/fetch_embed.py" ] && readersready; then
-    export PYTHONPATH="$r/deps${PYTHONPATH:+:$PYTHONPATH}"
-  fi
   # shellcheck disable=SC2086
-  if "$py" "$s/enrich.py" --kb-root "$src" --index "$new" --extract-cache "$idx/.extract" --report "$s/text.json" $text > "$s/enrich.log" 2>&1; then fulltext=true; else textwhy="the text pass stopped: $(tail -n 1 "$s/enrich.log")"; fi
-  if [ "$fulltext" = true ] && [ -x "$bin/gufi_sqlite3" ] && [ -f "$s/embed.py" ]; then
+  if "$helper" text --kb-root "$src" --index "$new" --extract-cache "$idx/.extract" --report "$s/text.json" $text > "$s/text.log" 2>&1; then fulltext=true; else textwhy="the text pass stopped: $(tail -n 1 "$s/text.log")"; fi
+  if [ "$fulltext" = true ] && [ -x "$bin/gufi_sqlite3" ] && [ "$embeds" = 1 ]; then
     phase embed
     onnxdir=
-    if [ -n "$onnx" ] && [ -f "$s/fetch_embed.py" ] && onnxready; then
-      onnxdir=$e
-      export PYTHONPATH="$e/deps${PYTHONPATH:+:$PYTHONPATH}"
-    fi
+    if [ -n "$onnx" ] && onnxready; then onnxdir=$e; fi
     if [ -n "$onnxdir" ] || [ -n "$model" ]; then
-      # embed.py takes the ONNX model when it loads, else the GGUF one.
+      # The ONNX model when its kit is there, else the GGUF one.
       # shellcheck disable=SC2086
-      "$py" "$s/embed.py" --index "$new" ${model:+--model "$model"} ${onnxdir:+--onnx "$onnxdir/model"} --gufi-sqlite3 "$bin/gufi_sqlite3" --cache "$idx/.embed-cache.db" --prune --report "$s/embed.json" $meaning > "$s/embed.log" 2>&1 && vectors=true
+      STUDIO_ORT_LIB=${onnxdir:+$onnxdir/libonnxruntime.so} "$helper" embed --index "$new" ${model:+--model "$model"} ${onnxdir:+--onnx "$onnxdir"} --gufi-sqlite3 "$bin/gufi_sqlite3" --cache "$idx/.embed-cache.db" --prune --report "$s/embed.json" $meaning > "$s/embed.log" 2>&1 && vectors=true
       [ "$vectors" = true ] || vecwhy="the embedding pass stopped: $(tail -n 1 "$s/embed.log")"
     else
       vecwhy="the embedding model could not be installed: $(tail -n 1 "$s/onnx.log" 2>/dev/null)"
@@ -119,7 +106,7 @@ rmtree "$stage"; rmtree "$idx/.old"
 case "$depth" in meaning-*) if [ "$vectors" != true ] && [ -z "$vecwhy" ]; then
   if [ "$fulltext" != true ]; then vecwhy="there is no text to embed"
   elif [ ! -x "$bin/gufi_sqlite3" ]; then vecwhy="there is no gufi_sqlite3 in $bin"
-  else vecwhy="there is no embedding model for this Python"; fi
+  else vecwhy="there is no embedding model for this system"; fi
 fi ;; esac
 phase count
 c=$("$bin/gufi_query" -n "$threads" -d '|' -a 1 -I 'CREATE TABLE t (d INT64, f INT64);' -K 'CREATE TABLE agg (d INT64, f INT64);' \

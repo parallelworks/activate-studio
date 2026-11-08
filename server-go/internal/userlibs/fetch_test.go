@@ -3,6 +3,7 @@
 package userlibs
 
 import (
+	"archive/zip"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -21,6 +22,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/parallelworks/activate-studio/server-go/internal/jsonv"
 	"github.com/parallelworks/activate-studio/server-go/internal/remote"
 )
 
@@ -363,5 +365,67 @@ func TestDownloadForAnUnknownPlatform(t *testing.T) {
 	}
 	if got := f.take(); len(got) != 0 {
 		t.Errorf("asked %v", got)
+	}
+}
+
+func values(o *jsonv.Object) []*jsonv.Object {
+	if o == nil {
+		return nil
+	}
+	out := []*jsonv.Object{}
+	for _, k := range o.Keys() {
+		out = append(out, jsonv.Obj(get(o, k)))
+	}
+	return out
+}
+
+// downloadPlatform is fetch_embed.py --download --platform, from fetchAll: the wheels for a platform and
+// the model files, into the cache only.
+func (m *Module) downloadPlatform(ctx context.Context, platform, cache string) error {
+	wheels := jsonv.Obj(get(jsonv.Obj(get(m.pins(), "wheels")), platform))
+	if wheels == nil || len(wheels.Keys()) == 0 {
+		return fmt.Errorf("no pinned wheels for %s", platform)
+	}
+	files := values(wheels)
+	files = append(files, values(jsonv.Obj(get(jsonv.Obj(get(m.pins(), "model")), "files")))...)
+	return fetchAll(ctx, files, cache)
+}
+
+// downloadReaders is fetch_embed.py --download-readers, from fetchAll: the document readers' wheels, into
+// the cache only.
+func (m *Module) downloadReaders(ctx context.Context, cache string) error {
+	return fetchAll(ctx, values(jsonv.Obj(get(m.pins(), "readers"))), cache)
+}
+
+func TestHelperPlatforms(t *testing.T) {
+	for in, want := range map[string]string{"Linux x86_64": "linux-amd64", "Linux aarch64\n": "linux-arm64", "Darwin arm64": "", "": ""} {
+		if got := helperPlatform(in); got != want {
+			t.Errorf("%q: %q, want %q", in, got, want)
+		}
+	}
+}
+
+// The library is unpacked from the wheel once, under the wheel's digest.
+func TestONNXRuntimeFromTheWheel(t *testing.T) {
+	m := moduleAt(t, t.TempDir())
+	wheel := filepath.Join(t.TempDir(), "ort.whl")
+	f, _ := os.Create(wheel)
+	z := zip.NewWriter(f)
+	for name, body := range map[string]string{"onnxruntime/capi/libonnxruntime.so.1.31.0": "the library", "onnxruntime/capi/onnxruntime_pybind11_state.so": "python", "onnxruntime/__init__.py": ""} {
+		w, _ := z.Create(name)
+		w.Write([]byte(body))
+	}
+	z.Close()
+	f.Close()
+	sum := strings.Repeat("ab", 32)
+	p, err := m.ortLibrary(wheel, sum)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(p); string(b) != "the library" || filepath.Base(p) != sum[:16]+"-libonnxruntime.so" {
+		t.Fatalf("%s: %q", p, b)
+	}
+	if _, err := m.ortLibrary(filepath.Join(t.TempDir(), "none.whl"), sum); err == nil {
+		t.Error("no wheel, no library")
 	}
 }
