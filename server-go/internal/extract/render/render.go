@@ -368,7 +368,7 @@ func (r *renderer) stop() bool {
 	}
 	if r.ops > maxOps || r.content > maxContent {
 		r.err = ErrTooComplex
-	} else if r.ops%4096 == 0 && r.ctx.Err() != nil {
+	} else if r.ctx.Err() != nil { // every operator: one can be a page-sized fill
 		r.err = r.ctx.Err()
 	}
 	return r.err != nil

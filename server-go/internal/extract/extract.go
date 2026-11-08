@@ -41,7 +41,9 @@ import (
 	"time"
 
 	"github.com/giraffesyo/downmark"
+
 	"github.com/giraffesyo/downmark/all"
+	"github.com/parallelworks/activate-studio/server-go/internal/kb"
 )
 
 // MaxText is the most text kept per document, in characters (enrich.py
@@ -267,8 +269,13 @@ func normSuffix(s string) string {
 
 // Suffix is a file name's lower-cased extension, as enrich.py and
 // preextract.ts take it.
+//
+// It is Node's path.extname (kb.ExtName), lower-cased: no suffix for a
+// dotfile such as ".bashrc", ".y" for "..y". enrich.py's pathlib suffix
+// agrees except on a name ending in a dot ("." against ""), which names
+// no kind either way.
 func Suffix(name string) string {
-	return strings.ToLower(filepath.Ext(name))
+	return strings.ToLower(kb.ExtName(filepath.ToSlash(name)))
 }
 
 // KindOf is how this extractor reads a file of this name.
