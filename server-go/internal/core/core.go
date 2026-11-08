@@ -33,6 +33,7 @@ type Core struct {
 	log   *slog.Logger
 	icons *iconCache
 	exts  *extensions.Set
+	step  stepMesher
 }
 
 // Register registers the core routes on mux and the core's start-up work

@@ -7,6 +7,7 @@ require (
 	github.com/giraffesyo/downmark v0.10.0
 	github.com/giraffesyo/pdf v0.6.0
 	github.com/richardlehane/mscfb v1.0.9
+	github.com/tetratelabs/wazero v1.12.0
 	golang.org/x/crypto/x509roots/fallback v0.0.0-20261105095718-a1058eb15227
 	golang.org/x/sys v0.49.0
 	golang.org/x/text v0.43.0

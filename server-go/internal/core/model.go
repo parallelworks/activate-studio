@@ -1,8 +1,9 @@
 package core
 
 import (
-	"bytes"
+	"context"
 	"encoding/binary"
+	"errors"
 	"io"
 	"math"
 	"net/http"
@@ -10,10 +11,12 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/apierr"
 	"github.com/parallelworks/activate-studio/server-go/internal/app"
-	"github.com/parallelworks/activate-studio/server-go/internal/jsonobj"
+	"github.com/parallelworks/activate-studio/server-go/internal/stepmesh"
 )
 
 // 3D previews (model.ts): STL is meshed here and the geometry goes to the
@@ -24,9 +27,12 @@ import (
 //	bytes    the arrays, back to back, in the order the header names them
 //
 // The cache (INDEX_BASE/model-cache/<path>.mdl) is the same file Node
-// writes, so either server serves the other's. STEP needs OpenCascade
-// (occt-import-js, WebAssembly, in Node); a STEP file not in the cache goes
-// to Node while Node runs, and answers 501 without it.
+// writes, byte for byte, so either server serves the other's. STEP is
+// meshed by OpenCascade: occt-import-js's WebAssembly, as Node runs it, here
+// under wazero (internal/stepmesh) from the module scripts/occt/prepare.mjs
+// prepares (STUDIO_OCCT_WASM, else ProjectRoot/server-go/occt/
+// occt-import-js.wasm). Without that module a STEP file not in the cache
+// goes to Node while Node runs, and answers 501 without it.
 
 // MaxModelBytes is model.ts's MAX_MODEL_BYTES.
 const MaxModelBytes = 80 * 1024 * 1024
@@ -94,27 +100,46 @@ func ParseSTL(buf []byte) ([]float32, error) {
 
 // EncodeSTL is encodeModel for one STL mesh.
 func EncodeSTL(pos []float32) []byte {
-	span := jsonobj.New()
-	span.SetValue("o", 0)
-	span.SetValue("n", len(pos))
-	mesh := jsonobj.New()
-	mesh.SetValue("positions", span)
-	h := jsonobj.New()
-	h.SetValue("format", "stl")
-	h.SetValue("triangles", len(pos)/9)
-	h.SetValue("meshes", []any{mesh})
-	js, _ := h.MarshalJSON()
-	pad := (4 - len(js)%4) % 4
-	var b bytes.Buffer
-	b.Grow(4 + len(js) + pad + 4*len(pos))
-	binary.Write(&b, binary.LittleEndian, uint32(len(js)+pad))
-	b.Write(js)
-	b.Write(bytes.Repeat([]byte{' '}, pad))
-	for _, f := range pos {
-		binary.Write(&b, binary.LittleEndian, math.Float32bits(f))
-	}
-	return b.Bytes()
+	return stepmesh.Encode("stl", float64(len(pos))/9, []stepmesh.Mesh{{Positions: pos}})
 }
+
+// OcctWasm is the prepared occt-import-js module.
+func OcctWasm(projectRoot string) string {
+	if p := os.Getenv("STUDIO_OCCT_WASM"); p != "" {
+		return p
+	}
+	return filepath.Join(projectRoot, "server-go", "occt", "occt-import-js.wasm")
+}
+
+// stepMesher is the STEP mesher, made at the first STEP file; nil (and
+// the reason logged once) when the module is not there or does not load.
+type stepMesher struct {
+	mu   sync.Mutex
+	m    *stepmesh.Mesher
+	err  error
+	done bool
+}
+
+func (c *Core) mesher() (*stepmesh.Mesher, error) {
+	c.step.mu.Lock()
+	defer c.step.mu.Unlock()
+	if !c.step.done {
+		c.step.done = true
+		wasm := OcctWasm(c.a.Cfg.ProjectRoot)
+		start := time.Now()
+		c.step.m, c.step.err = stepmesh.New(context.Background(), wasm, filepath.Join(c.a.Cfg.IndexBase, "wasm-cache"))
+		if c.step.err != nil {
+			c.log.Warn("model: STEP meshing unavailable", "wasm", wasm, "err", c.step.err)
+		} else {
+			c.step.m.Log = func(line string) { c.log.Debug("occt-import-js", "out", line) }
+			c.log.Info("model: STEP mesher ready", "package", c.step.m.Package(), "ms", time.Since(start).Milliseconds())
+		}
+	}
+	return c.step.m, c.step.err
+}
+
+// stepTimeout bounds one STEP file's meshing; Node has no bound.
+const stepTimeout = 10 * time.Minute
 
 func (c *Core) model(w http.ResponseWriter, r *http.Request) error {
 	rel := r.URL.Query().Get("path")
@@ -141,24 +166,45 @@ func (c *Core) model(w http.ResponseWriter, r *http.Request) error {
 	if cst, err := os.Stat(cached); err == nil && cst.ModTime().After(st.ModTime()) {
 		return sendModel(w, cached)
 	}
-	if suffix != ".stl" {
-		c.log.Info("model: STEP meshing is Node's (OpenCascade); handing the request on", "path", rel)
-		c.a.Node().ServeHTTP(w, app.HandOff(r, "STEP meshing (OpenCascade) until a Go or helper mesher"))
-		return nil
-	}
-	buf, err := os.ReadFile(abs)
-	if err != nil {
-		return err
-	}
-	pos, err := ParseSTL(buf)
-	if err != nil {
-		return err
+	var data []byte
+	if suffix == ".stl" {
+		buf, err := os.ReadFile(abs)
+		if err != nil {
+			return err
+		}
+		pos, err := ParseSTL(buf)
+		if err != nil {
+			return err
+		}
+		data = EncodeSTL(pos)
+	} else {
+		m, merr := c.mesher()
+		if merr != nil {
+			c.a.Node().ServeHTTP(w, app.HandOff(r, "STEP meshing: no prepared occt-import-js module ("+OcctWasm(c.a.Cfg.ProjectRoot)+")"))
+			return nil
+		}
+		buf, err := os.ReadFile(abs)
+		if err != nil {
+			return err
+		}
+		// The file is meshed and cached whether or not the client waits, as
+		// Node does.
+		ctx, cancel := context.WithTimeout(contextWithoutCancel(r), stepTimeout)
+		defer cancel()
+		meshes, err := m.ReadStep(ctx, buf)
+		if errors.Is(err, stepmesh.ErrUnconvertible) {
+			return apierr.New(422, "could not convert STEP geometry")
+		}
+		if err != nil {
+			return err
+		}
+		data = stepmesh.Encode("step", stepmesh.Triangles(meshes), meshes)
 	}
 	if err := os.MkdirAll(filepath.Dir(cached), 0o755); err != nil {
 		return err
 	}
 	tmp := cached + "." + strconv.Itoa(os.Getpid()) + ".tmp"
-	if err := os.WriteFile(tmp, EncodeSTL(pos), 0o644); err != nil {
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
 		return err
 	}
 	if err := os.Rename(tmp, cached); err != nil {
