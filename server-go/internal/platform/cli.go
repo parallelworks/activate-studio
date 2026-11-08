@@ -42,7 +42,7 @@ func runnableFile(f string) bool {
 	if err != nil || !st.Mode().IsRegular() {
 		return false
 	}
-	return syscall.Access(f, 0x1) == nil
+	return executable(f)
 }
 
 // ChosenCLI is chosenPwCli: the location chosen in Model access, or "".
