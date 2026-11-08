@@ -220,10 +220,10 @@ func (ix *Indexer) afterChange(rel string) {
 type Phase struct {
 	ID    string  `json:"id"`
 	Label string  `json:"label"`
+	Unit  string  `json:"unit"`
 	State string  `json:"state"`
 	Done  int     `json:"done"`
 	Total int     `json:"total"`
-	Unit  string  `json:"unit"`
 	Step  *string `json:"step"`
 	MS    *int64  `json:"ms"`
 	Note  *string `json:"note"`

@@ -630,13 +630,18 @@ func (ix *Indexer) rebuildMap() {
 	if _, _, m := DepthParts(ix.Settings.Get("kb").Depth); m == "off" {
 		return
 	}
-	s, err := semanticmap.Build(semanticmap.IndexSource(ix.P.GufiIndex), ix.P.SemanticMapDir, semanticmap.Options{})
+	// The defaults of semantic_map.py and cmd/semantic-map.
+	var s semanticmap.Summary
+	err := safeErr(func() (err error) {
+		s, err = semanticmap.Build(semanticmap.IndexSource(ix.P.GufiIndex), ix.P.SemanticMapDir, semanticmap.Options{Sample: 3000, Fit: 20000})
+		return err
+	})
 	if err != nil {
-		ix.Log.Write("semantic map: " + err.Error())
+		ix.logInfo("semantic map (kb) failed: " + err.Error())
 		return
 	}
 	b, _ := json.Marshal(s)
-	ix.Log.Write("semantic map: " + string(b))
+	ix.logInfo("semantic map (kb): " + string(b))
 }
 
 // ---- LibreOffice ----
@@ -675,4 +680,11 @@ func lookSoffice() string {
 		}
 	}
 	return ""
+}
+
+// logInfo is the server's own log (Node's console), not the index log.
+func (ix *Indexer) logInfo(msg string) {
+	if ix.App != nil && ix.App.Log != nil {
+		ix.App.Log.Info(msg)
+	}
 }
