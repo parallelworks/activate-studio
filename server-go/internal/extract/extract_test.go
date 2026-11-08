@@ -391,7 +391,9 @@ func TestExternal(t *testing.T) {
 		t.Fatalf("%+v", r)
 	}
 	start := time.Now()
-	if r := x.Update(ctx, filepath.Join(kb, "d.slow"), "d.slow", cache); r.Action != Failed || time.Since(start) > 10*time.Second {
+	// sleep 30 against a 1 s timeout: well under 30 s means it was killed,
+	// with room for a loaded host.
+	if r := x.Update(ctx, filepath.Join(kb, "d.slow"), "d.slow", cache); r.Action != Failed || time.Since(start) > 25*time.Second {
 		t.Fatalf("%+v after %s", r, time.Since(start))
 	}
 	if r := x.Update(ctx, filepath.Join(kb, "e.none"), "e.none", cache); r.Action != Failed {

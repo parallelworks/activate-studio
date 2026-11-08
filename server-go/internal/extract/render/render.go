@@ -361,6 +361,9 @@ func newRenderer(ctx context.Context, pc *model.Context, b box, rot int, dpi flo
 	return r
 }
 
+// testOnOp, when set by a test, is called after each operator is counted.
+var testOnOp func(ops int)
+
 // stop reports whether the page has to end: a limit or the deadline.
 func (r *renderer) stop() bool {
 	if r.err != nil {
@@ -425,6 +428,9 @@ func (r *renderer) run(content []byte, res types.Dict, depth int) {
 			continue
 		}
 		r.ops++
+		if testOnOp != nil {
+			testOnOp(r.ops)
+		}
 		num := func(i int) float64 {
 			if i < len(ops) && ops[i].kind == 'n' {
 				return ops[i].num
