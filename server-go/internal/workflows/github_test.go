@@ -397,4 +397,7 @@ func TestIconCandidateOrder(t *testing.T) {
 	eq(t, "blob", IconCandidates("/api/blobs/z", "", P), `["`+P+`/api/blobs/z"]`)
 	eq(t, "http", IconCandidates("http://plain.example/a.png", "", P), `[]`)
 	eq(t, "none", IconCandidates("", "", P), `[]`)
+	// GitHub's raw host as configured is read like GitHub's own.
+	t.Setenv("STUDIO_GITHUB_RAW_URL", "http://127.0.0.1:5986/gh-raw")
+	eq(t, "raw override", IconCandidates("http://127.0.0.1:5986/gh-raw/o/r/main/thumbnail.png", "/fb", P), `["http://127.0.0.1:5986/gh-raw/o/r/main/thumbnail.png","`+P+`/fb"]`)
 }

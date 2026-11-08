@@ -379,7 +379,7 @@ func IconCandidates(imageURL, fallbackURL, platformOrigin string) []string {
 	anonymous := true
 	if u, err := url.Parse(primary); err == nil && u.Scheme != "" && u.Host != "" {
 		h := u.Hostname()
-		anonymous = strings.HasPrefix(primary, platformOrigin) || h == "github.com" || strings.HasSuffix(h, ".githubusercontent.com")
+		anonymous = strings.HasPrefix(primary, platformOrigin) || h == "github.com" || strings.HasSuffix(h, ".githubusercontent.com") || strings.HasPrefix(primary, rawBase()+"/")
 	}
 	ordered := []string{primary, fallback}
 	if !anonymous {
@@ -388,7 +388,8 @@ func IconCandidates(imageURL, fallbackURL, platformOrigin string) []string {
 	var out []string
 	seen := map[string]bool{}
 	for _, u := range ordered {
-		if strings.HasPrefix(u, "https://") && !seen[u] {
+		// https only, and GitHub's raw host as configured (STUDIO_GITHUB_RAW_URL).
+		if (strings.HasPrefix(u, "https://") || strings.HasPrefix(u, rawBase()+"/")) && !seen[u] {
 			seen[u] = true
 			out = append(out, u)
 		}
