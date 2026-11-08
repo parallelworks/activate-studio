@@ -1,0 +1,21 @@
+Sheet: Feuil1
+Sample Excel Worksheet - Numbers and their Squares
+	Number	Square		Formatted
+	1	1		1
+	2	4		1.55
+	3	9
+	4	16
+	5	25		1125
+	6	36		1620
+	7	49		7105
+	8	64		15680
+	9	81		189945
+	10	100		1234500
+	11	121
+	12	144
+	13	169		169
+	14	196		1960
+	15	225		1253.82
+Written and saved in Microsoft Excel X for Mac Service Release 1.
+Sheet: Feuil2
+Sheet: Feuil3
