@@ -226,7 +226,10 @@ jobs:
         env:
           OUT_DIR: ${{ runner.temp }}/out
         run: deploy/mac/check_app.sh "$OUT_DIR/ACTIVATE Studio.app" --run
+      # Kept when the checks fail too, so bridge-go can still try the update
+      # (the Go-only build fails the checks of the routes not yet ported).
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() }}
         with:
           name: activate-studio-${{ matrix.server }}-macos-arm64
           path: |

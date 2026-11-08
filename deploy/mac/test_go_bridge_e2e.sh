@@ -117,7 +117,12 @@ ditto "$T/old/$NAME.app" "$APP"
 printf "PORT='%s'\nKB_ROOT='%s'\nSTUDIO_UPDATE_URL='http://127.0.0.1:%s'\n" "$PORT" "$KB" "$FEED_PORT" >"$DATA/studio.env"
 "$NODE" "$MJS" serve "$T/rel" "$FEED_PORT" &
 pids+=($!)
-env -i HOME="$H" PATH=/usr/bin:/bin:/usr/sbin:/sbin /bin/bash "$RES/studio-run.sh" "$DATA" >/dev/null 2>&1 &
+# As launcher.sh starts it where no LaunchAgent is loaded (STUDIO_APP_BUNDLE
+# and STUDIO_SUPERVISOR=detached): an update then restarts it through exit
+# 76, which runs the new copy's own studio-run.sh. With a LaunchAgent,
+# launchctl kickstart runs the new copy's studio-run.sh instead.
+env -i HOME="$H" PATH=/usr/bin:/bin:/usr/sbin:/sbin STUDIO_APP_BUNDLE="$APP" STUDIO_SUPERVISOR=detached \
+  /bin/bash "$RES/studio-run.sh" "$DATA" >/dev/null 2>&1 &
 pids+=($!)
 if wait_version "$OLD_VERSION" 120; then ok "$OLD_VERSION runs"; else bad "$OLD_VERSION did not start"; log_tail; exit 1; fi
 server_is node && ok "with the Node server" || bad "the server is not Node's"
