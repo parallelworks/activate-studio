@@ -17,8 +17,9 @@
 //	embed.Unavailable(modelDir) string      why the backend cannot run, "" when it can
 //	embed.New(modelDir, Options) (*Embedder, error)
 //	(*Embedder).Embed(texts) ([][]byte, error)   one blob per text, in order
-//	embed.Queries(ctx, modelDir, texts)    query vectors from a shared, lazily
-//	                                        loaded embedder (embedWorker.ts)
+//	(&embed.Queries{Dir: modelDir}).Embed(texts)   query vectors from one
+//	                                        `embed-query` child, started on first
+//	                                        use, stopped when idle (embedWorker.ts)
 //	embed.Pass(ctx, PassOptions) (PassResult, error)   embed.py over an index tree
 //
 // The ONNX Runtime library is found by FindLibrary.
