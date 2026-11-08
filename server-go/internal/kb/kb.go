@@ -97,20 +97,36 @@ const (
 // ExtName is path.extname: the suffix from the last dot of the base name,
 // "" for a name with no dot or only a leading one.
 func ExtName(p string) string {
-	base := p
-	if i := strings.LastIndexByte(base, '/'); i >= 0 {
-		base = base[i+1:]
+	// Node's posix extname, scanned from the end.
+	startDot, startPart, end, pre := -1, 0, -1, 0
+	matchedSlash := true
+	for i := len(p) - 1; i >= 0; i-- {
+		c := p[i]
+		if c == '/' {
+			if !matchedSlash {
+				startPart = i + 1
+				break
+			}
+			continue
+		}
+		if end == -1 {
+			matchedSlash = false
+			end = i + 1
+		}
+		if c == '.' {
+			if startDot == -1 {
+				startDot = i
+			} else if pre != 1 {
+				pre = 1
+			}
+		} else if startDot != -1 {
+			pre = -1
+		}
 	}
-	// path.extname ignores leading dots: ".bashrc" has none, "..x" is ".x".
-	start := 0
-	for start < len(base) && base[start] == '.' {
-		start++
-	}
-	i := strings.LastIndexByte(base[start:], '.')
-	if i < 0 {
+	if startDot == -1 || end == -1 || pre == 0 || (pre == 1 && startDot == end-1 && startDot == startPart+1) {
 		return ""
 	}
-	return base[start+i:]
+	return p[startDot:end]
 }
 
 // Classify is kb.ts's classify.
