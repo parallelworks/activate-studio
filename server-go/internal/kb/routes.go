@@ -16,7 +16,6 @@ import (
 
 	"github.com/parallelworks/activate-studio/server-go/internal/apierr"
 	"github.com/parallelworks/activate-studio/server-go/internal/app"
-	"github.com/parallelworks/activate-studio/server-go/internal/auth"
 	"github.com/parallelworks/activate-studio/server-go/internal/gufi"
 )
 
@@ -262,22 +261,6 @@ func libraryParam(r *http.Request, b body) (string, bool) {
 	return "", false
 }
 
-// lib is libOf: the library a request names. One Go does not have goes to
-// Node, which has the viewer's own and answers 404 for none.
-func (m *Module) lib(r *http.Request, b body) (Library, error) {
-	id, _ := libraryParam(r, b)
-	lib, ok, err := m.Libs.Get(id)
-	if err != nil {
-		return Library{}, err
-	}
-	if !ok {
-		// TODO(internal/libraries, internal/remote): hand-off until the libraries
-		// track resolves this library here; remove it then.
-		return Library{}, errToNode{"library " + id + " is not one of this host's"}
-	}
-	return lib, nil
-}
-
 // source is sourceOf: a library's files on this host.
 func (m *Module) source(lib Library) (string, error) {
 	if lib.SourceRoot == "" {
@@ -287,28 +270,6 @@ func (m *Module) source(lib Library) (string, error) {
 }
 
 func inAll(r *http.Request) bool { return strings.ToLower(qs(r, "library")) == All }
-
-// allLibs is scopeLibraries('all') for the viewer: Go answers only where
-// the viewer has no libraries of their own, which Node lists.
-func (m *Module) allLibs(r *http.Request) ([]Library, error) {
-	viewer := ""
-	if u := auth.UserOf(r); u != nil {
-		viewer = u.ID
-	}
-	known := !m.A.Cfg.AuthEnabled() || m.A.Cfg.FrontAuth
-	owner, ok := m.Libs.Owner(viewer, known)
-	if !ok {
-		// TODO(internal/libraries, internal/remote): hand-off until the libraries
-		// track resolves this library here; remove it then.
-		return nil, errToNode{"the viewer is identified by Node"}
-	}
-	if m.Libs.HasOwn(owner) {
-		// TODO(internal/libraries, internal/remote): hand-off until the libraries
-		// track resolves this library here; remove it then.
-		return nil, errToNode{"the viewer has libraries on their clusters"}
-	}
-	return m.Libs.ScopeAll(), nil
-}
 
 // others are listLibraries(label, viewer) without the main one, for the
 // label vocabulary.
@@ -351,7 +312,11 @@ func (m *Module) treeBody(w http.ResponseWriter, r *http.Request) error {
 		if trimSlashes(rel) == "" {
 			entries := []Entry{}
 			for _, l := range libs {
-				entries = append(entries, Entry{Name: l.Label, Path: l.ID, Type: "dir", Kind: "dir"})
+				name := l.Label
+				if l.Site != "" {
+					name = l.Label + " (on " + l.Site + ")"
+				}
+				entries = append(entries, Entry{Name: name, Path: l.ID, Type: "dir", Kind: "dir"})
 			}
 			writeJSON(w, 200, O("path", "", "entries", entries))
 			return nil
@@ -361,7 +326,13 @@ func (m *Module) treeBody(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 		labeled := []Entry{}
-		if lib.SourceRoot != "" {
+		if lib.Site != "" {
+			list, err := m.remoteTree(r, lib, sub, showHidden)
+			if err != nil {
+				return err
+			}
+			labeled = list
+		} else if lib.SourceRoot != "" {
 			list, err := ListDir(sub, lib.SourceRoot, showHidden)
 			if err != nil {
 				return err
@@ -377,6 +348,15 @@ func (m *Module) treeBody(w http.ResponseWriter, r *http.Request) error {
 	lib, err := m.lib(r, body{})
 	if err != nil {
 		return err
+	}
+	// A user's library on another system lists from its index there.
+	if lib.Site != "" {
+		list, err := m.remoteTree(r, lib, rel, showHidden)
+		if err != nil {
+			return err
+		}
+		writeJSON(w, 200, O("path", rel, "entries", list))
+		return nil
 	}
 	root, err := m.source(lib)
 	if err != nil {
@@ -417,48 +397,51 @@ func (m *Module) withLocalLabels(lib Library, root string, entries []Entry) []En
 
 func (m *Module) file(w http.ResponseWriter, r *http.Request) error {
 	rel := qs(r, "path")
-	err := func() error {
-		if inAll(r) {
-			lib, sub, err := m.splitAll(r, rel)
-			if err != nil {
-				return err
-			}
-			if lib.ReadThrough {
-				// TODO(internal/libraries, internal/remote): hand-off until the libraries
-				// track resolves this library here; remove it then.
-				return errToNode{"the library reads originals through another host"}
-			}
-			if lib.SourceRoot == "" {
-				return Error(409, "%s has no files on this host; it can be searched and described but not opened", lib.Label)
-			}
-			out, err := ReadFileContent(sub, lib.SourceRoot, m.cacheRoot(lib))
+	if inAll(r) {
+		lib, sub, err := m.splitAll(r, rel)
+		if err != nil {
+			return err
+		}
+		if lib.ReadThrough || lib.Site != "" {
+			out, err := m.remoteFile(r, lib, sub)
 			if err != nil {
 				return err
 			}
 			writeJSON(w, 200, out.Set("path", rel))
 			return nil
 		}
-		lib, err := m.lib(r, body{})
+		if lib.SourceRoot == "" {
+			return Error(409, "%s has no files on this host; it can be searched and described but not opened", lib.Label)
+		}
+		out, err := ReadFileContent(sub, lib.SourceRoot, m.cacheRoot(lib))
 		if err != nil {
 			return err
 		}
-		if lib.ReadThrough {
-			// TODO(internal/libraries, internal/remote): hand-off until the libraries
-			// track resolves this library here; remove it then.
-			return errToNode{"the library reads originals through another host"}
-		}
-		root, err := m.source(lib)
-		if err != nil {
-			return err
-		}
-		out, err := ReadFileContent(rel, root, m.cacheRoot(lib))
+		writeJSON(w, 200, out.Set("path", rel))
+		return nil
+	}
+	lib, err := m.lib(r, body{})
+	if err != nil {
+		return err
+	}
+	if lib.ReadThrough || lib.Site != "" {
+		out, err := m.remoteFile(r, lib, rel)
 		if err != nil {
 			return err
 		}
 		writeJSON(w, 200, out)
 		return nil
-	}()
-	return m.handled(w, r, err)
+	}
+	root, err := m.source(lib)
+	if err != nil {
+		return err
+	}
+	out, err := ReadFileContent(rel, root, m.cacheRoot(lib))
+	if err != nil {
+		return err
+	}
+	writeJSON(w, 200, out)
+	return nil
 }
 
 func (m *Module) cacheRoot(lib Library) string {
@@ -529,46 +512,44 @@ func sendFile(w http.ResponseWriter, abs string, headers map[string]string) erro
 
 func (m *Module) download(w http.ResponseWriter, r *http.Request) error {
 	rel := qs(r, "path")
-	err := func() error {
-		if inAll(r) {
-			lib, sub, err := m.splitAll(r, rel)
-			if err != nil {
-				return err
-			}
-			if lib.ReadThrough {
-				// TODO(internal/libraries, internal/remote): hand-off until the libraries
-				// track resolves this library here; remove it then.
-				return errToNode{"the library reads originals through another host"}
-			}
-			if lib.SourceRoot == "" {
-				return Error(409, "%s has no files on this host", lib.Label)
-			}
-			abs, err := Resolve(sub, lib.SourceRoot)
-			if err != nil {
-				return err
-			}
-			return sendFile(w, abs, map[string]string{"Content-Type": MimeFor(abs), "Content-Disposition": contentDisposition(filepath.Base(abs))})
+	var lib Library
+	sub := rel
+	var err error
+	if inAll(r) {
+		if lib, sub, err = m.splitAll(r, rel); err != nil {
+			return err
 		}
-		lib, err := m.lib(r, body{})
+	} else if lib, err = m.lib(r, body{}); err != nil {
+		return err
+	}
+	if lib.ReadThrough || lib.Site != "" {
+		if LibraryResolver == nil {
+			return Error(409, "%s has no files on this host", lib.Label)
+		}
+		name, data, err := LibraryResolver.Download(r, lib, sub)
 		if err != nil {
 			return err
 		}
-		if lib.ReadThrough {
-			// TODO(internal/libraries, internal/remote): hand-off until the libraries
-			// track resolves this library here; remove it then.
-			return errToNode{"the library reads originals through another host"}
+		w.Header().Set("Content-Type", MimeFor(name))
+		w.Header().Set("Content-Disposition", `attachment; filename="`+strings.ReplaceAll(name, `"`, "")+`"`)
+		w.Header().Set("Content-Length", strconv.Itoa(len(data)))
+		w.WriteHeader(200)
+		w.Write(data)
+		return nil
+	}
+	root := lib.SourceRoot
+	if inAll(r) {
+		if root == "" {
+			return Error(409, "%s has no files on this host", lib.Label)
 		}
-		root, err := m.source(lib)
-		if err != nil {
-			return err
-		}
-		abs, err := Resolve(rel, root)
-		if err != nil {
-			return err
-		}
-		return sendFile(w, abs, map[string]string{"Content-Type": MimeFor(abs), "Content-Disposition": contentDisposition(filepath.Base(abs))})
-	}()
-	return m.handled(w, r, err)
+	} else if root, err = m.source(lib); err != nil {
+		return err
+	}
+	abs, err := Resolve(sub, root)
+	if err != nil {
+		return err
+	}
+	return sendFile(w, abs, map[string]string{"Content-Type": MimeFor(abs), "Content-Disposition": contentDisposition(filepath.Base(abs))})
 }
 
 // sourceFile is the file a viewing route names in the library asked for.
@@ -1059,14 +1040,9 @@ func (m *Module) labelLib(r *http.Request, b body, rel string) (Library, string,
 		}
 		return Library{}, "", Error(404, "no library named %s", parts[0])
 	}
-	lib, ok, err := m.Libs.Get(want)
+	lib, err := m.libByID(r, want)
 	if err != nil {
 		return Library{}, "", err
-	}
-	if !ok {
-		// TODO(internal/libraries, internal/remote): hand-off until the libraries
-		// track resolves this library here; remove it then.
-		return Library{}, "", errToNode{"library " + want + " is not one of this host's"}
 	}
 	return lib, cleaned, nil
 }
@@ -1216,10 +1192,7 @@ func (m *Module) job(w http.ResponseWriter, r *http.Request) error {
 		writeJSON(w, 404, map[string]string{"error": "no such job"})
 		return nil
 	}
-	if m.A.NodeFree() {
-		writeJSON(w, 404, map[string]string{"error": "no such job"})
-		return nil
-	}
-	// TODO(internal/index): hand-off until every job kind runs in Go.
-	return m.toNode(w, r, "a job of Node's")
+	// Every route that starts a job runs here, so Node has none to show.
+	writeJSON(w, 404, map[string]string{"error": "no such job"})
+	return nil
 }

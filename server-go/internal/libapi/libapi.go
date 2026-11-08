@@ -20,6 +20,7 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/gufi"
 	"github.com/parallelworks/activate-studio/server-go/internal/gufitrace"
 	"github.com/parallelworks/activate-studio/server-go/internal/index"
+	"github.com/parallelworks/activate-studio/server-go/internal/kb"
 	"github.com/parallelworks/activate-studio/server-go/internal/libraries"
 	"github.com/parallelworks/activate-studio/server-go/internal/platform"
 	"github.com/parallelworks/activate-studio/server-go/internal/remote"
@@ -63,6 +64,7 @@ func Register(mux *http.ServeMux, a *app.App) {
 		gufitrace.Default = gufitrace.NewLog(os.Getenv("STUDIO_DATA_DIR"), a.Cfg.IndexBase, func() bool { return a.Settings.Effective().GufiLog })
 	}
 	libraries.CheckDest = remote.SSHDest
+	kb.LibraryResolver = kbResolver{s}
 	a.Providers.Libraries = func(r *http.Request, kbLabel, viewer string) ([]json.RawMessage, error) {
 		v := libraries.ViewerOf(viewer)
 		var out []json.RawMessage
@@ -99,6 +101,8 @@ func Register(mux *http.ServeMux, a *app.App) {
 		mux.HandleFunc("POST /api/libraries/build/check", h(s.buildCheck))
 		mux.HandleFunc("POST /api/libraries/build", h(s.buildAdd))
 		mux.HandleFunc("POST /api/libraries/{id}/rebuild", h(s.rebuild))
+		mux.HandleFunc("PUT /api/libraries/{id}/read-through", h(s.readThroughSave))
+		mux.HandleFunc("POST /api/libraries/{id}/read-through/test", h(s.readThroughTest))
 		index.Of(a).Hooks.RequestAllLibrarySyncs = s.builds.requestAllSyncs
 		a.OnIndexWork("libraries: sync", s.builds.startSync)
 		a.OnStop("libraries: stop builds", s.builds.stop)

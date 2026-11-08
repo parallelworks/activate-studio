@@ -66,6 +66,9 @@ func (e *Engine) env(k string) string {
 // localThreads is LOCAL_THREADS: one per core up to 16.
 func localThreads() int { return min(max(runtime.NumCPU(), 1), 16) }
 
+// LocalThreads is LOCAL_THREADS: the -n a query here asks for.
+func LocalThreads() int { return localThreads() }
+
 var unknownOptionRe = regexp.MustCompile(`(?i)unrecognized option|invalid option|unknown option`)
 
 // errUnknownOption marks gufi_query not knowing an option: an older GUFI.
