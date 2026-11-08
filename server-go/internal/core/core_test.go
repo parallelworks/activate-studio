@@ -2,6 +2,7 @@ package core
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/binary"
@@ -21,8 +22,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/parallelworks/activate-studio/server-go/internal/apierr"
 	"github.com/parallelworks/activate-studio/server-go/internal/app"
 	"github.com/parallelworks/activate-studio/server-go/internal/config"
+	"github.com/parallelworks/activate-studio/server-go/internal/stepmesh"
 )
 
 // The cases of server/test/setup.test.mjs, setupIcon.test.mjs,
@@ -498,5 +501,50 @@ func TestModelSTEPWithoutNode(t *testing.T) {
 	os.WriteFile(filepath.Join(e.kb, "junk.stp"), []byte("not a step file"), 0o644)
 	if j := e.do("GET", "/api/kb/model?path=junk.stp", nil); j.status != 422 || j.body["error"] != "could not convert STEP geometry" {
 		t.Fatalf("%d %s", j.status, j.raw)
+	}
+}
+
+type fakeStep struct {
+	delay time.Duration
+	err   error
+}
+
+func (f fakeStep) ReadStep(ctx context.Context, _ []byte) ([]stepmesh.Mesh, error) {
+	time.Sleep(f.delay)
+	if f.err != nil {
+		return nil, f.err
+	}
+	return []stepmesh.Mesh{{Positions: []float32{0, 0, 0}, Indices: []uint32{0, 0, 0}}}, nil
+}
+
+// A STEP file the mesher gives up on is Node's failed-mesh answer with its
+// own message, logged with its size and time, and not cached: the next
+// request meshes it again.
+func TestModelSTEPTooComplex(t *testing.T) {
+	e := newEnv(t, nil)
+	var logs bytes.Buffer
+	c := &Core{a: e.a, log: slog.New(slog.NewTextHandler(&logs, nil)), icons: newIconCache()}
+	c.step.fake = fakeStep{delay: 20 * time.Millisecond, err: stepmesh.ErrTooComplex}
+	mux := http.NewServeMux()
+	mux.Handle("GET /api/kb/model", apierr.Handler(c.log, c.model))
+	os.WriteFile(filepath.Join(e.kb, "big.step"), []byte("ISO-10303-21;"), 0o644)
+	get := func() *httptest.ResponseRecorder {
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, httptest.NewRequest("GET", "/api/kb/model?path=big.step", nil))
+		return w
+	}
+	w := get()
+	if w.Code != 422 || w.Body.String() != `{"error":"this STEP file is too complex to preview"}` {
+		t.Fatalf("%d %s", w.Code, w.Body.String())
+	}
+	if !regexp.MustCompile(`STEP meshing stopped at the bound.*path=big.step bytes=13 ms=\d+`).MatchString(logs.String()) {
+		t.Fatal(logs.String())
+	}
+	if _, err := os.Stat(filepath.Join(e.ix, "model-cache", "big.step.mdl")); err == nil {
+		t.Fatal("a failed mesh was cached")
+	}
+	c.step.fake = fakeStep{}
+	if w := get(); w.Code != 200 {
+		t.Fatalf("not tried again: %d", w.Code)
 	}
 }
