@@ -124,6 +124,9 @@ func (b *Bridge) SaveDownload(name, dataBase64 string) (string, error) {
 		return "", err
 	}
 	path, err := saveInDownloads(name, data)
+	if err == nil {
+		revealDownload(path)
+	}
 	if err == nil && b.app.test != nil {
 		b.app.test.note("saveDownload", path)
 	}
@@ -159,6 +162,7 @@ func (b *Bridge) SaveURL(path, name string) (string, error) {
 	if _, err := f.ReadFrom(res.Body); err != nil {
 		return "", err
 	}
+	revealDownload(dest)
 	return dest, nil
 }
 

@@ -24,6 +24,7 @@
 #   WINDOW=1         start the old window shell (bin/activate-studio) on DISPLAY
 #   KEEP=1           leave the scratch folder (its path is printed)
 #   SEARCH=0         skip the search checks (a Go payload whose index is not ported yet)
+#   SHOT=PROGRAM     with WINDOW=1, run PROGRAM SCRATCH NAME for a screenshot before and after the reopen
 set -euo pipefail
 
 OLD_ARCHIVE="$(cd "$(dirname "${1:?usage: test_go_bridge_e2e.sh OLD_ARCHIVE NEW_ARCHIVE}")" && pwd)/$(basename "$1")"
@@ -167,12 +168,33 @@ server_is go && ok "and it is the Go server" || bad "the server is not the Go se
 api -m 10 GET "$U/api/updates" | json "d.get('previous') == {'version': '$OLD_VERSION'} and d.get('mode') == 'app'" && ok "the Go updater offers the rollback" || bad "the Go updater offers no rollback"
 data_ok "on $NEW_VERSION"
 if [ "${WINDOW:-}" = 1 ]; then
+  # The old window is still the old program; the update changed it, so the
+  # page offers Reopen now (and reopens by itself when the person started the
+  # install there). The stand-in for that click: the old window ends and the
+  # install's launcher starts the new one, as reopen.go does.
+  api -m 10 GET "$U/api/updates" | json 'd.get("reopen") is True' && ok "the Go updater asks for the window to be reopened" || bad "no reopen asked for"
+  [ -n "${SHOT:-}" ] && "${SHOT}" "$T" go-before-reopen || true
+  old_shell="$(pgrep -u "$(id -u)" -f "^$APP/bin/activate-studio" | head -n 1 || true)"
+  [ -n "$old_shell" ] && kill -TERM "$old_shell" 2>/dev/null
+  for _ in $(seq 1 50); do [ -n "$old_shell" ] && kill -0 "$old_shell" 2>/dev/null || break; sleep 0.2; done
+  setsid env -i HOME="$H" PATH=/usr/bin:/bin DISPLAY="$DISPLAY" XAUTHORITY="${XAUTHORITY:-}" \
+    XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-}" DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-}" \
+    STUDIO_DATA_DIR="$DATA" "$APP/bin/activate-studio" >>"$T/window.log" 2>&1 &
+  pids+=($!)
+  if wait_version "$NEW_VERSION" 120; then ok "the reopened window starts $NEW_VERSION"; else bad "the reopened window did not start the server"; log_tail; fi
+  w=
   for _ in $(seq 1 30); do
-    w="$(pgrep -u "$(id -u)" -f "^$APP/bin/activate-studio" | head -n 1 || true)"
-    [ -n "$w" ] && ! readlink "/proc/$w/exe" | grep -q deleted && break
+    for p in $(pgrep -u "$(id -u)" -f "activate-studio-wk4" || true); do
+      case "$(readlink "/proc/$p/exe")" in "$APP/bin/"*) w="$p" ;; esac
+    done
+    [ -n "$w" ] && break
     sleep 1
   done
-  if [ -n "${w:-}" ] && ! readlink "/proc/$w/exe" | grep -q deleted; then ok "the window runs the new payload's shell"; else bad "no window from the new payload"; fi
+  if [ -n "$w" ]; then ok "the window is the new payload's shell ($(readlink "/proc/$w/exe"))"; else bad "no window from the new payload"; fi
+  sleep 2
+  server_is go && ok "under it, the Go server" || bad "the reopened window's server is not the Go server"
+  data_ok "in the reopened window"
+  [ -n "${SHOT:-}" ] && "${SHOT}" "$T" go-after-reopen || true
 fi
 
 # ---- 4. back to the Node version ----

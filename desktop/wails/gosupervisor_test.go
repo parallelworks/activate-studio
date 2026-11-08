@@ -78,12 +78,34 @@ func TestCommandWithGoServer(t *testing.T) {
 	if env := run.command(4999, nil).Env; slices.ContainsFunc(env, func(kv string) bool { return strings.HasPrefix(kv, "STUDIO_GO_SERVER_BIN=") }) {
 		t.Error("an inherited STUDIO_GO_SERVER_BIN reached the run script without the opt-in")
 	}
-	run.GoServer, run.SemanticMap = "/tree/app/bin/studio-server", "/tree/app/bin/semantic-map"
+	// A Go release: the run script is given its Go server, read from the
+	// tree at each start.
+	t.Setenv("STUDIO_GO_SERVER_BIN", "")
+	tree := t.TempDir()
+	touch(t, filepath.Join(tree, "app", "bin", "studio-server"), 0o755)
+	touch(t, filepath.Join(tree, "app", "bin", "semantic-map"), 0o755)
+	if err := os.WriteFile(filepath.Join(tree, "manifest.json"), []byte(`{"server": "go"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run = &Supervisor{RunScript: filepath.Join(tree, "studio-run.sh"), DataDir: data,
+		GoServer: filepath.Join(tree, "app", "bin", "studio-server"), SemanticMap: filepath.Join(tree, "app", "bin", "semantic-map")}
 	env := run.command(4999, nil).Env
-	for _, want := range []string{"STUDIO_GO_SERVER_BIN=/tree/app/bin/studio-server", "STUDIO_SEMANTIC_MAP_BIN=/tree/app/bin/semantic-map", "STUDIO_RUN_PORT=4999"} {
+	for _, want := range []string{"STUDIO_GO_SERVER_BIN=" + filepath.Join(tree, "app", "bin", "studio-server"),
+		"STUDIO_SEMANTIC_MAP_BIN=" + filepath.Join(tree, "app", "bin", "semantic-map"), "STUDIO_RUN_PORT=4999"} {
 		if !slices.Contains(env, want) {
 			t.Errorf("run script env lacks %s", want)
 		}
+	}
+	// Rolled back under the running shell to a Node release (no app/bin, no
+	// "server": "go"): the next start is not handed the Go server it had.
+	if err := os.RemoveAll(filepath.Join(tree, "app", "bin")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(tree, "manifest.json")); err != nil {
+		t.Fatal(err)
+	}
+	if env := run.command(4999, nil).Env; slices.ContainsFunc(env, func(kv string) bool { return strings.HasPrefix(kv, "STUDIO_GO_SERVER_BIN=") }) {
+		t.Error("after a rollback to a Node release the run script was still handed the Go server")
 	}
 
 	direct := &Supervisor{Node: "/usr/bin/node", Script: "/app/server/dist/main.js", AppDir: "/app", DataDir: data, KBRoot: t.TempDir(),
@@ -125,7 +147,8 @@ func TestRunScriptStartsTheGoServer(t *testing.T) {
 	write("app/bin/semantic-map", "")
 
 	t.Setenv("SHELL", "/bin/false") // no login shell to wait on
-	srv, smap := goServerPaths(func(k string) string { return map[string]string{"STUDIO_GO_SERVER": "1"}[k] }, tree, filepath.Join(tree, "app"))
+	t.Setenv("STUDIO_GO_SERVER", "1") // the switch, which the supervisor reads at each start
+	srv, smap := goServerPaths(os.Getenv, tree, filepath.Join(tree, "app"))
 	events := make(chan ServerEvent, 16)
 	sup := &Supervisor{RunScript: filepath.Join(tree, "studio-run.sh"), DataDir: data, KBRoot: t.TempDir(), GoServer: srv, SemanticMap: smap,
 		Events: func(e ServerEvent) { events <- e }}

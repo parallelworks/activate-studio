@@ -74,6 +74,10 @@ func main() {
 		os.Unsetenv("STUDIO_WAIT_PID")
 		waitForPID(v)
 	}
+	// macOS: the launcher's flags (--install, --stop, --uninstall, --help).
+	if code, ok := maybePassThrough(); ok {
+		os.Exit(code)
+	}
 	if len(os.Args) > 1 && (os.Args[1] == "--version" || os.Args[1] == "-version") {
 		fmt.Println("ACTIVATE Studio shell", version, webkitAPI)
 		return
@@ -137,6 +141,9 @@ func main() {
 			ProgramName:      "activate-studio",
 			WebviewGpuPolicy: linux.WebviewGpuPolicyOnDemand,
 		},
+		// macOS: the Swift window's menus and About panel (launcher_darwin.go).
+		Menu: appMenu(app),
+		Mac:  macOptions(),
 		Windows: &windows.Options{
 			// The web view's own data (local storage, cache) with the
 			// Studio's, not beside the executable.
@@ -173,7 +180,10 @@ func loadConfig() (Config, error) {
 	home, _ := os.UserHomeDir()
 	cfg.KBRoot = envOr("STUDIO_DEFAULT_KB", filepath.Join(home, "Documents", "ACTIVATE Studio"))
 
-	if tree := findTree(); tree != "" {
+	platformConfig(&cfg)
+	if cfg.Launcher != "" {
+		// macOS: the launcher runs the server (launcher_darwin.go).
+	} else if tree := findTree(); tree != "" {
 		cfg.Tree = tree
 		cfg.RunScript = filepath.Join(tree, "studio-run.sh")
 		cfg.AppDir = filepath.Join(tree, "app")

@@ -41,6 +41,18 @@ C="$APP/Contents"
 R="$C/Resources"
 G="$R/gufi"
 O="$R/ocr"
+# Which server the app runs (build_app.sh STUDIO_SERVER): node, go (the Go
+# server with Node and Python behind it) or go-only (the Go server alone,
+# with stand-ins for older updaters' checks, marked by node/PLACEHOLDER).
+if [ -z "${STUDIO_SERVER:-}" ]; then
+  if [ -f "$R/node/PLACEHOLDER" ]; then STUDIO_SERVER=go-only
+  elif [ -x "$R/app/bin/studio-server" ]; then STUDIO_SERVER=go
+  else STUDIO_SERVER=node; fi
+fi
+SERVER="$STUDIO_SERVER"
+# GUFI built without sqlite-lembed (GUFI_LEMBED=0) has no lembed0.dylib.
+LEMBED=1
+grep -q '"sqlite-lembed": *"none"' "$G/manifest.json" 2>/dev/null && LEMBED=0
 failures=0
 ok() { echo "  ok    $1"; }
 bad() { echo "  FAIL  $1"; failures=$((failures + 1)); }
@@ -58,20 +70,34 @@ for k in ('CFBundleShortVersionString', 'CFBundleVersion', 'LSMinimumSystemVersi
     assert info[k], k
 assert 'Parallel Works' in info['NSHumanReadableCopyright'], 'NSHumanReadableCopyright'
 PY
-for f in \
-  "MacOS/ACTIVATE Studio" Resources/launcher.sh Resources/studio-run.sh Resources/update-signing.pub \
-  Resources/node/bin/node Resources/python/bin/python3 \
-  Resources/models/minilm384.gguf Resources/models/minilm-l6/model.onnx Resources/models/minilm-l6/tokenizer.json \
-  Resources/app/build-info.json Resources/app/package.json \
-  Resources/app/server/dist/main.js Resources/app/server/node_modules/fastify/package.json \
-  Resources/app/web/dist/index.html Resources/app/indexer/enrich.py Resources/app/indexer/embed.py \
-  Resources/app/indexer/embed_onnx.py Resources/app/indexer/embed_query.py Resources/app/indexer/semantic_map.py \
-  Resources/app/indexer/reindex.sh Resources/app/docs/HELP.md Resources/app/CHANGELOG.md Resources/app/deploy/gufi-index.yaml \
-  Resources/gufi/bin/gufi_query Resources/gufi/bin/gufi_dir2index Resources/gufi/bin/gufi_sqlite3 \
-  Resources/gufi/lib/gufi_vt.dylib Resources/gufi/lib/vec0.dylib Resources/gufi/lib/lembed0.dylib \
-  Resources/gufi/lib/libomp.dylib Resources/gufi/lib/libpcre2-8.0.dylib Resources/gufi/licenses/GUFI-LICENSE.txt; do
+LAYOUT=("MacOS/ACTIVATE Studio" Resources/launcher.sh Resources/studio-run.sh Resources/update-signing.pub
+  Resources/node/bin/node Resources/models/minilm-l6/model.onnx Resources/models/minilm-l6/tokenizer.json
+  Resources/app/build-info.json Resources/app/package.json Resources/app/server/dist/main.js
+  Resources/app/web/dist/index.html Resources/app/docs/HELP.md Resources/app/CHANGELOG.md Resources/app/deploy/gufi-index.yaml
+  Resources/gufi/bin/gufi_query Resources/gufi/bin/gufi_dir2index Resources/gufi/bin/gufi_sqlite3
+  Resources/gufi/lib/gufi_vt.dylib Resources/gufi/lib/vec0.dylib
+  Resources/gufi/lib/libomp.dylib Resources/gufi/lib/libpcre2-8.0.dylib Resources/gufi/licenses/GUFI-LICENSE.txt)
+if [ "$SERVER" != go-only ]; then
+  LAYOUT+=(Resources/python/bin/python3 Resources/models/minilm384.gguf Resources/app/server/node_modules/fastify/package.json
+    Resources/app/indexer/enrich.py Resources/app/indexer/embed.py Resources/app/indexer/embed_onnx.py
+    Resources/app/indexer/embed_query.py Resources/app/indexer/semantic_map.py Resources/app/indexer/reindex.sh)
+fi
+[ "$LEMBED" = 1 ] && LAYOUT+=(Resources/gufi/lib/lembed0.dylib)
+if [ "$SERVER" != node ]; then
+  LAYOUT+=(Resources/manifest.json Resources/app/bin/studio-server Resources/app/bin/semantic-map Resources/app/bin/studio-extract
+    Resources/onnxruntime/lib/libonnxruntime.dylib Resources/onnxruntime/licenses/onnxruntime-LICENSE.txt)
+fi
+[ "$SERVER" = go-only ] && LAYOUT+=(Resources/node/PLACEHOLDER)
+for f in "${LAYOUT[@]}"; do
   check "$f" test -s "$C/$f"
 done
+if [ "$SERVER" != node ]; then
+  check "the manifest says the Go server runs" grep -q '"server": *"go"' "$R/manifest.json"
+fi
+if [ "$SERVER" = go-only ]; then
+  check "node/bin/node is the stand-in, executable, as older updaters check" sh -c "test -x '$R/node/bin/node' && head -c 2 '$R/node/bin/node' | grep -q '#!'"
+  check "no Node, Python or node_modules" sh -c "! [ -e '$R/python' ] && ! [ -e '$R/app/server/node_modules' ] && ! [ -e '$R/app/indexer' ]"
+fi
 if [ -d "$O" ]; then
   for f in Resources/ocr/bin/tesseract Resources/ocr/lib/libleptonica.6.dylib \
     Resources/ocr/share/tessdata/eng.traineddata Resources/ocr/share/tessdata/configs/tsv \
@@ -113,6 +139,9 @@ if command -v codesign >/dev/null 2>&1; then
     bad "the bundle's signature does not verify:"; printf '%s\n' "$out" | head -n 20 | sed 's/^/        /'
   fi
 fi
+if [ "$SERVER" = go-only ]; then
+  check "the ONNX model is the pinned file" sh -c "python3 -c 'import hashlib, json, sys; d = json.load(open(sys.argv[1])); sys.exit(0 if hashlib.sha256(open(sys.argv[2], \"rb\").read()).hexdigest() == d[\"model\"][\"files\"][\"model.onnx\"][\"sha256\"] else 1)' '$HERE/../../indexer/embed_deps.json' '$R/models/minilm-l6/model.onnx'"
+else
 check "the model is the full file (over 10 MB)" test "$(( $(wc -c <"$R/models/minilm384.gguf") ))" -gt 10000000
 check "the ONNX model is the pinned file" sh -c "python3 -c 'import hashlib, json, sys; d = json.load(open(sys.argv[1])); sys.exit(0 if hashlib.sha256(open(sys.argv[2], \"rb\").read()).hexdigest() == d[\"model\"][\"files\"][\"model.onnx\"][\"sha256\"] else 1)' '$R/app/indexer/embed_deps.json' '$R/models/minilm-l6/model.onnx'"
 check "onnxruntime, tokenizers and numpy are in the app's Python" sh -c "ls -d '$R'/python/lib/python3.*/site-packages/onnxruntime/__init__.py '$R'/python/lib/python3.*/site-packages/tokenizers/__init__.py '$R'/python/lib/python3.*/site-packages/numpy/__init__.py"
@@ -120,6 +149,7 @@ check "pypdf is in the app's Python, for PDFs downmark cannot read" sh -c "ls -d
 check "the document converter's macOS arm64 binary is there" \
   sh -c "find '$R/app/server/node_modules' -path '*downmark-darwin-arm64/bin/downmark' -type f | grep -q ."
 check "and no Linux build of it" sh -c "! find '$R/app/server/node_modules' -name 'downmark-linux-*' | grep -q ."
+fi
 
 echo "Scripts"
 # The executable is the launcher script, or the native window when built on a Mac.
@@ -136,16 +166,21 @@ done
 command -v shellcheck >/dev/null 2>&1 || echo "  (shellcheck is not installed; skipped)"
 
 echo "Native code"
-if command -v file >/dev/null 2>&1; then
+if command -v file >/dev/null 2>&1 && [ "$SERVER" = go-only ]; then
+  check "studio-server is a Mach-O arm64 executable" sh -c "file -b '$R/app/bin/studio-server' | grep -q 'Mach-O 64-bit.*arm64'"
+elif command -v file >/dev/null 2>&1; then
   check "node is a Mach-O arm64 executable" sh -c "file -b '$R/node/bin/node' | grep -q 'Mach-O 64-bit.*arm64'"
 fi
 MIN="$(python3 -c 'import plistlib,sys; print(plistlib.load(open(sys.argv[1],"rb"))["LSMinimumSystemVersion"])' "$C/Info.plist")"
-NATIVE=("$R/node/bin/node" "$R"/python/bin/python3.* "$R"/python/lib/*.dylib "$R"/python/lib/python3.*/lib-dynload/*.so "$G"/bin/* "$G"/lib/*.dylib
-  "$O"/bin/* "$O"/lib/*.dylib)
-# The Python packages' native libraries (onnxruntime, numpy and others), read
-# NUL-separated since the app's path has a space in it.
-while IFS= read -r -d '' f; do NATIVE+=("$f"); done < <(
-  find "$R"/python/lib/python3.*/site-packages -type f \( -name '*.so' -o -name '*.dylib' \) -print0)
+NATIVE=("$G"/bin/* "$G"/lib/*.dylib "$O"/bin/* "$O"/lib/*.dylib)
+[ "$SERVER" = node ] || NATIVE+=("$R"/app/bin/* "$R"/onnxruntime/lib/*.dylib)
+if [ "$SERVER" != go-only ]; then
+  NATIVE+=("$R/node/bin/node" "$R"/python/bin/python3.* "$R"/python/lib/*.dylib "$R"/python/lib/python3.*/lib-dynload/*.so)
+  # The Python packages' native libraries (onnxruntime, numpy and others), read
+  # NUL-separated since the app's path has a space in it.
+  while IFS= read -r -d '' f; do NATIVE+=("$f"); done < <(
+    find "$R"/python/lib/python3.*/site-packages -type f \( -name '*.so' -o -name '*.dylib' \) -print0)
+fi
 if out="$(python3 "$HERE/macho_check.py" --max-minos "$MIN" "${NATIVE[@]}" 2>&1)"; then
   ok "arm64, signed, runs on macOS $MIN, libraries resolve without DYLD_LIBRARY_PATH"
 else
@@ -185,7 +220,7 @@ fi
 
 echo "Size"
 echo "  $(du -sh "$APP" | cut -f1)  total"
-for d in node python gufi ocr app/server/node_modules app/web models; do
+for d in node python gufi ocr onnxruntime app/bin app/server/node_modules app/web models; do
   [ -e "$R/$d" ] || continue
   echo "  $(du -sh "$R/$d" | cut -f1)  $d"
 done
@@ -217,10 +252,15 @@ if [ "$RUN" = 1 ]; then
     fi
 
     echo "Running"
+    if [ "$SERVER" != go-only ]; then
     check "node runs" clean "$R/node/bin/node" -e 'process.exit(process.versions.node.startsWith("26.") ? 0 : 1)'
     check "python runs, with sqlite3 and pypdf" clean "$R/python/bin/python3" -c 'import sqlite3, json, zipfile, urllib.request, pypdf'
     check "the .xls and .ppt readers (xlrd, olefile) import in the app's Python" clean "$R/python/bin/python3" -B -c 'import xlrd, olefile'
     check "and with onnxruntime, tokenizers and numpy" clean "$R/python/bin/python3" -c 'import onnxruntime, tokenizers, numpy'
+    fi
+    if [ "$SERVER" != node ]; then
+      check "studio-server runs and lists its routes" clean /bin/sh -c "'$R/app/bin/studio-server' routes | grep -q /api/updates"
+    fi
     # The window, started only far enough to hand --help to the launcher.
     check "the app's executable starts" sh -c "env -i HOME='$T/home' PATH=/usr/bin:/bin '$C/MacOS/ACTIVATE Studio' --help | grep -q -- --uninstall"
     if command -v codesign >/dev/null 2>&1; then
@@ -229,7 +269,7 @@ if [ "$RUN" = 1 ]; then
     # Through /bin/sh, which drops DYLD_* variables, as gufi_vt and scripts start the tools.
     check "gufi_dir2index indexes a folder" clean /bin/sh -c "'$G/bin/gufi_dir2index' -x '$T/corpus' '$T/idx'"
     check "gufi_query reads the index" clean /bin/sh -c "'$G/bin/gufi_query' -d ' ' -E 'SELECT name FROM vrpentries;' '$T/idx/corpus' | grep -q cake.txt"
-    check "gufi_sqlite3 embeds with the bundled model" clean /bin/sh -c "printf '%s\n' \"INSERT INTO temp.lembed_models(name, model) SELECT 'm', lembed_model_from_file('$R/models/minilm384.gguf');\" \"SELECT length(lembed('m', 'hello'));\" | '$G/bin/gufi_sqlite3' | grep -q 1536"
+    [ "$LEMBED" = 0 ] || check "gufi_sqlite3 embeds with the bundled model" clean /bin/sh -c "printf '%s\n' \"INSERT INTO temp.lembed_models(name, model) SELECT 'm', lembed_model_from_file('$R/models/minilm384.gguf');\" \"SELECT length(lembed('m', 'hello'));\" | '$G/bin/gufi_sqlite3' | grep -q 1536"
     # dyld's lines are "dyld[pid]: /path", or on macOS 15 "dyld[pid]: <uuid>
     # /path" with "delayed: <name>" lines for libraries it defers.
     loaded="$(DYLD_PRINT_LIBRARIES=1 "$G/bin/gufi_sqlite3" :memory: 'SELECT 1;' 2>&1 >/dev/null |
@@ -242,6 +282,8 @@ if [ "$RUN" = 1 ]; then
     else
       ok "gufi_sqlite3 loads only the app's libraries and the system's"
     fi
+    check "gufi_sqlite3 loads sqlite-vec" clean /bin/sh -c "printf '%s\n' 'SELECT vec_length(vec_f32(\"[1,2,3]\"));' | '$G/bin/gufi_sqlite3' | grep -qx 3"
+    if [ "$SERVER" != go-only ]; then
     check "the indexer extracts text" clean env "${OCR_ENV[@]}" "$R/python/bin/python3" "$R/app/indexer/enrich.py" \
       --kb-root "$T/corpus" --index "$T/idx/corpus" --extract-cache "$T/extract"
     if [ "$OCR_RUN" = 1 ]; then
@@ -260,6 +302,7 @@ if [ "$RUN" = 1 ]; then
       mkdir -p "$T/pdfs/docs" && cp "$HERE/../../testdata/corpus/docs/report.pdf" "$T/pdfs/docs/"
       check "downmark's binary reads a PDF" clean /bin/sh -c 'b="$(find "$1" -path "*downmark-darwin-arm64/bin/downmark" -type f | head -1)"; "$b" "$2" | grep -q BOUNDARY-LAYER-4417' sh "$R/app/server/node_modules" "$T/pdfs/docs/report.pdf"
       check "the bundled pypdf reads it too" clean "$R/python/bin/python3" -c "import sys; from pypdf import PdfReader; sys.exit(0 if 'BOUNDARY-LAYER-4417' in ''.join(p.extract_text() or '' for p in PdfReader('$T/pdfs/docs/report.pdf').pages) else 1)"
+    fi
     fi
     # OCR: the app's tesseract on each image format leptonica reads, then on
     # a scanned PDF, whose page downmark hands it as a PNG (no poppler).
@@ -280,7 +323,7 @@ if [ "$RUN" = 1 ]; then
       else
         ok "tesseract loads only the app's library and the system's"
       fi
-      check "downmark reads a scanned PDF through the app's tesseract" clean env "${OCR_ENV[@]}" /bin/sh -c \
+      [ "$SERVER" = go-only ] || check "downmark reads a scanned PDF through the app's tesseract" clean env "${OCR_ENV[@]}" /bin/sh -c \
         'b="$(find "$1" -path "*downmark-darwin-arm64/bin/downmark" -type f | head -1)"; "$b" -ocr tesseract -ocr-policy thin "$2" | grep -qi heliotrope' \
         sh "$R/app/server/node_modules" "$HERE/testdata/ocr-sample.pdf"
     fi
@@ -327,7 +370,9 @@ if [ "$RUN" = 1 ]; then
     }
     trap 'tls_cleanup; rm -rf "$T"' EXIT
     echo "Outbound HTTPS through a certificate authority macOS trusts"
-    if ! sudo -n true 2>/dev/null; then
+    if [ "$SERVER" = go-only ]; then
+      echo "  (the check's HTTPS server is Node, which this app does not carry; skipped)"
+    elif ! sudo -n true 2>/dev/null; then
       echo "  (sudo asks for a password here, so no authority can be added to the System keychain; skipped)"
     else
       mkdir -p "$T/tls"
@@ -380,7 +425,7 @@ if [ "$RUN" = 1 ]; then
     done
     if [ "$up" = 1 ]; then ok "the server answers on 127.0.0.1:$PORT_FREE"; else bad "the server did not start:"; tail -n 30 "$T/data/logs/studio.log" | sed 's/^/        /'; fi
     check "it reports this build" grep -q "$(sed -n 's/.*"builtAt": *"\([^"]*\)".*/\1/p' "$R/app/build-info.json")" "$T/version.json"
-    check "its log says it trusts the system's certificates" grep -q "trusts the system's certificates" "$T/data/logs/studio.log"
+    [ "$SERVER" = go-only ] || check "its log says it trusts the system's certificates" grep -q "trusts the system's certificates" "$T/data/logs/studio.log"
     if [ "$TLS_RUN" = 1 ]; then
       curl -fsS -m 30 -X POST "http://127.0.0.1:$PORT_FREE/api/updates/check" >"$T/updcheck.json" 2>/dev/null || true
       if python3 -c 'import json, sys; d = json.load(open(sys.argv[1])); sys.exit(0 if d.get("state") == "idle" and not d.get("error") and not d.get("offline") and d.get("checkedAt") else 1)' "$T/updcheck.json" 2>/dev/null; then
@@ -391,7 +436,7 @@ if [ "$RUN" = 1 ]; then
         grep -i -E "outbound|update check|certificate" "$T/data/logs/studio.log" | tail -n 5 | sed 's/^/        /'
       fi
     fi
-    check "the model is linked into its index" test -e "$T/data/index/models/minilm384.gguf"
+    [ "$SERVER" = go-only ] || check "the model is linked into its index" test -e "$T/data/index/models/minilm384.gguf"
     check "and the ONNX model too" test -e "$T/data/index/models/minilm-l6/model.onnx"
     # A full rebuild runs indexer/reindex.sh (bash, then Python) with the
     # GUFI the server found; search then reads it through gufi_query.

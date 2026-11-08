@@ -29,6 +29,11 @@ const goRoutes = STRICT
 const NODE_DIRECT = new Map([
   ['setup.test.mjs', 'server-go/internal/core (TestSetupStatusAndBrowse, TestPrimaryFolderAndRestart, TestPort, TestPersonalDefaultsAndComplete)'],
   ['setupSignIn.test.mjs', 'server-go/internal/core (TestSignInRefusesSetup)'],
+  // The update tests set the running version with resetUpdatesForTests and
+  // the app's path (STUDIO_APP_BUNDLE, STUDIO_PAYLOAD_ROOT) per case.
+  ['updates.test.mjs', 'server-go/internal/updates (TestMacInstallKickstartsTheAgent, TestDetachedRunLoopRestartsWith76, TestRefusals, TestRollbackAndAutoSkips, TestAutoInstallWaitsForIdle, TestCloneAndHosted, TestOfflineIsNotAnError)'],
+  ['updateChannels.test.mjs', 'server-go/internal/updates (TestChannelsPickerAndMoveToStable, TestStateNewerFormatNeedsSnapshot, TestRequiresRelaunch)'],
+  ['updatesLinux.test.mjs', 'server-go/internal/updates (TestLinuxGoPayloadInstalls, TestLinuxPackageInstallsDoNotUpdate)'],
 ])
 const direct = NODE_DIRECT.has(path.basename(process.argv[1] ?? ''))
 // The ports the Go servers take; another test process may hold one.

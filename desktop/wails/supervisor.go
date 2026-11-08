@@ -18,7 +18,9 @@ package main
 // the Go front server (server-go/cmd/studio-server, docs/GO-PORT.md), which
 // starts Node behind it on a loopback port (STUDIO_NODE_SPAWN=1) and passes
 // on Node's exit status, so 75 and 76 work as before. With a tree the run
-// script starts it (STUDIO_GO_SERVER_BIN); without one the supervisor does.
+// script starts it (STUDIO_GO_SERVER_BIN, read from the tree at each start,
+// since an update or a rollback replaces the tree); without one the
+// supervisor does.
 // SemanticMap, when set, is given to the server as STUDIO_SEMANTIC_MAP_BIN.
 
 import (
@@ -329,10 +331,15 @@ func (s *Supervisor) command(port int, settings map[string]string) *exec.Cmd {
 		if s.KBRoot != "" {
 			cmd.Env = append(cmd.Env, "STUDIO_DEFAULT_KB="+s.KBRoot)
 		}
-		if s.GoServer != "" {
-			cmd.Env = append(cmd.Env, "STUDIO_GO_SERVER_BIN="+s.GoServer)
-			if s.SemanticMap != "" {
-				cmd.Env = append(envWithout(cmd.Env, "STUDIO_SEMANTIC_MAP_BIN"), "STUDIO_SEMANTIC_MAP_BIN="+s.SemanticMap)
+		// Read from the tree as it is now, not as it was at launch: an
+		// update or a rollback replaces it under the running shell, and a
+		// payload without app/bin (a Node release put back) must not be
+		// handed a Go server that is no longer there.
+		goServer, semanticMap := goServerPaths(os.Getenv, filepath.Dir(s.RunScript), s.AppDir)
+		if goServer != "" {
+			cmd.Env = append(cmd.Env, "STUDIO_GO_SERVER_BIN="+goServer)
+			if semanticMap != "" {
+				cmd.Env = append(envWithout(cmd.Env, "STUDIO_SEMANTIC_MAP_BIN"), "STUDIO_SEMANTIC_MAP_BIN="+semanticMap)
 			}
 		}
 		return cmd

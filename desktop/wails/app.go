@@ -51,6 +51,11 @@ type Config struct {
 	// FocusGuard: hold the window's focus handling while a dialog is open
 	// (Windows; see focusguard_windows.go).
 	FocusGuard bool
+
+	// macOS: the app bundle and its launcher (Contents/Resources/launcher.sh),
+	// which starts the background server; empty elsewhere.
+	Bundle   string
+	Launcher string
 }
 
 type ShellState struct {
@@ -62,7 +67,7 @@ type ShellState struct {
 type App struct {
 	ctx    context.Context
 	cfg    Config
-	sup    *Supervisor
+	sup    serverRunner
 	proxy  *Proxy
 	bridge *Bridge
 	test   *SelfTest
@@ -85,6 +90,13 @@ func NewApp(cfg Config) *App {
 	a.bridge = &Bridge{app: a}
 	a.proxy = NewProxy(a)
 	a.state = ShellState{Phase: "starting", Message: "Starting ACTIVATE Studio…"}
+	if cfg.Launcher != "" {
+		a.sup = newLauncherServer(cfg, a.onServerEvent)
+		if cfg.Test {
+			a.test = NewSelfTest(a)
+		}
+		return a
+	}
 	a.sup = &Supervisor{
 		RunScript:   cfg.RunScript,
 		Node:        cfg.Node,
@@ -207,7 +219,14 @@ func (a *App) relaunch() {
 		// An update that changed this window's own program, or one that
 		// replaces the whole app (relaunchAsked): open the new one
 		// (reopen.go). Otherwise only the server starts again.
-		if (a.shellChanged() || a.relaunchAsked()) && a.reopen(a.inst) {
+		if a.cfg.Bundle != "" {
+			// macOS: the bundle is opened again once this process has
+			// ended, which starts the copy the update put in place.
+			if a.reopenBundle() {
+				wruntime.Quit(a.ctx)
+				return
+			}
+		} else if (a.shellChanged() || a.relaunchAsked()) && a.reopen(a.inst) {
 			a.sup.Stop()
 			wruntime.Quit(a.ctx)
 			return
